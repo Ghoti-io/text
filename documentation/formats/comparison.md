@@ -23,7 +23,7 @@ measured here, on one machine, in one sitting.
 | 1 | JSON parses at roughly a third of Python's stdlib speed | JSON |
 | 2 | The JSON writer, streaming parser, Pointer, Patch and Schema take no caller allocator | JSON |
 | 3 | JSONPath `match()` and `search()` are refused | JSON |
-| 4 | The streaming JSON parser does not enforce the duplicate-name policy | JSON |
+| 4 | Streaming JSON LAST_WINS and COLLECT still deliver every repeated name | JSON |
 | 5 | There is no YAML schema validator | YAML |
 
 The library is LGPL-3.0-only. libyaml, RapidJSON and PyYAML are MIT. LGPL is
@@ -121,7 +121,10 @@ are uncommon among C JSON libraries.
   Schema. Parsing has one.
 - `match()` and `search()` in a JSONPath filter. They need an I-Regexp
   engine, and a query that uses either is refused.
-- The duplicate-name policy in the streaming parser.
+- LAST_WINS and COLLECT in the streaming parser. ERROR refuses a repeated
+  name and FIRST_WINS does not deliver the later member. The other two still
+  emit every member, because a value already handed to the callback cannot be
+  replaced.
 - SIMD scanning, which is what the throughput gap is about.
 
 ## CSV
@@ -185,8 +188,10 @@ What is left:
 - **`match()` and `search()` in a JSONPath filter**, which want an I-Regexp
   engine (RFC 9485). Whether this library should take a dependency on
   ghoti.io-regex for two functions is a decision.
-- **The duplicate-name policy in the streaming JSON parser.** Closing it
-  means holding every name of every open object.
+- **LAST_WINS and COLLECT on the streaming JSON parser.** ERROR and
+  FIRST_WINS are enforced. The other two still deliver every member, because
+  holding the object until it closes is what would make a stream able to
+  replace a value it has already handed over.
 - **The JSON writer, streaming parser, Pointer, Patch and Schema** still
   take no allocator. The \ref format_allocator_todo "allocator page" tracks
   that.

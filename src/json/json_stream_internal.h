@@ -63,10 +63,27 @@ typedef enum {
 /**
  * @brief Stack entry for tracking nesting
  */
+/**
+ * One object name the streaming parser has already accepted at this level.
+ * Owned by the stack entry. Arrays do not use it.
+ */
+typedef struct {
+  char * bytes;
+  size_t len;
+} json_stream_name;
+
 typedef struct {
   json_stream_state state; ///< State when entering this level
   int is_array;            ///< 1 if array, 0 if object
   int has_elements;        ///< 1 if container has at least one element
+  /**
+   * Names already accepted in this object, for the duplicate-name policy.
+   * NULL for an array, and for an object when the policy does not consult
+   * them (last-wins and collect deliver every member; see json_stream.c).
+   */
+  json_stream_name * names;
+  size_t name_count;
+  size_t name_cap;
 } json_stream_stack_entry;
 
 /**
@@ -260,6 +277,21 @@ struct GTEXT_JSON_Stream {
   // Limits tracking
   size_t total_bytes_consumed; ///< Total bytes processed
   size_t container_elem_count; ///< Current container element count
+
+  /**
+   * FIRST_WINS saw a repeated name and has not yet consumed its value.
+   * The key event is not emitted. The colon that follows arms `suppressing`.
+   */
+  int skip_member;
+
+  /**
+   * Events for the value of a repeated name under FIRST_WINS are not
+   * delivered. The grammar still runs, so a repeated name inside that value
+   * is still an error when the policy says so. Cleared when the value
+   * completes and `stack_size` is back at `suppress_at`.
+   */
+  int suppressing;
+  size_t suppress_at;
 
   /* Whether gtext_json_stream_finish() has been called. The DONE state cannot
    * answer that: it is also where a complete top-level value leaves the

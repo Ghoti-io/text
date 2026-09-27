@@ -1158,23 +1158,78 @@ TEST(Json5UnquotedKeys, TheStreamingParserEmitsTheSameNames) {
 	}
 }
 
-/* The streaming parser does not enforce the duplicate-name policy at all -
-   not for unquoted names, and not for quoted ones either, so this is older
-   than JSON5 and wider than it. Pinned here rather than left as a surprise:
-   dupkeys defaults to GTEXT_JSON_DUPKEY_ERROR, so the same document is refused
-   by gtext_json_parse() and accepted by the streaming parser. Enforcing it
-   there means remembering every name in each open object, which is a memory
-   cost a streaming parser should be asked for rather than assumed to want. */
-TEST(Json5UnquotedKeys, TheStreamingParserDoesNotSeeDuplicateNames) {
+/* The default policy is ERROR, and both parsers refuse. A name is compared
+   after escapes are decoded, quoted or not. One byte at a time, because the
+   name the stream compares is a token the lexer may have finished in an
+   earlier chunk. */
+GTEXT_JSON_Status stream_status(const std::string & src,
+    const GTEXT_JSON_Parse_Options * opts, size_t chunk) {
+	GTEXT_JSON_Event_cb cb = [](void *, const GTEXT_JSON_Event *,
+	                             GTEXT_JSON_Error *) { return GTEXT_JSON_OK; };
+	GTEXT_JSON_Stream * st = gtext_json_stream_new(opts, cb, nullptr);
+	if (!st) {
+		return GTEXT_JSON_E_OOM;
+	}
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Status status = GTEXT_JSON_OK;
+	for (size_t i = 0; i < src.size(); i += chunk) {
+		size_t n = std::min(chunk, src.size() - i);
+		status = gtext_json_stream_feed(st, src.data() + i, n, &err);
+		if (status != GTEXT_JSON_OK) {
+			break;
+		}
+	}
+	if (status == GTEXT_JSON_OK) {
+		status = gtext_json_stream_finish(st, &err);
+	}
+	if (status != GTEXT_JSON_OK) {
+		status = err.code;
+	}
+	gtext_json_stream_free(st);
+	gtext_json_error_free(&err);
+	return status;
+}
+
+TEST(Json5UnquotedKeys, BothParsersRefuseARepeatedName) {
 	GTEXT_JSON_Parse_Options opts = key_opts();
 	EXPECT_EQ(opts.dupkeys, GTEXT_JSON_DUPKEY_ERROR);
-	for (const char * src : {"{\"a\":1,\"a\":2}", "{a:1,\"a\":2}",
-	         "{a:1,a:2}"}) {
-		EXPECT_NE(dom_status(src, &opts), GTEXT_JSON_OK)
-		    << "the DOM parser refuses " << src;
-		EXPECT_TRUE(stream_accepts(src, &opts, std::strlen(src)))
-		    << "the streaming parser accepts " << src;
+	for (const char * src : {"{\"a\":1,\"a\":2}", "{a:1,\"a\":2}", "{a:1,a:2}",
+	         "{\"a\":1,\"\\u0061\":2}", "{\"a\":{\"b\":1,\"b\":2}}"}) {
+		EXPECT_EQ(dom_status(src, &opts), GTEXT_JSON_E_DUPKEY) << src;
+		for (size_t chunk : {std::strlen(src), size_t(1)}) {
+			EXPECT_EQ(stream_status(src, &opts, chunk), GTEXT_JSON_E_DUPKEY)
+			    << src << " at chunk " << chunk;
+		}
 	}
+}
+
+/* FIRST_WINS keeps the first member and does not deliver the later one. The
+   later value is still parsed: a broken one is an error, and so is a repeated
+   name inside a value that is kept. LAST_WINS and COLLECT still deliver every
+   member, because the callback has already been handed the earlier value and
+   a stream cannot take it back. */
+TEST(Json5UnquotedKeys, FirstWinsDoesNotDeliverTheLaterName) {
+	GTEXT_JSON_Parse_Options opts = key_opts();
+	opts.dupkeys = GTEXT_JSON_DUPKEY_FIRST_WINS;
+	const char * src = "{\"a\":1,\"a\":2,\"b\":3}";
+	bool ok = false;
+	std::vector<std::string> names = stream_names(src, &opts, 1, &ok);
+	EXPECT_TRUE(ok);
+	ASSERT_EQ(names.size(), 2u);
+	EXPECT_EQ(names[0], "a");
+	EXPECT_EQ(names[1], "b");
+	EXPECT_EQ(dom_status(src, &opts), GTEXT_JSON_OK);
+
+	EXPECT_EQ(stream_status("{\"a\":1,\"a\":[}", &opts, 1), GTEXT_JSON_E_BAD_TOKEN);
+	EXPECT_EQ(dom_status("{\"a\":1,\"a\":[}", &opts), GTEXT_JSON_E_BAD_TOKEN);
+
+	opts.dupkeys = GTEXT_JSON_DUPKEY_LAST_WINS;
+	names = stream_names("{\"a\":1,\"a\":2}", &opts, 1, &ok);
+	EXPECT_TRUE(ok);
+	ASSERT_EQ(names.size(), 2u);
+	EXPECT_EQ(names[0], "a");
+	EXPECT_EQ(names[1], "a");
 }
 
 TEST(Json5UnquotedKeys, BothParsersAgreeAcrossChunkBoundaries) {

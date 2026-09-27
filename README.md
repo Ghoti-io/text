@@ -317,9 +317,9 @@ documents;
 \ref format_yaml "yaml.md" says where
 that stops.
 
-What is still open is on the JSON side. The streaming parser does not
-enforce the duplicate-name policy. The writer, JSON Pointer, JSON Patch and
-JSON Schema do not take a caller allocator.
+What is still open is on the JSON side. Streaming LAST_WINS and COLLECT
+still deliver every member of a repeated name. The writer, JSON Pointer,
+JSON Patch and JSON Schema do not take a caller allocator.
 
 ## License
 

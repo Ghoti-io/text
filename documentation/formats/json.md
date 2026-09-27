@@ -322,16 +322,18 @@ may arrive in a later feed; other content there is
 `GTEXT_JSON_E_TRAILING_GARBAGE`. A stream of only white space, or only a
 comment, is refused at `finish()`, as `gtext_json_parse()` refuses it.
 
-**The streaming parser does not enforce the duplicate-name policy.** `dupkeys`
-defaults to `GTEXT_JSON_DUPKEY_ERROR` and `gtext_json_parse()` honors it, but
-`gtext_json_stream_feed()` emits both names and reports success. So the same
-document is refused by one parser and accepted by the other, which is not a
-JSON5 matter - it is equally true of two quoted names. It is pinned by a test
-(`Json5UnquotedKeys.TheStreamingParserDoesNotSeeDuplicateNames`) so that it
-shows up as a known gap rather than as a surprise. Closing it means holding
-every name of every open object in memory, bounded by `max_container_elems`
-and `max_string_bytes` but real, and that is a cost a streaming parser should
-be asked for rather than assumed to want.
+**The streaming parser enforces ERROR and FIRST_WINS.** `dupkeys` defaults to
+`GTEXT_JSON_DUPKEY_ERROR`. A repeated name - quoted, unquoted, or written once
+each way - is `GTEXT_JSON_E_DUPKEY` from both parsers. FIRST_WINS parses the
+later member and does not deliver it: the callback never sees that key. The
+later value is still parsed, so a broken one is an error.
+
+LAST_WINS and COLLECT still deliver every member. A value the callback has
+already been handed cannot be replaced or wrapped afterwards, and buffering
+every object until its `}` would stop the stream being a stream. Both of those
+modes accept a repeated name, and so does the DOM parser, so the two still
+agree about whether the document is JSON. What they do not agree about is
+which value a caller who builds an object from the events ends up with.
 
 @anchor json-tested-scope
 ## Tested scope
@@ -445,9 +447,9 @@ a length test alone would return the un-normalized input. Numbers are still
 referenced in place.
 
 JSONPath `match()` and `search()` are refused. They need an I-Regexp engine
-(RFC 9485). The streaming parser does not enforce the duplicate-name policy;
-see above. The writer, the streaming parser, JSON Pointer, JSON Patch and
-JSON Schema take no caller allocator; the
+(RFC 9485). The streaming parser's LAST_WINS and COLLECT modes still deliver
+every member of a repeated name; see above. The writer, the streaming parser,
+JSON Pointer, JSON Patch and JSON Schema take no caller allocator; the
 \ref format_allocator_todo "allocator page" tracks that.
 
 Some refusals carry line 0 and column 0. The message names the fault.

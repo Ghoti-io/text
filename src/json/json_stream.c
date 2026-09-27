@@ -122,6 +122,9 @@ static GTEXT_JSON_Status json_stream_push(
   st->stack[st->stack_size].state = state;
   st->stack[st->stack_size].is_array = is_array;
   st->stack[st->stack_size].has_elements = 0;
+  st->stack[st->stack_size].names = NULL;
+  st->stack[st->stack_size].name_count = 0;
+  st->stack[st->stack_size].name_cap = 0;
   st->stack_size++;
   st->depth++;
 
@@ -129,8 +132,22 @@ static GTEXT_JSON_Status json_stream_push(
 }
 
 // Pop state from stack
+static void json_stream_free_names(json_stream_stack_entry * entry) {
+  if (!entry->names) {
+    return;
+  }
+  for (size_t i = 0; i < entry->name_count; i++) {
+    free(entry->names[i].bytes);
+  }
+  free(entry->names);
+  entry->names = NULL;
+  entry->name_count = 0;
+  entry->name_cap = 0;
+}
+
 static void json_stream_pop(GTEXT_JSON_Stream * st) {
   if (st->stack_size > 0) {
+    json_stream_free_names(&st->stack[st->stack_size - 1]);
     st->stack_size--;
     st->depth--;
   }
@@ -142,6 +159,65 @@ static json_stream_stack_entry * json_stream_top(GTEXT_JSON_Stream * st) {
     return NULL;
   }
   return &st->stack[st->stack_size - 1];
+}
+
+/*
+ * ERROR and FIRST_WINS have to know which names this object already has.
+ * LAST_WINS and COLLECT do not: both deliver every member, because a value
+ * the callback has already been handed cannot be replaced or wrapped after
+ * the fact. Acceptance still agrees with the DOM parser for those two - a
+ * repeated name is not an error there either.
+ */
+static int json_stream_tracks_names(const GTEXT_JSON_Stream * st) {
+  return st->opts.dupkeys == GTEXT_JSON_DUPKEY_ERROR
+      || st->opts.dupkeys == GTEXT_JSON_DUPKEY_FIRST_WINS;
+}
+
+static int json_stream_name_seen(
+    const json_stream_stack_entry * entry, const char * bytes, size_t len) {
+  for (size_t i = 0; i < entry->name_count; i++) {
+    if (entry->names[i].len == len
+        && (len == 0 || memcmp(entry->names[i].bytes, bytes, len) == 0)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static GTEXT_JSON_Status json_stream_name_add(json_stream_stack_entry * entry,
+    const char * bytes, size_t len) {
+  if (entry->name_count == entry->name_cap) {
+    size_t cap = entry->name_cap == 0 ? 4 : entry->name_cap * 2;
+    if (cap < entry->name_cap) {
+      return GTEXT_JSON_E_OOM;
+    }
+    json_stream_name * grown =
+        (json_stream_name *)realloc(entry->names, cap * sizeof(*grown));
+    if (!grown) {
+      return GTEXT_JSON_E_OOM;
+    }
+    entry->names = grown;
+    entry->name_cap = cap;
+  }
+  char * copy = NULL;
+  if (len > 0) {
+    copy = (char *)malloc(len);
+    if (!copy) {
+      return GTEXT_JSON_E_OOM;
+    }
+    memcpy(copy, bytes, len);
+  }
+  entry->names[entry->name_count].bytes = copy;
+  entry->names[entry->name_count].len = len;
+  entry->name_count++;
+  return GTEXT_JSON_OK;
+}
+
+/* The value of a repeated FIRST_WINS name has finished. */
+static void json_stream_finish_suppressed(GTEXT_JSON_Stream * st) {
+  if (st->suppressing && st->stack_size == st->suppress_at) {
+    st->suppressing = 0;
+  }
 }
 
 // Set error in stream and error structure (standardized error handling)
@@ -236,6 +312,13 @@ static GTEXT_JSON_Status json_stream_handle_value_token(
 // Emit an event through the callback
 static GTEXT_JSON_Status json_stream_emit_event(GTEXT_JSON_Stream * st,
     GTEXT_JSON_Event_Type type, const GTEXT_JSON_Event * evt_data) {
+  /* A repeated name under FIRST_WINS is parsed and not delivered. The
+   * callback has not seen the member, which is what "the first one wins"
+   * means for a stream that cannot retract an event. */
+  if (st->suppressing) {
+    return GTEXT_JSON_OK;
+  }
+
   GTEXT_JSON_Event evt;
   memset(&evt, 0, sizeof(evt));
   evt.type = type;
@@ -560,6 +643,7 @@ static GTEXT_JSON_Status json_stream_close_array(GTEXT_JSON_Stream * st,
     }
     st->state = JSON_STREAM_STATE_VALUE;
   }
+  json_stream_finish_suppressed(st);
   return GTEXT_JSON_OK;
 }
 
@@ -618,6 +702,7 @@ static GTEXT_JSON_Status json_stream_close_object(GTEXT_JSON_Stream * st,
     }
     st->state = JSON_STREAM_STATE_VALUE;
   }
+  json_stream_finish_suppressed(st);
   return GTEXT_JSON_OK;
 }
 
@@ -728,14 +813,43 @@ static GTEXT_JSON_Status json_stream_handle_token(
           st, GTEXT_JSON_E_BAD_TOKEN, "Expected object key (string)", pos, err);
     }
 
+    const char * name =
+        keyword_name ? keyword_name : token->data.string.value;
+    size_t name_len =
+        keyword_name ? strlen(keyword_name) : token->data.string.value_len;
+    json_stream_stack_entry * object = json_stream_top(st);
+    if (object && !object->is_array && json_stream_tracks_names(st)) {
+      if (json_stream_name_seen(object, name, name_len)) {
+        json_position pos = {
+            .offset = st->buffer_start_offset + token->pos.offset,
+            .line = token->pos.line,
+            .col = token->pos.col};
+        if (st->opts.dupkeys == GTEXT_JSON_DUPKEY_ERROR) {
+          return json_stream_set_error(
+              st, GTEXT_JSON_E_DUPKEY, "Duplicate key in object", pos, err);
+        }
+        /* FIRST_WINS: parse the member, do not deliver it. */
+        st->skip_member = 1;
+        st->state = JSON_STREAM_STATE_OBJECT_VALUE;
+        return GTEXT_JSON_OK;
+      }
+      status = json_stream_name_add(object, name, name_len);
+      if (status != GTEXT_JSON_OK) {
+        json_position pos = {
+            .offset = st->buffer_start_offset + token->pos.offset,
+            .line = token->pos.line,
+            .col = token->pos.col};
+        return json_stream_set_error(
+            st, status, "Out of memory", pos, err);
+      }
+    }
+
     // Emit key event
     {
       GTEXT_JSON_Event evt;
       evt.type = GTEXT_JSON_EVT_KEY;
-      evt.as.str.s =
-          keyword_name ? keyword_name : token->data.string.value;
-      evt.as.str.len =
-          keyword_name ? strlen(keyword_name) : token->data.string.value_len;
+      evt.as.str.s = name;
+      evt.as.str.len = name_len;
       status = json_stream_emit_event(st, GTEXT_JSON_EVT_KEY, &evt);
       if (status != GTEXT_JSON_OK) {
         return status;
@@ -756,7 +870,14 @@ static GTEXT_JSON_Status json_stream_handle_token(
           "Expected colon after object key", pos, err);
     }
 
-    // After colon, expect value
+    // After colon, expect value. A repeated FIRST_WINS name is still parsed,
+    // so a broken value and a repeated name inside it are still errors, and
+    // none of its events are delivered.
+    if (st->skip_member) {
+      st->skip_member = 0;
+      st->suppressing = 1;
+      st->suppress_at = st->stack_size;
+    }
     st->state = JSON_STREAM_STATE_EXPECT_VALUE;
     return GTEXT_JSON_OK;
   }
@@ -910,21 +1031,27 @@ static GTEXT_JSON_Status json_stream_handle_value_token(
       top->has_elements = 1;
     }
 
-    // Check container element limit
-    st->container_elem_count++;
-    size_t max_elems = json_get_limit(
-        st->opts.max_container_elems, JSON_DEFAULT_MAX_CONTAINER_ELEMS);
-    if (st->container_elem_count > max_elems) {
-      json_position pos = {
-          .offset = st->buffer_start_offset + token->pos.offset,
-          .line = token->pos.line,
-          .col = token->pos.col};
-      return json_stream_set_error(st, GTEXT_JSON_E_LIMIT,
-          "Maximum container element count exceeded", pos, err);
+    /* A repeated name under FIRST_WINS is not a member, so it does not count
+     * against the container limit and its events were not delivered. */
+    int dropping = st->suppressing && st->stack_size == st->suppress_at;
+    if (!dropping) {
+      // Check container element limit
+      st->container_elem_count++;
+      size_t max_elems = json_get_limit(
+          st->opts.max_container_elems, JSON_DEFAULT_MAX_CONTAINER_ELEMS);
+      if (st->container_elem_count > max_elems) {
+        json_position pos = {
+            .offset = st->buffer_start_offset + token->pos.offset,
+            .line = token->pos.line,
+            .col = token->pos.col};
+        return json_stream_set_error(st, GTEXT_JSON_E_LIMIT,
+            "Maximum container element count exceeded", pos, err);
+      }
     }
 
     // Inside container - expect comma or closing bracket/brace
     st->state = JSON_STREAM_STATE_VALUE;
+    json_stream_finish_suppressed(st);
   }
 
   return GTEXT_JSON_OK;
@@ -999,6 +1126,9 @@ GTEXT_API void gtext_json_stream_free(GTEXT_JSON_Stream * st) {
   }
 
   // Free all buffers
+  for (size_t i = 0; i < st->stack_size; i++) {
+    json_stream_free_names(&st->stack[i]);
+  }
   free(st->input_buffer);
   // Free token buffer if it was allocated
   if (st->token_buffer.buffer) {

@@ -26,10 +26,10 @@
  * being read as code - was found by writing a test that happened to feed one
  * byte at a time. This asserts it on every input.
  *
- * The duplicate-name policy is taken out of that comparison by setting
- * LAST_WINS: the DOM parser enforces the policy and the streaming parser does
- * not, which is a known gap recorded on the JSON page, and leaving it in would
- * make every duplicate-name document a false report.
+ * The duplicate-name policy is part of the comparison. The default is ERROR,
+ * and both parsers refuse a repeated name. LAST_WINS and COLLECT still deliver
+ * every member on the stream - a value already handed to the callback cannot
+ * be replaced - and both of those accept, as the DOM parser does.
  *
  * Build with: make fuzz-json     Run: make fuzz-run-json
  *
@@ -146,6 +146,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   // passed to free(). And the snippet it allocates belongs to the caller.
   GTEXT_JSON_Error err{};
   GTEXT_JSON_Value * root = gtext_json_parse(text, len, &opts, &err);
+  const bool dom_ok = root != nullptr;
   if (root) {
     walk(root, 0);
     gtext_json_free(root);
@@ -153,28 +154,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   gtext_json_error_free(&err);
 
   /* The two parsers must agree about whether this is a document, and the
-   * streaming one must agree with itself at every chunk size. LAST_WINS takes
-   * the duplicate-name policy out of it - see the note at the top. */
-  GTEXT_JSON_Parse_Options both = opts;
-  both.dupkeys = GTEXT_JSON_DUPKEY_LAST_WINS;
-  GTEXT_JSON_Error dom_err{};
-  GTEXT_JSON_Value * dom = gtext_json_parse(text, len, &both, &dom_err);
-  const bool dom_ok = dom != nullptr;
-  if (dom) {
-    gtext_json_free(dom);
-  }
-  gtext_json_error_free(&dom_err);
+   * streaming one must agree with itself at every chunk size. */
 
   /* One byte at a time is the chunk size that finds boundary bugs, and it is
    * quadratic in the input length, so it is spent on the short inputs where
    * the corpus minimiser leaves the interesting ones anyway. */
-  if (stream_accepts(text, len, &both, len ? len : 1) != dom_ok) {
+  if (stream_accepts(text, len, &opts, len ? len : 1) != dom_ok) {
     __builtin_trap();
   }
-  if (len <= 64 && stream_accepts(text, len, &both, 1) != dom_ok) {
+  if (len <= 64 && stream_accepts(text, len, &opts, 1) != dom_ok) {
     __builtin_trap();
   }
-  if (len > 1 && stream_accepts(text, len, &both, 7) != dom_ok) {
+  if (len > 1 && stream_accepts(text, len, &opts, 7) != dom_ok) {
     __builtin_trap();
   }
   return 0;
