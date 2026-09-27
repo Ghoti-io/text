@@ -170,16 +170,18 @@ the first element twice, and §2.3.1.2 says so.
 
 The **filter selector** is implemented: `$[?@.price < 10]`, with `&&`, `||`,
 `!`, parentheses, the six comparison operators, and the functions `length()`,
-`count()` and `value()`. A filter may hold another filter, and a comparison may
-name the document root - `$.a[?@.b == $.x]` - as well as the current node.
+`count()`, `value()`, `match()` and `search()`. A filter may hold another
+filter, and a comparison may name the document root - `$.a[?@.b == $.x]` - as
+well as the current node.
 
-`match()` and `search()` are the exception: they need an I-Regexp engine, which
-this library does not have, so a query using either is refused with
-`GTEXT_JSON_E_PATH_UNSUPPORTED`. That status is separate from
-`GTEXT_JSON_E_PATH` for a query that is not well-formed, because the two ask the
-caller for different things - and a query whose filter was quietly dropped would
-select *every* element of the array rather than the ones asked for, which is why
-refusing is the only safe answer to a construct that cannot be evaluated.
+`match()` asks whether the whole string matches an I-Regexp (RFC 9485).
+`search()` asks whether any substring does. Both are compiled by
+ghoti.io-regex. A pattern that is not an I-Regexp makes the function false,
+which is what RFC 9535 says, and the query itself stays well-formed. A match
+the engine stops because a limit was reached is `GTEXT_JSON_E_LIMIT`: that is
+not a false result. `GTEXT_JSON_E_PATH_UNSUPPORTED` remains the status for a
+construct this build cannot evaluate, because dropping it and running the rest
+of the filter would select every element of the array.
 
 An **ill-typed** query is invalid rather than false, as §2.4.2 says: `length()`
 takes a value so its argument cannot be a multi-node query, `count()` and
@@ -191,10 +193,11 @@ The examples in RFC 9535 §1.5 and the slice examples in §2.3.4 are in the suit
 in `tests/test-json-path.cpp`, written from the RFC rather than from this
 implementation. `make conformance-jsonpath` scores it against the
 [JSONPath Compliance Test Suite](https://github.com/jsonpath-standard/jsonpath-compliance-test-suite):
-**650 of the 650 cases it attempts**, out of the 706 the suite ships. The other
-56 use `match()` or `search()` and are refused as unsupported rather than
-counted as passes or failures - a percentage over a subset means nothing without
-that number beside it.
+**704 of the 706 cases**. The other two, "explicit caret" and "explicit
+dollar", treat `^` and `$` as anchors. RFC 9485 makes both ordinary
+characters, and that is what is implemented. They are reported as a
+disagreement with the suite, not as passes and not as failures. A case this
+build refused as unsupported would be reported beside that number as well.
 
 That score covers **both** halves of what the suite asserts: the node list -
 which nodes a query selects and in what order - and the *normalized path* of each
@@ -446,8 +449,7 @@ strings: canonical ordering can keep the byte length and change the bytes, so
 a length test alone would return the un-normalized input. Numbers are still
 referenced in place.
 
-JSONPath `match()` and `search()` are refused. They need an I-Regexp engine
-(RFC 9485). The streaming parser's LAST_WINS and COLLECT modes still deliver
+The streaming parser's LAST_WINS and COLLECT modes still deliver
 every member of a repeated name; see above. The writer, the streaming parser,
 JSON Pointer, JSON Patch and JSON Schema take no caller allocator; the
 \ref format_allocator_todo "allocator page" tracks that.

@@ -44,14 +44,14 @@
  * rather than unions, and a caller counting results gets the number the
  * specification gives.
  *
- * **A construct that cannot be evaluated is refused, not ignored.** match()
- * and search() need an I-Regexp engine, which this library does not have, so a
- * query using either is refused at compile time with
- * GTEXT_JSON_E_PATH_UNSUPPORTED rather than evaluated as though the call were
- * absent. Dropping a filter and evaluating the rest would select every element
- * of the array instead of the ones asked for - a wrong answer where the refusal
- * is merely an absent feature. The same reasoning makes an *ill-typed* query
- * GTEXT_JSON_E_PATH: 2.4.2 says it is invalid, not false.
+ * **A construct that cannot be evaluated is refused, not ignored.** Dropping a
+ * filter and evaluating the rest would select every element of the array
+ * instead of the ones asked for. An *ill-typed* query is GTEXT_JSON_E_PATH:
+ * 2.4.2 says it is invalid, not false. match() and search() are evaluated.
+ * Their pattern is I-Regexp (RFC 9485), compiled by ghoti.io-regex. A pattern
+ * that is not I-Regexp is LogicalFalse, which is what RFC 9535 §2.4.6 says.
+ * A budget the engine exhausts is GTEXT_JSON_E_LIMIT, because that question
+ * was not answered.
  *
  * **The filter's recursion is the query's, not the document's.** The
  * expression parser and evaluator recurse over the expression tree, whose
@@ -71,6 +71,8 @@
 #include "json_internal.h"
 
 #include <ghoti.io/text/json/json_path.h>
+
+#include <ghoti.io/regex/regex.h>
 
 /* RFC 9535 2.3.3.1: an index or a slice bound is an integer in the
  * interchangeable range, so that every implementation agrees about it. */
@@ -93,8 +95,9 @@ typedef enum {
   JSON_PATH_EXPR_OR,
   JSON_PATH_EXPR_AND,
   JSON_PATH_EXPR_NOT,
-  JSON_PATH_EXPR_TEST,   /* a query, true when it selects anything */
-  JSON_PATH_EXPR_COMPARE /* comparable <op> comparable */
+  JSON_PATH_EXPR_TEST,    /* a query, true when it selects anything */
+  JSON_PATH_EXPR_LOGICAL, /* match() or search(), a LogicalType test */
+  JSON_PATH_EXPR_COMPARE  /* comparable <op> comparable */
 } json_path_expr_kind;
 
 typedef enum {
@@ -137,7 +140,9 @@ typedef enum {
   JSON_PATH_FN_NONE,
   JSON_PATH_FN_LENGTH, /* length(ValueType) -> ValueType */
   JSON_PATH_FN_COUNT,  /* count(NodesType) -> ValueType */
-  JSON_PATH_FN_VALUE   /* value(NodesType) -> ValueType */
+  JSON_PATH_FN_VALUE,  /* value(NodesType) -> ValueType */
+  JSON_PATH_FN_MATCH,  /* match(ValueType, ValueType) -> LogicalType */
+  JSON_PATH_FN_SEARCH  /* search(ValueType, ValueType) -> LogicalType */
 } json_path_fn;
 
 typedef enum {
@@ -151,7 +156,8 @@ typedef struct json_path_comparable {
   json_path_literal literal;
   json_path_query query;
   json_path_fn fn;
-  struct json_path_comparable * arg; /* the function's one argument */
+  struct json_path_comparable * arg;  /* every function's first argument */
+  struct json_path_comparable * arg2; /* match() and search(): the pattern */
 } json_path_comparable;
 
 typedef struct json_path_expr {
@@ -162,6 +168,7 @@ typedef struct json_path_expr {
   json_path_comparable lhs;
   json_path_comparable rhs;
   json_path_query test;
+  json_path_comparable logical; /* JSON_PATH_EXPR_LOGICAL */
 } json_path_expr;
 
 typedef struct json_path_selector {
@@ -756,12 +763,28 @@ static bool json_path_keyword(json_path_parser * p, const char * word) {
 static bool json_path_comparable_parse(
     json_path_parser * p, json_path_comparable * out);
 
-/* function-expr, restricted to the three this library evaluates.
- *
- * match() and search() are refused as unsupported rather than as invalid: they
- * are standard and well-formed, and what is missing is an I-Regexp engine.
- * Their absence is why a filter that uses them cannot be evaluated, and saying
- * "unsupported" rather than "invalid" tells a caller which of the two it is. */
+static bool json_path_fn_is_logical(json_path_fn fn) {
+  return fn == JSON_PATH_FN_MATCH || fn == JSON_PATH_FN_SEARCH;
+}
+
+/* ValueType: a literal, a singular query, or a function whose result is a
+ * value. match() and search() return LogicalType, so they cannot stand where
+ * a value is required (2.4.3). */
+static bool json_path_is_value_argument(const json_path_comparable * arg) {
+  if (arg->kind == JSON_PATH_COMPARABLE_LITERAL) {
+    return true;
+  }
+  if (arg->kind == JSON_PATH_COMPARABLE_QUERY) {
+    return arg->query.singular;
+  }
+  if (arg->kind == JSON_PATH_COMPARABLE_FUNCTION) {
+    return !json_path_fn_is_logical(arg->fn);
+  }
+  return false;
+}
+
+/* function-expr. The five standard functions. A name that is not one of them
+ * is not a well-formed query: 2.4.1 requires the name to be registered. */
 static bool json_path_function(json_path_parser * p, json_path_comparable * out) {
   const size_t start = p->at;
   while (!json_path_at_end(p)
@@ -787,11 +810,11 @@ static bool json_path_function(json_path_parser * p, json_path_comparable * out)
   else if (name_len == 5 && memcmp(name, "value", 5) == 0) {
     fn = JSON_PATH_FN_VALUE;
   }
-  else if ((name_len == 5 && memcmp(name, "match", 5) == 0)
-      || (name_len == 6 && memcmp(name, "search", 6) == 0)) {
-    json_path_fail(p, GTEXT_JSON_E_PATH_UNSUPPORTED,
-        "match() and search() need a regular expression engine");
-    return false;
+  else if (name_len == 5 && memcmp(name, "match", 5) == 0) {
+    fn = JSON_PATH_FN_MATCH;
+  }
+  else if (name_len == 6 && memcmp(name, "search", 6) == 0) {
+    fn = JSON_PATH_FN_SEARCH;
   }
   else {
     /* 2.4.1: a function this implementation does not know is not a
@@ -814,20 +837,58 @@ static bool json_path_function(json_path_parser * p, json_path_comparable * out)
     return false;
   }
   json_path_skip_space(p);
+
+  json_path_comparable * arg2 = NULL;
+  if (json_path_fn_is_logical(fn)) {
+    /* match() and search() take the subject and then the I-Regexp. */
+    if (json_path_peek(p) != ',') {
+      json_path_fail(p, GTEXT_JSON_E_PATH,
+          "match() and search() take exactly two arguments");
+      json_path_free_comparable(p->alloc, arg);
+      gtext_allocator_free(p->alloc, arg);
+      return false;
+    }
+    p->at++;
+    json_path_skip_space(p);
+    arg2 = (json_path_comparable *)gtext_allocator_calloc(
+        p->alloc, 1, sizeof(json_path_comparable));
+    if (!arg2) {
+      json_path_fail(p, GTEXT_JSON_E_OOM, "out of memory");
+      json_path_free_comparable(p->alloc, arg);
+      gtext_allocator_free(p->alloc, arg);
+      return false;
+    }
+    if (!json_path_comparable_parse(p, arg2)) {
+      json_path_free_comparable(p->alloc, arg);
+      gtext_allocator_free(p->alloc, arg);
+      json_path_free_comparable(p->alloc, arg2);
+      gtext_allocator_free(p->alloc, arg2);
+      return false;
+    }
+    json_path_skip_space(p);
+  }
+
   if (json_path_peek(p) != ')') {
-    /* One argument is all any of the three takes, so a comma here is an arity
-     * error rather than a syntax one - and 2.4.1 makes a wrong arity invalid. */
+    /* 2.4.1 makes a wrong arity invalid. A comma after a one-argument
+     * function, or a third argument to match() or search(), lands here. */
     json_path_fail(p, GTEXT_JSON_E_PATH,
-        "this function takes exactly one argument");
+        json_path_fn_is_logical(fn)
+            ? "match() and search() take exactly two arguments"
+            : "this function takes exactly one argument");
     json_path_free_comparable(p->alloc, arg);
     gtext_allocator_free(p->alloc, arg);
+    if (arg2) {
+      json_path_free_comparable(p->alloc, arg2);
+      gtext_allocator_free(p->alloc, arg2);
+    }
     return false;
   }
   p->at++;
 
   /* The type rules of 2.4.2/2.4.3, which make an ill-typed query invalid.
-   * count() and value() take a node list, so their argument has to be a query;
-   * length() takes a value, so a query argument has to be a singular one. */
+   * count() and value() take a node list, so their argument has to be a query.
+   * length(), and both arguments of match() and search(), take a value, so a
+   * query argument has to be a singular one. */
   if (fn == JSON_PATH_FN_COUNT || fn == JSON_PATH_FN_VALUE) {
     if (arg->kind != JSON_PATH_COMPARABLE_QUERY) {
       json_path_fail(p, GTEXT_JSON_E_PATH,
@@ -837,7 +898,18 @@ static bool json_path_function(json_path_parser * p, json_path_comparable * out)
       return false;
     }
   }
-  else if (arg->kind == JSON_PATH_COMPARABLE_QUERY && !arg->query.singular) {
+  else if (json_path_fn_is_logical(fn)) {
+    if (!json_path_is_value_argument(arg) || !json_path_is_value_argument(arg2)) {
+      json_path_fail(p, GTEXT_JSON_E_PATH,
+          "match() and search() take two values");
+      json_path_free_comparable(p->alloc, arg);
+      gtext_allocator_free(p->alloc, arg);
+      json_path_free_comparable(p->alloc, arg2);
+      gtext_allocator_free(p->alloc, arg2);
+      return false;
+    }
+  }
+  else if (!json_path_is_value_argument(arg)) {
     json_path_fail(p, GTEXT_JSON_E_PATH,
         "length() takes a value, so its query must be singular");
     json_path_free_comparable(p->alloc, arg);
@@ -848,6 +920,7 @@ static bool json_path_function(json_path_parser * p, json_path_comparable * out)
   out->kind = JSON_PATH_COMPARABLE_FUNCTION;
   out->fn = fn;
   out->arg = arg;
+  out->arg2 = arg2;
   return true;
 }
 
@@ -970,24 +1043,35 @@ static json_path_expr * json_path_basic(json_path_parser * p) {
     }
 
     if (!have_op) {
-      /* test-expr: a query, true when it selects at least one node. A function
-       * cannot stand here - of the standard five only match() and search()
-       * return a logical value, and those are refused above - and neither can
-       * a literal. 2.4.3 makes either of those ill-typed, which is invalid. */
-      if (first.kind != JSON_PATH_COMPARABLE_QUERY) {
+      /* test-expr: a query, true when it selects at least one node, or
+       * match()/search(), which return LogicalType (2.4.3). A value function
+       * or a literal standing here is ill-typed, which is invalid. */
+      if (first.kind == JSON_PATH_COMPARABLE_QUERY) {
+        inner = json_path_new_expr(p, JSON_PATH_EXPR_TEST);
+        if (!inner) {
+          json_path_free_comparable(p->alloc, &first);
+          return NULL;
+        }
+        inner->test = first.query;
+        /* The query's segments moved into the expression. */
+        memset(&first, 0, sizeof(first));
+      }
+      else if (first.kind == JSON_PATH_COMPARABLE_FUNCTION
+          && json_path_fn_is_logical(first.fn)) {
+        inner = json_path_new_expr(p, JSON_PATH_EXPR_LOGICAL);
+        if (!inner) {
+          json_path_free_comparable(p->alloc, &first);
+          return NULL;
+        }
+        inner->logical = first;
+        memset(&first, 0, sizeof(first));
+      }
+      else {
         json_path_fail(p, GTEXT_JSON_E_PATH,
             "this expression is not a test: it has no comparison");
         json_path_free_comparable(p->alloc, &first);
         return NULL;
       }
-      inner = json_path_new_expr(p, JSON_PATH_EXPR_TEST);
-      if (!inner) {
-        json_path_free_comparable(p->alloc, &first);
-        return NULL;
-      }
-      inner->test = first.query;
-      /* The query's segments moved into the expression. */
-      memset(&first, 0, sizeof(first));
     }
     else {
       json_path_skip_space(p);
@@ -996,8 +1080,18 @@ static json_path_expr * json_path_basic(json_path_parser * p) {
         json_path_free_comparable(p->alloc, &first);
         return NULL;
       }
-      /* 2.4.1: only a singular query may be compared. A non-singular one is
-       * ill-typed rather than false. */
+      /* 2.4.3: LogicalType may not be compared. match() == true is invalid,
+       * not false. 2.4.1: only a singular query may be compared. */
+      if ((first.kind == JSON_PATH_COMPARABLE_FUNCTION
+              && json_path_fn_is_logical(first.fn))
+          || (second.kind == JSON_PATH_COMPARABLE_FUNCTION
+              && json_path_fn_is_logical(second.fn))) {
+        json_path_fail(p, GTEXT_JSON_E_PATH,
+            "match() and search() return a logical value, which cannot be compared");
+        json_path_free_comparable(p->alloc, &first);
+        json_path_free_comparable(p->alloc, &second);
+        return NULL;
+      }
       if ((first.kind == JSON_PATH_COMPARABLE_QUERY && !first.query.singular)
           || (second.kind == JSON_PATH_COMPARABLE_QUERY
               && !second.query.singular)) {
@@ -1183,6 +1277,11 @@ static void json_path_free_comparable(
       gtext_allocator_free(alloc, c->arg);
       c->arg = NULL;
     }
+    if (c->arg2) {
+      json_path_free_comparable(alloc, c->arg2);
+      gtext_allocator_free(alloc, c->arg2);
+      c->arg2 = NULL;
+    }
     break;
   }
 }
@@ -1200,6 +1299,9 @@ static void json_path_free_expr(
   }
   else if (expr->kind == JSON_PATH_EXPR_TEST) {
     json_path_free_query(alloc, &expr->test);
+  }
+  else if (expr->kind == JSON_PATH_EXPR_LOGICAL) {
+    json_path_free_comparable(alloc, &expr->logical);
   }
   gtext_allocator_free(alloc, expr);
 }
@@ -2032,10 +2134,63 @@ static json_path_fv json_path_eval_function(json_path_eval * ev,
     }
   }
 
+  case JSON_PATH_FN_MATCH:
+  case JSON_PATH_FN_SEARCH:
+    /* LogicalType. A comparison is refused at compile time, so evaluation of
+     * these goes through json_path_logical_call, not through here. */
+    break;
   case JSON_PATH_FN_NONE:
     break;
   }
   return result;
+}
+
+/* match() or search() for one node. A subject or pattern that is not a
+ * string, and a pattern that is not I-Regexp, are LogicalFalse (RFC 9535
+ * §2.4.6, §2.4.7). GRX_ERR_LIMIT and GRX_ERR_OOM are not a Boolean: the
+ * question was not answered, and ev->status carries that out. */
+static bool json_path_logical_call(json_path_eval * ev,
+    const json_path_comparable * call, const GTEXT_JSON_Value * current) {
+  const json_path_fv subject = json_path_eval_comparable(ev, call->arg, current);
+  if (ev->status != GTEXT_JSON_OK) {
+    return false;
+  }
+  const json_path_fv pattern =
+      json_path_eval_comparable(ev, call->arg2, current);
+  if (ev->status != GTEXT_JSON_OK) {
+    return false;
+  }
+  if (subject.kind != JSON_PATH_FV_STRING || pattern.kind != JSON_PATH_FV_STRING) {
+    return false;
+  }
+
+  /* match is the whole string. search is any substring. The dialect anchors
+   * nothing; both questions are the same pattern and two option settings.
+   * GRX_OPT_UTF is the dialect's default and is applied by the parser. */
+  const uint32_t options = call->fn == JSON_PATH_FN_MATCH
+      ? (uint32_t)(GRX_OPT_ANCHORED | GRX_OPT_ANCHORED_END)
+      : (uint32_t)GRX_OPT_NONE;
+  GRX_Regex * regex = NULL;
+  const GRX_Result compiled = grx_regex_compile_with_allocator(pattern.string,
+      pattern.string_len, GRX_SYNTAX_IREGEXP, options, NULL,
+      (const GRX_Allocator *)ev->alloc, NULL, &regex);
+  if (compiled == GRX_ERR_SYNTAX || compiled == GRX_ERR_INVALID) {
+    return false;
+  }
+  if (compiled != GRX_OK) {
+    ev->status = compiled == GRX_ERR_OOM ? GTEXT_JSON_E_OOM : GTEXT_JSON_E_LIMIT;
+    return false;
+  }
+
+  int matched = 0;
+  const GRX_Result searched = grx_regex_search(regex, subject.string,
+      subject.string_len, 0, GRX_ENGINE_AUTO, NULL, NULL, &matched);
+  grx_regex_free(regex);
+  if (searched != GRX_OK) {
+    ev->status = searched == GRX_ERR_OOM ? GTEXT_JSON_E_OOM : GTEXT_JSON_E_LIMIT;
+    return false;
+  }
+  return matched != 0;
 }
 
 static json_path_fv json_path_eval_comparable(json_path_eval * ev,
@@ -2114,6 +2269,8 @@ static bool json_path_eval_expr(json_path_eval * ev,
         && json_path_eval_expr(ev, expr->right, current);
   case JSON_PATH_EXPR_NOT:
     return !json_path_eval_expr(ev, expr->left, current);
+  case JSON_PATH_EXPR_LOGICAL:
+    return json_path_logical_call(ev, &expr->logical, current);
   case JSON_PATH_EXPR_TEST: {
     json_path_list nodes;
     memset(&nodes, 0, sizeof(nodes));

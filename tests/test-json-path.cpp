@@ -616,23 +616,68 @@ TEST(JsonPathFilter, Functions) {
 	EXPECT_EQ(count(p.doc, "$[?value($.arr[*]) == 1]"), 0u);
 }
 
-/* match() and search() need a regular expression engine, so a filter using one
-   is refused as unsupported - the same distinction the whole selector used to
-   get. A caller learns that the query is fine and this build cannot run it. */
-TEST(JsonPathFilter, MatchAndSearchAreUnsupported) {
-	for (const char * query : {"$[?match(@.a, 'a.*')]", "$[?search(@.a, 'b')]",
-	         "$[?!match(@.a, 'x')]", "$[?@.b && match(@.a, 'x')]"}) {
-		GTEXT_JSON_Error err;
-		std::memset(&err, 0, sizeof(err));
-		GTEXT_JSON_Path * path =
-		    gtext_json_path_compile(query, SIZE_MAX, nullptr, &err);
-		EXPECT_EQ(path, nullptr) << "accepted [" << query << "]";
-		EXPECT_EQ(err.code, GTEXT_JSON_E_PATH_UNSUPPORTED)
-		    << "[" << query << "] gave " << (int)err.code;
-		if (path) {
-			gtext_json_path_free(path);
-		}
-	}
+/* match() is the whole string. search() is any substring. The same pattern
+   answers both, and a pattern that is not I-Regexp is false rather than an
+   invalid query. ^ and $ are ordinary characters in that language. */
+TEST(JsonPathFilter, MatchAndSearch) {
+	Parsed p;
+	p.doc = parse(R"([{"a":"hello"},{"a":"help"},{"a":"HELLO"},{"a":1},
+	                  {"a":"^a$"},{"a":"a"},{"a":"Bob"},{"a":"Robert"},
+	                  {"a":"ab"},{"a":""}])");
+	ASSERT_NE(p.doc, nullptr);
+
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, 'hello')]"), "{\"a\":\"hello\"}");
+	EXPECT_EQ(select(p.doc, "$[?search(@.a, 'ell')]"), "{\"a\":\"hello\"}");
+	// 'hel.' is four characters, so it matches "help" and not "hello".
+	// search finds it inside "hello" as well.
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, 'hel.')]"), "{\"a\":\"help\"}");
+	EXPECT_EQ(select(p.doc, "$[?search(@.a, 'hel.')]"),
+	    "{\"a\":\"hello\"}|{\"a\":\"help\"}");
+
+	// ^ and $ are literals. match of "a" against the pattern ^a$ is false.
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, '^a$')]"), "{\"a\":\"^a$\"}");
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, 'a')]"), "{\"a\":\"a\"}");
+	EXPECT_EQ(select(p.doc, "$[?search(@.a, 'a')]"),
+	    "{\"a\":\"^a$\"}|{\"a\":\"a\"}|{\"a\":\"ab\"}");
+
+	// Whole string versus a substring of it.
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, '[BR]ob')]"), "{\"a\":\"Bob\"}");
+	EXPECT_EQ(select(p.doc, "$[?search(@.a, '[BR]ob')]"),
+	    "{\"a\":\"Bob\"}|{\"a\":\"Robert\"}");
+
+	// A number is not a string, so match is false. The query itself is valid.
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, '1')]"), "");
+
+	// \d is not I-Regexp. The function is false; the query is not invalid.
+	// The query text has to spell a backslash, which is '\\' in a JSONPath string.
+	EXPECT_EQ(select(p.doc, R"($[?match(@.a, '\\d')])"), "");
+	EXPECT_EQ(select(p.doc, R"($[?search(@, '\\d')])"), "");
+
+	// The empty pattern matches only the empty string. search finds that
+	// substring in every string, and in nothing else.
+	EXPECT_EQ(select(p.doc, "$[?match(@.a, '')]"), "{\"a\":\"\"}");
+	EXPECT_EQ(count(p.doc, "$[?search(@.a, '')]"), 9u);
+
+	// '.' matches one scalar value other than CR and LF, so U+2028 matches
+	// and a line feed does not. "x" matches too.
+	Parsed lines;
+	lines.doc = parse("[\"\\n\",\"\\u2028\",\"x\"]");
+	ASSERT_NE(lines.doc, nullptr);
+	EXPECT_EQ(select(lines.doc, "$[?match(@, '.')]"),
+	    "\"\xe2\x80\xa8\"|\"x\"");
+
+	// A quantifier past the engine's repeat limit is not a false match. The
+	// pattern is legal I-Regexp; the question was not answered.
+	Parsed one;
+	one.doc = parse("[\"a\"]");
+	ASSERT_NE(one.doc, nullptr);
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Path_Result result;
+	EXPECT_EQ(gtext_json_path_query(one.doc, "$[?match(@, 'a{20,200000}')]",
+	              SIZE_MAX, nullptr, &result, &err),
+	    GTEXT_JSON_E_LIMIT);
+	gtext_json_error_free(&err);
 }
 
 /* The type rules of 2.4.2 make an ill-typed query invalid rather than false, so
@@ -650,6 +695,10 @@ TEST(JsonPathFilter, IllTypedQueriesAreInvalid) {
 	         "$[?== 1]",               //
 	         "$[?nosuch(@.a)]",        // an unregistered function name
 	         "$[?length(@.a, @.b) == 1]", // wrong arity
+	         "$[?match(@.* , 'a')]",     // match() wants a value, not a list
+	         "$[?match(@.a, 'x') == true]", // LogicalType is not comparable
+	         "$[?search(@.a)]",          // two arguments
+	         "$[?length(match(@.a, 'x'))]", // length() wants a value
 	         "$[?@.a &&]",             //
 	         "$[?@.a ||]",             //
 	         "$[?(@.a]",               // unclosed parenthesis

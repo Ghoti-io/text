@@ -11,8 +11,8 @@
  * line, "PATHS <json array>", with the normalized path of each - so the suite's
  * result and result_paths can both be checked. Or one line: "INVALID <message>"
  * for a query this library says is not well-formed, "UNSUPPORTED <message>" for
- * one it says is well-formed but does not evaluate - match() and search() - or
- * "ERROR <message>" for anything else.
+ * one it says is well-formed but does not evaluate, or "ERROR <message>" for
+ * anything else.
  *
  * The three refusals are kept apart because the suite's invalid_selector
  * cases are asking for the first one. Counting "unsupported" as a pass there

@@ -10,11 +10,10 @@ acceptable because the specification leaves object member order to the
 implementation.
 
 Three outcomes are counted, not two. A query this library refuses as
-*unsupported* - one using match() or search(), which need an I-Regexp engine - is
-not attempted, and is reported separately rather than as a pass or a failure. Scoring it as a pass
-where the case happens to be an invalid_selector one would count an
-unimplemented feature as conformance; scoring it as a failure would bury the
-cases that do work.
+*unsupported* is not attempted, and is reported separately rather than as a
+pass or a failure. Scoring it as a pass where the case happens to be an
+invalid_selector one would count an unimplemented feature as conformance;
+scoring it as a failure would bury the cases that do work.
 
 Environment:
     JPC_MIN         floor on the pass rate over attempted cases (default 100)
@@ -32,6 +31,15 @@ import os
 import subprocess
 import sys
 
+# RFC 9485 makes ^ and $ ordinary characters. These two cases anchor them,
+# which is what a naive wrap of the pattern in ^(?:...)$ does to a caret that
+# happens to sit at the start. ghoti.io-regex refuses that reading. The cases
+# stay named here so a change that starts agreeing with them is visible.
+SUITE_DISAGREES = {
+    "functions, match, explicit caret",
+    "functions, match, explicit dollar",
+}
+
 
 def main():
     if len(sys.argv) < 3:
@@ -42,6 +50,7 @@ def main():
 
     attempted = passed = 0
     unsupported = 0
+    disagrees = 0
     failures = []
 
     for case in cases:
@@ -64,6 +73,25 @@ def main():
         lines = out.split("\n")
         line = lines[0]
         path_line = next((l for l in lines[1:] if l.startswith("PATHS ")), None)
+        if case["name"] in SUITE_DISAGREES:
+            # Neither subject in these two cases contains a literal ^ or $,
+            # so the I-Regexp answer is an empty node list. Agreeing with the
+            # suite means the anchors leaked back in.
+            disagrees += 1
+            got = None
+            if line.startswith("OK "):
+                try:
+                    got = json.loads(line[3:])
+                except json.JSONDecodeError:
+                    got = None
+            if got == case.get("result"):
+                failures.append((case["name"],
+                                 "now agrees with the suite; drop it from SUITE_DISAGREES"))
+            elif got != []:
+                failures.append((case["name"],
+                                 "I-Regexp answer is []; got %s" % line[:80]))
+            continue
+
         if line.startswith("UNSUPPORTED"):
             unsupported += 1
             continue
@@ -135,9 +163,11 @@ def main():
     print("  attempted             %5d" % attempted)
     print("  passed                %5d  (%.1f%% of attempted, %.1f%% of the suite)"
           % (passed, rate, 100.0 * passed / total))
-    print("  not attempted         %5d  (match() and search(), refused as unsupported)"
-          % unsupported)
-    print("A percentage over attempted cases means nothing without that last count.")
+    print("  not attempted         %5d  (refused as unsupported)" % unsupported)
+    print("  suite disagrees       %5d  (^ and $ are ordinary characters in I-Regexp;"
+          % disagrees)
+    print("                              the suite anchors them in match())")
+    print("A percentage over attempted cases means nothing without those two counts.")
     print("Both the node list and the normalized path of each result are compared:")
     print("a result that holds the right values by the wrong route is a failure.")
 

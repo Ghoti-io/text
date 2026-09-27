@@ -43,12 +43,12 @@
  * outlive the result. What the result owns is the array holding them, which
  * @ref gtext_json_path_result_free releases.
  *
- * **What is not implemented.** `match()` and `search()` need an I-Regexp
- * engine, which this library does not have, so a query using either is refused
- * at compile time with @ref GTEXT_JSON_E_PATH_UNSUPPORTED. Everything else in
- * RFC 9535 is here, the filter selector included: `&&`, `||`, `!`,
- * parentheses, the six comparison operators, and `length()`, `count()` and
- * `value()`.
+ * The filter selector is here: `&&`, `||`, `!`, parentheses, the six
+ * comparison operators, and `length()`, `count()`, `value()`, `match()` and
+ * `search()`. `match()` and `search()` take an I-Regexp (RFC 9485), which
+ * ghoti.io-regex compiles. A pattern that is not an I-Regexp makes the
+ * function false. A match the engine cannot finish, because a limit was hit,
+ * is @ref GTEXT_JSON_E_LIMIT.
  *
  * A query this build cannot evaluate is refused rather than evaluated as though
  * the construct were absent, for the same reason the schema engine refuses a

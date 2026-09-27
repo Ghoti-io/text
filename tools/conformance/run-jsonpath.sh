@@ -9,9 +9,9 @@
 # upstream added a case is not a measurement of this library.
 #
 # JPC_MIN sets a floor the pass rate must meet, over the cases that were
-# attempted. The count that is *not* attempted - the filter selector, which
-# this library refuses as unsupported - is printed beside it, because a
-# percentage over a subset means nothing without it.
+# attempted. The count that is *not* attempted - a query refused as
+# unsupported - is printed beside it, because a percentage over a subset
+# means nothing without it.
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)

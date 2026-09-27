@@ -344,7 +344,28 @@ endif
 INCLUDE += $(UNICODE_CFLAGS)
 LDFLAGS += $(UNICODE_LIBS)
 
-# The three above, in one place, because every consumer of this list used to
+# ghoti.io-regex, for JSONPath match() and search(). Those two functions are
+# I-Regexp (RFC 9485), and this is the library that implements it. The call
+# is inside src/json/json_path.c; no public header names regex.
+#
+# regex's own manifest still lists text as optional. That edge is two programs
+# in the regex repository - the JSON Schema adapter and its suite runner -
+# and it is not a link of either library. This edge is the other one, and it
+# is why regex is built first.
+#
+# The graph stays a DAG: cutil -> unicode -> regex -> text.
+REGEX_PC ?= ghoti.io-regex$(BRANCH)
+REGEX_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --cflags $(REGEX_PC) 2>/dev/null)
+REGEX_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(REGEX_PC) 2>/dev/null)
+ifeq ($(strip $(REGEX_CFLAGS)),)
+ifndef SKIP_DEP_CHECK
+$(error ghoti.io-regex was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
+endif
+endif
+INCLUDE += $(REGEX_CFLAGS)
+LDFLAGS += $(REGEX_LIBS)
+
+# The four above, in one place, because every consumer of this list used to
 # carry its own copy and they drifted.  When chron arrived, tools/conformance's
 # scripts still asked pkg-config for cutil alone, so `make conformance` stopped
 # compiling and nothing noticed - it is not a target `make test` runs.  The same
@@ -352,9 +373,9 @@ LDFLAGS += $(UNICODE_LIBS)
 # fuzzers all failed to link, in fourteen hand-written dependency lists.  So the
 # Makefile hands the list to the scripts the way it hands them PREFIX, and a
 # script with no list refuses rather than falling back to a stale one.
-DEP_PCS := $(CUTIL_PC) $(CHRON_PC) $(UNICODE_PC)
-DEP_CFLAGS := $(CUTIL_CFLAGS) $(CHRON_CFLAGS) $(UNICODE_CFLAGS)
-DEP_LIBS := $(CUTIL_LIBS) $(CHRON_LIBS) $(UNICODE_LIBS)
+DEP_PCS := $(CUTIL_PC) $(CHRON_PC) $(UNICODE_PC) $(REGEX_PC)
+DEP_CFLAGS := $(CUTIL_CFLAGS) $(CHRON_CFLAGS) $(UNICODE_CFLAGS) $(REGEX_CFLAGS)
+DEP_LIBS := $(CUTIL_LIBS) $(CHRON_LIBS) $(UNICODE_LIBS) $(REGEX_LIBS)
 
 # Automatically collect all .c source files under the src directory.
 SOURCES := $(shell find src -type f -name '*.c')

@@ -22,9 +22,8 @@ measured here, on one machine, in one sitting.
 |---|---|---|
 | 1 | JSON parses at roughly a third of Python's stdlib speed | JSON |
 | 2 | The JSON writer, streaming parser, Pointer, Patch and Schema take no caller allocator | JSON |
-| 3 | JSONPath `match()` and `search()` are refused | JSON |
-| 4 | Streaming JSON LAST_WINS and COLLECT still deliver every repeated name | JSON |
-| 5 | There is no YAML schema validator | YAML |
+| 3 | Streaming JSON LAST_WINS and COLLECT still deliver every repeated name | JSON |
+| 4 | There is no YAML schema validator | YAML |
 
 The library is LGPL-3.0-only. libyaml, RapidJSON and PyYAML are MIT. LGPL is
 the license a commercial license can sit beside; a permissive license leaves
@@ -104,8 +103,8 @@ Compared against nlohmann/json, RapidJSON, jansson and cJSON.
 **Present.** DOM with typed accessors; push streaming and a pull reader; a
 writer with buffer and fixed-buffer sinks; file read and write; JSON Pointer
 (RFC 6901); JSON Patch (RFC 6902); JSON Merge Patch (RFC 7386); JSONPath
-(RFC 9535) with the filter selector and normalized paths, scoring 650 of the
-650 compliance cases it attempts; duplicate-key policy with four modes;
+(RFC 9535) with the filter selector, normalized paths, and `match()` and
+`search()`; duplicate-key policy with four modes;
 number handling that keeps the original lexeme; in-situ parsing; depth,
 string, element and total-size limits; JSONC and JSON5 as opt-in options;
 canonical output with sorted keys; errors with offset, line, column and a
@@ -119,8 +118,6 @@ are uncommon among C JSON libraries.
 
 - A caller allocator on the writer, the streaming parser, Pointer, Patch and
   Schema. Parsing has one.
-- `match()` and `search()` in a JSONPath filter. They need an I-Regexp
-  engine, and a query that uses either is refused.
 - LAST_WINS and COLLECT in the streaming parser. ERROR refuses a repeated
   name and FIRST_WINS does not deliver the later member. The other two still
   emit every member, because a value already handed to the callback cannot be
@@ -185,9 +182,6 @@ What is left:
 
 - **JSON throughput.** SIMD scanning is the item. The measurement to take
   first is where the time goes.
-- **`match()` and `search()` in a JSONPath filter**, which want an I-Regexp
-  engine (RFC 9485). Whether this library should take a dependency on
-  ghoti.io-regex for two functions is a decision.
 - **LAST_WINS and COLLECT on the streaming JSON parser.** ERROR and
   FIRST_WINS are enforced. The other two still deliver every member, because
   holding the object until it closes is what would make a stream able to

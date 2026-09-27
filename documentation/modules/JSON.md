@@ -585,11 +585,10 @@ meet.
 
 ### 17.2 JSONPath
 
-JSONPath (RFC 9535) is implemented, including the filter selector.
-`make conformance-jsonpath` scores 650 of the 650 cases it attempts.
-`match()` and `search()` need an I-Regexp engine this library does not
-have, and a query that uses either is refused. The format page is the
-authority for the rest.
+JSONPath (RFC 9535) is implemented, including the filter selector and
+`match()` and `search()`. Those two compile an I-Regexp with ghoti.io-regex.
+`make conformance-jsonpath` scores the compliance suite. The format page is
+the authority for the rest.
 
 ---
 

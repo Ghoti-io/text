@@ -33,7 +33,7 @@ For every format:
 | Duplicate names (RFC 8259 §4) | An error, unless the caller chooses `FIRST_WINS`, `LAST_WINS` or `COLLECT`. |
 | JSONC and JSON5 | Each extension is its own option, off by default: comments, trailing commas, single quotes, `NaN`, hex numbers, and the rest. Turning one on leaves RFC 8259. |
 | RFC 6901 JSON Pointer | Names one place in a document. |
-| RFC 9535 JSONPath | Selects a set of nodes. |
+| RFC 9535 JSONPath | Selects a set of nodes. `match()` and `search()` compile an I-Regexp with ghoti.io-regex. |
 | RFC 6902 JSON Patch, RFC 7386 Merge Patch | Applied to a document already parsed. |
 | JSON Schema 2020-12, 2019-09, draft-07, draft-06 | A keyword this library cannot enforce fails compilation and names the keyword. `pattern` and `patternProperties` run only when the caller supplies a regular-expression engine. `format` is an annotation unless the caller or the schema asks for it to be checked. `$schema` selects the dialect; a document with none is read as 2020-12, or as `default_dialect` when the caller set one. |
 | IDNA2008 and UTS #46 | What `hostname` and `idn-hostname` check. |
@@ -281,7 +281,7 @@ allocated; the format's free function releases it. `NULL` is safe to free.
 
 ## Dependencies
 
-All three are found through pkg-config, and the installed `.pc` file names
+All four are found through pkg-config, and the installed `.pc` file names
 them, so a program that links `ghoti.io-text-0` links these too.
 
 - [ghoti.io-cutil](https://github.com/Ghoti-io/cutil) — the allocator every
@@ -293,6 +293,10 @@ them, so a program that links `ghoti.io-text-0` links these too.
 - [ghoti.io-unicode](https://github.com/Ghoti-io/unicode) — normalisation and
   the character properties JSON5 names, JSON5 whitespace and IDNA need. It
   is a link dependency: it does not appear in a public header.
+- [ghoti.io-regex](https://github.com/Ghoti-io/regex) — I-Regexp for JSONPath
+  `match()` and `search()`. It is a link dependency: it does not appear in a
+  public header. JSON Schema's `pattern` keyword is a different dialect and
+  still takes the caller-supplied provider.
 
 ## Documentation
 
