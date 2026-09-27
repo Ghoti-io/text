@@ -1614,10 +1614,9 @@ conformance-jsonpath:
 UCD_VERSION := $(shell cat tools/idna/UCD_VERSION 2>/dev/null)
 UCD_DIR := third_party/ucd/$(UCD_VERSION)
 IDNA_TABLES := src/idna/tables
-# UTS #46's mapping table is not part of the UCD and versions on its own
-# schedule - there is no 17.0.0 of it - so it has its own pin. The skew is
-# harmless because the two answer different questions; tools/idna/fetch.sh
-# says why at length.
+# UTS #46's mapping table is not part of the UCD and is published on its own
+# schedule, so it has its own pin. Both pins are 17.0.0. They answer different
+# questions; tools/idna/fetch.sh says why at length.
 COMMA := ,
 IDNA_MAPPING_VERSION := $(shell cat tools/idna/IDNA_MAPPING_VERSION 2>/dev/null)
 IDNA_MAPPING_DIR := third_party/idna/$(IDNA_MAPPING_VERSION)

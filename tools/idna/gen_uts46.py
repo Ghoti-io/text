@@ -6,13 +6,13 @@ Reads ``third_party/idna/<mapping version>/IdnaMappingTable.txt`` and writes
 gen_tables.py, the output is committed so that a build needs neither the
 network nor Python, and ``make check-idna-tables`` regenerates and diffs.
 
-Two data sets with two version pins, because they version on different
-schedules: the mapping table is not part of the UCD and lags it. That skew is
-harmless here, because the two answer different questions. Only the characters
-the mapping table *changes* are taken from it - mapped and ignored - and RFC
-5892, derived in gen_tables.py from the UCD, still decides what is valid. A
-character the UCD has and the mapping table does not is one the mapping step
-leaves alone, which is what an unlisted character means in any case.
+Two data sets with two version pins, because the mapping table is not part of
+the UCD and the two are published on different schedules. Both are 17.0.0.
+Only the characters the mapping table *changes* are taken from it - mapped and
+ignored - and RFC 5892, derived in gen_tables.py from the UCD, still decides
+what is valid. A character the UCD has and the mapping table does not is one
+the mapping step leaves alone, which is what an unlisted character means in
+any case.
 
 Deviations are deliberately absent. Nontransitional processing - which is what
 every browser does now and what this library does - leaves all four of them

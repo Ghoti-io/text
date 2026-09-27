@@ -70,17 +70,15 @@ printf '\nUCD %s is in %s\n' "$version" "$dest"
 # exists up to 16.0.0 and stops; 17.0.0 lives at `Public/<version>/idna/`. An
 # earlier revision of this script knew only the first, and the comment here drew
 # the obvious conclusion from the listing it could see: "there is no 17.0.0 of
-# it at the time of writing". There is - dated 2025-07-25 - and that false
-# premise is what the version pin below has been resting on.
+# it at the time of writing". There is, dated 2025-07-25, and the pin below is
+# that version.
 #
-# The skew between the two pins is harmless *for the derivation*, because they
-# answer different questions: the mapping table is read only for the characters
+# The two pins stay separate, because the files version independently and
+# answer different questions. The mapping table is read only for the characters
 # it changes - mapped and ignored - and RFC 5892, derived from the UCD above,
 # decides what is valid. A character the UCD has and the mapping table does not
 # is one the mapping step leaves alone, which is what an unlisted character
-# means anyway. Whether to raise IDNA_MAPPING_VERSION to 17.0.0 now that it can
-# be fetched is a separate decision with regenerated tables attached to it, and
-# is deliberately not made here.
+# means anyway.
 #
 mapping_version=${2:-$(cat "$root/tools/idna/IDNA_MAPPING_VERSION")}
 mapping_dest="$root/third_party/idna/$mapping_version"

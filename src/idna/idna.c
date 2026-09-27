@@ -36,14 +36,13 @@
  * contextual rules and RFC 5893's bidi rule. The tables under tables/ are
  * generated from the UCD; everything here is the algorithm that reads them.
  *
- * Not implemented, and the reason it is written down here rather than left to
- * be discovered: UTS #46's mapping and normalisation step. A name is taken as
- * written, so `１２３` in fullwidth digits is not mapped to `123` and a label
- * that is not already in Normalization Form C is not put into it. Both are
- * refusals of something a browser would accept, which is the safe direction
- * to be wrong in but is still wrong. Doing it needs the UTS #46 mapping table
- * and a full NFC implementation, which is a larger piece of Unicode than
- * anything else here.
+ * An internationalized name is mapped before it is validated. UTS #46's
+ * mapping step, from tables/uts46_tables.c, folds or removes the characters
+ * that table names; the result is put into Normalization Form C; RFC 5892
+ * then says whether what remains is valid. A plain ASCII host name is not
+ * mapped. A character the mapping table does not list is left alone, which is
+ * what an unlisted character means and what keeps a mapping table behind the
+ * UCD from inventing a fold the Consortium has not published.
  */
 
 #include <string.h>
@@ -809,9 +808,9 @@ static const GTEXT_UTS46_Entry * idna_uts46_lookup(uint32_t cp) {
  * `fass.example`. They need no table entry precisely because nothing happens
  * to them.
  *
- * A character the table does not mention is left alone, which is both the
- * table's own rule and what makes the version skew between the mapping table
- * and the UCD harmless: a character too new for the mapping table is one the
+ * A character the table does not mention is left alone. That is the table's
+ * own rule, and it is why a mapping table older than the UCD does not change
+ * a validity answer: a character too new for the mapping table is one the
  * mapping step would not have touched.
  */
 static int idna_uts46_map(const char * text, size_t len, uint32_t * out,

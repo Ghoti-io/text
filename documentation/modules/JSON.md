@@ -550,8 +550,9 @@ define: RFC 5892's derived property, and UTS #46's mapping table, which is not
 part of the UCD and versions on its own schedule.
 
 The UCD version is pinned in `tools/idna/UCD_VERSION` and the mapping table's
-in `tools/idna/IDNA_MAPPING_VERSION`, because the two version on different
-schedules - there is no 17.0.0 of the mapping table.
+in `tools/idna/IDNA_MAPPING_VERSION`. The mapping table is not part of the UCD,
+so the two stay separate pins even when they name the same release. Both are
+17.0.0.
 
 Four gates:
 

@@ -227,6 +227,20 @@ TEST(Idna, MappedToAscii) {
 	EXPECT_FALSE(host("\xEF\xBC\x91\xEF\xBC\x92\xEF\xBC\x93"));
 }
 
+TEST(Idna, MappingTable17FoldsNewCapitals) {
+	// IdnaMappingTable 16.0.0 does not list these, so the mapping step left
+	// them alone and RFC 5892 then called each one DISALLOWED. 17.0.0 maps
+	// each capital to its small letter, which is PVALID. A plain hostname is
+	// still not mapped.
+	EXPECT_TRUE(idn("\xEA\x9F\x8E"));              // U+A7CE
+	EXPECT_TRUE(idn("\xEA\x9F\x92"));              // U+A7D2
+	EXPECT_TRUE(idn("\xEA\x9F\x94"));              // U+A7D4
+	EXPECT_TRUE(idn("\xEA\x9F\xB1"));              // U+A7F1 -> U+0073
+	EXPECT_TRUE(idn("\xF0\x96\xBA\xA0"));          // U+16EA0
+	EXPECT_TRUE(idn("\xF0\x96\xBA\xB8"));          // U+16EB8
+	EXPECT_FALSE(host("\xEA\x9F\xB1"));
+}
+
 TEST(Idna, IgnoredCharactersAreRemoved) {
 	// U+200B ZERO WIDTH SPACE is `ignored`: it leaves, and what is left is
 	// judged. `a<ZWSP>b` is the name `ab`.
