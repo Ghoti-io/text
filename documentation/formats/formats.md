@@ -10,8 +10,8 @@ which describe the API, and ahead of the source comments, which point back
 here.
 
 The distinction matters when reading: \ref json_module "JSON", \ref csv_module
-"CSV" and \ref yaml_module "YAML" under \ref text_modules "Modules" tell you how to
-call the library. The pages here tell you what it will do with a given byte
+"CSV", \ref yaml_module "YAML" and \ref toml_module "TOML" under
+\ref text_modules "Modules" tell you how to call the library. The pages here tell you what it will do with a given byte
 sequence, and how confident anyone should be about that.
 
 ## Formats
@@ -21,13 +21,14 @@ sequence, and how confident anyone should be about that.
 | JSON | @subpage format_json "JSON" | RFC 8259 / ECMA-404, plus RFC 6901, 6902, 7386, 9535, and JSON Schema 2020-12, 2019-09, draft-07, draft-06 | strict RFC 8259. JSONC and JSON5 are separate options, off by default | compact, pretty, and a canonical mode |
 | CSV | @subpage format_csv "CSV" | RFC 4180, plus configurable dialects | RFC 4180 and looser dialects; irregular rows | RFC 4180 with configurable quoting |
 | YAML | @subpage format_yaml "YAML" | YAML 1.2.2, with a 1.1 resolution mode | block and flow, anchors, tags, multi-document | DOM and streaming event serialization |
+| TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12); date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar, 709 of 709 toml-test cases | **no writer yet** |
 
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
 
-INI and TOML are planned and have no parser, so they have no page here. A
-page is written with the parser, not after it. `GTEXT_YAML_MODE_CONFIG` is a
-YAML parse preset, not a parser for either format.
+INI is planned and has no parser, so it has no page here. A page is written
+with the parser, not after it. `GTEXT_YAML_MODE_CONFIG` is a YAML parse preset,
+not a parser for either format.
 
 ## What each page contains
 

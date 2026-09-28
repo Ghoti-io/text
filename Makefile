@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -926,7 +926,11 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/yaml/yaml_parser.c \
 	src/yaml/yaml_pull_reader.c \
 	src/yaml/yaml_resolve.c \
-	src/yaml/yaml_to_json.c
+	src/yaml/yaml_to_json.c \
+	src/toml/toml_dom.c \
+	src/toml/toml_lexer.c \
+	src/toml/toml_parser.c \
+	src/toml/toml_file_io.c
 
 check-allocators: ## Fail if a converted file allocates without the allocator
 	@raw=$$(grep -nE '(^|[^_[:alnum:]])(malloc|calloc|realloc|free|strdup|strndup)[[:space:]]*\(' \
@@ -1632,6 +1636,23 @@ conformance-jsonpath: ## Score JSONPath against the compliance test suite (clone
 conformance-jsonpath:
 	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-jsonpath.sh
 
+conformance-toml: ## Score the TOML parser against toml-test (clones it on first use)
+conformance-toml:
+	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" TOML_MIN=100 \
+		tools/conformance/run-toml.sh
+
+conformance-toml-next: ## Score the TOML parser against toml-test's 1.1.0 list
+# Expected to fail, and that is what it is for. This parser is 1.0.0 and the
+# 1.1.0 manifest contains eleven cases it must refuse - \e and \xHH escapes,
+# newlines and a trailing comma inside an inline table, and a time without
+# seconds. Running it names them, so when the version option lands in phase 3
+# the work is a list rather than a search. No floor, because a score of 100
+# here would mean the option had been implemented and nobody had updated this
+# comment.
+conformance-toml-next:
+	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" TOML_SUITE_VERSION=1.1.0 \
+		tools/conformance/run-toml.sh
+
 UCD_VERSION := $(shell cat tools/idna/UCD_VERSION 2>/dev/null)
 UCD_DIR := third_party/ucd/$(UCD_VERSION)
 IDNA_TABLES := src/idna/tables
@@ -1880,7 +1901,7 @@ conformance-json-schema:
 	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-json-schema.sh
 
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

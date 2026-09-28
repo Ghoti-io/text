@@ -13,6 +13,8 @@ options and what they do.
 
 @subpage yaml_module
 
+@subpage toml_module
+
 ## Format conformance
 
 The module pages above describe how to call the library. \ref text_format_references
@@ -24,6 +26,7 @@ claim.
 - \ref format_json "JSON" — RFC 8259, plus Pointer, JSONPath, Patch, Merge Patch and Schema
 - \ref format_csv "CSV" — RFC 4180 and the dialect options
 - \ref format_yaml "YAML" — YAML 1.2.2
+- \ref format_toml "TOML" — TOML v1.0.0
 - \ref text_format_adding "Adding a format" — the checklist for a new parser
 
 ## Quick Links
