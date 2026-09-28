@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1929,8 +1929,35 @@ conformance-json-schema: ## Score the schema engine against JSON-Schema-Test-Sui
 conformance-json-schema: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-json-schema.sh
 
+# Every draft this engine reads, each at its own floor.
+#
+# The target above scores one directory - 2020-12 unless JSS_DRAFT says
+# otherwise - so until this existed the three older drafts were measured by
+# hand and nothing failed when one of them lost an assertion. That was not
+# hypothetical: draft-07 and draft-06 each sat eight assertions short of the
+# other two for as long as there was no target that would have said so, and the
+# defects behind them were things only those two directories ask about.
+#
+# One `make` per draft rather than a loop, so that a failure names the draft in
+# the line that fails.
+JSS_DRAFTS := draft2020-12 draft2019-09 draft7 draft6
+
+conformance-json-schema-all: ## Score the schema engine against every draft it reads
+conformance-json-schema-all: $(CONFORMANCE_LIB)
+	@fail=0; \
+	for draft in $(JSS_DRAFTS); do \
+		printf "\033[0;36m### JSON-Schema-Test-Suite: $$draft ###\033[0m\n"; \
+		JSS_DRAFT=$$draft $(CONFORMANCE_ENV) \
+			tools/conformance/run-json-schema.sh || fail=1; \
+	done; \
+	if [ $$fail -ne 0 ]; then \
+		printf "\033[0;31m\n### A draft did not meet its floor ###\033[0m\n" >&2; \
+		exit 1; \
+	fi; \
+	printf "\033[0;32mEvery draft met its floor.\033[0m\n"
+
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml conformance-toml-next
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

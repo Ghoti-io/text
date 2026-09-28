@@ -445,12 +445,18 @@ written in - almost no schema in the suite carries a `$schema`, so an
 implementation that is not told reads every file as its own default and is
 scored on rules the draft predates.
 
+`make conformance-json-schema-all` runs all four, each against the same floor,
+and is what `conformance-all` calls. Until it existed the three older drafts
+were measured by hand, so nothing failed when one of them was short - and two of
+them were short by eight assertions each for as long as that was true. A score
+nothing gates is a score nobody re-reads.
+
 | Draft | required | optional | optional/format |
 | --- | --- | --- | --- |
 | 2020-12 | 1301 / 1301 | 162 / 162 | 866 / 866 |
 | 2019-09 | 1261 / 1261 | 158 / 158 | 866 / 866 |
-| draft-07 | 929 / 929 | - | - |
-| draft-06 | 841 / 841 | - | - |
+| draft-07 | 929 / 929 | 114 / 118 | 785 / 785 |
+| draft-06 | 841 / 841 | 106 / 106 | 407 / 407 |
 
 Every required assertion in every draft this engine reads is answered, and
 answered correctly. draft-07 was 921 of 929 and draft-06 833 of 841: four
