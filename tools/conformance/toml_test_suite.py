@@ -12,6 +12,18 @@ Several scores, all from the one corpus:
                    **tomllib** rather than by this library. This is the only
                    score with a second implementation in it: everything else
                    here proves the two halves agree with each other.
+  events           the document rebuilt from gtext_toml_read_events() alone,
+                   compared to the same .json. The rebuild is in the runner and
+                   not in the library, so this is a second consumer of the
+                   format rather than the parser agreeing with itself, and it
+                   is the only measurement of whether the event stream carries
+                   everything the tree does.
+  comments         every case read with comments retained, written, and read
+                   again, requiring the same comments both times. Asked only of
+                   the cases that have a comment the tree keeps, and the header
+                   prints how many comments the corpus holds against how many
+                   of those a tree can hold - the gap is the ones only the
+                   event stream reports.
   crossed          each version arm run over the cases the *other* manifest
                    decides, and required to get them wrong. See below.
 
@@ -434,6 +446,78 @@ def score_decode(extra, want_invalid):
     return asked, passed, failures
 
 
+def score_comments(extra):
+    """Read with comments retained, write, read again, compare.
+
+    A round trip, and blind in the one way a round trip is: a comment dropped on
+    the way in and a comment dropped on the way out agree with each other.
+    tests/test-toml-comments.cpp is where each half is looked at separately;
+    this is what says the pair holds over 208 real files.
+
+    Two things are asked of each case, and the first is the one that makes the
+    rule a measurement: the number of comment lines the tree kept must be
+    exactly the number the event stream reported outside any container. The
+    second is the round trip.
+
+    Only cases that have a comment at all are asked. Counting the rest
+    as passes would make this mode's score a measurement of how many TOML files
+    have no comments in them - and by the same argument the number of comments
+    the corpus contains is printed rather than left implicit, because the
+    difference between that and the number the trees held is the population this
+    mode structurally cannot say anything about.
+    """
+    failures = []
+    passed = 0
+    asked = 0
+    in_events = 0
+    in_tree = 0
+    for path in valid:
+        out, why, code = run(read_case(path), extra)
+        if out is None:
+            failures.append((path, 'refused (exit %d): %s' % (code, why)))
+            continue
+        lines = out.decode('utf-8', 'replace').split('\n')
+        if not lines or not lines[0].startswith('events '):
+            failures.append((path, 'no comment listing: %r' % lines[:1]))
+            continue
+        words = lines[0].split()
+        in_events += int(words[1])
+        inside = int(words[2])
+        try:
+            cut = lines.index('first')
+            mid = lines.index('second')
+        except ValueError:
+            failures.append((path, 'the listing has no two halves'))
+            continue
+        first = sorted(x for x in lines[cut + 1:mid] if x)
+        second = sorted(x for x in lines[mid + 1:] if x)
+        in_tree += len(first)
+        # The rule the tree follows, asked of every case that has a comment at
+        # all: it keeps the ones attached to statements, which is the ones the
+        # stream reported at depth zero. A case failing this is either a comment
+        # lost where one could have been kept, or one kept that the writer will
+        # not be able to place.
+        if first or inside:
+            asked += 1
+            if len(first) != int(words[1]) - inside:
+                failures.append((path, '%d comment lines kept, %d arrived '
+                                       'outside a value'
+                                 % (len(first), int(words[1]) - inside)))
+                continue
+            passed += 1
+        if not first:
+            # Nothing kept: nothing for the round trip below to say.
+            continue
+        asked += 1
+        if first != second:
+            lost = [x for x in first if x not in second]
+            gained = [x for x in second if x not in first]
+            failures.append((path, 'lost %r gained %r' % (lost[:3], gained[:3])))
+        else:
+            passed += 1
+    return asked, passed, failures, in_events, in_tree
+
+
 def score_encode(extra):
     """The case's .json in, TOML out, read back by tomllib."""
     failures = []
@@ -474,9 +558,24 @@ def score_encode(extra):
     return asked, passed, failures
 
 
+COMMENT_COUNTS = {}
+
+
+def score_comments_mode():
+    asked, passed, failures, in_events, in_tree = score_comments(
+        ARM + ['--comments', '--style=as-read'])
+    COMMENT_COUNTS['events'] = in_events
+    COMMENT_COUNTS['tree'] = in_tree
+    return asked, passed, failures
+
+
 MODES = [
     ('decode', 'the reader, scored against the suite expectations',
      lambda: score_decode(ARM, True)),
+    ('events', 'the document rebuilt from the event stream alone',
+     lambda: score_decode(ARM + ['--events'], True)),
+    ('comments', 'comments kept through a write and a second read',
+     score_comments_mode),
     ('roundtrip as-read', 'parse, write, parse again; tables as they were read',
      lambda: score_decode(ARM + ['--roundtrip', '--style=as-read'], True)),
     ('roundtrip headers', 'the same, with every table forced to a [header]',
@@ -515,6 +614,14 @@ for name, blurb, scorer in MODES:
         print("    %-44s %s" % (path[:44], str(why)[:100]))
     if len(failures) > 12:
         print("    ... and %d more" % (len(failures) - 12))
+
+print("\ncomments: the %d valid cases contain %d comment lines, of which a tree "
+      "keeps %d." % (len(valid), COMMENT_COUNTS.get('events', 0),
+                     COMMENT_COUNTS.get('tree', 0)))
+print("  The rest are inside a value, where there is no statement to attach "
+      "them to and no line in")
+print("  the document the writer produces to put them on; "
+      "gtext_toml_read_events() reports those.")
 
 print("\ntotal    %d of %d  (%.1f%%)"
       % (total_passed, total_asked, 100.0 * total_passed / total_asked))

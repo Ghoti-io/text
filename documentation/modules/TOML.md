@@ -57,6 +57,7 @@ so there is no in-situ mode to offer.
 | `gtext_toml_write()` | Write a document to a sink. |
 | `gtext_toml_write_file()` | Write a document to a file, atomically. |
 | `gtext_toml_write_options_default()` | The write defaults, by value. |
+| `gtext_toml_read_events()` | Walk a document statement by statement, calling a callback. See section 5. |
 
 A successful parse always returns a `GTEXT_TOML_TABLE`, because a TOML document
 *is* a table. An empty input gives an empty table rather than an error, and
@@ -75,6 +76,7 @@ opts.max_depth = 32;
 | `max_depth` | 256 | Nesting of arrays and inline tables; 0 for no limit |
 | `max_total_bytes` | 0 | Bytes of input; 0 for no limit. `gtext_toml_parse_file()` applies it *while* reading, so an over-large file is refused rather than held |
 | `version` | `GTEXT_TOML_VERSION_1_0_0` | Which revision to read. `GTEXT_TOML_VERSION_1_1_0` reads the draft |
+| `retain_comments` | `false` | Keep comments: as events from `gtext_toml_read_events()`, and on the tree where the writer can put them back |
 
 Start from `gtext_toml_parse_options_default()` rather than from a zeroed
 struct: zeroed asks for no depth limit, which is a decision rather than a
@@ -240,7 +242,68 @@ walk repeat). None of the three is something a test could detect afterwards.
 A duplicate key is `E_DUPKEY` and not a replacement: TOML says defining a key
 twice is invalid.
 
-## 5. Errors
+## 5. The statements, in the order they were written
+
+```c
+static GTEXT_TOML_Status on_event(void * user, const GTEXT_TOML_Event * e,
+    GTEXT_TOML_Error * err) {
+  (void) user;
+  (void) err;
+  if (e->type == GTEXT_TOML_EVT_KEY) {
+    printf("line %d: %.*s\n", e->line,
+        (int) e->key.parts[e->key.count - 1].len,
+        e->key.parts[e->key.count - 1].data);
+  }
+  return GTEXT_TOML_OK; /* anything else stops the walk */
+}
+
+GTEXT_TOML_Parse_Options opts = gtext_toml_parse_options_default();
+opts.retain_comments = true;  /* for GTEXT_TOML_EVT_COMMENT */
+gtext_toml_read_events(bytes, len, &opts, on_event, NULL, &err);
+```
+
+The tree says what a document *means*; this says what it *says*. They differ
+whenever the arrangement matters: a table can be reopened lower down as a
+sub-table of itself, dotted keys interleave with headers, and a comment between
+two keys belongs to neither. Nine event types, `TABLE` and `ARRAY_TABLE` and
+`KEY` carrying a decoded key path, `VALUE` carrying a borrowed node you read with
+the ordinary accessors, the four brackets, and `COMMENT`.
+
+It is the same parser with a callback, so it refuses exactly what
+`gtext_toml_parse()` refuses, in the same place - and it builds the tree anyway,
+because TOML's redefinition rules are answered against it, then frees it. What
+you save is the tree's *lifetime*, not its cost: nothing comes back, so there is
+nothing to free.
+
+**There is no `feed`-shaped reader here** as JSON, CSV and YAML have, because
+this parser is not incremental and a `feed` over it would buffer the whole
+document while implying otherwise. \ref format_toml "The format page" gives the
+two reasons, both of them the format's.
+
+## 5b. Comments
+
+```c
+GTEXT_TOML_Parse_Options opts = gtext_toml_parse_options_default();
+opts.retain_comments = true;
+GTEXT_TOML_Value * root = gtext_toml_parse(bytes, len, &opts, &err);
+const char * why = gtext_toml_value_leading_comment(
+    gtext_toml_table_get(root, "port", 4));
+```
+
+`gtext_toml_value_leading_comment()`, `_inline_comment()` and
+`_trailing_comment()` read them; the matching `_set_*` calls write them. They
+hang from the value a statement defined - the comments around `a = 1` belong to
+the node `1` - and the text is the bytes after the `#`, verbatim, so `#` plus the
+text is the line. Write a leading space yourself if you want one.
+
+The tree keeps the comments the writer can put back. One inside `{ }` or between
+two array elements has no statement to attach to and no line in the output to go
+on, so it is reported by `gtext_toml_read_events()` and not kept here; the writer
+answers `GTEXT_TOML_E_UNREPRESENTABLE` if it is handed one it cannot place.
+\ref format_toml "The format page" has the division, the count over the corpus,
+and the four refusals.
+
+## 6. Errors
 
 ```c
 typedef struct {
@@ -275,13 +338,15 @@ yours, and `gtext_toml_error_free()` releases it through the same one - an
 error struct outlives the parse, and a parse can fail before it has read its
 options at all.
 
-## 6. What is not here yet
+## 7. What is not here yet
 
 - **A 1.1.0 reference.** The option reads the draft; nothing outside this
   repository does, so the fifteen cases where the two manifests disagree are
   checked against toml-test's decision and against nothing else.
-- A **pull reader / event API**, as JSON, CSV and YAML have.
-- **Comments in the tree**, which the YAML DOM does carry.
+- An **incremental reader**. `gtext_toml_read_events()` walks a whole document;
+  a chunk-fed one is argued against on the format page rather than pending.
+- **Comments inside a value, on the tree.** They reach you through the event
+  walk; the tree keeps the ones the writer can put back.
 - `toml_to_json` and `json_to_toml`.
 
 \ref format_toml "The format page" has the measured state of each.

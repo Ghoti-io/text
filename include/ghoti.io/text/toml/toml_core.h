@@ -81,7 +81,19 @@ typedef enum {
   GTEXT_TOML_E_DATETIME,    ///< A date-time `chron` refused - an impossible
                             ///< date, an out-of-range offset.
   GTEXT_TOML_E_WRITE,       ///< A sink refused output during serialization.
-  GTEXT_TOML_E_STATE        ///< Operation not valid in the current state.
+  GTEXT_TOML_E_STATE,       ///< Operation not valid in the current state.
+  /**
+   * The value is fine and this format has no spelling for it.
+   *
+   * Not a malformed document, which is what every other code above reports,
+   * and the distinction is one a caller acts on: a batch converter retries
+   * nothing on a syntax error and may well want to re-run this one with a
+   * different policy. It is reported by the two conversions - a JSON `null`
+   * where TOML has no null, a TOML `nan` where JSON has no non-finite number -
+   * and by the writer, for a comment on a value inside `{ }` where a comment
+   * cannot go.
+   */
+  GTEXT_TOML_E_UNREPRESENTABLE
 } GTEXT_TOML_Status;
 
 /**
@@ -211,10 +223,31 @@ typedef struct {
    * caller who did not think about it should get.
    */
   GTEXT_TOML_Version version;
+
+  /**
+   * Whether comments are kept. Default false.
+   *
+   * One option with two points of use, deliberately not two options: it
+   * decides whether gtext_toml_read_events() reports
+   * ::GTEXT_TOML_EVT_COMMENT, and the tree's comments are attached from those
+   * same events, so a caller cannot ask for one and get the other. What each
+   * of the two keeps is not the same, and it is the format that decides that
+   * rather than this option - see gtext_toml_value_leading_comment(), which
+   * names the comments a tree can hold and the ones only the event stream can
+   * carry.
+   *
+   * False by default because a comment costs an allocation per statement that
+   * has one, and the caller who wants values does not want to pay for text
+   * they will not read. Nothing about the *document* changes with it: a
+   * comment is not part of TOML's data model, so this cannot turn a document
+   * that parses into one that does not.
+   */
+  bool retain_comments;
 } GTEXT_TOML_Parse_Options;
 
 /**
- * @brief The defaults: allocator NULL, max_depth 256, no byte limit, 1.0.0.
+ * @brief The defaults: allocator NULL, max_depth 256, no byte limit, 1.0.0,
+ *   comments discarded.
  *
  * @return The defaults, by value.
  */

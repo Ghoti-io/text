@@ -557,6 +557,352 @@ static GTEXT_TOML_Value * jvalue(jreader * r) {
 }
 
 /*==========================================================================*
+ * Rebuilding a document from the event stream
+ *
+ * A second consumer of the format, which is the point: the event walk and the
+ * tree are built by one parse, so the only way to find out whether the stream
+ * carries everything the tree does is to rebuild the tree from the stream and
+ * score that against the same expectations. This rebuild is deliberately here
+ * and not in the library - a helper there would be the same code the parser
+ * already runs, and would agree with it by construction.
+ *
+ * It is also the only thing that exercises the public builder API over the
+ * whole corpus: gtext_toml_new_*(), gtext_toml_table_set() and
+ * gtext_toml_array_append() had unit tests and 208 documents' worth of nothing.
+ *==========================================================================*/
+
+/** One open container, with the key a pair inside it is waiting for. */
+typedef struct {
+  GTEXT_TOML_Value * container; /* NULL at statement level. */
+  GTEXT_TOML_Value * target;    /* Where a pending key's value goes. */
+  char * key;
+  size_t key_len;
+  bool have_key;
+} eframe;
+
+typedef struct {
+  GTEXT_TOML_Value * root;
+  GTEXT_TOML_Value * scope; /* The table the last header opened. */
+  eframe * frames;
+  size_t count;
+  size_t cap;
+  const char * error;
+} ebuild;
+
+static bool epush(ebuild * b, GTEXT_TOML_Value * container) {
+  if (b->count == b->cap) {
+    size_t want = b->cap ? b->cap * 2 : 16;
+    eframe * grown = realloc(b->frames, want * sizeof(eframe));
+    if (!grown) {
+      b->error = "out of memory";
+      return false;
+    }
+    b->frames = grown;
+    b->cap = want;
+  }
+  memset(&b->frames[b->count], 0, sizeof(eframe));
+  b->frames[b->count].container = container;
+  b->count++;
+  return true;
+}
+
+/** Find a table at `key`, creating it if it is not there. */
+static GTEXT_TOML_Value * echild(
+    ebuild * b, GTEXT_TOML_Value * table, const char * key, size_t len) {
+  GTEXT_TOML_Value * found =
+      (GTEXT_TOML_Value *) gtext_toml_table_get(table, key, len);
+  if (found) {
+    if (gtext_toml_value_type(found) == GTEXT_TOML_ARRAY) {
+      /* A header path through an array of tables names its newest element,
+       * which is what makes `[[a]]` then `[a.b]` a table inside that element. */
+      size_t n = gtext_toml_array_size(found);
+      if (n == 0) {
+        b->error = "a path reaches into an empty array";
+        return NULL;
+      }
+      return (GTEXT_TOML_Value *) gtext_toml_array_get(found, n - 1);
+    }
+    if (gtext_toml_value_type(found) != GTEXT_TOML_TABLE) {
+      b->error = "a path reaches through something that is not a table";
+      return NULL;
+    }
+    return found;
+  }
+  GTEXT_TOML_Value * made = gtext_toml_new_table(NULL);
+  if (!made || gtext_toml_table_set(table, key, len, made) != GTEXT_TOML_OK) {
+    gtext_toml_free(made);
+    b->error = "could not create a table";
+    return NULL;
+  }
+  return made;
+}
+
+/** Walk all but the last part of a path, creating tables as needed. */
+static GTEXT_TOML_Value * ewalk(
+    ebuild * b, GTEXT_TOML_Value * from, const GTEXT_TOML_Key * key) {
+  GTEXT_TOML_Value * at = from;
+  for (size_t i = 0; i + 1 < key->count && at; ++i) {
+    at = echild(b, at, key->parts[i].data, key->parts[i].len);
+  }
+  return at;
+}
+
+/** Store a finished value where the innermost frame says it goes. */
+static bool eplace(ebuild * b, GTEXT_TOML_Value * value) {
+  if (!b->count) {
+    b->error = "a value outside any statement";
+    gtext_toml_free(value);
+    return false;
+  }
+  eframe * f = &b->frames[b->count - 1];
+  if (f->container && gtext_toml_value_type(f->container) == GTEXT_TOML_ARRAY) {
+    if (gtext_toml_array_append(f->container, value) != GTEXT_TOML_OK) {
+      b->error = "could not append to an array";
+      gtext_toml_free(value);
+      return false;
+    }
+    return true;
+  }
+  if (!f->have_key) {
+    b->error = "a value with no key";
+    gtext_toml_free(value);
+    return false;
+  }
+  if (gtext_toml_table_set(f->target, f->key, f->key_len, value)
+      != GTEXT_TOML_OK) {
+    b->error = "could not set a key";
+    gtext_toml_free(value);
+    return false;
+  }
+  free(f->key);
+  f->key = NULL;
+  f->have_key = false;
+  return true;
+}
+
+/** A copy of one scalar from an event, which borrows its node. */
+static GTEXT_TOML_Value * ecopy(ebuild * b, const GTEXT_TOML_Value * value) {
+  switch (gtext_toml_value_type(value)) {
+    case GTEXT_TOML_STRING: {
+      size_t len = 0;
+      const char * text = gtext_toml_value_string(value, &len);
+      return gtext_toml_new_string(NULL, text, len);
+    }
+    case GTEXT_TOML_INTEGER: {
+      int64_t v = 0;
+      gtext_toml_value_integer(value, &v);
+      return gtext_toml_new_integer(NULL, v);
+    }
+    case GTEXT_TOML_FLOAT: {
+      double v = 0;
+      gtext_toml_value_float(value, &v);
+      return gtext_toml_new_float(NULL, v);
+    }
+    case GTEXT_TOML_BOOLEAN: {
+      bool v = false;
+      gtext_toml_value_boolean(value, &v);
+      return gtext_toml_new_boolean(NULL, v);
+    }
+    case GTEXT_TOML_DATETIME: {
+      GCHRON_TomlValue dt;
+      memset(&dt, 0, sizeof(dt));
+      gtext_toml_value_datetime(value, &dt);
+      return gtext_toml_new_datetime(NULL, &dt);
+    }
+    default:
+      b->error = "a container arrived as a scalar event";
+      return NULL;
+  }
+}
+
+static GTEXT_TOML_Status on_event(
+    void * user, const GTEXT_TOML_Event * e, GTEXT_TOML_Error * err) {
+  (void) err;
+  ebuild * b = (ebuild *) user;
+  switch (e->type) {
+    case GTEXT_TOML_EVT_COMMENT:
+      return GTEXT_TOML_OK;
+    case GTEXT_TOML_EVT_TABLE:
+    case GTEXT_TOML_EVT_ARRAY_TABLE: {
+      /* A header ends whatever was open, which cannot happen in a valid
+       * document: every container closes before its statement does. */
+      while (b->count) {
+        free(b->frames[b->count - 1].key);
+        b->count--;
+      }
+      GTEXT_TOML_Value * parent = ewalk(b, b->root, &e->key);
+      if (!parent) return GTEXT_TOML_E_STATE;
+      const GTEXT_TOML_Key_Part * last = &e->key.parts[e->key.count - 1];
+      if (e->type == GTEXT_TOML_EVT_TABLE) {
+        b->scope = echild(b, parent, last->data, last->len);
+        if (!b->scope) return GTEXT_TOML_E_STATE;
+      }
+      else {
+        GTEXT_TOML_Value * array = (GTEXT_TOML_Value *) gtext_toml_table_get(
+            parent, last->data, last->len);
+        if (!array) {
+          array = gtext_toml_new_array(NULL);
+          if (!array
+              || gtext_toml_table_set(
+                     parent, last->data, last->len, array)
+                  != GTEXT_TOML_OK) {
+            gtext_toml_free(array);
+            b->error = "could not create an array of tables";
+            return GTEXT_TOML_E_STATE;
+          }
+          /* So that the writer spells it `[[a]]` again, which matters only for
+           * a round trip and is what the event said. */
+          gtext_toml_value_set_inline(array, false);
+        }
+        GTEXT_TOML_Value * element = gtext_toml_new_table(NULL);
+        if (!element
+            || gtext_toml_array_append(array, element) != GTEXT_TOML_OK) {
+          gtext_toml_free(element);
+          b->error = "could not append a table to an array";
+          return GTEXT_TOML_E_STATE;
+        }
+        b->scope = element;
+      }
+      if (!epush(b, NULL)) return GTEXT_TOML_E_STATE;
+      b->frames[0].target = b->scope;
+      return GTEXT_TOML_OK;
+    }
+    case GTEXT_TOML_EVT_KEY: {
+      if (!b->count && !epush(b, NULL)) return GTEXT_TOML_E_STATE;
+      eframe * f = &b->frames[b->count - 1];
+      GTEXT_TOML_Value * from = f->container ? f->container : b->scope;
+      GTEXT_TOML_Value * target = ewalk(b, from, &e->key);
+      if (!target) return GTEXT_TOML_E_STATE;
+      const GTEXT_TOML_Key_Part * last = &e->key.parts[e->key.count - 1];
+      char * key = malloc(last->len + 1);
+      if (!key) {
+        b->error = "out of memory";
+        return GTEXT_TOML_E_STATE;
+      }
+      if (last->len) memcpy(key, last->data, last->len);
+      key[last->len] = '\0';
+      free(f->key);
+      f->target = target;
+      f->key = key;
+      f->key_len = last->len;
+      f->have_key = true;
+      return GTEXT_TOML_OK;
+    }
+    case GTEXT_TOML_EVT_VALUE: {
+      GTEXT_TOML_Value * copy = ecopy(b, e->value);
+      if (!copy) return GTEXT_TOML_E_STATE;
+      return eplace(b, copy) ? GTEXT_TOML_OK : GTEXT_TOML_E_STATE;
+    }
+    case GTEXT_TOML_EVT_ARRAY_BEGIN:
+    case GTEXT_TOML_EVT_INLINE_TABLE_BEGIN: {
+      bool array = e->type == GTEXT_TOML_EVT_ARRAY_BEGIN;
+      GTEXT_TOML_Value * container =
+          array ? gtext_toml_new_array(NULL) : gtext_toml_new_table(NULL);
+      if (!container) {
+        b->error = "out of memory";
+        return GTEXT_TOML_E_STATE;
+      }
+      if (!array) gtext_toml_value_set_inline(container, true);
+      if (!eplace(b, container)) return GTEXT_TOML_E_STATE;
+      if (!epush(b, container)) return GTEXT_TOML_E_STATE;
+      return GTEXT_TOML_OK;
+    }
+    case GTEXT_TOML_EVT_ARRAY_END:
+    case GTEXT_TOML_EVT_INLINE_TABLE_END: {
+      if (!b->count || !b->frames[b->count - 1].container) {
+        b->error = "a container closed that was never opened";
+        return GTEXT_TOML_E_STATE;
+      }
+      free(b->frames[b->count - 1].key);
+      b->count--;
+      return GTEXT_TOML_OK;
+    }
+  }
+  b->error = "an event of no known type";
+  return GTEXT_TOML_E_STATE;
+}
+
+/*==========================================================================*
+ * Listing the comments a document kept
+ *==========================================================================*/
+
+/**
+ * One comment, a line per line of it.
+ *
+ * A leading comment holding two lines is two comments - it was two `#` lines in
+ * the file and will be two again. Listing it as one would make this listing's
+ * length incomparable with the number of comments the event walk reported,
+ * which is the one number this mode exists to put it beside. The index keeps
+ * the order inside a block, which sorting the listing would otherwise lose.
+ */
+static void print_comment(char kind, const char * text) {
+  if (!text) return;
+  size_t index = 0;
+  const char * at = text;
+  for (;;) {
+    const char * end = strchr(at, '\n');
+    size_t len = end ? (size_t) (end - at) : strlen(at);
+    printf("%c%zu|%.*s\n", kind, index, (int) len, at);
+    if (!end) return;
+    at = end + 1;
+    ++index;
+  }
+}
+
+static void list_comments(const GTEXT_TOML_Value * value) {
+  print_comment('L', gtext_toml_value_leading_comment(value));
+  print_comment('I', gtext_toml_value_inline_comment(value));
+  print_comment('T', gtext_toml_value_trailing_comment(value));
+  if (gtext_toml_value_type(value) == GTEXT_TOML_TABLE) {
+    size_t n = gtext_toml_table_size(value);
+    for (size_t i = 0; i < n; ++i) {
+      list_comments(gtext_toml_table_value_at(value, i));
+    }
+  }
+  else if (gtext_toml_value_type(value) == GTEXT_TOML_ARRAY) {
+    size_t n = gtext_toml_array_size(value);
+    for (size_t i = 0; i < n; ++i) {
+      list_comments(gtext_toml_array_get(value, i));
+    }
+  }
+}
+
+/** Comments the walk reported, and how many of them were inside a value. */
+typedef struct {
+  unsigned long total;
+  unsigned long inside;
+  unsigned long depth;
+} ccount;
+
+/**
+ * Count the comments, and which of them a tree cannot hold.
+ *
+ * "Inside a value" is a question the stream answers by itself: a comment
+ * arriving while a container is open is one. That makes the rule the tree
+ * follows - keep the comments attached to statements - a *measured* property
+ * rather than a sentence in a header, because the Python half can then require
+ * the number of comment lines a tree kept to be exactly the number that arrived
+ * at depth zero, for every case in the corpus.
+ */
+static GTEXT_TOML_Status count_comment(
+    void * user, const GTEXT_TOML_Event * e, GTEXT_TOML_Error * err) {
+  (void) err;
+  ccount * c = (ccount *) user;
+  switch (e->type) {
+    case GTEXT_TOML_EVT_ARRAY_BEGIN:
+    case GTEXT_TOML_EVT_INLINE_TABLE_BEGIN: c->depth++; break;
+    case GTEXT_TOML_EVT_ARRAY_END:
+    case GTEXT_TOML_EVT_INLINE_TABLE_END: c->depth--; break;
+    case GTEXT_TOML_EVT_COMMENT:
+      c->total++;
+      if (c->depth) c->inside++;
+      break;
+    default: break;
+  }
+  return GTEXT_TOML_OK;
+}
+
+/*==========================================================================*
  * Driving it
  *==========================================================================*/
 
@@ -591,12 +937,19 @@ static void report(const GTEXT_TOML_Error * err) {
 int main(int argc, char ** argv) {
   bool roundtrip = false;
   bool encode = false;
+  bool events = false;
+  bool comments = false;
   GTEXT_TOML_Write_Options wopts = gtext_toml_write_options_default();
   GTEXT_TOML_Parse_Options popts = gtext_toml_parse_options_default();
 
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--roundtrip") == 0) roundtrip = true;
     else if (strcmp(argv[i], "--encode") == 0) encode = true;
+    else if (strcmp(argv[i], "--events") == 0) events = true;
+    else if (strcmp(argv[i], "--comments") == 0) {
+      comments = true;
+      popts.retain_comments = true;
+    }
     else if (strcmp(argv[i], "--version=1.0.0") == 0) {
       popts.version = GTEXT_TOML_VERSION_1_0_0;
     }
@@ -673,6 +1026,52 @@ int main(int argc, char ** argv) {
     return 0;
   }
 
+  if (events) {
+    /* The document rebuilt from the stream alone, printed the same way a
+     * parsed one is - so the Python half compares it against the suite's own
+     * expectation and not against this library's other answer. */
+    ebuild b;
+    memset(&b, 0, sizeof(b));
+    b.root = gtext_toml_new_table(NULL);
+    if (!b.root) {
+      free(data);
+      return 3;
+    }
+    b.scope = b.root;
+    GTEXT_TOML_Error eerr;
+    memset(&eerr, 0, sizeof(eerr));
+    GTEXT_TOML_Status s =
+        gtext_toml_read_events(data, len, &popts, on_event, &b, &eerr);
+    while (b.count) {
+      free(b.frames[b.count - 1].key);
+      b.count--;
+    }
+    free(b.frames);
+    if (s != GTEXT_TOML_OK) {
+      if (b.error) {
+        /* The rebuild gave up rather than the document being refused: this
+         * program's failure, and exit 3 says so rather than scoring as a
+         * refusal the case may have been hoping for. */
+        fprintf(stderr, "rebuilding from events: %s\n", b.error);
+        gtext_toml_error_free(&eerr);
+        gtext_toml_free(b.root);
+        free(data);
+        return 3;
+      }
+      report(&eerr);
+      gtext_toml_error_free(&eerr);
+      gtext_toml_free(b.root);
+      free(data);
+      return 1;
+    }
+    gtext_toml_error_free(&eerr);
+    emit_value(b.root);
+    putchar('\n');
+    gtext_toml_free(b.root);
+    free(data);
+    return 0;
+  }
+
   GTEXT_TOML_Error err;
   memset(&err, 0, sizeof(err));
   GTEXT_TOML_Value * root = gtext_toml_parse(data, len, &popts, &err);
@@ -681,6 +1080,62 @@ int main(int argc, char ** argv) {
     gtext_toml_error_free(&err);
     free(data);
     return 1;
+  }
+
+  if (comments) {
+    /* Three listings: how many comments the event walk saw, the ones the tree
+     * kept, and the ones a second read of this document's own output kept. The
+     * comparison is made in Python, where a difference can be printed; the gap
+     * between the first number and the length of the first listing is the
+     * measurement of what a tree cannot hold. */
+    ccount seen;
+    memset(&seen, 0, sizeof(seen));
+    GTEXT_TOML_Error cerr;
+    memset(&cerr, 0, sizeof(cerr));
+    (void) gtext_toml_read_events(data, len, &popts, count_comment, &seen,
+        &cerr);
+    gtext_toml_error_free(&cerr);
+    printf("events %lu %lu\n", seen.total, seen.inside);
+
+    GTEXT_TOML_Sink sink;
+    if (gtext_toml_sink_buffer(&sink) != GTEXT_TOML_OK) {
+      gtext_toml_free(root);
+      free(data);
+      return 3;
+    }
+    GTEXT_TOML_Status s = gtext_toml_write(root, &sink, &wopts);
+    if (s != GTEXT_TOML_OK) {
+      fprintf(stderr, "the writer refused a commented document, code %d\n",
+          (int) s);
+      gtext_toml_sink_buffer_free(&sink);
+      gtext_toml_free(root);
+      free(data);
+      return 3;
+    }
+    GTEXT_TOML_Error again;
+    memset(&again, 0, sizeof(again));
+    GTEXT_TOML_Value * reread =
+        gtext_toml_parse(gtext_toml_sink_buffer_data(&sink),
+            gtext_toml_sink_buffer_size(&sink), &popts, &again);
+    if (!reread) {
+      fputs("the writer's own output would not parse: ", stderr);
+      report(&again);
+      gtext_toml_error_free(&again);
+      gtext_toml_sink_buffer_free(&sink);
+      gtext_toml_free(root);
+      free(data);
+      return 3;
+    }
+    gtext_toml_error_free(&again);
+    gtext_toml_sink_buffer_free(&sink);
+    fputs("first\n", stdout);
+    list_comments(root);
+    fputs("second\n", stdout);
+    list_comments(reread);
+    gtext_toml_free(reread);
+    gtext_toml_free(root);
+    free(data);
+    return 0;
   }
 
   if (roundtrip) {

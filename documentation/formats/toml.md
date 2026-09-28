@@ -7,8 +7,11 @@ date-time types through `ghoti.io-chron`, and every one of the four
 redefinition rules as a separate check. It also **reads** the v1.1.0 draft,
 behind `GTEXT_TOML_Parse_Options::version`; the writer has no such option and
 [The version option](#toml_version) says why that is a finding rather than an
-omission. Every claim below was checked by something that runs, and where the
-evidence is thin the page says how thin.
+omission. A document can be read two ways - as a tree, or as
+[the sequence of statements it was written as](#toml_events), which is what
+carries the comments and the positions a tree cannot. Every claim below was
+checked by something that runs, and where the evidence is thin the page says
+how thin.
 Back to \ref text_format_references "Formats".
 
 ## Normative references
@@ -73,7 +76,10 @@ parse can fail before it has read its options.
 - **Comments.** `#` to the end of the line, with the same control-character
   rule as strings: tab is allowed, every other C0 control and U+007F are not.
   Checking strings and forgetting comments is the common shape of this
-  mistake.
+  mistake. With `GTEXT_TOML_Parse_Options::retain_comments` they are kept -
+  in the tree where the writer can put them back, and in the event stream
+  wherever they were; [Comments](#toml_comments) has the division and the
+  count.
 - **Integers.** `int64_t` exactly, in decimal with an optional sign and in
   `0x`, `0o` and `0b` without one. Underscores must have a digit on each side.
   Leading zeroes are refused in the integer part and permitted in a
@@ -191,6 +197,8 @@ allowed rows into the refused ones.
 | `allocator` | `NULL` | Every allocation of the parse; `NULL` is `gtext_allocator_default()` |
 | `max_depth` | 256 | Nesting of arrays and inline tables; 0 for no limit |
 | `max_total_bytes` | 0 | Bytes of input, 0 for no limit; applied *while* reading a file rather than after |
+| `version` | `GTEXT_TOML_VERSION_1_0_0` | Which revision to read; see [The version option](#toml_version) |
+| `retain_comments` | `false` | Keep comments: as `GTEXT_TOML_EVT_COMMENT` events, and on the tree where they can be written back |
 
 `max_depth` at 0 is safe rather than merely permitted: the value parser builds
 on an explicit stack, the teardown walks a worklist, and the writer walks two
@@ -261,8 +269,14 @@ buffer from an exactly-fitting one, which is what
   string or key that is not valid UTF-8 is `GTEXT_TOML_E_BAD_UNICODE`; a
   date-time `chron` will not spell is `GTEXT_TOML_E_DATETIME`. Both are
   reachable only through the constructors - a parsed tree contains neither.
-- **What it never writes.** Comments (the DOM does not carry them), multi-line
-  strings, literal strings, non-decimal integers, and indentation.
+- **Comments are written where they were read**, when the parse kept them:
+  above a statement, after it on its line, and at the end of the document.
+  `#` followed by the stored text is the line, so a read and a write are an
+  identity on a comment line rather than nearly one. A comment it cannot
+  place is `GTEXT_TOML_E_UNREPRESENTABLE` rather than dropped; see
+  [Comments](#toml_comments).
+- **What it never writes.** Multi-line strings, literal strings, non-decimal
+  integers, and indentation.
 
 **Building a document** is `gtext_toml_new_table()`, `_new_array()`,
 `_new_string()`, `_new_integer()`, `_new_float()`, `_new_boolean()`,
@@ -275,6 +289,132 @@ value that is already in a tree, that is the container itself, or that is an
 ancestor of it - a double free and two shapes of cycle, none of which any test
 could detect afterwards - and with `E_INVALID` a value from a different
 allocator, since the whole tree is freed through the root's.
+
+@anchor toml_events
+## Reading the statements
+
+`gtext_toml_read_events()` walks a document and calls a callback once per
+statement, in the order the file wrote them. `gtext_toml_parse()` answers what a
+document *means*; this answers what it *says*, which is a different question
+whenever the file's arrangement matters - a formatter, a linter, a diff, a tool
+that reports a line number.
+
+The two questions differ because a TOML tree is not a picture of its file. A
+table may be opened, left, and reopened lower down as a sub-table of itself
+(`[a.b]` before `[a]`); dotted keys interleave with headers; a comment between
+two keys belongs to neither of them. The stream keeps all of that and the tree
+keeps none of it.
+
+| Event | From |
+|---|---|
+| `GTEXT_TOML_EVT_TABLE` | `[a.b]`, with the whole path |
+| `GTEXT_TOML_EVT_ARRAY_TABLE` | `[[a.b]]` |
+| `GTEXT_TOML_EVT_KEY` | the key of a pair, at the top level or inside `{ }` |
+| `GTEXT_TOML_EVT_VALUE` | a scalar, as a borrowed `GTEXT_TOML_Value *` |
+| `GTEXT_TOML_EVT_ARRAY_BEGIN` / `_END` | `[` and `]` |
+| `GTEXT_TOML_EVT_INLINE_TABLE_BEGIN` / `_END` | `{` and `}` |
+| `GTEXT_TOML_EVT_COMMENT` | a comment, when `retain_comments` asked |
+
+A `KEY` is followed by exactly one value - a `VALUE`, or a balanced pair of
+`BEGIN`/`END` events - and the pairs nest. Every event carries `offset`, `line`
+and `col`, the same three numbers a `GTEXT_TOML_Error` reports, and each names
+where its own token *started*: a multi-line string's value is on the line the
+string opened on, not the line it closed on.
+
+**It is the same parser.** The events are emitted by the walk that builds the
+tree, a few lines after the check that made each statement legal, so the two
+entry points refuse the same documents in the same place - `read_events` builds
+the tree too, because TOML's duplicate-key and redefinition rules are answered
+against it, and frees it on the way out. A consumer never sees a statement the
+document turned out not to be allowed to make: a duplicate key produces no
+`KEY` event. It may see a key whose *value* then turns out to be malformed,
+because a statement is checked in pieces; the returned status is the verdict,
+not the stream.
+
+A callback that returns anything other than `GTEXT_TOML_OK` stops the walk, and
+that value is what `gtext_toml_read_events()` returns - so a consumer that has
+found what it came for stops the parse instead of reading the rest of the file,
+and a perfectly good document can end with a status the *caller* chose.
+
+**There is no pull reader, and that is a decision.** JSON, CSV and YAML each
+have one here, with the same four calls in the same order, because each of those
+parsers is genuinely incremental. This one is not, for two reasons that belong
+to the format rather than to the implementation:
+
+- TOML's refusals are whole-document. A duplicate key, a table defined twice, a
+  `[[a]]` against a static `a` - each is decided against everything read so
+  far, so a reader that answered before the end would be answering a different
+  question from `gtext_toml_parse()`, and "is this a TOML document" would have
+  two answers in one library.
+- Nothing here is resumable. There are 39 end-of-buffer tests across the lexer
+  and the parser, and each currently means "the document ends here"; in an
+  incremental reader each would have to mean "...or more input may follow",
+  which is 39 places to get right and a second grammar in all but name.
+
+A `feed`-shaped reader over this parser would therefore accumulate the whole
+document and parse it at the end: a streaming interface over something that does
+not stream, whose caller would believe memory was bounded when it was not. The
+callback gives a caller everything such a reader could, including stopping
+early, and promises nothing it does not do.
+
+@anchor toml_comments
+## Comments
+
+A comment is not part of TOML's data model, so keeping one is opt-in:
+`GTEXT_TOML_Parse_Options::retain_comments`, default `false`. One option with
+two points of use, deliberately not two: it decides whether `COMMENT` events are
+reported, and the tree's comments are attached from those same events.
+
+**The tree keeps the comments the writer can put back, and no others.**
+
+| Kind | Where it was | Accessor |
+|---|---|---|
+| leading | the own-line comments immediately above a statement, joined with `\n` | `gtext_toml_value_leading_comment()` |
+| inline | the comment after a statement, on its line | `gtext_toml_value_inline_comment()` |
+| trailing | the comments after the last statement, on the root | `gtext_toml_value_trailing_comment()` |
+
+They hang from the value a statement defines: the comments around `a = 1` belong
+to the node `1`, and the ones around `[a.b]` to the table that header opened.
+Consecutive own-line comments are one comment of several lines, which the writer
+splits back into a line each; a blank line between two of them does not separate
+them, because TOML gives no meaning to one and a writer cannot put it back.
+
+The text is the bytes after the `#`, verbatim and without the line ending. So
+`#` followed by the text is the line as written, which is what makes a read and
+a write an identity on a comment line; a caller setting one should usually begin
+it with a space. The CR of a CRLF belongs to the newline and not to the comment.
+
+**What a tree cannot hold** is a comment inside a value - between two array
+elements, or inside `{ }`. There is no statement there to attach it to, and no
+line in the document the writer produces to put it on, so keeping it would be a
+promise broken on the way out. Those are reported by
+`gtext_toml_read_events()`, in place, which is the division of labour between
+the two readers - and the division is *measured* rather than described: the
+corpus mode requires the number of comment lines a tree kept to equal the number
+the event stream reported outside any container, for every case. Of the 206
+comment lines in toml-test's 208 valid 1.0.0 cases, a tree holds 184 and the 22
+others are all inside a value.
+
+**The writer refuses what it cannot spell**, rather than altering it:
+
+| Comment | Status |
+|---|---|
+| a control character other than tab, or U+007F | `GTEXT_TOML_E_CONTROL` - the rule TOML applies to a comment it reads |
+| bytes that are not UTF-8 | `GTEXT_TOML_E_BAD_UNICODE` - as for a string |
+| a line break in an *inline* comment | `GTEXT_TOML_E_UNREPRESENTABLE` - there is no second line to put the rest on, and splitting it would give the next statement a comment |
+| any comment on a value being written inside `{ }` or `[ ]` | `GTEXT_TOML_E_UNREPRESENTABLE` |
+
+The last row is the one a document can reach: `GTEXT_TOML_TABLE_STYLE_INLINE`
+puts every table inside braces, so a document whose comments were written around
+headers cannot be written in that style. Nothing is wrong with the document or
+with the style; the two cannot be had together and the caller is told which. A
+table written inline may still carry its *own* comments, since those belong to
+the `a = { ... }` statement - only its children's are unplaceable.
+
+A trailing comment set on anything but the root is written after everything that
+node contains, and does **not** survive a round trip: the next header follows it,
+so the next parse reads it as that header's leading comment, which is what it now
+is. The root is the stable place for one, and the only place a parse puts one.
 
 ## Compliance checklist
 
@@ -289,9 +429,10 @@ allocator, since the whole tree is freed through the root's.
 | Arrays | heterogeneous, nested, trailing comma, newlines and comments inside | - |
 | Inline tables | pairs, dotted keys, nesting; at 1.1.0 also newlines, comments and a trailing comma at the separators | a newline or a trailing comma at 1.0.0, `E_BAD_TOKEN`; a newline inside a pair at either version, `E_BAD_TOKEN`; two commas, or extending the table afterwards, at either version |
 | Tables | headers, arrays of tables, implicit parents | the four redefinition rules above |
-| Comments | `#` to end of line | control characters, `E_CONTROL` |
+| Comments | `#` to end of line; kept on the tree and in the event stream with `retain_comments` | control characters, `E_CONTROL`; on the tree, only the comments a statement can carry - see [Comments](#toml_comments) |
+| Reading as events | every statement in the order written, with positions, through `gtext_toml_read_events()` | no incremental `feed`, deliberately - [Reading the statements](#toml_events) says why |
 | Versions | 1.0.0 by default, 1.1.0 through `GTEXT_TOML_Parse_Options::version` | an unrecognised version value reads as 1.0.0 |
-| Writing | the whole 1.0.0 grammar this module reads, in the spellings under Save - which is also valid 1.1.0, so there is no write-side version option | invalid UTF-8, `E_BAD_UNICODE`; a date-time `chron` refuses, `E_DATETIME`; a non-table root, `E_INVALID`. No comments, no multi-line or literal strings, no non-decimal integers |
+| Writing | the whole 1.0.0 grammar this module reads, in the spellings under Save - which is also valid 1.1.0, so there is no write-side version option - and the comments the tree kept | invalid UTF-8, `E_BAD_UNICODE`; a date-time `chron` refuses, `E_DATETIME`; a non-table root, `E_INVALID`; a comment it cannot place, `E_UNREPRESENTABLE`. No multi-line or literal strings, no non-decimal integers |
 
 ## Deviations
 
@@ -308,20 +449,22 @@ them accepts. If one is found it goes in this table with a reproduction.
 
 **toml-test, pinned at `ff49d109861c1ad25af53f687f2aef19ab650600`** (2026-09-15),
 `tools/conformance/TOML_SUITE_COMMIT`. Scored by `make conformance-toml` and by
-`make conformance-toml-next`. One corpus, two manifests, seven scores each,
+`make conformance-toml-next`. One corpus, two manifests, nine scores each,
 because it carries expectations rather than only inputs and so measures both
 directions:
 
 ```
 === toml-test, TOML 1.0.0 ===          === toml-test, TOML 1.1.0 ===
 decode             709 of  709         decode             712 of  712
+events             709 of  709         events             712 of  712
+comments           144 of  144         comments           154 of  154
 roundtrip as-read  709 of  709         roundtrip as-read  712 of  712
 roundtrip headers  208 of  208         roundtrip headers  218 of  218
 roundtrip inline   208 of  208         roundtrip inline   218 of  218
 encode as-read     208 of  208         encode as-read     218 of  218
 encode headers     208 of  208         encode headers     218 of  218
 crossed             66 of   66         crossed             66 of   66
-total             2316 of 2316         total             2362 of 2362
+total             3169 of 3169         total             3228 of 3228
 ```
 
 Several things about those scores, because a clean one is where this page is
@@ -337,6 +480,25 @@ least useful if it stops:
 - **501 of 709 cases are invalid at 1.0.0 and 494 of 712 at 1.1.0**, so the
   majority of this corpus walks the refusal paths rather than the happy one.
   That is unusual and it is the most valuable thing about it.
+- **The `events` row is a second consumer of the format, not the parser
+  agreeing with itself.** The runner rebuilds each document from the event
+  stream alone - through the public builder API, with its own find-or-create
+  bookkeeping for headers and dotted keys - and that rebuild is scored against
+  the suite's own expectation. The rebuild is in the runner and deliberately not
+  in the library, where it would be the code the parser already runs and would
+  agree by construction. It is also the only thing that exercises the
+  constructors over 208 real documents rather than over unit tests. Armed:
+  reporting a dotted key as its last part alone loses 56 cases, and dropping the
+  array-end event loses 17, while the `decode` row is silent about both.
+- **The `comments` row asks two things and is honest about its denominator.**
+  Only the cases that have a comment are asked - counting the rest as passes
+  would make the score a measurement of how many TOML files have no comments in
+  them. Of each it asks that the tree kept exactly the comment lines the event
+  stream reported outside any container, and that writing the document and
+  reading it again gives the same comments back. It is a round trip, so it is
+  blind in the way round trips are: a comment dropped on the way in and one
+  dropped on the way out agree with each other. `tests/test-toml-comments.cpp`
+  is where the halves are looked at separately.
 - **Only the two `encode` rows contain a second implementation.** Everything
   else, the roundtrip rows included, proves this module's two halves agree with
   each other. In encode mode the TOML this writer produces is read by `tomllib`
@@ -408,6 +570,28 @@ least useful if it stops:
   refuses. A mutation that leaks outside the code under test measures the leak,
   and would have left this page claiming a gate that does not exist.
 
+- **The comment channels have been seen to fail, and once not to.** Four
+  defects planted in the comment code, against the corpus mode and the two new
+  test files:
+
+  | planted defect | corpus `comments` | test-toml-comments.cpp | test-toml-events.cpp |
+  |---|---|---|---|
+  | the comments at the end of a file are not attached to the root | 1 case | 7 tests | - |
+  | the writer drops a leading comment on a key-value line | 47 cases | 15 tests | - |
+  | a comment inside an array is kept as the next statement's leading comment | 5 cases | 3 tests | - |
+  | the CR of a CRLF is kept in the comment text | **-** | **-** | **3 tests** |
+
+  The last row is the same shape as the version option's last two and as phase
+  2's `table_style`: a rule about *spelling* that no case in the corpus states.
+  No valid case pairs a CRLF line ending with a comment in a way the round trip
+  can see, so the corpus scores 100% with the CR kept - the comment text is
+  wrong, the document's values are not. That makes three such misses over
+  twenty-four planted defects, all three the same shape.
+
+  The first row is worth reading the other way round: the corpus sees that
+  defect in exactly one case out of 208, which is a gate arguing for the unit
+  file rather than against it.
+
 **Sanitizers.** All 5,684 reading runs - every case of both manifests, in the
 decode mode and all three roundtrip modes - under ASan + UBSan + LSan with
 `-fno-sanitize-recover`: 0 sanitizer reports, and no exit status outside
@@ -440,6 +624,24 @@ the default and the unrecognised value, each of the three points of use in both
 arms with the *value* asserted and not only acceptance, where the relaxation
 stops, the four 1.1.0 changes that need no option, and the round trip that
 stands in for a write-side version field. Its header carries the table above.
+
+**`tests/test-toml-events.cpp`**, 22 tests, for the stream rather than the
+grammar: the event sequence of every statement kind, a dotted key arriving as one
+key of several parts, a reopened table reported twice, decoded key parts
+including one containing a NUL, the positions - with a multi-line string whose
+value is reported where it *started*, since the parser's line counter has moved
+by the time there is a value to report - the refusals matching a parse's on both
+the status and the position, a refused statement producing no event, a callback
+stopping the walk at each of the first sixteen events (which is where a
+sanitizer sees the half-built tree released on a path nothing else takes), and
+the version and depth options reaching the walk.
+
+**`tests/test-toml-comments.cpp`**, 25 tests, for both halves of the round trip
+the corpus can only see together: where each kind attaches, the joining of
+consecutive lines, the verbatim text, an empty comment being a comment, the
+comment inside a value being absent from the tree and present in the stream -
+asserted together, in one test - a commented document written back byte for byte,
+and each of the four refusals above, none of which any document can reach.
 
 **`tests/test-toml-writer.cpp`**, 30 tests, for the writer's *text*, which is
 the half no comparison by value can reach: the three table styles each asserted
@@ -499,12 +701,15 @@ of those exists yet, so nothing scores the cases nobody chose.
 - **A fuzz harness**, for the reader and for the writer, and with the version
   option as an axis. `tests/fuzz` has them for the other formats; TOML has
   neither.
-- **A pull reader / event API**, as JSON, CSV and YAML have. TOML's semantics
-  are whole-document - a header can reopen a table defined earlier, and dotted
-  keys interleave - so an event stream is not simply a linearisation of the
-  file and needs its own design decision first.
-- **Comments in the DOM.** The YAML DOM carries leading and inline comments;
-  this one does not yet.
+- **An incremental reader.** The event walk exists; a chunk-fed one does not,
+  and [Reading the statements](#toml_events) argues that it should not - the two
+  reasons are the format's, so this is a closed question rather than an open
+  one until one of them changes.
+- **Comments inside a value, on the tree.** They are in the event stream and
+  the tree does not keep them, for the reason [Comments](#toml_comments) gives:
+  the writer has nowhere to put one back. A DOM that carried them would need a
+  writer that could break an array across lines, which is a shape decision
+  nothing has asked for yet.
 - **`toml_to_json` / `json_to_toml`**, beside the existing `yaml_to_json`.
 - **A 1.1.0 reference.** Nothing outside this repository reads the draft, so
   the fifteen cases the two manifests disagree over are checked against

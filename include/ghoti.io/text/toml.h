@@ -24,8 +24,9 @@
  *
  * Include <ghoti.io/text/toml.h> to reach the whole TOML API: the status
  * codes, error payload and options in toml_core.h, the parser, tree accessors
- * and constructors in toml_dom.h, and the writer and its sinks in
- * toml_writer.h.
+ * and constructors in toml_dom.h, the writer and its sinks in toml_writer.h,
+ * the statement-by-statement event walk in toml_events.h, and the JSON
+ * conversions in toml_json.h.
  *
  * The specification is TOML v1.0.0 (2021-01-12). The four date-time types are
  * `chron` values, so toml_dom.h includes <ghoti.io/chron/chron.h> and a caller
@@ -42,6 +43,7 @@
 
 /* Public module headers */
 #include <ghoti.io/text/toml/toml_dom.h>
+#include <ghoti.io/text/toml/toml_events.h>
 #include <ghoti.io/text/toml/toml_writer.h>
 
 #endif // GHOTI_IO_GTEXT_TOML_H

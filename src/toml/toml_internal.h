@@ -29,6 +29,7 @@
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/toml/toml_core.h>
 #include <ghoti.io/text/toml/toml_dom.h>
+#include <ghoti.io/text/toml/toml_events.h>
 #include <ghoti.io/text/toml/toml_writer.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -71,6 +72,28 @@ typedef enum {
   TOML_ARRAY_OF_TABLES = 1
 } toml_array_origin;
 
+/**
+ * The comments attached to one node, or nothing.
+ *
+ * Behind one pointer rather than three fields on every node. A document with
+ * no comments in it - which is every document parsed without
+ * GTEXT_TOML_Parse_Options::retain_comments - pays one pointer per node for
+ * this and not three, and the common case is the one that has to be cheap: a
+ * large TOML file is mostly scalars, and a scalar node is 56 bytes.
+ */
+typedef struct {
+  char * leading;  ///< Own-line comments above the statement, joined by '\n'.
+  char * trailing_inline; ///< The comment after the statement, on its line.
+  char * trailing; ///< Comments after everything this table contains.
+} toml_comments;
+
+/** Which of the three a call means. */
+typedef enum {
+  TOML_COMMENT_LEADING = 0,
+  TOML_COMMENT_INLINE = 1,
+  TOML_COMMENT_TRAILING = 2
+} toml_comment_kind;
+
 /** One entry of a table, in definition order. */
 typedef struct {
   char * key;   ///< Decoded key bytes, NUL-terminated for convenience.
@@ -107,6 +130,8 @@ struct GTEXT_TOML_Value {
   /** toml_table_origin for a table, toml_array_origin for an array. Unused
    *  for scalars. */
   unsigned char origin;
+  /** Comments, or NULL. Allocated on first use from this node's allocator. */
+  toml_comments * comments;
   union {
     struct {
       char * data;
@@ -156,6 +181,40 @@ typedef struct {
    * have no other reason to know.
    */
   GTEXT_TOML_Version version;
+  bool retain_comments; ///< Whether comments are kept and reported.
+  /**
+   * Where events go, or NULL for a parse that only wants the tree.
+   *
+   * The event walk is not a second reader: it is this one, with a callback. So
+   * these live on the context beside `version` rather than in a parallel
+   * structure, and every emission point is a call to toml_emit() a few lines
+   * from the check that made the statement legal.
+   */
+  GTEXT_TOML_Event_cb cb;
+  void * cb_user;
+  /** What the callback returned to stop the walk; OK while it is running. */
+  GTEXT_TOML_Status cb_status;
+  /**
+   * Scratch for the key path an event reports, grown and reused.
+   *
+   * The parser's own path segments are `toml_seg`, which is the same two
+   * fields as GTEXT_TOML_Key_Part with a writable pointer. Copying into this
+   * rather than casting between the two: they are distinct types whatever
+   * their layout, and `strict-aliasing-is-unguarded` is a defect no sanitizer
+   * here would see.
+   */
+  GTEXT_TOML_Key_Part * key_scratch;
+  size_t key_scratch_cap;
+  /**
+   * Own-line comments seen since the last statement, joined with '\n'.
+   *
+   * Accumulated only at statement level. A comment inside a value belongs
+   * where it was written and to nothing in the tree, so letting one land here
+   * would attach it to whatever statement came next - a comment moving from
+   * inside an array to the line above the following key.
+   */
+  toml_buf pending;
+  bool pending_any; ///< Distinguishes no comment from an empty one (`#`).
 } toml_ctx;
 
 /*--------------------------------------------------------------------------*
@@ -195,6 +254,13 @@ GTEXT_TOML_Value * toml_table_find(const GTEXT_TOML_Value * table,
  */
 bool toml_table_insert(const GTEXT_Allocator * alloc, GTEXT_TOML_Value * table,
     const char * key, size_t key_len, GTEXT_TOML_Value * value);
+
+/** The slot one comment kind lives in, allocating the block on first use. */
+char ** toml_comment_slot(GTEXT_TOML_Value * value, toml_comment_kind which);
+
+/** Replace what a slot holds with a copy of `len` bytes; NULL clears it. */
+bool toml_comment_store(const GTEXT_Allocator * alloc, char ** slot,
+    const char * text, size_t len);
 
 /*--------------------------------------------------------------------------*
  * toml_lexer.c

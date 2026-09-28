@@ -162,6 +162,12 @@ void gtext_toml_free(GTEXT_TOML_Value * root) {
       default:
         break;
     }
+    if (current->comments) {
+      gtext_allocator_free(alloc, current->comments->leading);
+      gtext_allocator_free(alloc, current->comments->trailing_inline);
+      gtext_allocator_free(alloc, current->comments->trailing);
+      gtext_allocator_free(alloc, current->comments);
+    }
     gtext_allocator_free(alloc, current);
     if (count == 0) break;
     current = stack[--count];
@@ -393,4 +399,98 @@ GTEXT_TOML_Status gtext_toml_value_set_inline(
     return GTEXT_TOML_OK;
   }
   return GTEXT_TOML_E_STATE;
+}
+
+/*==========================================================================*
+ * Comments
+ *
+ * Three slots behind one pointer, so that a node with no comment on it costs
+ * one pointer and not three strings' worth of NULLs.
+ *==========================================================================*/
+
+/**
+ * The slot a comment kind lives in, allocating the block on first use.
+ *
+ * @return The slot, or NULL if the block could not be allocated.
+ */
+char ** toml_comment_slot(GTEXT_TOML_Value * value, toml_comment_kind which) {
+  if (!value->comments) {
+    value->comments =
+        gtext_allocator_calloc(value->alloc, 1, sizeof(toml_comments));
+    if (!value->comments) return NULL;
+  }
+  switch (which) {
+    case TOML_COMMENT_LEADING: return &value->comments->leading;
+    case TOML_COMMENT_INLINE: return &value->comments->trailing_inline;
+    default: return &value->comments->trailing;
+  }
+}
+
+bool toml_comment_store(const GTEXT_Allocator * alloc, char ** slot,
+    const char * text, size_t len) {
+  char * copy = NULL;
+  if (text) {
+    copy = gtext_allocator_malloc(alloc, len + 1);
+    if (!copy) return false;
+    if (len) memcpy(copy, text, len);
+    copy[len] = '\0';
+  }
+  gtext_allocator_free(alloc, *slot);
+  *slot = copy;
+  return true;
+}
+
+/** Read a slot without allocating anything, for the accessors. */
+static const char * comment_of(
+    const GTEXT_TOML_Value * value, toml_comment_kind which) {
+  if (!value || !value->comments) return NULL;
+  switch (which) {
+    case TOML_COMMENT_LEADING: return value->comments->leading;
+    case TOML_COMMENT_INLINE: return value->comments->trailing_inline;
+    default: return value->comments->trailing;
+  }
+}
+
+const char * gtext_toml_value_leading_comment(const GTEXT_TOML_Value * value) {
+  return comment_of(value, TOML_COMMENT_LEADING);
+}
+
+const char * gtext_toml_value_inline_comment(const GTEXT_TOML_Value * value) {
+  return comment_of(value, TOML_COMMENT_INLINE);
+}
+
+const char * gtext_toml_value_trailing_comment(const GTEXT_TOML_Value * value) {
+  return comment_of(value, TOML_COMMENT_TRAILING);
+}
+
+/** The three setters, which differ only in which slot they write. */
+static GTEXT_TOML_Status set_comment(
+    GTEXT_TOML_Value * value, toml_comment_kind which, const char * comment) {
+  if (!value) return GTEXT_TOML_E_INVALID;
+  /* Removing a comment from a node that has none must not allocate the block
+   * to store a NULL in it: `set(NULL)` on an untouched node is how a caller
+   * clears what may or may not be there, and it has no reason to fail. */
+  if (!comment && !value->comments) return GTEXT_TOML_OK;
+  char ** slot = toml_comment_slot(value, which);
+  if (!slot) return GTEXT_TOML_E_OOM;
+  if (!toml_comment_store(
+          value->alloc, slot, comment, comment ? strlen(comment) : 0)) {
+    return GTEXT_TOML_E_OOM;
+  }
+  return GTEXT_TOML_OK;
+}
+
+GTEXT_TOML_Status gtext_toml_value_set_leading_comment(
+    GTEXT_TOML_Value * value, const char * comment) {
+  return set_comment(value, TOML_COMMENT_LEADING, comment);
+}
+
+GTEXT_TOML_Status gtext_toml_value_set_inline_comment(
+    GTEXT_TOML_Value * value, const char * comment) {
+  return set_comment(value, TOML_COMMENT_INLINE, comment);
+}
+
+GTEXT_TOML_Status gtext_toml_value_set_trailing_comment(
+    GTEXT_TOML_Value * value, const char * comment) {
+  return set_comment(value, TOML_COMMENT_TRAILING, comment);
 }

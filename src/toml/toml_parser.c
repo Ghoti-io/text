@@ -105,22 +105,164 @@ static void skip_blanks(toml_ctx * ctx) {
   }
 }
 
+/*--------------------------------------------------------------------------*
+ * Events
+ *
+ * The walk that builds the tree is the walk that reports it. Each emitter is
+ * called a few lines after the check that made the statement legal, so that a
+ * consumer never sees a statement the document was not allowed to make, and
+ * each returns false when the callback asked to stop - which travels back out
+ * on the same error paths a malformed document does.
+ *--------------------------------------------------------------------------*/
+
 /**
- * Consume a comment, `ctx->pos` on the `#`.
+ * Where a token starts, taken before it is scanned.
+ *
+ * The line has to be captured rather than read afterwards: a multi-line string
+ * moves ctx->line while it is being scanned, so by the time there is a value to
+ * report, `ctx->line` is the line the value *ended* on. Recomputing from the
+ * offset instead would walk the whole buffer per event, which is quadratic in
+ * the document for the one API whose reason to exist is to look at every line.
+ */
+typedef struct {
+  size_t offset;
+  int line;
+  size_t line_start;
+} toml_mark;
+
+static toml_mark mark_here(const toml_ctx * ctx) {
+  toml_mark m;
+  m.offset = ctx->pos;
+  m.line = ctx->line;
+  m.line_start = ctx->line_start;
+  return m;
+}
+
+/** Characters, not bytes, from the start of the line - as an error reports. */
+static int mark_col(const toml_ctx * ctx, toml_mark m) {
+  int col = 1;
+  for (size_t i = m.line_start; i < m.offset && i < ctx->len; ++i) {
+    if (((unsigned char) ctx->buf[i] & 0xC0) != 0x80) ++col;
+  }
+  return col;
+}
+
+/** Hand one event to the callback, or do nothing if there is none. */
+static bool emit(toml_ctx * ctx, GTEXT_TOML_Event * evt, toml_mark m) {
+  if (!ctx->cb) return true;
+  evt->offset = m.offset;
+  evt->line = m.line;
+  evt->col = mark_col(ctx, m);
+  GTEXT_TOML_Status status = ctx->cb(ctx->cb_user, evt, ctx->err);
+  if (status == GTEXT_TOML_OK) return true;
+  /* The callback's answer, not a parse failure: the document may be perfectly
+   * good and the consumer simply done with it. Kept here so that the entry
+   * point can report it as the status rather than inventing one. */
+  ctx->cb_status = status;
+  return false;
+}
+
+/** A bracket, a brace, or anything else carrying only its position. */
+static bool emit_plain(
+    toml_ctx * ctx, GTEXT_TOML_Event_Type type, toml_mark m) {
+  if (!ctx->cb) return true;
+  GTEXT_TOML_Event evt;
+  memset(&evt, 0, sizeof(evt));
+  evt.type = type;
+  return emit(ctx, &evt, m);
+}
+
+static bool emit_value(
+    toml_ctx * ctx, const GTEXT_TOML_Value * value, toml_mark m) {
+  if (!ctx->cb) return true;
+  GTEXT_TOML_Event evt;
+  memset(&evt, 0, sizeof(evt));
+  evt.type = GTEXT_TOML_EVT_VALUE;
+  evt.value = value;
+  return emit(ctx, &evt, m);
+}
+
+static bool emit_comment(toml_ctx * ctx, const char * text, size_t len,
+    bool own_line, toml_mark m) {
+  if (!ctx->cb) return true;
+  GTEXT_TOML_Event evt;
+  memset(&evt, 0, sizeof(evt));
+  evt.type = GTEXT_TOML_EVT_COMMENT;
+  evt.comment = text;
+  evt.comment_len = len;
+  evt.comment_own_line = own_line;
+  return emit(ctx, &evt, m);
+}
+
+/**
+ * A header or a key, with its decoded path.
+ *
+ * The path is copied into ctx->key_scratch, which grows and is reused: the
+ * parser's segments are a different type with a writable pointer, and two
+ * structs having the same fields is not permission to read one as the other.
+ */
+static bool emit_key(toml_ctx * ctx, GTEXT_TOML_Event_Type type,
+    const toml_path * path, toml_mark m) {
+  if (!ctx->cb) return true;
+  if (path->count > ctx->key_scratch_cap) {
+    if (path->count > SIZE_MAX / sizeof(GTEXT_TOML_Key_Part)) {
+      toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+      return false;
+    }
+    GTEXT_TOML_Key_Part * grown = gtext_allocator_realloc(ctx->alloc,
+        ctx->key_scratch, path->count * sizeof(GTEXT_TOML_Key_Part));
+    if (!grown) {
+      toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+      return false;
+    }
+    ctx->key_scratch = grown;
+    ctx->key_scratch_cap = path->count;
+  }
+  for (size_t i = 0; i < path->count; ++i) {
+    ctx->key_scratch[i].data = path->items[i].data;
+    ctx->key_scratch[i].len = path->items[i].len;
+  }
+  GTEXT_TOML_Event evt;
+  memset(&evt, 0, sizeof(evt));
+  evt.type = type;
+  evt.key.parts = ctx->key_scratch;
+  evt.key.count = path->count;
+  return emit(ctx, &evt, m);
+}
+
+/**
+ * Consume a comment, `ctx->pos` on the `#`, and report or keep it.
  *
  * A comment's text is text, so the control-character rule applies to it as
  * well as to strings. Checking strings and forgetting comments is the common
  * shape of this mistake, and `invalid/control/comment-*` is where a parser
  * that did it finds out.
+ *
+ * The text reported is the bytes after the `#` up to the line ending, verbatim
+ * - not trimmed, and without the CR of a CRLF, which belongs to the newline
+ * and not to the comment. So `#` followed by the text is the line as written,
+ * which is what makes writing a document that was read an identity on its
+ * comment lines rather than nearly one.
+ *
+ * @param attach_to A node to hang this on as its inline comment - the
+ *   statement this comment follows on the same line - or NULL.
+ * @param as_leading Whether to accumulate it for the *next* statement. True
+ *   only at statement level: a comment inside a value has no statement of its
+ *   own, and letting one accumulate here would move it to the line above
+ *   whatever came next.
  */
-static bool skip_comment(toml_ctx * ctx) {
+static bool scan_comment(
+    toml_ctx * ctx, GTEXT_TOML_Value * attach_to, bool as_leading) {
+  toml_mark m = mark_here(ctx);
+  size_t text_start = ctx->pos + 1;
+  size_t text_end = text_start;
   ctx->pos++; /* the '#' */
   while (ctx->pos < ctx->len) {
     unsigned char c = (unsigned char) ctx->buf[ctx->pos];
-    if (c == '\n') return true;
+    if (c == '\n') break;
     if (c == '\r') {
       if (ctx->pos + 1 < ctx->len && ctx->buf[ctx->pos + 1] == '\n') {
-        return true;
+        break;
       }
       return toml_fail(ctx, GTEXT_TOML_E_CONTROL,
           "a carriage return in a comment is only allowed before a line feed");
@@ -135,6 +277,73 @@ static bool skip_comment(toml_ctx * ctx) {
     }
     ctx->pos++;
   }
+  text_end = ctx->pos;
+  if (!ctx->retain_comments) return true;
+
+  /* Own-line or not is asked of the input rather than tracked by the caller:
+   * everything before the `#` on this line is blank, or it is not. The same
+   * question has three answers otherwise - a statement's trailing comment, one
+   * after a comma inside an array, one after the `[` of a multi-line array -
+   * and they are one answer here. */
+  bool own_line = true;
+  for (size_t i = m.line_start; i < m.offset; ++i) {
+    if (ctx->buf[i] != ' ' && ctx->buf[i] != '\t') {
+      own_line = false;
+      break;
+    }
+  }
+  if (!emit_comment(ctx, ctx->buf + text_start, text_end - text_start, own_line,
+          m)) {
+    return false;
+  }
+  if (attach_to) {
+    char ** slot = toml_comment_slot(attach_to, TOML_COMMENT_INLINE);
+    if (!slot
+        || !toml_comment_store(ctx->alloc, slot, ctx->buf + text_start,
+            text_end - text_start)) {
+      return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+    }
+  }
+  else if (as_leading) {
+    /* Consecutive own-line comments are one comment of several lines, joined
+     * the way the writer splits them apart again. A blank line between two of
+     * them does not separate them: TOML has no sense in which it would, and a
+     * rule that said otherwise would have to be written on both sides. */
+    if (ctx->pending_any
+        && !toml_buf_append(ctx->alloc, &ctx->pending, "\n", 1)) {
+      return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+    }
+    if (!toml_buf_append(ctx->alloc, &ctx->pending, ctx->buf + text_start,
+            text_end - text_start)) {
+      return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+    }
+    ctx->pending_any = true;
+  }
+  return true;
+}
+
+/**
+ * Give whatever own-line comments are pending to a node.
+ *
+ * Called twice with two kinds, and the second is the one that matters: a
+ * statement takes them as its leading comment, and at the end of the file the
+ * root takes what is left as its *trailing* comment, because there is no
+ * statement they came before. One function with the kind as an argument rather
+ * than two nearly identical ones - the first version of this had only the
+ * leading spelling, and the comment at the end of a file went into the root's
+ * leading slot, where the writer emits it above the first statement.
+ */
+static bool take_pending(
+    toml_ctx * ctx, GTEXT_TOML_Value * node, toml_comment_kind kind) {
+  if (!ctx->pending_any || !node) return true;
+  char ** slot = toml_comment_slot(node, kind);
+  if (!slot
+      || !toml_comment_store(
+          ctx->alloc, slot, ctx->pending.data, ctx->pending.len)) {
+    return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+  }
+  ctx->pending.len = 0;
+  ctx->pending_any = false;
   return true;
 }
 
@@ -153,12 +362,18 @@ static bool take_newline(toml_ctx * ctx) {
   return true;
 }
 
-/** After a statement: blanks, an optional comment, then a newline or the end. */
-static bool finish_statement(toml_ctx * ctx) {
+/**
+ * After a statement: blanks, an optional comment, then a newline or the end.
+ *
+ * @param node What the statement defined, so that a comment here attaches to
+ *   it. This is the only place an inline comment comes from: a comment inside a
+ *   value is not after a statement, it is inside one.
+ */
+static bool finish_statement(toml_ctx * ctx, GTEXT_TOML_Value * node) {
   skip_blanks(ctx);
   if (ctx->pos >= ctx->len) return true;
   if (ctx->buf[ctx->pos] == '#') {
-    if (!skip_comment(ctx)) return false;
+    if (!scan_comment(ctx, node, false)) return false;
   }
   if (ctx->pos >= ctx->len) return true;
   if (ctx->buf[ctx->pos] == '\n' || ctx->buf[ctx->pos] == '\r') {
@@ -175,7 +390,9 @@ static bool skip_array_space(toml_ctx * ctx) {
     if (ctx->pos >= ctx->len) return true;
     char c = ctx->buf[ctx->pos];
     if (c == '#') {
-      if (!skip_comment(ctx)) return false;
+      /* Not as a leading comment: this one is inside a value, and the tree has
+       * nowhere to put it. gtext_toml_read_events() reports it in place. */
+      if (!scan_comment(ctx, NULL, false)) return false;
       continue;
     }
     if (c == '\n' || c == '\r') {
@@ -375,6 +592,9 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
       if (in_array && c == ']') {
         /* An empty array, or the close after a trailing comma - which TOML
          * 1.0.0 allows in an array and not in an inline table. */
+        if (!emit_plain(ctx, GTEXT_TOML_EVT_ARRAY_END, mark_here(ctx))) {
+          goto done;
+        }
         ctx->pos++;
         count--;
         gtext_allocator_free(ctx->alloc, frames[count].key);
@@ -387,6 +607,7 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
       }
 
       if (c == '[' || c == '{') {
+        toml_mark open_at = mark_here(ctx);
         if (ctx->max_depth && count + 1 > ctx->max_depth) {
           toml_fail(ctx, GTEXT_TOML_E_DEPTH,
               "nested deeper than max_depth allows");
@@ -430,11 +651,18 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
           frames[count - 1].have_key = false;
         }
         TOML_FRAME_PUSH(container);
+        if (!emit_plain(ctx,
+                c == '[' ? GTEXT_TOML_EVT_ARRAY_BEGIN
+                         : GTEXT_TOML_EVT_INLINE_TABLE_BEGIN,
+                open_at)) {
+          goto done;
+        }
         state = (c == '[') ? WANT_VALUE : WANT_KEY;
         continue;
       }
 
       GTEXT_TOML_Value * scalar = NULL;
+      toml_mark scalar_at = mark_here(ctx);
       if (c == '"' || c == '\'') {
         toml_buf text = {0};
         if (!toml_scan_string(ctx, &text)) {
@@ -466,6 +694,19 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
         if (!scalar) goto done;
       }
 
+      if (!emit_value(ctx, scalar, scalar_at)) {
+        /* Before it is attached, so that a callback that stops the walk here
+         * leaves the tree exactly as consistent as any other failure does:
+         * `scalar` is still this function's to free through `root`, or is
+         * freed below. */
+        if (count == 0) {
+          root = scalar;
+        }
+        else {
+          gtext_toml_free(scalar);
+        }
+        goto done;
+      }
       if (count == 0) {
         root = scalar;
         ok = true;
@@ -519,6 +760,10 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
               "a TOML 1.0.0 inline table cannot end with a comma");
           goto done;
         }
+        if (!emit_plain(
+                ctx, GTEXT_TOML_EVT_INLINE_TABLE_END, mark_here(ctx))) {
+          goto done;
+        }
         ctx->pos++;
         count--;
         gtext_allocator_free(ctx->alloc, frames[count].key);
@@ -540,6 +785,7 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
       }
 
       toml_path path = {0};
+      toml_mark key_at = mark_here(ctx);
       size_t key_start = ctx->pos;
       if (!scan_key_path(ctx, &path)) {
         path_free(ctx->alloc, &path);
@@ -572,7 +818,9 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
       frames[count - 1].key_len = last->len;
       frames[count - 1].have_key = true;
       frames[count - 1].after_comma = false;
+      bool reported = emit_key(ctx, GTEXT_TOML_EVT_KEY, &path, key_at);
       path_free(ctx->alloc, &path);
+      if (!reported) goto done;
 
       skip_blanks(ctx);
       if (ctx->pos >= ctx->len || ctx->buf[ctx->pos] != '=') {
@@ -602,6 +850,9 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
         continue;
       }
       if (ctx->buf[ctx->pos] == ']') {
+        if (!emit_plain(ctx, GTEXT_TOML_EVT_ARRAY_END, mark_here(ctx))) {
+          goto done;
+        }
         ctx->pos++;
         count--;
         gtext_allocator_free(ctx->alloc, frames[count].key);
@@ -631,6 +882,9 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
       continue;
     }
     if (ctx->buf[ctx->pos] == '}') {
+      if (!emit_plain(ctx, GTEXT_TOML_EVT_INLINE_TABLE_END, mark_here(ctx))) {
+        goto done;
+      }
       ctx->pos++;
       count--;
       gtext_allocator_free(ctx->alloc, frames[count].key);
@@ -661,9 +915,16 @@ done:
  * Statements
  *--------------------------------------------------------------------------*/
 
-/** A key-value line, in whichever table is current. */
-static bool parse_key_value(toml_ctx * ctx, GTEXT_TOML_Value * current) {
+/**
+ * A key-value line, in whichever table is current.
+ *
+ * @param defined Receives the value the line defined, which is the node a
+ *   comment on this line attaches to.
+ */
+static bool parse_key_value(
+    toml_ctx * ctx, GTEXT_TOML_Value * current, GTEXT_TOML_Value ** defined) {
   toml_path path = {0};
+  toml_mark key_at = mark_here(ctx);
   size_t key_start = ctx->pos;
   if (!scan_key_path(ctx, &path)) {
     path_free(ctx->alloc, &path);
@@ -697,6 +958,11 @@ static bool parse_key_value(toml_ctx * ctx, GTEXT_TOML_Value * current) {
     return false;
   }
 
+  if (!emit_key(ctx, GTEXT_TOML_EVT_KEY, &path, key_at)) {
+    path_free(ctx->alloc, &path);
+    return false;
+  }
+
   GTEXT_TOML_Value * value = NULL;
   if (!parse_value(ctx, &value)) {
     path_free(ctx->alloc, &path);
@@ -708,6 +974,7 @@ static bool parse_key_value(toml_ctx * ctx, GTEXT_TOML_Value * current) {
     return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
   }
   path_free(ctx->alloc, &path);
+  *defined = value;
   return true;
 }
 
@@ -766,6 +1033,7 @@ static GTEXT_TOML_Value * walk_header_ancestors(
 /** A `[header]` or `[[header]]` line. `current` is set to the new scope. */
 static bool parse_header(
     toml_ctx * ctx, GTEXT_TOML_Value * root, GTEXT_TOML_Value ** current) {
+  toml_mark header_at = mark_here(ctx);
   ctx->pos++; /* the '[' */
   bool array_of_tables = ctx->pos < ctx->len && ctx->buf[ctx->pos] == '[';
   if (array_of_tables) ctx->pos++;
@@ -836,8 +1104,9 @@ static bool parse_header(
       return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
     }
     *current = element;
+    bool reported = emit_key(ctx, GTEXT_TOML_EVT_ARRAY_TABLE, &path, header_at);
     path_free(ctx->alloc, &path);
-    return true;
+    return reported;
   }
 
   if (!existing) {
@@ -853,8 +1122,9 @@ static bool parse_header(
       return toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
     }
     *current = table;
+    bool reported = emit_key(ctx, GTEXT_TOML_EVT_TABLE, &path, header_at);
     path_free(ctx->alloc, &path);
-    return true;
+    return reported;
   }
   if (existing->type != GTEXT_TOML_TABLE) {
     path_free(ctx->alloc, &path);
@@ -872,16 +1142,115 @@ static bool parse_header(
   }
   existing->origin = TOML_TABLE_HEADER;
   *current = existing;
+  bool reported = emit_key(ctx, GTEXT_TOML_EVT_TABLE, &path, header_at);
   path_free(ctx->alloc, &path);
-  return true;
+  return reported;
 }
 
 /*--------------------------------------------------------------------------*
  * Entry point
  *--------------------------------------------------------------------------*/
 
-GTEXT_TOML_Value * gtext_toml_parse(const char * bytes, size_t len,
-    const GTEXT_TOML_Parse_Options * opts, GTEXT_TOML_Error * err) {
+/**
+ * The whole of both entry points: read the document, build the tree, report
+ * what was read to `ctx->cb` if there is one.
+ *
+ * One function rather than two because there is one grammar. An event walk that
+ * re-read the document its own way would be a second reader of TOML, and two
+ * readers of one format disagree eventually - about a lone carriage return, or
+ * about which of four redefinition rules a case breaks. The event stream is
+ * therefore a view of this parse and cannot diverge from it.
+ *
+ * @param root_out Receives the tree on success. The caller owns it, and
+ *   gtext_toml_read_events() frees it immediately.
+ * @return The status: OK, the first parse failure, or what a callback returned
+ *   to stop the walk.
+ */
+static GTEXT_TOML_Status toml_parse_core(toml_ctx * ctx,
+    const GTEXT_TOML_Parse_Options * effective, GTEXT_TOML_Value ** root_out) {
+  *root_out = NULL;
+  if (!ctx->buf) {
+    toml_fail(ctx, GTEXT_TOML_E_INVALID, "no input");
+    return GTEXT_TOML_E_INVALID;
+  }
+  if (effective->max_total_bytes && ctx->len > effective->max_total_bytes) {
+    toml_fail(ctx, GTEXT_TOML_E_LIMIT, "longer than max_total_bytes allows");
+    return GTEXT_TOML_E_LIMIT;
+  }
+
+  /* Validated once, up front, rather than character by character as each
+   * scanner reaches it. TOML says a document must be valid UTF-8, and that is
+   * a property of the whole document including its comments and the bytes
+   * between its tokens - which no scanner looks at. */
+  size_t bad = 0;
+  if (!toml_utf8_validate(ctx->buf, ctx->len, &bad)) {
+    toml_fail_at(ctx, bad, GTEXT_TOML_E_BAD_UNICODE,
+        "not valid UTF-8; a TOML document must be");
+    return GTEXT_TOML_E_BAD_UNICODE;
+  }
+  if (ctx->len >= 3 && (unsigned char) ctx->buf[0] == 0xEF
+      && (unsigned char) ctx->buf[1] == 0xBB
+      && (unsigned char) ctx->buf[2] == 0xBF) {
+    toml_fail_at(ctx, 0, GTEXT_TOML_E_BAD_TOKEN,
+        "a byte order mark is not part of a TOML document");
+    return GTEXT_TOML_E_BAD_TOKEN;
+  }
+
+  GTEXT_TOML_Value * root = toml_value_new(ctx->alloc, GTEXT_TOML_TABLE);
+  if (!root) {
+    toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+    return GTEXT_TOML_E_OOM;
+  }
+  root->origin = TOML_TABLE_HEADER;
+  GTEXT_TOML_Value * current = root;
+
+  for (;;) {
+    skip_blanks(ctx);
+    if (ctx->pos >= ctx->len) break;
+    char c = ctx->buf[ctx->pos];
+    if (c == '\n' || c == '\r') {
+      if (!take_newline(ctx)) goto failed;
+      continue;
+    }
+    if (c == '#') {
+      if (!scan_comment(ctx, NULL, true)) goto failed;
+      continue;
+    }
+    /* What this statement defines, which is what the comments around it belong
+     * to: the value of a key-value line, or the table a header opened. */
+    GTEXT_TOML_Value * defined = NULL;
+    if (c == '[') {
+      if (!parse_header(ctx, root, &current)) goto failed;
+      defined = current;
+    }
+    else {
+      if (!parse_key_value(ctx, current, &defined)) goto failed;
+    }
+    if (!take_pending(ctx, defined, TOML_COMMENT_LEADING)) goto failed;
+    if (!finish_statement(ctx, defined)) goto failed;
+  }
+  /* Comments still pending at the end of the file are after the last statement
+   * and belong to no statement at all. The root is where they go, because the
+   * root is what "the whole document" is here. */
+  if (!take_pending(ctx, root, TOML_COMMENT_TRAILING)) goto failed;
+  *root_out = root;
+  return GTEXT_TOML_OK;
+
+failed:
+  gtext_toml_free(root);
+  if (ctx->cb_status != GTEXT_TOML_OK) return ctx->cb_status;
+  /* A scanner that fails always records the failure, so the error struct is the
+   * authority on which one it was. Without an error struct to read - the caller
+   * passed NULL - there is nothing to report but that it failed. */
+  if (ctx->err && ctx->err->code != GTEXT_TOML_OK) return ctx->err->code;
+  return GTEXT_TOML_E_BAD_TOKEN;
+}
+
+/** The two entry points differ in their setup and in what they do with the
+ *  tree, so both of them go through here. */
+static GTEXT_TOML_Status toml_run(const char * bytes, size_t len,
+    const GTEXT_TOML_Parse_Options * opts, GTEXT_TOML_Event_cb cb, void * user,
+    GTEXT_TOML_Error * err, GTEXT_TOML_Value ** root_out) {
   if (err) {
     memset(err, 0, sizeof(*err));
   }
@@ -897,64 +1266,48 @@ GTEXT_TOML_Value * gtext_toml_parse(const char * bytes, size_t len,
   ctx.err = err;
   ctx.max_depth = effective.max_depth;
   ctx.version = effective.version;
+  ctx.retain_comments = effective.retain_comments;
+  ctx.cb = cb;
+  ctx.cb_user = user;
 
-  if (!bytes) {
-    toml_fail(&ctx, GTEXT_TOML_E_INVALID, "no input");
-    return NULL;
-  }
-  if (effective.max_total_bytes && len > effective.max_total_bytes) {
-    toml_fail(&ctx, GTEXT_TOML_E_LIMIT, "longer than max_total_bytes allows");
-    return NULL;
-  }
+  GTEXT_TOML_Status status = toml_parse_core(&ctx, &effective, root_out);
+  toml_buf_free(ctx.alloc, &ctx.pending);
+  gtext_allocator_free(ctx.alloc, ctx.key_scratch);
+  return status;
+}
 
-  /* Validated once, up front, rather than character by character as each
-   * scanner reaches it. TOML says a document must be valid UTF-8, and that is
-   * a property of the whole document including its comments and the bytes
-   * between its tokens - which no scanner looks at. */
-  size_t bad = 0;
-  if (!toml_utf8_validate(bytes, len, &bad)) {
-    toml_fail_at(&ctx, bad, GTEXT_TOML_E_BAD_UNICODE,
-        "not valid UTF-8; a TOML document must be");
-    return NULL;
-  }
-  if (len >= 3 && (unsigned char) bytes[0] == 0xEF
-      && (unsigned char) bytes[1] == 0xBB && (unsigned char) bytes[2] == 0xBF) {
-    toml_fail_at(&ctx, 0, GTEXT_TOML_E_BAD_TOKEN,
-        "a byte order mark is not part of a TOML document");
-    return NULL;
-  }
-
-  GTEXT_TOML_Value * root = toml_value_new(ctx.alloc, GTEXT_TOML_TABLE);
-  if (!root) {
-    toml_fail(&ctx, GTEXT_TOML_E_OOM, "out of memory");
-    return NULL;
-  }
-  root->origin = TOML_TABLE_HEADER;
-  GTEXT_TOML_Value * current = root;
-
-  for (;;) {
-    skip_blanks(&ctx);
-    if (ctx.pos >= ctx.len) break;
-    char c = ctx.buf[ctx.pos];
-    if (c == '\n' || c == '\r') {
-      if (!take_newline(&ctx)) goto failed;
-      continue;
-    }
-    if (c == '#') {
-      if (!skip_comment(&ctx)) goto failed;
-      continue;
-    }
-    if (c == '[') {
-      if (!parse_header(&ctx, root, &current)) goto failed;
-    }
-    else {
-      if (!parse_key_value(&ctx, current)) goto failed;
-    }
-    if (!finish_statement(&ctx)) goto failed;
-  }
+GTEXT_TOML_Value * gtext_toml_parse(const char * bytes, size_t len,
+    const GTEXT_TOML_Parse_Options * opts, GTEXT_TOML_Error * err) {
+  GTEXT_TOML_Value * root = NULL;
+  (void) toml_run(bytes, len, opts, NULL, NULL, err, &root);
   return root;
+}
 
-failed:
+GTEXT_TOML_Status gtext_toml_read_events(const char * bytes, size_t len,
+    const GTEXT_TOML_Parse_Options * opts, GTEXT_TOML_Event_cb cb, void * user,
+    GTEXT_TOML_Error * err) {
+  if (err) {
+    memset(err, 0, sizeof(*err));
+  }
+  /* A walk with no callback is a parse whose result is thrown away, and a
+   * caller who means that has gtext_toml_parse() to say it with. Refusing is
+   * what makes `cb` a required argument rather than one this quietly ignores. */
+  if (!cb) {
+    toml_ctx probe;
+    memset(&probe, 0, sizeof(probe));
+    probe.buf = bytes;
+    probe.len = len;
+    probe.line = 1;
+    probe.err = err;
+    toml_fail(&probe, GTEXT_TOML_E_INVALID, "no event callback");
+    return GTEXT_TOML_E_INVALID;
+  }
+  GTEXT_TOML_Value * root = NULL;
+  GTEXT_TOML_Status status =
+      toml_run(bytes, len, opts, cb, user, err, &root);
+  /* The tree was built because TOML's refusals are answered against it, and is
+   * released here because nothing outside asked for it. This is the whole
+   * difference between the two entry points. */
   gtext_toml_free(root);
-  return NULL;
+  return status;
 }

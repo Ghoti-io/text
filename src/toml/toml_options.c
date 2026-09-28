@@ -38,6 +38,11 @@ GTEXT_TOML_Parse_Options gtext_toml_parse_options_default(void) {
    * a draft; a default that tracked it would mean this module's answer to
    * "is this a TOML document" changed with somebody else's unreleased work. */
   opts.version = GTEXT_TOML_VERSION_1_0_0;
+  /* A comment is not part of TOML's data model, so the caller who asked to
+   * read a document did not ask for these; keeping them costs an allocation
+   * per commented statement and is what gtext_toml_read_events() and the
+   * tree's comment accessors are for. */
+  opts.retain_comments = false;
   return opts;
 }
 

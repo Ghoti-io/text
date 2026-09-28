@@ -408,6 +408,99 @@ static bool is_container(const GTEXT_TOML_Value * value) {
 }
 
 /*==========================================================================*
+ * Comments
+ *
+ * Checked here rather than where a caller set one, so that the refusal names
+ * the document being written instead of a call made some time earlier - and so
+ * that a comment read out of a file, which the parser has already established
+ * is spellable, costs nothing on the way in.
+ *
+ * Three things cannot be written, and all three are refused rather than
+ * silently altered: bytes that are not UTF-8, a control character other than
+ * tab (the rule TOML applies to a comment it reads), and a line break in a
+ * comment that has to fit on the end of a line.
+ *==========================================================================*/
+
+static bool check_comment(
+    toml_wctx * w, const char * text, size_t len, bool newline_splits) {
+  size_t bad = 0;
+  if (!toml_utf8_validate(text, len, &bad)) {
+    w->status = GTEXT_TOML_E_BAD_UNICODE;
+    return false;
+  }
+  for (size_t i = 0; i < len; ++i) {
+    unsigned char c = (unsigned char) text[i];
+    if (c == '\t') continue;
+    if (c == '\n') {
+      if (newline_splits) continue;
+      /* An inline comment runs to the end of its line, so there is no second
+       * line to put the rest on. Splitting it would move half a comment onto a
+       * line of its own, where the next parse would read it as the *next*
+       * statement's comment - a different document. */
+      w->status = GTEXT_TOML_E_UNREPRESENTABLE;
+      return false;
+    }
+    if (c < 0x20 || c == 0x7F) {
+      w->status = GTEXT_TOML_E_CONTROL;
+      return false;
+    }
+  }
+  return true;
+}
+
+/** A comment block on lines of its own, one `#` line per '\n'-separated part. */
+static bool emit_comment_block(toml_wctx * w, const char * text) {
+  if (!text) return true;
+  size_t len = strlen(text);
+  if (!check_comment(w, text, len, true)) return false;
+  size_t start = 0;
+  for (;;) {
+    size_t end = start;
+    while (end < len && text[end] != '\n') ++end;
+    if (!wemitz(w, "#")) return false;
+    if (!wemit(w, text + start, end - start)) return false;
+    if (!wemitz(w, "\n")) return false;
+    w->wrote_any = true;
+    if (end >= len) return true;
+    start = end + 1;
+  }
+}
+
+/** The comment after a statement, before its newline. */
+static bool emit_inline_comment(toml_wctx * w, const char * text) {
+  if (!text) return true;
+  if (!check_comment(w, text, strlen(text), false)) return false;
+  /* One space between the statement and the `#`, and nothing between the `#`
+   * and the text: the text is what followed the `#` when this was read, so
+   * adding anything there would make a read-write pair not quite an identity
+   * on the one line where it can be one. */
+  if (!wemitz(w, " #")) return false;
+  return wemitz(w, text);
+}
+
+/**
+ * Refuse a comment on a value that is being written inside `{ }` or `[ ]`.
+ *
+ * A comment is only writable where a statement is. TOML 1.0.0 has no line
+ * break inside an inline table to put one on, an array would need to be broken
+ * across lines to carry one, and in both cases the comment would come back
+ * attached to something else or not at all. A parse never puts a comment here -
+ * the tree only keeps the ones it can put back - so this is reachable by a
+ * caller who set one through the DOM API, or by asking for
+ * GTEXT_TOML_TABLE_STYLE_INLINE on a document whose comments were written
+ * around headers. Both get told.
+ */
+static bool check_not_commented(toml_wctx * w, const GTEXT_TOML_Value * value) {
+  if (!value->comments) return true;
+  if (value->comments->leading || value->comments->trailing_inline
+      || value->comments->trailing) {
+    w->status = GTEXT_TOML_E_UNREPRESENTABLE;
+    return false;
+  }
+  return true;
+}
+
+/*==========================================================================*
  * The inline walk: `{ }` and `[ ]`, on an explicit stack
  *==========================================================================*/
 
@@ -484,11 +577,13 @@ static bool emit_inline(
     if (table) {
       const toml_pair * pair = &node->as.table.pairs[frame->index];
       child = pair->value;
+      if (!check_not_commented(w, child)) return false;
       if (!emit_key(w, pair->key, pair->len)) return false;
       if (!wemitz(w, " = ")) return false;
     }
     else {
       child = node->as.array.items[frame->index];
+      if (!check_not_commented(w, child)) return false;
     }
     /* Advanced before descending, so the parent resumes at the next element
      * rather than at this one. */
@@ -579,15 +674,36 @@ static bool path_descend(
   return spell_key(w, &w->path, key, len);
 }
 
-/** Write `[path]` or `[[path]]`, with a blank line before it if anything
- *  has been written already. */
-static bool emit_header(toml_wctx * w, bool array) {
+/**
+ * Write `[path]` or `[[path]]`, with a blank line before it if anything has been
+ * written already, and with @p node's comments around it.
+ *
+ * The leading comment goes after that blank line and not before it: it belongs
+ * to this header, and a comment separated from its header by a blank line reads
+ * as belonging to what came before.
+ */
+static bool emit_header(
+    toml_wctx * w, bool array, const GTEXT_TOML_Value * node) {
   if (w->wrote_any && !wemitz(w, "\n")) return false;
+  if (node->comments && !emit_comment_block(w, node->comments->leading)) {
+    return false;
+  }
   if (!wemitz(w, array ? "[[" : "[")) return false;
   if (!wemit(w, w->path.data, w->path.len)) return false;
-  if (!wemitz(w, array ? "]]\n" : "]\n")) return false;
+  if (!wemitz(w, array ? "]]" : "]")) return false;
+  if (node->comments
+      && !emit_inline_comment(w, node->comments->trailing_inline)) {
+    return false;
+  }
+  if (!wemitz(w, "\n")) return false;
   w->wrote_any = true;
   return true;
+}
+
+/** Whatever a node said comes after everything it contains. */
+static bool emit_trailing(toml_wctx * w, const GTEXT_TOML_Value * node) {
+  if (!node->comments) return true;
+  return emit_comment_block(w, node->comments->trailing);
 }
 
 GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
@@ -621,6 +737,7 @@ GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
 
       if (frame->is_array) {
         if (frame->index >= node->as.array.count) {
+          if (!emit_trailing(&w, node)) break;
           w.path.len = frame->path_len;
           headers.count--;
           continue;
@@ -628,7 +745,7 @@ GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
         const GTEXT_TOML_Value * element =
             node->as.array.items[frame->index];
         frame->index++;
-        if (!emit_header(&w, true)) break;
+        if (!emit_header(&w, true, element)) break;
         /* Elements of one array of tables share its header path, so the
          * element's frame cuts back to where it already is. */
         if (!hstack_push(&w, &headers, element, w.path.len, false)) break;
@@ -645,15 +762,22 @@ GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
         const toml_pair * pair = &node->as.table.pairs[frame->index];
         frame->index++;
         if (wants_header(&w, pair->value)) continue;
+        const toml_comments * c = pair->value->comments;
+        if (c && !emit_comment_block(&w, c->leading)) break;
         if (!emit_key(&w, pair->key, pair->len)) break;
         if (!wemitz(&w, " = ")) break;
         if (!emit_inline(&w, pair->value, &inline_stack)) break;
+        if (c && !emit_inline_comment(&w, c->trailing_inline)) break;
         if (!wemitz(&w, "\n")) break;
         w.wrote_any = true;
+        if (c && !emit_comment_block(&w, c->trailing)) break;
         continue;
       }
 
       if (frame->index >= n) {
+        /* After everything this table contains, which for the root is the end
+         * of the document - where a parse found the comments it put here. */
+        if (!emit_trailing(&w, node)) break;
         w.path.len = frame->path_len;
         headers.count--;
         continue;
@@ -668,7 +792,7 @@ GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
         if (!hstack_push(&w, &headers, pair->value, saved, true)) break;
         continue;
       }
-      if (!emit_header(&w, false)) break;
+      if (!emit_header(&w, false, pair->value)) break;
       if (!hstack_push(&w, &headers, pair->value, saved, false)) break;
     }
   }

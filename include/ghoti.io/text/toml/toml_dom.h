@@ -441,6 +441,119 @@ GTEXT_API GTEXT_TOML_Status gtext_toml_array_append(
 GTEXT_API GTEXT_TOML_Status gtext_toml_value_set_inline(
     GTEXT_TOML_Value * value, bool inline_style);
 
+/*==========================================================================*
+ * Comments
+ *
+ * Kept only when GTEXT_TOML_Parse_Options::retain_comments asked for them,
+ * and attached to the value a statement defines: the comment lines above
+ * `a = 1` and the one after it on its line belong to the node `1`, and the
+ * ones around a `[a.b]` line belong to the table that header opened.
+ *
+ * **A tree cannot hold every comment a file contains, and the reason is the
+ * writer rather than this structure.** A comment is only writable where a
+ * statement is, so a comment inside `{ }`, or between two elements of an
+ * array, has nowhere to go in the document gtext_toml_write() produces - and
+ * a comment kept where it could not be written back would be a promise this
+ * module breaks on the way out. Those comments are not silently dropped
+ * either: gtext_toml_read_events() reports every one of them, in place, which
+ * is the division of labour between the two readers. The format page counts
+ * how many comments in toml-test's own corpus fall on each side.
+ *
+ * The text is the bytes after the `#`, verbatim and without the line ending,
+ * so that `#` followed by the text is the line as it was written - which is
+ * what makes a read-write pair an identity on comment lines rather than
+ * nearly one. A caller setting a comment gets the same rule and should
+ * usually begin it with a space.
+ *==========================================================================*/
+
+/**
+ * @brief The comment lines written above the statement that defined a value.
+ *
+ * Consecutive own-line comments are one comment, joined with `\n` in the order
+ * they appeared - the writer splits them back into a line each. A blank line
+ * between them does not separate them.
+ *
+ * @param value Any node. NULL is accepted and answers NULL.
+ * @return The text, NUL-terminated, or NULL if there is none. Owned by the
+ *   node, and valid until it is freed or the comment is set again.
+ */
+GTEXT_API const char * gtext_toml_value_leading_comment(
+    const GTEXT_TOML_Value * value);
+
+/**
+ * @brief The comment written after the statement, on the same line.
+ *
+ * @param value Any node. NULL is accepted and answers NULL.
+ * @return The text, NUL-terminated, or NULL if there is none.
+ */
+GTEXT_API const char * gtext_toml_value_inline_comment(
+    const GTEXT_TOML_Value * value);
+
+/**
+ * @brief The comments after the last statement of a table, belonging to no
+ *   statement at all.
+ *
+ * A parse sets this only on the root, where it is the block of comments at the
+ * end of the file - the one place a comment has nothing after it to attach to.
+ * The writer emits a table's trailing comment after everything else that table
+ * contains, so on the root it goes at the end of the document, which is where
+ * it was.
+ *
+ * On any other table it is a comment a caller set, and it does **not** survive
+ * a round trip: written after that table's block it is then followed by the
+ * next header, and the next parse reads it as that header's leading comment,
+ * because that is what it now is. The stable place for a trailing comment is
+ * the root.
+ *
+ * @param value Any node. NULL is accepted and answers NULL.
+ * @return The text, NUL-terminated, or NULL if there is none.
+ */
+GTEXT_API const char * gtext_toml_value_trailing_comment(
+    const GTEXT_TOML_Value * value);
+
+/**
+ * @brief Set the leading comment, replacing any already there.
+ *
+ * @param value Any node.
+ * @param comment The text, NUL-terminated, or NULL to remove it. Copied. A
+ *   `\n` in it separates two comment lines; the writer refuses anything else
+ *   TOML cannot spell in a comment - a control character other than tab, or
+ *   bytes that are not UTF-8 - at the point where it would have to write it,
+ *   rather than here, so that the refusal names the document.
+ * @return GTEXT_TOML_OK, GTEXT_TOML_E_INVALID for a NULL node, or
+ *   GTEXT_TOML_E_OOM.
+ */
+GTEXT_API GTEXT_TOML_Status gtext_toml_value_set_leading_comment(
+    GTEXT_TOML_Value * value, const char * comment);
+
+/**
+ * @brief Set the inline comment, replacing any already there.
+ *
+ * A `\n` here is not two comments: an inline comment is the rest of one line,
+ * so the writer refuses one that contains a line break instead of inventing a
+ * place to put the second half.
+ *
+ * @param value Any node.
+ * @param comment The text, NUL-terminated, or NULL to remove it. Copied.
+ * @return GTEXT_TOML_OK, GTEXT_TOML_E_INVALID for a NULL node, or
+ *   GTEXT_TOML_E_OOM.
+ */
+GTEXT_API GTEXT_TOML_Status gtext_toml_value_set_inline_comment(
+    GTEXT_TOML_Value * value, const char * comment);
+
+/**
+ * @brief Set the trailing comment, replacing any already there.
+ *
+ * @param value Any node; see gtext_toml_value_trailing_comment() for why the
+ *   root is the only place this round-trips.
+ * @param comment The text, NUL-terminated, or NULL to remove it. Copied, and
+ *   a `\n` in it separates lines as in the leading comment.
+ * @return GTEXT_TOML_OK, GTEXT_TOML_E_INVALID for a NULL node, or
+ *   GTEXT_TOML_E_OOM.
+ */
+GTEXT_API GTEXT_TOML_Status gtext_toml_value_set_trailing_comment(
+    GTEXT_TOML_Value * value, const char * comment);
+
 #ifdef __cplusplus
 }
 #endif
