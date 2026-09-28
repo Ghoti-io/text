@@ -549,8 +549,15 @@ void fuzz_parsed_multidoc(
         GTEXT_YAML_Document ** back = gtext_yaml_parse_all(
             text.data(), text.size(), &back_count, &popts, &err);
         if (!back) {
+          /* The parser's own complaint, first: this file's triage lesson is
+             that it is shorter and truer than anything read off the bytes, and
+             this path was printing the bytes alone - so every find here began
+             with decoding a screenful of UTF-16 and guessing. */
           fprintf(stderr, "the multi-document writer wrote what the parser "
-                          "refuses:\n  in    %s\n  wrote %s\n",
+                          "refuses: %s (line %d col %d)\n"
+                          "  in    %s\n  wrote %s\n",
+                  err.message ? err.message : "(no message)", err.line,
+                  err.col,
                   legible(reinterpret_cast<const char *>(data), size).c_str(),
                   legible(text.data(), text.size()).c_str());
           gtext_yaml_error_free(&err);

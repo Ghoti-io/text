@@ -381,6 +381,10 @@ options at all.
   a chunk-fed one is argued against on the format page rather than pending.
 - **Comments inside a value, on the tree.** They reach you through the event
   walk; the tree keeps the ones the writer can put back.
+- **A differential against a second implementation over generated documents.**
+  `make fuzz-run-toml` and `make fuzz-run-toml-writer` check this library
+  against itself; `tomllib` appears only in the corpus, which holds the cases
+  somebody chose.
 - **A corpus for the JSON-to-TOML direction.** The conversions are scored over
   every TOML case sent out to JSON and back; the hazards on the way *in* - a
   `null`, an integer wider than `int64_t` - have unit tests and no population.

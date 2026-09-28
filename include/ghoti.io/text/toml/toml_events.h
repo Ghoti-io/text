@@ -49,11 +49,12 @@
  *     everything read so far, so a reader that answered before the end would be
  *     answering a different question from gtext_toml_parse(), which is two
  *     spellings of "is this a TOML document".
- *   - Nothing here is resumable. There are 39 end-of-buffer tests across the
+ *   - Nothing here is resumable. There are forty end-of-buffer tests across the
  *     lexer and the parser, and every one of them currently means "the document
  *     ends here"; in an incremental reader each would have to mean "...or more
- *     input may follow", which is 39 places to get right and a second grammar
- *     in all but name.
+ *     input may follow", which is forty places to get right and a second grammar
+ *     in all but name. (@ref format_toml gives the one-line command that counts
+ *     them, so the figure can be re-derived rather than believed.)
  *
  * So a `feed`-shaped reader over this would accumulate the whole document and
  * parse it at the end: a streaming interface over a parser that does not

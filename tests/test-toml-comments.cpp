@@ -157,6 +157,10 @@ TEST(TomlComments, ADocumentOfNothingButCommentsKeepsThem) {
   ASSERT_NE(root, nullptr);
   EXPECT_EQ(comments_of(root), "lead[-] in[-] trail[ only this]");
   EXPECT_EQ(gtext_toml_table_size(root), 0u);
+  // And it writes as itself, which is the one exception to "an empty root table
+  // writes nothing": there is nothing in the table and something in the
+  // document.
+  EXPECT_EQ(written(root, nullptr), "# only this\n");
   gtext_toml_free(root);
 }
 
@@ -441,6 +445,37 @@ TEST(TomlComments, ATableWrittenInlineMayStillCarryItsOwnComments) {
   GTEXT_TOML_Value * root = read_kept("# about a\na = { b = 1 } # beside a\n");
   ASSERT_NE(root, nullptr);
   EXPECT_EQ(written(root, nullptr), "# about a\na = { b = 1 } # beside a\n");
+  gtext_toml_free(root);
+}
+
+TEST(TomlComments, TheHeaderStyleRefusesACommentOnAnArrayItTurnsIntoHeaders) {
+  // The mirror of the inline style's refusal, and the one a *document* reaches
+  // without a caller setting anything. `a = [{...}]` is a static array carrying
+  // the statement's comment; GTEXT_TOML_TABLE_STYLE_HEADERS writes an array of
+  // tables as `[[a]]` blocks, where each element gets a header and the array
+  // gets nothing - so the comment has no line to go on.
+  //
+  // Refused rather than dropped. fuzz_toml_writer found this in a fifteen-minute
+  // run and the corpus cannot: its comments mode round-trips the as-read style,
+  // where such an array stays inline and the comment stays on its statement.
+  GTEXT_TOML_Value * root = read_kept("a = [{ b = 1 }] # about a\n");
+  ASSERT_NE(root, nullptr);
+  EXPECT_EQ(written(root, nullptr), "a = [{ b = 1 }] # about a\n");
+  GTEXT_TOML_Write_Options opts = gtext_toml_write_options_default();
+  opts.table_style = GTEXT_TOML_TABLE_STYLE_HEADERS;
+  EXPECT_EQ(refused_write(root, &opts), GTEXT_TOML_E_UNREPRESENTABLE);
+  // Without the comment the same document writes in that style, so it is the
+  // comment and not the shape that cannot be spelled.
+  GTEXT_TOML_Value * a = const_cast<GTEXT_TOML_Value *>(key(root, "a"));
+  ASSERT_EQ(gtext_toml_value_set_inline_comment(a, nullptr), GTEXT_TOML_OK);
+  EXPECT_EQ(written(root, &opts), "[[a]]\nb = 1\n");
+  // And a *trailing* comment on the same array is not refused, because it needs
+  // no statement of its own: it means "after everything this node contains",
+  // which is the position a table's trailing comment already gets. Two of the
+  // three refused rather than all three, so trailing comments keep one rule.
+  ASSERT_EQ(gtext_toml_value_set_trailing_comment(a, " end of a"),
+      GTEXT_TOML_OK);
+  EXPECT_EQ(written(root, &opts), "[[a]]\nb = 1\n# end of a\n");
   gtext_toml_free(root);
 }
 

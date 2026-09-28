@@ -265,8 +265,11 @@ buffer from an exactly-fitting one, which is what
 - **A date-time is `chron`'s** `gchron_write_toml()`, with the caller's
   `GCHRON_WriteOptions` if any. An unknown offset is `-00:00`, which is the
   only spelling that carries the meaning.
-- **Output ends with a newline**, and is empty for an empty root table. A blank
-  line separates sections, and there is none before the first thing written.
+- **Output ends with a newline**, and is empty for an empty root table - unless
+  that table carries a comment, in which case the document is comment lines and
+  nothing else, which is how it was read. A blank line separates sections, and
+  there is none before the first thing written; a leading comment goes after that
+  blank line, with its header, and not before it.
 - **It refuses rather than writing a document it could not read back.** A
   string or key that is not valid UTF-8 is `GTEXT_TOML_E_BAD_UNICODE`; a
   date-time `chron` will not spell is `GTEXT_TOML_E_DATETIME`. Both are
@@ -348,10 +351,16 @@ to the format rather than to the implementation:
   far, so a reader that answered before the end would be answering a different
   question from `gtext_toml_parse()`, and "is this a TOML document" would have
   two answers in one library.
-- Nothing here is resumable. There are 39 end-of-buffer tests across the lexer
-  and the parser, and each currently means "the document ends here"; in an
+- Nothing here is resumable. There are **forty** end-of-buffer tests across the
+  lexer and the parser, and each currently means "the document ends here"; in an
   incremental reader each would have to mean "...or more input may follow",
-  which is 39 places to get right and a second grammar in all but name.
+  which is forty places to get right and a second grammar in all but name. The
+  figure is one command rather than a claim, so it can be re-derived when either
+  file changes:
+
+  ```
+  grep -o 'ctx->pos [<>]=* ctx->len' src/toml/toml_{lexer,parser}.c | wc -l
+  ```
 
 A `feed`-shaped reader over this parser would therefore accumulate the whole
 document and parse it at the end: a streaming interface over something that does
@@ -405,13 +414,27 @@ others are all inside a value.
 | bytes that are not UTF-8 | `GTEXT_TOML_E_BAD_UNICODE` - as for a string |
 | a line break in an *inline* comment | `GTEXT_TOML_E_UNREPRESENTABLE` - there is no second line to put the rest on, and splitting it would give the next statement a comment |
 | any comment on a value being written inside `{ }` or `[ ]` | `GTEXT_TOML_E_UNREPRESENTABLE` |
+| a *leading or inline* comment on an array that `GTEXT_TOML_TABLE_STYLE_HEADERS` turns into `[[a]]` blocks | `GTEXT_TOML_E_UNREPRESENTABLE` |
 
-The last row is the one a document can reach: `GTEXT_TOML_TABLE_STYLE_INLINE`
-puts every table inside braces, so a document whose comments were written around
-headers cannot be written in that style. Nothing is wrong with the document or
-with the style; the two cannot be had together and the caller is told which. A
-table written inline may still carry its *own* comments, since those belong to
-the `a = { ... }` statement - only its children's are unplaceable.
+The last two rows are the ones a *document* can reach, and they are mirrors of
+each other. `GTEXT_TOML_TABLE_STYLE_INLINE` puts every table inside braces, so a
+document whose comments were written around headers cannot be written in that
+style; `_HEADERS` turns `a = [{...}]` into `[[a]]` blocks, where each element
+gets a header and the array gets nothing, so the comment from
+`a = [{...}] # note` has no line to go on. Only the leading and inline ones are
+refused there: a *trailing* comment means "after everything this node contains",
+which is a position whether or not the node has a statement of its own, and it is
+the position a table's trailing comment already gets. Nothing is wrong with the document or
+with the style in either case; the two cannot be had together and the caller is
+told which. A table written inline may still carry its *own* comments, since
+those belong to the `a = { ... }` statement - only its children's are
+unplaceable.
+
+The second of those was found by `fuzz_toml_writer` rather than by the corpus,
+and the reason is worth keeping: the `comments` mode round-trips the **as-read**
+style, where an array read as `[ ]` stays inline and its comment stays on its
+statement. A corpus mode that asked only the style a document arrived in cannot
+see a rule about the styles it did not.
 
 A trailing comment set on anything but the root is written after everything that
 node contains, and does **not** survive a round trip: the next header follows it,
@@ -742,7 +765,7 @@ comment inside a value being absent from the tree and present in the stream -
 asserted together, in one test - a commented document written back byte for byte,
 and each of the four refusals above, none of which any document can reach.
 
-**`tests/test-toml-json.cpp`**, 31 tests, for the conversions: every type with a
+**`tests/test-toml-json.cpp`**, 32 tests, for the conversions: every type with a
 counterpart asserted as exact JSON text, the `int64_t` bounds keeping every digit,
 all seven arms of the three policies, the four date-time kinds as the strings the
 writer would have spelled, both documented round-trip losses asserted by value,
@@ -796,21 +819,56 @@ for 1.1.0: nothing outside reads the draft at all. The Save section above is
 therefore the specification for the shapes, and `tests/test-toml-writer.cpp` is
 what holds it.
 
-**What nothing checks yet.** There is no fuzz harness for this module, in
-either direction, and no differential that puts generated documents to both
-this parser and `tomllib`. The corpus scores the cases someone chose; neither
-of those exists yet, so nothing scores the cases nobody chose. And
-`gtext_json_to_toml()` is scored only over JSON this library produced from TOML,
-which is a population with no `null` in it and no integer wider than `int64_t`:
-the corpus that would reach those is JSONTestSuite's valid files, already cloned
-by `make conformance-json` and not yet pointed at this.
+**Fuzzing**, `tests/fuzz/fuzz_toml.cpp` and `fuzz_toml_writer.cpp`, which is
+what scores the cases nobody chose. The reader harness draws the version, the
+comment option and the depth limit from the input and asserts four properties on
+every document; the writer harness builds documents through the DOM API as well
+as parsing them, because the writer's interesting refusals - a comment holding a
+control character, a comment on a value going inside `{ }`, a string that is not
+UTF-8 - cannot be reached from any text at all.
+
+Every property was seen to fail, by planting a defect for it, with the
+unmutated tree silent in all of them:
+
+| property | the defect that fires it |
+|---|---|
+| the event walk accepts exactly what the parse accepts, with the same status and position | an empty comment made to stop the walk |
+| **1.0.0's documents are a subset of 1.1.0's** | the inline-table trailing-comma rule inverted |
+| what the writer writes, the parser reads, with the same values | the backslash left unescaped |
+| the same comments come back (on parsed documents, all three styles) | four separate comment defects, above - and this property found a real one: see below |
+| a trip through JSON settles after one pass | - |
+
+The subset property is the one nothing else here can state, for the reason the
+`crossed` mode exists: each manifest asks an arm only the cases its own list
+decides. The last row is cheap insurance that nothing planted so far fires, and
+saying so is more useful than implying it is armed.
+
+**The writer harness found a defect in its first long run**, on the property the
+corpus states only for the as-read style: under `_HEADERS` a comment on an array
+of inline tables was dropped rather than refused. It is in the Comments section
+above, with the rule it now follows.
+
+One find in the first ninety seconds was the harness's own, and it is worth the
+space: comparing two documents by their JSON *text* is stricter than the
+contract, because the writer moves plain keys in front of sub-tables and must -
+every bare key after a `[header]` belongs to that header's table. `[[a.b]]`
+before `y = 2` comes back the other way round. The comparison sorts object keys
+now, which is the comparison the corpus already made.
+
+**What nothing checks yet.** There is no differential that puts generated
+documents to both this parser and `tomllib`; the fuzzers check this library
+against itself. And `gtext_json_to_toml()` is scored only over JSON this library
+produced from TOML, which is a population with no `null` in it and no integer
+wider than `int64_t`: the corpus that would reach those is JSONTestSuite's valid
+files, already cloned by `make conformance-json` and not yet pointed at this.
 
 @anchor toml_not_implemented
 ## Not implemented
 
-- **A fuzz harness**, for the reader and for the writer, and with the version
-  option as an axis. `tests/fuzz` has them for the other formats; TOML has
-  neither.
+- **A differential against `tomllib` over generated documents.** The fuzzers
+  check this library against itself - two of its own readers, and its writer
+  against its reader. The corpus is the only place a second implementation
+  appears, and it holds the cases somebody chose.
 - **An incremental reader.** The event walk exists; a chunk-fed one does not,
   and [Reading the statements](#toml_events) argues that it should not - the two
   reasons are the format's, so this is a closed question rather than an open

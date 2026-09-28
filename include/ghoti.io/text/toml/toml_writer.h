@@ -250,8 +250,9 @@ GTEXT_API GTEXT_TOML_Write_Options gtext_toml_write_options_default(void);
  * gtext_toml_free() keeps, and for the same reason: a writer that recursed
  * would crash on a tree this library handed the caller itself.
  *
- * Output ends with a newline, and is empty for an empty root table. Inside one
- * table, keys keep the order they were defined in, except that sub-tables
+ * Output ends with a newline, and is empty for an empty root table - unless the
+ * table carries a comment, which is a document of comment lines and nothing
+ * else, exactly as it was read. Inside one table, keys keep the order they were defined in, except that sub-tables
  * written as headers come after the plain keys whatever order they were
  * defined in - TOML has no choice about that, since every bare key after a
  * `[header]` belongs to the table that header opened.

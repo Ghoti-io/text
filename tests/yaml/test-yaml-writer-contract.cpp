@@ -2039,3 +2039,61 @@ TEST(YamlWriterContract, ATruncatedSequenceIsNotACharacter) {
 		gtext_yaml_error_free(&err);
 	}
 }
+
+/* The style a node remembers is a *preference*, and the writer has to refuse
+   one the text cannot be spelled in.  EveryCodePointSurvivesOrIsRefused above
+   asks this question with the default options, which are flow - and a flow
+   collection has no block scalar in it, so every awkward character there ends
+   up double-quoted and the block styles were never asked about any of them.
+
+   U+FEFF is the character that separates the two: nb-char is "c-printable -
+   b-char - c-byte-order-mark" (5.4), so it has no plain *or block* spelling,
+   and scalar_needs_quotes() had said so for the plain style since U+0085 and
+   U+2028 were added beside it.  A folded scalar carrying one went out as
+   itself and this library's own parser answered "Byte order mark in scalar
+   content".  fuzz_yaml_writer found it; the reproducer is
+   corpus/yaml-writer/bom-in-a-block-scalar.seed.
+
+   U+0085, U+2028 and U+2029 are here as the controls: each is an ordinary
+   nb-char in 1.2, so each *does* have a block spelling, and a fix that
+   refused the whole neighbourhood would pass this test only by accident. */
+TEST(YamlWriterContract, AStoredBlockStyleIsRefusedForTextThatHasNoBlockSpelling) {
+	struct Case {
+		const char *label;
+		uint32_t cp;
+	} const cases[] = {
+		{"U+FEFF byte order mark", 0xFEFF},
+		{"U+0085 next line", 0x0085},
+		{"U+2028 line separator", 0x2028},
+		{"U+2029 paragraph separator", 0x2029},
+	};
+	const GTEXT_YAML_Scalar_Style styles[] = {
+		GTEXT_YAML_SCALAR_STYLE_PLAIN,
+		GTEXT_YAML_SCALAR_STYLE_LITERAL,
+		GTEXT_YAML_SCALAR_STYLE_FOLDED,
+		GTEXT_YAML_SCALAR_STYLE_SINGLE_QUOTED,
+		GTEXT_YAML_SCALAR_STYLE_DOUBLE_QUOTED,
+	};
+	for (const Case &c : cases) {
+		const std::string value = "x" + utf8(c.cp) + "y";
+		for (GTEXT_YAML_Scalar_Style style : styles) {
+			GTEXT_YAML_Document *doc = gtext_yaml_document_new(nullptr, nullptr);
+			ASSERT_NE(doc, nullptr);
+			GTEXT_YAML_Node *root = gtext_yaml_node_new_scalar_n(
+				doc, value.data(), value.size(), nullptr, nullptr);
+			ASSERT_NE(root, nullptr);
+			EXPECT_TRUE(gtext_yaml_node_set_scalar_style(root, style));
+			gtext_yaml_document_set_root(doc, root);
+
+			Written w = write_doc(doc, /*block=*/true);
+			gtext_yaml_free(doc);
+			ASSERT_EQ(w.status, GTEXT_YAML_OK) << c.label << " style " << style;
+
+			std::string back;
+			ASSERT_TRUE(read_back_scalar(w.text, &back))
+				<< c.label << " style " << style << " wrote [" << w.text
+				<< "] which this parser refuses";
+			EXPECT_EQ(back, value) << c.label << " style " << style;
+		}
+	}
+}

@@ -1,6 +1,6 @@
 # Fuzzing
 
-Four libFuzzer harnesses:
+Six libFuzzer harnesses:
 
 | Target | Harness | Build | Run |
 | --- | --- | --- | --- |
@@ -8,8 +8,10 @@ Four libFuzzer harnesses:
 | YAML | `fuzz_yaml.cpp` | `make fuzz-yaml` | `make fuzz-run-yaml` |
 | YAML writers | `fuzz_yaml_writer.cpp` | `make fuzz-yaml-writer` | `make fuzz-run-yaml-writer` |
 | CSV  | `fuzz_csv.cpp`  | `make fuzz-csv`  | `make fuzz-run-csv`  |
+| TOML | `fuzz_toml.cpp` | `make fuzz-toml` | `make fuzz-run-toml` |
+| TOML writer | `fuzz_toml_writer.cpp` | `make fuzz-toml-writer` | `make fuzz-run-toml-writer` |
 
-`make fuzz` builds and runs all four. Each runs for `FUZZ_TIME` seconds
+`make fuzz` builds and runs all six. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
 
     make fuzz FUZZ_TIME=3600
@@ -377,6 +379,51 @@ message* said `omap keys must be unique`. The harness prints what the writer
 wrote because an artifact says nothing on its own - but the parser's own
 complaint is shorter and truer than anything inferred from the output.
 
+**And one more, found while the TOML harnesses below were being armed: U+FEFF
+in a scalar written as a block scalar.** It is the one character that separates
+the plain style's rule from the block styles'. nb-char is "c-printable - b-char
+- c-byte-order-mark" (5.4), so a byte order mark has no plain *and* no block
+spelling; `scalar_needs_quotes()` had refused it for the plain style since
+U+0085 and U+2028 were added beside it, and the block styles never asked,
+because they ask `plan_block_scalar()` and that function only looked below
+U+0020. A folded scalar carrying one went out as itself and this library's own
+parser answered `Byte order mark in scalar content` - five words that were the
+whole diagnosis, and truer than anything the 434 bytes of UTF-32 the harness
+printed would have suggested. The triage lesson above, applied a second time.
+
+Where it is reachable from was measured rather than assumed, because that is
+what decides whether the parser is in the wrong too: **only through
+`gtext_yaml_node_set_scalar_style()`**. The only YAML spelling that admits a
+U+FEFF is a quoted one - nb-json includes it - so a parsed node remembers a
+quoted style, and so does one `gtext_json_to_yaml()` builds; and with the
+default flow options every awkward character ends up double-quoted anyway,
+which is why `EveryCodePointSurvivesOrIsRefused` had never seen it although it
+walks all of Unicode. The test that holds it asks the five stored styles under
+block flow, with U+0085, U+2028 and U+2029 beside it as controls: each of those
+*does* have a block spelling, so a fix that refused the neighbourhood would
+pass only by accident. `corpus/yaml-writer/bom-in-a-block-scalar.seed`.
+
+**And with that one fixed, the next: a mapping entry written with no key.**
+Seven minutes of `fuzz_yaml_writer` after the U+FEFF fix, on the
+multi-document path in UTF-16, and the parser's complaint is again the whole
+statement of it:
+
+    Mapping key missing before ':'
+
+The writer produced a line of `: ":.."` - a value with a colon and nothing
+before it - inside a document whose keys are aliases (`*O : *O`, `&O : .*O`).
+**Not fixed**: it is a third thread of the same afternoon's work and a
+different defect from the byte order mark, and it wants its own look at how a
+key that is an alias, or an empty key, reaches the writer. The artifact is
+`libs/text/crash-a809a848cc25f19018ab4bad71c91b7a876a9cb9`, and it is a
+`crash-` file rather than a `.seed` because a seed is a reproducer that passes.
+
+This path now prints the parser's message before the bytes, which is the
+triage lesson above finally applied to it: it had been printing 434 bytes of
+UTF-16 and nothing else, so every find here began with decoding a screenful
+and guessing. Five words did what the guessing could not, twice in one
+afternoon.
+
 Three notes for whoever runs it next. The header is **two bytes** now, not
 one - path and dialect in the first, write options in the second - so a
 corpus unit written for the old shape means something different. Failure
@@ -387,9 +434,75 @@ with `c_str()` while building the node from the full run of bytes, so a NUL
 made the two disagree and the harness manufactured the contradiction it then
 reported. Decode the artifact before believing it.
 
+## Fuzzing TOML
+
+`fuzz_toml.cpp` reads and `fuzz_toml_writer.cpp` writes, on the same division
+as the YAML pair and for the same reason: a corpus of TOML text carries only
+values the parser accepts, and the writer's interesting refusals are all
+reachable through the DOM API alone - a comment holding a control character or
+a line break, a comment on a value going inside `{ }`, a string that is not
+UTF-8, a date-time `chron` will not spell.
+
+Four properties in the reader harness, and each was *seen to fail* by planting
+a defect for it. The control - the unmutated tree - is silent through 950,000
+executions:
+
+| property | the defect that fires it |
+| --- | --- |
+| the event walk accepts exactly what the parse accepts, with the same status and position | an empty comment made to stop the walk |
+| **1.0.0's documents are a subset of 1.1.0's** | the inline-table trailing-comma rule inverted |
+| what the writer writes, the parser reads back with the same values | the backslash left unescaped |
+| a trip through JSON settles after one pass | - |
+
+The subset property is the one no corpus row states. It is not a property of
+the two specifications - 1.1.0 *tightens* two things 1.0.0's prose allowed -
+but it is a property of this module, which takes the strict ABNF reading of
+both wherever they disagree; and each of toml-test's two manifests only ever
+asks an arm the cases its own list decides. The last row has no entry because
+nothing planted so far fires it: it is cheap insurance, and saying so is more
+useful than implying it is armed.
+
+The writer harness asserts the round trip under all three table styles, and on
+documents that came from *parsing* it also asserts that **the same comments come
+back** - the corpus's `comments` mode over inputs nobody chose. Four defects,
+all caught, control silent:
+
+| planted defect | what fired |
+| --- | --- |
+| no control-character check in a comment | the writer wrote what the parser refuses |
+| a line break allowed in an inline comment | the writer wrote what the parser refuses |
+| a comment written inside `{ }` | the comments changed |
+| the writer drops a leading comment | the comments changed |
+
+Comment fidelity is asserted only on the parsed family, and that is a real
+limit rather than laziness: a caller *can* set a trailing comment on a
+sub-table, which is written after that table's block and read back as the
+following header's leading comment - the same comment, in the place it now
+occupies.
+
+**A fifteen-minute run found one library defect**, and it is the mirror of a
+refusal the writer already made. `GTEXT_TOML_TABLE_STYLE_HEADERS` writes an
+array whose elements are all tables as `[[a]]` blocks - each element gets a
+header and the array gets nothing - so a comment sitting on the array, which is
+where a parse puts the comment from `a = [{...}] # note`, had no line to go on
+and was **dropped**. Refused now, with `E_UNREPRESENTABLE`, exactly as a comment
+on a value going inside `{ }` is. The corpus could not find it: its comments
+mode round-trips the as-read style, where such an array stays inline and its
+comment stays on its statement.
+`corpus/toml-writer/comment-on-an-array-of-tables.toml.seed`.
+
+**One find in the first ninety seconds was the harness's own**, and it is the
+same mistake the YAML harness made twice. Comparing documents by their JSON
+*text* made the property stricter than the contract: the writer's documented
+rule is that plain keys come before sub-tables, whatever order they were
+defined in, because every bare key after a `[header]` belongs to that header's
+table. So `[[a.b]]` before `y = 2` must come back in the other order. The
+comparison sorts object keys now, which is the comparison the corpus makes.
+
 ## The options byte
 
-Each harness consumes the first input byte (two, for CSV) as a selector for
+Each harness consumes the first input byte (two, for CSV and for the TOML
+writer) as a selector for
 the parse options — for the writer harness, for which of its five paths to
 run — and treats the rest as the document. The dialects these
 parsers accept are configurable enough that a fixed set of options would
@@ -448,8 +561,10 @@ of the parser it could not get to.
 | --- | ---: | --- |
 | JSON | 4.6M | clean |
 | YAML | 1.2M | clean |
-| YAML writers | see below | still finding things; see below |
+| YAML writers | see below | still finding things; one open, see below |
 | CSV  | 6.5k | clean |
+| TOML | 875.7k | clean |
+| TOML writer | 1.7M | one defect, fixed; clean after |
 
 The writer harness is new, and its execution count is not yet comparable: it
 builds a document and re-parses one on every run, so it is much slower per

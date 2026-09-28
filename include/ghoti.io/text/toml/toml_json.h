@@ -52,7 +52,7 @@
  *     and comes back as a TOML *integer*. The information is gone at the JSON
  *     end, not here.
  *
- * `@ref format_toml` gives the measurement: the corpus mode that sends every
+ * @ref format_toml gives the measurement: the corpus mode that sends every
  * valid case through JSON and back computes that population from the suite's
  * own expectations rather than from a list kept here.
  */

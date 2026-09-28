@@ -11,7 +11,7 @@ This is what the library implements.
 - **JSON.** RFC 8259 / ECMA-404, plus JSON Pointer (RFC 6901), JSONPath (RFC 9535), JSON Patch (RFC 6902), JSON Merge Patch (RFC 7386), and JSON Schema (2020-12, 2019-09, draft-07 and draft-06). JSONC and JSON5 are each a set of options.
 - **CSV.** RFC 4180, and other dialects through `GTEXT_CSV_Dialect`.
 - **YAML.** YAML 1.2.2, including its Core, JSON and Failsafe schemas, plus a YAML 1.1 resolution mode and the 1.1 types `!!timestamp`, `!!set`, `!!omap`, `!!pairs` and the `<<` merge key.
-- **TOML.** TOML v1.0.0, read and write, and the v1.1.0 draft read behind an option: the whole grammar, all four date-time types through `ghoti.io-chron`, and 2,316 of 2,316 against toml-test's 1.0.0 manifest with 2,362 of 2,362 against its 1.1.0 one - each manifest's cases decoded, written back out and read again under each of three table styles, the corpus's own expectations encoded and handed to `tomllib`, and a crossed mode that runs each version arm over the cases the other manifest drops and requires the wrong answer. The writer has no version option, which is a measurement rather than an omission: 1.1.0 adds spellings, not values, so the encode rows score 218 of 218 against its manifest unchanged.
+- **TOML.** TOML v1.0.0, read and write, and the v1.1.0 draft read behind an option: the whole grammar, all four date-time types through `ghoti.io-chron`, comments kept on request, a statement-by-statement event walk, conversions to and from the JSON tree, and 3,377 of 3,377 against toml-test's 1.0.0 manifest with 3,446 of 3,446 against its 1.1.0 one - ten scores from the one corpus, including each document rebuilt from the event stream alone, every comment carried through a write and a second read, every case sent out to JSON and back, and a crossed mode that runs each version arm over the cases the other manifest drops and requires the wrong answer. The writer has no version option, which is a measurement rather than an omission: 1.1.0 adds spellings, not values, so the encode rows score 218 of 218 against its manifest unchanged.
 
 INI is planned and has no parser yet.
 
@@ -252,6 +252,8 @@ outside this repository:
 | `make conformance-json` | JSON against JSONTestSuite |
 | `make conformance-csv` | CSV against csv-spectrum |
 | `make conformance-jsonpath` | JSONPath against its compliance suite |
+| `make conformance-toml` | TOML against toml-test's 1.0.0 manifest |
+| `make conformance-toml-next` | TOML against its 1.1.0 manifest |
 | `make fuzz` | Build and run the parsers' fuzzers |
 | `make docs` | The Doxygen manual, into `./docs` |
 

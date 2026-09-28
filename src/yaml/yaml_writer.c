@@ -1479,6 +1479,24 @@ static void plan_block_scalar(
     if (c == '\r') return;
     if (c < 0x20 && c != '\n' && c != '\t') return;
     if (c == 0x7F) return;
+    /* A block scalar's lines are nb-char, and nb-char is "c-printable -
+       b-char - c-byte-order-mark" (5.4), so a U+FEFF has no literal or folded
+       spelling any more than it has a plain one.  scalar_needs_quotes() has
+       said so for the plain style since U+0085 and U+2028 were added beside
+       it; the block styles never asked, because they ask this function and
+       this function only looked below U+0020.
+
+       fuzz_yaml_writer found it: a scalar carrying one, with a block style
+       stored on the node, was written straight out and this library's own
+       parser answered "Byte order mark in scalar content".  Reachable through
+       gtext_yaml_node_set_scalar_style() and not from any text - the only
+       YAML spelling that admits a U+FEFF is a quoted one, and a parsed node
+       remembers that style, as does one gtext_json_to_yaml() builds. */
+    if (c == 0xEF && i + 2 < body_len
+        && (unsigned char)value[i + 1] == 0xBB
+        && (unsigned char)value[i + 2] == 0xBF) {
+      return;
+    }
   }
 
   plan->body_len = body_len;

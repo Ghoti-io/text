@@ -500,6 +500,28 @@ static bool check_not_commented(toml_wctx * w, const GTEXT_TOML_Value * value) {
   return true;
 }
 
+/**
+ * Refuse the two comments that need a statement line of their own.
+ *
+ * For a node that is written as several statements rather than one - an array
+ * of tables, where each element gets its own `[[a]]` header and the array gets
+ * none - a leading or an inline comment has no line to go on. A *trailing*
+ * comment does: it means "after everything this node contains", which is a
+ * position whether or not the node has a statement, and it is the same position
+ * the writer already gives a table's trailing comment. So this refuses two of
+ * the three rather than all of them, which keeps one rule for trailing comments
+ * instead of two.
+ */
+static bool check_no_statement_comments(
+    toml_wctx * w, const GTEXT_TOML_Value * value) {
+  if (!value->comments) return true;
+  if (value->comments->leading || value->comments->trailing_inline) {
+    w->status = GTEXT_TOML_E_UNREPRESENTABLE;
+    return false;
+  }
+  return true;
+}
+
 /*==========================================================================*
  * The inline walk: `{ }` and `[ ]`, on an explicit stack
  *==========================================================================*/
@@ -789,6 +811,24 @@ GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
       size_t saved = 0;
       if (!path_descend(&w, pair->key, pair->len, &saved)) break;
       if (pair->value->type == GTEXT_TOML_ARRAY) {
+        /* An array written as `[[a]]` blocks has no statement of its own: each
+         * element gets a header and the array gets nothing, so a comment that
+         * needs a statement line - a leading or an inline one - has nowhere to
+         * go. Refused rather than dropped, which is the same rule as for a
+         * comment on a value inside `{ }` and the mirror of the one
+         * GTEXT_TOML_TABLE_STYLE_INLINE runs into. Its *trailing* comment is
+         * written as any container's is, below.
+         *
+         * A parse never puts a comment here - the statement `[[a]]` defines the
+         * *element*, so that is what its comments hang from - so this is
+         * reachable two ways: a caller who set one, and
+         * GTEXT_TOML_TABLE_STYLE_HEADERS applied to an array that was read as
+         * `a = [{...}]` and carried the comment on that line.
+         * fuzz_toml_writer found the second in a fifteen-minute run; the corpus
+         * cannot, because its comments-mode round trip asks only the as-read
+         * style, where such an array stays inline and its comment stays on the
+         * statement. */
+        if (!check_no_statement_comments(&w, pair->value)) break;
         if (!hstack_push(&w, &headers, pair->value, saved, true)) break;
         continue;
       }

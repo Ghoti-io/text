@@ -1,0 +1,5 @@
+a = """
+multi \u00e9 line\
+  continued"""
+b = '''raw'''
+"\u0000" = "a key with a NUL"

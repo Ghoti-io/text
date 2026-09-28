@@ -1601,9 +1601,12 @@ $(eval $(call fuzz-rule,fuzz_json,json))
 $(eval $(call fuzz-rule,fuzz_yaml,yaml))
 $(eval $(call fuzz-rule,fuzz_yaml_writer,yaml-writer))
 $(eval $(call fuzz-rule,fuzz_csv,csv))
+$(eval $(call fuzz-rule,fuzz_toml,toml))
+$(eval $(call fuzz-rule,fuzz_toml_writer,toml-writer))
 
 fuzz: ## Build and run every fuzzer for $(FUZZ_TIME) seconds each
 fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
+fuzz: fuzz-run-toml fuzz-run-toml-writer
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
