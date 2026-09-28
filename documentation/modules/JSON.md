@@ -359,19 +359,38 @@ Comprehensive usage examples are provided in the `examples/` directory.
 ### 17.1 What the schema engine does not cover
 
 Every standard keyword in every draft this engine reads is either enforced
-or ignored for a reason the specification gives. What remains:
+or ignored for a reason the specification gives. What remains is one entry:
 
-- **draft-07's location-independent identifier**: an `$id` holding only a
-  fragment, which is how that draft spells what 2019-09 calls `$anchor`. A
-  draft-07 document using one has a name this engine will not find
-- **`$ref` beside a sibling `$id`** should leave the base URI alone before
-  2019-09, because the `$ref` is the whole schema there. The resource pre-pass
-  registers the `$id` anyway, because it runs before any dialect is read
-- **a JSON pointer that crosses into an embedded resource** keeps the
-  referring resource's base URI. `#/definitions/baz/definitions/bar`, where
-  `baz` carries an `$id`, finds the right subschema and then resolves a
-  relative `$ref` inside it against the wrong document
 - **draft-04 and earlier** are refused by decision, not by omission - see below
+
+Three things were on this list until the identifier pre-pass was given the
+dialect, and they are worth recording because all three were invisible to the
+2020-12 and 2019-09 suites and visible only to the older two:
+
+- **`$ref` beside a sibling `$id`** leaves the base URI alone before 2019-09,
+  because the `$ref` is the whole schema there and every keyword beside it is
+  ignored. The compiler honoured that; the pre-pass did not, because it ran
+  before any dialect was read, and it registered the `$id` anyway. Two
+  assertions in each of draft-07 and draft-06 were answered *wrongly*
+- **`$anchor` is 2019-09's keyword**, and registering one in a draft-07
+  document answers a `$ref` the draft says finds nothing. The older spelling is
+  an `$id` holding only a fragment
+- **a JSON pointer that crosses into an embedded resource** was keeping the
+  referring resource's base URI. `#/definitions/baz/definitions/bar`, where
+  `baz` carries an `$id`, finds the right subschema, and a relative `$ref`
+  inside it belongs to `baz`'s resource. Two assertions refused in each of the
+  two older drafts, and the newer suites do not ask: their version of that case
+  uses a pointer that stays inside one resource
+
+A fourth was listed and was never true. draft-07's location-independent
+identifier - an `$id` holding only a fragment - was described here as a name
+this engine would not find, and the suite's four groups that use one had always
+passed. Resolving `#name` as a base change produces `base#name`, which is the
+same URI the anchor spelling registers, and a relative reference discards its
+base's fragment (RFC 3986 section 5.2.2), so everything nested below resolved
+against the same base either way. The rule is now written out as the draft
+states it, which changes no answer and stops the agreement between two
+spellings from resting on another function's fragment handling.
 
 ### `$schema` selects a draft
 
@@ -430,19 +449,20 @@ scored on rules the draft predates.
 | --- | --- | --- | --- |
 | 2020-12 | 1301 / 1301 | 162 / 162 | 866 / 866 |
 | 2019-09 | 1261 / 1261 | 158 / 158 | 866 / 866 |
-| draft-07 | 925 / 929 | - | - |
-| draft-06 | 837 / 841 | - | - |
+| draft-07 | 929 / 929 | - | - |
+| draft-06 | 841 / 841 | - | - |
 
-The four outstanding in each of draft-07 and draft-06 are the second and third
-entries of the gap list above: two answered wrongly for `$ref` beside a sibling
-`$id`, and two refused for a JSON pointer that crosses into an embedded
-resource. Nothing is answered wrongly in 2020-12 or 2019-09 - the older drafts
-spell both of those in ways the newer suites do not.
+Every required assertion in every draft this engine reads is answered, and
+answered correctly. draft-07 was 921 of 929 and draft-06 833 of 841: four
+refused in each for a meta-schema that was not embedded, two answered wrongly
+for `$ref` beside a sibling `$id`, and two refused for a pointer crossing into
+an embedded resource.
 
-Embedding the two older meta-schemas is what closed the four that used to be
-refused in each: `definitions.json`'s "validate definition against
-metaschema", and `ref.json`'s "remote ref, containing refs itself", which is
-that same reference by another name.
+The one thing left outside the required suites is draft-07's optional
+`content.json`, four assertions that want `contentMediaType` and
+`contentEncoding` enforced. They are annotations in 2020-12 and this engine
+ignores them in every draft, which is the same answer in both directions rather
+than a gap that moves with the dialect.
 `pattern` and `patternProperties` are measured through `ghoti.io-regex`, which
 the runner links when it is installed and says so when it does not.
 

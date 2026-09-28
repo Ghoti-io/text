@@ -410,6 +410,7 @@ static const struct {
     {"dependentRequired", JSON_DRAFT_2019_09, 0},
     {"maxContains", JSON_DRAFT_2019_09, 0},
     {"minContains", JSON_DRAFT_2019_09, 0},
+    {"$anchor", JSON_DRAFT_2019_09, 0},
     {"if", JSON_DRAFT_07, 0},
     {"then", JSON_DRAFT_07, 0},
     {"else", JSON_DRAFT_07, 0},
@@ -795,19 +796,19 @@ static GTEXT_JSON_Status json_schema_add_dynamic_anchor(
     GTEXT_JSON_Error * err);
 
 static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
-    const GTEXT_JSON_Value * value, const char * base, int depth,
-    GTEXT_JSON_Error * err);
+    const GTEXT_JSON_Value * value, const char * base,
+    json_schema_draft draft, int depth, GTEXT_JSON_Error * err);
 
 static GTEXT_JSON_Status json_schema_scan_list(GTEXT_JSON_Schema * schema,
-    const GTEXT_JSON_Value * list, const char * base, int depth,
-    GTEXT_JSON_Error * err) {
+    const GTEXT_JSON_Value * list, const char * base,
+    json_schema_draft draft, int depth, GTEXT_JSON_Error * err) {
   if (!list || list->type != GTEXT_JSON_ARRAY) {
     return GTEXT_JSON_OK;
   }
   size_t n = gtext_json_array_size(list);
   for (size_t i = 0; i < n; i++) {
     GTEXT_JSON_Status status = json_schema_scan_resources(
-        schema, gtext_json_array_get(list, i), base, depth + 1, err);
+        schema, gtext_json_array_get(list, i), base, draft, depth + 1, err);
     if (status != GTEXT_JSON_OK) {
       return status;
     }
@@ -816,20 +817,83 @@ static GTEXT_JSON_Status json_schema_scan_list(GTEXT_JSON_Schema * schema,
 }
 
 static GTEXT_JSON_Status json_schema_scan_map(GTEXT_JSON_Schema * schema,
-    const GTEXT_JSON_Value * map, const char * base, int depth,
-    GTEXT_JSON_Error * err) {
+    const GTEXT_JSON_Value * map, const char * base,
+    json_schema_draft draft, int depth, GTEXT_JSON_Error * err) {
   if (!map || map->type != GTEXT_JSON_OBJECT) {
     return GTEXT_JSON_OK;
   }
   size_t n = gtext_json_object_size(map);
   for (size_t i = 0; i < n; i++) {
     GTEXT_JSON_Status status = json_schema_scan_resources(
-        schema, gtext_json_object_value(map, i), base, depth + 1, err);
+        schema, gtext_json_object_value(map, i), base, draft, depth + 1, err);
     if (status != GTEXT_JSON_OK) {
       return status;
     }
   }
   return GTEXT_JSON_OK;
+}
+
+/*
+ * The URI an anchor name has inside the resource `scope` names.
+ *
+ * That resource's URI with the name as its fragment, replacing a fragment the
+ * base already carries rather than appending to it. Returns NULL on OOM, which
+ * every caller passes straight to json_schema_add_resource - it takes
+ * ownership either way and reports the failure once.
+ */
+static char * json_schema_anchor_uri(
+    const char * scope, const char * name, size_t name_len) {
+  size_t scope_len = strlen(scope);
+  char * uri = (char *)malloc(scope_len + name_len + 2);
+  if (!uri) {
+    return NULL;
+  }
+  const char * hash = (const char *)memchr(scope, '#', scope_len);
+  size_t keep = hash ? (size_t)(hash - scope) : scope_len;
+  memcpy(uri, scope, keep);
+  uri[keep] = '#';
+  memcpy(uri + keep + 1, name, name_len);
+  uri[keep + 1 + name_len] = '\0';
+  return uri;
+}
+
+/*
+ * Is this `$id` draft-07's location-independent identifier?
+ *
+ * An `$id` holding nothing but a fragment, which is how draft-07 and draft-06
+ * spell what 2019-09 calls `$anchor`: it names a place inside the resource
+ * already in scope rather than starting a new one. 2019-09 onward forbid a
+ * fragment in `$id` altogether, so the question is only asked before then.
+ *
+ * The fragment has to be a plain name. `#/definitions/x` is not one of these -
+ * it is not a legal `$id` in any draft - and is left to be resolved the way it
+ * always was rather than quietly given a second meaning.
+ *
+ * **This changes no answer today, and is here anyway.** documentation/modules/
+ * JSON.md used to list this as a gap - "a name this engine will not find" - and
+ * that was wrong: resolving `#name` as a base change produces `base#name`,
+ * which is the same string the anchor branch registers, and RFC 3986 section
+ * 5.2.2 discards a base's fragment when resolving a relative reference, so
+ * everything nested below resolved against the same base either way. Measured
+ * before this was written, with the branch mutated out: the suite's four
+ * location-independent groups pass both ways, and so do a nested `$id` below one
+ * with and without a root `$id`.
+ *
+ * What the coincidence rests on is another function's fragment handling. Making
+ * the rule the draft states explicit is what stops that from being load-bearing,
+ * and it is the branch the `$anchor` gating below is the other half of.
+ */
+static bool json_schema_id_is_anchor(
+    json_schema_draft draft, const GTEXT_JSON_Value * id) {
+  if (draft >= JSON_DRAFT_2019_09 || !id || id->type != GTEXT_JSON_STRING) {
+    return false;
+  }
+  const char * text = id->as.string.data;
+  size_t len = id->as.string.len;
+  if (len < 2 || text[0] != '#') {
+    return false;
+  }
+  return memchr(text + 1, '/', len - 1) == NULL;
 }
 
 /*
@@ -841,8 +905,8 @@ static GTEXT_JSON_Status json_schema_scan_map(GTEXT_JSON_Schema * schema,
  * reference and a backward one differently.
  */
 static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
-    const GTEXT_JSON_Value * value, const char * base, int depth,
-    GTEXT_JSON_Error * err) {
+    const GTEXT_JSON_Value * value, const char * base,
+    json_schema_draft draft, int depth, GTEXT_JSON_Error * err) {
   if (!value || value->type != GTEXT_JSON_OBJECT) {
     return GTEXT_JSON_OK;
   }
@@ -854,11 +918,65 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
     return GTEXT_JSON_E_DEPTH;
   }
 
+  /*
+   * Which draft this object is read as, before anything is read from it.
+   *
+   * The pre-pass used to run with no dialect at all, which is why the two
+   * rules below were missing: both are things the older drafts do differently,
+   * and there was nothing here that could have known. `$schema` is scoped to
+   * the resource that declares it exactly as the base URI is, so it is picked
+   * up on the way down and inherited by everything inside.
+   */
+  const GTEXT_JSON_Value * dialect = gtext_json_object_get(value, "$schema", 7);
+  if (dialect && dialect->type == GTEXT_JSON_STRING) {
+    json_schema_draft named = json_schema_draft_for_uri(
+        dialect->as.string.data, dialect->as.string.len);
+    if (named != 0) {
+      draft = named;
+    }
+  }
+
+  /*
+   * Before 2019-09 a schema object containing `$ref` *is* that reference: core
+   * says every other keyword beside it MUST be ignored. So an `$id` there does
+   * not move the base URI, an `$anchor` there names nothing, and the
+   * subschemas below it are not schemas. The compiler already honoured this;
+   * the pre-pass did not, and registered the `$id` anyway - which is the whole
+   * of the suite's "$ref prevents a sibling $id from changing the base uri".
+   *
+   * 2019-09 made `$ref` an applicator like any other, so from there the
+   * siblings apply and this does not fire.
+   */
+  if (draft < JSON_DRAFT_2019_09) {
+    const GTEXT_JSON_Value * ref = gtext_json_object_get(value, "$ref", 4);
+    if (ref && ref->type == GTEXT_JSON_STRING) {
+      return GTEXT_JSON_OK;
+    }
+  }
+
   const char * scope = base;
   char * owned_scope = NULL;
 
   const GTEXT_JSON_Value * id = gtext_json_object_get(value, "$id", 3);
-  if (id && id->type == GTEXT_JSON_STRING) {
+  if (json_schema_id_is_anchor(draft, id)) {
+    /*
+     * draft-07 and draft-06 spell a location-independent identifier as an
+     * `$id` holding only a fragment. It names a place *inside* the resource in
+     * scope, so it registers like an `$anchor` and leaves the scope alone.
+     * Resolving it as a base change happens to produce the same URI - `base`
+     * plus `#name` - which is why a reference to one has always been found;
+     * what it also did was make that string the base for everything nested
+     * below, so a further `$id` there resolved against `base#name`.
+     */
+    char * uri = json_schema_anchor_uri(
+        scope, id->as.string.data + 1, id->as.string.len - 1);
+    GTEXT_JSON_Status status =
+        json_schema_add_resource(schema, uri, value, err, NULL);
+    if (status != GTEXT_JSON_OK) {
+      return status;
+    }
+  }
+  else if (id && id->type == GTEXT_JSON_STRING) {
     owned_scope = json_uri_resolve(
         base, strlen(base), id->as.string.data, id->as.string.len);
     if (!owned_scope) {
@@ -880,24 +998,18 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
     scope = interned;
   }
 
-  const GTEXT_JSON_Value * anchor = gtext_json_object_get(value, "$anchor", 7);
+  /* `$anchor` arrived in 2019-09. In draft-07 and draft-06 it is an unknown
+   * member, and registering one there would answer a `$ref` the draft says
+   * finds nothing - the older spelling is the fragment-only `$id` above. */
+  const GTEXT_JSON_Value * anchor =
+      json_schema_keyword_in_draft(draft, "$anchor", 7)
+          ? gtext_json_object_get(value, "$anchor", 7)
+          : NULL;
   if (anchor && anchor->type == GTEXT_JSON_STRING) {
-    size_t scope_len = strlen(scope);
-    size_t name_len = anchor->as.string.len;
-    char * uri = (char *)malloc(scope_len + name_len + 2);
-    if (uri) {
-      /* An anchor names a location inside the resource in scope, so it is
-       * that resource's URI with the name as its fragment - and a base that
-       * already carries a fragment has it replaced, not appended to. */
-      char * hash = (char *)memchr(scope, '#', scope_len);
-      size_t keep = hash ? (size_t)(hash - scope) : scope_len;
-      memcpy(uri, scope, keep);
-      uri[keep] = '#';
-      memcpy(uri + keep + 1, anchor->as.string.data, name_len);
-      uri[keep + 1 + name_len] = '\0';
-    }
-    GTEXT_JSON_Status status =
-        json_schema_add_resource(schema, uri, value, err, NULL);
+    GTEXT_JSON_Status status = json_schema_add_resource(schema,
+        json_schema_anchor_uri(
+            scope, anchor->as.string.data, anchor->as.string.len),
+        value, err, NULL);
     if (status != GTEXT_JSON_OK) {
       return status;
     }
@@ -910,20 +1022,13 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
    * answers the references that do not need the dynamic scope at all.
    */
   const GTEXT_JSON_Value * dynamic =
-      gtext_json_object_get(value, "$dynamicAnchor", 14);
+      json_schema_keyword_in_draft(draft, "$dynamicAnchor", 14)
+          ? gtext_json_object_get(value, "$dynamicAnchor", 14)
+          : NULL;
   if (dynamic && dynamic->type == GTEXT_JSON_STRING
       && dynamic->as.string.len > 0) {
-    size_t scope_len = strlen(scope);
-    size_t name_len = dynamic->as.string.len;
-    char * uri = (char *)malloc(scope_len + name_len + 2);
-    if (uri) {
-      char * hash = (char *)memchr(scope, '#', scope_len);
-      size_t keep = hash ? (size_t)(hash - scope) : scope_len;
-      memcpy(uri, scope, keep);
-      uri[keep] = '#';
-      memcpy(uri + keep + 1, dynamic->as.string.data, name_len);
-      uri[keep + 1 + name_len] = '\0';
-    }
+    char * uri = json_schema_anchor_uri(
+        scope, dynamic->as.string.data, dynamic->as.string.len);
     GTEXT_JSON_Status status =
         json_schema_add_resource(schema, uri, value, err, NULL);
     if (status != GTEXT_JSON_OK) {
@@ -954,7 +1059,9 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
    * out, and a non-boolean is not this keyword at all.
    */
   const GTEXT_JSON_Value * recursive =
-      gtext_json_object_get(value, "$recursiveAnchor", 16);
+      json_schema_keyword_in_draft(draft, "$recursiveAnchor", 16)
+          ? gtext_json_object_get(value, "$recursiveAnchor", 16)
+          : NULL;
   if (recursive && recursive->type == GTEXT_JSON_BOOL) {
     bool on = false;
     if (gtext_json_get_bool(recursive, &on) == GTEXT_JSON_OK && on) {
@@ -974,10 +1081,11 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
     /* draft-07 spells the positional form `items: [...]`, so `items` is
      * scanned both ways; everything else has one shape. */
     if (sub && sub->type == GTEXT_JSON_ARRAY) {
-      status = json_schema_scan_list(schema, sub, scope, depth, err);
+      status = json_schema_scan_list(schema, sub, scope, draft, depth, err);
     }
     else {
-      status = json_schema_scan_resources(schema, sub, scope, depth + 1, err);
+      status = json_schema_scan_resources(
+          schema, sub, scope, draft, depth + 1, err);
     }
     if (status != GTEXT_JSON_OK) {
       return status;
@@ -986,7 +1094,8 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
   for (size_t i = 0; json_schema_subschema_list_keywords[i]; i++) {
     const char * name = json_schema_subschema_list_keywords[i];
     GTEXT_JSON_Status status = json_schema_scan_list(schema,
-        gtext_json_object_get(value, name, strlen(name)), scope, depth, err);
+        gtext_json_object_get(value, name, strlen(name)), scope, draft, depth,
+        err);
     if (status != GTEXT_JSON_OK) {
       return status;
     }
@@ -994,7 +1103,8 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
   for (size_t i = 0; json_schema_subschema_map_keywords[i]; i++) {
     const char * name = json_schema_subschema_map_keywords[i];
     GTEXT_JSON_Status status = json_schema_scan_map(schema,
-        gtext_json_object_get(value, name, strlen(name)), scope, depth, err);
+        gtext_json_object_get(value, name, strlen(name)), scope, draft, depth,
+        err);
     if (status != GTEXT_JSON_OK) {
       return status;
     }
@@ -1004,7 +1114,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
       gtext_json_object_get(value, "dependencies", 12);
   if (deps && deps->type == GTEXT_JSON_OBJECT) {
     GTEXT_JSON_Status status =
-        json_schema_scan_map(schema, deps, scope, depth, err);
+        json_schema_scan_map(schema, deps, scope, draft, depth, err);
     if (status != GTEXT_JSON_OK) {
       return status;
     }
@@ -1123,15 +1233,82 @@ static GTEXT_JSON_Status json_schema_embedded_document(
 }
 
 /*
+ * The resource URI a value in the table is the root of, or NULL.
+ *
+ * Anchors live in the same table under a URI carrying a fragment, and a
+ * fragment names a place inside a resource rather than a resource, so they are
+ * not answers to this question. Every resource URI is fragmentless, the root's
+ * included - it is built with json_uri_without_fragment.
+ */
+static const char * json_schema_resource_uri_of(
+    const GTEXT_JSON_Schema * schema, const GTEXT_JSON_Value * value) {
+  for (size_t i = 0; i < schema->resources_count; i++) {
+    if (schema->resources[i].value == value
+        && strchr(schema->resources[i].uri, '#') == NULL) {
+      return schema->resources[i].uri;
+    }
+  }
+  return NULL;
+}
+
+/*
+ * The base URI in scope at the end of a JSON pointer walked from `root`.
+ *
+ * A pointer fragment is resolved against the document, and a document may hold
+ * embedded resources: `#/definitions/baz/definitions/bar`, where `baz` carries
+ * an `$id`, names a subschema that belongs to `baz`'s resource and not to the
+ * one the reference was written in. Compiling it in the referrer's scope makes
+ * a relative `$ref` inside it resolve against the wrong document - the suite's
+ * draft7 and draft6 "base URI change - change folder in subschema", which was
+ * refused rather than answered wrongly only because the wrong URI happened not
+ * to exist.
+ *
+ * The innermost enclosing resource wins, so the walk goes from the longest
+ * prefix down. Each prefix is handed to gtext_json_pointer_get rather than
+ * stepped through by hand, so `~0` and `~1` are unescaped by the one piece of
+ * code that knows how.
+ */
+static const char * json_schema_pointer_base(const GTEXT_JSON_Schema * schema,
+    const GTEXT_JSON_Value * root, const char * pointer, size_t len) {
+  while (len > 0) {
+    /* The last `/` in the first `len` bytes. `memrchr` would say this in one
+     * call and is a GNU extension, which this translation unit is not built
+     * with. */
+    size_t cut = 0;
+    for (size_t i = len; i > 0; i--) {
+      if (pointer[i - 1] == '/') {
+        cut = i - 1;
+        break;
+      }
+    }
+    if (cut == 0) {
+      break;
+    }
+    len = cut;
+    const GTEXT_JSON_Value * at = gtext_json_pointer_get(root, pointer, len);
+    const char * uri = at ? json_schema_resource_uri_of(schema, at) : NULL;
+    if (uri) {
+      return uri;
+    }
+  }
+  return NULL;
+}
+
+/*
  * Find the schema a resolved absolute URI names.
  *
  * Two steps, because a URI is a resource and a location inside it. The
  * resource is looked up whole - the table holds anchors under their full URI,
  * so an anchor reference finds its entry directly - and a pointer fragment is
  * then walked from the resource's root.
+ *
+ * `base_out`, when the caller passes one, receives the base URI the target
+ * compiles in if the walk crossed into an embedded resource, and is left alone
+ * otherwise.
  */
 static const GTEXT_JSON_Value * json_schema_find_target(
-    json_schema_compile_ctx * cc, const char * uri, GTEXT_JSON_Error * err) {
+    json_schema_compile_ctx * cc, const char * uri, GTEXT_JSON_Error * err,
+    const char ** base_out) {
   GTEXT_JSON_Schema * schema = cc->schema;
   size_t uri_len = strlen(uri);
 
@@ -1183,12 +1360,13 @@ static const GTEXT_JSON_Value * json_schema_find_target(
       GTEXT_JSON_Status status =
           json_schema_add_resource(schema, without, doc, err, &interned);
       if (status == GTEXT_JSON_OK && interned) {
-        status = json_schema_scan_resources(schema, doc, interned, 0, err);
+        status = json_schema_scan_resources(
+            schema, doc, interned, cc->draft, 0, err);
       }
       if (status != GTEXT_JSON_OK) {
         return NULL;
       }
-      return json_schema_find_target(cc, uri, err);
+      return json_schema_find_target(cc, uri, err, base_out);
     }
     free(without);
     return NULL;
@@ -1210,6 +1388,15 @@ static const GTEXT_JSON_Value * json_schema_find_target(
   }
   const GTEXT_JSON_Value * found =
       gtext_json_pointer_get(root, decoded, decoded_len);
+  if (found && base_out) {
+    const char * inner = json_schema_resource_uri_of(schema, found);
+    if (!inner) {
+      inner = json_schema_pointer_base(schema, root, decoded, decoded_len);
+    }
+    if (inner) {
+      *base_out = inner;
+    }
+  }
   free(decoded);
   return found;
 }
@@ -1250,7 +1437,9 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
     }
   }
 
-  const GTEXT_JSON_Value * target = json_schema_find_target(cc, uri, err);
+  const char * pointer_base = NULL;
+  const GTEXT_JSON_Value * target =
+      json_schema_find_target(cc, uri, err, &pointer_base);
   if (!target) {
     if (err && err->code == GTEXT_JSON_OK) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_SCHEMA,
@@ -1313,19 +1502,27 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
    * reference silently reads the wrong schema.
    */
   const char * saved_base = cc->base_uri;
-  char * target_base = json_uri_without_fragment(uri, strlen(uri));
-  size_t base_slot = (size_t)-1;
-  if (target_base) {
-    for (size_t i = 0; i < schema->resources_count; i++) {
-      if (strcmp(schema->resources[i].uri, target_base) == 0) {
-        base_slot = i;
-        break;
-      }
-    }
-    free(target_base);
+  if (pointer_base) {
+    /* The pointer crossed into an embedded resource, so the target's own
+     * resource is that one rather than the one the pointer was written
+     * against. */
+    cc->base_uri = pointer_base;
   }
-  if (base_slot != (size_t)-1) {
-    cc->base_uri = schema->resources[base_slot].uri;
+  else {
+    char * target_base = json_uri_without_fragment(uri, strlen(uri));
+    size_t base_slot = (size_t)-1;
+    if (target_base) {
+      for (size_t i = 0; i < schema->resources_count; i++) {
+        if (strcmp(schema->resources[i].uri, target_base) == 0) {
+          base_slot = i;
+          break;
+        }
+      }
+      free(target_base);
+    }
+    if (base_slot != (size_t)-1) {
+      cc->base_uri = schema->resources[base_slot].uri;
+    }
   }
   GTEXT_JSON_Status status = json_schema_compile_node(node, target, cc, err);
   cc->base_uri = saved_base;
@@ -2360,7 +2557,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
               cc->base_uri, strlen(cc->base_uri), rs, rl);
           if (resolved) {
             const GTEXT_JSON_Value * target =
-                json_schema_find_target(cc, resolved, NULL);
+                json_schema_find_target(cc, resolved, NULL, NULL);
             free(resolved);
             if (target && target->type == GTEXT_JSON_OBJECT) {
               const GTEXT_JSON_Value * declared =
@@ -2440,7 +2637,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
        * URIs is two nodes and comparing pointers gives the wrong answer.
        */
       const GTEXT_JSON_Value * target =
-          json_schema_find_target(cc, cc->base_uri, NULL);
+          json_schema_find_target(cc, cc->base_uri, NULL, NULL);
       int bookended = 0;
       if (target && target->type == GTEXT_JSON_OBJECT) {
         const GTEXT_JSON_Value * declared =
@@ -4437,41 +4634,6 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
   }
 
   /*
-   * Every `$id` and `$anchor` is found before anything is compiled. A `$ref`
-   * is free to name something defined later in the document than the
-   * reference itself, so resolving identifiers as they are met would answer
-   * a forward reference and a backward one differently.
-   */
-  GTEXT_JSON_Status status = json_schema_add_resource(schema,
-      json_uri_without_fragment(schema->base_uri, strlen(schema->base_uri)),
-      schema->doc, err, NULL);
-  if (status == GTEXT_JSON_OK) {
-    status =
-        json_schema_scan_resources(schema, schema->doc, schema->base_uri, 0, err);
-  }
-  if (status != GTEXT_JSON_OK) {
-    gtext_json_schema_free(schema);
-    return NULL;
-  }
-
-  /* A root `$id` moves the document's own base, so compilation starts in
-   * whichever scope the pre-pass ended up putting the root in. */
-  const char * root_base = schema->base_uri;
-  const GTEXT_JSON_Value * root_id =
-      schema->doc->type == GTEXT_JSON_OBJECT
-          ? gtext_json_object_get(schema->doc, "$id", 3)
-          : NULL;
-  if (root_id && root_id->type == GTEXT_JSON_STRING) {
-    for (size_t i = 0; i < schema->resources_count; i++) {
-      if (schema->resources[i].value == schema->doc
-          && strcmp(schema->resources[i].uri, schema->base_uri) != 0) {
-        root_base = schema->resources[i].uri;
-        break;
-      }
-    }
-  }
-
-  /*
    * The dialect an undeclared document is read as.  2020-12 unless the caller
    * says otherwise; a `$schema` inside the document still wins, per resource.
    *
@@ -4492,6 +4654,44 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
       }
       gtext_json_schema_free(schema);
       return NULL;
+    }
+  }
+
+  /*
+   * Every `$id` and `$anchor` is found before anything is compiled. A `$ref`
+   * is free to name something defined later in the document than the
+   * reference itself, so resolving identifiers as they are met would answer
+   * a forward reference and a backward one differently.
+   *
+   * It needs the dialect, which is why that is settled first: two of the three
+   * things it looks for are spelled differently before 2019-09.
+   */
+  GTEXT_JSON_Status status = json_schema_add_resource(schema,
+      json_uri_without_fragment(schema->base_uri, strlen(schema->base_uri)),
+      schema->doc, err, NULL);
+  if (status == GTEXT_JSON_OK) {
+    status = json_schema_scan_resources(
+        schema, schema->doc, schema->base_uri, initial_draft, 0, err);
+  }
+  if (status != GTEXT_JSON_OK) {
+    gtext_json_schema_free(schema);
+    return NULL;
+  }
+
+  /* A root `$id` moves the document's own base, so compilation starts in
+   * whichever scope the pre-pass ended up putting the root in. */
+  const char * root_base = schema->base_uri;
+  const GTEXT_JSON_Value * root_id =
+      schema->doc->type == GTEXT_JSON_OBJECT
+          ? gtext_json_object_get(schema->doc, "$id", 3)
+          : NULL;
+  if (root_id && root_id->type == GTEXT_JSON_STRING) {
+    for (size_t i = 0; i < schema->resources_count; i++) {
+      if (schema->resources[i].value == schema->doc
+          && strcmp(schema->resources[i].uri, schema->base_uri) != 0) {
+        root_base = schema->resources[i].uri;
+        break;
+      }
     }
   }
 

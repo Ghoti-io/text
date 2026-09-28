@@ -13228,6 +13228,162 @@ TEST(JsonSchemaMetaschema, TheOlderDraftsNeedNoRegexProvider) {
 	}
 }
 
+// ===========================================================================
+// The resource pre-pass reads the dialect
+// ===========================================================================
+//
+// Identifiers are found before anything compiles, because a `$ref` may name
+// something defined later in the document. That pass used to run with no
+// dialect at all, and two of the three things it looks for are spelled
+// differently before 2019-09. Both showed up in the suite's draft7 and draft6
+// directories and in no other.
+
+TEST(JsonSchemaPrePass, ARefBesideASiblingIdLeavesTheBaseAloneBefore2019_09) {
+	// draft-07 core: a schema object containing `$ref` *is* that reference and
+	// every sibling keyword MUST be ignored - so the `$id` here does not move
+	// the base, and `foo.json` names the definition registered at
+	// `.../base/foo.json` rather than the one at `.../foo.json`.
+	//
+	// The compiler already honoured this; the pre-pass registered the `$id`
+	// anyway, and the `$ref` then found the number-typed definition. This is
+	// the suite's "$ref prevents a sibling $id from changing the base uri",
+	// which was answered wrongly rather than refused.
+	const char * body =
+	    "\"$id\":\"http://localhost:1234/sibling_id/base/\","
+	    "\"definitions\":{"
+	    "  \"foo\":{\"$id\":\"http://localhost:1234/sibling_id/foo.json\","
+	    "           \"type\":\"string\"},"
+	    "  \"base_foo\":{\"$id\":\"foo.json\",\"type\":\"number\"}},"
+	    "\"allOf\":[{\"$id\":\"http://localhost:1234/sibling_id/\","
+	    "            \"$ref\":\"foo.json\"}]";
+	{
+		MetaFixture f((std::string("{\"$schema\":\"http://json-schema.org/"
+		                          "draft-07/schema#\",")
+		    + body + "}")
+		        .c_str());
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_TRUE(f.accepts("1"));
+		EXPECT_FALSE(f.accepts("\"a\""));
+	}
+	{
+		// 2019-09 made `$ref` an applicator like any other, so there the
+		// sibling `$id` does move the base and the string-typed definition is
+		// what the reference finds. Same document, opposite answer, which is
+		// what makes the rule above a rule about the dialect.
+		MetaFixture f((std::string("{\"$schema\":\"https://json-schema.org/"
+		                          "draft/2019-09/schema\",")
+		    + body + "}")
+		        .c_str());
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_TRUE(f.accepts("\"a\""));
+		EXPECT_FALSE(f.accepts("1"));
+	}
+}
+
+TEST(JsonSchemaPrePass, AnAnchorIsNotAKeywordBefore2019_09) {
+	// `$anchor` arrived in 2019-09. In draft-07 it is an unknown member, so a
+	// `$ref` to the name it would have created finds nothing and the compile is
+	// refused - which is this engine's answer everywhere else too, rather than
+	// resolving a name the draft says does not exist.
+	MetaFixture seven(
+	    "{\"$schema\":\"http://json-schema.org/draft-07/schema#\","
+	    "\"$id\":\"http://e.com/a.json\","
+	    "\"allOf\":[{\"$ref\":\"#bar\"}],"
+	    "\"definitions\":{\"A\":{\"$anchor\":\"bar\","
+	    "                        \"type\":\"integer\"}}}");
+	EXPECT_EQ(seven.schema, nullptr);
+
+	// The same document in 2019-09, where `$anchor` is the spelling.
+	MetaFixture newer(
+	    "{\"$schema\":\"https://json-schema.org/draft/2019-09/schema\","
+	    "\"$id\":\"http://e.com/b.json\","
+	    "\"allOf\":[{\"$ref\":\"#bar\"}],"
+	    "\"$defs\":{\"A\":{\"$anchor\":\"bar\",\"type\":\"integer\"}}}");
+	ASSERT_NE(newer.schema, nullptr)
+	    << (newer.err.message ? newer.err.message : "");
+	EXPECT_TRUE(newer.accepts("1"));
+	EXPECT_FALSE(newer.accepts("\"a\""));
+
+	// And draft-07's own spelling of the same thing - an `$id` holding only a
+	// fragment - does work there.
+	MetaFixture spelt(
+	    "{\"$schema\":\"http://json-schema.org/draft-07/schema#\","
+	    "\"$id\":\"http://e.com/c.json\","
+	    "\"allOf\":[{\"$ref\":\"#bar\"}],"
+	    "\"definitions\":{\"A\":{\"$id\":\"#bar\","
+	    "                        \"type\":\"integer\"}}}");
+	ASSERT_NE(spelt.schema, nullptr)
+	    << (spelt.err.message ? spelt.err.message : "");
+	EXPECT_TRUE(spelt.accepts("1"));
+	EXPECT_FALSE(spelt.accepts("\"a\""));
+}
+
+TEST(JsonSchemaPrePass, AFragmentOnlyIdNamesAPlaceAndDoesNotMoveTheBase) {
+	// The shape documentation/modules/JSON.md used to say this engine could not
+	// read: a nested `$id` below a fragment-only one. It resolves against the
+	// resource's base and not against `base#name`, so `sub.json` is
+	// `http://e.com/sub.json` and the `$ref` to it finds the integer.
+	//
+	// It resolved that way before the rule was made explicit, because a
+	// relative reference discards its base's fragment (RFC 3986 section 5.2.2)
+	// and the two treatments therefore agree. That is why this test exists: the
+	// agreement is a property of URI resolution rather than of this pass, and
+	// nothing else here would notice it changing.
+	const char * tail =
+	    "\"allOf\":[{\"$ref\":\"#foo\"}],"
+	    "\"definitions\":{\"A\":{\"$id\":\"#foo\","
+	    "  \"properties\":{\"x\":{\"$ref\":\"sub.json\"}},"
+	    "  \"definitions\":{\"B\":{\"$id\":\"sub.json\","
+	    "                          \"type\":\"integer\"}}}}}";
+	{
+		MetaFixture f((std::string("{\"$schema\":\"http://json-schema.org/"
+		                          "draft-07/schema#\","
+		                          "\"$id\":\"http://e.com/root.json\",")
+		    + tail)
+		        .c_str());
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_TRUE(f.accepts("{\"x\":1}"));
+		EXPECT_FALSE(f.accepts("{\"x\":\"nope\"}"));
+	}
+	{
+		// And with no root `$id`, where the base is the empty string.
+		MetaFixture f((std::string("{\"$schema\":\"http://json-schema.org/"
+		                          "draft-07/schema#\",")
+		    + tail)
+		        .c_str());
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_TRUE(f.accepts("{\"x\":1}"));
+		EXPECT_FALSE(f.accepts("{\"x\":\"nope\"}"));
+	}
+}
+
+TEST(JsonSchemaRef, APointerIntoAnEmbeddedResourceCompilesInThatResource) {
+	// A pointer fragment is resolved against the document, and a document can
+	// hold embedded resources. `#/definitions/baz/definitions/bar` finds the
+	// right subschema, and that subschema belongs to `baz` - so the relative
+	// `$ref` inside it has to resolve against `http://e.com/inner/` and not
+	// against the document the pointer was written in.
+	//
+	// This was the suite's draft7 and draft6 "base URI change - change folder
+	// in subschema", refused rather than answered wrongly only because
+	// `http://e.com/int.json` happened not to exist. Nothing in the 2020-12 or
+	// 2019-09 directories asks it: their version of that case uses a pointer
+	// that stays inside one resource.
+	MetaFixture f("{\"$schema\":\"http://json-schema.org/draft-07/schema#\","
+	              "\"$id\":\"http://e.com/root.json\","
+	              "\"properties\":{\"list\":{"
+	              "  \"$ref\":\"#/definitions/baz/definitions/bar\"}},"
+	              "\"definitions\":{\"baz\":{\"$id\":\"inner/\","
+	              "  \"definitions\":{"
+	              "    \"bar\":{\"type\":\"array\","
+	              "             \"items\":{\"$ref\":\"int.json\"}},"
+	              "    \"int\":{\"$id\":\"int.json\","
+	              "             \"type\":\"integer\"}}}}}");
+	ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+	EXPECT_TRUE(f.accepts("{\"list\":[1]}"));
+	EXPECT_FALSE(f.accepts("{\"list\":[\"a\"]}"));
+}
+
 TEST(JsonSchemaAdditionalItems, AppliesOnlyWhenItemsIsAnArray) {
 	// draft-06, draft-07 and 2019-09 agree: `additionalItems` describes the
 	// tail of a positional `items`, and is ignored when `items` is a single
