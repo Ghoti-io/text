@@ -26,15 +26,29 @@ sequence, and how confident anyone should be about that.
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
 
-INI has no parser here and no page, and that is a position rather than a queue.
-Every page above measures its format against a specification and an outside
-corpus; INI has neither. There is no INI specification - the closest things are
-one implementation's documentation each - so "implement INI" first means choosing
-which INI, and then there is nothing to be scored against but the choice. The
-work would be a documented dialect in the shape `GTEXT_CSV_Dialect` already
-takes, and until somebody decides which dialect and what would count as
-conformance, starting it would produce the one thing the other four formats do
-not have: a parser whose correctness is its author's opinion.
+INI has no parser here and no page yet, and the reason is a scoping decision
+rather than an unanswerable question. There is no *generic* INI specification,
+so a parser calling itself simply "INI" would have nothing to be scored
+against but its author's choices. There are, however, at least four dialect
+specifications, each with a reference implementation that can be pinned and a
+corpus that can be scored: the freedesktop.org **Desktop Entry Specification**
+(1.5, 2020-04-27), whose references are GLib's `GKeyFile` and the stricter
+`desktop-file-validate`; **`systemd.syntax(7)`**; **`git-config(1)`**, with
+245 assertions in git's own `t1300-config.sh`; and the **EditorConfig
+specification** (0.17.2), which normatively requires a core to pass
+`editorconfig-core-test` - 202 assertions, 34 of them on the file grammar.
+Python's `configparser` is a fifth dialect whose specification is its
+implementation, so it is scoreable only by differential.
+
+Each of those is the same shape as every format above - a grammar, a pinned
+second reader, a corpus, a floor. What remains a decision is how much of it
+ships: the axes on which these dialects disagree are not reconcilable into one
+parser, so INI here means a documented dialect in the shape
+`GTEXT_CSV_Dialect` already takes, and one dialect scored against its
+specification is a better published position than several scored against
+nobody. A generic or Windows dialect is the part that would still have its
+author's opinion for a correctness argument, and would have to say so.
+
 `GTEXT_YAML_MODE_CONFIG` is a YAML parse preset, not a parser for either format.
 
 ## What each page contains
