@@ -29,6 +29,7 @@
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/toml/toml_core.h>
 #include <ghoti.io/text/toml/toml_dom.h>
+#include <ghoti.io/text/toml/toml_writer.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -89,6 +90,20 @@ struct GTEXT_TOML_Value {
    * check-allocators` exists to make impossible and which no test could see.
    */
   const GTEXT_Allocator * alloc;
+  /**
+   * The container this node hangs from, or NULL for a root or a node not yet
+   * stored anywhere.
+   *
+   * Set by toml_table_insert() and toml_array_push(), so the parser fills it
+   * in without knowing about it. Its purpose is the public builder: a node
+   * that already has a parent must not be stored a second time (that is a
+   * double free at teardown), and a node that is an ancestor of the container
+   * must not be stored inside it (that is a cycle, which makes the writer loop
+   * and the free walk repeat). Neither is a thing a test can detect after the
+   * fact, so both are refused at the one call that could create them, and the
+   * check needs a way to walk upwards.
+   */
+  GTEXT_TOML_Value * parent;
   /** toml_table_origin for a table, toml_array_origin for an array. Unused
    *  for scalars. */
   unsigned char origin;

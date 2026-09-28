@@ -20,7 +20,7 @@
 
 /**
  * @file toml_dom.c
- * @brief Building and reading a parsed TOML document, and releasing it.
+ * @brief Building and reading a TOML document, and releasing it.
  */
 
 #include "toml_internal.h"
@@ -48,6 +48,7 @@ bool toml_array_push(const GTEXT_Allocator * alloc, GTEXT_TOML_Value * array,
     array->as.array.capacity = want;
   }
   array->as.array.items[array->as.array.count++] = item;
+  item->parent = array;
   return true;
 }
 
@@ -85,6 +86,7 @@ bool toml_table_insert(const GTEXT_Allocator * alloc, GTEXT_TOML_Value * table,
   table->as.table.pairs[table->as.table.count].len = key_len;
   table->as.table.pairs[table->as.table.count].value = value;
   table->as.table.count++;
+  value->parent = table;
   return true;
 }
 
@@ -239,4 +241,156 @@ const GTEXT_TOML_Value * gtext_toml_table_get(
     const GTEXT_TOML_Value * value, const char * key, size_t key_len) {
   if (!value || value->type != GTEXT_TOML_TABLE || !key) return NULL;
   return toml_table_find(value, key, key_len);
+}
+
+/*--------------------------------------------------------------------------*
+ * Building a document
+ *
+ * The parser does not go through these: it inserts nodes it has just made,
+ * into containers it owns, and so cannot produce either of the shapes the
+ * checks here refuse. Putting the checks in the public entry points rather
+ * than in toml_table_insert() keeps the ancestor walk off the parse path,
+ * where it would turn a deep document into quadratic work for a case that
+ * cannot arise.
+ *--------------------------------------------------------------------------*/
+
+GTEXT_TOML_Value * gtext_toml_new_table(const GTEXT_Allocator * alloc) {
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_TABLE);
+  if (value) value->origin = TOML_TABLE_HEADER;
+  return value;
+}
+
+GTEXT_TOML_Value * gtext_toml_new_array(const GTEXT_Allocator * alloc) {
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_ARRAY);
+  if (value) value->origin = TOML_ARRAY_STATIC;
+  return value;
+}
+
+GTEXT_TOML_Value * gtext_toml_new_string(
+    const GTEXT_Allocator * alloc, const char * bytes, size_t len) {
+  if (!bytes && len) return NULL;
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_STRING);
+  if (!value) return NULL;
+  /* One byte more than asked for, and NUL there: the accessor promises a
+   * terminated buffer for convenience even though `len` is what counts. An
+   * empty string still gets storage, so that the accessor never answers NULL
+   * for a string that exists. */
+  char * copy = gtext_allocator_malloc(alloc, len + 1);
+  if (!copy) {
+    gtext_allocator_free(alloc, value);
+    return NULL;
+  }
+  if (len) memcpy(copy, bytes, len);
+  copy[len] = '\0';
+  value->as.string.data = copy;
+  value->as.string.len = len;
+  return value;
+}
+
+GTEXT_TOML_Value * gtext_toml_new_integer(
+    const GTEXT_Allocator * alloc, int64_t number) {
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_INTEGER);
+  if (value) value->as.integer = number;
+  return value;
+}
+
+GTEXT_TOML_Value * gtext_toml_new_float(
+    const GTEXT_Allocator * alloc, double number) {
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_FLOAT);
+  if (value) value->as.floating = number;
+  return value;
+}
+
+GTEXT_TOML_Value * gtext_toml_new_boolean(
+    const GTEXT_Allocator * alloc, bool boolean) {
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_BOOLEAN);
+  if (value) value->as.boolean = boolean;
+  return value;
+}
+
+GTEXT_TOML_Value * gtext_toml_new_datetime(
+    const GTEXT_Allocator * alloc, const GCHRON_TomlValue * datetime) {
+  if (!datetime) return NULL;
+  GTEXT_TOML_Value * value = toml_value_new(alloc, GTEXT_TOML_DATETIME);
+  if (value) value->as.datetime = *datetime;
+  return value;
+}
+
+/**
+ * The three ways a caller can make a tree that cannot be written or freed.
+ *
+ * `value` already stored is a double free waiting for teardown; `value` being
+ * the container, or an ancestor of it, is a cycle. The walk upwards is O(depth)
+ * and is the only one of the three that costs anything; it is cheap because a
+ * node that is not yet stored anywhere can only be an ancestor of `container`
+ * by being the root of the tree `container` is in.
+ */
+static GTEXT_TOML_Status toml_check_link(
+    const GTEXT_TOML_Value * container, const GTEXT_TOML_Value * value) {
+  if (value->parent) return GTEXT_TOML_E_STATE;
+  for (const GTEXT_TOML_Value * up = container; up; up = up->parent) {
+    if (up == value) return GTEXT_TOML_E_STATE;
+  }
+  /* One tree, one allocator: gtext_toml_free() reads the root's and frees
+   * every node through it, so a subtree from a different allocator would be
+   * released through the wrong one - the failure `make check-allocators`
+   * exists to prevent, arriving from the caller's side instead.
+   *
+   * NULL and gtext_allocator_default() are the same allocator spelled two
+   * ways, and a node keeps whichever spelling it was made with, so the
+   * comparison has to be of what they resolve to. Comparing the stored
+   * pointers would refuse a perfectly good pair of nodes for having been
+   * constructed by two callers who each read the documentation. */
+  const GTEXT_Allocator * a =
+      container->alloc ? container->alloc : gtext_allocator_default();
+  const GTEXT_Allocator * b =
+      value->alloc ? value->alloc : gtext_allocator_default();
+  if (a != b) return GTEXT_TOML_E_INVALID;
+  return GTEXT_TOML_OK;
+}
+
+GTEXT_TOML_Status gtext_toml_table_set(GTEXT_TOML_Value * table,
+    const char * key, size_t key_len, GTEXT_TOML_Value * value) {
+  if (!table || !value || (!key && key_len)) return GTEXT_TOML_E_INVALID;
+  if (table->type != GTEXT_TOML_TABLE) return GTEXT_TOML_E_INVALID;
+  GTEXT_TOML_Status bad = toml_check_link(table, value);
+  if (bad != GTEXT_TOML_OK) return bad;
+  if (toml_table_find(table, key ? key : "", key_len)) {
+    return GTEXT_TOML_E_DUPKEY;
+  }
+  if (!toml_table_insert(table->alloc, table, key ? key : "", key_len, value)) {
+    return GTEXT_TOML_E_OOM;
+  }
+  return GTEXT_TOML_OK;
+}
+
+GTEXT_TOML_Status gtext_toml_array_append(
+    GTEXT_TOML_Value * array, GTEXT_TOML_Value * value) {
+  if (!array || !value) return GTEXT_TOML_E_INVALID;
+  if (array->type != GTEXT_TOML_ARRAY) return GTEXT_TOML_E_INVALID;
+  GTEXT_TOML_Status bad = toml_check_link(array, value);
+  if (bad != GTEXT_TOML_OK) return bad;
+  if (!toml_array_push(array->alloc, array, value)) return GTEXT_TOML_E_OOM;
+  return GTEXT_TOML_OK;
+}
+
+GTEXT_TOML_Status gtext_toml_value_set_inline(
+    GTEXT_TOML_Value * value, bool inline_style) {
+  if (!value) return GTEXT_TOML_E_INVALID;
+  if (value->type == GTEXT_TOML_TABLE) {
+    /* Not IMPLICIT or DOTTED on the way back: both of those are how a table
+     * came to exist during a parse, and neither is a spelling a writer can
+     * choose. HEADER is the non-inline spelling. */
+    value->origin =
+        inline_style ? (unsigned char) TOML_TABLE_INLINE
+                     : (unsigned char) TOML_TABLE_HEADER;
+    return GTEXT_TOML_OK;
+  }
+  if (value->type == GTEXT_TOML_ARRAY) {
+    value->origin =
+        inline_style ? (unsigned char) TOML_ARRAY_STATIC
+                     : (unsigned char) TOML_ARRAY_OF_TABLES;
+    return GTEXT_TOML_OK;
+  }
+  return GTEXT_TOML_E_STATE;
 }

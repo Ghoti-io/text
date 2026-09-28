@@ -36,3 +36,15 @@ GTEXT_TOML_Parse_Options gtext_toml_parse_options_default(void) {
   opts.max_total_bytes = 0;
   return opts;
 }
+
+GTEXT_TOML_Write_Options gtext_toml_write_options_default(void) {
+  GTEXT_TOML_Write_Options opts;
+  opts.allocator = NULL;
+  /* Reproduce what was read rather than impose a shape. TOML gives a table two
+   * spellings and calls neither canonical, so the writer's job on a document
+   * that came from a file is to give it back recognisable; a caller who wants
+   * one shape says which. */
+  opts.table_style = GTEXT_TOML_TABLE_STYLE_AS_READ;
+  opts.datetime = NULL;
+  return opts;
+}

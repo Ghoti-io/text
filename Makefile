@@ -930,7 +930,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/toml/toml_dom.c \
 	src/toml/toml_lexer.c \
 	src/toml/toml_parser.c \
-	src/toml/toml_file_io.c
+	src/toml/toml_file_io.c \
+	src/toml/toml_writer.c
 
 check-allocators: ## Fail if a converted file allocates without the allocator
 	@raw=$$(grep -nE '(^|[^_[:alnum:]])(malloc|calloc|realloc|free|strdup|strndup)[[:space:]]*\(' \

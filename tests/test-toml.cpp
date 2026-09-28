@@ -268,19 +268,12 @@ TEST(Toml, FloatsIncludeTheInfinitiesAndNan) {
   gtext_toml_free(root);
 }
 
-TEST(Toml, NumbersDoNotDependOnTheLocale) {
-  // The conversion goes through gtext_number_strtod(), which reads a point
-  // whatever LC_NUMERIC says. strtod() in a comma locale stops at the point
-  // and reads 3.5 as 3, silently.
-  const char * previous = std::setlocale(LC_NUMERIC, "de_DE.UTF-8");
-  GTEXT_TOML_Value * root = ok("f = 3.5\n");
-  ASSERT_NE(root, nullptr);
-  double v = 0;
-  ASSERT_TRUE(gtext_toml_value_float(at(root, "f"), &v));
-  EXPECT_DOUBLE_EQ(v, 3.5);
-  gtext_toml_free(root);
-  std::setlocale(LC_NUMERIC, previous ? previous : "C");
-}
+/* Numbers do not depend on the locale: asserted in
+   tests/test-locale-numbers.cpp, which generates a comma locale with localedef
+   and fails if it cannot, rather than here. The test that was here called
+   setlocale(LC_NUMERIC, "de_DE.UTF-8") and used whatever came back - and that
+   returns NULL on this machine, so it ran in the C locale every time and
+   measured nothing. */
 
 TEST(Toml, StringFormsDecode) {
   GTEXT_TOML_Value * root = ok("a = \"x\\ty\\u0041\"\n"

@@ -11,7 +11,7 @@ This is what the library implements.
 - **JSON.** RFC 8259 / ECMA-404, plus JSON Pointer (RFC 6901), JSONPath (RFC 9535), JSON Patch (RFC 6902), JSON Merge Patch (RFC 7386), and JSON Schema (2020-12, 2019-09, draft-07 and draft-06). JSONC and JSON5 are each a set of options.
 - **CSV.** RFC 4180, and other dialects through `GTEXT_CSV_Dialect`.
 - **YAML.** YAML 1.2.2, including its Core, JSON and Failsafe schemas, plus a YAML 1.1 resolution mode and the 1.1 types `!!timestamp`, `!!set`, `!!omap`, `!!pairs` and the `<<` merge key.
-- **TOML.** TOML v1.0.0, read only: the whole grammar, all four date-time types through `ghoti.io-chron`, and 709 of 709 of toml-test's 1.0.0 cases. There is no writer yet, and TOML 1.1.0 is not implemented - it is still a draft, and it refuses two things 1.0.0 accepts, so it will be an option rather than a relaxation.
+- **TOML.** TOML v1.0.0, read and write: the whole grammar, all four date-time types through `ghoti.io-chron`, and 2,250 of 2,250 across toml-test's six measurable directions - the 709 1.0.0 cases decoded, written back out and read again under each of three table styles, and the corpus's own expectations encoded and handed to `tomllib`. TOML 1.1.0 is not implemented - it is still a draft, and it refuses two things 1.0.0 accepts, so it will be an option rather than a relaxation; measured, that is reader work only.
 
 INI is planned and has no parser yet.
 

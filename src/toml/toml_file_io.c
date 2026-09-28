@@ -98,3 +98,53 @@ GTEXT_TOML_Value * gtext_toml_parse_file(const char * path,
   gtext_file_free(data);
   return value;
 }
+
+/** What gtext_toml_write_file() is carrying through the atomic write. */
+typedef struct {
+  const GTEXT_TOML_Value * root;
+  const GTEXT_TOML_Write_Options * opts;
+  gtext_file_write_cb write;
+  void * write_user;
+  GTEXT_TOML_Status status;
+} toml_file_write_ctx;
+
+/** Adapt a file callback, which answers in ints, to a TOML sink. */
+static GTEXT_TOML_Status toml_file_sink_write(
+    void * user, const char * bytes, size_t len) {
+  toml_file_write_ctx * ctx = user;
+  if (ctx->write(ctx->write_user, bytes, len) != 0) return GTEXT_TOML_E_WRITE;
+  return GTEXT_TOML_OK;
+}
+
+static int toml_file_emit(
+    void * user, gtext_file_write_cb write, void * write_user) {
+  toml_file_write_ctx * ctx = user;
+  ctx->write = write;
+  ctx->write_user = write_user;
+  GTEXT_TOML_Sink sink;
+  sink.write = toml_file_sink_write;
+  sink.user = ctx;
+  ctx->status = gtext_toml_write(ctx->root, &sink, ctx->opts);
+  return ctx->status == GTEXT_TOML_OK ? 0 : -1;
+}
+
+GTEXT_TOML_Status gtext_toml_write_file(const GTEXT_TOML_Value * root,
+    const char * path, const GTEXT_TOML_Write_Options * opts) {
+  if (!root || !path) return GTEXT_TOML_E_INVALID;
+  toml_file_write_ctx ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.root = root;
+  ctx.opts = opts;
+  ctx.status = GTEXT_TOML_OK;
+  gtext_file_status fs = gtext_file_write_atomic(path, toml_file_emit, &ctx);
+  /* The writer's own refusal is the more specific answer, and the file layer
+   * reports it only as "the callback failed": a document with a bad date-time
+   * must not come back as a disk error. */
+  if (ctx.status != GTEXT_TOML_OK) return ctx.status;
+  if (fs != GTEXT_FILE_OK) {
+    GTEXT_TOML_Error err;
+    toml_file_error(fs, &err);
+    return err.code;
+  }
+  return GTEXT_TOML_OK;
+}

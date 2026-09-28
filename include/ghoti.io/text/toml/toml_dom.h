@@ -20,7 +20,8 @@
 
 /**
  * @file toml_dom.h
- * @brief Parsing a TOML document, and reading the tree that comes back.
+ * @brief Parsing a TOML document, reading the tree that comes back, and
+ *   building one from nothing.
  */
 
 #ifndef GHOTI_IO_GTEXT_TOML_TOML_DOM_H
@@ -270,6 +271,175 @@ GTEXT_API const GTEXT_TOML_Value * gtext_toml_table_value_at(
  */
 GTEXT_API const GTEXT_TOML_Value * gtext_toml_table_get(
     const GTEXT_TOML_Value * value, const char * key, size_t key_len);
+
+/*==========================================================================*
+ * Building a document
+ *
+ * Enough to construct any TOML document from nothing, which is what the
+ * writer needs to be measurable: toml-test's encoder direction hands a
+ * harness the tagged JSON of a document and asks for TOML back, so without
+ * these the write side could only ever be scored on trees this library had
+ * parsed itself - a round trip, which proves the two halves agree with each
+ * other rather than with TOML.
+ *
+ * Every constructor takes the allocator explicitly, because a node carries
+ * the allocator it came from and one tree must not mix two. Passing a
+ * different allocator to a constructor than the container's is refused by
+ * gtext_toml_table_set() and gtext_toml_array_append() rather than quietly
+ * producing a tree gtext_toml_free() would free through the wrong one.
+ *==========================================================================*/
+
+/**
+ * @brief A new empty table.
+ *
+ * Counts as a table a `[header]` defined, so
+ * GTEXT_TOML_TABLE_STYLE_AS_READ writes it as a header;
+ * gtext_toml_value_set_inline() says otherwise.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @return The table, or NULL on allocation failure.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_table(
+    const GTEXT_Allocator * alloc);
+
+/**
+ * @brief A new empty array.
+ *
+ * Counts as an array written `[ ]`, so GTEXT_TOML_TABLE_STYLE_AS_READ writes
+ * it inline even when every element is a table; gtext_toml_value_set_inline()
+ * says otherwise.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @return The array, or NULL on allocation failure.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_array(
+    const GTEXT_Allocator * alloc);
+
+/**
+ * @brief A new string value, copying @p bytes.
+ *
+ * The bytes are the decoded string - what a reader would hand back, not what a
+ * document contains. Escaping is the writer's job, and it will refuse bytes
+ * that are not valid UTF-8 rather than write a document it cannot read back.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @param bytes The string. May be NULL only when @p len is 0.
+ * @param len Bytes of @p bytes. A NUL among them is data, not a terminator.
+ * @return The value, or NULL on allocation failure or a NULL @p bytes with a
+ *   non-zero @p len.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_string(
+    const GTEXT_Allocator * alloc, const char * bytes, size_t len);
+
+/**
+ * @brief A new integer value.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @param value The integer.
+ * @return The value, or NULL on allocation failure.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_integer(
+    const GTEXT_Allocator * alloc, int64_t value);
+
+/**
+ * @brief A new float value.
+ *
+ * The infinities and NaN are accepted: TOML spells all three, and a writer
+ * that refused them would be narrower than the format.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @param value The double.
+ * @return The value, or NULL on allocation failure.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_float(
+    const GTEXT_Allocator * alloc, double value);
+
+/**
+ * @brief A new boolean value.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @param value The boolean.
+ * @return The value, or NULL on allocation failure.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_boolean(
+    const GTEXT_Allocator * alloc, bool value);
+
+/**
+ * @brief A new date-time value.
+ *
+ * The value is copied as it stands. Whether it is one TOML can spell is the
+ * writer's question, not this one's, so an impossible date is reported when
+ * the document is written rather than here - there is nothing useful a
+ * constructor could say about it that gtext_toml_write() cannot say with a
+ * position.
+ *
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @param value The chron value, whose `kind` says which of the four it is.
+ * @return The value, or NULL on allocation failure or a NULL @p value.
+ */
+GTEXT_API GTEXT_TOML_Value * gtext_toml_new_datetime(
+    const GTEXT_Allocator * alloc, const GCHRON_TomlValue * value);
+
+/**
+ * @brief Add a key to a table, taking ownership of @p value on success.
+ *
+ * On any failure the caller still owns @p value and must free it; on success
+ * it belongs to @p table and is released by the one gtext_toml_free() of the
+ * root.
+ *
+ * @param table The table.
+ * @param key The decoded key. May be empty, which TOML permits as `""`, and
+ *   may contain a NUL.
+ * @param key_len Bytes of @p key.
+ * @param value What to store.
+ * @return
+ *   - GTEXT_TOML_OK.
+ *   - GTEXT_TOML_E_INVALID if @p table is not a table, or a pointer is NULL.
+ *   - GTEXT_TOML_E_DUPKEY if the key is already there. Not a replacement:
+ *     TOML says defining a key twice is invalid, and a builder that silently
+ *     replaced would let a caller write a document that differs from what
+ *     they described without anything saying so.
+ *   - GTEXT_TOML_E_STATE if @p value is already in a tree, is @p table
+ *     itself, or is an ancestor of it. Those three are the ways to make a
+ *     shape that cannot be written or freed - the first is a double free, the
+ *     other two a cycle - and they are refused here because no test could see
+ *     them afterwards.
+ *   - GTEXT_TOML_E_OOM.
+ */
+GTEXT_API GTEXT_TOML_Status gtext_toml_table_set(GTEXT_TOML_Value * table,
+    const char * key, size_t key_len, GTEXT_TOML_Value * value);
+
+/**
+ * @brief Append to an array, taking ownership of @p value on success.
+ *
+ * TOML 1.0.0 arrays are heterogeneous (Array: "values of differing types may
+ * be mixed"), so nothing here checks that the element matches its neighbours.
+ *
+ * @param array The array.
+ * @param value What to append.
+ * @return As gtext_toml_table_set(), without GTEXT_TOML_E_DUPKEY.
+ */
+GTEXT_API GTEXT_TOML_Status gtext_toml_array_append(
+    GTEXT_TOML_Value * array, GTEXT_TOML_Value * value);
+
+/**
+ * @brief Say whether a container should be written inline.
+ *
+ * Sets what GTEXT_TOML_TABLE_STYLE_AS_READ reproduces: for a table, `{ }`
+ * against `[header]`; for an array, `[ ]` against `[[header]]`. It changes
+ * nothing about the value, and the other two table styles ignore it.
+ *
+ * A table read from a `{ }` in the document is already inline, so this is
+ * mostly for a tree that was built rather than parsed.
+ *
+ * @param value A table or an array.
+ * @param inline_style true for the inline spelling.
+ * @return GTEXT_TOML_OK, or GTEXT_TOML_E_INVALID for NULL, or
+ *   GTEXT_TOML_E_STATE for a scalar - a scalar has one spelling and a caller
+ *   asking to change it has mistaken this for something else.
+ */
+GTEXT_API GTEXT_TOML_Status gtext_toml_value_set_inline(
+    GTEXT_TOML_Value * value, bool inline_style);
 
 #ifdef __cplusplus
 }

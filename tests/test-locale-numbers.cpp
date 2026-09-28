@@ -13,6 +13,14 @@
  *   - A parsed JSON number quietly ended up with no double value, from the
  *     same partial parse leaving the has-double flag clear.
  *
+ * The TOML tests at the end of this file arrived here for a fourth reason,
+ * which is the one this file's own header was already about: they were written
+ * in tests/test-toml.cpp and tests/test-toml-writer.cpp calling
+ * setlocale(LC_NUMERIC, "de_DE.UTF-8") directly. That returns NULL on this
+ * machine, so both ran in the C locale and passed without ever meeting the
+ * condition they were named for. The generated locale is here; the tests
+ * belong here with it.
+ *
  * The separator belongs to the format, not to whoever is running the program.
  *
  * These tests need a locale whose separator is a comma, and a machine may not
@@ -51,6 +59,7 @@
 #include <cmath>
 #include <thread>
 #include <ghoti.io/text/json.h>
+#include <ghoti.io/text/toml.h>
 #include <ghoti.io/text/yaml.h>
 
 extern "C" {
@@ -133,6 +142,12 @@ private:
 	bool active_ = false;
 };
 
+/* Reached only when EnsureCommaLocale() itself failed, which
+   ACommaLocaleIsAvailable reports as a failure rather than a skip. Every test
+   here calls EnsureCommaLocale() for itself: four of them used to rely on that
+   test having run earlier in the same process to generate the locale and set
+   LOCPATH, so under --gtest_filter or --gtest_shuffle they skipped in silence,
+   which is the failure mode this whole file exists to have stopped doing. */
 #define SKIP_WITHOUT_COMMA_LOCALE(loc)                                        \
 	if (!(loc).active()) {                                                    \
 		GTEST_SKIP() << "no comma-decimal locale installed; "                 \
@@ -333,6 +348,7 @@ static size_t StrtodExtent(const char *in) {
 }
 
 TEST(LocaleNumbers, TheExtentScanAgreesWithStrtod) {
+	ASSERT_TRUE(EnsureCommaLocale());
 	ScopedLocale c("C");
 	ASSERT_TRUE(c.active());
 
@@ -376,6 +392,7 @@ TEST(LocaleNumbers, TheExtentScanAgreesWithStrtod) {
    deduction, so it is measured. Grouping would need printf's "'" flag; if
    one ever appears in those functions this goes red. */
 TEST(LocaleNumbers, AnIntegerIsSpelledTheSameInEveryLocale) {
+	ASSERT_TRUE(EnsureCommaLocale());
 	const int64_t svals[] = {0, 1, -1, 1234567, -9007199254740993LL,
 		INT64_MIN, INT64_MAX};
 	const uint64_t uvals[] = {0u, 1u, 1234567u, UINT64_MAX};
@@ -415,6 +432,7 @@ TEST(LocaleNumbers, AnIntegerIsSpelledTheSameInEveryLocale) {
    reports has to shorten with it, or every caller that checks "did this fit"
    is working from a number that is now wrong. */
 TEST(LocaleNumbers, AMultiByteSeparatorIsStillRepaired) {
+	ASSERT_TRUE(EnsureCommaLocale());
 #ifdef _WIN32
 	/* msvcrt's locales are code-page locales, and U+066B is in none of
 	   them: its "Pashto_Afghanistan" separates with a one-byte comma. There
@@ -491,6 +509,7 @@ TEST(LocaleNumbers, AParseStopsWhereTheDocumentSaysItDoes) {
 }
 
 TEST(LocaleNumbers, AYamlFloatIsStillAFloat) {
+	ASSERT_TRUE(EnsureCommaLocale());
 	EXPECT_EQ(YamlValueType("a: 0.1\n"), GTEXT_YAML_FLOAT) << "in the C locale";
 	CommaLocale loc;
 	SKIP_WITHOUT_COMMA_LOCALE(loc);
@@ -502,6 +521,7 @@ TEST(LocaleNumbers, AYamlFloatIsStillAFloat) {
 }
 
 TEST(LocaleNumbers, AJsonNumberBuiltFromADoubleIsStillJson) {
+	ASSERT_TRUE(EnsureCommaLocale());
 	EXPECT_EQ(JsonFromDouble(0.1), "0.10000000000000001") << "in the C locale";
 	CommaLocale loc;
 	SKIP_WITHOUT_COMMA_LOCALE(loc);
@@ -512,6 +532,7 @@ TEST(LocaleNumbers, AJsonNumberBuiltFromADoubleIsStillJson) {
 }
 
 TEST(LocaleNumbers, AParsedJsonNumberStillHasItsDouble) {
+	ASSERT_TRUE(EnsureCommaLocale());
 	const char *src = "{\"a\":0.1}";
 	auto parse_double = [&](const char *label) {
 		GTEXT_JSON_Parse_Options po = gtext_json_parse_options_default();
@@ -535,6 +556,7 @@ TEST(LocaleNumbers, AParsedJsonNumberStillHasItsDouble) {
 
 /* A YAML float key's JSON name carries a "." wherever it is converted. */
 TEST(LocaleNumbers, ACoercedFloatKeyKeepsItsDecimalPoint) {
+	ASSERT_TRUE(EnsureCommaLocale());
 	auto convert = [](const char *label) {
 		const char *src = "0.1: v\n";
 		GTEXT_YAML_Error err;
@@ -559,6 +581,53 @@ TEST(LocaleNumbers, ACoercedFloatKeyKeepsItsDecimalPoint) {
 		gtext_json_free(jv);
 		gtext_yaml_free(doc);
 		EXPECT_EQ(out, "{\"0.1\":\"v\"}") << label;
+	};
+	convert("in the C locale");
+	CommaLocale loc;
+	SKIP_WITHOUT_COMMA_LOCALE(loc);
+	convert(loc.name().c_str());
+}
+
+
+/* TOML, both directions.
+
+   These live here rather than beside the other TOML tests because this is
+   where a comma locale exists: the versions written in tests/test-toml.cpp
+   and tests/test-toml-writer.cpp called setlocale(LC_NUMERIC, "de_DE.UTF-8")
+   and took NULL for an answer, so they ran in the C locale for their whole
+   life. The reading half is gtext_number_strtod() and the writing half is
+   gtext_number_format_double(); a comma locale breaks the bare functions in
+   opposite directions, so both need saying. */
+TEST(LocaleNumbers, ATomlFloatSurvivesBothWays) {
+	ASSERT_TRUE(EnsureCommaLocale());
+	auto convert = [](const char *label) {
+		/* Reading: strtod in a comma locale stops at the point, and a parser
+		   that took the partial answer would read 3.5 as 3 and then refuse the
+		   ".5" that follows. */
+		GTEXT_TOML_Error err;
+		memset(&err, 0, sizeof(err));
+		const char *src = "f = 3.5\ng = -0.125\n";
+		GTEXT_TOML_Value *root =
+			gtext_toml_parse(src, strlen(src), nullptr, &err);
+		ASSERT_NE(root, nullptr) << label << ": "
+			<< (err.message ? err.message : "no message");
+		gtext_toml_error_free(&err);
+		double v = 0;
+		ASSERT_TRUE(gtext_toml_value_float(
+				gtext_toml_table_get(root, "f", 1), &v)) << label;
+		EXPECT_DOUBLE_EQ(v, 3.5) << label;
+
+		/* Writing: snprintf in a comma locale spells 3.5 as "3,5", which is
+		   not TOML at all - it is a key, a comma and another key. */
+		GTEXT_TOML_Sink sink;
+		ASSERT_EQ(gtext_toml_sink_buffer(&sink), GTEXT_TOML_OK) << label;
+		ASSERT_EQ(gtext_toml_write(root, &sink, nullptr), GTEXT_TOML_OK)
+			<< label;
+		const std::string out(gtext_toml_sink_buffer_data(&sink),
+				gtext_toml_sink_buffer_size(&sink));
+		gtext_toml_sink_buffer_free(&sink);
+		gtext_toml_free(root);
+		EXPECT_EQ(out, "f = 3.5\ng = -0.125\n") << label;
 	};
 	convert("in the C locale");
 	CommaLocale loc;
