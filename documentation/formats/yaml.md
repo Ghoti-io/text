@@ -48,7 +48,13 @@ over two indented lines yields `a b`, and `key: |` yields `a\nb`.
 
 **Encoding (§5.2).** UTF-8, UTF-16 and UTF-32 with BOM detection and
 transcoding to UTF-8. UTF-8 validation is on by default and is genuinely
-wired, unlike CSV's.
+wired, unlike CSV's. On the way out a byte order mark is a property of the
+*stream*, not of a document: a multi-document write emits one, at the front,
+however many documents it writes, and so does one streaming writer across
+however many pass through it. The grammar would admit one per document -
+`l-document-prefix` takes a mark at the head of each - which is why nothing
+that compares values could have measured this;
+`YamlEncoding.OneByteOrderMarkPerStreamNotPerDocument` counts the bytes.
 
 **Directives (§6.8).** `%YAML` and `%TAG`, with tag handle resolution.
 A `%YAML 1.1` directive switches resolution, as does the `yaml_1_1` parse
@@ -77,6 +83,10 @@ implement.
 
 **Anchors and aliases (§6.9, §7.1).** `&anchor` and `*alias`, with cycle
 detection and a total-expansion limit that bounds the billion-laughs attack.
+An alias may stand where a block mapping's key does - `ns-flow-yaml-node`
+begins with `c-ns-alias-node` (§8.2.2) - with or without a value: `*b : *a`
+and `*b :` are both entries, the second one keyed by whatever `&b` named and
+valued by the empty node.
 
 **Merge keys.** The `<<` key from the 1.1 type repository, on by default via
 `allow_merge_keys`. Verified: `a: &A {x: 1}` merged into a mapping that also

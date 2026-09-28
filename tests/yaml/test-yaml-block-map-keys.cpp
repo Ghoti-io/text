@@ -116,6 +116,79 @@ TEST(YamlBlockMapKeys, AnOwnLinePropertyBeforeAnEmptyKeyIsStillRefused) {
 	}
 }
 
+/* An alias may stand where a key does, and then be left without a value.
+ *
+ * ns-s-block-map-implicit-key is ns-s-implicit-yaml-key, which is
+ * ns-flow-yaml-node, whose first alternative is c-ns-alias-node (8.2.2,
+ * 7.1) - so "*a : b" is a mapping keyed by whatever &a named, and "*a :" is
+ * that key with the empty node for its value.
+ *
+ * The second of those was dropped.  A block mapping's children are collected
+ * as one alternating key, value, key, value list, and a key whose value is
+ * absent has to be given the null it stands for or the list is left one
+ * short.  Three kinds of node arrive at the point where that is decided -
+ * scalars, aliases, and flow collections - and only two of them asked:
+ * mapping_supply_null_value() was reached from the SCALAR event and from the
+ * four places a finished flow collection is added, and never from ALIAS.
+ *
+ * So the refusal landed on the *next* entry, not on the one at fault: its
+ * ":" found an even-length list in front of it and reported a key missing
+ * where there were two.  It took two aliases to see, because with an
+ * ordinary scalar in the following entry the scalar's own copy of the rule
+ * supplied the value the alias had not.  The writer fuzzer found it, on a
+ * document of its own making that this library then refused to read back.
+ *
+ * One column is the whole measurement: an ALIAS event's column is the first
+ * character of the anchor name, and the "*" that introduces it stands one to
+ * its left.  Taken at face value every alias looked one column deeper than
+ * it is, which is the difference between "at the key's column, so the next
+ * key" and "indented, so the previous key's value" - the last case below is
+ * what holds that line. */
+TEST(YamlBlockMapKeys, AnAliasKeyWithNoValueStillHasOne) {
+	static const Case kCases[] = {
+		/* The find, and the same shape with both values absent. */
+		{"a: &O v\nb: &P w\n*O :\n*P : y\n",
+		 "{\"a\": \"v\", \"b\": \"w\", \"v\": null, \"w\": \"y\"}"},
+		{"a: &O v\nb: &P w\n*O :\n*P :\n",
+		 "{\"a\": \"v\", \"b\": \"w\", \"v\": null, \"w\": null}"},
+
+		/* Nested, where the mapping's indentation is not 1. */
+		{"outer:\n  a: &O v\n  b: &P w\n  *O :\n  *P : y\n",
+		 "{\"outer\": {\"a\": \"v\", \"b\": \"w\", "
+		 "\"v\": null, \"w\": \"y\"}}"},
+
+		/* An absent value the entry below supplies as a collection. */
+		{"a: &O v\nb: &P w\n*O :\n  x: 1\n*P : 2\n",
+		 "{\"a\": \"v\", \"b\": \"w\", \"v\": {\"x\": 1}, \"w\": 2}"},
+
+		/* The two that already worked, and would go on working if the rule
+		   were never reached: a scalar follows the alias key in the first,
+		   and nothing follows it in the second. */
+		{"a: &O v\n*O :\nb: 2\n",
+		 "{\"a\": \"v\", \"v\": null, \"b\": 2}"},
+		{"a: &O v\nb: &P w\n*P : y\n*O :\n",
+		 "{\"a\": \"v\", \"b\": \"w\", \"w\": \"y\", \"v\": null}"},
+
+		/* Values, not keys.  A rule applied one column too far left turns
+		   each of these into a second entry keyed by the alias. */
+		{"a: &O v\nb: *O\n", "{\"a\": \"v\", \"b\": \"v\"}"},
+		{"a: &O v\nb:\n  *O\n", "{\"a\": \"v\", \"b\": \"v\"}"},
+		{"a: &O v\nb:\n- *O\n", "{\"a\": \"v\", \"b\": [\"v\"]}"},
+	};
+
+	for (const Case &c : kCases) {
+		const std::string got = Render(c.input);
+		if (c.expected) {
+			EXPECT_EQ(got, std::string(c.expected))
+				<< "input: " << ::testing::PrintToString(std::string(c.input));
+		} else {
+			EXPECT_EQ(got, std::string(""))
+				<< "should have been refused, input: "
+				<< ::testing::PrintToString(std::string(c.input));
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();

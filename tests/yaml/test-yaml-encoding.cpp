@@ -306,3 +306,142 @@ TEST(YamlEncoding, Utf16DoesNotReadOutsideTheInputBuffer) {
   gtext_yaml_error_free(&err);
   SUCCEED();  /* reaching here with no sanitizer report is the assertion */
 }
+
+/* One byte order mark per stream, never one per document.
+ *
+ * A BOM is stream-level: it says how the bytes that follow are encoded, and
+ * the encoding may not change inside a stream (5.2).  The writer's latch for
+ * it lives in the encoding state, and whether that state is set up once or
+ * once per document is the whole question - so the multi-document writer is
+ * asked with three documents rather than one, in every encoding that has a
+ * mark to emit.
+ *
+ * Nothing already here could have answered it.  A round trip cannot: a mark
+ * is admissible at the head of every l-document-prefix (5.2), so a stream
+ * carrying three of them parses to the same three documents as a stream
+ * carrying one, and this library reads it back with no complaint.  Only a
+ * count of the bytes separates the two, which is what this does.
+ *
+ * The streaming writer is asked beside it because it holds the same latch in
+ * a different place - one encoding state per writer, across however many
+ * documents pass through it. */
+namespace {
+
+struct BomCase {
+  const char *name;
+  GTEXT_YAML_Encoding encoding;
+  bool emit_bom;
+  const char *mark;
+  size_t mark_len;
+};
+
+const BomCase kBomCases[] = {
+  {"UTF-8 with emit_bom", GTEXT_YAML_ENCODING_UTF8, true, "\xEF\xBB\xBF", 3},
+  {"UTF-16LE", GTEXT_YAML_ENCODING_UTF16LE, false, "\xFF\xFE", 2},
+  {"UTF-16BE", GTEXT_YAML_ENCODING_UTF16BE, false, "\xFE\xFF", 2},
+  {"UTF-32LE", GTEXT_YAML_ENCODING_UTF32LE, false, "\xFF\xFE\x00\x00", 4},
+  {"UTF-32BE", GTEXT_YAML_ENCODING_UTF32BE, false, "\x00\x00\xFE\xFF", 4},
+};
+
+size_t count_marks(const std::string &bytes, const char *mark, size_t len) {
+  size_t found = 0;
+  for (size_t i = 0; i + len <= bytes.size(); ++i) {
+    if (memcmp(bytes.data() + i, mark, len) == 0) ++found;
+  }
+  return found;
+}
+
+/* The three documents, as ASCII a writer will not have to escape - so the
+   only place the mark's bytes can come from is the writer emitting one. */
+const char kThreeDocuments[] = "---\na: 1\n---\nb: 2\n---\nc: 3\n";
+
+} // namespace
+
+TEST(YamlEncoding, OneByteOrderMarkPerStreamNotPerDocument) {
+  size_t count = 0;
+  GTEXT_YAML_Error err;
+  memset(&err, 0, sizeof(err));
+  GTEXT_YAML_Document **docs = gtext_yaml_parse_all(
+      kThreeDocuments, strlen(kThreeDocuments), &count, nullptr, &err);
+  ASSERT_NE(docs, nullptr) << (err.message ? err.message : "unknown");
+  ASSERT_EQ(count, 3u);
+
+  for (const BomCase &c : kBomCases) {
+    GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+    opts.encoding = c.encoding;
+    opts.emit_bom = c.emit_bom;
+
+    GTEXT_YAML_Sink sink;
+    ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+    ASSERT_EQ(gtext_yaml_write_documents(docs, count, &sink, &opts),
+        GTEXT_YAML_OK) << c.name;
+    const std::string written(
+        gtext_yaml_sink_buffer_data(&sink), gtext_yaml_sink_buffer_size(&sink));
+    gtext_yaml_sink_buffer_free(&sink);
+
+    EXPECT_EQ(count_marks(written, c.mark, c.mark_len), 1u)
+      << c.name << ": three documents, and the mark belongs to the stream";
+    EXPECT_EQ(written.compare(0, c.mark_len, c.mark, c.mark_len), 0)
+      << c.name << ": the one mark has to be the first thing written";
+  }
+
+  /* And with no mark asked for, in the one encoding that can decline. */
+  {
+    GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+    opts.encoding = GTEXT_YAML_ENCODING_UTF8;
+    opts.emit_bom = false;
+    GTEXT_YAML_Sink sink;
+    ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+    ASSERT_EQ(gtext_yaml_write_documents(docs, count, &sink, &opts),
+        GTEXT_YAML_OK);
+    const std::string written(
+        gtext_yaml_sink_buffer_data(&sink), gtext_yaml_sink_buffer_size(&sink));
+    gtext_yaml_sink_buffer_free(&sink);
+    EXPECT_EQ(count_marks(written, "\xEF\xBB\xBF", 3), 0u);
+  }
+
+  for (size_t i = 0; i < count; ++i) gtext_yaml_free(docs[i]);
+  free(docs);
+}
+
+TEST(YamlEncoding, TheStreamingWriterEmitsOneByteOrderMarkForTheWholeStream) {
+  for (const BomCase &c : kBomCases) {
+    GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+    opts.encoding = c.encoding;
+    opts.emit_bom = c.emit_bom;
+
+    GTEXT_YAML_Sink sink;
+    ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+    GTEXT_YAML_Writer *writer = gtext_yaml_writer_new(sink, &opts);
+    ASSERT_NE(writer, nullptr) << c.name;
+
+    GTEXT_YAML_Status st = GTEXT_YAML_OK;
+    for (int doc = 0; doc < 3 && st == GTEXT_YAML_OK; ++doc) {
+      GTEXT_YAML_Event ev;
+      memset(&ev, 0, sizeof(ev));
+      ev.type = GTEXT_YAML_EVENT_DOCUMENT_START;
+      st = gtext_yaml_writer_event(writer, &ev);
+      if (st != GTEXT_YAML_OK) break;
+      memset(&ev, 0, sizeof(ev));
+      ev.type = GTEXT_YAML_EVENT_SCALAR;
+      ev.data.scalar.ptr = "x";
+      ev.data.scalar.len = 1;
+      st = gtext_yaml_writer_event(writer, &ev);
+      if (st != GTEXT_YAML_OK) break;
+      memset(&ev, 0, sizeof(ev));
+      ev.type = GTEXT_YAML_EVENT_DOCUMENT_END;
+      st = gtext_yaml_writer_event(writer, &ev);
+    }
+    if (st == GTEXT_YAML_OK) st = gtext_yaml_writer_finish(writer);
+    EXPECT_EQ(st, GTEXT_YAML_OK) << c.name;
+
+    const std::string written(
+        gtext_yaml_sink_buffer_data(&sink), gtext_yaml_sink_buffer_size(&sink));
+    if (st == GTEXT_YAML_OK) {
+      EXPECT_EQ(count_marks(written, c.mark, c.mark_len), 1u)
+        << c.name << ": one writer, one stream, one mark";
+    }
+    gtext_yaml_writer_free(writer);
+    gtext_yaml_sink_buffer_free(&sink);
+  }
+}

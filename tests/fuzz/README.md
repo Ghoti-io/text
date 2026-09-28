@@ -403,20 +403,64 @@ block flow, with U+0085, U+2028 and U+2029 beside it as controls: each of those
 *does* have a block spelling, so a fix that refused the neighbourhood would
 pass only by accident. `corpus/yaml-writer/bom-in-a-block-scalar.seed`.
 
-**And with that one fixed, the next: a mapping entry written with no key.**
-Seven minutes of `fuzz_yaml_writer` after the U+FEFF fix, on the
-multi-document path in UTF-16, and the parser's complaint is again the whole
-statement of it:
+**And with that one fixed, the next: an alias key with no value.** Seven
+minutes of `fuzz_yaml_writer` after the U+FEFF fix, on the multi-document
+path in UTF-16, and the parser's complaint is again the whole statement of
+it:
 
     Mapping key missing before ':'
 
-The writer produced a line of `: ":.."` - a value with a colon and nothing
-before it - inside a document whose keys are aliases (`*O : *O`, `&O : .*O`).
-**Not fixed**: it is a third thread of the same afternoon's work and a
-different defect from the byte order mark, and it wants its own look at how a
-key that is an alias, or an empty key, reaches the writer. The artifact is
-`libs/text/crash-a809a848cc25f19018ab4bad71c91b7a876a9cb9`, and it is a
-`crash-` file rather than a `.seed` because a seed is a reproducer that passes.
+Except that it was not. The message named the wrong entry, and the wrong
+side of the library: what the artifact's document held was
+
+    *O :
+    *P : y
+
+and the entry at fault is the *first* of those, whose value was never
+written. A block mapping's children are collected as one alternating key,
+value, key, value list, so a key whose value is absent has to be handed the
+null the empty node stands for or the list is left one short. Three kinds of
+node arrive where that is decided - scalars, aliases, and finished flow
+collections - and `mapping_supply_null_value()` was reached from two of them.
+An ALIAS event never asked.
+
+So the list went into the next entry one short, that entry's `:` found an
+even length in front of it, and the parser reported a key missing from a line
+that had one. Two aliases in a row were needed to see it at all: with an
+ordinary scalar in the following entry, the SCALAR event's own copy of the
+rule supplied the value the alias had not, and the document parsed.
+
+One column is the whole measurement. An ALIAS event's column is the first
+character of the anchor name and the `*` that introduces it stands one to its
+left, which is exactly the difference between *at* the key's column, so the
+next key, and *past* it, so the previous key's value. The fix is a four-line
+`alias_node_col()`; the three cases in the test that hold that line are
+`b: *O`, `b:` over `  *O`, and `b:` over `- *O`, each of which a rule applied
+one column too far left turns into a second entry.
+
+Worth saying that an alias belongs where the writer put it:
+`ns-s-block-map-implicit-key` is `ns-s-implicit-yaml-key`, which is
+`ns-flow-yaml-node`, whose first alternative is `c-ns-alias-node` (8.2.2,
+7.1). The writer was writing conforming YAML that this library then refused
+to read. `corpus/yaml-writer/alias-key-with-no-value.seed`, and
+`YamlBlockMapKeys.AnAliasKeyWithNoValueStillHasOne` is the gate - three
+mutations, each caught by the case meant for it: the rule removed, its column
+one place right so it never fires, and its column at the line's start so it
+fires for a value.
+
+`make conformance` scores exactly what it scored before, both ways, because
+yaml-test-suite has no input of this shape. An alias key *with* a value is
+there (E76Z, `&a a: &b b` over `*b : *a`), which is why the accepting half of
+the rule was never missing. An alias key without one appears twice and neither
+is an input:
+
+    grep -nE '^[[:space:]]*\*[^[:space:]]+[[:space:]]*:[[:space:]]*$' \
+        build/yaml-test-suite/src/*.yaml
+
+reports `X38W`, inside that case's `dump:` block rather than its `yaml:` one
+and with a sequence for its value on the lines below, and `2SXE`, where `*a:`
+is an alias to the anchor `&a:` standing as a value and there is no separator
+colon on the line at all. The corpus is 351 cases and holds neither.
 
 This path now prints the parser's message before the bytes, which is the
 triage lesson above finally applied to it: it had been printing 434 bytes of
@@ -561,19 +605,26 @@ of the parser it could not get to.
 | --- | ---: | --- |
 | JSON | 4.6M | clean |
 | YAML | 1.2M | clean |
-| YAML writers | see below | still finding things; one open, see below |
+| YAML writers | 5.9M | 25 defects, all fixed; clean after the last |
 | CSV  | 6.5k | clean |
 | TOML | 875.7k | clean |
 | TOML writer | 1.7M | one defect, fixed; clean after |
 
-The writer harness is new, and its execution count is not yet comparable: it
+The writer harness's execution count is not comparable with the readers': it
 builds a document and re-parses one on every run, so it is much slower per
-execution than a parse-only harness. The four writer defects it was written
+execution than a parse-only harness.  The 5.9M above is one 901-second run on
+the merged corpus after the last fix, at about 6,600 executions a second. The four writer defects it was written
 for had already been found by hand; it exists so the next four are not, and it
-has already earned that — forty-four library defects and three of its own,
-listed above. Most of the twenty are in the *reader*, which is not what this harness
-was built to test: a writer is an instrument for asking a parser questions a
-corpus of inputs cannot phrase, and it turns out to ask a lot of them.
+has already earned that — **twenty-five** defects in the library and three of
+its own. The figure is a count of the finds named in "Fuzzing a writer" above,
+one per bullet or paragraph, which is the only instrument there is for it: a
+few of those bullets name two faults of one shape found together, and none of
+them is a count of commits. It replaces two numbers that had drifted apart in
+this paragraph and disagreed with each other.
+
+Most of them are in the *reader*, which is not what this harness was built to
+test: a writer is an instrument for asking a parser questions a corpus of
+inputs cannot phrase, and it turns out to ask a lot of them.
 
 CSV is much slower per execution because the harness reads back every field of
 every parsed table; that is deliberate, since indexing is where a row/column

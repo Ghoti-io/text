@@ -1591,9 +1591,9 @@ static bool node_is_on_document_start_line(const parser_state *p, size_t offset)
  *     a:            {a: null, b: 1}
  *     b: 1
  *
- * Only scalars are asked about.  A block sequence may sit at its key's own
- * column and still be that key's value - "a:" then "- 1" is {a: [1]} - so the
- * '-' indicator must not be treated this way.
+ * Scalars, aliases and flow collections are asked.  A block sequence may sit
+ * at its key's own column and still be that key's value - "a:" then "- 1" is
+ * {a: [1]} - so the '-' indicator must not be treated this way.
  */
 /**
  * @brief The column a node begins in, which is not always the column of its
@@ -1613,6 +1613,26 @@ static int event_node_col(const GTEXT_YAML_Event *event) {
 		return event->prop_col;
 	}
 	return event->col;
+}
+
+/**
+ * @brief The column an alias node begins in.
+ *
+ * event_node_col() answers for a node whose content stands where the event
+ * points, and an ALIAS event points at the first character of the anchor
+ * name: the "*" that introduces it is one column to its left, and
+ * c-ns-alias-node (7.1) admits nothing between the two.  One column is the
+ * whole difference between "at the mapping's key column" and "one past it",
+ * which is the question block_value_is_missing() asks.
+ */
+static int alias_node_col(const GTEXT_YAML_Event *event) {
+	int col;
+	if (!event) return 0;
+	col = event_node_col(event);
+	/* Unchanged where a property already moved it left: the "&" or "!" is
+	   the node's first character and nothing precedes it. */
+	if (col == event->col && col > 1) col--;
+	return col;
 }
 
 static bool block_value_is_missing(parser_state *p, int col) {
@@ -3647,6 +3667,32 @@ static GTEXT_YAML_Status parse_callback(
 					return explicit_status;
 				}
 				if (!explicit_handled) {
+					/* An alias at the key's own column, while a value is
+					 * still expected, is the next key rather than that
+					 * value - the same rule the scalar case has had for as
+					 * long as the block mapping has, and an alias may stand
+					 * wherever a scalar does (7.1).  Only scalars and flow
+					 * collections were ever asked, so a key spelled as an
+					 * alias and left without a value never produced the null
+					 * it stands for: the alternating list stayed one short,
+					 * and the *next* entry's ":" then found an even-length
+					 * list in front of it and reported a key missing from a
+					 * line that had one.  Two aliases were needed to see it:
+					 * with a scalar in the second entry, the SCALAR event's
+					 * own copy of this rule supplied the value the alias had
+					 * not, and the document parsed. */
+					if (block_value_is_missing(p, alias_node_col(event))) {
+						if (!mapping_supply_null_value(p)) {
+							p->failed = true;
+							if (p->error) {
+								p->error->code = GTEXT_YAML_E_OOM;
+								p->error->message =
+									"Out of memory completing mapping value";
+							}
+							return GTEXT_YAML_E_OOM;
+						}
+						p->stack.states[p->stack.depth - 1] = STATE_MAPPING_KEY;
+					}
 					GTEXT_YAML_Status sep_status = flow_entry_needs_separator(p);
 					if (sep_status != GTEXT_YAML_OK) return sep_status;
 					if (!temp_add(p, node)) {
