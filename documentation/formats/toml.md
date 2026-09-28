@@ -9,9 +9,11 @@ behind `GTEXT_TOML_Parse_Options::version`; the writer has no such option and
 [The version option](#toml_version) says why that is a finding rather than an
 omission. A document can be read two ways - as a tree, or as
 [the sequence of statements it was written as](#toml_events), which is what
-carries the comments and the positions a tree cannot. Every claim below was
-checked by something that runs, and where the evidence is thin the page says
-how thin.
+carries the comments and the positions a tree cannot - and a tree
+[converts to and from JSON](#toml_json), where the two data models disagree in
+four places and each one is an option rather than a guess. Every claim below was
+checked by something that runs, and where the evidence is thin the page says how
+thin.
 Back to \ref text_format_references "Formats".
 
 ## Normative references
@@ -416,6 +418,73 @@ node contains, and does **not** survive a round trip: the next header follows it
 so the next parse reads it as that header's leading comment, which is what it now
 is. The root is the stable place for one, and the only place a parse puts one.
 
+@anchor toml_json
+## JSON, both ways
+
+`gtext_toml_to_json()` and `gtext_json_to_toml()`, beside the YAML module's pair.
+The models are nearly the same shape - a table is an object, an array is an
+array, a string is a string - and disagree in four places:
+
+| | Has | The other has no |
+|---|---|---|
+| TOML | the four date-time types | type for them |
+| TOML | `inf`, `-inf`, `nan` | spelling for them |
+| JSON | `null` | value for it |
+| JSON | a number of any size | integer wider than `int64_t` |
+
+Each is an option, and the defaults are not uniform because the losses are not:
+
+| Option | Default | The other arms |
+|---|---|---|
+| `datetime` | the string `gtext_toml_write()` would have written | refuse |
+| `nonfinite` | refuse | the strings `"inf"`, `"-inf"`, `"nan"`; or `null` |
+| `null_values` | refuse | leave the member out |
+
+A date-time converts by default because the *value* survives - the string is the
+same RFC 3339 text TOML would have written, from the same `chron` call - and only
+its type does not. A non-finite float refuses by default because no JSON spelling
+of `nan` keeps anything, so a caller has to choose which loss they want rather
+than being handed one. And `null` refuses because TOML's way of saying "no value"
+is to leave the key out, which `GTEXT_TOML_JSON_NULL_SKIP` does; a `null` **inside
+an array** is refused whatever the policy says, since dropping it would shorten
+the array and move every later index.
+
+**A number is its lexeme, for its type and for its value.** A lexeme holding
+`.`, `e` or `E` is a float and anything else an integer - the same question TOML
+asks of the same characters - and the digits are converted with the same
+`strtoll` and `gtext_number_strtod()` the TOML lexer uses. Asking the JSON value
+what C representations it *carries* is a different question and answers wrongly
+twice: a number this library built from a double carries no `int64` at all, and a
+range test on the double accepts `-9223372036854775809`, because that literal is
+exactly -2^63 once converted. Both of those were found by the corpus mode below,
+the first on its first run.
+
+**A round trip is an identity except at two places**, and both belong to JSON:
+
+- a date-time becomes a string and stays one. Re-reading strings that look like
+  dates is not on offer - a TOML string that spells a date *is* a string, and a
+  conversion that guessed would change what a document means to make its own
+  round trip look better;
+- a float whose shortest lossless spelling carries no point and no exponent -
+  `1.0`, `1e3` - is written `1` and `1000`, because JSON has one number type, and
+  comes back a TOML integer. `-0.0` comes back `0`: the value survives and the
+  sign of a zero does not.
+
+`gtext_json_to_toml()` requires an object at the top, because v1.0.0 says a TOML
+document is a table; an array or a scalar there is
+`GTEXT_TOML_E_UNREPRESENTABLE`, which is a different thing from `E_INVALID` and
+the distinction is the point of that status code - nothing is wrong with the
+JSON. `gtext_toml_to_json()` has no matching rule, because JSON has none: a
+single TOML value converts to a single JSON value.
+
+**Depth.** Both conversions walk on an explicit stack, as everything else here
+does, so neither can be crashed by nesting. The limit they carry is for the
+*other* module: `gtext_json_free()` recurses, and a nested array built through
+the JSON DOM API is released at 103,125 levels and dies by 106,250 on an 8 MB
+stack (bisected, at that stack size). The default of 256 is the JSON module's own
+parse default, so a converted tree is one the JSON parser could have produced
+itself; 0 removes the limit and hands the question back to the caller.
+
 ## Compliance checklist
 
 | Area | Supported | Rejected / limitation |
@@ -432,6 +501,7 @@ is. The root is the stable place for one, and the only place a parse puts one.
 | Comments | `#` to end of line; kept on the tree and in the event stream with `retain_comments` | control characters, `E_CONTROL`; on the tree, only the comments a statement can carry - see [Comments](#toml_comments) |
 | Reading as events | every statement in the order written, with positions, through `gtext_toml_read_events()` | no incremental `feed`, deliberately - [Reading the statements](#toml_events) says why |
 | Versions | 1.0.0 by default, 1.1.0 through `GTEXT_TOML_Parse_Options::version` | an unrecognised version value reads as 1.0.0 |
+| JSON, both ways | every type with a counterpart, in definition order; date-times as strings by default | a non-finite float, `E_UNREPRESENTABLE` by default; a JSON `null`, `E_UNREPRESENTABLE` (or skipped); a `null` in an array, always `E_UNREPRESENTABLE`; an integer outside `int64_t`, `E_RANGE`; a non-object JSON root, `E_UNREPRESENTABLE`; a number with no lexeme, `E_INVALID` |
 | Writing | the whole 1.0.0 grammar this module reads, in the spellings under Save - which is also valid 1.1.0, so there is no write-side version option - and the comments the tree kept | invalid UTF-8, `E_BAD_UNICODE`; a date-time `chron` refuses, `E_DATETIME`; a non-table root, `E_INVALID`; a comment it cannot place, `E_UNREPRESENTABLE`. No multi-line or literal strings, no non-decimal integers |
 
 ## Deviations
@@ -449,7 +519,7 @@ them accepts. If one is found it goes in this table with a reproduction.
 
 **toml-test, pinned at `ff49d109861c1ad25af53f687f2aef19ab650600`** (2026-09-15),
 `tools/conformance/TOML_SUITE_COMMIT`. Scored by `make conformance-toml` and by
-`make conformance-toml-next`. One corpus, two manifests, nine scores each,
+`make conformance-toml-next`. One corpus, two manifests, ten scores each,
 because it carries expectations rather than only inputs and so measures both
 directions:
 
@@ -458,13 +528,14 @@ directions:
 decode             709 of  709         decode             712 of  712
 events             709 of  709         events             712 of  712
 comments           144 of  144         comments           154 of  154
+via json           208 of  208         via json           218 of  218
 roundtrip as-read  709 of  709         roundtrip as-read  712 of  712
 roundtrip headers  208 of  208         roundtrip headers  218 of  218
 roundtrip inline   208 of  208         roundtrip inline   218 of  218
 encode as-read     208 of  208         encode as-read     218 of  218
 encode headers     208 of  208         encode headers     218 of  218
 crossed             66 of   66         crossed             66 of   66
-total             3169 of 3169         total             3228 of 3228
+total             3377 of 3377         total             3446 of 3446
 ```
 
 Several things about those scores, because a clean one is where this page is
@@ -499,6 +570,16 @@ least useful if it stops:
   blind in the way round trips are: a comment dropped on the way in and one
   dropped on the way out agree with each other. `tests/test-toml-comments.cpp`
   is where the halves are looked at separately.
+- **The `via json` row asks the whole corpus and excludes nothing.** Every valid
+  case goes out through `gtext_toml_to_json()` and back through
+  `gtext_json_to_toml()`, and is compared against the suite's own expectation
+  *transformed by the two losses a JSON round trip makes* - a date-time becomes a
+  string, and a float JSON writes without a point comes back an integer - with
+  the three cases holding a non-finite float expected to be **refused**. The
+  alternative, skipping the cases a round trip cannot return, would have left
+  exactly the two claims most likely to be wrong unmeasured. It found two defects
+  on its first two runs, both about which number is which; they are in the
+  section above and pinned in `tests/test-toml-json.cpp`.
 - **Only the two `encode` rows contain a second implementation.** Everything
   else, the roundtrip rows included, proves this module's two halves agree with
   each other. In encode mode the TOML this writer produces is read by `tomllib`
@@ -592,6 +673,24 @@ least useful if it stops:
   defect in exactly one case out of 208, which is a gate arguing for the unit
   file rather than against it.
 
+- **The conversions' gate has been seen to fail, and once not to.** Four defects
+  planted in `src/toml/toml_json.c`:
+
+  | planted defect | corpus `via json` | test-toml-json.cpp |
+  |---|---|---|
+  | an integer converted through a double | 1 case | 3 tests |
+  | every JSON number read as a float | 82 cases | 13 tests |
+  | the date-time policy ignored, and one always refused | 19 cases | 9 tests |
+  | the `null` policy ignored, and one always skipped | **-** | 5 tests |
+
+  The last row is silent for a structural reason worth stating plainly: **no TOML
+  document contains a `null`**, so nothing a TOML corpus can hold reaches the
+  JSON-to-TOML direction's own hazards - the null policy, the integer wider than
+  `int64_t`, the non-object root. The population that would is a *JSON* corpus,
+  and this mode does not have one. The first row is the narrow one: only
+  `valid/integer/long.toml` and its neighbours spell an integer a double cannot
+  hold.
+
 **Sanitizers.** All 5,684 reading runs - every case of both manifests, in the
 decode mode and all three roundtrip modes - under ASan + UBSan + LSan with
 `-fno-sanitize-recover`: 0 sanitizer reports, and no exit status outside
@@ -643,6 +742,13 @@ comment inside a value being absent from the tree and present in the stream -
 asserted together, in one test - a commented document written back byte for byte,
 and each of the four refusals above, none of which any document can reach.
 
+**`tests/test-toml-json.cpp`**, 31 tests, for the conversions: every type with a
+counterpart asserted as exact JSON text, the `int64_t` bounds keeping every digit,
+all seven arms of the three policies, the four date-time kinds as the strings the
+writer would have spelled, both documented round-trip losses asserted by value,
+the depth limit in both directions, and that neither conversion borrows from the
+tree it was given. Two of its tests are the defects the corpus mode found.
+
 **`tests/test-toml-writer.cpp`**, 30 tests, for the writer's *text*, which is
 the half no comparison by value can reach: the three table styles each asserted
 as exact output, the ordering rule, the header paths, key and string spellings
@@ -693,7 +799,11 @@ what holds it.
 **What nothing checks yet.** There is no fuzz harness for this module, in
 either direction, and no differential that puts generated documents to both
 this parser and `tomllib`. The corpus scores the cases someone chose; neither
-of those exists yet, so nothing scores the cases nobody chose.
+of those exists yet, so nothing scores the cases nobody chose. And
+`gtext_json_to_toml()` is scored only over JSON this library produced from TOML,
+which is a population with no `null` in it and no integer wider than `int64_t`:
+the corpus that would reach those is JSONTestSuite's valid files, already cloned
+by `make conformance-json` and not yet pointed at this.
 
 @anchor toml_not_implemented
 ## Not implemented
@@ -710,7 +820,10 @@ of those exists yet, so nothing scores the cases nobody chose.
   the writer has nowhere to put one back. A DOM that carried them would need a
   writer that could break an array across lines, which is a shape decision
   nothing has asked for yet.
-- **`toml_to_json` / `json_to_toml`**, beside the existing `yaml_to_json`.
+- **A JSON corpus for the JSON-to-TOML direction.** The `via json` mode only
+  sends TOML out and back, so the hazards on the way in - `null`, an integer
+  wider than `int64_t`, a non-object root - are reached by
+  `tests/test-toml-json.cpp` and by nothing with a population behind it.
 - **A 1.1.0 reference.** Nothing outside this repository reads the draft, so
   the fifteen cases the two manifests disagree over are checked against
   toml-test's decision and against nothing else. When a second 1.1.0

@@ -24,6 +24,12 @@ Several scores, all from the one corpus:
                    prints how many comments the corpus holds against how many
                    of those a tree can hold - the gap is the ones only the
                    event stream reports.
+  via json         every valid case out through gtext_toml_to_json() and back
+                   through gtext_json_to_toml(), compared to the same .json
+                   transformed by the two losses a JSON round trip makes - a
+                   date-time becomes a string, and a float JSON writes without a
+                   point comes back an integer. A case holding a non-finite
+                   float must be *refused*, since JSON cannot write one.
   crossed          each version arm run over the cases the *other* manifest
                    decides, and required to get them wrong. See below.
 
@@ -246,11 +252,23 @@ def same(mine, theirs, where='$'):
     if isinstance(theirs, dict) and 'type' in theirs and 'value' in theirs:
         if not (isinstance(mine, dict) and 'type' in mine):
             return '%s: expected a %s, got %r' % (where, theirs['type'], mine)
-        if mine['type'] != theirs['type']:
+        if theirs['type'] == 'string-datetime':
+            pass
+        elif mine['type'] != theirs['type']:
             return '%s: type %s, expected %s' % (where, mine['type'],
                                                  theirs['type'])
         kind = theirs['type']
         a, b = mine['value'], theirs['value']
+        if kind == 'string-datetime':
+            # A date-time that a conversion turned into a string. The claim is
+            # that the *instant* survived, so the comparison is the date-time
+            # one: the string is whichever spelling chron writes, which is not
+            # always the spelling the case was written in.
+            if mine['type'] != 'string':
+                return '%s: %s, expected a string' % (where, mine['type'])
+            if normalise_datetime(a) != normalise_datetime(b):
+                return '%s: %s, expected the instant %s' % (where, a, b)
+            return None
         if kind == 'integer':
             if int(a) != int(b):
                 return '%s: %s, expected %s' % (where, a, b)
@@ -446,6 +464,114 @@ def score_decode(extra, want_invalid):
     return asked, passed, failures
 
 
+DATETIME_TAGS = ('datetime', 'datetime-local', 'date-local', 'time-local')
+
+
+def via_json_expect(node):
+    """The suite's expectation as a round trip through JSON returns it.
+
+    Two documented losses, and both are computed from the expectation rather
+    than from anything this library printed:
+
+      - a date-time becomes a string, so the tag becomes `string-datetime` and
+        the comparison asks whether the instant survived;
+      - a float whose shortest lossless spelling carries no point and no
+        exponent - which is what JSON writes, since JSON has one number type -
+        comes back as an integer.
+
+    A non-finite float means the whole case must be *refused*, because the
+    default nonfinite policy refuses and JSON has no spelling for one. That is
+    returned as the first element rather than skipping the case: a conversion
+    that quietly emitted `null` there would otherwise score as a pass.
+
+    Encoding the two losses here is deliberate, and it is not the same mistake
+    as copying the subject's own list: a scorer that *skipped* these cases would
+    say nothing about them, where this says exactly what each must become, so a
+    change in either rule moves the score.
+    """
+    if isinstance(node, dict) and 'type' in node and 'value' in node:
+        kind, text = node['type'], node['value']
+        if kind in DATETIME_TAGS:
+            return False, {'type': 'string-datetime', 'value': text}
+        if kind == 'float':
+            value = float(text)
+            if math.isnan(value) or math.isinf(value):
+                return True, node
+            spelled = '%.17g' % value
+            if '.' not in spelled and 'e' not in spelled and 'E' not in spelled:
+                return False, {'type': 'integer', 'value': spelled}
+            return False, node
+        return False, node
+    if isinstance(node, dict):
+        refuse = False
+        out = {}
+        for key, value in node.items():
+            bad, out[key] = via_json_expect(value)
+            refuse = refuse or bad
+        return refuse, out
+    if isinstance(node, list):
+        refuse = False
+        out = []
+        for value in node:
+            bad, converted = via_json_expect(value)
+            out.append(converted)
+            refuse = refuse or bad
+        return refuse, out
+    return False, node
+
+
+def score_via_json(extra):
+    """Every valid case out to a JSON tree and back, scored against the
+    expectation the two documented losses transform it into.
+
+    Every case is asked. The alternative - excluding the ones a round trip
+    cannot return - would leave the two losses unmeasured, which is the half of
+    this claim most likely to be wrong.
+    """
+    failures = []
+    passed = 0
+    asked = 0
+    refusals = 0
+    for path in valid:
+        expectation = expectation_of(path)
+        if not os.path.exists(expectation):
+            continue
+        asked += 1
+        with open(expectation) as fh:
+            theirs = json.load(fh)
+        refuse, expected = via_json_expect(theirs)
+        out, why, code = run(read_case(path), extra)
+        if refuse:
+            refusals += 1
+            if out is not None:
+                failures.append((path, 'converted a non-finite float, which '
+                                       'JSON cannot hold'))
+            elif code != 1:
+                failures.append((path, 'exit %d, expected the refusal: %s'
+                                 % (code, why)))
+            else:
+                passed += 1
+            continue
+        if out is None:
+            failures.append((path, 'refused (exit %d): %s' % (code, why)))
+            continue
+        try:
+            mine = json.loads(out.decode('utf-8'))
+        except ValueError as exc:
+            failures.append((path, 'output is not JSON: %s' % exc))
+            continue
+        bad = same(mine, expected)
+        if bad:
+            failures.append((path, bad))
+        else:
+            passed += 1
+    VIA_JSON_COUNTS['refusals'] = refusals
+    return asked, passed, failures
+
+
+VIA_JSON_COUNTS = {}
+
+
 def score_comments(extra):
     """Read with comments retained, write, read again, compare.
 
@@ -576,6 +702,8 @@ MODES = [
      lambda: score_decode(ARM + ['--events'], True)),
     ('comments', 'comments kept through a write and a second read',
      score_comments_mode),
+    ('via json', 'out to a JSON tree and back, against the same expectations',
+     lambda: score_via_json(ARM + ['--via-json'])),
     ('roundtrip as-read', 'parse, write, parse again; tables as they were read',
      lambda: score_decode(ARM + ['--roundtrip', '--style=as-read'], True)),
     ('roundtrip headers', 'the same, with every table forced to a [header]',
@@ -615,6 +743,9 @@ for name, blurb, scorer in MODES:
     if len(failures) > 12:
         print("    ... and %d more" % (len(failures) - 12))
 
+print("\nvia json: %d of the %d valid cases hold a non-finite float, where the "
+      "expectation is a refusal" % (VIA_JSON_COUNTS.get('refusals', 0),
+                                    len(valid)))
 print("\ncomments: the %d valid cases contain %d comment lines, of which a tree "
       "keeps %d." % (len(valid), COMMENT_COUNTS.get('events', 0),
                      COMMENT_COUNTS.get('tree', 0)))

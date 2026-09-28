@@ -44,6 +44,7 @@
 /* Public module headers */
 #include <ghoti.io/text/toml/toml_dom.h>
 #include <ghoti.io/text/toml/toml_events.h>
+#include <ghoti.io/text/toml/toml_json.h>
 #include <ghoti.io/text/toml/toml_writer.h>
 
 #endif // GHOTI_IO_GTEXT_TOML_H

@@ -58,6 +58,8 @@ so there is no in-situ mode to offer.
 | `gtext_toml_write_file()` | Write a document to a file, atomically. |
 | `gtext_toml_write_options_default()` | The write defaults, by value. |
 | `gtext_toml_read_events()` | Walk a document statement by statement, calling a callback. See section 5. |
+| `gtext_toml_to_json()` | Convert a tree to a JSON tree. See section 5c. |
+| `gtext_json_to_toml()` | Convert a JSON tree to a TOML one. |
 
 A successful parse always returns a `GTEXT_TOML_TABLE`, because a TOML document
 *is* a table. An empty input gives an empty table rather than an error, and
@@ -303,6 +305,38 @@ answers `GTEXT_TOML_E_UNREPRESENTABLE` if it is handed one it cannot place.
 \ref format_toml "The format page" has the division, the count over the corpus,
 and the four refusals.
 
+## 5c. JSON, both ways
+
+```c
+GTEXT_JSON_Value * json = NULL;
+if (gtext_toml_to_json(root, NULL, &json, &err) == GTEXT_TOML_OK) {
+  ...
+  gtext_json_free(json);
+}
+```
+
+A table is an object, an array is an array, a string is a string. The two models
+disagree in four places, and each is an option rather than a guess:
+
+| | Default | Otherwise |
+|---|---|---|
+| a TOML date-time | the string the writer would have written | refuse |
+| `inf`, `-inf`, `nan` | refuse | `"inf"` / `"-inf"` / `"nan"`, or `null` |
+| a JSON `null` | refuse | leave the member out |
+| a JSON integer wider than `int64_t` | `GTEXT_TOML_E_RANGE` | - |
+
+A date-time converts because the value survives as a string and only its type
+does not; a non-finite float refuses because no JSON spelling of `nan` keeps
+anything. `gtext_json_to_toml()` needs an object at the top - a TOML document is
+a table - and reports `GTEXT_TOML_E_UNREPRESENTABLE` for anything else, which is
+the code that means "nothing is wrong with your value and this format cannot
+hold it".
+
+A round trip is an identity apart from two things JSON cannot say: a date-time
+comes back as a string, and a float JSON writes without a point (`1.0`, `1e3`)
+comes back an integer. \ref format_toml "The format page" has the measurement
+over the corpus, and the two defects that mode found.
+
 ## 6. Errors
 
 ```c
@@ -347,6 +381,8 @@ options at all.
   a chunk-fed one is argued against on the format page rather than pending.
 - **Comments inside a value, on the tree.** They reach you through the event
   walk; the tree keeps the ones the writer can put back.
-- `toml_to_json` and `json_to_toml`.
+- **A corpus for the JSON-to-TOML direction.** The conversions are scored over
+  every TOML case sent out to JSON and back; the hazards on the way *in* - a
+  `null`, an integer wider than `int64_t` - have unit tests and no population.
 
 \ref format_toml "The format page" has the measured state of each.

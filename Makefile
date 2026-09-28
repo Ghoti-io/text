@@ -931,6 +931,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/toml/toml_lexer.c \
 	src/toml/toml_parser.c \
 	src/toml/toml_file_io.c \
+	src/toml/toml_json.c \
 	src/toml/toml_writer.c
 
 check-allocators: ## Fail if a converted file allocates without the allocator

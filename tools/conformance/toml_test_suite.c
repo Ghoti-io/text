@@ -939,6 +939,7 @@ int main(int argc, char ** argv) {
   bool encode = false;
   bool events = false;
   bool comments = false;
+  bool via_json = false;
   GTEXT_TOML_Write_Options wopts = gtext_toml_write_options_default();
   GTEXT_TOML_Parse_Options popts = gtext_toml_parse_options_default();
 
@@ -946,6 +947,7 @@ int main(int argc, char ** argv) {
     if (strcmp(argv[i], "--roundtrip") == 0) roundtrip = true;
     else if (strcmp(argv[i], "--encode") == 0) encode = true;
     else if (strcmp(argv[i], "--events") == 0) events = true;
+    else if (strcmp(argv[i], "--via-json") == 0) via_json = true;
     else if (strcmp(argv[i], "--comments") == 0) {
       comments = true;
       popts.retain_comments = true;
@@ -1080,6 +1082,43 @@ int main(int argc, char ** argv) {
     gtext_toml_error_free(&err);
     free(data);
     return 1;
+  }
+
+  if (via_json) {
+    /* TOML in, through a JSON tree, and back to TOML - then printed the way a
+     * parsed document is, so the Python half compares it against the suite's
+     * own expectation transformed by the two documented losses. A failure here
+     * is exit 1 and not 3: a conversion refusing a document is a verdict about
+     * that document, and the two policies whose default is to refuse make
+     * refusal the correct answer for some cases. */
+    GTEXT_JSON_Value * json = NULL;
+    GTEXT_TOML_Error cerr;
+    memset(&cerr, 0, sizeof(cerr));
+    GTEXT_TOML_Status s = gtext_toml_to_json(root, NULL, &json, &cerr);
+    if (s != GTEXT_TOML_OK) {
+      report(&cerr);
+      gtext_toml_error_free(&cerr);
+      gtext_toml_free(root);
+      free(data);
+      return 1;
+    }
+    GTEXT_TOML_Value * back = NULL;
+    s = gtext_json_to_toml(json, NULL, &back, &cerr);
+    gtext_json_free(json);
+    if (s != GTEXT_TOML_OK) {
+      report(&cerr);
+      gtext_toml_error_free(&cerr);
+      gtext_toml_free(root);
+      free(data);
+      return 1;
+    }
+    gtext_toml_error_free(&cerr);
+    gtext_toml_free(root);
+    emit_value(back);
+    putchar('\n');
+    gtext_toml_free(back);
+    free(data);
+    return 0;
   }
 
   if (comments) {
