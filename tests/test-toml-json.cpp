@@ -395,6 +395,25 @@ TEST(TomlJson, ANumberWithNoLexemeIsRefusedRatherThanGuessedAt) {
   gtext_json_free(json);
 }
 
+TEST(TomlJson, ALexemeThatIsNotANumberIsRefusedRatherThanPartlyRead) {
+  // Only gtext_json_new_number_from_lexeme() can make one: it takes any bytes
+  // and derives no representations, so the lexeme is all there is. Reading
+  // `1.5x` as 1.5 would be a value this library invented.
+  GTEXT_JSON_Value * object = gtext_json_new_object();
+  ASSERT_NE(object, nullptr);
+  GTEXT_JSON_Value * bad = gtext_json_new_number_from_lexeme("1.5x", 4);
+  ASSERT_NE(bad, nullptr);
+  ASSERT_EQ(gtext_json_object_put(object, "a", 1, bad), GTEXT_JSON_OK);
+  GTEXT_TOML_Value * root = nullptr;
+  GTEXT_TOML_Error err;
+  std::memset(&err, 0, sizeof(err));
+  EXPECT_EQ(gtext_json_to_toml(object, nullptr, &root, &err),
+      GTEXT_TOML_E_INVALID);
+  EXPECT_EQ(root, nullptr);
+  gtext_toml_error_free(&err);
+  gtext_json_free(object);
+}
+
 TEST(TomlJson, TwoJsonMembersOfOneNameHaveNoTomlSpelling) {
   // RFC 8259 only SHOULD-s unique names, and this library has parse policies
   // that keep both. TOML has one key, so the conversion reports the duplicate

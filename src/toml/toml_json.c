@@ -388,17 +388,30 @@ static GTEXT_TOML_Value * j2t_number(const GTEXT_JSON_Value * value,
   memcpy(text, lexeme, len);
   text[len] = '\0';
 
+  char * end = NULL;
   if (floating) {
-    char * end = NULL;
     double d = gtext_number_strtod(text, &end);
+    /* A lexeme the conversion could not read all of. A parsed number cannot be
+     * one - the JSON parser validated it - but
+     * gtext_json_new_number_from_lexeme() takes any bytes at all, and reading
+     * `1.5x` as 1.5 would be a value this library invented. */
+    if (!end || end == text || *end != '\0') {
+      *status = conv_fail(
+          err, GTEXT_TOML_E_INVALID, "a number lexeme that is not a number");
+      return NULL;
+    }
     return gtext_toml_new_float(alloc, d);
   }
   errno = 0;
-  char * end = NULL;
   long long raw = strtoll(text, &end, 10);
   if (errno == ERANGE) {
     *status = conv_fail(err, GTEXT_TOML_E_RANGE,
         "an integer outside int64_t, which is what a TOML integer is");
+    return NULL;
+  }
+  if (!end || end == text || *end != '\0') {
+    *status = conv_fail(
+        err, GTEXT_TOML_E_INVALID, "a number lexeme that is not a number");
     return NULL;
   }
   return gtext_toml_new_integer(alloc, (int64_t) raw);
