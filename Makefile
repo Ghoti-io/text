@@ -1612,38 +1612,59 @@ fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
 	-@rm -rf $(FUZZ_DIR)
 
+# Every conformance target links the library the build just made, so every one
+# of them names it as a prerequisite and tells the script where it is.
+#
+# Neither used to be true. The nine targets below had no prerequisites at all
+# and each script globbed `build/*/release/apps/*.a`, taking whatever was there:
+# the absent case was handled and the *stale* case was not, so a score could
+# describe code that had already been edited away. It did, twice, on
+# 2026-09-28 - a planted defect looked undetectable until the archive was
+# rebuilt by hand. The glob also hardcoded `release`, so `BUILD=debug` scored
+# the release archive or nothing.
+#
+# The archive is a normal prerequisite and the shared library an order-only one,
+# which is the same shape the example rules use and for the same reason: each
+# runner links $(STATIC_TARGET), so a change to the library has to relink it,
+# while $(TARGET) is named only so that a conformance target on a clean tree
+# leaves the tree in the state `all` would. The runner's own rpath points at
+# $(PREFIX) for cutil and chron and does not want this library shared.
+CONFORMANCE_LIB := $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
+CONFORMANCE_ENV := PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" \
+	ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)"
+
 conformance: ## Score the YAML parser against yaml-test-suite (clones it on first use)
-conformance:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run.sh
+conformance: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run.sh
 
 conformance-roundtrip: ## Round-trip yaml-test-suite through all three YAML writers
-conformance-roundtrip:
+conformance-roundtrip: $(CONFORMANCE_LIB)
 	@echo "--- the DOM writer, flow style ---"
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" YTS_RT_MIN=100 tools/conformance/run.sh roundtrip
+	@$(CONFORMANCE_ENV) YTS_RT_MIN=100 tools/conformance/run.sh roundtrip
 	@echo "--- the DOM writer, block style ---"
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" YTS_RT_BLOCK=1 YTS_RT_MIN=100 tools/conformance/run.sh roundtrip
+	@$(CONFORMANCE_ENV) YTS_RT_BLOCK=1 YTS_RT_MIN=100 tools/conformance/run.sh roundtrip
 	@echo "--- the streaming writer ---"
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" YTS_RT_STREAM=1 YTS_RT_MIN=100 tools/conformance/run.sh roundtrip
+	@$(CONFORMANCE_ENV) YTS_RT_STREAM=1 YTS_RT_MIN=100 tools/conformance/run.sh roundtrip
 
 conformance-fastpath: ## Check the YAML JSON fast path against the general parser
-conformance-fastpath:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" YTS_FP_MIN=100 tools/conformance/run.sh fastpath
+conformance-fastpath: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) YTS_FP_MIN=100 tools/conformance/run.sh fastpath
 
 conformance-json: ## Score the JSON parser against JSONTestSuite (clones it on first use)
-conformance-json:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-json.sh
+conformance-json: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-json.sh
 
 conformance-csv: ## Score the CSV parser against csv-spectrum (clones it on first use)
-conformance-csv:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-csv.sh
+conformance-csv: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-csv.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
-conformance-jsonpath:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-jsonpath.sh
+conformance-jsonpath: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-jsonpath.sh
 
 conformance-toml: ## Score the TOML parser against toml-test (clones it on first use)
-conformance-toml:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" TOML_MIN=100 \
+conformance-toml: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) TOML_MIN=100 \
 		tools/conformance/run-toml.sh
 
 conformance-toml-next: ## Score the TOML parser against toml-test's 1.1.0 list
@@ -1656,8 +1677,8 @@ conformance-toml-next: ## Score the TOML parser against toml-test's 1.1.0 list
 # cases for it sit in the 1.1.0 list and in neither 1.0.0 list. Two further
 # defects were invisible to the corpus in every mode and are pinned in
 # tests/test-toml-version.cpp; that file's header has the table.
-conformance-toml-next:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" TOML_SUITE_VERSION=1.1.0 \
+conformance-toml-next: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) TOML_SUITE_VERSION=1.1.0 \
 		TOML_MIN=100 tools/conformance/run-toml.sh
 
 UCD_VERSION := $(shell cat tools/idna/UCD_VERSION 2>/dev/null)
@@ -1904,8 +1925,8 @@ check-metaschema: ## Fail if the embedded meta-schemas are not what json-schema.
 	printf "\033[0;32mEmbedded meta-schemas are byte-identical to what json-schema.org publishes.\033[0m\n"
 
 conformance-json-schema: ## Score the schema engine against JSON-Schema-Test-Suite (clones it on first use)
-conformance-json-schema:
-	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-json-schema.sh
+conformance-json-schema: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-json-schema.sh
 
 conformance-all: ## Score every parser against its external corpus
 conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml conformance-toml-next

@@ -11,6 +11,7 @@
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+. "$root/tools/conformance/lib.sh"
 suite=${CSS_SUITE:-$root/build/csv-spectrum}
 commit=$(cat "$root/tools/conformance/CSV_SUITE_COMMIT")
 
@@ -33,9 +34,7 @@ fi
 [ -n "$DEP_PCS" ] || { echo "DEP_PCS must be set; the Makefile passes it (see DEP_PCS there)" >&2; exit 1; }
 cflags=$(PKG_CONFIG_PATH="$PREFIX/share/pkgconfig" pkg-config --cflags $DEP_PCS)
 libs=$(PKG_CONFIG_PATH="$PREFIX/share/pkgconfig" pkg-config --libs $DEP_PCS)
-archive=$(ls "$root"/build/*/release/apps/*.a 2>/dev/null | head -1)
-[ -n "$archive" ] || { echo "build the library first (make)" >&2; exit 1; }
-generated=$(dirname "$(dirname "$archive")")/generated
+conformance_library
 runner=$suite/../css-runner
 cc -O1 -o "$runner" "$root/tools/conformance/csv_spectrum.c" \
 	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \

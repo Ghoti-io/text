@@ -21,6 +21,7 @@
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+. "$root/tools/conformance/lib.sh"
 suite=${YTS_SUITE:-$root/build/yaml-test-suite}
 commit=$(cat "$root/tools/conformance/YAML_SUITE_COMMIT")
 which=${1:-ours}
@@ -51,9 +52,7 @@ ours)
 	pc="$PREFIX/share/pkgconfig:$PREFIX/lib/pkgconfig"
 	cflags=$(PKG_CONFIG_PATH="$pc" pkg-config --cflags $DEP_PCS)
 	libs=$(PKG_CONFIG_PATH="$pc" pkg-config --libs $DEP_PCS)
-	archive=$(ls "$root"/build/*/release/apps/*.a 2>/dev/null | head -1)
-	generated=$(dirname "$(dirname "$archive")")/generated
-	[ -n "$archive" ] || { echo "build the library first (make)" >&2; exit 1; }
+	conformance_library
 	runner=$suite/../yts-runner
 	# The same rpath the Makefile links with, so the runner finds cutil and
 	# chron without the caller having to set LD_LIBRARY_PATH.
@@ -78,9 +77,7 @@ roundtrip)
 	pc="$PREFIX/share/pkgconfig:$PREFIX/lib/pkgconfig"
 	cflags=$(PKG_CONFIG_PATH="$pc" pkg-config --cflags $DEP_PCS)
 	libs=$(PKG_CONFIG_PATH="$pc" pkg-config --libs $DEP_PCS)
-	archive=$(ls "$root"/build/*/release/apps/*.a 2>/dev/null | head -1)
-	[ -n "$archive" ] || { echo "build the library first (make)" >&2; exit 1; }
-	generated=$(dirname "$(dirname "$archive")")/generated
+	conformance_library
 	runner=$suite/../yts-runner
 	rt=$suite/../yts-roundtrip
 	for pair in "yaml_test_suite.c $runner" "yaml_roundtrip.c $rt"; do
@@ -96,9 +93,7 @@ fastpath)
 	pc="$PREFIX/share/pkgconfig:$PREFIX/lib/pkgconfig"
 	cflags=$(PKG_CONFIG_PATH="$pc" pkg-config --cflags $DEP_PCS)
 	libs=$(PKG_CONFIG_PATH="$pc" pkg-config --libs $DEP_PCS)
-	archive=$(ls "$root"/build/*/release/apps/*.a 2>/dev/null | head -1)
-	[ -n "$archive" ] || { echo "build the library first (make)" >&2; exit 1; }
-	generated=$(dirname "$(dirname "$archive")")/generated
+	conformance_library
 	fp=$suite/../yts-fastpath
 	cc -O1 -o "$fp" "$root/tools/conformance/yaml_fastpath_diff.c" \
 		-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \

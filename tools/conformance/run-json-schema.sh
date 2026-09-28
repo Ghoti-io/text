@@ -16,6 +16,7 @@
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+. "$root/tools/conformance/lib.sh"
 commit=$(cat "$root/tools/conformance/JSON_SCHEMA_COMMIT")
 suite=${JSS_SUITE:-$root/build/json-schema-test-suite}
 draft=${JSS_DRAFT:-draft2020-12}
@@ -74,9 +75,7 @@ else
 	echo "regular expressions: none installed - pattern groups will not run"
 fi
 
-archive=$(ls "$root"/build/*/release/apps/*.a 2>/dev/null | head -1)
-[ -n "$archive" ] || { echo "build the library first (make)" >&2; exit 1; }
-generated=$(dirname "$(dirname "$archive")")/generated
+conformance_library
 runner=$root/build/json-schema-runner
 cc -O1 -o "$runner" "$root/tools/conformance/json_schema_suite.c" \
 	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \

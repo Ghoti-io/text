@@ -10,6 +10,7 @@
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+. "$root/tools/conformance/lib.sh"
 suite=${JTS_SUITE:-$root/build/json-test-suite}
 commit=$(cat "$root/tools/conformance/JSON_SUITE_COMMIT")
 
@@ -32,9 +33,7 @@ fi
 [ -n "$DEP_PCS" ] || { echo "DEP_PCS must be set; the Makefile passes it (see DEP_PCS there)" >&2; exit 1; }
 cflags=$(PKG_CONFIG_PATH="$PREFIX/share/pkgconfig" pkg-config --cflags $DEP_PCS)
 libs=$(PKG_CONFIG_PATH="$PREFIX/share/pkgconfig" pkg-config --libs $DEP_PCS)
-archive=$(ls "$root"/build/*/release/apps/*.a 2>/dev/null | head -1)
-[ -n "$archive" ] || { echo "build the library first (make)" >&2; exit 1; }
-generated=$(dirname "$(dirname "$archive")")/generated
+conformance_library
 runner=$suite/../jts-runner
 # The same rpath the Makefile links with, so the runner finds cutil without
 # the caller having to set LD_LIBRARY_PATH.
