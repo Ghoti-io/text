@@ -622,7 +622,7 @@ of the parser it could not get to.
 | YAML writers | 5.9M | 25 defects, all fixed; clean after the last |
 | CSV  | 6.5k | clean |
 | TOML | 875.7k | clean |
-| TOML writer | 1.7M | one defect, fixed; clean after |
+| TOML writer | 2.8M | one defect, fixed; clean after, with the spellings axis |
 
 The writer harness's execution count is not comparable with the readers': it
 builds a document and re-parses one on every run, so it is much slower per
