@@ -26,7 +26,7 @@ The JSON module provides comprehensive JSON processing capabilities with support
 - **High-quality error diagnostics** with position information and context snippets
 - **Round-trip correctness** including exact number preservation
 - **JSON Pointer (RFC 6901)**, **JSONPath (RFC 9535)**, **JSON Patch (RFC 6902)**, and **JSON Merge Patch (RFC 7386)**
-- **JSON Schema** for 2020-12, 2019-09, draft-07 and draft-06. A keyword this library cannot enforce fails compilation
+- **JSON Schema** for 2020-12, 2019-09, draft-07, draft-06 and draft-04. A keyword this library cannot enforce fails compilation
 - A pull reader, beside the DOM parser and the streaming parser
 
 ---
@@ -276,7 +276,7 @@ JSON Merge Patch provides a simpler merge operation that recursively merges a pa
 
 ## 12. JSON Schema Validation
 
-The engine reads JSON Schema 2020-12, 2019-09, draft-07 and draft-06, each
+The engine reads JSON Schema 2020-12, 2019-09, draft-07, draft-06 and draft-04, each
 with its own keyword set. `$schema` selects the dialect. A schema this
 library cannot fully enforce is refused at compile time and names the
 keyword. `pattern` and `patternProperties` run only when the caller supplies

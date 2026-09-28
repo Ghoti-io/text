@@ -108,7 +108,7 @@ writer with buffer and fixed-buffer sinks; file read and write; JSON Pointer
 number handling that keeps the original lexeme; in-situ parsing; depth,
 string, element and total-size limits; JSONC and JSON5 as opt-in options;
 canonical output with sorted keys; errors with offset, line, column and a
-snippet. JSON Schema 2020-12, 2019-09, draft-07 and draft-06, refusing a
+snippet. JSON Schema 2020-12, 2019-09, draft-07, draft-06 and draft-04, refusing a
 schema it cannot enforce. `normalize_unicode`. `gtext_json_to_yaml()`.
 
 The patch and pointer set, the duplicate-key modes and the preserved lexeme

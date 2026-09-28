@@ -229,7 +229,7 @@ so that moving within one array used unshifted indices, and a merge patch
 adding a new object member stored its `null` members instead of dropping
 them.
 
-**Schema.** 2020-12, 2019-09, draft-07 and draft-06, each with its own
+**Schema.** 2020-12, 2019-09, draft-07, draft-06 and draft-04, each with its own
 keyword set. `$schema` selects the dialect. A keyword this library cannot
 enforce fails compilation and is named. `minLength` and `maxLength` count
 characters, not bytes - see [Deviations](#json-deviations). Schemas compile
