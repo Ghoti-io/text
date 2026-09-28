@@ -624,6 +624,12 @@ of the parser it could not get to.
 | TOML | 875.7k | clean |
 | TOML writer | 2.8M | one defect, fixed; clean after, with the spellings axis |
 
+Both TOML harnesses were re-run after `gtext_json_to_toml()` stopped refusing a
+long number lexeme (2026-09-28): 65.6k and 510.2k executions, no crash and no
+artifact written. That is a confirmation run rather than a campaign, and it is
+here because the change moved a copy from a stack buffer to the allocator on a
+path `fuzz_toml`'s round trip reaches.
+
 The writer harness's execution count is not comparable with the readers': it
 builds a document and re-parses one on every run, so it is much slower per
 execution than a parse-only harness.  The 5.9M above is one 901-second run on
