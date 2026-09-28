@@ -80,16 +80,14 @@ import sys
 # The tagged-JSON and native-value comparisons, shared with the tomllib
 # differential rather than written twice. See tools/conformance/toml_native.py.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from toml_native import (actual_native, expected_native,  # noqa: E402
-                         normalise_datetime, same_float, same_native)
+from toml_native import (expected_native, normalise_datetime,  # noqa: E402
+                         same_float, same_native)
 
-try:
-    import tomllib
-except ImportError:  # pragma: no cover - the floor below depends on it
-    sys.exit("no tomllib; the encoder direction has no second decoder without "
-             "it, and scoring the writer only against this library's own "
-             "reader is the measurement this mode exists to avoid. "
-             "Python 3.11 or newer is required.")
+# The second reader, through its pin. It used to be `import tomllib` - whatever
+# interpreter this machine had - and the encode rows are the only place a second
+# implementation appears in this score, so that made two of these modes a
+# measurement against a reference nobody chose. See toml_reference.py.
+import toml_reference  # noqa: E402
 
 SUITE = sys.argv[1]
 RUNNER = sys.argv[2:]
@@ -525,10 +523,17 @@ def score_comments(extra):
 
 
 def score_encode(extra):
-    """The case's .json in, TOML out, read back by tomllib."""
+    """The case's .json in, TOML out, read back by the reference.
+
+    Two passes rather than one, because the reference is asked as a batch: the
+    writer runs for every case first, and everything it produced goes to the
+    reference in one invocation. A per-case round trip into the pinned image
+    would be hundreds of container starts for a score that takes a second.
+    """
     failures = []
     passed = 0
     asked = 0
+    pending = []  # (path, written, theirs)
     for path in valid:
         expectation = expectation_of(path)
         if not os.path.exists(expectation):
@@ -547,14 +552,13 @@ def score_encode(extra):
             failures.append((path, 'the suite expectation did not convert: %s'
                              % exc))
             continue
-        try:
-            mine = actual_native(tomllib.loads(out.decode('utf-8')))
-        except UnicodeDecodeError as exc:
-            failures.append((path, 'the TOML written is not UTF-8: %s' % exc))
-            continue
-        except tomllib.TOMLDecodeError as exc:
-            failures.append((path, 'tomllib refused what was written: %s'
-                             % exc))
+        pending.append((path, out, theirs))
+
+    readings = toml_reference.read_all([written for _p, written, _t in pending])
+    for (path, _written, theirs), (kind, mine) in zip(pending, readings):
+        if kind == 'err':
+            failures.append((path, 'the reference refused what was written: %s'
+                             % mine))
             continue
         bad = same_native(mine, theirs)
         if bad:
@@ -672,6 +676,22 @@ if VERSION == '1.1.0':
         ('spellings reach',
          'the option changed the bytes exactly where 1.0.0 then refuses them',
          score_spell_reach))
+
+# Which reference the encode rows will be read by, before any of them runs. It is
+# printed rather than assumed for the reason oracle_run.py gives: a score measured
+# against one `tomllib` and a score measured against another are different
+# statements, and a run that does not say which cannot be read a week later.
+try:
+    print(toml_reference.provenance())
+except toml_reference.OracleUnavailable as why:
+    sys.stderr.write(
+        "\033[0;31m### the second TOML reader is not available ###\033[0m\n"
+        "%s\n\nTwo of the modes below read this library's output with it, and "
+        "scoring the writer only against this library's own reader is the "
+        "measurement they exist to avoid. Run with GHOTI_ORACLE_MODE=host to "
+        "use this machine's own interpreter, which answers a different question "
+        "and says so in the line it prints.\n" % why)
+    sys.exit(1)
 
 print("=== toml-test, TOML %s ===" % VERSION)
 print("  the manifest lists %d valid and %d invalid cases"

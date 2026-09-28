@@ -131,16 +131,23 @@ int main(void) {
 
 
 def build_driver(root, workdir):
-    archive = None
-    for candidate in ("linux", "darwin", "windows"):
-        path = os.path.join(
-            root, "build", candidate, "release", "apps",
-            "libghoti.io-text-0.a")
-        if os.path.exists(path):
-            archive = path
-            break
+    """The C half of the comparison, linked against the archive the Makefile
+    just built.
+
+    ARCHIVE comes from the environment for the reason
+    tools/conformance/lib.sh gives at length: this used to glob
+    `build/<platform>/release/apps/*.a` and take whatever was there. The absent
+    case was handled and the *wrong* one was not - `make check-nfc-oracle
+    BUILD=debug` compared the release archive, and a glob is what let that
+    through. There is no fallback: a script run by hand says what to set.
+    """
+    archive = os.environ.get("ARCHIVE")
     if not archive:
-        sys.exit("build the library first (make)")
+        sys.exit("ARCHIVE must be set; the Makefile passes it\n"
+                 "  (by hand, ARCHIVE=build/<platform>/<build>/apps/"
+                 "libghoti.io-text-0.a)")
+    if not os.path.exists(archive):
+        sys.exit("%s is not there; build the library first (make)" % archive)
 
     source = os.path.join(workdir, "driver.c")
     with open(source, "w", encoding="ascii") as handle:

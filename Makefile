@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1664,7 +1664,7 @@ conformance-jsonpath: $(CONFORMANCE_LIB)
 
 conformance-toml: ## Score the TOML parser against toml-test (clones it on first use)
 conformance-toml: $(CONFORMANCE_LIB)
-	@$(CONFORMANCE_ENV) TOML_MIN=100 \
+	@$(ORACLE_ENV) $(CONFORMANCE_ENV) TOML_MIN=100 \
 		tools/conformance/run-toml.sh
 
 conformance-toml-next: ## Score the TOML parser against toml-test's 1.1.0 list
@@ -1678,7 +1678,7 @@ conformance-toml-next: ## Score the TOML parser against toml-test's 1.1.0 list
 # defects were invisible to the corpus in every mode and are pinned in
 # tests/test-toml-version.cpp; that file's header has the table.
 conformance-toml-next: $(CONFORMANCE_LIB)
-	@$(CONFORMANCE_ENV) TOML_SUITE_VERSION=1.1.0 \
+	@$(ORACLE_ENV) $(CONFORMANCE_ENV) TOML_SUITE_VERSION=1.1.0 \
 		TOML_MIN=100 tools/conformance/run-toml.sh
 
 UCD_VERSION := $(shell cat tools/idna/UCD_VERSION 2>/dev/null)
@@ -1821,19 +1821,27 @@ oracle-version: ## Resolve every oracle pin and print what answered
 	python3 tools/oracle/oracle_env.py
 
 oracle-images: ## Build the oracle images that are made here rather than pulled
-# Only python-idna needs building: it vendors its own UCD tables, so the version
-# of the package *is* the version of the data and no stock image carries the one
-# this library needs. The stock CPython images are pulled on demand by
-# oracle_env.py.
+# Two references need building rather than pulling. `python-idna` vendors its own
+# UCD tables, so the version of the package *is* the version of the data and no
+# stock image carries the one this library needs; `toml++` is a single header with
+# a compile-time switch, and no image carries that either. The stock CPython
+# images are pulled on demand by oracle_env.py.
+#
+# The tag comes from containers/IMAGES, which is the same place oracle_env.py
+# reads it, so an image built here cannot be tagged with a version the pin does
+# not name. It used to be derived from the directory's requirements.txt, which
+# was a second place the version lived and only worked for a reference installed
+# by pip.
 	@set -e; \
 	for dir in $(ORACLE_IMAGES)/*/; do \
 		[ -f "$$dir/Dockerfile" ] || continue; \
 		name=$$(basename "$$dir"); \
-		tag=$$(sed -n 's/^[a-zA-Z0-9_.-]*==\([^ \t]*\).*/\1/p' \
-			"$$dir/requirements.txt" 2>/dev/null | head -1); \
-		[ -n "$$tag" ] || { printf "no version to tag %s with\n" "$$name" >&2; exit 1; }; \
-		printf "\033[0;36mbuilding ghoti-text-oracle-%s:%s\033[0m\n" "$$name" "$$tag"; \
-		$(ORACLE_ENGINE) build -t "localhost/ghoti-text-oracle-$$name:$$tag" "$$dir"; \
+		image=$$(awk -F'\t' -v n="localhost/ghoti-text-oracle-$$name:" \
+			'!/^#/ && NF >= 3 && index($$2, n) == 1 { print $$2 }' \
+			$(ORACLE_IMAGES)/IMAGES | head -1); \
+		[ -n "$$image" ] || { printf "%s has a Dockerfile and no built-here line in containers/IMAGES, so nothing says what to tag it\n" "$$name" >&2; exit 1; }; \
+		printf "\033[0;36mbuilding %s\033[0m\n" "$$image"; \
+		$(ORACLE_ENGINE) build -t "$$image" "$$dir"; \
 	done; \
 	printf "\033[0;32mOracle images built. 'make oracle-version' checks them against IMAGES.\033[0m\n"
 
@@ -1873,10 +1881,11 @@ check-nfc-oracle: ## Compare this library's NFC against a pinned CPython's, over
 # sequences the host's 15.1.0 could answer, UCD 15.1.0, 16.0.0 and 17.0.0 return
 # identical NFC, so moving off the host buys coverage and reproducibility and
 # corrects nothing. check-nfc-oracle-strict below is where the skew goes away.
-check-nfc-oracle: $(APP_DIR)/$(TARGET)
+check-nfc-oracle: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(UCD_DIR),tools/idna/fetch.sh); \
-	$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py
+	ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" \
+		$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py
 
 check-nfc-oracle-strict: ## The NFC oracle against a UCD-matched CPython, where a disagreement is a defect
 # Deliberately outside TEST_GATES. The only pin whose UCD equals this library's
@@ -1890,11 +1899,42 @@ check-nfc-oracle-strict: ## The NFC oracle against a UCD-matched CPython, where 
 #
 # When CPython 3.15.0 is released the python pin moves to it and the two gates
 # converge; until then this is the one to run by hand after touching NFC.
-check-nfc-oracle-strict: $(APP_DIR)/$(TARGET)
+check-nfc-oracle-strict: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(UCD_DIR),tools/idna/fetch.sh); \
-	GHOTI_ORACLE_ALIAS=python=python-next \
+	ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" \
+		GHOTI_ORACLE_ALIAS=python=python-next \
 		$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py --strict
+
+check-toml-oracle: ## Compare the TOML reader against a pinned tomllib, over generated documents
+# The third thing. The fuzzers check this library against itself - two of its own
+# readers, and its writer against its reader - and toml-test is the only place a
+# second implementation appears, holding the cases somebody chose.
+# tools/oracle/toml_gen.py generates documents nobody chose, valid v1.0.0 by
+# construction, with the spelling varying independently of the value.
+#
+# TOML_ORACLE_COUNT sets how many (3,000 by default) and TOML_ORACLE_SEED where
+# to start, so a disagreement is reproducible from the seed the gate prints.
+#
+# Outside TEST_GATES, like every gate that consults an oracle: it needs a
+# container engine and a pull.
+check-toml-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-toml-oracle.sh
+
+check-toml-1-1-oracle: ## Compare the v1.1.0 reader against toml++'s unreleased set
+# The only second reader there is for the v1.1.0 draft, and it is not a v1.1.0
+# implementation: toml++'s `TOML_ENABLE_UNRELEASED_FEATURES` is its own
+# cherry-pick from the TOML master branch and issue list, overlapping v1.1.0's
+# four relaxations this library implements and adding two v1.1.0 does not have.
+# tools/oracle/toml_1_1_diff.py carries that list by name and generates only the
+# overlap, and it fails rather than passing if a run did not reach all five
+# spellings (four items; the inline-table one is two independent choices).
+#
+# Needs the built-here image: make oracle-images.
+check-toml-1-1-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-toml-1-1-oracle.sh
 
 check-metaschema: ## Fail if the embedded meta-schemas are not what json-schema.org publishes
 # The nineteen documents under $(METASCHEMA_SRC) - 2020-12's nine, 2019-09's

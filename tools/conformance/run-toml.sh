@@ -9,6 +9,11 @@
 # TOML_SUITE_VERSION picks which of the suite's two manifests to score against
 # and defaults to 1.0.0, which is what this parser implements.  Mirrors
 # run-json.sh.
+#
+# Two of the modes read this library's output with `tomllib`, which is reached
+# through tools/oracle/ like every other reference here, so this script needs
+# whatever GHOTI_ORACLE_* the Makefile is passing. GHOTI_ORACLE_MODE=host uses
+# this machine's own interpreter and says so.
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)

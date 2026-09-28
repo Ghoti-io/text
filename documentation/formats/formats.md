@@ -21,14 +21,21 @@ sequence, and how confident anyone should be about that.
 | JSON | @subpage format_json "JSON" | RFC 8259 / ECMA-404, plus RFC 6901, 6902, 7386, 9535, and JSON Schema 2020-12, 2019-09, draft-07, draft-06 | strict RFC 8259. JSONC and JSON5 are separate options, off by default | compact, pretty, and a canonical mode |
 | CSV | @subpage format_csv "CSV" | RFC 4180, plus configurable dialects | RFC 4180 and looser dialects; irregular rows | RFC 4180 with configurable quoting |
 | YAML | @subpage format_yaml "YAML" | YAML 1.2.2, with a 1.1 resolution mode | block and flow, anchors, tags, multi-document | DOM and streaming event serialization |
-| TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12) and the v1.1.0 draft behind an option; date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar read and written, 1.1.0 read, a statement-by-statement event walk, comments through a write, JSON both ways; 3,377 of 3,377 and 3,446 of 3,446 toml-test measurements | no 1.1.0 reference outside the corpus; no incremental reader (argued, not pending); no corpus behind the JSON-to-TOML direction |
+| TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12) and the v1.1.0 draft behind an option; date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar read and written, 1.1.0 read, a statement-by-statement event walk, comments through a write, JSON both ways; 3,377 of 3,377 and 3,883 of 3,883 toml-test measurements, a pinned `tomllib` over 60,000 generated documents, and toml++ over the four v1.1.0 relaxations it shares | no comment inside a value on the tree; no incremental reader (argued, not pending); the two v1.1.0 unquoted-key relaxations |
 
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
 
-INI is planned and has no parser, so it has no page here. A page is written
-with the parser, not after it. `GTEXT_YAML_MODE_CONFIG` is a YAML parse preset,
-not a parser for either format.
+INI has no parser here and no page, and that is a position rather than a queue.
+Every page above measures its format against a specification and an outside
+corpus; INI has neither. There is no INI specification - the closest things are
+one implementation's documentation each - so "implement INI" first means choosing
+which INI, and then there is nothing to be scored against but the choice. The
+work would be a documented dialect in the shape `GTEXT_CSV_Dialect` already
+takes, and until somebody decides which dialect and what would count as
+conformance, starting it would produce the one thing the other four formats do
+not have: a parser whose correctness is its author's opinion.
+`GTEXT_YAML_MODE_CONFIG` is a YAML parse preset, not a parser for either format.
 
 ## What each page contains
 

@@ -1,0 +1,14 @@
+# What the toml++ image is built from, pinned by content.
+#
+# One line per file: <sha256> <url>
+#
+# The header is the claim. toml++ is a single header, so its SHA-256 *is* the
+# implementation, and a tag or a release name could be moved under it. The
+# Dockerfile verifies this hash and refuses the build otherwise.
+#
+# 3.4.0's `TOML_ENABLE_UNRELEASED_FEATURES` set is not TOML v1.1.0's - it is
+# toml++'s own cherry-pick from the TOML master branch and issue list, and it
+# includes two things v1.1.0 does not have. See ../IMAGES for which, and
+# ../../toml_1_1_diff.py for how the comparison is kept to the constructs both
+# implementations target.
+6b5172ad4dd6519aec67b919181fa7a38a2234131e5b2afa232dfe444819783e  https://raw.githubusercontent.com/marzer/tomlplusplus/v3.4.0/toml.hpp

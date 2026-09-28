@@ -95,6 +95,18 @@ PROBE = {
                 "import sys, unicodedata; print('python %s, unicodedata %s'"
                 " % (sys.version.split()[0], unicodedata.unidata_version))"],
                "unicodedata ", None),
+    # `tomllib` has no version of its own - it is part of CPython - so the
+    # interpreter is the claim, and the probe imports the module so that an
+    # image without it fails here rather than in the middle of a comparison.
+    "tomllib": (["python3", "-c",
+                 "import sys, tomllib;"
+                 " print('python %s, tomllib in the standard library'"
+                 " % sys.version.split()[0])"],
+                "tomllib", None),
+    # toml++'s driver prints its version, whether the unreleased set is on, and
+    # the SHA-256 of the driver source it was compiled from. Asked with no input,
+    # it writes that line and stops.
+    "tomlpp": (["toml-driver", "--version"], "toml++", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

@@ -472,9 +472,19 @@ a write an identity on a comment line; a caller setting one should usually begin
 it with a space. The CR of a CRLF belongs to the newline and not to the comment.
 
 **What a tree cannot hold** is a comment inside a value - between two array
-elements, or inside `{ }`. There is no statement there to attach it to, and no
-line in the document the writer produces to put it on, so keeping it would be a
-promise broken on the way out. Those are reported by
+elements, or inside `{ }`. There is no statement there to attach it to, and the
+writer has no line to put it on, so keeping it would be a promise broken on the
+way out.
+
+That second half used to be written as "no line in the document", which said the
+format had nowhere for one. It does not: v1.0.0 already allows any number of
+newlines and comments inside `[ ]`, this reader accepts them, and
+`GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES` gives an inline table lines of its own.
+What is missing is on this side - **the writer has no multi-line array style**,
+so it writes `[1, 2]` and a comment between the two elements has nowhere to go in
+*its* output rather than in TOML's. Retaining them would be two pieces of work
+and not one: a place on the tree for a comment that belongs to a value rather
+than to a statement, and a layout the writer can put it back into. Those are reported by
 `gtext_toml_read_events()`, in place, which is the division of labour between
 the two readers - and the division is *measured* rather than described: the
 corpus mode requires the number of comment lines a tree kept to equal the number
@@ -940,11 +950,110 @@ every bare key after a `[header]` belongs to that header's table. `[[a.b]]`
 before `y = 2` comes back the other way round. The comparison sorts object keys
 now, which is the comparison the corpus already made.
 
-**What nothing checks yet.** There is no differential that puts generated
-documents to both this parser and `tomllib`; the fuzzers check this library
-against itself.
+**The second reader is pinned.** The encode rows read this library's output with
+`tomllib`, which is the only place a second implementation appears in this score
+- and until now it was reached by `import tomllib` in the scoring script,
+whatever `python3` this machine happened to have. `tomllib` is part of CPython
+and changes with it, so "the writer's output is readable" meant "readable by this
+machine today". It now goes through `tools/oracle/` like every other reference
+here, the version is printed above the numbers, and `GHOTI_ORACLE_MODE=host`
+still uses this machine's own interpreter and says so in that line. The
+reference is asked once for the whole batch rather than per case.
 
-`gtext_json_to_toml()` now has a corpus of its own. `make
+@anchor toml_oracle
+## A second reader, over documents nobody chose
+
+`make check-toml-oracle` generates TOML v1.0.0 documents and compares this
+library's reading of each against the pinned `tomllib`'s. It is the third thing:
+the fuzzers check this library against itself - two of its own readers, and its
+writer against its reader - and toml-test is a second implementation over the
+cases somebody chose.
+
+`tools/oracle/toml_gen.py` builds a value tree and then spells it, so validity is
+a property of the construction rather than something to check afterwards: an
+invalid document would make the comparison one of two error messages, and both
+implementations refusing is not agreement about anything. The spelling varies
+independently of the value, which is where a reader's disagreements live - the
+same value as a bare, quoted or dotted key; as a `[header]`, a `[[array of
+tables]]` or an inline table; as a basic, literal or multi-line string; with
+underscores in an integer, four bases, and any of the five offsets a reference
+can hold.
+
+`-00:00` is deliberately not generated. v1.0.0 gives it the meaning "offset
+unknown" and Python cannot hold that - `fromisoformat` reads it as UTC and
+`isoformat` writes `+00:00` back - so a document using one would produce a
+disagreement about the reference's model rather than about either reader. That is
+the one place this differential is narrower than the format, and it is stated
+rather than discovered.
+
+**Three readings, not two.** The generator says what it meant, this library says
+what it read, and the reference says what it read. The generator's claim is not a
+third implementation - it is the test author - but it is what catches a generator
+that emits something other than what it thinks, and it did: a first version put
+an inline table's `key = value` line *after* a `[header]`, where it belongs to
+that header's table, so both readers agreed with the text and disagreed with the
+generator. Without that third reading it would have printed as a finding in this
+library.
+
+Measured: **60,000 documents, no disagreements**, and 3,000 in the gate by
+default at about seven seconds. `TOML_ORACLE_COUNT` and `TOML_ORACLE_SEED` set
+how many and where to start, and a disagreement prints the seed that reproduces
+it on its own.
+
+Seen to fail, three ways, each caught with the document that did it: an
+underscore kept in a number rather than stripped, `\t` decoded as a space, and a
+fractional second dropped before `chron` sees it. Two no-op mutations as controls
+returned clean.
+
+@anchor toml_1_1_oracle
+### And a second reader for v1.1.0, as far as one exists
+
+`make check-toml-1-1-oracle` is the same shape against a different reference, and
+it is narrower on purpose. Nothing outside this repository reads the v1.1.0
+draft. toml++ 3.4.0 is the nearest thing: `TOML_ENABLE_UNRELEASED_FEATURES` turns
+on eight items its author cherry-picked from the TOML master branch and the issue
+list, and that set **overlaps** v1.1.0's rather than coinciding with it.
+
+So the overlap is written down by name, in
+`tools/oracle/toml_1_1_diff.py` - beside the code that generates from it, rather
+than in the pin table where it could drift:
+
+| | |
+| --- | --- |
+| omitted seconds in a time of day (toml#671) | in both, compared here |
+| newlines and trailing commas inline (toml#516) | in both, compared here |
+| the `\e` escape (toml#790) | in both, compared here |
+| the `\xHH` escape (toml#796) | in both, compared here |
+| hex floating point (toml#562) | toml++ only, never generated |
+| `+` in a bare key (toml#644) | toml++ only, never generated |
+| unicode in an unquoted key (toml#687, toml#891) | v1.1.0 only, and unread here |
+| a lone CR refused in a multi-line string | v1.1.0 only, no second reader |
+
+The documents are the 1.0.0 generator's with those four spellings applied, so the
+value tree is the same and a disagreement is about the relaxation rather than
+about the rest of the format - which the `tomllib` differential already covers.
+
+**All five spellings have to turn up in a run**, four items counted as five
+because the inline-table relaxation is two independent choices and this library
+offers them as two write-side bits for that reason. A run that reached three of
+them would print a clean line for the other two, so the count of each is printed
+and a missing one fails the gate. That is not a hypothetical: the first version
+reached zero `\e` and zero `\xHH` documents - the 1.0.0 generator has no reason
+to put U+001B in a string, and the substitution range started at U+0001 so it
+never met the `\u0000` the base spelling actually writes - and the gate said so
+and failed rather than reporting the three it had.
+
+Measured: **60,000 documents generated, 35,992 of them spelling at least one
+relaxation, no disagreements**, in about 45 seconds.
+
+Seen to fail: `\e` decoded as U+001C, and the seconds patched back as `:01`
+rather than `:00`, each caught with the document that did it; a no-op mutation as
+a control returned clean. The image's driver carries the SHA-256 of the source it
+was compiled from and the gate refuses to compare when that differs from the
+committed `driver.cpp`, naming `make oracle-images` - checked by editing the file
+and watching it refuse.
+
+`gtext_json_to_toml()` has a corpus of its own. `make
 conformance-json-to-toml` puts every `y_` and `i_` file of JSONTestSuite's
 `test_parsing` - the population `make conformance-json` already clones and pins
 - through the conversion, which is where the three places TOML is narrower than
@@ -992,28 +1101,27 @@ length is not the question - `strtod` and `strtoll` are, and `ERANGE` from
 @anchor toml_not_implemented
 ## Not implemented
 
-- **A differential against `tomllib` over generated documents.** The fuzzers
-  check this library against itself - two of its own readers, and its writer
-  against its reader. The corpus is the only place a second implementation
-  appears, and it holds the cases somebody chose.
 - **An incremental reader.** The event walk exists; a chunk-fed one does not,
   and [Reading the statements](#toml_events) argues that it should not - the two
-  reasons are the format's, so this is a closed question rather than an open
-  one until one of them changes.
-- **Comments inside a value, on the tree.** They are in the event stream and
-  the tree does not keep them, for the reason [Comments](#toml_comments) gives:
-  the writer has nowhere to put one back. Half of that reason has since
-  changed: `GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES` gives an inline table lines
-  of its own, and a comment inside `{ }` is v1.1.0's third inline relaxation, so
-  a DOM that carried them would now have somewhere to put one - for a table. An
-  array still has nowhere, the tree still has no slot, and nothing has asked for
-  either; it is written down here because the reason moved rather than the
-  answer.
-- **A 1.1.0 reference.** Nothing outside this repository reads the draft, so
-  the fifteen cases the two manifests disagree over are checked against
-  toml-test's decision and against nothing else. When a second 1.1.0
-  implementation exists it belongs in the encode rows the way `tomllib` is in
-  the 1.0.0 ones.
+  reasons are the format's, so this is a closed question rather than an open one
+  until one of them changes. Re-checked 2026-09-28: TOML's refusals are still
+  whole-document, and the end-of-buffer count the argument rests on is still 40,
+  by the command given there rather than by memory.
+- **Comments inside a value, on the tree.** They are in the event stream and the
+  tree does not keep them. The reason used to be written as "TOML has nowhere to
+  put one back", and that was wrong: v1.0.0 already allows newlines and comments
+  inside `[ ]` and this reader accepts them, and
+  `GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES` gives an inline table lines of its
+  own. The blocker is on this side and it is two things - a place on the tree for
+  a comment attached to a *value* rather than to a statement, and a multi-line
+  array style for the writer to put it back into. Neither exists and nothing has
+  asked for either; what is recorded here now is the work rather than an excuse.
+- **A full 1.1.0 reference.** `make check-toml-1-1-oracle` compares the four
+  relaxations toml++ and the draft agree about; the two v1.1.0 items this
+  library does not read (unicode in an unquoted key, toml#687 and toml#891) and
+  the one it reads that toml++ is not known to (a lone carriage return refused
+  inside a multi-line string) have no second reader. Those three are asked of
+  toml-test's decision and of nothing else.
 
 ---
 

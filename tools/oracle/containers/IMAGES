@@ -50,6 +50,42 @@ python	docker.io/library/python:3.14-slim@sha256:7bf6c3111fe094f8ee1a1cbcdc63c4c
 # gating pin and the line above it stays, for the reading between the two.
 python-next	docker.io/library/python:3.15-rc-slim@sha256:4c269ae51995d15c7115f3403bde620e5aa5387ca5b865e56a61a4a24c9ffb49	unicodedata 17.0.0	The same question at this library's own UCD version
 
+# `tomllib`, the second TOML reader. Same image as the gating `python` pin, and a
+# pin of its own because it answers a different question and the version field
+# has to say so: `tomllib` is part of CPython and has no release of its own, so
+# what decides its answers is the interpreter and not a UCD. A line saying
+# "unicodedata 16.0.0" beside a TOML comparison would name the wrong thing.
+#
+# It was the host's until now, and that is the whole reason this entry exists.
+# The TOML corpus's encode rows are the only place a second implementation
+# appears in this library's TOML score, and they were reading whatever `python3`
+# this machine happened to have - a reference nobody chose, of a version nothing
+# recorded. `check-toml-oracle` uses the same pin over generated documents.
+tomllib	docker.io/library/python:3.14-slim@sha256:7bf6c3111fe094f8ee1a1cbcdc63c4cfb345b0e3df42d5aa9a90b3b4b022ab6d	python 3.14	TOML 1.0.0, as CPython's standard library reads it
+
+# toml++ with its unreleased-features set on: the second reader for the
+# relaxations TOML v1.1.0 makes, and the only one there is. Nothing else outside
+# this repository reads the draft at all.
+#
+# **Built here, and the pin is the header's SHA-256**, not this tag: toml++ is a
+# single header, so its bytes are the implementation and `v3.4.0` is a name for
+# them that a maintainer could move. containers/tomlpp/SOURCES carries the hash
+# and the Dockerfile refuses the build without it. The driver's own SHA-256 is
+# compiled into the driver and checked by the gate, because an image carrying one
+# built from an older copy of driver.cpp would answer confidently and wrongly.
+#
+# **Its set is not v1.1.0's**, and that is the thing to read before trusting a
+# clean run. 3.4.0 implements eight unreleased items, cherry-picked from the TOML
+# master branch and the issue list. Four of them are v1.1.0 relaxations this
+# library implements - omitted seconds in a time, newlines and trailing commas in
+# an inline table, `\e`, and `\xHH`. Two are not in v1.1.0 at all: hex floating
+# point (#562) and `+` in a bare key (#644). Two are v1.1.0's unquoted-key
+# relaxations (#687, #891), which this library does not implement. So the
+# comparison runs over the constructs both target and says which it left out;
+# tools/oracle/toml_1_1_diff.py is where that list lives, by name, rather than
+# here where it could drift from the code that uses it.
+tomlpp	localhost/ghoti-text-oracle-tomlpp:3.4.0	toml++ 3.4.0	TOML v1.0.0 plus its own unreleased set, four of which are v1.1.0's
+
 # python-idna, and the one pin here that changes a verdict rather than only
 # making it reproducible.
 #
