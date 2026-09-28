@@ -23,6 +23,8 @@
  * @brief The TOML module's default options.
  */
 
+#include <string.h>
+
 #include "toml_internal.h"
 
 GTEXT_TOML_Parse_Options gtext_toml_parse_options_default(void) {
@@ -48,6 +50,12 @@ GTEXT_TOML_Parse_Options gtext_toml_parse_options_default(void) {
 
 GTEXT_TOML_Write_Options gtext_toml_write_options_default(void) {
   GTEXT_TOML_Write_Options opts;
+  /* Zeroed first, then every field said out loud. Setting each by hand alone
+   * is correct only until the next field is added, and the YAML writer read
+   * two uninitialised pointers off the stack that way; the explicit
+   * assignments stay because a default worth documenting is worth writing
+   * down. */
+  memset(&opts, 0, sizeof(opts));
   opts.allocator = NULL;
   /* Reproduce what was read rather than impose a shape. TOML gives a table two
    * spellings and calls neither canonical, so the writer's job on a document
@@ -55,5 +63,9 @@ GTEXT_TOML_Write_Options gtext_toml_write_options_default(void) {
    * one shape says which. */
   opts.table_style = GTEXT_TOML_TABLE_STYLE_AS_READ;
   opts.datetime = NULL;
+  /* v1.0.0 spellings, which every reader accepts. Each bit here makes the
+   * output unreadable to one, so this is a caller's decision and not a
+   * default. */
+  opts.spellings = GTEXT_TOML_SPELL_1_0_0_ONLY;
   return opts;
 }

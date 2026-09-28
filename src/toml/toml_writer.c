@@ -170,11 +170,17 @@ typedef struct {
   const GTEXT_Allocator * alloc;
   const GCHRON_WriteOptions * datetime;
   GTEXT_TOML_Table_Style style;
+  unsigned spellings; ///< GTEXT_TOML_Spelling bits; 0 is v1.0.0 only.
   GTEXT_TOML_Status status;
   toml_buf path;    ///< The current `[header]` path, already quoted.
   toml_buf scratch; ///< One key or one scalar at a time.
   bool wrote_any;   ///< Whether a blank line is wanted before the next header.
 } toml_wctx;
+
+/** Whether this write may use one of the v1.1.0 draft's added spellings. */
+static bool spells(const toml_wctx * w, unsigned bit) {
+  return (w->spellings & bit) != 0;
+}
 
 /** Send bytes to the sink, remembering the first failure. */
 static bool wemit(toml_wctx * w, const char * bytes, size_t len) {
@@ -244,14 +250,34 @@ static bool spell_string(
       continue;
     }
     if (c < 0x20 || c == 0x7F) {
-      /* The five without a short escape, U+0000 among them: a TOML string may
-       * hold a NUL and this is how it is written. Upper-case hex digits, as
-       * the specification's own examples use. */
+      /* The characters without a short escape, U+0000 among them: a TOML
+       * string may hold a NUL and this is how it is written. Upper-case hex
+       * digits, as the specification's own examples use.
+       *
+       * v1.1.0 adds two shorter spellings for exactly these, and each is a
+       * separate option bit. `\e` is tested first so that with both set
+       * U+001B gets the one that names it rather than the one that numbers
+       * it. */
       static const char hex[] = "0123456789ABCDEF";
+      if (c == 0x1B && spells(w, GTEXT_TOML_SPELL_1_1_0_ESCAPE_E)) {
+        if (!badd(w, out, "\\e", 2)) return false;
+        ++i;
+        continue;
+      }
+      const bool short_hex = spells(w, GTEXT_TOML_SPELL_1_1_0_ESCAPE_X);
       char seq[6] = {'\\', 'u', '0', '0', hex[0], hex[0]};
-      seq[4] = hex[(c >> 4) & 0xF];
-      seq[5] = hex[c & 0xF];
-      if (!badd(w, out, seq, sizeof(seq))) return false;
+      size_t seq_len = sizeof(seq);
+      if (short_hex) {
+        seq[1] = 'x';
+        seq[2] = hex[(c >> 4) & 0xF];
+        seq[3] = hex[c & 0xF];
+        seq_len = 4;
+      }
+      else {
+        seq[4] = hex[(c >> 4) & 0xF];
+        seq[5] = hex[c & 0xF];
+      }
+      if (!badd(w, out, seq, seq_len)) return false;
       ++i;
       continue;
     }
@@ -350,6 +376,59 @@ static bool spell_float(toml_wctx * w, toml_buf * out, double d) {
   return true;
 }
 
+/**
+ * Drop the `:00` seconds from a time, for
+ * GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS.
+ *
+ * The draft's words are that an omitted `:00` "will be assumed", so this
+ * removes exactly the three bytes that assumption would put back. It is the
+ * mirror of the reader, which inserts `:00` into the text before
+ * gchron_parse_toml() sees it: `chron` stays the only date-time grammar in
+ * this library on the way out as on the way in, and this is a narrowing of its
+ * text rather than a second speller.
+ *
+ * Which is safe only because the *value* decides and the text is then checked.
+ * The value has to carry a zero second and a zero fraction - `07:32:01` and
+ * `07:32:00.5` name different instants from `07:32` - and the text has to
+ * carry no fraction at all, because `fraction_digits` 3 writes `.000` for a
+ * zero nanosecond and the seconds cannot come out from in front of it.
+ *
+ * Where the value says the seconds are droppable and the text does not hold
+ * `:00` where they belong, nothing is dropped and the write fails with
+ * E_STATE: that combination means this function and `chron`'s spelling have
+ * drifted apart, and mangling somebody's timestamp on a guess is the one
+ * outcome worse than refusing.
+ *
+ * The position is fixed by the grammar rather than searched for: an offset
+ * also contains a colon, so counting colons finds the wrong one. A TOML date
+ * is `YYYY-MM-DD`, ten characters, and one separator follows it, so the time
+ * begins at 11 for the two date-time kinds and at 0 for a local time -
+ * `space_separator` and `lowercase` change which character the separator is
+ * and not where it sits.
+ */
+static bool shorten_time(
+    toml_wctx * w, char * text, size_t * n, const GCHRON_TomlValue * value) {
+  size_t start;
+  switch (value->kind) {
+    case GCHRON_TOML_LOCAL_TIME: start = 0; break;
+    case GCHRON_TOML_LOCAL_DATE_TIME:
+    case GCHRON_TOML_OFFSET_DATE_TIME: start = 11; break;
+    default: return true; /* A local date has no seconds to drop. */
+  }
+  if (value->civil.time.second != 0 || value->civil.time.nsec != 0) return true;
+  /* A written fraction keeps the seconds in front of it. */
+  if (*n > start + 8 && text[start + 8] == '.') return true;
+
+  if (*n < start + 8 || text[start + 5] != ':' || text[start + 6] != '0'
+      || text[start + 7] != '0') {
+    w->status = GTEXT_TOML_E_STATE;
+    return false;
+  }
+  memmove(text + start + 5, text + start + 8, *n - (start + 8));
+  *n -= 3;
+  return true;
+}
+
 static bool spell_scalar(
     toml_wctx * w, toml_buf * out, const GTEXT_TOML_Value * value) {
   char text[80];
@@ -378,6 +457,10 @@ static bool spell_scalar(
          * deciding here whether TOML can write it - a refusal with the key in
          * hand is more use than one at construction. */
         w->status = GTEXT_TOML_E_DATETIME;
+        return false;
+      }
+      if (spells(w, GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS)
+          && !shorten_time(w, text, &n, &value->as.datetime)) {
         return false;
       }
       return badd(w, out, text, n);
@@ -529,6 +612,14 @@ static bool check_no_statement_comments(
 typedef struct {
   const GTEXT_TOML_Value * node;
   size_t index;
+  /**
+   * How many tables enclose this frame's contents, counting this frame when
+   * it is one. Only meaningful when GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES is
+   * set, and it counts *tables* because only a table breaks its lines: an
+   * array on one line contributes no indentation for the tables inside it to
+   * be measured against.
+   */
+  unsigned level;
 } toml_iframe;
 
 typedef struct {
@@ -537,8 +628,8 @@ typedef struct {
   size_t capacity;
 } toml_istack;
 
-static bool istack_push(
-    toml_wctx * w, toml_istack * st, const GTEXT_TOML_Value * node) {
+static bool istack_push(toml_wctx * w, toml_istack * st,
+    const GTEXT_TOML_Value * node, unsigned level) {
   if (st->count == st->capacity) {
     size_t want = st->capacity ? st->capacity * 2 : 16;
     if (want > SIZE_MAX / sizeof(toml_iframe)) {
@@ -556,7 +647,17 @@ static bool istack_push(
   }
   st->frames[st->count].node = node;
   st->frames[st->count].index = 0;
+  st->frames[st->count].level = level;
   st->count++;
+  return true;
+}
+
+/** A line break and two spaces for each level, for a multi-line `{ }`. */
+static bool windent(toml_wctx * w, unsigned level) {
+  if (!wemitz(w, "\n")) return false;
+  for (unsigned i = 0; i < level; ++i) {
+    if (!wemitz(w, "  ")) return false;
+  }
   return true;
 }
 
@@ -567,32 +668,63 @@ static bool istack_push(
  * table style does not apply any more: a table reached through an array or an
  * inline table has no header available to it, so everything below this point
  * is inline whatever it was read as.
+ *
+ * Two v1.1.0 spellings are chosen here, and only for tables. v1.0.0 forbids a
+ * newline inside `{ }` and a comma after its last pair; it already permits
+ * both inside `[ ]`, so an array's layout is not a v1.1.0 question and is left
+ * exactly as it was.
+ *
+ * The draft relaxes the inline table's *separators*, which is what decides
+ * where the breaks may go: after `{`, after each `,`, and before `}`. Not
+ * between a key and its `=` or between `=` and its value - `keyval-sep` is
+ * still plain `ws` - which is why the key, the `= ` and the value are written
+ * in one run below whatever the options say.
  */
 static bool emit_inline(
     toml_wctx * w, const GTEXT_TOML_Value * value, toml_istack * st) {
   if (!is_container(value)) return emit_scalar(w, value);
 
+  const bool multiline = spells(w, GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES);
+  const bool trailing = spells(w, GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA);
   size_t base = st->count;
-  if (!istack_push(w, st, value)) return false;
-  if (!wemitz(w, value->type == GTEXT_TOML_TABLE ? "{" : "[")) return false;
+  const bool root_table = value->type == GTEXT_TOML_TABLE;
+  if (!istack_push(w, st, value, root_table ? 1u : 0u)) return false;
+  if (!wemitz(w, root_table ? "{" : "[")) return false;
 
   while (st->count > base) {
     toml_iframe * frame = &st->frames[st->count - 1];
     const GTEXT_TOML_Value * node = frame->node;
     bool table = node->type == GTEXT_TOML_TABLE;
     size_t n = table ? node->as.table.count : node->as.array.count;
+    unsigned level = frame->level;
 
     if (frame->index >= n) {
-      if (!wemitz(w, table ? (n ? " }" : "}") : "]")) return false;
+      /* An empty table is `{}` whatever is asked for: there is no last pair
+         for a comma to follow and no pair for a line to hold. */
+      if (table && n) {
+        if (trailing && !wemitz(w, ",")) return false;
+        if (multiline) {
+          if (!windent(w, level - 1)) return false;
+        }
+        else if (!wemitz(w, " ")) return false;
+      }
+      if (!wemitz(w, table ? "}" : "]")) return false;
       st->count--;
       continue;
     }
 
     if (frame->index) {
-      if (!wemitz(w, ", ")) return false;
+      if (!wemitz(w, ",")) return false;
+      if (table && multiline) {
+        if (!windent(w, level)) return false;
+      }
+      else if (!wemitz(w, " ")) return false;
     }
     else if (table) {
-      if (!wemitz(w, " ")) return false;
+      if (multiline) {
+        if (!windent(w, level)) return false;
+      }
+      else if (!wemitz(w, " ")) return false;
     }
 
     const GTEXT_TOML_Value * child;
@@ -612,10 +744,13 @@ static bool emit_inline(
     frame->index++;
 
     if (is_container(child)) {
-      if (!istack_push(w, st, child)) return false;
+      const bool child_table = child->type == GTEXT_TOML_TABLE;
+      if (!istack_push(w, st, child, level + (child_table ? 1u : 0u))) {
+        return false;
+      }
       /* `frame` may dangle now: the push can realloc the frame array. Nothing
        * below this point reads it. */
-      if (!wemitz(w, child->type == GTEXT_TOML_TABLE ? "{" : "[")) return false;
+      if (!wemitz(w, child_table ? "{" : "[")) return false;
     }
     else if (!emit_scalar(w, child)) {
       return false;
@@ -745,6 +880,11 @@ GTEXT_TOML_Status gtext_toml_write(const GTEXT_TOML_Value * root,
   w.alloc = effective.allocator;
   w.datetime = effective.datetime;
   w.style = effective.table_style;
+  /* Masked to what this build knows, so an unrecognised bit from a
+     configuration file cannot reach a spelling nobody chose - the same reason
+     GTEXT_TOML_Parse_Options::version reads an unknown value as the strict
+     arm. */
+  w.spellings = effective.spellings & (unsigned) GTEXT_TOML_SPELL_1_1_0_ALL;
   w.status = GTEXT_TOML_OK;
 
   toml_istack inline_stack;

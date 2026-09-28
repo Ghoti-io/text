@@ -550,3 +550,324 @@ TEST(TomlVersion, AOneOneZeroDocumentWritesAsTomlOneZeroZeroAccepts) {
   gtext_toml_free(strict);
   gtext_toml_free(root);
 }
+
+// -------------------------------------------------------------------------
+// The write-side spelling option
+//
+// The other direction from the test above. That one says the writer needs no
+// *version* option, because v1.0.0's spellings are all v1.1.0 spellings too.
+// GTEXT_TOML_Write_Options::spellings is for the spellings v1.1.0 *adds*, and
+// every one of them makes the output unreadable to a v1.0.0 reader - which is
+// what makes the option measurable, and what these tests assert each time.
+//
+// Three properties for every bit, because two of them can pass while the bit
+// does nothing:
+//
+//   - the bytes are what was asked for, character by character. A bit that
+//     reaches nothing leaves the v1.0.0 spelling and the next two still hold;
+//   - the 1.1.0 arm reads the result back with the same values, which is what
+//     says the shorter spelling means the same thing;
+//   - the 1.0.0 arm refuses it, which is what says the bit reached a point of
+//     use at all.
+//
+// The corpus asks the last two over 218 valid cases (`roundtrip 1.1.0
+// spellings` and `spellings reach`, 52 of which are spelt differently). What is
+// here and nowhere else is the first: the exact bytes, the interactions between
+// bits, and the places each bit must NOT reach.
+// -------------------------------------------------------------------------
+
+namespace {
+
+// Write `root` with `spellings`, requiring success.
+std::string write_with(
+    const GTEXT_TOML_Value * root, unsigned spellings,
+    const GCHRON_WriteOptions * datetime = nullptr) {
+  GTEXT_TOML_Write_Options opts = gtext_toml_write_options_default();
+  opts.spellings = spellings;
+  opts.datetime = datetime;
+  GTEXT_TOML_Sink sink;
+  if (gtext_toml_sink_buffer(&sink) != GTEXT_TOML_OK) return "<no sink>";
+  GTEXT_TOML_Status st = gtext_toml_write(root, &sink, &opts);
+  std::string out = st == GTEXT_TOML_OK
+      ? std::string(gtext_toml_sink_buffer_data(&sink),
+            gtext_toml_sink_buffer_size(&sink))
+      : std::string("<refused ") + std::to_string((int) st) + ">";
+  gtext_toml_sink_buffer_free(&sink);
+  return out;
+}
+
+// Read `document` at 1.1.0, write it with `spellings`, and return the bytes.
+std::string spelt(const std::string & document, unsigned spellings) {
+  GTEXT_TOML_Value * root = ok_1_1(document);
+  if (!root) return "<refused>";
+  std::string out = write_with(root, spellings);
+  gtext_toml_free(root);
+  return out;
+}
+
+// What both arms make of some bytes: "1.0.0 and 1.1.0", "1.1.0 only", or
+// "neither". Written as a string so a failure names the arm rather than
+// printing a bool.
+std::string reads_as(const std::string & text) {
+  GTEXT_TOML_Parse_Options strict = at(GTEXT_TOML_VERSION_1_0_0);
+  GTEXT_TOML_Parse_Options draft = at(GTEXT_TOML_VERSION_1_1_0);
+  GTEXT_TOML_Value * a = gtext_toml_parse(
+      text.data(), text.size(), &strict, nullptr);
+  GTEXT_TOML_Value * b = gtext_toml_parse(
+      text.data(), text.size(), &draft, nullptr);
+  std::string out = a ? (b ? "1.0.0 and 1.1.0" : "1.0.0 only")
+                      : (b ? "1.1.0 only" : "neither");
+  gtext_toml_free(a);
+  gtext_toml_free(b);
+  return out;
+}
+
+} // namespace
+
+TEST(TomlSpellings, TheDefaultIsEveryReadersSpelling) {
+  EXPECT_EQ(gtext_toml_write_options_default().spellings,
+      (unsigned) GTEXT_TOML_SPELL_1_0_0_ONLY);
+  EXPECT_EQ((unsigned) GTEXT_TOML_SPELL_1_0_0_ONLY, 0u);
+
+  // A zeroed struct, the default, and a NULL options pointer are the three ways
+  // a caller reaches the writer without choosing, and all three have to spell
+  // v1.0.0 - the same three-way check the version option gets above.
+  const std::string document = "s = \"\\u001B\"\nlt = 07:32:00\n"
+                               "t = { a = 1 }\n";
+  GTEXT_TOML_Value * root = ok_1_1(document);
+  ASSERT_NE(root, nullptr);
+
+  GTEXT_TOML_Write_Options zeroed;
+  std::memset(&zeroed, 0, sizeof(zeroed));
+  GTEXT_TOML_Sink sink;
+  ASSERT_EQ(gtext_toml_sink_buffer(&sink), GTEXT_TOML_OK);
+  ASSERT_EQ(gtext_toml_write(root, &sink, &zeroed), GTEXT_TOML_OK);
+  const std::string from_zeroed(
+      gtext_toml_sink_buffer_data(&sink), gtext_toml_sink_buffer_size(&sink));
+  gtext_toml_sink_buffer_free(&sink);
+
+  ASSERT_EQ(gtext_toml_sink_buffer(&sink), GTEXT_TOML_OK);
+  ASSERT_EQ(gtext_toml_write(root, &sink, nullptr), GTEXT_TOML_OK);
+  const std::string from_null(
+      gtext_toml_sink_buffer_data(&sink), gtext_toml_sink_buffer_size(&sink));
+  gtext_toml_sink_buffer_free(&sink);
+
+  const std::string expected = "s = \"\\u001B\"\nlt = 07:32:00\n"
+                               "t = { a = 1 }\n";
+  EXPECT_EQ(from_zeroed, expected);
+  EXPECT_EQ(from_null, expected);
+  EXPECT_EQ(write_with(root, GTEXT_TOML_SPELL_1_0_0_ONLY), expected);
+  EXPECT_EQ(reads_as(expected), std::string("1.0.0 and 1.1.0"));
+  gtext_toml_free(root);
+}
+
+TEST(TomlSpellings, EscapeEIsTheOneCharacterItNames) {
+  // U+001B and nothing else. U+0001 has no short escape at either version and
+  // has to keep the long one, which is what says the bit did not turn into
+  // "escape things differently".
+  const std::string document = "s = \"\\u001B\\u0001\\u007F\"\n";
+  EXPECT_EQ(spelt(document, GTEXT_TOML_SPELL_1_1_0_ESCAPE_E),
+      std::string("s = \"\\e\\u0001\\u007F\"\n"));
+  EXPECT_EQ(reads_as(spelt(document, GTEXT_TOML_SPELL_1_1_0_ESCAPE_E)),
+      std::string("1.1.0 only"));
+  EXPECT_EQ(string_1_1(spelt(document, GTEXT_TOML_SPELL_1_1_0_ESCAPE_E), "s"),
+      std::string("\x1B\x01\x7F"));
+}
+
+TEST(TomlSpellings, EscapeXReachesEveryEscapedControlAndNothingElse) {
+  const std::string document = "s = \"\\u001B\\u0001\\u007F\"\n";
+  EXPECT_EQ(spelt(document, GTEXT_TOML_SPELL_1_1_0_ESCAPE_X),
+      std::string("s = \"\\x1B\\x01\\x7F\"\n"));
+  EXPECT_EQ(reads_as(spelt(document, GTEXT_TOML_SPELL_1_1_0_ESCAPE_X)),
+      std::string("1.1.0 only"));
+  EXPECT_EQ(string_1_1(spelt(document, GTEXT_TOML_SPELL_1_1_0_ESCAPE_X), "s"),
+      std::string("\x1B\x01\x7F"));
+
+  // A character with a short escape of its own keeps it: `\t` does not become
+  // `\x09`. And a character v1.0.0 writes through as itself keeps being written
+  // through - U+00F8 is two bytes of UTF-8 and `\xf8` would be a spelling no
+  // rule asks for, so a document holding one still reads at 1.0.0.
+  const std::string mixed = "s = \"\\t\\u00F8\"\n";
+  EXPECT_EQ(spelt(mixed, GTEXT_TOML_SPELL_1_1_0_ESCAPE_X),
+      std::string("s = \"\\t\xC3\xB8\"\n"));
+  EXPECT_EQ(reads_as(spelt(mixed, GTEXT_TOML_SPELL_1_1_0_ESCAPE_X)),
+      std::string("1.0.0 and 1.1.0"));
+}
+
+TEST(TomlSpellings, EscapeEWinsOverEscapeXForTheOneTheyShare) {
+  const std::string document = "s = \"\\u001B\\u0001\"\n";
+  const unsigned both = GTEXT_TOML_SPELL_1_1_0_ESCAPE_E
+      | GTEXT_TOML_SPELL_1_1_0_ESCAPE_X;
+  EXPECT_EQ(spelt(document, both), std::string("s = \"\\e\\x01\"\n"));
+}
+
+TEST(TomlSpellings, SecondsComeOffOnlyWhereTheyMeanNothing) {
+  const std::string document =
+      "lt = 07:32:00\n"
+      "lt_sec = 07:32:01\n"
+      "lt_frac = 07:32:00.25\n"
+      "ldt = 1979-05-27T07:32:00\n"
+      "odt = 1979-05-27T07:32:00-08:00\n"
+      "ld = 1979-05-27\n";
+  const std::string out =
+      spelt(document, GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS);
+  EXPECT_EQ(out,
+      "lt = 07:32\n"
+      "lt_sec = 07:32:01\n"
+      /* .250, not .25: chron's default fraction rounds the digit count up to
+         3, 6 or 9 - the widths an RFC 3339 reader expects. The seconds stay
+         either way, which is what this line is here for. */
+      "lt_frac = 07:32:00.250\n"
+      "ldt = 1979-05-27T07:32\n"
+      "odt = 1979-05-27T07:32-08:00\n"
+      "ld = 1979-05-27\n");
+  EXPECT_EQ(reads_as(out), std::string("1.1.0 only"));
+
+  // The same instants, which is the whole claim: `:00` omitted "will be
+  // assumed", so the shorter text has to read back to the value the longer one
+  // did.
+  GTEXT_TOML_Value * before = ok_1_1(document);
+  GTEXT_TOML_Value * after = ok_1_1(out);
+  ASSERT_NE(before, nullptr);
+  ASSERT_NE(after, nullptr);
+  for (const char * k :
+      {"lt", "lt_sec", "lt_frac", "ldt", "odt", "ld"}) {
+    EXPECT_EQ(datetime_of(key(before, k)), datetime_of(key(after, k))) << k;
+  }
+  gtext_toml_free(before);
+  gtext_toml_free(after);
+}
+
+TEST(TomlSpellings, AWrittenFractionKeepsTheSecondsInFrontOfIt) {
+  // `fraction_digits` 3 writes `.000` for a zero nanosecond, and the seconds
+  // cannot come out from in front of a fraction. The value says they are
+  // droppable and the text says they are not, and the text wins - the
+  // alternative is `07:32.000`, which is not a TOML time at all.
+  const std::string document = "lt = 07:32:00\n";
+  GTEXT_TOML_Value * root = ok_1_1(document);
+  ASSERT_NE(root, nullptr);
+
+  GCHRON_WriteOptions dt;
+  gchron_write_options_default(&dt);
+  dt.fraction_digits = 3;
+  EXPECT_EQ(write_with(root, GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS, &dt),
+      std::string("lt = 07:32:00.000\n"));
+
+  dt.fraction_digits = GCHRON_FRACTION_DIGITS_AUTO;
+  EXPECT_EQ(write_with(root, GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS, &dt),
+      std::string("lt = 07:32\n"));
+  gtext_toml_free(root);
+}
+
+TEST(TomlSpellings, InlineNewlinesBreakTablesAndLeaveArraysAlone) {
+  const std::string document =
+      "t = { a = 1, b = { c = 2 } }\n"
+      "arr = [1, 2]\n"
+      "empty = {}\n";
+  const std::string out =
+      spelt(document, GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES);
+  EXPECT_EQ(out,
+      "t = {\n"
+      "  a = 1,\n"
+      "  b = {\n"
+      "    c = 2\n"
+      "  }\n"
+      "}\n"
+      "arr = [1, 2]\n"
+      "empty = {}\n");
+  EXPECT_EQ(reads_as(out), std::string("1.1.0 only"));
+
+  // Two spaces for each *table* that encloses the line, which is why an array
+  // in between adds none: only a table breaks its lines, so there is no
+  // indentation of its own for the tables inside it to be measured against.
+  const std::string nested = "t = { d = [1, { e = 3 }] }\n";
+  EXPECT_EQ(spelt(nested, GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES),
+      "t = {\n"
+      "  d = [1, {\n"
+      "    e = 3\n"
+      "  }]\n"
+      "}\n");
+}
+
+TEST(TomlSpellings, ATrailingCommaFollowsAPairAndNeverNothing) {
+  const std::string document = "t = { a = 1, b = 2 }\nempty = {}\n"
+                               "arr = [1, 2]\n";
+  const std::string out =
+      spelt(document, GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA);
+  // An empty table has no last pair for a comma to follow, and `{,}` is not a
+  // table at either version. An array's trailing comma is legal at v1.0.0
+  // already, so it is not this bit's business and none is emitted.
+  EXPECT_EQ(out, "t = { a = 1, b = 2, }\nempty = {}\narr = [1, 2]\n");
+  EXPECT_EQ(reads_as(out), std::string("1.1.0 only"));
+  EXPECT_EQ(reads_as("empty = {}\narr = [1, 2]\n"),
+      std::string("1.0.0 and 1.1.0"));
+}
+
+TEST(TomlSpellings, TheTwoInlineBitsAreIndependent) {
+  const std::string document = "t = { a = 1, b = 2 }\n";
+  const unsigned both = GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES
+      | GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA;
+  EXPECT_EQ(spelt(document, both),
+      "t = {\n"
+      "  a = 1,\n"
+      "  b = 2,\n"
+      "}\n");
+  EXPECT_EQ(spelt(document, GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES),
+      "t = {\n"
+      "  a = 1,\n"
+      "  b = 2\n"
+      "}\n");
+  EXPECT_EQ(spelt(document, GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA),
+      "t = { a = 1, b = 2, }\n");
+}
+
+TEST(TomlSpellings, AllIsTheFiveBitsAndAnUnknownBitIsIgnored) {
+  EXPECT_EQ((unsigned) GTEXT_TOML_SPELL_1_1_0_ALL,
+      (unsigned) (GTEXT_TOML_SPELL_1_1_0_ESCAPE_E
+          | GTEXT_TOML_SPELL_1_1_0_ESCAPE_X
+          | GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS
+          | GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES
+          | GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA));
+
+  // A bit this build does not know is ignored rather than refused, for the
+  // reason an unrecognised `version` reads as the strict arm: a field filled in
+  // from a configuration file must not be able to reach a grammar nobody chose.
+  const std::string document = "t = { a = 1 }\n";
+  EXPECT_EQ(spelt(document, 1u << 20), std::string("t = { a = 1 }\n"));
+  EXPECT_EQ(spelt(document, (1u << 20) | GTEXT_TOML_SPELL_1_1_0_ALL),
+      spelt(document, GTEXT_TOML_SPELL_1_1_0_ALL));
+}
+
+TEST(TomlSpellings, EveryBitTogetherStillMeansTheSameDocument) {
+  const std::string document =
+      "s = \"\\u001B\\u0001\"\n"
+      "lt = 07:32:00\n"
+      "t = { a = 1, b = { c = 2 } }\n"
+      "arr = [1, 2]\n";
+  const std::string out = spelt(document, GTEXT_TOML_SPELL_1_1_0_ALL);
+  EXPECT_EQ(out,
+      "s = \"\\e\\x01\"\n"
+      "lt = 07:32\n"
+      "t = {\n"
+      "  a = 1,\n"
+      "  b = {\n"
+      "    c = 2,\n"
+      "  },\n"
+      "}\n"
+      "arr = [1, 2]\n");
+  EXPECT_EQ(reads_as(out), std::string("1.1.0 only"));
+
+  GTEXT_TOML_Value * before = ok_1_1(document);
+  GTEXT_TOML_Value * after = ok_1_1(out);
+  ASSERT_NE(before, nullptr);
+  ASSERT_NE(after, nullptr);
+  EXPECT_EQ(string_of(key(before, "s")), string_of(key(after, "s")));
+  EXPECT_EQ(datetime_of(key(before, "lt")), datetime_of(key(after, "lt")));
+  const GTEXT_TOML_Value * tb = key(before, "t");
+  const GTEXT_TOML_Value * ta = key(after, "t");
+  ASSERT_NE(tb, nullptr);
+  ASSERT_NE(ta, nullptr);
+  EXPECT_EQ(gtext_toml_table_size(tb), gtext_toml_table_size(ta));
+  gtext_toml_free(before);
+  gtext_toml_free(after);
+}

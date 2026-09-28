@@ -506,10 +506,11 @@ asks an arm the cases its own list decides. The last row has no entry because
 nothing planted so far fires it: it is cheap insurance, and saying so is more
 useful than implying it is armed.
 
-The writer harness asserts the round trip under all three table styles, and on
-documents that came from *parsing* it also asserts that **the same comments come
-back** - the corpus's `comments` mode over inputs nobody chose. Four defects,
-all caught, control silent:
+The writer harness asserts the round trip under all three table styles and under
+any combination of the v1.1.0 write spellings, and on documents that came from
+*parsing* it also asserts that **the same comments come back** - the corpus's
+`comments` mode over inputs nobody chose. Four defects, all caught, control
+silent:
 
 | planted defect | what fired |
 | --- | --- |
@@ -542,6 +543,19 @@ rule is that plain keys come before sub-tables, whatever order they were
 defined in, because every bare key after a `[header]` belongs to that header's
 table. So `[[a.b]]` before `y = 2` must come back in the other order. The
 comparison sorts object keys now, which is the comparison the corpus makes.
+
+**The v1.1.0 write spellings are an axis here too**, drawn from the mode byte's
+spare bits rather than from a third header byte: `sel` has five bits left once
+the table style and the parse version have taken theirs, and the spelling mask
+needs five of its own. So the header stays two bytes and a corpus unit keeps its
+length and its body offset; what changes is that its mode byte now also picks a
+spelling, which the fuzzer re-explores on its own.
+
+The read-back version follows the mask, and it has to: every spelling the option
+adds is 1.0.0-invalid by construction, so re-reading spelt bytes with the strict
+arm would report the option's whole purpose as a writer defect. A zero mask
+reads back at 1.0.0, which is the stricter of the two and the right default for
+the property.
 
 ## The options byte
 

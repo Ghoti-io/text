@@ -161,8 +161,8 @@ somebody will later have to disprove:
 **The writer has no version option, and that is a measurement.** Every spelling
 1.0.0 defines is still a 1.1.0 spelling, so a writer emitting 1.0.0 is already
 correct for both - the encode rows score 218 of 218 against the 1.1.0 manifest
-with no writer change at all. Nothing 1.1.0 adds survives into output either:
-the seconds are always written, `\e` and `\xHH` come back as `\uXXXX` or as the
+with no writer change at all. By default nothing 1.1.0 adds survives into output
+either: the seconds are written, `\e` and `\xHH` come back as `\uXXXX` or as the
 character, an inline table is one line, and no trailing comma is emitted. A
 `version` field on `GTEXT_TOML_Write_Options` would therefore be an axis with no
 point of use, which is the same defect as a `table_style` that never reaches its
@@ -170,6 +170,74 @@ decision - and that one scored 2250 of 2250 before anyone noticed. The round
 trip is asserted instead: `TomlVersion.AOneOneZeroDocumentWritesAsTomlOneZeroZeroAccepts`
 reads a document only 1.1.0 accepts, writes it, and reads it back with the
 strict arm.
+
+**What the draft's spellings *do* get is a style option**, which is the other
+direction and a different question: not "which version is this output valid
+under" - all of it is valid under both - but "may the writer use a spelling only
+the draft can read". `GTEXT_TOML_Write_Options::spellings` is that, five bits and
+zero by default:
+
+| bit | v1.0.0 writes | with the bit |
+|---|---|---|
+| `_ESCAPE_E` | `\u001B` | `\e` |
+| `_ESCAPE_X` | `\u00HH` for an escaped control | `\xHH` |
+| `_TIME_NO_SECONDS` | `07:32:00` | `07:32`, where the seconds and the fraction are both zero |
+| `_INLINE_NEWLINES` | `{ a = 1, b = 2 }` | one pair to a line, two spaces for each enclosing table |
+| `_INLINE_TRAILING_COMMA` | `{ a = 1 }` | `{ a = 1, }` |
+
+Five bits rather than one, because they are five decisions with five
+consequences and a single bit standing for a family is a bit somebody later has
+to prove reaches all of it. `GTEXT_TOML_SPELL_1_1_0_ALL` is for the caller who
+means "the draft's spellings" and accepts that the set widens as this library
+learns more of them.
+
+Three things about it are deliberate:
+
+- **Tables only.** A newline and a trailing comma inside `[ ]` have been legal
+  since v1.0.0, so an array's layout is not a v1.1.0 spelling and neither bit
+  touches one. An empty table stays `{}`: there is no last pair for a comma to
+  follow.
+- **`\xHH` escapes no more characters than `\uXXXX` did.** `\xf8` would be
+  U+00F8 under the draft, and a writer that used it would be escaping a
+  character no rule asks to be escaped. So the bit changes the *spelling* of the
+  escapes v1.0.0 already required and adds none, and a document of ordinary text
+  still reads at 1.0.0 with the bit set.
+- **The seconds come off `chron`'s text, not off a second speller.** The draft
+  says an omitted `:00` "will be assumed", and this removes exactly the three
+  bytes that assumption puts back - the mirror of the reader, which *inserts*
+  `:00` before `gchron_parse_toml()` sees the text. The value decides (a zero
+  second and a zero fraction, and no fraction in the text - `fraction_digits` 3
+  writes `.000` and the seconds cannot come out from in front of it) and the
+  text is then checked: where the value says droppable and `:00` is not standing
+  where it belongs, the write fails with `E_STATE` rather than mangling a
+  timestamp on a guess.
+
+**How it is measured**, because a spelling option is exactly the shape of thing
+a corpus comparing values cannot see - which is the finding this module has now
+made four times:
+
+- `roundtrip 1.1.0 spellings` writes all 218 valid cases with every bit set and
+  reads them back with the 1.1.0 arm, against the same expectations. That is the
+  *values* half, and it is what catches a spelling that changes one: the
+  seconds-dropping made to fire on any time refuses four cases with `E_STATE` and
+  takes the arm to 3875 of 3883.
+- `spellings reach` writes each case twice, once with the bits and once without,
+  and requires the two answers to be opposites: bytes that differ must be
+  refused by the 1.0.0 arm and bytes that do not must be accepted by it. Every
+  one of the five spellings is 1.0.0-invalid, so that equivalence holds, and an
+  option that reached nothing breaks it on every case carrying the construct.
+  **52 of the 218 are written differently**, and that count is the mode's real
+  denominator: a zero would mean the corpus holds none of the constructs, so it
+  is scored rather than reported. The first draft of this mode printed the
+  complaint beside a score of 218 of 218 and met the floor.
+- `tests/test-toml-version.cpp` has the exact bytes, bit by bit, the
+  interactions (`\e` wins over `\xHH` for the character they share; the two
+  inline bits are independent), and the places each bit must *not* reach. Eight
+  mutations - each bit made not to reach its point of use, the mask dropped on
+  the way into the writer, and the seconds dropped whatever they are - are each
+  caught, and the unmutated tree is silent.
+- `fuzz_toml_writer` draws the mask from its mode byte's spare bits, so the
+  round trip is asserted under arbitrary combinations on documents nobody chose.
 
 ## The redefinition rules are four rules
 
@@ -281,7 +349,15 @@ buffer from an exactly-fitting one, which is what
   place is `GTEXT_TOML_E_UNREPRESENTABLE` rather than dropped; see
   [Comments](#toml_comments).
 - **What it never writes.** Multi-line strings, literal strings, non-decimal
-  integers, and indentation.
+  integers, and - with the default options - indentation.
+- **The v1.1.0 spellings are available and off.**
+  `GTEXT_TOML_Write_Options::spellings` is a mask of
+  @ref GTEXT_TOML_Spelling bits, each turning on one spelling the draft adds:
+  `\e` for U+001B, `\xHH` for an escaped control, `:00` seconds omitted, an
+  inline table broken across lines and indented, and a trailing comma after its
+  last pair. `GTEXT_TOML_SPELL_1_1_0_ALL` is every one this release knows.
+  **Any bit but zero produces a document a v1.0.0 reader refuses**, which today
+  is every reader outside this library; see below.
 
 **Building a document** is `gtext_toml_new_table()`, `_new_array()`,
 `_new_string()`, `_new_integer()`, `_new_float()`, `_new_boolean()`,
@@ -523,9 +599,9 @@ itself; 0 removes the limit and hands the question back to the caller.
 | Tables | headers, arrays of tables, implicit parents | the four redefinition rules above |
 | Comments | `#` to end of line; kept on the tree and in the event stream with `retain_comments` | control characters, `E_CONTROL`; on the tree, only the comments a statement can carry - see [Comments](#toml_comments) |
 | Reading as events | every statement in the order written, with positions, through `gtext_toml_read_events()` | no incremental `feed`, deliberately - [Reading the statements](#toml_events) says why |
-| Versions | 1.0.0 by default, 1.1.0 through `GTEXT_TOML_Parse_Options::version` | an unrecognised version value reads as 1.0.0 |
+| Versions | 1.0.0 by default, 1.1.0 through `GTEXT_TOML_Parse_Options::version` on the way in and `GTEXT_TOML_Write_Options::spellings` on the way out | an unrecognised version value reads as 1.0.0; an unknown spelling bit is ignored |
 | JSON, both ways | every type with a counterpart, in definition order; date-times as strings by default | a non-finite float, `E_UNREPRESENTABLE` by default; a JSON `null`, `E_UNREPRESENTABLE` (or skipped); a `null` in an array, always `E_UNREPRESENTABLE`; an integer outside `int64_t`, `E_RANGE`; a non-object JSON root, `E_UNREPRESENTABLE`; a number with no lexeme, `E_INVALID` |
-| Writing | the whole 1.0.0 grammar this module reads, in the spellings under Save - which is also valid 1.1.0, so there is no write-side version option - and the comments the tree kept | invalid UTF-8, `E_BAD_UNICODE`; a date-time `chron` refuses, `E_DATETIME`; a non-table root, `E_INVALID`; a comment it cannot place, `E_UNREPRESENTABLE`. No multi-line or literal strings, no non-decimal integers |
+| Writing | the whole 1.0.0 grammar this module reads, in the spellings under Save - which is also valid 1.1.0, so there is no write-side version option - the five spellings 1.1.0 *adds* behind `GTEXT_TOML_Write_Options::spellings`, off by default, and the comments the tree kept | invalid UTF-8, `E_BAD_UNICODE`; a date-time `chron` refuses, `E_DATETIME`; a non-table root, `E_INVALID`; a comment it cannot place, `E_UNREPRESENTABLE`. No multi-line or literal strings, no non-decimal integers |
 
 ## Deviations
 
@@ -542,9 +618,12 @@ them accepts. If one is found it goes in this table with a reproduction.
 
 **toml-test, pinned at `ff49d109861c1ad25af53f687f2aef19ab650600`** (2026-09-15),
 `tools/conformance/TOML_SUITE_COMMIT`. Scored by `make conformance-toml` and by
-`make conformance-toml-next`. One corpus, two manifests, ten scores each,
-because it carries expectations rather than only inputs and so measures both
-directions:
+`make conformance-toml-next`. One corpus, two manifests, **ten scores on the
+1.0.0 arm and twelve on the 1.1.0 one**, because it carries expectations rather
+than only inputs and so measures both directions. The two extra rows are the
+write-side spelling option, and they belong to that arm alone: output carrying a
+v1.1.0 spelling is 1.0.0-invalid by construction, so re-reading it with the
+strict arm would score the option's purpose as a defect.
 
 ```
 === toml-test, TOML 1.0.0 ===          === toml-test, TOML 1.1.0 ===
@@ -558,7 +637,10 @@ roundtrip inline   208 of  208         roundtrip inline   218 of  218
 encode as-read     208 of  208         encode as-read     218 of  218
 encode headers     208 of  208         encode headers     218 of  218
 crossed             66 of   66         crossed             66 of   66
-total             3377 of 3377         total             3446 of 3446
+                                       roundtrip 1.1.0    218 of  218
+                                        spellings
+                                       spellings reach    219 of  219
+total             3377 of 3377         total             3883 of 3883
 ```
 
 Several things about those scores, because a clean one is where this page is
@@ -609,7 +691,10 @@ least useful if it stops:
   and compared to the suite's own expectation, so the writer is scored against
   something outside this library. `tomllib` reads 1.0.0 only, and those rows
   score 218 of 218 against the 1.1.0 manifest unchanged, which is the evidence
-  that 1.1.0 adds spellings and not values.
+  that 1.1.0 adds spellings and not values. They run with the default write
+  options, and they are the reason the spelling option is not a default: the
+  same rows with `GTEXT_TOML_SPELL_1_1_0_ALL` would be 218 refusals from a
+  reference that reads 1.0.0.
 - **The `crossed` row is the only one that can tell the two arms apart.** Each
   ordinary row asks an arm the cases its own manifest decides, so it is silent
   about everything that manifest drops. `crossed` computes four populations from
@@ -875,9 +960,13 @@ files, already cloned by `make conformance-json` and not yet pointed at this.
   one until one of them changes.
 - **Comments inside a value, on the tree.** They are in the event stream and
   the tree does not keep them, for the reason [Comments](#toml_comments) gives:
-  the writer has nowhere to put one back. A DOM that carried them would need a
-  writer that could break an array across lines, which is a shape decision
-  nothing has asked for yet.
+  the writer has nowhere to put one back. Half of that reason has since
+  changed: `GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES` gives an inline table lines
+  of its own, and a comment inside `{ }` is v1.1.0's third inline relaxation, so
+  a DOM that carried them would now have somewhere to put one - for a table. An
+  array still has nowhere, the tree still has no slot, and nothing has asked for
+  either; it is written down here because the reason moved rather than the
+  answer.
 - **A JSON corpus for the JSON-to-TOML direction.** The `via json` mode only
   sends TOML out and back, so the hazards on the way in - `null`, an integer
   wider than `int64_t`, a non-object root - are reached by

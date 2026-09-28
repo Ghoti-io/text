@@ -695,6 +695,65 @@ def score_comments_mode():
     return asked, passed, failures
 
 
+SPELL_COUNTS = {}
+
+
+def score_spell_reach():
+    """Whether GTEXT_TOML_Write_Options::spellings reaches a point of use.
+
+    Each valid case is written twice, with the option and without, and the two
+    answers have to be opposites: bytes that differ hold a v1.1.0 spelling and
+    so must be refused by the 1.0.0 arm, and bytes that do not differ must be
+    accepted by it. A bit that never reached its decision makes them agree on
+    every case carrying the construct it was meant to change.
+
+    The count of cases that *do* differ is printed rather than required,
+    because it is a property of the corpus and not of the library - but a run
+    where nothing differed would be a run that measured nothing, so zero is a
+    failure of the mode as a whole.
+    """
+    failures = []
+    passed = 0
+    asked = 0
+    differing = 0
+    for path in valid:
+        asked += 1
+        out, why, code = run(read_case(path),
+                             ARM + ['--spell-check', '--spellings=1.1.0'])
+        if out is None:
+            failures.append((path, 'refused (exit %d): %s' % (code, why)))
+            continue
+        lines = out.decode('utf-8').split()
+        if len(lines) != 4 or lines[0] != 'differs' \
+                or lines[2] != 'reads-at-1.0.0':
+            failures.append((path, 'unreadable verdict %r' % out[:60]))
+            continue
+        differs = lines[1] == 'yes'
+        reads = lines[3] == 'yes'
+        if differs:
+            differing += 1
+        if differs == reads:
+            failures.append((path, 'the spellings option %s the bytes and the '
+                                   '1.0.0 arm %s them: those cannot both be '
+                                   'true'
+                             % ('changed' if differs else 'left',
+                                'refused' if not reads else 'accepted')))
+        else:
+            passed += 1
+    SPELL_COUNTS['differing'] = differing
+    # In the denominator, not beside it. The first draft of this mode appended
+    # a complaint and returned 218 of 218 anyway, so the gate announced that it
+    # had measured nothing and still met the floor - which is the whole shape of
+    # a sweep that cannot see returning clean.
+    asked += 1
+    if differing:
+        passed += 1
+    else:
+        failures.append(('(the corpus)', 'not one case was written differently, '
+                                         'so this mode asked nothing'))
+    return asked, passed, failures
+
+
 MODES = [
     ('decode', 'the reader, scored against the suite expectations',
      lambda: score_decode(ARM, True)),
@@ -717,6 +776,22 @@ MODES = [
     ('crossed', 'each arm over the cases the other manifest decides',
      score_cross),
 ]
+
+# Two modes for the write-side spelling option, and only on the 1.1.0 arm:
+# output carrying a v1.1.0 spelling is by construction not readable by the
+# 1.0.0 one, so read-write-read at 1.0.0 would be scoring the option's whole
+# purpose as a failure.
+if VERSION == '1.1.0':
+    MODES.append(
+        ('roundtrip 1.1.0 spellings',
+         'parse, write with every 1.1.0 spelling, parse again',
+         lambda: score_decode(
+             ARM + ['--roundtrip', '--style=as-read', '--spellings=1.1.0'],
+             False)))
+    MODES.append(
+        ('spellings reach',
+         'the option changed the bytes exactly where 1.0.0 then refuses them',
+         score_spell_reach))
 
 print("=== toml-test, TOML %s ===" % VERSION)
 print("  the manifest lists %d valid and %d invalid cases"
@@ -746,6 +821,17 @@ for name, blurb, scorer in MODES:
 print("\nvia json: %d of the %d valid cases hold a non-finite float, where the "
       "expectation is a refusal" % (VIA_JSON_COUNTS.get('refusals', 0),
                                     len(valid)))
+if VERSION == '1.1.0':
+    print("\nspellings: %d of the %d valid cases are written differently when "
+          "every 1.1.0 spelling is" % (SPELL_COUNTS.get('differing', 0),
+                                       len(valid)))
+    print("  allowed; each of those is then refused by the 1.0.0 arm, and each "
+          "of the rest is not.")
+    print("  That count is the mode's denominator in disguise: a zero would "
+          "mean the corpus holds none")
+    print("  of the constructs the option changes, and it is scored as a "
+          "failure rather than reported.")
+
 print("\ncomments: the %d valid cases contain %d comment lines, of which a tree "
       "keeps %d." % (len(valid), COMMENT_COUNTS.get('events', 0),
                      COMMENT_COUNTS.get('tree', 0)))

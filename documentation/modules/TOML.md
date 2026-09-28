@@ -124,6 +124,16 @@ omission: every spelling 1.0.0 defines is still a 1.1.0 spelling, so the writer
 is already correct for both. Measured - the corpus's encode rows score 218 of
 218 against the 1.1.0 manifest with no writer change at all.
 
+The spellings 1.1.0 *adds* are a separate question and a separate option.
+`GTEXT_TOML_Write_Options::spellings` is a mask of `GTEXT_TOML_Spelling` bits -
+`_ESCAPE_E`, `_ESCAPE_X`, `_TIME_NO_SECONDS`, `_INLINE_NEWLINES`,
+`_INLINE_TRAILING_COMMA`, and `_1_1_0_ALL` for every one this release knows.
+Zero is the default, and **any other value produces a document a 1.0.0 reader
+refuses** - which today is every reader outside this library, so it is not a
+formatting preference to set by habit. An unknown bit is ignored, for the same
+reason an unrecognised `version` reads as the strict arm. \ref format_toml has
+the table of what each bit changes and the two corpus modes that measure them.
+
 ## 4. Reading the tree
 
 `gtext_toml_value_type()` returns one of seven:
@@ -206,6 +216,11 @@ a full buffer and an exactly-fitting document have the same count.
 | `_AS_READ` (default) | as it was read: `[header]` or `{ }` | as it was read: `[[header]]` or `[ ]` |
 | `_HEADERS` | `[header]` | `[[header]]`, unless empty |
 | `_INLINE` | `{ }` | `[{ }, { }]` |
+
+`spellings` changes the spelling of the values and the layout of an inline
+*table*; see section 3. It never changes an array's layout, because a newline
+and a trailing comma inside `[ ]` have been legal since 1.0.0 and so are not
+1.1.0 spellings at all.
 
 Two things are not options. Plain keys are written before sub-tables, because
 every bare key after a `[header]` belongs to the table that header opened; and

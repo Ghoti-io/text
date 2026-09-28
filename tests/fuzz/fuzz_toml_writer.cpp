@@ -162,10 +162,11 @@ std::string spell_comments(const std::map<std::string, int> & counts) {
 }
 
 bool write_document(const GTEXT_TOML_Value * root,
-    GTEXT_TOML_Table_Style style, std::string * out,
+    GTEXT_TOML_Table_Style style, unsigned spellings, std::string * out,
     GTEXT_TOML_Status * status) {
   GTEXT_TOML_Write_Options wopts = gtext_toml_write_options_default();
   wopts.table_style = style;
+  wopts.spellings = spellings;
   GTEXT_TOML_Sink sink;
   if (gtext_toml_sink_buffer(&sink) != GTEXT_TOML_OK) return false;
   *status = gtext_toml_write(root, &sink, &wopts);
@@ -178,24 +179,32 @@ bool write_document(const GTEXT_TOML_Value * root,
   return ok;
 }
 
-/** Write, read back, and require the values to survive. */
+/** Write, read back, and require the values to survive.
+ *
+ * `spellings` is GTEXT_TOML_Write_Options::spellings, and it decides which
+ * version reads the output back: every v1.1.0 spelling the option adds is
+ * 1.0.0-invalid by construction, so re-reading spelt bytes with the strict arm
+ * would score the option's whole purpose as a writer defect. Zero reads back at
+ * 1.0.0, which is the stricter of the two and the right default. */
 void must_round_trip(const GTEXT_TOML_Value * root,
-    GTEXT_TOML_Table_Style style, bool compare_comments) {
+    GTEXT_TOML_Table_Style style, unsigned spellings, bool compare_comments) {
   std::string written;
   GTEXT_TOML_Status status = GTEXT_TOML_OK;
-  if (!write_document(root, style, &written, &status)) return;
+  if (!write_document(root, style, spellings, &written, &status)) return;
 
   GTEXT_TOML_Parse_Options popts = gtext_toml_parse_options_default();
   popts.max_depth = 0;
   popts.retain_comments = true;
+  if (spellings) popts.version = GTEXT_TOML_VERSION_1_1_0;
   GTEXT_TOML_Error err;
   std::memset(&err, 0, sizeof(err));
   GTEXT_TOML_Value * back =
       gtext_toml_parse(written.data(), written.size(), &popts, &err);
   if (!back) {
     fprintf(stderr,
-        "the writer wrote what the parser refuses (style %d): %s\n  %s\n",
-        (int) style, err.message ? err.message : "",
+        "the writer wrote what the parser refuses (style %d, spellings 0x%x): "
+        "%s\n  %s\n",
+        (int) style, spellings, err.message ? err.message : "",
         legible(written.data(), written.size()).c_str());
     gtext_toml_error_free(&err);
     __builtin_trap();
@@ -206,9 +215,9 @@ void must_round_trip(const GTEXT_TOML_Value * root,
   std::string after;
   if (values_of(root, &before) && values_of(back, &after) && before != after) {
     fprintf(stderr,
-        "the writer wrote a different document (style %d):\n"
+        "the writer wrote a different document (style %d, spellings 0x%x):\n"
         "  wrote  %s\n  before %s\n  after  %s\n",
-        (int) style, legible(written.data(), written.size()).c_str(),
+        (int) style, spellings, legible(written.data(), written.size()).c_str(),
         before.c_str(), after.c_str());
     __builtin_trap();
   }
@@ -220,9 +229,9 @@ void must_round_trip(const GTEXT_TOML_Value * root,
     collect_comments(back, &is);
     if (was != is) {
       fprintf(stderr,
-          "the comments changed (style %d):\n  wrote  %s\n"
+          "the comments changed (style %d, spellings 0x%x):\n  wrote  %s\n"
           "  before %s\n  after  %s\n",
-          (int) style, legible(written.data(), written.size()).c_str(),
+          (int) style, spellings, legible(written.data(), written.size()).c_str(),
           spell_comments(was).c_str(), spell_comments(is).c_str());
       __builtin_trap();
     }
@@ -342,7 +351,8 @@ GTEXT_TOML_Value * build(Bytes & b, int depth) {
 }
 
 /** A document built through the API, written, and read back. */
-void fuzz_built(const uint8_t * data, size_t size, uint8_t sel) {
+void fuzz_built(const uint8_t * data, size_t size, uint8_t sel,
+    unsigned spellings) {
   Bytes b{data, size};
   GTEXT_TOML_Value * root = gtext_toml_new_table(nullptr);
   if (!root) return;
@@ -361,12 +371,13 @@ void fuzz_built(const uint8_t * data, size_t size, uint8_t sel) {
      sub-table, which is written after that table's block and read back as the
      next header's leading comment - the same comment, in the place it now
      occupies. The parsed family below is where comment fidelity is a promise. */
-  must_round_trip(root, (GTEXT_TOML_Table_Style) (sel % 3), false);
+  must_round_trip(root, (GTEXT_TOML_Table_Style) (sel % 3), spellings, false);
   gtext_toml_free(root);
 }
 
 /** A document that came from parsing, with its comments, written and read. */
-void fuzz_parsed(const uint8_t * data, size_t size, uint8_t sel) {
+void fuzz_parsed(const uint8_t * data, size_t size, uint8_t sel,
+    unsigned spellings) {
   GTEXT_TOML_Parse_Options popts = gtext_toml_parse_options_default();
   popts.retain_comments = true;
   popts.max_depth = 0;
@@ -380,7 +391,7 @@ void fuzz_parsed(const uint8_t * data, size_t size, uint8_t sel) {
   if (!root) return;
   /* The comments are a promise on this family: every one the tree holds came
      from a statement, so every one has a statement to go back on. */
-  must_round_trip(root, (GTEXT_TOML_Table_Style) (sel % 3), true);
+  must_round_trip(root, (GTEXT_TOML_Table_Style) (sel % 3), spellings, true);
   gtext_toml_free(root);
 }
 
@@ -390,9 +401,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   if (size < 2) return 0;
   const uint8_t mode = data[0];
   const uint8_t sel = data[1];
+  /* The v1.1.0 write spellings, from the mode byte's spare bits rather than
+     from a third header byte: `sel` has only five bits free once the table
+     style and the parse version have taken theirs, and the mask needs five of
+     its own. The header stays two bytes, so a corpus unit keeps its length and
+     its body offset - what changes is that its mode byte now also chooses a
+     spelling, which the fuzzer re-explores on its own. */
+  const unsigned spellings =
+      (unsigned) (mode >> 1) & (unsigned) GTEXT_TOML_SPELL_1_1_0_ALL;
   const uint8_t * body = data + 2;
   const size_t len = size - 2;
-  if (mode & 1) fuzz_built(body, len, sel);
-  else fuzz_parsed(body, len, sel);
+  if (mode & 1) fuzz_built(body, len, sel, spellings);
+  else fuzz_parsed(body, len, sel, spellings);
   return 0;
 }

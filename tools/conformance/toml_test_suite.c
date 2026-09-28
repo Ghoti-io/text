@@ -14,6 +14,15 @@
  * --style=as-read|headers|inline picks GTEXT_TOML_Table_Style, so the option
  * is measured rather than asserted: each setting is run over the whole corpus.
  *
+ * --spellings=1.1.0 sets GTEXT_TOML_Write_Options::spellings to every v1.1.0
+ * spelling this library knows, so the write-side option is measured over the
+ * corpus too. --spell-check is the mode that asks whether it reached anything:
+ * it writes the document twice, once with the option and once without, and
+ * prints two lines - whether the bytes differ, and whether the spelt bytes
+ * still read at 1.0.0. Every v1.1.0 spelling is 1.0.0-invalid, so those two
+ * answers have to be opposites, and a bit that never reached its decision
+ * makes them agree.
+ *
  * --version=1.0.0|1.1.0 picks GTEXT_TOML_Parse_Options::version, and the two
  * manifests are the two sides of it: toml_test_suite.py scores the 1.0.0 list
  * with the 1.0.0 arm and the 1.1.0 list with the 1.1.0 arm, and the eleven
@@ -940,6 +949,7 @@ int main(int argc, char ** argv) {
   bool events = false;
   bool comments = false;
   bool via_json = false;
+  bool spell_check = false;
   GTEXT_TOML_Write_Options wopts = gtext_toml_write_options_default();
   GTEXT_TOML_Parse_Options popts = gtext_toml_parse_options_default();
 
@@ -948,6 +958,10 @@ int main(int argc, char ** argv) {
     else if (strcmp(argv[i], "--encode") == 0) encode = true;
     else if (strcmp(argv[i], "--events") == 0) events = true;
     else if (strcmp(argv[i], "--via-json") == 0) via_json = true;
+    else if (strcmp(argv[i], "--spellings=1.1.0") == 0) {
+      wopts.spellings = GTEXT_TOML_SPELL_1_1_0_ALL;
+    }
+    else if (strcmp(argv[i], "--spell-check") == 0) spell_check = true;
     else if (strcmp(argv[i], "--comments") == 0) {
       comments = true;
       popts.retain_comments = true;
@@ -1172,6 +1186,74 @@ int main(int argc, char ** argv) {
     fputs("second\n", stdout);
     list_comments(reread);
     gtext_toml_free(reread);
+    gtext_toml_free(root);
+    free(data);
+    return 0;
+  }
+
+  if (spell_check) {
+    /* Two writes of one document, and the question is whether the option
+     * reached a point of use at all: bytes that differ have to be refused by
+     * the strict arm, and bytes that do not have to be accepted by it. Every
+     * one of the five spellings is 1.0.0-invalid, so the two are equivalent,
+     * and a bit that never reached its decision breaks the equivalence on
+     * every case that carries the construct it was supposed to change.
+     *
+     * The values are not compared here - the roundtrip mode does that over the
+     * same corpus with the same flag. This mode is only about reach. */
+    char * plain = NULL;
+    size_t plain_len = 0;
+    char * spelt = NULL;
+    size_t spelt_len = 0;
+    GTEXT_TOML_Write_Options none = gtext_toml_write_options_default();
+    none.table_style = wopts.table_style;
+    none.datetime = wopts.datetime;
+    for (int pass = 0; pass < 2; ++pass) {
+      GTEXT_TOML_Sink sink;
+      if (gtext_toml_sink_buffer(&sink) != GTEXT_TOML_OK) {
+        free(plain);
+        gtext_toml_free(root);
+        free(data);
+        return 3;
+      }
+      GTEXT_TOML_Status s = gtext_toml_write(
+          root, &sink, pass ? &wopts : &none);
+      if (s != GTEXT_TOML_OK) {
+        fprintf(stderr, "the writer refused a parsed document, code %d\n",
+            (int) s);
+        gtext_toml_sink_buffer_free(&sink);
+        free(plain);
+        gtext_toml_free(root);
+        free(data);
+        return 3;
+      }
+      size_t n = gtext_toml_sink_buffer_size(&sink);
+      char * copy = (char *) malloc(n ? n : 1);
+      if (!copy) {
+        gtext_toml_sink_buffer_free(&sink);
+        free(plain);
+        gtext_toml_free(root);
+        free(data);
+        return 3;
+      }
+      memcpy(copy, gtext_toml_sink_buffer_data(&sink), n);
+      gtext_toml_sink_buffer_free(&sink);
+      if (pass) { spelt = copy; spelt_len = n; }
+      else { plain = copy; plain_len = n; }
+    }
+    const bool differs =
+        plain_len != spelt_len || memcmp(plain, spelt, plain_len) != 0;
+    GTEXT_TOML_Parse_Options strict = gtext_toml_parse_options_default();
+    GTEXT_TOML_Error at_1_0;
+    memset(&at_1_0, 0, sizeof(at_1_0));
+    GTEXT_TOML_Value * reread =
+        gtext_toml_parse(spelt, spelt_len, &strict, &at_1_0);
+    printf("differs %s\nreads-at-1.0.0 %s\n", differs ? "yes" : "no",
+        reread ? "yes" : "no");
+    if (reread) gtext_toml_free(reread);
+    gtext_toml_error_free(&at_1_0);
+    free(plain);
+    free(spelt);
     gtext_toml_free(root);
     free(data);
     return 0;

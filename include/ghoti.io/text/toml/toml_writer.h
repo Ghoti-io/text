@@ -33,6 +33,12 @@
  * table a header defined, `{ }` for one written inline - and
  * @ref GTEXT_TOML_Write_Options::table_style overrides that in either
  * direction.
+ *
+ * There is no write-side *version* option, because every v1.0.0 spelling is
+ * also a v1.1.0 one and so the output is already right for both.
+ * @ref GTEXT_TOML_Write_Options::spellings is the other direction: the
+ * spellings the draft *adds*, off by default, each of which makes the output
+ * unreadable to a v1.0.0 reader.
  */
 
 #ifndef GHOTI_IO_GTEXT_TOML_TOML_WRITER_H
@@ -203,6 +209,112 @@ typedef enum {
 } GTEXT_TOML_Table_Style;
 
 /**
+ * @enum GTEXT_TOML_Spelling
+ * @brief Spellings the v1.1.0 draft adds, which a write may use.
+ *
+ * Every spelling v1.0.0 defines is still a v1.1.0 spelling, so the writer's
+ * output is valid under both versions and needs no version option. The draft
+ * *adds* spellings, though, and a caller who knows their reader is a v1.1.0
+ * one may want them. Each bit here turns one on.
+ *
+ * **Any bit but zero produces a document a v1.0.0 reader refuses**, and today
+ * that is every reader outside this library. That is the point of the option
+ * and it is also the hazard, which is why the values name the version rather
+ * than the appearance: `\xHH` is not "shorter escapes", it is "escapes only a
+ * draft reader accepts".
+ *
+ * They are separate bits rather than one because they are separate decisions
+ * with separate consequences - a shorter escape changes one character of a
+ * string, and a multi-line inline table changes the shape of the document -
+ * and because a single bit standing for a family is a bit somebody later has
+ * to disprove reaches all of it.
+ *
+ * The field is `unsigned`, so a caller may OR these together.
+ */
+typedef enum {
+  /**
+   * Write only what v1.0.0 spells, which every reader accepts. The default,
+   * and what a zeroed struct gives.
+   */
+  GTEXT_TOML_SPELL_1_0_0_ONLY = 0u,
+
+  /**
+   * `\e` for U+001B, where v1.0.0 has only `\u001B`.
+   *
+   * Applies to the one character. It is checked before
+   * @ref GTEXT_TOML_SPELL_1_1_0_ESCAPE_X, so with both set U+001B is written
+   * `\e` and not `\x1B`.
+   */
+  GTEXT_TOML_SPELL_1_1_0_ESCAPE_E = 1u << 0,
+
+  /**
+   * `\xHH` for a control character, where v1.0.0 has only `\u00HH`.
+   *
+   * Only for the characters a basic string *must* escape - U+0000 to U+001F
+   * except those with a short escape of their own, and U+007F. A character
+   * v1.0.0 writes through as itself keeps being written through: `\xf8` would
+   * be U+00F8 under the draft, but writing it that way would escape something
+   * no rule asks to be escaped and would cost a reader that has the option
+   * off nothing but compatibility.
+   */
+  GTEXT_TOML_SPELL_1_1_0_ESCAPE_X = 1u << 1,
+
+  /**
+   * Omit `:00` seconds from a time, where v1.0.0 requires them.
+   *
+   * Only where the seconds *and* the fraction are both zero, which is the
+   * only case in which the shorter text names the same instant. `07:32:00`
+   * becomes `07:32`; `07:32:01` and `07:32:00.5` are unchanged.
+   *
+   * The text still comes from `chron` - the draft's own words are that `:00`
+   * "will be assumed", and this removes exactly the `:00` that assumption
+   * would put back, after checking that those are the three bytes standing
+   * there. `chron` stays the only date-time grammar in this library, on the
+   * way out as on the way in.
+   */
+  GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS = 1u << 2,
+
+  /**
+   * Write an inline table across lines, one pair to a line, indented two
+   * spaces for each level - where v1.0.0 forbids a newline inside `{ }`.
+   *
+   * Tables only. A newline inside `[ ]` has always been legal, so an array's
+   * layout is not a v1.1.0 spelling and is not changed here.
+   *
+   * The draft relaxes the *separators* and not the pairs, so the break goes
+   * after `{`, after each `,` and before `}`, and never between a key and its
+   * `=` or between `=` and its value.
+   */
+  GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES = 1u << 3,
+
+  /**
+   * A comma after an inline table's last pair, where v1.0.0 forbids one.
+   *
+   * Independent of @ref GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES: on its own it
+   * writes `{ a = 1, }`, and with it the comma ends the last pair's line.
+   * Tables only, again - v1.0.0 already permits an array's trailing comma,
+   * and the writer emits none either way.
+   */
+  GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA = 1u << 4,
+
+  /**
+   * Every v1.1.0 spelling **this version of the library knows about**.
+   *
+   * Which is not the same as every spelling the draft has, and not a stable
+   * set: a release that learns another one widens this value, so a caller
+   * recompiling gets the new spelling without asking. That is what a caller
+   * who wants "the draft's spellings" is asking for; a caller who wants a
+   * fixed set should name the bits.
+   */
+  GTEXT_TOML_SPELL_1_1_0_ALL =
+      GTEXT_TOML_SPELL_1_1_0_ESCAPE_E
+      | GTEXT_TOML_SPELL_1_1_0_ESCAPE_X
+      | GTEXT_TOML_SPELL_1_1_0_TIME_NO_SECONDS
+      | GTEXT_TOML_SPELL_1_1_0_INLINE_NEWLINES
+      | GTEXT_TOML_SPELL_1_1_0_INLINE_TRAILING_COMMA
+} GTEXT_TOML_Spelling;
+
+/**
  * @struct GTEXT_TOML_Write_Options
  * @brief What a write is allowed to do, and how it spells things.
  *
@@ -232,11 +344,25 @@ typedef struct {
    * asked for, because that spelling is the only one carrying the meaning.
    */
   const GCHRON_WriteOptions * datetime;
+
+  /**
+   * v1.1.0 spellings to use, as @ref GTEXT_TOML_Spelling bits ORed together.
+   *
+   * Default GTEXT_TOML_SPELL_1_0_0_ONLY, which is zero: output every reader
+   * accepts. Any other value produces a document only a v1.1.0 reader reads,
+   * so this is not a formatting preference to set by habit.
+   *
+   * Bits this library does not know are ignored rather than refused, for the
+   * same reason GTEXT_TOML_Parse_Options::version reads an unrecognised value
+   * as the strict arm: a field filled in from a configuration file should not
+   * be able to reach a grammar nobody chose.
+   */
+  unsigned spellings;
 } GTEXT_TOML_Write_Options;
 
 /**
  * @brief The default write options: default allocator, tables as they were
- *   read, `chron`'s date-time defaults.
+ *   read, `chron`'s date-time defaults, and v1.0.0 spellings only.
  *
  * @return The defaults, by value.
  */
