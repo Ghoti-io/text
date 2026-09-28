@@ -338,6 +338,60 @@ TEST(TomlJson, AnIntegerTooLargeForInt64IsRefusedAndNotRounded) {
       "i = 9223372036854775807\nj = -9223372036854775808\n");
 }
 
+TEST(TomlJson, ALongSpellingOfAnOrdinaryNumberIsStillThatNumber) {
+	// The conversion copied a number's lexeme into a 64-byte buffer and refused
+	// anything longer with E_RANGE, on the reasoning that nothing longer than
+	// that fits in an int64 or a double. That is true of a number's *shortest*
+	// spelling and not of a spelling, and JSON has no rule that a number be
+	// written shortly.
+	//
+	// JSONTestSuite has the case: y_number_double_close_to_zero.json is 82
+	// characters and an ordinary double. This library's own TOML reader accepts
+	// the same literal, so the refusal made one path in one library disagree with
+	// another about a representable value - which is what the JSON-shaped corpus
+	// in tools/conformance/json_to_toml_suite.py was added to find, and did.
+	const char * tiny =
+	    "{\"f\":-0.0000000000000000000000000000000000000000000000000000000000"
+	    "00000000000000000001}";
+	EXPECT_EQ(to_toml(tiny, nullptr), "f = -1e-78\n");
+
+	// A long spelling of a whole number, where every digit past the double's
+	// precision changes nothing - and used to change E_RANGE.
+	const char * one =
+	    "{\"f\":1.0000000000000000000000000000000000000000000000000000000000"
+	    "000000000000001}";
+	EXPECT_EQ(to_toml(one, nullptr), "f = 1.0\n");
+
+	// An integer whose spelling is long because it is large is still E_RANGE:
+	// the length is not the question, and strtoll's ERANGE is the answer.
+	EXPECT_EQ(to_toml_refused("{\"i\":1000000000000000000000000000000000000000"
+	                          "0000000000000000000000000000000}",
+	              nullptr),
+	    GTEXT_TOML_E_RANGE);
+
+	// And a long lexeme that is not a number at all is still E_INVALID rather
+	// than being read as far as it parses. Only
+	// gtext_json_new_number_from_lexeme() can make one. Spelled as a float, since
+	// a long run of digits with a trailing letter reaches the integer branch and
+	// strtoll's ERANGE answers first.
+	GTEXT_JSON_Value * obj = gtext_json_new_object();
+	ASSERT_NE(obj, nullptr);
+	std::string junk = "1." + std::string(68, '1') + "x";
+	GTEXT_JSON_Value * bad =
+	    gtext_json_new_number_from_lexeme(junk.c_str(), junk.size());
+	ASSERT_NE(bad, nullptr);
+	ASSERT_EQ(gtext_json_object_put(obj, "n", 1, bad), GTEXT_JSON_OK);
+	GTEXT_TOML_Value * out = nullptr;
+	GTEXT_TOML_Error err;
+	memset(&err, 0, sizeof(err));
+	EXPECT_EQ(gtext_json_to_toml(obj, nullptr, &out, &err),
+	    GTEXT_TOML_E_INVALID);
+	EXPECT_EQ(out, nullptr);
+	gtext_toml_free(out);
+	gtext_json_free(obj);
+	gtext_toml_error_free(&err);
+}
+
 TEST(TomlJson, ARootThatIsNotAnObjectHasNoTomlDocumentToBe) {
   EXPECT_EQ(to_toml_refused("[1,2]", nullptr), GTEXT_TOML_E_UNREPRESENTABLE);
   EXPECT_EQ(to_toml_refused("\"x\"", nullptr), GTEXT_TOML_E_UNREPRESENTABLE);

@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1956,8 +1956,12 @@ conformance-json-schema-all: $(CONFORMANCE_LIB)
 	fi; \
 	printf "\033[0;32mEvery draft met its floor.\033[0m\n"
 
+conformance-json-to-toml: ## Score gtext_json_to_toml() over JSONTestSuite's documents
+conformance-json-to-toml: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-json-to-toml.sh
+
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

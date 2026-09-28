@@ -942,10 +942,52 @@ now, which is the comparison the corpus already made.
 
 **What nothing checks yet.** There is no differential that puts generated
 documents to both this parser and `tomllib`; the fuzzers check this library
-against itself. And `gtext_json_to_toml()` is scored only over JSON this library
-produced from TOML, which is a population with no `null` in it and no integer
-wider than `int64_t`: the corpus that would reach those is JSONTestSuite's valid
-files, already cloned by `make conformance-json` and not yet pointed at this.
+against itself.
+
+`gtext_json_to_toml()` now has a corpus of its own. `make
+conformance-json-to-toml` puts every `y_` and `i_` file of JSONTestSuite's
+`test_parsing` - the population `make conformance-json` already clones and pins
+- through the conversion, which is where the three places TOML is narrower than
+JSON actually live: a `null`, an integer wider than `int64_t`, and a root that
+is not a table. The `via json` mode of the TOML corpus cannot reach any of them,
+because every document it converts came out of TOML.
+
+The oracle is Python. For each document it walks the values in document order
+and names the **first** obstacle the conversion should meet, which is the same
+order the conversion walks in - so a document holding a `null` before a
+too-large integer has one right answer rather than two, and there is no floor
+to set: one disagreement fails the run.
+
+| Mode | Cases | What it asks |
+| --- | --- | --- |
+| outcome | 105 | the documented refusal, or none |
+| round trip | 98 | JSON → TOML → text → TOML → JSON, equal by value |
+| null policy | 4 | `NULL_SKIP` drops a member and never an element |
+| table root | 105 | v1.0.0: a TOML document is a table |
+
+Each document is wrapped as `{"wrapped": <document>}` for the first three modes,
+which is how the ones whose root is not a table reach the rest of the
+conversion; `table root` is the unwrapped run, so the refusal is scored rather
+than assumed. 25 of the 130 files this library's own JSON parser refuses, so
+they are not inputs to a conversion at all - `make conformance-json` is where
+that is scored, and the count is printed rather than left out. Two of the 130
+carry a duplicate name, so the conversion is asked with the JSON parser's
+`LAST_WINS` policy: without it two documents the corpus says must be accepted
+would never reach the conversion.
+
+The null-policy mode needs both halves of the policy in its denominator, and
+says so: a run that saw only member `null`s or only ones inside an array has
+measured one side of a two-sided option and would print 100% for it.
+
+**It found a defect on its first run.** A number's lexeme was copied into a
+64-byte buffer and anything longer refused with `E_RANGE`, on the reasoning that
+nothing longer fits in an `int64_t` or a double. That is true of a number's
+*shortest* spelling and not of a spelling, and JSON has no rule that a number be
+written shortly: `y_number_double_close_to_zero.json` is 82 characters and an
+ordinary double, and this library's own TOML reader accepts the same literal.
+One path in one library disagreed with another about a representable value. The
+length is not the question - `strtod` and `strtoll` are, and `ERANGE` from
+`strtoll` is what an integer outside `int64_t` looks like.
 
 @anchor toml_not_implemented
 ## Not implemented
@@ -967,10 +1009,6 @@ files, already cloned by `make conformance-json` and not yet pointed at this.
   array still has nowhere, the tree still has no slot, and nothing has asked for
   either; it is written down here because the reason moved rather than the
   answer.
-- **A JSON corpus for the JSON-to-TOML direction.** The `via json` mode only
-  sends TOML out and back, so the hazards on the way in - `null`, an integer
-  wider than `int64_t`, a non-object root - are reached by
-  `tests/test-toml-json.cpp` and by nothing with a population behind it.
 - **A 1.1.0 reference.** Nothing outside this repository reads the draft, so
   the fifteen cases the two manifests disagree over are checked against
   toml-test's decision and against nothing else. When a second 1.1.0

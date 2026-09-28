@@ -250,6 +250,8 @@ outside this repository:
 | --- | --- |
 | `make conformance` | YAML against yaml-test-suite |
 | `make conformance-json` | JSON against JSONTestSuite |
+| `make conformance-json-schema-all` | The schema engine against every draft it reads |
+| `make conformance-json-to-toml` | `gtext_json_to_toml()` over JSONTestSuite's documents |
 | `make conformance-csv` | CSV against csv-spectrum |
 | `make conformance-jsonpath` | JSONPath against its compliance suite |
 | `make conformance-toml` | TOML against toml-test's 1.0.0 manifest |

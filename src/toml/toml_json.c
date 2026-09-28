@@ -365,31 +365,44 @@ static GTEXT_TOML_Value * j2t_number(const GTEXT_JSON_Value * value,
       break;
     }
   }
-  /* Copied rather than used in place: a lexeme is bytes and a length, and
-   * nothing promises a NUL after it. 64 is past every int64 spelling and every
-   * double's shortest form; anything longer is a number neither type can hold,
-   * and for the integer branch that is E_RANGE by definition. */
-  char text[64];
-  if (len >= sizeof(text)) {
-    if (floating) {
-      /* A float lexeme may legitimately be long - a caller's own
-       * gtext_json_new_number_from_lexeme() can hold any digits at all - and
-       * the value is what a reader makes of it, so the tail beyond the
-       * precision of a double changes nothing. Truncating it would, so this
-       * refuses instead of guessing. */
-      *status = conv_fail(err, GTEXT_TOML_E_RANGE,
-          "a number lexeme longer than any double needs");
+  /*
+   * Copied rather than used in place: a lexeme is bytes and a length, and
+   * nothing promises a NUL after it. 64 covers every int64 spelling and every
+   * double's shortest form, so almost nothing reaches the allocation; a lexeme
+   * that does not fit is copied to the heap rather than refused.
+   *
+   * It used to be refused, on the reasoning that anything longer than 64 bytes
+   * is a number neither type can hold. That is true of a *shortest* spelling
+   * and not of a spelling, and JSON has no rule that a number be written
+   * shortly: `-0.000000000000000000000000000000000000000000000000000000000000000000000000000001`
+   * is 82 characters and an ordinary double, and JSONTestSuite has it. This
+   * library's own TOML reader accepts that literal, so refusing it here made
+   * one path in one library disagree with another about a representable value.
+   * The length is not the question; strtod and strtoll answer the question, and
+   * ERANGE from strtoll is what an integer outside int64 looks like.
+   */
+  char stack[64];
+  char * text = stack;
+  char * heap = NULL;
+  if (len >= sizeof(stack)) {
+    heap = (char *) gtext_allocator_malloc(alloc, len + 1);
+    if (!heap) {
+      *status = conv_fail(
+          err, GTEXT_TOML_E_OOM, "out of memory reading a number lexeme");
       return NULL;
     }
-    *status = conv_fail(err, GTEXT_TOML_E_RANGE,
-        "an integer outside int64_t, which is what a TOML integer is");
-    return NULL;
+    text = heap;
   }
   memcpy(text, lexeme, len);
   text[len] = '\0';
 
   char * end = NULL;
+  GTEXT_TOML_Value * out = NULL;
   if (floating) {
+    /* Underflow and overflow both set ERANGE and both give the value a reader
+     * of the same text would get - 0 and an infinity - so neither is consulted.
+     * TOML spells both, and this library's reader produces both from the same
+     * literals. */
     double d = gtext_number_strtod(text, &end);
     /* A lexeme the conversion could not read all of. A parsed number cannot be
      * one - the JSON parser validated it - but
@@ -398,23 +411,28 @@ static GTEXT_TOML_Value * j2t_number(const GTEXT_JSON_Value * value,
     if (!end || end == text || *end != '\0') {
       *status = conv_fail(
           err, GTEXT_TOML_E_INVALID, "a number lexeme that is not a number");
-      return NULL;
     }
-    return gtext_toml_new_float(alloc, d);
+    else {
+      out = gtext_toml_new_float(alloc, d);
+    }
+    gtext_allocator_free(alloc, heap);
+    return out;
   }
   errno = 0;
   long long raw = strtoll(text, &end, 10);
   if (errno == ERANGE) {
     *status = conv_fail(err, GTEXT_TOML_E_RANGE,
         "an integer outside int64_t, which is what a TOML integer is");
-    return NULL;
   }
-  if (!end || end == text || *end != '\0') {
+  else if (!end || end == text || *end != '\0') {
     *status = conv_fail(
         err, GTEXT_TOML_E_INVALID, "a number lexeme that is not a number");
-    return NULL;
   }
-  return gtext_toml_new_integer(alloc, (int64_t) raw);
+  else {
+    out = gtext_toml_new_integer(alloc, (int64_t) raw);
+  }
+  gtext_allocator_free(alloc, heap);
+  return out;
 }
 
 /**
