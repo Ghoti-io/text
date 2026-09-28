@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -932,7 +932,13 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/toml/toml_parser.c \
 	src/toml/toml_file_io.c \
 	src/toml/toml_json.c \
-	src/toml/toml_writer.c
+	src/toml/toml_writer.c \
+	src/ini/ini_core.c \
+	src/ini/ini_dom.c \
+	src/ini/ini_parser.c \
+	src/ini/ini_value.c \
+	src/ini/ini_writer.c \
+	src/ini/ini_file_io.c
 
 check-allocators: ## Fail if a converted file allocates without the allocator
 	@raw=$$(grep -nE '(^|[^_[:alnum:]])(malloc|calloc|realloc|free|strdup|strndup)[[:space:]]*\(' \
@@ -1603,10 +1609,11 @@ $(eval $(call fuzz-rule,fuzz_yaml_writer,yaml-writer))
 $(eval $(call fuzz-rule,fuzz_csv,csv))
 $(eval $(call fuzz-rule,fuzz_toml,toml))
 $(eval $(call fuzz-rule,fuzz_toml_writer,toml-writer))
+$(eval $(call fuzz-rule,fuzz_ini,ini))
 
 fuzz: ## Build and run every fuzzer for $(FUZZ_TIME) seconds each
 fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
-fuzz: fuzz-run-toml fuzz-run-toml-writer
+fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
@@ -2000,8 +2007,20 @@ conformance-json-to-toml: ## Score gtext_json_to_toml() over JSONTestSuite's doc
 conformance-json-to-toml: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-json-to-toml.sh
 
+conformance-ini-desktop-entry: ## Score the INI reader over this machine's Desktop Entry files
+# The one conformance target whose corpus is neither fetched nor pinned, because
+# no Desktop Entry test suite exists to fetch. What exists is a large population
+# of real files on any Linux system, so the denominator is derived at run time
+# and printed, and an empty corpus fails rather than scoring 0 of 0.
+#
+# It scores acceptance and preservation - parse, byte-identical rewrite, and the
+# generic dialect's inherited parity - and not refusal, because every file in the
+# corpus is already valid. The refusals are in tests/test-ini.cpp.
+conformance-ini-desktop-entry: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-ini-desktop-entry.sh
+
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

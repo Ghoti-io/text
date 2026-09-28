@@ -10,8 +10,9 @@ Six libFuzzer harnesses:
 | CSV  | `fuzz_csv.cpp`  | `make fuzz-csv`  | `make fuzz-run-csv`  |
 | TOML | `fuzz_toml.cpp` | `make fuzz-toml` | `make fuzz-run-toml` |
 | TOML writer | `fuzz_toml_writer.cpp` | `make fuzz-toml-writer` | `make fuzz-run-toml-writer` |
+| INI  | `fuzz_ini.cpp`  | `make fuzz-ini`  | `make fuzz-run-ini`  |
 
-`make fuzz` builds and runs all six. Each runs for `FUZZ_TIME` seconds
+`make fuzz` builds and runs all seven. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
 
     make fuzz FUZZ_TIME=3600
@@ -557,6 +558,92 @@ arm would report the option's whole purpose as a writer defect. A zero mask
 reads back at 1.0.0, which is the stricter of the two and the right default for
 the property.
 
+## Fuzzing INI
+
+`fuzz_ini.cpp` asserts five properties beyond "it did not crash", and the first
+one is the whole reason the harness is worth having:
+
+- **The strict dialect is a subset of the generic one.** The generic dialect is
+  Desktop Entry plus six relaxations and one normalisation; a relaxation may
+  only *add* accepted documents, so anything the strict dialect accepts the
+  generic one must accept, and for an input **containing no CR** must give the
+  same groups, keys and raw values. The corpus can only state this over documents
+  that are already valid, which is every file on the disk.
+- **An unmodified document writes back byte for byte** (Desktop Entry §3).
+- **A normalizing write's output parses and holds the same values**, which the
+  byte-identical property does not imply, because normalizing takes a different
+  branch.
+- **Every raw value goes through every accessor** - unescape, escape, list,
+  bool, int, double, and the locale chain. Most fail, and a failure is a fine
+  answer; reading a byte that is not there is not.
+- **A second parse of the same bytes is the same document.**
+
+### The parity property found a defect on its first run
+
+At 237,647 executions, 90 seconds, on an empty corpus. The input reduced to:
+
+```
+[G]
+k=v<CR>          <- a trailing CR, and no linefeed after it
+```
+
+The CRLF test was `bytes[content_end - 1] == '\r'` with no clause asking whether
+an LF was actually there, so at end of input the generic dialect **stripped a CR
+that was not a terminator** and produced a value one byte shorter than the strict
+dialect's. Neither a corpus nor a round trip could have seen it: the byte still
+came back in the line's trailing run, so the document rewrote byte for byte and
+scored clean. Only comparing the two dialects' *values* on the same bytes
+separates them, which is the property this harness exists to assert.
+`corpus/ini/trailing-cr-with-no-linefeed.ini.seed`.
+
+### And then it found that the property itself was wrong
+
+Rebuilt with the parser fixed, the same property trapped again at **30,209
+executions** on a document whose *header* ends with LF and whose *entry* ends
+with CRLF. This time the library was right and the property was wrong.
+
+`accept_crlf` is not a relaxation. The other six generic-dialect changes only
+widen what is accepted, so they carry the inherited property; this one removes a
+CR from the content of a line the strict dialect **already accepted**, so
+`Exec=/bin/true` + CRLF is `/bin/true\r` to the strict dialect and `/bin/true` to
+the generic one, and both are correct. The claim "a relaxation may only add
+accepted documents" had been written into the header, the constructor, two
+documentation pages, the README and this property, and the corpus could not
+contradict any of them because **this machine has zero CRLF `.desktop` files**.
+
+So the property now asserts acceptance unconditionally and values only for an
+input containing no CR, and `conformance-ini-desktop-entry` excludes a CR-bearing
+file from its parity score and counts it. The exclusion path is not reachable
+from the corpus, so it was exercised on purpose: a directory with one CRLF file
+and one plain one reports `parity 1 of 1, 1 excluded`.
+
+### One abort with no reproducer
+
+A 600-second run ended at **3,263,258 executions** with
+`AddressSanitizer:DEADLYSIGNAL` twice and "nested bug in the same thread,
+aborting" - no error type, no stack, and **no artifact**, because libFuzzer never
+got to write one. It has not recurred: 1,979,816 executions in fork mode and
+3,339,326 in a later run, both clean, and the 4,073-file corpus replays clean
+deterministically. The cause is unknown and is recorded here rather than
+explained away.
+
+What it did produce is a better instrument. `__builtin_trap()` raises SIGILL,
+which ASan reports as DEADLYSIGNAL, so a failing property and a genuine memory
+fault look identical - and if ASan's own report faults, neither is identified.
+`fuzz_ini.cpp` now names the property and dumps the input itself, escaped and
+flushed, before trapping. If it returns, the log will say which of the five it
+was. An instrument that only works when the crash handler works is not an
+instrument.
+
+The fix drew out a second, subtler one in the writer. Refusing the value
+outright - which is what "a CR would end the line" suggests - made a document
+this module *reads* unwritable, and the round-trip test caught that immediately.
+A trailing CR is unsafe only when an LF is written **directly** after it: at end
+of file, or before a `\r\n` terminator that supplies its own CR, it round-trips
+fine. So `ini_value_writable()` takes the byte that will follow the value, and
+refuses exactly the values that would read back differently rather than every
+value that looks dangerous. A writer that is too strict is a defect too.
+
 ## The options byte
 
 Each harness consumes the first input byte (two, for CSV and for the TOML
@@ -623,6 +710,7 @@ of the parser it could not get to.
 | CSV  | 6.5k | clean |
 | TOML | 875.7k | clean |
 | TOML writer | 2.8M | one defect, fixed; clean after, with the spellings axis |
+| INI  | 5.3M | two defects and one false claim, all fixed; clean after, with one unexplained abort noted below |
 
 Both TOML harnesses were re-run after `gtext_json_to_toml()` stopped refusing a
 long number lexeme (2026-09-28): 65.6k and 510.2k executions, no crash and no

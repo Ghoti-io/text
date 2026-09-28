@@ -22,32 +22,31 @@ sequence, and how confident anyone should be about that.
 | CSV | @subpage format_csv "CSV" | RFC 4180, plus configurable dialects | RFC 4180 and looser dialects; irregular rows | RFC 4180 with configurable quoting |
 | YAML | @subpage format_yaml "YAML" | YAML 1.2.2, with a 1.1 resolution mode | block and flow, anchors, tags, multi-document | DOM and streaming event serialization |
 | TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12) and the v1.1.0 draft behind an option; date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar read and written, 1.1.0 read, a statement-by-statement event walk, comments through a write, JSON both ways; 3,377 of 3,377 and 3,883 of 3,883 toml-test measurements, a pinned `tomllib` over 60,000 generated documents, and toml++ over the four v1.1.0 relaxations it shares | no comment inside a value on the tree; no incremental reader (argued, not pending); the two v1.1.0 unquoted-key relaxations |
+| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
 
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
 
-INI has no parser here and no page yet, and the reason is a scoping decision
-rather than an unanswerable question. There is no *generic* INI specification,
-so a parser calling itself simply "INI" would have nothing to be scored
-against but its author's choices. There are, however, at least four dialect
-specifications, each with a reference implementation that can be pinned and a
-corpus that can be scored: the freedesktop.org **Desktop Entry Specification**
-(1.5, 2020-04-27), whose references are GLib's `GKeyFile` and the stricter
-`desktop-file-validate`; **`systemd.syntax(7)`**; **`git-config(1)`**, with
-245 assertions in git's own `t1300-config.sh`; and the **EditorConfig
-specification** (0.17.2), which normatively requires a core to pass
-`editorconfig-core-test` - 202 assertions, 34 of them on the file grammar.
-Python's `configparser` is a fifth dialect whose specification is its
-implementation, so it is scoreable only by differential.
+INI is the one format here whose *name* does not identify a grammar. There is no
+INI specification, so the page above does not describe "INI": it describes the
+freedesktop.org **Desktop Entry Specification 1.5 (2020-04-27)**, which is the
+dialect the parser reads by default, plus a generic dialect defined as that
+grammar with seven named changes - six relaxations and one CRLF
+normalisation. A parser calling itself simply "INI" would
+have nothing to be scored against but its author's choices; a parser reading a
+named dialect has a specification, two reference implementations and a corpus,
+and the page records where all three disagree.
 
-Each of those is the same shape as every format above - a grammar, a pinned
-second reader, a corpus, a floor. What remains a decision is how much of it
-ships: the axes on which these dialects disagree are not reconcilable into one
-parser, so INI here means a documented dialect in the shape
-`GTEXT_CSV_Dialect` already takes, and one dialect scored against its
-specification is a better published position than several scored against
-nobody. A generic or Windows dialect is the part that would still have its
-author's opinion for a correctness argument, and would have to say so.
+Three more dialects have the same property and are not implemented:
+**`systemd.syntax(7)`**, **`git-config(1)`** - with 245 assertions in git's own
+`t1300-config.sh` - and the **EditorConfig specification** (0.17.2), which
+normatively requires a conforming core to pass `editorconfig-core-test`, 202
+assertions of which 34 test the file grammar. Python's `configparser` is a fifth
+whose specification is its implementation, so it could only be scored by
+differential. The INI page's "Not implemented" section says what each would
+need. **Win32 `.ini` is deliberately absent and not merely unimplemented**: its
+API is documented as consulting the registry before the file, so its answer is
+not a function of the file's bytes and there is nothing to conform to.
 
 `GTEXT_YAML_MODE_CONFIG` is a YAML parse preset, not a parser for either format.
 

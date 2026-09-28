@@ -4,10 +4,20 @@
 
 `GTEXT_JSON_Parse_Options::allocator` routes a whole JSON parse through a
 caller-supplied `GTEXT_Allocator`, which is cutil's `GCU_Allocator` under a
-local name. **CSV and YAML now do the same**, through
-`GTEXT_CSV_Parse_Options::allocator` and
-`GTEXT_YAML_Parse_Options::allocator`. What is left is the JSON entry points
-other than parsing, listed at the end.
+local name. **CSV, YAML and INI now do the same**, through
+`GTEXT_CSV_Parse_Options::allocator`, `GTEXT_YAML_Parse_Options::allocator` and
+`GTEXT_INI_Parse_Options::allocator`. INI is the one that covers its *accessors*
+as well - `gtext_ini_unescape()`, `gtext_ini_escape()` and
+`gtext_ini_value_list()` each take one and each has a matching free function -
+because the INI reader hands back raw bytes and the decoding is a separate call,
+so an allocator that stopped at the parse would cover less of that module than
+of the others. What is left is the JSON entry points other than parsing, listed
+at the end.
+
+Two INI allocations are deliberately *not* the caller's, and both are the same
+exception the other modules make: an error's `context_snippet`, because an error
+outlives the parse and a parse can fail before it has read its options, and a
+buffer sink's buffer, because a sink is created before any options exist.
 
 ## Why it had to be all or nothing
 

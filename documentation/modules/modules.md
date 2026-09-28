@@ -15,6 +15,8 @@ options and what they do.
 
 @subpage toml_module
 
+@subpage ini_module
+
 ## Format conformance
 
 The module pages above describe how to call the library. \ref text_format_references
@@ -27,6 +29,7 @@ claim.
 - \ref format_csv "CSV" — RFC 4180 and the dialect options
 - \ref format_yaml "YAML" — YAML 1.2.2
 - \ref format_toml "TOML" — TOML v1.0.0
+- \ref format_ini "INI (Desktop Entry)" — Desktop Entry Specification 1.5
 - \ref text_format_adding "Adding a format" — the checklist for a new parser
 
 ## Quick Links

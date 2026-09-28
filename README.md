@@ -12,13 +12,13 @@ This is what the library implements.
 - **CSV.** RFC 4180, and other dialects through `GTEXT_CSV_Dialect`.
 - **YAML.** YAML 1.2.2, including its Core, JSON and Failsafe schemas, plus a YAML 1.1 resolution mode and the 1.1 types `!!timestamp`, `!!set`, `!!omap`, `!!pairs` and the `<<` merge key.
 - **TOML.** TOML v1.0.0, read and write, and the v1.1.0 draft read behind an option: the whole grammar, all four date-time types through `ghoti.io-chron`, comments kept on request, a statement-by-statement event walk, conversions to and from the JSON tree, and 3,377 of 3,377 against toml-test's 1.0.0 manifest with 3,883 of 3,883 against its 1.1.0 one - ten scores from the one corpus and twelve on the newer arm, including each document rebuilt from the event stream alone, every comment carried through a write and a second read, every case sent out to JSON and back, and a crossed mode that runs each version arm over the cases the other manifest drops and requires the wrong answer. The writer has no version *option*, which is a measurement rather than an omission: 1.1.0 adds spellings, not values, so the encode rows score 218 of 218 against its manifest unchanged. The spellings it adds are a style option instead - `\e`, `\xHH`, omitted `:00` seconds, a multi-line inline table and its trailing comma - five bits, off by default because each one produces a document a 1.0.0 reader refuses, and measured over the corpus two ways: the values survive a write and a second read, and the bytes change exactly where the strict arm then refuses them (52 of the 218 valid cases).
+- **INI.** No such specification exists, so the dialect is named rather than guessed: the freedesktop.org **Desktop Entry Specification 1.5 (2020-04-27)**, read and written, with a generic dialect defined as that grammar plus seven named changes - six relaxations and one CRLF normalisation, separated because only the six carry the property that every document the strict dialect accepts reads identically under both. Sections 3, 4 and 5 in full - the `#`-only comment rule, the `A-Za-z0-9-` key charset, `\\s \\n \\t \\r \\\\` escapes, `;`-separated lists with the specification's awkward trailing-terminator rule, and the `key[lang_COUNTRY@MODIFIER]` fallback chain. Values are decoded at the accessor and not during the parse, which is where both reference implementations put it and what lets an unmodified document write back **byte for byte**, comments and unknown keys included, as section 3 requires. 202 of 202 real `.desktop` files on this machine parse, rewrite byte-identically, and read identically under both dialects.
 
-INI has no parser yet. It has no *single* specification, but it has four
-dialect specifications with pinnable reference implementations and scoreable
-corpora - Desktop Entry, systemd units, git config and EditorConfig - so what
-is open is how many dialects ship and in what shape, not whether any of it can
-be measured. \ref text_format_references "Formats" says what implementing it
-would take.
+`systemd.syntax(7)`, `git-config(1)` and EditorConfig are three more dialects
+with a specification, a reference and a corpus each, and are not implemented;
+Win32 `.ini` is deliberately absent, because its API reads the registry before
+the file and so cannot be conformed to. \ref text_format_references "Formats"
+has the reasoning and the INI page has the plan.
 
 ## Before you call it
 
