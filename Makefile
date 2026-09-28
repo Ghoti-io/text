@@ -1643,16 +1643,18 @@ conformance-toml:
 		tools/conformance/run-toml.sh
 
 conformance-toml-next: ## Score the TOML parser against toml-test's 1.1.0 list
-# Expected to fail, and that is what it is for. This parser is 1.0.0 and the
-# 1.1.0 manifest contains eleven cases it must refuse - \e and \xHH escapes,
-# newlines and a trailing comma inside an inline table, and a time without
-# seconds. Running it names them, so when the version option lands in phase 3
-# the work is a list rather than a search. No floor, because a score of 100
-# here would mean the option had been implemented and nobody had updated this
-# comment.
+# The other arm of GTEXT_TOML_Parse_Options::version, scored the same way and to
+# the same floor. Both targets also run the suite's `crossed` mode, and what
+# that adds was measured rather than argued: of eight planted defects the two
+# manifests' ordinary rows caught five, crossed caught six, and one of its six
+# - a lone carriage return admitted at 1.0.0, which is 1.0.0's prose read in
+# place of its ABNF - was seen by no other corpus channel at all, because both
+# cases for it sit in the 1.1.0 list and in neither 1.0.0 list. Two further
+# defects were invisible to the corpus in every mode and are pinned in
+# tests/test-toml-version.cpp; that file's header has the table.
 conformance-toml-next:
 	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" TOML_SUITE_VERSION=1.1.0 \
-		tools/conformance/run-toml.sh
+		TOML_MIN=100 tools/conformance/run-toml.sh
 
 UCD_VERSION := $(shell cat tools/idna/UCD_VERSION 2>/dev/null)
 UCD_DIR := third_party/ucd/$(UCD_VERSION)
@@ -1902,7 +1904,7 @@ conformance-json-schema:
 	@PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" tools/conformance/run-json-schema.sh
 
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema conformance-jsonpath conformance-toml conformance-toml-next
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

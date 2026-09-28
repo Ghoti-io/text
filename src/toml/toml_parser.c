@@ -186,6 +186,20 @@ static bool skip_array_space(toml_ctx * ctx) {
   }
 }
 
+/**
+ * What may separate the parts of an inline table at the version being read.
+ *
+ * 1.0.0 allows only blanks, so a newline is left in the stream for the caller
+ * to complain about by name; 1.1.0 allows what an array allows. Returning
+ * false means an error was recorded - a lone CR, or a control character in a
+ * comment - and not that nothing was skipped.
+ */
+static bool inline_space(toml_ctx * ctx) {
+  if (ctx->version == GTEXT_TOML_VERSION_1_1_0) return skip_array_space(ctx);
+  skip_blanks(ctx);
+  return true;
+}
+
 /*--------------------------------------------------------------------------*
  * Keys
  *--------------------------------------------------------------------------*/
@@ -480,11 +494,16 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
     }
 
     if (state == WANT_KEY) {
-      /* Inside an inline table. TOML 1.0.0: "inline tables are intended to
-       * appear on a single line", and a newline inside the braces is invalid -
-       * which is one of the ten cases that separate 1.0.0 from 1.1.0, so this
-       * is deliberately not skip_array_space(). */
-      skip_blanks(ctx);
+      /* Inside an inline table, just after `{` or just after a comma - the
+       * third and last place the version option reaches. TOML 1.0.0: "inline
+       * tables are intended to appear on a single line", and a newline inside
+       * the braces is invalid; 1.1.0's `inline-table-open` and
+       * `inline-table-sep` are each followed by `ws-comment-newline`, so both
+       * positions take a comment and a line break there. Whichever version, the
+       * relaxation stops at the brace and the comma: `keyval-sep` is still
+       * plain `ws`, so a pair may not be split across lines, and that is why
+       * this is two different skippers and not one flag on skip_blanks(). */
+      if (!inline_space(ctx)) goto done;
       if (ctx->pos >= ctx->len) {
         toml_fail(ctx, GTEXT_TOML_E_BAD_TOKEN,
             "the document ends inside an inline table");
@@ -492,9 +511,10 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
       }
       char c = ctx->buf[ctx->pos];
       if (c == '}') {
-        if (frames[count - 1].after_comma) {
+        if (frames[count - 1].after_comma
+            && ctx->version != GTEXT_TOML_VERSION_1_1_0) {
           /* TOML 1.0.0's inline-table production has no trailing comma; 1.1.0
-           * adds one, which is one of the ten cases that separate them. */
+           * adds one. */
           toml_fail(ctx, GTEXT_TOML_E_BAD_TOKEN,
               "a TOML 1.0.0 inline table cannot end with a comma");
           goto done;
@@ -510,6 +530,10 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
         continue;
       }
       if (c == '\n' || c == '\r') {
+        /* Reachable only at 1.0.0, and deliberately not guarded on the version
+         * as well: at 1.1.0 inline_space() consumed every newline and refused a
+         * lone CR itself, so a second condition here would be a guard nothing
+         * could make fire. */
         toml_fail(ctx, GTEXT_TOML_E_BAD_TOKEN,
             "a TOML 1.0.0 inline table cannot span lines");
         goto done;
@@ -592,7 +616,9 @@ static bool parse_value(toml_ctx * ctx, GTEXT_TOML_Value ** root_out) {
           "array items are separated by commas");
       goto done;
     }
-    skip_blanks(ctx);
+    /* Before the comma or the closing brace, which is the other half of
+     * `inline-table-sep` and of `inline-table-close`. */
+    if (!inline_space(ctx)) goto done;
     if (ctx->pos >= ctx->len) {
       toml_fail(ctx, GTEXT_TOML_E_BAD_TOKEN,
           "the document ends inside an inline table");
@@ -870,6 +896,7 @@ GTEXT_TOML_Value * gtext_toml_parse(const char * bytes, size_t len,
   ctx.alloc = effective.allocator;
   ctx.err = err;
   ctx.max_depth = effective.max_depth;
+  ctx.version = effective.version;
 
   if (!bytes) {
     toml_fail(&ctx, GTEXT_TOML_E_INVALID, "no input");

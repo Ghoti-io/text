@@ -14,6 +14,15 @@
  * --style=as-read|headers|inline picks GTEXT_TOML_Table_Style, so the option
  * is measured rather than asserted: each setting is run over the whole corpus.
  *
+ * --version=1.0.0|1.1.0 picks GTEXT_TOML_Parse_Options::version, and the two
+ * manifests are the two sides of it: toml_test_suite.py scores the 1.0.0 list
+ * with the 1.0.0 arm and the 1.1.0 list with the 1.1.0 arm, and the eleven
+ * cases where the lists disagree are cases each arm must get wrong when run
+ * with the other's setting. Note that this reaches BOTH parses in --roundtrip:
+ * re-reading at the same version is the honest reading of read-write-read, and
+ * the sharper claim - that a 1.1.0 document writes as TOML a 1.0.0 parser
+ * accepts - is asserted in tests/test-toml.cpp where it can be stated exactly.
+ *
  * Exit status: 0 with output, or 1 with a reason on stderr for a document this
  * library refuses - which is what an invalid case wants. **3 is different**:
  * it means this runner's own output could not be written or could not be read
@@ -583,10 +592,17 @@ int main(int argc, char ** argv) {
   bool roundtrip = false;
   bool encode = false;
   GTEXT_TOML_Write_Options wopts = gtext_toml_write_options_default();
+  GTEXT_TOML_Parse_Options popts = gtext_toml_parse_options_default();
 
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--roundtrip") == 0) roundtrip = true;
     else if (strcmp(argv[i], "--encode") == 0) encode = true;
+    else if (strcmp(argv[i], "--version=1.0.0") == 0) {
+      popts.version = GTEXT_TOML_VERSION_1_0_0;
+    }
+    else if (strcmp(argv[i], "--version=1.1.0") == 0) {
+      popts.version = GTEXT_TOML_VERSION_1_1_0;
+    }
     else if (strcmp(argv[i], "--style=as-read") == 0) {
       wopts.table_style = GTEXT_TOML_TABLE_STYLE_AS_READ;
     }
@@ -659,7 +675,7 @@ int main(int argc, char ** argv) {
 
   GTEXT_TOML_Error err;
   memset(&err, 0, sizeof(err));
-  GTEXT_TOML_Value * root = gtext_toml_parse(data, len, NULL, &err);
+  GTEXT_TOML_Value * root = gtext_toml_parse(data, len, &popts, &err);
   if (!root) {
     report(&err);
     gtext_toml_error_free(&err);
@@ -687,7 +703,7 @@ int main(int argc, char ** argv) {
     memset(&again, 0, sizeof(again));
     GTEXT_TOML_Value * reread =
         gtext_toml_parse(gtext_toml_sink_buffer_data(&sink),
-            gtext_toml_sink_buffer_size(&sink), NULL, &again);
+            gtext_toml_sink_buffer_size(&sink), &popts, &again);
     if (!reread) {
       /* Exit 3, not 1: this is the writer producing a document this parser
        * refuses, and it must not be mistaken for a correct refusal of the

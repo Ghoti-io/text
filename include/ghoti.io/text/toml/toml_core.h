@@ -22,10 +22,10 @@
  * @file toml_core.h
  * @brief Status codes, error payload and parse options for the TOML module.
  *
- * The specification is **TOML v1.0.0, 2021-01-12**. Nothing here implements
- * any part of the 1.1.0 preview; when that arrives it will be a documented
- * option rather than a relaxation of the default, because 1.1.0 is not 1.0.0
- * plus permissions - it also *refuses* two things 1.0.0 accepts.
+ * The default specification is **TOML v1.0.0, 2021-01-12**. The 1.1.0 preview
+ * is available through GTEXT_TOML_Parse_Options::version, and is an option
+ * rather than a relaxation of the default because 1.1.0 is not 1.0.0 plus
+ * permissions - it also *refuses* things 1.0.0's prose allows.
  *
  * TOML's four date-time types are `chron`'s. This module does not carry a
  * second date-time grammar: a scanned date-time is handed to
@@ -133,6 +133,44 @@ typedef struct {
 GTEXT_API void gtext_toml_error_free(GTEXT_TOML_Error * err);
 
 /**
+ * @enum GTEXT_TOML_Version
+ * @brief Which revision of the specification a parse is reading.
+ *
+ * Three constructs separate the two, and each has cases on both sides of the
+ * switch in toml-test's two manifests, so the option is measured at its points
+ * of use rather than asserted to exist:
+ *
+ *   - `\\e` (U+001B) and `\\xHH` escapes in a basic string;
+ *   - a newline, a comment, or a trailing comma inside `{ }`;
+ *   - a time whose seconds are omitted, which 1.1.0 reads as `:00`.
+ *
+ * The switch is deliberately not spelled as "relax some checks". 1.1.0 also
+ * settles two questions 1.0.0 left contradictory - a lone carriage return
+ * inside a multi-line string, which 1.0.0's prose permits and its ABNF
+ * forbids - and this module takes the ABNF's reading under both versions, so
+ * that a document refused at 1.1.0 is refused at 1.0.0 too. See @ref
+ * format_toml for the case-by-case account of what moves and what does not.
+ *
+ * The writer has no such option, and that is a finding rather than an
+ * omission: every spelling 1.0.0 defines is still a 1.1.0 spelling, so a
+ * writer emitting 1.0.0 is already correct for both. A `version` field on the
+ * write options would be a second spelling of an axis with no point of use.
+ */
+typedef enum {
+  /** TOML v1.0.0, 2021-01-12. The default, and what the oracle implements. */
+  GTEXT_TOML_VERSION_1_0_0 = 0,
+  /**
+   * The TOML v1.1.0 preview.
+   *
+   * Not a released specification: it is a draft, `tomllib` cannot read it, and
+   * the only reference for it is toml-test's own 1.1.0 manifest. A caller who
+   * asks for it is asking for a moving target, which is why it is not the
+   * default.
+   */
+  GTEXT_TOML_VERSION_1_1_0 = 1
+} GTEXT_TOML_Version;
+
+/**
  * @struct GTEXT_TOML_Parse_Options
  * @brief What a parse is allowed to do.
  *
@@ -163,10 +201,20 @@ typedef struct {
    * while reading, so an over-large file is refused without being held.
    */
   size_t max_total_bytes;
+
+  /**
+   * Which revision of the specification to read. Default
+   * GTEXT_TOML_VERSION_1_0_0.
+   *
+   * Zero is the released version, so a zeroed struct asks for 1.0.0 rather
+   * than for a draft - the one field here whose zero value is the answer a
+   * caller who did not think about it should get.
+   */
+  GTEXT_TOML_Version version;
 } GTEXT_TOML_Parse_Options;
 
 /**
- * @brief The default options: allocator NULL, max_depth 256, no byte limit.
+ * @brief The defaults: allocator NULL, max_depth 256, no byte limit, 1.0.0.
  *
  * @return The defaults, by value.
  */

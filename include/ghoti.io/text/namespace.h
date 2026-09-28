@@ -278,6 +278,7 @@
 #define GTEXT_TOML_Table_Style GHOTIIO_TEXT(GTEXT_TOML_Table_Style)
 #define GTEXT_TOML_Type GHOTIIO_TEXT(GTEXT_TOML_Type)
 #define GTEXT_TOML_Value GHOTIIO_TEXT(GTEXT_TOML_Value)
+#define GTEXT_TOML_Version GHOTIIO_TEXT(GTEXT_TOML_Version)
 #define GTEXT_TOML_Write_Function GHOTIIO_TEXT(GTEXT_TOML_Write_Function)
 #define GTEXT_TOML_Write_Options GHOTIIO_TEXT(GTEXT_TOML_Write_Options)
 #define gtext_allocator_calloc GHOTIIO_TEXT(gtext_allocator_calloc)

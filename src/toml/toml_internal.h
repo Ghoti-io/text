@@ -146,6 +146,16 @@ typedef struct {
   const GTEXT_Allocator * alloc;
   GTEXT_TOML_Error * err; ///< May be NULL.
   size_t max_depth;       ///< 0 for no limit.
+  /**
+   * Which specification revision this parse is reading.
+   *
+   * On the context rather than passed down, because the three places that
+   * consult it are in two files and at three different depths: the escape
+   * scanner, the time scanner, and the inline-table states of the value
+   * parser. A parameter would have to be threaded through six functions that
+   * have no other reason to know.
+   */
+  GTEXT_TOML_Version version;
 } toml_ctx;
 
 /*--------------------------------------------------------------------------*

@@ -74,14 +74,51 @@ opts.max_depth = 32;
 | `allocator` | `NULL` | Every allocation of the parse goes through it; `NULL` means `gtext_allocator_default()` |
 | `max_depth` | 256 | Nesting of arrays and inline tables; 0 for no limit |
 | `max_total_bytes` | 0 | Bytes of input; 0 for no limit. `gtext_toml_parse_file()` applies it *while* reading, so an over-large file is refused rather than held |
+| `version` | `GTEXT_TOML_VERSION_1_0_0` | Which revision to read. `GTEXT_TOML_VERSION_1_1_0` reads the draft |
 
 Start from `gtext_toml_parse_options_default()` rather than from a zeroed
 struct: zeroed asks for no depth limit, which is a decision rather than a
-default.
+default. `version` is the one field whose zero *is* the right answer for a
+caller who did not think about it - it is the released specification - and it is
+asserted from all three routes (the constructor, a zeroed struct, a `NULL`
+options pointer) in `tests/test-toml-version.cpp`.
 
 `max_depth` at 0 is genuinely safe here and not merely allowed. The value
 parser builds on an explicit stack and the teardown walks a worklist, so
 neither the parse nor the free grows the C stack with the document's nesting.
+
+### 3b. The 1.1.0 option
+
+```c
+GTEXT_TOML_Parse_Options opts = gtext_toml_parse_options_default();
+opts.version = GTEXT_TOML_VERSION_1_1_0;
+```
+
+Three constructs change, and nothing else:
+
+```toml
+# All three are E_BAD_* at 1.0.0 and read at 1.1.0.
+esc  = "\e and \x41"          # U+001B and "A"
+tbl  = {                      # newlines, comments and a trailing comma,
+  a = 1,                      # at the separators only
+}
+time = 07:32                  # the seconds are read as :00
+```
+
+Two things to know before reaching for it:
+
+- **It is a draft.** No released reference implements it - CPython's `tomllib`
+  is 1.0.0 - so on that arm the only reference is toml-test's own 1.1.0
+  manifest. That is why it is not the default.
+- **The relaxation stops at the inline table's separators.** `{a\n= 1}` and
+  `{a =\n1}` are invalid at 1.1.0 too, because `keyval-sep` is still plain
+  whitespace. Neither manifest has a case either way; `\ref format_toml` says
+  how that was measured.
+
+**There is no write-side version option**, and that is a finding rather than an
+omission: every spelling 1.0.0 defines is still a 1.1.0 spelling, so the writer
+is already correct for both. Measured - the corpus's encode rows score 218 of
+218 against the 1.1.0 manifest with no writer change at all.
 
 ## 4. Reading the tree
 
@@ -240,10 +277,9 @@ options at all.
 
 ## 6. What is not here yet
 
-- **TOML 1.1.0**, which will be an option rather than a relaxation of the
-  default: 1.1.0 also refuses two things 1.0.0 accepts. It is a reader-only
-  job: measured, the writer already scores 218 of 218 on the 1.1.0 corpus,
-  because 1.1.0 adds spellings rather than values.
+- **A 1.1.0 reference.** The option reads the draft; nothing outside this
+  repository does, so the fifteen cases where the two manifests disagree are
+  checked against toml-test's decision and against nothing else.
 - A **pull reader / event API**, as JSON, CSV and YAML have.
 - **Comments in the tree**, which the YAML DOM does carry.
 - `toml_to_json` and `json_to_toml`.

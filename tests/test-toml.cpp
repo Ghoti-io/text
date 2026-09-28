@@ -3,8 +3,9 @@
  *
  * TOML: the contract toml-test cannot see.
  *
- * The conformance suite (tools/conformance/run-toml.sh, 709 of 709 at TOML
- * 1.0.0) decides whether documents are read correctly. It says nothing about
+ * The conformance suite (tools/conformance/run-toml.sh, 2316 of 2316 at TOML
+ * 1.0.0 and 2362 of 2362 at 1.1.0) decides whether documents are read
+ * correctly. It says nothing about
  * the API around that: what an accessor does with the wrong type, whether keys
  * come back in the order the document gave them, where an error points, or
  * whether a document nested past every reasonable depth can be freed. Those
@@ -334,15 +335,21 @@ TEST(Toml, ControlCharactersAreRefusedInCommentsAsWellAsStrings) {
   gtext_toml_free(root);
 }
 
-TEST(Toml, TheOneOneZeroAdditionsAreRefusedByName) {
-  // Phase 3 turns these into an option. Until then each is refused, and the
-  // status code says which kind of refusal it is - so when the option lands,
-  // these tests change rather than quietly continuing to pass.
+TEST(Toml, TheOneOneZeroAdditionsAreRefusedByDefault) {
+  // The default is the released version, and this is that statement made from
+  // the outside: NULL options, no version named. The option itself, both arms
+  // and every case where they part, is tests/test-toml-version.cpp - including
+  // the two other routes to this default, which this file's `refused()` helper
+  // cannot reach because it always passes NULL.
+  //
+  // `07:32` answers E_BAD_TOKEN and not E_DATETIME: the missing seconds are
+  // now the scanner's own refusal, pointing at the place they are missing,
+  // rather than chron declining a time it was handed.
   EXPECT_EQ(refused("a = \"\\e\"\n"), GTEXT_TOML_E_BAD_ESCAPE);
   EXPECT_EQ(refused("a = \"\\x41\"\n"), GTEXT_TOML_E_BAD_ESCAPE);
   EXPECT_EQ(refused("a = {b = 1,}\n"), GTEXT_TOML_E_BAD_TOKEN);
   EXPECT_EQ(refused("a = {\n  b = 1\n}\n"), GTEXT_TOML_E_BAD_TOKEN);
-  EXPECT_EQ(refused("a = 07:32\n"), GTEXT_TOML_E_DATETIME);
+  EXPECT_EQ(refused("a = 07:32\n"), GTEXT_TOML_E_BAD_TOKEN);
 }
 
 TEST(Toml, ErrorsPointAtTheRightPlace) {

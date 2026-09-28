@@ -2,7 +2,7 @@
 
 Usage: toml_test_suite.py <suite-dir> <runner-command...>
 
-Four scores, all from the one corpus:
+Several scores, all from the one corpus:
 
   decode           TOML in, tagged JSON out, compared to the case's .json.
   roundtrip        TOML in, written back out, read again, and the *second*
@@ -12,13 +12,30 @@ Four scores, all from the one corpus:
                    **tomllib** rather than by this library. This is the only
                    score with a second implementation in it: everything else
                    here proves the two halves agree with each other.
+  crossed          each version arm run over the cases the *other* manifest
+                   decides, and required to get them wrong. See below.
 
 Which cases are asked comes from the suite's own `tests/files-toml-1.0.0`
 manifest rather than from a directory walk: the two lists differ, and the
 difference is exactly the cases where 1.0.0 and the 1.1.0 draft disagree.
 Walking the tree would silently score this 1.0.0 parser against 1.1.0
 expectations for those, which is the shape of mistake that reads as a parser
-defect.
+defect. TOML_SUITE_VERSION picks the manifest and is passed to the runner as
+--version=, so the arm and the expectations always come from the same place.
+
+The crossed mode exists because running a gate once per option setting is not a
+measurement of the option: each arm is only ever asked the cases its own
+manifest decides, and 33 of this mode's 66 runs are cases no manifest asks
+anybody. Its worth was measured, not argued - of eight defects planted in the
+version option, the two manifests' ordinary rows caught five and this mode
+caught six, and one of its six was seen by nothing else here: a lone carriage
+return admitted at 1.0.0, whose only two cases sit in the 1.1.0 invalid list
+and in neither 1.0.0 list. (Two further defects were invisible to the corpus
+altogether and live in tests/test-toml-version.cpp.)
+
+The four populations are computed from the two manifests rather than listed by
+hand: a hand-copied copy of the subject's own list is two spellings of one set,
+and the copy is the one that goes stale.
 
 Comparison of a valid case is by value and not by text. The suite tags every
 scalar - {"type": "integer", "value": "42"} - and two spellings of one value
@@ -71,6 +88,95 @@ invalid = sorted(p for p in listed
 if not valid or not invalid:
     sys.exit("manifest %s lists %d valid and %d invalid cases; that is not a "
              "corpus" % (manifest, len(valid), len(invalid)))
+
+ARM = ['--version=%s' % VERSION]
+
+
+def read_manifest(version):
+    path = os.path.join(SUITE, 'tests', 'files-toml-%s' % version)
+    if not os.path.exists(path):
+        sys.exit("no manifest %s; the crossed mode needs both" % path)
+    with open(path) as fh:
+        return set(line.strip() for line in fh if line.strip())
+
+
+LIST_1_0 = read_manifest('1.0.0')
+LIST_1_1 = read_manifest('1.1.0')
+
+
+def cross_sets():
+    """The four populations the version switch actually separates.
+
+    Derived from the two manifests, and each one returned with the expectation
+    it carries rather than as a bare list, so a case cannot be in a population
+    without something being asserted about it under both arms.
+
+    `spec-1.0.0/` and `spec-1.1.0/` are the one place a difference between the
+    lists is not a difference between the versions: they are extracts of two
+    prose documents, and the second renumbered every heading, so all sixteen
+    files appear in exactly one list while being about rules neither version
+    touched. They are therefore not excluded but given their own population,
+    with the expectation that both arms refuse all sixteen - which is a claim
+    that fails loudly if a later revision does move one of those rules.
+    """
+    def only_in(source, other, prefix):
+        return sorted(p for p in source
+                      if p.endswith('.toml') and p.startswith(prefix)
+                      and p not in other
+                      and not p.startswith('invalid/spec-')
+                      and not p.startswith('valid/spec-'))
+
+    # In 1.0.0's invalid list and in neither 1.1.0 list: 1.1.0 made these legal
+    # and the suite dropped them rather than writing an expectation, so the
+    # assertion is acceptance and not a value.
+    relaxed = only_in(LIST_1_0, LIST_1_1, 'invalid/')
+    # In 1.1.0's valid list and in neither 1.0.0 list: syntax 1.0.0 refuses.
+    added = only_in(LIST_1_1, LIST_1_0, 'valid/')
+    # In 1.1.0's invalid list and in neither 1.0.0 list: 1.1.0 settled a
+    # question 1.0.0 left contradictory (a lone CR inside a multi-line string,
+    # which 1.0.0's prose permits and its ABNF forbids). This module takes the
+    # ABNF's reading under both arms, so both must refuse.
+    tightened = only_in(LIST_1_1, LIST_1_0, 'invalid/')
+    restated = sorted(p for p in (LIST_1_0 | LIST_1_1)
+                      if p.endswith('.toml') and p.startswith('invalid/spec-'))
+    return relaxed, added, tightened, restated
+
+
+def score_cross():
+    """Run each arm over what the other manifest decides."""
+    relaxed, added, tightened, restated = cross_sets()
+    if not relaxed or not added or not tightened or not restated:
+        sys.exit("the crossed mode found %d relaxed, %d added, %d tightened "
+                 "and %d restated cases; an empty population agrees with "
+                 "everything" % (len(relaxed), len(added), len(tightened),
+                                 len(restated)))
+    # (population, at 1.0.0, at 1.1.0) where True means "must be accepted".
+    plan = [('relaxed', relaxed, False, True),
+            ('added', added, False, True),
+            ('tightened', tightened, False, False),
+            ('restated', restated, False, False)]
+    failures = []
+    passed = 0
+    asked = 0
+    for label, paths, want_1_0, want_1_1 in plan:
+        for path in paths:
+            data = read_case(path)
+            for version, want in (('1.0.0', want_1_0), ('1.1.0', want_1_1)):
+                asked += 1
+                out, why, code = run(data, ['--version=%s' % version])
+                got = out is not None
+                if code == 3:
+                    failures.append((path, '%s at %s: exit 3, the runner '
+                                           'failing rather than a verdict: %s'
+                                     % (label, version, why)))
+                elif got != want:
+                    failures.append(
+                        (path, '%s at %s: %s, expected it to be %s'
+                         % (label, version, 'accepted' if got else 'refused',
+                            'accepted' if want else 'refused')))
+                else:
+                    passed += 1
+    return asked, passed, failures
 
 
 def run(data, extra=()):
@@ -370,17 +476,19 @@ def score_encode(extra):
 
 MODES = [
     ('decode', 'the reader, scored against the suite expectations',
-     lambda: score_decode([], True)),
+     lambda: score_decode(ARM, True)),
     ('roundtrip as-read', 'parse, write, parse again; tables as they were read',
-     lambda: score_decode(['--roundtrip', '--style=as-read'], True)),
+     lambda: score_decode(ARM + ['--roundtrip', '--style=as-read'], True)),
     ('roundtrip headers', 'the same, with every table forced to a [header]',
-     lambda: score_decode(['--roundtrip', '--style=headers'], False)),
+     lambda: score_decode(ARM + ['--roundtrip', '--style=headers'], False)),
     ('roundtrip inline', 'the same, with every table forced inline',
-     lambda: score_decode(['--roundtrip', '--style=inline'], False)),
+     lambda: score_decode(ARM + ['--roundtrip', '--style=inline'], False)),
     ('encode as-read', 'the writer, with tomllib reading what it wrote',
-     lambda: score_encode(['--encode', '--style=as-read'])),
+     lambda: score_encode(ARM + ['--encode', '--style=as-read'])),
     ('encode headers', 'the same, with every table forced to a [header]',
-     lambda: score_encode(['--encode', '--style=headers'])),
+     lambda: score_encode(ARM + ['--encode', '--style=headers'])),
+    ('crossed', 'each arm over the cases the other manifest decides',
+     score_cross),
 ]
 
 print("=== toml-test, TOML %s ===" % VERSION)
@@ -388,6 +496,11 @@ print("  the manifest lists %d valid and %d invalid cases"
       % (len(valid), len(invalid)))
 print("  nothing is skipped: every mode below is asked every case it applies "
       "to")
+_relaxed, _added, _tightened, _restated = cross_sets()
+print("  the two manifests differ over %d cases 1.1.0 relaxed, %d it added, "
+      "%d it tightened," % (len(_relaxed), len(_added), len(_tightened)))
+print("  and %d that differ only because the spec extracts were renumbered"
+      % len(_restated))
 
 total_asked = 0
 total_passed = 0

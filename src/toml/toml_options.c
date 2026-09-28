@@ -34,6 +34,10 @@ GTEXT_TOML_Parse_Options gtext_toml_parse_options_default(void) {
    * make, not a default to ship. */
   opts.max_depth = 256;
   opts.max_total_bytes = 0;
+  /* The released specification, which is also what the oracle reads. 1.1.0 is
+   * a draft; a default that tracked it would mean this module's answer to
+   * "is this a TOML document" changed with somebody else's unreleased work. */
+  opts.version = GTEXT_TOML_VERSION_1_0_0;
   return opts;
 }
 

@@ -323,12 +323,25 @@ static bool scan_escape(toml_ctx * ctx, toml_buf * out, bool multiline) {
     case 'u': return scan_escaped_scalar(ctx, out, 4);
     case 'U': return scan_escaped_scalar(ctx, out, 8);
     default:
-      /* \e and \xHH are 1.1.0 additions and are refused here by name, so the
+      /* \e and \xHH are 1.1.0 additions, and this is the first of the three
+       * places the version option reaches. Refused by name under 1.0.0, so the
        * message says which version would take them rather than only that this
        * one will not. */
       if (c == 'e' || c == 'x') {
-        return toml_fail_at(ctx, backslash, GTEXT_TOML_E_BAD_ESCAPE,
-            "that escape is a TOML 1.1.0 addition; this parser is 1.0.0");
+        if (ctx->version != GTEXT_TOML_VERSION_1_1_0) {
+          return toml_fail_at(ctx, backslash, GTEXT_TOML_E_BAD_ESCAPE,
+              "that escape is a TOML 1.1.0 addition; this parse is 1.0.0");
+        }
+        if (c == 'e') {
+          return toml_buf_append_byte(ctx->alloc, out, '\x1B')
+              || toml_fail(ctx, GTEXT_TOML_E_OOM, "out of memory");
+        }
+        /* `\xHH` names U+00HH, a scalar value and not a byte: 1.1.0 says "all
+         * TOML strings are sequences of Unicode characters, _not_ byte
+         * sequences", so \xf8 is two bytes of UTF-8 and not one of Latin-1.
+         * Writing it as a byte is the mistake this shares a scanner with
+         * \uXXXX to avoid. */
+        return scan_escaped_scalar(ctx, out, 2);
       }
       return toml_fail_at(
           ctx, backslash, GTEXT_TOML_E_BAD_ESCAPE, "not an escape sequence");
@@ -524,8 +537,16 @@ static bool take_digits(toml_ctx * ctx, size_t count) {
   return true;
 }
 
-/** Consume a `HH:MM[:SS][.fraction]` time. */
-static bool take_time(toml_ctx * ctx) {
+/**
+ * Consume a `HH:MM[:SS][.fraction]` time.
+ *
+ * @param secs_at Receives SIZE_MAX when seconds were written, and otherwise
+ *   the offset just past the minutes - the point where 1.1.0's `:00` belongs.
+ *   Whether an omission is allowed is not decided here: the extent is the same
+ *   either way, and the caller has the position to complain about.
+ */
+static bool take_time(toml_ctx * ctx, size_t * secs_at) {
+  *secs_at = SIZE_MAX;
   if (!take_digits(ctx, 2)) return false;
   if (ctx->pos >= ctx->len || ctx->buf[ctx->pos] != ':') return false;
   ctx->pos++;
@@ -538,7 +559,12 @@ static bool take_time(toml_ctx * ctx) {
       if (ctx->pos >= ctx->len || !is_digit(ctx->buf[ctx->pos])) return false;
       while (ctx->pos < ctx->len && is_digit(ctx->buf[ctx->pos])) ctx->pos++;
     }
+    return true;
   }
+  /* A fraction cannot follow minutes: 1.1.0's grammar puts it on the seconds,
+   * so `07:32.5` is not a time with a fractional minute. Left in the stream for
+   * the statement parser, which is where any other trailing byte is refused. */
+  *secs_at = ctx->pos;
   return true;
 }
 
@@ -553,6 +579,7 @@ static bool take_time(toml_ctx * ctx) {
 static GTEXT_TOML_Value * scan_datetime(toml_ctx * ctx) {
   size_t start = ctx->pos;
   bool has_date = false;
+  size_t secs_at = SIZE_MAX;
 
   if (ctx->len - ctx->pos >= 5 && is_digit(ctx->buf[ctx->pos + 4]) == false
       && ctx->buf[ctx->pos + 4] == '-') {
@@ -586,7 +613,7 @@ static GTEXT_TOML_Value * scan_datetime(toml_ctx * ctx) {
           && is_digit(ctx->buf[ctx->pos + 2])
           && ctx->buf[ctx->pos + 3] == ':') {
         ctx->pos++;
-        if (!take_time(ctx)) {
+        if (!take_time(ctx, &secs_at)) {
           toml_fail_at(ctx, start, GTEXT_TOML_E_BAD_TOKEN, "not a time");
           return NULL;
         }
@@ -615,18 +642,48 @@ static GTEXT_TOML_Value * scan_datetime(toml_ctx * ctx) {
     }
   }
   else {
-    if (!take_time(ctx)) {
+    if (!take_time(ctx, &secs_at)) {
       toml_fail_at(ctx, start, GTEXT_TOML_E_BAD_TOKEN, "not a time");
       return NULL;
     }
   }
 
+  const char * text = ctx->buf + start;
+  size_t text_len = ctx->pos - start;
+  /* Bounded by the grammar rather than by a guess: a time with no seconds has
+   * no fraction either, so the longest such date-time is
+   * `YYYY-MM-DDTHH:MM+HH:MM`, 22 bytes, and 25 once `:00` is in. The check
+   * below is still written out, because a bound argued from the grammar and a
+   * bound the code enforces are two different things. */
+  char patched[32];
+  if (secs_at != SIZE_MAX) {
+    /* The second of the three places the version option reaches. 1.1.0:
+     * "seconds may be omitted, in which case `:00` will be assumed" - which is
+     * a rewrite of the text, so that is what this does rather than a second
+     * reading of the grammar. chron stays the only date-time parser here. */
+    if (ctx->version != GTEXT_TOML_VERSION_1_1_0) {
+      toml_fail_at(ctx, secs_at, GTEXT_TOML_E_BAD_TOKEN,
+          "a TOML 1.0.0 time needs its seconds; 1.1.0 makes them optional");
+      return NULL;
+    }
+    size_t head = secs_at - start;
+    if (text_len + 3 > sizeof(patched)) {
+      toml_fail_at(ctx, start, GTEXT_TOML_E_BAD_TOKEN, "not a time");
+      return NULL;
+    }
+    memcpy(patched, text, head);
+    memcpy(patched + head, ":00", 3);
+    memcpy(patched + head + 3, text + head, text_len - head);
+    text = patched;
+    text_len += 3;
+  }
+
   GCHRON_TomlValue parsed;
-  GCHRON_Result result = gchron_parse_toml(
-      ctx->buf + start, ctx->pos - start, NULL, &parsed, NULL, NULL);
+  GCHRON_Result result =
+      gchron_parse_toml(text, text_len, NULL, &parsed, NULL, NULL);
   if (result != GCHRON_OK) {
     toml_fail_at(ctx, start, GTEXT_TOML_E_DATETIME,
-        "not a TOML 1.0.0 date-time; chron refused it");
+        "not a TOML date-time; chron refused it");
     return NULL;
   }
   GTEXT_TOML_Value * value = toml_value_new(ctx->alloc, GTEXT_TOML_DATETIME);
