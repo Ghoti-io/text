@@ -361,7 +361,9 @@ Comprehensive usage examples are provided in the `examples/` directory.
 Every standard keyword in every draft this engine reads is either enforced
 or ignored for a reason the specification gives. What remains is one entry:
 
-- **draft-04 and earlier** are refused by decision, not by omission - see below
+- **draft-03 and earlier** are refused by decision, not by omission - see
+  below. So is the unversioned `http://json-schema.org/schema#` alias, which
+  names no draft
 
 Three things were on this list until the identifier pre-pass was given the
 dialect, and they are worth recording because all three were invisible to the
@@ -400,8 +402,8 @@ the base URI is: it applies to the resource that declares it and everything
 inside, and the resource outside is unaffected, so the same keyword can mean
 different things either side of a boundary within one compile.
 
-2020-12, 2019-09, draft-07 and draft-06 are read. What differs between them
-and is honoured here:
+2020-12, 2019-09, draft-07, draft-06 and draft-04 are read. What differs
+between them and is honoured here:
 
 - a keyword the draft did not have yet is an unknown member and is ignored -
   `prefixItems`, `$dynamicRef` and `$dynamicAnchor` before 2020-12;
@@ -414,12 +416,48 @@ and is honoured here:
 - an array-valued `items` with `additionalItems`, which is how the older
   drafts spell what 2020-12 calls `prefixItems` and `items`, compiles to the
   same slots in every draft
+- **draft-04 has three rules of its own**, and they are the reason it stops
+  being a difference of keyword set:
+  - the identifier is `id`. draft-06 renamed it to `$id`, and each spelling is
+    read only in the draft that has it: an `id` in a 2020-12 document is an
+    annotation somebody wrote, and moving the base URI for it would resolve a
+    `$ref` against a document nobody named. The fragment-only form is a
+    location-independent name there as in draft-06 and draft-07
+  - `exclusiveMinimum` and `exclusiveMaximum` are **booleans that modify**
+    `minimum` and `maximum`, so `{"minimum": 3, "exclusiveMinimum": true}` is
+    `> 3`. They are joined after the object is read, because the bound each
+    modifies may be written second. A number there is draft-06's spelling and
+    is refused rather than read as a bound, and a `true` with no bound to
+    modify is refused too - draft-04's meta-schema makes each depend on the
+    other, and a lone one asserts a bound whose value is nowhere in the
+    document
+  - `integer` is a constraint on **how the number is written**. draft-04
+    section 3.5 defines the primitive types over the JSON text, so a fraction
+    or an exponent makes a number a "number": `1.0` and `1e2` are not integers
+    there and are in every later draft. The suite puts this in
+    `optional/zeroTerminatedFloats.json` because an implementation that has
+    already turned the text into a double cannot answer it; this one keeps the
+    lexeme
+- `const`, `contains` and `propertyNames` arrived in draft-06, so in draft-04
+  they are unknown members and are ignored
 
-draft-04 and earlier are **refused**, and the error names the draft. draft-04
-spells `exclusiveMinimum` as a boolean that modifies `minimum`, and `$id` as
-`id`; reading one of those as if it were draft-06 does not produce a wrong
-keyword, it produces a wrong answer about the instance, which is exactly what
-this engine refuses rather than guesses at.
+draft-03 and earlier are **refused**, and the error names the draft. `required`
+there is a boolean on each property rather than a list on the object,
+`dependencies` holds a different shape again, and `divisibleBy` is `multipleOf`
+under another name: that is a different language rather than the same one
+spelled differently, and nothing in this engine's structure corresponds to it.
+
+`http://json-schema.org/schema#` is refused as well, and it is worth saying why
+separately. It is the unversioned alias, and json-schema.org has answered it
+with whatever was current - draft-04 for years, 2020-12 today - so a document
+using it has not said what it was written against. That is the case this engine
+refuses rather than guesses at. It used to be refused under the *name*
+draft-04, which was a claim about the document the URI does not support.
+
+draft-04 was on that list until it was implemented, on the argument that
+reading it as draft-06 answers the instance wrongly. That argument is against
+guessing, not against implementing, and draft-04 is still what OpenAPI 2.0 and
+a great deal of installed tooling speaks.
 
 A document that carries no `$schema` at all is read as
 `GTEXT_JSON_Schema_Options::default_dialect`, or as 2020-12 when the caller
@@ -457,12 +495,13 @@ nothing gates is a score nobody re-reads.
 | 2019-09 | 1261 / 1261 | 158 / 158 | 866 / 866 |
 | draft-07 | 929 / 929 | 114 / 118 | 785 / 785 |
 | draft-06 | 841 / 841 | 106 / 106 | 407 / 407 |
+| draft-04 | 618 / 618 | 100 / 100 | 291 / 291 |
 
 Every required assertion in every draft this engine reads is answered, and
 answered correctly. draft-07 was 921 of 929 and draft-06 833 of 841: four
 refused in each for a meta-schema that was not embedded, two answered wrongly
 for `$ref` beside a sibling `$id`, and two refused for a pointer crossing into
-an embedded resource.
+an embedded resource. draft-04 was refused entirely.
 
 The one thing left outside the required suites is draft-07's optional
 `content.json`, four assertions that want `contentMediaType` and
@@ -493,14 +532,15 @@ question written in JSON Schema: `{"$ref":
 asked about. All nine published documents - the root and the eight under
 `.../2020-12/meta/` - ship inside this library, so that reference resolves
 with no resolver configured. So do 2019-09's seven, and the single document
-each that draft-07 and draft-06 publish: eighteen in all, which is every
-dialect this engine reads. `$vocabulary` arrived in 2019-09, so the two older
-drafts have nothing to split a root document into - the keyword set is the
-draft.
+each that draft-07, draft-06 and draft-04 publish: nineteen in all, which is
+every dialect this engine reads. `$vocabulary` arrived in 2019-09, so the three
+older drafts have nothing to split a root document into - the keyword set is
+the draft. draft-04's own identifier is spelled `id`, so the generator accepts
+either keyword.
 
-Neither older document uses `pattern` in a schema position, so unlike the
-newer two they resolve with no regular-expression provider either. `pattern`
-appears in them as a keyword being *described*, and what makes
+None of the three older documents uses `pattern` in a schema position, so
+unlike the newer two they resolve with no regular-expression provider either.
+`pattern` appears in them as a keyword being *described*, and what makes
 `patternProperties`' keys regular expressions is spelled `"format": "regex"`,
 which is an annotation.
 

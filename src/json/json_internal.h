@@ -1081,6 +1081,16 @@ typedef struct json_schema_node {
   double exclusive_minimum;  ///< Exclusive lower bound
   int has_exclusive_maximum; ///< 1 if exclusiveMaximum is set
   double exclusive_maximum;  ///< Exclusive upper bound
+  /**
+   * 1 when `integer` means draft-04's `integer`.
+   *
+   * draft-04 defines the primitive types by how a value is *written*, so a
+   * number carrying a fraction or an exponent is a "number" and not an
+   * "integer" - `1.0` is invalid against `{"type":"integer"}` there and valid
+   * against it in every later draft, which changed the rule to be about the
+   * value.
+   */
+  int integer_excludes_fraction;
   int has_multiple_of;       ///< 1 if multipleOf is set
   double multiple_of;        ///< Divisor; must be greater than zero
   /**

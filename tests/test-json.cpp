@@ -12599,18 +12599,18 @@ TEST(JsonSchemaMetaschema, TheCallersResolverWins) {
 	gtext_json_free(doc);
 }
 
-TEST(JsonSchemaMetaschema, EmbedsEighteenDocumentsAndNotTheWholeWeb) {
+TEST(JsonSchemaMetaschema, EmbedsNineteenDocumentsAndNotTheWholeWeb) {
 	// A reference that leaves the document still does not resolve. What was
-	// added is eighteen documents - 2020-12's nine, 2019-09's seven, and one
-	// each for draft-07 and draft-06 - not a fetcher, and a URI that merely
-	// looks like one of them is refused the way it always was.
+	// added is nineteen documents - 2020-12's nine, 2019-09's seven, and one
+	// each for draft-07, draft-06 and draft-04 - not a fetcher, and a URI that
+	// merely looks like one of them is refused the way it always was.
 	//
 	// 2019-09's root used to be in this list, because only 2020-12 was
 	// embedded. It is now a document this library carries, and it has moved
-	// to the test below that compiles it. draft-07's and draft-06's went the
-	// same way; what is here in their place is draft-04's, which is refused
-	// for a different reason - a dialect this engine will not read - and the
-	// `https` spelling of draft-07's, which is not the URI it publishes.
+	// to the test below that compiles it. draft-07's, draft-06's and draft-04's
+	// went the same way; what is here in their place is draft-03's, which is
+	// refused for a different reason - a dialect this engine will not read - and
+	// the `https` spelling of draft-07's, which is not the URI it publishes.
 	ToyProvider provider;
 	GTEXT_JSON_Regex_Provider rvt = toy_vtable(&provider);
 	GTEXT_JSON_Schema_Options opts = gtext_json_schema_options_default();
@@ -12624,6 +12624,7 @@ TEST(JsonSchemaMetaschema, EmbedsEighteenDocumentsAndNotTheWholeWeb) {
 	    "{\"$ref\":\"https://json-schema.org/draft/2020-12/schema/\"}",
 	    "{\"$ref\":\"https://json-schema.org/draft-07/schema\"}",
 	    "{\"$ref\":\"http://json-schema.org/draft-05/schema#\"}",
+	    "{\"$ref\":\"http://json-schema.org/draft-03/schema#\"}",
 	};
 	for (const char * src : elsewhere) {
 		GTEXT_JSON_Value * doc = parse_doc(src);
@@ -12970,16 +12971,217 @@ TEST(JsonSchemaDraft, KeywordsThatDidNotExistYetAreIgnored) {
 	}
 }
 
+// ===========================================================================
+// draft-04
+// ===========================================================================
+//
+// The oldest draft this engine reads, and the one where the differences stop
+// being differences of keyword set. Three rules are its own: the identifier is
+// `id`, `exclusiveMinimum`/`exclusiveMaximum` are booleans over
+// `minimum`/`maximum`, and `integer` is a constraint on how a number is
+// written. It was refused until all three were implemented, on the argument
+// that reading it as draft-06 answers the instance wrongly - which is an
+// argument against guessing, not against implementing.
+
+TEST(JsonSchemaDraft04, ExclusiveBoundsAreBooleansOverTheBoundsTheyName) {
+	{
+		MetaFixture f(
+		    "{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+		    "\"minimum\":3,\"exclusiveMinimum\":true}");
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_FALSE(f.accepts("3"));
+		EXPECT_TRUE(f.accepts("3.5"));
+	}
+	{
+		// `false` is the default written out, so the bound stays inclusive.
+		MetaFixture f(
+		    "{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+		    "\"maximum\":3,\"exclusiveMaximum\":false}");
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_TRUE(f.accepts("3"));
+		EXPECT_FALSE(f.accepts("3.5"));
+	}
+	{
+		// The keyword order is the document's, and the bound it modifies may
+		// come second, so the two halves are joined after the object is read.
+		MetaFixture f(
+		    "{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+		    "\"exclusiveMaximum\":true,\"maximum\":3}");
+		ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+		EXPECT_FALSE(f.accepts("3"));
+		EXPECT_TRUE(f.accepts("2"));
+	}
+	{
+		// A number there is draft-06's spelling, and in draft-04 it is not this
+		// keyword at all. Refused rather than read as a bound, because reading
+		// it as one is the wrong answer this draft was refused over.
+		MetaFixture f(
+		    "{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+		    "\"exclusiveMinimum\":3}");
+		EXPECT_EQ(f.schema, nullptr);
+	}
+	{
+		// And a bound to modify is required: draft-04's meta-schema makes each
+		// depend on the other, and a lone `true` asserts a bound whose value is
+		// nowhere in the document.
+		MetaFixture f(
+		    "{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+		    "\"exclusiveMinimum\":true}");
+		EXPECT_EQ(f.schema, nullptr);
+	}
+	{
+		// draft-06 onward: a number, and a boolean is not the keyword.
+		MetaFixture f(
+		    "{\"$schema\":\"http://json-schema.org/draft-06/schema#\","
+		    "\"minimum\":3,\"exclusiveMinimum\":true}");
+		EXPECT_EQ(f.schema, nullptr);
+	}
+}
+
+TEST(JsonSchemaDraft04, TheIdentifierIsSpeltIdAndOnlyThere) {
+	// `id` is what draft-06 renamed to `$id`. It has to move the base URI in
+	// draft-04 and must not in any later draft, where a document carrying one
+	// has written an annotation - moving the base there would resolve a `$ref`
+	// against a document nobody named.
+	MetaFixture four("{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+	                 "\"id\":\"http://e.com/root.json\","
+	                 "\"properties\":{\"x\":{\"$ref\":\"sub.json\"}},"
+	                 "\"definitions\":{\"B\":{\"id\":\"sub.json\","
+	                 "                        \"type\":\"integer\"}}}");
+	ASSERT_NE(four.schema, nullptr)
+	    << (four.err.message ? four.err.message : "");
+	EXPECT_TRUE(four.accepts("{\"x\":1}"));
+	EXPECT_FALSE(four.accepts("{\"x\":\"a\"}"));
+
+	// The same document called draft-06: `id` names nothing, so `sub.json` does
+	// not resolve and the compile is refused rather than resolving somewhere.
+	MetaFixture six("{\"$schema\":\"http://json-schema.org/draft-06/schema#\","
+	                "\"id\":\"http://e.com/root.json\","
+	                "\"properties\":{\"x\":{\"$ref\":\"sub.json\"}},"
+	                "\"definitions\":{\"B\":{\"id\":\"sub.json\","
+	                "                        \"type\":\"integer\"}}}");
+	EXPECT_EQ(six.schema, nullptr);
+
+	// And `$id` is not draft-04's keyword either, so the same document written
+	// the modern way does not resolve there.
+	MetaFixture wrong(
+	    "{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+	    "\"$id\":\"http://e.com/root.json\","
+	    "\"properties\":{\"x\":{\"$ref\":\"sub.json\"}},"
+	    "\"definitions\":{\"B\":{\"$id\":\"sub.json\","
+	    "                        \"type\":\"integer\"}}}");
+	EXPECT_EQ(wrong.schema, nullptr);
+}
+
+TEST(JsonSchemaDraft04, AFragmentOnlyIdIsALocationIndependentName) {
+	// draft-04 has the same location-independent identifier as draft-06 and
+	// draft-07, under the older keyword name.
+	MetaFixture f("{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+	              "\"allOf\":[{\"$ref\":\"#foo\"}],"
+	              "\"definitions\":{\"A\":{\"id\":\"#foo\","
+	              "                        \"type\":\"integer\"}}}");
+	ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+	EXPECT_TRUE(f.accepts("1"));
+	EXPECT_FALSE(f.accepts("\"a\""));
+}
+
+TEST(JsonSchemaDraft04, IntegerIsAboutHowTheNumberIsWritten) {
+	// draft-04 section 3.5 defines the primitive types over the JSON text, so a
+	// fraction or an exponent makes a number a "number" rather than an
+	// "integer" whatever its value. draft-06 changed the rule to be about the
+	// value, which is why 1.0 is an integer there and not here.
+	//
+	// The suite puts this in optional/zeroTerminatedFloats.json because an
+	// implementation that has already turned the text into a double cannot
+	// answer it. This one keeps the lexeme.
+	MetaFixture four("{\"$schema\":\"http://json-schema.org/draft-04/schema#\","
+	                 "\"type\":\"integer\"}");
+	ASSERT_NE(four.schema, nullptr) << (four.err.message ? four.err.message : "");
+	EXPECT_TRUE(four.accepts("1"));
+	EXPECT_TRUE(four.accepts("-7"));
+	EXPECT_FALSE(four.accepts("1.0"));
+	EXPECT_FALSE(four.accepts("1e2"));
+	EXPECT_FALSE(four.accepts("1.5"));
+
+	MetaFixture six("{\"$schema\":\"http://json-schema.org/draft-06/schema#\","
+	                "\"type\":\"integer\"}");
+	ASSERT_NE(six.schema, nullptr) << (six.err.message ? six.err.message : "");
+	EXPECT_TRUE(six.accepts("1.0"));
+	EXPECT_TRUE(six.accepts("1e2"));
+	EXPECT_FALSE(six.accepts("1.5"));
+}
+
+TEST(JsonSchemaDraft04, KeywordsDraft06AddedAreNotKeywordsHere) {
+	// `const`, `contains` and `propertyNames` all arrived in draft-06. In
+	// draft-04 they are unknown members, and an unknown member is ignored -
+	// so a schema using one constrains nothing rather than constraining
+	// something the draft cannot express.
+	struct Case {
+		const char * keyword;
+		const char * schema;
+		const char * rejected;
+	};
+	const Case cases[] = {
+	    {"const", "\"const\":1", "2"},
+	    {"contains", "\"contains\":{\"type\":\"integer\"}", "[\"a\"]"},
+	    {"propertyNames",
+	        "\"propertyNames\":{\"maxLength\":1}", "{\"ab\":1}"},
+	};
+	for (const Case & c : cases) {
+		MetaFixture four(
+		    (std::string("{\"$schema\":\"http://json-schema.org/draft-04/"
+		                "schema#\",")
+		        + c.schema + "}")
+		        .c_str());
+		ASSERT_NE(four.schema, nullptr) << c.keyword;
+		EXPECT_TRUE(four.accepts(c.rejected)) << c.keyword;
+
+		// And draft-06, where each of them is the keyword it looks like.
+		MetaFixture six(
+		    (std::string("{\"$schema\":\"http://json-schema.org/draft-06/"
+		                "schema#\",")
+		        + c.schema + "}")
+		        .c_str());
+		ASSERT_NE(six.schema, nullptr) << c.keyword;
+		EXPECT_FALSE(six.accepts(c.rejected)) << c.keyword;
+	}
+}
+
+TEST(JsonSchemaDraft04, ItsMetaschemaIsEmbeddedToo) {
+	// So "is this a valid draft-04 schema?" needs no resolver, which is what
+	// the suite's draft4 definitions.json and ref.json ask.
+	MetaFixture f("{\"$ref\":\"http://json-schema.org/draft-04/schema#\"}");
+	ASSERT_EQ(f.opts.resolver, nullptr);
+	ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+
+	EXPECT_TRUE(f.accepts("{\"type\":\"string\"}"));
+	EXPECT_TRUE(f.accepts("{\"minimum\":1,\"exclusiveMinimum\":true}"));
+	EXPECT_FALSE(f.accepts("{\"type\":\"strong\"}"));
+	EXPECT_FALSE(f.accepts("{\"maxLength\":-1}"));
+	// draft-04's own document says the exclusive bounds are booleans, so the
+	// later drafts' spelling is what it rejects - the opposite way round from
+	// draft-06's and draft-07's meta-schemas.
+	EXPECT_FALSE(f.accepts("{\"exclusiveMinimum\":3}"));
+	// A boolean is not a schema in draft-04; it became one in draft-06.
+	EXPECT_FALSE(f.accepts("true"));
+}
+
 TEST(JsonSchemaDraft, DraftsThisEngineCannotReadAreRefused) {
-	// draft-04 spells `exclusiveMinimum` as a boolean that modifies
-	// `minimum`, and `$id` as `id`. Reading one of those as if it were
-	// draft-06 does not produce a wrong keyword, it produces a wrong answer
-	// about the instance - so it is refused, the way every other keyword this
-	// engine cannot honour is.
+	// draft-03 is a different language rather than the same one spelled
+	// differently: `required` is a boolean on each property rather than a list
+	// on the object, and `divisibleBy` is `multipleOf` under another name.
+	// Nothing in this engine's structure corresponds to either.
+	//
+	// The unversioned alias names no draft at all. json-schema.org has answered
+	// it with whatever was current - draft-04 for years, 2020-12 today - so a
+	// document using it has not said what it was written against, which is the
+	// case this engine refuses rather than guesses at. draft-04 was on this list
+	// until it was implemented; the difference is that implementing a rule is
+	// not guessing at one.
 	const char * old_drafts[] = {
-	    "http://json-schema.org/draft-04/schema#",
 	    "http://json-schema.org/draft-03/schema#",
 	    "http://json-schema.org/schema#",
+	    "http://json-schema.org/schema",
 	};
 	for (const char * dialect : old_drafts) {
 		std::string src =
@@ -13507,9 +13709,9 @@ TEST(JsonSchemaDialect, ADeclaredSchemaStillWins) {
 
 TEST(JsonSchemaDialect, AnUnreadableDefaultIsRefused) {
 	// Silently falling back to 2020-12 would tell a caller who asked for
-	// draft-04 that they got draft-04.
+	// draft-03 that they got draft-03.
 	GTEXT_JSON_Schema_Options opts = gtext_json_schema_options_default();
-	opts.default_dialect = "http://json-schema.org/draft-04/schema#";
+	opts.default_dialect = "http://json-schema.org/draft-03/schema#";
 
 	GTEXT_JSON_Error err;
 	memset(&err, 0, sizeof(err));

@@ -411,13 +411,15 @@ complete.
 @anchor json-not-implemented
 ## Gaps
 
-The dialect is 2020-12 by default. 2019-09, draft-07 and draft-06 are each
-read with their own keyword set, scoped to the resource that declares
-`$schema`. Draft-04 and earlier are refused: they spell `exclusiveMinimum`
-and `$id` differently, and reading one as a later draft would answer the
-instance wrongly. Every published meta-schema of every dialect it reads is
-embedded: 2020-12's nine, 2019-09's seven, and one each for draft-07 and
-draft-06.
+The dialect is 2020-12 by default. 2019-09, draft-07, draft-06 and draft-04
+are each read with their own keyword set, scoped to the resource that declares
+`$schema` - including draft-04's three rules of its own: `id` for the
+identifier, boolean `exclusiveMinimum`/`exclusiveMaximum` over
+`minimum`/`maximum`, and `integer` as a constraint on how the number is
+written. draft-03 and earlier are refused, and so is the unversioned
+`http://json-schema.org/schema#`, which names no draft. Every published
+meta-schema of every dialect it reads is embedded: 2020-12's nine, 2019-09's
+seven, and one each for draft-07, draft-06 and draft-04.
 
 A schema this library cannot fully enforce is refused at compile time.
 

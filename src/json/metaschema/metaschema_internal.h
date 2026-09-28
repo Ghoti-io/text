@@ -61,7 +61,7 @@ typedef struct {
 } json_metaschema_doc;
 
 /**
- * Every published meta-schema of every dialect this library reads: eighteen
+ * Every published meta-schema of every dialect this library reads: nineteen
  * documents.
  *
  * 2020-12 has nine - the root meta-schema, the seven vocabulary meta-schemas
@@ -70,12 +70,12 @@ typedef struct {
  * rather than by the root. 2019-09 has seven, having one `format` vocabulary
  * rather than two and keeping the `unevaluated*` keywords in `applicator`.
  *
- * draft-07 and draft-06 have one each, because `$vocabulary` arrived in
- * 2019-09 and before it the keyword set is the draft rather than a declaration
- * inside it. Their `uri` here is the fragmentless form, which is what a
- * reference resolves to before its fragment is read - a document in the wild
- * refers to them as `http://json-schema.org/draft-07/schema#`, and that is the
- * same identity.
+ * draft-07, draft-06 and draft-04 have one each, because `$vocabulary` arrived
+ * in 2019-09 and before it the keyword set is the draft rather than a
+ * declaration inside it. Their `uri` here is the fragmentless form, which is
+ * what a reference resolves to before its fragment is read - a document in the
+ * wild refers to them as `http://json-schema.org/draft-07/schema#`, and that is
+ * the same identity.
  */
 extern const json_metaschema_doc json_metaschema_docs[];
 extern const size_t json_metaschema_doc_count;

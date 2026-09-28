@@ -3,8 +3,8 @@
 # Fetch the published JSON Schema meta-schemas, for every dialect this
 # library reads that has them.
 #
-# Eighteen documents: 2020-12's nine, 2019-09's seven, and one each for
-# draft-07 and draft-06. They are what a `$ref` to
+# Nineteen documents: 2020-12's nine, 2019-09's seven, and one each for
+# draft-07, draft-06 and draft-04. They are what a `$ref` to
 # https://json-schema.org/draft/<date>/schema and the vocabulary meta-schemas
 # beneath it resolve to, and what a `$ref` to
 # http://json-schema.org/draft-0N/schema resolves to. The library embeds them,
@@ -13,7 +13,7 @@
 # fetches into the committed C file, and `make check-metaschema` fails if the
 # two disagree.
 #
-# The two older drafts publish a single document each rather than a root plus a
+# The three older drafts publish a single document each rather than a root plus a
 # vocabulary set: `$vocabulary` does not exist before 2019-09, so the keyword
 # set *is* the draft and there is nothing to split it into. They are also
 # spelled differently in two ways that matter here. The path is
@@ -21,7 +21,9 @@
 # carries an empty fragment - `http://json-schema.org/draft-07/schema#` - which
 # is the URI a document in the wild refers to them by. What is embedded is
 # keyed without the fragment, because that is what a reference resolves to
-# before its fragment is read.
+# before its fragment is read. draft-04's is spelled `id` rather than `$id`,
+# which is the rename draft-06 made and one of the three reasons draft-04 needs
+# its own reading.
 #
 # This is the opposite of what tools/idna/fetch.sh does with the UCD, and the
 # difference is the point. The UCD versions: 17.0.0 supersedes 16.0.0, and a
@@ -105,5 +107,6 @@ fetch_dialect 2020-12 core applicator unevaluated validation meta-data \
 fetch_dialect 2019-09 core applicator validation meta-data format content
 fetch_old_dialect draft-07
 fetch_old_dialect draft-06
+fetch_old_dialect draft-04
 
 echo "done; regenerate with tools/metaschema/gen_metaschema.py"

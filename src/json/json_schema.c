@@ -325,13 +325,21 @@ static const struct {
  * which exist. The numbers increase with time so that "at least this draft"
  * is a comparison.
  *
- * Only back to draft-06. draft-04 and draft-03 spell `exclusiveMinimum` as a
- * boolean that modifies `minimum`, and draft-04 spells `$id` as `id`; reading
- * one of those as if it were draft-06 does not produce a wrong keyword, it
- * produces a wrong answer about the instance. They are refused, which is the
- * same thing this engine does with every other keyword it cannot honour.
+ * Back to draft-04, which is where the differences stop being differences of
+ * keyword set and start being differences of meaning: it spells `$id` as `id`,
+ * `exclusiveMinimum` as a boolean that modifies `minimum`, and `integer` as a
+ * constraint on how a number is written. All three are implemented, because
+ * implementing a rule is not the same as guessing at one - and draft-04 is
+ * still what OpenAPI 2.0 and a great deal of installed tooling speaks.
+ *
+ * draft-03 is refused. `required` there is a boolean on each property rather
+ * than a list on the object, `dependencies` holds a different shape again, and
+ * `divisibleBy` is `multipleOf` under another name: that is a different
+ * language rather than the same one spelled differently, and nothing in this
+ * engine's structure corresponds to it.
  */
 typedef enum {
+  JSON_DRAFT_04 = 4,
   JSON_DRAFT_06 = 6,
   JSON_DRAFT_07 = 7,
   JSON_DRAFT_2019_09 = 2019,
@@ -350,19 +358,28 @@ static const struct {
     {"http://json-schema.org/draft-07/schema", JSON_DRAFT_07},
     {"http://json-schema.org/draft-06/schema#", JSON_DRAFT_06},
     {"http://json-schema.org/draft-06/schema", JSON_DRAFT_06},
+    {"http://json-schema.org/draft-04/schema#", JSON_DRAFT_04},
+    {"http://json-schema.org/draft-04/schema", JSON_DRAFT_04},
     {NULL, JSON_DRAFT_2020_12}};
 
 /* Named so that the refusal can say which draft it was, rather than "an
- * unsupported dialect". */
+ * unsupported dialect".
+ *
+ * `http://json-schema.org/schema#` is the unversioned alias, and it is here
+ * rather than mapped to a draft because it names no draft: json-schema.org has
+ * answered it with whatever was current, which was draft-04 for years and is
+ * 2020-12 today, so a document using it has not said what it was written
+ * against. That is exactly the case this engine refuses rather than guesses -
+ * and it used to be refused under the *name* draft-04, which was a claim about
+ * the document that the URI does not support. */
 static const struct {
   const char * uri;
   const char * name;
 } json_schema_dialects_refused[] = {
-    {"http://json-schema.org/draft-04/schema#", "draft-04"},
-    {"http://json-schema.org/draft-04/schema", "draft-04"},
     {"http://json-schema.org/draft-03/schema#", "draft-03"},
     {"http://json-schema.org/draft-03/schema", "draft-03"},
-    {"http://json-schema.org/schema#", "draft-04"},
+    {"http://json-schema.org/schema#", "an unversioned alias"},
+    {"http://json-schema.org/schema", "an unversioned alias"},
     {NULL, NULL}};
 
 /* The draft a dialect URI names, or 0 if this engine does not read it. */
@@ -375,6 +392,45 @@ static json_schema_draft json_schema_draft_for_uri(
     }
   }
   return 0;
+}
+
+/*
+ * The draft a schema object is read as: its own `$schema`, or the one in scope.
+ *
+ * `$schema` is scoped to the resource that declares it, and that includes the
+ * object declaring it - so an object's `$schema` decides how that object's own
+ * identifier is spelled. Both the pre-pass and the compiler ask this, rather
+ * than each having its own idea of when the dialect changes.
+ */
+static json_schema_draft json_schema_draft_in(
+    const GTEXT_JSON_Value * value, json_schema_draft in_scope) {
+  if (!value || value->type != GTEXT_JSON_OBJECT) {
+    return in_scope;
+  }
+  const GTEXT_JSON_Value * dialect = gtext_json_object_get(value, "$schema", 7);
+  if (!dialect || dialect->type != GTEXT_JSON_STRING) {
+    return in_scope;
+  }
+  json_schema_draft named = json_schema_draft_for_uri(
+      dialect->as.string.data, dialect->as.string.len);
+  return named ? named : in_scope;
+}
+
+/*
+ * The identifier `value`'s own object would carry in this draft.
+ *
+ * draft-04 spells it `id` and draft-06 renamed it to `$id`. Both are read only
+ * in the draft that has them: an `id` in a 2020-12 document is an annotation
+ * somebody wrote, and reading it as a base-URI change would move the base of a
+ * document that never asked for one.
+ */
+static const GTEXT_JSON_Value * json_schema_identifier(
+    const GTEXT_JSON_Value * value, json_schema_draft draft) {
+  if (!value || value->type != GTEXT_JSON_OBJECT) {
+    return NULL;
+  }
+  return draft <= JSON_DRAFT_04 ? gtext_json_object_get(value, "id", 2)
+                                : gtext_json_object_get(value, "$id", 3);
 }
 
 /*
@@ -414,6 +470,14 @@ static const struct {
     {"if", JSON_DRAFT_07, 0},
     {"then", JSON_DRAFT_07, 0},
     {"else", JSON_DRAFT_07, 0},
+    /* draft-06's, all four. draft-04 spells the identifier `id`, which is not
+     * a keyword *after* draft-04 either - a document that carries one there has
+     * written an annotation - so both spellings are bounded on both sides. */
+    {"$id", JSON_DRAFT_06, 0},
+    {"id", JSON_DRAFT_04, JSON_DRAFT_04},
+    {"const", JSON_DRAFT_06, 0},
+    {"contains", JSON_DRAFT_06, 0},
+    {"propertyNames", JSON_DRAFT_06, 0},
     {NULL, JSON_DRAFT_06, 0}};
 
 /* Which vocabulary each keyword belongs to. A keyword not listed here is one
@@ -927,14 +991,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
    * the resource that declares it exactly as the base URI is, so it is picked
    * up on the way down and inherited by everything inside.
    */
-  const GTEXT_JSON_Value * dialect = gtext_json_object_get(value, "$schema", 7);
-  if (dialect && dialect->type == GTEXT_JSON_STRING) {
-    json_schema_draft named = json_schema_draft_for_uri(
-        dialect->as.string.data, dialect->as.string.len);
-    if (named != 0) {
-      draft = named;
-    }
-  }
+  draft = json_schema_draft_in(value, draft);
 
   /*
    * Before 2019-09 a schema object containing `$ref` *is* that reference: core
@@ -957,7 +1014,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
   const char * scope = base;
   char * owned_scope = NULL;
 
-  const GTEXT_JSON_Value * id = gtext_json_object_get(value, "$id", 3);
+  const GTEXT_JSON_Value * id = json_schema_identifier(value, draft);
   if (json_schema_id_is_anchor(draft, id)) {
     /*
      * draft-07 and draft-06 spell a location-independent identifier as an
@@ -1805,7 +1862,8 @@ static GTEXT_JSON_Status json_schema_compile_node(json_schema_node * node,
   unsigned int saved_vocabularies = cc->vocabularies;
   json_schema_draft saved_draft = cc->draft;
   if (schema_doc && schema_doc->type == GTEXT_JSON_OBJECT) {
-    const GTEXT_JSON_Value * id = gtext_json_object_get(schema_doc, "$id", 3);
+    const GTEXT_JSON_Value * id = json_schema_identifier(
+        schema_doc, json_schema_draft_in(schema_doc, saved_draft));
     if (id && id->type == GTEXT_JSON_STRING) {
       /* The pre-pass already resolved and interned this; finding it here is
        * a lookup rather than a second resolution, so the two cannot drift. */
@@ -1988,6 +2046,16 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
       }
     }
   }
+
+  /* draft-04's `type: "integer"` is about how the number is written. Recorded
+   * on the node because validation is where it is asked, and the draft in scope
+   * is known only here. */
+  node->integer_excludes_fraction = cc->draft <= JSON_DRAFT_04 ? 1 : 0;
+
+  /* draft-04's `exclusiveMinimum`/`exclusiveMaximum`, which are booleans over
+   * `minimum`/`maximum`; -1 means the keyword was not there. */
+  int draft4_exclusive_minimum = -1;
+  int draft4_exclusive_maximum = -1;
 
   size_t obj_size = gtext_json_object_size(schema_doc);
   const int has_sibling_ref = cc->draft < JSON_DRAFT_2019_09
@@ -3055,6 +3123,39 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
       }
     }
     // --- numeric assertions -------------------------------------------
+    /*
+     * draft-04 spells these two as booleans that modify `minimum` and
+     * `maximum` rather than as bounds of their own: `{"minimum": 3,
+     * "exclusiveMinimum": true}` is `> 3`. Recorded here and applied after the
+     * loop, because the keywords arrive in whatever order the document wrote
+     * them and the bound this one modifies may not have been read yet.
+     */
+    else if (cc->draft <= JSON_DRAFT_04
+        && (json_matches(key, key_len, "exclusiveMinimum")
+            || json_matches(key, key_len, "exclusiveMaximum"))) {
+      if (value->type != GTEXT_JSON_BOOL) {
+        if (err) {
+          *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+              .message = "In draft-04 exclusiveMinimum and exclusiveMaximum "
+                         "are booleans that modify minimum and maximum"};
+        }
+        return GTEXT_JSON_E_INVALID;
+      }
+      bool on = false;
+      if (gtext_json_get_bool(value, &on) != GTEXT_JSON_OK) {
+        if (err) {
+          *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+              .message = "Invalid boolean exclusive bound"};
+        }
+        return GTEXT_JSON_E_INVALID;
+      }
+      if (json_matches(key, key_len, "exclusiveMinimum")) {
+        draft4_exclusive_minimum = on ? 1 : 0;
+      }
+      else {
+        draft4_exclusive_maximum = on ? 1 : 0;
+      }
+    }
     else if (json_matches(key, key_len, "exclusiveMinimum")
         || json_matches(key, key_len, "exclusiveMaximum")
         || json_matches(key, key_len, "multipleOf")) {
@@ -3331,6 +3432,44 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
    * 2020-12 removed the keyword, so there it is an unknown member and never
    * reaches here.
    */
+  /*
+   * draft-04's exclusive bounds, now that both halves have been read.
+   *
+   * `true` turns the bound it names into an exclusive one; `false` is the
+   * default spelled out and changes nothing. Either without the bound it
+   * modifies is refused: draft-04's meta-schema makes each depend on the other,
+   * and a lone `"exclusiveMinimum": true` asserts a bound whose value is
+   * nowhere in the document.
+   */
+  if (draft4_exclusive_minimum >= 0) {
+    if (!node->has_minimum) {
+      if (err) {
+        *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+            .message = "draft-04 exclusiveMinimum needs a minimum to modify"};
+      }
+      return GTEXT_JSON_E_INVALID;
+    }
+    if (draft4_exclusive_minimum == 1) {
+      node->has_exclusive_minimum = 1;
+      node->exclusive_minimum = node->minimum;
+      node->has_minimum = 0;
+    }
+  }
+  if (draft4_exclusive_maximum >= 0) {
+    if (!node->has_maximum) {
+      if (err) {
+        *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+            .message = "draft-04 exclusiveMaximum needs a maximum to modify"};
+      }
+      return GTEXT_JSON_E_INVALID;
+    }
+    if (draft4_exclusive_maximum == 1) {
+      node->has_exclusive_maximum = 1;
+      node->exclusive_maximum = node->maximum;
+      node->has_maximum = 0;
+    }
+  }
+
   if (cc->draft < JSON_DRAFT_2020_12 && node->additional_items) {
     const GTEXT_JSON_Value * items =
         gtext_json_object_get(schema_doc, "items", 5);
@@ -3412,6 +3551,30 @@ static int json_schema_is_integral(const GTEXT_JSON_Value * instance) {
   /* `floor` rather than a cast: it is defined for every finite double, and
    * every double of magnitude 2^52 or more is already whole. */
   return isfinite(dv) && dv == floor(dv);
+}
+
+/*
+ * Is this number *written* as an integer, which is draft-04's question?
+ *
+ * draft-04 section 3.5 defines the primitive types over the JSON text, so a
+ * fraction or an exponent makes a number a "number" and not an "integer" even
+ * when its value is whole: `1.0` and `1e2` are not integers there, and are in
+ * every draft from draft-06 on. The lexeme is the only place that distinction
+ * survives - by the time it is a double, 1 and 1.0 are one value - so a number
+ * that arrived without one cannot be asked, and falls back to the value.
+ */
+static int json_schema_is_written_as_integer(const GTEXT_JSON_Value * instance) {
+  const char * lexeme = instance->as.number.lexeme;
+  if (!lexeme) {
+    return json_schema_is_integral(instance);
+  }
+  size_t len = instance->as.number.lexeme_len;
+  for (size_t i = 0; i < len; i++) {
+    if (lexeme[i] == '.' || lexeme[i] == 'e' || lexeme[i] == 'E') {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 static int json_schema_is_multiple_of(
@@ -3981,7 +4144,9 @@ static GTEXT_JSON_Status json_schema_validate_body(
        * a whole number satisfies both "number" and "integer".  A schema
        * saying {"type":"integer"} therefore matches 5 and 5.0 but not 5.5,
        * which is what JSON Schema requires. */
-      if (json_schema_is_integral(instance)) {
+      if (node->integer_excludes_fraction
+              ? json_schema_is_written_as_integer(instance)
+              : json_schema_is_integral(instance)) {
         instance_flag |= JSON_SCHEMA_TYPE_INTEGER;
       }
       break;
@@ -4679,12 +4844,11 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
   }
 
   /* A root `$id` moves the document's own base, so compilation starts in
-   * whichever scope the pre-pass ended up putting the root in. */
+   * whichever scope the pre-pass ended up putting the root in. Spelled `id`
+   * in draft-04, which is why this asks rather than assuming. */
   const char * root_base = schema->base_uri;
-  const GTEXT_JSON_Value * root_id =
-      schema->doc->type == GTEXT_JSON_OBJECT
-          ? gtext_json_object_get(schema->doc, "$id", 3)
-          : NULL;
+  const GTEXT_JSON_Value * root_id = json_schema_identifier(
+      schema->doc, json_schema_draft_in(schema->doc, initial_draft));
   if (root_id && root_id->type == GTEXT_JSON_STRING) {
     for (size_t i = 0; i < schema->resources_count; i++) {
       if (schema->resources[i].value == schema->doc

@@ -32,6 +32,7 @@ draft2020-12) JSS_DIALECT="https://json-schema.org/draft/2020-12/schema" ;;
 draft2019-09) JSS_DIALECT="https://json-schema.org/draft/2019-09/schema" ;;
 draft7)       JSS_DIALECT="http://json-schema.org/draft-07/schema#" ;;
 draft6)       JSS_DIALECT="http://json-schema.org/draft-06/schema#" ;;
+draft4)       JSS_DIALECT="http://json-schema.org/draft-04/schema#" ;;
 *)            JSS_DIALECT="" ;;
 esac
 export JSS_DIALECT

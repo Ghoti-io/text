@@ -89,9 +89,10 @@
  *   work; targets are compiled once and shared. A reference that leaves the
  *   document is fetched through GTEXT_JSON_Schema_Options::resolver, and
  *   refused at compile time when there is none or it does not know the URI -
- *   except for the nine published 2020-12 meta-schemas, which are embedded, so
- *   that a schema saying "this instance is a valid schema" resolves without a
- *   resolver and without a socket
+ *   except for the published meta-schemas of every dialect this engine reads,
+ *   which are embedded, so that a schema saying "this instance is a valid
+ *   schema" resolves without a resolver and without a socket. draft-04 spells
+ *   the identifier "id" and the two are read only in the draft that has them
  * - prefixItems and items, where "items" applies to the elements at an
  *   index past the end of "prefixItems" and to every element when there is
  *   no "prefixItems". draft-07's array-valued "items" compiles to
@@ -126,13 +127,19 @@
  *
  * Unsupported standard keywords (rejected at compile time):
  * - pattern, patternProperties, when no provider was supplied
- * - a $schema naming draft-04 or earlier. Those drafts spell
- *   exclusiveMinimum as a boolean modifying minimum, and $id as id, so
- *   reading one as a later draft gives a wrong answer about the instance
- *   rather than an unknown keyword. 2020-12, 2019-09, draft-07 and draft-06
- *   are read, each with its own keyword set, and the dialect is scoped to the
- *   resource that declares it. A document with no $schema is read as
- *   default_dialect, or as 2020-12 when that is not set
+ * - a $schema naming draft-03 or earlier, or the unversioned
+ *   http://json-schema.org/schema# alias, which names no draft: it has been
+ *   answered with whatever was current, so a document using it has not said
+ *   what it was written against. draft-03 spells "required" as a boolean on
+ *   each property and "divisibleBy" as what later drafts call multipleOf,
+ *   which is a different language rather than the same one spelled
+ *   differently. 2020-12, 2019-09, draft-07, draft-06 and draft-04 are read,
+ *   each with its own keyword set, and the dialect is scoped to the resource
+ *   that declares it. draft-04's three rules of its own are implemented: the
+ *   identifier is "id", exclusiveMinimum and exclusiveMaximum are booleans
+ *   that modify minimum and maximum, and "integer" is a constraint on how a
+ *   number is written, so 1.0 is not one. A document with no $schema is read
+ *   as default_dialect, or as 2020-12 when that is not set
  * - $recursiveRef with any value but "#". 2019-09 defines exactly one, and
  *   the keyword is otherwise implemented: $recursiveRef and $recursiveAnchor
  *   are 2019-09's spelling of $dynamicRef and $dynamicAnchor, answered by the

@@ -1897,8 +1897,8 @@ check-nfc-oracle-strict: $(APP_DIR)/$(TARGET)
 		$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py --strict
 
 check-metaschema: ## Fail if the embedded meta-schemas are not what json-schema.org publishes
-# The eighteen documents under $(METASCHEMA_SRC) - 2020-12's nine, 2019-09's
-# seven, and one each for draft-07 and draft-06 - are somebody else's,
+# The nineteen documents under $(METASCHEMA_SRC) - 2020-12's nine, 2019-09's
+# seven, and one each for draft-07, draft-06 and draft-04 - are somebody else's,
 # embedded so that a schema which validates another schema needs no resolver
 # and no socket. That makes this file the one place in the repository where a
 # silent edit would change what "a valid schema" means in any of those
@@ -1940,7 +1940,7 @@ conformance-json-schema: $(CONFORMANCE_LIB)
 #
 # One `make` per draft rather than a loop, so that a failure names the draft in
 # the line that fails.
-JSS_DRAFTS := draft2020-12 draft2019-09 draft7 draft6
+JSS_DRAFTS := draft2020-12 draft2019-09 draft7 draft6 draft4
 
 conformance-json-schema-all: ## Score the schema engine against every draft it reads
 conformance-json-schema-all: $(CONFORMANCE_LIB)
