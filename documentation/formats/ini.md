@@ -223,13 +223,71 @@ corpus scores acceptance and preservation and cannot score those two rules; the
 unit tests can, and do. A corpus grown from real files flatters a parser exactly
 where the real files are uniform.
 
-**What no gate here reaches yet** is a *generated* differential against
-`GKeyFile` and `desktop-file-validate` - the population that would contain a
-duplicate key, a `;` comment, a BOM, CRLF and a non-ASCII name, none of which
-appear in any real file on this machine. Those rules are asserted against the
-references by hand, case by case, in `notes/text/INI-DIALECTS.md` §A.2 and §A.3,
-and the container that answers them builds today; wiring it as a gate is the
-next piece of work.
+**`make check-ini-oracle`** is the gate the corpus cannot be: generated
+documents, against **both references in one pinned image, over the same bytes in
+one pass**. It exists because every real file on this machine is already valid,
+so the corpus reaches no refusal at all - no duplicate key, no `;` comment, no
+BOM, no CRLF, no non-ASCII name.
+
+Four scores, each with its own denominator, plus the generator's own intent as a
+third reading that separates "the subject is wrong" from "the generator emitted
+something other than what it thinks":
+
+| Score | What it compares |
+|---|---|
+| `intent` | our verdict is the one the generator meant to produce |
+| `legality` | our accept/reject matches `desktop-file-validate`'s syntax verdict |
+| `values` | for documents both accept, the groups, keys and raw values match `GKeyFile` |
+| `strings` | gtext_ini_unescape() agrees with `g_key_file_get_string()` |
+
+Measured, 20,000 documents at seed 20260928:
+
+| Score | | Excluded |
+|---|---:|---:|
+| `intent` | **20,000 of 20,000** | - |
+| `legality` | **8,365 of 8,365** | 11,635 |
+| `values` | **9,776 of 9,776** | 1,301 |
+| `strings` | **7,172 of 7,172** | 3,905 |
+
+The `legality` exclusions are the four stricter-validator axes, by axis:
+whitespace-only line 3,019, a space after `]` 2,427, invalid UTF-8 2,355, a CR
+inside a value 2,319. More is excluded there than scored, which is why the
+control on the exclusion table matters and is in the mutation table below.
+
+**47 axes, every one required to appear in the run.** An axis the generator stops
+emitting fails the gate rather than quietly shrinking the population - which is
+exactly how the corpus came to be blind to four of the rules above.
+
+**The exclusions are counted and named, never silent.** Two axes have no oracle at
+all: a document with an unknown escape, or with a trailing lone backslash, is
+parsed by `GKeyFile` and refused only at `get_string()` while the validator
+accepts it outright, so nothing outside this repository decides it. A NUL in a
+value is excluded from `values` because `GKeyFile` truncates there by
+construction. And a document carrying one of four axes where **the validator is
+stricter than both `GKeyFile` and this module** - a whitespace-only line, a space
+after `]`, a CR anywhere, or non-UTF-8 - is excluded from `legality`, because
+scoring it either way would be wrong: as a failure it would assert a rule this
+module has decided not to implement, and as a pass it would hide a real
+difference. In all four the validator's own message ends "The validation will
+continue", so it is a complaint about a document it can still read. That table
+lives in `tools/oracle/ini_diff.py`, by name, with the reason for each.
+
+**Every score was seen to fail**, and each by the comparison meant for it:
+
+| Mutation | intent | legality | values | strings | axes |
+|---|---|---|---|---|---|
+| `;` accepted as a comment | **982 / 1000** | **407 / 417** | - | - | - |
+| duplicate keys allowed | **981 / 1000** | **409 / 417** | **511 / 529** | - | - |
+| trailing whitespace trimmed | - | - | **445 / 511** | **323 / 372** | - |
+| an undefined escape accepted | - | - | - | **315 / 372** | - |
+| the generator drops one axis | - | - | - | - | **FAIL** |
+| one exclusion removed | - | **441 / 481** | - | - | - |
+
+The third row is the point of the whole gate: trimming trailing whitespace in the
+strict dialect is the mutation the **corpus structurally cannot see**, and here it
+moves two scores. The last row is the control on the exclusions themselves -
+removing one makes the excluded count drop and the comparison fail, so the
+exclusions are a knowing-difference set rather than a place failures go to hide.
 
 **`make fuzz-ini`** asserts five properties beyond "it did not crash", and the
 first of them - that the strict dialect is a subset of the generic one, since a

@@ -107,6 +107,10 @@ PROBE = {
     # the SHA-256 of the driver source it was compiled from. Asked with no input,
     # it writes that line and stops.
     "tomlpp": (["toml-driver", "--version"], "toml++", None),
+    # Both Desktop Entry references in one driver, so the version line names
+    # both packages plus the driver's own SHA-256. The driver writes it with no
+    # protocol prefix and stops, the way toml-driver does.
+    "inidesktop": (["ini-driver", "--version"], "glib ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

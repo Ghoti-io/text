@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1942,6 +1942,28 @@ check-toml-1-1-oracle: ## Compare the v1.1.0 reader against toml++'s unreleased 
 check-toml-1-1-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-toml-1-1-oracle.sh
+
+check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
+# The gate the corpus cannot be. Every `.desktop` file on this machine is already
+# valid, so conformance-ini-desktop-entry scores acceptance and preservation and
+# reaches no refusal at all: no real file here carries a duplicate key, a `;`
+# comment, a BOM, CRLF or a non-ASCII name. This generates them.
+#
+# Two references, in one image, over the same bytes in one pass, because they
+# answer different halves of one question and disagree about the answer: GKeyFile
+# says what a value *is* and accepts documents section 3.2 forbids;
+# desktop-file-validate says whether a document is *legal* and refuses them. A
+# differential against either alone would agree with that one's blind spot.
+#
+# Four scores with four denominators, plus the generator's own intent as a third
+# reading, plus a zero-axis check: an axis the generator stopped emitting fails
+# the gate rather than quietly shrinking the population.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+# Needs the built-here image: make oracle-images.
+check-ini-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-oracle.sh
 
 check-metaschema: ## Fail if the embedded meta-schemas are not what json-schema.org publishes
 # The nineteen documents under $(METASCHEMA_SRC) - 2020-12's nine, 2019-09's

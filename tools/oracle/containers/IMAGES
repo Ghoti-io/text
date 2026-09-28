@@ -110,3 +110,32 @@ tomlpp	localhost/ghoti-text-oracle-tomlpp:3.4.0	toml++ 3.4.0	TOML v1.0.0 plus it
 # base by digest and the wheel by the SHA-256 PyPI publishes for it, with
 # --require-hashes so that pip refuses anything else. See containers/idna/.
 idna	localhost/ghoti-text-oracle-idna:3.19	idnadata 17.0.0	The IDNA2008 derived property, and UTS #46's mapping table
+
+# The Desktop Entry references, **both of them, in one built-here image**.
+#
+# This is the only pin whose line names two references, and the reason is that
+# they answer different halves of one question and disagree with each other about
+# the answer. GLib's `GKeyFile` says what a value *is*: it is the permissive
+# reader, and it accepts documents the specification forbids - a duplicate group,
+# a duplicate key, a key outside `A-Za-z0-9-`, an orphan `key[de]`, an indented
+# line. `desktop-file-validate` says whether a document is *legal*, and refuses
+# every one of those. The specification sits with the validator.
+#
+# So a differential against `GKeyFile` alone would agree with its blind spot and
+# score clean while violating §3.2, and one against the validator alone could not
+# check a single value. Both, over the same bytes, in one pass. The driver asks
+# them together for that reason and not for speed: two passes would not be
+# guaranteed to have seen the same document.
+#
+# **Neither reference answers an unknown escape.** `GKeyFile` parses `k=a\qb` and
+# refuses it only at `g_key_file_get_string()`; the validator accepts it outright.
+# So those documents have no oracle, and tools/oracle/ini_diff.py excludes them
+# **and counts them** rather than scoring them - the count is printed, because an
+# exclusion nobody counts is a hole in the denominator.
+#
+# The version field names both packages plus the driver's own SHA-256, and the
+# gate checks the printed line against it. What pins the two references is the
+# base digest in containers/inidesktop/Dockerfile together with these versions: a
+# Debian point release that moved either package changes the printed line and
+# fails the check, rather than silently changing what the comparison means.
+inidesktop	localhost/ghoti-text-oracle-inidesktop:2.84.4	glib 2.84.4, desktop-file-utils 0.28-1	Desktop Entry: what a value is, and whether the document is legal
