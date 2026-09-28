@@ -12599,15 +12599,18 @@ TEST(JsonSchemaMetaschema, TheCallersResolverWins) {
 	gtext_json_free(doc);
 }
 
-TEST(JsonSchemaMetaschema, EmbedsSixteenDocumentsAndNotTheWholeWeb) {
+TEST(JsonSchemaMetaschema, EmbedsEighteenDocumentsAndNotTheWholeWeb) {
 	// A reference that leaves the document still does not resolve. What was
-	// added is sixteen documents - 2020-12's nine and 2019-09's seven - not a
-	// fetcher, and a URI that merely looks like one of them is refused the
-	// way it always was.
+	// added is eighteen documents - 2020-12's nine, 2019-09's seven, and one
+	// each for draft-07 and draft-06 - not a fetcher, and a URI that merely
+	// looks like one of them is refused the way it always was.
 	//
 	// 2019-09's root used to be in this list, because only 2020-12 was
 	// embedded. It is now a document this library carries, and it has moved
-	// to the test below that compiles it.
+	// to the test below that compiles it. draft-07's and draft-06's went the
+	// same way; what is here in their place is draft-04's, which is refused
+	// for a different reason - a dialect this engine will not read - and the
+	// `https` spelling of draft-07's, which is not the URI it publishes.
 	ToyProvider provider;
 	GTEXT_JSON_Regex_Provider rvt = toy_vtable(&provider);
 	GTEXT_JSON_Schema_Options opts = gtext_json_schema_options_default();
@@ -12619,6 +12622,8 @@ TEST(JsonSchemaMetaschema, EmbedsSixteenDocumentsAndNotTheWholeWeb) {
 	    "{\"$ref\":\"https://json-schema.org/draft/2019-09/meta/unevaluated\"}",
 	    "{\"$ref\":\"https://json-schema.org/draft/2020-12/meta/nonesuch\"}",
 	    "{\"$ref\":\"https://json-schema.org/draft/2020-12/schema/\"}",
+	    "{\"$ref\":\"https://json-schema.org/draft-07/schema\"}",
+	    "{\"$ref\":\"http://json-schema.org/draft-05/schema#\"}",
 	};
 	for (const char * src : elsewhere) {
 		GTEXT_JSON_Value * doc = parse_doc(src);
@@ -13111,6 +13116,116 @@ TEST(JsonSchemaMetaschema, Resolves2019_09WithoutAResolver) {
 
 	EXPECT_TRUE(f.accepts("{\"type\":\"string\"}"));
 	EXPECT_FALSE(f.accepts("{\"type\":\"nonesuch\"}"));
+}
+
+// ===========================================================================
+// draft-07 and draft-06 describe themselves too
+// ===========================================================================
+//
+// Both publish a single document rather than a root plus a vocabulary set:
+// `$vocabulary` arrived in 2019-09, so before it the keyword set *is* the
+// draft. Until these were embedded, "is this a valid draft-07 schema?" was the
+// one dialect question this library could not answer without a resolver, and
+// two groups of the suite's draft7 and draft6 files - `definitions.json`'s
+// "validate definition against metaschema" and `ref.json`'s "remote ref,
+// containing refs itself" - were refused for that reason alone.
+
+TEST(JsonSchemaMetaschema, ResolvesDraft07WithoutAResolver) {
+	MetaFixture f("{\"$ref\":\"http://json-schema.org/draft-07/schema#\"}");
+	ASSERT_EQ(f.opts.resolver, nullptr);
+	ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+
+	EXPECT_TRUE(f.accepts("{\"type\":\"string\"}"));
+	EXPECT_TRUE(f.accepts("true"));
+	EXPECT_TRUE(f.accepts("{\"definitions\":{\"a\":{\"minimum\":1}}}"));
+	EXPECT_TRUE(f.accepts("{\"items\":[{\"type\":\"integer\"}]}"));
+
+	EXPECT_FALSE(f.accepts("{\"type\":\"strong\"}"));
+	EXPECT_FALSE(f.accepts("{\"maxLength\":-1}"));
+	EXPECT_FALSE(f.accepts("{\"required\":[1]}"));
+	EXPECT_FALSE(f.accepts("{\"allOf\":{}}"));
+	EXPECT_FALSE(f.accepts("[]"));
+	// draft-04's spelling of the keyword, which draft-07 made a number. The
+	// document that answered has to be draft-07's for this to be invalid.
+	EXPECT_FALSE(f.accepts("{\"exclusiveMinimum\":true}"));
+}
+
+TEST(JsonSchemaMetaschema, TheOlderDraftsAnswerAsThemselvesAndNotAs2020_12) {
+	// The reference crosses into a document whose own `$schema` is draft-07,
+	// so from there the dialect is draft-07 - and the constraints are that
+	// document's, which are *looser* in places. 2020-12's meta/core pins `$id`
+	// to `^[^#]*#?$` and constrains `$defs`; draft-07's metaschema says only
+	// that `$id` is a string and has never heard of `$defs`. A test that only
+	// checked what both refuse would pass with the wrong document answering.
+	MetaFixture f("{\"$ref\":\"http://json-schema.org/draft-07/schema#\"}");
+	ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+	EXPECT_TRUE(f.accepts("{\"$id\":\"https://example.com/s.json#frag\"}"));
+	EXPECT_TRUE(f.accepts("{\"$defs\":7}"));
+
+	// And the same two against 2020-12's, which is what those would be
+	// measured by if the dialect had not been scoped to the resource.
+	MetaFixture newer(
+	    "{\"$ref\":\"https://json-schema.org/draft/2020-12/schema\"}");
+	ASSERT_NE(newer.schema, nullptr)
+	    << (newer.err.message ? newer.err.message : "");
+	EXPECT_FALSE(
+	    newer.accepts("{\"$id\":\"https://example.com/s.json#frag\"}"));
+	EXPECT_FALSE(newer.accepts("{\"$defs\":7}"));
+}
+
+TEST(JsonSchemaMetaschema, ResolvesDraft06WithoutAResolver) {
+	MetaFixture f("{\"$ref\":\"http://json-schema.org/draft-06/schema#\"}");
+	ASSERT_NE(f.schema, nullptr) << (f.err.message ? f.err.message : "");
+
+	EXPECT_TRUE(f.accepts("{\"type\":\"string\"}"));
+	EXPECT_FALSE(f.accepts("{\"type\":\"strong\"}"));
+	EXPECT_FALSE(f.accepts("{\"maxLength\":-1}"));
+	EXPECT_FALSE(f.accepts("{\"exclusiveMinimum\":true}"));
+
+	// draft-06 has no `if`, and its meta-schema does not forbid unknown
+	// members, so a nonsense `if` is valid there and not in draft-07. This is
+	// what separates the two documents from each other rather than only from
+	// 2020-12's.
+	EXPECT_TRUE(f.accepts("{\"if\":7}"));
+	MetaFixture seven(
+	    "{\"$ref\":\"http://json-schema.org/draft-07/schema#\"}");
+	ASSERT_NE(seven.schema, nullptr)
+	    << (seven.err.message ? seven.err.message : "");
+	EXPECT_FALSE(seven.accepts("{\"if\":7}"));
+}
+
+TEST(JsonSchemaMetaschema, TheOlderDraftsNeedNoRegexProvider) {
+	// 2020-12's meta/core constrains `$id` and `$anchor` with `pattern`, so a
+	// reference to it without a provider is refused. Neither older document
+	// uses `pattern` in a schema position at all - `pattern` appears there as a
+	// *property being described*, and the regular-expression-ness of
+	// `patternProperties`' keys is spelled `"format": "regex"`, which is an
+	// annotation. So these two compile with no provider, and saying so is the
+	// difference between "it happened to work" and "it cannot need one".
+	GTEXT_JSON_Schema_Options opts = gtext_json_schema_options_default();
+	ASSERT_EQ(opts.regex, nullptr);
+	for (const char * src : {
+	         "{\"$ref\":\"http://json-schema.org/draft-07/schema#\"}",
+	         "{\"$ref\":\"http://json-schema.org/draft-06/schema#\"}",
+	     }) {
+		GTEXT_JSON_Value * doc = parse_doc(src);
+		ASSERT_NE(doc, nullptr) << src;
+		GTEXT_JSON_Error err;
+		memset(&err, 0, sizeof(err));
+		GTEXT_JSON_Schema * schema =
+		    gtext_json_schema_compile_with_options(doc, &opts, &err);
+		EXPECT_NE(schema, nullptr)
+		    << src << ": " << (err.message ? err.message : "");
+		GTEXT_JSON_Value * v = parse_doc("{\"type\":\"strong\"}");
+		ASSERT_NE(v, nullptr);
+		EXPECT_EQ(gtext_json_schema_validate(schema, v, nullptr),
+		    GTEXT_JSON_E_SCHEMA)
+		    << src;
+		gtext_json_free(v);
+		gtext_json_schema_free(schema);
+		gtext_json_free(doc);
+		gtext_json_error_free(&err);
+	}
 }
 
 TEST(JsonSchemaAdditionalItems, AppliesOnlyWhenItemsIsAnArray) {

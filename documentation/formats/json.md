@@ -415,7 +415,9 @@ The dialect is 2020-12 by default. 2019-09, draft-07 and draft-06 are each
 read with their own keyword set, scoped to the resource that declares
 `$schema`. Draft-04 and earlier are refused: they spell `exclusiveMinimum`
 and `$id` differently, and reading one as a later draft would answer the
-instance wrongly. The nine published 2020-12 meta-schemas are embedded.
+instance wrongly. Every published meta-schema of every dialect it reads is
+embedded: 2020-12's nine, 2019-09's seven, and one each for draft-07 and
+draft-06.
 
 A schema this library cannot fully enforce is refused at compile time.
 

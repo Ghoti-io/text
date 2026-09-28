@@ -1897,14 +1897,15 @@ check-nfc-oracle-strict: $(APP_DIR)/$(TARGET)
 		$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py --strict
 
 check-metaschema: ## Fail if the embedded meta-schemas are not what json-schema.org publishes
-# The sixteen documents under $(METASCHEMA_SRC) - 2020-12's nine and 2019-09's
-# seven - are somebody else's, embedded so
-# that a schema which validates another schema needs no resolver and no
-# socket. That makes this file the one place in the repository where a silent
-# edit would change what "a valid 2020-12 schema" means, with nothing to
-# compare against. Regenerating from the published documents and diffing is
-# the comparison; it is also a content check, since the bytes are verbatim and
-# any difference at all is a difference from what is published.
+# The eighteen documents under $(METASCHEMA_SRC) - 2020-12's nine, 2019-09's
+# seven, and one each for draft-07 and draft-06 - are somebody else's,
+# embedded so that a schema which validates another schema needs no resolver
+# and no socket. That makes this file the one place in the repository where a
+# silent edit would change what "a valid schema" means in any of those
+# dialects, with nothing to compare against. Regenerating from the published
+# documents and diffing is the comparison; it is also a content check, since
+# the bytes are verbatim and any difference at all is a difference from what is
+# published.
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(METASCHEMA_DIR),tools/metaschema/fetch.sh); \
 	tmp=$$(mktemp -d) || exit 1; \

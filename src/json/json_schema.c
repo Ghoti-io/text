@@ -1080,11 +1080,35 @@ static GTEXT_JSON_Status json_schema_embedded_document(
     return GTEXT_JSON_OK;
   }
 
+  /* The document is held one source line at a time - see
+   * metaschema/metaschema_internal.h for why - so it is joined here, parsed,
+   * and the joined copy dropped. The parsed value is what is cached; the bytes
+   * are wanted once. */
+  size_t len = 0;
+  for (size_t i = 0; i < doc->line_count; i++) {
+    len += strlen(doc->lines[i]);
+  }
+  char * text = (char *)malloc(len + 1);
+  if (!text) {
+    if (err) {
+      *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
+          .message = "Out of memory joining an embedded meta-schema"};
+    }
+    return GTEXT_JSON_E_OOM;
+  }
+  size_t at = 0;
+  for (size_t i = 0; i < doc->line_count; i++) {
+    size_t n = strlen(doc->lines[i]);
+    memcpy(text + at, doc->lines[i], n);
+    at += n;
+  }
+  text[len] = '\0';
+
   GTEXT_JSON_Parse_Options popts = gtext_json_parse_options_default();
   GTEXT_JSON_Error perr;
   memset(&perr, 0, sizeof(perr));
-  GTEXT_JSON_Value * parsed =
-      gtext_json_parse(doc->text, doc->len, &popts, &perr);
+  GTEXT_JSON_Value * parsed = gtext_json_parse(text, len, &popts, &perr);
+  free(text);
   if (!parsed) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,

@@ -361,17 +361,16 @@ Comprehensive usage examples are provided in the `examples/` directory.
 Every standard keyword in every draft this engine reads is either enforced
 or ignored for a reason the specification gives. What remains:
 
-- **the draft-07 and draft-06 meta-schemas are not vendored.** 2020-12's nine
-  documents and 2019-09's seven are embedded, so a `$ref` to either resolves
-  with no resolver and no network. The two older drafts publish a single
-  meta-schema each and neither is carried, so a draft-07 document that
-  validates another schema against its own dialect needs a resolver
 - **draft-07's location-independent identifier**: an `$id` holding only a
   fragment, which is how that draft spells what 2019-09 calls `$anchor`. A
   draft-07 document using one has a name this engine will not find
 - **`$ref` beside a sibling `$id`** should leave the base URI alone before
   2019-09, because the `$ref` is the whole schema there. The resource pre-pass
   registers the `$id` anyway, because it runs before any dialect is read
+- **a JSON pointer that crosses into an embedded resource** keeps the
+  referring resource's base URI. `#/definitions/baz/definitions/bar`, where
+  `baz` carries an `$id`, finds the right subschema and then resolves a
+  relative `$ref` inside it against the wrong document
 - **draft-04 and earlier** are refused by decision, not by omission - see below
 
 ### `$schema` selects a draft
@@ -431,12 +430,19 @@ scored on rules the draft predates.
 | --- | --- | --- | --- |
 | 2020-12 | 1301 / 1301 | 162 / 162 | 866 / 866 |
 | 2019-09 | 1261 / 1261 | 158 / 158 | 866 / 866 |
-| draft-07 | 921 / 929 | - | - |
-| draft-06 | 833 / 841 | - | - |
+| draft-07 | 925 / 929 | - | - |
+| draft-06 | 837 / 841 | - | - |
 
-Nothing is answered wrongly in any of the four. The eight outstanding in each
-of draft-07 and draft-06 are refusals, and they are the first three entries of
-the gap list above: the un-vendored meta-schema, and `$ref` beside `$id`.
+The four outstanding in each of draft-07 and draft-06 are the second and third
+entries of the gap list above: two answered wrongly for `$ref` beside a sibling
+`$id`, and two refused for a JSON pointer that crosses into an embedded
+resource. Nothing is answered wrongly in 2020-12 or 2019-09 - the older drafts
+spell both of those in ways the newer suites do not.
+
+Embedding the two older meta-schemas is what closed the four that used to be
+refused in each: `definitions.json`'s "validate definition against
+metaschema", and `ref.json`'s "remote ref, containing refs itself", which is
+that same reference by another name.
 `pattern` and `patternProperties` are measured through `ghoti.io-regex`, which
 the runner links when it is installed and says so when it does not.
 
@@ -460,7 +466,24 @@ question written in JSON Schema: `{"$ref":
 "https://json-schema.org/draft/2020-12/schema"}` applied to the schema being
 asked about. All nine published documents - the root and the eight under
 `.../2020-12/meta/` - ship inside this library, so that reference resolves
-with no resolver configured.
+with no resolver configured. So do 2019-09's seven, and the single document
+each that draft-07 and draft-06 publish: eighteen in all, which is every
+dialect this engine reads. `$vocabulary` arrived in 2019-09, so the two older
+drafts have nothing to split a root document into - the keyword set is the
+draft.
+
+Neither older document uses `pattern` in a schema position, so unlike the
+newer two they resolve with no regular-expression provider either. `pattern`
+appears in them as a keyword being *described*, and what makes
+`patternProperties`' keys regular expressions is spelled `"format": "regex"`,
+which is an annotation.
+
+The bytes are held one source line at a time and joined when a document is
+used, rather than as one string literal each. C99 guarantees only 4,095
+characters in a string literal after concatenation and draft-07's meta-schema
+is 4,979 bytes; every compiler in use here accepts more, and the alternative
+was a pedantic diagnostic switched off in the one file where somebody else's
+document decides whether the limit is met.
 
 This is the opposite of what the IDNA tables do with the Unicode Character
 Database, and the difference is the point. The UCD versions: 17.0.0
