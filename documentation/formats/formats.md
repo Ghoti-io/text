@@ -22,7 +22,7 @@ sequence, and how confident anyone should be about that.
 | CSV | @subpage format_csv "CSV" | RFC 4180, plus configurable dialects | RFC 4180 and looser dialects; irregular rows | RFC 4180 with configurable quoting |
 | YAML | @subpage format_yaml "YAML" | YAML 1.2.2, with a 1.1 resolution mode | block and flow, anchors, tags, multi-document | DOM and streaming event serialization |
 | TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12) and the v1.1.0 draft behind an option; date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar read and written, 1.1.0 read, a statement-by-statement event walk, comments through a write, JSON both ways; 3,377 of 3,377 and 3,883 of 3,883 toml-test measurements, a pinned `tomllib` over 60,000 generated documents, and toml++ over the four v1.1.0 relaxations it shares | no comment inside a value on the tree; no incremental reader (argued, not pending); the two v1.1.0 unquoted-key relaxations |
-| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
+| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail; `git-config(1)`; EditorConfig 0.17.2 | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects; **34 of 34** of `editorconfig-core-test`'s grammar assertions, where both reference cores score 33 | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
 
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
@@ -32,28 +32,38 @@ INI specification, so the page above does not describe "INI": it describes the
 freedesktop.org **Desktop Entry Specification 1.5 (2020-04-27)**, which is the
 dialect the parser reads by default, plus a generic dialect defined as that
 grammar with seven named changes - six relaxations and one CRLF
-normalisation - and **`git-config(1)`**, which is a grammar of its own rather
-than a derivation of either: it accepts documents Desktop Entry refuses and
-refuses documents Desktop Entry accepts. A parser calling itself simply "INI"
-would have nothing to be scored against but its author's choices; a parser
-reading a named dialect has a specification, a reference implementation and a
-corpus, and the page records where they disagree.
+normalisation - plus **`git-config(1)`** and **EditorConfig 0.17.2**, each a
+grammar of its own rather than a derivation of either: both accept documents
+Desktop Entry refuses and refuse documents Desktop Entry accepts. A parser calling
+itself simply "INI" would have nothing to be scored against but its author's
+choices; a parser reading a named dialect has a specification, a reference
+implementation and a corpus, and the page records where they disagree.
 
-Two more dialects have the same property and are not implemented:
-**`systemd.syntax(7)`** and the **EditorConfig specification** (0.17.2), which
-normatively requires a conforming core to pass `editorconfig-core-test`, 202
-assertions of which 34 test the file grammar. Python's `configparser` is a
-fourth whose specification is its implementation, so it could only be scored by
-differential. The INI page's "Not implemented" section says what each would
-need.
+One more dialect has the same property and is not implemented:
+**`systemd.syntax(7)`**. Python's `configparser` is another whose specification is
+its implementation, so it could only be scored by differential. The INI page's
+"Not implemented" section says what each would need - and for systemd the open
+question is the reference rather than the code, since `systemd-analyze verify`
+validates units rather than syntax.
 
-The three implemented dialects differ in how much a clean score is worth, and
-the page says so rather than presenting one number. Desktop Entry has **two**
-reference implementations that disagree with each other, so agreeing with both is
-a real constraint. git config has **one** - the same program decides legality and
-values - so agreement there cannot be told from being wrong the same way, and
-what stands in for a second opinion is a written statement of each rule that the
-gate scores separately. **Win32 `.ini` is deliberately absent and not merely unimplemented**: its
+The four implemented dialects differ in how much a clean score is worth, and the
+page says so rather than presenting one number - three distinct situations, which
+is the most useful thing the INI work has to say about oracles:
+
+- **Desktop Entry has two reference implementations that disagree with each
+  other**, so agreeing with both is a real constraint, and the sharing between them
+  is incidental: one community, two codebases.
+- **git config has one.** The same program decides legality and values, so
+  agreement there cannot be told from being wrong the same way, and what stands in
+  for a second opinion is a written statement of each rule that the gate scores
+  separately.
+- **EditorConfig has two that disagree *and* a normative conformance suite that
+  both of them fail** - 33 of 34 each, for one shared reason, since both descend
+  from Python's `ConfigParser`. So the specification gets the vote, agreeing with
+  the references everywhere would be a failure, and the gate's third score asserts
+  that each known departure is *still there* rather than ignoring it.
+
+**Win32 `.ini` is deliberately absent and not merely unimplemented**: its
 API is documented as consulting the registry before the file, so its answer is
 not a function of the file's bytes and there is nothing to conform to.
 

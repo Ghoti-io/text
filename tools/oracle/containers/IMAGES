@@ -168,3 +168,34 @@ inidesktop	localhost/ghoti-text-oracle-inidesktop:2.84.4	glib 2.84.4, desktop-fi
 # are the same implementation. That is luck rather than design and will not
 # survive the next Debian release; the pin is what makes it checkable either way.
 gitconfig	localhost/ghoti-text-oracle-gitconfig:2.47.3	git 1:2.47.3-0+deb13u1	git config: whether the document is legal, and what every value is
+
+# The EditorConfig references, **two of them in one image, and they disagree** -
+# the good case, and the same shape as the inidesktop line above. This is the
+# opposite situation to gitconfig's lone reference in every way that matters.
+#
+# What makes it different from the Desktop Entry pin is that neither reference is
+# an authority. EditorConfig is the only one of these formats with a **normative
+# conformance suite** - specification 0.17.2 says a conforming core "must pass the
+# tests in the core-tests repository" - and `make conformance-ini-editorconfig`
+# scores that directly, pinned by tools/conformance/EDITORCONFIG_SUITE_COMMIT.
+# **Both cores score 33 of its 34 grammar assertions.** So agreeing with them
+# everywhere would be a failure, and tools/oracle/ini_ec_diff.py is built around
+# saying so: it scores our verdict against the specification (`intent`), scores
+# values only over documents free of a construct a core is known to get wrong, and
+# has a third score that asserts each known departure **is still there** - a core
+# fixed upstream fails loudly instead of quietly inflating the second.
+#
+# **Their agreement is worth less than GKeyFile's and desktop-file-validate's.**
+# The sharing there is incidental - two programs from one community, different
+# code. Here it is structural: both cores descend from Python's `ConfigParser`,
+# core-py says so in its own docstring and core-c is `inih`, which cites it too.
+# The two places they agree while contradicting the specification - truncating a
+# value at a whitespace-preceded `#` or `;` - are exactly that inherited
+# behaviour. Where they disagree with *each other*, the specification decides.
+#
+# **Built here rather than pulled** because Debian's `editorconfig` package folds
+# the suite version into its own version string, and what decides these answers is
+# core-c's source at a commit and core-py's pip version. The C driver's SHA-256 and
+# the Python driver's SHA-256 are both compiled or substituted in and printed, for
+# the reason the gitconfig line gives.
+editorconfig	localhost/ghoti-text-oracle-editorconfig:0.12.11	editorconfig-core-c 0.12.11, editorconfig-core-py 0.17.1	EditorConfig: what every value is, twice, from two implementations that disagree

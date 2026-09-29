@@ -68,7 +68,11 @@ static bool ini_group_matches(const GTEXT_INI_Dialect * dialect,
     const GTEXT_INI_Group * group, const char * query, size_t query_len) {
   const ini_str * name = group->canon.data ? &group->canon : &group->name;
   if (name->len != query_len) return false;
-  if (!dialect->fold_case) return memcmp(name->data, query, query_len) == 0;
+  /* gtext_ini_group_names_fold(), not `fold_case`: EditorConfig folds keys and
+   * compares section names byte for byte. */
+  if (!gtext_ini_group_names_fold(dialect)) {
+    return query_len == 0 || memcmp(name->data, query, query_len) == 0;
+  }
   size_t dot = 0;
   while (dot < query_len && query[dot] != '.') dot++;
   for (size_t i = 0; i < dot; i++) {
@@ -229,7 +233,13 @@ GTEXT_INI_Status gtext_ini_document_add_group(GTEXT_INI_Document * doc,
    * as the argument instead would make a caller unable to say which of the two
    * subsection spellings to write.
    */
-  if (doc->dialect.fold_case || doc->dialect.subsection_syntax) {
+  /* gtext_ini_group_names_fold(), not `fold_case`: EditorConfig folds keys and
+   * not section names, so gtext_ini_canon_group() has nothing to produce for one
+   * and returning false is the right answer rather than a failure. Asking
+   * `fold_case` here turned every add_group() under that dialect into
+   * GTEXT_INI_E_OOM. */
+  if (gtext_ini_group_names_fold(&doc->dialect) ||
+      doc->dialect.subsection_syntax) {
     char stack[512];
     char * buf = stack;
     char * heap = NULL;

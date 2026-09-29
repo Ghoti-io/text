@@ -99,6 +99,24 @@ static bool ini_buf_take(const GTEXT_Allocator * alloc, ini_buf * buf,
  */
 static bool ini_is_blank(char c) { return c == ' ' || c == '\t'; }
 
+/**
+ * The whitespace that may sit between a key and its `=`.
+ *
+ * Two answers, and which one applies is the dialect's. git's is the literal pair
+ * above - `k\r= v` is refused by git while `\rk = v` is accepted, by the same
+ * implementation on the same line - so the separator run cannot simply use
+ * gtext_ini_is_space(). EditorConfig has no such split: it trims the whole line
+ * with one predicate before classifying it, so `k\v= v` is `k` = `v`.
+ *
+ * Keyed on ::GTEXT_INI_Dialect::ctype_whitespace rather than on an id, and the
+ * effect for Desktop Entry is nil either way: its whitespace is exactly space and
+ * tab already.
+ */
+static bool ini_sep_space(const GTEXT_INI_Dialect * dialect, char c) {
+  return dialect->ctype_whitespace ? gtext_ini_is_space(dialect, c)
+                                   : ini_is_blank(c);
+}
+
 /** Whether every byte of [start, end) is whitespace to @p dialect. */
 static bool ini_all_space(const GTEXT_INI_Dialect * dialect, const char * bytes,
     size_t start, size_t end) {
@@ -138,7 +156,8 @@ static bool ini_fail(ini_parse * p, GTEXT_INI_Status code,
 static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
     size_t len, bool is_group) {
   const GTEXT_INI_Dialect * d = &p->doc->dialect;
-  if (is_group ? (!d->fold_case && !d->subsection_syntax) : !d->fold_case) {
+  if (is_group ? (!gtext_ini_group_names_fold(d) && !d->subsection_syntax)
+               : !d->fold_case) {
     return true;
   }
   char stack[512];
@@ -350,9 +369,22 @@ static bool ini_check_locale_keys(ini_parse * p) {
  * subsection name is data: measured, `[a "b]c"]` is the subsection `b]c`. A
  * scan for the first `]` would cut that header in the wrong place and then
  * refuse it.
+ *
+ * **Which `]` closes the header is the dialect's, not a detail.** EditorConfig's
+ * names "may contain any characters between the square brackets", so it closes at
+ * the *last* `]` on the line and `[a]b]` is one section named `a]b`; for every
+ * other dialect here a `]` inside a name is not spellable and the first one ends
+ * it. Asking gtext_ini_group_close_is_last() keeps that a property of the name
+ * grammar rather than a test against an id.
+ *
+ * The two modes are one loop rather than two: taking the last match is
+ * remembering instead of returning, and a second loop would be a second place
+ * for the quoting rules to be got wrong.
  */
 static size_t ini_find_header_close(const GTEXT_INI_Dialect * dialect,
     const char * bytes, size_t start, size_t end) {
+  bool last = gtext_ini_group_close_is_last(dialect);
+  size_t found = SIZE_MAX;
   bool quote = false;
   for (size_t i = start; i < end; i++) {
     char c = bytes[i];
@@ -368,9 +400,12 @@ static size_t ini_find_header_close(const GTEXT_INI_Dialect * dialect,
         continue;
       }
     }
-    if (c == ']') return i;
+    if (c == ']') {
+      if (!last) return i;
+      found = i;
+    }
   }
-  return SIZE_MAX;
+  return found;
 }
 
 /** Where one entry ends, and whether it parsed. */
@@ -426,18 +461,29 @@ static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
     size_t eq = key_start;
     while (eq < content_end && p->bytes[eq] != '=') eq++;
     if (eq >= content_end) {
+      /*
+       * A line with no `=` at all. **This is where
+       * ::GTEXT_INI_Dialect::valueless_keys stops being reachable** for a dialect
+       * whose keys are not a closed character set: there is no key yet to call
+       * valueless, because the key's extent is defined by the `=` that is missing.
+       * So the flag is dead for this branch, and the header says so - a mutation
+       * setting it true on the EditorConfig dialect left both of that dialect's
+       * gates green, which is how the coupling got written down.
+       */
       r.ok = ini_fail(p, GTEXT_INI_E_BAD_LINE,
           "a line is not blank, a comment, a group header or an entry",
           line_start);
       return r;
     }
     key_end = eq;
-    while (key_end > key_start && ini_is_blank(p->bytes[key_end - 1])) key_end--;
+    while (key_end > key_start && ini_sep_space(d, p->bytes[key_end - 1])) {
+      key_end--;
+    }
   }
 
-  /* Only a space or a tab may sit between the key and the `=`. */
+  /* What may sit between the key and the `=`: see ini_sep_space(). */
   size_t eq = key_end;
-  while (eq < content_end && ini_is_blank(p->bytes[eq])) eq++;
+  while (eq < content_end && ini_sep_space(d, p->bytes[eq])) eq++;
 
   if (eq >= content_end || p->bytes[eq] != '=') {
     if (d->valueless_keys && eq >= content_end) {

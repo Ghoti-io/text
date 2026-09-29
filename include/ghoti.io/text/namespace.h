@@ -151,6 +151,7 @@
 #define gtext_csv_reader_free GHOTIIO_TEXT(gtext_csv_reader_free)
 #define gtext_csv_sniff GHOTIIO_TEXT(gtext_csv_sniff)
 #define gtext_ini_dialect_desktop_entry GHOTIIO_TEXT(gtext_ini_dialect_desktop_entry)
+#define gtext_ini_dialect_editorconfig GHOTIIO_TEXT(gtext_ini_dialect_editorconfig)
 #define gtext_ini_dialect_generic GHOTIIO_TEXT(gtext_ini_dialect_generic)
 #define gtext_ini_dialect_git_config GHOTIIO_TEXT(gtext_ini_dialect_git_config)
 #define gtext_ini_document_add_group GHOTIIO_TEXT(gtext_ini_document_add_group)

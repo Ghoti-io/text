@@ -202,9 +202,28 @@ static bool ini_value_writable(const ini_str * value,
      */
     return !scan.trailing_backslash || next == '\0';
   }
-  if (value->data[0] == ' ' || value->data[0] == '\t') return false;
+  /*
+   * gtext_ini_is_space(), not a literal space-or-tab test. The parse skips the
+   * dialect's whitespace after the `=`, so whatever that predicate calls
+   * whitespace would be eaten on the way back in - a leading CR under the generic
+   * dialect, a leading vertical tab under EditorConfig. The literal test said
+   * those two were writable and they are not; a value written that way came back
+   * shorter.
+   */
+  if (gtext_ini_is_space(dialect, value->data[0])) return false;
   for (size_t i = 0; i < value->len; i++) {
     if (value->data[i] == '\n') return false;
+  }
+  /*
+   * The trailing run, for a dialect that drops it. Desktop Entry keeps it, so
+   * `k=v ` round-trips there and must stay writable; EditorConfig trims it, so
+   * the same value would read back one byte shorter and is refused. This is the
+   * ::GTEXT_INI_Dialect::trim_trailing_space flag being asked about a value rather
+   * than about a parse, which is the only place the writer needs it.
+   */
+  if (dialect->trim_trailing_space &&
+      gtext_ini_is_space(dialect, value->data[value->len - 1])) {
+    return false;
   }
   if (dialect->accept_crlf && value->data[value->len - 1] == '\r' &&
       next == '\n') {

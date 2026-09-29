@@ -134,7 +134,20 @@ static GTEXT_INI_Status ini_decode(const GTEXT_INI_Dialect * dialect,
   if (!buf) return GTEXT_INI_E_OOM;
   size_t w = 0;
   for (size_t i = 0; i < raw_len; i++) {
-    if (raw[i] != '\\') {
+    /*
+     * A dialect with **no escape set at all** has no escape syntax, so a backslash
+     * is an ordinary byte - which is what ini_value.h promises ("a dialect with no
+     * escapes copies the bytes") and what EditorConfig needs: its specification
+     * defines no escaping mechanism, and its conformance suite asserts that
+     * `value \; not comment` keeps the backslash.
+     *
+     * This arm was unreachable until that dialect arrived. Every earlier one had a
+     * non-empty set, so a backslash always reached the lookup below and a
+     * no-escape dialect would have had every backslash refused as
+     * GTEXT_INI_E_BAD_ESCAPE - the documented behaviour with nothing able to
+     * exercise it.
+     */
+    if (raw[i] != '\\' || (!dialect->escapes && !extra)) {
       buf[w++] = raw[i];
       continue;
     }

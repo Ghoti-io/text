@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1965,6 +1965,38 @@ check-ini-git-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-git-oracle.sh
 
+check-ini-editorconfig-oracle: ## Compare the EditorConfig reader against both cores
+# **Two references that disagree, and neither is an authority** - which is a third
+# situation, distinct from both of the gates around it. Desktop Entry has two
+# references that disagree and between them decide the answers; git config has one
+# that decides everything; EditorConfig has two that disagree *and a normative
+# conformance suite that both of them fail*.
+#
+# So the specification gets the vote. `intent` scores our verdict against
+# specification 0.17.2 as tools/oracle/ini_ec_gen.py writes it down; `values-c` and
+# `values-py` score only over documents carrying no construct that core is known to
+# get wrong; and `divergence-c` and `divergence-py` assert that each known
+# departure **is still there**, per axis. That last score is the unusual one and it
+# is the point: a core fixed upstream fails it loudly rather than silently
+# inflating the values score, and a generator that stopped emitting the
+# discriminating document fails it too.
+#
+# Their agreement is also worth less than the Desktop Entry pin's, because the
+# sharing is structural rather than incidental: both cores descend from Python's
+# `ConfigParser`, and the one rule they agree on while contradicting the
+# specification - a value truncated at a whitespace-preceded `#` or `;` - is
+# exactly the inherited behaviour. containers/IMAGES says so where the pin is.
+#
+# The differential deliberately needs **no glob matcher**: every section name the
+# generator emits is a literal filename and the query is one of those names. A
+# filepath glob is the subject of 130 of the suite's 202 assertions and is not a
+# text library's job, so the glob-bearing documents are conformance-ini-editorconfig's.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+check-ini-editorconfig-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-editorconfig-oracle.sh
+
 check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
 # The gate the corpus cannot be. Every `.desktop` file on this machine is already
 # valid, so conformance-ini-desktop-entry scores acceptance and preservation and
@@ -2063,8 +2095,31 @@ conformance-ini-desktop-entry: ## Score the INI reader over this machine's Deskt
 conformance-ini-desktop-entry: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-ini-desktop-entry.sh
 
+conformance-ini-editorconfig: ## Score the INI reader against editorconfig-core-test
+# The only INI target whose number is a **pass count against a normative suite**
+# rather than an agreement with a reference: EditorConfig 0.17.2 says a conforming
+# core "must pass the tests in the core-tests repository", so the floor is all of
+# them and the suite commit is pinned in tools/conformance/EDITORCONFIG_SUITE_COMMIT.
+#
+# 34 of the suite's 202 assertions test the grammar. The other 168 test a filepath
+# glob matcher (130), file discovery (24), value semantics (10) and a command line
+# (3), none of which is a text library's job - quoting 202 and scoring a sixth of
+# it would be the wrong number.
+#
+# **Both reference cores score 33 of these 34**, so this target is the one place
+# in the module where agreeing with the reference implementations everywhere would
+# be a failure. They are used as differential oracles instead, by
+# check-ini-editorconfig-oracle.
+#
+# The script runs a **control** first - the harness's own glob matcher and section
+# merge against a throwaway Python parser - which must score 34 of 34 before the
+# library is asked anything, because the harness has to resolve properties itself
+# and a harness that has never been shown to work cannot fail for the right reason.
+conformance-ini-editorconfig: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-ini-editorconfig.sh
+
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

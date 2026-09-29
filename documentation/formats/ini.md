@@ -289,6 +289,147 @@ its `k`/`m`/`g` suffixes and `--type=path` are its porcelain's rules rather than
 its file grammar's, and the one of those that reaches the grammar - a valueless
 key meaning true - is spelled here as an absent value for the caller to read.
 
+### EditorConfig
+
+gtext_ini_dialect_editorconfig() is specification **0.17.2**, and it is the only
+dialect here whose correctness claim is a **pass count against a normative
+suite** rather than an agreement with a reference. The specification says a
+conforming core "must pass the tests in the core-tests repository", and
+`make conformance-ini-editorconfig` scores the 34 of that suite's 202 assertions
+that test the grammar. The other 168 test a filepath glob matcher (130), file
+discovery and precedence (24), value semantics (10) and a command line (3); none
+is a text library's job, and quoting 202 while scoring a sixth of it would be the
+wrong number.
+
+Like git config it is not a relaxation of Desktop Entry in either direction, so it
+too is written out field by field:
+
+| | EditorConfig accepts | Desktop Entry |
+|---|---|---|
+| `; comment` | a comment | ::GTEXT_INI_E_BAD_LINE |
+| `  [a]`, `  k=v`, `[a]   ` | the line is trimmed **before** it is classified | leading whitespace refused |
+| `k=v` before any header | a preamble; `root` is defined to live there | ::GTEXT_INI_E_NO_GROUP |
+| `[a]` twice, `k=1` twice | merged, last assignment wins | ::GTEXT_INI_E_DUPGROUP, ::GTEXT_INI_E_DUPKEY |
+| `[a]b]`, `[a#b]`, `[]`, `[ a b ]` | any byte between the brackets, closing at the **last** `]` | `[`, `]` and control characters refused; `[]` refused |
+| `ke y=v`, `k:e=v` | the key is everything before the **first** `=` | ::GTEXT_INI_E_BAD_KEY |
+| CRLF, a leading BOM | accepted | LF only, BOM refused |
+| `Indent` and `indent` | one key: keys are case-insensitive | two keys |
+
+and it refuses what Desktop Entry accepts:
+
+| | EditorConfig | Desktop Entry |
+|---|---|---|
+| `k=a\nb` | `\n` is two bytes; the dialect defines **no escapes** | a newline |
+| `k=a;b;` | one value; there is no list spelling | a two-item list |
+| `bare` | ::GTEXT_INI_E_BAD_LINE - the pair rule needs the `=` | ::GTEXT_INI_E_BAD_LINE, same |
+| `k:v` | ::GTEXT_INI_E_BAD_LINE - `:` is not a separator | ::GTEXT_INI_E_BAD_LINE, same |
+| `[a] junk` | ::GTEXT_INI_E_BAD_LINE - after the trim a header must end with `]` | ::GTEXT_INI_E_BAD_LINE, same |
+| `[a]\rk=v` | ::GTEXT_INI_E_BAD_LINE - a lone CR is not a line separator | one line, the CR is data |
+| `k=v ` | the trailing run is trimmed | the trailing run is **kept**, because GLib keeps it |
+| `k=\va\v` | `\v` and `\f` are whitespace here | not whitespace in any other dialect |
+
+That last row is the one field no other dialect sets. Both EditorConfig cores ask
+the platform - core-c calls `isspace()` and core-py matches Python's `\s` - while
+git carries its own ctype table in which `\v` and `\f` are control characters, so
+the two dialects hold opposite rules about exactly two bytes.
+::GTEXT_INI_Dialect::ctype_whitespace is that choice. No corpus of real files
+contains either byte in either position.
+
+#### Both references fail the suite, and that is the finding
+
+**editorconfig-core-c 0.12.11 and editorconfig-core-py 0.17.1 each score 33 of
+34.** Both fail the same assertion, `semicolon_or_hash_in_property`: the
+specification says a `#` or `;` "anywhere other than at the beginning of a line
+does *not* start a comment, but is part of the text of that line", and both cores
+truncate a value at a whitespace-preceded one. This module scores 34 of 34.
+
+Their agreement there is **not** corroboration, and the difference from the
+Desktop Entry pin matters. `GKeyFile` and `desktop-file-validate` share a
+community and not an implementation, so when they agree that is two readings; the
+two EditorConfig cores both descend from Python's `ConfigParser` - core-py says so
+in its own docstring and core-c is `inih`, which cites it as well - and the
+inline-comment truncation is precisely the inherited behaviour. So the
+specification gets the vote, and `make check-ini-editorconfig-oracle` is built
+around saying so.
+
+**Twenty constructs in all** separate at least one core from the specification, the
+inline-comment truncation above included - eleven of them core-c's and fourteen
+core-py's, overlapping in five. All were measured;
+`notes/text/INI-DIALECTS.md` §A.16 has the transcript, and the gate's
+`divergence-c` and `divergence-py` scores hold each one as a standing assertion.
+The others worth naming here, because each is a rule a reader might otherwise copy
+from a reference:
+
+- **core-py refuses an indented comment.** It tests the line's first byte before
+  stripping, so `  # c` is a parse error - against its own specification's first
+  line rule, and the suite does not cover it.
+- **core-py splits lines on a vertical tab, a form feed and a lone CR**, because
+  Python's `splitlines()` does. `k=a\vb` is two lines to it.
+- **core-py refuses `[a#b]`, `[a;b]` and `[]`**, all of which the specification
+  allows.
+- **core-py ends a key at a `:`**, so `k:e=v` is `k` = `e=v`, and maps the exact
+  value `""` to the empty string. Neither is in the specification.
+- **core-c silently drops** a key over 1024 bytes, a value over 4096, and splits a
+  physical line at 5000 - the specification's lengths are a **floor** ("cores must
+  accept ... up to and including"), not a cap, which is why this dialect needed no
+  length field at all.
+- **core-c reads `=v` as a property whose name is the empty string.**
+- **Both** accept `:` as a separator and both silently ignore whatever follows a
+  header's `]`.
+
+#### What the EditorConfig differential measured
+
+`make check-ini-editorconfig-oracle` asks both cores about generated documents.
+Every section name it emits is a literal filename with no glob metacharacter, and
+the query is one of those names, so the differential needs **no glob matcher** -
+globbing is the conformance gate's business, not this one's.
+
+At 20,000 generated documents, seed 20260929:
+
+| Score | | Excluded |
+|---|---:|---:|
+| `intent` - our verdict is what specification 0.17.2 says | **20,000 / 20,000** | - |
+| `rewrite` - an accepted document writes back byte for byte | **12,699 / 12,699** | - |
+| `values-c` - resolved properties match core-c | **5,469 / 5,469** | 843 |
+| `values-py` - resolved properties match core-py | **6,045 / 6,045** | 814 |
+| `divergence-c` - each known departure of core-c is still there | **11 / 11 axes** | - |
+| `divergence-py` - each known departure of core-py is still there | **14 / 14 axes** | - |
+
+61 of 61 axes exercised. The `divergence` scores are the unusual ones and they are
+the point: a document carrying a construct a core is known to get wrong is taken
+*out* of that core's `values` denominator and put into a per-axis check that the
+departure is still observable. A core fixed upstream fails `divergence` loudly
+rather than quietly inflating `values`, and so does a generator that stops
+emitting the discriminating document. The exclusions are the cases with no oracle
+at all: a NUL in a value, which core-c truncates at, and an invalid UTF-8 byte,
+which core-py's codec refuses before its parser ever sees it.
+
+Eleven mutations were applied to see the two gates fail, and **nine moved a
+score**: closing the header at the first `]` (intent 1,134/1,200 and both `values`),
+dropping `\v`/`\f` from the whitespace set (values-c 278/342), turning inline
+comments on (conformance **25 of 34**, values-c 261/342), folding group names as
+`fold_case` alone would (conformance **5 of 34**), keeping trailing whitespace
+(conformance 33 of 34), not skipping a BOM (conformance 33 of 34), treating a
+header remainder as an entry (intent 1,162/1,200), narrowing the separator run's
+whitespace to git's (values-c), and refusing an empty section name (intent
+1,159/1,200 *and* `divergence-py` losing `section-empty` - the conformance gate saw
+nothing, because the suite has no `[]` case). Two did not:
+
+- **Setting `valueless_keys` true changed nothing**, and that is a fact about the
+  flag rather than about the gates: a dialect whose keys may hold any byte has to
+  find the `=` before it knows where the key ended, so a line with no `=` is a bad
+  line before there is a key to call valueless. The flag is only meaningful with a
+  closed key charset, and ::GTEXT_INI_Dialect::valueless_keys now says so.
+- **Removing the writer's representability check changed nothing**, and cannot,
+  for the same reason it cannot in the git differential: every value a parse stored
+  is writable by construction. It is covered by
+  `IniEditorConfig.TheWriterRefusesAValueThatWouldNotReadBackAsItself`.
+
+What is deliberately left out is EditorConfig's *properties*. `indent_size`,
+`tab_width`, the `unset` value and the lower-casing that both cores apply to six
+known property names are semantics on top of the grammar, and they belong to
+whatever reads the document. So does the filepath glob.
+
 ## Deviations
 
 | Case | This parser | Elsewhere |
@@ -442,20 +583,38 @@ names its own failing property so a recurrence identifies itself.
 
 ## Not implemented
 
-- **The other two dialects.** `systemd.syntax(7)` and EditorConfig each have a
-  specification, a reference implementation and a corpus, and
-  `notes/text/INI-DIALECTS.md` has the axis table and the plan. What each needs
-  that the three implemented dialects did not: systemd's continuation rule, where
-  a trailing backslash becomes **a space** rather than nothing *and* an
-  intervening comment block is skipped, so a continuation can jump over a `#`
-  line; and EditorConfig's 34-assertion `editorconfig-core-test` suite, which its
-  specification normatively requires passing.
+- **The systemd dialect.** `systemd.syntax(7)` has a specification, an
+  implementation and a corpus of 163 unit files on this machine, and
+  `notes/text/INI-DIALECTS.md` has the axis table and the plan. Three things it
+  needs that the four implemented dialects did not:
 
-  systemd's continuation is the one place where the machinery here does not
-  already fit: ::GTEXT_INI_Continuation_Mode has two members rather than four
-  because a constant nothing reads is worse than an absent one, and
-  `GTEXT_INI_CONTINUATION_JOIN_SPACE` should arrive with the code that implements
-  it. gtext_ini_scan_value() is where it goes.
+  - **A continuation that joins with a space** rather than nothing, and that skips
+    an intervening comment block, so a continuation can jump over a `#` line.
+    ::GTEXT_INI_Continuation_Mode has two members rather than four because a
+    constant nothing reads is worse than an absent one, and
+    `GTEXT_INI_CONTINUATION_JOIN_SPACE` should arrive with the code that
+    implements it. gtext_ini_scan_value() is where it goes. The comment-block skip
+    turns out **not** to break the value's storage: the skipped lines are inside
+    the value's contiguous extent and are discarded while decoding, which is what
+    git's `\`-plus-newline bytes already do.
+  - **Variable-length escapes.** ::GTEXT_INI_Dialect::escapes is a string of
+    single letters and the table behind it maps one letter to one byte; systemd's
+    set includes `\xHH`, octal `\nnn`, `\uNNNN` and `\UNNNNNNNN`, which are
+    variable-length input producing multi-byte UTF-8 output. That is a new
+    mechanism in the value layer, not a new field.
+  - **A words accessor.** systemd's quoting is explicitly per-setting rather than
+    part of the grammar, so ::GTEXT_INI_Dialect::quoted_values stays false and the
+    splitting belongs beside gtext_ini_value_list() as a function of its own.
+    gtext_ini_value_bool() would also need the wider set `1 yes true on`, which
+    means a dialect parameter on a published signature or a second function.
+
+  Its open question is the **reference**, not the code. `systemd-analyze verify`
+  validates *units*, with semantic requirements far beyond syntax - it refuses a
+  syntactically perfect file for having no `ExecStart` - and it is the one oracle
+  in `tools/oracle/containers/IMAGES`'s plan whose feasibility has never been
+  tested. The corpus cannot stand in either: of the 163 unit files here, **zero**
+  use a line continuation or a `;` comment, so the two hardest rules have no real
+  instances. That probe should come before any of the code.
 - **The continuation modes nothing implements.** systemd joins with a space and
   configparser joins an indented line with a newline. Both are named here and in
   `notes/text/INI-DIALECTS.md` and neither is in the enum, deliberately.

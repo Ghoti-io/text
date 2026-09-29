@@ -578,8 +578,8 @@ one is the whole reason the harness is worth having:
   answer; reading a byte that is not there is not.
 - **A second parse of the same bytes is the same document.**
 
-**All of those but the first run under three dialects** - Desktop Entry, generic
-and git config - and that is a correction rather than a refinement. The
+**All of those but the first run under four dialects** - Desktop Entry, generic,
+git config and EditorConfig - and that is a correction rather than a refinement. The
 byte-identical rewrite was asserted under the *strict* dialect alone for a while,
 and the strict dialect has `skip_bom` false and refuses a document beginning with
 a byte-order mark. So when the generic dialect turned out to be **discarding** a
@@ -588,13 +588,23 @@ came in - no input this harness could generate reached the path, and it had to b
 found by a differential against git instead. A property asserted under one
 dialect says nothing about another that relaxes the rule the property depends on.
 
-The first property has no analogue for git config, and the absence is a finding:
-git is not a relaxation of Desktop Entry in either direction - it accepts a
-preamble, a continuation and a valueless key that Desktop Entry refuses, and
-refuses a key not starting with a letter and a group name outside `A-Za-z0-9-.`
-that Desktop Entry accepts - so neither direction of the subset relation holds
-and there is nothing to assert. Asserting either would fail on the first input
-that exercised the difference.
+The first property has no analogue for git config or EditorConfig, and the absence
+is a finding: neither is a relaxation of Desktop Entry in either direction. git
+accepts a preamble, a continuation and a valueless key that Desktop Entry refuses,
+and refuses a key not starting with a letter and a group name outside
+`A-Za-z0-9-.` that Desktop Entry accepts; EditorConfig accepts a section name
+holding any byte, an empty section name and a duplicate key, and refuses the `\n`
+escape and the `;`-separated list Desktop Entry *defines* - so the same bytes can
+be a legal document to both dialects and mean different things. Neither direction
+of the subset relation holds and there is nothing to assert; asserting either would
+fail on the first input that exercised the difference.
+
+EditorConfig earns its place here for a second reason: it is the **widest** of the
+four, so it is the dialect that actually reaches the writer and the value layer on
+arbitrary input where the other three refuse early. It is also the only one with
+no escape set at all, and that turned out to matter - gtext_ini_unescape() refused
+every backslash for an escape-free dialect, which is the documented behaviour's
+exact opposite, and no dialect existed to show it until this one.
 
 ### The parity property found a defect on its first run
 
@@ -730,6 +740,7 @@ of the parser it could not get to.
 | TOML writer | 2.8M | one defect, fixed; clean after, with the spellings axis |
 | INI  | 5.3M | two defects and one false claim, all fixed; clean after, with one unexplained abort noted below |
 | INI, three dialects | 4.4M + 1.9M | clean; the git config dialect added, and every property but the subset relation now asserted under all three. Two runs because the first binary predated two edits that changed no behaviour - an uncalled function removed and a comment - and a figure carried across a rebuild is not a figure |
+| INI, four dialects | 2.5M + 578k | clean, no artifacts; the EditorConfig dialect added as a fourth arm. Two runs again and for the same reason: the second binary is the one this commit ships. It is the widest of the four, so it is the arm that actually reaches the writer and the value layer on arbitrary input - and the only one with no escape set, which is what exposed gtext_ini_unescape() refusing every backslash for an escape-free dialect |
 
 Both TOML harnesses were re-run after `gtext_json_to_toml()` stopped refusing a
 long number lexeme (2026-09-28): 65.6k and 510.2k executions, no crash and no

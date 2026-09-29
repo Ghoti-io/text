@@ -117,6 +117,12 @@ PROBE = {
     # UCD pins above, since a config file's grammar is git's source and nothing
     # else.
     "gitconfig": (["git-config-driver", "--version"], "git ", None),
+    # EditorConfig has **two** references and this image carries both, so one
+    # digest pins both and there is one probe rather than two. The C driver's line
+    # is asked because it is the one that names a source commit; the Python
+    # driver's version is checked by the same IMAGES line, which holds both.
+    "editorconfig": (["editorconfig-driver", "--version"],
+                     "editorconfig-core-c ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

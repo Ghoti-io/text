@@ -249,11 +249,19 @@ typedef enum {
  * |---|---|---|
  * | Desktop Entry §3.2, §3.3 | any ASCII but `[`, `]`, control | `A-Za-z0-9-`, optional `[LOCALE]` |
  * | git config | `A-Za-z0-9-.`, plus a quoted subsection | `A-Za-z0-9-`, **first character alphabetic** |
+ * | EditorConfig | **any byte, `]` included** | anything but `=` |
  *
  * So git is *stricter* than Desktop Entry about group names and stricter again
  * about the first character of a key, while being the only one of the two with
- * a subsection. Those are not points on one axis, and one bit for a family the
- * references split several ways is a mistake this repository has made before.
+ * a subsection; EditorConfig is looser than either about both. Those are not
+ * points on one axis, and one bit for a family the references split several ways
+ * is a mistake this repository has made before.
+ *
+ * The style also decides **where a group name ends**, which is not a charset
+ * question and cannot be asked one byte at a time: a dialect whose names may
+ * hold a `]` has to close the header at the *last* one on the line rather than
+ * the first. gtext_ini_group_close_is_last() is that question, asked by name so
+ * that the parser never tests an id.
  *
  * Every entry here was measured against the reference rather than read off the
  * manual page - `git-config(1)` says a variable "must belong to some section",
@@ -280,7 +288,25 @@ typedef enum {
    * terminator and a group name may not contain `[`, `]` or a control
    * character. What ::GTEXT_INI_DIALECT_GENERIC uses.
    */
-  GTEXT_INI_NAMES_ANY
+  GTEXT_INI_NAMES_ANY,
+  /**
+   * EditorConfig 0.17.2. A key is "the part before the first `=` on the line",
+   * so it may hold anything but `=` - a space included, and `ke y = value` is a
+   * key called `ke y`, which the conformance suite asserts. A section name "may
+   * contain any characters between the square brackets", so the header closes at
+   * the **last** `]` on the line and `[a]b]` is one section named `a]b`.
+   *
+   * Measured both ways against both cores: core-c finds the last `]` and core-py
+   * matches greedily to the same place, and neither refuses a `[` or a control
+   * character inside a name. **The empty name `[]` is accepted**, which core-c
+   * does and core-py refuses; see gtext_ini_group_is_preamble() for the one
+   * consequence in the tree.
+   *
+   * Unlike ::GTEXT_INI_NAMES_ANY, a `#` or `;` inside a name is not special and
+   * a `]` does not end it. core-py refuses `[a#b]` outright - a bug against its
+   * own specification, which says any characters.
+   */
+  GTEXT_INI_NAMES_EDITORCONFIG
 } GTEXT_INI_Name_Style;
 
 /**
@@ -359,7 +385,21 @@ typedef enum {
    * does not begin with a letter, a group name containing anything but
    * `A-Za-z0-9-.`).
    */
-  GTEXT_INI_DIALECT_GIT_CONFIG
+  GTEXT_INI_DIALECT_GIT_CONFIG,
+  /**
+   * EditorConfig, as specification 0.17.2 defines it. The versions of the two
+   * cores it was differed against are named in
+   * `tools/oracle/containers/IMAGES`, and the normative conformance suite is
+   * pinned in `tools/conformance/EDITORCONFIG_SUITE_COMMIT`.
+   *
+   * The simplest grammar of the four and **the only one with a normative
+   * conformance suite**, which is why it is the only dialect here whose
+   * correctness claim is a pass count rather than a differential: `make
+   * conformance-ini-editorconfig` scores the 34 `parser` assertions of
+   * `editorconfig-core-test`. Both reference cores score 33 of those 34, so
+   * agreeing with either of them everywhere would be a failure.
+   */
+  GTEXT_INI_DIALECT_EDITORCONFIG
 } GTEXT_INI_Dialect_Id;
 
 /**
@@ -442,6 +482,27 @@ typedef struct {
 
   /** Whether CRLF is accepted as a line terminator as well as LF. */
   bool accept_crlf;
+
+  /**
+   * Whether the dialect's whitespace is `<ctype.h>`'s `isspace()` set rather
+   * than just space and tab - so a vertical tab and a form feed are whitespace
+   * too.
+   *
+   * **True only for EditorConfig, and false for git config on purpose.** git
+   * carries its own ctype table in which `\v` and `\f` are control characters,
+   * measured: `k = a\v` keeps the vertical tab as the value's last byte and
+   * `\vk = v` is a syntax error rather than skipped indentation. Both
+   * EditorConfig cores reach for the platform's answer instead - core-c calls
+   * `isspace()` and core-py uses Python's `\s` - so under that dialect the same
+   * two bytes are trimmed away.
+   *
+   * Two bytes is the whole difference, and no corpus of real files contains
+   * either, which is exactly why it is a field rather than an assumption.
+   *
+   * The line terminator is never in this set: an LF ends the line before any
+   * trimming happens, and a CR is ::accept_crlf's.
+   */
+  bool ctype_whitespace;
 
   /**
    * Whether trailing whitespace is stripped from a value.
@@ -560,6 +621,15 @@ typedef struct {
    * Measured: a valueless key may **not** carry a trailing comment - `k ; c`
    * is refused, though `[a] ; c` on a header line is fine. Nothing in the
    * manual page says so.
+   *
+   * **It is only meaningful with a closed key charset**, and that coupling is
+   * worth stating because the flag otherwise looks independent. A dialect whose
+   * keys may hold any byte has to find the `=` before it knows where the key
+   * ended, so a line with no `=` is a bad line before there is a key to call
+   * valueless - which is why setting this true on the EditorConfig dialect
+   * changes nothing at all. Found by mutation: the flag flipped and both gates
+   * stayed green, because for ::GTEXT_INI_NAMES_EDITORCONFIG and
+   * ::GTEXT_INI_NAMES_DESKTOP_ENTRY nothing reads it.
    */
   bool valueless_keys;
 
@@ -645,6 +715,46 @@ GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_generic(void);
  * @return The dialect, by value.
  */
 GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_git_config(void);
+
+/**
+ * @brief The EditorConfig dialect, as specification 0.17.2 defines it.
+ *
+ * `#` and `;` comments at the start of a line only, leading and trailing
+ * whitespace removed from the line **before** it is classified, a preamble,
+ * duplicate groups and duplicate keys with the last winning, case-insensitive
+ * keys with case-sensitive section names, section names holding any byte and
+ * closing at the last `]`, keys holding anything but `=`, no escapes, no
+ * quoting, no continuation, no list, CRLF accepted and a BOM skipped.
+ *
+ * Like git config it is **not** built by relaxing Desktop Entry: it accepts a
+ * preamble, a duplicate group, a duplicate key and a section name Desktop Entry
+ * refuses, and refuses the `\n` escape and the `;`-separated list Desktop Entry
+ * defines. Building it as a relaxation would also inherit the next field added
+ * to Desktop Entry's constructor, whose default here would be a guess.
+ *
+ * **Its correctness claim is the only one in this module that is a pass count
+ * rather than an agreement.** EditorConfig has a normative conformance suite -
+ * "a conforming core or plugin must pass the tests in the core-tests
+ * repository" - and `make conformance-ini-editorconfig` runs the 34 of its 202
+ * assertions that test the grammar. The other 168 test a filepath glob matcher,
+ * file discovery and a command line, none of which is a text library's job.
+ *
+ * The two reference cores are used as differential oracles instead, and
+ * **both of them score 33 of those 34**: each strips a whitespace-preceded `#`
+ * from a value, where the specification says a `#` "anywhere other than at the
+ * beginning of a line does *not* start a comment". They fail it for one shared
+ * reason - both descend from Python's `ConfigParser` - so this is not two
+ * independent readings agreeing, and @ref format_ini says so where the number
+ * is quoted.
+ *
+ * **What it deliberately does not do** is interpret a value. `indent_size`,
+ * `tab_width`, the `unset` value and the lower-casing that cores apply to six
+ * known property names are EditorConfig's *properties*, not its file grammar,
+ * and they belong to whatever reads the document.
+ *
+ * @return The dialect, by value.
+ */
+GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void);
 
 /**
  * @struct GTEXT_INI_Parse_Options

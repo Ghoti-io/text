@@ -9,9 +9,10 @@ and writes one back out **byte for byte**.
 
 It is the one module here whose format is chosen by the caller rather than named
 by the module. There is no INI specification, so `GTEXT_INI_Dialect` names which
-INI - three of them today: Desktop Entry, a generic derivation of it, and git
-config - and the default is Desktop Entry 1.5, the only INI dialect with a
-normative document and two independent reference implementations.
+INI - four of them today: Desktop Entry, a generic derivation of it, git config
+and EditorConfig - and the default is Desktop Entry 1.5. EditorConfig is the only
+one of the four with a **normative conformance suite**, and the only one where this
+module scores higher than either reference implementation does.
 
 ---
 
@@ -185,9 +186,46 @@ own rule, and measured both ways.
 generated documents; \ref format_ini "the format page" has the figures and the
 mutations that were seen to move them.
 
+### EditorConfig
+
+```c
+opts.dialect = gtext_ini_dialect_editorconfig();
+```
+
+Specification 0.17.2, and the simplest grammar of the four: no escapes, no
+quoting, no continuation, no list, no inline comments. Two rules a caller is most
+likely to be surprised by, both of which its conformance suite asserts:
+
+```c
+/* The line is trimmed **before** it is classified, so an indented header is a
+ * header and an indented comment is a comment. core-py gets the second wrong. */
+
+/* A section name may hold any byte, so the header closes at the LAST `]`. */
+GTEXT_INI_Document * doc = gtext_ini_parse("[a]b]\nk=v\n", &opts, NULL);
+/* one group, named `a]b` - the same bytes are two things under git */
+
+/* Keys are case-insensitive and section names are not: the canonical key is
+ * lower-cased and the group name is compared byte for byte. */
+size_t len = 0;
+const char * key = gtext_ini_group_canonical_key_at(group, 0, &len);
+```
+
+What this dialect does **not** do is resolve properties for a filepath. The
+section name is a glob, and matching one is a separate job from reading the
+document - 130 of the suite's 202 assertions are about that matcher, and they are
+out of scope. gtext_ini_document_group_at() in order plus your own matcher is the
+whole of it; `tools/conformance/editorconfig_suite.py` is a worked example.
+
+`make conformance-ini-editorconfig` scores the suite's 34 grammar assertions -
+**34 of 34, where both reference cores score 33** - and
+`make check-ini-editorconfig-oracle` differs the reader against both of them over
+20,000 generated documents. \ref format_ini "The format page" has the figures, the
+twenty places a core departs from its own specification, and the mutations that
+were seen to move a score.
+
 ### Something in between
 
-Change individual fields if you need something between any two of the three.
+Change individual fields if you need something between any two of the four.
 ::GTEXT_INI_Dialect is a plain struct and every field is an axis on which real
 specified dialects disagree; \ref format_ini "the format page" has the table.
 
@@ -240,8 +278,10 @@ into place, so an interrupted write leaves the previous file intact.
 
 ## 6. What is not here
 
-No systemd or EditorConfig dialect; no streaming reader; and no Win32 dialect,
-which is absent by decision rather than by omission - its answers are not a
-function of the file's bytes. \ref format_ini "The format page" says why for each,
-and names the two continuation modes that are deliberately not in the enum
-because nothing implements them yet.
+No systemd dialect; no streaming reader; and no Win32 dialect, which is absent by
+decision rather than by omission - its answers are not a function of the file's
+bytes. \ref format_ini "The format page" says why for each, names the two
+continuation modes that are deliberately not in the enum because nothing
+implements them yet, and says what systemd needs beyond them: variable-length
+escapes, a words accessor, and a reference whose feasibility has never been
+tested.

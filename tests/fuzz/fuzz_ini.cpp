@@ -40,14 +40,21 @@
  *   - **A second parse of the same bytes is the same document.** Cheap, and it
  *     catches a parser that depends on anything outside its input.
  *
- * Every property but the first is asserted under **all three** dialects -
- * Desktop Entry, generic and git config - because a property asserted under one
- * says nothing about another. The byte-identical rewrite was asserted only under
- * the strict dialect at first, and the strict dialect refuses a document
- * beginning with a BOM, so the generic dialect's silently dropped BOM was
- * unreachable from here and had to be found by a differential against git
- * instead. The first property has no analogue for git: it is not a relaxation of
- * Desktop Entry in either direction, so no subset relation holds to assert.
+ * Every property but the first is asserted under **all four** dialects -
+ * Desktop Entry, generic, git config and EditorConfig - because a property
+ * asserted under one says nothing about another. The byte-identical rewrite was
+ * asserted only under the strict dialect at first, and the strict dialect refuses
+ * a document beginning with a BOM, so the generic dialect's silently dropped BOM
+ * was unreachable from here and had to be found by a differential against git
+ * instead. The first property has no analogue for either of the last two: neither
+ * is a relaxation of Desktop Entry in either direction, so no subset relation
+ * holds to assert.
+ *
+ * EditorConfig is the widest of the four - almost any byte sequence is a legal
+ * document to it - so it is the dialect that actually reaches the writer and the
+ * value layer on arbitrary input, where the other three refuse early. It is also
+ * the only one with no escape set, which is how a backslash came to be refused by
+ * gtext_ini_unescape() for years with no dialect able to show it.
  *
  * Build with: make fuzz-ini      Run: make fuzz-run-ini
  *
@@ -250,10 +257,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   GTEXT_INI_Dialect strict = gtext_ini_dialect_desktop_entry();
   GTEXT_INI_Dialect loose = gtext_ini_dialect_generic();
   GTEXT_INI_Dialect git = gtext_ini_dialect_git_config();
+  GTEXT_INI_Dialect ec = gtext_ini_dialect_editorconfig();
 
   GTEXT_INI_Document * a = parse(text, strict);
   GTEXT_INI_Document * b = parse(text, loose);
   GTEXT_INI_Document * g = parse(text, git);
+  GTEXT_INI_Document * e = parse(text, ec);
 
   if (a) {
     /* Acceptance is unconditional: all six relaxations only widen it. */
@@ -280,9 +289,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
    * exercise(), which is where the value is.
    */
   if (g) exercise(g, text, git, "git-config");
+  /*
+   * No parity property against EditorConfig either, and for the mirror-image
+   * reason: it accepts a section name holding any byte, an empty section name, a
+   * preamble and a duplicate key that Desktop Entry refuses, and refuses the `\n`
+   * escape and the `;`-separated list Desktop Entry defines - so the same bytes
+   * can be a legal document to both and mean different things.
+   */
+  if (e) exercise(e, text, ec, "editorconfig");
 
   if (a) gtext_ini_free(a);
   if (b) gtext_ini_free(b);
   if (g) gtext_ini_free(g);
+  if (e) gtext_ini_free(e);
   return 0;
 }

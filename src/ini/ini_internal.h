@@ -206,6 +206,11 @@ GTEXT_INTERNAL_API ini_entry * gtext_ini_group_push(GTEXT_INI_Group * group);
  * git on exactly those two bytes, which no corpus of real files would ever
  * show, so the predicate is a function of the dialect and not of <ctype.h>.
  *
+ * **EditorConfig is the dialect that does want C's answer**, because both of its
+ * cores ask the platform: core-c calls `isspace()` and core-py matches `\s`.
+ * ::GTEXT_INI_Dialect::ctype_whitespace is that choice, so the two dialects with
+ * a rule about `\v` can hold opposite ones.
+ *
  * CR is space to git and not to Desktop Entry, which is what lets a CRLF file
  * read correctly under a dialect that has no CRLF rule of its own.
  */
@@ -312,6 +317,39 @@ GTEXT_INTERNAL_API GTEXT_INI_Status gtext_ini_scan_value(
 
 /** Whether @p dialect decides a value's extent by scanning its syntax. */
 GTEXT_INTERNAL_API bool gtext_ini_dialect_scans_values(
+    const GTEXT_INI_Dialect * dialect);
+
+/**
+ * Whether a group header closes at the **last** `]` on the line, not the first.
+ *
+ * True for EditorConfig, whose section names "may contain any characters between
+ * the square brackets" - so `[a]b]` is one section named `a]b`, and a scan for
+ * the first `]` would cut it in the wrong place. Both cores do this: core-c has
+ * `find_last_char_or_comment` and core-py's greedy `[^\#;]+` backtracks to the
+ * same place.
+ *
+ * Asked as a capability rather than as `id == GTEXT_INI_DIALECT_EDITORCONFIG`,
+ * for the reason gtext_ini_dialect_scans_values() gives: a `== SOME_DIALECT` test
+ * in shared code is a bug waiting for the second dialect that needs the same
+ * behaviour.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_group_close_is_last(
+    const GTEXT_INI_Dialect * dialect);
+
+/**
+ * Whether ::GTEXT_INI_Dialect::fold_case reaches **group** names as well as keys.
+ *
+ * It does not always, and the two dialects that fold disagree about which half:
+ * git folds a section name and not a quoted subsection, EditorConfig folds a key
+ * and not a section name at all. The specification is explicit - "pair keys are
+ * case-insensitive; all keys are lowercased after parsing" says nothing about a
+ * section, and a section is a filepath glob whose case significance is the
+ * filesystem's question rather than the format's.
+ *
+ * So `fold_case` alone cannot answer "does this group name have a canonical
+ * form", and every caller that wants to know asks this instead.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_group_names_fold(
     const GTEXT_INI_Dialect * dialect);
 
 #endif // GHOTI_IO_GTEXT_INI_INI_INTERNAL_H

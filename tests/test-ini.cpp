@@ -1655,3 +1655,532 @@ TEST(IniGit, UnescapeAndTheParserShareOneImplementation) {
     gtext_ini_free(trimmed);
   }
 }
+
+// ------------------------------------------------------- the EditorConfig dialect
+//
+// Every rule here was measured against **two** cores, editorconfig-core-c 0.12.11
+// and editorconfig-core-py 0.17.1, and against specification 0.17.2 and its
+// conformance suite - which is the only normative INI conformance suite that
+// exists. The probe transcript is notes/text/INI-DIALECTS.md §A.16;
+// `make conformance-ini-editorconfig` scores the suite's 34 grammar assertions and
+// `make check-ini-editorconfig-oracle` differs against both cores over 20,000
+// generated documents.
+//
+// **Both cores score 33 of those 34**, so this is the one dialect here where
+// agreeing with the reference implementations everywhere would be a failure. The
+// cases below are the ones where the specification and a core disagree, plus the
+// ones no differential over parsed documents can reach: a caller building a
+// document, and the writer's refusals.
+
+namespace {
+
+GTEXT_INI_Dialect ec() { return gtext_ini_dialect_editorconfig(); }
+
+/** The canonical key of every entry, in document order. */
+std::vector<std::string> canonical_keys(const GTEXT_INI_Document * doc) {
+  std::vector<std::string> out;
+  for (size_t g = 0; g < gtext_ini_document_group_count(doc); g++) {
+    const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
+    for (size_t e = 0; e < gtext_ini_group_entry_count(group); e++) {
+      out.push_back(got(gtext_ini_group_canonical_key_at, group, e));
+    }
+  }
+  return out;
+}
+
+/** The name of every group, as the document spelled it. */
+std::vector<std::string> group_names(const GTEXT_INI_Document * doc) {
+  std::vector<std::string> out;
+  for (size_t g = 0; g < gtext_ini_document_group_count(doc); g++) {
+    const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
+    out.push_back(gtext_ini_group_is_preamble(group)
+                      ? std::string("<preamble>")
+                      : got(gtext_ini_group_name, group));
+  }
+  return out;
+}
+
+} // namespace
+
+TEST(IniEditorConfig, TheDialectIsNotARelaxationOfDesktopEntryInEitherDirection) {
+  GTEXT_INI_Dialect e = ec();
+  GTEXT_INI_Dialect de = gtext_ini_dialect_desktop_entry();
+  EXPECT_EQ(e.id, GTEXT_INI_DIALECT_EDITORCONFIG);
+  /* Accepts what Desktop Entry refuses. */
+  EXPECT_TRUE(e.comment_semicolon);
+  EXPECT_TRUE(e.allow_preamble);
+  EXPECT_TRUE(e.allow_duplicate_groups);
+  EXPECT_EQ(e.dupkey, GTEXT_INI_DUPKEY_LAST_WINS);
+  EXPECT_TRUE(e.accept_crlf);
+  EXPECT_TRUE(e.skip_bom);
+  EXPECT_EQ(e.name_style, GTEXT_INI_NAMES_EDITORCONFIG);
+  /* And refuses what Desktop Entry accepts: the escape set and the list. */
+  EXPECT_NE(de.escapes, nullptr);
+  EXPECT_EQ(e.escapes, nullptr);
+  EXPECT_EQ(de.list_separator, ';');
+  EXPECT_EQ(e.list_separator, 0);
+  /* Nothing git has: no inline comments, no quoting, no continuation, no
+   * valueless key, no subsection, no entry after the header. */
+  EXPECT_FALSE(e.inline_comments);
+  EXPECT_FALSE(e.quoted_values);
+  EXPECT_EQ(e.continuation, GTEXT_INI_CONTINUATION_NONE);
+  EXPECT_FALSE(e.valueless_keys);
+  EXPECT_FALSE(e.subsection_syntax);
+  EXPECT_FALSE(e.header_remainder_is_entry);
+  /* The one field no other dialect sets. */
+  EXPECT_TRUE(e.ctype_whitespace);
+  EXPECT_FALSE(git().ctype_whitespace);
+  EXPECT_FALSE(de.ctype_whitespace);
+}
+
+TEST(IniEditorConfig, TheLineIsTrimmedBeforeItIsClassified) {
+  /*
+   * "For each line: 1. Remove all leading and trailing whitespace. 2. Process the
+   * remaining text as specified for its type." The trim comes *first*, so an
+   * indented header is a header and an indented comment is a comment.
+   *
+   * core-py gets the second one wrong - it tests `line[0] in '#;'` before
+   * stripping, so `  # c` is a parse error there - and the conformance suite does
+   * not cover it.
+   */
+  GTEXT_INI_Document * doc =
+      ok("   # an indented comment\n  [a.c]   \n\t \n  k = v  \n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"a.c"}));
+  EXPECT_EQ(raw(doc, "a.c", "k"), "v");
+  /* And the whole thing writes back byte for byte, indentation included. */
+  EXPECT_EQ(written(doc), "   # an indented comment\n  [a.c]   \n\t \n  k = v  \n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, TheHeaderClosesAtTheLastBracket) {
+  /*
+   * "May contain any characters between the square brackets", so the name runs to
+   * the *last* `]` on the line. Both cores do this - core-c with
+   * `find_last_char_or_comment` and core-py with a greedy match that backtracks to
+   * the same place.
+   *
+   * The contrast is the point: the same bytes under git close at the first `]`,
+   * which is why this is a property of the name grammar rather than of the parser.
+   */
+  GTEXT_INI_Document * doc = ok("[a]b]\nk=v\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"a]b"}));
+  EXPECT_EQ(raw(doc, "a]b", "k"), "v");
+  EXPECT_EQ(written(doc), "[a]b]\nk=v\n");
+  gtext_ini_free(doc);
+
+  /* git's names cannot hold a `]`, so it closes at the first one and reads the
+   * remainder `b]` as an entry on the same line - which has no `=` after its key,
+   * and a valueless key may not be followed by anything. Measured: git exits 128
+   * on this document too, for the same reason. */
+  refused("[a]b]\nk=v\n", GTEXT_INI_E_BAD_LINE, git());
+}
+
+TEST(IniEditorConfig, ASectionNameMayHoldAnyByteIncludingCommentIntroducers) {
+  /*
+   * core-py refuses all three of these: its section pattern excludes an unescaped
+   * `#` or `;` outright, which the specification does not. core-c accepts them, and
+   * so does this.
+   */
+  for (const char * text : {"[a#b]\nk=v\n", "[a;b]\nk=v\n", "[a\tb]\nk=v\n",
+           "[a[b]\nk=v\n"}) {
+    GTEXT_INI_Document * doc = ok(text, ec());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(written(doc), text) << text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniEditorConfig, AnEmptySectionNameIsAcceptedAndIsNotThePreamble) {
+  /*
+   * `[]` is accepted - core-c accepts it, core-py refuses it, and the
+   * specification says any characters. Refusing it would throw away the rest of a
+   * document over a section that matches no file.
+   *
+   * The cost is the one ambiguity this dialect has: an empty group name is also
+   * the preamble's, so gtext_ini_group_find("") can find either.
+   * gtext_ini_group_is_preamble() is what separates them, which is why it is a
+   * public accessor rather than an internal flag.
+   */
+  GTEXT_INI_Document * doc = ok("pre=1\n[]\nk=v\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc),
+      (std::vector<std::string>{"<preamble>", ""}));
+  EXPECT_TRUE(gtext_ini_group_is_preamble(gtext_ini_document_group_at(doc, 0)));
+  EXPECT_FALSE(gtext_ini_group_is_preamble(gtext_ini_document_group_at(doc, 1)));
+  EXPECT_EQ(written(doc), "pre=1\n[]\nk=v\n");
+  gtext_ini_free(doc);
+
+  /* Every other dialect here refuses it, including on the query side - GKeyFile
+   * fails with "Invalid group name: " and git exits 128. */
+  refused("[]\nk=v\n", GTEXT_INI_E_BAD_GROUP, git());
+  refused("[]\nk=v\n", GTEXT_INI_E_BAD_GROUP, gtext_ini_dialect_generic());
+}
+
+TEST(IniEditorConfig, AKeyIsEverythingBeforeTheFirstEquals) {
+  /*
+   * "The key is the part before the first `=` on the line", trimmed. So a key may
+   * hold a space - the suite asserts `ke y=value` - and a `:`, and a second `=` is
+   * part of the value.
+   *
+   * core-py ends a key at a `:`, so it reads `k:e=v` as `k` = `e=v`. core-c and
+   * this read the specification's answer.
+   */
+  GTEXT_INI_Document * doc = ok("[a.c]\nke y=value\nk:e=v\nj=a=b\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc),
+      (std::vector<std::string>{"ke y", "k:e", "j"}));
+  EXPECT_EQ(raw(doc, "a.c", "ke y"), "value");
+  EXPECT_EQ(raw(doc, "a.c", "k:e"), "v");
+  EXPECT_EQ(raw(doc, "a.c", "j"), "a=b");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, KeysFoldAndSectionNamesDoNot) {
+  /*
+   * "Pair keys are case-insensitive. All keys are lowercased after parsing." The
+   * specification says nothing about a section, and a section is a filepath glob
+   * whose case significance is the filesystem's question rather than the format's -
+   * so `[A.C]` and `[a.c]` are two groups while `Indent` and `indent` are one key.
+   *
+   * This is why gtext_ini_group_names_fold() exists: `fold_case` alone would fold
+   * both, as it does for git.
+   */
+  GTEXT_INI_Document * doc = ok("[A.C]\nIndent=1\n[a.c]\nindent=2\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"A.C", "a.c"}));
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"indent", "indent"}));
+  /* Two distinct groups, each reachable only by its own spelling. */
+  EXPECT_EQ(raw(doc, "A.C", "indent"), "1");
+  EXPECT_EQ(raw(doc, "a.c", "INDENT"), "2");
+  EXPECT_EQ(raw(doc, "a.C", "indent"), "<absent>");
+  /* The document's own spelling of the key is kept, so the rewrite is exact. */
+  EXPECT_EQ(written(doc), "[A.C]\nIndent=1\n[a.c]\nindent=2\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, ThereAreNoInlineCommentsAndNoEscapes) {
+  /*
+   * **The rule both cores get wrong.** "A `;` or `#` anywhere other than at the
+   * beginning of a line does *not* start a comment, but is part of the text of that
+   * line", and the suite's `semicolon_or_hash_in_property` asserts it. Both cores
+   * truncate a value at a whitespace-preceded `#` or `;` - inherited from Python's
+   * ConfigParser - and both therefore score 33 of 34.
+   *
+   * No escapes either: the specification defines none, so a backslash is a byte and
+   * the suite asserts that `value \; not comment` keeps it.
+   */
+  GTEXT_INI_Document * doc =
+      ok("[a.c]\nk1=value; not comment\nk2=value # not comment\n"
+         "k3=value \\; not comment\nk4=value#tight\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a.c", "k1"), "value; not comment");
+  EXPECT_EQ(raw(doc, "a.c", "k2"), "value # not comment");
+  EXPECT_EQ(raw(doc, "a.c", "k3"), "value \\; not comment");
+  EXPECT_EQ(raw(doc, "a.c", "k4"), "value#tight");
+
+  /* And the value layer is a copy, not a decode: `\;` stays two bytes. */
+  GTEXT_INI_Dialect d = ec();
+  size_t len = 0;
+  const char * stored = gtext_ini_document_get(doc, "a.c", "k3", &len);
+  ASSERT_NE(stored, nullptr);
+  char * decoded = nullptr;
+  size_t decoded_len = 0;
+  ASSERT_EQ(gtext_ini_unescape(&d, stored, len, nullptr, &decoded, &decoded_len),
+      GTEXT_INI_OK);
+  EXPECT_EQ(take(decoded, decoded_len), "value \\; not comment");
+  gtext_ini_string_free(nullptr, decoded);
+  gtext_ini_free(doc);
+
+  /* The same bytes under git are three different values, because git has both
+   * inline comments and `\\` in its escape set. */
+  GTEXT_INI_Document * g = ok("[a]\nk2 = value # not comment\n", git());
+  ASSERT_NE(g, nullptr);
+  EXPECT_EQ(raw(g, "a", "k2"), "value");
+  gtext_ini_free(g);
+}
+
+TEST(IniEditorConfig, TrailingWhitespaceIsTrimmedAndInnerWhitespaceIsKept) {
+  /*
+   * "Keys and values are trimmed of leading and trailing whitespace, but include
+   * any whitespace that is between non-whitespace characters." The suite asserts
+   * both halves, and Desktop Entry is the contrast: it *keeps* a trailing run,
+   * because GLib does.
+   */
+  GTEXT_INI_Document * doc =
+      ok("[a.c]\nkey= value with whitespace inside  \nempty=  \n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a.c", "key"), "value with whitespace inside");
+  EXPECT_EQ(raw(doc, "a.c", "empty"), "");
+  EXPECT_EQ(written(doc), "[a.c]\nkey= value with whitespace inside  \nempty=  \n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, AVerticalTabIsWhitespaceHereAndNotInGit) {
+  /*
+   * Two bytes, and the two dialects hold opposite rules about them. Both
+   * EditorConfig cores ask the platform - core-c calls `isspace()` and core-py
+   * matches `\s` - while git carries its own ctype table classing `\v` and `\f` as
+   * control characters. Measured on both sides: core-c reads `k=\va\v` as `a`, and
+   * git keeps the trailing vertical tab in its value.
+   *
+   * No corpus of real files contains either byte in either position, which is why
+   * this is a field and a test rather than an assumption.
+   */
+  GTEXT_INI_Document * doc = ok("[a.c]\n\vk=\va\v\n\fj=\fb\f\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a.c", "k"), "a");
+  EXPECT_EQ(raw(doc, "a.c", "j"), "b");
+  EXPECT_EQ(written(doc), "[a.c]\n\vk=\va\v\n\fj=\fb\f\n");
+  gtext_ini_free(doc);
+
+  /*
+   * And in the **separator run**, which is a third notion of whitespace in the
+   * same parser: git matches the run between a key and its `=` against `' '` and
+   * `'\t'` literally, so `k\r= v` is refused by git while `\rk = v` is accepted.
+   * EditorConfig trims the whole line with one predicate, so `k\v=\vv` is `k` =
+   * `v`. Nothing else reaches ini_sep_space()'s arm for this dialect, which is why
+   * the differential has an axis for it too.
+   */
+  doc = ok("[a.c]\nk\v=\vv\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k"}));
+  EXPECT_EQ(raw(doc, "a.c", "k"), "v");
+  EXPECT_EQ(written(doc), "[a.c]\nk\v=\vv\n");
+  gtext_ini_free(doc);
+
+  /* git: the trailing vertical tab is the value's last byte, and a leading one
+   * where a key should start is a syntax error. */
+  GTEXT_INI_Document * g = ok("[a]\nk = a\v\n", git());
+  ASSERT_NE(g, nullptr);
+  EXPECT_EQ(raw(g, "a", "k"), "a\v");
+  gtext_ini_free(g);
+  refused("[a]\n\vk = v\n", GTEXT_INI_E_BAD_KEY, git());
+}
+
+TEST(IniEditorConfig, ALineWithNoEqualsIsInvalidAndAnEmptyValueIsNot) {
+  /*
+   * "Any line that is not one of the above is invalid." A bare key is not a pair,
+   * because the pair rule needs the `=`; both cores report an error too. `k=` is a
+   * different thing - an empty value - and is legal, which is why
+   * ::GTEXT_INI_Dialect::valueless_keys is false rather than the two being
+   * conflated.
+   */
+  refused("[a.c]\nbare\n", GTEXT_INI_E_BAD_LINE, ec());
+  GTEXT_INI_Document * doc = ok("[a.c]\nk=\n", ec());
+  ASSERT_NE(doc, nullptr);
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  /* Present, and empty - not absent. git is where those differ. */
+  EXPECT_TRUE(gtext_ini_group_value_present_at(group, 0));
+  EXPECT_EQ(raw(doc, "a.c", "k"), "");
+  gtext_ini_free(doc);
+
+  /* git reads the same bare key as a valueless entry, its spelling for true. */
+  GTEXT_INI_Document * g = ok("[a]\nbare\n", git());
+  ASSERT_NE(g, nullptr);
+  EXPECT_FALSE(gtext_ini_group_value_present_at(
+      gtext_ini_document_group_at(g, 0), 0));
+  gtext_ini_free(g);
+}
+
+TEST(IniEditorConfig, AColonIsNotASeparatorAndAnEmptyKeyIsRefused) {
+  /*
+   * Three refusals where at least one core accepts, each following from the same
+   * sentence: a line that is not blank, a comment, a header or a `=` pair is
+   * invalid.
+   *
+   *   - `k:v` has no `=`. **Both** cores accept `:` as a separator, inherited from
+   *     ConfigParser; the specification's pair rule names `=` and nothing else.
+   *   - `=v` and `   =v` have an empty key. core-c reads a property whose name is
+   *     the empty string; core-py refuses, as this does.
+   *   - `[a] junk` does not end with `]` after the trim, so it is not a header
+   *     either. Both cores silently ignore the remainder.
+   */
+  refused("[a.c]\nk:v\n", GTEXT_INI_E_BAD_LINE, ec());
+  refused("[a.c]\n=v\n", GTEXT_INI_E_BAD_KEY, ec());
+  refused("[a.c]\n   =v\n", GTEXT_INI_E_BAD_KEY, ec());
+  refused("[a.c] junk\nk=v\n", GTEXT_INI_E_BAD_LINE, ec());
+  refused("[a.c\nk=v\n", GTEXT_INI_E_BAD_GROUP, ec());
+
+  /* With the last-`]` rule the remainder case flips: `[a.c] junk]` is one
+   * section whose name holds a space, which all three agree on. */
+  GTEXT_INI_Document * doc = ok("[a.c] junk]\nk=v\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"a.c] junk"}));
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, ALoneCarriageReturnIsNotALineSeparator) {
+  /*
+   * "LF or CRLF line separators" - a bare CR is neither. So `[a.c]\rk=v` is one
+   * line that does not end with `]`, and it is invalid.
+   *
+   * All three answers differ here, which is the clearest single case for why the
+   * specification gets the vote: core-c reads the section and silently drops the
+   * rest of the line, core-py splits the line on the CR and reads both halves.
+   */
+  refused("[a.c]\rk=v\n", GTEXT_INI_E_BAD_LINE, ec());
+  /* A CR that *is* part of a CRLF terminator is fine, and the suite asserts it. */
+  GTEXT_INI_Document * doc = ok("[a.c]\r\nk = v\r\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a.c", "k"), "v");
+  EXPECT_EQ(written(doc), "[a.c]\r\nk = v\r\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, TheLastAssignmentWinsAcrossDuplicateSections) {
+  /*
+   * The suite's `repeat_sections_ML` and `basic_cascade_ML`: two sections with the
+   * same name merge, and a repeated key takes the later value. Both are stored -
+   * the tree keeps the document - and the lookup answers the last.
+   */
+  GTEXT_INI_Document * doc =
+      ok("[a.c]\nopt1=first\nopt2=keep\n[a.c]\nopt1=second\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(gtext_ini_document_group_count(doc), 2u);
+  EXPECT_EQ(raw(doc, "a.c", "opt1"), "second");
+  EXPECT_EQ(raw(doc, "a.c", "opt2"), "keep");
+  EXPECT_EQ(written(doc), "[a.c]\nopt1=first\nopt2=keep\n[a.c]\nopt1=second\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, ABomIsSkippedAndWrittenBack) {
+  /*
+   * The suite's `bom_at_head` requires that a leading BOM be skipped. Skipped is
+   * not discarded: the document carries it and the writer puts it back, which is
+   * the defect the git differential found in the generic dialect - a document
+   * opening with one came back three bytes shorter.
+   */
+  const std::string text = "\xEF\xBB\xBF; a comment\nroot = true\n[a.c]\nk = v\n";
+  GTEXT_INI_Document * doc = ok(text, ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a.c", "k"), "v");
+  EXPECT_EQ(written(doc), text);
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, TheWriterRefusesAValueThatWouldNotReadBackAsItself) {
+  /*
+   * The refusals a differential over parsed documents cannot reach, because every
+   * value a parse stored is writable by construction. A mutation removing this
+   * check passed the whole git differential untouched, and the same would be true
+   * here, so it is a unit test rather than a score.
+   *
+   * What this dialect makes unwritable and git does not: a value whose **trailing**
+   * byte is whitespace. git tracks the last content byte and an escape counts as
+   * content, so `a\t` round-trips there; EditorConfig trims the run, so the value
+   * would come back shorter. And the whitespace set is C's, so a vertical tab is
+   * caught at both ends where under every other dialect it is an ordinary byte.
+   */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = ec();
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * group = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "a.c", &group), GTEXT_INI_OK);
+
+  for (const std::string & bad : {std::string(" lead"), std::string("trail "),
+           std::string("\vlead"), std::string("trail\v"),
+           std::string("trail\f"), std::string("a\nb")}) {
+    ASSERT_EQ(gtext_ini_group_set(group, "k", bad.data(), bad.size()),
+        GTEXT_INI_OK) << bad;
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    EXPECT_EQ(gtext_ini_write(doc, &sink, nullptr),
+        GTEXT_INI_E_UNREPRESENTABLE) << bad;
+    gtext_ini_sink_buffer_free(&sink);
+  }
+
+  /* Inner whitespace is fine, and so is a `#`: there are no inline comments, so
+   * nothing about the value's interior can change how it reads back. */
+  const std::string fine = "a value # with a hash";
+  ASSERT_EQ(gtext_ini_group_set(group, "k", fine.data(), fine.size()),
+      GTEXT_INI_OK);
+  std::string out = written(doc);
+  EXPECT_EQ(out, "[a.c]\nk=a value # with a hash\n");
+  GTEXT_INI_Document * again = ok(out, ec());
+  ASSERT_NE(again, nullptr);
+  EXPECT_EQ(raw(again, "a.c", "k"), fine);
+  gtext_ini_free(again);
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, NoListAndNoLocalePostfix) {
+  /*
+   * Two Desktop Entry features that are absent, and absent for different reasons.
+   * The list has no spelling - a `;` in a value is part of the value - so
+   * gtext_ini_value_list() has nothing to split on and says so. The locale postfix
+   * is not absent so much as unspellable: `[` and `]` are ordinary bytes in an
+   * EditorConfig key, so `k[de]` is a key called `k[de]`.
+   */
+  GTEXT_INI_Dialect d = ec();
+  GTEXT_INI_List * list = nullptr;
+  EXPECT_EQ(gtext_ini_value_list(&d, "a;b", 3, nullptr, &list),
+      GTEXT_INI_E_INVALID);
+  EXPECT_EQ(list, nullptr);
+
+  GTEXT_INI_Document * doc = ok("[a.c]\nk[de]=v\n", ec());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k[de]"}));
+  EXPECT_EQ(raw(doc, "a.c", "k[de]"), "v");
+  gtext_ini_free(doc);
+}
+
+TEST(IniEditorConfig, NoLengthCapIsImposed) {
+  /*
+   * "Cores must accept keys and values with lengths up to and including 1024 and
+   * 4096 characters respectively" is a **floor, not a cap**, which is worth saying
+   * because it is the opposite of what a reader expects from a limits clause - and
+   * it is why this dialect needed no length field at all.
+   *
+   * core-c caps at exactly those numbers and silently *drops* anything longer, plus
+   * splits a physical line at 5000 bytes; core-py and this impose nothing. So the
+   * assertion here is an invariance rather than a status: one byte over the floor
+   * behaves like one byte under it.
+   */
+  for (size_t extra : {size_t{0}, size_t{1}}) {
+    std::string key(1024 + extra, 'k');
+    std::string value(4096 + extra, 'v');
+    std::string text = "[a.c]\n" + key + "=" + value + "\n";
+    GTEXT_INI_Document * doc = ok(text, ec());
+    ASSERT_NE(doc, nullptr) << extra;
+    EXPECT_EQ(raw(doc, "a.c", key.c_str()), value) << extra;
+    EXPECT_EQ(written(doc), text) << extra;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniEditorConfig, EveryShapeWritesBackByteForByte) {
+  /*
+   * The preservation property, over the shapes the differential's generator emits
+   * and the conformance suite's own files use. It is asserted per dialect because a
+   * property asserted under one says nothing about another that relaxes the rule it
+   * depends on - which is exactly how the generic dialect's discarded BOM survived
+   * a fuzzer that checked this under the strict dialect only.
+   */
+  for (const char * text : {
+           "[a.c]\nk=v\n",
+           "[a.c]\nk=v",
+           "\xEF\xBB\xBF[a.c]\nk=v\n",
+           "[a.c]\r\nk=v\r\n",
+           "; c\n# c\n   ; indented\n[a.c]\nk=v\n",
+           "root=true\n\n[a.c]\n\nk = v \n\n",
+           "[]\nk=v\n",
+           "[a]b]\nk=v\n",
+           "[a#b]\nk=v\n",
+           "[ spaced ]\nke y = a = b \n",
+           "\vk=\vv\v\n",
+           "[a.c]\nk=\n[a.c]\nk=2\n",
+       }) {
+    GTEXT_INI_Document * doc = ok(text, ec());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(written(doc), text) << text;
+    /* And a second parse of the output is the same document again. */
+    GTEXT_INI_Document * again = ok(written(doc), ec());
+    ASSERT_NE(again, nullptr) << text;
+    EXPECT_EQ(written(again), text) << text;
+    gtext_ini_free(again);
+    gtext_ini_free(doc);
+  }
+}

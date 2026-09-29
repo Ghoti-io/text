@@ -187,6 +187,121 @@ GTEXT_INI_Dialect gtext_ini_dialect_git_config(void) {
   return d;
 }
 
+GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void) {
+  /*
+   * Field by field, for the reason gtext_ini_dialect_git_config() gives: this is
+   * not a relaxation of Desktop Entry in either direction. It accepts a preamble,
+   * a duplicate group, a duplicate key, a leading BOM, CRLF, a `;` comment and a
+   * section name holding any byte; it refuses the `\n` escape and the
+   * `;`-separated list Desktop Entry defines, so its values mean something
+   * different for the same bytes.
+   */
+  GTEXT_INI_Dialect d;
+  memset(&d, 0, sizeof(d));
+  d.id = GTEXT_INI_DIALECT_EDITORCONFIG;
+  d.comment_hash = true;
+  d.comment_semicolon = true;
+  /*
+   * The specification's line rule is "remove all leading and trailing whitespace,
+   * then process the remaining text as specified for its type" - the trim happens
+   * *before* the classification, so an indented `[a]` is a header and an indented
+   * `# c` is a comment. That is two flags here rather than one: this one for the
+   * leading run, ::trim_trailing_space for the trailing one, and the fact that
+   * blankness is tested over the whole line for a whitespace-only line.
+   *
+   * core-py gets this wrong and the conformance suite does not catch it: it tests
+   * `line[0] in '#;'` before stripping, so `  # c` is a parse error there.
+   * Measured.
+   */
+  d.allow_leading_whitespace = true;
+  /* "Root: must be specified in the preamble" - the format has a preamble by
+   * name, and is the only one of these four dialects whose specification does. */
+  d.allow_preamble = true;
+  /* Two sections with the same glob merge, and the later assignment wins;
+   * asserted by the suite's `repeat_sections_ML` and `basic_cascade_ML`. */
+  d.allow_duplicate_groups = true;
+  d.dupkey = GTEXT_INI_DUPKEY_LAST_WINS;
+  d.name_style = GTEXT_INI_NAMES_EDITORCONFIG;
+  /* No locale postfix: `[` and `]` are ordinary bytes in an EditorConfig key, so
+   * `k[de]` is a key called `k[de]`. */
+  d.locale_postfix = false;
+  d.require_unlocalized_key = false;
+  /* "LF or CRLF line separators." The suite asserts the CRLF case. */
+  d.accept_crlf = true;
+  /* "Keys and values are trimmed of leading and trailing whitespace, but include
+   * any whitespace that is between non-whitespace characters." So
+   * `key= value with whitespace inside  ` is `value with whitespace inside`,
+   * which the suite asserts. */
+  d.trim_trailing_space = true;
+  /*
+   * Not in the specification, which says only that the file is UTF-8; both cores
+   * skip one, and the suite's `bom_at_head` asserts that they must. Skipped and
+   * kept, not discarded - the writer puts it back.
+   */
+  d.skip_bom = true;
+  /*
+   * **No escapes at all**, and this is the rule most easily assumed away: the
+   * specification defines no escaping mechanism, so a backslash is a byte.
+   * Asserted by the suite - `key1=value \; not comment` has the value
+   * `value \; not comment`, backslash included. A `\;` inside a *section name*
+   * does mean a literal `;` to a core, but that is the glob matcher's escape and
+   * not the parser's, so it is not here either.
+   */
+  d.escapes = NULL;
+  /* "Any line that is not one of the above is invalid" and there is no list
+   * spelling; a `;` in a value is part of the value. */
+  d.list_separator = 0;
+  /*
+   * False, matching both cores, which hand back a value holding a bare 0xFF
+   * unchanged. The specification's "must be UTF-8 encoded" is a requirement on
+   * whoever writes the file; enforcing it in a reader would refuse a document no
+   * reference refuses. Same reasoning as git config's.
+   */
+  d.utf8_values = false;
+  /*
+   * The whitespace set is C's, unlike every other dialect here. Both cores ask
+   * the platform - core-c calls `isspace()` and core-py matches `\s` - so a
+   * vertical tab and a form feed are trimmed. Measured against core-c, which
+   * reads `k=\va\v` as the value `a`.
+   */
+  d.ctype_whitespace = true;
+  /* No continuation. A line that begins with whitespace is a line, not the
+   * previous one continued: core-c has the `INI_ALLOW_MULTILINE` machinery
+   * inherited from ConfigParser and compiles it *out*, because the suite's
+   * `spaces_before_middle_property_ML` asserts three separate keys. */
+  d.continuation = GTEXT_INI_CONTINUATION_NONE;
+  /*
+   * **False, against both references.** "A `;` or `#` anywhere other than at the
+   * beginning of a line does *not* start a comment, but is part of the text of
+   * that line", and the suite asserts it: `key2=value # not comment` has the
+   * value `value # not comment`. Both cores truncate there and so score 33 of 34
+   * - for one shared reason, that both descend from `ConfigParser`, so their
+   * agreement is heritage rather than corroboration.
+   */
+  d.inline_comments = false;
+  /* No quoting: `k="a b"` is the four-character value with its quotes.
+   * core-py maps the exact value `""` to the empty string, which is neither in
+   * the specification nor in core-c. */
+  d.quoted_values = false;
+  /* "Pair keys are case-insensitive. All keys are lowercased after parsing."
+   * Section names are *not* folded - see gtext_ini_group_names_fold(). */
+  d.fold_case = true;
+  d.subsection_syntax = false;
+  /* A key with no `=` is not a valueless entry, it is an invalid line: the
+   * specification's pair rule needs the `=`, and both cores report an error.
+   * `k=` is an empty value, which is a different thing and is legal. */
+  d.valueless_keys = false;
+  /*
+   * False, and this is the one place the specification is stricter than both
+   * cores. After the trim a header line must *end* with `]`, so `[a] junk` is
+   * not a section header, is not a comment and has no `=` - it is an invalid
+   * line. Both cores silently ignore the remainder. With the last-`]` rule,
+   * `[a] junk]` is instead one section named `a] junk`, which all three agree on.
+   */
+  d.header_remainder_is_entry = false;
+  return d;
+}
+
 GTEXT_INI_Parse_Options gtext_ini_parse_options_default(void) {
   GTEXT_INI_Parse_Options o;
   memset(&o, 0, sizeof(o));
@@ -291,14 +406,19 @@ bool gtext_ini_is_space(const GTEXT_INI_Dialect * dialect, char c) {
   /*
    * CR is whitespace to git and data to Desktop Entry. Tying it to accept_crlf
    * rather than to the dialect id keeps it a property a caller can set.
-   *
-   * `\v` and `\f` are deliberately absent for every dialect: git's own ctype
-   * table classes them as control characters rather than space - measured, a
-   * trailing `\v` stays in the value and a leading one is a syntax error - and
-   * Desktop Entry's grammar has no whitespace but space and tab either. No
-   * dialect here wants <ctype.h>'s answer.
    */
   if (c == '\r' && dialect->accept_crlf) return true;
+  /*
+   * `\v` and `\f` are whitespace to EditorConfig and **not** to git, which is
+   * why this is a field. git carries its own ctype table classing them as
+   * control characters - measured, a trailing `\v` stays in git's value and a
+   * leading one is a syntax error - while both EditorConfig cores ask the
+   * platform and trim them. Desktop Entry's grammar has neither, so its answer
+   * is the same either way.
+   *
+   * LF is never here: the line ends at it before any trimming happens.
+   */
+  if (dialect->ctype_whitespace && (c == '\v' || c == '\f')) return true;
   return false;
 }
 
@@ -315,7 +435,9 @@ static char ini_lower(char c) {
 bool gtext_ini_canon_group(const GTEXT_INI_Dialect * dialect, const char * raw,
     size_t len, char * out, size_t * out_len) {
   *out_len = 0;
-  if (!dialect->fold_case && !dialect->subsection_syntax) return false;
+  if (!gtext_ini_group_names_fold(dialect) && !dialect->subsection_syntax) {
+    return false;
+  }
   size_t w = 0;
   size_t i = 0;
   /* The section part: `A-Za-z0-9-` plus `.`, folded. A `.` here is the
@@ -389,6 +511,26 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
    * group name: ". The specification being silent, the reference decides, and
    * @ref format_ini records that this is why.
    */
+  if (dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG) {
+    /*
+     * "May contain any characters between the square brackets" - so `[`, `]`,
+     * `#`, `;` and a control character are all in the name, and there is nothing
+     * left to check but the line terminator, which cannot be here because the
+     * header was found on one line.
+     *
+     * **The empty name is accepted**, which is the opposite of every other
+     * dialect here and is deliberate. core-c accepts `[]` and core-py refuses it;
+     * the specification says any characters, and refusing would throw away the
+     * rest of a document over a section that simply matches no file. The cost is
+     * that gtext_ini_group_find("") can find either a `[]` group or the preamble
+     * group, whichever comes first, and gtext_ini_group_is_preamble() is how a
+     * caller tells them apart.
+     */
+    for (size_t i = 0; i < len; i++) {
+      if (name[i] == '\n') return false;
+    }
+    return true;
+  }
   if (!len) return false;
   if (dialect->name_style == GTEXT_INI_NAMES_GIT) {
     /*
@@ -430,13 +572,38 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
   return true;
 }
 
+bool gtext_ini_group_close_is_last(const GTEXT_INI_Dialect * dialect) {
+  /* A capability, not an id test - see ini_internal.h. The question is a property
+   * of the name grammar: a dialect whose names may hold a `]` cannot stop at the
+   * first one. */
+  return dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG;
+}
+
+bool gtext_ini_group_names_fold(const GTEXT_INI_Dialect * dialect) {
+  /*
+   * EditorConfig folds keys and not sections, so `fold_case` on its own answers
+   * the wrong question for a group. A section name is a filepath glob, and
+   * whether two spellings of a path are the same file is the filesystem's
+   * question rather than the format's - which is why the specification folds keys
+   * explicitly and says nothing about sections.
+   */
+  return dialect->fold_case &&
+         dialect->name_style != GTEXT_INI_NAMES_EDITORCONFIG;
+}
+
 bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
   switch (dialect->name_style) {
     case GTEXT_INI_NAMES_GIT:
       return ini_git_keychar(c);
     case GTEXT_INI_NAMES_ANY:
-      /* Anything that reads back as itself: not the delimiter, not a
-       * terminator. */
+    case GTEXT_INI_NAMES_EDITORCONFIG:
+      /*
+       * Anything that reads back as itself: not the delimiter, not a terminator.
+       * EditorConfig shares this arm rather than having one of its own, because
+       * "the part before the first `=` on the line" is the same rule - the suite
+       * asserts `ke y=value`, a key with a space in it. What differs between the
+       * two styles is the *group* name, not the key.
+       */
       return c != '=' && c != '\n' && c != '\r';
     case GTEXT_INI_NAMES_DESKTOP_ENTRY:
     default:
@@ -465,9 +632,13 @@ bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect, const char * key,
     }
     return true;
   }
-  if (dialect->name_style == GTEXT_INI_NAMES_ANY) {
+  if (dialect->name_style == GTEXT_INI_NAMES_ANY ||
+      dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG) {
     /* Still not anything at all: a key may not contain the delimiter or a line
-     * terminator, or the document would not read back as itself. */
+     * terminator, or the document would not read back as itself. An empty key is
+     * refused by the `!len` test above, which is where this dialect parts company
+     * with core-c: core-c reads `=v` as a property whose name is the empty
+     * string, and core-py refuses it as this does. */
     for (size_t i = 0; i < len; i++) {
       if (!gtext_ini_key_char_ok(dialect, key[i])) return false;
     }
