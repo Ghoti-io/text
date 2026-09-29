@@ -32,19 +32,28 @@ INI specification, so the page above does not describe "INI": it describes the
 freedesktop.org **Desktop Entry Specification 1.5 (2020-04-27)**, which is the
 dialect the parser reads by default, plus a generic dialect defined as that
 grammar with seven named changes - six relaxations and one CRLF
-normalisation. A parser calling itself simply "INI" would
-have nothing to be scored against but its author's choices; a parser reading a
-named dialect has a specification, two reference implementations and a corpus,
-and the page records where all three disagree.
+normalisation - and **`git-config(1)`**, which is a grammar of its own rather
+than a derivation of either: it accepts documents Desktop Entry refuses and
+refuses documents Desktop Entry accepts. A parser calling itself simply "INI"
+would have nothing to be scored against but its author's choices; a parser
+reading a named dialect has a specification, a reference implementation and a
+corpus, and the page records where they disagree.
 
-Three more dialects have the same property and are not implemented:
-**`systemd.syntax(7)`**, **`git-config(1)`** - with 245 assertions in git's own
-`t1300-config.sh` - and the **EditorConfig specification** (0.17.2), which
+Two more dialects have the same property and are not implemented:
+**`systemd.syntax(7)`** and the **EditorConfig specification** (0.17.2), which
 normatively requires a conforming core to pass `editorconfig-core-test`, 202
-assertions of which 34 test the file grammar. Python's `configparser` is a fifth
-whose specification is its implementation, so it could only be scored by
+assertions of which 34 test the file grammar. Python's `configparser` is a
+fourth whose specification is its implementation, so it could only be scored by
 differential. The INI page's "Not implemented" section says what each would
-need. **Win32 `.ini` is deliberately absent and not merely unimplemented**: its
+need.
+
+The three implemented dialects differ in how much a clean score is worth, and
+the page says so rather than presenting one number. Desktop Entry has **two**
+reference implementations that disagree with each other, so agreeing with both is
+a real constraint. git config has **one** - the same program decides legality and
+values - so agreement there cannot be told from being wrong the same way, and
+what stands in for a second opinion is a written statement of each rule that the
+gate scores separately. **Win32 `.ini` is deliberately absent and not merely unimplemented**: its
 API is documented as consulting the registry before the file, so its answer is
 not a function of the file's bytes and there is nothing to conform to.
 

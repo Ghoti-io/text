@@ -31,6 +31,77 @@ static const char * ini_out(const ini_str * s, size_t * len) {
   return s ? s->data : NULL;
 }
 
+static char ini_lower_byte(char c) {
+  return (c >= 'A' && c <= 'Z') ? (char) (c - 'A' + 'a') : c;
+}
+
+/**
+ * Whether a stored key is the one a caller asked for.
+ *
+ * Compares against the folded form the parse stored, so a lookup folds only the
+ * query and never allocates - which is why the tree carries `canon` at all. A
+ * dialect that does not fold has no `canon` and compares the spelling directly.
+ */
+static bool ini_key_matches(const GTEXT_INI_Dialect * dialect,
+    const ini_entry * entry, const char * query, size_t query_len) {
+  const ini_str * name = entry->canon.data ? &entry->canon : &entry->key;
+  if (name->len != query_len) return false;
+  if (!dialect->fold_case) return memcmp(name->data, query, query_len) == 0;
+  for (size_t i = 0; i < query_len; i++) {
+    if (name->data[i] != ini_lower_byte(query[i])) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a stored group is the one a caller asked for.
+ *
+ * **The section part folds and the subsection part does not**, which is git's
+ * rule for a name on its command line and is measured rather than inferred:
+ * over a file holding `[a.SubB]` and `[b "SubB"]`, git answers `a.subb.k` and
+ * `b.SubB.k` and refuses `a.SubB.k` and `b.subb.k`. So the dotted header
+ * spelling is reachable only by its folded name and the quoted one only by its
+ * exact name - the two are not interchangeable, and a lookup that folded the
+ * whole query would find the first and lose the second.
+ */
+static bool ini_group_matches(const GTEXT_INI_Dialect * dialect,
+    const GTEXT_INI_Group * group, const char * query, size_t query_len) {
+  const ini_str * name = group->canon.data ? &group->canon : &group->name;
+  if (name->len != query_len) return false;
+  if (!dialect->fold_case) return memcmp(name->data, query, query_len) == 0;
+  size_t dot = 0;
+  while (dot < query_len && query[dot] != '.') dot++;
+  for (size_t i = 0; i < dot; i++) {
+    if (name->data[i] != ini_lower_byte(query[i])) return false;
+  }
+  if (dot == query_len) return true;
+  return memcmp(name->data + dot, query + dot, query_len - dot) == 0;
+}
+
+/** The index of the n-th entry carrying @p key, or the count when absent. */
+static size_t ini_find_nth(const GTEXT_INI_Group * group, const char * key,
+    size_t key_len, size_t n) {
+  size_t seen = 0;
+  for (size_t e = 0; e < group->count; e++) {
+    if (!ini_key_matches(&group->doc->dialect, &group->entries[e], key,
+            key_len)) {
+      continue;
+    }
+    if (seen == n) return e;
+    seen++;
+  }
+  return group->count;
+}
+
+/** Whether a dialect's single-value lookup answers the last occurrence. */
+static bool ini_wants_last(const GTEXT_INI_Dialect * dialect) {
+  /* COLLECT joins LAST_WINS here because `git config --get` answers the last of
+   * several - measured. The two modes differ in what they promise about the
+   * earlier occurrences, not in which one a single-value read selects. */
+  return dialect->dupkey == GTEXT_INI_DUPKEY_LAST_WINS ||
+         dialect->dupkey == GTEXT_INI_DUPKEY_COLLECT;
+}
+
 GTEXT_INI_Document * gtext_ini_new(const GTEXT_INI_Parse_Options * opts) {
   GTEXT_INI_Parse_Options effective = opts ? *opts
                                           : gtext_ini_parse_options_default();
@@ -53,6 +124,7 @@ void gtext_ini_free(GTEXT_INI_Document * doc) {
     for (size_t e = 0; e < group->count; e++) {
       ini_entry * entry = &group->entries[e];
       gtext_ini_str_clear(alloc, &entry->key);
+      gtext_ini_str_clear(alloc, &entry->canon);
       gtext_ini_str_clear(alloc, &entry->value);
       gtext_ini_str_clear(alloc, &entry->pre);
       gtext_ini_str_clear(alloc, &entry->sep);
@@ -61,11 +133,13 @@ void gtext_ini_free(GTEXT_INI_Document * doc) {
     }
     if (group->entries) gtext_allocator_free(alloc, group->entries);
     gtext_ini_str_clear(alloc, &group->name);
+    gtext_ini_str_clear(alloc, &group->canon);
     gtext_ini_str_clear(alloc, &group->comment);
     gtext_ini_str_clear(alloc, &group->hdr_pre);
     gtext_ini_str_clear(alloc, &group->hdr_post);
   }
   if (doc->groups) gtext_allocator_free(alloc, doc->groups);
+  gtext_ini_str_clear(alloc, &doc->bom);
   gtext_ini_str_clear(alloc, &doc->leading);
   gtext_ini_str_clear(alloc, &doc->trailing);
   gtext_allocator_free(alloc, doc);
@@ -86,8 +160,7 @@ const GTEXT_INI_Group * gtext_ini_document_group(
   if (!doc || !name) return NULL;
   size_t len = strlen(name);
   for (size_t g = 0; g < doc->count; g++) {
-    if (doc->groups[g].name.len == len &&
-        memcmp(doc->groups[g].name.data, name, len) == 0) {
+    if (ini_group_matches(&doc->dialect, &doc->groups[g], name, len)) {
       return &doc->groups[g];
     }
   }
@@ -109,20 +182,11 @@ const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
    */
   for (size_t g = 0; g < doc->count; g++) {
     const GTEXT_INI_Group * grp = &doc->groups[g];
-    if (grp->name.len != glen || memcmp(grp->name.data, group, glen) != 0) {
-      continue;
-    }
+    if (!ini_group_matches(&doc->dialect, grp, group, glen)) continue;
     for (size_t e = 0; e < grp->count; e++) {
       const ini_entry * entry = &grp->entries[e];
-      if (entry->key.len != klen || memcmp(entry->key.data, key, klen) != 0) {
-        continue;
-      }
-      if (doc->dialect.dupkey == GTEXT_INI_DUPKEY_LAST_WINS) {
-        found = entry;
-      }
-      else if (!found) {
-        found = entry;
-      }
+      if (!ini_key_matches(&doc->dialect, entry, key, klen)) continue;
+      if (ini_wants_last(&doc->dialect) || !found) found = entry;
     }
   }
   return ini_out(found ? &found->value : NULL, len);
@@ -133,7 +197,9 @@ GTEXT_INI_Status gtext_ini_document_add_group(GTEXT_INI_Document * doc,
   if (out) *out = NULL;
   if (!doc || !name) return GTEXT_INI_E_INVALID;
   size_t len = strlen(name);
-  if (!gtext_ini_group_name_ok(&doc->dialect, name, len)) return GTEXT_INI_E_BAD_GROUP;
+  if (!gtext_ini_group_name_ok(&doc->dialect, name, len)) {
+    return GTEXT_INI_E_BAD_GROUP;
+  }
   if (!doc->dialect.allow_duplicate_groups &&
       gtext_ini_document_group(doc, name)) {
     return GTEXT_INI_E_DUPGROUP;
@@ -156,9 +222,70 @@ GTEXT_INI_Status gtext_ini_document_add_group(GTEXT_INI_Document * doc,
   if (!gtext_ini_str_set(doc->alloc, &group->name, name, len)) {
     return GTEXT_INI_E_OOM;
   }
+  /*
+   * @p name is the *header* spelling, so for git a subsection comes in as
+   * `remote "origin"` rather than as `remote.origin`, and the canonical form is
+   * derived from it exactly as the parser derives it. Taking the canonical form
+   * as the argument instead would make a caller unable to say which of the two
+   * subsection spellings to write.
+   */
+  if (doc->dialect.fold_case || doc->dialect.subsection_syntax) {
+    char stack[512];
+    char * buf = stack;
+    char * heap = NULL;
+    if (len > sizeof(stack)) {
+      heap = gtext_allocator_malloc(doc->alloc, len);
+      if (!heap) return GTEXT_INI_E_OOM;
+      buf = heap;
+    }
+    size_t canon_len = 0;
+    bool ok = gtext_ini_canon_group(&doc->dialect, name, len, buf, &canon_len) &&
+              gtext_ini_str_set(doc->alloc, &group->canon, buf, canon_len);
+    if (heap) gtext_allocator_free(doc->alloc, heap);
+    if (!ok) {
+      gtext_ini_str_clear(doc->alloc, &group->name);
+      return GTEXT_INI_E_OOM;
+    }
+  }
   doc->count++;
   if (out) *out = group;
   return GTEXT_INI_OK;
+}
+
+size_t gtext_ini_group_find(const GTEXT_INI_Group * group, const char * key,
+    size_t n) {
+  if (!group || !key) return SIZE_MAX;
+  size_t index = ini_find_nth(group, key, strlen(key), n);
+  return index >= group->count ? SIZE_MAX : index;
+}
+
+bool gtext_ini_group_value_present_at(const GTEXT_INI_Group * group,
+    size_t index) {
+  if (!group || index >= group->count) return false;
+  return group->entries[index].has_value;
+}
+
+const char * gtext_ini_group_canonical_name(const GTEXT_INI_Group * group,
+    size_t * len) {
+  if (!group) {
+    if (len) *len = 0;
+    return NULL;
+  }
+  return ini_out(group->canon.data ? &group->canon : &group->name, len);
+}
+
+const char * gtext_ini_group_canonical_key_at(const GTEXT_INI_Group * group,
+    size_t index, size_t * len) {
+  if (!group || index >= group->count) {
+    if (len) *len = 0;
+    return NULL;
+  }
+  const ini_entry * entry = &group->entries[index];
+  return ini_out(entry->canon.data ? &entry->canon : &entry->key, len);
+}
+
+bool gtext_ini_group_is_preamble(const GTEXT_INI_Group * group) {
+  return group ? group->preamble : false;
 }
 
 const char * gtext_ini_document_leading_comment(
@@ -197,22 +324,6 @@ const char * gtext_ini_group_value_at(const GTEXT_INI_Group * group,
   return ini_out(&group->entries[index].value, len);
 }
 
-/** The index of the n-th entry carrying @p key, or the count when absent. */
-static size_t ini_find_nth(const GTEXT_INI_Group * group, const char * key,
-    size_t key_len, size_t n) {
-  size_t seen = 0;
-  for (size_t e = 0; e < group->count; e++) {
-    const ini_entry * entry = &group->entries[e];
-    if (entry->key.len != key_len ||
-        memcmp(entry->key.data, key, key_len) != 0) {
-      continue;
-    }
-    if (seen == n) return e;
-    seen++;
-  }
-  return group->count;
-}
-
 const char * gtext_ini_group_get(const GTEXT_INI_Group * group,
     const char * key, size_t * len) {
   if (len) *len = 0;
@@ -220,9 +331,7 @@ const char * gtext_ini_group_get(const GTEXT_INI_Group * group,
   size_t key_len = strlen(key);
   size_t count = gtext_ini_group_count_key(group, key);
   if (!count) return NULL;
-  size_t want = group->doc->dialect.dupkey == GTEXT_INI_DUPKEY_LAST_WINS
-                    ? count - 1
-                    : 0;
+  size_t want = ini_wants_last(&group->doc->dialect) ? count - 1 : 0;
   size_t index = ini_find_nth(group, key, key_len, want);
   if (index >= group->count) return NULL;
   return ini_out(&group->entries[index].value, len);
@@ -234,9 +343,8 @@ size_t gtext_ini_group_count_key(const GTEXT_INI_Group * group,
   size_t key_len = strlen(key);
   size_t count = 0;
   for (size_t e = 0; e < group->count; e++) {
-    const ini_entry * entry = &group->entries[e];
-    if (entry->key.len == key_len &&
-        memcmp(entry->key.data, key, key_len) == 0) {
+    if (ini_key_matches(&group->doc->dialect, &group->entries[e], key,
+            key_len)) {
       count++;
     }
   }
@@ -257,12 +365,34 @@ static GTEXT_INI_Status ini_entry_init(GTEXT_INI_Group * group,
     ini_entry * entry, const char * key, size_t key_len, const char * value,
     size_t value_len) {
   const GTEXT_Allocator * alloc = group->doc->alloc;
+  const GTEXT_INI_Dialect * d = &group->doc->dialect;
+  /* Not verbatim: `pre`, `sep` and `eol` below are this function's invention, so
+   * a non-normalizing write must synthesize the line rather than claim to be
+   * reproducing one. */
+  entry->verbatim = false;
+  entry->has_value = true;
   bool ok = gtext_ini_str_set(alloc, &entry->key, key, key_len) &&
             gtext_ini_str_set(alloc, &entry->value, value ? value : "",
                 value_len) &&
             gtext_ini_str_set(alloc, &entry->pre, "", 0) &&
             gtext_ini_str_set(alloc, &entry->sep, "=", 1) &&
             gtext_ini_str_set(alloc, &entry->eol, "\n", 1);
+  if (ok && d->fold_case) {
+    /* The folded form a lookup will compare against. Built here rather than at
+     * lookup time for the same reason the parser builds it. */
+    char stack[256];
+    char * buf = stack;
+    char * heap = NULL;
+    if (key_len > sizeof(stack)) {
+      heap = gtext_allocator_malloc(alloc, key_len);
+      if (!heap) return GTEXT_INI_E_OOM;
+      buf = heap;
+    }
+    size_t canon_len = 0;
+    ok = gtext_ini_canon_key(d, key, key_len, buf, &canon_len) &&
+         gtext_ini_str_set(alloc, &entry->canon, buf, canon_len);
+    if (heap) gtext_allocator_free(alloc, heap);
+  }
   return ok ? GTEXT_INI_OK : GTEXT_INI_E_OOM;
 }
 

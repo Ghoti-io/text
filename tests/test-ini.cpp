@@ -15,6 +15,7 @@
  */
 
 #include <clocale>
+#include <vector>
 #include <cstring>
 #include <string>
 #include <gtest/gtest.h>
@@ -115,7 +116,7 @@ TEST(IniDialect, TheGenericDialectRelaxesSevenThingsAndNothingElse) {
   EXPECT_NE(loose.allow_preamble, strict.allow_preamble);
   EXPECT_NE(loose.allow_duplicate_groups, strict.allow_duplicate_groups);
   EXPECT_NE(loose.dupkey, strict.dupkey);
-  EXPECT_NE(loose.strict_key_charset, strict.strict_key_charset);
+  EXPECT_NE(loose.name_style, strict.name_style);
   EXPECT_NE(loose.accept_crlf, strict.accept_crlf);
 }
 
@@ -1011,3 +1012,646 @@ TEST(IniGeneric, EveryDocumentTheStrictDialectAcceptsParsesTheSameWay) {
 }
 
 } // namespace
+
+// -------------------------------------------------------- the git config dialect
+//
+// Every assertion in this section was measured against git 2.47.3 before it was
+// written, with `git config --file <f> --list -z` so that a valueless key is
+// distinguishable from an empty one and a value containing a newline is not split.
+// The transcript is in notes/text/INI-DIALECTS.md §A.4 and §A.12; the generated
+// differential that runs the same comparison over 20,000 documents is
+// `make check-ini-git-oracle`.
+//
+// The cases here are the ones a differential cannot reach: a caller building a
+// document rather than parsing one, and the writer's refusals - which over any
+// parsed population are unreachable, because every value a parse stored is
+// writable by construction. A mutation removing the writer's representability
+// check passed the whole 500-document differential untouched, which is why these
+// exist.
+
+namespace {
+
+GTEXT_INI_Dialect git() { return gtext_ini_dialect_git_config(); }
+
+/**
+ * Call a (pointer, length) accessor and build a std::string from its result.
+ *
+ * `take(f(&len), len)` is wrong, and wrong in a way that passes: the call and the
+ * read of `len` are unsequenced as arguments, so `len` can be read before `f`
+ * writes it - giving a zero-length string for any value, and *silently agreeing*
+ * with any assertion whose expected value happens to be empty. Two of the
+ * assertions below were reading a stale zero, and one of the two passed. Here the
+ * call is a statement of its own, so the ordering is not a question.
+ */
+template <typename F, typename... Args>
+std::string got(F fn, Args... args) {
+  size_t len = 0;
+  const char * data = fn(args..., &len);
+  return take(data, len);
+}
+
+/** The canonical `section[.subsection].key` name of every entry, in order. */
+std::vector<std::string> canonical_names(const GTEXT_INI_Document * doc) {
+  std::vector<std::string> out;
+  for (size_t g = 0; g < gtext_ini_document_group_count(doc); g++) {
+    const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
+    size_t glen = 0;
+    const char * gname = gtext_ini_group_canonical_name(group, &glen);
+    std::string prefix;
+    if (!gtext_ini_group_is_preamble(group) && glen) {
+      prefix = std::string(gname, glen) + ".";
+    }
+    for (size_t e = 0; e < gtext_ini_group_entry_count(group); e++) {
+      size_t klen = 0;
+      const char * key = gtext_ini_group_canonical_key_at(group, e, &klen);
+      out.push_back(prefix + std::string(key, klen));
+    }
+  }
+  return out;
+}
+
+/** The decoded value of the first entry of the first group. */
+std::string decoded_first(const GTEXT_INI_Document * doc) {
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  size_t len = 0;
+  const char * rawv = gtext_ini_group_value_at(group, 0, &len);
+  GTEXT_INI_Dialect d = git();
+  char * out = nullptr;
+  size_t out_len = 0;
+  if (gtext_ini_unescape(&d, rawv, len, nullptr, &out, &out_len)
+      != GTEXT_INI_OK) {
+    return "<refused>";
+  }
+  std::string result = take(out, out_len);
+  gtext_ini_string_free(nullptr, out);
+  return result;
+}
+
+} // namespace
+
+TEST(IniGit, TheDialectIsNotARelaxationOfDesktopEntryInEitherDirection) {
+  GTEXT_INI_Dialect g = git();
+  GTEXT_INI_Dialect de = gtext_ini_dialect_desktop_entry();
+  EXPECT_EQ(g.id, GTEXT_INI_DIALECT_GIT_CONFIG);
+  /* Accepts what Desktop Entry refuses. */
+  EXPECT_TRUE(g.comment_semicolon);
+  EXPECT_TRUE(g.allow_preamble);
+  EXPECT_TRUE(g.valueless_keys);
+  EXPECT_TRUE(g.inline_comments);
+  EXPECT_TRUE(g.quoted_values);
+  EXPECT_TRUE(g.subsection_syntax);
+  EXPECT_EQ(g.continuation, GTEXT_INI_CONTINUATION_JOIN_EMPTY);
+  /* And refuses what Desktop Entry accepts: a group name of any ASCII. */
+  EXPECT_EQ(de.name_style, GTEXT_INI_NAMES_DESKTOP_ENTRY);
+  EXPECT_EQ(g.name_style, GTEXT_INI_NAMES_GIT);
+  /* No list separator: git spells a list as repeated lines, so inventing one
+   * here would be a syntax git does not have. */
+  EXPECT_EQ(g.list_separator, 0);
+  EXPECT_EQ(g.dupkey, GTEXT_INI_DUPKEY_COLLECT);
+}
+
+TEST(IniGit, SectionAndKeyFoldButAQuotedSubsectionDoesNot) {
+  GTEXT_INI_Document * doc = ok("[Core]\nBare = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"core.bare"}));
+  /* The tree keeps the document's own spelling, so a rewrite is byte-exact. */
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  size_t len = 0;
+  const char * name = gtext_ini_group_name(group, &len);
+  EXPECT_EQ(take(name, len), "Core");
+  EXPECT_EQ(raw(doc, "core", "bare"), "v");
+  /* Folded on the query side too. */
+  EXPECT_EQ(raw(doc, "CORE", "BARE"), "v");
+  gtext_ini_free(doc);
+
+  /* A quoted subsection is case-sensitive, and the dotted spelling is not:
+   * measured, git answers `b.SubB.k` and `a.subb.k` and refuses the other two
+   * spellings of each. */
+  doc = ok("[a.SubB]\nk = 1\n[b \"SubB\"]\nk = 2\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc),
+      (std::vector<std::string>{"a.subb.k", "b.SubB.k"}));
+  EXPECT_EQ(raw(doc, "a.subb", "k"), "1");
+  EXPECT_EQ(raw(doc, "a.SubB", "k"), "<absent>");
+  EXPECT_EQ(raw(doc, "b.SubB", "k"), "2");
+  EXPECT_EQ(raw(doc, "b.subb", "k"), "<absent>");
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, ASubsectionMayHoldBytesTheSectionNameMayNot) {
+  /* Any byte but a terminator, `]` and `[` included, and a backslash *drops* -
+   * so `\t` here is the letter t, while `\t` in a value one line later is a tab.
+   * One file, two escape layers, chosen by position. */
+  GTEXT_INI_Document * doc =
+      ok("[a \"b]c[\"]\nk = x\\ty\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.b]c[.k"}));
+  EXPECT_EQ(decoded_first(doc), "x\ty");
+  gtext_ini_free(doc);
+
+  doc = ok("[a \"x\\ty\"]\nk = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.xty.k"}));
+  gtext_ini_free(doc);
+
+  doc = ok("[a \"x\\\"y\"]\nk = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.x\"y.k"}));
+  gtext_ini_free(doc);
+
+  /* An empty subsection is legal where an empty *section* is not. */
+  doc = ok("[a \"\"]\nk = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a..k"}));
+  gtext_ini_free(doc);
+  refused("[]\nk = v\n", GTEXT_INI_E_BAD_GROUP, git());
+
+  /* The spelling is exactly `[name "sub"]`: whitespace before the quote is
+   * required and nothing may follow the closing quote. */
+  refused("[a\"b\"]\nk = v\n", GTEXT_INI_E_BAD_GROUP, git());
+  refused("[a \"b\" ]\nk = v\n", GTEXT_INI_E_BAD_GROUP, git());
+  refused("[a \"b\" \"c\"]\nk = v\n", GTEXT_INI_E_BAD_GROUP, git());
+}
+
+TEST(IniGit, QuotingIsAToggleRatherThanAWrapper) {
+  /* The rule most easily got wrong. A reader requiring the value to begin and
+   * end with a quote would refuse three documents git accepts. */
+  struct { const char * text; const char * want; } cases[] = {
+      {"[a]\nk = x\" mid \"y\n", "x mid y"},
+      {"[a]\nk = \"a\"b\n", "ab"},
+      {"[a]\nk = \"a\" \"b\"\n", "a b"},
+      {"[a]\nk = \"  spaced  \"\n", "  spaced  "},
+      {"[a]\nk = \"v # not a comment\"\n", "v # not a comment"},
+      {"[a]\nk = \"\"\n", ""},
+  };
+  for (const auto & c : cases) {
+    GTEXT_INI_Document * doc = ok(c.text, git());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(decoded_first(doc), c.want) << c.text;
+    gtext_ini_free(doc);
+  }
+  /* A run left open when the logical line ends is an error, at end of input as
+   * well as at a newline. */
+  refused("[a]\nk = \"abc\n", GTEXT_INI_E_BAD_LINE, git());
+  refused("[a]\nk = \"abc", GTEXT_INI_E_BAD_LINE, git());
+}
+
+TEST(IniGit, AnInlineCommentEndsTheValueAndQuotesProtectIt) {
+  struct { const char * text; const char * want; } cases[] = {
+      {"[a]\nk = v # c\n", "v"},
+      {"[a]\nk = v ; c\n", "v"},
+      {"[a]\nk = v#tight\n", "v"},
+      {"[a]\nk = # c\n", ""},
+      {"[a]\nk = ;\n", ""},
+  };
+  for (const auto & c : cases) {
+    GTEXT_INI_Document * doc = ok(c.text, git());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(decoded_first(doc), c.want) << c.text;
+    /* The comment is still in the document: it lives in the entry's `eol`, so a
+     * rewrite reproduces it. */
+    EXPECT_EQ(written(doc), c.text) << c.text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniGit, AContinuationJoinsWithNothingAndACommentSwallowsIt) {
+  struct { const char * text; const char * want; } cases[] = {
+      /* Joined with nothing, so the space that survives is the one that was
+       * already in the value. */
+      {"[a]\nk = one\\\ntwo\n", "onetwo"},
+      {"[a]\nk = one \\\ntwo\n", "one two"},
+      /* Inside a quoted run it is still a continuation. */
+      {"[a]\nk = \"one\\\ntwo\"\n", "onetwo"},
+      /* CRLF after the backslash, because git turns CRLF into LF as it reads. */
+      {"[a]\nk = one\\\r\ntwo\n", "onetwo"},
+      /* End of input right after the backslash: a continuation onto nothing. */
+      {"[a]\nk = one\\", "one"},
+  };
+  for (const auto & c : cases) {
+    GTEXT_INI_Document * doc = ok(c.text, git());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(decoded_first(doc), c.want) << c.text;
+    /* The five pieces still tile the line: `value` holds the backslashes and the
+     * terminators they span. */
+    EXPECT_EQ(written(doc), c.text) << c.text;
+    gtext_ini_free(doc);
+  }
+
+  /* Once a comment has started the backslash is comment text, so the line ends
+   * at its terminator and the next line is an entry of its own. Measured. */
+  GTEXT_INI_Document * doc = ok("[a]\nk = v # c\\\nj = w\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.k", "a.j"}));
+  EXPECT_EQ(raw(doc, "a", "j"), "w");
+  gtext_ini_free(doc);
+
+  /* A continuation belongs to the value grammar, so a trailing backslash on a
+   * header line or on a valueless key is just a stray byte. */
+  refused("[a]\\\nk = v\n", GTEXT_INI_E_BAD_KEY, git());
+  refused("[a]\nbare\\\n", GTEXT_INI_E_BAD_LINE, git());
+}
+
+TEST(IniGit, AContinuationFixesTheTrailingWhitespaceBoundary) {
+  /*
+   * The rule a first reading of `git-config(1)` does not give, and the one this
+   * differential found only at 20,000 documents rather than 500: a continuation
+   * marks everything written so far as **content**, so the trailing spaces before
+   * it survive - while the same value without the backslash has them trimmed.
+   *
+   * It needed a trailing-space value and a continuation to meet in one document,
+   * which is why a smaller population missed it and why a hand-written corpus
+   * never would have had it at all.
+   */
+  struct { const char * text; const char * want; } cases[] = {
+      {"[a]\nk = false   \\", "false   "},
+      {"[a]\nk = false   \\\n", "false   "},
+      {"[a]\nk = false   \\\n# c\n", "false   "},
+      {"[a]\nk = false   \\\nj = 1\n", "false   j = 1"},
+      /* Without the continuation, trimmed. */
+      {"[a]\nk = false   \n", "false"},
+      {"[a]\nk = false   ", "false"},
+      /* A backslash with no content before it does not resurrect the leading
+       * run, because that run was never written at all. */
+      {"[a]\nk =    \\", ""},
+      /* `\\` is the escape for a literal backslash, which is content, so the
+       * spaces before it are covered too. */
+      {"[a]\nk = false   \\\\", "false   \\"},
+  };
+  for (const auto & c : cases) {
+    GTEXT_INI_Document * doc = ok(c.text, git());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(decoded_first(doc), c.want) << c.text;
+    EXPECT_EQ(written(doc), c.text) << c.text;
+    gtext_ini_free(doc);
+  }
+
+  /*
+   * The two caller-set cases that look alike and are not, which is the whole
+   * reason the writer asks the scanner instead of matching bytes:
+   *
+   *   - `a\` followed by a terminator is **refused**: the backslash has not
+   *     consumed a terminator yet, so it takes the one written after it and the
+   *     stored value comes back as `a\<LF>` instead.
+   *   - `a\<LF>` is **written**: it already contains the newline its join went
+   *     over, so writing a terminator after it gives `a\<LF><LF>`, whose re-read
+   *     performs the same join, stops at the second terminator, and stores the
+   *     same bytes.
+   */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = git();
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * group = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "core", &group), GTEXT_INI_OK);
+
+  ASSERT_EQ(gtext_ini_group_set(group, "url", "a\\", 2), GTEXT_INI_OK);
+  GTEXT_INI_Sink sink;
+  ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_write(doc, &sink, nullptr), GTEXT_INI_E_UNREPRESENTABLE);
+  gtext_ini_sink_buffer_free(&sink);
+
+  ASSERT_EQ(gtext_ini_group_set(group, "url", "a\\\n", 3), GTEXT_INI_OK);
+  std::string out = written(doc);
+  EXPECT_EQ(out, "[core]\nurl=a\\\n\n");
+  GTEXT_INI_Document * again = ok(out, git());
+  ASSERT_NE(again, nullptr);
+  /* The raw value survives, not merely the decoded one. */
+  EXPECT_EQ(raw(again, "core", "url"), "a\\\n");
+  gtext_ini_free(again);
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, AValuelessKeyIsNotAnEmptyValue) {
+  GTEXT_INI_Document * doc = ok("[a]\nbare\nempty =\n", git());
+  ASSERT_NE(doc, nullptr);
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  ASSERT_EQ(gtext_ini_group_entry_count(group), 2u);
+
+  /* The distinction NULL cannot carry: `gtext_ini_group_get` answers NULL for a
+   * key that is absent *and* for one present with no value, so the predicate is
+   * what separates "unset" from git's shorthand for boolean true. */
+  EXPECT_FALSE(gtext_ini_group_value_present_at(group, 0));
+  EXPECT_TRUE(gtext_ini_group_value_present_at(group, 1));
+  EXPECT_EQ(gtext_ini_group_find(group, "bare", 0), 0u);
+  EXPECT_EQ(gtext_ini_group_find(group, "empty", 0), 1u);
+  EXPECT_EQ(gtext_ini_group_find(group, "missing", 0), SIZE_MAX);
+  /* Folded, like every other key lookup. */
+  EXPECT_EQ(gtext_ini_group_find(group, "BARE", 0), 0u);
+
+  size_t len = 0;
+  EXPECT_EQ(gtext_ini_group_value_at(group, 0, &len), nullptr);
+  EXPECT_EQ(got(gtext_ini_group_value_at, group, (size_t) 1), "");
+
+  /* Written back with no `=`, because `bare=` would mean something else. */
+  EXPECT_EQ(written(doc), "[a]\nbare\nempty =\n");
+  gtext_ini_free(doc);
+
+  /* Measured, and in `git-config(1)` nowhere: a valueless key may not carry a
+   * trailing comment, though a header may. */
+  refused("[a]\nbare ; c\n", GTEXT_INI_E_BAD_LINE, git());
+  doc = ok("[a] ; c\nk = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(written(doc), "[a] ; c\nk = v\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, TheRemainderOfAHeaderLineIsAnEntry) {
+  GTEXT_INI_Document * doc = ok("[a] k = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.k"}));
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  EXPECT_EQ(written(doc), "[a] k = v\n");
+  gtext_ini_free(doc);
+
+  /* `[a] junk` is a *valueless* key, not an error. */
+  doc = ok("[a] junk\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.junk"}));
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  EXPECT_FALSE(gtext_ini_group_value_present_at(group, 0));
+  EXPECT_EQ(written(doc), "[a] junk\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, AnEntryBeforeAnySectionIsAPreambleRatherThanAnError) {
+  /* `git-config(1)` says a variable "must belong to some section". git accepts
+   * one that does not, and names it with no prefix at all. */
+  GTEXT_INI_Document * doc = ok("k = v\n[a]\nj = w\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"k", "a.j"}));
+  const GTEXT_INI_Group * first = gtext_ini_document_group_at(doc, 0);
+  EXPECT_TRUE(gtext_ini_group_is_preamble(first));
+  EXPECT_EQ(got(gtext_ini_group_name, first), "");
+  EXPECT_FALSE(gtext_ini_group_is_preamble(
+      gtext_ini_document_group_at(doc, 1)));
+  /* No header is invented for it: `[]` is not even a legal git header. */
+  EXPECT_EQ(written(doc), "k = v\n[a]\nj = w\n");
+  gtext_ini_free(doc);
+
+  /* Desktop Entry still refuses one, which is what allow_preamble is for. */
+  refused("Before=1\n[Desktop Entry]\nType=Application\nName=n\n",
+      GTEXT_INI_E_NO_GROUP);
+}
+
+TEST(IniGit, EveryOccurrenceOfARepeatedKeyIsAValueAndTheLastIsTheAnswer) {
+  GTEXT_INI_Document * doc = ok("[a]\nk = 1\nk = 2\n", git());
+  ASSERT_NE(doc, nullptr);
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  EXPECT_EQ(gtext_ini_group_count_key(group, "k"), 2u);
+  /* `--get-all` order. */
+  EXPECT_EQ(got(gtext_ini_group_get_nth, group, "k", (size_t) 0), "1");
+  EXPECT_EQ(got(gtext_ini_group_get_nth, group, "k", (size_t) 1), "2");
+  /* `--get` answers the last - measured, and the opposite of what this enum's
+   * documentation claimed before any dialect used it. */
+  EXPECT_EQ(got(gtext_ini_group_get, group, "k"), "2");
+  EXPECT_EQ(raw(doc, "a", "k"), "2");
+  gtext_ini_free(doc);
+
+  /* A repeated *header* merges: the lookup crosses both groups, and the tree
+   * keeps them apart so the rewrite is exact. */
+  doc = ok("[a]\nk = 1\n[a]\nk = 2\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(gtext_ini_document_group_count(doc), 2u);
+  EXPECT_EQ(raw(doc, "a", "k"), "2");
+  EXPECT_EQ(written(doc), "[a]\nk = 1\n[a]\nk = 2\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, TheEscapeSetIsGitsAndNotDesktopEntrys) {
+  struct { const char * text; const char * want; } cases[] = {
+      {"[a]\nk = a\\tb\n", "a\tb"},
+      {"[a]\nk = a\\nb\n", "a\nb"},
+      {"[a]\nk = a\\bb\n", "a\bb"},
+      {"[a]\nk = a\\\"b\n", "a\"b"},
+      {"[a]\nk = a\\\\b\n", "a\\b"},
+      /* An escape at the very end is *content*, so it is not trimmed as trailing
+       * whitespace even when it spells one. The discriminating case for the
+       * scanner's last-content-byte tracking, and the one a right-to-left trim
+       * gets wrong. */
+      {"[a]\nk = a\\t\n", "a\t"},
+  };
+  for (const auto & c : cases) {
+    GTEXT_INI_Document * doc = ok(c.text, git());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(decoded_first(doc), c.want) << c.text;
+    gtext_ini_free(doc);
+  }
+  /* `\r` and `\s` are Desktop Entry's and are not git's. "Other char escape
+   * sequences (including octal escape sequences) are invalid." */
+  refused("[a]\nk = a\\rb\n", GTEXT_INI_E_BAD_ESCAPE, git());
+  refused("[a]\nk = a\\sb\n", GTEXT_INI_E_BAD_ESCAPE, git());
+  refused("[a]\nk = a\\qb\n", GTEXT_INI_E_BAD_ESCAPE, git());
+  refused("[a]\nk = a\\101b\n", GTEXT_INI_E_BAD_ESCAPE, git());
+  refused("[a]\nk = a\\ b\n", GTEXT_INI_E_BAD_ESCAPE, git());
+  /* A backslash before a *lone* CR is neither a continuation nor an escape. */
+  refused("[a]\nk = a\\\rb\n", GTEXT_INI_E_BAD_ESCAPE, git());
+}
+
+TEST(IniGit, WhitespaceIsGitsOwnCtypeAndNotTheCLibrarys) {
+  /* `\v` and `\f` are control characters to git, not space. So a trailing `\v`
+   * stays in the value where a trailing space would be trimmed, and a `\v` where
+   * a key should start is a syntax error rather than skipped indentation. A
+   * parser built on isspace() differs from git on exactly these two bytes, which
+   * no corpus of real files would ever show. */
+  GTEXT_INI_Document * doc = ok("[a]\nk = a\v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(decoded_first(doc), "a\v");
+  gtext_ini_free(doc);
+  refused("[a]\n\vk = v\n", GTEXT_INI_E_BAD_KEY, git());
+
+  /* CR *is* space to git: interior, it is data; trailing, it is trimmed. */
+  doc = ok("[a]\nk = a\rb\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(decoded_first(doc), "a\rb");
+  gtext_ini_free(doc);
+  /* And it may not sit between a key and its `=`, because that run is matched
+   * against space and tab literally. */
+  refused("[a]\nk\r= v\n", GTEXT_INI_E_BAD_LINE, git());
+}
+
+TEST(IniGit, KeyAndSectionCharsetsDifferAndBothAreStricterThanDesktopEntrys) {
+  /* A key must begin with a letter; a section name need not. */
+  GTEXT_INI_Document * doc = ok("[12]\nk-1 = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"12.k-1"}));
+  gtext_ini_free(doc);
+  refused("[a]\n1k = v\n", GTEXT_INI_E_BAD_KEY, git());
+  refused("[a]\n-k = v\n", GTEXT_INI_E_BAD_KEY, git());
+  refused("[a]\n= v\n", GTEXT_INI_E_BAD_KEY, git());
+  /* These end the key scan at a byte outside the charset, so what follows is
+   * neither `=` nor the end of the line. */
+  refused("[a]\nk_1 = v\n", GTEXT_INI_E_BAD_LINE, git());
+  refused("[a]\nk.1 = v\n", GTEXT_INI_E_BAD_LINE, git());
+  /* A section name is `A-Za-z0-9-.`: stricter than Desktop Entry's "any ASCII
+   * but [ ] and control", which is why this is not a relaxation. */
+  refused("[a_b]\nk = v\n", GTEXT_INI_E_BAD_GROUP, git());
+  refused("[caf\xc3\xa9]\nk = v\n", GTEXT_INI_E_BAD_GROUP, git());
+  /* A dot is legal anywhere in a section name, including alone. */
+  doc = ok("[a.b.c.d]\nk = v\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.b.c.d.k"}));
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, AValueIsNotValidatedAsUtf8BecauseGitReturnsItUnchanged) {
+  /* The axis the two references disagree about: `g_key_file_get_string()`
+   * refuses a bare 0xFF, and `git config --get` hands it back. So this is a
+   * property of the dialect rather than of the format's character set. */
+  EXPECT_TRUE(gtext_ini_dialect_desktop_entry().utf8_values);
+  EXPECT_FALSE(git().utf8_values);
+  /* Split string literals: `"\xffb"` would read `ffb` as one hex escape. */
+  GTEXT_INI_Document * doc = ok("[a]\nk = a\xff" "b\n", git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(decoded_first(doc), "a\xff" "b");
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, ANulInAValueIsKeptWhereGitTruncates) {
+  /* The one deliberate deviation, and it is in the direction of representing
+   * more than the reference can: this reader is length-based throughout, so a
+   * document git reads as `a` is read here as the three bytes it contains.
+   * Refusing to store it would make the library unable to represent a document
+   * git accepts. The differential excludes these and counts them. */
+  std::string text("[a]\nk = a\0b\n", 12);
+  GTEXT_INI_Document * doc = ok(text, git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(decoded_first(doc), std::string("a\0b", 3));
+  EXPECT_EQ(written(doc), text);
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, ABomIsSkippedAndStillWrittenBack) {
+  /* Skipped means "not part of the first line", not "discarded": a document that
+   * opened with one and comes back three bytes shorter is not the same document.
+   * Found by the git differential rather than by the fuzzer, because the fuzzer
+   * asserts the byte-identical rewrite under the *strict* dialect, which refuses
+   * a BOM outright and so can never reach this path. */
+  std::string text = "\xef\xbb\xbf[a]\nk = v\n";
+  GTEXT_INI_Document * doc = ok(text, git());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_names(doc), (std::vector<std::string>{"a.k"}));
+  EXPECT_EQ(written(doc), text);
+  gtext_ini_free(doc);
+
+  /* The generic dialect skips one too, and had the same defect. */
+  doc = ok(text, gtext_ini_dialect_generic());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(written(doc), text);
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, TheWriterRefusesAValueThatWouldNotReadBackAsItself) {
+  /*
+   * Unreachable from any parse - every value a parse stored is writable by
+   * construction - so these come from a caller setting one, and a mutation
+   * removing the check passed a 500-document differential untouched.
+   *
+   * The check is a re-scan rather than a list of dangerous bytes, which is why a
+   * continuation survives it and a trailing backslash does not.
+   */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = git();
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * group = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "core", &group), GTEXT_INI_OK);
+  ASSERT_NE(group, nullptr);
+
+  struct { const char * value; bool writable; const char * why; } cases[] = {
+      {"plain", true, "nothing to quote"},
+      {"a\\tb", true, "an escape re-reads as itself"},
+      {"one\\\ntwo", true, "a continuation is a value that reads back the same"},
+      {"\"a b\"", true, "a balanced quoted run"},
+      {"a ", false, "a trailing space would be trimmed"},
+      {" a", false, "a leading run is dropped before any content"},
+      {"a#b", false, "the rest would come back as a comment"},
+      {"a;b", false, "likewise"},
+      {"a\\", false, "a trailing backslash would swallow the terminator"},
+      {"a\"", false, "an unbalanced quote does not even scan"},
+      {"a\nb", false, "a bare newline ends the line early"},
+  };
+  for (const auto & c : cases) {
+    ASSERT_EQ(gtext_ini_group_set(group, "url", c.value, strlen(c.value)),
+        GTEXT_INI_OK) << c.value;
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    GTEXT_INI_Status status = gtext_ini_write(doc, &sink, nullptr);
+    if (c.writable) {
+      EXPECT_EQ(status, GTEXT_INI_OK) << c.value << ": " << c.why;
+      if (status == GTEXT_INI_OK) {
+        /* And it does read back as itself, which is the property the check is
+         * standing in for. */
+        std::string out(gtext_ini_sink_buffer_data(&sink),
+            gtext_ini_sink_buffer_size(&sink));
+        GTEXT_INI_Document * again = ok(out, git());
+        ASSERT_NE(again, nullptr) << out;
+        EXPECT_EQ(raw(again, "core", "url"), c.value) << out;
+        gtext_ini_free(again);
+      }
+    }
+    else {
+      EXPECT_EQ(status, GTEXT_INI_E_UNREPRESENTABLE)
+          << c.value << ": " << c.why;
+    }
+    gtext_ini_sink_buffer_free(&sink);
+  }
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, ACallerAddsAGroupByItsHeaderSpellingNotItsCanonicalName) {
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = git();
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * group = nullptr;
+  /* The header spelling, so a caller can choose which of the two subsection
+   * forms to write. The canonical name is derived from it. */
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "remote \"orig in\"", &group),
+      GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(group, "url", "x", 1), GTEXT_INI_OK);
+  EXPECT_EQ(got(gtext_ini_group_canonical_name, group), "remote.orig in");
+  EXPECT_EQ(raw(doc, "remote.orig in", "url"), "x");
+  EXPECT_EQ(written(doc), "[remote \"orig in\"]\nurl=x\n");
+  /* And a name that is not a legal header is refused rather than stored. */
+  EXPECT_EQ(gtext_ini_document_add_group(doc, "bad_section", nullptr),
+      GTEXT_INI_E_BAD_GROUP);
+  gtext_ini_free(doc);
+}
+
+TEST(IniGit, UnescapeAndTheParserShareOneImplementation) {
+  /* The parser calls gtext_ini_scan_value() to find where the logical line ends
+   * and gtext_ini_unescape() calls it again over the stored bytes. Re-scanning
+   * the stored span must give the same answer, which is what makes one function
+   * sound here: the span ends at a content byte, so nothing dropped can affect
+   * what is kept. */
+  GTEXT_INI_Dialect d = git();
+  const char * cases[] = {"\"a\" \"b\"", "x\" mid \"y", "a\\tb", "one\\\ntwo",
+                          "\"v # c\"", "a\\t"};
+  for (const char * text : cases) {
+    std::string doc_text = std::string("[a]\nk = ") + text + "\n";
+    GTEXT_INI_Document * doc = ok(doc_text, git());
+    ASSERT_NE(doc, nullptr) << doc_text;
+    const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+    size_t len = 0;
+    const char * stored = gtext_ini_group_value_at(group, 0, &len);
+    /* The stored span is exactly the value's own bytes. */
+    EXPECT_EQ(take(stored, len), text) << doc_text;
+    char * first = nullptr;
+    size_t first_len = 0;
+    ASSERT_EQ(gtext_ini_unescape(&d, stored, len, nullptr, &first, &first_len),
+        GTEXT_INI_OK) << doc_text;
+    std::string once = take(first, first_len);
+    gtext_ini_string_free(nullptr, first);
+    gtext_ini_free(doc);
+
+    /* Decoding the decoded form again is not the property - that would be
+     * idempotence, which escapes do not have. The property is that the stored
+     * span decodes to what the whole line decoded to. */
+    std::string direct_text = std::string("[a]\nk = ") + text;
+    GTEXT_INI_Document * trimmed = ok(direct_text, git());
+    ASSERT_NE(trimmed, nullptr) << direct_text;
+    EXPECT_EQ(decoded_first(trimmed), once) << direct_text;
+    gtext_ini_free(trimmed);
+  }
+}

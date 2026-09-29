@@ -139,3 +139,32 @@ idna	localhost/ghoti-text-oracle-idna:3.19	idnadata 17.0.0	The IDNA2008 derived 
 # Debian point release that moved either package changes the printed line and
 # fails the check, rather than silently changing what the comparison means.
 inidesktop	localhost/ghoti-text-oracle-inidesktop:2.84.4	glib 2.84.4, desktop-file-utils 0.28-1	Desktop Entry: what a value is, and whether the document is legal
+
+# The git config reference, **built here and one reference rather than two**.
+#
+# This is the opposite case to the inidesktop line above, and the contrast is the
+# useful part. Desktop Entry needs two references because GKeyFile and
+# desktop-file-validate answer different halves of one question and disagree; git
+# config needs one because the same program answers both halves - it refuses a
+# file outright rather than warning about it, so "is this legal" and "what is this
+# value" have a single authority and there is no second opinion to be had.
+#
+# That is a weaker position than the Desktop Entry gate is in, and saying so is
+# the point of this paragraph. A differential against a lone reference cannot
+# distinguish "we agree" from "we are both wrong the same way", so
+# tools/oracle/ini_git_diff.py adds a third reading that does not come from git
+# at all: the generator states what each document is *meant* to be, and the
+# `intent` score checks our verdict against that. A rule both git and this
+# library got wrong would still pass `legality`; it would fail `intent`.
+#
+# **Built here rather than pulled** because the driver has to frame the batch
+# protocol. git is a Debian package, so what pins the reference is the base digest
+# plus the version the driver prints, which the gate checks against this line -
+# and the driver's own SHA-256 is compiled in, because an image carrying a driver
+# built from an older copy of driver.c would answer confidently and wrongly.
+#
+# The upstream version here, 2.47.3, is the same one this machine's own git is, so
+# the probes recorded in notes/text/INI-DIALECTS.md §A.4 and the gate's reference
+# are the same implementation. That is luck rather than design and will not
+# survive the next Debian release; the pin is what makes it checkable either way.
+gitconfig	localhost/ghoti-text-oracle-gitconfig:2.47.3	git 1:2.47.3-0+deb13u1	git config: whether the document is legal, and what every value is

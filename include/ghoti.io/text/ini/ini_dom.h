@@ -259,6 +259,90 @@ GTEXT_API const char * gtext_ini_group_value_at(const GTEXT_INI_Group * group,
  * @param len Receives the length in bytes. May be NULL.
  * @return The raw value, or NULL if absent.
  */
+/**
+ * @brief The index of the @p n-th entry carrying @p key, or `SIZE_MAX`.
+ *
+ * The primitive gtext_ini_group_get() is built on, exposed because a NULL from
+ * that function means two different things and this one separates them: an
+ * absent key returns `SIZE_MAX`, and a key present with no value returns its
+ * index, which gtext_ini_group_value_present_at() then answers `false` for.
+ *
+ * Folding is the dialect's. Under ::GTEXT_INI_Dialect::fold_case the key is
+ * matched without regard to case.
+ *
+ * @param group The group. NULL yields `SIZE_MAX`.
+ * @param key The key, NUL-terminated.
+ * @param n Which occurrence, counting from zero in document order.
+ * @return The entry index, or `SIZE_MAX` when there is no such occurrence.
+ */
+GTEXT_API size_t gtext_ini_group_find(const GTEXT_INI_Group * group,
+    const char * key, size_t n);
+
+/**
+ * @brief Whether the entry at @p index has a value at all.
+ *
+ * False for a *valueless key* - git's `k` with no `=`, which its porcelain reads
+ * as boolean true. Such an entry is present, is written back as `k` with no `=`,
+ * and gtext_ini_group_value_at() returns NULL for it.
+ *
+ * This exists because NULL cannot carry the distinction: gtext_ini_group_get()
+ * returns NULL for a key that is not there *and* for one that is there with no
+ * value, and a caller reading git config has to tell those apart - the first
+ * means "unset", the second means "true".
+ *
+ * @param group The group. NULL yields false.
+ * @param index The entry index.
+ * @return True when the entry has a value, false when it has none or the index
+ *   is out of range.
+ */
+GTEXT_API bool gtext_ini_group_value_present_at(const GTEXT_INI_Group * group,
+    size_t index);
+
+/**
+ * @brief The group's canonical name - what a lookup matches against.
+ *
+ * The same bytes as gtext_ini_group_name() for a dialect that neither folds case
+ * nor has subsections. For git it is the folded `section` or
+ * `section.subsection`, which is the name `git config --list` prints: a header
+ * spelled `[Remote "orig in"]` has the name `Remote "orig in"` and the canonical
+ * name `remote.orig in`.
+ *
+ * @param group The group. NULL yields NULL.
+ * @param len Receives the length. May be NULL.
+ * @return The canonical name, not NUL-terminated-dependent but always
+ *   NUL-terminated in practice.
+ */
+GTEXT_API const char * gtext_ini_group_canonical_name(
+    const GTEXT_INI_Group * group, size_t * len);
+
+/**
+ * @brief The entry's canonical key - what a lookup matches against.
+ *
+ * The same bytes as gtext_ini_group_key_at() for a dialect that does not fold
+ * case; the lower-cased spelling for one that does. `[a] Bare = v` under git
+ * keeps the key `Bare` on the tree, so a rewrite is byte-identical, and answers
+ * `bare` here, which is the name `git config --list` prints.
+ *
+ * @param group The group. NULL yields NULL.
+ * @param index The entry index.
+ * @param len Receives the length. May be NULL.
+ * @return The canonical key, or NULL when the index is out of range.
+ */
+GTEXT_API const char * gtext_ini_group_canonical_key_at(
+    const GTEXT_INI_Group * group, size_t index, size_t * len);
+
+/**
+ * @brief Whether this group holds entries that appeared before any header.
+ *
+ * True only under ::GTEXT_INI_Dialect::allow_preamble, for the one synthetic
+ * group such entries live in. Its name is empty and **no header is written for
+ * it**, so a rewrite does not invent a `[]` line that the document never had.
+ *
+ * @param group The group. NULL yields false.
+ * @return True for the preamble group.
+ */
+GTEXT_API bool gtext_ini_group_is_preamble(const GTEXT_INI_Group * group);
+
 GTEXT_API const char * gtext_ini_group_get(const GTEXT_INI_Group * group,
     const char * key, size_t * len);
 

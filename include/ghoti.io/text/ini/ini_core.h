@@ -207,7 +207,8 @@ GTEXT_API void gtext_ini_error_free(GTEXT_INI_Error * err);
  * refuses the document. That is deliberate: git config and systemd both need
  * every occurrence, and a tree that kept one value per key could not grow the
  * others later without changing the type a caller walks.
- * gtext_ini_group_get_all_at() reaches them under every mode.
+ * gtext_ini_group_count_key() and gtext_ini_group_get_nth() reach them under
+ * every mode, and are the spelling of `git config --get-all`.
  */
 typedef enum {
   /** Refuse the document. Desktop Entry §3.3. The default. */
@@ -218,11 +219,109 @@ typedef enum {
   GTEXT_INI_DUPKEY_LAST_WINS,
   /**
    * Every occurrence is a value of its own, and a caller is expected to read
-   * them with gtext_ini_group_get_all_at(). Lookup answers the first, so that
-   * a caller who forgets still gets document order rather than a surprise.
+   * them with gtext_ini_group_count_key() and gtext_ini_group_get_nth().
+   *
+   * **Lookup answers the last**, which is git's: measured, `git config --get
+   * a.k` on a file with `k = 1` then `k = 2` prints `2`, while `--get-all`
+   * prints both in order. An earlier draft of this comment said "the first",
+   * written before any dialect used the mode and contradicted by the only
+   * reference that has it.
+   *
+   * So this and ::GTEXT_INI_DUPKEY_LAST_WINS select the same value, and the
+   * library cannot tell them apart. The difference is a promise to the caller
+   * rather than a behaviour: under LAST_WINS the earlier occurrences have been
+   * overridden and reading them is reading dead data, and under COLLECT they
+   * are values the document meant. Nothing here enforces that, which is why it
+   * is written down.
    */
   GTEXT_INI_DUPKEY_COLLECT
 } GTEXT_INI_Dupkey_Mode;
+
+/**
+ * @enum GTEXT_INI_Name_Style
+ * @brief The grammar a dialect's group and key names follow.
+ *
+ * A single "strict or not" flag was here first and could not hold three
+ * grammars, because the two specified dialects disagree about group names and
+ * key names *independently*:
+ *
+ * | | group name | key name |
+ * |---|---|---|
+ * | Desktop Entry §3.2, §3.3 | any ASCII but `[`, `]`, control | `A-Za-z0-9-`, optional `[LOCALE]` |
+ * | git config | `A-Za-z0-9-.`, plus a quoted subsection | `A-Za-z0-9-`, **first character alphabetic** |
+ *
+ * So git is *stricter* than Desktop Entry about group names and stricter again
+ * about the first character of a key, while being the only one of the two with
+ * a subsection. Those are not points on one axis, and one bit for a family the
+ * references split several ways is a mistake this repository has made before.
+ *
+ * Every entry here was measured against the reference rather than read off the
+ * manual page - `git-config(1)` says a variable "must belong to some section",
+ * and git accepts one that does not.
+ */
+typedef enum {
+  /**
+   * Desktop Entry §3.2 and §3.3. A group name is any ASCII except `[`, `]` and
+   * a control character; a key is `A-Za-z0-9-` with an optional `[LOCALE]`
+   * postfix that ::GTEXT_INI_Dialect::locale_postfix governs.
+   */
+  GTEXT_INI_NAMES_DESKTOP_ENTRY = 0,
+  /**
+   * git config. A section name is `A-Za-z0-9-.` with no case significance; a
+   * key is `A-Za-z0-9-` and **must begin with a letter**, so `1k` and `-k` are
+   * both refused and `k-1` is not. Measured: `git config -f` exits 128 on
+   * `1k = v`, on `-k = v`, on `k_1 = v` and on `k.1 = v`, and exits 0 on
+   * `[12] k = v` - a *section* name may start with a digit even though a key
+   * may not.
+   */
+  GTEXT_INI_NAMES_GIT,
+  /**
+   * Anything that reads back as itself: a key may not contain `=` or a line
+   * terminator and a group name may not contain `[`, `]` or a control
+   * character. What ::GTEXT_INI_DIALECT_GENERIC uses.
+   */
+  GTEXT_INI_NAMES_ANY
+} GTEXT_INI_Name_Style;
+
+/**
+ * @enum GTEXT_INI_Continuation_Mode
+ * @brief Whether a logical line may span several physical lines, and how.
+ *
+ * The three dialects that have a continuation rule disagree about what the
+ * join *inserts*, which is why this is an enum and not a flag: git joins with
+ * nothing, systemd replaces the backslash with a space, and configparser joins
+ * an indented line with a newline. A parser that got this wrong would produce a
+ * value differing from the reference by exactly one character, which is the
+ * kind of difference a corpus of real files never notices.
+ *
+ * Only the modes this module implements are listed. The other two are named in
+ * @ref format_ini under what is not implemented, because a constant nothing
+ * reads is worse than an absent one.
+ */
+typedef enum {
+  /** A line is a line. Desktop Entry, EditorConfig. */
+  GTEXT_INI_CONTINUATION_NONE = 0,
+  /**
+   * A backslash immediately before the line terminator joins this line to the
+   * next **with nothing between them**, and both the backslash and the
+   * terminator are discarded.
+   *
+   * git's, and measured rather than read: `k = one\` then `two` gives
+   * `onetwo`, and `k = one \` then `two` gives `one two` - the space that
+   * survives is the one that was already in the value, not one the join added.
+   *
+   * Two further rules that come with it, both measured, and both of which a
+   * plausible implementation gets wrong:
+   *
+   *   - A continuation inside a quoted run is still a continuation:
+   *     `k = "one\` / `two"` gives `onetwo`.
+   *   - **An inline comment swallows it.** `k = v # c\` followed by `d = w`
+   *     gives `a.k = v` and `a.d = w`, not a joined line: once a comment has
+   *     started, the backslash is comment text, so the line ends at its
+   *     terminator like any other.
+   */
+  GTEXT_INI_CONTINUATION_JOIN_EMPTY
+} GTEXT_INI_Continuation_Mode;
 
 /**
  * @enum GTEXT_INI_Dialect_Id
@@ -246,7 +345,21 @@ typedef enum {
    * proviso is ::GTEXT_INI_Dialect::accept_crlf, which is the one of the seven
    * changes that alters a value rather than widening acceptance.
    */
-  GTEXT_INI_DIALECT_GENERIC
+  GTEXT_INI_DIALECT_GENERIC,
+  /**
+   * git config, as `git-config(1)` "Syntax" defines it and as git itself reads
+   * it. The version measured against is named in
+   * `tools/oracle/containers/IMAGES`.
+   *
+   * This one is **not** a relaxation of Desktop Entry in either direction, and
+   * that is the point of it being its own dialect rather than a set of flags on
+   * another: it accepts documents Desktop Entry refuses (a preamble, an inline
+   * comment, a continuation, a quoted value, a valueless key, a repeated key,
+   * a subsection) *and* refuses documents Desktop Entry accepts (a key that
+   * does not begin with a letter, a group name containing anything but
+   * `A-Za-z0-9-.`).
+   */
+  GTEXT_INI_DIALECT_GIT_CONFIG
 } GTEXT_INI_Dialect_Id;
 
 /**
@@ -306,20 +419,8 @@ typedef struct {
   /** What a second entry with an existing key in one group means. */
   GTEXT_INI_Dupkey_Mode dupkey;
 
-  /**
-   * Whether names follow Desktop Entry's spelling rules.
-   *
-   * When true, a key name is restricted to `A-Za-z0-9-` plus an optional
-   * `[LOCALE]` postfix (§3.3) and a group name to ASCII (§3.2). When false a
-   * key may be any bytes but `=` and a line terminator, and a group name any
-   * bytes but `[`, `]` and a control character.
-   *
-   * One field rather than two because no dialect here relaxes one and not the
-   * other: both restrictions are §3's, and both are what the generic dialect
-   * drops. A second field nothing sets differently would be an axis with no
-   * point of use.
-   */
-  bool strict_key_charset;
+  /** Which grammar group and key names follow. See ::GTEXT_INI_Name_Style. */
+  GTEXT_INI_Name_Style name_style;
 
   /**
    * Whether `key[LOCALE]` is recognized as a localized spelling of `key`.
@@ -378,6 +479,115 @@ typedef struct {
    * list spelling. `';'` for Desktop Entry §4.
    */
   char list_separator;
+
+  /**
+   * Whether a logical line may span several physical lines, and how.
+   *
+   * A dialect with a continuation rule changes what "the raw value" is: the
+   * stored bytes then contain the backslashes and the line terminators they
+   * span, because those bytes are in the document and @ref format_ini's
+   * byte-identical rewrite requirement does not exempt them. The join happens
+   * in ini_value.h with every other decoding step.
+   */
+  GTEXT_INI_Continuation_Mode continuation;
+
+  /**
+   * Whether `#` and `;` begin a comment **anywhere on a line**, not only at
+   * its start.
+   *
+   * git config is the one specified dialect here that has them, and they are
+   * what makes its value scan structural rather than a byte range: `k = v # c`
+   * has the value `v`, and `k = "v # c"` has the value `v # c`, so the parser
+   * cannot find where a value ends without tracking the quoting. Measured: no
+   * space is needed either side, `k = v#c` is also `v`.
+   *
+   * Which introducers count is still ::comment_hash and ::comment_semicolon, so
+   * a dialect with inline comments and only one introducer is expressible.
+   */
+  bool inline_comments;
+
+  /**
+   * Whether `"` toggles a quoted run inside a value.
+   *
+   * Quoting in git config is a **toggle, not a wrapper**, which is the rule
+   * most easily got wrong: measured, `k = x" mid "y` is `x mid y` and
+   * `k = "a"b` is `ab`, so a reader that required the value to begin and end
+   * with a quote would refuse two documents git accepts. Inside a run,
+   * whitespace and the comment introducers are ordinary bytes; a run left open
+   * at the end of a logical line is an error.
+   */
+  bool quoted_values;
+
+  /**
+   * Whether group and key names are matched without regard to case.
+   *
+   * git config folds both to lower case, and **does not fold a quoted
+   * subsection name** - so `[a "SubB"]` and `[a "subb"]` are different groups
+   * while `[Core]` and `[core]` are one. The tree keeps every name as the
+   * document spelled it and carries the folded form beside it for lookup, so a
+   * rewrite is still byte-identical.
+   */
+  bool fold_case;
+
+  /**
+   * Whether a group header may carry a subsection: `[section "sub"]`, and the
+   * deprecated `[section.sub]`.
+   *
+   * Three rules travel with it, each measured against git:
+   *
+   *   - The quoted name is **case-sensitive** and may hold any byte but a line
+   *     terminator - `]`, `[`, `#` and `;` included.
+   *   - Inside it a backslash **drops**: `\t` is the letter `t` and `\"` is a
+   *     quote. This is the same file's *second* escape layer, and the layer is
+   *     chosen by position rather than by any marker - `\t` in a value is a
+   *     tab on the very next line.
+   *   - The dotted form lower-cases the subsection, so `[a.SubB]` and
+   *     `[a "subb"]` name the same group and `[a "SubB"]` does not.
+   *
+   * The whole header must be `[name]`, `[name "sub"]` or `[name.sub]` and
+   * nothing else: `[a"b"]` with no space is refused, and so is `[a "b" ]`.
+   */
+  bool subsection_syntax;
+
+  /**
+   * Whether a key with no `=` at all is a legal entry with **no value**.
+   *
+   * git's shorthand for boolean true, and the reason the tree has to tell an
+   * absent value from an empty one: `k` and `k =` are both legal and are not
+   * the same entry. gtext_ini_group_value_present_at() is that distinction,
+   * because a NULL from gtext_ini_group_get() would otherwise mean two things.
+   *
+   * Measured: a valueless key may **not** carry a trailing comment - `k ; c`
+   * is refused, though `[a] ; c` on a header line is fine. Nothing in the
+   * manual page says so.
+   */
+  bool valueless_keys;
+
+  /**
+   * Whether a value must be well-formed UTF-8 for gtext_ini_unescape() to hand
+   * it over.
+   *
+   * True for Desktop Entry, and measured rather than assumed on both sides:
+   * `g_key_file_get_string()` refuses a value containing a bare `0xFF` that
+   * `g_key_file_load_from_data()` accepted, while `git config --get` hands the
+   * same bytes back unchanged. So this is not a question about the format's
+   * character set - both dialects *parse* such a document - but about what the
+   * reference's string accessor promises, and the two references disagree.
+   *
+   * The parser never consults it. Validating during a parse is what neither
+   * reference does, and Desktop Entry §3.1 permits any byte but LF in a comment.
+   */
+  bool utf8_values;
+
+  /**
+   * Whether what follows a group header's `]` on the same line is an entry.
+   *
+   * `git-config(1)` says "all the other lines (and the remainder of the line
+   * after the section header) are recognized as setting variables", and it
+   * means it: `[a] k = v` sets `a.k`, and `[a] junk` sets a *valueless* `junk`.
+   * A dialect without this refuses anything but whitespace after the `]`.
+   */
+  bool header_remainder_is_entry;
 } GTEXT_INI_Dialect;
 
 /**
@@ -410,6 +620,31 @@ GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void);
  * @return The dialect, by value.
  */
 GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_generic(void);
+
+/**
+ * @brief The git config dialect, as `git-config(1)` "Syntax" defines it.
+ *
+ * `#` and `;` comments **anywhere on a line**, a preamble, subsections in both
+ * spellings, case-folded section and key names with case-sensitive quoted
+ * subsections, valueless keys, repeated keys as a list, an entry after the
+ * header on the same line, backslash continuation joining with nothing, quoted
+ * runs that toggle, and the escape set `\"`, `\\`, `\n`, `\t`, `\b` and
+ * nothing else.
+ *
+ * It is not built by relaxing Desktop Entry, and could not be: it refuses
+ * documents Desktop Entry accepts as well as accepting documents Desktop Entry
+ * refuses. @ref format_ini has the table both ways round, and the differential
+ * against git itself is `make check-ini-git-oracle`.
+ *
+ * **What it deliberately does not do** is interpret a value's type. git's
+ * `--type=bool`, `--type=int` with its `k`/`m`/`g` suffixes and `--type=path`
+ * are its porcelain's rules, not its file grammar's, and a valueless key being
+ * boolean true is the one of those that reaches the grammar - which is why it
+ * is spelled as an absent value here and left for the caller to read as true.
+ *
+ * @return The dialect, by value.
+ */
+GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_git_config(void);
 
 /**
  * @struct GTEXT_INI_Parse_Options

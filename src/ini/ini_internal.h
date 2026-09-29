@@ -39,6 +39,14 @@
  * five reproduces the input exactly; an entry a caller creates gets
  * `sep = "="` and `eol = "\n"`. That is why Desktop Entry §3's preservation
  * requirement is met by construction rather than by care.
+ *
+ * **A continuation dialect does not break that.** Under
+ * ::GTEXT_INI_CONTINUATION_JOIN_EMPTY one logical line spans several physical
+ * ones, and the five pieces still tile it exactly: `value` then contains the
+ * backslashes and the line terminators it spans, and `eol` is measured from the
+ * end of the value to the end of the *logical* line. So `value` can contain an
+ * LF, which is why the writer's representability check consults the dialect
+ * rather than refusing one outright.
  */
 
 #ifndef GHOTI_IO_GTEXT_INI_INI_INTERNAL_H
@@ -57,22 +65,63 @@ typedef struct {
 /** One `key = value` line. */
 typedef struct {
   ini_str key;     ///< As the document spelled it, postfix included.
+  /**
+   * The folded form used for lookup, or absent when the dialect does not fold.
+   *
+   * Present rather than folding at lookup time because a lookup must not
+   * allocate, and absent rather than always-a-copy because a dialect with no
+   * folding would then pay for a second copy of every key. `canon.data` being
+   * NULL means "compare ::key directly", which is the only reading.
+   */
+  ini_str canon;
   ini_str value;   ///< Raw: leading run after `=` removed, nothing decoded.
   ini_str pre;     ///< Leading whitespace of the line.
   ini_str sep;     ///< From the end of the key to the start of the value.
   ini_str eol;     ///< From the end of the value to the end of the line.
   ini_str comment; ///< Comment and blank lines immediately above, verbatim.
+  /**
+   * Whether ::value is a value at all.
+   *
+   * False for a valueless key - git's `k` with no `=`, which is its shorthand
+   * for boolean true. `value` is then absent and ::sep is too. This is a field
+   * rather than `value.data == NULL` because a caller asking
+   * gtext_ini_group_get() for a missing key also gets NULL, and one sentinel
+   * meaning both would make the two indistinguishable.
+   */
+  bool has_value;
+  /**
+   * Whether ::pre, ::sep and ::eol hold the document's own bytes.
+   *
+   * True for a parsed entry and false for one a caller created, which is what
+   * decides whether a non-normalizing write reproduces the line or synthesizes
+   * one. Tested rather than inferred from `sep.data`, which is absent for a
+   * valueless key that *is* verbatim.
+   */
+  bool verbatim;
 } ini_entry;
 
 /** One `[group]` and the entries under it. */
 struct GTEXT_INI_Group {
   ini_str name;
+  ini_str canon;    ///< Folded/canonical name, or absent. See ini_entry::canon.
   ini_str comment;  ///< Comment and blank lines immediately above the header.
   ini_str hdr_pre;  ///< Leading whitespace before `[`.
   ini_str hdr_post; ///< From `]` to the end of the line, terminator included.
   ini_entry * entries;
   size_t count;
   size_t capacity;
+  /**
+   * Whether this group stands for entries that came before any header.
+   *
+   * git accepts them - measured, `k = v` in a file with no section at all is
+   * `k`, and `git-config(1)`'s claim that a variable "must belong to some
+   * section" is wrong about its own implementation. Such a group has an empty
+   * name, and the writer emits no header for it, so a rewrite does not invent
+   * one. The alternative - refusing the document - would mean this module reads
+   * fewer git config files than git does.
+   */
+  bool preamble;
+  bool verbatim;    ///< Whether ::hdr_pre and ::hdr_post are the document's.
   struct GTEXT_INI_Document * doc; ///< For the dialect. The document does not
                                   ///< move, so this stays valid when the
                                   ///< group array is reallocated.
@@ -84,6 +133,23 @@ struct GTEXT_INI_Document {
   GTEXT_INI_Group * groups;
   size_t count;
   size_t capacity;
+  /**
+   * The byte-order mark the parse skipped, or absent.
+   *
+   * Kept because ::GTEXT_INI_Dialect::skip_bom means "not part of the first
+   * line", not "throw it away": a document that opens with one and is written
+   * back without it is three bytes shorter than it was. Separate from ::leading
+   * rather than prepended to it because ::leading is comment text and is gated
+   * on GTEXT_INI_Write_Options::emit_comments, and a BOM is not a comment.
+   *
+   * Found by the git differential, not by the fuzzer, and the reason is worth
+   * keeping: fuzz_ini.cpp asserts the byte-identical rewrite under the *strict*
+   * dialect, which has skip_bom false and refuses a document beginning with one,
+   * so no input it could generate would reach this path. A property asserted
+   * under one dialect says nothing about another that relaxes the rule the
+   * property depends on.
+   */
+  ini_str bom;
   ini_str leading;  ///< Before the first group header.
   ini_str trailing; ///< After the last line that belongs to an entry.
   bool synthesized; ///< True when built by gtext_ini_new() rather than parsed.
@@ -106,6 +172,19 @@ GTEXT_INTERNAL_API void gtext_ini_set_error(GTEXT_INI_Error * err,
 GTEXT_INTERNAL_API bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     const char * name, size_t len);
 
+/**
+ * Whether @p c may appear anywhere in a key name for @p dialect.
+ *
+ * Separate from gtext_ini_key_ok() because a *scan* needs to know where a key
+ * ends and cannot ask about the whole name: git's rule that the first byte must
+ * be a letter would then stop the scan at the `1` of `ab12`, cutting the key
+ * short and reading the rest as a syntax error. gtext_ini_key_ok() is this
+ * predicate over every byte plus whatever positional rules the dialect adds, so
+ * the charset itself is written once.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect,
+    char c);
+
 /** Whether @p key is a legal key for @p dialect, postfix included. */
 GTEXT_INTERNAL_API bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect,
     const char * key, size_t len);
@@ -115,5 +194,124 @@ GTEXT_INTERNAL_API size_t gtext_ini_key_base_len(const char * key, size_t len);
 
 /** Append an entry to a group without any duplicate or charset check. */
 GTEXT_INTERNAL_API ini_entry * gtext_ini_group_push(GTEXT_INI_Group * group);
+
+/**
+ * Whether @p c is whitespace to @p dialect.
+ *
+ * **git's answer is not C's.** git carries its own ctype table in which `\v`
+ * and `\f` are control characters and not space, so `k = a\v` keeps the
+ * vertical tab as the value's last byte instead of trimming it, and a `\v`
+ * where a key should start is a syntax error rather than skipped indentation.
+ * Both measured against git 2.47.3. A parser built on `isspace()` differs from
+ * git on exactly those two bytes, which no corpus of real files would ever
+ * show, so the predicate is a function of the dialect and not of <ctype.h>.
+ *
+ * CR is space to git and not to Desktop Entry, which is what lets a CRLF file
+ * read correctly under a dialect that has no CRLF rule of its own.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_is_space(const GTEXT_INI_Dialect * dialect,
+    char c);
+
+/**
+ * The canonical, foldable form of a group name, or false when there is none.
+ *
+ * Writes into @p out, which must have room for @p len bytes. For git this
+ * lower-cases the section part and, for the deprecated dotted spelling, the
+ * subsection too - but leaves a quoted subsection alone, because git compares
+ * that case-sensitively. Used on both the storing and the querying side so that
+ * the two cannot drift apart.
+ *
+ * @param raw The bytes between `[` and `]`, as the document spelled them.
+ * @param out Receives the canonical form.
+ * @param out_len Receives its length, which is at most @p len.
+ * @return False when the name is not a legal group name for the dialect.
+ *
+ * There is deliberately **no matching function for the query side**. A query is
+ * folded in place by ini_dom.c's comparison, byte against byte, because a lookup
+ * must not allocate and the rule is not the same one: a header's dotted
+ * subsection folds and a query's does not, since a query carries no quotes and
+ * cannot say which spelling the caller meant. A `_query` variant of this function
+ * was written and then removed when nothing called it - the comparison had done
+ * the work inline all along, and a second implementation of a folding rule is
+ * exactly what drifts.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_canon_group(const GTEXT_INI_Dialect * dialect,
+    const char * raw, size_t len, char * out, size_t * out_len);
+
+/** The canonical form of a key: lower-cased when the dialect folds. */
+GTEXT_INTERNAL_API bool gtext_ini_canon_key(const GTEXT_INI_Dialect * dialect,
+    const char * raw, size_t len, char * out, size_t * out_len);
+
+/** What scanning a structured value found. See gtext_ini_scan_value(). */
+typedef struct {
+  /**
+   * Bytes from the start of the value up to and including its last content
+   * byte - what gets stored as the raw value.
+   *
+   * Trailing whitespace and an inline comment are outside it, and an escape is
+   * *inside* it even when it spells a space: measured, `k = a\t` has the value
+   * `a\t` and the tab is content, while `k = a\t ` trims only the literal
+   * space. So this cannot be computed by trimming the span from the right.
+   */
+  size_t content_len;
+  /** Bytes the logical line occupies, its final terminator excluded. */
+  size_t logical_len;
+  /** Length of the terminator that ended it: 0 at end of input, 1 or 2. */
+  size_t term_len;
+  /** A quoted run was still open when the logical line ended. */
+  bool open_quote;
+  /** A backslash named no escape sequence the dialect has. */
+  bool bad_escape;
+  /** The offset within the value at which the fault was found. */
+  size_t fault_offset;
+  /**
+   * Whether the scan ran out of input **immediately after a backslash**, so the
+   * value's last byte is one that has not yet consumed its line terminator.
+   *
+   * Deliberately narrower than "ended with a continuation", and the narrowing is
+   * the point. A value holding `a\` *and* the newline it joined over is
+   * self-contained: re-reading it performs the same join and stops at the next
+   * terminator, whatever that is. A value ending in a bare backslash is not - it
+   * will pair with whichever terminator is written after it and swallow the line
+   * beyond. Only the second is unsafe, and only when something does follow.
+   *
+   * Setting it for every continuation refused `k = false   \` followed by a
+   * comment line - a document the parse itself produces - which is how the
+   * distinction got found.
+   */
+  bool trailing_backslash;
+} ini_value_scan;
+
+/**
+ * Scan - and optionally decode - a value whose extent the syntax decides.
+ *
+ * This is the single implementation of git's value grammar, and it is one
+ * function because the parser and the value layer must agree about it exactly:
+ * the parser calls it to find where the logical line ends, and
+ * gtext_ini_unescape() calls it again over the stored bytes to produce the
+ * decoded string. Two copies of a rule this fiddly would drift, and the drift
+ * would be invisible - the document would parse and give a wrong value.
+ *
+ * Re-scanning just the stored span is sound because that span ends at a content
+ * byte, so nothing that was dropped can affect what is kept.
+ *
+ * @param dialect The rules. ::GTEXT_INI_Dialect::quoted_values,
+ *   ::GTEXT_INI_Dialect::inline_comments and
+ *   ::GTEXT_INI_Dialect::continuation all steer it.
+ * @param raw The first byte of the value.
+ * @param len Bytes available, to the end of the input.
+ * @param out Receives the decoded bytes, or NULL to measure only. Needs room
+ *   for @p len bytes: decoding only ever shrinks.
+ * @param out_len Receives the decoded length. May be NULL.
+ * @param scan Receives the measurements. May not be NULL.
+ * @return GTEXT_INI_OK, or the refusal @p scan describes.
+ */
+GTEXT_INTERNAL_API GTEXT_INI_Status gtext_ini_scan_value(
+    const GTEXT_INI_Dialect * dialect, const char * raw, size_t len,
+    char * out, size_t * out_len, ini_value_scan * scan);
+
+/** Whether @p dialect decides a value's extent by scanning its syntax. */
+GTEXT_INTERNAL_API bool gtext_ini_dialect_scans_values(
+    const GTEXT_INI_Dialect * dialect);
 
 #endif // GHOTI_IO_GTEXT_INI_INI_INTERNAL_H

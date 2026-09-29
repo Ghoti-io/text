@@ -111,6 +111,12 @@ PROBE = {
     # both packages plus the driver's own SHA-256. The driver writes it with no
     # protocol prefix and stops, the way toml-driver does.
     "inidesktop": (["ini-driver", "--version"], "glib ", None),
+    # git config's only reference is git, so the version line names the Debian
+    # package version plus the driver's own SHA-256. The prefix is `git ` because
+    # that is what pins the answers - there is no data version here, unlike the
+    # UCD pins above, since a config file's grammar is git's source and nothing
+    # else.
+    "gitconfig": (["git-config-driver", "--version"], "git ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

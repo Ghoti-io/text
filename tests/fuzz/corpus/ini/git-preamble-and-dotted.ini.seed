@@ -1,0 +1,3 @@
+k = preamble
+[a.SubB]
+x = a\tb

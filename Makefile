@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1942,6 +1942,28 @@ check-toml-1-1-oracle: ## Compare the v1.1.0 reader against toml++'s unreleased 
 check-toml-1-1-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-toml-1-1-oracle.sh
+
+check-ini-git-oracle: ## Compare the git config reader against git itself
+# git config has **one** reference, unlike Desktop Entry's two, and that is the
+# weakness this gate is built around rather than a convenience: the same program
+# decides whether a file is legal and what its values are, so a clean run cannot
+# tell "we agree" from "we are both wrong the same way". What stands in for the
+# second reference is the generator's own intent - every rule written down from
+# git-config(1) and from measurement before either program is asked - so a rule
+# both got wrong fails `intent` while passing `legality`.
+#
+# There is also no corpus to fall back on, and that is measured rather than
+# asserted. Over the 25 git config files on this machine - every `.git/config`
+# under $HOME plus /etc/gitconfig - 24 carry a quoted subsection and **zero** carry
+# any of: a dotted subsection, a continuation, a quoted value, a valueless key, an
+# inline comment, a repeated key, a `;` comment line, CRLF, a preamble entry, or a
+# non-ASCII byte. A conformance run over them would score one construct out of
+# eleven and print clean, which is the shape this repository keeps meeting.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+check-ini-git-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-git-oracle.sh
 
 check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
 # The gate the corpus cannot be. Every `.desktop` file on this machine is already

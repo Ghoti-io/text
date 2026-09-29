@@ -91,6 +91,13 @@ static char ini_escape_byte(char letter) {
     case 't': return '\t';
     case 'r': return '\r';
     case '\\': return '\\';
+    /* git's two additions. `\b` is a backspace, which no other dialect here
+     * can spell, and `\"` is the quote that would otherwise toggle a quoted
+     * run. Neither is in Desktop Entry §4, and `\r` and `\s` are not in git's
+     * set - which is why the letters a dialect allows are a field and the bytes
+     * they stand for are a shared table. */
+    case 'b': return '\b';
+    case '"': return '"';
     default: return 0;
   }
 }
@@ -118,7 +125,9 @@ static GTEXT_INI_Status ini_decode(const GTEXT_INI_Dialect * dialect,
   if (!raw && raw_len) return GTEXT_INI_E_INVALID;
   *out = NULL;
   if (out_len) *out_len = 0;
-  if (!ini_utf8_ok(raw ? raw : "", raw_len)) return GTEXT_INI_E_BAD_UNICODE;
+  if (dialect->utf8_values && !ini_utf8_ok(raw ? raw : "", raw_len)) {
+    return GTEXT_INI_E_BAD_UNICODE;
+  }
   /* The decoded form is never longer than the raw form: every escape is two
    * bytes in and one out. So one allocation, sized once, and no growth. */
   char * buf = gtext_allocator_malloc(alloc, raw_len + 1);
@@ -153,11 +162,238 @@ static GTEXT_INI_Status ini_decode(const GTEXT_INI_Dialect * dialect,
   return GTEXT_INI_OK;
 }
 
+bool gtext_ini_dialect_scans_values(const GTEXT_INI_Dialect * dialect) {
+  /*
+   * Asked as a capability rather than as `id == GTEXT_INI_DIALECT_GIT_CONFIG`,
+   * so that a caller who switches one of these fields on a dialect of their own
+   * gets the scanner rather than a value silently measured the simple way. A
+   * `== SOME_DIALECT` test in shared code is a bug waiting for the second
+   * dialect that needs the same behaviour.
+   */
+  return dialect->quoted_values || dialect->inline_comments ||
+         dialect->continuation != GTEXT_INI_CONTINUATION_NONE;
+}
+
+/** Whether @p c introduces a comment for @p dialect. */
+static bool ini_comment_intro(const GTEXT_INI_Dialect * dialect, char c) {
+  return (c == '#' && dialect->comment_hash) ||
+         (c == ';' && dialect->comment_semicolon);
+}
+
+GTEXT_INI_Status gtext_ini_scan_value(const GTEXT_INI_Dialect * dialect,
+    const char * raw, size_t len, char * out, size_t * out_len,
+    ini_value_scan * scan) {
+  if (!dialect || !scan) return GTEXT_INI_E_INVALID;
+  if (!raw && len) return GTEXT_INI_E_INVALID;
+  memset(scan, 0, sizeof(*scan));
+  if (out_len) *out_len = 0;
+
+  bool quote = false;
+  bool comment = false;
+  size_t w = 0;         /* Bytes written to `out`. */
+  size_t kept = 0;      /* `w` as of the last content byte - the decoded length. */
+  size_t content = 0;   /* Input offset just past the last content byte. */
+  size_t i = 0;
+
+  while (i < len) {
+    char c = raw[i];
+
+    /*
+     * The terminator ends the logical line. A CR is part of it only when an LF
+     * follows, which is git's get_next_char() exactly; any other CR is a byte,
+     * and a whitespace one at that.
+     */
+    bool crlf = c == '\r' && dialect->accept_crlf && i + 1 < len &&
+                raw[i + 1] == '\n';
+    if (c == '\n' || crlf) {
+      if (quote) {
+        scan->open_quote = true;
+        scan->fault_offset = i;
+        return GTEXT_INI_E_BAD_LINE;
+      }
+      scan->logical_len = i;
+      scan->term_len = crlf ? 2 : 1;
+      scan->content_len = content;
+      if (out_len) *out_len = kept;
+      return GTEXT_INI_OK;
+    }
+
+    /* Comment text runs to the terminator, and swallows everything - including
+     * a backslash that would otherwise have continued the line. */
+    if (comment) {
+      i++;
+      continue;
+    }
+
+    if (!quote && gtext_ini_is_space(dialect, c)) {
+      /*
+       * Written but not counted. A run before any content is dropped outright,
+       * and a run after the last content byte is dropped by `kept` not having
+       * advanced - which is how one pass drops both the leading and the trailing
+       * run without ever scanning backwards. An interior run survives because
+       * the next content byte advances `kept` past it.
+       */
+      if (kept) {
+        if (out) out[w] = c;
+        w++;
+      }
+      i++;
+      continue;
+    }
+
+    if (!quote && dialect->inline_comments && ini_comment_intro(dialect, c)) {
+      comment = true;
+      i++;
+      continue;
+    }
+
+    if (c == '"' && dialect->quoted_values) {
+      /*
+       * A toggle, not a wrapper: `x" mid "y` is one value of `x mid y`. The
+       * quote is content for the purpose of `content`, so that the stored span
+       * includes the closing one - a span ending just after the last *inner*
+       * byte would re-scan as an unterminated run.
+       */
+      quote = !quote;
+      content = i + 1;
+      i++;
+      continue;
+    }
+
+    if (c == '\\') {
+      if (i + 1 >= len) {
+        /*
+         * End of input right after a backslash. git reports EOF as a newline, so
+         * this is a continuation onto nothing: the backslash disappears and the
+         * value ends. Measured - `k = one\` with no terminator is `one`.
+         */
+        if (quote) {
+          scan->open_quote = true;
+          scan->fault_offset = i;
+          return GTEXT_INI_E_BAD_LINE;
+        }
+        /*
+         * End of input counts as the newline, so this is a continuation too and
+         * fixes the content boundary the same way: `k = false   \` at end of
+         * input keeps its spaces.
+         */
+        kept = w;
+        content = i + 1;
+        scan->logical_len = len;
+        scan->term_len = 0;
+        scan->content_len = content;
+        scan->trailing_backslash = true;
+        if (out_len) *out_len = kept;
+        return GTEXT_INI_OK;
+      }
+      char letter = raw[i + 1];
+      if (dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_EMPTY) {
+        size_t span = 0;
+        if (letter == '\n') {
+          span = 2;
+        }
+        else if (letter == '\r' && dialect->accept_crlf && i + 2 < len &&
+                 raw[i + 2] == '\n') {
+          span = 3;
+        }
+        if (span) {
+          /*
+           * **A continuation marks everything written so far as content**, which
+           * is measured and is not what a first reading of the rule suggests:
+           * `k = false   \` keeps its three trailing spaces, while the same value
+           * without the backslash has them trimmed. So the join is not merely
+           * "skip these bytes" - it fixes the trailing-whitespace boundary at the
+           * point it occurs.
+           *
+           * Found by the differential at 20,000 documents and not at 500, on a
+           * document carrying both a trailing-space value and a continuation. The
+           * two axes had to meet in one document for it to show.
+           */
+          kept = w;
+          content = i + span;
+          i += span;
+          continue;
+        }
+        /*
+         * A backslash before a *lone* CR is not a continuation, and is not an
+         * escape either - git has no `\r`. Measured: refused, both at end of
+         * input and with a byte following. So it falls through to the escape
+         * lookup below and is reported there, which is the right error rather
+         * than a convenient one.
+         */
+      }
+      if (!ini_escape_allowed(dialect, letter)) {
+        scan->bad_escape = true;
+        scan->fault_offset = i;
+        return GTEXT_INI_E_BAD_ESCAPE;
+      }
+      if (out) out[w] = ini_escape_byte(letter);
+      w++;
+      kept = w;
+      content = i + 2;
+      i += 2;
+      continue;
+    }
+
+    if (out) out[w] = c;
+    w++;
+    kept = w;
+    content = i + 1;
+    i++;
+  }
+
+  /* End of input behaves as a final newline, so an open run is still an error. */
+  if (quote) {
+    scan->open_quote = true;
+    scan->fault_offset = len;
+    return GTEXT_INI_E_BAD_LINE;
+  }
+  scan->logical_len = len;
+  scan->term_len = 0;
+  scan->content_len = content;
+  if (out_len) *out_len = kept;
+  return GTEXT_INI_OK;
+}
+
 GTEXT_INI_Status gtext_ini_unescape(const GTEXT_INI_Dialect * dialect,
     const char * raw, size_t raw_len, const GTEXT_Allocator * alloc,
     char ** out, size_t * out_len) {
+  if (!dialect || !out) return GTEXT_INI_E_INVALID;
+  if (!raw && raw_len) return GTEXT_INI_E_INVALID;
   if (!alloc) alloc = gtext_allocator_default();
-  return ini_decode(dialect, raw, raw_len, alloc, 0, out, out_len);
+  if (!gtext_ini_dialect_scans_values(dialect)) {
+    return ini_decode(dialect, raw, raw_len, alloc, 0, out, out_len);
+  }
+  /*
+   * A dialect whose values are scanned decodes with the same function the parser
+   * measured with, over the bytes the parser stored. Anything else would be a
+   * second implementation of the quoting, comment and continuation rules, and
+   * the two would disagree about some value without either of them crashing.
+   *
+   * **No UTF-8 validation on this path**, and that is the dialect's call rather
+   * than an oversight: ::GTEXT_INI_Dialect::utf8_values is false for git,
+   * because `git config --get` hands back a value containing a bare 0xFF
+   * unchanged. Validating here would refuse a value the reference returns.
+   */
+  *out = NULL;
+  if (out_len) *out_len = 0;
+  if (dialect->utf8_values && !ini_utf8_ok(raw ? raw : "", raw_len)) {
+    return GTEXT_INI_E_BAD_UNICODE;
+  }
+  char * buf = gtext_allocator_malloc(alloc, raw_len + 1);
+  if (!buf) return GTEXT_INI_E_OOM;
+  ini_value_scan scan;
+  size_t decoded_len = 0;
+  GTEXT_INI_Status status =
+      gtext_ini_scan_value(dialect, raw, raw_len, buf, &decoded_len, &scan);
+  if (status != GTEXT_INI_OK) {
+    gtext_allocator_free(alloc, buf);
+    return status;
+  }
+  buf[decoded_len] = '\0';
+  *out = buf;
+  if (out_len) *out_len = decoded_len;
+  return GTEXT_INI_OK;
 }
 
 GTEXT_INI_Status gtext_ini_escape(const GTEXT_INI_Dialect * dialect,

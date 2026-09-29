@@ -34,14 +34,23 @@
  * is in ini_value.c, where a caller has asked a question that depends on it.
  *
  * Line classification, in the order the tests below apply it, each rule
- * measured against `GKeyFile` rather than assumed:
+ * measured against a reference rather than assumed:
  *
- *   - empty, or nothing but spaces and tabs, is a blank line;
+ *   - empty, or nothing but the dialect's whitespace, is a blank line;
  *   - a comment introducer at the start of the content is a comment;
- *   - `[` starts a group header, which must be `[name]` followed by nothing
- *     but whitespace - `[G]   ` is a group and `[G] junk` is an error;
- *   - anything else must contain `=`, and is an entry;
+ *   - `[` starts a group header, which must be `[name]` followed by nothing but
+ *     whitespace unless ::GTEXT_INI_Dialect::header_remainder_is_entry, in
+ *     which case what follows the `]` is an entry on the same line;
+ *   - anything else is an entry;
  *   - anything else at all is GTEXT_INI_E_BAD_LINE.
+ *
+ * **A logical line is not always a physical one.** Under
+ * ::GTEXT_INI_CONTINUATION_JOIN_EMPTY a value may span several, and a value's
+ * extent is then decided by gtext_ini_scan_value() rather than by the next LF -
+ * so the loop below advances by what the scanner consumed, not by the line it
+ * started on. One scanner serves both the parse and gtext_ini_unescape(),
+ * because two implementations of git's quoting would disagree about some value
+ * while both kept working.
  */
 
 #include "ini_internal.h"
@@ -78,12 +87,23 @@ static bool ini_buf_take(const GTEXT_Allocator * alloc, ini_buf * buf,
   return true;
 }
 
-static bool ini_is_space(char c) { return c == ' ' || c == '\t'; }
+/**
+ * A space or a tab, and nothing else, whatever the dialect.
+ *
+ * Distinct from gtext_ini_is_space() on purpose, and the distinction is git's:
+ * its top-level loop skips anything its ctype calls space - CR included - while
+ * the run between a key and its `=` is matched against `' '` and `'\t'`
+ * literally. So `\rk = v` is accepted and `k\r= v` is refused, by the same
+ * implementation, on the same line. One predicate for both would have to pick
+ * one of those two answers and would get the other wrong.
+ */
+static bool ini_is_blank(char c) { return c == ' ' || c == '\t'; }
 
-/** Whether every byte of [start, end) is a space or a tab. */
-static bool ini_all_space(const char * bytes, size_t start, size_t end) {
+/** Whether every byte of [start, end) is whitespace to @p dialect. */
+static bool ini_all_space(const GTEXT_INI_Dialect * dialect, const char * bytes,
+    size_t start, size_t end) {
   for (size_t i = start; i < end; i++) {
-    if (!ini_is_space(bytes[i])) return false;
+    if (!gtext_ini_is_space(dialect, bytes[i])) return false;
   }
   return true;
 }
@@ -109,6 +129,54 @@ static bool ini_fail(ini_parse * p, GTEXT_INI_Status code,
   return false;
 }
 
+/**
+ * Store the canonical form of a name beside it, when the dialect has one.
+ *
+ * Leaves `canon` absent when the dialect does not fold or canonicalize, which is
+ * what every lookup reads as "compare the spelling directly".
+ */
+static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
+    size_t len, bool is_group) {
+  const GTEXT_INI_Dialect * d = &p->doc->dialect;
+  if (is_group ? (!d->fold_case && !d->subsection_syntax) : !d->fold_case) {
+    return true;
+  }
+  char stack[512];
+  char * buf = stack;
+  char * heap = NULL;
+  /* A canonical form is never longer than the raw one: folding is per byte and
+   * the subsection spelling only ever drops characters. */
+  if (len > sizeof(stack)) {
+    heap = gtext_allocator_malloc(p->alloc, len ? len : 1);
+    if (!heap) return false;
+    buf = heap;
+  }
+  size_t canon_len = 0;
+  bool ok = is_group ? gtext_ini_canon_group(d, raw, len, buf, &canon_len)
+                     : gtext_ini_canon_key(d, raw, len, buf, &canon_len);
+  if (ok) ok = gtext_ini_str_set(p->alloc, canon, buf, canon_len);
+  if (heap) gtext_allocator_free(p->alloc, heap);
+  return ok;
+}
+
+/** Grow doc->groups by one and return the fresh, zeroed group. */
+static GTEXT_INI_Group * ini_push_group(ini_parse * p) {
+  if (p->doc->count == p->doc->capacity) {
+    size_t want = p->doc->capacity ? p->doc->capacity * 2 : 8;
+    GTEXT_INI_Group * grown = gtext_allocator_realloc(
+        p->alloc, p->doc->groups, want * sizeof(*grown));
+    if (!grown) return NULL;
+    p->doc->groups = grown;
+    p->doc->capacity = want;
+    for (size_t g = 0; g < p->doc->count; g++) p->doc->groups[g].doc = p->doc;
+  }
+  GTEXT_INI_Group * group = &p->doc->groups[p->doc->count];
+  memset(group, 0, sizeof(*group));
+  group->doc = p->doc;
+  p->doc->count++;
+  return group;
+}
+
 /** Add a group header to the document, attaching any pending comments. */
 static bool ini_add_group(ini_parse * p, size_t name_start, size_t name_end,
     size_t pre_start, size_t pre_end, size_t post_start, size_t post_end,
@@ -117,8 +185,7 @@ static bool ini_add_group(ini_parse * p, size_t name_start, size_t name_end,
   size_t name_len = name_end - name_start;
   if (!gtext_ini_group_name_ok(&p->doc->dialect, name, name_len)) {
     return ini_fail(p, GTEXT_INI_E_BAD_GROUP,
-        "a group name may not be empty or contain '[', ']' or a control "
-        "character",
+        "a group name is empty or uses a spelling the dialect does not allow",
         name_start);
   }
   if (!p->doc->dialect.allow_duplicate_groups) {
@@ -133,19 +200,11 @@ static bool ini_add_group(ini_parse * p, size_t name_start, size_t name_end,
   if (p->opts->max_groups && p->doc->count >= p->opts->max_groups) {
     return ini_fail(p, GTEXT_INI_E_LIMIT, "too many groups", line_start);
   }
-  if (p->doc->count == p->doc->capacity) {
-    size_t want = p->doc->capacity ? p->doc->capacity * 2 : 8;
-    GTEXT_INI_Group * grown = gtext_allocator_realloc(
-        p->alloc, p->doc->groups, want * sizeof(*grown));
-    if (!grown) return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
-    p->doc->groups = grown;
-    p->doc->capacity = want;
-    for (size_t g = 0; g < p->doc->count; g++) p->doc->groups[g].doc = p->doc;
-  }
-  GTEXT_INI_Group * group = &p->doc->groups[p->doc->count];
-  memset(group, 0, sizeof(*group));
-  group->doc = p->doc;
+  GTEXT_INI_Group * group = ini_push_group(p);
+  if (!group) return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
+  group->verbatim = true;
   if (!gtext_ini_str_set(p->alloc, &group->name, name, name_len) ||
+      !ini_set_canon(p, &group->canon, name, name_len, true) ||
       !gtext_ini_str_set(p->alloc, &group->hdr_pre, p->bytes + pre_start,
           pre_end - pre_start) ||
       !gtext_ini_str_set(p->alloc, &group->hdr_post, p->bytes + post_start,
@@ -155,38 +214,65 @@ static bool ini_add_group(ini_parse * p, size_t name_start, size_t name_end,
   if (!ini_buf_take(p->alloc, &p->pending, &group->comment)) {
     return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
   }
-  p->group_index = p->doc->count;
-  p->doc->count++;
+  p->group_index = p->doc->count - 1;
   return true;
 }
 
-/** Add an entry to the current group. */
-static bool ini_add_entry(ini_parse * p, size_t line_start, size_t pre_end,
-    size_t eq, size_t value_start, size_t value_end, size_t line_end) {
+/**
+ * The group a preamble entry belongs to, created on first need.
+ *
+ * An empty name and ::GTEXT_INI_Group::preamble set, so the writer emits no
+ * header for it. The alternative - naming it, say, `""` in the tree and writing
+ * `[]` back - would put a line in the output that was not in the input.
+ */
+static GTEXT_INI_Group * ini_preamble_group(ini_parse * p, size_t line_start) {
+  GTEXT_INI_Group * group = ini_push_group(p);
+  if (!group) {
+    ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
+    return NULL;
+  }
+  group->preamble = true;
+  group->verbatim = true;
+  if (!gtext_ini_str_set(p->alloc, &group->name, "", 0)) {
+    ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
+    return NULL;
+  }
+  p->group_index = p->doc->count - 1;
+  return group;
+}
+
+/**
+ * Add an entry to the current group.
+ *
+ * @param has_value False for a valueless key, where @p value_start and
+ *   @p value_end are ignored and no `sep` is stored.
+ */
+static bool ini_add_entry(ini_parse * p, size_t line_start, size_t key_start,
+    size_t key_end, size_t value_start, size_t value_end, size_t line_end,
+    bool has_value) {
   if (p->group_index == INI_NO_GROUP) {
-    /*
-     * A preamble entry needs somewhere to live, and inventing an unnamed group
-     * would put a group in the tree the document does not have. The dialects
-     * that allow a preamble are the ones this module does not implement yet, so
-     * the honest answer is to say what is missing rather than to guess a shape
-     * for it.
-     */
-    return ini_fail(p, GTEXT_INI_E_NO_GROUP,
-        "an entry appeared before the first group header", line_start);
+    if (!p->doc->dialect.allow_preamble) {
+      /*
+       * A dialect that forbids a preamble says so here rather than inventing a
+       * group: putting an unnamed group in the tree would be a group the
+       * document does not have, and a rewrite would then emit its header.
+       */
+      return ini_fail(p, GTEXT_INI_E_NO_GROUP,
+          "an entry appeared before the first group header", line_start);
+    }
+    if (!ini_preamble_group(p, line_start)) return false;
   }
   GTEXT_INI_Group * group = &p->doc->groups[p->group_index];
-  size_t key_end = eq;
-  while (key_end > pre_end && ini_is_space(p->bytes[key_end - 1])) key_end--;
-  size_t key_len = key_end - pre_end;
-  if (!gtext_ini_key_ok(&p->doc->dialect, p->bytes + pre_end, key_len)) {
+  size_t key_len = key_end - key_start;
+  if (!gtext_ini_key_ok(&p->doc->dialect, p->bytes + key_start, key_len)) {
     return ini_fail(p, GTEXT_INI_E_BAD_KEY,
         "a key name is empty or uses a character the dialect does not allow",
-        pre_end);
+        key_start);
   }
   if (p->doc->dialect.dupkey == GTEXT_INI_DUPKEY_ERROR) {
     for (size_t e = 0; e < group->count; e++) {
       if (group->entries[e].key.len == key_len &&
-          memcmp(group->entries[e].key.data, p->bytes + pre_end, key_len) ==
+          memcmp(group->entries[e].key.data, p->bytes + key_start, key_len) ==
               0) {
         return ini_fail(p, GTEXT_INI_E_DUPKEY,
             "two keys in one group have the same name", line_start);
@@ -200,17 +286,29 @@ static bool ini_add_entry(ini_parse * p, size_t line_start, size_t pre_end,
   }
   ini_entry * entry = gtext_ini_group_push(group);
   if (!entry) return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
-  if (!gtext_ini_str_set(p->alloc, &entry->key, p->bytes + pre_end, key_len) ||
-      !gtext_ini_str_set(p->alloc, &entry->value, p->bytes + value_start,
-          value_end - value_start) ||
-      !gtext_ini_str_set(p->alloc, &entry->pre, p->bytes + line_start,
-          pre_end - line_start) ||
-      !gtext_ini_str_set(p->alloc, &entry->sep, p->bytes + key_end,
-          value_start - key_end) ||
-      !gtext_ini_str_set(p->alloc, &entry->eol, p->bytes + value_end,
-          line_end - value_end)) {
-    return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
+  entry->verbatim = true;
+  entry->has_value = has_value;
+  bool ok = gtext_ini_str_set(p->alloc, &entry->key, p->bytes + key_start,
+                key_len) &&
+            ini_set_canon(p, &entry->canon, p->bytes + key_start, key_len,
+                false) &&
+            gtext_ini_str_set(p->alloc, &entry->pre, p->bytes + line_start,
+                key_start - line_start);
+  if (ok && has_value) {
+    ok = gtext_ini_str_set(p->alloc, &entry->value, p->bytes + value_start,
+             value_end - value_start) &&
+         gtext_ini_str_set(p->alloc, &entry->sep, p->bytes + key_end,
+             value_start - key_end) &&
+         gtext_ini_str_set(p->alloc, &entry->eol, p->bytes + value_end,
+             line_end - value_end);
   }
+  else if (ok) {
+    /* No `=`, so no separator and no value: everything from the end of the key
+     * to the end of the line is the terminator run. */
+    ok = gtext_ini_str_set(p->alloc, &entry->eol, p->bytes + key_end,
+        line_end - key_end);
+  }
+  if (!ok) return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
   if (!ini_buf_take(p->alloc, &p->pending, &entry->comment)) {
     return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
   }
@@ -243,6 +341,164 @@ static bool ini_check_locale_keys(ini_parse * p) {
     }
   }
   return true;
+}
+
+/**
+ * The offset of the `]` that closes a header, or SIZE_MAX.
+ *
+ * Quote-aware when the dialect has subsections, because a `]` inside a quoted
+ * subsection name is data: measured, `[a "b]c"]` is the subsection `b]c`. A
+ * scan for the first `]` would cut that header in the wrong place and then
+ * refuse it.
+ */
+static size_t ini_find_header_close(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t start, size_t end) {
+  bool quote = false;
+  for (size_t i = start; i < end; i++) {
+    char c = bytes[i];
+    if (dialect->subsection_syntax) {
+      if (c == '"') {
+        quote = !quote;
+        continue;
+      }
+      if (quote) {
+        /* The subsection's own escape layer: a backslash hides whatever follows
+         * it, the closing quote included. */
+        if (c == '\\') i++;
+        continue;
+      }
+    }
+    if (c == ']') return i;
+  }
+  return SIZE_MAX;
+}
+
+/** Where one entry ends, and whether it parsed. */
+typedef struct {
+  size_t next_offset;
+  bool ok;
+} ini_entry_result;
+
+/**
+ * Read one entry, starting at @p key_start, and say where the logical line
+ * ended.
+ *
+ * @param line_start First byte of the line's own bytes - the start of `pre`.
+ *   Differs from @p key_start when the line began with whitespace, and when the
+ *   entry follows a group header on the same line.
+ * @param content_end End of the physical line's content, terminator excluded.
+ * @param line_end End of the physical line, terminator included.
+ */
+static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
+    size_t key_start, size_t content_end, size_t line_end) {
+  const GTEXT_INI_Dialect * d = &p->doc->dialect;
+  ini_entry_result r;
+  r.next_offset = line_end;
+  r.ok = false;
+
+  /*
+   * Where the key ends. A dialect whose keys are a closed character set ends the
+   * key at the first byte outside it, which is what lets `k` with no `=` be an
+   * entry at all; a dialect without one has to find the `=` first and then trim
+   * backwards, because its keys may contain spaces.
+   */
+  size_t key_end;
+  if (d->name_style == GTEXT_INI_NAMES_GIT) {
+    key_end = key_start;
+    while (key_end < content_end &&
+           gtext_ini_key_char_ok(d, p->bytes[key_end])) {
+      key_end++;
+    }
+    /*
+     * The charset predicate, not gtext_ini_key_ok(): asking the latter one byte
+     * at a time would apply git's "must begin with a letter" rule to every byte
+     * and stop the scan at the `1` of `ab12`. The positional rule is enforced
+     * once, by ini_add_entry(), over the whole name.
+     */
+    if (key_end == key_start) {
+      r.ok = ini_fail(p, GTEXT_INI_E_BAD_KEY,
+          "a key name is empty or uses a character the dialect does not allow",
+          key_start);
+      return r;
+    }
+  }
+  else {
+    size_t eq = key_start;
+    while (eq < content_end && p->bytes[eq] != '=') eq++;
+    if (eq >= content_end) {
+      r.ok = ini_fail(p, GTEXT_INI_E_BAD_LINE,
+          "a line is not blank, a comment, a group header or an entry",
+          line_start);
+      return r;
+    }
+    key_end = eq;
+    while (key_end > key_start && ini_is_blank(p->bytes[key_end - 1])) key_end--;
+  }
+
+  /* Only a space or a tab may sit between the key and the `=`. */
+  size_t eq = key_end;
+  while (eq < content_end && ini_is_blank(p->bytes[eq])) eq++;
+
+  if (eq >= content_end || p->bytes[eq] != '=') {
+    if (d->valueless_keys && eq >= content_end) {
+      /* A key with nothing after it. Measured: `k` alone is an entry with no
+       * value, and `k ; c` is *refused* - a trailing comment is not allowed
+       * here, which is why this tests for the end of the content rather than
+       * skipping a comment first. */
+      r.ok = ini_add_entry(p, line_start, key_start, key_end, 0, 0, line_end,
+          false);
+      return r;
+    }
+    r.ok = ini_fail(p, GTEXT_INI_E_BAD_LINE,
+        "a line is not blank, a comment, a group header or an entry",
+        line_start);
+    return r;
+  }
+
+  /* §3.3: "Space before and after the equals sign should be ignored." The
+   * leading run goes into `sep`; what happens to a trailing run is the
+   * dialect's, and for a scanning dialect the scanner decides it. */
+  size_t value_start = eq + 1;
+  while (value_start < content_end &&
+         gtext_ini_is_space(d, p->bytes[value_start])) {
+    value_start++;
+  }
+
+  if (gtext_ini_dialect_scans_values(d)) {
+    /*
+     * The scanner is given everything to the end of the input, not to the end of
+     * this physical line, because a continuation may carry the value onto the
+     * next one. What it consumed is what the logical line spans.
+     */
+    ini_value_scan scan;
+    GTEXT_INI_Status status = gtext_ini_scan_value(d, p->bytes + value_start,
+        p->len - value_start, NULL, NULL, &scan);
+    if (status != GTEXT_INI_OK) {
+      const char * message =
+          scan.open_quote ? "a quoted value is missing its closing quote"
+                          : "a backslash names no escape sequence this dialect "
+                            "has";
+      r.ok = ini_fail(p, status, message, value_start + scan.fault_offset);
+      return r;
+    }
+    size_t value_end = value_start + scan.content_len;
+    size_t logical_end = value_start + scan.logical_len + scan.term_len;
+    r.next_offset = logical_end;
+    r.ok = ini_add_entry(p, line_start, key_start, key_end, value_start,
+        value_end, logical_end, true);
+    return r;
+  }
+
+  size_t value_end = content_end;
+  if (d->trim_trailing_space) {
+    while (value_end > value_start &&
+           gtext_ini_is_space(d, p->bytes[value_end - 1])) {
+      value_end--;
+    }
+  }
+  r.ok = ini_add_entry(p, line_start, key_start, key_end, value_start,
+      value_end, line_end, true);
+  return r;
 }
 
 GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
@@ -285,6 +541,12 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
       (unsigned char) bytes[0] == 0xEF && (unsigned char) bytes[1] == 0xBB &&
       (unsigned char) bytes[2] == 0xBF) {
     offset = 3;
+    /* Skipped, not discarded - the writer puts it back. */
+    if (!gtext_ini_str_set(alloc, &doc->bom, bytes, 3)) {
+      gtext_ini_set_error(err, GTEXT_INI_E_OOM, "out of memory", bytes, len, 0);
+      gtext_ini_free(doc);
+      return NULL;
+    }
   }
 
   bool ok = true;
@@ -309,10 +571,13 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
 
     size_t pre_end = offset;
     if (effective.dialect.allow_leading_whitespace) {
-      while (pre_end < content_end && ini_is_space(bytes[pre_end])) pre_end++;
+      while (pre_end < content_end &&
+             gtext_ini_is_space(&effective.dialect, bytes[pre_end])) {
+        pre_end++;
+      }
     }
 
-    bool blank = ini_all_space(bytes, offset, content_end);
+    bool blank = ini_all_space(&effective.dialect, bytes, offset, content_end);
     bool comment = false;
     if (!blank) {
       char first = bytes[pre_end];
@@ -331,53 +596,75 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
               line_end - offset)) {
         ok = ini_fail(&p, GTEXT_INI_E_OOM, "out of memory", offset);
       }
+      offset = line_end;
+      continue;
     }
-    else if (bytes[pre_end] == '[') {
-      size_t close = pre_end + 1;
-      while (close < content_end && bytes[close] != ']') close++;
-      if (close >= content_end) {
+
+    if (bytes[pre_end] == '[') {
+      size_t close =
+          ini_find_header_close(&effective.dialect, bytes, pre_end + 1,
+              content_end);
+      if (close == SIZE_MAX) {
         ok = ini_fail(&p, GTEXT_INI_E_BAD_GROUP,
             "a group header is missing its ']'", offset);
+        offset = line_end;
+        continue;
       }
-      else if (!ini_all_space(bytes, close + 1, content_end)) {
+      /* What follows the `]`: whitespace, and then either nothing or - for a
+       * dialect that allows it - an entry on the same line. */
+      size_t rest = close + 1;
+      while (rest < content_end &&
+             gtext_ini_is_space(&effective.dialect, bytes[rest])) {
+        rest++;
+      }
+      bool remainder = rest < content_end;
+      if (remainder && effective.dialect.header_remainder_is_entry &&
+          ((bytes[rest] == '#' && effective.dialect.comment_hash) ||
+              (bytes[rest] == ';' && effective.dialect.comment_semicolon))) {
+        /*
+         * `[a] ; c` - a comment, not an entry. git accepts it, and its top-level
+         * loop is why: once the header is read it goes back to classifying, and a
+         * comment introducer is tested before a key. Treating the remainder as an
+         * entry unconditionally refused a document git reads, which is what the
+         * differential caught.
+         *
+         * The comment stays in `hdr_post`, which already spans the `]` to the end
+         * of the line, so it is preserved without a place of its own.
+         */
+        remainder = false;
+      }
+      if (remainder && !effective.dialect.header_remainder_is_entry) {
         /* `[G] junk` - GKeyFile refuses this, and so must anything claiming to
          * read the same documents. */
         ok = ini_fail(&p, GTEXT_INI_E_BAD_LINE,
             "a group header must be followed by nothing but whitespace",
             close + 1);
+        offset = line_end;
+        continue;
       }
-      else {
-        ok = ini_add_group(&p, pre_end + 1, close, offset, pre_end, close + 1,
-            line_end, offset);
+      /*
+       * With a remainder, the whitespace after the `]` belongs to the entry's
+       * `pre` rather than to the header's `hdr_post`, so that the header ends at
+       * the `]` and the pieces still tile the line exactly.
+       */
+      size_t post_end = remainder ? close + 1 : line_end;
+      ok = ini_add_group(&p, pre_end + 1, close, offset, pre_end, close + 1,
+          post_end, offset);
+      if (ok && remainder) {
+        ini_entry_result r =
+            ini_read_entry(&p, close + 1, rest, content_end, line_end);
+        ok = r.ok;
+        offset = r.next_offset;
+        continue;
       }
+      offset = line_end;
+      continue;
     }
-    else {
-      size_t eq = pre_end;
-      while (eq < content_end && bytes[eq] != '=') eq++;
-      if (eq >= content_end) {
-        ok = ini_fail(&p, GTEXT_INI_E_BAD_LINE,
-            "a line is not blank, a comment, a group header or an entry",
-            offset);
-      }
-      else {
-        size_t value_start = eq + 1;
-        /* §3.3: "Space before and after the equals sign should be ignored."
-         * The leading run goes; the trailing run is part of the value unless
-         * the dialect says otherwise, which is what `GKeyFile` does. */
-        while (value_start < content_end && ini_is_space(bytes[value_start])) {
-          value_start++;
-        }
-        size_t value_end = content_end;
-        if (effective.dialect.trim_trailing_space) {
-          while (value_end > value_start && ini_is_space(bytes[value_end - 1])) {
-            value_end--;
-          }
-        }
-        ok = ini_add_entry(&p, offset, pre_end, eq, value_start, value_end,
-            line_end);
-      }
-    }
-    offset = line_end;
+
+    ini_entry_result r =
+        ini_read_entry(&p, offset, pre_end, content_end, line_end);
+    ok = r.ok;
+    offset = r.next_offset;
   }
 
   if (ok && p.pending.len) {

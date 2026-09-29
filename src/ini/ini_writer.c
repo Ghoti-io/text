@@ -147,6 +147,61 @@ static GTEXT_INI_Status ini_put_eol(GTEXT_INI_Sink * sink,
 static bool ini_value_writable(const ini_str * value,
     const GTEXT_INI_Dialect * dialect, char next) {
   if (!value->len) return true;
+  if (gtext_ini_dialect_scans_values(dialect)) {
+    /*
+     * For a dialect whose values are scanned, the question is not which bytes
+     * are dangerous but whether re-reading these bytes gives them back. So ask
+     * the scanner, which is the same code the parse used: the value is writable
+     * exactly when the scan consumes all of it *as content*.
+     *
+     * That one test subsumes every case a hand-written list would have to
+     * enumerate, and gets right several a plausible list would miss:
+     *
+     *   - a trailing space or an inline comment introducer, which would come
+     *     back shorter, fail `content_len == len`;
+     *   - a trailing backslash, which the scanner reads as a continuation onto
+     *     nothing and so leaves outside the content, fails it too - and that is
+     *     the byte that would otherwise silently swallow the terminator written
+     *     after it;
+     *   - an unbalanced quote fails the scan outright;
+     *   - an **LF is fine** when a backslash precedes it, because that is a
+     *     continuation and reads back as the same value. A check that refused
+     *     every LF would make a document this module reads unwritable, which is
+     *     the mistake the non-scanning branch below already made once.
+     *
+     * `next` is not consulted: any byte that could combine with what follows is
+     * one the scan has already declined to count as content.
+     */
+    if (gtext_ini_is_space(dialect, value->data[0])) return false;
+    ini_value_scan scan;
+    if (gtext_ini_scan_value(dialect, value->data, value->len, NULL, NULL,
+            &scan) != GTEXT_INI_OK) {
+      return false;
+    }
+    if (scan.content_len != value->len || scan.logical_len != value->len) {
+      return false;
+    }
+    /*
+     * A value whose last byte is a bare backslash will pair with whichever
+     * terminator is written after it and swallow the line beyond, so it is
+     * writable only when nothing follows. A parse produces one only where the
+     * document itself ran out, and there `eol` is empty; a caller who sets one on
+     * a line that has a terminator is refused.
+     *
+     * A value that *contains* the newline its continuation joined over is not
+     * this case and is writable: re-reading performs the same join and stops at
+     * the next terminator.
+     */
+    /*
+     * A value whose content *ends* with the newline a continuation joined over is
+     * safe, and checking otherwise was a mistake made here once: writing it and
+     * then a terminator gives `a\<LF><LF>`, whose re-read performs the same join,
+     * stops at the second terminator, and stores the same raw bytes. It is only
+     * the **bare** trailing backslash that is unsafe, because it has not yet
+     * consumed a terminator and will take whichever one is written next.
+     */
+    return !scan.trailing_backslash || next == '\0';
+  }
   if (value->data[0] == ' ' || value->data[0] == '\t') return false;
   for (size_t i = 0; i < value->len; i++) {
     if (value->data[i] == '\n') return false;
@@ -164,6 +219,11 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
   GTEXT_INI_Write_Options effective = opts ? *opts
                                           : gtext_ini_write_options_default();
 
+  /* Before anything, and not gated on emit_comments: a BOM is not a comment, and
+   * a document that had one is not the same document without it. */
+  if (doc->bom.data) {
+    INI_TRY(ini_put(sink, doc->bom.data, doc->bom.len));
+  }
   if (effective.emit_comments && doc->leading.data) {
     INI_TRY(ini_put(sink, doc->leading.data, doc->leading.len));
   }
@@ -172,9 +232,16 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
     if (effective.emit_comments && group->comment.data) {
       INI_TRY(ini_put(sink, group->comment.data, group->comment.len));
     }
-    if (!effective.normalize && group->hdr_post.data) {
+    if (group->preamble) {
+      /* Entries that came before any header. Writing a header here - even an
+       * empty `[]` - would put a line in the output the document never had, and
+       * `[]` is not even a legal header to the one dialect that has a preamble. */
+    }
+    else if (!effective.normalize && group->verbatim && group->hdr_post.data) {
       /* The header as it was read: any leading whitespace, the brackets, and
-       * whatever followed the `]` including the terminator. */
+       * whatever followed the `]` including the terminator. The name is the
+       * document's own spelling, so a git subsection comes back as
+       * `[remote "orig in"]` rather than as its canonical `remote.orig in`. */
       INI_TRY(ini_put(sink, group->hdr_pre.data, group->hdr_pre.len));
       INI_TRY(ini_put(sink, "[", 1));
       INI_TRY(ini_put(sink, group->name.data, group->name.len));
@@ -192,29 +259,46 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
       if (effective.emit_comments && entry->comment.data) {
         INI_TRY(ini_put(sink, entry->comment.data, entry->comment.len));
       }
+      bool verbatim = !effective.normalize && entry->verbatim;
       /* What follows the value in the output decides whether a trailing CR is
        * safe, so the check has to know which branch below will run. */
       char next = '\0';
-      if (!effective.normalize && entry->sep.data) {
+      if (verbatim) {
         next = entry->eol.len ? entry->eol.data[0] : '\0';
       }
       else {
         next = effective.crlf ? '\r' : '\n';
       }
-      if (!ini_value_writable(&entry->value, &doc->dialect, next)) {
+      if (entry->has_value &&
+          !ini_value_writable(&entry->value, &doc->dialect, next)) {
         return GTEXT_INI_E_UNREPRESENTABLE;
       }
-      if (!effective.normalize && entry->sep.data) {
+      if (!entry->has_value && !doc->dialect.valueless_keys) {
+        /*
+         * Guards an invariant rather than a reachable input: `has_value` is false
+         * only for a key the parser read with no `=`, and the dialect that parsed
+         * it is the one stored on the document, so a dialect without the spelling
+         * cannot be holding one. It is here because emitting `k=` would silently
+         * change the entry from "true" to "the empty string", and because a fourth
+         * dialect could make it reachable.
+         */
+        return GTEXT_INI_E_UNREPRESENTABLE;
+      }
+      if (verbatim) {
         INI_TRY(ini_put(sink, entry->pre.data, entry->pre.len));
         INI_TRY(ini_put(sink, entry->key.data, entry->key.len));
-        INI_TRY(ini_put(sink, entry->sep.data, entry->sep.len));
-        INI_TRY(ini_put(sink, entry->value.data, entry->value.len));
+        if (entry->has_value) {
+          INI_TRY(ini_put(sink, entry->sep.data, entry->sep.len));
+          INI_TRY(ini_put(sink, entry->value.data, entry->value.len));
+        }
         INI_TRY(ini_put(sink, entry->eol.data, entry->eol.len));
       }
       else {
         INI_TRY(ini_put(sink, entry->key.data, entry->key.len));
-        INI_TRY(ini_put(sink, "=", 1));
-        INI_TRY(ini_put(sink, entry->value.data, entry->value.len));
+        if (entry->has_value) {
+          INI_TRY(ini_put(sink, "=", 1));
+          INI_TRY(ini_put(sink, entry->value.data, entry->value.len));
+        }
         INI_TRY(ini_put_eol(sink, &effective));
       }
     }

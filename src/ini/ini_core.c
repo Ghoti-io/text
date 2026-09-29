@@ -34,6 +34,17 @@
  */
 static const char ini_desktop_escapes[] = "snrt\\";
 
+/*
+ * git's escape set, from `git-config(1)`: "\n", "\t" and "\b" for the control
+ * characters, and "\\" and "\"" for themselves. "Other char escape sequences
+ * (including octal escape sequences) are invalid" - measured, `k = a\qb` and
+ * `k = a\101b` are both refused, and so is `k = a\ b`.
+ *
+ * Note what is *absent*: `\r`, which Desktop Entry has, and `\s`. git has no
+ * spelling for a carriage return in a value at all.
+ */
+static const char ini_git_escapes[] = "ntb\\\"";
+
 GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void) {
   GTEXT_INI_Dialect d;
   memset(&d, 0, sizeof(d));
@@ -44,7 +55,7 @@ GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void) {
   d.allow_preamble = false;
   d.allow_duplicate_groups = false;
   d.dupkey = GTEXT_INI_DUPKEY_ERROR;
-  d.strict_key_charset = true;
+  d.name_style = GTEXT_INI_NAMES_DESKTOP_ENTRY;
   d.locale_postfix = true;
   d.require_unlocalized_key = true;
   d.accept_crlf = false;
@@ -52,6 +63,14 @@ GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void) {
   d.skip_bom = false;
   d.escapes = ini_desktop_escapes;
   d.list_separator = ';';
+  d.utf8_values = true;
+  d.continuation = GTEXT_INI_CONTINUATION_NONE;
+  d.inline_comments = false;
+  d.quoted_values = false;
+  d.fold_case = false;
+  d.subsection_syntax = false;
+  d.valueless_keys = false;
+  d.header_remainder_is_entry = false;
   return d;
 }
 
@@ -83,11 +102,88 @@ GTEXT_INI_Dialect gtext_ini_dialect_generic(void) {
   d.allow_preamble = true;
   d.allow_duplicate_groups = true;
   d.dupkey = GTEXT_INI_DUPKEY_LAST_WINS;
-  d.strict_key_charset = false;
+  d.name_style = GTEXT_INI_NAMES_ANY;
   /* The one normalisation. See above: this changes values, not just which
    * documents are accepted. */
   d.accept_crlf = true;
   d.skip_bom = true;
+  return d;
+}
+
+GTEXT_INI_Dialect gtext_ini_dialect_git_config(void) {
+  /*
+   * Written out field by field rather than derived from another dialect, which
+   * is the opposite of gtext_ini_dialect_generic() and is deliberate.
+   *
+   * The generic dialect is Desktop Entry plus a list of changes, so deriving it
+   * means a field added later is inherited and the list stays short. git config
+   * is not a relaxation of Desktop Entry in *either* direction - it accepts a
+   * preamble, an inline comment, a continuation, a quoted value, a valueless
+   * key, a repeated key and a subsection, and it refuses a key that does not
+   * begin with a letter and a group name holding anything but `A-Za-z0-9-.`.
+   * Deriving it would hide that by making the differences look like a short
+   * list of tweaks, and would silently inherit any future Desktop Entry field
+   * whose default happens to be wrong here. A dialect that is its own grammar
+   * is spelled as its own grammar.
+   */
+  GTEXT_INI_Dialect d;
+  memset(&d, 0, sizeof(d));
+  d.id = GTEXT_INI_DIALECT_GIT_CONFIG;
+  d.comment_hash = true;
+  d.comment_semicolon = true;
+  /* Leading whitespace before a key or a header is skipped; measured, both
+   * `  [a]` and `\t k = v` are accepted. */
+  d.allow_leading_whitespace = true;
+  d.allow_preamble = true;
+  /* `[core]` twice is one section to git: `--list` prints both entries and
+   * merges them under one name. */
+  d.allow_duplicate_groups = true;
+  /* Every occurrence is a value. `--get` answers the last and `--get-all` all
+   * of them, in order. */
+  d.dupkey = GTEXT_INI_DUPKEY_COLLECT;
+  d.name_style = GTEXT_INI_NAMES_GIT;
+  /* No locale postfix: `k[de]` is not a git key at all, because `[` is not in
+   * its key charset. Leaving locale_postfix false is what makes `k[de] = v` a
+   * GTEXT_INI_E_BAD_KEY here rather than a localized spelling of `k`. */
+  d.locale_postfix = false;
+  d.require_unlocalized_key = false;
+  /*
+   * git converts CRLF to LF as it reads - its get_next_char() peeks after a CR
+   * and keeps the CR only when no LF follows. So a lone CR is data, and one
+   * before an LF is part of the terminator.
+   */
+  d.accept_crlf = true;
+  /*
+   * Trailing whitespace is dropped from a value, but not by trimming the span:
+   * git tracks the offset of the last content byte, and an escape counts as
+   * content. `k = a\t` therefore keeps the tab. The scanner is what implements
+   * that; this flag records the intent for a reader of the dialect.
+   */
+  d.trim_trailing_space = true;
+  /*
+   * Measured: a file beginning with a UTF-8 BOM parses, and the first section
+   * is found. git does not reject it and does not fold it into the name.
+   */
+  d.skip_bom = true;
+  d.escapes = ini_git_escapes;
+  /*
+   * **No list separator.** git has multi-valued keys, and they are spelled as
+   * repeated lines rather than as one delimited value - which is what
+   * GTEXT_INI_DUPKEY_COLLECT is for. Setting a separator here would invent a
+   * syntax git does not have, and gtext_ini_value_list() correctly refuses a
+   * dialect that has none.
+   */
+  d.list_separator = 0;
+  /* False: `git config --get` returns a value holding a bare 0xFF unchanged,
+   * where g_key_file_get_string() refuses one. */
+  d.utf8_values = false;
+  d.continuation = GTEXT_INI_CONTINUATION_JOIN_EMPTY;
+  d.inline_comments = true;
+  d.quoted_values = true;
+  d.fold_case = true;
+  d.subsection_syntax = true;
+  d.valueless_keys = true;
+  d.header_remainder_is_entry = true;
   return d;
 }
 
@@ -190,6 +286,99 @@ size_t gtext_ini_key_base_len(const char * key, size_t len) {
   return len;
 }
 
+bool gtext_ini_is_space(const GTEXT_INI_Dialect * dialect, char c) {
+  if (c == ' ' || c == '\t') return true;
+  /*
+   * CR is whitespace to git and data to Desktop Entry. Tying it to accept_crlf
+   * rather than to the dialect id keeps it a property a caller can set.
+   *
+   * `\v` and `\f` are deliberately absent for every dialect: git's own ctype
+   * table classes them as control characters rather than space - measured, a
+   * trailing `\v` stays in the value and a leading one is a syntax error - and
+   * Desktop Entry's grammar has no whitespace but space and tab either. No
+   * dialect here wants <ctype.h>'s answer.
+   */
+  if (c == '\r' && dialect->accept_crlf) return true;
+  return false;
+}
+
+/** Whether @p c may appear in a git section or key name: `A-Za-z0-9-`. */
+static bool ini_git_keychar(char c) {
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+         (c >= '0' && c <= '9') || c == '-';
+}
+
+static char ini_lower(char c) {
+  return (c >= 'A' && c <= 'Z') ? (char) (c - 'A' + 'a') : c;
+}
+
+bool gtext_ini_canon_group(const GTEXT_INI_Dialect * dialect, const char * raw,
+    size_t len, char * out, size_t * out_len) {
+  *out_len = 0;
+  if (!dialect->fold_case && !dialect->subsection_syntax) return false;
+  size_t w = 0;
+  size_t i = 0;
+  /* The section part: `A-Za-z0-9-` plus `.`, folded. A `.` here is the
+   * deprecated subsection spelling, whose subsection folds too, so the whole
+   * run can be folded in one pass. */
+  while (i < len && (ini_git_keychar(raw[i]) || raw[i] == '.')) {
+    out[w++] = dialect->fold_case ? ini_lower(raw[i]) : raw[i];
+    i++;
+  }
+  if (i == len) {
+    /* No quoted subsection. An empty name is refused - measured, `[]` is a
+     * syntax error to git while `[a ""]` is not. */
+    if (!w) return false;
+    *out_len = w;
+    return true;
+  }
+  if (!dialect->subsection_syntax) return false;
+  /* `[section "sub"]`: whitespace, then a quoted run, then nothing. */
+  if (!gtext_ini_is_space(dialect, raw[i])) return false;
+  while (i < len && gtext_ini_is_space(dialect, raw[i])) i++;
+  if (i >= len || raw[i] != '"') return false;
+  i++;
+  if (!w) return false;
+  out[w++] = '.';
+  bool closed = false;
+  while (i < len) {
+    char c = raw[i];
+    if (c == '"') {
+      closed = true;
+      i++;
+      break;
+    }
+    if (c == '\\') {
+      /*
+       * The second escape layer, and the one that surprises: a backslash inside
+       * a subsection name is simply dropped. Measured - `[a "x\ty"]` is the
+       * subsection `xty`, while `\t` in a value one line later is a tab.
+       */
+      i++;
+      if (i >= len) return false;
+      c = raw[i];
+    }
+    /* Case is preserved here, and that is the whole difference between the two
+     * spellings: `[a "SubB"]` is not `[a "subb"]`, but `[a.SubB]` is. */
+    out[w++] = c;
+    i++;
+  }
+  if (!closed) return false;
+  if (i != len) return false; /* `[a "b" ]` and `[a "b"x]` are refused. */
+  *out_len = w;
+  return true;
+}
+
+bool gtext_ini_canon_key(const GTEXT_INI_Dialect * dialect, const char * raw,
+    size_t len, char * out, size_t * out_len) {
+  *out_len = 0;
+  if (!dialect->fold_case) return false;
+  if (!len) return false;
+  for (size_t i = 0; i < len; i++) out[i] = ini_lower(raw[i]);
+  *out_len = len;
+  return true;
+}
+
 bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     const char * name, size_t len) {
   /*
@@ -201,6 +390,32 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
    * @ref format_ini records that this is why.
    */
   if (!len) return false;
+  if (dialect->name_style == GTEXT_INI_NAMES_GIT) {
+    /*
+     * git's section grammar, which is stricter than Desktop Entry's: only
+     * `A-Za-z0-9-.`, and then optionally whitespace and a quoted subsection.
+     * Measured - `[a_b]` and `[caf\xc3\xa9]` are both refused, `[a-b]`, `[a.b]`,
+     * `[1a]` and `[12]` are accepted. A section name, unlike a key, need not
+     * begin with a letter.
+     *
+     * The subsection's own rules are gtext_ini_canon_group()'s, and asking it is
+     * how this stays a single implementation: a name is legal exactly when it
+     * canonicalizes. A second copy of the quoting rules here is what would
+     * drift.
+     */
+    char stack[512];
+    char * buf = stack;
+    char * heap = NULL;
+    if (len > sizeof(stack)) {
+      heap = gtext_allocator_malloc(gtext_allocator_default(), len);
+      if (!heap) return false;
+      buf = heap;
+    }
+    size_t canon_len = 0;
+    bool ok = gtext_ini_canon_group(dialect, name, len, buf, &canon_len);
+    if (heap) gtext_allocator_free(gtext_allocator_default(), heap);
+    return ok;
+  }
   for (size_t i = 0; i < len; i++) {
     unsigned char c = (unsigned char) name[i];
     if (c == '[' || c == ']') return false;
@@ -208,31 +423,62 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     /* §3.2 says "all ASCII characters", so a byte above 0x7F is outside the
      * name grammar. `GKeyFile` accepts one; @ref format_ini records that as a
      * deviation, with the reproduction, rather than following it. */
-    if (dialect->strict_key_charset && c > 0x7F) return false;
+    if (dialect->name_style == GTEXT_INI_NAMES_DESKTOP_ENTRY && c > 0x7F) {
+      return false;
+    }
   }
   return true;
+}
+
+bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
+  switch (dialect->name_style) {
+    case GTEXT_INI_NAMES_GIT:
+      return ini_git_keychar(c);
+    case GTEXT_INI_NAMES_ANY:
+      /* Anything that reads back as itself: not the delimiter, not a
+       * terminator. */
+      return c != '=' && c != '\n' && c != '\r';
+    case GTEXT_INI_NAMES_DESKTOP_ENTRY:
+    default:
+      /* §3.3's `A-Za-z0-9-`. The `[LOCALE]` postfix has its own charset and is
+       * checked by gtext_ini_key_ok() rather than here, because `[` and `]` are
+       * legal in a key only in that one position. */
+      return ini_git_keychar(c);
+  }
 }
 
 bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect, const char * key,
     size_t len) {
   if (!len) return false;
-  if (!dialect->strict_key_charset) {
-    /* Still not anything at all: a key may not contain the delimiter or a line
-     * terminator, or the document would not read back as itself. */
+  if (dialect->name_style == GTEXT_INI_NAMES_GIT) {
+    /*
+     * `A-Za-z0-9-`, and the first byte must be a letter. The first-byte rule is
+     * git's and is not Desktop Entry's: measured, `1k = v` and `-k = v` are both
+     * refused where `k-1 = v` is not. It is also the one place git is stricter
+     * about keys than about sections, where `[12]` is fine.
+     */
+    char first = key[0];
+    bool alpha = (first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z');
+    if (!alpha) return false;
     for (size_t i = 0; i < len; i++) {
-      char c = key[i];
-      if (c == '=' || c == '\n' || c == '\r') return false;
+      if (!gtext_ini_key_char_ok(dialect, key[i])) return false;
     }
     return true;
   }
+  if (dialect->name_style == GTEXT_INI_NAMES_ANY) {
+    /* Still not anything at all: a key may not contain the delimiter or a line
+     * terminator, or the document would not read back as itself. */
+    for (size_t i = 0; i < len; i++) {
+      if (!gtext_ini_key_char_ok(dialect, key[i])) return false;
+    }
+    return true;
+  }
+  /* Desktop Entry §3.3 from here. */
   size_t base = dialect->locale_postfix ? gtext_ini_key_base_len(key, len)
                                         : len;
   if (!base) return false;
   for (size_t i = 0; i < base; i++) {
-    char c = key[i];
-    bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-              (c >= '0' && c <= '9') || c == '-';
-    if (!ok) return false;
+    if (!gtext_ini_key_char_ok(dialect, key[i])) return false;
   }
   if (base == len) return true;
   /* The postfix: `[` at base, `]` at the end, and a non-empty locale between

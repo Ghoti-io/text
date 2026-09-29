@@ -142,8 +142,11 @@ The six relaxations - each only *widens* what is accepted:
 
 1. `;` begins a comment as well as `#`.
 2. A comment, header or entry may be indented.
-3. Entries may appear before the first group header (still
-   ::GTEXT_INI_E_NO_GROUP today - see *Not implemented*).
+3. Entries may appear before the first group header. They live in a group with an
+   empty name for which gtext_ini_group_is_preamble() is true and **no header is
+   written**, so a rewrite does not invent a `[]` line. This was refused outright
+   until the git config dialect needed it, because git accepts one and
+   `git-config(1)` says it cannot.
 4. A duplicate group is accepted, and a lookup merges the two.
 5. A duplicate key is accepted, last one winning a lookup.
 6. A key may be any bytes but `=` and a line terminator; a group name any bytes
@@ -166,6 +169,125 @@ the parity score and counts it.
 The escape set and the list separator are deliberately untouched: a change to
 how a *value is decoded* would not be a relaxation either, and unlike CRLF there
 is no reason to want one.
+
+### git config
+
+gtext_ini_dialect_git_config() is `git-config(1)`'s "Syntax", and it is **not**
+built by relaxing Desktop Entry in either direction - which is why it is written
+out field by field rather than derived. It accepts documents Desktop Entry
+refuses *and* refuses documents Desktop Entry accepts:
+
+| | git config accepts | Desktop Entry |
+|---|---|---|
+| `;` comment | yes | ::GTEXT_INI_E_BAD_LINE |
+| Comment **anywhere on a line** | yes, `k = v # c` is `v` | no such rule |
+| Entry before any header | yes, named `k` with no prefix | ::GTEXT_INI_E_NO_GROUP |
+| Key with no `=` | yes, value **absent** | ::GTEXT_INI_E_BAD_LINE |
+| Backslash continuation | yes, joins with nothing | no such rule |
+| Quoted run in a value | yes, a **toggle** | `"` is an ordinary byte |
+| Subsection `[a "b"]` | yes, case-sensitive | `a "b"` is just a group name |
+| Repeated key | every occurrence is a value | ::GTEXT_INI_E_DUPKEY |
+| Entry after `]` on one line | yes | ::GTEXT_INI_E_BAD_LINE |
+| | **git config refuses** | **Desktop Entry accepts** |
+| Key not starting with a letter | ::GTEXT_INI_E_BAD_KEY | `1k` and `-k` are fine |
+| Key with `_` or `.` | ::GTEXT_INI_E_BAD_LINE | `_` no, `.` no - but for a different reason |
+| Group name outside `A-Za-z0-9-.` | ::GTEXT_INI_E_BAD_GROUP | any ASCII but `[`, `]`, control |
+| Non-ASCII group name | ::GTEXT_INI_E_BAD_GROUP | also refused (§3.2), but `GKeyFile` accepts |
+
+Four rules of it are worth stating on their own, because each is a place a
+plausible implementation goes wrong and none of the four is in the manual page:
+
+1. **Quoting is a toggle, not a wrapper.** `k = x" mid "y` is the single value
+   `x mid y`, and `k = "a"b` is `ab`. A reader that required the value to begin
+   and end with a quote would refuse two documents git accepts.
+2. **Trailing whitespace is dropped by tracking the last content byte, not by
+   trimming from the right.** An escape counts as content, so `k = a\t` keeps the
+   tab while `k = a ` does not keep the space. A right-to-left trim gets the first
+   of those wrong. **A continuation also fixes that boundary**, which is the rule
+   with the least support in the manual page and the one this module got wrong
+   first: `k = false   \` keeps its three trailing spaces, and the same value
+   without the backslash does not. It took a document carrying a trailing-space
+   value *and* a continuation for the differential to show it, which is why it
+   appeared at 20,000 generated documents and not at 500.
+3. **git's whitespace is not C's.** git carries its own ctype table in which
+   `\v` and `\f` are control characters rather than space, so a trailing `\v`
+   stays in the value and a leading one is a syntax error rather than skipped
+   indentation. A parser built on `isspace()` differs from git on exactly those
+   two bytes - a difference no corpus of real files would ever show.
+4. **One file, two escape layers, chosen by position.** Inside a subsection name
+   a backslash *drops*: `[a "x\ty"]` is the subsection `xty`. The same two bytes
+   in a value one line later are a tab.
+
+And two consequences reach the API rather than the grammar:
+
+- **A valueless key is not an empty value.** `k` and `k =` are both legal and are
+  different entries, so gtext_ini_group_get() returning NULL would mean two
+  things - absent, or present-with-no-value, which git's porcelain reads as
+  boolean true. gtext_ini_group_value_present_at() is the distinction, and
+  gtext_ini_group_find() is the index primitive it pairs with.
+- **A name has a spelling and a canonical form.** The tree keeps
+  `[Remote "orig in"]` as the document wrote it, so a rewrite is byte-identical,
+  and carries `remote.orig in` beside it for lookup -
+  gtext_ini_group_canonical_name() and gtext_ini_group_canonical_key_at(). The
+  section part folds and a **quoted** subsection does not, so `[a "SubB"]` is
+  reachable only as `a.SubB` and `[a.SubB]` only as `a.subb`. Measured: git
+  answers both of those and refuses the two crossed spellings.
+
+#### What the git differential measured
+
+`make check-ini-git-oracle` generates the population rather than collecting one,
+and the reason is measurable. Over the **25** git config files on this machine -
+every `.git/config` under `$HOME` plus `/etc/gitconfig` - **24** carry a quoted
+subsection and **zero** carry any of the other ten constructs above: no dotted
+subsection, no continuation, no quoted value, no valueless key, no inline comment,
+no repeated key, no `;` comment line, no CRLF, no preamble entry, no non-ASCII
+byte. A conformance run over that corpus would score one construct out of eleven
+and print clean.
+
+At 20,000 generated documents, seed 20260929, against git 1:2.47.3-0+deb13u1:
+
+| Score | | Excluded |
+|---|---:|---:|
+| `intent` - our verdict is what the generator meant | **20,000 / 20,000** | - |
+| `legality` - our accept/reject matches git | **20,000 / 20,000** | - |
+| `values` - canonical names and values match `--list` | **10,924 / 10,924** | 1,108 |
+| `lookup` - a single-value read answers the last, as `--get` does | **10,924 / 10,924** | 1,108 |
+| `rewrite` - an accepted document writes back byte for byte | **12,032 / 12,032** | - |
+
+93 of 93 axes exercised. The 1,108 exclusions are one cause under two names -
+`nul-in-value` 678 and `nul-in-subsection` 452 - because git reads a config file
+with C string functions and truncates at a NUL where this reader keeps the bytes.
+They are counted and named rather than dropped, and they stay in `legality` and
+`intent`, which both implementations do answer.
+
+**One reference, not two**, and that is this gate's weakness rather than its
+design: the same program decides whether a git config file is legal and what its
+values are, so "we agree" cannot be told from "we are both wrong the same way".
+What stands in for a second opinion is the `intent` score - every rule written
+down from `git-config(1)` and from measurement before either program is asked.
+
+Nine mutations were applied to see the gate fail, and **seven of the nine moved a
+score**: admitting `_` to the key charset (intent and legality to 492/500),
+treating `\v` and `\f` as whitespace (490/500), dropping the continuation rule
+(453/500), discarding the BOM on write (rewrite 297/318), folding a quoted
+subsection (values 272/285), removing one exclusion-table entry (values 285/305 -
+the excluded count drops, which is the control on the exclusion set itself), and
+stopping one axis in the generator (the axis check). Two did not, and both are
+recorded rather than explained away:
+
+- **Making `DUPKEY_COLLECT` answer the first occurrence changed nothing**, because
+  every score walked the tree and none called the single-value lookup. The
+  `lookup` score was added for it, and now moves to 198/285.
+- **Removing the writer's representability check changed nothing**, and cannot:
+  every value a parse stored is writable by construction, so that path is
+  reachable only from a caller setting one. It is covered by
+  `IniGit.TheWriterRefusesAValueThatWouldNotReadBackAsItself` instead, which is
+  the honest place for it.
+
+What is deliberately left out is git's *types*. `--type=bool`, `--type=int` with
+its `k`/`m`/`g` suffixes and `--type=path` are its porcelain's rules rather than
+its file grammar's, and the one of those that reaches the grammar - a valueless
+key meaning true - is spelled here as an absent value for the caller to read.
 
 ## Deviations
 
@@ -320,19 +442,23 @@ names its own failing property so a recurrence identifies itself.
 
 ## Not implemented
 
-- **The other dialects.** `systemd.syntax(7)`, `git-config(1)` and EditorConfig
-  each have a specification, a reference implementation and a corpus, and
+- **The other two dialects.** `systemd.syntax(7)` and EditorConfig each have a
+  specification, a reference implementation and a corpus, and
   `notes/text/INI-DIALECTS.md` has the axis table and the plan. What each needs
-  that this one did not: systemd's continuation rule, where a trailing backslash
-  becomes a space and an intervening comment block is skipped; git's
-  multi-valued keys and its two escape layers; EditorConfig's preamble and its
-  34-assertion conformance suite.
-- **A preamble.** GTEXT_INI_Dialect::allow_preamble exists and entries before
-  the first group are still ::GTEXT_INI_E_NO_GROUP, because a preamble entry
-  needs somewhere to live and inventing an unnamed group would put a group in
-  the tree the document does not have. EditorConfig is the dialect that needs
-  it, and it should arrive with the shape that dialect wants rather than with a
-  guess.
+  that the three implemented dialects did not: systemd's continuation rule, where
+  a trailing backslash becomes **a space** rather than nothing *and* an
+  intervening comment block is skipped, so a continuation can jump over a `#`
+  line; and EditorConfig's 34-assertion `editorconfig-core-test` suite, which its
+  specification normatively requires passing.
+
+  systemd's continuation is the one place where the machinery here does not
+  already fit: ::GTEXT_INI_Continuation_Mode has two members rather than four
+  because a constant nothing reads is worse than an absent one, and
+  `GTEXT_INI_CONTINUATION_JOIN_SPACE` should arrive with the code that implements
+  it. gtext_ini_scan_value() is where it goes.
+- **The continuation modes nothing implements.** systemd joins with a space and
+  configparser joins an indented line with a newline. Both are named here and in
+  `notes/text/INI-DIALECTS.md` and neither is in the enum, deliberately.
 - **Win32 `.ini`.** Deliberately absent, and not because its reference is out of
   reach - a `GetPrivateProfileStringA` probe under wine runs in this workspace
   today. `GetPrivateProfileString` is documented as consulting the registry's

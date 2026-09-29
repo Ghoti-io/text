@@ -40,6 +40,15 @@
  *   - **A second parse of the same bytes is the same document.** Cheap, and it
  *     catches a parser that depends on anything outside its input.
  *
+ * Every property but the first is asserted under **all three** dialects -
+ * Desktop Entry, generic and git config - because a property asserted under one
+ * says nothing about another. The byte-identical rewrite was asserted only under
+ * the strict dialect at first, and the strict dialect refuses a document
+ * beginning with a BOM, so the generic dialect's silently dropped BOM was
+ * unreachable from here and had to be found by a differential against git
+ * instead. The first property has no analogue for git: it is not a relaxation of
+ * Desktop Entry in either direction, so no subset relation holds to assert.
+ *
  * Build with: make fuzz-ini      Run: make fuzz-run-ini
  *
  * Copyright 2026 by Corey Pennycuff
@@ -164,6 +173,20 @@ void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect) {
   }
 }
 
+/**
+ * The properties that hold for any dialect over any input it accepted.
+ *
+ * Factored out because there are three dialects here now and the alternative was
+ * three copies: the strict one, the generic one, and git config. A property
+ * asserted for one dialect says nothing about another - the byte-identical
+ * rewrite was asserted only under the strict dialect for a while, which has
+ * `skip_bom` false and refuses a document beginning with a BOM, so the generic
+ * dialect's dropped BOM was unreachable from here and had to be found by a
+ * differential instead.
+ */
+void exercise(GTEXT_INI_Document * doc, const std::string & text,
+    const GTEXT_INI_Dialect & dialect, const char * who);
+
 GTEXT_INI_Document * parse(const std::string & text,
     const GTEXT_INI_Dialect & dialect) {
   GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
@@ -176,6 +199,48 @@ GTEXT_INI_Document * parse(const std::string & text,
   return doc;
 }
 
+void exercise(GTEXT_INI_Document * doc, const std::string & text,
+    const GTEXT_INI_Dialect & dialect, const char * who) {
+  /* §3's preservation requirement, and the one the tree breaks most easily. */
+  std::string again;
+  if (render(doc, nullptr, again)) {
+    if (again != text) {
+      std::fprintf(stderr, "=== dialect: %s\n", who);
+      fail("byte-identical rewrite", text);
+    }
+  }
+
+  /* A normalizing write takes a different path, and its output must parse and
+   * hold the same values. */
+  GTEXT_INI_Write_Options norm = gtext_ini_write_options_default();
+  norm.normalize = true;
+  std::string normalized;
+  if (render(doc, &norm, normalized)) {
+    GTEXT_INI_Document * c = parse(normalized, dialect);
+    if (c) {
+      if (flatten(c) != flatten(doc)) {
+        std::fprintf(stderr, "=== dialect: %s\n", who);
+        fail("a normalized write re-parses to the same values", text);
+      }
+      gtext_ini_free(c);
+    }
+  }
+
+  /* Parsing the same bytes twice must give the same document. */
+  GTEXT_INI_Document * twice = parse(text, dialect);
+  if (!twice) {
+    std::fprintf(stderr, "=== dialect: %s\n", who);
+    fail("a second parse of the same bytes refused them", text);
+  }
+  if (flatten(twice) != flatten(doc)) {
+    std::fprintf(stderr, "=== dialect: %s\n", who);
+    fail("a second parse differed", text);
+  }
+  gtext_ini_free(twice);
+
+  poke(doc, &dialect);
+}
+
 } // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
@@ -184,9 +249,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
 
   GTEXT_INI_Dialect strict = gtext_ini_dialect_desktop_entry();
   GTEXT_INI_Dialect loose = gtext_ini_dialect_generic();
+  GTEXT_INI_Dialect git = gtext_ini_dialect_git_config();
 
   GTEXT_INI_Document * a = parse(text, strict);
   GTEXT_INI_Document * b = parse(text, loose);
+  GTEXT_INI_Document * g = parse(text, git);
 
   if (a) {
     /* Acceptance is unconditional: all six relaxations only widen it. */
@@ -199,39 +266,23 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     if (text.find('\r') == std::string::npos) {
       if (flatten(a) != flatten(b)) fail("dialect parity on a CR-free input", text);
     }
-
-    /* §3's preservation requirement. */
-    std::string again;
-    if (render(a, nullptr, again)) {
-      if (again != text) fail("byte-identical rewrite", text);
-    }
-
-    /* A normalizing write takes a different path, and its output must parse and
-     * hold the same values. */
-    GTEXT_INI_Write_Options norm = gtext_ini_write_options_default();
-    norm.normalize = true;
-    std::string normalized;
-    if (render(a, &norm, normalized)) {
-      GTEXT_INI_Document * c = parse(normalized, strict);
-      if (c) {
-        if (flatten(c) != flatten(a)) {
-          fail("a normalized write re-parses to the same values", text);
-        }
-        gtext_ini_free(c);
-      }
-    }
-
-    /* Parsing the same bytes twice must give the same document. */
-    GTEXT_INI_Document * twice = parse(text, strict);
-    if (!twice) fail("a second parse of the same bytes refused them", text);
-    if (flatten(twice) != flatten(a)) fail("a second parse differed", text);
-    gtext_ini_free(twice);
-
-    poke(a, &strict);
+    exercise(a, text, strict, "desktop-entry");
   }
-  if (b) poke(b, &loose);
+  if (b) exercise(b, text, loose, "generic");
+  /*
+   * **No parity property against git**, and its absence is the finding rather
+   * than a gap. git config is not a relaxation of Desktop Entry in either
+   * direction: it accepts a preamble, a continuation and a valueless key that
+   * Desktop Entry refuses, and refuses a key not beginning with a letter and a
+   * group name outside `A-Za-z0-9-.` that Desktop Entry accepts. So neither
+   * `a implies g` nor `g implies a` holds, and asserting either would fail on the
+   * first input that exercised the difference. What does hold is everything in
+   * exercise(), which is where the value is.
+   */
+  if (g) exercise(g, text, git, "git-config");
 
   if (a) gtext_ini_free(a);
   if (b) gtext_ini_free(b);
+  if (g) gtext_ini_free(g);
   return 0;
 }

@@ -9,7 +9,8 @@ and writes one back out **byte for byte**.
 
 It is the one module here whose format is chosen by the caller rather than named
 by the module. There is no INI specification, so `GTEXT_INI_Dialect` names which
-INI, and the default is Desktop Entry 1.5 - the only INI dialect with a
+INI - three of them today: Desktop Entry, a generic derivation of it, and git
+config - and the default is Desktop Entry 1.5, the only INI dialect with a
 normative document and two independent reference implementations.
 
 ---
@@ -141,9 +142,54 @@ inherited property holds over documents containing no CR, and the gates say so.
 The escape set and the list separator are untouched: a change to how a value is
 *decoded* would not be a relaxation either.
 
-Change individual fields if you need something between the two. ::GTEXT_INI_Dialect
-is a plain struct and every field is an axis on which real specified dialects
-disagree; \ref format_ini "the format page" has the table.
+### git config
+
+```c
+opts.dialect = gtext_ini_dialect_git_config();
+```
+
+`git-config(1)`'s "Syntax", and **not** a relaxation of Desktop Entry in either
+direction - which is why it is its own constructor rather than a derivation. It
+accepts a preamble, comments anywhere on a line, a backslash continuation, quoted
+runs inside a value, subsections in both spellings, valueless keys, repeated keys
+and an entry after the `]`; and it *refuses* a key that does not begin with a
+letter and a group name outside `A-Za-z0-9-.`, both of which Desktop Entry allows.
+
+Three things a caller meets that the other two dialects do not:
+
+```c
+/* A valueless key is not an empty value. `k` and `k =` are both legal, and
+ * gtext_ini_group_get() returns NULL for both a missing key and a valueless one -
+ * so the predicate is what tells them apart. */
+size_t index = gtext_ini_group_find(group, "bare", 0);
+if (index != SIZE_MAX && !gtext_ini_group_value_present_at(group, index)) {
+  /* git's shorthand for boolean true. */
+}
+
+/* A name has a spelling and a canonical form. The tree keeps what the document
+ * wrote, so a rewrite is byte-identical; lookups use the canonical form. */
+size_t len = 0;
+const char * canonical = gtext_ini_group_canonical_name(group, &len);
+/* `[Remote "orig in"]` -> name `Remote "orig in"`, canonical `remote.orig in` */
+
+/* Repeated keys are a list. gtext_ini_group_get() answers the last, as
+ * `git config --get` does; count_key and get_nth are `--get-all`. */
+size_t n = gtext_ini_group_count_key(group, "url");
+```
+
+The **section** part of a name folds and a **quoted** subsection does not, so
+`[a "SubB"]` is reachable only as `a.SubB` and `[a.SubB]` only as `a.subb` - git's
+own rule, and measured both ways.
+
+`make check-ini-git-oracle` compares the reader against git itself over 20,000
+generated documents; \ref format_ini "the format page" has the figures and the
+mutations that were seen to move them.
+
+### Something in between
+
+Change individual fields if you need something between any two of the three.
+::GTEXT_INI_Dialect is a plain struct and every field is an axis on which real
+specified dialects disagree; \ref format_ini "the format page" has the table.
 
 ## 5. Building and writing
 
@@ -194,6 +240,8 @@ into place, so an interrupted write leaves the previous file intact.
 
 ## 6. What is not here
 
-No systemd, git-config or EditorConfig dialect; no preamble support yet; no
-streaming reader; and no Win32 dialect, which is absent by decision rather than
-by omission. \ref format_ini "The format page" says why for each.
+No systemd or EditorConfig dialect; no streaming reader; and no Win32 dialect,
+which is absent by decision rather than by omission - its answers are not a
+function of the file's bytes. \ref format_ini "The format page" says why for each,
+and names the two continuation modes that are deliberately not in the enum
+because nothing implements them yet.
