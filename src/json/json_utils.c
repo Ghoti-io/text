@@ -35,6 +35,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
@@ -314,8 +315,22 @@ int json_check_string_length_overflow(size_t len) {
  * includes the reserved words: `{true: 1}` is an object whose name is the four
  * letters. The lexer reads those words as keyword tokens, which is right
  * everywhere a value is expected and carries no text for the one place it is
- * not, so the name is recovered from the token type. -Infinity is absent
- * because it is not an identifier: a name cannot start with a minus sign.
+ * not, so the name is recovered from the token type.
+ *
+ * **The type alone is not enough to recover a spelling, and this function used
+ * to be asked to do it.** ::JSON_TOKEN_NEG_INFINITY is absent below because
+ * `-Infinity` is not an identifier - a name cannot begin with a sign - and that
+ * reasoning is right and was incomplete: `-Infinity` is the only signed
+ * nonfinite the lexer gives a type of its own. `+Infinity` is handed
+ * ::JSON_TOKEN_INFINITY and `+NaN` and `-NaN` are handed ::JSON_TOKEN_NAN, so
+ * all three arrived here wearing the bare word's type and were answered with
+ * the bare word's text. A fuzzer found `{+Infinity:5}`: accepted as an object
+ * whose name is `Infinity`, a key the document never spelled and one byte
+ * shorter than what it said.
+ *
+ * So callers in name position must use json_keyword_token_name() instead, which
+ * asks the token whether its bytes are exactly the keyword. This function
+ * remains the type-to-text table it always was, and is correct for what it does.
  */
 GTEXT_INTERNAL_API const char * json_keyword_token_spelling(int token_type) {
   switch (token_type) {
@@ -332,4 +347,29 @@ GTEXT_INTERNAL_API const char * json_keyword_token_spelling(int token_type) {
   default:
     return NULL;
   }
+}
+
+/**
+ * The name a keyword token spells, or NULL if it cannot be one.
+ *
+ * The rule an unquoted name has to satisfy is that its bytes are the identifier
+ * - so a keyword token is a name only when the span it covers is exactly the
+ * keyword. That is one comparison and it is the whole rule: a sign in front
+ * makes the span longer than the word, whatever type the lexer chose, so this
+ * refuses `+Infinity`, `+NaN` and `-NaN` for the same reason and without
+ * needing to know which of them the lexer gave a distinct type to.
+ *
+ * Fixed here rather than by giving each signed spelling its own token type.
+ * Eleven sites read ::JSON_TOKEN_INFINITY and twelve read ::JSON_TOKEN_NAN,
+ * across six files, every one of them a place where the *value* is wanted and
+ * where `+Infinity` and `Infinity` are the same number and should stay one
+ * type. Name position is the only place the spelling matters, so the check
+ * belongs in name position.
+ */
+GTEXT_INTERNAL_API const char * json_keyword_token_name(
+    const json_token * token) {
+  if (!token) return NULL;
+  const char * spelling = json_keyword_token_spelling(token->type);
+  if (!spelling) return NULL;
+  return token->length == strlen(spelling) ? spelling : NULL;
 }

@@ -84,7 +84,15 @@ void expect_both(const std::string & src,
     const GTEXT_JSON_Parse_Options * opts, bool valid) {
 	EXPECT_EQ(dom_status(src, opts) == GTEXT_JSON_OK, valid)
 	    << "DOM parser, input [" << src << "]";
-	for (size_t chunk : {src.size() ? src.size() : size_t(1), size_t(1)}) {
+	/* **Every chunk size, not the two ends.** This used to try the whole input
+	   and then one byte at a time, on the reasoning that those are the extremes.
+	   They are, and the interesting sizes are in between: the streaming reader
+	   accepted `{+Infinity:1}` at chunk 10 and above - exactly the width of
+	   `{+Infinity`, the point at which the token arrives inside one feed - and
+	   refused it below that. Sampling the ends found nothing because at the full
+	   width both readers were wrong together. Inputs here are a few dozen bytes,
+	   so sweeping is free. */
+	for (size_t chunk = 1; chunk <= (src.size() ? src.size() : 1); chunk++) {
 		EXPECT_EQ(stream_accepts(src, opts, chunk), valid)
 		    << "streaming parser, chunk " << chunk << ", input [" << src << "]";
 	}
@@ -1250,6 +1258,72 @@ TEST(Json5UnquotedKeys, BothParsersAgreeAcrossChunkBoundaries) {
 	for (const Case & c : cases) {
 		expect_both(c.src, &opts, c.valid);
 	}
+}
+
+/**
+ * A signed nonfinite is not a name, and the sign is not silently dropped.
+ *
+ * Found by the fuzz soak as `{+Infinity:5}`: **accepted, as an object whose name
+ * was `Infinity`** - a key one byte shorter than the document spelled, which is a
+ * silently wrong answer rather than a refusal. An unquoted name is an ECMAScript
+ * IdentifierName and `+` has neither ID_Start nor ID_Continue, so all four signed
+ * spellings must be refused.
+ *
+ * The cause was that the *name* was recovered from the token type, and only
+ * `-Infinity` has a type of its own: `+Infinity` is handed JSON_TOKEN_INFINITY and
+ * `+NaN` and `-NaN` are handed JSON_TOKEN_NAN, so three of the four arrived wearing
+ * the bare word's type and were answered with the bare word's text. The check that
+ * excluded `-Infinity` was written about the sign that happened to be
+ * distinguishable.
+ *
+ * The bare words stay valid - IdentifierName includes the reserved words - and are
+ * asserted here beside the signed ones, because a fix that refused both would pass
+ * a test that only listed the refusals.
+ */
+TEST(Json5UnquotedKeys, ASignedNonfiniteIsNotAName) {
+	GTEXT_JSON_Parse_Options opts = key_opts();
+	opts.allow_nonfinite_numbers = true;
+	opts.allow_leading_plus = true;
+
+	struct Case {
+		const char * src;
+		bool valid;
+	};
+	const Case cases[] = {
+	    /* The bare words are names. */
+	    {"{Infinity:1}", true},
+	    {"{NaN:1}", true},
+	    {"{Infinity:1,NaN:2}", true},
+	    /* Signed, in any spelling, is not. */
+	    {"{+Infinity:1}", false},
+	    {"{-Infinity:1}", false},
+	    {"{+NaN:1}", false},
+	    {"{-NaN:1}", false},
+	    /* Whitespace around the colon changed which branch was reached, so both. */
+	    {"{+Infinity : 1}", false},
+	    {"{ +Infinity:1}", false},
+	    {"{-NaN : 1}", false},
+	    /* A sign is not a name character in front of anything else either. */
+	    {"{+a:1}", false},
+	    {"{-a:1}", false},
+	    /* And the words are still values where a value is expected. */
+	    {"[+Infinity]", true},
+	    {"[-Infinity]", true},
+	    {"[+NaN]", true},
+	};
+	for (const Case & c : cases) {
+		expect_both(c.src, &opts, c.valid);
+	}
+
+	/* The name that comes back is the one the document spelled. A test that only
+	   checked the verdict would pass with the sign still being dropped from some
+	   other spelling that was accepted. */
+	bool ok = false;
+	std::vector<std::string> names = names_of("{Infinity:1,NaN:2}", &opts, &ok);
+	EXPECT_TRUE(ok);
+	ASSERT_EQ(names.size(), 2u);
+	EXPECT_EQ(names[0], "Infinity");
+	EXPECT_EQ(names[1], "NaN");
 }
 
 // ===========================================================================

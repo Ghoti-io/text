@@ -801,7 +801,7 @@ static GTEXT_JSON_Status json_stream_handle_token(
     const char * keyword_name = NULL;
     if (token->type != JSON_TOKEN_STRING && token->type != JSON_TOKEN_IDENT &&
         st->opts.allow_unquoted_keys) {
-      keyword_name = json_keyword_token_spelling(token->type);
+      keyword_name = json_keyword_token_name(token);
     }
     if (token->type != JSON_TOKEN_STRING && token->type != JSON_TOKEN_IDENT &&
         !keyword_name) {

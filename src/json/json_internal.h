@@ -688,6 +688,11 @@ const char * json_token_type_description(int token_type);
  */
 GTEXT_INTERNAL_API const char * json_keyword_token_spelling(int token_type);
 
+/** The name a keyword token spells, or NULL if its bytes are not exactly the
+ *  keyword - which is how a signed nonfinite is refused in name position. */
+GTEXT_INTERNAL_API const char * json_keyword_token_name(
+    const json_token * token);
+
 /**
  * @brief Get effective limit value (use default if configured is 0)
  *
