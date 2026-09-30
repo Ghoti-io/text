@@ -336,7 +336,15 @@ static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
    * key in every configparser document and found nothing in it.
    */
   bool joins = gtext_ini_names_may_continue(d);
-  if (!folds && !joins) return true;
+  /*
+   * A third reason, and ::GTEXT_INI_DIALECT_WIN32 is the only dialect with it:
+   * the group name is **trimmed inside the brackets**, so `[ b ]` and `[b]` are
+   * one section. The document's bytes stay in `name` and the trimmed spelling is
+   * the canonical one, which is the same division of labour systemd's join uses
+   * and is what keeps the header round-tripping verbatim.
+   */
+  bool trims = is_group && d->trim_group_name;
+  if (!folds && !joins && !trims) return true;
 
   char stack[512];
   char * buf = stack;
@@ -379,6 +387,20 @@ static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
     }
   }
 
+  if (trims) {
+    /* The dialect's whitespace set, not a blank-only run: measured, `[\tb\vc\f]`
+     * trims the tab and the form feed and keeps the VT that is inside the name.
+     * A name of only whitespace trims to the empty name, which is why `[ ]` and
+     * `[]` are one section here and two under configparser. */
+    while (source_len && gtext_ini_is_space(d, source[0])) {
+      source++;
+      source_len--;
+    }
+    while (source_len && gtext_ini_is_space(d, source[source_len - 1])) {
+      source_len--;
+    }
+  }
+
   bool ok = true;
   if (folds) {
     char fold_stack[512];
@@ -399,7 +421,7 @@ static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
     if (ok) ok = gtext_ini_str_set(p->alloc, canon, fold_buf, canon_len);
     if (fold_heap) gtext_allocator_free(p->alloc, fold_heap);
   }
-  else if (joined) {
+  else if (joined || trims) {
     ok = gtext_ini_str_set(p->alloc, canon, source, source_len);
   }
   if (heap) gtext_allocator_free(p->alloc, heap);
@@ -719,17 +741,34 @@ static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
     while (eq < key_limit && !gtext_ini_is_separator(d, p->bytes[eq])) eq++;
     if (eq >= key_limit) {
       /*
-       * A line with no `=` at all. **This is where
-       * ::GTEXT_INI_Dialect::valueless_keys stops being reachable** for a dialect
-       * whose keys are not a closed character set: there is no key yet to call
-       * valueless, because the key's extent is defined by the `=` that is missing.
-       * So the flag is dead for this branch, and the header says so - a mutation
+       * A line with no `=` at all, and there are two answers.
+       *
+       * For most dialects the key's extent is defined by the `=` that is missing,
+       * so there is no key yet to call valueless and the line is refused -
+       * ::GTEXT_INI_Dialect::valueless_keys is dead in this branch. A mutation
        * setting it true on the EditorConfig dialect left both of that dialect's
-       * gates green, which is how the coupling got written down.
+       * gates green, which is how that got written down.
+       *
+       * Win32 answers the other way: the whole trimmed line is the key and the
+       * entry has no value. Measured - `novalue` alone is reported by
+       * `GetPrivateProfileSectionA` and is invisible to
+       * `GetPrivateProfileStringA`, and `[a` with no `]` arrives here for the same
+       * treatment. So the flag is live for an open charset after all, and the
+       * header records that the old reasoning was about this code rather than
+       * about the format.
        */
-      r.ok = ini_fail(p, GTEXT_INI_E_BAD_LINE,
-          "a line is not blank, a comment, a group header or an entry",
-          line_start);
+      if (!d->valueless_keys) {
+        r.ok = ini_fail(p, GTEXT_INI_E_BAD_LINE,
+            "a line is not blank, a comment, a group header or an entry",
+            line_start);
+        return r;
+      }
+      size_t bare_end = key_limit;
+      while (bare_end > key_start && ini_sep_space(d, p->bytes[bare_end - 1])) {
+        bare_end--;
+      }
+      r.ok = ini_add_entry(p, line_start, key_start, bare_end, 0, 0, line_end,
+          false);
       return r;
     }
     key_end = eq;
@@ -948,16 +987,30 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
       }
     }
 
-    if (bytes[pre_end] == '[') {
-      size_t close =
-          ini_find_header_close(&effective.dialect, bytes, pre_end + 1,
-              content_end);
+    size_t close = SIZE_MAX;
+    bool is_header = bytes[pre_end] == '[';
+    if (is_header) {
+      close = ini_find_header_close(&effective.dialect, bytes, pre_end + 1,
+          content_end);
       if (close == SIZE_MAX) {
-        ok = ini_fail(&p, GTEXT_INI_E_BAD_GROUP,
-            "a group header is missing its ']'", offset);
-        offset = line_end;
-        continue;
+        /*
+         * Win32 alone: a `[` line with no `]` is not a malformed header, it is
+         * not a header. Measured - `[a` followed by `k=v` leaves `k` in the
+         * section that was already current, and `GetPrivateProfileSectionA`
+         * reports `[a` itself as one of that section's entries, so the line is
+         * kept rather than skipped. Falling through to the entry path is what
+         * produces both halves of that, because a Win32 line needs no separator.
+         */
+        if (!effective.dialect.unclosed_header_is_line) {
+          ok = ini_fail(&p, GTEXT_INI_E_BAD_GROUP,
+              "a group header is missing its ']'", offset);
+          offset = line_end;
+          continue;
+        }
+        is_header = false;
       }
+    }
+    if (is_header) {
       /* What follows the `]`: whitespace, and then either nothing or - for a
        * dialect that allows it - an entry on the same line. */
       size_t rest = close + 1;

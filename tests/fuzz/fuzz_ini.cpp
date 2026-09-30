@@ -40,9 +40,14 @@
  *   - **A second parse of the same bytes is the same document.** Cheap, and it
  *     catches a parser that depends on anything outside its input.
  *
- * Every property but the first is asserted under **all six** dialects -
- * Desktop Entry, generic, git config, EditorConfig, systemd and configparser -
- * because a property asserted under one says nothing about another. The byte-identical rewrite was
+ * Every property but the first is asserted under **all seven** dialects -
+ * Desktop Entry, generic, git config, EditorConfig, systemd, configparser and
+ * Win32 - because a property asserted under one says nothing about another.
+ * Win32 also carries one property no other dialect can: it must **never refuse an
+ * input**, because its key charset is open, its empty key and empty section name
+ * are both spellable, a line with no separator is a valueless entry and an
+ * unclosed header is an ordinary line, so no byte sequence is left to reject.
+ * The byte-identical rewrite was
  * asserted only under the strict dialect at first, and the strict dialect refuses
  * a document beginning with a BOM, so the generic dialect's silently dropped BOM
  * was unreachable from here and had to be found by a differential against git
@@ -286,6 +291,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   GTEXT_INI_Dialect ec = gtext_ini_dialect_editorconfig();
   GTEXT_INI_Dialect sd = gtext_ini_dialect_systemd();
   GTEXT_INI_Dialect cp = gtext_ini_dialect_configparser();
+  GTEXT_INI_Dialect w32 = gtext_ini_dialect_win32();
 
   GTEXT_INI_Document * a = parse(text, strict);
   GTEXT_INI_Document * b = parse(text, loose);
@@ -293,6 +299,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   GTEXT_INI_Document * e = parse(text, ec);
   GTEXT_INI_Document * s = parse(text, sd);
   GTEXT_INI_Document * c = parse(text, cp);
+  GTEXT_INI_Document * w = parse(text, w32);
 
   if (a) {
     /* Acceptance is unconditional: all six relaxations only widen it. */
@@ -347,12 +354,29 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
    * being left to the differential.
    */
   if (c) exercise(c, text, cp, "configparser");
+  /*
+   * **Win32 has the one property here that is not conditional, and it is about
+   * refusal rather than about agreement: it must parse every input.** The key
+   * charset is open, the empty key and the empty section name are both spellable,
+   * a line with no separator is a valueless entry, and an unclosed header is an
+   * ordinary line - so no byte sequence is left for this reader to reject. That is
+   * exactly the kind of claim a fuzzer is for, and it is the only dialect of the
+   * seven that can make it.
+   *
+   * No parity property against any of the other six, for a reason none of them
+   * has: `;` is a comment here and `#` is not, which is the opposite of the
+   * generic dialect on both counts. The same line is a comment to one and an entry
+   * to the other in both directions at once.
+   */
+  if (!w) fail("the Win32 dialect refused an input, and it refuses nothing", text);
+  if (w) exercise(w, text, w32, "win32");
 
   if (a) gtext_ini_free(a);
   if (b) gtext_ini_free(b);
   if (g) gtext_ini_free(g);
   if (e) gtext_ini_free(e);
   if (s) gtext_ini_free(s);
+  if (w) gtext_ini_free(w);
   if (c) gtext_ini_free(c);
   return 0;
 }

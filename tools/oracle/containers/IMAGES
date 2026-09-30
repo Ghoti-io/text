@@ -266,3 +266,41 @@ editorconfig	localhost/ghoti-text-oracle-editorconfig:0.12.11	editorconfig-core-
 # recovery. A reader whose caller cannot see a warning must not silently lose a
 # setting.
 systemd	localhost/ghoti-text-oracle-systemd:257.13	systemd 257.13-1~deb13u1	systemd unit syntax: whether a line has a grammar fault, and how a value splits into words
+
+# The Win32 profile API, and **the only reference in this file that is not the
+# thing it stands for.** wine is a reimplementation of the Windows API; no run
+# here establishes what a Microsoft kernel32 does. That limit is printed with
+# every run by tools/oracle/ini_win32_diff.py rather than living only here,
+# because a differential whose reference may not be the reference has to say so
+# where the number is read.
+#
+# Two of the dialect's rules have a second, independent source - Microsoft's
+# documentation for `GetPrivateProfileString` states quote stripping ("if the
+# string associated with lpKeyName is enclosed in single or double quotation
+# marks, the marks are discarded") and case insensitivity. The other
+# twenty-eight rest on wine alone, which is a weaker position than any other
+# INI dialect here is in, configparser included: there the reference *is* the
+# specification, which is at least the same artifact everyone else reads.
+#
+# **Two references in one image, and they disagree.** `GetPrivateProfileString`
+# and `GetPrivateProfileSection` read the same file and do not agree about a
+# `;`-led line: the enumeration API discards it, the string API retrieves it, so
+# `;disabled=1` is a comment to one and a live setting to the other. That is not
+# a curiosity, it is the most consequential rule in the format, and it is why
+# this gate scores against both entry points instead of picking one. The dialect
+# follows the enumeration API; ini_win32_diff.py asserts the disagreement with
+# the other is still there.
+#
+# **The API's answer is not a function of the file** where the registry's
+# `IniFileMapping` names the section, and no reader of the file can be. This
+# image has no such keys, so it reads the file - which is the case the dialect is
+# for, and is not every case a Windows application meets.
+#
+# Built here, so the pin is not a digest: the base is pinned by digest in
+# containers/win32/Dockerfile and wine is a Debian package, so what pins the
+# reference is that digest plus the version the driver prints, which the gate
+# checks against this line. The cross compiler is deliberately unpinned - a
+# different mingw emitting the same call does not read a file differently - and
+# the driver's own SHA-256 is compiled in, for the reason the gitconfig line
+# gives.
+win32	localhost/ghoti-text-oracle-win32:10.0	wine 10.0~repack-6	The Win32 profile API: what a lookup returns, and what an enumeration lists

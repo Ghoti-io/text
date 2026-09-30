@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2044,6 +2044,53 @@ check-ini-configparser-oracle: ## Compare the configparser reader against CPytho
 check-ini-configparser-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-configparser-oracle.sh
+
+conformance-ini-win32: ## Score the Win32 reader over this machine's .ini files
+# **Real bytes of the right shape from the wrong provenance**, and the gate prints
+# that with every run. This machine has two `.ini` files a Windows application
+# wrote, both inside a wine prefix; what it has hundreds of are freedesktop and
+# Python `.ini` and `.cfg` files. The profile API reads any of them, so they are a
+# valid population for "do we agree with the reference about real bytes" and no
+# population at all for "is this format used this way".
+#
+# Worth having anyway, and the reason is configparser's: of that dialect's three
+# defects the **corpus** found the cheapest one - a value beginning with `;`,
+# present in 331 of 479 real files and in none of the 102 probes or 88 generator
+# axes. This is the same instrument aimed at a weaker population.
+#
+# The comparison is the differential's own, with `--corpus` instead of generated
+# documents: one implementation, two populations.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+conformance-ini-win32: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/conformance/run-ini-win32.sh
+
+check-ini-win32-oracle: ## Compare the Win32 reader against wine's profile API
+# **The reference is wine, not Windows**, and the gate prints that with every run.
+# Two of this dialect's thirty rules have a second, independent source - Microsoft's
+# documentation for `GetPrivateProfileString` states quote stripping and case
+# insensitivity - and the other twenty-eight rest on one reimplementation. That is a
+# weaker position than any other INI dialect here is in, configparser included: there
+# the reference is at least the artifact everyone else reads.
+#
+# What offsets it is that the reference has **three entry points and two of them
+# disagree about the most consequential rule in the format**.
+# `GetPrivateProfileString` retrieves `;disabled=1`; `GetPrivateProfileSection` does
+# not list it. So this is a two-reference differential built from one implementation,
+# scored both ways, with the disagreement asserted by the `divergence` score rather
+# than resolved by picking a side quietly. The dialect follows the enumeration API.
+#
+# **There is no REFUSES table, because this dialect refuses nothing.** The key charset
+# is open, the empty key and empty section name are both spellable, a line with no
+# separator is a valueless entry, and an unclosed header is an ordinary line. `intent`
+# checks exactly that: a byte sequence this reader will not parse is a defect, and no
+# reference can report one.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+check-ini-win32-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-win32-oracle.sh
 
 check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
 # The gate the corpus cannot be. Every `.desktop` file on this machine is already

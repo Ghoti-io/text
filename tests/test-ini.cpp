@@ -3324,3 +3324,551 @@ TEST(IniConfigParser, TwoDivergencesAreDeliberateAndBothAreUnicode) {
   EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k\xc3\x89"}));
   gtext_ini_free(doc);
 }
+
+namespace {
+
+GTEXT_INI_Dialect w32() { return gtext_ini_dialect_win32(); }
+
+/**
+ * The canonical - trimmed and folded - name of every group.
+ *
+ * A different question from the file's earlier `canonical_names()`, which builds
+ * git's `section.key` pairs; this is the section name alone, which is what a
+ * Win32 lookup and `GetPrivateProfileSectionNames` are about.
+ */
+std::vector<std::string> group_canon(const GTEXT_INI_Document * doc) {
+  std::vector<std::string> out;
+  for (size_t g = 0; g < gtext_ini_document_group_count(doc); g++) {
+    const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
+    out.push_back(gtext_ini_group_is_preamble(group)
+                      ? std::string("<preamble>")
+                      : got(gtext_ini_group_canonical_name, group));
+  }
+  return out;
+}
+
+/** The decoded value - quotes stripped - of a raw span, under Win32. */
+std::string w32_decoded(const std::string & raw_value) {
+  GTEXT_INI_Dialect d = w32();
+  char * out = nullptr;
+  size_t len = 0;
+  if (gtext_ini_unescape(&d, raw_value.data(), raw_value.size(), nullptr, &out,
+          &len) != GTEXT_INI_OK) {
+    return "<error>";
+  }
+  std::string result = take(out, len);
+  gtext_ini_string_free(nullptr, out);
+  return result;
+}
+
+/** Parse under Win32 and return the first entry's decoded value. */
+std::string w32_first(const std::string & text) {
+  GTEXT_INI_Document * doc = ok(text, w32());
+  if (!doc) return "<refused>";
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  size_t len = 0;
+  const char * value = gtext_ini_group_value_at(group, 0, &len);
+  std::string out = w32_decoded(std::string(value ? value : "", len));
+  gtext_ini_free(doc);
+  return out;
+}
+
+} // namespace
+
+TEST(IniWin32, TheDialectIsMeasuredAndHasNoDocumentToCite) {
+  /*
+   * `GetPrivateProfileString` has two documented rules - quote stripping and case
+   * insensitivity - and this dialect has thirty. Every field below came from a
+   * probe under wine, and three of them are fields no other dialect needed.
+   */
+  GTEXT_INI_Dialect w = w32();
+  EXPECT_EQ(w.id, GTEXT_INI_DIALECT_WIN32);
+  EXPECT_EQ(w.name_style, GTEXT_INI_NAMES_WIN32);
+  EXPECT_EQ(w.space_set, GTEXT_INI_SPACE_CTYPE);
+  EXPECT_EQ(w.header_remainder, GTEXT_INI_HEADER_REMAINDER_IGNORE);
+  EXPECT_EQ(w.dupkey, GTEXT_INI_DUPKEY_FIRST_WINS);
+  EXPECT_EQ(std::string(w.separators), "=");
+  /* The four axes this dialect introduced. */
+  EXPECT_TRUE(w.allow_empty_key);
+  EXPECT_TRUE(w.trim_group_name);
+  EXPECT_TRUE(w.unclosed_header_is_line);
+  EXPECT_TRUE(w.strip_wrapping_quotes);
+  /* And the fifth: a lookup does not merge duplicate sections, which every other
+   * dialect here does because GKeyFile does. */
+  EXPECT_FALSE(w.merge_duplicate_groups);
+  /* Both names fold, which only git also does - and git folds for a different
+   * reason and with a charset. */
+  EXPECT_TRUE(w.fold_case);
+  EXPECT_TRUE(w.fold_group_case);
+  /* The lone CR is this dialect's alone among the seven. */
+  EXPECT_TRUE(w.accept_crlf);
+  EXPECT_TRUE(w.lone_cr_terminates);
+  EXPECT_TRUE(w.valueless_keys);
+  EXPECT_TRUE(w.allow_empty_group_name);
+  EXPECT_TRUE(w.allow_duplicate_groups);
+  EXPECT_TRUE(w.allow_preamble);
+  EXPECT_TRUE(w.trim_trailing_space);
+  EXPECT_TRUE(w.skip_bom);
+  /*
+   * `;` is a comment and `#` is not, which is the dialect's one divergence and is
+   * measured rather than chosen: `GetPrivateProfileSection` drops a `;` line,
+   * `GetPrivateProfileString` retrieves it, and neither drops a `#` line.
+   */
+  EXPECT_TRUE(w.comment_semicolon);
+  EXPECT_FALSE(w.comment_hash);
+  /*
+   * The three things that deriving this dialect from the generic one silently
+   * inherited and got wrong. Each is asserted because each was a defect.
+   */
+  EXPECT_EQ(w.escapes, nullptr);
+  EXPECT_FALSE(w.locale_postfix);
+  EXPECT_FALSE(w.utf8_values);
+  /* Not git's quote toggle: `strip_wrapping_quotes` above is the rule. */
+  EXPECT_FALSE(w.quoted_values);
+  EXPECT_FALSE(w.inline_comments);
+  EXPECT_EQ(w.continuation, GTEXT_INI_CONTINUATION_NONE);
+  EXPECT_EQ(w.list_separator, 0);
+  EXPECT_FALSE(w.word_split);
+  EXPECT_FALSE(w.subsection_syntax);
+}
+
+TEST(IniWin32, AHeaderClosesAtTheLastBracketAndTheRestIsDiscarded) {
+  struct Case { const char * text; const char * name; };
+  for (const Case & c : {
+           Case{"[a]\nk=v\n", "a"},
+           Case{"[a]junk\nk=v\n", "a"},
+           Case{"[a]b]\nk=v\n", "a]b"},
+           Case{"[a]]junk\nk=v\n", "a]"},
+           Case{"[a[b]\nk=v\n", "a[b"},
+           Case{"[a][b]\nk=v\n", "a][b"},
+           Case{"[a=b]\nk=v\n", "a=b"},
+           Case{"[a;b]\nk=v\n", "a;b"},
+           Case{"[a#b]\nk=v\n", "a#b"},
+           Case{"   [a]\nk=v\n", "a"},
+           Case{"[a] ; c\nk=v\n", "a"},
+       }) {
+    GTEXT_INI_Document * doc = ok(c.text, w32());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(group_canon(doc), (std::vector<std::string>{c.name}))
+        << c.text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniWin32, TheGroupNameIsTrimmedInsideTheBrackets) {
+  /*
+   * `[ b ]` and `[b]` are one section, which no other dialect here does: the
+   * three that allow a space in a name all *keep* it, and configparser's `[ b ]`
+   * is a section literally named `" b "`. The trim is the dialect's whitespace
+   * set, so a tab and a form feed go too.
+   */
+  for (const std::string & text : {std::string("[ b ]\nk=v\n"),
+           std::string("[\tb\t]\nk=v\n"), std::string("[\fb\f]\nk=v\n"),
+           std::string("[b]\nk=v\n")}) {
+    GTEXT_INI_Document * doc = ok(text, w32());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"b"})) << text;
+    /* The document's own bytes are kept, so the header writes back unchanged. */
+    EXPECT_EQ(written(doc), text) << text;
+    gtext_ini_free(doc);
+  }
+  /* A name of only whitespace trims to the empty name, so `[ ]` and `[]` are the
+   * same section - and under configparser they are two different ones. */
+  GTEXT_INI_Document * doc = ok("[ ]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{""}));
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, AnUnclosedHeaderIsAnOrdinaryLineAndNotAnError) {
+  /*
+   * Measured: `[a` with no `]` leaves the following key in whatever section was
+   * current, and `GetPrivateProfileSectionA` reports `[a` itself as one of that
+   * section's entries. So it is neither refused nor skipped - it is a valueless
+   * entry, which is why this rule travels with `valueless_keys`.
+   *
+   * Every other dialect refuses it, which is what the three specifications that
+   * discuss it say.
+   */
+  GTEXT_INI_Document * doc = ok("[a\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"<preamble>"}));
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"[a", "k"}));
+  EXPECT_EQ(written(doc), "[a\nk=v\n");
+  gtext_ini_free(doc);
+  /* And a following good header still starts a section. */
+  GTEXT_INI_Document * two = ok("[a\nk=v\n[b]\nj=w\n", w32());
+  ASSERT_NE(two, nullptr);
+  EXPECT_EQ(group_canon(two),
+      (std::vector<std::string>{"<preamble>", "b"}));
+  gtext_ini_free(two);
+  /* The generic dialect, for contrast: the same bytes are a bad group. */
+  refused("[a\nk=v\n", GTEXT_INI_E_BAD_GROUP, gtext_ini_dialect_generic());
+}
+
+TEST(IniWin32, AByteBeforeTheBracketMeansTheLineIsNotAHeader) {
+  /* The `[` has to be the first non-blank byte. `x[a]` is an ordinary line, and
+   * since it has no `=` it is a valueless entry. */
+  GTEXT_INI_Document * doc = ok("x[a]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"<preamble>"}));
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"x[a]", "k"}));
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, TheEmptyGroupNameParsesAndIsUnreachableByName) {
+  /*
+   * `[]` is a legal header. Its entries are then reachable by no name at all,
+   * because a lookup for the empty name finds the **preamble** - measured, `p=0`
+   * then `[]` then `k=v` answers `p` and not `k`. That is the duplicate-section
+   * rule reaching the preamble rather than a rule of its own, and
+   * gtext_ini_group_is_preamble() is how a caller tells the two apart.
+   */
+  GTEXT_INI_Document * doc = ok("p=0\n[]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"<preamble>", ""}));
+  EXPECT_EQ(raw(doc, "", "p"), "0");
+  EXPECT_EQ(raw(doc, "", "k"), "<absent>");
+  gtext_ini_free(doc);
+  /* EditorConfig allows `[]` too; configparser refuses it. Three answers. */
+  refused("[]\nk=v\n", GTEXT_INI_E_BAD_GROUP, cp());
+}
+
+TEST(IniWin32, TheFirstSeparatorSplitsTheLineAndTheKeyIsOpen) {
+  struct Case { const char * text; const char * key; const char * value; };
+  for (const Case & c : {
+           Case{"[a]\nk = v\n", "k", "v"},
+           Case{"[a]\nk=a=b\n", "k", "a=b"},
+           Case{"[a]\nk==v\n", "k", "=v"},
+           Case{"[a]\nk[1]=v\n", "k[1]", "v"},
+           Case{"[a]\nq;x=v\n", "q;x", "v"},
+           Case{"[a]\nq#x=v\n", "q#x", "v"},
+           Case{"[a]\n\"k\"=v\n", "\"k\"", "v"},
+           Case{"[a]\nke y=v\n", "ke y", "v"},
+           Case{"[a]\nk\t=\tv\t\n", "k", "v"},
+           Case{"[a]\nk\v=\fv\v\n", "k", "v"},
+           /* `\x1c`-`\x1f` are not whitespace here, which is what separates this
+            * set from configparser's. */
+           Case{"[a]\nk\x1c=v\n", "k\x1c", "v"},
+       }) {
+    GTEXT_INI_Document * doc = ok(c.text, w32());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{c.key})) << c.text;
+    EXPECT_EQ(raw(doc, "a", c.key), c.value) << c.text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniWin32, TheEmptyKeyIsAKeyAndIsAddressable) {
+  /*
+   * `= v` is an entry that `GetPrivateProfileStringA(sec, "", ...)` returns `v`
+   * for, so the empty key is addressable rather than merely tolerated. Every
+   * other dialect here refuses it - core-c reads it as a property named by the
+   * empty string and core-py refuses it, and the EditorConfig arm follows
+   * core-py.
+   */
+  for (const std::string & text : {std::string("[a]\n= v\n"),
+           std::string("[a]\n   = v\n")}) {
+    GTEXT_INI_Document * doc = ok(text, w32());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{""})) << text;
+    EXPECT_EQ(raw(doc, "a", ""), "v") << text;
+    gtext_ini_free(doc);
+  }
+  refused("[a]\n= v\n", GTEXT_INI_E_BAD_KEY, cp());
+}
+
+TEST(IniWin32, ALineWithNoSeparatorIsAValuelessEntry) {
+  /*
+   * Measured, and the two APIs part company here in the other direction:
+   * `GetPrivateProfileSectionA` reports `novalue` as one of the section's
+   * entries, and `GetPrivateProfileStringA` cannot retrieve it at all. The
+   * grammar keeps it, which is what lets the document write back.
+   *
+   * This is also the flag's first live use with an **open** key charset. The
+   * header for valueless_keys used to say that combination was impossible.
+   */
+  GTEXT_INI_Document * doc = ok("[a]\nnovalue   \n]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc),
+      (std::vector<std::string>{"novalue", "]", "k"}));
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  EXPECT_FALSE(gtext_ini_group_value_present_at(group, 0));
+  EXPECT_FALSE(gtext_ini_group_value_present_at(group, 1));
+  EXPECT_TRUE(gtext_ini_group_value_present_at(group, 2));
+  EXPECT_EQ(written(doc), "[a]\nnovalue   \n]\nk=v\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, OneMatchingPairOfSurroundingQuotesComesOffTheValue) {
+  /*
+   * A **wrapper**, not git's toggle, and the four rules that separate them are
+   * each measured. The last row is the discriminating one: git gives `x mid y`.
+   */
+  EXPECT_EQ(w32_first("[a]\nk=\"v\"\n"), "v");
+  EXPECT_EQ(w32_first("[a]\nk='v'\n"), "v");
+  EXPECT_EQ(w32_first("[a]\nk=\"\"x\"\"\n"), "\"x\"");
+  EXPECT_EQ(w32_first("[a]\nk=\"\"\n"), "");
+  EXPECT_EQ(w32_first("[a]\nk=''\n"), "");
+  /* Both ends must be quotes, and the same one. */
+  EXPECT_EQ(w32_first("[a]\nk=\"x\n"), "\"x");
+  EXPECT_EQ(w32_first("[a]\nk=x\"\n"), "x\"");
+  EXPECT_EQ(w32_first("[a]\nk=\"x'\n"), "\"x'");
+  EXPECT_EQ(w32_first("[a]\nk=\"\n"), "\"");
+  /* A quote in the middle is data, because neither end is one. */
+  EXPECT_EQ(w32_first("[a]\nk=x\" mid \"y\n"), "x\" mid \"y");
+  /* And a `;` after a closing quote is still data: there are no inline
+   * comments, so the value does not end at a quote either. */
+  EXPECT_EQ(w32_first("[a]\nk=\"v\" ; c\n"), "\"v\" ; c");
+  /* The strip happens after the trim, so quoting is the only way to spell a
+   * value with a blank at either end. */
+  EXPECT_EQ(w32_first("[a]\nk=\"  x  \"\n"), "  x  ");
+  EXPECT_EQ(w32_first("[a]\nk=   pad   \n"), "pad");
+  EXPECT_EQ(w32_first("[a]\nk=   \n"), "");
+}
+
+TEST(IniWin32, SemicolonIsACommentAndHashIsNot) {
+  /*
+   * **The dialect's one divergence, and it is measured on both sides.**
+   * `GetPrivateProfileSection` drops a line whose first non-blank byte is `;`;
+   * `GetPrivateProfileString` retrieves it by name. So `;disabled=1` is a comment
+   * to one entry point of the reference and a live setting to the other, and this
+   * follows the one that does not hand back a setting its author disabled.
+   *
+   * `#` is a comment to **neither**, which is the half most readers of this format
+   * get wrong in the other direction.
+   */
+  GTEXT_INI_Document * doc = ok("[a]\n;disabled=1\n   ;also=2\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k"}));
+  gtext_ini_free(doc);
+  GTEXT_INI_Document * hash = ok("[a]\n#hash=2\n# prose\nk=v\n", w32());
+  ASSERT_NE(hash, nullptr);
+  EXPECT_EQ(canonical_keys(hash),
+      (std::vector<std::string>{"#hash", "# prose", "k"}));
+  EXPECT_EQ(raw(hash, "a", "#hash"), "2");
+  gtext_ini_free(hash);
+  /* A `;` that is not leading is an ordinary key byte. */
+  GTEXT_INI_Document * mid = ok("[a]\nq;x=1\n", w32());
+  ASSERT_NE(mid, nullptr);
+  EXPECT_EQ(canonical_keys(mid), (std::vector<std::string>{"q;x"}));
+  gtext_ini_free(mid);
+}
+
+TEST(IniWin32, BothNamesFoldAndOnlyOverAscii) {
+  /*
+   * The one dialect in this module whose case rule a byte-oriented reader
+   * implements **exactly**. Measured: `[a]` and `[A]` are one section, `[\xe9]`
+   * and `[\xc9]` are two. configparser lower-cases through Python `str` and this
+   * module has to record two deviations for it; here there are none.
+   */
+  GTEXT_INI_Document * doc = ok("[MiXeD]\nKeY = v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"mixed"}));
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"key"}));
+  /* The document's spelling is kept beside the folded one. */
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"MiXeD"}));
+  EXPECT_EQ(written(doc), "[MiXeD]\nKeY = v\n");
+  gtext_ini_free(doc);
+  GTEXT_INI_Document * high = ok("[\xc3\xa9]\nk=v\n", w32());
+  ASSERT_NE(high, nullptr);
+  EXPECT_EQ(group_canon(high), (std::vector<std::string>{"\xc3\xa9"}));
+  gtext_ini_free(high);
+}
+
+TEST(IniWin32, TheFirstOfTwoDuplicatesWins) {
+  /* For keys and for sections alike, and neither is an error. */
+  GTEXT_INI_Document * doc = ok("[a]\nk=1\nK=2\nk =3\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k", "k", "k"}));
+  EXPECT_EQ(raw(doc, "a", "k"), "1");
+  gtext_ini_free(doc);
+  GTEXT_INI_Document * two = ok("[a]\nk=1\n[b]\nj=2\n[A]\nm=3\n", w32());
+  ASSERT_NE(two, nullptr);
+  EXPECT_EQ(group_canon(two), (std::vector<std::string>{"a", "b", "a"}));
+  EXPECT_EQ(raw(two, "a", "k"), "1");
+  /* The later duplicate's entries are unreachable by lookup, and still in the
+   * tree - which is exactly what `GetPrivateProfileSectionNames` shows. */
+  EXPECT_EQ(raw(two, "a", "m"), "<absent>");
+  gtext_ini_free(two);
+}
+
+TEST(IniWin32, AllThreeLineTerminatorsEndALine) {
+  /* The lone CR is this dialect's alone among the seven. */
+  for (const std::string & text : {std::string("[a]\nk=v\n"),
+           std::string("[a]\r\nk=v\r\n"), std::string("[a]\rk=v\r"),
+           std::string("[a]\nk=v"), std::string("[a]\r\nk=v\rj=w\n")}) {
+    GTEXT_INI_Document * doc = ok(text, w32());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(raw(doc, "a", "k"), "v") << text;
+    EXPECT_EQ(written(doc), text) << text;
+    gtext_ini_free(doc);
+  }
+  /* A CR inside a value ends the line there rather than being data. */
+  GTEXT_INI_Document * doc = ok("[a]\nk=a\rb\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a", "k"), "a");
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k", "b"}));
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, ThereAreNoEscapesAndNoContinuation) {
+  /* A trailing backslash is data, and the next line is its own entry. */
+  GTEXT_INI_Document * doc = ok("[a]\nk=one\\\nmore=two\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k", "more"}));
+  EXPECT_EQ(raw(doc, "a", "k"), "one\\");
+  gtext_ini_free(doc);
+  /*
+   * And the decode pass leaves a backslash alone, which is the part that
+   * deriving from the generic dialect got wrong: Desktop Entry's escape set came
+   * along and `\n` would have become a newline.
+   */
+  EXPECT_EQ(w32_first("[a]\nk=a\\nb\n"), "a\\nb");
+  EXPECT_EQ(w32_first("[a]\nk=a\\\\b\n"), "a\\\\b");
+  EXPECT_EQ(w32_first("[a]\nk=v\\\n"), "v\\");
+}
+
+TEST(IniWin32, HighBytesPassThroughEveryPosition) {
+  /*
+   * There are no encoding rules: the ANSI API is byte-oriented and validates
+   * nothing. Inheriting the generic dialect's `utf8_values` would have refused
+   * every `.ini` written in a code page, which is most of the older ones - and a
+   * lone 0xE9 is not valid UTF-8, so this is the assertion that catches it.
+   */
+  const std::string text = "[\xe9]\nk\xe9=v\xe9\n";
+  GTEXT_INI_Document * doc = ok(text, w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"\xe9"}));
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k\xe9"}));
+  EXPECT_EQ(raw(doc, "\xe9", "k\xe9"), "v\xe9");
+  EXPECT_EQ(written(doc), text);
+  gtext_ini_free(doc);
+  /*
+   * **The contrast is in the decode, not the parse**, and getting that wrong is
+   * what made this test fail first: ::GTEXT_INI_Dialect::utf8_values is read by
+   * gtext_ini_unescape() and never by the parser, so the generic dialect *parses*
+   * a latin-1 value happily and refuses it only when asked what it means.
+   */
+  EXPECT_EQ(w32_decoded("v\xe9"), "v\xe9");
+  GTEXT_INI_Dialect g = gtext_ini_dialect_generic();
+  char * out = nullptr;
+  size_t olen = 0;
+  EXPECT_EQ(gtext_ini_unescape(&g, "v\xe9", 2, nullptr, &out, &olen),
+      GTEXT_INI_E_BAD_UNICODE);
+  gtext_ini_string_free(nullptr, out);
+}
+
+TEST(IniWin32, EntriesBeforeAnyHeaderGoToThePreamble) {
+  GTEXT_INI_Document * doc = ok("p=0\nq=1\n[a]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"<preamble>", "a"}));
+  EXPECT_EQ(raw(doc, "", "p"), "0");
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, ThisDialectRefusesNothing) {
+  /*
+   * **A property, not an observation.** The key charset is open, the empty key
+   * and the empty section name are both spellable, a line with no separator is a
+   * valueless entry, and an unclosed header is an ordinary line - so there is no
+   * byte sequence left for this reader to reject. The reference cannot report an
+   * error either: the profile API has no way to say a file is malformed.
+   *
+   * The differential's `intent` score is this same assertion over 83 documents,
+   * and it is what caught two defects - a group name outside git's charset and an
+   * empty key both failed canonicalization, and a canonicalization failure is
+   * reported as ::GTEXT_INI_E_OOM two frames up.
+   */
+  for (const std::string & text : {
+           std::string(""), std::string("\n\n   \n"), std::string("["),
+           std::string("]"), std::string("="), std::string("[]"),
+           std::string("[[[["), std::string("]]]]"),
+           std::string("\xff\xfe\x00\x01", 4), std::string("=\n=\n=\n"),
+           std::string("[a]\n\x00\n", 7), std::string("\r\r\r"),
+           std::string("; \n# \n[ \n] \n"),
+       }) {
+    GTEXT_INI_Error err;
+    std::memset(&err, 0, sizeof(err));
+    GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+    opts.dialect = w32();
+    GTEXT_INI_Document * doc =
+        gtext_ini_parse(text.data(), text.size(), &opts, &err);
+    EXPECT_NE(doc, nullptr) << "refused: " << ::testing::PrintToString(text)
+                            << " with " << (err.message ? err.message : "?");
+    if (doc) {
+      /* And whatever it is, it writes back. */
+      EXPECT_EQ(written(doc), text) << ::testing::PrintToString(text);
+      gtext_ini_free(doc);
+    }
+    gtext_ini_error_free(&err);
+  }
+}
+
+TEST(IniWin32, ABomIsSkippedRatherThanJoiningTheFirstName) {
+  GTEXT_INI_Document * doc = ok("\xef\xbb\xbf[a]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_canon(doc), (std::vector<std::string>{"a"}));
+  EXPECT_EQ(written(doc), "\xef\xbb\xbf[a]\nk=v\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, TheWriterRefusesASynthesizedValueItCouldNotReadBack) {
+  /*
+   * **The builder accepts and the writer refuses**, which is this module's
+   * contract everywhere: gtext_ini_group_set() validates the key and stores the
+   * value, and ::GTEXT_INI_E_UNREPRESENTABLE comes from gtext_ini_write(). A test
+   * that expected the refusal from the setter was asking the wrong function.
+   *
+   * What makes this dialect's version of the question sharp is that **all three
+   * line terminators are terminators here**, so a lone CR in a synthesized value
+   * is as unwritable as an LF - and the writer's non-scanning branch only refused
+   * a CR that was both last and followed by an LF. A value of `a\rb` was written
+   * verbatim and came back as two entries.
+   */
+  struct Case { const char * key; const char * value; bool writable; };
+  for (const Case & c : {
+           Case{"plain", "v", true},
+           Case{"quoted", "\"v\"", true},
+           Case{"semi", "a;b", true},
+           Case{"hash", "a#b", true},
+           /* Trimmed on the way back in, so it cannot be spelled. */
+           Case{"lead", " v", false},
+           Case{"trail", "v ", false},
+           Case{"tab", "v\t", false},
+           /* All three terminators end a line here. */
+           Case{"lf", "a\nb", false},
+           Case{"cr", "a\rb", false},
+           Case{"crlf", "a\r\nb", false},
+           Case{"cr-last", "v\r", false},
+       }) {
+    GTEXT_INI_Document * doc = empty(w32());
+    ASSERT_NE(doc, nullptr) << c.key;
+    GTEXT_INI_Group * g = nullptr;
+    ASSERT_EQ(gtext_ini_document_add_group(doc, "a", &g), GTEXT_INI_OK);
+    ASSERT_EQ(gtext_ini_group_set(g, c.key, c.value, std::strlen(c.value)),
+        GTEXT_INI_OK) << c.key;
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    GTEXT_INI_Status status = gtext_ini_write(doc, &sink, nullptr);
+    if (c.writable) {
+      EXPECT_EQ(status, GTEXT_INI_OK) << c.key;
+      if (status == GTEXT_INI_OK) {
+        /* And what it wrote reads back as the same value, which is the property
+         * the refusal above exists to protect. */
+        std::string bytes(gtext_ini_sink_buffer_data(&sink),
+            gtext_ini_sink_buffer_size(&sink));
+        GTEXT_INI_Document * again = ok(bytes, w32());
+        ASSERT_NE(again, nullptr) << c.key;
+        EXPECT_EQ(raw(again, "a", c.key), c.value) << c.key;
+        gtext_ini_free(again);
+      }
+    }
+    else {
+      EXPECT_EQ(status, GTEXT_INI_E_UNREPRESENTABLE) << c.key;
+    }
+    gtext_ini_sink_buffer_free(&sink);
+    gtext_ini_free(doc);
+  }
+}

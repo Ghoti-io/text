@@ -931,6 +931,23 @@ GTEXT_INI_Status gtext_ini_unescape(const GTEXT_INI_Dialect * dialect,
     return status;
   }
   if (!gtext_ini_dialect_scans_values(dialect)) {
+    /*
+     * The Win32 wrapper strip, and it belongs here rather than in the parser for
+     * the reason §5 of the design gives: the stored bytes are the document's, and
+     * what a value *means* is the accessor's question. A caller who wants the
+     * quotes can read gtext_ini_entry_value() and get them.
+     *
+     * Four measured rules, and all four are what separate a wrapper from
+     * ::GTEXT_INI_Dialect::quoted_values' toggle: exactly one pair comes off
+     * (`""x""` is `"x"`), both ends must be quotes (`"x` and `x"` are
+     * themselves), the two must be the *same* quote (`"x'` is unchanged), and the
+     * value has already been trimmed, so `"  x  "` keeps its blanks.
+     */
+    if (dialect->strip_wrapping_quotes && raw_len >= 2 &&
+        (raw[0] == '"' || raw[0] == '\'') && raw[raw_len - 1] == raw[0]) {
+      raw++;
+      raw_len -= 2;
+    }
     return ini_decode(dialect, raw, raw_len, alloc, 0, out, out_len);
   }
   /*

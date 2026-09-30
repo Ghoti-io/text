@@ -136,6 +136,12 @@ PROBE = {
     # version plus its own SHA-256. The prefix is `systemd ` because that is what
     # decides the answers: a unit file's grammar is systemd's source and nothing else.
     "systemd": (["systemd-unit-driver", "--version"], "systemd ", None),
+    # The Win32 profile API, reached through wine. The driver is a win64 `.exe`
+    # and the image's entrypoint is the wine loader, so the probe passes only
+    # `--version` and the entrypoint supplies the rest. The prefix is `wine `
+    # because wine's implementation is what decides these answers - there is no
+    # specification and no data version, and Windows itself is not here.
+    "win32": (["--version"], "wine ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

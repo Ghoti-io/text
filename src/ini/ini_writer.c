@@ -228,6 +228,21 @@ static bool ini_value_writable(const ini_str * value,
   if (gtext_ini_is_space(dialect, value->data[0])) return false;
   for (size_t i = 0; i < value->len; i++) {
     if (value->data[i] == '\n') return false;
+    /*
+     * **A CR too, for a dialect where a lone CR ends a line.** Only
+     * ::GTEXT_INI_DIALECT_WIN32 is one, and until this line the CR case was
+     * covered by the far narrower test further down - a CR that is both the last
+     * byte *and* followed by an LF. So a synthesized `a\rb` was declared writable,
+     * written verbatim, and read back as two entries: the value `a` and a
+     * valueless entry named `b`.
+     *
+     * Reachable only through gtext_ini_group_set(), which neither the corpus gate
+     * nor the differential exercises - both start from bytes and ask what they
+     * mean, and a value that no document can spell never appears in either. This
+     * is the second time that blind spot has hidden a terminator bug in a
+     * synthesized value; the first was configparser's.
+     */
+    if (dialect->lone_cr_terminates && value->data[i] == '\r') return false;
   }
   /*
    * The trailing run, for a dialect that drops it. Desktop Entry keeps it, so

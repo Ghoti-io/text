@@ -351,7 +351,30 @@ typedef enum {
    * named `" b "`, and `[ ]` one named `" "`. Any byte but a line terminator may
    * appear in it, `[`, `#` and a control character included.
    */
-  GTEXT_INI_NAMES_CONFIGPARSER
+  GTEXT_INI_NAMES_CONFIGPARSER,
+  /**
+   * The Win32 profile API's names, measured under wine because there is no
+   * document that states them.
+   *
+   * Keys are ::GTEXT_INI_NAMES_EDITORCONFIG's shape - everything before the
+   * first `=` on the line, trimmed - and group names are any byte but a line
+   * terminator, closed at the **last** `]`, and *trimmed*. Three properties are
+   * this style's alone and each is measured:
+   *
+   * - **The name is trimmed inside the brackets**, so `[ b ]` and `[b]` are one
+   *   section. Every other dialect here either forbids the space or keeps it;
+   *   ::GTEXT_INI_Dialect::trim_group_name carries it.
+   * - **The empty name and the empty key are both spellable.** `[]` parses, and
+   *   `= v` is an entry whose key is the empty string, which
+   *   `GetPrivateProfileStringA(sec, "", ...)` retrieves.
+   * - **A `[` line with no `]` is not a header at all** - it is an ordinary
+   *   line, and since a Win32 line needs no `=`, it is a valueless entry named
+   *   `[a`. ::GTEXT_INI_Dialect::unclosed_header_is_line carries that.
+   *
+   * `;` and `#` are ordinary bytes in both names: measured, `k;c=v` is the key
+   * `k;c` and `[a;b]` is the section `a;b`.
+   */
+  GTEXT_INI_NAMES_WIN32
 } GTEXT_INI_Name_Style;
 
 /**
@@ -670,7 +693,30 @@ typedef enum {
    *     file, because a file is what an INI document is;
    *     ::GTEXT_INI_Dialect::lone_cr_terminates records it.
    */
-  GTEXT_INI_DIALECT_CONFIGPARSER
+  GTEXT_INI_DIALECT_CONFIGPARSER,
+  /**
+   * The Win32 profile API, as `GetPrivateProfileString` and
+   * `GetPrivateProfileSection` read a file.
+   *
+   * **The one dialect here whose reference is two entry points of one
+   * implementation that disagree with each other**, and the disagreement is
+   * about the most consequential rule in the format: a `;` line.
+   * `GetPrivateProfileSection` discards it; `GetPrivateProfileString` does not,
+   * so `;disabled=1` is a live setting to one API and a comment to the other.
+   * This dialect follows the enumeration API and treats `;` as a comment,
+   * because a reader that returns a commented-out setting is worse than one
+   * that agrees with only half of its reference. `#` is a comment to neither
+   * and is an ordinary byte here.
+   *
+   * **It cannot reproduce what an application sees**, and that is a property of
+   * the API rather than of this reader: `GetPrivateProfileString` consults the
+   * registry's `IniFileMapping` for the section and reads the file only "if
+   * there is no subkey or entry for the section name". Where a mapping exists,
+   * no reader of the file can agree with it. @ref format_ini has the
+   * quotation. What this dialect is for is the far larger population: the
+   * `.ini` files on Windows that applications parse themselves.
+   */
+  GTEXT_INI_DIALECT_WIN32
 } GTEXT_INI_Dialect_Id;
 
 /**
@@ -743,6 +789,93 @@ typedef struct {
    * gtext_ini_group_is_preamble() tells them apart.
    */
   bool allow_empty_group_name;
+
+  /**
+   * Whether an entry's key may be the empty string.
+   *
+   * ::GTEXT_INI_DIALECT_WIN32 alone, and it is not a relaxation for its own
+   * sake: measured, `= v` is an entry that
+   * `GetPrivateProfileStringA(sec, "", ...)` returns `v` for, so the empty key
+   * is *addressable* rather than merely tolerated. Every other dialect here
+   * refuses it - core-c reads `=v` as a property named by the empty string and
+   * core-py refuses it, and the EditorConfig arm follows core-py.
+   *
+   * It is the key-side twin of ::GTEXT_INI_Dialect::allow_empty_group_name and
+   * is a separate field because the two references split differently: Win32
+   * allows both, EditorConfig the group name only.
+   */
+  bool allow_empty_key;
+
+  /**
+   * Whether the whitespace inside a group header's brackets is part of the name.
+   *
+   * True for ::GTEXT_INI_DIALECT_WIN32, where `[ b ]`, `[\tb\t]` and `[b]` are
+   * one section - measured, with the whitespace set being
+   * ::GTEXT_INI_Dialect::space_set's rather than a blank-only run.
+   *
+   * False for every other dialect, and the three of them that permit a space in
+   * a name *keep* it: configparser's `[ b ]` is a section literally named
+   * `" b "`, and asking for `[b]` there is a `KeyError`. So this is not a
+   * convenience that could be turned on everywhere; it changes which document a
+   * lookup answers.
+   */
+  bool trim_group_name;
+
+  /**
+   * Whether a line whose first non-blank byte is `[` but which holds no `]` is
+   * an ordinary line rather than a malformed header.
+   *
+   * True for ::GTEXT_INI_DIALECT_WIN32 only. Measured: `[a` followed by `k=v`
+   * leaves `k` in whatever section was current - the preamble, if no header has
+   * been seen - and `GetPrivateProfileSectionA` reports `[a` itself as one of
+   * that section's entries. Nothing is refused and nothing is a new section.
+   *
+   * For every other dialect an unclosed header is ::GTEXT_INI_E_BAD_GROUP,
+   * which is what the three specifications that discuss it say. Reaching the
+   * entry path instead is only coherent for a dialect that also accepts a line
+   * with no separator, so this travels with
+   * ::GTEXT_INI_Dialect::valueless_keys.
+   */
+  bool unclosed_header_is_line;
+
+  /**
+   * Whether one matching pair of surrounding `"` or `'` is removed from a value.
+   *
+   * True for ::GTEXT_INI_DIALECT_WIN32, whose documentation says so - "if the
+   * string associated with lpKeyName is enclosed in single or double quotation
+   * marks, the marks are discarded" - and whose behaviour under wine agrees.
+   *
+   * **This is a wrapper, and ::GTEXT_INI_Dialect::quoted_values is a toggle.**
+   * They are not two settings of one idea and the measurements are what separate
+   * them: git's `k = x" mid "y` is `x mid y`, while Win32's is `x" mid "y`
+   * unchanged, because neither end is a quote. Exactly one pair comes off
+   * (`""x""` is `"x"`), both ends must be present (`"x` and `x"` are
+   * themselves), and the two ends must be the same character (`"x'` is
+   * unchanged). The strip happens after the value is trimmed, so `"  x  "`
+   * keeps its spaces - which is the only way to spell a value with a leading or
+   * trailing blank in this dialect.
+   */
+  bool strip_wrapping_quotes;
+
+  /**
+   * Whether a lookup searches every group of a name or only the first.
+   *
+   * True for every dialect but ::GTEXT_INI_DIALECT_WIN32, and that is `GKeyFile`'s
+   * behaviour: it merges repeated group headers, so a key under the second `[G]`
+   * is found under `G`. The tree keeps the two groups apart either way, so this
+   * changes what a lookup answers and never what the document says.
+   *
+   * **Win32 does not merge**, and it is measured twice over: a key in a second
+   * `[a]` is not retrievable at all, while `GetPrivateProfileSectionNames` still
+   * lists that section - so the duplicate is visible and its contents are not.
+   * The same rule is what makes a `[]` section unreachable, because the empty name
+   * finds the preamble and stops there.
+   *
+   * It is a field rather than a consequence of
+   * ::GTEXT_INI_Dialect::allow_duplicate_groups because three dialects allow
+   * duplicates and disagree about this: generic and git merge, Win32 does not.
+   */
+  bool merge_duplicate_groups;
 
   /** What a second entry with an existing key in one group means. */
   GTEXT_INI_Dupkey_Mode dupkey;
@@ -1021,14 +1154,21 @@ typedef struct {
    * is refused, though `[a] ; c` on a header line is fine. Nothing in the
    * manual page says so.
    *
-   * **It is only meaningful with a closed key charset**, and that coupling is
-   * worth stating because the flag otherwise looks independent. A dialect whose
+   * **It used to be meaningful only with a closed key charset**, and that is no
+   * longer true - the note is kept because the reasoning was sound and the
+   * conclusion was about the code rather than about the format. A dialect whose
    * keys may hold any byte has to find the `=` before it knows where the key
-   * ended, so a line with no `=` is a bad line before there is a key to call
-   * valueless - which is why setting this true on the EditorConfig dialect
-   * changes nothing at all. Found by mutation: the flag flipped and both gates
-   * stayed green, because for ::GTEXT_INI_NAMES_EDITORCONFIG and
-   * ::GTEXT_INI_NAMES_DESKTOP_ENTRY nothing reads it.
+   * ended, so the flag was dead in that branch: setting it true on the
+   * EditorConfig dialect changed nothing at all, which a mutation found by
+   * flipping it and watching both gates stay green.
+   *
+   * ::GTEXT_INI_DIALECT_WIN32 has an open key charset **and** valueless entries -
+   * measured, `novalue` alone is an entry that `GetPrivateProfileSectionA`
+   * reports and `GetPrivateProfileStringA` cannot see - so the open-charset
+   * branch now honours the flag by taking the whole trimmed line as the key.
+   * For ::GTEXT_INI_NAMES_EDITORCONFIG and ::GTEXT_INI_NAMES_DESKTOP_ENTRY
+   * nothing still reads it, and the mutation that proved that is still in the
+   * table.
    */
   bool valueless_keys;
 
@@ -1239,6 +1379,58 @@ GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_systemd(void);
  * @return The dialect, by value.
  */
 GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_configparser(void);
+
+/**
+ * The Win32 profile API's dialect, measured rather than read.
+ *
+ * `GetPrivateProfileString` has documentation and no grammar: two sentences
+ * about quoting and case, and nothing about lines, headers, comments or
+ * duplicates. So every rule here came from a probe under wine, and the probe is
+ * `tools/oracle/containers/win32/`.
+ *
+ * **What it is for.** Not to reproduce the API's answer - it cannot, and neither
+ * can any reader of the file, because `IniFileMapping` may redirect a section
+ * to the registry. It is for the `.ini` files that exist on Windows, which
+ * overwhelmingly belong to applications that parse the file themselves. Against
+ * those, this is the best-documented reading of the format available.
+ *
+ * **The rules, each measured:**
+ *
+ * - Lines end at LF, CRLF **or a lone CR**, and blank lines are ignored.
+ * - The whitespace set is `isspace()`'s, not blank-only: VT and FF are trimmed,
+ *   and `\x1c`-`\x1f` are not.
+ * - A header is a line whose first non-blank byte is `[` and which holds a `]`.
+ *   The name runs to the **last** `]`, is then **trimmed**, and anything after
+ *   that `]` is discarded - `[a]junk` is `a`, `[a]]junk` is `a]`.
+ * - `[]` is a legal header whose name is empty. A lookup for the empty name
+ *   finds the preamble instead, so a `[]` section's entries are unreachable by
+ *   name; gtext_ini_group_is_preamble() is how a caller tells the two apart.
+ * - A `[` line with no `]` is not a header. It is a valueless entry.
+ * - `=` is the only separator and the **first** one on the line splits it:
+ *   `k=a=b` is `a=b`.
+ * - Key and value are both trimmed; one matching pair of surrounding quotes
+ *   then comes off the value.
+ * - A line with no `=` is a valueless entry, which `GetPrivateProfileSection`
+ *   reports and `GetPrivateProfileString` cannot retrieve.
+ * - Keys and group names both fold case, **ASCII only**: measured, `[\xe9]` and
+ *   `[\xc9]` are two sections. This is the one dialect in this module whose case
+ *   rule a byte-oriented reader can implement exactly.
+ * - The first of two duplicate keys wins, and the first of two duplicate
+ *   sections does; a later duplicate section is unreachable by lookup and is
+ *   still listed by `GetPrivateProfileSectionNames`.
+ * - There are no escapes and no continuations. A trailing backslash is data.
+ *
+ * **The one stated divergence, and it is measured rather than chosen:** `;`
+ * introduces a comment here. `GetPrivateProfileSection` agrees and
+ * `GetPrivateProfileString` does not, so the two halves of the reference
+ * disagree and this follows the half that does not hand back a commented-out
+ * setting. `#` is a comment to neither API and is an ordinary byte here, which
+ * is the other half of the same measurement and is the row most readers of this
+ * format get wrong in the opposite direction.
+ *
+ * @return The dialect by value.
+ */
+GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_win32(void);
 
 /**
  * @struct GTEXT_INI_Parse_Options

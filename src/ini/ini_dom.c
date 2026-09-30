@@ -179,10 +179,15 @@ const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
   size_t klen = strlen(key);
   const ini_entry * found = NULL;
   /*
-   * Every group of that name, not just the first: GLib merges repeated group
-   * headers, so a key under the second `[G]` is found under `G`. The tree keeps
-   * the two apart so that a rewrite reproduces the document; the merge lives
-   * here, in the lookup, where it costs the document nothing.
+   * Every group of that name, or only the first, which is
+   * ::GTEXT_INI_Dialect::merge_duplicate_groups. GLib merges repeated group
+   * headers, so a key under the second `[G]` is found under `G`; the Win32 profile
+   * API does not, and a key in a second `[a]` is retrievable by no name at all
+   * while `GetPrivateProfileSectionNames` still lists that section.
+   *
+   * The tree keeps the groups apart either way, so that a rewrite reproduces the
+   * document; the merge, or its absence, lives here in the lookup where it costs
+   * the document nothing.
    */
   for (size_t g = 0; g < doc->count; g++) {
     const GTEXT_INI_Group * grp = &doc->groups[g];
@@ -192,6 +197,7 @@ const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
       if (!ini_key_matches(&doc->dialect, entry, key, klen)) continue;
       if (ini_wants_last(&doc->dialect) || !found) found = entry;
     }
+    if (!doc->dialect.merge_duplicate_groups) break;
   }
   return ini_out(found ? &found->value : NULL, len);
 }

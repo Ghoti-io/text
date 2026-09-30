@@ -89,6 +89,15 @@ GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void) {
   d.space_set = GTEXT_INI_SPACE_BLANK;
   d.fold_group_case = false;
   d.allow_empty_group_name = false;
+  /* The four axes ::GTEXT_INI_DIALECT_WIN32 introduced. False here, and each
+   * for a measured reason rather than by default: this dialect refuses an empty
+   * key, keeps whatever whitespace is inside the brackets, calls an unclosed
+   * header an error, and has no wrapper-quote rule. */
+  d.allow_empty_key = false;
+  d.trim_group_name = false;
+  d.unclosed_header_is_line = false;
+  d.strip_wrapping_quotes = false;
+  d.merge_duplicate_groups = true;
   return d;
 }
 
@@ -213,6 +222,15 @@ GTEXT_INI_Dialect gtext_ini_dialect_git_config(void) {
   d.separators = "=";
   d.space_set = GTEXT_INI_SPACE_BLANK;
   d.allow_empty_group_name = false;
+  /* The four axes ::GTEXT_INI_DIALECT_WIN32 introduced. False here, and each
+   * for a measured reason rather than by default: this dialect refuses an empty
+   * key, keeps whatever whitespace is inside the brackets, calls an unclosed
+   * header an error, and has no wrapper-quote rule. */
+  d.allow_empty_key = false;
+  d.trim_group_name = false;
+  d.unclosed_header_is_line = false;
+  d.strip_wrapping_quotes = false;
+  d.merge_duplicate_groups = true;
   return d;
 }
 
@@ -320,6 +338,15 @@ GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void) {
    * may contain any characters, so the permissive reading wins. The only
    * dialect here that does. */
   d.allow_empty_group_name = true;
+  /* The four axes ::GTEXT_INI_DIALECT_WIN32 introduced. False here, and each
+   * for a measured reason rather than by default: this dialect refuses an empty
+   * key, keeps whatever whitespace is inside the brackets, calls an unclosed
+   * header an error, and has no wrapper-quote rule. */
+  d.allow_empty_key = false;
+  d.trim_group_name = false;
+  d.unclosed_header_is_line = false;
+  d.strip_wrapping_quotes = false;
+  d.merge_duplicate_groups = true;
   d.separators = "=";
   d.subsection_syntax = false;
   /* A key with no `=` is not a valueless entry, it is an invalid line: the
@@ -416,6 +443,15 @@ GTEXT_INI_Dialect gtext_ini_dialect_systemd(void) {
   d.separators = "=";
   d.fold_group_case = false;
   d.allow_empty_group_name = false;
+  /* The four axes ::GTEXT_INI_DIALECT_WIN32 introduced. False here, and each
+   * for a measured reason rather than by default: this dialect refuses an empty
+   * key, keeps whatever whitespace is inside the brackets, calls an unclosed
+   * header an error, and has no wrapper-quote rule. */
+  d.allow_empty_key = false;
+  d.trim_group_name = false;
+  d.unclosed_header_is_line = false;
+  d.strip_wrapping_quotes = false;
+  d.merge_duplicate_groups = true;
   d.continuation = GTEXT_INI_CONTINUATION_JOIN_SPACE;
   /* Measured: `Environment=W1 # x` is five words, so a `#` after the start of a
    * line is data. */
@@ -611,6 +647,183 @@ GTEXT_INI_Dialect gtext_ini_dialect_configparser(void) {
   /* `[]` is not a header - the pattern needs one character - so it falls through
    * to be read as an ordinary line and refused. */
   d.allow_empty_group_name = false;
+  /* The four axes ::GTEXT_INI_DIALECT_WIN32 introduced. False here, and each
+   * for a measured reason rather than by default: this dialect refuses an empty
+   * key, keeps whatever whitespace is inside the brackets, calls an unclosed
+   * header an error, and has no wrapper-quote rule. */
+  d.allow_empty_key = false;
+  d.trim_group_name = false;
+  d.unclosed_header_is_line = false;
+  d.strip_wrapping_quotes = false;
+  d.merge_duplicate_groups = true;
+  return d;
+}
+
+GTEXT_INI_Dialect gtext_ini_dialect_win32(void) {
+  /*
+   * **Every field set explicitly from a zeroed struct**, the way git,
+   * EditorConfig, systemd and configparser are built and deliberately not the way
+   * generic is. The first version of this derived from generic, and silent
+   * inheritance carried three things that are wrong here: Desktop Entry's escape
+   * set, its `locale_postfix`, and `utf8_values`, the last of which would have
+   * refused every `.ini` written in a code page. A dialect whose reference is a
+   * measurement cannot afford a field nobody looked at.
+   *
+   * Every assignment is a measurement taken under wine 10.0 through
+   * `GetPrivateProfileStringA`, `GetPrivateProfileSectionA` and
+   * `GetPrivateProfileSectionNamesA`. The API's own documentation states two of
+   * these thirty rules.
+   */
+  GTEXT_INI_Dialect d;
+  memset(&d, 0, sizeof(d));
+  d.id = GTEXT_INI_DIALECT_WIN32;
+  d.name_style = GTEXT_INI_NAMES_WIN32;
+
+  /*
+   * **The divergence, and the only one.** `;` is a comment to
+   * `GetPrivateProfileSection` and not to `GetPrivateProfileString`: measured,
+   * `;disabled=1` is absent from the section enumeration and
+   * `GetPrivateProfileStringA(sec, ";disabled", ...)` returns `1`. Two entry
+   * points of one implementation, one file, two grammars.
+   *
+   * This follows the enumeration API. A caller who asks for `disabled` and is
+   * told nothing is correctly served; one handed a setting its author commented
+   * out cannot recover from it downstream.
+   *
+   * `#` is a comment to **neither** API - measured, `#hash=2` is listed by the
+   * enumeration and retrievable by name - so it is an ordinary byte. That is the
+   * half most likely to surprise, and it is why these two are set apart from each
+   * other rather than together.
+   */
+  d.comment_semicolon = true;
+  d.comment_hash = false;
+
+  /* Measured: `   [a]` and `   k = v` are both fine, and a comment is recognized
+   * after leading whitespace too. */
+  d.allow_leading_whitespace = true;
+
+  /* Entries before any header go to the section named by the empty string, which
+   * `GetPrivateProfileStringA(NULL-equivalent "", key, ...)` retrieves and
+   * `GetPrivateProfileSectionNames` does not list. */
+  d.allow_preamble = true;
+
+  /* Measured: a section named twice is listed twice by
+   * `GetPrivateProfileSectionNames`, and every lookup answers from the first. */
+  d.allow_duplicate_groups = true;
+  d.dupkey = GTEXT_INI_DUPKEY_FIRST_WINS;
+
+  /* `[]` parses. Its entries are then unreachable by name, because the empty name
+   * finds the preamble first - measured, `p=0` then `[]` then `k=v` answers `p`
+   * and not `k`. That is the duplicate-section rule reaching the preamble, not a
+   * rule of its own. */
+  d.allow_empty_group_name = true;
+
+  /* The four axes this dialect is the first to need; each field's own
+   * documentation carries the measurement. */
+  d.allow_empty_key = true;
+  d.trim_group_name = true;
+  d.unclosed_header_is_line = true;
+  d.strip_wrapping_quotes = true;
+
+  /* **A lookup does not merge duplicate sections.** Measured twice over: a key in
+   * a second `[a]` is retrievable by no name, while `GetPrivateProfileSectionNames`
+   * still lists that section. It is the same rule that makes a `[]` section
+   * unreachable - the empty name finds the preamble and stops. Every other dialect
+   * here merges, which is GKeyFile's behaviour. */
+  d.merge_duplicate_groups = false;
+
+  /* `k[1]=v` is a key named `k[1]`: there is no locale postfix, and `[` is an
+   * ordinary key byte. Inheriting Desktop Entry's `true` here would have made
+   * `k[de]` a localized spelling of `k` in a format that has never had one. */
+  d.locale_postfix = false;
+  d.require_unlocalized_key = false;
+
+  /* All three terminators. The lone CR is this dialect's alone among the seven:
+   * measured, `[a]<CR>k=v` is a section and an entry, and a CR inside a value
+   * ends the line there. */
+  d.accept_crlf = true;
+  d.lone_cr_terminates = true;
+
+  /* A BOM at the start is skipped rather than becoming part of the first section
+   * name: measured, a UTF-8 BOM before `[a]` still gives the section `a`. */
+  d.skip_bom = true;
+
+  /* `isspace()`'s set. VT and FF are trimmed around the separator and at the ends
+   * of a value; `\x1c`-`\x1f` are **not**, which is what separates this from
+   * configparser's set and is the reason that third set exists. */
+  d.space_set = GTEXT_INI_SPACE_CTYPE;
+
+  /* Both ends of a value, unlike Desktop Entry: measured, `spaced =    padded `
+   * retrieves `padded`. Quoting is the only way to keep a blank at either end. */
+  d.trim_trailing_space = true;
+
+  /* `=` only, and the **first** one on the line splits it: `k==v` is the value
+   * `=v` and `k=a=b` is `a=b`. */
+  d.separators = "=";
+
+  /*
+   * **No escapes of any kind.** `escapes` stays NULL and both escape flags stay
+   * false: measured, `k=one\` then `more=two` are two entries and the backslash
+   * is data. Inheriting Desktop Entry's set - which deriving from generic did -
+   * would have had gtext_ini_unescape() decode a `\n` that the reference returns
+   * as two characters.
+   */
+  d.escapes = NULL;
+  d.escapes_in_grammar = false;
+  d.numeric_escapes = false;
+
+  /* Nothing splits a value here, so `list_separator` is never consulted and is
+   * left at NUL rather than at a character that would suggest it is. */
+  d.list_separator = '\0';
+  d.word_split = false;
+
+  /* No continuation. Measured with the backslash probe above, and there is no
+   * indent rule either: an indented line is an ordinary entry. */
+  d.continuation = GTEXT_INI_CONTINUATION_NONE;
+
+  /* No comment introducer works *within* a line: `semi = v ; trailing semi`
+   * retrieves that whole string, trailing comment and all. */
+  d.inline_comments = false;
+
+  /* Not git's toggle. `d.strip_wrapping_quotes` above is the rule here, and the
+   * two give different answers for `k=x" mid "y` - `x mid y` there, unchanged
+   * here. */
+  d.quoted_values = false;
+
+  /* Both names fold, and **ASCII only**: measured, `[a]` and `[A]` are one
+   * section while `[\xe9]` and `[\xc9]` are two. The one dialect here whose case
+   * rule a byte-oriented reader implements exactly rather than approximately. */
+  d.fold_case = true;
+  d.fold_group_case = true;
+
+  /* git's `[a "b"]` is git's alone. */
+  d.subsection_syntax = false;
+
+  /* A line with no `=` is an entry with no value. Reachable here where it is dead
+   * for every other open-charset dialect, because `unclosed_header_is_line` needs
+   * it: `[a` has to become *something*. */
+  d.valueless_keys = true;
+
+  /*
+   * **No encoding rules at all.** Measured: a latin-1 high byte passes through a
+   * section name, a key and a value unchanged - `[\xe9]` is a section and
+   * `k\xe9=v\xe9` retrieves `v\xe9` - because the ANSI API is byte-oriented and
+   * validates nothing. What does cut a value short is a NUL, and that is the C
+   * string API showing through rather than a property of the file: `k=a\0b`
+   * retrieves `a`.
+   */
+  d.utf8_values = false;
+
+  /* Discarded, like configparser's and for a different reason: the name ends at
+   * the last `]` and the scan stops looking. `[a]junk` is `a`, `[a]]junk` is
+   * `a]`. */
+  d.header_remainder = GTEXT_INI_HEADER_REMAINDER_IGNORE;
+
+  /* Not a grammar rule and not the reference's business: the profile API has no
+   * notion of a bool. Left at the default so that a caller who wants
+   * gtext_ini_value_bool() gets the same answer here as under the generic
+   * dialect. */
+  d.bool_style = GTEXT_INI_BOOLS_TRUE_FALSE;
   return d;
 }
 
@@ -752,6 +965,26 @@ bool gtext_ini_canon_group(const GTEXT_INI_Dialect * dialect, const char * raw,
   if (!gtext_ini_group_names_fold(dialect) && !dialect->subsection_syntax) {
     return false;
   }
+  if (dialect->name_style == GTEXT_INI_NAMES_WIN32) {
+    /*
+     * **Win32 is the second dialect to fold a group name, and the rest of this
+     * function was written for the first.** git's canonical form is built out of
+     * `A-Za-z0-9-.` plus a quoted subsection, and everything outside that set is
+     * refused - which for a Win32 name meant `[a]b]`, `[a=b]`, `[a;b]`, a high
+     * byte and the empty name all failing here. The caller reports a false from
+     * this function as ::GTEXT_INI_E_OOM, so twelve documents were refused with an
+     * allocation failure; the differential's `intent` score is what found it,
+     * because this dialect refuses nothing and any refusal is a defect.
+     *
+     * The rule itself is the whole of it: fold every byte, ASCII only. Measured -
+     * `[a]` and `[A]` are one section, `[\xe9]` and `[\xc9]` are two - and the
+     * trim has already happened in ini_set_canon(), so a name of only whitespace
+     * arrives here empty and is legal.
+     */
+    for (size_t i = 0; i < len; i++) out[i] = ini_lower(raw[i]);
+    *out_len = len;
+    return true;
+  }
   size_t w = 0;
   size_t i = 0;
   /* The section part: `A-Za-z0-9-` plus `.`, folded. A `.` here is the
@@ -809,7 +1042,11 @@ bool gtext_ini_canon_key(const GTEXT_INI_Dialect * dialect, const char * raw,
     size_t len, char * out, size_t * out_len) {
   *out_len = 0;
   if (!dialect->fold_case) return false;
-  if (!len) return false;
+  /* The empty key is a key under ::GTEXT_INI_DIALECT_WIN32 - measured, `= v` is
+   * retrieved by `GetPrivateProfileStringA(sec, "", ...)` - so the emptiness test
+   * reads the field rather than refusing outright. Refusing here reported itself
+   * as ::GTEXT_INI_E_OOM two frames up, which is how it was found. */
+  if (!len && !dialect->allow_empty_key) return false;
   for (size_t i = 0; i < len; i++) out[i] = ini_lower(raw[i]);
   *out_len = len;
   return true;
@@ -860,6 +1097,31 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
      */
     if (!len && !dialect->allow_empty_group_name) return false;
     for (size_t i = 0; i < len; i++) {
+      if (name[i] == '\n' || name[i] == '\r') return false;
+    }
+    return true;
+  }
+  if (dialect->name_style == GTEXT_INI_NAMES_WIN32) {
+    /*
+     * Any byte but a line terminator, closed at the last `]`.
+     *
+     * The span is the document's, **untrimmed** - the trim that
+     * ::GTEXT_INI_Dialect::trim_group_name asks for produces the canonical name
+     * and leaves `name` holding what the file said, so that the header writes
+     * back byte for byte. So the emptiness test has to trim here too, or `[ ]`
+     * would be judged a one-character name and `[]` an empty one when the
+     * reference makes them the same section.
+     *
+     * Measured to be in the name: `[`, `;`, `#`, `=`, a space in the middle, a
+     * control character, and a byte above 0x7F. Nothing is outside it but the
+     * terminator, which cannot reach here.
+     */
+    size_t begin = 0;
+    size_t stop = len;
+    while (begin < stop && gtext_ini_is_space(dialect, name[begin])) begin++;
+    while (stop > begin && gtext_ini_is_space(dialect, name[stop - 1])) stop--;
+    if (begin == stop && !dialect->allow_empty_group_name) return false;
+    for (size_t i = begin; i < stop; i++) {
       if (name[i] == '\n' || name[i] == '\r') return false;
     }
     return true;
@@ -941,6 +1203,7 @@ bool gtext_ini_group_close_is_last(const GTEXT_INI_Dialect * dialect) {
   switch (dialect->name_style) {
     case GTEXT_INI_NAMES_EDITORCONFIG:
     case GTEXT_INI_NAMES_CONFIGPARSER:
+    case GTEXT_INI_NAMES_WIN32:
       return true;
     default:
       return false;
@@ -970,6 +1233,7 @@ bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
     case GTEXT_INI_NAMES_EDITORCONFIG:
     case GTEXT_INI_NAMES_SYSTEMD:
     case GTEXT_INI_NAMES_CONFIGPARSER:
+    case GTEXT_INI_NAMES_WIN32:
       /*
        * Anything that reads back as itself: not the delimiter, not a terminator.
        * EditorConfig shares this arm rather than having one of its own, because
@@ -1007,7 +1271,7 @@ bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
 
 bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect, const char * key,
     size_t len) {
-  if (!len) return false;
+  if (!len) return dialect->allow_empty_key;
   if (dialect->name_style == GTEXT_INI_NAMES_GIT) {
     /*
      * `A-Za-z0-9-`, and the first byte must be a letter. The first-byte rule is
@@ -1026,12 +1290,16 @@ bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect, const char * key,
   if (dialect->name_style == GTEXT_INI_NAMES_ANY ||
       dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG ||
       dialect->name_style == GTEXT_INI_NAMES_SYSTEMD ||
-      dialect->name_style == GTEXT_INI_NAMES_CONFIGPARSER) {
+      dialect->name_style == GTEXT_INI_NAMES_CONFIGPARSER ||
+      dialect->name_style == GTEXT_INI_NAMES_WIN32) {
     /* Still not anything at all: a key may not contain the delimiter or a line
      * terminator, or the document would not read back as itself. An empty key is
-     * refused by the `!len` test above, which is where this dialect parts company
-     * with core-c: core-c reads `=v` as a property whose name is the empty
-     * string, and core-py refuses it as this does. */
+     * refused by the `!len` test above unless the dialect allows one, which is
+     * where EditorConfig parts company with core-c - core-c reads `=v` as a
+     * property whose name is the empty string, core-py refuses it, and this
+     * follows core-py. Win32 allows it, and there the empty key is *addressable*
+     * rather than tolerated: `GetPrivateProfileStringA(sec, "", ...)` returns its
+     * value. */
     for (size_t i = 0; i < len; i++) {
       if (!gtext_ini_key_char_ok(dialect, key[i])) return false;
     }
