@@ -5054,3 +5054,66 @@ TEST(IniInterpolation, TheOutputIsBounded) {
   gtext_ini_string_free(nullptr, out);
   gtext_ini_free(d);
 }
+
+/**
+ * A reference resolves through **its own group's dialect**, and three shipping
+ * dialects reach that path.
+ *
+ * The style is a parameter rather than a ::GTEXT_INI_Dialect field, which is the
+ * design decision - and its consequence is that this API composes escapes with
+ * interpolation even though no *reference* has both. `configparser` has no escape
+ * set, so the whole question is invisible from the gate that scores this pass: the
+ * header claimed "no dialect here has both", which is true of the references and
+ * false of the six dialects a caller can hand in. Reachable with no custom dialect
+ * struct at all.
+ *
+ * Both arms asserted, because the failing one is a documented return that nothing
+ * exercised - an error arm with no failing sink reads as working code.
+ */
+TEST(IniInterpolation, ACrossDialectReferenceUsesItsOwnDialect) {
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_desktop_entry();
+  GTEXT_INI_Interpolate_Options io = gtext_ini_interpolate_options_default();
+  io.style = GTEXT_INI_INTERPOLATION_BASIC;
+
+  struct Case {
+    const char * doc;
+    GTEXT_INI_Status want;
+    const char * value;
+  };
+  const Case cases[] = {
+      /* `\n` is in Desktop Entry §4's escape set, so the substituted value arrives
+       * decoded - the reference's map holds processed values, and for this dialect
+       * "processed" means unescaped rather than merely joined. */
+      {"[Desktop Entry]\nTarget=a\\nb\nName=%(Target)s\n", GTEXT_INI_OK, "a\nb"},
+      /* `\q` is not, and the refusal comes from the *referenced* value rather than
+       * from the one being interpolated. */
+      {"[Desktop Entry]\nTarget=a\\qb\nName=%(Target)s\n",
+          GTEXT_INI_E_BAD_ESCAPE, nullptr},
+  };
+  for (const Case & c : cases) {
+    GTEXT_INI_Error err;
+    std::memset(&err, 0, sizeof(err));
+    GTEXT_INI_Document * d =
+        gtext_ini_parse(c.doc, std::strlen(c.doc), &opts, &err);
+    gtext_ini_error_free(&err);
+    ASSERT_NE(d, nullptr) << c.doc;
+    const GTEXT_INI_Group * g = gtext_ini_document_group(d, "Desktop Entry");
+    ASSERT_NE(g, nullptr);
+    size_t len = 0;
+    const char * raw = gtext_ini_group_get(g, "Name", &len);
+    ASSERT_NE(raw, nullptr);
+    char * out = nullptr;
+    size_t out_len = 0;
+    EXPECT_EQ(gtext_ini_value_interpolate(g, &io, raw, len, &out, &out_len),
+        c.want) << c.doc;
+    if (c.want == GTEXT_INI_OK) {
+      EXPECT_EQ(std::string(out, out_len), c.value) << c.doc;
+    }
+    else {
+      EXPECT_EQ(out, nullptr) << c.doc;
+    }
+    gtext_ini_string_free(nullptr, out);
+    gtext_ini_free(d);
+  }
+}

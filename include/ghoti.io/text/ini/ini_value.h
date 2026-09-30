@@ -434,9 +434,20 @@ gtext_ini_interpolate_options_default(void);
  *
  * Interpolation is nonetheless not the escape pass: `configparser` has no escape
  * set at all, so for that dialect gtext_ini_unescape() is exactly the join and
- * nothing more. No dialect here has both escapes and interpolation, so no
- * reference can say how the two would compose, and this order is stated rather
- * than measured.
+ * nothing more.
+ *
+ * **No *reference* has both escapes and interpolation, but this API composes them**,
+ * because the style is a parameter and not a dialect field - so a caller may hand
+ * this function a group from a Desktop Entry, git or systemd document, and those
+ * three do have an escape set. What happens then is defined rather than accidental:
+ * a value a reference **resolves to** is decoded by its own group's dialect, so
+ * `Target=a\nb` substituted through `%(Target)s` arrives as a real newline, and a
+ * referenced value holding an escape the set does not define is
+ * ::GTEXT_INI_E_BAD_ESCAPE. That is consistent with @p raw only if the caller
+ * followed the order above and passed gtext_ini_unescape()'s output; pass the tree's
+ * raw bytes under one of those dialects and the two halves of the result are decoded
+ * to different depths. No reference can settle the composition, so this is stated,
+ * and IniInterpolation.ACrossDialectReferenceUsesItsOwnDialect asserts it.
  *
  * @param group The group @p raw came from, whose keys a reference resolves
  *   against. May be NULL, and then only GTEXT_INI_Interpolate_Options::defaults
