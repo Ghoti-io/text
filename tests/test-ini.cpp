@@ -3073,6 +3073,8 @@ TEST(IniConfigParser, TheWriterIndentsASynthesizedMultiLineValue) {
            Case{"\nb", true, "an empty first line"},
            Case{"a", true, "one line"},
            Case{"a\nb\n", false, "a trailing terminator would be stripped"},
+           Case{"a\rb", false, "a CR ends a line and the writer emits its own"},
+           Case{"a\r\nb", false, "and a CRLF would be replaced by the chosen one"},
            Case{"a\n", false, "the same with nothing after it"},
            Case{"a\n#c", false, "an indented `#` reads back as a comment"},
            Case{"a\n;c", false, "and so does the other introducer"},
@@ -3112,6 +3114,71 @@ TEST(IniConfigParser, TheWriterIndentsASynthesizedMultiLineValue) {
     gtext_ini_sink_buffer_free(&sink);
     gtext_ini_free(doc);
   }
+}
+
+TEST(IniConfigParser, ASynthesizedValuesLineBreaksMustBeWhatTheWriterEmits) {
+  /*
+   * Found by re-reading the writer rather than by any gate, and neither the corpus nor
+   * the differential could have found it: both score documents this module *parsed*, so
+   * both only ever exercise the verbatim path, and this is the synthesized one - a
+   * caller building a document through gtext_ini_group_set().
+   *
+   * The writer emits one terminator of its own choosing per line break, so a terminator
+   * the value carries that is not that one is rewritten and the value does not come
+   * back. Two failures, and the first is the worse of the two:
+   *
+   *   - `"a<CR>b"` was emitted verbatim, and the document then **failed to re-parse at
+   *     all** - a CR ends a line here, so `b` is an entry with no separator. The
+   *     writer had declared the value representable and produced an unreadable file.
+   *   - `"a<CR><LF>b"` was emitted with its terminator replaced, so the value came back
+   *     `"a<LF>b"`: silently different, which is the failure mode
+   *     ::GTEXT_INI_E_UNREPRESENTABLE exists to prevent.
+   *
+   * This is the third time an accessor reachable only from the builder has needed a
+   * unit test rather than a score, and the shape is always the same.
+   */
+  struct Case { const char * value; size_t len; };
+  for (const Case & c : {Case{"a\rb", 3}, Case{"a\r\nb", 4}, Case{"a\rb\nc", 5}}) {
+    GTEXT_INI_Document * doc = empty(cp());
+    ASSERT_NE(doc, nullptr);
+    GTEXT_INI_Group * group = nullptr;
+    ASSERT_EQ(gtext_ini_document_add_group(doc, "a", &group), GTEXT_INI_OK);
+    ASSERT_EQ(gtext_ini_group_set(group, "k", c.value, c.len), GTEXT_INI_OK);
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    EXPECT_EQ(gtext_ini_write(doc, &sink, nullptr), GTEXT_INI_E_UNREPRESENTABLE)
+        << c.value;
+    gtext_ini_sink_buffer_free(&sink);
+    gtext_ini_free(doc);
+  }
+  /* A value whose break is a bare LF is fine, which is the whole point: the rule is
+   * about which terminator, not about whether there is one. */
+  GTEXT_INI_Document * doc = empty(cp());
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * group = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "a", &group), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(group, "k", "a\nb", 3), GTEXT_INI_OK);
+  EXPECT_EQ(written(doc), "[a]\nk=a\n b\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniConfigParser, TheJoinStripsItsOwnResultForAValueNoParseProduces) {
+  /*
+   * The reference joins the pieces and then strips the result, and this asserts that
+   * last step - which **no gate reaches**, and a mutation disabling it moved nothing.
+   * That is not a hole in the gates: a parse never produces such a value, because the
+   * span it stores ends at the last line that contributed text. It is reachable only by
+   * handing gtext_ini_unescape() a raw value of one's own, which is a legal call and
+   * therefore has to be right.
+   *
+   * Recorded rather than deleted, because the function's contract is "what
+   * `configparser` would return for these bytes", and dropping the step would make that
+   * false for an input a caller can construct.
+   */
+  EXPECT_EQ(joined("1\n  2\n\n\n"), "1\n2");
+  EXPECT_EQ(joined("1\n  \n"), "1");
+  EXPECT_EQ(joined("\n\n"), "");
+  EXPECT_EQ(joined("v   "), "v");
 }
 
 TEST(IniConfigParser, AParsedMultiLineValueIsWritableWithItsOwnIndentation) {

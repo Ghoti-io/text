@@ -559,6 +559,26 @@ bool gtext_ini_indent_value_ok(const GTEXT_INI_Dialect * dialect,
            gtext_ini_terminator_len(dialect, value, len, content_end - 1)) {
       content_end--;
     }
+    if (!verbatim && line_end > content_end) {
+      /*
+       * **A synthesized value's line breaks must be exactly what the writer will
+       * emit**, and the writer emits one terminator of its own choosing per break -
+       * so a terminator in the value that is not that one is rewritten, and the value
+       * does not come back.
+       *
+       * Two failures, both reachable only through the builder API, which is why
+       * neither the corpus nor the differential could see them: `"a<CR>b"` was emitted
+       * verbatim and the document then **failed to re-parse at all**, because a CR
+       * ends a line here and `b` is an entry with no separator; and `"a<CR><LF>b"` was
+       * emitted with the terminator replaced, so the value came back `"a<LF>b"`.
+       *
+       * The test is on terminator length rather than on the byte, so a dialect where a
+       * CR is *data* - one with neither `accept_crlf` nor `lone_cr_terminates` - keeps
+       * it, which is the difference between refusing what cannot be spelled and
+       * refusing what merely looks dangerous.
+       */
+      if (line_end - content_end != 1 || value[content_end] != '\n') return false;
+    }
     if (!first && kind == INI_LINE_CONTENT) {
       size_t indent = gtext_ini_indent_width(dialect, value, len, i);
       /*
