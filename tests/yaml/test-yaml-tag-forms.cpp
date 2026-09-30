@@ -62,6 +62,55 @@ TEST(YamlTagForms, AllThreeSpellings) {
 	}
 }
 
+/* A handle has to be up against its name.
+ *
+ * c-ns-shorthand-tag is c-tag-handle ns-tag-char+ (5.6) with nothing allowed
+ * between the two, and a space is not an ns-tag-char - so a space after "!!"
+ * ends the tag and leaves the handle with no name at all.
+ *
+ * This file's own opening paragraph records the same defect for the single
+ * "!": the stream read the token after it as the tag's name whichever form it
+ * was, so "! a" used its own node as the tag name. The "!!" handle kept that
+ * behaviour. stream_scan() skips whitespace, so it answers with the next
+ * token whatever stands in front of it, and "!! str" glued that token on as
+ * the suffix: the tag became "!!str" and the node became *empty*, with the
+ * document's only value swallowed into the tag name. Accepted, and silently
+ * wrong - PyYAML refuses every input below ("expected URI, but found ' '").
+ *
+ * "a: !! b" and "- !! x" were already refused and that hid this: the glued
+ * name failed a namespace lookup afterwards, so the error named a tag nobody
+ * had written rather than the malformed handle. Against the unfixed stream
+ * only three of the seven refusals below actually fail - the three where the
+ * glued name happens to be a *defined* tag, "!!str" - so four of them would
+ * have passed while the defect was fully present, and a shorter list of
+ * inputs could easily have been all four.
+ *
+ * Found by the yaml-writer fuzz leg on the EVO-X2 at 578,031 executions,
+ * through the event pipe rather than the DOM: the streaming writer re-emitted
+ * the swallowed scalar, so the round trip disagreed with itself.
+ */
+TEST(YamlTagForms, AShorthandHandleNeedsANameAgainstIt) {
+	EXPECT_EQ(Render("!! str\n"), std::string(""));
+	EXPECT_EQ(Render("!!  str\n"), std::string(""));
+	EXPECT_EQ(Render("!!\n"), std::string(""));
+	EXPECT_EQ(Render("!! \n"), std::string(""));
+	EXPECT_EQ(Render("a: !! b\n"), std::string(""));
+	EXPECT_EQ(Render("- !! x\n"), std::string(""));
+	/* No trailing newline either. */
+	EXPECT_EQ(Render("!! str"), std::string(""));
+
+	/* What still has to work, and it is the whole reason this is an adjacency
+	   test rather than a ban: the shorthand itself, the node that follows it,
+	   and the non-specific "!" which is *defined* by standing apart from its
+	   node. A fix that refused a space after any "!" would break the four
+	   cases in kCases above. */
+	EXPECT_EQ(Render("!!str 12\n"), std::string("\"12\""));
+	EXPECT_EQ(Render("!!int 12\n"), std::string("12"));
+	EXPECT_EQ(Render("!!str\n"), std::string("\"\""));
+	EXPECT_EQ(Render("! str\n"), std::string("\"str\""));
+	EXPECT_EQ(Render("a: !!str 1\n"), std::string("{\"a\": \"1\"}"));
+}
+
 /* A verbatim tag that never closes is an error rather than a scalar. */
 TEST(YamlTagForms, AnUnterminatedVerbatimTagIsRefused) {
 	EXPECT_EQ(Render("!<tag:x a\n"), std::string(""));

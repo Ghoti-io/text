@@ -1067,8 +1067,26 @@ process_token:
           GTEXT_YAML_Token name_tok;
           nst = stream_scan(s, &name_tok);
           if (nst != GTEXT_YAML_OK) return nst;
-          if (name_tok.type != GTEXT_YAML_TOKEN_SCALAR) {
-            return GTEXT_YAML_E_BAD_TOKEN;
+          /* c-ns-shorthand-tag is c-tag-handle ns-tag-char+ (5.6), with
+             nothing allowed between the handle and the name: the "!!" has to
+             be up against its suffix, and a space is not an ns-tag-char, so
+             one ends the tag and leaves the handle with no name at all.
+             stream_scan() skips whitespace, so it answers with the next token
+             whatever stands before it - and "!! str" glued that token on as
+             the suffix, yielding the tag "!!str" on an *empty* node with the
+             scalar swallowed into the tag name. The document was accepted and
+             its only value silently moved; PyYAML refuses it outright
+             ("expected URI, but found ' '").
+             This is the adjacency test stream_tag_is_non_specific() opens
+             with, thirty lines above, for the single-"!" spelling of the same
+             question. Both handles need it; only one had it. "a: !! b" and
+             "- !! x" looked handled because the glued name failed a namespace
+             lookup afterwards, which refused them for the wrong reason and
+             named a tag nobody wrote. */
+          if (name_tok.type != GTEXT_YAML_TOKEN_SCALAR
+              || name_tok.offset != tag_tok.offset + 1) {
+            stream_fail(s, &tok, "Tag handle \"!!\" with no name after it");
+            return GTEXT_YAML_E_INVALID;
           }
           tag_len = name_tok.u.scalar.len;
           if (tag_len > sizeof(buf) - 3) tag_len = sizeof(buf) - 3;
