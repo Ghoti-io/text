@@ -7,6 +7,8 @@
  *     w32 ok | w32 err <status>
  *     G <hex canonical name> <hex document name> P|N
  *     E <hex document key> <hex raw value>|- <hex decoded value>|-
+ *     L <hex query name> <hex query key> <hex looked-up value>|-
+ *     S                                  (a lookup skipped: a NUL in a name)
  *     W <hex rewrite>
  *     END
  *
@@ -128,6 +130,69 @@ int main(void) {
         }
         fputs("\n", stdout);
         gtext_ini_string_free(NULL, decoded);
+      }
+    }
+    /*
+     * **The lookup, asked through the library's own accessor.** Everything above
+     * walks the tree by index, so none of it reaches gtext_ini_document_get() -
+     * and a differential that compares a tree cannot see a defect in a lookup.
+     * One did: git's `section.subsection` case rule was applied to every folding
+     * dialect, so a Win32 lookup for `[Foo.Bar]` spelled as the file spells it
+     * found nothing, and both gates stayed green because both resolved
+     * first-wins in the harness instead of asking the library.
+     *
+     * The query uses the **document's own spelling**, which is what a caller who
+     * read the name out of the file would type, and is the only spelling that
+     * exercises the fold. A name or key containing a NUL cannot be asked for
+     * through a NUL-terminated API at all and is skipped with `S`, so the count
+     * is in the output rather than silently absent.
+     */
+    for (size_t g = 0; g < groups; g++) {
+      const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
+      size_t name_len = 0;
+      const char * name = gtext_ini_group_name(group, &name_len);
+      bool preamble = gtext_ini_group_is_preamble(group);
+      size_t entries = gtext_ini_group_entry_count(group);
+      for (size_t e = 0; e < entries; e++) {
+        size_t key_len = 0;
+        const char * key = gtext_ini_group_key_at(group, e, &key_len);
+        if (memchr(name, 0, name_len) || memchr(key, 0, key_len)) {
+          fputs("S\n", stdout);
+          continue;
+        }
+        char qname[4096];
+        char qkey[4096];
+        if (name_len >= sizeof(qname) || key_len >= sizeof(qkey)) {
+          fputs("S\n", stdout);
+          continue;
+        }
+        memcpy(qname, preamble ? "" : name, preamble ? 0 : name_len);
+        qname[preamble ? 0 : name_len] = '\0';
+        memcpy(qkey, key, key_len);
+        qkey[key_len] = '\0';
+        size_t got_len = 0;
+        const char * got = gtext_ini_document_get(doc, qname, qkey, &got_len);
+        fputs("L ", stdout);
+        put_hex(qname, preamble ? 0 : name_len);
+        fputs(" ", stdout);
+        put_hex(qkey, key_len);
+        fputs(" ", stdout);
+        if (!got) {
+          fputs("-", stdout);
+        }
+        else {
+          char * decoded = NULL;
+          size_t decoded_len = 0;
+          if (gtext_ini_unescape(&dialect, got, got_len, NULL, &decoded,
+                  &decoded_len) == GTEXT_INI_OK) {
+            put_hex(decoded, decoded_len);
+            gtext_ini_string_free(NULL, decoded);
+          }
+          else {
+            fputs("-", stdout);
+          }
+        }
+        fputs("\n", stdout);
       }
     }
     GTEXT_INI_Sink sink;

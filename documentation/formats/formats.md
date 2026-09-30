@@ -22,7 +22,7 @@ sequence, and how confident anyone should be about that.
 | CSV | @subpage format_csv "CSV" | RFC 4180, plus configurable dialects | RFC 4180 and looser dialects; irregular rows | RFC 4180 with configurable quoting |
 | YAML | @subpage format_yaml "YAML" | YAML 1.2.2, with a 1.1 resolution mode | block and flow, anchors, tags, multi-document | DOM and streaming event serialization |
 | TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12) and the v1.1.0 draft behind an option; date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar read and written, 1.1.0 read, a statement-by-statement event walk, comments through a write, JSON both ways; 3,377 of 3,377 and 3,883 of 3,883 toml-test measurements, a pinned `tomllib` over 60,000 generated documents, and toml++ over the four v1.1.0 relaxations it shares | no comment inside a value on the tree; no incremental reader (argued, not pending); the two v1.1.0 unquoted-key relaxations |
-| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail; `git-config(1)`; EditorConfig 0.17.2; `systemd.syntax(7)`; Python `configparser`, which has none | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects; **34 of 34** of `editorconfig-core-test`'s grammar assertions, where both reference cores score 33; 165 of 165 systemd unit files parse and rewrite byte for byte; 703 of 703 `.cfg` and `.ini` files get the same verdict as `configparser` itself, which refuses 224 of them | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
+| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail; `git-config(1)`; EditorConfig 0.17.2; `systemd.syntax(7)`; Python `configparser`, which has none; the Win32 profile API, which has none and no reference that is Windows | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects; **34 of 34** of `editorconfig-core-test`'s grammar assertions, where both reference cores score 33; 165 of 165 systemd unit files parse and rewrite byte for byte; 703 of 703 `.cfg` and `.ini` files get the same verdict as `configparser` itself, which refuses 224 of them; 701 real `.ini` and `.cfg` files agree with wine's Win32 profile API over 118,790 value comparisons and 214,774 lookups | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
 
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
@@ -39,14 +39,9 @@ itself simply "INI" would have nothing to be scored against but its author's
 choices; a parser reading a named dialect has a specification, a reference
 implementation and a corpus, and the page records where they disagree.
 
-One dialect with the same property remains unimplemented: Python's `configparser`,
-whose "specification" is its implementation, so it could only ever be scored by
-differential. The INI page's "Not implemented" section says what it would need, and why
-its interpolation is the obstacle.
-
-The five implemented dialects differ in how much a clean score is worth, and the page
-says so rather than presenting one number - **four distinct situations**, which is the
-most useful thing the INI work has to say about oracles:
+**Every named dialect is now implemented**, and the seven differ in how much a clean
+score is worth. The page says so rather than presenting one number - **six distinct
+situations**, which is the most useful thing the INI work has to say about oracles:
 
 - **Desktop Entry has two reference implementations that disagree with each
   other**, so agreeing with both is a real constraint, and the sharing between them
@@ -69,17 +64,31 @@ most useful thing the INI work has to say about oracles:
   exclusions. Whether that reference was usable at all was an open question for the
   whole of the INI work, and answering it was most of the effort for this dialect.
 
-- **configparser has one reference and it is also the specification** - the weakest
-  position of the six, and weaker than git's lone reference, because there
-  `git-config(1)` at least exists to disagree with git. So two other things carry the
-  weight: the generator's own reading of the dialect, scored as a separate `intent`
-  number, and a local corpus of 703 real files of which the reference **refuses 224** -
-  most `lit.cfg` files are Python scripts - which is the only place this format's
-  refusals can be scored against something real.
+- **configparser has one reference and it is also the specification** - weaker than
+  git's lone reference, because there `git-config(1)` at least exists to disagree with
+  git. So two other things carry the weight: the generator's own reading of the
+  dialect, scored as a separate `intent` number, and a local corpus of 703 real files
+  of which the reference **refuses 224** - most `lit.cfg` files are Python scripts -
+  which is the only place this format's refusals can be scored against something real.
 
-**Win32 `.ini` is deliberately absent and not merely unimplemented**: its
-API is documented as consulting the registry before the file, so its answer is
-not a function of the file's bytes and there is nothing to conform to.
+- **Win32 has one reference that is not the thing it stands for, and it disagrees with
+  itself.** wine is a reimplementation of the Windows API; no run here establishes what
+  a Microsoft kernel32 does, and the gate prints that with every number. Two of the
+  thirty rules have a second source in Microsoft's own documentation and twenty-eight
+  do not, which is the weakest grounding of the seven. What partly offsets it is that
+  the reference has three entry points and two of them disagree about the format's most
+  consequential rule - `GetPrivateProfileSection` drops a `;` line and
+  `GetPrivateProfileString` retrieves it - so it is a two-reference differential built
+  from one implementation, scored both ways, with the disagreement **asserted** rather
+  than resolved by quietly picking a side.
+
+**Win32 `.ini` used to be listed here as deliberately absent**, on the grounds that
+`GetPrivateProfileString` consults the registry before the file so its answer is not a
+function of the file's bytes. That is true of the **API** and it disqualifies only the
+claim to reproduce it. It is not true of the file, and reading the `.ini` files that
+exist on Windows - which mostly belong to applications with their own parsers - is a
+different question that was reachable the whole time. The registry redirection is now a
+documented limit of the dialect rather than a reason not to have one.
 
 `GTEXT_YAML_MODE_CONFIG` is a YAML parse preset, not a parser for either format.
 

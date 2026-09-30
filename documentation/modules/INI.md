@@ -9,12 +9,15 @@ and writes one back out **byte for byte**.
 
 It is the one module here whose format is chosen by the caller rather than named
 by the module. There is no INI specification, so `GTEXT_INI_Dialect` names which
-INI - six of them: Desktop Entry, a generic derivation of it, git config,
-EditorConfig, systemd and Python's configparser - and the default is Desktop Entry 1.5.
-EditorConfig is the only one with a **normative conformance suite**, and the only one
-where this module scores higher than either reference implementation does; configparser
-is the only one with **no specification at all**, so every rule of it is a measurement
-rather than a citation.
+INI - seven of them: Desktop Entry, a generic derivation of it, git config,
+EditorConfig, systemd, Python's configparser and the Win32 profile API - and the
+default is Desktop Entry 1.5. EditorConfig is the only one with a **normative
+conformance suite**, and the only one where this module scores higher than either
+reference implementation does; configparser is the only one with **no specification at
+all**, so every rule of it is a measurement rather than a citation; Win32 has no
+specification *and* no reference that is the thing it stands for - wine is a
+reimplementation of the Windows API - so it is the weakest-grounded of the seven and
+its gate prints that with every run.
 
 ---
 
@@ -365,10 +368,58 @@ deliberately.
 gtext_ini_write_file() writes a temporary beside the destination and renames it
 into place, so an interrupted write leaves the previous file intact.
 
+### Win32 profile API
+
+```c
+GTEXT_INI_Dialect dialect = gtext_ini_dialect_win32();
+```
+
+For the `.ini` files that exist on Windows. **Not** for reproducing what
+`GetPrivateProfileString` returns on a given machine, which nothing that reads only
+the file can do: the API consults the registry's `IniFileMapping` for the section
+first. What it is for is the far larger population of files whose readers are the
+applications themselves.
+
+Thirty rules, all measured under wine, because the API documents two. The ones most
+likely to surprise:
+
+- **`;` is a comment and `#` is not.** The reference disagrees with itself here -
+  `GetPrivateProfileSection` drops a `;` line and `GetPrivateProfileString` retrieves
+  it - so `;disabled=1` is a comment to one entry point and a live setting to the
+  other. This follows the enumeration API. `#` is a comment to neither.
+- **A lookup is case-insensitive over ASCII only**, for keys and section names both,
+  and the first of two duplicates wins. A lookup does **not** search a second
+  `[a]`, unlike every other dialect here.
+- **`[ b ]` and `[b]` are one section**; `[a]b]` is the section `a]b`; `[a]junk` is
+  `a`; `[a` with no `]` is not a header at all but a valueless entry.
+- **One matching pair of surrounding quotes comes off a value**, which is how a value
+  with a leading or trailing blank is spelled. This is a wrapper and not git's
+  toggle: `x" mid "y` is unchanged here.
+- **Nothing is ever refused.** Every byte sequence is a legal document.
+
+`make conformance-ini-win32` scores this machine's 701 `.ini` and `.cfg` files against
+wine's profile API - 118,790 value comparisons and 214,774 lookups - and
+`make check-ini-win32-oracle` differs against the pinned image over 85 generated axes,
+scoring the section list, the section enumeration, the per-key value and the lookup
+through gtext_ini_document_get() separately. The corpus is real bytes of the
+right shape from the **wrong provenance**: this machine has two `.ini` files a Windows
+application wrote, and the gate says so where the number is printed.
+
 ## 6. What is not here
 
-No `configparser` dialect; no streaming reader; and no Win32 dialect, which is absent
-by decision rather than by omission - its answers are not a function of the file's
-bytes. \ref format_ini "The format page" says why for each, and names the one
-continuation mode still deliberately absent from the enum because nothing implements
-it.
+No streaming reader, and no interpolation - which is absent and *measured*, because
+over the 479 real `configparser` documents on this machine the default
+`BasicInterpolation` refuses a value in 301 of them and changes one in none.
+
+**Every named dialect is implemented**, Win32 included. That entry used to read "no
+Win32 dialect, which is absent by decision - its answers are not a function of the
+file's bytes", and the correction is worth keeping: that sentence is true of the
+**API's** answers, because `GetPrivateProfileString` consults the registry before the
+file. It is not true of the file, and reading the `.ini` files that exist on Windows -
+which mostly belong to applications with their own parsers - was the actual goal and
+was reachable all along. Two things genuinely stay out: the registry redirection,
+which no reader of a file can follow, and UTF-16 input, which the `W` entry points
+read and this byte-oriented module does not.
+
+\ref format_ini "The format page" says why for each, and names the one continuation
+mode still deliberately absent from the enum because nothing implements it.

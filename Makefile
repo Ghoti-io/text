@@ -2249,6 +2249,14 @@ conformance-ini-configparser: $(CONFORMANCE_LIB)
 	$(CONFORMANCE_ENV) tools/conformance/run-ini-configparser.sh
 
 conformance-all: ## Score every parser against its external corpus
+# **conformance-ini-win32 is deliberately not here.** Every gate in this list runs
+# with what the machine already has - a local corpus, an installed reference, or a
+# pinned suite checkout - and none of them needs a container. The Win32 corpus gate
+# does: its reference is wine inside the pinned image, by design rather than by
+# accident, because pinning the host's wine is not something this library can do.
+# Adding it would quietly change this target's contract from "needs this machine" to
+# "needs podman", so it sits with the oracle gates instead, where that requirement is
+# already the rule. `make conformance-ini-win32` runs it.
 conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
 
 coverage: ## Build instrumented, run the tests, and report line coverage

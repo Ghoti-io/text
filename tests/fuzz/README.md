@@ -578,8 +578,9 @@ one is the whole reason the harness is worth having:
   answer; reading a byte that is not there is not.
 - **A second parse of the same bytes is the same document.**
 
-**All of those but the first run under four dialects** - Desktop Entry, generic,
-git config and EditorConfig - and that is a correction rather than a refinement. The
+**All of those but the first run under seven dialects** - Desktop Entry, generic,
+git config, EditorConfig, systemd, configparser and Win32 - and that is a correction
+rather than a refinement. The
 byte-identical rewrite was asserted under the *strict* dialect alone for a while,
 and the strict dialect has `skip_bom` false and refuses a document beginning with
 a byte-order mark. So when the generic dialect turned out to be **discarding** a
@@ -588,9 +589,20 @@ came in - no input this harness could generate reached the path, and it had to b
 found by a differential against git instead. A property asserted under one
 dialect says nothing about another that relaxes the rule the property depends on.
 
-The first property has no analogue for git config, EditorConfig, systemd or
-configparser, and the absence is a finding: none of the four is a relaxation of Desktop
-Entry in either direction. configparser sits outside every relation for a reason none of
+**Win32 carries a property none of the other six can**, and it is about refusal rather
+than about agreement: it must parse **every** input. Its key charset is open, the empty
+key and the empty section name are both spellable, a line with no separator is a
+valueless entry and an unclosed header is an ordinary line, so no byte sequence is left
+for that reader to reject. A claim of that shape is exactly what a fuzzer is for, and
+it is the only unconditional property in this harness other than the first.
+
+The first property has no analogue for git config, EditorConfig, systemd,
+configparser or Win32, and the absence is a finding: none of the five is a relaxation
+of Desktop Entry in either direction. Win32's reason is its own and is the only one
+that runs in both directions at once within a single rule: `;` is a comment to it and
+`#` is not, which is the exact opposite of the generic dialect on both counts - so one
+line is a comment to one and an entry to the other, and the next line the other way
+round. configparser sits outside every relation for a reason none of
 the others has - a `:` ends a key for it and is an ordinary key byte to the other five,
 so the same line is a *different entry* rather than a legal-or-not question - and it is
 the only dialect that reaches the indent scan, the second join, and a writer branch that

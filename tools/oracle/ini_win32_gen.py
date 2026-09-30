@@ -93,6 +93,11 @@ def _axes():
     add("header-name-semicolon", "[a;b]\nk=v\n")
     add("header-name-hash", "[a#b]\nk=v\n")
     add("header-name-high-byte", b"[\xe9]\nk=v\n")
+    # A dotted name in mixed case, which is what caught git's subsection case rule
+    # being applied to every folding dialect. The axis exists because the *absence*
+    # of one let that defect through both gates.
+    add("header-name-dotted-mixed", "[Foo.Bar]\nKeY=v\n")
+    add("header-name-mixed", "[MiXeD]\nKeY=v\n")
     add("header-long-name", "[" + "s" * 300 + "]\nk=v\n")
     add("header-duplicate", "[a]\nk=1\n[b]\nj=2\n[a]\nm=3\n")
     add("header-duplicate-case", "[a]\nk=1\n[A]\nj=2\n")

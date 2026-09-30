@@ -72,7 +72,8 @@ def ours(runner, docs):
     current = None
     for line in finished.stdout.decode("utf-8", "surrogateescape").splitlines():
         if line == "BEGIN":
-            current = {"ok": None, "status": None, "groups": [], "rewrite": None}
+            current = {"ok": None, "status": None, "groups": [], "rewrite": None,
+                       "lookups": [], "skipped": 0}
         elif line == "END":
             records.append(current)
             current = None
@@ -98,6 +99,13 @@ def ours(runner, docs):
                 current["groups"][-1]["entries"].append((key, raw, dec))
         elif line.startswith("W "):
             current["rewrite"] = unhexed(line.split(" ", 1)[1])
+        elif line.startswith("L "):
+            _, qname, qkey, value = line.split(" ")
+            current.setdefault("lookups", []).append(
+                (unhexed(qname), unhexed(qkey),
+                 None if value == "-" else unhexed(value)))
+        elif line == "S":
+            current["skipped"] = current.get("skipped", 0) + 1
     return records
 
 
@@ -164,6 +172,15 @@ def plan(record, doc):
         for key, raw, _ in group["entries"]:
             rendered.append(key if raw is None else key + b"=" + raw)
         asks.append(("sections", canon, rendered))
+        # **Ask with the document's own spelling as well as the canonical one.**
+        # Asking only with the canonical name means no query ever carries an
+        # upper-case letter, so the fold is never exercised - and that blind spot
+        # hid a real defect: git's `section.subsection` case rule was applied to
+        # every folding dialect, so a Win32 lookup for `[Foo.Bar]` spelled exactly
+        # as the file spells it found nothing. A harness that normalizes its own
+        # input cannot test a normalization.
+        if group["name"] != canon and not group["preamble"]:
+            asks.append(("sections", trimmed(group["name"]), rendered))
         # **One ask per canonical key, answered by the first entry with it.** The
         # dialect is first-wins, so asking once per *entry* and expecting that
         # entry's own value is a question the reference never answers: for
@@ -177,6 +194,17 @@ def plan(record, doc):
                 continue
             first[folded] = True
             asks.append(("values", (canon, key), dec))
+            # The same, for the key: the reference folds both names, and a query
+            # that is already folded asks it nothing.
+            if key.lower() != key or (group["name"] != canon and
+                                      not group["preamble"]):
+                asks.append(("values", (trimmed(group["name"]), key), dec))
+    # **The library's own lookups, asked of the reference with the same spelling.**
+    # This is the only part of the plan whose expectation comes from an accessor
+    # rather than from the harness resolving the tree itself - which is what let a
+    # lookup defect through both gates once.
+    for qname, qkey, value in record.get("lookups", []):
+        asks.append(("lookup", (qname, qkey), value))
     # The divergence probes, asked up front rather than in a second pass: for each
     # `;`-led line that has a separator, ask the string API for the key we did not
     # create. A `;` line is dropped by us and by the enumeration API, so this is
@@ -202,6 +230,8 @@ def reference(docs, plans):
             elif kind == "sections":
                 job.append("SECT " + hexed(arg))
             else:
+                # "values", "lookup" and "divprobe" are all a GET; they differ in
+                # where the expectation came from, not in what is asked.
                 job.append("GET %s %s" % (hexed(arg[0]), hexed(arg[1])))
         lines.append(b"DOC %d\n" % len(doc) + doc +
                      ("ASK %d\n" % len(job) + "".join(l + "\n" for l in job))
@@ -296,7 +326,7 @@ def main():
         return 2
 
     score = {k: [0, 0] for k in ("intent", "names", "sections", "values",
-                                 "rewrite")}
+                                 "lookup", "rewrite")}
     diverged = {}
     failures = []
     # **The reference's channel cannot carry a NUL**, and that is a property of
@@ -330,7 +360,7 @@ def main():
             continue
 
         for (kind, arg, expect), answer in zip(asks, answers):
-            if kind in ("sections", "values") and _has_nul(expect):
+            if kind in ("sections", "values", "lookup") and _has_nul(expect):
                 nul_excluded += 1
                 continue
             if kind == "names":
@@ -349,6 +379,14 @@ def main():
                 else:
                     failures.append("%s: section %r: %r != ours %r" %
                                     (label, arg, got, expect))
+            elif kind == "lookup":
+                score["lookup"][1] += 1
+                got = None if answer == "MISSING" else unhexed(answer)
+                if got == expect:
+                    score["lookup"][0] += 1
+                else:
+                    failures.append("%s: lookup %r/%r: %r != ours %r" %
+                                    (label, arg[0], arg[1], got, expect))
             elif kind == "divprobe":
                 continue
             else:
@@ -392,7 +430,7 @@ def main():
 
     print()
     ok = True
-    for name in ("intent", "names", "sections", "values", "rewrite"):
+    for name in ("intent", "names", "sections", "values", "lookup", "rewrite"):
         good, total = score[name]
         print("%-10s %d/%d" % (name, good, total))
         if good != total:

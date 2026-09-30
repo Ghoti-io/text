@@ -3676,6 +3676,95 @@ TEST(IniWin32, BothNamesFoldAndOnlyOverAscii) {
   gtext_ini_free(high);
 }
 
+TEST(IniWin32, ADottedSectionNameFoldsLikeAnyOtherByte) {
+  /*
+   * **The `.` is an ordinary byte here, and it was not.** git was the only dialect
+   * folding a group name when ini_group_matches() was written, so its rule became
+   * *the* rule: fold up to the first `.` and compare the rest byte for byte,
+   * because `[a.SubB]` folds its subsection and `[a "SubB"]` does not. Applied to
+   * Win32 - where a dotted section name is ordinary and common - that split the
+   * query in two, and a lookup using the **document's own spelling** returned
+   * nothing while the fully lower-cased one worked.
+   *
+   * The reference finds all four spellings. Neither gate could see it: both asked
+   * the reference with the canonical name, so no query they generated ever carried
+   * an upper-case letter after a dot. A harness that normalizes its own input
+   * cannot test a normalization.
+   */
+  GTEXT_INI_Document * doc = ok("[Foo.Bar]\nKeY=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  for (const std::string & spelling : {std::string("Foo.Bar"),
+           std::string("foo.bar"), std::string("FOO.BAR"),
+           std::string("foo.BAR"), std::string("FoO.bAr")}) {
+    EXPECT_EQ(raw(doc, spelling.c_str(), "KeY"), "v") << spelling;
+    EXPECT_EQ(raw(doc, spelling.c_str(), "key"), "v") << spelling;
+    EXPECT_EQ(raw(doc, spelling.c_str(), "KEY"), "v") << spelling;
+  }
+  gtext_ini_free(doc);
+  /* git's rule is still git's: a subsection's case is significant, and only the
+   * section part before the dot folds. */
+  GTEXT_INI_Document * g = ok("[a \"SubB\"]\n\tk = v\n",
+      gtext_ini_dialect_git_config());
+  ASSERT_NE(g, nullptr);
+  EXPECT_EQ(raw(g, "a.SubB", "k"), "v");
+  EXPECT_EQ(raw(g, "A.SubB", "k"), "v");
+  EXPECT_EQ(raw(g, "a.subb", "k"), "<absent>");
+  gtext_ini_free(g);
+}
+
+TEST(IniWin32, ALookupTrimsTheNameItIsGiven) {
+  /*
+   * The stored canonical name has already been trimmed, and the caller's query had
+   * not been - so `[ b ]` could be found as `b` and not as `" b "`, which is the
+   * spelling a caller who copied the name out of the file would have. Measured: the
+   * reference finds it either way.
+   *
+   * Found by the differential's `lookup` score, which exists because neither of the
+   * other scores reaches gtext_ini_document_get() at all.
+   */
+  GTEXT_INI_Document * doc = ok("[ b ]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  for (const std::string & spelling : {std::string("b"), std::string(" b "),
+           std::string("\tb\t"), std::string("  B  ")}) {
+    EXPECT_EQ(raw(doc, spelling.c_str(), "k"), "v") << "[" << spelling << "]";
+  }
+  gtext_ini_free(doc);
+}
+
+TEST(IniWin32, TheEmptyNameIsThePreambleAndNotTheFirstEmptyGroup) {
+  /*
+   * Two kinds of group can carry an empty canonical name - the preamble, and a `[]`
+   * header - and the reference resolves the empty name to the **preamble**, always.
+   * Measured: `[]` then `k=v`, with no preamble at all, answers nothing for
+   * `("", "k")`. So it is not "the first group whose name matches", and a `[]`
+   * section's entries are reachable by no name.
+   */
+  GTEXT_INI_Document * doc = ok("[]\nk=v\n", w32());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "", "k"), "<absent>");
+  /* And the entries are still in the tree, which is what the rewrite needs. */
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k"}));
+  EXPECT_EQ(written(doc), "[]\nk=v\n");
+  gtext_ini_free(doc);
+  /* With a preamble present, the preamble answers and the `[]` group does not. */
+  GTEXT_INI_Document * two = ok("p=0\n[]\nk=v\n", w32());
+  ASSERT_NE(two, nullptr);
+  EXPECT_EQ(raw(two, "", "p"), "0");
+  EXPECT_EQ(raw(two, "", "k"), "<absent>");
+  gtext_ini_free(two);
+  /*
+   * EditorConfig is deliberately the other way, and its own documentation says so:
+   * gtext_ini_group_find("") may find either, whichever comes first, and
+   * gtext_ini_group_is_preamble() is how a caller tells them apart. That is why the
+   * rule above is conditioned on merge_duplicate_groups rather than applied to
+   * every dialect that allows an empty name.
+   */
+  GTEXT_INI_Document * ecdoc = ok("[]\nk=v\n", ec());
+  ASSERT_NE(ecdoc, nullptr);
+  EXPECT_EQ(raw(ecdoc, "", "k"), "v");
+  gtext_ini_free(ecdoc);
+}
+
 TEST(IniWin32, TheFirstOfTwoDuplicatesWins) {
   /* For keys and for sections alike, and neither is an error. */
   GTEXT_INI_Document * doc = ok("[a]\nk=1\nK=2\nk =3\n", w32());

@@ -67,11 +67,69 @@ static bool ini_key_matches(const GTEXT_INI_Dialect * dialect,
 static bool ini_group_matches(const GTEXT_INI_Dialect * dialect,
     const GTEXT_INI_Group * group, const char * query, size_t query_len) {
   const ini_str * name = group->canon.data ? &group->canon : &group->name;
+  /*
+   * **The query is trimmed too, where the name was.** The stored canonical name
+   * has already had its surrounding whitespace removed under
+   * ::GTEXT_INI_Dialect::trim_group_name; the caller's query has not, so
+   * `[ b ]` could be found as `b` and not as `" b "` - which is the spelling a
+   * caller who copied the name out of the file would have. Measured: the
+   * reference finds it either way.
+   */
+  if (dialect->trim_group_name) {
+    while (query_len && gtext_ini_is_space(dialect, query[0])) {
+      query++;
+      query_len--;
+    }
+    while (query_len && gtext_ini_is_space(dialect, query[query_len - 1])) {
+      query_len--;
+    }
+  }
+  /*
+   * **The empty name is the preamble, for a dialect that does not merge.** Two
+   * kinds of group can carry an empty canonical name - the preamble, and a `[]`
+   * header - and the reference resolves the empty name to the first, always:
+   * measured, `[]` then `k=v` with no preamble at all answers *nothing* for
+   * `("", "k")`, so it is not simply "the first group that matches".
+   *
+   * For a merging dialect this rule would change EditorConfig's documented
+   * behaviour, where gtext_ini_group_find("") may find either and
+   * gtext_ini_group_is_preamble() is how a caller tells them apart. So it is
+   * conditioned on the same field that expresses "a lookup stops at the first
+   * group of a name", which is the property it follows from.
+   */
+  if (!query_len && !dialect->merge_duplicate_groups && !group->preamble) {
+    return false;
+  }
   if (name->len != query_len) return false;
   /* gtext_ini_group_names_fold(), not `fold_case`: EditorConfig folds keys and
    * compares section names byte for byte. */
   if (!gtext_ini_group_names_fold(dialect)) {
     return query_len == 0 || memcmp(name->data, query, query_len) == 0;
+  }
+  if (!dialect->subsection_syntax) {
+    /*
+     * **The whole name folds.** Every byte, no structure - which is what
+     * ::GTEXT_INI_DIALECT_WIN32 needs and what the branch below silently was not
+     * doing for it.
+     *
+     * git was the only dialect that folded a group name when this function was
+     * written, so its rule was written as *the* rule: fold up to the first `.` and
+     * compare the rest byte for byte, because `[a.SubB]` folds its subsection and
+     * `[a "SubB"]` does not. Applied to Win32 that made a `.` in a section name -
+     * which is common in a real `.ini` - split the query in two, and a lookup for
+     * `[Foo.Bar]` **using the document's own spelling** returned nothing while
+     * `foo.bar` worked. Measured against the reference, which finds all four
+     * spellings.
+     *
+     * Neither gate could see it, and the reason is worth more than the fix: both
+     * asked the reference using the *canonical* name, so no query they generated
+     * ever had an upper-case letter after a dot. A harness that normalizes its own
+     * input cannot test a normalization.
+     */
+    for (size_t i = 0; i < query_len; i++) {
+      if (name->data[i] != ini_lower_byte(query[i])) return false;
+    }
+    return true;
   }
   size_t dot = 0;
   while (dot < query_len && query[dot] != '.') dot++;

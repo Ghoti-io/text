@@ -796,6 +796,111 @@ letting the indent comparison be `<` instead of `<=`. Both change values while l
 every rewrite byte-identical, which is why a round-trip score cannot see them and a value
 comparison must exist.
 
+### Win32 profile API
+
+gtext_ini_dialect_win32() is the Win32 profile API - `GetPrivateProfileString`,
+`GetPrivateProfileSection` and `GetPrivateProfileSectionNames` - and it is **the one
+dialect here whose reference is not the thing it stands for**. There is no
+specification; the API's documentation states two rules, quote stripping and case
+insensitivity, and this dialect has thirty. Every other rule was measured under
+wine, which is a reimplementation of the Windows API and not Windows.
+
+**Why it exists at all, after being recorded as "never ship".** The disqualifying
+fact was true and answered a different question. `GetPrivateProfileString` consults
+the registry's `IniFileMapping` for the section and reads the file only *"if there is
+no subkey or entry for the section name"*, so the **API's** answer is not a function
+of the file's bytes: two machines with the same file can correctly return different
+values. That rules out claiming to reproduce the API. It says nothing about reading
+the `.ini` files that exist on Windows, and those overwhelmingly belong to
+applications that parse the file themselves - the profile functions date to Windows
+3.x and Microsoft's own documentation says they exist for 16-bit compatibility. The
+large population is the one this dialect is for.
+
+**The reference disagrees with itself, and the disagreement is the format's most
+consequential rule.** `GetPrivateProfileSection` discards a line whose first
+non-blank byte is `;`. `GetPrivateProfileString` retrieves it. So `;disabled=1` is a
+comment to one entry point and a live setting to the other:
+
+```
+[a]
+;disabled=1
+k=v
+```
+
+`GetPrivateProfileSectionA("a", …)` reports `k=v` and nothing else;
+`GetPrivateProfileStringA("a", ";disabled", …)` returns `1`. **This dialect follows
+the enumeration API**, because a reader whose caller asks for `disabled` and is told
+nothing is correctly served, while one handed a setting its author commented out
+cannot be recovered from downstream. `#` is a comment to **neither** API - measured,
+`#hash=2` is both listed and retrievable - and is an ordinary byte here. That is the
+half most readers of this format get wrong in the other direction.
+
+The `;` convention appears to work for prose comments under both APIs for a reason
+that is not a comment rule at all: `; some prose` has no `=`, and a line with no
+separator is invisible to `GetPrivateProfileString` anyway. It is the
+*commented-out setting* - by far the commonest kind in a real `.ini` - where the two
+APIs part.
+
+Not a relaxation of anything:
+
+| | Win32 | elsewhere |
+|---|---|---|
+| `;k=v` | a comment - following `GetPrivateProfileSection`, and **not** `GetPrivateProfileString` | a comment for generic, EditorConfig, systemd and configparser; a key for Desktop Entry |
+| `#k=v` | an **entry**, key `#k` | a comment everywhere else |
+| `[ b ]` | the section `b` - the name is **trimmed inside the brackets** | `" b "` for configparser and EditorConfig; refused by Desktop Entry and git |
+| `[a]b]` | the section `a]b` - closes at the **last** `]` | the same for EditorConfig and configparser; the first `]` elsewhere |
+| `[a]junk` | the section `a`, remainder discarded | three dialects, three answers - see ::GTEXT_INI_Header_Remainder |
+| `[a` | **not a header.** A valueless entry named `[a`, and the section in force does not change | `GTEXT_INI_E_BAD_GROUP` everywhere else |
+| `[]` | a legal header whose entries are reachable by **no name**: the empty name finds the preamble | accepted by EditorConfig, refused by the rest |
+| `= v` | an entry whose key is the empty string, which a lookup retrieves | refused everywhere else |
+| `novalue` | an entry with no value: listed by the enumeration API, invisible to the lookup | git alone, and only with a closed key charset |
+| `k=a=b` | `a=b` - the **first** separator splits the line | the same everywhere; configparser's may be a `:` |
+| `k="v"` | `v` - one matching pair of surrounding quotes comes off | git has a quote *toggle*; nobody else has either |
+| `k=x" mid "y` | unchanged - neither end is a quote | git gives `x mid y` |
+| `k=v` then `K=2` | the **first** wins | last for generic, an error for Desktop Entry and configparser, collected for git |
+| `[a]` … `[A]` | one section for lookup, two in the tree, and a lookup does **not** search the second | every other dialect merges duplicate sections, which is GKeyFile's behaviour |
+| a lone CR | ends a line | data everywhere but systemd and configparser |
+| `[\xe9]` vs `[\xc9]` | two sections - folding is **ASCII only** | configparser folds through Python `str`, which a byte reader cannot follow |
+| `k=one\` | the value `one\` - no continuation, no escapes, a backslash is data | git and systemd continue; configparser indents |
+
+**This dialect refuses nothing**, and that is a property rather than an observation.
+The key charset is open, the empty key and the empty section name are both
+spellable, a line with no separator is a valueless entry, and an unclosed header is
+an ordinary line - so no byte sequence is left to reject. The reference cannot report
+an error either: the profile API has no way to say a file is malformed. It is the
+only one of the seven that can make this claim, `tests/fuzz/fuzz_ini.cpp` asserts it
+on every input, and the differential's `intent` score is the same assertion over 83
+documents. That score caught two defects: `gtext_ini_canon_group()` was written for
+git and refused every Win32 name outside `A-Za-z0-9-.`, and `gtext_ini_canon_key()`
+refused the empty key - and a canonicalization failure is reported as
+::GTEXT_INI_E_OOM two frames up, so twelve documents were refused with an allocation
+failure.
+
+Five fields exist because of this dialect and each is a rule no bool already held:
+::GTEXT_INI_Dialect::allow_empty_key, ::GTEXT_INI_Dialect::trim_group_name,
+::GTEXT_INI_Dialect::unclosed_header_is_line,
+::GTEXT_INI_Dialect::strip_wrapping_quotes and
+::GTEXT_INI_Dialect::merge_duplicate_groups. A sixth change is not a new field:
+::GTEXT_INI_Dialect::valueless_keys is now live with an **open** key charset, which
+its own documentation said was impossible. That reasoning was sound and was about the
+code rather than about the format - `[a` has to become *something*, so the
+open-charset branch takes the whole trimmed line as the key.
+
+**What the writer had to learn.** The profile API writes CRLF, `key=value` with no
+spaces, and trims a value it was given - measured, writing `"  pad  "` and reading it
+back gives `pad`, so a round trip through the API is lossy in a way this module's is
+not. On this side the consequence is narrower and sharper: all three line terminators
+end a line here, so a synthesized value containing a lone CR cannot be written. It
+was, until a unit test asked: the writer declared `a\rb` representable, emitted it
+verbatim, and the document read back as two entries. Reachable only through
+gtext_ini_group_set(), which neither gate exercises because both start from bytes -
+the same blind spot that hid configparser's CR defect.
+
+**Two things stay out.** The registry redirection, which no reader of a file can
+follow. And UTF-16: a Windows `.ini` is sometimes UTF-16LE with a BOM, which the `W`
+entry points read and this byte-oriented module does not - a caller transcodes, or
+asks for a decision.
+
 ## Deviations
 
 | Case | This parser | Elsewhere |
@@ -947,15 +1052,139 @@ no stack and no artifact; it has not recurred and its cause is unknown. It is
 recorded in `tests/fuzz/README.md` rather than explained away, and the harness now
 names its own failing property so a recurrence identifies itself.
 
+**`make conformance-ini-win32`** scores this machine's `.ini` and `.cfg` files against
+wine's profile API. Measured 2026-09-29: **701 files**, and every score clean -
+`intent` 701/701 (this dialect refuses nothing), `names` 701/701, `sections`
+5,371/5,371, `values` **118,790/118,790**, `lookup` **214,774/214,774**, `rewrite`
+701/701.
+
+**The corpus is real bytes of the right shape from the wrong provenance**, and the gate
+prints that with the number. This machine has exactly **two** `.ini` files a Windows
+application wrote, both inside a wine prefix; the 701 belong to freedesktop, Python and
+other tools. The profile API reads any of them, so they are a valid population for "do
+we agree with the reference about real bytes" and no population at all for "is this
+format used this way". **It found nothing**, on its first run and every run since - which
+is worth saying plainly, because for configparser the corpus found the cheapest of three
+defects and here it found none. That is the honest measure of what a weaker population
+buys.
+
+**`make check-ini-win32-oracle`** is the differential, and it is shaped by the reference
+having **three entry points of which two disagree**. 85 axes, one construct per
+document (and the corpus gate above runs the same comparison over real files, with
+`--corpus`, rather than a second copy of it):
+
+| Score | | Excluded |
+|---|---:|---:|
+| `intent` - every document parses, because this dialect refuses nothing | **85 / 85** | - |
+| `names` - `GetPrivateProfileSectionNames` against our section list | **85 / 85** | - |
+| `sections` - `GetPrivateProfileSection` against our entries, raw values | **88 / 88** | - |
+| `values` - `GetPrivateProfileString` against our decoded values | **91 / 91** | - |
+| `lookup` - the same, asked through gtext_ini_document_get() | **99 / 99** | - |
+| `rewrite` - an accepted document writes back byte for byte | **85 / 85** | - |
+| `divergence` - each stated departure is still observable | **4 / 4** | 1 not observable |
+| the reference returns C strings and cannot express a NUL | - | 3 |
+
+**`intent` means something different here than in any other INI gate.** Elsewhere it is
+our verdict against the generator's reading of a specification. Here the claim is that
+*there is no document to refuse*, and it is checked as such - a refusal is a defect even
+though no reference can report one. It earned its place immediately, catching two
+defects at once: `gtext_ini_canon_group()` had been written for git and refused every
+Win32 name outside `A-Za-z0-9-.`, and `gtext_ini_canon_key()` refused the empty key -
+and because `ini_add_group()` reports a canonicalization failure as
+::GTEXT_INI_E_OOM, twelve documents were refused with an out-of-memory error.
+
+**`lookup` exists because the other scores cannot see a lookup.** `names`, `sections`
+and `values` all walk the tree by index and resolve first-wins in the harness, so none
+of them reaches gtext_ini_document_get() - and a differential that compares a tree
+cannot find a defect in an accessor. Adding it found **three**, all of them in
+`ini_group_matches()` and all invisible to every other score:
+
+- git's `section.subsection` rule - fold up to the first `.`, compare the rest byte for
+  byte - was applied to **every** folding dialect, because git was the only one when it
+  was written. A Win32 lookup for `[Foo.Bar]` spelled as the file spells it found
+  nothing, while `foo.bar` worked. A dotted section name is ordinary in a real `.ini`.
+- The query was not trimmed where the stored name had been, so `[ b ]` was findable as
+  `b` and not as `" b "` - again, the spelling a caller who copied the name out of the
+  file would have.
+- The empty name found the first group carrying it, where the reference resolves it to
+  the **preamble** specifically: `[]` with no preamble answers nothing.
+
+The first of those three had also escaped the harness for a reason worth naming: both
+gates asked the reference using the **canonical** name, so no query they generated ever
+carried an upper-case letter after a dot. A harness that normalizes its own input cannot
+test a normalization.
+
+**The divergence score asserts a disagreement rather than an agreement**, which the
+reference makes necessary: four axes where `GetPrivateProfileString` retrieves something
+this reader does not, three of them `;` lines and one a value truncated at a NUL. A wine
+that began treating `;` as a comment would fail here instead of quietly making `values`
+look better. A fifth axis is in the table for its reasoning and predicts no observable
+difference - a `;` line with no `=` is dropped by both APIs and by this reader, for two
+unrelated reasons - and is counted separately rather than forgiven.
+
+**Where each reach ends, measured.** 28 mutations, every one caught, control clean:
+
+| Mutation | unit | oracle | corpus |
+|---|:-:|:-:|:-:|
+| `;` is not a comment | ✓ | ✓ | ✓ |
+| `#` **is** a comment | ✓ | ✓ | ✓ |
+| the group name is not trimmed | ✓ | ✓ | |
+| an unclosed header is an error | ✓ | ✓ | |
+| quotes are not stripped | ✓ | ✓ | ✓ |
+| the empty key is refused | ✓ | ✓ | |
+| a lookup merges duplicate groups | ✓ | | |
+| a lone CR is data | ✓ | ✓ | |
+| the whitespace set is blank-only | ✓ | ✓ | |
+| trailing space is kept | ✓ | ✓ | ✓ |
+| the last duplicate key wins | ✓ | | |
+| keys do not fold | ✓ | | |
+| group names do not fold | ✓ | ✓ | |
+| the BOM is not skipped | ✓ | ✓ | |
+| the empty group name is refused | ✓ | ✓ | |
+| valueless keys are refused | ✓ | ✓ | ✓ |
+| UTF-8 validation is on | ✓ | ✓ | |
+| a header remainder is an error | ✓ | ✓ | |
+| Desktop Entry's escape set is inherited | ✓ | ✓ | ✓ |
+| the locale postfix is on | ✓ | | |
+| the header closes at the **first** `]` | ✓ | ✓ | |
+| the quote strip accepts a single byte | ✓ | ✓ | ✓ |
+| the quote strip ignores which quote | ✓ | ✓ | ✓ |
+| the group name trims leading only | ✓ | ✓ | |
+| the writer allows a synthesized CR | ✓ | | |
+| a valueless key is not trimmed | ✓ | ✓ | ✓ |
+| `canon_key` refuses the empty key | ✓ | ✓ | |
+| `canon_group` uses git's charset | ✓ | ✓ | ✓ |
+
+**Six of the 28 are caught by the unit tests alone**, and they are the same shape in
+every case: a rule about a *lookup* or about a *synthesized* value. Both gates start
+from bytes and ask what they mean, so neither can reach gtext_ini_group_set() or - before
+the `lookup` score existed - gtext_ini_document_get(). That is not a gap to close by
+adding documents; it is what a unit test is for.
+
+**The harness failed its own control twice**, and both failures were the restore step
+rather than a mutation. `shutil.copy2` preserves the mtime, so a restored source was
+older than the object built from the mutated one and `make` rebuilt nothing - every gate
+scored the previous mutation's binary. Fixing that, the control failed again, because
+the control runs *before* the first restore and inherited stale artifacts from the
+aborted run. Both sweeps are void; the third is the one above. A control that cannot
+fail proves nothing, and this one failed twice and was right both times.
+
 ## Not implemented
 
 **Every named dialect is now implemented.** Desktop Entry, generic, git config,
-EditorConfig, systemd and configparser: six, of which one has a normative conformance
-suite, three have a normative document, one is a written derivation of another, and one
-has no specification at all. What is left out below is a *feature* of one of them or a
-format nobody can conform to.
+EditorConfig, systemd, configparser and Win32: seven, of which one has a normative
+conformance suite, three have a normative document, one is a written derivation of
+another, one has no specification at all, and one has no specification *and* no
+reference that is the thing it stands for. What is left out below is a *feature* of
+one of them.
 
-- **Win32 `.ini`.** Absent by decision, not by omission; the entry below says why.
+**Win32 `.ini` was on this list and is not any more**, and the correction is worth
+keeping because the reasoning was sound and answered a question nobody asked.
+`GetPrivateProfileString` consults the registry before the file, so the API's answer
+is not a function of the file's bytes - true, and it disqualifies only the claim to
+reproduce that API. Reading the `.ini` files that exist on Windows is a different
+thing, it is what the format is for, and it was reachable the whole time. See the
+dialect's own section above.
 
 What the systemd work needed, recorded because the estimate was wrong twice:
 
