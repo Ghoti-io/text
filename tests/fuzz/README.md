@@ -588,9 +588,13 @@ came in - no input this harness could generate reached the path, and it had to b
 found by a differential against git instead. A property asserted under one
 dialect says nothing about another that relaxes the rule the property depends on.
 
-The first property has no analogue for git config, EditorConfig or systemd, and the
-absence is a finding: none of the three is a relaxation of Desktop Entry in either
-direction. systemd sits outside every subset relation here in both directions at once -
+The first property has no analogue for git config, EditorConfig, systemd or
+configparser, and the absence is a finding: none of the four is a relaxation of Desktop
+Entry in either direction. configparser sits outside every relation for a reason none of
+the others has - a `:` ends a key for it and is an ordinary key byte to the other five,
+so the same line is a *different entry* rather than a legal-or-not question - and it is
+the only dialect that reaches the indent scan, the second join, and a writer branch that
+**inserts** bytes rather than emitting the value it was given. systemd sits outside every subset relation here in both directions at once -
 it refuses a preamble that the other two accept, ends a line on a lone CR that all four
 others treat as data, and accepts a continuation inside a name that none of them has. git
 accepts a preamble, a continuation and a valueless key that Desktop Entry refuses,

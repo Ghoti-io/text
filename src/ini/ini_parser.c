@@ -108,13 +108,16 @@ static bool ini_is_blank(char c) { return c == ' ' || c == '\t'; }
  * gtext_ini_is_space(). EditorConfig has no such split: it trims the whole line
  * with one predicate before classifying it, so `k\v= v` is `k` = `v`.
  *
- * Keyed on ::GTEXT_INI_Dialect::ctype_whitespace rather than on an id, and the
- * effect for Desktop Entry is nil either way: its whitespace is exactly space and
- * tab already.
+ * Keyed on ::GTEXT_INI_Dialect::space_set rather than on an id, and the effect for
+ * Desktop Entry is nil either way: its whitespace is exactly space and tab
+ * already. configparser is the other dialect with no split - its `\s*` before the
+ * delimiter is the same `\s` that strips the line, so `k\v= v` and `k\x1c= v` are
+ * both the key `k`. Measured.
  */
 static bool ini_sep_space(const GTEXT_INI_Dialect * dialect, char c) {
-  return dialect->ctype_whitespace ? gtext_ini_is_space(dialect, c)
-                                   : ini_is_blank(c);
+  return dialect->space_set != GTEXT_INI_SPACE_BLANK
+             ? gtext_ini_is_space(dialect, c)
+             : ini_is_blank(c);
 }
 
 /** Whether every byte of [start, end) is whitespace to @p dialect. */
@@ -170,20 +173,71 @@ typedef struct {
 } ini_logical_line;
 
 /**
+ * Follow configparser's indent continuation from the physical line
+ * [@p offset, @p first_end) with terminator ending at @p first_line_end.
+ *
+ * A line joins on when it is **more indented than the line the entry began on**,
+ * strictly - `  k=1` followed by `  2` is a syntax error, not a continuation, and
+ * so is `    k=1` followed by `  2`. Comment lines contribute nothing and do not
+ * end it; blank lines contribute an empty line and do not end it either. Every one
+ * of those was measured against CPython 3.13.5; none is in the documentation.
+ *
+ * The span ends at the **last line that contributed text**, which is why this
+ * remembers rather than simply stopping: the reference joins the pieces and then
+ * strips the result, so trailing blank and comment lines are not part of the value
+ * and belong to the document's own comment stream. A scan that ran to the first
+ * non-continuation line would have swallowed them and a rewrite would still have
+ * been byte-identical, which is the reason this needed a value comparison to find
+ * rather than a round-trip one.
+ */
+static ini_logical_line ini_indent_logical_line(
+    const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len,
+    size_t offset, size_t first_end, size_t first_line_end) {
+  ini_logical_line r;
+  r.content_end = first_end;
+  r.line_end = first_line_end;
+  size_t base = gtext_ini_indent_width(dialect, bytes, len, offset);
+  size_t i = first_line_end;
+  while (i < len) {
+    size_t line_end = 0;
+    ini_line_kind kind =
+        gtext_ini_classify_line(dialect, bytes, len, i, &line_end);
+    if (kind == INI_LINE_COMMENT || kind == INI_LINE_BLANK) {
+      i = line_end;
+      continue;
+    }
+    if (gtext_ini_indent_width(dialect, bytes, len, i) <= base) break;
+    size_t content_end = line_end;
+    while (content_end > i &&
+           gtext_ini_terminator_len(dialect, bytes, len, content_end - 1)) {
+      content_end--;
+    }
+    r.content_end = content_end;
+    r.line_end = line_end;
+    i = line_end;
+  }
+  return r;
+}
+
+/**
  * Find the logical line starting at @p offset.
  *
  * For a dialect with no continuation this is the physical line and the loop runs
  * once, which is what keeps the other four dialects untouched. For systemd it
  * follows a trailing backslash onto the next line, skipping a comment block, until
- * a line does not end in one.
+ * a line does not end in one. For configparser it follows the *next* line's
+ * indentation instead, which is ini_indent_logical_line() above.
  *
  * **Only called for a line that is neither blank nor a comment**, and that is
  * measured rather than convenient: `# c\` followed by an entry does *not* continue
  * the comment - the entry is read normally - so a comment's trailing backslash is
- * comment text. systemd classifies the first line, then assembles.
+ * comment text. systemd classifies the first line, then assembles. configparser
+ * classifies first too, and for it the rule has a second consequence: an indented
+ * `#` line is a comment and never a continuation, because the comment test runs on
+ * the stripped line.
  */
 static ini_logical_line ini_logical_line_at(const GTEXT_INI_Dialect * dialect,
-    const char * bytes, size_t len, size_t offset) {
+    const char * bytes, size_t len, size_t offset, bool may_indent_continue) {
   ini_logical_line r;
   size_t i = offset;
   for (;;) {
@@ -193,6 +247,24 @@ static ini_logical_line ini_logical_line_at(const GTEXT_INI_Dialect * dialect,
     }
     r.content_end = i;
     r.line_end = i + term;
+    if (dialect->continuation == GTEXT_INI_CONTINUATION_INDENT) {
+      /*
+       * Only for a line that will become an entry, which is what
+       * @p may_indent_continue says. A **group header ends a continuation** rather
+       * than starting one: the reference clears its current key when it reads a
+       * header, with the comment "so sections can't start with a continuation
+       * line", and measured, `[a]` / `k=1` / `[b]` / `  2` is a syntax error
+       * because `  2` is read as an entry and has no delimiter.
+       *
+       * An *indented* header while a value is open never reaches this test at all,
+       * and that is the right order rather than a special case: the line was
+       * already absorbed into the open entry's span by the scan below, so the main
+       * loop never classifies it. `k=1` / `  [b]` is the value `1\n[b]`, measured.
+       */
+      if (!may_indent_continue) return r;
+      return ini_indent_logical_line(dialect, bytes, len, offset, r.content_end,
+          r.line_end);
+    }
     if (i > offset) {
       ini_continuation cont =
           gtext_ini_continuation_at(dialect, bytes, len, i - 1);
@@ -256,7 +328,14 @@ static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
    * order that composes: a folded, continued name would otherwise depend on which
    * step ran.
    */
-  bool joins = d->continuation != GTEXT_INI_CONTINUATION_NONE;
+  /*
+   * gtext_ini_names_may_continue(), not "has a continuation": configparser has one
+   * and no name can carry it, because an indent continuation needs an entry to
+   * already be open before a line can be more indented than the one that started
+   * it. Asking the wrong question here would have built a joined buffer for every
+   * key in every configparser document and found nothing in it.
+   */
+  bool joins = gtext_ini_names_may_continue(d);
   if (!folds && !joins) return true;
 
   char stack[512];
@@ -438,13 +517,34 @@ static bool ini_add_entry(ini_parse * p, size_t line_start, size_t key_start,
         key_start);
   }
   if (p->doc->dialect.dupkey == GTEXT_INI_DUPKEY_ERROR) {
-    for (size_t e = 0; e < group->count; e++) {
-      if (group->entries[e].key.len == key_len &&
-          memcmp(group->entries[e].key.data, p->bytes + key_start, key_len) ==
-              0) {
-        return ini_fail(p, GTEXT_INI_E_DUPKEY,
-            "two keys in one group have the same name", line_start);
-      }
+    /*
+     * gtext_ini_group_count_key(), which compares the **canonical** name, not a
+     * memcmp of the raw bytes. The raw comparison that was here was correct while
+     * Desktop Entry was the only dialect refusing a duplicate - it does not fold -
+     * and wrong the moment one both folded and refused: configparser raises
+     * `DuplicateOptionError` for `k1` then `K1`, so the fold happens before the
+     * check. A raw comparison would have stored two entries and let the document
+     * through.
+     *
+     * The entry is not in the group yet, so this counts the earlier ones only. The
+     * canonical form of *this* key is built below by ini_set_canon(); the lookup
+     * builds its own from the bytes, which is the same function.
+     */
+    char stack[256];
+    char * buf = stack;
+    char * heap = NULL;
+    if (key_len >= sizeof(stack)) {
+      heap = gtext_allocator_malloc(p->alloc, key_len + 1);
+      if (!heap) return ini_fail(p, GTEXT_INI_E_OOM, "out of memory", line_start);
+      buf = heap;
+    }
+    memcpy(buf, p->bytes + key_start, key_len);
+    buf[key_len] = '\0';
+    bool dup = gtext_ini_group_count_key(group, buf) != 0;
+    if (heap) gtext_allocator_free(p->alloc, heap);
+    if (dup) {
+      return ini_fail(p, GTEXT_INI_E_DUPKEY,
+          "two keys in one group have the same name", line_start);
     }
   }
   if (p->opts->max_entries_per_group &&
@@ -570,11 +670,19 @@ typedef struct {
  * @param line_start First byte of the line's own bytes - the start of `pre`.
  *   Differs from @p key_start when the line began with whitespace, and when the
  *   entry follows a group header on the same line.
- * @param content_end End of the physical line's content, terminator excluded.
- * @param line_end End of the physical line, terminator included.
+ * @param content_end End of the logical line's content, terminator excluded.
+ * @param line_end End of the logical line, terminator included.
+ * @param key_limit Where the search for the separator stops, which is **not
+ *   always @p content_end**. For configparser it is the end of the *first*
+ *   physical line: the reference matches its option pattern against that line
+ *   alone and appends every continuation line to the value without looking at it,
+ *   so a `=` on a continuation line is data. Passing `content_end` here read
+ *   `k` / `  j=2` as one entry named `k\n  j`, where the reference reports the
+ *   bare `k` as a `ParsingError`. For systemd the two are the same value on
+ *   purpose - there a *key* may be continued.
  */
 static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
-    size_t key_start, size_t content_end, size_t line_end) {
+    size_t key_start, size_t content_end, size_t line_end, size_t key_limit) {
   const GTEXT_INI_Dialect * d = &p->doc->dialect;
   ini_entry_result r;
   r.next_offset = line_end;
@@ -589,7 +697,7 @@ static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
   size_t key_end;
   if (d->name_style == GTEXT_INI_NAMES_GIT) {
     key_end = key_start;
-    while (key_end < content_end &&
+    while (key_end < key_limit &&
            gtext_ini_key_char_ok(d, p->bytes[key_end])) {
       key_end++;
     }
@@ -608,8 +716,8 @@ static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
   }
   else {
     size_t eq = key_start;
-    while (eq < content_end && p->bytes[eq] != '=') eq++;
-    if (eq >= content_end) {
+    while (eq < key_limit && !gtext_ini_is_separator(d, p->bytes[eq])) eq++;
+    if (eq >= key_limit) {
       /*
        * A line with no `=` at all. **This is where
        * ::GTEXT_INI_Dialect::valueless_keys stops being reachable** for a dialect
@@ -630,12 +738,12 @@ static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
     }
   }
 
-  /* What may sit between the key and the `=`: see ini_sep_space(). */
+  /* What may sit between the key and the separator: see ini_sep_space(). */
   size_t eq = key_end;
-  while (eq < content_end && ini_sep_space(d, p->bytes[eq])) eq++;
+  while (eq < key_limit && ini_sep_space(d, p->bytes[eq])) eq++;
 
-  if (eq >= content_end || p->bytes[eq] != '=') {
-    if (d->valueless_keys && eq >= content_end) {
+  if (eq >= key_limit || !gtext_ini_is_separator(d, p->bytes[eq])) {
+    if (d->valueless_keys && eq >= key_limit) {
       /* A key with nothing after it. Measured: `k` alone is an entry with no
        * value, and `k ; c` is *refused* - a trailing comment is not allowed
        * here, which is why this tests for the end of the content rather than
@@ -654,7 +762,21 @@ static ini_entry_result ini_read_entry(ini_parse * p, size_t line_start,
    * leading run goes into `sep`; what happens to a trailing run is the
    * dialect's, and for a scanning dialect the scanner decides it. */
   size_t value_start = eq + 1;
+  /*
+   * **Stop at a line terminator**, which `content_end` used to guarantee on its own
+   * and no longer does: for an indent-continued value `content_end` is the end of the
+   * *logical* line, so a skip bounded only by it can walk off the end of the key's own
+   * line and into the continuation.
+   *
+   * It takes a CR to show, because a CR is whitespace to any dialect that accepts CRLF
+   * while an LF is whitespace to none - the line ends at an LF before anything trims.
+   * So `alpha =    <CR>  continued` skipped the spaces, then skipped the CR, and lost
+   * the empty first line of the value: the reference gives `"\ncontinued"` and this
+   * gave `"continued"`. Found by the differential's `lone-cr` axis, which exists
+   * because no file in the 703-file local corpus contains one.
+   */
   while (value_start < content_end &&
+         !gtext_ini_terminator_len(d, p->bytes, p->len, value_start) &&
          gtext_ini_is_space(d, p->bytes[value_start])) {
     value_start++;
   }
@@ -808,11 +930,22 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
      * For every other dialect ini_logical_line_at() returns the physical line it
      * was already given, so nothing changes for them.
      */
+    /*
+     * The first physical line's own end, kept before the logical line can grow
+     * past it. It is where the search for a key's separator stops - see
+     * ini_read_entry()'s `key_limit`.
+     */
+    size_t key_limit = content_end;
     {
-      ini_logical_line logical =
-          ini_logical_line_at(&effective.dialect, bytes, len, offset);
+      ini_logical_line logical = ini_logical_line_at(&effective.dialect, bytes,
+          len, offset, bytes[pre_end] != '[');
       content_end = logical.content_end;
       line_end = logical.line_end;
+      if (gtext_ini_names_may_continue(&effective.dialect)) {
+        /* systemd, where a key may itself be continued: the separator can be on a
+         * later physical line and the whole logical line is in scope. */
+        key_limit = content_end;
+      }
     }
 
     if (bytes[pre_end] == '[') {
@@ -833,7 +966,9 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
         rest++;
       }
       bool remainder = rest < content_end;
-      if (remainder && effective.dialect.header_remainder_is_entry &&
+      if (remainder &&
+          effective.dialect.header_remainder ==
+              GTEXT_INI_HEADER_REMAINDER_ENTRY &&
           ((bytes[rest] == '#' && effective.dialect.comment_hash) ||
               (bytes[rest] == ';' && effective.dialect.comment_semicolon))) {
         /*
@@ -848,7 +983,19 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
          */
         remainder = false;
       }
-      if (remainder && !effective.dialect.header_remainder_is_entry) {
+      if (remainder && effective.dialect.header_remainder ==
+                           GTEXT_INI_HEADER_REMAINDER_IGNORE) {
+        /*
+         * configparser: the remainder is discarded and the section stands. Not a
+         * decision anyone made - its header pattern is applied with `re.match`,
+         * which need not reach the end of the line - so `[a]junk` and `[a] k = v`
+         * are both the section `a`. The bytes stay in `hdr_post` so that a rewrite
+         * reproduces them; what they do not get is a meaning.
+         */
+        remainder = false;
+      }
+      if (remainder && effective.dialect.header_remainder ==
+                           GTEXT_INI_HEADER_REMAINDER_ERROR) {
         /* `[G] junk` - GKeyFile refuses this, and so must anything claiming to
          * read the same documents. */
         ok = ini_fail(&p, GTEXT_INI_E_BAD_LINE,
@@ -866,8 +1013,8 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
       ok = ini_add_group(&p, pre_end + 1, close, offset, pre_end, close + 1,
           post_end, offset);
       if (ok && remainder) {
-        ini_entry_result r =
-            ini_read_entry(&p, close + 1, rest, content_end, line_end);
+        ini_entry_result r = ini_read_entry(&p, close + 1, rest, content_end,
+            line_end, content_end);
         ok = r.ok;
         offset = r.next_offset;
         continue;
@@ -876,8 +1023,8 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
       continue;
     }
 
-    ini_entry_result r =
-        ini_read_entry(&p, offset, pre_end, content_end, line_end);
+    ini_entry_result r = ini_read_entry(&p, offset, pre_end, content_end,
+        line_end, key_limit);
     ok = r.ok;
     offset = r.next_offset;
   }

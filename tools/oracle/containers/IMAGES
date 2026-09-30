@@ -63,6 +63,41 @@ python-next	docker.io/library/python:3.15-rc-slim@sha256:4c269ae51995d15c7115f34
 # recorded. `check-toml-oracle` uses the same pin over generated documents.
 tomllib	docker.io/library/python:3.14-slim@sha256:7bf6c3111fe094f8ee1a1cbcdc63c4cfb345b0e3df42d5aa9a90b3b4b022ab6d	python 3.14	TOML 1.0.0, as CPython's standard library reads it
 
+# `configparser`, the third question asked of that same image, and the one dialect in
+# this library whose **specification is an implementation**. The Python documentation
+# describes what `configparser` does rather than defining a format; there is no
+# document to conform to and no conformance suite to score, so this pin is not a
+# convenience - it is the entire definition of what the comparison means.
+#
+# Same image and digest as the two lines above, a line of its own for tomllib's
+# reason: it answers a different question and the version field has to say so. What
+# decides these answers is the interpreter, not a UCD.
+#
+# **The pin and the host agree, and that was measured rather than assumed.** This
+# machine's python3 is 3.13.5 and the pin is 3.14; every rule of the dialect was
+# probed on the host first, so all 102 probe documents and the 38-document
+# channel comparison were re-run inside the pin before anything was built on them.
+# The answers are byte-identical - 3.13 rewrote `_read_inner()` and added
+# `MultilineContinuationError`, and 3.14 changed nothing this format can see. So the
+# transcripts in notes/text/INI-DIALECTS.md section 19, taken on the host, describe
+# the pinned reference too.
+#
+# **The reference's channel is a file**, and that is a measurement, not a detail:
+# Python's universal-newline translation applies to `read(path)` and not to
+# `read_string()`, so the two disagree about a lone CR and about nothing else in 38
+# documents. `containers/configparser/driver.py` reads a file, because a file is what
+# an INI document is.
+#
+# Not built here, and it needs no Dockerfile: the driver is an ordinary Python script
+# in this tree, which oracle_env.py bind-mounts read-only at its own path. So what
+# pins the reference is this digest plus a file the gate ran from, with nothing in
+# between that could drift.
+#
+# The comparison is weaker than any other INI gate's and the gate says so: one
+# reference that is also the specification. `make conformance-ini-configparser` is
+# what carries the other half - 703 real files, 224 of which the reference refuses.
+configparser	docker.io/library/python:3.14-slim@sha256:7bf6c3111fe094f8ee1a1cbcdc63c4cfb345b0e3df42d5aa9a90b3b4b022ab6d	python 3.14	Python configparser: whether the document is legal, and what every value is
+
 # toml++ with its unreleased-features set on: the second reader for the
 # relaxations TOML v1.1.0 makes, and the only one there is. Nothing else outside
 # this repository reads the draft at all.

@@ -143,9 +143,13 @@ static GTEXT_INI_Status ini_put_eol(GTEXT_INI_Sink * sink,
  * @param value The raw value.
  * @param dialect The dialect the document was read under.
  * @param next The first byte written after the value, or 0 for end of output.
+ * @param verbatim Whether the value's own bytes are what will be emitted. Only
+ *   ::GTEXT_INI_CONTINUATION_INDENT cares, and it cares a great deal: there the
+ *   writer inserts the indentation a synthesized continuation needs, so the two
+ *   emissions require opposite things of the value.
  */
 static bool ini_value_writable(const ini_str * value,
-    const GTEXT_INI_Dialect * dialect, char next) {
+    const GTEXT_INI_Dialect * dialect, char next, bool verbatim) {
   if (!value->len) return true;
   if (gtext_ini_dialect_scans_values(dialect)) {
     /*
@@ -210,6 +214,17 @@ static bool ini_value_writable(const ini_str * value,
    * those two were writable and they are not; a value written that way came back
    * shorter.
    */
+  if (dialect->continuation == GTEXT_INI_CONTINUATION_INDENT) {
+    /*
+     * An LF is how this dialect *spells* a continuation, so the blanket refusal
+     * below would make every multi-line configparser value unwritable - including
+     * one this module had just read, which is the mistake the scanning branch above
+     * records having made once. gtext_ini_indent_value_ok() asks the reader's own
+     * line rules instead: it is not a list of forbidden bytes but a re-read of the
+     * value, line by line.
+     */
+    return gtext_ini_indent_value_ok(dialect, value->data, value->len, verbatim);
+  }
   if (gtext_ini_is_space(dialect, value->data[0])) return false;
   for (size_t i = 0; i < value->len; i++) {
     if (value->data[i] == '\n') return false;
@@ -230,6 +245,45 @@ static bool ini_value_writable(const ini_str * value,
     return false;
   }
   return true;
+}
+
+/**
+ * Emit a synthesized value under ::GTEXT_INI_CONTINUATION_INDENT, indenting each
+ * line after the first so that reading it back gives the same value.
+ *
+ * One space is enough and one space is what this uses: the rule is "more indented
+ * than the line the entry began on", and a synthesized entry's line begins at
+ * column zero. An empty line in the middle is emitted **without** the indent,
+ * because an indented empty line is still a blank line to the reader and the
+ * bytes would be noise.
+ *
+ * Only reached for a value ini_value_writable() has already accepted, so there is
+ * no line here that would come back different - a comment line, a line with its
+ * own leading or trailing whitespace, and a trailing terminator are all refused
+ * before this runs.
+ */
+static GTEXT_INI_Status ini_put_indented(GTEXT_INI_Sink * sink,
+    const GTEXT_INI_Write_Options * opts, const ini_str * value) {
+  size_t start = 0;
+  bool first = true;
+  while (start < value->len) {
+    size_t i = start;
+    while (i < value->len && value->data[i] != '\n') i++;
+    size_t content_end = i;
+    /* A CR before the LF belongs to the terminator this write chooses, not to the
+     * line, so it is not re-emitted here. */
+    if (content_end > start && value->data[content_end - 1] == '\r') {
+      content_end--;
+    }
+    if (!first) {
+      INI_TRY(ini_put_eol(sink, opts));
+      if (content_end > start) INI_TRY(ini_put(sink, " ", 1));
+    }
+    INI_TRY(ini_put(sink, value->data + start, content_end - start));
+    first = false;
+    start = (i < value->len) ? i + 1 : i;
+  }
+  return GTEXT_INI_OK;
 }
 
 GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
@@ -289,7 +343,7 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
         next = effective.crlf ? '\r' : '\n';
       }
       if (entry->has_value &&
-          !ini_value_writable(&entry->value, &doc->dialect, next)) {
+          !ini_value_writable(&entry->value, &doc->dialect, next, verbatim)) {
         return GTEXT_INI_E_UNREPRESENTABLE;
       }
       if (!entry->has_value && !doc->dialect.valueless_keys) {
@@ -315,8 +369,15 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
       else {
         INI_TRY(ini_put(sink, entry->key.data, entry->key.len));
         if (entry->has_value) {
-          INI_TRY(ini_put(sink, "=", 1));
-          INI_TRY(ini_put(sink, entry->value.data, entry->value.len));
+          /* The dialect's first separator, not a literal `=`: a dialect can have
+           * more than one and the first is the one it writes. */
+          INI_TRY(ini_put(sink, doc->dialect.separators, 1));
+          if (doc->dialect.continuation == GTEXT_INI_CONTINUATION_INDENT) {
+            INI_TRY(ini_put_indented(sink, &effective, &entry->value));
+          }
+          else {
+            INI_TRY(ini_put(sink, entry->value.data, entry->value.len));
+          }
         }
         INI_TRY(ini_put_eol(sink, &effective));
       }

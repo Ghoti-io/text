@@ -571,6 +571,199 @@ What is deliberately left out is systemd's **types**. Its time spans belong to
 summing rule; its sizes and its `%`-specifiers - which need the unit name and the
 host - are not a text parser's to know.
 
+### Python configparser
+
+gtext_ini_dialect_configparser() is Python's `configparser`, and it is **the one
+dialect here with no specification at all**. The Python documentation describes what
+the module does rather than defining a format, and says so; there is no normative
+document, no conformance suite, and nothing to cite. So every field of the dialect is
+a measurement against CPython, and the module's own source settled two rules no
+probe of a single document could have.
+
+The reference version is pinned in `tools/oracle/containers/IMAGES`. The pin is
+CPython 3.14 and this machine's interpreter is 3.13.5, so before anything was built on
+the host probes they were **re-run inside the pin**: all 102 probe documents and the
+38-document channel comparison are byte-identical between the two. 3.13 rewrote
+`_read_inner()` and added `MultilineContinuationError`; 3.14 changed nothing this
+format can see.
+
+Not a relaxation of anything:
+
+| | configparser | elsewhere |
+|---|---|---|
+| `k: v` | `=` **or** `:`, whichever comes first - so `k:b=c` is `b=c` and `k=b:c` is `b:c` | `=` only, everywhere else |
+| `k = 1` + `  2` | one value, `1\n2` - **an indented line continues it, joined with a newline** | git and systemd use a trailing backslash; the other two have no continuation |
+| `  k = 1` + `  2` | **refused.** The comparison is against the entry's own line, strictly | - |
+| `k = 1` + `#c` + `  2` | the comment contributes nothing and does not end it: `1\n2` | systemd skips a comment block too; nothing else has one to skip |
+| `k = 1` + blank + `  2` | the blank line **is** a line: `1\n\n2` | a blank line *ends* a systemd continuation |
+| `k = 1` + `  2` + blank + `[b]` | the value ends at `2`; the blanks belong to the document | - |
+| `j = ;black` | the value is `;black` - a **value** may begin with a comment introducer | the same everywhere; what is new is that an indented `;white` under it is a comment |
+| `[a]junk` | the section `a`, and `junk` is **discarded** | Desktop Entry refuses it; git reads an entry from it |
+| `[]` | refused - the header pattern needs one character | EditorConfig accepts it, and is the only dialect that does |
+| `[a]b]` | one section named `a]b` | EditorConfig agrees; the other three close at the first `]` |
+| `[ b ]` | a section literally named `" b "` | the name is never trimmed anywhere here |
+| `[A]` and `[a]` | **two** sections, while `k` and `K` are one option | git folds both; EditorConfig folds the key only, as here |
+| `k1 = 1` + `K1 = 2` | refused - the duplicate check is on the **folded** name | Desktop Entry refuses a duplicate and does not fold |
+| `[a]` twice | refused. `strict=True` is the default | git and systemd merge; EditorConfig lets the later win |
+| `k = a ; c` | the value is `a ; c` - inline comments are **off by default** | git truncates at a `#` or `;`; both EditorConfig cores do too, against their own specification |
+| `k = "q v"` | the quotes are part of the value | git's quoting is in the grammar |
+| `k = a\nb` | four characters; **no escapes exist** | Desktop Entry has five, git five, systemd eleven plus four numeric forms |
+| `k` alone | refused. `allow_no_value=False` is the default | git reads it as boolean true |
+| `k = v<CR>j = w` | two entries - **a lone CR ends a line** | systemd agrees; the others treat it as data or whitespace |
+| `\x1c` to `\x1f` | **whitespace** | `isspace()` does not say so, so no other dialect here agrees |
+| `k = TRUE` | boolean true - the eight words, **folded** | systemd admits the same eight and folds none of them |
+| `<BOM>[a]` | refused. `read()` decodes as UTF-8, not `utf-8-sig` | the generic dialect skips a mark; Desktop Entry refuses one |
+
+Four of those forced a change to the dialect struct, and each is an axis a `bool`
+could not hold:
+
+- **Two separator characters** (::GTEXT_INI_Dialect::separators). It is a set rather
+  than a character because two places have to agree about it - where a key ends, and
+  whether a byte may appear inside one - and a charset written against only the first
+  would read `k:v` as a key called `k:v` in one and as `k` = `v` in the other.
+- **A third whitespace set** (::GTEXT_INI_SPACE_PYTHON). Python's `\s` includes the
+  four ASCII separator controls and C's `isspace()` does not. Measured in all four
+  positions the predicate is asked about: they strip as indentation, sit between a key
+  and its delimiter, trim off a value's end, and may precede a comment introducer.
+- **A third answer for what follows a header's `]`**
+  (::GTEXT_INI_HEADER_REMAINDER_IGNORE). Three references, three answers. This one
+  keeps the bytes so a rewrite reproduces them and gives them no meaning.
+- **Folded keys with unfolded sections** (::GTEXT_INI_Dialect::fold_group_case), which
+  EditorConfig needs too. It used to be spelled as `fold_case` minus a name style,
+  which was right while one dialect wanted it and became a list of exceptions in
+  shared code the moment a second did.
+
+**The continuation is the one that changed the parser**, and the way it differs from
+the other two is the point. A backslash continuation is announced by the value's own
+bytes, so a scanner walking the value finds it wherever it is - which is why systemd's
+reaches a group header and a key. An indent continuation is a property of the **next**
+line and cannot be recognised without knowing how far the entry's own line was
+indented, so gtext_ini_dialect_scans_values() is false for it and the parser decides
+the extent. Two consequences followed:
+
+- A key's separator is sought on its **own physical line only**. The reference matches
+  its option pattern against that line and appends every continuation line without
+  looking at it, so a `=` on a continuation line is data. Bounding the search by the
+  logical line instead read `k` followed by an indented `j=2` as one entry named
+  `k\n  j`, where the reference reports the bare `k` as an error.
+- The value's extent ends at the **last line that contributed text**, not at the first
+  line that is not a continuation. The reference joins the pieces and then strips the
+  result, so trailing blank and comment lines are not in the value - and a rewrite is
+  byte-identical either way, which is why this needed a *value* comparison to find.
+
+**Three things are deliberately not implemented**, each with the measurement behind it:
+
+- **Interpolation.** Over the 479 real `configparser` documents on this machine the
+  *default* `BasicInterpolation` refuses a value in **301 of them** and changes a value
+  in **none**. Five files contain `%(` or `${` and not one is an interpolation: the
+  `${prefix}` in numpy's `npymath.ini` is pkg-config's own variable syntax, which
+  `ExtendedInterpolation` would try to resolve as `section:key` and fail. So shipping
+  the default form would break 63% of the files on this machine and improve nothing.
+  Values come back raw and the differential pins `interpolation=None`. (An earlier
+  measurement of this, over eleven files, reported three - correct over that population
+  and far too weak to decide anything.)
+- **`[DEFAULT]`'s value inheritance.** A lookup policy over a parsed tree rather than a
+  rule of the grammar: a caller who wants it asks the section and then asks `DEFAULT`.
+  `[DEFAULT]` is an ordinary group here, and the differential pins `default_section` to
+  a name no document can spell so that both sides agree about what it is.
+- **Unicode-aware whitespace and case folding.** Properties of Python's `str`, not of
+  the format. `configparser` strips a no-break space from a value's edge and
+  lower-cases `É` in a key; a byte-oriented reader can do neither, because neither is a
+  single byte. Both are asserted as divergences rather than left as gaps - the
+  differential scores that each departure is **still observable**, so a change to the
+  fold fails loudly instead of quietly inflating the values score.
+
+**A lone CR terminates a line here, and that is a choice between two behaviours of the
+reference rather than a reading of it.** `read_string()` wraps its text in a
+`StringIO` whose newline is `'\n'`, so no translation happens and `k=v<CR>j=w` is one
+value; `read(path)` opens the file with `newline=None` and Python's universal-newline
+translation turns a lone CR into an LF before `configparser` sees it. Of 38 documents
+probed both ways that is the **only** difference between the two channels. A file is
+what an INI document is, so this dialect follows the file, and the differential's
+driver reads one for the same reason.
+
+#### Tested scope
+
+**`make conformance-ini-configparser`** is the only INI corpus gate whose reference is
+**installed**, and that changes what a corpus can be asked. The Desktop Entry corpus
+has a validator but no value reader that agrees with this one about everything; the
+systemd corpus has neither, because this machine has no systemd. Here `configparser` is
+in the standard library of the interpreter that scores the gate, so every file gets all
+three questions. Measured over `/etc`, `/usr/share` and `/usr/lib`, **703 unique files**:
+
+| Score | |
+|---|---:|
+| `verdict` - we accept exactly the files the reference accepts | **703 / 703** |
+| `values` - sections, keys and joined values agree | **401 / 401** |
+| `round trip` - byte for byte | **479 / 479** |
+| `divergence` - excluded for Unicode whitespace, and still differing | **78 / 78** |
+
+**A `.cfg` or `.ini` extension does not mean the file is one of these documents**, and
+the gate measures that rather than filtering it away. The reference refuses **224 of
+the 703**: 221 with `MissingSectionHeaderError`, because most `lit.cfg` files are
+Python scripts and `/etc/dpkg/dpkg.cfg` is a section-less key-value file, plus one
+duplicate option, one parse error and one file that is not UTF-8. Those 224 stay in the
+denominator, and they are the only **refusals** a real corpus of this format offers - a
+reader that accepted them would be wrong in the one direction no generated document
+tests.
+
+The 78 exclusions are one thing: `configparser` strips Unicode whitespace and this
+reader strips ASCII whitespace, so a value that is a lone no-break space is empty there
+and one byte long here. TeXLive's babel locale files have one. The exclusion predicate
+is **narrow on purpose** - it fires only where the two strips reach a different byte -
+and the gate asserts that every excluded file really does differ. The wide version of
+the predicate ("the file contains any non-ASCII whitespace") excluded 115 files of
+which 78 differ, so 37 agreeing files would have silently left the score; the assertion
+is what keeps an exclusion from widening quietly.
+
+The census it prints matters for the same reason the systemd one does: of 703 files a
+**lone CR, a byte-order mark and a `[DEFAULT]` section appear in none**, and CRLF in
+one. So the corpus is unusually good here and still silent about three rules.
+
+**`make check-ini-configparser-oracle`** is what covers them: generated documents
+against the pinned interpreter. At **20,000 documents**, seed 20260929, against
+CPython 3.14.7:
+
+| Score | | Excluded |
+|---|---:|---:|
+| `intent` - our verdict is what the generator's own reading says | **20,000 / 20,000** | - |
+| `verdict` - our verdict matches the reference's | **16,030 / 16,030** | - |
+| `values` - sections, keys and joined values agree | **10,145 / 10,145** | - |
+| `rewrite` - an accepted document writes back byte for byte | **10,145 / 10,145** | - |
+| `divergence` - each known departure is still observable | **2,965 / 2,965** | - |
+| the reference's channel cannot decode the document | - | 1,005 |
+
+88 of 88 axes exercised. The 1,005 exclusions are documents holding a byte that is not
+UTF-8: `read()` raises `UnicodeDecodeError` before `configparser` sees a line, which is
+a limit of the **channel** and not a disagreement about the grammar - the encoding is
+`read()`'s parameter rather than the format's rule.
+
+**`intent` carries more weight here than in any other INI gate**, and that is a
+consequence of the dialect having no specification. For git, systemd and EditorConfig a
+document can be checked against prose; here the generator's own table *is* the prose,
+and without it a rule both the reference and this library got wrong would pass every
+other score untouched.
+
+**The differential found two defects, and each needed a construct the corpus does not
+contain.** Both are one shape: a CR is whitespace to any dialect that accepts CRLF
+while an LF is whitespace to none, because a line ends at an LF before anything trims.
+So a value whose first line is empty begins at its own terminator, and under CRLF that
+first byte is a CR - which the parser skipped as leading whitespace, walking into the
+continuation and losing the value's empty first line, and which the writer then called
+leading whitespace too and declared unrepresentable, so a document just parsed could
+not be written back. The corpus has one CRLF file and no lone CR at all.
+
+**And the generator's own structure was the third finding.** Its first version offered
+every axis independently, and three collisions followed, each of which read as a
+library defect until it was traced: a refusing axis beside a divergence axis made the
+divergence unobservable, because both sides refused the document and the departure
+could not be seen; two refusing axes in one document made the `intent` expectation a
+guess about which fault a parser reaches first; and a key drawn twice from a
+five-element list is a duplicate key, which this dialect refuses. So a mode is chosen
+first and each document carries at most one special construct. The symptom that named
+the first of those was the gate's own "this divergence was never observed" assertion -
+which is what that assertion is for.
+
 ## Deviations
 
 | Case | This parser | Elsewhere |
@@ -724,14 +917,12 @@ names its own failing property so a recurrence identifies itself.
 
 ## Not implemented
 
-- **Python's `configparser`.** The one remaining dialect whose "specification" is its
-  implementation, so it could only ever be scored by differential. Its image is
-  already pinned for other gates, and `notes/text/INI-DIALECTS.md` §4.5 has the axis
-  row: a `:` separator as well as `=`, indent-joined continuation, `%(name)s` and
-  `${section:key}` interpolation, and lower-cased keys. Interpolation is the reason it
-  has not been done - it is a second grammar layered on the first, and a reader that
-  implemented it would be answering a question about a *program's* defaults rather than
-  about a format.
+**Every named dialect is now implemented.** Desktop Entry, generic, git config,
+EditorConfig, systemd and configparser: six, of which one has a normative conformance
+suite, three have a normative document, one is a written derivation of another, and one
+has no specification at all. What is left out below is a *feature* of one of them or a
+format nobody can conform to.
+
 - **Win32 `.ini`.** Absent by decision, not by omission; the entry below says why.
 
 What the systemd work needed, recorded because the estimate was wrong twice:
@@ -759,11 +950,29 @@ What the systemd work needed, recorded because the estimate was wrong twice:
   the document's bytes with the joined form beside it as the canonical one. No reading of
   `systemd.syntax(7)` suggests that; it took a probe.
 
-- **The continuation mode nothing implements.** configparser joins an indented line
-  with a newline. It is named here and in `notes/text/INI-DIALECTS.md` and is not in
-  ::GTEXT_INI_Continuation_Mode, deliberately: a constant nothing reads is worse than
-  an absent one, and it should arrive with the code that implements it - which is what
-  `GTEXT_INI_CONTINUATION_JOIN_SPACE` did.
+What the configparser work needed, recorded the same way, because the predictions were
+wrong in the opposite direction from systemd's - the obstacle named in advance turned
+out not to be one, and the thing that reached the parser was not on the list:
+
+  - **Interpolation was named as the reason this dialect had not been done**, and it is
+    not an obstacle at all: it is a pass over an assembled value, it ships in no form,
+    and the measurement that settles it is that the *default* interpolation refuses a
+    value in 301 of the 479 real documents on this machine and changes one in none. The
+    earlier reading of the same question, over eleven files, said "three" - correct over
+    that population and far too weak to decide anything.
+  - **The continuation reached the parser rather than the value layer**, which is the
+    mirror image of systemd's surprise. There the continuation turned out to be a
+    property of the line when it had been taken for a property of the value; here it is
+    a property of the *following* line, which is neither - so the value scanner cannot
+    find it and a key's separator has to be sought on its own physical line only.
+  - **Three of the four struct changes were axes no prediction named**: two separator
+    characters, a third whitespace set, and a third answer for what follows a `]`. Each
+    was found by probing rather than by reading, and none of them is about the
+    continuation everybody had noticed.
+  - **The cheapest finding came from the corpus, not the differential.** A value
+    beginning with `;` is not a comment - the reference tests the whole line - and 331
+    of the 479 real documents have one, while none of the 102 probe documents and none
+    of the generator's axes did. It made those values come back empty.
 - **Win32 `.ini`, again.** Deliberately absent, and not because its reference is out
   of reach - a `GetPrivateProfileStringA` probe under wine runs in this workspace
   today. `GetPrivateProfileString` is documented as consulting the registry's
@@ -771,11 +980,17 @@ What the systemd work needed, recorded because the estimate was wrong twice:
   subkey or entry for the section name"*, so its answer is not a function of the
   file's bytes and there is nothing for a text library to conform to. Two
   machines with the same file can correctly return different values.
-- **Interpolation.** Absent, and measured rather than assumed: across every
-  INI-shaped file on this machine, **zero** use `%(name)s` or `${section:key}`,
-  and three contain a bare `%` that `configparser`'s default interpolation
-  *refuses*. systemd's `%` specifiers need the unit name and the host, which a
-  text parser does not have.
+- **Interpolation.** Absent, and measured - twice, because the first measurement was
+  taken over the wrong population. Over the **479 real `configparser` documents** on
+  this machine the default `BasicInterpolation` refuses a value in **301** of them and
+  changes a value in **none**; five contain `%(` or `${` and not one is an
+  interpolation, the `${prefix}` in numpy's `npymath.ini` being pkg-config's own
+  variable syntax. So the only measurable effect of shipping the default form is to
+  break 63% of the files here. The earlier figure - "zero use it, three contain a bare
+  `%`" - was taken over eleven files and is correct over those eleven; it was far too
+  small a population to decide the question, and it happened to point the same way.
+  systemd's `%` specifiers are a separate thing and need the unit name and the host,
+  which a text parser does not have.
 - **A streaming or incremental reader.** The document is read whole. An INI file
   is flat and line-oriented, so a pull reader would be a small piece of work; no
   caller has needed one.

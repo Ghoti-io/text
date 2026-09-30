@@ -40,9 +40,9 @@
  *   - **A second parse of the same bytes is the same document.** Cheap, and it
  *     catches a parser that depends on anything outside its input.
  *
- * Every property but the first is asserted under **all five** dialects -
- * Desktop Entry, generic, git config, EditorConfig and systemd - because a property
- * asserted under one says nothing about another. The byte-identical rewrite was
+ * Every property but the first is asserted under **all six** dialects -
+ * Desktop Entry, generic, git config, EditorConfig, systemd and configparser -
+ * because a property asserted under one says nothing about another. The byte-identical rewrite was
  * asserted only under the strict dialect at first, and the strict dialect refuses
  * a document beginning with a BOM, so the generic dialect's silently dropped BOM
  * was unreachable from here and had to be found by a differential against git
@@ -62,6 +62,14 @@
  * joined text. Every property here is worth more under it for that reason - a
  * byte-identical rewrite of a document whose name and bytes differ is a stronger
  * statement than one where they are the same object.
+ *
+ * configparser is the dialect that reaches the **indent scan and the second join**,
+ * and it is the only one whose value can span lines without the value's own bytes
+ * saying so. Two things are only reachable under it: a raw value holding comment
+ * and blank lines that the joined form drops, and a writer that *inserts* bytes
+ * rather than emitting the value it was given. It is also the only dialect here
+ * with two separator characters, so it is the only one under which the key scan and
+ * the key charset can disagree.
  *
  * Build with: make fuzz-ini      Run: make fuzz-run-ini
  *
@@ -277,12 +285,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   GTEXT_INI_Dialect git = gtext_ini_dialect_git_config();
   GTEXT_INI_Dialect ec = gtext_ini_dialect_editorconfig();
   GTEXT_INI_Dialect sd = gtext_ini_dialect_systemd();
+  GTEXT_INI_Dialect cp = gtext_ini_dialect_configparser();
 
   GTEXT_INI_Document * a = parse(text, strict);
   GTEXT_INI_Document * b = parse(text, loose);
   GTEXT_INI_Document * g = parse(text, git);
   GTEXT_INI_Document * e = parse(text, ec);
   GTEXT_INI_Document * s = parse(text, sd);
+  GTEXT_INI_Document * c = parse(text, cp);
 
   if (a) {
     /* Acceptance is unconditional: all six relaxations only widen it. */
@@ -324,11 +334,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
    * so it sits outside every subset relation here in both directions.
    */
   if (s) exercise(s, text, sd, "systemd");
+  /*
+   * And none against configparser, which is the sixth dialect to sit outside every
+   * subset relation here and does so in a way none of the others do: a `:` ends a
+   * key for it and is an ordinary key byte to the other five, so the same line is a
+   * different entry rather than a legal-or-not question. It also refuses a
+   * duplicate key that EditorConfig accepts and accepts an indented value no other
+   * dialect can spell.
+   *
+   * What it does reach that nothing else does is the indent scan, the second join
+   * and the writer's inserting branch - which is why it is here at all rather than
+   * being left to the differential.
+   */
+  if (c) exercise(c, text, cp, "configparser");
 
   if (a) gtext_ini_free(a);
   if (b) gtext_ini_free(b);
   if (g) gtext_ini_free(g);
   if (e) gtext_ini_free(e);
   if (s) gtext_ini_free(s);
+  if (c) gtext_ini_free(c);
   return 0;
 }

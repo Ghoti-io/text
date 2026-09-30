@@ -103,6 +103,15 @@ PROBE = {
                  " print('python %s, tomllib in the standard library'"
                  " % sys.version.split()[0])"],
                 "tomllib", None),
+    # `configparser` is part of CPython too, so the interpreter is again the claim.
+    # The probe imports it and prints the version the same way the batch driver's
+    # `--version` does, so an image without it fails here rather than in the middle of
+    # a comparison.
+    "configparser": (["python3", "-c",
+                      "import sys, configparser;"
+                      " print('python %s, configparser in the standard library'"
+                      " % sys.version.split()[0])"],
+                     "configparser", None),
     # toml++'s driver prints its version, whether the unreleased set is on, and
     # the SHA-256 of the driver source it was compiled from. Asked with no input,
     # it writes that line and stops.

@@ -1727,11 +1727,20 @@ TEST(IniEditorConfig, TheDialectIsNotARelaxationOfDesktopEntryInEitherDirection)
   EXPECT_EQ(e.continuation, GTEXT_INI_CONTINUATION_NONE);
   EXPECT_FALSE(e.valueless_keys);
   EXPECT_FALSE(e.subsection_syntax);
-  EXPECT_FALSE(e.header_remainder_is_entry);
-  /* The one field no other dialect sets. */
-  EXPECT_TRUE(e.ctype_whitespace);
-  EXPECT_FALSE(git().ctype_whitespace);
-  EXPECT_FALSE(de.ctype_whitespace);
+  EXPECT_EQ(e.header_remainder, GTEXT_INI_HEADER_REMAINDER_ERROR);
+  /* The whitespace set: C's, where git's is space-and-tab and configparser's is
+   * Python's. Three dialects, three answers, six bytes between them. */
+  EXPECT_EQ(e.space_set, GTEXT_INI_SPACE_CTYPE);
+  EXPECT_EQ(git().space_set, GTEXT_INI_SPACE_BLANK);
+  EXPECT_EQ(de.space_set, GTEXT_INI_SPACE_BLANK);
+  /* Keys fold and section names do not, which is the split configparser also
+   * needs and which used to be spelled by excluding a name style. */
+  EXPECT_TRUE(e.fold_case);
+  EXPECT_FALSE(e.fold_group_case);
+  EXPECT_TRUE(git().fold_group_case);
+  /* The one dialect here that accepts `[]`. */
+  EXPECT_TRUE(e.allow_empty_group_name);
+  EXPECT_FALSE(de.allow_empty_group_name);
 }
 
 TEST(IniEditorConfig, TheLineIsTrimmedBeforeItIsClassified) {
@@ -2266,8 +2275,8 @@ TEST(IniSystemd, TheDialectIsItsOwnGrammarAndNotARelaxation) {
   EXPECT_TRUE(git().escapes_in_grammar);
   /* And a vertical tab is not whitespace, which was a live guess: systemd is a C
    * program, so `isspace()` was the plausible answer and is wrong three ways. */
-  EXPECT_FALSE(s.ctype_whitespace);
-  EXPECT_TRUE(ec().ctype_whitespace);
+  EXPECT_EQ(s.space_set, GTEXT_INI_SPACE_BLANK);
+  EXPECT_EQ(ec().space_set, GTEXT_INI_SPACE_CTYPE);
   /* No list separator and no case folding. */
   EXPECT_EQ(s.list_separator, 0);
   EXPECT_FALSE(s.fold_case);
@@ -2612,4 +2621,639 @@ TEST(IniSystemd, EveryShapeWritesBackByteForByte) {
     gtext_ini_free(again);
     gtext_ini_free(doc);
   }
+}
+
+// ------------------------------------------------------ the configparser dialect
+//
+// **This dialect has no specification**, so every assertion below is a
+// measurement against CPython 3.13.5 and none of them is a citation. The probe
+// transcript is notes/text/INI-DIALECTS.md §19; `make check-ini-configparser-oracle`
+// differs against a pinned interpreter over generated documents, and there is no
+// conformance target because there is nothing to conform to.
+//
+// The cases here are the ones a differential cannot reach or would not explain:
+// the fields that grew for this dialect, the two channel-dependent answers, the
+// writer's representability rule for a multi-line value, and the two divergences
+// that are deliberate.
+
+namespace {
+
+GTEXT_INI_Dialect cp() { return gtext_ini_dialect_configparser(); }
+
+/** An empty document under @p dialect, for the builder-side assertions. */
+GTEXT_INI_Document * empty(GTEXT_INI_Dialect dialect) {
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = dialect;
+  return gtext_ini_new(&opts);
+}
+
+/** The decoded - that is, indent-joined - form of a raw value. */
+std::string joined(const std::string & raw_value) {
+  GTEXT_INI_Dialect d = cp();
+  char * out = nullptr;
+  size_t len = 0;
+  if (gtext_ini_unescape(&d, raw_value.data(), raw_value.size(), nullptr, &out,
+          &len) != GTEXT_INI_OK) {
+    return "<error>";
+  }
+  std::string result = take(out, len);
+  gtext_ini_string_free(nullptr, out);
+  return result;
+}
+
+/** Parse under configparser and return the first entry's joined value. */
+std::string first_joined(const std::string & text) {
+  GTEXT_INI_Document * doc = ok(text, cp());
+  if (!doc) return "<refused>";
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  size_t len = 0;
+  const char * value = gtext_ini_group_value_at(group, 0, &len);
+  std::string out = joined(std::string(value ? value : "", len));
+  gtext_ini_free(doc);
+  return out;
+}
+
+} // namespace
+
+TEST(IniConfigParser, TheDialectIsMeasuredAndNotCited) {
+  GTEXT_INI_Dialect c = cp();
+  EXPECT_EQ(c.id, GTEXT_INI_DIALECT_CONFIGPARSER);
+  EXPECT_EQ(c.name_style, GTEXT_INI_NAMES_CONFIGPARSER);
+  EXPECT_EQ(c.continuation, GTEXT_INI_CONTINUATION_INDENT);
+  EXPECT_EQ(c.bool_style, GTEXT_INI_BOOLS_CONFIGPARSER);
+  EXPECT_EQ(c.header_remainder, GTEXT_INI_HEADER_REMAINDER_IGNORE);
+  EXPECT_EQ(c.space_set, GTEXT_INI_SPACE_PYTHON);
+  EXPECT_EQ(std::string(c.separators), "=:");
+  /* Keys fold, sections do not. The split EditorConfig needs too. */
+  EXPECT_TRUE(c.fold_case);
+  EXPECT_FALSE(c.fold_group_case);
+  /* A duplicate of either kind is a refusal, which is the *default*
+   * configuration - `strict=False` is what merges them, and the axis table this
+   * work began from had recorded the lax answer as the dialect's. */
+  EXPECT_EQ(c.dupkey, GTEXT_INI_DUPKEY_ERROR);
+  EXPECT_FALSE(c.allow_duplicate_groups);
+  EXPECT_FALSE(c.allow_preamble);
+  EXPECT_FALSE(c.valueless_keys);
+  EXPECT_FALSE(c.inline_comments);
+  EXPECT_FALSE(c.quoted_values);
+  EXPECT_FALSE(c.skip_bom);
+  EXPECT_FALSE(c.allow_empty_group_name);
+  EXPECT_EQ(c.escapes, nullptr);
+  EXPECT_FALSE(c.numeric_escapes);
+  EXPECT_EQ(c.list_separator, 0);
+  EXPECT_FALSE(c.word_split);
+  /* No dialect scans this one's values: the extent of an indent-continued value
+   * is not in the value's own bytes. */
+  EXPECT_TRUE(c.trim_trailing_space);
+}
+
+TEST(IniConfigParser, EitherSeparatorEndsTheKeyAndTheFirstOneWins) {
+  /*
+   * `(?P<option>.*?)\s*(?P<vi>=|:)` - a lazy match, so the *first* delimiter on
+   * the line ends the key whichever of the two it is. Measured all four ways, and
+   * the pair that matters is the last two: a reader that looked for `=` first
+   * would read `k:b=c` as the key `k:b`.
+   */
+  struct Case { const char * text; const char * key; const char * value; };
+  for (const Case & c : {
+           Case{"[a]\nk=v\n", "k", "v"},
+           Case{"[a]\nk:v\n", "k", "v"},
+           Case{"[a]\nk=b:c\n", "k", "b:c"},
+           Case{"[a]\nk:b=c\n", "k", "b=c"},
+           Case{"[a]\nk = = v\n", "k", "= v"},
+           Case{"[a]\nk:=v\n", "k", "=v"},
+       }) {
+    GTEXT_INI_Document * doc = ok(c.text, cp());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{c.key})) << c.text;
+    EXPECT_EQ(raw(doc, "a", c.key), c.value) << c.text;
+    gtext_ini_free(doc);
+  }
+  /*
+   * And a `:` is therefore outside the key charset, where it is inside every
+   * other dialect's - asked through the builder, which is the public spelling of
+   * the same predicate.
+   */
+  GTEXT_INI_Document * mine = empty(cp());
+  ASSERT_NE(mine, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(mine, "a", &g), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_group_set(g, "k:v", "1", 1), GTEXT_INI_E_BAD_KEY);
+  EXPECT_EQ(gtext_ini_group_set(g, "k v", "1", 1), GTEXT_INI_OK);
+  gtext_ini_free(mine);
+  GTEXT_INI_Document * theirs = empty(ec());
+  ASSERT_NE(theirs, nullptr);
+  GTEXT_INI_Group * g2 = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(theirs, "a", &g2), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_group_set(g2, "k:v", "1", 1), GTEXT_INI_OK);
+  gtext_ini_free(theirs);
+}
+
+TEST(IniConfigParser, AKeyIsAnythingBeforeTheSeparatorAndFoldsToLowerCase) {
+  GTEXT_INI_Document * doc = ok("[a]\nke y = v\nK1 = w\nk[x] = y\nk#z = 1\n", cp());
+  ASSERT_NE(doc, nullptr);
+  /* A space, a bracket and a comment introducer are all ordinary key bytes: the
+   * key is defined by where it ends, not by a charset. */
+  EXPECT_EQ(canonical_keys(doc),
+      (std::vector<std::string>{"ke y", "k1", "k[x]", "k#z"}));
+  gtext_ini_free(doc);
+  /* An empty key is refused, and so is one that is only whitespace. */
+  refused("[a]\n= v\n", GTEXT_INI_E_BAD_KEY, cp());
+  refused("[a]\n  = v\n", GTEXT_INI_E_BAD_KEY, cp());
+  /* A line with no separator at all is not a valueless key here. */
+  refused("[a]\nk\n", GTEXT_INI_E_BAD_LINE, cp());
+}
+
+TEST(IniConfigParser, ADuplicateKeyIsComparedOnTheFoldedName) {
+  /*
+   * The one case that needed a **code change rather than a field**: the parser's
+   * duplicate check compared raw bytes, which is right for Desktop Entry - the
+   * only other dialect refusing a duplicate, and one that does not fold - and
+   * wrong for a dialect that does both. `k1` then `K1` is a
+   * `DuplicateOptionError`, so the fold happens before the check.
+   */
+  refused("[a]\nk1 = 1\nK1 = 2\n", GTEXT_INI_E_DUPKEY, cp());
+  refused("[a]\nk = 1\nk = 2\n", GTEXT_INI_E_DUPKEY, cp());
+  /* Across sections it is not a duplicate, and the sections themselves are
+   * case-sensitive - so this document has two groups and no duplicate anything. */
+  GTEXT_INI_Document * doc = ok("[A]\nk = 1\n[a]\nK = 2\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"A", "a"}));
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k", "k"}));
+  gtext_ini_free(doc);
+  /* A duplicate section is refused under the default configuration. */
+  refused("[a]\nk = 1\n[a]\nj = 2\n", GTEXT_INI_E_DUPGROUP, cp());
+}
+
+TEST(IniConfigParser, TheHeaderClosesAtTheLastBracketAndTheRestIsDiscarded) {
+  /*
+   * `\[(?P<header>.+)\]` applied with `re.match`: greedy, so the last `]` closes
+   * it, and not anchored at the end, so anything after that is never looked at.
+   * Three dialects give three answers to `[a]junk` - Desktop Entry refuses it,
+   * git reads an entry from it, this keeps the section - which is why the axis is
+   * an enum.
+   */
+  struct Case { const char * text; const char * name; };
+  for (const Case & c : {
+           Case{"[a]b]\nk=v\n", "a]b"},
+           Case{"[a]junk\nk=v\n", "a"},
+           Case{"[a] k = v\nj=w\n", "a"},
+           Case{"[a]=v\nk=w\n", "a"},
+           Case{"[ b ]\nk=v\n", " b "},
+           Case{"[a=b]\nk=v\n", "a=b"},
+           Case{"[a#b]\nk=v\n", "a#b"},
+           Case{"[a[b]\nk=v\n", "a[b"},
+           Case{"[a] ]\nk=v\n", "a] "},
+       }) {
+    GTEXT_INI_Document * doc = ok(c.text, cp());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(group_names(doc), (std::vector<std::string>{c.name})) << c.text;
+    /* The discarded bytes are still in the document, so a rewrite reproduces
+     * them: they have no meaning, which is not the same as being absent. */
+    EXPECT_EQ(written(doc), c.text) << c.text;
+    gtext_ini_free(doc);
+  }
+  /* `[]` is refused, which is the opposite of EditorConfig's answer to the same
+   * three bytes - and the only axis on which the two name grammars differ. */
+  refused("[]\nk=v\n", GTEXT_INI_E_BAD_GROUP, cp());
+  GTEXT_INI_Document * doc = ok("[]\nk=v\n", ec());
+  ASSERT_NE(doc, nullptr);
+  gtext_ini_free(doc);
+}
+
+TEST(IniConfigParser, AnIndentedLineContinuesTheValueAndJoinsWithANewline) {
+  struct Case { const char * text; const char * value; };
+  for (const Case & c : {
+           Case{"[a]\nk=1\n  2\n", "1\n2"},
+           Case{"[a]\nk=1\n\t2\n", "1\n2"},
+           Case{"[a]\nk=1\n 2\n", "1\n2"},
+           Case{"[a]\nk=1\n  2\n  3\n", "1\n2\n3"},
+           /* The indent is compared against the entry's own line, and the depth
+            * of a continuation relative to earlier ones does not matter. */
+           Case{"[a]\nk=1\n    2\n  3\n", "1\n2\n3"},
+           /* A comment line contributes nothing and does not end it; a blank
+            * line contributes an empty line and does not end it either. */
+           Case{"[a]\nk=1\n#c\n  2\n", "1\n2"},
+           Case{"[a]\nk=1\n  2\n#c\n  3\n", "1\n2\n3"},
+           Case{"[a]\nk=1\n\n  2\n", "1\n\n2"},
+           Case{"[a]\nk=1\n\t\n  2\n", "1\n\n2"},
+           /* Each contributing line is stripped on both sides, the first too. */
+           Case{"[a]\nk=1  \n  2  \n", "1\n2"},
+           /* An empty first line still holds the newline the join inserts. */
+           Case{"[a]\nk=\n  2\n", "\n2"},
+           Case{"[a]\nk=\n\n  2\n", "\n\n2"},
+           /* An indented line that looks like an entry, or like a header, is
+            * neither: it is text. */
+           Case{"[a]\nk=1\n  j=2\n", "1\nj=2"},
+           Case{"[a]\nk=1\n  [b]\n", "1\n[b]"},
+           /* At end of input with no terminator. */
+           Case{"[a]\nk=1\n  2", "1\n2"},
+       }) {
+    EXPECT_EQ(first_joined(c.text), c.value) << c.text;
+    GTEXT_INI_Document * doc = ok(c.text, cp());
+    ASSERT_NE(doc, nullptr) << c.text;
+    EXPECT_EQ(written(doc), c.text) << c.text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniConfigParser, TheIndentComparisonIsStrictlyGreaterThanTheEntrysOwnLine) {
+  /*
+   * The rule that cannot be inferred from a single document's result, and the one
+   * that had to come from reading `_read_inner()`: the comparison is against the
+   * indent of the line that **started the entry**, strictly. So an entry indented
+   * two spaces is not continued by a line indented two spaces - that line is read
+   * as an entry of its own, has no separator, and the document is refused.
+   */
+  refused("[a]\n  k=1\n  2\n", GTEXT_INI_E_BAD_LINE, cp());
+  refused("[a]\n    k=1\n  2\n", GTEXT_INI_E_BAD_LINE, cp());
+  /* One space deeper is enough. */
+  GTEXT_INI_Document * doc = ok("[a]\n  k=1\n   2\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(first_joined("[a]\n  k=1\n   2\n"), "1\n2");
+  gtext_ini_free(doc);
+  /* Two entries at the same indent are two entries. */
+  GTEXT_INI_Document * two = ok("[a]\n  k=1\n  j=2\n", cp());
+  ASSERT_NE(two, nullptr);
+  EXPECT_EQ(canonical_keys(two), (std::vector<std::string>{"k", "j"}));
+  gtext_ini_free(two);
+}
+
+TEST(IniConfigParser, AGroupHeaderEndsAContinuationAndIsNeverContinued) {
+  /*
+   * The reference clears its current key when it reads a header, with the comment
+   * "so sections can't start with a continuation line". So an indented line after
+   * a header has nothing to join to and is an entry - or, with no separator, a
+   * refusal. An *indented* header while a value is open never gets that far: it
+   * was already absorbed into the value, which the case above asserts.
+   */
+  refused("[a]\nk=1\n[b]\n  2\n", GTEXT_INI_E_BAD_LINE, cp());
+  /* An indented header at the start of a document is a header: the indent only
+   * means anything while an entry is open. */
+  GTEXT_INI_Document * doc = ok("  [a]\n  k=v\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(group_names(doc), (std::vector<std::string>{"a"}));
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  gtext_ini_free(doc);
+}
+
+TEST(IniConfigParser, AKeysSeparatorIsSoughtOnItsOwnLineOnly) {
+  /*
+   * The bug this test exists for: the value's extent grows past the first
+   * physical line, and the search for the separator was bounded by that extent.
+   * So `k` followed by an indented `j=2` read as one entry named `k\n  j` - a key
+   * containing a newline - where the reference reports the bare `k` as a
+   * `ParsingError`. The separator is matched against the entry's own line and
+   * every continuation line is appended without being looked at.
+   *
+   * systemd is the opposite case and shares the code: there a *key* may be
+   * continued, so the whole logical line is in scope.
+   */
+  refused("[a]\nk\n  j=2\n", GTEXT_INI_E_BAD_LINE, cp());
+  GTEXT_INI_Document * doc = ok("[Service]\nEnviron\\\nment=v\n", sd());
+  ASSERT_NE(doc, nullptr);
+  /* `Environ ment` and not `Environment`: systemd's join inserts a space, which
+   * is the whole point of that dialect's continuation being JOIN_SPACE. The key
+   * is a nonsense setting name and parses anyway - what matters here is that the
+   * separator was found on the *second* physical line. */
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"Environ ment"}));
+  gtext_ini_free(doc);
+}
+
+TEST(IniConfigParser, TheValueEndsAtItsLastContributingLine) {
+  /*
+   * The reference joins the pieces and then strips the result, so trailing blank
+   * and comment lines are not in the value. They therefore belong to the
+   * document's comment stream rather than to the entry, and a scan that ran to
+   * the first non-continuation line would have swallowed them - a rewrite would
+   * still have been byte-identical, which is why this needed a *value*
+   * comparison to find rather than a round-trip one.
+   */
+  EXPECT_EQ(first_joined("[a]\nk=1\n  2\n\n\n[b]\nj=3\n"), "1\n2");
+  EXPECT_EQ(first_joined("[a]\nk=1\n  2\n#c\n[b]\nj=3\n"), "1\n2");
+  /* The blank lines are outside the entry, so the second group's leading comment
+   * holds them and the rewrite still tiles the input exactly. */
+  GTEXT_INI_Document * doc = ok("[a]\nk=1\n  2\n\n\n[b]\nj=3\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a", "k"), "1\n  2");
+  EXPECT_EQ(written(doc), "[a]\nk=1\n  2\n\n\n[b]\nj=3\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniConfigParser, PythonsWhitespaceIncludesFourBytesCsDoesNot) {
+  /*
+   * `\x1c` through `\x1f`, the ASCII separator controls. Python's `\s` and
+   * `str.strip()` include them and `isspace()` does not, so this is a third
+   * whitespace set rather than a reuse of EditorConfig's - and it is asked in
+   * four different positions, all measured.
+   */
+  /*
+   * Asked through the parser rather than through the predicate, because the
+   * predicate is internal and because what matters is that all four *positions*
+   * read it as whitespace. EditorConfig, whose set is C's, refuses the same
+   * documents.
+   */
+  for (char raw_byte : {'\x1c', '\x1d', '\x1e', '\x1f'}) {
+    std::string byte(1, raw_byte);
+    std::string doc_text = "[a]\nk" + byte + "=" + byte + "v" + byte + "\n";
+    GTEXT_INI_Document * mine = ok(doc_text, cp());
+    ASSERT_NE(mine, nullptr) << doc_text;
+    EXPECT_EQ(canonical_keys(mine), (std::vector<std::string>{"k"})) << doc_text;
+    EXPECT_EQ(raw(mine, "a", "k"), "v") << doc_text;
+    gtext_ini_free(mine);
+    /* Under EditorConfig the same byte is part of the key and of the value. */
+    GTEXT_INI_Document * theirs = ok(doc_text, ec());
+    ASSERT_NE(theirs, nullptr) << doc_text;
+    EXPECT_EQ(canonical_keys(theirs), (std::vector<std::string>{"k" + byte}))
+        << doc_text;
+    gtext_ini_free(theirs);
+  }
+  /* Indentation, the separator run, the trailing trim, and before a comment. */
+  EXPECT_EQ(first_joined("[a]\nk=1\n\x1c" "2\n"), "1\n2");
+  GTEXT_INI_Document * doc = ok("[a]\nk\x1c=\x1cv\x1c\n\x1c#c\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k"}));
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  gtext_ini_free(doc);
+  /* A vertical tab and a form feed are in the set as well, which EditorConfig
+   * shares and git does not. */
+  EXPECT_EQ(first_joined("[a]\nk=1\n\v2\n"), "1\n2");
+  EXPECT_EQ(first_joined("[a]\nk=1\n\f2\n"), "1\n2");
+}
+
+TEST(IniConfigParser, ALoneCarriageReturnTerminatesALineBecauseTheFileDoes) {
+  /*
+   * The one place the reference has two answers, and neither is wrong: Python's
+   * universal-newline translation applies to `read(path)` and not to
+   * `read_string()`, so a lone CR is a terminator in a file and data in a string.
+   * Of the 38 documents probed both ways it is the **only** difference between
+   * the two channels. A file is what an INI document is, so this follows the file
+   * - and the differential's driver reads a file for the same reason.
+   */
+  GTEXT_INI_Document * doc = ok("[a]\nk=v\rj=w\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k", "j"}));
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  EXPECT_EQ(written(doc), "[a]\nk=v\rj=w\n");
+  gtext_ini_free(doc);
+  /* So a CR inside what looks like a value splits the line, and the second half
+   * has no separator. */
+  refused("[a]\nk=a\rb\n", GTEXT_INI_E_BAD_LINE, cp());
+  /* And a CR before an indented line is a terminator, so that line continues. */
+  EXPECT_EQ(first_joined("[a]\nk=a\r  b\n"), "a\nb");
+  /* CRLF and CR CR LF both behave as the file channel does. */
+  GTEXT_INI_Document * crlf = ok("[a]\r\nk=v\r\n", cp());
+  ASSERT_NE(crlf, nullptr);
+  EXPECT_EQ(raw(crlf, "a", "k"), "v");
+  gtext_ini_free(crlf);
+}
+
+TEST(IniConfigParser, QuotesBackslashesAndInlineCommentsAreAllLiteral) {
+  GTEXT_INI_Document * doc =
+      ok("[a]\nk=\"q v\"\nj=a\\nb\nm=x ; c\nn=y # c\np=100%\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a", "k"), "\"q v\"");
+  EXPECT_EQ(raw(doc, "a", "j"), "a\\nb");
+  EXPECT_EQ(raw(doc, "a", "m"), "x ; c");
+  EXPECT_EQ(raw(doc, "a", "n"), "y # c");
+  EXPECT_EQ(raw(doc, "a", "p"), "100%");
+  /* And the decoded form is the same bytes: a backslash is data, which is the
+   * contract gtext_ini_unescape() has for a dialect with no escape set. */
+  EXPECT_EQ(joined("a\\nb"), "a\\nb");
+  gtext_ini_free(doc);
+  /*
+   * `100%` is the compatibility trap in this dialect and it is a **layer above
+   * the grammar**: the value parses and is stored, and it is `get()` under the
+   * default `BasicInterpolation` that raises. Interpolation does not ship - no
+   * file on this machine uses `%(name)s` and three use a bare `%` - so the raw
+   * value is the answer and @ref format_ini says so with the count.
+   */
+}
+
+TEST(IniConfigParser, BooleansAreSystemdsWordsFoldedToLowerCase) {
+  GTEXT_INI_Dialect c = cp();
+  GTEXT_INI_Dialect s = sd();
+  bool value = false;
+  for (const char * yes : {"1", "yes", "true", "on", "YES", "Yes", "TRUE", "On"}) {
+    EXPECT_EQ(gtext_ini_value_bool(&c, yes, strlen(yes), &value), GTEXT_INI_OK)
+        << yes;
+    EXPECT_TRUE(value) << yes;
+  }
+  for (const char * no : {"0", "no", "false", "off", "OFF", "False"}) {
+    EXPECT_EQ(gtext_ini_value_bool(&c, no, strlen(no), &value), GTEXT_INI_OK) << no;
+    EXPECT_FALSE(value) << no;
+  }
+  for (const char * bad : {"n", "t", "2", "", "true false"}) {
+    EXPECT_EQ(gtext_ini_value_bool(&c, bad, strlen(bad), &value),
+        GTEXT_INI_E_TYPE) << bad;
+  }
+  /* The same eight words as systemd's, and systemd folds none of them - which is
+   * why the two sets are separate members rather than one flag. */
+  EXPECT_EQ(gtext_ini_value_bool(&s, "YES", 3, &value), GTEXT_INI_E_TYPE);
+  EXPECT_EQ(gtext_ini_value_bool(&s, "yes", 3, &value), GTEXT_INI_OK);
+}
+
+TEST(IniConfigParser, TheWriterIndentsASynthesizedMultiLineValue) {
+  /*
+   * An LF is how this dialect *spells* a continuation, so the writer cannot refuse
+   * one - that would make a document it had just read unwritable, which is the
+   * mistake the scanning branch of the same predicate records having made. What it
+   * does instead is **supply the indentation**, which is the only way a caller's
+   * `"a\nb"` can be written at all: emitted as-is it would read back as an entry
+   * `a` followed by a line `b` with no separator.
+   *
+   * So the property is a round trip through the writer, not a byte comparison
+   * against a spelling this test would have to guess.
+   */
+  struct Case { const char * value; bool writable; const char * why; };
+  for (const Case & c : {
+           Case{"a\nb", true, "an ordinary two-line value"},
+           Case{"a\n\nb", true, "a blank line in the middle is representable"},
+           Case{"a\nb\nc", true, "three lines"},
+           Case{"\nb", true, "an empty first line"},
+           Case{"a", true, "one line"},
+           Case{"a\nb\n", false, "a trailing terminator would be stripped"},
+           Case{"a\n", false, "the same with nothing after it"},
+           Case{"a\n#c", false, "an indented `#` reads back as a comment"},
+           Case{"a\n;c", false, "and so does the other introducer"},
+           Case{"a\n b", false, "the writer's indent plus its own would be stripped"},
+           Case{"a\nb ", false, "a trailing space on the last line is stripped"},
+           Case{" a", false, "a leading space is eaten after the separator"},
+           Case{"a ", false, "a trailing space is stripped"},
+       }) {
+    GTEXT_INI_Document * doc = empty(cp());
+    ASSERT_NE(doc, nullptr);
+    GTEXT_INI_Group * group = nullptr;
+    ASSERT_EQ(gtext_ini_document_add_group(doc, "a", &group), GTEXT_INI_OK);
+    ASSERT_EQ(gtext_ini_group_set(group, "k", c.value, strlen(c.value)),
+        GTEXT_INI_OK) << c.why;
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    GTEXT_INI_Status status = gtext_ini_write(doc, &sink, nullptr);
+    if (!c.writable) {
+      EXPECT_EQ(status, GTEXT_INI_E_UNREPRESENTABLE) << c.why;
+    }
+    else {
+      EXPECT_EQ(status, GTEXT_INI_OK) << c.why;
+      if (status == GTEXT_INI_OK) {
+        std::string out(gtext_ini_sink_buffer_data(&sink),
+            gtext_ini_sink_buffer_size(&sink));
+        /* And it reads back as the same value, which is the whole claim. */
+        GTEXT_INI_Document * again = ok(out, cp());
+        ASSERT_NE(again, nullptr) << out;
+        const GTEXT_INI_Group * g2 = gtext_ini_document_group_at(again, 0);
+        size_t len = 0;
+        const char * stored = gtext_ini_group_value_at(g2, 0, &len);
+        EXPECT_EQ(joined(std::string(stored ? stored : "", len)), c.value)
+            << c.why << " wrote: " << out;
+        gtext_ini_free(again);
+      }
+    }
+    gtext_ini_sink_buffer_free(&sink);
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniConfigParser, AParsedMultiLineValueIsWritableWithItsOwnIndentation) {
+  /*
+   * The other half of the same predicate, and the reason it takes a flag: a
+   * *verbatim* value carries the indentation its document had, so it requires
+   * exactly what a synthesized one forbids. A comment line inside the span is
+   * likewise fine here and refused there.
+   */
+  for (const std::string & text : {std::string("[a]\nk=1\n  2\n"),
+           std::string("[a]\nk=1\n#c\n  2\n"),
+           std::string("[a]\nk=1\n\n  2\n"),
+           std::string("[a]\nk=\n  2\n")}) {
+    GTEXT_INI_Document * doc = ok(text, cp());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(written(doc), text) << text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniConfigParser, EveryAcceptedDocumentRewritesByteForByte) {
+  for (const std::string & text : {
+           std::string("[a]\nk = v\n"),
+           std::string("[a]\nk:v\n"),
+           std::string("#c\n;d\n\n[a]\nk=1\n  2\n"),
+           std::string("[a]\nk=1\n\n  2\n#c\n  3\n"),
+           std::string("[a]junk\nk=v\n"),
+           std::string("[ b ]\nk=v\n"),
+           std::string("  [a]\n  k=v\n"),
+           std::string("[a]\nk=\n  2\n"),
+           std::string("[a]\r\nk=v\r\n"),
+           std::string("[a]\nk=v\rj=w\n"),
+           std::string("[a]\nk=1\n  2"),
+           std::string("[a]\nk=\"q\" ; c\n"),
+           std::string("[a]\nk\x1c=\x1cv\n"),
+           std::string("[a]\nk=1\n  2\n\n\n[b]\nj=3\n"),
+       }) {
+    GTEXT_INI_Document * doc = ok(text, cp());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(written(doc), text) << text;
+    GTEXT_INI_Document * again = ok(written(doc), cp());
+    ASSERT_NE(again, nullptr) << text;
+    EXPECT_EQ(written(again), text) << text;
+    gtext_ini_free(again);
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniConfigParser, ACarriageReturnTerminatorIsNotLeadingWhitespace) {
+    /*
+   * Two defects in one shape, both found by the differential's `lone-cr` and `crlf`
+   * axes and neither reachable from the 703-file local corpus, which contains one CRLF
+   * file and no lone CR at all.
+   *
+   * A CR is whitespace to every dialect that accepts CRLF, and an LF is whitespace to
+   * none - the line ends at an LF before anything trims. So a value whose first line is
+   * empty begins at its own terminator, and under CRLF that first byte is a CR:
+   *
+   *   - the **parser** skipped it as leading whitespace and walked into the
+   *     continuation, losing the value's empty first line: `alpha =<CR>  v` gave `v`
+   *     where the reference gives `\nv`. The skip had been bounded by the end of the
+   *     physical line, which stopped it before this dialect made that the end of the
+   *     *logical* line;
+   *   - the **writer** then called the same first byte leading whitespace and declared
+   *     the value unrepresentable, so a document this module had just parsed could not
+   *     be written back.
+   */
+  struct Case { const char * text; const char * value; };
+  for (const Case & c : {
+           Case{"[a]\nk =\r  v\n", "\nv"},
+           Case{"[a]\nk =   \r  v\n", "\nv"},
+           Case{"[a]\r\nk =\r\n  v\r\n", "\nv"},
+           Case{"[a]\r\nk = 1\r\n  2\r\n", "1\n2"},
+       }) {
+    EXPECT_EQ(first_joined(c.text), c.value) << c.text;
+    GTEXT_INI_Document * doc = ok(c.text, cp());
+    ASSERT_NE(doc, nullptr) << c.text;
+    /* And it is writable, which is the second half: the value's first byte is a
+     * terminator rather than a space that would be eaten. */
+    EXPECT_EQ(written(doc), c.text) << c.text;
+    gtext_ini_free(doc);
+  }
+  /* A leading space still is leading whitespace, so the distinction is the
+   * terminator and not the CR. */
+  GTEXT_INI_Document * doc = ok("[a]\nk =  v\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  gtext_ini_free(doc);
+}
+
+TEST(IniConfigParser, AValueBeginningWithACommentIntroducerIsNotAComment) {
+  /*
+   * Found by the **local corpus**, and not by any of the 102 probe documents nor by the
+   * generator: a raw value starts in the middle of its line, so a value of `;black`
+   * begins with a comment introducer and is not a comment - the reference tests the
+   * whole line, `j = ;black`, which does not start with `;`.
+   *
+   * The indent join classified every line of the raw value including the first, so
+   * those values came back **empty** and the documents were unwritable. 331 of the 479
+   * real configparser documents on this machine have one: Midnight Commander's skins
+   * spell a default colour that way.
+   */
+  EXPECT_EQ(first_joined("[a]\nj = ;black\n"), ";black");
+  EXPECT_EQ(first_joined("[a]\nj = #ff0000\n"), "#ff0000");
+  /*
+   * And here is the pair that makes the rule exact rather than approximate, measured
+   * both ways against the reference: the *value* may begin with a `;` and a
+   * *continuation line* may not. `j = ;black` is the value `;black`, and an indented
+   * `;white` under it is a **comment** - the comment test runs on the stripped line, so
+   * indentation does not protect it - while an indented `white` continues the value.
+   * One introducer, two answers, decided by whether the line began with a key.
+   */
+  EXPECT_EQ(first_joined("[a]\nj = ;black\n  ;white\n"), ";black");
+  EXPECT_EQ(first_joined("[a]\nj = ;black\n  white\n"), ";black\nwhite");
+  for (const std::string & text : {std::string("[a]\nj = ;black\n"),
+           std::string("[a]\nj = #ff0000\n  ;white\n")}) {
+    GTEXT_INI_Document * doc = ok(text, cp());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(written(doc), text) << text;
+    gtext_ini_free(doc);
+  }
+}
+
+TEST(IniConfigParser, TwoDivergencesAreDeliberateAndBothAreUnicode) {
+  /*
+   * Python's `str` is Unicode-aware and this reader is byte-oriented, so two of
+   * the reference's rules cannot be followed here and are **stated** rather than
+   * approximated. Both are asserted so that a future change to either is a
+   * visible decision and not a drift.
+   *
+   * The differential excludes documents containing a non-ASCII byte from the
+   * scores these affect and counts them, which is where the exclusion is
+   * enforced; this is where it is explained.
+   */
+  /* A no-break space indents a line for `configparser` and is data here, so the
+   * document that would have been one value there is refused. U+0085 and the
+   * Unicode separators are the same case. */
+  refused("[a]\nk=1\n\xc2\xa0" "2\n", GTEXT_INI_E_BAD_LINE, cp());
+  /* And `optionxform` is `str.lower()`, so a non-ASCII upper-case letter folds
+   * there and not here: the canonical key keeps its bytes. */
+  GTEXT_INI_Document * doc = ok("[a]\nK\xc3\x89 = v\n", cp());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{"k\xc3\x89"}));
+  gtext_ini_free(doc);
 }

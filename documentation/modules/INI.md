@@ -9,10 +9,12 @@ and writes one back out **byte for byte**.
 
 It is the one module here whose format is chosen by the caller rather than named
 by the module. There is no INI specification, so `GTEXT_INI_Dialect` names which
-INI - five of them today: Desktop Entry, a generic derivation of it, git config,
-EditorConfig and systemd - and the default is Desktop Entry 1.5. EditorConfig is the
-only one with a **normative conformance suite**, and the only one where this module
-scores higher than either reference implementation does.
+INI - six of them: Desktop Entry, a generic derivation of it, git config,
+EditorConfig, systemd and Python's configparser - and the default is Desktop Entry 1.5.
+EditorConfig is the only one with a **normative conformance suite**, and the only one
+where this module scores higher than either reference implementation does; configparser
+is the only one with **no specification at all**, so every rule of it is a measurement
+rather than a citation.
 
 ---
 
@@ -263,9 +265,56 @@ cannot see a warning must not silently drop a setting. \ref format_ini
 parse and write back byte for byte - and `make check-ini-systemd-oracle` differs
 against systemd itself over 5,000 generated documents.
 
+### Python configparser
+
+```c
+GTEXT_INI_Dialect dialect = gtext_ini_dialect_configparser();
+GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+opts.dialect = dialect;
+GTEXT_INI_Document * doc = gtext_ini_parse(text, len, &opts, &err);
+
+/* `=` or `:`, whichever comes first, so `opt : b=c` is the key `opt` and the value
+ * `b=c`. */
+
+/* A value can span lines, and the **joined** form is what a caller wants: the raw
+ * value holds the terminators and the indentation, and gtext_ini_unescape() performs
+ * the join - the same two-layer shape systemd's escapes have. `k = 1` followed by an
+ * indented `2` joins to "1\n2". */
+char * joined = NULL;
+size_t joined_len = 0;
+gtext_ini_unescape(&dialect, raw, raw_len, NULL, &joined, &joined_len);
+gtext_ini_string_free(NULL, joined);
+
+/* Booleans are systemd's eight words, and unlike systemd's they fold. */
+bool flag = false;
+gtext_ini_value_bool(&dialect, "TRUE", 4, &flag);
+```
+
+Three things a caller meets that no other dialect here has:
+
+- **Two separator characters.** The key ends at the first `=` or `:` on the line.
+- **A continuation with no marker.** An indented line continues the previous entry's
+  value, joined with a newline - so the value's extent depends on the *next* line, and
+  a synthesized multi-line value is written back with the indentation supplied by the
+  writer. A value that could not read back as itself - one whose second line would be
+  read as a comment, or whose last line is blank - is ::GTEXT_INI_E_UNREPRESENTABLE
+  rather than mangled.
+- **No escapes at all.** A backslash is data, and so are quotes.
+
+**Interpolation does not ship, and the number is the reason**: over the 479 real
+`configparser` documents on this machine the *default* `BasicInterpolation` refuses a
+value in **301** of them and changes a value in **none**. `[DEFAULT]`'s value
+inheritance does not ship either - it is a lookup over a parsed tree, and a caller who
+wants it asks the section and then asks `DEFAULT`.
+
+`make conformance-ini-configparser` scores this machine's 703 `.cfg` and `.ini` files
+against `configparser` itself - the only INI corpus gate here whose reference is
+installed - and `make check-ini-configparser-oracle` differs against a pinned
+interpreter over 20,000 generated documents.
+
 ### Something in between
 
-Change individual fields if you need something between any two of the five.
+Change individual fields if you need something between any two of the six.
 ::GTEXT_INI_Dialect is a plain struct and every field is an axis on which real
 specified dialects disagree; \ref format_ini "the format page" has the table.
 

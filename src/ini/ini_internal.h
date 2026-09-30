@@ -208,13 +208,25 @@ GTEXT_INTERNAL_API ini_entry * gtext_ini_group_push(GTEXT_INI_Group * group);
  *
  * **EditorConfig is the dialect that does want C's answer**, because both of its
  * cores ask the platform: core-c calls `isspace()` and core-py matches `\s`.
- * ::GTEXT_INI_Dialect::ctype_whitespace is that choice, so the two dialects with
- * a rule about `\v` can hold opposite ones.
+ * ::GTEXT_INI_Dialect::space_set is that choice, so the dialects with a rule about
+ * `\v` can hold opposite ones - and configparser, whose whitespace is Python's
+ * `\s` rather than C's, needs a third answer again: four more bytes, `\x1c`
+ * through `\x1f`.
  *
  * CR is space to git and not to Desktop Entry, which is what lets a CRLF file
  * read correctly under a dialect that has no CRLF rule of its own.
  */
 GTEXT_INTERNAL_API bool gtext_ini_is_space(const GTEXT_INI_Dialect * dialect,
+    char c);
+
+/**
+ * Whether @p c separates a key from its value under @p dialect.
+ *
+ * `=` for five dialects and `=` or `:` for configparser. Asked of one byte,
+ * because the two places that need it - where a key ends, and whether a byte may
+ * appear inside one - would otherwise be free to disagree about `k:v`.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_is_separator(const GTEXT_INI_Dialect * dialect,
     char c);
 
 /**
@@ -369,7 +381,9 @@ GTEXT_INTERNAL_API size_t gtext_ini_terminator_len(
  * the square brackets" - so `[a]b]` is one section named `a]b`, and a scan for
  * the first `]` would cut it in the wrong place. Both cores do this: core-c has
  * `find_last_char_or_comment` and core-py's greedy `[^\#;]+` backtracks to the
- * same place.
+ * same place. True for configparser too, which arrives at it from the other
+ * direction: its header pattern is a greedy `.+` between the brackets, so the
+ * match lands on the last `]` whether anyone intended that or not.
  *
  * Asked as a capability rather than as `id == GTEXT_INI_DIALECT_EDITORCONFIG`,
  * for the reason gtext_ini_dialect_scans_values() gives: a `== SOME_DIALECT` test
@@ -382,17 +396,113 @@ GTEXT_INTERNAL_API bool gtext_ini_group_close_is_last(
 /**
  * Whether ::GTEXT_INI_Dialect::fold_case reaches **group** names as well as keys.
  *
- * It does not always, and the two dialects that fold disagree about which half:
- * git folds a section name and not a quoted subsection, EditorConfig folds a key
- * and not a section name at all. The specification is explicit - "pair keys are
- * case-insensitive; all keys are lowercased after parsing" says nothing about a
- * section, and a section is a filepath glob whose case significance is the
- * filesystem's question rather than the format's.
+ * It does not always, and the three dialects that fold disagree about which half:
+ * git folds a section name and not a quoted subsection, EditorConfig and
+ * configparser fold a key and not a section name at all. EditorConfig's
+ * specification is explicit - "pair keys are case-insensitive; all keys are
+ * lowercased after parsing" says nothing about a section, and a section is a
+ * filepath glob whose case significance is the filesystem's question rather than
+ * the format's; configparser's section name is a dictionary key `optionxform`
+ * never sees, so `[A]` and `[a]` are two sections.
  *
  * So `fold_case` alone cannot answer "does this group name have a canonical
- * form", and every caller that wants to know asks this instead.
+ * form", and every caller that wants to know asks this instead. It reads
+ * ::GTEXT_INI_Dialect::fold_group_case and tests no name style: it used to be
+ * `fold_case` minus EditorConfig, which became a list of exceptions the moment a
+ * second dialect wanted the same thing.
  */
 GTEXT_INTERNAL_API bool gtext_ini_group_names_fold(
     const GTEXT_INI_Dialect * dialect);
+
+/**
+ * Whether a **name** may contain a continuation, so that its canonical form is
+ * the joined one.
+ *
+ * True for systemd alone, and it is not the same question as "does the dialect
+ * have a continuation". systemd assembles the logical line before classifying it,
+ * so `[Serv\` + `ice]` is a section and `Environ\` + `ment=v` a key;
+ * configparser's continuation is the *next* line's indentation, which can only
+ * ever extend a value, because an entry has to exist before a line can be more
+ * indented than the one that started it.
+ *
+ * Asked so that ini_set_canon() does not build a joined form for a name that
+ * cannot have one.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_names_may_continue(
+    const GTEXT_INI_Dialect * dialect);
+
+/** What a physical line is, before anything looks at its contents. */
+typedef enum {
+  INI_LINE_CONTENT,
+  INI_LINE_COMMENT,
+  INI_LINE_BLANK
+} ini_line_kind;
+
+/**
+ * Classify the physical line at @p at: content, comment, or blank.
+ *
+ * Exported because two callers need exactly the reader's own answer:
+ * gtext_ini_continuation_at() decides whether a systemd continuation skips a line,
+ * and the parser's indent-continuation scan decides whether a line contributes to
+ * a configparser value. A second copy of "is this a comment" is a second place for
+ * the leading-whitespace rule to drift - and the rule matters here: the test runs
+ * on the *stripped* line, so an indented `#` is a comment and never a continuation.
+ *
+ * @param line_end Receives the offset just past the line's terminator.
+ */
+GTEXT_INTERNAL_API ini_line_kind gtext_ini_classify_line(
+    const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len, size_t at,
+    size_t * line_end);
+
+/**
+ * The offset of the first non-whitespace byte of the line at @p at, relative to
+ * @p at - configparser's indentation level.
+ *
+ * Counted in **bytes**, which is Python's count in characters for every document
+ * the differential compares: its `\S` search is over a `str`, so a multi-byte
+ * indent character would count once there and several times here. The only such
+ * characters are the Unicode whitespace outside ASCII, which is already the
+ * divergence ::GTEXT_INI_SPACE_PYTHON names.
+ *
+ * Returns the line's whole content length for a blank line, which no caller uses:
+ * a blank line is classified before its indent is asked for.
+ */
+GTEXT_INTERNAL_API size_t gtext_ini_indent_width(
+    const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len,
+    size_t at);
+
+/**
+ * Join an indent-continued raw value into its logical form.
+ *
+ * configparser's algorithm exactly: split on line terminators, drop the comment
+ * lines, strip each remaining line on both sides, join what is left with a single
+ * LF, then strip the result's trailing whitespace. A blank line contributes an
+ * empty line, which is why the join is not simply "remove the terminators".
+ *
+ * @param out Receives the joined bytes, or NULL to measure only. Never longer
+ *   than @p len.
+ * @param out_len Receives the joined length. May not be NULL.
+ */
+GTEXT_INTERNAL_API void gtext_ini_join_indent(
+    const GTEXT_INI_Dialect * dialect, const char * raw, size_t len, char * out,
+    size_t * out_len);
+
+/**
+ * Whether an indent-continued value would read back as itself.
+ *
+ * The writer's question, and it cannot be a list of forbidden bytes: an LF is
+ * fine here - it is how a continuation is spelled - unless the line after it
+ * would be read as something other than a continuation of this value. So the
+ * predicate walks the value with the reader's own line rules and asks, of each
+ * line after the first, whether re-reading would take it back.
+ *
+ * @param verbatim Whether the writer will emit these bytes unchanged. It decides
+ *   the one rule the two emissions disagree about: a verbatim value carries its
+ *   own indentation and a synthesized one is given it, so each requires exactly
+ *   what the other forbids.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_indent_value_ok(
+    const GTEXT_INI_Dialect * dialect, const char * value, size_t len,
+    bool verbatim);
 
 #endif // GHOTI_IO_GTEXT_INI_INI_INTERNAL_H

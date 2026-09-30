@@ -139,15 +139,9 @@ static bool ini_run_is_space(const GTEXT_INI_Dialect * dialect,
   return true;
 }
 
-/**
- * Classify the physical line starting at @p at: comment, blank, or content.
- *
- * Used only by gtext_ini_continuation_at(), to decide whether a line following a
- * continuation is skipped over, ends the logical line, or is joined on.
- */
-typedef enum { INI_LINE_CONTENT, INI_LINE_COMMENT, INI_LINE_BLANK } ini_line_kind;
-
-static ini_line_kind ini_classify_line(const GTEXT_INI_Dialect * dialect,
+/* ini_line_kind and this function's contract are in ini_internal.h: two callers
+ * outside this file need exactly the reader's own answer. */
+ini_line_kind gtext_ini_classify_line(const GTEXT_INI_Dialect * dialect,
     const char * bytes, size_t len, size_t at, size_t * line_end) {
   size_t i = at;
   size_t term = 0;
@@ -309,7 +303,8 @@ ini_continuation gtext_ini_continuation_at(const GTEXT_INI_Dialect * dialect,
       return r;
     }
     size_t line_end = 0;
-    ini_line_kind kind = ini_classify_line(dialect, bytes, len, after, &line_end);
+    ini_line_kind kind =
+        gtext_ini_classify_line(dialect, bytes, len, after, &line_end);
     if (kind == INI_LINE_COMMENT) {
       after = line_end;
       continue;
@@ -418,7 +413,201 @@ bool gtext_ini_dialect_scans_values(const GTEXT_INI_Dialect * dialect) {
    */
   return dialect->numeric_escapes || dialect->quoted_values ||
          dialect->inline_comments ||
-         dialect->continuation != GTEXT_INI_CONTINUATION_NONE;
+         (dialect->continuation != GTEXT_INI_CONTINUATION_NONE &&
+             dialect->continuation != GTEXT_INI_CONTINUATION_INDENT);
+}
+
+bool gtext_ini_names_may_continue(const GTEXT_INI_Dialect * dialect) {
+  /*
+   * Only a continuation the *line's own bytes* announce can extend a name, and
+   * that is the distinction this function exists to draw. A trailing backslash is
+   * there to be found wherever the scan happens to be - in a group header, in a
+   * key, in a value - so systemd's continuation reaches all three. An indent
+   * continuation is a property of the **next** line and needs an entry to already
+   * be open, so it can only ever extend a value.
+   */
+  return dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_EMPTY ||
+         dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_SPACE;
+}
+
+size_t gtext_ini_indent_width(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t at) {
+  size_t i = at;
+  while (i < len && !gtext_ini_terminator_len(dialect, bytes, len, i) &&
+         gtext_ini_is_space(dialect, bytes[i])) {
+    i++;
+  }
+  return i - at;
+}
+
+/**
+ * Whether the trailing whitespace a join strips includes @p c.
+ *
+ * Python's `str.rstrip()`, which the reference applies to the joined value, strips
+ * the line terminators as well - and gtext_ini_is_space() deliberately does not,
+ * because a line ends at its terminator before anything trims. So the join needs
+ * its own predicate rather than reusing that one, and this is the only place in
+ * the module where an LF counts as whitespace.
+ */
+static bool ini_join_trailing_space(const GTEXT_INI_Dialect * dialect, char c) {
+  return c == '\n' || c == '\r' || gtext_ini_is_space(dialect, c);
+}
+
+/**
+ * Classify one line of a raw indent-continued value.
+ *
+ * The **first** line is content whatever it looks like, and that is the whole
+ * reason this wrapper exists. A raw value starts in the middle of its line - after
+ * the key and the separator - so a value of `;black` begins with a comment
+ * introducer and is not a comment: the reference tests for one on the whole line,
+ * `j = ;black`, which does not start with `;`. Only a continuation line is ever
+ * classified.
+ *
+ * Found by the local corpus, which is the point of having one: not one of the 102
+ * probe documents had a value beginning with `;` or `#`, and 331 of the 479 real
+ * files the reference reads do - Midnight Commander's skins spell a default colour
+ * that way. Without the guard those values came back **empty** and the documents
+ * were unwritable.
+ */
+static ini_line_kind ini_value_line_kind(const GTEXT_INI_Dialect * dialect,
+    const char * raw, size_t len, size_t at, bool first, size_t * line_end) {
+  ini_line_kind kind = gtext_ini_classify_line(dialect, raw, len, at, line_end);
+  return first ? INI_LINE_CONTENT : kind;
+}
+
+void gtext_ini_join_indent(const GTEXT_INI_Dialect * dialect, const char * raw,
+    size_t len, char * out, size_t * out_len) {
+  size_t w = 0;
+  size_t i = 0;
+  bool first = true;
+  while (i < len) {
+    size_t line_end = 0;
+    ini_line_kind kind =
+        ini_value_line_kind(dialect, raw, len, i, first, &line_end);
+    size_t content_end = line_end;
+    while (content_end > i &&
+           gtext_ini_terminator_len(dialect, raw, len, content_end - 1)) {
+      content_end--;
+    }
+    if (kind == INI_LINE_COMMENT) {
+      /* Contributes nothing at all - not even an empty line. The reference
+       * appends to the value only when the line has no comment on it, which is
+       * how a `#` line between two continuation lines vanishes while a blank line
+       * between them becomes a newline. */
+      i = line_end;
+      continue;
+    }
+    /* Each piece is stripped on both sides before the join, the first included:
+     * the reference strips the whole line and then strips the value again. */
+    size_t start = i;
+    while (start < content_end && gtext_ini_is_space(dialect, raw[start])) {
+      start++;
+    }
+    size_t end = content_end;
+    while (end > start && gtext_ini_is_space(dialect, raw[end - 1])) end--;
+    if (!first) {
+      if (out) out[w] = '\n';
+      w++;
+    }
+    if (out && end > start) memcpy(out + w, raw + start, end - start);
+    w += end - start;
+    first = false;
+    i = line_end;
+  }
+  /*
+   * The reference's final `rstrip()`. It can only bite on a value whose last
+   * contributing line is blank, which a parse does not produce - the span ends at
+   * the last line that contributed text - but a caller may hand one in, and then
+   * this is what configparser would have returned.
+   *
+   * Skipped when measuring, because there is nothing to look back at. The trim
+   * only ever shortens, so a measured length stays the upper bound a caller
+   * sizing a buffer needs.
+   */
+  if (out) {
+    while (w && ini_join_trailing_space(dialect, out[w - 1])) w--;
+  }
+  *out_len = w;
+}
+
+bool gtext_ini_indent_value_ok(const GTEXT_INI_Dialect * dialect,
+    const char * value, size_t len, bool verbatim) {
+  if (!len) return true;
+  /*
+   * Two emissions and therefore two questions, which is why @p verbatim is here.
+   *
+   *   - **Verbatim**: the writer emits these bytes unchanged, so the value has to
+   *     carry its own indentation - which a parse guarantees, because the span was
+   *     assembled from lines that were indented more deeply than the entry's.
+   *   - **Synthesized**: gtext_ini_write() indents each line after the first, so
+   *     the value must *not* carry one. A leading whitespace byte on a
+   *     continuation line would survive the injected indent and then be stripped
+   *     on the way back in.
+   *
+   * The two are exact opposites on that one point and identical on every other,
+   * so one function with a flag rather than two that could drift.
+   */
+  size_t i = 0;
+  bool first = true;
+  size_t last_content_end = 0;
+  while (i < len) {
+    size_t line_end = 0;
+    ini_line_kind kind =
+        ini_value_line_kind(dialect, value, len, i, first, &line_end);
+    size_t content_end = line_end;
+    while (content_end > i &&
+           gtext_ini_terminator_len(dialect, value, len, content_end - 1)) {
+      content_end--;
+    }
+    if (!first && kind == INI_LINE_CONTENT) {
+      size_t indent = gtext_ini_indent_width(dialect, value, len, i);
+      /*
+       * Indented, or re-reading would read the line as an entry of its own; and
+       * for a synthesized value *not* indented, because the writer supplies that.
+       */
+      if (verbatim ? indent == 0 : indent != 0) return false;
+      /* A trailing whitespace byte on any line but the last is inside the span
+       * and survives; on the last line it is stripped. That is the final check
+       * below, so nothing more is needed per line here. */
+    }
+    if (!first && kind == INI_LINE_COMMENT) {
+      /*
+       * A `#` or `;` line inside the span is fine verbatim - the reader skips it
+       * and the bytes stay in the value - but a synthesized one would be given an
+       * indent and then read as a comment, so the line would vanish. Measured:
+       * an indented `#` is a comment and never a continuation.
+       */
+      if (!verbatim) return false;
+    }
+    if (kind == INI_LINE_CONTENT) last_content_end = content_end;
+    first = false;
+    i = line_end;
+  }
+  /*
+   * The value must end at its last content line. Trailing blank or comment lines
+   * are dropped on the way back in, so a value carrying them would come back
+   * shorter - and a value that is *only* blank and comment lines would come back
+   * empty.
+   */
+  if (last_content_end != len) return false;
+  /*
+   * The first line's own leading run is eaten after the separator, and the last line's
+   * trailing run is stripped. Both would come back missing.
+   *
+   * **Unless the first byte begins a line terminator**, which is not leading
+   * whitespace at all: a value whose first line is empty starts at its own terminator,
+   * and under CRLF that first byte is a CR - which every dialect accepting CRLF calls
+   * whitespace. Without the guard `alpha =<CRLF>  value` was read correctly and then
+   * declared unwritable, so a document this module had just parsed could not be
+   * written back. The LF case never showed it, because an LF is whitespace to no
+   * dialect here.
+   */
+  if (!gtext_ini_terminator_len(dialect, value, len, 0) &&
+      gtext_ini_is_space(dialect, value[0])) {
+    return false;
+  }
+  if (gtext_ini_is_space(dialect, value[len - 1])) return false;
+  return true;
 }
 
 /** Whether @p c introduces a comment for @p dialect. */
@@ -692,6 +881,35 @@ GTEXT_INI_Status gtext_ini_unescape(const GTEXT_INI_Dialect * dialect,
   if (!dialect || !out) return GTEXT_INI_E_INVALID;
   if (!raw && raw_len) return GTEXT_INI_E_INVALID;
   if (!alloc) alloc = gtext_allocator_default();
+  if (dialect->continuation == GTEXT_INI_CONTINUATION_INDENT) {
+    /*
+     * The join, and then the escape pass over its result - the same two-layer
+     * shape the scanning dialects have below and in the same order, for the same
+     * reason: what a continuation joined over is a line break and not the input to
+     * an escape. configparser has no escapes at all, so the second pass is a copy;
+     * it runs anyway rather than being skipped, so that a caller who adds an escape
+     * set to a copy of the dialect gets both layers instead of neither.
+     *
+     * This is the non-scanning branch because the *extent* of an indent-continued
+     * value is not discoverable from the value's own bytes - it needs the indent of
+     * the line the entry started on, which only the parser knows. The bytes stored
+     * are already exactly the value's, so the join has nothing to find.
+     */
+    char stack[512];
+    char * buf = stack;
+    char * heap = NULL;
+    if (raw_len > sizeof(stack)) {
+      heap = gtext_allocator_malloc(alloc, raw_len ? raw_len : 1);
+      if (!heap) return GTEXT_INI_E_OOM;
+      buf = heap;
+    }
+    size_t joined_len = 0;
+    gtext_ini_join_indent(dialect, raw ? raw : "", raw_len, buf, &joined_len);
+    GTEXT_INI_Status status =
+        ini_decode(dialect, buf, joined_len, alloc, 0, out, out_len);
+    if (heap) gtext_allocator_free(alloc, heap);
+    return status;
+  }
   if (!gtext_ini_dialect_scans_values(dialect)) {
     return ini_decode(dialect, raw, raw_len, alloc, 0, out, out_len);
   }
@@ -1095,29 +1313,51 @@ static bool ini_word_is(const char * raw, size_t len, const char * word) {
   return len == n && memcmp(raw, word, n) == 0;
 }
 
+/** Whether @p raw is @p word, folding case when @p fold. */
+static bool ini_word_is_maybe_folded(const char * raw, size_t raw_len,
+    const char * word, bool fold) {
+  if (!fold) return ini_word_is(raw, raw_len, word);
+  size_t n = strlen(word);
+  if (raw_len != n) return false;
+  for (size_t i = 0; i < n; i++) {
+    char c = raw[i];
+    if (c >= 'A' && c <= 'Z') c = (char) (c - 'A' + 'a');
+    if (c != word[i]) return false;
+  }
+  return true;
+}
+
 GTEXT_INI_Status gtext_ini_value_bool(const GTEXT_INI_Dialect * dialect,
     const char * raw, size_t raw_len, bool * out) {
   if (!dialect || !out || (!raw && raw_len)) return GTEXT_INI_E_INVALID;
-  /* §4: "must either be the string true or false". Nothing else, and no case
+  /*
+   * §4: "must either be the string true or false". Nothing else, and no case
    * folding - §3 says case is significant everywhere in the file. systemd's set is
-   * wider and is also case-sensitive. */
-  if (ini_word_is(raw, raw_len, "true")) {
+   * wider and is also case-sensitive; configparser's is the same eight words as
+   * systemd's and is **not**, because `getboolean()` lower-cases the value before
+   * looking it up in `BOOLEAN_STATES`. Measured: `YES` and `TRUE` are accepted
+   * there and refused by systemd, and `n`, `t` and `2` are refused by both.
+   */
+  bool fold = dialect->bool_style == GTEXT_INI_BOOLS_CONFIGPARSER;
+  bool wide = dialect->bool_style == GTEXT_INI_BOOLS_SYSTEMD ||
+              dialect->bool_style == GTEXT_INI_BOOLS_CONFIGPARSER;
+  if (ini_word_is_maybe_folded(raw, raw_len, "true", fold)) {
     *out = true;
     return GTEXT_INI_OK;
   }
-  if (ini_word_is(raw, raw_len, "false")) {
+  if (ini_word_is_maybe_folded(raw, raw_len, "false", fold)) {
     *out = false;
     return GTEXT_INI_OK;
   }
-  if (dialect->bool_style == GTEXT_INI_BOOLS_SYSTEMD) {
+  if (wide) {
     static const char * const yes[] = {"1", "yes", "on"};
     static const char * const no[] = {"0", "no", "off"};
     for (size_t i = 0; i < sizeof(yes) / sizeof(*yes); i++) {
-      if (ini_word_is(raw, raw_len, yes[i])) {
+      if (ini_word_is_maybe_folded(raw, raw_len, yes[i], fold)) {
         *out = true;
         return GTEXT_INI_OK;
       }
-      if (ini_word_is(raw, raw_len, no[i])) {
+      if (ini_word_is_maybe_folded(raw, raw_len, no[i], fold)) {
         *out = false;
         return GTEXT_INI_OK;
       }

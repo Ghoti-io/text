@@ -323,7 +323,35 @@ typedef enum {
    * document's own bytes are the name. See
    * ::GTEXT_INI_CONTINUATION_JOIN_SPACE.
    */
-  GTEXT_INI_NAMES_SYSTEMD
+  GTEXT_INI_NAMES_SYSTEMD,
+  /**
+   * Python `configparser`, as CPython 3.13.5 reads it. Both halves come from one
+   * regular expression apiece, and reading them is what settles two rules no
+   * prose states.
+   *
+   * A key is `(?P<option>.*?)\s*(?P<vi>=|:)`: everything before the **first** `=`
+   * or `:` on the line, trimmed - so `ke y = v` is a key called `ke y`, `k:b=c`
+   * has the value `b=c` and `k=b:c` the value `b:c`, whichever delimiter comes
+   * first. An empty key is refused: `= v` is a `ParsingError`.
+   *
+   * A section header is `\[(?P<header>.+)\]` matched with `re.match`, and three
+   * consequences fall out of that spelling, all measured:
+   *
+   *   - `.+` is greedy, so the header closes at the **last** `]` on the line and
+   *     `[a]b]` is one section named `a]b`, exactly as EditorConfig does.
+   *   - `re.match` is not `fullmatch`, so **anything after that `]` is silently
+   *     discarded**: `[a]junk` is the section `a`, and so is `[a] k = v`. That is
+   *     ::GTEXT_INI_HEADER_REMAINDER_IGNORE, and it is the reason the axis is an
+   *     enum rather than a flag.
+   *   - `.+` needs one character, so **`[]` is refused** while
+   *     ::GTEXT_INI_NAMES_EDITORCONFIG accepts it -
+   *     ::GTEXT_INI_Dialect::allow_empty_group_name is that difference.
+   *
+   * The name is not trimmed inside the brackets: `[ b ]` is a section literally
+   * named `" b "`, and `[ ]` one named `" "`. Any byte but a line terminator may
+   * appear in it, `[`, `#` and a control character included.
+   */
+  GTEXT_INI_NAMES_CONFIGPARSER
 } GTEXT_INI_Name_Style;
 
 /**
@@ -392,7 +420,48 @@ typedef enum {
    * gtext_ini_continuation_at() is shared by the parser and the value scanner
    * rather than living in the scanner alone.
    */
-  GTEXT_INI_CONTINUATION_JOIN_SPACE
+  GTEXT_INI_CONTINUATION_JOIN_SPACE,
+  /**
+   * configparser: a following line **indented more deeply than the line the entry
+   * began on** is part of that entry's value, and the lines are joined with a
+   * **newline**.
+   *
+   * This is the one continuation here that is not announced by a marker in the
+   * value. The other two are a backslash the value's own bytes carry, so a
+   * scanner walking the value finds them; this one is a property of the *next*
+   * line, and it cannot be recognised without knowing how far the entry's own
+   * line was indented. gtext_ini_dialect_scans_values() is false for it, and the
+   * parser decides the extent.
+   *
+   * Every rule below was measured against CPython 3.13.5, and the ones that are
+   * not in the documentation are the ones that decide whether a value is right:
+   *
+   *   - The comparison is **strictly greater, against the entry's own line**, not
+   *     "is indented at all": `  k=1` followed by `  2` is a *syntax error*
+   *     (`  2` is read as an entry and has no delimiter), and `    k=1` followed
+   *     by `  2` is the same error. Indentation is counted in characters, and a
+   *     tab counts as one.
+   *   - A **group header ends the continuation** whatever its indentation:
+   *     configparser clears the current key when it reads one, with the comment
+   *     "so sections can't start with a continuation line". But an *indented*
+   *     header while a value is open is not a header at all - it is a
+   *     continuation line whose text happens to be `[b]`.
+   *   - A **comment line contributes nothing and does not end it**, so a value
+   *     jumps over a `#` or `;` line exactly as systemd's does. The comment test
+   *     runs first and it runs on the *stripped* line, so an indented `#` is a
+   *     comment and never a continuation.
+   *   - A **blank line contributes an empty line to the value** and does not end
+   *     it: `k=1`, blank, `  2` is `1\n\n2`. But trailing blank lines are
+   *     dropped, because the reference joins the pieces and then strips the
+   *     result - so the value ends at the last line that contributed text, and
+   *     the blank and comment lines after it belong to the document.
+   *   - Each contributing line is **stripped on both sides** before joining, the
+   *     first one included.
+   *
+   * The stored raw value therefore spans several lines and holds every byte
+   * between them, comment lines included; gtext_ini_unescape() performs the join.
+   */
+  GTEXT_INI_CONTINUATION_INDENT
 } GTEXT_INI_Continuation_Mode;
 
 /**
@@ -416,8 +485,99 @@ typedef enum {
    * systemd's set: `1`, `yes`, `true`, `on` and `0`, `no`, `false`, `off`.
    * Case-sensitive, like every other systemd comparison.
    */
-  GTEXT_INI_BOOLS_SYSTEMD
+  GTEXT_INI_BOOLS_SYSTEMD,
+  /**
+   * configparser's `BOOLEAN_STATES`: the same eight words systemd admits, and
+   * **case-insensitively**, because `getboolean()` lower-cases the value before
+   * looking it up. Measured: `YES`, `Yes` and `TRUE` are all accepted and `n`,
+   * `t` and `2` are not.
+   *
+   * So this and ::GTEXT_INI_BOOLS_SYSTEMD differ in exactly one respect and it
+   * is not the word list. A single flag for "systemd's set" would have made
+   * `TRUE` a type error under a dialect that accepts it.
+   */
+  GTEXT_INI_BOOLS_CONFIGPARSER
 } GTEXT_INI_Bool_Style;
+
+/**
+ * @enum GTEXT_INI_Space_Set
+ * @brief Which bytes a dialect treats as whitespace.
+ *
+ * Three answers, measured against three references, and the differences are two
+ * bytes here and four there - which is exactly why this is a table rather than an
+ * assumption. No corpus of real files on this machine contains any of the six.
+ *
+ * The line terminator is never in any of these sets: a line ends at its
+ * terminator before any trimming happens, and which bytes terminate a line is
+ * ::GTEXT_INI_Dialect::accept_crlf and ::GTEXT_INI_Dialect::lone_cr_terminates.
+ */
+typedef enum {
+  /**
+   * Space and tab, and nothing else. Desktop Entry and git config.
+   *
+   * git carries its own ctype table in which `\v` and `\f` are control
+   * characters, and it is not an accident of the implementation: measured,
+   * `k = a\v` keeps the vertical tab as the value's last byte and `\vk = v` is a
+   * syntax error rather than skipped indentation.
+   */
+  GTEXT_INI_SPACE_BLANK = 0,
+  /**
+   * `<ctype.h>`'s `isspace()` in the C locale: space, tab, `\v`, `\f` (and the
+   * terminators, which never reach here). EditorConfig, whose two cores both ask
+   * the platform - core-c calls `isspace()` and core-py uses Python's `\s`.
+   */
+  GTEXT_INI_SPACE_CTYPE,
+  /**
+   * Python's `\s` restricted to ASCII: `isspace()`'s set **plus `\x1c` through
+   * `\x1f`**, the four ASCII separator controls. configparser's, and measured
+   * rather than assumed - all four are stripped as indentation, accepted between
+   * a key and its delimiter, trimmed off the end of a value, and allowed to
+   * precede a comment introducer.
+   *
+   * It is ASCII-only on purpose, and the omission is a **stated divergence rather
+   * than an oversight**: Python's `\s` and `str.strip()` are Unicode-aware, so a
+   * no-break space or a U+0085 also indents a line there. This reader is
+   * byte-oriented and cannot ask that question of one byte, so those documents
+   * are excluded from the differential and counted, and @ref format_ini names the
+   * rule they would need.
+   */
+  GTEXT_INI_SPACE_PYTHON
+} GTEXT_INI_Space_Set;
+
+/**
+ * @enum GTEXT_INI_Header_Remainder
+ * @brief What anything but whitespace after a group header's `]` means.
+ *
+ * Three references, three answers, on one of the least interesting-looking lines
+ * a document can contain. This was a `bool` until configparser arrived and needed
+ * the third value; a flag would have had to call `[a]junk` either an error or an
+ * entry, and it is neither.
+ */
+typedef enum {
+  /**
+   * Refuse the document. Desktop Entry, EditorConfig and systemd: `GKeyFile`
+   * rejects `[G] junk`, and anything claiming to read the same documents must.
+   */
+  GTEXT_INI_HEADER_REMAINDER_ERROR = 0,
+  /**
+   * The remainder is an entry on the same line. git config, which says so -
+   * "the remainder of the line after the section header" is a setting - and means
+   * it: `[a] k = v` sets `a.k` and `[a] junk` sets a valueless `junk`. A comment
+   * introducer there is still a comment.
+   */
+  GTEXT_INI_HEADER_REMAINDER_ENTRY,
+  /**
+   * The remainder is **discarded**, and the document is accepted. configparser,
+   * and not by decision: its section pattern is applied with `re.match`, which
+   * does not have to reach the end of the line, so whatever follows the last `]`
+   * is simply never looked at. `[a]junk`, `[a] k = v` and `[a]=v` are all the
+   * section `a` and nothing else.
+   *
+   * This module keeps those bytes so that a rewrite reproduces them; what it does
+   * not do is give them a meaning.
+   */
+  GTEXT_INI_HEADER_REMAINDER_IGNORE
+} GTEXT_INI_Header_Remainder;
 
 /**
  * @enum GTEXT_INI_Dialect_Id
@@ -480,7 +640,37 @@ typedef enum {
    * document instead, and @ref format_ini says why and what the differential does
    * about it.
    */
-  GTEXT_INI_DIALECT_SYSTEMD
+  GTEXT_INI_DIALECT_SYSTEMD,
+  /**
+   * Python `configparser`, as CPython reads it. The version measured against is
+   * named in `tools/oracle/containers/IMAGES`.
+   *
+   * **The one dialect here whose specification is an implementation.** The Python
+   * documentation describes `configparser`'s behaviour rather than defining a
+   * format, and says so; there is no document to be conformant to and no
+   * conformance suite to score, so this dialect's correctness claim is a
+   * differential and nothing else. Every field of it was measured.
+   *
+   * Two consequences of that are worth reading before trusting a number:
+   *
+   *   - **The reference has no single answer.** Five configurations of
+   *     `ConfigParser` gave five different readings of one document, so the
+   *     differential pins its configuration and prints it:
+   *     `interpolation=None`, `strict=True`, `allow_no_value=False`,
+   *     `inline_comment_prefixes=None`, `empty_lines_in_values=True`, and
+   *     `default_section` set to a name no document can spell. This dialect is
+   *     the *default* configuration except for interpolation and the default
+   *     section, both of which are layers above the grammar - @ref format_ini
+   *     says what each choice leaves out.
+   *   - **The input channel changes the grammar.** `read_string()` and
+   *     `read(path)` disagree about exactly one thing: a lone CR. Python's
+   *     universal-newline translation makes it a line terminator when a file is
+   *     read and leaves it as data when a string is, and nothing in
+   *     `configparser` itself is involved either way. This dialect follows the
+   *     file, because a file is what an INI document is;
+   *     ::GTEXT_INI_Dialect::lone_cr_terminates records it.
+   */
+  GTEXT_INI_DIALECT_CONFIGPARSER
 } GTEXT_INI_Dialect_Id;
 
 /**
@@ -537,6 +727,23 @@ typedef struct {
   /** Whether a second group with an existing name is accepted. */
   bool allow_duplicate_groups;
 
+  /**
+   * Whether `[]` is a group whose name is the empty string.
+   *
+   * **True for EditorConfig alone**, and it is a disagreement between that
+   * dialect's own two references: core-c accepts `[]` and core-py refuses it,
+   * and the specification says a name "may contain any characters", so the
+   * permissive reading wins. Everything else here refuses it - `GKeyFile` fails
+   * with "Invalid group name: ", and configparser's section pattern needs one
+   * character, so `[]` is not a header there and falls through to be read as an
+   * ordinary line, which has no delimiter and is a `ParsingError`.
+   *
+   * The one consequence in the tree is that gtext_ini_group_find("") can find a
+   * `[]` group or the preamble group, whichever comes first;
+   * gtext_ini_group_is_preamble() tells them apart.
+   */
+  bool allow_empty_group_name;
+
   /** What a second entry with an existing key in one group means. */
   GTEXT_INI_Dupkey_Mode dupkey;
 
@@ -580,25 +787,15 @@ typedef struct {
   bool lone_cr_terminates;
 
   /**
-   * Whether the dialect's whitespace is `<ctype.h>`'s `isspace()` set rather
-   * than just space and tab - so a vertical tab and a form feed are whitespace
-   * too.
+   * Which bytes count as whitespace. See ::GTEXT_INI_Space_Set, which has the
+   * measurement behind each of the three sets.
    *
-   * **True only for EditorConfig, and false for git config on purpose.** git
-   * carries its own ctype table in which `\v` and `\f` are control characters,
-   * measured: `k = a\v` keeps the vertical tab as the value's last byte and
-   * `\vk = v` is a syntax error rather than skipped indentation. Both
-   * EditorConfig cores reach for the platform's answer instead - core-c calls
-   * `isspace()` and core-py uses Python's `\s` - so under that dialect the same
-   * two bytes are trimmed away.
-   *
-   * Two bytes is the whole difference, and no corpus of real files contains
-   * either, which is exactly why it is a field rather than an assumption.
-   *
-   * The line terminator is never in this set: an LF ends the line before any
-   * trimming happens, and a CR is ::accept_crlf's.
+   * This was a `bool` meaning "`isspace()` rather than space and tab" until
+   * configparser needed a third set, and the bool's own documentation had already
+   * said what was wrong with it: "two bytes is the whole difference". It is four
+   * more bytes for the third set, and a flag cannot hold three values.
    */
-  bool ctype_whitespace;
+  GTEXT_INI_Space_Set space_set;
 
   /**
    * Whether trailing whitespace is stripped from a value.
@@ -675,6 +872,22 @@ typedef struct {
   bool numeric_escapes;
 
   /**
+   * The characters that may separate a key from its value, as a NUL-terminated
+   * string in no particular order. **Never NULL and never empty**, and the first
+   * character is the one the writer emits for a synthesized entry.
+   *
+   * `"="` for five of the six dialects and `"=:"` for configparser, whose option
+   * pattern is `(?P<vi>=|:)`. Which one appears in a given line does not matter:
+   * the key ends at whichever comes **first**, so `k=b:c` has the value `b:c` and
+   * `k:b=c` has the value `b=c`. Measured both ways.
+   *
+   * It is a set rather than a single character because it has to be asked of one
+   * byte at a time in two places - finding where a key ends, and deciding whether
+   * a byte may appear *in* a key - and those two must not be able to disagree.
+   */
+  const char * separators;
+
+  /**
    * The list separator for gtext_ini_value_list(), or 0 if the dialect has no
    * list spelling. `';'` for Desktop Entry §4.
    */
@@ -740,15 +953,41 @@ typedef struct {
   bool quoted_values;
 
   /**
-   * Whether group and key names are matched without regard to case.
+   * Whether **key** names are matched without regard to case.
    *
    * git config folds both to lower case, and **does not fold a quoted
    * subsection name** - so `[a "SubB"]` and `[a "subb"]` are different groups
    * while `[Core]` and `[core]` are one. The tree keeps every name as the
    * document spelled it and carries the folded form beside it for lookup, so a
    * rewrite is still byte-identical.
+   *
+   * Group names are ::fold_group_case, because two dialects fold one and not the
+   * other.
+   *
+   * The fold is ASCII, and for configparser that is a **stated divergence**:
+   * `optionxform` is Python's `str.lower()`, which is Unicode-aware, so `KE` with
+   * an acute accent folds there and `I` with a dot above folds to two characters.
+   * @ref format_ini names it, and the differential excludes such documents and
+   * counts them.
    */
   bool fold_case;
+
+  /**
+   * Whether **group** names are matched without regard to case as well.
+   *
+   * True for git config alone, and the split is not a nicety: EditorConfig and
+   * configparser both fold keys and both leave section names exactly as written.
+   * EditorConfig's section name is a filepath glob, and whether two spellings of
+   * a path are one file is the filesystem's question rather than the format's;
+   * configparser simply uses the name as a dictionary key, and `[A]` and `[a]`
+   * are two sections - measured.
+   *
+   * This was derived from ::fold_case by excluding a name style, which worked
+   * while EditorConfig was the only exception and became a list of exceptions in
+   * shared code the moment configparser arrived. gtext_ini_group_names_fold()
+   * reads this field now and tests no id at all.
+   */
+  bool fold_group_case;
 
   /**
    * Whether a group header may carry a subsection: `[section "sub"]`, and the
@@ -810,14 +1049,13 @@ typedef struct {
   bool utf8_values;
 
   /**
-   * Whether what follows a group header's `]` on the same line is an entry.
+   * What anything but whitespace after a group header's `]` means. See
+   * ::GTEXT_INI_Header_Remainder.
    *
-   * `git-config(1)` says "all the other lines (and the remainder of the line
-   * after the section header) are recognized as setting variables", and it
-   * means it: `[a] k = v` sets `a.k`, and `[a] junk` sets a *valueless* `junk`.
-   * A dialect without this refuses anything but whitespace after the `]`.
+   * A `bool` until configparser, which neither refuses such a line nor reads an
+   * entry from it: it discards the remainder and keeps the section.
    */
-  bool header_remainder_is_entry;
+  GTEXT_INI_Header_Remainder header_remainder;
 } GTEXT_INI_Dialect;
 
 /**
@@ -954,6 +1192,53 @@ GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void);
  * @return The dialect, by value.
  */
 GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_systemd(void);
+
+/**
+ * @brief The Python `configparser` dialect, as CPython reads a file.
+ *
+ * `#` and `;` comments, **`=` or `:`** as the separator, no preamble, no
+ * duplicate section and no duplicate key, keys lower-cased and sections not,
+ * quotes and backslashes literal, inline comments off, a valueless key refused,
+ * and a continuation **by indentation that joins with a newline**.
+ *
+ * **Its specification is an implementation**, which makes it the one dialect here
+ * whose every rule had to be measured and none of which can be cited. Four of
+ * those measurements are the reason the dialect struct grew:
+ *
+ *   - **Two separator characters**, whichever comes first
+ *     (::GTEXT_INI_Dialect::separators).
+ *   - **A third whitespace set**: Python's `\s` includes `\x1c` through `\x1f`
+ *     and `isspace()` does not (::GTEXT_INI_SPACE_PYTHON).
+ *   - **A third answer for what follows a header's `]`**: discard it
+ *     (::GTEXT_INI_HEADER_REMAINDER_IGNORE).
+ *   - **Folded keys with unfolded sections**, which EditorConfig also needs and
+ *     which used to be spelled by excluding a name style
+ *     (::GTEXT_INI_Dialect::fold_group_case).
+ *
+ * **Three things it does not implement, each for a stated reason**, and
+ * @ref format_ini has the counts behind them:
+ *
+ *   - **Interpolation.** `%(name)s` and `${section:key}` appear in **no file** on
+ *     this machine, while a bare `%` appears in three - and a bare `%` is exactly
+ *     what configparser's *default* interpolation refuses. Shipping the default
+ *     form would only break files that are otherwise fine, so values come back
+ *     raw and the differential pins `interpolation=None`.
+ *   - **The `[DEFAULT]` section's inheritance.** It is a lookup policy over a
+ *     parsed tree rather than a rule of the grammar: a caller wanting it asks the
+ *     section and then asks `DEFAULT`. `[DEFAULT]` is an ordinary group here.
+ *   - **Unicode-aware whitespace and case folding**, which are properties of
+ *     Python's `str` and not of the format. Both are named divergences with a
+ *     test each rather than gaps.
+ *
+ * **A lone CR terminates a line here**, and that is a choice between two
+ * behaviours of the reference rather than a reading of it: `read(path)` gets
+ * Python's universal-newline translation and `read_string()` does not, so they
+ * disagree about that one byte and about nothing else. A file is what an INI
+ * document is, so this follows the file.
+ *
+ * @return The dialect, by value.
+ */
+GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_configparser(void);
 
 /**
  * @struct GTEXT_INI_Parse_Options

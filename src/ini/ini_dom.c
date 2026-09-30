@@ -385,7 +385,7 @@ static GTEXT_INI_Status ini_entry_init(GTEXT_INI_Group * group,
             gtext_ini_str_set(alloc, &entry->value, value ? value : "",
                 value_len) &&
             gtext_ini_str_set(alloc, &entry->pre, "", 0) &&
-            gtext_ini_str_set(alloc, &entry->sep, "=", 1) &&
+            gtext_ini_str_set(alloc, &entry->sep, d->separators, 1) &&
             gtext_ini_str_set(alloc, &entry->eol, "\n", 1);
   if (ok && d->fold_case) {
     /* The folded form a lookup will compare against. Built here rather than at

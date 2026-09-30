@@ -155,6 +155,7 @@
 #define gtext_ini_dialect_generic GHOTIIO_TEXT(gtext_ini_dialect_generic)
 #define gtext_ini_dialect_git_config GHOTIIO_TEXT(gtext_ini_dialect_git_config)
 #define gtext_ini_dialect_systemd GHOTIIO_TEXT(gtext_ini_dialect_systemd)
+#define gtext_ini_dialect_configparser GHOTIIO_TEXT(gtext_ini_dialect_configparser)
 #define gtext_ini_document_add_group GHOTIIO_TEXT(gtext_ini_document_add_group)
 #define gtext_ini_document_get GHOTIIO_TEXT(gtext_ini_document_get)
 #define gtext_ini_document_group GHOTIIO_TEXT(gtext_ini_document_group)

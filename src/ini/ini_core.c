@@ -84,7 +84,11 @@ GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void) {
   d.fold_case = false;
   d.subsection_syntax = false;
   d.valueless_keys = false;
-  d.header_remainder_is_entry = false;
+  d.header_remainder = GTEXT_INI_HEADER_REMAINDER_ERROR;
+  d.separators = "=";
+  d.space_set = GTEXT_INI_SPACE_BLANK;
+  d.fold_group_case = false;
+  d.allow_empty_group_name = false;
   return d;
 }
 
@@ -199,9 +203,16 @@ GTEXT_INI_Dialect gtext_ini_dialect_git_config(void) {
   d.inline_comments = true;
   d.quoted_values = true;
   d.fold_case = true;
+  /* Section names as well, which is git alone - see fold_group_case. Its quoted
+   * subsection is still case-sensitive, and gtext_ini_canon_group() is where
+   * that split lives. */
+  d.fold_group_case = true;
   d.subsection_syntax = true;
   d.valueless_keys = true;
-  d.header_remainder_is_entry = true;
+  d.header_remainder = GTEXT_INI_HEADER_REMAINDER_ENTRY;
+  d.separators = "=";
+  d.space_set = GTEXT_INI_SPACE_BLANK;
+  d.allow_empty_group_name = false;
   return d;
 }
 
@@ -282,7 +293,7 @@ GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void) {
    * vertical tab and a form feed are trimmed. Measured against core-c, which
    * reads `k=\va\v` as the value `a`.
    */
-  d.ctype_whitespace = true;
+  d.space_set = GTEXT_INI_SPACE_CTYPE;
   /* No continuation. A line that begins with whitespace is a line, not the
    * previous one continued: core-c has the `INI_ALLOW_MULTILINE` machinery
    * inherited from ConfigParser and compiles it *out*, because the suite's
@@ -304,6 +315,12 @@ GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void) {
   /* "Pair keys are case-insensitive. All keys are lowercased after parsing."
    * Section names are *not* folded - see gtext_ini_group_names_fold(). */
   d.fold_case = true;
+  d.fold_group_case = false;
+  /* core-c accepts `[]` and core-py refuses it; the specification says a name
+   * may contain any characters, so the permissive reading wins. The only
+   * dialect here that does. */
+  d.allow_empty_group_name = true;
+  d.separators = "=";
   d.subsection_syntax = false;
   /* A key with no `=` is not a valueless entry, it is an invalid line: the
    * specification's pair rule needs the `=`, and both cores report an error.
@@ -316,7 +333,7 @@ GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void) {
    * line. Both cores silently ignore the remainder. With the last-`]` rule,
    * `[a] junk]` is instead one section named `a] junk`, which all three agree on.
    */
-  d.header_remainder_is_entry = false;
+  d.header_remainder = GTEXT_INI_HEADER_REMAINDER_ERROR;
   return d;
 }
 
@@ -395,7 +412,10 @@ GTEXT_INI_Dialect gtext_ini_dialect_systemd(void) {
    * key, and a literal `\v` inside a value stays in the word rather than splitting
    * it. So systemd is git's answer, not EditorConfig's.
    */
-  d.ctype_whitespace = false;
+  d.space_set = GTEXT_INI_SPACE_BLANK;
+  d.separators = "=";
+  d.fold_group_case = false;
+  d.allow_empty_group_name = false;
   d.continuation = GTEXT_INI_CONTINUATION_JOIN_SPACE;
   /* Measured: `Environment=W1 # x` is five words, so a `#` after the start of a
    * line is data. */
@@ -414,7 +434,7 @@ GTEXT_INI_Dialect gtext_ini_dialect_systemd(void) {
   d.valueless_keys = false;
   /* "Invalid section header '[Service] junk'" - the remainder is refused, not read
    * as an entry. */
-  d.header_remainder_is_entry = false;
+  d.header_remainder = GTEXT_INI_HEADER_REMAINDER_ERROR;
   return d;
 }
 
@@ -444,6 +464,154 @@ void gtext_ini_error_free(GTEXT_INI_Error * err) {
   }
   err->context_snippet_len = 0;
   err->caret_offset = 0;
+}
+
+GTEXT_INI_Dialect gtext_ini_dialect_configparser(void) {
+  /*
+   * Field by field, like the three dialects above, and here there was no
+   * alternative: **this dialect has no specification at all.** The Python
+   * documentation describes what `configparser` does, the module's own docstring
+   * describes its regular expressions, and neither defines a format. So every
+   * value below is a measurement against CPython 3.13.5 and nothing below is a
+   * citation. notes/text/INI-DIALECTS.md §19 has the transcript.
+   *
+   * Two of these were settled by reading the implementation rather than by
+   * probing, and both had to be: `_read_inner()`'s indent bookkeeping cannot be
+   * inferred from any single document's result, and the two regular expressions
+   * decide four separate rules between them.
+   */
+  GTEXT_INI_Dialect d;
+  memset(&d, 0, sizeof(d));
+  d.id = GTEXT_INI_DIALECT_CONFIGPARSER;
+  d.comment_hash = true;
+  d.comment_semicolon = true;
+  /*
+   * A line is stripped before it is classified, so an indented comment, header
+   * and entry are all fine - measured, `  [a]` is the section `a` and `  k=v` is
+   * an entry. Indentation is only special while a value is open, which is
+   * ::GTEXT_INI_CONTINUATION_INDENT rather than this field.
+   */
+  d.allow_leading_whitespace = true;
+  /*
+   * `MissingSectionHeaderError`, and it is not a strict-mode matter: all five
+   * configurations probed in §A.1 refuse an entry before the first section. A
+   * leading run of comments and blank lines is fine, and a document that is
+   * nothing but comments is accepted.
+   */
+  d.allow_preamble = false;
+  /*
+   * **`DuplicateSectionError`**, and this corrects the axis table this work
+   * started from, which said "merged". Merging is what happens across two
+   * `read()` calls and what `strict=False` does; within one read of one file the
+   * default configuration refuses it. The earlier reading came from a probe whose
+   * successful run had `strict=False` set for an unrelated reason - a measurement
+   * carried one step past its conditions.
+   */
+  d.allow_duplicate_groups = false;
+  /*
+   * `DuplicateOptionError`, **compared on the folded name**: `k1` then `K1` is a
+   * duplicate, so the fold happens before the check. That ordering is the reason
+   * ini_add_entry() compares canonical keys rather than raw ones - it was
+   * comparing raw bytes, which was correct for the only other dialect with this
+   * mode (Desktop Entry, which does not fold) and wrong the moment a dialect had
+   * both.
+   */
+  d.dupkey = GTEXT_INI_DUPKEY_ERROR;
+  d.name_style = GTEXT_INI_NAMES_CONFIGPARSER;
+  d.locale_postfix = false;
+  d.require_unlocalized_key = false;
+  /*
+   * Both true, and together they are Python's universal-newline translation
+   * rather than anything in `configparser`: `read(path)` opens the file with
+   * `newline=None`, which turns a CRLF and a **lone CR** alike into one LF before
+   * the parser sees either.
+   *
+   * This is the one place the reference has two answers and the channel picks:
+   * `read_string()` wraps the text in a `StringIO` whose newline is `'\n'`, so
+   * there no translation happens and `k=v\rj=w` is a single value `v\rj=w`. Of
+   * the 38 documents probed both ways, the lone CR is the **only** difference
+   * between the two channels. A file is what an INI document is, so this follows
+   * the file, and tools/oracle/ini_cp_ours.c's reference driver reads a file for
+   * the same reason.
+   */
+  d.accept_crlf = true;
+  d.lone_cr_terminates = true;
+  /* Every part of a value is `str.strip()`ed, so both ends go. */
+  d.trim_trailing_space = true;
+  /*
+   * A BOM is refused: `read()` decodes as UTF-8 rather than `utf-8-sig` unless
+   * asked, so the mark stays in the text and `<BOM>[a]` is not a section header -
+   * `MissingSectionHeaderError`. Measured.
+   */
+  d.skip_bom = false;
+  /*
+   * **No escapes at all**, and a backslash is data: `k=a\nb` is the four
+   * characters `a`, `\`, `n`, `b`. Nothing in `configparser` looks at one, which
+   * also means a trailing backslash is not a continuation - the continuation here
+   * is the *next* line's indentation.
+   */
+  d.escapes = NULL;
+  d.escapes_in_grammar = false;
+  d.numeric_escapes = false;
+  /* No list spelling of any kind: a repeated key is an error, not a list. */
+  d.list_separator = 0;
+  d.word_split = false;
+  d.bool_style = GTEXT_INI_BOOLS_CONFIGPARSER;
+  /*
+   * False. The encoding is `read()`'s parameter rather than the format's rule -
+   * `encoding='latin-1'` reads any bytes at all - so refusing a value for not
+   * being UTF-8 would be this module inventing a requirement. What the
+   * differential does instead is pin `encoding='utf-8'` and exclude documents
+   * that are not valid UTF-8, counting them.
+   */
+  d.utf8_values = false;
+  /*
+   * `\x1c` through `\x1f` are whitespace here and are not `isspace()`'s, which is
+   * the whole reason for a third set. Measured four ways: all four bytes strip as
+   * indentation, sit between a key and its delimiter, trim off a value's end, and
+   * may precede a comment introducer.
+   */
+  d.space_set = GTEXT_INI_SPACE_PYTHON;
+  /* `=` or `:`, whichever comes first on the line. */
+  d.separators = "=:";
+  d.continuation = GTEXT_INI_CONTINUATION_INDENT;
+  /*
+   * Off, which is the default and is the trap in this dialect: `k = a ; c` is the
+   * seven-character value `a ; c`. `inline_comment_prefixes` is None unless a
+   * caller sets it, and both EditorConfig cores - which descend from this code -
+   * truncate there instead, against their own specification.
+   */
+  d.inline_comments = false;
+  /* Quotes are literal: `k="q v"` keeps them. Measured. */
+  d.quoted_values = false;
+  /* Keys fold and sections do not: `[A]` and `[a]` are two sections, `k` and `K`
+   * one option. */
+  d.fold_case = true;
+  d.fold_group_case = false;
+  d.subsection_syntax = false;
+  /*
+   * `allow_no_value` is False by default, so a line with no delimiter is a
+   * `ParsingError` rather than a valueless key. `k=` is an empty value and is a
+   * different thing.
+   *
+   * There is a rule behind this one that this dialect cannot reach: continuing a
+   * valueless key is a `MultilineContinuationError`, a check added in 3.13. With
+   * `allow_no_value` off there is no valueless key to continue, so the branch is
+   * unreachable here - recorded rather than implemented, because implementing an
+   * unreachable rule is a claim no test can support.
+   */
+  d.valueless_keys = false;
+  /*
+   * **Discarded.** The section pattern is applied with `re.match`, which need not
+   * reach the end of the line, so `[a]junk`, `[a] k = v` and `[a]=v` are all the
+   * section `a` and the rest is never looked at. Three dialects, three answers -
+   * see ::GTEXT_INI_Header_Remainder.
+   */
+  d.header_remainder = GTEXT_INI_HEADER_REMAINDER_IGNORE;
+  /* `[]` is not a header - the pattern needs one character - so it falls through
+   * to be read as an ordinary line and refused. */
+  d.allow_empty_group_name = false;
+  return d;
 }
 
 bool gtext_ini_str_set(const GTEXT_Allocator * alloc, ini_str * out,
@@ -525,16 +693,46 @@ bool gtext_ini_is_space(const GTEXT_INI_Dialect * dialect, char c) {
    */
   if (c == '\r' && dialect->accept_crlf) return true;
   /*
-   * `\v` and `\f` are whitespace to EditorConfig and **not** to git, which is
-   * why this is a field. git carries its own ctype table classing them as
-   * control characters - measured, a trailing `\v` stays in git's value and a
-   * leading one is a syntax error - while both EditorConfig cores ask the
-   * platform and trim them. Desktop Entry's grammar has neither, so its answer
-   * is the same either way.
+   * `\v` and `\f` are whitespace to EditorConfig and configparser and **not** to
+   * git, which is why this is a table. git carries its own ctype table classing
+   * them as control characters - measured, a trailing `\v` stays in git's value
+   * and a leading one is a syntax error - while both EditorConfig cores ask the
+   * platform and trim them. Desktop Entry's grammar has neither, so its answer is
+   * the same either way.
    *
    * LF is never here: the line ends at it before any trimming happens.
    */
-  if (dialect->ctype_whitespace && (c == '\v' || c == '\f')) return true;
+  if (dialect->space_set == GTEXT_INI_SPACE_BLANK) return false;
+  if (c == '\v' || c == '\f') return true;
+  /*
+   * The four ASCII separator controls, which Python's `\s` and `str.strip()`
+   * include and `isspace()` does not. configparser alone, and measured in all four
+   * positions the predicate is asked about: `\x1c` indents a line, sits between a
+   * key and its delimiter, trims off the end of a value, and may precede a comment
+   * introducer.
+   *
+   * What is deliberately *not* here is the rest of Python's set - a no-break
+   * space, U+0085, the Unicode separators - because those are not single bytes and
+   * this reader classifies one byte at a time. @ref format_ini states the
+   * divergence and the differential counts the documents it excludes for it.
+   */
+  if (dialect->space_set == GTEXT_INI_SPACE_PYTHON && c >= 0x1C && c <= 0x1F) {
+    return true;
+  }
+  return false;
+}
+
+bool gtext_ini_is_separator(const GTEXT_INI_Dialect * dialect, char c) {
+  /*
+   * Asked one byte at a time, from the two places that must agree: where a key
+   * ends, and whether a byte may appear inside one. A dialect with two separators
+   * whose key charset had been written against only the first would accept
+   * `k:v` as a key called `k:v` in one place and as `k` = `v` in the other.
+   */
+  if (!c) return false;
+  for (const char * p = dialect->separators; *p; p++) {
+    if (*p == c) return true;
+  }
   return false;
 }
 
@@ -646,6 +844,26 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     }
     return true;
   }
+  if (dialect->name_style == GTEXT_INI_NAMES_CONFIGPARSER) {
+    /*
+     * The greedy `.+` between the brackets, so any byte but a line terminator is
+     * in the name: `[`, `]`, `#`, `;`, a space and a control character all
+     * measured. The name is **not trimmed** - `[ b ]` is a section literally named
+     * `" b "` and `[ ]` one named `" "`, because the strip that happens before
+     * classification is of the whole line rather than of the name.
+     *
+     * The empty name is refused, and not by a rule of its own: `.+` needs one
+     * character, so `[]` never matches the header pattern at all and is read as an
+     * ordinary line, which has no delimiter and is a `ParsingError`.
+     * ::GTEXT_INI_Dialect::allow_empty_group_name carries that, because
+     * EditorConfig's answer is the opposite.
+     */
+    if (!len && !dialect->allow_empty_group_name) return false;
+    for (size_t i = 0; i < len; i++) {
+      if (name[i] == '\n' || name[i] == '\r') return false;
+    }
+    return true;
+  }
   if (dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG) {
     /*
      * "May contain any characters between the square brackets" - so `[`, `]`,
@@ -661,6 +879,7 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
      * group, whichever comes first, and gtext_ini_group_is_preamble() is how a
      * caller tells them apart.
      */
+    if (!len && !dialect->allow_empty_group_name) return false;
     for (size_t i = 0; i < len; i++) {
       if (name[i] == '\n') return false;
     }
@@ -708,22 +927,39 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
 }
 
 bool gtext_ini_group_close_is_last(const GTEXT_INI_Dialect * dialect) {
-  /* A capability, not an id test - see ini_internal.h. The question is a property
+  /*
+   * A capability, not an id test - see ini_internal.h. The question is a property
    * of the name grammar: a dialect whose names may hold a `]` cannot stop at the
-   * first one. */
-  return dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG;
+   * first one.
+   *
+   * Two dialects, for the same reason arrived at differently. EditorConfig's
+   * specification says a name "may contain any characters between the square
+   * brackets"; configparser's says nothing, and its pattern is a greedy `.+`
+   * between the brackets, which lands on the last `]` on the line. `[a]b]` is one
+   * section named `a]b` under both.
+   */
+  switch (dialect->name_style) {
+    case GTEXT_INI_NAMES_EDITORCONFIG:
+    case GTEXT_INI_NAMES_CONFIGPARSER:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool gtext_ini_group_names_fold(const GTEXT_INI_Dialect * dialect) {
   /*
-   * EditorConfig folds keys and not sections, so `fold_case` on its own answers
-   * the wrong question for a group. A section name is a filepath glob, and
-   * whether two spellings of a path are the same file is the filesystem's
-   * question rather than the format's - which is why the specification folds keys
-   * explicitly and says nothing about sections.
+   * A field now, and it used to be `fold_case` minus a name style. That spelling
+   * was right while EditorConfig was the only dialect folding keys and not
+   * sections, and became a **list of exceptions in shared code** the moment
+   * configparser did the same - which is the shape this repository has a standing
+   * lesson about. The reasons the two have for it are different and neither is
+   * about keys: EditorConfig's section name is a filepath glob, and whether two
+   * spellings of a path are one file is the filesystem's question; configparser's
+   * is a dictionary key that `optionxform` never touches, so `[A]` and `[a]` are
+   * two sections while `k` and `K` are one option.
    */
-  return dialect->fold_case &&
-         dialect->name_style != GTEXT_INI_NAMES_EDITORCONFIG;
+  return dialect->fold_group_case;
 }
 
 bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
@@ -733,6 +969,7 @@ bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
     case GTEXT_INI_NAMES_ANY:
     case GTEXT_INI_NAMES_EDITORCONFIG:
     case GTEXT_INI_NAMES_SYSTEMD:
+    case GTEXT_INI_NAMES_CONFIGPARSER:
       /*
        * Anything that reads back as itself: not the delimiter, not a terminator.
        * EditorConfig shares this arm rather than having one of its own, because
@@ -751,7 +988,14 @@ bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
           (c == '\n' || c == '\r')) {
         return dialect->continuation != GTEXT_INI_CONTINUATION_NONE;
       }
-      return c != '=' && c != '\n' && c != '\r';
+      /*
+       * gtext_ini_is_separator(), not a literal `=`: configparser's key ends at
+       * the first `=` **or** `:`, so a `:` is outside its key charset while being
+       * inside every other dialect's. Reading the set from the dialect is what
+       * keeps this predicate and the parser's "find where the key ends" scan from
+       * being able to disagree.
+       */
+      return !gtext_ini_is_separator(dialect, c) && c != '\n' && c != '\r';
     case GTEXT_INI_NAMES_DESKTOP_ENTRY:
     default:
       /* §3.3's `A-Za-z0-9-`. The `[LOCALE]` postfix has its own charset and is
@@ -781,7 +1025,8 @@ bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect, const char * key,
   }
   if (dialect->name_style == GTEXT_INI_NAMES_ANY ||
       dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG ||
-      dialect->name_style == GTEXT_INI_NAMES_SYSTEMD) {
+      dialect->name_style == GTEXT_INI_NAMES_SYSTEMD ||
+      dialect->name_style == GTEXT_INI_NAMES_CONFIGPARSER) {
     /* Still not anything at all: a key may not contain the delimiter or a line
      * terminator, or the document would not read back as itself. An empty key is
      * refused by the `!len` test above, which is where this dialect parts company

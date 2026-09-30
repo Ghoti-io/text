@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2022,6 +2022,29 @@ check-ini-systemd-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-systemd-oracle.sh
 
+check-ini-configparser-oracle: ## Compare the configparser reader against CPython's
+# **One reference, and it is also the specification** - the weakest position any dialect
+# in this module is in. git config has a lone reference too, but `git-config(1)` exists
+# to disagree with git; the Python documentation describes what `configparser` does and
+# says so. So two things carry the weight instead: the generator's own reading, scored as
+# `intent`, and conformance-ini-configparser's 703 real files, 224 of which the reference
+# refuses.
+#
+# The reference reads a **file**. Python's universal-newline translation applies to
+# `read(path)` and not to `read_string()`, and of 38 documents probed both ways a lone CR
+# is the only thing they disagree about. A file is what an INI document is.
+#
+# Three axes are excluded from `values` and asserted separately: `configparser` works on
+# Python `str`, so its whitespace and its case folding are Unicode's, and a byte-oriented
+# reader cannot ask either question of one byte. The `divergence` score is that each
+# departure is **still there** - a change to the fold fails loudly rather than quietly
+# inflating `values`.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+check-ini-configparser-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-configparser-oracle.sh
+
 check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
 # The gate the corpus cannot be. Every `.desktop` file on this machine is already
 # valid, so conformance-ini-desktop-entry scores acceptance and preservation and
@@ -2156,8 +2179,30 @@ conformance-ini-systemd: ## Score the INI reader over this machine's systemd uni
 conformance-ini-systemd: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-ini-systemd.sh
 
+conformance-ini-configparser: ## Score the INI reader against configparser over this machine's .cfg and .ini files
+# **The only INI corpus gate whose reference is installed**, and that changes what a
+# corpus can be asked. `configparser` is in the standard library of the python3 that
+# scores this, so every file gets all three questions - do we accept what it accepts,
+# does every value agree, and is the rewrite byte for byte - where the Desktop Entry
+# corpus can only be asked legality and the systemd corpus only acceptance.
+#
+# **A `.cfg` extension does not mean the file is one of these documents**, and the gate
+# measures that rather than filtering it away: 224 of the 703 files here are not
+# configparser documents at all - most `lit.cfg` files are Python scripts - and they are
+# the only **refusals** a real corpus of this format offers. They stay in the
+# denominator, because a reader that accepted them would be wrong in the one direction
+# no generated document tests.
+#
+# 78 files are excluded from the values score for a measured reason - `configparser`
+# strips Unicode whitespace and this reader strips ASCII whitespace - and the gate
+# **asserts that every excluded file really does differ**, so an exclusion cannot widen
+# quietly.
+conformance-ini-configparser: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(CONFORMANCE_ENV) tools/conformance/run-ini-configparser.sh
+
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the
