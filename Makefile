@@ -495,6 +495,7 @@ TEXTLIBRARY := -Wl,--whole-archive $(APP_DIR)/$(STATIC_TARGET) -Wl,--no-whole-ar
 # check-symbols is right to reject that in a shipping build but it is not a
 # defect in an instrumented one.
 ALL_TEST_GATES := check-symbols check-allocators check-headers \
+	check-fuzz-harnesses \
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema
@@ -837,7 +838,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1120,6 +1121,50 @@ ifeq ($(OS_NAME), Linux)
 else
 	@printf "check-symbols: skipped (Linux only)\n"
 endif
+
+check-fuzz-harnesses: ## Fail if a fuzz harness no longer compiles
+# **A harness that does not compile is a gate that cannot run, and it reads exactly
+# like a gate that ran and found nothing.** Nothing else here builds tests/fuzz/:
+# `make test` does not, `conformance-all` does not, and neither does any check-*
+# target - so a change to a harness went through 3,061 tests, ASan, seven oracles and
+# five gates and was committed with three uses of an undeclared identifier in it. It
+# was caught by shipping the tree to a machine whose first step is building the
+# harnesses, which is the third time a fresh machine has been this suite's gate.
+#
+# **-fsyntax-only, not a link.** The defect this exists for is a compile error, and
+# building all seven with coverage, ASan and UBSan takes about a minute where parsing
+# them takes about a second. A gate cheap enough to be in `make test` catches this on
+# the commit that causes it; one that costs a minute gets moved out of the way.
+#
+# Skips when clang is absent, and that is the right way round by this file's own rule:
+# the property is "does clang accept this file", which cannot exist without clang. A
+# harness that fails to compile is still wrong on a machine with no clang, but nothing
+# there can see it - unlike the four gates above, whose subject is a table that is
+# wrong whether or not python3 is installed.
+# The clang check is made **in the recipe and not with ifeq**, because FUZZ_CC_OK is
+# defined some four hundred lines below this rule: `ifeq ($(FUZZ_CC_OK),)` is evaluated
+# while make reads the file, so it saw an empty value and this gate skipped on a machine
+# that has clang and had just built all seven harnesses with it. A gate that skips when
+# it could run is the failure this file has most of its comments about, and it reached
+# that state through variable ordering rather than through logic.
+	@if ! command -v $(FUZZ_CXX) > /dev/null 2>&1; then \
+		printf "check-fuzz-harnesses: skipped (no $(FUZZ_CXX); the harnesses are not parsed)\n"; \
+		exit 0; \
+	fi; \
+	bad=""; \
+	for h in tests/fuzz/*.cpp; do \
+		$(FUZZ_CXX) -fsyntax-only -std=c++20 -w $(INCLUDE) "$$h" 2> $(BUILD_DIR)/.fuzz-syntax.log \
+			|| { bad="$$bad $$h"; cat $(BUILD_DIR)/.fuzz-syntax.log >&2; }; \
+	done; \
+	rm -f $(BUILD_DIR)/.fuzz-syntax.log; \
+	if [ -n "$$bad" ]; then \
+		printf "\033[0;31m\n### Fuzz harnesses that no longer compile ###\033[0m\n" >&2; \
+		printf "%s\n" "$$bad" >&2; \
+		printf "\nNothing else in this Makefile builds tests/fuzz/, so this is the only\n" >&2; \
+		printf "gate that would notice. Build one for real with: make fuzz-<target>\n" >&2; \
+		exit 1; \
+	fi; \
+	printf "check-fuzz-harnesses: %s harnesses parse\n" "$$(ls tests/fuzz/*.cpp | wc -l)"
 
 test: ## Make and run the Unit tests
 test: $(APP_DIR)/$(TARGET) $(TEST_EXECUTABLES) $(TEST_GATES)
