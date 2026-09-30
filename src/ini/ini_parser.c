@@ -874,6 +874,80 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
   const GTEXT_Allocator * alloc = effective.allocator
                                       ? effective.allocator
                                       : gtext_allocator_default();
+
+  /*
+   * What the bytes say they are, before anything reads them as text.
+   *
+   * This is ahead of the document's allocation rather than folded into the
+   * skip_bom branch below, and the reason is that the two questions are not the
+   * same one. skip_bom asks whether a UTF-8 mark belongs to the first line - a
+   * rule of the dialect, about text this module can read. This asks whether the
+   * bytes are that text at all, which no dialect has an opinion about: a UTF-16LE
+   * document parsed cleanly under every one of the seven before this ran, into a
+   * group named "" whose keys were the file's bytes with NULs between them.
+   */
+  size_t bom_len = 0;
+  GTEXT_INI_Source_Encoding source =
+      gtext_ini_detect_encoding(bytes, len, &bom_len);
+  if (source == GTEXT_INI_SOURCE_UTF16LE || source == GTEXT_INI_SOURCE_UTF16BE) {
+    if (!effective.decode_utf16) {
+      gtext_ini_set_error(err, GTEXT_INI_E_ENCODING,
+          source == GTEXT_INI_SOURCE_UTF16LE
+              ? "the document is UTF-16LE; set decode_utf16 to read it"
+              : "the document is UTF-16BE; set decode_utf16 to read it",
+          bytes, len, 0);
+      return NULL;
+    }
+    char * decoded = NULL;
+    size_t decoded_len = 0;
+    GTEXT_INI_Status dstatus = GTEXT_INI_OK;
+    const char * dmessage = NULL;
+    size_t doffset = 0;
+    if (!gtext_ini_utf16_to_utf8(alloc, bytes + bom_len, len - bom_len,
+            source == GTEXT_INI_SOURCE_UTF16BE, &decoded, &decoded_len, &dstatus,
+            &dmessage, &doffset)) {
+      gtext_ini_set_error(err, dstatus, dmessage, bytes, len,
+          bom_len + doffset);
+      return NULL;
+    }
+    /*
+     * Parsed by the same function, once, with the option cleared and the limit
+     * spent. Recursion rather than a shared inner helper because the inner
+     * helper would be this whole function: every rule below applies unchanged to
+     * the decoded bytes, and the one thing that must not happen twice is
+     * happening twice.
+     *
+     * max_total_bytes is cleared because it bounds *the input*, which is what the
+     * caller handed over and what was already checked above. UTF-16 to UTF-8 can
+     * grow a document - three bytes out for two in, for anything in the BMP above
+     * U+07FF - and a limit re-applied here would refuse a file that was inside it.
+     */
+    GTEXT_INI_Parse_Options inner = effective;
+    inner.decode_utf16 = false;
+    inner.max_total_bytes = 0;
+    inner.allocator = alloc;
+    GTEXT_INI_Document * decoded_doc =
+        gtext_ini_parse(decoded, decoded_len, &inner, err);
+    /*
+     * Freed here, and safe: every string on the tree is the document's own
+     * allocation (ini_internal.h's ownership rule), and gtext_ini_set_error()
+     * copies its snippet rather than pointing at the input. Nothing outlives this
+     * buffer, which is also why the offsets in `err` are offsets into bytes the
+     * caller never sees - the header says so where the option is declared.
+     */
+    gtext_allocator_free(alloc, decoded);
+    if (decoded_doc) decoded_doc->source_encoding = source;
+    return decoded_doc;
+  }
+  if (source == GTEXT_INI_SOURCE_UTF32LE || source == GTEXT_INI_SOURCE_UTF32BE) {
+    gtext_ini_set_error(err, GTEXT_INI_E_ENCODING,
+        source == GTEXT_INI_SOURCE_UTF32LE
+            ? "the document is UTF-32LE, which this module does not decode"
+            : "the document is UTF-32BE, which this module does not decode",
+        bytes, len, 0);
+    return NULL;
+  }
+
   GTEXT_INI_Document * doc = gtext_allocator_calloc(alloc, 1, sizeof(*doc));
   if (!doc) {
     gtext_ini_set_error(err, GTEXT_INI_E_OOM, "out of memory", bytes, len, 0);
@@ -881,6 +955,7 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
   }
   doc->alloc = alloc;
   doc->dialect = effective.dialect;
+  doc->source_encoding = source;
 
   ini_parse p;
   memset(&p, 0, sizeof(p));
@@ -893,9 +968,7 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
   p.group_index = INI_NO_GROUP;
 
   size_t offset = 0;
-  if (effective.dialect.skip_bom && len >= 3 &&
-      (unsigned char) bytes[0] == 0xEF && (unsigned char) bytes[1] == 0xBB &&
-      (unsigned char) bytes[2] == 0xBF) {
+  if (effective.dialect.skip_bom && source == GTEXT_INI_SOURCE_UTF8) {
     offset = 3;
     /* Skipped, not discarded - the writer puts it back. */
     if (!gtext_ini_str_set(alloc, &doc->bom, bytes, 3)) {

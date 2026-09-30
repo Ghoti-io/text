@@ -14,6 +14,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <cstdio>
 #include <clocale>
 #include <vector>
 #include <cstring>
@@ -3869,12 +3870,21 @@ TEST(IniWin32, ThisDialectRefusesNothing) {
    * and it is what caught two defects - a group name outside git's charset and an
    * empty key both failed canonicalization, and a canonicalization failure is
    * reported as ::GTEXT_INI_E_OOM two frames up.
+   *
+   * **Qualified: every rule of the grammar, and not the encoding check above it.**
+   * `FF FE 00 01` was in this list, chosen because a mark-shaped prefix ought not
+   * to be special, and it is now ::GTEXT_INI_E_ENCODING - so this test failed the
+   * moment gtext_ini_detect_encoding() existed, which is the right way round for
+   * it to have found out. The input moved to IniEncoding, where being refused is
+   * what it asserts. Nothing about the dialect changed: `FE FF 00 01` with the
+   * mark's bytes altered is still accepted below, which is the pair that shows the
+   * refusal belongs to the encoding and not to any rule here.
    */
   for (const std::string & text : {
            std::string(""), std::string("\n\n   \n"), std::string("["),
            std::string("]"), std::string("="), std::string("[]"),
            std::string("[[[["), std::string("]]]]"),
-           std::string("\xff\xfe\x00\x01", 4), std::string("=\n=\n=\n"),
+           std::string("\xfe\xfd\x00\x01", 4), std::string("=\n=\n=\n"),
            std::string("[a]\n\x00\n", 7), std::string("\r\r\r"),
            std::string("; \n# \n[ \n] \n"),
        }) {
@@ -4014,4 +4024,440 @@ TEST(IniWin32, TheWriterRefusesASynthesizedValueItCouldNotReadBack) {
     gtext_ini_sink_buffer_free(&sink);
     gtext_ini_free(doc);
   }
+}
+
+namespace {
+
+/** The same document, encoded as UTF-16 with a byte-order mark. */
+std::string as_utf16(const std::string & utf8, bool big_endian, bool bom = true) {
+  std::string out;
+  if (bom) out += big_endian ? "\xFE\xFF" : "\xFF\xFE";
+  /* ASCII only, which every caller below is: one code unit per byte. */
+  for (unsigned char c : utf8) {
+    if (big_endian) { out += '\0'; out += (char) c; }
+    else { out += (char) c; out += '\0'; }
+  }
+  return out;
+}
+
+/** Parse with decode_utf16 on, expecting success. */
+GTEXT_INI_Document * u16_ok(const std::string & text,
+    GTEXT_INI_Dialect dialect = gtext_ini_dialect_win32()) {
+  GTEXT_INI_Error err;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = dialect;
+  opts.decode_utf16 = true;
+  GTEXT_INI_Document * doc =
+      gtext_ini_parse(text.data(), text.size(), &opts, &err);
+  if (!doc) {
+    ADD_FAILURE() << "decode failed: " << (err.message ? err.message : "?");
+  }
+  gtext_ini_error_free(&err);
+  return doc;
+}
+
+/** Parse with decode_utf16 on, expecting a particular refusal. */
+void decode_refused(const std::string & text, GTEXT_INI_Status expect) {
+  GTEXT_INI_Error err;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_win32();
+  opts.decode_utf16 = true;
+  GTEXT_INI_Document * doc =
+      gtext_ini_parse(text.data(), text.size(), &opts, &err);
+  EXPECT_EQ(doc, nullptr);
+  if (doc) gtext_ini_free(doc);
+  else EXPECT_EQ(err.code, expect);
+  gtext_ini_error_free(&err);
+}
+
+} // namespace
+
+/**
+ * The measurement this whole group exists because of.
+ *
+ * Before ::GTEXT_INI_E_ENCODING there was no refusal here and no diagnostic: a
+ * UTF-16LE `.ini` *parsed*, into one group whose name was empty and five entries
+ * whose keys held the file's bytes with NULs between them. Under the Win32
+ * dialect that outcome was unconditional, because the dialect refuses nothing, so
+ * a caller had no way at all to tell the nonsense from a reading.
+ *
+ * Asserted as the shape of the old behaviour rather than described in a comment,
+ * because the sniff is what stands between the two and a test that only checked
+ * the new answer would pass just as well if the sniff were moved somewhere it
+ * could be skipped.
+ */
+TEST(IniEncoding, AUtf16DocumentUsedToParseIntoNonsense) {
+  const std::string u8 = "[boot]\r\nshell=explorer.exe\r\n";
+  const std::string le = as_utf16(u8, false);
+
+  /* What it does now, for every dialect: one code, naming the encoding. */
+  refused(le, GTEXT_INI_E_ENCODING, gtext_ini_dialect_win32());
+  refused(le, GTEXT_INI_E_ENCODING, gtext_ini_dialect_desktop_entry());
+  refused(le, GTEXT_INI_E_ENCODING, gtext_ini_dialect_generic());
+
+  /* And the nonsense it used to be: the bytes are still there to be read that
+   * way, so the assertion is that nothing reads them that way any more. */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_win32();
+  GTEXT_INI_Error err;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Document * doc =
+      gtext_ini_parse(le.data(), le.size(), &opts, &err);
+  EXPECT_EQ(doc, nullptr);
+  /* The old reading produced exactly one group and five entries. If this ever
+   * parses again, that is the count to look for. */
+  if (doc) {
+    EXPECT_EQ(gtext_ini_document_group_count(doc), 0u)
+        << "a UTF-16 document parsed; the old defect is back";
+    gtext_ini_free(doc);
+  }
+  gtext_ini_error_free(&err);
+}
+
+/** Both byte orders decode to the same tree the UTF-8 original gives. */
+TEST(IniEncoding, BothByteOrdersDecodeToTheSameDocument) {
+  const std::string u8 = "[boot]\r\nshell=explorer.exe\r\nrun=\r\n";
+  GTEXT_INI_Document * plain = ok(u8, gtext_ini_dialect_win32());
+  ASSERT_NE(plain, nullptr);
+  const std::string expect = raw(plain, "boot", "shell");
+  EXPECT_EQ(expect, "explorer.exe");
+
+  for (bool big : {false, true}) {
+    GTEXT_INI_Document * doc = u16_ok(as_utf16(u8, big));
+    ASSERT_NE(doc, nullptr) << (big ? "BE" : "LE");
+    EXPECT_EQ(gtext_ini_document_group_count(doc),
+        gtext_ini_document_group_count(plain));
+    EXPECT_EQ(raw(doc, "boot", "shell"), expect);
+    /* The empty value survives the decode as an empty value rather than as an
+     * absent key, which is the distinction a NUL-terminated converter loses. */
+    EXPECT_EQ(raw(doc, "boot", "run"), "");
+    EXPECT_EQ(gtext_ini_document_source_encoding(doc),
+        big ? GTEXT_INI_SOURCE_UTF16BE : GTEXT_INI_SOURCE_UTF16LE);
+    gtext_ini_free(doc);
+  }
+  gtext_ini_free(plain);
+}
+
+/**
+ * A UTF-32LE mark opens with UTF-16LE's two bytes, and the order of the tests is
+ * the only thing that keeps them apart.
+ *
+ * This is the test that would catch a sniffer rewritten "more simply" with the
+ * two-byte marks first: every UTF-32LE document would then be decoded as UTF-16LE
+ * into alternating text and NULs, successfully, with no diagnostic anywhere -
+ * which is the same failure this group was created to remove, one encoding along.
+ */
+TEST(IniEncoding, Utf32IsNotMistakenForUtf16) {
+  std::string u32("\xFF\xFE\x00\x00", 4);
+  for (char c : std::string("[a]\nk=v\n")) {
+    u32 += c;
+    u32 += std::string("\x00\x00\x00", 3);
+  }
+  size_t bom_len = 0;
+  EXPECT_EQ(gtext_ini_detect_encoding(u32.data(), u32.size(), &bom_len),
+      GTEXT_INI_SOURCE_UTF32LE);
+  EXPECT_EQ(bom_len, 4u);
+  /* Refused with decode_utf16 *on*, which is the point: the option says "decode
+   * UTF-16", and this is not UTF-16. */
+  decode_refused(u32, GTEXT_INI_E_ENCODING);
+  refused(u32, GTEXT_INI_E_ENCODING, gtext_ini_dialect_win32());
+
+  std::string be("\x00\x00\xFE\xFF", 4);
+  be += "junk";
+  EXPECT_EQ(gtext_ini_detect_encoding(be.data(), be.size(), &bom_len),
+      GTEXT_INI_SOURCE_UTF32BE);
+  EXPECT_EQ(bom_len, 4u);
+  decode_refused(be, GTEXT_INI_E_ENCODING);
+}
+
+/** Every mark the detector knows, and the lengths it reports for them. */
+TEST(IniEncoding, TheDetectorReportsTheMarkAndItsLength) {
+  struct Case {
+    std::string bytes;
+    GTEXT_INI_Source_Encoding expect;
+    size_t bom_len;
+    const char * why;
+  };
+  const Case cases[] = {
+      {"", GTEXT_INI_SOURCE_BYTES, 0, "empty"},
+      {"[a]\nk=v\n", GTEXT_INI_SOURCE_BYTES, 0, "no mark"},
+      {"\xEF\xBB\xBF[a]\n", GTEXT_INI_SOURCE_UTF8, 3, "UTF-8"},
+      {std::string("\xFF\xFE[\x00", 4), GTEXT_INI_SOURCE_UTF16LE, 2, "UTF-16LE"},
+      {std::string("\xFE\xFF\x00[", 4), GTEXT_INI_SOURCE_UTF16BE, 2, "UTF-16BE"},
+      {std::string("\xFF\xFE\x00\x00", 4), GTEXT_INI_SOURCE_UTF32LE, 4,
+          "UTF-32LE"},
+      {std::string("\x00\x00\xFE\xFF", 4), GTEXT_INI_SOURCE_UTF32BE, 4,
+          "UTF-32BE"},
+      /* Two bytes of a four-byte mark is the two-byte mark, because that is all
+       * there is: `FF FE` alone is a UTF-16LE document of no content. */
+      {std::string("\xFF\xFE", 2), GTEXT_INI_SOURCE_UTF16LE, 2, "bare FF FE"},
+      /* And one byte of it is nothing. */
+      {std::string("\xFF", 1), GTEXT_INI_SOURCE_BYTES, 0, "lone FF"},
+      /* A UTF-8 mark needs all three bytes. */
+      {std::string("\xEF\xBB", 2), GTEXT_INI_SOURCE_BYTES, 0, "partial UTF-8"},
+  };
+  for (const Case & c : cases) {
+    size_t bom_len = 12345;
+    EXPECT_EQ(gtext_ini_detect_encoding(c.bytes.data(), c.bytes.size(), &bom_len),
+        c.expect) << c.why;
+    EXPECT_EQ(bom_len, c.bom_len) << c.why;
+  }
+  /* NULL is bytes, and does not write through a NULL out-parameter. */
+  EXPECT_EQ(gtext_ini_detect_encoding(nullptr, 0, nullptr),
+      GTEXT_INI_SOURCE_BYTES);
+}
+
+/**
+ * There is deliberately no content sniffing, so a BOM-less UTF-16 document still
+ * reads as nonsense.
+ *
+ * Asserted rather than left unmentioned, because it is the one case this work
+ * does not close and an untested gap reads exactly like an oversight. The shape
+ * that would identify it - a NUL at every odd offset - is real and is a guess,
+ * and this machine holds no BOM-less UTF-16 `.ini` file to calibrate a guess
+ * against: of its 612 `.ini` files, 612 are byte-oriented.
+ */
+TEST(IniEncoding, ABomlessUtf16DocumentIsStillReadAsBytes) {
+  const std::string le = as_utf16("[boot]\nshell=x\n", false, /*bom=*/false);
+  size_t bom_len = 0;
+  EXPECT_EQ(gtext_ini_detect_encoding(le.data(), le.size(), &bom_len),
+      GTEXT_INI_SOURCE_BYTES);
+  EXPECT_EQ(bom_len, 0u);
+  /* It parses, and into the nonsense the marked form used to give: the group's
+   * name carries the NULs. */
+  GTEXT_INI_Document * doc = u16_ok(le);
+  ASSERT_NE(doc, nullptr);
+  size_t len = 0;
+  const GTEXT_INI_Group * g = gtext_ini_document_group_at(doc, 0);
+  const char * name = gtext_ini_group_name(g, &len);
+  ASSERT_NE(name, nullptr);
+  /*
+   * Nine bytes, not eight: the name starts at the byte after `[`, which in UTF-16LE
+   * is the high half of `[` itself, so the nonsense is not even aligned to the code
+   * units. That is the clearest single statement of why a marked document had to
+   * stop parsing.
+   *
+   * Built rather than spelled as a literal, because `"\x00b"` is not what it looks
+   * like: a hex escape in C++ consumes as many hex digits as follow it, so that is
+   * the one character 0x0B and the first attempt at this assertion compared against
+   * `"\v\0o\0o\0t\0\0"`. A test whose expected value is built the same way the
+   * input is cannot make that mistake.
+   */
+  std::string expect;
+  expect += '\0';
+  for (char c : std::string("boot")) { expect += c; expect += '\0'; }
+  EXPECT_EQ(std::string(name, len), expect);
+  EXPECT_EQ(gtext_ini_document_source_encoding(doc), GTEXT_INI_SOURCE_BYTES);
+  gtext_ini_free(doc);
+}
+
+/**
+ * The inputs that moved here out of IniWin32.ThisDialectRefusesNothing.
+ *
+ * `FF FE 00 01` was in that list because a mark-shaped prefix ought not to be
+ * special to a dialect that refuses nothing, and the encoding check made it
+ * special. Kept as a case rather than deleted, because the interesting part is
+ * the pair: the same four bytes with the mark altered are still accepted, so the
+ * refusal is demonstrably about the mark and not about any rule of the grammar.
+ */
+TEST(IniEncoding, AMarkShapedPrefixIsTheOnlyThingWin32Refuses) {
+  refused(std::string("\xff\xfe\x00\x01", 4), GTEXT_INI_E_ENCODING,
+      gtext_ini_dialect_win32());
+  refused(std::string("\xfe\xff\x00\x01", 4), GTEXT_INI_E_ENCODING,
+      gtext_ini_dialect_win32());
+  /* One byte different, and it is an ordinary document again. */
+  GTEXT_INI_Document * doc =
+      ok(std::string("\xfe\xfd\x00\x01", 4), gtext_ini_dialect_win32());
+  ASSERT_NE(doc, nullptr);
+  gtext_ini_free(doc);
+  /* `FF FE` with nothing after it is a UTF-16LE document of no content, and is
+   * refused for that and not for being short. With the decode on it is an empty
+   * document, which is the only reading. */
+  refused(std::string("\xff\xfe", 2), GTEXT_INI_E_ENCODING,
+      gtext_ini_dialect_win32());
+  GTEXT_INI_Document * empty = u16_ok(std::string("\xff\xfe", 2));
+  ASSERT_NE(empty, nullptr);
+  EXPECT_EQ(gtext_ini_document_group_count(empty), 0u);
+  EXPECT_EQ(written(empty), "");
+  gtext_ini_free(empty);
+}
+
+/** A truncated or damaged UTF-16 document is refused, not half-read. */
+TEST(IniEncoding, DamagedUtf16IsRefused) {
+  /* An odd byte count: the last code unit has one byte. */
+  std::string odd = as_utf16("[a]\nk=v\n", false);
+  odd.pop_back();
+  decode_refused(odd, GTEXT_INI_E_BAD_UNICODE);
+
+  /* A high surrogate at the end of the document, with no low one to pair. */
+  std::string high("\xFF\xFE", 2);
+  high += std::string("\x00\xD8", 2);
+  decode_refused(high, GTEXT_INI_E_BAD_UNICODE);
+
+  /* A high surrogate followed by something that is not a low surrogate. */
+  std::string bad_pair("\xFF\xFE", 2);
+  bad_pair += std::string("\x00\xD8", 2);
+  bad_pair += std::string("A\x00", 2);
+  decode_refused(bad_pair, GTEXT_INI_E_BAD_UNICODE);
+
+  /* A low surrogate with no high one before it. Refused rather than passed
+   * through as WTF-8, which is the choice the unicode library states. */
+  std::string lone_low("\xFF\xFE", 2);
+  lone_low += std::string("\x00\xDC", 2);
+  decode_refused(lone_low, GTEXT_INI_E_BAD_UNICODE);
+}
+
+/** A surrogate pair decodes to one code point above the BMP. */
+TEST(IniEncoding, ASurrogatePairDecodesToOneCodePoint) {
+  /* U+1F4A9 is D83D DCA9 in UTF-16, and F0 9F 92 A9 in UTF-8. */
+  std::string le("\xFF\xFE", 2);
+  for (char c : std::string("[a]\nk=")) { le += c; le += '\0'; }
+  le += std::string("\x3D\xD8\xA9\xDC", 4);
+  le += std::string("\n\x00", 2);
+  GTEXT_INI_Document * doc = u16_ok(le);
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a", "k"), "\xF0\x9F\x92\xA9");
+  gtext_ini_free(doc);
+}
+
+/**
+ * A decoded document does not rewrite byte-identically, and says so.
+ *
+ * Not a defect to fix later but the arithmetic of the request: the caller asked
+ * for the text and the text is UTF-8. The test exists so that the claim is
+ * checked rather than asserted in a doc comment, and so that a later change that
+ * made gtext_ini_write() re-encode would have to come here and say so.
+ */
+TEST(IniEncoding, ADecodedDocumentRewritesAsUtf8WithNoMark) {
+  const std::string u8 = "[boot]\r\nshell=explorer.exe\r\n";
+  GTEXT_INI_Document * doc = u16_ok(as_utf16(u8, false));
+  ASSERT_NE(doc, nullptr);
+  /* Byte-identical to the *decoded* bytes, which is what the tree holds - the
+   * line terminators and spacing are preserved, only the encoding is not. */
+  EXPECT_EQ(written(doc), u8);
+  EXPECT_EQ(gtext_ini_document_source_encoding(doc), GTEXT_INI_SOURCE_UTF16LE);
+  gtext_ini_free(doc);
+}
+
+/** What the accessor says for every other way a document can come about. */
+TEST(IniEncoding, SourceEncodingForDocumentsThatWereNeverDecoded) {
+  EXPECT_EQ(gtext_ini_document_source_encoding(nullptr),
+      GTEXT_INI_SOURCE_BYTES);
+
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_win32();
+  GTEXT_INI_Document * built = gtext_ini_new(&opts);
+  ASSERT_NE(built, nullptr);
+  EXPECT_EQ(gtext_ini_document_source_encoding(built), GTEXT_INI_SOURCE_BYTES);
+  gtext_ini_free(built);
+
+  GTEXT_INI_Document * plain = ok("[a]\nk=v\n", gtext_ini_dialect_win32());
+  ASSERT_NE(plain, nullptr);
+  EXPECT_EQ(gtext_ini_document_source_encoding(plain), GTEXT_INI_SOURCE_BYTES);
+  gtext_ini_free(plain);
+
+  /* A UTF-8 mark is reported whether or not the dialect skipped it, because this
+   * says what the file was and skip_bom says what the parser did with it. */
+  GTEXT_INI_Document * marked = ok("\xEF\xBB\xBF[a]\nk=v\n",
+      gtext_ini_dialect_win32());
+  ASSERT_NE(marked, nullptr);
+  EXPECT_EQ(gtext_ini_document_source_encoding(marked), GTEXT_INI_SOURCE_UTF8);
+  gtext_ini_free(marked);
+}
+
+/**
+ * A UTF-16 document whose first code point is U+FEFF carries two marks, and the
+ * second one survives the decode as a UTF-8 mark.
+ *
+ * Worth a test because the recursion makes it happen without anybody deciding it
+ * should: the decode strips the UTF-16 mark, the decoded bytes then begin
+ * `EF BB BF`, and the inner parse treats that as the document's own mark. That is
+ * the right answer - the inner ZWNBSP really is in the text - and it is the kind
+ * of answer a recursive implementation gives by accident, so it is pinned here.
+ */
+TEST(IniEncoding, ADoubleMarkDecodesToADocumentWithAUtf8Mark) {
+  std::string le("\xFF\xFE", 2);
+  le += std::string("\xFF\xFE", 2);  /* U+FEFF as text, not as a mark. */
+  for (char c : std::string("[a]\nk=v\n")) { le += c; le += '\0'; }
+  GTEXT_INI_Document * doc = u16_ok(le);
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "a", "k"), "v");
+  /* The outer mark decided the encoding; the inner one is the document's. */
+  EXPECT_EQ(gtext_ini_document_source_encoding(doc), GTEXT_INI_SOURCE_UTF16LE);
+  EXPECT_EQ(written(doc), "\xEF\xBB\xBF[a]\nk=v\n");
+  gtext_ini_free(doc);
+}
+
+/**
+ * The limit is spent on the caller's bytes and not again on the decoded ones.
+ *
+ * A UTF-16 document within `max_total_bytes` must not be refused because its
+ * UTF-8 form is larger, and it can be: three bytes out for two in, for anything
+ * from U+0800 to U+FFFF.
+ */
+TEST(IniEncoding, TheSizeLimitAppliesToTheBytesHandedIn) {
+  /* Every value byte is U+4E2D, which is 2 bytes of UTF-16 and 3 of UTF-8. */
+  std::string le("\xFF\xFE", 2);
+  for (char c : std::string("[a]\nk=")) { le += c; le += '\0'; }
+  for (int i = 0; i < 40; i++) le += std::string("\x2D\x4E", 2);
+  le += std::string("\n\x00", 2);
+
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_win32();
+  opts.decode_utf16 = true;
+  opts.max_total_bytes = le.size();
+  GTEXT_INI_Error err;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Document * doc =
+      gtext_ini_parse(le.data(), le.size(), &opts, &err);
+  ASSERT_NE(doc, nullptr) << (err.message ? err.message : "?");
+  /* The decoded value is larger than the limit the input fitted inside. */
+  EXPECT_GT(raw(doc, "a", "k").size(), 80u);
+  gtext_ini_free(doc);
+  gtext_ini_error_free(&err);
+
+  /* And the limit still bites on the input itself. */
+  opts.max_total_bytes = le.size() - 1;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Document * refused_doc =
+      gtext_ini_parse(le.data(), le.size(), &opts, &err);
+  EXPECT_EQ(refused_doc, nullptr);
+  if (refused_doc) gtext_ini_free(refused_doc);
+  else EXPECT_EQ(err.code, GTEXT_INI_E_LIMIT);
+  gtext_ini_error_free(&err);
+}
+
+/** The whole path through the file reader, which is where such a file arrives. */
+TEST(IniEncoding, AUtf16FileIsReadThroughTheFileReader) {
+  const std::string u8 = "[boot]\r\nshell=explorer.exe\r\n";
+  std::string path = std::string(::testing::TempDir()) + "gtext-ini-utf16.ini";
+  {
+    std::FILE * f = std::fopen(path.c_str(), "wb");
+    ASSERT_NE(f, nullptr);
+    const std::string le = as_utf16(u8, false);
+    ASSERT_EQ(std::fwrite(le.data(), 1, le.size(), f), le.size());
+    std::fclose(f);
+  }
+
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_win32();
+  GTEXT_INI_Error err;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Document * doc = gtext_ini_parse_file(path.c_str(), &opts, &err);
+  EXPECT_EQ(doc, nullptr) << "the default must not read it as bytes";
+  if (doc) gtext_ini_free(doc);
+  else EXPECT_EQ(err.code, GTEXT_INI_E_ENCODING);
+  gtext_ini_error_free(&err);
+
+  opts.decode_utf16 = true;
+  std::memset(&err, 0, sizeof(err));
+  doc = gtext_ini_parse_file(path.c_str(), &opts, &err);
+  ASSERT_NE(doc, nullptr) << (err.message ? err.message : "?");
+  EXPECT_EQ(raw(doc, "boot", "shell"), "explorer.exe");
+  EXPECT_EQ(gtext_ini_document_source_encoding(doc), GTEXT_INI_SOURCE_UTF16LE);
+  gtext_ini_free(doc);
+  gtext_ini_error_free(&err);
+  std::remove(path.c_str());
 }

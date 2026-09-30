@@ -55,6 +55,7 @@
 #include <ghoti.io/text/ini.h>
 #include <ghoti.io/text/macros.h>
 #include <string.h>
+#include <stdint.h>
 
 /** A counted, owned string. A NULL `data` means absent, not empty. */
 typedef struct {
@@ -153,7 +154,35 @@ struct GTEXT_INI_Document {
   ini_str leading;  ///< Before the first group header.
   ini_str trailing; ///< After the last line that belongs to an entry.
   bool synthesized; ///< True when built by gtext_ini_new() rather than parsed.
+  /**
+   * What the leading byte-order mark said, or ::GTEXT_INI_SOURCE_BYTES.
+   *
+   * Separate from ::bom, which holds a UTF-8 mark's three bytes so the writer can
+   * put them back. This says what the *file* was, and for a decoded UTF-16
+   * document ::bom is empty while this is not - there is no mark to put back,
+   * because the tree's bytes are UTF-8 that never appeared on disk.
+   */
+  GTEXT_INI_Source_Encoding source_encoding;
 };
+
+/**
+ * Decode a UTF-16 document into a freshly allocated, NUL-terminated UTF-8 one.
+ *
+ * @param alloc Where the buffer comes from.
+ * @param bytes The document with its byte-order mark already skipped.
+ * @param len Its length, which must be even.
+ * @param big_endian True for UTF-16BE.
+ * @param out Receives the buffer, which the caller frees.
+ * @param out_len Receives its length, not counting the terminator.
+ * @param status Receives the refusal on failure.
+ * @param message Receives a static message on failure.
+ * @param offset Receives the offset into @p bytes the refusal is about.
+ * @return True on success.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_utf16_to_utf8(const GTEXT_Allocator * alloc,
+    const char * bytes, size_t len, bool big_endian, char ** out,
+    size_t * out_len, GTEXT_INI_Status * status, const char ** message,
+    size_t * offset);
 
 /** Duplicate @p len bytes, NUL-terminating one past the end. */
 GTEXT_INTERNAL_API bool gtext_ini_str_set(const GTEXT_Allocator * alloc,

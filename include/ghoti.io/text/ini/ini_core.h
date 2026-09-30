@@ -153,8 +153,88 @@ typedef enum {
    * to emit one under a dialect whose escape set is empty - and a caller can
    * act on it by choosing a dialect that has one.
    */
-  GTEXT_INI_E_UNREPRESENTABLE
+  GTEXT_INI_E_UNREPRESENTABLE,
+  /**
+   * The bytes open with a byte-order mark for an encoding this module does not
+   * read as-is, and the parse was not asked to decode it.
+   *
+   * **Not one of the refusals above, because it is not about the document's
+   * rules at all**: it is the answer to "these bytes are not the text you think
+   * they are". It exists because the alternative was measured and is worse. A
+   * UTF-16LE `.ini` handed to gtext_ini_parse() before this code existed did not
+   * fail - it *succeeded*, producing one group whose name was empty and five
+   * entries whose keys were `\xFF\xFE[\x00b\x00o\x00o\x00t\x00]\x00` and
+   * the like. Under ::GTEXT_INI_DIALECT_WIN32, which refuses nothing, that
+   * outcome is unconditional: every UTF-16 document parses, and no caller has any
+   * way to tell the nonsense from a reading.
+   *
+   * Set GTEXT_INI_Parse_Options::decode_utf16 to read the document instead of
+   * being told about it. ::GTEXT_INI_SOURCE_UTF32LE and
+   * ::GTEXT_INI_SOURCE_UTF32BE report this code whatever that option says,
+   * because no decoder for them ships: a Windows `.ini` is UTF-16 when it is not
+   * bytes, and a UTF-32 one has never been observed.
+   */
+  GTEXT_INI_E_ENCODING
 } GTEXT_INI_Status;
+
+/**
+ * @enum GTEXT_INI_Source_Encoding
+ * @brief What a document's leading byte-order mark said its encoding was.
+ *
+ * Reported by gtext_ini_detect_encoding() and, after the fact, by
+ * gtext_ini_document_source_encoding().
+ *
+ * **Every member but ::GTEXT_INI_SOURCE_BYTES is decided by a byte-order mark
+ * and nothing else.** There is no content heuristic here, deliberately: the
+ * shape that would identify a BOM-less UTF-16LE document is a NUL at every odd
+ * offset, and while that shape is real it is a guess, and this machine holds no
+ * BOM-less UTF-16 `.ini` file to calibrate a guess against. Of the 612 `.ini`
+ * files on it, **612 are byte-oriented** - not one carries a mark of any kind,
+ * including UTF-8's. So a BOM-less UTF-16 document still parses into nonsense,
+ * exactly as it did before, and that is a bounded statement rather than the open
+ * question it replaces. A caller who knows what it holds converts before calling
+ * in; a caller who does not cannot be helped by a sniffer that is wrong
+ * sometimes.
+ *
+ * ::GTEXT_INI_SOURCE_UTF8 is *not* the default for an unmarked document. A
+ * document with no mark is ::GTEXT_INI_SOURCE_BYTES, because this module does
+ * not decide that unmarked bytes are UTF-8 - ::GTEXT_INI_Dialect::utf8_values
+ * does, per dialect, and ::GTEXT_INI_DIALECT_WIN32 sets it false so that a
+ * code-page `.ini` reads.
+ */
+typedef enum {
+  /** No byte-order mark, or a mark this module reads directly. */
+  GTEXT_INI_SOURCE_BYTES = 0,
+  /** `EF BB BF`. Read directly; ::GTEXT_INI_Dialect::skip_bom says how. */
+  GTEXT_INI_SOURCE_UTF8,
+  /** `FF FE`, and not followed by `00 00`. Decodable. */
+  GTEXT_INI_SOURCE_UTF16LE,
+  /** `FE FF`. Decodable. */
+  GTEXT_INI_SOURCE_UTF16BE,
+  /** `FF FE 00 00`. Detected so that it is not mistaken for UTF-16LE. */
+  GTEXT_INI_SOURCE_UTF32LE,
+  /** `00 00 FE FF`. Detected, never decoded. */
+  GTEXT_INI_SOURCE_UTF32BE
+} GTEXT_INI_Source_Encoding;
+
+/**
+ * @brief What the leading byte-order mark, if any, says @p bytes are encoded in.
+ *
+ * Public because a caller that gets ::GTEXT_INI_E_ENCODING needs to know what it
+ * is holding, and because the order of the tests is not obvious: `FF FE` is
+ * UTF-16LE **only when the next two bytes are not `00 00`**, which is UTF-32LE
+ * with the same first two bytes. A sniffer that tests the shorter mark first
+ * calls every UTF-32LE document UTF-16LE and then decodes it into alternating
+ * text and NULs.
+ *
+ * @param bytes The start of the document. NULL yields ::GTEXT_INI_SOURCE_BYTES.
+ * @param len How many bytes are readable at @p bytes.
+ * @param bom_len Receives the mark's length in bytes, 0 when there is none.
+ *   May be NULL.
+ * @return The encoding the mark names, or ::GTEXT_INI_SOURCE_BYTES for no mark.
+ */
+GTEXT_API GTEXT_INI_Source_Encoding gtext_ini_detect_encoding(
+    const char * bytes, size_t len, size_t * bom_len);
 
 /**
  * @struct GTEXT_INI_Error
@@ -1482,10 +1562,37 @@ typedef struct {
    * is a deliberate act rather than an oversight.
    */
   bool retain_comments;
+
+  /**
+   * Decode a UTF-16 document into UTF-8 before parsing it, rather than refusing
+   * it. **Default false.**
+   *
+   * False is the default because a decode changes the bytes, and every offset
+   * this module reports - GTEXT_INI_Error::offset, and the extents behind
+   * gtext_ini_group_value_at() - is an offset into the bytes it parsed. With this
+   * set they are offsets into a buffer the caller never sees, which is a real
+   * loss and the reason it is opt-in rather than automatic. A caller that wants
+   * meaningful offsets decodes on its own side and passes the result in; a caller
+   * that wants the file read hands the file over and sets this.
+   *
+   * It applies only to ::GTEXT_INI_SOURCE_UTF16LE and
+   * ::GTEXT_INI_SOURCE_UTF16BE, and only when the mark is present - see
+   * ::GTEXT_INI_Source_Encoding for why there is no sniffing. A UTF-32 mark is
+   * ::GTEXT_INI_E_ENCODING regardless.
+   *
+   * **A document read this way does not rewrite byte-identically**, and cannot:
+   * gtext_ini_write() emits the UTF-8 the tree holds, with no mark. That is not
+   * a defect to be fixed later but the arithmetic of the request - the caller
+   * asked for the text, and the text is what it gets.
+   * gtext_ini_document_source_encoding() reports what the file was, so a caller
+   * that means to write UTF-16 back can encode the output itself.
+   */
+  bool decode_utf16;
 } GTEXT_INI_Parse_Options;
 
 /**
- * @brief The defaults: allocator NULL, Desktop Entry, no limits, comments kept.
+ * @brief The defaults: allocator NULL, Desktop Entry, no limits, comments kept,
+ * UTF-16 refused.
  *
  * @return The defaults, by value.
  */

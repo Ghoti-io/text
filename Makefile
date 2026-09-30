@@ -837,7 +837,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -954,6 +954,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/toml/toml_writer.c \
 	src/ini/ini_core.c \
 	src/ini/ini_dom.c \
+	src/ini/ini_encoding.c \
 	src/ini/ini_parser.c \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
@@ -2110,6 +2111,52 @@ check-ini-win32-oracle: ## Compare the Win32 reader against wine's profile API
 check-ini-win32-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-win32-oracle.sh
+
+check-ini-win32-encoding-oracle: ## Compare the UTF-16 decode against the profile API
+# **A UTF-16 `.ini` is a question the reference answers**, which is why this gate
+# exists and why the UTF-16 decode is not simply asserted in a header. Given the same
+# document as UTF-8 and as UTF-16LE-with-a-mark, `GetPrivateProfileSectionNames` and
+# `GetPrivateProfileString` return the same sections and the same values - so every
+# generated document can be asked in three encodings and scored on all three.
+#
+# **Without a mark the reference reads nothing**: no sections, every lookup MISSING,
+# because the first line reads as a section name beginning with a NUL and the API
+# hands back C strings. That is the corroboration for having no content heuristic,
+# and it is a better reason than the one it replaces: not "this machine has no
+# BOM-less UTF-16 file to calibrate a guess against" but "the reference does not
+# guess, and a reader that did would be reading a document it does not read".
+#
+# Not in `conformance-all` and not in `make test`, for the reason every gate needing
+# the pinned image is not: it needs that image. Its ASCII-only population is stated
+# with the number - the A entry points transcode to the host code page, so a non-ASCII
+# document is the channel narrowing rather than a disagreement, and those are counted
+# out loud rather than dropped.
+check-ini-win32-encoding-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) \
+		tools/oracle/run-ini-win32-encoding-oracle.sh
+
+check-ini-win32-authored-oracle: ## Score against files the profile API itself wrote
+# **The population whose provenance is right by construction**, and the only answer
+# this host can give to what `conformance-ini-win32` states about itself: that its 701
+# files are real bytes of the right shape from the wrong provenance. Two `.ini` files
+# here were written by a Windows application. Nothing can change that; what can be
+# changed is who writes the population, and `WritePrivateProfileString` is the other
+# half of the same reference.
+#
+# It is also the only gate that exercises the reference as a **writer**; every other
+# ask here is about what a lookup returns. What it confirmed on its first run was
+# already measured by a one-off probe and already written down - the authoring call
+# strips a value's leading and trailing whitespace, so `"  padded  "` reaches the file
+# as `padded`. The gain is that the rule is now under a gate rather than in a
+# sentence.
+#
+# Not in `conformance-all`, for the same reason as the other two: it needs the pinned
+# image.
+check-ini-win32-authored-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) \
+		tools/oracle/run-ini-win32-authored-oracle.sh
 
 check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
 # The gate the corpus cannot be. Every `.desktop` file on this machine is already

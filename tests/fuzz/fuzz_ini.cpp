@@ -368,7 +368,44 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
    * generic dialect on both counts. The same line is a comment to one and an entry
    * to the other in both directions at once.
    */
-  if (!w) fail("the Win32 dialect refused an input, and it refuses nothing", text);
+  /*
+   * **The property is now qualified, and the qualification is the finding.** It
+   * held unconditionally for one round and then an encoding check was added above
+   * the grammar, so a document opening `FF FE` or `FE FF` or `FF FE 00 00` is
+   * ::GTEXT_INI_E_ENCODING to every dialect including this one. That is not a
+   * grammar refusal - the claim "the key charset is open, the empty key is
+   * spellable, no byte sequence is left to reject" is still exactly true of every
+   * rule below the encoding - but an unqualified assertion here would have failed
+   * on the first input the fuzzer generated with a `FF FE` prefix, which at four
+   * bytes of a two-byte alphabet is immediate.
+   *
+   * Written as "refuses nothing it reads as bytes" rather than deleted, because the
+   * qualified property still catches everything the original did. The excluded set
+   * is named by gtext_ini_detect_encoding() rather than by a byte test here, so a
+   * mark this harness does not know about cannot silently widen the exemption -
+   * which is the shape a weakened assertion usually takes.
+   */
+  size_t bom_len = 0;
+  GTEXT_INI_Source_Encoding enc =
+      gtext_ini_detect_encoding(text.data(), text.size(), &bom_len);
+  bool byte_oriented =
+      enc == GTEXT_INI_SOURCE_BYTES || enc == GTEXT_INI_SOURCE_UTF8;
+  if (!w && byte_oriented) {
+    fail("the Win32 dialect refused an input it reads as bytes, and it refuses "
+         "nothing", text);
+  }
+  /*
+   * And the other half of the same check, which the original could not make: a
+   * document that *is* marked must be refused, by every dialect, with that code
+   * and no other. A sniffer that fell through would otherwise read as this
+   * property still holding.
+   */
+  if (!byte_oriented) {
+    if (w) fail("a marked document parsed under Win32 without decode_utf16", text);
+    if (a || b || g || e || s || c) {
+      fail("a marked document parsed under a dialect that should refuse it", text);
+    }
+  }
   if (w) exercise(w, text, w32, "win32");
 
   if (a) gtext_ini_free(a);

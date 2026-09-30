@@ -590,11 +590,24 @@ found by a differential against git instead. A property asserted under one
 dialect says nothing about another that relaxes the rule the property depends on.
 
 **Win32 carries a property none of the other six can**, and it is about refusal rather
-than about agreement: it must parse **every** input. Its key charset is open, the empty
-key and the empty section name are both spellable, a line with no separator is a
-valueless entry and an unclosed header is an ordinary line, so no byte sequence is left
-for that reader to reject. A claim of that shape is exactly what a fuzzer is for, and
-it is the only unconditional property in this harness other than the first.
+than about agreement: it must parse **every input it reads as bytes**. Its key charset is
+open, the empty key and the empty section name are both spellable, a line with no
+separator is a valueless entry and an unclosed header is an ordinary line, so no byte
+sequence is left for that reader to reject. A claim of that shape is exactly what a
+fuzzer is for.
+
+**The qualification arrived by the property failing, which is the right way round.** It
+was unconditional for one round, and then an encoding check went in above the grammar:
+a document opening `FF FE`, `FE FF` or `FF FE 00 00` is now ::GTEXT_INI_E_ENCODING to
+every dialect including this one. At four bytes over a two-byte alphabet the fuzzer
+reaches that prefix almost at once, so the assertion failed on its next run rather than
+outliving the thing it described. Nothing about the dialect changed - every rule below
+the encoding still refuses nothing - and the harness says so by naming the excluded set
+with gtext_ini_detect_encoding() rather than with a byte test of its own, so a mark this
+harness does not know about cannot silently widen the exemption. **The converse went in
+beside it**, which the unconditional form could not state: a marked document must be
+refused by *every* dialect, so a sniffer that fell through would fail here instead of
+reading as the property still holding.
 
 The first property has no analogue for git config, EditorConfig, systemd,
 configparser or Win32, and the absence is a finding: none of the five is a relaxation
