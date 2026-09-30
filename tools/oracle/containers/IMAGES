@@ -291,6 +291,24 @@ systemd	localhost/ghoti-text-oracle-systemd:257.13	systemd 257.13-1~deb13u1	syst
 # follows the enumeration API; ini_win32_diff.py asserts the disagreement with
 # the other is still there.
 #
+# **Three entry points became five**, and the two new ones read the other direction.
+# `WritePrivateProfileStringA` and `WritePrivateProfileStringW` let the reference be
+# asked to *author* a file, which is the only answer this host has to the corpus gate's
+# stated provenance problem: files a Windows application wrote cannot be conjured here,
+# files the profile API wrote can. Two measurements came with them. The authoring call
+# strips a value's leading and trailing whitespace - already known, now under a gate.
+# And `WritePrivateProfileStringW` does **not** create a UTF-16 file: asked to, the
+# reference wrote ANSI and transcoded U+00A5 to `A5`. That matches Microsoft's documented
+# behaviour, so it is the reference being right rather than wine being short.
+#
+# **The reading side does handle UTF-16**, which is what makes this module's decode
+# measurable rather than asserted. Given a document as UTF-16LE or UTF-16BE with a mark,
+# `GetPrivateProfileSectionNames` and `GetPrivateProfileString` answer exactly as they do
+# for its UTF-8 form. **Without a mark they answer nothing at all** - no sections, every
+# lookup absent - because the first line reads as a section name beginning with a NUL and
+# these are C-string APIs. That is why this module has no content heuristic: a reader that
+# sniffed would be reading a document the reference does not read.
+#
 # **The API's answer is not a function of the file** where the registry's
 # `IniFileMapping` names the section, and no reader of the file can be. This
 # image has no such keys, so it reads the file - which is the case the dialect is

@@ -67,10 +67,22 @@ static char * read_block(size_t * out_len) {
   return data;
 }
 
-int main(void) {
+int main(int argc, char ** argv) {
   GTEXT_INI_Dialect dialect = gtext_ini_dialect_win32();
   GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
   opts.dialect = dialect;
+  /*
+   * `--decode-utf16` for the encoding population, and nothing else changes.
+   *
+   * A flag rather than a second runner, because the two must read the same
+   * documents through the same accessors: the whole claim the encoding scores make
+   * is that a document's UTF-16 form gives the same tree as its UTF-8 form, and a
+   * second program would be free to differ for reasons that had nothing to do with
+   * the encoding.
+   */
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "--decode-utf16")) opts.decode_utf16 = true;
+  }
 
   for (;;) {
     size_t len = 0;

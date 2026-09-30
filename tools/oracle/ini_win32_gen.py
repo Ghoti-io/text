@@ -182,6 +182,53 @@ def _axes():
 AXES = _axes()
 
 
+# What the reference is asked to *author*, for the population whose provenance is
+# the profile API itself.
+#
+# **This is the answer to a problem the corpus gate can only describe.** That gate
+# reads this machine's real `.ini` files and says with every run that they are real
+# bytes of the right shape from the wrong provenance: two of them were written by a
+# Windows application and the other 699 belong to freedesktop and Python. Files a
+# Windows application wrote cannot be conjured. Files **the profile API wrote** can:
+# `WritePrivateProfileString` is the other half of the same reference, and what it
+# emits is a `.ini` file of exactly the right provenance by construction.
+#
+# Each entry is (label, [(section, key, value), ...]). The values are chosen for what
+# a *writer* has to decide rather than for what a reader has to parse: whether a
+# space survives, whether quotes are added or kept, whether a `;` in a value is
+# escaped or left to be re-read as a comment.
+#
+# The first run confirmed rather than discovered: `WritePrivateProfileString` strips a
+# value's leading and trailing whitespace, which a one-off probe had already measured
+# and documentation/formats/ini.md already records. What is new is that the rule is
+# now in a gate instead of in a sentence, so a wine that stopped trimming would fail
+# here rather than making a paragraph quietly wrong.
+AUTHORED = [
+    ("plain", [("boot", "shell", "explorer.exe")]),
+    ("two-sections", [("a", "k", "1"), ("b", "k", "2")]),
+    ("two-keys", [("a", "k", "1"), ("a", "j", "2")]),
+    ("empty-value", [("a", "k", "")]),
+    ("spaces-inside", [("a", "k", "one two")]),
+    ("spaces-around", [("a", "k", "  padded  ")]),
+    ("tab-inside", [("a", "k", "one\ttwo")]),
+    ("quoted", [("a", "k", '"quoted"')]),
+    ("single-quoted", [("a", "k", "'quoted'")]),
+    ("semicolon", [("a", "k", "one;two")]),
+    ("leading-semicolon", [("a", "k", ";one")]),
+    ("hash", [("a", "k", "one#two")]),
+    ("equals", [("a", "k", "one=two")]),
+    ("brackets", [("a", "k", "[one]")]),
+    ("mixed-case-section", [("Mixed Case", "k", "v")]),
+    ("mixed-case-key", [("a", "Key Name", "v")]),
+    ("spaced-section", [(" spaced ", "k", "v")]),
+    ("percent", [("a", "k", "100%")]),
+    ("backslash", [("a", "k", "C:\\dir\\file")]),
+    ("long-value", [("a", "k", "x" * 200)]),
+    ("many-keys", [("a", "k%d" % i, str(i)) for i in range(12)]),
+    ("overwrite", [("a", "k", "first"), ("a", "k", "second")]),
+]
+
+
 def documents(count=None, seed=None):
     """The population: every axis, then repeats if a larger count is asked for.
 
