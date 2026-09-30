@@ -153,8 +153,17 @@ std::string flatten(const GTEXT_INI_Document * doc) {
   return out;
 }
 
-/** Put every value through every accessor, discarding the answers. */
-void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect) {
+/**
+ * Put every value through every accessor, discarding the answers.
+ *
+ * **@p text is here only because two of these do not discard theirs.** Every other
+ * call below is a crash-and-sanitizer probe whose return is thrown away; the
+ * interpolation properties are real assertions, and fail() needs the input that
+ * produced them in order to write the reproducer. A parameter that exists for two
+ * lines out of forty is worth explaining rather than leaving as a puzzle.
+ */
+void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect,
+    const std::string & text) {
   for (size_t g = 0; g < gtext_ini_document_group_count(doc); g++) {
     const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
     for (size_t e = 0; e < gtext_ini_group_entry_count(group); e++) {
@@ -323,7 +332,7 @@ void exercise(GTEXT_INI_Document * doc, const std::string & text,
   }
   gtext_ini_free(twice);
 
-  poke(doc, &dialect);
+  poke(doc, &dialect, text);
 }
 
 } // namespace
