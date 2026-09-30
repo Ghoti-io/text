@@ -164,6 +164,37 @@ REFERENCE_DIVERGES = {
                            "fold leaves alone", None),
 }
 
+# Where the **pinned configuration is load-bearing**, per axis: which non-default
+# configuration of the reference the departure lives in, and what it does there.
+#
+# `interpolation=None` is the one pin that a printed line cannot discharge, and the
+# reason is that a pin is **wider than an exclusion**. An exclusion names a document
+# and keeps the knowledge; a pin removes a behaviour from the comparison entirely, so
+# for as long as this table did not exist nothing in this gate would have failed if
+# this module's handling of `%` changed, or if the reference's had. The axes were
+# already generated and already scored - under a configuration in which both sides
+# answer `100%` with `100%`, which is agreement about nothing.
+#
+# So `tools/oracle/ini_cp_diff.py` runs the reference twice more and asserts, per axis,
+# that its *default* still answers differently from the pinned one. Three shapes:
+#
+#   refuse  the reference refuses a document the pinned configuration accepts
+#   change  it accepts and returns a different value
+#   differ  either, because which one depends on what the document happens to hold -
+#           `%(alpha)s` resolves when `alpha` is in the section and raises when it is
+#           not, and the generator does not choose
+#
+# **`value-extended-interpolation` needs the third configuration and not the default**,
+# measured: `BasicInterpolation` leaves `${sect:alpha}` alone, because `$` is not its
+# trigger byte. An assertion that looked for a divergence under `basic` for every axis
+# in this table would have failed on that one and been right to.
+PIN_INTERPOLATION = {
+    "value-percent": ("basic", "refuse"),
+    "value-percent-pair": ("basic", "change"),
+    "value-interpolation": ("basic", "differ"),
+    "value-extended-interpolation": ("extended", "differ"),
+}
+
 # Where the reference's **channel** cannot carry the document, so there is no oracle
 # for it - not a disagreement about the grammar. `read()` decodes as UTF-8 and raises
 # `UnicodeDecodeError` before `configparser` sees a single line, while this reader is
@@ -434,7 +465,18 @@ class Gen:
         elif cont < 0.42:
             self.mark("cont-deeper-then-shallower", axes)
             lines += ["      deep", "  shallow"]
-        elif cont < 0.46 and not self.needs_plain_entry():
+        elif cont < 0.46 and not self.needs_plain_entry() and \
+                not axes & set(PIN_INTERPOLATION):
+            # **Not over a value something asserts about**, and this is the same trap
+            # needs_plain_entry() exists for, met a second time from the other side.
+            # That predicate covers the constructs a *mode* chose; these four are
+            # chosen inside value() by the roll, so the generator cannot know in
+            # advance and the guard has to read what value() marked. The line built
+            # here is discarded, so a document recorded as carrying
+            # `value-interpolation` went out with no `%(alpha)s` in it at all - and
+            # the pin assertion then found the reference's Basic configuration
+            # answering it exactly as the pinned one did, which was true of those
+            # bytes and says nothing about the rule.
             self.mark("cont-empty-first-line", axes)
             lines = ["%s %s" % (key, sep), "  the whole value"]
         return lines

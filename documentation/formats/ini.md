@@ -651,21 +651,66 @@ the extent. Two consequences followed:
   result, so trailing blank and comment lines are not in the value - and a rewrite is
   byte-identical either way, which is why this needed a *value* comparison to find.
 
-**Three things are deliberately not implemented**, each with the measurement behind it:
+**Interpolation is off by default and available on request**, and the measurement is
+why it is that way round rather than either extreme:
 
-- **Interpolation.** Over the 479 real `configparser` documents on this machine the
-  *default* `BasicInterpolation` refuses a value in **301 of them** and changes a value
-  in **none**. Five files contain `%(` or `${` and not one is an interpolation: the
-  `${prefix}` in numpy's `npymath.ini` is pkg-config's own variable syntax, which
-  `ExtendedInterpolation` would try to resolve as `section:key` and fail. So shipping
-  the default form would break 63% of the files on this machine and improve nothing.
-  Values come back raw and the differential pins `interpolation=None`. (An earlier
-  measurement of this, over eleven files, reported three - correct over that population
-  and far too weak to decide anything.)
+- Over the 479 real `configparser` documents on this machine the *default*
+  `BasicInterpolation` refuses a value in **301 of them** and changes a value in
+  **none**. Five files contain `%(` or `${` and not one is a reference it could
+  resolve: the `${prefix}` in numpy's `npymath.ini` is pkg-config's own variable
+  syntax, which `ExtendedInterpolation` would try to read as `section:key` and fail. So
+  a reader that interpolated by default would read 63% of this machine's `.ini` and
+  `.cfg` files worse and none of them better.
+- **The population that could have overturned that was measured separately and did
+  not.** The corpus gate scans `/etc /usr/share /usr/lib` filtered to `.ini` and
+  `.cfg`, and the files that use interpolation are Python *project* configuration -
+  `tox.ini`, `setup.cfg`, `alembic.ini`, `pytest.ini` - which live in project trees
+  and home directories. There are 103 of those on this machine and **only 5 are within
+  the corpus gate's reach**. Nine contain `%(name)s`, and running `configparser` over
+  each shows every one of the nine is a `logging` format string
+  (`log_cli_format = %(asctime)s %(levelname)s %(message)s`), which the default
+  `BasicInterpolation` refuses with `InterpolationMissingOptionError` - `pytest` reads
+  that file with `iniconfig`, not with `configparser`. Same finding as numpy's
+  `${prefix}`, on the population chosen to break it.
+- **What that measures is "not by default", and it was read for a while as "not at
+  all".** Nothing above bears on whether a caller who wants Python's reading should be
+  able to ask for it, and the docs claimed the wider thing under a heading full of
+  numbers, which made an inference look measured. gtext_ini_value_interpolate() is the
+  narrower claim implemented: ::GTEXT_INI_Interpolation selects `BasicInterpolation`
+  or `ExtendedInterpolation`, gtext_ini_value_needs_interpolation() answers whether a
+  value can be used raw under a style, and the default of every spelling is
+  ::GTEXT_INI_INTERPOLATION_NONE. It is an accessor beside gtext_ini_unescape() and
+  **not** a ::GTEXT_INI_Dialect field, because no reference in a value changes how a
+  document is tokenized.
+- **The pin is now asserted rather than printed**, which is the other half of what was
+  wrong. `interpolation=None` is one of six configurations the differential pins, and a
+  pin is *wider than an exclusion*: an exclusion names a document and keeps the
+  knowledge, while a pin removes a behaviour from the comparison, so nothing would have
+  failed if this module's handling of `%` changed or if the reference's had. The gate
+  now runs the reference three times - `none` to score, `basic` and `extended` to score
+  our own pass against the thing it reimplements and to fail if the default stops
+  answering differently. See `pin` and `interp` under Tested scope.
+- **One deliberate departure, which is a bound the reference does not have.**
+  `max_depth` caps how deep a chain of references goes and not how large it gets:
+  `a = ${b}${b}` doubles per hop, so ten hops is a thousandfold.
+  GTEXT_INI_Interpolate_Options::max_output bounds the result - by default
+  proportionally, at sixteen times the input or 64 KiB, whichever is larger - and
+  `SIZE_MAX` restores the reference's own behaviour. The differential sets `SIZE_MAX`
+  so that a policy cannot read as a disagreement, and
+  `IniInterpolation.TheOutputIsBounded` exhibits the amplification before bounding it.
+
+(An earlier measurement of the first point, over eleven files, reported three - correct
+over that population and far too weak to decide anything.)
+
+**Two things are deliberately not implemented**, each with the measurement behind it:
+
 - **`[DEFAULT]`'s value inheritance.** A lookup policy over a parsed tree rather than a
   rule of the grammar: a caller who wants it asks the section and then asks `DEFAULT`.
   `[DEFAULT]` is an ordinary group here, and the differential pins `default_section` to
-  a name no document can spell so that both sides agree about what it is.
+  a name no document can spell so that both sides agree about what it is. The one place
+  it is a parameter rather than absent is
+  GTEXT_INI_Interpolate_Options::defaults, because a reference *inside* a value has to
+  resolve against some map and the reference's is that chain.
 - **Unicode-aware whitespace and case folding.** Properties of Python's `str`, not of
   the format. `configparser` strips a no-break space from a value's edge and
   lower-cases `É` in a key; a byte-oriented reader can do neither, because neither is a
@@ -731,12 +776,47 @@ CPython 3.14.7:
 | `values` - sections, keys and joined values agree | **10,145 / 10,145** | - |
 | `rewrite` - an accepted document writes back byte for byte | **10,145 / 10,145** | - |
 | `divergence` - each known departure is still observable | **2,965 / 2,965** | - |
+| `interp` - our interpolation matches Basic's and Extended's | **32,060 / 32,060** | - |
+| `pin` - `interpolation=None` still keeps a behaviour out | **2,622 / 2,622** | - |
 | the reference's channel cannot decode the document | - | 1,005 |
 
 88 of 88 axes exercised. The 1,005 exclusions are documents holding a byte that is not
 UTF-8: `read()` raises `UnicodeDecodeError` before `configparser` sees a line, which is
 a limit of the **channel** and not a disagreement about the grammar - the encoding is
 `read()`'s parameter rather than the format's rule.
+
+**The last two scores exist because a pin is wider than an exclusion**, and for one
+round of this gate nothing could fail on the one pin that mattered. `interpolation=None`
+was printed above the numbers, honestly, and the four `%`/`$` axes were generated and
+scored all along - under a configuration in which both sides answer `100%` with `100%`,
+which is agreement about nothing. An exclusion names a document and keeps the knowledge;
+a pin removes a behaviour from the comparison, so no change to this module's handling of
+`%`, and no change to the reference's, would have been visible here.
+
+So the gate runs both sides three times: `none` for the five scores above, and `basic`
+and `extended` for `interp`, which compares gtext_ini_value_interpolate() against the
+implementations it reimplements, and for `pin`, which asserts per axis that the
+reference's own *default* still answers a document differently from the pinned
+configuration. `value-extended-interpolation` needs the third run and not the default,
+measured: `BasicInterpolation` leaves `${sect:alpha}` alone, because `$` is not its
+trigger byte, and an assertion that looked for a divergence under `basic` for every axis
+in the table would have failed on that one and been right to. Every score was put in a
+position to fail before being believed - a bare `%` treated as a literal, the
+reference's `basic` run silently made the pinned one, and a construct stopped being
+generated - and each broke the run loudly.
+
+Two instrument bugs came out of that, neither in the library. The first: `interp`
+originally scored every non-excluded document, on the reasoning that a document carrying
+a Unicode divergence still has an interpolation answer. It does, and the answer is
+contaminated - a no-break space at a value's edge is stripped by the reference under
+*every* configuration - so the score read 625 of 756 while the pass was correct on all
+of them. The second: the generator's `cont-empty-first-line` branch calls `value()` and
+then **discards the line it built**, so a document recorded as carrying
+`value-interpolation` went out with no `%(alpha)s` in it, and `pin` found the reference's
+`basic` configuration answering it exactly as the pinned one did - true of those bytes
+and silent about the rule. That is the same trap `needs_plain_entry()` already existed
+for, met from the other side: those axes are chosen inside `value()` by the roll rather
+than by a mode, so the guard has to read what `value()` marked.
 
 **`intent` carries more weight here than in any other INI gate**, and that is a
 consequence of the dialect having no specification. For git, systemd and EditorConfig a

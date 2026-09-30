@@ -1,6 +1,8 @@
 /*
  * Our side of the configparser differential.
  *
+ *     ini_cp_ours [--interpolation=none|basic|extended]
+ *
  * Per document: `<len>\n` then the document's bytes. `-1\n` ends the stream. Output:
  *
  *     BEGIN
@@ -21,6 +23,19 @@
  *
  * The `W` line needs no reference: a document this module parses must write back byte
  * for byte, which is a property of this module alone.
+ *
+ * `--interpolation` runs gtext_ini_value_interpolate() over each joined value, and
+ * exists because the pinned configuration is `interpolation=None` on both sides: that
+ * pin removes a behaviour from the comparison rather than excluding a document from
+ * it, so without a run that turns it on, nothing here would fail if this module's
+ * handling of `%` changed or if `configparser`'s did. A per-value refusal is reported
+ * as `cp err <status>` for the whole document, because that is what the reference does
+ * - its exception comes out of `parser.items()` and there is no partial result.
+ *
+ * **Joined first, interpolated second**, which is the reference's order and not a
+ * choice: `read()` stores a value already joined and `get()` interpolates what it
+ * stored, so a reference resolving to a multi-line value substitutes the joined text.
+ * Interpolating the raw span instead differs on every value a continuation spans.
  *
  * Hex throughout, and shared with the reference driver's `hexed()` - including `.`
  * for the empty string. A value here can contain a newline, so a whitespace-delimited
@@ -61,10 +76,36 @@ static char * read_block(size_t * out_len) {
   return data;
 }
 
-int main(void) {
+int main(int argc, char ** argv) {
   GTEXT_INI_Dialect dialect = gtext_ini_dialect_configparser();
   GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
   opts.dialect = dialect;
+  GTEXT_INI_Interpolate_Options interp = gtext_ini_interpolate_options_default();
+  /*
+   * **The output bound is configured away here on purpose.** It is the one place
+   * gtext_ini_value_interpolate() departs from the reference - `configparser` has no
+   * bound and a C library copying that would ship an amplification - so leaving the
+   * default on would make a deliberate policy read as a disagreement about
+   * interpolation, which is the one thing this comparison is for. The departure is
+   * asserted instead by IniInterpolation.TheOutputIsBounded, which exhibits the
+   * amplification before bounding it.
+   */
+  interp.max_output = (size_t) -1;
+  for (int a = 1; a < argc; a++) {
+    if (!strcmp(argv[a], "--interpolation=none")) {
+      interp.style = GTEXT_INI_INTERPOLATION_NONE;
+    }
+    else if (!strcmp(argv[a], "--interpolation=basic")) {
+      interp.style = GTEXT_INI_INTERPOLATION_BASIC;
+    }
+    else if (!strcmp(argv[a], "--interpolation=extended")) {
+      interp.style = GTEXT_INI_INTERPOLATION_EXTENDED;
+    }
+    else {
+      fprintf(stderr, "unknown argument %s\n", argv[a]);
+      return 2;
+    }
+  }
 
   for (;;) {
     size_t len = 0;
@@ -81,37 +122,67 @@ int main(void) {
       free(data);
       continue;
     }
-    printf("cp ok\n");
+    /*
+     * **Two passes over the tree**, the first of which prints nothing. With
+     * interpolation on, a single value can refuse the document, and the reference
+     * refuses it whole - so the body cannot be emitted until every value in it has
+     * been asked for. Under `--interpolation=none` nothing refuses and the two
+     * passes produce what one did.
+     */
+    GTEXT_INI_Status refusal = GTEXT_INI_OK;
     size_t groups = gtext_ini_document_group_count(doc);
-    for (size_t g = 0; g < groups; g++) {
-      const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
-      size_t name_len = 0;
-      const char * name = gtext_ini_group_name(group, &name_len);
-      fputs("G ", stdout);
-      put_hex(name, name_len);
-      fputs("\n", stdout);
-      size_t entries = gtext_ini_group_entry_count(group);
-      for (size_t e = 0; e < entries; e++) {
-        size_t key_len = 0;
-        const char * key = gtext_ini_group_canonical_key_at(group, e, &key_len);
-        size_t value_len = 0;
-        const char * value = gtext_ini_group_value_at(group, e, &value_len);
-        char * joined = NULL;
-        size_t joined_len = 0;
-        GTEXT_INI_Status status = gtext_ini_unescape(&dialect, value, value_len,
-            NULL, &joined, &joined_len);
-        fputs("E ", stdout);
-        put_hex(key, key_len);
-        fputs(" ", stdout);
-        if (status == GTEXT_INI_OK) {
-          put_hex(joined, joined_len);
+    for (int pass = 0; pass < 2 && refusal == GTEXT_INI_OK; pass++) {
+      if (pass == 1) printf("cp ok\n");
+      for (size_t g = 0; g < groups && refusal == GTEXT_INI_OK; g++) {
+        const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
+        size_t name_len = 0;
+        const char * name = gtext_ini_group_name(group, &name_len);
+        if (pass == 1) {
+          fputs("G ", stdout);
+          put_hex(name, name_len);
+          fputs("\n", stdout);
         }
-        else {
-          printf("<join-failed-%d>", (int) status);
+        size_t entries = gtext_ini_group_entry_count(group);
+        for (size_t e = 0; e < entries; e++) {
+          size_t key_len = 0;
+          const char * key =
+              gtext_ini_group_canonical_key_at(group, e, &key_len);
+          size_t value_len = 0;
+          const char * value = gtext_ini_group_value_at(group, e, &value_len);
+          char * joined = NULL;
+          size_t joined_len = 0;
+          GTEXT_INI_Status status = gtext_ini_unescape(&dialect, value,
+              value_len, NULL, &joined, &joined_len);
+          char * resolved = NULL;
+          size_t resolved_len = 0;
+          if (status == GTEXT_INI_OK) {
+            status = gtext_ini_value_interpolate(group, &interp, joined,
+                joined_len, &resolved, &resolved_len);
+          }
+          if (status != GTEXT_INI_OK) {
+            refusal = status;
+            gtext_ini_string_free(NULL, joined);
+            gtext_ini_string_free(NULL, resolved);
+            break;
+          }
+          if (pass == 1) {
+            fputs("E ", stdout);
+            put_hex(key, key_len);
+            fputs(" ", stdout);
+            put_hex(resolved, resolved_len);
+            fputs("\n", stdout);
+          }
+          gtext_ini_string_free(NULL, joined);
+          gtext_ini_string_free(NULL, resolved);
         }
-        fputs("\n", stdout);
-        gtext_ini_string_free(NULL, joined);
       }
+    }
+    if (refusal != GTEXT_INI_OK) {
+      printf("cp err %d\n", (int) refusal);
+      gtext_ini_free(doc);
+      printf("END\n");
+      free(data);
+      continue;
     }
     GTEXT_INI_Sink sink;
     if (gtext_ini_sink_buffer(&sink) == GTEXT_INI_OK) {
