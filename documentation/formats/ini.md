@@ -764,6 +764,38 @@ first and each document carries at most one special construct. The symptom that 
 the first of those was the gate's own "this divergence was never observed" assertion -
 which is what that assertion is for.
 
+#### Twenty-seven mutations, all twenty-seven caught
+
+Each rule of the dialect and each new branch was flipped, and the gate that noticed
+recorded. Every one moved a score, which is the first time in this module that has been
+true of a dialect on the first pass - and the reason is that this is the fourth dialect
+built with the same three instruments, so the gaps the earlier ones found were already
+closed before this one started.
+
+**Five are caught by the unit tests alone, and each for a reason that is a property of
+the instruments rather than a hole in them:**
+
+| Mutation | Why no score can reach it |
+|---|---|
+| `valueless_keys` turned on | unreachable for any dialect whose keys are not a closed character set: the key's extent is defined by the separator, so a line without one is a bad line before there is a key to call valueless. The same finding as EditorConfig's, and the field's own documentation says so |
+| `bool_style` set to systemd's | the reference has **no channel that returns a boolean**. `getboolean()` is a second call on an already-parsed value, and the differential compares raw values |
+| the writer's verbatim/synthesized split collapsed | reachable only through `gtext_ini_group_set()`. Both gates score documents this module *parsed*, and those take the verbatim path |
+| a synthesized value's CR break allowed | the same reason, and this one was a **live defect** until it was found by re-reading the writer: the writer emitted `"a<CR>b"` and produced a document that would not re-parse |
+| the join's final strip removed | a parse cannot produce a value whose last contributing line is blank, because the span it stores ends at the last line that contributed text. A caller handing `gtext_ini_unescape()` its own raw value can |
+
+The last two are the honest reading of that table: **two of the five were unmeasured
+until this pass**, not merely unreachable. The CR rule was a defect and is now a test;
+the join's strip was dead to every gate and is now a test. A mutation that moves nothing
+is a question - is this branch unreachable, or is it untested? - and answering it is the
+point of applying the mutation at all.
+
+Nine mutations are caught by all three gates, and the two most interesting are about the
+*extent* of a value rather than about a flag: ending the logical line at the first line
+that is not a continuation (rather than at the last line that contributed text) and
+letting the indent comparison be `<` instead of `<=`. Both change values while leaving
+every rewrite byte-identical, which is why a round-trip score cannot see them and a value
+comparison must exist.
+
 ## Deviations
 
 | Case | This parser | Elsewhere |
