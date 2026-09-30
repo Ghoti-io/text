@@ -604,6 +604,25 @@ DEPFILES := $(LIBOBJECTS:.o=.d) $(TEST_DEPFILES) \
 ####################################################################
 
 LIBVER_GEN := $(GEN_DIR)/ghoti.io/$(PROJECT)/libver_gen.h
+# EVERY rule that compiles a translation unit carries `| $(LIBVER_GEN)`, not
+# just the release library's. Each one reaches this generated header -
+# macros.h includes namespace.h includes libver.h includes libver_gen.h - so
+# a rule without it works only on a tree where something else already
+# generated the file. That is the worst shape a build defect takes: it passes
+# for everyone who has built before and fails for everyone who has not, and
+# under -j it is a race rather than a clean failure.
+#
+# CONVENTIONS.md section 6 states the rule and section 12 warns that copying
+# a Makefile copies its defects. This is that: the release C rule had it and
+# the ASan and fuzz rules did not. From a clean tree, asking for a single
+# ASan object failed outright:
+#
+#     include/ghoti.io/text/libver.h:42:10: fatal error:
+#     ghoti.io/text/libver_gen.h: No such file or directory
+#
+# The release C++ rule is corrected for the same reason even though src/
+# holds no .cpp file today, so the trap is not left armed for whoever adds
+# the first one.
 
 # libver_gen.h is regenerated on every build and rewritten only when its content
 # changes, so a variable given on the command line - make MAJOR_VERSION=2, or
@@ -645,7 +664,7 @@ $(OBJ_DIR)/%.o: src/%.c $(FLAGS_STAMP) | $(LIBVER_GEN)
 	$(CC) $(LIB_CFLAGS) $(INCLUDE) -c $< -MMD -MP -MF $(@:.o=.d) -o $@
 
 # Pattern rule for C++ source files (if any):
-$(OBJ_DIR)/%.o: src/%.cpp $(FLAGS_STAMP)
+$(OBJ_DIR)/%.o: src/%.cpp $(FLAGS_STAMP) | $(LIBVER_GEN)
 	@printf "\n### Compiling $@ ###\n"
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -MMD -MP -MF $(@:.o=.d) -o $@
@@ -781,7 +800,7 @@ ifeq ($(UNAME_S), Linux)
 endif
 
 # Pattern rule for ASan-instrumented C object files
-$(ASAN_OBJ_DIR)/%.o: src/%.c $(ASAN_FLAGS_STAMP)
+$(ASAN_OBJ_DIR)/%.o: src/%.c $(ASAN_FLAGS_STAMP) | $(LIBVER_GEN)
 	@printf "\n### Compiling (ASan+UBSan instrumented): $< ###\n"
 	@mkdir -p $(@D)
 	$(CC) $(ASAN_CFLAGS) $(INCLUDE) -c $< -MMD -MP -MF $(@:.o=.d) -o $@
@@ -1576,7 +1595,7 @@ FUZZ_TIME ?= 60
 # header change rebuilds nothing here, and the stale objects disagree with the
 # fresh ones about struct layout.  That shows up as a fuzzer "finding" -
 # a _Bool loaded as 255, a SEGV in free() - in code that is correct.
-$(FUZZ_OBJ_DIR)/%.o: src/%.c $(FUZZ_FLAGS_STAMP)
+$(FUZZ_OBJ_DIR)/%.o: src/%.c $(FUZZ_FLAGS_STAMP) | $(LIBVER_GEN)
 	@mkdir -p $(@D)
 	@$(FUZZ_CC) $(FUZZ_LIB_FLAGS) -std=c17 -w $(INCLUDE) -c $< -MMD -MP -MF $(@:.o=.d) -o $@
 
