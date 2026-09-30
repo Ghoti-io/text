@@ -1122,6 +1122,21 @@ look better. A fifth axis is in the table for its reasoning and predicts no obse
 difference - a `;` line with no `=` is dropped by both APIs and by this reader, for two
 unrelated reasons - and is counted separately rather than forgiven.
 
+**And the fuzzer found a seventh defect, which belongs to the generic dialect.** A key
+whose own first bytes are a UTF-8 BOM: `skip_bom` strips a BOM only at offset 0, so
+` <BOM>j=v` - a blank, then the BOM - is an entry whose key really *is* `<BOM>j`, and
+that reading is correct. A **normalized** write then drops the leading blank, the key
+lands at offset 0, and a reader strips it there, so the document comes back with a
+different key or with none at all. It is refused now, in normalize mode only; the
+verbatim write keeps the blank and round-trips, which is why the default path is
+untouched.
+
+The generic dialect has had that defect for as long as it has had `skip_bom`, and
+570,000 fuzz executions across five and six dialects never reached it. What changed is
+not the property but the **cost of the path**: under a dialect where a line needs no
+separator to be an entry, the whole reproducer is four bytes. A seventh arm made an old
+defect in the second arm cheap to find.
+
 **Where each reach ends, measured.** 28 mutations, every one caught, control clean:
 
 | Mutation | unit | oracle | corpus |

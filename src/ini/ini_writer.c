@@ -301,6 +301,27 @@ static GTEXT_INI_Status ini_put_indented(GTEXT_INI_Sink * sink,
   return GTEXT_INI_OK;
 }
 
+/**
+ * Whether a name's own first bytes are a UTF-8 BOM.
+ *
+ * A key or group name can hold one: `skip_bom` strips a BOM only at offset 0, so
+ * ` <BOM>j=v` - a blank, then the BOM - is an entry whose key really is
+ * `<BOM>j`, and that is the correct reading of those bytes.
+ *
+ * It matters to the **writer**, and only in normalize mode, because normalizing
+ * drops the leading blank and can move such a name to offset 0 - where a reader
+ * will strip the BOM and give back a different name. Found by the fuzzer at
+ * 663,648 executions on a four-byte input, ` <BOM>`, which under the Win32
+ * dialect is a valueless entry whose whole key is the BOM. The generic dialect
+ * has had the same defect for as long as it has had `skip_bom`; adding a seventh
+ * dialect whose keys need no separator is what made it cheap to reach.
+ */
+static bool ini_bom_prefixed(const ini_str * name) {
+  return name->len >= 3 && (unsigned char) name->data[0] == 0xEF &&
+         (unsigned char) name->data[1] == 0xBB &&
+         (unsigned char) name->data[2] == 0xBF;
+}
+
 GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
     GTEXT_INI_Sink * sink, const GTEXT_INI_Write_Options * opts) {
   if (!doc || !sink || !sink->write) return GTEXT_INI_E_INVALID;
@@ -314,6 +335,32 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
   }
   if (effective.emit_comments && doc->leading.data) {
     INI_TRY(ini_put(sink, doc->leading.data, doc->leading.len));
+  }
+  /*
+   * **A normalized write may not emit a name whose own bytes begin with a BOM**,
+   * unless the document already carries one for the reader to strip instead.
+   *
+   * The rule is deliberately **conservative**: what actually breaks is only such a
+   * name landing at offset 0, and whether it does depends on everything emitted
+   * before it. Computing that would mean a second copy of this function's emission
+   * order, and two copies of an order are how the two drift - so this refuses the
+   * name wherever it sits. The cost is that a document with a BOM-prefixed name
+   * below the first line is unwritable in *normalize* mode while remaining
+   * perfectly writable in the default verbatim mode, which is where "refuse rather
+   * than mangle" leaves it.
+   */
+  if (effective.normalize && doc->dialect.skip_bom && !doc->bom.data) {
+    for (size_t g = 0; g < doc->count; g++) {
+      const GTEXT_INI_Group * group = &doc->groups[g];
+      if (!group->preamble && ini_bom_prefixed(&group->name)) {
+        return GTEXT_INI_E_UNREPRESENTABLE;
+      }
+      for (size_t e = 0; e < group->count; e++) {
+        if (ini_bom_prefixed(&group->entries[e].key)) {
+          return GTEXT_INI_E_UNREPRESENTABLE;
+        }
+      }
+    }
   }
   for (size_t g = 0; g < doc->count; g++) {
     const GTEXT_INI_Group * group = &doc->groups[g];

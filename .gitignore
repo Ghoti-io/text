@@ -19,6 +19,10 @@ tasks
 
 # Fuzzer crash/leak artifacts (reproducers are promoted to tests instead)
 crash-*
+# libFuzzer's -minimize_crash=1 writes these beside crash-*, and only the
+# latter was ignored - so a minimisation left a dozen untracked files that look
+# like fixtures and are not.
+minimized-from-*
 # libFuzzer also writes one of these for an input that is merely very slow -
 # a finding to act on, not a file to keep.
 slow-unit-*

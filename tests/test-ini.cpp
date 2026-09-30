@@ -3895,6 +3895,60 @@ TEST(IniWin32, ThisDialectRefusesNothing) {
   }
 }
 
+TEST(IniWin32, ANameWhoseOwnBytesAreABomIsNotNormalizable) {
+  /*
+   * **Found by the fuzzer at 663,648 executions, on four bytes:** a blank, then a
+   * UTF-8 BOM. `skip_bom` strips a BOM only at offset 0, so with a blank in front
+   * of it the BOM is *data* - and under this dialect a line needs no separator, so
+   * the whole key is the BOM. That reading is correct.
+   *
+   * What was not correct is writing it back **normalized**: normalizing drops the
+   * leading blank, the key lands at offset 0, and a reader strips the BOM there -
+   * so the document came back with no entries at all. A verbatim write keeps the
+   * blank and round-trips, which is why only the normalize path is refused.
+   *
+   * The generic dialect has had the same defect for as long as it has had
+   * `skip_bom`; the seventh dialect, whose keys need no separator, is what made it
+   * a four-byte input rather than a conjunction the fuzzer had not hit in 570,000
+   * executions.
+   */
+  const std::string bom = "\xef\xbb\xbf";
+  for (const GTEXT_INI_Dialect & d : {w32(), gtext_ini_dialect_generic()}) {
+    GTEXT_INI_Document * doc = ok(" " + bom + "j=v\n", d);
+    ASSERT_NE(doc, nullptr);
+    /* The BOM is part of the key, and the verbatim write reproduces the line. */
+    EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{bom + "j"}));
+    EXPECT_EQ(written(doc), " " + bom + "j=v\n");
+    /* Normalizing would move it to offset 0, so it is refused instead. */
+    GTEXT_INI_Write_Options norm = gtext_ini_write_options_default();
+    norm.normalize = true;
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    EXPECT_EQ(gtext_ini_write(doc, &sink, &norm), GTEXT_INI_E_UNREPRESENTABLE);
+    gtext_ini_sink_buffer_free(&sink);
+    gtext_ini_free(doc);
+  }
+  /* A group name is the same case. */
+  GTEXT_INI_Document * g = ok(" [" + bom + "a]\nk=v\n", w32());
+  ASSERT_NE(g, nullptr);
+  GTEXT_INI_Write_Options norm = gtext_ini_write_options_default();
+  norm.normalize = true;
+  GTEXT_INI_Sink sink;
+  ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_write(g, &sink, &norm), GTEXT_INI_E_UNREPRESENTABLE);
+  gtext_ini_sink_buffer_free(&sink);
+  gtext_ini_free(g);
+  /* And a document that *does* carry a BOM of its own is unaffected: the reader
+   * will strip exactly what the writer emitted and store it again. */
+  GTEXT_INI_Document * ok_doc = ok(bom + "[a]\nk=v\n", w32());
+  ASSERT_NE(ok_doc, nullptr);
+  GTEXT_INI_Sink s2;
+  ASSERT_EQ(gtext_ini_sink_buffer(&s2), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_write(ok_doc, &s2, &norm), GTEXT_INI_OK);
+  gtext_ini_sink_buffer_free(&s2);
+  gtext_ini_free(ok_doc);
+}
+
 TEST(IniWin32, ABomIsSkippedRatherThanJoiningTheFirstName) {
   GTEXT_INI_Document * doc = ok("\xef\xbb\xbf[a]\nk=v\n", w32());
   ASSERT_NE(doc, nullptr);
