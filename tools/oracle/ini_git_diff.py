@@ -50,19 +50,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import ini_git_gen  # noqa: E402
+import ini_status  # noqa: E402
 import oracle_env  # noqa: E402
 
 NAME = "gitconfig"
 
-# Our status codes, in the order GTEXT_INI_Status declares them. The numbers cross
-# a process boundary, so the mapping lives here by name rather than being assumed
-# to match anything.
-CODES = {
-    0: "OK", 1: "E_INVALID", 2: "E_OOM", 3: "E_LIMIT", 4: "E_BAD_LINE",
-    5: "E_BAD_GROUP", 6: "E_BAD_KEY", 7: "E_DUPGROUP", 8: "E_DUPKEY",
-    9: "E_NO_GROUP", 10: "E_BAD_ESCAPE", 11: "E_BAD_UNICODE", 12: "E_CONTROL",
-    13: "E_RANGE", 14: "E_TYPE", 15: "E_WRITE", 16: "E_UNREPRESENTABLE",
-}
+# Our status codes, read from the header by tools/oracle/ini_status.py. This used to
+# be a dict transcribed here, and it went stale twice without anything noticing:
+# `GTEXT_INI_E_ENCODING` arrived as 17 while the copy stopped at 16, so an encoding
+# refusal printed as `?` in the one place whose job is to say what happened.
+CODES = ini_status.names()
 
 #
 # Axes on which git's answer is not a function of the document's bytes, with the
