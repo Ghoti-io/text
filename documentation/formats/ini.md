@@ -869,6 +869,61 @@ the join's strip was dead to every gate and is now a test. A mutation that moves
 is a question - is this branch unreachable, or is it untested? - and answering it is the
 point of applying the mutation at all.
 
+#### Twenty-one more for interpolation, and the one that found a defect
+
+gtext_ini_value_interpolate() got its own pass, because a feature with 16 unit tests and
+a 32,060-comparison differential is still only as good as what would fail if it broke.
+Twenty-one mutations, every one applied and caught - four by the `interp` score, one by
+`values`, the rest by the unit tests alone, which is the expected split: a mutation that
+changes a *value* is what a differential is for and a mutation that changes a *status* on
+a document the reference also refuses is not.
+
+**One of them was not a mutation.** `section-key-sees-the-defaults` added
+GTEXT_INI_Interpolate_Options::defaults to the lookup behind a `${section:key}` path,
+and no score moved - because the code was wrong and the mutation was the fix. The
+comment above it read:
+
+> A `section:key` reference does not see the defaults, because the reference reaches it
+> through `parser.get(sect, opt, raw=True)` while a bare `${key}` reads the current
+> section's map - and only that map is the chain that includes `[DEFAULT]`. **Measured
+> rather than inferred from symmetry.**
+
+It was inferred, and the word "measured" was doing the work that a measurement should
+have. `get()` resolves through `_unify_values()`, which chains the section's own vars
+with the defaults, so both spellings see them:
+
+```
+[DEFAULT]        ${shared}    -> from-default
+shared = ...     ${o:shared}  -> from-default    <- we answered E_INTERPOLATION_MISSING
+[o] own = ...    ${o:own}     -> from-o
+```
+
+The nested case agrees, because the reference recurses with
+`dict(parser.items(sect, raw=True))` and `items()` merges the defaults too.
+
+**Why no instrument could have caught it, which is the part worth keeping.** No unit
+test covered the rule in either direction *and the differential cannot reach it at all*:
+the driver pins `default_section` to a name no document can spell, precisely so that
+`[DEFAULT]` is an ordinary section on both sides, so there is no defaults chain in that
+gate to compare and `ini_cp_ours.c` passes NULL. A rule a gate excludes by construction
+has to be carried by the unit tests, and the exclusion is exactly what makes it easy to
+forget that. The mutation is now inverted - what must be caught is taking the defaults
+*away* - and `IniInterpolation.BothExtendedSpellingsSeeTheDefaults` carries the rule.
+
+**One mutation reported `NOT-APPLIED` on the second pass**, because the fix had rewritten
+the call it anchored on from three lines to two. That is the check earning its place: the
+harness asserts its anchor matches exactly once, and without that a mutation that lands
+nowhere is indistinguishable from one nothing catches. Re-anchored and caught.
+
+**And the harness made the same class of mistake as the code.** Its restore step took
+each file back with `git show HEAD:`, which is right only while the working tree *is*
+HEAD - and the second run was started with the defaults fix uncommitted. The first
+restore reverted it silently; every later mutation would have been scored against code
+that no longer contained the fix, and the fix would have been gone with nothing saying
+so. It now snapshots the working tree's own bytes at startup and compares back after
+each iteration, so a dirty tree - the normal case immediately after a mutation finds
+something - is legitimate. Restoring to HEAD is not the same thing as restoring.
+
 Nine mutations are caught by all three gates, and the two most interesting are about the
 *extent* of a value rather than about a flag: ending the logical line at the first line
 that is not a continuation (rather than at the last line that contributed text) and

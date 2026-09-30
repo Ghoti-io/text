@@ -5117,3 +5117,78 @@ TEST(IniInterpolation, ACrossDialectReferenceUsesItsOwnDialect) {
     gtext_ini_free(d);
   }
 }
+
+/**
+ * Both spellings of an extended reference see the defaults, `${section:key}`
+ * included.
+ *
+ * **This is the rule a mutation found, by moving no score.** The implementation
+ * passed no defaults on the two-part path, on the reading that the reference reaches
+ * it through `parser.get(sect, opt, raw=True)` while a bare `${key}` reads the
+ * current section's `map` - only one of them the chain holding `[DEFAULT]`. It reads
+ * that way in the source and is false: `get()` resolves through `_unify_values()`,
+ * which chains the section's own vars with the defaults. Measured against CPython,
+ * which is the only thing that would have said so:
+ *
+ *     ${shared}    -> from-default
+ *     ${o:shared}  -> from-default      <- the one that was wrong here
+ *     ${o:own}     -> from-o
+ *
+ * Nothing caught it because no test covered the rule in either direction and the
+ * `configparser` differential cannot: its driver pins `default_section` to a name no
+ * document can spell, precisely so that `[DEFAULT]` is an ordinary section on both
+ * sides, so the gate has no defaults chain to compare. A rule that gate cannot reach
+ * has to be carried here, and this one was not being carried anywhere.
+ */
+TEST(IniInterpolation, BothExtendedSpellingsSeeTheDefaults) {
+  const std::string doc =
+      "[DEFAULT]\nshared = from-default\n"
+      "[o]\nown = from-o\nchain = ${shared}-x\n"
+      "[s]\nviabare = ${shared}\nviapath = ${o:shared}\nownpath = ${o:own}\n"
+      "nested = ${o:chain}\n";
+  GTEXT_INI_Document * d = cp_parse(doc);
+  ASSERT_NE(d, nullptr);
+  const GTEXT_INI_Group * g = gtext_ini_document_group(d, "s");
+  const GTEXT_INI_Group * def = gtext_ini_document_group(d, "DEFAULT");
+  ASSERT_NE(g, nullptr);
+  ASSERT_NE(def, nullptr);
+
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  opts.style = GTEXT_INI_INTERPOLATION_EXTENDED;
+  opts.defaults = def;
+
+  const std::pair<const char *, const char *> want[] = {
+      {"viabare", "from-default"},
+      {"viapath", "from-default"},
+      {"ownpath", "from-o"},
+      /* The nested case agrees, and for the same reason: the reference recurses
+       * with `dict(parser.items(sect, raw=True))` and `items()` merges the defaults
+       * too, so a chain reached through a path still resolves a default. */
+      {"nested", "from-default-x"},
+  };
+  for (const auto & w : want) {
+    size_t len = 0;
+    const char * raw = gtext_ini_group_get(g, w.first, &len);
+    ASSERT_NE(raw, nullptr) << w.first;
+    char * out = nullptr;
+    size_t out_len = 0;
+    ASSERT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+        GTEXT_INI_OK) << w.first;
+    EXPECT_EQ(std::string(out, out_len), w.second) << w.first;
+    gtext_ini_string_free(nullptr, out);
+  }
+
+  /* And without a defaults group every one of those is missing rather than
+   * resolving, so the test is about the parameter and not about the document. */
+  opts.defaults = nullptr;
+  for (const char * key : {"viabare", "viapath", "nested"}) {
+    size_t len = 0;
+    const char * raw = gtext_ini_group_get(g, key, &len);
+    char * out = nullptr;
+    size_t out_len = 0;
+    EXPECT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+        GTEXT_INI_E_INTERPOLATION_MISSING) << key;
+    gtext_ini_string_free(nullptr, out);
+  }
+  gtext_ini_free(d);
+}

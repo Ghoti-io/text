@@ -357,6 +357,14 @@ typedef struct GTEXT_INI_Interpolate_Options {
    *
    * Consulted second, never first, and only for a reference. It does not make
    * the key visible to gtext_ini_group_get().
+   *
+   * **Both spellings of an extended reference see it** - `${key}` and
+   * `${section:key}` alike. That is worth stating because the reference's source
+   * reads as though they differ: a two-part path goes through
+   * `parser.get(sect, opt, raw=True)` and a bare name through the section's own
+   * `map`. `get()` resolves through `_unify_values()`, which chains the section's
+   * vars with the defaults, so both see them - measured, after a comment asserting
+   * the opposite stood here over the wrong behaviour.
    */
   const GTEXT_INI_Group * defaults;
   /**

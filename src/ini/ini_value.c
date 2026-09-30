@@ -1778,14 +1778,31 @@ static GTEXT_INI_Status ini_interp_extended_one(const GTEXT_INI_Group * group,
   char * value = NULL;
   size_t value_len = 0;
   /*
-   * **A `section:key` reference does not see the defaults**, because the
-   * reference reaches it through `parser.get(sect, opt, raw=True)` while a bare
-   * `${key}` reads the current section's map - and only that map is the chain
-   * that includes `[DEFAULT]`. Measured rather than inferred from symmetry.
+   * **A `section:key` reference DOES see the defaults**, and this is the one rule
+   * here that was got wrong by reading the reference's source instead of running
+   * it. `_interpolate_some()` reaches a two-part path through
+   * `parser.get(sect, opt, raw=True)` and a bare `${key}` through the current
+   * section's `map`, which reads as two different lookups - only one of them the
+   * chain that includes `[DEFAULT]`. It is not: `get()` resolves through
+   * `_unify_values()`, which chains the section's own vars with the defaults, so
+   * both paths see them. Measured, this time:
+   *
+   *     [DEFAULT]         ${shared}     -> 'from-default'
+   *     shared = ...      ${o:shared}   -> 'from-default'   <- the one in question
+   *     [o] own = ...     ${o:own}      -> 'from-o'
+   *
+   * The nested case agrees: the reference recurses with
+   * `dict(parser.items(sect, raw=True))`, and `items()` merges the defaults too, so
+   * `${o:chain}` where `chain = ${shared}-x` is `D-x` rather than a missing key.
+   * Passing the defaults on both paths gets that for free.
+   *
+   * A comment claiming "measured rather than inferred from symmetry" stood over the
+   * wrong behaviour here until a mutation that *added* the defaults to this call
+   * moved no score - because nothing tested the rule either way, which is what the
+   * mutation pass is for.
    */
-  GTEXT_INI_Status status = ini_interp_lookup(source,
-      colon ? NULL : ctx->opts->defaults, ctx->alloc, key, key_len, &value,
-      &value_len);
+  GTEXT_INI_Status status = ini_interp_lookup(source, ctx->opts->defaults,
+      ctx->alloc, key, key_len, &value, &value_len);
   if (status != GTEXT_INI_OK) return status;
   if (!memchr(value, '$', value_len)) {
     status = ini_interp_put(ctx, value, value_len);
