@@ -395,7 +395,13 @@ likely to surprise:
 - **One matching pair of surrounding quotes comes off a value**, which is how a value
   with a leading or trailing blank is spelled. This is a wrapper and not git's
   toggle: `x" mid "y` is unchanged here.
-- **Nothing is ever refused.** Every byte sequence is a legal document.
+- **No rule of the grammar ever refuses anything.** Every byte sequence is a legal
+  document. The one refusal is above the grammar and applies to every dialect: a
+  UTF-16 or UTF-32 byte-order mark is ::GTEXT_INI_E_ENCODING unless
+  GTEXT_INI_Parse_Options::decode_utf16 is set, in which case UTF-16 is decoded to
+  UTF-8 and read. Before that check existed a UTF-16LE `.ini` *parsed*, into one
+  group with an empty name whose keys were the file's bytes with NULs between them -
+  and because this dialect refuses nothing, that was unconditional.
 
 `make conformance-ini-win32` scores this machine's 701 `.ini` and `.cfg` files against
 wine's profile API - 118,790 value comparisons and 214,774 lookups - and
@@ -404,6 +410,16 @@ scoring the section list, the section enumeration, the per-key value and the loo
 through gtext_ini_document_get() separately. The corpus is real bytes of the
 right shape from the **wrong provenance**: this machine has two `.ini` files a Windows
 application wrote, and the gate says so where the number is printed.
+
+Two further gates were added on 2026-09-30, each answering something those two cannot.
+`make check-ini-win32-authored-oracle` is the one population whose provenance is right
+by construction: `WritePrivateProfileString` is the other half of the same reference, so
+it is asked to **author** 22 files and our reader is scored against the reference's
+reading of them. `make check-ini-win32-encoding-oracle` scores the UTF-16 decode over
+each generated document re-encoded in both byte orders - 162 documents, 190 lookups -
+which is possible because the reference reads a marked UTF-16 file and answers exactly
+as it does for the UTF-8 form. It reads **nothing** from an unmarked one, which is why
+there is no content sniffing here.
 
 ## 6. What is not here
 
@@ -417,9 +433,19 @@ file's bytes", and the correction is worth keeping: that sentence is true of the
 **API's** answers, because `GetPrivateProfileString` consults the registry before the
 file. It is not true of the file, and reading the `.ini` files that exist on Windows -
 which mostly belong to applications with their own parsers - was the actual goal and
-was reachable all along. Two things genuinely stay out: the registry redirection,
-which no reader of a file can follow, and UTF-16 input, which the `W` entry points
-read and this byte-oriented module does not.
+was reachable all along. **One** thing genuinely stays out: the registry redirection,
+which no reader of a file can follow.
+
+UTF-16 input was the second and is not any more, and it is worth keeping for the same
+reason the Win32 entry is. It was recorded as a scope boundary - "a caller transcodes,
+or asks for a decision" - which reads like a decision and is a decision deferred. What
+settled it was measuring what happened without one: such a file did not fail, it
+succeeded, into nonsense, unconditionally under the dialect that refuses nothing. **A
+gap you can describe is a gap; a gap that returns a document is a defect**, and nothing
+had checked which this was. UTF-16 is now decoded on request and refused by default, and
+what stays out of *that* is writing UTF-16 back - which the reference does not do either:
+asked to author a file through the `W` entry points it wrote ANSI and transcoded the
+non-ASCII away.
 
 \ref format_ini "The format page" says why for each, and names the one continuation
 mode still deliberately absent from the enum because nothing implements it.

@@ -896,10 +896,51 @@ verbatim, and the document read back as two entries. Reachable only through
 gtext_ini_group_set(), which neither gate exercises because both start from bytes -
 the same blind spot that hid configparser's CR defect.
 
-**Two things stay out.** The registry redirection, which no reader of a file can
-follow. And UTF-16: a Windows `.ini` is sometimes UTF-16LE with a BOM, which the `W`
-entry points read and this byte-oriented module does not - a caller transcodes, or
-asks for a decision.
+**One thing stays out**, and it is the registry redirection, which no reader of a
+file can follow.
+
+**UTF-16 was the second thing and is not any more.** The entry above said "a caller
+transcodes, or asks for a decision", which was a decision deferred rather than made,
+and what settled it was measuring what happened without one. A UTF-16LE `.ini` handed
+to gtext_ini_parse() did not fail - it **succeeded**, producing one group whose name
+was empty and five entries whose keys were the file's bytes with NULs between them.
+Under this dialect that outcome was unconditional, because the dialect refuses
+nothing, so no caller had any way to tell the nonsense from a reading. A gap you can
+describe is a gap; a gap that returns a document is a defect.
+
+So:
+
+  - ::GTEXT_INI_E_ENCODING is what a document with a UTF-16 or UTF-32 byte-order mark
+    gets by default, under **every** dialect. gtext_ini_detect_encoding() is public,
+    because a caller holding one needs to know which it has.
+  - GTEXT_INI_Parse_Options::decode_utf16 reads it instead: UTF-16LE and UTF-16BE are
+    decoded to UTF-8 and parsed, and gtext_ini_document_source_encoding() reports what
+    the file was. UTF-32 is refused whatever that option says - no decoder ships,
+    because a Windows `.ini` is UTF-16 when it is not bytes and a UTF-32 one has never
+    been observed.
+  - **A decoded document does not rewrite byte-identically**, and cannot: the tree
+    holds UTF-8 that never appeared on disk, so gtext_ini_write() emits UTF-8 with no
+    mark. That is the arithmetic of the request rather than a defect - the caller asked
+    for the text - and the accessor exists so a caller meaning to write UTF-16 back can
+    re-encode.
+  - Error offsets under a decode are offsets into a buffer the caller never sees, which
+    is the real cost and the reason the option is opt-in rather than automatic.
+
+**There is no content sniffing, and that is measured rather than chosen.** A BOM-less
+UTF-16 document still reads as nonsense. The shape that would identify one - a NUL at
+every odd offset - is real and is a guess, and the reference does not guess either:
+given a UTF-16LE document with no mark, `GetPrivateProfileSectionNames` reports nothing
+and every `GetPrivateProfileString` is absent, because the first line reads as a
+section name beginning with a NUL and the API hands back C strings. A reader that
+sniffed would be reading a document the reference does not read. With a mark the
+reference reads the file and answers exactly as it does for the UTF-8 form, which is
+what `make check-ini-win32-encoding-oracle` scores.
+
+The one thing under this heading that is still only a decision: a UTF-16 document is
+decoded and not re-encoded on the way out, so this module cannot *write* a UTF-16
+`.ini`. Nothing has asked it to, and `WritePrivateProfileStringW` does not create one
+either - measured: asked to author a file through the `W` entry points, the reference
+wrote ANSI and transcoded the non-ASCII away.
 
 ## Deviations
 
@@ -1067,6 +1108,46 @@ format used this way". **It found nothing**, on its first run and every run sinc
 is worth saying plainly, because for configparser the corpus found the cheapest of three
 defects and here it found none. That is the honest measure of what a weaker population
 buys.
+
+**`make check-ini-win32-authored-oracle` is what can be done about that provenance**,
+and it is the only population here whose provenance is right by construction. Files a
+Windows application wrote cannot be conjured on this host. Files *the profile API*
+wrote can: `WritePrivateProfileString` is the other half of the same reference, so the
+gate asks the container to author 22 files and scores our reader against the reference's
+reading of them. Measured 2026-09-30: `intent` 22/22, `names` 22/22, `sections` 25/25,
+`values` **38/38**, `lookup` **35/35**, `rewrite` 22/22.
+
+It is also the only gate that exercises the reference as a **writer**; every other ask
+in this module is about what a lookup returns. What its first run confirmed was already
+known - the whitespace trim recorded two paragraphs above, measured earlier by a one-off
+probe - so it discovered nothing, and the gain is that the rule now sits under a gate
+instead of in a sentence nothing would contradict. A wine that stopped trimming would
+fail here.
+
+A control was applied before the score was believed, because a gate green on its first
+run has not been seen to fail: disabling the quote strip took `values` to 36/38 and
+`lookup` to 33/35, naming `quoted` both times.
+
+**`make check-ini-win32-encoding-oracle`** scores the UTF-16 decode, over each generated
+document re-encoded as UTF-16LE and UTF-16BE with a mark. Measured 2026-09-30: 162
+documents, `intent` 162/162, `names` 162/162, `sections` 168/168, `values` 182/182,
+`lookup` **190/190**, `parity` 162/162; 4 generated documents excluded for holding a
+non-ASCII byte, and 6 asks excluded for a NUL.
+
+The `parity` score exists because of this gate's own control, and is the more useful
+half of it. Breaking the byte order took `names` to 90/162, which is the gate working -
+and `values` read 171/171 and `lookup` 173/173 at the same moment, both green, because a
+broken decode produced fewer groups and therefore fewer asks. **Every denominator here
+is derived from our own tree, so a defect that makes the tree smaller shrinks the
+population that would have caught it.** `parity` compares the decoded tree against the
+same document read the only other way it can be read, one row per document, with a
+denominator that cannot move: it went to 82/162 under the same control.
+
+The ASCII-only population is stated with the number rather than left implicit: the A
+entry points transcode to the host code page, so a document holding U+00A5 comes back as
+`A5` from the UTF-16 file and `C2 A5` from the UTF-8 one. That is the channel narrowing
+rather than a disagreement about the file, so those documents are counted out of the
+score instead of quietly dropped.
 
 **`make check-ini-win32-oracle`** is the differential, and it is shaped by the reference
 having **three entry points of which two disagree**. 85 axes, one construct per

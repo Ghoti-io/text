@@ -22,7 +22,7 @@ sequence, and how confident anyone should be about that.
 | CSV | @subpage format_csv "CSV" | RFC 4180, plus configurable dialects | RFC 4180 and looser dialects; irregular rows | RFC 4180 with configurable quoting |
 | YAML | @subpage format_yaml "YAML" | YAML 1.2.2, with a 1.1 resolution mode | block and flow, anchors, tags, multi-document | DOM and streaming event serialization |
 | TOML | @subpage format_toml "TOML" | TOML v1.0.0 (2021-01-12) and the v1.1.0 draft behind an option; date-times delegated to ghoti.io-chron | the whole 1.0.0 grammar read and written, 1.1.0 read, a statement-by-statement event walk, comments through a write, JSON both ways; 3,377 of 3,377 and 3,883 of 3,883 toml-test measurements, a pinned `tomllib` over 60,000 generated documents, and toml++ over the four v1.1.0 relaxations it shares | no comment inside a value on the tree; no incremental reader (argued, not pending); the two v1.1.0 unquoted-key relaxations |
-| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail; `git-config(1)`; EditorConfig 0.17.2; `systemd.syntax(7)`; Python `configparser`, which has none; the Win32 profile API, which has none and no reference that is Windows | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects; **34 of 34** of `editorconfig-core-test`'s grammar assertions, where both reference cores score 33; 165 of 165 systemd unit files parse and rewrite byte for byte; 703 of 703 `.cfg` and `.ini` files get the same verdict as `configparser` itself, which refuses 224 of them; 701 real `.ini` and `.cfg` files agree with wine's Win32 profile API over 118,790 value comparisons and 214,774 lookups | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
+| INI | @subpage format_ini "INI (Desktop Entry)" | freedesktop.org Desktop Entry Specification 1.5 (2020-04-27); a derived generic dialect for the long tail; `git-config(1)`; EditorConfig 0.17.2; `systemd.syntax(7)`; Python `configparser`, which has none; the Win32 profile API, which has none and no reference that is Windows | the whole of sections 3, 4 and 5, comments and unknown keys kept on the tree, values decoded at the accessor as both references do; 202 of 202 real `.desktop` files on this machine parse, rewrite byte for byte, and read identically under both dialects; **34 of 34** of `editorconfig-core-test`'s grammar assertions, where both reference cores score 33; 165 of 165 systemd unit files parse and rewrite byte for byte; 703 of 703 `.cfg` and `.ini` files get the same verdict as `configparser` itself, which refuses 224 of them; 701 real `.ini` and `.cfg` files agree with wine's Win32 profile API over 118,790 value comparisons and 214,774 lookups, plus 22 files the profile API itself authored and 162 documents re-encoded as UTF-16 in both byte orders | byte-identical by default, or normalized; refuses a value the dialect cannot spell rather than mangling it |
 
 A cross-format audit against the libraries these are meant to replace is in
 \ref format_comparison "Comparison with other libraries".
@@ -89,6 +89,17 @@ claim to reproduce it. It is not true of the file, and reading the `.ini` files 
 exist on Windows - which mostly belong to applications with their own parsers - is a
 different question that was reachable the whole time. The registry redirection is now a
 documented limit of the dialect rather than a reason not to have one.
+
+**UTF-16 input was listed beside it and is not any more**, and the correction has a
+different shape worth keeping. It was not a reason not to do something - it was a scope
+boundary written as prose ("a caller transcodes, or asks for a decision"), which reads
+like a decision and is a decision deferred. Nothing had checked what happened to such a
+file, and what happened was that it parsed: one group with an empty name, keys made of
+the file's own bytes with NULs between them, unconditionally, because the Win32 dialect
+refuses nothing. A gap you can describe is a gap; a gap that returns a document is a
+defect. UTF-16 is now refused by default and decoded on request, and the reference reads
+a marked UTF-16 file the same way it reads the UTF-8 form - so the decode is measured
+rather than asserted.
 
 `GTEXT_YAML_MODE_CONFIG` is a YAML parse preset, not a parser for either format.
 

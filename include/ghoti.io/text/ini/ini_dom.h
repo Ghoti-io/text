@@ -113,6 +113,28 @@ GTEXT_API GTEXT_INI_Document * gtext_ini_new(
 GTEXT_API void gtext_ini_free(GTEXT_INI_Document * doc);
 
 /**
+ * @brief What encoding the parsed bytes carried a mark for.
+ *
+ * ::GTEXT_INI_SOURCE_BYTES for a document with no mark, for one built by
+ * gtext_ini_new(), and for NULL. ::GTEXT_INI_SOURCE_UTF8 when the bytes carried a
+ * UTF-8 mark - whether or not ::GTEXT_INI_Dialect::skip_bom skipped it, because
+ * this reports what the file was and that field decides what the parser did with
+ * it. ::GTEXT_INI_SOURCE_UTF16LE or ::GTEXT_INI_SOURCE_UTF16BE when
+ * GTEXT_INI_Parse_Options::decode_utf16 decoded one - the only case in which the
+ * tree's bytes are not a subsequence of the caller's.
+ *
+ * **The reason to ask is gtext_ini_write().** It emits what the tree holds, which
+ * for a decoded document is UTF-8 with no mark, so a caller that means to write
+ * the file back as it found it needs to know that and re-encode. Every other
+ * value means a rewrite is in the document's own bytes.
+ *
+ * @param doc The document. NULL yields ::GTEXT_INI_SOURCE_BYTES.
+ * @return The encoding its mark named.
+ */
+GTEXT_API GTEXT_INI_Source_Encoding gtext_ini_document_source_encoding(
+    const GTEXT_INI_Document * doc);
+
+/**
  * @brief How many groups the document has, counting duplicates separately.
  *
  * @param doc The document.
@@ -135,9 +157,21 @@ GTEXT_API const GTEXT_INI_Group * gtext_ini_document_group_at(
  * @brief The first group with a given name.
  *
  * @param doc The document.
- * @param name The group name, NUL-terminated. Compared byte for byte: Desktop
- *   Entry §3 says "case is significant everywhere in the file", and no dialect
- *   here folds a group name.
+ * Matched by the dialect's rules, not byte for byte. Desktop Entry §3 says
+ * "case is significant everywhere in the file" and this is a byte comparison
+ * there - but ::GTEXT_INI_DIALECT_GIT, ::GTEXT_INI_DIALECT_EDITORCONFIG and
+ * ::GTEXT_INI_DIALECT_WIN32 each fold a group name, and Win32 trims one, so
+ * `[ Boot ]` is found by `boot`.
+ *
+ * **This paragraph said "no dialect here folds a group name" for three dialects
+ * after that stopped being true**, which is worth recording next to the
+ * correction: the sentence was accurate when written, cited a specification to
+ * say so, and nothing about adding a folding dialect brings you back to the
+ * accessor whose contract it changed. The same claim was wrong in
+ * gtext_ini_document_group()'s neighbour below for the same reason.
+ *
+ * @param doc The document.
+ * @param name The group name, NUL-terminated.
  * @return The group, or NULL if there is none.
  */
 GTEXT_API const GTEXT_INI_Group * gtext_ini_document_group(
@@ -146,11 +180,17 @@ GTEXT_API const GTEXT_INI_Group * gtext_ini_document_group(
 /**
  * @brief Look a key up across every group of a given name.
  *
- * This is the lookup that matches `GKeyFile`'s behaviour on a document with a
- * repeated group header: GLib merges them, so a key in the second `[G]` is
- * found under `G`. The tree keeps the two groups apart, and this searches
- * both, so that the merge is a property of the lookup rather than a loss of
- * what the document said.
+ * On a document with a repeated group header the dialect decides whether the
+ * repeats are one section: ::GTEXT_INI_Dialect::merge_duplicate_groups. GLib
+ * merges them, so a key in the second `[G]` is found under `G`; the Win32 profile
+ * API does not, and a key in a second `[a]` is retrievable by no name at all
+ * while `GetPrivateProfileSectionNames` still lists that section. Either way the
+ * tree keeps the groups apart and this searches as many as the dialect says, so
+ * the merge is a property of the lookup rather than a loss of what the document
+ * said.
+ *
+ * The name is matched the way gtext_ini_document_group() matches it, folding and
+ * trimming per dialect.
  *
  * @param doc The document.
  * @param group The group name.

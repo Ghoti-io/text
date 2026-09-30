@@ -217,6 +217,11 @@ const GTEXT_INI_Group * gtext_ini_document_group_at(
   return &doc->groups[index];
 }
 
+GTEXT_INI_Source_Encoding gtext_ini_document_source_encoding(
+    const GTEXT_INI_Document * doc) {
+  return doc ? doc->source_encoding : GTEXT_INI_SOURCE_BYTES;
+}
+
 const GTEXT_INI_Group * gtext_ini_document_group(
     const GTEXT_INI_Document * doc, const char * name) {
   if (!doc || !name) return NULL;
