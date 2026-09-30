@@ -596,15 +596,16 @@ TEST(IniValue, AListItemStillHonoursTheEscapeSet) {
 
 TEST(IniValue, BooleanIsExactlyTrueOrFalse) {
   bool out = false;
-  EXPECT_EQ(gtext_ini_value_bool("true", 4, &out), GTEXT_INI_OK);
+  GTEXT_INI_Dialect de = gtext_ini_dialect_desktop_entry();
+  EXPECT_EQ(gtext_ini_value_bool(&de, "true", 4, &out), GTEXT_INI_OK);
   EXPECT_TRUE(out);
-  EXPECT_EQ(gtext_ini_value_bool("false", 5, &out), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_value_bool(&de, "false", 5, &out), GTEXT_INI_OK);
   EXPECT_FALSE(out);
   /* §4 admits nothing else, and §3 says case is significant. systemd's wider
    * set belongs to the systemd dialect. */
   for (const char * no : {"1", "0", "yes", "no", "on", "off", "True", "FALSE",
            "", " true"}) {
-    EXPECT_EQ(gtext_ini_value_bool(no, std::strlen(no), &out),
+    EXPECT_EQ(gtext_ini_value_bool(&de, no, std::strlen(no), &out),
         GTEXT_INI_E_TYPE) << no;
   }
 }
@@ -2178,6 +2179,434 @@ TEST(IniEditorConfig, EveryShapeWritesBackByteForByte) {
     EXPECT_EQ(written(doc), text) << text;
     /* And a second parse of the output is the same document again. */
     GTEXT_INI_Document * again = ok(written(doc), ec());
+    ASSERT_NE(again, nullptr) << text;
+    EXPECT_EQ(written(again), text) << text;
+    gtext_ini_free(again);
+    gtext_ini_free(doc);
+  }
+}
+
+// ------------------------------------------------------------ the systemd dialect
+//
+// Every rule here was measured against **systemd 257** in a pinned container, because
+// this machine has no systemd at all - no `systemd-analyze`, no `systemctl`, PID 1 is
+// `init` - while carrying 165 unit files shipped by other packages. The transcript is
+// notes/text/INI-DIALECTS.md §A.17; `make check-ini-systemd-oracle` runs the same
+// comparison over 5,000 generated documents and `make conformance-ini-systemd` reads
+// every unit file on the machine.
+//
+// The instrument is worth knowing about before the rules: `systemd-analyze verify`
+// **exits 0 on a syntax error**. It warns, skips the line and keeps the file, so its
+// exit status is about semantics and only its diagnostics are about the grammar. And
+// values come back through `Environment=` alone, which echoes each parsed word after
+// unquoting, unescaping and word splitting - there is no verb that prints a setting.
+//
+// The cases below are the ones a differential cannot reach: a caller building a
+// document, the writer's refusals, and the rules whose answer the reference's
+// reporting channel destroys - a CR in a value, which its logger rewrites to a
+// newline.
+
+namespace {
+
+GTEXT_INI_Dialect sd() { return gtext_ini_dialect_systemd(); }
+
+/** The words of a raw value under the systemd dialect, for readable assertions. */
+std::vector<std::string> words(const std::string & raw) {
+  GTEXT_INI_Dialect d = sd();
+  GTEXT_INI_List * list = nullptr;
+  std::vector<std::string> out;
+  if (gtext_ini_value_words(&d, raw.data(), raw.size(), nullptr, &list)
+      != GTEXT_INI_OK) {
+    out.push_back("<error>");
+    return out;
+  }
+  for (size_t i = 0; i < gtext_ini_list_count(list); i++) {
+    size_t len = 0;
+    const char * item = gtext_ini_list_at(list, i, &len);
+    out.push_back(take(item, len));
+  }
+  gtext_ini_list_free(list);
+  return out;
+}
+
+/** The decoded form of a raw value under the systemd dialect. */
+std::string decoded(const std::string & raw) {
+  GTEXT_INI_Dialect d = sd();
+  char * out = nullptr;
+  size_t len = 0;
+  if (gtext_ini_unescape(&d, raw.data(), raw.size(), nullptr, &out, &len)
+      != GTEXT_INI_OK) {
+    return "<error>";
+  }
+  std::string result = take(out, len);
+  gtext_ini_string_free(nullptr, out);
+  return result;
+}
+
+} // namespace
+
+TEST(IniSystemd, TheDialectIsItsOwnGrammarAndNotARelaxation) {
+  GTEXT_INI_Dialect s = sd();
+  EXPECT_EQ(s.id, GTEXT_INI_DIALECT_SYSTEMD);
+  EXPECT_EQ(s.continuation, GTEXT_INI_CONTINUATION_JOIN_SPACE);
+  EXPECT_EQ(s.name_style, GTEXT_INI_NAMES_SYSTEMD);
+  EXPECT_EQ(s.bool_style, GTEXT_INI_BOOLS_SYSTEMD);
+  EXPECT_TRUE(s.word_split);
+  EXPECT_TRUE(s.numeric_escapes);
+  EXPECT_TRUE(s.lone_cr_terminates);
+  /* Refuses a preamble, where EditorConfig's specification names one and git accepts
+   * one. Measured: "Assignment outside of section. Ignoring." */
+  EXPECT_FALSE(s.allow_preamble);
+  /* Quoting is not in the grammar, because the specification says it is per-setting -
+   * which is this module's layering claim stated by somebody else. */
+  EXPECT_FALSE(s.quoted_values);
+  /* Nor is the escape set: systemd's config_parse() never looks at a backslash. git
+   * is the only dialect here that refuses a bad escape while reading. */
+  EXPECT_FALSE(s.escapes_in_grammar);
+  EXPECT_TRUE(git().escapes_in_grammar);
+  /* And a vertical tab is not whitespace, which was a live guess: systemd is a C
+   * program, so `isspace()` was the plausible answer and is wrong three ways. */
+  EXPECT_FALSE(s.ctype_whitespace);
+  EXPECT_TRUE(ec().ctype_whitespace);
+  /* No list separator and no case folding. */
+  EXPECT_EQ(s.list_separator, 0);
+  EXPECT_FALSE(s.fold_case);
+}
+
+TEST(IniSystemd, TheContinuationJoinsWithASpace) {
+  /*
+   * The rule the whole dialect turns on, and the **minimal pair** that settles it.
+   * Every example in `systemd.syntax(7)` indents the continued line, and with the
+   * second line indented, joining with a space and joining with nothing give the same
+   * answer. Flush left they differ; inside a quoted run the answer is unambiguous.
+   *
+   * Measured against systemd 257: `Environment="W1\` then `W2"` is the single word
+   * `W1 W2`, hex 5731205732.
+   */
+  GTEXT_INI_Document * doc = ok("[Service]\nA=W1\\\nW2\n", sd());
+  ASSERT_NE(doc, nullptr);
+  /* The stored value is the document's bytes, continuation included, which is what
+   * makes the rewrite byte-identical. */
+  EXPECT_EQ(raw(doc, "Service", "A"), "W1\\\nW2");
+  EXPECT_EQ(decoded("W1\\\nW2"), "W1 W2");
+  EXPECT_EQ(written(doc), "[Service]\nA=W1\\\nW2\n");
+  gtext_ini_free(doc);
+
+  /* With a space before the backslash there are **two** spaces in the joined value -
+   * the document's own and the one the backslash became. Unobservable through
+   * `Environment=`, because word splitting eats a run either way, so it is asserted
+   * here and by the round trip rather than by the differential. */
+  EXPECT_EQ(decoded("W1 \\\nW2"), "W1  W2");
+  EXPECT_EQ(words("W1 \\\nW2"), (std::vector<std::string>{"W1", "W2"}));
+}
+
+TEST(IniSystemd, TheContinuationSkipsACommentBlockAndStopsAtABlankLine) {
+  /*
+   * The manual's nastiest-looking rule, and it is true: a continuation jumps over a
+   * `#` or `;` block and joins with whatever follows it. What the manual does **not**
+   * say is the other half - a *blank* line ends the continuation instead of being
+   * skipped, and the trailing backslash then simply disappears.
+   */
+  GTEXT_INI_Document * doc =
+      ok("[Service]\nA=W1\\\n# a comment\n; another\nW2\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(decoded(raw(doc, "Service", "A")), "W1 W2");
+  EXPECT_EQ(written(doc), "[Service]\nA=W1\\\n# a comment\n; another\nW2\n");
+  gtext_ini_free(doc);
+
+  /* A blank line ends it, and `B` is its own entry. */
+  doc = ok("[Service]\nA=W1\\\n\nB=W2\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "Service", "A"), "W1");
+  EXPECT_EQ(raw(doc, "Service", "B"), "W2");
+  EXPECT_EQ(written(doc), "[Service]\nA=W1\\\n\nB=W2\n");
+  gtext_ini_free(doc);
+
+  /* And a comment's **own** trailing backslash does not continue it - measured, the
+   * entry after it is read normally. So the comment test runs before the assembly. */
+  doc = ok("[Service]\n# a comment \\\nA=W1\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "Service", "A"), "W1");
+  gtext_ini_free(doc);
+}
+
+TEST(IniSystemd, AContinuationMayAppearInAHeaderOrAKey) {
+  /*
+   * **The structural finding, and it is not in the manual.** systemd assembles the
+   * logical line before classifying it, so a continuation works on a group header and
+   * on a key - measured, `[Serv\` then `ice]` is the section `Serv ice`, which systemd
+   * reports as an unknown section rather than as a syntax error.
+   *
+   * That is why a name here is not a span of the document: the tree keeps the bytes as
+   * written, so the rewrite is exact, and the **joined form is the canonical form**,
+   * which is the same two-form storage case folding already needed.
+   */
+  GTEXT_INI_Document * doc = ok("[Serv\\\nice]\nEnv\\\niron=1\n", sd());
+  ASSERT_NE(doc, nullptr);
+  const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+  EXPECT_EQ(got(gtext_ini_group_name, group), "Serv\\\nice");
+  EXPECT_EQ(got(gtext_ini_group_canonical_name, group), "Serv ice");
+  EXPECT_EQ(got(gtext_ini_group_key_at, group, (size_t) 0), "Env\\\niron");
+  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, group, (size_t) 0), "Env iron");
+  /* Reachable by the joined name, which is what a caller has. */
+  EXPECT_EQ(raw(doc, "Serv ice", "Env iron"), "1");
+  EXPECT_EQ(written(doc), "[Serv\\\nice]\nEnv\\\niron=1\n");
+  gtext_ini_free(doc);
+
+  /* A continuation at the very end of a key joins to a trailing space, which systemd
+   * strips before the `=`. So the canonical key has no trailing space. */
+  doc = ok("[Service]\nEnv\\\n=1\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(got(gtext_ini_group_canonical_key_at,
+                gtext_ini_document_group_at(doc, 0), (size_t) 0), "Env");
+  EXPECT_EQ(written(doc), "[Service]\nEnv\\\n=1\n");
+  gtext_ini_free(doc);
+}
+
+TEST(IniSystemd, ALoneCarriageReturnEndsALine) {
+  /*
+   * Measured and **not in the manual**: `A=1<CR>B=2` is two settings, and the line
+   * counter advances across the CR. No other dialect here does this - to Desktop Entry
+   * a lone CR is part of the value, to git and EditorConfig it is whitespace.
+   */
+  GTEXT_INI_Document * doc = ok("[Service]\nA=1\rB=2\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "Service", "A"), "1");
+  EXPECT_EQ(raw(doc, "Service", "B"), "2");
+  EXPECT_EQ(written(doc), "[Service]\nA=1\rB=2\n");
+  gtext_ini_free(doc);
+
+  /* The same bytes under git are one entry whose value holds the CR, because git's
+   * whitespace includes it and its line ends only at an LF. */
+  GTEXT_INI_Document * g = ok("[a]\nA=1\rB=2\n", git());
+  ASSERT_NE(g, nullptr);
+  EXPECT_EQ(gtext_ini_group_entry_count(gtext_ini_document_group_at(g, 0)), 1u);
+  gtext_ini_free(g);
+}
+
+TEST(IniSystemd, WordsAreQuotedByEitherCharacterAndQuotingIsAToggle) {
+  /*
+   * systemd's spelling of a list, and three of its rules are not in the manual. The
+   * manual says an opening quote may appear only at the start or after unquoted
+   * whitespace; systemd does not enforce that.
+   */
+  EXPECT_EQ(words("one two"), (std::vector<std::string>{"one", "two"}));
+  EXPECT_EQ(words("a \"b c\" d"), (std::vector<std::string>{"a", "b c", "d"}));
+  EXPECT_EQ(words("a 'b c' d"), (std::vector<std::string>{"a", "b c", "d"}));
+  /* A toggle, not a wrapper. */
+  EXPECT_EQ(words("x\"y z\""), (std::vector<std::string>{"xy z"}));
+  EXPECT_EQ(words("\"a\"b"), (std::vector<std::string>{"ab"}));
+  EXPECT_EQ(words("a\"b c\""), (std::vector<std::string>{"ab c"}));
+  /* Each quote character is literal inside the other. */
+  EXPECT_EQ(words("\"a'b\""), (std::vector<std::string>{"a'b"}));
+  EXPECT_EQ(words("'a\"b'"), (std::vector<std::string>{"a\"b"}));
+  /* An empty quoted run is an empty **word**, not nothing. */
+  EXPECT_EQ(words("\"\" x"), (std::vector<std::string>{"", "x"}));
+  /* An unclosed quote is an error, which systemd reports as "Invalid syntax" while
+   * discarding the setting. */
+  EXPECT_EQ(words("\"a b"), (std::vector<std::string>{"<error>"}));
+  /* Escapes are decoded inside single quotes too, unlike a shell. */
+  EXPECT_EQ(words("'a\\tb'"), (std::vector<std::string>{"a\tb"}));
+  EXPECT_EQ(words("\"a\\tb\""), (std::vector<std::string>{"a\tb"}));
+  /* A trailing lone backslash is dropped - measured, `A\` is the single word `A`. */
+  EXPECT_EQ(words("A\\"), (std::vector<std::string>{"A"}));
+  /* A literal vertical tab does **not** split a word, because it is not whitespace. */
+  EXPECT_EQ(words("a\vb"), (std::vector<std::string>{"a\vb"}));
+}
+
+TEST(IniSystemd, TheEscapeSetIsTheFullCOneWithFourNumericForms) {
+  /* The letters, each checked as a byte rather than by eye: four of them are control
+   * characters that a diagnostic renders as nothing, which is how the first reading of
+   * this table came out wrong. */
+  EXPECT_EQ(decoded("A\\aB"), std::string("A\aB"));
+  EXPECT_EQ(decoded("A\\bB"), std::string("A\bB"));
+  EXPECT_EQ(decoded("A\\fB"), std::string("A\fB"));
+  EXPECT_EQ(decoded("A\\vB"), std::string("A\vB"));
+  EXPECT_EQ(decoded("A\\nB"), std::string("A\nB"));
+  EXPECT_EQ(decoded("A\\rB"), std::string("A\rB"));
+  EXPECT_EQ(decoded("A\\tB"), std::string("A\tB"));
+  EXPECT_EQ(decoded("A\\sB"), std::string("A B"));
+  EXPECT_EQ(decoded("A\\\\B"), std::string("A\\B"));
+  EXPECT_EQ(decoded("A\\\"B"), std::string("A\"B"));
+  EXPECT_EQ(decoded("A\\'B"), std::string("A'B"));
+  /* The four numeric forms: two hex digits, exactly three octal, four and eight hex. */
+  EXPECT_EQ(decoded("A\\x41B"), "AAB");
+  EXPECT_EQ(decoded("A\\101B"), "AAB");
+  EXPECT_EQ(decoded("A\\u00e9B"), "A\xC3\xA9" "B");
+  EXPECT_EQ(decoded("A\\U0001F600B"), "A\xF0\x9F\x98\x80" "B");
+  /* A lone surrogate is **encoded**, not refused: `\ud800` is ED A0 80, which is what
+   * encoding by codepoint without a surrogate check produces and what systemd
+   * produces. */
+  EXPECT_EQ(decoded("A\\ud800B"), "A\xED\xA0\x80" "B");
+}
+
+TEST(IniSystemd, AMalformedNumericEscapeIsAnErrorAndNotData) {
+  /*
+   * **The rule this module got wrong first**, and the way it got it wrong is the
+   * lesson. The first probe read each diagnostic's reported value by splitting on
+   * `ignoring: ` - a substring that appears in **both** "Invalid environment
+   * assignment, ignoring: " (a word that parsed) and "Invalid syntax, ignoring: " (the
+   * setting refused outright). A refusal echoing the raw value therefore read exactly
+   * like a word that had kept its backslash, and the rule came out backwards as "a
+   * malformed numeric escape is data".
+   *
+   * Keeping the message *type* separated them: every one of these makes systemd
+   * discard the setting, exactly as an unknown letter does.
+   */
+  for (const char * bad : {"A\\10B", "A\\400B", "A\\u41B", "A\\U00110000B",
+           "A\\xZZB", "A\\x00B", "A\\000B", "A\\u0000B", "A\\qB"}) {
+    EXPECT_EQ(decoded(bad), "<error>") << bad;
+    EXPECT_EQ(words(bad), (std::vector<std::string>{"<error>"})) << bad;
+  }
+  /* And `\x4B` is not a short escape at all - `\x` takes up to two hex digits, so this
+   * is the letter K. */
+  EXPECT_EQ(decoded("A\\x4B"), "AK");
+}
+
+TEST(IniSystemd, ABadEscapeParsesAndFailsAtTheAccessor) {
+  /*
+   * The layering, and systemd's own code is what settles it: `config_parse()` hands the
+   * raw value to the setting's parser and never looks at a backslash. So a unit
+   * carrying `ExecStart=/bin/foo \q` **parses**, and the complaint arrives only where a
+   * caller asked a question that depends on it.
+   *
+   * git is the opposite and is the only dialect here that is: it unescapes while it
+   * reads, so the same document is a syntax error there. Measured on both sides.
+   */
+  GTEXT_INI_Document * doc = ok("[Service]\nExecStart=/bin/foo \\q\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "Service", "ExecStart"), "/bin/foo \\q");
+  EXPECT_EQ(decoded("/bin/foo \\q"), "<error>");
+  EXPECT_EQ(written(doc), "[Service]\nExecStart=/bin/foo \\q\n");
+  gtext_ini_free(doc);
+
+  refused("[a]\nk = a\\qb\n", GTEXT_INI_E_BAD_ESCAPE, git());
+}
+
+TEST(IniSystemd, ARefusedLineIsRefusedWhereSystemdWouldSkipIt) {
+  /*
+   * **The one deliberate departure**, and it is worth stating as a test rather than
+   * only in prose: systemd warns about a malformed line and *skips* it, keeping the
+   * rest of the file. This refuses the document.
+   *
+   * The reason is the caller: a library whose user cannot see a warning must not
+   * silently drop a setting, because the failure then surfaces as behaviour rather
+   * than as an error. The differential compares the *presence* of a grammar fault,
+   * which is the part both agree on.
+   */
+  refused("[Service]\nbare\n", GTEXT_INI_E_BAD_LINE, sd());
+  refused("[Service]\n=one\n", GTEXT_INI_E_BAD_KEY, sd());
+  refused("[Service\nA=1\n", GTEXT_INI_E_BAD_GROUP, sd());
+  refused("[Service] junk\nA=1\n", GTEXT_INI_E_BAD_LINE, sd());
+  refused("A=1\n[Service]\nB=2\n", GTEXT_INI_E_NO_GROUP, sd());
+}
+
+TEST(IniSystemd, AKeyAndASectionMayHoldASpace) {
+  /* Measured: both are reported as *unknown* rather than as syntax errors, so the
+   * grammar accepts them. A key is everything before the first `=`, trimmed. */
+  GTEXT_INI_Document * doc =
+      ok("[Serv ice]\nEnviron ment=1\nA-b=2\nC=x=y\n", sd());
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(raw(doc, "Serv ice", "Environ ment"), "1");
+  EXPECT_EQ(raw(doc, "Serv ice", "A-b"), "2");
+  EXPECT_EQ(raw(doc, "Serv ice", "C"), "x=y");
+  gtext_ini_free(doc);
+}
+
+TEST(IniSystemd, BooleansTakeTheWiderSet) {
+  /*
+   * The only accessor in the value layer that took no dialect, which was the anomaly
+   * rather than the design - gtext_ini_unescape(), gtext_ini_escape() and
+   * gtext_ini_value_list() all take one, because what a value *means* is the dialect's
+   * business. The parameter arrived with this dialect.
+   */
+  GTEXT_INI_Dialect s = sd();
+  GTEXT_INI_Dialect de = gtext_ini_dialect_desktop_entry();
+  bool out = false;
+  for (const char * yes : {"1", "yes", "true", "on"}) {
+    EXPECT_EQ(gtext_ini_value_bool(&s, yes, std::strlen(yes), &out),
+        GTEXT_INI_OK) << yes;
+    EXPECT_TRUE(out) << yes;
+  }
+  for (const char * no : {"0", "no", "false", "off"}) {
+    EXPECT_EQ(gtext_ini_value_bool(&s, no, std::strlen(no), &out),
+        GTEXT_INI_OK) << no;
+    EXPECT_FALSE(out) << no;
+  }
+  /* Case-sensitive, like every other systemd comparison. */
+  EXPECT_EQ(gtext_ini_value_bool(&s, "YES", 3, &out), GTEXT_INI_E_TYPE);
+  /* And Desktop Entry still admits exactly two words, which §4 requires. */
+  EXPECT_EQ(gtext_ini_value_bool(&de, "yes", 3, &out), GTEXT_INI_E_TYPE);
+  EXPECT_EQ(gtext_ini_value_bool(&de, "true", 4, &out), GTEXT_INI_OK);
+}
+
+TEST(IniSystemd, TheWriterRefusesAValueThatWouldNotReadBackAsItself) {
+  /*
+   * The refusals no differential over parsed documents can reach, because every value a
+   * parse stored is writable by construction. What this dialect makes unwritable and
+   * the others do not: a value containing a **lone CR**, which would end the line.
+   */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = sd();
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * group = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "Service", &group), GTEXT_INI_OK);
+
+  for (const std::string & bad : {std::string(" lead"), std::string("trail "),
+           std::string("a\nb"), std::string("a\rb"), std::string("a\r\nb")}) {
+    ASSERT_EQ(gtext_ini_group_set(group, "A", bad.data(), bad.size()),
+        GTEXT_INI_OK) << bad;
+    GTEXT_INI_Sink sink;
+    ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+    EXPECT_EQ(gtext_ini_write(doc, &sink, nullptr),
+        GTEXT_INI_E_UNREPRESENTABLE) << bad;
+    gtext_ini_sink_buffer_free(&sink);
+  }
+
+  /* A vertical tab is fine here and not under EditorConfig, because it is not
+   * whitespace to systemd - the two dialects hold opposite rules about the same byte. */
+  const std::string fine = "a\vb";
+  ASSERT_EQ(gtext_ini_group_set(group, "A", fine.data(), fine.size()),
+      GTEXT_INI_OK);
+  std::string out = written(doc);
+  EXPECT_EQ(out, "[Service]\nA=a\vb\n");
+  GTEXT_INI_Document * again = ok(out, sd());
+  ASSERT_NE(again, nullptr);
+  EXPECT_EQ(raw(again, "Service", "A"), fine);
+  gtext_ini_free(again);
+  gtext_ini_free(doc);
+}
+
+TEST(IniSystemd, EveryShapeWritesBackByteForByte) {
+  /*
+   * The preservation property, over the shapes the differential generates and the ones
+   * its reference cannot report on. `A=a\rb` is here because systemd's diagnostic
+   * channel **rewrites a CR to an LF** - measured by minimal pair, since all four
+   * spellings of a carriage return arrive as 0x0a while an 0x0e escape arrives as 0x0e -
+   * so the differential excludes it and this is the only place it is checked.
+   */
+  for (const char * text : {
+           "[Service]\nA=1\n",
+           "[Service]\nA=1",
+           "\xEF\xBB\xBF[Service]\nA=1\n",
+           "[Service]\r\nA=1\r\n",
+           "[Service]\nA=1\rB=2\n",
+           "# c\n; c\n   # c\n[Service]\nA=1\n",
+           "[Service]\nA=W1\\\nW2\n",
+           "[Service]\nA=W1 \\\n# skipped\n; skipped\nW2\n",
+           "[Service]\nA=W1\\\n\nB=2\n",
+           "[Service]\nA=W1\\\n",
+           "[Serv\\\nice]\nEnv\\\niron=1\n",
+           "[Service]\nA=a\\rb\n",
+           "[Service]\nA=\"q\" 'r' \\ts\n",
+           "[Service]\nA=\n[Service]\nA=2\n",
+           "[Service]\n\vA=\va\v\n",
+       }) {
+    GTEXT_INI_Document * doc = ok(text, sd());
+    ASSERT_NE(doc, nullptr) << text;
+    EXPECT_EQ(written(doc), text) << text;
+    GTEXT_INI_Document * again = ok(written(doc), sd());
     ASSERT_NE(again, nullptr) << text;
     EXPECT_EQ(written(again), text) << text;
     gtext_ini_free(again);

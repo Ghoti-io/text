@@ -123,6 +123,10 @@ PROBE = {
     # driver's version is checked by the same IMAGES line, which holds both.
     "editorconfig": (["editorconfig-driver", "--version"],
                      "editorconfig-core-c ", None),
+    # systemd's only reference is systemd, and the driver prints the Debian package
+    # version plus its own SHA-256. The prefix is `systemd ` because that is what
+    # decides the answers: a unit file's grammar is systemd's source and nothing else.
+    "systemd": (["systemd-unit-driver", "--version"], "systemd ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

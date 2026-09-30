@@ -306,7 +306,24 @@ typedef enum {
    * a `]` does not end it. core-py refuses `[a#b]` outright - a bug against its
    * own specification, which says any characters.
    */
-  GTEXT_INI_NAMES_EDITORCONFIG
+  GTEXT_INI_NAMES_EDITORCONFIG,
+  /**
+   * systemd unit and configuration files. A key is everything before the first
+   * `=` on the logical line, trimmed - measured, `Environ ment=v` is a key called
+   * `Environ ment` and `Environment-x=v` one called `Environment-x`, both reported
+   * as *unknown settings* rather than as syntax errors. A section name is
+   * everything between `[` and the first `]`, and may hold a space: `[Serv ice]`
+   * is a section named `Serv ice`.
+   *
+   * The same shape as ::GTEXT_INI_NAMES_EDITORCONFIG for keys and as
+   * ::GTEXT_INI_NAMES_ANY for group names, and it is its own arm anyway, because
+   * what makes systemd's names different is not their charset: **a name may
+   * contain a line continuation.** `[Serv\` then `ice]` is the section
+   * `Serv ice` - measured - so the joined form is the canonical form and the
+   * document's own bytes are the name. See
+   * ::GTEXT_INI_CONTINUATION_JOIN_SPACE.
+   */
+  GTEXT_INI_NAMES_SYSTEMD
 } GTEXT_INI_Name_Style;
 
 /**
@@ -346,8 +363,61 @@ typedef enum {
    *     started, the backslash is comment text, so the line ends at its
    *     terminator like any other.
    */
-  GTEXT_INI_CONTINUATION_JOIN_EMPTY
+  GTEXT_INI_CONTINUATION_JOIN_EMPTY,
+  /**
+   * systemd: a trailing backslash is **replaced by a space**, and a comment block
+   * between the two halves is skipped.
+   *
+   * `systemd.syntax(7)` says exactly this - "lines ending in a backslash are
+   * concatenated with the following line while reading and the backslash is
+   * replaced by a space character" - and it needed a **minimal pair** to confirm,
+   * because every example in the manual indents the continued line. With the
+   * second line indented, joining with a space and joining with nothing both give
+   * two words and look identical. With it flush left they differ, and inside a
+   * quoted run the answer is unambiguous: `Environment="W1\` then `W2"` is the
+   * single word `W1 W2`, hex `5731205732`. Measured against systemd 257.
+   *
+   * Two rules travel with it, both measured and neither obvious:
+   *
+   *   - **A comment block between the halves is skipped**, so a continuation
+   *     jumps over a `#` or `;` line and joins with whatever follows it. The
+   *     manual says so and it is true.
+   *   - **A blank line ends the continuation** instead of being skipped. The
+   *     trailing backslash then simply disappears, exactly as one at end of input
+   *     does. The manual does not say this.
+   *
+   * Unlike git's, **this continuation is a property of the line rather than of the
+   * value**: it works on a group header and on a key as well, because systemd
+   * assembles the logical line before classifying it. That is why
+   * gtext_ini_continuation_at() is shared by the parser and the value scanner
+   * rather than living in the scanner alone.
+   */
+  GTEXT_INI_CONTINUATION_JOIN_SPACE
 } GTEXT_INI_Continuation_Mode;
+
+/**
+ * @enum GTEXT_INI_Bool_Style
+ * @brief Which spellings gtext_ini_value_bool() accepts.
+ *
+ * Desktop Entry §4 admits two words and no others - "values of type boolean must
+ * either be the string `true` or `false`" - and systemd admits eight. That is not
+ * a relaxation a caller can express by setting a flag, because the two sets are
+ * *lists*, so it is an enum with a member per dialect family rather than a
+ * character set.
+ *
+ * The typed accessors for numbers need no such thing: systemd's time spans and
+ * sizes are per-setting rules rather than grammar, and @ref format_ini's "Not
+ * implemented" says where they belong instead.
+ */
+typedef enum {
+  /** `true` and `false`, exactly, as Desktop Entry §4 requires. */
+  GTEXT_INI_BOOLS_TRUE_FALSE = 0,
+  /**
+   * systemd's set: `1`, `yes`, `true`, `on` and `0`, `no`, `false`, `off`.
+   * Case-sensitive, like every other systemd comparison.
+   */
+  GTEXT_INI_BOOLS_SYSTEMD
+} GTEXT_INI_Bool_Style;
 
 /**
  * @enum GTEXT_INI_Dialect_Id
@@ -399,7 +469,18 @@ typedef enum {
    * `editorconfig-core-test`. Both reference cores score 33 of those 34, so
    * agreeing with either of them everywhere would be a failure.
    */
-  GTEXT_INI_DIALECT_EDITORCONFIG
+  GTEXT_INI_DIALECT_EDITORCONFIG,
+  /**
+   * systemd unit and configuration file syntax, as `systemd.syntax(7)` defines it
+   * and as systemd itself reads it. The version measured against is named in
+   * `tools/oracle/containers/IMAGES`.
+   *
+   * The widest grammar of the five and the only one that **does not refuse a
+   * malformed line**: systemd warns and skips it. This module refuses the
+   * document instead, and @ref format_ini says why and what the differential does
+   * about it.
+   */
+  GTEXT_INI_DIALECT_SYSTEMD
 } GTEXT_INI_Dialect_Id;
 
 /**
@@ -484,6 +565,21 @@ typedef struct {
   bool accept_crlf;
 
   /**
+   * Whether a **lone CR** is a line terminator in its own right.
+   *
+   * True only for systemd, and measured rather than read - `systemd.syntax(7)`
+   * does not mention it. `Environment=W1\rEnvironment=W2` yields two settings, and
+   * `Environment=W1\rW2` reports the second half's fault on **line 7**, so the
+   * line counter advanced. Every other dialect here treats a lone CR as data: to
+   * Desktop Entry it is part of the value, to git and EditorConfig it is
+   * whitespace.
+   *
+   * Independent of ::accept_crlf, which only says whether a CR *before an LF* is
+   * part of that terminator.
+   */
+  bool lone_cr_terminates;
+
+  /**
    * Whether the dialect's whitespace is `<ctype.h>`'s `isspace()` set rather
    * than just space and tab - so a vertical tab and a form feed are whitespace
    * too.
@@ -531,15 +627,79 @@ typedef struct {
    * escapes, and gtext_ini_value_string() is then a copy.
    *
    * A static string; not owned. Each character in it is the letter *after* the
-   * backslash.
+   * backslash. Only single-letter sequences: the numeric forms are
+   * ::numeric_escapes, because a letter set cannot express a variable-length one.
    */
   const char * escapes;
+
+  /**
+   * Whether the **parse** applies the escape set, refusing a sequence that is not
+   * in it, or whether a backslash is just a byte until a caller decodes one.
+   *
+   * **True for git config alone**, and measured: `git config -f` exits 128 on a
+   * file containing `k = a\qb`, because git unescapes while it reads. Everything
+   * else here leaves it to gtext_ini_unescape() - Desktop Entry because
+   * `g_key_file_load_from_data()` accepts such a file and only
+   * `g_key_file_get_string()` refuses it, and systemd because `config_parse()`
+   * hands the raw value to the setting's own parser and never looks at a
+   * backslash. So a systemd unit carrying `ExecStart=/bin/foo \q` parses, and the
+   * complaint arrives where a caller asked a question that depends on it.
+   *
+   * It does not change where a *continuation* is recognised: that is the line's
+   * structure rather than a value's content, and
+   * ::GTEXT_INI_Dialect::continuation governs it for every dialect.
+   */
+  bool escapes_in_grammar;
+
+  /**
+   * Whether `\xHH`, `\nnn` (octal), `\uNNNN` and `\UNNNNNNNN` are escapes too.
+   *
+   * systemd's set, and the first variable-length escapes in this module: two hex
+   * digits, **exactly three** octal digits, four and eight hex digits, with the
+   * last two producing multi-byte UTF-8. Measured as bytes against systemd 257 -
+   * `\x41` and `\101` are both `A`, `\u00e9` is two bytes and `\U0001F600` is
+   * four.
+   *
+   * **A malformed one is an error**, exactly as an unknown escape *letter* is:
+   * `\10`, `\400`, `\u41`, `\U00110000`, `\xZZ` and all three spellings of NUL
+   * make systemd discard the whole setting.
+   *
+   * That cost a wrong answer to find, and the wrong answer is worth recording. The
+   * first probe extracted the reported value by splitting each diagnostic on
+   * `ignoring: ` - a substring that appears in **both** "Invalid environment
+   * assignment, ignoring: " (a successfully parsed word) and "Invalid syntax,
+   * ignoring: " (the setting refused outright). So a refusal echoing the raw value
+   * read exactly like a word that had kept its backslash, and the rule came out
+   * backwards. Keeping the message *type* is what separated them.
+   */
+  bool numeric_escapes;
 
   /**
    * The list separator for gtext_ini_value_list(), or 0 if the dialect has no
    * list spelling. `';'` for Desktop Entry §4.
    */
   char list_separator;
+
+  /**
+   * Whether a value splits into **words** on unquoted whitespace, with `"` and
+   * `'` quoting and escapes decoded inside both.
+   *
+   * systemd's spelling of a list, and the reason it is a separate axis from
+   * ::list_separator: there is no delimiter character to name. `systemd.syntax(7)`
+   * is explicit that this applies only "for settings where quoting is allowed",
+   * which the grammar cannot know because it depends on the setting - so the
+   * parser never does it and gtext_ini_value_words() is where a caller asks.
+   *
+   * Measured against systemd 257, and three of the rules are not in the manual:
+   * quoting is a **toggle, not a wrapper** (`x"y z"` is the one word `xy z`,
+   * `a"b c"` is `ab c`), **escapes are processed inside single quotes too**
+   * (unlike a shell), and an empty quoted run produces an **empty word**. An
+   * unclosed quote is an error.
+   */
+  bool word_split;
+
+  /** Which spellings gtext_ini_value_bool() accepts. See ::GTEXT_INI_Bool_Style. */
+  GTEXT_INI_Bool_Style bool_style;
 
   /**
    * Whether a logical line may span several physical lines, and how.
@@ -755,6 +915,45 @@ GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_git_config(void);
  * @return The dialect, by value.
  */
 GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void);
+
+/**
+ * @brief The systemd dialect, as `systemd.syntax(7)` defines it.
+ *
+ * `#` and `;` comments at the start of a line, no preamble, duplicate sections
+ * merged, repeated keys collected as a list, case-**sensitive** keys, section and
+ * key names that may hold a space, a backslash continuation that **joins with a
+ * space** and skips an intervening comment block, the full C escape set including
+ * the four numeric forms, and a lone CR as a line terminator.
+ *
+ * Not built by relaxing anything, like the two dialects before it. Three things
+ * are unique to it in this module:
+ *
+ *   - **The continuation is a property of the line, not of the value.** It works
+ *     on a group header and on a key, because systemd assembles the logical line
+ *     before classifying it. So a group's or an entry's stored name is the
+ *     document's own bytes and the **joined form is the canonical form** - the
+ *     same two-form storage case folding already needed.
+ *   - **Variable-length escapes**, and a malformed one is data rather than an
+ *     error. See ::GTEXT_INI_Dialect::numeric_escapes.
+ *   - **Quoting is not in the grammar.** The specification says so itself, which
+ *     is the layering claim @ref format_ini makes stated by somebody else, so
+ *     ::GTEXT_INI_Dialect::quoted_values is false and gtext_ini_value_words() is
+ *     where a caller splits one.
+ *
+ * **What it deliberately does not do** is interpret a value's type beyond
+ * booleans. systemd's time spans belong to `ghoti.io-chron`, whose duration type
+ * already covers them; its sizes and its `%`-specifiers - which need the unit name
+ * and the host - are not a text parser's to know. @ref format_ini says so for each.
+ *
+ * **Where it departs from systemd on purpose:** systemd warns about a malformed
+ * line and *skips* it, keeping the rest of the file; this refuses the document.
+ * A reader that silently dropped a setting would be the worse failure for a
+ * library whose caller cannot see the warning, and @ref format_ini records what
+ * the differential does about the difference.
+ *
+ * @return The dialect, by value.
+ */
+GTEXT_API GTEXT_INI_Dialect gtext_ini_dialect_systemd(void);
 
 /**
  * @struct GTEXT_INI_Parse_Options

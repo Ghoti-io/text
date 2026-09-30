@@ -126,6 +126,92 @@ static bool ini_all_space(const GTEXT_INI_Dialect * dialect, const char * bytes,
   return true;
 }
 
+/**
+ * Join the continuations in [start, end) into @p out, which must have room for
+ * `end - start` bytes. Returns the joined length, or SIZE_MAX when there is no
+ * continuation in the range at all.
+ *
+ * SIZE_MAX rather than "the same bytes" so that a caller can tell "nothing to do"
+ * from "joined to the same length", and store no canonical form in the first case.
+ * A join only ever shortens: the backslash and its terminator become one space, or
+ * nothing.
+ */
+static size_t ini_join_continuations(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t start, size_t end, char * out) {
+  size_t w = 0;
+  bool joined = false;
+  size_t i = start;
+  while (i < end) {
+    ini_continuation cont = gtext_ini_continuation_at(dialect, bytes, len, i);
+    if (cont.span) {
+      joined = true;
+      if (!cont.ends_line &&
+          dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_SPACE) {
+        out[w++] = ' ';
+      }
+      /*
+       * `cont.span` can reach past `end` - a continuation at the end of the range
+       * consumes its terminator, which is outside it - so clamp rather than trust
+       * it. The bytes between are the comment block it skipped, and they are not
+       * part of the name.
+       */
+      i += cont.span;
+      continue;
+    }
+    out[w++] = bytes[i++];
+  }
+  return joined ? w : SIZE_MAX;
+}
+
+/** Where the logical line starting at @p offset ends. */
+typedef struct {
+  size_t content_end; /* Just past its last content byte. */
+  size_t line_end;    /* Just past the whole thing, terminators included. */
+} ini_logical_line;
+
+/**
+ * Find the logical line starting at @p offset.
+ *
+ * For a dialect with no continuation this is the physical line and the loop runs
+ * once, which is what keeps the other four dialects untouched. For systemd it
+ * follows a trailing backslash onto the next line, skipping a comment block, until
+ * a line does not end in one.
+ *
+ * **Only called for a line that is neither blank nor a comment**, and that is
+ * measured rather than convenient: `# c\` followed by an entry does *not* continue
+ * the comment - the entry is read normally - so a comment's trailing backslash is
+ * comment text. systemd classifies the first line, then assembles.
+ */
+static ini_logical_line ini_logical_line_at(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t offset) {
+  ini_logical_line r;
+  size_t i = offset;
+  for (;;) {
+    size_t term = 0;
+    while (i < len && !(term = gtext_ini_terminator_len(dialect, bytes, len, i))) {
+      i++;
+    }
+    r.content_end = i;
+    r.line_end = i + term;
+    if (i > offset) {
+      ini_continuation cont =
+          gtext_ini_continuation_at(dialect, bytes, len, i - 1);
+      if (cont.span && !cont.ends_line) {
+        i = (i - 1) + cont.span;
+        continue;
+      }
+      if (cont.span) {
+        /* The logical line ends here and the backslash disappears. It stays inside
+         * `content_end` because it is one of the document's bytes and the pieces
+         * have to tile; what it is *not* is part of the joined name or value. */
+        r.line_end = (i - 1) + cont.span;
+        return r;
+      }
+    }
+    return r;
+  }
+}
+
 /** State threaded through one parse. */
 typedef struct {
   const char * bytes;
@@ -156,24 +242,87 @@ static bool ini_fail(ini_parse * p, GTEXT_INI_Status code,
 static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
     size_t len, bool is_group) {
   const GTEXT_INI_Dialect * d = &p->doc->dialect;
-  if (is_group ? (!gtext_ini_group_names_fold(d) && !d->subsection_syntax)
-               : !d->fold_case) {
-    return true;
-  }
+  bool folds = is_group ? (gtext_ini_group_names_fold(d) || d->subsection_syntax)
+                        : d->fold_case;
+  /*
+   * Two independent reasons a name can have a canonical form, and a dialect may
+   * want either, both, or neither:
+   *
+   *   - it **folds** - git lower-cases a section and a key, EditorConfig a key;
+   *   - it **continues** - systemd's `[Serv\` + `ice]` is the section `Serv ice`,
+   *     so the joined form is canonical and the document's bytes are the name.
+   *
+   * The join happens first and the fold applies to its result, which is the only
+   * order that composes: a folded, continued name would otherwise depend on which
+   * step ran.
+   */
+  bool joins = d->continuation != GTEXT_INI_CONTINUATION_NONE;
+  if (!folds && !joins) return true;
+
   char stack[512];
   char * buf = stack;
   char * heap = NULL;
-  /* A canonical form is never longer than the raw one: folding is per byte and
-   * the subsection spelling only ever drops characters. */
+  /* A canonical form is never longer than the raw one: folding is per byte, the
+   * subsection spelling only ever drops characters, and a join turns at least two
+   * bytes into at most one. */
   if (len > sizeof(stack)) {
     heap = gtext_allocator_malloc(p->alloc, len ? len : 1);
     if (!heap) return false;
     buf = heap;
   }
-  size_t canon_len = 0;
-  bool ok = is_group ? gtext_ini_canon_group(d, raw, len, buf, &canon_len)
-                     : gtext_ini_canon_key(d, raw, len, buf, &canon_len);
-  if (ok) ok = gtext_ini_str_set(p->alloc, canon, buf, canon_len);
+
+  const char * source = raw;
+  size_t source_len = len;
+  char * joined = NULL;
+  if (joins) {
+    size_t offset = (size_t) (raw - p->bytes);
+    size_t got = ini_join_continuations(&p->doc->dialect, p->bytes, p->len,
+        offset, offset + len, buf);
+    if (got != SIZE_MAX) {
+      /* There was a continuation, so the joined text is the starting point for the
+       * fold - and is itself the canonical form when the dialect does not fold. */
+      joined = buf;
+      source = buf;
+      source_len = got;
+      if (!is_group) {
+        /*
+         * A key whose continuation sits at its very end - `Environment\` then
+         * `=v` - joins to `Environment ` with a trailing space, because the raw
+         * span was trimmed before the join and the injected space came after.
+         * systemd trims whitespace before the `=`, so trim it here too. A no-op
+         * for every other case: the raw span was already trimmed, and no other
+         * dialect can put whitespace in a key this way.
+         */
+        while (source_len && ini_sep_space(d, source[source_len - 1])) {
+          source_len--;
+        }
+      }
+    }
+  }
+
+  bool ok = true;
+  if (folds) {
+    char fold_stack[512];
+    char * fold_buf = fold_stack;
+    char * fold_heap = NULL;
+    if (source_len > sizeof(fold_stack)) {
+      fold_heap = gtext_allocator_malloc(p->alloc, source_len ? source_len : 1);
+      if (!fold_heap) {
+        if (heap) gtext_allocator_free(p->alloc, heap);
+        return false;
+      }
+      fold_buf = fold_heap;
+    }
+    size_t canon_len = 0;
+    ok = is_group
+             ? gtext_ini_canon_group(d, source, source_len, fold_buf, &canon_len)
+             : gtext_ini_canon_key(d, source, source_len, fold_buf, &canon_len);
+    if (ok) ok = gtext_ini_str_set(p->alloc, canon, fold_buf, canon_len);
+    if (fold_heap) gtext_allocator_free(p->alloc, fold_heap);
+  }
+  else if (joined) {
+    ok = gtext_ini_str_set(p->alloc, canon, source, source_len);
+  }
   if (heap) gtext_allocator_free(p->alloc, heap);
   return ok;
 }
@@ -597,23 +746,26 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
 
   bool ok = true;
   while (ok && offset < len) {
-    /* The line's bytes, and the bytes of the line including its terminator. */
-    size_t content_end = offset;
-    while (content_end < len && bytes[content_end] != '\n') content_end++;
-    bool has_lf = content_end < len;
-    size_t line_end = has_lf ? content_end + 1 : content_end;
     /*
-     * A CR is part of the terminator only when an LF follows it. Without the
-     * `has_lf` test a trailing CR at end of input was stripped as though it
-     * were one, so the same bytes gave the generic dialect a value one byte
-     * shorter than the strict dialect's - which is what fuzz_ini.cpp's parity
+     * The physical line's bytes, and the bytes of the line including its
+     * terminator, asked through gtext_ini_terminator_len().
+     *
+     * A CR is part of the terminator only when an LF follows it - unless the
+     * dialect ends a line on a lone CR, which only systemd does. Without that
+     * distinction a trailing CR at end of input was stripped as though it were a
+     * terminator, so the same bytes gave the generic dialect a value one byte
+     * shorter than the strict dialect's; that is what fuzz_ini.cpp's parity
      * property is for, and what it found on its first run at 237k executions.
      * Only the last CR before the LF is a terminator; any before that are data.
      */
-    if (effective.dialect.accept_crlf && has_lf && content_end > offset &&
-        bytes[content_end - 1] == '\r') {
-      content_end--;
+    size_t content_end = offset;
+    size_t term_len = 0;
+    while (content_end < len &&
+           !(term_len = gtext_ini_terminator_len(&effective.dialect, bytes, len,
+                 content_end))) {
+      content_end++;
     }
+    size_t line_end = content_end + term_len;
 
     size_t pre_end = offset;
     if (effective.dialect.allow_leading_whitespace) {
@@ -644,6 +796,23 @@ GTEXT_INI_Document * gtext_ini_parse(const char * bytes, size_t len,
       }
       offset = line_end;
       continue;
+    }
+
+    /*
+     * From here the line may be a **logical** one. systemd's continuation works on
+     * a group header and on a key as well as in a value, because it assembles the
+     * line before classifying it - so this is recomputed after the blank and
+     * comment tests rather than before them, which is measured and not merely
+     * convenient: `# c\` followed by an entry does not continue the comment.
+     *
+     * For every other dialect ini_logical_line_at() returns the physical line it
+     * was already given, so nothing changes for them.
+     */
+    {
+      ini_logical_line logical =
+          ini_logical_line_at(&effective.dialect, bytes, len, offset);
+      content_end = logical.content_end;
+      line_end = logical.line_end;
     }
 
     if (bytes[pre_end] == '[') {

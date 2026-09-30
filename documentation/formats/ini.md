@@ -430,6 +430,147 @@ What is deliberately left out is EditorConfig's *properties*. `indent_size`,
 known property names are semantics on top of the grammar, and they belong to
 whatever reads the document. So does the filepath glob.
 
+### systemd
+
+gtext_ini_dialect_systemd() is `systemd.syntax(7)`, and the fifth and last of the
+named dialects. Every rule was measured against **systemd 257** in a pinned
+container, because **this machine has no systemd at all** - no `systemd-analyze`, no
+`systemctl`, PID 1 is `init` - while carrying 165 unit files shipped by other
+packages. So the corpus is local and the reference cannot be, which is the reverse of
+every other dialect here and the reason this one came last.
+
+Like the two before it, not a relaxation of anything:
+
+| | systemd | elsewhere |
+|---|---|---|
+| `A=W1\` + `W2` | one value, `W1 W2` - the backslash **becomes a space** | no continuation, or git's joins with nothing |
+| `A=W1\` + `# c` + `W2` | the comment block is **skipped** and the halves join | - |
+| `A=W1\` + blank + `B=2` | the blank line **ends** the continuation; the backslash disappears | - |
+| `[Serv\` + `ice]` | one section named `Serv ice` - **a name may be continued** | no other dialect has this |
+| `A=1<CR>B=2` | two settings: **a lone CR ends a line** | data to Desktop Entry, whitespace to git and EditorConfig |
+| `A=1` before any header | refused - "Assignment outside of section" | EditorConfig's specification names a preamble; git accepts one |
+| `\a \b \f \v \n \r \t \s \\ \" \'` | all of them | Desktop Entry has five, git has five, EditorConfig none |
+| `\x41 \101 \u00e9 \U0001F600` | four **variable-length** numeric forms | no other dialect here |
+| `ExecStart=/bin/foo \q` | **parses**; the complaint arrives at the accessor | git refuses the document |
+| `A="x" 'y' z` | three words, quoting removed - but only if a caller asks | git's quoting is in the grammar |
+| `A=yes` | boolean true | Desktop Entry admits `true` and `false` and nothing else |
+| `\v` | **not** whitespace | not whitespace to git either; whitespace to EditorConfig |
+
+Three of those needed something the other four dialects did not.
+
+**The continuation is a property of the line, not of the value.** git's exists only
+inside a value, so gtext_ini_scan_value() can own it; systemd assembles the logical
+line *before* classifying it, so the same rule has to serve a group header and a key
+as well. gtext_ini_continuation_at() is that one implementation, asked by the parser,
+the value scanner and the canonical-name step - and the consequence for the tree is
+that a name is no longer a span of the document. It keeps the bytes as written, so the
+rewrite is byte-identical, and the **joined form is the canonical form**, which is the
+same two-form storage case folding already needed.
+
+**Variable-length escapes**, with multi-byte output. ::GTEXT_INI_Dialect::escapes is a
+set of letters and cannot hold `\xHH` or `\U0001F600`, so
+::GTEXT_INI_Dialect::numeric_escapes is a second field. A lone surrogate is *encoded*
+rather than refused - `\ud800` is `ED A0 80`, which is what systemd produces.
+
+**Quoting and escaping are not in the grammar**, and the specification says so
+itself - quoting applies only "for settings where quoting is allowed", which the
+grammar cannot know because it depends on the setting. That is this page's layering
+claim stated by somebody else, so ::GTEXT_INI_Dialect::quoted_values is false,
+::GTEXT_INI_Dialect::escapes_in_grammar is false, and gtext_ini_value_words() is where
+a caller splits a value. git is the only dialect here that refuses a bad escape while
+*reading*, and that too was measured rather than assumed.
+
+#### Where this module departs from systemd on purpose
+
+**systemd warns about a malformed line and skips it; this refuses the document.** A
+unit file with `not a pair` on line 6 loses line 6 and keeps the rest, and
+`systemd-analyze verify` exits **0**. This module returns ::GTEXT_INI_E_BAD_LINE.
+
+The reason is the caller. A library's user cannot see a warning, so a reader that
+skipped the line would surface the failure as behaviour - a setting silently absent -
+rather than as an error. systemd can do it because a warning reaches its journal and a
+human; a parser handing back a tree cannot. So the differential compares the
+**presence** of a grammar fault, which is the part both agree on, and not the recovery.
+
+#### What the systemd differential measured
+
+The oracle question was open from the first day of this work, and
+`notes/text/INI-DIALECTS.md` §A.13 listed it as the one reference whose feasibility had
+never been tested. The answer is yes, with two caveats that took four probe rounds to
+find:
+
+- **`systemd-analyze verify` exits 0 on a syntax error.** Its exit status reports
+  *semantic* failure - a service with no `ExecStart=` - and says nothing about the
+  grammar. So the oracle is the **diagnostics**, classified; a gate built on the status
+  would have scored every broken document as legal and printed clean.
+- **Values come back through `Environment=` and nowhere else.** No verb prints a parsed
+  setting, but that one validates each word as `NAME=VALUE` and reports a failure
+  verbatim - after unquoting, unescaping and word splitting. It is systemd's whole
+  value grammar echoed back, one word per line.
+
+  And that channel **rewrites a CR to an LF** and **truncates at 2,097 bytes**. Both are
+  measured, both live in the differential's exclusions, and the first was found by a
+  minimal pair: all four spellings of a carriage return arrive as `0x0a` while an
+  `\x0e` escape arrives as `0x0e`, so the rewriting is the logger's and not the
+  decoder's. Read in a terminal, that difference says systemd decodes `\r` to a
+  newline, which would be a systemd bug rather than a reporting artefact.
+
+At 5,000 generated documents, seed 20260929, against systemd 257.13-1~deb13u1:
+
+| Score | | Excluded |
+|---|---:|---:|
+| `intent` - our verdict is what the rule says | **5,000 / 5,000** | - |
+| `grammar` - a line-grammar fault is reported by both or neither | **4,745 / 4,745** | - |
+| `words` - `Environment=` splits the same way | **3,509 / 3,509** | 79 |
+| `rewrite` - an accepted document writes back byte for byte | **3,588 / 3,588** | - |
+| `divergence` - systemd is still wrong where it is known to be | **1 / 1 axis** | - |
+
+83 of 83 axes exercised. `make conformance-ini-systemd` reads every unit file on the
+machine: **165 of 165 parse and write back byte for byte**.
+
+**That corpus gate prints a set of zeros, and they are the point.** Of the 165 files, a
+`;` comment, CRLF, a byte-order mark, a non-ASCII byte and **every escape sequence**
+appear in **none**, and a line continuation in 2. So a clean run over every systemd
+unit file on a working Linux system says almost nothing about the rules the dialect is
+hardest to get right, which is why the gate prints the census rather than only the
+score.
+
+#### A systemd defect the gate asserts is still there
+
+**systemd skips a byte-order mark too late.** The skip happens after the comment test
+and after the leading-whitespace skip, so a first line of `<BOM># c` is not recognised
+as a comment; it falls to the assignment branch, which reports "Assignment outside of
+section." before it has even looked for an `=`. Pinned down by six probes: `<BOM>[Unit]`
+is fine and `<BOM>` alone is fine, while `<BOM># c`, `<BOM>xyz`, `<BOM>k=v` and
+`<BOM>   # c` all draw the spurious complaint.
+
+This module skips the mark properly. Rather than excluding those documents, the gate
+asserts per axis that the departure is **still observable** - the same instrument the
+EditorConfig differential uses - so a systemd fixed upstream fails loudly instead of
+quietly inflating `grammar`.
+
+Twelve mutations were applied, and **eleven moved a score**: joining with nothing
+instead of a space (intent 754/800), not skipping a comment block (754/800), not
+ending at a blank line (rewrite 538/562), a lone CR not terminating (intent 777/800),
+allowing a preamble (739/800), a header remainder as an entry (783/800), validating
+escapes during the parse (732/800), dropping the numeric escapes (words 489/544),
+quoting as a wrapper rather than a toggle (words 517/544), keeping a trailing lone
+backslash in a word (words 542/544), and assembling only the physical line (intent
+739/800).
+
+The header-remainder mutation moved nothing at first, and the fix was the generator's
+rather than the gate's: `[Install] junk` is refused whatever the flag says, because a
+remainder with no `=` is a bad line either way, so the axis had to emit
+`[Install] WantedBy=...` before the flag could matter. The one mutation still not
+caught is the boolean set, and it cannot be: the reference's only value channel is
+`Environment=`, which reports words, so nothing in the differential ever asks
+gtext_ini_value_bool() anything. `IniSystemd.BooleansTakeTheWiderSet` covers it.
+
+What is deliberately left out is systemd's **types**. Its time spans belong to
+`ghoti.io-chron`, whose duration type already covers `s min h d w ms us` and the
+summing rule; its sizes and its `%`-specifiers - which need the unit name and the
+host - are not a text parser's to know.
+
 ## Deviations
 
 | Case | This parser | Elsewhere |
@@ -583,43 +724,48 @@ names its own failing property so a recurrence identifies itself.
 
 ## Not implemented
 
-- **The systemd dialect.** `systemd.syntax(7)` has a specification, an
-  implementation and a corpus of 163 unit files on this machine, and
-  `notes/text/INI-DIALECTS.md` has the axis table and the plan. Three things it
-  needs that the four implemented dialects did not:
+- **Python's `configparser`.** The one remaining dialect whose "specification" is its
+  implementation, so it could only ever be scored by differential. Its image is
+  already pinned for other gates, and `notes/text/INI-DIALECTS.md` §4.5 has the axis
+  row: a `:` separator as well as `=`, indent-joined continuation, `%(name)s` and
+  `${section:key}` interpolation, and lower-cased keys. Interpolation is the reason it
+  has not been done - it is a second grammar layered on the first, and a reader that
+  implemented it would be answering a question about a *program's* defaults rather than
+  about a format.
+- **Win32 `.ini`.** Absent by decision, not by omission; the entry below says why.
 
-  - **A continuation that joins with a space** rather than nothing, and that skips
-    an intervening comment block, so a continuation can jump over a `#` line.
-    ::GTEXT_INI_Continuation_Mode has two members rather than four because a
-    constant nothing reads is worse than an absent one, and
-    `GTEXT_INI_CONTINUATION_JOIN_SPACE` should arrive with the code that
-    implements it. gtext_ini_scan_value() is where it goes. The comment-block skip
-    turns out **not** to break the value's storage: the skipped lines are inside
-    the value's contiguous extent and are discarded while decoding, which is what
-    git's `\`-plus-newline bytes already do.
-  - **Variable-length escapes.** ::GTEXT_INI_Dialect::escapes is a string of
-    single letters and the table behind it maps one letter to one byte; systemd's
-    set includes `\xHH`, octal `\nnn`, `\uNNNN` and `\UNNNNNNNN`, which are
-    variable-length input producing multi-byte UTF-8 output. That is a new
-    mechanism in the value layer, not a new field.
-  - **A words accessor.** systemd's quoting is explicitly per-setting rather than
-    part of the grammar, so ::GTEXT_INI_Dialect::quoted_values stays false and the
-    splitting belongs beside gtext_ini_value_list() as a function of its own.
-    gtext_ini_value_bool() would also need the wider set `1 yes true on`, which
-    means a dialect parameter on a published signature or a second function.
+What the systemd work needed, recorded because the estimate was wrong twice:
 
-  Its open question is the **reference**, not the code. `systemd-analyze verify`
-  validates *units*, with semantic requirements far beyond syntax - it refuses a
-  syntactically perfect file for having no `ExecStart` - and it is the one oracle
-  in `tools/oracle/containers/IMAGES`'s plan whose feasibility has never been
-  tested. The corpus cannot stand in either: of the 163 unit files here, **zero**
-  use a line continuation or a `;` comment, so the two hardest rules have no real
-  instances. That probe should come before any of the code.
-- **The continuation modes nothing implements.** systemd joins with a space and
-  configparser joins an indented line with a newline. Both are named here and in
-  `notes/text/INI-DIALECTS.md` and neither is in the enum, deliberately.
-- **Win32 `.ini`.** Deliberately absent, and not because its reference is out of
-  reach - a `GetPrivateProfileStringA` probe under wine runs in this workspace
+  - **A continuation that joins with a space** and skips an intervening comment block.
+    Predicted, and correct. ::GTEXT_INI_Continuation_Mode had two members rather than
+    four because a constant nothing reads is worse than an absent one, and
+    `GTEXT_INI_CONTINUATION_JOIN_SPACE` arrived with the code that implements it.
+  - **Variable-length escapes** with multi-byte output. Predicted, and correct - though
+    it turned out to need a *field* as well as a mechanism, because
+    ::GTEXT_INI_Dialect::escapes is a set of letters and cannot hold `\xHH`.
+  - **A words accessor**, gtext_ini_value_words(), and a dialect parameter on
+    gtext_ini_value_bool() - which was the only accessor in the value layer without
+    one. Predicted, and correct.
+
+  **First wrong prediction:** the comment-block skip was called "the single nastiest
+  rule in any of these dialects" before any of it was built. It is not. The skipped
+  lines sit inside the value's contiguous extent and are discarded while decoding,
+  exactly as git's backslash-plus-newline bytes already are, so the storage that
+  shipped for git holds it unchanged.
+
+  **Second wrong prediction, and the one that mattered:** the continuation was taken to
+  be a property of the *value*, as git's is. It is a property of the **line** - it works
+  in a group header and in a key - so it reached the tree's storage, where a name became
+  the document's bytes with the joined form beside it as the canonical one. No reading of
+  `systemd.syntax(7)` suggests that; it took a probe.
+
+- **The continuation mode nothing implements.** configparser joins an indented line
+  with a newline. It is named here and in `notes/text/INI-DIALECTS.md` and is not in
+  ::GTEXT_INI_Continuation_Mode, deliberately: a constant nothing reads is worse than
+  an absent one, and it should arrive with the code that implements it - which is what
+  `GTEXT_INI_CONTINUATION_JOIN_SPACE` did.
+- **Win32 `.ini`, again.** Deliberately absent, and not because its reference is out
+  of reach - a `GetPrivateProfileStringA` probe under wine runs in this workspace
   today. `GetPrivateProfileString` is documented as consulting the registry's
   `IniFileMapping` for the section and reading the file only *"if there is no
   subkey or entry for the section name"*, so its answer is not a function of the

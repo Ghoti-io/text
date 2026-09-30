@@ -31,6 +31,7 @@
 
 #include "../text_number_internal.h"
 #include "ini_internal.h"
+#include <stdint.h>
 #include <errno.h>
 #include <stdlib.h>
 
@@ -98,6 +99,14 @@ static char ini_escape_byte(char letter) {
      * they stand for are a shared table. */
     case 'b': return '\b';
     case '"': return '"';
+    /* systemd's four more. `\a` and `\v` are spellable in no other dialect here,
+     * and `\'` matters because systemd quotes with `'` as well as `"`. All four
+     * measured as bytes, because a diagnostic renders a control character as
+     * nothing: 07, 0b, 0c and 27. */
+    case 'a': return '\a';
+    case 'v': return '\v';
+    case 'f': return '\f';
+    case '\'': return '\'';
     default: return 0;
   }
 }
@@ -109,6 +118,206 @@ static bool ini_escape_allowed(const GTEXT_INI_Dialect * dialect, char letter) {
     if (*e == letter) return true;
   }
   return false;
+}
+
+size_t gtext_ini_terminator_len(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t at) {
+  if (at >= len) return 0;
+  if (bytes[at] == '\n') return 1;
+  if (bytes[at] != '\r') return 0;
+  if (dialect->accept_crlf && at + 1 < len && bytes[at + 1] == '\n') return 2;
+  /* A lone CR. Only systemd ends a line on one; measured, and not in its manual. */
+  return dialect->lone_cr_terminates ? 1 : 0;
+}
+
+/** Whether every byte of [start, end) is whitespace to @p dialect. */
+static bool ini_run_is_space(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t start, size_t end) {
+  for (size_t i = start; i < end; i++) {
+    if (!gtext_ini_is_space(dialect, bytes[i])) return false;
+  }
+  return true;
+}
+
+/**
+ * Classify the physical line starting at @p at: comment, blank, or content.
+ *
+ * Used only by gtext_ini_continuation_at(), to decide whether a line following a
+ * continuation is skipped over, ends the logical line, or is joined on.
+ */
+typedef enum { INI_LINE_CONTENT, INI_LINE_COMMENT, INI_LINE_BLANK } ini_line_kind;
+
+static ini_line_kind ini_classify_line(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t at, size_t * line_end) {
+  size_t i = at;
+  size_t term = 0;
+  while (i < len && !(term = gtext_ini_terminator_len(dialect, bytes, len, i))) {
+    i++;
+  }
+  size_t content_end = i;
+  *line_end = i + term;
+  size_t first = at;
+  if (dialect->allow_leading_whitespace) {
+    while (first < content_end && gtext_ini_is_space(dialect, bytes[first])) {
+      first++;
+    }
+  }
+  if (first >= content_end) return INI_LINE_BLANK;
+  if (!ini_run_is_space(dialect, bytes, at, first)) return INI_LINE_CONTENT;
+  char c = bytes[first];
+  if ((c == '#' && dialect->comment_hash) ||
+      (c == ';' && dialect->comment_semicolon)) {
+    return INI_LINE_COMMENT;
+  }
+  return INI_LINE_CONTENT;
+}
+
+static int ini_hex_digit(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+/** Encode @p cp as UTF-8 into @p out (at least 4 bytes). Returns the length. */
+static size_t ini_utf8_encode(uint32_t cp, char * out) {
+  if (cp < 0x80) {
+    out[0] = (char) cp;
+    return 1;
+  }
+  if (cp < 0x800) {
+    out[0] = (char) (0xC0 | (cp >> 6));
+    out[1] = (char) (0x80 | (cp & 0x3F));
+    return 2;
+  }
+  if (cp < 0x10000) {
+    out[0] = (char) (0xE0 | (cp >> 12));
+    out[1] = (char) (0x80 | ((cp >> 6) & 0x3F));
+    out[2] = (char) (0x80 | (cp & 0x3F));
+    return 3;
+  }
+  out[0] = (char) (0xF0 | (cp >> 18));
+  out[1] = (char) (0x80 | ((cp >> 12) & 0x3F));
+  out[2] = (char) (0x80 | ((cp >> 6) & 0x3F));
+  out[3] = (char) (0x80 | (cp & 0x3F));
+  return 4;
+}
+
+/**
+ * A numeric escape at @p at, where `raw[at]` is the backslash.
+ *
+ * Returns the input bytes it consumes, or 0 when the sequence is not a well-formed
+ * one - which the caller turns into ::GTEXT_INI_E_BAD_ESCAPE, because systemd
+ * discards the whole setting for `\10`, `\400`, `\u41`, `\U00110000` and `\xZZ`
+ * exactly as it does for an unknown letter. Measured against systemd 257 - and
+ * measured *twice*, because the first reading had it backwards: see
+ * ::GTEXT_INI_Dialect::numeric_escapes for how.
+ *
+ * All three spellings of NUL return 0 too: systemd will not put a NUL in a value,
+ * and refuses the setting rather than dropping the byte.
+ *
+ * A surrogate is encoded rather than refused - `\ud800` is `ed a0 80`, which is
+ * what encoding by codepoint without a surrogate check produces, and is what
+ * systemd produces.
+ *
+ * @param decoded Receives up to 4 bytes, or NULL to measure only.
+ * @param decoded_len Receives their count. Must not be NULL.
+ */
+static size_t ini_numeric_escape(const char * raw, size_t len, size_t at,
+    char * decoded, size_t * decoded_len) {
+  *decoded_len = 0;
+  if (at + 1 >= len) return 0;
+  char kind = raw[at + 1];
+  size_t digits = 0;
+  int base = 16;
+  size_t start = at + 2;
+  if (kind == 'x') {
+    digits = 2;
+  }
+  else if (kind == 'u') {
+    digits = 4;
+  }
+  else if (kind == 'U') {
+    digits = 8;
+  }
+  else if (kind >= '0' && kind <= '7') {
+    /* Exactly three octal digits, the first of them this one. */
+    digits = 3;
+    base = 8;
+    start = at + 1;
+  }
+  else {
+    return 0;
+  }
+  if (start + digits > len) return 0;
+  uint32_t value = 0;
+  for (size_t i = 0; i < digits; i++) {
+    char c = raw[start + i];
+    int d = base == 8 ? ((c >= '0' && c <= '7') ? c - '0' : -1)
+                      : ini_hex_digit(c);
+    if (d < 0) return 0;
+    value = value * (uint32_t) base + (uint32_t) d;
+  }
+  if (!value) return 0;                       /* No NUL, by any spelling. */
+  if (base == 8 && value > 0xFF) return 0;    /* `\400` is data. */
+  if (value > 0x10FFFF) return 0;             /* Above Unicode, so data. */
+  char buf[4];
+  size_t n;
+  if (kind == 'x' || base == 8) {
+    /* A byte, not a codepoint: `\xC3` is one byte 0xC3, not U+00C3. */
+    buf[0] = (char) value;
+    n = 1;
+  }
+  else {
+    n = ini_utf8_encode(value, buf);
+  }
+  if (decoded) memcpy(decoded, buf, n);
+  *decoded_len = n;
+  return (start + digits) - at;
+}
+
+ini_continuation gtext_ini_continuation_at(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t at) {
+  ini_continuation r;
+  memset(&r, 0, sizeof(r));
+  if (dialect->continuation == GTEXT_INI_CONTINUATION_NONE) return r;
+  if (at >= len || bytes[at] != '\\') return r;
+  size_t term = gtext_ini_terminator_len(dialect, bytes, len, at + 1);
+  if (!term) return r;
+  size_t after = at + 1 + term;
+  if (dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_EMPTY) {
+    /*
+     * git: the backslash and its terminator, and nothing else. git does **not**
+     * skip a comment block here - a `#` after a continuation is joined on as
+     * comment text, which its own scanner then swallows to the end of the line.
+     */
+    r.span = 1 + term;
+    r.ends_line = after >= len;
+    return r;
+  }
+  /*
+   * systemd: skip any run of comment lines, then look at what follows. Measured -
+   * a continuation jumps over a `#` or `;` block and joins with whatever comes
+   * after it, but a **blank** line ends the continuation rather than being
+   * skipped. The blank line is left unconsumed for the parser to handle where it
+   * handles every other one.
+   */
+  for (;;) {
+    if (after >= len) {
+      r.span = after - at;
+      r.ends_line = true;
+      return r;
+    }
+    size_t line_end = 0;
+    ini_line_kind kind = ini_classify_line(dialect, bytes, len, after, &line_end);
+    if (kind == INI_LINE_COMMENT) {
+      after = line_end;
+      continue;
+    }
+    r.span = after - at;
+    r.ends_line = (kind == INI_LINE_BLANK);
+    return r;
+  }
 }
 
 /**
@@ -156,6 +365,30 @@ static GTEXT_INI_Status ini_decode(const GTEXT_INI_Dialect * dialect,
       gtext_allocator_free(alloc, buf);
       return GTEXT_INI_E_BAD_ESCAPE;
     }
+    if (dialect->numeric_escapes) {
+      char decoded[4];
+      size_t decoded_len = 0;
+      size_t used = ini_numeric_escape(raw, raw_len, i, decoded, &decoded_len);
+      if (used) {
+        memcpy(buf + w, decoded, decoded_len);
+        w += decoded_len;
+        i += used - 1;
+        continue;
+      }
+      char next = raw[i + 1];
+      if (next == 'x' || next == 'u' || next == 'U' ||
+          (next >= '0' && next <= '9')) {
+        /*
+         * It looks like a numeric escape and is not one, which systemd treats the
+         * same way as an unknown letter: the setting is discarded. Falling through
+         * to the letter lookup would ask whether `x`, `u`, `U` or a digit is in the
+         * escape set, which is a different question with the same answer only by
+         * accident.
+         */
+        gtext_allocator_free(alloc, buf);
+        return GTEXT_INI_E_BAD_ESCAPE;
+      }
+    }
     char letter = raw[i + 1];
     if (extra && letter == extra) {
       buf[w++] = extra;
@@ -183,7 +416,8 @@ bool gtext_ini_dialect_scans_values(const GTEXT_INI_Dialect * dialect) {
    * `== SOME_DIALECT` test in shared code is a bug waiting for the second
    * dialect that needs the same behaviour.
    */
-  return dialect->quoted_values || dialect->inline_comments ||
+  return dialect->numeric_escapes || dialect->quoted_values ||
+         dialect->inline_comments ||
          dialect->continuation != GTEXT_INI_CONTINUATION_NONE;
 }
 
@@ -216,16 +450,15 @@ GTEXT_INI_Status gtext_ini_scan_value(const GTEXT_INI_Dialect * dialect,
      * follows, which is git's get_next_char() exactly; any other CR is a byte,
      * and a whitespace one at that.
      */
-    bool crlf = c == '\r' && dialect->accept_crlf && i + 1 < len &&
-                raw[i + 1] == '\n';
-    if (c == '\n' || crlf) {
+    size_t term = gtext_ini_terminator_len(dialect, raw, len, i);
+    if (term) {
       if (quote) {
         scan->open_quote = true;
         scan->fault_offset = i;
         return GTEXT_INI_E_BAD_LINE;
       }
       scan->logical_len = i;
-      scan->term_len = crlf ? 2 : 1;
+      scan->term_len = term;
       scan->content_len = content;
       if (out_len) *out_len = kept;
       return GTEXT_INI_OK;
@@ -300,15 +533,63 @@ GTEXT_INI_Status gtext_ini_scan_value(const GTEXT_INI_Dialect * dialect,
         return GTEXT_INI_OK;
       }
       char letter = raw[i + 1];
+      ini_continuation cont = gtext_ini_continuation_at(dialect, raw, len, i);
+      if (cont.span && cont.ends_line &&
+          dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_SPACE) {
+        /*
+         * systemd: a blank line after a continuation ends the logical line, and the
+         * backslash **disappears**. So it is part of the terminator run rather than
+         * part of the value - `A=W1  \` before a blank line is the value `W1`, with
+         * the spaces trimmed and the backslash in `eol`.
+         *
+         * Spelling it that way rather than as a trailing backslash is what keeps a
+         * parsed document writable: a value ending in a bare backslash is refused by
+         * the writer, because a terminator written after it would turn it into a
+         * continuation - and a document this module just read must always write
+         * back. The bytes still tile, so the rewrite is byte-identical either way;
+         * only the *value* differs, and this is the one that round-trips.
+         *
+         * git does not come here: its continuation neither skips a comment block nor
+         * stops at a blank line, and its backslash-at-end-of-input case is measured
+         * to fix the trailing-whitespace boundary instead - which the branch below
+         * does.
+         */
+        if (quote) {
+          scan->open_quote = true;
+          scan->fault_offset = i;
+          return GTEXT_INI_E_BAD_LINE;
+        }
+        scan->logical_len = i;
+        scan->term_len = cont.span;
+        scan->content_len = content;
+        if (out_len) *out_len = kept;
+        return GTEXT_INI_OK;
+      }
+      if (cont.span &&
+          dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_SPACE) {
+        /*
+         * **The backslash becomes a space**, measured by minimal pair: with the
+         * continued line flush left, `Environment="W1\` then `W2"` is the single
+         * word `W1 W2` - hex 5731205732. Every example in `systemd.syntax(7)`
+         * indents the second line, where joining with a space and joining with
+         * nothing are indistinguishable.
+         *
+         * The injected space is written on the same terms as any other whitespace -
+         * dropped before the first content byte, kept between two - and then the
+         * boundary is fixed the way the JOIN_EMPTY branch below fixes it, so the
+         * stored span reaches past the continuation and re-scans to the same value.
+         */
+        if (kept) {
+          if (out) out[w] = ' ';
+          w++;
+        }
+        kept = w;
+        content = i + cont.span;
+        i += cont.span;
+        continue;
+      }
       if (dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_EMPTY) {
-        size_t span = 0;
-        if (letter == '\n') {
-          span = 2;
-        }
-        else if (letter == '\r' && dialect->accept_crlf && i + 2 < len &&
-                 raw[i + 2] == '\n') {
-          span = 3;
-        }
+        size_t span = cont.span;
         if (span) {
           /*
            * **A continuation marks everything written so far as content**, which
@@ -334,6 +615,43 @@ GTEXT_INI_Status gtext_ini_scan_value(const GTEXT_INI_Dialect * dialect,
          * lookup below and is reported there, which is the right error rather
          * than a convenient one.
          */
+      }
+      if (!dialect->escapes_in_grammar) {
+        /*
+         * The escape set is not the grammar's here, so a backslash is an ordinary
+         * content byte and the sequence is decoded - or refused - by
+         * gtext_ini_unescape() and gtext_ini_value_words(). Treating it as content
+         * is also what makes the trailing-whitespace rule come out right without
+         * knowing the set: `A=a\s   ` keeps `a\s` because the backslash and the `s`
+         * are both content, and the three spaces after them are not.
+         */
+        if (out) out[w] = c;
+        w++;
+        kept = w;
+        content = i + 1;
+        i++;
+        continue;
+      }
+      if (dialect->numeric_escapes) {
+        char decoded[4];
+        size_t decoded_len = 0;
+        size_t used = ini_numeric_escape(raw, len, i, out ? decoded : NULL,
+            &decoded_len);
+        if (used) {
+          if (out) memcpy(out + w, decoded, decoded_len);
+          w += decoded_len;
+          kept = w;
+          content = i + used;
+          i += used;
+          continue;
+        }
+        char next = raw[i + 1];
+        if (next == 'x' || next == 'u' || next == 'U' ||
+            (next >= '0' && next <= '9')) {
+          scan->bad_escape = true;
+          scan->fault_offset = i;
+          return GTEXT_INI_E_BAD_ESCAPE;
+        }
       }
       if (!ini_escape_allowed(dialect, letter)) {
         scan->bad_escape = true;
@@ -404,6 +722,26 @@ GTEXT_INI_Status gtext_ini_unescape(const GTEXT_INI_Dialect * dialect,
     return status;
   }
   buf[decoded_len] = '\0';
+  if (!dialect->escapes_in_grammar && (dialect->escapes ||
+          dialect->numeric_escapes)) {
+    /*
+     * Two passes, because the two jobs belong to different layers. The scan found
+     * the value's extent and joined its continuations - the line's structure - and
+     * left every backslash alone; this decodes the escape set, which is the
+     * caller's question. systemd is the dialect that needs both, and the order
+     * matters: a continuation inside `A=a\` + `tb` joins to `a tb` and is *not* a
+     * tab, which is what systemd produces.
+     */
+    char * decoded = NULL;
+    size_t final_len = 0;
+    GTEXT_INI_Status second =
+        ini_decode(dialect, buf, decoded_len, alloc, 0, &decoded, &final_len);
+    gtext_allocator_free(alloc, buf);
+    if (second != GTEXT_INI_OK) return second;
+    *out = decoded;
+    if (out_len) *out_len = final_len;
+    return GTEXT_INI_OK;
+  }
   *out = buf;
   if (out_len) *out_len = decoded_len;
   return GTEXT_INI_OK;
@@ -537,6 +875,198 @@ GTEXT_INI_Status gtext_ini_value_list(const GTEXT_INI_Dialect * dialect,
   return GTEXT_INI_OK;
 }
 
+/**
+ * Append one word to a list, growing it. Takes ownership of @p data.
+ *
+ * The list's capacity is its `count` rounded up by doubling, tracked by the caller
+ * through @p capacity, because ::GTEXT_INI_List has no capacity field - the list
+ * gtext_ini_value_list() builds knows its length before it starts and this one does
+ * not.
+ */
+static bool ini_words_push(GTEXT_INI_List * list, size_t * capacity, char * data,
+    size_t len) {
+  if (list->count == *capacity) {
+    size_t want = *capacity ? *capacity * 2 : 8;
+    ini_str * grown = gtext_allocator_realloc(list->alloc, list->items,
+        want * sizeof(*grown));
+    if (!grown) return false;
+    list->items = grown;
+    *capacity = want;
+  }
+  list->items[list->count].data = data;
+  list->items[list->count].len = len;
+  list->count++;
+  return true;
+}
+
+GTEXT_INI_Status gtext_ini_value_words(const GTEXT_INI_Dialect * dialect,
+    const char * raw, size_t raw_len, const GTEXT_Allocator * alloc,
+    GTEXT_INI_List ** out) {
+  if (!dialect || !out) return GTEXT_INI_E_INVALID;
+  if (!raw && raw_len) return GTEXT_INI_E_INVALID;
+  *out = NULL;
+  if (!dialect->word_split) return GTEXT_INI_E_INVALID;
+  if (!alloc) alloc = gtext_allocator_default();
+
+  GTEXT_INI_List * list = gtext_allocator_calloc(alloc, 1, sizeof(*list));
+  if (!list) return GTEXT_INI_E_OOM;
+  list->alloc = alloc;
+  size_t capacity = 0;
+
+  /*
+   * One word at a time into `buf`, which is sized once for the whole value: a word
+   * is never longer than what it was made from, since every step here either copies
+   * a byte or shortens a run.
+   */
+  char * buf = gtext_allocator_malloc(alloc, raw_len + 1);
+  if (!buf) {
+    gtext_ini_list_free(list);
+    return GTEXT_INI_E_OOM;
+  }
+  size_t w = 0;
+  bool in_word = false;
+  char quote = 0; /* The quote character of the open run, or 0. */
+  GTEXT_INI_Status status = GTEXT_INI_OK;
+  size_t i = 0;
+
+  while (i < raw_len) {
+    char c = raw[i];
+    ini_continuation cont =
+        gtext_ini_continuation_at(dialect, raw, raw_len, i);
+    if (cont.span) {
+      /*
+       * The join, using the same primitive the parser and the scanner use. Inside a
+       * quoted run the injected space is content; outside one it ends the word,
+       * which is the same thing ordinary whitespace does.
+       */
+      if (quote) {
+        buf[w++] = ' ';
+      }
+      else if (in_word) {
+        char * word = gtext_allocator_malloc(alloc, w + 1);
+        if (!word) { status = GTEXT_INI_E_OOM; break; }
+        memcpy(word, buf, w);
+        word[w] = 0;
+        if (!ini_words_push(list, &capacity, word, w)) {
+          gtext_allocator_free(alloc, word);
+          status = GTEXT_INI_E_OOM;
+          break;
+        }
+        w = 0;
+        in_word = false;
+      }
+      i += cont.span;
+      continue;
+    }
+    if (!quote && gtext_ini_is_space(dialect, c)) {
+      if (in_word) {
+        char * word = gtext_allocator_malloc(alloc, w + 1);
+        if (!word) { status = GTEXT_INI_E_OOM; break; }
+        memcpy(word, buf, w);
+        word[w] = 0;
+        if (!ini_words_push(list, &capacity, word, w)) {
+          gtext_allocator_free(alloc, word);
+          status = GTEXT_INI_E_OOM;
+          break;
+        }
+        w = 0;
+        in_word = false;
+      }
+      i++;
+      continue;
+    }
+    if (c == '"' || c == '\'') {
+      /*
+       * A toggle, not a wrapper - `x"y z"` is one word `xy z` - and each quote
+       * character is ordinary inside a run opened by the other. Opening one starts a
+       * word even if it closes immediately, which is how `""` becomes an empty word.
+       */
+      if (!quote) {
+        quote = c;
+        in_word = true;
+        i++;
+        continue;
+      }
+      if (quote == c) {
+        quote = 0;
+        i++;
+        continue;
+      }
+      /* The other quote character, inside this run: data. */
+    }
+    if (c == '\\' && i + 1 >= raw_len) {
+      /*
+       * A lone backslash at the very end of the value: **dropped**, measured -
+       * `Environment=A\` is the single word `A`. It reaches here because the parser
+       * stores it: the scanner's end-of-input branch counts it as content so that
+       * the stored span and the document's bytes still agree, and dropping it is the
+       * value layer's job rather than the line layer's.
+       */
+      i++;
+      continue;
+    }
+    if (c == '\\' && i + 1 < raw_len) {
+      /* Escapes are decoded inside a single-quoted run too, unlike a shell. */
+      if (dialect->numeric_escapes) {
+        char decoded[4];
+        size_t decoded_len = 0;
+        size_t used = ini_numeric_escape(raw, raw_len, i, decoded, &decoded_len);
+        if (used) {
+          memcpy(buf + w, decoded, decoded_len);
+          w += decoded_len;
+          in_word = true;
+          i += used;
+          continue;
+        }
+        char next = raw[i + 1];
+        if (next == 'x' || next == 'u' || next == 'U' ||
+            (next >= '0' && next <= '9')) {
+          /* Malformed, so the setting is refused - see ini_numeric_escape(). */
+          status = GTEXT_INI_E_BAD_ESCAPE;
+          break;
+        }
+      }
+      if (!ini_escape_allowed(dialect, raw[i + 1])) {
+        status = GTEXT_INI_E_BAD_ESCAPE;
+        break;
+      }
+      buf[w++] = ini_escape_byte(raw[i + 1]);
+      in_word = true;
+      i += 2;
+      continue;
+    }
+    buf[w++] = c;
+    in_word = true;
+    i++;
+  }
+
+  if (status == GTEXT_INI_OK && quote) {
+    /* systemd reports "Invalid syntax" and discards the whole setting. */
+    status = GTEXT_INI_E_BAD_LINE;
+  }
+  if (status == GTEXT_INI_OK && in_word) {
+    char * word = gtext_allocator_malloc(alloc, w + 1);
+    if (!word) {
+      status = GTEXT_INI_E_OOM;
+    }
+    else {
+      memcpy(word, buf, w);
+      word[w] = 0;
+      if (!ini_words_push(list, &capacity, word, w)) {
+        gtext_allocator_free(alloc, word);
+        status = GTEXT_INI_E_OOM;
+      }
+    }
+  }
+  gtext_allocator_free(alloc, buf);
+  if (status != GTEXT_INI_OK) {
+    gtext_ini_list_free(list);
+    return status;
+  }
+  *out = list;
+  return GTEXT_INI_OK;
+}
+
 size_t gtext_ini_list_count(const GTEXT_INI_List * list) {
   return list ? list->count : 0;
 }
@@ -559,18 +1089,39 @@ void gtext_ini_list_free(GTEXT_INI_List * list) {
   gtext_allocator_free(alloc, list);
 }
 
-GTEXT_INI_Status gtext_ini_value_bool(const char * raw, size_t raw_len,
-    bool * out) {
-  if (!out || (!raw && raw_len)) return GTEXT_INI_E_INVALID;
+/** Whether [raw, raw+len) is exactly @p word. */
+static bool ini_word_is(const char * raw, size_t len, const char * word) {
+  size_t n = strlen(word);
+  return len == n && memcmp(raw, word, n) == 0;
+}
+
+GTEXT_INI_Status gtext_ini_value_bool(const GTEXT_INI_Dialect * dialect,
+    const char * raw, size_t raw_len, bool * out) {
+  if (!dialect || !out || (!raw && raw_len)) return GTEXT_INI_E_INVALID;
   /* §4: "must either be the string true or false". Nothing else, and no case
-   * folding - §3 says case is significant everywhere in the file. */
-  if (raw_len == 4 && memcmp(raw, "true", 4) == 0) {
+   * folding - §3 says case is significant everywhere in the file. systemd's set is
+   * wider and is also case-sensitive. */
+  if (ini_word_is(raw, raw_len, "true")) {
     *out = true;
     return GTEXT_INI_OK;
   }
-  if (raw_len == 5 && memcmp(raw, "false", 5) == 0) {
+  if (ini_word_is(raw, raw_len, "false")) {
     *out = false;
     return GTEXT_INI_OK;
+  }
+  if (dialect->bool_style == GTEXT_INI_BOOLS_SYSTEMD) {
+    static const char * const yes[] = {"1", "yes", "on"};
+    static const char * const no[] = {"0", "no", "off"};
+    for (size_t i = 0; i < sizeof(yes) / sizeof(*yes); i++) {
+      if (ini_word_is(raw, raw_len, yes[i])) {
+        *out = true;
+        return GTEXT_INI_OK;
+      }
+      if (ini_word_is(raw, raw_len, no[i])) {
+        *out = false;
+        return GTEXT_INI_OK;
+      }
+    }
   }
   return GTEXT_INI_E_TYPE;
 }

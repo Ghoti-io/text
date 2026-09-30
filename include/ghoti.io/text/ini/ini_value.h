@@ -175,21 +175,71 @@ GTEXT_API const char * gtext_ini_list_at(const GTEXT_INI_List * list,
 GTEXT_API void gtext_ini_list_free(GTEXT_INI_List * list);
 
 /**
- * @brief Read a raw value as a boolean.
+ * @brief Split a raw value into **words**, systemd's spelling of a list.
+ *
+ * One pass over the raw value doing four things at once, which is how systemd's
+ * `extract_first_word()` does them and why they cannot be separate steps: joining
+ * a line continuation, removing quotes, decoding escapes, and splitting on
+ * unquoted whitespace. Decoding first and splitting second would be wrong - a
+ * `\"` would become a quote character indistinguishable from one the document
+ * wrote.
+ *
+ * Measured against systemd 257, and three of the rules are not in
+ * `systemd.syntax(7)`:
+ *
+ *   - **Quoting is a toggle, not a wrapper**: `x"y z"` is the one word `xy z`,
+ *     and `a"b c"` is `ab c`. The manual says an opening quote may appear only at
+ *     the start or after unquoted whitespace; systemd does not enforce that.
+ *   - `"` and `'` both quote and each is **literal inside the other**.
+ *   - **Escapes are decoded inside single quotes too**, unlike a shell.
+ *
+ * An empty quoted run produces an **empty word** (`"" x` is two words); a leading
+ * or trailing whitespace run produces none. An unclosed quote is
+ * ::GTEXT_INI_E_BAD_LINE, which is what systemd reports as "Invalid syntax" while
+ * discarding the setting.
+ *
+ * The result is the same ::GTEXT_INI_List gtext_ini_value_list() returns, because
+ * a caller asks it the same questions - only the spelling of the separator
+ * differs, and for this dialect there is not one.
+ *
+ * @param dialect The dialect. Must not be NULL, and must have
+ *   ::GTEXT_INI_Dialect::word_split.
+ * @param raw The raw value, as the parser stored it.
+ * @param raw_len Length of @p raw.
+ * @param alloc Allocator, or NULL for the default.
+ * @param out Receives the list. Release with gtext_ini_list_free().
+ * @return ::GTEXT_INI_OK, ::GTEXT_INI_E_BAD_LINE (an unclosed quote),
+ *   ::GTEXT_INI_E_BAD_ESCAPE, ::GTEXT_INI_E_INVALID (the dialect does not split
+ *   words) or ::GTEXT_INI_E_OOM.
+ */
+GTEXT_API GTEXT_INI_Status gtext_ini_value_words(
+    const GTEXT_INI_Dialect * dialect, const char * raw, size_t raw_len,
+    const GTEXT_Allocator * alloc, GTEXT_INI_List ** out);
+
+/**
+ * @brief Read a raw value as a boolean, by the dialect's spellings.
  *
  * Desktop Entry §4: "Values of type boolean must either be the string `true`
- * or `false`." Nothing else is accepted - not `1`, not `yes`, not `True` -
- * because the specification admits nothing else and a reader that guessed
- * would be reading a different dialect. systemd's wider set (`1 yes true on`)
- * belongs to the systemd dialect, which is not implemented yet.
+ * or `false`." Nothing else is accepted there - not `1`, not `yes`, not `True` -
+ * because the specification admits nothing else and a reader that guessed would be
+ * reading a different dialect. systemd admits eight words, and
+ * ::GTEXT_INI_Dialect::bool_style is which set applies.
  *
+ * **The dialect parameter arrived with systemd**, and this function was the only
+ * one in the value layer without one - gtext_ini_unescape(), gtext_ini_escape() and
+ * gtext_ini_value_list() all take a dialect, because what a value *means* is the
+ * dialect's business. That it did not was the anomaly, so the parameter was added
+ * rather than a second function.
+ *
+ * @param dialect The dialect. Must not be NULL.
  * @param raw The raw value.
  * @param raw_len Length of @p raw.
  * @param out Receives the value. Must not be NULL.
  * @return ::GTEXT_INI_OK, ::GTEXT_INI_E_TYPE or ::GTEXT_INI_E_INVALID.
  */
-GTEXT_API GTEXT_INI_Status gtext_ini_value_bool(const char * raw,
-    size_t raw_len, bool * out);
+GTEXT_API GTEXT_INI_Status gtext_ini_value_bool(
+    const GTEXT_INI_Dialect * dialect, const char * raw, size_t raw_len,
+    bool * out);
 
 /**
  * @brief Read a raw value as a signed 64-bit integer.

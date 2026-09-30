@@ -9,10 +9,10 @@ and writes one back out **byte for byte**.
 
 It is the one module here whose format is chosen by the caller rather than named
 by the module. There is no INI specification, so `GTEXT_INI_Dialect` names which
-INI - four of them today: Desktop Entry, a generic derivation of it, git config
-and EditorConfig - and the default is Desktop Entry 1.5. EditorConfig is the only
-one of the four with a **normative conformance suite**, and the only one where this
-module scores higher than either reference implementation does.
+INI - five of them today: Desktop Entry, a generic derivation of it, git config,
+EditorConfig and systemd - and the default is Desktop Entry 1.5. EditorConfig is the
+only one with a **normative conformance suite**, and the only one where this module
+scores higher than either reference implementation does.
 
 ---
 
@@ -223,9 +223,49 @@ whole of it; `tools/conformance/editorconfig_suite.py` is a worked example.
 twenty places a core departs from its own specification, and the mutations that
 were seen to move a score.
 
+### systemd
+
+```c
+opts.dialect = gtext_ini_dialect_systemd();
+```
+
+`systemd.syntax(7)`, and the widest grammar of the five. Three things a caller meets
+that no other dialect here has:
+
+```c
+/* A continuation joins with a **space**, and it can appear in a name as well as in a
+ * value - so a name is the document's bytes and the joined form is canonical. */
+GTEXT_INI_Document * doc = gtext_ini_parse("[Serv\\\nice]\nA=1\n", &opts, NULL);
+const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, 0);
+size_t len = 0;
+gtext_ini_group_name(group, &len);            /* `Serv\<LF>ice` - what was written */
+gtext_ini_group_canonical_name(group, &len);  /* `Serv ice`      - what it means */
+
+/* Quoting and escaping are **per setting**, not part of the grammar - the
+ * specification says so - so the parser stores them and a caller asks. */
+GTEXT_INI_List * words = NULL;
+gtext_ini_value_words(&dialect, raw, raw_len, NULL, &words);
+/* `"x" 'y' z` is three words; escapes are decoded inside single quotes too. */
+
+/* And the booleans are the wider set. This is the accessor that gained a dialect
+ * parameter when this dialect arrived, being the only one in the value layer without
+ * one. */
+bool flag = false;
+gtext_ini_value_bool(&dialect, "yes", 3, &flag);
+```
+
+**A malformed line is refused here and skipped by systemd**, which is a deliberate
+departure: systemd warns and keeps the rest of the file, and a library whose caller
+cannot see a warning must not silently drop a setting. \ref format_ini
+"The format page" says so where the number is quoted.
+
+`make conformance-ini-systemd` reads every unit file on this machine - **165 of 165**
+parse and write back byte for byte - and `make check-ini-systemd-oracle` differs
+against systemd itself over 5,000 generated documents.
+
 ### Something in between
 
-Change individual fields if you need something between any two of the four.
+Change individual fields if you need something between any two of the five.
 ::GTEXT_INI_Dialect is a plain struct and every field is an axis on which real
 specified dialects disagree; \ref format_ini "the format page" has the table.
 
@@ -278,10 +318,8 @@ into place, so an interrupted write leaves the previous file intact.
 
 ## 6. What is not here
 
-No systemd dialect; no streaming reader; and no Win32 dialect, which is absent by
-decision rather than by omission - its answers are not a function of the file's
-bytes. \ref format_ini "The format page" says why for each, names the two
-continuation modes that are deliberately not in the enum because nothing
-implements them yet, and says what systemd needs beyond them: variable-length
-escapes, a words accessor, and a reference whose feasibility has never been
-tested.
+No `configparser` dialect; no streaming reader; and no Win32 dialect, which is absent
+by decision rather than by omission - its answers are not a function of the file's
+bytes. \ref format_ini "The format page" says why for each, and names the one
+continuation mode still deliberately absent from the enum because nothing implements
+it.

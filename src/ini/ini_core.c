@@ -45,6 +45,20 @@ static const char ini_desktop_escapes[] = "snrt\\";
  */
 static const char ini_git_escapes[] = "ntb\\\"";
 
+/**
+ * systemd's single-letter escapes: the full C set.
+ *
+ * `a b f n r t v` and `\\ " '`, plus Desktop Entry's `\s` for a space, which
+ * systemd also has. The four numeric forms are not spellable here - a letter set
+ * cannot hold a variable-length sequence - and are
+ * ::GTEXT_INI_Dialect::numeric_escapes instead.
+ *
+ * Every one measured as bytes against systemd 257, because the diagnostic channel
+ * renders a control character as nothing and four of these are control characters:
+ * `\a` is 07, `\b` 08, `\f` 0c, `\v` 0b.
+ */
+static const char ini_systemd_escapes[] = "abfnrtvs\\\"'";
+
 GTEXT_INI_Dialect gtext_ini_dialect_desktop_entry(void) {
   GTEXT_INI_Dialect d;
   memset(&d, 0, sizeof(d));
@@ -166,6 +180,10 @@ GTEXT_INI_Dialect gtext_ini_dialect_git_config(void) {
    */
   d.skip_bom = true;
   d.escapes = ini_git_escapes;
+  /* True here and nowhere else: git unescapes while it reads, so a bad escape is
+   * a syntax error rather than a question for the accessor. Measured - `git config
+   * -f` exits 128 on `k = a\\qb`. */
+  d.escapes_in_grammar = true;
   /*
    * **No list separator.** git has multi-valued keys, and they are spelled as
    * repeated lines rather than as one delimited value - which is what
@@ -298,6 +316,104 @@ GTEXT_INI_Dialect gtext_ini_dialect_editorconfig(void) {
    * line. Both cores silently ignore the remainder. With the last-`]` rule,
    * `[a] junk]` is instead one section named `a] junk`, which all three agree on.
    */
+  d.header_remainder_is_entry = false;
+  return d;
+}
+
+GTEXT_INI_Dialect gtext_ini_dialect_systemd(void) {
+  /*
+   * Field by field, for the reason the two dialects above give. Every value here
+   * was measured against systemd 257 rather than read off `systemd.syntax(7)`;
+   * notes/text/INI-DIALECTS.md §A.17 has the transcript, and five of these
+   * contradict the manual page or fill a silence in it.
+   */
+  GTEXT_INI_Dialect d;
+  memset(&d, 0, sizeof(d));
+  d.id = GTEXT_INI_DIALECT_SYSTEMD;
+  d.comment_hash = true;
+  d.comment_semicolon = true;
+  /* Measured: an indented comment, header and entry are all accepted. */
+  d.allow_leading_whitespace = true;
+  /*
+   * **False.** "Assignment outside of section. Ignoring." - systemd refuses an
+   * entry before the first header, which makes it the only dialect here besides
+   * Desktop Entry to do so, and the opposite of EditorConfig, whose specification
+   * names the preamble.
+   */
+  d.allow_preamble = false;
+  /* `[Service]` twice is one section. */
+  d.allow_duplicate_groups = true;
+  /*
+   * Every occurrence is a value, as with git. The *reset* rule - an empty
+   * assignment clears the list - is a per-setting semantic rather than a grammar
+   * rule, so the tree keeps the empty entry and a caller applies the reset.
+   */
+  d.dupkey = GTEXT_INI_DUPKEY_COLLECT;
+  d.name_style = GTEXT_INI_NAMES_SYSTEMD;
+  d.locale_postfix = false;
+  d.require_unlocalized_key = false;
+  d.accept_crlf = true;
+  /*
+   * Measured, and not in the manual page. A lone CR ends a line: two settings
+   * separated by one are two settings, and the line counter advances across it.
+   */
+  d.lone_cr_terminates = true;
+  /*
+   * Measured, and the discriminating case is subtle: `Environment=A\s` and
+   * `Environment=A\s   ` give the same two bytes, so the trailing run is stripped
+   * from the raw line **before** unescaping and an escaped space at the end
+   * survives. Same rule as git's, reached from the other direction.
+   */
+  d.trim_trailing_space = true;
+  d.skip_bom = true;
+  d.escapes = ini_systemd_escapes;
+  d.numeric_escapes = true;
+  /*
+   * **False**, and this is the layering claim §5 makes, stated by systemd's own
+   * code: `config_parse()` hands the raw value to the setting's parser and never
+   * looks at a backslash, so a unit carrying `ExecStart=/bin/foo \\q` parses and
+   * only a caller who asks for the decoded form is refused. git is the opposite
+   * and is the only dialect here that is.
+   */
+  d.escapes_in_grammar = false;
+  /*
+   * **No list separator, and word splitting instead.** systemd spells a list two
+   * ways - a repeated key, which is ::dupkey, and whitespace-separated words,
+   * which is ::word_split. Neither is a delimiter character, so naming one here
+   * would invent a syntax systemd does not have.
+   */
+  d.list_separator = 0;
+  d.word_split = true;
+  d.bool_style = GTEXT_INI_BOOLS_SYSTEMD;
+  /* False: systemd hands back a value holding a bare 0xFF unchanged, as git does,
+   * so validation belongs to whoever asked for a string. */
+  d.utf8_values = false;
+  /*
+   * **False, and this was a live guess worth checking.** systemd is a C program, so
+   * `isspace()` was the plausible answer; it is wrong three ways.
+   * `Environment\v=W1` and `\vEnvironment=W1` both leave the vertical tab in the
+   * key, and a literal `\v` inside a value stays in the word rather than splitting
+   * it. So systemd is git's answer, not EditorConfig's.
+   */
+  d.ctype_whitespace = false;
+  d.continuation = GTEXT_INI_CONTINUATION_JOIN_SPACE;
+  /* Measured: `Environment=W1 # x` is five words, so a `#` after the start of a
+   * line is data. */
+  d.inline_comments = false;
+  /*
+   * **False, and the specification is why** - quoting applies only "for settings
+   * where quoting is allowed", which the grammar cannot know. So the parser stores
+   * the quotes and gtext_ini_value_words() removes them, which is the layering
+   * claim @ref format_ini makes, stated by somebody else's specification.
+   */
+  d.quoted_values = false;
+  /* Measured: `environment=W1` is reported as an *unknown key*, so case matters. */
+  d.fold_case = false;
+  d.subsection_syntax = false;
+  /* "Missing '=', ignoring line." - a bare key is not an entry. */
+  d.valueless_keys = false;
+  /* "Invalid section header '[Service] junk'" - the remainder is refused, not read
+   * as an entry. */
   d.header_remainder_is_entry = false;
   return d;
 }
@@ -511,6 +627,25 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
    * group name: ". The specification being silent, the reference decides, and
    * @ref format_ini records that this is why.
    */
+  if (dialect->name_style == GTEXT_INI_NAMES_SYSTEMD) {
+    /*
+     * Everything between `[` and the first `]`, and a space is fine: measured,
+     * `[Serv ice]` is a section named `Serv ice` and systemd reports it as an
+     * *unknown section* rather than as a syntax error. A terminator is allowed for
+     * the same reason it is in a key - the name may be continued, and the parser is
+     * the gate.
+     */
+    if (!len) return false;
+    for (size_t i = 0; i < len; i++) {
+      unsigned char c = (unsigned char) name[i];
+      if (c == '[' || c == ']') return false;
+      if ((c == '\n' || c == '\r') &&
+          dialect->continuation == GTEXT_INI_CONTINUATION_NONE) {
+        return false;
+      }
+    }
+    return true;
+  }
   if (dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG) {
     /*
      * "May contain any characters between the square brackets" - so `[`, `]`,
@@ -597,13 +732,25 @@ bool gtext_ini_key_char_ok(const GTEXT_INI_Dialect * dialect, char c) {
       return ini_git_keychar(c);
     case GTEXT_INI_NAMES_ANY:
     case GTEXT_INI_NAMES_EDITORCONFIG:
+    case GTEXT_INI_NAMES_SYSTEMD:
       /*
        * Anything that reads back as itself: not the delimiter, not a terminator.
        * EditorConfig shares this arm rather than having one of its own, because
        * "the part before the first `=` on the line" is the same rule - the suite
        * asserts `ke y=value`, a key with a space in it. What differs between the
        * two styles is the *group* name, not the key.
+       *
+       * systemd shares it too, and then **allows a terminator as well**, because a
+       * key may be continued: `Environ\` + `ment=v` is the key `Environ ment` and
+       * the stored span holds the backslash and the newline. The parser is the gate
+       * for that - a terminator reaches a key only by way of a continuation it
+       * already followed - so the predicate is permissive here on purpose rather
+       * than re-deriving the line structure.
        */
+      if (dialect->name_style == GTEXT_INI_NAMES_SYSTEMD &&
+          (c == '\n' || c == '\r')) {
+        return dialect->continuation != GTEXT_INI_CONTINUATION_NONE;
+      }
       return c != '=' && c != '\n' && c != '\r';
     case GTEXT_INI_NAMES_DESKTOP_ENTRY:
     default:
@@ -633,7 +780,8 @@ bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect, const char * key,
     return true;
   }
   if (dialect->name_style == GTEXT_INI_NAMES_ANY ||
-      dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG) {
+      dialect->name_style == GTEXT_INI_NAMES_EDITORCONFIG ||
+      dialect->name_style == GTEXT_INI_NAMES_SYSTEMD) {
     /* Still not anything at all: a key may not contain the delimiter or a line
      * terminator, or the document would not read back as itself. An empty key is
      * refused by the `!len` test above, which is where this dialect parts company

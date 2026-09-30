@@ -199,3 +199,35 @@ gitconfig	localhost/ghoti-text-oracle-gitconfig:2.47.3	git 1:2.47.3-0+deb13u1	gi
 # the Python driver's SHA-256 are both compiled or substituted in and printed, for
 # the reason the gitconfig line gives.
 editorconfig	localhost/ghoti-text-oracle-editorconfig:0.12.11	editorconfig-core-c 0.12.11, editorconfig-core-py 0.17.1	EditorConfig: what every value is, twice, from two implementations that disagree
+
+# The systemd reference, **one reference and an instrument that answers a different
+# question than it appears to**.
+#
+# `systemd-analyze verify` exits **0** on a syntax error. It warns, skips the
+# offending line, and keeps the file; the exit status reports *semantic* failure, such
+# as a service with no `ExecStart=`. So this gate reads the **diagnostics** and
+# classifies them, and tools/oracle/ini_sd_diff.py holds the list of which strings are
+# about the line grammar. A gate built on the exit status would have scored every
+# syntactically broken document as legal, and would have printed clean while doing it.
+#
+# **Values come back through `Environment=`** and nowhere else: no verb prints a
+# parsed setting, but that one validates each word as `NAME=VALUE` and reports a
+# failure verbatim, after unquoting, unescaping and word splitting. Two limits of that
+# channel are measured and handled in the denominator rather than worked around - it
+# rewrites a CR to an LF, and truncates a message at 2,097 bytes - because an oracle's
+# limits belong in the count.
+#
+# **This machine has no systemd**: no `systemd-analyze`, no `systemctl`, PID 1 is
+# `init`, while 164 unit files sit under /usr/lib/systemd shipped by other packages.
+# So the corpus is local and the reference cannot be, which is the reverse of the
+# Desktop Entry pin - and the reason this was the last of the five dialects rather
+# than the third. Whether this oracle was usable at all was an open question in
+# notes/text/INI-DIALECTS.md §A.13 from the first day of the INI work to the day it
+# was answered.
+#
+# systemd and this module **disagree on purpose**, and the gate is shaped around it:
+# systemd keeps a file with a bad line and drops the line, while this module refuses
+# the document. So the comparison is the *presence* of a grammar fault, not the
+# recovery. A reader whose caller cannot see a warning must not silently lose a
+# setting.
+systemd	localhost/ghoti-text-oracle-systemd:257.13	systemd 257.13-1~deb13u1	systemd unit syntax: whether a line has a grammar fault, and how a value splits into words

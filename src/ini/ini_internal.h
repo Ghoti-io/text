@@ -320,6 +320,49 @@ GTEXT_INTERNAL_API bool gtext_ini_dialect_scans_values(
     const GTEXT_INI_Dialect * dialect);
 
 /**
+ * What a line continuation at @p at consumes, if there is one there.
+ *
+ * **One implementation, three callers**, and that is the point: the parser needs it
+ * to find where a logical line ends, the value scanner needs it to join a value,
+ * and the canonical-name step needs it to join a name. systemd's continuation works
+ * on a group header and on a key as well as in a value, because systemd assembles
+ * the logical line before classifying it - so a second copy of "what is a
+ * continuation" would be a second place for the comment-block rule to drift.
+ */
+typedef struct {
+  /**
+   * Bytes consumed from @p at: the backslash, its terminator, and any comment
+   * lines skipped over. Zero when there is no continuation here.
+   */
+  size_t span;
+  /**
+   * Whether the logical line **ends** after those bytes rather than continuing.
+   *
+   * True when the next physical line is blank or the input has run out. Measured:
+   * a blank line ends a systemd continuation instead of being skipped, and the
+   * trailing backslash then simply disappears - exactly as one at end of input
+   * does. The blank line itself is left unconsumed, so the parser handles it where
+   * it handles every other blank line.
+   */
+  bool ends_line;
+} ini_continuation;
+
+GTEXT_INTERNAL_API ini_continuation gtext_ini_continuation_at(
+    const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len,
+    size_t at);
+
+/**
+ * How many bytes of line terminator sit at @p at, or 0 if none does.
+ *
+ * A lone CR is a terminator only for systemd - ::GTEXT_INI_Dialect::lone_cr_terminates,
+ * measured rather than read, since `systemd.syntax(7)` does not mention it. For
+ * every other dialect a CR counts only as the first byte of a CRLF.
+ */
+GTEXT_INTERNAL_API size_t gtext_ini_terminator_len(
+    const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len,
+    size_t at);
+
+/**
  * Whether a group header closes at the **last** `]` on the line, not the first.
  *
  * True for EditorConfig, whose section names "may contain any characters between

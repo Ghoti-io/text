@@ -40,8 +40,8 @@
  *   - **A second parse of the same bytes is the same document.** Cheap, and it
  *     catches a parser that depends on anything outside its input.
  *
- * Every property but the first is asserted under **all four** dialects -
- * Desktop Entry, generic, git config and EditorConfig - because a property
+ * Every property but the first is asserted under **all five** dialects -
+ * Desktop Entry, generic, git config, EditorConfig and systemd - because a property
  * asserted under one says nothing about another. The byte-identical rewrite was
  * asserted only under the strict dialect at first, and the strict dialect refuses
  * a document beginning with a BOM, so the generic dialect's silently dropped BOM
@@ -50,11 +50,18 @@
  * is a relaxation of Desktop Entry in either direction, so no subset relation
  * holds to assert.
  *
- * EditorConfig is the widest of the four - almost any byte sequence is a legal
+ * EditorConfig is the widest of the five - almost any byte sequence is a legal
  * document to it - so it is the dialect that actually reaches the writer and the
- * value layer on arbitrary input, where the other three refuse early. It is also
- * the only one with no escape set, which is how a backslash came to be refused by
+ * value layer on arbitrary input, where the others refuse early. It is also the only
+ * one with no escape set, which is how a backslash came to be refused by
  * gtext_ini_unescape() for years with no dialect able to show it.
+ *
+ * systemd is the dialect that reaches the **line assembler**: it is the only one
+ * whose continuation can appear in a group header or a key, so it is the only one
+ * under which a name is not a span of the document and the canonical form carries the
+ * joined text. Every property here is worth more under it for that reason - a
+ * byte-identical rewrite of a document whose name and bytes differ is a stronger
+ * statement than one where they are the same object.
  *
  * Build with: make fuzz-ini      Run: make fuzz-run-ini
  *
@@ -151,6 +158,17 @@ void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect) {
         gtext_ini_string_free(nullptr, encoded);
       }
       GTEXT_INI_List * list = nullptr;
+      GTEXT_INI_List * words = nullptr;
+      if (gtext_ini_value_words(dialect, value, len, nullptr, &words)
+          == GTEXT_INI_OK) {
+        /* Reading every word back is the point: a words pass that returned OK with a
+         * bad length would otherwise go unnoticed. */
+        for (size_t w = 0; w < gtext_ini_list_count(words); w++) {
+          size_t word_len = 0;
+          (void) gtext_ini_list_at(words, w, &word_len);
+        }
+        gtext_ini_list_free(words);
+      }
       if (gtext_ini_value_list(dialect, value, len, nullptr, &list)
           == GTEXT_INI_OK) {
         for (size_t i = 0; i < gtext_ini_list_count(list); i++) {
@@ -160,7 +178,7 @@ void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect) {
         gtext_ini_list_free(list);
       }
       bool flag = false;
-      (void) gtext_ini_value_bool(value, len, &flag);
+      (void) gtext_ini_value_bool(dialect, value, len, &flag);
       int64_t whole = 0;
       (void) gtext_ini_value_int(value, len, &whole);
       double real = 0;
@@ -258,11 +276,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   GTEXT_INI_Dialect loose = gtext_ini_dialect_generic();
   GTEXT_INI_Dialect git = gtext_ini_dialect_git_config();
   GTEXT_INI_Dialect ec = gtext_ini_dialect_editorconfig();
+  GTEXT_INI_Dialect sd = gtext_ini_dialect_systemd();
 
   GTEXT_INI_Document * a = parse(text, strict);
   GTEXT_INI_Document * b = parse(text, loose);
   GTEXT_INI_Document * g = parse(text, git);
   GTEXT_INI_Document * e = parse(text, ec);
+  GTEXT_INI_Document * s = parse(text, sd);
 
   if (a) {
     /* Acceptance is unconditional: all six relaxations only widen it. */
@@ -297,10 +317,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
    * can be a legal document to both and mean different things.
    */
   if (e) exercise(e, text, ec, "editorconfig");
+  /*
+   * No parity property against systemd either. It refuses a preamble that
+   * EditorConfig and git accept, ends a line on a lone CR that every other dialect
+   * treats as data, and accepts a continuation in a name that no other dialect has -
+   * so it sits outside every subset relation here in both directions.
+   */
+  if (s) exercise(s, text, sd, "systemd");
 
   if (a) gtext_ini_free(a);
   if (b) gtext_ini_free(b);
   if (g) gtext_ini_free(g);
   if (e) gtext_ini_free(e);
+  if (s) gtext_ini_free(s);
   return 0;
 }

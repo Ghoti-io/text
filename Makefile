@@ -818,7 +818,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1997,6 +1997,31 @@ check-ini-editorconfig-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-editorconfig-oracle.sh
 
+check-ini-systemd-oracle: ## Compare the systemd reader against systemd itself
+# **The instrument answers a different question than it appears to**, and finding that
+# out was most of the work: `systemd-analyze verify` **exits 0 on a syntax error**. It
+# warns, skips the offending line, and keeps the file; the exit status reports semantic
+# failure, such as a service with no ExecStart=. A gate built on it would have scored
+# every syntactically broken document as legal and printed clean.
+#
+# So the gate reads the **diagnostics** and classifies them into line-grammar faults
+# and everything else, and values come back through `Environment=` - the one setting
+# that echoes each parsed word verbatim, after unquoting, unescaping and word
+# splitting. Two limits of that channel are measured and live in the denominator: it
+# rewrites a CR to an LF and truncates a message at 2,097 bytes.
+#
+# systemd and this module **disagree on purpose**: systemd keeps a file with a bad line
+# and drops the line, while this refuses the document. So `grammar` compares the
+# *presence* of a fault rather than the recovery. And one score asserts that systemd is
+# **still wrong** about a byte-order mark before anything but a section header, which it
+# skips too late - a reference fixed upstream fails that loudly rather than quietly
+# inflating the others.
+#
+# Outside TEST_GATES, like every gate here that consults an oracle.
+check-ini-systemd-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-ini-systemd-oracle.sh
+
 check-ini-oracle: ## Compare the Desktop Entry reader against both of its references
 # The gate the corpus cannot be. Every `.desktop` file on this machine is already
 # valid, so conformance-ini-desktop-entry scores acceptance and preservation and
@@ -2118,8 +2143,21 @@ conformance-ini-editorconfig: ## Score the INI reader against editorconfig-core-
 conformance-ini-editorconfig: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-ini-editorconfig.sh
 
+conformance-ini-systemd: ## Score the INI reader over this machine's systemd units
+# Acceptance and preservation only, because **this machine has no systemd**: the unit
+# files are shipped by other packages, PID 1 is `init`, and there is no
+# `systemd-analyze` here to say whether one is valid. The Desktop Entry corpus comes
+# with a validator and this one does not.
+#
+# The gate prints **which constructs the corpus does not contain**, and those zeros are
+# the finding rather than a footnote: a `;` comment, CRLF, a BOM and every escape appear
+# in no unit file on this machine, so a clean run says nothing about them.
+# check-ini-systemd-oracle is what does.
+conformance-ini-systemd: $(CONFORMANCE_LIB)
+	@$(CONFORMANCE_ENV) tools/conformance/run-ini-systemd.sh
+
 conformance-all: ## Score every parser against its external corpus
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the
