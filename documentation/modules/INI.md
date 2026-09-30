@@ -304,11 +304,24 @@ Three things a caller meets that no other dialect here has:
   rather than mangled.
 - **No escapes at all.** A backslash is data, and so are quotes.
 
-**Interpolation does not ship, and the number is the reason**: over the 479 real
-`configparser` documents on this machine the *default* `BasicInterpolation` refuses a
-value in **301** of them and changes a value in **none**. `[DEFAULT]`'s value
-inheritance does not ship either - it is a lookup over a parsed tree, and a caller who
-wants it asks the section and then asks `DEFAULT`.
+**Interpolation is off by default and available on request**, and the number is why it
+is that way round: over the 479 real `configparser` documents on this machine the
+*default* `BasicInterpolation` refuses a value in **301** of them and changes a value in
+**none**, so a reader that interpolated by default would read 63% of them worse and none
+of them better. That measures "not by default"; it says nothing about whether a caller
+who wants Python's reading can ask for it, and for a while the docs claimed the wider
+thing. gtext_ini_value_interpolate() is the narrower claim implemented -
+::GTEXT_INI_INTERPOLATION_BASIC and ::GTEXT_INI_INTERPOLATION_EXTENDED, with
+gtext_ini_value_needs_interpolation() to ask whether a value can be used raw - and it is
+an accessor beside gtext_ini_unescape() rather than a ::GTEXT_INI_Dialect field, because
+no reference in a value changes how a document is tokenized. The default of every
+spelling, including a zero-initialized options struct, is
+::GTEXT_INI_INTERPOLATION_NONE.
+
+`[DEFAULT]`'s value inheritance does not ship - it is a lookup over a parsed tree, and a
+caller who wants it asks the section and then asks `DEFAULT`. The one place it appears is
+GTEXT_INI_Interpolate_Options::defaults, because a reference *inside* a value has to
+resolve against some map and the reference's is that chain.
 
 `make conformance-ini-configparser` scores this machine's 703 `.cfg` and `.ini` files
 against `configparser` itself - the only INI corpus gate here whose reference is
@@ -423,9 +436,13 @@ there is no content sniffing here.
 
 ## 6. What is not here
 
-No streaming reader, and no interpolation - which is absent and *measured*, because
-over the 479 real `configparser` documents on this machine the default
-`BasicInterpolation` refuses a value in 301 of them and changes one in none.
+No streaming reader. Interpolation used to be listed here, and the correction is worth
+keeping because the measurement never supported the entry: over the 479 real
+`configparser` documents on this machine the default `BasicInterpolation` refuses a value
+in 301 of them and changes one in none, which argues for not doing it **by default** and
+is silent about offering it at all. It now ships as gtext_ini_value_interpolate(), off
+unless asked for. What is genuinely absent is any interpolation for the other six
+dialects, because none of their references has the concept.
 
 **Every named dialect is implemented**, Win32 included. That entry used to read "no
 Win32 dialect, which is absent by decision - its answers are not a function of the

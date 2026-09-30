@@ -55,38 +55,6 @@
 
 #include "ini_internal.h"
 
-/** A growable byte buffer for accumulating a run of comment lines. */
-typedef struct {
-  char * data;
-  size_t len;
-  size_t capacity;
-} ini_buf;
-
-static bool ini_buf_append(const GTEXT_Allocator * alloc, ini_buf * buf,
-    const char * bytes, size_t len) {
-  if (!len) return true;
-  if (buf->len + len > buf->capacity) {
-    size_t want = buf->capacity ? buf->capacity * 2 : 128;
-    while (want < buf->len + len) want *= 2;
-    char * grown = gtext_allocator_realloc(alloc, buf->data, want);
-    if (!grown) return false;
-    buf->data = grown;
-    buf->capacity = want;
-  }
-  memcpy(buf->data + buf->len, bytes, len);
-  buf->len += len;
-  return true;
-}
-
-/** Move the accumulated comment run into @p out, emptying the buffer. */
-static bool ini_buf_take(const GTEXT_Allocator * alloc, ini_buf * buf,
-    ini_str * out) {
-  if (!buf->len) return true;
-  if (!gtext_ini_str_set(alloc, out, buf->data, buf->len)) return false;
-  buf->len = 0;
-  return true;
-}
-
 /**
  * A space or a tab, and nothing else, whatever the dialect.
  *

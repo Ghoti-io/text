@@ -1525,6 +1525,383 @@ static const char * ini_locale_try(const GTEXT_INI_Group * group,
   return gtext_ini_group_get(group, buf, len);
 }
 
+/*
+ * -------------------------------------------------------------------------
+ * Interpolation: `configparser`'s pass over an assembled value.
+ * -------------------------------------------------------------------------
+ *
+ * **A separate pass and not part of any grammar**, which is why it lives here
+ * beside the escape decoder rather than in the parser: no reference in a value
+ * changes how a document is tokenized. `configparser` puts the split in the same
+ * place - `read()` stores raw and `get()` interpolates - and the consequence is
+ * visible in its own exceptions, which are raised by `items()` and not by
+ * `read()`. Measured: `[s]\na = 100%\n` reads without complaint under
+ * `BasicInterpolation` and raises `InterpolationSyntaxError` when the value is
+ * asked for.
+ *
+ * **Not on by default, and that is measured rather than chosen for convenience.**
+ * Over the 479 real documents on this machine that `configparser` reads, its own
+ * default `BasicInterpolation` refuses a value in **301** and changes a value in
+ * **none**; the five files containing `%(` or `${` hold no reference this code
+ * could resolve, because numpy's `npymath.ini` spells pkg-config's variables and
+ * `${prefix}` means something else there. The Python-ecosystem files the local
+ * corpus structurally cannot reach were measured separately and say the same
+ * thing: of 103 such files, nine contain `%(name)s` and every one of the nine is
+ * a `logging` format string that `BasicInterpolation` also refuses. So the
+ * default is ::GTEXT_INI_INTERPOLATION_NONE and this is what a caller opts into.
+ *
+ * Faithful to CPython's `BasicInterpolation._interpolate_some()` and
+ * `ExtendedInterpolation._interpolate_some()`, including four rules that are easy
+ * to get wrong and that tools/oracle/ini_cp_diff.py checks against the reference
+ * itself rather than against a reading of its source:
+ *
+ *   - **A trigger byte that begins no reference is an error, not a literal.**
+ *     `100%` is ::GTEXT_INI_E_INTERPOLATION under basic and fine under extended,
+ *     and `a$b` is the other way round.
+ *   - **A reference resolves to the JOINED value**, not the raw span the tree
+ *     holds. `read()` stores `'\n'.join(val)`, so a multi-line value substitutes
+ *     without its continuation indentation.
+ *   - **Recursion happens only when the substituted value carries the trigger
+ *     byte**, and under extended it resolves **in the section the value came
+ *     from**, not in the one being read. A `${other:k}` whose value holds a `$`
+ *     therefore continues in `other`.
+ *   - **The depth limit is a cap, not a cycle detector**, and it is checked on
+ *     entry rather than before descending. Measured against the reference by
+ *     moving its own `MAX_INTERPOLATION_DEPTH`: a chain of three frames resolves
+ *     at 3 and refuses at 2, and reading the source alone gave 4.
+ *
+ * **One departure, and it is a bound the reference does not have.**
+ * GTEXT_INI_Interpolate_Options::max_depth caps how deep a chain goes and not how
+ * large it gets: `a = ${b}${b}` doubles per hop, so ten hops is a thousandfold and
+ * a megabyte of input is a gigabyte of output. `configparser` is a Python library and wears that; a C library copying
+ * it would ship a documented amplification, so the result is bounded - by default
+ * proportionally, at sixteen times the input or 64 KiB, whichever is larger. See
+ * GTEXT_INI_Interpolate_Options::max_output, which a caller can set to `SIZE_MAX`
+ * to get the reference's own behaviour back.
+ */
+
+/** How deep a chain of references may go, when the caller names no limit. */
+#define INI_INTERPOLATION_MAX_DEPTH 10
+
+/** The floor of the default output bound, and its multiple of the input. */
+#define INI_INTERPOLATION_MIN_OUTPUT ((size_t) 65536)
+#define INI_INTERPOLATION_OUTPUT_FACTOR ((size_t) 16)
+
+GTEXT_INI_Interpolate_Options gtext_ini_interpolate_options_default(void) {
+  GTEXT_INI_Interpolate_Options out;
+  memset(&out, 0, sizeof(out));
+  out.style = GTEXT_INI_INTERPOLATION_NONE;
+  out.defaults = NULL;
+  out.max_depth = INI_INTERPOLATION_MAX_DEPTH;
+  out.max_output = 0;
+  out.allocator = NULL;
+  return out;
+}
+
+/**
+ * What one call carries, so that no signature here has to thread six parameters.
+ *
+ * ::limit is resolved once, from the options and the input's length, rather than
+ * recomputed per frame - a bound derived from the *current* frame's length would
+ * grow with the expansion it is supposed to be bounding.
+ */
+typedef struct {
+  const GTEXT_INI_Interpolate_Options * opts;
+  const GTEXT_Allocator * alloc;
+  char trigger;
+  unsigned max_depth;
+  size_t limit;
+  ini_buf accum;
+} ini_interp_ctx;
+
+/** The byte that introduces a reference, or 0 for a style with none. */
+static char ini_interp_trigger(GTEXT_INI_Interpolation style) {
+  if (style == GTEXT_INI_INTERPOLATION_BASIC) return '%';
+  if (style == GTEXT_INI_INTERPOLATION_EXTENDED) return '$';
+  return 0;
+}
+
+bool gtext_ini_value_needs_interpolation(GTEXT_INI_Interpolation style,
+    const char * raw, size_t raw_len) {
+  char trigger = ini_interp_trigger(style);
+  if (!trigger || !raw) return false;
+  return memchr(raw, trigger, raw_len) != NULL;
+}
+
+/** Append, refusing with ::GTEXT_INI_E_LIMIT rather than growing past the bound. */
+static GTEXT_INI_Status ini_interp_put(ini_interp_ctx * ctx, const char * bytes,
+    size_t len) {
+  /* Checked before the append and on the sum, not after it: a check on the
+   * result would have already allocated what it is refusing. */
+  if (len > ctx->limit || ctx->accum.len > ctx->limit - len) {
+    return GTEXT_INI_E_LIMIT;
+  }
+  return ini_buf_append(ctx->alloc, &ctx->accum, bytes, len) ? GTEXT_INI_OK
+                                                            : GTEXT_INI_E_OOM;
+}
+
+/**
+ * Look a key up in @p group and then in the defaults, and **join** what it finds.
+ *
+ * `configparser`'s map for a section is a chain of the section's own vars and the
+ * default section's, so a key present in both resolves to the section's. The
+ * order here is that one, and the defaults group is a parameter rather than one
+ * this code goes looking for because `[DEFAULT]` is a lookup policy and not a
+ * rule of the grammar - see GTEXT_INI_Interpolate_Options::defaults.
+ *
+ * **The joined value and not the raw span**, which is the half of this that a
+ * reading of the tree alone would get wrong. `read()` stores a value already
+ * joined - `'\n'.join(val)` - and `get()` interpolates that, so a reference to a
+ * key whose value spans continuation lines substitutes the joined text. Handing
+ * back what the tree holds would substitute the terminators and the indentation
+ * the continuation spanned, which is a different string on every multi-line
+ * value. gtext_ini_unescape() is the join for this dialect, so it is what runs
+ * here, and the caller is told to pass its output as the top-level value for the
+ * same reason.
+ *
+ * @return ::GTEXT_INI_OK with `*out` owned and non-NULL,
+ *   ::GTEXT_INI_E_INTERPOLATION_MISSING when no group has the key, or what
+ *   gtext_ini_unescape() refused with.
+ */
+static GTEXT_INI_Status ini_interp_lookup(const GTEXT_INI_Group * group,
+    const GTEXT_INI_Group * defaults, const GTEXT_Allocator * alloc,
+    const char * key, size_t key_len, char ** out, size_t * out_len) {
+  *out = NULL;
+  *out_len = 0;
+  size_t raw_len = 0;
+  const char * raw = gtext_ini_group_get_n(group, key, key_len, &raw_len);
+  const GTEXT_INI_Group * home = group;
+  if (!raw && defaults && defaults != group) {
+    raw = gtext_ini_group_get_n(defaults, key, key_len, &raw_len);
+    home = defaults;
+  }
+  if (!raw) return GTEXT_INI_E_INTERPOLATION_MISSING;
+  return gtext_ini_unescape(&home->doc->dialect, raw, raw_len, alloc, out,
+      out_len);
+}
+
+static GTEXT_INI_Status ini_interp_some(const GTEXT_INI_Group * group,
+    ini_interp_ctx * ctx, const char * rest, size_t rest_len, unsigned depth);
+
+/**
+ * One `%(name)s` reference, or the failure it is.
+ *
+ * @p at points at the `%`; @p len is what remains from there. On success
+ * `*consumed` is how many bytes the reference spelled.
+ */
+static GTEXT_INI_Status ini_interp_basic_one(const GTEXT_INI_Group * group,
+    ini_interp_ctx * ctx, const char * at, size_t len, unsigned depth,
+    size_t * consumed) {
+  if (len >= 2 && at[1] == '%') {
+    *consumed = 2;
+    return ini_interp_put(ctx, "%", 1);
+  }
+  if (len < 2 || at[1] != '(') {
+    /*
+     * The bare `%`. `configparser` spells this "'%' must be followed by '%' or
+     * '(', found: ...", and it is the single most common way a real document
+     * fails under the reference's default - 301 of this machine's 479.
+     */
+    return GTEXT_INI_E_INTERPOLATION;
+  }
+  /*
+   * `%\(([^)]+)\)s`: at least one byte of name, no `)` inside it, and the `s`
+   * is required. `%()s` is a syntax error there and `%(a)d` is one too, and both
+   * fall out of matching the pattern rather than being special-cased.
+   */
+  const char * close = memchr(at + 2, ')', len - 2);
+  if (!close || close == at + 2) return GTEXT_INI_E_INTERPOLATION;
+  size_t after = (size_t) (close - at) + 1;
+  if (after >= len || at[after] != 's') return GTEXT_INI_E_INTERPOLATION;
+  const char * name = at + 2;
+  size_t name_len = (size_t) (close - name);
+  char * value = NULL;
+  size_t value_len = 0;
+  GTEXT_INI_Status status = ini_interp_lookup(group, ctx->opts->defaults,
+      ctx->alloc, name, name_len, &value, &value_len);
+  if (status != GTEXT_INI_OK) return status;
+  *consumed = after + 1;
+  /* Only a value carrying the trigger byte is re-read; the reference's own
+   * condition, and what keeps an ordinary substitution from paying for a
+   * recursive call. */
+  if (!memchr(value, '%', value_len)) {
+    status = ini_interp_put(ctx, value, value_len);
+  }
+  else {
+    status = ini_interp_some(group, ctx, value, value_len, depth + 1);
+  }
+  gtext_ini_string_free(ctx->alloc, value);
+  return status;
+}
+
+/**
+ * One `${name}` or `${section:key}` reference.
+ *
+ * The section is **not** folded by the key rule: `configparser` applies
+ * `optionxform` to the option half of the path and nothing to the section half,
+ * so gtext_ini_document_group_n() decides what a section name matches and the
+ * dialect's own group folding applies there.
+ */
+static GTEXT_INI_Status ini_interp_extended_one(const GTEXT_INI_Group * group,
+    ini_interp_ctx * ctx, const char * at, size_t len, unsigned depth,
+    size_t * consumed) {
+  if (len >= 2 && at[1] == '$') {
+    *consumed = 2;
+    return ini_interp_put(ctx, "$", 1);
+  }
+  if (len < 2 || at[1] != '{') return GTEXT_INI_E_INTERPOLATION;
+  const char * close = memchr(at + 2, '}', len - 2);
+  if (!close || close == at + 2) return GTEXT_INI_E_INTERPOLATION;
+  const char * path = at + 2;
+  size_t path_len = (size_t) (close - path);
+  *consumed = (size_t) (close - at) + 1;
+
+  const char * colon = memchr(path, ':', path_len);
+  const GTEXT_INI_Group * source = group;
+  const char * key = path;
+  size_t key_len = path_len;
+  if (colon) {
+    size_t sect_len = (size_t) (colon - path);
+    key = colon + 1;
+    key_len = path_len - sect_len - 1;
+    /* "More than one ':' found" is a syntax error and not a section whose name
+     * has a colon in it - the reference splits on every colon and counts. */
+    if (memchr(key, ':', key_len)) return GTEXT_INI_E_INTERPOLATION;
+    /* `group->doc` and not a public accessor: there is none, and a group always
+     * has a document - the field exists so that a group survives the group array
+     * being reallocated. A NULL group means the caller passed none, and then
+     * there is no tree for a `section:key` path to walk. */
+    if (!group) return GTEXT_INI_E_INTERPOLATION_MISSING;
+    source = gtext_ini_document_group_n(group->doc, path, sect_len);
+    if (!source) return GTEXT_INI_E_INTERPOLATION_MISSING;
+  }
+  char * value = NULL;
+  size_t value_len = 0;
+  /*
+   * **A `section:key` reference does not see the defaults**, because the
+   * reference reaches it through `parser.get(sect, opt, raw=True)` while a bare
+   * `${key}` reads the current section's map - and only that map is the chain
+   * that includes `[DEFAULT]`. Measured rather than inferred from symmetry.
+   */
+  GTEXT_INI_Status status = ini_interp_lookup(source,
+      colon ? NULL : ctx->opts->defaults, ctx->alloc, key, key_len, &value,
+      &value_len);
+  if (status != GTEXT_INI_OK) return status;
+  if (!memchr(value, '$', value_len)) {
+    status = ini_interp_put(ctx, value, value_len);
+  }
+  else {
+    /* **In the section the value came from**, which is the rule a `${a:k}` chain
+     * walks the document by. Continuing in `group` would resolve the next hop
+     * against the wrong map. */
+    status = ini_interp_some(source, ctx, value, value_len, depth + 1);
+  }
+  gtext_ini_string_free(ctx->alloc, value);
+  return status;
+}
+
+/** `_interpolate_some()`: append @p rest to the accumulator, resolving references. */
+static GTEXT_INI_Status ini_interp_some(const GTEXT_INI_Group * group,
+    ini_interp_ctx * ctx, const char * rest, size_t rest_len, unsigned depth) {
+  /* Checked on entry, before any byte is consumed, which is where the reference
+   * checks it: depth starts at 1, so a limit of 10 admits ten frames. */
+  if (depth > ctx->max_depth) return GTEXT_INI_E_INTERPOLATION;
+  while (rest_len) {
+    const char * found = memchr(rest, ctx->trigger, rest_len);
+    if (!found) return ini_interp_put(ctx, rest, rest_len);
+    size_t plain = (size_t) (found - rest);
+    if (plain) {
+      GTEXT_INI_Status status = ini_interp_put(ctx, rest, plain);
+      if (status != GTEXT_INI_OK) return status;
+    }
+    rest += plain;
+    rest_len -= plain;
+    size_t consumed = 0;
+    GTEXT_INI_Status status =
+        ctx->opts->style == GTEXT_INI_INTERPOLATION_BASIC
+            ? ini_interp_basic_one(group, ctx, rest, rest_len, depth, &consumed)
+            : ini_interp_extended_one(group, ctx, rest, rest_len, depth,
+                  &consumed);
+    if (status != GTEXT_INI_OK) return status;
+    rest += consumed;
+    rest_len -= consumed;
+  }
+  return GTEXT_INI_OK;
+}
+
+GTEXT_INI_Status gtext_ini_value_interpolate(const GTEXT_INI_Group * group,
+    const GTEXT_INI_Interpolate_Options * options, const char * raw,
+    size_t raw_len, char ** out, size_t * out_len) {
+  if (out_len) *out_len = 0;
+  if (!out || (!raw && raw_len)) return GTEXT_INI_E_INVALID;
+  *out = NULL;
+  GTEXT_INI_Interpolate_Options opts =
+      options ? *options : gtext_ini_interpolate_options_default();
+  if (opts.style != GTEXT_INI_INTERPOLATION_NONE &&
+      opts.style != GTEXT_INI_INTERPOLATION_BASIC &&
+      opts.style != GTEXT_INI_INTERPOLATION_EXTENDED) {
+    return GTEXT_INI_E_INVALID;
+  }
+  ini_interp_ctx ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.opts = &opts;
+  ctx.alloc = opts.allocator ? opts.allocator : gtext_allocator_default();
+  ctx.trigger = ini_interp_trigger(opts.style);
+  ctx.max_depth = opts.max_depth ? opts.max_depth
+                                 : INI_INTERPOLATION_MAX_DEPTH;
+  /*
+   * Proportional with a floor, resolved once from the *input* and never from a
+   * frame - see GTEXT_INI_Interpolate_Options::max_output for why 0 is a bound
+   * here and "no limit" in the parse options. The multiplication is checked
+   * because `raw_len` is a caller's number.
+   */
+  if (opts.max_output) {
+    ctx.limit = opts.max_output;
+  }
+  else if (raw_len > (size_t) -1 / INI_INTERPOLATION_OUTPUT_FACTOR) {
+    ctx.limit = (size_t) -1;
+  }
+  else {
+    ctx.limit = raw_len * INI_INTERPOLATION_OUTPUT_FACTOR;
+    if (ctx.limit < INI_INTERPOLATION_MIN_OUTPUT) {
+      ctx.limit = INI_INTERPOLATION_MIN_OUTPUT;
+    }
+  }
+  /*
+   * ::GTEXT_INI_INTERPOLATION_NONE copies, rather than returning @p raw or
+   * refusing: a caller holding the style in a variable then needs no branch, and
+   * the result is owned the same way under every style. A function whose return
+   * is sometimes borrowed and sometimes owned is the sentinel-means-two-things
+   * shape this module has paid for elsewhere. The bound is not applied to it -
+   * the copy cannot amplify, and refusing an input for being longer than a bound
+   * derived from its own length would be nonsense.
+   */
+  GTEXT_INI_Status status =
+      opts.style == GTEXT_INI_INTERPOLATION_NONE
+          ? (ini_buf_append(ctx.alloc, &ctx.accum, raw, raw_len)
+                 ? GTEXT_INI_OK
+                 : GTEXT_INI_E_OOM)
+          : ini_interp_some(group, &ctx, raw, raw_len, 1);
+  if (status != GTEXT_INI_OK) {
+    gtext_allocator_free(ctx.alloc, ctx.accum.data);
+    return status;
+  }
+  /* NUL-terminated past the end, like every other buffer this layer hands back,
+   * and the length is authoritative because a resolved value may contain a NUL
+   * that a raw one did. */
+  char * copy = gtext_allocator_malloc(ctx.alloc, ctx.accum.len + 1);
+  if (!copy) {
+    gtext_allocator_free(ctx.alloc, ctx.accum.data);
+    return GTEXT_INI_E_OOM;
+  }
+  if (ctx.accum.len) memcpy(copy, ctx.accum.data, ctx.accum.len);
+  copy[ctx.accum.len] = '\0';
+  gtext_allocator_free(ctx.alloc, ctx.accum.data);
+  *out = copy;
+  if (out_len) *out_len = ctx.accum.len;
+  return GTEXT_INI_OK;
+}
+
 const char * gtext_ini_group_get_locale(const GTEXT_INI_Group * group,
     const char * key, const char * locale, size_t * len) {
   if (len) *len = 0;

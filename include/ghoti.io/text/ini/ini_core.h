@@ -174,7 +174,36 @@ typedef enum {
    * because no decoder for them ships: a Windows `.ini` is UTF-16 when it is not
    * bytes, and a UTF-32 one has never been observed.
    */
-  GTEXT_INI_E_ENCODING
+  GTEXT_INI_E_ENCODING,
+  /**
+   * A value cannot be interpolated under the style asked for.
+   *
+   * gtext_ini_value_interpolate() only, never a parse: interpolation is a pass
+   * over an assembled value and not part of any dialect's grammar, so a document
+   * containing `100%` parses under every dialect here and this code is what a
+   * caller who then asks for ::GTEXT_INI_INTERPOLATION_BASIC gets.
+   *
+   * **This is the code configparser's own default produces on 63% of the real
+   * documents on this machine**, which is why it is a status and not an
+   * assertion: `BasicInterpolation` refuses a bare `%`, and the measurement that
+   * kept this module's default at ::GTEXT_INI_INTERPOLATION_NONE is the same one
+   * that says a caller who opts in must be told about it rather than handed a
+   * guess. Covers a trigger byte that begins no reference (`100%`, `a$b`), a
+   * reference with no closing delimiter, an extended path with more than one
+   * `:`, and a chain of references deeper than
+   * GTEXT_INI_Interpolate_Options::max_depth.
+   */
+  GTEXT_INI_E_INTERPOLATION,
+  /**
+   * A well-formed reference names a key or a section that is not there.
+   *
+   * Separate from ::GTEXT_INI_E_INTERPOLATION because the two ask different
+   * things of a caller: that one says the document is wrong, this one says the
+   * document is incomplete for the tree it was resolved against, and a caller
+   * with a fallback can act on it. `configparser` splits them the same way, as
+   * `InterpolationSyntaxError` against `InterpolationMissingOptionError`.
+   */
+  GTEXT_INI_E_INTERPOLATION_MISSING
 } GTEXT_INI_Status;
 
 /**

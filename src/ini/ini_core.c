@@ -827,6 +827,29 @@ GTEXT_INI_Dialect gtext_ini_dialect_win32(void) {
   return d;
 }
 
+bool ini_buf_append(const GTEXT_Allocator * alloc, ini_buf * buf,
+    const char * bytes, size_t len) {
+  if (!len) return true;
+  if (buf->len + len > buf->capacity) {
+    size_t want = buf->capacity ? buf->capacity * 2 : 128;
+    while (want < buf->len + len) want *= 2;
+    char * grown = gtext_allocator_realloc(alloc, buf->data, want);
+    if (!grown) return false;
+    buf->data = grown;
+    buf->capacity = want;
+  }
+  memcpy(buf->data + buf->len, bytes, len);
+  buf->len += len;
+  return true;
+}
+
+bool ini_buf_take(const GTEXT_Allocator * alloc, ini_buf * buf, ini_str * out) {
+  if (!buf->len) return true;
+  if (!gtext_ini_str_set(alloc, out, buf->data, buf->len)) return false;
+  buf->len = 0;
+  return true;
+}
+
 bool gtext_ini_str_set(const GTEXT_Allocator * alloc, ini_str * out,
     const char * bytes, size_t len) {
   char * copy = gtext_allocator_malloc(alloc, len + 1);

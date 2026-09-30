@@ -190,6 +190,53 @@ void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect) {
         }
         gtext_ini_list_free(list);
       }
+      /*
+       * Interpolation, under all three styles, and with **two properties rather
+       * than a discard**. The pass is reachable from any value, and a value the
+       * fuzzer built is the only population that walks its error arms - a bare `%`,
+       * an unterminated `%(`, a path with two colons, a reference that resolves to
+       * a value holding another one.
+       *
+       * The properties are the ones no reference is needed for:
+       *
+       *   - ::GTEXT_INI_INTERPOLATION_NONE returns the input, always. It is the
+       *     default, so a regression there changes what every caller who passed no
+       *     options gets.
+       *   - **gtext_ini_value_needs_interpolation() and the pass must agree about
+       *     the trigger byte.** They are two readings of one predicate written in
+       *     two places, which is the shape that drifts: if the detector says a value
+       *     does not need the pass, the pass must succeed and return it unchanged.
+       *     The converse is deliberately not asserted - a value *with* a `%` can
+       *     still come back unchanged, since `%(k)s` resolving to `%(k)s` is a
+       *     legal document.
+       */
+      for (GTEXT_INI_Interpolation style :
+          {GTEXT_INI_INTERPOLATION_NONE, GTEXT_INI_INTERPOLATION_BASIC,
+              GTEXT_INI_INTERPOLATION_EXTENDED}) {
+        GTEXT_INI_Interpolate_Options iopts =
+            gtext_ini_interpolate_options_default();
+        iopts.style = style;
+        char * resolved = nullptr;
+        size_t resolved_len = 0;
+        GTEXT_INI_Status istatus = gtext_ini_value_interpolate(group, &iopts,
+            value, len, &resolved, &resolved_len);
+        bool needs = gtext_ini_value_needs_interpolation(style, value, len);
+        if (istatus == GTEXT_INI_OK) {
+          bool unchanged = resolved_len == len &&
+              (len == 0 || std::memcmp(resolved, value, len) == 0);
+          if (style == GTEXT_INI_INTERPOLATION_NONE && !unchanged) {
+            fail("interpolation NONE changed a value", text);
+          }
+          if (!needs && !unchanged) {
+            fail("a value the detector called literal was changed anyway", text);
+          }
+        }
+        else if (!needs) {
+          fail("a value the detector called literal was refused", text);
+        }
+        gtext_ini_string_free(nullptr, resolved);
+      }
+
       bool flag = false;
       (void) gtext_ini_value_bool(dialect, value, len, &flag);
       int64_t whole = 0;

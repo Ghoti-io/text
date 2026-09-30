@@ -4461,3 +4461,596 @@ TEST(IniEncoding, AUtf16FileIsReadThroughTheFileReader) {
   gtext_ini_error_free(&err);
   std::remove(path.c_str());
 }
+
+namespace {
+
+/** Parse under the configparser dialect, which is the only one with a reference
+ *  for interpolation at all. */
+GTEXT_INI_Document * cp_parse(const std::string & text) {
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_configparser();
+  GTEXT_INI_Error err;
+  std::memset(&err, 0, sizeof(err));
+  GTEXT_INI_Document * doc =
+      gtext_ini_parse(text.data(), text.size(), &opts, &err);
+  gtext_ini_error_free(&err);
+  return doc;
+}
+
+/**
+ * Join a raw value the way the parser's caller must, then interpolate it.
+ *
+ * **Two passes and in that order**, which is the reference's: `read()` stores a
+ * value already joined and `get()` interpolates what it stored. Skipping the join
+ * and interpolating the raw span differs on every value a continuation line spans,
+ * so the helper does both and no test can accidentally do one.
+ */
+GTEXT_INI_Status interp(const std::string & text, const char * group,
+    const char * key, GTEXT_INI_Interpolation style, std::string * out,
+    const GTEXT_INI_Group * defaults = nullptr) {
+  out->clear();
+  GTEXT_INI_Document * doc = cp_parse(text);
+  if (!doc) return GTEXT_INI_E_INVALID;
+  GTEXT_INI_Dialect dialect = gtext_ini_dialect_configparser();
+  const GTEXT_INI_Group * g = gtext_ini_document_group(doc, group);
+  if (!g) {
+    gtext_ini_free(doc);
+    return GTEXT_INI_E_INVALID;
+  }
+  size_t raw_len = 0;
+  const char * raw = gtext_ini_group_get(g, key, &raw_len);
+  char * joined = nullptr;
+  size_t joined_len = 0;
+  GTEXT_INI_Status status = gtext_ini_unescape(&dialect, raw ? raw : "",
+      raw ? raw_len : 0, nullptr, &joined, &joined_len);
+  if (status == GTEXT_INI_OK) {
+    GTEXT_INI_Interpolate_Options opts =
+        gtext_ini_interpolate_options_default();
+    opts.style = style;
+    opts.defaults = defaults ? defaults
+                             : gtext_ini_document_group(doc, "DEFAULT");
+    char * resolved = nullptr;
+    size_t resolved_len = 0;
+    status = gtext_ini_value_interpolate(g, &opts, joined, joined_len,
+        &resolved, &resolved_len);
+    if (status == GTEXT_INI_OK) out->assign(resolved, resolved_len);
+    gtext_ini_string_free(nullptr, resolved);
+  }
+  gtext_ini_string_free(nullptr, joined);
+  gtext_ini_free(doc);
+  return status;
+}
+
+/** The resolved value, for a case expected to succeed. */
+std::string resolved(const std::string & text, const char * key,
+    GTEXT_INI_Interpolation style) {
+  std::string out;
+  GTEXT_INI_Status status = interp(text, "s", key, style, &out);
+  EXPECT_EQ(status, GTEXT_INI_OK) << "status " << (int) status;
+  return out;
+}
+
+} // namespace
+
+/**
+ * The measurement the default rests on, asserted rather than only recorded.
+ *
+ * Every dialect here parses `100%` and hands back `100%`, and that is not a
+ * convenience: `configparser`'s own default refuses a value in **301** of the 479
+ * real documents on this machine it can read, and changes a value in **none**. A
+ * reader that interpolated by default would therefore read a third of this
+ * machine's INI files worse, and would gain nothing measurable on the rest.
+ *
+ * So the assertion is that the pass is **off unless asked for**, under every
+ * spelling of "I did not ask": a NULL options pointer, a default-initialized
+ * struct, and an explicitly-NONE style. A gap between those three is how a
+ * feature turns itself on.
+ */
+TEST(IniInterpolation, TheDefaultResolvesNothing) {
+  const std::string doc = "[s]\nalpha = one\na = %(alpha)s\nb = 100%\n"
+                          "c = ${s:alpha}\n";
+  GTEXT_INI_Document * d = cp_parse(doc);
+  ASSERT_NE(d, nullptr);
+  const GTEXT_INI_Group * g = gtext_ini_document_group(d, "s");
+  ASSERT_NE(g, nullptr);
+
+  for (const char * key : {"a", "b", "c"}) {
+    size_t len = 0;
+    const char * raw = gtext_ini_group_get(g, key, &len);
+    ASSERT_NE(raw, nullptr) << key;
+    const std::string want(raw, len);
+
+    /* NULL options. */
+    char * out = nullptr;
+    size_t out_len = 0;
+    EXPECT_EQ(gtext_ini_value_interpolate(g, nullptr, raw, len, &out, &out_len),
+        GTEXT_INI_OK);
+    EXPECT_EQ(std::string(out, out_len), want) << key;
+    gtext_ini_string_free(nullptr, out);
+
+    /* A zero-initialized struct, which must mean the same thing - the field
+     * order is not a contract and a caller who memsets must get the default. */
+    GTEXT_INI_Interpolate_Options zeroed;
+    std::memset(&zeroed, 0, sizeof(zeroed));
+    out = nullptr;
+    EXPECT_EQ(gtext_ini_value_interpolate(g, &zeroed, raw, len, &out, &out_len),
+        GTEXT_INI_OK);
+    EXPECT_EQ(std::string(out, out_len), want) << key;
+    gtext_ini_string_free(nullptr, out);
+
+    /* And the named style. */
+    GTEXT_INI_Interpolate_Options none = gtext_ini_interpolate_options_default();
+    none.style = GTEXT_INI_INTERPOLATION_NONE;
+    out = nullptr;
+    EXPECT_EQ(gtext_ini_value_interpolate(g, &none, raw, len, &out, &out_len),
+        GTEXT_INI_OK);
+    EXPECT_EQ(std::string(out, out_len), want) << key;
+    gtext_ini_string_free(nullptr, out);
+  }
+  EXPECT_EQ(gtext_ini_interpolate_options_default().style,
+      GTEXT_INI_INTERPOLATION_NONE);
+  gtext_ini_free(d);
+}
+
+/**
+ * `NONE` **copies**, so the result is owned under every style.
+ *
+ * Returning the caller's own pointer would be cheaper and is the sentinel that
+ * means two things: a caller holding the style in a variable would then have to
+ * know which styles hand back memory to free and which do not, and the one that
+ * does not is the default.
+ */
+TEST(IniInterpolation, NoneStillReturnsAnOwnedBuffer) {
+  const char * raw = "100%";
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  char * out = nullptr;
+  size_t out_len = 0;
+  ASSERT_EQ(gtext_ini_value_interpolate(nullptr, &opts, raw, 4, &out, &out_len),
+      GTEXT_INI_OK);
+  ASSERT_NE(out, nullptr);
+  EXPECT_NE(out, raw) << "a borrowed pointer would be freed by the caller";
+  EXPECT_EQ(std::string(out, out_len), "100%");
+  gtext_ini_string_free(nullptr, out);
+}
+
+/**
+ * The half of `BasicInterpolation` that is not substitution.
+ *
+ * `'%' must be followed by '%' or '('` is the reference's own message, and it makes
+ * the default configuration a **validator**: `pct = 100%` is a hard error to
+ * `configparser.ConfigParser()` and reads fine with `interpolation=None`. This is
+ * the rule that refuses 301 of the 479, so it is the one worth spelling out here
+ * rather than leaving to the oracle.
+ */
+TEST(IniInterpolation, BasicRefusesABarePercent) {
+  std::string out;
+  EXPECT_EQ(interp("[s]\na = 100%\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_BASIC, &out), GTEXT_INI_E_INTERPOLATION);
+  EXPECT_EQ(interp("[s]\na = %\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_BASIC, &out), GTEXT_INI_E_INTERPOLATION);
+  EXPECT_EQ(interp("[s]\na = 50%50\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_BASIC, &out), GTEXT_INI_E_INTERPOLATION);
+
+  /* The acquitting pair: one byte different and the same value is fine, so the
+   * refusal is about the `%` and not about the digits around it. */
+  EXPECT_EQ(resolved("[s]\na = 100%%\n", "a", GTEXT_INI_INTERPOLATION_BASIC),
+      "100%");
+  EXPECT_EQ(resolved("[s]\na = 100%\n", "a", GTEXT_INI_INTERPOLATION_NONE),
+      "100%");
+  /* And `$` is nothing to this style, as `%` is nothing to the other. */
+  EXPECT_EQ(resolved("[s]\na = 100$\n", "a", GTEXT_INI_INTERPOLATION_BASIC),
+      "100$");
+  EXPECT_EQ(resolved("[s]\na = 100%\n", "a", GTEXT_INI_INTERPOLATION_EXTENDED),
+      "100%");
+  EXPECT_EQ(resolved("[s]\na = a%%b\n", "a", GTEXT_INI_INTERPOLATION_EXTENDED),
+      "a%%b") << "Extended does not touch a percent at all";
+}
+
+/** `%(key)s` and the ways of spelling it wrong. */
+TEST(IniInterpolation, BasicSubstitutesFromTheSameSection) {
+  EXPECT_EQ(resolved("[s]\nalpha = one\na = %(alpha)s\n", "a",
+      GTEXT_INI_INTERPOLATION_BASIC), "one");
+  EXPECT_EQ(resolved("[s]\nalpha = one\na = x%(alpha)sy\n", "a",
+      GTEXT_INI_INTERPOLATION_BASIC), "xoney");
+  /* The key folds the way the dialect folds, which for configparser is how it
+   * finds a key at all. */
+  EXPECT_EQ(resolved("[s]\nALPHA = one\na = %(alpha)s\n", "a",
+      GTEXT_INI_INTERPOLATION_BASIC), "one");
+
+  std::string out;
+  EXPECT_EQ(interp("[s]\na = %(missing)s\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_BASIC, &out),
+      GTEXT_INI_E_INTERPOLATION_MISSING);
+  /* Not a reference at all, so a syntax refusal rather than a missing one: the
+   * pattern needs a name, a `)` and then an `s`. */
+  for (const char * bad : {"%()s", "%(x", "%(x)d", "%(x)"}) {
+    EXPECT_EQ(interp(std::string("[s]\na = ") + bad + "\n", "s", "a",
+        GTEXT_INI_INTERPOLATION_BASIC, &out), GTEXT_INI_E_INTERPOLATION)
+        << bad;
+  }
+}
+
+/** `${key}`, `${section:key}`, and `$$`. */
+TEST(IniInterpolation, ExtendedWalksTheDocument) {
+  EXPECT_EQ(resolved("[s]\nalpha = one\na = ${alpha}\n", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED), "one");
+  EXPECT_EQ(resolved("[s]\na = ${o:k}\n[o]\nk = far\n", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED), "far");
+  EXPECT_EQ(resolved("[s]\na = $$\n", "a", GTEXT_INI_INTERPOLATION_EXTENDED),
+      "$");
+
+  std::string out;
+  EXPECT_EQ(interp("[s]\na = ${nope}\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED, &out),
+      GTEXT_INI_E_INTERPOLATION_MISSING);
+  EXPECT_EQ(interp("[s]\na = ${no:such}\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED, &out),
+      GTEXT_INI_E_INTERPOLATION_MISSING);
+  /* "More than one ':' found" is the reference's own wording, and it is a syntax
+   * refusal rather than a section whose name contains a colon. */
+  EXPECT_EQ(interp("[s]\na = ${x:y:z}\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED, &out), GTEXT_INI_E_INTERPOLATION);
+  for (const char * bad : {"$", "a$b", "${}", "${x"}) {
+    EXPECT_EQ(interp(std::string("[s]\na = ") + bad + "\n", "s", "a",
+        GTEXT_INI_INTERPOLATION_EXTENDED, &out), GTEXT_INI_E_INTERPOLATION)
+        << bad;
+  }
+}
+
+/**
+ * A reference resolves against the **joined** value, not the raw span.
+ *
+ * The one rule a reading of the tree alone gets wrong, and it is wrong on every
+ * multi-line value: `read()` stores `'\n'.join(val)`, so the text substituted has
+ * had its continuation indentation removed. Substituting what the tree holds would
+ * put the leading spaces of every continuation line into the result.
+ */
+TEST(IniInterpolation, AReferenceResolvesToTheJoinedValue) {
+  EXPECT_EQ(resolved("[s]\nalpha = one\n  two\na = %(alpha)s\n", "a",
+      GTEXT_INI_INTERPOLATION_BASIC), "one\ntwo");
+  EXPECT_EQ(resolved("[s]\nalpha = one\n      deep\na = ${alpha}\n", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED), "one\ndeep");
+  EXPECT_EQ(resolved("[s]\na = ${o:m}\n[o]\nm = a\n  b\n  c\n", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED), "a\nb\nc");
+  /* The raw span is still there to be read the wrong way, so this is the
+   * assertion that nothing reads it that way. */
+  GTEXT_INI_Document * d = cp_parse("[s]\nalpha = one\n  two\n");
+  ASSERT_NE(d, nullptr);
+  size_t len = 0;
+  const char * raw =
+      gtext_ini_group_get(gtext_ini_document_group(d, "s"), "alpha", &len);
+  EXPECT_EQ(std::string(raw, len), "one\n  two") << "the span keeps the indent";
+  gtext_ini_free(d);
+}
+
+/**
+ * A substituted value is itself interpolated, and under Extended **in the section
+ * it came from**.
+ *
+ * Continuing in the section being read would resolve the next hop against the
+ * wrong map, which is invisible until a chain crosses a section and the two
+ * sections both have the key. So the test gives them both one, with different
+ * values: the pair is what discriminates, and either section alone would pass
+ * whichever way the code went.
+ */
+TEST(IniInterpolation, NestingResolvesInTheReferredSection) {
+  EXPECT_EQ(resolved("[s]\nleaf = end\nmid = %(leaf)s\na = %(mid)s\n", "a",
+      GTEXT_INI_INTERPOLATION_BASIC), "end");
+  EXPECT_EQ(resolved(
+      "[s]\nleaf = wrong\na = ${o:mid}\n[o]\nmid = ${leaf}\nleaf = right\n",
+      "a", GTEXT_INI_INTERPOLATION_EXTENDED), "right");
+
+  /* The depth limit is a cap and not a cycle detector, so a cycle and a chain of
+   * eleven stop the same way. Both are the document being wrong. */
+  std::string out;
+  EXPECT_EQ(interp("[s]\na = %(b)s\nb = %(a)s\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_BASIC, &out), GTEXT_INI_E_INTERPOLATION);
+  EXPECT_EQ(interp("[s]\na = ${b}\nb = ${a}\n", "s", "a",
+      GTEXT_INI_INTERPOLATION_EXTENDED, &out), GTEXT_INI_E_INTERPOLATION);
+}
+
+/**
+ * `max_depth` is a cap a caller can move, and it bounds the chain rather than the
+ * value.
+ *
+ * Asserted as an **invariance plus a bound**: the same document resolves at a
+ * depth that admits it and refuses at one that does not, so the field is shown to
+ * be read rather than merely present. A test that only checked the default would
+ * pass with the field ignored entirely.
+ */
+TEST(IniInterpolation, MaxDepthBoundsTheChain) {
+  /*
+   * `a = %(c)s` -> `c = %(b)s` -> `b = %(leaf)s` -> `leaf = end`, which is
+   * **three** frames and not four: the last substitution puts in a value with no
+   * `%` in it, and that one does not recurse. The boundary was taken from the
+   * reference rather than counted here - moving CPython's own
+   * `MAX_INTERPOLATION_DEPTH` over this same document refuses at 1 and 2 and
+   * resolves at 3. Counting it by reading the code gave 4, which is exactly the
+   * kind of off-by-one a boundary asserted against a second implementation
+   * catches and one asserted against the default alone does not.
+   */
+  const std::string doc =
+      "[s]\nleaf = end\nb = %(leaf)s\nc = %(b)s\na = %(c)s\n";
+  GTEXT_INI_Document * d = cp_parse(doc);
+  ASSERT_NE(d, nullptr);
+  const GTEXT_INI_Group * g = gtext_ini_document_group(d, "s");
+  ASSERT_NE(g, nullptr);
+  size_t len = 0;
+  const char * raw = gtext_ini_group_get(g, "a", &len);
+  ASSERT_NE(raw, nullptr);
+
+  for (unsigned depth = 1; depth <= 5; depth++) {
+    GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+    opts.style = GTEXT_INI_INTERPOLATION_BASIC;
+    opts.max_depth = depth;
+    char * out = nullptr;
+    size_t out_len = 0;
+    GTEXT_INI_Status status =
+        gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len);
+    if (depth >= 3) {
+      EXPECT_EQ(status, GTEXT_INI_OK) << "depth " << depth;
+      if (status == GTEXT_INI_OK) {
+        EXPECT_EQ(std::string(out, out_len), "end");
+      }
+    }
+    else {
+      EXPECT_EQ(status, GTEXT_INI_E_INTERPOLATION) << "depth " << depth;
+    }
+    gtext_ini_string_free(nullptr, out);
+  }
+  /* 0 means the reference's own limit, which admits this chain. */
+  GTEXT_INI_Interpolate_Options zero = gtext_ini_interpolate_options_default();
+  zero.style = GTEXT_INI_INTERPOLATION_BASIC;
+  zero.max_depth = 0;
+  char * out = nullptr;
+  size_t out_len = 0;
+  EXPECT_EQ(gtext_ini_value_interpolate(g, &zero, raw, len, &out, &out_len),
+      GTEXT_INI_OK);
+  gtext_ini_string_free(nullptr, out);
+  gtext_ini_free(d);
+}
+
+/**
+ * `defaults` is `[DEFAULT]`, and it is consulted **second and only for a
+ * reference**.
+ *
+ * A lookup policy over a parsed tree rather than a rule of the grammar, which is
+ * the same reason the oracle pins `default_section` to a name no document can
+ * spell. Three claims, and the third is the one that would otherwise leak: the
+ * defaults group does not make its keys visible to gtext_ini_group_get().
+ */
+TEST(IniInterpolation, DefaultsAreConsultedSecond) {
+  const std::string doc =
+      "[DEFAULT]\nshared = fallback\nboth = from-default\n"
+      "[s]\nboth = from-section\na = %(shared)s\nb = %(both)s\n";
+  GTEXT_INI_Document * d = cp_parse(doc);
+  ASSERT_NE(d, nullptr);
+  const GTEXT_INI_Group * g = gtext_ini_document_group(d, "s");
+  const GTEXT_INI_Group * def = gtext_ini_document_group(d, "DEFAULT");
+  ASSERT_NE(g, nullptr);
+  ASSERT_NE(def, nullptr);
+
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  opts.style = GTEXT_INI_INTERPOLATION_BASIC;
+  opts.defaults = def;
+  for (const std::pair<const char *, const char *> & want :
+      {std::make_pair("a", "fallback"), std::make_pair("b", "from-section")}) {
+    size_t len = 0;
+    const char * raw = gtext_ini_group_get(g, want.first, &len);
+    ASSERT_NE(raw, nullptr) << want.first;
+    char * out = nullptr;
+    size_t out_len = 0;
+    ASSERT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+        GTEXT_INI_OK) << want.first;
+    EXPECT_EQ(std::string(out, out_len), want.second) << want.first;
+    gtext_ini_string_free(nullptr, out);
+  }
+
+  /* Without it, the same reference is missing rather than resolving. */
+  opts.defaults = nullptr;
+  size_t len = 0;
+  const char * raw = gtext_ini_group_get(g, "a", &len);
+  char * out = nullptr;
+  size_t out_len = 0;
+  EXPECT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+      GTEXT_INI_E_INTERPOLATION_MISSING);
+  gtext_ini_string_free(nullptr, out);
+
+  /* And it is not a second place to find a key: the tree is unchanged. */
+  EXPECT_EQ(gtext_ini_group_get(g, "shared", nullptr), nullptr)
+      << "defaults must not make a key visible to an ordinary lookup";
+  gtext_ini_free(d);
+}
+
+/**
+ * The detector says "not usable raw", not "holds a reference".
+ *
+ * `100%` holds no reference and is exactly what Basic refuses, so a predicate that
+ * answered false for it would be silent on the 301 documents that matter most. The
+ * useful question is whether interpolating could return anything other than the
+ * input, and false is the load-bearing answer.
+ */
+TEST(IniInterpolation, TheDetectorAnswersAboutTheTriggerByte) {
+  struct Case {
+    const char * raw;
+    bool basic;
+    bool extended;
+  };
+  const Case cases[] = {
+      {"plain", false, false},
+      {"100%", true, false},
+      {"a%%b", true, false},
+      {"%(k)s", true, false},
+      {"${k}", false, true},
+      {"$$", false, true},
+      {"a$b", false, true},
+      {"%(a)s and ${b}", true, true},
+      {"", false, false},
+  };
+  for (const Case & c : cases) {
+    const size_t len = std::strlen(c.raw);
+    EXPECT_EQ(gtext_ini_value_needs_interpolation(GTEXT_INI_INTERPOLATION_BASIC,
+        c.raw, len), c.basic) << c.raw;
+    EXPECT_EQ(gtext_ini_value_needs_interpolation(
+        GTEXT_INI_INTERPOLATION_EXTENDED, c.raw, len), c.extended) << c.raw;
+    /* NONE resolves nothing, so nothing ever needs it. */
+    EXPECT_FALSE(gtext_ini_value_needs_interpolation(
+        GTEXT_INI_INTERPOLATION_NONE, c.raw, len)) << c.raw;
+  }
+  /* A NUL is data here as everywhere, so the length decides and not a
+   * terminator. */
+  EXPECT_TRUE(gtext_ini_value_needs_interpolation(GTEXT_INI_INTERPOLATION_BASIC,
+      "a\0%", 3));
+  EXPECT_FALSE(gtext_ini_value_needs_interpolation(
+      GTEXT_INI_INTERPOLATION_BASIC, "a\0%", 2));
+}
+
+/** A NUL in a value survives the pass, both around a reference and inside one. */
+TEST(IniInterpolation, ANulIsData) {
+  GTEXT_INI_Document * d = cp_parse(std::string("[s]\nk = a\0b\nA = %(k)s!\n", 23));
+  ASSERT_NE(d, nullptr);
+  const GTEXT_INI_Group * g = gtext_ini_document_group(d, "s");
+  ASSERT_NE(g, nullptr);
+  size_t len = 0;
+  const char * raw = gtext_ini_group_get(g, "a", &len);
+  ASSERT_NE(raw, nullptr);
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  opts.style = GTEXT_INI_INTERPOLATION_BASIC;
+  char * out = nullptr;
+  size_t out_len = 0;
+  ASSERT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+      GTEXT_INI_OK);
+  EXPECT_EQ(std::string(out, out_len), std::string("a\0b!", 4));
+  EXPECT_EQ(out_len, 4u) << "the length is authoritative, not the terminator";
+  gtext_ini_string_free(nullptr, out);
+  gtext_ini_free(d);
+}
+
+/** Parameters a caller can get wrong. */
+TEST(IniInterpolation, RefusesUnusableArguments) {
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  opts.style = GTEXT_INI_INTERPOLATION_BASIC;
+  char * out = nullptr;
+  size_t out_len = 0;
+  EXPECT_EQ(gtext_ini_value_interpolate(nullptr, &opts, nullptr, 4, &out,
+      &out_len), GTEXT_INI_E_INVALID);
+  EXPECT_EQ(gtext_ini_value_interpolate(nullptr, &opts, "x", 1, nullptr,
+      &out_len), GTEXT_INI_E_INVALID);
+  /* An empty value is not an unusable one, and NULL with a zero length is how a
+   * valueless key arrives. */
+  EXPECT_EQ(gtext_ini_value_interpolate(nullptr, &opts, nullptr, 0, &out,
+      &out_len), GTEXT_INI_OK);
+  EXPECT_EQ(out_len, 0u);
+  gtext_ini_string_free(nullptr, out);
+  /* A style outside the enum, which a caller can produce from a cast or from a
+   * value read out of its own configuration. */
+  opts.style = (GTEXT_INI_Interpolation) 99;
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(nullptr, &opts, "x", 1, &out, &out_len),
+      GTEXT_INI_E_INVALID);
+  EXPECT_EQ(out, nullptr);
+}
+
+/**
+ * No group is not an error, and it is not a way to resolve a reference either.
+ *
+ * A caller interpolating a value it assembled itself has no group to give, and
+ * the honest answer for a reference is then that the key is not there - the
+ * alternative would be to refuse the whole call, which would also refuse a value
+ * that holds no reference at all.
+ */
+TEST(IniInterpolation, WithoutAGroupOnlyLiteralsResolve) {
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  opts.style = GTEXT_INI_INTERPOLATION_BASIC;
+  char * out = nullptr;
+  size_t out_len = 0;
+  ASSERT_EQ(gtext_ini_value_interpolate(nullptr, &opts, "a%%b", 4, &out,
+      &out_len), GTEXT_INI_OK);
+  EXPECT_EQ(std::string(out, out_len), "a%b");
+  gtext_ini_string_free(nullptr, out);
+
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(nullptr, &opts, "%(k)s", 5, &out,
+      &out_len), GTEXT_INI_E_INTERPOLATION_MISSING);
+  opts.style = GTEXT_INI_INTERPOLATION_EXTENDED;
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(nullptr, &opts, "${o:k}", 6, &out,
+      &out_len), GTEXT_INI_E_INTERPOLATION_MISSING);
+}
+
+/**
+ * The one departure from the reference, and it is a bound the reference lacks.
+ *
+ * `max_depth` caps how deep a chain goes and not how large it gets: each hop here
+ * doubles, so ten hops is a thousandfold. `configparser` has no bound at all and
+ * wears it, being Python; a C library that copied that would ship a documented
+ * amplification. So the default refuses, and a caller who wants the reference's
+ * behaviour back says so.
+ *
+ * **The amplification is exhibited first and bounded second.** A test that only
+ * asserted the refusal would pass just as well if the expansion were broken and
+ * never grew at all, which is the mutation this ordering catches.
+ */
+TEST(IniInterpolation, TheOutputIsBounded) {
+  /* Six doublings from a two-byte leaf: 2 -> 4 -> 8 -> ... -> 128. */
+  std::string doc = "[s]\nl0 = ab\n";
+  for (int i = 1; i <= 6; i++) {
+    doc += "l" + std::to_string(i) + " = ${l" + std::to_string(i - 1) +
+           "}${l" + std::to_string(i - 1) + "}\n";
+  }
+  doc += "a = ${l6}\n";
+  GTEXT_INI_Document * d = cp_parse(doc);
+  ASSERT_NE(d, nullptr);
+  const GTEXT_INI_Group * g = gtext_ini_document_group(d, "s");
+  ASSERT_NE(g, nullptr);
+  size_t len = 0;
+  const char * raw = gtext_ini_group_get(g, "a", &len);
+  ASSERT_NE(raw, nullptr);
+
+  GTEXT_INI_Interpolate_Options opts = gtext_ini_interpolate_options_default();
+  opts.style = GTEXT_INI_INTERPOLATION_EXTENDED;
+  opts.max_output = (size_t) -1;  /* the reference's own behaviour */
+  char * out = nullptr;
+  size_t out_len = 0;
+  ASSERT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+      GTEXT_INI_OK);
+  EXPECT_EQ(out_len, 128u) << "the expansion must actually amplify, or the "
+                              "bound below is asserting nothing";
+  EXPECT_GT(out_len, len * 16) << "and by more than the default factor";
+  gtext_ini_string_free(nullptr, out);
+
+  /* Now the bound. Six bytes is below every intermediate result. */
+  opts.max_output = 6;
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+      GTEXT_INI_E_LIMIT);
+  EXPECT_EQ(out, nullptr);
+
+  /* A bound that admits it exactly, so the comparison is not off by one. */
+  opts.max_output = 128;
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+      GTEXT_INI_OK);
+  EXPECT_EQ(out_len, 128u);
+  gtext_ini_string_free(nullptr, out);
+  opts.max_output = 127;
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(g, &opts, raw, len, &out, &out_len),
+      GTEXT_INI_E_LIMIT);
+
+  /*
+   * And the default, which is proportional: `${l6}` is six bytes, so the floor of
+   * 64 KiB is what applies and 128 fits well inside it. The assertion that makes
+   * the default *mean* something is not this one but the pair above - this only
+   * says the default is not so tight that an ordinary document trips it.
+   */
+  GTEXT_INI_Interpolate_Options def = gtext_ini_interpolate_options_default();
+  def.style = GTEXT_INI_INTERPOLATION_EXTENDED;
+  EXPECT_EQ(def.max_output, 0u) << "0 is the proportional default, not no limit";
+  out = nullptr;
+  EXPECT_EQ(gtext_ini_value_interpolate(g, &def, raw, len, &out, &out_len),
+      GTEXT_INI_OK);
+  EXPECT_EQ(out_len, 128u);
+  gtext_ini_string_free(nullptr, out);
+  gtext_ini_free(d);
+}

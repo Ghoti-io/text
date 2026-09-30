@@ -277,6 +277,216 @@ GTEXT_API GTEXT_INI_Status gtext_ini_value_double(const char * raw,
     size_t raw_len, double * out);
 
 /**
+ * @enum GTEXT_INI_Interpolation
+ * @brief Which reference syntax gtext_ini_value_interpolate() resolves.
+ *
+ * **Not a dialect field, and that placement is the decision rather than a
+ * detail.** Interpolation is a pass over an already-assembled value: no
+ * reference in a value changes how the document is tokenized, which lines are
+ * continuations, or which entries exist. Putting it in ::GTEXT_INI_Dialect would
+ * say the opposite, and would also make it a property of *the document* when it
+ * is a property of the question a caller is asking.
+ *
+ * So every dialect here parses `k = 100%` and hands back `100%`, and a caller who
+ * wants `configparser`'s reading asks for it. @ref format_ini records the
+ * measurement behind that default: over the 479 real documents on this machine
+ * that `configparser` reads, its own default ::GTEXT_INI_INTERPOLATION_BASIC
+ * **refuses a value in 301 of them and changes a value in none**, and of the five
+ * files containing `%(` or `${` not one is a reference this enum could resolve -
+ * numpy's `npymath.ini` spells pkg-config's variables, which share the syntax and
+ * mean something else. A reader that interpolated by default would read a third
+ * of this machine's INI files worse.
+ */
+typedef enum GTEXT_INI_Interpolation {
+  /**
+   * No pass. A `%` or a `$` is an ordinary byte.
+   *
+   * The default everywhere in this module, and what `ConfigParser(interpolation=
+   * None)` does.
+   */
+  GTEXT_INI_INTERPOLATION_NONE = 0,
+  /**
+   * `%(key)s`, with `%%` for a literal `%`. `configparser`'s `BasicInterpolation`.
+   *
+   * **A `%` that begins neither is ::GTEXT_INI_E_INTERPOLATION**, not a literal.
+   * That refusal is the half of this style people forget: it makes
+   * `BasicInterpolation` a validator and not only a substitution, and it is what
+   * a bare `100%` runs into.
+   *
+   * The key is looked up in the group the value came from, then in
+   * GTEXT_INI_Interpolate_Options::defaults, using the dialect's own key folding -
+   * which for this module is ASCII. `configparser` folds with `str.lower()`, so a
+   * reference to a key spelled with a non-ASCII capital resolves there and not
+   * here; that divergence is @ref format_ini's `nonascii-upper-key` and the
+   * `configparser` gate asserts it is still observable.
+   */
+  GTEXT_INI_INTERPOLATION_BASIC,
+  /**
+   * `${key}` and `${section:key}`, with `$$` for a literal `$`.
+   * `configparser`'s `ExtendedInterpolation`, which is opt-in there too.
+   *
+   * `%` is an ordinary byte under this style and `$` is not, so the two styles do
+   * not nest and are not orderable: `a%%b` is `a%%b` here and `a%b` under
+   * ::GTEXT_INI_INTERPOLATION_BASIC. Measured against CPython, which is also why
+   * the gate needs a run of its own for each.
+   */
+  GTEXT_INI_INTERPOLATION_EXTENDED
+} GTEXT_INI_Interpolation;
+
+/**
+ * @brief How gtext_ini_value_interpolate() resolves a reference.
+ *
+ * Zero-initializing this struct gives ::GTEXT_INI_INTERPOLATION_NONE, no
+ * defaults group, the reference's own depth limit and the default allocator -
+ * so a caller who wants one field sets one field. Use
+ * gtext_ini_interpolate_options_default() rather than writing the fields, so
+ * that a field added later does not change what an existing caller means.
+ */
+typedef struct GTEXT_INI_Interpolate_Options {
+  /** Which reference syntax to resolve. */
+  GTEXT_INI_Interpolation style;
+  /**
+   * A group consulted when the value's own group does not have the key, or NULL.
+   *
+   * This is `configparser`'s `[DEFAULT]`, and it is a parameter because that
+   * section is a **lookup policy over a parsed tree and not a rule of the
+   * grammar** - the same reason the `configparser` oracle pins
+   * `default_section` to a name no document can spell. A caller reproducing
+   * Python's reading passes `gtext_ini_document_group(doc, "DEFAULT")` here; one
+   * that wants sections to be independent passes NULL.
+   *
+   * Consulted second, never first, and only for a reference. It does not make
+   * the key visible to gtext_ini_group_get().
+   */
+  const GTEXT_INI_Group * defaults;
+  /**
+   * How many references deep a chain may go before
+   * ::GTEXT_INI_E_INTERPOLATION, or 0 for `configparser`'s limit of 10.
+   *
+   * A limit and not a cycle detector, which is the reference's choice and is
+   * also the weaker claim: `a = %(b)s` and `b = %(a)s` is a cycle, and
+   * `%(b)s` through eleven hops is not, and both stop here. A cap is what makes
+   * the pass terminate on a tree a caller assembled rather than parsed.
+   */
+  unsigned max_depth;
+  /**
+   * Largest result to build, or 0 for a **bound proportional to the input** -
+   * which is not the same thing as no bound.
+   *
+   * **The polarity is deliberately the opposite of
+   * ::GTEXT_INI_Parse_Options::max_total_bytes, and the reason is that here there
+   * is recursion to bound.** A parse is flat, so its count limits are policy and
+   * 0 means "no limit"; interpolation *expands*, and ::max_depth caps how deep a
+   * chain goes without capping how large it gets. `a = ${b}${b}` with `b`
+   * referring to `c` the same way doubles per hop, so ten hops is a thousandfold
+   * and a megabyte of input is a gigabyte of output. `configparser` has no bound
+   * at all here; a C library that copied that would have a documented
+   * amplification.
+   *
+   * The default is `max(65536, 16 * raw_len)`: proportional, so a large document
+   * is not refused for being large, and bounded, so the amplification factor is
+   * 16 rather than unbounded. Exceeding it is ::GTEXT_INI_E_LIMIT, which is
+   * distinct from both interpolation refusals because it is a statement about
+   * this call and not about the document.
+   *
+   * Pass `SIZE_MAX` for no bound, and get `configparser`'s own behaviour. One
+   * sentinel is not being made to mean two things: 0 is the default and
+   * `SIZE_MAX` is unlimited, and no value means both.
+   */
+  size_t max_output;
+  /** Allocator for the result, or NULL for the default. The same one must be
+   *  passed to gtext_ini_string_free(). */
+  const GTEXT_Allocator * allocator;
+} GTEXT_INI_Interpolate_Options;
+
+/**
+ * @brief The options gtext_ini_value_interpolate() uses when given NULL.
+ *
+ * @return ::GTEXT_INI_INTERPOLATION_NONE, no defaults, depth 10, the
+ *   proportional output bound, the default allocator.
+ */
+GTEXT_API GTEXT_INI_Interpolate_Options
+gtext_ini_interpolate_options_default(void);
+
+/**
+ * @brief Resolve the references in a raw value.
+ *
+ * Faithful to `configparser`'s `BasicInterpolation` and `ExtendedInterpolation`,
+ * including the parts that are not substitution: a trigger byte that begins no
+ * reference is ::GTEXT_INI_E_INTERPOLATION, a reference to a key that is not
+ * there is ::GTEXT_INI_E_INTERPOLATION_MISSING, and a substituted value
+ * containing a trigger byte is itself interpolated - under
+ * ::GTEXT_INI_INTERPOLATION_EXTENDED **relative to the section it came from**,
+ * which is why a `${other:k}` chain can walk the document.
+ *
+ * ::GTEXT_INI_INTERPOLATION_NONE copies the bytes, so a caller holding a style in
+ * a variable needs no branch of its own.
+ *
+ * **gtext_ini_unescape() first, this second**, and that order is the reference's
+ * rather than a preference. `read()` stores a value already *joined* -
+ * `'\n'.join(val)` - and `get()` interpolates what it stored, so the text a
+ * reference resolves against is the joined one. Pass gtext_ini_unescape()'s
+ * output as @p raw for a value the parser produced; a value read straight out of
+ * the tree still carries the terminators and the indentation its continuation
+ * lines spanned, and interpolating that would substitute a different string on
+ * every multi-line value. The same join is applied to whatever a reference
+ * *resolves to*, so a caller cannot get the two halves out of step.
+ *
+ * Interpolation is nonetheless not the escape pass: `configparser` has no escape
+ * set at all, so for that dialect gtext_ini_unescape() is exactly the join and
+ * nothing more. No dialect here has both escapes and interpolation, so no
+ * reference can say how the two would compose, and this order is stated rather
+ * than measured.
+ *
+ * @param group The group @p raw came from, whose keys a reference resolves
+ *   against. May be NULL, and then only GTEXT_INI_Interpolate_Options::defaults
+ *   is consulted. The document reached through it is what a
+ *   `${section:key}` walks.
+ * @param options How to resolve. NULL means
+ *   gtext_ini_interpolate_options_default(), which resolves nothing.
+ * @param raw The raw value.
+ * @param raw_len Length of @p raw. A NUL inside it is data, as everywhere here.
+ * @param out Receives a NUL-terminated buffer. Must not be NULL. Release with
+ *   gtext_ini_string_free().
+ * @param out_len Receives its length, not counting the terminator. May be NULL.
+ *   Authoritative: a resolved value may contain a NUL if a raw one did.
+ * @return ::GTEXT_INI_OK, ::GTEXT_INI_E_INTERPOLATION,
+ *   ::GTEXT_INI_E_INTERPOLATION_MISSING, ::GTEXT_INI_E_LIMIT
+ *   (GTEXT_INI_Interpolate_Options::max_output), ::GTEXT_INI_E_BAD_ESCAPE (a
+ *   value a reference resolved to is not decodable under the group's dialect,
+ *   which `configparser` cannot produce and a dialect with an escape set could),
+ *   ::GTEXT_INI_E_INVALID or ::GTEXT_INI_E_OOM.
+ */
+GTEXT_API GTEXT_INI_Status gtext_ini_value_interpolate(
+    const GTEXT_INI_Group * group,
+    const GTEXT_INI_Interpolate_Options * options, const char * raw,
+    size_t raw_len, char ** out, size_t * out_len);
+
+/**
+ * @brief Whether interpolating @p raw under @p style could return anything other
+ *   than @p raw.
+ *
+ * **Deliberately "contains the trigger byte" and not "contains a well-formed
+ * reference"**, because the case a caller most needs to hear about is the one a
+ * stricter predicate would call clean: `100%` holds no reference, and it is
+ * exactly what ::GTEXT_INI_INTERPOLATION_BASIC refuses. A detector that answered
+ * false for it would be silent on 301 of this machine's 479 real documents while
+ * gtext_ini_value_interpolate() refused them.
+ *
+ * So this is the predicate for "can I use the raw value as-is under this style",
+ * and false is the load-bearing answer. It reads bytes only and asks the document
+ * nothing, so it cannot distinguish a reference that resolves from one that does
+ * not - gtext_ini_value_interpolate() is the only thing that can.
+ *
+ * @param style The style. ::GTEXT_INI_INTERPOLATION_NONE always yields false.
+ * @param raw The raw value.
+ * @param raw_len Length of @p raw.
+ * @return True when @p raw contains `%` (basic) or `$` (extended).
+ */
+GTEXT_API bool gtext_ini_value_needs_interpolation(
+    GTEXT_INI_Interpolation style, const char * raw, size_t raw_len);
+
+/**
  * @brief Look a key up with Desktop Entry §5's locale fallback.
  *
  * The match order for an `LC_MESSAGES` of `lang_COUNTRY.ENCODING@MODIFIER`,

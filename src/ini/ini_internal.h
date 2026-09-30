@@ -184,6 +184,47 @@ GTEXT_INTERNAL_API bool gtext_ini_utf16_to_utf8(const GTEXT_Allocator * alloc,
     size_t * out_len, GTEXT_INI_Status * status, const char ** message,
     size_t * offset);
 
+/**
+ * gtext_ini_group_get() over a counted key, so a caller holding a slice of a
+ * value need not copy it.
+ *
+ * The public spelling takes a NUL-terminated key, which is right for a caller
+ * naming a key it knows; a key read *out of* a document cannot use it, because a
+ * value may contain a NUL and the copy would be cut short there and match the
+ * wrong entry. gtext_ini_value_interpolate() reads its key names out of a value,
+ * so it needs this one. The public function is a wrapper rather than a second
+ * implementation: the duplicate-key policy and the fold live in one place.
+ */
+GTEXT_INTERNAL_API const char * gtext_ini_group_get_n(
+    const GTEXT_INI_Group * group, const char * key, size_t key_len,
+    size_t * len);
+
+/** gtext_ini_document_group() over a counted name, for the same reason. */
+GTEXT_INTERNAL_API const GTEXT_INI_Group * gtext_ini_document_group_n(
+    const GTEXT_INI_Document * doc, const char * name, size_t name_len);
+
+/**
+ * A growable byte buffer.
+ *
+ * Shared rather than written twice: the parser accumulates a run of comment
+ * lines into one and gtext_ini_value_interpolate() accumulates a substituted
+ * value, and neither knows its length in advance. A second copy of a doubling
+ * realloc is exactly the kind of duplication that drifts on the off-by-one.
+ */
+typedef struct {
+  char * data;
+  size_t len;
+  size_t capacity;
+} ini_buf;
+
+/** Append @p len bytes, growing by doubling. False on allocation failure. */
+GTEXT_INTERNAL_API bool ini_buf_append(const GTEXT_Allocator * alloc,
+    ini_buf * buf, const char * bytes, size_t len);
+
+/** Move the accumulated bytes into @p out, emptying the buffer. */
+GTEXT_INTERNAL_API bool ini_buf_take(const GTEXT_Allocator * alloc,
+    ini_buf * buf, ini_str * out);
+
 /** Duplicate @p len bytes, NUL-terminating one past the end. */
 GTEXT_INTERNAL_API bool gtext_ini_str_set(const GTEXT_Allocator * alloc,
     ini_str * out, const char * bytes, size_t len);

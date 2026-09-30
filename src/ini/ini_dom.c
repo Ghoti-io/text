@@ -222,16 +222,20 @@ GTEXT_INI_Source_Encoding gtext_ini_document_source_encoding(
   return doc ? doc->source_encoding : GTEXT_INI_SOURCE_BYTES;
 }
 
-const GTEXT_INI_Group * gtext_ini_document_group(
-    const GTEXT_INI_Document * doc, const char * name) {
+const GTEXT_INI_Group * gtext_ini_document_group_n(
+    const GTEXT_INI_Document * doc, const char * name, size_t name_len) {
   if (!doc || !name) return NULL;
-  size_t len = strlen(name);
   for (size_t g = 0; g < doc->count; g++) {
-    if (ini_group_matches(&doc->dialect, &doc->groups[g], name, len)) {
+    if (ini_group_matches(&doc->dialect, &doc->groups[g], name, name_len)) {
       return &doc->groups[g];
     }
   }
   return NULL;
+}
+
+const GTEXT_INI_Group * gtext_ini_document_group(
+    const GTEXT_INI_Document * doc, const char * name) {
+  return name ? gtext_ini_document_group_n(doc, name, strlen(name)) : NULL;
 }
 
 const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
@@ -403,17 +407,29 @@ const char * gtext_ini_group_value_at(const GTEXT_INI_Group * group,
   return ini_out(&group->entries[index].value, len);
 }
 
-const char * gtext_ini_group_get(const GTEXT_INI_Group * group,
-    const char * key, size_t * len) {
+const char * gtext_ini_group_get_n(const GTEXT_INI_Group * group,
+    const char * key, size_t key_len, size_t * len) {
   if (len) *len = 0;
   if (!group || !key) return NULL;
-  size_t key_len = strlen(key);
-  size_t count = gtext_ini_group_count_key(group, key);
+  size_t count = 0;
+  for (size_t e = 0; e < group->count; e++) {
+    if (ini_key_matches(&group->doc->dialect, &group->entries[e], key,
+            key_len)) {
+      count++;
+    }
+  }
   if (!count) return NULL;
   size_t want = ini_wants_last(&group->doc->dialect) ? count - 1 : 0;
   size_t index = ini_find_nth(group, key, key_len, want);
   if (index >= group->count) return NULL;
   return ini_out(&group->entries[index].value, len);
+}
+
+const char * gtext_ini_group_get(const GTEXT_INI_Group * group,
+    const char * key, size_t * len) {
+  if (len) *len = 0;
+  if (!key) return NULL;
+  return gtext_ini_group_get_n(group, key, strlen(key), len);
 }
 
 size_t gtext_ini_group_count_key(const GTEXT_INI_Group * group,

@@ -574,8 +574,16 @@ one is the whole reason the harness is worth having:
   byte-identical property does not imply, because normalizing takes a different
   branch.
 - **Every raw value goes through every accessor** - unescape, escape, list,
-  bool, int, double, and the locale chain. Most fail, and a failure is a fine
-  answer; reading a byte that is not there is not.
+  bool, int, double, interpolation under all three styles, and the locale chain. Most
+  fail, and a failure is a fine answer; reading a byte that is not there is not.
+- **`GTEXT_INI_INTERPOLATION_NONE` returns the input**, always. It is the default, so a
+  regression there changes what every caller who passed no options gets.
+- **`gtext_ini_value_needs_interpolation()` and the pass agree about the trigger byte.**
+  Two readings of one predicate written in two places, which is the shape that drifts: if
+  the detector says a value does not need the pass, the pass must succeed and return it
+  unchanged. The converse is deliberately *not* asserted - a value holding a `%` can
+  still come back unchanged, since `%(k)s` resolving to `%(k)s` is a legal document, and
+  asserting the biconditional would fail on a correct library.
 - **A second parse of the same bytes is the same document.**
 
 **All of those but the first run under seven dialects** - Desktop Entry, generic,
