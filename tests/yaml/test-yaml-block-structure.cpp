@@ -136,6 +136,49 @@ TEST(YamlBlockStructure, RefusesASecondTopLevelNode) {
 	EXPECT_EQ(Render("- - a\n- b\n"), std::string("[[\"a\"], \"b\"]"));
 }
 
+/* The same rule, reached through an explicit key, which used to walk around it.
+ *
+ * Where the scalar before a ":" was placed decides how it is taken back, and
+ * detach_last_scalar() trusted a flag for the root case instead of checking that
+ * the root was still that scalar. The flag outlives the scalar: it was left set
+ * after the first key was claimed, and the paths that hold a scalar as an
+ * *explicit* key never touched it. So a scalar under a "?" could arrive carrying
+ * an earlier scalar's "I am the root" and clear a root that a finished collection
+ * had since filled.
+ *
+ * " 1:" over "? 2:" is the shape: the dedent closes the indent-1 mapping onto the
+ * root, and the ":" after the explicit key then discards it. The document was
+ * accepted as {"1": {"2": null}} - the two collections silently folded into one,
+ * which is the same data loss this whole test is about.
+ *
+ * The anchored spelling is what found it, and it is worse than a wrong tree: with
+ * "&O" on the node that gets dropped, the alias that names it stays in the DOM
+ * while its anchor leaves, so the writer emits "*O" against no "&O" anywhere and
+ * produces a document its own parser refuses. A twelve-hour fuzz run over the
+ * writers reached it in three and a half million executions.
+ *
+ * PyYAML refuses every input below and accepts every one in the block after,
+ * which is where the line between the two came from.
+ */
+TEST(YamlBlockStructure, RefusesASecondTopLevelNodeUnderAnExplicitKey) {
+	EXPECT_EQ(Render(" 1:\n? 2:\n"), std::string(""));
+	EXPECT_EQ(Render(" 1:\n? 2\n"), std::string(""));
+	EXPECT_EQ(Render("&O\n 1:\n? *O\n"), std::string(""));
+	EXPECT_EQ(Render("&O\n 1:\n? *O\n? .:\n"), std::string(""));
+	/* No trailing newline either: the dedent is the last thing in the input. */
+	EXPECT_EQ(Render(" 1:\n? 2:"), std::string(""));
+
+	/* What still has to work: an explicit key is an ordinary way to write a
+	   mapping entry, and none of these may trip the rule above. A fix that
+	   refused the "?" at the top level outright would pass the block above and
+	   break every one of these. */
+	EXPECT_EQ(Render("? a\n: 1\nb: 2\n"), std::string("{\"a\": 1, \"b\": 2}"));
+	EXPECT_EQ(Render("a: 1\n? b\n: 2\n"), std::string("{\"a\": 1, \"b\": 2}"));
+	EXPECT_EQ(Render("? a\n? b\n"), std::string("{\"a\": null, \"b\": null}"));
+	EXPECT_EQ(Render("? a\n: 1\n"), std::string("{\"a\": 1}"));
+	EXPECT_EQ(Render("&O a\n"), std::string("\"a\""));
+}
+
 int main(int argc, char **argv) {
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();

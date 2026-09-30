@@ -2211,14 +2211,52 @@ static GTEXT_YAML_Node *detach_last_flow_node(parser_state *p, int line) {
 	return node;
 }
 
+/**
+ * @brief Take back the last scalar, because a ":" makes it a mapping key.
+ *
+ * Where the scalar was put decides how to take it back.  The temp case checks
+ * the thing it describes - right depth, non-empty, and that node on top - and
+ * declines otherwise; the root case checked only a flag.
+ *
+ * **The flag outlives the scalar.**  It is set when a scalar becomes the root
+ * and is not cleared when a ":" claims that scalar, and the paths that hold a
+ * scalar as an *explicit* key ("? x") assign last_scalar_node without
+ * touching either placement flag.  So a later scalar could arrive still
+ * carrying an earlier one's "I am the root" and clear a p->root that had since
+ * been filled by a finished collection:
+ *
+ *     &O
+ *      1:
+ *     ? *O
+ *
+ * The dedent to column 1 closes the indent-2 mapping onto the root; the ":"
+ * after the explicit key then discarded it.  " 1:" over "? 2:" is the same
+ * thing without the anchor, and parsed as {1: {2: null}} - two top-level
+ * collections silently folded into one, where PyYAML refuses a second
+ * top-level node outright.  With "&O" on the node that is discarded it is
+ * worse than a wrong tree: the anchor leaves the DOM and the alias stays in
+ * it, so the writer emits "*O" against no "&O" anywhere and produces a
+ * document its own parser refuses.  A twelve-hour fuzz run over the writers
+ * reached that in 3.4 million executions.
+ *
+ * Testing identity rather than the flag is the whole fix, and it is the test
+ * detach_last_flow_node() has always made one function above.  Trying instead
+ * to keep the flags truthful on the explicit-key paths looked more thorough
+ * and was wrong twice over: a captured explicit key is in temp but already
+ * claimed, so calling it "in temp" let a same-line ":" take back a key that
+ * was spoken for ("? !!str : 1" gained an empty key), and calling it "in
+ * neither" broke the compact mapping an explicit key is allowed to be
+ * ("? earth: blue").  The placement flags are left exactly as they were.
+ */
 static GTEXT_YAML_Node *detach_last_scalar(parser_state *p) {
 	GTEXT_YAML_Node *node = p->last_scalar_node;
 
 	if (!node) return NULL;
 
-	if (p->last_scalar_in_root) {
+	if (p->last_scalar_in_root && p->root == node) {
 		p->root = NULL;
 		p->last_scalar_node = NULL;
+		p->last_scalar_in_root = false;
 		return node;
 	}
 
