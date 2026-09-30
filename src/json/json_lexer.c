@@ -583,6 +583,22 @@ static int json_lexer_match_keyword(json_lexer * lexer, json_token * token) {
     return 0;
   }
 
+  /* In streaming mode a run that reaches the end of what has arrived is
+   * unfinished rather than a keyword. The word decided here is only the word
+   * if nothing follows it that would make it longer: `null` with a chunk
+   * boundary behind it may be the first four bytes of the name `nullzc`, and
+   * committing the keyword spends the bytes on a token the next chunk
+   * contradicts. Nothing is consumed - the caller keeps the bytes and lexes
+   * them again when more arrive - and gtext_json_stream_finish() clears
+   * streaming_mode, so the last keyword in a document is not left waiting.
+   *
+   * This is the rule json_lexer_parse_identifier() already applies to the
+   * same bytes. The keyword path needs it too, because it is reached first
+   * and returns without ever giving the identifier path a look. */
+  if (lexer->streaming_mode && len >= lexer->input_len - start) {
+    return GTEXT_JSON_E_INCOMPLETE;
+  }
+
   const char * keyword_start = lexer->input + start;
 
   // Check for standard keywords
@@ -2197,6 +2213,11 @@ GTEXT_INTERNAL_API GTEXT_JSON_Status json_lexer_next(
   int keyword_result = json_lexer_match_keyword(lexer, token);
   if (keyword_result == 1) {
     return GTEXT_JSON_OK;
+  }
+  else if (keyword_result == GTEXT_JSON_E_INCOMPLETE) {
+    /* The run reached the end of the buffer, so the word is not settled yet.
+     * Nothing was consumed; the stream keeps the bytes. */
+    return GTEXT_JSON_E_INCOMPLETE;
   }
   else if (keyword_result == GTEXT_JSON_E_NONFINITE) {
     /* "NaN" or "Infinity" where nonfinite numbers were not asked for. Where

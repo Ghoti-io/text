@@ -1326,6 +1326,105 @@ TEST(Json5UnquotedKeys, ASignedNonfiniteIsNotAName) {
 	EXPECT_EQ(names[1], "NaN");
 }
 
+/* A keyword is only a keyword if nothing follows it that would make it longer.
+ *
+ * The streaming lexer scanned the whole run of identifier characters, compared it
+ * against the five words, and committed the token when it matched - without asking
+ * whether the run had reached the end of what had arrived. So a chunk boundary
+ * landing exactly after `null` inside the name `nullzc` spent those four bytes on
+ * the keyword, and the next chunk opened with `zc`, where a colon was due. The
+ * document was accepted whole and refused at four of its fifteen chunk sizes.
+ *
+ * All five words are here because the defect was in the run measurement they
+ * share, not in any one of them: the fuzzer found `null` and a sweep of the same
+ * shape then diverged on `true`, `false`, `NaN` and `Infinity` too.
+ *
+ * The names are read back at every chunk size as well as the verdict. A reader
+ * that accepted the document but handed `null` up as the key would satisfy a
+ * verdict-only test, and that is exactly the state the defect produced one feed
+ * earlier.
+ */
+TEST(Json5UnquotedKeys, AKeywordIsOnlyAKeywordIfNothingFollowsIt) {
+	GTEXT_JSON_Parse_Options opts = key_opts();
+	opts.allow_nonfinite_numbers = true;
+
+	struct Case {
+		const char * src;
+		const char * name;
+	};
+	const Case cases[] = {
+	    /* The five keywords, each as the head of a longer name. */
+	    {"{nullzc:1}", "nullzc"},
+	    {"{truez:1}", "truez"},
+	    {"{falsez:1}", "falsez"},
+	    {"{NaNz:1}", "NaNz"},
+	    {"{Infinityz:1}", "Infinityz"},
+	    /* The word itself is still a name, so a fix that refused both would not
+	       pass: the run simply ends where it ends. */
+	    {"{null:1}", "null"},
+	    {"{true:1}", "true"},
+	    {"{Infinity:1}", "Infinity"},
+	    /* A boundary after the word with the name continuing past a second
+	       keyword, which is where the run measurement has to hold twice. */
+	    {"{nullnull:1}", "nullnull"},
+	    /* The crash the soak found, with a member in front so the boundary falls
+	       inside the name rather than at the start of the document. */
+	    {"{a:2,nullzc:1}", "a"},
+	};
+	for (const Case & c : cases) {
+		expect_both(c.src, &opts, true);
+	}
+
+	/* The DOM's names. */
+	for (const Case & c : cases) {
+		bool ok = false;
+		std::vector<std::string> names = names_of(c.src, &opts, &ok);
+		EXPECT_TRUE(ok) << "input [" << c.src << "]";
+		ASSERT_FALSE(names.empty()) << "input [" << c.src << "]";
+		EXPECT_EQ(names[0], c.name) << "DOM, input [" << c.src << "]";
+	}
+
+	/* And the streaming reader's, at every chunk size. */
+	for (const Case & c : cases) {
+		const std::string src = c.src;
+		for (size_t chunk = 1; chunk <= src.size(); chunk++) {
+			std::vector<std::string> keys;
+			GTEXT_JSON_Event_cb cb = [](void * user, const GTEXT_JSON_Event * ev,
+			                             GTEXT_JSON_Error *) {
+				if (ev->type == GTEXT_JSON_EVT_KEY) {
+					static_cast<std::vector<std::string> *>(user)->push_back(
+					    std::string(ev->as.str.s ? ev->as.str.s : "",
+					        ev->as.str.len));
+				}
+				return GTEXT_JSON_OK;
+			};
+			GTEXT_JSON_Stream * st = gtext_json_stream_new(&opts, cb, &keys);
+			ASSERT_NE(st, nullptr);
+			GTEXT_JSON_Error err;
+			std::memset(&err, 0, sizeof(err));
+			GTEXT_JSON_Status status = GTEXT_JSON_OK;
+			for (size_t i = 0; i < src.size(); i += chunk) {
+				size_t n = std::min(chunk, src.size() - i);
+				status = gtext_json_stream_feed(st, src.data() + i, n, &err);
+				if (status != GTEXT_JSON_OK) {
+					break;
+				}
+			}
+			if (status == GTEXT_JSON_OK) {
+				status = gtext_json_stream_finish(st, &err);
+			}
+			gtext_json_stream_free(st);
+			gtext_json_error_free(&err);
+			EXPECT_EQ(status, GTEXT_JSON_OK)
+			    << "chunk " << chunk << ", input [" << src << "]";
+			ASSERT_FALSE(keys.empty())
+			    << "chunk " << chunk << ", input [" << src << "]";
+			EXPECT_EQ(keys[0], c.name)
+			    << "streaming, chunk " << chunk << ", input [" << src << "]";
+		}
+	}
+}
+
 // ===========================================================================
 // The dialect as a whole
 // ===========================================================================
