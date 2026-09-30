@@ -498,7 +498,33 @@ static GTEXT_YAML_Status stream_emit_alias(GTEXT_YAML_Stream *s, GTEXT_YAML_Toke
 
      Which of the two is not known until the token after the alias, so it
      travels to the parser in the outer slot - the same journey, and the same
-     arbiter, as a property a second one displaces. */
+     arbiter, as a property a second one displaces.
+
+     **But first the same question every other token kind asks**, and this path
+     was the one place that did not ask it. A property is only the alias's
+     business at all if the alias's line has not *left it behind*; where it has,
+     the property names an empty node and the alias is an unrelated sibling:
+
+         a: &OO        the "*OO" line begins at the same column, so a's value
+         *OO :         was never written - &OO is its, and the alias is the
+                       next key, carrying nothing
+
+     Deferring unconditionally sent &OO to the parser as an outer property, and
+     nothing there could claim it: no collection opens on that line, because
+     "*OO" is a key in the mapping already open. check_outer_property_claimed()
+     then refused the document with "An alias node may not carry an anchor",
+     which is the right message for the case above it and the wrong answer here.
+     PyYAML reads it as {'a': None, None: None}.
+
+     Found by the fuzz soak, through the yaml writer's round trip: the writer
+     emitted exactly this shape from a tree that was correct, and the parser
+     would not read its own output back. Five other token kinds - indicator,
+     anchor, non-specific tag, tag, scalar - already paired this check with the
+     flush; the alias was the sixth and had only half of it. */
+  if (stream_props_left_behind(s, tok)) {
+    GTEXT_YAML_Status flush = stream_flush_empty_node(s, tok);
+    if (flush != GTEXT_YAML_OK) return flush;
+  }
   GTEXT_YAML_Status defer = stream_defer_property(
     s, tok, &s->pending_anchor, &s->pending_anchor_line,
     &s->outer_anchor, &s->outer_anchor_line,
