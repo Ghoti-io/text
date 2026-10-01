@@ -252,6 +252,128 @@ TEST(YamlWriterContract, AStringThatSpellsANumberIsQuoted) {
 	}
 }
 
+/* The merge key is the other text whose plain spelling is not a string, and
+   it is the only one that is not the schema's doing.
+
+   A plain "<<" in a mapping key resolves to tag:yaml.org,2002:merge (10.3.2),
+   so a DOM holding the *string* "<<" for a key had no plain spelling - and
+   went out plain anyway.  Both halves were wrong and only one was loud: with a
+   scalar value this library's own parser refused the output it had just
+   written ("Merge value must be mapping or sequence of mappings"), which is
+   how a fuzzer found it in a built document; with a mapping value the output
+   parsed cleanly and came back with the key gone and its contents spliced into
+   the mapping around it.
+
+   The second half is why this is tested by reading the document back rather
+   than by looking for a quote in the text: "wrote something the parser
+   accepts" is the property that held while the value was being lost.
+
+   The controls are the texts next to it, because a check for "contains <<"
+   rather than "is <<" would quote all of them: "<<" is two characters of
+   ordinary ns-char anywhere else. */
+TEST(YamlWriterContract, AStringKeyThatSpellsTheMergeKeyIsQuoted) {
+	struct Case { const char *key; bool mapping_value; };
+	const Case cases[] = {
+		{ "<<", false },   /* the fuzzer's shape: scalar value, refused output */
+		{ "<<", true },    /* the quiet shape: the key vanished */
+		{ "<<x", false },  /* controls: these have a plain spelling */
+		{ "a<<", false },
+		{ "<", false },
+		{ "<<<", false },
+	};
+	for (const Case &c : cases) {
+		GTEXT_YAML_Document *doc = gtext_yaml_document_new(nullptr, nullptr);
+		GTEXT_YAML_Node *root = gtext_yaml_node_new_mapping(doc, nullptr, nullptr);
+		ASSERT_NE(root, nullptr);
+		GTEXT_YAML_Node *key = gtext_yaml_node_new_scalar_typed(
+			doc, c.key, strlen(c.key), GTEXT_YAML_STRING, nullptr, nullptr);
+		ASSERT_NE(key, nullptr) << c.key;
+		GTEXT_YAML_Node *value = nullptr;
+		if (c.mapping_value) {
+			value = gtext_yaml_node_new_mapping(doc, nullptr, nullptr);
+			value = gtext_yaml_mapping_set(doc, value,
+				gtext_yaml_node_new_scalar_typed(
+					doc, "a", 1, GTEXT_YAML_STRING, nullptr, nullptr),
+				gtext_yaml_node_new_scalar(doc, "1", nullptr, nullptr));
+		}
+		else {
+			value = gtext_yaml_node_new_scalar_typed(
+				doc, "x", 1, GTEXT_YAML_STRING, nullptr, nullptr);
+		}
+		ASSERT_NE(value, nullptr) << c.key;
+		root = gtext_yaml_mapping_set(doc, root, key, value);
+		ASSERT_NE(root, nullptr) << c.key;
+		ASSERT_TRUE(gtext_yaml_document_set_root(doc, root)) << c.key;
+
+		for (int block = 0; block < 2; block++) {
+			Written w = write_doc(doc, block != 0);
+			ASSERT_EQ(w.status, GTEXT_YAML_OK) << c.key;
+
+			GTEXT_YAML_Error err;
+			memset(&err, 0, sizeof(err));
+			GTEXT_YAML_Document *back =
+				gtext_yaml_parse(w.text.data(), w.text.size(), nullptr, &err);
+			/* EXPECT and a gate rather than ASSERT, so that every case in the
+			   table reports.  The two "<<" rows fail in different ways - one is
+			   refused here and the other loses its key below - and an ASSERT on
+			   the first row would end the test before the second was tried,
+			   which is the row that matters. */
+			EXPECT_NE(back, nullptr)
+				<< "key <<" << c.key << ">> wrote " << w.text << " which this "
+				<< "parser refuses: " << (err.message ? err.message : "");
+			gtext_yaml_error_free(&err);
+
+			if (back) {
+				const GTEXT_YAML_Node *r = gtext_yaml_document_root(back);
+				EXPECT_NE(r, nullptr) << c.key;
+				if (r) {
+					EXPECT_EQ(gtext_yaml_mapping_size(r), 1u)
+						<< "key <<" << c.key << ">> wrote " << w.text;
+					EXPECT_NE(gtext_yaml_mapping_get(r, c.key), nullptr)
+						<< "key <<" << c.key << ">> wrote " << w.text
+						<< " which does not have that key in it any more";
+				}
+				gtext_yaml_free(back);
+			}
+		}
+		gtext_yaml_free(doc);
+	}
+}
+
+/* And the writer does not quote it where it is not a key: a value's plain
+   spelling is never resolved as a merge.  This is the lower bound of the check
+   above, and it fails if "<<" is ever quoted by scalar_needs_quotes() - which
+   would be a different fix, in the wrong place, scoring the test above for
+   free. */
+TEST(YamlWriterContract, APlainMergeKeyTextIsStillAStringAsAValue) {
+	GTEXT_YAML_Document *doc = gtext_yaml_document_new(nullptr, nullptr);
+	GTEXT_YAML_Node *root = gtext_yaml_node_new_mapping(doc, nullptr, nullptr);
+	root = gtext_yaml_mapping_set(doc, root,
+		gtext_yaml_node_new_scalar_typed(
+			doc, "k", 1, GTEXT_YAML_STRING, nullptr, nullptr),
+		gtext_yaml_node_new_scalar_typed(
+			doc, "<<", 2, GTEXT_YAML_STRING, nullptr, nullptr));
+	ASSERT_NE(root, nullptr);
+	ASSERT_TRUE(gtext_yaml_document_set_root(doc, root));
+
+	Written w = write_doc(doc);
+	ASSERT_EQ(w.status, GTEXT_YAML_OK);
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *back =
+		gtext_yaml_parse(w.text.data(), w.text.size(), nullptr, &err);
+	ASSERT_NE(back, nullptr) << w.text;
+	gtext_yaml_error_free(&err);
+	const GTEXT_YAML_Node *v =
+		gtext_yaml_mapping_get(gtext_yaml_document_root(back), "k");
+	ASSERT_NE(v, nullptr) << w.text;
+	EXPECT_EQ(gtext_yaml_node_type(v), GTEXT_YAML_STRING) << w.text;
+	const char *got = gtext_yaml_node_as_string(v);
+	EXPECT_STREQ(got ? got : "", "<<") << w.text;
+	gtext_yaml_free(back);
+	gtext_yaml_free(doc);
+}
+
 /* And the plain constructor agrees with a parse of the same characters. */
 TEST(YamlWriterContract, ABuiltScalarHasTheTypeItsTextWouldParseAs) {
 	struct Case { const char *text; GTEXT_YAML_Node_Type type; };

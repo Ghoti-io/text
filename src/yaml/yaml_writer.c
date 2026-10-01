@@ -1684,6 +1684,25 @@ static GTEXT_YAML_Status write_block_scalar(
 
    `style` is what the caller would prefer, after the options and the node's
    own remembered style have been consulted. */
+/* 10.3.2's merge row: a plain "<<" in a mapping key resolves to
+   tag:yaml.org,2002:merge, not to a string.  is_merge_key() in yaml_resolve.c
+   is where that rule is stated and commented; this is the writer's half of it.
+
+   Position is not consulted, so the string "<<" is quoted as a value too,
+   where plain would have been fine.  That follows the "---" and "..." family
+   in scalar_needs_quotes(): quoting is value-preserving for a string, so the
+   whole family is quoted rather than only the positions where leaving it plain
+   is fatal, and the alternative is threading "is this a key" through
+   plan_scalar_style() for two characters.
+
+   Dialect and schema are not consulted either, because merge keys are not
+   theirs to decide: allow_merge_keys defaults to true and is_merge_key() asks
+   neither.  Nor does allow_merge_keys = false make plain "<<" safe to write -
+   it makes it an error to read. */
+static bool plain_text_is_merge_key(const char *value, size_t len) {
+  return len == 2 && value[0] == '<' && value[1] == '<';
+}
+
 static GTEXT_YAML_Scalar_Style plan_scalar_style(
     GTEXT_YAML_Scalar_Style style,
     const char *value,
@@ -1729,10 +1748,19 @@ static GTEXT_YAML_Scalar_Style plan_scalar_style(
        strictly more of them - "yes", "off", "012", "0:0" - so the strings
        spelling those went out plain and came back as a bool or an integer;
        the failsafe schema resolves none of them, so quoting for its sake
-       protects nothing. */
+       protects nothing.
+
+       A plain "<<" is the other text that does not resolve to a string, and
+       it is not the schema's doing: as a mapping key it is the merge key.  A
+       DOM built with the string "<<" for a key went out plain, and the output
+       was then refused by this library's own parser for a merge value that is
+       not a mapping - or, where the value *was* a mapping, read back with the
+       key gone and its contents spliced into the mapping around it.  A fuzzer
+       found the first; the second is the one that was quiet. */
     else if (is_string
-             && gtext_yaml_plain_text_resolves_to_non_string_as(
-                    value, len, schema, yaml_1_1)) {
+             && (gtext_yaml_plain_text_resolves_to_non_string_as(
+                     value, len, schema, yaml_1_1)
+                 || plain_text_is_merge_key(value, len))) {
       style = GTEXT_YAML_SCALAR_STYLE_DOUBLE_QUOTED;
     }
     /* Long enough to wrap, and wrapping it is allowed to change how it is
