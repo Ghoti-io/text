@@ -580,7 +580,22 @@ static bool parse_sexagesimal_value(
 
 	double total = 0.0;
 	bool has_fraction = false;
-	while (*p != '\0') {
+	/* "for (;;)" and not "while (*p)", because the loop condition is the one
+	   place the empty-segment rule below could be skipped past.  1.1's int row
+	   is "[-+]? [1-9] [0-9_]* (: [0-5]? [0-9])+", so every colon has to have a
+	   segment after it, and the guard on seg_len is what says so - but with a
+	   trailing colon "p = colon + 1" lands on the terminator and the condition
+	   ended the loop before the guard was ever reached.  "-4:" resolved to the
+	   integer -4, and the scalar text kept the colon.
+
+	   That pair is what makes it more than a wrong type.  A plain scalar ending
+	   in ":" is one the writer has to quote - nothing safe follows the colon -
+	   and a quoted scalar is a string, so the document came back with "-4:"
+	   where an int had been.  The writer was right both times; the int was
+	   never a number.  The yaml-writer fuzzer found it as a round trip that
+	   changed a value, which is the only way a self-consistent wrong answer
+	   ever surfaces: it took a reader that disagreed with the writer. */
+	for (;;) {
 		const char *colon = strchr(p, ':');
 		bool last = colon == NULL;
 		size_t seg_len = last ? strlen(p) : (size_t)(colon - p);
@@ -600,6 +615,7 @@ static bool parse_sexagesimal_value(
 			}
 		} else {
 			bool seen_dot = false;
+			bool seen_digit = false;
 			double frac_scale = 1.0;
 			for (size_t i = 0; i < seg_len; i++) {
 				char c = p[i];
@@ -609,19 +625,32 @@ static bool parse_sexagesimal_value(
 						return false;
 					}
 					seen_dot = true;
+					/* The dot is what the float row has and the int row does
+					   not, so seeing one settles the type.  Counting fraction
+					   digits instead made "1:5." - a float of 65 by that row's
+					   "\. [0-9_]*", whose digits are optional - the integer
+					   65, and the dot then had nowhere to go in the output. */
+					has_fraction = true;
 					continue;
 				}
 				if (c < '0' || c > '9') {
 					gtext_allocator_free(alloc, clean);
 					return false;
 				}
+				seen_digit = true;
 				if (!seen_dot) {
 					segment = segment * 10.0 + (double)(c - '0');
 				} else {
 					frac_scale *= 10.0;
 					segment += (double)(c - '0') / frac_scale;
-					has_fraction = true;
 				}
+			}
+			/* A segment of punctuation is not a segment.  "-4:." has a
+			   non-empty last segment and no digit in it, and came out as the
+			   integer -240. */
+			if (!seen_digit) {
+				gtext_allocator_free(alloc, clean);
+				return false;
 			}
 		}
 
