@@ -245,3 +245,66 @@ TEST(YamlDepth, TheParsedLimitStillBinds) {
 	EXPECT_EQ(ParseStatus(std::string(500, '[') + "x" + std::string(500, ']'), 256),
 		GTEXT_YAML_E_DEPTH);
 }
+
+/* The *other* walk in the resolver, which stayed a recursion when resolve_node
+   stopped being one.
+   
+   update_alias_targets() repoints any alias whose target a merge replaced, and
+   it runs over the whole document from the root - thirty lines below the
+   comment in resolve_node() explaining why depth must not cost a frame.  Its
+   frames are small, five callee-saved registers and a return address, so 48
+   bytes a level: this document survives 173000 levels and takes the process
+   down at 175000, which is 8 MiB to within a rounding error.
+   
+   Two things have to be true for the walk to run at all, and both are asserted
+   below rather than assumed, because either one failing would make this test
+   pass without ever reaching the code it is about:
+   
+   - a merge has to have *replaced* a mapping, not just filled it in, since
+     only a replacement goes in the list the walk exists to apply.  "{<<: *r}"
+     is one pair and gains two, so it cannot be merged in place.
+   - the document has to really be that deep.
+   
+   The shape is "[deep, x]" rather than "[deep]" because with one child the
+   recursion into it is in tail position and gcc -O2 eliminates it - 160000
+   levels of "[[[...]]]" parse fine on the recursive walk, which is a reminder
+   that a witness for a stack overflow has to defeat the optimiser before it
+   can defeat the stack. */
+TEST(YamlDepth, TheMergeAliasWalkDoesNotUseTheCStack) {
+	const size_t n = 200000;
+	std::string in = "a: &r {q: 1, w: 2}\nb: ";
+	in += std::string(n, '[');
+	in += "{<<: *r}";
+	for (size_t i = 0; i < n; ++i) in += ",x]";
+
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.max_depth = SIZE_MAX;
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc =
+		gtext_yaml_parse(in.data(), in.size(), &opts, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "");
+	gtext_yaml_error_free(&err);
+
+	/* Control one: the nesting is really there. */
+	const GTEXT_YAML_Node *node =
+		gtext_yaml_mapping_get(gtext_yaml_document_root(doc), "b");
+	size_t seen = 0;
+	while (node && gtext_yaml_node_type(node) == GTEXT_YAML_SEQUENCE
+			&& gtext_yaml_sequence_length(node) > 0) {
+		node = gtext_yaml_sequence_get(node, 0);
+		seen++;
+	}
+	EXPECT_EQ(seen, n);
+
+	/* Control two: the merge grew the mapping, so a replacement was recorded
+	   and the walk had something to do. */
+	ASSERT_NE(node, nullptr);
+	ASSERT_EQ(gtext_yaml_node_type(node), GTEXT_YAML_MAPPING);
+	EXPECT_EQ(gtext_yaml_mapping_size(node), 2u);
+	EXPECT_NE(gtext_yaml_mapping_get(node, "q"), nullptr);
+	EXPECT_NE(gtext_yaml_mapping_get(node, "w"), nullptr);
+
+	gtext_yaml_free(doc);
+}

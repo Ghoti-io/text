@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1311,50 +1312,185 @@ static GTEXT_YAML_Status apply_merge_keys(
 	return GTEXT_YAML_OK;
 }
 
-static void update_alias_targets(
-	GTEXT_YAML_Node *node,
+/* A set of nodes this walk has already been to.
+ *
+ * Open addressing on the pointer, because the only question asked of it is
+ * "seen before", there is no deletion, and the keys are addresses from one
+ * arena - so the low bits are the varying ones and a multiply-shift scatters
+ * them well enough. Sized to a power of two and kept under three quarters
+ * full, which bounds a probe run without a load factor calculation at every
+ * insert. */
+typedef struct {
+	const GTEXT_YAML_Node **slots;
+	size_t capacity;   /* a power of two, or 0 */
+	size_t count;
+	const GTEXT_Allocator *alloc;
+} yaml_node_set;
+
+static size_t node_set_slot(const yaml_node_set *set, const GTEXT_YAML_Node *n) {
+	/* Knuth's multiplicative constant for 64 bits, then take the high bits of
+	   the product, which mixes the low bits of the address into the index. */
+	uint64_t h = (uint64_t)(uintptr_t)n * 0x9E3779B97F4A7C15ull;
+	size_t i = (size_t)(h >> 32) & (set->capacity - 1);
+	while (set->slots[i] && set->slots[i] != n) {
+		i = (i + 1) & (set->capacity - 1);
+	}
+	return i;
+}
+
+static bool node_set_grow(yaml_node_set *set) {
+	size_t new_capacity = set->capacity == 0 ? 64 : set->capacity * 2;
+	const GTEXT_YAML_Node **slots = (const GTEXT_YAML_Node **)gtext_allocator_calloc(
+		set->alloc, new_capacity, sizeof(*slots)
+	);
+	if (!slots) return false;
+	const GTEXT_YAML_Node **old_slots = set->slots;
+	size_t old_capacity = set->capacity;
+	set->slots = slots;
+	set->capacity = new_capacity;
+	for (size_t i = 0; i < old_capacity; i++) {
+		if (old_slots[i]) set->slots[node_set_slot(set, old_slots[i])] = old_slots[i];
+	}
+	gtext_allocator_free(set->alloc, old_slots);
+	return true;
+}
+
+/* true if @p n was added, false if it was already there.  @p oom is set if the
+   table could not grow, which is the one case a caller must not read as
+   "already seen". */
+static bool node_set_add(yaml_node_set *set, const GTEXT_YAML_Node *n, bool *oom) {
+	if (set->count * 4 >= set->capacity * 3) {
+		if (!node_set_grow(set)) { *oom = true; return false; }
+	}
+	size_t i = node_set_slot(set, n);
+	if (set->slots[i] == n) return false;
+	set->slots[i] = n;
+	set->count++;
+	return true;
+}
+
+/* Repoint every alias whose target was replaced by a merge.
+ *
+ * This was a recursion over the whole document, and 22 bytes of YAML ended the
+ * process:
+ *
+ *     &O
+ *     :: - <:
+ *     <<
+ *     - <::
+ *     *O
+ *
+ * with stock options - allow_merge_keys defaults to true - in every schema and
+ * both dialects.  resolve_node() below was converted from recursion to a heap
+ * stack for exactly this reason, and says so in its own comment; this walk is
+ * called from the same function thirty lines further down and stayed a
+ * recursion over the same tree.
+ *
+ * **But depth is only half of it, and the smaller half.** A merge key whose
+ * value dereferences to one of its own ancestors splices that ancestor's pairs
+ * into a descendant, and the pairs are copied by pointer - so the document
+ * afterwards contains a cycle.  This walk was not running out of stack because
+ * the document was deep.  It was not terminating.  A one-gigabyte stack
+ * overflows in the same place, which is how that was established and is the
+ * only way to tell the two apart from a trace that just repeats.
+ *
+ * So both: the stack is on the heap, and the walk carries the set of nodes it
+ * has already visited.  The set is the part that matters, and a depth cap
+ * would not have done instead - deep documents are supported here deliberately
+ * (see resolve_node), so any cap large enough to keep them working is also
+ * large enough to spend a long time going round a cycle.
+ *
+ * Repointing is idempotent, so a global set rather than a path is right: a DAG
+ * built by ordinary aliases is walked once per node instead of once per path
+ * into it, which is a side benefit and not the reason.
+ *
+ * The cycle itself is a defect in its own right and is not fixed here - a
+ * caller still gets a cyclic DOM back, which their own recursive walk will not
+ * survive.  See notes/text/SOAK-FINDINGS.md finding 8. */
+static GTEXT_YAML_Status update_alias_targets(
+	GTEXT_YAML_Node *root,
 	yaml_merge_replacement *replacements,
-	size_t replacement_count
+	size_t replacement_count,
+	const GTEXT_Allocator *alloc
 ) {
-	if (!node) return;
+	if (!root) return GTEXT_YAML_OK;
 
-	if (node->type == GTEXT_YAML_ALIAS && node->as.alias.target) {
-		for (size_t i = 0; i < replacement_count; i++) {
-			if (node->as.alias.target == replacements[i].old_node) {
-				node->as.alias.target = replacements[i].new_node;
-				break;
+	GTEXT_YAML_Node **stack = NULL;
+	size_t count = 0, capacity = 0;
+	yaml_node_set seen = {NULL, 0, 0, alloc};
+	GTEXT_YAML_Status status = GTEXT_YAML_OK;
+	bool oom = false;
+
+	#define YAML_UAT_PUSH(n)                                                   \
+		do {                                                                   \
+			GTEXT_YAML_Node *push_node = (n);                                  \
+			if (push_node) {                                                   \
+				if (count == capacity) {                                        \
+					size_t new_capacity = capacity == 0 ? 32 : capacity * 2;     \
+					GTEXT_YAML_Node **items = (GTEXT_YAML_Node **)              \
+						gtext_allocator_realloc(alloc, stack,                    \
+							new_capacity * sizeof(*items));                       \
+					if (!items) { oom = true; goto done; }                       \
+					stack = items;                                              \
+					capacity = new_capacity;                                    \
+				}                                                               \
+				stack[count++] = push_node;                                     \
+			}                                                                   \
+		} while (0)
+
+	YAML_UAT_PUSH(root);
+
+	while (count > 0) {
+		GTEXT_YAML_Node *node = stack[--count];
+
+		if (node->type == GTEXT_YAML_ALIAS) {
+			/* A leaf for this walk: an alias's target is not descended into,
+			   which is what keeps an ordinary alias to an ancestor from being
+			   a cycle at all. */
+			if (node->as.alias.target) {
+				for (size_t i = 0; i < replacement_count; i++) {
+					if (node->as.alias.target == replacements[i].old_node) {
+						node->as.alias.target = replacements[i].new_node;
+						break;
+					}
+				}
 			}
+			continue;
 		}
-		return;
+
+		/* Only collections can be revisited, and only they are worth the
+		   table's memory. */
+		if (!node_set_add(&seen, node, &oom)) {
+			if (oom) goto done;
+			continue;
+		}
+
+		switch (node->type) {
+			case GTEXT_YAML_SEQUENCE:
+			case GTEXT_YAML_OMAP:
+			case GTEXT_YAML_PAIRS:
+				for (size_t i = 0; i < node->as.sequence.count; i++) {
+					YAML_UAT_PUSH(node->as.sequence.children[i]);
+				}
+				break;
+			case GTEXT_YAML_MAPPING:
+			case GTEXT_YAML_SET:
+				for (size_t i = 0; i < node->as.mapping.count; i++) {
+					YAML_UAT_PUSH(node->as.mapping.pairs[i].key);
+					YAML_UAT_PUSH(node->as.mapping.pairs[i].value);
+				}
+				break;
+			default:
+				break;
+		}
 	}
 
-	if (node->type == GTEXT_YAML_SEQUENCE) {
-		for (size_t i = 0; i < node->as.sequence.count; i++) {
-			update_alias_targets(node->as.sequence.children[i], replacements, replacement_count);
-		}
-		return;
-	}
-
-	if (node->type == GTEXT_YAML_OMAP || node->type == GTEXT_YAML_PAIRS) {
-		for (size_t i = 0; i < node->as.sequence.count; i++) {
-			update_alias_targets(node->as.sequence.children[i], replacements, replacement_count);
-		}
-		return;
-	}
-
-	if (node->type == GTEXT_YAML_MAPPING) {
-		for (size_t i = 0; i < node->as.mapping.count; i++) {
-			update_alias_targets(node->as.mapping.pairs[i].key, replacements, replacement_count);
-			update_alias_targets(node->as.mapping.pairs[i].value, replacements, replacement_count);
-		}
-	}
-
-	if (node->type == GTEXT_YAML_SET) {
-		for (size_t i = 0; i < node->as.mapping.count; i++) {
-			update_alias_targets(node->as.mapping.pairs[i].key, replacements, replacement_count);
-			update_alias_targets(node->as.mapping.pairs[i].value, replacements, replacement_count);
-		}
-	}
+done:
+	#undef YAML_UAT_PUSH
+	if (oom) status = GTEXT_YAML_E_OOM;
+	gtext_allocator_free(alloc, stack);
+	gtext_allocator_free(alloc, seen.slots);
+	return status;
 }
 
 static void mapping_remove_pair(GTEXT_YAML_Node *node, size_t index) {
@@ -2661,7 +2797,17 @@ GTEXT_INTERNAL_API GTEXT_YAML_Status yaml_resolve_document(
 
 	doc->root = root;
 	if (replacement_count > 0) {
-		update_alias_targets(doc->root, replacements, replacement_count);
+		GTEXT_YAML_Status walk = update_alias_targets(
+			doc->root, replacements, replacement_count, doc->ctx->alloc
+		);
+		if (walk != GTEXT_YAML_OK) {
+			gtext_allocator_free(doc->ctx->alloc, replacements);
+			if (error) {
+				error->code = GTEXT_YAML_E_OOM;
+				error->message = "Out of memory repointing merged aliases";
+			}
+			return walk;
+		}
 	}
 	gtext_allocator_free(doc->ctx->alloc, replacements);
 	return GTEXT_YAML_OK;
