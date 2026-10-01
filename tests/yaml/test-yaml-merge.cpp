@@ -231,6 +231,84 @@ TEST(YamlMerge, AQuotedMergeKeyIsAnOrdinaryString) {
 	}
 }
 
+/* A merge splices the source mapping's pairs in *by pointer*, so a merge whose
+   value dereferences to one of the mapping's own ancestors makes the document
+   contain itself.  Twenty-two bytes did that, and the process died:
+
+       &O
+       :: - <:
+       <<
+       - <::
+       *O
+
+   The death was in the walk that repoints merged aliases, which was a
+   recursion; a one-gigabyte stack overflowed in the same place, which is how
+   "deep" was ruled out and "does not terminate" ruled in.  But a cycle-safe
+   walk there only moves the problem: the writer and every public accessor are
+   ordinary recursions over the DOM, and a cyclic DOM handed back to a caller is
+   a crash in the caller's code.  There is also no YAML to write it as - the
+   writer emits a shared node inline rather than as an alias, so a cycle has no
+   output at all.  So the merge is refused, which is the only answer that leaves
+   a document anyone can use.
+
+   PyYAML accepts these and builds a cyclic Python object (its repr prints
+   "{...}"), which a garbage-collected language can hold and C cannot.  That is
+   a deliberate divergence and is recorded in notes/text/SOAK-FINDINGS.md
+   finding 8, not an oversight.
+
+   What is *not* refused is the lower bound of this check, and it is the half
+   worth testing: an alias to an ancestor is ordinary YAML and is not
+   containment, and a mapping may merge from itself as long as nothing comes
+   back round - "&r {a: 1, <<: *r}" splices only "a: 1", because
+   merge_from_mapping skips merge keys. */
+TEST(YamlMerge, AMergeMayNotMakeAMappingContainItself) {
+	struct Case { const char *yaml; const char *expected; };
+	const Case cases[] = {
+		/* The 22-byte fuzz witness, and the shape it reduces to. */
+		{ "&O\n:: - <:\n<<\n- <::\n*O", nullptr },
+		{ "&r\nk: {<<: *r}\n", nullptr },
+		{ "&r\nk: {<<: *r, z: 9}\n", nullptr },
+		/* Depth does not help it: the ancestor is still an ancestor. */
+		{ "&r\na: 1\nb:\n  c:\n    d: {<<: *r}\n", nullptr },
+		/* The merge source is the mapping itself, and no pair comes back. */
+		{ "&r {a: 1, <<: *r}", "{\"a\": 1}" },
+		{ "&r\na: 1\nsub: &s\n  <<: *s\n", "{\"a\": 1, \"sub\": {}}" },
+		/* An alias to an ancestor is not containment.  Render() prints a node
+		   already on its path as "*", which is how these two terminate. */
+		{ "&r\na: *r\n", "{\"a\": *}" },
+		{ "&r\na: [*r]\n", "{\"a\": [*]}" },
+		/* An ordinary merge from a sibling, and from a nested anchor, which
+		   share a subtree with the source and contain nothing of the target. */
+		{ "base: &b {a: 1}\nderived: {<<: *b, c: 2}\n",
+		  "{\"base\": {\"a\": 1}, \"derived\": {\"a\": 1, \"c\": 2}}" },
+		{ "&r\na: &av {x: 1}\nb: {<<: *av}\n",
+		  "{\"a\": {\"x\": 1}, \"b\": {\"x\": 1}}" },
+	};
+	for (const Case &c : cases) {
+		const std::string got = Render(c.yaml);
+		if (c.expected) {
+			EXPECT_EQ(got, std::string(c.expected))
+				<< "input: " << ::testing::PrintToString(std::string(c.yaml));
+		} else {
+			EXPECT_EQ(got, std::string(""))
+				<< "should have been refused, input: "
+				<< ::testing::PrintToString(std::string(c.yaml));
+		}
+	}
+}
+
+/* The refusal is reported, not just performed: a caller who sees a null
+   document needs to be able to tell this apart from a syntax error. */
+TEST(YamlMerge, ASelfContainingMergeIsReportedAsInvalid) {
+	const char *yaml = "&O\n:: - <:\n<<\n- <::\n*O";
+	GTEXT_YAML_Error err = {};
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(yaml, strlen(yaml), NULL, &err);
+	ASSERT_EQ(doc, nullptr);
+	EXPECT_EQ(err.code, GTEXT_YAML_E_INVALID);
+	ASSERT_NE(err.message, nullptr);
+	EXPECT_NE(strstr(err.message, "contain itself"), nullptr) << err.message;
+}
+
 int main(int argc, char **argv) {
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();

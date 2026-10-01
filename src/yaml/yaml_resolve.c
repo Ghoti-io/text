@@ -1024,6 +1024,156 @@ typedef struct {
 	GTEXT_YAML_Node *new_node;
 } yaml_merge_replacement;
 
+/* A set of nodes this walk has already been to.
+ *
+ * Open addressing on the pointer, because the only question asked of it is
+ * "seen before", there is no deletion, and the keys are addresses from one
+ * arena - so the low bits are the varying ones and a multiply-shift scatters
+ * them well enough. Sized to a power of two and kept under three quarters
+ * full, which bounds a probe run without a load factor calculation at every
+ * insert. */
+typedef struct {
+	const GTEXT_YAML_Node **slots;
+	size_t capacity;   /* a power of two, or 0 */
+	size_t count;
+	const GTEXT_Allocator *alloc;
+} yaml_node_set;
+
+static size_t node_set_slot(const yaml_node_set *set, const GTEXT_YAML_Node *n) {
+	/* Knuth's multiplicative constant for 64 bits, then take the high bits of
+	   the product, which mixes the low bits of the address into the index. */
+	uint64_t h = (uint64_t)(uintptr_t)n * 0x9E3779B97F4A7C15ull;
+	size_t i = (size_t)(h >> 32) & (set->capacity - 1);
+	while (set->slots[i] && set->slots[i] != n) {
+		i = (i + 1) & (set->capacity - 1);
+	}
+	return i;
+}
+
+static bool node_set_grow(yaml_node_set *set) {
+	size_t new_capacity = set->capacity == 0 ? 64 : set->capacity * 2;
+	const GTEXT_YAML_Node **slots = (const GTEXT_YAML_Node **)gtext_allocator_calloc(
+		set->alloc, new_capacity, sizeof(*slots)
+	);
+	if (!slots) return false;
+	const GTEXT_YAML_Node **old_slots = set->slots;
+	size_t old_capacity = set->capacity;
+	set->slots = slots;
+	set->capacity = new_capacity;
+	for (size_t i = 0; i < old_capacity; i++) {
+		if (old_slots[i]) set->slots[node_set_slot(set, old_slots[i])] = old_slots[i];
+	}
+	gtext_allocator_free(set->alloc, old_slots);
+	return true;
+}
+
+/* true if @p n was added, false if it was already there.  @p oom is set if the
+   table could not grow, which is the one case a caller must not read as
+   "already seen". */
+static bool node_set_add(yaml_node_set *set, const GTEXT_YAML_Node *n, bool *oom) {
+	if (set->count * 4 >= set->capacity * 3) {
+		if (!node_set_grow(set)) { *oom = true; return false; }
+	}
+	size_t i = node_set_slot(set, n);
+	if (set->slots[i] == n) return false;
+	set->slots[i] = n;
+	set->count++;
+	return true;
+}
+
+/* The outcome of a reachability question that can itself run out of memory.
+   "No" and "could not tell" are different answers and a caller must not read
+   one as the other, which a bool return would force it to. */
+typedef enum {
+	YAML_REACH_NO = 0,
+	YAML_REACH_YES,
+	YAML_REACH_OOM
+} yaml_reach_result;
+
+/* Does any node in @p roots contain @p target, at any depth, counting a root
+   that *is* the target?
+ *
+ * Containment only: an alias is a leaf here, exactly as it is in
+ * update_alias_targets() below, because the graph whose cycles matter is the
+ * one those walks follow.  An alias to an ancestor is ordinary YAML and is not
+ * a cycle in this graph; a mapping that contains itself is.
+ *
+ * The seen set is shared across all of @p roots, so the whole question costs
+ * one visit per reachable node rather than one per root. */
+static yaml_reach_result nodes_reach_node(
+	GTEXT_YAML_Node *const *roots,
+	size_t root_count,
+	const GTEXT_YAML_Node *target,
+	const GTEXT_Allocator *alloc
+) {
+	if (!target || root_count == 0) return YAML_REACH_NO;
+
+	GTEXT_YAML_Node **stack = NULL;
+	size_t count = 0, capacity = 0;
+	yaml_node_set seen = {NULL, 0, 0, alloc};
+	yaml_reach_result result = YAML_REACH_NO;
+	bool oom = false;
+
+	#define YAML_REACH_PUSH(n)                                                 \
+		do {                                                                   \
+			GTEXT_YAML_Node *push_node = (n);                                  \
+			if (push_node) {                                                   \
+				if (push_node == target) { result = YAML_REACH_YES; goto done; } \
+				if (count == capacity) {                                        \
+					size_t new_capacity = capacity == 0 ? 32 : capacity * 2;     \
+					GTEXT_YAML_Node **items = (GTEXT_YAML_Node **)              \
+						gtext_allocator_realloc(alloc, stack,                    \
+							new_capacity * sizeof(*items));                       \
+					if (!items) { oom = true; goto done; }                       \
+					stack = items;                                              \
+					capacity = new_capacity;                                    \
+				}                                                               \
+				stack[count++] = push_node;                                     \
+			}                                                                   \
+		} while (0)
+
+	for (size_t i = 0; i < root_count; i++) YAML_REACH_PUSH(roots[i]);
+
+	while (count > 0) {
+		GTEXT_YAML_Node *node = stack[--count];
+
+		if (node->type == GTEXT_YAML_ALIAS) continue;
+
+		/* Only a collection can be arrived at twice, and only a collection has
+		   children to enumerate, so the table holds collections alone. */
+		if (!node_set_add(&seen, node, &oom)) {
+			if (oom) goto done;
+			continue;
+		}
+
+		switch (node->type) {
+			case GTEXT_YAML_SEQUENCE:
+			case GTEXT_YAML_OMAP:
+			case GTEXT_YAML_PAIRS:
+				for (size_t i = 0; i < node->as.sequence.count; i++) {
+					YAML_REACH_PUSH(node->as.sequence.children[i]);
+				}
+				break;
+			case GTEXT_YAML_MAPPING:
+			case GTEXT_YAML_SET:
+				for (size_t i = 0; i < node->as.mapping.count; i++) {
+					YAML_REACH_PUSH(node->as.mapping.pairs[i].key);
+					YAML_REACH_PUSH(node->as.mapping.pairs[i].value);
+				}
+				break;
+			default:
+				break;
+		}
+	}
+
+done:
+	#undef YAML_REACH_PUSH
+	if (oom) result = YAML_REACH_OOM;
+	gtext_allocator_free(alloc, stack);
+	gtext_allocator_free(alloc, seen.slots);
+	return result;
+}
+
 static bool is_merge_key(const GTEXT_YAML_Node *key) {
 	key = deref_alias(key);
 	if (!key) return false;
@@ -1093,18 +1243,20 @@ static bool merge_pairs_add_or_replace(
 	long idx = merge_pairs_find(*pairs, *count, key, max_depth);
 	if (idx >= 0) {
 		yaml_merge_pair *existing = &(*pairs)[(size_t)idx];
-		if (from_merge) {
+		/* The winning pair is taken whole.  This used to overwrite the value and
+		   *both tags* and leave the losing key node in place, so a pair could
+		   carry one source's key with another source's key_tag.  The two keys
+		   are nodes_equal, which is why nothing visible went wrong - but
+		   nodes_equal stops at max_depth, so deep enough keys are only equal as
+		   far as it looked, and from_merge then described half the pair.  It
+		   also decides whether the cycle check in apply_merge_keys() walks this
+		   key, which has to be the key that is actually stored. */
+		if (from_merge || existing->from_merge) {
+			existing->key = (GTEXT_YAML_Node *)key;
 			existing->value = value;
 			existing->key_tag = key_tag;
 			existing->value_tag = value_tag;
-			existing->from_merge = true;
-			return true;
-		}
-		if (existing->from_merge) {
-			existing->value = value;
-			existing->key_tag = key_tag;
-			existing->value_tag = value_tag;
-			existing->from_merge = false;
+			existing->from_merge = from_merge;
 			return true;
 		}
 	}
@@ -1269,6 +1421,49 @@ static GTEXT_YAML_Status apply_merge_keys(
 		}
 	}
 
+	/* A merge must not make the mapping contain itself.
+	 *
+	 * The spliced pairs are shared by pointer with the merge source, so if the
+	 * source is this mapping's own ancestor - which a merge value that is an
+	 * alias to an enclosing anchor reaches in one step - the document
+	 * afterwards has a cycle in it.  Twenty-two bytes did this:
+	 *
+	 *     &O
+	 *     :: - <:
+	 *     <<
+	 *     - <::
+	 *     *O
+	 *
+	 * and the process died in update_alias_targets() below, which was a
+	 * recursion.  That walk is iterative and cycle-safe now, and the writer
+	 * and the accessors are not: a cyclic DOM handed back to a caller is a
+	 * segmentation fault in their code, so the place to stop it is here,
+	 * before the document exists.
+	 *
+	 * The question asked is the exact one: does any edge this splice is about
+	 * to add lead back to the mapping the edge starts from.  The pairs the
+	 * document wrote itself are already this mapping's children, so in a graph
+	 * that is still acyclic they cannot reach it, and only the pairs that came
+	 * from a merge are walked.  Nothing here rejects an *alias* to an ancestor
+	 * - that is ordinary YAML, and it is not containment. */
+	for (size_t i = 0; i < merged_count; i++) {
+		if (!merged_pairs[i].from_merge) continue;
+		GTEXT_YAML_Node *ends[2] = {merged_pairs[i].key, merged_pairs[i].value};
+		yaml_reach_result reach = nodes_reach_node(ends, 2, node, doc->ctx->alloc);
+		if (reach == YAML_REACH_NO) continue;
+		gtext_allocator_free(doc->ctx->alloc, merged_pairs);
+		if (error) {
+			if (reach == YAML_REACH_OOM) {
+				error->code = GTEXT_YAML_E_OOM;
+				error->message = "Out of memory checking a merge for a cycle";
+			}
+			else {
+				error->code = GTEXT_YAML_E_INVALID;
+				error->message = "Merge key would make a mapping contain itself";
+			}
+		}
+		return reach == YAML_REACH_OOM ? GTEXT_YAML_E_OOM : GTEXT_YAML_E_INVALID;
+	}
 	if (merged_count <= node->as.mapping.count) {
 		for (size_t i = 0; i < merged_count; i++) {
 			node->as.mapping.pairs[i].key = merged_pairs[i].key;
@@ -1312,63 +1507,6 @@ static GTEXT_YAML_Status apply_merge_keys(
 	return GTEXT_YAML_OK;
 }
 
-/* A set of nodes this walk has already been to.
- *
- * Open addressing on the pointer, because the only question asked of it is
- * "seen before", there is no deletion, and the keys are addresses from one
- * arena - so the low bits are the varying ones and a multiply-shift scatters
- * them well enough. Sized to a power of two and kept under three quarters
- * full, which bounds a probe run without a load factor calculation at every
- * insert. */
-typedef struct {
-	const GTEXT_YAML_Node **slots;
-	size_t capacity;   /* a power of two, or 0 */
-	size_t count;
-	const GTEXT_Allocator *alloc;
-} yaml_node_set;
-
-static size_t node_set_slot(const yaml_node_set *set, const GTEXT_YAML_Node *n) {
-	/* Knuth's multiplicative constant for 64 bits, then take the high bits of
-	   the product, which mixes the low bits of the address into the index. */
-	uint64_t h = (uint64_t)(uintptr_t)n * 0x9E3779B97F4A7C15ull;
-	size_t i = (size_t)(h >> 32) & (set->capacity - 1);
-	while (set->slots[i] && set->slots[i] != n) {
-		i = (i + 1) & (set->capacity - 1);
-	}
-	return i;
-}
-
-static bool node_set_grow(yaml_node_set *set) {
-	size_t new_capacity = set->capacity == 0 ? 64 : set->capacity * 2;
-	const GTEXT_YAML_Node **slots = (const GTEXT_YAML_Node **)gtext_allocator_calloc(
-		set->alloc, new_capacity, sizeof(*slots)
-	);
-	if (!slots) return false;
-	const GTEXT_YAML_Node **old_slots = set->slots;
-	size_t old_capacity = set->capacity;
-	set->slots = slots;
-	set->capacity = new_capacity;
-	for (size_t i = 0; i < old_capacity; i++) {
-		if (old_slots[i]) set->slots[node_set_slot(set, old_slots[i])] = old_slots[i];
-	}
-	gtext_allocator_free(set->alloc, old_slots);
-	return true;
-}
-
-/* true if @p n was added, false if it was already there.  @p oom is set if the
-   table could not grow, which is the one case a caller must not read as
-   "already seen". */
-static bool node_set_add(yaml_node_set *set, const GTEXT_YAML_Node *n, bool *oom) {
-	if (set->count * 4 >= set->capacity * 3) {
-		if (!node_set_grow(set)) { *oom = true; return false; }
-	}
-	size_t i = node_set_slot(set, n);
-	if (set->slots[i] == n) return false;
-	set->slots[i] = n;
-	set->count++;
-	return true;
-}
-
 /* Repoint every alias whose target was replaced by a merge.
  *
  * This was a recursion over the whole document, and 22 bytes of YAML ended the
@@ -1404,9 +1542,11 @@ static bool node_set_add(yaml_node_set *set, const GTEXT_YAML_Node *n, bool *oom
  * built by ordinary aliases is walked once per node instead of once per path
  * into it, which is a side benefit and not the reason.
  *
- * The cycle itself is a defect in its own right and is not fixed here - a
- * caller still gets a cyclic DOM back, which their own recursive walk will not
- * survive.  See notes/text/SOAK-FINDINGS.md finding 8. */
+ * apply_merge_keys() now refuses the merge that made the cycle, so this walk
+ * should no longer be able to meet one.  The set stays: it is what the walk
+ * costs in a DAG anyway, and "should no longer be able to" is a claim about
+ * another function thirteen hundred lines up, which is not the sort of claim a
+ * walk over a caller's data should rest its termination on. */
 static GTEXT_YAML_Status update_alias_targets(
 	GTEXT_YAML_Node *root,
 	yaml_merge_replacement *replacements,
