@@ -301,6 +301,105 @@ TEST(Yaml11Mode, ASexagesimalKeepsItsTypeAcrossARoundTrip) {
 	}
 }
 
+/* And the rest of the two rows, which no round trip could have reported.
+ *
+ *   int    [-+]? [1-9] [0-9_]* ( : [0-5]? [0-9] )+
+ *   float  [-+]? [0-9] [0-9_]* ( : [0-5]? [0-9] )+ \. [0-9_]*
+ *
+ * parse_sexagesimal_value() split on ":" and accepted a segment of any length
+ * and any value, stripped underscores from the whole text before looking at
+ * it, and took a dot anywhere in the last segment as the fraction.  So "0:30"
+ * was the integer 30, "1:99" was 159, "01:30" was 90, "1:3_0" was 90 and
+ * "1:.5" was the float 60.5 - texts the rows do not admit and that PyYAML,
+ * a 1.1 implementation, reads as the strings they are.
+ *
+ * None of them is a round trip failure: the writer emits the digits it was
+ * given and the reader resolves them to the same wrong number, so the two
+ * agree the whole way.  That is why the fuzzer found the trailing colon and
+ * not these, and it is also what makes these the worse half - a document said
+ * "0:30" and the library answered 30, with nothing anywhere to disagree.
+ *
+ * Measured against PyYAML's resolver over the 49 spellings below and in
+ * ../../notes/text/SOAK-FINDINGS.md: 17 disagreements before, 9 after the
+ * trailing-colon fix alone, 0 after this one.
+ *
+ * The values are asserted and not only the types, because a rule that admits
+ * the right texts and adds them up wrong would pass a type check. */
+TEST(Yaml11Mode, ASexagesimalsSegmentsAreClockSegments) {
+	struct Case { const char *text; GTEXT_YAML_Node_Type type; double value; };
+	const Case cases[] = {
+		/* A ":" group is "[0-5]? [0-9]": one or two digits, at most 59. */
+		{ "1:59",      GTEXT_YAML_INT,   119 },
+		{ "1:05",      GTEXT_YAML_INT,   65 },
+		{ "1:60",      GTEXT_YAML_STRING, 0 },
+		{ "1:99",      GTEXT_YAML_STRING, 0 },
+		{ "1:005",     GTEXT_YAML_STRING, 0 },
+		/* The *first* segment has no such bound - it is the hours. */
+		{ "100:59",    GTEXT_YAML_INT,   6059 },
+		{ "60:00",     GTEXT_YAML_INT,   3600 },
+		{ "1:2:3:4:5", GTEXT_YAML_INT,   1 * 60 * 60 * 60 * 60
+		                                 + 2 * 60 * 60 * 60
+		                                 + 3 * 60 * 60 + 4 * 60 + 5 },
+		/* The int row starts "[1-9]", so a leading zero leaves it... */
+		{ "0:1",       GTEXT_YAML_STRING, 0 },
+		{ "0:30",      GTEXT_YAML_STRING, 0 },
+		{ "01:30",     GTEXT_YAML_STRING, 0 },
+		{ "00:30",     GTEXT_YAML_STRING, 0 },
+		/* ...and the float row starts "[0-9]", so with a fraction it does not.
+		   This pair is the whole reason the leading digit is kept. */
+		{ "0:0.0",     GTEXT_YAML_FLOAT, 0.0 },
+		{ "0:30.5",    GTEXT_YAML_FLOAT, 30.5 },
+		{ "01:30.0",   GTEXT_YAML_FLOAT, 90.0 },
+		/* 1.1 puts underscores in the first segment and the fraction, and
+		   nowhere else - the clause a whole-text strip cannot express. */
+		{ "1_0:30",    GTEXT_YAML_INT,   630 },
+		{ "1:3_0",     GTEXT_YAML_STRING, 0 },
+		{ "1:30.2_5",  GTEXT_YAML_FLOAT, 90.25 },
+		/* The dot comes after a whole ":NN" group, so these are not floats
+		   however much they look like numbers. */
+		{ "1:.5",      GTEXT_YAML_STRING, 0 },
+		{ "0.5:30",    GTEXT_YAML_STRING, 0 },
+		{ "1:2.3.4",   GTEXT_YAML_STRING, 0 },
+		/* And the plain readings, so that refusing the family cannot pass. */
+		{ "15:01:42",  GTEXT_YAML_INT,   15 * 3600 + 1 * 60 + 42 },
+		{ "-1:30",     GTEXT_YAML_INT,   -90 },
+		{ "+1:30",     GTEXT_YAML_INT,   90 },
+		{ "1:20:30.5", GTEXT_YAML_FLOAT, 1 * 3600 + 20 * 60 + 30.5 },
+	};
+
+	for (const Case &c : cases) {
+		GTEXT_YAML_Document *doc = nullptr;
+		const GTEXT_YAML_Node *value = plain_scalar_in_flow(&doc, c.text, true);
+		ASSERT_NE(value, nullptr) << c.text;
+		const char *got = gtext_yaml_node_as_string(value);
+		ASSERT_NE(got, nullptr) << c.text;
+		ASSERT_STREQ(got, c.text) << "the scanner handed the resolver other text";
+		/* EXPECT and not ASSERT, so that one wrong type does not end the
+		   sweep and hide how many of these spellings are wrong - the value
+		   checks below are the ones that need the type to have matched. */
+		EXPECT_EQ(gtext_yaml_node_type(value), c.type) << c.text;
+		const bool typed = gtext_yaml_node_type(value) == c.type;
+		if (typed && c.type == GTEXT_YAML_INT) {
+			int64_t got_int = 0;
+			EXPECT_TRUE(gtext_yaml_node_as_int(value, &got_int)) << c.text;
+			EXPECT_EQ(got_int, (int64_t)c.value) << c.text;
+		}
+		else if (typed && c.type == GTEXT_YAML_FLOAT) {
+			double got_float = 0.0;
+			EXPECT_TRUE(gtext_yaml_node_as_float(value, &got_float)) << c.text;
+			EXPECT_DOUBLE_EQ(got_float, c.value) << c.text;
+		}
+		gtext_yaml_free(doc);
+
+		/* 1.2 has no sexagesimal row, so every spelling is a string there. */
+		GTEXT_YAML_Document *d12 = nullptr;
+		const GTEXT_YAML_Node *v12 = plain_scalar_in_flow(&d12, c.text, false);
+		ASSERT_NE(v12, nullptr) << c.text;
+		EXPECT_EQ(gtext_yaml_node_type(v12), GTEXT_YAML_STRING) << c.text;
+		gtext_yaml_free(d12);
+	}
+}
+
 int main(int argc, char **argv) {
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();

@@ -1154,10 +1154,16 @@ TEST(YamlWriterContract, AnOmapWillNotTakeAKeyItAlreadyHas) {
  * scalar_needs_quotes() admits a small whitelist and quotes everything else,
  * and the note above it says why that is safe: "quoting is value-preserving
  * here: neither text resolves to anything but a string". True of a string,
- * and of nothing else. ":" is not on the whitelist; "0:0" is nonetheless a
+ * and of nothing else. ":" is not on the whitelist; "1:30" is nonetheless a
  * legal plain scalar - 7.3.3 admits ":" where an ns-plain-safe character
- * follows it - and parsed with yaml_1_1 it is the sexagesimal integer 0. It
- * was written "0:0" in quotes and came back the string.
+ * follows it - and parsed with yaml_1_1 it is the sexagesimal integer 90. It
+ * was written "1:30" in quotes and came back the string.
+ *
+ * The witness was "0:0" until the resolver was corrected to 10.3.2's actual
+ * 1.1 int row, "[-+]? [1-9] [0-9_]* (: [0-5]? [0-9])+", whose leading "[1-9]"
+ * makes "0:0" a string in 1.1 as well as in 1.2 - which PyYAML agrees with.
+ * A string witness would have left every assertion below passing and nothing
+ * being measured, since each one asks whether a *non-string* survived.
  *
  * The writer fuzzer found it through the event pipe, where the scalar arrives
  * plain and has to leave plain, because plainness is what carries the type. */
@@ -1168,7 +1174,10 @@ TEST(YamlWriterContract, AColonDoesNotForceQuotesOntoANonString) {
 	   with no key. */
 	struct Case { const char *text; bool needs_quotes; };
 	const Case cases[] = {
-		{ "0:0",     false }, { "1:30:00", false },
+		{ "1:30",    false }, { "1:30:00", false },
+		/* A string in both dialects now, and still a legal plain scalar: the
+		   whitelist question is about plainness and not about type. */
+		{ "0:0",     false },
 		{ "a:b",     false }, { "x:1",     false },
 		/* A trailing colon has nothing safe after it. */
 		{ "a:",      true  },
@@ -1200,7 +1209,8 @@ TEST(YamlWriterContract, AColonDoesNotForceQuotesOntoANonString) {
 	/* And the property that makes it matter: a 1.1 sexagesimal integer keeps
 	   its value across a round trip, in every position a scalar can stand and
 	   in both styles. The oracle is the parser, not the quoting rule. */
-	const char *inputs[] = { "0:0", "k: 0:0", "0:0: v", "[0:0]", "{k: 0:0}" };
+	const char *inputs[] = {
+		"1:30", "k: 1:30", "1:30: v", "[1:30]", "{k: 1:30}" };
 	for (const char *input : inputs) {
 		for (int block = 0; block < 2; ++block) {
 			GTEXT_YAML_Parse_Options popts = gtext_yaml_parse_options_default();
@@ -1227,7 +1237,7 @@ TEST(YamlWriterContract, AColonDoesNotForceQuotesOntoANonString) {
 				gtext_yaml_parse(out.data(), out.size(), &popts, nullptr);
 			ASSERT_NE(back, nullptr) << input << " wrote <<" << out << ">>";
 
-			/* Find the scalar that was "0:0" in each shape and check it is
+			/* Find the scalar that was "1:30" in each shape and check it is
 			   still the integer it parsed as. */
 			const GTEXT_YAML_Node *r1 = gtext_yaml_document_root(doc);
 			const GTEXT_YAML_Node *r2 = gtext_yaml_document_root(back);
@@ -1275,7 +1285,7 @@ TEST(YamlWriterContract, AStringSurvivesTheDialectItIsWrittenFor) {
 	   does and that both do. */
 	const char *texts[] = {
 		"yes", "no", "on", "off", "y", "n", "Yes", "OFF",
-		"012", "0b101", "1_000", "0:0", "1:30:00",
+		"012", "0b101", "1_000", "1:30", "1:30:00",
 		/* Both dialects resolve these; both have to quote them. */
 		"true", "null", "~", "12", "1.5", "0x1f",
 		/* Neither does: these may stay plain in either. */

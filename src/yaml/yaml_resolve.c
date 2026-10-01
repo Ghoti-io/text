@@ -556,113 +556,122 @@ static bool has_disallowed_leading_zero(const char *s, size_t len, bool allow_un
 	return result;
 }
 
+/* YAML 1.1's two sexagesimal rows, read literally off the 1.1 type
+   repository:
+
+     int    [-+]? [1-9] [0-9_]* ( : [0-5]? [0-9] )+
+     float  [-+]? [0-9] [0-9_]* ( : [0-5]? [0-9] )+ \. [0-9_]*
+
+   Every clause there is load-bearing, and this walk had none of them except
+   "a colon is present".  It split on ":", accepted a segment of any length
+   and any value, stripped underscores from the whole text before looking at
+   it, and took a dot anywhere in the final segment as the fraction.  So
+   "0:30" was the integer 30, "1:99" was 159, "01:30" was 90 and "1:3_0" was
+   90 - four texts that PyYAML, which is a 1.1 implementation, reads as the
+   strings they are, and that the rows above do not admit.
+
+   None of those is a round trip failure: the writer emits the digits it was
+   given, the reader resolves them to the same wrong number, and the two agree
+   all the way.  That is why the fuzzer found the trailing-colon case and not
+   these - a self-consistent wrong answer needs a reader that disagrees, and
+   there was none.  It is also why they are the worse half: a document said
+   "0:30" and this library answered 30 with nothing anywhere to notice.
+
+   The segment rules in particular are not pedantry.  "[0-5]? [0-9]" is what
+   makes a sexagesimal a clock reading: the row exists so that "15:01:42" is a
+   number of seconds, and a group of "99" or of three digits means the text
+   was never that. Leading zeros are what separate the int row from the float
+   row - "0:30" is in neither, "0:30.5" is in the second - and 1.1 puts
+   underscores in the first segment and the fraction only, which is the one
+   clause a whole-text strip cannot express.
+
+   No allocation: the walk is bounded by @p len, so there is no copy to make
+   and no failure that is not the text's own.  @p allow_underscore is the
+   dialect's, and with it off an underscore is simply not a digit. */
 static bool parse_sexagesimal_value(
 	const char *s,
 	size_t len,
 	bool allow_underscore,
 	double *out,
-	bool *out_is_int,
-	const GTEXT_Allocator *alloc
+	bool *out_is_int
 ) {
 	if (!s || len == 0 || !out) return false;
-	char *clean = strip_underscores(s, len, allow_underscore, alloc);
-	if (!clean) return false;
-	const char *p = clean;
+
+	size_t i = 0;
 	bool neg = false;
-	if (*p == '+' || *p == '-') {
-		neg = (*p == '-');
-		p++;
-	}
-	if (*p == '\0' || strchr(p, ':') == NULL) {
-		gtext_allocator_free(alloc, clean);
-		return false;
+	if (s[i] == '+' || s[i] == '-') {
+		neg = (s[i] == '-');
+		i++;
 	}
 
-	double total = 0.0;
-	bool has_fraction = false;
-	/* "for (;;)" and not "while (*p)", because the loop condition is the one
-	   place the empty-segment rule below could be skipped past.  1.1's int row
-	   is "[-+]? [1-9] [0-9_]* (: [0-5]? [0-9])+", so every colon has to have a
-	   segment after it, and the guard on seg_len is what says so - but with a
-	   trailing colon "p = colon + 1" lands on the terminator and the condition
-	   ended the loop before the guard was ever reached.  "-4:" resolved to the
-	   integer -4, and the scalar text kept the colon.
-
-	   That pair is what makes it more than a wrong type.  A plain scalar ending
-	   in ":" is one the writer has to quote - nothing safe follows the colon -
-	   and a quoted scalar is a string, so the document came back with "-4:"
-	   where an int had been.  The writer was right both times; the int was
-	   never a number.  The yaml-writer fuzzer found it as a round trip that
-	   changed a value, which is the only way a self-consistent wrong answer
-	   ever surfaces: it took a reader that disagreed with the writer. */
-	for (;;) {
-		const char *colon = strchr(p, ':');
-		bool last = colon == NULL;
-		size_t seg_len = last ? strlen(p) : (size_t)(colon - p);
-		if (seg_len == 0) {
-			gtext_allocator_free(alloc, clean);
-			return false;
+	/* The first segment: a digit, then digits and underscores.  Its leading
+	   digit is what the two rows disagree about, so it is kept. */
+	if (i >= len || s[i] < '0' || s[i] > '9') return false;
+	const bool first_is_zero = (s[i] == '0');
+	double total = (double)(s[i] - '0');
+	i++;
+	while (i < len) {
+		if (s[i] == '_') {
+			if (!allow_underscore) return false;
+			i++;
+			continue;
 		}
-
-		double segment = 0.0;
-		if (!last) {
-			for (size_t i = 0; i < seg_len; i++) {
-				if (p[i] < '0' || p[i] > '9') {
-					gtext_allocator_free(alloc, clean);
-					return false;
-				}
-				segment = segment * 10.0 + (double)(p[i] - '0');
-			}
-		} else {
-			bool seen_dot = false;
-			bool seen_digit = false;
-			double frac_scale = 1.0;
-			for (size_t i = 0; i < seg_len; i++) {
-				char c = p[i];
-				if (c == '.') {
-					if (seen_dot) {
-						gtext_allocator_free(alloc, clean);
-						return false;
-					}
-					seen_dot = true;
-					/* The dot is what the float row has and the int row does
-					   not, so seeing one settles the type.  Counting fraction
-					   digits instead made "1:5." - a float of 65 by that row's
-					   "\. [0-9_]*", whose digits are optional - the integer
-					   65, and the dot then had nowhere to go in the output. */
-					has_fraction = true;
-					continue;
-				}
-				if (c < '0' || c > '9') {
-					gtext_allocator_free(alloc, clean);
-					return false;
-				}
-				seen_digit = true;
-				if (!seen_dot) {
-					segment = segment * 10.0 + (double)(c - '0');
-				} else {
-					frac_scale *= 10.0;
-					segment += (double)(c - '0') / frac_scale;
-				}
-			}
-			/* A segment of punctuation is not a segment.  "-4:." has a
-			   non-empty last segment and no digit in it, and came out as the
-			   integer -240. */
-			if (!seen_digit) {
-				gtext_allocator_free(alloc, clean);
-				return false;
-			}
-		}
-
-		total = total * 60.0 + segment;
-		if (last) break;
-		p = colon + 1;
+		if (s[i] < '0' || s[i] > '9') break;
+		total = total * 10.0 + (double)(s[i] - '0');
+		i++;
 	}
+
+	/* One or more ":" groups, each one or two digits worth at most 59.  A
+	   colon with nothing after it, a third digit, or a group past 59 all
+	   leave the row - and a colon with an underscore after it stops the digit
+	   run here and is caught as trailing text below. */
+	size_t groups = 0;
+	while (i < len && s[i] == ':') {
+		i++;
+		unsigned segment = 0;
+		size_t digits = 0;
+		while (i < len && digits < 2 && s[i] >= '0' && s[i] <= '9') {
+			segment = segment * 10u + (unsigned)(s[i] - '0');
+			digits++;
+			i++;
+		}
+		if (digits == 0) return false;
+		if (i < len && s[i] >= '0' && s[i] <= '9') return false;
+		if (segment > 59u) return false;
+		total = total * 60.0 + (double)segment;
+		groups++;
+	}
+	if (groups == 0) return false;
+
+	/* The fraction is the float row's, and its digits are optional: "1:5." is
+	   a float of 65.  Which row this is has to be settled by the dot and not
+	   by what follows it. */
+	bool is_float = false;
+	if (i < len && s[i] == '.') {
+		is_float = true;
+		i++;
+		double scale = 1.0;
+		while (i < len) {
+			if (s[i] == '_') {
+				if (!allow_underscore) return false;
+				i++;
+				continue;
+			}
+			if (s[i] < '0' || s[i] > '9') break;
+			scale *= 10.0;
+			total += (double)(s[i] - '0') / scale;
+			i++;
+		}
+	}
+
+	/* Anything left over was never part of either row. */
+	if (i != len) return false;
+	/* And the clause the two rows differ on: the int row starts "[1-9]". */
+	if (!is_float && first_is_zero) return false;
 
 	if (neg) total = -total;
 	*out = total;
-	if (out_is_int) *out_is_int = !has_fraction;
-	gtext_allocator_free(alloc, clean);
+	if (out_is_int) *out_is_int = !is_float;
 	return true;
 }
 
@@ -1420,7 +1429,7 @@ static GTEXT_YAML_Status warn_yaml_1_1_scalars(
 
 	double sexa = 0.0;
 	bool sexa_is_int = false;
-	if (parse_sexagesimal_value(value, len, allow_underscore, &sexa, &sexa_is_int, alloc)) {
+	if (parse_sexagesimal_value(value, len, allow_underscore, &sexa, &sexa_is_int)) {
 		GTEXT_YAML_Status st = gtext_yaml_emit_warning(
 			opts,
 			GTEXT_YAML_WARNING_YAML11_SEXAGESIMAL,
@@ -1737,7 +1746,7 @@ static GTEXT_YAML_Status resolve_scalar(
 			if (yaml_1_1) {
 				double sexa = 0.0;
 				bool is_int = false;
-				if (parse_sexagesimal_value(value, len, true, &sexa, &is_int, alloc)) {
+				if (parse_sexagesimal_value(value, len, true, &sexa, &is_int)) {
 					/* A fraction makes it a float and not this tag's type;
 					   a whole number past int64_t has nothing to convert to,
 					   and "!!int 99999999999999999999999" is already refused
@@ -1781,7 +1790,7 @@ static GTEXT_YAML_Status resolve_scalar(
 			if (yaml_1_1) {
 				double sexa = 0.0;
 				bool is_int = false;
-				if (parse_sexagesimal_value(value, len, true, &sexa, &is_int, alloc)) {
+				if (parse_sexagesimal_value(value, len, true, &sexa, &is_int)) {
 					out = sexa;
 					node->type = GTEXT_YAML_FLOAT;
 					node->as.scalar.type = GTEXT_YAML_FLOAT;
@@ -1970,7 +1979,7 @@ static GTEXT_YAML_Status resolve_scalar(
 		   Left to the rows below, which have no sexagesimal among them, so
 		   it stays the string it was written as.  That is what a decimal
 		   too large for the type already resolves to. */
-		if (parse_sexagesimal_value(value, len, allow_underscore, &sexa, &is_int, alloc)
+		if (parse_sexagesimal_value(value, len, allow_underscore, &sexa, &is_int)
 				&& (!is_int || gtext_yaml_double_fits_int64(sexa))) {
 			if (is_int) {
 				node->type = GTEXT_YAML_INT;
@@ -2118,7 +2127,7 @@ GTEXT_INTERNAL_API GTEXT_YAML_Node_Type gtext_yaml_plain_text_classify_as(
 		type = GTEXT_YAML_BOOL;
 	}
 	else if (v11 && parse_sexagesimal_value(value, len, allow_underscore, &f,
-			&b, alloc)) {
+			&b)) {
 		/* b is reused as "is an integer" here, the way the resolver reads it,
 		   and is put back below before anything else can see it. */
 		if (b && gtext_yaml_double_fits_int64(f)) {
