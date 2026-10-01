@@ -1735,8 +1735,33 @@ static GTEXT_YAML_Scalar_Style plan_scalar_style(
                     value, len, schema, yaml_1_1)) {
       style = GTEXT_YAML_SCALAR_STYLE_DOUBLE_QUOTED;
     }
+    /* Long enough to wrap, and wrapping it is allowed to change how it is
+       spelled but not what it says.  A folded block scalar is never a plain
+       one, so 10.3.2 gives it the string tag whatever it holds - and this arm
+       is reached *only* through PLAIN, which is what write_scalar_node()
+       forces every non-string scalar to precisely so that no style can change
+       its type.  The comment there says plan_scalar_style() upgrades PLAIN
+       only "where the text cannot be written plain at all"; a number that
+       does not fit the line is text that can be written plain perfectly well
+       and merely does not fit, so the upgrade was outside the one exception
+       the rule allows.  An int of 222 written with line_width 2 came back as
+       the string "222".
+
+       Asked of the *text* rather than of is_string, which is what makes one
+       condition enough for both callers: a string spelling a number has
+       already been quoted by the arm above and never arrives here, so this
+       only ever fires for a scalar whose own spelling would resolve to
+       something other than a string - and folding that is the value change.
+       A long ordinary word resolves to a string either way and still folds.
+
+       The consequence is that a value whose plain spelling exceeds the width
+       is written over it. That is the only option available: YAML has no way
+       to wrap a number, and a line_width is a preference where a value is a
+       guarantee. */
     else if (!in_flow && pretty && line_width > 0 &&
-             len > (size_t)line_width) {
+             len > (size_t)line_width &&
+             !gtext_yaml_plain_text_resolves_to_non_string_as(
+                 value, len, schema, yaml_1_1)) {
       style = GTEXT_YAML_SCALAR_STYLE_FOLDED;
     }
   }

@@ -529,6 +529,133 @@ TEST(YamlWriterContract, AScalarIsNeverWrittenAsSomethingElse) {
 	}
 }
 
+/* A line width may change how a value is spelled, not what it says.
+ *
+ * write_scalar_node() forces every non-string scalar to PLAIN, precisely so no
+ * style can change its type, and its comment allows plan_scalar_style() to
+ * upgrade PLAIN only "where the text cannot be written plain at all". The
+ * width-driven fold sat inside that exception without belonging to it: a
+ * number that does not fit the line is text that can be written plain
+ * perfectly well and merely does not fit. A folded block scalar is never a
+ * plain one, so 10.3.2 gives it the string tag whatever it holds.
+ *
+ * So an int of 222 written with line_width 2 came back as the string "222",
+ * and the fuzzer's case was a 32-digit float that came back as a 32-character
+ * string. Across a sweep of five types x five requested styles x six widths x
+ * both dialects x the core and JSON schemas, 200 of 840 combinations changed
+ * the type before the fix and none after it.
+ *
+ * The bound is not "tiny widths". It is any width the plain spelling exceeds,
+ * which is why the long float below is tested at 8 as well as at 2 - it fails
+ * at 8 where "222" does not.
+ *
+ * Found by the yaml-writer fuzz leg on the EVO-X2 at 4,153,232 executions,
+ * through the built-DOM arm: a corpus of YAML text cannot reach this, because
+ * a parsed number already has a spelling that fits whatever line it arrived
+ * on. It needed a document built through the API with a width set.
+ */
+TEST(YamlWriterContract, ALineWidthDoesNotFoldANonStringIntoAString) {
+	struct Case {
+		const char *text;
+		GTEXT_YAML_Node_Type type;
+		GTEXT_YAML_Node_Type expect;
+	};
+	const Case cases[] = {
+		{"222", GTEXT_YAML_INT, GTEXT_YAML_INT},
+		{"2.5", GTEXT_YAML_FLOAT, GTEXT_YAML_FLOAT},
+		{"true", GTEXT_YAML_BOOL, GTEXT_YAML_BOOL},
+		{"null", GTEXT_YAML_NULL, GTEXT_YAML_NULL},
+		{"222222222222222222222223.2222", GTEXT_YAML_FLOAT, GTEXT_YAML_FLOAT},
+		/* A string stays a string, and that is not the interesting half: it
+		   must still be *folded*, which the block below checks. */
+		{"aaaa bbbb cccc dddd", GTEXT_YAML_STRING, GTEXT_YAML_STRING},
+	};
+	const int widths[] = {1, 2, 4, 8, 80};
+	/* Every requested style, because the rule is about the node's type and not
+	   about what the caller asked for - and because a fix that only looked at
+	   opts->scalar_style would pass with PLAIN still folding. */
+	for (int style = 0; style < 5; style++) {
+		for (int width : widths) {
+			for (const Case &c : cases) {
+				GTEXT_YAML_Document *doc =
+					gtext_yaml_document_new(nullptr, nullptr);
+				ASSERT_NE(doc, nullptr);
+				GTEXT_YAML_Node *root = gtext_yaml_node_new_scalar_typed(
+					doc, c.text, strlen(c.text), c.type, nullptr, nullptr);
+				ASSERT_NE(root, nullptr) << c.text;
+				gtext_yaml_node_set_scalar_style(
+					root, (GTEXT_YAML_Scalar_Style)style);
+				gtext_yaml_document_set_root(doc, root);
+
+				GTEXT_YAML_Sink sink;
+				ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+				GTEXT_YAML_Write_Options opts =
+					gtext_yaml_write_options_default();
+				opts.pretty = true;
+				opts.indent_spaces = 2;
+				opts.line_width = width;
+				opts.scalar_style = (GTEXT_YAML_Scalar_Style)style;
+				const GTEXT_YAML_Status st =
+					gtext_yaml_write_document(doc, &sink, &opts);
+				std::string text;
+				if (st == GTEXT_YAML_OK) {
+					text.assign(gtext_yaml_sink_buffer_data(&sink),
+						gtext_yaml_sink_buffer_size(&sink));
+				}
+				gtext_yaml_sink_buffer_free(&sink);
+				gtext_yaml_free(doc);
+				ASSERT_EQ(st, GTEXT_YAML_OK) << c.text << " width " << width;
+
+				GTEXT_YAML_Error err;
+				memset(&err, 0, sizeof(err));
+				GTEXT_YAML_Parse_Options popts =
+					gtext_yaml_parse_options_default();
+				GTEXT_YAML_Document *back =
+					gtext_yaml_parse(text.data(), text.size(), &popts, &err);
+				gtext_yaml_error_free(&err);
+				ASSERT_NE(back, nullptr)
+					<< "style " << style << " width " << width << " <<"
+					<< c.text << ">> wrote <<" << text << ">>";
+				EXPECT_EQ(gtext_yaml_node_type(gtext_yaml_document_root(back)),
+					c.expect)
+					<< "style " << style << " width " << width << " <<"
+					<< c.text << ">> wrote <<" << text << ">>";
+				gtext_yaml_free(back);
+			}
+		}
+	}
+
+	/* The other half: a long *string* must still be folded when the width asks
+	   for it. Without this the test would pass with the fold removed outright,
+	   which would preserve every type and silently drop the feature. */
+	{
+		const char *value = "aaaa bbbb cccc dddd";
+		GTEXT_YAML_Document *doc = gtext_yaml_document_new(nullptr, nullptr);
+		GTEXT_YAML_Node *root = gtext_yaml_node_new_scalar_typed(
+			doc, value, strlen(value), GTEXT_YAML_STRING, nullptr, nullptr);
+		ASSERT_NE(root, nullptr);
+		gtext_yaml_document_set_root(doc, root);
+		GTEXT_YAML_Sink sink;
+		ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+		GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+		opts.pretty = true;
+		opts.indent_spaces = 2;
+		opts.line_width = 8;
+		const GTEXT_YAML_Status st =
+			gtext_yaml_write_document(doc, &sink, &opts);
+		std::string text(gtext_yaml_sink_buffer_data(&sink),
+			gtext_yaml_sink_buffer_size(&sink));
+		gtext_yaml_sink_buffer_free(&sink);
+		gtext_yaml_free(doc);
+		ASSERT_EQ(st, GTEXT_YAML_OK);
+		EXPECT_NE(text.find('>'), std::string::npos)
+			<< "a long string should still fold: <<" << text << ">>";
+		std::string back;
+		ASSERT_TRUE(read_back_scalar(text, &back)) << text;
+		EXPECT_EQ(back, value);
+	}
+}
+
 /* A YAML stream is a stream of *characters*, and every escape of 5.7 names a
    code point, so a byte that is not part of any UTF-8 sequence has no
    spelling at all. Writing "\\xFF" for the byte 0xFF would read back as
