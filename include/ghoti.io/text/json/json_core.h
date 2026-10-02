@@ -144,6 +144,102 @@ typedef enum {
 } GTEXT_JSON_Dupkey_Mode;
 
 /**
+ * @brief How many top-level values one input holds, and what separates them
+ *
+ * A JSON text is one value. A great deal of real data is a *sequence* of them
+ * - one per line in a log, an export, or a network stream - under the names
+ * NDJSON and JSON Lines, and there is no single specification for it. Three
+ * readings are in use and they disagree about inputs that occur, so this is an
+ * enumeration rather than a flag:
+ *
+ * | Mode | Between two values | Accepts |
+ * |---|---|---|
+ * | ::GTEXT_JSON_RECORDS_OFF | nothing may follow | one JSON text (RFC 8259) |
+ * | ::GTEXT_JSON_RECORDS_WHITESPACE | any white space, or none | `{"a":1}{"b":2}`, `1 2` |
+ * | ::GTEXT_JSON_RECORDS_LINE | an LF, and none inside a value | NDJSON / JSON Lines |
+ * | ::GTEXT_JSON_RECORDS_SEQ | an RS (0x1E) before each | RFC 7464 json-seq |
+ *
+ * The default is ::GTEXT_JSON_RECORDS_OFF, which is what this parser has
+ * always done: a token after a complete document is
+ * ::GTEXT_JSON_E_TRAILING_GARBAGE. Nothing about a document's own grammar
+ * changes in any mode - a record is a JSON text and is held to exactly the
+ * same rules, including every limit and the duplicate-name policy.
+ *
+ * Which of the three to ask for is a question about the producer, not about
+ * convenience, and the difference is not cosmetic: under
+ * ::GTEXT_JSON_RECORDS_WHITESPACE a file whose records a buggy writer ran
+ * together with no separator at all is accepted, and a reader that wanted one
+ * record per line will silently see fewer records than there are lines.
+ * ::GTEXT_JSON_RECORDS_LINE is the mode to name if the data is meant to be one
+ * value per line, because it is the only one that can say so.
+ */
+typedef enum {
+  /**
+   * One JSON text, and trailing content is an error. The default, and what
+   * every release before this option did.
+   */
+  GTEXT_JSON_RECORDS_OFF = 0,
+
+  /**
+   * Values separated by any amount of JSON white space, including none.
+   *
+   * The tolerant reading, and the one to use for input of unknown provenance
+   * where losing a record would be worse than accepting a sloppy separator.
+   * `{"a":1}{"b":2}` and `1 2` are two records each.
+   */
+  GTEXT_JSON_RECORDS_WHITESPACE,
+
+  /**
+   * NDJSON / JSON Lines: one value per line.
+   *
+   * At least one LF must separate two records; a CR immediately before it is
+   * accepted, so CRLF data reads, and additional blank lines are accepted
+   * because a file ending in one is ordinary. A record may **not** contain a
+   * line end of its own, which is the rule that makes this mode different from
+   * ::GTEXT_JSON_RECORDS_WHITESPACE rather than merely stricter about the
+   * separator: a pretty-printed value spanning lines is
+   * ::GTEXT_JSON_E_BAD_TOKEN here, because in a format where the line is the
+   * record it would be read as several broken records by every other tool.
+   *
+   * **Cannot be combined with
+   * ::GTEXT_JSON_Parse_Options::allow_unescaped_controls,
+   * ::GTEXT_JSON_Parse_Options::allow_line_continuations or
+   * ::GTEXT_JSON_Parse_Options::allow_comments**, each of which is
+   * ::GTEXT_JSON_E_INVALID. The first two let a line end reach the inside of a
+   * string, where the rule above cannot see it; the third admits `//`, which
+   * is *terminated* by a line end, so a comment and a record cannot share a
+   * line. A guarantee with a hole in it is worse than a refusal naming the
+   * reason.
+   */
+  GTEXT_JSON_RECORDS_LINE,
+
+  /**
+   * RFC 7464 `application/json-seq`: an RS (0x1E) introduces every record.
+   *
+   * The RS is required, including before the first record, and is what this
+   * mode checks - it is the byte that makes the framing unambiguous, and it
+   * cannot occur unescaped inside a JSON text. The LF that RFC 7464's grammar
+   * places after each record is accepted and not required, which is a
+   * deliberate leniency in the accepting direction: a truncated final record
+   * is still refused, by the grammar, because it does not parse.
+   *
+   * An RS that introduces no record - `RS RS`, or a trailing RS at the end of
+   * the input - is skipped rather than failed on, which is what RFC 7464 has a
+   * reader do with a truncated element.
+   *
+   * **Cannot be combined with
+   * ::GTEXT_JSON_Parse_Options::allow_comments**, which is
+   * ::GTEXT_JSON_E_INVALID. An RS cannot occur inside a JSON text but it can
+   * occur inside a comment, and a comment is an extension to the text rather
+   * than to the framing: a `//` comment running to the end of the input
+   * swallows every RS after it, so a reader that lexes reads one comment where
+   * a reader slicing on RS reads several records. RFC 7464's grammar has no
+   * comments in it. ::GTEXT_JSON_RECORDS_WHITESPACE takes comments.
+   */
+  GTEXT_JSON_RECORDS_SEQ
+} GTEXT_JSON_Records;
+
+/**
  * @brief Parse options structure
  *
  * Controls parsing behavior including strictness, extensions, limits, and
@@ -393,6 +489,21 @@ typedef struct {
   bool parse_int64;           ///< Detect and parse exact int64 representation
   bool parse_uint64;          ///< Detect and parse exact uint64 representation
   bool parse_double; ///< Derive double representation when representable
+
+  /**
+   * Whether this input is one JSON text or a sequence of them, and what
+   * separates them. See ::GTEXT_JSON_Records.
+   *
+   * Appended rather than placed with the strictness options, so that the
+   * offset of every field that was already here stays where it was.
+   *
+   * Honoured by gtext_json_stream_feed(), by the pull reader built on it, and
+   * by gtext_json_parse_multiple(). **Not** by gtext_json_parse(), which
+   * returns one value and has nowhere to put a second: it refuses trailing
+   * content whatever this says, and that is checked by a test rather than left
+   * to the reader of this comment.
+   */
+  GTEXT_JSON_Records records; ///< (default: GTEXT_JSON_RECORDS_OFF)
 } GTEXT_JSON_Parse_Options;
 
 /**
@@ -462,6 +573,39 @@ typedef struct {
       float_format; ///< Floating-point formatting strategy (default: SHORTEST)
   int float_precision; ///< Precision for fixed/scientific format (default: 6,
                        ///< ignored for SHORTEST)
+
+  /**
+   * Whether this sink receives one JSON text or a sequence of them, and what
+   * frames them. See ::GTEXT_JSON_Records.
+   *
+   * Appended rather than placed with the formatting fields, so that the offset
+   * of every field that was already here stays where it was.
+   *
+   * The writer's side of the same question, and the two are deliberately the
+   * same enumeration, so that a program reading records and writing them back
+   * names the format once. What each mode emits:
+   *
+   * | Mode | gtext_json_write_value() | the incremental writer |
+   * |---|---|---|
+   * | ::GTEXT_JSON_RECORDS_OFF | one value | **refuses** a second root, ::GTEXT_JSON_E_STATE |
+   * | ::GTEXT_JSON_RECORDS_WHITESPACE | value, then `newline` | `newline` between |
+   * | ::GTEXT_JSON_RECORDS_LINE | value, then a newline | a newline between |
+   * | ::GTEXT_JSON_RECORDS_SEQ | RS, value, newline | RS before each |
+   *
+   * The refusal in the first row is a fix rather than a restriction: the
+   * incremental writer used to accept a second top-level value and emit
+   * `{"a":1}{"b":2}`, which is not JSON and which this library's own parser
+   * refuses, while every call and gtext_json_writer_finish() returned
+   * ::GTEXT_JSON_OK.
+   *
+   * ::GTEXT_JSON_RECORDS_LINE does not make a pretty-printed value illegal
+   * here the way it does on the parse side - a writer asked for both is asked
+   * for something it cannot do, so `pretty` with this mode is
+   * ::GTEXT_JSON_E_INVALID at gtext_json_writer_new() and at
+   * gtext_json_write_value(), rather than silently writing records no reader
+   * of this format can read back.
+   */
+  GTEXT_JSON_Records records; ///< (default: GTEXT_JSON_RECORDS_OFF)
 } GTEXT_JSON_Write_Options;
 
 /**

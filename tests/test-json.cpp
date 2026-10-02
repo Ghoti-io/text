@@ -7593,8 +7593,20 @@ TEST(MultipleTopLevel, ErrorHandling) {
     // First value should parse successfully
     GTEXT_JSON_Value * value1 = gtext_json_parse_multiple(input, input_len, &opts, &err, &bytes_consumed);
     ASSERT_NE(value1, nullptr);
-    // bytes_consumed should point to the start of "invalid" (after "123 ")
-    EXPECT_GT(bytes_consumed, 3u);  // At least "123"
+
+    /* bytes_consumed covers the value and **nothing that could not be read**.
+       This used to assert `> 3` - the start of "invalid" rather than the end of
+       "123" - which was the lexer's position after the failed trailing lex, and
+       that position is only sometimes before the bad token: for `1 NaN` the
+       lexer consumed the NaN before failing and reported all five bytes
+       consumed, so a caller looping on this function read one record and
+       concluded the input had ended cleanly. The offset is the end of the value
+       now, in every case, and what matters is the pair of properties below: the
+       value's own bytes are accounted for, and the unreadable ones are still
+       there for the next call to fail on. */
+    EXPECT_GE(bytes_consumed, 3u) << "the value's own bytes";
+    EXPECT_LT(bytes_consumed, input_len)
+        << "bytes that cannot be lexed must not be reported as consumed";
     gtext_json_free(value1);
 
     // Second parse should fail (invalid JSON)

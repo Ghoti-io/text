@@ -374,6 +374,234 @@ static void json_stream_compact_buffer(GTEXT_JSON_Stream * st) {
   st->input_buffer_processed = 0;
 }
 
+/*
+ * Consume the bytes that separate one record from the next, and say whether
+ * the mode's rule for them was met.
+ *
+ * Only reached when GTEXT_JSON_Parse_Options::records is not
+ * GTEXT_JSON_RECORDS_OFF and GTEXT_JSON_Stream::between_records is armed.
+ * Returns GTEXT_JSON_OK with `*ready` set when a record's first byte has been
+ * found and the separator was legal, GTEXT_JSON_OK with `*ready` clear when
+ * the buffer ran out inside the separator - the tallies live on the stream, so
+ * a separator split across feeds is read as one - and an error when the
+ * separator breaks the mode's rule.
+ *
+ * This is not the lexer's whitespace skip and cannot be. RS (0x1E) is not JSON
+ * white space, so the lexer refuses the byte that GTEXT_JSON_RECORDS_SEQ
+ * requires; and the rules here are about *how many* of each byte appeared,
+ * which a skipper that only advances cannot report. A UTF-8 BOM is also
+ * skipped, because json-seq data may carry one before its first RS and the
+ * lexer's own BOM handling has already been passed by then.
+ */
+static GTEXT_JSON_Status json_stream_consume_separator(
+    GTEXT_JSON_Stream * st, int * ready, GTEXT_JSON_Error * err) {
+  *ready = 0;
+
+  const char * buf = st->lexer.input;
+  const size_t len = st->lexer.input_len;
+
+  while (st->lexer.current_offset < len) {
+    const unsigned char c = (unsigned char)buf[st->lexer.current_offset];
+    size_t step = 1;
+    if (c == 0x1E && st->opts.records == GTEXT_JSON_RECORDS_SEQ) {
+      /* Only where the mode gives it a meaning. An RS is not JSON white space,
+         so in the other two modes it must reach the lexer and be refused:
+         skipping it here would let a reader asked for NDJSON quietly strip the
+         framing of a json-seq file and report records it had not checked. */
+      st->sep_rs++;
+    }
+    else if (c == '\n') {
+      st->sep_lf++;
+      json_position_increment_line(&st->lexer.pos);
+      st->lexer.pos.col = 1;
+    }
+    else if (c == ' ' || c == '\t' || c == '\r') {
+      /* Not counted. A CR is accepted so that CRLF data reads in
+         GTEXT_JSON_RECORDS_LINE, where the LF beside it is what the rule
+         names; a lone CR separator is therefore not a line end, which is the
+         same reading the lexer takes. */
+    }
+    else if (c == 0xEF && len - st->lexer.current_offset >= 3
+        && (unsigned char)buf[st->lexer.current_offset + 1] == 0xBB
+        && (unsigned char)buf[st->lexer.current_offset + 2] == 0xBF) {
+      step = 3;
+    }
+    else {
+      break;
+    }
+    st->lexer.current_offset += step;
+    st->lexer.pos.offset += step;
+    st->input_buffer_processed = st->lexer.current_offset;
+  }
+
+  if (st->lexer.current_offset >= len) {
+    /* The separator has not ended yet, as far as this buffer can say. The
+       tallies stay on the stream for the next feed, and finish() is where an
+       input that ends here is accepted: no mode requires a separator *after*
+       the last record. */
+    return GTEXT_JSON_OK;
+  }
+
+  json_position pos = {
+      .offset = st->buffer_start_offset + st->lexer.current_offset,
+      .line = st->lexer.pos.line,
+      .col = st->lexer.pos.col};
+
+  /* **Before the first record there is nothing to separate.** This scan runs
+     before the first record as well as between records - it has to, because
+     the bytes ahead of a sequence are no more part of its first value than the
+     bytes between two values are part of either, and leaving them to the lexer
+     made `\n\n0` a record that "spans lines" in GTEXT_JSON_RECORDS_LINE. It
+     was the records fuzzer's second finding, in both readers at once.
+     GTEXT_JSON_RECORDS_SEQ is the exception: RFC 7464 puts an RS before every
+     record, the first included, so its rule is checked from the start. */
+  const int separator_required =
+      st->records_total > 0 || st->opts.records == GTEXT_JSON_RECORDS_SEQ;
+
+  const GTEXT_JSON_Records rule =
+      separator_required ? st->opts.records : GTEXT_JSON_RECORDS_WHITESPACE;
+  switch (rule) {
+  case GTEXT_JSON_RECORDS_LINE:
+    if (st->sep_lf == 0) {
+      return json_stream_set_error(st, GTEXT_JSON_E_BAD_TOKEN,
+          "A record must be followed by a line end in this mode", pos, err);
+    }
+    break;
+  case GTEXT_JSON_RECORDS_SEQ:
+    if (st->sep_rs == 0) {
+      return json_stream_set_error(st, GTEXT_JSON_E_BAD_TOKEN,
+          "RFC 7464 requires an RS (0x1E) before every record", pos, err);
+    }
+    break;
+  case GTEXT_JSON_RECORDS_WHITESPACE:
+  case GTEXT_JSON_RECORDS_OFF:
+  default:
+    break;
+  }
+
+  st->sep_lf = 0;
+  st->sep_rs = 0;
+  st->between_records = 0;
+  st->record_saw_line_end = 0;
+  st->state = JSON_STREAM_STATE_INIT;
+  *ready = 1;
+  return GTEXT_JSON_OK;
+}
+
+/*
+ * Refuse a combination of options that cannot be honoured, rather than
+ * honouring part of it.
+ *
+ * GTEXT_JSON_RECORDS_LINE promises that one record is one line, and it enforces
+ * that by noticing the line ends the lexer skipped. Three extensions break
+ * that:
+ *
+ * - allow_unescaped_controls accepts a raw LF as *string content*, where the
+ *   lexer's whitespace skipper never sees it;
+ * - allow_line_continuations (JSON5) accepts a backslash followed by one, in
+ *   the same place and invisibly for the same reason;
+ * - allow_comments admits `//`, which is **terminated** by a line end, so a
+ *   comment and a record cannot share a line and a comment between two records
+ *   reads as the next record spanning lines. Making that one work would mean a
+ *   second comment skipper here, in this file, with its own chunk-boundary
+ *   state - one rule written twice, which is how two of the defects already
+ *   fixed in this file got in. GTEXT_JSON_RECORDS_WHITESPACE accepts comments
+ *   between records and makes no claim this one would have to break.
+ *
+ * So the combination is an error at the first call rather than a guarantee
+ * that quietly has a hole in it. The other two modes make no claim about line
+ * ends and are unaffected.
+ */
+static GTEXT_JSON_Status json_records_check_options(
+    const GTEXT_JSON_Parse_Options * opts, GTEXT_JSON_Error * err) {
+  if (!opts) {
+    return GTEXT_JSON_OK;
+  }
+
+  /* GTEXT_JSON_RECORDS_SEQ and comments. An RS is the byte that makes RFC
+     7464's framing unambiguous precisely because it cannot occur inside a JSON
+     text - but it can occur inside a *comment*, and a comment is an extension
+     to the text rather than to the framing. With both on, a `//` comment
+     running to the end of the input swallows every RS after it, so the
+     streaming parser reads the rest as one comment where a reader slicing on
+     RS reads several records. Neither is wrong about the comment; they are
+     answering different questions, and the input is one json-seq says nothing
+     about. */
+  if (opts->records == GTEXT_JSON_RECORDS_SEQ && opts->allow_comments) {
+    if (err) {
+      *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+          .message = "GTEXT_JSON_RECORDS_SEQ cannot be combined with "
+                     "allow_comments: an RS inside a comment is framing to a "
+                     "reader that slices on it and content to one that does "
+                     "not, and RFC 7464's grammar has no comments in it",
+          .line = 1,
+          .col = 1};
+    }
+    return GTEXT_JSON_E_INVALID;
+  }
+
+  if (opts->records != GTEXT_JSON_RECORDS_LINE) {
+    return GTEXT_JSON_OK;
+  }
+  if (!opts->allow_unescaped_controls && !opts->allow_line_continuations
+      && !opts->allow_comments) {
+    return GTEXT_JSON_OK;
+  }
+  if (err) {
+    *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+        .message = "GTEXT_JSON_RECORDS_LINE cannot be combined with "
+                   "allow_unescaped_controls, allow_line_continuations or "
+                   "allow_comments: each puts a line end somewhere this mode "
+                   "cannot see it or cannot allow it",
+        .line = 1,
+        .col = 1};
+  }
+  return GTEXT_JSON_E_INVALID;
+}
+
+/*
+ * A top-level value has just completed. Close the record out, or say why it is
+ * not one.
+ *
+ * Called from both token loops - the one in json_stream_process_tokens() and
+ * the one gtext_json_stream_finish() runs over what is left - because a record
+ * can complete in either, and a hook in only one of them would make the last
+ * record of an input depend on where the caller's chunk boundaries fell. That
+ * is the shape of two defects already fixed in this file.
+ */
+static GTEXT_JSON_Status json_stream_record_boundary(
+    GTEXT_JSON_Stream * st, GTEXT_JSON_Error * err) {
+  if (st->opts.records == GTEXT_JSON_RECORDS_OFF
+      || st->state != JSON_STREAM_STATE_DONE || st->between_records) {
+    return GTEXT_JSON_OK;
+  }
+
+  if (st->opts.records == GTEXT_JSON_RECORDS_LINE && st->record_saw_line_end) {
+    /* The record held a line end of its own, so in a format where the line is
+       the record this value is not one. Refused rather than accepted, because
+       every other reader of this format would see it as several broken
+       records; GTEXT_JSON_RECORDS_WHITESPACE is the mode that accepts it. */
+    json_position pos = {.offset = st->total_bytes_consumed,
+        .line = st->lexer.pos.line,
+        .col = st->lexer.pos.col};
+    return json_stream_set_error(st, GTEXT_JSON_E_BAD_TOKEN,
+        "A record may not span lines in this mode", pos, err);
+  }
+
+  GTEXT_JSON_Event evt;
+  memset(&evt, 0, sizeof(evt));
+  evt.type = GTEXT_JSON_EVT_RECORD_END;
+  GTEXT_JSON_Status status =
+      json_stream_emit_event(st, GTEXT_JSON_EVT_RECORD_END, &evt);
+  if (status != GTEXT_JSON_OK) {
+    return status;
+  }
+
+  st->records_total++;
+  st->between_records = 1;
+  return GTEXT_JSON_OK;
+}
+
 // Process tokens from the buffered input
 static GTEXT_JSON_Status json_stream_process_tokens(
     GTEXT_JSON_Stream * st, GTEXT_JSON_Error * err) {
@@ -442,7 +670,34 @@ static GTEXT_JSON_Status json_stream_process_tokens(
   while (1) {
     memset(&token, 0, sizeof(token));
 
+    /* The separator between two records, before the lexer sees anything: in
+       GTEXT_JSON_RECORDS_SEQ it begins with a byte the lexer would refuse. */
+    if (st->between_records) {
+      int ready = 0;
+      GTEXT_JSON_Status sep = json_stream_consume_separator(st, &ready, err);
+      if (sep != GTEXT_JSON_OK) {
+        return sep;
+      }
+      if (!ready) {
+        return GTEXT_JSON_OK; // separator continues in the next chunk
+      }
+    }
+
     GTEXT_JSON_Status token_status = json_lexer_next(&st->lexer, &token);
+
+    /* **Collected here, before any branch below returns.** The lexer is
+       re-initialised for every buffer, so a flag left on it is lost at each
+       chunk boundary - and the white space a token's scan skipped has been
+       skipped whether or not that token turned out to be complete. Collecting
+       it after the incomplete-token branch made `[\n548310]` depend on where
+       the chunk fell: refused at chunk sizes 1, 2 and 9 and accepted at 3
+       through 8, because only some of those put a boundary inside the number
+       whose scan had crossed the line end. json_lexer::saw_line_end says why
+       it is the lexer that has to set it. */
+    if (st->lexer.saw_line_end) {
+      st->record_saw_line_end = 1;
+      st->lexer.saw_line_end = 0;
+    }
     if (token_status != GTEXT_JSON_OK) {
       // Check for incomplete input (string or number spanning chunks, or
       // partial keyword)
@@ -535,6 +790,12 @@ static GTEXT_JSON_Status json_stream_process_tokens(
      * Whitespace does not reach here - the lexer skips it - and neither does
      * EOF, handled above.
      */
+    /* In a records mode this is unreachable: json_stream_record_boundary()
+       arms between_records the moment a top-level value completes, and the
+       scanner above has already returned the state to INIT by the time a token
+       is read. Asserting that rather than assuming it, because "unreachable"
+       and "never reached in the cases I tried" are different claims and this
+       one would fail open - as GTEXT_JSON_E_TRAILING_GARBAGE on valid input. */
     if (st->state == JSON_STREAM_STATE_DONE) {
       json_position pos = {
           .offset = st->buffer_start_offset + token.pos.offset,
@@ -542,7 +803,11 @@ static GTEXT_JSON_Status json_stream_process_tokens(
           .col = token.pos.col};
       json_token_cleanup(&token);
       return json_stream_set_error(st, GTEXT_JSON_E_TRAILING_GARBAGE,
-          "Trailing content after the document", pos, err);
+          st->opts.records == GTEXT_JSON_RECORDS_OFF
+              ? "Trailing content after the document"
+              : "Trailing content after a record (internal: the record "
+                "boundary was not taken)",
+          pos, err);
     }
 
     // Process token based on current state
@@ -554,11 +819,21 @@ static GTEXT_JSON_Status json_stream_process_tokens(
       return status;
     }
 
+    /* A completed top-level value is a record, in a records mode. */
+    status = json_stream_record_boundary(st, err);
+    if (status != GTEXT_JSON_OK) {
+      return status;
+    }
+
     // If we're in error or done state, stop processing
-    if (st->state == JSON_STREAM_STATE_ERROR ||
-        st->state == JSON_STREAM_STATE_DONE) {
+    if (st->state == JSON_STREAM_STATE_ERROR
+        || (st->state == JSON_STREAM_STATE_DONE && !st->between_records)) {
       return GTEXT_JSON_OK;
     }
+    /* DONE with between_records armed is not the end of the input, it is the
+       end of a record: keep going, so that a feed holding several records
+       delivers all of them rather than leaving the rest for whatever call
+       happens to come next. */
   }
 }
 
@@ -1111,6 +1386,18 @@ GTEXT_API GTEXT_JSON_Stream * gtext_json_stream_new(
   st->lexer_initialized = 0;
   st->buffer_start_offset = 0;
 
+  /* Records mode. Everything here is 0 for GTEXT_JSON_RECORDS_OFF, which is
+     the state the whole feature is inert in.
+     In every other mode the separator scan is armed before anything has been
+     read, so that the bytes ahead of the first record are framing rather than
+     part of it - what that fixed is written at json_stream_consume_separator().
+     Which rule applies to those bytes is decided there, from records_total. */
+  st->records_total = 0;
+  st->sep_lf = 0;
+  st->sep_rs = 0;
+  st->record_saw_line_end = 0;
+  st->between_records = (st->opts.records != GTEXT_JSON_RECORDS_OFF) ? 1 : 0;
+
   // Initialize buffers with reasonable starting sizes
   st->input_buffer_size = 4096;
   st->input_buffer =
@@ -1187,6 +1474,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_feed(GTEXT_JSON_Stream * st,
           .col = 1};
     }
     return GTEXT_JSON_E_INVALID;
+  }
+
+  GTEXT_JSON_Status opt_status = json_records_check_options(&st->opts, err);
+  if (opt_status != GTEXT_JSON_OK) {
+    return opt_status;
   }
 
   /* The DONE state is not closed for business: JSON allows white space after a
@@ -1322,6 +1614,14 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
     return GTEXT_JSON_E_STATE;
   }
 
+  /* Also here, not only in feed(): an input of no bytes at all reaches
+     finish() without ever reaching feed(), and a contradiction in the options
+     is a contradiction whether or not anything was parsed. */
+  GTEXT_JSON_Status opt_status = json_records_check_options(&st->opts, err);
+  if (opt_status != GTEXT_JSON_OK) {
+    return opt_status;
+  }
+
   // Complete parsing of any remaining buffered input
   // First, compact buffer to ensure unprocessed data is at the start
   json_stream_compact_buffer(st);
@@ -1379,6 +1679,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
     while (1) {
       memset(&token, 0, sizeof(token));
       status = json_lexer_next(&st->lexer, &token);
+      /* Before the branch, as in the feed loop and for the same reason. */
+      if (st->lexer.saw_line_end) {
+        st->record_saw_line_end = 1;
+        st->lexer.saw_line_end = 0;
+      }
       if (status != GTEXT_JSON_OK) {
         // If still incomplete or error, it's a real problem
         st->lexer.streaming_mode = old_streaming_mode; // Restore
@@ -1435,6 +1740,15 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
       status = json_stream_handle_token(st, &adjusted_token, err);
       json_token_cleanup(&token);
 
+      if (status != GTEXT_JSON_OK) {
+        st->lexer.streaming_mode = old_streaming_mode; // Restore
+        return status;
+      }
+
+      /* A record can complete here as well as in the feed loop - a top-level
+         number is only finished by the end of input - so the boundary is taken
+         in both places. */
+      status = json_stream_record_boundary(st, err);
       if (status != GTEXT_JSON_OK) {
         st->lexer.streaming_mode = old_streaming_mode; // Restore
         return status;
@@ -1529,6 +1843,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
       while (1) {
         memset(&token, 0, sizeof(token));
         status = json_lexer_next(&st->lexer, &token);
+        /* Before the branch, as in the other two loops. */
+        if (st->lexer.saw_line_end) {
+          st->record_saw_line_end = 1;
+          st->lexer.saw_line_end = 0;
+        }
         if (status != GTEXT_JSON_OK) {
           // If still incomplete or error, it's a real problem
           st->lexer.streaming_mode = old_streaming_mode; // Restore
@@ -1591,6 +1910,18 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
           return status;
         }
 
+        /* **The third place a record can complete**, and the one the records
+           fuzzer found missing at 4,558 executions: a partial *keyword* is
+           kept in the input buffer rather than in the token buffer, so `true`
+           as the last record of a stream finishes here and nowhere else. It
+           emitted its value event and no EVT_RECORD_END. A hook is one
+           decision and this file has three token loops; all three take it. */
+        status = json_stream_record_boundary(st, err);
+        if (status != GTEXT_JSON_OK) {
+          st->lexer.streaming_mode = old_streaming_mode; // Restore
+          return status;
+        }
+
         // Update processed offset after successful token processing
         // After compaction, we start from 0, so current_offset is the amount
         // processed Safe: lexer.current_offset is always <= lexer.input_len
@@ -1608,8 +1939,9 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
         st->input_buffer_processed = st->lexer.current_offset;
 
         // If we're in error or done state, stop processing
-        if (st->state == JSON_STREAM_STATE_ERROR ||
-            st->state == JSON_STREAM_STATE_DONE) {
+        if (st->state == JSON_STREAM_STATE_ERROR
+            || (st->state == JSON_STREAM_STATE_DONE
+                && !st->between_records)) {
           break;
         }
       }
@@ -1634,11 +1966,18 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_finish(
    * space, or nothing but a comment, was *accepted* with no events emitted.
    * gtext_json_parse() refuses all three; the JSON fuzzer's differential found
    * the pair. */
-  if (st->state == JSON_STREAM_STATE_INIT) {
+  if (st->state == JSON_STREAM_STATE_INIT && st->records_total == 0) {
     json_position pos = {.offset = 0, .line = 1, .col = 1};
     return json_stream_set_error(
         st, GTEXT_JSON_E_INCOMPLETE, "No JSON value provided", pos, err);
   }
+
+  /* In a records mode, INIT with records already delivered is the ordinary end
+     of a sequence: the separator after the last record returned the state to
+     INIT and the input then ended. It is only "no value provided" when nothing
+     was ever delivered, which the records_total test above says. A separator
+     still being read - between_records armed, the input ended inside it - is
+     also the end: no mode asks for a separator after the last record. */
 
   st->state = JSON_STREAM_STATE_DONE;
   st->finished = 1;

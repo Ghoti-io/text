@@ -18,6 +18,14 @@
  * shape asserted that three substrings appeared in the output, which they do.
  * This harness would have found it on the first object with two members.
  *
+ * A second top-level value is part of this too, and the comment that used to
+ * sit in the shadow below was wrong about it: the writer did *not* refuse one,
+ * it wrote `{"a":1}{"b":2}` and reported OK. It refuses one now with
+ * GTEXT_JSON_Write_Options::records off, and with a framing named it writes
+ * the bytes between the records - which this harness drives from its second
+ * input byte, comparing the two writers' output as bytes rather than
+ * canonically, because the framing is the subject.
+ *
  * So the input is not a document here; it is a **program**. Each byte selects a
  * writer call, and the structural rules the writer enforces are what keep the
  * program legal: a value where a key belongs is refused with
@@ -92,16 +100,41 @@ struct Shadow {
   // A stack of containers under construction. The root is index 0 once set.
   std::vector<GTEXT_JSON_Value *> stack;
   GTEXT_JSON_Value * root = nullptr;
+  /** Every completed top-level value, in order. One unless records are on. */
+  std::vector<GTEXT_JSON_Value *> roots;
+  bool records_on = false;
   std::string pending_key;
   bool have_pending_key = false;
+
+  /**
+   * Names already written into each open object.
+   *
+   * The incremental writer has no duplicate-name policy - it writes the keys
+   * it is given, which is the caller's business - and the DOM cannot represent
+   * that: gtext_json_object_put() *replaces*. So a repeated name makes the two
+   * routes describe different documents through no fault of either, and the
+   * comparison has to stop rather than report a disagreement. Reparsing cannot
+   * stand in: the default duplicate-name policy refuses such a document, so
+   * the output would read as "the writer wrote bytes that do not parse", which
+   * is not what happened.
+   */
+  std::vector<std::vector<std::string>> names;
 
   /** Attach @p v where the current position says it goes. */
   bool place(GTEXT_JSON_Value * v) {
     if (!v) return false;
     if (stack.empty()) {
       if (root) {
-        gtext_json_free(v);
-        return false; // a second root; the writer refuses this too
+        /* A second top-level value. With GTEXT_JSON_Write_Options::records off
+           the writer refuses it - which it did *not* before that option
+           existed: it wrote `{"a":1}{"b":2}` and reported OK, and this comment
+           asserted a refusal that was not there. With a framing named it is
+           the next record, so the shadow keeps it. */
+        if (!records_on) {
+          gtext_json_free(v);
+          return false;
+        }
+        roots.push_back(root);
       }
       root = v;
       return true;
@@ -144,6 +177,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   opts.escape_unicode = (flags & 0x40) != 0;
   opts.escape_all_non_ascii = (flags & 0x80) != 0;
 
+  /* GTEXT_JSON_Write_Options::records, from the low bits of the second byte: a
+     framing is what makes a *sequence* of top-level values legal, so without
+     this the harness can only ever write one. LINE is skipped while `pretty`
+     is set, because that pair is refused by documented design rather than by a
+     defect, and a harness spending its inputs on a documented refusal learns
+     nothing. */
+  static const GTEXT_JSON_Records record_modes[] = {GTEXT_JSON_RECORDS_OFF,
+      GTEXT_JSON_RECORDS_WHITESPACE, GTEXT_JSON_RECORDS_LINE,
+      GTEXT_JSON_RECORDS_SEQ};
+  if (size >= 2) {
+    opts.records = record_modes[data[1] & 0x03];
+    if (opts.records == GTEXT_JSON_RECORDS_LINE && opts.pretty) {
+      opts.records = GTEXT_JSON_RECORDS_WHITESPACE;
+    }
+  }
+
   GTEXT_JSON_Sink sink;
   if (gtext_json_sink_buffer(&sink) != GTEXT_JSON_OK) return 0;
   GTEXT_JSON_Writer * w = gtext_json_writer_new(sink, &opts);
@@ -153,9 +202,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
 
   Shadow shadow;
+  shadow.records_on = opts.records != GTEXT_JSON_RECORDS_OFF;
   bool refused = false; // a call the writer rejected: stop comparing
 
-  size_t i = 1;
+  size_t i = (size >= 2) ? 2 : 1;
   while (i < size && !refused) {
     const uint8_t op = data[i++] % OP_COUNT;
     GTEXT_JSON_Status st = GTEXT_JSON_OK;
@@ -166,7 +216,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       if (st == GTEXT_JSON_OK) {
         GTEXT_JSON_Value * o = gtext_json_new_object();
         if (!shadow.place(o)) refused = true;
-        else shadow.stack.push_back(o);
+        else {
+          shadow.stack.push_back(o);
+          shadow.names.push_back({});
+        }
       }
       break;
     }
@@ -174,7 +227,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       st = gtext_json_writer_object_end(w);
       if (st == GTEXT_JSON_OK) {
         if (shadow.stack.empty()) refused = true;
-        else shadow.stack.pop_back();
+        else {
+          shadow.stack.pop_back();
+          if (!shadow.names.empty()) shadow.names.pop_back();
+        }
       }
       break;
     case OP_ARRAY_BEGIN: {
@@ -203,6 +259,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       i += have;
       st = gtext_json_writer_key(w, key.data(), key.size());
       if (st == GTEXT_JSON_OK) {
+        /* A name already in this object: see Shadow::names. */
+        if (!shadow.names.empty()) {
+          std::vector<std::string> & seen = shadow.names.back();
+          bool repeated = false;
+          for (const std::string & n : seen) {
+            if (n == key) {
+              repeated = true;
+              break;
+            }
+          }
+          if (repeated) {
+            refused = true;
+            break;
+          }
+          seen.push_back(key);
+        }
         shadow.pending_key = key;
         shadow.have_pending_key = true;
       }
@@ -287,6 +359,75 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   const std::string out(
       gtext_json_sink_buffer_data(&sink), gtext_json_sink_buffer_size(&sink));
 
+  if (shadow.root && shadow.records_on) {
+    /* The last record, which place() only pushes when the *next* one starts. */
+    shadow.roots.push_back(shadow.root);
+    shadow.root = nullptr;
+  }
+
+  /* **The records differential**, when a framing was asked for. The same values
+     through the whole-value writer, one call per record, must be the same bytes
+     the incremental writer produced - the incremental one defers each record's
+     terminator to the next record or to finish(), and the whole-value one
+     frames each call with no state at all, so the two strategies agreeing is
+     the property. And what came out must read back as that many records.
+     Compared as *bytes*, not canonically: the framing is the subject, and a
+     canonical comparison normalises exactly that away - which is how it hid a
+     trailing space per comma in pretty mode for as long as it did. */
+  if (finished && shadow.stack.empty() && shadow.records_on
+      && !shadow.roots.empty() && !out.empty()) {
+    GTEXT_JSON_Sink vs;
+    if (gtext_json_sink_buffer(&vs) == GTEXT_JSON_OK) {
+      bool all = true;
+      for (GTEXT_JSON_Value * r : shadow.roots) {
+        if (gtext_json_write_value(&vs, &opts, r, nullptr) != GTEXT_JSON_OK) {
+          all = false;
+          break;
+        }
+      }
+      if (all) {
+        const std::string from_values(gtext_json_sink_buffer_data(&vs),
+            gtext_json_sink_buffer_size(&vs));
+        if (from_values != out) {
+          std::fprintf(stderr, "incremental: %zu bytes, value writer: %zu\n",
+              out.size(), from_values.size());
+          fail("the two writers framed the same records differently", out);
+        }
+      }
+      gtext_json_sink_buffer_free(&vs);
+    }
+
+    GTEXT_JSON_Parse_Options popts = gtext_json_parse_options_default();
+    popts.records = opts.records;
+    popts.max_total_bytes = 0;
+    size_t off = 0;
+    size_t read_back = 0;
+    bool readable = true;
+    while (off < out.size() && readable) {
+      size_t used = 0;
+      GTEXT_JSON_Error perr{};
+      GTEXT_JSON_Value * v = gtext_json_parse_multiple(
+          out.data() + off, out.size() - off, &popts, &perr, &used);
+      gtext_json_error_free(&perr);
+      if (!v || used == 0) {
+        if (v) gtext_json_free(v);
+        readable = false;
+        break;
+      }
+      read_back++;
+      gtext_json_free(v);
+      off += used;
+    }
+    if (!readable) {
+      fail("the writer framed records its own reader refuses", out);
+    }
+    if (read_back != shadow.roots.size()) {
+      std::fprintf(stderr, "wrote %zu records, read back %zu\n",
+          shadow.roots.size(), read_back);
+      fail("a records round trip changed how many records there were", out);
+    }
+  }
+
   // Only a complete, unrefused program makes a claim about the bytes. A program
   // that left a container open wrote a prefix, which is not a document.
   if (finished && shadow.stack.empty() && shadow.root && !out.empty()) {
@@ -332,6 +473,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
 
   if (shadow.root) gtext_json_free(shadow.root);
+  for (GTEXT_JSON_Value * r : shadow.roots) gtext_json_free(r);
   gtext_json_writer_free(w);
   gtext_json_sink_buffer_free(&sink);
   return 0;

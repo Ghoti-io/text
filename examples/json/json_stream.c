@@ -64,6 +64,13 @@ static GTEXT_JSON_Status event_callback(
   case GTEXT_JSON_EVT_NULL:
     printf("%*sNull\n", *depth * 2, "");
     break;
+
+  case GTEXT_JSON_EVT_RECORD_END:
+    // Only reached when GTEXT_JSON_Parse_Options::records asks for a sequence
+    // of top-level values; see json_ndjson.c. Listed rather than defaulted so
+    // that -Wswitch keeps saying something if the enumeration grows again.
+    printf("%*s--- end of record ---\n", *depth * 2, "");
+    break;
   }
 
   return GTEXT_JSON_OK;

@@ -326,6 +326,70 @@ static int write_unicode_escape(
   return write_bytes(sink, buf, (size_t)len);
 }
 
+/**
+ * A write failed because the string is not UTF-8.
+ *
+ * The writers' internal helpers return 0 or 1, where 1 is a sink failure. This
+ * third value separates "the sink refused the bytes" from "the bytes were not
+ * writable", so the public entry points can report GTEXT_JSON_E_BAD_UNICODE -
+ * the same status the parser uses for the same input - rather than
+ * GTEXT_JSON_E_WRITE, which would send a caller looking at their sink.
+ */
+#define JSON_WRITE_ERR_UNICODE 2
+
+/* Decode one UTF-8 character, strictly. Returns its length in bytes and writes
+ * the codepoint, or 0 if these bytes are not a well-formed character.
+ *
+ * Deliberately not the lexer's json_utf8_decode(): that one answers "is this
+ * white space", so it accepts an overlong encoding and a lone surrogate, and
+ * here those are exactly what must be refused. A writer that emits them
+ * produces bytes its own parser rejects. */
+static size_t writer_utf8_decode(
+    const char * p, size_t available, uint32_t * out_cp) {
+  const unsigned char * u = (const unsigned char *)p;
+  if (available == 0) {
+    return 0;
+  }
+  if (u[0] < 0x80) {
+    *out_cp = u[0];
+    return 1;
+  }
+  size_t seq;
+  uint32_t cp;
+  if ((u[0] & 0xE0) == 0xC0) {
+    seq = 2;
+    cp = u[0] & 0x1Fu;
+  }
+  else if ((u[0] & 0xF0) == 0xE0) {
+    seq = 3;
+    cp = u[0] & 0x0Fu;
+  }
+  else if ((u[0] & 0xF8) == 0xF0) {
+    seq = 4;
+    cp = u[0] & 0x07u;
+  }
+  else {
+    return 0; // a continuation byte, or 0xF8..0xFF
+  }
+  if (available < seq) {
+    return 0; // truncated
+  }
+  for (size_t i = 1; i < seq; i++) {
+    if ((u[i] & 0xC0) != 0x80) {
+      return 0;
+    }
+    cp = (cp << 6) | (u[i] & 0x3Fu);
+  }
+  /* Overlong, surrogate half, and past the last codepoint. Each is a sequence
+     that decodes and still is not UTF-8. */
+  static const uint32_t lowest[5] = {0, 0, 0x80, 0x800, 0x10000};
+  if (cp < lowest[seq] || (cp >= 0xD800 && cp <= 0xDFFF) || cp > 0x10FFFF) {
+    return 0;
+  }
+  *out_cp = cp;
+  return seq;
+}
+
 // Escape and write a string value
 static int write_escaped_string(GTEXT_JSON_Sink * sink, const char * str,
     size_t len, const GTEXT_JSON_Write_Options * opt) {
@@ -391,23 +455,51 @@ static int write_escaped_string(GTEXT_JSON_Sink * sink, const char * str,
       continue;
     }
 
-    // Non-ASCII characters
+    /* Non-ASCII. **Decoded as a character, not handled as a byte.**
+     *
+     * Both of these branches used to escape each byte of a sequence on its own,
+     * under a comment saying a more sophisticated implementation would decode
+     * the UTF-8 - so `é` (C3 A9) came out as `Ã©`, which is valid
+     * JSON holding the two characters `Ã©`. Every non-ASCII string was
+     * silently changed by either option, and the output reparsed cleanly as the wrong
+     * value, which is the failure a round-trip test over ASCII cannot see.
+     *
+     * And a sequence that is not UTF-8 was written through verbatim, so the
+     * writer reported GTEXT_JSON_OK for bytes this library's own parser
+     * refuses. It is refused here instead: a string a caller built through the
+     * DOM or handed to gtext_json_writer_string() is the only way such bytes
+     * reach a writer, since a parse validates. */
     if (c >= 0x80) {
-      if (escape_all_non_ascii) {
-        // Escape all non-ASCII as \uXXXX
-        if (write_unicode_escape(sink, c) != 0)
-          return 1;
-        continue;
+      uint32_t cp = 0;
+      const size_t seq = writer_utf8_decode(str + i, len - i, &cp);
+      if (seq == 0) {
+        return JSON_WRITE_ERR_UNICODE;
       }
-      else if (escape_unicode) {
-        // For escape_unicode, we need to handle UTF-8 sequences properly
-        // For now, escape individual bytes if they're >= 0x80
-        // A more sophisticated implementation would decode UTF-8 and escape
-        // codepoints
-        if (write_unicode_escape(sink, c) != 0)
-          return 1;
-        continue;
+
+      if (escape_unicode || escape_all_non_ascii) {
+        if (cp < 0x10000u) {
+          if (write_unicode_escape(sink, cp) != 0) {
+            return 1;
+          }
+        }
+        else {
+          /* Outside the BMP there is no single \uXXXX, so JSON's escape is the
+             surrogate pair - which is why a byte-wise escape could not have
+             been right for an emoji even by accident. */
+          const uint32_t v = cp - 0x10000u;
+          if (write_unicode_escape(sink, 0xD800u + (v >> 10)) != 0
+              || write_unicode_escape(sink, 0xDC00u + (v & 0x3FFu)) != 0) {
+            return 1;
+          }
+        }
       }
+      else {
+        if (write_bytes(sink, str + i, seq) != 0) {
+          return 1;
+        }
+      }
+      i += seq - 1; // the loop's own increment accounts for the last byte
+      continue;
     }
 
     // Regular character - write as-is
@@ -807,9 +899,21 @@ static int write_value_iterative(GTEXT_JSON_Sink * sink,
         status = 1;
         goto done;
       }
-      if (opts->space_after_comma && write_char(sink, ' ') != 0) {
-        status = 1;
-        goto done;
+      /* **Not when a newline follows it.** `space_after_comma` is a
+         compact-mode option: in pretty mode the comma is followed by an indent that begins
+         with a newline, so the space becomes trailing white space at the end of
+         every line - which changes nothing a reader sees and which many tools
+         object to. The incremental writer had always declined it here (it is
+         inside its own `else if (!pretty)`); this writer did not, so the two
+         produced different bytes for the same document whenever both options
+         were set. Found by tests/fuzz/fuzz_json_writer.cpp once it began
+         comparing the two writers' bytes rather than their reparsed values -
+         a canonical comparison normalises exactly this away. */
+      if (!opts->pretty || should_inline) {
+        if (opts->space_after_comma && write_char(sink, ' ') != 0) {
+          status = 1;
+          goto done;
+        }
       }
     }
 
@@ -916,24 +1020,67 @@ GTEXT_API GTEXT_JSON_Status gtext_json_write_value(GTEXT_JSON_Sink * sink,
     return GTEXT_JSON_E_INVALID;
   }
 
+  /* GTEXT_JSON_Write_Options::records frames one record. This function writes
+     a whole value and is called once per record, so - unlike the incremental
+     writer - it needs no state to do that: the RS goes before this value and
+     the line end after it, and a caller writing N records into one sink gets
+     the same bytes the incremental writer would produce for the same N. */
+  if (opt && opt->records != GTEXT_JSON_RECORDS_OFF) {
+    if (opt->records == GTEXT_JSON_RECORDS_LINE && opt->pretty) {
+      if (err) {
+        *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+            .message = "GTEXT_JSON_RECORDS_LINE cannot be combined with "
+                       "pretty: one record per line and a value printed "
+                       "across lines are contradictory requests"};
+      }
+      return GTEXT_JSON_E_INVALID;
+    }
+    if (opt->records == GTEXT_JSON_RECORDS_SEQ) {
+      const char rs = (char)0x1E;
+      if (write_bytes(sink, &rs, 1) != 0) {
+        if (err) {
+          *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_WRITE,
+              .message = "Failed to write the record separator"};
+        }
+        return GTEXT_JSON_E_WRITE;
+      }
+    }
+  }
+
   int result = write_value_iterative(sink, v, opt);
   if (result != 0) {
+    /* Which failure it was. A string that is not UTF-8 is the caller's bytes
+       rather than the sink's doing, and reporting GTEXT_JSON_E_WRITE for it
+       would send them looking at the wrong thing. */
+    const GTEXT_JSON_Status code = (result == JSON_WRITE_ERR_UNICODE)
+        ? GTEXT_JSON_E_BAD_UNICODE
+        : GTEXT_JSON_E_WRITE;
     if (err) {
-      *err = (GTEXT_JSON_Error){
-          .code = GTEXT_JSON_E_WRITE, .message = "Write operation failed"};
+      *err = (GTEXT_JSON_Error){.code = code,
+          .message = (code == GTEXT_JSON_E_BAD_UNICODE)
+              ? "A string is not valid UTF-8 and cannot be written as JSON"
+              : "Write operation failed"};
     }
-    return GTEXT_JSON_E_WRITE;
+    return code;
   }
 
   // Add trailing newline if requested
   const GTEXT_JSON_Write_Options * opts =
       opt ? opt : &(GTEXT_JSON_Write_Options){0};
-  if (opts->trailing_newline) {
+
+  /* The record's terminator, and not also the trailing newline below: asking
+     for both would end a record in two line ends, which reads back as a blank
+     line between records. A records mode *is* the statement that every value
+     ends in one, so it subsumes trailing_newline rather than adding to it. */
+  const bool record_terminator = opts->records != GTEXT_JSON_RECORDS_OFF;
+  if (record_terminator || opts->trailing_newline) {
     const char * newline = opts->newline ? opts->newline : "\n";
     if (write_string(sink, newline) != 0) {
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_WRITE,
-            .message = "Failed to write trailing newline"};
+            .message = record_terminator
+                ? "Failed to write the record terminator"
+                : "Failed to write trailing newline"};
       }
       return GTEXT_JSON_E_WRITE;
     }
@@ -1132,6 +1279,71 @@ static int writer_write_comma_if_needed(GTEXT_JSON_Writer * w) {
   return 0;
 }
 
+/*
+ * Everything that has to happen before a value is written, as one status.
+ *
+ * Two things: the comma that separates elements of a container, and - at the
+ * top level - the question of whether a second value is allowed here at all.
+ *
+ * That second question used to have no answer. This writer accepted a second
+ * top-level value and wrote `{"a":1}{"b":2}`, which is not JSON, which this
+ * library's own parser refuses, and which every call reported
+ * GTEXT_JSON_OK for, gtext_json_writer_finish() included. So the default is
+ * now a refusal, and a sequence of values is something a caller asks for by
+ * naming a framing in GTEXT_JSON_Write_Options::records - at which point the
+ * bytes between the records are written rather than left out.
+ */
+static GTEXT_JSON_Status writer_begin_value(GTEXT_JSON_Writer * w) {
+  if (w->stack_size == 0) {
+    /* A top-level value. */
+    if (w->opts.records == GTEXT_JSON_RECORDS_OFF) {
+      if (w->roots_written > 0) {
+        w->error = 1;
+        return GTEXT_JSON_E_STATE;
+      }
+    }
+    else {
+      if (w->opts.records == GTEXT_JSON_RECORDS_LINE && w->opts.pretty) {
+        /* One record per line and a value printed across lines are two
+           requests that contradict each other. Refused rather than written,
+           because the output would be a file this library's own
+           GTEXT_JSON_RECORDS_LINE reader could not read back. */
+        w->error = 1;
+        return GTEXT_JSON_E_INVALID;
+      }
+
+      /* The previous record's terminator, deferred to here: writing it when
+         that record closed would need a hook in every value writer and in both
+         container-end functions, where this is the one place a record boundary
+         is actually crossed. gtext_json_writer_finish() writes the last one. */
+      if (w->records_pending) {
+        const char * newline = w->opts.newline ? w->opts.newline : "\n";
+        if (writer_write_string(w, newline) != 0) {
+          w->error = 1;
+          return GTEXT_JSON_E_WRITE;
+        }
+        w->records_pending = 0;
+      }
+
+      /* RFC 7464 puts its RS before every record, the first included. */
+      if (w->opts.records == GTEXT_JSON_RECORDS_SEQ) {
+        if (writer_write_char(w, 0x1E) != 0) {
+          w->error = 1;
+          return GTEXT_JSON_E_WRITE;
+        }
+      }
+      w->records_pending = 1;
+    }
+    w->roots_written++;
+  }
+
+  if (writer_write_comma_if_needed(w) != 0) {
+    w->error = 1;
+    return GTEXT_JSON_E_WRITE;
+  }
+  return GTEXT_JSON_OK;
+}
+
 GTEXT_API GTEXT_JSON_Writer * gtext_json_writer_new(
     GTEXT_JSON_Sink sink, const GTEXT_JSON_Write_Options * opt) {
   if (!sink.write) {
@@ -1170,6 +1382,8 @@ GTEXT_API GTEXT_JSON_Writer * gtext_json_writer_new(
 
   w->stack_size = 0;
   w->error = 0;
+  w->roots_written = 0;
+  w->records_pending = 0;
 
   return w;
 }
@@ -1202,9 +1416,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_object_begin(
   }
 
   // Write comma if needed (for arrays) or handle first element
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write opening brace
@@ -1295,9 +1511,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_array_begin(
   }
 
   // Write comma if needed (for arrays) or handle first element
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write opening bracket
@@ -1386,15 +1604,24 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_key(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write key
-  if (write_escaped_string(&w->sink, key, len, &w->opts) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const int esc = write_escaped_string(&w->sink, key, len, &w->opts);
+    if (esc == JSON_WRITE_ERR_UNICODE) {
+      w->error = 1;
+      return GTEXT_JSON_E_BAD_UNICODE;
+    }
+    if (esc != 0) {
+      w->error = 1;
+      return GTEXT_JSON_E_WRITE;
+    }
   }
 
   // Write colon with optional spacing
@@ -1443,9 +1670,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_null(GTEXT_JSON_Writer * w) {
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write null
@@ -1488,9 +1717,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_bool(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write boolean
@@ -1533,9 +1764,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_number_lexeme(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write number lexeme
@@ -1578,9 +1811,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_number_i64(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Format number (locale-independent)
@@ -1630,9 +1865,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_number_u64(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Format number (locale-independent)
@@ -1682,9 +1919,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_number_double(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Check for nonfinite numbers
@@ -1765,15 +2004,24 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_string(
   }
 
   // Write comma if needed
-  if (writer_write_comma_if_needed(w) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const GTEXT_JSON_Status begin = writer_begin_value(w);
+    if (begin != GTEXT_JSON_OK) {
+      return begin;
+    }
   }
 
   // Write escaped string
-  if (write_escaped_string(&w->sink, s, len, &w->opts) != 0) {
-    w->error = 1;
-    return GTEXT_JSON_E_WRITE;
+  {
+    const int esc = write_escaped_string(&w->sink, s, len, &w->opts);
+    if (esc == JSON_WRITE_ERR_UNICODE) {
+      w->error = 1;
+      return GTEXT_JSON_E_BAD_UNICODE;
+    }
+    if (esc != 0) {
+      w->error = 1;
+      return GTEXT_JSON_E_WRITE;
+    }
   }
 
   // Mark current container as having elements
@@ -1816,8 +2064,30 @@ GTEXT_API GTEXT_JSON_Status gtext_json_writer_finish(
     return GTEXT_JSON_E_INCOMPLETE;
   }
 
-  // Add trailing newline if requested
-  if (w->opts.trailing_newline) {
+  /* The last record's terminator. Every record in a records mode is followed
+     by one, including the last: a reader of NDJSON expects the final line to
+     end, and RFC 7464's grammar puts an LF after each record. This is the
+     deferred write writer_begin_value() would otherwise have made at the start
+     of a record that never came. */
+  if (w->records_pending) {
+    const char * newline = w->opts.newline ? w->opts.newline : "\n";
+    if (writer_write_string(w, newline) != 0) {
+      w->error = 1;
+      if (err) {
+        *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_WRITE,
+            .message = "Failed to write the record terminator"};
+      }
+      return GTEXT_JSON_E_WRITE;
+    }
+    w->records_pending = 0;
+  }
+
+  /* Not also the trailing newline in a records mode: the record terminator
+     above already ended the last record, and writing both would leave the
+     output ending in a blank line that a reader of this format reads as one
+     more separator. The same subsumption gtext_json_write_value() makes. */
+  if (w->opts.trailing_newline
+      && w->opts.records == GTEXT_JSON_RECORDS_OFF) {
     const char * newline = w->opts.newline ? w->opts.newline : "\n";
     if (writer_write_string(w, newline) != 0) {
       w->error = 1;

@@ -123,6 +123,19 @@ typedef struct json_token_buffer {
       int has_dot;           ///< 1 if number contains '.'
       int has_exp;           ///< 1 if number contains 'e' or 'E'
       int exp_sign_seen;     ///< 1 if exponent sign (+/-) seen
+      /**
+       * 1 if a digit of the exponent has been consumed.
+       *
+       * The sign of an exponent is legal immediately after the `e` and nowhere
+       * else, and `exp_sign_seen` alone cannot say that: it is 0 both before
+       * the sign's position and long after it. So a number resumed at a chunk
+       * boundary after `2e9` saw has_exp with no sign and took a following `-`
+       * as the exponent's sign - which made `2e9-1` one malformed number where
+       * the whole-buffer lexer reads two values. Invisible until records mode,
+       * because until then both readings were a refusal and only the status
+       * code differed.
+       */
+      int exp_digit_seen;
       int starts_with_minus; ///< 1 if number starts with '-'
       int starts_with_plus;  ///< 1 if number starts with '+' (JSON5)
       int is_hex;            ///< 1 if number is a JSON5 hex literal
@@ -319,6 +332,48 @@ struct GTEXT_JSON_Stream {
    * anything that is not white space or a comment with
    * GTEXT_JSON_E_TRAILING_GARBAGE. */
   int finished;
+
+  /* ---- GTEXT_JSON_Parse_Options::records ----
+   *
+   * All of this is inert when the mode is GTEXT_JSON_RECORDS_OFF, which is the
+   * default: `records_total` stays 0, `between_records` is never armed, and
+   * every branch below is skipped. The one behavioural difference in the OFF
+   * case is none at all, which is what the tests assert.
+   */
+
+  /** Complete top-level values delivered so far, one per EVT_RECORD_END. */
+  size_t records_total;
+
+  /**
+   * A record has ended and the bytes separating it from the next are being
+   * read.
+   *
+   * The separator is consumed by json_stream_consume_separator() rather than
+   * by the lexer, for two reasons that are both about what the lexer cannot
+   * do: RS (0x1E) is not JSON white space, so the lexer would refuse it where
+   * GTEXT_JSON_RECORDS_SEQ requires it; and the mode has to *count* what it
+   * skipped, where the lexer only skips. Armed at creation for
+   * GTEXT_JSON_RECORDS_SEQ, because RFC 7464 puts an RS before the first
+   * record too.
+   */
+  int between_records;
+
+  /** LF bytes in the separator read so far. LINE mode needs at least one. */
+  size_t sep_lf;
+
+  /** RS bytes in the separator being read. GTEXT_JSON_RECORDS_SEQ needs one. */
+  size_t sep_rs;
+
+  /**
+   * The record being parsed has a line end inside it.
+   *
+   * Collected from json_lexer::saw_line_end after every token, because the
+   * lexer is re-initialised for each buffer and would lose it at a chunk
+   * boundary. Only GTEXT_JSON_RECORDS_LINE reads it: there, a record spanning
+   * lines is refused, which is the rule that makes that mode a statement about
+   * the format rather than only about the separator.
+   */
+  int record_saw_line_end;
 };
 
 #ifdef __cplusplus

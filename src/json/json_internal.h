@@ -404,6 +404,20 @@ typedef struct {
   struct json_token_buffer *
       token_buffer; ///< Token buffer for incomplete tokens (streaming mode
                     ///< only, can be NULL)
+
+  /**
+   * Set when the white space or comment this lexer skipped ended a line.
+   *
+   * GTEXT_JSON_RECORDS_LINE has to know whether a record held a line end of
+   * its own, and the only code that sees those bytes is
+   * json_lexer_skip_whitespace(): the line ends *between* records are consumed
+   * by the streaming parser's own separator scan, so anything this flag
+   * reports happened inside a value. The lexer never clears it - the streaming
+   * parser collects it after each token and clears it there, because a lexer
+   * is re-initialised for each buffer and a flag it owned would be lost at
+   * every chunk boundary.
+   */
+  int saw_line_end;
 } json_lexer;
 
 /**
@@ -1054,6 +1068,28 @@ struct GTEXT_JSON_Writer {
   size_t stack_capacity;           ///< Stack capacity
   size_t stack_size;               ///< Current stack depth
   int error;                       ///< Error flag (1 if error occurred)
+
+  /**
+   * Top-level values begun so far.
+   *
+   * Counted because the second one is the question: with
+   * GTEXT_JSON_Write_Options::records off it is refused, and with a framing
+   * named it is a new record. Incremented where a value begins rather than
+   * where one ends, because writer_begin_value() is the single place a
+   * top-level position is recognised - a container's own members are at a
+   * stack depth above zero and do not reach it.
+   */
+  size_t roots_written;
+
+  /**
+   * A record has been written whose terminator has not.
+   *
+   * The same deferral the CSV streaming writer makes, for the same reason: the
+   * byte after a record is written either when the next record starts or at
+   * gtext_json_writer_finish(), and only those two places know which. Always 0
+   * when records is GTEXT_JSON_RECORDS_OFF.
+   */
+  int records_pending;
 };
 
 /**

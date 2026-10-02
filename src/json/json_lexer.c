@@ -214,6 +214,7 @@ static void json_lexer_skip_whitespace(json_lexer * lexer) {
     }
     if (ends_line) {
       json_position_increment_line(&lexer->pos);
+      lexer->saw_line_end = 1;
       lexer->pos.col = 1;
     }
     else {
@@ -259,6 +260,7 @@ static int json_lexer_skip_single_line_comment(json_lexer * lexer) {
       }
       if (lexer->input[lexer->current_offset] == '\n') {
         json_position_increment_line(&lexer->pos);
+        lexer->saw_line_end = 1;
         lexer->pos.col = 1;
         // Check for overflow before incrementing
         if (json_check_add_overflow(lexer->current_offset, 1)) {
@@ -354,6 +356,7 @@ static int json_lexer_skip_multi_line_comment(json_lexer * lexer) {
       }
       if (lexer->input[lexer->current_offset] == '\n') {
         json_position_increment_line(&lexer->pos);
+        lexer->saw_line_end = 1;
         lexer->pos.col = 1;
       }
       else {
@@ -1427,6 +1430,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
   int has_dot = 0;
   int has_exp = 0;
   int exp_sign_seen = 0;
+  int exp_digit_seen = 0;
   int starts_with_minus = 0;
   int starts_with_plus = 0;
   int is_hex = 0;
@@ -1439,6 +1443,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
     has_dot = tb->parse_state.number_state.has_dot;
     has_exp = tb->parse_state.number_state.has_exp;
     exp_sign_seen = tb->parse_state.number_state.exp_sign_seen;
+    exp_digit_seen = tb->parse_state.number_state.exp_digit_seen;
     starts_with_minus = tb->parse_state.number_state.starts_with_minus;
     starts_with_plus = tb->parse_state.number_state.starts_with_plus;
     is_hex = tb->parse_state.number_state.is_hex;
@@ -1497,7 +1502,12 @@ static GTEXT_JSON_Status json_lexer_parse_number(
 
     // If resuming with exponent but no sign seen yet, check for exponent sign
     // first
-    if (resuming && has_exp && !exp_sign_seen && (c == '+' || c == '-')) {
+    /* A sign is the exponent's sign only in the position right after the `e`.
+       `!exp_digit_seen` is what says so: without it this branch took the `-` of
+       `2e9-1`, resumed after the `9`, as a sign - one malformed number where
+       the whole-buffer lexer reads the two values `2e9` and `-1`. */
+    if (resuming && has_exp && !exp_sign_seen && !exp_digit_seen
+        && (c == '+' || c == '-')) {
       exp_sign_seen = 1;
       end++;
       // Append to buffer if available
@@ -1552,6 +1562,11 @@ static GTEXT_JSON_Status json_lexer_parse_number(
       continue;
     }
     if (c >= '0' && c <= '9') {
+      /* Recorded so that a resumption knows the exponent's sign position has
+         already gone by. See number_state::exp_digit_seen. */
+      if (has_exp) {
+        exp_digit_seen = 1;
+      }
       end++;
       // Append to buffer if available
       if (tb) {
@@ -1687,6 +1702,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
           tb->parse_state.number_state.has_dot = has_dot;
           tb->parse_state.number_state.has_exp = has_exp;
           tb->parse_state.number_state.exp_sign_seen = exp_sign_seen;
+          tb->parse_state.number_state.exp_digit_seen = exp_digit_seen;
           tb->parse_state.number_state.starts_with_minus = starts_with_minus;
           tb->parse_state.number_state.starts_with_plus = starts_with_plus;
           tb->parse_state.number_state.is_hex = is_hex;
@@ -1748,6 +1764,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
         tb->parse_state.number_state.has_dot = has_dot;
         tb->parse_state.number_state.has_exp = has_exp;
         tb->parse_state.number_state.exp_sign_seen = exp_sign_seen;
+          tb->parse_state.number_state.exp_digit_seen = exp_digit_seen;
         tb->parse_state.number_state.starts_with_minus = starts_with_minus;
         tb->parse_state.number_state.starts_with_plus = starts_with_plus;
         tb->parse_state.number_state.is_hex = is_hex;
@@ -1782,6 +1799,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
             tb->parse_state.number_state.has_dot = has_dot;
             tb->parse_state.number_state.has_exp = has_exp;
             tb->parse_state.number_state.exp_sign_seen = exp_sign_seen;
+          tb->parse_state.number_state.exp_digit_seen = exp_digit_seen;
             tb->parse_state.number_state.starts_with_minus = starts_with_minus;
             tb->parse_state.number_state.starts_with_plus = starts_with_plus;
             tb->parse_state.number_state.is_hex = is_hex;
@@ -1797,6 +1815,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
           tb->parse_state.number_state.has_dot = has_dot;
           tb->parse_state.number_state.has_exp = has_exp;
           tb->parse_state.number_state.exp_sign_seen = exp_sign_seen;
+          tb->parse_state.number_state.exp_digit_seen = exp_digit_seen;
           tb->parse_state.number_state.starts_with_minus = starts_with_minus;
           tb->parse_state.number_state.starts_with_plus = starts_with_plus;
           tb->parse_state.number_state.is_hex = is_hex;
@@ -1812,6 +1831,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
           tb->parse_state.number_state.has_dot = has_dot;
           tb->parse_state.number_state.has_exp = has_exp;
           tb->parse_state.number_state.exp_sign_seen = exp_sign_seen;
+          tb->parse_state.number_state.exp_digit_seen = exp_digit_seen;
           tb->parse_state.number_state.starts_with_minus = starts_with_minus;
           tb->parse_state.number_state.starts_with_plus = starts_with_plus;
           tb->parse_state.number_state.is_hex = is_hex;
@@ -1882,6 +1902,7 @@ static GTEXT_JSON_Status json_lexer_parse_number(
           tb->parse_state.number_state.has_dot = has_dot;
           tb->parse_state.number_state.has_exp = has_exp;
           tb->parse_state.number_state.exp_sign_seen = exp_sign_seen;
+          tb->parse_state.number_state.exp_digit_seen = exp_digit_seen;
           tb->parse_state.number_state.starts_with_minus = starts_with_minus;
           tb->parse_state.number_state.starts_with_plus = starts_with_plus;
           tb->parse_state.number_state.is_hex = is_hex;
@@ -1990,6 +2011,9 @@ GTEXT_INTERNAL_API GTEXT_JSON_Status json_lexer_init(json_lexer * lexer,
   lexer->opts = opts;
   lexer->streaming_mode = streaming_mode ? 1 : 0;
   lexer->token_buffer = NULL; // Set by caller if needed
+  /* Cleared here and never by the lexer again: the streaming parser collects
+     it after each token (json_lexer::saw_line_end). */
+  lexer->saw_line_end = 0;
 
   /* Skip leading BOM if enabled - and only where the input really begins.
    * The streaming parser re-initialises the lexer on every feed with whatever

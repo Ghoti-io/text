@@ -65,6 +65,9 @@ GTEXT_API GTEXT_JSON_Parse_Options gtext_json_parse_options_default(void) {
   opts.parse_uint64 = true;           // detect uint64
   opts.parse_double = true;           // derive double
 
+  // One JSON text, and trailing content is an error
+  opts.records = GTEXT_JSON_RECORDS_OFF;
+
   return opts;
 }
 
@@ -101,6 +104,9 @@ GTEXT_API GTEXT_JSON_Write_Options gtext_json_write_options_default(void) {
   opts.float_format =
       GTEXT_JSON_FLOAT_SHORTEST; // shortest representation by default
   opts.float_precision = 6; // default precision (used for FIXED/SCIENTIFIC)
+
+  // One JSON text per sink, and a second top-level value is refused
+  opts.records = GTEXT_JSON_RECORDS_OFF;
 
   return opts;
 }

@@ -1712,6 +1712,7 @@ $(eval $(call fuzz-rule,fuzz_ini,ini))
 $(eval $(call fuzz-rule,fuzz_json_writer,json-writer))
 $(eval $(call fuzz-rule,fuzz_csv_writer,csv-writer))
 $(eval $(call fuzz-rule,fuzz_ini_writer,ini-writer))
+$(eval $(call fuzz-rule,fuzz_json_records,json-records))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -1723,6 +1724,7 @@ fuzz: ## Build and run every fuzzer for $(FUZZ_TIME) seconds each
 fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
 fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
+fuzz: fuzz-run-json-records
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:

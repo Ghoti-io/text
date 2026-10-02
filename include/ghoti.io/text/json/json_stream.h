@@ -52,7 +52,25 @@ typedef enum {
   GTEXT_JSON_EVT_ARRAY_END,    ///< Array end marker
   GTEXT_JSON_EVT_OBJECT_BEGIN, ///< Object start marker
   GTEXT_JSON_EVT_OBJECT_END,   ///< Object end marker
-  GTEXT_JSON_EVT_KEY           ///< Object key (before value)
+  GTEXT_JSON_EVT_KEY,          ///< Object key (before value)
+
+  /**
+   * One top-level value is complete.
+   *
+   * Emitted only when ::GTEXT_JSON_Parse_Options::records is not
+   * ::GTEXT_JSON_RECORDS_OFF, once per record, after that record's last event
+   * and before anything belonging to the next one. The last record's
+   * GTEXT_JSON_EVT_RECORD_END arrives from gtext_json_stream_finish(), because
+   * until then the input may still be a longer value.
+   *
+   * It carries no data. It exists because the events alone cannot say where a
+   * record ended: `1 2` is two records and emits two GTEXT_JSON_EVT_NUMBER
+   * events, which is also what the single value `[1,2]` emits between its
+   * array markers, and a consumer building one object per record needs to know
+   * which. Appended to this enumeration rather than grouped with the other
+   * structural markers so that no existing enumerator's value moves.
+   */
+  GTEXT_JSON_EVT_RECORD_END
 } GTEXT_JSON_Event_Type;
 
 /**

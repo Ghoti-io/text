@@ -36,6 +36,28 @@
 
 namespace {
 
+/** One string value through the incremental writer, for comparison. */
+std::string json_write_incremental_string(
+    const GTEXT_JSON_Write_Options & opts, const char * utf8) {
+  GTEXT_JSON_Sink sink;
+  if (gtext_json_sink_buffer(&sink) != GTEXT_JSON_OK)
+    return std::string();
+  GTEXT_JSON_Writer * w = gtext_json_writer_new(sink, &opts);
+  if (!w) {
+    gtext_json_sink_buffer_free(&sink);
+    return std::string();
+  }
+  std::string out;
+  if (gtext_json_writer_string(w, utf8, std::strlen(utf8)) == GTEXT_JSON_OK &&
+      gtext_json_writer_finish(w, nullptr) == GTEXT_JSON_OK) {
+    out.assign(
+        gtext_json_sink_buffer_data(&sink), gtext_json_sink_buffer_size(&sink));
+  }
+  gtext_json_writer_free(w);
+  gtext_json_sink_buffer_free(&sink);
+  return out;
+}
+
 std::string json_write_value_with(
     const GTEXT_JSON_Write_Options & opts, const GTEXT_JSON_Value * v) {
   GTEXT_JSON_Sink sink;
@@ -444,4 +466,214 @@ TEST(CsvWriterAgreement, StreamingWriterHonoursTrimTrailingEmptyFields) {
   // the table writer does for the same row.
   EXPECT_EQ(csv_from_stream(o, {{"", ""}}, &st), "\n");
   EXPECT_EQ(st, GTEXT_CSV_OK);
+}
+
+/**
+ * @test JsonWriterUnicode.EscapeUnicodeEscapesCodepointsNotBytes
+ *
+ * `escape_unicode` and `escape_all_non_ascii` used to escape each **byte** of
+ * a UTF-8 sequence on its own, under a comment saying a more sophisticated
+ * implementation would decode the UTF-8. So `é` (C3 A9) came out as
+ * `\u00C3\u00A9` - which is valid JSON holding the two characters `Ã©`. Every
+ * non-ASCII string was silently changed by either option, and the output
+ * reparsed cleanly as the wrong value.
+ *
+ * Nothing caught it because no test in the suite had ever set either option on
+ * a string that was not ASCII: a round trip over ASCII is a round trip these
+ * options do not touch. So this test is written as the round trip over the
+ * characters that distinguish the cases - two, three and four byte sequences -
+ * and it asserts the bytes as well, because "it round-trips" is also true of
+ * not escaping at all.
+ */
+TEST(JsonWriterUnicode, EscapeUnicodeEscapesCodepointsNotBytes) {
+  struct Case {
+    const char * utf8;    // the string's content
+    const char * escaped; // what \uXXXX escaping must produce
+    const char * what;
+  };
+  const Case cases[] = {
+      {"\u00e9", "\"\\u00E9\"", "e-acute, two bytes"},
+      {"\u20ac", "\"\\u20AC\"", "euro sign, three bytes"},
+      {"\U0001f600", "\"\\uD83D\\uDE00\"", "emoji, four bytes, a pair"},
+      {"a\u00e9b", "\"a\\u00E9b\"", "mixed with ASCII"},
+      {"abc", "\"abc\"", "ASCII is untouched"},
+      {"\u007f", "\"\\u007F\"", "DEL is ASCII but not printable"},
+  };
+
+  for (const Case & c : cases) {
+    GTEXT_JSON_Value * v = gtext_json_new_string(c.utf8, std::strlen(c.utf8));
+    ASSERT_NE(v, nullptr) << c.what;
+
+    for (int which = 0; which < 2; which++) {
+      GTEXT_JSON_Write_Options o = gtext_json_write_options_default();
+      if (which == 0)
+        o.escape_unicode = true;
+      else
+        o.escape_all_non_ascii = true;
+
+      const std::string out = json_write_value_with(o, v);
+      if (std::strcmp(c.utf8, "\u007f") != 0) {
+        EXPECT_EQ(out, std::string(c.escaped))
+            << c.what << " (option " << which << ")";
+      }
+
+      // And the value survives, which the byte-wise escaping did not do.
+      GTEXT_JSON_Value * back =
+          gtext_json_parse(out.data(), out.size(), nullptr, nullptr);
+      ASSERT_NE(back, nullptr) << c.what << ": " << out;
+      const char * got = nullptr;
+      size_t got_len = 0;
+      ASSERT_EQ(gtext_json_get_string(back, &got, &got_len), GTEXT_JSON_OK);
+      EXPECT_EQ(std::string(got, got_len), std::string(c.utf8))
+          << c.what << " (option " << which << "): wrote " << out;
+      gtext_json_free(back);
+    }
+
+    // The two writers agree about it, which is the property this file is for.
+    GTEXT_JSON_Write_Options o = gtext_json_write_options_default();
+    o.escape_unicode = true;
+    EXPECT_EQ(
+        json_write_value_with(o, v), json_write_incremental_string(o, c.utf8))
+        << c.what;
+    gtext_json_free(v);
+  }
+}
+
+/**
+ * @test JsonWriterUnicode.AStringThatIsNotUtf8IsRefused
+ *
+ * Both writers used to emit invalid UTF-8 verbatim and report GTEXT_JSON_OK,
+ * so the output was bytes this library's own parser refuses. A parse validates
+ * UTF-8, so such a string can only reach a writer through the DOM builders or
+ * gtext_json_writer_string() - which is exactly where it was never checked.
+ *
+ * Found by tests/fuzz/fuzz_json_writer.cpp. The agreement differential in this
+ * file could not have found it: both writers share one escaper, so they were
+ * wrong identically and agreed perfectly.
+ */
+TEST(JsonWriterUnicode, AStringThatIsNotUtf8IsRefused) {
+  struct Case {
+    std::string bytes;
+    const char * what;
+  };
+  const Case cases[] = {
+      {std::string("a\xff"
+                   "b"),
+          "0xff is never a UTF-8 byte"},
+      {std::string("\xed\xa0\x80"), "a lone high surrogate, encoded"},
+      {std::string("\xe2\x82"), "a truncated three-byte sequence"},
+      {std::string("\xc0\x80"), "an overlong encoding of NUL"},
+      {std::string("\x80"), "a stray continuation byte"},
+      {std::string("\xf5\x80\x80\x80"), "past U+10FFFF"},
+  };
+
+  for (const Case & c : cases) {
+    // The whole-value writer.
+    GTEXT_JSON_Value * v =
+        gtext_json_new_string(c.bytes.data(), c.bytes.size());
+    ASSERT_NE(v, nullptr) << c.what;
+    GTEXT_JSON_Sink sink;
+    ASSERT_EQ(gtext_json_sink_buffer(&sink), GTEXT_JSON_OK);
+    GTEXT_JSON_Write_Options o = gtext_json_write_options_default();
+    GTEXT_JSON_Error err;
+    std::memset(&err, 0, sizeof(err));
+    EXPECT_EQ(
+        gtext_json_write_value(&sink, &o, v, &err), GTEXT_JSON_E_BAD_UNICODE)
+        << c.what;
+    EXPECT_EQ(err.code, GTEXT_JSON_E_BAD_UNICODE) << c.what;
+    gtext_json_error_free(&err);
+    gtext_json_sink_buffer_free(&sink);
+    gtext_json_free(v);
+
+    // The incremental writer, as a value and as a key.
+    for (int as_key = 0; as_key < 2; as_key++) {
+      GTEXT_JSON_Sink s2;
+      ASSERT_EQ(gtext_json_sink_buffer(&s2), GTEXT_JSON_OK);
+      GTEXT_JSON_Writer * w = gtext_json_writer_new(s2, &o);
+      ASSERT_NE(w, nullptr);
+      GTEXT_JSON_Status st;
+      if (as_key) {
+        ASSERT_EQ(gtext_json_writer_object_begin(w), GTEXT_JSON_OK);
+        st = gtext_json_writer_key(w, c.bytes.data(), c.bytes.size());
+      }
+      else {
+        st = gtext_json_writer_string(w, c.bytes.data(), c.bytes.size());
+      }
+      EXPECT_EQ(st, GTEXT_JSON_E_BAD_UNICODE)
+          << c.what << (as_key ? " as a key" : " as a value");
+      gtext_json_writer_free(w);
+      gtext_json_sink_buffer_free(&s2);
+    }
+  }
+
+  // And valid UTF-8 is written, so the check is about the bytes and not about
+  // being non-ASCII at all.
+  const char * valid = "\u00e9\u20ac";
+  GTEXT_JSON_Value * ok = gtext_json_new_string(valid, std::strlen(valid));
+  ASSERT_NE(ok, nullptr);
+  GTEXT_JSON_Write_Options o = gtext_json_write_options_default();
+  EXPECT_EQ(json_write_value_with(o, ok), "\"\u00e9\u20ac\"");
+  gtext_json_free(ok);
+}
+
+/**
+ * @test JsonWriterAgreement.PrettyDeclinesSpaceAfterComma
+ *
+ * `space_after_comma` is a compact-mode option. In pretty mode the comma is
+ * followed by an indent that begins with a newline, so a space there is
+ * trailing white space at the end of every line: it changes nothing a reader
+ * sees and many tools object to it.
+ *
+ * The incremental writer had always declined it when pretty - the space is
+ * inside its own compact-mode branch - and gtext_json_write_value() had not,
+ * so the two produced different bytes for the same document whenever both
+ * options were set. The agreement test above could not see it, because it
+ * compared the two writers' **reparsed values**, and white space is exactly
+ * what a reparse normalises away. tests/fuzz/fuzz_json_writer.cpp found it
+ * once the records comparison began comparing bytes.
+ */
+TEST(JsonWriterAgreement, PrettyDeclinesSpaceAfterComma) {
+  const char * const docs[] = {"[null,null,true]", "{\"a\":1,\"b\":2}",
+      "[[1,2],[3,4]]", "{\"a\":[1,2],\"b\":{\"c\":3}}"};
+
+  for (const char * d : docs) {
+    GTEXT_JSON_Value * v =
+        gtext_json_parse(d, std::strlen(d), nullptr, nullptr);
+    ASSERT_NE(v, nullptr) << d;
+
+    GTEXT_JSON_Write_Options pretty = gtext_json_write_options_default();
+    pretty.pretty = true;
+    pretty.space_after_comma = true;
+    GTEXT_JSON_Write_Options plain = pretty;
+    plain.space_after_comma = false;
+
+    // In pretty mode the option makes no difference at all.
+    const std::string with = json_write_value_with(pretty, v);
+    EXPECT_EQ(with, json_write_value_with(plain, v)) << d;
+
+    // And no line ends in a space, which is the reason.
+    size_t start = 0;
+    while (start < with.size()) {
+      size_t nl = with.find('\n', start);
+      const size_t end = (nl == std::string::npos) ? with.size() : nl;
+      if (end > start) {
+        EXPECT_NE(with[end - 1], ' ') << d << ": a line ends in a space:\n"
+                                      << with;
+      }
+      if (nl == std::string::npos)
+        break;
+      start = nl + 1;
+    }
+
+    // Compact mode still honours it, so the option is not simply ignored.
+    GTEXT_JSON_Write_Options compact = gtext_json_write_options_default();
+    compact.space_after_comma = true;
+    const std::string compact_out = json_write_value_with(compact, v);
+    GTEXT_JSON_Write_Options compact_off = compact;
+    compact_off.space_after_comma = false;
+    EXPECT_NE(compact_out, json_write_value_with(compact_off, v))
+        << d << ": compact mode must still add the space";
+
+    gtext_json_free(v);
+  }
 }

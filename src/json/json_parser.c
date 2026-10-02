@@ -1770,6 +1770,12 @@ static GTEXT_JSON_Value * json_parse_internal(const char * bytes, size_t len,
     json_context_set_input_buffer(root->ctx, bytes, len);
   }
 
+  /* Where this value ended, before anything after it is looked at. The
+     trailing lex below moves the cursor past whatever it tried to read, so by
+     the time it fails this is the only offset that still names the end of what
+     was actually parsed. */
+  const size_t value_ended_at = parser.lexer.current_offset;
+
   // Check for trailing content
   json_token token;
   status = json_lexer_next(&parser.lexer, &token);
@@ -1780,13 +1786,22 @@ static GTEXT_JSON_Value * json_parse_internal(const char * bytes, size_t len,
     // Note: When json_lexer_next returns an error, token.pos may not be set
     // (it's initialized to 0), so we use parser.lexer.pos which is always valid
     if (allow_multiple) {
-      // Multiple values allowed - return the value and bytes_consumed pointing
-      // to error
+      /* **The end of the value, not the position the failed lex reached.**
+         This used to report the lexer's position, which is *past* the bytes
+         that could not be read - so they were consumed and never seen again:
+         `1 NaN` returned the value 1 and said all five bytes were consumed, and
+         `6NaN\t9` read as the two records 6 and 9 with the NaN silently
+         dropped. A caller looping on this function cannot tell "the input
+         ended" from "the rest of it was unreadable" if the offset has already
+         crossed it.
+
+         Pointing at the end of the value instead means the next call starts on
+         those bytes and fails with the real error at the real position, and the
+         loop still advances, because a value is never zero bytes long. Found by
+         tests/fuzz/fuzz_json_records.cpp, as a disagreement with the streaming
+         parser, which refuses the whole input. */
       if (bytes_consumed) {
-        // Use lexer position (always valid) as the error occurred at current
-        // lexer position Check for bounds to prevent overflow
-        *bytes_consumed =
-            (parser.lexer.pos.offset <= len) ? parser.lexer.pos.offset : len;
+        *bytes_consumed = (value_ended_at <= len) ? value_ended_at : len;
       }
       json_token_cleanup(&token);
       return root;
@@ -1886,6 +1901,112 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_parse(const char * bytes, size_t len,
   return json_parse_internal(bytes, len, opt, err, 0, NULL);
 }
 
+/**
+ * True for a byte that can only be framing between two records, in @p mode.
+ *
+ * RS counts only under GTEXT_JSON_RECORDS_SEQ. In the other modes it is not
+ * white space and has no meaning, so it must be left for the parser to refuse:
+ * treating it as framing everywhere would let a reader asked for NDJSON
+ * quietly strip a json-seq file's framing and report records it never checked.
+ */
+static int json_records_is_separator_byte(
+    unsigned char c, GTEXT_JSON_Records mode) {
+  if (c == 0x1E) {
+    return mode == GTEXT_JSON_RECORDS_SEQ;
+  }
+  return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+/*
+ * The framing rules of GTEXT_JSON_Parse_Options::records, for
+ * gtext_json_parse_multiple().
+ *
+ * The streaming parser enforces these in json_stream_consume_separator(),
+ * which reads the bytes as they arrive. Here the whole buffer is in hand, so
+ * the same rules are checked by looking at it - and that is the only honest way
+ * to do it, because json_parse_internal() reports the *start of the next
+ * token* as the bytes consumed, so the separator has already been crossed by
+ * the time it returns.
+ *
+ * `lead` is how many bytes of framing precede this record (SEQ's RS, and a
+ * BOM), `used` is what the parse reported. Returns the status, filling @p err.
+ */
+static GTEXT_JSON_Status json_records_check_frame(const char * bytes,
+    size_t len, const GTEXT_JSON_Parse_Options * opt, size_t lead, size_t used,
+    GTEXT_JSON_Error * err) {
+  if (!opt || opt->records == GTEXT_JSON_RECORDS_OFF) {
+    return GTEXT_JSON_OK;
+  }
+
+  /* Where the value ended: back over the framing that `used` already crossed.
+     Everything between there and `used` is the separator before the next
+     record, and there is no next record when used == len. */
+  size_t value_end = used;
+  while (value_end > lead
+      && json_records_is_separator_byte(
+          (unsigned char)bytes[value_end - 1], opt->records)) {
+    value_end--;
+  }
+
+  /* The framing ahead of this record is not part of it: leading blank lines
+     before a value are as ordinary as blank lines between two, and counting
+     them as content made `\n\n0` a record that spans lines. The records
+     fuzzer found it in this reader and in the streaming one at once. */
+  size_t value_start = lead;
+  while (value_start < value_end
+      && json_records_is_separator_byte(
+          (unsigned char)bytes[value_start], opt->records)) {
+    value_start++;
+  }
+
+  if (opt->records == GTEXT_JSON_RECORDS_LINE) {
+    for (size_t i = value_start; i < value_end; i++) {
+      if (bytes[i] == '\n') {
+        if (err) {
+          *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_BAD_TOKEN,
+              .message = "A record may not span lines in this mode",
+              .line = 1,
+              .col = 1};
+        }
+        return GTEXT_JSON_E_BAD_TOKEN;
+      }
+    }
+  }
+
+  if (used >= len) {
+    /* The last record. No mode requires a separator after it, which is why a
+       file whose final line has no newline reads. */
+    return GTEXT_JSON_OK;
+  }
+
+  size_t lf = 0;
+  size_t rs = 0;
+  for (size_t i = value_end; i < used; i++) {
+    if (bytes[i] == '\n') {
+      lf++;
+    }
+    else if ((unsigned char)bytes[i] == 0x1E) {
+      rs++;
+    }
+  }
+
+  if (opt->records == GTEXT_JSON_RECORDS_LINE && lf == 0) {
+    if (err) {
+      *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_BAD_TOKEN,
+          .message = "A record must be followed by a line end in this mode",
+          .line = 1,
+          .col = 1};
+    }
+    return GTEXT_JSON_E_BAD_TOKEN;
+  }
+  /* GTEXT_JSON_RECORDS_SEQ is not checked here. Its RS is the byte that *ends*
+     a record as much as it begins the next, so the record is the slice between
+     two of them - which is how gtext_json_parse_multiple() reads it, and the
+     RS before each record is required there rather than inferred here. */
+  (void)rs;
+  return GTEXT_JSON_OK;
+}
+
 GTEXT_API GTEXT_JSON_Value * gtext_json_parse_multiple(const char * bytes,
     size_t len, const GTEXT_JSON_Parse_Options * opt, GTEXT_JSON_Error * err,
     size_t * bytes_consumed) {
@@ -1923,6 +2044,152 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_parse_multiple(const char * bytes,
     *bytes_consumed = 0;
     return NULL;
   }
-  // Allow multiple values and return bytes consumed
-  return json_parse_internal(bytes, len, opt, err, 1, bytes_consumed);
+  /* GTEXT_JSON_RECORDS_LINE cannot be honoured alongside the two extensions
+     that let a line end inside a string, and saying so is better than a rule
+     with a hole in it. The same check the streaming parser makes. */
+  if (opt && opt->records == GTEXT_JSON_RECORDS_SEQ && opt->allow_comments) {
+    /* The same refusal the streaming parser makes, for the reason written at
+       json_records_check_options(): an RS inside a comment is framing to the
+       reader that slices on it and content to the one that does not. */
+    if (err) {
+      *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+          .message = "GTEXT_JSON_RECORDS_SEQ cannot be combined with "
+                     "allow_comments: an RS inside a comment is framing to a "
+                     "reader that slices on it and content to one that does "
+                     "not, and RFC 7464's grammar has no comments in it",
+          .line = 1,
+          .col = 1};
+    }
+    *bytes_consumed = 0;
+    return NULL;
+  }
+
+  if (opt && opt->records == GTEXT_JSON_RECORDS_LINE
+      && (opt->allow_unescaped_controls || opt->allow_line_continuations
+          || opt->allow_comments)) {
+    if (err) {
+      *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
+          .message = "GTEXT_JSON_RECORDS_LINE cannot be combined with "
+                     "allow_unescaped_controls, allow_line_continuations or "
+                     "allow_comments: each puts a line end somewhere this mode "
+                     "cannot see it or cannot allow it",
+          .line = 1,
+          .col = 1};
+    }
+    *bytes_consumed = 0;
+    return NULL;
+  }
+
+  /* The framing before this record. RFC 7464 puts an RS before every record
+     including the first, and the lexer would refuse that byte - so it is
+     consumed here, together with a BOM that may precede it, and added back to
+     the count so the caller's loop advances over it. */
+  size_t lead = 0;
+  if (opt && opt->records == GTEXT_JSON_RECORDS_SEQ) {
+    size_t rs = 0;
+    while (lead < len) {
+      const unsigned char c = (unsigned char)bytes[lead];
+      if (c == 0x1E) {
+        rs++;
+        lead++;
+      }
+      else if (json_records_is_separator_byte(c, GTEXT_JSON_RECORDS_SEQ)) {
+        lead++;
+      }
+      else if (c == 0xEF && len - lead >= 3
+          && (unsigned char)bytes[lead + 1] == 0xBB
+          && (unsigned char)bytes[lead + 2] == 0xBF) {
+        lead += 3;
+      }
+      else {
+        break;
+      }
+    }
+    if (lead < len && rs == 0) {
+      if (err) {
+        *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_BAD_TOKEN,
+            .message = "RFC 7464 requires an RS (0x1E) before every record",
+            .line = 1,
+            .col = 1};
+      }
+      *bytes_consumed = 0;
+      return NULL;
+    }
+    if (lead >= len) {
+      /* Framing and nothing else: the end of a sequence, not a record. */
+      if (err) {
+        *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INCOMPLETE,
+            .message = "No JSON value provided",
+            .line = 1,
+            .col = 1};
+      }
+      *bytes_consumed = len;
+      return NULL;
+    }
+  }
+
+  /* In GTEXT_JSON_RECORDS_SEQ the record is the slice between two RS bytes,
+     which is what makes that framing worth having: the next record's start is
+     known without parsing anything, and an RS cannot occur unescaped inside a
+     JSON text. So the slice is handed over on its own, and as a *single* value
+     rather than a sequence, which makes two values between one pair of RS
+     bytes the framing error it is. The lexer would refuse the RS anyway. */
+  size_t slice = len - lead;
+  int single = 0;
+  if (opt && opt->records == GTEXT_JSON_RECORDS_SEQ) {
+    size_t end = lead;
+    while (end < len && (unsigned char)bytes[end] != 0x1E) {
+      end++;
+    }
+    slice = end - lead;
+    single = 1;
+  }
+
+  size_t used = 0;
+  GTEXT_JSON_Value * v = json_parse_internal(
+      bytes + lead, slice, opt, err, single ? 0 : 1, single ? NULL : &used);
+  if (!v) {
+    *bytes_consumed = 0;
+    return NULL;
+  }
+  if (single) {
+    /* The whole slice was this record, framing included: the next call begins
+       at the RS, which its own leading scan consumes. */
+    used = slice;
+  }
+
+  const GTEXT_JSON_Status frame =
+      json_records_check_frame(bytes, len, opt, lead, lead + used, err);
+  if (frame != GTEXT_JSON_OK) {
+    gtext_json_free(v);
+    *bytes_consumed = 0;
+    return NULL;
+  }
+
+  size_t consumed = lead + used;
+
+  /* **Trailing framing belongs to the last record's count.** An input may end
+     in framing that introduces nothing - a final LF in NDJSON, an RS in
+     json-seq that RFC 7464 says a reader should discard as a truncated record
+     - and the streaming parser accepts that, because no mode requires a
+     separator *after* the last record. This function could not say so: it
+     would parse the last record, leave the framing unconsumed, and the
+     caller's `while (off < len)` loop would call again on bytes holding no
+     value and get a failure for an input that is fine.
+     Reporting those bytes here keeps the loop a plain one and keeps the two
+     readers agreeing, which is how the records fuzzer found this. */
+  if (opt && opt->records != GTEXT_JSON_RECORDS_OFF && consumed < len) {
+    size_t tail = consumed;
+    while (tail < len
+        && json_records_is_separator_byte(
+            (unsigned char)bytes[tail], opt->records)) {
+      tail++;
+    }
+    if (tail == len) {
+      consumed = len;
+    }
+  }
+
+  *bytes_consumed = consumed;
+  return v;
 }
