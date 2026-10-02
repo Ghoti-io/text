@@ -2020,27 +2020,45 @@ static GTEXT_YAML_Status write_node(
   const char * tag_override,
   bool leading_newline);
 
+/* The tag that will actually be written for a node that carries @p tag, or
+   NULL for none.  Two rules live here and nowhere else, because every caller
+   that has to predict whether a property will appear needs the same answers:
+   an empty tag string is no tag, and some types carry their tag whether the
+   node named one or not.
+
+   An empty tag string used to be a tag everywhere but in write_tag(), which
+   wrote nothing for it - so a node carrying "" was given a tag's spacing and
+   none of its text, and an entry holding one vanished from the sequence it
+   was in. */
+static const char * effective_tag(
+    const char * tag, GTEXT_YAML_Node_Type type, bool canonical) {
+  if (tag && !*tag) tag = NULL;
+  if (!tag && (node_requires_tag(type) || canonical)) {
+    tag = default_tag_for_type(type);
+  }
+  return tag;
+}
+
+/* out_wrote, when given, reports whether anything was actually put in front
+   of the node - which is not the same question as whether the node carries an
+   anchor or a tag.  An anchor is written only at a node's first occurrence,
+   and an empty tag string is no tag, so both of those arrive here truthy and
+   leave nothing behind.  Every caller that spaces the next character away
+   from a property has to ask this one rather than the node: a space written
+   for a property that was suppressed becomes indentation. */
 static GTEXT_YAML_Status write_properties(
     yaml_writer_state * state,
     const char * anchor,
     const char * tag,
     GTEXT_YAML_Node_Type type,
-    bool trailing_space) {
+    bool trailing_space,
+    bool * out_wrote) {
   bool canonical = state->opts && state->opts->canonical;
 
-  /* An empty tag string is no tag.  It used to be one everywhere but in
-     write_tag(), which wrote nothing for it - so a node carrying "" was given
-     a tag's spacing and none of its text, and an entry holding one vanished
-     from the sequence it was in. */
-  if (tag && !*tag) tag = NULL;
+  tag = effective_tag(tag, type, canonical);
 
-  if (!tag && node_requires_tag(type)) {
-    tag = default_tag_for_type(type);
-  }
-
-  if (!tag && canonical) {
-    tag = default_tag_for_type(type);
-  }
+  /* What reaches the sink, rather than what the node held. */
+  if (out_wrote) *out_wrote = (anchor != NULL || tag != NULL);
 
   if (anchor) {
     if (!anchor_name_is_writable(anchor)) return GTEXT_YAML_E_INVALID;
@@ -2071,7 +2089,8 @@ static GTEXT_YAML_Status write_node_prefix(
     yaml_writer_state * state,
     const GTEXT_YAML_Node * node,
     const char * tag_override,
-    bool trailing_space) {
+    bool trailing_space,
+    bool * out_wrote) {
   const char *anchor = node_anchor(node);
   if (anchor) {
     /* Second and later occurrences of one node write no anchor; see
@@ -2090,7 +2109,8 @@ static GTEXT_YAML_Status write_node_prefix(
       anchor,
       tag_override ? tag_override : node_tag(node),
       node->type,
-      trailing_space);
+      trailing_space,
+      out_wrote);
 }
 
 static GTEXT_YAML_Status resolve_custom_write_tag(
@@ -2202,18 +2222,27 @@ static GTEXT_YAML_Status write_scalar_node(
     const bool as_written =
         writer_text_reads_as_null(state->opts, value, empty ? 0 : value_len);
     /* Properties are enough to make a flow sequence entry a node, so an
-       anchored or tagged empty scalar can stay empty even there. */
-    const bool has_properties =
-        node_anchor(node) || resolved_tag || node_tag(node);
-    if (empty && as_written
-        && (state->empty_scalar_ok || has_properties)) {
-      status = write_node_prefix(state, node, resolved_tag, false);
+       anchored or tagged empty scalar can stay empty even there - but only
+       properties that were *written*.  The prefix goes out first and says so,
+       because the node cannot: an anchor already written for this node is
+       suppressed as a duplicate, which is how an empty key carrying &O came
+       to be written as " :" - a colon spaced away from an anchor that was no
+       longer there, and a leading space the reader takes for indentation. */
+    bool wrote_properties = false;
+    if (empty && as_written) {
+      status = write_node_prefix(
+          state, node, resolved_tag, false, &wrote_properties);
       if (status != GTEXT_YAML_OK) return status;
-      state->key_absorbs_colon = has_properties;
-      return write_inline_comment(state, node_inline_comment(node));
+      if (state->empty_scalar_ok || wrote_properties) {
+        state->key_absorbs_colon = wrote_properties;
+        return write_inline_comment(state, node_inline_comment(node));
+      }
+      /* Nothing in front of it and nowhere here to be empty, so the spelling
+         is written out below with no property to separate it from. */
+    } else {
+      status = write_node_prefix(state, node, resolved_tag, true, NULL);
+      if (status != GTEXT_YAML_OK) return status;
     }
-    status = write_node_prefix(state, node, resolved_tag, true);
-    if (status != GTEXT_YAML_OK) return status;
     /* The node's own text where the target dialect reads it as a null, and
        that dialect's own spelling everywhere else - which covers two cases,
        not one.  The obvious is text the dialect does not read as a null.  The
@@ -2237,7 +2266,7 @@ static GTEXT_YAML_Status write_scalar_node(
       state->block_parent_indent,
       writer_schema(state->opts), writer_yaml_1_1(state->opts), &block);
 
-  status = write_node_prefix(state, node, resolved_tag, true);
+  status = write_node_prefix(state, node, resolved_tag, true, NULL);
   if (status != GTEXT_YAML_OK) return status;
 
   switch (style) {
@@ -2393,7 +2422,7 @@ static GTEXT_YAML_Status write_enter_sequence(
       }
     }
   }
-  status = write_node_prefix(state, node, resolved_tag, true);
+  status = write_node_prefix(state, node, resolved_tag, true, NULL);
   if (status != GTEXT_YAML_OK) return status;
   if (f->coll_flow) {
     status = write_str(state, "[");
@@ -2522,7 +2551,7 @@ static GTEXT_YAML_Status write_enter_mapping(
       }
     }
   }
-  status = write_node_prefix(state, node, resolved_tag, true);
+  status = write_node_prefix(state, node, resolved_tag, true, NULL);
   if (status != GTEXT_YAML_OK) return status;
 
   if (f->coll_flow) {
@@ -3254,13 +3283,17 @@ static int writer_write_prefix(
     bool trailing_space) {
   yaml_writer_state view;
   writer_view(writer, &view);
-  if (write_properties(&view, anchor, tag, type, trailing_space)
+  bool wrote = false;
+  if (write_properties(&view, anchor, tag, type, trailing_space, &wrote)
       != GTEXT_YAML_OK) {
     writer->error = true;
     return 1;
   }
-  /* An anchor or a tag with nothing after it would swallow a ':'. */
-  writer->key_absorbs_colon = !trailing_space && (anchor || tag);
+  /* An anchor or a tag with nothing after it would swallow a ':'.  What was
+     written, not what was passed: a tag of "" is no tag, and spacing a colon
+     away from a property nobody wrote puts a space at the head of the line,
+     where it reads as indentation. */
+  writer->key_absorbs_colon = !trailing_space && wrote;
   return 0;
 }
 
@@ -3378,7 +3411,13 @@ static GTEXT_YAML_Status writer_emit_scalar(
   yaml_writer_stack_entry *top = writer_stack_top(writer);
   bool in_flow = top ? top->flow : false;
   size_t base_indent = top ? top->indent : 0;
-  bool has_properties = event->anchor || event->tag;
+  /* What will be written, not what the event carries: a tag of "" is no tag,
+     and an empty node with no property in front of it has nowhere to be in a
+     flow sequence entry - so counting one that will not appear wrote "[]"
+     where the entry belonged. */
+  bool has_properties = event->anchor
+      || effective_tag(event->tag, GTEXT_YAML_STRING,
+                       writer->opts.canonical) != NULL;
   yaml_writer_state view;
   writer_view(writer, &view);
 
@@ -3645,7 +3684,15 @@ static GTEXT_YAML_Status writer_emit_container_start(
   size_t parent_indent = parent ? parent->indent : 0;
   size_t indent_step = (size_t)writer_indent_spaces(&writer->opts);
   size_t child_indent = parent ? parent_indent + (parent->flow ? 0 : indent_step) : 0;
-  bool has_prefix = event->anchor || event->tag;
+  /* A property that will not be written is not a prefix: this forces flow
+     style and writes a line break before the collection, and an event
+     carrying tag="" got both for nothing - a block mapping came out as
+     "{k: v}". */
+  bool has_prefix = event->anchor
+      || effective_tag(event->tag,
+                       (type == YAML_WRITER_STACK_SEQUENCE)
+                           ? GTEXT_YAML_SEQUENCE : GTEXT_YAML_MAPPING,
+                       writer->opts.canonical) != NULL;
 
   if (writer->opts.flow_style == GTEXT_YAML_FLOW_STYLE_FLOW) {
     force_flow = true;

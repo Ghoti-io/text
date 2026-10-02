@@ -2673,3 +2673,198 @@ TEST(YamlWriterContract, TheMultiDocumentWriterDefinesTheAnchorInEveryEncoding) 
 
 	gtext_yaml_free(doc);
 }
+
+/* Finding 20, and the other half of the one before it.  7e37c5e made an alias
+ * whose anchor nothing had written define the node there instead, which means
+ * a node's anchor can now be written somewhere other than at the node - and
+ * when the walk later reaches the node itself, write_node_prefix() suppresses
+ * the anchor as a duplicate and writes nothing at all.  The caller had asked
+ * the node whether it carried properties rather than asking what had just
+ * been written, so the colon was spaced away from an anchor that was no
+ * longer there: " :" at the head of a line, which the reader takes for
+ * indentation.
+ *
+ * The input reaches that state through the merge key: the alias is the value
+ * of the first pair and its target is the *second* pair's key, so the alias is
+ * written first. */
+TEST(YamlWriterContract, AnEmptyKeyWhoseAnchorWasAlreadyWrittenIsNotIndented) {
+	const char *yaml = "&O\t:\n<<\n- :: *O";
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Parse_Options popts = gtext_yaml_parse_options_default();
+	popts.dupkeys = GTEXT_YAML_DUPKEY_KEEP_ALL;
+	size_t count = 0;
+	GTEXT_YAML_Document **docs =
+		gtext_yaml_parse_all(yaml, strlen(yaml), &count, &popts, &err);
+	ASSERT_NE(docs, nullptr) << (err.message ? err.message : "");
+	ASSERT_EQ(count, 1u);
+	gtext_yaml_error_free(&err);
+
+	/* The premise, asserted rather than assumed: without the alias standing
+	   before its own target this writes nothing unusual, and the test would
+	   keep passing for a reason that has nothing to do with the fix. */
+	const GTEXT_YAML_Node *root = gtext_yaml_document_root(docs[0]);
+	ASSERT_NE(root, nullptr);
+	ASSERT_EQ(gtext_yaml_node_type(root), GTEXT_YAML_MAPPING);
+	ASSERT_EQ(gtext_yaml_mapping_size(root), 2u);
+	const GTEXT_YAML_Node *k0 = nullptr, *v0 = nullptr;
+	const GTEXT_YAML_Node *k1 = nullptr, *v1 = nullptr;
+	ASSERT_TRUE(gtext_yaml_mapping_get_at(root, 0, &k0, &v0));
+	ASSERT_TRUE(gtext_yaml_mapping_get_at(root, 1, &k1, &v1));
+	ASSERT_EQ(gtext_yaml_node_type(v0), GTEXT_YAML_ALIAS);
+	ASSERT_EQ(gtext_yaml_alias_target(v0), k1);
+	ASSERT_STREQ(gtext_yaml_node_anchor(k1), "O");
+	ASSERT_EQ(gtext_yaml_node_type(k1), GTEXT_YAML_NULL);
+
+	GTEXT_YAML_Sink sink;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+	GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+	/* Block style is the whole question: in flow a leading space is nothing,
+	   and the default picked flow for this document. */
+	opts.flow_style = GTEXT_YAML_FLOW_STYLE_BLOCK;
+	GTEXT_YAML_Status status =
+		gtext_yaml_write_documents(docs, count, &sink, &opts);
+	std::string text;
+	if (status == GTEXT_YAML_OK) {
+		text.assign(gtext_yaml_sink_buffer_data(&sink),
+			gtext_yaml_sink_buffer_size(&sink));
+	}
+	gtext_yaml_sink_buffer_free(&sink);
+	ASSERT_EQ(status, GTEXT_YAML_OK);
+
+	/* The mechanism: no line may open with a space.  Asserted as well as the
+	   round trip below, because a later change that kept the output readable
+	   by dropping the entry would pass the round trip alone. */
+	size_t line = 0;
+	for (size_t i = 0; i <= text.size(); i++) {
+		if (i == text.size() || text[i] == '\n') { line = i + 1; continue; }
+		if (i == line) {
+			EXPECT_NE(text[i], ' ')
+				<< "line opens with a space, at byte " << i
+				<< ", in <<" << text << ">>";
+		}
+	}
+
+	/* And the property the fuzzer asserts: our parser reads our own output.
+	   Before the fix this refused it with "Mapping key not on same line as
+	   ':'". */
+	GTEXT_YAML_Error back_err;
+	memset(&back_err, 0, sizeof(back_err));
+	size_t back_count = 0;
+	GTEXT_YAML_Document **back = gtext_yaml_parse_all(
+		text.data(), text.size(), &back_count, &popts, &back_err);
+	EXPECT_NE(back, nullptr) << "output refused: "
+		<< (back_err.message ? back_err.message : "")
+		<< ", in <<" << text << ">>";
+	EXPECT_EQ(back_count, count) << "in <<" << text << ">>";
+	gtext_yaml_error_free(&back_err);
+	if (back) {
+		for (size_t i = 0; i < back_count; i++) gtext_yaml_free(back[i]);
+		free(back);
+	}
+
+	for (size_t i = 0; i < count; i++) gtext_yaml_free(docs[i]);
+	free(docs);
+}
+
+/* The same question asked of the streaming writer, where the property that
+ * will not be written arrives as a tag of "" rather than as a suppressed
+ * anchor.  write_properties() has always read "" as no tag; three callers
+ * counted it as one anyway, and each spent something on it:
+ *
+ *   - a scalar key was given the " :" spacing, as above;
+ *   - an empty flow sequence entry was treated as a node and left empty, so
+ *     "[~]" came out as "[]" and the entry was gone;
+ *   - a block collection was forced into flow style, so "k: v" came out as
+ *     "{k: v}".
+ *
+ * An empty tag is no tag, so the invariance is the assertion: the output must
+ * be byte-for-byte what the same events produce carrying no tag at all. */
+TEST(YamlWriterContract, AnEmptyTagStringIsNotAProperty) {
+	enum Shape { BLOCK_MAP_EMPTY_KEY, FLOW_SEQ_EMPTY_ENTRY, BLOCK_MAP_START };
+	struct Case { Shape shape; const char *name; };
+	const Case cases[] = {
+		{ BLOCK_MAP_EMPTY_KEY,  "block mapping, empty key" },
+		{ FLOW_SEQ_EMPTY_ENTRY, "flow sequence, empty entry" },
+		{ BLOCK_MAP_START,      "block mapping start" },
+	};
+
+	auto run = [](Shape shape, const char *tag) {
+		GTEXT_YAML_Sink sink;
+		EXPECT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+		GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+		opts.flow_style = (shape == FLOW_SEQ_EMPTY_ENTRY)
+			? GTEXT_YAML_FLOW_STYLE_FLOW : GTEXT_YAML_FLOW_STYLE_BLOCK;
+		GTEXT_YAML_Writer *writer = gtext_yaml_writer_new(sink, &opts);
+		EXPECT_NE(writer, nullptr);
+
+		auto send = [&](GTEXT_YAML_Event_Type type, const char *text,
+				const char *with_tag) {
+			GTEXT_YAML_Event e;
+			memset(&e, 0, sizeof(e));
+			e.type = type;
+			if (type == GTEXT_YAML_EVENT_SCALAR) {
+				e.data.scalar.ptr = text ? text : "";
+				e.data.scalar.len = text ? strlen(text) : 0;
+			}
+			e.tag = with_tag;
+			EXPECT_EQ(gtext_yaml_writer_event(writer, &e), GTEXT_YAML_OK);
+		};
+
+		send(GTEXT_YAML_EVENT_STREAM_START, nullptr, nullptr);
+		send(GTEXT_YAML_EVENT_DOCUMENT_START, nullptr, nullptr);
+		switch (shape) {
+			case BLOCK_MAP_EMPTY_KEY:
+				send(GTEXT_YAML_EVENT_MAPPING_START, nullptr, nullptr);
+				send(GTEXT_YAML_EVENT_SCALAR, nullptr, tag);
+				send(GTEXT_YAML_EVENT_SCALAR, "v", nullptr);
+				send(GTEXT_YAML_EVENT_MAPPING_END, nullptr, nullptr);
+				break;
+			case FLOW_SEQ_EMPTY_ENTRY:
+				send(GTEXT_YAML_EVENT_SEQUENCE_START, nullptr, nullptr);
+				send(GTEXT_YAML_EVENT_SCALAR, nullptr, tag);
+				send(GTEXT_YAML_EVENT_SEQUENCE_END, nullptr, nullptr);
+				break;
+			case BLOCK_MAP_START:
+				send(GTEXT_YAML_EVENT_MAPPING_START, nullptr, tag);
+				send(GTEXT_YAML_EVENT_SCALAR, "k", nullptr);
+				send(GTEXT_YAML_EVENT_SCALAR, "v", nullptr);
+				send(GTEXT_YAML_EVENT_MAPPING_END, nullptr, nullptr);
+				break;
+		}
+		send(GTEXT_YAML_EVENT_DOCUMENT_END, nullptr, nullptr);
+		send(GTEXT_YAML_EVENT_STREAM_END, nullptr, nullptr);
+		EXPECT_EQ(gtext_yaml_writer_finish(writer), GTEXT_YAML_OK);
+
+		std::string out(gtext_yaml_sink_buffer_data(&sink),
+			gtext_yaml_sink_buffer_size(&sink));
+		gtext_yaml_writer_free(writer);
+		gtext_yaml_sink_buffer_free(&sink);
+		return out;
+	};
+
+	for (const Case &c : cases) {
+		const std::string none = run(c.shape, nullptr);
+		const std::string empty = run(c.shape, "");
+		EXPECT_EQ(none, empty)
+			<< c.name << ": tag=\"\" wrote <<" << empty
+			<< ">> where no tag wrote <<" << none << ">>";
+
+		/* The empty entry has to still be there, which an invariance between
+		   two equally wrong outputs would not catch. */
+		if (c.shape == FLOW_SEQ_EMPTY_ENTRY) {
+			GTEXT_YAML_Error err;
+			memset(&err, 0, sizeof(err));
+			GTEXT_YAML_Document *back =
+				gtext_yaml_parse(empty.data(), empty.size(), nullptr, &err);
+			ASSERT_NE(back, nullptr) << (err.message ? err.message : "");
+			gtext_yaml_error_free(&err);
+			const GTEXT_YAML_Node *root = gtext_yaml_document_root(back);
+			ASSERT_NE(root, nullptr);
+			EXPECT_EQ(gtext_yaml_sequence_length(root), 1u)
+				<< "the entry is gone, in <<" << empty << ">>";
+			gtext_yaml_free(back);
+		}
+	}
+}
