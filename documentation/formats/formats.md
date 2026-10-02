@@ -169,6 +169,32 @@ A parse option that covers an arena but not the structure around it is heap
 corruption for anyone who uses it, which is why each conversion was all or
 nothing rather than a half-finished option.
 
+**Every format with a writer now has a fuzz harness for it**, which YAML and
+TOML had and JSON, CSV and INI did not. The asymmetry was structural rather
+than an oversight: a corpus of documents drives a parse, so a harness seeded
+with text reaches `gtext_*_write*()` only for documents a parse produced, and
+cannot reach a sequence of writer calls at all. Three defects were living in
+exactly that gap - the JSON incremental writer emitted `{"a":1,"b":,2}` for
+every object of two or more members, and the CSV streaming writer ignored
+`trailing_newline` and `trim_trailing_empty_fields`, both of which its table
+writer honours. `tests/test-writer-agreement.cpp` is the instrument that
+found them: where a format has two writers, writing the same values both ways
+under the same options is a differential that costs nothing.
+
+**The library is compiled for Windows**, by `make check-windows-cross`, which
+builds all 75 sources with mingw-w64 in a container and runs an LLP64 probe
+under wine. Before it existed this code had never been built off Linux - five
+CI jobs, all `ubuntu-latest` - and the Makefile detects Windows by looking for
+`MINGW64_NT` in `uname -s`, true only under MSYS2, so the Windows arms of the
+headers had been read by people and never by a compiler. The portability
+surface is four preprocessor conditionals, all of them the export macros in
+`macros.h`, but the `#if` arms nobody compiles are never parsed, and one of
+those arms decides what every exported symbol is declared as. The gate checks
+the artifact rather than the exit status: `__declspec(dllexport)` writes a
+`.drectve` section that an ELF object does not have. It needs a container
+engine and an image, so it sits outside `make test` and reports a skip when
+they are absent.
+
 ## Adding a format
 
 @subpage text_format_adding "Adding a format" is the checklist and the page template:

@@ -284,6 +284,33 @@ original escape spellings are not retained.
 non-finite value is an error rather than a silent `null`, which is what
 several other libraries substitute.
 
+### Two writers, and what only one of them can do
+
+`gtext_json_write_value()` is handed a whole document and
+`gtext_json_writer_*()` is handed one call at a time, and that difference is
+not only a matter of convenience: **four of the options cannot be honoured
+incrementally**, because each needs a container complete in hand before its
+first byte can go out.
+
+| Option | Why a streaming writer cannot honour it |
+|---|---|
+| `sort_object_keys` | the order of the names is not known until the last one has arrived, and the first was already written |
+| `inline_array_threshold` | whether an array is short enough to inline is a fact about its finished length |
+| `inline_object_threshold` | likewise for an object's member count |
+| `canonical_numbers` | it chooses reformatting over a lexeme a parse preserved, and nothing here was parsed: `gtext_json_writer_number_lexeme()` is the caller handing over bytes and `gtext_json_writer_number_double()` formats, so the choice the option makes is the choice of which function to call |
+
+`gtext_json_writer_new()` accepts all four and ignores them. It does not fail,
+because an options structure is shared between the two writers and a caller
+who sets `sort_object_keys` once for a program that uses both should not have
+the incremental one refuse to start. The header says which, field by field,
+and `JsonWriterAgreement.TheFourOptionsTheIncrementalWriterCannotHonour`
+asserts both halves: that the incremental writer ignores them, and that the value writer
+honours them - so the list cannot grow quietly.
+
+Everything else is the same writer. Both paths produce the same bytes for the
+same document under the same options, which is now asserted rather than
+assumed; see **Tested scope** below.
+
 ## Compliance checklist
 
 | Area | Supported | Rejected / limitation |
@@ -358,6 +385,25 @@ seeded from `tests/fuzz/corpus/json/`. The harness spends its first input
 byte selecting parse options, so the extension paths are reachable rather
 than dead. It has found real bugs - a use-after-free in the object parser's
 error path among them; `tests/fuzz/README.md` records what and how.
+
+`tests/fuzz/fuzz_json_writer.cpp` reaches what that harness cannot. A corpus
+of JSON text drives a parse, and the incremental API is a sequence of calls
+that no document produces - so its input is a **program** rather than a
+document: each byte selects a writer call, and the writer's own structural
+rules are what keep the program legal. The same bytes build a shadow document
+through the DOM API, which is written with `gtext_json_write_value()` and
+compared as canonical text, so the differential is free.
+
+**The two writers are compared directly.**
+`tests/test-writer-agreement.cpp` writes the same values both ways under nine
+options, over every object size from zero to four members by nine value kinds,
+and reparses each result with its member count checked. It exists because the
+incremental writer emitted `{"a":1,"b":,2}` for every object of two or more
+members - invalid JSON, from a sequence of calls that each returned
+`GTEXT_JSON_OK`, `gtext_json_writer_finish()` included. A single member was
+right by accident. The one test over that API had asserted that three
+substrings appeared in the output, and all three do appear in that malformed
+line, which is why a substring assertion is not a test of a writer.
 
 **Reach of the oracles.** `make conformance-json` clones
 [JSONTestSuite](https://github.com/nst/JSONTestSuite) and scores this parser

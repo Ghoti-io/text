@@ -352,6 +352,39 @@ that stops.
 What is still open is on the JSON side. Streaming LAST_WINS and COLLECT
 still deliver every member of a repeated name.
 
+**The writers are now checked against each other.** Where a format has both a
+whole-value writer and an incremental one, writing the same values both ways
+under the same options is a differential that costs nothing, and nothing had
+been doing it. Three defects were in that gap: the JSON incremental writer
+emitted `{"a":1,"b":,2}` for every object of two or more members - invalid
+JSON, from calls that each returned GTEXT_JSON_OK - and the CSV streaming
+writer ignored `trailing_newline` and `trim_trailing_empty_fields`, both of
+which its table writer honours. All three are fixed, and
+`tests/test-writer-agreement.cpp` plus three new fuzz harnesses
+(`fuzz_json_writer`, `fuzz_csv_writer`, `fuzz_ini_writer`) hold the line: every
+format with a writer now has a harness for it, which is what YAML and TOML
+already had. The JSON one reads its input as a *program* rather than as a
+document, because the incremental API is a sequence of calls no document
+produces.
+
+Four JSON write options cannot apply to the incremental writer -
+`sort_object_keys`, the two inline thresholds and `canonical_numbers`, each
+needing a whole container before its first byte goes out. It accepts and
+ignores them, which it always did; gtext_json_writer_new() now says so, and a
+test asserts both that it ignores them and that the value writer honours them.
+
+**The library compiles for Windows**, which it had never been asked to do:
+five CI jobs, all `ubuntu-latest`, and a Makefile that finds Windows by looking
+for `MINGW64_NT` in `uname -s`, true only under MSYS2. `make
+check-windows-cross` builds all 75 sources with mingw-w64 in a container, with
+this library's own warning set and -Werror, and checks on the artifact that the
+Windows arm of macros.h was the one compiled - `__declspec(dllexport)` writes a
+`.drectve` section an ELF object has none of. An LLP64 probe runs under wine
+for the `long` width. It is compile-only, since linking would need four
+dependencies cross-built too, and it is outside `make test` because it needs a
+container engine; absent one it reports a skip. Real Windows stays the
+authority.
+
 Every **JSON** entry point now takes a caller's allocator: parsing, the
 streaming parser and its pull reader, the writer, JSON Pointer, JSON Patch,
 gtext_json_clone() and JSON Schema. Patch and clone inherit the allocator of the

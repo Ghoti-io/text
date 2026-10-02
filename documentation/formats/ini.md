@@ -1222,6 +1222,19 @@ The corpus could not contradict it because this machine has **zero** CRLF
 `.desktop` files. The claim now carries its proviso and the gate excludes and
 counts a CR-bearing file.
 
+**`make fuzz-ini-writer`** asks the other half of the question. `fuzz_ini.cpp`
+reaches `gtext_ini_write()` only with documents a parse produced, and a parse
+has already refused everything the writer would have to refuse - so the group
+names and keys reachable only through `gtext_ini_new()`,
+`gtext_ini_document_add_group()` and `gtext_ini_group_set()` were reached by
+nothing. A name holding `]`, a newline, a NUL or bytes that are not UTF-8, and
+a value holding a line break, are what that harness builds, across all seven
+dialects, and it asserts the round trip **only for what the DOM accepted**.
+That is deliberate: the DOM API's own refusals are the other half of what is
+under test, since a name the writer could not round-trip should be refused on
+the way in rather than written and lost, and the harness fails either way
+round.
+
 **5.3M executions clean** since those fixes, in two runs. One earlier 600-second
 run ended at 3.26M with an ASan "nested bug" abort that produced no error type,
 no stack and no artifact; it has not recurred and its cause is unknown. It is

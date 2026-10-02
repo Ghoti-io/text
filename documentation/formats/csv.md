@@ -139,8 +139,26 @@ only ever add quotes, never remove them, which matters when the dialect's
 delimiter is one of the characters a number may contain - a `.` delimiter makes
 `1.5` both numeric and unwritable bare, so it is quoted.
 
-The newline string is configurable and `trim_trailing_empty_fields` exists
-for consumers that treat a trailing delimiter as an error.
+The newline string is configurable. `trailing_newline` decides whether the
+last record ends in one, and `trim_trailing_empty_fields` drops the empty
+fields at the end of a record, for consumers that treat a trailing delimiter
+as an error.
+
+Both of those are **row- and table-level questions handed to a writer that may
+only see one field at a time**, and the streaming writer honoured neither
+until it was made to. Which record is the last is not known at
+`gtext_csv_writer_record_end()` - only at `gtext_csv_writer_finish()` - so the
+record separator is now held back and emitted either when the next record
+begins or, if the option asks, as the terminator at `finish()`. Not after a
+failure: a record whose field was refused was never written, and emitting the
+terminator would leave a caller who ignores the status with a file holding one
+stray newline and no data. Whether an empty field is a *trailing* one is not
+known until the next field arrives, so an empty field is counted rather than
+written, a following field flushes the run through the ordinary field path -
+`quote_empty_fields` and the quoting policy still reach them - and
+`record_end()` discards what is left. A record of nothing but empty fields
+therefore writes no field at all, which is what the table writer does for the
+same row.
 
 **The writer refuses a field it cannot represent.** Quoting is not a
 presentation choice in CSV; it is the only thing that carries the delimiter, a
@@ -252,6 +270,28 @@ differentially correct against - but Python's `csv` module encodes a
 widely-held reading of the ambiguous cases, and the comparison against it
 recorded above was made by hand, once, rather than by anything that runs
 again.
+
+**The two writers are compared directly.**
+`CsvWriterAgreement.BothWritersAgreeOverTheOptionAndShapeMatrix` in
+`tests/test-writer-agreement.cpp` writes the same rows through
+`gtext_csv_write_table()` and through `gtext_csv_writer_*()` over 352
+combinations of options and shapes, comparing the bytes and the verdict, and
+`tests/fuzz/fuzz_csv_writer.cpp` states the same property over fields nobody
+chose - a field holding the delimiter, the quote character, a bare CR, a NUL
+or bytes that are not UTF-8, and an empty field in every position, which is
+where `fuzz_csv.cpp` cannot reach because it only writes what it parsed.
+Rows are given a uniform field count deliberately: `gtext_csv_row_append()`
+refuses a ragged row, so a ragged shape would hand the two writers different
+content and read as a disagreement in the library.
+
+Round-tripping is asserted only where the policy promises one.
+`GTEXT_CSV_QUOTE_NONE` may refuse a field outright with
+`GTEXT_CSV_E_UNQUOTABLE_FIELD`, as **Save** above describes, and with
+`always_escape_quotes` cleared a quote inside an unquoted field is emitted
+verbatim - readable by a parser with `allow_unquoted_quotes` on, and the
+deliberate interoperability choice that option's documentation leaves to the
+caller. Both are choices rather than defects, so neither is held to the round
+trip.
 
 **Round-trip is now pinned.** `CsvRoundTrip.WriteThenReparsePreservesFields`
 in `tests/test-csv.cpp` parses, writes and reparses twelve documents chosen
