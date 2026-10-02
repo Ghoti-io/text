@@ -302,6 +302,7 @@ static GTEXT_JSON_Value * json_value_new_with_context(
 
   val->type = type;
   val->ctx = ctx;
+  val->contained = false;
   memset(&val->as, 0, sizeof(val->as));
 
   return val;
@@ -802,6 +803,7 @@ GTEXT_JSON_Status json_array_add_element(
   if (array->as.array.count == SIZE_MAX) {
     return GTEXT_JSON_E_LIMIT;
   }
+  element->contained = true;
   array->as.array.elems[array->as.array.count++] = element;
   return GTEXT_JSON_OK;
 }
@@ -868,16 +870,126 @@ GTEXT_JSON_Status json_object_add_pair(GTEXT_JSON_Value * object,
   size_t idx = object->as.object.count++;
   object->as.object.pairs[idx].key = key_copy;
   object->as.object.pairs[idx].key_len = key_len;
+  value->contained = true;
   object->as.object.pairs[idx].value = value;
   return GTEXT_JSON_OK;
 }
 
 // Public mutation API functions
 
+/* Would storing @p child inside @p container make the value contain itself?
+ *
+ * Four bytes of API misuse did this:
+ *
+ *     GTEXT_JSON_Value *a = gtext_json_new_array();
+ *     gtext_json_array_push(a, a);          // returned GTEXT_JSON_OK
+ *     gtext_json_free(a);                   // SIGSEGV
+ *
+ * and nothing reported anything until the process died.  A cyclic value is not
+ * just unfreeable: it has no JSON to be written as, every DOM walk here is a
+ * walk over containment, and there are a dozen of them - free, write, equal,
+ * clone, merge-patch, JSONPath, schema compilation - so the place to stop it is
+ * the door it comes in by, not each walk in turn.  The YAML half of this
+ * library refuses the equivalent in apply_merge_keys() for the same reason.
+ *
+ * The question is reachability in the *pre-insert* value, which is acyclic by
+ * induction because every door asks this: a cycle through the new edge
+ * container -> child exists exactly when @p container is reachable from
+ * @p child already, or is @p child.  So the walk terminates.
+ *
+ * The identity case is checked first and separately, because it is the cheap
+ * one and the common mistake.  After that the cost is the size of @p child's
+ * subtree, paid per insertion - which makes building a deep value by wrapping
+ * ("push the big thing into a fresh container, repeat") quadratic in its
+ * depth.  That is the price of the guarantee; a caller assembling something
+ * very large top-down rather than inside-out pays nothing, because then the
+ * child is a leaf.
+ *
+ * Returns GTEXT_JSON_OK when the insertion is safe, E_INVALID when it would
+ * make a cycle, and E_OOM when the walk could not be completed - which is not
+ * "safe", and is reported rather than assumed either way. */
+static GTEXT_JSON_Status json_check_no_cycle(
+    const GTEXT_JSON_Value * container, const GTEXT_JSON_Value * child) {
+  if (!container || !child) {
+    return GTEXT_JSON_OK;
+  }
+  if (container == child) {
+    return GTEXT_JSON_E_INVALID;
+  }
+  /* Only a container can hold anything, so only a container can be a step on
+     a path back to @p container. */
+  if (child->type != GTEXT_JSON_ARRAY && child->type != GTEXT_JSON_OBJECT) {
+    return GTEXT_JSON_OK;
+  }
+  /* And nothing can reach a value that nothing points at.  See the `contained`
+     field: this is what keeps assembling a deep value inside-out linear rather
+     than quadratic, and it is sound only because every door below sets the
+     flag. */
+  if (!container->contained) {
+    return GTEXT_JSON_OK;
+  }
+
+  const GTEXT_JSON_Value ** stack = NULL;
+  size_t count = 0, capacity = 0;
+  GTEXT_JSON_Status status = GTEXT_JSON_OK;
+
+  /* No allocator threaded in: this is a predicate with no document in hand
+     whose scratch is transient, the same reason nodes_equal() in
+     yaml_resolve.c gives for its own frame stack. */
+  #define JSON_CYCLE_PUSH(n)                                                   \
+    do {                                                                       \
+      const GTEXT_JSON_Value * push_node = (n);                                \
+      if (push_node) {                                                         \
+        if (push_node == container) {                                          \
+          status = GTEXT_JSON_E_INVALID;                                       \
+          goto done;                                                           \
+        }                                                                      \
+        if (push_node->type == GTEXT_JSON_ARRAY                                \
+            || push_node->type == GTEXT_JSON_OBJECT) {                         \
+          if (count == capacity) {                                             \
+            size_t new_capacity = capacity == 0 ? 32 : capacity * 2;           \
+            const GTEXT_JSON_Value ** items =                                  \
+                (const GTEXT_JSON_Value **)gtext_allocator_realloc(            \
+                    NULL, (void *)stack, new_capacity * sizeof(*items));       \
+            if (!items) { status = GTEXT_JSON_E_OOM; goto done; }              \
+            stack = items;                                                     \
+            capacity = new_capacity;                                           \
+          }                                                                    \
+          stack[count++] = push_node;                                          \
+        }                                                                      \
+      }                                                                        \
+    } while (0)
+
+  JSON_CYCLE_PUSH(child);
+
+  while (count > 0) {
+    const GTEXT_JSON_Value * node = stack[--count];
+    if (node->type == GTEXT_JSON_ARRAY) {
+      for (size_t i = 0; i < node->as.array.count; i++) {
+        JSON_CYCLE_PUSH(node->as.array.elems[i]);
+      }
+    }
+    else {
+      for (size_t i = 0; i < node->as.object.count; i++) {
+        JSON_CYCLE_PUSH(node->as.object.pairs[i].value);
+      }
+    }
+  }
+
+done:
+  #undef JSON_CYCLE_PUSH
+  gtext_allocator_free(NULL, (void *)stack);
+  return status;
+}
+
 GTEXT_API GTEXT_JSON_Status gtext_json_array_push(
     GTEXT_JSON_Value * arr, GTEXT_JSON_Value * child) {
   if (!arr || arr->type != GTEXT_JSON_ARRAY || !child) {
     return GTEXT_JSON_E_INVALID;
+  }
+  GTEXT_JSON_Status cycle = json_check_no_cycle(arr, child);
+  if (cycle != GTEXT_JSON_OK) {
+    return cycle;
   }
 
   // Use the internal helper function which handles growing the array
@@ -895,6 +1007,12 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_set(
     return GTEXT_JSON_E_INVALID;
   }
 
+  /* Before the old value is freed below, so a refused call changes nothing. */
+  GTEXT_JSON_Status cycle = json_check_no_cycle(arr, child);
+  if (cycle != GTEXT_JSON_OK) {
+    return cycle;
+  }
+
   // Get the old value to be replaced
   GTEXT_JSON_Value * old_value = arr->as.array.elems[idx];
 
@@ -909,6 +1027,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_set(
   }
 
   // Set element at index (replacing existing element)
+  child->contained = true;
   arr->as.array.elems[idx] = child;
 
   // Note: If child has a different context, it will be freed when
@@ -927,6 +1046,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_insert(
   // Check bounds - allow inserting at count (same as push)
   if (idx > arr->as.array.count) {
     return GTEXT_JSON_E_INVALID;
+  }
+
+  GTEXT_JSON_Status cycle = json_check_no_cycle(arr, child);
+  if (cycle != GTEXT_JSON_OK) {
+    return cycle;
   }
 
   // If inserting at the end, use push logic
@@ -984,6 +1108,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_insert(
   }
 
   // Insert new element at idx
+  child->contained = true;
   arr->as.array.elems[idx] = child;
 
   // Increment count (check for overflow)
@@ -1034,6 +1159,12 @@ GTEXT_API GTEXT_JSON_Status gtext_json_object_put(GTEXT_JSON_Value * obj,
     return GTEXT_JSON_E_INVALID;
   }
 
+  /* Before anything is replaced, so a refused call changes nothing. */
+  GTEXT_JSON_Status cycle = json_check_no_cycle(obj, val);
+  if (cycle != GTEXT_JSON_OK) {
+    return cycle;
+  }
+
   // Check if key already exists - if so, replace the value
   for (size_t i = 0; i < obj->as.object.count; ++i) {
     if (obj->as.object.pairs[i].key_len == key_len) {
@@ -1052,6 +1183,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_object_put(GTEXT_JSON_Value * obj,
           json_context_free(child_ctx);
         }
 
+        val->contained = true;
         obj->as.object.pairs[i].value = val;
         return GTEXT_JSON_OK;
       }

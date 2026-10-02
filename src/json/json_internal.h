@@ -482,6 +482,24 @@ typedef struct json_context {
 struct GTEXT_JSON_Value {
   GTEXT_JSON_Type type; ///< Type of this value
   json_context * ctx;   ///< Context (arena) for this value tree
+  /** Whether this value has ever been stored inside another value.
+   *
+   * Read only by json_check_no_cycle(), and only as a shortcut: a value that
+   * nothing points at cannot be reached from anything, so an insertion whose
+   * *container* is not contained cannot close a cycle and needs no walk. That
+   * turns assembling a deep value inside-out - wrap the big thing in a fresh
+   * container, repeat - from quadratic in its depth back into linear, which at
+   * sixteen thousand levels is the difference between 6.7 seconds and 1.5
+   * milliseconds.
+   *
+   * **Every door that stores one value inside another must set it**, or the
+   * shortcut skips a walk that was needed. The four public ones funnel through
+   * json_array_add_element() and json_object_add_pair() or assign in place
+   * beside their own guard, which is why all of it is in one file. The parser,
+   * the clone and the patch builders do not set it and do not need to: they
+   * build fresh subtrees whose interior nodes a caller can only reach through
+   * the const accessors, so none of them can arrive here as a container. */
+  bool contained;
 
   union {
     int boolean; ///< For GTEXT_JSON_BOOL
