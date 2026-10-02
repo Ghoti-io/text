@@ -1692,10 +1692,20 @@ $(eval $(call fuzz-rule,fuzz_csv,csv))
 $(eval $(call fuzz-rule,fuzz_toml,toml))
 $(eval $(call fuzz-rule,fuzz_toml_writer,toml-writer))
 $(eval $(call fuzz-rule,fuzz_ini,ini))
+$(eval $(call fuzz-rule,fuzz_json_writer,json-writer))
+$(eval $(call fuzz-rule,fuzz_csv_writer,csv-writer))
+$(eval $(call fuzz-rule,fuzz_ini_writer,ini-writer))
 
+# Every format with a writer now has a harness for it. YAML and TOML had one
+# and JSON, CSV and INI did not, which is the asymmetry that let an object of
+# two or more members come out of gtext_json_writer_* as {"a":1,"b":,2} - not
+# JSON, from calls that each returned OK - and let the CSV streaming writer
+# ignore two options its table writer honours. A corpus of documents reaches a
+# parse; it cannot reach a sequence of writer calls.
 fuzz: ## Build and run every fuzzer for $(FUZZ_TIME) seconds each
 fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
 fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
+fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
