@@ -1228,10 +1228,22 @@ TEST(YamlToJsonEmpty, EmptyDocumentBecomesNull) {
 	GTEXT_YAML_Error err;
 	memset(&err, 0, sizeof(err));
 	GTEXT_YAML_Document * d = gtext_yaml_parse("", 0, &po, &err);
-	if (!d) {
-		gtext_yaml_error_free(&err);
-		GTEST_SKIP() << "an empty document does not parse";
-	}
+	// Asserted, not skipped on. This used to read
+	//
+	//     if (!d) GTEST_SKIP() << "an empty document does not parse";
+	//
+	// which made the parser refusing an empty document a *pass*: the one
+	// regression this test is placed to catch would have turned it green. An
+	// empty stream is a valid YAML document whose root is the empty node, and
+	// 10.3.2 resolves that to null under the core schema, so refusing it is a
+	// defect and belongs here as a failure.
+	//
+	// A skip is for something about the machine - no mkfifo, no comma-decimal
+	// locale installed - never for a property of the library under test.
+	ASSERT_NE(d, nullptr)
+	    << "an empty document must parse: its root is the empty node, which the "
+	       "core schema resolves to null ("
+	    << (err.message ? err.message : "no message") << ")";
 
 	GTEXT_JSON_Value * out = nullptr;
 	ASSERT_EQ(gtext_yaml_to_json(d, &out, &err), GTEXT_YAML_OK)
