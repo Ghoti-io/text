@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/text.h>
 #include <ghoti.io/text/json.h>
 #include <cmath>
@@ -11185,7 +11186,10 @@ struct GrowBuffer {
 	size_t capacity = 0;
 
 	~GrowBuffer() {
-		free(data);
+		// Through the allocator, not free(): json_buffer_grow_unified() takes
+		// an allocator now, and a NULL one means gcu_allocator_default(),
+		// which is a vtable rather than a promise of malloc compatibility.
+		gtext_allocator_free(nullptr, data);
 	}
 };
 
@@ -11195,24 +11199,114 @@ TEST(JsonBufferGrow, RejectsNullArguments) {
 	size_t cap = 0;
 	char * buf = nullptr;
 	EXPECT_EQ(json_buffer_grow_unified(nullptr, &cap, 10,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_E_INVALID);
 	EXPECT_EQ(json_buffer_grow_unified(&buf, nullptr, 10,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_E_INVALID);
+}
+
+namespace {
+
+// A counting allocator, local to these tests: just enough to say whether the
+// allocator parameter was used at all.
+struct GrowCounts {
+	size_t served = 0;
+	size_t live = 0;
+};
+
+void * grow_malloc(void * ctx, size_t size) {
+	auto * c = static_cast<GrowCounts *>(ctx);
+	void * p = std::malloc(size ? size : 1);
+	if (p) {
+		c->served++;
+		c->live++;
+	}
+	return p;
+}
+
+void * grow_calloc(void * ctx, size_t n, size_t size) {
+	if (n && size > SIZE_MAX / n) {
+		return nullptr;
+	}
+	void * p = grow_malloc(ctx, n * size);
+	if (p) {
+		std::memset(p, 0, n * size);
+	}
+	return p;
+}
+
+void grow_free(void * ctx, void * ptr) {
+	if (!ptr) {
+		return;
+	}
+	static_cast<GrowCounts *>(ctx)->live--;
+	std::free(ptr);
+}
+
+void * grow_realloc(void * ctx, void * ptr, size_t size) {
+	auto * c = static_cast<GrowCounts *>(ctx);
+	void * p = std::realloc(ptr, size ? size : 1);
+	if (p) {
+		c->served++;
+		if (!ptr) {
+			c->live++;
+		}
+	}
+	return p;
+}
+
+} // namespace
+
+/*
+ * The allocator parameter, at the level where the helper is tested on its own.
+ * Every other call in this file passes nullptr, which exercises the default and
+ * says nothing about whether the parameter is read - so without this, the
+ * parameter could be ignored here and only the stream-level tests in
+ * test-allocator.cpp would notice.
+ */
+TEST(JsonBufferGrow, UsesTheAllocatorItIsGiven) {
+	GrowCounts counts;
+	// By field name: nothing fixes the order of GCU_Allocator's members.
+	GTEXT_Allocator alloc;
+	alloc.ctx = &counts;
+	alloc.malloc_fn = grow_malloc;
+	alloc.calloc_fn = grow_calloc;
+	alloc.realloc_fn = grow_realloc;
+	alloc.free_fn = grow_free;
+
+	char * buf = nullptr;
+	size_t cap = 0;
+	ASSERT_EQ(json_buffer_grow_unified(&buf, &cap, 100,
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, &alloc),
+	    GTEXT_JSON_OK);
+	ASSERT_NE(buf, nullptr);
+	EXPECT_GE(cap, 100u);
+	EXPECT_EQ(counts.served, 1u) << "the allocator parameter was ignored";
+	EXPECT_EQ(counts.live, 1u);
+
+	// Growing again goes to the same allocator.
+	ASSERT_EQ(json_buffer_grow_unified(&buf, &cap, cap + 1,
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, &alloc),
+	    GTEXT_JSON_OK);
+	EXPECT_EQ(counts.served, 2u);
+	EXPECT_EQ(counts.live, 1u) << "the grow reallocated in place, once";
+
+	gtext_allocator_free(&alloc, buf);
+	EXPECT_EQ(counts.live, 0u);
 }
 
 TEST(JsonBufferGrow, AlreadyLargeEnoughIsANoOp) {
 	GrowBuffer b;
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 100,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	char * before = b.data;
 	size_t cap_before = b.capacity;
 
 	// needed <= capacity must not reallocate.
 	EXPECT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, cap_before,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.data, before);
 	EXPECT_EQ(b.capacity, cap_before);
@@ -11223,7 +11317,7 @@ TEST(JsonBufferGrow, InitialAllocationUsesTheLargerOfNeededAndInitial) {
 		// Default initial size is 64.
 		GrowBuffer b;
 		ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 10,
-		              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+		              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 		    GTEXT_JSON_OK);
 		EXPECT_EQ(b.capacity, 64u);
 		EXPECT_NE(b.data, nullptr);
@@ -11231,7 +11325,7 @@ TEST(JsonBufferGrow, InitialAllocationUsesTheLargerOfNeededAndInitial) {
 	{
 		GrowBuffer b;
 		ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 5000,
-		              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+		              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 		    GTEXT_JSON_OK);
 		EXPECT_EQ(b.capacity, 5000u);
 	}
@@ -11239,7 +11333,7 @@ TEST(JsonBufferGrow, InitialAllocationUsesTheLargerOfNeededAndInitial) {
 		// An explicit initial size is honored.
 		GrowBuffer b;
 		ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 3,
-		              JSON_BUFFER_GROWTH_SIMPLE, 256, 0, 0, 0, 0),
+		              JSON_BUFFER_GROWTH_SIMPLE, 256, 0, 0, 0, 0, nullptr),
 		    GTEXT_JSON_OK);
 		EXPECT_EQ(b.capacity, 256u);
 	}
@@ -11248,19 +11342,19 @@ TEST(JsonBufferGrow, InitialAllocationUsesTheLargerOfNeededAndInitial) {
 TEST(JsonBufferGrow, SimpleStrategyDoubles) {
 	GrowBuffer b;
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 64,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	ASSERT_EQ(b.capacity, 64u);
 
 	// One byte more than capacity doubles rather than growing by one.
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 65,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 128u);
 
 	// When doubling is still not enough, the needed size is used.
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 1000,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 1000u);
 }
@@ -11268,12 +11362,12 @@ TEST(JsonBufferGrow, SimpleStrategyDoubles) {
 TEST(JsonBufferGrow, SimpleStrategyHonorsAnExplicitMultiplier) {
 	GrowBuffer b;
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 100,
-	              JSON_BUFFER_GROWTH_SIMPLE, 100, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 100, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	ASSERT_EQ(b.capacity, 100u);
 
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 101,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 3, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 3, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 300u);
 }
@@ -11282,18 +11376,18 @@ TEST(JsonBufferGrow, HybridGrowsSmallBuffersByAFixedIncrement) {
 	GrowBuffer b;
 	// Below small_threshold, so the fixed increment applies.
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 100,
-	              JSON_BUFFER_GROWTH_HYBRID, 100, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 100, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_OK);
 	ASSERT_EQ(b.capacity, 100u);
 
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 101,
-	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 164u) << "small buffers grow by the increment, not by doubling";
 
 	// When the increment is not enough, the needed size wins.
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 900,
-	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 900u);
 }
@@ -11302,18 +11396,18 @@ TEST(JsonBufferGrow, HybridDoublesLargeBuffers) {
 	GrowBuffer b;
 	// At or above small_threshold, so doubling applies.
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 2048,
-	              JSON_BUFFER_GROWTH_HYBRID, 2048, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 2048, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_OK);
 	ASSERT_EQ(b.capacity, 2048u);
 
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 2049,
-	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 4096u) << "large buffers double, not grow by the increment";
 
 	// When doubling is not enough, the needed size wins.
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 100000,
-	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 100000u);
 }
@@ -11321,12 +11415,12 @@ TEST(JsonBufferGrow, HybridDoublesLargeBuffers) {
 TEST(JsonBufferGrow, HeadroomIsAddedAfterGrowth) {
 	GrowBuffer b;
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 100,
-	              JSON_BUFFER_GROWTH_SIMPLE, 100, 0, 0, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 100, 0, 0, 0, 0, nullptr),
 	    GTEXT_JSON_OK);
 	ASSERT_EQ(b.capacity, 100u);
 
 	ASSERT_EQ(json_buffer_grow_unified(&b.data, &b.capacity, 101,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 2, 0, 32),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 2, 0, 32, nullptr),
 	    GTEXT_JSON_OK);
 	EXPECT_EQ(b.capacity, 232u) << "doubled to 200, plus 32 headroom";
 }
@@ -11346,7 +11440,7 @@ TEST(JsonBufferGrow, HybridSmallIncrementOverflowFallsBackToNeeded) {
 	size_t threshold = SIZE_MAX; // keep the "small buffer" branch selected
 
 	EXPECT_EQ(json_buffer_grow_unified(&fake, &cap, SIZE_MAX - 4,
-	              JSON_BUFFER_GROWTH_HYBRID, 0, threshold, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 0, threshold, 2, 64, 0, nullptr),
 	    GTEXT_JSON_E_OOM);
 	// The buffer and capacity are left alone on failure.
 	EXPECT_EQ(cap, SIZE_MAX - 8u);
@@ -11360,7 +11454,7 @@ TEST(JsonBufferGrow, HybridLargeMultiplyOverflowFallsBackToNeeded) {
 	size_t cap = (SIZE_MAX / 2) + 2;
 
 	EXPECT_EQ(json_buffer_grow_unified(&fake, &cap, SIZE_MAX - 4,
-	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0),
+	              JSON_BUFFER_GROWTH_HYBRID, 0, 1024, 2, 64, 0, nullptr),
 	    GTEXT_JSON_E_OOM);
 	EXPECT_EQ(cap, (SIZE_MAX / 2) + 2u);
 	free(fake);
@@ -11372,7 +11466,7 @@ TEST(JsonBufferGrow, SimpleMultiplyOverflowFallsBackToNeeded) {
 	size_t cap = (SIZE_MAX / 2) + 2;
 
 	EXPECT_EQ(json_buffer_grow_unified(&fake, &cap, SIZE_MAX - 4,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 2, 0, 0),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 2, 0, 0, nullptr),
 	    GTEXT_JSON_E_OOM);
 	EXPECT_EQ(cap, (SIZE_MAX / 2) + 2u);
 	free(fake);
@@ -11387,7 +11481,7 @@ TEST(JsonBufferGrow, HeadroomOverflowDoesNotShrinkBelowNeeded) {
 	// overflowing.  The function must keep the un-headroomed capacity rather
 	// than wrapping, and that capacity must still cover `needed`.
 	EXPECT_EQ(json_buffer_grow_unified(&fake, &cap, SIZE_MAX - 4,
-	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 2, 0, SIZE_MAX / 2),
+	              JSON_BUFFER_GROWTH_SIMPLE, 0, 0, 2, 0, SIZE_MAX / 2, nullptr),
 	    GTEXT_JSON_E_OOM);
 	EXPECT_EQ(cap, 64u);
 	free(fake);

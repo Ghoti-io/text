@@ -925,6 +925,9 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/json/json_dom.c \
 	src/json/json_writer.c \
 	src/json/json_pointer.c \
+	src/json/json_stream.c \
+	src/json/json_stream_buffer.c \
+	src/json/json_utils.c \
 	src/json/json_lexer.c \
 	src/json/json_number.c \
 	src/json/json_parser.c \

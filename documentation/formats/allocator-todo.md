@@ -242,14 +242,126 @@ behaves, since an allocator that is not passed cannot be reached. `-Werror`
 reported it as an unused variable, which is the compiler noticing a vacuous test
 before I did. It compares the three spellings' answers now.
 
+## JSON streaming parser: done
+
+The field was already there and already reachable. `gtext_json_stream_new()`
+takes `GTEXT_JSON_Parse_Options` - the same structure the parser takes, with the
+same `allocator` member - and read nothing from it. So this was never "an entry
+point that takes no allocator": it was one that accepted an allocator and
+dropped it, which is strictly worse, because a caller who sets the field has
+nothing to notice.
+
+(The paragraph this section replaced said the streaming parser "does not share
+the parse options". It does share them. That sentence is why this looked like
+the same size of job as Patch and Schema, which genuinely have nowhere to put
+the field.)
+
+Converted, in dependency order rather than file order, because the stream's
+memory is spread across three files:
+
+- `json_utils.c` - `json_buffer_grow_unified()`, the one shared growth helper,
+  gained a trailing allocator parameter. Both its callers are on the stream's
+  path, so nothing else had to change.
+- `json_stream_buffer.c` - `json_token_buffer` records its allocator, set by
+  `json_token_buffer_init()` **as a parameter**. The same shape as
+  `csv_field_buffer::alloc` and for the same reason: the site that grows the
+  buffer and the site that releases it must be unable to name different
+  allocators.
+- `json_stream.c` - the stream structure, its 4096-byte input buffer, the state
+  stack, each object's key-name array and each key copy. The handle reads
+  `opt->allocator` into a local before the `calloc` that creates the structure
+  that will hold the copy, the way `gtext_json_writer_new()` and
+  `gtext_csv_stream_new()` already do.
+
+`src/json/json_stream.c`, `src/json/json_stream_buffer.c` and
+`src/json/json_utils.c` are now on `ALLOCATOR_CLEAN_SOURCES`. One exemption:
+the `free()` of `GTEXT_JSON_Error::context_snippet`, per the section below.
+
+### What the gate could not see
+
+`src/json/json_pull_reader.c` was **already** on `ALLOCATOR_CLEAN_SOURCES` and
+had been passing. It routes its own structure, its event queue and its key
+copies through `opts->allocator`, and then calls
+`gtext_json_stream_new(opts, ...)`. Everything under that call came from the C
+library.
+
+`make check-allocators` greps a listed file for direct `malloc`, `calloc`,
+`realloc` and `free`. That is a sound predicate. The sentence people read off a
+passing run - *this component's memory comes from the caller's allocator* - is a
+different one, and the two come apart the moment a listed file allocates by
+calling something that is not listed. A per-file grep cannot see a call.
+
+No test covered it either, and the shape of that hole is worth keeping:
+`tests/test-allocator.cpp` had `CsvStream` + `CsvPullReader` and `YamlStream` +
+`YamlPullReader`, and neither of the JSON pair. Three formats with the same
+two-layer shape, two covered on both layers, one on neither - readable from the
+test names without knowing anything about the defect.
+
+### What the controls showed
+
+A balance assertion alone would not have caught this, which is why these tests
+assert a floor on bytes outstanding while the stream is alive rather than only
+`live_blocks == 0` at the end. `live_blocks == 0` holds when the allocator
+serves nothing, and `total_allocations > 0` holds from the wrapper's own
+structure while everything beneath it bypasses.
+
+| control | result |
+| --- | --- |
+| A. stream structure and input buffer back on the C library (the historical defect) | rc=1, all four tests fail. `JsonPullReaderBalances` reports `live_bytes` **80 vs 4096**: the reader's own structure was served and the stream's buffer was not - the exact gap `total_allocations > 0` would have passed |
+| B. token buffer freed through the C library | rc=134, `munmap_chunk(): invalid pointer`. Caught by glibc *before* gtest adjudicates, so it prints no summary at all and a scorer counting `[  FAILED  ]` lines reads it as zero failures |
+| C. `gtext_json_stream_free()` stops releasing the key-name arrays | rc=1, caught **only** by `JsonStreamBalancesWhenTheInputIsRefused`. A well-formed document pops its own stack, so the success-path test never reaches that arm |
+| D. `json_buffer_grow_unified()` ignores the allocator it is given | rc=1, all four fail |
+
+Two further mutations never got as far as running: a constant loop bound tripped
+`-Werror=type-limits` and an unused allocator parameter tripped
+`-Werror=unused-parameter`. The compiler refuses those two spellings of the
+defect outright, which is worth knowing but is not a statement about the tests -
+both controls had to be rewritten into forms that compile before they measured
+anything.
+
 ## The other JSON entry points
 
-`GTEXT_JSON_Parse_Options::allocator` covers parsing,
-`GTEXT_JSON_Write_Options::allocator` the writer, and JSON Pointer has entry
-points of its own. The streaming parser, JSON Patch and JSON Schema still take no
-allocator; each needs an options structure of its own or an added parameter, and
-none of them shares the parse options. By raw allocation count the remaining work
-is roughly: `json_schema.c` 97 sites, `json_patch.c` 40, `json_stream.c` 13.
+`GTEXT_JSON_Parse_Options::allocator` covers parsing, the streaming parser and
+its pull reader; `GTEXT_JSON_Write_Options::allocator` the writer; and JSON
+Pointer has entry points of its own. JSON Patch and JSON Schema are what remain,
+and **neither needs a new options structure**, which is worth stating plainly
+because the paragraph that stood here claimed both did and that is what made
+them look like the expensive half of this work:
+
+- **JSON Patch** needs no API change at all. `gtext_json_patch_apply()` and
+  `gtext_json_merge_patch()` are handed a DOM, every `GTEXT_JSON_Value` carries
+  `ctx`, and `json_context::alloc` is documented as never NULL - so the
+  allocator is already reachable from the argument. What is left is the
+  transient memory: the clone frame stack (already on `gtext_allocator_*`, with
+  an explicit NULL to replace) and the pointer-token buffers.
+
+  The nodes Patch *attaches* are already right, and that was worth checking
+  before anything else: they come from `json_arena_alloc_for_context()`, so they
+  are in the target's own arena. Had they come from the C library instead, this
+  would not have been a missing feature but a cross-allocator free - C-library
+  nodes inside an arena-allocated tree, released by `gtext_json_free()` through
+  the arena's allocator. They don't, so it isn't.
+
+- **JSON Schema** already has `GTEXT_JSON_Schema_Options` and a
+  `gtext_json_schema_compile_with_options()` that takes it. It needs one field
+  added to an existing structure, exactly as `GTEXT_JSON_Write_Options` did.
+  `gtext_json_schema_validate()` takes a compiled schema, which can record the
+  allocator the compile was given, the way the DOM records its own.
+
+By raw `malloc`/`calloc`/`realloc`/`free` call count the remaining work is
+roughly `json_schema.c` 97, `json_patch.c` 40 and `json_uri.c` 13, the last
+reached only from Schema. Those are call counts, not distinct allocations.
+
+### A check that would have caught the pull reader
+
+Not built yet, and recorded here so the gap is not mistaken for coverage: for
+every file on `ALLOCATOR_CLEAN_SOURCES`, the files *it calls into* within the
+same component should be on the list too. A listed file calling an unlisted
+allocating file is the signature of this whole class, and it is a cheaper
+property to check than any analysis of where memory actually came from. After
+this conversion the JSON component satisfies it - the unlisted allocating files
+left are Patch, Schema and `json_uri.c`, none of which a listed file calls -
+so the check would pass today and be worth adding before that stops being true.
 
 ## The error-snippet exception
 

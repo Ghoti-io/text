@@ -315,17 +315,18 @@ typedef struct {
    * gtext_json_parse_file() - the arena and every DOM node, key and string in
    * it, the preserved number lexemes, and the parser's transient buffers.
    *
+   * Also covered, because both take these same options:
+   * gtext_json_stream_new() - the stream structure, its input buffer, the
+   * token buffer, the state stack and each object's key copies - and
+   * gtext_json_reader_new(), whose event queue was already on this allocator
+   * and whose stream now is too.
+   *
    * Not covered, and still using the C library:
    * - `GTEXT_JSON_Error::context_snippet`, because gtext_json_error_free()
    *   receives only the error and has no way to learn which allocator made
    *   it. Freeing it through a mismatched allocator would be worse than the
    *   one diagnostic allocation it avoids.
    * - JSON Patch and JSON Schema, neither of which takes an allocator yet.
-   * - The streaming parser, and that one is a trap rather than an absence:
-   *   gtext_json_stream_new() takes *these* options and reads nothing from
-   *   this member, so a caller who sets it still gets the stream's input
-   *   buffer, token buffer, state stack and key copies from the C library,
-   *   with no diagnostic anywhere. Do not rely on it there yet.
    *
    * The writer and JSON Pointer are covered and are not reached through this
    * member, because neither takes parse options: see

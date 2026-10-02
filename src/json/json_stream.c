@@ -44,15 +44,16 @@
 #define JSON_ERROR_CONTEXT_AFTER 20
 
 // Grow a buffer if needed (uses unified buffer growth function)
-static GTEXT_JSON_Status json_stream_grow_buffer(
-    char ** buffer, size_t * capacity, size_t needed) {
+static GTEXT_JSON_Status json_stream_grow_buffer(char ** buffer,
+    size_t * capacity, size_t needed, const GTEXT_Allocator * alloc) {
   return json_buffer_grow_unified(buffer, capacity, needed,
       JSON_BUFFER_GROWTH_SIMPLE, // Simple doubling strategy
       0,                         // Use default initial size
       0,                         // Not used for simple strategy
       0,                         // Use default multiplier (2)
       0,                         // Not used for simple strategy
-      1024                       // Add 1024 bytes headroom
+      1024,                      // Add 1024 bytes headroom
+      alloc                      // The stream's own allocator
   );
 }
 
@@ -85,7 +86,8 @@ static GTEXT_JSON_Status json_stream_grow_stack(GTEXT_JSON_Stream * st) {
   }
 
   json_stream_stack_entry * new_stack =
-      (json_stream_stack_entry *)realloc(st->stack, alloc_size);
+      (json_stream_stack_entry *)gtext_allocator_realloc(
+          st->opts.allocator, st->stack, alloc_size);
   if (!new_stack) {
     return GTEXT_JSON_E_OOM;
   }
@@ -132,14 +134,15 @@ static GTEXT_JSON_Status json_stream_push(
 }
 
 // Pop state from stack
-static void json_stream_free_names(json_stream_stack_entry * entry) {
+static void json_stream_free_names(
+    json_stream_stack_entry * entry, const GTEXT_Allocator * alloc) {
   if (!entry->names) {
     return;
   }
   for (size_t i = 0; i < entry->name_count; i++) {
-    free(entry->names[i].bytes);
+    gtext_allocator_free(alloc, entry->names[i].bytes);
   }
-  free(entry->names);
+  gtext_allocator_free(alloc, entry->names);
   entry->names = NULL;
   entry->name_count = 0;
   entry->name_cap = 0;
@@ -147,7 +150,8 @@ static void json_stream_free_names(json_stream_stack_entry * entry) {
 
 static void json_stream_pop(GTEXT_JSON_Stream * st) {
   if (st->stack_size > 0) {
-    json_stream_free_names(&st->stack[st->stack_size - 1]);
+    json_stream_free_names(
+        &st->stack[st->stack_size - 1], st->opts.allocator);
     st->stack_size--;
     st->depth--;
   }
@@ -185,14 +189,14 @@ static int json_stream_name_seen(
 }
 
 static GTEXT_JSON_Status json_stream_name_add(json_stream_stack_entry * entry,
-    const char * bytes, size_t len) {
+    const char * bytes, size_t len, const GTEXT_Allocator * alloc) {
   if (entry->name_count == entry->name_cap) {
     size_t cap = entry->name_cap == 0 ? 4 : entry->name_cap * 2;
     if (cap < entry->name_cap) {
       return GTEXT_JSON_E_OOM;
     }
-    json_stream_name * grown =
-        (json_stream_name *)realloc(entry->names, cap * sizeof(*grown));
+    json_stream_name * grown = (json_stream_name *)gtext_allocator_realloc(
+        alloc, entry->names, cap * sizeof(*grown));
     if (!grown) {
       return GTEXT_JSON_E_OOM;
     }
@@ -201,7 +205,7 @@ static GTEXT_JSON_Status json_stream_name_add(json_stream_stack_entry * entry,
   }
   char * copy = NULL;
   if (len > 0) {
-    copy = (char *)malloc(len);
+    copy = (char *)gtext_allocator_malloc(alloc, len);
     if (!copy) {
       return GTEXT_JSON_E_OOM;
     }
@@ -243,7 +247,7 @@ static GTEXT_JSON_Status json_stream_set_error(GTEXT_JSON_Stream * st,
     // should be NULL. But we check anyway for safety in case err is passed
     // directly.
     if (err->context_snippet != NULL) {
-      free(err->context_snippet);
+      free(err->context_snippet); // allocator-exempt
       err->context_snippet = NULL;
     }
 
@@ -833,7 +837,8 @@ static GTEXT_JSON_Status json_stream_handle_token(
         st->state = JSON_STREAM_STATE_OBJECT_VALUE;
         return GTEXT_JSON_OK;
       }
-      status = json_stream_name_add(object, name, name_len);
+      status =
+          json_stream_name_add(object, name, name_len, st->opts.allocator);
       if (status != GTEXT_JSON_OK) {
         json_position pos = {
             .offset = st->buffer_start_offset + token->pos.offset,
@@ -1070,8 +1075,17 @@ GTEXT_API GTEXT_JSON_Stream * gtext_json_stream_new(
     return NULL;
   }
 
-  GTEXT_JSON_Stream * st =
-      (GTEXT_JSON_Stream *)calloc(1, sizeof(GTEXT_JSON_Stream));
+  /*
+   * Read before the options are copied, because the struct that will hold the
+   * copy is what is being allocated.  Both arms below leave
+   * st->opts.allocator equal to `alloc` - the copy carries it, and the
+   * defaults put NULL there - so everything afterwards can read the one field
+   * and gtext_json_stream_free() needs nothing from the caller.
+   */
+  const GTEXT_Allocator * alloc = opt ? opt->allocator : NULL;
+
+  GTEXT_JSON_Stream * st = (GTEXT_JSON_Stream *)gtext_allocator_calloc(
+      alloc, 1, sizeof(GTEXT_JSON_Stream));
   if (!st) {
     return NULL;
   }
@@ -1099,14 +1113,16 @@ GTEXT_API GTEXT_JSON_Stream * gtext_json_stream_new(
 
   // Initialize buffers with reasonable starting sizes
   st->input_buffer_size = 4096;
-  st->input_buffer = (char *)malloc(st->input_buffer_size);
+  st->input_buffer =
+      (char *)gtext_allocator_malloc(alloc, st->input_buffer_size);
   if (!st->input_buffer) {
-    free(st);
+    gtext_allocator_free(alloc, st);
     return NULL;
   }
 
-  // Initialize token buffer
-  json_token_buffer_init(&st->token_buffer);
+  // Initialize token buffer, with the allocator as a parameter rather than a
+  // field assigned afterwards: see json_token_buffer::alloc.
+  json_token_buffer_init(&st->token_buffer, alloc);
   // Note: buffer is allocated on-demand, not here
 
   // The stack is left NULL with capacity 0, from the calloc above, and the
@@ -1126,18 +1142,21 @@ GTEXT_API void gtext_json_stream_free(GTEXT_JSON_Stream * st) {
   }
 
   // Free all buffers
+  const GTEXT_Allocator * alloc = st->opts.allocator;
   for (size_t i = 0; i < st->stack_size; i++) {
-    json_stream_free_names(&st->stack[i]);
+    json_stream_free_names(&st->stack[i], alloc);
   }
-  free(st->input_buffer);
-  // Free token buffer if it was allocated
+  gtext_allocator_free(alloc, st->input_buffer);
+  // Free token buffer if it was allocated.  Through st->token_buffer.alloc
+  // rather than this one, because that field is what grew it - they are the
+  // same allocator today and the point is that nothing here has to know it.
   if (st->token_buffer.buffer) {
-    free(st->token_buffer.buffer);
+    gtext_allocator_free(st->token_buffer.alloc, st->token_buffer.buffer);
     st->token_buffer.buffer = NULL;
   }
-  free(st->stack);
+  gtext_allocator_free(alloc, st->stack);
 
-  free(st);
+  gtext_allocator_free(alloc, st);
 }
 
 GTEXT_API GTEXT_JSON_Status gtext_json_stream_feed(GTEXT_JSON_Stream * st,
@@ -1216,8 +1235,8 @@ GTEXT_API GTEXT_JSON_Status gtext_json_stream_feed(GTEXT_JSON_Stream * st,
   }
 
   size_t needed = st->input_buffer_used + len;
-  GTEXT_JSON_Status status = json_stream_grow_buffer(
-      &st->input_buffer, &st->input_buffer_size, needed);
+  GTEXT_JSON_Status status = json_stream_grow_buffer(&st->input_buffer,
+      &st->input_buffer_size, needed, st->opts.allocator);
   if (status != GTEXT_JSON_OK) {
     json_position pos = {
         .offset = st->total_bytes_consumed, .line = 1, .col = 1};

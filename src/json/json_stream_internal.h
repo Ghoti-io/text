@@ -30,6 +30,7 @@
 #ifndef GHOTI_IO_GTEXT_SRC_JSON_JSON_STREAM_INTERNAL_H
 #define GHOTI_IO_GTEXT_SRC_JSON_JSON_STREAM_INTERNAL_H
 
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
 
 #include "json_internal.h"
@@ -132,6 +133,19 @@ typedef struct json_token_buffer {
   size_t start_offset;    ///< Offset where token started in input_buffer
   size_t consumed_length; ///< Length of data consumed from input_buffer (for
                           ///< incomplete tokens)
+
+  /**
+   * The allocator @c buffer belongs to, or NULL for the default one.
+   *
+   * Recorded here, and set by json_token_buffer_init() as a parameter, so that
+   * whatever grows the buffer and whatever releases it cannot disagree.  The
+   * same shape as csv_field_buffer::alloc, and for the reason written at
+   * src/csv/csv_stream_buffer.c:38 - a buffer grown through the caller's
+   * allocator and freed through the C library's is a mismatch the tracking
+   * allocator catches as a block it never made, and the only reliable way to
+   * prevent it is to stop the two sites being able to name different ones.
+   */
+  const GTEXT_Allocator * alloc;
 } json_token_buffer;
 
 /**
@@ -166,8 +180,12 @@ typedef struct json_token_buffer {
  * before use.
  *
  * @param tb Token buffer to initialize (must not be NULL)
+ * @param alloc Allocator the buffer will come from, or NULL for the default
+ *   one.  A parameter, not a field the caller assigns afterwards: see
+ *   json_token_buffer::alloc.
  */
-void json_token_buffer_init(json_token_buffer * tb);
+void json_token_buffer_init(
+    json_token_buffer * tb, const GTEXT_Allocator * alloc);
 
 /**
  * @brief Clear a token buffer structure

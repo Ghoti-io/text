@@ -31,10 +31,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
 #include "json_stream_internal.h"
 // Token buffer helper functions
-void json_token_buffer_init(json_token_buffer * tb) {
+void json_token_buffer_init(
+    json_token_buffer * tb, const GTEXT_Allocator * alloc) {
   if (!tb) {
     return;
   }
@@ -42,6 +44,10 @@ void json_token_buffer_init(json_token_buffer * tb) {
   tb->type = JSON_TOKEN_BUFFER_NONE;
   tb->start_offset = SIZE_MAX;
   tb->consumed_length = 0;
+  // Before any growth, and never reassigned: json_token_buffer_grow() and
+  // gtext_json_stream_free() both read this one field, so they cannot name
+  // different allocators for one buffer.
+  tb->alloc = alloc;
 }
 
 void json_token_buffer_clear(json_token_buffer * tb) {
@@ -70,7 +76,8 @@ GTEXT_JSON_Status json_token_buffer_grow(
       JSON_BUFFER_SMALL_THRESHOLD,    // Small threshold
       JSON_BUFFER_GROWTH_MULTIPLIER,  // Growth multiplier
       64,                             // Fixed increment for small buffers
-      0                               // No headroom
+      0,                              // No headroom
+      tb->alloc                       // Recorded by json_token_buffer_init()
   );
 }
 

@@ -130,7 +130,7 @@ void json_position_advance(json_position * pos, const char * input,
 GTEXT_JSON_Status json_buffer_grow_unified(char ** buffer, size_t * capacity,
     size_t needed, json_buffer_growth_strategy strategy, size_t initial_size,
     size_t small_threshold, size_t growth_multiplier, size_t fixed_increment,
-    size_t headroom) {
+    size_t headroom, const GTEXT_Allocator * alloc) {
   if (!buffer || !capacity) {
     return GTEXT_JSON_E_INVALID;
   }
@@ -230,7 +230,8 @@ GTEXT_JSON_Status json_buffer_grow_unified(char ** buffer, size_t * capacity,
   }
 
   // Reallocate buffer
-  char * new_buffer = (char *)realloc(*buffer, new_capacity);
+  char * new_buffer = (char *)gtext_allocator_realloc(alloc, *buffer,
+      new_capacity);
   if (!new_buffer) {
     return GTEXT_JSON_E_OOM;
   }

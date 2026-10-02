@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <gtest/gtest.h>
 
 #include <ghoti.io/text/allocator.h>
@@ -1182,4 +1183,210 @@ TEST(Allocator, JsonPointerWithoutAnAllocatorStillResolves) {
 	EXPECT_EQ(c.live_blocks, 0u);
 
 	gtext_json_free(v);
+}
+
+/*
+ * The streaming parser, and the floor is the point of these two tests.
+ *
+ * `live_blocks == 0` holds when the allocator serves *nothing*, and
+ * `total_allocations > 0` holds from a wrapper's own structure while everything
+ * beneath it bypasses - which is how gtext_json_stream_new() came to ignore
+ * GTEXT_JSON_Parse_Options::allocator while src/json/json_pull_reader.c sat on
+ * the `check-allocators` list and passed.  What separates the two states is
+ * *which* allocations arrive, so these assert on bytes outstanding while the
+ * stream is alive: the input buffer alone is JSON_TOKEN_BUFFER-independent and
+ * 4096 bytes by construction, so a build that allocated it from the C library
+ * cannot reach the floor no matter how the rest is counted.
+ */
+TEST(Allocator, JsonStreamBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	opts.allocator = &alloc;
+
+	GTEXT_JSON_Event_cb cb =
+	    [](void *, const GTEXT_JSON_Event *, GTEXT_JSON_Error *) {
+		    return GTEXT_JSON_OK;
+	    };
+	GTEXT_JSON_Stream * st = gtext_json_stream_new(&opts, cb, nullptr);
+	ASSERT_NE(st, nullptr);
+	// The stream's own structure and its 4096-byte input buffer, both of which
+	// exist before a single byte is fed.
+	EXPECT_GE(c.live_bytes, 4096u) << "the input buffer bypassed the allocator";
+	EXPECT_GE(c.total_allocations, 2u);
+
+	// Shaped to take every growth path the stream has: nesting past the
+	// initial stack capacity, more keys in one object than the name array's
+	// first four slots, a string longer than the token buffer's initial 64
+	// bytes, and more input than the 4096-byte buffer holds.
+	std::string src = "{";
+	for (int i = 0; i < 40; i++) {
+		src += "\"key" + std::to_string(i) + "\":[{";
+	}
+	src += "\"deep\":\"";
+	src.append(300, 'x');
+	src += "\"";
+	for (int i = 0; i < 40; i++) {
+		src += "}]";
+		if (i + 1 < 40) {
+			src += ",\"pad" + std::to_string(i) + "\":1";
+		}
+	}
+	src += "}";
+	src.append(5000, ' '); // past the input buffer, so it must grow
+
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	// One byte at a time, so every token crosses a chunk boundary and has to
+	// be buffered rather than referenced in place.
+	for (size_t i = 0; i < src.size(); i++) {
+		ASSERT_EQ(gtext_json_stream_feed(st, src.data() + i, 1, &err),
+		    GTEXT_JSON_OK)
+		    << (err.message ? err.message : "feed failed") << " at " << i;
+	}
+	EXPECT_EQ(gtext_json_stream_finish(st, &err), GTEXT_JSON_OK)
+	    << (err.message ? err.message : "finish failed");
+	gtext_json_stream_free(st);
+	gtext_json_error_free(&err);
+
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonStreamBalancesWhenTheInputIsRefused) {
+	// The error path frees a stack that still has entries on it, each with its
+	// own key-name array - the one case json_stream_free_names() is reached
+	// from gtext_json_stream_free() rather than from json_stream_pop().
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	opts.allocator = &alloc;
+
+	GTEXT_JSON_Event_cb cb =
+	    [](void *, const GTEXT_JSON_Event *, GTEXT_JSON_Error *) {
+		    return GTEXT_JSON_OK;
+	    };
+	GTEXT_JSON_Stream * st = gtext_json_stream_new(&opts, cb, nullptr);
+	ASSERT_NE(st, nullptr);
+
+	// Opens ten objects, names a key in each, then goes wrong - so the stream
+	// is freed mid-document with names outstanding at every level.
+	std::string src;
+	for (int i = 0; i < 10; i++) {
+		src += "{\"a" + std::to_string(i) + "\":";
+	}
+	src += "@";
+
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Status status =
+	    gtext_json_stream_feed(st, src.data(), src.size(), &err);
+	if (status == GTEXT_JSON_OK) {
+		status = gtext_json_stream_finish(st, &err);
+	}
+	EXPECT_NE(status, GTEXT_JSON_OK) << "'@' should not parse";
+	gtext_json_stream_free(st);
+	gtext_json_error_free(&err);
+
+	EXPECT_EQ(c.live_blocks, 0u) << "a refused document leaked";
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+/*
+ * The pull reader, which is the test that was missing.
+ *
+ * tests/test-allocator.cpp had CsvStream/CsvPullReader and
+ * YamlStream/YamlPullReader and neither of the JSON pair - three formats with
+ * the same two-layer shape, two of them covered on both layers and one on
+ * neither.  src/json/json_pull_reader.c routes its own queue and key copies
+ * through the caller's allocator and then hands the same options to
+ * gtext_json_stream_new(), so until the stream honoured them the larger half of
+ * a reader's memory came from the C library with every gate green.
+ */
+TEST(Allocator, JsonPullReaderBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	opts.allocator = &alloc;
+
+	GTEXT_JSON_Reader * r = gtext_json_reader_new(&opts);
+	ASSERT_NE(r, nullptr);
+	// The reader's own structure is a few hundred bytes; the stream it owns
+	// brings the 4096-byte input buffer with it.  Before the stream was
+	// converted this floor was the assertion that failed while
+	// `total_allocations > 0` still passed.
+	EXPECT_GE(c.live_bytes, 4096u)
+	    << "the reader's stream bypassed the allocator";
+
+	std::string src = "[";
+	for (int i = 0; i < 60; i++) {
+		if (i) {
+			src += ",";
+		}
+		src += "{\"name" + std::to_string(i) + "\":\"value\"}";
+	}
+	src += "]";
+
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	ASSERT_EQ(gtext_json_reader_feed(r, src.data(), src.size(), &err),
+	    GTEXT_JSON_OK)
+	    << (err.message ? err.message : "feed failed");
+	ASSERT_EQ(gtext_json_reader_feed(r, nullptr, 0, &err), GTEXT_JSON_OK);
+
+	// A few read, the rest still queued at free time.
+	for (int i = 0; i < 5; i++) {
+		GTEXT_JSON_Event ev;
+		std::memset(&ev, 0, sizeof(ev));
+		EXPECT_EQ(gtext_json_reader_next(r, &ev), GTEXT_JSON_OK);
+	}
+
+	gtext_json_reader_free(r);
+	gtext_json_error_free(&err);
+	EXPECT_EQ(c.live_blocks, 0u) << "queued events were not released";
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonStreamWithoutAnAllocatorStillParses) {
+	// The default path unchanged, and compared against the named-allocator
+	// path rather than merely asserted to work: both must deliver the same
+	// events in the same order.
+	const char * src = "{\"a\":[1,2,{\"b\":null}],\"c\":\"d\"}";
+	std::vector<int> plain;
+	std::vector<int> tracked;
+
+	GTEXT_JSON_Event_cb cb = [](void * user, const GTEXT_JSON_Event * ev,
+	                             GTEXT_JSON_Error *) {
+		static_cast<std::vector<int> *>(user)->push_back((int)ev->type);
+		return GTEXT_JSON_OK;
+	};
+
+	GTEXT_JSON_Parse_Options plain_opts = gtext_json_parse_options_default();
+	EXPECT_EQ(plain_opts.allocator, nullptr) << "no allocator by default";
+	GTEXT_JSON_Stream * a = gtext_json_stream_new(&plain_opts, cb, &plain);
+	ASSERT_NE(a, nullptr);
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	ASSERT_EQ(gtext_json_stream_feed(a, src, std::strlen(src), &err),
+	    GTEXT_JSON_OK);
+	ASSERT_EQ(gtext_json_stream_finish(a, &err), GTEXT_JSON_OK);
+	gtext_json_stream_free(a);
+	gtext_json_error_free(&err);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options named = gtext_json_parse_options_default();
+	named.allocator = &alloc;
+	GTEXT_JSON_Stream * b = gtext_json_stream_new(&named, cb, &tracked);
+	ASSERT_NE(b, nullptr);
+	std::memset(&err, 0, sizeof(err));
+	ASSERT_EQ(gtext_json_stream_feed(b, src, std::strlen(src), &err),
+	    GTEXT_JSON_OK);
+	ASSERT_EQ(gtext_json_stream_finish(b, &err), GTEXT_JSON_OK);
+	gtext_json_stream_free(b);
+	gtext_json_error_free(&err);
+
+	EXPECT_EQ(plain, tracked) << "the two allocators gave different events";
+	EXPECT_FALSE(plain.empty());
+	EXPECT_EQ(c.live_blocks, 0u);
 }

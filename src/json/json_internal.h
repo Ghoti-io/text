@@ -824,12 +824,19 @@ typedef enum {
  * @param fixed_increment Fixed increment for hybrid small buffers (0 = use
  * default 64)
  * @param headroom Additional headroom to add after growth (0 = no headroom)
+ * @param alloc Allocator the buffer belongs to, or NULL for the default one.
+ *   It is a parameter rather than something the caller assigns afterwards,
+ *   because the buffer this grows is released through whatever allocator the
+ *   owner records - so a buffer grown here through one allocator and freed
+ *   through another is exactly the mismatch csv_field_buffer_init() was
+ *   changed to prevent.  Both callers are on the streaming parser's path and
+ *   pass the stream's own allocator.
  * @return GTEXT_JSON_OK on success, GTEXT_JSON_E_OOM on failure
  */
 GTEXT_JSON_Status json_buffer_grow_unified(char ** buffer, size_t * capacity,
     size_t needed, json_buffer_growth_strategy strategy, size_t initial_size,
     size_t small_threshold, size_t growth_multiplier, size_t fixed_increment,
-    size_t headroom);
+    size_t headroom, const GTEXT_Allocator * alloc);
 
 /**
  * @brief Check if addition would overflow (size_t)
