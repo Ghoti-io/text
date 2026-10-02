@@ -75,6 +75,13 @@ size_t MeasureDepth(const GTEXT_YAML_Node *n) {
 	return d;
 }
 
+/* Counts events and nothing else, so what a walk test measures is the walk. */
+GTEXT_YAML_Status CountEvent(const GTEXT_YAML_Node_Event *e, void *user) {
+	(void)e;
+	(*static_cast<size_t *>(user))++;
+	return GTEXT_YAML_OK;
+}
+
 GTEXT_YAML_Status ToJsonIt(const GTEXT_YAML_Document *doc) {
 	GTEXT_JSON_Value *json = nullptr;
 	GTEXT_YAML_Error err;
@@ -336,4 +343,62 @@ TEST(YamlBuiltDepth, LiftingTheAliasBudgetDoesNotLiftTheDepthLimit) {
 
 	EXPECT_EQ(ToJsonIt(doc), GTEXT_YAML_E_DEPTH);
 	gtext_yaml_free(doc);
+}
+
+/* The event walk, which was three functions calling each other - walk_node,
+   walk_sequence, walk_mapping - and so a recursion over the whole document.
+   
+   It is the sixth walk over a DOM here to come off the C stack and the worst
+   of them.  Every other one needed max_depth = SIZE_MAX to be asked for first;
+   this one **ignored max_depth altogether**, so a document built through the
+   DOM API with every option at its default went two hundred thousand levels
+   deep and took the process with it.
+   
+   It also outlived the sweep that found the others: that sweep looked for a
+   function calling its own name, and this recursion went round three.  A sweep
+   that cannot see the shape it is looking for returns clean. */
+TEST(YamlBuiltDepth, TheEventWalkDoesNotUseTheCStack) {
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.max_depth = SIZE_MAX;
+
+	const size_t depth = 200000;
+	GTEXT_YAML_Document *doc = BuildNested(depth, &opts);
+	ASSERT_NE(doc, nullptr);
+	ASSERT_EQ(MeasureDepth(gtext_yaml_document_root(doc)), depth);
+
+	size_t events = 0;
+	EXPECT_EQ(gtext_yaml_document_walk(doc, CountEvent, &events), GTEXT_YAML_OK);
+	/* The control, and it has to be the exact number: a walk that stopped
+	   early would not crash either.  One document start and end, one sequence
+	   start and end per level, and the scalar at the bottom. */
+	EXPECT_EQ(events, 2 * depth + 3);
+
+	gtext_yaml_free(doc);
+}
+
+/* And max_depth binds it, which is the half that makes the default options
+   case an error rather than a death. */
+TEST(YamlBuiltDepth, TheEventWalkHoldsABuiltDocumentToMaxDepth) {
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.max_depth = 100;
+
+	GTEXT_YAML_Document *shallow = BuildNested(50, &opts);
+	ASSERT_NE(shallow, nullptr);
+	ASSERT_EQ(MeasureDepth(gtext_yaml_document_root(shallow)), 50u);
+	size_t events = 0;
+	EXPECT_EQ(gtext_yaml_document_walk(shallow, CountEvent, &events),
+		GTEXT_YAML_OK);
+	EXPECT_EQ(events, 2 * 50u + 3);
+	gtext_yaml_free(shallow);
+
+	GTEXT_YAML_Document *deep = BuildNested(500, &opts);
+	ASSERT_NE(deep, nullptr);
+	ASSERT_EQ(MeasureDepth(gtext_yaml_document_root(deep)), 500u);
+	events = 0;
+	EXPECT_EQ(gtext_yaml_document_walk(deep, CountEvent, &events),
+		GTEXT_YAML_E_DEPTH);
+	/* It got somewhere before refusing, which says the limit stopped the walk
+	   rather than something rejecting the document up front. */
+	EXPECT_GT(events, 0u);
+	gtext_yaml_free(deep);
 }
