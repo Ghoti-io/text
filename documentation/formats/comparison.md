@@ -95,6 +95,11 @@ concurrently. The rule, including version accessors and number formatting, is
 in section 7 of the \ref core_module "Core module page", with a per-module
 statement on the JSON, CSV and YAML pages.
 
+It is exercised rather than only stated: `tests/test-concurrency.cpp` runs each
+safe combination from eight threads, and `make test-tsan` runs the whole suite
+under ThreadSanitizer. `make test-asan` cannot stand in for that - ASan and
+UBSan detect nothing about data races.
+
 ## JSON
 
 Compared against nlohmann/json, RapidJSON, jansson and cJSON.

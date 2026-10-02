@@ -478,6 +478,65 @@ ASAN_STATIC_TARGET := $(BASE_NAME_PREFIX)-asan.a
 ASAN_LIBOBJECTS := $(patsubst src/%.c,$(ASAN_OBJ_DIR)/%.o,$(SOURCES))
 
 ####################################################################
+# ThreadSanitizer
+####################################################################
+
+# A separate tree from the ASan one because the two runtimes cannot be linked
+# together, and a separate target because `make test` must not depend on a
+# sanitizer this library needs only as a standing guard.
+#
+# ## What this gate is for, since it is not looking for a known bug
+#
+# This library has **no mutable state outside the caller's objects**: no
+# file-scope variable that is not const, no function-local static, no lazily
+# built table, no cache. Every byte a call touches is on its stack, in a
+# document the caller owns, or from the allocator the caller supplied. That is
+# why its concurrency guarantee can be as strong as it is, and it is a property
+# of the code rather than of a lock - there is no lock to inspect.
+#
+# A property like that needs a gate, because the thing that breaks it is an
+# ordinary-looking improvement: a memo on a hot path, a table built on first
+# use, a cached default. `make test-asan` cannot see any of it - ASan and UBSan
+# detect nothing about data races, measured: a mutex removed from a guarded
+# cache in a sibling library passed every ASan run and was reported by
+# ThreadSanitizer on the first.
+#
+# ## Why every test, not the threaded ones
+#
+# Three test files run threads today and the rest do not, so most of this build
+# is instrumentation over single-threaded code that can report nothing. A list
+# of "the threaded tests" would be cheaper and is the wrong shape: it is a list
+# someone has to remember to extend, and the test that matters is the one that
+# grows a thread later. The same argument check-headers makes about globbing
+# include/.
+#
+# ## Two things not to copy from the ASan target
+#
+# There is no LD_PRELOAD of the runtime here. Linking with -fsanitize=thread
+# already puts libtsan first in the executable's NEEDED list, so it buys
+# nothing - and it breaks every system() call, because the spawned shell
+# inherits the preload and dies. Several tests here shell out to an oracle.
+#
+# LD_PRELOAD *is* cleared, for the same reason the ASan target clears it: a
+# desktop-wide preload inherited from the session (Debian sets
+# libgtk3-nocsd.so.0) gets ahead of the sanitizer runtime.
+TSAN_FLAGS := -fsanitize=thread -fno-omit-frame-pointer -g -O1
+
+TSAN_BUILD_DIR := $(BUILD_DIR)-tsan
+TSAN_OBJ_DIR := $(TSAN_BUILD_DIR)/objects
+TSAN_FLAGS_STAMP := $(TSAN_OBJ_DIR)/.flags
+TSAN_APP_DIR := $(TSAN_BUILD_DIR)/apps
+
+TSAN_TARGET := $(BASE_NAME_PREFIX)-tsan.$(LIB_EXTENSION)
+ifeq ($(UNAME_S),Linux)
+	TSAN_LIBRARY_NAME_FLAG := -Wl,-soname,$(TSAN_TARGET)
+else
+	TSAN_LIBRARY_NAME_FLAG :=
+endif
+
+TSAN_LIBOBJECTS := $(patsubst src/%.c,$(TSAN_OBJ_DIR)/%.o,$(SOURCES))
+
+####################################################################
 # Test discovery
 ####################################################################
 
@@ -558,6 +617,9 @@ TEST_EXECUTABLES := $(addprefix $(APP_DIR)/,$(addsuffix $(EXE_EXTENSION),$(TEST_
 # ASan test executables
 ASAN_TEST_EXECUTABLES := $(patsubst $(APP_DIR)/%,$(ASAN_APP_DIR)/%,$(TEST_EXECUTABLES))
 
+# TSan test executables
+TSAN_TEST_EXECUTABLES := $(patsubst $(APP_DIR)/%,$(TSAN_APP_DIR)/%,$(TEST_EXECUTABLES))
+
 # Automatically collect all example .c files, one directory per module.  A new
 # module's examples are picked up by adding it to EXAMPLE_MODULES; yaml was
 # omitted here for a long time, so its examples were never compiled and nothing
@@ -590,8 +652,10 @@ TEST_DEPFILES := $(addprefix $(APP_DIR)/,$(addsuffix .d,$(TEST_NAMES)))
 # an AddressSanitizer report in code that is correct, and can equally hide a
 # report in code that is not.
 ASAN_TEST_DEPFILES := $(addprefix $(ASAN_APP_DIR)/,$(addsuffix .d,$(TEST_NAMES)))
+TSAN_TEST_DEPFILES := $(addprefix $(TSAN_APP_DIR)/,$(addsuffix .d,$(TEST_NAMES)))
 DEPFILES := $(LIBOBJECTS:.o=.d) $(TEST_DEPFILES) \
-	$(ASAN_LIBOBJECTS:.o=.d) $(ASAN_TEST_DEPFILES)
+	$(ASAN_LIBOBJECTS:.o=.d) $(ASAN_TEST_DEPFILES) \
+	$(TSAN_LIBOBJECTS:.o=.d) $(TSAN_TEST_DEPFILES)
 -include $(DEPFILES)
 
 
@@ -834,6 +898,41 @@ endef
 $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(subst |, ,$(pair))),$(word 2,$(subst |, ,$(pair))))))
 
 ####################################################################
+# ThreadSanitizer Build
+####################################################################
+
+TSAN_CFLAGS := $(CFLAGS) $(TSAN_FLAGS) -DGTEXT_BUILD -DGTEXT_TEST_BUILD
+TSAN_CXXFLAGS := $(CXXFLAGS) $(TSAN_FLAGS)
+TSAN_LDFLAGS := $(LDFLAGS) $(TSAN_FLAGS)
+
+ifeq ($(UNAME_S), Linux)
+	TSAN_CFLAGS += -fPIC
+endif
+
+$(TSAN_OBJ_DIR)/%.o: src/%.c $(TSAN_FLAGS_STAMP) | $(LIBVER_GEN)
+	@printf "\n### Compiling (TSan instrumented): $< ###\n"
+	@mkdir -p $(@D)
+	$(CC) $(TSAN_CFLAGS) $(INCLUDE) -c $< -MMD -MP -MF $(@:.o=.d) -o $@
+
+# Same soname reasoning as the ASan library: it names this file, because this
+# file is never installed and is only ever loaded out of the build tree.
+$(TSAN_APP_DIR)/$(TSAN_TARGET): $(TSAN_LIBOBJECTS)
+	@printf "\n### Compiling TSan-instrumented Shared Library ###\n"
+	@mkdir -p $(@D)
+	$(CXX) $(TSAN_CXXFLAGS) -shared -o $@ $^ $(TSAN_LDFLAGS) $(TSAN_LIBRARY_NAME_FLAG)
+
+define tsan-test-executable-rule
+$(TSAN_APP_DIR)/$2$(EXE_EXTENSION): \
+		$1 \
+		$(TSAN_APP_DIR)/$(TSAN_TARGET)
+	@printf "\n### Compiling TSan %s Test ###\n" "$2"
+	@mkdir -p $$(@D)
+	$$(CXX) $$(TSAN_CXXFLAGS) $$(INCLUDE) -MMD -MP -MF $$(TSAN_APP_DIR)/$2.d -o $$@ $$< $$(TSAN_LDFLAGS) $$(TESTFLAGS) $$(TSAN_APP_DIR)/$$(TSAN_TARGET)
+endef
+
+$(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(subst |, ,$(pair))),$(word 2,$(subst |, ,$(pair))))))
+
+####################################################################
 # Commands
 ####################################################################
 
@@ -844,7 +943,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 # Debug build commands
 .PHONY: all-debug install-debug test-debug test-watch-debug uninstall-debug watch-debug
 # Sanitizer commands
-.PHONY: test-asan test-asan-quiet test-ubsan sanitizer-help
+.PHONY: test-asan test-asan-quiet test-ubsan test-tsan test-tsan-quiet sanitizer-help
 
 
 watch: ## Watch the file directory for changes and compile the target
@@ -987,11 +1086,11 @@ check-allocator-callees: ## Fail if a converted file calls into an unconverted o
 # Linux before it existed - five CI jobs, all ubuntu-latest - and the four
 # preprocessor conditionals it reaches decide what every exported symbol is
 # declared as. A `#if` arm nobody compiles is not small, it is unparsed.
-check-windows-cross: ## Compile every source for Windows with mingw-w64 (needs podman)
+check-windows-cross: ## Compile every source for Windows with mingw-w64
 	@tools/cross-windows.sh; \
 	status=$$?; \
 	if [ $$status -eq 77 ]; then \
-		printf "check-windows-cross: skipped (no container engine or image)\n"; \
+		printf "check-windows-cross: skipped (no host mingw-w64, and no container engine or image)\n"; \
 		exit 0; \
 	fi; \
 	exit $$status
@@ -1411,6 +1510,111 @@ endif
 test-ubsan: ## Alias for test-asan (ASan+UBSan are run together)
 test-ubsan: test-asan
 
+test-tsan: ## Run all tests with ThreadSanitizer (Linux only)
+# See the ThreadSanitizer block near ASAN_UBSAN_FLAGS for what this gate is
+# for, why it builds every test rather than the three that run threads, and
+# the two things not to copy here from the ASan target.
+test-tsan: $(TSAN_APP_DIR)/$(TSAN_TARGET) $(TSAN_TEST_EXECUTABLES)
+ifeq ($(OS_NAME), Linux)
+	@printf "\033[0;36m\n"
+	@printf "###########################################\n"
+	@printf "### Running tests with ThreadSanitizer  ###\n"
+	@printf "###########################################\n"
+	@printf "\033[0m\n"
+# halt_on_error=1 so that the first race fails the gate rather than being
+# counted and passed over: TSan's default is to report and carry on, and a
+# report with exit status 0 is a gate that cannot fail.
+#
+# second_deadlock_stack=1 costs some memory and makes a lock-order report name
+# both sites, which is the difference between a report that can be acted on and
+# one that says only that something is wrong.
+#
+# allocator_may_return_null=1 for the same reason the ASan target sets it, and
+# found the same way: without it testJson dies in
+# JsonBufferGrow.HybridSmallIncrementOverflowFallsBackToNeeded, which asks for
+# a SIZE_MAX-sized capacity on purpose to reach the overflow branch and expects
+# GTEXT_JSON_E_OOM back. TSan treats "too big to allocate" as fatal, so every
+# out-of-memory path in this library is untestable under it otherwise. Race
+# detection is unaffected; this option governs allocation-size errors only.
+	@failed=""; \
+	for test_exe in $(TSAN_TEST_EXECUTABLES); do \
+		test_name=$$(basename $$test_exe $(EXE_EXTENSION)); \
+		printf "\033[0;30;43m\n"; \
+		printf "############################\n"; \
+		printf "### Running %s tests (TSan) ###\n" "$$test_name"; \
+		printf "############################"; \
+		printf "\033[0m\n\n"; \
+		LD_PRELOAD= LD_LIBRARY_PATH="$(TSAN_APP_DIR)" \
+			TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:allocator_may_return_null=1 \
+			$$test_exe --gtest_brief=1 || failed="$$failed $$test_name"; \
+	done; \
+	if [ -n "$$failed" ]; then \
+		printf "\033[0;31m\nThreadSanitizer findings in:%s\033[0m\n" "$$failed" >&2; \
+		exit 1; \
+	fi
+	@printf "\033[0;32m\n"
+	@printf "###########################################\n"
+	@printf "### All tests passed with TSan          ###\n"
+	@printf "###########################################\n"
+	@printf "\033[0m\n"
+else
+	@printf "\033[0;31m\n"
+	@printf "Sanitizer builds are currently only supported on Linux\n"
+	@printf "\033[0m\n"
+	@exit 1
+endif
+
+test-tsan-quiet: ## Run TSan tests with minimal output (Linux only)
+# **A test can fail under this gate without a race, and the first version of
+# this recipe printed nothing when that happened.** It showed only the lines
+# around `WARNING: ThreadSanitizer`, so a failure with no report - which is
+# what a timing assertion or an exhausted resource looks like - left the
+# operator with a test name, an exit status of 1, and no information at all.
+# Seen once: testYamlParseScaling, whose DepthCostsLinearTime asserts a time
+# ratio, failed in a full run with 0 reports and has not reproduced in 25
+# subsequent runs idle, under eight spinning cores, and alongside a -j8
+# rebuild. It peaks at 285 MB under TSan against 83 MB plain, which is the
+# kind of thing that matters on a loaded box.
+#
+# So the no-report branch prints the test's own output instead. The cause of
+# that one failure is still unknown, and the point of this note is that the
+# next occurrence will say which half it was.
+test-tsan-quiet: $(TSAN_APP_DIR)/$(TSAN_TARGET) $(TSAN_TEST_EXECUTABLES)
+ifeq ($(OS_NAME), Linux)
+	@races=0; failed=""; \
+	printf "\n\033[1;33m%-34s %8s %s\033[0m\n" "Test Suite (TSan)" "Tests" "Status"; \
+	for test_exe in $(TSAN_TEST_EXECUTABLES); do \
+		test_name=$$(basename $$test_exe $(EXE_EXTENSION)); \
+		output=$$(LD_PRELOAD= LD_LIBRARY_PATH="$(TSAN_APP_DIR)" \
+			TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:allocator_may_return_null=1 \
+			$$test_exe --gtest_brief=1 2>&1); \
+		code=$$?; \
+		num=$$(printf '%s' "$$output" | grep -oE '\[=+\] [0-9]+ tests? from' | grep -oE '[0-9]+' | head -1); \
+		this=$$(printf '%s' "$$output" | grep -c 'WARNING: ThreadSanitizer'); \
+		races=$$((races + this)); \
+		if [ $$code -eq 0 ]; then \
+			printf "%-34s %8s \033[0;32mok\033[0m\n" "$$test_name" "$${num:-?}"; \
+		else \
+			printf "%-34s %8s \033[0;31mFAILED rc=%s (%s race report(s))\033[0m\n" "$$test_name" "$${num:-?}" "$$code" "$$this"; \
+			if [ "$$this" -gt 0 ]; then \
+				printf '%s\n' "$$output" | grep -A 12 'WARNING: ThreadSanitizer' | head -40; \
+			else \
+				printf '%s\n' "$$output" | tail -40; \
+			fi; \
+			failed="$$failed $$test_name"; \
+		fi; \
+	done; \
+	printf "\ntsan: %d ThreadSanitizer report(s)\n" "$$races"; \
+	if [ -n "$$failed" ]; then \
+		printf "\033[0;31mfailing:%s\033[0m\n" "$$failed" >&2; \
+		exit 1; \
+	fi; \
+	printf "\033[0;32mNo races reported.\033[0m\n"
+else
+	@printf "\033[0;31m\nSanitizer builds are currently only supported on Linux\n\033[0m\n"
+	@exit 1
+endif
+
 test-asan-quiet: ## Run ASan+UBSan tests with minimal output (Linux only)
 test-asan-quiet: $(ASAN_APP_DIR)/$(ASAN_TARGET) $(ASAN_TEST_EXECUTABLES)
 ifeq ($(OS_NAME), Linux)
@@ -1475,13 +1679,25 @@ sanitizer-help: ## Show help for sanitizer usage
 	@printf "  - Unaligned memory access\n"
 	@printf "  - Division by zero\n"
 	@printf "\n"
+	@printf "ThreadSanitizer (TSan) detects, and the two above do not:\n"
+	@printf "  - Data races\n"
+	@printf "  - Lock-order inversions\n"
+	@printf "\n"
+	@printf "  It cannot be linked with ASan, so it has its own tree and target.\n"
+	@printf "  This library keeps no mutable global state, so it is a standing\n"
+	@printf "  guard on that rather than a hunt: see tests/test-concurrency.cpp\n"
+	@printf "  and documentation/modules/Core.md section 7.\n"
+	@printf "\n"
 	@printf "Usage:\n"
 	@printf "  make test-asan         - Run all tests with sanitizers (verbose)\n"
 	@printf "  make test-asan-quiet   - Run all tests with sanitizers (summary)\n"
 	@printf "  make test-ubsan        - Alias for test-asan\n"
+	@printf "  make test-tsan         - Run all tests with ThreadSanitizer\n"
+	@printf "  make test-tsan-quiet   - Run all tests with TSan (summary)\n"
 	@printf "\n"
-	@printf "Sanitizers build a separate instrumented library in:\n"
+	@printf "Sanitizers build separate instrumented libraries in:\n"
 	@printf "  $(ASAN_APP_DIR)/\n"
+	@printf "  $(TSAN_APP_DIR)/\n"
 	@printf "\n"
 	@printf "Note: Sanitizer builds are slower but catch more bugs.\n"
 	@printf "      Use them before commits or releases.\n"
@@ -2485,6 +2701,11 @@ $(FLAGS_STAMP): force-flags
 $(ASAN_FLAGS_STAMP): force-flags
 	@mkdir -p $(@D)
 	@printf '%s\n' '$(ASAN_CFLAGS) $(ASAN_CXXFLAGS) $(ASAN_LDFLAGS) $(INCLUDE)' > $@.new
+	@cmp -s $@.new $@ 2>/dev/null && rm -f $@.new || mv -f $@.new $@
+
+$(TSAN_FLAGS_STAMP): force-flags
+	@mkdir -p $(@D)
+	@printf '%s\n' '$(TSAN_CFLAGS) $(TSAN_CXXFLAGS) $(TSAN_LDFLAGS) $(INCLUDE)' > $@.new
 	@cmp -s $@.new $@ 2>/dev/null && rm -f $@.new || mv -f $@.new $@
 
 $(FUZZ_FLAGS_STAMP): force-flags

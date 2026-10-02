@@ -125,6 +125,152 @@ jobs:
         working-directory: text
         run: make test-valgrind-quiet PREFIX="$PREFIX"
 
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: text
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtest-dev
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Ghoti-io/CUtil
+          path: cutil
+
+      - name: Build and install cutil
+        working-directory: cutil
+        run: |
+          make -j"$(nproc)" PREFIX="$PREFIX"
+          make install PREFIX="$PREFIX"
+
+      # A separate job from asan because the two runtimes cannot be linked
+      # together, and separate from `test` because ASan and UBSan detect
+      # nothing about data races - measured in this library, not quoted:
+      # an unlocked "build the defaults once" cache planted in
+      # gtext_json_parse_options_default() passed ten of ten plain runs and ten
+      # of ten ASan+UBSan runs of tests/test-concurrency.cpp, and TSan reported
+      # it on the first run and named both accesses.
+      #
+      # What it guards is the claim in documentation/modules/Core.md section 7:
+      # distinct objects share nothing, because the library keeps no mutable
+      # global state. That is a property of the whole source tree, and the thing
+      # that breaks it is an ordinary-looking optimisation.
+      - name: Tests under ThreadSanitizer
+        working-directory: text
+        run: make test-tsan-quiet PREFIX="$PREFIX"
+
+  cross-windows:
+    name: Windows cross-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: text
+
+      # The cross toolchain on the runner itself. tools/cross-windows.sh uses a
+      # container only as a way to *get* a toolchain, and prefers one already on
+      # PATH - which is what makes this job possible at all: the Containerfile
+      # lives in the workspace notes and is not published with this library, so
+      # CI could not build that image.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtest-dev \
+            gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Ghoti-io/CUtil
+          path: cutil
+
+      - name: Build and install cutil
+        working-directory: cutil
+        run: |
+          make -j"$(nproc)" PREFIX="$PREFIX"
+          make install PREFIX="$PREFIX"
+
+      # A native build first: the generated headers under build/ are on the
+      # cross compile's include path, and a tree that has never been built has
+      # nothing to include. The script says so rather than failing fifty times.
+      - name: Build
+        working-directory: text
+        run: make -j"$(nproc)" PREFIX="$PREFIX"
+
+      # GTEXT_WORKSPACE is where .local lives, which in this layout is the
+      # directory above the checkout rather than two above it.
+      #
+      # This is compile-only and deliberately so; linking would need cutil,
+      # chron, unicode and regex cross-built too, and the question is whether
+      # this library's own sources are portable. It checks the artifact as well
+      # as the exit status: a clean compile does not say which arm of
+      # `#if defined(_WIN32)` produced it, and the .drectve section only an
+      # dllexport build emits is what distinguishes them.
+      - name: Compile every source for Windows
+        working-directory: text
+        run: make check-windows-cross PREFIX="$PREFIX"
+        env:
+          GTEXT_WORKSPACE: ..
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: text
+
+      # First Darwin build of this library. Until the cross-compile job above
+      # existed, every CI job was ubuntu-latest and the library had never been
+      # built off Linux at all; this is the other half of that, and the one that
+      # runs the tests rather than only compiling.
+      #
+      # The portability surface is small and known: the only preprocessor
+      # conditionals in src/ and include/ are the export macros in
+      # include/ghoti.io/text/macros.h, and macOS takes the same
+      # __attribute__((visibility("default"))) arm Linux does - there is no
+      # __APPLE__ anywhere in the shipping sources. The Makefile has the Darwin
+      # arms it needs (dylib, -install_name rather than -soname).
+      #
+      # Two places to look first if this job is red:
+      #
+      # - tests/test-locale-numbers.cpp needs a locale that separates with a
+      #   comma, and *fails* rather than skipping when it cannot get one, which
+      #   is deliberate. It probes for an installed one before trying to
+      #   generate it with localedef, and macOS ships de_DE.UTF-8, so the probe
+      #   should succeed; localedef does not exist there.
+      # - googletest comes from brew here, not from libgtest-dev, so
+      #   pkg-config has to find it. brew puts the .pc files outside the default
+      #   search path.
+      - name: Install build dependencies
+        run: |
+          brew install pkg-config googletest
+          echo "PKG_CONFIG_PATH=$(brew --prefix googletest)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Ghoti-io/CUtil
+          path: cutil
+
+      - name: Build and install cutil
+        working-directory: cutil
+        run: |
+          make -j"$(sysctl -n hw.ncpu)" PREFIX="$PREFIX"
+          make install PREFIX="$PREFIX"
+
+      - name: Build
+        working-directory: text
+        run: make -j"$(sysctl -n hw.ncpu)" PREFIX="$PREFIX"
+
+      - name: Tests
+        working-directory: text
+        run: make test PREFIX="$PREFIX"
+
   coverage:
     name: Coverage floor
     runs-on: ubuntu-latest

@@ -345,9 +345,10 @@ Concretely:
 
 This holds because the library keeps no mutable global state. Every parse
 writes only into the context, arena or table it was given, and the only
-file-scope variables in the sources are `const` tables. It was checked by
-searching for non-const file-scope variables rather than assumed - two things
-that turned up are worth naming, because they are easy to get wrong:
+file-scope variables in the sources are `const` tables - no function-local
+`static`, no lazily built table, no cache. It was checked by searching for
+non-const file-scope variables rather than assumed - two things that turned up
+are worth naming, because they are easy to get wrong:
 
 - **`gtext_version_string()` returns a compile-time constant.** There is no
   buffer for two threads to share.
@@ -363,9 +364,28 @@ that turned up are worth naming, because they are easy to get wrong:
 it are touched from more than one thread.** The library adds no locking of its
 own. The default stdlib allocator is thread-safe.
 
-None of this is enforced. There is no internal locking to disable and no
-thread-safe build variant; a caller that needs shared access provides its own
-mutual exclusion.
+Each of the four "yes" rows above is run from eight threads by
+`tests/test-concurrency.cpp`, which is also what `make test-tsan` is pointed
+at. The two halves answer different questions and both are needed: under the
+ordinary build those tests catch a torn or wrong *answer*, which is what a
+user of a racy build would see, and under ThreadSanitizer they catch the race
+whether or not it lost. `make test-asan` sees neither - ASan and UBSan detect
+nothing about data races at all. Measured here rather than asserted: an
+unlocked "build the defaults once and copy them" cache planted in
+`gtext_json_parse_options_default()` passed ten out of ten plain runs and ten
+out of ten ASan+UBSan runs, and ThreadSanitizer reported it on the first run,
+naming both accesses.
+
+The table's first row - the same object from two threads at once - is the
+documented prohibition and is deliberately *not* tested. A test for it would be
+a race on purpose: it would pass the plain build most of the time and fail
+`make test-tsan` by design, which is a gate reporting a defect that is not one.
+
+The guarantee itself is still not *enforced*. There is no internal locking to
+disable and no thread-safe build variant; a caller that needs shared access
+provides its own mutual exclusion. What the gate adds is that the property the
+guarantee rests on - no mutable global state - can no longer be broken quietly
+by an ordinary-looking optimisation.
 
 ## 8. Related Documentation
 
