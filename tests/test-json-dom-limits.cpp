@@ -58,6 +58,33 @@ size_t MeasureDepth(const GTEXT_JSON_Value * v) {
 	return d;
 }
 
+/* n nested objects, one member each, for the walks that descend through
+   objects rather than arrays - RFC 7386's MergePatch is defined over members,
+   so a nested *array* says nothing about it. */
+GTEXT_JSON_Value * BuildNestedObjects(size_t n) {
+	GTEXT_JSON_Value * inner = gtext_json_new_object();
+	if (!inner) return nullptr;
+	for (size_t i = 0; i < n; i++) {
+		GTEXT_JSON_Value * outer = gtext_json_new_object();
+		if (!outer) return nullptr;
+		if (gtext_json_object_put(outer, "k", 1, inner) != GTEXT_JSON_OK) {
+			return nullptr;
+		}
+		inner = outer;
+	}
+	return inner;
+}
+
+size_t MeasureObjectDepth(const GTEXT_JSON_Value * v) {
+	size_t d = 0;
+	while (v && gtext_json_typeof(v) == GTEXT_JSON_OBJECT
+			&& gtext_json_object_size(v) > 0) {
+		v = gtext_json_object_get(v, "k", 1);
+		d++;
+	}
+	return d;
+}
+
 /* Run @p fn on a thread with a deliberately small stack.
  *
  * The walks under test die in proportion to depth, and on the main thread's
@@ -357,4 +384,93 @@ TEST(JsonDomLimits, APatchDoesNotLeakWhatTheTargetWasHolding) {
 		gtext_json_free(patch);
 		gtext_json_free(root);
 	}
+}
+
+/* The deep copy everything else is built on: gtext_json_clone(),
+   gtext_json_object_merge(), and every patch operation that stores a value all
+   go through it, so it is the most ordinary call in the library to reach a
+   recursion with. */
+TEST(JsonDomLimits, CloningADeepValueDoesNotUseTheCStack) {
+	const size_t depth = 12000;
+	GTEXT_JSON_Value * v = BuildNested(depth);
+	ASSERT_NE(v, nullptr);
+	ASSERT_EQ(MeasureDepth(v), depth);
+
+	GTEXT_JSON_Value * copy = nullptr;
+	RunOnSmallStack([&] { copy = gtext_json_clone(v); });
+	ASSERT_NE(copy, nullptr);
+	/* The control: a clone that came back shallower would not crash either. */
+	EXPECT_EQ(MeasureDepth(copy), depth);
+	/* And it is a copy rather than the same value. */
+	EXPECT_NE(copy, v);
+
+	gtext_json_free(copy);
+	gtext_json_free(v);
+}
+
+/* RFC 7386's MergePatch walks *members*, so this nests objects: a deep array
+   would be cloned rather than merged and would say nothing about the merge
+   itself.  That distinction is why this is a separate test and not a second
+   depth in the one above - the first version of this probe used arrays and the
+   merge never recursed at all. */
+TEST(JsonDomLimits, MergePatchingADeepObjectDoesNotUseTheCStack) {
+	const size_t depth = 8000;
+	GTEXT_JSON_Value * target = BuildNestedObjects(depth);
+	GTEXT_JSON_Value * patch = BuildNestedObjects(depth);
+	ASSERT_NE(target, nullptr);
+	ASSERT_NE(patch, nullptr);
+	ASSERT_EQ(MeasureObjectDepth(target), depth);
+	ASSERT_EQ(MeasureObjectDepth(patch), depth);
+
+	GTEXT_JSON_Status status = GTEXT_JSON_E_INVALID;
+	RunOnSmallStack([&] { status = gtext_json_merge_patch(target, patch, nullptr); });
+	EXPECT_EQ(status, GTEXT_JSON_OK);
+	/* The control: the merge reached the bottom.  Merging a shape into itself
+	   leaves it unchanged, so the depth is the thing to check. */
+	EXPECT_EQ(MeasureObjectDepth(target), depth);
+
+	gtext_json_free(target);
+	gtext_json_free(patch);
+}
+
+/* The patch file had a second copy of deep equality - its own type switch, its
+   own number ladder, its own unordered key match - used by RFC 6902's "test"
+   operation and by schema validation.  It now calls the one in json_dom.c,
+   which is both the de-duplication and the depth fix.
+   
+   Reached here through gtext_json_patch_apply(), which is the door that gets to
+   it: a first version of this test called gtext_json_equal() directly and
+   passed with the recursion still in place, which is a test of the wrong
+   function wearing the right name. */
+TEST(JsonDomLimits, ThePatchTestOperationComparesDeeply) {
+	const size_t depth = 12000;
+
+	GTEXT_JSON_Value * doc = gtext_json_new_object();
+	ASSERT_NE(doc, nullptr);
+	ASSERT_EQ(gtext_json_object_put(doc, "deep", 4, BuildNested(depth)),
+		GTEXT_JSON_OK);
+
+	/* [{"op":"test","path":"/deep","value":<the same deep value>}] */
+	GTEXT_JSON_Value * op = gtext_json_new_object();
+	ASSERT_NE(op, nullptr);
+	ASSERT_EQ(gtext_json_object_put(op, "op", 2,
+		gtext_json_new_string("test", 4)), GTEXT_JSON_OK);
+	ASSERT_EQ(gtext_json_object_put(op, "path", 4,
+		gtext_json_new_string("/deep", 5)), GTEXT_JSON_OK);
+	GTEXT_JSON_Value * expected = BuildNested(depth);
+	ASSERT_NE(expected, nullptr);
+	ASSERT_EQ(gtext_json_object_put(op, "value", 5, expected), GTEXT_JSON_OK);
+	GTEXT_JSON_Value * patch = gtext_json_new_array();
+	ASSERT_NE(patch, nullptr);
+	ASSERT_EQ(gtext_json_array_push(patch, op), GTEXT_JSON_OK);
+
+	GTEXT_JSON_Status status = GTEXT_JSON_E_INVALID;
+	RunOnSmallStack([&] { status = gtext_json_patch_apply(doc, patch, nullptr); });
+	/* The control is the answer itself: "test" succeeds only if the comparison
+	   went all the way down, and a walk that gave up early would report a
+	   mismatch rather than crash. */
+	EXPECT_EQ(status, GTEXT_JSON_OK);
+
+	gtext_json_free(patch);
+	gtext_json_free(doc);
 }

@@ -40,12 +40,12 @@
 // Helper function to deep clone a JSON value into the same context
 // This is needed for the copy operation and schema validation
 // Made non-static so it can be shared with json_schema.c
-GTEXT_JSON_Value * json_value_clone(
+/* Everything about a clone except its children: the node, its scalar payload,
+   and - for a container - the child storage, sized for the source and left
+   empty.  The children are filled in by json_value_clone(), which does it
+   without recursing. */
+static GTEXT_JSON_Value * json_value_clone_shallow(
     const GTEXT_JSON_Value * src, json_context * ctx) {
-  if (!src || !ctx) {
-    return NULL;
-  }
-
   GTEXT_JSON_Value * dst = json_value_new_with_existing_context(src->type, ctx);
   if (!dst) {
     return NULL;
@@ -121,17 +121,6 @@ GTEXT_JSON_Value * json_value_clone(
     else {
       dst->as.array.elems = NULL;
     }
-
-    // Clone each element
-    for (size_t i = 0; i < src->as.array.count; i++) {
-      GTEXT_JSON_Value * cloned_elem =
-          json_value_clone(src->as.array.elems[i], ctx);
-      if (!cloned_elem) {
-        return NULL;
-      }
-      dst->as.array.elems[i] = cloned_elem;
-      dst->as.array.count++;
-    }
     break;
   }
 
@@ -158,34 +147,6 @@ GTEXT_JSON_Value * json_value_clone(
     else {
       dst->as.object.pairs = NULL;
     }
-
-    // Clone each key-value pair
-    for (size_t i = 0; i < src->as.object.count; i++) {
-      // Allocate and copy key
-      // Check for integer overflow in key_len + 1
-      if (src->as.object.pairs[i].key_len > SIZE_MAX - 1) {
-        return NULL; // Overflow
-      }
-      char * key = (char *)json_arena_alloc_for_context(
-          ctx, src->as.object.pairs[i].key_len + 1, 1);
-      if (!key) {
-        return NULL;
-      }
-      memcpy(key, src->as.object.pairs[i].key, src->as.object.pairs[i].key_len);
-      key[src->as.object.pairs[i].key_len] = '\0';
-
-      // Clone value
-      GTEXT_JSON_Value * cloned_val =
-          json_value_clone(src->as.object.pairs[i].value, ctx);
-      if (!cloned_val) {
-        return NULL;
-      }
-
-      dst->as.object.pairs[i].key = key;
-      dst->as.object.pairs[i].key_len = src->as.object.pairs[i].key_len;
-      dst->as.object.pairs[i].value = cloned_val;
-      dst->as.object.count++;
-    }
     break;
   }
   }
@@ -193,92 +154,172 @@ GTEXT_JSON_Value * json_value_clone(
   return dst;
 }
 
-// Helper function to check deep equality of two JSON values
-// This is needed for the test operation and schema validation
-// Made non-static so it can be shared with json_schema.c
+/* Where a clone is inside one container: which child of @src is next, and the
+   @dst that is being filled. */
+typedef struct {
+  const GTEXT_JSON_Value * src;
+  GTEXT_JSON_Value * dst;
+  size_t i;
+} json_clone_frame;
+
+/* Deep clone @p src into @p ctx, with the walk's stack on the heap.
+ *
+ * This is the deep copy everything in this library uses - gtext_json_clone(),
+ * gtext_json_object_merge(), every patch operation that stores a value - and it
+ * was a recursion.  A value built through the DOM API has no depth limit to
+ * bound it: max_depth is a *parser* option, and json_core.h is careful to say
+ * so.  Twenty thousand levels on a 512 KB stack took the process down, and it
+ * is reached through the most ordinary call in the file.
+ *
+ * Cycles are not guarded against and do not need to be: a value cannot contain
+ * itself, because json_check_no_cycle() refuses the insertion that would do it.
+ *
+ * The destination's `count` grows as children land, exactly as the recursion
+ * left it, so a clone that fails part way leaves a shorter container rather
+ * than one with holes in it - and its caller frees the whole context, or is
+ * returning NULL into one it owns. */
+GTEXT_JSON_Value * json_value_clone(
+    const GTEXT_JSON_Value * src, json_context * ctx) {
+  if (!src || !ctx) {
+    return NULL;
+  }
+
+  GTEXT_JSON_Value * root = json_value_clone_shallow(src, ctx);
+  if (!root) {
+    return NULL;
+  }
+  if (src->type != GTEXT_JSON_ARRAY && src->type != GTEXT_JSON_OBJECT) {
+    return root;
+  }
+
+  json_clone_frame inline_frames[64];
+  json_clone_frame * frames = inline_frames;
+  size_t count = 0;
+  size_t capacity = sizeof(inline_frames) / sizeof(inline_frames[0]);
+  GTEXT_JSON_Value * answer = root;
+
+  #define JSON_CLONE_PUSH(s, d)                                                \
+    do {                                                                       \
+      if (count == capacity) {                                                 \
+        size_t new_capacity = capacity * 2;                                    \
+        json_clone_frame * grown;                                              \
+        if (frames == inline_frames) {                                         \
+          grown = (json_clone_frame *)gtext_allocator_malloc(                  \
+              NULL, new_capacity * sizeof(*grown));                            \
+          if (grown) memcpy(grown, frames, count * sizeof(*grown));            \
+        }                                                                      \
+        else {                                                                 \
+          grown = (json_clone_frame *)gtext_allocator_realloc(                 \
+              NULL, frames, new_capacity * sizeof(*grown));                    \
+        }                                                                      \
+        if (!grown) { answer = NULL; goto done; }                              \
+        frames = grown;                                                        \
+        capacity = new_capacity;                                               \
+      }                                                                        \
+      frames[count].src = (s);                                                 \
+      frames[count].dst = (d);                                                 \
+      frames[count].i = 0;                                                     \
+      count++;                                                                 \
+    } while (0)
+
+  JSON_CLONE_PUSH(src, root);
+
+  while (count > 0) {
+    json_clone_frame * f = &frames[count - 1];
+    const bool is_object = (f->src->type == GTEXT_JSON_OBJECT);
+    const size_t children =
+        is_object ? f->src->as.object.count : f->src->as.array.count;
+
+    if (f->i >= children) {
+      count--;
+      continue;
+    }
+
+    const size_t i = f->i;
+    const GTEXT_JSON_Value * child_src = is_object
+        ? f->src->as.object.pairs[i].value
+        : f->src->as.array.elems[i];
+    GTEXT_JSON_Value * parent_dst = f->dst;
+
+    if (is_object) {
+      // Allocate and copy key
+      // Check for integer overflow in key_len + 1
+      const size_t key_len = f->src->as.object.pairs[i].key_len;
+      if (key_len > SIZE_MAX - 1) {
+        answer = NULL; // Overflow
+        goto done;
+      }
+      char * key = (char *)json_arena_alloc_for_context(ctx, key_len + 1, 1);
+      if (!key) {
+        answer = NULL;
+        goto done;
+      }
+      memcpy(key, f->src->as.object.pairs[i].key, key_len);
+      key[key_len] = '\0';
+      parent_dst->as.object.pairs[i].key = key;
+      parent_dst->as.object.pairs[i].key_len = key_len;
+    }
+
+    GTEXT_JSON_Value * child_dst = NULL;
+    if (child_src) {
+      child_dst = json_value_clone_shallow(child_src, ctx);
+      if (!child_dst) {
+        answer = NULL;
+        goto done;
+      }
+    }
+    else {
+      /* The recursion returned NULL for a NULL child and its caller treated
+         that as a failure, so a container holding a NULL child could not be
+         cloned at all.  Kept, rather than quietly changed: it is a separate
+         question from this one. */
+      answer = NULL;
+      goto done;
+    }
+
+    if (is_object) {
+      parent_dst->as.object.pairs[i].value = child_dst;
+      parent_dst->as.object.count++;
+    }
+    else {
+      parent_dst->as.array.elems[i] = child_dst;
+      parent_dst->as.array.count++;
+    }
+
+    /* Advanced before the push, which can move the frame array. */
+    f->i++;
+
+    if (child_src->type == GTEXT_JSON_ARRAY
+        || child_src->type == GTEXT_JSON_OBJECT) {
+      JSON_CLONE_PUSH(child_src, child_dst);
+    }
+  }
+
+done:
+  #undef JSON_CLONE_PUSH
+  if (frames != inline_frames) {
+    gtext_allocator_free(NULL, frames);
+  }
+  return answer;
+}
+
+/* Deep equality for the test operation and for schema validation.
+ *
+ * This was a second copy of the predicate gtext_json_equal() already
+ * implements, written out again in this file: the same type switch, the same
+ * i64-then-u64-then-double-then-lexeme ladder for numbers, the same
+ * unordered key match for objects.  Two copies of one decision drift, and
+ * these had: the one in json_dom.c checks for NULL string data and NULL child
+ * storage before reading them and this one did not.
+ *
+ * It was also a recursion, like everything else that walked a value in this
+ * file, and so had no bound for a value built through the DOM API.  Both
+ * problems have one answer, which is to ask the function that already knows.
+ *
+ * GTEXT_JSON_EQUAL_NUMERIC is what this always did: compare numbers by value
+ * where both sides have a representation, and fall back to the lexeme. */
 int json_value_equal(const GTEXT_JSON_Value * a, const GTEXT_JSON_Value * b) {
-  if (a == b) {
-    return 1; // Same pointer
-  }
-
-  if (!a || !b) {
-    return 0; // One is NULL
-  }
-
-  if (a->type != b->type) {
-    return 0; // Different types
-  }
-
-  switch (a->type) {
-  case GTEXT_JSON_NULL:
-    return 1; // Both are null
-
-  case GTEXT_JSON_BOOL:
-    return a->as.boolean == b->as.boolean;
-
-  case GTEXT_JSON_STRING:
-    if (a->as.string.len != b->as.string.len) {
-      return 0;
-    }
-    return memcmp(a->as.string.data, b->as.string.data, a->as.string.len) == 0;
-
-  case GTEXT_JSON_NUMBER: {
-    // For numbers, check if they are numerically equal
-    // First check if both have the same representation available
-    if (a->as.number.has_i64 && b->as.number.has_i64) {
-      return a->as.number.i64 == b->as.number.i64;
-    }
-    if (a->as.number.has_u64 && b->as.number.has_u64) {
-      return a->as.number.u64 == b->as.number.u64;
-    }
-    if (a->as.number.has_dbl && b->as.number.has_dbl) {
-      // Use approximate equality for doubles (with epsilon)
-      double diff = fabs(a->as.number.dbl - b->as.number.dbl);
-      return diff < 1e-15 || (a->as.number.dbl == b->as.number.dbl);
-    }
-    // Fall back to lexeme comparison
-    if (a->as.number.lexeme_len != b->as.number.lexeme_len) {
-      return 0;
-    }
-    return memcmp(a->as.number.lexeme, b->as.number.lexeme,
-               a->as.number.lexeme_len) == 0;
-  }
-
-  case GTEXT_JSON_ARRAY: {
-    if (a->as.array.count != b->as.array.count) {
-      return 0;
-    }
-    for (size_t i = 0; i < a->as.array.count; i++) {
-      if (!json_value_equal(a->as.array.elems[i], b->as.array.elems[i])) {
-        return 0;
-      }
-    }
-    return 1;
-  }
-
-  case GTEXT_JSON_OBJECT: {
-    if (a->as.object.count != b->as.object.count) {
-      return 0;
-    }
-    // For objects, we need to check that all keys in a exist in b with equal
-    // values and vice versa. Since objects may not have stable key order, we
-    // need to search for each key.
-    for (size_t i = 0; i < a->as.object.count; i++) {
-      const char * key = a->as.object.pairs[i].key;
-      size_t key_len = a->as.object.pairs[i].key_len;
-      const GTEXT_JSON_Value * b_val = gtext_json_object_get(b, key, key_len);
-      if (!b_val) {
-        return 0; // Key not found in b
-      }
-      if (!json_value_equal(a->as.object.pairs[i].value, b_val)) {
-        return 0; // Values not equal
-      }
-    }
-    return 1;
-  }
-  }
-
-  return 0; // Should not reach here
+  return gtext_json_equal(a, b, GTEXT_JSON_EQUAL_NUMERIC) ? 1 : 0;
 }
 
 // Parse a string field from an operation object
@@ -1568,8 +1609,74 @@ GTEXT_API GTEXT_JSON_Status gtext_json_patch_apply(GTEXT_JSON_Value * root,
 
 // Recursive helper function for JSON Merge Patch
 // Implements the MergePatch(Target, Patch) algorithm from RFC 7386
-static GTEXT_JSON_Status json_merge_patch_recursive(GTEXT_JSON_Value * target,
-    const GTEXT_JSON_Value * patch, GTEXT_JSON_Error * err) {
+/* Pairs of (target, patch) still to be merged.
+ *
+ * json_merge_patch_one() below used to call itself for a member whose target
+ * and patch are both objects, which made RFC 7386's algorithm a recursion over
+ * the patch - and a patch built through the DOM API has no depth limit, since
+ * max_depth is a *parser* option.  Twenty thousand nested objects on a 512 KB
+ * stack took the process down.
+ *
+ * The order the pairs come off does not matter: each one is a distinct target
+ * node and merge-patch is per-member, so no member's result depends on when
+ * another was done. */
+typedef struct {
+  GTEXT_JSON_Value * target;
+  const GTEXT_JSON_Value * patch;
+} json_mp_pair;
+
+typedef struct {
+  json_mp_pair * items;
+  size_t count;
+  size_t capacity;
+  json_mp_pair inline_items[32];
+} json_mp_work;
+
+static void json_mp_work_init(json_mp_work * w) {
+  w->items = w->inline_items;
+  w->count = 0;
+  w->capacity = sizeof(w->inline_items) / sizeof(w->inline_items[0]);
+}
+
+static void json_mp_work_free(json_mp_work * w) {
+  if (w->items != w->inline_items) {
+    gtext_allocator_free(NULL, w->items);
+  }
+}
+
+static bool json_mp_work_push(
+    json_mp_work * w, GTEXT_JSON_Value * target, const GTEXT_JSON_Value * patch) {
+  if (w->count == w->capacity) {
+    size_t new_capacity = w->capacity * 2;
+    json_mp_pair * grown;
+    if (w->items == w->inline_items) {
+      grown = (json_mp_pair *)gtext_allocator_malloc(
+          NULL, new_capacity * sizeof(*grown));
+      if (grown) {
+        memcpy(grown, w->items, w->count * sizeof(*grown));
+      }
+    }
+    else {
+      grown = (json_mp_pair *)gtext_allocator_realloc(
+          NULL, w->items, new_capacity * sizeof(*grown));
+    }
+    if (!grown) {
+      return false;
+    }
+    w->items = grown;
+    w->capacity = new_capacity;
+  }
+  w->items[w->count].target = target;
+  w->items[w->count].patch = patch;
+  w->count++;
+  return true;
+}
+
+/* One level of RFC 7386's MergePatch: everything but the members whose target
+   and patch are both objects, which go on @p work for the driver below. */
+static GTEXT_JSON_Status json_merge_patch_one(GTEXT_JSON_Value * target,
+    const GTEXT_JSON_Value * patch, GTEXT_JSON_Error * err,
+    json_mp_work * work) {
   if (!target || !patch) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
@@ -1809,10 +1916,12 @@ static GTEXT_JSON_Status json_merge_patch_recursive(GTEXT_JSON_Value * target,
       // Important: target_value_mut points to pairs[j].value
       // Even if the pairs array shifts during recursive operations, this
       // pointer should remain valid as long as we don't free the value itself
-      GTEXT_JSON_Status status =
-          json_merge_patch_recursive(target_value_mut, patch_value, err);
-      if (status != GTEXT_JSON_OK) {
-        return status;
+      if (!json_mp_work_push(work, target_value_mut, patch_value)) {
+        if (err) {
+          *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
+              .message = "Out of memory merging patch"};
+        }
+        return GTEXT_JSON_E_OOM;
       }
     }
     else {
@@ -1834,12 +1943,13 @@ static GTEXT_JSON_Status json_merge_patch_recursive(GTEXT_JSON_Value * target,
         // {"a":{"bb":{}}}, not the patch itself.
         cloned_value =
             json_value_new_with_existing_context(GTEXT_JSON_OBJECT, target_ctx);
-        if (cloned_value) {
-          GTEXT_JSON_Status sub =
-              json_merge_patch_recursive(cloned_value, patch_value, err);
-          if (sub != GTEXT_JSON_OK) {
-            return sub;
+        if (cloned_value
+            && !json_mp_work_push(work, cloned_value, patch_value)) {
+          if (err) {
+            *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
+                .message = "Out of memory merging patch"};
           }
+          return GTEXT_JSON_E_OOM;
         }
       }
       else {
@@ -1872,6 +1982,32 @@ static GTEXT_JSON_Status json_merge_patch_recursive(GTEXT_JSON_Value * target,
   }
 
   return GTEXT_JSON_OK;
+}
+
+/* The driver: one level at a time, with the pairs still to do on the heap. */
+static GTEXT_JSON_Status json_merge_patch_recursive(GTEXT_JSON_Value * target,
+    const GTEXT_JSON_Value * patch, GTEXT_JSON_Error * err) {
+  json_mp_work work;
+  json_mp_work_init(&work);
+  if (!json_mp_work_push(&work, target, patch)) {
+    if (err) {
+      *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
+          .message = "Out of memory merging patch"};
+    }
+    json_mp_work_free(&work);
+    return GTEXT_JSON_E_OOM;
+  }
+
+  GTEXT_JSON_Status status = GTEXT_JSON_OK;
+  while (work.count > 0) {
+    json_mp_pair pair = work.items[--work.count];
+    status = json_merge_patch_one(pair.target, pair.patch, err, &work);
+    if (status != GTEXT_JSON_OK) {
+      break;
+    }
+  }
+  json_mp_work_free(&work);
+  return status;
 }
 
 // Main JSON Merge Patch function
