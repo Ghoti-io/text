@@ -320,8 +320,17 @@ typedef struct {
    *   receives only the error and has no way to learn which allocator made
    *   it. Freeing it through a mismatched allocator would be worse than the
    *   one diagnostic allocation it avoids.
-   * - The writer, the streaming parser, JSON Pointer, Patch and Schema, none
-   *   of which takes an allocator yet.
+   * - JSON Patch and JSON Schema, neither of which takes an allocator yet.
+   * - The streaming parser, and that one is a trap rather than an absence:
+   *   gtext_json_stream_new() takes *these* options and reads nothing from
+   *   this member, so a caller who sets it still gets the stream's input
+   *   buffer, token buffer, state stack and key copies from the C library,
+   *   with no diagnostic anywhere. Do not rely on it there yet.
+   *
+   * The writer and JSON Pointer are covered and are not reached through this
+   * member, because neither takes parse options: see
+   * GTEXT_JSON_Write_Options::allocator below, and
+   * gtext_json_pointer_get_with_allocator().
    *
    * Nothing silently falls back: `make check-allocators` fails the build if a
    * file on the covered list calls malloc, calloc, realloc or free directly.

@@ -304,6 +304,8 @@
 #define GTEXT_JSON_Path GHOTIIO_TEXT(GTEXT_JSON_Path)
 #define GTEXT_JSON_Path_Result GHOTIIO_TEXT(GTEXT_JSON_Path_Result)
 #define gtext_json_pointer_get GHOTIIO_TEXT(gtext_json_pointer_get)
+#define gtext_json_pointer_get_with_allocator GHOTIIO_TEXT(gtext_json_pointer_get_with_allocator)
+#define gtext_json_pointer_get_mut_with_allocator GHOTIIO_TEXT(gtext_json_pointer_get_mut_with_allocator)
 #define gtext_json_pointer_get_mut GHOTIIO_TEXT(gtext_json_pointer_get_mut)
 #define gtext_json_schema_compile GHOTIIO_TEXT(gtext_json_schema_compile)
 #define gtext_json_schema_compile_with_options GHOTIIO_TEXT(gtext_json_schema_compile_with_options)

@@ -116,10 +116,17 @@ static int json_pointer_parse_index(
   return 1;
 }
 
-// Internal function that performs the actual pointer evaluation
-// Handles both const and non-const versions
-static GTEXT_JSON_Value * json_pointer_evaluate(
-    GTEXT_JSON_Value * root, const char * ptr, size_t len) {
+/* Internal function that performs the actual pointer evaluation.
+   Handles both const and non-const versions.
+
+   @p alloc is where the one transient allocation here comes from - the decoded
+   token, which lives for one loop iteration and never escapes. It is a
+   parameter rather than read from options because neither public entry point
+   has any: see gtext_json_pointer_get_with_allocator(). json_patch.c needs it
+   threaded this way too, since every pointer walk a patch performs happens
+   inside a call the caller gave an allocator to. */
+static GTEXT_JSON_Value * json_pointer_evaluate(GTEXT_JSON_Value * root,
+    const char * ptr, size_t len, const GTEXT_Allocator * alloc) {
   if (!root || !ptr) {
     return NULL;
   }
@@ -191,7 +198,7 @@ static GTEXT_JSON_Value * json_pointer_evaluate(
     if (token_len > SIZE_MAX - 1) {
       return NULL; // Token too large
     }
-    char * decoded = (char *)malloc(token_len + 1);
+    char * decoded = (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!decoded) {
       return NULL;
     }
@@ -201,7 +208,7 @@ static GTEXT_JSON_Value * json_pointer_evaluate(
         ptr + token_start, token_len, decoded, token_len + 1, &decoded_len);
 
     if (status != GTEXT_JSON_OK) {
-      free(decoded);
+      gtext_allocator_free(alloc, decoded);
       return NULL;
     }
 
@@ -213,18 +220,18 @@ static GTEXT_JSON_Value * json_pointer_evaluate(
 
     if (is_array_index) {
       if (current->type != GTEXT_JSON_ARRAY) {
-        free(decoded);
+        gtext_allocator_free(alloc, decoded);
         return NULL;
       }
       if (array_idx >= current->as.array.count) {
-        free(decoded);
+        gtext_allocator_free(alloc, decoded);
         return NULL;
       }
       current = current->as.array.elems[array_idx];
     }
     else {
       if (current->type != GTEXT_JSON_OBJECT) {
-        free(decoded);
+        gtext_allocator_free(alloc, decoded);
         return NULL;
       }
 
@@ -232,7 +239,7 @@ static GTEXT_JSON_Value * json_pointer_evaluate(
           (const GTEXT_JSON_Value *)current, decoded, decoded_len);
 
       if (!found) {
-        free(decoded);
+        gtext_allocator_free(alloc, decoded);
         return NULL;
       }
 
@@ -241,7 +248,7 @@ static GTEXT_JSON_Value * json_pointer_evaluate(
       current = (GTEXT_JSON_Value *)found;
     }
 
-    free(decoded);
+    gtext_allocator_free(alloc, decoded);
     pos = token_end;
   }
 
@@ -252,10 +259,22 @@ GTEXT_API const GTEXT_JSON_Value * gtext_json_pointer_get(
     const GTEXT_JSON_Value * root, const char * ptr, size_t len) {
   // Cast away const for internal evaluation
   // This is safe because we're only reading
-  return json_pointer_evaluate((GTEXT_JSON_Value *)root, ptr, len);
+  return json_pointer_evaluate((GTEXT_JSON_Value *)root, ptr, len, NULL);
 }
 
 GTEXT_API GTEXT_JSON_Value * gtext_json_pointer_get_mut(
     GTEXT_JSON_Value * root, const char * ptr, size_t len) {
-  return json_pointer_evaluate(root, ptr, len);
+  return json_pointer_evaluate(root, ptr, len, NULL);
+}
+
+GTEXT_API const GTEXT_JSON_Value * gtext_json_pointer_get_with_allocator(
+    const GTEXT_JSON_Value * root, const char * ptr, size_t len,
+    const GTEXT_Allocator * alloc) {
+  return json_pointer_evaluate((GTEXT_JSON_Value *)root, ptr, len, alloc);
+}
+
+GTEXT_API GTEXT_JSON_Value * gtext_json_pointer_get_mut_with_allocator(
+    GTEXT_JSON_Value * root, const char * ptr, size_t len,
+    const GTEXT_Allocator * alloc) {
+  return json_pointer_evaluate(root, ptr, len, alloc);
 }

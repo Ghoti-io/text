@@ -1070,3 +1070,116 @@ TEST(Allocator, JsonWriterWithNoAllocatorOptionStillWrites) {
 	gtext_json_sink_buffer_free(&sink);
 	gtext_json_free(v);
 }
+
+// ---------------------------------------------------------------------------
+// JSON Pointer.
+//
+// The walk allocates one transient buffer per token - the decoded form, since
+// `~0` and `~1` mean a token is not always a span of the input - released
+// before the next token is read. Nothing outlives the call, so there is no free
+// function to hand the allocator back to.
+//
+// Neither gtext_json_pointer_get() nor its mutable twin takes options, so this
+// is a separate entry point rather than a field, the shape
+// gtext_csv_new_table_with_allocator() already set.
+// ---------------------------------------------------------------------------
+
+TEST(Allocator, JsonPointerBalancesThroughTheAllocator) {
+	const char * doc = "{\"a\":{\"b\":[10,20,{\"c~d\":7}]}}";
+	GTEXT_JSON_Value * v = gtext_json_parse(doc, strlen(doc), nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	// Several tokens, and one carrying an escape so the decode is not a copy.
+	const char * ptr = "/a/b/2/c~0d";
+	const GTEXT_JSON_Value * found = gtext_json_pointer_get_with_allocator(
+		v, ptr, strlen(ptr), &alloc);
+	ASSERT_NE(found, nullptr);
+	EXPECT_EQ(gtext_json_typeof(found), GTEXT_JSON_NUMBER);
+
+	EXPECT_GT(c.total_allocations, 0u) << "the allocator was bypassed";
+	// Every token buffer is released inside the walk, so the balance holds the
+	// moment it returns rather than after some later free.
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_json_free(v);
+}
+
+TEST(Allocator, JsonPointerBalancesWhenTheWalkFails) {
+	// The error paths are the ones with a buffer in hand: six of the seven
+	// returns in the walk happen with `decoded` live. A pointer that resolves
+	// is the one case that does not exercise them.
+	const char * doc = "{\"a\":[1,2]}";
+	GTEXT_JSON_Value * v = gtext_json_parse(doc, strlen(doc), nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	const char * misses[] = {
+		"/a/9",      // index past the end
+		"/a/x",      // not an index, and the container is an array
+		"/nope",     // key absent
+		"/a/0/deep", // descending into a scalar
+	};
+	for (const char * ptr : misses) {
+		Counters c;
+		GTEXT_Allocator alloc = make_allocator(&c);
+		EXPECT_EQ(gtext_json_pointer_get_with_allocator(v, ptr, strlen(ptr), &alloc),
+			nullptr) << ptr;
+		EXPECT_EQ(c.live_blocks, 0u) << ptr;
+		EXPECT_EQ(c.live_bytes, 0u) << ptr;
+	}
+
+	gtext_json_free(v);
+}
+
+TEST(Allocator, JsonPointerMutableTwinUsesTheAllocatorToo) {
+	const char * doc = "{\"a\":{\"b\":1}}";
+	GTEXT_JSON_Value * v = gtext_json_parse(doc, strlen(doc), nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	const char * ptr = "/a/b";
+	GTEXT_JSON_Value * found =
+		gtext_json_pointer_get_mut_with_allocator(v, ptr, strlen(ptr), &alloc);
+	ASSERT_NE(found, nullptr);
+	EXPECT_GT(c.total_allocations, 0u) << "the allocator was bypassed";
+	EXPECT_EQ(c.live_blocks, 0u);
+
+	gtext_json_free(v);
+}
+
+TEST(Allocator, JsonPointerWithoutAnAllocatorStillResolves) {
+	// The delegating pair must be unchanged: same answers, and the caller's
+	// allocator untouched because it was never named.
+	const char * doc = "{\"a\":[1,2]}";
+	GTEXT_JSON_Value * v = gtext_json_parse(doc, strlen(doc), nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	// **Not a counter assertion.** The first version of this built a tracking
+	// allocator, passed NULL, and checked that it served nothing - which is true
+	// however the code behaves, since an allocator that is not passed cannot be
+	// reached. -Werror caught it as an unused variable, which was the compiler
+	// noticing the test was vacuous before I did.
+	//
+	// What is worth asserting is that the three spellings agree, so the
+	// delegating pair is still the same walk.
+	const char * ptr = "/a/1";
+	const GTEXT_JSON_Value * plain = gtext_json_pointer_get(v, ptr, strlen(ptr));
+	const GTEXT_JSON_Value * null_alloc =
+		gtext_json_pointer_get_with_allocator(v, ptr, strlen(ptr), nullptr);
+	ASSERT_NE(plain, nullptr);
+	EXPECT_EQ(plain, null_alloc) << "the NULL fallback resolved differently";
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	const GTEXT_JSON_Value * named =
+		gtext_json_pointer_get_with_allocator(v, ptr, strlen(ptr), &alloc);
+	EXPECT_EQ(plain, named) << "naming an allocator changed the answer";
+	EXPECT_GT(c.total_allocations, 0u) << "the named allocator was bypassed";
+	EXPECT_EQ(c.live_blocks, 0u);
+
+	gtext_json_free(v);
+}

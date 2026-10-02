@@ -202,15 +202,54 @@ Three defects planted, three caught, and two of them taught something:
   because a crash prints no summary. Same family as "the exit status is the
   verdict".
 
+## JSON Pointer: done
+
+The walk allocates one transient buffer per token - the decoded form, since `~0`
+and `~1` mean a token is not always a span of the input - and releases it before
+the next token is read. Nothing it allocates outlives the call, so no free
+function needs the allocator handed back.
+
+`gtext_json_pointer_get()` and `gtext_json_pointer_get_mut()` take **no options**,
+so there was nowhere to put a field.
+`gtext_json_pointer_get_with_allocator()` and
+`gtext_json_pointer_get_mut_with_allocator()` are the entry points that name one,
+the shape `gtext_csv_new_table_with_allocator()` already set for exactly this
+situation; the original two delegate with NULL and are unchanged.
+`src/json/json_pointer.c` is in `ALLOCATOR_CLEAN_SOURCES`.
+
+Threading it through `json_pointer_evaluate()` is also what `json_patch.c` will
+need: every pointer walk a patch performs happens inside a call the caller gave
+an allocator to, so the internal signature had to grow whether or not the public
+one did.
+
+### What the controls showed
+
+Three planted, three caught, and the second is why the failure-path test exists:
+
+- the buffer from the C library and freed through the allocator - the guard word,
+  sixteen times over eight tests.
+- **one error path leaking it.** Six of the walk's seven returns happen with the
+  buffer live, and a pointer that *resolves* takes none of them - so the success
+  test passes while a leak sits in the miss case. Only
+  `JsonPointerBalancesWhenTheWalkFails`, which walks four different ways to miss,
+  fails on this.
+- the entry points dropping the allocator on the way in, which balances
+  perfectly and is caught by asserting the allocator was used.
+
+One of my own: the first version of the NULL-fallback test built a tracking
+allocator, passed NULL, and asserted it served nothing - true however the code
+behaves, since an allocator that is not passed cannot be reached. `-Werror`
+reported it as an unused variable, which is the compiler noticing a vacuous test
+before I did. It compares the three spellings' answers now.
+
 ## The other JSON entry points
 
-`GTEXT_JSON_Parse_Options::allocator` covers parsing and
-`GTEXT_JSON_Write_Options::allocator` the writer. The streaming parser, JSON
-Pointer, JSON Patch and JSON Schema each have their own entry points and take no
-allocator. Each needs an options structure of its own or an added parameter;
+`GTEXT_JSON_Parse_Options::allocator` covers parsing,
+`GTEXT_JSON_Write_Options::allocator` the writer, and JSON Pointer has entry
+points of its own. The streaming parser, JSON Patch and JSON Schema still take no
+allocator; each needs an options structure of its own or an added parameter, and
 none of them shares the parse options. By raw allocation count the remaining work
-is roughly: `json_schema.c` 97 sites, `json_patch.c` 40, `json_stream.c` 13,
-`json_pointer.c` 7.
+is roughly: `json_schema.c` 97 sites, `json_patch.c` 40, `json_stream.c` 13.
 
 ## The error-snippet exception
 
