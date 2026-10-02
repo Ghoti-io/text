@@ -321,12 +321,18 @@ typedef struct {
    * gtext_json_reader_new(), whose event queue was already on this allocator
    * and whose stream now is too.
    *
+   * And covered by inheritance, without taking these options at all: whatever
+   * the parse recorded here is read back from the tree by
+   * gtext_json_patch_apply(), gtext_json_merge_patch() and
+   * gtext_json_clone(), each of which clones a document and used to put that
+   * copy in the C library.
+   *
    * Not covered, and still using the C library:
    * - `GTEXT_JSON_Error::context_snippet`, because gtext_json_error_free()
    *   receives only the error and has no way to learn which allocator made
    *   it. Freeing it through a mismatched allocator would be worse than the
    *   one diagnostic allocation it avoids.
-   * - JSON Patch and JSON Schema, neither of which takes an allocator yet.
+   * - JSON Schema, which does not take an allocator yet.
    *
    * The writer and JSON Pointer are covered and are not reached through this
    * member, because neither takes parse options: see

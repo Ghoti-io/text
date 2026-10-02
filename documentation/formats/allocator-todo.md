@@ -319,38 +319,90 @@ defect outright, which is worth knowing but is not a statement about the tests -
 both controls had to be rewritten into forms that compile before they measured
 anything.
 
-## The other JSON entry points
+## JSON Patch: done
 
-`GTEXT_JSON_Parse_Options::allocator` covers parsing, the streaming parser and
-its pull reader; `GTEXT_JSON_Write_Options::allocator` the writer; and JSON
-Pointer has entry points of its own. JSON Patch and JSON Schema are what remain,
-and **neither needs a new options structure**, which is worth stating plainly
-because the paragraph that stood here claimed both did and that is what made
-them look like the expensive half of this work:
+No API change, as predicted: `gtext_json_patch_apply()` and
+`gtext_json_merge_patch()` are handed a DOM, every `GTEXT_JSON_Value` carries
+`ctx`, and `json_context::alloc` is never NULL. All forty raw calls sat in three
+functions - `json_patch_find_parent_and_token()`, `json_patch_add()` and
+`json_patch_remove()` - each of which already takes `root`, so the conversion
+was `root->ctx->alloc` at three function tops and ten distinct call spellings
+rewritten.
 
-- **JSON Patch** needs no API change at all. `gtext_json_patch_apply()` and
-  `gtext_json_merge_patch()` are handed a DOM, every `GTEXT_JSON_Value` carries
-  `ctx`, and `json_context::alloc` is documented as never NULL - so the
-  allocator is already reachable from the argument. What is left is the
-  transient memory: the clone frame stack (already on `gtext_allocator_*`, with
-  an explicit NULL to replace) and the pointer-token buffers.
+### The larger half was not the token buffers
 
-  The nodes Patch *attaches* are already right, and that was worth checking
-  before anything else: they come from `json_arena_alloc_for_context()`, so they
-  are in the target's own arena. Had they come from the C library instead, this
-  would not have been a missing feature but a cross-allocator free - C-library
-  nodes inside an arena-allocated tree, released by `gtext_json_free()` through
-  the arena's allocator. They don't, so it isn't.
+Writing a test for the conversion found a defect the conversion would not have
+touched. Both entry points clone the whole document for atomicity, and built the
+clone's context with
 
-- **JSON Schema** already has `GTEXT_JSON_Schema_Options` and a
-  `gtext_json_schema_compile_with_options()` that takes it. It needs one field
-  added to an existing structure, exactly as `GTEXT_JSON_Write_Options` did.
-  `gtext_json_schema_validate()` takes a compiled schema, which can record the
-  allocator the compile was given, the way the DOM records its own.
+```c
+json_context * clone_ctx = json_context_new(NULL);
+```
 
-By raw `malloc`/`calloc`/`realloc`/`free` call count the remaining work is
-roughly `json_schema.c` 97, `json_patch.c` 40 and `json_uri.c` 13, the last
-reached only from Schema. Those are call counts, not distinct allocations.
+so **a deep copy of the entire document came from the C library on every patch
+call**, discarding an allocator that was sitting in `root->ctx`. That is far
+more memory than every token buffer in the file put together, and for an arena
+caller it is the allocation they would most want inside it. It also decided
+what the operations allocated through, because they read the allocator from the
+tree they are given and that tree is the clone - so converting the token buffers
+without this would have left them correctly reading the *wrong* allocator.
+
+`gtext_json_clone()` had it too, through `json_value_clone_into_new_context()`
+in `json_dom.c`: a public entry point that takes no options, whose only possible
+allocator is the source's, passing NULL. Self-consistent - the clone records the
+context that made it, so `gtext_json_free()` releases through the same one - and
+a complete bypass. All three now inherit.
+
+**`json_dom.c` was already on `ALLOCATOR_CLEAN_SOURCES` and passed throughout.**
+`json_context_new(NULL)` is not a `malloc` call, so the grep cannot see it. This
+is the same blindness as the pull reader, and worth stating as its own shape:
+the check sees raw allocation *calls*, so an allocator discarded at an internal
+API boundary is invisible to it. Audit for that by grepping the constructor
+rather than the allocator, and ask of each site whether an allocator was
+available to pass.
+
+`json_context_new(` has **14 call sites**, counted rather than estimated:
+
+| where | count | passes |
+| --- | --- | --- |
+| `json_dom.c`, the `gtext_json_new_*` builders | 9 | `NULL`, correctly - no caller allocator exists to inherit |
+| `json_dom.c`, `gtext_json_clone()` | 1 | the source's, as of this commit |
+| `json_patch.c` | 2 | the tree's, as of this commit |
+| `json_parser.c` | 1 | `opt->allocator` - the one that was always right |
+| `json_schema.c:4739` | 1 | `NULL`, and outstanding - the schema's own context |
+
+One incorrect `NULL` is left, and it belongs with the Schema work below.
+
+### What the controls showed
+
+| control | result |
+| --- | --- |
+| A. `patch_apply`'s clone context back to `json_context_new(NULL)` | rc=1, fails `JsonPatchBalancesThroughTheAllocator` and nothing else |
+| B. `gtext_json_clone()`'s context back to NULL | rc=1, fails `JsonCloneInheritsTheSourcesAllocator` and nothing else |
+| C. the fourteen `token_buf` frees back to the C library | rc=134, `munmap_chunk(): invalid pointer` - caught by glibc before gtest reports, so it prints no summary |
+
+A and B failing exactly one test each is the useful part: the clone fix and the
+token-buffer conversion are separately covered, so neither can regress behind
+the other.
+
+The first version of `JsonPatchBalancesThroughTheAllocator` is also why the
+patch document matters. Its paths were plain object keys, the token buffers are
+only allocated for a token that must be decoded or parsed as an index, and the
+test reported `88 vs 88` - the patch had allocated nothing at all through the
+tree's allocator. The paths now use `~0`, `~1` and numeric indices deliberately.
+
+## JSON Schema: what is left
+
+`GTEXT_JSON_Schema_Options` already exists and
+`gtext_json_schema_compile_with_options()` already takes it, so Schema needs one
+field added to an existing structure, as `GTEXT_JSON_Write_Options` did - not a
+new structure. `gtext_json_schema_validate()` takes a compiled schema, which can
+record the allocator its compile was given, the way the DOM records its own.
+`json_schema.c:4739`'s `json_context_new(NULL)` is part of that work.
+
+By raw `malloc`/`calloc`/`realloc`/`free` call count what remains is
+`json_schema.c` 97 and `json_uri.c` 13, the latter reached only from Schema.
+Those are call counts, not distinct allocations.
 
 ### A check that would have caught the pull reader
 

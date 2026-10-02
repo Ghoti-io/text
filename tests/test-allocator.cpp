@@ -1390,3 +1390,181 @@ TEST(Allocator, JsonStreamWithoutAnAllocatorStillParses) {
 	EXPECT_FALSE(plain.empty());
 	EXPECT_EQ(c.live_blocks, 0u);
 }
+
+/*
+ * JSON Patch, which needed no API change: a patch is applied to a tree, and
+ * json_context::alloc records the allocator the parse was given, so
+ * gtext_json_patch_apply() can read it from its own argument.  That makes the
+ * allocator the *parse* was handed the one a patch must use - which is also why
+ * these tests pass one set of options and then assert on the same counters
+ * across both calls.
+ *
+ * The token buffers only exist for a token that has to be decoded or parsed as
+ * an index, so the paths below are chosen for that: `~0` and `~1` escapes, and
+ * numeric array indices.  A patch over plain unescaped object keys allocates
+ * nothing here and would pass whatever this code did.
+ */
+TEST(Allocator, JsonPatchBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	opts.allocator = &alloc;
+
+	const char * doc = R"({"a~b":1,"c/d":2,"arr":[10,20,30],"o":{"k":"v"}})";
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Value * root =
+	    gtext_json_parse(doc, std::strlen(doc), &opts, &err);
+	ASSERT_NE(root, nullptr) << (err.message ? err.message : "parse failed");
+
+	// Every operation whose path needs decoding or index parsing.
+	const char * patch_text = R"([
+	  {"op":"replace","path":"/a~0b","value":11},
+	  {"op":"replace","path":"/c~1d","value":22},
+	  {"op":"add","path":"/arr/1","value":15},
+	  {"op":"remove","path":"/arr/0"},
+	  {"op":"add","path":"/arr/-","value":40},
+	  {"op":"add","path":"/o/new","value":"w"},
+	  {"op":"remove","path":"/o/k"}
+	])";
+	GTEXT_JSON_Value * patch =
+	    gtext_json_parse(patch_text, std::strlen(patch_text), &opts, &err);
+	ASSERT_NE(patch, nullptr) << (err.message ? err.message : "patch failed");
+
+	size_t before = c.total_allocations;
+	EXPECT_EQ(gtext_json_patch_apply(root, patch, &err), GTEXT_JSON_OK)
+	    << (err.message ? err.message : "apply failed");
+	EXPECT_GT(c.total_allocations, before)
+	    << "the patch allocated nothing through the tree's allocator";
+
+	gtext_json_free(patch);
+	gtext_json_free(root);
+	gtext_json_error_free(&err);
+
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonPatchBalancesWhenAnOperationFails) {
+	// The error paths, which are most of the frees in this file: a token that
+	// decodes and then names nothing, and an index past the end.  Each returns
+	// with both buffers live, so a missed free here is invisible to a patch
+	// that succeeds.
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	opts.allocator = &alloc;
+
+	const char * patches[] = {
+	    R"([{"op":"replace","path":"/no~0such","value":1}])",
+	    R"([{"op":"remove","path":"/arr/99"}])",
+	    R"([{"op":"add","path":"/arr/99","value":1}])",
+	    R"([{"op":"remove","path":"/o/missing"}])",
+	    R"([{"op":"replace","path":"/arr/notanindex","value":1}])",
+	};
+	for (const char * patch_text : patches) {
+		const char * doc = R"({"a~b":1,"arr":[1,2],"o":{"k":"v"}})";
+		GTEXT_JSON_Error err;
+		std::memset(&err, 0, sizeof(err));
+		GTEXT_JSON_Value * root =
+		    gtext_json_parse(doc, std::strlen(doc), &opts, &err);
+		ASSERT_NE(root, nullptr);
+		GTEXT_JSON_Value * patch =
+		    gtext_json_parse(patch_text, std::strlen(patch_text), &opts, &err);
+		ASSERT_NE(patch, nullptr);
+
+		EXPECT_NE(gtext_json_patch_apply(root, patch, &err), GTEXT_JSON_OK)
+		    << patch_text << " should not apply";
+
+		gtext_json_free(patch);
+		gtext_json_free(root);
+		gtext_json_error_free(&err);
+	}
+	EXPECT_EQ(c.live_blocks, 0u) << "a refused operation leaked";
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonPatchWithoutAnAllocatorStillApplies) {
+	// The default path, compared against the named-allocator path rather than
+	// only asserted to work: both must produce the same document.
+	const char * doc = R"({"a~b":1,"arr":[1,2,3]})";
+	const char * patch_text = R"([
+	  {"op":"replace","path":"/a~0b","value":9},
+	  {"op":"add","path":"/arr/1","value":5}
+	])";
+
+	auto apply_with = [&](const GTEXT_JSON_Parse_Options * o) {
+		GTEXT_JSON_Error err;
+		std::memset(&err, 0, sizeof(err));
+		GTEXT_JSON_Value * root =
+		    gtext_json_parse(doc, std::strlen(doc), o, &err);
+		GTEXT_JSON_Value * patch =
+		    gtext_json_parse(patch_text, std::strlen(patch_text), o, &err);
+		std::string out;
+		if (root && patch
+		    && gtext_json_patch_apply(root, patch, &err) == GTEXT_JSON_OK) {
+			GTEXT_JSON_Write_Options wo = gtext_json_write_options_default();
+			GTEXT_JSON_Sink sink;
+			if (gtext_json_sink_buffer(&sink) == GTEXT_JSON_OK) {
+				if (gtext_json_write_value(&sink, &wo, root, &err)
+				    == GTEXT_JSON_OK) {
+					out.assign(gtext_json_sink_buffer_data(&sink),
+					    gtext_json_sink_buffer_size(&sink));
+				}
+				gtext_json_sink_buffer_free(&sink);
+			}
+		}
+		gtext_json_free(patch);
+		gtext_json_free(root);
+		gtext_json_error_free(&err);
+		return out;
+	};
+
+	GTEXT_JSON_Parse_Options plain = gtext_json_parse_options_default();
+	EXPECT_EQ(plain.allocator, nullptr) << "no allocator by default";
+	std::string without = apply_with(&plain);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options named = gtext_json_parse_options_default();
+	named.allocator = &alloc;
+	std::string with = apply_with(&named);
+
+	EXPECT_FALSE(without.empty());
+	EXPECT_EQ(without, with) << "the two allocators gave different documents";
+	EXPECT_GT(c.total_allocations, 0u);
+	EXPECT_EQ(c.live_blocks, 0u);
+}
+
+TEST(Allocator, JsonCloneInheritsTheSourcesAllocator) {
+	// gtext_json_clone() takes no options, so the only allocator it could use
+	// is the source's - and it passed NULL, putting the copy in the C library
+	// while src->ctx held the caller's allocator.
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	opts.allocator = &alloc;
+
+	const char * doc = R"({"a":[1,2,3],"b":{"c":"d"},"e":"a longer string here"})";
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Value * root =
+	    gtext_json_parse(doc, std::strlen(doc), &opts, &err);
+	ASSERT_NE(root, nullptr) << (err.message ? err.message : "parse failed");
+
+	size_t before_blocks = c.live_blocks;
+	size_t before_bytes = c.live_bytes;
+	GTEXT_JSON_Value * copy = gtext_json_clone(root);
+	ASSERT_NE(copy, nullptr);
+	// A deep copy of this document is not small; if it came from the C library
+	// these would not move at all.
+	EXPECT_GT(c.live_blocks, before_blocks) << "the clone bypassed the allocator";
+	EXPECT_GT(c.live_bytes, before_bytes);
+	EXPECT_TRUE(gtext_json_equal(root, copy, GTEXT_JSON_EQUAL_LEXEME));
+
+	gtext_json_free(copy);
+	gtext_json_free(root);
+	gtext_json_error_free(&err);
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+}

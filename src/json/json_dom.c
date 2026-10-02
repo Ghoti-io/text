@@ -1570,8 +1570,18 @@ static GTEXT_JSON_Value * json_value_clone_into_new_context(
     return NULL;
   }
 
-  // Create a new context for the clone
-  json_context * new_ctx = json_context_new(NULL);
+  /*
+   * The clone inherits the source's allocator rather than the C library.
+   *
+   * gtext_json_clone() takes no options, so for a long time this passed NULL
+   * and a clone of an arena-allocated document came from the C library -
+   * self-consistent, because the clone records the context that made it and
+   * gtext_json_free() releases through it, but a complete bypass of an
+   * allocator that was sitting in src->ctx the whole time.  json_context::alloc
+   * is documented as never NULL, so there is nothing to default here.
+   */
+  json_context * new_ctx =
+      json_context_new(src->ctx ? src->ctx->alloc : NULL);
   if (!new_ctx) {
     return NULL;
   }

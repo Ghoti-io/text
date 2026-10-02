@@ -404,6 +404,15 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
     return GTEXT_JSON_E_INVALID;
   }
 
+  /*
+   * No options structure, and none needed: a patch is applied to a tree, and
+   * every GTEXT_JSON_Value carries the context that made it.  json_context
+   * records the allocator the parse was given and documents it as never NULL,
+   * so the caller's allocator is already in reach of the argument - which is
+   * why JSON Patch needed no API change to stop using the C library here.
+   */
+  const GTEXT_Allocator * alloc = root->ctx ? root->ctx->alloc : NULL;
+
   // Empty path means root itself
   if (path_len == 1 && path[0] == '/') {
     *out_parent = NULL; // No parent (root is the target)
@@ -440,7 +449,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
     int is_idx = 0;
     if (*out_token_len > 0) {
       // Try parsing as index
-      char * token_buf = (char *)malloc(*out_token_len + 1);
+      char * token_buf =
+          (char *)gtext_allocator_malloc(alloc, *out_token_len + 1);
       if (!token_buf) {
         return GTEXT_JSON_E_OOM;
       }
@@ -449,9 +459,10 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
 
       // Decode escape sequences
       size_t decoded_len;
-      char * decoded = (char *)malloc(*out_token_len + 1);
+      char * decoded =
+          (char *)gtext_allocator_malloc(alloc, *out_token_len + 1);
       if (!decoded) {
-        free(token_buf);
+        gtext_allocator_free(alloc, token_buf);
         return GTEXT_JSON_E_OOM;
       }
       // Simple decode: ~0 -> ~, ~1 -> /
@@ -462,8 +473,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
       for (size_t i = 0; i < *out_token_len; i++) {
         // Defensive bounds check (should never trigger, but prevents overflow)
         if (out_pos >= *out_token_len) {
-          free(decoded);
-          free(token_buf);
+          gtext_allocator_free(alloc, decoded);
+          gtext_allocator_free(alloc, token_buf);
           return GTEXT_JSON_E_INVALID;
         }
         if (token_buf[i] == '~' && i + 1 < *out_token_len) {
@@ -499,8 +510,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
         }
       }
 
-      free(decoded);
-      free(token_buf);
+      gtext_allocator_free(alloc, decoded);
+      gtext_allocator_free(alloc, token_buf);
     }
 
     *out_is_array_index = is_idx;
@@ -509,7 +520,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
 
   // Extract parent path (everything before last '/')
   size_t parent_path_len = last_slash_pos;
-  char * parent_path = (char *)malloc(parent_path_len + 1);
+  char * parent_path =
+      (char *)gtext_allocator_malloc(alloc, parent_path_len + 1);
   if (!parent_path) {
     return GTEXT_JSON_E_OOM;
   }
@@ -519,7 +531,7 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
   // Get parent value
   GTEXT_JSON_Value * parent =
       gtext_json_pointer_get_mut(root, parent_path, parent_path_len);
-  free(parent_path);
+  gtext_allocator_free(alloc, parent_path);
 
   if (!parent) {
     return GTEXT_JSON_E_INVALID;
@@ -533,7 +545,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
   int is_idx = 0;
   if (*out_token_len > 0) {
     // Try parsing as index
-    char * token_buf = (char *)malloc(*out_token_len + 1);
+    char * token_buf =
+          (char *)gtext_allocator_malloc(alloc, *out_token_len + 1);
     if (!token_buf) {
       return GTEXT_JSON_E_OOM;
     }
@@ -542,9 +555,10 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
 
     // Decode escape sequences
     size_t decoded_len;
-    char * decoded = (char *)malloc(*out_token_len + 1);
+    char * decoded =
+          (char *)gtext_allocator_malloc(alloc, *out_token_len + 1);
     if (!decoded) {
-      free(token_buf);
+      gtext_allocator_free(alloc, token_buf);
       return GTEXT_JSON_E_OOM;
     }
     // Simple decode: ~0 -> ~, ~1 -> /
@@ -555,8 +569,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
     for (size_t i = 0; i < *out_token_len; i++) {
       // Defensive bounds check (should never trigger, but prevents overflow)
       if (out_pos >= *out_token_len) {
-        free(decoded);
-        free(token_buf);
+        gtext_allocator_free(alloc, decoded);
+        gtext_allocator_free(alloc, token_buf);
         return GTEXT_JSON_E_INVALID;
       }
       if (token_buf[i] == '~' && i + 1 < *out_token_len) {
@@ -592,8 +606,8 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
       }
     }
 
-    free(decoded);
-    free(token_buf);
+    gtext_allocator_free(alloc, decoded);
+    gtext_allocator_free(alloc, token_buf);
   }
 
   *out_is_array_index = is_idx;
@@ -604,6 +618,7 @@ static GTEXT_JSON_Status json_patch_find_parent_and_token(
 static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
     const char * path, size_t path_len, const GTEXT_JSON_Value * value,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = root && root->ctx ? root->ctx->alloc : NULL;
   if (!root || !path || !value) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
@@ -662,7 +677,7 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
     // Add to array
 
     // Parse index
-    char * token_buf = (char *)malloc(token_len + 1);
+    char * token_buf = (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!token_buf) {
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -675,9 +690,9 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
 
     // Decode escape sequences
     size_t decoded_len;
-    char * decoded = (char *)malloc(token_len + 1);
+    char * decoded = (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!decoded) {
-      free(token_buf);
+      gtext_allocator_free(alloc, token_buf);
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
             .message = "Out of memory decoding array index"};
@@ -715,8 +730,8 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
       char * endptr;
       unsigned long long parsed = strtoull(decoded, &endptr, 10);
       if (*endptr != '\0' || parsed > SIZE_MAX) {
-        free(decoded);
-        free(token_buf);
+        gtext_allocator_free(alloc, decoded);
+        gtext_allocator_free(alloc, token_buf);
         if (err) {
           *err = (GTEXT_JSON_Error){
               .code = GTEXT_JSON_E_INVALID, .message = "Invalid array index"};
@@ -725,8 +740,8 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
       }
       idx = (size_t)parsed;
       if (idx > parent->as.array.count) {
-        free(decoded);
-        free(token_buf);
+        gtext_allocator_free(alloc, decoded);
+        gtext_allocator_free(alloc, token_buf);
         if (err) {
           *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
               .message = "Array index out of bounds"};
@@ -735,8 +750,8 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
       }
     }
 
-    free(decoded);
-    free(token_buf);
+    gtext_allocator_free(alloc, decoded);
+    gtext_allocator_free(alloc, token_buf);
 
     // Insert at index
     status = gtext_json_array_insert(parent, idx, cloned_value);
@@ -759,7 +774,8 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
     }
 
     // Decode token (handle escape sequences)
-    char * decoded_key = (char *)malloc(token_len + 1);
+    char * decoded_key =
+      (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!decoded_key) {
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -772,7 +788,7 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
     for (size_t i = 0; i < token_len; i++) {
       // Defensive bounds check (should never trigger, but prevents overflow)
       if (out_pos >= token_len) {
-        free(decoded_key);
+        gtext_allocator_free(alloc, decoded_key);
         if (err) {
           *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
               .message = "Buffer overflow in key decoding"};
@@ -801,7 +817,7 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
     // Put key-value pair (replaces if exists)
     status = gtext_json_object_put(
         parent, decoded_key, decoded_key_len, cloned_value);
-    free(decoded_key);
+    gtext_allocator_free(alloc, decoded_key);
 
     if (status != GTEXT_JSON_OK) {
       if (err) {
@@ -818,6 +834,7 @@ static GTEXT_JSON_Status json_patch_add(GTEXT_JSON_Value * root,
 // Implement remove operation
 static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     const char * path, size_t path_len, GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = root && root->ctx ? root->ctx->alloc : NULL;
   if (!root || !path) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
@@ -863,7 +880,7 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     // Remove from array
 
     // Parse index
-    char * token_buf = (char *)malloc(token_len + 1);
+    char * token_buf = (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!token_buf) {
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -876,9 +893,9 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
 
     // Decode escape sequences
     size_t decoded_len;
-    char * decoded = (char *)malloc(token_len + 1);
+    char * decoded = (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!decoded) {
-      free(token_buf);
+      gtext_allocator_free(alloc, token_buf);
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
             .message = "Out of memory decoding array index"};
@@ -889,8 +906,8 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     for (size_t i = 0; i < token_len; i++) {
       // Defensive bounds check (should never trigger, but prevents overflow)
       if (out_pos >= token_len) {
-        free(decoded);
-        free(token_buf);
+        gtext_allocator_free(alloc, decoded);
+        gtext_allocator_free(alloc, token_buf);
         if (err) {
           *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
               .message = "Buffer overflow in token decoding"};
@@ -920,8 +937,8 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     char * endptr;
     unsigned long long parsed = strtoull(decoded, &endptr, 10);
     if (*endptr != '\0' || parsed > SIZE_MAX) {
-      free(decoded);
-      free(token_buf);
+      gtext_allocator_free(alloc, decoded);
+      gtext_allocator_free(alloc, token_buf);
       if (err) {
         *err = (GTEXT_JSON_Error){
             .code = GTEXT_JSON_E_INVALID, .message = "Invalid array index"};
@@ -930,8 +947,8 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     }
     size_t idx = (size_t)parsed;
 
-    free(decoded);
-    free(token_buf);
+    gtext_allocator_free(alloc, decoded);
+    gtext_allocator_free(alloc, token_buf);
 
     if (idx >= parent->as.array.count) {
       if (err) {
@@ -961,7 +978,8 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     }
 
     // Decode token (handle escape sequences)
-    char * decoded_key = (char *)malloc(token_len + 1);
+    char * decoded_key =
+      (char *)gtext_allocator_malloc(alloc, token_len + 1);
     if (!decoded_key) {
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -974,7 +992,7 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     for (size_t i = 0; i < token_len; i++) {
       // Defensive bounds check (should never trigger, but prevents overflow)
       if (out_pos >= token_len) {
-        free(decoded_key);
+        gtext_allocator_free(alloc, decoded_key);
         if (err) {
           *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
               .message = "Buffer overflow in key decoding"};
@@ -1001,7 +1019,7 @@ static GTEXT_JSON_Status json_patch_remove(GTEXT_JSON_Value * root,
     size_t decoded_key_len = out_pos;
 
     status = gtext_json_object_remove(parent, decoded_key, decoded_key_len);
-    free(decoded_key);
+    gtext_allocator_free(alloc, decoded_key);
 
     if (status != GTEXT_JSON_OK) {
       if (err) {
@@ -1407,9 +1425,19 @@ GTEXT_API GTEXT_JSON_Status gtext_json_patch_apply(GTEXT_JSON_Value * root,
     return GTEXT_JSON_E_INVALID;
   }
 
-  // For atomicity: clone the root, apply operations to the clone,
-  // then copy the clone's content back to the original only if all succeed
-  json_context * clone_ctx = json_context_new(NULL);
+  /*
+   * For atomicity: clone the root, apply operations to the clone, then copy
+   * the clone's content back to the original only if all succeed.
+   *
+   * The clone's context takes the root's allocator.  Passing NULL here put a
+   * deep copy of the *entire document* in the C library's heap on every call,
+   * which is the largest single allocation a patch makes and the one a caller
+   * with an arena would most want inside it.  It also decided what the
+   * operations below allocate through, since they read the allocator from the
+   * tree they are given and that tree is this clone.
+   */
+  json_context * clone_ctx =
+      json_context_new(root->ctx ? root->ctx->alloc : NULL);
   if (!clone_ctx) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2023,9 +2051,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_merge_patch(GTEXT_JSON_Value * target,
     return GTEXT_JSON_E_INVALID;
   }
 
-  // For atomicity: clone the target, apply merge to the clone,
-  // then copy the clone's content back to the original only if all succeed
-  json_context * clone_ctx = json_context_new(NULL);
+  // For atomicity: clone the target, apply merge to the clone, then copy the
+  // clone's content back to the original only if all succeed.  The allocator
+  // comes from the target, for the reason given in gtext_json_patch_apply().
+  json_context * clone_ctx =
+      json_context_new(target->ctx ? target->ctx->alloc : NULL);
   if (!clone_ctx) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
