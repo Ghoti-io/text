@@ -1235,6 +1235,23 @@ GTEXT_API GTEXT_YAML_Node * gtext_yaml_node_clone(
  * The JSON value and all its descendants are owned by the caller and
  * must be freed with gtext_json_free().
  *
+ * **Nesting depth.** The conversion is a recursive descent, and it is bounded
+ * by the `max_depth` of the options @p yaml_doc was made with - the same limit
+ * gtext_yaml_write_document() holds a built document to. Past it the
+ * conversion returns @ref GTEXT_YAML_E_DEPTH. Until this was asked as its own
+ * question the depth was bounded only by `max_alias_expansion`, which is the
+ * alias-bomb budget and bounded depth as a side effect of bounding node count:
+ * a caller who raised that budget - the one documented knob for "this document
+ * is big and I know it" - lost a depth protection they were never told they
+ * had, and the process died at some tens of thousands of levels.
+ *
+ * `max_depth = SIZE_MAX` still means no limit, and here that is the same
+ * bargain gtext_json_parse() documents for its own recursive descent: raising
+ * the limit is choosing a number rather than removing one. What this function
+ * produces is a JSON value, and the reader that would read it back says so in
+ * the same words. For deep or untrusted input, convert a document that carries
+ * a real `max_depth`.
+ *
  * Supported conversions:
  * - YAML null → JSON null
  * - YAML bool → JSON boolean

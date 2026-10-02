@@ -35,6 +35,7 @@
 #include <string>
 
 extern "C" {
+#include <ghoti.io/text/json.h>
 #include <ghoti.io/text/yaml.h>
 }
 
@@ -72,6 +73,15 @@ size_t MeasureDepth(const GTEXT_YAML_Node *n) {
 		d++;
 	}
 	return d;
+}
+
+GTEXT_YAML_Status ToJsonIt(const GTEXT_YAML_Document *doc) {
+	GTEXT_JSON_Value *json = nullptr;
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Status st = gtext_yaml_to_json(doc, &json, &err);
+	if (json) gtext_json_free(json);
+	return st;
 }
 
 GTEXT_YAML_Status WriteIt(const GTEXT_YAML_Document *doc) {
@@ -273,4 +283,57 @@ TEST(YamlBuiltDepth, AParsedDocumentIsUnchanged) {
 int main(int argc, char **argv) {
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
+}
+
+/* And the conversion to JSON, which is the third recursive descent over a
+   built document and the one whose guard was an accident.
+   
+   convert_node() looked guarded, and was, but not against depth: what stopped
+   it was max_nodes, taken from max_alias_expansion, which exists for the alias
+   *bomb* - a DAG that resolves to an exponentially larger tree, where "every
+   path is distinct" defeats the cycle check.  Depth was bounded only as a side
+   effect of bounding node count, so lifting that budget - the one documented
+   knob for "this document is big and I know it" - took the depth protection
+   with it and the process died at some tens of thousands of levels.
+   
+   A guard that holds for a reason unrelated to what it is holding is a guard
+   that someone fixing something else will remove. */
+TEST(YamlBuiltDepth, TheConversionHoldsABuiltDocumentToMaxDepth) {
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.max_depth = 100;
+
+	GTEXT_YAML_Document *shallow = BuildNested(50, &opts);
+	ASSERT_NE(shallow, nullptr);
+	ASSERT_EQ(MeasureDepth(gtext_yaml_document_root(shallow)), 50u);
+	EXPECT_EQ(ToJsonIt(shallow), GTEXT_YAML_OK);
+	gtext_yaml_free(shallow);
+
+	GTEXT_YAML_Document *deep = BuildNested(500, &opts);
+	ASSERT_NE(deep, nullptr);
+	ASSERT_EQ(MeasureDepth(gtext_yaml_document_root(deep)), 500u);
+	EXPECT_EQ(ToJsonIt(deep), GTEXT_YAML_E_DEPTH);
+	gtext_yaml_free(deep);
+}
+
+/* The one that matters, and the one that was crashing: the depth limit holds
+   with the node budget lifted.
+   
+   max_alias_expansion = SIZE_MAX is what a caller sets for a big document.
+   Before, that was also what turned off the only thing bounding the recursion;
+   now it bounds nothing but node count, and E_DEPTH comes from max_depth.
+   This crashes rather than fails if the two are confused again. */
+TEST(YamlBuiltDepth, LiftingTheAliasBudgetDoesNotLiftTheDepthLimit) {
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.max_depth = 256;
+	opts.max_alias_expansion = SIZE_MAX;
+
+	const size_t depth = 200000;
+	GTEXT_YAML_Document *doc = BuildNested(depth, &opts);
+	ASSERT_NE(doc, nullptr);
+	/* The control: a document that is not actually this deep would be refused
+	   by the depth limit for the wrong reason, or not refused at all. */
+	ASSERT_EQ(MeasureDepth(gtext_yaml_document_root(doc)), depth);
+
+	EXPECT_EQ(ToJsonIt(doc), GTEXT_YAML_E_DEPTH);
+	gtext_yaml_free(doc);
 }

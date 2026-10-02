@@ -170,6 +170,29 @@ typedef struct {
 	 * It still means unlimited when it happens. */
 	size_t nodes_visited;
 	size_t max_nodes;
+	/* How deep the conversion may go.
+	 *
+	 * convert_node() is a recursion, and until now nothing bounded its depth:
+	 * what stopped it was max_nodes above, which is the *alias bomb* budget
+	 * and bounds depth only as a side effect of bounding node count.  So a
+	 * caller who raised max_alias_expansion - the one documented knob for
+	 * "this document is big and I know it" - lost a depth protection they
+	 * were never told they had, and 60000 levels took the process down.  A
+	 * guard that holds for a reason unrelated to what it is holding is a
+	 * guard that someone fixing something else will remove.
+	 *
+	 * Taken from the document's own max_depth, the way write_node() takes it
+	 * (see yaml_writer.c and test-yaml-built-depth.cpp): a document carries
+	 * the options it was made with, and a DOM built through the API carries
+	 * the default rather than no limit at all.
+	 *
+	 * max_depth = SIZE_MAX still means no limit, and here that is a caller
+	 * asking for the same bargain gtext_json_parse() documents for its own
+	 * recursive descent - "raising the limit is choosing a number rather than
+	 * removing one".  The output of this function is a JSON value, and the
+	 * reader that would read it back says the same thing, so there is nowhere
+	 * better for the bound to come from. */
+	size_t max_depth;
 	/* The allocator the walk's own stack comes from: the document's, so the
 	   conversion is accounted to the same place the document is. */
 	const GTEXT_Allocator *alloc;
@@ -389,6 +412,17 @@ static GTEXT_YAML_Status convert_node(
 			out_err->message = "cannot convert: alias expansion limit exceeded";
 		}
 		return GTEXT_YAML_E_LIMIT;
+	}
+
+	/* Depth, asked as its own question rather than left to the budget above.
+	   stack_len is this walk's depth already, because the cycle check pushes
+	   every node it descends into. */
+	if (ctx->max_depth > 0 && ctx->stack_len >= ctx->max_depth) {
+		if (out_err) {
+			out_err->code = GTEXT_YAML_E_DEPTH;
+			out_err->message = "cannot convert: nesting depth limit exceeded";
+		}
+		return GTEXT_YAML_E_DEPTH;
 	}
 
 	if (yaml_to_json_stack_contains(ctx, yaml_node)) {
@@ -883,6 +917,7 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_to_json_with_options(
 	ctx.alloc = alloc;
 	/* The document keeps the options it was parsed with. */
 	ctx.max_nodes = yaml_doc->options.max_alias_expansion;
+	ctx.max_depth = yaml_doc->options.max_depth;
 
 	if (gtext_yaml_document_has_merge_keys(yaml_doc) && !ctx.options.allow_merge_keys) {
 		if (out_err) {
