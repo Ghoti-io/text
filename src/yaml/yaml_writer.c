@@ -2750,6 +2750,35 @@ static GTEXT_YAML_Status write_advance(
         case GTEXT_YAML_SET:
           return write_enter_mapping(state, stack);
         case GTEXT_YAML_ALIAS: {
+          /* **An alias whose target has not been written yet is where that
+             node gets defined**, because an alias refers to the most recent
+             *preceding* node carrying the anchor (3.2.2.2) and there is no
+             preceding one here.  Writing `*O` regardless produces a document
+             this library's own parser refuses with "Unknown anchor referenced
+             by alias", which is how this was found: `&O <<:` anchors the merge
+             key itself, apply_merge_keys consumes that entry, and the
+             definition leaves the tree with it while every alias to it stays.
+
+             Expanding is value-preserving where refusing would not be: the
+             alias still denotes the target's content, and the target is still
+             in hand.  So this frame becomes the target and is re-entered,
+             which writes it with its anchor - write_node_prefix records the
+             node before any child is pushed, so a target that contains this
+             same alias finds it recorded and writes `*O` as it should,
+             terminating rather than expanding forever.
+
+             Ordinary documents do not reach this: a parsed anchor always
+             precedes its aliases, so the target is already in the set by now
+             and the byte-identical rewrite is unaffected.  Two guards keep the
+             re-entry finite - a target that is this node, and a target that is
+             itself an alias, are both left to write_alias_node. */
+          const GTEXT_YAML_Node * target = node->as.alias.target;
+          if (target && target != node && target->type != GTEXT_YAML_ALIAS
+              && !gtext_yaml_node_set_has(&state->anchors_written, target)
+              && node_anchor(target)) {
+            f->node = target;
+            return GTEXT_YAML_OK;
+          }
           GTEXT_YAML_Status status = write_alias_node(state, node);
           stack->count--;
           return status;

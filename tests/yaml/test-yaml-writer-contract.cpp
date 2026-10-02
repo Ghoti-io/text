@@ -2494,3 +2494,93 @@ TEST(YamlWriterContract, AStoredBlockStyleIsRefusedForTextThatHasNoBlockSpelling
 		}
 	}
 }
+
+/* An alias whose anchor the merge consumed.
+ *
+ * `&O <<:` puts the anchor on the **merge key itself**.  apply_merge_keys()
+ * consumes that pair, which is correct - a merge key is not an entry of the
+ * resulting mapping - and the anchor definition leaves the tree with it while
+ * every alias to it stays behind.  The writer then emitted `*O` for a node it
+ * had not defined, and this library's own parser refused the output with
+ * "Unknown anchor referenced by alias".
+ *
+ * Found by fuzz_yaml_writer on the EVO-X2, run 7, from a 376-byte unit
+ * minimised to twelve bytes.  It is older than the eleven commits of that
+ * session: the same input crashes at d9d85ef, which is the first of them.
+ *
+ * The rule the fix states is 3.2.2.2's: an alias refers to the most recent
+ * *preceding* node carrying the anchor, so where there is no preceding one the
+ * alias is where that node gets defined.  Expanding is value-preserving - the
+ * alias still denotes the target's content and the target is still in hand -
+ * where refusing the document would not be.
+ */
+TEST(YamlWriterContract, AnAliasWhoseAnchorTheMergeConsumedStillHasADefinition) {
+	const char *yaml = "&O <<:\n ? : *O\n";
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(yaml, strlen(yaml), nullptr, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "");
+	gtext_yaml_error_free(&err);
+
+	/* The control for the premise: the anchored node must really be gone from
+	   the tree, or the writer has an ordinary definition to emit and this test
+	   is about nothing.  The root holds one pair and it is not the merge key. */
+	const GTEXT_YAML_Node *root = gtext_yaml_document_root(doc);
+	ASSERT_NE(root, nullptr);
+	ASSERT_EQ(gtext_yaml_node_type(root), GTEXT_YAML_MAPPING);
+	ASSERT_EQ(gtext_yaml_mapping_size(root), 1u);
+
+	for (int block = 0; block < 2; block++) {
+		Written w = write_doc(doc, block != 0);
+		ASSERT_EQ(w.status, GTEXT_YAML_OK) << "block=" << block;
+
+		/* The property the fuzzer asserts: our own parser reads our own
+		   output.  This is the whole finding. */
+		GTEXT_YAML_Error back_err;
+		memset(&back_err, 0, sizeof(back_err));
+		GTEXT_YAML_Document *back =
+			gtext_yaml_parse(w.text.data(), w.text.size(), nullptr, &back_err);
+		EXPECT_NE(back, nullptr)
+			<< "block=" << block << " output " << w.text << " refused: "
+			<< (back_err.message ? back_err.message : "");
+		gtext_yaml_error_free(&back_err);
+		if (back) gtext_yaml_free(back);
+
+		/* And the mechanism, so that a future change which kept the document
+		   parseable by dropping the alias instead would be seen to have done
+		   so.  The definition is written, and no bare alias is left over. */
+		EXPECT_NE(w.text.find("&O"), std::string::npos)
+			<< "block=" << block << " output " << w.text;
+		EXPECT_EQ(w.text.find("*O"), std::string::npos)
+			<< "block=" << block << " output " << w.text;
+	}
+
+	gtext_yaml_free(doc);
+}
+
+/* The other half, and the reason it is here: the fix must not turn every alias
+ * into an expansion.  A node whose anchor *is* written keeps being referenced,
+ * which is what makes the output byte-identical for every document this
+ * library parses - the case the first test cannot distinguish on its own.
+ */
+TEST(YamlWriterContract, AnAliasToAnAnchorThatIsWrittenStaysAnAlias) {
+	const char *yaml = "a: &O v\nb: *O\n";
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(yaml, strlen(yaml), nullptr, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "");
+	gtext_yaml_error_free(&err);
+
+	for (int block = 0; block < 2; block++) {
+		Written w = write_doc(doc, block != 0);
+		ASSERT_EQ(w.status, GTEXT_YAML_OK) << "block=" << block;
+		EXPECT_NE(w.text.find("&O"), std::string::npos)
+			<< "block=" << block << " output " << w.text;
+		EXPECT_NE(w.text.find("*O"), std::string::npos)
+			<< "block=" << block << " output " << w.text;
+	}
+
+	gtext_yaml_free(doc);
+}
