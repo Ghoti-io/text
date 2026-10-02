@@ -279,6 +279,24 @@ normalizes numeric lexemes. String escapes are always normalized: the DOM
 stores decoded strings, so the writer re-escapes canonically and the input's
 original escape spellings are not retained.
 
+`escape_unicode` and `escape_all_non_ascii` escape **codepoints**, so `é`
+becomes `\u00E9` and an astral character becomes a surrogate pair -
+`\uD83D\uDE00`. They used to escape each *byte* of the UTF-8 sequence, which
+turned `é` into `\u00C3\u00A9`: valid JSON holding the two characters `Ã©`.
+The two options are synonyms; nothing observable distinguishes them.
+
+`space_after_comma` is a compact-mode option. In pretty mode the comma is
+followed by an indent beginning with a newline, so the space would be trailing
+white space at the end of every line, and it is not written.
+
+**A string that is not valid UTF-8 is refused** with
+`GTEXT_JSON_E_BAD_UNICODE`, by both writers, rather than written through. A
+parse validates UTF-8, so such a string can only reach a writer through the
+`gtext_json_new_*` builders or `gtext_json_writer_string()`; written out it
+would be bytes this library's own parser rejects. The refusal can leave a
+partial document in the sink, as a sink failure can - these writers stream, and
+only `gtext_csv_write_table()` in this library promises otherwise.
+
 `allow_nonfinite_numbers` must be set for the writer to emit `NaN` or
 `Infinity`, and doing so produces output that is not JSON. Without it a
 non-finite value is an error rather than a silent `null`, which is what
@@ -311,6 +329,96 @@ Everything else is the same writer. Both paths produce the same bytes for the
 same document under the same options, which is now asserted rather than
 assumed; see **Tested scope** below.
 
+## One input, several JSON texts
+
+A JSON text is one value. RFC 8259 says so, and by default a token after it is
+`GTEXT_JSON_E_TRAILING_GARBAGE` - which is right for a document and wrong for a
+log, an export or a network stream, where the bytes are a *sequence* of values.
+That format has no single specification, and three readings of it are in use
+that disagree about inputs which occur. So
+`GTEXT_JSON_Parse_Options::records` is an enumeration rather than a flag:
+
+| Mode | Between two records | Accepts |
+|---|---|---|
+| `GTEXT_JSON_RECORDS_OFF` | nothing may follow the first | one JSON text; the default, and what every release before this did |
+| `GTEXT_JSON_RECORDS_WHITESPACE` | any JSON white space, including none | `{"a":1}{"b":2}`, `1 2`, and a pretty-printed value per record |
+| `GTEXT_JSON_RECORDS_LINE` | at least one LF, and no line end *inside* a record | NDJSON / JSON Lines |
+| `GTEXT_JSON_RECORDS_SEQ` | an RS (0x1E) before each record, the first included | RFC 7464 `application/json-seq` |
+
+Nothing about a record's own grammar changes in any mode. A record is a JSON
+text held to exactly the same rules, including every limit and the
+duplicate-name policy.
+
+**`LINE` is the only mode that can say "one value per line",** and that is why
+it is worth distinguishing from `WHITESPACE` rather than being a stricter
+version of it. Under `WHITESPACE`, a file whose records a buggy writer ran
+together with no separator is accepted and a reader expecting one record per
+line silently sees fewer records than there are lines. `LINE` refuses that, and
+refuses a value printed across lines, because in a format where the line is the
+record such a value is read as several broken records by every other tool.
+
+**Two modes refuse some parse options**, at the first call with
+`GTEXT_JSON_E_INVALID`, rather than making a promise with a hole in it.
+
+`LINE` refuses three. `allow_unescaped_controls` and `allow_line_continuations`
+each let a line end reach the inside of a *string*, where the rule cannot see
+it; `allow_comments` admits `//`, which is *terminated* by a line end, so a
+comment and a record cannot share a line.
+
+`SEQ` refuses `allow_comments`. An RS is the byte that makes RFC 7464's framing
+unambiguous precisely because it cannot occur inside a JSON text - but it can
+occur inside a comment, and a comment is an extension to the text rather than
+to the framing. With both on, a `//` comment running to the end of the input
+swallows every RS after it, so the streaming parser reads the rest as one
+comment where a reader slicing on RS reads several records. RFC 7464's grammar
+has no comments in it.
+
+`WHITESPACE` accepts comments between records and makes no claim that any of
+these would break, so it is where a caller who wants both is routed.
+
+`SEQ` **skips framing that introduces nothing**: `RS RS` is an RS with no
+record after it, and RFC 7464 has a reader discard a truncated element rather
+than fail on it. A trailing RS at the end of the input is the same case.
+
+Three entry points read the format:
+
+- **`gtext_json_stream_feed()`** emits `GTEXT_JSON_EVT_RECORD_END` once per
+  record. That event exists because the others cannot answer the question: `1 2`
+  is two records and emits two `EVT_NUMBER` events, which is also what the
+  single value `[1,2]` emits between its array markers.
+- **the pull reader**, which wraps the streaming parser and so delivers the
+  same events.
+- **`gtext_json_parse_multiple()` in a loop**, which returns one value and says
+  where the next begins, so a sequence is read one record at a time without
+  ever holding more than one. It honours `records`, so the framing is checked
+  rather than merely tolerated, and trailing framing that introduces nothing -
+  a final newline, a json-seq RS that RFC 7464 says to discard - is counted as
+  consumed, so the loop is a plain `while (off < len)`.
+
+`gtext_json_parse()` is **not** one of them. It returns one value and has
+nowhere to put a second, so it refuses trailing content whatever `records`
+says, and a test asserts that rather than leaving it to this paragraph.
+
+On the writing side `GTEXT_JSON_Write_Options::records` is the same
+enumeration, so a program that reads records and writes them back names the
+format once. `gtext_json_write_value()` frames each call, which needs no state;
+the incremental writer defers each record's terminator to the next record or to
+`gtext_json_writer_finish()`. The two produce the same bytes, which is
+asserted. A records mode subsumes `trailing_newline` rather than adding to it -
+honouring both would end the output in a blank line that a reader of this
+format reads as one more separator - and `LINE` with `pretty` is
+`GTEXT_JSON_E_INVALID`, because a writer asked for both is asked for a file
+this library's own `LINE` reader could not read back.
+
+**With `records` off, a second top-level value is now refused** with
+`GTEXT_JSON_E_STATE`. That is a fix rather than a restriction: the incremental
+writer used to accept one and write `{"a":1}{"b":2}`, which is not JSON and
+which this parser refuses, while every call and `finish()` returned
+`GTEXT_JSON_OK`.
+
+`examples/json/json_ndjson.c` reads the same bytes in all four modes and prints
+what each one says.
+
 ## Compliance checklist
 
 | Area | Supported | Rejected / limitation |
@@ -323,7 +431,7 @@ assumed; see **Tested scope** below.
 | Encoding | UTF-8, validated | invalid sequence `E_BAD_UNICODE` |
 | Leading BOM | accepted, skipped | never written |
 | Duplicate names | four policies | default `GTEXT_JSON_E_DUPKEY` |
-| Trailing content | single value, or explicit consumed-length parse | `GTEXT_JSON_E_TRAILING_GARBAGE` |
+| Trailing content | single value; a consumed-length parse; or a sequence, with `records` | `GTEXT_JSON_E_TRAILING_GARBAGE` by default |
 | Comments, trailing commas, single quotes | opt-in | default `E_BAD_TOKEN` / `E_TRAILING_GARBAGE` |
 | Depth | 256 default | `GTEXT_JSON_E_DEPTH` |
 | Size limits | four, configurable | `GTEXT_JSON_E_LIMIT` |
@@ -393,6 +501,29 @@ document: each byte selects a writer call, and the writer's own structural
 rules are what keep the program legal. The same bytes build a shadow document
 through the DOM API, which is written with `gtext_json_write_value()` and
 compared as canonical text, so the differential is free.
+
+**Records.** `tests/test-json-records.cpp` is 21 tests over
+`GTEXT_JSON_Parse_Options::records`, and what shapes them is that a mode which
+merely accepts more is easy to assert and easy to get wrong in the direction
+that matters. So every mode is checked in both directions - the inputs it must
+accept *and* the inputs it must refuse that a weaker mode accepts - and three
+pairs of modes are compared over the same input, because a test that only feeds
+NDJSON to NDJSON mode cannot tell `LINE` from `WHITESPACE`. Every case also runs
+one byte at a time, since a separator is the one thing in this feature a feed
+boundary can split, and the streaming parser's two older defects were both
+answers that depended on where the caller's chunks fell. Ten planted mutations
+were each caught by the test written for it.
+
+`tests/fuzz/fuzz_json_records.cpp` states the same property over inputs nobody
+chose: the streaming parser and a loop over `gtext_json_parse_multiple()` must
+agree about whether an input is a legal sequence and about how many records it
+holds, at every chunk size, and whatever the input turned out to hold must
+survive being written back and read again. It found five defects from an empty
+corpus, four of them older than the option it was written for - a partial
+keyword as the last record emitting no boundary event, leading blank lines
+counted as part of the first record, an exponent sign absorbed after the
+exponent's digits on resumption, and `gtext_json_parse_multiple()` reporting
+unlexable trailing bytes as consumed, which silently dropped them.
 
 **The two writers are compared directly.**
 `tests/test-writer-agreement.cpp` writes the same values both ways under nine

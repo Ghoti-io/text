@@ -352,6 +352,39 @@ that stops.
 What is still open is on the JSON side. Streaming LAST_WINS and COLLECT
 still deliver every member of a repeated name.
 
+**One input can now hold several JSON texts.** A JSON text is one value, so
+`{"a":1}\n{"b":2}\n` used to deliver the first object's events and then
+GTEXT_JSON_E_TRAILING_GARBAGE - while two pages of this library's own
+documentation said the streaming parser was suitable for NDJSON.
+GTEXT_JSON_Parse_Options::records names which reading of a value *sequence* is
+meant, and it is an enumeration rather than a flag because the three readings in
+use disagree about inputs that occur: any white space between values (so
+`{"a":1}{"b":2}` and `1 2` are two records each), NDJSON's one value per line,
+or RFC 7464's RS framing. The default is off, which is exactly what every
+earlier release did.
+
+A record boundary arrives as GTEXT_JSON_EVT_RECORD_END, because the other events
+cannot say where one ended - `1 2` emits two number events, and so does `[1,2]`
+between its array markers. The streaming parser, its pull reader and
+gtext_json_parse_multiple() in a loop all read the format;
+gtext_json_write_value() and the incremental writer both write it, from the
+same enumeration on the write options, and produce the same bytes.
+`examples/json/json_ndjson.c` reads one input in all four modes and prints what
+each says.
+
+Five defects came out of the fuzzer written for it, four of them older than the
+option: a partial keyword as the last record emitted no boundary event; leading
+blank lines were counted as part of the first record; a number resumed at a
+chunk boundary absorbed a following sign as its exponent's, so `2e9-1` was one
+malformed number where the whole-buffer lexer reads two values; and
+gtext_json_parse_multiple() reported trailing bytes it could not lex as
+consumed, so a loop over records silently dropped them. Three more came from
+the writers: a string that is not valid UTF-8 was written through verbatim and
+reported OK, `escape_unicode` escaped each *byte* of a UTF-8 sequence so `é`
+became `\u00C3\u00A9` - valid JSON holding `Ã©` - and `space_after_comma` put a
+trailing space at the end of every line in pretty mode, where only one of the
+two writers did it.
+
 **The writers are now checked against each other.** Where a format has both a
 whole-value writer and an incremental one, writing the same values both ways
 under the same options is a differential that costs nothing, and nothing had

@@ -23,6 +23,14 @@ Streaming parser example. Demonstrates:
 - Handling events from the streaming parser
 - Processing large JSON documents without building a full DOM
 
+### json_ndjson.c
+NDJSON / JSON Lines: one input holding several JSON texts. Demonstrates:
+- `GTEXT_JSON_Parse_Options::records`, and why it is an enumeration - the three
+  readings disagree about inputs that occur
+- `GTEXT_JSON_EVT_RECORD_END`, the event that says where a record ended
+- Reading a sequence one DOM value at a time with `gtext_json_parse_multiple()`
+- Writing records back with the matching framing
+
 ### json_pointer.c
 JSON Pointer (RFC 6901) example. Demonstrates:
 - Using JSON Pointers to access nested values

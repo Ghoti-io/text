@@ -181,6 +181,16 @@ writer honours. `tests/test-writer-agreement.cpp` is the instrument that
 found them: where a format has two writers, writing the same values both ways
 under the same options is a differential that costs nothing.
 
+**One JSON input can hold several JSON texts.** A JSON text is one value, and
+a log, an export or a network stream is a sequence of them -
+`GTEXT_JSON_Parse_Options::records` names which reading of that is meant. It is
+an enumeration rather than a flag because the three in use disagree about
+inputs that occur: any white space between values, NDJSON's one value per line,
+or RFC 7464's RS framing. Two pages here had claimed the streaming parser was
+suitable for NDJSON while it was not, which is the shape of defect this suite
+keeps finding: a sentence that was true of an intention rather than of the
+code. @subpage format_json "json.md" has the modes and what each refuses.
+
 **The library is compiled for Windows**, by `make check-windows-cross`, which
 builds all 75 sources with mingw-w64 in a container and runs an LLP64 probe
 under wine. Before it existed this code had never been built off Linux - five

@@ -27,6 +27,8 @@ The JSON examples are located in `examples/json/` and demonstrate various aspect
 
 @subpage example_json_stream
 
+@subpage example_json_ndjson
+
 @subpage example_json_file_io
 
 @subpage example_json_pointer
@@ -134,6 +136,7 @@ To build and run the examples, you need:
 2. **Explore your use case:** Choose examples that match what you're trying to accomplish:
    - File I/O? → `json_file_io.c` or `csv_file_io.c`
    - Large data? → `json_stream.c` or `csv_stream.c`
+   - One value per line, or a stream of records? → `json_ndjson.c`
    - Building data? → `json_create.c` or `csv_write.c`
    - Advanced features? → `json_pointer.c`, `json_patch.c`, `json_schema.c`, or `csv_dialects.c`
 

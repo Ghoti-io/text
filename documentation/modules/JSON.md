@@ -51,9 +51,19 @@ Streaming parsing processes JSON incrementally, emitting events as values are en
 - Process large JSON documents with minimal memory usage
 - Handle JSON from network streams or files
 - Transform JSON on-the-fly without building a full DOM
-- Process NDJSON (newline-delimited JSON) streams
+- Process NDJSON (newline-delimited JSON) streams, by setting
+  `GTEXT_JSON_Parse_Options::records`
 
 The streaming parser accepts input in chunks and maintains state between calls, making it suitable for network or file I/O scenarios.
+
+**NDJSON needs `records` to be set.** This bullet used to stand on its own, and
+it was not true: a JSON text is one value, so `{"a":1}\n{"b":2}\n` delivered
+the first object's events and then `GTEXT_JSON_E_TRAILING_GARBAGE`.
+`GTEXT_JSON_Parse_Options::records` names which reading of a value *sequence*
+is meant - any white space between values, one value per line, or RFC 7464's
+RS framing - and a record boundary then arrives as
+`GTEXT_JSON_EVT_RECORD_END`. See \ref format_json "json.md" and
+`examples/json/json_ndjson.c`.
 
 **Multi-Chunk Value Handling:**
 The parser correctly handles values (strings, numbers) that span multiple chunks. When a value is incomplete at the end of a chunk, the parser preserves state and waits for more input. This ensures correct parsing regardless of how the input is split across chunks.
