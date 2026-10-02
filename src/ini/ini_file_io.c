@@ -32,6 +32,14 @@ static GTEXT_INI_Status ini_file_error(gtext_file_status status,
   GTEXT_INI_Status code;
   const char * message;
   switch (status) {
+    case GTEXT_FILE_E_NOT_FOUND:
+      code = GTEXT_INI_E_INVALID;
+      message = "no such file or directory";
+      break;
+    case GTEXT_FILE_E_ACCESS:
+      code = GTEXT_INI_E_INVALID;
+      message = "permission denied opening the file";
+      break;
     case GTEXT_FILE_E_OPEN:
       code = GTEXT_INI_E_INVALID;
       message = "could not open the file";

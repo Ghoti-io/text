@@ -41,6 +41,14 @@ static GTEXT_JSON_Status json_file_error(
   GTEXT_JSON_Status code;
   const char * message;
   switch (status) {
+  case GTEXT_FILE_E_NOT_FOUND:
+    code = GTEXT_JSON_E_INVALID;
+    message = "No such file or directory";
+    break;
+  case GTEXT_FILE_E_ACCESS:
+    code = GTEXT_JSON_E_INVALID;
+    message = "Permission denied opening file";
+    break;
   case GTEXT_FILE_E_OPEN:
     code = GTEXT_JSON_E_INVALID;
     message = "Failed to open file";

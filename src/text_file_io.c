@@ -48,9 +48,34 @@
  * caller says which of those it was doing: the distinction between "could not
  * open it" and "it failed part way through" is one the formats' error
  * messages make, and it is not recoverable from the result code alone.
+ *
+ * Hence two fallbacks rather than one. @p before_status is what a failure
+ * decided *before* any byte moved means for this operation, and @p
+ * during_status is what GCU_FILE_ERR_IO means for it. Collapsing them into a
+ * single parameter is what left GTEXT_FILE_E_READ with no producer anywhere in
+ * the library: the reader passed GTEXT_FILE_E_OPEN for every cutil failure, so
+ * a file that opened and then would not read - a directory, a disk that gave
+ * up half way - was reported to five formats as "could not open the file", and
+ * the five `case GTEXT_FILE_E_READ:` arms sat there unreachable.
+ *
+ * The codes beside ERR_IO are all decided before the transfer, which is what
+ * lets them be told apart: cutil derives NOT_FOUND, ACCESS, EXISTS and
+ * NOT_EMPTY from errno at the open, and ERR_INVALID from its own argument
+ * checking. Every code cutil can return is named, and this switch deliberately
+ * has **no `default:` arm**, so that cutil growing another one is a
+ * -Wswitch error here - which is to say an error, under -Werror - rather than
+ * a silent reclassification. That is how the four it has already grown came to
+ * be lumped in with ERR_IO: a `default:` opts a switch out of the one warning
+ * that would have reported them.
+ *
+ * What stays approximate, said plainly: an *open* that fails for a reason
+ * outside cutil's errno table - EMFILE, ENXIO on a FIFO - also arrives as
+ * ERR_IO, and is reported here as a read failure. The alternative is to ask
+ * the filesystem a second question afterwards, which is a race, and the
+ * question cutil's result codes exist to avoid.
  */
-static gtext_file_status gtext_file_map(
-    GCU_File_Result result, gtext_file_status io_status) {
+static gtext_file_status gtext_file_map(GCU_File_Result result,
+    gtext_file_status before_status, gtext_file_status during_status) {
   switch (result) {
     case GCU_FILE_OK:
       return GTEXT_FILE_OK;
@@ -58,12 +83,25 @@ static gtext_file_status gtext_file_map(
       return GTEXT_FILE_E_OOM;
     case GCU_FILE_ERR_LIMIT:
       return GTEXT_FILE_E_LIMIT;
+    case GCU_FILE_ERR_NOT_FOUND:
+      return GTEXT_FILE_E_NOT_FOUND;
+    case GCU_FILE_ERR_ACCESS:
+      return GTEXT_FILE_E_ACCESS;
+    case GCU_FILE_ERR_EXISTS:
+    case GCU_FILE_ERR_NOT_EMPTY:
     case GCU_FILE_ERR_INVALID:
+      return before_status;
     case GCU_FILE_ERR_IO:
     case GCU_FILE_RESULT_COUNT:
-    default:
-      return io_status;
+      return during_status;
   }
+  /* Out here rather than in a `default:` arm, and that is the whole point:
+     -Wswitch reports a missing enumerator only where there is no default, so
+     writing one would opt this switch out of the single instrument that would
+     have caught cutil growing NOT_FOUND, EXISTS, ACCESS and NOT_EMPTY. This
+     line is for a value outside the enum, which C permits through a cast and
+     an enum's own range does not forbid. */
+  return during_status;
 }
 
 GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(const char * path,
@@ -85,7 +123,11 @@ GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(const char * path,
   GCU_File_Result result =
       gcu_file_read(path, max_bytes, alloc, &data, out_len);
   if (result != GCU_FILE_OK) {
-    return gtext_file_map(result, GTEXT_FILE_E_OPEN);
+    /* GTEXT_FILE_E_READ for an ERR_IO, because gcu_file_read() reports the
+       open through errno - NOT_FOUND or ACCESS - and reaches ERR_IO from the
+       transfer. A directory is the ordinary way to get here: fopen() on one
+       succeeds and the first fread() sets the error flag. */
+    return gtext_file_map(result, GTEXT_FILE_E_OPEN, GTEXT_FILE_E_READ);
   }
 
   *out_data = (char *)data;
@@ -142,7 +184,12 @@ GTEXT_INTERNAL_API gtext_file_status gtext_file_write_atomic(const char * path,
       gcu_file_temp_create(&temp, directory, "gtext", NULL);
   gtext_allocator_free(alloc, directory);
   if (result != GCU_FILE_OK) {
-    return gtext_file_map(result, GTEXT_FILE_E_OPEN);
+    /* The same status either way, and that is the finding rather than an
+       oversight: gcu_file_temp_create() calls mkstemp() and returns a flat
+       GCU_FILE_ERR_IO for every reason it can fail, a missing directory
+       included. So there is no "part way through" to distinguish here - the
+       temporary either came into being or did not. */
+    return gtext_file_map(result, GTEXT_FILE_E_OPEN, GTEXT_FILE_E_OPEN);
   }
 
   int failed = emit(user, gtext_file_fwrite, gcu_file_temp_stream(&temp));
@@ -176,5 +223,9 @@ GTEXT_INTERNAL_API gtext_file_status gtext_file_write_atomic(const char * path,
    */
   result = gcu_file_temp_commit(
       &temp, path, GCU_FILE_SYNC_FULL, GCU_FILE_PERMS_PRESERVE);
-  return gtext_file_map(result, GTEXT_FILE_E_WRITE);
+  /* Both fallbacks are GTEXT_FILE_E_WRITE: everything this call can fail at -
+     the sync, the rename, reading the destination's permissions - happens
+     after the bytes were accepted, so "it failed part way through" is the only
+     honest reading of any of them. */
+  return gtext_file_map(result, GTEXT_FILE_E_WRITE, GTEXT_FILE_E_WRITE);
 }

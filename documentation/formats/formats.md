@@ -140,6 +140,55 @@ conformance` scores yaml-test-suite at 395 of the 395 cases it can check.
 That figure is a statement about those documents; the YAML page says where
 the suite ends. The deviations that page records are closed.
 
+## Reading and writing files
+
+Each format has a `*_parse_file()` and a `*_write_file()`, and all five share
+one implementation - `src/text_file_io.c`, a seam onto `ghoti.io-cutil`'s file
+module - so the properties below hold for JSON, YAML, TOML, INI and CSV alike
+rather than for whichever of them was written first.
+
+- **Reading is incremental**, so a pipe, a FIFO, `/dev/stdin` and anything
+  under `/proc` can be parsed, and `max_total_bytes` is enforced *while* the
+  file is being read rather than against bytes already in memory. A limit
+  applied after the read is not a limit.
+- **Writing is atomic.** The document goes to a temporary file in the
+  destination's own directory, is committed to the disk, and only then
+  replaces the destination, so an interrupted write, a full disk or a power
+  loss leaves the previous file whole rather than truncated. A file that
+  already exists keeps the permissions it had; a new one gets what an ordinary
+  `fopen()` would have given it.
+- **The buffer comes from the caller's allocator**, which matters because it
+  is the largest single allocation any of these entry points makes.
+
+**What a failure says.** Four different things can go wrong before a byte of
+the document is parsed, and all four arrive as the same status code - the
+format's `E_INVALID` - because they are one thing for the caller to act on:
+the path is wrong. They are told apart in `err.message`, which names:
+
+| What happened | JSON, CSV and YAML say | TOML and INI say |
+|---|---|---|
+| There is nothing at that path | `No such file or directory` | `no such file or directory` |
+| The filesystem refused to open it | `Permission denied opening file` | `permission denied opening the file` |
+| The open failed for some other reason | `Failed to open file` | `could not open the file` |
+| It opened, and the read failed part way | `Failed to read file` † | `the file could not be read to the end` |
+
+† YAML spells this one `Failed to read file contents`.
+
+The last row is the one worth knowing about, because the obvious way to
+produce it is to hand a *directory* to `*_parse_file()`: on POSIX the open
+succeeds and the first read fails. Until October 2026 that case, and a disk
+that gave up half way through, were both reported as "could not open the
+file" - the shared layer had no way to say otherwise, and the four rows above
+were two. Running out of memory and exceeding `max_total_bytes` have their own
+status codes (`E_OOM` and `E_LIMIT`) and always did.
+
+**What a refusal says.** `*_write_file()` reports the *serializer's* status
+rather than a disk error when the document itself cannot be written down: a
+CSV field holding the delimiter under `GTEXT_CSV_QUOTE_NONE`, a TOML root that
+is not a table, an INI value holding a newline, a YAML tag with no spelling.
+The destination is left exactly as it was in every one of those cases, as it
+is for a failure on the disk.
+
 ## Comparison with other libraries
 
 @subpage format_comparison "Comparison with other libraries" asks a different

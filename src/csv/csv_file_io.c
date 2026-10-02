@@ -42,6 +42,14 @@ static GTEXT_CSV_Status csv_file_error(
   GTEXT_CSV_Status code;
   const char * message;
   switch (status) {
+  case GTEXT_FILE_E_NOT_FOUND:
+    code = GTEXT_CSV_E_INVALID;
+    message = "No such file or directory";
+    break;
+  case GTEXT_FILE_E_ACCESS:
+    code = GTEXT_CSV_E_INVALID;
+    message = "Permission denied opening file";
+    break;
   case GTEXT_FILE_E_OPEN:
     code = GTEXT_CSV_E_INVALID;
     message = "Failed to open file";

@@ -33,6 +33,14 @@ static void toml_file_error(gtext_file_status status, GTEXT_TOML_Error * err) {
   GTEXT_TOML_Status code;
   const char * message;
   switch (status) {
+    case GTEXT_FILE_E_NOT_FOUND:
+      code = GTEXT_TOML_E_INVALID;
+      message = "no such file or directory";
+      break;
+    case GTEXT_FILE_E_ACCESS:
+      code = GTEXT_TOML_E_INVALID;
+      message = "permission denied opening the file";
+      break;
     case GTEXT_FILE_E_OPEN:
       code = GTEXT_TOML_E_INVALID;
       message = "could not open the file";

@@ -93,7 +93,10 @@ the caller divides the input into chunks.
 incremental, so a pipe or `/dev/stdin` works and `max_total_bytes` is enforced
 before the whole file is in memory. Writing is atomic - a temporary file
 beside the destination, renamed over it once complete - so an interrupted
-write leaves the previous file intact.
+write leaves the previous file intact. The plumbing is shared by all five
+formats; the \ref text_format_references "Formats" page describes it once,
+under "Reading and writing files", including which of the four open-and-read
+failures `err.message` reports.
 
 ## Limits
 

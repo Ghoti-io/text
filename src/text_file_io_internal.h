@@ -55,14 +55,30 @@ extern "C" {
  *
  * Each module maps these onto its own codes, so the shared layer does not have
  * to know whether it is serving JSON, CSV or YAML.
+ *
+ * Several of these land on the *same* public status in every format and differ
+ * only in the message - GTEXT_FILE_E_NOT_FOUND, _E_ACCESS, _E_OPEN and _E_READ
+ * are all GTEXT_JSON_E_INVALID, for instance. That is deliberate and is worth
+ * saying, because it is easy to read a five-way split as five public codes:
+ * the public enums draw their distinctions where a caller can *act* on them,
+ * and "the path is wrong" is one action whether the file is absent, forbidden
+ * or unreadable. What differs is what the message tells the person reading it,
+ * and a missing file and a forbidden one are not the same sentence.
+ *
+ * GTEXT_FILE_E_NOT_FOUND and GTEXT_FILE_E_ACCESS exist because cutil tells
+ * them apart at the open and this library used to throw both away. A caller
+ * pointed at a path it may not read was told "could not open the file", which
+ * is true of every failure here and therefore says nothing.
  */
 typedef enum {
   GTEXT_FILE_OK = 0,
-  GTEXT_FILE_E_OPEN,  ///< Could not open the path
-  GTEXT_FILE_E_READ,  ///< Opened, but reading failed part way
-  GTEXT_FILE_E_WRITE, ///< Writing or committing failed
-  GTEXT_FILE_E_OOM,   ///< Allocation failed
-  GTEXT_FILE_E_LIMIT  ///< File larger than the caller allows
+  GTEXT_FILE_E_NOT_FOUND, ///< There is nothing at that path
+  GTEXT_FILE_E_ACCESS,    ///< The filesystem refused on permission grounds
+  GTEXT_FILE_E_OPEN,      ///< Could not open the path, for some other reason
+  GTEXT_FILE_E_READ,      ///< Opened, but reading failed part way
+  GTEXT_FILE_E_WRITE,     ///< Writing or committing failed
+  GTEXT_FILE_E_OOM,       ///< Allocation failed
+  GTEXT_FILE_E_LIMIT      ///< File larger than the caller allows
 } gtext_file_status;
 
 /**
