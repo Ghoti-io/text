@@ -308,3 +308,124 @@ TEST(YamlDepth, TheMergeAliasWalkDoesNotUseTheCStack) {
 
 	gtext_yaml_free(doc);
 }
+
+/* The comparison the resolver uses for "the same key", which was the fifth
+   recursive walk over a DOM here and the last one max_depth = SIZE_MAX could
+   take down.
+   
+   Its frames are small - about 48 bytes against resolve_node()'s 344 - so it
+   took a deeper document to reach the end of the stack than any of the walks
+   converted before it, which is exactly why it outlived them.
+   
+   Two shapes, and they are different failures. This one is too deep: */
+TEST(YamlDepth, TheKeyComparisonDoesNotUseTheCStack) {
+	const size_t n = 200000;
+	const std::string deep =
+		std::string(n, '[') + "x" + std::string(n, ']');
+	const std::string in = "? " + deep + "\n: 0\n? " + deep + "\n: 1\n";
+
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.max_depth = SIZE_MAX;
+	opts.dupkeys = GTEXT_YAML_DUPKEY_ERROR;
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc =
+		gtext_yaml_parse(in.data(), in.size(), &opts, &err);
+
+	/* The control, and the point: the two keys have to be *found equal*, which
+	   is the walk running all the way down both of them.  A document that came
+	   back parsed would mean the comparison gave up somewhere, and a test that
+	   only asked "did this not crash" would pass for that reason. */
+	EXPECT_EQ(doc, nullptr);
+	EXPECT_EQ(err.code, GTEXT_YAML_E_DUPKEY) << (err.message ? err.message : "");
+	if (doc) gtext_yaml_free(doc);
+	gtext_yaml_error_free(&err);
+}
+
+/* And this one is not deep at all, and does not terminate.
+   
+   deref_alias() resolves each alias to its own enclosing sequence, so the pair
+   (x, y) recurs and the comparison asks the same question for ever.  A bigger
+   stack is no help, which is how the two shapes were told apart: a gigabyte of
+   it overflowed in the same place.  Both keys are legal YAML and each parses
+   on its own.
+   
+   The answer is that they *are* equal, which is the coinductive reading of
+   structural equality: assuming a == b and then proving a == b from that
+   assumption is a proof of bisimilarity, and these two are the same infinite
+   sequence written twice.  Reporting a duplicate key is therefore the right
+   answer and not merely a termination. */
+TEST(YamlDepth, TwoSelfReferentialKeysAreTheSameKey) {
+	struct Case { const char *yaml; };
+	const Case cases[] = {
+		{ "? &x [*x]\n: 1\n? &y [*y]\n: 2\n" },
+		{ "? &x {k: *x}\n: 1\n? &y {k: *y}\n: 2\n" },
+		{ "? &x [[*x]]\n: 1\n? &y [[*y]]\n: 2\n" },
+	};
+	for (const Case &c : cases) {
+		for (int unlimited = 0; unlimited < 2; unlimited++) {
+			GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+			if (unlimited) opts.max_depth = SIZE_MAX;
+			opts.dupkeys = GTEXT_YAML_DUPKEY_ERROR;
+			GTEXT_YAML_Error err;
+			memset(&err, 0, sizeof(err));
+			GTEXT_YAML_Document *doc =
+				gtext_yaml_parse(c.yaml, strlen(c.yaml), &opts, &err);
+			EXPECT_EQ(doc, nullptr)
+				<< "input: " << c.yaml << " max_depth "
+				<< (unlimited ? "SIZE_MAX" : "default");
+			EXPECT_EQ(err.code, GTEXT_YAML_E_DUPKEY)
+				<< "input: " << c.yaml << " : "
+				<< (err.message ? err.message : "");
+			if (doc) gtext_yaml_free(doc);
+			gtext_yaml_error_free(&err);
+		}
+	}
+}
+
+/* The lower bound: a self-referential key is only equal to one that recurs the
+   same way.  Without this, a comparison that answered "equal" the moment it
+   saw an alias would pass the test above. */
+TEST(YamlDepth, ASelfReferentialKeyIsNotEqualToEverything) {
+	struct Case { const char *yaml; bool duplicate; };
+	const Case cases[] = {
+		/* One recurs through a sequence and the other through a mapping. */
+		{ "? &x [*x]\n: 1\n? &y {k: *y}\n: 2\n", false },
+		/* Different numbers of children. */
+		{ "? &x [*x]\n: 1\n? &y [*y, *y]\n: 2\n", false },
+		/* Same shape, different scalar inside it. */
+		{ "? &x [1, *x]\n: 1\n? &y [2, *y]\n: 2\n", false },
+		/* But "nests twice before coming back" *is* the same key, and this is
+		   the case that says the answer is bisimilarity rather than "the same
+		   spelling": "&x [*x]" and "&y [[*y]]" are both the sequence whose one
+		   child is itself a sequence whose one child is itself, forever.
+		   {(x, y), (x, [y])} relates them, so they are equal, and the
+		   expectation here was wrong before the implementation was. */
+		{ "? &x [*x]\n: 1\n? &y [[*y]]\n: 2\n", true },
+		/* One recurs and the other ends. */
+		{ "? &x [*x]\n: 1\n? [[]]\n: 2\n", false },
+		/* And the positive control, so the table is not all one answer. */
+		{ "? &x [*x]\n: 1\n? &y [*y]\n: 2\n", true },
+	};
+	for (const Case &c : cases) {
+		GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+		opts.max_depth = SIZE_MAX;
+		opts.dupkeys = GTEXT_YAML_DUPKEY_ERROR;
+		GTEXT_YAML_Error err;
+		memset(&err, 0, sizeof(err));
+		GTEXT_YAML_Document *doc =
+			gtext_yaml_parse(c.yaml, strlen(c.yaml), &opts, &err);
+		if (c.duplicate) {
+			EXPECT_EQ(doc, nullptr) << "input: " << c.yaml;
+			EXPECT_EQ(err.code, GTEXT_YAML_E_DUPKEY) << "input: " << c.yaml;
+		}
+		else {
+			EXPECT_NE(doc, nullptr)
+				<< "input: " << c.yaml << " refused as a duplicate: "
+				<< (err.message ? err.message : "");
+		}
+		if (doc) gtext_yaml_free(doc);
+		gtext_yaml_error_free(&err);
+	}
+}

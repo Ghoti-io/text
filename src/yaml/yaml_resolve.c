@@ -958,57 +958,298 @@ static bool scalar_equal(const GTEXT_YAML_Node *a, const GTEXT_YAML_Node *b) {
 	return false;
 }
 
+/* One frame of nodes_equal()'s comparison, which used to be a C stack frame.
+ *
+ * @a and @b are the pair being compared, normalised through deref_alias()
+ * once the frame leaves YAML_EQ_ENTER.  @i walks @a's children or pairs; @j
+ * walks @b's pairs looking for one that matches pair @i, because a mapping's
+ * pairs are unordered and the match is a search rather than a zip.
+ *
+ * @guarded says this frame's (@a, @b) counts as an assumption that the two are
+ * equal.  See nodes_equal(). */
+typedef struct {
+	const GTEXT_YAML_Node *a;
+	const GTEXT_YAML_Node *b;
+	size_t depth;
+	size_t i;
+	size_t j;
+	unsigned char stage;
+	bool guarded;
+} yaml_eq_frame;
+
+enum {
+	YAML_EQ_ENTER = 0,     /* normalise, decide the arm, set the cursors */
+	YAML_EQ_SEQ,           /* children, in order, all of them */
+	YAML_EQ_MAP_NEXT,      /* on to a's next pair */
+	YAML_EQ_MAP_TRY,       /* try b's pair j as the match for a's pair i */
+	YAML_EQ_MAP_KEY_DONE,  /* the keys' answer is in */
+	YAML_EQ_MAP_VALUE_DONE /* the values' answer is in */
+};
+
+/* Is (@a, @b) already being compared further up @frames?
+ *
+ * Only guarded frames count, which is every collection frame that got past
+ * YAML_EQ_ENTER: a scalar frame answers immediately and never has anything
+ * below it. */
+static bool eq_pair_on_path(
+	const yaml_eq_frame *frames,
+	size_t count,
+	const GTEXT_YAML_Node *a,
+	const GTEXT_YAML_Node *b
+) {
+	for (size_t k = 0; k < count; k++) {
+		if (frames[k].guarded && frames[k].a == a && frames[k].b == b) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* Structural equality, with its stack on the heap and cycles terminated.
+ *
+ * This was the fifth recursive walk over a DOM in this library and the last
+ * one on the path `max_depth = SIZE_MAX` opens.  resolve_node(),
+ * gtext_yaml_node_clone() and write_node() were each converted after a crash,
+ * and this one had not crashed yet - its frames are smaller, so it took a
+ * deeper document to reach the end of the stack, which is the whole reason it
+ * outlived them.  Two documents found it, and they are *different* failures:
+ *
+ *     ? [[[ ... a hundred thousand of them ... ]]]
+ *     : 0
+ *     ? [[[ ... the same again ... ]]]
+ *     : 1
+ *
+ * is too deep.  This one is not deep at all and does not terminate:
+ *
+ *     ? &x [*x]
+ *     : 1
+ *     ? &y [*y]
+ *     : 2
+ *
+ * deref_alias() resolves each alias to its own enclosing sequence, so the pair
+ * (x, y) recurs and the comparison asks the same question for ever.  A bigger
+ * stack does not help the second one, and that is how the two were told apart:
+ * a gigabyte of stack overflowed in the same place.  Both documents are legal
+ * YAML and both parse on their own.
+ *
+ * So: the frames are on the heap, and **a pair already being compared is
+ * answered "equal"**.  That is the coinductive reading of structural equality
+ * - the greatest fixpoint - and it is the right one for a graph that may have
+ * cycles: assuming a == b and then proving a == b from that assumption is a
+ * proof of bisimilarity, and it makes `&x [*x]` properly equal to `&y [*y]`,
+ * which they are.  The assumption lives exactly as long as the frame that made
+ * it, which is what makes it safe under the mapping arm's backtracking - an
+ * assumption made while trying a candidate pair that then fails goes away with
+ * the frame that tried it.
+ *
+ * The path is searched linearly, and only when deref_alias() actually moved a
+ * pointer, because an alias is the only way back round to a node already being
+ * compared.  A parsed document cannot contain itself - apply_merge_keys()
+ * refuses the merge that would have done it - and a built one cannot either,
+ * because every DOM constructor that *adds* a child (sequence_append,
+ * sequence_insert, mapping_set) returns a new node rather than mutating one,
+ * so a node's children are fixed when it is created and the only in-place
+ * operations remove.  So an ordinary deep document pays nothing for the check,
+ * and one with k aliases on a path pays k comparisons per step.
+ *
+ * @p max_depth keeps its old meaning: a bound at which the answer is "not
+ * equal" rather than an error.  It is unreachable from a parsed document,
+ * since the parser has already refused anything deeper, and it is 0 - no
+ * bound - at the one door that has no options to read.  It is no longer what
+ * stands between this function and the end of the stack.
+ *
+ * @p out_failed - optional - says the comparison could not be made at all,
+ * which here means the frame stack could not grow.  It is not an answer, and a
+ * caller that reads it as one gets the dangerous reading in one of the two
+ * directions: "not equal" lets a duplicate key through at the omap door and
+ * hides one at the dupkey door. */
 static bool nodes_equal(
 	const GTEXT_YAML_Node *a,
 	const GTEXT_YAML_Node *b,
 	size_t depth,
-	size_t max_depth
+	size_t max_depth,
+	bool *out_failed
 ) {
-	a = deref_alias(a);
-	b = deref_alias(b);
-	if (a == b) return true;
-	if (!a || !b) return false;
-	if (max_depth > 0 && depth >= max_depth) return false;
+	if (out_failed) *out_failed = false;
 
-	if (a->type != b->type) return false;
+	/* Enough for any document that was parsed with the default limit, so the
+	   common case never allocates.  No allocator is threaded in: this is a
+	   predicate with no document in hand whose scratch is transient, the same
+	   reason gtext_yaml_plain_text_resolves_to_non_string_as() gives. */
+	yaml_eq_frame inline_frames[320];
+	yaml_eq_frame *frames = inline_frames;
+	size_t capacity = sizeof(inline_frames) / sizeof(inline_frames[0]);
+	size_t count = 0;
+	bool failed = false;
+	/* The result of the frame that most recently popped. */
+	bool answer = false;
 
-	switch (a->type) {
-		case GTEXT_YAML_STRING:
-		case GTEXT_YAML_BOOL:
-		case GTEXT_YAML_INT:
-		case GTEXT_YAML_FLOAT:
-		case GTEXT_YAML_NULL:
-			return scalar_equal(a, b);
-		case GTEXT_YAML_SEQUENCE:
-		case GTEXT_YAML_OMAP:
-		case GTEXT_YAML_PAIRS:
-			if (a->as.sequence.count != b->as.sequence.count) return false;
-			for (size_t i = 0; i < a->as.sequence.count; i++) {
-				if (!nodes_equal(a->as.sequence.children[i], b->as.sequence.children[i], depth + 1, max_depth)) {
-					return false;
+	frames[0].a = a;
+	frames[0].b = b;
+	frames[0].depth = depth;
+	frames[0].i = 0;
+	frames[0].j = 0;
+	frames[0].stage = YAML_EQ_ENTER;
+	frames[0].guarded = false;
+	count = 1;
+
+	/* Writes to the frame being left must happen before the push, because the
+	   push can move the array. */
+	#define YAML_EQ_PUSH(na, nb, nd)                                           \
+		do {                                                                   \
+			if (count == capacity) {                                           \
+				size_t new_capacity = capacity * 2;                            \
+				yaml_eq_frame *grown;                                          \
+				if (frames == inline_frames) {                                 \
+					grown = (yaml_eq_frame *)gtext_allocator_malloc(           \
+						NULL, new_capacity * sizeof(*grown));                  \
+					if (grown) memcpy(grown, frames, count * sizeof(*grown));  \
+				}                                                              \
+				else {                                                         \
+					grown = (yaml_eq_frame *)gtext_allocator_realloc(          \
+						NULL, frames, new_capacity * sizeof(*grown));          \
+				}                                                              \
+				if (!grown) { failed = true; goto done; }                      \
+				frames = grown;                                                \
+				capacity = new_capacity;                                       \
+			}                                                                  \
+			frames[count].a = (na);                                            \
+			frames[count].b = (nb);                                            \
+			frames[count].depth = (nd);                                        \
+			frames[count].i = 0;                                               \
+			frames[count].j = 0;                                               \
+			frames[count].stage = YAML_EQ_ENTER;                               \
+			frames[count].guarded = false;                                     \
+			count++;                                                           \
+		} while (0)
+
+	while (count > 0) {
+		yaml_eq_frame *f = &frames[count - 1];
+
+		switch (f->stage) {
+			case YAML_EQ_ENTER: {
+				const GTEXT_YAML_Node *x = deref_alias(f->a);
+				const GTEXT_YAML_Node *y = deref_alias(f->b);
+				const bool moved = (x != f->a) || (y != f->b);
+				f->a = x;
+				f->b = y;
+
+				if (x == y) { answer = true; count--; continue; }
+				if (!x || !y) { answer = false; count--; continue; }
+				if (max_depth > 0 && f->depth >= max_depth) {
+					answer = false; count--; continue;
+				}
+				if (x->type != y->type) { answer = false; count--; continue; }
+
+				switch (x->type) {
+					case GTEXT_YAML_STRING:
+					case GTEXT_YAML_BOOL:
+					case GTEXT_YAML_INT:
+					case GTEXT_YAML_FLOAT:
+					case GTEXT_YAML_NULL:
+						answer = scalar_equal(x, y); count--; continue;
+
+					case GTEXT_YAML_SEQUENCE:
+					case GTEXT_YAML_OMAP:
+					case GTEXT_YAML_PAIRS:
+						if (x->as.sequence.count != y->as.sequence.count) {
+							answer = false; count--; continue;
+						}
+						if (moved && eq_pair_on_path(frames, count - 1, x, y)) {
+							answer = true; count--; continue;
+						}
+						f->guarded = true;
+						f->stage = YAML_EQ_SEQ;
+						continue;
+
+					case GTEXT_YAML_MAPPING:
+					case GTEXT_YAML_SET:
+						if (x->as.mapping.count != y->as.mapping.count) {
+							answer = false; count--; continue;
+						}
+						if (moved && eq_pair_on_path(frames, count - 1, x, y)) {
+							answer = true; count--; continue;
+						}
+						f->guarded = true;
+						f->stage = YAML_EQ_MAP_NEXT;
+						continue;
+
+					default:
+						answer = false; count--; continue;
 				}
 			}
-			return true;
-		case GTEXT_YAML_MAPPING:
-		case GTEXT_YAML_SET:
-			if (a->as.mapping.count != b->as.mapping.count) return false;
-			for (size_t i = 0; i < a->as.mapping.count; i++) {
-				const GTEXT_YAML_Node *key = a->as.mapping.pairs[i].key;
-				const GTEXT_YAML_Node *value = a->as.mapping.pairs[i].value;
-				bool found = false;
-				for (size_t j = 0; j < b->as.mapping.count; j++) {
-					if (nodes_equal(key, b->as.mapping.pairs[j].key, depth + 1, max_depth) &&
-						nodes_equal(value, b->as.mapping.pairs[j].value, depth + 1, max_depth)) {
-						found = true;
-						break;
-					}
+
+			case YAML_EQ_SEQ:
+				/* Every child, in order.  On re-entry @answer is the previous
+				   child's verdict, and one "no" ends the whole question. */
+				if (f->i > 0 && !answer) { count--; continue; }
+				if (f->i >= f->a->as.sequence.count) {
+					answer = true; count--; continue;
 				}
-				if (!found) return false;
-			}
-			return true;
-		default:
-			return false;
+				{
+					const GTEXT_YAML_Node *ca = f->a->as.sequence.children[f->i];
+					const GTEXT_YAML_Node *cb = f->b->as.sequence.children[f->i];
+					const size_t nd = f->depth + 1;
+					f->i++;
+					YAML_EQ_PUSH(ca, cb, nd);
+				}
+				continue;
+
+			case YAML_EQ_MAP_NEXT:
+				if (f->i >= f->a->as.mapping.count) {
+					answer = true; count--; continue;
+				}
+				f->j = 0;
+				f->stage = YAML_EQ_MAP_TRY;
+				continue;
+
+			case YAML_EQ_MAP_TRY:
+				/* No pair of @b matched @a's pair @i, so the two mappings hold
+				   different pairs. */
+				if (f->j >= f->b->as.mapping.count) {
+					answer = false; count--; continue;
+				}
+				{
+					const GTEXT_YAML_Node *ka = f->a->as.mapping.pairs[f->i].key;
+					const GTEXT_YAML_Node *kb = f->b->as.mapping.pairs[f->j].key;
+					const size_t nd = f->depth + 1;
+					f->stage = YAML_EQ_MAP_KEY_DONE;
+					YAML_EQ_PUSH(ka, kb, nd);
+				}
+				continue;
+
+			case YAML_EQ_MAP_KEY_DONE:
+				if (!answer) { f->j++; f->stage = YAML_EQ_MAP_TRY; continue; }
+				{
+					const GTEXT_YAML_Node *va = f->a->as.mapping.pairs[f->i].value;
+					const GTEXT_YAML_Node *vb = f->b->as.mapping.pairs[f->j].value;
+					const size_t nd = f->depth + 1;
+					f->stage = YAML_EQ_MAP_VALUE_DONE;
+					YAML_EQ_PUSH(va, vb, nd);
+				}
+				continue;
+
+			case YAML_EQ_MAP_VALUE_DONE:
+				/* The keys matched and the values did not, so this candidate
+				   is not the match; another pair of @b may still be. */
+				if (!answer) { f->j++; f->stage = YAML_EQ_MAP_TRY; continue; }
+				f->i++;
+				f->stage = YAML_EQ_MAP_NEXT;
+				continue;
+
+			default:
+				answer = false; count--; continue;
+		}
 	}
+
+done:
+	#undef YAML_EQ_PUSH
+	if (frames != inline_frames) gtext_allocator_free(NULL, frames);
+	if (failed) {
+		if (out_failed) *out_failed = true;
+		return false;
+	}
+	return answer;
 }
 
 typedef struct {
@@ -1160,14 +1401,23 @@ static bool merge_pairs_grow(
 	return true;
 }
 
+/* The index of the pair whose key equals @p key, or -1.  @p out_failed says
+   the comparison could not be made, which is not the same as "no match": a
+   caller that treats it as one silently drops a merge override. */
 static long merge_pairs_find(
 	yaml_merge_pair *pairs,
 	size_t count,
 	const GTEXT_YAML_Node *key,
-	size_t max_depth
+	size_t max_depth,
+	bool *out_failed
 ) {
 	for (size_t i = 0; i < count; i++) {
-		if (nodes_equal(key, pairs[i].key, 0, max_depth)) return (long)i;
+		bool failed = false;
+		if (nodes_equal(key, pairs[i].key, 0, max_depth, &failed)) return (long)i;
+		if (failed) {
+			if (out_failed) *out_failed = true;
+			return -1;
+		}
 	}
 	return -1;
 }
@@ -1184,7 +1434,11 @@ static bool merge_pairs_add_or_replace(
 	bool from_merge,
 	const GTEXT_Allocator *alloc
 ) {
-	long idx = merge_pairs_find(*pairs, *count, key, max_depth);
+	bool find_failed = false;
+	long idx = merge_pairs_find(*pairs, *count, key, max_depth, &find_failed);
+	/* Reported as a failure to add, which every caller already turns into
+	   E_OOM - and a stack that would not grow is what the failure is. */
+	if (find_failed) return false;
 	if (idx >= 0) {
 		yaml_merge_pair *existing = &(*pairs)[(size_t)idx];
 		/* The winning pair is taken whole.  This used to overwrite the value and
@@ -1689,7 +1943,19 @@ static GTEXT_YAML_Status apply_dupkey_policy(
 
 	for (size_t i = 0; i < node->as.mapping.count; i++) {
 		for (size_t j = i + 1; j < node->as.mapping.count; j++) {
-			if (!nodes_equal(node->as.mapping.pairs[i].key, node->as.mapping.pairs[j].key, 0, opts->max_depth)) {
+			bool failed = false;
+			const bool same = nodes_equal(
+				node->as.mapping.pairs[i].key, node->as.mapping.pairs[j].key,
+				0, opts->max_depth, &failed
+			);
+			if (failed) {
+				if (error) {
+					error->code = GTEXT_YAML_E_OOM;
+					error->message = "Out of memory comparing mapping keys";
+				}
+				return GTEXT_YAML_E_OOM;
+			}
+			if (!same) {
 				continue;
 			}
 			switch (opts->dupkeys) {
@@ -2427,7 +2693,15 @@ GTEXT_INTERNAL_API bool gtext_yaml_omap_can_take(
 				|| prev->as.mapping.count != 1) {
 			continue;
 		}
-		if (nodes_equal(key, prev->as.mapping.pairs[0].key, 0, 0)) return false;
+		/* A comparison that could not be made refuses the entry.  This door
+		   returns a bool and has nowhere to report a failure, and of the two
+		   wrong answers available "no, it cannot take it" is the one that does
+		   not put a duplicate key into an omap. */
+		bool failed = false;
+		if (nodes_equal(key, prev->as.mapping.pairs[0].key, 0, 0, &failed)) {
+			return false;
+		}
+		if (failed) return false;
 	}
 	return true;
 }
@@ -2531,7 +2805,19 @@ static GTEXT_YAML_Status resolve_exit_sequence(
 				for (size_t j = 0; j < i; j++) {
 					const GTEXT_YAML_Node *prev = deref_alias(node->as.sequence.children[j]);
 					if (!prev || prev->type != GTEXT_YAML_MAPPING) continue;
-					if (nodes_equal(key, prev->as.mapping.pairs[0].key, 0, opts ? opts->max_depth : 0)) {
+					bool failed = false;
+					const bool same = nodes_equal(
+						key, prev->as.mapping.pairs[0].key, 0,
+						opts ? opts->max_depth : 0, &failed
+					);
+					if (failed) {
+						if (error) {
+							error->code = GTEXT_YAML_E_OOM;
+							error->message = "Out of memory comparing omap keys";
+						}
+						return GTEXT_YAML_E_OOM;
+					}
+					if (same) {
 						if (error) {
 							error->code = GTEXT_YAML_E_DUPKEY;
 							error->message = "omap keys must be unique";
