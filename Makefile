@@ -838,7 +838,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -977,6 +977,23 @@ ALLOCATOR_CLEAN_SOURCES := \
 
 check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
 	@python3 tools/check-allocator-callees.py
+
+# Deliberately outside TEST_GATES, like every gate here that needs something
+# this machine may not have. It wants podman and a mingw image, and a gate that
+# cannot run on a fresh clone has no business failing `make test`.
+#
+# It is still a gate and not a report: the library had never been compiled off
+# Linux before it existed - five CI jobs, all ubuntu-latest - and the four
+# preprocessor conditionals it reaches decide what every exported symbol is
+# declared as. A `#if` arm nobody compiles is not small, it is unparsed.
+check-windows-cross: ## Compile every source for Windows with mingw-w64 (needs podman)
+	@tools/cross-windows.sh; \
+	status=$$?; \
+	if [ $$status -eq 77 ]; then \
+		printf "check-windows-cross: skipped (no container engine or image)\n"; \
+		exit 0; \
+	fi; \
+	exit $$status
 
 check-allocators: ## Fail if a converted file allocates without the allocator
 	@raw=$$(grep -nE '(^|[^_[:alnum:]])(malloc|calloc|realloc|free|strdup|strndup)[[:space:]]*\(' \
