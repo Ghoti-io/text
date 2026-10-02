@@ -20,13 +20,32 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <pthread.h>
+
 #include <cstring>
+#include <functional>
 #include <string>
 #include <gtest/gtest.h>
 
 #include <ghoti.io/text/json.h>
 
 namespace {
+
+/* n nested arrays, assembled inside-out: each new array wraps the previous
+   one, so the *child* of every push is the big half.  That is the shape the
+   cycle check is quadratic in if it has no shortcut, which is why the tests
+   below are written this way round rather than top-down. */
+GTEXT_JSON_Value * BuildNested(size_t n) {
+	GTEXT_JSON_Value * inner = gtext_json_new_null();
+	if (!inner) return nullptr;
+	for (size_t i = 0; i < n; i++) {
+		GTEXT_JSON_Value * outer = gtext_json_new_array();
+		if (!outer) return nullptr;
+		if (gtext_json_array_push(outer, inner) != GTEXT_JSON_OK) return nullptr;
+		inner = outer;
+	}
+	return inner;
+}
 
 /* What the value actually is, rather than what it was asked to be. */
 size_t MeasureDepth(const GTEXT_JSON_Value * v) {
@@ -37,6 +56,41 @@ size_t MeasureDepth(const GTEXT_JSON_Value * v) {
 		d++;
 	}
 	return d;
+}
+
+/* Run @p fn on a thread with a deliberately small stack.
+ *
+ * The walks under test die in proportion to depth, and on the main thread's
+ * 8 MiB that takes a *lot* of depth: bisected on this machine, free survived
+ * 104535 levels and died at 104925, equality survived 74532 and died at 74922,
+ * and the writer survived 32450 and died at 32839 - about 80, 112 and 257 bytes
+ * a level.
+ *
+ * Reaching those depths is not the problem; paying for them is.  Every level of
+ * a value built through the DOM API is a separate context with an arena of its
+ * own, so depth costs about 3 KB a level of real memory - and a shared 200000
+ * for all three tests came to 1.3 GB, which under ASan's redzones was enough to
+ * have the run killed by the OOM killer.  That is a bad test however it
+ * finishes.
+ *
+ * So the stack is made small instead of the value large.  The property is the
+ * same one - this walk's stack use is proportional to the depth of what it
+ * walks - and asking it with 512 KB costs megabytes rather than gigabytes.  A
+ * recursive walk still takes the whole process down, which is the honest way
+ * for it to report. */
+void RunOnSmallStack(const std::function<void()> & fn) {
+	pthread_attr_t attr;
+	ASSERT_EQ(pthread_attr_init(&attr), 0);
+	ASSERT_EQ(pthread_attr_setstacksize(&attr, 512 * 1024), 0);
+	pthread_t thread;
+	auto trampoline = [](void * arg) -> void * {
+		(*static_cast<const std::function<void()> *>(arg))();
+		return nullptr;
+	};
+	ASSERT_EQ(pthread_create(&thread, &attr, trampoline,
+		const_cast<std::function<void()> *>(&fn)), 0);
+	ASSERT_EQ(pthread_join(thread, nullptr), 0);
+	pthread_attr_destroy(&attr);
 }
 
 } // namespace
@@ -157,6 +211,78 @@ TEST(JsonDomLimits, AnOrdinaryInsertionIsNotRefused) {
 	EXPECT_EQ(gtext_json_array_push(other, root), GTEXT_JSON_OK);
 	EXPECT_EQ(MeasureDepth(other), 3u);
 	gtext_json_free(other);
+}
+
+/* And the depth the DOM API can reach, which the parser's limit says nothing
+   about.  Each of these three walks recursed; each takes the process down if it
+   goes back to recursing, which is the honest way to report the thing it exists
+   to prevent.
+   
+   See RunOnSmallStack() for why the stack is small rather than the value deep,
+   and for the depths at which each of them died on the main thread's 8 MiB.
+   Every depth here is at least twice what 512 KB can hold of that walk's
+   frames. */
+TEST(JsonDomLimits, FreeingADeepValueDoesNotUseTheCStack) {
+	const size_t depth = 15000;   /* 512 KB holds about 6550 of its frames */
+	GTEXT_JSON_Value * v = BuildNested(depth);
+	ASSERT_NE(v, nullptr);
+	/* The control: a value that is not actually this deep would be freed by any
+	   implementation. */
+	ASSERT_EQ(MeasureDepth(v), depth);
+	RunOnSmallStack([v] { gtext_json_free(v); });
+}
+
+TEST(JsonDomLimits, WritingADeepValueDoesNotUseTheCStack) {
+	const size_t depth = 6000;    /* 512 KB holds about 2040 of its frames */
+	GTEXT_JSON_Value * v = BuildNested(depth);
+	ASSERT_NE(v, nullptr);
+	ASSERT_EQ(MeasureDepth(v), depth);
+
+	GTEXT_JSON_Sink sink;
+	ASSERT_EQ(gtext_json_sink_buffer(&sink), GTEXT_JSON_OK);
+	GTEXT_JSON_Status status = GTEXT_JSON_E_INVALID;
+	RunOnSmallStack([&] {
+		status = gtext_json_write_value(&sink, nullptr, v, nullptr);
+	});
+	EXPECT_EQ(status, GTEXT_JSON_OK);
+	/* The control: one "[" and one "]" per level, and "null" at the bottom.  A
+	   walk that stopped early would not crash either. */
+	EXPECT_EQ(gtext_json_sink_buffer_size(&sink), 2 * depth + 4);
+	gtext_json_sink_buffer_free(&sink);
+	gtext_json_free(v);
+}
+
+TEST(JsonDomLimits, ComparingDeepValuesDoesNotUseTheCStack) {
+	const size_t depth = 12000;   /* 512 KB holds about 4680 of its frames */
+	GTEXT_JSON_Value * a = BuildNested(depth);
+	GTEXT_JSON_Value * b = BuildNested(depth);
+	ASSERT_NE(a, nullptr);
+	ASSERT_NE(b, nullptr);
+	ASSERT_EQ(MeasureDepth(a), depth);
+	ASSERT_EQ(MeasureDepth(b), depth);
+
+	bool same = false;
+	RunOnSmallStack([&] { same = gtext_json_equal(a, b, GTEXT_JSON_EQUAL_LEXEME); });
+	EXPECT_TRUE(same);
+
+	/* And the comparison really went to the bottom: a walk that gave up early
+	   would answer "equal" for these two as well. */
+	GTEXT_JSON_Value * c = BuildNested(depth);
+	ASSERT_NE(c, nullptr);
+	GTEXT_JSON_Value * tail = c;
+	for (size_t i = 0; i + 1 < depth; i++) {
+		tail = const_cast<GTEXT_JSON_Value *>(gtext_json_array_get(tail, 0));
+		ASSERT_NE(tail, nullptr);
+	}
+	ASSERT_EQ(gtext_json_array_set(tail, 0, gtext_json_new_bool(true)),
+		GTEXT_JSON_OK);
+	bool differ = true;
+	RunOnSmallStack([&] { differ = !gtext_json_equal(a, c, GTEXT_JSON_EQUAL_LEXEME); });
+	EXPECT_TRUE(differ);
+
+	gtext_json_free(a);
+	gtext_json_free(b);
+	gtext_json_free(c);
 }
 
 int main(int argc, char ** argv) {

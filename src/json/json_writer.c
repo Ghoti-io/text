@@ -555,284 +555,334 @@ static int write_number(GTEXT_JSON_Sink * sink, const GTEXT_JSON_Value * v,
   return 1;
 }
 
-// Recursive write function
-static int write_value_recursive(GTEXT_JSON_Sink * sink,
-    const GTEXT_JSON_Value * v, const GTEXT_JSON_Write_Options * opt,
-    int depth) {
+/* A scalar, or NULL, which 7.2's equivalent here is: the empty value a
+   container holds where nothing was put.  Returns 1 if @p v is a container
+   instead, which the caller opens. */
+static int write_scalar_value(GTEXT_JSON_Sink * sink,
+    const GTEXT_JSON_Value * v, const GTEXT_JSON_Write_Options * opts,
+    int * out_is_container, int * out_status) {
+  *out_is_container = 0;
+  *out_status = 0;
   if (!v) {
-    return write_string(sink, "null");
+    *out_status = write_string(sink, "null");
+    return 0;
   }
-
-  const GTEXT_JSON_Write_Options * opts =
-      opt ? opt : &(GTEXT_JSON_Write_Options){0};
-
   switch (v->type) {
   case GTEXT_JSON_NULL:
-    return write_string(sink, "null");
+    *out_status = write_string(sink, "null");
+    return 0;
 
   case GTEXT_JSON_BOOL:
-    return write_string(sink, v->as.boolean ? "true" : "false");
+    *out_status = write_string(sink, v->as.boolean ? "true" : "false");
+    return 0;
 
   case GTEXT_JSON_NUMBER:
-    return write_number(sink, v, opts);
+    *out_status = write_number(sink, v, opts);
+    return 0;
 
   case GTEXT_JSON_STRING:
     // Check for NULL string data (empty string is valid, but NULL pointer is
     // not)
     if (!v->as.string.data && v->as.string.len > 0) {
-      return 1; // Invalid string state
+      *out_status = 1; // Invalid string state
+      return 0;
     }
-    return write_escaped_string(
-        sink, v->as.string.data, v->as.string.len, opts);
+    *out_status =
+        write_escaped_string(sink, v->as.string.data, v->as.string.len, opts);
+    return 0;
 
-  case GTEXT_JSON_ARRAY: {
-    if (write_char(sink, '[') != 0)
-      return 1;
+  case GTEXT_JSON_ARRAY:
+  case GTEXT_JSON_OBJECT:
+    *out_is_container = 1;
+    return 0;
 
-    size_t size = v->as.array.count;
-
-    // Check for NULL elems pointer (defensive)
-    if (size > 0 && !v->as.array.elems) {
-      return 1; // Invalid array state
-    }
-
-    // Determine if we should format inline (based on threshold)
-    int should_inline = 0;
-    if (opts->pretty) {
-      int threshold = opts->inline_array_threshold;
-      if (threshold < 0) {
-        should_inline = 0; // -1 means always pretty (never inline)
-      }
-      else if (threshold == 0) {
-        should_inline = 0; // 0 means always pretty
-      }
-      else {
-        should_inline = (size <= (size_t)threshold);
-      }
-    }
-
-    for (size_t i = 0; i < size; i++) {
-      if (i > 0) {
-        if (write_char(sink, ',') != 0)
-          return 1;
-        if (opts->space_after_comma) {
-          if (write_char(sink, ' ') != 0)
-            return 1;
-        }
-      }
-
-      if (opts->pretty && !should_inline) {
-        if (write_indent(sink, depth + 1, opts) != 0)
-          return 1;
-      }
-      else if (should_inline && i > 0) {
-        // Inline formatting: add space after comma
-        if (write_char(sink, ' ') != 0)
-          return 1;
-      }
-
-      // Bounds check: i < size already checked, but verify elems[i] is valid
-      if (!v->as.array.elems || i >= v->as.array.capacity) {
-        return 1; // Out of bounds
-      }
-
-      if (write_value_recursive(sink, v->as.array.elems[i], opts, depth + 1) !=
-          0) {
-        return 1;
-      }
-    }
-
-    if (opts->pretty && size > 0 && !should_inline) {
-      if (write_indent(sink, depth, opts) != 0)
-        return 1;
-    }
-
-    return write_char(sink, ']');
+  default:
+    *out_status = 1; // Unknown type
+    return 0;
   }
+}
 
-  case GTEXT_JSON_OBJECT: {
-    if (write_char(sink, '{') != 0)
-      return 1;
+/* The threshold decision, which is the same question for both kinds of
+   container asked of two different options. */
+static int write_should_inline(
+    size_t size, int threshold, const GTEXT_JSON_Write_Options * opts) {
+  if (!opts->pretty) {
+    return 0;
+  }
+  /* -1 means always pretty, and so does 0: neither is a width. */
+  if (threshold <= 0) {
+    return 0;
+  }
+  return size <= (size_t)threshold;
+}
 
-    size_t size = v->as.object.count;
-
-    // Check for NULL pairs pointer (defensive)
-    if (size > 0 && !v->as.object.pairs) {
-      return 1; // Invalid object state
-    }
-
-    // Create index array for sorting if needed
-    size_t * indices = NULL;
-    if (opts->sort_object_keys && size > 0) {
-      // Check for integer overflow in malloc
-      if (size > SIZE_MAX / sizeof(size_t)) {
-        return 1; // Overflow
-      }
-
-      indices = (size_t *)malloc(size * sizeof(size_t));
-      if (!indices) {
-        return 1; // Out of memory
-      }
-      for (size_t i = 0; i < size; i++) {
-        indices[i] = i;
-      }
-      // Sort indices by key - use a wrapper function
-      // We need to pass the pairs array to the comparison function
-      // Since qsort doesn't support context, we'll use a different approach
-      // For now, we'll do a simple bubble sort (not optimal but works)
-      for (size_t i = 0; i < size - 1; i++) {
-        for (size_t j = 0; j < size - 1 - i; j++) {
-          size_t idx_a = indices[j];
-          size_t idx_b = indices[j + 1];
-
-          // Bounds check indices
-          if (idx_a >= size || idx_b >= size ||
-              idx_a >= v->as.object.capacity ||
-              idx_b >= v->as.object.capacity) {
-            free(indices);
-            return 1; // Out of bounds
-          }
-
-          const char * key_a = v->as.object.pairs[idx_a].key;
-          size_t len_a = v->as.object.pairs[idx_a].key_len;
-          const char * key_b = v->as.object.pairs[idx_b].key;
-          size_t len_b = v->as.object.pairs[idx_b].key_len;
-
-          // Check for NULL keys
-          if (!key_a || !key_b) {
-            free(indices);
-            return 1; // Invalid key
-          }
-
-          size_t min_len = len_a < len_b ? len_a : len_b;
-          int cmp = memcmp(key_a, key_b, min_len);
-          if (cmp > 0 || (cmp == 0 && len_a > len_b)) {
-            size_t tmp = indices[j];
-            indices[j] = indices[j + 1];
-            indices[j + 1] = tmp;
-          }
-        }
-      }
-    }
-
-    // Determine if we should format inline (based on threshold)
-    int should_inline = 0;
-    if (opts->pretty) {
-      int threshold = opts->inline_object_threshold;
-      if (threshold < 0) {
-        should_inline = 0; // -1 means always pretty (never inline)
-      }
-      else if (threshold == 0) {
-        should_inline = 0; // 0 means always pretty
-      }
-      else {
-        should_inline = (size <= (size_t)threshold);
-      }
-    }
-
-    for (size_t i = 0; i < size; i++) {
-      size_t idx = indices ? indices[i] : i;
-
-      // Bounds check index
-      if (idx >= size || idx >= v->as.object.capacity) {
-        if (indices)
-          free(indices);
+/* The object key order, when one was asked for: indices into pairs[], sorted by
+   key.  NULL when the caller did not ask, which means "as stored". */
+static int write_object_indices(const GTEXT_JSON_Value * v, size_t size,
+    const GTEXT_JSON_Write_Options * opts, size_t ** out_indices) {
+  *out_indices = NULL;
+  if (!opts->sort_object_keys || size == 0) {
+    return 0;
+  }
+  if (size > SIZE_MAX / sizeof(size_t)) {
+    return 1; // Overflow
+  }
+  size_t * indices = (size_t *)malloc(size * sizeof(size_t));
+  if (!indices) {
+    return 1; // Out of memory
+  }
+  for (size_t i = 0; i < size; i++) {
+    indices[i] = i;
+  }
+  for (size_t i = 0; i + 1 < size; i++) {
+    for (size_t j = 0; j + 1 < size - i; j++) {
+      size_t idx_a = indices[j];
+      size_t idx_b = indices[j + 1];
+      if (idx_a >= size || idx_b >= size || idx_a >= v->as.object.capacity ||
+          idx_b >= v->as.object.capacity) {
+        free(indices);
         return 1; // Out of bounds
       }
-
-      if (i > 0) {
-        if (write_char(sink, ',') != 0) {
-          if (indices)
-            free(indices);
-          return 1;
-        }
-        if (opts->space_after_comma) {
-          if (write_char(sink, ' ') != 0) {
-            if (indices)
-              free(indices);
-            return 1;
-          }
-        }
-      }
-
-      if (opts->pretty && !should_inline) {
-        if (write_indent(sink, depth + 1, opts) != 0) {
-          if (indices)
-            free(indices);
-          return 1;
-        }
-      }
-      else if (should_inline && i > 0) {
-        // Inline formatting: add space after comma
-        if (write_char(sink, ' ') != 0) {
-          if (indices)
-            free(indices);
-          return 1;
-        }
-      }
-
-      // Check for NULL key
-      if (!v->as.object.pairs[idx].key) {
-        if (indices)
-          free(indices);
+      const char * key_a = v->as.object.pairs[idx_a].key;
+      size_t len_a = v->as.object.pairs[idx_a].key_len;
+      const char * key_b = v->as.object.pairs[idx_b].key;
+      size_t len_b = v->as.object.pairs[idx_b].key_len;
+      if (!key_a || !key_b) {
+        free(indices);
         return 1; // Invalid key
       }
-
-      // Write key
-      if (write_escaped_string(sink, v->as.object.pairs[idx].key,
-              v->as.object.pairs[idx].key_len, opts) != 0) {
-        if (indices)
-          free(indices);
-        return 1;
+      size_t min_len = len_a < len_b ? len_a : len_b;
+      int cmp = memcmp(key_a, key_b, min_len);
+      if (cmp > 0 || (cmp == 0 && len_a > len_b)) {
+        size_t tmp = indices[j];
+        indices[j] = indices[j + 1];
+        indices[j + 1] = tmp;
       }
+    }
+  }
+  *out_indices = indices;
+  return 0;
+}
 
-      // Write colon with optional spacing
+/* One container being written: how far through it, how it is being formatted,
+   and the key order it was given. */
+typedef struct {
+  const GTEXT_JSON_Value * v;
+  size_t size;
+  size_t i;
+  int should_inline;
+  int depth;
+  size_t * indices; /* owned; objects with sort_object_keys only */
+} json_write_frame;
+
+/* Write @p root, with the writer's own stack on the heap.
+ *
+ * This was a recursion, and a value built through the DOM API has no depth
+ * limit to bound it: max_depth is a *parser* option and json_core.h says so
+ * carefully.  Two hundred thousand levels, assembled through the documented
+ * API with nothing unusual asked for, took the process down.  Its `depth`
+ * parameter looked like a guard and was not - it was only ever the indentation
+ * width.
+ *
+ * Cycles are not guarded against and do not need to be: a value cannot contain
+ * itself, because json_check_no_cycle() refuses the insertion that would do it.
+ * Without that there would be nothing to write anyway. */
+static int write_value_iterative(GTEXT_JSON_Sink * sink,
+    const GTEXT_JSON_Value * root, const GTEXT_JSON_Write_Options * opt) {
+  const GTEXT_JSON_Write_Options * opts =
+      opt ? opt : &(GTEXT_JSON_Write_Options){0};
+
+  json_write_frame inline_frames[32];
+  json_write_frame * frames = inline_frames;
+  size_t count = 0;
+  size_t capacity = sizeof(inline_frames) / sizeof(inline_frames[0]);
+  int status = 0;
+
+  /* Opens @p node as a container: the bracket, then a frame.  Everything the
+     frame needs is computed here, so the loop below never asks twice. */
+  #define JSON_WRITE_OPEN(node, node_depth)                                    \
+    do {                                                                       \
+      const GTEXT_JSON_Value * open_v = (node);                                \
+      const int is_object = (open_v->type == GTEXT_JSON_OBJECT);                \
+      size_t open_size = is_object ? open_v->as.object.count                   \
+                                   : open_v->as.array.count;                   \
+      if (write_char(sink, is_object ? '{' : '[') != 0) {                      \
+        status = 1;                                                            \
+        goto done;                                                             \
+      }                                                                        \
+      /* Defensive: a count with no storage behind it. */                      \
+      if (open_size > 0                                                        \
+          && !(is_object ? (void *)open_v->as.object.pairs                      \
+                         : (void *)open_v->as.array.elems)) {                   \
+        status = 1;                                                            \
+        goto done;                                                             \
+      }                                                                        \
+      size_t * open_indices = NULL;                                            \
+      if (is_object                                                            \
+          && write_object_indices(open_v, open_size, opts, &open_indices)       \
+              != 0) {                                                          \
+        status = 1;                                                            \
+        goto done;                                                             \
+      }                                                                        \
+      if (count == capacity) {                                                 \
+        size_t new_capacity = capacity * 2;                                    \
+        json_write_frame * grown;                                              \
+        if (frames == inline_frames) {                                         \
+          grown = (json_write_frame *)gtext_allocator_malloc(                  \
+              NULL, new_capacity * sizeof(*grown));                            \
+          if (grown) memcpy(grown, frames, count * sizeof(*grown));            \
+        }                                                                      \
+        else {                                                                 \
+          grown = (json_write_frame *)gtext_allocator_realloc(                 \
+              NULL, frames, new_capacity * sizeof(*grown));                    \
+        }                                                                      \
+        if (!grown) {                                                          \
+          free(open_indices);                                                  \
+          status = 1;                                                          \
+          goto done;                                                           \
+        }                                                                      \
+        frames = grown;                                                        \
+        capacity = new_capacity;                                               \
+      }                                                                        \
+      frames[count].v = open_v;                                                \
+      frames[count].size = open_size;                                          \
+      frames[count].i = 0;                                                     \
+      frames[count].depth = (node_depth);                                      \
+      frames[count].indices = open_indices;                                    \
+      frames[count].should_inline = write_should_inline(open_size,              \
+          is_object ? opts->inline_object_threshold                             \
+                    : opts->inline_array_threshold,                            \
+          opts);                                                               \
+      count++;                                                                 \
+    } while (0)
+
+  {
+    int is_container = 0;
+    int leaf_status = 0;
+    write_scalar_value(sink, root, opts, &is_container, &leaf_status);
+    if (!is_container) {
+      return leaf_status;
+    }
+    JSON_WRITE_OPEN(root, 0);
+  }
+
+  while (count > 0) {
+    json_write_frame * f = &frames[count - 1];
+    const int is_object = (f->v->type == GTEXT_JSON_OBJECT);
+
+    if (f->i >= f->size) {
+      if (opts->pretty && f->size > 0 && !f->should_inline) {
+        if (write_indent(sink, f->depth, opts) != 0) {
+          status = 1;
+          goto done;
+        }
+      }
+      if (write_char(sink, is_object ? '}' : ']') != 0) {
+        status = 1;
+        goto done;
+      }
+      free(f->indices);
+      count--;
+      continue;
+    }
+
+    const size_t i = f->i;
+    const int child_depth = f->depth + 1;
+    const int should_inline = f->should_inline;
+
+    if (i > 0) {
+      if (write_char(sink, ',') != 0) {
+        status = 1;
+        goto done;
+      }
+      if (opts->space_after_comma && write_char(sink, ' ') != 0) {
+        status = 1;
+        goto done;
+      }
+    }
+
+    if (opts->pretty && !should_inline) {
+      if (write_indent(sink, child_depth, opts) != 0) {
+        status = 1;
+        goto done;
+      }
+    }
+    else if (should_inline && i > 0) {
+      // Inline formatting: add space after comma
+      if (write_char(sink, ' ') != 0) {
+        status = 1;
+        goto done;
+      }
+    }
+
+    const GTEXT_JSON_Value * child = NULL;
+    if (is_object) {
+      const size_t idx = f->indices ? f->indices[i] : i;
+      if (idx >= f->size || idx >= f->v->as.object.capacity) {
+        status = 1; // Out of bounds
+        goto done;
+      }
+      if (!f->v->as.object.pairs[idx].key) {
+        status = 1; // Invalid key
+        goto done;
+      }
+      if (write_escaped_string(sink, f->v->as.object.pairs[idx].key,
+              f->v->as.object.pairs[idx].key_len, opts) != 0) {
+        status = 1;
+        goto done;
+      }
       if (opts->pretty && !should_inline) {
         if (write_string(sink, ": ") != 0) {
-          if (indices)
-            free(indices);
-          return 1;
+          status = 1;
+          goto done;
         }
       }
       else {
         if (write_char(sink, ':') != 0) {
-          if (indices)
-            free(indices);
-          return 1;
+          status = 1;
+          goto done;
         }
-        if (opts->space_after_colon) {
-          if (write_char(sink, ' ') != 0) {
-            if (indices)
-              free(indices);
-            return 1;
-          }
+        if (opts->space_after_colon && write_char(sink, ' ') != 0) {
+          status = 1;
+          goto done;
         }
       }
-
-      // Write value
-      if (write_value_recursive(
-              sink, v->as.object.pairs[idx].value, opts, depth + 1) != 0) {
-        if (indices)
-          free(indices);
-        return 1;
+      child = f->v->as.object.pairs[idx].value;
+    }
+    else {
+      if (!f->v->as.array.elems || i >= f->v->as.array.capacity) {
+        status = 1; // Out of bounds
+        goto done;
       }
+      child = f->v->as.array.elems[i];
     }
 
-    if (indices) {
-      free(indices);
-    }
+    /* Advanced before the child is entered, because the open below can move
+       the frame array and nothing may be written through @c f after it. */
+    f->i++;
 
-    if (opts->pretty && size > 0 && !should_inline) {
-      if (write_indent(sink, depth, opts) != 0)
-        return 1;
+    int is_container = 0;
+    int leaf_status = 0;
+    write_scalar_value(sink, child, opts, &is_container, &leaf_status);
+    if (!is_container) {
+      if (leaf_status != 0) {
+        status = leaf_status;
+        goto done;
+      }
+      continue;
     }
-
-    return write_char(sink, '}');
+    JSON_WRITE_OPEN(child, child_depth);
   }
 
-  default:
-    return 1; // Unknown type
+done:
+  #undef JSON_WRITE_OPEN
+  for (size_t k = 0; k < count; k++) {
+    free(frames[k].indices);
   }
+  if (frames != inline_frames) {
+    gtext_allocator_free(NULL, frames);
+  }
+  return status;
 }
 
 GTEXT_API GTEXT_JSON_Status gtext_json_write_value(GTEXT_JSON_Sink * sink,
@@ -854,7 +904,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_write_value(GTEXT_JSON_Sink * sink,
     return GTEXT_JSON_E_INVALID;
   }
 
-  int result = write_value_recursive(sink, v, opt, 0);
+  int result = write_value_iterative(sink, v, opt);
   if (result != 0) {
     if (err) {
       *err = (GTEXT_JSON_Error){

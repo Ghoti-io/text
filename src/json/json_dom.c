@@ -218,56 +218,159 @@ void json_context_free(json_context * ctx) {
 }
 
 // Recursively free child values that have different contexts
+/* One node whose children are still being scanned, and whether its own context
+   has to be freed once they have been.  @ctx_to_free is held separately because
+   the node's memory *is* that context's arena, so it cannot be read after. */
+typedef struct {
+  GTEXT_JSON_Value * node;
+  size_t i;
+  json_context * ctx_to_free;
+} json_free_frame;
+
+/* The recursion this replaces, kept for one case: a stack that will not grow.
+   Freeing cannot report a failure, so the alternatives are to leak the foreign
+   contexts or to do what the code did before, and doing what it did before is
+   the better of the two - it is only reachable once the allocator is already
+   refusing, and it is what every caller survived until now. */
+static void json_free_children_fallback(GTEXT_JSON_Value * v) {
+  if (!v) {
+    return;
+  }
+  json_context * parent_ctx = v->ctx;
+  size_t count = 0;
+  if (v->type == GTEXT_JSON_ARRAY && v->as.array.elems) {
+    count = v->as.array.count;
+  }
+  else if (v->type == GTEXT_JSON_OBJECT && v->as.object.pairs) {
+    count = v->as.object.count;
+  }
+  for (size_t i = 0; i < count; i++) {
+    GTEXT_JSON_Value * child = (v->type == GTEXT_JSON_ARRAY)
+        ? v->as.array.elems[i]
+        : v->as.object.pairs[i].value;
+    if (!child) {
+      continue;
+    }
+    json_context * child_ctx =
+        (child->ctx && child->ctx != parent_ctx) ? child->ctx : NULL;
+    json_free_children_fallback(child);
+    if (child_ctx) {
+      json_context_free(child_ctx);
+    }
+  }
+}
+
+/* How many children @p v has for the purposes of this scan. */
+static size_t json_free_child_count(const GTEXT_JSON_Value * v) {
+  if (v->type == GTEXT_JSON_ARRAY && v->as.array.elems) {
+    return v->as.array.count;
+  }
+  if (v->type == GTEXT_JSON_OBJECT && v->as.object.pairs) {
+    return v->as.object.count;
+  }
+  return 0;
+}
+
+static GTEXT_JSON_Value * json_free_child_at(
+    const GTEXT_JSON_Value * v, size_t i) {
+  if (v->type == GTEXT_JSON_ARRAY) {
+    return v->as.array.elems[i];
+  }
+  return v->as.object.pairs[i].value;
+}
+
+/* Find every descendant whose context differs from its parent's and free that
+ * context, deepest first.
+ *
+ * This is not about reclaiming the nodes: a value's nodes live in its
+ * context's arena and gtext_json_free() frees that arena in one go.  It exists
+ * because a subtree grafted in from *another* arena - which is what every
+ * gtext_json_array_push() of a separately created value does - owns an arena of
+ * its own that nothing else will free.  So the walk visits every node, not only
+ * the containers, because a scalar can have been grafted too.
+ *
+ * It was a recursion, and a value built through the DOM API has no depth limit
+ * to bound it - max_depth is a *parser* option, and json_core.h is careful to
+ * say so.  Two hundred thousand levels, assembled by the documented API with
+ * nothing unusual asked for, could not be freed: the process died trying.
+ *
+ * Deepest first matters and is what the stack gives: a context is freed when
+ * its frame pops, which is after everything below it has been scanned. */
 static void json_free_children_recursive(GTEXT_JSON_Value * v) {
   if (!v) {
     return;
   }
 
-  json_context * parent_ctx = v->ctx;
+  /* Deep enough that nothing a parser could have produced ever allocates:
+     json_core.h puts the recursive parser's own ceiling at about 18000 levels
+     on an 8 MiB stack, and its default limit at 256. */
+  json_free_frame inline_frames[64];
+  json_free_frame * frames = inline_frames;
+  size_t count = 0;
+  size_t capacity = sizeof(inline_frames) / sizeof(inline_frames[0]);
 
-  if (v->type == GTEXT_JSON_ARRAY && v->as.array.elems) {
-    for (size_t i = 0; i < v->as.array.count; i++) {
-      GTEXT_JSON_Value * child = v->as.array.elems[i];
-      if (child) {
-        if (child->ctx && child->ctx != parent_ctx) {
-          // Child has different context - save context before freeing
-          json_context * child_ctx = child->ctx;
-          // Recursively free child's children first (to find nested values with
-          // different contexts)
-          json_free_children_recursive(child);
-          // Now free the child's context (this frees the child value structure
-          // itself)
-          json_context_free(child_ctx);
-        }
-        else {
-          // Child has same context - still need to recurse to find nested
-          // values with different contexts
-          json_free_children_recursive(child);
+  frames[0].node = v;
+  frames[0].i = 0;
+  frames[0].ctx_to_free = NULL;
+  count = 1;
+
+  while (count > 0) {
+    json_free_frame * f = &frames[count - 1];
+    const size_t children = json_free_child_count(f->node);
+
+    if (f->i >= children) {
+      json_context * doomed = f->ctx_to_free;
+      count--;
+      if (doomed) {
+        json_context_free(doomed);
+      }
+      continue;
+    }
+
+    GTEXT_JSON_Value * child = json_free_child_at(f->node, f->i);
+    json_context * parent_ctx = f->node->ctx;
+    f->i++;
+    if (!child) {
+      continue;
+    }
+
+    if (count == capacity) {
+      size_t new_capacity = capacity * 2;
+      json_free_frame * grown;
+      if (frames == inline_frames) {
+        grown = (json_free_frame *)gtext_allocator_malloc(
+            NULL, new_capacity * sizeof(*grown));
+        if (grown) {
+          memcpy(grown, frames, count * sizeof(*grown));
         }
       }
+      else {
+        grown = (json_free_frame *)gtext_allocator_realloc(
+            NULL, frames, new_capacity * sizeof(*grown));
+      }
+      if (!grown) {
+        /* See json_free_children_fallback(). */
+        json_context * child_ctx =
+            (child->ctx && child->ctx != parent_ctx) ? child->ctx : NULL;
+        json_free_children_fallback(child);
+        if (child_ctx) {
+          json_context_free(child_ctx);
+        }
+        continue;
+      }
+      frames = grown;
+      capacity = new_capacity;
     }
+
+    frames[count].node = child;
+    frames[count].i = 0;
+    frames[count].ctx_to_free =
+        (child->ctx && child->ctx != parent_ctx) ? child->ctx : NULL;
+    count++;
   }
-  else if (v->type == GTEXT_JSON_OBJECT && v->as.object.pairs) {
-    for (size_t i = 0; i < v->as.object.count; i++) {
-      GTEXT_JSON_Value * child = v->as.object.pairs[i].value;
-      if (child) {
-        if (child->ctx && child->ctx != parent_ctx) {
-          // Child has different context - save context before freeing
-          json_context * child_ctx = child->ctx;
-          // Recursively free child's children first (to find nested values with
-          // different contexts)
-          json_free_children_recursive(child);
-          // Now free the child's context (this frees the child value structure
-          // itself)
-          json_context_free(child_ctx);
-        }
-        else {
-          // Child has same context - still need to recurse to find nested
-          // values with different contexts
-          json_free_children_recursive(child);
-        }
-      }
-    }
+
+  if (frames != inline_frames) {
+    gtext_allocator_free(NULL, frames);
   }
 }
 
@@ -1241,30 +1344,20 @@ GTEXT_API GTEXT_JSON_Status gtext_json_object_remove(
 }
 
 // Helper function for deep equality comparison with configurable mode
-static bool json_value_equal_internal(const GTEXT_JSON_Value * a,
+/* Everything but the two collection arms: the answer for a pair of values whose
+   types already match and which are not both containers. */
+static bool json_scalar_equal(const GTEXT_JSON_Value * a,
     const GTEXT_JSON_Value * b, GTEXT_JSON_Equal_Mode mode) {
-  if (a == b) {
-    return 1; // Same pointer
-  }
-
-  if (!a || !b) {
-    return 0; // One is NULL
-  }
-
-  if (a->type != b->type) {
-    return 0; // Different types
-  }
-
   switch (a->type) {
   case GTEXT_JSON_NULL:
-    return 1; // Both are null
+    return true;
 
   case GTEXT_JSON_BOOL:
     return a->as.boolean == b->as.boolean;
 
   case GTEXT_JSON_STRING:
     if (a->as.string.len != b->as.string.len) {
-      return 0;
+      return false;
     }
     // Check for NULL pointers before memcmp
     if (!a->as.string.data || !b->as.string.data) {
@@ -1273,119 +1366,196 @@ static bool json_value_equal_internal(const GTEXT_JSON_Value * a,
     }
     return memcmp(a->as.string.data, b->as.string.data, a->as.string.len) == 0;
 
-  case GTEXT_JSON_NUMBER: {
+  case GTEXT_JSON_NUMBER:
     if (mode == GTEXT_JSON_EQUAL_LEXEME) {
       // Lexeme-based comparison: must have identical lexemes
       if (a->as.number.lexeme_len != b->as.number.lexeme_len) {
-        return 0;
+        return false;
       }
       if (a->as.number.lexeme && b->as.number.lexeme) {
         return memcmp(a->as.number.lexeme, b->as.number.lexeme,
                    a->as.number.lexeme_len) == 0;
       }
       // If either doesn't have a lexeme, they're not equal in lexeme mode
-      return 0;
+      return false;
     }
-    else {
-      // Numeric equivalence comparison
-      // First check if both have the same representation available
-      if (a->as.number.has_i64 && b->as.number.has_i64) {
-        return a->as.number.i64 == b->as.number.i64;
-      }
-      if (a->as.number.has_u64 && b->as.number.has_u64) {
-        return a->as.number.u64 == b->as.number.u64;
-      }
-      if (a->as.number.has_dbl && b->as.number.has_dbl) {
-        // Use approximate equality for doubles (with epsilon)
-        double diff = fabs(a->as.number.dbl - b->as.number.dbl);
-        return diff < 1e-15 || (a->as.number.dbl == b->as.number.dbl);
-      }
-      // Fall back to lexeme comparison if no numeric representation available
-      if (a->as.number.lexeme_len != b->as.number.lexeme_len) {
-        return 0;
-      }
-      if (a->as.number.lexeme && b->as.number.lexeme) {
-        return memcmp(a->as.number.lexeme, b->as.number.lexeme,
-                   a->as.number.lexeme_len) == 0;
-      }
-      return 0;
+    // Numeric equivalence comparison: the same representation, if both have it
+    if (a->as.number.has_i64 && b->as.number.has_i64) {
+      return a->as.number.i64 == b->as.number.i64;
     }
-  }
-
-  case GTEXT_JSON_ARRAY: {
-    if (a->as.array.count != b->as.array.count) {
-      return 0;
+    if (a->as.number.has_u64 && b->as.number.has_u64) {
+      return a->as.number.u64 == b->as.number.u64;
     }
-    // Check for NULL elems arrays
-    if (!a->as.array.elems || !b->as.array.elems) {
-      return (
-          a->as.array.elems == b->as.array.elems); // Both NULL or both non-NULL
+    if (a->as.number.has_dbl && b->as.number.has_dbl) {
+      double diff = fabs(a->as.number.dbl - b->as.number.dbl);
+      return diff < 1e-15 || (a->as.number.dbl == b->as.number.dbl);
     }
-    for (size_t i = 0; i < a->as.array.count; i++) {
-      if (!json_value_equal_internal(
-              a->as.array.elems[i], b->as.array.elems[i], mode)) {
-        return 0;
-      }
+    // Fall back to lexeme comparison if no numeric representation available
+    if (a->as.number.lexeme_len != b->as.number.lexeme_len) {
+      return false;
     }
-    return 1;
-  }
-
-  case GTEXT_JSON_OBJECT: {
-    if (a->as.object.count != b->as.object.count) {
-      return 0;
+    if (a->as.number.lexeme && b->as.number.lexeme) {
+      return memcmp(a->as.number.lexeme, b->as.number.lexeme,
+                 a->as.number.lexeme_len) == 0;
     }
-    // Check for NULL pairs arrays
-    if (!a->as.object.pairs || !b->as.object.pairs) {
-      return (a->as.object.pairs ==
-          b->as.object.pairs); // Both NULL or both non-NULL
-    }
-    // For objects, we need to match keys regardless of order
-    // For each key in a, find it in b and compare values
-    for (size_t i = 0; i < a->as.object.count; i++) {
-      const char * key_a = a->as.object.pairs[i].key;
-      size_t key_len_a = a->as.object.pairs[i].key_len;
-      const GTEXT_JSON_Value * val_a = a->as.object.pairs[i].value;
-
-      // Find matching key in b
-      int found = 0;
-      for (size_t j = 0; j < b->as.object.count; j++) {
-        if (b->as.object.pairs[j].key_len == key_len_a) {
-          // Check for NULL key pointers before memcmp
-          if (key_len_a == 0) {
-            // Empty key - both must have NULL or both must have non-NULL
-            if ((key_a == NULL) == (b->as.object.pairs[j].key == NULL)) {
-              // Found matching key - compare values
-              if (!json_value_equal_internal(
-                      val_a, b->as.object.pairs[j].value, mode)) {
-                return 0;
-              }
-              found = 1;
-              break;
-            }
-          }
-          else if (key_a != NULL && b->as.object.pairs[j].key != NULL) {
-            if (memcmp(b->as.object.pairs[j].key, key_a, key_len_a) == 0) {
-              // Found matching key - compare values
-              if (!json_value_equal_internal(
-                      val_a, b->as.object.pairs[j].value, mode)) {
-                return 0;
-              }
-              found = 1;
-              break;
-            }
-          }
-        }
-      }
-      if (!found) {
-        return 0; // Key not found in b
-      }
-    }
-    return 1;
-  }
+    return false;
 
   default:
-    return 0;
+    return false;
   }
+}
+
+/* b's first pair whose key is the one of a's pair @p i, or -1.
+ *
+ * JSON object keys are strings, so the match is a string search and not a
+ * recursive comparison - which is the whole reason this walk is a plain
+ * conjunction and nodes_equal() in the YAML half is not.  First match wins, and
+ * its value decides: that is what the recursion did, and an object with two
+ * equal keys is not a shape either side has to agree about. */
+static long json_object_match(const GTEXT_JSON_Value * a,
+    const GTEXT_JSON_Value * b, size_t i) {
+  const char * key = a->as.object.pairs[i].key;
+  const size_t key_len = a->as.object.pairs[i].key_len;
+  for (size_t j = 0; j < b->as.object.count; j++) {
+    if (b->as.object.pairs[j].key_len != key_len) {
+      continue;
+    }
+    if (key_len == 0) {
+      if ((key == NULL) == (b->as.object.pairs[j].key == NULL)) {
+        return (long)j;
+      }
+      continue;
+    }
+    if (key && b->as.object.pairs[j].key
+        && memcmp(b->as.object.pairs[j].key, key, key_len) == 0) {
+      return (long)j;
+    }
+  }
+  return -1;
+}
+
+/* Where the comparison is inside one pair of containers. */
+typedef struct {
+  const GTEXT_JSON_Value * a;
+  const GTEXT_JSON_Value * b;
+  size_t i;
+} json_eq_frame;
+
+/* Deep equality, with the walk's stack on the heap.
+ *
+ * It was a recursion, and a value built through the DOM API has no depth limit
+ * to bound it - max_depth is a *parser* option.  Two hundred thousand levels
+ * took the process down.
+ *
+ * A plain conjunction, so no result has to be carried back up: the first
+ * inequality is the answer and the walk stops there.  The frontier is a cursor
+ * per container rather than every child at once, so the stack is as deep as the
+ * values and not as wide as their widest array.
+ *
+ * Cycles are not guarded against, and do not need to be: a value cannot contain
+ * itself, because json_check_no_cycle() refuses the insertion that would do it.
+ *
+ * A stack that will not grow is reported as "not equal", which is the one place
+ * this function has to give a wrong answer rather than an error - it returns a
+ * bool and gtext_json_equal() has nowhere to put a failure.  Said here because
+ * it is the kind of thing a reader should not have to find out by reading the
+ * allocation. */
+static bool json_value_equal_internal(const GTEXT_JSON_Value * a,
+    const GTEXT_JSON_Value * b, GTEXT_JSON_Equal_Mode mode) {
+  json_eq_frame inline_frames[64];
+  json_eq_frame * frames = inline_frames;
+  size_t count = 0;
+  size_t capacity = sizeof(inline_frames) / sizeof(inline_frames[0]);
+  bool answer = true;
+
+  #define JSON_EQ_VISIT(na, nb)                                                \
+    do {                                                                       \
+      const GTEXT_JSON_Value * x = (na);                                       \
+      const GTEXT_JSON_Value * y = (nb);                                       \
+      if (x != y) {                                                            \
+        if (!x || !y || x->type != y->type) { answer = false; goto done; }      \
+        if (x->type == GTEXT_JSON_ARRAY) {                                     \
+          if (x->as.array.count != y->as.array.count) {                        \
+            answer = false; goto done;                                         \
+          }                                                                    \
+          if (!x->as.array.elems || !y->as.array.elems) {                      \
+            if (x->as.array.elems != y->as.array.elems) {                      \
+              answer = false; goto done;                                       \
+            }                                                                  \
+          }                                                                    \
+          else { JSON_EQ_PUSH(x, y); }                                         \
+        }                                                                      \
+        else if (x->type == GTEXT_JSON_OBJECT) {                               \
+          if (x->as.object.count != y->as.object.count) {                      \
+            answer = false; goto done;                                         \
+          }                                                                    \
+          if (!x->as.object.pairs || !y->as.object.pairs) {                    \
+            if (x->as.object.pairs != y->as.object.pairs) {                    \
+              answer = false; goto done;                                       \
+            }                                                                  \
+          }                                                                    \
+          else { JSON_EQ_PUSH(x, y); }                                         \
+        }                                                                      \
+        else if (!json_scalar_equal(x, y, mode)) {                             \
+          answer = false; goto done;                                           \
+        }                                                                      \
+      }                                                                        \
+    } while (0)
+
+  #define JSON_EQ_PUSH(na, nb)                                                 \
+    do {                                                                       \
+      if (count == capacity) {                                                 \
+        size_t new_capacity = capacity * 2;                                    \
+        json_eq_frame * grown;                                                 \
+        if (frames == inline_frames) {                                         \
+          grown = (json_eq_frame *)gtext_allocator_malloc(                     \
+              NULL, new_capacity * sizeof(*grown));                            \
+          if (grown) memcpy(grown, frames, count * sizeof(*grown));            \
+        }                                                                      \
+        else {                                                                 \
+          grown = (json_eq_frame *)gtext_allocator_realloc(                    \
+              NULL, frames, new_capacity * sizeof(*grown));                    \
+        }                                                                      \
+        if (!grown) { answer = false; goto done; }                             \
+        frames = grown;                                                        \
+        capacity = new_capacity;                                               \
+      }                                                                        \
+      frames[count].a = (na);                                                  \
+      frames[count].b = (nb);                                                  \
+      frames[count].i = 0;                                                     \
+      count++;                                                                 \
+    } while (0)
+
+  JSON_EQ_VISIT(a, b);
+
+  while (count > 0) {
+    json_eq_frame * f = &frames[count - 1];
+
+    if (f->a->type == GTEXT_JSON_ARRAY) {
+      if (f->i >= f->a->as.array.count) { count--; continue; }
+      const GTEXT_JSON_Value * ca = f->a->as.array.elems[f->i];
+      const GTEXT_JSON_Value * cb = f->b->as.array.elems[f->i];
+      f->i++;
+      JSON_EQ_VISIT(ca, cb);
+      continue;
+    }
+
+    if (f->i >= f->a->as.object.count) { count--; continue; }
+    const long j = json_object_match(f->a, f->b, f->i);
+    if (j < 0) { answer = false; goto done; }
+    const GTEXT_JSON_Value * va = f->a->as.object.pairs[f->i].value;
+    const GTEXT_JSON_Value * vb = f->b->as.object.pairs[(size_t)j].value;
+    f->i++;
+    JSON_EQ_VISIT(va, vb);
+  }
+
+done:
+  #undef JSON_EQ_VISIT
+  #undef JSON_EQ_PUSH
+  if (frames != inline_frames) {
+    gtext_allocator_free(NULL, frames);
+  }
+  return answer;
 }
 
 GTEXT_API bool gtext_json_equal(const GTEXT_JSON_Value * a,
