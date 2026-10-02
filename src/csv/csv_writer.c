@@ -802,8 +802,51 @@ GTEXT_API GTEXT_CSV_Writer * gtext_csv_writer_new(
   writer->state = CSV_WRITER_STATE_INITIAL;
   writer->has_fields_in_record = false;
   writer->last_error = GTEXT_CSV_OK;
+  writer->pending_empty_fields = 0;
+  writer->pending_newline = false;
 
   return writer;
+}
+
+/** The record separator, or the terminator at finish(). */
+static GTEXT_CSV_Status csv_writer_write_newline(GTEXT_CSV_Writer * writer) {
+  const char * newline = writer->opts.newline ? writer->opts.newline : "\n";
+  return writer->sink.write(writer->sink.user, newline, strlen(newline));
+}
+
+/** One field, with its preceding delimiter when it is not the first. */
+static GTEXT_CSV_Status csv_writer_emit_field(
+    GTEXT_CSV_Writer * writer, const char * bytes, size_t len) {
+  if (writer->has_fields_in_record) {
+    char delimiter = writer->opts.dialect.delimiter;
+    GTEXT_CSV_Status status =
+        writer->sink.write(writer->sink.user, &delimiter, 1);
+    if (status != GTEXT_CSV_OK) {
+      return status;
+    }
+  }
+  GTEXT_CSV_Status status =
+      csv_write_field(&writer->sink, bytes, len, &writer->opts);
+  if (status != GTEXT_CSV_OK) {
+    return status;
+  }
+  writer->has_fields_in_record = true;
+  return GTEXT_CSV_OK;
+}
+
+/** Write the empty fields that were held back, now that one follows them. */
+static GTEXT_CSV_Status csv_writer_flush_pending_empties(
+    GTEXT_CSV_Writer * writer) {
+  while (writer->pending_empty_fields > 0) {
+    /* Written through the same path as any other field, so that
+       quote_empty_fields and the quoting policy reach them. */
+    GTEXT_CSV_Status status = csv_writer_emit_field(writer, "", 0);
+    if (status != GTEXT_CSV_OK) {
+      return status;
+    }
+    writer->pending_empty_fields--;
+  }
+  return GTEXT_CSV_OK;
 }
 
 GTEXT_API GTEXT_CSV_Status gtext_csv_writer_record_begin(
@@ -824,8 +867,20 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_writer_record_begin(
     return GTEXT_CSV_E_INVALID;
   }
 
+  /* The previous record's separator, held back because at its record_end()
+     this writer could not know whether another record would follow. */
+  if (writer->pending_newline) {
+    GTEXT_CSV_Status status = csv_writer_write_newline(writer);
+    if (status != GTEXT_CSV_OK) {
+      writer->last_error = status;
+      return status;
+    }
+    writer->pending_newline = false;
+  }
+
   writer->state = CSV_WRITER_STATE_IN_RECORD;
   writer->has_fields_in_record = false;
+  writer->pending_empty_fields = 0;
   writer->last_error = GTEXT_CSV_OK;
 
   return GTEXT_CSV_OK;
@@ -843,27 +898,25 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_writer_field(
     return GTEXT_CSV_E_INVALID;
   }
 
-  // Insert delimiter before field if this is not the first field in the record
-  if (writer->has_fields_in_record) {
-    char delimiter = writer->opts.dialect.delimiter;
-    GTEXT_CSV_Status status =
-        writer->sink.write(writer->sink.user, &delimiter, 1);
-    if (status != GTEXT_CSV_OK) {
-      writer->last_error = status;
-      return status;
-    }
+  /* An empty field might be a trailing one, and that is not knowable yet, so
+     it is counted rather than written.  See pending_empty_fields. */
+  if (writer->opts.trim_trailing_empty_fields && len == 0) {
+    writer->pending_empty_fields++;
+    return GTEXT_CSV_OK;
   }
 
-  // Write the field with proper quoting and escaping
-  GTEXT_CSV_Status status =
-      csv_write_field(&writer->sink, (const char *)bytes, len, &writer->opts);
-
+  /* A field has arrived, so any empty ones before it were not trailing. */
+  GTEXT_CSV_Status status = csv_writer_flush_pending_empties(writer);
   if (status != GTEXT_CSV_OK) {
     writer->last_error = status;
     return status;
   }
 
-  writer->has_fields_in_record = true;
+  status = csv_writer_emit_field(writer, (const char *)bytes, len);
+  if (status != GTEXT_CSV_OK) {
+    writer->last_error = status;
+    return status;
+  }
   return GTEXT_CSV_OK;
 }
 
@@ -879,22 +932,16 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_writer_record_end(
     return GTEXT_CSV_E_INVALID;
   }
 
-  // Write newline sequence
-  const char * newline = writer->opts.newline;
-  if (!newline) {
-    newline = "\n"; // Default newline
-  }
-  // newline is expected to be a null-terminated string per API contract
-  // strlen() is safe here as newline is either a string literal or
-  // null-terminated
-  size_t newline_len = strlen(newline);
+  /* The empty fields held back were trailing after all, which is what
+     trim_trailing_empty_fields asks to drop.  A record of nothing but empty
+     fields therefore writes no field at all, which is what the table writer
+     does for the same row. */
+  writer->pending_empty_fields = 0;
 
-  GTEXT_CSV_Status status =
-      writer->sink.write(writer->sink.user, newline, newline_len);
-  if (status != GTEXT_CSV_OK) {
-    writer->last_error = status;
-    return status;
-  }
+  /* The newline is deferred rather than written: whether this record is the
+     last - and so whether trailing_newline governs its terminator - is only
+     known at finish().  record_begin() emits it if another record follows. */
+  writer->pending_newline = true;
 
   writer->state = CSV_WRITER_STATE_INITIAL;
   writer->has_fields_in_record = false;
@@ -914,13 +961,27 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_writer_finish(GTEXT_CSV_Writer * writer) {
     }
   }
 
-  // If trailing_newline is enabled and we've written at least one record,
-  // write a final newline (but only if we haven't already written one)
-  // Note: trailing_newline typically means add newline at end of file,
-  // but since we already write newlines after each record, we only need
-  // to add one if no records were written or if explicitly requested.
-  // For simplicity, we'll skip this for now as it's typically handled
-  // by the caller if needed.
+  /* The last record's terminator, which only this function can decide: every
+     record but the last is followed by a separator, and trailing_newline says
+     whether the last one is too.  This used to be skipped entirely - "handled
+     by the caller if needed" - so a streaming write always ended in a newline
+     and ignored the option the table writer honours. */
+  if (writer->pending_newline) {
+    /* Not after a failure.  A record whose field was refused - an unquotable
+       field under GTEXT_CSV_QUOTE_NONE, say - was never written, and the table
+       writer returns the error having emitted nothing.  Writing the terminator
+       here would leave a caller who ignores the status with a file holding one
+       stray newline and no data. */
+    if (writer->opts.trailing_newline
+        && writer->last_error == GTEXT_CSV_OK) {
+      GTEXT_CSV_Status status = csv_writer_write_newline(writer);
+      if (status != GTEXT_CSV_OK) {
+        writer->last_error = status;
+        return status;
+      }
+    }
+    writer->pending_newline = false;
+  }
 
   writer->state = CSV_WRITER_STATE_FINISHED;
   return GTEXT_CSV_OK;

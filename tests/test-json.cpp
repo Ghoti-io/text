@@ -4679,11 +4679,27 @@ TEST(StreamingWriter, NestedStructures) {
     status = gtext_json_writer_finish(w, &err);
     EXPECT_EQ(status, GTEXT_JSON_OK);
 
-    // Verify output
-    const char * output = gtext_json_sink_buffer_data(&sink);
-    EXPECT_NE(strstr(output, "\"arr\""), nullptr);
-    EXPECT_NE(strstr(output, "\"obj\""), nullptr);
-    EXPECT_NE(strstr(output, "\"key\""), nullptr);
+    // The whole output, and a reparse.
+    //
+    // This used to be three strstr() calls asserting that "arr", "obj" and
+    // "key" appeared somewhere. All three were true of
+    //
+    //     {"arr":[1,2],"obj":,{"key":"value"}}
+    //
+    // which is what this API actually wrote for any object of two or more
+    // members, and is not JSON. The test covering the exact shape of the defect
+    // passed for as long as the defect existed, because presence of a substring
+    // says nothing about the bytes between them. See
+    // tests/test-writer-agreement.cpp.
+    const size_t out_len = gtext_json_sink_buffer_size(&sink);
+    const std::string output(gtext_json_sink_buffer_data(&sink), out_len);
+    EXPECT_EQ(output, "{\"arr\":[1,2],\"obj\":{\"key\":\"value\"}}");
+
+    GTEXT_JSON_Value * reparsed =
+        gtext_json_parse(output.data(), output.size(), nullptr, nullptr);
+    ASSERT_NE(reparsed, nullptr) << "not valid JSON: " << output;
+    EXPECT_EQ(gtext_json_object_size(reparsed), 2u);
+    gtext_json_free(reparsed);
 
     gtext_json_writer_free(w);
     gtext_json_sink_buffer_free(&sink);

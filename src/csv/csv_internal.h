@@ -572,6 +572,28 @@ struct GTEXT_CSV_Writer {
   csv_writer_state state;       ///< Current writer state
   bool has_fields_in_record;    ///< Whether current record has any fields
   GTEXT_CSV_Status last_error;  ///< Last error status (if any)
+
+  /** Empty fields seen since the last non-empty one, not yet written.
+   *
+   * ::GTEXT_CSV_Write_Options::trim_trailing_empty_fields drops the empty
+   * fields at the *end* of a record, and whether an empty field is at the end
+   * is not known until the next field arrives or the record closes.  So an
+   * empty field is counted here instead of written: a following non-empty
+   * field flushes the run, and gtext_csv_writer_record_end() discards it.
+   * Only a count is needed, never the bytes, because an empty field has none.
+   * Zero when the option is off, where every field is written as it comes. */
+  size_t pending_empty_fields;
+
+  /** Whether a record has been closed whose newline is not written yet.
+   *
+   * A newline separates records, so every record but the last gets one, and
+   * ::GTEXT_CSV_Write_Options::trailing_newline decides the last - which means
+   * the writer cannot know at record_end() whether to emit it, because "last"
+   * is only known at gtext_csv_writer_finish().  It is emitted when the next
+   * record begins, or at finish() if the option asks for it.  This is what
+   * makes the two writers agree: the table writer has the whole table and can
+   * ask `is_last_row` directly. */
+  bool pending_newline;
 };
 
 /**

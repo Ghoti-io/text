@@ -226,8 +226,31 @@ typedef struct GTEXT_JSON_Writer GTEXT_JSON_Writer;
  * sink using the specified write options. The writer enforces structural
  * correctness (e.g., prevents writing values without keys inside objects).
  *
+ * **Four write options cannot apply here, and are ignored rather than
+ * refused.** Each needs to see the whole of a value before its first byte is
+ * written, which is exactly what this API gives up:
+ *
+ * - ::GTEXT_JSON_Write_Options::sort_object_keys - the keys are not all known
+ *   until the object closes, and the first one is already written by then.
+ * - ::GTEXT_JSON_Write_Options::inline_array_threshold and
+ *   ::GTEXT_JSON_Write_Options::inline_object_threshold - both decide bracket
+ *   style from the element count, which is not known when the bracket is
+ *   written.
+ * - ::GTEXT_JSON_Write_Options::canonical_numbers - it selects reformatting
+ *   from a parsed value *instead of* a lexeme preserved by a parse. Nothing
+ *   here was parsed: gtext_json_writer_number_lexeme() is the caller handing
+ *   over bytes, and gtext_json_writer_number_double() formats. The choice the
+ *   option makes is the choice of which function to call.
+ *
+ * Everything else behaves as it does in gtext_json_write_value(), byte for
+ * byte, and that is checked by a test comparing the two writers over the same
+ * document for every remaining option. They did not always agree: an object of
+ * two or more members used to come out as `{"a":1,"b":,2}` from this API, and
+ * the separator rule is shared with the value writer now.
+ *
  * @param sink Output sink (must not be NULL)
- * @param opt Write options (can be NULL for defaults)
+ * @param opt Write options (can be NULL for defaults). See above for the four
+ *            this API cannot honour.
  * @return New writer instance, or NULL on allocation failure
  */
 GTEXT_API GTEXT_JSON_Writer * gtext_json_writer_new(

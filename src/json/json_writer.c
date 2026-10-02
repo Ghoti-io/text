@@ -1079,6 +1079,21 @@ static int writer_write_comma_if_needed(GTEXT_JSON_Writer * w) {
     return 0; // No stack, no comma needed
   }
 
+  /* A separator belongs before an *element*, and in an object the element
+     starts at the key - so a value that follows a key must not write one. Every
+     writer of a value calls this, including object_begin() and array_begin()
+     when the container is itself an object's value, and `has_elements` cannot
+     tell them apart: it is a property of the container, where the question is
+     about the position.
+     Without this an object of two or more members came out as
+     {"a":1,"b":,2} - invalid JSON, from a sequence of calls that each returned
+     GTEXT_JSON_OK, with gtext_json_writer_finish() reporting OK too. A single
+     member was right by luck, because has_elements is still 0 when the first
+     value is written, which is why the shape had to be two. */
+  if (top->type == JSON_WRITER_STACK_OBJECT && !top->expecting_key) {
+    return 0; // after a key: gtext_json_writer_key() wrote the separator
+  }
+
   if (top->has_elements) {
     if (writer_write_char(w, ',') != 0) {
       return 1;
