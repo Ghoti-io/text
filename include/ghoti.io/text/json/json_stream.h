@@ -92,6 +92,50 @@ typedef struct {
       size_t len;     ///< Lexeme length in bytes
     } number;         ///< For GTEXT_JSON_EVT_NUMBER
   } as;
+
+  /**
+   * @brief This name has already appeared in the enclosing object.
+   *
+   * Meaningful on ::GTEXT_JSON_EVT_KEY and `false` on every other event.
+   *
+   * ## Why this exists rather than the parser applying the policy
+   *
+   * ::GTEXT_JSON_Parse_Options::dupkeys has four values, and a streaming
+   * parser can only honour two of them itself. ::GTEXT_JSON_DUPKEY_ERROR
+   * refuses the document, and ::GTEXT_JSON_DUPKEY_FIRST_WINS parses the
+   * repeated member and delivers none of its events - both are decisions it
+   * can take before the callback has seen anything.
+   *
+   * ::GTEXT_JSON_DUPKEY_LAST_WINS and ::GTEXT_JSON_DUPKEY_COLLECT are not like
+   * that. Last-wins means replacing a value the callback has already been
+   * handed, and collect means wrapping it in an array after the fact; an event
+   * cannot be retracted, and buffering until the object closes is not
+   * streaming. So under those two modes **every member is delivered**, which
+   * read as a silent disagreement with gtext_json_parse() on the same option
+   * and was recorded as an adoption blocker on the comparison page.
+   *
+   * This is the information the caller needs to apply either policy itself,
+   * and it is the only part the parser is in a position to supply: whichever
+   * structure the callback is building, last-wins is "overwrite what you
+   * stored under this name" and collect is "append to it", and both are one
+   * line at the point where it stores a member.
+   *
+   * It is never `true` under ::GTEXT_JSON_DUPKEY_ERROR or
+   * ::GTEXT_JSON_DUPKEY_FIRST_WINS, because neither of those delivers a key
+   * event for a repeated name at all.
+   *
+   * Names are compared as bytes after decoding, so `"a"` and `"\u0061"` are
+   * the same name; with ::GTEXT_JSON_Parse_Options::normalize_unicode they are
+   * compared after normalisation, exactly as gtext_json_parse() compares them.
+   *
+   * Appended after the union rather than placed beside `type`, so that the
+   * offset of every field that was already here stays where it was. The
+   * struct's *size* does grow, and gtext_json_reader_next() takes one by
+   * pointer from the caller, so a caller has to be recompiled against this
+   * header - which is true of every options struct in this library for the
+   * same reason.
+   */
+  bool repeated_key;
 } GTEXT_JSON_Event;
 
 /**

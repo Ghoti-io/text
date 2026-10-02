@@ -111,6 +111,11 @@ static bool event_copy(const GTEXT_Allocator * alloc,
     const GTEXT_JSON_Event * src, GTEXT_JSON_Event * dst) {
   memset(dst, 0, sizeof(*dst));
   dst->type = src->type;
+  /* Copied here rather than in each arm below: this function has two early
+     returns, so a field set after one of them would be carried on some events
+     and dropped on others - and a key event, the only one this field means
+     anything on, leaves by the *second* return. */
+  dst->repeated_key = src->repeated_key;
 
   size_t len = 0;
   const char * bytes = event_bytes(src, &len);

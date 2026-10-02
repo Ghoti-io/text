@@ -166,15 +166,26 @@ static json_stream_stack_entry * json_stream_top(GTEXT_JSON_Stream * st) {
 }
 
 /*
- * ERROR and FIRST_WINS have to know which names this object already has.
- * LAST_WINS and COLLECT do not: both deliver every member, because a value
- * the callback has already been handed cannot be replaced or wrapped after
- * the fact. Acceptance still agrees with the DOM parser for those two - a
- * repeated name is not an error there either.
+ * Every mode has to know which names this object already has, and they do
+ * three different things with the answer.
+ *
+ * ERROR refuses the document. FIRST_WINS parses the repeated member and
+ * delivers none of its events. LAST_WINS and COLLECT deliver every member -
+ * a value the callback has already been handed cannot be replaced or wrapped
+ * after the fact, and buffering an object until it closes is not streaming -
+ * and set `repeated_key` on the key event so that the caller can apply either
+ * policy where it stores the member. Acceptance agrees with the DOM parser in
+ * all four cases.
+ *
+ * LAST_WINS and COLLECT did not track names at all until they had something to
+ * report, which is why this predicate existed. It is kept rather than removed
+ * because the name array is not free - it is one allocation per object with a
+ * repeated-name check per member - and a future mode that genuinely does not
+ * need it should have somewhere to say so.
  */
 static int json_stream_tracks_names(const GTEXT_JSON_Stream * st) {
-  return st->opts.dupkeys == GTEXT_JSON_DUPKEY_ERROR
-      || st->opts.dupkeys == GTEXT_JSON_DUPKEY_FIRST_WINS;
+  (void)st;
+  return 1;
 }
 
 static int json_stream_name_seen(
@@ -903,7 +914,11 @@ static GTEXT_JSON_Status json_stream_close_array(GTEXT_JSON_Stream * st,
         st, GTEXT_JSON_E_BAD_TOKEN, "Trailing comma not allowed", pos, err);
   }
 
+  /* Zeroed, not field-by-field. The struct grew a `repeated_key` field after
+     these four sites were written, and a field-by-field initialisation hands
+     the callback whatever was on the stack for every field added later. */
   GTEXT_JSON_Event evt;
+  memset(&evt, 0, sizeof(evt));
   evt.type = GTEXT_JSON_EVT_ARRAY_END;
   GTEXT_JSON_Status status =
       json_stream_emit_event(st, GTEXT_JSON_EVT_ARRAY_END, &evt);
@@ -962,6 +977,7 @@ static GTEXT_JSON_Status json_stream_close_object(GTEXT_JSON_Stream * st,
   }
 
   GTEXT_JSON_Event evt;
+  memset(&evt, 0, sizeof(evt));
   evt.type = GTEXT_JSON_EVT_OBJECT_END;
   GTEXT_JSON_Status status =
       json_stream_emit_event(st, GTEXT_JSON_EVT_OBJECT_END, &evt);
@@ -1097,6 +1113,7 @@ static GTEXT_JSON_Status json_stream_handle_token(
     size_t name_len =
         keyword_name ? strlen(keyword_name) : token->data.string.value_len;
     json_stream_stack_entry * object = json_stream_top(st);
+    int repeated_name = 0;
     if (object && !object->is_array && json_stream_tracks_names(st)) {
       if (json_stream_name_seen(object, name, name_len)) {
         json_position pos = {
@@ -1107,29 +1124,40 @@ static GTEXT_JSON_Status json_stream_handle_token(
           return json_stream_set_error(
               st, GTEXT_JSON_E_DUPKEY, "Duplicate key in object", pos, err);
         }
-        /* FIRST_WINS: parse the member, do not deliver it. */
-        st->skip_member = 1;
-        st->state = JSON_STREAM_STATE_OBJECT_VALUE;
-        return GTEXT_JSON_OK;
+        if (st->opts.dupkeys == GTEXT_JSON_DUPKEY_FIRST_WINS) {
+          /* FIRST_WINS: parse the member, do not deliver it. */
+          st->skip_member = 1;
+          st->state = JSON_STREAM_STATE_OBJECT_VALUE;
+          return GTEXT_JSON_OK;
+        }
+        /* LAST_WINS and COLLECT: deliver it, and say that it is a repeat.
+           The name is already in the array, so it is not added again - which
+           also means the array is bounded by the number of *distinct* names
+           rather than by the number of members. */
+        repeated_name = 1;
       }
-      status =
-          json_stream_name_add(object, name, name_len, st->opts.allocator);
-      if (status != GTEXT_JSON_OK) {
-        json_position pos = {
-            .offset = st->buffer_start_offset + token->pos.offset,
-            .line = token->pos.line,
-            .col = token->pos.col};
-        return json_stream_set_error(
-            st, status, "Out of memory", pos, err);
+      if (!repeated_name) {
+        status =
+            json_stream_name_add(object, name, name_len, st->opts.allocator);
+        if (status != GTEXT_JSON_OK) {
+          json_position pos = {
+              .offset = st->buffer_start_offset + token->pos.offset,
+              .line = token->pos.line,
+              .col = token->pos.col};
+          return json_stream_set_error(
+              st, status, "Out of memory", pos, err);
+        }
       }
     }
 
     // Emit key event
     {
       GTEXT_JSON_Event evt;
+      memset(&evt, 0, sizeof(evt));
       evt.type = GTEXT_JSON_EVT_KEY;
       evt.as.str.s = name;
       evt.as.str.len = name_len;
+      evt.repeated_key = repeated_name ? true : false;
       status = json_stream_emit_event(st, GTEXT_JSON_EVT_KEY, &evt);
       if (status != GTEXT_JSON_OK) {
         return status;
@@ -1177,6 +1205,7 @@ static GTEXT_JSON_Status json_stream_handle_value_token(
     GTEXT_JSON_Stream * st, const json_token * token, GTEXT_JSON_Error * err) {
   GTEXT_JSON_Status status;
   GTEXT_JSON_Event evt;
+  memset(&evt, 0, sizeof(evt));
 
   switch (token->type) {
   case JSON_TOKEN_NULL:

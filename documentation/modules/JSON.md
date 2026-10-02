@@ -144,6 +144,15 @@ options above set, and everything else as the default has it. See the
 - **`GTEXT_JSON_DUPKEY_LAST_WINS`**: Use the last occurrence of a duplicate key
 - **`GTEXT_JSON_DUPKEY_COLLECT`**: Store all values for duplicate keys in an array
 
+All four apply to `gtext_json_parse()`. The streaming parser and the pull
+reader apply `ERROR` and `FIRST_WINS` the same way, and **cannot apply the
+other two themselves**: last-wins means replacing a value the callback already
+has, collect means wrapping one after the fact, and buffering an object until
+it closes is not streaming. Under those two modes every member is delivered and
+`GTEXT_JSON_Event::repeated_key` marks the repeats, which is one line at the
+point where a consumer stores a member — overwrite for last-wins, append for
+collect. Acceptance is identical across all three readers in every mode.
+
 ### 4.4 Resource Limits
 
 All limits use `0` to indicate library defaults:
@@ -248,8 +257,17 @@ The streaming parser emits events for:
 - **Value events**: `NULL`, `BOOL`, `NUMBER`, `STRING`
 - **Structure events**: `ARRAY_BEGIN`, `ARRAY_END`, `OBJECT_BEGIN`, `OBJECT_END`
 - **Key events**: `KEY` (for object keys)
+- **Record events**: `RECORD_END`, once per top-level value when
+  `records` is not `GTEXT_JSON_RECORDS_OFF`
 
 Each event includes the relevant data (boolean value, string/number text, etc.) and maintains position information for error reporting.
+
+A `KEY` event also carries `repeated_key`, true when that name has already
+appeared in the enclosing object. It can only be true under
+`GTEXT_JSON_DUPKEY_LAST_WINS` and `GTEXT_JSON_DUPKEY_COLLECT`, the two modes a
+stream cannot apply for the caller; the other two never deliver a key event for
+a repeated name. Names are compared the way `gtext_json_parse()` compares them,
+so `"a"` and `"\u0061"` are one name, and `normalize_unicode` applies.
 
 ---
 

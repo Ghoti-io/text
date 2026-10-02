@@ -452,7 +452,23 @@ typedef struct {
                           ///< (default: off)
 
   // Duplicate keys
-  GTEXT_JSON_Dupkey_Mode dupkeys; ///< Duplicate key handling policy
+  /**
+   * What to do about a name that appears twice in one object.
+   *
+   * All four values are honoured by gtext_json_parse(). The streaming parser
+   * and its pull reader honour ::GTEXT_JSON_DUPKEY_ERROR and
+   * ::GTEXT_JSON_DUPKEY_FIRST_WINS the same way, and cannot honour the other
+   * two themselves: last-wins would mean replacing a value the callback has
+   * already been handed and collect would mean wrapping it after the fact.
+   * Under those two modes every member is delivered, and
+   * ::GTEXT_JSON_Event::repeated_key says which of them are repeats, which is
+   * what a caller needs to apply either policy where it stores a member. See
+   * that field for why this is the division rather than a limitation.
+   *
+   * Acceptance is the same across all three readers in every mode: a repeated
+   * name is an error under ERROR and is not one under the other three.
+   */
+  GTEXT_JSON_Dupkey_Mode dupkeys;
 
   // Limits (0 => library default)
   /**

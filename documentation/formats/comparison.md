@@ -22,7 +22,14 @@ measured here, on one machine, in one sitting.
 |---|---|---|
 | 1 | JSON parses at roughly a third of Python's stdlib speed | JSON |
 | 2 | There is no YAML schema validator | YAML |
-| 3 | Streaming JSON LAST_WINS and COLLECT still deliver every repeated name | JSON |
+
+Finding 3 used to read *"Streaming JSON LAST_WINS and COLLECT still deliver
+every repeated name"*, and the first half of it is still true and always will
+be: a stream cannot replace a value it has handed over. What made it a blocker
+was the silence. `GTEXT_JSON_Event::repeated_key` now marks the repeats, which
+is what a consumer needs to apply either policy itself, and a differential test
+builds the structure from the events and compares it against what
+`gtext_json_parse()` produced from the same bytes under the same option.
 
 The library is LGPL-3.0-only. libyaml, RapidJSON and PyYAML are MIT. LGPL is
 the license a commercial license can sit beside; a permissive license leaves
@@ -120,13 +127,20 @@ are uncommon among C JSON libraries.
 
 **Missing.**
 
-- A caller allocator on the writer, the streaming parser, Pointer, Patch and
-  Schema. Parsing has one.
-- LAST_WINS and COLLECT in the streaming parser. ERROR refuses a repeated
-  name and FIRST_WINS does not deliver the later member. The other two still
-  emit every member, because a value already handed to the callback cannot be
-  replaced.
 - SIMD scanning, which is what the throughput gap is about.
+
+Two entries left this list rather than being answered by it, and both were
+stale by the time anyone read them again:
+
+- *"A caller allocator on the writer, the streaming parser, Pointer, Patch and
+  Schema"* - all five have one, in 02741e4, d4bbfca, 9d2083c, 40179de and
+  afb5d84. The closing section of this page said the allocator work was done
+  while this bullet still said it was not, which is what a "missing" list does
+  when it is a second copy of a status recorded somewhere else.
+- *"LAST_WINS and COLLECT in the streaming parser"* - the parser still cannot
+  apply either, and that part is structural. It now reports a repeated name
+  through `GTEXT_JSON_Event::repeated_key`, which is the part a consumer
+  needs; see the note under the findings table above.
 
 ## CSV
 
@@ -186,10 +200,13 @@ What is left:
 
 - **JSON throughput.** SIMD scanning is the item. The measurement to take
   first is where the time goes.
-- **LAST_WINS and COLLECT on the streaming JSON parser.** ERROR and
-  FIRST_WINS are enforced. The other two still deliver every member, because
+- **Streaming duplicate keys are reported, not applied.** ERROR and
+  FIRST_WINS are enforced by the parser. The other two deliver every member -
   holding the object until it closes is what would make a stream able to
-  replace a value it has already handed over.
+  replace a value it has already handed over, and that is not streaming - and
+  mark the repeats with `GTEXT_JSON_Event::repeated_key`. A consumer applies
+  the policy where it stores the member; the differential in
+  tests/test-json-stream-dupkeys.cpp is what says the flag is sufficient.
 - **Caller allocators are done.** The YAML and CSV writers' working memory was
   one of the last two; the other was the bytes of the file, for every
   `*_parse_file()` entry point, which went to cutil's default while the document
