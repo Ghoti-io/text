@@ -342,7 +342,8 @@ static bool spell_float(toml_wctx * w, toml_buf * out, double d) {
         text, sizeof(text), d, GTEXT_NUMBER_GENERAL, precision);
     if (n < 0 || (size_t) n >= sizeof(text)) continue;
     char * end = NULL;
-    if (gtext_number_strtod(text, &end) == d && end && *end == '\0') {
+    if (gtext_number_strtod(w->alloc, text, &end) == d && end
+        && *end == '\0') {
       len = n;
       break;
     }

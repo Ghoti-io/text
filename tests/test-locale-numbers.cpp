@@ -58,6 +58,7 @@
 #include <atomic>
 #include <cmath>
 #include <thread>
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/json.h>
 #include <ghoti.io/text/toml.h>
 #include <ghoti.io/text/yaml.h>
@@ -179,6 +180,69 @@ std::string JsonFromDouble(double x) {
 	gtext_json_sink_buffer_free(&sink);
 	gtext_json_free(n);
 	return out;
+}
+
+/* A counting allocator, for the one allocation gtext_number_strtod() makes.
+   Deliberately small: the question here is not whether memory balances - 
+   tests/test-allocator.cpp asks that of whole parses, with a guarded header
+   per block - but whether this one buffer arrives here *at all*. */
+struct StrtodCounters {
+	size_t calls = 0;
+	size_t live = 0;
+	size_t largest = 0;
+};
+
+void *strtod_malloc(void *ctx, size_t size) {
+	auto *c = static_cast<StrtodCounters *>(ctx);
+	void *p = malloc(size ? size : 1);
+	if (!p) return nullptr;
+	c->calls++;
+	c->live++;
+	if (size > c->largest) c->largest = size;
+	return p;
+}
+
+void *strtod_calloc(void *ctx, size_t n, size_t size) {
+	const size_t total = n * size;
+	void *p = strtod_malloc(ctx, total);
+	if (p) memset(p, 0, total ? total : 1);
+	return p;
+}
+
+void *strtod_realloc(void *ctx, void *ptr, size_t size) {
+	auto *c = static_cast<StrtodCounters *>(ctx);
+	void *p = realloc(ptr, size ? size : 1);
+	if (!p) return nullptr;
+	if (!ptr) {
+		c->calls++;
+		c->live++;
+	}
+	if (size > c->largest) c->largest = size;
+	return p;
+}
+
+void strtod_free(void *ctx, void *ptr) {
+	if (!ptr) return;
+	static_cast<StrtodCounters *>(ctx)->live--;
+	free(ptr);
+}
+
+/* Convert `text` with a counting allocator and report what it served. */
+double StrtodThrough(const char *text, StrtodCounters *counters, char **end) {
+	GTEXT_Allocator alloc;
+	memset(&alloc, 0, sizeof(alloc));
+	alloc.malloc_fn = strtod_malloc;
+	alloc.calloc_fn = strtod_calloc;
+	alloc.realloc_fn = strtod_realloc;
+	alloc.free_fn = strtod_free;
+	alloc.ctx = counters;
+	return gtext_number_strtod(&alloc, text, end);
+}
+
+/* "0." followed by `digits` nines: a valid spelling of a double, as long as
+   asked for, with a decimal point in it that a comma locale will not read. */
+std::string LongFraction(size_t digits) {
+	return "0." + std::string(digits, '9');
 }
 
 }  // namespace
@@ -467,7 +531,7 @@ TEST(LocaleNumbers, AMultiByteSeparatorIsStillRepaired) {
 
 	/* And back again, through the multi-byte respelling in the parser. */
 	char *end = nullptr;
-	EXPECT_EQ(gtext_number_strtod("0.5", &end), 0.5);
+	EXPECT_EQ(gtext_number_strtod(nullptr, "0.5", &end), 0.5);
 	EXPECT_EQ(*end, '\0');
 }
 
@@ -487,23 +551,23 @@ TEST(LocaleNumbers, AParseStopsWhereTheDocumentSaysItDoes) {
 		<< "the locale is not hostile in the way this test needs";
 
 	char *end = nullptr;
-	EXPECT_EQ(gtext_number_strtod("1,5", &end), 1.0);
+	EXPECT_EQ(gtext_number_strtod(nullptr, "1,5", &end), 1.0);
 	ASSERT_NE(end, nullptr);
 	EXPECT_EQ(*end, ',');
 
 	end = nullptr;
-	EXPECT_EQ(gtext_number_strtod("1.5", &end), 1.5);
+	EXPECT_EQ(gtext_number_strtod(nullptr, "1.5", &end), 1.5);
 	ASSERT_NE(end, nullptr);
 	EXPECT_EQ(*end, '\0');
 
 	end = nullptr;
-	EXPECT_EQ(gtext_number_strtod("-2.5e3xyz", &end), -2500.0);
+	EXPECT_EQ(gtext_number_strtod(nullptr, "-2.5e3xyz", &end), -2500.0);
 	ASSERT_NE(end, nullptr);
 	EXPECT_STREQ(end, "xyz");
 
 	/* Nothing to convert stays nothing to convert. */
 	end = nullptr;
-	EXPECT_EQ(gtext_number_strtod("abc", &end), 0.0);
+	EXPECT_EQ(gtext_number_strtod(nullptr, "abc", &end), 0.0);
 	ASSERT_NE(end, nullptr);
 	EXPECT_STREQ(end, "abc");
 }
@@ -633,4 +697,118 @@ TEST(LocaleNumbers, ATomlFloatSurvivesBothWays) {
 	CommaLocale loc;
 	SKIP_WITHOUT_COMMA_LOCALE(loc);
 	convert(loc.name().c_str());
+}
+
+/* The respelling buffer belongs to the caller's allocator.
+ *
+ * gtext_number_strtod() only copies the token when the locale's separator is
+ * not "." - in a "." locale strtod's own answer is already right and nothing
+ * is allocated at all - and only when the copy will not fit a 128-byte stack
+ * buffer. Both conditions at once is why this was the last raw allocation in
+ * the library: `make check-allocators` reads the file and saw nothing to
+ * object to, because the allocation was not in a file on its list, and
+ * `make check-allocator-callees` found it and carried it as a recorded gap.
+ *
+ * The two runs below are the instrument. A 300-digit token must allocate; a
+ * 60-digit one in the same locale must not. One assertion alone cannot say
+ * this: a count of 1 could be any allocation the conversion happens to make,
+ * and a count of 0 could mean the token never reached the heap *or* that the
+ * heap it reached was the C library's. The pair separates them, and the
+ * length is the only thing that differs between them.
+ */
+TEST(LocaleNumbers, TheRespellingBufferComesFromTheCallersAllocator) {
+	ASSERT_TRUE(EnsureCommaLocale());
+	CommaLocale loc;
+	SKIP_WITHOUT_COMMA_LOCALE(loc);
+
+	const std::string long_token = LongFraction(300);
+	StrtodCounters big;
+	char *end = nullptr;
+	const double parsed = StrtodThrough(long_token.c_str(), &big, &end);
+
+	EXPECT_EQ(big.calls, 1u)
+		<< "a " << long_token.size() << "-byte token in " << loc.name()
+		<< " has to be respelled into a buffer too large for the stack, and "
+		   "that buffer did not come from here";
+	EXPECT_EQ(big.live, 0u) << "the respelling buffer was not freed, or was "
+		"freed through the C library instead of through this allocator";
+	EXPECT_GE(big.largest, long_token.size())
+		<< "the one block served is too small to be the respelled token";
+
+	/* ...and the conversion is still right, which is the point of respelling
+	   at all. 0.999... to 300 places is the double nearest 1. */
+	EXPECT_DOUBLE_EQ(parsed, 1.0);
+	ASSERT_NE(end, nullptr);
+	EXPECT_EQ(static_cast<size_t>(end - long_token.c_str()),
+		long_token.size());
+
+	/* The control. Same locale, same shape of token, short enough for the
+	   stack buffer: nothing may be asked of the allocator. If this also
+	   reported 1, the count above would be measuring something else. */
+	const std::string short_token = LongFraction(60);
+	StrtodCounters small;
+	char *send = nullptr;
+	const double short_parsed = StrtodThrough(short_token.c_str(), &small, &send);
+	EXPECT_EQ(small.calls, 0u)
+		<< short_token.size() << " bytes fits the internal stack buffer, so "
+		   "there is nothing for an allocator to serve";
+	EXPECT_DOUBLE_EQ(short_parsed, 1.0);
+}
+
+/* A "." locale allocates nothing however long the token is.
+ *
+ * The fast path: strtod consumed exactly as many bytes as the C grammar
+ * describes, so the one locale-dependent character in that grammar cannot
+ * have been read as anything else and the answer is already right. Asserted
+ * because it is what keeps the allocator parameter free for every caller on
+ * every machine that is not in a comma locale - which is most of them, and
+ * which is why a defect on the other path stayed hidden.
+ */
+TEST(LocaleNumbers, ADotLocaleNeverReachesTheAllocator) {
+	ScopedLocale c_locale("C");
+	ASSERT_TRUE(c_locale.active());
+
+	const std::string long_token = LongFraction(4096);
+	StrtodCounters counters;
+	char *end = nullptr;
+	const double parsed = StrtodThrough(long_token.c_str(), &counters, &end);
+
+	EXPECT_EQ(counters.calls, 0u)
+		<< "the C locale separates with '.', so there is nothing to respell";
+	EXPECT_DOUBLE_EQ(parsed, 1.0);
+	ASSERT_NE(end, nullptr);
+	EXPECT_EQ(static_cast<size_t>(end - long_token.c_str()),
+		long_token.size());
+}
+
+/* A failed allocation is reported as nothing converted, not as a wrong answer.
+ *
+ * The one case where this function has to choose. It cannot convert without
+ * respelling, and converting without respelling would read "0.9" as 0 in a
+ * comma locale - a silently wrong number, which is worse than a refusal in
+ * every caller that checks `end`. So it reports that nothing was consumed.
+ */
+TEST(LocaleNumbers, ARefusedRespellingBufferConvertsNothing) {
+	ASSERT_TRUE(EnsureCommaLocale());
+	CommaLocale loc;
+	SKIP_WITHOUT_COMMA_LOCALE(loc);
+
+	GTEXT_Allocator alloc;
+	memset(&alloc, 0, sizeof(alloc));
+	alloc.malloc_fn = [](void *, size_t) -> void * { return nullptr; };
+	alloc.calloc_fn = [](void *, size_t, size_t) -> void * { return nullptr; };
+	alloc.realloc_fn = [](void *, void *, size_t) -> void * { return nullptr; };
+	alloc.free_fn = [](void *, void *) {};
+	alloc.ctx = nullptr;
+
+	const std::string long_token = LongFraction(300);
+	char *end = nullptr;
+	const double parsed =
+		gtext_number_strtod(&alloc, long_token.c_str(), &end);
+
+	EXPECT_EQ(parsed, 0.0);
+	ASSERT_NE(end, nullptr);
+	EXPECT_EQ(end, long_token.c_str())
+		<< "end must point at the start of the token, which is how a caller "
+		   "tells that nothing was converted";
 }

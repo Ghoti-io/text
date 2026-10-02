@@ -866,7 +866,7 @@ static GTEXT_TOML_Value * scan_decimal(toml_ctx * ctx) {
      * NUMBERS.md is about, and this module gets it right by reusing the fix
      * rather than by being careful. */
     char * end = NULL;
-    double d = gtext_number_strtod(digits, &end);
+    double d = gtext_number_strtod(ctx->alloc, digits, &end);
     toml_buf_free(ctx->alloc, &text);
     value = toml_value_new(ctx->alloc, GTEXT_TOML_FLOAT);
     if (!value) {

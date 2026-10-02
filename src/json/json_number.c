@@ -508,7 +508,7 @@ GTEXT_INTERNAL_API GTEXT_JSON_Status json_parse_number(const char * input,
     /* Not strtod: where LC_NUMERIC's separator is a comma it stops at the
        "." and the "entire string consumed" test below then leaves the
        number with no double value at all. */
-    double dbl_val = gtext_number_strtod(strtod_input, &endptr);
+    double dbl_val = gtext_number_strtod(num->alloc, strtod_input, &endptr);
 
     // Check if entire string was consumed
     if (endptr == strtod_input + input_len && errno == 0) {

@@ -78,6 +78,7 @@ static GTEXT_YAML_Status coerce_key_name(
 	char *buf,
 	size_t buf_size,
 	const char **out,
+	const GTEXT_Allocator *alloc,
 	GTEXT_YAML_Error *out_err
 ) {
 	switch (gtext_yaml_node_type(key)) {
@@ -120,7 +121,7 @@ static GTEXT_YAML_Status coerce_key_name(
 			n = gtext_number_format_double(
 				buf, buf_size, d, GTEXT_NUMBER_GENERAL, prec);
 			if (n < 0 || (size_t)n >= buf_size) break;
-			if (gtext_number_strtod(buf, NULL) == d) break;
+			if (gtext_number_strtod(alloc, buf, NULL) == d) break;
 		}
 		if (n < 0 || (size_t)n >= buf_size) break;
 		/* "1e+20" is already unmistakably a float; "1" is not. */
@@ -788,8 +789,8 @@ static GTEXT_YAML_Status convert_node(
 					break;
 				}
 			} else {
-				GTEXT_YAML_Status named = coerce_key_name(
-					resolved_key, key_buf, sizeof(key_buf), &key, out_err);
+				GTEXT_YAML_Status named = coerce_key_name(resolved_key,
+					key_buf, sizeof(key_buf), &key, ctx->alloc, out_err);
 				if (named != GTEXT_YAML_OK) {
 					gtext_json_free(*out_json);
 					*out_json = NULL;

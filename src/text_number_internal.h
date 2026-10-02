@@ -58,6 +58,7 @@
 #ifndef GHOTI_IO_GTEXT_TEXT_NUMBER_INTERNAL_H
 #define GHOTI_IO_GTEXT_TEXT_NUMBER_INTERNAL_H
 
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -143,11 +144,33 @@ GTEXT_INTERNAL_API size_t gtext_number_c_extent(const char * s);
  * caller can go on checking endptr and errno as it did before. @p end is set
  * relative to @p s, never into any temporary this function may have made.
  *
+ * ## Why this takes an allocator
+ *
+ * In a locale whose separator is not "." the token has to be respelled before
+ * strtod will read it, and a token has no bound on how long it may be written
+ * - `0.000...1` is a valid spelling of a small double - so the respelling
+ * buffer cannot always be a stack buffer. It was a bare malloc() until it
+ * took this parameter, which made it the one piece of memory a caller who
+ * supplied an allocator could not see: `make check-allocator-callees`
+ * reported it as a recorded gap, reached from seven call sites.
+ *
+ * @p alloc may be NULL, which means gtext_allocator_default(), and that is
+ * the right thing to pass from a public entry point that takes no allocator
+ * of its own - gtext_ini_value_double() is one. It is not the right thing to
+ * pass from inside a parse or a write that has the caller's allocator in
+ * hand, and `make check-allocators` cannot tell the two apart, so the choice
+ * is the caller's to make deliberately.
+ *
+ * Nothing is allocated at all in a "." locale, nor for a token short enough
+ * for the internal stack buffer, so most callers never reach @p alloc.
+ *
+ * @param alloc Allocator for the respelling buffer, or NULL for the default
  * @param s String to convert (must not be NULL)
  * @param end Set to the first unconverted character, or NULL if not wanted
  * @return The converted value, or 0 on failure
  */
-GTEXT_INTERNAL_API double gtext_number_strtod(const char * s, char ** end);
+GTEXT_INTERNAL_API double gtext_number_strtod(
+    const GTEXT_Allocator * alloc, const char * s, char ** end);
 
 #ifdef __cplusplus
 }

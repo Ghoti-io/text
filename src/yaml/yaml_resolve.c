@@ -858,7 +858,7 @@ static bool parse_float_value(
 	/* Not strtod: it reads LC_NUMERIC, and where the separator is a comma it
 	   stops at the "." in "0.1", leaves *end pointing at it, and the test
 	   below then calls a perfectly good float a string. */
-	double parsed = gtext_number_strtod(clean, &end);
+	double parsed = gtext_number_strtod(alloc, clean, &end);
 	if (errno == ERANGE || end == clean || (end && *end != '\0')) {
 		gtext_allocator_free(alloc, clean);
 		return false;

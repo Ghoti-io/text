@@ -39,14 +39,27 @@ import sys
 # Findings that are known, argued, and not fixed here. Each entry is
 # (defining file, reason). A file in this list is NOT a pass - it is a recorded
 # gap, and the reason has to say what would close it.
-ALLOWED = {
-    'src/text_number.c': (
-        "gtext_number_strtod()'s respelling buffer, reached only in a locale "
-        "whose decimal separator is not '.' and only for a token longer than "
-        "the 128-byte stack buffer. Closing it means an allocator parameter on "
-        "gtext_number_strtod() and gtext_number_format_*(), which is a "
-        "signature change at seven call sites across five files."),
-}
+# Empty, and the entry that used to be here is worth keeping a record of,
+# because its reason was wrong in a way this script caused. It read:
+#
+#   src/text_number.c: gtext_number_strtod()'s respelling buffer [...] Closing
+#   it means an allocator parameter on gtext_number_strtod() AND
+#   gtext_number_format_*(), which is a signature change at seven call sites
+#   across five files.
+#
+# gtext_number_format_i64(), _u64() and _format_double() allocate nothing at
+# all - they are snprintf with a bounds check. They appeared in the reason
+# because **this script reports a file, not a function**: the predicate is
+# "the file defining the callee contains a raw allocation", so every entry
+# point in a file with one allocation anywhere is named as a caller. Written
+# into the allowance as the cost of the fix, that made the job look about
+# three times larger than it was, and pointed it at four functions that could
+# not have been the problem. Only gtext_number_strtod() needed the parameter:
+# seven call sites, in seven files, not five.
+#
+# A file-level finding read as a function-level one is the shape to watch for
+# in anything this script prints.
+ALLOWED = {}
 
 
 def listed_sources(makefile='Makefile'):
@@ -180,8 +193,12 @@ def main():
         return 1
 
     n = len(ALLOWED)
-    print('\033[0;32mNo listed file reaches unlisted memory, except the '
-          '%d recorded gap%s.\033[0m' % (n, '' if n == 1 else 's'))
+    if n == 0:
+        print('\033[0;32mNo listed file reaches unlisted memory, and there '
+              'are no recorded gaps.\033[0m')
+    else:
+        print('\033[0;32mNo listed file reaches unlisted memory, except the '
+              '%d recorded gap%s.\033[0m' % (n, '' if n == 1 else 's'))
     return 0
 
 

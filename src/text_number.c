@@ -289,7 +289,8 @@ static size_t locale_separator(char * out, size_t out_size) {
   return 1;
 }
 
-GTEXT_INTERNAL_API double gtext_number_strtod(const char * s, char ** end) {
+GTEXT_INTERNAL_API double gtext_number_strtod(
+    const GTEXT_Allocator * alloc, const char * s, char ** end) {
   if (!s) {
     if (end) *end = NULL;
     return 0.0;
@@ -324,7 +325,21 @@ GTEXT_INTERNAL_API double gtext_number_strtod(const char * s, char ** end) {
   char * copy = stack_buf;
   const size_t needed = extent + seplen + 1;
   if (needed > sizeof stack_buf) {
-    copy = (char *)malloc(needed);
+    /* Through the caller's allocator. A token has no bound on how long it may
+       be *written*, so this branch is reachable, and it is the only allocation
+       in this file: for as long as it came from the C library directly it was
+       memory a caller who supplied an allocator could not see, in a path
+       reached from seven places across the JSON, YAML, TOML and INI readers.
+       It is doubly invisible - only in a locale whose separator is not "."
+       and only for a token over 128 bytes - which is why it survived the
+       sweep that converted the rest of the library.
+
+       The first draft of this comment named the C function, and
+       `make check-allocators` refused the file for it: that gate excludes a
+       comment line only when the line *starts* with a continuation marker,
+       and this file's block comments do not repeat one. Worth knowing before
+       weakening the pattern to fit a sentence. */
+    copy = (char *)gtext_allocator_malloc(alloc, needed);
     if (!copy) {
       /* Converting in the wrong locale would be a silently wrong number, so
          report that nothing was converted instead. */
@@ -368,7 +383,7 @@ GTEXT_INTERNAL_API double gtext_number_strtod(const char * s, char ** end) {
   }
   if (so > extent) so = extent;
 
-  if (copy != stack_buf) free(copy);
+  if (copy != stack_buf) gtext_allocator_free(alloc, copy);
 
   errno = conversion_errno ? conversion_errno : saved_errno;
   if (end) *end = (char *)s + so;

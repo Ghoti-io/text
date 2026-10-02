@@ -1478,7 +1478,11 @@ GTEXT_INI_Status gtext_ini_value_double(const char * raw, size_t raw_len,
   char * text = ini_dup_for_strtod(raw, raw_len, stack, sizeof(stack), &heap);
   if (!text) return GTEXT_INI_E_OOM;
   char * end = NULL;
-  double value = gtext_number_strtod(text, &end);
+  /* The default allocator, deliberately and like ini_dup_for_strtod() above:
+   * this is a public entry point that takes no allocator, so there is no
+   * caller allocator for it to honour. Everything inside a parse passes the
+   * one it is serving. */
+  double value = gtext_number_strtod(gtext_allocator_default(), text, &end);
   GTEXT_INI_Status status = GTEXT_INI_OK;
   if (end == text || (size_t) (end - text) != raw_len) {
     status = GTEXT_INI_E_TYPE;

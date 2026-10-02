@@ -946,6 +946,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/json/json_pull_reader.c \
 	src/allocator.c \
 	src/text_file_io.c \
+	src/text_number.c \
 	src/idna/nfc_utf8.c \
 	src/yaml/json_to_yaml.c \
 	src/yaml/reader.c \

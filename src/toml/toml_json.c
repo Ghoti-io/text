@@ -403,7 +403,7 @@ static GTEXT_TOML_Value * j2t_number(const GTEXT_JSON_Value * value,
      * of the same text would get - 0 and an infinity - so neither is consulted.
      * TOML spells both, and this library's reader produces both from the same
      * literals. */
-    double d = gtext_number_strtod(text, &end);
+    double d = gtext_number_strtod(alloc, text, &end);
     /* A lexeme the conversion could not read all of. A parsed number cannot be
      * one - the JSON parser validated it - but
      * gtext_json_new_number_from_lexeme() takes any bytes at all, and reading
