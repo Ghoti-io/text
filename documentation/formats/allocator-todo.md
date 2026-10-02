@@ -41,7 +41,7 @@ found in exactly that state - `src/allocator.c`, `src/idna/nfc_utf8.c` and
 watched. Adding a converted file to the list belongs in the commit that
 converts it.
 
-## CSV: done
+## CSV: done, except the writer's working memory
 
 `GTEXT_CSV_Parse_Options::allocator` covers the parse and everything the table
 owns afterwards. `src/csv/csv_table.c`, `src/csv/csv_stream.c` and
@@ -95,7 +95,7 @@ had ever done that. `Allocator.CsvEmptyInputBalancesThroughTheAllocator`
 exists for that path, and fails on the planted defect with
 "freed a block this allocator never made".
 
-## YAML: done
+## YAML: done, except the writer's working memory
 
 `GTEXT_YAML_Parse_Options::allocator` covers every parse entry point -
 `gtext_yaml_parse()`, `_parse_all()`, `_parse_json()`, `_parse_partial()`,
@@ -494,6 +494,35 @@ allocator-aware file.** The audit for it is to grep the *entry points* that take
 no allocator and ask of each caller whether one was in hand - which is how all
 three were found, and what the byte floors in `tests/test-allocator.cpp` check
 now that they are fixed.
+
+## Still open: the YAML and CSV writers' working memory
+
+Found by surveying what was left after Schema, and it contradicts this page's own
+"YAML: done" heading - which is why it is recorded here rather than left as a
+heading someone has to disbelieve.
+
+`GTEXT_JSON_Write_Options`, `GTEXT_TOML_Write_Options` and
+`GTEXT_INI_Write_Options` all carry an `allocator`.
+**`GTEXT_YAML_Write_Options` and `GTEXT_CSV_Write_Options` do not**, and neither
+`src/yaml/yaml_writer.c` nor `src/csv/csv_writer.c` is on
+`ALLOCATOR_CLEAN_SOURCES`. They hold 18 and 12 raw calls, which split exactly
+along the line the correction above draws:
+
+| file | sink, exempt | the writer's own working memory, not exempt |
+| --- | --- | --- |
+| `yaml_writer.c` | 6 - the buffer and fixed-buffer sinks and their data | ~12 - the DOM writer's frame stack, `writer->tag_handles`, the `GTEXT_YAML_Writer` structure and its entry stack |
+| `csv_writer.c` | 6 - the same two sinks | ~6 - `escape_buffer` at two sites, and the `GTEXT_CSV_Writer` structure |
+
+The sink half stays exempt for the reason given above: `gtext_yaml_sink_buffer()`
+and `gtext_csv_sink_buffer()` take no options, so a sink exists before any
+allocator is named. The other half is allocated and released inside one call from
+options the caller supplied, which is the INI line, and it is the work left.
+
+Two things to do with it rather than only the conversion. The heading above
+should stop saying "done" unqualified - a page that records a correction and then
+leaves the superseded heading in place is how the exemption survived this long.
+And `check-allocators` will not notice either file until it is listed, so listing
+them is the first step and not the last.
 
 ## The error-snippet exception
 
