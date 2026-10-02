@@ -862,13 +862,19 @@ static GTEXT_YAML_Document *yaml_parse_json_document_internal(
 	}
 
 	doc->root = root;
-	doc->node_count = 1;
 
 	status = yaml_resolve_document(doc, error);
 	if (status != GTEXT_YAML_OK) {
 		yaml_context_free(ctx);
 		return NULL;
 	}
+
+	/* After yaml_resolve_document(), not before: a merge key expands into a
+	   mapping node that resolution creates (yaml_resolve.c), so a count taken
+	   above misses it.  The context holds one count per document - every path
+	   that builds a document gives it a context of its own - so this is that
+	   document's own total and not a running one. */
+	doc->node_count = ctx->node_count;
 
 	return doc;
 }
@@ -5163,7 +5169,6 @@ GTEXT_YAML_Document *yaml_parse_document(
 	
 	/* Set document root */
 	doc->root = parser.root;
-	doc->node_count = 1;  /* TODO: track actual count */
 
 	if (!finalize_tag_handles(&parser, doc)) {
 		parser_free(&parser);
@@ -5182,7 +5187,14 @@ GTEXT_YAML_Document *yaml_parse_document(
 		yaml_context_free(ctx);
 		return NULL;
 	}
-	
+
+	/* After yaml_resolve_document(), not before: a merge key expands into a
+	   mapping node that resolution creates (yaml_resolve.c), so a count taken
+	   above misses it.  The context holds one count per document - every path
+	   that builds a document gives it a context of its own - so this is that
+	   document's own total and not a running one. */
+	doc->node_count = ctx->node_count;
+
 	parser_free(&parser);
 	return doc;
 }
@@ -5603,7 +5615,6 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_parse_partial(
 	}
 
 	state.doc->root = root;
-	state.doc->node_count = state.ctx->node_count;
 
 	if (root) {
 		GTEXT_YAML_Error resolve_error = {0};
@@ -5645,6 +5656,14 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_parse_partial(
 			}
 		}
 	}
+
+	/* After yaml_resolve_document(), not before: a merge key expands into a
+	   mapping node that resolution creates (yaml_resolve.c), so a count taken
+	   above misses it.  Here rather than inside the `if (root)` above because a
+	   resolve error this parser *recovers* from still leaves the nodes it made
+	   in the tree, and an empty document - no root - has a real count of zero
+	   rather than no count at all. */
+	state.doc->node_count = state.ctx->node_count;
 
 	parser_free(&state.parser);
 	gtext_allocator_free(opts->allocator, state.top_nodes);
@@ -5723,7 +5742,6 @@ static bool multidoc_finalize_document(multidoc_state *state) {
 	
 	/* Set document root */
 	state->current_doc->root = p->root;
-	state->current_doc->node_count = 1;
 
 	if (!finalize_tag_handles(p, state->current_doc)) {
 		state->failed = true;
@@ -5740,6 +5758,13 @@ static bool multidoc_finalize_document(multidoc_state *state) {
 		state->failed = true;
 		return false;
 	}
+
+	/* After yaml_resolve_document(), not before: a merge key expands into a
+	   mapping node that resolution creates (yaml_resolve.c), so a count taken
+	   above misses it.  The context holds one count per document - every path
+	   that builds a document gives it a context of its own - so this is that
+	   document's own total and not a running one. */
+	state->current_doc->node_count = state->current_doc->ctx->node_count;
 	
 	/* Add to documents array */
 	if (state->count >= state->capacity) {

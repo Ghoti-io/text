@@ -4,9 +4,13 @@
  */
 
 #include <gtest/gtest.h>
+#include <set>
 
 extern "C" {
 #include "../src/yaml/yaml_internal.h"
+/* For the DOM accessors the node_count tests walk the tree with: the internal
+   header alone does not declare them. */
+#include <ghoti.io/text/yaml.h>
 #include <stdlib.h>
 #include <string.h>
 }
@@ -287,4 +291,211 @@ TEST(YamlContext, NullSafety) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
+}
+
+//
+// GTEXT_YAML_Document::node_count
+//
+// The field was set to a literal 1 on three of the four paths that build a
+// document, with a TODO beside one of them, and read by nothing - so it was
+// wrong and nothing could notice. These tests are the reader it did not have.
+//
+// It is counted by the four node constructors in yaml_dom.c and lives on the
+// context, and every path that builds a document gives that document a context
+// of its own, so the figure is per document and not a running total.
+//
+
+// Nodes in the finished tree, as an independent count: node_count is
+// accumulated while the document is built, and this walks it afterwards. Two
+// routes to one number is the point.
+//
+// **Distinct nodes, by pointer, and that is not a detail.** A merge key splices
+// the source mapping's pairs in by pointer, so one node is reachable twice, and
+// an alias the writer resolved is reachable from both places that named it. A
+// walk that adds one per visit counts *occurrences*; node_count counts
+// allocations. The first version of this counted occurrences and read 15 where
+// the document holds 14 nodes - which looks exactly like the count being one
+// short, and is the oracle being wrong instead.
+static void collect_nodes(
+		const GTEXT_YAML_Node *n, std::set<const GTEXT_YAML_Node *> *seen) {
+	if (!n) return;
+	if (!seen->insert(n).second) return; // already counted: shared, not new
+	if (gtext_yaml_node_type(n) == GTEXT_YAML_SEQUENCE) {
+		size_t len = gtext_yaml_sequence_length(n);
+		for (size_t i = 0; i < len; i++) {
+			collect_nodes(gtext_yaml_sequence_get(n, i), seen);
+		}
+	}
+	else if (gtext_yaml_node_type(n) == GTEXT_YAML_MAPPING) {
+		size_t len = gtext_yaml_mapping_size(n);
+		for (size_t i = 0; i < len; i++) {
+			const GTEXT_YAML_Node *k = nullptr;
+			const GTEXT_YAML_Node *v = nullptr;
+			if (gtext_yaml_mapping_get_at(n, i, &k, &v)) {
+				collect_nodes(k, seen);
+				collect_nodes(v, seen);
+			}
+		}
+	}
+}
+
+static size_t count_nodes(const GTEXT_YAML_Node *n) {
+	std::set<const GTEXT_YAML_Node *> seen;
+	collect_nodes(n, &seen);
+	return seen.size();
+}
+
+TEST(YamlNodeCount, CountsEveryNodeOfASingleDocumentParse) {
+	// 1 root mapping + 2 keys + 2 values, one of which is a sequence of 3:
+	// 1 + 2 + 1 + (1 + 3) = 8 nodes by hand, and the walk below is the check on
+	// that arithmetic rather than a second statement of it.
+	const char *src = "a: 1\nb: [2, 3, 4]\n";
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(src, strlen(src), nullptr, nullptr);
+	ASSERT_NE(doc, nullptr);
+
+	EXPECT_EQ(doc->node_count, count_nodes(doc->root));
+	// And it is not the literal 1 it used to be, for a document that plainly
+	// holds more than one node. A document with exactly one node could not tell
+	// the fixed state from the broken one.
+	EXPECT_GT(doc->node_count, 1u);
+
+	gtext_yaml_free(doc);
+}
+
+TEST(YamlNodeCount, CountsTheNodeAMergeKeyCreates) {
+	// This is the only one of these tests that separates *where* the count is
+	// taken, and it does it by subtraction rather than by a figure.
+	//
+	// The two documents are the same shape: one mapping of two keys, whose
+	// second value is a mapping of two pairs. In `merged` the first of those
+	// pairs is "<<: *b" - a key scalar and an alias node - and in `plain` it is
+	// "q: 0" - a key scalar and a scalar. Equal allocations so far. What
+	// `merged` allocates and `plain` does not is the one mapping node that
+	// yaml_resolve_document() builds for the merge, so the difference is
+	// exactly 1.
+	//
+	// Measured: 14 and 13. With the count taken where it used to be - beside
+	// `doc->root = parser.root`, before the resolve - both read 13 and the
+	// difference is 0, which is what this fails on. The other tests in this file
+	// pass under either placement, so without this one the fix is unmeasured.
+	const char *merged =
+		"base: &b {x: 1, y: 2}\n"
+		"derived:\n"
+		"  <<: *b\n"
+		"  z: 3\n";
+	const char *plain =
+		"base: &b {x: 1, y: 2}\n"
+		"derived:\n"
+		"  q: 0\n"
+		"  z: 3\n";
+
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	opts.allow_merge_keys = true;
+
+	GTEXT_YAML_Document *m = gtext_yaml_parse(merged, strlen(merged), &opts, nullptr);
+	ASSERT_NE(m, nullptr);
+	GTEXT_YAML_Document *p = gtext_yaml_parse(plain, strlen(plain), &opts, nullptr);
+	ASSERT_NE(p, nullptr);
+
+	// The premise: the merge really was expanded, so "derived" carries x, y and
+	// z rather than a "<<" key. A test that asserted the count difference
+	// without this would pass just as well if merge keys had stopped working.
+	const GTEXT_YAML_Node *derived =
+		gtext_yaml_mapping_get(m->root, "derived");
+	ASSERT_NE(derived, nullptr);
+	EXPECT_NE(gtext_yaml_mapping_get(derived, "x"), nullptr);
+	EXPECT_NE(gtext_yaml_mapping_get(derived, "z"), nullptr);
+	EXPECT_EQ(gtext_yaml_mapping_get(derived, "<<"), nullptr);
+
+	EXPECT_EQ(m->node_count, p->node_count + 1)
+		<< "the count was taken before the merge node was built";
+
+	// And the field means allocations, not nodes in the tree: resolution leaves
+	// the pre-merge mapping unreachable, so the total exceeds what a walk of the
+	// finished document can find. That is what "Total nodes allocated" says, and
+	// it is why the equality the other tests assert holds only for documents
+	// that discard nothing.
+	EXPECT_GT(m->node_count, count_nodes(m->root));
+
+	gtext_yaml_free(m);
+	gtext_yaml_free(p);
+}
+
+TEST(YamlNodeCountIsPerDocument, EachDocumentInAStreamCountsOnlyItsOwn) {
+	// One context per document is what makes the figure per document. If the
+	// stream shared one, the second document's count would include the first's
+	// and the third's would include both - so the smaller document coming
+	// second is what separates the two.
+	const char *src =
+		"---\n"
+		"a: [1, 2, 3, 4, 5]\n"
+		"---\n"
+		"b: 1\n";
+	size_t count = 0;
+	GTEXT_YAML_Document **docs =
+		gtext_yaml_parse_all(src, strlen(src), &count, nullptr, nullptr);
+	ASSERT_NE(docs, nullptr);
+	ASSERT_EQ(count, 2u);
+
+	EXPECT_EQ(docs[0]->node_count, count_nodes(docs[0]->root));
+	EXPECT_EQ(docs[1]->node_count, count_nodes(docs[1]->root));
+	// The second document is the smaller one, so a running total would make it
+	// the larger figure.
+	EXPECT_LT(docs[1]->node_count, docs[0]->node_count);
+
+	for (size_t i = 0; i < count; i++) {
+		gtext_yaml_free(docs[i]);
+	}
+	free(docs);
+}
+
+TEST(YamlNodeCount, CountsEveryNodeOfAPartialParse) {
+	const char *src = "a: 1\nb: [2, 3]\n";
+	GTEXT_YAML_Document *doc = nullptr;
+	GTEXT_YAML_Error *errors = nullptr;
+	size_t error_count = 0;
+	ASSERT_EQ(gtext_yaml_parse_partial(src, strlen(src), nullptr, &doc, &errors,
+			&error_count, nullptr),
+		GTEXT_YAML_OK);
+	ASSERT_NE(doc, nullptr);
+
+	EXPECT_EQ(doc->node_count, count_nodes(doc->root));
+	EXPECT_GT(doc->node_count, 1u);
+
+	for (size_t i = 0; i < error_count; i++) {
+		gtext_yaml_error_free(&errors[i]);
+	}
+	free(errors);
+	gtext_yaml_free(doc);
+}
+
+TEST(YamlNodeCount, CountsEveryNodeOfADocumentBuiltFromJson) {
+	// gtext_yaml_parse_json() is the fourth path, and its count was assigned
+	// before the resolve as well.
+	const char *json = "{\"a\":1,\"b\":[2,3,4]}";
+	GTEXT_YAML_Document *doc =
+		gtext_yaml_parse_json(json, strlen(json), nullptr, nullptr);
+	ASSERT_NE(doc, nullptr);
+
+	EXPECT_EQ(doc->node_count, count_nodes(doc->root));
+	EXPECT_GT(doc->node_count, 1u);
+
+	gtext_yaml_free(doc);
+}
+
+TEST(YamlNodeCount, CountsEveryNodeOnTheJsonFastPathToo) {
+	// gtext_yaml_parse() takes the same builder when the input looks like JSON
+	// and enable_json_fast_path is on, which it is by default - so an ordinary
+	// parse of JSON-shaped YAML reaches the fourth path rather than the first.
+	// Without this the fast path is counted by nothing.
+	const char *src = "{\"a\": 1, \"b\": [2, 3, 4]}";
+	GTEXT_YAML_Parse_Options opts = gtext_yaml_parse_options_default();
+	ASSERT_TRUE(opts.enable_json_fast_path) << "the default stopped taking it";
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(src, strlen(src), &opts, nullptr);
+	ASSERT_NE(doc, nullptr);
+
+	EXPECT_EQ(doc->node_count, count_nodes(doc->root));
+	EXPECT_GT(doc->node_count, 1u);
+
+	gtext_yaml_free(doc);
 }
