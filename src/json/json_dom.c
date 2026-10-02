@@ -296,7 +296,7 @@ static GTEXT_JSON_Value * json_free_child_at(
  *
  * Deepest first matters and is what the stack gives: a context is freed when
  * its frame pops, which is after everything below it has been scanned. */
-static void json_free_children_recursive(GTEXT_JSON_Value * v) {
+GTEXT_INTERNAL_API void json_free_foreign_contexts(GTEXT_JSON_Value * v) {
   if (!v) {
     return;
   }
@@ -380,7 +380,7 @@ GTEXT_API void gtext_json_free(GTEXT_JSON_Value * v) {
   }
 
   // First, recursively free any children that have different contexts
-  json_free_children_recursive(v);
+  json_free_foreign_contexts(v);
 
   // Then free this value's context, which frees the arena and all memory
   json_context * ctx = v->ctx;
@@ -1123,7 +1123,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_set(
   if (old_value && old_value->ctx && old_value->ctx != arr->ctx) {
     json_context * child_ctx = old_value->ctx;
     // Recursively free child's children first
-    json_free_children_recursive(old_value);
+    json_free_foreign_contexts(old_value);
     // Now free the child's context (this frees the child value structure
     // itself)
     json_context_free(child_ctx);
@@ -1135,7 +1135,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_set(
 
   // Note: If child has a different context, it will be freed when
   // gtext_json_free() is called on the root, via
-  // json_free_children_recursive(). We don't free it here because the child
+  // json_free_foreign_contexts(). We don't free it here because the child
   // value structure itself is in that context's arena.
   return GTEXT_JSON_OK;
 }
@@ -1240,7 +1240,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_array_remove(
   if (removed_value && removed_value->ctx && removed_value->ctx != arr->ctx) {
     json_context * child_ctx = removed_value->ctx;
     // Recursively free child's children first
-    json_free_children_recursive(removed_value);
+    json_free_foreign_contexts(removed_value);
     // Now free the child's context (this frees the child value structure
     // itself)
     json_context_free(child_ctx);
@@ -1280,7 +1280,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_object_put(GTEXT_JSON_Value * obj,
         if (old_value && old_value->ctx && old_value->ctx != obj->ctx) {
           json_context * child_ctx = old_value->ctx;
           // Recursively free child's children first
-          json_free_children_recursive(old_value);
+          json_free_foreign_contexts(old_value);
           // Now free the child's context (this frees the child value structure
           // itself)
           json_context_free(child_ctx);
@@ -1327,7 +1327,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_object_remove(
   if (removed_value && removed_value->ctx && removed_value->ctx != obj->ctx) {
     json_context * child_ctx = removed_value->ctx;
     // Recursively free child's children first
-    json_free_children_recursive(removed_value);
+    json_free_foreign_contexts(removed_value);
     // Now free the child's context (this frees the child value structure
     // itself)
     json_context_free(child_ctx);
@@ -1641,7 +1641,7 @@ GTEXT_API GTEXT_JSON_Status gtext_json_object_merge(GTEXT_JSON_Value * target,
               GTEXT_JSON_Value * old_val = target->as.object.pairs[j].value;
               if (old_val && old_val->ctx && old_val->ctx != target->ctx) {
                 json_context * old_ctx = old_val->ctx;
-                json_free_children_recursive(old_val);
+                json_free_foreign_contexts(old_val);
                 json_context_free(old_ctx);
               }
               target->as.object.pairs[j].value = cloned_val;

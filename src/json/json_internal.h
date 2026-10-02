@@ -658,6 +658,19 @@ GTEXT_JSON_Value * json_value_clone(
  * @param b Second value to compare (can be NULL)
  * @return 1 if values are equal, 0 otherwise
  */
+/* Free the context of every descendant of @p v whose context differs from its
+   parent's, deepest first.
+ *
+ * Not about reclaiming @p v's own nodes: those live in @p v's context's arena,
+ * which gtext_json_free() releases in one go.  It is about subtrees grafted in
+ * from *another* arena - which is what storing a separately created value does
+ * - whose arenas nothing else will free.
+ *
+ * Shared with json_patch.c, where the atomic clone-and-copy-back in
+ * gtext_json_patch_apply() and gtext_json_merge_patch() replaces the original's
+ * content and so has to release whatever the original was holding. */
+GTEXT_INTERNAL_API void json_free_foreign_contexts(GTEXT_JSON_Value * v);
+
 int json_value_equal(const GTEXT_JSON_Value * a, const GTEXT_JSON_Value * b);
 
 /**

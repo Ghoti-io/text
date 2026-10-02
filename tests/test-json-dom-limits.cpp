@@ -289,3 +289,72 @@ int main(int argc, char ** argv) {
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
+
+/* The atomic clone-and-copy-back in gtext_json_merge_patch() and
+   gtext_json_patch_apply() replaces the original's content, which makes
+   whatever the original was holding from *other* arenas unreachable - and
+   nothing else frees those.  A target assembled by storing separately created
+   values, which is every target built through the DOM API rather than parsed,
+   leaked all of it on every call.
+   
+   Two levels is enough to show it and LSan is what sees it, so this test's
+   assertions are about the result and its verdict comes from the sanitizer
+   build.  It was found by the 8000-level merge test above, which leaked
+   1.3 GB and so could not be committed until this was fixed: a number big
+   enough to be noticed is sometimes the only reason a small one gets looked
+   at. */
+TEST(JsonDomLimits, APatchDoesNotLeakWhatTheTargetWasHolding) {
+	{
+		GTEXT_JSON_Value * target = gtext_json_new_object();
+		ASSERT_NE(target, nullptr);
+		/* A separately created value, so it carries an arena of its own. */
+		GTEXT_JSON_Value * grafted = gtext_json_new_object();
+		ASSERT_NE(grafted, nullptr);
+		ASSERT_EQ(gtext_json_object_put(grafted, "x", 1,
+			gtext_json_new_number_i64(1)), GTEXT_JSON_OK);
+		ASSERT_EQ(gtext_json_object_put(target, "a", 1, grafted), GTEXT_JSON_OK);
+
+		GTEXT_JSON_Value * patch = gtext_json_new_object();
+		ASSERT_NE(patch, nullptr);
+		ASSERT_EQ(gtext_json_object_put(patch, "a", 1,
+			gtext_json_new_number_i64(2)), GTEXT_JSON_OK);
+
+		EXPECT_EQ(gtext_json_merge_patch(target, patch, nullptr), GTEXT_JSON_OK);
+		const GTEXT_JSON_Value * a = gtext_json_object_get(target, "a", 1);
+		ASSERT_NE(a, nullptr);
+		EXPECT_EQ(gtext_json_typeof(a), GTEXT_JSON_NUMBER);
+
+		gtext_json_free(patch);
+		gtext_json_free(target);
+	}
+	{
+		GTEXT_JSON_Value * root = gtext_json_new_object();
+		ASSERT_NE(root, nullptr);
+		GTEXT_JSON_Value * grafted = gtext_json_new_array();
+		ASSERT_NE(grafted, nullptr);
+		ASSERT_EQ(gtext_json_array_push(grafted, gtext_json_new_number_i64(1)),
+			GTEXT_JSON_OK);
+		ASSERT_EQ(gtext_json_object_put(root, "a", 1, grafted), GTEXT_JSON_OK);
+
+		/* [{"op":"replace","path":"/a","value":2}] */
+		GTEXT_JSON_Value * op = gtext_json_new_object();
+		ASSERT_NE(op, nullptr);
+		ASSERT_EQ(gtext_json_object_put(op, "op", 2,
+			gtext_json_new_string("replace", 7)), GTEXT_JSON_OK);
+		ASSERT_EQ(gtext_json_object_put(op, "path", 4,
+			gtext_json_new_string("/a", 2)), GTEXT_JSON_OK);
+		ASSERT_EQ(gtext_json_object_put(op, "value", 5,
+			gtext_json_new_number_i64(2)), GTEXT_JSON_OK);
+		GTEXT_JSON_Value * patch = gtext_json_new_array();
+		ASSERT_NE(patch, nullptr);
+		ASSERT_EQ(gtext_json_array_push(patch, op), GTEXT_JSON_OK);
+
+		EXPECT_EQ(gtext_json_patch_apply(root, patch, nullptr), GTEXT_JSON_OK);
+		const GTEXT_JSON_Value * a = gtext_json_object_get(root, "a", 1);
+		ASSERT_NE(a, nullptr);
+		EXPECT_EQ(gtext_json_typeof(a), GTEXT_JSON_NUMBER);
+
+		gtext_json_free(patch);
+		gtext_json_free(root);
+	}
+}

@@ -1543,6 +1543,9 @@ GTEXT_API GTEXT_JSON_Status gtext_json_patch_apply(GTEXT_JSON_Value * root,
 
   // All operations succeeded - copy clone's content back to original
   // This preserves the original's context but replaces its content
+  /* As in gtext_json_merge_patch(): the original's grafted subtrees are about
+     to become unreachable, and nothing else frees them. */
+  json_free_foreign_contexts(root);
   GTEXT_JSON_Status status = json_value_copy_content(root, clone);
   if (status != GTEXT_JSON_OK) {
     // Copy failed - free clone and return error
@@ -1913,8 +1916,15 @@ GTEXT_API GTEXT_JSON_Status gtext_json_merge_patch(GTEXT_JSON_Value * target,
     return status;
   }
 
-  // All operations succeeded - copy clone's content back to original
-  // This preserves the original's context but replaces its content
+  /* All operations succeeded - copy the clone's content back to the original.
+     The original's context is preserved and its content replaced, so whatever
+     the original was holding from *other* arenas has to be released first:
+     nothing else ever will, and json_value_copy_content() overwrites the
+     pointers that were the only way to reach it.  A target assembled by storing
+     separately created values - which is every DOM-built target - leaked all of
+     it on every merge, which a test of an 8000-deep object found at 1.3 GB and
+     a two-level one shows just as well. */
+  json_free_foreign_contexts(target);
   status = json_value_copy_content(target, clone);
   if (status != GTEXT_JSON_OK) {
     // Copy failed - free clone and return error
