@@ -66,8 +66,9 @@ static gtext_file_status gtext_file_map(
   }
 }
 
-GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(
-    const char * path, size_t max_bytes, char ** out_data, size_t * out_len) {
+GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(const char * path,
+    size_t max_bytes, const GTEXT_Allocator * alloc, char ** out_data,
+    size_t * out_len) {
   if (!path || !out_data || !out_len) {
     return GTEXT_FILE_E_OPEN;
   }
@@ -76,9 +77,13 @@ GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(
 
   /* GCU_FILE_UNLIMITED is 0, which is the same "no limit" spelling this
    * library's callers already use, so max_bytes passes straight through. */
+  /* GTEXT_Allocator is a typedef for GCU_Allocator, so the caller's allocator
+   * is handed to cutil as it stands - there is nothing to bridge. This read
+   * passed NULL here for as long as the option existed, which left the bytes of
+   * the file itself outside the one promise the option makes. */
   void * data = NULL;
   GCU_File_Result result =
-      gcu_file_read(path, max_bytes, NULL, &data, out_len);
+      gcu_file_read(path, max_bytes, alloc, &data, out_len);
   if (result != GCU_FILE_OK) {
     return gtext_file_map(result, GTEXT_FILE_E_OPEN);
   }
@@ -87,8 +92,9 @@ GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(
   return GTEXT_FILE_OK;
 }
 
-GTEXT_INTERNAL_API void gtext_file_free(char * data) {
-  gcu_file_free(NULL, data);
+GTEXT_INTERNAL_API void gtext_file_free(
+    const GTEXT_Allocator * alloc, char * data) {
+  gcu_file_free(alloc, data);
 }
 
 /** Write one buffer to the stream cutil opened for the temporary file. */
@@ -101,6 +107,7 @@ static int gtext_file_fwrite(void * user, const char * bytes, size_t len) {
 }
 
 GTEXT_INTERNAL_API gtext_file_status gtext_file_write_atomic(const char * path,
+    const GTEXT_Allocator * alloc,
     int (*emit)(void * ctx, gtext_file_write_cb write, void * write_user),
     void * user) {
   if (!path || !emit) {
@@ -118,21 +125,22 @@ GTEXT_INTERNAL_API gtext_file_status gtext_file_write_atomic(const char * path,
       != GCU_PATH_OK) {
     return GTEXT_FILE_E_OPEN;
   }
-  char * directory = (char *)malloc(directory_len + 1);
+  char * directory =
+      (char *)gtext_allocator_malloc(alloc, directory_len + 1);
   if (!directory) {
     return GTEXT_FILE_E_OOM;
   }
   if (gcu_path_dirname(
           GCU_PATH_NATIVE, path, directory, directory_len + 1, NULL)
       != GCU_PATH_OK) {
-    free(directory);
+    gtext_allocator_free(alloc, directory);
     return GTEXT_FILE_E_OPEN;
   }
 
   GCU_File_Temp temp;
   GCU_File_Result result =
       gcu_file_temp_create(&temp, directory, "gtext", NULL);
-  free(directory);
+  gtext_allocator_free(alloc, directory);
   if (result != GCU_FILE_OK) {
     return gtext_file_map(result, GTEXT_FILE_E_OPEN);
   }

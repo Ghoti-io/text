@@ -88,7 +88,8 @@ GTEXT_API GTEXT_CSV_Table * gtext_csv_parse_file(const char * path,
 
   char * data = NULL;
   size_t len = 0;
-  gtext_file_status fs = gtext_file_read_all(path, max_bytes, &data, &len);
+  gtext_file_status fs = gtext_file_read_all(
+      path, max_bytes, effective.allocator, &data, &len);
   if (fs != GTEXT_FILE_OK) {
     csv_file_error(fs, err);
     return NULL;
@@ -99,7 +100,7 @@ GTEXT_API GTEXT_CSV_Table * gtext_csv_parse_file(const char * path,
   effective.in_situ_mode = false;
 
   GTEXT_CSV_Table * table = gtext_csv_parse_table(data, len, &effective, err);
-  gtext_file_free(data);
+  gtext_file_free(effective.allocator, data);
   return table;
 }
 
@@ -152,7 +153,11 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_write_file(const char * path,
   ctx.opts = opts;
   ctx.status = GTEXT_CSV_OK;
 
-  gtext_file_status fs = gtext_file_write_atomic(path, csv_file_emit, &ctx);
+  /* opts may be NULL here - gtext_csv_write_table() fills in the defaults -
+     and NULL is the default allocator either way, so no options object has to
+     be built just to read one field off it. */
+  gtext_file_status fs = gtext_file_write_atomic(
+      path, opts ? opts->allocator : NULL, csv_file_emit, &ctx);
   if (fs != GTEXT_FILE_OK) {
     // A failure inside the serializer is more specific than "write failed".
     if (ctx.status != GTEXT_CSV_OK) {

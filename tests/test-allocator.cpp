@@ -10,6 +10,8 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <cstdio>
+#include <fstream>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -20,6 +22,8 @@
 #include <ghoti.io/text/csv.h>
 #include <ghoti.io/text/yaml.h>
 #include <ghoti.io/text/json.h>
+#include <ghoti.io/text/toml.h>
+#include <ghoti.io/text/ini.h>
 
 namespace {
 
@@ -30,6 +34,21 @@ struct Counters {
 	size_t live_blocks = 0;
 	size_t total_allocations = 0;
 	size_t live_bytes = 0;
+	// The high-water mark of live_bytes. A buffer that is allocated and freed
+	// inside one call leaves live_bytes at zero afterwards, so a test about such
+	// a buffer - the whole of a file being read, say - has nothing to assert
+	// without this.
+	size_t peak_bytes = 0;
+	// The largest single block this allocator ever served, and how many blocks
+	// reached big_threshold. A file read asks for the whole file at once, so a
+	// block that big is the signature of the read - and counting them, rather
+	// than taking the maximum, is what works for a parser that allocates one
+	// file-sized block of its own (YAML copies the whole input into one).
+	// peak_bytes cannot say it: the two runs being compared reach their
+	// high-water marks at different moments and the difference is not the buffer.
+	size_t largest_block = 0;
+	size_t big_threshold = 0; // 0 disables the count
+	size_t big_blocks = 0;
 	// Fail the allocation once this many have been served (0 = never).
 	size_t fail_after = 0;
 };
@@ -56,6 +75,9 @@ void * count_malloc(void * ctx, size_t size) {
 	c->live_blocks++;
 	c->total_allocations++;
 	c->live_bytes += size;
+	if (c->live_bytes > c->peak_bytes) c->peak_bytes = c->live_bytes;
+	if (size > c->largest_block) c->largest_block = size;
+	if (c->big_threshold && size >= c->big_threshold) c->big_blocks++;
 	return static_cast<char *>(raw) + sizeof(Header);
 }
 
@@ -2245,4 +2267,335 @@ TEST(Allocator, CsvWriterWithNoAllocatorOptionStillWrites) {
 
 	gtext_csv_sink_buffer_free(&sink);
 	gtext_csv_free_table(table);
+}
+
+// ---------------------------------------------------------------------------
+// The file buffer, for every *_parse_file() entry point.
+//
+// This was the last of them, and the largest: gtext_file_read_all() delegated
+// to cutil's gcu_file_read() with NULL where an allocator goes, so the bytes of
+// the file itself - more than everything else a small parse allocates put
+// together - came from cutil's default while the document came from the
+// caller's. GTEXT_*_Parse_Options::allocator lists the *_parse_file() entry
+// points among what it covers, and for the file that was not true.
+//
+// It needed no change to cutil: GTEXT_Allocator is a typedef for GCU_Allocator,
+// so the caller's allocator is handed over as it stands.
+//
+// **Finding an instrument for this took three tries, and the two that failed
+// are the reason the third is shaped as it is.**
+//
+// `total_allocations > 0` is vacuous: a file parse allocates the document too,
+// so it holds in both worlds.
+//
+// Comparing the *peak* live bytes of a file parse against the same bytes parsed
+// from memory does not work either. The buffer is freed before the entry point
+// returns, so the closing balance is zero both ways - that part is fine - but
+// the two runs reach their high-water marks at different moments, so the
+// difference is not the buffer. Measured for TOML: an 8880-byte file gave a peak
+// difference of 7648, less than the file, while the read plainly had gone
+// through the allocator.
+//
+// What does work is the largest single block, because a file read asks for the
+// whole file at once. That needs one guard to mean anything: an arena allocates
+// in big blocks of its own, and for a document of a few thousand members those
+// reach 64 KB and 120 KB - far past an 8 KB file - so no block could be
+// attributed to the read. Hence the padding below. Each file is large in bytes
+// and holds a tiny document: comment lines, or whitespace for JSON, which every
+// one of these formats ignores. The document's own memory stays small, the file
+// buffer is the only large block, and the assertion can attribute it.
+//
+// The guard is kept as an assertion rather than removed, so that a future change
+// making the memory parse allocate a block that big fails here instead of
+// quietly making the test unable to tell.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/** A path under build/ that is removed when the test ends. */
+class TmpFile {
+public:
+	TmpFile(const char * name, const std::string & body) {
+		path_ = std::string("build/test-allocator-") + name;
+		std::ofstream out(path_, std::ios::binary | std::ios::trunc);
+		out << body;
+	}
+	~TmpFile() { std::remove(path_.c_str()); }
+	const char * c_str() const { return path_.c_str(); }
+private:
+	std::string path_;
+};
+
+// Padding that every one of these formats ignores, repeated until the file is
+// comfortably past any arena block a tiny document will cause. @p line must
+// already end in a newline.
+std::string padded(const std::string & line, const std::string & document) {
+	std::string out;
+	out.reserve(300000);
+	while (out.size() < 256u * 1024u) out += line;
+	out += document;
+	return out;
+}
+
+void expect_file_read_went_through_the_allocator(
+		const Counters & from_file, const Counters & from_memory,
+		size_t file_bytes) {
+	EXPECT_GT(from_file.total_allocations, from_memory.total_allocations)
+	    << "the file read allocated nothing through the caller's allocator";
+	// The discriminating assertion. Both runs are given the same bytes; only the
+	// file run allocates them, so it must serve at least one more block of
+	// file size than the memory run does. A count and not a maximum, because
+	// YAML's parse copies the whole input into one block of its own and so
+	// reaches that size either way - a maximum cannot tell two such blocks from
+	// one. Before the fix the two counts are equal.
+	EXPECT_GT(from_file.big_blocks, from_memory.big_blocks)
+	    << "no allocation here was the size of the file, so the file was read "
+	       "through something else";
+	EXPECT_GE(from_file.largest_block, file_bytes)
+	    << "no single allocation reached the size of the file";
+	// Both runs balance, so nothing leaked. The *other* direction - the buffer
+	// allocated here and released through cutil's default - does not show up as
+	// a failed expectation at all: the pointer never comes back to count_free(),
+	// so these counters cannot see it, and what catches it is glibc aborting
+	// with "munmap_chunk(): invalid pointer" on a free of an offset pointer.
+	// The control for that mutation is therefore judged by the exit status, not
+	// by the log, because a crash prints no [ FAILED ] line.
+	EXPECT_EQ(from_file.live_blocks, 0u);
+	EXPECT_EQ(from_file.live_bytes, 0u);
+	EXPECT_EQ(from_memory.live_blocks, 0u);
+	EXPECT_EQ(from_memory.live_bytes, 0u);
+}
+
+} // namespace
+
+TEST(Allocator, JsonParseFileReadsTheFileThroughTheAllocator) {
+	// Whitespace between tokens is unrestricted, so this is one small object in
+	// a large file.
+	const std::string body = padded("                                        \n",
+	    "{\"a\":1,\"b\":[2,3]}");
+	TmpFile f("read.json", body);
+
+	Counters fc;
+	fc.big_threshold = body.size();
+	GTEXT_Allocator fa = make_allocator(&fc);
+	GTEXT_JSON_Parse_Options fo = gtext_json_parse_options_default();
+	fo.allocator = &fa;
+	fo.max_total_bytes = 0;
+	GTEXT_JSON_Value * from_file = gtext_json_parse_file(f.c_str(), &fo, nullptr);
+	ASSERT_NE(from_file, nullptr);
+	gtext_json_free(from_file);
+
+	Counters mc;
+	mc.big_threshold = body.size();
+	GTEXT_Allocator ma = make_allocator(&mc);
+	GTEXT_JSON_Parse_Options mo = gtext_json_parse_options_default();
+	mo.allocator = &ma;
+	mo.max_total_bytes = 0;
+	GTEXT_JSON_Value * from_mem =
+	    gtext_json_parse(body.data(), body.size(), &mo, nullptr);
+	ASSERT_NE(from_mem, nullptr);
+	gtext_json_free(from_mem);
+
+	expect_file_read_went_through_the_allocator(fc, mc, body.size());
+}
+
+TEST(Allocator, YamlParseFileReadsTheFileThroughTheAllocator) {
+	const std::string body = padded("# padding\n", "a: 1\nb: [2, 3]\n");
+	TmpFile f("read.yaml", body);
+
+	Counters fc;
+	fc.big_threshold = body.size();
+	GTEXT_Allocator fa = make_allocator(&fc);
+	GTEXT_YAML_Parse_Options fo = gtext_yaml_parse_options_default();
+	fo.allocator = &fa;
+	fo.max_total_bytes = 0;
+	GTEXT_YAML_Document * from_file =
+	    gtext_yaml_parse_file(f.c_str(), &fo, nullptr);
+	ASSERT_NE(from_file, nullptr);
+	gtext_yaml_free(from_file);
+
+	Counters mc;
+	mc.big_threshold = body.size();
+	GTEXT_Allocator ma = make_allocator(&mc);
+	GTEXT_YAML_Parse_Options mo = gtext_yaml_parse_options_default();
+	mo.allocator = &ma;
+	mo.max_total_bytes = 0;
+	GTEXT_YAML_Document * from_mem =
+	    gtext_yaml_parse(body.data(), body.size(), &mo, nullptr);
+	ASSERT_NE(from_mem, nullptr);
+	gtext_yaml_free(from_mem);
+
+	expect_file_read_went_through_the_allocator(fc, mc, body.size());
+}
+
+TEST(Allocator, YamlParseFileAllReadsTheFileThroughTheAllocator) {
+	// The second YAML entry point that reads a file, through its own slurp.
+	const std::string body =
+	    padded("# padding\n", "---\na: 1\n---\nb: 2\n");
+	TmpFile f("read-all.yaml", body);
+
+	Counters fc;
+	fc.big_threshold = body.size();
+	GTEXT_Allocator fa = make_allocator(&fc);
+	GTEXT_YAML_Parse_Options fo = gtext_yaml_parse_options_default();
+	fo.allocator = &fa;
+	fo.max_total_bytes = 0;
+	GTEXT_YAML_Document ** docs = nullptr;
+	size_t count = 0;
+	ASSERT_EQ(
+	    gtext_yaml_parse_file_all(f.c_str(), &fo, &docs, &count, nullptr),
+	    GTEXT_YAML_OK);
+	ASSERT_GE(count, 2u);
+	for (size_t i = 0; i < count; i++) gtext_yaml_free(docs[i]);
+	free(docs); // the documented contract: plain free() for the array itself
+
+	Counters mc;
+	mc.big_threshold = body.size();
+	GTEXT_Allocator ma = make_allocator(&mc);
+	GTEXT_YAML_Parse_Options mo = gtext_yaml_parse_options_default();
+	mo.allocator = &ma;
+	mo.max_total_bytes = 0;
+	size_t mcount = 0;
+	GTEXT_YAML_Document ** mdocs =
+	    gtext_yaml_parse_all(body.data(), body.size(), &mcount, &mo, nullptr);
+	ASSERT_NE(mdocs, nullptr);
+	for (size_t i = 0; i < mcount; i++) gtext_yaml_free(mdocs[i]);
+	free(mdocs);
+
+	expect_file_read_went_through_the_allocator(fc, mc, body.size());
+}
+
+TEST(Allocator, TomlParseFileReadsTheFileThroughTheAllocator) {
+	const std::string body = padded("# padding\n", "a = 1\nb = \"two\"\n");
+	TmpFile f("read.toml", body);
+
+	Counters fc;
+	fc.big_threshold = body.size();
+	GTEXT_Allocator fa = make_allocator(&fc);
+	GTEXT_TOML_Parse_Options fo = gtext_toml_parse_options_default();
+	fo.allocator = &fa;
+	fo.max_total_bytes = 0;
+	GTEXT_TOML_Value * from_file = gtext_toml_parse_file(f.c_str(), &fo, nullptr);
+	ASSERT_NE(from_file, nullptr);
+	gtext_toml_free(from_file);
+
+	Counters mc;
+	mc.big_threshold = body.size();
+	GTEXT_Allocator ma = make_allocator(&mc);
+	GTEXT_TOML_Parse_Options mo = gtext_toml_parse_options_default();
+	mo.allocator = &ma;
+	mo.max_total_bytes = 0;
+	GTEXT_TOML_Value * from_mem =
+	    gtext_toml_parse(body.data(), body.size(), &mo, nullptr);
+	ASSERT_NE(from_mem, nullptr);
+	gtext_toml_free(from_mem);
+
+	expect_file_read_went_through_the_allocator(fc, mc, body.size());
+}
+
+TEST(Allocator, CsvParseFileReadsTheFileThroughTheAllocator) {
+	// CSV has no ignorable whitespace - every line is a record - so the padding
+	// is comment lines, which the dialect's allow_comments turns on.
+	const std::string body = padded("# padding\n", "a,b,c\n1,2,3\n");
+	TmpFile f("read.csv", body);
+
+	GTEXT_CSV_Parse_Options base = gtext_csv_parse_options_default();
+	base.dialect.allow_comments = true;
+	base.max_total_bytes = 0;
+
+	Counters fc;
+	fc.big_threshold = body.size();
+	GTEXT_Allocator fa = make_allocator(&fc);
+	GTEXT_CSV_Parse_Options fo = base;
+	fo.allocator = &fa;
+	GTEXT_CSV_Table * from_file = gtext_csv_parse_file(f.c_str(), &fo, nullptr);
+	ASSERT_NE(from_file, nullptr);
+	// The padding really was ignored, so the file is large and the table is not.
+	EXPECT_EQ(gtext_csv_row_count(from_file), 2u);
+	gtext_csv_free_table(from_file);
+
+	Counters mc;
+	mc.big_threshold = body.size();
+	GTEXT_Allocator ma = make_allocator(&mc);
+	GTEXT_CSV_Parse_Options mo = base;
+	mo.allocator = &ma;
+	GTEXT_CSV_Table * from_mem =
+	    gtext_csv_parse_table(body.data(), body.size(), &mo, nullptr);
+	ASSERT_NE(from_mem, nullptr);
+	gtext_csv_free_table(from_mem);
+
+	expect_file_read_went_through_the_allocator(fc, mc, body.size());
+}
+
+TEST(Allocator, IniParseFileReadsTheFileThroughTheAllocator) {
+	// '#', not ';': this library's default INI dialect does not take a semicolon
+	// comment, and a ';' padding line is refused as "not blank, a comment, a
+	// group header or an entry".
+	const std::string body = padded("# padding\n", "[s]\nk = v\n");
+	TmpFile f("read.ini", body);
+
+	Counters fc;
+	fc.big_threshold = body.size();
+	GTEXT_Allocator fa = make_allocator(&fc);
+	GTEXT_INI_Parse_Options fo = gtext_ini_parse_options_default();
+	fo.allocator = &fa;
+	fo.max_total_bytes = 0;
+	GTEXT_INI_Document * from_file =
+	    gtext_ini_parse_file(f.c_str(), &fo, nullptr);
+	ASSERT_NE(from_file, nullptr);
+	gtext_ini_free(from_file);
+
+	Counters mc;
+	mc.big_threshold = body.size();
+	GTEXT_Allocator ma = make_allocator(&mc);
+	GTEXT_INI_Parse_Options mo = gtext_ini_parse_options_default();
+	mo.allocator = &ma;
+	mo.max_total_bytes = 0;
+	GTEXT_INI_Document * from_mem =
+	    gtext_ini_parse(body.data(), body.size(), &mo, nullptr);
+	ASSERT_NE(from_mem, nullptr);
+	gtext_ini_free(from_mem);
+
+	expect_file_read_went_through_the_allocator(fc, mc, body.size());
+}
+
+TEST(Allocator, WriteFileTakesItsDirectoryBufferFromTheAllocator) {
+	// The write side allocates one buffer of its own: the destination's
+	// directory name, so the temporary file can be made beside it and the commit
+	// stay a rename on one filesystem. Small, and for a document this size the
+	// only allocation the write makes - which is what lets a count of it
+	// discriminate.
+	const char * path = "build/test-allocator-write.json";
+	GTEXT_JSON_Value * v = gtext_json_parse("{\"a\":1}", 7, nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Write_Options opts = gtext_json_write_options_default();
+	opts.allocator = &alloc;
+
+	ASSERT_EQ(gtext_json_write_file(path, v, &opts, nullptr), GTEXT_JSON_OK);
+	EXPECT_GT(c.total_allocations, 0u)
+	    << "the atomic write's directory buffer bypassed the allocator";
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	std::remove(path);
+	gtext_json_free(v);
+}
+
+TEST(Allocator, ParseFileWithNoAllocatorOptionStillReadsTheFile) {
+	// The null fallback, which is what every existing caller passes.
+	const std::string body = "{\"a\":[1,2,3]}";
+	TmpFile f("default.json", body);
+	GTEXT_JSON_Parse_Options opts = gtext_json_parse_options_default();
+	EXPECT_EQ(opts.allocator, nullptr) << "the default named an allocator";
+	GTEXT_JSON_Value * v = gtext_json_parse_file(f.c_str(), &opts, nullptr);
+	ASSERT_NE(v, nullptr);
+	gtext_json_free(v);
+
+	// And with no options at all, which is the other way in.
+	GTEXT_JSON_Value * w = gtext_json_parse_file(f.c_str(), nullptr, nullptr);
+	ASSERT_NE(w, nullptr);
+	gtext_json_free(w);
 }

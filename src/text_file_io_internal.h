@@ -40,6 +40,7 @@
 #ifndef GHOTI_IO_GTEXT_TEXT_FILE_IO_INTERNAL_H
 #define GHOTI_IO_GTEXT_TEXT_FILE_IO_INTERNAL_H
 
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -77,25 +78,37 @@ typedef enum {
  * @param max_bytes Refuse anything larger, or 0 for no limit. The limit is a
  *                  promise rather than a truncation: an over-large file is
  *                  refused, not shortened.
+ * @param alloc     Allocator for the buffer, or NULL for the default. This is
+ *                  the caller's allocator, and it has to be: the buffer is the
+ *                  single largest allocation a *_parse_file() entry point
+ *                  makes, so a parse that took it from anywhere else would
+ *                  leave GTEXT_*_Parse_Options::allocator covering everything
+ *                  except the file.
  * @param out_data  Receives the buffer; the caller releases it with
- *                  gtext_file_free(), not free().
+ *                  gtext_file_free(), not free(), **through the same
+ *                  allocator**.
  * @param out_len   Receives the length in bytes, terminator excluded.
  * @return GTEXT_FILE_OK, or the reason it failed.
  */
-GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(
-    const char * path, size_t max_bytes, char ** out_data, size_t * out_len);
+GTEXT_INTERNAL_API gtext_file_status gtext_file_read_all(const char * path,
+    size_t max_bytes, const GTEXT_Allocator * alloc, char ** out_data,
+    size_t * out_len);
 
 /**
  * @brief Release a buffer from gtext_file_read_all().
  *
- * A named function rather than free(), because the buffer comes from cutil
- * and is released through cutil's allocator. Today that is the default one
- * and free() would happen to work, which is exactly the kind of coincidence
- * that stops being true without anything failing to compile.
+ * A named function rather than free(), because the buffer comes from cutil and
+ * is released through the allocator it was read with. It used to be the default
+ * one, so free() would happen to work - exactly the kind of coincidence that
+ * stops being true without anything failing to compile. Now that a caller can
+ * supply one, free() here would be a free through the wrong allocator.
  *
- * @param data The buffer. NULL is accepted and ignored.
+ * @param alloc The allocator the buffer was read with, or NULL for the default.
+ *              It must be the same one.
+ * @param data  The buffer. NULL is accepted and ignored.
  */
-GTEXT_INTERNAL_API void gtext_file_free(char * data);
+GTEXT_INTERNAL_API void gtext_file_free(
+    const GTEXT_Allocator * alloc, char * data);
 
 /**
  * @brief Callback that writes one buffer, returning 0 on success.
@@ -113,11 +126,16 @@ typedef int (*gtext_file_write_cb)(void * user, const char * bytes, size_t len);
  * configuration files these parsers are usually pointed at.
  *
  * @param path    Destination path.
+ * @param alloc   Allocator for the one buffer this needs - the destination's
+ *                directory name, for placing the temporary file beside it - or
+ *                NULL for the default. From the caller's write options, so a
+ *                write to a file allocates where a write to a sink does.
  * @param emit    Called once with a sink to write through.
  * @param user    Passed back to @p emit.
  * @return GTEXT_FILE_OK, or the reason it failed.
  */
 GTEXT_INTERNAL_API gtext_file_status gtext_file_write_atomic(const char * path,
+    const GTEXT_Allocator * alloc,
     int (*emit)(void * ctx, gtext_file_write_cb write, void * write_user),
     void * user);
 

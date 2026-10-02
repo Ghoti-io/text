@@ -140,8 +140,8 @@ static gtext_file_status yaml_file_slurp(const char * path,
    * stopped meaning "no limit" and started meaning "the default", as the
    * public header had said all along. */
   *out_effective = gtext_yaml_parse_options_effective(options);
-  return gtext_file_read_all(
-      path, out_effective->max_total_bytes, out_data, out_len);
+  return gtext_file_read_all(path, out_effective->max_total_bytes,
+      out_effective->allocator, out_data, out_len);
 }
 
 GTEXT_API GTEXT_YAML_Document * gtext_yaml_parse_file(
@@ -171,7 +171,7 @@ GTEXT_API GTEXT_YAML_Document * gtext_yaml_parse_file(
   GTEXT_YAML_Document * doc =
       gtext_yaml_parse(buffer, len, &effective, out_err);
   set_document_newline(doc, newline);
-  gtext_file_free(buffer);
+  gtext_file_free(effective.allocator, buffer);
   return doc;
 }
 
@@ -203,7 +203,7 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_parse_file_all(
   size_t count = 0;
   GTEXT_YAML_Document ** docs =
       gtext_yaml_parse_all(buffer, len, &count, &effective, out_err);
-  gtext_file_free(buffer);
+  gtext_file_free(effective.allocator, buffer);
   if (!docs) {
     return out_err ? out_err->code : GTEXT_YAML_E_INVALID;
   }
@@ -269,7 +269,8 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_file(
   ctx.opts = use_opts;
   ctx.status = GTEXT_YAML_OK;
 
-  gtext_file_status fs = gtext_file_write_atomic(path, yaml_file_emit, &ctx);
+  gtext_file_status fs =
+      gtext_file_write_atomic(path, use_opts->allocator, yaml_file_emit, &ctx);
   if (fs != GTEXT_FILE_OK) {
     /* A failure inside the serializer is the more specific answer, and it is
      * the one the caller can act on; the shared layer only knows that the

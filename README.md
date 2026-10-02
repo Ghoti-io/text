@@ -374,10 +374,21 @@ GTEXT_TOML_To_JSON_Options: each routes its own frame stack through an allocator
 but builds its output with the `gtext_json_new_*` constructors, which take none,
 so an option there would read as covering a tree it could not reach.
 
-Two allocations stay on the C library by design: `GTEXT_JSON_Error::context_snippet`
+The bytes of the file are covered too, for every `*_parse_file()` entry point.
+That one was the largest and the last: the read delegated to cutil with no
+allocator named, so the whole file came from cutil's default while the document
+came from the caller's. It needed no change to cutil - GTEXT_Allocator is a
+typedef for GCU_Allocator and `gcu_file_read()` has always taken one.
+`gtext_file_write_atomic()` is covered as well, so a write to a file allocates
+where a write to a sink does.
+
+Three things stay on the C library by design. `GTEXT_JSON_Error::context_snippet`
 and its CSV equivalent, because gtext_json_error_free() is handed only the error
-and cannot learn which allocator made the snippet, and the `gtext_json_new_*` DOM
-builders, which take no options and so have no caller allocator to inherit.
+and cannot learn which allocator made the snippet. The `gtext_json_new_*` DOM
+builders, which take no options and so have no caller allocator to inherit. And
+gtext_number_strtod()'s respelling buffer, reached only in a locale whose decimal
+separator is not `.` and only for a token past 128 bytes; `make
+check-allocator-callees` records it rather than letting it pass unnoticed.
 
 ## License
 

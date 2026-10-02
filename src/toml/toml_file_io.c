@@ -89,13 +89,14 @@ GTEXT_TOML_Value * gtext_toml_parse_file(const char * path,
    * statement about what it would parse rather than about what it would
    * allocate. */
   gtext_file_status fs =
-      gtext_file_read_all(path, effective.max_total_bytes, &data, &len);
+      gtext_file_read_all(path, effective.max_total_bytes,
+          effective.allocator, &data, &len);
   if (fs != GTEXT_FILE_OK) {
     toml_file_error(fs, err);
     return NULL;
   }
   GTEXT_TOML_Value * value = gtext_toml_parse(data, len, &effective, err);
-  gtext_file_free(data);
+  gtext_file_free(effective.allocator, data);
   return value;
 }
 
@@ -136,7 +137,11 @@ GTEXT_TOML_Status gtext_toml_write_file(const GTEXT_TOML_Value * root,
   ctx.root = root;
   ctx.opts = opts;
   ctx.status = GTEXT_TOML_OK;
-  gtext_file_status fs = gtext_file_write_atomic(path, toml_file_emit, &ctx);
+  /* opts may be NULL - the writer fills in the defaults - and NULL is the
+     default allocator either way, so no options object is built just to read
+     one field off it. */
+  gtext_file_status fs = gtext_file_write_atomic(
+      path, opts ? opts->allocator : NULL, toml_file_emit, &ctx);
   /* The writer's own refusal is the more specific answer, and the file layer
    * reports it only as "the callback failed": a document with a bad date-time
    * must not come back as a disk error. */

@@ -185,12 +185,14 @@ What is left:
   FIRST_WINS are enforced. The other two still deliver every member, because
   holding the object until it closes is what would make a stream able to
   replace a value it has already handed over.
-- **Caller allocators are done.** The YAML and CSV writers were the last two:
-  their write options now carry one, as JSON's, TOML's and INI's already did. A
-  buffer sink is exempt by design, a writer's scratch memory is not. Every
-  `GTEXT_*_Options` structure either carries an allocator or documents why it
-  does not, and the \ref format_allocator_todo "allocator page" has the
-  per-file counts and the controls.
+- **Caller allocators are done.** The YAML and CSV writers' working memory was
+  one of the last two; the other was the bytes of the file, for every
+  `*_parse_file()` entry point, which went to cutil's default while the document
+  went to the caller's. A buffer sink is exempt by design, a writer's scratch
+  memory is not. Every `GTEXT_*_Options` structure either carries an allocator or
+  documents why it does not, `make check-allocator-callees` keeps a converted
+  file from calling into an unconverted one, and the \ref format_allocator_todo
+  "allocator page" has the per-file counts and the controls.
 
 ---
 

@@ -94,7 +94,8 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_parse_file(const char * path,
 
   char * data = NULL;
   size_t len = 0;
-  gtext_file_status fs = gtext_file_read_all(path, max_bytes, &data, &len);
+  gtext_file_status fs = gtext_file_read_all(
+      path, max_bytes, effective.allocator, &data, &len);
   if (fs != GTEXT_FILE_OK) {
     json_file_error(fs, err);
     return NULL;
@@ -105,7 +106,7 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_parse_file(const char * path,
   effective.in_situ_mode = false;
 
   GTEXT_JSON_Value * value = gtext_json_parse(data, len, &effective, err);
-  gtext_file_free(data);
+  gtext_file_free(effective.allocator, data);
   return value;
 }
 
@@ -147,7 +148,11 @@ GTEXT_API GTEXT_JSON_Status gtext_json_write_file(const char * path,
   ctx.opts = opts;
   ctx.status = GTEXT_JSON_OK;
 
-  gtext_file_status fs = gtext_file_write_atomic(path, json_file_emit, &ctx);
+  /* opts may be NULL - the writer fills in the defaults - and NULL is the
+     default allocator either way, so no options object is built just to read
+     one field off it. */
+  gtext_file_status fs = gtext_file_write_atomic(
+      path, opts ? opts->allocator : NULL, json_file_emit, &ctx);
   if (fs != GTEXT_FILE_OK) {
     // A failure inside the serializer is more specific than "write failed".
     if (ctx.status != GTEXT_JSON_OK) {

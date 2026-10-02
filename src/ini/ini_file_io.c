@@ -73,13 +73,14 @@ GTEXT_INI_Document * gtext_ini_parse_file(const char * path,
   char * data = NULL;
   size_t len = 0;
   gtext_file_status fs =
-      gtext_file_read_all(path, effective.max_total_bytes, &data, &len);
+      gtext_file_read_all(path, effective.max_total_bytes,
+          effective.allocator, &data, &len);
   if (fs != GTEXT_FILE_OK) {
     ini_file_error(fs, err);
     return NULL;
   }
   GTEXT_INI_Document * doc = gtext_ini_parse(data, len, &effective, err);
-  gtext_file_free(data);
+  gtext_file_free(effective.allocator, data);
   return doc;
 }
 
@@ -119,7 +120,11 @@ GTEXT_INI_Status gtext_ini_write_file(const GTEXT_INI_Document * doc,
   ctx.doc = doc;
   ctx.opts = opts;
   ctx.status = GTEXT_INI_OK;
-  gtext_file_status fs = gtext_file_write_atomic(path, ini_file_emit, &ctx);
+  /* opts may be NULL - the writer fills in the defaults - and NULL is the
+     default allocator either way, so no options object is built just to read
+     one field off it. */
+  gtext_file_status fs = gtext_file_write_atomic(
+      path, opts ? opts->allocator : NULL, ini_file_emit, &ctx);
   /* The writer's own refusal is the more specific answer; the file layer only
    * knows that the callback failed, and an unrepresentable value must not come
    * back as a disk error. */

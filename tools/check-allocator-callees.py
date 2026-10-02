@@ -40,15 +40,6 @@ import sys
 # (defining file, reason). A file in this list is NOT a pass - it is a recorded
 # gap, and the reason has to say what would close it.
 ALLOWED = {
-    'src/text_file_io.c': (
-        "The file buffer for every *_parse_file() entry point. "
-        "gtext_file_read_all() delegates to cutil's gcu_file_read(), which is "
-        "passed NULL where an allocator would go, so the largest single "
-        "allocation a file parse makes comes from cutil's default and not the "
-        "caller's. Closing it means threading an allocator through a second "
-        "library's API, which is a decision about cutil rather than a "
-        "conversion here. The three raw calls in this file are a dirname "
-        "buffer in the atomic-write path."),
     'src/text_number.c': (
         "gtext_number_strtod()'s respelling buffer, reached only in a locale "
         "whose decimal separator is not '.' and only for a token longer than "
@@ -188,8 +179,9 @@ def main():
             "this script's ALLOWED table.\n")
         return 1
 
+    n = len(ALLOWED)
     print('\033[0;32mNo listed file reaches unlisted memory, except the '
-          '%d recorded gaps.\033[0m' % len(ALLOWED))
+          '%d recorded gap%s.\033[0m' % (n, '' if n == 1 else 's'))
     return 0
 
 

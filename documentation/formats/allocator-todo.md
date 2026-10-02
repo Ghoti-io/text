@@ -509,18 +509,12 @@ Of the four, two were gate gaps and are closed by listing the files:
   only. Both are on the list now with the marker on each line, so the exemption
   is machine-checked rather than remembered.
 
-The other two are real and are recorded in the script's own `ALLOWED` table,
-where each entry has to say what would close it:
+One of the other two is closed below. The remaining one is recorded in the
+script's own `ALLOWED` table, where each entry has to say what would close it:
 
-| file | the memory | why it is not closed here |
+| file | the memory | why it is not closed |
 | --- | --- | --- |
-| `src/text_file_io.c` | the buffer holding the whole file, for every `*_parse_file()` entry point | `gtext_file_read_all()` delegates to cutil's `gcu_file_read()` with NULL where an allocator would go, so the largest single allocation a file parse makes comes from cutil's default. Closing it is a decision about **cutil's** API, not a conversion here |
 | `src/text_number.c` | `gtext_number_strtod()`'s respelling buffer | reached only in a locale whose decimal separator is not `.`, and only for a token past the 128-byte stack buffer. Closing it means an allocator parameter on `gtext_number_strtod()` and `gtext_number_format_*()`: seven call sites in five files |
-
-Of those two, `text_file_io.c` is the one worth a decision, because it is not a
-small or rare allocation - it is the file. `GTEXT_YAML_Parse_Options::allocator`
-lists `gtext_yaml_parse_file()` among the entry points it covers, and for the
-bytes of the file itself that is not true today.
 
 The script also reports a **stale allowance**: an entry in `ALLOWED` that is no
 longer reached from a listed file, so the table cannot quietly outlive the
@@ -618,6 +612,80 @@ its stack, the tag-handle array and the copy of `"!e!"` - and the broken state i
 exactly 2, because `gtext_yaml_writer_new()` alone accounts for two. A floor of 2
 passed in both worlds. It is 4 now, and every floor on this page records both
 measured states beside it rather than only the one that passes.
+
+## Done: the file buffer, for every `*_parse_file()` entry point
+
+The largest of the lot, and the one the callee check was built to find.
+`gtext_file_read_all()` delegated to cutil's `gcu_file_read()` with NULL where an
+allocator goes, so the bytes of the file - more than everything else a small
+parse allocates put together - came from cutil's default while the document came
+from the caller's. Every `GTEXT_*_Parse_Options::allocator` lists its
+`*_parse_file()` entry point among what it covers, and for the file that was not
+true.
+
+**It needed no change to cutil, and the first estimate that it did was wrong on
+both counts.** `GTEXT_Allocator` is a `typedef` for `GCU_Allocator`, and
+`gcu_file_read()` has taken `const GCU_Allocator *` all along - so the caller's
+allocator is handed over as it stands, with nothing to bridge and nothing to
+decide. The recorded reason for not doing it had asserted a cross-library
+decision that did not exist; reading the header is what settled it.
+
+Sixteen call sites across the five formats, plus `gtext_file_write_atomic()`,
+whose one buffer is the destination's directory name - so a write to a file now
+allocates where a write to a sink does. Every read path already had the
+allocator in scope at both the read and the free, and every one frees the buffer
+before its entry point returns, so nothing about lifetimes changed. The three
+write paths that did not have an `effective` options object read
+`opts ? opts->allocator : NULL` instead, which is the same answer because NULL is
+the default allocator either way.
+
+### Finding an instrument for it took three tries
+
+The two that failed are why the third is shaped as it is, and all three are
+recorded beside the tests.
+
+1. **`total_allocations > 0` is vacuous.** A file parse allocates the document
+   too, so it holds in both worlds.
+2. **The peak of live bytes does not work either.** The buffer is freed before
+   the entry point returns, so the closing balance is zero both ways - that part
+   is fine - but a file parse and the same bytes parsed from memory reach their
+   high-water marks at *different moments*, so the difference is not the buffer.
+   Measured for TOML: an 8880-byte file gave a peak difference of 7648, less
+   than the file, while the read plainly had gone through the allocator.
+3. **Counting blocks at least as large as the file** is what works, because a
+   file read asks for the whole file at once.
+
+The third needed two corrections of its own. A *maximum* block size is not
+enough: an arena allocates in big blocks, and for a document of a few thousand
+members those reach 64 KB and 120 KB, far past an 8 KB file, so no block could be
+attributed to the read. Hence each test's file is large in bytes and holds a tiny
+document - comment lines, or whitespace for JSON - so the file buffer is the only
+large block. And a maximum still cannot tell two file-sized blocks from one,
+which YAML needs: its parse copies the whole input into one block of its own and
+so reaches that size either way. A *count* of blocks past the threshold
+distinguishes them.
+
+The guard that caught both of those - an assertion that the memory run does
+*not* allocate a block that big - is kept rather than removed, so a future change
+that makes it do so fails the test instead of quietly making it unable to tell.
+
+### The controls, and one the harness misread
+
+Three mutations, each compiled before being run:
+
+| control | verdict |
+| --- | --- |
+| the read buffer back to cutil's default | fails five tests by assertion |
+| the free through the wrong allocator | **aborts**: `munmap_chunk(): invalid pointer` |
+| the dirname buffer back to `malloc()` | fails the write test by assertion |
+
+The middle one is worth keeping in mind. A buffer allocated through the caller's
+allocator and released through cutil's default never comes back to the counting
+allocator's `free`, so **the counters cannot see it** - what catches it is glibc
+aborting on a free of an offset pointer. My control harness first reported that
+mutation as *still passing*, because it looked for `[  FAILED  ]` lines in the
+log and a crash prints none. A crash parses as zero failures; the exit status is
+the verdict.
 
 ## Finished: every options structure now answers the question
 
