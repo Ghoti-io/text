@@ -43,7 +43,7 @@
 
 GTEXT_API void gtext_json_error_free(GTEXT_JSON_Error * err) {
   if (err && err->context_snippet) {
-    free(err->context_snippet);
+    free(err->context_snippet); // allocator-exempt: error memory, see the option's docs
     err->context_snippet = NULL;
     err->context_snippet_len = 0;
     err->caret_offset = 0;
@@ -108,7 +108,7 @@ GTEXT_JSON_Status json_error_generate_context_snippet(const char * input,
   }
 
   // Allocate snippet buffer
-  char * snippet = (char *)malloc(snippet_len + 1);
+  char * snippet = (char *)malloc(snippet_len + 1); // allocator-exempt: error memory, see the option's docs
   if (!snippet) {
     return GTEXT_JSON_E_OOM;
   }

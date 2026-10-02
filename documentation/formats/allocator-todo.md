@@ -484,20 +484,62 @@ both failures were in the instrument rather than in the code:
 
 ### A check that would have caught the pull reader
 
-Still not built, and still recorded here rather than mistaken for coverage: for
-every file on `ALLOCATOR_CLEAN_SOURCES`, the files *it calls into* within the
-same component should be on the list too. `json_schema.c` and `json_uri.c` are
-both listed now, so the JSON component satisfies it again.
+Built now, as `make check-allocator-callees` (`tools/check-allocator-callees.py`),
+and it found two things on its first run.
 
-It would not have caught any of the three bypasses above. Each is a call into a
-file that was *already listed* - `json_parser.c`, `json_dom.c`,
-`json_pointer.c` - through an entry point that takes no allocator. That is a
-third shape, after the per-file grep and the callee-not-listed rule: **an
-allocator-aware component calling an allocator-blind entry point of an
-allocator-aware file.** The audit for it is to grep the *entry points* that take
-no allocator and ask of each caller whether one was in hand - which is how all
-three were found, and what the byte floors in `tests/test-allocator.cpp` check
-now that they are fixed.
+**The obvious form of the rule is useless, and measuring it is what showed that.**
+"Every callee of a listed file must itself be listed" reports **sixty**
+violations across this library, and almost all of them are calls to
+`gtext_json_parse_options_default()`, `toml_fail()` and the like - functions that
+allocate nothing and have no business on a list about allocation. That is the
+nearby question: *membership*, where the real one is *does this callee allocate,
+and whose allocator does it use*. A check nobody can act on is a check that gets
+turned off, so the predicate is narrower: a callee is reported only when the file
+defining it holds a raw allocation that is not marked exempt. That takes the
+sixty to four.
+
+Of the four, two were gate gaps and are closed by listing the files:
+
+- **`src/yaml/yaml_node_set.c`** had zero raw calls and was simply not on the
+  list, so `check-allocators` had never read it - while `yaml_writer.c` and
+  `yaml_resolve.c` both call into it for the anchors-written set. Correct all
+  along, and unverified all along.
+- **`src/json/json_error.c` and `src/csv/csv_error.c`**, whose five calls are the
+  error-snippet exemption this page already argues. They were exempt in prose
+  only. Both are on the list now with the marker on each line, so the exemption
+  is machine-checked rather than remembered.
+
+The other two are real and are recorded in the script's own `ALLOWED` table,
+where each entry has to say what would close it:
+
+| file | the memory | why it is not closed here |
+| --- | --- | --- |
+| `src/text_file_io.c` | the buffer holding the whole file, for every `*_parse_file()` entry point | `gtext_file_read_all()` delegates to cutil's `gcu_file_read()` with NULL where an allocator would go, so the largest single allocation a file parse makes comes from cutil's default. Closing it is a decision about **cutil's** API, not a conversion here |
+| `src/text_number.c` | `gtext_number_strtod()`'s respelling buffer | reached only in a locale whose decimal separator is not `.`, and only for a token past the 128-byte stack buffer. Closing it means an allocator parameter on `gtext_number_strtod()` and `gtext_number_format_*()`: seven call sites in five files |
+
+Of those two, `text_file_io.c` is the one worth a decision, because it is not a
+small or rare allocation - it is the file. `GTEXT_YAML_Parse_Options::allocator`
+lists `gtext_yaml_parse_file()` among the entry points it covers, and for the
+bytes of the file itself that is not true today.
+
+The script also reports a **stale allowance**: an entry in `ALLOWED` that is no
+longer reached from a listed file, so the table cannot quietly outlive the
+problem it describes.
+
+What it still cannot see is the fourth shape below - a listed file calling an
+allocator-aware entry point and passing the *wrong* allocator. The call is
+well-formed and only the choice is wrong, so no textual check reaches it.
+
+### The three shapes it was supposed to catch, and the one it cannot
+
+It would not have caught any of the three bypasses found while converting
+Schema. Each is a call into a file that was *already listed* -
+`json_parser.c`, `json_dom.c`, `json_pointer.c` - through an entry point that
+takes no allocator. That is a third shape, after the per-file grep and the
+callee rule: **an allocator-aware component calling an allocator-blind entry
+point of an allocator-aware file.** The audit for it is to grep the *entry
+points* that take no allocator and ask of each caller whether one was in hand -
+which is how all three were found.
 
 ## Done: the YAML and CSV writers' working memory
 

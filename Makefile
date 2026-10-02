@@ -494,7 +494,7 @@ TEXTLIBRARY := -Wl,--whole-archive $(APP_DIR)/$(STATIC_TARGET) -Wl,--no-whole-ar
 # this: --coverage links the gcov runtime, which exports mangle_path, and
 # check-symbols is right to reject that in a shipping build but it is not a
 # defect in an instrumented one.
-ALL_TEST_GATES := check-symbols check-allocators check-headers \
+ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-headers \
 	check-fuzz-harnesses \
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
@@ -838,7 +838,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call asan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -933,9 +933,11 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/json/json_utils.c \
 	src/json/json_lexer.c \
 	src/json/json_number.c \
+	src/json/json_error.c \
 	src/json/json_parser.c \
 	src/csv/csv_pull_reader.c \
 	src/csv/csv_sniff.c \
+	src/csv/csv_error.c \
 	src/csv/csv_writer.c \
 	src/csv/csv_stream.c \
 	src/csv/csv_stream_buffer.c \
@@ -953,6 +955,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/yaml/yaml_writer.c \
 	src/yaml/yaml_context.c \
 	src/yaml/yaml_dom.c \
+	src/yaml/yaml_node_set.c \
 	src/yaml/yaml_parser.c \
 	src/yaml/yaml_pull_reader.c \
 	src/yaml/yaml_resolve.c \
@@ -970,6 +973,9 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
 	src/ini/ini_file_io.c
+
+check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
+	@python3 tools/check-allocator-callees.py
 
 check-allocators: ## Fail if a converted file allocates without the allocator
 	@raw=$$(grep -nE '(^|[^_[:alnum:]])(malloc|calloc|realloc|free|strdup|strndup)[[:space:]]*\(' \

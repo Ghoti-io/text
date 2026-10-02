@@ -38,7 +38,7 @@ GTEXT_API void gtext_csv_error_free(GTEXT_CSV_Error * err) {
     return;
   }
   if (err->context_snippet) {
-    free(err->context_snippet);
+    free(err->context_snippet); // allocator-exempt: error memory, see the option's docs
     err->context_snippet = NULL;
     err->context_snippet_len = 0;
     err->caret_offset = 0;
@@ -51,7 +51,7 @@ GTEXT_API void gtext_csv_error_free(GTEXT_CSV_Error * err) {
    * reasonably read it after freeing. */
   if (err->message_is_owned) {
     /* Cast away const: when the flag is set, the library allocated it. */
-    free((void *)(uintptr_t)err->message);
+    free((void *)(uintptr_t)err->message); // allocator-exempt: error memory, see the option's docs
     err->message = NULL;
     err->message_is_owned = false;
   }
@@ -115,7 +115,7 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_error_generate_context_snippet(
   }
 
   // Allocate snippet buffer
-  char * snippet = (char *)malloc(snippet_len + 1);
+  char * snippet = (char *)malloc(snippet_len + 1); // allocator-exempt: error memory, see the option's docs
   if (!snippet) {
     return GTEXT_CSV_E_OOM;
   }
@@ -155,7 +155,7 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_error_copy(
 
   // Free existing context snippet in destination
   if (dst->context_snippet) {
-    free(dst->context_snippet);
+    free(dst->context_snippet); // allocator-exempt: error memory, see the option's docs
     dst->context_snippet = NULL;
   }
 
@@ -173,7 +173,7 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_error_copy(
       return GTEXT_CSV_E_OOM;
     }
 
-    dst->context_snippet = (char *)malloc(src_snippet_len + 1);
+    dst->context_snippet = (char *)malloc(src_snippet_len + 1); // allocator-exempt: error memory, see the option's docs
     if (!dst->context_snippet) {
       dst->context_snippet_len = 0;
       dst->caret_offset = 0;
