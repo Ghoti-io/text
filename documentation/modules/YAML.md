@@ -932,6 +932,64 @@ All tests pass with zero memory leaks (valgrind-verified).
 
 ---
 
+## 13.5 Schema validation
+
+`gtext_yaml_validate()` checks a document against a **JSON Schema**, and
+`gtext_yaml_schema_compile()` takes the schema as a YAML document, which is
+how they are normally written.
+
+There is no YAML schema language to use instead. YAML 1.2 section 10 defines
+schemas and they are about implicit typing - whether `yes` is a boolean - not
+about validation; `GTEXT_YAML_Schema` selects one of those and is not a
+validator. Kwalify and Rx were proposed as validation languages and neither is
+used. What is used is JSON Schema: Kubernetes, OpenAPI, GitHub Actions, Azure
+Pipelines, Ansible and the `yaml-language-server` directive all describe YAML
+documents with it.
+
+```c
+GTEXT_YAML_Error err;
+memset(&err, 0, sizeof(err));
+
+GTEXT_JSON_Schema *schema = gtext_yaml_schema_compile(schema_doc, NULL, &err);
+switch (gtext_yaml_validate(doc, schema, NULL, &err)) {
+  case GTEXT_YAML_OK:
+    break;
+  case GTEXT_YAML_E_SCHEMA:
+    /* err.line and err.col are positions in the YAML. */
+    fprintf(stderr, "%s:%d:%d: %s\n", path, err.line, err.col, err.message);
+    break;
+  default:
+    /* The document could not be expressed as JSON, so the schema was never
+       applied. A different problem with a different fix. */
+    fprintf(stderr, "%s: %s\n", path, err.message);
+    break;
+}
+gtext_json_schema_free(schema);
+```
+
+**The position is the point.** Converting with `gtext_yaml_to_json()` and
+calling `gtext_json_schema_validate()` gives the same verdict. What it cannot
+give is a place in a file the user wrote: a JSON Schema failure names a
+pointer into the converted instance, and `/spec/2/env` with no line number
+sends them hunting through a document that does not contain those names.
+`gtext_yaml_validate()` resolves that pointer back through the YAML.
+
+Three things about the conversion are worth knowing before trusting a pass,
+because validation is of the *converted* document:
+
+- **Non-string keys** are refused by default; with
+  `coerce_keys_to_strings` the key `1` becomes the name `"1"`, and a schema's
+  `properties` has to spell it that way.
+- **Aliases** are refused by default; with `allow_resolved_aliases` they are
+  expanded, so a schema sees the same subtree twice and `maxItems` counts the
+  expansion. A failure inside an expanded copy is reported at the anchor.
+- **Tags** become the JSON shapes `gtext_yaml_to_json()` gives them, so a
+  schema describes those shapes and not the YAML tags.
+
+One document at a time; walk a multi-document stream and validate each.
+
+`examples/yaml/yaml_validate.c` is a runnable version of the above.
+
 ## 14. Future Enhancements
 
 ### Known gaps
@@ -945,6 +1003,11 @@ The two flow figures stop at 280 by event for one reason, which is in the
 grammar rather than in the writer: `ns-flow-seq-entry` has no empty
 alternative, so a flow sequence entry that is the empty node with no
 properties has to be written `~`.
+
+**Schema validation used to be here**, as "there is no YAML schema
+validator". It is section 13.5 above now. What is still absent, and
+deliberately, is a *YAML-native* schema language: a fourth proposal after
+Kwalify and Rx would have no users.
 
 **`gtext_yaml_stream_*` does not feed `gtext_yaml_writer_event()`**, however
 alike the two look. Both speak `GTEXT_YAML_Event`. The writer takes composed

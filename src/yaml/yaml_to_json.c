@@ -48,6 +48,10 @@
 
 /* A coerced key's name never needs more than this: the longest is a double in
    exponential form with seventeen significant digits. */
+/* Declared in yaml_internal.h, which the validator includes: resolving a JSON
+   Pointer against the *YAML* document has to spell a mapping key the same way
+   the conversion spelled it, or a pointer into the converted document would
+   not find the node it came from. One function, not two readings of one rule. */
 #define GTEXT_YAML_KEY_NAME_MAX 40
 
 /**
@@ -73,7 +77,7 @@
  * accident. ".inf" and ".nan" have no JSON spelling at all and are refused,
  * as the writer already refuses them as values.
  */
-static GTEXT_YAML_Status coerce_key_name(
+GTEXT_INTERNAL_API GTEXT_YAML_Status yaml_coerce_key_name(
 	const GTEXT_YAML_Node *key,
 	char *buf,
 	size_t buf_size,
@@ -789,7 +793,7 @@ static GTEXT_YAML_Status convert_node(
 					break;
 				}
 			} else {
-				GTEXT_YAML_Status named = coerce_key_name(resolved_key,
+				GTEXT_YAML_Status named = yaml_coerce_key_name(resolved_key,
 					key_buf, sizeof(key_buf), &key, ctx->alloc, out_err);
 				if (named != GTEXT_YAML_OK) {
 					gtext_json_free(*out_json);

@@ -25,6 +25,8 @@
  */
 
 #include <math.h>
+#include <limits.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3895,7 +3897,58 @@ static GTEXT_JSON_Status json_schema_apply_unevaluated(
  * above it. A node that has one keeps its own set instead, because those two
  * see what their *own* schema object reached and not what a sibling did.
  */
+/*
+ * Record which instance a failure happened on, and otherwise get out of the
+ * way.
+ *
+ * **One site, not seventeen.** The engine has about fifty places that set
+ * GTEXT_JSON_E_SCHEMA and seventeen recursive calls, and threading an
+ * instance path through all of them would mean deciding, at each, what step it
+ * takes - and getting one wrong would put a failure in the wrong place, which
+ * is worse than having no place at all. Every entry into a schema node goes
+ * through here instead, so the *deepest* frame to fail is the first to return,
+ * and it is the one whose instance is recorded. The pointer string is rendered
+ * once at the top, by searching the instance for that node.
+ *
+ * The second branch is a guard, and **nothing in the engine reaches it
+ * today**. `anyOf`, `oneOf`, `not` and `if` all run subschemas that are
+ * allowed to fail, and every one of them passes a scratch GTEXT_JSON_Error it
+ * frees afterwards - so a branch that misses never touches the caller's
+ * structure. Checked, by removing this branch: no test fails. It is kept
+ * because the invariant it protects is not local - an applicator changed to
+ * share the caller's error would leak the location of a branch that was
+ * supposed to miss into a *passing* result, and that is a defect no assertion
+ * about a failure would catch.
+ *
+ * Why the deepest frame wins rather than the shallowest: almost every leaf
+ * failure assigns a fresh compound literal to `*err`, which zeroes this field
+ * on the way past, and the frame that produced it then sets it again as it
+ * returns. The frames above see it already set and leave it alone.
+ */
+static GTEXT_JSON_Status json_schema_validate_scoped(
+    const json_schema_node * node, const GTEXT_JSON_Value * instance,
+    int depth, json_schema_eval * eval,
+    const json_schema_scope * outer, GTEXT_JSON_Error * err);
+
 static GTEXT_JSON_Status json_schema_validate_depth(
+    const json_schema_node * node, const GTEXT_JSON_Value * instance,
+    int depth, json_schema_eval * eval,
+    const json_schema_scope * outer, GTEXT_JSON_Error * err) {
+  const int had_instance = err && err->schema_instance != NULL;
+  const GTEXT_JSON_Status status =
+      json_schema_validate_scoped(node, instance, depth, eval, outer, err);
+  if (err) {
+    if (status == GTEXT_JSON_E_SCHEMA && !err->schema_instance) {
+      err->schema_instance = instance;
+    }
+    else if (status == GTEXT_JSON_OK && !had_instance) {
+      err->schema_instance = NULL;
+    }
+  }
+  return status;
+}
+
+static GTEXT_JSON_Status json_schema_validate_scoped(
     const json_schema_node * node, const GTEXT_JSON_Value * instance,
     int depth, json_schema_eval * eval,
     const json_schema_scope * outer, GTEXT_JSON_Error * err) {
@@ -5072,6 +5125,118 @@ GTEXT_API void gtext_json_schema_free(GTEXT_JSON_Schema * schema) {
   gtext_allocator_free(alloc, schema);
 }
 
+/*
+ * Append one RFC 6901 reference token, with snprintf's semantics: write what
+ * fits, count what was needed.
+ *
+ * `~` becomes `~0` and `/` becomes `~1`, and in that order - the other way
+ * round turns a `/` into `~01`, which reads back as `~1`.
+ */
+static void json_pointer_append_token(char * buf, size_t cap, size_t * needed,
+    const char * text, size_t text_len) {
+  const char * p = text;
+  const char * const stop = text + text_len;
+  /* One lambda-free emitter so the escape cases and the ordinary case cannot
+     disagree about truncation. */
+#define JSON_PTR_PUT(c)                                                        \
+  do {                                                                         \
+    if (buf && *needed + 1 < cap) buf[*needed] = (c);                          \
+    (*needed)++;                                                               \
+  } while (0)
+
+  JSON_PTR_PUT('/');
+  for (; p < stop; p++) {
+    if (*p == '~') {
+      JSON_PTR_PUT('~');
+      JSON_PTR_PUT('0');
+    }
+    else if (*p == '/') {
+      JSON_PTR_PUT('~');
+      JSON_PTR_PUT('1');
+    }
+    else {
+      JSON_PTR_PUT(*p);
+    }
+  }
+#undef JSON_PTR_PUT
+  if (buf && cap) buf[*needed < cap ? *needed : cap - 1] = '\0';
+}
+
+/*
+ * Find `target` inside `node` by identity, writing the pointer to it.
+ *
+ * By identity rather than by equality: two members of one object can hold
+ * equal values, and the question is which of them the engine was looking at.
+ * A DOM built by a parse has no shared nodes, so identity is exact.
+ *
+ * Returns 1 when found, 0 when not - which is the `propertyNames` case, where
+ * the instance the engine validated is a string it built for the check and is
+ * not in the document at all.
+ */
+static int json_schema_find_pointer(const GTEXT_JSON_Value * node,
+    const GTEXT_JSON_Value * target, char * buf, size_t cap, size_t * needed,
+    int depth) {
+  if (!node) return 0;
+  if (node == target) return 1;
+  /* The same bound the validator uses, so a document it could walk is one
+     this can walk too. */
+  if (depth > 1024) return 0;
+
+  switch (gtext_json_typeof(node)) {
+    case GTEXT_JSON_ARRAY: {
+      const size_t n = gtext_json_array_size(node);
+      for (size_t i = 0; i < n; i++) {
+        char index[32];
+        const int written = snprintf(index, sizeof index, "%zu", i);
+        if (written < 0 || (size_t)written >= sizeof index) return 0;
+        const size_t saved = *needed;
+        json_pointer_append_token(
+            buf, cap, needed, index, (size_t)written);
+        if (json_schema_find_pointer(gtext_json_array_get(node, i), target,
+                buf, cap, needed, depth + 1)) {
+          return 1;
+        }
+        *needed = saved;
+        if (buf && cap) buf[saved < cap ? saved : cap - 1] = '\0';
+      }
+      return 0;
+    }
+    case GTEXT_JSON_OBJECT: {
+      const size_t n = gtext_json_object_size(node);
+      for (size_t i = 0; i < n; i++) {
+        size_t klen = 0;
+        const char * key = gtext_json_object_key(node, i, &klen);
+        const size_t saved = *needed;
+        json_pointer_append_token(buf, cap, needed, key ? key : "", klen);
+        if (json_schema_find_pointer(gtext_json_object_value(node, i), target,
+                buf, cap, needed, depth + 1)) {
+          return 1;
+        }
+        *needed = saved;
+        if (buf && cap) buf[saved < cap ? saved : cap - 1] = '\0';
+      }
+      return 0;
+    }
+    default:
+      return 0;
+  }
+}
+
+GTEXT_API int gtext_json_schema_instance_pointer(
+    const GTEXT_JSON_Value * instance, const GTEXT_JSON_Error * err,
+    char * buf, size_t buf_size) {
+  if (buf && buf_size) buf[0] = '\0';
+  if (!instance || !err || !err->schema_instance) return -1;
+
+  size_t needed = 0;
+  if (!json_schema_find_pointer(
+          instance, err->schema_instance, buf, buf_size, &needed, 0)) {
+    return -1;
+  }
+  if (needed > (size_t)INT_MAX) return -1;
+  return (int)needed;
+}
+
 GTEXT_API GTEXT_JSON_Status gtext_json_schema_validate(
     const GTEXT_JSON_Schema * schema, const GTEXT_JSON_Value * instance,
     GTEXT_JSON_Error * err) {
@@ -5083,5 +5248,16 @@ GTEXT_API GTEXT_JSON_Status gtext_json_schema_validate(
     return GTEXT_JSON_E_INVALID;
   }
 
+  /* No position is computed here, and nothing is allocated. The engine records
+     which *value* a failing frame was applied to; turning that into a pointer
+     is a walk of the instance, which gtext_json_schema_instance_pointer() does
+     on request and into the caller's buffer.
+
+     Rendering it here was the first design and it was wrong for one reason:
+     the string had to be owned by the error, and a schema validation allocated
+     nothing before. Every existing caller that did not call
+     gtext_json_error_free() after a failure - several in this library's own
+     tests - became one that leaks, which is a change in obligations that no
+     release note makes safe. */
   return json_schema_validate_node(schema->root, instance, err);
 }

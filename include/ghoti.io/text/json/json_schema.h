@@ -552,6 +552,43 @@ GTEXT_API GTEXT_JSON_Status gtext_json_schema_validate(
     const GTEXT_JSON_Schema * schema, const GTEXT_JSON_Value * instance,
     GTEXT_JSON_Error * err);
 
+/**
+ * @brief Where in the instance a validation failed, as an RFC 6901 pointer.
+ *
+ * Writes the pointer to ::GTEXT_JSON_Error::schema_instance into @p buf: `""`
+ * for the instance itself, `/items/2/name` for a value inside it, with `~` and
+ * `/` escaped as `~0` and `~1`.
+ *
+ * ## Why this is a function and not a field
+ *
+ * The engine records which *value* a failing subschema was applied to, and
+ * nothing more. A pointer string in the error structure would have to be
+ * owned by it, and a schema validation allocated nothing before - so every
+ * existing caller that does not call gtext_json_error_free() after a failure
+ * would silently have become one that leaks. Deriving it on request costs one
+ * walk of the instance, paid by the caller who wants a position, and changes
+ * no obligation for the callers who do not.
+ *
+ * ## Buffer sizing
+ *
+ * snprintf's contract: at most @p buf_size bytes are written, including the
+ * terminator, and the return value is what the pointer *needed*, excluding it.
+ * A return of @p buf_size or more means the answer was truncated and a buffer
+ * that large plus one would hold it.
+ *
+ * @param instance The instance that was validated - the same value passed to
+ *   gtext_json_schema_validate(), not a subtree of it (must not be NULL)
+ * @param err The error it reported (must not be NULL)
+ * @param buf Destination, which may be NULL to ask only for the length
+ * @param buf_size Bytes available in @p buf, including the terminator
+ * @return Bytes the pointer needs, excluding the terminator; or -1 when there
+ *   is no position to report - the error is not a schema failure, or the value
+ *   is not in @p instance, which is what `propertyNames` produces
+ */
+GTEXT_API int gtext_json_schema_instance_pointer(
+    const GTEXT_JSON_Value * instance, const GTEXT_JSON_Error * err,
+    char * buf, size_t buf_size);
+
 #ifdef __cplusplus
 }
 #endif

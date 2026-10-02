@@ -1061,6 +1061,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/yaml/yaml_pull_reader.c \
 	src/yaml/yaml_resolve.c \
 	src/yaml/yaml_to_json.c \
+	src/yaml/yaml_validate.c \
 	src/toml/toml_dom.c \
 	src/toml/toml_lexer.c \
 	src/toml/toml_parser.c \

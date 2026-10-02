@@ -37,12 +37,21 @@ This page provides practical examples demonstrating the YAML module's streaming 
     - Scalar style selection and line-width folding
     - Buffer sink output
 
+### Validation
+
+- @subpage example_yaml_validate "yaml_validate.c" — Validating against a JSON Schema
+    - A schema written in YAML, compiled with gtext_yaml_schema_compile()
+    - A failure reported at the line and column of the YAML, not at a pointer
+      into the converted instance
+    - A conversion refusal kept distinct from a schema failure
+
 ## Example Status
 
 **Current Status (February 2026):**
 - ✅ Streaming parser examples available
 - ⏳ DOM parser examples (planned - awaiting DOM-specific examples)
 - ✅ Writer examples available
+- ✅ Schema validation example available
 
 The examples focus on the **streaming parser API**, which is currently implemented. DOM and writer examples will be added as those features are completed.
 

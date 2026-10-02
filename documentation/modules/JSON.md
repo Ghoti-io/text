@@ -311,6 +311,38 @@ keyword. `pattern` and `patternProperties` run only when the caller supplies
 a regular-expression engine. What is still open is in section 17.1. The format page is the
 authority for which keyword does what.
 
+**A failure says where.** `GTEXT_JSON_Error::schema_instance` is the value a
+failing subschema was applied to, and `gtext_json_schema_instance_pointer()`
+turns that into an RFC 6901 pointer into the instance: `""` for the instance
+itself, `/items/2/name` for a value inside it. Until these existed the engine
+reported *what* was wrong and nothing about *where*, which is enough on a
+one-line instance and not on a configuration file - and is also what a
+validator for another format needs: `gtext_yaml_validate()` turns the same
+pointer into a line and a column in the YAML source.
+
+```c
+if (gtext_json_schema_validate(schema, instance, &err) == GTEXT_JSON_E_SCHEMA) {
+  char where[256];
+  if (gtext_json_schema_instance_pointer(instance, &err, where,
+          sizeof(where)) >= 0) {
+    fprintf(stderr, "%s: %s\n", where, err.message);
+  }
+}
+```
+
+**The pointer is derived on request and not carried in the error**, which is a
+deliberate choice rather than an inconvenience. A string in the error would
+have to be owned by it, and a schema validation allocated nothing before - so
+every existing caller that does not call `gtext_json_error_free()` after a
+failure would silently have become one that leaks. The length-only form
+(`buf` NULL) sizes a buffer; the return value is snprintf's, the length
+*needed*.
+
+The one failure with no pointer is `propertyNames`, which validates each of an
+object's *names* as if it were a string instance - that string is built for the
+check and is not part of the instance, so there is nothing to point at, and the
+function returns -1. `schema_instance` still holds the name.
+
 ---
 
 ## 13. Error Reporting

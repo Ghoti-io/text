@@ -42,6 +42,7 @@
 /* Public module headers */
 #include <ghoti.io/text/yaml/yaml_dom.h>
 #include <ghoti.io/text/yaml/yaml_events.h>
+#include <ghoti.io/text/yaml/yaml_schema.h>
 #include <ghoti.io/text/yaml/yaml_stream.h>
 #include <ghoti.io/text/yaml/yaml_writer.h>
 

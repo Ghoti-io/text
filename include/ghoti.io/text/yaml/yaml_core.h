@@ -59,6 +59,11 @@ extern "C" {
  * - GTEXT_YAML_E_DUPKEY: Duplicate mapping key (policy may vary by options).
  * - GTEXT_YAML_E_WRITE: Sink/write error during serialization.
  * - GTEXT_YAML_E_STATE: Operation not valid in current parser/writer state.
+ * - GTEXT_YAML_E_SCHEMA: The document converts, and does not satisfy the
+ *   schema it was validated against. Only gtext_yaml_validate() returns it,
+ *   and it is deliberately distinct from GTEXT_YAML_E_INVALID: "this YAML
+ *   cannot be expressed as JSON" and "this YAML is not what the schema asks
+ *   for" are different problems with different fixes.
  */
 typedef enum {
   GTEXT_YAML_OK = 0,
@@ -71,7 +76,10 @@ typedef enum {
   GTEXT_YAML_E_BAD_ESCAPE,
   GTEXT_YAML_E_DUPKEY,
   GTEXT_YAML_E_WRITE,
-  GTEXT_YAML_E_STATE
+  GTEXT_YAML_E_STATE,
+  /* Appended rather than grouped with the other parse faults, so that no
+     existing enumerator's value moves. */
+  GTEXT_YAML_E_SCHEMA
 } GTEXT_YAML_Status;
 
 /**

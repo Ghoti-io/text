@@ -580,7 +580,20 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_new_number_i64(int64_t x) {
   val->as.number.i64 = x;
   val->as.number.has_i64 = 1;
   val->as.number.has_u64 = 0;
-  val->as.number.has_dbl = 0;
+  /* **Also the double, because a parse of the same lexeme would set it.**
+     Without this, a number built here and a number read from `1` were not the
+     same value: gtext_json_get_double() refused the constructed one, and so
+     did every caller that asks a number for a double. The one that found it
+     was gtext_json_schema_compile(), which reads `minimum`, `maximum`,
+     `exclusiveMinimum`, `exclusiveMaximum` and `multipleOf` that way - so a
+     schema assembled with these constructors, or converted from YAML or TOML,
+     was refused as "Invalid minimum value" while the byte-identical schema
+     text compiled.
+
+     Approximate above 2^53, exactly as a parse of the same digits is, and
+     has_i64 still carries the exact value for anyone who wants it. */
+  val->as.number.dbl = (double)x;
+  val->as.number.has_dbl = 1;
   return val;
 }
 
@@ -619,7 +632,9 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_new_number_u64(uint64_t x) {
   val->as.number.u64 = x;
   val->as.number.has_i64 = 0;
   val->as.number.has_u64 = 1;
-  val->as.number.has_dbl = 0;
+  /* As above: a parse of this lexeme would derive a double, so this does. */
+  val->as.number.dbl = (double)x;
+  val->as.number.has_dbl = 1;
   return val;
 }
 

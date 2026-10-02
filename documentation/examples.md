@@ -11,7 +11,7 @@ The examples are organized by module:
 
 - **JSON Examples** - Demonstrate JSON parsing, writing, streaming, and advanced features
 - **CSV Examples** - Demonstrate CSV reading, writing, streaming, and dialect handling
-- **YAML Examples** - `yaml_writer_formatting.c` is the program in the tree. The security, streaming and config pages are guides for programs that have not been written
+- **YAML Examples** - `yaml_writer_formatting.c` and `yaml_validate.c` are the programs in the tree. The security, streaming and config pages are guides for programs that have not been written
 
 All examples are located in the `examples/` directory and can be built using the Makefile.
 
@@ -63,8 +63,9 @@ The CSV examples are located in `examples/csv/` and demonstrate various aspects 
 
 The YAML examples demonstrate the parser and writer APIs.
 
-**Note:** `examples/yaml/` currently holds one program, `yaml_writer_formatting.c`,
-which `make examples` builds into `build/<platform>/<config>/apps/examples/yaml/`.
+**Note:** `examples/yaml/` holds two programs, `yaml_writer_formatting.c` and
+`yaml_validate.c`, which `make examples` builds into
+`build/<platform>/<config>/apps/examples/yaml/`.
 The security, streaming and configuration pages linked below are guides rather
 than walkthroughs of files in the tree - the programs they describe have not
 been written yet.

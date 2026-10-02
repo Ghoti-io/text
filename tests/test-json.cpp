@@ -3331,18 +3331,12 @@ TEST(StreamingParser, InvalidJSON) {
     gtext_json_stream_free(st);
     // Free error from first operation before reusing
     gtext_json_error_free(&err);
-    err = GTEXT_JSON_Error{
-        .code = {},
-        .message = {},
-        .offset = {},
-        .line = {},
-        .col = {},
-        .context_snippet = {},
-        .context_snippet_len = {},
-        .caret_offset = {},
-        .expected_token = {},
-        .actual_token = {}
-    };
+    /* `{}` rather than a field for every member. All three of these were
+       written out in full and broke the build the next time GTEXT_JSON_Error
+       grew a field - which is what a field-by-field zeroing always does: it
+       is a second copy of the structure's shape, kept by hand, for no benefit
+       over zeroing the whole thing. */
+    err = GTEXT_JSON_Error{};
 
     // Invalid: incomplete structure
     st = gtext_json_stream_new(&opts, callback, nullptr);
@@ -7770,18 +7764,7 @@ TEST(EnhancedErrorReporting, MultipleErrors) {
     gtext_json_error_free(&err);
 
     // Reset error structure
-    err = GTEXT_JSON_Error{
-        .code = {},
-        .message = {},
-        .offset = {},
-        .line = {},
-        .col = {},
-        .context_snippet = {},
-        .context_snippet_len = {},
-        .caret_offset = {},
-        .expected_token = {},
-        .actual_token = {}
-    };
+    err = GTEXT_JSON_Error{};
     // Second parse (should reuse error structure)
     GTEXT_JSON_Value * result2 = gtext_json_parse(json2, strlen(json2), &opts, &err);
     EXPECT_EQ(result2, nullptr);
@@ -9087,18 +9070,7 @@ TEST(StateValidation, ContinueAfterError) {
     EXPECT_NE(err.code, GTEXT_JSON_OK);
 
     // Try to feed more data after error - should reject or handle gracefully
-    GTEXT_JSON_Error err2{
-        .code = {},
-        .message = {},
-        .offset = {},
-        .line = {},
-        .col = {},
-        .context_snippet = {},
-        .context_snippet_len = {},
-        .caret_offset = {},
-        .expected_token = {},
-        .actual_token = {}
-    };
+    GTEXT_JSON_Error err2{};
     GTEXT_JSON_Status status_after_error = gtext_json_stream_feed(stream, "more data", 9, &err2);
     // Should either reject (return error) or handle gracefully (not crash)
     // The important thing is it doesn't crash
@@ -9129,18 +9101,7 @@ TEST(StateValidation, MultipleFinishCalls) {
     EXPECT_EQ(finish1, GTEXT_JSON_OK);
 
     // Second finish should handle gracefully (already done)
-    GTEXT_JSON_Error err2{
-        .code = {},
-        .message = {},
-        .offset = {},
-        .line = {},
-        .col = {},
-        .context_snippet = {},
-        .context_snippet_len = {},
-        .caret_offset = {},
-        .expected_token = {},
-        .actual_token = {}
-    };
+    GTEXT_JSON_Error err2{};
     GTEXT_JSON_Status finish2 = gtext_json_stream_finish(stream, &err2);
     // Should either succeed (idempotent) or return appropriate status
     EXPECT_NE(finish2, GTEXT_JSON_E_INVALID);

@@ -48,6 +48,12 @@ GTEXT_API void gtext_json_error_free(GTEXT_JSON_Error * err) {
     err->context_snippet_len = 0;
     err->caret_offset = 0;
   }
+  /* Borrowed, so only forgotten - and cleared all the same: a caller who frees
+     the instance and then reads the error would otherwise be handed a dangling
+     pointer by a function whose name says it tidied up. */
+  if (err) {
+    err->schema_instance = NULL;
+  }
 }
 
 GTEXT_JSON_Status json_error_generate_context_snippet(const char * input,

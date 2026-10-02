@@ -93,6 +93,18 @@ typedef enum {
  * and optional enhanced diagnostics (context snippet, caret positioning,
  * expected/actual token descriptions).
  */
+/**
+ * @brief Forward declaration of JSON value structure
+ *
+ * The actual structure is defined internally. Values are allocated from
+ * an arena and freed via gtext_json_free().
+ *
+ * Declared here, above GTEXT_JSON_Error rather than below it, because that
+ * structure names it: a schema validation failure carries the value it failed
+ * on.
+ */
+typedef struct GTEXT_JSON_Value GTEXT_JSON_Value;
+
 typedef struct {
   GTEXT_JSON_Status code; ///< Error code
   const char * message;   ///< Human-readable error message (static string)
@@ -110,6 +122,41 @@ typedef struct {
                                ///< string, may be NULL)
   const char * actual_token;   ///< Description of actual token encountered
                                ///< (static string, may be NULL)
+
+  /**
+   * @brief The value a schema validation failed on.
+   *
+   * The deepest instance a failing subschema was applied to. NULL unless this
+   * is a ::GTEXT_JSON_E_SCHEMA from gtext_json_schema_validate().
+   *
+   * **Borrowed, not owned.** It is a node of the instance that was validated
+   * and is valid for exactly as long as that instance is. Nothing here needs
+   * freeing, which is deliberate: a schema validation allocated nothing before
+   * this field existed, and a field that *did* need freeing would silently
+   * turn every existing caller into one that leaks.
+   *
+   * ## Why the engine reports a value rather than a position
+   *
+   * It reported *what* was wrong - "Value does not match the required type" -
+   * and nothing about *where*. On a one-line instance that is enough; on a
+   * configuration file it is not, and it is also what a validator for another
+   * format needs in order to translate a failure into its own coordinates.
+   *
+   * The position is derived on request, by
+   * gtext_json_schema_instance_pointer(), which writes an RFC 6901 pointer
+   * into a buffer of the caller's. That is where the one-line answer a caller
+   * usually wants comes from; gtext_yaml_validate() turns the same pointer
+   * into a line and a column in the YAML source.
+   *
+   * ## `propertyNames` is the case to know about
+   *
+   * It validates each of an object's *names* as if it were a string instance,
+   * and that string is built for the check. So this field holds it, and
+   * gtext_json_schema_instance_pointer() reports that there is no pointer to
+   * it - the name is not part of the instance, and a pointer that claimed
+   * otherwise would name a different node.
+   */
+  const GTEXT_JSON_Value * schema_instance;
 } GTEXT_JSON_Error;
 
 /**
@@ -123,14 +170,6 @@ typedef enum {
   GTEXT_JSON_ARRAY,  ///< array value
   GTEXT_JSON_OBJECT  ///< object value
 } GTEXT_JSON_Type;
-
-/**
- * @brief Forward declaration of JSON value structure
- *
- * The actual structure is defined internally. Values are allocated from
- * an arena and freed via gtext_json_free().
- */
-typedef struct GTEXT_JSON_Value GTEXT_JSON_Value;
 
 /**
  * @brief Duplicate key handling mode

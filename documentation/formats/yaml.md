@@ -65,6 +65,11 @@ option.
 to a bool node, `123` to int, `3.14` to float, and both `null` and `~` to
 null.
 
+These are *resolution* schemas - which plain scalar is a boolean - and have
+nothing to do with validation, which is a confusion the shared word invites.
+Validating a document's shape is `gtext_yaml_validate()`, against a JSON
+Schema; see \ref yaml_schema_module "the YAML schema page".
+
 Under 1.2 defaults, `yes` resolves to the **string** `"yes"` and `0755` to
 the **string** `"0755"` - correct for 1.2, which removed 1.1's `y|yes|on`
 booleans and leading-zero octals. So do `1_000`, `0b101` and `0O14`: digit

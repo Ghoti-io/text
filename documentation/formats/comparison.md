@@ -21,7 +21,23 @@ measured here, on one machine, in one sitting.
 | # | Finding | Scope |
 |---|---|---|
 | 1 | JSON parses at roughly a third of Python's stdlib speed | JSON |
-| 2 | There is no YAML schema validator | YAML |
+
+Finding 2 used to read *"There is no YAML schema validator"*. There is now:
+`gtext_yaml_validate()`, against JSON Schema, which is the language the
+ecosystem actually describes YAML with - Kubernetes, OpenAPI, GitHub Actions
+and the `yaml-language-server` directive all do, and the schemas are usually
+written in YAML. The engine is this library's JSON Schema one, so every draft
+it supports comes with it, and `gtext_yaml_schema_compile()` takes the schema
+as YAML.
+
+The part that needed building was not the verdict - converting and calling the
+JSON validator always gave that - but **the position**. A JSON Schema failure
+names a place in the converted instance, which is a document the user never
+wrote. `gtext_yaml_validate()` resolves that pointer back through the YAML and
+reports the line and column of the node it names. Getting there needed the schema engine to
+record which value a failing subschema was applied to, which it had never
+done, so JSON Schema validation gained a location as well -
+`gtext_json_schema_instance_pointer()`.
 
 Finding 3 used to read *"Streaming JSON LAST_WINS and COLLECT still deliver
 every repeated name"*, and the first half of it is still true and always will
@@ -171,8 +187,9 @@ retention and scalar style on a parse-write cycle when `retain_comments` and
 `pretty` are set; source location per node; binary and timestamp accessors;
 multi-document parse and emit; a JSON fast path; a safe-mode option set;
 push streaming and a pull reader; a YAML 1.1 resolution mode; conversion to
-and from JSON; a caller allocator on the parse. This is the most complete of
-the three formats.
+and from JSON; validation against a JSON Schema, reported at the line and
+column of the YAML; a caller allocator on the parse. This is the most complete
+of the three formats.
 
 libyaml discards comments, and yaml-cpp's support is partial. A tool that
 rewrites a configuration file and must keep its comments is a case where
@@ -180,8 +197,12 @@ this library is the better choice.
 
 **Missing.**
 
-- Schema validation. `GTEXT_YAML_Schema` selects implicit typing (failsafe,
-  JSON or core). It is not a validator, and there is no Kwalify or Rx.
+- A YAML-native schema language. `GTEXT_YAML_Schema` selects implicit typing
+  (failsafe, JSON or core) and is not a validator; Kwalify and Rx were
+  proposed and neither is used. Validation is against JSON Schema instead -
+  see `gtext_yaml_validate()` and the note under the findings table above -
+  which is a deliberate choice rather than a gap, because a fourth proposal
+  for a YAML schema language would have no users.
 - In-situ parsing. Over the suite's parsing documents, 70% of scalars are
   contiguous in the input and 30% of scalar bytes are. Folding, escapes and
   block indentation mean the text in the document is not the text of the

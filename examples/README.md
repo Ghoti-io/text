@@ -10,6 +10,14 @@ Writer formatting options for YAML. Demonstrates:
 - Scalar style selection and line-width folding
 - Custom indentation
 
+### yaml_validate.c
+Validating a YAML document against a JSON Schema. Demonstrates:
+- Compiling a schema that is itself written in YAML
+- A failure reported at the line and column of the YAML, not at a JSON Pointer
+  into the converted instance
+- Keeping "this cannot be expressed as JSON" distinct from "this does not
+  satisfy the schema"
+
 ## JSON Examples
 
 ### json_basic.c

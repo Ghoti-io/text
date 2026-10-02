@@ -678,4 +678,30 @@ GTEXT_INTERNAL_API bool gtext_yaml_stream_last_error(
 	GTEXT_YAML_Error *out
 );
 
+/**
+ * @brief Spell a non-string mapping key the way gtext_yaml_to_json() does.
+ *
+ * The name a YAML key gets in the converted JSON, for the keys JSON has no
+ * spelling for: a null, a bool, an int, a float. Written into @p buf, which
+ * must be at least 40 bytes; @p out is set to point into it, or to a literal
+ * for the cases that need no formatting.
+ *
+ * Shared with the validator rather than copied into it. A JSON Pointer from a
+ * schema failure indexes the *converted* document, and resolving it against
+ * the YAML document means asking which YAML key produced that name - which is
+ * this question, backwards. Two implementations of it would drift, and the
+ * drift would present as a validation error reported at the wrong line.
+ *
+ * @return GTEXT_YAML_OK, or GTEXT_YAML_E_INVALID for a key with no JSON name
+ *         (a collection, or an infinity or NaN).
+ */
+GTEXT_INTERNAL_API GTEXT_YAML_Status yaml_coerce_key_name(
+	const GTEXT_YAML_Node *key,
+	char *buf,
+	size_t buf_size,
+	const char **out,
+	const GTEXT_Allocator *alloc,
+	GTEXT_YAML_Error *out_err
+);
+
 #endif /* GHOTI_IO_GTEXT_SRC_YAML_YAML_INTERNAL_H */
