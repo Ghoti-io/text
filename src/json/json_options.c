@@ -71,6 +71,8 @@ GTEXT_API GTEXT_JSON_Parse_Options gtext_json_parse_options_default(void) {
 GTEXT_API GTEXT_JSON_Write_Options gtext_json_write_options_default(void) {
   GTEXT_JSON_Write_Options opts = {0};
 
+  opts.allocator = NULL; // the default allocator; not the sink's buffer
+
   // Formatting
   opts.pretty = false;            // compact output
   opts.indent_spaces = 2;         // default indent (used if pretty = true)

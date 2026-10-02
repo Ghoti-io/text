@@ -4,7 +4,8 @@
 
 `GTEXT_JSON_Parse_Options::allocator` routes a whole JSON parse through a
 caller-supplied `GTEXT_Allocator`, which is cutil's `GCU_Allocator` under a
-local name. **CSV, YAML and INI now do the same**, through
+local name, and **`GTEXT_JSON_Write_Options::allocator` now covers the writer's
+own working memory**. **CSV, YAML and INI also do the same for parsing**, through
 `GTEXT_CSV_Parse_Options::allocator`, `GTEXT_YAML_Parse_Options::allocator` and
 `GTEXT_INI_Parse_Options::allocator`. INI is the one that covers its *accessors*
 as well - `gtext_ini_unescape()`, `gtext_ini_escape()` and
@@ -148,12 +149,68 @@ in that instance, and the whole conversion was then swept for the shape. The
 same pass also rewrote the word `free()` inside a comment. A mechanical change
 of this size needs the compiler read carefully rather than trusted to be silent.
 
+## A correction: only the *sink* is exempt, not the writer
+
+The CSV and YAML sections above say the writer is deliberately exempt, and that
+was wider than the argument supporting it. The argument is about the **sink**:
+`gtext_json_sink_buffer()` takes no options, so a sink is created before any
+allocator is named and outlives the write, and routing its buffer through a
+caller allocator would mean freeing through whichever options happened to be
+passed last. That is sound, and it is about the sink alone.
+
+A writer's *working memory* is a different thing. It is allocated and released
+inside one call, from options the caller supplied, and nothing about it predates
+anything. **INI already drew that line correctly** -
+`GTEXT_INI_Write_Options::allocator` is "the allocator the writer's own working
+memory comes from... Not the sink's: a buffer sink owns its buffer" - so the
+exemption had already been superseded by the newest module while this page still
+recorded it as a decision in force. That is the shape worth noticing: a
+documented decision that a later module quietly improved on reads exactly like a
+decision still standing.
+
+## JSON writer: done
+
+`GTEXT_JSON_Write_Options::allocator` covers the scratch a write takes and gives
+back - the frame stack the value walk carries, and the sorted index array a
+`sort_object_keys` write builds per object - plus, for the incremental API, the
+`GTEXT_JSON_Writer` handle and its stack, which `gtext_json_writer_new()`
+allocates and `gtext_json_writer_free()` releases through the same one.
+`src/json/json_writer.c` is in `ALLOCATOR_CLEAN_SOURCES`.
+
+The handle reads its allocator from the **options argument**, not from the copy
+it stores, because the handle is allocated before that copy exists - the
+`csv_field_buffer_init()` lesson in a new place, where an allocator assigned
+after the allocation it serves is the bug. `gtext_json_writer_free()` then reads
+the stored copy, which is sound because it is set once and never cleared.
+
+The sink allocations carry `allocator-exempt` markers, so the gate passes them
+deliberately rather than by omission.
+
+### What the controls showed
+
+Three defects planted, three caught, and two of them taught something:
+
+- indices from the C library and freed through the allocator - caught by the
+  tracking allocator's guard word, "freed a block this allocator never made".
+- the frame growth bypassing the allocator *consistently*, so nothing is
+  mismatched and the counters simply stay at zero. Caught by asserting the
+  allocator was **used** (`total_allocations > 0`) rather than only balanced. A
+  bypass is invisible to a balance check, because bypassing is balanced.
+- the writer's stack freed by the C library - which does not fail a test, it
+  **aborts the process** with `munmap_chunk(): invalid pointer`. The first
+  scorer counted `[  FAILED  ]` lines and reported this control as not caught,
+  because a crash prints no summary. Same family as "the exit status is the
+  verdict".
+
 ## The other JSON entry points
 
-`GTEXT_JSON_Parse_Options::allocator` covers parsing. The JSON writer, the
-streaming parser, JSON Pointer, JSON Patch and JSON Schema each have their own
-entry points and take no allocator. Each needs an options structure of its own
-or an added parameter; none of them shares the parse options.
+`GTEXT_JSON_Parse_Options::allocator` covers parsing and
+`GTEXT_JSON_Write_Options::allocator` the writer. The streaming parser, JSON
+Pointer, JSON Patch and JSON Schema each have their own entry points and take no
+allocator. Each needs an options structure of its own or an added parameter;
+none of them shares the parse options. By raw allocation count the remaining work
+is roughly: `json_schema.c` 97 sites, `json_patch.c` 40, `json_stream.c` 13,
+`json_pointer.c` 7.
 
 ## The error-snippet exception
 

@@ -350,8 +350,9 @@ documents;
 that stops.
 
 What is still open is on the JSON side. Streaming LAST_WINS and COLLECT
-still deliver every member of a repeated name. The writer, JSON Pointer,
-JSON Patch and JSON Schema do not take a caller allocator.
+still deliver every member of a repeated name. The streaming parser, JSON
+Pointer, JSON Patch and JSON Schema do not take a caller allocator; parsing
+and the writer do.
 
 ## License
 

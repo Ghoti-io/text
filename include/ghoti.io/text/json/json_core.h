@@ -386,6 +386,25 @@ typedef enum {
  * canonical output options.
  */
 typedef struct {
+  /**
+   * The allocator the writer's own working memory comes from, or NULL for the
+   * default. **Not the sink's**: a buffer sink owns its buffer, because a sink
+   * is created before any options are seen and outlives the write.
+   *
+   * What this covers is the scratch a write needs and then releases - the
+   * frame stack the value walk carries, and the sorted index array a
+   * ::sort_object_keys write builds per object - plus, for the incremental
+   * API, the ::GTEXT_JSON_Writer handle and its stack, which
+   * gtext_json_writer_new() allocates and gtext_json_writer_free() releases
+   * through this same allocator. So an arena caller writing a large document
+   * no longer reaches the C heap for any of it.
+   *
+   * The same line GTEXT_INI_Write_Options::allocator draws, and for the same
+   * reason: a partial allocator is worse than none, so the sink's buffer is
+   * exempt deliberately and documented rather than left to be discovered.
+   */
+  const GTEXT_Allocator * allocator;
+
   // Formatting
   bool pretty;       ///< Pretty-print output (false = compact, true = pretty)
   int indent_spaces; ///< Number of spaces per indent level (e.g. 2, 4)

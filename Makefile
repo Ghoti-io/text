@@ -923,6 +923,7 @@ endif
 # C library calls in it are the implementation rather than a bypass.
 ALLOCATOR_CLEAN_SOURCES := \
 	src/json/json_dom.c \
+	src/json/json_writer.c \
 	src/json/json_lexer.c \
 	src/json/json_number.c \
 	src/json/json_parser.c \

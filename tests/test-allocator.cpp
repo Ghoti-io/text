@@ -924,3 +924,149 @@ TEST(Allocator, YamlNullAllocatorOptionStillParses) {
 	ASSERT_NE(doc, nullptr);
 	gtext_yaml_free(doc);
 }
+
+// ---------------------------------------------------------------------------
+// The JSON writer's working memory.
+//
+// GTEXT_JSON_Write_Options::allocator covers the scratch a write needs and
+// releases - the frame stack the value walk carries, the sorted index array a
+// sort_object_keys write builds per object, and for the incremental API the
+// GTEXT_JSON_Writer handle and its stack.
+//
+// **The sink is deliberately not covered**, which is why these tests say
+// nothing about it: a sink is created before any options are seen and outlives
+// the write, so it owns its buffer. That is the line
+// GTEXT_INI_Write_Options::allocator already draws, and the reason this module
+// was listed as "the writer takes no allocator" for as long as it was: the
+// documentation recorded writers as exempt wholesale, when only the sink is.
+//
+// A separate allocator is used for each so that a block crossing between them
+// trips the guard word rather than merely counting wrong.
+// ---------------------------------------------------------------------------
+
+TEST(Allocator, JsonWriteValueBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	// Parsed with the default allocator on purpose: the value is not what is
+	// under test here, and keeping the two apart is what makes a stray block
+	// attributable.
+	// strlen, not a literal: the first version of this counted the bytes by
+	// hand, got 48 for a 49-byte document, and the parse refused a truncated
+	// object. A length that has to be kept in step with a string beside it is
+	// a length that will not be.
+	const char * doc =
+		"{\"b\":[1,2,{\"d\":4,\"c\":[5,6,7]}],\"a\":{\"z\":1,\"y\":2}}";
+	GTEXT_JSON_Value * v = gtext_json_parse(doc, strlen(doc), nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	GTEXT_JSON_Sink sink;
+	ASSERT_EQ(gtext_json_sink_buffer(&sink), GTEXT_JSON_OK);
+
+	GTEXT_JSON_Write_Options opts = gtext_json_write_options_default();
+	opts.allocator = &alloc;
+	// Both of these pull on the covered memory: sorting allocates an index
+	// array per object, and pretty printing walks every frame.
+	opts.sort_object_keys = true;
+	opts.pretty = true;
+
+	GTEXT_JSON_Error err;
+	memset(&err, 0, sizeof(err));
+	ASSERT_EQ(gtext_json_write_value(&sink, &opts, v, &err), GTEXT_JSON_OK)
+		<< (err.message ? err.message : "");
+
+	EXPECT_GT(c.total_allocations, 0u) << "the allocator was bypassed";
+	// Everything the write took, the write gave back - there is no handle to
+	// free afterwards, so the balance must already hold here.
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_json_sink_buffer_free(&sink);
+	gtext_json_free(v);
+}
+
+TEST(Allocator, JsonWriteFrameGrowthStaysWithTheAllocator) {
+	// Deeper than the inline frame array, so the heap growth path runs. The
+	// inline array is what makes an ordinary write allocate nothing at all,
+	// which would leave the growth path untested by every shallow document.
+	std::string deep;
+	const int levels = 400;
+	for (int i = 0; i < levels; i++) deep += "[";
+	deep += "1";
+	for (int i = 0; i < levels; i++) deep += "]";
+
+	GTEXT_JSON_Parse_Options popts = gtext_json_parse_options_default();
+	popts.max_depth = levels + 8;
+	GTEXT_JSON_Value * v =
+		gtext_json_parse(deep.data(), deep.size(), &popts, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_JSON_Sink sink;
+	ASSERT_EQ(gtext_json_sink_buffer(&sink), GTEXT_JSON_OK);
+	GTEXT_JSON_Write_Options opts = gtext_json_write_options_default();
+	opts.allocator = &alloc;
+
+	ASSERT_EQ(gtext_json_write_value(&sink, &opts, v, nullptr), GTEXT_JSON_OK);
+	EXPECT_GT(c.total_allocations, 0u) << "the frame stack never left the inline array";
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_json_sink_buffer_free(&sink);
+	gtext_json_free(v);
+}
+
+TEST(Allocator, JsonIncrementalWriterBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	GTEXT_JSON_Sink sink;
+	ASSERT_EQ(gtext_json_sink_buffer(&sink), GTEXT_JSON_OK);
+	GTEXT_JSON_Write_Options opts = gtext_json_write_options_default();
+	opts.allocator = &alloc;
+
+	GTEXT_JSON_Writer * w = gtext_json_writer_new(sink, &opts);
+	ASSERT_NE(w, nullptr);
+	// The handle and its stack both come from here, so a block is live before
+	// anything is written. The defect this guards against is the handle coming
+	// from one allocator and going back to another, which the guard word in
+	// count_free() reports rather than letting it corrupt the heap quietly.
+	EXPECT_GT(c.live_blocks, 0u) << "the handle did not come from the allocator";
+
+	// Nested deeply enough to grow the writer's own stack past its default.
+	const int levels = 128;
+	for (int i = 0; i < levels; i++) {
+		ASSERT_EQ(gtext_json_writer_array_begin(w), GTEXT_JSON_OK) << i;
+	}
+	for (int i = 0; i < levels; i++) {
+		ASSERT_EQ(gtext_json_writer_array_end(w), GTEXT_JSON_OK) << i;
+	}
+
+	gtext_json_writer_free(w);
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_json_sink_buffer_free(&sink);
+}
+
+TEST(Allocator, JsonWriterWithNoAllocatorOptionStillWrites) {
+	// The null fallback, which is what every existing caller passes: a write
+	// that names no allocator must behave exactly as it did before the field
+	// existed.
+	const char * doc = "{\"a\":[1,2]}";
+	GTEXT_JSON_Value * v = gtext_json_parse(doc, strlen(doc), nullptr, nullptr);
+	ASSERT_NE(v, nullptr);
+
+	GTEXT_JSON_Sink sink;
+	ASSERT_EQ(gtext_json_sink_buffer(&sink), GTEXT_JSON_OK);
+	GTEXT_JSON_Write_Options opts = gtext_json_write_options_default();
+	EXPECT_EQ(opts.allocator, nullptr) << "the default must name no allocator";
+	opts.sort_object_keys = true;
+
+	ASSERT_EQ(gtext_json_write_value(&sink, &opts, v, nullptr), GTEXT_JSON_OK);
+	EXPECT_GT(gtext_json_sink_buffer_size(&sink), 0u);
+
+	gtext_json_sink_buffer_free(&sink);
+	gtext_json_free(v);
+}

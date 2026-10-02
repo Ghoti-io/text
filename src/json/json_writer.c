@@ -74,7 +74,13 @@ static int buffer_write_fn(void * user, const char * bytes, size_t len) {
       new_size *= 2;
     }
 
-    char * new_data = (char *)realloc(buf->data, new_size);
+    /* allocator-exempt: a buffer sink owns its buffer.  A sink is created
+       before any write options are seen - gtext_json_sink_buffer() takes none -
+       and it outlives the write, so there is no caller allocator to read here
+       and routing it through one would mean freeing through whichever options
+       happened to be passed last.  Same line GTEXT_INI_Write_Options draws. */
+    char * new_data =
+        (char *)realloc(buf->data, new_size); // allocator-exempt
     if (!new_data) {
       return 1; // Out of memory
     }
@@ -156,8 +162,9 @@ GTEXT_API GTEXT_JSON_Status gtext_json_sink_buffer(GTEXT_JSON_Sink * sink) {
     return GTEXT_JSON_E_INVALID;
   }
 
-  GTEXT_JSON_Buffer_Sink * buf =
-      (GTEXT_JSON_Buffer_Sink *)malloc(sizeof(GTEXT_JSON_Buffer_Sink));
+  /* allocator-exempt: see buffer_grow().  The sink predates the options. */
+  GTEXT_JSON_Buffer_Sink * buf = (GTEXT_JSON_Buffer_Sink *)
+      malloc(sizeof(GTEXT_JSON_Buffer_Sink)); // allocator-exempt
   if (!buf) {
     return GTEXT_JSON_E_OOM;
   }
@@ -206,8 +213,9 @@ GTEXT_API void gtext_json_sink_buffer_free(GTEXT_JSON_Sink * sink) {
 
   GTEXT_JSON_Buffer_Sink * buf = (GTEXT_JSON_Buffer_Sink *)sink->user;
   if (buf) {
-    free(buf->data);
-    free(buf);
+    /* allocator-exempt: paired with gtext_json_sink_buffer(). */
+    free(buf->data); // allocator-exempt
+    free(buf);       // allocator-exempt
     sink->user = NULL;
     sink->write = NULL;
   }
@@ -219,8 +227,10 @@ GTEXT_API GTEXT_JSON_Status gtext_json_sink_fixed_buffer(
     return GTEXT_JSON_E_INVALID;
   }
 
-  GTEXT_JSON_Fixed_Buffer_Sink * buf = (GTEXT_JSON_Fixed_Buffer_Sink *)malloc(
-      sizeof(GTEXT_JSON_Fixed_Buffer_Sink));
+  /* allocator-exempt: see buffer_grow().  The caller owns the bytes; this is
+     only the bookkeeping around them, and it predates the options too. */
+  GTEXT_JSON_Fixed_Buffer_Sink * buf = (GTEXT_JSON_Fixed_Buffer_Sink *)
+      malloc(sizeof(GTEXT_JSON_Fixed_Buffer_Sink)); // allocator-exempt
   if (!buf) {
     return GTEXT_JSON_E_OOM;
   }
@@ -277,7 +287,8 @@ GTEXT_API void gtext_json_sink_fixed_buffer_free(GTEXT_JSON_Sink * sink) {
   GTEXT_JSON_Fixed_Buffer_Sink * buf =
       (GTEXT_JSON_Fixed_Buffer_Sink *)sink->user;
   if (buf) {
-    free(buf);
+    /* allocator-exempt: paired with gtext_json_sink_fixed_buffer(). */
+    free(buf); // allocator-exempt
     sink->user = NULL;
     sink->write = NULL;
   }
@@ -627,7 +638,8 @@ static int write_object_indices(const GTEXT_JSON_Value * v, size_t size,
   if (size > SIZE_MAX / sizeof(size_t)) {
     return 1; // Overflow
   }
-  size_t * indices = (size_t *)malloc(size * sizeof(size_t));
+  size_t * indices =
+      (size_t *)gtext_allocator_malloc(opts->allocator, size * sizeof(size_t));
   if (!indices) {
     return 1; // Out of memory
   }
@@ -640,7 +652,7 @@ static int write_object_indices(const GTEXT_JSON_Value * v, size_t size,
       size_t idx_b = indices[j + 1];
       if (idx_a >= size || idx_b >= size || idx_a >= v->as.object.capacity ||
           idx_b >= v->as.object.capacity) {
-        free(indices);
+        gtext_allocator_free(opts->allocator, indices);
         return 1; // Out of bounds
       }
       const char * key_a = v->as.object.pairs[idx_a].key;
@@ -648,7 +660,7 @@ static int write_object_indices(const GTEXT_JSON_Value * v, size_t size,
       const char * key_b = v->as.object.pairs[idx_b].key;
       size_t len_b = v->as.object.pairs[idx_b].key_len;
       if (!key_a || !key_b) {
-        free(indices);
+        gtext_allocator_free(opts->allocator, indices);
         return 1; // Invalid key
       }
       size_t min_len = len_a < len_b ? len_a : len_b;
@@ -729,15 +741,15 @@ static int write_value_iterative(GTEXT_JSON_Sink * sink,
         json_write_frame * grown;                                              \
         if (frames == inline_frames) {                                         \
           grown = (json_write_frame *)gtext_allocator_malloc(                  \
-              NULL, new_capacity * sizeof(*grown));                            \
+              opts->allocator, new_capacity * sizeof(*grown));                 \
           if (grown) memcpy(grown, frames, count * sizeof(*grown));            \
         }                                                                      \
         else {                                                                 \
           grown = (json_write_frame *)gtext_allocator_realloc(                 \
-              NULL, frames, new_capacity * sizeof(*grown));                    \
+              opts->allocator, frames, new_capacity * sizeof(*grown));         \
         }                                                                      \
         if (!grown) {                                                          \
-          free(open_indices);                                                  \
+          gtext_allocator_free(opts->allocator, open_indices);                 \
           status = 1;                                                          \
           goto done;                                                           \
         }                                                                      \
@@ -781,7 +793,7 @@ static int write_value_iterative(GTEXT_JSON_Sink * sink,
         status = 1;
         goto done;
       }
-      free(f->indices);
+      gtext_allocator_free(opts->allocator, f->indices);
       count--;
       continue;
     }
@@ -877,10 +889,10 @@ static int write_value_iterative(GTEXT_JSON_Sink * sink,
 done:
   #undef JSON_WRITE_OPEN
   for (size_t k = 0; k < count; k++) {
-    free(frames[k].indices);
+    gtext_allocator_free(opts->allocator, frames[k].indices);
   }
   if (frames != inline_frames) {
-    gtext_allocator_free(NULL, frames);
+    gtext_allocator_free(opts->allocator, frames);
   }
   return status;
 }
@@ -1016,7 +1028,8 @@ static int writer_ensure_stack(GTEXT_JSON_Writer * w) {
     }
 
     json_writer_stack_entry * new_stack =
-        (json_writer_stack_entry *)realloc(w->stack, new_capacity * entry_size);
+        (json_writer_stack_entry *)gtext_allocator_realloc(                     
+            w->opts.allocator, w->stack, new_capacity * entry_size);
     if (!new_stack) {
       return 1; // Out of memory
     }
@@ -1110,8 +1123,16 @@ GTEXT_API GTEXT_JSON_Writer * gtext_json_writer_new(
     return NULL;
   }
 
-  GTEXT_JSON_Writer * w =
-      (GTEXT_JSON_Writer *)calloc(1, sizeof(GTEXT_JSON_Writer));
+  /* **The allocator is read from @p opt and not from w->opts**, because the
+     handle itself is allocated before w->opts exists.  Reading it back from
+     the copy would be the csv_field_buffer_init() mistake in a new place: an
+     allocator assigned after the allocation it is meant to serve.  The copy is
+     what gtext_json_writer_free() reads, which is sound because w->opts is set
+     here and never cleared. */
+  const GTEXT_Allocator * alloc = opt ? opt->allocator : NULL;
+
+  GTEXT_JSON_Writer * w = (GTEXT_JSON_Writer *)gtext_allocator_calloc(
+      alloc, 1, sizeof(GTEXT_JSON_Writer));
   if (!w) {
     return NULL;
   }
@@ -1125,10 +1146,10 @@ GTEXT_API GTEXT_JSON_Writer * gtext_json_writer_new(
   }
 
   w->stack_capacity = JSON_WRITER_DEFAULT_STACK_CAPACITY;
-  w->stack = (json_writer_stack_entry *)calloc(
-      w->stack_capacity, sizeof(json_writer_stack_entry));
+  w->stack = (json_writer_stack_entry *)gtext_allocator_calloc(
+      alloc, w->stack_capacity, sizeof(json_writer_stack_entry));
   if (!w->stack) {
-    free(w);
+    gtext_allocator_free(alloc, w);
     return NULL;
   }
 
@@ -1144,9 +1165,9 @@ GTEXT_API void gtext_json_writer_free(GTEXT_JSON_Writer * w) {
   }
 
   if (w->stack) {
-    free(w->stack);
+    gtext_allocator_free(w->opts.allocator, w->stack);
   }
-  free(w);
+  gtext_allocator_free(w->opts.allocator, w);
 }
 
 GTEXT_API GTEXT_JSON_Status gtext_json_writer_object_begin(
