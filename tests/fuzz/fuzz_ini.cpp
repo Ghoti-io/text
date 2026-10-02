@@ -154,6 +154,34 @@ std::string flatten(const GTEXT_INI_Document * doc) {
 }
 
 /**
+ * A group to lend gtext_ini_value_interpolate() as its defaults, or NULL.
+ *
+ * **The defaults chain needs a group from here or nothing reaches it.** The
+ * interpolation pass below used gtext_ini_interpolate_options_default()
+ * unchanged, which leaves GTEXT_INI_Interpolate_Options::defaults NULL - so
+ * ini_interp_lookup()'s second branch and the defaults half of a
+ * `${section:key}` reference were unreachable from this harness however long it
+ * ran. That is the one part of the module whose unit tests were written from a
+ * probe rather than from the pinned reference, so it is the last part that
+ * should have been left out of the population.
+ *
+ * `[DEFAULT]` first, because that is `configparser`'s own spelling and the
+ * reading a caller reproducing Python passes; a fuzzer rarely generates that
+ * name, so any *other* group of the document serves next. It has to be another
+ * group: ini_interp_lookup() tests `defaults != group`, so lending a value its
+ * own group exercises nothing, and a one-group document gets NULL rather than a
+ * pass that only looks like one.
+ */
+const GTEXT_INI_Group * defaults_for(const GTEXT_INI_Document * doc,
+    const GTEXT_INI_Group * own, size_t g) {
+  const GTEXT_INI_Group * named = gtext_ini_document_group(doc, "DEFAULT");
+  if (named && named != own) return named;
+  size_t count = gtext_ini_document_group_count(doc);
+  if (count < 2) return nullptr;
+  return gtext_ini_document_group_at(doc, (g + 1) % count);
+}
+
+/**
  * Put every value through every accessor, discarding the answers.
  *
  * **@p text is here only because two of these do not discard theirs.** Every other
@@ -218,32 +246,52 @@ void poke(const GTEXT_INI_Document * doc, const GTEXT_INI_Dialect * dialect,
        *     The converse is deliberately not asserted - a value *with* a `%` can
        *     still come back unchanged, since `%(k)s` resolving to `%(k)s` is a
        *     legal document.
+       *
+       * **Both properties hold under a defaults group as well, which is why the
+       * chain can be a second axis rather than a weakening.** NONE does no pass,
+       * so a lender cannot change what it returns; and
+       * gtext_ini_value_needs_interpolation() reads the value's own bytes for a
+       * trigger, so a value with no trigger resolves without the lender ever
+       * being consulted. Nothing here had to be relaxed to reach the chain - see
+       * defaults_for() for why it was unreachable before.
        */
-      for (GTEXT_INI_Interpolation style :
-          {GTEXT_INI_INTERPOLATION_NONE, GTEXT_INI_INTERPOLATION_BASIC,
-              GTEXT_INI_INTERPOLATION_EXTENDED}) {
-        GTEXT_INI_Interpolate_Options iopts =
-            gtext_ini_interpolate_options_default();
-        iopts.style = style;
-        char * resolved = nullptr;
-        size_t resolved_len = 0;
-        GTEXT_INI_Status istatus = gtext_ini_value_interpolate(group, &iopts,
-            value, len, &resolved, &resolved_len);
-        bool needs = gtext_ini_value_needs_interpolation(style, value, len);
-        if (istatus == GTEXT_INI_OK) {
-          bool unchanged = resolved_len == len &&
-              (len == 0 || std::memcmp(resolved, value, len) == 0);
-          if (style == GTEXT_INI_INTERPOLATION_NONE && !unchanged) {
-            fail("interpolation NONE changed a value", text);
+      const GTEXT_INI_Group * lender = defaults_for(doc, group, g);
+      const GTEXT_INI_Group * defaults_set[2] = {nullptr, lender};
+      size_t defaults_count = lender ? 2 : 1;
+      for (size_t d = 0; d < defaults_count; d++) {
+        for (GTEXT_INI_Interpolation style :
+            {GTEXT_INI_INTERPOLATION_NONE, GTEXT_INI_INTERPOLATION_BASIC,
+                GTEXT_INI_INTERPOLATION_EXTENDED}) {
+          /* The defaults pass exists to reach the chain, and
+           * ::GTEXT_INI_INTERPOLATION_NONE does no pass at all, so repeating it
+           * under a lender buys executions and no coverage. Both properties are
+           * already asserted for that style on d == 0. */
+          if (d == 1 && style == GTEXT_INI_INTERPOLATION_NONE) continue;
+          GTEXT_INI_Interpolate_Options iopts =
+              gtext_ini_interpolate_options_default();
+          iopts.style = style;
+          iopts.defaults = defaults_set[d];
+          char * resolved = nullptr;
+          size_t resolved_len = 0;
+          GTEXT_INI_Status istatus = gtext_ini_value_interpolate(group, &iopts,
+              value, len, &resolved, &resolved_len);
+          bool needs = gtext_ini_value_needs_interpolation(style, value, len);
+          if (istatus == GTEXT_INI_OK) {
+            bool unchanged = resolved_len == len &&
+                (len == 0 || std::memcmp(resolved, value, len) == 0);
+            if (style == GTEXT_INI_INTERPOLATION_NONE && !unchanged) {
+              fail("interpolation NONE changed a value", text);
+            }
+            if (!needs && !unchanged) {
+              fail("a value the detector called literal was changed anyway",
+                  text);
+            }
           }
-          if (!needs && !unchanged) {
-            fail("a value the detector called literal was changed anyway", text);
+          else if (!needs) {
+            fail("a value the detector called literal was refused", text);
           }
+          gtext_ini_string_free(nullptr, resolved);
         }
-        else if (!needs) {
-          fail("a value the detector called literal was refused", text);
-        }
-        gtext_ini_string_free(nullptr, resolved);
       }
 
       bool flag = false;
