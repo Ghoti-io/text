@@ -454,9 +454,14 @@ a length test alone would return the un-normalized input. Numbers are still
 referenced in place.
 
 The streaming parser's LAST_WINS and COLLECT modes still deliver
-every member of a repeated name; see above. The writer, the streaming parser,
-JSON Pointer, JSON Patch and JSON Schema take no caller allocator; the
-\ref format_allocator_todo "allocator page" tracks that.
+every member of a repeated name; see above.
+
+Every entry point here takes a caller's allocator - parsing, the writer, the
+streaming parser and its pull reader, JSON Pointer, JSON Patch and JSON Schema.
+`GTEXT_JSON_Error::context_snippet` does not, because gtext_json_error_free() is
+handed only the error, and neither do the `gtext_json_new_*` DOM builders, which
+take no options. The \ref format_allocator_todo "allocator page" tracks what is
+left across the library.
 
 Some refusals carry line 0 and column 0. The message names the fault.
 

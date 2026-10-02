@@ -21,7 +21,7 @@ measured here, on one machine, in one sitting.
 | # | Finding | Scope |
 |---|---|---|
 | 1 | JSON parses at roughly a third of Python's stdlib speed | JSON |
-| 2 | The JSON writer, streaming parser, Pointer, Patch and Schema take no caller allocator | JSON |
+| 2 | The YAML and CSV writers' working memory takes no caller allocator | YAML, CSV |
 | 3 | Streaming JSON LAST_WINS and COLLECT still deliver every repeated name | JSON |
 | 4 | There is no YAML schema validator | YAML |
 
@@ -186,9 +186,12 @@ What is left:
   FIRST_WINS are enforced. The other two still deliver every member, because
   holding the object until it closes is what would make a stream able to
   replace a value it has already handed over.
-- **The JSON writer, streaming parser, Pointer, Patch and Schema** still
-  take no allocator. The \ref format_allocator_todo "allocator page" tracks
-  that.
+- **The YAML and CSV writers' working memory** still comes from the C library.
+  Their write options carry no allocator, where JSON's, TOML's and INI's do; a
+  buffer sink is exempt by design, a writer's scratch memory is not. Every JSON
+  entry point takes one now, the writer, streaming parser, Pointer, Patch and
+  Schema included. The \ref format_allocator_todo "allocator page" tracks what
+  is left.
 
 ---
 

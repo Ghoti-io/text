@@ -401,8 +401,12 @@ tree's allocator. The paths now use `~0`, `~1` and numeric indices deliberately.
 
 One field on the structure that already existed, `GTEXT_JSON_Schema_Options`,
 which `gtext_json_schema_compile_with_options()` already took - as
-`GTEXT_JSON_Write_Options` did, and not a new structure. 110 raw calls converted,
-97 in `json_schema.c` and 13 in `json_uri.c`; four left deliberately.
+`GTEXT_JSON_Write_Options` did, and not a new structure.
+
+110 raw calls in all - 97 in `json_schema.c` and 13 in `json_uri.c`, counted as
+occurrences and not as matching lines, which here are the same number because no
+line holds two. **106 converted, four left deliberately**, all four in
+`json_schema.c` and all four `err->context_snippet`.
 
 `gtext_json_schema_validate()` and `gtext_json_schema_free()` take no options and
 need none. The allocator is recorded once, on `schema->ctx`, by the

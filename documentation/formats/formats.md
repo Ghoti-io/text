@@ -153,12 +153,16 @@ particular to this library.
 
 ## Work in progress
 
-@subpage format_allocator_todo "Caller allocators" records what remains. CSV and
-YAML parses take a caller allocator. The JSON writer, the streaming parser,
-JSON Pointer, JSON Patch and JSON Schema do not yet. A parse option that
-covers an arena but not the structure around it is heap corruption for
-anyone who uses it, which is why the work stopped short of a half-finished
-option.
+@subpage format_allocator_todo "Caller allocators" records what remains. Every
+parse takes one, and so does every JSON entry point - the writer, the streaming
+parser and its pull reader, JSON Pointer, JSON Patch and JSON Schema. What is
+left is the YAML and CSV writers' own working memory, where TOML's and INI's
+write options already carry an allocator and those two do not. A buffer sink
+stays exempt on purpose, because it is created before any allocator is named.
+
+A parse option that covers an arena but not the structure around it is heap
+corruption for anyone who uses it, which is why each conversion was all or
+nothing rather than a half-finished option.
 
 ## Adding a format
 

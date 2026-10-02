@@ -352,16 +352,24 @@ that stops.
 What is still open is on the JSON side. Streaming LAST_WINS and COLLECT
 still deliver every member of a repeated name.
 
-Every entry point now takes a caller's allocator: parsing, the streaming parser
-and its pull reader, the writer, JSON Pointer, JSON Patch, gtext_json_clone()
-and JSON Schema. Patch and clone inherit the allocator of the tree they are
-given, because what they produce lives in that tree; Schema names its own in
-GTEXT_JSON_Schema_Options, because a compiled schema outlives the document it
-was built from. What is left on the C library is one diagnostic allocation -
-`GTEXT_JSON_Error::context_snippet`, which gtext_json_error_free() could not
-release through the right allocator because it is handed only the error - and
-the `gtext_json_new_*` DOM builders, which take no options and so have no
-caller allocator to use.
+Every **JSON** entry point now takes a caller's allocator: parsing, the
+streaming parser and its pull reader, the writer, JSON Pointer, JSON Patch,
+gtext_json_clone() and JSON Schema. Patch and clone inherit the allocator of the
+tree they are given, because what they produce lives in that tree; Schema names
+its own in GTEXT_JSON_Schema_Options, because a compiled schema outlives the
+document it was built from.
+
+Across the library the gap left is the **YAML and CSV writers' working memory**:
+GTEXT_YAML_Write_Options and GTEXT_CSV_Write_Options carry no allocator, where
+JSON's, TOML's and INI's do. A buffer sink is deliberately exempt - it is created
+before any allocator is named - but a writer's own scratch memory is not, and
+those two are the ones still on the C library. \ref format_allocator_todo
+"allocator-todo.md" has the per-file counts.
+
+Two allocations stay on the C library by design: `GTEXT_JSON_Error::context_snippet`
+and its CSV equivalent, because gtext_json_error_free() is handed only the error
+and cannot learn which allocator made the snippet, and the `gtext_json_new_*` DOM
+builders, which take no options and so have no caller allocator to inherit.
 
 ## License
 
