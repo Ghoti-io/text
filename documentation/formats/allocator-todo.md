@@ -373,6 +373,12 @@ available to pass.
 
 One incorrect `NULL` is left, and it belongs with the Schema work below.
 
+**As of the Schema conversion, none is.** The count is still 14, recounted with
+comment lines excluded - prose quoting `json_context_new(NULL)` matches a naive
+grep, and did: `json_dom.c` 8 `NULL` in the public builders, plus
+`json_value_clone_new_context()` and `json_value_new_string_on()` taking one;
+`json_parser.c` 1; `json_patch.c` 2; `json_schema.c` 1.
+
 ### What the controls showed
 
 | control | result |
@@ -391,29 +397,103 @@ only allocated for a token that must be decoded or parsed as an index, and the
 test reported `88 vs 88` - the patch had allocated nothing at all through the
 tree's allocator. The paths now use `~0`, `~1` and numeric indices deliberately.
 
-## JSON Schema: what is left
+## JSON Schema: done
 
-`GTEXT_JSON_Schema_Options` already exists and
-`gtext_json_schema_compile_with_options()` already takes it, so Schema needs one
-field added to an existing structure, as `GTEXT_JSON_Write_Options` did - not a
-new structure. `gtext_json_schema_validate()` takes a compiled schema, which can
-record the allocator its compile was given, the way the DOM records its own.
-`json_schema.c:4739`'s `json_context_new(NULL)` is part of that work.
+One field on the structure that already existed, `GTEXT_JSON_Schema_Options`,
+which `gtext_json_schema_compile_with_options()` already took - as
+`GTEXT_JSON_Write_Options` did, and not a new structure. 110 raw calls converted,
+97 in `json_schema.c` and 13 in `json_uri.c`; four left deliberately.
 
-By raw `malloc`/`calloc`/`realloc`/`free` call count what remains is
-`json_schema.c` 97 and `json_uri.c` 13, the latter reached only from Schema.
-Those are call counts, not distinct allocations.
+`gtext_json_schema_validate()` and `gtext_json_schema_free()` take no options and
+need none. The allocator is recorded once, on `schema->ctx`, by the
+`json_context_new(alloc)` that was `json_context_new(NULL)` - the last incorrect
+`NULL` of the fourteen counted in the Patch section - so every function
+downstream reads it from `cc->ctx->alloc` or `schema->ctx->alloc` and nothing
+defaults it a second time.
+
+### Why Schema names its allocator and Patch inherits one
+
+Patch and `gtext_json_clone()` take the allocator of the tree they are given,
+and that is right there: what they produce lives inside that tree and dies with
+it. A compiled schema does not. The header promises the schema document may be
+freed after compiling, which is the whole reason the schema clones it - so a
+schema built from the document's allocator would outlive the lifetime the caller
+chose that allocator for. The caller has to say, and the option is where.
+
+That distinction has a test of its own, because one allocator cannot make the
+assertion: `JsonSchemaClonesTheDocumentOnItsOwnAllocator` parses the document
+through allocator A, compiles through allocator B, and asserts A sees *nothing*
+of the compile. With a single allocator a clone taken from either satisfies every
+count, so the test would have passed whichever one it came from - which is the
+question being asked.
+
+### What the gate could not see, three times
+
+`make check-allocators` greps each listed file for a direct `malloc`. Three
+bypasses here were **calls**, so no amount of grepping `json_schema.c` could
+find them, and all three were green before they were fixed:
+
+| where | what went to the C library |
+| --- | --- |
+| `gtext_json_parse(text, len, &popts, ...)` for an embedded meta-schema, with `popts` straight from `gtext_json_parse_options_default()` | all nine documents of the 2020-12 dialect, every time a schema validated another schema |
+| `gtext_json_new_string(kname, klen)` in `propertyNames` | one throwaway string value per key of every object the keyword checks |
+| `gtext_json_pointer_get(root, ...)` while resolving a `$ref` fragment | JSON Pointer's token buffer, once per path segment - and `gtext_json_pointer_get_with_allocator()` had existed since the Pointer conversion |
+
+The first is measured: compiling `{"$ref": ".../2020-12/schema"}` puts **762,350
+bytes in 1,457 allocations** through the caller's allocator now, against
+**237,294 in 731** with that one line removed. The difference is the parsed
+documents; the compiled nodes and resource tables were always on the allocator,
+which is why a balance check saw nothing wrong.
+
+The second needed a new internal entry point rather than a fix in place:
+`json_value_new_string_on()` is `gtext_json_new_string()` with the allocator
+spelled out, and the public builder now calls it with `NULL`. The public
+builders keep taking no allocator - they have no options and so no caller
+allocator to inherit - but inside the library, where there is one, they are no
+longer used.
+
+### What the controls showed
+
+Five mutations, one per mechanism, each reverting one decision:
+
+| control | reverted | what happened |
+| --- | --- | --- |
+| schema-context | `json_context_new(alloc)` → `NULL` | **aborted**: `munmap_chunk(): invalid pointer`. Memory from the C library freed through the counting allocator; glibc caught it before the test's own guard assertion could. Recorded as caught-by-glibc, because a crash prints no gtest summary and a scorer counting `[ FAILED ]` lines reads it as zero failures |
+| embedded-parse | drop `popts.allocator = alloc` | the meta-schema floor fails |
+| propertynames-temp | `json_value_new_string_on` → `gtext_json_new_string` | validation-allocation count fails |
+| eval-marks | the `eval_init` call site passes `NULL` | validation-allocation count fails |
+| doc-clone | `json_value_clone_new_context(doc, alloc)` → `gtext_json_clone(doc)` | the two-allocator test fails: *compiling took memory from the document's allocator* |
+
+Two of those controls failed to measure anything on their first attempt, and
+both failures were in the instrument rather than in the code:
+
+- **The embedded-meta-schema floor was vacuous.** It was first written as
+  `>= 100000`, which sits *below both* 762,350 and 237,294 - so the test passed
+  with the bypass in place. The control is the only reason that was found; the
+  test had been green either way. The floor is now 400 KB, and the comment
+  beside it carries both measurements so the next reader can see what it
+  separates.
+- **The eval-marks mutation did not compile.** Setting `eval->alloc = NULL`
+  left the function's `alloc` parameter unused, and `-Werror=unused-parameter`
+  refused it. A mutation that does not build measures nothing, so it was moved
+  to the call site, where passing `NULL` compiles and is the same revert.
 
 ### A check that would have caught the pull reader
 
-Not built yet, and recorded here so the gap is not mistaken for coverage: for
+Still not built, and still recorded here rather than mistaken for coverage: for
 every file on `ALLOCATOR_CLEAN_SOURCES`, the files *it calls into* within the
-same component should be on the list too. A listed file calling an unlisted
-allocating file is the signature of this whole class, and it is a cheaper
-property to check than any analysis of where memory actually came from. After
-this conversion the JSON component satisfies it - the unlisted allocating files
-left are Patch, Schema and `json_uri.c`, none of which a listed file calls -
-so the check would pass today and be worth adding before that stops being true.
+same component should be on the list too. `json_schema.c` and `json_uri.c` are
+both listed now, so the JSON component satisfies it again.
+
+It would not have caught any of the three bypasses above. Each is a call into a
+file that was *already listed* - `json_parser.c`, `json_dom.c`,
+`json_pointer.c` - through an entry point that takes no allocator. That is a
+third shape, after the per-file grep and the callee-not-listed rule: **an
+allocator-aware component calling an allocator-blind entry point of an
+allocator-aware file.** The audit for it is to grep the *entry points* that take
+no allocator and ask of each caller whether one was in hand - which is how all
+three were found, and what the byte floors in `tests/test-allocator.cpp` check
+now that they are fixed.
 
 ## The error-snippet exception
 

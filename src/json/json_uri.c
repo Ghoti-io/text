@@ -29,14 +29,24 @@
  * than the whole mechanism. A resolver that treats `$ref` as a pointer gets
  * the common case right and every schema with an `$id` in it wrong.
  *
- * The strings here are plain malloc'd C strings rather than arena values:
- * they outlive no document, they are built and thrown away during
- * compilation, and putting them in the schema's arena would tie their
- * lifetime to something they have no relation to.
+ * The strings here are plain C strings rather than arena values: they outlive
+ * no document, they are built and thrown away during compilation, and putting
+ * them in the schema's arena would tie their lifetime to something they have
+ * no relation to.
+ *
+ * They come from the caller's allocator all the same.  Every function here
+ * that allocates takes the allocator as a trailing parameter rather than
+ * reading it from anything: this file is reached only from json_schema.c,
+ * which has the compiling schema's allocator in hand at every call, and a
+ * string returned from one allocator and released through another is the
+ * failure mode that an allocator assigned after the fact invites (see the
+ * note on csv_field_buffer_init in src/csv/csv_stream_buffer.c).
  */
 
 #include <stdlib.h>
 #include <string.h>
+
+#include <ghoti.io/text/allocator.h>
 
 #include "json_internal.h"
 
@@ -174,7 +184,8 @@ static size_t json_uri_remove_dot_segments(
 }
 
 char * json_uri_resolve(
-    const char * base, size_t base_len, const char * ref, size_t ref_len) {
+    const char * base, size_t base_len, const char * ref, size_t ref_len,
+    const GTEXT_Allocator * alloc) {
   json_uri_parts b;
   json_uri_parts r;
   json_uri_parts t;
@@ -189,7 +200,7 @@ char * json_uri_resolve(
    * scheme is already absolute and the base contributes nothing. */
   if (r.has_scheme) {
     t = r;
-    merged = (char *)malloc(r.path_len + 1);
+    merged = (char *)gtext_allocator_malloc(alloc, r.path_len + 1);
     if (!merged) {
       return NULL;
     }
@@ -203,7 +214,7 @@ char * json_uri_resolve(
       t.authority = r.authority;
       t.authority_len = r.authority_len;
       t.has_authority = 1;
-      merged = (char *)malloc(r.path_len + 1);
+      merged = (char *)gtext_allocator_malloc(alloc, r.path_len + 1);
       if (!merged) {
         return NULL;
       }
@@ -217,7 +228,7 @@ char * json_uri_resolve(
       t.authority_len = b.authority_len;
       t.has_authority = b.has_authority;
       if (r.path_len == 0) {
-        merged = (char *)malloc(b.path_len + 1);
+        merged = (char *)gtext_allocator_malloc(alloc, b.path_len + 1);
         if (!merged) {
           return NULL;
         }
@@ -242,7 +253,7 @@ char * json_uri_resolve(
         t.query_len = r.query_len;
         t.has_query = r.has_query;
         if (r.path[0] == '/') {
-          merged = (char *)malloc(r.path_len + 1);
+          merged = (char *)gtext_allocator_malloc(alloc, r.path_len + 1);
           if (!merged) {
             return NULL;
           }
@@ -263,7 +274,7 @@ char * json_uri_resolve(
             }
           }
           size_t joined_len = keep + r.path_len;
-          char * joined = (char *)malloc(joined_len + 2);
+          char * joined = (char *)gtext_allocator_malloc(alloc, joined_len + 2);
           if (!joined) {
             return NULL;
           }
@@ -276,13 +287,13 @@ char * json_uri_resolve(
           memcpy(joined + at, r.path, r.path_len);
           at += r.path_len;
           joined[at] = '\0';
-          merged = (char *)malloc(at + 1);
+          merged = (char *)gtext_allocator_malloc(alloc, at + 1);
           if (!merged) {
-            free(joined);
+            gtext_allocator_free(alloc, joined);
             return NULL;
           }
           merged_len = json_uri_remove_dot_segments(joined, at, merged);
-          free(joined);
+          gtext_allocator_free(alloc, joined);
         }
       }
     }
@@ -305,9 +316,9 @@ char * json_uri_resolve(
   if (t.has_fragment) {
     total += t.fragment_len + 1;
   }
-  char * out = (char *)malloc(total);
+  char * out = (char *)gtext_allocator_malloc(alloc, total);
   if (!out) {
-    free(merged);
+    gtext_allocator_free(alloc, merged);
     return NULL;
   }
   size_t at = 0;
@@ -335,14 +346,15 @@ char * json_uri_resolve(
     at += t.fragment_len;
   }
   out[at] = '\0';
-  free(merged);
+  gtext_allocator_free(alloc, merged);
   return out;
 }
 
-char * json_uri_without_fragment(const char * uri, size_t len) {
+char * json_uri_without_fragment(
+    const char * uri, size_t len, const GTEXT_Allocator * alloc) {
   const char * hash = (const char *)memchr(uri, '#', len);
   size_t keep = hash ? (size_t)(hash - uri) : len;
-  char * out = (char *)malloc(keep + 1);
+  char * out = (char *)gtext_allocator_malloc(alloc, keep + 1);
   if (!out) {
     return NULL;
   }
@@ -361,8 +373,9 @@ char * json_uri_without_fragment(const char * uri, size_t len) {
  * a resolver that skipped this step looked for `percent%25field` and found
  * nothing.
  */
-char * json_uri_percent_decode(const char * s, size_t len, size_t * out_len) {
-  char * out = (char *)malloc(len + 1);
+char * json_uri_percent_decode(const char * s, size_t len, size_t * out_len,
+    const GTEXT_Allocator * alloc) {
+  char * out = (char *)gtext_allocator_malloc(alloc, len + 1);
   if (!out) {
     return NULL;
   }

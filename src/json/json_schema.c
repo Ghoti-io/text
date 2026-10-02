@@ -37,7 +37,18 @@
 #include <ghoti.io/text/json/json_schema.h>
 #include "metaschema/metaschema_internal.h"
 
-static void json_schema_node_free(json_schema_node * node) {
+/*
+ * The allocator is a parameter and not a field on the node.
+ *
+ * Every node and every string hanging off it came from one allocator - the
+ * compiling schema's - so one argument threaded down the tree says it once,
+ * where a per-node copy would be a pointer per node and one more place for a
+ * node built on an error path to be missing it.  Compare csv_field_buffer's
+ * `alloc`, which is a field because the buffer outlives the call that grew it;
+ * a node is only ever freed from a walk that started at the schema.
+ */
+static void json_schema_node_free(
+    json_schema_node * node, const GTEXT_Allocator * alloc) {
   if (!node) {
     return;
   }
@@ -45,53 +56,53 @@ static void json_schema_node_free(json_schema_node * node) {
   // Free properties
   if (node->properties) {
     for (size_t i = 0; i < node->properties_count; i++) {
-      free(node->properties[i].key);
-      json_schema_node_free(node->properties[i].schema);
+      gtext_allocator_free(alloc, node->properties[i].key);
+      json_schema_node_free(node->properties[i].schema, alloc);
     }
-    free(node->properties);
+    gtext_allocator_free(alloc, node->properties);
   }
 
   // Free required keys
   if (node->required_keys) {
     for (size_t i = 0; i < node->required_count; i++) {
-      free(node->required_keys[i]);
+      gtext_allocator_free(alloc, node->required_keys[i]);
     }
-    free(node->required_keys);
+    gtext_allocator_free(alloc, node->required_keys);
   }
 
-  free(node->dynamic_ref_name);
-  json_schema_node_free(node->unevaluated_items);
-  json_schema_node_free(node->unevaluated_properties);
+  gtext_allocator_free(alloc, node->dynamic_ref_name);
+  json_schema_node_free(node->unevaluated_items, alloc);
+  json_schema_node_free(node->unevaluated_properties, alloc);
 
   // Free the asserted format's name
-  free(node->format_name);
+  gtext_allocator_free(alloc, node->format_name);
 
   // Free items schema
-  json_schema_node_free(node->items_schema);
+  json_schema_node_free(node->items_schema, alloc);
 
   // Free the applicator subschemas
   if (node->all_of) {
     for (size_t i = 0; i < node->all_of_count; i++) {
-      json_schema_node_free(node->all_of[i]);
+      json_schema_node_free(node->all_of[i], alloc);
     }
-    free(node->all_of);
+    gtext_allocator_free(alloc, node->all_of);
   }
   if (node->any_of) {
     for (size_t i = 0; i < node->any_of_count; i++) {
-      json_schema_node_free(node->any_of[i]);
+      json_schema_node_free(node->any_of[i], alloc);
     }
-    free(node->any_of);
+    gtext_allocator_free(alloc, node->any_of);
   }
   if (node->one_of) {
     for (size_t i = 0; i < node->one_of_count; i++) {
-      json_schema_node_free(node->one_of[i]);
+      json_schema_node_free(node->one_of[i], alloc);
     }
-    free(node->one_of);
+    gtext_allocator_free(alloc, node->one_of);
   }
-  json_schema_node_free(node->not_schema);
-  json_schema_node_free(node->if_schema);
-  json_schema_node_free(node->then_schema);
-  json_schema_node_free(node->else_schema);
+  json_schema_node_free(node->not_schema, alloc);
+  json_schema_node_free(node->if_schema, alloc);
+  json_schema_node_free(node->then_schema, alloc);
+  json_schema_node_free(node->else_schema, alloc);
 
   /* ref_target is deliberately not freed here: it is owned by the schema's
    * registry, because a recursive or shared reference would otherwise be
@@ -99,35 +110,35 @@ static void json_schema_node_free(json_schema_node * node) {
 
   if (node->prefix_items) {
     for (size_t i = 0; i < node->prefix_items_count; i++) {
-      json_schema_node_free(node->prefix_items[i]);
+      json_schema_node_free(node->prefix_items[i], alloc);
     }
-    free(node->prefix_items);
+    gtext_allocator_free(alloc, node->prefix_items);
   }
-  json_schema_node_free(node->additional_items);
-  json_schema_node_free(node->contains_schema);
-  json_schema_node_free(node->additional_properties);
-  json_schema_node_free(node->property_names);
+  json_schema_node_free(node->additional_items, alloc);
+  json_schema_node_free(node->contains_schema, alloc);
+  json_schema_node_free(node->additional_properties, alloc);
+  json_schema_node_free(node->property_names, alloc);
 
   if (node->dep_schemas) {
     for (size_t i = 0; i < node->dep_schemas_count; i++) {
-      free(node->dep_schemas[i].key);
-      json_schema_node_free(node->dep_schemas[i].schema);
+      gtext_allocator_free(alloc, node->dep_schemas[i].key);
+      json_schema_node_free(node->dep_schemas[i].schema, alloc);
     }
-    free(node->dep_schemas);
+    gtext_allocator_free(alloc, node->dep_schemas);
   }
 
   // Free dependentRequired
   if (node->dep_required) {
     for (size_t i = 0; i < node->dep_required_count; i++) {
-      free(node->dep_required[i].key);
+      gtext_allocator_free(alloc, node->dep_required[i].key);
       if (node->dep_required[i].required) {
         for (size_t j = 0; j < node->dep_required[i].required_count; j++) {
-          free(node->dep_required[i].required[j]);
+          gtext_allocator_free(alloc, node->dep_required[i].required[j]);
         }
-        free(node->dep_required[i].required);
+        gtext_allocator_free(alloc, node->dep_required[i].required);
       }
     }
-    free(node->dep_required);
+    gtext_allocator_free(alloc, node->dep_required);
   }
 
   /* The provider's compiled patterns. `regex_provider` is set on a node that
@@ -148,18 +159,18 @@ static void json_schema_node_free(json_schema_node * node) {
   }
   if (node->pattern_properties) {
     for (size_t i = 0; i < node->pattern_properties_count; i++) {
-      json_schema_node_free(node->pattern_properties[i].schema);
+      json_schema_node_free(node->pattern_properties[i].schema, alloc);
     }
-    free(node->pattern_properties);
+    gtext_allocator_free(alloc, node->pattern_properties);
   }
 
   // Free enum values (values are in context, just free array)
-  free(node->enum_values);
+  gtext_allocator_free(alloc, node->enum_values);
 
   // Free const value (value is in context, just clear pointer)
   // Note: const_value is freed when context is freed
 
-  free(node);
+  gtext_allocator_free(alloc, node);
 }
 
 static GTEXT_JSON_Status json_schema_parse_type(json_schema_node * node,
@@ -617,7 +628,10 @@ static GTEXT_JSON_Status json_schema_reject_keyword(
     *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_SCHEMA_UNSUPPORTED,
         .message = "Schema uses a standard keyword this implementation does "
                    "not enforce"};
-    char * name = (char *)malloc(key_len + 1);
+    /* allocator-exempt: this becomes err->context_snippet, which gtext_json_error_free()
+       releases - and it is handed only the error, so it has no way to learn which
+       allocator made this. */
+    char * name = (char *)malloc(key_len + 1);  // allocator-exempt
     if (name) {
       memcpy(name, key, key_len);
       name[key_len] = '\0';
@@ -705,7 +719,10 @@ static GTEXT_JSON_Status json_schema_reject_regex(
         .message = "Schema pattern is not a valid regular expression",
         .offset = offset};
     size_t len = strlen(message);
-    char * copy = (char *)malloc(len + 1);
+    /* allocator-exempt: this becomes err->context_snippet, which gtext_json_error_free()
+       releases - and it is handed only the error, so it has no way to learn which
+       allocator made this. */
+    char * copy = (char *)malloc(len + 1);  // allocator-exempt
     if (copy) {
       memcpy(copy, message, len + 1);
       err->context_snippet = copy;
@@ -775,6 +792,7 @@ static GTEXT_JSON_Status json_schema_compile_regex(const GTEXT_JSON_Value * doc,
 static GTEXT_JSON_Status json_schema_add_resource(GTEXT_JSON_Schema * schema,
     char * uri, const GTEXT_JSON_Value * value, GTEXT_JSON_Error * err,
     const char ** out_interned) {
+  const GTEXT_Allocator * alloc = schema->ctx->alloc;
   if (out_interned) {
     *out_interned = NULL;
   }
@@ -790,7 +808,7 @@ static GTEXT_JSON_Status json_schema_add_resource(GTEXT_JSON_Schema * schema,
    * are not: the first wins, as it does everywhere else a name is bound. */
   for (size_t i = 0; i < schema->resources_count; i++) {
     if (strcmp(schema->resources[i].uri, uri) == 0) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       if (out_interned) {
         *out_interned = schema->resources[i].uri;
       }
@@ -801,17 +819,17 @@ static GTEXT_JSON_Status json_schema_add_resource(GTEXT_JSON_Schema * schema,
     size_t cap =
         schema->resources_capacity ? schema->resources_capacity * 2 : 8;
     if (cap > SIZE_MAX / sizeof(json_schema_resource)) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       if (err) {
         *err = (GTEXT_JSON_Error){
             .code = GTEXT_JSON_E_OOM, .message = "Too many schema resources"};
       }
       return GTEXT_JSON_E_OOM;
     }
-    json_schema_resource * grown = (json_schema_resource *)realloc(
+    json_schema_resource * grown = (json_schema_resource *)gtext_allocator_realloc(alloc, 
         schema->resources, cap * sizeof(json_schema_resource));
     if (!grown) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
             .message = "Out of memory growing the resource table"};
@@ -905,10 +923,10 @@ static GTEXT_JSON_Status json_schema_scan_map(GTEXT_JSON_Schema * schema,
  * every caller passes straight to json_schema_add_resource - it takes
  * ownership either way and reports the failure once.
  */
-static char * json_schema_anchor_uri(
-    const char * scope, const char * name, size_t name_len) {
+static char * json_schema_anchor_uri(const char * scope, const char * name,
+    size_t name_len, const GTEXT_Allocator * alloc) {
   size_t scope_len = strlen(scope);
-  char * uri = (char *)malloc(scope_len + name_len + 2);
+  char * uri = (char *)gtext_allocator_malloc(alloc, scope_len + name_len + 2);
   if (!uri) {
     return NULL;
   }
@@ -971,6 +989,7 @@ static bool json_schema_id_is_anchor(
 static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
     const GTEXT_JSON_Value * value, const char * base,
     json_schema_draft draft, int depth, GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = schema->ctx->alloc;
   if (!value || value->type != GTEXT_JSON_OBJECT) {
     return GTEXT_JSON_OK;
   }
@@ -1026,7 +1045,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
      * below, so a further `$id` there resolved against `base#name`.
      */
     char * uri = json_schema_anchor_uri(
-        scope, id->as.string.data + 1, id->as.string.len - 1);
+        scope, id->as.string.data + 1, id->as.string.len - 1, alloc);
     GTEXT_JSON_Status status =
         json_schema_add_resource(schema, uri, value, err, NULL);
     if (status != GTEXT_JSON_OK) {
@@ -1035,7 +1054,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
   }
   else if (id && id->type == GTEXT_JSON_STRING) {
     owned_scope = json_uri_resolve(
-        base, strlen(base), id->as.string.data, id->as.string.len);
+        base, strlen(base), id->as.string.data, id->as.string.len, alloc);
     if (!owned_scope) {
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1065,7 +1084,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
   if (anchor && anchor->type == GTEXT_JSON_STRING) {
     GTEXT_JSON_Status status = json_schema_add_resource(schema,
         json_schema_anchor_uri(
-            scope, anchor->as.string.data, anchor->as.string.len),
+            scope, anchor->as.string.data, anchor->as.string.len, alloc),
         value, err, NULL);
     if (status != GTEXT_JSON_OK) {
       return status;
@@ -1085,7 +1104,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
   if (dynamic && dynamic->type == GTEXT_JSON_STRING
       && dynamic->as.string.len > 0) {
     char * uri = json_schema_anchor_uri(
-        scope, dynamic->as.string.data, dynamic->as.string.len);
+        scope, dynamic->as.string.data, dynamic->as.string.len, alloc);
     GTEXT_JSON_Status status =
         json_schema_add_resource(schema, uri, value, err, NULL);
     if (status != GTEXT_JSON_OK) {
@@ -1208,6 +1227,7 @@ static GTEXT_JSON_Status json_schema_scan_resources(GTEXT_JSON_Schema * schema,
 static GTEXT_JSON_Status json_schema_embedded_document(
     json_schema_compile_ctx * cc, const char * uri, size_t uri_len,
     const GTEXT_JSON_Value ** out, GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   *out = NULL;
 
   const json_metaschema_doc * doc = NULL;
@@ -1229,7 +1249,7 @@ static GTEXT_JSON_Status json_schema_embedded_document(
    * other eight and several of those refer to each other, so meeting one
    * twice is the common case rather than the exception. */
   if (!schema->embedded) {
-    schema->embedded = (GTEXT_JSON_Value **)calloc(
+    schema->embedded = (GTEXT_JSON_Value **)gtext_allocator_calloc(alloc, 
         json_metaschema_doc_count, sizeof(GTEXT_JSON_Value *));
     if (!schema->embedded) {
       if (err) {
@@ -1255,7 +1275,7 @@ static GTEXT_JSON_Status json_schema_embedded_document(
   for (size_t i = 0; i < doc->line_count; i++) {
     len += strlen(doc->lines[i]);
   }
-  char * text = (char *)malloc(len + 1);
+  char * text = (char *)gtext_allocator_malloc(alloc, len + 1);
   if (!text) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1271,11 +1291,22 @@ static GTEXT_JSON_Status json_schema_embedded_document(
   }
   text[len] = '\0';
 
+  /*
+   * The parse gets this schema's allocator too.
+   *
+   * check-allocators cannot see this line: it greps each listed file for a
+   * direct malloc, and a document parsed into the C library through a call to
+   * another file is not one.  Nine meta-schema documents went there - the whole
+   * 2020-12 dialect, every time a schema validated another schema - with the
+   * gate green and nothing in this file to find.  The same shape as
+   * json_pull_reader.c calling the un-threaded stream.
+   */
   GTEXT_JSON_Parse_Options popts = gtext_json_parse_options_default();
+  popts.allocator = alloc;
   GTEXT_JSON_Error perr;
   memset(&perr, 0, sizeof(perr));
   GTEXT_JSON_Value * parsed = gtext_json_parse(text, len, &popts, &perr);
-  free(text);
+  gtext_allocator_free(alloc, text);
   if (!parsed) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
@@ -1327,6 +1358,7 @@ static const char * json_schema_resource_uri_of(
  */
 static const char * json_schema_pointer_base(const GTEXT_JSON_Schema * schema,
     const GTEXT_JSON_Value * root, const char * pointer, size_t len) {
+  const GTEXT_Allocator * alloc = schema->ctx->alloc;
   while (len > 0) {
     /* The last `/` in the first `len` bytes. `memrchr` would say this in one
      * call and is a GNU extension, which this translation unit is not built
@@ -1342,7 +1374,12 @@ static const char * json_schema_pointer_base(const GTEXT_JSON_Schema * schema,
       break;
     }
     len = cut;
-    const GTEXT_JSON_Value * at = gtext_json_pointer_get(root, pointer, len);
+    /* _with_allocator, because evaluating a pointer allocates a token buffer
+       and this one is evaluated once per path segment while resolving a
+       `$ref`.  gtext_json_pointer_get() would put every one of them in the C
+       library, and check-allocators cannot see a call. */
+    const GTEXT_JSON_Value * at =
+        gtext_json_pointer_get_with_allocator(root, pointer, len, alloc);
     const char * uri = at ? json_schema_resource_uri_of(schema, at) : NULL;
     if (uri) {
       return uri;
@@ -1366,6 +1403,7 @@ static const char * json_schema_pointer_base(const GTEXT_JSON_Schema * schema,
 static const GTEXT_JSON_Value * json_schema_find_target(
     json_schema_compile_ctx * cc, const char * uri, GTEXT_JSON_Error * err,
     const char ** base_out) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   GTEXT_JSON_Schema * schema = cc->schema;
   size_t uri_len = strlen(uri);
 
@@ -1394,7 +1432,7 @@ static const GTEXT_JSON_Value * json_schema_find_target(
      * asked first, so that a caller who deliberately serves one of those URIs
      * is not overruled by a copy they did not ask for. Without either, the
      * reference does not resolve. */
-    char * without = json_uri_without_fragment(uri, uri_len);
+    char * without = json_uri_without_fragment(uri, uri_len, alloc);
     if (!without) {
       return NULL;
     }
@@ -1406,7 +1444,7 @@ static const GTEXT_JSON_Value * json_schema_find_target(
     if (!doc
         && json_schema_embedded_document(cc, without, base_len, &doc, err)
             != GTEXT_JSON_OK) {
-      free(without);
+      gtext_allocator_free(alloc, without);
       return NULL;
     }
     if (doc) {
@@ -1425,7 +1463,7 @@ static const GTEXT_JSON_Value * json_schema_find_target(
       }
       return json_schema_find_target(cc, uri, err, base_out);
     }
-    free(without);
+    gtext_allocator_free(alloc, without);
     return NULL;
   }
   if (fragment_len == 0) {
@@ -1439,12 +1477,12 @@ static const GTEXT_JSON_Value * json_schema_find_target(
    * is a slash in the step after. */
   size_t decoded_len = 0;
   char * decoded =
-      json_uri_percent_decode(fragment, fragment_len, &decoded_len);
+      json_uri_percent_decode(fragment, fragment_len, &decoded_len, alloc);
   if (!decoded) {
     return NULL;
   }
   const GTEXT_JSON_Value * found =
-      gtext_json_pointer_get(root, decoded, decoded_len);
+      gtext_json_pointer_get_with_allocator(root, decoded, decoded_len, alloc);
   if (found && base_out) {
     const char * inner = json_schema_resource_uri_of(schema, found);
     if (!inner) {
@@ -1454,7 +1492,7 @@ static const GTEXT_JSON_Value * json_schema_find_target(
       *base_out = inner;
     }
   }
-  free(decoded);
+  gtext_allocator_free(alloc, decoded);
   return found;
 }
 
@@ -1475,9 +1513,10 @@ static const GTEXT_JSON_Value * json_schema_find_target(
 static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
     const char * ref, size_t ref_len, json_schema_compile_ctx * cc,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   GTEXT_JSON_Schema * schema = cc->schema;
   char * uri = json_uri_resolve(
-      cc->base_uri, strlen(cc->base_uri), ref, ref_len);
+      cc->base_uri, strlen(cc->base_uri), ref, ref_len, alloc);
   if (!uri) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1488,7 +1527,7 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
 
   for (size_t i = 0; i < schema->refs_count; i++) {
     if (strcmp(schema->refs[i].uri, uri) == 0) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       *out = schema->refs[i].node;
       return GTEXT_JSON_OK;
     }
@@ -1506,24 +1545,24 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_SCHEMA,
           .message = "$ref does not resolve to a schema"};
     }
-    free(uri);
+    gtext_allocator_free(alloc, uri);
     return GTEXT_JSON_E_SCHEMA;
   }
 
   if (schema->refs_count == schema->refs_capacity) {
     size_t cap = schema->refs_capacity ? schema->refs_capacity * 2 : 8;
     if (cap > SIZE_MAX / sizeof(json_schema_ref_entry)) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       if (err) {
         *err = (GTEXT_JSON_Error){
             .code = GTEXT_JSON_E_OOM, .message = "Too many $ref targets"};
       }
       return GTEXT_JSON_E_OOM;
     }
-    json_schema_ref_entry * grown = (json_schema_ref_entry *)realloc(
+    json_schema_ref_entry * grown = (json_schema_ref_entry *)gtext_allocator_realloc(alloc, 
         schema->refs, cap * sizeof(json_schema_ref_entry));
     if (!grown) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       if (err) {
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
             .message = "Out of memory growing the $ref registry"};
@@ -1535,9 +1574,9 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
   }
 
   json_schema_node * node =
-      (json_schema_node *)calloc(1, sizeof(json_schema_node));
+      (json_schema_node *)gtext_allocator_calloc(alloc, 1, sizeof(json_schema_node));
   if (!node) {
-    free(uri);
+    gtext_allocator_free(alloc, uri);
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
           .message = "Out of memory allocating a $ref target"};
@@ -1566,7 +1605,7 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
     cc->base_uri = pointer_base;
   }
   else {
-    char * target_base = json_uri_without_fragment(uri, strlen(uri));
+    char * target_base = json_uri_without_fragment(uri, strlen(uri), alloc);
     size_t base_slot = (size_t)-1;
     if (target_base) {
       for (size_t i = 0; i < schema->resources_count; i++) {
@@ -1575,7 +1614,7 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
           break;
         }
       }
-      free(target_base);
+      gtext_allocator_free(alloc, target_base);
     }
     if (base_slot != (size_t)-1) {
       cc->base_uri = schema->resources[base_slot].uri;
@@ -1612,6 +1651,7 @@ static GTEXT_JSON_Status json_schema_resolve_ref(json_schema_node ** out,
 static GTEXT_JSON_Status json_schema_read_dialect(
     json_schema_compile_ctx * cc, const GTEXT_JSON_Value * doc,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   if (!doc || doc->type != GTEXT_JSON_OBJECT) {
     return GTEXT_JSON_OK;
   }
@@ -1652,7 +1692,10 @@ static GTEXT_JSON_Status json_schema_read_dialect(
             .message = "Schema is written against a draft this "
                        "implementation does not read"};
         size_t n = strlen(json_schema_dialects_refused[i].name);
-        char * name = (char *)malloc(n + 1);
+        /* allocator-exempt: this becomes err->context_snippet, which gtext_json_error_free()
+           releases - and it is handed only the error, so it has no way to learn which
+           allocator made this. */
+        char * name = (char *)malloc(n + 1);  // allocator-exempt
         if (name) {
           memcpy(name, json_schema_dialects_refused[i].name, n + 1);
           err->context_snippet = name;
@@ -1664,7 +1707,7 @@ static GTEXT_JSON_Status json_schema_read_dialect(
   }
 
   char * uri = json_uri_resolve(cc->base_uri, strlen(cc->base_uri),
-      dialect->as.string.data, dialect->as.string.len);
+      dialect->as.string.data, dialect->as.string.len, alloc);
   if (!uri) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1700,11 +1743,11 @@ static GTEXT_JSON_Status json_schema_read_dialect(
     GTEXT_JSON_Status status = json_schema_embedded_document(
         cc, uri, strlen(uri), &meta, err);
     if (status != GTEXT_JSON_OK) {
-      free(uri);
+      gtext_allocator_free(alloc, uri);
       return status;
     }
   }
-  free(uri);
+  gtext_allocator_free(alloc, uri);
   if (!meta || meta->type != GTEXT_JSON_OBJECT) {
     return GTEXT_JSON_OK;
   }
@@ -1745,7 +1788,10 @@ static GTEXT_JSON_Status json_schema_read_dialect(
         *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_SCHEMA_UNSUPPORTED,
             .message = "The metaschema requires a vocabulary this "
                        "implementation does not have"};
-        char * name = (char *)malloc(key_len + 1);
+        /* allocator-exempt: this becomes err->context_snippet, which gtext_json_error_free()
+           releases - and it is handed only the error, so it has no way to learn which
+           allocator made this. */
+        char * name = (char *)malloc(key_len + 1);  // allocator-exempt
         if (name) {
           memcpy(name, key, key_len);
           name[key_len] = '\0';
@@ -1768,8 +1814,9 @@ static GTEXT_JSON_Status json_schema_read_dialect(
 static GTEXT_JSON_Status json_schema_compile_sub(json_schema_node ** out,
     const GTEXT_JSON_Value * doc, json_schema_compile_ctx * cc,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   json_schema_node * sub =
-      (json_schema_node *)calloc(1, sizeof(json_schema_node));
+      (json_schema_node *)gtext_allocator_calloc(alloc, 1, sizeof(json_schema_node));
   if (!sub) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1779,7 +1826,7 @@ static GTEXT_JSON_Status json_schema_compile_sub(json_schema_node ** out,
   }
   GTEXT_JSON_Status status = json_schema_compile_node(sub, doc, cc, err);
   if (status != GTEXT_JSON_OK) {
-    json_schema_node_free(sub);
+    json_schema_node_free(sub, alloc);
     return status;
   }
   *out = sub;
@@ -1791,6 +1838,7 @@ static GTEXT_JSON_Status json_schema_compile_sub_list(
     json_schema_node *** out_list, size_t * out_count, const char * keyword,
     const GTEXT_JSON_Value * value, json_schema_compile_ctx * cc,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   if (value->type != GTEXT_JSON_ARRAY) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_INVALID,
@@ -1817,7 +1865,7 @@ static GTEXT_JSON_Status json_schema_compile_sub_list(
     return GTEXT_JSON_E_OOM;
   }
   json_schema_node ** list =
-      (json_schema_node **)calloc(n, sizeof(json_schema_node *));
+      (json_schema_node **)gtext_allocator_calloc(alloc, n, sizeof(json_schema_node *));
   if (!list) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1831,9 +1879,9 @@ static GTEXT_JSON_Status json_schema_compile_sub_list(
         json_schema_compile_sub(&list[i], elem, cc, err);
     if (status != GTEXT_JSON_OK) {
       for (size_t j = 0; j < i; j++) {
-        json_schema_node_free(list[j]);
+        json_schema_node_free(list[j], alloc);
       }
-      free(list);
+      gtext_allocator_free(alloc, list);
       return status;
     }
   }
@@ -1861,6 +1909,16 @@ static GTEXT_JSON_Status json_schema_compile_node(json_schema_node * node,
   const char * saved = cc->base_uri;
   unsigned int saved_vocabularies = cc->vocabularies;
   json_schema_draft saved_draft = cc->draft;
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
+  /*
+   * Here rather than in json_schema_compile_body(), which returns early for a
+   * schema that is not an object - so a boolean schema, `true` or `false`,
+   * used to reach validation with no owner at all.  Nothing noticed while only
+   * `$dynamicRef` read this field, because a boolean schema has no keywords to
+   * carry one; the per-validation marks read it for their allocator, and they
+   * are allocated for any node.
+   */
+  node->owner = cc->schema;
   if (schema_doc && schema_doc->type == GTEXT_JSON_OBJECT) {
     const GTEXT_JSON_Value * id = json_schema_identifier(
         schema_doc, json_schema_draft_in(schema_doc, saved_draft));
@@ -1868,7 +1926,7 @@ static GTEXT_JSON_Status json_schema_compile_node(json_schema_node * node,
       /* The pre-pass already resolved and interned this; finding it here is
        * a lookup rather than a second resolution, so the two cannot drift. */
       char * resolved = json_uri_resolve(
-          saved, strlen(saved), id->as.string.data, id->as.string.len);
+          saved, strlen(saved), id->as.string.data, id->as.string.len, alloc);
       if (resolved) {
         for (size_t i = 0; i < cc->schema->resources_count; i++) {
           if (strcmp(cc->schema->resources[i].uri, resolved) == 0) {
@@ -1876,7 +1934,7 @@ static GTEXT_JSON_Status json_schema_compile_node(json_schema_node * node,
             break;
           }
         }
-        free(resolved);
+        gtext_allocator_free(alloc, resolved);
       }
     }
   }
@@ -1914,6 +1972,7 @@ static GTEXT_JSON_Status json_schema_add_dynamic_anchor(
     GTEXT_JSON_Schema * schema, size_t resource_slot, const char * name,
     size_t name_len, json_schema_node * node, const GTEXT_JSON_Value * value,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = schema->ctx->alloc;
   /* The pre-pass makes the entry with no compiled node; compilation fills it
    * in. Appending a second entry instead would leave the empty one in front
    * of it, and the search below would keep finding that. */
@@ -1935,7 +1994,7 @@ static GTEXT_JSON_Status json_schema_add_dynamic_anchor(
         ? schema->dynamic_anchors_capacity * 2
         : 4;
     json_schema_dynamic_anchor * grown =
-        (json_schema_dynamic_anchor *)realloc(schema->dynamic_anchors,
+        (json_schema_dynamic_anchor *)gtext_allocator_realloc(alloc, schema->dynamic_anchors,
             cap * sizeof(json_schema_dynamic_anchor));
     if (!grown) {
       if (err) {
@@ -1947,7 +2006,7 @@ static GTEXT_JSON_Status json_schema_add_dynamic_anchor(
     schema->dynamic_anchors = grown;
     schema->dynamic_anchors_capacity = cap;
   }
-  char * copy = (char *)malloc(name_len + 1);
+  char * copy = (char *)gtext_allocator_malloc(alloc, name_len + 1);
   if (!copy) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -1983,6 +2042,7 @@ static json_schema_node * json_schema_find_dynamic_anchor(
 static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
     const GTEXT_JSON_Value * schema_doc, json_schema_compile_ctx * cc,
     GTEXT_JSON_Error * err) {
+  const GTEXT_Allocator * alloc = cc->ctx->alloc;
   if (cc->depth >= JSON_SCHEMA_MAX_COMPILE_DEPTH) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_DEPTH,
@@ -2018,8 +2078,8 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
   /* Which resource this schema object sits in, and any `$dynamicAnchor` it
    * declares. Both are recorded before the keywords are walked, because a
    * `$dynamicRef` in this same object has to be able to find an anchor this
-   * object declares. */
-  node->owner = cc->schema;
+   * object declares.  `owner` is set in json_schema_compile_node(), which
+   * reaches a boolean schema too. */
   node->resource_slot = json_schema_resource_slot(cc->schema, cc->base_uri);
   const GTEXT_JSON_Value * dynamic_anchor =
       gtext_json_object_get(schema_doc, "$dynamicAnchor", 14);
@@ -2120,7 +2180,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
             return GTEXT_JSON_E_OOM;
           }
-          json_schema_property * new_props = (json_schema_property *)realloc(
+          json_schema_property * new_props = (json_schema_property *)gtext_allocator_realloc(alloc, 
               node->properties, new_capacity * sizeof(json_schema_property));
           if (!new_props) {
             if (err) {
@@ -2154,7 +2214,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
             return GTEXT_JSON_E_OOM;
           }
-          prop->key = (char *)malloc(prop_key_len + 1);
+          prop->key = (char *)gtext_allocator_malloc(alloc, prop_key_len + 1);
           if (!prop->key) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2167,9 +2227,9 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
 
           // Compile property schema recursively
           prop->schema =
-              (json_schema_node *)calloc(1, sizeof(json_schema_node));
+              (json_schema_node *)gtext_allocator_calloc(alloc, 1, sizeof(json_schema_node));
           if (!prop->schema) {
-            free(prop->key);
+            gtext_allocator_free(alloc, prop->key);
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
                   .message = "Out of memory allocating property schema"};
@@ -2185,8 +2245,8 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
              * keyword that failed, and it is not yet reachable from the
              * parent - properties_count has not been incremented - so
              * nothing else will ever free it. */
-            free(prop->key);
-            json_schema_node_free(prop->schema);
+            gtext_allocator_free(alloc, prop->key);
+            json_schema_node_free(prop->schema, alloc);
             prop->schema = NULL;
             return status;
           }
@@ -2216,7 +2276,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
             return GTEXT_JSON_E_OOM;
           }
-          char ** new_keys = (char **)realloc(
+          char ** new_keys = (char **)gtext_allocator_realloc(alloc, 
               node->required_keys, new_capacity * sizeof(char *));
           if (!new_keys) {
             if (err) {
@@ -2259,7 +2319,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             return GTEXT_JSON_E_OOM;
           }
           node->required_keys[node->required_count] =
-              (char *)malloc(req_key_len + 1);
+              (char *)gtext_allocator_malloc(alloc, req_key_len + 1);
           if (!node->required_keys[node->required_count]) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2289,7 +2349,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
       }
       // Compile items schema recursively
       node->items_schema =
-          (json_schema_node *)calloc(1, sizeof(json_schema_node));
+          (json_schema_node *)gtext_allocator_calloc(alloc, 1, sizeof(json_schema_node));
       if (!node->items_schema) {
         if (err) {
           *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2301,7 +2361,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
       GTEXT_JSON_Status status =
           json_schema_compile_node(node->items_schema, value, cc, err);
       if (status != GTEXT_JSON_OK) {
-        json_schema_node_free(node->items_schema);
+        json_schema_node_free(node->items_schema, alloc);
         node->items_schema = NULL;
         return status;
       }
@@ -2335,7 +2395,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
             return GTEXT_JSON_E_OOM;
           }
-          GTEXT_JSON_Value ** new_enum = (GTEXT_JSON_Value **)realloc(
+          GTEXT_JSON_Value ** new_enum = (GTEXT_JSON_Value **)gtext_allocator_realloc(alloc, 
               node->enum_values, new_capacity * sizeof(GTEXT_JSON_Value *));
           if (!new_enum) {
             if (err) {
@@ -2622,11 +2682,11 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
         int bookended = 0;
         if (name_len > 0 && name[0] != '/') {
           char * resolved = json_uri_resolve(
-              cc->base_uri, strlen(cc->base_uri), rs, rl);
+              cc->base_uri, strlen(cc->base_uri), rs, rl, alloc);
           if (resolved) {
             const GTEXT_JSON_Value * target =
                 json_schema_find_target(cc, resolved, NULL, NULL);
-            free(resolved);
+            gtext_allocator_free(alloc, resolved);
             if (target && target->type == GTEXT_JSON_OBJECT) {
               const GTEXT_JSON_Value * declared =
                   gtext_json_object_get(target, "$dynamicAnchor", 14);
@@ -2637,8 +2697,8 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
           }
         }
         if (bookended) {
-          free(node->dynamic_ref_name);
-          node->dynamic_ref_name = (char *)malloc(name_len + 1);
+          gtext_allocator_free(alloc, node->dynamic_ref_name);
+          node->dynamic_ref_name = (char *)gtext_allocator_malloc(alloc, name_len + 1);
           if (!node->dynamic_ref_name) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2715,8 +2775,8 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             && gtext_json_get_bool(declared, &on) == GTEXT_JSON_OK && on;
       }
       if (bookended) {
-        free(node->dynamic_ref_name);
-        node->dynamic_ref_name = (char *)malloc(1);
+        gtext_allocator_free(alloc, node->dynamic_ref_name);
+        node->dynamic_ref_name = (char *)gtext_allocator_malloc(alloc, 1);
         if (!node->dynamic_ref_name) {
           if (err) {
             *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2840,8 +2900,8 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
           }
           else {
-            free(node->format_name);
-            node->format_name = (char *)malloc(name_len + 1);
+            gtext_allocator_free(alloc, node->format_name);
+            node->format_name = (char *)gtext_allocator_malloc(alloc, name_len + 1);
             if (!node->format_name) {
               if (err) {
                 *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -2897,7 +2957,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
             return GTEXT_JSON_E_OOM;
           }
-          node->pattern_properties = (json_schema_pattern_property *)calloc(
+          node->pattern_properties = (json_schema_pattern_property *)gtext_allocator_calloc(alloc, 
               n, sizeof(json_schema_pattern_property));
           if (!node->pattern_properties) {
             if (err) {
@@ -2984,7 +3044,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
         if (dv->type == GTEXT_JSON_ARRAY) {
           size_t rn = gtext_json_array_size(dv);
           json_schema_dep_required * grown =
-              (json_schema_dep_required *)realloc(node->dep_required,
+              (json_schema_dep_required *)gtext_allocator_realloc(alloc, node->dep_required,
                   (node->dep_required_count + 1)
                       * sizeof(json_schema_dep_required));
           if (!grown) {
@@ -2998,7 +3058,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
           json_schema_dep_required * entry =
               &node->dep_required[node->dep_required_count];
           memset(entry, 0, sizeof(*entry));
-          entry->key = (char *)malloc(dk_len + 1);
+          entry->key = (char *)gtext_allocator_malloc(alloc, dk_len + 1);
           if (!entry->key) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3010,7 +3070,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
           entry->key[dk_len] = '\0';
           node->dep_required_count++;
           if (rn > 0) {
-            entry->required = (char **)calloc(rn, sizeof(char *));
+            entry->required = (char **)gtext_allocator_calloc(alloc, rn, sizeof(char *));
             if (!entry->required) {
               if (err) {
                 *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3031,7 +3091,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
               }
               return GTEXT_JSON_E_INVALID;
             }
-            entry->required[j] = (char *)malloc(nl + 1);
+            entry->required[j] = (char *)gtext_allocator_malloc(alloc, nl + 1);
             if (!entry->required[j]) {
               if (err) {
                 *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3046,7 +3106,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
         }
         else {
           json_schema_dep_schema * grown =
-              (json_schema_dep_schema *)realloc(node->dep_schemas,
+              (json_schema_dep_schema *)gtext_allocator_realloc(alloc, node->dep_schemas,
                   (node->dep_schemas_count + 1)
                       * sizeof(json_schema_dep_schema));
           if (!grown) {
@@ -3060,7 +3120,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
           json_schema_dep_schema * entry =
               &node->dep_schemas[node->dep_schemas_count];
           memset(entry, 0, sizeof(*entry));
-          entry->key = (char *)malloc(dk_len + 1);
+          entry->key = (char *)gtext_allocator_malloc(alloc, dk_len + 1);
           if (!entry->key) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3089,7 +3149,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
       }
       size_t n = gtext_json_object_size(value);
       if (n > 0) {
-        node->dep_schemas = (json_schema_dep_schema *)calloc(
+        node->dep_schemas = (json_schema_dep_schema *)gtext_allocator_calloc(alloc, 
             n, sizeof(json_schema_dep_schema));
         if (!node->dep_schemas) {
           if (err) {
@@ -3104,7 +3164,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
         const char * dk = gtext_json_object_key(value, i, &dk_len);
         const GTEXT_JSON_Value * sub = gtext_json_object_value(value, i);
         json_schema_dep_schema * entry = &node->dep_schemas[i];
-        entry->key = (char *)malloc(dk_len + 1);
+        entry->key = (char *)gtext_allocator_malloc(alloc, dk_len + 1);
         if (!entry->key) {
           if (err) {
             *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3304,7 +3364,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
       }
       size_t n = gtext_json_object_size(value);
       if (n > 0) {
-        node->dep_required = (json_schema_dep_required *)calloc(
+        node->dep_required = (json_schema_dep_required *)gtext_allocator_calloc(alloc, 
             n, sizeof(json_schema_dep_required));
         if (!node->dep_required) {
           if (err) {
@@ -3326,7 +3386,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
           return GTEXT_JSON_E_INVALID;
         }
         json_schema_dep_required * entry = &node->dep_required[i];
-        entry->key = (char *)malloc(dk_len + 1);
+        entry->key = (char *)gtext_allocator_malloc(alloc, dk_len + 1);
         if (!entry->key) {
           if (err) {
             *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3340,7 +3400,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
 
         size_t rn = gtext_json_array_size(list);
         if (rn > 0) {
-          entry->required = (char **)calloc(rn, sizeof(char *));
+          entry->required = (char **)gtext_allocator_calloc(alloc, rn, sizeof(char *));
           if (!entry->required) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3367,7 +3427,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
             }
             return GTEXT_JSON_E_INVALID;
           }
-          entry->required[j] = (char *)malloc(nl + 1);
+          entry->required[j] = (char *)gtext_allocator_malloc(alloc, nl + 1);
           if (!entry->required[j]) {
             if (err) {
               *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -3474,7 +3534,7 @@ static GTEXT_JSON_Status json_schema_compile_body(json_schema_node * node,
     const GTEXT_JSON_Value * items =
         gtext_json_object_get(schema_doc, "items", 5);
     if (!items || items->type != GTEXT_JSON_ARRAY) {
-      json_schema_node_free(node->additional_items);
+      json_schema_node_free(node->additional_items, alloc);
       node->additional_items = NULL;
     }
   }
@@ -3689,12 +3749,23 @@ typedef struct json_schema_scope {
 typedef struct {
   unsigned char * marks;
   size_t count;
+  /**
+   * Where `marks` comes from, recorded by json_schema_eval_init() before it
+   * allocates and never reassigned, so init and clear cannot name different
+   * allocators for one buffer - the csv_field_buffer_init rule.
+   *
+   * Validation is reached with a node and not with the schema, so the
+   * allocator arrives from json_schema_node::owner, which
+   * json_schema_compile_node() sets on every node it compiles.
+   */
+  const GTEXT_Allocator * alloc;
 } json_schema_eval;
 
-static GTEXT_JSON_Status json_schema_eval_init(
-    json_schema_eval * eval, const GTEXT_JSON_Value * instance) {
+static GTEXT_JSON_Status json_schema_eval_init(json_schema_eval * eval,
+    const GTEXT_JSON_Value * instance, const GTEXT_Allocator * alloc) {
   eval->marks = NULL;
   eval->count = 0;
+  eval->alloc = alloc;
   if (!instance) {
     return GTEXT_JSON_OK;
   }
@@ -3707,12 +3778,13 @@ static GTEXT_JSON_Status json_schema_eval_init(
   if (eval->count == 0) {
     return GTEXT_JSON_OK;
   }
-  eval->marks = (unsigned char *)calloc(eval->count, 1);
+  eval->marks =
+      (unsigned char *)gtext_allocator_calloc(eval->alloc, eval->count, 1);
   return eval->marks ? GTEXT_JSON_OK : GTEXT_JSON_E_OOM;
 }
 
 static void json_schema_eval_clear(json_schema_eval * eval) {
-  free(eval->marks);
+  gtext_allocator_free(eval->alloc, eval->marks);
   eval->marks = NULL;
   eval->count = 0;
 }
@@ -3848,7 +3920,9 @@ static GTEXT_JSON_Status json_schema_validate_depth(
   }
 
   json_schema_eval local;
-  if (json_schema_eval_init(&local, instance) != GTEXT_JSON_OK) {
+  if (json_schema_eval_init(&local, instance,
+          node->owner && node->owner->ctx ? node->owner->ctx->alloc : NULL)
+      != GTEXT_JSON_OK) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
           .message = "Out of memory tracking what a schema evaluated"};
@@ -3881,7 +3955,7 @@ static GTEXT_JSON_Status json_schema_validate_inplace(
     return json_schema_validate_depth(node, instance, depth, NULL, scope, err);
   }
   json_schema_eval sub;
-  if (json_schema_eval_init(&sub, instance) != GTEXT_JSON_OK) {
+  if (json_schema_eval_init(&sub, instance, eval->alloc) != GTEXT_JSON_OK) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
           .message = "Out of memory tracking what a schema evaluated"};
@@ -4496,7 +4570,11 @@ static GTEXT_JSON_Status json_schema_validate_body(
         if (!kname) {
           continue;
         }
-        GTEXT_JSON_Value * key_val = gtext_json_new_string(kname, klen);
+        /* On the schema's allocator: gtext_json_new_string() would make its
+           own context in the C library, once per key of every object this
+           keyword checks, and the gate cannot see a bypass that is a call. */
+        GTEXT_JSON_Value * key_val = json_value_new_string_on(kname, klen,
+            node->owner && node->owner->ctx ? node->owner->ctx->alloc : NULL);
         if (!key_val) {
           if (err) {
             *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -4687,6 +4765,13 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
     const GTEXT_JSON_Schema_Options * opts_in, GTEXT_JSON_Error * err) {
   GTEXT_JSON_Schema_Options defaults = gtext_json_schema_options_default();
   const GTEXT_JSON_Schema_Options * opts = opts_in ? opts_in : &defaults;
+  /*
+   * Read once, here, and then carried on the schema's own context rather than
+   * on the options structure - which the caller is not promised outlives the
+   * compiled schema, and usually does not.  Everything from here on reaches it
+   * as `schema->ctx->alloc` or `cc->ctx->alloc`, both of which are this.
+   */
+  const GTEXT_Allocator * alloc = opts->allocator;
 
   if (!schema_doc) {
     if (err) {
@@ -4725,8 +4810,8 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
   }
 
   // Allocate schema structure
-  GTEXT_JSON_Schema * schema =
-      (GTEXT_JSON_Schema *)calloc(1, sizeof(GTEXT_JSON_Schema));
+  GTEXT_JSON_Schema * schema = (GTEXT_JSON_Schema *)gtext_allocator_calloc(
+      alloc, 1, sizeof(GTEXT_JSON_Schema));
   if (!schema) {
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
@@ -4735,10 +4820,17 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
     return NULL;
   }
 
-  // Create context for cloned enum/const values
-  schema->ctx = json_context_new(NULL);
+  /*
+   * The context for cloned enum/const values, and the one place the caller's
+   * allocator is recorded for the schema's whole life.  json_context::alloc is
+   * documented as never NULL, so everything downstream can read it from
+   * `cc->ctx` or `schema->ctx` and nothing has to default it again.  This used
+   * to be json_context_new(NULL), which put every `enum` and `const` value a
+   * schema holds in the C library whatever the caller had asked for.
+   */
+  schema->ctx = json_context_new(alloc);
   if (!schema->ctx) {
-    free(schema);
+    gtext_allocator_free(alloc, schema);
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
           .message = "Out of memory creating schema context"};
@@ -4747,10 +4839,10 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
   }
 
   // Allocate root node
-  schema->root = (json_schema_node *)calloc(1, sizeof(json_schema_node));
+  schema->root = (json_schema_node *)gtext_allocator_calloc(alloc, 1, sizeof(json_schema_node));
   if (!schema->root) {
     json_context_free(schema->ctx);
-    free(schema);
+    gtext_allocator_free(alloc, schema);
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
           .message = "Out of memory allocating schema node"};
@@ -4761,12 +4853,18 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
   /* The document is cloned so that $ref can be resolved against it after the
    * caller frees theirs.  A schema with no $ref pays for this too; keeping
    * two code paths, one of which only some schemas exercise, is the more
-   * expensive choice in the end. */
-  schema->doc = gtext_json_clone(schema_doc);
+   * expensive choice in the end.
+   *
+   * On *this* schema's allocator and not the document's, which is what
+   * gtext_json_clone() would have given it.  The clone outlives the document
+   * by contract - that is the whole reason it exists - so it cannot be held in
+   * an allocator chosen for the document's lifetime.  It keeps a context of its
+   * own all the same, so gtext_json_free() below still releases it. */
+  schema->doc = json_value_clone_new_context(schema_doc, alloc);
   if (!schema->doc) {
-    json_schema_node_free(schema->root);
+    json_schema_node_free(schema->root, alloc);
     json_context_free(schema->ctx);
-    free(schema);
+    gtext_allocator_free(alloc, schema);
     if (err) {
       *err = (GTEXT_JSON_Error){.code = GTEXT_JSON_E_OOM,
           .message = "Out of memory cloning the schema document"};
@@ -4788,7 +4886,7 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
    * is what makes a relative one mean anything. */
   schema->base_uri = json_uri_without_fragment(
       opts->base_uri ? opts->base_uri : "",
-      opts->base_uri ? strlen(opts->base_uri) : 0);
+      opts->base_uri ? strlen(opts->base_uri) : 0, alloc);
   if (!schema->base_uri) {
     gtext_json_schema_free(schema);
     if (err) {
@@ -4832,7 +4930,7 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
    * things it looks for are spelled differently before 2019-09.
    */
   GTEXT_JSON_Status status = json_schema_add_resource(schema,
-      json_uri_without_fragment(schema->base_uri, strlen(schema->base_uri)),
+      json_uri_without_fragment(schema->base_uri, strlen(schema->base_uri), alloc),
       schema->doc, err, NULL);
   if (status == GTEXT_JSON_OK) {
     status = json_schema_scan_resources(
@@ -4895,7 +4993,7 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
       continue;
     }
     size_t name_len = strlen(entry->name);
-    char * ref = (char *)malloc(name_len + 2);
+    char * ref = (char *)gtext_allocator_malloc(alloc, name_len + 2);
     if (!ref) {
       gtext_json_schema_free(schema);
       if (err) {
@@ -4909,7 +5007,7 @@ GTEXT_API GTEXT_JSON_Schema * gtext_json_schema_compile_with_options(
     json_schema_node * target = NULL;
     cc.base_uri = schema->resources[entry->resource_slot - 1].uri;
     status = json_schema_resolve_ref(&target, ref, name_len + 1, &cc, err);
-    free(ref);
+    gtext_allocator_free(alloc, ref);
     if (status != GTEXT_JSON_OK) {
       gtext_json_schema_free(schema);
       return NULL;
@@ -4926,23 +5024,32 @@ GTEXT_API void gtext_json_schema_free(GTEXT_JSON_Schema * schema) {
     return;
   }
 
-  json_schema_node_free(schema->root);
+  /*
+   * Captured before anything is released, because the allocator lives on
+   * schema->ctx and json_context_free() below frees that - after which
+   * schema->ctx->alloc is a read of freed memory, and `gtext_allocator_free(alloc, schema)` would be
+   * asking an allocator that no longer exists to release the object holding
+   * it.
+   */
+  const GTEXT_Allocator * alloc = schema->ctx ? schema->ctx->alloc : NULL;
+
+  json_schema_node_free(schema->root, alloc);
 
   /* The registry owns every $ref target, so they are freed here rather than
    * by the nodes that refer to them. */
   if (schema->refs) {
     for (size_t i = 0; i < schema->refs_count; i++) {
-      free(schema->refs[i].uri);
-      json_schema_node_free(schema->refs[i].node);
+      gtext_allocator_free(alloc, schema->refs[i].uri);
+      json_schema_node_free(schema->refs[i].node, alloc);
     }
-    free(schema->refs);
+    gtext_allocator_free(alloc, schema->refs);
   }
 
   if (schema->resources) {
     for (size_t i = 0; i < schema->resources_count; i++) {
-      free(schema->resources[i].uri);
+      gtext_allocator_free(alloc, schema->resources[i].uri);
     }
-    free(schema->resources);
+    gtext_allocator_free(alloc, schema->resources);
   }
   /* After `resources`, which borrows pointers into these. Slots for
    * documents no reference reached are NULL, which gtext_json_free() takes. */
@@ -4950,19 +5057,19 @@ GTEXT_API void gtext_json_schema_free(GTEXT_JSON_Schema * schema) {
     for (size_t i = 0; i < schema->embedded_count; i++) {
       gtext_json_free(schema->embedded[i]);
     }
-    free(schema->embedded);
+    gtext_allocator_free(alloc, schema->embedded);
   }
   if (schema->dynamic_anchors) {
     for (size_t i = 0; i < schema->dynamic_anchors_count; i++) {
-      free(schema->dynamic_anchors[i].name);
+      gtext_allocator_free(alloc, schema->dynamic_anchors[i].name);
     }
-    free(schema->dynamic_anchors);
+    gtext_allocator_free(alloc, schema->dynamic_anchors);
   }
-  free(schema->base_uri);
+  gtext_allocator_free(alloc, schema->base_uri);
 
   gtext_json_free(schema->doc);
   json_context_free(schema->ctx);
-  free(schema);
+  gtext_allocator_free(alloc, schema);
 }
 
 GTEXT_API GTEXT_JSON_Status gtext_json_schema_validate(

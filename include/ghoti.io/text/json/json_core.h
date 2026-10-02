@@ -331,16 +331,26 @@ typedef struct {
    * - `GTEXT_JSON_Error::context_snippet`, because gtext_json_error_free()
    *   receives only the error and has no way to learn which allocator made
    *   it. Freeing it through a mismatched allocator would be worse than the
-   *   one diagnostic allocation it avoids.
-   * - JSON Schema, which does not take an allocator yet.
+   *   one diagnostic allocation it avoids. This is now the only one.
+   * - The `gtext_json_new_*` DOM builders, which take no options and so have
+   *   no caller allocator to use. Inside the library, where one is in hand,
+   *   they are not used: see json_value_new_string_on().
    *
-   * The writer and JSON Pointer are covered and are not reached through this
-   * member, because neither takes parse options: see
-   * GTEXT_JSON_Write_Options::allocator below, and
-   * gtext_json_pointer_get_with_allocator().
+   * The writer, JSON Pointer and JSON Schema are covered and are not reached
+   * through this member, because none of them takes parse options: see
+   * GTEXT_JSON_Write_Options::allocator below,
+   * gtext_json_pointer_get_with_allocator(), and
+   * GTEXT_JSON_Schema_Options::allocator - which covers the compiled schema,
+   * its nodes, the embedded meta-schema documents a `$ref` reaches, and the
+   * memory validation itself needs.
    *
    * Nothing silently falls back: `make check-allocators` fails the build if a
    * file on the covered list calls malloc, calloc, realloc or free directly.
+   * What that gate cannot see is a *call* - a listed file reaching an
+   * allocation through a function that takes no allocator. That is how the
+   * nine embedded meta-schemas went to the C library with the gate green, and
+   * it is checked by the byte floors in tests/test-allocator.cpp rather than
+   * by the gate.
    */
   const GTEXT_Allocator * allocator;
                           ///< (default: off)

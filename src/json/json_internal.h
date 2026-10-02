@@ -187,26 +187,34 @@ GTEXT_INTERNAL_API void json_uri_parts_split(
 /**
  * @brief Resolve a URI-reference against a base, RFC 3986 section 5.2
  *
- * @return A malloc'd string the caller frees, or NULL if allocation failed
+ * @param alloc Allocator the result comes from, or NULL for the default
+ * @return A string the caller releases through @p alloc, or NULL if
+ *   allocation failed
  */
 GTEXT_INTERNAL_API char * json_uri_resolve(
-    const char * base, size_t base_len, const char * ref, size_t ref_len);
+    const char * base, size_t base_len, const char * ref, size_t ref_len,
+    const GTEXT_Allocator * alloc);
 
 /**
  * @brief Copy a URI with its fragment removed
  *
- * @return A malloc'd string the caller frees, or NULL if allocation failed
+ * @param alloc Allocator the result comes from, or NULL for the default
+ * @return A string the caller releases through @p alloc, or NULL if
+ *   allocation failed
  */
 GTEXT_INTERNAL_API char * json_uri_without_fragment(
-    const char * uri, size_t len);
+    const char * uri, size_t len, const GTEXT_Allocator * alloc);
 
 /**
  * @brief Percent-decode a string, RFC 3986 section 2.1
  *
- * @return A malloc'd string the caller frees, or NULL if allocation failed
+ * @param alloc Allocator the result comes from, or NULL for the default
+ * @return A string the caller releases through @p alloc, or NULL if
+ *   allocation failed
  */
 GTEXT_INTERNAL_API char * json_uri_percent_decode(
-    const char * s, size_t len, size_t * out_len);
+    const char * s, size_t len, size_t * out_len,
+    const GTEXT_Allocator * alloc);
 
 /**
  * @brief Is `name` one of the formats 2020-12's vocabulary defines?
@@ -642,6 +650,41 @@ GTEXT_JSON_Status json_object_add_pair(GTEXT_JSON_Value * object,
  */
 GTEXT_JSON_Value * json_value_clone(
     const GTEXT_JSON_Value * src, json_context * ctx);
+
+/**
+ * @brief Deep clone a JSON value into a context of its own
+ *
+ * The clone owns the context it is in, so gtext_json_free() releases it.
+ * Unlike json_value_clone(), which puts the copy in a caller's context and
+ * ties its lifetime to that context's, this is for a copy that outlives
+ * whatever it was copied from.
+ *
+ * @param src Source value to clone, or NULL for NULL
+ * @param alloc Allocator the new context draws from, or NULL for the default.
+ *   Named rather than taken from @p src, because a copy that outlives the
+ *   original may need to outlive the original's allocator too; gtext_json_clone()
+ *   passes the source's, and the compiled schema passes its own.
+ * @return Cloned value, or NULL on allocation failure
+ */
+GTEXT_INTERNAL_API GTEXT_JSON_Value * json_value_clone_new_context(
+    const GTEXT_JSON_Value * src, const GTEXT_Allocator * alloc);
+
+/**
+ * @brief Create a string value in a context of its own, on a named allocator
+ *
+ * What gtext_json_new_string() does, with the allocator spelled out. The
+ * public builder takes no options and so passes NULL; a caller inside the
+ * library that has an allocator in hand passes that instead, so a value it
+ * builds and frees does not bypass what the caller asked for.
+ *
+ * @param s String bytes, or NULL only when @p len is 0
+ * @param len Length in bytes
+ * @param alloc Allocator the value's context draws from, or NULL for the
+ *   default
+ * @return New value the caller releases with gtext_json_free(), or NULL
+ */
+GTEXT_INTERNAL_API GTEXT_JSON_Value * json_value_new_string_on(
+    const char * s, size_t len, const GTEXT_Allocator * alloc);
 
 /**
  * @brief Deep equality comparison for JSON values

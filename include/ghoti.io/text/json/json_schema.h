@@ -445,6 +445,31 @@ typedef struct {
    * borrowed, and need only outlive the compile call.
    */
   const char * default_dialect;
+
+  /**
+   * Where the compiled schema's memory comes from, or NULL for the C library.
+   *
+   * This covers the whole compiled object and everything it owns: the schema
+   * structure, every compiled node, the `$ref` registry, the resource and
+   * `$dynamicAnchor` tables, the base URI, the URI strings built while
+   * resolving references, the clone of the schema document, and the
+   * per-validation marks gtext_json_schema_validate() uses. The allocator is
+   * recorded on the schema, so validating and freeing it need no options of
+   * their own.
+   *
+   * Borrowed, and it must outlive the schema rather than the compile call -
+   * which is why this is an option and not inherited from the document.
+   * gtext_json_patch_apply() and gtext_json_clone() take the allocator of the
+   * tree they are given, because what they produce lives in that tree and
+   * dies with it. A compiled schema is a separate object with its own
+   * lifetime: the header promises the document may be freed after compiling,
+   * so a schema built from the document's allocator would outlive the reason
+   * the caller chose it. The caller has to say, and this is where.
+   *
+   * gtext_json_schema_compile(), which takes no options, therefore uses the C
+   * library.
+   */
+  const GTEXT_Allocator * allocator;
 } GTEXT_JSON_Schema_Options;
 
 /**

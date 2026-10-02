@@ -350,10 +350,18 @@ documents;
 that stops.
 
 What is still open is on the JSON side. Streaming LAST_WINS and COLLECT
-still deliver every member of a repeated name. JSON Schema does not take a
-caller allocator; everything else does - parsing, the streaming parser and its
-pull reader, the writer, JSON Pointer, JSON Patch and gtext_json_clone(), the
-last two by inheriting the allocator of the tree they are given.
+still deliver every member of a repeated name.
+
+Every entry point now takes a caller's allocator: parsing, the streaming parser
+and its pull reader, the writer, JSON Pointer, JSON Patch, gtext_json_clone()
+and JSON Schema. Patch and clone inherit the allocator of the tree they are
+given, because what they produce lives in that tree; Schema names its own in
+GTEXT_JSON_Schema_Options, because a compiled schema outlives the document it
+was built from. What is left on the C library is one diagnostic allocation -
+`GTEXT_JSON_Error::context_snippet`, which gtext_json_error_free() could not
+release through the right allocator because it is handed only the error - and
+the `gtext_json_new_*` DOM builders, which take no options and so have no
+caller allocator to use.
 
 ## License
 

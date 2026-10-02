@@ -458,13 +458,14 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_new_bool(bool b) {
   return val;
 }
 
-GTEXT_API GTEXT_JSON_Value * gtext_json_new_string(const char * s, size_t len) {
+GTEXT_INTERNAL_API GTEXT_JSON_Value * json_value_new_string_on(
+    const char * s, size_t len, const GTEXT_Allocator * alloc) {
   // Allow NULL pointer only if len is 0 (empty string)
   if (!s && len > 0) {
     return NULL;
   }
 
-  json_context * ctx = json_context_new(NULL);
+  json_context * ctx = json_context_new(alloc);
   if (!ctx) {
     return NULL;
   }
@@ -495,6 +496,18 @@ GTEXT_API GTEXT_JSON_Value * gtext_json_new_string(const char * s, size_t len) {
   val->as.string.data = str_data;
   val->as.string.len = len;
   return val;
+}
+
+GTEXT_API GTEXT_JSON_Value * gtext_json_new_string(const char * s, size_t len) {
+  /*
+   * The C library, because a public builder has no options and so no caller
+   * allocator to inherit - which is the right answer here and the wrong one
+   * inside the library, where there usually is one.  JSON Schema builds a
+   * throwaway string value for every key `propertyNames` checks, and it has
+   * the compiling schema's allocator in hand; it calls
+   * json_value_new_string_on() with it rather than this.
+   */
+  return json_value_new_string_on(s, len, NULL);
 }
 
 GTEXT_API GTEXT_JSON_Value * gtext_json_new_number_from_lexeme(
@@ -1563,25 +1576,13 @@ GTEXT_API bool gtext_json_equal(const GTEXT_JSON_Value * a,
   return json_value_equal_internal(a, b, mode);
 }
 
-// Helper function to deep clone a value into a new context
-static GTEXT_JSON_Value * json_value_clone_into_new_context(
-    const GTEXT_JSON_Value * src) {
+GTEXT_INTERNAL_API GTEXT_JSON_Value * json_value_clone_new_context(
+    const GTEXT_JSON_Value * src, const GTEXT_Allocator * alloc) {
   if (!src) {
     return NULL;
   }
 
-  /*
-   * The clone inherits the source's allocator rather than the C library.
-   *
-   * gtext_json_clone() takes no options, so for a long time this passed NULL
-   * and a clone of an arena-allocated document came from the C library -
-   * self-consistent, because the clone records the context that made it and
-   * gtext_json_free() releases through it, but a complete bypass of an
-   * allocator that was sitting in src->ctx the whole time.  json_context::alloc
-   * is documented as never NULL, so there is nothing to default here.
-   */
-  json_context * new_ctx =
-      json_context_new(src->ctx ? src->ctx->alloc : NULL);
+  json_context * new_ctx = json_context_new(alloc);
   if (!new_ctx) {
     return NULL;
   }
@@ -1597,7 +1598,22 @@ static GTEXT_JSON_Value * json_value_clone_into_new_context(
 }
 
 GTEXT_API GTEXT_JSON_Value * gtext_json_clone(const GTEXT_JSON_Value * src) {
-  return json_value_clone_into_new_context(src);
+  /*
+   * The clone inherits the source's allocator rather than the C library.
+   *
+   * gtext_json_clone() takes no options, so for a long time this passed NULL
+   * and a clone of an arena-allocated document came from the C library -
+   * self-consistent, because the clone records the context that made it and
+   * gtext_json_free() releases through it, but a complete bypass of an
+   * allocator that was sitting in src->ctx the whole time.  json_context::alloc
+   * is documented as never NULL, so there is nothing to default here.
+   *
+   * A caller that needs the copy on a *different* allocator from the original
+   * calls json_value_clone_new_context() and names one; the compiled schema
+   * does, because it outlives the document it was built from.
+   */
+  return json_value_clone_new_context(
+      src, src && src->ctx ? src->ctx->alloc : NULL);
 }
 
 GTEXT_API GTEXT_JSON_Status gtext_json_object_merge(GTEXT_JSON_Value * target,

@@ -1568,3 +1568,310 @@ TEST(Allocator, JsonCloneInheritsTheSourcesAllocator) {
 	EXPECT_EQ(c.live_blocks, 0u);
 	EXPECT_EQ(c.live_bytes, 0u);
 }
+
+/*
+ * JSON Schema, the last entry point that did not take a caller's allocator.
+ *
+ * The floors below are byte floors and not merely "non-zero", because a
+ * wrapper that allocates its own small structure through the allocator and
+ * then builds everything beneath it in the C library satisfies a non-zero
+ * count and a balanced one.  What separates "served everything" from "served
+ * the struct" is how much is outstanding while the schema is alive.
+ */
+namespace {
+
+// A schema and an instance, compiled and validated under a counting allocator.
+struct SchemaRun {
+	size_t bytes_after_doc = 0;
+	size_t bytes_after_compile = 0;
+	size_t allocations_during_compile = 0;
+	size_t allocations_during_validate = 0;
+	GTEXT_JSON_Status validate_status = GTEXT_JSON_OK;
+	bool compiled = false;
+};
+
+SchemaRun run_schema(Counters * c, const GTEXT_Allocator * alloc,
+    const char * schema_text, const char * instance_text, bool relax = false) {
+	SchemaRun r;
+	GTEXT_JSON_Parse_Options popts = gtext_json_parse_options_default();
+	popts.allocator = alloc;
+
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Value * doc =
+	    gtext_json_parse(schema_text, std::strlen(schema_text), &popts, &err);
+	gtext_json_error_free(&err);
+	EXPECT_NE(doc, nullptr);
+	if (!doc) return r;
+	r.bytes_after_doc = c->live_bytes;
+	const size_t allocations_before_compile = c->total_allocations;
+
+	GTEXT_JSON_Schema_Options sopts = gtext_json_schema_options_default();
+	sopts.allocator = alloc;
+	sopts.allow_unsupported_keywords = relax;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Schema * schema =
+	    gtext_json_schema_compile_with_options(doc, &sopts, &err);
+	EXPECT_NE(schema, nullptr) << (err.message ? err.message : "compile failed");
+	gtext_json_error_free(&err);
+	if (!schema) {
+		gtext_json_free(doc);
+		return r;
+	}
+	r.compiled = true;
+	r.bytes_after_compile = c->live_bytes;
+	r.allocations_during_compile =
+	    c->total_allocations - allocations_before_compile;
+
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Value * instance = gtext_json_parse(
+	    instance_text, std::strlen(instance_text), &popts, &err);
+	gtext_json_error_free(&err);
+	EXPECT_NE(instance, nullptr);
+
+	size_t before = c->total_allocations;
+	std::memset(&err, 0, sizeof(err));
+	r.validate_status = gtext_json_schema_validate(schema, instance, &err);
+	gtext_json_error_free(&err);
+	r.allocations_during_validate = c->total_allocations - before;
+
+	gtext_json_free(instance);
+	// Neither of these takes options: the allocator is on the schema, which is
+	// the whole reason validating and freeing need not be told again.
+	gtext_json_schema_free(schema);
+	gtext_json_free(doc);
+	return r;
+}
+
+} // namespace
+
+TEST(Allocator, JsonSchemaCompilesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	// enum and const are cloned into the schema's own context, which is the
+	// allocation json_context_new(NULL) used to put in the C library.
+	SchemaRun r = run_schema(&c, &alloc,
+	    R"({"type":"object",)"
+	    R"("properties":{"a":{"enum":[1,"two",{"three":3},[4]]},)"
+	    R"("b":{"const":"fixed"}},"required":["a"]})",
+	    R"({"a":1,"b":"fixed"})");
+	ASSERT_TRUE(r.compiled);
+	EXPECT_EQ(r.validate_status, GTEXT_JSON_OK);
+
+	// The compiled schema's own memory, not the document's.  A context's first
+	// arena chunk alone is larger than this, so the floor is met by
+	// construction as soon as schema->ctx comes from here at all - and not met
+	// if the context was made with json_context_new(NULL).
+	EXPECT_GE(r.bytes_after_compile - r.bytes_after_doc, 4096u)
+	    << "the compiled schema bypassed the allocator";
+
+	EXPECT_EQ(c.live_blocks, 0u) << "the schema did not free through this";
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonSchemaEmbeddedMetaschemaUsesTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	// A $ref to a dialect meta-schema is answered from the nine documents this
+	// library embeds, parsed on first use.  That parse is a *call* into
+	// json_parser.c, so no amount of grepping json_schema.c for malloc can see
+	// where its memory comes from: it used to take
+	// gtext_json_parse_options_default(), and every one of those documents went
+	// to the C library with the gate green.
+	SchemaRun r = run_schema(&c, &alloc,
+	    R"({"$ref":"https://json-schema.org/draft/2020-12/schema"})",
+	    R"({"type":"string"})",
+	    // The meta-schema itself uses `pattern`, which needs a regex provider;
+	    // relaxing is how this test reaches the embedded documents at all.
+	    true);
+	ASSERT_TRUE(r.compiled);
+	EXPECT_EQ(r.validate_status, GTEXT_JSON_OK);
+
+	/*
+	 * The floor is 400 KB, and the two measurements it sits between are the
+	 * reason: compiling this schema puts 762,350 bytes through the allocator in
+	 * 1,457 allocations with the parse options carrying it, and 237,294 bytes in
+	 * 731 without - because the compiled nodes and the resource table for the
+	 * meta-schema come from here either way, and only the parsed *documents*
+	 * move. A floor of 100 KB was the first thing written here and it sat below
+	 * both figures, so it could not tell the two apart; the control is what said
+	 * so.
+	 */
+	EXPECT_GE(r.bytes_after_compile - r.bytes_after_doc, 400000u)
+	    << "the embedded meta-schema documents bypassed the allocator";
+	EXPECT_GE(r.allocations_during_compile, 1000u)
+	    << "too few allocations for nine parsed meta-schema documents";
+
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonSchemaValidationAllocatesThroughTheAllocator) {
+	// Two keywords allocate at validation time rather than at compile time, and
+	// validation is reached with a node rather than with the schema - so this
+	// is the half of the contract that an options structure alone cannot keep.
+	struct Case {
+		const char * name;
+		const char * schema;
+		const char * instance;
+		size_t min_allocations;
+	};
+	const Case cases[] = {
+	    // One throwaway string value per key checked.  Four keys here.
+	    {"propertyNames",
+	        R"({"type":"object","propertyNames":{"type":"string","maxLength":4}})",
+	        R"({"ab":1,"cd":2,"ef":3,"gh":4})", 4},
+	    // The marks array that records what a subschema evaluated.
+	    {"unevaluatedProperties",
+	        R"({"type":"object","allOf":[{"properties":{"a":{"type":"integer"}}}],)"
+	        R"("unevaluatedProperties":false})",
+	        R"({"a":1})", 1},
+	};
+
+	for (const Case & k : cases) {
+		Counters c;
+		GTEXT_Allocator alloc = make_allocator(&c);
+		SchemaRun r = run_schema(&c, &alloc, k.schema, k.instance);
+		ASSERT_TRUE(r.compiled) << k.name;
+		EXPECT_EQ(r.validate_status, GTEXT_JSON_OK) << k.name;
+		EXPECT_GE(r.allocations_during_validate, k.min_allocations)
+		    << k.name << ": validation allocated outside the allocator";
+		EXPECT_EQ(c.live_blocks, 0u) << k.name;
+		EXPECT_EQ(c.live_bytes, 0u) << k.name;
+	}
+}
+
+TEST(Allocator, JsonSchemaWithoutAnAllocatorStillAgrees) {
+	// gtext_json_schema_compile() takes no options and so uses the C library,
+	// which the header says.  What must not differ is the answer: a test that
+	// only ran the allocator path could not tell a working allocator from one
+	// that had quietly changed what the schema accepts.
+	const char * schema_text =
+	    R"({"type":"object","properties":{"a":{"type":"integer"}},)"
+	    R"("required":["a"],"additionalProperties":false})";
+	struct Case { const char * instance; GTEXT_JSON_Status want; };
+	const Case cases[] = {
+	    {R"({"a":1})", GTEXT_JSON_OK},
+	    {R"({"a":"no"})", GTEXT_JSON_E_SCHEMA},
+	    {R"({})", GTEXT_JSON_E_SCHEMA},
+	    {R"({"a":1,"b":2})", GTEXT_JSON_E_SCHEMA},
+	};
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	for (const Case & k : cases) {
+		GTEXT_JSON_Error err;
+		std::memset(&err, 0, sizeof(err));
+		GTEXT_JSON_Value * doc =
+		    gtext_json_parse(schema_text, std::strlen(schema_text), nullptr, &err);
+		ASSERT_NE(doc, nullptr);
+		gtext_json_error_free(&err);
+		GTEXT_JSON_Schema * plain = gtext_json_schema_compile(doc, nullptr);
+		ASSERT_NE(plain, nullptr);
+
+		GTEXT_JSON_Schema_Options sopts = gtext_json_schema_options_default();
+		sopts.allocator = &alloc;
+		GTEXT_JSON_Schema * counted =
+		    gtext_json_schema_compile_with_options(doc, &sopts, nullptr);
+		ASSERT_NE(counted, nullptr);
+
+		GTEXT_JSON_Value * instance =
+		    gtext_json_parse(k.instance, std::strlen(k.instance), nullptr, &err);
+		ASSERT_NE(instance, nullptr) << k.instance;
+		gtext_json_error_free(&err);
+
+		EXPECT_EQ(gtext_json_schema_validate(plain, instance, nullptr), k.want)
+		    << k.instance;
+		EXPECT_EQ(gtext_json_schema_validate(counted, instance, nullptr), k.want)
+		    << k.instance << " (through the allocator)";
+
+		gtext_json_free(instance);
+		gtext_json_schema_free(counted);
+		gtext_json_schema_free(plain);
+		gtext_json_free(doc);
+	}
+
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+}
+
+TEST(Allocator, JsonSchemaClonesTheDocumentOnItsOwnAllocator) {
+	/*
+	 * Two allocators, because one cannot answer this.
+	 *
+	 * The schema clones the document so `$ref` still resolves after the caller
+	 * frees theirs, and that clone is the largest thing the schema owns. With
+	 * the document and the schema on the same allocator, a clone taken from
+	 * *either* satisfies every count - so the test would pass whichever
+	 * allocator it came from, which is the question.
+	 *
+	 * gtext_json_clone() inherits the source's allocator, correctly, because
+	 * what it returns lives and dies with the tree it copied. A compiled schema
+	 * does not: the header promises the document may be freed after compiling,
+	 * so the clone has to be on the allocator chosen for the *schema*.
+	 */
+	Counters doc_c;
+	Counters schema_c;
+	GTEXT_Allocator doc_alloc = make_allocator(&doc_c);
+	GTEXT_Allocator schema_alloc = make_allocator(&schema_c);
+
+	const char * schema_text =
+	    R"({"type":"object","properties":{)"
+	    R"("a":{"type":"string","minLength":1},)"
+	    R"("b":{"type":"array","items":{"type":"integer"}},)"
+	    R"("c":{"enum":["one","two","three"]}},"required":["a","b"]})";
+
+	GTEXT_JSON_Parse_Options popts = gtext_json_parse_options_default();
+	popts.allocator = &doc_alloc;
+	GTEXT_JSON_Error err;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Value * doc =
+	    gtext_json_parse(schema_text, std::strlen(schema_text), &popts, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "parse failed");
+	gtext_json_error_free(&err);
+
+	const size_t doc_bytes_before = doc_c.live_bytes;
+	const size_t doc_allocs_before = doc_c.total_allocations;
+
+	GTEXT_JSON_Schema_Options sopts = gtext_json_schema_options_default();
+	sopts.allocator = &schema_alloc;
+	std::memset(&err, 0, sizeof(err));
+	GTEXT_JSON_Schema * schema =
+	    gtext_json_schema_compile_with_options(doc, &sopts, &err);
+	ASSERT_NE(schema, nullptr) << (err.message ? err.message : "compile failed");
+	gtext_json_error_free(&err);
+
+	// The document's allocator saw nothing of the compile.  This is the
+	// assertion a single allocator cannot make.
+	EXPECT_EQ(doc_c.live_bytes, doc_bytes_before)
+	    << "compiling took memory from the document's allocator";
+	EXPECT_EQ(doc_c.total_allocations, doc_allocs_before)
+	    << "compiling allocated from the document's allocator";
+	EXPECT_GE(schema_c.live_bytes, 4096u)
+	    << "the schema's allocator saw none of the compile";
+
+	// And the clone really is independent: freeing the document first must
+	// leave the schema usable, which is what the clone is for.
+	gtext_json_free(doc);
+	EXPECT_EQ(doc_c.live_blocks, 0u);
+	EXPECT_EQ(doc_c.live_bytes, 0u);
+
+	const char * good = R"({"a":"x","b":[1,2],"c":"two"})";
+	const char * bad = R"({"a":"x","b":["no"]})";
+	GTEXT_JSON_Value * ok_v =
+	    gtext_json_parse(good, std::strlen(good), nullptr, nullptr);
+	GTEXT_JSON_Value * bad_v =
+	    gtext_json_parse(bad, std::strlen(bad), nullptr, nullptr);
+	ASSERT_NE(ok_v, nullptr);
+	ASSERT_NE(bad_v, nullptr);
+	EXPECT_EQ(gtext_json_schema_validate(schema, ok_v, nullptr), GTEXT_JSON_OK);
+	EXPECT_EQ(gtext_json_schema_validate(schema, bad_v, nullptr),
+	    GTEXT_JSON_E_SCHEMA);
+	gtext_json_free(ok_v);
+	gtext_json_free(bad_v);
+
+	gtext_json_schema_free(schema);
+	EXPECT_EQ(schema_c.live_blocks, 0u) << "the schema did not free through this";
+	EXPECT_EQ(schema_c.live_bytes, 0u);
+}
