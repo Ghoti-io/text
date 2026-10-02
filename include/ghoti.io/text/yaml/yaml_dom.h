@@ -1324,6 +1324,20 @@ typedef enum {
 /**
  * @struct GTEXT_YAML_To_JSON_Options
  * @brief Options controlling YAML to JSON conversion behavior.
+ *
+ * **There is no allocator here, and that is a consequence rather than an
+ * omission**, exactly as for GTEXT_TOML_To_JSON_Options. The JSON DOM's
+ * constructors take none - `gtext_json_new_object()` has no parameters - so
+ * every node this builds comes from the JSON module's own arenas, and
+ * gtext_json_free() releases them. The conversion's own frame stack comes from
+ * the *source document's* allocator, which is where the rest of that
+ * document's walks are charged; an option covering only that would invite a
+ * caller to think it covered the output.
+ *
+ * So @ref GTEXT_YAML_Write_Options::allocator covers writing a document out
+ * and this covers nothing, which is not an inconsistency: a write's scratch is
+ * the whole of what a write allocates, and here the scratch is the smaller
+ * half.
  */
 typedef struct {
 	bool allow_resolved_aliases;    /* Resolve alias nodes to targets. */

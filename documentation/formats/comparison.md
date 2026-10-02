@@ -21,9 +21,8 @@ measured here, on one machine, in one sitting.
 | # | Finding | Scope |
 |---|---|---|
 | 1 | JSON parses at roughly a third of Python's stdlib speed | JSON |
-| 2 | The YAML and CSV writers' working memory takes no caller allocator | YAML, CSV |
+| 2 | There is no YAML schema validator | YAML |
 | 3 | Streaming JSON LAST_WINS and COLLECT still deliver every repeated name | JSON |
-| 4 | There is no YAML schema validator | YAML |
 
 The library is LGPL-3.0-only. libyaml, RapidJSON and PyYAML are MIT. LGPL is
 the license a commercial license can sit beside; a permissive license leaves
@@ -186,12 +185,12 @@ What is left:
   FIRST_WINS are enforced. The other two still deliver every member, because
   holding the object until it closes is what would make a stream able to
   replace a value it has already handed over.
-- **The YAML and CSV writers' working memory** still comes from the C library.
-  Their write options carry no allocator, where JSON's, TOML's and INI's do; a
-  buffer sink is exempt by design, a writer's scratch memory is not. Every JSON
-  entry point takes one now, the writer, streaming parser, Pointer, Patch and
-  Schema included. The \ref format_allocator_todo "allocator page" tracks what
-  is left.
+- **Caller allocators are done.** The YAML and CSV writers were the last two:
+  their write options now carry one, as JSON's, TOML's and INI's already did. A
+  buffer sink is exempt by design, a writer's scratch memory is not. Every
+  `GTEXT_*_Options` structure either carries an allocator or documents why it
+  does not, and the \ref format_allocator_todo "allocator page" has the
+  per-file counts and the controls.
 
 ---
 

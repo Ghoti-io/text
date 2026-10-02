@@ -359,12 +359,20 @@ tree they are given, because what they produce lives in that tree; Schema names
 its own in GTEXT_JSON_Schema_Options, because a compiled schema outlives the
 document it was built from.
 
-Across the library the gap left is the **YAML and CSV writers' working memory**:
-GTEXT_YAML_Write_Options and GTEXT_CSV_Write_Options carry no allocator, where
-JSON's, TOML's and INI's do. A buffer sink is deliberately exempt - it is created
-before any allocator is named - but a writer's own scratch memory is not, and
-those two are the ones still on the C library. \ref format_allocator_todo
-"allocator-todo.md" has the per-file counts.
+The **YAML and CSV writers** were the last two, and are done:
+GTEXT_YAML_Write_Options and GTEXT_CSV_Write_Options each carry an allocator now,
+as JSON's, TOML's and INI's already did. A buffer sink is deliberately exempt - it
+is created before any allocator is named - but a writer's own scratch memory is
+not, and that is what was converted: the DOM writer's frame stack, the
+anchors-written set, the event writer's handle, stack and %TAG handles, the CSV
+escape buffer and the CSV writer's handle. \ref format_allocator_todo
+"allocator-todo.md" has the per-file counts and the six controls.
+
+Every GTEXT_*_Options structure in the library now either carries an allocator or
+documents why it does not. The two that do not are GTEXT_YAML_To_JSON_Options and
+GTEXT_TOML_To_JSON_Options: each routes its own frame stack through an allocator
+but builds its output with the `gtext_json_new_*` constructors, which take none,
+so an option there would read as covering a tree it could not reach.
 
 Two allocations stay on the C library by design: `GTEXT_JSON_Error::context_snippet`
 and its CSV equivalent, because gtext_json_error_free() is handed only the error

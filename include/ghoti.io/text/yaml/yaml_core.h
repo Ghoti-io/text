@@ -406,8 +406,10 @@ typedef struct {
    *
    * - GTEXT_YAML_Error and the strings it owns, released by
    *   gtext_yaml_error_free(), which is handed an error and no allocator.
-   * - The writer. gtext_yaml_write() and the emitter take write options, which
-   *   have no allocator, as the JSON and CSV writers do not.
+   * - Nothing else. The writer is covered too, but by its own option:
+   *   GTEXT_YAML_Write_Options::allocator, which a write is given rather than
+   *   inheriting from the document - a document may be written to a sink that
+   *   outlives it, and the two choices are the caller's to make separately.
    *
    * Neither is ever freed through a caller's allocator or vice versa, so there
    * is no path on which the two mix. `make check-allocators` is what keeps that
@@ -459,6 +461,30 @@ typedef struct {
    */
   GTEXT_YAML_Schema schema;
   bool yaml_1_1;
+
+  /**
+   * The allocator the write's own working memory comes from, or NULL for the
+   * default. **Not the sink's**: a buffer sink owns its buffer, because a sink
+   * is created before any options are seen and outlives the write.
+   *
+   * What this covers is the scratch a write needs and then releases - the
+   * frame stack that `gtext_yaml_write_document()` carries instead of
+   * recursing - plus, for the event API, the ::GTEXT_YAML_Writer handle, its
+   * node stack and the %TAG handles it records for the document being
+   * written, which gtext_yaml_writer_new() allocates and
+   * gtext_yaml_writer_free() releases through this same allocator. So an arena
+   * caller writing a large document no longer reaches the C heap for any of
+   * it.
+   *
+   * The same line GTEXT_JSON_Write_Options::allocator and
+   * GTEXT_INI_Write_Options::allocator draw, and for the same reason: a
+   * partial allocator is worse than none, so the sink's buffer is exempt
+   * deliberately and documented rather than left to be discovered.
+   *
+   * Appended rather than placed with the formatting fields so that the offset
+   * of every field that was already here stays where it was.
+   */
+  const GTEXT_Allocator * allocator;
 } GTEXT_YAML_Write_Options;
 
 /**

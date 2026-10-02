@@ -144,6 +144,8 @@ GTEXT_API GTEXT_YAML_Write_Options gtext_yaml_write_options_default(void)
      change. */
   opts.schema = GTEXT_YAML_SCHEMA_CORE;
   opts.yaml_1_1 = false;
+  /* The C library, which is what a write has always used. */
+  opts.allocator = NULL;
   return opts;
 }
 

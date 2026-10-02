@@ -499,34 +499,106 @@ no allocator and ask of each caller whether one was in hand - which is how all
 three were found, and what the byte floors in `tests/test-allocator.cpp` check
 now that they are fixed.
 
-## Still open: the YAML and CSV writers' working memory
+## Done: the YAML and CSV writers' working memory
 
-Found by surveying what was left after Schema, and it contradicts this page's own
-"YAML: done" heading - which is why it is recorded here rather than left as a
-heading someone has to disbelieve.
+Found by surveying what was left after Schema, and it contradicted this page's
+own "YAML: done" heading - which is why it was recorded here rather than left as
+a heading someone has to disbelieve. It is now converted.
 
-`GTEXT_JSON_Write_Options`, `GTEXT_TOML_Write_Options` and
-`GTEXT_INI_Write_Options` all carry an `allocator`.
-**`GTEXT_YAML_Write_Options` and `GTEXT_CSV_Write_Options` do not**, and neither
-`src/yaml/yaml_writer.c` nor `src/csv/csv_writer.c` is on
-`ALLOCATOR_CLEAN_SOURCES`. They hold 18 and 12 raw calls, which split exactly
-along the line the correction above draws:
+`GTEXT_YAML_Write_Options` and `GTEXT_CSV_Write_Options` each carry an
+`allocator`, appended to the structure so that every field that was already
+there keeps its offset. Both files are on `ALLOCATOR_CLEAN_SOURCES`. The 30 raw
+calls split exactly along the line the correction above draws:
 
-| file | sink, exempt | the writer's own working memory, not exempt |
+| file | sink, exempt | the writer's own working memory, converted |
 | --- | --- | --- |
-| `yaml_writer.c` | 6 - the buffer and fixed-buffer sinks and their data | ~12 - the DOM writer's frame stack, `writer->tag_handles`, the `GTEXT_YAML_Writer` structure and its entry stack |
-| `csv_writer.c` | 6 - the same two sinks | ~6 - `escape_buffer` at two sites, and the `GTEXT_CSV_Writer` structure |
+| `yaml_writer.c` | 6 - the buffer and fixed-buffer sinks and their data | 12 - the DOM writer's frame stack, `writer->tag_handles`, the `GTEXT_YAML_Writer` structure and its entry stack |
+| `csv_writer.c` | 6 - the same two sinks | 6 - `escape_buffer` at two sites, and the `GTEXT_CSV_Writer` structure |
 
 The sink half stays exempt for the reason given above: `gtext_yaml_sink_buffer()`
 and `gtext_csv_sink_buffer()` take no options, so a sink exists before any
-allocator is named. The other half is allocated and released inside one call from
-options the caller supplied, which is the INI line, and it is the work left.
+allocator is named. Each exempt call carries the marker *on the allocation line*,
+because the check greps line-wise and a marker on the line above is invisible to
+it.
 
-Two things to do with it rather than only the conversion. The heading above
-should stop saying "done" unqualified - a page that records a correction and then
-leaves the superseded heading in place is how the exemption survived this long.
-And `check-allocators` will not notice either file until it is listed, so listing
-them is the first step and not the last.
+### What the clean-list grep could not have seen, a fourth time
+
+**The anchors-written set.** `yaml_writer.c` initialised it from
+`doc->ctx->alloc`, with a comment saying "the document's allocator, so a write is
+accounted to the same place the document is". That was the only defensible answer
+while write options had no allocator. The moment they do it becomes a *partial*
+allocator - a caller who names one for the write still has part of the write come
+from wherever the document was parsed - which is the failure
+`GTEXT_JSON_Write_Options::allocator` says in so many words that it avoids. It is
+write scratch: initialised per document, freed before the call returns, holding
+no node. It now comes from `opts->allocator`.
+
+The grep could not have reported this. `gtext_allocator_init(..., doc->ctx->alloc)`
+is a perfectly good allocator call; what is wrong with it is *which* allocator,
+and that is not a property of the line. **One allocator cannot answer "whose
+allocator did this come from"** - with the document and the write on the same
+one, every count is satisfied either way. The discriminating instrument is a
+second allocator, which is what
+`Allocator.YamlWriteAnchorSetComesFromTheWriteNotTheDocument` uses: the
+document's counters must not move at all across the write.
+
+### The ordering trap, twice
+
+`gtext_yaml_writer_new()` and `gtext_csv_writer_new()` allocate the handle
+*before* `writer->opts` exists, so both read the allocator from the `opts`
+parameter into a local first. Reading it back from the copy would be an allocator
+assigned after the allocation it is meant to serve. The free side reads
+`writer->opts.allocator`, which is sound only because `opts` is set in the
+constructor and never cleared - and that is the same reasoning
+`gtext_json_writer_new()` already carried, so this is a third instance of one
+pattern rather than a new question.
+
+### The controls, and one floor that separated nothing
+
+Six mutations, each putting one mechanism back on the C library, each compiled
+before being run:
+
+| control | test that must fail | fired |
+| --- | --- | --- |
+| frame stack to `realloc` | `YamlWriteFrameStackGrowthStaysWithTheAllocator` | yes |
+| anchor set to the document's allocator | `YamlWriteAnchorSetComesFromTheWriteNotTheDocument` | yes |
+| `%TAG` handle copy to `malloc` | `YamlEventWriterBalancesThroughTheAllocator` | yes |
+| writer handle to `calloc` | `YamlEventWriterBalancesThroughTheAllocator` | yes |
+| CSV escape buffer to `malloc` | `CsvWriteTableEscapeBufferComesFromTheAllocator` | yes |
+| CSV handle to `malloc` | `CsvWriterHandleBalancesThroughTheAllocator` | yes |
+
+And `make check-allocators` was shown to fire on both files by name, which it
+could not do before they were listed.
+
+**One floor was vacuous and the measurement is what caught it.** The event-writer
+test asserted `after_directive >= 2`. Measured, the fixed state is 4 - the handle,
+its stack, the tag-handle array and the copy of `"!e!"` - and the broken state is
+exactly 2, because `gtext_yaml_writer_new()` alone accounts for two. A floor of 2
+passed in both worlds. It is 4 now, and every floor on this page records both
+measured states beside it rather than only the one that passes.
+
+## Finished: every options structure now answers the question
+
+With these two, the sweep over every `GTEXT_*_Options` structure in the library
+comes back with no silent gaps. Each either carries an `allocator` or documents
+why it does not:
+
+| structure | allocator | |
+| --- | --- | --- |
+| `GTEXT_JSON_Parse_Options`, `GTEXT_JSON_Write_Options`, `GTEXT_JSON_Schema_Options` | yes | |
+| `GTEXT_YAML_Parse_Options`, `GTEXT_YAML_Write_Options` | yes | the write option is new |
+| `GTEXT_CSV_Parse_Options`, `GTEXT_CSV_Write_Options` | yes | the write option is new |
+| `GTEXT_TOML_Parse_Options`, `GTEXT_TOML_Write_Options`, `GTEXT_TOML_From_JSON_Options` | yes | |
+| `GTEXT_INI_Parse_Options`, `GTEXT_INI_Write_Options` | yes | |
+| `GTEXT_TOML_To_JSON_Options` | no, argued | the JSON constructors take none, so the output is the JSON module's arenas; an option covering only the frame stack would read as covering the output |
+| `GTEXT_YAML_To_JSON_Options` | no, argued | the same case - but the header said *nothing* until now, so a reader had no way to tell. The paragraph TOML's header carried is on it now |
+
+Those last two are the one place a reader could still be misled, and the
+difference between them was documentation rather than behaviour: both route the
+walk's frame stack through an allocator and build their output with
+`gtext_json_new_*`, which takes none. Giving them a real allocator means giving
+the whole JSON constructor family an on-allocator form - a change to JSON's
+public DOM surface, not a conversion - and it is deliberately not done here.
 
 ## The error-snippet exception
 

@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/yaml/yaml_writer.h>
 #include "yaml_internal.h"
@@ -60,7 +61,14 @@ static int buffer_write_fn(void * user, const char * bytes, size_t len) {
       new_size *= 2;
     }
 
-    char * new_data = (char *)realloc(buf->data, new_size);
+    /* allocator-exempt: a buffer sink owns its buffer.  A sink is created
+       before any write options are seen - gtext_yaml_sink_buffer() takes none -
+       and it outlives the write, so there is no caller allocator to read here
+       and routing it through one would mean freeing through whichever options
+       happened to be passed last.  Same line GTEXT_JSON_Write_Options and
+       GTEXT_INI_Write_Options draw. */
+    char * new_data =
+        (char *)realloc(buf->data, new_size); // allocator-exempt
     if (!new_data) {
       return 1;
     }
@@ -125,7 +133,8 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_sink_buffer(GTEXT_YAML_Sink * sink) {
   }
 
   GTEXT_YAML_Buffer_Sink * buf =
-      (GTEXT_YAML_Buffer_Sink *)malloc(sizeof(GTEXT_YAML_Buffer_Sink));
+      (GTEXT_YAML_Buffer_Sink *)malloc( // allocator-exempt: it owns its buffer
+          sizeof(GTEXT_YAML_Buffer_Sink));
   if (!buf) {
     return GTEXT_YAML_E_OOM;
   }
@@ -174,8 +183,8 @@ GTEXT_API void gtext_yaml_sink_buffer_free(GTEXT_YAML_Sink * sink) {
 
   GTEXT_YAML_Buffer_Sink * buf = (GTEXT_YAML_Buffer_Sink *)sink->user;
   if (buf) {
-    free(buf->data);
-    free(buf);
+    free(buf->data); // allocator-exempt
+    free(buf);       // allocator-exempt
     sink->user = NULL;
     sink->write = NULL;
   }
@@ -187,8 +196,9 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_sink_fixed_buffer(
     return GTEXT_YAML_E_INVALID;
   }
 
-  GTEXT_YAML_Fixed_Buffer_Sink * buf = (GTEXT_YAML_Fixed_Buffer_Sink *)malloc(
-      sizeof(GTEXT_YAML_Fixed_Buffer_Sink));
+  GTEXT_YAML_Fixed_Buffer_Sink * buf =
+      (GTEXT_YAML_Fixed_Buffer_Sink *)malloc( // allocator-exempt
+          sizeof(GTEXT_YAML_Fixed_Buffer_Sink));
   if (!buf) {
     return GTEXT_YAML_E_OOM;
   }
@@ -241,7 +251,7 @@ GTEXT_API void gtext_yaml_sink_fixed_buffer_free(GTEXT_YAML_Sink * sink) {
 
   GTEXT_YAML_Fixed_Buffer_Sink * buf = (GTEXT_YAML_Fixed_Buffer_Sink *)sink->user;
   if (buf) {
-    free(buf);
+    free(buf); // allocator-exempt
     sink->user = NULL;
     sink->write = NULL;
   }
@@ -2349,12 +2359,13 @@ typedef struct {
 } write_stack;
 
 static bool write_stack_push(
-    write_stack * stack, const GTEXT_YAML_Node * node, size_t indent,
+    write_stack * stack, const GTEXT_Allocator * alloc,
+    const GTEXT_YAML_Node * node, size_t indent,
     bool flow, const char * tag_override, bool leading_newline) {
   if (stack->count == stack->capacity) {
     size_t new_capacity = stack->capacity == 0 ? 32 : stack->capacity * 2;
-    write_frame * items = (write_frame *)realloc(
-        stack->items, new_capacity * sizeof(write_frame));
+    write_frame * items = (write_frame *)gtext_allocator_realloc(
+        alloc, stack->items, new_capacity * sizeof(write_frame));
     if (!items) return false;
     stack->items = items;
     stack->capacity = new_capacity;
@@ -2389,8 +2400,8 @@ static GTEXT_YAML_Status write_push_child(
   if (state->max_depth > 0 && stack->count >= state->max_depth) {
     return GTEXT_YAML_E_DEPTH;
   }
-  if (!write_stack_push(
-          stack, child, indent, flow, tag_override, leading_newline)) {
+  if (!write_stack_push(stack, state->opts->allocator, child, indent, flow,
+          tag_override, leading_newline)) {
     return GTEXT_YAML_E_OOM;
   }
   return GTEXT_YAML_OK;
@@ -2858,7 +2869,7 @@ static GTEXT_YAML_Status write_node(
       state->flow_indent = f->was_flow_indent;
     }
   }
-  free(stack.items);
+  gtext_allocator_free(state->opts->allocator, stack.items);
   return status;
 }
 
@@ -2889,10 +2900,13 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_document(
     opts = &defaults;
   }
 
-  /* The document's allocator, so a write is accounted to the same place the
-     document is. */
-  gtext_yaml_node_set_init(
-      &state.anchors_written, doc->ctx ? doc->ctx->alloc : NULL);
+  /* The write's allocator, not the document's.  This set is scratch that lives
+     exactly as long as the write - it is keyed on nodes, but it holds no node -
+     so charging it to the document would leave a caller who named a write
+     allocator with part of the write still coming from somewhere else, which
+     is the partial allocator GTEXT_YAML_Write_Options::allocator says it is
+     not.  It was the document's until the write options could be asked. */
+  gtext_yaml_node_set_init(&state.anchors_written, opts->allocator);
   state.sink = sink;
   state.opts = opts;
   /* The document's own limit, not the writer's: a document carries the parse
@@ -3015,8 +3029,9 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_documents(
     /* And 3.2.2.2's anchor namespace is per document too, so the record of
        which anchors have been written starts empty for each one. */
     gtext_yaml_node_set_free(&state.anchors_written);
-    gtext_yaml_node_set_init(
-        &state.anchors_written, doc->ctx ? doc->ctx->alloc : NULL);
+    /* Per document: 3.2.2.2's anchor namespace is per document.  On the write's
+       allocator, for the reason gtext_yaml_write_document() gives. */
+    gtext_yaml_node_set_init(&state.anchors_written, opts->allocator);
 
     state.block_parent_indent = -1;
     status = write_str(&state, "---");
@@ -3122,7 +3137,7 @@ struct GTEXT_YAML_Writer {
 /* Forget the handles the document just written declared. */
 static void writer_tag_handles_clear(GTEXT_YAML_Writer *writer) {
   for (size_t i = 0; i < writer->tag_handle_count; i++) {
-    free(writer->tag_handles[i]);
+    gtext_allocator_free(writer->opts.allocator, writer->tag_handles[i]);
   }
   writer->tag_handle_count = 0;
 }
@@ -3134,13 +3149,14 @@ static int writer_tag_handle_add(GTEXT_YAML_Writer *writer, const char *handle) 
   if (writer->tag_handle_count == writer->tag_handle_capacity) {
     size_t cap = writer->tag_handle_capacity ? writer->tag_handle_capacity * 2 : 4;
     if (cap > 4096) return 1;
-    char **grown = (char **)realloc(writer->tag_handles, cap * sizeof(*grown));
+    char **grown = (char **)gtext_allocator_realloc(
+        writer->opts.allocator, writer->tag_handles, cap * sizeof(*grown));
     if (!grown) return 1;
     writer->tag_handles = grown;
     writer->tag_handle_capacity = cap;
   }
   size_t len = strlen(handle);
-  char *copy = (char *)malloc(len + 1);
+  char *copy = (char *)gtext_allocator_malloc(writer->opts.allocator, len + 1);
   if (!copy) return 1;
   memcpy(copy, handle, len + 1);
   writer->tag_handles[writer->tag_handle_count++] = copy;
@@ -3166,8 +3182,9 @@ static int writer_stack_grow(GTEXT_YAML_Writer *writer) {
   if (entry_size > 0 && new_capacity > SIZE_MAX / entry_size) {
     return 1;
   }
-  yaml_writer_stack_entry *new_stack = (yaml_writer_stack_entry *)realloc(
-      writer->stack, new_capacity * entry_size);
+  yaml_writer_stack_entry *new_stack = (yaml_writer_stack_entry *)
+      gtext_allocator_realloc(
+          writer->opts.allocator, writer->stack, new_capacity * entry_size);
   if (!new_stack) {
     return 1;
   }
@@ -3899,7 +3916,15 @@ GTEXT_API GTEXT_YAML_Writer * gtext_yaml_writer_new(
     return NULL;
   }
 
-  GTEXT_YAML_Writer *writer = (GTEXT_YAML_Writer *)calloc(1, sizeof(*writer));
+  /* Read from @p opts and not from writer->opts, because the handle is
+     allocated before writer->opts exists.  Reading it back from the copy would
+     be an allocator assigned after the allocation it is meant to serve.  The
+     copy is what gtext_yaml_writer_free() reads, which is sound because
+     writer->opts is set below and never cleared. */
+  const GTEXT_Allocator *alloc = opts ? opts->allocator : NULL;
+
+  GTEXT_YAML_Writer *writer =
+      (GTEXT_YAML_Writer *)gtext_allocator_calloc(alloc, 1, sizeof(*writer));
   if (!writer) {
     return NULL;
   }
@@ -3913,10 +3938,10 @@ GTEXT_API GTEXT_YAML_Writer * gtext_yaml_writer_new(
   }
   writer_encoding_init(&writer->encoding, &writer->opts);
   writer->stack_capacity = YAML_WRITER_DEFAULT_STACK_CAPACITY;
-  writer->stack = (yaml_writer_stack_entry *)calloc(
-      writer->stack_capacity, sizeof(yaml_writer_stack_entry));
+  writer->stack = (yaml_writer_stack_entry *)gtext_allocator_calloc(
+      alloc, writer->stack_capacity, sizeof(yaml_writer_stack_entry));
   if (!writer->stack) {
-    free(writer);
+    gtext_allocator_free(alloc, writer);
     return NULL;
   }
 
@@ -3932,9 +3957,9 @@ GTEXT_API void gtext_yaml_writer_free(GTEXT_YAML_Writer *writer) {
     return;
   }
   writer_tag_handles_clear(writer);
-  free(writer->tag_handles);
-  free(writer->stack);
-  free(writer);
+  gtext_allocator_free(writer->opts.allocator, writer->tag_handles);
+  gtext_allocator_free(writer->opts.allocator, writer->stack);
+  gtext_allocator_free(writer->opts.allocator, writer);
 }
 
 GTEXT_API GTEXT_YAML_Status gtext_yaml_writer_event(

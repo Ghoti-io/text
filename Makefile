@@ -936,6 +936,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/json/json_parser.c \
 	src/csv/csv_pull_reader.c \
 	src/csv/csv_sniff.c \
+	src/csv/csv_writer.c \
 	src/csv/csv_stream.c \
 	src/csv/csv_stream_buffer.c \
 	src/csv/csv_table.c \
@@ -949,6 +950,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/yaml/stream.c \
 	src/yaml/utf8.c \
 	src/yaml/yaml_arena.c \
+	src/yaml/yaml_writer.c \
 	src/yaml/yaml_context.c \
 	src/yaml/yaml_dom.c \
 	src/yaml/yaml_parser.c \

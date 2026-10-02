@@ -227,9 +227,13 @@ typedef struct {
    * - GTEXT_CSV_Error and the context snippet it owns, released by
    *   gtext_csv_error_free(), which is handed an error and no allocator. The
    *   same is true of GTEXT_JSON_Error.
-   * - The writer: sinks, the writer structure, and the transient escape
-   *   buffer. gtext_csv_write_table() is a separate entry point taking write
-   *   options, which have no allocator, exactly as the JSON writer does not.
+   * - Sinks. A sink is created before any options are seen and outlives the
+   *   write, so it owns its buffer; the rest of the writer - its structure and
+   *   the transient escape buffer - is covered, but by its own option,
+   *   GTEXT_CSV_Write_Options::allocator. gtext_csv_write_table() is a separate
+   *   entry point taking write options, and a table may be written to a sink
+   *   that outlives it, so the two choices are the caller's to make
+   *   separately. Exactly as in JSON.
    *
    * Neither of those is ever freed through a caller's allocator or vice
    * versa, so there is no path on which the two mix. `make check-allocators`
@@ -339,6 +343,27 @@ typedef struct {
   /// Appended rather than grouped with the quoting booleans above so that the
   /// offset of every field that was already here stays where it was.
   GTEXT_CSV_Quoting quoting;
+
+  /**
+   * The allocator the write's own working memory comes from, or NULL for the
+   * default. **Not the sink's**: a buffer sink owns its buffer, because a sink
+   * is created before any options are seen and outlives the write.
+   *
+   * What this covers is the scratch a write needs and then releases - the
+   * escape buffer a field too large for the stack one needs - plus the
+   * ::GTEXT_CSV_Writer handle, which gtext_csv_writer_new() allocates and
+   * gtext_csv_writer_free() releases through this same allocator. So an arena
+   * caller writing a large table no longer reaches the C heap for any of it.
+   *
+   * The same line GTEXT_JSON_Write_Options::allocator and
+   * GTEXT_INI_Write_Options::allocator draw, and for the same reason: a
+   * partial allocator is worse than none, so the sink's buffer is exempt
+   * deliberately and documented rather than left to be discovered.
+   *
+   * Appended, like ::quoting above, so that the offset of every field that was
+   * already here stays where it was.
+   */
+  const GTEXT_Allocator * allocator;
 } GTEXT_CSV_Write_Options;
 
 /**

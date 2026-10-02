@@ -126,5 +126,7 @@ GTEXT_API GTEXT_CSV_Write_Options gtext_csv_write_options_default(void) {
   // library writes.
   opts.trailing_newline = true;
   opts.trim_trailing_empty_fields = false;
+  /* The C library, which is what a write has always used. */
+  opts.allocator = NULL;
   return opts;
 }

@@ -153,12 +153,15 @@ particular to this library.
 
 ## Work in progress
 
-@subpage format_allocator_todo "Caller allocators" records what remains. Every
-parse takes one, and so does every JSON entry point - the writer, the streaming
-parser and its pull reader, JSON Pointer, JSON Patch and JSON Schema. What is
-left is the YAML and CSV writers' own working memory, where TOML's and INI's
-write options already carry an allocator and those two do not. A buffer sink
-stays exempt on purpose, because it is created before any allocator is named.
+@subpage format_allocator_todo "Caller allocators" records how that went. Every
+parse takes one, so does every JSON entry point - the writer, the streaming
+parser and its pull reader, JSON Pointer, JSON Patch and JSON Schema - and so do
+the YAML and CSV writers, which were the last two. Every `GTEXT_*_Options`
+structure in the library now either carries an allocator or documents why it
+does not; the two that do not are the YAML and TOML *to-JSON* converters, whose
+output is built by `gtext_json_new_*` and so comes from the JSON module's own
+arenas. A buffer sink stays exempt on purpose, because it is created before any
+allocator is named.
 
 A parse option that covers an arena but not the structure around it is heap
 corruption for anyone who uses it, which is why each conversion was all or

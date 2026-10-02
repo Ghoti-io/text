@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
 #include "csv_internal.h"
 
@@ -69,7 +70,14 @@ static GTEXT_CSV_Status buffer_write_fn(
       new_size *= 2;
     }
 
-    char * new_data = (char *)realloc(buf->data, new_size);
+    /* allocator-exempt: a buffer sink owns its buffer.  A sink is created
+       before any write options are seen - gtext_csv_sink_buffer() takes none -
+       and it outlives the write, so there is no caller allocator to read here
+       and routing it through one would mean freeing through whichever options
+       happened to be passed last.  Same line GTEXT_JSON_Write_Options and
+       GTEXT_INI_Write_Options draw. */
+    char * new_data =
+        (char *)realloc(buf->data, new_size); // allocator-exempt
     if (!new_data) {
       return GTEXT_CSV_E_OOM; // Out of memory
     }
@@ -153,7 +161,8 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_sink_buffer(GTEXT_CSV_Sink * sink) {
   }
 
   GTEXT_CSV_Buffer_Sink * buf =
-      (GTEXT_CSV_Buffer_Sink *)malloc(sizeof(GTEXT_CSV_Buffer_Sink));
+      (GTEXT_CSV_Buffer_Sink *)malloc( // allocator-exempt: it owns its buffer
+          sizeof(GTEXT_CSV_Buffer_Sink));
   if (!buf) {
     return GTEXT_CSV_E_OOM;
   }
@@ -201,8 +210,8 @@ GTEXT_API void gtext_csv_sink_buffer_free(GTEXT_CSV_Sink * sink) {
 
   GTEXT_CSV_Buffer_Sink * buf = (GTEXT_CSV_Buffer_Sink *)sink->user;
   if (buf) {
-    free(buf->data);
-    free(buf);
+    free(buf->data); // allocator-exempt
+    free(buf);       // allocator-exempt
     sink->user = NULL;
     sink->write = NULL;
   }
@@ -214,8 +223,9 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_sink_fixed_buffer(
     return GTEXT_CSV_E_INVALID;
   }
 
-  GTEXT_CSV_Fixed_Buffer_Sink * buf = (GTEXT_CSV_Fixed_Buffer_Sink *)malloc(
-      sizeof(GTEXT_CSV_Fixed_Buffer_Sink));
+  GTEXT_CSV_Fixed_Buffer_Sink * buf =
+      (GTEXT_CSV_Fixed_Buffer_Sink *)malloc( // allocator-exempt
+          sizeof(GTEXT_CSV_Fixed_Buffer_Sink));
   if (!buf) {
     return GTEXT_CSV_E_OOM;
   }
@@ -268,7 +278,7 @@ GTEXT_API void gtext_csv_sink_fixed_buffer_free(GTEXT_CSV_Sink * sink) {
 
   GTEXT_CSV_Fixed_Buffer_Sink * buf = (GTEXT_CSV_Fixed_Buffer_Sink *)sink->user;
   if (buf) {
-    free(buf);
+    free(buf); // allocator-exempt
     sink->user = NULL;
     sink->write = NULL;
   }
@@ -667,7 +677,8 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_write_field(const GTEXT_CSV_Sink * sink,
           // Avoid allocating more than half of addressable space
           return GTEXT_CSV_E_LIMIT;
         }
-        escape_buffer = (char *)malloc(escaped_len);
+        escape_buffer =
+            (char *)gtext_allocator_malloc(opts->allocator, escaped_len);
         if (!escape_buffer) {
           return GTEXT_CSV_E_OOM;
         }
@@ -682,7 +693,7 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_write_field(const GTEXT_CSV_Sink * sink,
       }
 
       if (!use_stack) {
-        free(escape_buffer);
+        gtext_allocator_free(opts->allocator, escape_buffer);
       }
 
       if (status != GTEXT_CSV_OK) {
@@ -731,7 +742,8 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_write_field(const GTEXT_CSV_Sink * sink,
             // Avoid allocating more than half of addressable space
             return GTEXT_CSV_E_LIMIT;
           }
-          escape_buffer = (char *)malloc(escaped_len);
+          escape_buffer =
+              (char *)gtext_allocator_malloc(opts->allocator, escaped_len);
           if (!escape_buffer) {
             return GTEXT_CSV_E_OOM;
           }
@@ -747,7 +759,7 @@ GTEXT_INTERNAL_API GTEXT_CSV_Status csv_write_field(const GTEXT_CSV_Sink * sink,
         }
 
         if (!use_stack) {
-          free(escape_buffer);
+          gtext_allocator_free(opts->allocator, escape_buffer);
         }
 
         return status;
@@ -774,8 +786,13 @@ GTEXT_API GTEXT_CSV_Writer * gtext_csv_writer_new(
     return NULL;
   }
 
-  GTEXT_CSV_Writer * writer =
-      (GTEXT_CSV_Writer *)malloc(sizeof(GTEXT_CSV_Writer));
+  /* Read from @p opts and not from writer->opts, because the handle is
+     allocated before writer->opts exists.  Reading it back from the copy would
+     be an allocator assigned after the allocation it is meant to serve.  The
+     copy is what gtext_csv_writer_free() reads, which is sound because
+     writer->opts is set here and never cleared. */
+  GTEXT_CSV_Writer * writer = (GTEXT_CSV_Writer *)gtext_allocator_malloc(
+      opts->allocator, sizeof(GTEXT_CSV_Writer));
   if (!writer) {
     return NULL;
   }
@@ -912,7 +929,7 @@ GTEXT_API GTEXT_CSV_Status gtext_csv_writer_finish(GTEXT_CSV_Writer * writer) {
 GTEXT_API void gtext_csv_writer_free(GTEXT_CSV_Writer * writer) {
   if (writer) {
     // Sink is not owned by writer, so we don't free it
-    free(writer);
+    gtext_allocator_free(writer->opts.allocator, writer);
   }
 }
 

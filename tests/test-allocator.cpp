@@ -1875,3 +1875,374 @@ TEST(Allocator, JsonSchemaClonesTheDocumentOnItsOwnAllocator) {
 	EXPECT_EQ(schema_c.live_blocks, 0u) << "the schema did not free through this";
 	EXPECT_EQ(schema_c.live_bytes, 0u);
 }
+
+// ---------------------------------------------------------------------------
+// The YAML and CSV writers' working memory.
+//
+// These were the last two entry points taking options with no allocator in
+// them, so a caller who had named one for the parse still reached the C heap
+// to write the document back out.  The sink is the deliberate exception and
+// stays one: it is created before any write options exist, so there is no
+// allocator to read at the point its buffer grows.  Each test below therefore
+// frees the sink *after* the balance is asserted, and the sink's own blocks
+// never appear in these counters at all.
+// ---------------------------------------------------------------------------
+
+// A YAML document deep enough to grow the write's frame stack past its first
+// 32 frames, and carrying an anchor so that the anchors-written set allocates
+// too.  Returned as text because what is under test is the write, not the
+// parse.
+static std::string deep_yaml_document(int levels) {
+	std::string s = "&top\n";
+	for (int i = 0; i < levels; i++) {
+		s += std::string(static_cast<size_t>(i) * 2, ' ') + "- \n";
+	}
+	s += std::string(static_cast<size_t>(levels) * 2, ' ') + "- leaf\n";
+	return s;
+}
+
+TEST(Allocator, YamlWriteDocumentBalancesThroughTheAllocator) {
+	// Parsed with the default allocator on purpose: a stray block in the
+	// counters below can then only have come from the write.
+	const char * src =
+		"top: &a\n"
+		"  nested: {x: 1, y: [2, 3]}\n"
+		"ref: *a\n"
+		"list:\n"
+		"  - one\n"
+		"  - two\n";
+	GTEXT_YAML_Document * doc =
+		gtext_yaml_parse(src, std::strlen(src), nullptr, nullptr);
+	ASSERT_NE(doc, nullptr);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	GTEXT_YAML_Sink sink;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+	GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+	opts.allocator = &alloc;
+	opts.flow_style = GTEXT_YAML_FLOW_STYLE_BLOCK;
+
+	ASSERT_EQ(gtext_yaml_write_document(doc, &sink, &opts), GTEXT_YAML_OK);
+	EXPECT_GT(c.total_allocations, 0u) << "the allocator was bypassed";
+	// There is no handle to free afterwards, so the balance must already hold.
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	// The output is not empty, so the counters above are measuring a write
+	// that happened rather than one that returned early.
+	EXPECT_GT(gtext_yaml_sink_buffer_size(&sink), 0u);
+
+	gtext_yaml_sink_buffer_free(&sink);
+	gtext_yaml_free(doc);
+}
+
+TEST(Allocator, YamlWriteFrameStackGrowthStaysWithTheAllocator) {
+	// Past the first 32 frames, so the realloc path runs.  A shallow document
+	// never leaves the initial block, which would leave growth untested.
+	const int levels = 200;
+	std::string src = deep_yaml_document(levels);
+
+	GTEXT_YAML_Parse_Options popts = gtext_yaml_parse_options_default();
+	popts.max_depth = static_cast<size_t>(levels) + 16;
+	GTEXT_YAML_Document * doc =
+		gtext_yaml_parse(src.data(), src.size(), &popts, nullptr);
+	ASSERT_NE(doc, nullptr);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_YAML_Sink sink;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+	GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+	opts.allocator = &alloc;
+	opts.flow_style = GTEXT_YAML_FLOW_STYLE_BLOCK;
+
+	ASSERT_EQ(gtext_yaml_write_document(doc, &sink, &opts), GTEXT_YAML_OK);
+
+	// Measured: 5 allocations here - the first frame block, three doublings to
+	// carry 200 levels past a capacity of 32, and one for the anchors-written
+	// set that "&top" fills.  With the frame stack back on the C library only
+	// the anchor set remains, which is 1.  The floor has to sit above that or
+	// it separates nothing, so 4 is chosen between the two measured states
+	// rather than below both.
+	EXPECT_GE(c.total_allocations, 4u)
+		<< "the frame stack never grew through the allocator";
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_yaml_sink_buffer_free(&sink);
+	gtext_yaml_free(doc);
+}
+
+TEST(Allocator, YamlWriteAnchorSetComesFromTheWriteNotTheDocument) {
+	// Two allocators, because one cannot answer "whose allocator did this come
+	// from".  The anchors-written set used to be charged to the *document's*
+	// allocator, which was the only defensible answer while write options had
+	// none - and becomes a partial allocator the moment they do: a caller who
+	// names one for the write would still have part of the write come from
+	// wherever the document was parsed.
+	Counters doc_c;
+	GTEXT_Allocator doc_alloc = make_allocator(&doc_c);
+	Counters wr_c;
+	GTEXT_Allocator wr_alloc = make_allocator(&wr_c);
+
+	// Three anchors and three aliases, so the set is written to and read from
+	// rather than merely initialised.
+	const char * src =
+		"a: &one 1\n"
+		"b: &two {x: 2}\n"
+		"c: &three [3, 4]\n"
+		"ra: *one\n"
+		"rb: *two\n"
+		"rc: *three\n";
+	GTEXT_YAML_Parse_Options popts = gtext_yaml_parse_options_default();
+	popts.allocator = &doc_alloc;
+	GTEXT_YAML_Document * doc =
+		gtext_yaml_parse(src, std::strlen(src), &popts, nullptr);
+	ASSERT_NE(doc, nullptr);
+	ASSERT_GT(doc_c.total_allocations, 0u) << "the parse bypassed its allocator";
+
+	const size_t doc_allocs_before = doc_c.total_allocations;
+	const size_t doc_bytes_before = doc_c.live_bytes;
+
+	GTEXT_YAML_Sink sink;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+	GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+	opts.allocator = &wr_alloc;
+	opts.flow_style = GTEXT_YAML_FLOW_STYLE_BLOCK;
+	ASSERT_EQ(gtext_yaml_write_document(doc, &sink, &opts), GTEXT_YAML_OK);
+
+	// The discriminating assertion: the document's allocator saw nothing at
+	// all during the write.  With both halves on one allocator every count
+	// below is satisfied either way, which is why there are two.
+	EXPECT_EQ(doc_c.total_allocations, doc_allocs_before)
+		<< "the write allocated from the document's allocator";
+	EXPECT_EQ(doc_c.live_bytes, doc_bytes_before)
+		<< "the write took memory from the document's allocator";
+	EXPECT_GT(wr_c.total_allocations, 0u)
+		<< "the write's allocator saw none of the write";
+	EXPECT_EQ(wr_c.live_blocks, 0u);
+	EXPECT_EQ(wr_c.live_bytes, 0u);
+
+	// Written with the aliases intact, which is what made the anchor set run.
+	std::string out(gtext_yaml_sink_buffer_data(&sink),
+		gtext_yaml_sink_buffer_size(&sink));
+	EXPECT_NE(out.find("*one"), std::string::npos) << out;
+
+	gtext_yaml_sink_buffer_free(&sink);
+	gtext_yaml_free(doc);
+	EXPECT_EQ(doc_c.live_blocks, 0u);
+	EXPECT_EQ(doc_c.live_bytes, 0u);
+}
+
+TEST(Allocator, YamlEventWriterBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	GTEXT_YAML_Sink sink;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+	GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+	opts.allocator = &alloc;
+	opts.trailing_newline = true;
+
+	GTEXT_YAML_Writer * w = gtext_yaml_writer_new(sink, &opts);
+	ASSERT_NE(w, nullptr);
+	// The handle and its stack both come from here, so blocks are live before
+	// anything is written.  The defect this guards against is the handle coming
+	// from one allocator and going back to another, which the guard word in
+	// count_free() reports rather than letting it corrupt the heap quietly.
+	EXPECT_GT(c.live_blocks, 0u) << "the handle did not come from the allocator";
+
+	GTEXT_YAML_Event ev;
+	std::memset(&ev, 0, sizeof(ev));
+
+	// A %TAG directive, so the handle list allocates: one realloc for the array
+	// and one malloc for the copy of "!e!".
+	ev.type = GTEXT_YAML_EVENT_DIRECTIVE;
+	ev.data.directive.name = "TAG";
+	ev.data.directive.value = "!e!";
+	ev.data.directive.value2 = "tag:example.com,2000:app/";
+	ASSERT_EQ(gtext_yaml_writer_event(w, &ev), GTEXT_YAML_OK);
+	const size_t after_directive = c.total_allocations;
+
+	std::memset(&ev, 0, sizeof(ev));
+	ev.type = GTEXT_YAML_EVENT_DOCUMENT_START;
+	ASSERT_EQ(gtext_yaml_writer_event(w, &ev), GTEXT_YAML_OK);
+
+	// Nested past the writer's default stack of 32, so its own stack grows.
+	const int levels = 128;
+	std::memset(&ev, 0, sizeof(ev));
+	ev.type = GTEXT_YAML_EVENT_SEQUENCE_START;
+	for (int i = 0; i < levels; i++) {
+		ASSERT_EQ(gtext_yaml_writer_event(w, &ev), GTEXT_YAML_OK) << i;
+	}
+	std::memset(&ev, 0, sizeof(ev));
+	ev.type = GTEXT_YAML_EVENT_SCALAR;
+	ev.data.scalar.ptr = "leaf";
+	ev.data.scalar.len = 4;
+	ASSERT_EQ(gtext_yaml_writer_event(w, &ev), GTEXT_YAML_OK);
+	std::memset(&ev, 0, sizeof(ev));
+	ev.type = GTEXT_YAML_EVENT_SEQUENCE_END;
+	for (int i = 0; i < levels; i++) {
+		ASSERT_EQ(gtext_yaml_writer_event(w, &ev), GTEXT_YAML_OK) << i;
+	}
+	std::memset(&ev, 0, sizeof(ev));
+	ev.type = GTEXT_YAML_EVENT_DOCUMENT_END;
+	ASSERT_EQ(gtext_yaml_writer_event(w, &ev), GTEXT_YAML_OK);
+	ASSERT_EQ(gtext_yaml_writer_finish(w), GTEXT_YAML_OK);
+
+	// Measured: 4 by this point - the handle, its stack, the tag-handle array
+	// and the copy of "!e!".  A floor of 2 would have been vacuous, because
+	// gtext_yaml_writer_new() alone accounts for 2 and the broken state
+	// measures exactly that; 4 is the only value that separates them.
+	EXPECT_GE(after_directive, 4u)
+		<< "the %TAG handle list did not come from the allocator";
+	EXPECT_GT(c.total_allocations, after_directive)
+		<< "the writer's stack never grew through the allocator";
+
+	gtext_yaml_writer_free(w);
+	EXPECT_EQ(c.live_blocks, 0u) << "the writer did not free through this";
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_yaml_sink_buffer_free(&sink);
+}
+
+TEST(Allocator, YamlWriterWithNoAllocatorOptionStillWrites) {
+	// The null fallback, which is what every existing caller passes.  A write
+	// with no allocator named must behave exactly as it did before the option
+	// existed, including through gtext_yaml_writer_new(NULL).
+	const char * src = "a: &x 1\nb: *x\nc: [1, 2, 3]\n";
+	GTEXT_YAML_Document * doc =
+		gtext_yaml_parse(src, std::strlen(src), nullptr, nullptr);
+	ASSERT_NE(doc, nullptr);
+
+	GTEXT_YAML_Sink s1;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&s1), GTEXT_YAML_OK);
+	GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+	EXPECT_EQ(opts.allocator, nullptr) << "the default named an allocator";
+	ASSERT_EQ(gtext_yaml_write_document(doc, &s1, &opts), GTEXT_YAML_OK);
+	std::string with_default(
+		gtext_yaml_sink_buffer_data(&s1), gtext_yaml_sink_buffer_size(&s1));
+
+	// And with no options at all, which takes the same path by way of the
+	// defaults the writer fills in.
+	GTEXT_YAML_Sink s2;
+	ASSERT_EQ(gtext_yaml_sink_buffer(&s2), GTEXT_YAML_OK);
+	ASSERT_EQ(gtext_yaml_write_document(doc, &s2, nullptr), GTEXT_YAML_OK);
+	std::string with_none(
+		gtext_yaml_sink_buffer_data(&s2), gtext_yaml_sink_buffer_size(&s2));
+	EXPECT_EQ(with_default, with_none);
+	EXPECT_FALSE(with_default.empty());
+
+	GTEXT_YAML_Writer * w = gtext_yaml_writer_new(s1, nullptr);
+	ASSERT_NE(w, nullptr) << "a NULL options pointer must still make a writer";
+	gtext_yaml_writer_free(w);
+
+	gtext_yaml_sink_buffer_free(&s1);
+	gtext_yaml_sink_buffer_free(&s2);
+	gtext_yaml_free(doc);
+}
+
+TEST(Allocator, CsvWriteTableEscapeBufferComesFromTheAllocator) {
+	// The heap escape buffer runs only for a field whose *escaped* length
+	// reaches 256 bytes; below that the writer uses a stack buffer and
+	// allocates nothing at all.  So the field is 400 quote characters, each of
+	// which escapes to two bytes - 800 escaped, comfortably past the threshold
+	// and past it even if the stack buffer is ever enlarged.
+	const size_t quotes = 400;
+	std::string big(quotes, '"');
+
+	GTEXT_CSV_Table * table = gtext_csv_new_table();
+	ASSERT_NE(table, nullptr);
+	const char * fields[] = {big.data(), "plain"};
+	const size_t lengths[] = {big.size(), 5};
+	ASSERT_EQ(gtext_csv_row_append(table, fields, lengths, 2, nullptr),
+		GTEXT_CSV_OK);
+
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+	GTEXT_CSV_Sink sink;
+	ASSERT_EQ(gtext_csv_sink_buffer(&sink), GTEXT_CSV_OK);
+	GTEXT_CSV_Write_Options opts = gtext_csv_write_options_default();
+	opts.allocator = &alloc;
+
+	ASSERT_EQ(gtext_csv_write_table(&sink, &opts, table), GTEXT_CSV_OK);
+
+	// Measured: exactly 1.  One field needed the heap, so that allocation is
+	// the whole of what this write owed the allocator, and the broken state
+	// measures 0 - the two states are 1 and 0, which this floor separates.
+	EXPECT_GE(c.total_allocations, 1u)
+		<< "the escape buffer bypassed the allocator";
+	EXPECT_EQ(c.live_blocks, 0u);
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	// The escaping really happened: 400 quotes doubled, plus the surrounding
+	// pair, is what reaches the sink.
+	EXPECT_GE(gtext_csv_sink_buffer_size(&sink), quotes * 2)
+		<< "the large field was not escaped, so the heap path never ran";
+
+	gtext_csv_sink_buffer_free(&sink);
+	gtext_csv_free_table(table);
+}
+
+TEST(Allocator, CsvWriterHandleBalancesThroughTheAllocator) {
+	Counters c;
+	GTEXT_Allocator alloc = make_allocator(&c);
+
+	GTEXT_CSV_Sink sink;
+	ASSERT_EQ(gtext_csv_sink_buffer(&sink), GTEXT_CSV_OK);
+	GTEXT_CSV_Write_Options opts = gtext_csv_write_options_default();
+	opts.allocator = &alloc;
+
+	GTEXT_CSV_Writer * w = gtext_csv_writer_new(&sink, &opts);
+	ASSERT_NE(w, nullptr);
+	EXPECT_EQ(c.live_blocks, 1u) << "the handle did not come from the allocator";
+
+	// A field large enough to need the heap escape buffer, through the
+	// incremental API rather than the table one.
+	std::string big(400, '"');
+	ASSERT_EQ(gtext_csv_writer_record_begin(w), GTEXT_CSV_OK);
+	ASSERT_EQ(gtext_csv_writer_field(w, big.data(), big.size()), GTEXT_CSV_OK);
+	ASSERT_EQ(gtext_csv_writer_record_end(w), GTEXT_CSV_OK);
+	ASSERT_EQ(gtext_csv_writer_finish(w), GTEXT_CSV_OK);
+	// Measured: exactly 2, the handle and the escape buffer.  Either one going
+	// back to the C library measures 1, so this floor separates both defects
+	// singly as well as together.
+	EXPECT_GE(c.total_allocations, 2u)
+		<< "the handle and the escape buffer did not both come from here";
+	// The escape buffer is released at the end of the field, so only the handle
+	// is still outstanding.
+	EXPECT_EQ(c.live_blocks, 1u);
+
+	gtext_csv_writer_free(w);
+	EXPECT_EQ(c.live_blocks, 0u) << "the writer did not free through this";
+	EXPECT_EQ(c.live_bytes, 0u);
+
+	gtext_csv_sink_buffer_free(&sink);
+}
+
+TEST(Allocator, CsvWriterWithNoAllocatorOptionStillWrites) {
+	// The null fallback, as for YAML above.
+	GTEXT_CSV_Table * table = gtext_csv_new_table();
+	ASSERT_NE(table, nullptr);
+	std::string big(400, '"');
+	const char * fields[] = {big.data()};
+	const size_t lengths[] = {big.size()};
+	ASSERT_EQ(gtext_csv_row_append(table, fields, lengths, 1, nullptr),
+		GTEXT_CSV_OK);
+
+	GTEXT_CSV_Sink sink;
+	ASSERT_EQ(gtext_csv_sink_buffer(&sink), GTEXT_CSV_OK);
+	GTEXT_CSV_Write_Options opts = gtext_csv_write_options_default();
+	EXPECT_EQ(opts.allocator, nullptr) << "the default named an allocator";
+	ASSERT_EQ(gtext_csv_write_table(&sink, &opts, table), GTEXT_CSV_OK);
+	EXPECT_GT(gtext_csv_sink_buffer_size(&sink), 0u);
+
+	GTEXT_CSV_Writer * w = gtext_csv_writer_new(&sink, &opts);
+	ASSERT_NE(w, nullptr);
+	gtext_csv_writer_free(w);
+
+	gtext_csv_sink_buffer_free(&sink);
+	gtext_csv_free_table(table);
+}
