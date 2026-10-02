@@ -297,9 +297,24 @@ jobs:
 
       # The floor exists so that coverage can only be argued upward. Raise it
       # when the number rises; do not lower it to make a branch pass.
+      #
+      # **It was 73 while the measured figure was 83.1%**, so ten points of
+      # regression would have passed it in silence - a threshold below both of
+      # the states it is meant to separate separates nothing, and this one had
+      # drifted that far from the thing it was guarding. `make coverage` now
+      # prints the headroom alongside the verdict, and says so when there is
+      # more of it than the gate can usefully hold.
+      #
+      # 82 against 83.1% measured on 2026-10-02: 33,282 lines, no test skipped,
+      # gcc 14 at -O0. The margin is for a machine difference rather than for
+      # slack - nothing in the instrumented run depends on an optional tool,
+      # since `make coverage` clears TEST_GATES and the oracle checks are
+      # separate targets. If this step fails at 82, that is worth reading
+      # rather than lowering: it means CI reaches meaningfully less of the
+      # library than a developer machine does.
       - name: Line coverage
         working-directory: text
-        run: make coverage COVERAGE_MIN=73 PREFIX="$PREFIX"
+        run: make coverage COVERAGE_MIN=82 PREFIX="$PREFIX"
 
   fuzz:
     name: Fuzzers (smoke)

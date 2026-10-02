@@ -2658,6 +2658,11 @@ coverage: ## Build instrumented, run the tests, and report line coverage
 # COVERAGE_MIN, when set, makes the report fail below that percentage.  CI
 # passes one so that coverage can only be argued upward; a local run without it
 # just prints the numbers.
+#
+# **Re-derive the number before arguing about it.** The floor in CI sat at 73
+# while the figure was 83.1%, which is not a coverage problem but a gate that
+# could not fail: ten points of regression would have met it. The report prints
+# the headroom for that reason, and says when there is too much of it.
 	@status=0; \
 	$(MAKE) --no-print-directory test TEST_GATES= \
 		EXTRA_CFLAGS="--coverage -O0" \

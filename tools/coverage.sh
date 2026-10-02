@@ -131,6 +131,17 @@ awk -v min="${COVERAGE_MIN:-0}" '
         exit 1
       }
       printf "\ncoverage: %.1f%% meets the floor of %s%%\n", pct, min
+      # The margin, printed because "meets the floor" reads the same at a
+      # tenth of a point of headroom and at ten points. The floor sat at 73%
+      # while the measured figure was 83.1%, so ten points of regression would
+      # have passed it in silence: a threshold below both the states it is
+      # meant to separate separates nothing. Raise the floor when the number
+      # rises; never lower it to make a branch pass.
+      margin = pct - min
+      printf "coverage: %.1f points of headroom\n", margin
+      if (margin > 2.0) {
+        printf "coverage: that is more headroom than this gate can usefully hold; raise COVERAGE_MIN towards %.0f%%\n", pct
+      }
     }
   }
 ' ./*.gcov || status=$?
