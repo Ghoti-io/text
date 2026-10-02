@@ -2584,3 +2584,92 @@ TEST(YamlWriterContract, AnAliasToAnAnchorThatIsWrittenStaysAnAlias) {
 
 	gtext_yaml_free(doc);
 }
+
+/*
+ * The same defect as the two tests above, through the two wrappers neither of
+ * them takes: the multi-document writer, and a non-UTF-8 encoding.
+ *
+ * This is the shape the fuzzer actually found, and the tests above are not.
+ * The reproducer's two option bytes select mode 3 (fuzz_parsed_multidoc) and
+ * encoding index 2 (UTF-16BE); the tests above call write_doc(), which is one
+ * document in UTF-8.  gtext_yaml_write_documents() and the UTF-16 encoder each
+ * re-walk the node tree around write_advance(), so the arm the fix is in was
+ * reached by a path no test here took - which is worth closing whether or not
+ * the writer ever goes wrong there again.
+ *
+ * The input is tests/fuzz/corpus/yaml-writer/merge-anchor-alias-multidoc-
+ * utf16.seed (fourteen bytes, minimized from the 376-byte artifact beside it).
+ * Both separate the two builds: exit 0 with the fix, 77 without it.
+ */
+TEST(YamlWriterContract, TheMultiDocumentWriterDefinesTheAnchorInEveryEncoding) {
+	const char *yaml = "&O\t<<:\n :\t*O";
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(yaml, strlen(yaml), nullptr, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "");
+	gtext_yaml_error_free(&err);
+
+	/* The premise, as above: the anchored node is gone from the tree, so the
+	   writer has no ordinary definition to emit. */
+	const GTEXT_YAML_Node *root = gtext_yaml_document_root(doc);
+	ASSERT_NE(root, nullptr);
+	ASSERT_EQ(gtext_yaml_node_type(root), GTEXT_YAML_MAPPING);
+	ASSERT_EQ(gtext_yaml_mapping_size(root), 1u);
+
+	struct Case {
+		GTEXT_YAML_Encoding encoding;
+		const char *name;
+		std::string anchor;
+	};
+	/* The anchor as those bytes actually appear, which is the point of running
+	   this in more than one encoding: "&O" is two bytes in UTF-8 and four in
+	   UTF-16BE, and a byte search written for one finds nothing in the other. */
+	const Case cases[] = {
+		{GTEXT_YAML_ENCODING_UTF8, "utf8", std::string("&O", 2)},
+		{GTEXT_YAML_ENCODING_UTF16BE, "utf16be",
+			std::string("\x00&\x00O", 4)},
+	};
+
+	for (const Case &c : cases) {
+		GTEXT_YAML_Sink sink;
+		ASSERT_EQ(gtext_yaml_sink_buffer(&sink), GTEXT_YAML_OK);
+		GTEXT_YAML_Write_Options opts = gtext_yaml_write_options_default();
+		opts.encoding = c.encoding;
+		GTEXT_YAML_Document *docs[1] = {doc};
+		GTEXT_YAML_Status status =
+			gtext_yaml_write_documents(docs, 1, &sink, &opts);
+		std::string text;
+		if (status == GTEXT_YAML_OK) {
+			text.assign(gtext_yaml_sink_buffer_data(&sink),
+				gtext_yaml_sink_buffer_size(&sink));
+		}
+		gtext_yaml_sink_buffer_free(&sink);
+		ASSERT_EQ(status, GTEXT_YAML_OK) << c.name;
+
+		/* The property the fuzzer asserts, and the one that failed: our parser
+		   reads our own output.  Before the fix this refused the document with
+		   "Unknown anchor referenced by alias". */
+		GTEXT_YAML_Error back_err;
+		memset(&back_err, 0, sizeof(back_err));
+		size_t back_count = 0;
+		GTEXT_YAML_Document **back = gtext_yaml_parse_all(
+			text.data(), text.size(), &back_count, nullptr, &back_err);
+		EXPECT_NE(back, nullptr)
+			<< c.name << ": output refused: "
+			<< (back_err.message ? back_err.message : "");
+		EXPECT_EQ(back_count, 1u) << c.name;
+		gtext_yaml_error_free(&back_err);
+		if (back) {
+			for (size_t i = 0; i < back_count; i++) gtext_yaml_free(back[i]);
+			free(back);
+		}
+
+		/* And the mechanism, so that keeping it parseable by dropping the alias
+		   instead would be seen to have done so. */
+		EXPECT_NE(text.find(c.anchor), std::string::npos)
+			<< c.name << ": no anchor definition in the output";
+	}
+
+	gtext_yaml_free(doc);
+}
