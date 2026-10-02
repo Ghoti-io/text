@@ -1,7 +1,7 @@
 /*
  * Our side of the configparser differential.
  *
- *     ini_cp_ours [--interpolation=none|basic|extended]
+ *     ini_cp_ours [--interpolation=none|basic|extended] [--default-section=<name>]
  *
  * Per document: `<len>\n` then the document's bytes. `-1\n` ends the stream. Output:
  *
@@ -36,6 +36,26 @@
  * choice: `read()` stores a value already joined and `get()` interpolates what it
  * stored, so a reference resolving to a multi-line value substitutes the joined text.
  * Interpolating the raw span instead differs on every value a continuation spans.
+ *
+ * `--default-section` points GTEXT_INI_Interpolate_Options::defaults at the group of
+ * that name, which is the fifth and sixth configurations of this gate. It exists
+ * because the pinned `default_section` is a name no document can spell, and that pin
+ * excluded the defaults chain from the comparison **by construction** rather than by
+ * naming a document - so a rule about it went wrong and nothing here could fail. See
+ * ini_cp_gen.DEFAULTS_CHAIN.
+ *
+ * Two things about that mode, and both are needed for the two sides to line up:
+ *
+ *   - **The defaults group is not emitted.** With `default_section` live the reference
+ *     does not list it in `sections()`, so a `G` line for it would be a section the
+ *     reference never answers. This module keeps it as an ordinary group, which is
+ *     right - inheritance is a lookup policy and not a rule of the grammar - so the
+ *     difference is in what the comparison reads, not in what either side parsed.
+ *   - **Its values are still interpolated.** The reference reaches them: with the
+ *     inheritance live, `items(section)` carries the defaults' keys into every section
+ *     and interpolates them there, so a bad `%` inside `[DEFAULT]` refuses the
+ *     document. Skipping the group entirely would accept where the reference refuses,
+ *     and the verdict comparison would blame the chain for a hole in this runner.
  *
  * Hex throughout, and shared with the reference driver's `hexed()` - including `.`
  * for the empty string. A value here can contain a newline, so a whitespace-delimited
@@ -80,6 +100,7 @@ int main(int argc, char ** argv) {
   GTEXT_INI_Dialect dialect = gtext_ini_dialect_configparser();
   GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
   opts.dialect = dialect;
+  const char * default_section = NULL;
   GTEXT_INI_Interpolate_Options interp = gtext_ini_interpolate_options_default();
   /*
    * **The output bound is configured away here on purpose.** It is the one place
@@ -100,6 +121,13 @@ int main(int argc, char ** argv) {
     }
     else if (!strcmp(argv[a], "--interpolation=extended")) {
       interp.style = GTEXT_INI_INTERPOLATION_EXTENDED;
+    }
+    else if (!strncmp(argv[a], "--default-section=", 18)) {
+      default_section = argv[a] + 18;
+      if (!*default_section) {
+        fprintf(stderr, "--default-section must name a section\n");
+        return 2;
+      }
     }
     else {
       fprintf(stderr, "unknown argument %s\n", argv[a]);
@@ -131,13 +159,25 @@ int main(int argc, char ** argv) {
      */
     GTEXT_INI_Status refusal = GTEXT_INI_OK;
     size_t groups = gtext_ini_document_group_count(doc);
+    /*
+     * Per document, because the group is this document's. Looked up by the dialect's
+     * own folding, which is what a caller reproducing Python's reading would use -
+     * gtext_ini_document_group() is the call GTEXT_INI_Interpolate_Options::defaults
+     * documents for exactly this purpose.
+     */
+    const GTEXT_INI_Group * defaults = default_section
+        ? gtext_ini_document_group(doc, default_section) : NULL;
+    interp.defaults = defaults;
     for (int pass = 0; pass < 2 && refusal == GTEXT_INI_OK; pass++) {
       if (pass == 1) printf("cp ok\n");
       for (size_t g = 0; g < groups && refusal == GTEXT_INI_OK; g++) {
         const GTEXT_INI_Group * group = gtext_ini_document_group_at(doc, g);
         size_t name_len = 0;
         const char * name = gtext_ini_group_name(group, &name_len);
-        if (pass == 1) {
+        /* Interpolated below either way; emitted only when it is not the defaults
+         * group, which the reference does not list as a section. */
+        int emit = pass == 1 && group != defaults;
+        if (emit) {
           fputs("G ", stdout);
           put_hex(name, name_len);
           fputs("\n", stdout);
@@ -165,7 +205,7 @@ int main(int argc, char ** argv) {
             gtext_ini_string_free(NULL, resolved);
             break;
           }
-          if (pass == 1) {
+          if (emit) {
             fputs("E ", stdout);
             put_hex(key, key_len);
             fputs(" ", stdout);

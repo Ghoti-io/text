@@ -2,7 +2,8 @@
 """The `configparser` reference, framed for the batch protocol.
 
     driver.py --version
-    driver.py [--interpolation=none|basic|extended] < <stream of documents>
+    driver.py [--interpolation=none|basic|extended] [--default-section=<name>]
+              < <stream of documents>
 
 Per document: `<len>\n` then that many bytes. `-1\n` ends the stream. Output:
 
@@ -53,6 +54,18 @@ the choice is visible.
                                  name set to something no document can spell,
                                  `[DEFAULT]` is an ordinary section on both sides.
 
+                                 **`--default-section` is how that pin is also
+                                 asserted**, and it exists because this pin was wider
+                                 than anyone noticed: it excluded the defaults chain
+                                 from the gate *by construction*, so a rule about it
+                                 went wrong and no instrument could fail. Given
+                                 `--default-section=DEFAULT` the inheritance is live,
+                                 and `items(section)` then carries another section's
+                                 keys exactly as the paragraph above says - which is
+                                 why tools/oracle/ini_cp_diff.py compares only the keys
+                                 our own tree holds under those two runs, and goes on
+                                 comparing every key under the pinned one.
+
 Copyright 2026 by Corey Pennycuff
 """
 
@@ -97,7 +110,7 @@ INTERPOLATIONS = {
 }
 
 
-def answer(data, out, which):
+def answer(data, out, which, default_section=NO_DEFAULT_SECTION):
     """One document's record, for the configuration @p which names.
 
     **Every line is built before any is written**, which matters only once
@@ -120,7 +133,7 @@ def answer(data, out, which):
         style = INTERPOLATIONS[which]
         parser = configparser.ConfigParser(
             interpolation=style() if style else None,
-            default_section=NO_DEFAULT_SECTION)
+            default_section=default_section)
         try:
             parser.read(path, encoding="utf-8")
             for section in parser.sections():
@@ -151,9 +164,19 @@ def main(argv):
                          % sys.version.split()[0])
         return 0
     which = "none"
+    default_section = NO_DEFAULT_SECTION
     for arg in argv[1:]:
         if arg.startswith("--interpolation="):
             which = arg.split("=", 1)[1]
+        elif arg.startswith("--default-section="):
+            # Deliberately not validated against a list: the pinned value is a name no
+            # document can spell and the live value is whatever the gate asks for, so
+            # there is nothing here to check it against. An empty name is refused
+            # because `ConfigParser` would accept it and then no section could be
+            # addressed at all.
+            default_section = arg.split("=", 1)[1]
+            if not default_section:
+                sys.exit("--default-section must name a section")
         else:
             sys.exit("unknown argument %r" % arg)
     if which not in INTERPOLATIONS:
@@ -164,7 +187,7 @@ def main(argv):
         data = read_block(stream)
         if data is None:
             break
-        answer(data, sys.stdout, which)
+        answer(data, sys.stdout, which, default_section)
     sys.stdout.flush()
     return 0
 

@@ -34,6 +34,30 @@ Seven scores:
   `pin`        per axis, that `interpolation=None` is still load-bearing - that the
                reference's own *default* still answers differently from the pinned
                configuration. See ini_cp_gen.PIN_INTERPOLATION.
+  `defaults`   the **defaults chain**, under a fifth and sixth configuration in which
+               `default_section` is `DEFAULT` and `[DEFAULT]`'s inheritance is live.
+               Two scores in one: that the value agrees for every key our own tree
+               holds, and - `defaults-pin` - that the pinned configuration still
+               *refuses* what the live one resolves, so the fifth configuration is
+               keeping something in rather than duplicating the third.
+
+**`default_section` was the pin that excluded a rule by construction**, which is a
+worse shape than a pin nothing asserts. Pinning it to a name no document can spell
+makes `[DEFAULT]` an ordinary section on both sides - correct, since inheritance is a
+lookup policy over a parsed tree and not a rule of the grammar - and it silently took
+the whole defaults chain out of scope. §22.7 of notes/text/INI-DIALECTS.md is the cost:
+`${sect:key}` did not consult the defaults, the comment over the wrong code claimed the
+rule had been *measured* when it had been inferred, and no instrument here could fail.
+The unit test that carries it now was written from a probe, so nothing in this tree would
+notice if the reference changed. The `defaults` score is that gap closed: the reference
+is asked twice more, with the inheritance live.
+
+Under those two runs the reference's `items(section)` carries the defaults' keys into
+every section, exactly as the pin's rationale says. So **only the keys our own tree holds
+are compared there**, and the completeness of the key set stays where it already was -
+`values`, under the pinned configuration, which compares every key exhaustively. A score
+that compared the full key set under the live configuration would be asserting that this
+module copies a lookup policy into its tree, which it deliberately does not.
 
 **`interpolation=None` was the one pin nothing could fail on**, and the last two
 scores are why this file runs the reference three times. A pin is wider than an
@@ -71,9 +95,41 @@ import oracle_env  # noqa: E402
 
 NAME = "configparser"
 
-# The configurations each side is asked for. `none` is the pinned one every existing
-# score reads; the other two exist so that the pin can be failed rather than printed.
-RUNS = ("none", "basic", "extended")
+# The configurations each side is asked for, and the arguments that select each. `none`
+# is the pinned one every existing score reads; `basic` and `extended` exist so that the
+# interpolation pin can be failed rather than printed; the two `-defaults` runs turn
+# `default_section` live so that the defaults chain is in the comparison at all.
+#
+# Both sides take the same flags, which is not a coincidence to be relied on quietly:
+# `tools/oracle/ini_cp_ours.c` was given the same spellings precisely so that this table
+# has one column instead of two and cannot say different things to the two sides.
+DEFAULT_SECTION = "DEFAULT"
+RUNS = {
+    "none": ["--interpolation=none"],
+    "basic": ["--interpolation=basic"],
+    "extended": ["--interpolation=extended"],
+    "basic-defaults": ["--interpolation=basic",
+                       "--default-section=" + DEFAULT_SECTION],
+    "extended-defaults": ["--interpolation=extended",
+                          "--default-section=" + DEFAULT_SECTION],
+}
+
+
+def as_tree(body):
+    """A record's `G`/`E` lines as [(section, {key: value})], in document order.
+
+    Only the `defaults` score needs this: every other comparison is of the body lines
+    verbatim, which is the stronger check and the right one wherever both sides emit the
+    same key set. Here they deliberately do not.
+    """
+    tree = []
+    for line in body:
+        if line.startswith("G "):
+            tree.append((line[2:], {}))
+        elif line.startswith("E ") and tree:
+            key, _, value = line[2:].partition(" ")
+            tree[-1][1][key] = value
+    return tree
 
 # How the reference spells an interpolation refusal, against the code this module
 # reports. Compared by *name* only for these three, because they are the refusals the
@@ -137,6 +193,12 @@ def main(argv):
     print("configuration: interpolation=None, strict=True, allow_no_value=False,")
     print("               inline_comment_prefixes=None, empty_lines_in_values=True,")
     print("               default_section=<unspellable>, read from a file")
+    print("               and two more runs with default_section=%s, where the "
+          "[DEFAULT]" % DEFAULT_SECTION)
+    print("               inheritance is live - the pin that excluded the defaults "
+          "chain from")
+    print("               this gate by construction rather than by naming a "
+          "document")
     print("our side:       max_output=SIZE_MAX, so the one deliberate departure - a "
           "bound on")
     print("               the expansion, which the reference has none of - cannot "
@@ -156,14 +218,13 @@ def main(argv):
         payload += (b"%d\n" % len(data)) + data
     payload += b"-1\n"
 
-    # Both sides, once per configuration. Six processes rather than two, and the
+    # Both sides, once per configuration. Ten processes rather than two, and the
     # reference is reached through the same pinned image each time - `check_pin` runs
     # once because it is the image that is pinned, not the invocation.
     mine = {}
     theirs = {}
-    for which in RUNS:
-        flag = "--interpolation=%s" % which
-        proc = subprocess.run([ours, flag], input=bytes(payload),
+    for which, flags in RUNS.items():
+        proc = subprocess.run([ours] + flags, input=bytes(payload),
             capture_output=True)
         if proc.returncode != 0:
             print("FAIL: our runner exited %d under %s"
@@ -176,7 +237,7 @@ def main(argv):
         if len(mine[which]) != count:
             return 1
 
-        command = oracle_env.command(NAME, ["python3", DRIVER, flag])
+        command = oracle_env.command(NAME, ["python3", DRIVER] + flags)
         proc = subprocess.run(command, input=bytes(payload), capture_output=True)
         if proc.returncode != 0:
             print("FAIL: the reference driver exited %d under %s"
@@ -201,6 +262,9 @@ def main(argv):
     divergence = [0, 0]
     interp = [0, 0]
     pin = [0, 0]
+    defaults = [0, 0]
+    defaults_pin = [0, 0]
+    defaults_axes = collections.Counter()
     pinned_axes = collections.Counter()
     used = set()
     refusals = collections.Counter()
@@ -362,6 +426,92 @@ def main(argv):
             else:
                 interp[0] += 1
 
+        # --- defaults: the chain the pinned `default_section` excludes by construction
+        #
+        # **Scored over the axes the generator built for it, and over nothing else.**
+        # The population is a function of the generator - which axis it put in the
+        # document - and never of what either reader answered, for the reason the `pin`
+        # score gives: a denominator that depended on our parse would shrink in exactly
+        # the case this score exists to catch.
+        chain_axes = axes & set(ini_cp_gen.DEFAULTS_AXES)
+        for axis in sorted(chain_axes):
+            style = ini_cp_gen.DEFAULTS_CHAIN.get(axis, ("basic", None))[0]
+            label = style + "-defaults"
+            ours_d = mine[label][i]
+            ref_d = theirs[label][i]
+            we_r = ours_d["status"].startswith("err")
+            they_r = ref_d["status"].startswith("err")
+
+            # `defaults-pin`: that turning the inheritance on is what made this
+            # resolve. Without this the fifth configuration could be duplicating the
+            # third and the score would read exactly the same.
+            shape = ini_cp_gen.DEFAULTS_CHAIN.get(axis, (None, None))[1]
+            if shape == "resolve":
+                defaults_pin[1] += 1
+                pinned = theirs[style][i]
+                reason = pinned["status"][4:] if \
+                    pinned["status"].startswith("err") else None
+                if reason != "InterpolationMissingOptionError":
+                    failures.append("doc %d [%s]: the pinned configuration answers "
+                        "this %s, where the whole point of the axis is that it cannot "
+                        "see the defaults - so default_section=%s is no longer keeping "
+                        "the chain out of this gate\n      input %r"
+                        % (i, ",".join(sorted(axes)),
+                           "with %s" % reason if reason else "without refusing",
+                           DEFAULT_SECTION, data[:200]))
+                elif they_r:
+                    failures.append("doc %d [%s]: the reference refuses this with the "
+                        "inheritance live (%s), so the axis is not exercising the "
+                        "chain\n      input %r"
+                        % (i, ",".join(sorted(axes)), ref_d["status"][4:], data[:200]))
+                else:
+                    defaults_pin[0] += 1
+
+            defaults[1] += 1
+            if we_r != they_r:
+                failures.append("doc %d [%s] %s: we %s, the reference %s"
+                    "\n      input %r" % (i, ",".join(sorted(axes)), label,
+                        "refused" if we_r else "accepted",
+                        "refused (%s)" % ref_d["status"][4:] if they_r
+                            else "accepted", data[:200]))
+                continue
+            if we_r:
+                defaults[0] += 1
+                defaults_axes[axis] += 1
+                continue
+
+            # **Our key set, not theirs**, and the sections compared pairwise. With the
+            # inheritance live the reference carries the defaults' keys into every
+            # section while this module keeps them where the document put them, so an
+            # extra key on their side is the pin's own rationale and not a difference.
+            # A key of *ours* they do not have is still a failure, and so is a section.
+            our_tree = as_tree(ours_d["body"])
+            ref_tree = as_tree(ref_d["body"])
+            ref_sections = dict(ref_tree)
+            trouble = None
+            if [name for name, _ in our_tree] != [name for name, _ in ref_tree]:
+                trouble = ("the sections differ: ours %s, theirs %s"
+                    % ([n for n, _ in our_tree], [n for n, _ in ref_tree]))
+            else:
+                for name, entries in our_tree:
+                    for key, value in entries.items():
+                        if key not in ref_sections[name]:
+                            trouble = ("section %s has our key %s and the reference "
+                                "does not" % (name, key))
+                        elif ref_sections[name][key] != value:
+                            trouble = ("section %s key %s: ref %s, ours %s"
+                                % (name, key, ref_sections[name][key], value))
+                        if trouble:
+                            break
+                    if trouble:
+                        break
+            if trouble:
+                failures.append("doc %d [%s] %s: %s\n      input %r"
+                    % (i, ",".join(sorted(axes)), label, trouble, data[:200]))
+            else:
+                defaults[0] += 1
+                defaults_axes[axis] += 1
+
         # --- verdict
         verdict[1] += 1
         if we_refused == they_refused:
@@ -415,6 +565,13 @@ def main(argv):
           "Basic and Extended)" % tuple(interp))
     print("pin         %6d of %6d  (interpolation=None still keeps a behaviour "
           "out)" % tuple(pin))
+    print("defaults    %6d of %6d  (the [DEFAULT] chain, for every key our tree "
+          "holds)" % tuple(defaults))
+    print("defaults-pin%6d of %6d  (default_section=<unspellable> still keeps the "
+          "chain out)" % tuple(defaults_pin))
+    for axis in ini_cp_gen.DEFAULTS_AXES:
+        style, shape = ini_cp_gen.DEFAULTS_CHAIN.get(axis, ("basic", "precedence"))
+        print("    %-30s %6d  %s, %s" % (axis, defaults_axes[axis], style, shape))
     for axis in ini_cp_gen.PIN_INTERPOLATION:
         where, shape = ini_cp_gen.PIN_INTERPOLATION[axis]
         print("    %-30s %6d  alone, reference %s %ss"
@@ -435,10 +592,13 @@ def main(argv):
     # that is the only document where the claim is about that axis and nothing else.
     missing_pin = [a for a in ini_cp_gen.PIN_INTERPOLATION if not pinned_axes[a]]
 
+    missing_chain = [a for a in ini_cp_gen.DEFAULTS_AXES if not defaults_axes[a]]
+
     bad = bool(failures) or intent[0] != intent[1] or verdict[0] != verdict[1] \
         or values[0] != values[1] or rewrite[0] != rewrite[1] \
         or divergence[0] != divergence[1] or interp[0] != interp[1] \
-        or pin[0] != pin[1]
+        or pin[0] != pin[1] or defaults[0] != defaults[1] \
+        or defaults_pin[0] != defaults_pin[1]
     if missing_axes:
         print("FAIL these axes never appeared, so the run says nothing about them: %s"
               % ", ".join(missing_axes))
@@ -461,7 +621,16 @@ def main(argv):
         print("FAIL nothing asserted the interpolation pin, so interpolation=None is "
               "a printed line again rather than a measurement")
         bad = True
-    print("FAIL" if bad else "PASS: every document agrees under all three "
+    if missing_chain:
+        print("FAIL these defaults-chain axes never appeared, so this run says nothing "
+              "about the chain the pinned default_section excludes: %s"
+              % ", ".join(missing_chain))
+        bad = True
+    if not defaults_pin[1]:
+        print("FAIL nothing asserted the default_section pin, so the two live runs "
+              "may be answering exactly what the pinned ones do")
+        bad = True
+    print("FAIL" if bad else "PASS: every document agrees under all five "
           "configurations, or diverges for a reason this run proved is still there")
     return 1 if bad else 0
 

@@ -97,6 +97,11 @@ AXES = (
     "header-remainder-comment",
     "header-case-pair",
     "header-default-section",
+    # ---- the defaults chain: a [DEFAULT] another section inherits from
+    "default-basic-reference",
+    "default-extended-reference",
+    "default-extended-path",
+    "default-overridden",
     "header-empty",
     "header-no-close",
     "header-duplicate",
@@ -194,6 +199,44 @@ PIN_INTERPOLATION = {
     "value-interpolation": ("basic", "differ"),
     "value-extended-interpolation": ("extended", "differ"),
 }
+
+# The defaults chain, which the pinned configuration excludes **by construction** and
+# not by naming a document.
+#
+# `default_section` is pinned to a name no document can spell, so `[DEFAULT]` is an
+# ordinary section on both sides and there is no inheritance in the gate at all. That
+# pin is correct - value inheritance is a lookup policy over a parsed tree rather than a
+# rule of the grammar, and leaving it on would make every section's item list include
+# another section's keys - but it took a *rule* out of scope with it, and §22.7 of
+# notes/text/INI-DIALECTS.md is what that cost: `${sect:key}` did not consult the
+# defaults, the comment over the wrong code said "measured rather than inferred from
+# symmetry", and it had been inferred. No instrument could have caught it. The unit test
+# that carries it now was written from a probe, so if the reference changed, nothing
+# would fail.
+#
+# So these four documents are generated for a **fifth and sixth configuration** of the
+# reference, in which `default_section` is `DEFAULT` and the inheritance is live. Each
+# entry is `(which interpolation style reaches it, what the live configuration does
+# that the pinned one does not)`:
+#
+#   resolve  the pinned configuration raises InterpolationMissingOptionError, because
+#            the key is in a section it cannot see; the live one resolves it
+#
+# **`default-overridden` is deliberately not here**, and the reason is worth keeping:
+# a section holding its own copy of the key resolves to that copy under *both*
+# configurations, so it asserts nothing about the pin. What it does assert is
+# precedence - that the defaults group does not shadow the section's own entry - which
+# is a correctness claim the `defaults` score makes and the pin assertion cannot.
+DEFAULTS_CHAIN = {
+    "default-basic-reference": ("basic", "resolve"),
+    "default-extended-reference": ("extended", "resolve"),
+    "default-extended-path": ("extended", "resolve"),
+}
+
+# Every axis the `defaults` score is scored over, which is the table above plus the
+# precedence case. Named once, because a score and its denominator drifting apart is
+# how `interp` came to report 625 of 756 while being right about all of them.
+DEFAULTS_AXES = tuple(DEFAULTS_CHAIN) + ("default-overridden",)
 
 # Where the reference's **channel** cannot carry the document, so there is no oracle
 # for it - not a disagreement about the grammar. `read()` decodes as UTF-8 and raises
@@ -514,6 +557,56 @@ class Gen:
         self.mark("header-plain", axes)
         return "[%s]" % name
 
+    def defaults_document(self, axis):
+        """A `[DEFAULT]` and a section that inherits from it, for one axis.
+
+        **A whole document from a template rather than an axis offered to the tables**,
+        because this shape needs two sections with agreeing content and the tables build
+        one section from independent draws. The same reasoning as the mode mechanism
+        above: a construct that needs company cannot be assembled by parts that do not
+        know about each other.
+
+        Clean under the pinned configuration, which is what lets these documents be
+        scored by every existing score as well as the new one. With
+        `interpolation=None` nothing resolves and `[DEFAULT]` is an ordinary section, so
+        `values` compares three entries across two sections; with a style on and the
+        pinned `default_section`, the reference raises
+        `InterpolationMissingOptionError` and this module reports
+        `E_INTERPOLATION_MISSING`, which `interp` already owns. Only the fifth and sixth
+        configurations resolve them, and that is the whole point of the axis.
+
+        **One terminator, and no CR mutation.** The tail of document() would otherwise
+        rewrite every newline here, which is a legal document either way but makes the
+        record about line endings as well as about inheritance. At most one special
+        construct per document is the rule this file is built on.
+        """
+        axes = set()
+        self.refusal = None
+        self.mark(axis, axes)
+        # `shared` lives in [DEFAULT] alone for the three resolving axes, so the
+        # reference cannot find it without the inheritance: that is what makes the
+        # pinned configuration refuse and the live one answer.
+        body = {
+            "default-basic-reference": "alpha = %(shared)s",
+            "default-extended-reference": "alpha = ${shared}",
+            # §22.7's exact shape. A two-part path goes through `parser.get()` and a
+            # bare name through the section's own `map`, which reads as two different
+            # lookups - and both chain the defaults. This is the document that says so.
+            "default-extended-path": "alpha = ${sect:shared}",
+            "default-overridden": "alpha = %(shared)s",
+        }[axis]
+        lines = ["[DEFAULT]", "shared = from-default", "[sect]"]
+        if axis == "default-overridden":
+            # The section's own copy, which must win. Written before the reference to
+            # it, because configparser resolves at lookup rather than at read and the
+            # order in the file is therefore not what decides - stating that here so a
+            # reader does not take the order as the claim.
+            lines.append("shared = from-sect")
+        else:
+            lines.append("own = from-sect")
+        lines.append(body)
+        return ("\n".join(lines) + "\n").encode("utf-8"), axes, None
+
     def document(self):
         axes = set()
         self.refusal = None
@@ -527,6 +620,9 @@ class Gen:
             self.special = self.rng.choice(sorted(REFERENCE_DIVERGES))
         elif roll < 0.50:
             self.special = "invalid-utf8"
+        elif roll < 0.58:
+            self.special = self.rng.choice(sorted(DEFAULTS_AXES))
+            return self.defaults_document(self.special)
 
         lines = []
         prefix = ""
