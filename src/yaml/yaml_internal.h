@@ -58,6 +58,41 @@ GTEXT_INTERNAL_API bool gtext_yaml_omap_can_take(
 	const GTEXT_YAML_Node *entry
 );
 
+/* A set of DOM nodes keyed on the pointer, for a walk that has to know where
+   it has already been.  "Seen before" is the only question asked of it and
+   there is no deletion, so an open-addressed table of pointers is the whole
+   implementation; see yaml_node_set.c.
+
+   Zero-initialised is a valid empty set, and so is the result of
+   gtext_yaml_node_set_init(); either way it allocates on first insert. */
+typedef struct {
+	const GTEXT_YAML_Node **slots;
+	size_t capacity;   /* a power of two, or 0 while nothing is allocated */
+	size_t count;
+	const GTEXT_Allocator *alloc;
+} GTEXT_YAML_Node_Set;
+
+GTEXT_INTERNAL_API void gtext_yaml_node_set_init(
+	GTEXT_YAML_Node_Set *set,
+	const GTEXT_Allocator *alloc
+);
+
+/* True when @p n was added, false when it was already there.  @p oom - which
+   may be NULL - is set when the table could not grow, which is the one case a
+   caller must not read as "already seen". */
+GTEXT_INTERNAL_API bool gtext_yaml_node_set_add(
+	GTEXT_YAML_Node_Set *set,
+	const GTEXT_YAML_Node *n,
+	bool *oom
+);
+
+GTEXT_INTERNAL_API bool gtext_yaml_node_set_has(
+	const GTEXT_YAML_Node_Set *set,
+	const GTEXT_YAML_Node *n
+);
+
+GTEXT_INTERNAL_API void gtext_yaml_node_set_free(GTEXT_YAML_Node_Set *set);
+
 /* True when @p value, written as a plain scalar, would resolve to something
    other than a string under the 1.2 core schema.  The writer asks so that a
    string node whose text spells a number or a null goes out in quotes rather

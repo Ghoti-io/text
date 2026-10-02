@@ -1024,63 +1024,6 @@ typedef struct {
 	GTEXT_YAML_Node *new_node;
 } yaml_merge_replacement;
 
-/* A set of nodes this walk has already been to.
- *
- * Open addressing on the pointer, because the only question asked of it is
- * "seen before", there is no deletion, and the keys are addresses from one
- * arena - so the low bits are the varying ones and a multiply-shift scatters
- * them well enough. Sized to a power of two and kept under three quarters
- * full, which bounds a probe run without a load factor calculation at every
- * insert. */
-typedef struct {
-	const GTEXT_YAML_Node **slots;
-	size_t capacity;   /* a power of two, or 0 */
-	size_t count;
-	const GTEXT_Allocator *alloc;
-} yaml_node_set;
-
-static size_t node_set_slot(const yaml_node_set *set, const GTEXT_YAML_Node *n) {
-	/* Knuth's multiplicative constant for 64 bits, then take the high bits of
-	   the product, which mixes the low bits of the address into the index. */
-	uint64_t h = (uint64_t)(uintptr_t)n * 0x9E3779B97F4A7C15ull;
-	size_t i = (size_t)(h >> 32) & (set->capacity - 1);
-	while (set->slots[i] && set->slots[i] != n) {
-		i = (i + 1) & (set->capacity - 1);
-	}
-	return i;
-}
-
-static bool node_set_grow(yaml_node_set *set) {
-	size_t new_capacity = set->capacity == 0 ? 64 : set->capacity * 2;
-	const GTEXT_YAML_Node **slots = (const GTEXT_YAML_Node **)gtext_allocator_calloc(
-		set->alloc, new_capacity, sizeof(*slots)
-	);
-	if (!slots) return false;
-	const GTEXT_YAML_Node **old_slots = set->slots;
-	size_t old_capacity = set->capacity;
-	set->slots = slots;
-	set->capacity = new_capacity;
-	for (size_t i = 0; i < old_capacity; i++) {
-		if (old_slots[i]) set->slots[node_set_slot(set, old_slots[i])] = old_slots[i];
-	}
-	gtext_allocator_free(set->alloc, old_slots);
-	return true;
-}
-
-/* true if @p n was added, false if it was already there.  @p oom is set if the
-   table could not grow, which is the one case a caller must not read as
-   "already seen". */
-static bool node_set_add(yaml_node_set *set, const GTEXT_YAML_Node *n, bool *oom) {
-	if (set->count * 4 >= set->capacity * 3) {
-		if (!node_set_grow(set)) { *oom = true; return false; }
-	}
-	size_t i = node_set_slot(set, n);
-	if (set->slots[i] == n) return false;
-	set->slots[i] = n;
-	set->count++;
-	return true;
-}
-
 /* The outcome of a reachability question that can itself run out of memory.
    "No" and "could not tell" are different answers and a caller must not read
    one as the other, which a bool return would force it to. */
@@ -1110,7 +1053,8 @@ static yaml_reach_result nodes_reach_node(
 
 	GTEXT_YAML_Node **stack = NULL;
 	size_t count = 0, capacity = 0;
-	yaml_node_set seen = {NULL, 0, 0, alloc};
+	GTEXT_YAML_Node_Set seen;
+	gtext_yaml_node_set_init(&seen, alloc);
 	yaml_reach_result result = YAML_REACH_NO;
 	bool oom = false;
 
@@ -1141,7 +1085,7 @@ static yaml_reach_result nodes_reach_node(
 
 		/* Only a collection can be arrived at twice, and only a collection has
 		   children to enumerate, so the table holds collections alone. */
-		if (!node_set_add(&seen, node, &oom)) {
+		if (!gtext_yaml_node_set_add(&seen, node, &oom)) {
 			if (oom) goto done;
 			continue;
 		}
@@ -1170,7 +1114,7 @@ done:
 	#undef YAML_REACH_PUSH
 	if (oom) result = YAML_REACH_OOM;
 	gtext_allocator_free(alloc, stack);
-	gtext_allocator_free(alloc, seen.slots);
+	gtext_yaml_node_set_free(&seen);
 	return result;
 }
 
@@ -1557,7 +1501,8 @@ static GTEXT_YAML_Status update_alias_targets(
 
 	GTEXT_YAML_Node **stack = NULL;
 	size_t count = 0, capacity = 0;
-	yaml_node_set seen = {NULL, 0, 0, alloc};
+	GTEXT_YAML_Node_Set seen;
+	gtext_yaml_node_set_init(&seen, alloc);
 	GTEXT_YAML_Status status = GTEXT_YAML_OK;
 	bool oom = false;
 
@@ -1600,7 +1545,7 @@ static GTEXT_YAML_Status update_alias_targets(
 
 		/* Only collections can be revisited, and only they are worth the
 		   table's memory. */
-		if (!node_set_add(&seen, node, &oom)) {
+		if (!gtext_yaml_node_set_add(&seen, node, &oom)) {
 			if (oom) goto done;
 			continue;
 		}
@@ -1629,7 +1574,7 @@ done:
 	#undef YAML_UAT_PUSH
 	if (oom) status = GTEXT_YAML_E_OOM;
 	gtext_allocator_free(alloc, stack);
-	gtext_allocator_free(alloc, seen.slots);
+	gtext_yaml_node_set_free(&seen);
 	return status;
 }
 

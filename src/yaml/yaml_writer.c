@@ -322,6 +322,30 @@ typedef struct {
    * gtext_yaml_parse_options_effective() means a caller who asked for none. */
   size_t depth;
   size_t max_depth;
+  /* Nodes whose anchor this document has already written.
+   *
+   * A node can be reached twice: a merge key splices the source mapping's
+   * pairs in by pointer, so one node becomes the value of two keys.  The
+   * writer has no alias to emit for the second occurrence - a shared node is
+   * not an alias node, and one created by a merge carries no anchor of its
+   * own to point at - so it writes the subtree out again.  That is a value
+   * change rather than a cosmetic one, because an anchor written twice moves
+   * what a *later* alias binds to: 3.2.2.2 says an alias refers to the most
+   * recent preceding node with that name, so
+   *
+   *     m: &s {v: &n 1}
+   *     k: &n 2
+   *     c: {<<: *s}
+   *     r: *n          <- 2, bound where it is written
+   *
+   * came back with r = 1, because the copy of "&n 1" the merge put in "c"
+   * was written between "&n 2" and the alias.  The second definition is
+   * dropped instead, which leaves every alias binding to the definition it
+   * had before.  Identity is still not preserved - two equal nodes come back
+   * where one was shared - and that is a separate question from the value.
+   *
+   * Per document, because 3.2.2.2's anchor namespace is per document. */
+  GTEXT_YAML_Node_Set anchors_written;
 } yaml_writer_state;
 
 static GTEXT_YAML_Encoding writer_encoding(const GTEXT_YAML_Write_Options *opts) {
@@ -2048,9 +2072,22 @@ static GTEXT_YAML_Status write_node_prefix(
     const GTEXT_YAML_Node * node,
     const char * tag_override,
     bool trailing_space) {
+  const char *anchor = node_anchor(node);
+  if (anchor) {
+    /* Second and later occurrences of one node write no anchor; see
+       anchors_written.  The set is keyed on the node rather than on the name
+       because a name may legitimately be redefined for a *different* node
+       (3.2.2.2, and YamlAnchors.AnAnchorMayBeRedefined), and that definition
+       has to be written. */
+    bool oom = false;
+    if (!gtext_yaml_node_set_add(&state->anchors_written, node, &oom)) {
+      if (oom) return GTEXT_YAML_E_OOM;
+      anchor = NULL;
+    }
+  }
   return write_properties(
       state,
-      node_anchor(node),
+      anchor,
       tag_override ? tag_override : node_tag(node),
       node->type,
       trailing_space);
@@ -2777,18 +2814,27 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_document(
   GTEXT_YAML_Status status = GTEXT_YAML_OK;
   const GTEXT_YAML_Node *root = NULL;
 
+  /* Zeroed first: this used to set every field by hand, which is correct
+     only until the next field is added.  One was, and the DOM writer read
+     two uninitialised pointers off the stack.  It is also before the
+     argument check, because the cleanup at the end of this function frees
+     the anchor set and every exit goes through it - including the ones that
+     refuse the arguments.  A zeroed set is a valid empty one. */
+  memset(&state, 0, sizeof(state));
+
   if (!doc || !sink || !sink->write) {
-    return GTEXT_YAML_E_INVALID;
+    status = GTEXT_YAML_E_INVALID;
+    goto done;
   }
 
   if (!opts) {
     opts = &defaults;
   }
 
-  /* Zeroed first: this used to set every field by hand, which is correct
-     only until the next field is added.  One was, and the DOM writer read
-     two uninitialised pointers off the stack. */
-  memset(&state, 0, sizeof(state));
+  /* The document's allocator, so a write is accounted to the same place the
+     document is. */
+  gtext_yaml_node_set_init(
+      &state.anchors_written, doc->ctx ? doc->ctx->alloc : NULL);
   state.sink = sink;
   state.opts = opts;
   /* The document's own limit, not the writer's: a document carries the parse
@@ -2811,35 +2857,41 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_document(
        instead, which is a different stream. */
     status = write_str(&state, "---");
     if (status != GTEXT_YAML_OK) {
-      return status;
+      goto done;
     }
     if (opts->trailing_newline) {
       status = write_str(&state, writer_newline(opts));
     }
-    return status;
+    goto done;
   }
 
   status = write_comment_lines(&state, node_leading_comment(root), 0);
   if (status != GTEXT_YAML_OK) {
-    return status;
+    goto done;
   }
 
   status = write_node(&state, root, 0, writer_root_is_flow(opts), NULL, false);
   if (status != GTEXT_YAML_OK) {
-    return status;
+    goto done;
   }
 
   if (opts->trailing_newline) {
     status = write_separator(&state);
     if (status != GTEXT_YAML_OK) {
-      return status;
+      goto done;
     }
   }
   if (encoding.pending_utf8_len != 0) {
-    return GTEXT_YAML_E_INVALID;
+    status = GTEXT_YAML_E_INVALID;
+    goto done;
   }
 
-  return GTEXT_YAML_OK;
+  status = GTEXT_YAML_OK;
+    goto done;
+
+done:
+	gtext_yaml_node_set_free(&state.anchors_written);
+	return status;
 }
 
 GTEXT_API GTEXT_YAML_Status gtext_yaml_write_documents(
@@ -2853,26 +2905,29 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_documents(
   GTEXT_YAML_Status status = GTEXT_YAML_OK;
   bool wrote_doc = false;
 
+  /* Before the argument check: every exit frees the anchor set, including
+     the ones that refuse the arguments.  A zeroed set is a valid empty one. */
+  memset(&state, 0, sizeof(state));
+
   if (!sink || !sink->write) {
-    return GTEXT_YAML_E_INVALID;
+    status = GTEXT_YAML_E_INVALID;
+    goto done;
   }
   /* An empty stream is a stream.  "# comment only", "..." and a file of one
      blank line all parse to no documents at all, and refusing to write them
      made a legal round trip look like a writer failure. */
   if (count == 0) {
-    return GTEXT_YAML_OK;
+    status = GTEXT_YAML_OK;
+    goto done;
   }
   if (!docs) {
-    return GTEXT_YAML_E_INVALID;
+    status = GTEXT_YAML_E_INVALID;
+    goto done;
   }
   if (!opts) {
     opts = &defaults;
   }
 
-  /* Zeroed first: this used to set every field by hand, which is correct
-     only until the next field is added.  One was, and the DOM writer read
-     two uninitialised pointers off the stack. */
-  memset(&state, 0, sizeof(state));
   state.sink = sink;
   state.opts = opts;
   writer_encoding_init(&encoding, opts);
@@ -2888,44 +2943,56 @@ GTEXT_API GTEXT_YAML_Status gtext_yaml_write_documents(
     const GTEXT_YAML_Node *root = NULL;
 
     if (!doc) {
-      return GTEXT_YAML_E_INVALID;
+      status = GTEXT_YAML_E_INVALID;
+    goto done;
     }
 
     if (wrote_doc) {
       status = write_separator(&state);
-      if (status != GTEXT_YAML_OK) return status;
+      if (status != GTEXT_YAML_OK) goto done;
     }
 
     /* Per document, since each carries the options it was parsed with. */
     state.max_depth = doc->options.max_depth;
+    /* And 3.2.2.2's anchor namespace is per document too, so the record of
+       which anchors have been written starts empty for each one. */
+    gtext_yaml_node_set_free(&state.anchors_written);
+    gtext_yaml_node_set_init(
+        &state.anchors_written, doc->ctx ? doc->ctx->alloc : NULL);
 
     state.block_parent_indent = -1;
     status = write_str(&state, "---");
-    if (status != GTEXT_YAML_OK) return status;
+    if (status != GTEXT_YAML_OK) goto done;
     status = write_str(&state, writer_newline(opts));
-    if (status != GTEXT_YAML_OK) return status;
+    if (status != GTEXT_YAML_OK) goto done;
 
     root = doc->root;
     if (root) {
       status = write_comment_lines(&state, node_leading_comment(root), 0);
-      if (status != GTEXT_YAML_OK) return status;
+      if (status != GTEXT_YAML_OK) goto done;
       status = write_node(&state, root, 0, writer_root_is_flow(opts), NULL, false);
-      if (status != GTEXT_YAML_OK) return status;
+      if (status != GTEXT_YAML_OK) goto done;
     }
 
     if (opts->trailing_newline) {
       status = write_separator(&state);
-      if (status != GTEXT_YAML_OK) return status;
+      if (status != GTEXT_YAML_OK) goto done;
     }
 
     wrote_doc = true;
   }
 
   if (encoding.pending_utf8_len != 0) {
-    return GTEXT_YAML_E_INVALID;
+    status = GTEXT_YAML_E_INVALID;
+    goto done;
   }
 
-  return GTEXT_YAML_OK;
+  status = GTEXT_YAML_OK;
+    goto done;
+
+done:
+	gtext_yaml_node_set_free(&state.anchors_written);
+	return status;
 }
 
 // ============================================================================

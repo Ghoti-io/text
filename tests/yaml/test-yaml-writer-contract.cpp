@@ -252,6 +252,144 @@ TEST(YamlWriterContract, AStringThatSpellsANumberIsQuoted) {
 	}
 }
 
+/* An anchor is written once per node, because writing it twice moves what a
+   later alias means.
+
+   A merge key splices the source mapping's pairs in by pointer, so one node
+   becomes the value of two keys.  The writer has no alias to emit for the
+   second occurrence - a shared node is not an alias node, and one a merge
+   created carries no anchor of its own - so it wrote the subtree out again,
+   anchor and all.  3.2.2.2: an alias refers to the most recent *preceding*
+   node with that name, and the binding is taken where the alias is written
+   (which is what YamlAnchors.AnAliasTakesTheMostRecentPrecedingDefinition is
+   about).  So a second definition inserted between a name's real definition
+   and an alias to it silently rebinds the alias:
+
+       m: &s {v: &n 1}
+       k: &n 2
+       c: {<<: *s}
+       r: *n            <- 2 going in
+
+   went out as "{m: &s {v: &n 1}, k: &n 2, c: {v: &n 1}, r: *n}" and came back
+   with r = 1.  A value change, on default options, from a document that round
+   trips "successfully": the output parses, and nothing but the alias target
+   says anything is wrong.
+
+   Dropping the second definition leaves every alias bound to what it was
+   bound to.  What it does not do is preserve *sharing* - two equal nodes come
+   back where one node was shared - and that is a separate question from the
+   value, which is the one this test is about. */
+TEST(YamlWriterContract, AnAnchorIsWrittenOncePerNode) {
+	const char *yaml =
+		"m: &s {v: &n 1}\n"
+		"k: &n 2\n"
+		"c: {<<: *s}\n"
+		"r: *n\n";
+
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(yaml, strlen(yaml), nullptr, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "");
+	gtext_yaml_error_free(&err);
+
+	/* The control: the merge has to have happened, or there is no shared node
+	   and this test is about nothing.  "c" holds the source's one pair. */
+	const GTEXT_YAML_Node *c =
+		gtext_yaml_mapping_get(gtext_yaml_document_root(doc), "c");
+	ASSERT_NE(c, nullptr);
+	ASSERT_EQ(gtext_yaml_node_type(c), GTEXT_YAML_MAPPING);
+	ASSERT_EQ(gtext_yaml_mapping_size(c), 1u);
+
+	const GTEXT_YAML_Node *before =
+		gtext_yaml_mapping_get(gtext_yaml_document_root(doc), "r");
+	ASSERT_NE(before, nullptr);
+	ASSERT_EQ(gtext_yaml_node_type(before), GTEXT_YAML_ALIAS);
+	const GTEXT_YAML_Node *before_target = gtext_yaml_alias_target(before);
+	ASSERT_NE(before_target, nullptr);
+	const char *before_text = gtext_yaml_node_as_string(before_target);
+	ASSERT_NE(before_text, nullptr);
+	EXPECT_STREQ(before_text, "2");
+
+	for (int block = 0; block < 2; block++) {
+		Written w = write_doc(doc, block != 0);
+		ASSERT_EQ(w.status, GTEXT_YAML_OK);
+
+		/* Two definitions of "&n", not one: the input deliberately has two
+		   different nodes carrying that name, which is what makes the
+		   rebinding observable at all.  The defect wrote a *third*, a copy of
+		   the first that the merge put in "c".  This asserts the mechanism
+		   rather than the consequence, and is kept because a future change
+		   that preserved the value some other way should be seen to have done
+		   so rather than passing quietly. */
+		size_t definitions = 0;
+		for (size_t i = 0; i + 1 < w.text.size(); i++) {
+			if (w.text[i] == '&' && w.text[i + 1] == 'n') definitions++;
+		}
+		EXPECT_EQ(definitions, 2u) << "wrote " << w.text;
+
+		memset(&err, 0, sizeof(err));
+		GTEXT_YAML_Document *back =
+			gtext_yaml_parse(w.text.data(), w.text.size(), nullptr, &err);
+		ASSERT_NE(back, nullptr) << w.text << " : "
+			<< (err.message ? err.message : "");
+		gtext_yaml_error_free(&err);
+
+		const GTEXT_YAML_Node *after =
+			gtext_yaml_mapping_get(gtext_yaml_document_root(back), "r");
+		ASSERT_NE(after, nullptr) << w.text;
+		const GTEXT_YAML_Node *target =
+			gtext_yaml_node_type(after) == GTEXT_YAML_ALIAS
+				? gtext_yaml_alias_target(after) : after;
+		ASSERT_NE(target, nullptr) << w.text;
+		const char *got = gtext_yaml_node_as_string(target);
+		EXPECT_STREQ(got ? got : "", "2")
+			<< "the alias was rebound by the round trip; wrote " << w.text;
+		gtext_yaml_free(back);
+	}
+	gtext_yaml_free(doc);
+}
+
+/* The lower bound, and the reason the record is kept per *node* rather than
+   per name: 1.2 lets a name be redefined for a different node, this parser
+   allows it deliberately (YamlAnchors.AnAnchorMayBeRedefined), and both
+   definitions have to be written.  A fix that suppressed a repeated *name*
+   would pass the test above and lose one of these. */
+TEST(YamlWriterContract, ATrulyRedefinedAnchorKeepsBothDefinitions) {
+	const char *yaml = "a: &dup 1\nb: &dup 2\nc: *dup\n";
+	GTEXT_YAML_Error err;
+	memset(&err, 0, sizeof(err));
+	GTEXT_YAML_Document *doc = gtext_yaml_parse(yaml, strlen(yaml), nullptr, &err);
+	ASSERT_NE(doc, nullptr) << (err.message ? err.message : "");
+	gtext_yaml_error_free(&err);
+
+	for (int block = 0; block < 2; block++) {
+		Written w = write_doc(doc, block != 0);
+		ASSERT_EQ(w.status, GTEXT_YAML_OK);
+		size_t definitions = 0;
+		for (size_t i = 0; i + 3 < w.text.size(); i++) {
+			if (w.text.compare(i, 4, "&dup") == 0) definitions++;
+		}
+		EXPECT_EQ(definitions, 2u) << "wrote " << w.text;
+
+		memset(&err, 0, sizeof(err));
+		GTEXT_YAML_Document *back =
+			gtext_yaml_parse(w.text.data(), w.text.size(), nullptr, &err);
+		ASSERT_NE(back, nullptr) << w.text;
+		gtext_yaml_error_free(&err);
+		const GTEXT_YAML_Node *n =
+			gtext_yaml_mapping_get(gtext_yaml_document_root(back), "c");
+		ASSERT_NE(n, nullptr) << w.text;
+		const GTEXT_YAML_Node *t =
+			gtext_yaml_node_type(n) == GTEXT_YAML_ALIAS
+				? gtext_yaml_alias_target(n) : n;
+		ASSERT_NE(t, nullptr) << w.text;
+		const char *got = gtext_yaml_node_as_string(t);
+		EXPECT_STREQ(got ? got : "", "2") << "wrote " << w.text;
+		gtext_yaml_free(back);
+	}
+	gtext_yaml_free(doc);
+}
+
 /* The merge key is the other text whose plain spelling is not a string, and
    it is the only one that is not the schema's doing.
 
