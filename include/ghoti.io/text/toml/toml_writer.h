@@ -346,7 +346,7 @@ typedef struct {
   const GCHRON_WriteOptions * datetime;
 
   /**
-   * v1.1.0 spellings to use, as @ref GTEXT_TOML_Spelling bits ORed together.
+   * v1.1.0 spellings to use, as `GTEXT_TOML_Spelling` bits ORed together.
    *
    * Default GTEXT_TOML_SPELL_1_0_0_ONLY, which is zero: output every reader
    * accepts. Any other value produces a document only a v1.1.0 reader reads,

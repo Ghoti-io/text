@@ -111,7 +111,7 @@ NaN's sign is not observable, so both signed spellings give NaN.
 **JSON5 string escapes**, also off by default and also two separate questions:
 
 - `allow_ecma_escapes` - `\xHH`, `\v`, `\0`, and ECMAScript's rule that any
-  other character after a backslash is that character (`\a` is `a`, `\'` is an
+  other character after a backslash is that character (`\a` is `a`, <tt>\\&apos;</tt> is an
   apostrophe). `\xHH` names a *codepoint*, so `\xe9` decodes to the two UTF-8
   bytes of U+00E9 rather than to the byte 0xE9, which would not be UTF-8 at
   all. `\0` is U+0000 and is an error where a digit follows it; `\1` through

@@ -124,8 +124,8 @@ typedef enum {
  * contain a NUL, since a quoted key may name one.
  */
 typedef struct {
-  const char * data;
-  size_t len;
+  const char * data; ///< The decoded bytes of this part
+  size_t len;        ///< Their length; may include NUL bytes
 } GTEXT_TOML_Key_Part;
 
 /**
@@ -136,8 +136,8 @@ typedef struct {
  * duration of the callback; a consumer that keeps a key copies it.
  */
 typedef struct {
-  const GTEXT_TOML_Key_Part * parts;
-  size_t count;
+  const GTEXT_TOML_Key_Part * parts; ///< The parts, in order
+  size_t count;                      ///< How many parts
 } GTEXT_TOML_Key;
 
 /**
@@ -149,7 +149,7 @@ typedef struct {
  * buffer that was handed in, the same three numbers GTEXT_TOML_Error reports.
  */
 typedef struct {
-  GTEXT_TOML_Event_Type type;
+  GTEXT_TOML_Event_Type type; ///< What kind of event this is
   /** The path, for TABLE, ARRAY_TABLE and KEY; `count` is 0 otherwise. */
   GTEXT_TOML_Key key;
   /**

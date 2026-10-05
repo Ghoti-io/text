@@ -54,7 +54,7 @@ parse can fail before it has read its options.
   in a quoted key, so keys are compared by bytes and a length rather than with
   `strcmp`.
 - **Strings.** All four forms. Basic and multi-line basic take the escapes
-  <tt>\\b \\t \\n \\f \\r \\" \\\\ \\uXXXX \\UXXXXXXXX</tt>, and at 1.1.0 also
+  <tt>\\b \\t \\n \\f \\r \\&quot; \\\\ \\uXXXX \\UXXXXXXXX</tt>, and at 1.1.0 also
   <tt>\\e</tt> and <tt>\\xHH</tt>; an escape must name a Unicode
   scalar value, so a surrogate or a value above U+10FFFF is
   `GTEXT_TOML_E_BAD_UNICODE` rather than a bad escape - the escape is
@@ -116,7 +116,7 @@ a point of use rather than a flag somebody might later read:
 
 | What moves | Where the option is read | 1.0.0 | 1.1.0 |
 |---|---|---|---|
-| `\e` and `\xHH` escapes | `scan_escape()`, `src/toml/toml_lexer.c` | `E_BAD_ESCAPE`, with a message naming 1.1.0 | U+001B, and U+00HH |
+| <tt>\\e</tt> and <tt>\\xHH</tt> escapes | `scan_escape()`, `src/toml/toml_lexer.c` | `E_BAD_ESCAPE`, with a message naming 1.1.0 | U+001B, and U+00HH |
 | newline, comment or trailing comma inside `{ }` | `inline_space()` and the `WANT_KEY` state, `src/toml/toml_parser.c` | `E_BAD_TOKEN` | accepted at the separators |
 | a time with the seconds omitted | `scan_datetime()`, `src/toml/toml_lexer.c` | `E_BAD_TOKEN`, pointing at where the seconds are missing | read as `:00` |
 
@@ -162,7 +162,7 @@ somebody will later have to disprove:
 1.0.0 defines is still a 1.1.0 spelling, so a writer emitting 1.0.0 is already
 correct for both - the encode rows score 218 of 218 against the 1.1.0 manifest
 with no writer change at all. By default nothing 1.1.0 adds survives into output
-either: the seconds are written, `\e` and `\xHH` come back as `\uXXXX` or as the
+either: the seconds are written, <tt>\\e</tt> and <tt>\\xHH</tt> come back as `\uXXXX` or as the
 character, an inline table is one line, and no trailing comma is emitted. A
 `version` field on `GTEXT_TOML_Write_Options` would therefore be an axis with no
 point of use, which is the same defect as a `table_style` that never reaches its
@@ -312,7 +312,7 @@ buffer from an exactly-fitting one, which is what
   order the document gave.
 - **An empty array is always `key = []`**, even under `_HEADERS`. Zero
   `[[key]]` headers would not say that `key` exists at all.
-- **Strings are basic strings.** `"..."` with `\b \t \n \f \r \" \\` and
+- **Strings are basic strings.** `"..."` with <tt>\\b \\t \\n \\f \\r \\&quot; \\\\</tt> and
   `\uXXXX` for the remaining controls and U+007F, which v1.0.0 §String lists
   among the characters a basic string may not hold unescaped. The form a string
   was written in is not retained - a multi-line string comes back as a basic
@@ -320,7 +320,7 @@ buffer from an exactly-fitting one, which is what
   writer that guessed would be inventing one.
 - **Keys are bare where v1.0.0 §Keys allows it** (`A-Za-z0-9_-`, non-empty) and
   a quoted basic string otherwise, escaped exactly as a string is. So the empty
-  key is `""` and a key containing a NUL is <tt>"a\\u0000b"</tt>.
+  key is `""` and a key containing a NUL is <tt>&quot;a\\u0000b&quot;</tt>.
 - **A float keeps its type.** The shortest `%g` precision that reads back as
   the same double is used - found by converting and reading back, not by
   assuming 17, so 0.1 is `0.1` and not `0.10000000000000001` - and `.0` is
@@ -352,7 +352,7 @@ buffer from an exactly-fitting one, which is what
   integers, and - with the default options - indentation.
 - **The v1.1.0 spellings are available and off.**
   `GTEXT_TOML_Write_Options::spellings` is a mask of
-  @ref GTEXT_TOML_Spelling bits, each turning on one spelling the draft adds:
+  `GTEXT_TOML_Spelling` bits, each turning on one spelling the draft adds:
   `\e` for U+001B, `\xHH` for an escaped control, `:00` seconds omitted, an
   inline table broken across lines and indented, and a trailing comma after its
   last pair. `GTEXT_TOML_SPELL_1_1_0_ALL` is every one this release knows.
@@ -600,7 +600,7 @@ itself; 0 removes the limit and hands the question back to the caller.
 |---|---|---|
 | Encoding | UTF-8 | anything else, `E_BAD_UNICODE`; a leading BOM, `E_BAD_TOKEN` (a choice, see Deviations) |
 | Keys | bare, quoted, literal, dotted, empty, NUL-containing | a multi-line string as a key, `E_BAD_TOKEN` |
-| Strings | all four forms, all 1.0.0 escapes, and `\e` / `\xHH` at 1.1.0 | `\e` and `\xHH` at 1.0.0, `E_BAD_ESCAPE`; any other escape at either version, `E_BAD_ESCAPE`; surrogate or out-of-range escape, `E_BAD_UNICODE`; control character, `E_CONTROL` |
+| Strings | all four forms, all 1.0.0 escapes, and `\e` / `\xHH` at 1.1.0 | <tt>\\e</tt> and <tt>\\xHH</tt> at 1.0.0, `E_BAD_ESCAPE`; any other escape at either version, `E_BAD_ESCAPE`; surrogate or out-of-range escape, `E_BAD_UNICODE`; control character, `E_CONTROL` |
 | Integers | decimal, hex, octal, binary, underscores | outside `int64_t`, `E_RANGE`; leading zero or misplaced underscore, `E_BAD_TOKEN` |
 | Floats | fraction, exponent, infinities, NaN | `1.`, `.1`, `1.e2`, `1e`, `E_BAD_TOKEN` |
 | Date-times | all four types, `-00:00` as unknown offset, seconds optional at 1.1.0 | omitted seconds at 1.0.0, `E_BAD_TOKEN`; a fraction on the minutes at either version, `E_BAD_TOKEN`; anything `chron` refuses, `E_DATETIME` |
@@ -747,7 +747,7 @@ least useful if it stops:
   | planted defect | 1.0.0 | 1.1.0 | crossed | test-toml-version.cpp |
   |---|---|---|---|---|
   | the inline-table skipper relaxed at both versions | 4 | - | 4 | caught |
-  | `\e` and `\xHH` accepted at both versions | 1 | - | 3 | caught |
+  | <tt>\\e</tt> and <tt>\\xHH</tt> accepted at both versions | 1 | - | 3 | caught |
   | an omitted second assumed at both versions | 3 | - | 4 | caught |
   | the option stored and never put on the parse context | - | 11 | 15 | caught |
   | `\xHH` appended as one byte rather than as U+00HH | - | 2 | - | caught |

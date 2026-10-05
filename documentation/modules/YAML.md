@@ -481,7 +481,7 @@ Double-quoted scalars support escape sequences:
 - `\UXXXXXXXX` - Unicode code point (8 hex digits)
 
 All of 5.7 is implemented: `\0`, `\a`, `\b`, `\t`, `\n`, `\v`, `\f`, `\r`,
-`\e`, a space, `"`, `/`, `\\`, `\N`, `\_`, `\L`, `\P`, `\xNN`, `\uNNNN` and
+`\e`, a space, <tt>&quot;</tt>, `/`, `\\`, `\N`, `\_`, `\L`, `\P`, `\xNN`, `\uNNNN` and
 `\UNNNNNNNN`. All three numeric escapes name a *character* and are encoded as
 one - `"\x92"` is U+0092, not a lone byte 0x92 - and each is an error without
 its hex digits. Anything else after a backslash is a malformed document

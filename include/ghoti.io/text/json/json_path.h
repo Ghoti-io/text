@@ -84,7 +84,7 @@ typedef struct GTEXT_JSON_Path GTEXT_JSON_Path;
  * @brief The nodes a query selected, in the order RFC 9535 gives them
  *
  * `nodes` is owned by the result and released by
- * @ref gtext_json_path_result_free. The values it points at are owned by the
+ * `gtext_json_path_result_free()`. The values it points at are owned by the
  * document.
  *
  * A node may appear more than once: `$[0,0]` selects the first element twice,
@@ -95,8 +95,8 @@ typedef struct {
   /**
    * The normalized path of each node (RFC 9535 §2.7), or NULL.
    *
-   * Filled in only by @ref gtext_json_path_select_paths and
-   * @ref gtext_json_path_query_paths, because building them costs an
+   * Filled in only by `gtext_json_path_select_paths()` and
+   * `gtext_json_path_query_paths()`, because building them costs an
    * allocation per result. A normalized path names exactly one node - `$`
    * followed by a bracketed index or single-quoted name per step, as in
    * `$['store']['book'][0]['author']` - and is itself a valid query, so it can

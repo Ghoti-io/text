@@ -86,7 +86,7 @@ typedef enum {
  * For ALIAS events, the `alias_name` field contains the referenced anchor name.
  */
 typedef struct {
-	GTEXT_YAML_Event_Type type;
+	GTEXT_YAML_Event_Type type; ///< What kind of event this is
 	union {
 		struct {
 			const char * ptr;
@@ -104,10 +104,10 @@ typedef struct {
 		} comment;
 		const char * alias_name;  /* For GTEXT_YAML_EVENT_ALIAS */
 		char indicator;
-	} data;
-	const char * anchor;  /* Anchor name for this node (NULL if none) */
-	const char * tag;     /* Explicit tag for this node (NULL if none) */
-	/* A second anchor or tag, written before the one above and on an earlier
+	} data; ///< The payload, selected by `type`
+	const char * anchor;  ///< Anchor name for this node (NULL if none)
+	const char * tag;     ///< Explicit tag for this node (NULL if none)
+	/** A second anchor or tag, written before the one above and on an earlier
 	 * line, whose node is not this one but the block collection this node
 	 * opens - if it opens one.
 	 *
@@ -128,11 +128,11 @@ typedef struct {
 	 *       &v2 val2
 	 *
 	 * NULL, with a line of 0, when there is no such property. */
-	const char * outer_anchor;
-	int outer_anchor_line;
-	const char * outer_tag;
-	int outer_tag_line;
-	/* 1-based line the tag was written on, or 0 when there is no tag.
+	const char * outer_anchor; ///< The earlier anchor, or NULL
+	int outer_anchor_line;     ///< 1-based line `outer_anchor` was written on, or 0
+	const char * outer_tag;    ///< The earlier tag, or NULL
+	int outer_tag_line;        ///< 1-based line `outer_tag` was written on, or 0
+	/** 1-based line the tag was written on, or 0 when there is no tag.
 	 *
 	 * A tag applies to the node that follows it, and in block context the
 	 * parser cannot tell which node that is until it has seen what comes
@@ -141,7 +141,7 @@ typedef struct {
 	 * only in where the tag was written, so the position has to travel with
 	 * it. */
 	int tag_line;
-	/* 1-based line the anchor was written on, or 0 when there is no anchor.
+	/** 1-based line the anchor was written on, or 0 when there is no anchor.
 	 *
 	 * The same problem as tag_line, and the same answer. An anchor applies to
 	 * the node that follows it, and in block context the parser cannot tell
@@ -155,7 +155,7 @@ typedef struct {
 	 * next, the leftmost is the tag - so an anchor written before the
 	 * collection would look as though it shared the node's line. */
 	int anchor_line;
-	/* Where the leftmost property of this node was written: 1-based line and
+	/** Where the leftmost property of this node was written: 1-based line and
 	 * 0-based column, or 0 and -1 when the node carries no properties.
 	 *
 	 * A property has to be indented past the block collection that is already
@@ -175,10 +175,10 @@ typedef struct {
 	 * a property that has not found its node was written - 0 and -1 when
 	 * none is waiting.  A consumer deciding what the indicator opens can then
 	 * see that something is already waiting to name it. */
-	int prop_line;
-	int prop_col;
-	GTEXT_YAML_Scalar_Style scalar_style; /* Preferred scalar style (SCALAR events) */
-	/* DOCUMENT_START and DOCUMENT_END only: the marker was written.
+	int prop_line; ///< 1-based line of the leftmost property, or 0 (see above)
+	int prop_col;  ///< 0-based column of the leftmost property, or -1
+	GTEXT_YAML_Scalar_Style scalar_style; ///< Preferred scalar style (SCALAR events)
+	/** DOCUMENT_START and DOCUMENT_END only: the marker was written.
 	 *
 	 * Both events fire for every document, whether or not the stream says so
 	 * in as many characters - a bare "a: 1" is a document, and a stream that
@@ -195,8 +195,8 @@ typedef struct {
 	 *  counts bytes of the decoded stream, which is an index into the
 	 *  caller's buffer only for UTF-8 with no byte order mark. */
 	size_t offset;
-	int line;
-	int col;
+	int line; ///< Line of the event
+	int col;  ///< Column of the event
 } GTEXT_YAML_Event;
 
 /**

@@ -91,7 +91,7 @@ typedef struct {
       const char * s; ///< Number lexeme (exact token text)
       size_t len;     ///< Lexeme length in bytes
     } number;         ///< For GTEXT_JSON_EVT_NUMBER
-  } as;
+  } as; ///< The payload, selected by `type`
 
   /**
    * @brief This name has already appeared in the enclosing object.

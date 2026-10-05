@@ -105,6 +105,12 @@ typedef enum {
  */
 typedef struct GTEXT_JSON_Value GTEXT_JSON_Value;
 
+/**
+ * @brief Error details filled in by the parser and the other JSON entry points
+ *
+ * `code`, `message`, `offset`, `line` and `col` locate and name the failure.
+ * The remaining fields are optional extras and may be NULL.
+ */
 typedef struct {
   GTEXT_JSON_Status code; ///< Error code
   const char * message;   ///< Human-readable error message (static string)
@@ -317,8 +323,9 @@ typedef struct {
   bool allow_leading_plus;
 
   /**
-   * Allow a number whose decimal point has digits on only one side: `.5`,
-   * `5.`. JSON5. Default: off.
+   * @brief Allow a number whose decimal point has digits on only one side.
+   *
+   * The forms are `.5` and `5.`. JSON5. Default: off.
    *
    * Both spellings, because they are one question: whether the point may sit
    * at an edge. `.` alone is not a number under either setting, and neither

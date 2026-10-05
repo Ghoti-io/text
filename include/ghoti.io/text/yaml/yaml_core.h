@@ -102,7 +102,7 @@ typedef enum {
  * @brief Rich error payload returned/filled by YAML operations.
  *
  * Fields:
- * - code: status code (see @ref GTEXT_YAML_Status).
+ * - code: status code (see `GTEXT_YAML_Status`).
  * - message: human-readable message (owned by caller or static; do not free).
  * - offset/line/col: where in the input the error is. See
  *   @ref gtext_yaml_offsets for what offset counts - it is not always
@@ -112,16 +112,16 @@ typedef enum {
  * - expected_token/actual_token: optional textual tokens to aid diagnostics.
  */
 typedef struct {
-  GTEXT_YAML_Status code;
-  const char * message;
-  size_t offset;
-  int line;
-  int col;
-  char * context_snippet;
-  size_t context_snippet_len;
-  size_t caret_offset;
-  const char * expected_token;
-  const char * actual_token;
+  GTEXT_YAML_Status code;        ///< Status code
+  const char * message;          ///< Human-readable message; do not free
+  size_t offset;                 ///< Where in the input the error is
+  int line;                      ///< Line of the error
+  int col;                       ///< Column of the error
+  char * context_snippet;        ///< Nearby input, or NULL; freed by gtext_yaml_error_free()
+  size_t context_snippet_len;    ///< Length of `context_snippet`
+  size_t caret_offset;           ///< Position of the error within `context_snippet`
+  const char * expected_token;   ///< What was expected, or NULL
+  const char * actual_token;     ///< What was found, or NULL
 } GTEXT_YAML_Error;
 
 /**
@@ -131,9 +131,9 @@ typedef struct {
  * @ref gtext_yaml_offsets applies to @c offset.
  */
 typedef struct {
-  size_t offset;
-  int line;
-  int col;
+  size_t offset; ///< Where in the input the node begins
+  int line;      ///< Line number
+  int col;       ///< Column number
 } GTEXT_YAML_Source_Location;
 
 /**
@@ -247,11 +247,11 @@ typedef enum {
  * @ref gtext_yaml_offsets applies to @c offset.
  */
 typedef struct {
-  GTEXT_YAML_Warning_Code code;
-  const char * message;
-  size_t offset;
-  int line;
-  int col;
+  GTEXT_YAML_Warning_Code code; ///< Which warning this is
+  const char * message;         ///< Human-readable message
+  size_t offset;                ///< Where in the input the warning applies
+  int line;                     ///< Line of the warning
+  int col;                      ///< Column of the warning
 } GTEXT_YAML_Warning;
 
 /**
@@ -313,11 +313,11 @@ typedef GTEXT_YAML_Status (*GTEXT_YAML_Custom_Tag_Json_Converter)(
  * @brief Custom tag handler registration.
  */
 typedef struct {
-  const char * tag;
-  GTEXT_YAML_Custom_Tag_Constructor construct;
-  GTEXT_YAML_Custom_Tag_Representer represent;
-  GTEXT_YAML_Custom_Tag_Json_Converter to_json;
-  void * user;
+  const char * tag;                                ///< The tag this handler is for
+  GTEXT_YAML_Custom_Tag_Constructor construct;     ///< Builds a node from the tagged input
+  GTEXT_YAML_Custom_Tag_Representer represent;     ///< Chooses the tag to write a node with
+  GTEXT_YAML_Custom_Tag_Json_Converter to_json;    ///< Converts a tagged node to JSON
+  void * user;                                     ///< Passed back to each callback
 } GTEXT_YAML_Custom_Tag;
 
 /**
@@ -328,10 +328,10 @@ typedef struct {
  */
 typedef struct {
   /* Limits and behavior */
-  GTEXT_YAML_Mode mode;
-  GTEXT_YAML_Dupkey_Mode dupkeys;
-  GTEXT_YAML_Schema schema;
-  /* Maximum nesting depth, for reading a document and for walking one.
+  GTEXT_YAML_Mode mode;          ///< Preset that overrides some of the options below
+  GTEXT_YAML_Dupkey_Mode dupkeys; ///< What to do with a mapping whose keys repeat
+  GTEXT_YAML_Schema schema;      ///< Implicit typing schema for plain scalars
+  /** Maximum nesting depth, for reading a document and for walking one.
    *
    * It bounds the parser, the DOM writer and gtext_yaml_node_clone(). The
    * last two matter because the DOM constructors do not consult it: they
@@ -348,16 +348,16 @@ typedef struct {
    * its stack on the heap now, so depth costs memory rather than a frame and
    * this limit is a policy rather than a guard rail. */
   size_t max_depth;
-  size_t max_total_bytes;
-  size_t max_alias_expansion;
+  size_t max_total_bytes;        ///< Maximum input size in bytes; 0 selects the default
+  size_t max_alias_expansion;    ///< Maximum nodes produced by alias expansion; 0 selects the default
 
   /* Toggles */
-  bool validate_utf8;
-  bool resolve_tags;
-  bool retain_comments;
-  bool yaml_1_1;
-  bool enable_custom_tags;
-  /* Whether application-defined tags are accepted: a local tag such as
+  bool validate_utf8;            ///< Reject input that is not valid UTF-8
+  bool resolve_tags;             ///< Resolve explicit tags to node types
+  bool retain_comments;          ///< Report comments as GTEXT_YAML_EVENT_COMMENT events from the streaming parser
+  bool yaml_1_1;                 ///< Read plain scalars by the YAML 1.1 rules
+  bool enable_custom_tags;       ///< Apply the handlers in `custom_tags`
+  /** Whether application-defined tags are accepted: a local tag such as
    * "!point", or a global one under a prefix of your own.  These are valid
    * YAML and the specification's own examples use them, so the default is
    * true; false is a lockdown for input you do not trust.
@@ -366,10 +366,10 @@ typedef struct {
    * that names no type the specification defines - "!!bogus" - is a
    * malformed document and is refused whatever this is set to. */
   bool allow_nonstandard_tags;
-  bool allow_aliases;
-  bool allow_merge_keys;
+  bool allow_aliases;            ///< Accept `*alias` nodes
+  bool allow_merge_keys;         ///< Accept the `<<` merge key
 
-  /* Whether a mapping key may be a collection.  YAML allows it - "? [a, b]"
+  /** Whether a mapping key may be a collection.  YAML allows it - "? [a, b]"
    * names a sequence as a key - and many consumers cannot represent one, so
    * false refuses the document rather than handing on something they will
    * mishandle.
@@ -378,21 +378,21 @@ typedef struct {
    * returned early on exactly the setting that was meant to switch it on. */
   bool allow_complex_keys;
 
-  /* Whether a mapping key must resolve to a string.  Stricter than
+  /** Whether a mapping key must resolve to a string.  Stricter than
    * allow_complex_keys, and refuses everything that would refuse - an
    * integer or boolean key is a scalar, so it passes the complex-key test
    * and fails this one.  JSON has no other kind of key, which is what this
    * is for. */
   bool require_string_keys;
-  bool enable_json_fast_path;
-  const GTEXT_YAML_Custom_Tag * custom_tags;
-  size_t custom_tag_count;
+  bool enable_json_fast_path;    ///< Let input that is plain JSON take the JSON parser's route
+  const GTEXT_YAML_Custom_Tag * custom_tags; ///< Custom tag handlers, or NULL
+  size_t custom_tag_count;       ///< How many entries `custom_tags` has
 
   /* Warnings */
-  GTEXT_YAML_Warning_Callback warning_callback;
-  void * warning_user_data;
-  bool warnings_as_errors;
-  unsigned int warning_mask;
+  GTEXT_YAML_Warning_Callback warning_callback; ///< Called for each warning, or NULL
+  void * warning_user_data;      ///< Passed to `warning_callback`
+  bool warnings_as_errors;       ///< Treat a warning as a parse error
+  unsigned int warning_mask;     ///< Warnings to suppress, as GTEXT_YAML_WARNING_MASK() bits ORed together
 
   /**
    * Allocator for everything the parse produces, or NULL for
@@ -431,21 +431,21 @@ typedef struct {
  * @brief Options controlling document emission/serialization.
  */
 typedef struct {
-  bool pretty;
-  int indent_spaces;
-  int line_width;
-  const char * newline;
-  bool trailing_newline;
-  bool canonical;
-  GTEXT_YAML_Scalar_Style scalar_style;
-  GTEXT_YAML_Flow_Style flow_style;
-  GTEXT_YAML_Encoding encoding;
-  bool emit_bom;
-  bool enable_custom_tags;
-  const GTEXT_YAML_Custom_Tag * custom_tags;
-  size_t custom_tag_count;
+  bool pretty;                   ///< Use block layout with indentation instead of the compact form
+  int indent_spaces;             ///< Spaces per indentation level
+  int line_width;                ///< Preferred line width; 0 or less means no limit
+  const char * newline;          ///< The line terminator to write
+  bool trailing_newline;         ///< End the output with a newline
+  bool canonical;                ///< Write the canonical form
+  GTEXT_YAML_Scalar_Style scalar_style; ///< Preferred scalar style
+  GTEXT_YAML_Flow_Style flow_style;     ///< Preferred collection style
+  GTEXT_YAML_Encoding encoding;  ///< Output encoding
+  bool emit_bom;                 ///< Write a byte order mark first
+  bool enable_custom_tags;       ///< Apply the handlers in `custom_tags`
+  const GTEXT_YAML_Custom_Tag * custom_tags; ///< Custom tag handlers, or NULL
+  size_t custom_tag_count;       ///< How many entries `custom_tags` has
 
-  /* The dialect the output is meant to be read back in.
+  /** The dialect the output is meant to be read back in.
    *
    * Only a plain scalar is resolved by its contents (10.3.2), so whether a
    * scalar may go out plain is a question about what *that* schema and
@@ -458,17 +458,17 @@ typedef struct {
    *   a null            written "~",   read back under JSON  the string "~"
    *
    * These default to the 1.2 core schema, which is what the writer has always
-   * emitted and what @ref gtext_yaml_parse_options_default reads. Set them to
+   * emitted and what `gtext_yaml_parse_options_default()` reads. Set them to
    * the parse options a document came from - or will go to - and a string
    * that spells one of that dialect's words is quoted, and a null is spelled
    * the way that dialect spells one.
    *
-   * @ref GTEXT_YAML_SCHEMA_FAILSAFE resolves nothing, so nothing needs
+   * `GTEXT_YAML_SCHEMA_FAILSAFE` resolves nothing, so nothing needs
    * quoting for its sake; by the same token a document written for it cannot
    * carry a type at all, which is what asking for the failsafe schema means.
    */
   GTEXT_YAML_Schema schema;
-  bool yaml_1_1;
+  bool yaml_1_1;                 ///< Quote what YAML 1.1 would read as another type; see `schema`
 
   /**
    * The allocator the write's own working memory comes from, or NULL for the

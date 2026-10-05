@@ -312,18 +312,18 @@ typedef struct {
 	bool has_time;      ///< A time was present, not just a date.
 	bool tz_specified;  ///< An offset was present.
 	bool tz_utc;        ///< The offset was written `Z`.
-	int year;
-	int month;
-	int day;
-	int hour;
-	int minute;
-	int second;
+	int year;           ///< Year
+	int month;          ///< Month, 1 to 12
+	int day;            ///< Day of the month
+	int hour;           ///< Hour
+	int minute;         ///< Minute
+	int second;         ///< Second
 	int nsec;           ///< Fractional seconds, in nanoseconds.
 	int tz_offset;      ///< Minutes ahead of UTC.
 	/**
 	 * The document wrote `:60`.
 	 *
-	 * @ref second then reads 59, of the same minute and with the same
+	 * `second` then reads 59, of the same minute and with the same
 	 * fraction - where the Linux kernel puts the repeated second, and the
 	 * only place a value with sixty seconds can go. This flag is what says it
 	 * did not have to, and without it the fields would quietly disagree with
@@ -1340,9 +1340,9 @@ typedef enum {
  * half.
  */
 typedef struct {
-	bool allow_resolved_aliases;    /* Resolve alias nodes to targets. */
-	bool allow_merge_keys;          /* Allow merge-expanded mappings. */
-	/* Convert a non-string scalar key to a JSON name instead of refusing it.
+	bool allow_resolved_aliases;    ///< Resolve alias nodes to targets.
+	bool allow_merge_keys;          ///< Allow merge-expanded mappings.
+	/** Convert a non-string scalar key to a JSON name instead of refusing it.
 	 *
 	 * The name follows the key's value, not the way it was written, because
 	 * that is how this parser decides which keys are the same: "0x10" and
@@ -1355,10 +1355,10 @@ typedef struct {
 	 * different keys and JSON has one name for them - so two keys landing on
 	 * one name is refused rather than silently letting the second win. */
 	bool coerce_keys_to_strings;
-	GTEXT_YAML_JSON_Large_Int_Policy large_int_policy;
-	bool enable_custom_tags;        /* Enable custom tag JSON conversions. */
-	const GTEXT_YAML_Custom_Tag * custom_tags;
-	size_t custom_tag_count;
+	GTEXT_YAML_JSON_Large_Int_Policy large_int_policy; ///< What to do with an integer JSON cannot hold exactly
+	bool enable_custom_tags;        ///< Enable custom tag JSON conversions.
+	const GTEXT_YAML_Custom_Tag * custom_tags; ///< Custom tag handlers, or NULL
+	size_t custom_tag_count;        ///< How many entries `custom_tags` has
 } GTEXT_YAML_To_JSON_Options;
 
 /**

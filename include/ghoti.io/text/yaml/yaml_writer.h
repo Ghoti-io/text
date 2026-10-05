@@ -57,27 +57,27 @@ typedef int (*GTEXT_YAML_Write_Function)(
  * @brief YAML output sink structure.
  */
 typedef struct {
-	GTEXT_YAML_Write_Function write;
-	void * user;
+	GTEXT_YAML_Write_Function write; ///< Called with each chunk of output
+	void * user;                     ///< Passed to `write`
 } GTEXT_YAML_Sink;
 
 /**
  * @brief Growable buffer sink structure.
  */
 typedef struct {
-	char * data;
-	size_t size;
-	size_t used;
+	char * data;  ///< The buffer, NUL-terminated
+	size_t size;  ///< Bytes allocated
+	size_t used;  ///< Bytes written, not counting the terminator
 } GTEXT_YAML_Buffer_Sink;
 
 /**
  * @brief Fixed buffer sink structure.
  */
 typedef struct {
-	char * data;
-	size_t size;
-	size_t used;
-	bool truncated;
+	char * data;     ///< The buffer, NUL-terminated
+	size_t size;     ///< Capacity in bytes, including the terminator
+	size_t used;     ///< Bytes written, not counting the terminator
+	bool truncated;  ///< Set when output did not fit and was cut short
 } GTEXT_YAML_Fixed_Buffer_Sink;
 
 /**

@@ -88,7 +88,7 @@ typedef enum {
  * callback.
  */
 typedef struct {
-  GTEXT_YAML_Node_Event_Type type;
+  GTEXT_YAML_Node_Event_Type type; ///< What kind of event this is
 
   /** The node this event is about.
    *

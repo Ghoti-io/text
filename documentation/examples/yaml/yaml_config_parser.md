@@ -366,7 +366,7 @@ if (config->server_workers < 1 || config->server_workers > 128) {
 }
 ```
 
-### Security
+### Security of untrusted input
 
 Always use limits for config files from untrusted sources:
 ```c

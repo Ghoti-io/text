@@ -184,7 +184,7 @@ refuses *and* refuses documents Desktop Entry accepts:
 | Entry before any header | yes, named `k` with no prefix | ::GTEXT_INI_E_NO_GROUP |
 | Key with no `=` | yes, value **absent** | ::GTEXT_INI_E_BAD_LINE |
 | Backslash continuation | yes, joins with nothing | no such rule |
-| Quoted run in a value | yes, a **toggle** | `"` is an ordinary byte |
+| Quoted run in a value | yes, a **toggle** | <tt>&quot;</tt> is an ordinary byte |
 | Subsection `[a "b"]` | yes, case-sensitive | `a "b"` is just a group name |
 | Repeated key | every occurrence is a value | ::GTEXT_INI_E_DUPKEY |
 | Entry after `]` on one line | yes | ::GTEXT_INI_E_BAD_LINE |
@@ -332,7 +332,7 @@ That last row is the one field no other dialect sets. Both EditorConfig cores as
 the platform - core-c calls `isspace()` and core-py matches Python's `\s` - while
 git carries its own ctype table in which `\v` and `\f` are control characters, so
 the two dialects hold opposite rules about exactly two bytes.
-::GTEXT_INI_Dialect::ctype_whitespace is that choice. No corpus of real files
+::GTEXT_INI_Dialect::space_set is that choice. No corpus of real files
 contains either byte in either position.
 
 #### Both references fail the suite, and that is the finding
@@ -443,16 +443,16 @@ Like the two before it, not a relaxation of anything:
 
 | | systemd | elsewhere |
 |---|---|---|
-| `A=W1\` + `W2` | one value, `W1 W2` - the backslash **becomes a space** | no continuation, or git's joins with nothing |
-| `A=W1\` + `# c` + `W2` | the comment block is **skipped** and the halves join | - |
-| `A=W1\` + blank + `B=2` | the blank line **ends** the continuation; the backslash disappears | - |
-| `[Serv\` + `ice]` | one section named `Serv ice` - **a name may be continued** | no other dialect has this |
+| <tt>A=W1\\</tt> + `W2` | one value, `W1 W2` - the backslash **becomes a space** | no continuation, or git's joins with nothing |
+| <tt>A=W1\\</tt> + `# c` + `W2` | the comment block is **skipped** and the halves join | - |
+| <tt>A=W1\\</tt> + blank + `B=2` | the blank line **ends** the continuation; the backslash disappears | - |
+| <tt>[Serv\\</tt> + `ice]` | one section named `Serv ice` - **a name may be continued** | no other dialect has this |
 | `A=1<CR>B=2` | two settings: **a lone CR ends a line** | data to Desktop Entry, whitespace to git and EditorConfig |
 | `A=1` before any header | refused - "Assignment outside of section" | EditorConfig's specification names a preamble; git accepts one |
-| `\a \b \f \v \n \r \t \s \\ \" \'` | all of them | Desktop Entry has five, git has five, EditorConfig none |
+| <tt>\\a \\b \\f \\v \\n \\r \\t \\s \\\\ \\&quot; \\&apos;</tt> | all of them | Desktop Entry has five, git has five, EditorConfig none |
 | `\x41 \101 \u00e9 \U0001F600` | four **variable-length** numeric forms | no other dialect here |
 | `ExecStart=/bin/foo \q` | **parses**; the complaint arrives at the accessor | git refuses the document |
-| `A="x" 'y' z` | three words, quoting removed - but only if a caller asks | git's quoting is in the grammar |
+| <tt>A=&quot;x&quot; &apos;y&apos; z</tt> | three words, quoting removed - but only if a caller asks | git's quoting is in the grammar |
 | `A=yes` | boolean true | Desktop Entry admits `true` and `false` and nothing else |
 | `\v` | **not** whitespace | not whitespace to git either; whitespace to EditorConfig |
 
@@ -1459,25 +1459,26 @@ What the configparser work needed, recorded the same way, because the prediction
 wrong in the opposite direction from systemd's - the obstacle named in advance turned
 out not to be one, and the thing that reached the parser was not on the list:
 
-  - **Interpolation was named as the reason this dialect had not been done**, and it is
-    not an obstacle at all: it is a pass over an assembled value, it ships in no form,
-    and the measurement that settles it is that the *default* interpolation refuses a
-    value in 301 of the 479 real documents on this machine and changes one in none. The
-    earlier reading of the same question, over eleven files, said "three" - correct over
-    that population and far too weak to decide anything.
-  - **The continuation reached the parser rather than the value layer**, which is the
-    mirror image of systemd's surprise. There the continuation turned out to be a
-    property of the line when it had been taken for a property of the value; here it is
-    a property of the *following* line, which is neither - so the value scanner cannot
-    find it and a key's separator has to be sought on its own physical line only.
-  - **Three of the four struct changes were axes no prediction named**: two separator
-    characters, a third whitespace set, and a third answer for what follows a `]`. Each
-    was found by probing rather than by reading, and none of them is about the
-    continuation everybody had noticed.
-  - **The cheapest finding came from the corpus, not the differential.** A value
-    beginning with `;` is not a comment - the reference tests the whole line - and 331
-    of the 479 real documents have one, while none of the 102 probe documents and none
-    of the generator's axes did. It made those values come back empty.
+- **Interpolation was named as the reason this dialect had not been done**, and it is
+  not an obstacle at all: it is a pass over an assembled value, it ships in no form,
+  and the measurement that settles it is that the *default* interpolation refuses a
+  value in 301 of the 479 real documents on this machine and changes one in none. The
+  earlier reading of the same question, over eleven files, said "three" - correct over
+  that population and far too weak to decide anything.
+- **The continuation reached the parser rather than the value layer**, which is the
+  mirror image of systemd's surprise. There the continuation turned out to be a
+  property of the line when it had been taken for a property of the value; here it is
+  a property of the *following* line, which is neither - so the value scanner cannot
+  find it and a key's separator has to be sought on its own physical line only.
+- **Three of the four struct changes were axes no prediction named**: two separator
+  characters, a third whitespace set, and a third answer for what follows a `]`. Each
+  was found by probing rather than by reading, and none of them is about the
+  continuation everybody had noticed.
+- **The cheapest finding came from the corpus, not the differential.** A value
+  beginning with `;` is not a comment - the reference tests the whole line - and 331
+  of the 479 real documents have one, while none of the 102 probe documents and none
+  of the generator's axes did. It made those values come back empty.
+
 - **Win32 `.ini`, again.** Deliberately absent, and not because its reference is out
   of reach - a `GetPrivateProfileStringA` probe under wine runs in this workspace
   today. `GetPrivateProfileString` is documented as consulting the registry's
