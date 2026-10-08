@@ -130,6 +130,35 @@ int main(void) {
 """
 
 
+def persistent_driver(archive):
+    """The driver binary kept under the library build directory.
+
+    A TemporaryDirectory does not survive the build container, and the host
+    replay is not allowed to compile. The archive's directory is
+    `<build>/apps`, so one level up is that build directory.
+    """
+    return os.path.join(os.path.dirname(os.path.dirname(archive)), "nfc-driver")
+
+
+def _host_runtime_path(path):
+    """A `/work/...` path from the build container, as the host sees it.
+
+    install.sh mounts the workspace at `/work` and sets GHOTI_HOST_ROOT to
+    the host path of that mount. The driver is linked in the container and
+    executed on the host, so its rpath has to name the host prefix. `-L`
+    stays on `/work` so the container's linker can still open the library.
+    """
+    host_root = os.environ.get("GHOTI_HOST_ROOT")
+    if not host_root:
+        return path
+    if path == "/work":
+        return host_root
+    prefix = "/work/"
+    if path.startswith(prefix):
+        return os.path.join(host_root, path[len(prefix):])
+    return path
+
+
 def build_driver(root, workdir):
     """The C half of the comparison, linked against the archive the Makefile
     just built.
@@ -140,19 +169,34 @@ def build_driver(root, workdir):
     case was handled and the *wrong* one was not - `make check-nfc-oracle
     BUILD=debug` compared the release archive, and a glob is what let that
     through. There is no fallback: a script run by hand says what to set.
+
+    GHOTI_BUILD_CONTAINER writes the binary under the library build directory
+    and does not start a reference container. GHOTI_ORACLE_REPLAY uses that
+    binary and does not invoke the compiler.
     """
     archive = os.environ.get("ARCHIVE")
     if not archive:
         sys.exit("ARCHIVE must be set; the Makefile passes it\n"
                  "  (by hand, ARCHIVE=build/<platform>/<build>/apps/"
                  "libghoti.io-text-0.a)")
+    if os.environ.get("GHOTI_ORACLE_REPLAY"):
+        binary = persistent_driver(archive)
+        if not os.path.isfile(binary):
+            sys.exit("%s is not there. The build container should have "
+                     "written it before this replay." % binary)
+        return binary
     if not os.path.exists(archive):
         sys.exit("%s is not there; build the library first (make)" % archive)
 
-    source = os.path.join(workdir, "driver.c")
+    if os.environ.get("GHOTI_BUILD_CONTAINER"):
+        binary = persistent_driver(archive)
+        os.makedirs(os.path.dirname(binary), exist_ok=True)
+        source = binary + ".c"
+    else:
+        source = os.path.join(workdir, "driver.c")
+        binary = os.path.join(workdir, "driver")
     with open(source, "w", encoding="ascii") as handle:
         handle.write(DRIVER)
-    binary = os.path.join(workdir, "driver")
     generated = os.path.join(
         os.path.dirname(os.path.dirname(archive)), "generated")
     # The archive's NFC is a call into ghoti.io-unicode now, so the driver
@@ -177,7 +221,10 @@ def build_driver(root, workdir):
     # that passes for the wrong reason.
     for flag in list(unicode_flags):
         if flag.startswith("-L") and len(flag) > 2:
-            unicode_flags.append("-Wl,-rpath," + flag[2:])
+            libdir = flag[2:]
+            if os.environ.get("GHOTI_BUILD_CONTAINER"):
+                libdir = _host_runtime_path(libdir)
+            unicode_flags.append("-Wl,-rpath," + libdir)
 
     command = [
         os.environ.get("CC", "cc"), "-O1", "-o", binary, source,
@@ -314,6 +361,13 @@ def ask(argv, question, answer, what):
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     root = os.path.dirname(os.path.dirname(here))
+    # Recorded by the Makefile. Building the driver is the whole of this
+    # process inside the build container: the reference container is the
+    # host's job, and calling the engine here would be an unrecorded launch.
+    if (os.environ.get("GHOTI_BUILD_CONTAINER")
+            and not os.environ.get("GHOTI_ORACLE_REPLAY")):
+        build_driver(root, None)
+        return 0
     version = open(os.path.join(root, "tools", "idna", "UCD_VERSION"),
                    encoding="utf-8").read().strip()
     parser = argparse.ArgumentParser(description=__doc__)

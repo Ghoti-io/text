@@ -2201,10 +2201,17 @@ check-idna-oracle: ## Compare the derived IDNA property against a pinned indepen
 # The host `import idna` check is gone because it asked the wrong question. Any
 # idna satisfied it; what this gate needs is one whose tables are the pinned
 # UCD, and oracle_env.py is what can tell the difference.
+# The build container records this gate and does not start its reference.
+# install.sh runs the recorded line on the host.
 check-idna-oracle:
-	@$(REQUIRE_PYTHON3); \
-	$(call REQUIRE_DATA,$(UCD_DIR),tools/idna/fetch.sh); \
-	$(ORACLE_RUN) idna -- python3 tools/oracle/idna_diff.py
+	@set -e; \
+	if [ -n "$$GHOTI_BUILD_CONTAINER" ]; then \
+		printf '%s\n' 'text check-idna-oracle' >> "$$GHOTI_ORACLE_GATES"; \
+	else \
+		$(REQUIRE_PYTHON3); \
+		$(call REQUIRE_DATA,$(UCD_DIR),tools/idna/fetch.sh); \
+		$(ORACLE_RUN) idna -- python3 tools/oracle/idna_diff.py; \
+	fi
 
 check-nfc-oracle: ## Compare this library's NFC against a pinned CPython's, over every sequence
 # CPython's unicodedata is a normaliser written by other people from the same
@@ -2218,11 +2225,29 @@ check-nfc-oracle: ## Compare this library's NFC against a pinned CPython's, over
 # sequences the host's 15.1.0 could answer, UCD 15.1.0, 16.0.0 and 17.0.0 return
 # identical NFC, so moving off the host buys coverage and reproducibility and
 # corrects nothing. check-nfc-oracle-strict below is where the skew goes away.
+# The archive is built in the container. The driver is too: nfc_diff.py
+# writes it under the build directory while GHOTI_BUILD_CONTAINER is set,
+# and does not start the reference. GHOTI_ORACLE_REPLAY drops the archive
+# prerequisite so the host does not compile it, then runs the comparison
+# against the driver the container left behind.
+ifeq ($(GHOTI_ORACLE_REPLAY),1)
+check-nfc-oracle:
+else
 check-nfc-oracle: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
-	@$(REQUIRE_PYTHON3); \
-	$(call REQUIRE_DATA,$(UCD_DIR),tools/idna/fetch.sh); \
-	ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" \
-		$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py
+endif
+	@set -e; \
+	if [ -n "$$GHOTI_BUILD_CONTAINER" ]; then \
+		$(REQUIRE_PYTHON3); \
+		ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" \
+			python3 tools/oracle/nfc_diff.py; \
+		printf '%s\n' 'text check-nfc-oracle' >> "$$GHOTI_ORACLE_GATES"; \
+	else \
+		$(REQUIRE_PYTHON3); \
+		$(call REQUIRE_DATA,$(UCD_DIR),tools/idna/fetch.sh); \
+		LD_LIBRARY_PATH="$(LIB_INSTALL_PATH)/$(SUITE)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+		ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" \
+			$(ORACLE_RUN) python -- python3 tools/oracle/nfc_diff.py; \
+	fi
 
 check-nfc-oracle-strict: ## The NFC oracle against a UCD-matched CPython, where a disagreement is a defect
 # Deliberately outside TEST_GATES. The only pin whose UCD equals this library's
