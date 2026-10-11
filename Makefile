@@ -557,7 +557,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-fuzz-harnesses \
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
-	check-metaschema
+	check-metaschema check-html-tables
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -937,7 +937,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1074,7 +1074,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_parser.c \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
-	src/ini/ini_file_io.c
+	src/ini/ini_file_io.c \
+	src/html/html_charref.c
 
 check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
 	@python3 tools/check-allocator-callees.py
@@ -2104,6 +2105,38 @@ check-idna-tables: ## Fail if the committed IDNA tables are not what the generat
 		exit 1; \
 	fi; \
 	printf "\033[0;32mIDNA tables are byte-identical to the generators' output (UCD $(UCD_VERSION), IDNA mapping $(IDNA_MAPPING_VERSION)).\033[0m\n"
+
+# The named character reference table is generated from the WHATWG entities.json
+# and committed, so a build needs neither the network nor Python.  Without this
+# gate the committed table can drift from the generator that is supposed to
+# produce it, and from the pinned data the generator reads; the generator
+# checks the data against its hash itself, so a changed entities.json fails
+# here rather than regenerating quietly.
+HTML_DATA_DIR := third_party/html
+HTML_TABLES := src/html/tables
+
+check-html-tables: ## Fail if the committed HTML character reference table is not what the generator produces
+	@$(REQUIRE_PYTHON3); \
+	if [ ! -s $(HTML_DATA_DIR)/entities.json ]; then \
+		$(call REQUIRE_DATA,$(HTML_DATA_DIR),tools/html/fetch.sh); \
+	fi; \
+	tmp=$$(mktemp -d) || exit 1; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	mkdir -p "$$tmp/out"; \
+	if ! python3 tools/html/gen_charrefs.py --out "$$tmp/out" >/dev/null 2>"$$tmp/err"; then \
+		printf "\033[0;31m\n### The HTML table generator failed ###\033[0m\n" >&2; \
+		cat "$$tmp/err" >&2; \
+		exit 1; \
+	fi; \
+	if ! diff -ru $(HTML_TABLES) "$$tmp/out" >"$$tmp/diff" 2>&1; then \
+		printf "\033[0;31m\n### The committed HTML character reference table is stale ###\033[0m\n" >&2; \
+		head -40 "$$tmp/diff" >&2; \
+		printf "\nThe table under $(HTML_TABLES) is committed so that a build needs\n" >&2; \
+		printf "neither the network nor Python. Regenerate with:\n" >&2; \
+		printf "  tools/html/gen_charrefs.py\n" >&2; \
+		exit 1; \
+	fi; \
+	printf "\033[0;32mThe HTML character reference table is byte-identical to the generator's output ($$(sed -n 's/^const size_t gtext_html_charref_count = \([0-9]*\);/\1/p' $(HTML_TABLES)/charref_table.c) names).\033[0m\n"
 
 # ---------------------------------------------------------------------------
 # Oracles
