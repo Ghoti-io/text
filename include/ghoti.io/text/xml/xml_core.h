@@ -104,10 +104,17 @@ typedef enum {
                        ///< range, a document that ends inside a code unit, a
                        ///< byte above 0x7F under `US-ASCII`. The position is
                        ///< the offending unit's.
-  GTEXT_XML_E_ENCODING_MISMATCH ///< The declaration's `encoding` names a
+  GTEXT_XML_E_ENCODING_MISMATCH, ///< The declaration's `encoding` names a
                        ///< different family from the one the document is in
                        ///< (a UTF-16 document labeled UTF-8, a UTF-8 document
                        ///< labeled UTF-16). The position is the label's.
+
+  GTEXT_XML_E_INCOMPLETE, ///< Event parsers only: the pull reader has no event
+                       ///< to give until it is fed more input. Not an error
+                       ///< in the document.
+  GTEXT_XML_E_STATE    ///< Event parsers only: the call does not fit the
+                       ///< parser's state - input after the end of input, or
+                       ///< a pull reader that has delivered its last event.
 } GTEXT_XML_Status;
 
 /**

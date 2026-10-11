@@ -184,6 +184,9 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
       return xml_fail(p, GTEXT_XML_E_DOCTYPE,
           "declaration in the internal subset is not terminated by '>'");
     }
+    if (b == '%' && p->partial && p->pos + 1 >= p->length) {
+      return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+    }
     if (b == '%' && is_entity && p->pos + 1 < p->length
         && xml_is_space(p->in[p->pos + 1])) {
       /* `<!ENTITY % name ...>`: the percent sign that makes it a parameter
@@ -257,17 +260,23 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p) {
     if (b != '<') {
       return bad(p, "unexpected content in the internal subset");
     }
+    if (xml_cut_literal(p, "<!--", 4) || xml_cut_literal(p, "<?", 2)) {
+      return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+    }
     if (xml_looking_at(p, "<!--", 4)) {
-      status = xml_parse_comment(p, NULL);
+      status = xml_parse_comment(p, 0);
     }
     else if (xml_looking_at(p, "<?", 2)) {
-      status = xml_parse_pi(p, NULL);
+      status = xml_parse_pi(p, 0);
     }
     else {
       size_t k = 0;
       for (; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
         if (xml_looking_at(p, keywords[k], strlen(keywords[k]))) {
           break;
+        }
+        if (xml_cut_literal(p, keywords[k], strlen(keywords[k]))) {
+          return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
         }
       }
       if (k == sizeof(keywords) / sizeof(keywords[0])) {
@@ -315,6 +324,10 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   xml_consume(p, length);
   size_t space = xml_skip_space(p);
 
+  if (xml_cut_literal(p, "SYSTEM", 6) || xml_cut_literal(p, "PUBLIC", 6)) {
+    status = xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+    goto done;
+  }
   const int is_system = xml_looking_at(p, "SYSTEM", 6);
   const int is_public = !is_system && xml_looking_at(p, "PUBLIC", 6);
   if (is_system || is_public) {
@@ -361,7 +374,11 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   }
   xml_consume(p, 1);
 
-  {
+  if (p->stream) {
+    status = xml_emit_doctype(p, &start, name.data,
+        has_public ? pub.data : NULL, has_system ? sys.data : NULL);
+  }
+  else {
     GTEXT_Markup_Node * node = NULL;
     status = xml_from_markup(p,
         gtext_markup_create_doctype(p->doc, name.data,

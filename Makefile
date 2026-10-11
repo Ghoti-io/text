@@ -1087,7 +1087,9 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/xml/xml_encoding.c \
 	src/xml/xml_lexer.c \
 	src/xml/xml_namespace.c \
-	src/xml/xml_parser.c
+	src/xml/xml_parser.c \
+	src/xml/xml_reader.c \
+	src/xml/xml_stream.c
 
 check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
 	@python3 tools/check-allocator-callees.py

@@ -148,108 +148,165 @@ static int raw_label(const unsigned char * s, size_t n, size_t * at, size_t * le
 
 /* ---- conversion --------------------------------------------------------- */
 
-typedef struct {
-  xml_ctx * p;
-  markup_buf * out;
-  size_t line;
-  size_t column;
-  uint32_t previous;
-} xml_sink;
+/* The converter is incremental: a document may arrive in pieces that cut a
+   UTF-16 or UTF-32 unit, or a surrogate pair, anywhere. What carries across a
+   piece is a partial unit (`left`), a high surrogate waiting for its low one
+   (`high`), and the line, column and byte count that a position in an error is
+   made of. The whole-document parse feeds one piece and ends it, so there is one
+   conversion and not two. */
 
-static GTEXT_XML_Status sink_invalid(xml_sink * s, const char * message) {
+void xml_converter_init(
+    xml_converter * c, xml_ctx * p, markup_buf * out, xml_family family) {
+  memset(c, 0, sizeof(*c));
+  c->p = p;
+  c->out = out;
+  c->family = family;
+  c->line = 1;
+  c->column = 1;
+}
+
+static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message) {
   GTEXT_Markup_Location where;
-  where.offset = s->out->length;
-  where.line = s->line;
-  where.column = s->column;
-  return xml_fail_at(s->p, GTEXT_XML_E_INVALID_SEQUENCE, message, &where);
+  where.offset = c->total;
+  where.line = c->line;
+  where.column = c->column;
+  return xml_fail_at(c->p, GTEXT_XML_E_INVALID_SEQUENCE, message, &where);
 }
 
 /* Append one character, keeping the line and column of the original. */
-static GTEXT_XML_Status sink_put(xml_sink * s, uint32_t cp) {
-  GTEXT_XML_Status status = xml_append_code_point(s->p, s->out, cp);
+static GTEXT_XML_Status conv_put(xml_converter * c, uint32_t cp) {
+  const size_t before = c->out->length;
+  GTEXT_XML_Status status = xml_append_code_point(c->p, c->out, cp);
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  c->total += c->out->length - before;
   if (cp == '\n') {
-    if (s->previous != '\r') {
-      s->line++;
+    if (c->previous != '\r') {
+      c->line++;
     }
-    s->column = 1;
+    c->column = 1;
   }
   else if (cp == '\r') {
-    s->line++;
-    s->column = 1;
+    c->line++;
+    c->column = 1;
   }
   else {
-    s->column++;
+    c->column++;
   }
-  s->previous = cp;
+  c->previous = cp;
   return GTEXT_XML_OK;
 }
 
-static GTEXT_XML_Status convert(xml_ctx * p, xml_family family, size_t skip) {
-  const unsigned char * in = p->in;
-  const size_t n = p->length;
-  xml_sink sink = {p, &p->decoded, 1, 1, 0};
+/* The next whole code unit of `width` bytes, from the bytes left over from the
+   last piece and then from this one. 0 if there is not a whole one yet; what
+   there is stays in `left`. */
+static int take_unit(xml_converter * c, const unsigned char ** data, size_t * n,
+    size_t width, int big, uint32_t * unit) {
+  const unsigned char * u;
+  if (c->left_n == 0 && *n >= width) {
+    u = *data;
+    *data += width;
+    *n -= width;
+  }
+  else {
+    while (c->left_n < width && *n > 0) {
+      c->left[c->left_n++] = **data;
+      (*data)++;
+      (*n)--;
+    }
+    if (c->left_n < width) {
+      return 0;
+    }
+    u = c->left;
+    c->left_n = 0;
+  }
+  if (width == 2) {
+    *unit = big ? (uint32_t)(u[0] << 8 | u[1]) : (uint32_t)(u[1] << 8 | u[0]);
+  }
+  else {
+    *unit = big ? ((uint32_t)u[0] << 24 | (uint32_t)u[1] << 16
+                      | (uint32_t)u[2] << 8 | u[3])
+                : ((uint32_t)u[3] << 24 | (uint32_t)u[2] << 16
+                      | (uint32_t)u[1] << 8 | u[0]);
+  }
+  return 1;
+}
+
+GTEXT_XML_Status xml_converter_feed(xml_converter * c,
+    const unsigned char * data, size_t n, int final) {
   GTEXT_XML_Status status = GTEXT_XML_OK;
+  const xml_family family = c->family;
 
   if (family == XML_FAMILY_LATIN1 || family == XML_FAMILY_ASCII) {
     for (size_t i = 0; i < n && status == GTEXT_XML_OK; i++) {
-      if (in[i] >= 0x80 && family == XML_FAMILY_ASCII) {
-        return sink_invalid(&sink, "a byte above 0x7F in a US-ASCII document");
+      if (data[i] >= 0x80 && family == XML_FAMILY_ASCII) {
+        return conv_invalid(c, "a byte above 0x7F in a US-ASCII document");
       }
-      status = sink_put(&sink, in[i]);
+      status = conv_put(c, data[i]);
     }
+    return status;
   }
-  else if (family == XML_FAMILY_UTF16LE || family == XML_FAMILY_UTF16BE) {
+  if (family == XML_FAMILY_UTF16LE || family == XML_FAMILY_UTF16BE) {
     const int big = family == XML_FAMILY_UTF16BE;
-    size_t i = skip;
-    while (i < n && status == GTEXT_XML_OK) {
-      if (n - i < 2) {
-        return sink_invalid(&sink, "a UTF-16 document ends inside a code unit");
-      }
-      uint32_t u = big ? (uint32_t)(in[i] << 8 | in[i + 1])
-                       : (uint32_t)(in[i + 1] << 8 | in[i]);
-      i += 2;
-      if (u >= 0xDC00 && u <= 0xDFFF) {
-        return sink_invalid(&sink, "a low surrogate with no high surrogate before it");
-      }
-      if (u >= 0xD800 && u <= 0xDBFF) {
-        if (n - i < 2) {
-          return sink_invalid(&sink,
-              n - i == 0 ? "a high surrogate at the end of the document"
-                         : "a UTF-16 document ends inside a code unit");
+    uint32_t u;
+    while (take_unit(c, &data, &n, 2, big, &u)) {
+      if (c->high != 0) {
+        if (u < 0xDC00 || u > 0xDFFF) {
+          return conv_invalid(c, "a high surrogate not followed by a low one");
         }
-        const uint32_t v = big ? (uint32_t)(in[i] << 8 | in[i + 1])
-                               : (uint32_t)(in[i + 1] << 8 | in[i]);
-        if (v < 0xDC00 || v > 0xDFFF) {
-          return sink_invalid(&sink, "a high surrogate not followed by a low one");
-        }
-        i += 2;
-        u = 0x10000 + ((u - 0xD800) << 10) + (v - 0xDC00);
+        const uint32_t cp = 0x10000 + ((c->high - 0xD800) << 10) + (u - 0xDC00);
+        c->high = 0;
+        status = conv_put(c, cp);
       }
-      status = sink_put(&sink, u);
+      else if (u >= 0xDC00 && u <= 0xDFFF) {
+        return conv_invalid(c, "a low surrogate with no high surrogate before it");
+      }
+      else if (u >= 0xD800 && u <= 0xDBFF) {
+        c->high = u;
+        continue;
+      }
+      else {
+        status = conv_put(c, u);
+      }
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
     }
+    if (final) {
+      if (c->high != 0 && c->left_n == 0) {
+        return conv_invalid(c, "a high surrogate at the end of the document");
+      }
+      if (c->left_n != 0 || c->high != 0) {
+        return conv_invalid(c, "a UTF-16 document ends inside a code unit");
+      }
+    }
+    return GTEXT_XML_OK;
   }
-  else { /* UTF-32 */
+  { /* UTF-32 */
     const int big = family == XML_FAMILY_UTF32BE;
-    size_t i = skip;
-    while (i < n && status == GTEXT_XML_OK) {
-      if (n - i < 4) {
-        return sink_invalid(&sink, "a UTF-32 document ends inside a code unit");
-      }
-      const uint32_t u = big
-          ? ((uint32_t)in[i] << 24 | (uint32_t)in[i + 1] << 16
-                | (uint32_t)in[i + 2] << 8 | in[i + 3])
-          : ((uint32_t)in[i + 3] << 24 | (uint32_t)in[i + 2] << 16
-                | (uint32_t)in[i + 1] << 8 | in[i]);
-      i += 4;
+    uint32_t u;
+    while (take_unit(c, &data, &n, 4, big, &u)) {
       if (u > 0x10FFFF || (u >= 0xD800 && u <= 0xDFFF)) {
-        return sink_invalid(&sink, "a UTF-32 unit that is not a Unicode scalar value");
+        return conv_invalid(c, "a UTF-32 unit that is not a Unicode scalar value");
       }
-      status = sink_put(&sink, u);
+      status = conv_put(c, u);
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
     }
+    if (final && c->left_n != 0) {
+      return conv_invalid(c, "a UTF-32 document ends inside a code unit");
+    }
+    return GTEXT_XML_OK;
   }
+}
+
+static GTEXT_XML_Status convert(xml_ctx * p, xml_family family, size_t skip) {
+  xml_converter c;
+  xml_converter_init(&c, p, &p->decoded, family);
+  const GTEXT_XML_Status status =
+      xml_converter_feed(&c, p->in + skip, p->length - skip, 1);
   if (status != GTEXT_XML_OK) {
     return status;
   }
@@ -263,38 +320,37 @@ static GTEXT_XML_Status convert(xml_ctx * p, xml_family family, size_t skip) {
 
 /* ---- detection ---------------------------------------------------------- */
 
-GTEXT_XML_Status xml_detect_encoding(xml_ctx * p) {
-  const unsigned char * s = p->in;
-  const size_t n = p->length;
-  p->enc_family = XML_FAMILY_UTF8;
-  p->enc_bom = 0;
-
-  if (n >= 3 && s[0] == 0xEF && s[1] == 0xBB && s[2] == 0xBF) {
-    p->enc_bom = 1;
-    p->pos = 3; /* A mark is not a character of the document: column 1 still. */
-    return GTEXT_XML_OK;
-  }
+int xml_sniff(const unsigned char * s, size_t n, xml_family * out_family,
+    size_t * out_skip, int * out_bom) {
   xml_family family = XML_FAMILY_UTF8;
   size_t skip = 0;
+  int bom = 0;
+
+  if (n >= 3 && s[0] == 0xEF && s[1] == 0xBB && s[2] == 0xBF) {
+    *out_family = XML_FAMILY_UTF8;
+    *out_skip = 3; /* A mark is not a character of the document: column 1 still. */
+    *out_bom = 1;
+    return 0;
+  }
   if (n >= 4 && s[0] == 0xFF && s[1] == 0xFE && s[2] == 0 && s[3] == 0) {
     family = XML_FAMILY_UTF32LE;
     skip = 4;
-    p->enc_bom = 1;
+    bom = 1;
   }
   else if (n >= 4 && s[0] == 0 && s[1] == 0 && s[2] == 0xFE && s[3] == 0xFF) {
     family = XML_FAMILY_UTF32BE;
     skip = 4;
-    p->enc_bom = 1;
+    bom = 1;
   }
   else if (n >= 2 && s[0] == 0xFF && s[1] == 0xFE) {
     family = XML_FAMILY_UTF16LE;
     skip = 2;
-    p->enc_bom = 1;
+    bom = 1;
   }
   else if (n >= 2 && s[0] == 0xFE && s[1] == 0xFF) {
     family = XML_FAMILY_UTF16BE;
     skip = 2;
-    p->enc_bom = 1;
+    bom = 1;
   }
   else if (n >= 4 && s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0x3C) {
     family = XML_FAMILY_UTF32BE;
@@ -309,8 +365,7 @@ GTEXT_XML_Status xml_detect_encoding(xml_ctx * p) {
     family = XML_FAMILY_UTF16LE;
   }
   else if (n >= 4 && s[0] == 0x4C && s[1] == 0x6F && s[2] == 0xA7 && s[3] == 0x94) {
-    return xml_fail(p, GTEXT_XML_E_UNSUPPORTED_ENCODING,
-        "EBCDIC is not supported");
+    return 1;
   }
 
   if (family == XML_FAMILY_UTF8) {
@@ -324,9 +379,54 @@ GTEXT_XML_Status xml_detect_encoding(xml_ctx * p) {
         family = label == XML_LABEL_LATIN1 ? XML_FAMILY_LATIN1 : XML_FAMILY_ASCII;
       }
     }
-    if (family == XML_FAMILY_UTF8) {
-      return GTEXT_XML_OK;
-    }
+  }
+  *out_family = family;
+  *out_skip = skip;
+  *out_bom = bom;
+  return 0;
+}
+
+int xml_sniff_needs_more(const unsigned char * s, size_t n, int * has_close) {
+  if (n < 4) {
+    return 1;
+  }
+  xml_family family;
+  size_t skip;
+  int bom;
+  if (xml_sniff(s, n, &family, &skip, &bom) != 0 || bom
+      || (family != XML_FAMILY_UTF8 && family != XML_FAMILY_LATIN1
+          && family != XML_FAMILY_ASCII)) {
+    return 0; /* Decided by the first bytes. */
+  }
+  /* ASCII-compatible with no mark: a declaration may still say Latin-1 or
+     ASCII, and it is only read once it has ended. */
+  const size_t m = n < 5 ? n : 5;
+  if (memcmp(s, "<?xml", m) != 0) {
+    return 0;
+  }
+  if (n < 6) {
+    return 1;
+  }
+  if (!xml_is_space(s[5])) {
+    return 0;
+  }
+  return !*has_close;
+}
+
+GTEXT_XML_Status xml_detect_encoding(xml_ctx * p) {
+  p->enc_family = XML_FAMILY_UTF8;
+  p->enc_bom = 0;
+  xml_family family;
+  size_t skip;
+  int bom;
+  if (xml_sniff(p->in, p->length, &family, &skip, &bom)) {
+    return xml_fail(p, GTEXT_XML_E_UNSUPPORTED_ENCODING,
+        "EBCDIC is not supported");
+  }
+  p->enc_bom = bom;
+  if (family == XML_FAMILY_UTF8) {
+    p->pos = skip;
+    return GTEXT_XML_OK;
   }
   p->enc_family = family;
   return convert(p, family, skip);

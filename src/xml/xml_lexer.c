@@ -64,9 +64,26 @@ int xml_looking_at(const xml_ctx * p, const char * literal, size_t length) {
       && memcmp(p->in + p->pos, literal, length) == 0;
 }
 
+int xml_cut_literal(const xml_ctx * p, const char * literal, size_t length) {
+  const size_t have = p->length - p->pos;
+  return p->partial && have < length && memcmp(p->in + p->pos, literal, have) == 0;
+}
+
+int xml_at_end(const xml_ctx * p, size_t at) {
+  if (at >= p->length) {
+    return 1;
+  }
+  uint32_t cp = 0;
+  size_t n = 0;
+  return p->partial && xml_decode(p, at, &cp, &n) == XML_CHAR_EOF;
+}
+
 GTEXT_XML_Status xml_expect(
     xml_ctx * p, const char * literal, size_t length, const char * message) {
   if (!xml_looking_at(p, literal, length)) {
+    if (xml_cut_literal(p, literal, length)) {
+      return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+    }
     return xml_unexpected(p, message);
   }
   xml_consume(p, length);
@@ -106,35 +123,37 @@ xml_char_status xml_decode(
     cp = b0;
     n = 1;
   }
-  else if (b0 >= 0xC2 && b0 <= 0xDF) {
-    n = 2;
-    if (left < 2 || (s[1] & 0xC0) != 0x80) {
-      return XML_CHAR_BAD_UTF8;
+  else if (b0 >= 0xC2 && b0 <= 0xF4) {
+    n = b0 <= 0xDF ? 2 : (b0 <= 0xEF ? 3 : 4);
+    /* What is there must be the start of a character before it is a short one:
+       a continuation byte that is not, or a second byte that makes it overlong,
+       a surrogate or beyond U+10FFFF, is wrong whatever follows. */
+    const size_t have = left < n ? left : n;
+    for (size_t i = 1; i < have; i++) {
+      if ((s[i] & 0xC0) != 0x80) {
+        return XML_CHAR_BAD_UTF8;
+      }
     }
-    cp = ((uint32_t)(b0 & 0x1F) << 6) | (s[1] & 0x3F);
-  }
-  else if (b0 >= 0xE0 && b0 <= 0xEF) {
-    n = 3;
-    if (left < 3 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80) {
-      return XML_CHAR_BAD_UTF8;
+    if (have >= 2
+        && ((b0 == 0xE0 && s[1] < 0xA0) || (b0 == 0xED && s[1] > 0x9F)
+            || (b0 == 0xF0 && s[1] < 0x90) || (b0 == 0xF4 && s[1] > 0x8F))) {
+      return XML_CHAR_BAD_UTF8; /* overlong, surrogate, beyond U+10FFFF */
     }
-    if ((b0 == 0xE0 && s[1] < 0xA0) || (b0 == 0xED && s[1] > 0x9F)) {
-      return XML_CHAR_BAD_UTF8; /* overlong, surrogate */
+    if (left < n) {
+      /* A character cut short by the end of what has arrived is not yet wrong. */
+      return p->partial ? XML_CHAR_EOF : XML_CHAR_BAD_UTF8;
     }
-    cp = ((uint32_t)(b0 & 0x0F) << 12) | ((uint32_t)(s[1] & 0x3F) << 6)
-        | (s[2] & 0x3F);
-  }
-  else if (b0 >= 0xF0 && b0 <= 0xF4) {
-    n = 4;
-    if (left < 4 || (s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80
-        || (s[3] & 0xC0) != 0x80) {
-      return XML_CHAR_BAD_UTF8;
+    if (n == 2) {
+      cp = ((uint32_t)(b0 & 0x1F) << 6) | (s[1] & 0x3F);
     }
-    if ((b0 == 0xF0 && s[1] < 0x90) || (b0 == 0xF4 && s[1] > 0x8F)) {
-      return XML_CHAR_BAD_UTF8; /* overlong, beyond U+10FFFF */
+    else if (n == 3) {
+      cp = ((uint32_t)(b0 & 0x0F) << 12) | ((uint32_t)(s[1] & 0x3F) << 6)
+          | (s[2] & 0x3F);
     }
-    cp = ((uint32_t)(b0 & 0x07) << 18) | ((uint32_t)(s[1] & 0x3F) << 12)
-        | ((uint32_t)(s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    else {
+      cp = ((uint32_t)(b0 & 0x07) << 18) | ((uint32_t)(s[1] & 0x3F) << 12)
+          | ((uint32_t)(s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    }
   }
   else {
     return XML_CHAR_BAD_UTF8;
@@ -285,6 +304,10 @@ static int name_at(const xml_ctx * p, size_t start, size_t * length) {
 GTEXT_XML_Status xml_scan_name(xml_ctx * p, size_t * length) {
   switch (name_at(p, p->pos, length)) {
     case 0:
+      if (p->partial && xml_at_end(p, p->pos + *length)) {
+        /* It may go on: a name that ends where the input does has not ended. */
+        return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+      }
       return GTEXT_XML_OK;
     case 2:
       return xml_fail(p, GTEXT_XML_E_LIMIT_NAME, "name too long");
@@ -358,13 +381,13 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
   }
   if (found != 0) {
     return xml_fail_at(p,
-        i >= p->length ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_SYNTAX,
+        xml_at_end(p, i) ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_SYNTAX,
         "'&' must begin a reference", &at);
   }
   const size_t end = i + length;
-  if (end >= p->length || in[end] != ';') {
+  if (xml_at_end(p, end) || in[end] != ';') {
     return xml_fail_at(p,
-        end >= p->length ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_SYNTAX,
+        xml_at_end(p, end) ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_SYNTAX,
         "reference not terminated by ';'", &at);
   }
   const char * name = (const char *)in + i;

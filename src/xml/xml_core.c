@@ -78,6 +78,10 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "invalid byte sequence for the document's encoding";
     case GTEXT_XML_E_ENCODING_MISMATCH:
       return "declared encoding does not match the document";
+    case GTEXT_XML_E_INCOMPLETE:
+      return "more input is needed";
+    case GTEXT_XML_E_STATE:
+      return "wrong state for this call";
   }
   return "unknown status";
 }
@@ -119,7 +123,7 @@ GTEXT_XML_Status xml_fail_at(xml_ctx * p, GTEXT_XML_Status code,
 
 GTEXT_Markup_Location xml_here(const xml_ctx * p) {
   GTEXT_Markup_Location here;
-  here.offset = p->pos;
+  here.offset = p->base + p->pos;
   here.line = p->line;
   here.column = p->column;
   return here;

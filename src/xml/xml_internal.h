@@ -135,6 +135,8 @@ typedef struct {
   const unsigned char * name; ///< As written, in the input.
   size_t name_length;
   size_t binding_mark; ///< bindings.count when the element opened.
+  size_t name_offset;  ///< Event parsing: where the name is kept, in `names`,
+                       ///< because the input it was read from is not kept.
 } xml_frame;
 
 /** An attribute of the start tag being read. */
@@ -173,10 +175,14 @@ typedef struct {
   uint32_t stamp;
 } xml_hset;
 
+struct GTEXT_XML_Stream;
+
 typedef struct {
   const unsigned char * in;
   size_t length;
   size_t pos;
+  size_t base; ///< Event parsing: the offset in the document of in[0], because
+               ///< bytes already read are dropped. Always 0 for a DOM parse.
   size_t line;
   size_t column;
 
@@ -186,11 +192,25 @@ typedef struct {
   size_t max_name_bytes;
   size_t max_namespaces;
 
-  GTEXT_Markup_Document * doc;
+  GTEXT_Markup_Document * doc;       ///< NULL when parsing events.
   const GTEXT_Allocator * allocator; ///< The document's copy.
   xml_seams seams;
 
+  /** Non-NULL when the parse delivers events (xml_stream.c) instead of building
+   *  a tree: every place the tree parser would make a node calls an xml_emit_*
+   *  function instead. */
+  struct GTEXT_XML_Stream * stream;
+  GTEXT_Markup_Location tag_end_at; ///< Where `/>` of an empty element was.
+  markup_buf names;                 ///< Event parsing: the names of the open
+                                    ///< elements, one after another.
+
   GTEXT_XML_Error err;
+
+  /** Event parsing, before the end of the input: the buffer may end inside a
+   *  token, so the lexer reports "the input ended" (UNEXPECTED_EOF), and not a
+   *  syntax error, where more input could still make it well-formed. Always 0
+   *  for a DOM parse, where the end of the buffer is the end of the document. */
+  int partial;
 
   xml_family enc_family; ///< What the document was found to be in.
   int enc_bom;           ///< It began with a byte order mark.
@@ -223,6 +243,41 @@ typedef struct {
  * A UTF-8 mark is skipped by moving `pos`.
  */
 GTEXT_XML_Status xml_detect_encoding(xml_ctx * p);
+/**
+ * What the first `n` bytes say, as xml_detect_encoding() decides it: the family,
+ * how many leading bytes are a byte order mark, and whether there was one.
+ * Returns non-zero for EBCDIC, which is refused. Pure: it looks at the bytes and
+ * nothing else, so a document that arrives in pieces is decided by the same code.
+ */
+int xml_sniff(const unsigned char * s, size_t n, xml_family * family,
+    size_t * skip, int * bom);
+/**
+ * Are `n` bytes too few to decide? Fewer than four, or a declaration that may
+ * still say ISO-8859-1 and has not ended (`*has_close` tells whether a '>'
+ * has been seen).
+ */
+int xml_sniff_needs_more(const unsigned char * s, size_t n, int * has_close);
+
+/** Conversion to UTF-8, in pieces: see xml_encoding.c. */
+typedef struct {
+  xml_ctx * p;
+  markup_buf * out;
+  xml_family family;
+  size_t total;        ///< Bytes of UTF-8 produced so far.
+  size_t line;
+  size_t column;
+  uint32_t previous;
+  unsigned char left[4]; ///< A partial code unit carried from the last piece.
+  size_t left_n;
+  uint32_t high;       ///< A high surrogate waiting for its low one.
+} xml_converter;
+void xml_converter_init(
+    xml_converter * c, xml_ctx * p, markup_buf * out, xml_family family);
+/** Convert a piece, appending to `out`. `final` says no more will come, so a
+ *  partial unit is an error. Errors are recorded in `p->err`. */
+GTEXT_XML_Status xml_converter_feed(xml_converter * c,
+    const unsigned char * data, size_t n, int final);
+
 /** Classify an encoding label, case-insensitively. */
 xml_label xml_classify_label(const unsigned char * label, size_t length);
 /**
@@ -276,6 +331,19 @@ xml_char_status xml_decode(
 static inline int xml_is_space(unsigned char c) {
   return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
 }
+
+/**
+ * Is the input at the cursor a proper prefix of `literal` that the end of the
+ * buffer cut short? Only when `partial`: then the answer to "is it `literal`?"
+ * is "not yet known". Callers that would otherwise report a mismatch report the
+ * end of the input instead.
+ */
+int xml_cut_literal(const xml_ctx * p, const char * literal, size_t length);
+/**
+ * Is `at` the end of what has arrived: past the last byte, or (when `partial`)
+ * at the start of a character the end cut short?
+ */
+int xml_at_end(const xml_ctx * p, size_t at);
 
 /** Skip whitespace; the number of bytes skipped. */
 size_t xml_skip_space(xml_ctx * p);
@@ -367,12 +435,13 @@ GTEXT_XML_Status xml_check_qname(xml_ctx * p, const unsigned char * name,
 /* ---- Pieces the document type shares with the parser -------------------- */
 
 /**
- * Parse the comment at the cursor (on `<!--`). With a `parent`, add a comment
- * node to it; with NULL, only check it and move on.
+ * Parse the comment at the cursor (on `<!--`). With `keep`, it is delivered -
+ * added to the tree as a child of the open element, or as an event; without,
+ * it is only checked and moved over (the internal subset of a document type).
  */
-GTEXT_XML_Status xml_parse_comment(xml_ctx * p, GTEXT_Markup_Node * parent);
+GTEXT_XML_Status xml_parse_comment(xml_ctx * p, int keep);
 /** As xml_parse_comment() for the processing instruction at `<?`. */
-GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent);
+GTEXT_XML_Status xml_parse_pi(xml_ctx * p, int keep);
 /** Set a node's location and link it as `parent`'s last child. */
 void xml_attach(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node,
     const GTEXT_Markup_Location * where);
@@ -381,6 +450,58 @@ void xml_attach(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node,
 
 /** Parse `<!DOCTYPE ...>` at the cursor and add the doctype node. */
 GTEXT_XML_Status xml_parse_doctype(xml_ctx * p);
+
+/* ---- Pieces the event parser drives (xml_parser.c) ---------------------- */
+
+/** The XML declaration at the cursor (on `<?xml`). */
+GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p);
+/** The start tag at the cursor (on `<`). *is_empty is set for `<a/>`. */
+GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty);
+/** The end tag at the cursor (on `</`). */
+GTEXT_XML_Status xml_parse_end_tag(xml_ctx * p);
+/** The CDATA section at the cursor (on `<![CDATA[`). */
+GTEXT_XML_Status xml_parse_cdata(xml_ctx * p);
+/** Hand over the character data gathered so far, if there is any. */
+GTEXT_XML_Status xml_flush_text(xml_ctx * p);
+
+/* ---- Events (xml_stream.c) ----------------------------------------------- */
+
+/*
+ * What the parser calls where the DOM parser makes a node. Each returns OK, or
+ * the status that stops the parse: the callback's own, or a limit. None of them
+ * keeps a pointer it is given.
+ */
+GTEXT_XML_Status xml_emit_document_start(xml_ctx * p, const char * version,
+    const char * encoding, size_t encoding_length,
+    GTEXT_Markup_Encoding_Source source, GTEXT_Markup_Standalone standalone);
+GTEXT_XML_Status xml_emit_doctype(xml_ctx * p, const GTEXT_Markup_Location * at,
+    const char * name, const char * public_id, const char * system_id);
+/** The start tag just read: p->attrs and p->attr_pool hold its attributes,
+ *  already resolved. */
+GTEXT_XML_Status xml_emit_element_start(xml_ctx * p,
+    const GTEXT_Markup_Location * at, const unsigned char * name,
+    size_t name_length, size_t colon, const char * element_ns);
+/** The end of the element whose name is given, at `at`, in scope. */
+GTEXT_XML_Status xml_emit_element_end(xml_ctx * p,
+    const GTEXT_Markup_Location * at, const unsigned char * name,
+    size_t name_length);
+GTEXT_XML_Status xml_emit_text(xml_ctx * p, const GTEXT_Markup_Location * at,
+    const char * data, size_t length);
+GTEXT_XML_Status xml_emit_cdata(xml_ctx * p, const GTEXT_Markup_Location * at,
+    const char * data, size_t length);
+GTEXT_XML_Status xml_emit_comment(xml_ctx * p, const GTEXT_Markup_Location * at,
+    const char * data, size_t length);
+GTEXT_XML_Status xml_emit_pi(xml_ctx * p, const GTEXT_Markup_Location * at,
+    const char * target, size_t target_length, const char * data, size_t length);
+
+/**
+ * Make the event parser take an attempt at every construct whenever any input
+ * arrives, instead of only when the scan for its end says it is complete. For
+ * tests: it is quadratic, and it exists so that the lexer is shown to give the
+ * DOM parse's verdict for a buffer that ends anywhere.
+ */
+GTEXT_INTERNAL_API size_t xml_stream_work(const struct GTEXT_XML_Stream * stream);
+GTEXT_INTERNAL_API void xml_stream_set_eager(struct GTEXT_XML_Stream * stream, int eager);
 
 /* ---- Entry (xml_parser.c) ----------------------------------------------- */
 

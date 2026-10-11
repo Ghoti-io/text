@@ -3,7 +3,25 @@
 Usage: xmlconf_suite.py <xmlconf-dir> <runner> [exceptions-file]
 
 The runner reads a document on stdin and prints one line: `OK`, or
-`FAIL <status> <offset> <line> <column> <message>` (xmlconf_suite.c).
+`FAIL <status> <offset> <line> <column> <message>` (xmlconf_suite.c). It is run
+three ways on every case: `dom` (gtext_xml_parse()), `whole` (the event parser,
+fed the document in one call) and `bytes` (the event parser, one byte per call).
+The first is scored as described below. The other two are not scored on their
+own: they must give **exactly the DOM parse's line** - the same status, offset,
+line, column and message for a refusal, and for an acceptance the same tree
+(the runner replays the events and compares every name, value and location). Any
+case on which they differ is a failure of the gate, with no exceptions list: the
+event parsers claim the DOM parser's verdicts, and a case where they do not is a
+defect in one of them.
+
+There is one difference, and it is by construction: gtext_xml_parse() converts
+the whole of a UTF-16, UTF-32, ISO-8859-1 or US-ASCII document before it reads
+any of it, so it reports a byte that is not valid in the encoding
+(GTEXT_XML_E_INVALID_SEQUENCE) even if the document is not well-formed earlier;
+the event parser reports whichever comes first. Where the DOM parse says
+INVALID_SEQUENCE and the event parser instead refuses the document for a
+well-formedness reason at or before that offset, both have refused it and the
+case is counted apart ("conversion error ordering"), not failed.
 
 What is scored, by the case's TYPE in the catalogue:
 
@@ -118,22 +136,30 @@ def classify_scope(t):
     return None
 
 
-def run(path):
+def run_line(path, mode):
+    """The runner's one line for a file in a mode, or (None, why) if it died."""
     with open(path, 'rb') as fh:
         data = fh.read()
     try:
-        done = subprocess.run([RUNNER], input=data, capture_output=True, timeout=30)
+        done = subprocess.run([RUNNER, mode], input=data, capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
-        return ('TIMEOUT', '')
+        return None, ('TIMEOUT', '')
     line = done.stdout.decode('utf-8', 'replace').strip()
     if done.returncode != 0 or not line:
-        return ('CRASH', 'exit %s %s' % (done.returncode, done.stderr.decode('utf-8', 'replace')[:80]))
+        return None, ('CRASH', 'exit %s %s' % (done.returncode, done.stderr.decode('utf-8', 'replace')[:80]))
+    return line, None
+
+
+def run(path):
+    line, died = run_line(path, 'dom')
+    if died:
+        return died + (None,)
     if line == 'OK':
-        return ('OK', '')
+        return ('OK', '', line)
     parts = line.split(' ', 5)
     if parts[0] != 'FAIL' or len(parts) < 6:
-        return ('CRASH', 'unreadable runner output: %r' % line[:80])
-    return (parts[1], '%s:%s %s' % (parts[3], parts[4], parts[5]))
+        return ('CRASH', 'unreadable runner output: %r' % line[:80], line)
+    return (parts[1], '%s:%s %s' % (parts[3], parts[4], parts[5]), line)
 
 
 def load_exceptions():
@@ -161,6 +187,21 @@ WELL_FORMEDNESS = tuple('GTEXT_XML_E_' + n for n in (
 
 UNSUPPORTED = ('GTEXT_XML_E_UNSUPPORTED_ENCODING', 'GTEXT_XML_E_UNSUPPORTED_VERSION')
 
+# The cases allowed to differ by the conversion-ordering rule, by id. Any other
+# case that needs the rule is a failure: the list is the whole exemption.
+REORDERED_IDS = {'hst-lhs-009'}
+
+
+def reordered(dom_line, stream_line):
+    """Both refused it; the DOM parse reached the encoding error first."""
+    d = dom_line.split(' ', 5)
+    s = stream_line.split(' ', 5)
+    return (d[0] == 'FAIL' and s[0] == 'FAIL'
+            and d[1] == 'GTEXT_XML_E_INVALID_SEQUENCE'
+            and s[1] in WELL_FORMEDNESS and s[1] != d[1]
+            and int(s[2]) <= int(d[2]))
+
+
 cases = []
 walk(load_catalogue(), '', '', cases)
 if not cases:
@@ -174,6 +215,9 @@ unscored = collections.Counter()         # (type, outcome) over reported-only ca
 failures = []                            # unexplained scored failures
 explained = []                           # (id, reason) exceptions seen to fail
 crashes = []
+disagreements = []                       # (id, mode, dom line, stream line)
+ordering = collections.Counter()         # mode -> cases refused first for another reason
+stream_checked = 0
 seen_ids = set()
 missing = []
 
@@ -192,10 +236,23 @@ for t, path, beside in cases:
         missing.append((ident, path))
         continue
     kind = t.get('TYPE')
-    outcome, detail = run(path)
+    outcome, detail, dom_line = run(path)
     if outcome in ('CRASH', 'TIMEOUT'):
         crashes.append((ident, outcome, detail))
         continue
+    # The event parser, whole and a byte at a time, must say what the DOM parse
+    # said. This is every case that is in scope - the unsupported ones included,
+    # since an unsupported encoding is refused the same way by both.
+    for mode in ('whole', 'bytes'):
+        line, died = run_line(path, mode)
+        if died:
+            crashes.append((ident + ' [' + mode + ']', died[0], died[1]))
+        elif line != dom_line:
+            if reordered(dom_line, line) and ident in REORDERED_IDS:
+                ordering[mode] += 1
+            else:
+                disagreements.append((ident, mode, dom_line, line))
+        stream_checked += 1
     if outcome in UNSUPPORTED:
         unsupported[(kind, outcome)] += 1
         continue
@@ -250,6 +307,11 @@ print("out of scope:")
 for why, v in sorted(out_of_scope.items()):
     print("  %-34s %4d" % (why, v))
 print()
+print("event parser, whole and by bytes, against the DOM parse: %d runs, %d disagree" % (
+    stream_checked, len(disagreements)))
+print("  (conversion error ordering, both refused: %d whole, %d by bytes)" % (
+    ordering['whole'], ordering['bytes']))
+print()
 print("exceptions (scored cases that fail, each with its reason): %d" % len(explained))
 reasons = collections.Counter(r for _, r in explained)
 for r, v in reasons.most_common():
@@ -263,6 +325,14 @@ if failures:
     for ident, kind, detail, path in failures[:200]:
         print("  %-40s %-7s %s" % (ident, kind, detail))
         print("  %-40s         %s" % ('', os.path.relpath(path, SUITE)))
+if disagreements:
+    status = 1
+    print()
+    print("EVENT PARSER DISAGREES WITH THE DOM PARSE: %d" % len(disagreements))
+    for ident, mode, dom_line, stream_line in disagreements[:60]:
+        print("  %-40s %s" % (ident, mode))
+        print("      dom:    %s" % dom_line)
+        print("      stream: %s" % stream_line)
 if crashes:
     status = 1
     print()

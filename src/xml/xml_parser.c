@@ -57,12 +57,19 @@ void xml_attach(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node,
 
 static GTEXT_Markup_Node * current_parent(const xml_ctx * p) {
   return p->frame_count > 0 ? p->frames[p->frame_count - 1].node
-                            : p->doc->root;
+                            : (p->doc ? p->doc->root : NULL);
+}
+
+/* The name of an open element, as written. A tree parse points into its input,
+   which it keeps; an event parse does not keep its input, so it kept the name. */
+static const unsigned char * frame_name(const xml_ctx * p, const xml_frame * f) {
+  return f->name ? f->name
+                 : (const unsigned char *)p->names.data + f->name_offset;
 }
 
 /* ---- comments ----------------------------------------------------------- */
 
-GTEXT_XML_Status xml_parse_comment(xml_ctx * p, GTEXT_Markup_Node * parent) {
+GTEXT_XML_Status xml_parse_comment(xml_ctx * p, int keep) {
   const GTEXT_Markup_Location at = xml_here(p);
   xml_consume(p, 4); /* "<!--" */
   const size_t start = p->pos;
@@ -101,7 +108,7 @@ GTEXT_XML_Status xml_parse_comment(xml_ctx * p, GTEXT_Markup_Node * parent) {
   if (!found) {
     return xml_fail_at(p, GTEXT_XML_E_UNEXPECTED_EOF, "unterminated comment", &at);
   }
-  if (parent) {
+  if (keep) {
     buf_reset(&p->scratch);
     GTEXT_XML_Status status = xml_append(p, &p->scratch, "", 0);
     if (status == GTEXT_XML_OK) {
@@ -110,14 +117,22 @@ GTEXT_XML_Status xml_parse_comment(xml_ctx * p, GTEXT_Markup_Node * parent) {
     if (status != GTEXT_XML_OK) {
       return status;
     }
-    GTEXT_Markup_Node * node = NULL;
-    status = xml_from_markup(p,
-        gtext_markup_create_comment(
-            p->doc, p->scratch.data, p->scratch.length, &node));
-    if (status != GTEXT_XML_OK) {
-      return status;
+    if (p->stream) {
+      status = xml_emit_comment(p, &at, p->scratch.data, p->scratch.length);
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
     }
-    xml_attach(parent, node, &at);
+    else {
+      GTEXT_Markup_Node * node = NULL;
+      status = xml_from_markup(p,
+          gtext_markup_create_comment(
+              p->doc, p->scratch.data, p->scratch.length, &node));
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
+      xml_attach(current_parent(p), node, &at);
+    }
   }
   xml_consume(p, i + 3 - p->pos);
   return GTEXT_XML_OK;
@@ -125,7 +140,7 @@ GTEXT_XML_Status xml_parse_comment(xml_ctx * p, GTEXT_Markup_Node * parent) {
 
 /* ---- processing instructions -------------------------------------------- */
 
-GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent) {
+GTEXT_XML_Status xml_parse_pi(xml_ctx * p, int keep) {
   const GTEXT_Markup_Location at = xml_here(p);
   xml_consume(p, 2); /* "<?" */
   size_t target_length = 0;
@@ -148,6 +163,9 @@ GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent) {
   size_t data_start = p->pos;
   size_t end = p->pos;
   if (!xml_looking_at(p, "?>", 2)) {
+    if (xml_cut_literal(p, "?>", 2)) {
+      return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+    }
     if (xml_skip_space(p) == 0) {
       return xml_unexpected(p,
           "white space is required between a processing instruction's target and data");
@@ -179,7 +197,23 @@ GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent) {
     }
     end = i;
   }
-  if (parent) {
+  if (keep && p->stream) {
+    /* The data is normalized into the scratch buffer, which the target does not
+       use: the target is a slice of the input. */
+    buf_reset(&p->scratch);
+    status = xml_append(p, &p->scratch, "", 0);
+    if (status == GTEXT_XML_OK) {
+      status = xml_append_normalized(p, &p->scratch, data_start, end);
+    }
+    if (status == GTEXT_XML_OK) {
+      status = xml_emit_pi(p, &at, (const char *)target, target_length,
+          p->scratch.data, p->scratch.length);
+    }
+    if (status != GTEXT_XML_OK) {
+      return status;
+    }
+  }
+  else if (keep) {
     markup_buf name;
     markup_buf data;
     markup_buf_init(&name, p->allocator);
@@ -202,7 +236,7 @@ GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent) {
     if (status != GTEXT_XML_OK) {
       return status;
     }
-    xml_attach(parent, node, &at);
+    xml_attach(current_parent(p), node, &at);
   }
   xml_consume(p, end + 2 - p->pos);
   return GTEXT_XML_OK;
@@ -210,8 +244,17 @@ GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent) {
 
 /* ---- CDATA sections and character data ---------------------------------- */
 
-static GTEXT_XML_Status flush_text(xml_ctx * p) {
+GTEXT_XML_Status xml_flush_text(xml_ctx * p) {
   if (p->text.length == 0) {
+    return GTEXT_XML_OK;
+  }
+  if (p->stream) {
+    const GTEXT_XML_Status emitted =
+        xml_emit_text(p, &p->text_where, p->text.data, p->text.length);
+    if (emitted != GTEXT_XML_OK) {
+      return emitted;
+    }
+    buf_reset(&p->text);
     return GTEXT_XML_OK;
   }
   GTEXT_Markup_Node * node = NULL;
@@ -225,7 +268,7 @@ static GTEXT_XML_Status flush_text(xml_ctx * p) {
   return GTEXT_XML_OK;
 }
 
-static GTEXT_XML_Status parse_cdata(xml_ctx * p) {
+GTEXT_XML_Status xml_parse_cdata(xml_ctx * p) {
   const GTEXT_Markup_Location at = xml_here(p);
   xml_consume(p, 9); /* "<![CDATA[" */
   const size_t start = p->pos;
@@ -262,14 +305,22 @@ static GTEXT_XML_Status parse_cdata(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
-  GTEXT_Markup_Node * node = NULL;
-  status = xml_from_markup(p,
-      gtext_markup_create_cdata(
-          p->doc, p->scratch.data, p->scratch.length, &node));
-  if (status != GTEXT_XML_OK) {
-    return status;
+  if (p->stream) {
+    status = xml_emit_cdata(p, &at, p->scratch.data, p->scratch.length);
+    if (status != GTEXT_XML_OK) {
+      return status;
+    }
   }
-  xml_attach(current_parent(p), node, &at);
+  else {
+    GTEXT_Markup_Node * node = NULL;
+    status = xml_from_markup(p,
+        gtext_markup_create_cdata(
+            p->doc, p->scratch.data, p->scratch.length, &node));
+    if (status != GTEXT_XML_OK) {
+      return status;
+    }
+    xml_attach(current_parent(p), node, &at);
+  }
   xml_consume(p, i + 3 - p->pos);
   return GTEXT_XML_OK;
 }
@@ -455,7 +506,7 @@ static int is_literal(const unsigned char * s, size_t n, const char * literal) {
   return n == strlen(literal) && memcmp(s, literal, n) == 0;
 }
 
-static GTEXT_XML_Status parse_start_tag(xml_ctx * p, int * is_empty) {
+GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
   GTEXT_Markup_Node * parent = current_parent(p);
   const GTEXT_Markup_Location at = xml_here(p);
   xml_consume(p, 1); /* '<' */
@@ -492,6 +543,7 @@ static GTEXT_XML_Status parse_start_tag(xml_ctx * p, int * is_empty) {
       break;
     }
     if (c == '/') {
+      p->tag_end_at = xml_here(p);
       status = xml_expect(p, "/>", 2, "'/' must be followed by '>'");
       if (status != GTEXT_XML_OK) {
         return status;
@@ -697,6 +749,35 @@ static GTEXT_XML_Status parse_start_tag(xml_ctx * p, int * is_empty) {
     }
   }
 
+  if (p->stream) {
+    /* Events, not a tree. */
+    status = xml_emit_element_start(p, &at, name, name_length, colon, element_ns);
+    if (status == GTEXT_XML_OK && *is_empty) {
+      status = xml_emit_element_end(p, &p->tag_end_at, name, name_length);
+    }
+    if (status != GTEXT_XML_OK || *is_empty) {
+      xml_scope_release(p, mark);
+      return status;
+    }
+    const size_t name_offset = p->names.length;
+    status = xml_append(p, &p->names, (const char *)name, name_length);
+    if (status == GTEXT_XML_OK) {
+      status = xml_grow(p, (void **)&p->frames, &p->frame_capacity,
+          sizeof(xml_frame), p->frame_count + 1);
+    }
+    if (status != GTEXT_XML_OK) {
+      xml_scope_release(p, mark);
+      return status;
+    }
+    xml_frame * f = &p->frames[p->frame_count++];
+    f->node = NULL;
+    f->name = NULL;
+    f->name_offset = name_offset;
+    f->name_length = name_length;
+    f->binding_mark = mark;
+    return GTEXT_XML_OK;
+  }
+
   /* The tree. */
   const char * prefix = NULL;
   const char * local = NULL;
@@ -759,7 +840,7 @@ static GTEXT_XML_Status parse_start_tag(xml_ctx * p, int * is_empty) {
   return GTEXT_XML_OK;
 }
 
-static GTEXT_XML_Status parse_end_tag(xml_ctx * p) {
+GTEXT_XML_Status xml_parse_end_tag(xml_ctx * p) {
   const GTEXT_Markup_Location at = xml_here(p);
   xml_consume(p, 2); /* "</" */
   size_t length = 0;
@@ -768,7 +849,8 @@ static GTEXT_XML_Status parse_end_tag(xml_ctx * p) {
     return status;
   }
   const xml_frame * f = &p->frames[p->frame_count - 1];
-  if (length != f->name_length || memcmp(p->in + p->pos, f->name, length) != 0) {
+  const unsigned char * open_name = frame_name(p, f);
+  if (length != f->name_length || memcmp(p->in + p->pos, open_name, length) != 0) {
     return xml_fail_at(p, GTEXT_XML_E_MISMATCHED_TAG,
         "end tag does not match the start tag", &at);
   }
@@ -778,6 +860,13 @@ static GTEXT_XML_Status parse_end_tag(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  if (p->stream) {
+    status = xml_emit_element_end(p, &at, open_name, f->name_length);
+    if (status != GTEXT_XML_OK) {
+      return status;
+    }
+    p->names.length = f->name_offset;
+  }
   xml_scope_release(p, f->binding_mark);
   p->frame_count--;
   return GTEXT_XML_OK;
@@ -786,7 +875,7 @@ static GTEXT_XML_Status parse_end_tag(xml_ctx * p) {
 /* The root element and everything inside it. */
 static GTEXT_XML_Status parse_element(xml_ctx * p) {
   int is_empty = 0;
-  GTEXT_XML_Status status = parse_start_tag(p, &is_empty);
+  GTEXT_XML_Status status = xml_parse_start_tag(p, &is_empty);
   if (status != GTEXT_XML_OK) {
     return status;
   }
@@ -797,28 +886,28 @@ static GTEXT_XML_Status parse_element(xml_ctx * p) {
     }
     const unsigned char c = p->in[p->pos];
     if (c == '<') {
-      status = flush_text(p);
+      status = xml_flush_text(p);
       if (status != GTEXT_XML_OK) {
         return status;
       }
       if (xml_looking_at(p, "</", 2)) {
-        status = parse_end_tag(p);
+        status = xml_parse_end_tag(p);
       }
       else if (xml_looking_at(p, "<!--", 4)) {
-        status = xml_parse_comment(p, current_parent(p));
+        status = xml_parse_comment(p, 1);
       }
       else if (xml_looking_at(p, "<![CDATA[", 9)) {
-        status = parse_cdata(p);
+        status = xml_parse_cdata(p);
       }
       else if (xml_looking_at(p, "<?", 2)) {
-        status = xml_parse_pi(p, current_parent(p));
+        status = xml_parse_pi(p, 1);
       }
       else if (xml_looking_at(p, "<!", 2)) {
         status = xml_fail(p, GTEXT_XML_E_SYNTAX,
             "not a comment or a CDATA section");
       }
       else {
-        status = parse_start_tag(p, &is_empty);
+        status = xml_parse_start_tag(p, &is_empty);
       }
     }
     else if (c == '&') {
@@ -890,7 +979,7 @@ static GTEXT_XML_Status pseudo_attribute(xml_ctx * p, const char * name,
   return GTEXT_XML_OK;
 }
 
-static GTEXT_XML_Status parse_xml_declaration(xml_ctx * p) {
+GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
   xml_consume(p, 5); /* "<?xml" */
   size_t at = 0;
   size_t length = 0;
@@ -923,6 +1012,9 @@ static GTEXT_XML_Status parse_xml_declaration(xml_ctx * p) {
   size_t label_length = 0;
   GTEXT_Markup_Standalone standalone = GTEXT_MARKUP_STANDALONE_UNSPECIFIED;
   size_t space = xml_skip_space(p);
+  if (xml_cut_literal(p, "encoding", 8)) {
+    return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+  }
   if (xml_looking_at(p, "encoding", 8)) {
     if (space == 0) {
       return xml_unexpected(p, "white space is required before encoding");
@@ -949,6 +1041,9 @@ static GTEXT_XML_Status parse_xml_declaration(xml_ctx * p) {
     label = (const char *)p->in + label_at;
     space = xml_skip_space(p);
   }
+  if (xml_cut_literal(p, "standalone", 10)) {
+    return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+  }
   if (xml_looking_at(p, "standalone", 10)) {
     if (space == 0) {
       return xml_unexpected(p, "white space is required before standalone");
@@ -974,6 +1069,15 @@ static GTEXT_XML_Status parse_xml_declaration(xml_ctx * p) {
     return status;
   }
 
+  if (p->stream) {
+    return xml_emit_document_start(p, "1.0",
+        label ? label : xml_family_name(p->enc_family),
+        label ? label_length : strlen(xml_family_name(p->enc_family)),
+        p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM
+                   : (label ? GTEXT_MARKUP_ENCODING_DECLARATION
+                            : GTEXT_MARKUP_ENCODING_DEFAULT),
+        standalone);
+  }
   status = xml_from_markup(p,
       gtext_markup_document_set_xml_declaration(p->doc, "1.0", standalone));
   if (status != GTEXT_XML_OK) {
@@ -1006,10 +1110,10 @@ static GTEXT_XML_Status parse_misc(xml_ctx * p, int allow_doctype, int * seen_do
     }
     GTEXT_XML_Status status;
     if (xml_looking_at(p, "<!--", 4)) {
-      status = xml_parse_comment(p, p->doc->root);
+      status = xml_parse_comment(p, 1);
     }
     else if (xml_looking_at(p, "<?", 2)) {
-      status = xml_parse_pi(p, p->doc->root);
+      status = xml_parse_pi(p, 1);
     }
     else if (xml_looking_at(p, "<!DOCTYPE", 9)) {
       if (!allow_doctype || *seen_doctype) {
@@ -1037,7 +1141,7 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
   int declared = 0;
   if (xml_looking_at(p, "<?xml", 5) && p->pos + 5 < p->length
       && xml_is_space(p->in[p->pos + 5])) {
-    status = parse_xml_declaration(p);
+    status = xml_parse_xml_declaration(p);
     if (status != GTEXT_XML_OK) {
       return status;
     }
