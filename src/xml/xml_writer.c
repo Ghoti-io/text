@@ -48,9 +48,11 @@
 
 #include <ghoti.io/text/macros.h>
 
+#include <ghoti.io/text/markup/markup_html.h>
 #include <ghoti.io/unicode/utf.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #include "xml_internal.h"
 
@@ -67,9 +69,23 @@ enum {
   F_PRESERVE = 4  /* xml:space="preserve" on it or above */
 };
 
+/* What an open XHTML element means for the elements inside it (xhtml mode). */
+enum {
+  HZ_A = 1,       /* inside an a */
+  HZ_FORM = 2,    /* inside a form */
+  HZ_P = 4,       /* inside a p */
+  HZ_LI = 8,      /* an li is reached from here before a special element */
+  HZ_DD = 16,     /* likewise a dd or dt */
+  HZ_BUTTON = 32, /* inside a button */
+  HZ_FOREIGN = 64 /* directly in SVG or MathML content that HTML would build
+                     as such: reached from an svg or math element, and not in
+                     an integration point */
+};
+
 typedef struct {
   size_t mark;         /* bindings in scope outside this element */
   unsigned char flags; /* F_* */
+  unsigned hz;         /* HZ_*, for the elements below */
 } wframe;
 
 typedef struct {
@@ -114,6 +130,9 @@ typedef struct {
   bool dry;
   bool bom;      /* UTF-8 output starts with a byte order mark */
   bool declared; /* the XML declaration is being written in this pass */
+  bool xhtml;    /* GTEXT_XML_Write_Options::xhtml */
+  bool declare_now; /* xhtml: the root element's XHTML namespace is declared
+                       here if it is not already */
   size_t seed;
 
   /* output */
@@ -730,8 +749,12 @@ static bool is_lit(const char * s, size_t n, const char * lit) {
 
 /* ---- names and namespaces of one element -------------------------------- */
 
+static bool declaring(const wctx * w) {
+  return w->o.declare_namespaces || w->declare_now;
+}
+
 static GTEXT_XML_Status note_used(wctx * w, const char * k, size_t n) {
-  if (!w->o.declare_namespaces) {
+  if (!declaring(w)) {
     return GTEXT_XML_OK;
   }
   if (w->nuses == w->usecap) {
@@ -778,7 +801,7 @@ static GTEXT_XML_Status need_binding(wctx * w, const char * key, size_t klen,
         "an xmlns attribute contradicts the namespace of the name that uses it",
         key, klen);
   }
-  if (!w->o.declare_namespaces) {
+  if (!declaring(w)) {
     return fail_name(w, GTEXT_XML_E_NAMESPACE,
         b ? (klen ? "the prefix is bound to a different namespace here"
                   : "the default namespace here is not this element's")
@@ -1135,6 +1158,688 @@ static bool has_seq(const char * s, size_t n, const char * seq, size_t m) {
   return false;
 }
 
+/* ---- XHTML-compatible output -------------------------------------------- */
+
+/* What the HTML parser's tree construction does with an element of this name
+   (XHTML namespace only). Sorted by name; a name not here has no category. */
+enum {
+  XC_BLOCK = 1u << 0,
+  XC_P = 1u << 1,
+  XC_A = 1u << 2,
+  XC_FORM = 1u << 3,
+  XC_LI = 1u << 4,
+  XC_DTDD = 1u << 5,
+  XC_OPTION = 1u << 6,
+  XC_OPTGROUP = 1u << 7,
+  XC_HEADING = 1u << 8,
+  XC_TABLE = 1u << 9,
+  XC_SECTION = 1u << 10,
+  XC_ROW = 1u << 11,
+  XC_CELL = 1u << 12,
+  XC_COL = 1u << 13,
+  XC_TABLE_CHILD = 1u << 14,
+  XC_TABLE_OK = 1u << 15,
+  XC_RAWISH = 1u << 16,
+  XC_SPECIAL = 1u << 17,
+  XC_CONT = 1u << 18,
+  XC_HTML = 1u << 19,
+  XC_HEAD = 1u << 20,
+  XC_BODY = 1u << 21,
+  XC_COLGROUP = 1u << 22,
+  XC_CAPTION = 1u << 23,
+  XC_BUTTON = 1u << 24,
+  XC_SELECT = 1u << 25,
+  XC_TEMPLATE = 1u << 26,
+  XC_ODD = 1u << 27,
+  XC_HEADCONTENT = 1u << 28,
+};
+
+typedef struct {
+  const char * name;
+  unsigned cats;
+} xcat;
+
+static const xcat k_xcats[] = {
+    {"a", XC_A},
+    {"address", XC_BLOCK | XC_SPECIAL | XC_CONT},
+    {"applet", XC_SPECIAL},
+    {"area", XC_SPECIAL},
+    {"article", XC_BLOCK | XC_SPECIAL},
+    {"aside", XC_BLOCK | XC_SPECIAL},
+    {"base", XC_SPECIAL | XC_HEADCONTENT},
+    {"basefont", XC_SPECIAL | XC_HEADCONTENT},
+    {"bgsound", XC_SPECIAL | XC_HEADCONTENT},
+    {"blockquote", XC_BLOCK | XC_SPECIAL},
+    {"body", XC_SPECIAL | XC_BODY},
+    {"br", XC_SPECIAL},
+    {"button", XC_SPECIAL | XC_BUTTON},
+    {"caption", XC_TABLE_CHILD | XC_SPECIAL | XC_CAPTION},
+    {"center", XC_BLOCK | XC_SPECIAL},
+    {"col", XC_COL | XC_SPECIAL},
+    {"colgroup", XC_TABLE_CHILD | XC_SPECIAL | XC_COLGROUP},
+    {"dd", XC_BLOCK | XC_DTDD | XC_SPECIAL},
+    {"details", XC_BLOCK | XC_SPECIAL},
+    {"dialog", XC_BLOCK},
+    {"dir", XC_BLOCK | XC_SPECIAL},
+    {"div", XC_BLOCK | XC_SPECIAL | XC_CONT},
+    {"dl", XC_BLOCK | XC_SPECIAL},
+    {"dt", XC_BLOCK | XC_DTDD | XC_SPECIAL},
+    {"embed", XC_SPECIAL},
+    {"fieldset", XC_BLOCK | XC_SPECIAL},
+    {"figcaption", XC_BLOCK | XC_SPECIAL},
+    {"figure", XC_BLOCK | XC_SPECIAL},
+    {"footer", XC_BLOCK | XC_SPECIAL},
+    {"form", XC_BLOCK | XC_FORM | XC_SPECIAL},
+    {"frame", XC_SPECIAL | XC_ODD},
+    {"frameset", XC_SPECIAL | XC_ODD},
+    {"h1", XC_BLOCK | XC_HEADING | XC_SPECIAL},
+    {"h2", XC_BLOCK | XC_HEADING | XC_SPECIAL},
+    {"h3", XC_BLOCK | XC_HEADING | XC_SPECIAL},
+    {"h4", XC_BLOCK | XC_HEADING | XC_SPECIAL},
+    {"h5", XC_BLOCK | XC_HEADING | XC_SPECIAL},
+    {"h6", XC_BLOCK | XC_HEADING | XC_SPECIAL},
+    {"head", XC_SPECIAL | XC_HEAD},
+    {"header", XC_BLOCK | XC_SPECIAL},
+    {"hgroup", XC_BLOCK | XC_SPECIAL},
+    {"hr", XC_BLOCK | XC_SPECIAL},
+    {"html", XC_SPECIAL | XC_HTML},
+    {"iframe", XC_RAWISH | XC_SPECIAL},
+    {"image", XC_ODD},
+    {"img", XC_SPECIAL},
+    {"input", XC_SPECIAL},
+    {"isindex", XC_ODD},
+    {"keygen", XC_SPECIAL},
+    {"li", XC_BLOCK | XC_LI | XC_SPECIAL},
+    {"link", XC_SPECIAL | XC_HEADCONTENT},
+    {"listing", XC_BLOCK | XC_SPECIAL},
+    {"main", XC_BLOCK | XC_SPECIAL},
+    {"marquee", XC_SPECIAL},
+    {"math", XC_ODD},
+    {"menu", XC_BLOCK | XC_SPECIAL},
+    {"meta", XC_SPECIAL | XC_HEADCONTENT},
+    {"nav", XC_BLOCK | XC_SPECIAL},
+    {"noembed", XC_RAWISH | XC_SPECIAL},
+    {"noframes", XC_RAWISH | XC_SPECIAL},
+    {"noscript", XC_RAWISH | XC_SPECIAL | XC_HEADCONTENT},
+    {"object", XC_SPECIAL},
+    {"ol", XC_BLOCK | XC_SPECIAL},
+    {"optgroup", XC_OPTGROUP},
+    {"option", XC_OPTION},
+    {"p", XC_BLOCK | XC_P | XC_SPECIAL | XC_CONT},
+    {"param", XC_SPECIAL},
+    {"plaintext", XC_BLOCK | XC_RAWISH | XC_SPECIAL},
+    {"pre", XC_BLOCK | XC_SPECIAL},
+    {"script", XC_TABLE_OK | XC_SPECIAL | XC_HEADCONTENT},
+    {"search", XC_BLOCK | XC_SPECIAL},
+    {"section", XC_BLOCK | XC_SPECIAL},
+    {"select", XC_SPECIAL | XC_SELECT},
+    {"source", XC_SPECIAL},
+    {"style", XC_TABLE_OK | XC_SPECIAL | XC_HEADCONTENT},
+    {"summary", XC_BLOCK | XC_SPECIAL},
+    {"svg", XC_ODD},
+    {"table", XC_BLOCK | XC_TABLE | XC_SPECIAL},
+    {"tbody", XC_SECTION | XC_TABLE_CHILD | XC_SPECIAL},
+    {"td", XC_CELL | XC_SPECIAL},
+    {"template", XC_TABLE_OK | XC_SPECIAL | XC_TEMPLATE | XC_HEADCONTENT},
+    {"textarea", XC_SPECIAL},
+    {"tfoot", XC_SECTION | XC_TABLE_CHILD | XC_SPECIAL},
+    {"th", XC_CELL | XC_SPECIAL},
+    {"thead", XC_SECTION | XC_TABLE_CHILD | XC_SPECIAL},
+    {"title", XC_SPECIAL | XC_HEADCONTENT},
+    {"tr", XC_ROW | XC_SPECIAL},
+    {"track", XC_SPECIAL},
+    {"ul", XC_BLOCK | XC_SPECIAL},
+    {"wbr", XC_SPECIAL},
+    {"xmp", XC_BLOCK | XC_RAWISH | XC_SPECIAL},
+};
+
+static unsigned xcats_of(const GTEXT_Markup_Node * e) {
+  if (!e || gtext_markup_node_kind(e) != GTEXT_MARKUP_KIND_ELEMENT) {
+    return 0;
+  }
+  const char * ns = gtext_markup_element_namespace(e);
+  if (!ns || strcmp(ns, GTEXT_MARKUP_NS_HTML) != 0) {
+    return 0;
+  }
+  const char * local = gtext_markup_element_local_name(e);
+  size_t lo = 0;
+  size_t hi = sizeof(k_xcats) / sizeof(k_xcats[0]);
+  while (lo < hi) {
+    const size_t mid = lo + (hi - lo) / 2;
+    const int c = strcmp(local, k_xcats[mid].name);
+    if (c == 0) {
+      return k_xcats[mid].cats;
+    }
+    if (c < 0) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return 0;
+}
+
+static bool is_xhtml_element(const GTEXT_Markup_Node * e) {
+  const char * ns = gtext_markup_element_namespace(e);
+  return ns && strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0;
+}
+
+/* A refusal of xhtml mode: the tree is XML, but not one an HTML parser would
+   read the same way. */
+static GTEXT_XML_Status refuse_x(
+    wctx * w, const GTEXT_Markup_Node * n, const char * why) {
+  w->at = n;
+  w->at_attr = -1;
+  return fail(w, GTEXT_XML_E_XHTML, why);
+}
+
+/* A hazard: counted (once, in the checking pass), and a refusal when strict. */
+static GTEXT_XML_Status hazard(wctx * w, const GTEXT_Markup_Node * n,
+    GTEXT_XML_Xhtml_Hazard kind, const char * why) {
+  if (w->dry) {
+    if (w->r->xhtml_hazards++ == 0) {
+      w->r->xhtml_hazard_kind = kind;
+      build_path(n, -1, w->r->xhtml_hazard_path);
+    }
+  }
+  if (w->o.xhtml_strict) {
+    return refuse_x(w, n, why);
+  }
+  return GTEXT_XML_OK;
+}
+
+static bool html_space_only(const char * d, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    if (d[i] != ' ' && d[i] != '\t' && d[i] != '\n' && d[i] != '\r'
+        && d[i] != '\f') {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool has_upper(const char * s) {
+  for (; *s; s++) {
+    if (*s >= 'A' && *s <= 'Z') {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool is_foreign_ns(const char * ns) {
+  return ns
+      && (strcmp(ns, GTEXT_MARKUP_NS_SVG) == 0
+          || strcmp(ns, GTEXT_MARKUP_NS_MATHML) == 0);
+}
+
+/* The elements inside which HTML parses start tags as HTML again. */
+static bool is_integration_point(const GTEXT_Markup_Node * e) {
+  const char * ns = gtext_markup_element_namespace(e);
+  const char * local = gtext_markup_element_local_name(e);
+  if (!ns) {
+    return false;
+  }
+  if (strcmp(ns, GTEXT_MARKUP_NS_SVG) == 0) {
+    return strcmp(local, "foreignObject") == 0 || strcmp(local, "desc") == 0
+        || strcmp(local, "title") == 0;
+  }
+  if (strcmp(ns, GTEXT_MARKUP_NS_MATHML) == 0) {
+    if (strcmp(local, "annotation-xml") == 0) {
+      GTEXT_Markup_Attribute enc;
+      if (gtext_markup_element_get_attribute(e, NULL, "encoding", &enc)) {
+        return (enc.value_length == 9 && strncasecmp(enc.value, "text/html", 9) == 0)
+            || (enc.value_length == 21
+                && strncasecmp(enc.value, "application/xhtml+xml", 21) == 0);
+      }
+      return false;
+    }
+    return strcmp(local, "mi") == 0 || strcmp(local, "mo") == 0
+        || strcmp(local, "mn") == 0 || strcmp(local, "ms") == 0
+        || strcmp(local, "mtext") == 0;
+  }
+  return false;
+}
+
+/* HTML start tags that end foreign content (the standard's list). */
+static bool is_breakout(const GTEXT_Markup_Node * e) {
+  static const char * const names[] = {"b", "big", "blockquote", "body", "br",
+      "center", "code", "dd", "div", "dl", "dt", "em", "embed", "h1", "h2",
+      "h3", "h4", "h5", "h6", "head", "hr", "i", "img", "li", "listing", "menu",
+      "meta", "nobr", "ol", "p", "pre", "ruby", "s", "small", "span", "strong",
+      "strike", "sub", "sup", "table", "tt", "u", "ul", "var"};
+  const char * local = gtext_markup_element_local_name(e);
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+    if (strcmp(local, names[i]) == 0) {
+      return true;
+    }
+  }
+  if (strcmp(local, "font") == 0) {
+    GTEXT_Markup_Attribute a;
+    return gtext_markup_element_get_attribute(e, NULL, "color", &a)
+        || gtext_markup_element_get_attribute(e, NULL, "face", &a)
+        || gtext_markup_element_get_attribute(e, NULL, "size", &a);
+  }
+  return false;
+}
+
+/* A table part that is not in the kind of parent HTML accepts it in is ignored
+   (the cases HTML repairs by inserting a part are the parent's to report). */
+static bool table_part_misplaced(unsigned cats, unsigned pc) {
+  if (pc & XC_TEMPLATE) {
+    return false;
+  }
+  if (cats & XC_ROW) {
+    return !(pc & (XC_SECTION | XC_TABLE | XC_ROW | XC_CELL));
+  }
+  if (cats & XC_CELL) {
+    return !(pc & (XC_ROW | XC_SECTION | XC_TABLE | XC_CELL));
+  }
+  if (cats & XC_SECTION) {
+    return !(pc & (XC_TABLE | XC_ROW | XC_CELL | XC_SECTION));
+  }
+  if (cats & (XC_CAPTION | XC_COLGROUP)) {
+    return !(pc & XC_TABLE);
+  }
+  if (cats & XC_COL) {
+    return !(pc & (XC_COLGROUP | XC_TABLE));
+  }
+  return false;
+}
+
+#define HAZ(w, node, kind, why) \
+  do { \
+    if (hazard((w), (node), (kind), (why)) != GTEXT_XML_OK) { \
+      return (w)->status; \
+    } \
+  } while (0)
+
+/* Attributes of an XHTML element: names HTML would fold, and namespaces it
+   does not have. */
+static GTEXT_XML_Status xhtml_check_attributes(
+    wctx * w, const GTEXT_Markup_Node * e, bool is_root) {
+  const size_t count = gtext_markup_element_attribute_count(e);
+  for (size_t i = 0; i < count; i++) {
+    GTEXT_Markup_Attribute a;
+    gtext_markup_element_attribute_at(e, i, &a);
+    if (has_upper(a.local)) {
+      return refuse_x(w, e,
+          "an HTML parser lower-cases attribute names, so one with upper case "
+          "letters is read as a different attribute");
+    }
+    if (!a.ns) {
+      continue;
+    }
+    if (strcmp(a.ns, NS_XMLNS) == 0) {
+      const bool same_default = !a.prefix
+          && a.value_length == strlen(GTEXT_MARKUP_NS_HTML)
+          && memcmp(a.value, GTEXT_MARKUP_NS_HTML, a.value_length) == 0;
+      if (!is_root && !same_default) {
+        HAZ(w, e, GTEXT_XML_XHTML_HAZARD_NAMESPACED_ATTRIBUTE,
+            "an HTML parser reads a namespace declaration here as an "
+            "attribute and keeps the namespace of the enclosing element");
+      }
+      continue;
+    }
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_NAMESPACED_ATTRIBUTE,
+        "an HTML parser reads an attribute with a namespace as a plain "
+        "attribute with its prefixed name");
+  }
+  return GTEXT_XML_OK;
+}
+
+/* Element in SVG or MathML namespace, or in none of the known ones. */
+static GTEXT_XML_Status xhtml_check_foreign(wctx * w,
+    const GTEXT_Markup_Node * e, unsigned in_hz, unsigned * out_hz) {
+  const char * ns = gtext_markup_element_namespace(e);
+  const char * local = gtext_markup_element_local_name(e);
+  const GTEXT_Markup_Node * parent = gtext_markup_node_parent(e);
+  bool legit = false;
+  if (!is_foreign_ns(ns)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+        "an HTML parser only makes elements in the HTML, SVG and MathML "
+        "namespaces");
+  }
+  else {
+    legit = true;
+    const bool is_root_name = (strcmp(ns, GTEXT_MARKUP_NS_SVG) == 0
+                                  && strcmp(local, "svg") == 0)
+        || (strcmp(ns, GTEXT_MARKUP_NS_MATHML) == 0 && strcmp(local, "math") == 0);
+    if (gtext_markup_element_prefix(e)) {
+      legit = false;
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+          "an HTML parser reads a prefixed name as a name with a colon in it");
+    }
+    if (in_hz & HZ_FOREIGN) {
+      const char * pns = gtext_markup_element_namespace(parent);
+      if (!pns || strcmp(pns, ns) != 0) {
+        legit = false;
+        HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+            "an HTML parser gives an element the namespace of its foreign "
+            "parent, not its own");
+      }
+      else if (is_breakout(e)) {
+        legit = false;
+        HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+            "this start tag ends foreign content in an HTML parser");
+      }
+    }
+    else if (!is_root_name) {
+      legit = false;
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+          "an HTML parser makes SVG and MathML elements only inside an svg or "
+          "math element");
+    }
+  }
+  *out_hz = (in_hz & ~(unsigned)HZ_FOREIGN)
+      | ((legit && !is_integration_point(e)) ? HZ_FOREIGN : 0u);
+  return GTEXT_XML_OK;
+}
+
+/* What an HTML parser would do to this element and what it holds directly.
+   `hz` is what the open elements above it are; it becomes what they are for the
+   children. The element is in the XHTML namespace when `xe`. */
+static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
+    bool xe, bool has_content, unsigned * hz) {
+  const GTEXT_Markup_Node * parent = gtext_markup_node_parent(e);
+  const bool is_root = gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_DOCUMENT;
+  const char * local = gtext_markup_element_local_name(e);
+  if (!xe) {
+    if (is_root) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+          "an HTML parser makes the root of a document an html element");
+    }
+    return xhtml_check_foreign(w, e, *hz, hz);
+  }
+
+  const unsigned fl = gtext_markup_html_node_flags(e);
+  const unsigned cats = xcats_of(e);
+  const unsigned pc = xcats_of(parent);
+  const unsigned in = *hz;
+  if (gtext_markup_element_prefix(e)) {
+    return refuse_x(w, e,
+        "an HTML parser reads a prefixed name as a different element, so an "
+        "element in the XHTML namespace cannot have a prefix");
+  }
+  if (has_upper(local)) {
+    return refuse_x(w, e,
+        "an HTML parser lower-cases element names, so one with upper case "
+        "letters is read as a different element");
+  }
+  if (!((local[0] >= 'a' && local[0] <= 'z'))) {
+    return refuse_x(w, e,
+        "an HTML parser only starts an element name with an ASCII letter");
+  }
+  if ((fl & GTEXT_MARKUP_HTML_VOID) && has_content) {
+    return refuse_x(w, e, "a void element cannot have children");
+  }
+  if (xhtml_check_attributes(w, e, is_root) != GTEXT_XML_OK) {
+    return w->status;
+  }
+
+  /* Where it stands. */
+  if (is_root && !(cats & XC_HTML)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+        "an HTML parser makes the root of a document an html element");
+  }
+  if (!is_root && (cats & XC_HTML)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+        "an HTML parser merges a nested html element into the first");
+  }
+  if ((cats & (XC_HEAD | XC_BODY)) && !(pc & XC_HTML)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+        "an HTML parser only has a head or body directly in html");
+  }
+  if ((cats & XC_A) && (in & HZ_A)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_NESTED_A,
+        "an a inside an a: an HTML parser ends the first one");
+  }
+  if ((cats & XC_FORM) && (in & HZ_FORM)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_NESTED_FORM,
+        "a form inside a form: an HTML parser ignores the inner one");
+  }
+  if ((cats & XC_BLOCK) && (in & HZ_P)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_P_BLOCK,
+        "a block-level element inside a p: an HTML parser ends the p");
+  }
+  const bool implied_end = ((cats & XC_LI) && (in & HZ_LI))
+      || ((cats & XC_DTDD) && (in & HZ_DD))
+      || ((cats & XC_OPTION) && (pc & XC_OPTION))
+      || ((cats & XC_OPTGROUP) && (pc & (XC_OPTION | XC_OPTGROUP)))
+      || ((cats & XC_HEADING) && (pc & XC_HEADING))
+      || ((cats & XC_ROW) && (pc & (XC_ROW | XC_CELL)))
+      || ((cats & XC_CELL) && (pc & XC_CELL))
+      || ((cats & XC_SECTION) && (pc & (XC_ROW | XC_CELL | XC_SECTION)));
+  if (implied_end) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_IMPLIED_END,
+        "an HTML parser ends an open element where this one starts");
+  }
+  if ((cats & XC_ODD)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+        "an HTML parser rewrites or specially treats this element");
+  }
+  if ((cats & XC_BUTTON) && (in & HZ_BUTTON)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+        "a button inside a button: an HTML parser ends the first one");
+  }
+  if (table_part_misplaced(cats, pc)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+        "an HTML parser ignores a table part outside a table");
+  }
+  if (in & HZ_FOREIGN) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+        "an HTML parser makes an HTML tag inside SVG or MathML content a "
+        "foreign element or ends the content");
+  }
+  if ((cats & XC_TEMPLATE) && has_content) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+        "an HTML parser puts the children of a template into a content "
+        "fragment");
+  }
+
+  /* What it holds. */
+  const bool in_table = (cats & (XC_TABLE | XC_SECTION | XC_ROW)) != 0;
+  const bool newline_first = (fl & GTEXT_MARKUP_HTML_DROPS_FIRST_NEWLINE) != 0;
+  const bool raw = (fl & (GTEXT_MARKUP_HTML_RAW_TEXT
+                         | GTEXT_MARKUP_HTML_ESCAPABLE_RAW_TEXT))
+      != 0;
+  const bool scan = has_content
+      && (in_table || newline_first || raw
+          || (cats & (XC_RAWISH | XC_HEAD | XC_COLGROUP | XC_SELECT)));
+  bool seen_head = false;
+  bool seen_body = false;
+  if (scan) {
+    bool first = true;
+    for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(e); c;
+        c = gtext_markup_node_next_sibling(c)) {
+      const GTEXT_Markup_Kind k = gtext_markup_node_kind(c);
+      size_t len = 0;
+      const char * data = NULL;
+      if (k == GTEXT_MARKUP_KIND_TEXT) {
+        data = gtext_markup_node_data(c, &len);
+        if (len == 0) {
+          continue; /* XML reads it back as nothing */
+        }
+      }
+      if (first && newline_first && data && data[0] == '\n') {
+        return refuse_x(w, c,
+            "an HTML parser drops a line feed that starts a pre, textarea or "
+            "listing, and an XML parser keeps it");
+      }
+      first = false;
+      if (raw && k != GTEXT_MARKUP_KIND_TEXT) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
+            "an HTML parser reads markup inside this element as text");
+      }
+      if ((cats & XC_RAWISH) && k == GTEXT_MARKUP_KIND_ELEMENT) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
+            "an HTML parser reads markup inside this element as text");
+      }
+      if ((cats & XC_RAWISH) && data
+          && (memchr(data, '<', len) || memchr(data, '&', len)
+              || memchr(data, '>', len) || memchr(data, '\r', len))) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
+            "an HTML parser reads this text without its escapes");
+      }
+      if (cats & XC_HEAD) {
+        if (data ? !html_space_only(data, len)
+                 : (k == GTEXT_MARKUP_KIND_ELEMENT
+                       && !(xcats_of(c) & XC_HEADCONTENT))) {
+          HAZ(w, c, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+              "an HTML parser ends the head at this");
+        }
+      }
+      if ((cats & XC_COLGROUP) && k == GTEXT_MARKUP_KIND_ELEMENT
+          && !(xcats_of(c) & (XC_COL | XC_TEMPLATE))) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+            "an HTML parser ends a colgroup at anything but a col");
+      }
+      if ((cats & XC_SELECT) && k == GTEXT_MARKUP_KIND_ELEMENT) {
+        const unsigned cc = xcats_of(c);
+        const char * cl = gtext_markup_element_local_name(c);
+        if (!(cc & (XC_OPTION | XC_OPTGROUP | XC_TEMPLATE))
+            && strcmp(cl, "hr") != 0 && strcmp(cl, "script") != 0) {
+          HAZ(w, c, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+              "an HTML parser ignores most elements inside a select");
+        }
+      }
+      if (!in_table) {
+        continue;
+      }
+      if (data) {
+        if (!html_space_only(data, len)) {
+          HAZ(w, c, GTEXT_XML_XHTML_HAZARD_TABLE_FOSTER_PARENT,
+              "an HTML parser moves text in a table to before the table");
+        }
+        continue;
+      }
+      if (k != GTEXT_MARKUP_KIND_ELEMENT) {
+        continue;
+      }
+      const unsigned cc = xcats_of(c);
+      if (cc & XC_TABLE_OK) {
+        continue;
+      }
+      bool implied = false;
+      bool foster = false;
+      if (cats & XC_TABLE) {
+        if (cc & (XC_ROW | XC_CELL | XC_COL)) {
+          implied = true;
+        }
+        else if (!(cc & XC_TABLE_CHILD)) {
+          foster = true;
+        }
+      }
+      else if (cats & XC_SECTION) {
+        if (cc & XC_CELL) {
+          implied = true;
+        }
+        else if (!(cc & (XC_ROW | XC_SECTION))) {
+          foster = true;
+        }
+      }
+      else if (!(cc & (XC_CELL | XC_ROW | XC_SECTION))) {
+        foster = true;
+      }
+      if (implied) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_TABLE_IMPLIED_PART,
+            "an HTML parser puts a tbody, tr or colgroup around this");
+      }
+      if (foster) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_TABLE_FOSTER_PARENT,
+            "an HTML parser moves this out of the table");
+      }
+    }
+  }
+  if (cats & XC_HTML) {
+    /* Exactly a head and then a body, nothing else but comments. */
+    for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(e); c;
+        c = gtext_markup_node_next_sibling(c)) {
+      const GTEXT_Markup_Kind k = gtext_markup_node_kind(c);
+      if (k == GTEXT_MARKUP_KIND_COMMENT) {
+        continue;
+      }
+      if (k == GTEXT_MARKUP_KIND_TEXT) {
+        size_t len = 0;
+        gtext_markup_node_data(c, &len);
+        if (len == 0) {
+          continue;
+        }
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+            "an HTML parser drops or moves text directly in html");
+        continue;
+      }
+      const unsigned cc = xcats_of(c);
+      if (k == GTEXT_MARKUP_KIND_ELEMENT && (cc & XC_HEAD) && !seen_head
+          && !seen_body) {
+        seen_head = true;
+      }
+      else if (k == GTEXT_MARKUP_KIND_ELEMENT && (cc & XC_BODY) && !seen_body
+          && seen_head) {
+        seen_body = true;
+      }
+      else {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+            "an HTML parser makes html hold one head and then one body");
+      }
+    }
+    if (!seen_head || !seen_body) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+          "an HTML parser inserts the head and body that html lacks");
+    }
+  }
+
+  /* What the children inherit. */
+  unsigned out = in & ~(unsigned)HZ_FOREIGN;
+  if (cats & XC_A) {
+    out |= HZ_A;
+  }
+  if (cats & XC_FORM) {
+    out |= HZ_FORM;
+  }
+  if (cats & XC_P) {
+    out |= HZ_P;
+  }
+  if (cats & XC_BUTTON) {
+    out |= HZ_BUTTON;
+  }
+  const bool stops = (cats & XC_SPECIAL) && !(cats & XC_CONT);
+  if (cats & XC_LI) {
+    out |= HZ_LI;
+  }
+  else if (stops) {
+    out &= ~(unsigned)HZ_LI;
+  }
+  if (cats & XC_DTDD) {
+    out |= HZ_DD;
+  }
+  else if (stops) {
+    out &= ~(unsigned)HZ_DD;
+  }
+  *hz = out;
+  return GTEXT_XML_OK;
+}
+
+/* The text of a script or style, which no escape can reach in HTML. */
+static GTEXT_XML_Status xhtml_raw_text(
+    wctx * w, const GTEXT_Markup_Node * n, const char * data, size_t len) {
+  const GTEXT_Markup_Status st = gtext_markup_check_xml_chars(data, len);
+  if (st == GTEXT_MARKUP_E_ENCODING) {
+    return fail(w, GTEXT_XML_E_UTF8, "invalid UTF-8");
+  }
+  if (st != GTEXT_MARKUP_OK) {
+    return fail(w, GTEXT_XML_E_CHARACTER, "character not allowed in XML");
+  }
+  if (len > 0 && (memchr(data, '<', len) || memchr(data, '&', len)
+                     || memchr(data, '\r', len)
+                     || has_seq(data, len, "]]>", 3))) {
+    return refuse_x(w, n,
+        "script and style content with <, &, ]]> or a carriage return is read "
+        "differently by an HTML parser and an XML parser");
+  }
+  return put_text(w, data, len, false);
+}
+
 static GTEXT_XML_Status write_leaf(wctx * w, const GTEXT_Markup_Node * n) {
   w->at = n;
   w->at_attr = -1;
@@ -1145,8 +1850,20 @@ static GTEXT_XML_Status write_leaf(wctx * w, const GTEXT_Markup_Node * n) {
   }
   switch (gtext_markup_node_kind(n)) {
     case GTEXT_MARKUP_KIND_TEXT:
+      if (w->xhtml) {
+        const GTEXT_Markup_Node * parent = gtext_markup_node_parent(n);
+        if (parent && gtext_markup_html_node_is_raw_text(parent)) {
+          return xhtml_raw_text(w, n, data, len);
+        }
+      }
       return put_escaped(w, GTEXT_MARKUP_ESCAPE_XML_TEXT, data, len);
     case GTEXT_MARKUP_KIND_CDATA:
+      if (w->xhtml
+          && !(w->nframes > 0 && (w->frames[w->nframes - 1].hz & HZ_FOREIGN))) {
+        return refuse_x(w, n,
+            "an HTML parser reads a CDATA section outside SVG and MathML "
+            "content as a comment");
+      }
       if (check_raw_data(w, data, len,
               "a carriage return in a CDATA section would be read back as a "
               "line feed")
@@ -1173,12 +1890,23 @@ static GTEXT_XML_Status write_leaf(wctx * w, const GTEXT_Markup_Node * n) {
         return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
             "a comment cannot contain -- or end in -");
       }
+      /* The HTML parser also ends a comment at <!--> and <!--->, and a comment
+         that ends in <!- is covered by the rule above (it ends in -). */
+      if (w->xhtml && len > 0
+          && (data[0] == '>' || (len > 1 && data[0] == '-' && data[1] == '>'))) {
+        return refuse_x(w, n,
+            "an HTML parser ends a comment that starts with > or ->");
+      }
       if (put_str(w, "<!--") != GTEXT_XML_OK
           || put_text(w, data, len, false) != GTEXT_XML_OK) {
         return w->status;
       }
       return put_str(w, "-->");
     case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
+      if (w->xhtml) {
+        return refuse_x(w, n,
+            "an HTML parser reads a processing instruction as a comment");
+      }
       const char * target = gtext_markup_pi_target(n);
       if (!target || !ncname(target)) {
         return bad_name(w, target ? target : "");
@@ -1222,7 +1950,8 @@ static GTEXT_XML_Status write_leaf(wctx * w, const GTEXT_Markup_Node * n) {
 
 /* ---- elements ----------------------------------------------------------- */
 
-static GTEXT_XML_Status push_frame(wctx * w, size_t mark, unsigned char flags) {
+static GTEXT_XML_Status push_frame(
+    wctx * w, size_t mark, unsigned char flags, unsigned hz) {
   if (w->nframes == w->framecap) {
     const size_t cap = w->framecap ? w->framecap * 2 : 32;
     if (cap > SIZE_MAX / sizeof(wframe)) {
@@ -1238,6 +1967,7 @@ static GTEXT_XML_Status push_frame(wctx * w, size_t mark, unsigned char flags) {
   }
   w->frames[w->nframes].mark = mark;
   w->frames[w->nframes].flags = flags;
+  w->frames[w->nframes].hz = hz;
   w->nframes++;
   return GTEXT_XML_OK;
 }
@@ -1293,6 +2023,21 @@ static GTEXT_XML_Status open_element(
   if (preserve_attr) {
     flags |= F_PRESERVE | F_NOINDENT;
   }
+
+  /* XHTML-compatible output: what an HTML parser would do to this element. */
+  const bool xe = w->xhtml && is_xhtml_element(e);
+  unsigned hz = w->nframes ? w->frames[w->nframes - 1].hz : 0;
+  if (w->xhtml) {
+    if (xhtml_enter(w, e, xe, has_content, &hz) != GTEXT_XML_OK) {
+      return w->status;
+    }
+    if (gtext_markup_html_node_flags(e)
+        & (GTEXT_MARKUP_HTML_RAW_TEXT | GTEXT_MARKUP_HTML_ESCAPABLE_RAW_TEXT
+            | GTEXT_MARKUP_HTML_DROPS_FIRST_NEWLINE)) {
+      /* White space in these is content in HTML. */
+      flags |= F_PRESERVE | F_NOINDENT;
+    }
+  }
   if (has_text) {
     flags |= F_NOINDENT;
   }
@@ -1323,7 +2068,12 @@ static GTEXT_XML_Status open_element(
     }
   }
   w->at_attr = -1;
-  if (check_element_name(w, e, mark) != GTEXT_XML_OK) {
+  /* An XHTML root element is useless to an HTML parser and to a reader of the
+     file without its namespace: declare it, as declare_namespaces would. */
+  w->declare_now = xe && w->nframes == 0 && !gtext_markup_element_prefix(e);
+  const GTEXT_XML_Status named = check_element_name(w, e, mark);
+  w->declare_now = false;
+  if (named != GTEXT_XML_OK) {
     return w->status;
   }
   for (size_t i = 0; i < count; i++) {
@@ -1372,7 +2122,11 @@ static GTEXT_XML_Status open_element(
     }
   }
   if (!has_content) {
-    if (w->o.expand_empty_elements) {
+    if (xe && gtext_markup_html_node_is_void(e)) {
+      if (put_str(w, " />") != GTEXT_XML_OK) {
+        return w->status;
+      }
+    } else if (xe || w->o.expand_empty_elements) {
       if (put_str(w, "></") != GTEXT_XML_OK
           || put_qname(w, gtext_markup_element_prefix(e),
                  gtext_markup_element_local_name(e)) != GTEXT_XML_OK
@@ -1389,7 +2143,7 @@ static GTEXT_XML_Status open_element(
     return w->status;
   }
   *descend = true;
-  return push_frame(w, mark, flags);
+  return push_frame(w, mark, flags, hz);
 }
 
 static GTEXT_XML_Status close_element(wctx * w, const GTEXT_Markup_Node * e) {
@@ -1511,6 +2265,20 @@ static GTEXT_XML_Status run_pass(wctx * w) {
               "a document type must come once, before the root element");
         }
         seen_doctype = true;
+        if (w->xhtml) {
+          const char * dn = gtext_markup_doctype_name(n);
+          if (!dn || strcmp(dn, "html") != 0 || gtext_markup_doctype_public_id(n)
+              || gtext_markup_doctype_system_id(n)) {
+            w->at = n;
+            if (hazard(w, n, GTEXT_XML_XHTML_HAZARD_DOCTYPE,
+                    "an HTML parser derives quirks mode from the document "
+                    "type and keeps its identifiers; only <!DOCTYPE html> "
+                    "is read back as written")
+                != GTEXT_XML_OK) {
+              return w->status;
+            }
+          }
+        }
         if (write_doctype(w, n) != GTEXT_XML_OK) {
           return w->status;
         }
@@ -1614,6 +2382,9 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
   if (o.newline && (!*o.newline || !only_of(o.newline, "\r\n"))) {
     return refuse(r, "the newline must be line feeds and carriage returns");
   }
+  if (o.xhtml_strict && !o.xhtml) {
+    return refuse(r, "xhtml_strict needs xhtml");
+  }
   if (o.max_depth == 0) {
     o.max_depth = XML_WRITE_DEFAULT_MAX_DEPTH;
   }
@@ -1634,6 +2405,7 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
     w->sink = *sink;
   }
   w->o = o;
+  w->xhtml = o.xhtml;
   w->pretty = o.indent != NULL;
   w->indent = o.indent ? o.indent : "";
   w->indent_len = strlen(w->indent);

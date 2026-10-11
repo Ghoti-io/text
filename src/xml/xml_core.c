@@ -90,6 +90,8 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "not an XML name";
     case GTEXT_XML_E_LIMIT_OUTPUT:
       return "output too long";
+    case GTEXT_XML_E_XHTML:
+      return "not the same tree for an HTML parser";
   }
   return "unknown status";
 }

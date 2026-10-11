@@ -24,8 +24,8 @@
  *
  * Include <ghoti.io/text/markup.h> to reach the document model XML, XHTML and
  * HTML share: the status codes, options and vocabulary in markup_core.h, the
- * tree in markup_tree.h, and the escaping and lexical checks in
- * markup_escape.h.
+ * tree in markup_tree.h, the escaping and lexical checks in
+ * markup_escape.h, and the HTML vocabulary in markup_html.h.
  */
 
 #ifndef GHOTI_IO_GTEXT_MARKUP_H
@@ -38,6 +38,7 @@
 
 /* Public module headers */
 #include <ghoti.io/text/markup/markup_escape.h>
+#include <ghoti.io/text/markup/markup_html.h>
 #include <ghoti.io/text/markup/markup_tree.h>
 
 #endif // GHOTI_IO_GTEXT_MARKUP_H

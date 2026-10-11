@@ -380,6 +380,7 @@ name is at fault, the name (`r.name`). Nothing is repaired:
 | a template element's content (it is not a child) or a document with no root element | `_UNREPRESENTABLE` |
 | a document version other than `1.0` | `_UNSUPPORTED_VERSION` |
 | nesting past `max_depth` (256), output past `max_output_bytes` (256 MiB) | `_LIMIT_DEPTH`, `_LIMIT_OUTPUT` |
+| with `xhtml`: a tree an HTML parser would read as a different one, that no spelling prevents (a void element with children, `<` in a script, a processing instruction, an upper case name, ...), or with `xhtml_strict` any hazard; see "XHTML-compatible output" | `_XHTML` |
 
 **A refusal writes nothing to the sink.** The writer walks the tree twice with
 the same code: first checking everything and counting the bytes, without output,
@@ -435,6 +436,94 @@ for a parsed tree; the walk uses the parent and sibling links and a heap array o
 frames, never the C stack, and namespace scope is a hash table from prefix to its
 innermost binding, so a lookup costs the same at any depth. A tree 100,000 levels
 deep with a new prefix at every level is written in well under a second.
+
+## XHTML-compatible output
+
+XHTML is XML in the XHTML namespace and needs no parser of its own: the XML
+parser reads it, and what it builds already carries the namespace, so the HTML
+vocabulary questions of \ref format_markup "the markup tree" (`gtext_markup_html_node_is_void()`
+and the rest) can be asked of it with no extra step.
+
+**The one real trap.** The same bytes are two different trees depending on the
+media type they arrive under. As `application/xhtml+xml` they are XML: `<br/>` is
+an empty `br`, `<script/>` is an empty script, `<p/>` an empty paragraph, a CDATA
+section is text. As `text/html` they are HTML: `<br/>` is `<br>` (the slash is
+ignored), `<script/>` is a script start tag that swallows the rest of the
+document, `<p/>` opens a paragraph, a CDATA section outside SVG and MathML is a
+bogus comment, a processing instruction is a comment, and a table, a `p` or an
+`li` is restructured by tree construction. **This library therefore never
+guesses.** Every API takes the parser explicitly (`gtext_xml_parse()` is XML;
+the HTML parser, when it exists, is a different function), and no function
+sniffs content for an "HTML-ness". Choosing the parser is the caller's job, and
+it follows the media type, not the bytes.
+
+**The mode.** `GTEXT_XML_Write_Options::xhtml` (appended to the options; zeroed
+is off, and output without it is byte-identical to what it was) writes XML that
+an HTML parser reads to the same tree as an XML parser, for the elements in the
+XHTML namespace (others are written as XML as before: `<br>` in the SVG
+namespace is not void):
+
+| The tree holds | Written |
+|---|---|
+| an empty void element (`br`, `img`, ... - `markup_html.h`) | `<br />`, with the space |
+| any other empty XHTML element | expanded: `<p></p>`, `<script></script>`, never `<script/>` |
+| text in `script` or `style` | raw, with `>` unescaped and no CDATA section |
+| the XHTML namespace missing on the root element | declared there, as `declare_namespaces` would, without that option (counted in `namespace_declarations_added`) |
+| a boolean attribute | with the value the tree holds; never rewritten or minimized |
+| `pre`, `textarea`, `script`, `style`, `title` and `listing` under `indent` | left alone, as `xml:space="preserve"` would |
+
+**Refused, not repaired** (`GTEXT_XML_E_XHTML`, with the path and the reason in
+`r.message`), because the two parsers would read the result differently: a void
+element with children; `<`, `&`, `]]>` or a carriage return in `script` or
+`style` text; a `pre`, `textarea` or `listing` whose text starts with a line feed
+(HTML drops the first one, XML keeps it); a comment starting with `>` or `->`
+(HTML ends it early; one ending in `<!-` is already refused, as `_UNREPRESENTABLE`,
+by the XML rule against a trailing `-`); a processing instruction; a CDATA section
+that is not inside real SVG or MathML content (reached from an `svg` or `math`
+element, and not directly in an HTML integration point); an element in the XHTML
+namespace with a prefix (HTML reads `h:p` as an element named `h:p`); an XHTML
+element or attribute name with an ASCII upper case letter (HTML lower-cases it,
+so `BR` is not void and `<BR></BR>` is two tags), and an XHTML element name that
+does not start with an ASCII letter.
+
+**Hazards, reported not refused.** Some trees cannot be made safe by spelling,
+because HTML tree construction rebuilds them: `GTEXT_XML_Write_Result` carries
+`xhtml_hazards` (a count), `xhtml_hazard_kind` and `xhtml_hazard_path` (the
+first; a path longer than 255 bytes keeps its end behind `...`). The kinds:
+
+| Kind | A tree with |
+|---|---|
+| `TABLE_IMPLIED_PART` | a `tr`, `td`, `th` or `col` one level too high in a `table`, `tbody`, ... (HTML inserts the `tbody`, `tr` or `colgroup`) |
+| `TABLE_FOSTER_PARENT` | text, or an element that does not belong, directly in `table`, `tbody`, `thead`, `tfoot` or `tr` (HTML moves it before the table) |
+| `P_BLOCK` | a block-level element anywhere inside a `p` |
+| `NESTED_A`, `NESTED_FORM` | an `a` in an `a`, a `form` in a `form` |
+| `IMPLIED_END` | an `li`, or a `dt`/`dd`, reached from an earlier one through its ancestors before a special element (so `li > div > li` counts, `li > ul > li` does not); an `option`, `optgroup`, heading, `tr`, cell or table section directly in one that HTML ends |
+| `RAW_TEXT_CONTENT` | markup inside `script`, `style`, `title` or `textarea`; `<`, `&`, `>` or a carriage return in the text of `iframe`, `noembed`, `noframes`, `noscript`, `plaintext` or `xmp` (the writer's escapes are shown literally) |
+| `DOCUMENT_STRUCTURE` | a root that is not `html`; an `html` without exactly a `head` and then a `body`, or with text in it; a nested `html`, `head` or `body`; something in `head` that ends the head |
+| `SPECIAL_ELEMENT` | `image`, `isindex`, `frameset`, `frame`, `svg` or `math` in the XHTML namespace; a `template` with children; a `button` in a `button`; a `colgroup` with children other than `col`; a `select` with children other than `option`, `optgroup`, `hr`, `script`, `template`; a table part not in a table |
+| `FOREIGN_CONTENT` | a prefixed SVG or MathML element; one not inside an `svg` or `math` element, or in a different foreign namespace than its parent; one named like an HTML breakout tag (`div`, `p`, `span`, `font` with `color`, `face` or `size`, ...); an HTML element directly in foreign content that is not an integration point; an element in any other namespace |
+| `NAMESPACED_ATTRIBUTE` | an attribute with a namespace on an XHTML element (`xml:lang`, `xlink:href`), or a namespace declaration on a non-root XHTML element other than the default one for the XHTML namespace |
+| `DOCTYPE` | a document type other than `<!DOCTYPE html>` with no identifiers |
+
+`xhtml_strict` makes any hazard a refusal (`GTEXT_XML_E_XHTML`; without `xhtml` it
+is `_INVALID`). **The list is the hazards known so far, not a proof.** "No
+hazards" means the tree is free of these; it does not mean an HTML parser has
+been shown to read it as the same tree, and none exists in this library yet. It
+is conservative where it models HTML's scope rules (it does not know about
+`button`, `td` or `template` boundaries) and certainly incomplete elsewhere. The
+first task of the HTML parser phase is a differential against a reference HTML
+parser over random trees, which must show no divergence on a tree without
+hazards; any divergence extends the list.
+
+**What is checked now, and what is not.** The XML half of the guarantee: for every
+document the mode accepts, parse (XML), write with `xhtml`, parse (XML) gives an
+equal tree. It is run over every well-formed document of the W3C suite and over
+random trees (see Tested scope). The HTML half - write with `xhtml`, parse with
+the HTML parser, compare - belongs to Phase 3, and the comparison it will use is
+fixed in `notes/text/XML-HTML-PLAN.md` and already implemented and tested against
+the XML side in `tests/test-xhtml-writer.cpp`. The XML declaration is written by
+the usual rules (an HTML parser reads it as a comment), so output meant for both
+should use `GTEXT_XML_DECLARATION_NEVER`.
 
 ## Files
 
@@ -725,6 +814,26 @@ parser reaches first.
   `reproducer-*.seed` in `tests/fuzz/corpus/xml` and `.../xml-writer`, through the
   harnesses' own properties, with no fuzzer built. The input that made `fuzz_xml` fail
   before the attribute-limit fix is one of them.
+
+- **XHTML-compatible output** (`tests/test-xhtml-writer.cpp`, `tests/test-markup-html.cpp`):
+  every row of the specification's matrix, and each refusal and each hazard kind
+  by status, path and count, with the near misses that must not be hazards
+  (`li > ul > li`, a whole table, `foreignObject` content); strict mode against the
+  hazard count; output without the option against literal bytes on XHTML-shaped
+  trees; the XML round trip over hand-written XHTML in all five encodings, over
+  every well-formed document of the W3C suite (the great majority accepted, the
+  rest refused with a reason, every outcome accounted for) and over thousands of
+  random trees; the Phase 3 comparison function against the XML side, including
+  that it fails for every difference but the declaration; the allocator failing at
+  every point and the sink at every call; a 100,000-deep tree. The vocabulary is
+  looked up entry by entry, checked to answer only in the XHTML namespace, and
+  checked against data it was not made from: the web-platform-tests tree-
+  construction vectors and the html5lib serializer vectors, which a test fails
+  (and `check-xhtml-test-data` says how to fetch) when absent. They can show an
+  entry wrong, not that one is missing. `fuzz_xml_writer` varies `xhtml` and
+  `xhtml_strict` too (strict agrees with the hazard count; a refusal writes
+  nothing and explains itself), and `check-xml-fuzz-plants` has a plant for it.
+
 
 ## Gaps
 

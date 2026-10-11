@@ -104,6 +104,12 @@ const char * const kPiDataAscii[] = {"", "d", "a b", "x?y", "k=\"v\"", "z"};
 const char * const kPiDataWild[] = {"a?>b", " lead", "\tt", "x\ry", "?>", "ok"};
 const char * const kTargets[] = {"pi", "t1", "a-b", "target", "_p"};
 const char * const kTargetsWild[] = {"xml", "XML", "Xml", "a:b", "", "ok", "1"};
+// Names of XHTML-namespace elements for the xhtml option: the void, raw-text, table, list,
+// form and structure names its rules are about, and a few the HTML parser folds or rewrites.
+const char * const kHtmlNames[] = {"html", "head", "body", "br", "img", "p", "div", "span", "a", "ul", "li",
+    "dl", "dt", "dd", "table", "tbody", "tr", "td", "script", "style", "pre", "textarea", "title", "select",
+    "option", "form", "button", "template", "colgroup", "col", "svg", "image", "BR", "Div", "_x", "iframe"};
+const char * const kForeignNames[] = {"svg", "g", "rect", "div", "foreignObject", "math", "mi"};
 const char * const kPub[] = {"pub id", "-//W3C//DTD X//EN", "a b"};
 const char * const kSys[] = {"s.dtd", "http://x/y", "a b.dtd"};
 const char * const kSysWild[] = {"a\"b", "a'b", "a\"'b", "", "ok"};
@@ -127,6 +133,7 @@ struct Builder {
   // back, so the writer refuses it by design (xml_writer.h). Strict mode stays on there and
   // draws its text from ASCII, instead of being switched off for the whole run.
   bool ascii_text = false;
+  bool xhtml = false; // some elements are XHTML (or SVG) elements, for the xhtml option
 
   const char * name() {
     if (!strict && in.byte() % 4 == 0) {
@@ -145,9 +152,22 @@ struct Builder {
   }
 
   Node * element(int depth) {
-    const Prefix b = binding();
+    Prefix b = binding();
+    const char * local = nullptr;
+    if (xhtml) {
+      const uint8_t pickx = in.byte() % 8;
+      if (pickx < 4) {
+        b = Prefix{nullptr, GTEXT_MARKUP_NS_HTML};
+        local = pick(in, kHtmlNames);
+      }
+      else if (pickx == 4) {
+        const char * n = pick(in, kForeignNames);
+        b = Prefix{nullptr, (n[0] == 'm') ? GTEXT_MARKUP_NS_MATHML : GTEXT_MARKUP_NS_SVG};
+        local = n;
+      }
+    }
     Node * e = nullptr;
-    if (gtext_markup_create_element(doc, b.uri, b.prefix, name(), &e) != GTEXT_MARKUP_OK) {
+    if (gtext_markup_create_element(doc, b.uri, b.prefix, local ? local : name(), &e) != GTEXT_MARKUP_OK) {
       return nullptr;
     }
     const int attrs = in.byte() % 4;
@@ -360,8 +380,10 @@ struct Collect {
   }
 };
 
-bool refusal_allowed(GTEXT_XML_Status s) {
+bool refusal_allowed(GTEXT_XML_Status s, bool xhtml) {
   switch (s) {
+    case GTEXT_XML_E_XHTML:
+      return xhtml;
     case GTEXT_XML_E_UNREPRESENTABLE:
     case GTEXT_XML_E_CHARACTER:
     case GTEXT_XML_E_NAME:
@@ -409,6 +431,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   // refused as an invalid option: the one refusal that is not about the tree.
   const bool no_such_mark = eight_bit && o.byte_order_mark == GTEXT_XML_BOM_ALWAYS;
   const bool sink_fails = (m3 & 0x40) != 0;
+  // The xhtml option comes from the last byte, which no other decision reads before the
+  // program's own bytes run out, so the existing corpus keeps its meaning.
+  const uint8_t m4 = data[size - 1];
+  o.xhtml = (m4 & 3) == 0 || (m4 & 3) == 1;
+  o.xhtml_strict = o.xhtml && (m4 & 2) == 0 && (m4 & 4) != 0;
 
   GTEXT_Markup_Document * doc = nullptr;
   if (gtext_markup_document_new(nullptr, &doc) != GTEXT_MARKUP_OK) {
@@ -418,6 +445,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     gtext_markup_document_set_encoding(doc, "UTF-8", GTEXT_MARKUP_ENCODING_BOM);
   }
   Builder b{in, doc, strict, eight_bit};
+  b.xhtml = o.xhtml;
   b.ascii_text = o.encoding == GTEXT_XML_OUTPUT_ISO_8859_1 && o.xml_declaration == GTEXT_XML_DECLARATION_NEVER;
   Node * root = gtext_markup_document_root(doc);
 
@@ -475,13 +503,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           gtext_xml_status_string(st1), program);
     }
   }
-  else if (strict && st1 != GTEXT_XML_OK) {
+  else if (strict && !o.xhtml && st1 != GTEXT_XML_OK) {
     fail("the writer refused a tree XML can spell", std::string(gtext_xml_status_string(st1)) + ": "
         + (r1.message ? r1.message : "?") + " at " + r1.path, program);
   }
 
   if (st1 != GTEXT_XML_OK) {
-    if (!refusal_allowed(st1) && !(no_such_mark && st1 == GTEXT_XML_E_INVALID)) {
+    if (!refusal_allowed(st1, o.xhtml) && !(no_such_mark && st1 == GTEXT_XML_E_INVALID)) {
       fail("a refusal with a status the writer does not document", gtext_xml_status_string(st1), program);
     }
     if (!sink.bytes.empty()) {
@@ -550,6 +578,54 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
   if (buf) {
     gtext_xml_write_buffer_free(doc, &o, buf);
+  }
+
+  // ---- xhtml: strict agrees with the hazards; a refusal explains itself -------------
+  if (o.xhtml && !no_such_mark) {
+    GTEXT_XML_Write_Options loose = o;
+    loose.xhtml_strict = false;
+    GTEXT_XML_Write_Options tight = o;
+    tight.xhtml_strict = true;
+    char * lbuf = nullptr;
+    size_t llen = 0;
+    GTEXT_XML_Write_Result lr;
+    const GTEXT_XML_Status ls = gtext_xml_write_buffer(doc, &loose, &lbuf, &llen, &lr);
+    char * tbuf = nullptr;
+    size_t tlen = 0;
+    GTEXT_XML_Write_Result tr;
+    const GTEXT_XML_Status ts = gtext_xml_write_buffer(doc, &tight, &tbuf, &tlen, &tr);
+    if (ls == GTEXT_XML_OK) {
+      if (lr.xhtml_hazards == 0) {
+        if (ts != GTEXT_XML_OK || tlen != llen || std::memcmp(tbuf, lbuf, llen) != 0) {
+          fail("strict refused or changed a tree without hazards", gtext_xml_status_string(ts), program);
+        }
+      }
+      else if (ts != GTEXT_XML_E_XHTML) {
+        fail("strict accepted a tree with hazards", std::to_string(lr.xhtml_hazards), program);
+      }
+      if ((lr.xhtml_hazards == 0) != (lr.xhtml_hazard_kind == GTEXT_XML_XHTML_HAZARD_NONE)
+          || (lr.xhtml_hazards != 0 && lr.xhtml_hazard_path[0] == '\0' && lr.xhtml_hazard_kind != GTEXT_XML_XHTML_HAZARD_DOCTYPE
+              && lr.xhtml_hazard_kind != GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE)) {
+        fail("the hazard count, kind and path disagree", std::to_string(lr.xhtml_hazards), program);
+      }
+    }
+    else {
+      if (ts == GTEXT_XML_OK) {
+        fail("strict accepted a tree the loose mode refused", gtext_xml_status_string(ls), program);
+      }
+      if (lbuf || tbuf) {
+        fail("a refused xhtml write left a buffer", "", program);
+      }
+      if (ls == GTEXT_XML_E_XHTML && (lr.path[0] == '\0' || !lr.message || !*lr.message)) {
+        fail("an xhtml refusal without a path and a reason", "", program);
+      }
+    }
+    if (lbuf) {
+      gtext_xml_write_buffer_free(doc, &loose, lbuf);
+    }
+    if (tbuf) {
+      gtext_xml_write_buffer_free(doc, &tight, tbuf);
+    }
   }
 
   // ---- an allocator that fails, and a sink that does ------------------------------

@@ -557,7 +557,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-fuzz-harnesses \
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
-	check-metaschema check-html-tables
+	check-metaschema check-html-tables check-xhtml-test-data
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -937,7 +937,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-xml-fuzz-plants oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-xml-fuzz-plants oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1079,6 +1079,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/markup/markup_check.c \
 	src/markup/markup_core.c \
 	src/markup/markup_escape.c \
+	src/markup/markup_html.c \
 	src/markup/markup_support.c \
 	src/markup/markup_tree.c \
 	src/markup/markup_walk.c \
@@ -1971,7 +1972,7 @@ fuzz: fuzz-run-xml fuzz-run-xml-writer
 check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each XML fuzzer finds it
 # A fuzzer that has never failed has not been shown able to. tools/xml/plant-fuzz.py copies
 # this tree to a scratch directory, edits one line of the library there, and runs the
-# harness the edit is meant for for FUZZ_TIME seconds (nine plants, six for the fuzzers and
+# harness the edit is meant for for FUZZ_TIME seconds (ten plants, seven for the fuzzers and
 # three for the differential, and two unedited controls); it must stop with a report, and an
 # unedited copy must not. Needs clang, a minute a plant, the dependencies on PREFIX, and (for
 # the three plants that run the differential) the container engine and the xml oracle image.
@@ -2160,6 +2161,16 @@ check-idna-tables: ## Fail if the committed IDNA tables are not what the generat
 # here rather than regenerating quietly.
 HTML_DATA_DIR := third_party/html
 HTML_TABLES := src/html/tables
+
+# The vocabulary and XHTML-writer tests read third-party data (the html5lib
+# serializer vectors, the web-platform-tests tree-construction vectors, the W3C
+# XML suite) and FAIL without it. A test that skipped would report green having
+# compared nothing, so the absent case is a gate failure with the fetch command,
+# in the same place as every other gate that needs fetched data.
+check-xhtml-test-data: ## Fail, with the fetch command, if the data the XHTML tests read is not here
+	@$(call REQUIRE_DATA,third_party/html/html5lib-tests/serializer,tools/html/fetch.sh)
+	@$(call REQUIRE_DATA,third_party/html/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
+	@$(call REQUIRE_DATA,third_party/xml/xmlconf,tools/xml/fetch.sh)
 
 check-html-tables: ## Fail if the committed HTML character reference table is not what the generator produces
 	@$(REQUIRE_PYTHON3); \

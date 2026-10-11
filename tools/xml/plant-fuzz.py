@@ -5,8 +5,8 @@
 
 A fuzzer that has never failed has not been shown to be able to. A plant whose defect has a recorded reproducer (REPRODUCERS) is found by running the harness
 over that file with -runs=0, which is the same every time; only the others are searched for.
-There are nine plants
-(six for the fuzzers, three for the differential) and two controls. Each plant here is
+There are ten plants
+(seven for the fuzzers, three for the differential) and two controls. Each plant here is
 one edit to one line of the library, applied to a **copy** of this repository in a
 scratch directory (the working tree is never touched), and the harness it is meant
 for is run on the copy for the harness time budget (60 seconds by default, the same
@@ -41,6 +41,10 @@ for is run on the copy for the harness time budget (60 seconds by default, the s
                    allows: a writer too strict. fuzz_xml_writer's strict mode, which is
                    the only thing that can find this - a refusal is always a permitted
                    answer to the other properties.
+
+  xhtml-strict-ignored  the writer's xhtml_strict stops refusing hazards: a tree with a
+                   hazard is written as if it had none. fuzz_xml_writer's xhtml
+                   properties (strict agrees with the hazard count).
 
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
@@ -78,6 +82,9 @@ PLANTS = {
     "strict-comment": ("xml-writer", "src/xml/xml_writer.c",
                        "if (has_seq(data, len, \"--\", 2) || (len > 0 && data[len - 1] == '-')) {",
                        "if (has_seq(data, len, \"-\", 1)) {"),
+    "xhtml-strict-ignored": ("xml-writer", "src/xml/xml_writer.c",
+                             "  if (w->o.xhtml_strict) {\n    return refuse_x(w, n, why);\n  }\n  return GTEXT_XML_OK;",
+                             "  return GTEXT_XML_OK;"),
     "oracle-attr-prefix": ("oracle", "src/xml/xml_parser.c",
                            "    if (!xml_scope_lookup(p, (const char *)a->name_ptr, a->colon, &a->ns)) {\n      xml_scope_release(p, mark);\n      return xml_fail_at(p, GTEXT_XML_E_NAMESPACE,\n          \"the attribute's prefix is not bound to a namespace\", &a->where);\n    }",
                            "    if (!xml_scope_lookup(p, (const char *)a->name_ptr, a->colon, &a->ns)) {\n      a->ns = \"urn:unbound\";\n    }"),

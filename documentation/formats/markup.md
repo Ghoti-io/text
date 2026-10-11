@@ -114,6 +114,29 @@ first byte is written, so a refusal has written nothing. Bytes that are not
 UTF-8 are `GTEXT_MARKUP_E_ENCODING`; a valid character the language cannot
 spell is `GTEXT_MARKUP_E_UNREPRESENTABLE`.
 
+## The HTML vocabulary
+
+`<ghoti.io/text/markup/markup_html.h>` answers the questions the XHTML profile
+and, later, the HTML parser and sanitizer ask about names, from tables taken from
+the HTML Standard (WHATWG) on 2026-10-11 (the source and date are in the table's
+header comment in `src/markup/markup_html.c`):
+
+| Question | Names |
+|---|---|
+| void (`gtext_markup_html_is_void()`) | `area` `base` `br` `col` `embed` `hr` `img` `input` `link` `meta` `source` `track` `wbr`, and the legacy `basefont` `bgsound` `frame` `keygen` `param` that HTML parsing and serialization still treat so |
+| raw text (`..._is_raw_text()`) | `script` `style` |
+| escapable raw text (`..._is_escapable_raw_text()`) | `textarea` `title` |
+| first line feed dropped (`..._drops_first_newline()`) | `pre` `textarea` `listing` |
+| boolean attribute (`..._is_boolean_attribute()`) | the attribute index's rows of type "Boolean attribute": per element (`disabled` on `button`, not on `p`) plus the global `autofocus` `inert` `itemscope` `headingreset`; the obsolete presentational ones are not in it |
+
+Each has a form taking a namespace and a local name, and a `_node_` form taking an
+element. **They answer only for the XHTML namespace**: `<br>` in the SVG
+namespace, or in none, is not void. Lookups are a binary search over static
+tables - O(log n), no allocation, thread-safe - and need no parse step: a tree
+read by the XML parser from XHTML already has the namespace. Nothing here sniffs
+or parses; see \ref format_xml "XML" for why the parser must always be chosen by
+the caller.
+
 ## Statuses
 
 | Status | When |
@@ -175,6 +198,9 @@ spell is `GTEXT_MARKUP_E_UNREPRESENTABLE`.
   (\ref format_xml "XML"); the HTML parser and serializer are later phases.
 - HTML's escaping modes (`&nbsp;`, attribute quoting) belong to the HTML
   serializer and are not here.
+- The vocabulary is the standard's lists as of its date; it does not follow the
+  living standard on its own, and the legacy presentational boolean attributes
+  (`compact`, `nowrap`, ...) are left out.
 - Nothing in the tree validates namespace constraints (a prefix bound to a
   namespace, `xmlns` declarations in scope). The XML parser enforces them as it
   reads; a tree built by hand is not held to them.

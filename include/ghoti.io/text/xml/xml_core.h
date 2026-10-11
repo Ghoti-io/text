@@ -135,8 +135,14 @@ typedef enum {
                        ///< a processing instruction target that is not an
                        ///< NCName or is `xml` in any case, or a document type
                        ///< name that is not a Name.
-  GTEXT_XML_E_LIMIT_OUTPUT ///< Writer only: the output would be longer than
+  GTEXT_XML_E_LIMIT_OUTPUT, ///< Writer only: the output would be longer than
                        ///< `max_output_bytes`.
+  GTEXT_XML_E_XHTML    ///< Writer only: `xhtml` mode refuses a tree that is
+                       ///< XML but that an HTML parser would read as a
+                       ///< different tree (a void element with children,
+                       ///< `<` in a script, a processing instruction, ...), or,
+                       ///< with `xhtml_strict`, one with a tree-construction
+                       ///< hazard. The result's message and path say which.
 } GTEXT_XML_Status;
 
 /**

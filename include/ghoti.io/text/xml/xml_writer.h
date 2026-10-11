@@ -91,6 +91,54 @@
  *   GTEXT_XML_Write_Result::doctype_without_subset says so.
  * - A template element's content, being no child of the element, is refused
  *   rather than dropped.
+ *
+ * ## XHTML-compatible output
+ *
+ * With GTEXT_XML_Write_Options::xhtml the writer produces XML that an HTML
+ * parser reads, as `text/html`, to the same tree an XML parser reads from it as
+ * `application/xhtml+xml`. **The same bytes are two different trees depending
+ * on the media type**, and nothing here guesses which one is meant: the parser
+ * is always chosen by the caller, and no function in this library sniffs
+ * content for an "HTML-ness".
+ *
+ * Only elements in the XHTML namespace are treated so; everything else is
+ * written as XML. For those elements:
+ *
+ * - an empty void element (`br`, `img`, ...; markup_html.h) is `<br />`, with
+ *   the space; every other empty element is expanded (`<p></p>`,
+ *   `<script></script>`, never `<script/>`, which HTML reads as an open tag);
+ * - the XHTML namespace is declared on the root element when the root is an
+ *   XHTML element and has no declaration (as `declare_namespaces` would, without
+ *   needing it);
+ * - a boolean attribute is written with the value the tree holds, never
+ *   rewritten; `script` and `style` content is written without a CDATA section
+ *   and with `>` unescaped; `pre`, `listing`, `textarea`, `script`, `style` and
+ *   `title` are never indented.
+ *
+ * Refused (GTEXT_XML_E_XHTML, with the path and the reason), not repaired:
+ * a void element with children; `<`, `&`, `]]>` or a carriage return in
+ * `script` or `style` text; a `pre`, `textarea` or `listing` whose text starts
+ * with a line feed (HTML drops the first one, XML keeps it); a comment that
+ * starts with `>` or `->` (HTML ends it early; one ending in `<!-` is refused
+ * already, as GTEXT_XML_E_UNREPRESENTABLE, because it ends in `-`); a processing
+ * instruction (HTML makes it a comment); a CDATA section outside SVG and MathML
+ * content; an XHTML element with a prefix (HTML reads `h:p` as a different
+ * element); an XHTML element or attribute name with an ASCII upper case letter
+ * (HTML lower-cases it, so `BR` is not void and `<BR></BR>` is two tags), and an
+ * XHTML element name that does not start with an ASCII letter.
+ *
+ * Tree-construction hazards (GTEXT_XML_Xhtml_Hazard) cannot be fixed by
+ * spelling and are reported in the result as a count and the first one's kind
+ * and path; with GTEXT_XML_Write_Options::xhtml_strict they are refusals. The
+ * hazards are the ones known so far: "no hazards" is not a proof that an HTML
+ * parser reads the same tree (see GTEXT_XML_Xhtml_Hazard).
+ *
+ * The XML declaration is written under the usual rules; an HTML parser reads it
+ * as a comment, so use GTEXT_XML_DECLARATION_NEVER for output meant for both.
+ * The guarantee for the XML side is the round trip: for every tree the mode
+ * accepts, parsing the output with the XML parser gives an equal tree. The
+ * HTML-parser half of the guarantee belongs to the HTML parser (see
+ * notes/text/XML-HTML-PLAN.md).
  */
 
 #ifndef GHOTI_IO_GTEXT_XML_XML_WRITER_H
@@ -221,6 +269,20 @@ typedef struct {
   /** A UTF-8 byte order mark. See GTEXT_XML_Bom_Mode. It counts toward
    *  `max_output_bytes`, as UTF-16's does. Appended so that zeroed is the default. */
   GTEXT_XML_Bom_Mode byte_order_mark;
+
+  /**
+   * XHTML-compatible output: the XML an HTML parser (`text/html`) reads to the
+   * same tree as an XML parser (`application/xhtml+xml`). See the file comment.
+   * Appended, so zeroed is off and the output without it is byte-identical to
+   * what it was before the option existed.
+   */
+  bool xhtml;
+
+  /** With `xhtml`: a tree-construction hazard
+   *  (GTEXT_XML_Write_Result::xhtml_hazards) is a refusal,
+   *  GTEXT_XML_E_XHTML, not a count. Without `xhtml` it is
+   *  GTEXT_XML_E_INVALID. */
+  bool xhtml_strict;
 } GTEXT_XML_Write_Options;
 
 /**
@@ -230,6 +292,76 @@ typedef struct {
  *   declarations added, compact, "\n", depth 256, 256 MiB.
  */
 GTEXT_API GTEXT_XML_Write_Options gtext_xml_write_options_default(void);
+
+/**
+ * @enum GTEXT_XML_Xhtml_Hazard
+ * @brief What an `xhtml` write found that an HTML parser would build differently
+ *   and that no spelling can prevent.
+ *
+ * **This is the list of hazards known so far, not a proof.** A result with no
+ * hazards means the tree is free of the hazards listed here; it does not mean an
+ * HTML parser has been shown to read it as the same tree, and none exists in this
+ * library yet. The first task of the HTML parser phase is a differential against
+ * a reference HTML parser over random trees, which must find no divergence on a
+ * tree without hazards; any divergence extends this list. The list is
+ * conservative where it models HTML's scope rules (it does not know about
+ * `button`, `td` or `template` boundaries) and is certainly incomplete where it
+ * does not.
+ */
+typedef enum {
+  GTEXT_XML_XHTML_HAZARD_NONE = 0,
+  /** A `table` (or `tbody`, `thead`, `tfoot`) with a `tr`, `td`, `th` or `col`
+   *  child one level too high: HTML inserts the `tbody`, `tr` or `colgroup`. */
+  GTEXT_XML_XHTML_HAZARD_TABLE_IMPLIED_PART,
+  /** Text that is not white space, or an element that does not belong, directly
+   *  in a `table`, `tbody`, `thead`, `tfoot` or `tr`: HTML moves it in front
+   *  of the table (foster parenting). */
+  GTEXT_XML_XHTML_HAZARD_TABLE_FOSTER_PARENT,
+  /** A block-level element inside a `p` (at any depth): HTML ends the `p`. */
+  GTEXT_XML_XHTML_HAZARD_P_BLOCK,
+  /** An `a` inside an `a`. */
+  GTEXT_XML_XHTML_HAZARD_NESTED_A,
+  /** A `form` inside a `form`. */
+  GTEXT_XML_XHTML_HAZARD_NESTED_FORM,
+  /** A `li`, `dt`/`dd` that HTML ends where the next starts (reached through
+   *  the ancestor chain, so `li > div > li` counts), or an `option`,
+   *  `optgroup`, heading, `tr`, `td`/`th` or table section directly in one
+   *  that HTML ends. */
+  GTEXT_XML_XHTML_HAZARD_IMPLIED_END,
+  /** Markup (an element, comment) inside `script`, `style`, `title` or
+   *  `textarea`, or `<`, `&`, `>` or a carriage return in the text of
+   *  `iframe`, `noembed`, `noframes`, `noscript`, `plaintext` or `xmp`: HTML
+   *  reads it as text, and the escapes the writer needs are shown literally. */
+  GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
+  /** The document is not `html` with exactly a `head` and then a `body`
+   *  (HTML inserts what is missing), has a nested `html`, `head` or `body`,
+   *  has text directly in `html`, or has in `head` something that ends the
+   *  head. */
+  GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+  /** An XHTML-namespace element HTML rewrites or treats specially: `image`,
+   *  `isindex`, `frameset`, `frame`, `svg`, `math`; a `template` with children
+   *  (they go to a content fragment); a `button` in a `button`; a `colgroup`
+   *  with children other than `col`; a `select` with children other than
+   *  `option`, `optgroup`, `hr`, `script`, `template`; a table part (`caption`,
+   *  `colgroup`, `col`, `tbody`, `tr`, `td`, ...) not in a table, which HTML
+   *  ignores. */
+  GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+  /** SVG or MathML content HTML would build differently: an element in
+   *  those namespaces with a prefix, not inside an `svg` or `math` element, in
+   *  a different foreign namespace than its parent, or named like an HTML tag
+   *  that breaks out of foreign content (`div`, `p`, `font color`, ...); an
+   *  HTML element directly inside foreign content that is not an integration
+   *  point; an element in any other namespace. */
+  GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+  /** An attribute with a namespace on an XHTML element (`xml:lang`,
+   *  `xlink:href`): HTML reads it as a plain attribute of that prefixed name.
+   *  Also a namespace declaration other than on the root element or the
+   *  default declaration of the XHTML namespace itself. */
+  GTEXT_XML_XHTML_HAZARD_NAMESPACED_ATTRIBUTE,
+  /** A document type other than `<!DOCTYPE html>` with no identifiers (HTML
+   *  derives quirks mode from it, and keeps the identifiers). */
+  GTEXT_XML_XHTML_HAZARD_DOCTYPE
+} GTEXT_XML_Xhtml_Hazard;
 
 /**
  * @struct GTEXT_XML_Write_Result
@@ -266,6 +398,14 @@ typedef struct {
                            ///< not record whether the source had an internal
                            ///< subset, and none is written: this is set for every
                            ///< document type written, subset or not.
+  size_t xhtml_hazards;    ///< `xhtml` only: how many hazards were found
+                           ///< (GTEXT_XML_Xhtml_Hazard). With `xhtml_strict` the
+                           ///< first one is the refusal, so this is 1.
+  GTEXT_XML_Xhtml_Hazard xhtml_hazard_kind; ///< The kind of the first one.
+  char xhtml_hazard_path[256]; ///< Its path, in the form of `path`; a path
+                           ///< longer than 255 bytes keeps its end behind `...`
+                           ///< (truncated, not wrapped). Empty when there is
+                           ///< none.
 } GTEXT_XML_Write_Result;
 
 /**
