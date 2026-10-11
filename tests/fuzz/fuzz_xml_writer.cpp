@@ -399,15 +399,23 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   o.expand_empty_elements = (m1 >> 5) & 1;
   o.indent = kIndents[m2 % 5];
   o.newline = kNewlines[(m2 >> 3) % 4];
+  o.byte_order_mark = static_cast<GTEXT_XML_Bom_Mode>((m2 >> 5) % 3);
   const bool eight_bit = o.encoding == GTEXT_XML_OUTPUT_ISO_8859_1 || o.encoding == GTEXT_XML_OUTPUT_US_ASCII;
   const bool strict = (m3 & 1) != 0;
   o.declare_namespaces = strict ? true : ((m3 >> 1) & 1);
   const bool faults = (m3 & 0x20) != 0;
+  const bool doc_had_bom = (m3 & 0x80) != 0;
+  // A byte order mark for ISO-8859-1 or US-ASCII output does not exist, and asking for one is
+  // refused as an invalid option: the one refusal that is not about the tree.
+  const bool no_such_mark = eight_bit && o.byte_order_mark == GTEXT_XML_BOM_ALWAYS;
   const bool sink_fails = (m3 & 0x40) != 0;
 
   GTEXT_Markup_Document * doc = nullptr;
   if (gtext_markup_document_new(nullptr, &doc) != GTEXT_MARKUP_OK) {
     return 0;
+  }
+  if (doc_had_bom) {
+    gtext_markup_document_set_encoding(doc, "UTF-8", GTEXT_MARKUP_ENCODING_BOM);
   }
   Builder b{in, doc, strict, eight_bit};
   b.ascii_text = o.encoding == GTEXT_XML_OUTPUT_ISO_8859_1 && o.xml_declaration == GTEXT_XML_DECLARATION_NEVER;
@@ -461,13 +469,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     fail("the sink writer and the buffer writer disagree", std::string(gtext_xml_status_string(st1)) + " against "
         + gtext_xml_status_string(st2), program);
   }
-  if (strict && st1 != GTEXT_XML_OK) {
+  if (no_such_mark) {
+    if (st1 != GTEXT_XML_E_INVALID || !sink.bytes.empty()) {
+      fail("a byte order mark for an encoding without one was not refused as invalid",
+          gtext_xml_status_string(st1), program);
+    }
+  }
+  else if (strict && st1 != GTEXT_XML_OK) {
     fail("the writer refused a tree XML can spell", std::string(gtext_xml_status_string(st1)) + ": "
         + (r1.message ? r1.message : "?") + " at " + r1.path, program);
   }
 
   if (st1 != GTEXT_XML_OK) {
-    if (!refusal_allowed(st1)) {
+    if (!refusal_allowed(st1) && !(no_such_mark && st1 == GTEXT_XML_E_INVALID)) {
       fail("a refusal with a status the writer does not document", gtext_xml_status_string(st1), program);
     }
     if (!sink.bytes.empty()) {
@@ -480,6 +494,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   else {
     if (!buf || buf_len != sink.bytes.size() || std::memcmp(buf, sink.bytes.data(), buf_len) != 0) {
       fail("the sink writer and the buffer writer wrote different bytes", "", program);
+    }
+    if (o.encoding == GTEXT_XML_OUTPUT_UTF8) {
+      // A UTF-8 byte order mark is there exactly when it was asked for or, by default, the
+      // document came from one.
+      const bool has = sink.bytes.compare(0, 3, "\xEF\xBB\xBF") == 0;
+      const bool want = o.byte_order_mark == GTEXT_XML_BOM_ALWAYS
+          || (o.byte_order_mark == GTEXT_XML_BOM_AUTO && doc_had_bom);
+      if (has != want) {
+        fail("the UTF-8 byte order mark is not what the option says", has ? "present" : "absent", program);
+      }
     }
     GTEXT_Markup_Document * back = nullptr;
     GTEXT_XML_Error err;

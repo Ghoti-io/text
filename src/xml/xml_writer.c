@@ -112,6 +112,7 @@ typedef struct {
   GTEXT_XML_Write_Result * r;
   GTEXT_XML_Status status;
   bool dry;
+  bool bom;      /* UTF-8 output starts with a byte order mark */
   bool declared; /* the XML declaration is being written in this pass */
   size_t seed;
 
@@ -1475,6 +1476,12 @@ static GTEXT_XML_Status run_pass(wctx * w) {
     return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
         "the document has no root element");
   }
+  if (w->bom) {
+    static const unsigned char mark[3] = {0xEF, 0xBB, 0xBF};
+    if (out_raw(w, mark, 3) != GTEXT_XML_OK) {
+      return w->status;
+    }
+  }
   if (is_utf16(w)) {
     static const unsigned char le[2] = {0xFF, 0xFE};
     static const unsigned char be[2] = {0xFE, 0xFF};
@@ -1542,6 +1549,22 @@ static GTEXT_XML_Status run_pass(wctx * w) {
 
 /* ---- entry points ------------------------------------------------------- */
 
+/* "UTF-8" in any case, which is how the parser records what a mark and a
+   declaration agreed on. */
+static bool label_is_utf8(const char * label) {
+  static const char want[] = "utf-8";
+  for (size_t i = 0; i < sizeof(want); i++) {
+    char c = label[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = (char)(c + 32);
+    }
+    if (c != want[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static GTEXT_XML_Status refuse(GTEXT_XML_Write_Result * r, const char * why) {
   r->code = GTEXT_XML_E_INVALID;
   r->message = why;
@@ -1575,6 +1598,15 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
   if ((int)o.xml_declaration < GTEXT_XML_DECLARATION_AUTO
       || o.xml_declaration > GTEXT_XML_DECLARATION_NEVER) {
     return refuse(r, "unknown XML declaration mode");
+  }
+  if ((int)o.byte_order_mark < GTEXT_XML_BOM_AUTO
+      || o.byte_order_mark > GTEXT_XML_BOM_NEVER) {
+    return refuse(r, "unknown byte order mark mode");
+  }
+  if (o.byte_order_mark == GTEXT_XML_BOM_ALWAYS
+      && (o.encoding == GTEXT_XML_OUTPUT_ISO_8859_1
+          || o.encoding == GTEXT_XML_OUTPUT_US_ASCII)) {
+    return refuse(r, "ISO-8859-1 and US-ASCII have no byte order mark");
   }
   if (o.indent && !only_of(o.indent, " \t")) {
     return refuse(r, "the indent must be spaces and tabs");
@@ -1611,6 +1643,14 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
   w->seed = (size_t)(uintptr_t)w ^ (size_t)(uintptr_t)&local;
   w->at_attr = -1;
 
+  if (o.encoding == GTEXT_XML_OUTPUT_UTF8) {
+    GTEXT_Markup_Encoding_Source source = GTEXT_MARKUP_ENCODING_UNKNOWN;
+    const char * label = gtext_markup_document_encoding(doc, &source);
+    w->bom = o.byte_order_mark == GTEXT_XML_BOM_ALWAYS
+        || (o.byte_order_mark == GTEXT_XML_BOM_AUTO
+            && source == GTEXT_MARKUP_ENCODING_BOM && label
+            && label_is_utf8(label));
+  }
   w->dry = true;
   GTEXT_XML_Status status = run_pass(w);
   if (status == GTEXT_XML_OK && !check_only) {

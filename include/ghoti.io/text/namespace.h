@@ -612,6 +612,7 @@
 #define gtext_markup_replace GHOTIIO_TEXT(gtext_markup_replace)
 #define gtext_markup_status_string GHOTIIO_TEXT(gtext_markup_status_string)
 #define gtext_markup_string_free GHOTIIO_TEXT(gtext_markup_string_free)
+#define GTEXT_XML_Bom_Mode GHOTIIO_TEXT(GTEXT_XML_Bom_Mode)
 #define GTEXT_XML_Declaration_Mode GHOTIIO_TEXT(GTEXT_XML_Declaration_Mode)
 #define GTEXT_XML_Error GHOTIIO_TEXT(GTEXT_XML_Error)
 #define GTEXT_XML_Event GHOTIIO_TEXT(GTEXT_XML_Event)

@@ -182,5 +182,6 @@ GTEXT_XML_Write_Options gtext_xml_write_options_default(void) {
   opts.encoding = GTEXT_XML_OUTPUT_UTF8;
   opts.max_depth = XML_WRITE_DEFAULT_MAX_DEPTH;
   opts.max_output_bytes = XML_WRITE_DEFAULT_MAX_OUTPUT;
+  opts.byte_order_mark = GTEXT_XML_BOM_AUTO;
   return opts;
 }

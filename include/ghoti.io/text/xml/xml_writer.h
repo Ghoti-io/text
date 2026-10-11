@@ -140,6 +140,31 @@ typedef enum {
 } GTEXT_XML_Declaration_Mode;
 
 /**
+ * @enum GTEXT_XML_Bom_Mode
+ * @brief Whether UTF-8 output starts with a byte order mark (EF BB BF).
+ *
+ * Only UTF-8 output has a choice: UTF-16 output always starts with its mark
+ * (GTEXT_XML_Write_Options::encoding), and ISO-8859-1 and US-ASCII have no such
+ * mark.
+ */
+typedef enum {
+  /**
+   * Write one when the output is UTF-8 and the document was parsed with one:
+   * its recorded encoding is UTF-8 and the source of that is a byte order mark
+   * (gtext_markup_document_encoding()). So parse(file with a mark) then write
+   * gives a file with one, and a document without gives none. The default.
+   */
+  GTEXT_XML_BOM_AUTO = 0,
+  /** Write one for UTF-8 output, whatever the document was. For UTF-16 it is
+   *  what is written anyway; for ISO-8859-1 and US-ASCII there is no such mark and
+   *  the write is refused as GTEXT_XML_E_INVALID. */
+  GTEXT_XML_BOM_ALWAYS,
+  /** Never write one for UTF-8 output. UTF-16 output keeps its mark: the
+   *  encoding is unreadable without it. */
+  GTEXT_XML_BOM_NEVER
+} GTEXT_XML_Bom_Mode;
+
+/**
  * @struct GTEXT_XML_Write_Options
  * @brief What a write may do. Zeroed is the same as the defaults.
  */
@@ -192,6 +217,10 @@ typedef struct {
    *  of 256 MiB. Exceeding it is GTEXT_XML_E_LIMIT_OUTPUT, before any byte is
    *  written. */
   size_t max_output_bytes;
+
+  /** A UTF-8 byte order mark. See GTEXT_XML_Bom_Mode. It counts toward
+   *  `max_output_bytes`, as UTF-16's does. Appended so that zeroed is the default. */
+  GTEXT_XML_Bom_Mode byte_order_mark;
 } GTEXT_XML_Write_Options;
 
 /**

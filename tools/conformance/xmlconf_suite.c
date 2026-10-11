@@ -170,7 +170,22 @@ static void run_round_trip(const char *buf, size_t n) {
     GTEXT_Markup_Document *back = NULL;
     st = gtext_xml_parse(out, out_len, NULL, &back, &err);
     const char *why = NULL;
-    if (st != GTEXT_XML_OK) {
+    if (round_trip_configs[i].enc == GTEXT_XML_OUTPUT_UTF8) {
+      /* A UTF-8 document that began with a byte order mark is written with one,
+         and one that did not is not given one. */
+      const int in_bom = n >= 3 && memcmp(buf, "\xEF\xBB\xBF", 3) == 0;
+      const int out_bom = out_len >= 3 && memcmp(out, "\xEF\xBB\xBF", 3) == 0;
+      if (in_bom && !out_bom) {
+        why = "the UTF-8 byte order mark was not kept";
+      }
+      else if (!in_bom && out_bom) {
+        why = "a UTF-8 byte order mark was added";
+      }
+    }
+    if (why) {
+      /* reported below */
+    }
+    else if (st != GTEXT_XML_OK) {
       why = "the output does not parse";
     }
     else if (!gtext_markup_equal(gtext_markup_document_root(doc), gtext_markup_document_root(back))) {

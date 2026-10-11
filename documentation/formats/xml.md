@@ -108,6 +108,27 @@ statements about the **document** and score as well-formedness refusals. The
 other labels, a streaming decoder, and the four unusual byte orders of
 Appendix F are not supported.
 
+### Byte order marks and declarations
+
+A mark is the document's own statement of its encoding (XML 1.0 Appendix F), and
+the declaration is a second statement that must agree (4.3.3: a declaration naming
+an encoding other than the one the entity is in is an error, and a processor must
+not read the document as the encoding it names). So, in the DOM parse, the push
+parser and the pull reader alike, however the input is cut:
+
+| Mark | Declaration | Result |
+|---|---|---|
+| UTF-8 | none, or `encoding="UTF-8"` in any case | accepted; encoding `UTF-8`, source `BOM` (the mark wins as the source even when the declaration says the same) |
+| UTF-8 | `ISO-8859-1`, `US-ASCII`, `UTF-16`, `UTF-32` | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
+| UTF-16 | `UTF-8`, `ISO-8859-1`, `UTF-32` | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
+| UTF-16 | `UTF-16` | accepted |
+
+The mark is skipped: it is in the byte offsets of locations and not in columns,
+so the first element of `EF BB BF <a/>` is at offset 3, line 1, column 1. A mark cut
+short at the end of the input (`EF`, `EF BB`) is the DOM parse's error from the
+event parsers too, however the bytes arrive. The writer gives a mark back through
+`byte_order_mark` above.
+
 ## Limits
 
 Each has a default from the first release; `0` in the options selects it, and
@@ -380,6 +401,7 @@ character the encoding lacks is written `&#x20AC;` in text and attribute values.
 |---|---|---|
 | `xml_declaration` | `AUTO` | `AUTO` writes `<?xml ...?>` when the document has a version or standalone flag, or the output is ISO-8859-1; `ALWAYS`; `NEVER`. ISO-8859-1 is the one that forces it because its output can hold bytes that are not UTF-8, which only the declaration tells a reader about, so a document that had none comes back with `version="1.0"`; US-ASCII output is UTF-8 and UTF-16 has its byte order mark, so neither needs one. With `NEVER`, ISO-8859-1 output of a character from U+0080 to U+00FF is refused (`_UNREPRESENTABLE`). Version and standalone are the document's, and a version other than `1.0` is refused in every mode; the encoding is the output's (`UTF-8`, `UTF-16`, `ISO-8859-1`, `US-ASCII`), not the label the document was parsed with |
 | `encoding` | UTF-8 | UTF-16 little or big endian (with a byte order mark), ISO-8859-1, US-ASCII |
+| `byte_order_mark` | `AUTO` | UTF-8 output only (UTF-16 always starts with its mark, and ISO-8859-1 and US-ASCII have none: `ALWAYS` with those is `_INVALID`). `AUTO` writes `EF BB BF` when the document was parsed with one - its recorded encoding is UTF-8 and the source of that is `BOM` - so a file with a mark is written back with one and a file without is not given one; `ALWAYS`; `NEVER`. It counts toward `max_output_bytes` |
 | `expand_empty_elements` | off | `<a></a>` instead of `<a/>` |
 | `declare_namespaces` | off | add the `xmlns` declarations a name needs, on the element that needs them after its other attributes (`namespace_declarations_added`), instead of refusing. It rebinds a prefix an enclosing element bound to another namespace, never one the element's own name or another attribute already relies on, never contradicts the element's own `xmlns` attribute, and never invents a prefix for an attribute |
 | `indent`, `newline` | NULL, `"\n"` | `indent` NULL is compact; otherwise spaces and tabs. `newline` is a string of CR and LF |
@@ -666,6 +688,12 @@ parser reaches first.
   of the byte kept behind the cursor, or making the scan for the end of a
   construct restart or get a quote or a dash count wrong each fails one.
 
+- **Byte order marks** (`tests/test-xml-bom.cpp`): the writer's option in each of
+  its values, with every output encoding and with the recorded label and source
+  varied; a mark cut at every offset, in pairs, and a byte at a time, with and
+  without a declaration, in the push parser (eager mode too) and the pull reader,
+  giving the whole-input feed's events, encoding, source and locations; marks cut
+  short; and the mark-against-declaration table above in all three parsers.
 - **The writer** (`tests/test-xml-writer.cpp`): every row of the
   specification's matrix; each refusal with its status and path, and that the sink
   was not called; every way a namespace can be wrong and the option that adds the
