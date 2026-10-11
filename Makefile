@@ -937,7 +937,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-xml-fuzz-plants oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-xml-fuzz-plants oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2410,6 +2410,38 @@ check-xml-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-xml-oracle.sh && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-xml-oracle.sh --controls
+
+check-html-oracle: ## Prove the HTML references on the standard's vectors, then check the XHTML write mode against them
+# Two references in one pinned image (containers/html): html5lib 1.1 and parse5 8.0.1, which
+# share no code. Two gates, in this order, because the second is only as good as the first:
+#
+#   tools/oracle/html_vectors.py   every tree-construction vector of the pinned web-platform-tests
+#                                  tree that does not need script to run is put to both
+#                                  references; each must reproduce the expected tree, or be a line
+#                                  of tools/oracle/html_deviations.txt (an unlisted, a stale and a
+#                                  changed entry each fail).
+#   tools/oracle/html_diff.py      trees written with the `xhtml` mode - 4000 generated, the W3C XML
+#                                  suite, the expected trees of the vectors above - are read by both
+#                                  references and held to the tree that was written, under
+#                                  html_equivalent (tools/oracle/html_equivalent.h, the same file
+#                                  tests/test-xhtml-writer.cpp uses). A tree with no hazards that an
+#                                  HTML parser reads differently fails the run. A divergence on a tree
+#                                  with hazards is a line of tools/oracle/html_divergences.txt.
+#
+# **Both are then made to fail.** `run-html-oracle.sh --controls` corrupts the vectors and the
+# references' answers, corrupts the writer's output five ways, and compiles the writer with four of
+# the repairs this differential led to undone, and requires the gate to exit 3 with the right
+# heading each time.
+#
+# HTML_ORACLE_COUNT and HTML_ORACLE_SEED size and seed the generated part (a hunt: the
+# list describes the default). Outside TEST_GATES, like every gate here that consults an
+# oracle. Needs the built-here image: make oracle-images.
+check-html-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,third_party/html/wpt/html/syntax/parsing/resources,tools/html/fetch.sh); \
+	$(call REQUIRE_DATA,third_party/xml/xmlconf,tools/xml/fetch.sh); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-oracle.sh --controls
 
 check-ini-git-oracle: ## Compare the git config reader against git itself
 # git config has **one** reference, unlike Desktop Entry's two, and that is the

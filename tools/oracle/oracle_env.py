@@ -148,6 +148,10 @@ PROBE = {
     # decide their answers), the Debian package versions, and the driver's own
     # SHA-256.
     "xml": (["xml-driver", "--version"], "libxml2 ", None),
+    # HTML has **two** references in one image, html5lib and parse5. One digest pins
+    # both, so there is one probe; the line names both package versions, the Debian
+    # interpreter packages and the SHA-256 of the two driver files.
+    "html": (["html-driver", "--version"], "html5lib ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"
@@ -225,6 +229,12 @@ def _have_image(image):
 
 def ensure(name):
     """Make the reference runnable, or raise saying what is missing."""
+    if MODE == "host" and name.split("-", 1)[0] == "html":
+        # The HTML references are two packages at pinned versions that no host has installed together, and
+        # a differential against whatever a host has would score a different question under the same name.
+        raise OracleUnavailable(
+            "the html references have no host mode: they exist only in the pinned image "
+            "(make oracle-images builds it)")
     if MODE == "host":
         binary = _probe(name, ([name], "", None))[0][0]
         if shutil.which(binary) is None:

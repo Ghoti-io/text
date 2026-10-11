@@ -32,10 +32,11 @@
  *   well-formed xmlconf document when it is fetched, and a few thousand random
  *   trees (accepted ones round-trip; refused ones are refused with
  *   GTEXT_XML_E_XHTML or an XML status, never written).
- * - The comparison function the HTML parser half of the exit gate will use
- *   (html_equivalent below) is specified in notes/text/XML-HTML-PLAN.md and
- *   tested here against the XML side: it holds between a tree and its
- *   round-tripped self, and fails for every difference except the declaration.
+ * - The comparison function the HTML parser half of the exit gate uses
+ *   (html_equivalent, tools/oracle/html_equivalent.h) is specified in
+ *   notes/text/XML-HTML-PLAN.md and tested here against the XML side: it holds
+ *   between a tree and its round-tripped self, and fails for every difference
+ *   except the declaration.
  * - The allocator and the sink failing at every point.
  *
  * Copyright 2026 by Corey Pennycuff
@@ -60,6 +61,7 @@
 #include <ghoti.io/text/xml.h>
 
 #include "markup_test_support.h"
+#include "../tools/oracle/html_equivalent.h"
 
 namespace {
 
@@ -215,120 +217,59 @@ struct Collect {
   }
 };
 
-// ---- html_equivalent: the comparison the HTML parser half will use ---------
+// ---- html_equivalent: the comparison the HTML parser half uses ------------
 //
-// Two documents are equivalent when, after normalization, they are equal:
-//   * locations, prefixes and the order of attributes are not compared;
-//   * attributes in the xmlns namespace (declarations) are dropped from
-//     elements, and so are attributes named `xmlns` or `xmlns:*` in no
-//     namespace: that is the known representation difference (the XML parser
-//     records declarations in the xmlns namespace; an HTML parser keeps them as
-//     plain attributes);
-//   * empty text nodes are dropped, adjacent text and CDATA are one text node
-//     (an HTML parser has no CDATA node; XML cannot tell the others apart);
-//   * element equality is namespace and local name, then the attribute set by
-//     (namespace, local name, value); comments by data; doctypes by name and
-//     both identifiers; processing instructions never occur (the mode refuses
-//     them) and compare as unequal to everything.
-struct Norm {
-  const Node * node;     // nullptr for a merged text
-  std::string text;
-};
-
-std::vector<Norm> normalized_children(const Node * parent) {
-  std::vector<Norm> out;
-  for (const Node * c = gtext_markup_node_first_child(parent); c; c = gtext_markup_node_next_sibling(c)) {
-    const GTEXT_Markup_Kind k = gtext_markup_node_kind(c);
-    if (k == GTEXT_MARKUP_KIND_TEXT || k == GTEXT_MARKUP_KIND_CDATA) {
-      size_t len = 0;
-      const char * d = gtext_markup_node_data(c, &len);
-      if (len == 0) {
-        continue;
-      }
-      if (!out.empty() && out.back().node == nullptr) {
-        out.back().text.append(d, len);
-      }
-      else {
-        out.push_back({nullptr, std::string(d, len)});
-      }
-    }
-    else {
-      out.push_back({c, ""});
-    }
-  }
-  return out;
-}
-
-std::vector<std::string> attribute_set(const Node * e) {
-  std::vector<std::string> out;
-  const size_t n = gtext_markup_element_attribute_count(e);
-  for (size_t i = 0; i < n; i++) {
-    GTEXT_Markup_Attribute a;
-    gtext_markup_element_attribute_at(e, i, &a);
-    if (a.ns && std::strcmp(a.ns, NS_XMLNS) == 0) {
-      continue;
-    }
-    // An HTML parser keeps `xmlns` and `xmlns:*` as plain attributes: the same
-    // declarations, in no namespace.
-    if (!a.ns && (std::strcmp(a.local, "xmlns") == 0 || std::strncmp(a.local, "xmlns:", 6) == 0)) {
-      continue;
-    }
-    out.push_back(std::string(a.ns ? a.ns : "") + "|" + a.local + "=" + std::string(a.value, a.value_length));
-  }
-  std::sort(out.begin(), out.end());
-  return out;
-}
-
-std::string str(const char * s) {
-  return s ? s : "";
-}
-
-bool html_equivalent(const Node * a, const Node * b) {
-  const GTEXT_Markup_Kind ka = gtext_markup_node_kind(a);
-  if (ka != gtext_markup_node_kind(b)) {
-    return false;
-  }
-  switch (ka) {
-    case GTEXT_MARKUP_KIND_ELEMENT:
-      if (str(gtext_markup_element_namespace(a)) != str(gtext_markup_element_namespace(b))
-          || str(gtext_markup_element_local_name(a)) != str(gtext_markup_element_local_name(b))
-          || attribute_set(a) != attribute_set(b)) {
-        return false;
-      }
-      break;
-    case GTEXT_MARKUP_KIND_COMMENT: {
-      size_t la = 0, lb = 0;
-      const char * da = gtext_markup_node_data(a, &la);
-      const char * db = gtext_markup_node_data(b, &lb);
-      return std::string(da, la) == std::string(db, lb);
-    }
-    case GTEXT_MARKUP_KIND_DOCTYPE:
-      return str(gtext_markup_doctype_name(a)) == str(gtext_markup_doctype_name(b))
-          && str(gtext_markup_doctype_public_id(a)) == str(gtext_markup_doctype_public_id(b))
-          && str(gtext_markup_doctype_system_id(a)) == str(gtext_markup_doctype_system_id(b));
-    case GTEXT_MARKUP_KIND_DOCUMENT:
-      break;
-    default:
-      return false;  // processing instructions, and anything unexpected
-  }
-  const std::vector<Norm> ca = normalized_children(a);
-  const std::vector<Norm> cb = normalized_children(b);
-  if (ca.size() != cb.size()) {
-    return false;
-  }
-  for (size_t i = 0; i < ca.size(); i++) {
-    if ((ca[i].node == nullptr) != (cb[i].node == nullptr)) {
-      return false;
-    }
-    if (ca[i].node == nullptr ? ca[i].text != cb[i].text : !html_equivalent(ca[i].node, cb[i].node)) {
-      return false;
-    }
-  }
-  return true;
-}
+// Defined once, in C, in tools/oracle/html_equivalent.h (rules 1-8 of
+// notes/text/XML-HTML-PLAN.md), and included here and by the harness that scores
+// this mode against html5lib and parse5 (tools/oracle/html_ours.c). This file
+// tests it against the XML side below.
 
 bool trees_equal(const Doc * a, const Doc * b) {
   return gtext_markup_equal(gtext_markup_document_root(a), gtext_markup_document_root(b));
+}
+
+// html_equivalent's own edges: attribute keys that must not alias, a tree too deep to compare, and the
+// path and the names of the place where two trees first differ.
+TEST(XhtmlWriter, HtmlEquivalentKeepsDifferentAttributesApartAndSaysWhereTreesDiffer) {
+  // (namespace "a", name "b=c", value "d") against (namespace "a|b", name "c", value "d"): a separator
+  // character in the key would make them one.
+  Build x;
+  Build y;
+  x.attr(x.el(nullptr, "p"), "b=c", "d", "urn:a", "p");
+  y.attr(y.el(nullptr, "p"), "c", "d", "urn:a|b", "p");
+  EXPECT_FALSE(html_equivalent(x.root(), y.root()));
+  // The same attribute set in another order is the same.
+  Build u;
+  Build v;
+  Node * pu = u.el(nullptr, "p");
+  u.attr(pu, "a", "1");
+  u.attr(pu, "b", "2");
+  Node * pv = v.el(nullptr, "p");
+  v.attr(pv, "b", "2");
+  v.attr(pv, "a", "1");
+  EXPECT_TRUE(html_equivalent(u.root(), v.root()));
+  // Where they differ: the path, and the elements below the place.
+  Build m;
+  Build n;
+  Node * mb = m.el(m.el(nullptr, "html"), "body");
+  m.el(m.el(mb, "div"), "template");
+  Node * nb = n.el(n.el(nullptr, "html"), "body");
+  n.el(nb, "div");
+  HtmlEq_Diff d;
+  std::memset(&d, 0, sizeof(d));
+  EXPECT_EQ(htmleq_compare(m.root(), n.root(), "", &d), 0);
+  EXPECT_NE(std::string(d.why).find("child count"), std::string::npos) << d.why;
+  EXPECT_NE(std::string(d.ctx).find("template"), std::string::npos) << d.ctx;
+  // A tree deeper than the comparison recurses is not "different".
+  Build deep_a;
+  Build deep_b;
+  Node * pa = deep_a.el(nullptr, "div");
+  Node * pb = deep_b.el(nullptr, "div");
+  for (int i = 0; i < HTMLEQ_MAX_DEPTH + 10; i++) {
+    pa = deep_a.el(pa, "div");
+    pb = deep_b.el(pb, "div");
+  }
+  EXPECT_EQ(htmleq_compare(deep_a.root(), deep_b.root(), "", nullptr), HTMLEQ_TOO_DEEP);
 }
 
 // ---- the matrix ---------------------------------------------------------
@@ -890,6 +831,26 @@ TEST(XhtmlWriter, PrettyPrintingLeavesWhiteSensitiveElementsAlone) {
   EXPECT_NE(out.bytes.find("<textarea><!--c--></textarea>"), std::string::npos) << out.bytes;
   EXPECT_NE(out.bytes.find("<div>\n"), std::string::npos) << out.bytes;
   EXPECT_EQ(out.r.elements_skipped_preserve, 2u);
+}
+
+TEST(XhtmlWriter, PrettyPrintingDoesNotIndentTheChildrenOfHtml) {
+  // An HTML parser drops white space before the head, keeps it in html after the head and moves
+  // it into the body after the body: indented, the html element reads as a different tree.
+  Build b;
+  Node * html = html_root(b, true);
+  Node * body = b.el(html, "body");
+  b.el(b.el(body, "div"), "p");
+  Opts o = xopts();
+  o.indent = "  ";
+  const Out out = write_with(b.doc, o);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes,
+      "<html xmlns=\"" XHTML "\"><head></head><body>\n    <div>\n      <p></p>\n    </div>\n  </body></html>");
+  EXPECT_EQ(out.r.elements_skipped_mixed, 1u);  // the html element
+  // Without the mode, html is indented like any other element.
+  Opts plain = gtext_xml_write_options_default();
+  plain.indent = "  ";
+  EXPECT_NE(write_with(b.doc, plain).bytes.find("<html xmlns=\"" XHTML "\">\n  <head"), std::string::npos);
 }
 
 // ---- without the option, nothing changes ---------------------------------
@@ -1501,6 +1462,389 @@ TEST(XhtmlWriter, ElementsHtmlRewritesOrIgnoresAreHazards) {
   });
 }
 
+// Found by the differential against html5lib and parse5 (tools/oracle/html_diff.py): trees
+// the hazard list called safe that an HTML parser read as another tree. Each case here is one
+// such tree, kept as the regression test of its fix.
+TEST(XhtmlWriter, HazardsTheHtmlDifferentialFound) {
+  const GTEXT_XML_Xhtml_Hazard X = GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT;
+  const GTEXT_XML_Xhtml_Hazard E = GTEXT_XML_XHTML_HAZARD_IMPLIED_END;
+  const GTEXT_XML_Xhtml_Hazard R = GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT;
+  const GTEXT_XML_Xhtml_Hazard N = GTEXT_XML_XHTML_HAZARD_NONE;
+  check_hazard_cases({
+      // The end tag the writer puts out is, to HTML, part of the plaintext's text.
+      {"empty plaintext", [](Build & b, Node * body) { b.el(body, "plaintext"); }, X, "/html/body/plaintext"},
+      {"plaintext with text", [](Build & b, Node * body) { b.text(b.el(body, "plaintext"), "x"); }, X,
+          "/html/body/plaintext"},
+      // nobr is the one formatting element HTML will not nest.
+      {"nobr > nobr", [](Build & b, Node * body) { b.el(b.el(body, "nobr"), "nobr"); }, E,
+          "/html/body/nobr/nobr"},
+      {"nobr > i > nobr", [](Build & b, Node * body) { b.el(b.el(b.el(body, "nobr"), "i"), "nobr"); }, E,
+          "/html/body/nobr/i/nobr"},
+      {"sibling nobr", [](Build & b, Node * body) {
+         b.el(body, "nobr");
+         b.el(body, "nobr");
+       }, N, ""},
+      // search is special in the standard (it ends the li chain), and the two references predate that:
+      // the chain is read through it, so it is a hazard.
+      {"li > search > li", [](Build & b, Node * body) { b.el(b.el(b.el(body, "li"), "search"), "li"); }, E,
+          "/html/body/li/search/li"},
+      // HTML's "in select" mode drops every start tag but option, optgroup, hr, script and template,
+      // however far below the select it is.
+      {"select > option > b", [](Build & b, Node * body) { b.el(b.el(b.el(body, "select"), "option"), "b"); }, X,
+          "/html/body/select/option/b"},
+      {"select > option > svg", [](Build & b, Node * body) {
+         Node * s = b.el(b.el(b.el(body, "select"), "option"), "svg", SVG);
+         b.xmlns(s, nullptr, SVG);
+       }, X, "/html/body/select/option/svg"},
+      {"select > optgroup > hr", [](Build & b, Node * body) { b.el(b.el(b.el(body, "select"), "optgroup"), "hr"); }, X,
+          "/html/body/select/optgroup/hr"},
+      {"select > optgroup > option, text", [](Build & b, Node * body) {
+         Node * g = b.el(b.el(body, "select"), "optgroup");
+         b.text(b.el(g, "option"), "o");
+         b.text(g, "t");
+       }, N, ""},
+      {"select > template > div", [](Build & b, Node * body) {
+         b.el(b.el(b.el(body, "select"), "template"), "div");
+       }, X, "/html/body/select/template"},  // the template has children; the div below it is not "in select"
+      {"select > option > template", [](Build & b, Node * body) {
+         b.el(b.el(b.el(body, "select"), "option"), "template");
+       }, N, ""},
+      {"option outside a select may hold elements", [](Build & b, Node * body) {
+         b.el(b.el(body, "option"), "b");
+       }, N, ""},
+      // Ruby parts end the open element that a start tag of one finds first (a rtc is not ended by
+      // rt and rp), with a ruby open above.
+      {"ruby > rb > rtc", [](Build & b, Node * body) { b.el(b.el(b.el(body, "ruby"), "rb"), "rtc"); }, E,
+          "/html/body/ruby/rb/rtc"},
+      {"ruby > rt > rp", [](Build & b, Node * body) { b.el(b.el(b.el(body, "ruby"), "rt"), "rp"); }, E,
+          "/html/body/ruby/rt/rp"},
+      {"ruby > p > rb", [](Build & b, Node * body) { b.el(b.el(b.el(body, "ruby"), "p"), "rb"); }, E,
+          "/html/body/ruby/p/rb"},
+      {"ruby > rtc > rt", [](Build & b, Node * body) { b.el(b.el(b.el(body, "ruby"), "rtc"), "rt"); }, N, ""},
+      {"ruby > rtc > rtc", [](Build & b, Node * body) { b.el(b.el(b.el(body, "ruby"), "rtc"), "rtc"); }, E,
+          "/html/body/ruby/rtc/rtc"},
+      {"ruby > rb, rt, rp as siblings", [](Build & b, Node * body) {
+         Node * r = b.el(body, "ruby");
+         b.el(r, "rb");
+         b.el(r, "rt");
+         b.el(r, "rp");
+       }, N, ""},
+      {"rb > rb with no ruby above", [](Build & b, Node * body) { b.el(b.el(body, "rb"), "rb"); }, N, ""},
+      // A carriage return is written as a reference, and parse5 does not read that as white space.
+      {"carriage return in a table", [](Build & b, Node * body) { b.text(b.el(body, "table"), "\r"); },
+          GTEXT_XML_XHTML_HAZARD_TABLE_FOSTER_PARENT, "/html/body/table/text()"},
+      {"line feeds and spaces in a table", [](Build & b, Node * body) { b.text(b.el(body, "table"), " \n\t "); }, N,
+          ""},
+      // A comment is markup, and these elements' content is text to HTML.
+      {"comment in iframe", [](Build & b, Node * body) { b.comment(b.el(body, "iframe"), "c"); }, R,
+          "/html/body/iframe/comment()"},
+      {"comment in noembed", [](Build & b, Node * body) { b.comment(b.el(body, "noembed"), "c"); }, R,
+          "/html/body/noembed/comment()"},
+      {"comment in xmp", [](Build & b, Node * body) { b.comment(b.el(body, "xmp"), "c"); }, R,
+          "/html/body/xmp/comment()"},
+  });
+}
+
+TEST(XhtmlWriter, TextThatIsNotWhiteSpaceEndsAColgroupAndAHead) {
+  const GTEXT_XML_Xhtml_Hazard X = GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT;
+  const GTEXT_XML_Xhtml_Hazard D = GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE;
+  struct Case {
+    const char * text;
+    bool colgroup;  // else head
+    bool hazard;
+  };
+  for (const Case & c : {Case{"x", true, true}, Case{"<", true, true}, Case{" ", true, false}, Case{"\n \t", true, false},
+           Case{"\r", true, true}, Case{"x", false, true}, Case{" \n", false, false}, Case{"\r", false, true},
+           Case{"\xC2\xA0", true, true}, Case{"\xC2\xA0", false, true}}) {
+    SCOPED_TRACE(std::string(c.colgroup ? "colgroup " : "head ") + c.text);
+    Build b;
+    Node * html = html_root(b);
+    Node * head = b.el(html, "head");
+    Node * body = b.el(html, "body");
+    if (c.colgroup) {
+      b.text(b.el(b.el(body, "table"), "colgroup"), c.text);
+    }
+    else {
+      b.text(head, c.text);
+    }
+    const Out out = write_x(b.doc);
+    ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+    EXPECT_EQ(out.r.xhtml_hazards != 0, c.hazard);
+    if (c.hazard) {
+      EXPECT_EQ(out.r.xhtml_hazard_kind, c.colgroup ? X : D);
+    }
+  }
+}
+
+TEST(XhtmlWriter, AFormFeedIsNotAnXmlCharacterSoItIsNeverWritten) {
+  // HTML counts a form feed as white space in a colgroup or a head; XML has no such character, so
+  // the tree cannot hold one and the writer says so.
+  Build b;
+  Node * html = html_root(b);
+  b.el(html, "head");
+  b.text(b.el(b.el(b.el(html, "body"), "table"), "colgroup"), "\f");
+  const Out out = write_x(b.doc);
+  EXPECT_EQ(out.status, GTEXT_XML_E_CHARACTER);
+}
+
+TEST(XhtmlWriter, NoscriptInTheHeadWithAMarkupChildIsRawTextContent) {
+  for (int what = 0; what < 2; what++) {
+    Build b;
+    Node * html = html_root(b);
+    Node * ns = b.el(b.el(html, "head"), "noscript");
+    if (what == 0) {
+      b.comment(ns, "c");
+    }
+    else {
+      b.el(ns, "meta");
+    }
+    b.el(html, "body");
+    const Out out = write_x(b.doc);
+    ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+    EXPECT_EQ(out.r.xhtml_hazard_kind, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT) << what;
+  }
+}
+
+TEST(XhtmlWriter, PrettyPrintingAroundTheRootWritesNothingAfterIt) {
+  Opts o = xopts();
+  o.indent = "  ";
+  Build b;
+  b.comment(nullptr, "lead");
+  Node * doctype = nullptr;
+  ASSERT_EQ(gtext_markup_create_doctype(b.doc, "html", nullptr, nullptr, &doctype), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(b.root(), doctype), GTEXT_MARKUP_OK);
+  html_root(b);
+  b.comment(nullptr, "tail");
+  const Out out = write_with(b.doc, o);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes, "<!--lead-->\n<!DOCTYPE html>\n<html xmlns=\"" XHTML "\"></html><!--tail-->");
+  // A processing instruction after the root is refused here as everywhere in this mode.
+  Build c;
+  html_root(c);
+  c.pi(nullptr, "t", "d");
+  EXPECT_EQ(write_with(c.doc, o).status, GTEXT_XML_E_XHTML);
+}
+
+TEST(XhtmlWriter, AnAttributeWithAColonAndNoNamespaceIsNotAnXmlNameSoItIsNeverWritten) {
+  // HTML would move xlink:href and xml:lang on an SVG element into their namespaces; the tree
+  // cannot hold them as plain names that XML would accept, so the question does not arise.
+  for (const char * name : {"xlink:href", "xml:lang"}) {
+    Build b;
+    Node * svg = b.el(b.el(html_root(b, true), "body"), "svg", SVG);
+    b.xmlns(svg, nullptr, SVG);
+    b.attr(svg, name, "x");
+    EXPECT_NE(write_x(b.doc).status, GTEXT_XML_OK) << name;
+  }
+}
+
+TEST(XhtmlWriter, NoscriptInTheHeadEndsItAtTextButNotAtWhiteSpace) {
+  for (const char * text : {"x", " x ", "\xC3\xA9"}) {
+    Build b;
+    Node * html = html_root(b);
+    b.text(b.el(b.el(html, "head"), "noscript"), text);
+    b.el(html, "body");
+    const Out out = write_x(b.doc);
+    ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+    EXPECT_EQ(out.r.xhtml_hazard_kind, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE) << text;
+    EXPECT_STREQ(out.r.xhtml_hazard_path, "/html/head/noscript/text()") << text;
+  }
+  Build b;
+  Node * html = html_root(b);
+  b.text(b.el(b.el(html, "head"), "noscript"), " \n\t");
+  b.el(html, "body");
+  EXPECT_EQ(write_x(b.doc).r.xhtml_hazards, 0u);
+  // In the body the same text is nothing special.
+  Build c;
+  c.text(c.el(c.el(html_root(c, true), "body"), "noscript"), "x");
+  EXPECT_EQ(write_x(c.doc).r.xhtml_hazards, 0u);
+}
+
+TEST(XhtmlWriter, ReferencesTheEncodingNeedsAreWhatHtmlReadsThemAs) {
+  Opts ascii = xopts();
+  ascii.encoding = GTEXT_XML_OUTPUT_US_ASCII;
+  // &#x80;-&#x9F; are read by HTML as Windows-1252 characters (&#x85; is an ellipsis).
+  for (const char * c1 : {"\xC2\x80", "\xC2\x85", "\xC2\x9F"}) {
+    Build b;
+    b.text(b.el(b.el(html_root(b, true), "body"), "p"), c1);
+    const Out out = write_with(b.doc, ascii);
+    EXPECT_EQ(out.status, GTEXT_XML_E_XHTML) << c1;
+    EXPECT_STREQ(out.r.path, "/html/body/p/text()");
+    // Written as itself it is fine, and without the mode it is a reference as before.
+    EXPECT_EQ(write_x(b.doc).status, GTEXT_XML_OK);
+    Opts plain = gtext_xml_write_options_default();
+    plain.encoding = GTEXT_XML_OUTPUT_US_ASCII;
+    EXPECT_EQ(write_with(b.doc, plain).status, GTEXT_XML_OK);
+  }
+  {
+    Build b;
+    Node * p = b.el(b.el(html_root(b, true), "body"), "p");
+    b.text(p, "\xC3\xA9\xE2\x82\xAC");
+    b.attr(p, "title", "\xC2\xA0\xC3\xA9");
+    const Out out = write_with(b.doc, ascii);
+    ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+    EXPECT_NE(out.bytes.find("&#xE9;&#x20AC;"), std::string::npos) << out.bytes;
+    EXPECT_EQ(out.r.xhtml_hazards, 0u);
+  }
+  // In an element whose content HTML reads as text, a reference is shown literally.
+  for (const char * name : {"iframe", "noembed", "noframes", "xmp"}) {
+    Build b;
+    b.text(b.el(b.el(html_root(b, true), "body"), name), "\xC3\xA9");
+    EXPECT_EQ(write_with(b.doc, ascii).r.xhtml_hazard_kind, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT) << name;
+    EXPECT_EQ(write_x(b.doc).r.xhtml_hazards, 0u) << name;  // UTF-8 needs none
+  }
+  // C1 characters in an attribute value under US-ASCII are refused like those in text.
+  {
+    Build b;
+    b.attr(b.el(b.el(html_root(b, true), "body"), "p"), "title", "a\xC2\x85z");
+    const Out out = write_with(b.doc, ascii);
+    EXPECT_EQ(out.status, GTEXT_XML_E_XHTML);
+    EXPECT_STREQ(out.r.path, "/html/body/p/@title");
+  }
+  // ISO-8859-1: HTML reads the label as Windows-1252, so bytes 0x80-0x9F are other characters. Those
+  // are refused, in text and in attributes; U+00E9 is a raw byte, U+20AC a reference.
+  Opts latin = xopts();
+  latin.encoding = GTEXT_XML_OUTPUT_ISO_8859_1;
+  latin.xml_declaration = GTEXT_XML_DECLARATION_ALWAYS;
+  for (const char * c1 : {"\xC2\x80", "\xC2\x85", "\xC2\x9F"}) {
+    Build b;
+    Node * p = b.el(b.el(html_root(b, true), "body"), "p");
+    b.text(p, c1);
+    EXPECT_EQ(write_with(b.doc, latin).status, GTEXT_XML_E_XHTML) << c1;
+    Build a;
+    a.attr(a.el(a.el(html_root(a, true), "body"), "p"), "title", c1);
+    EXPECT_EQ(write_with(a.doc, latin).status, GTEXT_XML_E_XHTML) << c1;
+    Opts plain = gtext_xml_write_options_default();
+    plain.encoding = GTEXT_XML_OUTPUT_ISO_8859_1;
+    plain.xml_declaration = GTEXT_XML_DECLARATION_ALWAYS;
+    EXPECT_EQ(write_with(b.doc, plain).status, GTEXT_XML_OK) << c1;  // as before without the mode
+  }
+  {
+    Build b;
+    Node * p = b.el(b.el(html_root(b, true), "body"), "p");
+    b.text(p, "\xC3\xA9\xC2\xA0\xE2\x82\xAC");
+    const Out out = write_with(b.doc, latin);
+    ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+    EXPECT_NE(out.bytes.find("\xE9\xA0&#x20AC;"), std::string::npos) << out.bytes;
+    EXPECT_EQ(out.r.xhtml_hazards, 0u);
+  }
+  // In an element read as text a byte the encoding spells is fine (U+00E9) and a reference is not (U+20AC).
+  for (const char * name : {"iframe", "noembed", "noframes", "xmp"}) {
+    Build b;
+    b.text(b.el(b.el(html_root(b, true), "body"), name), "\xC3\xA9");
+    EXPECT_EQ(write_with(b.doc, latin).r.xhtml_hazards, 0u) << name;
+    Build c;
+    c.text(c.el(c.el(html_root(c, true), "body"), name), "\xE2\x82\xAC");
+    EXPECT_EQ(write_with(c.doc, latin).r.xhtml_hazard_kind, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT) << name;
+  }
+}
+
+TEST(XhtmlWriter, NothingIsWrittenBetweenTheRootAndALaterTopLevelItem) {
+  // After the root's end tag an HTML parser reads white space as text in the body, so a separator
+  // written there is a difference in the tree; before the root it is ignored.
+  Build b;
+  b.comment(nullptr, "before");
+  Node * html = html_root(b, true);
+  b.el(html, "body");
+  b.comment(nullptr, "after");
+  const Out out = write_x(b.doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes,
+      "<!--before-->\n<html xmlns=\"" XHTML "\"><head></head><body></body></html><!--after-->");
+  // Without the option the separator is still written.
+  Opts plain = gtext_xml_write_options_default();
+  EXPECT_EQ(write_with(b.doc, plain).bytes,
+      "<!--before-->\n<html xmlns=\"" XHTML "\"><head/><body/></html>\n<!--after-->");
+  // And pretty printing does not end the document with a line feed in this mode.
+  Build c;
+  html_root(c);
+  Opts pretty = xopts();
+  pretty.indent = "  ";
+  EXPECT_EQ(write_with(c.doc, pretty).bytes, "<html xmlns=\"" XHTML "\"></html>");
+  Opts plain_pretty = gtext_xml_write_options_default();
+  plain_pretty.indent = "  ";
+  EXPECT_EQ(write_with(c.doc, plain_pretty).bytes, "<html xmlns=\"" XHTML "\"/>\n");
+}
+
+TEST(XhtmlWriter, ForeignNamesAndAttributesHtmlWouldChangeAreHazards) {
+  const GTEXT_XML_Xhtml_Hazard F = GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT;
+  const GTEXT_XML_Xhtml_Hazard N = GTEXT_XML_XHTML_HAZARD_NONE;
+  auto svg = [](Build & b, Node * parent) {
+    Node * e = b.el(parent, "svg", SVG);
+    b.xmlns(e, nullptr, SVG);
+    return e;
+  };
+  auto math = [](Build & b, Node * parent) {
+    Node * e = b.el(parent, "math", MATHML);
+    b.xmlns(e, nullptr, MATHML);
+    return e;
+  };
+  check_hazard_cases({
+      // HTML lower-cases names and restores the ones in its tables.
+      {"svg viewBox", [&](Build & b, Node * body) { b.attr(svg(b, body), "viewBox", "0 0 1 1"); }, N, ""},
+      {"svg contentScriptType", [&](Build & b, Node * body) { b.attr(svg(b, body), "contentScriptType", "x"); },
+          F, "/html/body/svg"},
+      {"svg fooBar attribute", [&](Build & b, Node * body) { b.attr(svg(b, body), "fooBar", "x"); }, F,
+          "/html/body/svg"},
+      // Names that differ only in case are one attribute to HTML; whichever pair it is, one of the two is
+      // a name HTML does not read back, so the pair is a hazard.
+      {"viewBox and viewbox", [&](Build & b, Node * body) {
+         Node * s = svg(b, body);
+         b.attr(s, "viewBox", "0 0 1 1");
+         b.attr(s, "viewbox", "2 2 2 2");
+       }, F, "/html/body/svg"},
+      {"two math attributes in different case", [&](Build & b, Node * body) {
+         Node * m = math(b, body);
+         b.attr(m, "class", "a");
+         b.attr(m, "CLASS", "b");
+       }, F, "/html/body/math"},
+      // HTML restores the case of the names in its tables, so the folded form of one is another name.
+      {"svg viewbox", [&](Build & b, Node * body) { b.attr(svg(b, body), "viewbox", "0 0 1 1"); }, F, "/html/body/svg"},
+      {"svg clippath", [&](Build & b, Node * body) { b.el(svg(b, body), "clippath", SVG); }, F,
+          "/html/body/svg/clippath"},
+      {"math definitionurl", [&](Build & b, Node * body) { b.attr(math(b, body), "definitionurl", "u"); }, F,
+          "/html/body/math"},
+      {"svg lower case attribute", [&](Build & b, Node * body) { b.attr(svg(b, body), "data-foo", "x"); }, N, ""},
+      {"svg clipPath", [&](Build & b, Node * body) { b.el(svg(b, body), "clipPath", SVG); }, N, ""},
+      {"svg foreignObject", [&](Build & b, Node * body) { b.el(svg(b, body), "foreignObject", SVG); }, N, ""},
+      {"svg customElement", [&](Build & b, Node * body) { b.el(svg(b, body), "customElement", SVG); }, F,
+          "/html/body/svg/customElement"},
+      {"svg Foo", [&](Build & b, Node * body) { b.el(svg(b, body), "Foo", SVG); }, F, "/html/body/svg/Foo"},
+      {"a table name on a math element", [&](Build & b, Node * body) { b.el(math(b, body), "clipPath", MATHML); }, F,
+          "/html/body/math/clipPath"},
+      {"math definitionURL", [&](Build & b, Node * body) { b.attr(math(b, body), "definitionURL", "u"); }, N, ""},
+      {"math viewBox", [&](Build & b, Node * body) { b.attr(math(b, body), "viewBox", "u"); }, F, "/html/body/math"},
+      {"svg definitionURL", [&](Build & b, Node * body) { b.attr(svg(b, body), "definitionURL", "u"); }, F,
+          "/html/body/svg"},
+      // The namespaced attributes HTML knows, spelled as it knows them.
+      {"xlink:href", [&](Build & b, Node * body) {
+         Node * s = svg(b, body);
+         b.xmlns(s, "xlink", "http://www.w3.org/1999/xlink");
+         b.attr(s, "href", "#a", "http://www.w3.org/1999/xlink", "xlink");
+       }, N, ""},
+      {"xlink:foo", [&](Build & b, Node * body) {
+         Node * s = svg(b, body);
+         b.xmlns(s, "xlink", "http://www.w3.org/1999/xlink");
+         b.attr(s, "foo", "#a", "http://www.w3.org/1999/xlink", "xlink");
+       }, F, "/html/body/svg"},
+      {"xlink:href under another prefix", [&](Build & b, Node * body) {
+         Node * s = svg(b, body);
+         b.xmlns(s, "x", "http://www.w3.org/1999/xlink");
+         b.attr(s, "href", "#a", "http://www.w3.org/1999/xlink", "x");
+       }, F, "/html/body/svg"},
+      {"xml:lang", [&](Build & b, Node * body) {
+         b.attr(svg(b, body), "lang", "en", "http://www.w3.org/XML/1998/namespace", "xml");
+       }, N, ""},
+      {"xml:base", [&](Build & b, Node * body) {
+         b.attr(svg(b, body), "base", "u", "http://www.w3.org/XML/1998/namespace", "xml");
+       }, F, "/html/body/svg"},
+      {"an attribute in a namespace of its own", [&](Build & b, Node * body) {
+         Node * s = svg(b, body);
+         b.xmlns(s, "q", "urn:q");
+         b.attr(s, "a", "1", "urn:q", "q");
+       }, F, "/html/body/svg"},
+  });
+}
+
 TEST(XhtmlWriter, ForeignContentHtmlWouldBuildDifferentlyIsAHazard) {
   const GTEXT_XML_Xhtml_Hazard F = GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT;
   const GTEXT_XML_Xhtml_Hazard N = GTEXT_XML_XHTML_HAZARD_NONE;
@@ -1610,7 +1954,10 @@ TEST(XhtmlWriter, TextInRawishElementsIsAHazardWhenItNeedsAnEscape) {
   const GTEXT_XML_Xhtml_Hazard R = GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT;
   const GTEXT_XML_Xhtml_Hazard N = GTEXT_XML_XHTML_HAZARD_NONE;
   std::vector<Expect> cases;
-  for (const char * name : {"iframe", "noembed", "noframes", "noscript", "plaintext", "xmp"}) {
+  // (plaintext is not here: it is a hazard whatever it holds, because HTML reads the rest
+  // of the document, the end tags that close it included, as its text; see
+  // HazardsTheHtmlDifferentialFound.)
+  for (const char * name : {"iframe", "noembed", "noframes", "noscript", "xmp"}) {
     for (const char * bad : {"a<b", "a&b", "a>b", "a\rb"}) {
       cases.push_back({name, nullptr, R, nullptr});
       static std::vector<std::string> keep;

@@ -306,6 +306,50 @@ def check_xml_pin_fires():
         fail("control: a missing xml pin was not caught")
 
 
+def html_pin_problems(table):
+    """The HTML pin must name both references, and its tag must carry both versions.
+
+    Same shape as the xml pin: the image holds two parsers that share no code, and a
+    pin edited down to one (or a tag that no longer matches the versions) would keep
+    every other check here green.
+    """
+    if "html" not in table:
+        return ["html: no pin at all, and the HTML differential needs one"]
+    image, version, _ = table["html"]
+    problems = []
+    for lib in ("html5lib ", "parse5 "):
+        if lib not in version:
+            problems.append("html: the version field %r does not name %s" % (version, lib.strip()))
+    tag = image.rsplit(":", 1)[-1]
+    versions = [w.strip(",") for w in version.split() if w[:1].isdigit()]
+    if not versions or tag.split("-") != versions:
+        problems.append("html: the image tag %r does not carry the versions in %r" % (tag, version))
+    return problems
+
+
+def check_html_pin(table):
+    for problem in html_pin_problems(table):
+        fail(problem)
+
+
+def check_html_pin_fires():
+    """The control: a pin that dropped parse5, one with a stale tag, and a missing one."""
+    good = {"html": ("localhost/ghoti-text-oracle-html:1.1-8.0.1", "html5lib 1.1, parse5 8.0.1", "")}
+    if html_pin_problems(good):
+        fail("control: a good html pin was reported: %r" % html_pin_problems(good))
+    one = {"html": ("localhost/ghoti-text-oracle-html:1.1", "html5lib 1.1", "")}
+    if not any("parse5" in p for p in html_pin_problems(one)):
+        fail("control: an html pin without parse5 was not caught")
+    stale = {"html": ("localhost/ghoti-text-oracle-html:1.1-8.0.0", "html5lib 1.1, parse5 8.0.1", "")}
+    if not any("tag" in p for p in html_pin_problems(stale)):
+        fail("control: an html pin with a stale tag was not caught")
+    prefix = {"html": ("localhost/ghoti-text-oracle-html:1.1-8.0.1", "html5lib 1.1, parse5 8.0", "")}
+    if not any("tag" in p for p in html_pin_problems(prefix)):
+        fail("control: a version that is only a prefix of the tag's was not caught")
+    if not html_pin_problems({}):
+        fail("control: a missing html pin was not caught")
+
+
 def main():
     table = check_images_parses()
     check_images_rules_fire()
@@ -317,6 +361,8 @@ def main():
     check_matched_pins_fire()
     check_xml_pin(table)
     check_xml_pin_fires()
+    check_html_pin(table)
+    check_html_pin_fires()
     if FAILURES:
         sys.stderr.write("\033[0;31m\n### The oracle pin table is wrong ###"
                          "\033[0m\n")
@@ -325,7 +371,7 @@ def main():
         return 1
     print("oracle pins: %d references, all askable; IMAGES parses; the stderr "
           "filter fires both ways; idna and python-next name UCD %s; the xml pin names "
-          "libxml2 and expat." % (len(table), pinned_ucd()))
+          "libxml2 and expat; the html pin names html5lib and parse5." % (len(table), pinned_ucd()))
     return 0
 
 

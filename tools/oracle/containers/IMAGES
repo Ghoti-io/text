@@ -332,3 +332,17 @@ win32	localhost/ghoti-text-oracle-win32:10.0	wine 10.0~repack-6	The Win32 profil
 # processing. See containers/xml/Dockerfile and tools/oracle/xml_diff.py.
 
 xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML 1.0: whether a document is well-formed, and what it contains, from two parsers that share no code
+
+# HTML: html5lib and parse5 in one image, because they share no code (Python and
+# JavaScript), and a differential scored against only one inherits that one's gaps.
+# html5lib 1.1 dates from 2020 and has not followed every later change to the standard;
+# parse5 8.0.1 tracks it. **What the pin is:** the version field names the two packages (the
+# gate checks the driver's printed line for both, and the tag carries both versions); the
+# packages themselves are fixed by wheel hashes and an npm lock file, the base image by
+# digest, and the drivers by a SHA-256 the gate recomputes. The Debian python3 and nodejs
+# versions are *recorded* in the printed line and not enforced here. There is no host mode
+# for this reference. A fragment context in a foreign namespace is something html5lib's API
+# cannot express (a bare HTML name only), which the vector gate lists as a deviation. See
+# containers/html/Dockerfile, tools/oracle/html_vectors.py and html_diff.py.
+
+html	localhost/ghoti-text-oracle-html:1.1-8.0.1	html5lib 1.1, parse5 8.0.1	HTML5 parsing: the tree a document or fragment becomes, from two parsers that share no code

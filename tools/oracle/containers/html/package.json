@@ -1,0 +1,10 @@
+{
+  "name": "ghoti-text-oracle-html",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pinned parse5 for the HTML oracle; see Dockerfile.",
+  "dependencies": {
+    "parse5": "8.0.1"
+  }
+}

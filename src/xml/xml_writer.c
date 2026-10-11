@@ -77,9 +77,12 @@ enum {
   HZ_LI = 8,      /* an li is reached from here before a special element */
   HZ_DD = 16,     /* likewise a dd or dt */
   HZ_BUTTON = 32, /* inside a button */
-  HZ_FOREIGN = 64 /* directly in SVG or MathML content that HTML would build
-                     as such: reached from an svg or math element, and not in
-                     an integration point */
+  HZ_FOREIGN = 64, /* directly in SVG or MathML content that HTML would build
+                      as such: reached from an svg or math element, and not in
+                      an integration point */
+  HZ_NOBR = 128,  /* inside a nobr */
+  HZ_SELECT = 256, /* inside a select, not in a template inside it */
+  HZ_RUBY = 512   /* inside a ruby (the scope boundaries are not modelled) */
 };
 
 typedef struct {
@@ -509,6 +512,14 @@ static GTEXT_XML_Status enc_cp(wctx * w, uint32_t cp, bool ref_ok) {
     case GTEXT_XML_OUTPUT_US_ASCII: {
       const uint32_t limit =
           w->o.encoding == GTEXT_XML_OUTPUT_ISO_8859_1 ? 0xFF : 0x7F;
+      if (w->xhtml && cp >= 0x80 && cp <= 0x9F) {
+        /* HTML reads &#x80;-&#x9F; as the Windows-1252 characters at those codes, and
+           reads a document labelled ISO-8859-1 as Windows-1252, so the raw bytes 0x80-0x9F
+           mean other characters too: a C1 control character cannot be spelled either way. */
+        return fail(w, GTEXT_XML_E_XHTML,
+            "an HTML parser reads a C1 control character, as a numeric reference or as a "
+            "byte of an ISO-8859-1 document, as the Windows-1252 character at that code");
+      }
       if (cp <= limit) {
         if (cp >= 0x80 && !w->declared) {
           /* A byte that is not UTF-8, in a document that does not say so:
@@ -1192,7 +1203,13 @@ enum {
   XC_TEMPLATE = 1u << 26,
   XC_ODD = 1u << 27,
   XC_HEADCONTENT = 1u << 28,
+  XC_NOBR = 1u << 29,
 };
+
+/* Ruby: a start tag of one of its parts, with a ruby open, ends an open dd, dt, li,
+   optgroup, option, p or ruby part (rtc is not ended by rt and rp). */
+#define XC_RUBY (1u << 30)
+#define XC_RUBYPART (1u << 31)
 
 typedef struct {
   const char * name;
@@ -1258,6 +1275,7 @@ static const xcat k_xcats[] = {
     {"menu", XC_BLOCK | XC_SPECIAL},
     {"meta", XC_SPECIAL | XC_HEADCONTENT},
     {"nav", XC_BLOCK | XC_SPECIAL},
+    {"nobr", XC_NOBR},
     {"noembed", XC_RAWISH | XC_SPECIAL},
     {"noframes", XC_RAWISH | XC_SPECIAL},
     {"noscript", XC_RAWISH | XC_SPECIAL | XC_HEADCONTENT},
@@ -1267,10 +1285,21 @@ static const xcat k_xcats[] = {
     {"option", XC_OPTION},
     {"p", XC_BLOCK | XC_P | XC_SPECIAL | XC_CONT},
     {"param", XC_SPECIAL},
-    {"plaintext", XC_BLOCK | XC_RAWISH | XC_SPECIAL},
+    /* Odd because it never ends: HTML reads everything after its start tag, the
+       end tags the writer puts out included, as its text. */
+    {"plaintext", XC_BLOCK | XC_RAWISH | XC_SPECIAL | XC_ODD},
     {"pre", XC_BLOCK | XC_SPECIAL},
+    {"rb", XC_RUBYPART},
+    {"rp", XC_RUBYPART},
+    {"rt", XC_RUBYPART},
+    {"rtc", XC_RUBYPART},
+    {"ruby", XC_RUBY},
     {"script", XC_TABLE_OK | XC_SPECIAL | XC_HEADCONTENT},
-    {"search", XC_BLOCK | XC_SPECIAL},
+    /* Special in the standard, which makes it end the chain an li, dt or dd is
+       found through; html5lib 1.1 and parse5 8.0.1 predate that and read the
+       chain through it, so it is not allowed to stop the chain here (XC_CONT):
+       a hazard under either reading. */
+    {"search", XC_BLOCK | XC_SPECIAL | XC_CONT},
     {"section", XC_BLOCK | XC_SPECIAL},
     {"select", XC_SPECIAL | XC_SELECT},
     {"source", XC_SPECIAL},
@@ -1348,6 +1377,20 @@ static GTEXT_XML_Status hazard(wctx * w, const GTEXT_Markup_Node * n,
   return GTEXT_XML_OK;
 }
 
+/* White space in the sense of the standard's "ASCII whitespace" and no carriage
+   return. A carriage return is written as &#13;, and a character that comes from a
+   reference is not white space to every HTML parser (parse5 8.0.1 treats it as
+   any other character, which in a table, a colgroup or a head ends the mode the
+   standard keeps), so where white space and other text differ it is not trusted. */
+static bool html_space_plain(const char * d, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    if (d[i] != ' ' && d[i] != '\t' && d[i] != '\n' && d[i] != '\f') {
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool html_space_only(const char * d, size_t n) {
   for (size_t i = 0; i < n; i++) {
     if (d[i] != ' ' && d[i] != '\t' && d[i] != '\n' && d[i] != '\r'
@@ -1356,6 +1399,21 @@ static bool html_space_only(const char * d, size_t n) {
     }
   }
   return true;
+}
+
+/* Whether writing `data` would need a character reference in this encoding. */
+static bool text_needs_reference(const wctx * w, const char * data, size_t len) {
+  if (w->o.encoding != GTEXT_XML_OUTPUT_US_ASCII
+      && w->o.encoding != GTEXT_XML_OUTPUT_ISO_8859_1) {
+    return false;
+  }
+  for (size_t i = 0; i < len; i++) {
+    const unsigned char c = (unsigned char)data[i];
+    if (c >= 0xC4 || (c >= 0x80 && w->o.encoding == GTEXT_XML_OUTPUT_US_ASCII)) {
+      return true; /* U+0100 and up, or anything beyond ASCII */
+    }
+  }
+  return false;
 }
 
 static bool has_upper(const char * s) {
@@ -1488,6 +1546,53 @@ static GTEXT_XML_Status xhtml_check_attributes(
   return GTEXT_XML_OK;
 }
 
+/* The attributes of an element in SVG or MathML namespace. HTML lower-cases an
+   attribute name and restores the case of the ones in its tables; it reads
+   `xlink:href` and the other six xlink names, and `xml:lang` and `xml:space`, as
+   attributes in those namespaces, and every other prefixed name as a plain
+   attribute with a colon in it. The prefix has to be the literal one: the
+   standard's tables match the text of the name. */
+static GTEXT_XML_Status xhtml_check_foreign_attributes(
+    wctx * w, const GTEXT_Markup_Node * e, const char * ns) {
+  static const char * const xlink_names[] = {"actuate", "arcrole", "href", "role",
+      "show", "title", "type"};
+  const size_t count = gtext_markup_element_attribute_count(e);
+  for (size_t i = 0; i < count; i++) {
+    GTEXT_Markup_Attribute a;
+    gtext_markup_element_attribute_at(e, i, &a);
+    if (!a.ns) {
+      if (!gtext_markup_html_foreign_name_survives(ns, true, a.local)) {
+        HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+            "an HTML parser lower-cases an attribute name here and does not "
+            "restore this one");
+      }
+      /* (Two names that differ only in case are one attribute to HTML, which keeps the first. They cannot
+         both pass the test above: one of them has an upper case letter that is not in a table, or is the
+         folded form of one that is.) */
+      continue;
+    }
+    if (strcmp(a.ns, NS_XMLNS) == 0) {
+      continue; /* a declaration: kept as an attribute of that name, which is the known difference */
+    }
+    bool known = false;
+    if (strcmp(a.ns, GTEXT_MARKUP_NS_XLINK) == 0 && a.prefix
+        && strcmp(a.prefix, "xlink") == 0) {
+      for (size_t k = 0; k < sizeof(xlink_names) / sizeof(xlink_names[0]); k++) {
+        known |= strcmp(a.local, xlink_names[k]) == 0;
+      }
+    }
+    else if (strcmp(a.ns, NS_XML) == 0 && a.prefix && strcmp(a.prefix, "xml") == 0) {
+      known = strcmp(a.local, "lang") == 0 || strcmp(a.local, "space") == 0;
+    }
+    if (!known) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+          "an HTML parser reads this namespaced attribute as a plain one with "
+          "a colon in its name");
+    }
+  }
+  return GTEXT_XML_OK;
+}
+
 /* Element in SVG or MathML namespace, or in none of the known ones. */
 static GTEXT_XML_Status xhtml_check_foreign(wctx * w,
     const GTEXT_Markup_Node * e, unsigned in_hz, unsigned * out_hz) {
@@ -1502,6 +1607,14 @@ static GTEXT_XML_Status xhtml_check_foreign(wctx * w,
   }
   else {
     legit = true;
+    if (!gtext_markup_html_foreign_name_survives(ns, false, local)) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
+          "an HTML parser lower-cases an element name here and does not "
+          "restore this one");
+    }
+    if (xhtml_check_foreign_attributes(w, e, ns) != GTEXT_XML_OK) {
+      return w->status;
+    }
     const bool is_root_name = (strcmp(ns, GTEXT_MARKUP_NS_SVG) == 0
                                   && strcmp(local, "svg") == 0)
         || (strcmp(ns, GTEXT_MARKUP_NS_MATHML) == 0 && strcmp(local, "math") == 0);
@@ -1545,6 +1658,10 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
   const bool is_root = gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_DOCUMENT;
   const char * local = gtext_markup_element_local_name(e);
   if (!xe) {
+    if (*hz & HZ_SELECT) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+          "an HTML parser ignores most elements inside a select");
+    }
     if (is_root) {
       HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
           "an HTML parser makes the root of a document an html element");
@@ -1578,6 +1695,7 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
   }
 
   /* Where it stands. */
+  const size_t hazards_before = w->r->xhtml_hazards;
   if (is_root && !(cats & XC_HTML)) {
     HAZ(w, e, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
         "an HTML parser makes the root of a document an html element");
@@ -1618,6 +1736,40 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
     HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
         "an HTML parser rewrites or specially treats this element");
   }
+  if ((cats & XC_RUBYPART) && (in & HZ_RUBY)) {
+    /* A start tag of a ruby part generates implied end tags first: an open dd,
+       dt, li, optgroup, option, p, rb, rp, rt or rtc is ended (an rtc is not,
+       by rt and rp). */
+    const bool part_parent = (pc & XC_RUBYPART) != 0;
+    const char * pl = gtext_markup_element_local_name(parent);
+    const bool parent_is_rtc = part_parent && strcmp(pl, "rtc") == 0;
+    const bool ends_on_rt = strcmp(local, "rt") == 0 || strcmp(local, "rp") == 0;
+    const bool ended = (pc & (XC_DTDD | XC_LI | XC_OPTGROUP | XC_OPTION | XC_P))
+        || (part_parent && !(ends_on_rt && parent_is_rtc));
+    if (ended) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_IMPLIED_END,
+          "an HTML parser ends the open element where a ruby part starts");
+    }
+  }
+  if (in & HZ_SELECT) {
+    /* HTML's "in select" mode ignores every start tag but these, wherever it
+       is below the select (an element inside an option is dropped and its
+       text kept). */
+    const bool allowed = (cats & XC_TEMPLATE) != 0 || strcmp(local, "script") == 0
+        || ((pc & XC_SELECT)
+            && ((cats & (XC_OPTION | XC_OPTGROUP)) != 0 || strcmp(local, "hr") == 0))
+        || ((pc & XC_OPTGROUP) && (cats & XC_OPTION));
+    /* One hazard to an element: when another rule above found this one already, the
+       select adds nothing to the count. */
+    if (!allowed && w->r->xhtml_hazards == hazards_before) {
+      HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+          "an HTML parser ignores most elements inside a select");
+    }
+  }
+  if ((cats & XC_NOBR) && (in & HZ_NOBR)) {
+    HAZ(w, e, GTEXT_XML_XHTML_HAZARD_IMPLIED_END,
+        "a nobr inside a nobr: an HTML parser ends the first one");
+  }
   if ((cats & XC_BUTTON) && (in & HZ_BUTTON)) {
     HAZ(w, e, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
         "a button inside a button: an HTML parser ends the first one");
@@ -1645,7 +1797,7 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
       != 0;
   const bool scan = has_content
       && (in_table || newline_first || raw
-          || (cats & (XC_RAWISH | XC_HEAD | XC_COLGROUP | XC_SELECT)));
+          || (cats & (XC_RAWISH | XC_HEAD | XC_COLGROUP)));
   bool seen_head = false;
   bool seen_body = false;
   if (scan) {
@@ -1671,18 +1823,30 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
         HAZ(w, c, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
             "an HTML parser reads markup inside this element as text");
       }
-      if ((cats & XC_RAWISH) && k == GTEXT_MARKUP_KIND_ELEMENT) {
+      if ((cats & XC_RAWISH) && k != GTEXT_MARKUP_KIND_TEXT) {
         HAZ(w, c, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
             "an HTML parser reads markup inside this element as text");
       }
       if ((cats & XC_RAWISH) && data
           && (memchr(data, '<', len) || memchr(data, '&', len)
-              || memchr(data, '>', len) || memchr(data, '\r', len))) {
+              || memchr(data, '>', len) || memchr(data, '\r', len)
+              || text_needs_reference(w, data, len))) {
         HAZ(w, c, GTEXT_XML_XHTML_HAZARD_RAW_TEXT_CONTENT,
             "an HTML parser reads this text without its escapes");
       }
+      if ((cats & XC_RAWISH) && (pc & XC_HEAD) && strcmp(local, "noscript") == 0 && data
+          && !html_space_plain(data, len)) {
+        /* With scripting off HTML parses a noscript in the head, and text that
+           is not white space ends the head. */
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
+            "an HTML parser ends the head at text inside a noscript in it");
+      }
+      if ((cats & XC_COLGROUP) && data && !html_space_plain(data, len)) {
+        HAZ(w, c, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
+            "an HTML parser ends a colgroup at text that is not white space");
+      }
       if (cats & XC_HEAD) {
-        if (data ? !html_space_only(data, len)
+        if (data ? !html_space_plain(data, len)
                  : (k == GTEXT_MARKUP_KIND_ELEMENT
                        && !(xcats_of(c) & XC_HEADCONTENT))) {
           HAZ(w, c, GTEXT_XML_XHTML_HAZARD_DOCUMENT_STRUCTURE,
@@ -1694,15 +1858,6 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
         HAZ(w, c, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
             "an HTML parser ends a colgroup at anything but a col");
       }
-      if ((cats & XC_SELECT) && k == GTEXT_MARKUP_KIND_ELEMENT) {
-        const unsigned cc = xcats_of(c);
-        const char * cl = gtext_markup_element_local_name(c);
-        if (!(cc & (XC_OPTION | XC_OPTGROUP | XC_TEMPLATE))
-            && strcmp(cl, "hr") != 0 && strcmp(cl, "script") != 0) {
-          HAZ(w, c, GTEXT_XML_XHTML_HAZARD_SPECIAL_ELEMENT,
-              "an HTML parser ignores most elements inside a select");
-        }
-      }
       if (!in_table) {
         continue;
       }
@@ -1710,6 +1865,15 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
         if (!html_space_only(data, len)) {
           HAZ(w, c, GTEXT_XML_XHTML_HAZARD_TABLE_FOSTER_PARENT,
               "an HTML parser moves text in a table to before the table");
+        }
+        else if (memchr(data, '\r', len)) {
+          /* A carriage return is written as &#13;, and a character from a
+             reference is not white space to every HTML parser (parse5 8.0.1
+             moves it out of the table; the standard keeps it in). */
+          HAZ(w, c, GTEXT_XML_XHTML_HAZARD_TABLE_FOSTER_PARENT,
+              "an HTML parser may take a carriage return written as a "
+              "reference for text that is not white space, and move it out of "
+              "the table");
         }
         continue;
       }
@@ -1802,6 +1966,18 @@ static GTEXT_XML_Status xhtml_enter(wctx * w, const GTEXT_Markup_Node * e,
   }
   if (cats & XC_BUTTON) {
     out |= HZ_BUTTON;
+  }
+  if (cats & XC_NOBR) {
+    out |= HZ_NOBR;
+  }
+  if (cats & XC_SELECT) {
+    out |= HZ_SELECT;
+  }
+  if (cats & XC_RUBY) {
+    out |= HZ_RUBY;
+  }
+  if (cats & XC_TEMPLATE) {
+    out &= ~(unsigned)HZ_SELECT;
   }
   const bool stops = (cats & XC_SPECIAL) && !(cats & XC_CONT);
   if (cats & XC_LI) {
@@ -2041,16 +2217,21 @@ static GTEXT_XML_Status open_element(
   if (has_text) {
     flags |= F_NOINDENT;
   }
+  /* Its own children, and not what is below them: an HTML parser drops white space
+     before the head, puts it in the html element after the head, and puts it in the
+     body after the body, so indenting the html element's children is a different tree
+     to HTML and a plain one to XML. */
+  const bool own_children_plain = xe && (xcats_of(e) & XC_HTML) != 0;
   if (w->pretty && has_content) {
     if (flags & F_PRESERVE) {
       COUNT(w, elements_skipped_preserve);
-    } else if (flags & F_NOINDENT) {
+    } else if ((flags & F_NOINDENT) || own_children_plain) {
       COUNT(w, elements_skipped_mixed);
     } else {
       COUNT(w, elements_indented);
     }
   }
-  if (w->pretty && has_content && !(flags & F_NOINDENT)) {
+  if (w->pretty && has_content && !(flags & F_NOINDENT) && !own_children_plain) {
     flags |= F_INDENT;
   }
 
@@ -2253,7 +2434,10 @@ static GTEXT_XML_Status run_pass(wctx * w) {
   bool seen_doctype = false;
   for (const GTEXT_Markup_Node * n = gtext_markup_node_first_child(top); n;
       n = gtext_markup_node_next_sibling(n)) {
-    if (any && put_ascii(w, w->newline, w->newline_len) != GTEXT_XML_OK) {
+    /* After the root element an HTML parser reads white space as text in the
+       body, so a separator written there would be a difference in the tree. */
+    if (any && !(w->xhtml && seen_element)
+        && put_ascii(w, w->newline, w->newline_len) != GTEXT_XML_OK) {
       return w->status;
     }
     any = true;
@@ -2309,7 +2493,8 @@ static GTEXT_XML_Status run_pass(wctx * w) {
     }
   }
   w->at = NULL;
-  if (w->pretty && put_ascii(w, w->newline, w->newline_len) != GTEXT_XML_OK) {
+  if (w->pretty && !(w->xhtml && seen_element)
+      && put_ascii(w, w->newline, w->newline_len) != GTEXT_XML_OK) {
     return w->status;
   }
   return w->dry ? GTEXT_XML_OK : flush(w);

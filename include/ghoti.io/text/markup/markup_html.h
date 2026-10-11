@@ -110,6 +110,30 @@ GTEXT_API bool gtext_markup_html_drops_first_newline(
 GTEXT_API bool gtext_markup_html_is_boolean_attribute(
     const char * ns, const char * element, const char * attribute);
 
+/**
+ * @brief Would an HTML parser read this SVG or MathML name back as written?
+ *
+ * An HTML parser lower-cases every element and attribute name, then restores the
+ * case of the names in two tables of the standard: the 36 SVG element names
+ * (`foreignObject`, `linearGradient`, ...), the 58 SVG attribute names (`viewBox`,
+ * `preserveAspectRatio`, ...) and MathML's `definitionURL`. A name with an upper
+ * case letter that is not in the table for its kind and namespace comes back
+ * lower case, as a different name; `contentScriptType` is one (the standard
+ * dropped it), and so is any name of your own. A name that is already lower case but is
+ * the folded form of a table entry is restored to the entry, which is also another name.
+ *
+ * @param ns        The element's namespace: SVG or MathML. Any other answers false.
+ * @param attribute true for the name of an attribute of an element in `ns`, false
+ *   for the name of an element.
+ * @param local     The local name, exactly as it is in the tree.
+ * @return true when `local` is in the table for `ns` and `attribute` spelled as the table has it, or
+ *   has no ASCII upper case letter and is not the lower-cased form of such an entry (`viewbox` is
+ *   read back as `viewBox`, `clippath` as `clipPath`, `definitionurl` as `definitionURL`: other names).
+ *   Whether the element or attribute exists in the vocabulary is not asked.
+ */
+GTEXT_API bool gtext_markup_html_foreign_name_survives(
+    const char * ns, bool attribute, const char * local);
+
 /** @brief gtext_markup_html_element_flags() of an element node; 0 for any
  *  other node or NULL. */
 GTEXT_API unsigned gtext_markup_html_node_flags(

@@ -467,10 +467,12 @@ namespace is not void):
 |---|---|
 | an empty void element (`br`, `img`, ... - `markup_html.h`) | `<br />`, with the space |
 | any other empty XHTML element | expanded: `<p></p>`, `<script></script>`, never `<script/>` |
+| a top-level item after the root element | written right after it, with no separator or final line feed: an HTML parser reads white space there as text in the body |
 | text in `script` or `style` | raw, with `>` unescaped and no CDATA section |
 | the XHTML namespace missing on the root element | declared there, as `declare_namespaces` would, without that option (counted in `namespace_declarations_added`) |
 | a boolean attribute | with the value the tree holds; never rewritten or minimized |
 | `pre`, `textarea`, `script`, `style`, `title` and `listing` under `indent` | left alone, as `xml:space="preserve"` would |
+| the `html` element under `indent` | its own children are not indented (an HTML parser drops white space before the head, keeps it after, and moves it into the body after the body); what is below them is |
 
 **Refused, not repaired** (`GTEXT_XML_E_XHTML`, with the path and the reason in
 `r.message`), because the two parsers would read the result differently: a void
@@ -483,8 +485,13 @@ that is not inside real SVG or MathML content (reached from an `svg` or `math`
 element, and not directly in an HTML integration point); an element in the XHTML
 namespace with a prefix (HTML reads `h:p` as an element named `h:p`); an XHTML
 element or attribute name with an ASCII upper case letter (HTML lower-cases it,
-so `BR` is not void and `<BR></BR>` is two tags), and an XHTML element name that
-does not start with an ASCII letter.
+so `BR` is not void and `<BR></BR>` is two tags), an XHTML element name that
+does not start with an ASCII letter, and, in an encoding that cannot spell it
+(`US-ASCII`), a character from U+0080 to U+009F, which would be written as a numeric
+reference that HTML reads as the Windows-1252 character at that code (`&#x85;` is an
+ellipsis); under ISO-8859-1, too, in text and in attribute values: HTML reads that label as
+Windows-1252, so the raw byte 0x80-0x9F means that character as well (the bytes above 0x9F
+agree between the two).
 
 **Hazards, reported not refused.** Some trees cannot be made safe by spelling,
 because HTML tree construction rebuilds them: `GTEXT_XML_Write_Result` carries
@@ -494,36 +501,47 @@ first; a path longer than 255 bytes keeps its end behind `...`). The kinds:
 | Kind | A tree with |
 |---|---|
 | `TABLE_IMPLIED_PART` | a `tr`, `td`, `th` or `col` one level too high in a `table`, `tbody`, ... (HTML inserts the `tbody`, `tr` or `colgroup`) |
-| `TABLE_FOSTER_PARENT` | text, or an element that does not belong, directly in `table`, `tbody`, `thead`, `tfoot` or `tr` (HTML moves it before the table) |
+| `TABLE_FOSTER_PARENT` | text, or an element that does not belong, directly in `table`, `tbody`, `thead`, `tfoot` or `tr` (HTML moves it before the table); a carriage return there, which is written as a reference and which not every HTML parser reads as white space |
 | `P_BLOCK` | a block-level element anywhere inside a `p` |
 | `NESTED_A`, `NESTED_FORM` | an `a` in an `a`, a `form` in a `form` |
-| `IMPLIED_END` | an `li`, or a `dt`/`dd`, reached from an earlier one through its ancestors before a special element (so `li > div > li` counts, `li > ul > li` does not); an `option`, `optgroup`, heading, `tr`, cell or table section directly in one that HTML ends |
-| `RAW_TEXT_CONTENT` | markup inside `script`, `style`, `title` or `textarea`; `<`, `&`, `>` or a carriage return in the text of `iframe`, `noembed`, `noframes`, `noscript`, `plaintext` or `xmp` (the writer's escapes are shown literally) |
-| `DOCUMENT_STRUCTURE` | a root that is not `html`; an `html` without exactly a `head` and then a `body`, or with text in it; a nested `html`, `head` or `body`; something in `head` that ends the head |
-| `SPECIAL_ELEMENT` | `image`, `isindex`, `frameset`, `frame`, `svg` or `math` in the XHTML namespace; a `template` with children; a `button` in a `button`; a `colgroup` with children other than `col`; a `select` with children other than `option`, `optgroup`, `hr`, `script`, `template`; a table part not in a table |
-| `FOREIGN_CONTENT` | a prefixed SVG or MathML element; one not inside an `svg` or `math` element, or in a different foreign namespace than its parent; one named like an HTML breakout tag (`div`, `p`, `span`, `font` with `color`, `face` or `size`, ...); an HTML element directly in foreign content that is not an integration point; an element in any other namespace |
+| `IMPLIED_END` | an `li`, or a `dt`/`dd`, reached from an earlier one through its ancestors before a special element (so `li > div > li` counts, `li > ul > li` does not; `search` does not stop the chain, because the references predate that); an `option`, `optgroup`, heading, `tr`, cell or table section directly in one that HTML ends; a `nobr` in a `nobr`; a ruby part (`rb`, `rt`, `rp`, `rtc`) in an open `ruby` directly in an element it ends |
+| `RAW_TEXT_CONTENT` | markup (an element or a comment) inside `script`, `style`, `title`, `textarea`, `iframe`, `noembed`, `noframes`, `noscript`, `plaintext` or `xmp`; `<`, `&`, `>`, a carriage return, or a character the output encoding writes as a reference, in the text of the last six (the writer's escapes are shown literally) |
+| `DOCUMENT_STRUCTURE` | a root that is not `html`; an `html` without exactly a `head` and then a `body`, or with text in it; a nested `html`, `head` or `body`; something in `head` that ends the head (non-white-space text, in a `noscript` there too) |
+| `SPECIAL_ELEMENT` | `image`, `isindex`, `frameset`, `frame`, `svg`, `math` or `plaintext` (which swallows the end tags that close it) in the XHTML namespace; a `template` with children; a `button` in a `button`; a `colgroup` with children other than `col` or with text; an element in a `select` other than `option`, `optgroup` (in the select), `hr` (in the select), `script`, `template` and `option` (in an `optgroup`), at any depth; a table part not in a table |
+| `FOREIGN_CONTENT` | a prefixed SVG or MathML element; one not inside an `svg` or `math` element, or in a different foreign namespace than its parent; one named like an HTML breakout tag (`div`, `p`, `span`, `font` with `color`, `face` or `size`, ...); an HTML element directly in foreign content that is not an integration point; an element in any other namespace; an element or attribute name with an upper case letter that HTML lower-cases and does not restore (`gtext_markup_html_foreign_name_survives()`: `customElement`, `contentScriptType`; `viewBox` and `foreignObject` are restored); a namespaced attribute other than `xlink:href` and its six siblings and `xml:lang`/`xml:space`, spelled with those prefixes |
 | `NAMESPACED_ATTRIBUTE` | an attribute with a namespace on an XHTML element (`xml:lang`, `xlink:href`), or a namespace declaration on a non-root XHTML element other than the default one for the XHTML namespace |
 | `DOCTYPE` | a document type other than `<!DOCTYPE html>` with no identifiers |
 
 `xhtml_strict` makes any hazard a refusal (`GTEXT_XML_E_XHTML`; without `xhtml` it
-is `_INVALID`). **The list is the hazards known so far, not a proof.** "No
-hazards" means the tree is free of these; it does not mean an HTML parser has
-been shown to read it as the same tree, and none exists in this library yet. It
-is conservative where it models HTML's scope rules (it does not know about
-`button`, `td` or `template` boundaries) and certainly incomplete elsewhere. The
-first task of the HTML parser phase is a differential against a reference HTML
-parser over random trees, which must show no divergence on a tree without
-hazards; any divergence extends the list.
+is `_INVALID`). **"No hazards" is a measured claim, and it is not a proof.** It means the
+tree is free of the hazards above, and that over every tree the HTML differential has
+tried (see "HTML reference parsers": 3,442 comparisons on trees with no hazards in the default
+population and 139,378 in hunts of 240,000 generated trees) **both references agree with the
+tree that was written**, under the comparison fixed in `notes/text/XML-HTML-PLAN.md`
+(`tools/oracle/html_equivalent.h`): no tree with no hazards was read differently by both. "Zero
+divergences" means that and nothing wider: html5lib 1.1 alone read 88 of those trees differently
+(33 in the default population), every one for a cause listed in `KNOWN_CAUSES`
+(`tools/oracle/html_diff.py`) where it predates the standard - a `template`, an `hr` in a `select`,
+ruby parts, `command` - and parse5, which follows the standard, read them as written. parse5 alone
+read none of them differently.
+The list is conservative where it models HTML's scope rules (it does not know about
+`button`, `td` or `template` boundaries; ruby and `nobr` are taken through every ancestor)
+and where the references are behind the standard (`search`, carriage returns written as
+references), and it is incomplete where the references cannot show it: customizable select,
+processing instructions as nodes, the parts of the standard newer than both. The mode never
+looks at the bytes of an HTML document's encoding: the references are given characters, and a
+`<meta charset>` a tree holds is not applied by it.
 
-**What is checked now, and what is not.** The XML half of the guarantee: for every
-document the mode accepts, parse (XML), write with `xhtml`, parse (XML) gives an
-equal tree. It is run over every well-formed document of the W3C suite and over
-random trees (see Tested scope). The HTML half - write with `xhtml`, parse with
-the HTML parser, compare - belongs to Phase 3, and the comparison it will use is
-fixed in `notes/text/XML-HTML-PLAN.md` and already implemented and tested against
-the XML side in `tests/test-xhtml-writer.cpp`. The XML declaration is written by
-the usual rules (an HTML parser reads it as a comment), so output meant for both
-should use `GTEXT_XML_DECLARATION_NEVER`.
+**What is checked.** The XML half of the guarantee: for every document the mode accepts,
+parse (XML), write with `xhtml`, parse (XML) gives an equal tree, over every well-formed
+document of the W3C suite and random trees (see Tested scope). The HTML half: write with
+`xhtml`, parse with an HTML parser, compare, against two reference parsers
+(`make check-html-oracle`, below). The comparison, `html_equivalent`, is implemented once, in
+`tools/oracle/html_equivalent.h`, and tested against the XML side in
+`tests/test-xhtml-writer.cpp`. The XML declaration is written by the usual rules (an HTML
+parser reads it as a comment), so output meant for both should use
+`GTEXT_XML_DECLARATION_NEVER`. This library has no HTML parser yet; the HTML half is checked
+against html5lib and parse5, and will be against this library's own when it exists.
 
 ## Files
 
@@ -693,6 +711,102 @@ kind of difference for each.
 itself - an attribute prefix that is not bound but is accepted, a line feed kept in an
 attribute value - and requires the comparison to fail.
 
+## HTML reference parsers
+
+`make check-html-oracle` holds the XHTML write mode to **html5lib 1.1** (Python) and
+**parse5 8.0.1** (JavaScript), which share no code, in one pinned container
+(`tools/oracle/containers/html`). What pins them, in order of strength: the wheels by
+SHA-256 (`requirements.txt`, `--require-hashes`) and the npm packages by their
+integrity hashes (`package-lock.json`, `npm ci`); the base image by digest (the one
+`containers/xml` uses), with the Debian `python3` and `nodejs` packages installed on it, whose
+versions the driver prints but `IMAGES` does not pin (a Debian point release changes the
+line and is seen, not refused); and the two driver files by a SHA-256 compiled into the
+version line, which the gate recomputes from the files in this tree. The pin is a line of `containers/IMAGES`, checked by `make
+oracle-version` and, without an engine, by `check-oracle-env`. The container runs with
+no network. No browser and no host-installed parser is used.
+
+**One format for both.** The driver reads a document (and, for fragments, a context
+element, and the scripting flag) and writes the tree in the html5lib-tests / web-platform-
+tests tree-construction format (`| <tag>`, `|   attr="v"`, `svg ` and `math ` for foreign
+elements, `content` under a `template`), the same serialization for both, plus the
+parse-error count. A difference between the two answers is then a difference between the
+parsers and not between two dump writers.
+
+**The oracle is proved first** (`tools/oracle/html_vectors.py`). All 1,962
+tree-construction vectors of the pinned web-platform-tests tree that do not need script to
+run (1,926 independent of the scripting flag and 36 written for one setting, run with
+it; the 6 vectors in the four `scripted_*.dat` files are the tree a script makes, and are
+counted and named) are put to both references and each must reproduce the expected tree.
+1,608 of 1,962 are reproduced by html5lib and 1,832 of 1,962 by parse5;
+**the rest are 484 deviations, every one a line of `tools/oracle/html_deviations.txt` with a
+class and a reason, and the run fails on an unlisted one, a stale one and one whose
+answer has changed** (the line locks a digest of the expected and the actual tree). 67 are
+html5lib's API: it takes a fragment context by HTML name only and cannot be given `svg path`.
+The other 417 are 413 where a reference is older than the vectors, which follow the living
+standard, and 4 where html5lib is wrong against the standard whatever its age; the 19 cases that
+were once a blanket reason each have a reason of their own, and the rest are grouped by the file and
+cause they share: html5lib 1.1 is from 2020 and has no template insertion mode, the older ruby and
+adoption rules, and keeps `isindex`; both lack the rewritten 'in select' mode (customizable
+select), the `search` element's rules, processing instructions as nodes, and form handling in
+templates. That is the reason the differential never trusts a reference on a construct the
+standard has since changed: the standard decides, and the reference is only evidence.
+
+**The differential** (`tools/oracle/html_diff.py`, `html_ours.c`, `html_equivalent.h`).
+Trees are written with `xhtml` (declaration `NEVER`), read by both references, and the
+trees they return are held to the tree that was written under `html_equivalent`, the eight
+rules of `notes/text/XML-HTML-PLAN.md`, implemented once in C in `html_equivalent.h` and
+included by `tests/test-xhtml-writer.cpp` as well, so the rules cannot be weakened in one
+place only. The population: generated trees (4,000 in the default run; half *tame*, built
+to keep clear of the listed hazards so that "no hazards" is tested on many non-trivial trees,
+a share of those with one random change, the rest *wild*, any element of any vocabulary in any
+place, favouring a group of names that interact: ruby, tables, lists, forms, formatting,
+head, foreign content, raw text), each read with the scripting flag off and on, a fifth written in
+US-ASCII or ISO-8859-1 (about 15% and 5%), and a ninth pretty-printed; every well-formed document
+of the W3C XML suite, re-written; and the expected tree of every
+document-mode tree-construction vector. A tree the writer refuses is counted by its reason and not
+compared.
+
+**What it found.** Fifteen kinds of tree the hazard list or the writer had wrong, each a tree with
+`xhtml_hazards == 0` that an HTML parser read as another tree, each now a hazard or a refusal with a
+regression test (`HazardsTheHtmlDifferentialFound` and its neighbours; the list is in
+`notes/text/XML-HTML-PLAN.md`, "Phase 3a as built"): foreign names and namespaced attributes HTML does not
+restore, and the folded form of a name it does (`viewbox` is read as `viewBox`), `plaintext`, markup and
+references inside raw-text elements, C1 characters (as references, and as bytes under ISO-8859-1), `nobr` and
+ruby parts that HTML ends, elements below the first level of a `select`, text in a `colgroup` or in a
+`noscript` in the head, carriage returns written as references in a table, a separator after the root,
+indentation of `html`'s own children, and `search` in the `li` chain. Two things the review asked about did
+not reproduce as separate defects: an attribute with a colon and no namespace is refused by the writer as not
+an XML name before it matters, and two attributes that differ only in case cannot both pass the name test
+(one of them is, or is the folded form of, a name HTML does not read back).
+
+**The result.** Default population: 3,442 comparisons on trees with no hazards, 3,409 read as written by both
+parsers; **no tree was read differently by both**; html5lib alone differed on 33, for causes listed in
+`KNOWN_CAUSES` (no template mode, `hr` in a `select`, `command`, ruby parts, `summary` not special), parse5
+alone on none. Hunts: 240,000 further generated trees (seeds 22 to 27, 40,000 each; earlier hunts of 400,000
+found the defects above and were run on earlier states of the writer) gave 139,378 comparisons on trees with
+no hazards; again none was read differently by both references; html5lib alone differed on 88, every one of a
+listed cause, parse5 alone on none. On trees with hazards, 4,386 comparisons in the default run: 295 read as
+written, 3,958 differ in both references, 88 in html5lib alone, 45 in parse5 alone. html5lib and parse5 read
+7,620 of 7,828 trees alike. `tools/oracle/html_divergences.txt` has 28 lines (21 in the default population,
+7 seen only in hunts), each a first hazard and who differed, or a known cause, with a class and a reason.
+The population also holds a fixed case: one tree for every entry of every vocabulary table in
+`markup_html.c` (and the folded form of each SVG name, which must be a hazard), the ruby parts inside each
+other, and the places each repair above is about; 178 of them are written without hazards and read back
+as written by both. A hunt is `HTML_ORACLE_COUNT=100000 HTML_ORACLE_SEED=2 make check-html-oracle`.
+
+**Both gates are made to fail.** `tools/oracle/run-html-oracle.sh --controls`, which
+`make check-html-oracle` runs after the comparisons, corrupts one expectation, one reference
+answer, a listed deviation and a locked digest in the vectors; corrupts the writer's output
+five ways (an empty element written `<x/>`, script text in a CDATA section, an end tag on a
+void element, the document type dropped, an escape changed); changes the list three ways (an
+entry made stale, a count changed, the list emptied); and compiles the writer with each of
+16 repairs this differential led to undone (`plaintext`, `nobr`, ruby, the foreign element and
+attribute name checks, the C1 refusal, the select depth, a carriage return in a table, text in
+a colgroup, in a head and in a head `noscript`, the separator after the root, the indentation of
+`html`, `search` in the `li` chain, markup and references in raw-text elements), and requires
+exit status 3 with the heading for that kind of failure each time. `run-html-oracle.sh --control
+NAME` runs one.
+
 ## Fuzzers
 
 `fuzz_xml` and `fuzz_xml_writer` (`tests/fuzz/`, `make fuzz-run-xml`, `make
@@ -823,14 +937,15 @@ parser reaches first.
   trees; the XML round trip over hand-written XHTML in all five encodings, over
   every well-formed document of the W3C suite (the great majority accepted, the
   rest refused with a reason, every outcome accounted for) and over thousands of
-  random trees; the Phase 3 comparison function against the XML side, including
+  random trees; the HTML comparison function (`html_equivalent`) against the XML side, including
   that it fails for every difference but the declaration; the allocator failing at
   every point and the sink at every call; a 100,000-deep tree. The vocabulary is
   looked up entry by entry, checked to answer only in the XHTML namespace, and
   checked against data it was not made from: the web-platform-tests tree-
   construction vectors and the html5lib serializer vectors, which a test fails
   (and `check-xhtml-test-data` says how to fetch) when absent. They can show an
-  entry wrong, not that one is missing. `fuzz_xml_writer` varies `xhtml` and
+  entry wrong, not that one is missing. The HTML half is `make check-html-oracle` (above), and
+  every tree it found wrong is a case of `HazardsTheHtmlDifferentialFound` and its neighbours. `fuzz_xml_writer` varies `xhtml` and
   `xhtml_strict` too (strict agrees with the hazard count; a refusal writes
   nothing and explains itself), and `check-xml-fuzz-plants` has a plant for it.
 

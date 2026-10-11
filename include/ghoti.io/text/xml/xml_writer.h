@@ -125,20 +125,26 @@
  * content; an XHTML element with a prefix (HTML reads `h:p` as a different
  * element); an XHTML element or attribute name with an ASCII upper case letter
  * (HTML lower-cases it, so `BR` is not void and `<BR></BR>` is two tags), and an
- * XHTML element name that does not start with an ASCII letter.
+ * XHTML element name that does not start with an ASCII letter, and a character
+ * from U+0080 to U+009F: under US-ASCII it would be a numeric reference, which an
+ * HTML parser reads as the Windows-1252 character at that code, and under ISO-8859-1
+ * the parser reads the label as Windows-1252, so the raw byte means that character too.
  *
  * Tree-construction hazards (GTEXT_XML_Xhtml_Hazard) cannot be fixed by
  * spelling and are reported in the result as a count and the first one's kind
  * and path; with GTEXT_XML_Write_Options::xhtml_strict they are refusals. The
- * hazards are the ones known so far: "no hazards" is not a proof that an HTML
- * parser reads the same tree (see GTEXT_XML_Xhtml_Hazard).
+ * hazards are the ones the differential against html5lib and parse5 has found:
+ * "no hazards" is measured, not a proof that an HTML parser reads the same tree
+ * (see GTEXT_XML_Xhtml_Hazard).
  *
  * The XML declaration is written under the usual rules; an HTML parser reads it
  * as a comment, so use GTEXT_XML_DECLARATION_NEVER for output meant for both.
  * The guarantee for the XML side is the round trip: for every tree the mode
  * accepts, parsing the output with the XML parser gives an equal tree. The
- * HTML-parser half of the guarantee belongs to the HTML parser (see
- * notes/text/XML-HTML-PLAN.md).
+ * HTML-parser half is checked against html5lib and parse5 (`make
+ * check-html-oracle`; see notes/text/XML-HTML-PLAN.md), and will be against this
+ * library's own HTML parser when there is one. The mode never applies a
+ * `<meta charset>`: the references are given characters.
  */
 
 #ifndef GHOTI_IO_GTEXT_XML_XML_WRITER_H
@@ -298,15 +304,17 @@ GTEXT_API GTEXT_XML_Write_Options gtext_xml_write_options_default(void);
  * @brief What an `xhtml` write found that an HTML parser would build differently
  *   and that no spelling can prevent.
  *
- * **This is the list of hazards known so far, not a proof.** A result with no
- * hazards means the tree is free of the hazards listed here; it does not mean an
- * HTML parser has been shown to read it as the same tree, and none exists in this
- * library yet. The first task of the HTML parser phase is a differential against
- * a reference HTML parser over random trees, which must find no divergence on a
- * tree without hazards; any divergence extends this list. The list is
- * conservative where it models HTML's scope rules (it does not know about
- * `button`, `td` or `template` boundaries) and is certainly incomplete where it
- * does not.
+ * **This is a measured list, not a proof.** A result with no hazards means the tree
+ * is free of the hazards listed here. Over every tree tried in the differential
+ * against html5lib 1.1 and parse5 8.0.1 (tools/oracle/html_diff.py, `make
+ * check-html-oracle`: generated trees, the W3C XML suite, the standard's own
+ * trees) such a tree was read as the tree written, except where html5lib 1.1
+ * alone predates the standard (`template`, an `hr` in a `select`, ruby parts,
+ * `command`); every divergence the differential found extended this list or the
+ * refusals. The list is conservative where it models HTML's scope rules (it does
+ * not know about `button`, `td` or `template` boundaries) and where the
+ * references are behind the standard, and it is incomplete where the references
+ * cannot show it.
  */
 typedef enum {
   GTEXT_XML_XHTML_HAZARD_NONE = 0,
@@ -351,7 +359,12 @@ typedef enum {
    *  a different foreign namespace than its parent, or named like an HTML tag
    *  that breaks out of foreign content (`div`, `p`, `font color`, ...); an
    *  HTML element directly inside foreign content that is not an integration
-   *  point; an element in any other namespace. */
+   *  point; an element in any other namespace; an element or attribute name
+   *  with an upper case letter that HTML would lower-case and does not restore
+   *  (gtext_markup_html_foreign_name_survives()), or a namespaced attribute that
+   *  is not one of the nine HTML reads as namespaced (`xlink:href`, `xml:lang`, ...).
+   *  Markup other than text inside `iframe`, `noembed`, `noframes`,
+   *  `noscript`, `plaintext` or `xmp` is RAW_TEXT_CONTENT, not this. */
   GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT,
   /** An attribute with a namespace on an XHTML element (`xml:lang`,
    *  `xlink:href`): HTML reads it as a plain attribute of that prefixed name.

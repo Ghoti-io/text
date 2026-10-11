@@ -137,6 +137,15 @@ read by the XML parser from XHTML already has the namespace. Nothing here sniffs
 or parses; see \ref format_xml "XML" for why the parser must always be chosen by
 the caller.
 
+One more question is asked of SVG and MathML names and has no `_node_` form:
+`gtext_markup_html_foreign_name_survives()` says whether an HTML parser reads an
+element or attribute name back as written. It lower-cases every name and restores
+the case of 36 SVG element names (`foreignObject`), 58 SVG attribute names
+(`viewBox`) and MathML's `definitionURL`; any other name with an upper case letter
+(`contentScriptType`, which the standard dropped, is one) comes back as a different
+name. Its table is transcribed from parse5 8.0.1's copy of the standard's (the source is
+in `src/markup/markup_html.c`), and the XHTML writer uses it.
+
 ## Statuses
 
 | Status | When |

@@ -38,6 +38,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
@@ -386,6 +387,74 @@ TEST(MarkupHtml, TheSerializerVectorsAgreeOnVoidAndBooleanAttributes) {
   EXPECT_TRUE(gtext_markup_html_is_boolean_attribute(XHTML, "button", "disabled"));
   EXPECT_NE(options_text.find("\"div\", [{\"namespace\": null, \"name\": \"irrelevant\""), std::string::npos);
   EXPECT_FALSE(gtext_markup_html_is_boolean_attribute(XHTML, "div", "irrelevant"));
+}
+
+// The names an HTML parser restores in foreign content (markup_html.c cites where the
+// tables are from). A pin of the transcription, as for the element tables above: every
+// listed name survives, its lower case form survives (it is the form HTML reads), and the
+// near misses do not.
+TEST(MarkupHtml, ForeignNamesSurviveWhenHtmlRestoresTheirCase) {
+  const char * svg = "http://www.w3.org/2000/svg";
+  const char * math = "http://www.w3.org/1998/Math/MathML";
+  const char * const tags[] = {"altGlyph", "altGlyphDef", "altGlyphItem", "animateColor", "animateMotion",
+      "animateTransform", "clipPath", "feBlend", "feColorMatrix", "feComponentTransfer", "feComposite",
+      "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feFlood", "feFuncA",
+      "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology",
+      "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight", "feTile", "feTurbulence",
+      "foreignObject", "glyphRef", "linearGradient", "radialGradient", "textPath"};
+  const char * const attrs[] = {"attributeName", "attributeType", "baseFrequency", "baseProfile", "calcMode",
+      "clipPathUnits", "diffuseConstant", "edgeMode", "filterUnits", "glyphRef", "gradientTransform",
+      "gradientUnits", "kernelMatrix", "kernelUnitLength", "keyPoints", "keySplines", "keyTimes",
+      "lengthAdjust", "limitingConeAngle", "markerHeight", "markerUnits", "markerWidth", "maskContentUnits",
+      "maskUnits", "numOctaves", "pathLength", "patternContentUnits", "patternTransform", "patternUnits",
+      "pointsAtX", "pointsAtY", "pointsAtZ", "preserveAlpha", "preserveAspectRatio", "primitiveUnits", "refX",
+      "refY", "repeatCount", "repeatDur", "requiredExtensions", "requiredFeatures", "specularConstant",
+      "specularExponent", "spreadMethod", "startOffset", "stdDeviation", "stitchTiles", "surfaceScale",
+      "systemLanguage", "tableValues", "targetX", "targetY", "textLength", "viewBox", "viewTarget",
+      "xChannelSelector", "yChannelSelector", "zoomAndPan"};
+  for (const char * t : tags) {
+    SCOPED_TRACE(t);
+    EXPECT_TRUE(gtext_markup_html_foreign_name_survives(svg, false, t));
+    EXPECT_EQ(gtext_markup_html_foreign_name_survives(svg, true, t), std::strcmp(t, "glyphRef") == 0);
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(math, false, t));
+    std::string lower(t);
+    for (char & ch : lower) {
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    // The folded form of an entry is restored to the entry, so it is not read back as written.
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, false, lower.c_str()));
+    EXPECT_TRUE(gtext_markup_html_foreign_name_survives(math, false, lower.c_str()));
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, false, (std::string(t) + "X").c_str()));
+  }
+  for (const char * a : attrs) {
+    SCOPED_TRACE(a);
+    EXPECT_TRUE(gtext_markup_html_foreign_name_survives(svg, true, a));
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(math, true, a));
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, true, (std::string(a) + "X").c_str()));
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, true, (std::string("X") + a).c_str()));
+    std::string folded(a);
+    for (char & ch : folded) {
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, true, folded.c_str()));
+    EXPECT_TRUE(gtext_markup_html_foreign_name_survives(math, true, folded.c_str()));
+  }
+  EXPECT_TRUE(gtext_markup_html_foreign_name_survives(math, true, "definitionURL"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(math, true, "definitionurl"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, true, "definitionURL"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(math, false, "definitionURL"));
+  // Dropped by the standard: read lower case, so not as written.
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, true, "contentScriptType"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, true, "contentStyleType"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, false, "customElement"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(math, false, "Foo"));
+  // No upper case: read as written, in these two namespaces only.
+  EXPECT_TRUE(gtext_markup_html_foreign_name_survives(svg, false, "g"));
+  EXPECT_TRUE(gtext_markup_html_foreign_name_survives(math, true, "mathvariant"));
+  EXPECT_TRUE(gtext_markup_html_foreign_name_survives(svg, true, "data-x"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(XHTML, false, "p"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(nullptr, false, "g"));
+  EXPECT_FALSE(gtext_markup_html_foreign_name_survives(svg, false, nullptr));
 }
 
 }  // namespace

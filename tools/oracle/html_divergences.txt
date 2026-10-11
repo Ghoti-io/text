@@ -1,0 +1,61 @@
+# Divergences of the XHTML write mode from html5lib and parse5 that are expected and
+# understood: every tree on which an HTML parser builds something other than the tree that
+# was written, grouped, for the default population of tools/oracle/html_diff.py (4000
+# generated trees, seed 1; the W3C XML suite; the expected trees of the tree-construction
+# vectors). The gate is html_diff.py, and it fails on a divergence that is not here, on an
+# entry that no longer occurs, and on one whose count has changed (the count is the
+# signature: a different tree for the same entry is a different count or a different entry).
+# A count of `hunt` is an entry seen only on the larger populations a hunt generates (other
+# seeds, 100,000 trees): it need not occur in the default one, and if it does, its count is
+# written here.
+#
+# Columns, tab separated: key, count, class, reason.
+#
+# **No tree without hazards is ever listed as a writer defect.** That is the claim under test
+# and the gate has no entry for it: such a tree is fixed in the writer, or becomes a new kind of
+# hazard (and then appears here, under that kind). The two sorts of key:
+#
+#   hazard:<first hazard>:<who differed>   a tree the writer reported a hazard in, and the
+#       kind of its first hazard. The hazard is the reason: the entry says what an HTML
+#       parser does about it. "Who" is both references, or the one that differed. A tree with
+#       several hazards is counted under its first; a hazard that does not make HTML build
+#       another tree (the list is conservative in places) is no entry, because nothing
+#       diverged. What differed is in the report the gate prints, not in the key: the same
+#       first hazard turns up as a different first difference from tree to tree.
+#
+#   ref:<who>:<cause>   a tree with NO hazards on which one reference reads it as written and
+#       the other does not. These are not the writer's: the cause is established (see
+#       KNOWN_CAUSES in html_diff.py, each with the vectors in html_deviations.txt that show
+#       it) and the standard is the arbiter. A cause not in that table fails the run.
+#
+# Classes: hazard-expected (the hazard says an HTML parser builds something else), html5lib-wrong
+# (a reference is wrong against the standard), reference-old (the reference predates a change to
+# the standard), standard-unclear (the standard can be read either way).
+hazard:doctype:both	n=1500	hazard-expected	doctype: a document type other than <!DOCTYPE html>, which HTML turns into a quirks mode and whose identifiers it keeps; the trees counted here are mostly the W3C XML suite's, whose roots are not html at all, so what differs is the html, head and body HTML builds around them, the case it folds, and the namespaces it gives. Here both references build a tree other than the one written.
+hazard:doctype:html5lib	hunt	hazard-expected	doctype: a document type other than <!DOCTYPE html>, which HTML turns into a quirks mode and whose identifiers it keeps; the trees counted here are mostly the W3C XML suite's, whose roots are not html at all, so what differs is the html, head and body HTML builds around them, the case it folds, and the namespaces it gives. Here only html5lib differs; it predates the standard's rule for a construct in the tree (template, search, isindex, hr in a select; see html_deviations.txt).
+hazard:doctype:parse5	hunt	hazard-expected	doctype: a document type other than <!DOCTYPE html> comes first among the hazards. What differs is an SVG or MathML attribute whose upper case name HTML lower-cases and does not restore (contentScriptType); only parse5 differs because html5lib 1.1 still restores it.
+hazard:document-structure:both	n=1682	hazard-expected	document-structure: a tree without the html, head and body HTML always builds (or with elements and text it does not accept there): HTML inserts them and moves the rest. Here both references build a tree other than the one written.
+hazard:document-structure:html5lib	n=3	hazard-expected	document-structure: a tree without the html, head and body HTML always builds (or with elements and text it does not accept there): HTML inserts them and moves the rest. Here only html5lib differs; it has no template insertion mode, and moves a template out of the head.
+hazard:document-structure:parse5	n=10	hazard-expected	document-structure: a tree without the html, head and body HTML always builds (or with elements and text it does not accept there): HTML inserts them and moves the rest. Here only parse5 differs.
+hazard:foreign-content:both	n=298	hazard-expected	foreign-content: SVG or MathML content HTML builds differently: another namespace for the element, an end to the foreign content at a breakout tag, or an attribute name it lower-cases and does not restore. Here both references build a tree other than the one written.
+hazard:foreign-content:parse5	hunt	hazard-expected	foreign-content: an SVG or MathML attribute whose name has an upper case letter that HTML lower-cases and does not restore (contentScriptType, which the standard dropped from its table). Here only parse5 differs because html5lib 1.1 still restores it.
+hazard:implied-end:both	n=29	hazard-expected	implied-end: an element HTML ends where another starts (a list item in a list item, a nobr in a nobr, a ruby part in a ruby part), so the second is a sibling, not a child. Here both references build a tree other than the one written.
+hazard:implied-end:parse5	n=28	hazard-expected	implied-end: an element HTML ends where another starts (a list item in a list item, a nobr in a nobr, a ruby part in a ruby part), so the second is a sibling, not a child. Here only parse5 differs: it ends the open element where a ruby part starts, as the standard says, and html5lib 1.1's older ruby rules keep the nesting.
+hazard:namespaced-attribute:both	n=56	hazard-expected	namespaced-attribute: an attribute with a namespace (xml:lang, xlink:href) on an HTML element, which HTML keeps as a plain attribute with a colon in its name. Here both references build a tree other than the one written.
+hazard:nested-a:both	n=5	hazard-expected	nested-a: an a inside an a, which HTML ends before the second. Here both references build a tree other than the one written.
+hazard:nested-form:both	hunt	hazard-expected	nested-form: a form inside a form, which HTML ignores. Here both references build a tree other than the one written.
+hazard:p-block:both	n=28	hazard-expected	p-block: a block-level element inside a p, which HTML ends the p before. Here both references build a tree other than the one written.
+hazard:p-block:html5lib	hunt	hazard-expected	p-block: a block-level element inside a p, which HTML ends the p before. Here only html5lib differs; html5lib 1.1 predates the standard's rule for a construct in the tree (isindex, template, search, hr in a select, ruby; see html_deviations.txt).
+hazard:p-block:parse5	hunt	hazard-expected	p-block: a block-level element inside a p, which HTML ends the p before. Here only parse5 differs: html5lib 1.1 predates the search element, which the standard makes a block.
+hazard:raw-text-content:both	n=188	hazard-expected	raw-text-content: markup, or text that needs an escape, inside an element whose content HTML reads as text (script, style, title, textarea, iframe, noembed, noframes, noscript, xmp). Here both references build a tree other than the one written.
+hazard:raw-text-content:parse5	n=1	hazard-expected	raw-text-content: markup, or text that needs an escape, inside an element whose content HTML reads as text (script, style, title, textarea, iframe, noembed, noframes, noscript, xmp). Here only parse5 differs, for an SVG attribute whose upper case name HTML lower-cases and does not restore (contentScriptType) in a tree whose first hazard is this one.
+hazard:special-element:both	n=143	hazard-expected	special-element: an element HTML rewrites, ignores or treats specially (image, isindex, frameset, template with children, plaintext, a table part outside a table, an element inside a select, a button in a button). Here both references build a tree other than the one written.
+hazard:special-element:html5lib	n=85	hazard-expected	special-element: an element HTML rewrites, ignores or treats specially (image, isindex, frameset, template with children, plaintext, a table part outside a table, an element inside a select, a button in a button). Here only html5lib differs; it predates the standard's rule (isindex, template, search, hr in a select; see html_deviations.txt).
+hazard:special-element:parse5	n=2	hazard-expected	special-element: an element HTML rewrites, ignores or treats specially (image, isindex, frameset, template with children, plaintext, a table part outside a table, an element inside a select, a button in a button). Here only parse5 differs.
+hazard:table-foster-parent:both	n=27	hazard-expected	table-foster-parent: text or an element HTML does not accept in a table, which it moves to before the table. Here both references build a tree other than the one written.
+hazard:table-foster-parent:parse5	n=4	hazard-expected	table-foster-parent: text or an element HTML does not accept in a table, which it moves to before the table. Here only parse5 differs: it reads a carriage return, which the writer puts out as &#13;, as text that is not white space and moves it out of the table, where the standard keeps it. The writer reports that as the hazard.
+hazard:table-implied-part:both	n=2	hazard-expected	table-implied-part: a tr, td or col HTML wraps in the table part it implies. Here both references build a tree other than the one written.
+ref:html5lib:command	n=1	reference-old	html5lib 1.1 still treats command as a void element, which the standard dropped (tests25.dat in html_deviations.txt); parse5 reads these trees as written
+ref:html5lib:select-hr	n=10	reference-old	html5lib 1.1 drops an hr inside a select, which the standard has allowed since 2020 (webkit02.dat in html_deviations.txt); parse5 reads these trees as written
+ref:html5lib:summary	hunt	reference-old	html5lib 1.1 does not count summary among the special elements, so it ends an open dt, dd or li found through one; the standard stops at the summary, and parse5 reads these trees as written
+ref:html5lib:template	n=22	html5lib-wrong	html5lib 1.1 has no template insertion mode: it moves a template out of the head or a table into the body and keeps its contents as children; every template.dat vector it fails (html_deviations.txt) is the same cause, and parse5 reads these trees as written
