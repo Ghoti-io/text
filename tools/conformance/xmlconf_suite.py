@@ -156,7 +156,8 @@ def load_exceptions():
 # invariant is a refusal for the wrong reason and must not score as a pass.
 WELL_FORMEDNESS = tuple('GTEXT_XML_E_' + n for n in (
     'SYNTAX', 'UNEXPECTED_EOF', 'UTF8', 'CHARACTER', 'MISMATCHED_TAG',
-    'DUPLICATE_ATTRIBUTE', 'ENTITY', 'NAMESPACE', 'DOCTYPE'))
+    'DUPLICATE_ATTRIBUTE', 'ENTITY', 'NAMESPACE', 'DOCTYPE',
+    'INVALID_SEQUENCE', 'ENCODING_MISMATCH'))
 
 UNSUPPORTED = ('GTEXT_XML_E_UNSUPPORTED_ENCODING', 'GTEXT_XML_E_UNSUPPORTED_VERSION')
 

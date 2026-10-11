@@ -70,12 +70,19 @@ extern "C" {
  * document type declares it, and an external identifier is recorded and never
  * opened.
  *
- * **Encodings.** UTF-8 only. A UTF-8 byte order mark is accepted and skipped.
- * UTF-16 and UTF-32 by their byte order mark or by the first bytes, EBCDIC by
- * its first bytes, and an XML declaration whose `encoding` is anything but
- * `UTF-8` (case-insensitive) return GTEXT_XML_E_UNSUPPORTED_ENCODING, which
- * says nothing about whether the document is well-formed. An XML declaration
- * with a version other than 1.0 returns GTEXT_XML_E_UNSUPPORTED_VERSION.
+ * **Encodings.** UTF-8 (a byte order mark is accepted and skipped), UTF-16 and
+ * UTF-32 in either byte order (by their mark, or by the first bytes of
+ * `<?xml` as in XML 1.0 Appendix F), and documents whose declaration says
+ * `ISO-8859-1` or `US-ASCII`. Anything else that is named is
+ * GTEXT_XML_E_UNSUPPORTED_ENCODING, as is EBCDIC; that says nothing about
+ * whether the document is well-formed. Input that is not UTF-8 is converted
+ * to UTF-8 first: lines and columns still count characters of the original,
+ * but a byte offset counts bytes of the UTF-8 form. The document's encoding
+ * and its source describe the original. A declared `encoding` naming another
+ * family than the document is in is GTEXT_XML_E_ENCODING_MISMATCH, and bytes
+ * that are not valid in the encoding are GTEXT_XML_E_INVALID_SEQUENCE. An XML
+ * declaration with a version other than 1.0 returns
+ * GTEXT_XML_E_UNSUPPORTED_VERSION.
  *
  * @param data   The document. Need not be NUL-terminated and is not kept; may
  *               be NULL only if `len` is 0 (which is an empty document, and

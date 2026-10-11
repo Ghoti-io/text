@@ -254,13 +254,15 @@ TEST_F(XmlParse, VersionsAndEncodingsAreStatementsAboutTheParser) {
   Result r = parse("<?xml version=\"1.1\"?><a/>");
   EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_VERSION);
   EXPECT_EQ(parse("<?xml version=\"1.2\"?><a/>").status, GTEXT_XML_E_UNSUPPORTED_VERSION);
-  r = parse("<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/>");
+  r = parse("<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>");
   EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_ENCODING);
   EXPECT_EQ(r.err.byte_offset, 30u);  // The value: <?xml version="1.0" encoding="
-  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a/>").status,
-      GTEXT_XML_E_UNSUPPORTED_ENCODING);
-  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"US-ASCII\"?><a/>").status,
-      GTEXT_XML_E_UNSUPPORTED_ENCODING);
+  // A UTF-8 document labeled UTF-16 is a mismatch the specification makes fatal.
+  r = parse("<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_ENCODING_MISMATCH);
+  EXPECT_EQ(r.err.byte_offset, 30u);
+  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a/>").status, GTEXT_XML_OK);
+  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"US-ASCII\"?><a/>").status, GTEXT_XML_OK);
   EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><a/>").status, GTEXT_XML_OK);
   EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"Utf-8\"?><a/>").status, GTEXT_XML_OK);
   // An encoding name that is not one is a syntax error, not a statement.
@@ -295,16 +297,11 @@ TEST_F(XmlParse, ByteOrderMarksAndWideEncodings) {
   // Two marks: the second is a character that is not white space.
   EXPECT_EQ(parse("\xEF\xBB\xBF\xEF\xBB\xBF<a/>").status, GTEXT_XML_E_SYNTAX);
 
-  const char * wide[] = {"\xFE\xFF\x00<\x00/\x00>", "\xFF\xFE<\x00/\x00>\x00",
-      "\x00\x00\xFE\xFF\x00\x00\x00<", "\xFF\xFE\x00\x00<\x00\x00\x00",
-      "\x00<\x00?", "<\x00?\x00", "\x00\x00\x00<", "<\x00\x00\x00",
-      "\x4C\x6F\xA7\x94"};
-  const size_t sizes[] = {8, 8, 8, 8, 4, 4, 4, 4, 4};
-  for (size_t i = 0; i < sizeof(wide) / sizeof(wide[0]); i++) {
-    Result w = parse(std::string(wide[i], sizes[i]));
-    EXPECT_EQ(w.status, GTEXT_XML_E_UNSUPPORTED_ENCODING) << i;
-    EXPECT_EQ(w.err.byte_offset, 0u) << i;
-  }
+  // EBCDIC is recognised and declined; UTF-16 and UTF-32 are read
+  // (test-xml-encodings.cpp).
+  Result e = parse(std::string("\x4C\x6F\xA7\x94", 4));
+  EXPECT_EQ(e.status, GTEXT_XML_E_UNSUPPORTED_ENCODING);
+  EXPECT_EQ(e.err.byte_offset, 0u);
 }
 
 TEST_F(XmlParse, EmptyAndMissingRoots) {
@@ -817,7 +814,7 @@ TEST_F(XmlParse, ArgumentsAndStatuses) {
 
   // Every status has a name, and no two share one.
   std::vector<std::string> names;
-  for (int s = GTEXT_XML_OK; s <= GTEXT_XML_E_LIMIT_NAMESPACES; s++) {
+  for (int s = GTEXT_XML_OK; s <= GTEXT_XML_E_ENCODING_MISMATCH; s++) {
     const char * name = gtext_xml_status_string(static_cast<GTEXT_XML_Status>(s));
     ASSERT_NE(name, nullptr);
     EXPECT_STRNE(name, "unknown status") << s;

@@ -890,28 +890,7 @@ static GTEXT_XML_Status pseudo_attribute(xml_ctx * p, const char * name,
   return GTEXT_XML_OK;
 }
 
-static int equals_ignore_case(const unsigned char * s, size_t n, const char * t) {
-  if (n != strlen(t)) {
-    return 0;
-  }
-  for (size_t i = 0; i < n; i++) {
-    unsigned char a = s[i];
-    unsigned char b = (unsigned char)t[i];
-    if (a >= 'A' && a <= 'Z') {
-      a = (unsigned char)(a + 32);
-    }
-    if (b >= 'A' && b <= 'Z') {
-      b = (unsigned char)(b + 32);
-    }
-    if (a != b) {
-      return 0;
-    }
-  }
-  return 1;
-}
-
-static GTEXT_XML_Status parse_xml_declaration(
-    xml_ctx * p, int had_bom) {
+static GTEXT_XML_Status parse_xml_declaration(xml_ctx * p) {
   xml_consume(p, 5); /* "<?xml" */
   size_t at = 0;
   size_t length = 0;
@@ -963,9 +942,9 @@ static GTEXT_XML_Status parse_xml_declaration(
     if (!name_ok) {
       return xml_fail_at(p, GTEXT_XML_E_SYNTAX, "not an encoding name", &where);
     }
-    if (!equals_ignore_case(p->in + label_at, label_length, "UTF-8")) {
-      return xml_fail_at(p, GTEXT_XML_E_UNSUPPORTED_ENCODING,
-          "only UTF-8 is supported", &where);
+    status = xml_check_label(p, p->in + label_at, label_length, &where);
+    if (status != GTEXT_XML_OK) {
+      return status;
     }
     label = (const char *)p->in + label_at;
     space = xml_skip_space(p);
@@ -1003,50 +982,18 @@ static GTEXT_XML_Status parse_xml_declaration(
   /* The label as written, so that a writer can say what the document said. */
   markup_buf copy;
   markup_buf_init(&copy, p->allocator);
-  status = xml_append(p, &copy, label ? label : "UTF-8",
-      label ? label_length : 5);
+  status = label ? xml_append(p, &copy, label, label_length)
+                 : xml_append(p, &copy, xml_family_name(p->enc_family),
+                       strlen(xml_family_name(p->enc_family)));
   if (status == GTEXT_XML_OK) {
     status = xml_from_markup(p,
         gtext_markup_document_set_encoding(p->doc, copy.data,
-            had_bom ? GTEXT_MARKUP_ENCODING_BOM
-                    : (label ? GTEXT_MARKUP_ENCODING_DECLARATION
+            p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM
+                       : (label ? GTEXT_MARKUP_ENCODING_DECLARATION
                              : GTEXT_MARKUP_ENCODING_DEFAULT)));
   }
   markup_buf_free(&copy);
   return status;
-}
-
-/* Byte order marks and the first bytes of UTF-16, UTF-32 and EBCDIC documents
-   (XML 1.0 Appendix F). A UTF-8 mark is skipped. */
-static GTEXT_XML_Status detect_encoding(xml_ctx * p, int * had_bom) {
-  const unsigned char * s = p->in;
-  const size_t n = p->length;
-  *had_bom = 0;
-  if (n >= 3 && s[0] == 0xEF && s[1] == 0xBB && s[2] == 0xBF) {
-    *had_bom = 1;
-    p->pos = 3; /* A mark is not a character of the document: column 1 still. */
-    return GTEXT_XML_OK;
-  }
-  int other = 0;
-  if (n >= 2 && ((s[0] == 0xFE && s[1] == 0xFF) || (s[0] == 0xFF && s[1] == 0xFE))) {
-    other = 1; /* UTF-16 and UTF-32 marks (FF FE 00 00 starts with FF FE). */
-  }
-  else if (n >= 4 && s[0] == 0x00 && s[1] == 0x00 && s[2] == 0xFE && s[3] == 0xFF) {
-    other = 1;
-  }
-  else if (n >= 4
-      && ((s[0] == 0x00 && s[1] == 0x00 && s[2] == 0x00 && s[3] == 0x3C)
-          || (s[0] == 0x3C && s[1] == 0x00 && s[2] == 0x00 && s[3] == 0x00)
-          || (s[0] == 0x00 && s[1] == 0x3C && s[2] == 0x00 && s[3] == 0x3F)
-          || (s[0] == 0x3C && s[1] == 0x00 && s[2] == 0x3F && s[3] == 0x00)
-          || (s[0] == 0x4C && s[1] == 0x6F && s[2] == 0xA7 && s[3] == 0x94))) {
-    other = 1;
-  }
-  if (other) {
-    return xml_fail(p, GTEXT_XML_E_UNSUPPORTED_ENCODING,
-        "only UTF-8 is supported (UTF-16, UTF-32 and EBCDIC are not)");
-  }
-  return GTEXT_XML_OK;
 }
 
 /* Comments, processing instructions and white space, where they may occur
@@ -1083,15 +1030,14 @@ static GTEXT_XML_Status parse_misc(xml_ctx * p, int allow_doctype, int * seen_do
 }
 
 static GTEXT_XML_Status parse_document(xml_ctx * p) {
-  int had_bom = 0;
-  GTEXT_XML_Status status = detect_encoding(p, &had_bom);
+  GTEXT_XML_Status status = xml_detect_encoding(p);
   if (status != GTEXT_XML_OK) {
     return status;
   }
   int declared = 0;
   if (xml_looking_at(p, "<?xml", 5) && p->pos + 5 < p->length
       && xml_is_space(p->in[p->pos + 5])) {
-    status = parse_xml_declaration(p, had_bom);
+    status = parse_xml_declaration(p);
     if (status != GTEXT_XML_OK) {
       return status;
     }
@@ -1099,8 +1045,9 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
   }
   if (!declared) {
     status = xml_from_markup(p,
-        gtext_markup_document_set_encoding(p->doc, "UTF-8",
-            had_bom ? GTEXT_MARKUP_ENCODING_BOM : GTEXT_MARKUP_ENCODING_DEFAULT));
+        gtext_markup_document_set_encoding(p->doc,
+            xml_family_name(p->enc_family),
+            p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM : GTEXT_MARKUP_ENCODING_DEFAULT));
     if (status != GTEXT_XML_OK) {
       return status;
     }
@@ -1140,6 +1087,7 @@ static size_t limit_or(size_t given, size_t fallback) {
 }
 
 static void cleanup(xml_ctx * p) {
+  markup_buf_free(&p->decoded);
   markup_buf_free(&p->text);
   markup_buf_free(&p->attr_pool);
   markup_buf_free(&p->scratch);
@@ -1212,6 +1160,7 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
   }
   p.doc = doc;
   p.allocator = &doc->allocator;
+  markup_buf_init(&p.decoded, p.allocator);
   markup_buf_init(&p.text, p.allocator);
   markup_buf_init(&p.attr_pool, p.allocator);
   markup_buf_init(&p.scratch, p.allocator);

@@ -2,12 +2,12 @@
 
 # XML
 
-`gtext_xml_parse()` reads a whole **UTF-8 XML 1.0 (Fifth Edition)** document
-with **Namespaces in XML 1.0** and builds a
-\ref format_markup "Markup tree" from it. This is the first slice of the XML
-phase: the DOM parse. The event parsers (push and pull), the writer, the file
-entry points, UTF-16 and UTF-32, and the reference-parser differential are the
-next slices and are not here; the **Gaps** section lists them.
+`gtext_xml_parse()` reads a whole **XML 1.0 (Fifth Edition)** document, in UTF-8,
+UTF-16, UTF-32, ISO-8859-1 or US-ASCII, with **Namespaces in XML 1.0** and builds
+a \ref format_markup "Markup tree" from it. This is the DOM parse and its
+encodings. The event parsers (push and pull), the writer, the file entry points
+and the reference-parser differential are the next slices and are not here; the
+**Gaps** section lists them.
 Back to \ref text_format_references "Formats".
 
 ## Normative references
@@ -16,7 +16,7 @@ Back to \ref text_format_references "Formats".
   well-formedness, the character and name productions, line-end normalization
   (2.11), attribute-value normalization (3.3.3), the document type declaration
   (2.8, only as far as finding its end), and the byte order and encoding rules
-  of Appendix F (only as far as recognizing what is not UTF-8).
+  of Appendix F, and 4.3.3 for the declaration checked against the bytes.
 - [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/xml-names/):
   prefix declaration and scope, the reserved `xml` and `xmlns`, qualified names.
 - The [W3C XML Conformance Test Suite](https://www.w3.org/XML/Test/) (release
@@ -40,7 +40,10 @@ Every element, text, CDATA, comment, processing instruction and doctype node
 carries its source location, and so does every attribute. A location is the
 byte offset, the line and the column of the construct's first character; a line
 ends at LF, CR or CR LF, a column counts characters, and a UTF-8 byte order mark
-counts in the offset and not in the columns.
+counts in the offset and not in the columns. For input that is converted (UTF-16,
+UTF-32, ISO-8859-1, US-ASCII) a line and column still count characters of the
+original, but the **offset counts bytes of the UTF-8 form** the parser read, and
+a byte order mark is not counted at all.
 
 ## The document type declaration is recognized, not processed
 
@@ -73,14 +76,24 @@ non-NULL one is honoured.
 
 ## Encodings
 
-UTF-8 only, and the decision is explicit:
+The parser reads UTF-8. Anything else it supports is converted to UTF-8 first,
+in one pass and through the document's allocator, so the parse itself is the same
+for every encoding. The document's encoding name and its source (`BOM`,
+`DECLARATION`, `DEFAULT`) describe the **original**: a UTF-16 document with a mark
+says `UTF-16` from `BOM`, and one declared `ISO-8859-1` says `ISO-8859-1` from
+`DECLARATION`. The input limit applies to the original bytes.
 
 | Input | Result |
 |---|---|
 | UTF-8, with or without a byte order mark | parsed; a mark is skipped and the document's encoding source is `BOM` |
-| UTF-16 or UTF-32, by byte order mark or by the first bytes (Appendix F) | `GTEXT_XML_E_UNSUPPORTED_ENCODING`, at offset 0 |
-| EBCDIC, by its first bytes | the same |
-| an XML declaration whose `encoding` is anything but `UTF-8` (case-insensitive), including `US-ASCII` and `ISO-8859-1` | the same, positioned at the label |
+| UTF-16 or UTF-32, little or big endian, by byte order mark or by the first bytes of `<?` (Appendix F; a mark-less UTF-16 document that starts with `<` and anything else is read as UTF-8 and refused) | converted and parsed. A document with no mark and no declaration is read as the family its first bytes show, named `UTF-16` or `UTF-32` from `DEFAULT` |
+| a declaration `encoding="ISO-8859-1"` or `"US-ASCII"` (case-insensitive) in a document with no mark | converted (every byte of Latin-1 is the code point of that value) and parsed. The label is read from the declaration in the raw bytes before converting |
+| a UTF-16 or UTF-32 document whose label names another family (`UTF-8`, `ISO-8859-1`, `US-ASCII`, or the other width) | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
+| a UTF-8 document (with or without a mark) labeled `UTF-16` or `UTF-32`, or one with a UTF-8 mark labeled `ISO-8859-1` or `US-ASCII` | the same |
+| a bare label `UTF-16` or `UTF-32` | matches either byte order |
+| a lone or reversed surrogate, a UTF-32 unit past U+10FFFF or in the surrogate range, a document that ends inside a code unit, a byte of 0x80 or above under `US-ASCII` | `GTEXT_XML_E_INVALID_SEQUENCE`, at the unit |
+| the labels `UTF-16LE`, `UTF-16BE`, `UTF-32LE`, `UTF-32BE` and aliases such as `UCS-2` or `latin1` (declined on purpose) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` at the label |
+| EBCDIC, by its first bytes; any other label (`windows-1252`, `Shift_JIS`, ...) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` (offset 0 for EBCDIC, the label otherwise) |
 | an XML declaration whose `encoding` is not an `EncName` | `GTEXT_XML_E_SYNTAX` |
 | a version other than 1.0 | `GTEXT_XML_E_UNSUPPORTED_VERSION` for `1.<digits>`, `GTEXT_XML_E_SYNTAX` for anything the production does not allow |
 | bytes that are not UTF-8 | `GTEXT_XML_E_UTF8` |
@@ -88,9 +101,10 @@ UTF-8 only, and the decision is explicit:
 
 An unsupported answer is a statement about the **parser** and not about the
 document: the document may be well-formed. The conformance score keeps those
-cases apart for that reason. UTF-16 and UTF-32 by byte order mark, the
-declaration checked against what was detected, and a decision about
-`ISO-8859-1` and `US-ASCII` are the next slice.
+cases apart for that reason. The mismatch and invalid-sequence answers are
+statements about the **document** and score as well-formedness refusals. The
+other labels, a streaming decoder, and the four unusual byte orders of
+Appendix F are not supported.
 
 ## Limits
 
@@ -137,6 +151,8 @@ parser could not accept.
 | `_NAMESPACE` | an unbound prefix, a name with two colons, `xmlns` or `xml` misused, a prefix undeclared, a colon in a processing-instruction target |
 | `_DOCTYPE` | a malformed document type declaration or internal subset |
 | `_UNSUPPORTED_ENCODING`, `_UNSUPPORTED_VERSION` | as above |
+| `_INVALID_SEQUENCE` | bytes that are not valid in the document's encoding, positioned at the unit |
+| `_ENCODING_MISMATCH` | the declaration names a different family from the one the document is in, positioned at the label |
 | `_LIMIT_*` | a limit above, each its own status |
 | `_INVALID`, `_OOM` | an unusable argument; an allocation failed |
 
@@ -187,6 +203,12 @@ Two things the suite itself got wrong, found while scoring:
   three line-end forms and multi-byte characters), the document type scanner
   over its hostile cases, namespace scope and its errors, numeric references
   past 32 and 64 bits, and a document 300,000 levels deep.
+- **Encodings** (`tests/test-xml-encodings.cpp`): each row of the encoding matrix,
+  the mismatches in both directions, malformed units, lines, columns and offsets
+  for converted input, the input limit on original bytes, 300 random documents
+  encoded in every supported encoding (with and without a mark) and compared
+  with the tree of the same document in UTF-8, and the allocator failing at every
+  point of converting four documents.
 - **Limits and failure injection** (`tests/test-xml-limits.cpp`): each limit at
   its value, one past it and far past it, as its own status; the allocator
   failing at every one of the rich document's allocations in turn (more than 150
@@ -205,7 +227,7 @@ Two things the suite itself got wrong, found while scoring:
 - No event parsers (push `GTEXT_XML_Stream`, pull `GTEXT_XML_Reader`), so no
   check that chunk boundaries do not matter.
 - No writer, no `gtext_xml_parse_file` / `_write_file`, no round trip.
-- No UTF-16 or UTF-32, and no decision yet about `ISO-8859-1` and `US-ASCII`.
+- Encodings other than UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are declined (see Encodings).
 - No fuzzers and no reference-parser differential (libxml2, expat): the scores
   above are against the specification's own suite only. Where those two disagree
   with each other about names, the Markup tree page has the measurement.
@@ -213,3 +235,10 @@ Two things the suite itself got wrong, found while scoring:
   predefined five are refused, and 340 not-well-formed documents whose fault is
   inside a DTD are accepted (listed, with their reasons).
 - No XML 1.1, no canonicalization, no XPath. None is planned in this phase.
+
+Conversion happens before parsing, so an invalid sequence anywhere in a
+non-UTF-8 document is reported in preference to an earlier syntax error, and the
+converted copy is held in memory beside the original (up to twice the size for
+ISO-8859-1, 1.5 times for UTF-16). `max_input_bytes` limits the original only.
+For converted input, `offset` in an error counts bytes of the UTF-8 form, not of
+the caller's buffer; `line` and `column` count characters.

@@ -69,6 +69,29 @@ extern "C" {
 #define XML_DEFAULT_MAX_NODES ((size_t)10000000)
 #define XML_DEFAULT_MAX_NAMESPACES ((size_t)256)
 
+/* ---- Encodings (xml_encoding.c) ----------------------------------------- */
+
+/** What the document is in, as far as the first bytes and the label say. */
+typedef enum {
+  XML_FAMILY_UTF8 = 0, ///< UTF-8, or nothing says otherwise.
+  XML_FAMILY_UTF16LE,
+  XML_FAMILY_UTF16BE,
+  XML_FAMILY_UTF32LE,
+  XML_FAMILY_UTF32BE,
+  XML_FAMILY_LATIN1, ///< Declared ISO-8859-1.
+  XML_FAMILY_ASCII   ///< Declared US-ASCII.
+} xml_family;
+
+/** An encoding label from the declaration, by family. */
+typedef enum {
+  XML_LABEL_OTHER = 0,
+  XML_LABEL_UTF8,
+  XML_LABEL_UTF16,
+  XML_LABEL_UTF32,
+  XML_LABEL_LATIN1,
+  XML_LABEL_ASCII
+} xml_label;
+
 /* ---- Seams -------------------------------------------------------------- */
 
 /** An attribute a declaration supplies when the start tag omits it. */
@@ -169,6 +192,10 @@ typedef struct {
 
   GTEXT_XML_Error err;
 
+  xml_family enc_family; ///< What the document was found to be in.
+  int enc_bom;           ///< It began with a byte order mark.
+  markup_buf decoded;    ///< The UTF-8 form of converted input; `in` points here.
+
   markup_buf text;        ///< Character data being gathered.
   GTEXT_Markup_Location text_where;
   markup_buf attr_pool;   ///< Attribute values of the current start tag.
@@ -188,6 +215,25 @@ typedef struct {
   size_t binding_count;
   size_t binding_capacity;
 } xml_ctx;
+
+/**
+ * Decide the encoding from the first bytes (and, for a document with no mark
+ * that declares ISO-8859-1 or US-ASCII, the declaration), and convert the input
+ * to UTF-8 if it is not already: `in`/`length` then name the converted copy.
+ * A UTF-8 mark is skipped by moving `pos`.
+ */
+GTEXT_XML_Status xml_detect_encoding(xml_ctx * p);
+/** Classify an encoding label, case-insensitively. */
+xml_label xml_classify_label(const unsigned char * label, size_t length);
+/**
+ * Check the declaration's label against the family found. Mismatches the
+ * specification makes fatal are GTEXT_XML_E_ENCODING_MISMATCH, any other
+ * unsupported label is GTEXT_XML_E_UNSUPPORTED_ENCODING; both at `where`.
+ */
+GTEXT_XML_Status xml_check_label(xml_ctx * p, const unsigned char * label,
+    size_t length, const GTEXT_Markup_Location * where);
+/** The name a document gets when it declares none. */
+const char * xml_family_name(xml_family family);
 
 /* ---- Errors ------------------------------------------------------------- */
 

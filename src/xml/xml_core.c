@@ -74,6 +74,10 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "too many nodes";
     case GTEXT_XML_E_LIMIT_NAMESPACES:
       return "too many namespace declarations in scope";
+    case GTEXT_XML_E_INVALID_SEQUENCE:
+      return "invalid byte sequence for the document's encoding";
+    case GTEXT_XML_E_ENCODING_MISMATCH:
+      return "declared encoding does not match the document";
   }
   return "unknown status";
 }

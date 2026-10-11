@@ -80,10 +80,11 @@ typedef enum {
                        ///< the reserved `xml` and `xmlns` prefixes.
   GTEXT_XML_E_DOCTYPE, ///< A malformed or unterminated document type
                        ///< declaration.
-  GTEXT_XML_E_UNSUPPORTED_ENCODING, ///< UTF-16, UTF-32 or EBCDIC (by byte
-                       ///< order mark or by the first bytes), or an XML
-                       ///< declaration whose `encoding` is not UTF-8. Not a
-                       ///< verdict on the document: it may be well-formed.
+  GTEXT_XML_E_UNSUPPORTED_ENCODING, ///< EBCDIC (by its first bytes), or
+                       ///< an XML declaration whose `encoding` is none of
+                       ///< UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII.
+                       ///< Not a verdict on the document: it may be
+                       ///< well-formed.
   GTEXT_XML_E_UNSUPPORTED_VERSION, ///< An XML declaration with a version other
                        ///< than 1.0. Not a verdict on the document.
 
@@ -94,8 +95,19 @@ typedef enum {
                                 ///< `max_attribute_bytes`.
   GTEXT_XML_E_LIMIT_NAME,       ///< A name longer than `max_name_bytes`.
   GTEXT_XML_E_LIMIT_NODES,      ///< More than `max_nodes` nodes in the tree.
-  GTEXT_XML_E_LIMIT_NAMESPACES  ///< More than `max_namespaces` namespace
+  GTEXT_XML_E_LIMIT_NAMESPACES, ///< More than `max_namespaces` namespace
                                 ///< declarations in scope at once.
+
+  GTEXT_XML_E_INVALID_SEQUENCE, ///< Bytes that are not valid in the document's
+                       ///< encoding: a lone or reversed UTF-16 surrogate, a
+                       ///< UTF-32 unit past U+10FFFF or in the surrogate
+                       ///< range, a document that ends inside a code unit, a
+                       ///< byte above 0x7F under `US-ASCII`. The position is
+                       ///< the offending unit's.
+  GTEXT_XML_E_ENCODING_MISMATCH ///< The declaration's `encoding` names a
+                       ///< different family from the one the document is in
+                       ///< (a UTF-16 document labeled UTF-8, a UTF-8 document
+                       ///< labeled UTF-16). The position is the label's.
 } GTEXT_XML_Status;
 
 /**
