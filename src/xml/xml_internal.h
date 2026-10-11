@@ -1,0 +1,353 @@
+/*
+ * SPDX-License-Identifier: LGPL-3.0-only
+ *
+ * Copyright (C) 2026 Corey Pennycuff
+ *
+ * This file is part of Ghoti.io Text.
+ *
+ * Ghoti.io Text is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * Ghoti.io Text is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * @file
+ *
+ * The XML parser's internal state.
+ *
+ * ## Shape
+ *
+ * One pass over the whole input, no recursion: the open elements are a heap
+ * array (`frames`) bounded by `max_depth`, so a document nested a million deep
+ * is refused at the limit and never reaches the C stack. Every function that
+ * can fail returns a GTEXT_XML_Status and has already recorded where and why in
+ * `ctx->err`; the first failure wins and nothing overwrites it.
+ *
+ * The cursor (`pos`, `line`, `column`) moves only through xml_consume(), the
+ * one place that knows what a line end is, so a position can never disagree
+ * with the bytes consumed.
+ *
+ * ## Seams for the DTD phase
+ *
+ * Phase 4 attaches entity resolution, attribute types and default attributes
+ * here. The three function pointers in xml_seams are NULL for every public
+ * parse, and each is consulted at exactly one place, so Phase 4 changes no
+ * Phase 1 behaviour by being added. They are reachable from tests through
+ * xml_parse_with_seams() so that "NULL changes nothing, non-NULL is honoured"
+ * is checked rather than assumed.
+ */
+
+#ifndef GHOTI_IO_GTEXT_SRC_XML_XML_INTERNAL_H
+#define GHOTI_IO_GTEXT_SRC_XML_XML_INTERNAL_H
+
+#include <ghoti.io/text/macros.h>
+#include <ghoti.io/text/xml.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "../markup/markup_internal.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ---- Defaults ----------------------------------------------------------- */
+
+#define XML_DEFAULT_MAX_INPUT ((size_t)64 * 1024 * 1024)
+#define XML_DEFAULT_MAX_DEPTH ((size_t)256)
+#define XML_DEFAULT_MAX_ATTRIBUTES ((size_t)1024)
+#define XML_DEFAULT_MAX_ATTRIBUTE_BYTES ((size_t)16 * 1024 * 1024)
+#define XML_DEFAULT_MAX_NAME_BYTES ((size_t)8192)
+#define XML_DEFAULT_MAX_NODES ((size_t)10000000)
+#define XML_DEFAULT_MAX_NAMESPACES ((size_t)256)
+
+/* ---- Seams -------------------------------------------------------------- */
+
+/** An attribute a declaration supplies when the start tag omits it. */
+typedef struct {
+  const char * name;  ///< The name as written, prefix included. NUL-terminated.
+  const char * value; ///< The default value. NUL-terminated.
+} xml_default_attribute;
+
+/**
+ * Where the DTD phase attaches. All NULL means "no DTD processing", which is
+ * what Phase 1 is.
+ */
+typedef struct {
+  /** Replacement text for a general entity the five predefined ones do not
+   *  cover. Return non-zero and set *text / *length to use it as character
+   *  data; zero for "not declared", which is an error. */
+  int (*resolve_entity)(void * user, const char * name, size_t name_length,
+      const char ** text, size_t * length);
+  /** Non-zero if the attribute is declared with a tokenized type, so that its
+   *  value is normalized further (runs of spaces collapse, the ends trim). */
+  int (*attribute_type)(void * user, const char * element, size_t element_length,
+      const char * attribute, size_t attribute_length);
+  /** The defaults for an element; returns how many and sets *list. */
+  size_t (*default_attributes)(void * user, const char * element,
+      size_t element_length, const xml_default_attribute ** list);
+  void * user;
+} xml_seams;
+
+/* ---- State -------------------------------------------------------------- */
+
+/** One namespace declaration in scope. One allocation: prefix, NUL, uri, NUL. */
+typedef struct {
+  char * data;
+  size_t prefix_length; ///< 0 is the default namespace.
+  size_t uri_length;    ///< 0 undeclares (only for the default namespace).
+} xml_binding;
+
+/** An open element. */
+typedef struct {
+  GTEXT_Markup_Node * node;
+  const unsigned char * name; ///< As written, in the input.
+  size_t name_length;
+  size_t binding_mark; ///< bindings.count when the element opened.
+} xml_frame;
+
+/** An attribute of the start tag being read. */
+typedef struct {
+  size_t name_length;
+  size_t colon;       ///< Offset of the first ':' within the name, or SIZE_MAX.
+  size_t value_offset; ///< Into `attr_pool`.
+  size_t value_length;
+  uint32_t raw_hash;
+  GTEXT_Markup_Location where;
+  const unsigned char * name_ptr; ///< Where the name is: the input, or the
+                                  ///< seam's string for a defaulted attribute.
+  int kind;           ///< XML_ATTR_*.
+  const char * ns;    ///< Resolved namespace URI, or NULL.
+} xml_attr;
+
+/** What an attribute of a start tag is. */
+enum {
+  XML_ATTR_PLAIN = 0,       ///< No prefix, not a declaration.
+  XML_ATTR_PREFIXED,        ///< `p:name`, p resolved.
+  XML_ATTR_DEFAULT_NS_DECL, ///< `xmlns`.
+  XML_ATTR_PREFIX_DECL      ///< `xmlns:p`.
+};
+
+typedef struct {
+  uint32_t stamp; ///< Slot is live only when equal to the set's stamp.
+  uint32_t index;
+  uint32_t hash;
+} xml_slot;
+
+/** A set of attribute names that is empty again in O(1): see xml_hset_begin(). */
+typedef struct {
+  xml_slot * slots;
+  size_t capacity; ///< A power of two, or 0.
+  size_t count;
+  uint32_t stamp;
+} xml_hset;
+
+typedef struct {
+  const unsigned char * in;
+  size_t length;
+  size_t pos;
+  size_t line;
+  size_t column;
+
+  size_t max_depth;
+  size_t max_attributes;
+  size_t max_attribute_bytes;
+  size_t max_name_bytes;
+  size_t max_namespaces;
+
+  GTEXT_Markup_Document * doc;
+  const GTEXT_Allocator * allocator; ///< The document's copy.
+  xml_seams seams;
+
+  GTEXT_XML_Error err;
+
+  markup_buf text;        ///< Character data being gathered.
+  GTEXT_Markup_Location text_where;
+  markup_buf attr_pool;   ///< Attribute values of the current start tag.
+  markup_buf scratch;     ///< NUL-terminated copies of names for the tree.
+
+  xml_attr * attrs;
+  size_t attr_count;
+  size_t attr_capacity;
+  xml_hset raw_names;
+  xml_hset expanded_names;
+
+  xml_frame * frames;
+  size_t frame_count;
+  size_t frame_capacity;
+
+  xml_binding * bindings;
+  size_t binding_count;
+  size_t binding_capacity;
+} xml_ctx;
+
+/* ---- Errors ------------------------------------------------------------- */
+
+/** Record a failure at `where` (the first one wins) and return `code`. */
+GTEXT_XML_Status xml_fail_at(xml_ctx * p, GTEXT_XML_Status code,
+    const char * message, const GTEXT_Markup_Location * where);
+/** As xml_fail_at() at the cursor. */
+GTEXT_XML_Status xml_fail(
+    xml_ctx * p, GTEXT_XML_Status code, const char * message);
+/**
+ * "This is not what the grammar allows here." Chooses the more specific code
+ * when the character at the cursor is the real trouble: end of input, a byte
+ * sequence that is not UTF-8, a character XML forbids. Otherwise E_SYNTAX with
+ * `message`.
+ */
+GTEXT_XML_Status xml_unexpected(xml_ctx * p, const char * message);
+/** The location of the cursor. */
+GTEXT_Markup_Location xml_here(const xml_ctx * p);
+/** Map a markup status from the tree to the parser's. */
+GTEXT_XML_Status xml_from_markup(xml_ctx * p, GTEXT_Markup_Status status);
+
+/* ---- Cursor and characters (xml_lexer.c) -------------------------------- */
+
+/** Move the cursor over `n` bytes that have already been validated. */
+void xml_consume(xml_ctx * p, size_t n);
+
+/** Result of decoding one character. */
+typedef enum {
+  XML_CHAR_OK = 0,
+  XML_CHAR_EOF,
+  XML_CHAR_BAD_UTF8,
+  XML_CHAR_FORBIDDEN ///< UTF-8 is fine; XML's Char production excludes it.
+} xml_char_status;
+
+/** Decode and classify the character at `at`. */
+xml_char_status xml_decode(
+    const xml_ctx * p, size_t at, uint32_t * code_point, size_t * bytes);
+
+/** XML whitespace: tab, line feed, carriage return, space. */
+static inline int xml_is_space(unsigned char c) {
+  return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
+}
+
+/** Skip whitespace; the number of bytes skipped. */
+size_t xml_skip_space(xml_ctx * p);
+/** Does the input at the cursor start with this? */
+int xml_looking_at(const xml_ctx * p, const char * literal, size_t length);
+/** Consume `literal` or fail with `message` (via xml_unexpected). */
+GTEXT_XML_Status xml_expect(
+    xml_ctx * p, const char * literal, size_t length, const char * message);
+
+/**
+ * Measure the Name at the cursor without consuming it. Fails if there is none
+ * or it is longer than the limit.
+ */
+GTEXT_XML_Status xml_scan_name(xml_ctx * p, size_t * length);
+
+/** Append `[from, to)` of the input to `buf`, line ends normalized to LF. */
+GTEXT_XML_Status xml_append_normalized(
+    xml_ctx * p, markup_buf * buf, size_t from, size_t to);
+/** Append a code point as UTF-8. */
+GTEXT_XML_Status xml_append_code_point(
+    xml_ctx * p, markup_buf * buf, uint32_t code_point);
+/** Append bytes, mapping the markup status to the parser's. */
+GTEXT_XML_Status xml_append(
+    xml_ctx * p, markup_buf * buf, const char * bytes, size_t length);
+
+/**
+ * Read a reference at the cursor (which must be on `&`) and append what it
+ * stands for to `buf`. Errors are positioned at the `&`.
+ */
+GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf);
+
+/**
+ * Check a run of character data starting at the cursor and find where it ends:
+ * at '<', at '&', or at the end of the input. Every character is validated and
+ * "]]>" is refused. Leaves the cursor at the start of the run.
+ */
+GTEXT_XML_Status xml_scan_text_run(xml_ctx * p, size_t * end);
+
+/** An allocation through the document's allocator; NULL on failure. */
+void * xml_alloc(xml_ctx * p, size_t size);
+void xml_release(xml_ctx * p, void * ptr);
+/** Grow an array to hold at least `needed` elements. */
+GTEXT_XML_Status xml_grow(xml_ctx * p, void ** array, size_t * capacity,
+    size_t element_size, size_t needed);
+
+/* ---- Names and sets ----------------------------------------------------- */
+
+uint32_t xml_hash(const void * bytes, size_t length, uint32_t seed);
+/** Empty the set, with room for `expected` members. */
+GTEXT_XML_Status xml_hset_begin(xml_ctx * p, xml_hset * set, size_t expected);
+/** Does member `existing` equal `key`? Called only when the hashes agree. */
+typedef int (*xml_hset_same)(
+    const xml_ctx * p, uint32_t existing, const void * key);
+/**
+ * Add `index` under `hash`. Returns 0 if added, 1 if an equal member (by
+ * `same`) is already there, -1 on allocation failure.
+ */
+int xml_hset_insert(xml_ctx * p, xml_hset * set, uint32_t hash, uint32_t index,
+    xml_hset_same same, const void * key);
+void xml_hset_free(xml_ctx * p, xml_hset * set);
+
+/* ---- Namespaces (xml_namespace.c) --------------------------------------- */
+
+/** Open a scope: remember how many bindings are in effect. */
+size_t xml_scope_mark(const xml_ctx * p);
+/** Close it: drop every binding made since. */
+void xml_scope_release(xml_ctx * p, size_t mark);
+/**
+ * Declare `prefix` (empty for the default namespace) as `uri`, enforcing the
+ * constraints on the `xml` and `xmlns` prefixes and the limit. Errors are
+ * positioned at `where`.
+ */
+GTEXT_XML_Status xml_scope_declare(xml_ctx * p, const char * prefix,
+    size_t prefix_length, const char * uri, size_t uri_length,
+    const GTEXT_Markup_Location * where);
+/**
+ * Resolve a prefix (length 0 for the default namespace) to a NUL-terminated
+ * URI. Returns 1 and sets *uri to it, or to NULL for "no namespace"; returns 0
+ * if the prefix is unbound. `xml` is always bound.
+ */
+int xml_scope_lookup(const xml_ctx * p, const char * prefix,
+    size_t prefix_length, const char ** uri);
+void xml_scope_free(xml_ctx * p);
+
+/** Split a name at its colon and check both halves are NCNames. */
+GTEXT_XML_Status xml_check_qname(xml_ctx * p, const unsigned char * name,
+    size_t name_length, size_t * colon, const GTEXT_Markup_Location * where);
+
+/* ---- Pieces the document type shares with the parser -------------------- */
+
+/**
+ * Parse the comment at the cursor (on `<!--`). With a `parent`, add a comment
+ * node to it; with NULL, only check it and move on.
+ */
+GTEXT_XML_Status xml_parse_comment(xml_ctx * p, GTEXT_Markup_Node * parent);
+/** As xml_parse_comment() for the processing instruction at `<?`. */
+GTEXT_XML_Status xml_parse_pi(xml_ctx * p, GTEXT_Markup_Node * parent);
+/** Set a node's location and link it as `parent`'s last child. */
+void xml_attach(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node,
+    const GTEXT_Markup_Location * where);
+
+/* ---- Document type (xml_doctype.c) -------------------------------------- */
+
+/** Parse `<!DOCTYPE ...>` at the cursor and add the doctype node. */
+GTEXT_XML_Status xml_parse_doctype(xml_ctx * p);
+
+/* ---- Entry (xml_parser.c) ----------------------------------------------- */
+
+/**
+ * gtext_xml_parse() with the DTD seams filled in. For tests; the public entry
+ * point passes none.
+ */
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_parse_with_seams(const void * data,
+    size_t len, const GTEXT_XML_Parse_Options * opts, const xml_seams * seams,
+    GTEXT_Markup_Document ** out, GTEXT_XML_Error * err);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // GHOTI_IO_GTEXT_SRC_XML_XML_INTERNAL_H

@@ -191,7 +191,7 @@ GTEXT_Markup_Status gtext_markup_escape_alloc(GTEXT_Markup_Escape_Mode mode,
 /* ---- names -------------------------------------------------------------- */
 
 /* XML 1.0 (Fifth Edition) production [4]. */
-static bool name_start_char(uint32_t c) {
+bool markup_xml_name_start_char(uint32_t c) {
   return c == ':' || (c >= 'A' && c <= 'Z') || c == '_' || (c >= 'a' && c <= 'z')
       || (c >= 0xC0 && c <= 0xD6) || (c >= 0xD8 && c <= 0xF6)
       || (c >= 0xF8 && c <= 0x2FF) || (c >= 0x370 && c <= 0x37D)
@@ -202,8 +202,8 @@ static bool name_start_char(uint32_t c) {
 }
 
 /* Production [4a]. */
-static bool name_char(uint32_t c) {
-  return name_start_char(c) || c == '-' || c == '.' || (c >= '0' && c <= '9')
+bool markup_xml_name_char(uint32_t c) {
+  return markup_xml_name_start_char(c) || c == '-' || c == '.' || (c >= '0' && c <= '9')
       || c == 0xB7 || (c >= 0x300 && c <= 0x36F) || (c >= 0x203F && c <= 0x2040);
 }
 
@@ -223,7 +223,7 @@ static bool is_name(const char * text, size_t len, bool allow_colon) {
     if (!allow_colon && cp == ':') {
       return false;
     }
-    if (first ? !name_start_char(cp) : !name_char(cp)) {
+    if (first ? !markup_xml_name_start_char(cp) : !markup_xml_name_char(cp)) {
       return false;
     }
     first = false;

@@ -937,7 +937,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1081,7 +1081,12 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/markup/markup_escape.c \
 	src/markup/markup_support.c \
 	src/markup/markup_tree.c \
-	src/markup/markup_walk.c
+	src/markup/markup_walk.c \
+	src/xml/xml_core.c \
+	src/xml/xml_doctype.c \
+	src/xml/xml_lexer.c \
+	src/xml/xml_namespace.c \
+	src/xml/xml_parser.c
 
 check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
 	@python3 tools/check-allocator-callees.py
@@ -2003,6 +2008,18 @@ conformance-csv: ## Score the CSV parser against csv-spectrum (clones it on firs
 conformance-csv: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-csv.sh
 
+# Outside TEST_GATES, like every conformance target: it wants the pinned suite,
+# which a fresh clone does not have until tools/xml/fetch.sh has run. With the
+# data absent it fails and says so; it does not skip. The data directory is
+# named here, and not only in the script, so that this target and
+# `make conformance-all` fail the same way.
+XML_DATA_DIR := third_party/xml
+
+conformance-xml: ## Score the XML parser against the pinned W3C XML Conformance Test Suite
+conformance-xml: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
+	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MAX_ENTITY=81 XMLCONF_MAX_DECLINED=53 tools/conformance/run-xml.sh
+
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-jsonpath.sh
@@ -2698,7 +2715,7 @@ conformance-all: ## Score every parser against its external corpus
 # Adding it would quietly change this target's contract from "needs this machine" to
 # "needs podman", so it sits with the oracle gates instead, where that requirement is
 # already the rule. `make conformance-ini-win32` runs it.
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

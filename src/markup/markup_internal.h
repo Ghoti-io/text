@@ -188,6 +188,13 @@ void markup_atom_release(
  */
 GTEXT_Markup_Status markup_check_utf8(const char * bytes, size_t len);
 
+/* ---- XML name productions ----------------------------------------------- */
+
+/** XML 1.0 (Fifth Edition) production [4], NameStartChar. */
+bool markup_xml_name_start_char(uint32_t c);
+/** Production [4a], NameChar. */
+bool markup_xml_name_char(uint32_t c);
+
 /* ---- walking ------------------------------------------------------------ */
 
 /** The first of a node's extended children: its template content, else its

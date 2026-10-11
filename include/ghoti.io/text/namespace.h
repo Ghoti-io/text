@@ -612,6 +612,13 @@
 #define gtext_markup_replace GHOTIIO_TEXT(gtext_markup_replace)
 #define gtext_markup_status_string GHOTIIO_TEXT(gtext_markup_status_string)
 #define gtext_markup_string_free GHOTIIO_TEXT(gtext_markup_string_free)
+#define GTEXT_XML_Error GHOTIIO_TEXT(GTEXT_XML_Error)
+#define GTEXT_XML_Parse_Options GHOTIIO_TEXT(GTEXT_XML_Parse_Options)
+#define GTEXT_XML_Status GHOTIIO_TEXT(GTEXT_XML_Status)
+#define gtext_xml_error_free GHOTIIO_TEXT(gtext_xml_error_free)
+#define gtext_xml_parse GHOTIIO_TEXT(gtext_xml_parse)
+#define gtext_xml_parse_options_default GHOTIIO_TEXT(gtext_xml_parse_options_default)
+#define gtext_xml_status_string GHOTIIO_TEXT(gtext_xml_status_string)
 /// @endcond
 
 #endif // GHOTI_IO_GTEXT_NAMESPACE_H

@@ -9,7 +9,8 @@ through an API that refuses what would break it and leaves the tree as it was
 when it does. **This is the tree and the lexical rules for writing it.** The
 parsers that fill it and the writers that read it are later phases (see
 `notes/text/XML-HTML-PLAN.md`); nothing on this page reads or writes a markup
-language, and the sections below say what has and has not been checked.
+language - \ref format_xml "XML" is the first parser that fills the tree - and
+the sections below say what has and has not been checked.
 Back to \ref text_format_references "Formats".
 
 ## Normative references
@@ -169,13 +170,13 @@ spell is `GTEXT_MARKUP_E_UNREPRESENTABLE`.
 
 ## Gaps
 
-- No parser or writer yet; this page describes a tree nobody has filled from
-  bytes. Phase 1 (XML) is next.
+- No writer yet. The XML parser fills the tree (\ref format_xml "XML"); the
+  HTML parser and every writer are later phases.
 - HTML's escaping modes (`&nbsp;`, attribute quoting) belong to the HTML
   serializer and are not here.
 - Nothing in the tree validates namespace constraints (a prefix bound to a
-  namespace, `xmlns` declarations in scope). That is Phase 1, where the parser
-  produces them.
+  namespace, `xmlns` declarations in scope). The XML parser enforces them as it
+  reads; a tree built by hand is not held to them.
 - No `normalize()` (merging adjacent text nodes), no ID lookup, no
   `getElementsBy*`. XPath and selectors are later.
 - Attribute order is preserved and not significant to equality, as in the DOM.
