@@ -8,9 +8,8 @@ a \ref format_markup "Markup tree" from it. `GTEXT_XML_Stream` (push) and
 `GTEXT_XML_Reader` (pull) read the same documents as a stream of events, in
 pieces, without building a tree (**Event parsers** below). `gtext_xml_write()` and
 its buffer and file forms write a tree back as XML, and `gtext_xml_parse_file()`
-reads a file (**Writer** and **Files** below). The fuzzers and the
-reference-parser differential are the next slice and are not here; the **Gaps**
-section lists them.
+reads a file (**Writer** and **Files** below). It is scored against the W3C
+suite, against libxml2 and expat (**Reference parsers**) and fuzzed (**Fuzzers**).
 Back to \ref text_format_references "Formats".
 
 ## Normative references
@@ -487,6 +486,137 @@ Two things the suite itself got wrong, found while scoring:
   documents use an internal one, so it cannot be used to decide which well-formed
   documents are readable without a DTD.
 
+## Reference parsers
+
+`make check-xml-oracle` puts every input to **libxml2 2.9.14** (recovery off, no
+entity substitution, no DTD loading, no network) and to **expat 2.8.3** (with and
+without namespace processing), in one pinned container
+(`tools/oracle/containers/xml`; the pin, the digest of the base image and the
+driver's own hash are in `containers/IMAGES` and checked at run time). The two share
+no code, which is what makes agreement between them worth something; they are not
+treated as independent where they are not, and where they disagree with each other
+(713 of the 6,577 inputs below) the disagreement is read against the specification
+and not settled by a vote. No browser and no host-installed library is used.
+
+**The inputs** are the whole of the W3C suite - the not-well-formed cases, which are
+the refusals and the point, and every `valid`, `invalid` and `error` case, which are
+asked only whether they are well-formed - 17 fuzz seeds that are not suite documents,
+and 3,997 generated and mutated documents, mostly refused (this parser accepts about 6% of
+them, and the run fails if that leaves 3% to 30%, or if any axis below has fewer than 10). The deciding axes are varied on purpose and counted in the report:
+namespaces (bound, unbound and reused prefixes, the reserved `xml` and `xmlns`,
+`xmlns=""`, two colons) and encodings (a mark, none, UTF-16 and UTF-32 in both byte
+orders, ISO-8859-1 and US-ASCII by declaration, a label that lies, a unit that is
+not a character).
+
+**What is compared.** The verdict, ours against each reference run namespace-aware,
+because this parser is: libxml2 well-formed *and* namespace-well-formed, expat in its
+namespace mode. And, for a document all three accept, an event list: element and
+attribute names with namespace and prefix, namespace declarations, the character data,
+comments, processing instructions, the document type's names, and the declaration's
+version and standalone flag. Normalized, and only so far: adjacent character data
+(a CDATA section included) is one run, because the information set does not tell
+them apart and expat has no node for either, attributes and declarations are sorted,
+and a declaration of version 1.0 with no standalone is the same as none. **White
+space is not masked**: a whitespace-only text node is an event.
+
+**Every disagreement is a line of `tools/oracle/xml_disagreements.txt`**: the input,
+what each program said, a class and a reason. The gate fails on a disagreement that is
+not listed, on a listed one that has gone, and on one whose signature has changed, so
+a new defect cannot hide behind an old entry for the same input and an entry cannot
+outlive its reason. There is no class for "ours is wrong"; that is fixed, with a test.
+A class is a **measurement**, made by `tools/oracle/xml_classify.py` and not by
+reading: a disagreement is `scope-dtd` only if the same document with its document
+type declaration removed is agreed on by all three programs, `reference-scope` only if
+the same document converted to UTF-8 is, `version-specific` only if expat's error is at
+a non-ASCII byte of a document libxml2 and this parser both accept, and so on. A control alone
+is never enough: each class also needs the reference side to point its way (for `scope-dtd` and
+`reference-scope`, that this parser accepts or declines what a reference refuses, or refuses a
+reference to a declared entity), because a regression of this parser in UTF-16 decoding or in
+skipping a DTD makes the same controls agree. `make check-xml-fuzz-plants` plants such a
+regression, a valid UTF-16 document refused, and requires the hunt to fail on it.
+
+| class | count | what it is |
+|---|---:|---|
+| `scope-dtd` | 1,070 | needs DTD processing, which this parser does not do. 1,004 of them are suite documents that declare entities, attribute defaults or types, or whose declaration is malformed; the parser skips a declaration's grammar (above), so it accepts the not-well-formed ones and refuses a reference to a declared entity |
+| `scope-xml11` | 130 | the document says `version="1.1"`, which is declined on purpose |
+| `scope-unsupported` | 13 | an encoding label (`euc-jp`, `Shift_JIS`, `iso-2022-jp`, `latin1`, `windows-1252`) or a version (`1.7`) that is declined; libxml2 reads most of them through iconv, expat none |
+| `version-specific` | 21 | expat's name tables are XML 1.0 **Fourth** Edition's: it refuses an element named `eggſ` (U+017F, a letter) and one named with a supplementary-plane character, name characters since the Fifth. The suite says so itself: `x-rmt5-014` and `x-rmt5-016` are marked `EDITION="5"`, and the `ibm-invalid-P89-*` documents say "only legal per 5th edition" |
+| `reference-wrong` | 20 | libxml2 accepts a document whose declared encoding contradicts its bytes (XML 4.3.3), 9 times, expat refusing it as this parser does; expat accepts a version that is not `1.` and digits (`2.0`, `1`, `42.88`), 11 times |
+| `spec-ambiguity` | 5 | UTF-16 or UTF-32 with no byte order mark and no `<?` to start: 4.3.3 requires the mark and Appendix F's detection does not cover the case; expat guesses from a NUL beside the first character, and this parser reads it as UTF-8 and refuses the NUL |
+| `reference-scope` | 5 | a reference does not read the document in its encoding: UTF-32: expat never reads it, and libxml2 2.9.14 reads some presentations of it and not others |
+| `representation` | 2 | libxml2 does not report a declaration of the reserved `xml` prefix; expat and this parser do |
+
+Two more comparisons are reported and not scored. libxml2 also objects to 33 of the
+accepted documents for a namespace name that is not a URI (`xmlns="a b"`): that is a
+quality check and not a constraint of Namespaces in XML, so it is counted. And the
+namespace axis: of the 173 documents expat accepts without namespaces and refuses with
+them, this parser refuses 158 (of the other 15, 12 say `version="1.1"` and are declined, and 3 are
+DTD cases in the list), and of the 178 libxml2 refuses only for namespaces, 156 (18 are
+declined and 4 are DTD cases in the list).
+
+**What it found.** No disagreement turned out to be a defect in this parser. Over the
+6,577 inputs above, and over seven further populations of 100,000 to 150,000 generated
+documents each (different seeds, run to find what the gate's population does not
+reach), everything the classifier could not explain was one of the references being
+lax: libxml2 accepting `<!DOCTYPEha PUBLIC ...>` (no white space after the keyword),
+`<?xml version="1."?>` (as expat does) and a document with a NUL byte after the root
+element (it stops reading there), expat accepting `version="2.0"` and a UTF-16 document
+with no mark. They are not in the list, because the
+gate's population does not contain them. `XML_ORACLE_COUNT=100000 XML_ORACLE_SEED=2 make
+check-xml-oracle` runs the same comparison on another population as a **hunt**: the
+generated disagreements it finds cannot be in a list made for the default one, so they are
+classified by the same controls and the run fails only on one that no class explains. That
+is the one to read: either a defect of this parser, or a mutant with two causes the controls
+do not separate. Across seeds 1 to 4 and 11 to 13 (up to 150,000 documents each) the 3 to 9 a
+population leaves unexplained that I read were the second kind: a UTF-16 document with no mark
+and a DTD (expat guesses the encoding, this parser reads UTF-8 and refuses the NUL), a UTF-16
+document with an invalid code unit that libxml2 accepts through iconv, or a `version="1."`
+beside a Fifth Edition name expat refuses.
+
+**The gate is made to fail.** `tools/oracle/run-xml-oracle.sh --controls`, which
+`make check-xml-oracle` runs after the comparison, corrupts our answers seven ways (a
+verdict flipped, an attribute dropped, a character changed, whitespace lost, an empty
+list, an entry made stale, a signature changed) and requires exit status 3, the heading and the
+kind of difference for each.
+`make check-xml-fuzz-plants` goes one step further and plants a defect in the library
+itself - an attribute prefix that is not bound but is accepted, a line feed kept in an
+attribute value - and requires the comparison to fail.
+
+## Fuzzers
+
+`fuzz_xml` and `fuzz_xml_writer` (`tests/fuzz/`, `make fuzz-run-xml`, `make
+fuzz-run-xml-writer`; `tests/fuzz/README.md` has the properties and the planted
+defects). The reader's: `gtext_xml_parse()`, the event parser fed the whole input,
+a byte at a time and in pieces, and the pull reader, give the same refusal (status, message and position)
+or the same tree down to every location; an accepted tree survives UTF-8, both UTF-16s,
+ISO-8859-1 and US-ASCII and writes back to the same bytes; an allocation that fails
+anywhere is `E_OOM` or the normal answer and leaks nothing; and the event parser's work
+is linear in its input. The first four input bytes set the limits, tiny on purpose. The
+writer's: a program builds a tree and the options of the write, and if the writer says
+OK the bytes parse to the tree that was written, the sink and the buffer writers agree,
+and **in strict mode - where the program uses only what XML can spell - the writer must
+say OK**, which is the only way to find a writer that refuses what it should write.
+
+The seeds are derived from the suite (`tools/xml/make-fuzz-seeds.py`), the recorded
+finds are `reproducer-*.seed` files beside them, and `make test` replays every one
+through both harnesses (`tests/test-xml-fuzz-seeds.cpp`), so a regression is caught with
+no fuzzer built. `make check-xml-fuzz-plants` shows each harness finds a defect planted
+in a copy of the library within the default 60 seconds, and finds nothing in an
+unedited copy. Run to date: `fuzz_xml` 1.78M executions in 1,200 s and 1.20M in 600 s on the last
+binary, `fuzz_xml_writer` 1.74M and 643k, with nothing left after the fix below.
+
+**What they found.** One defect, in the library, fixed here: an attribute value's
+limit was checked when a run of ordinary bytes ended, and a run ends where the input that
+has arrived ends, so a value over `max_attribute_bytes` with a byte that is not a
+character further along the same run was `LIMIT_VALUE` when the document came in pieces
+that ended before the bad byte and an invalid-character refusal when it came whole: one
+document, two answers, by how it was cut. The limit is met at the byte that crosses it
+now, in both parsers (`tests/test-xml-stream.cpp`, "ALimitAndABadByteInOneRun...";
+`reproducer-attribute-limit-before-a-bad-byte.seed`). Two allowances in the harness are
+not defects and are in its header: the input limit, and an invalid byte sequence in a
+converted document, are reported by the DOM parse before an earlier error that the event
+parser reaches first.
+
 ## Tested scope
 
 - **Matrix and grammar tests** (`tests/test-xml-parse.cpp`, 32 cases): each row
@@ -563,16 +693,22 @@ Two things the suite itself got wrong, found while scoring:
   inherited, mixed content indented, a contradiction ignored, swapped surrogates,
   a leaked array, ...) are each caught by the test meant to catch them.
 
+- **The fuzzers' seeds** (`tests/test-xml-fuzz-seeds.cpp`): every tracked seed and every
+  `reproducer-*.seed` in `tests/fuzz/corpus/xml` and `.../xml-writer`, through the
+  harnesses' own properties, with no fuzzer built. The input that made `fuzz_xml` fail
+  before the attribute-limit fix is one of them.
+
 ## Gaps
 
 - The writer has no streaming (event) form, no canonicalization (C14N), no HTML
   serialization and no DTD output; the internal subset of a document type is not
   written because it is not stored.
 - Encodings other than UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are declined (see Encodings).
-- No fuzzers (the parser's, the event parser's and the writer's are slice 1e) and
-  no reference-parser differential (libxml2, expat): the scores above are against
-  the specification's own suite only. Where those two disagree
-  with each other about names, the Markup tree page has the measurement.
+- The reference differential and the fuzzers (above) have limits of their own. The gate's
+  generated population is small (3,997 documents), so the references' leniencies (above)
+  are found by a hunt on a larger one and not by the gate; and the fuzzers have run for
+  minutes to an hour, not for days. 1,070 of the 1,266 listed disagreements are the
+  absence of DTD processing.
 - No DTD processing: declarations are skipped, entities other than the
   predefined five are refused, and 340 not-well-formed documents whose fault is
   inside a DTD are accepted (listed, with their reasons).

@@ -937,7 +937,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle oracle-images oracle-version oracle-clean
+.PHONY: clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-xml-fuzz-plants oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1905,6 +1905,8 @@ FUZZ_CORPUS := tests/fuzz/corpus
 # Long enough to be worth running, short enough for a coffee. Override for a
 # real campaign: make fuzz FUZZ_TIME=3600
 FUZZ_TIME ?= 60
+# Extra libFuzzer arguments, e.g. FUZZ_ARGS=-seed=1 for a run that is the same every time.
+FUZZ_ARGS ?=
 
 # -MMD -MP -MF for the same reason as the release and ASan rules: without it a
 # header change rebuilds nothing here, and the stale objects disagree with the
@@ -1934,7 +1936,7 @@ fuzz-run-$2: $$(FUZZ_APP_DIR)/$1
 	@mkdir -p $$(FUZZ_CORPUS)/$2
 	@printf "\n### Fuzzing $2 for $$(FUZZ_TIME)s ###\n"
 	@$$(FUZZ_APP_DIR)/$1 $$(FUZZ_CORPUS)/$2 \
-		-max_total_time=$$(FUZZ_TIME) -print_final_stats=1
+		-max_total_time=$$(FUZZ_TIME) -print_final_stats=1 $$(FUZZ_ARGS)
 endef
 
 $(eval $(call fuzz-rule,fuzz_json,json))
@@ -1950,6 +1952,8 @@ $(eval $(call fuzz-rule,fuzz_ini_writer,ini-writer))
 $(eval $(call fuzz-rule,fuzz_json_records,json-records))
 $(eval $(call fuzz-rule,fuzz_json_dupkeys,json-dupkeys))
 $(eval $(call fuzz-rule,fuzz_markup_tree,markup-tree))
+$(eval $(call fuzz-rule,fuzz_xml,xml))
+$(eval $(call fuzz-rule,fuzz_xml_writer,xml-writer))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -1962,6 +1966,19 @@ fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
 fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
+fuzz: fuzz-run-xml fuzz-run-xml-writer
+
+check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each XML fuzzer finds it
+# A fuzzer that has never failed has not been shown able to. tools/xml/plant-fuzz.py copies
+# this tree to a scratch directory, edits one line of the library there, and runs the
+# harness the edit is meant for for FUZZ_TIME seconds (nine plants, six for the fuzzers and
+# three for the differential, and two unedited controls); it must stop with a report, and an
+# unedited copy must not. Needs clang, a minute a plant, the dependencies on PREFIX, and (for
+# the three plants that run the differential) the container engine and the xml oracle image.
+# Outside TEST_GATES: it builds and runs fuzzers.
+check-xml-fuzz-plants:
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" python3 tools/xml/plant-fuzz.py --time $(FUZZ_TIME)
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
@@ -2359,6 +2376,29 @@ check-toml-1-1-oracle: ## Compare the v1.1.0 reader against toml++'s unreleased 
 check-toml-1-1-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-toml-1-1-oracle.sh
+
+check-xml-oracle: ## Compare the XML parser against libxml2 and expat, and show the gate fails when it should
+# Two references in one pinned image (containers/xml), and they share no code: libxml2
+# with recovery off, and expat with and without namespace processing. Every input is
+# scored, the refused ones included - the W3C suite's not-well-formed half, its valid and
+# invalid halves (asked only whether they are well-formed), and a generated set (mostly
+# refused: about 6% is accepted, and the run fails if that drifts out of 3-30%) - and every disagreement is a line of
+# tools/oracle/xml_disagreements.txt with a class and a reason. The run fails on an
+# unlisted disagreement, on a listed one that has gone, and on one whose signature has
+# changed, so neither a new defect nor a stale excuse can sit behind an old entry.
+#
+# **It is then made to fail.** `run-xml-oracle.sh --controls` corrupts our answers seven
+# ways (a verdict flipped, an attribute dropped, a character changed, whitespace lost, an
+# empty list, a stale entry, a changed signature) and requires the gate to exit 3 with the
+# heading and the kind of difference for each; a gate whose assertion no longer reaches its subject prints the same clean line as
+# one that passes, and this repository has met that more than once.
+#
+# XML_ORACLE_COUNT and XML_ORACLE_SEED size and seed the generated part. Outside
+# TEST_GATES, like every gate here that consults an oracle.
+check-xml-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-xml-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-xml-oracle.sh --controls
 
 check-ini-git-oracle: ## Compare the git config reader against git itself
 # git config has **one** reference, unlike Desktop Entry's two, and that is the

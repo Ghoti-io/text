@@ -142,6 +142,12 @@ PROBE = {
     # because wine's implementation is what decides these answers - there is no
     # specification and no data version, and Windows itself is not here.
     "win32": (["--version"], "wine ", None),
+    # XML has **two** references in one image, libxml2 and expat, which share no
+    # code. One digest pins both, so there is one probe; the line it prints names
+    # both library versions (the ones the libraries report about themselves, which
+    # decide their answers), the Debian package versions, and the driver's own
+    # SHA-256.
+    "xml": (["xml-driver", "--version"], "libxml2 ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"

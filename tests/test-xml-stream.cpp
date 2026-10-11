@@ -1990,4 +1990,121 @@ TEST(XmlStream, TheEventsOfAHugeDocumentFedInPiecesAreTheTreesOfTheWhole) {
   expect_agrees("many siblings", run, dom);
 }
 
+
+// Found by fuzz_xml. An attribute value's run of ordinary bytes was checked against
+// the limit only when the run ended, and a run ends where the input that has arrived
+// ends: so a value over the limit, with a byte that is not a character further along
+// the same run, was LIMIT_VALUE when the bytes came in pieces that ended before the
+// bad byte and an invalid-character refusal when they came whole. One document, two
+// answers, by how it was cut. The limit is met at the byte that crosses it.
+//
+// The other limits that look at a run were audited for the same shape and need no
+// change: a name's is checked after every character (name_at()), and the depth, the
+// attribute count, the namespaces in scope and the node count are counted per element
+// or node and not per run of bytes. Character data has no byte limit.
+struct LimitCase {
+  std::string doc;
+  GTEXT_XML_Status want;
+  const char * what;
+};
+
+// The pull reader over `doc`, in pieces of `chunk` bytes: the status and the error the feed reported.
+GTEXT_XML_Status pull_status(const std::string & doc, size_t chunk, const GTEXT_XML_Parse_Options & opts,
+    GTEXT_XML_Error * err) {
+  GTEXT_XML_Reader * r = gtext_xml_reader_new(&opts);
+  EXPECT_NE(r, nullptr);
+  GTEXT_XML_Status st = GTEXT_XML_OK;
+  size_t at = 0;
+  while (at < doc.size() && st == GTEXT_XML_OK) {
+    const size_t n = std::min(chunk == 0 ? doc.size() : chunk, doc.size() - at);
+    st = gtext_xml_reader_feed(r, doc.data() + at, n, err);
+    at += n;
+    GTEXT_XML_Status last;
+    drain(r, &last);
+  }
+  if (st == GTEXT_XML_OK) {
+    st = gtext_xml_reader_feed(r, nullptr, 0, err);
+  }
+  gtext_xml_reader_free(r);
+  return st;
+}
+
+void check_limit_cases(const std::vector<LimitCase> & cases, const GTEXT_XML_Parse_Options & opts) {
+  for (const LimitCase & c : cases) {
+    Dom dom;
+    run_dom(dom, c.doc, &opts);
+    ASSERT_EQ(dom.status, c.want) << c.what << ": " << show(c.doc);
+    for (size_t chunk : {1u, 2u, 3u, 5u, 8u, 13u, 64u}) {
+      Parsed run;
+      run_stream(run, c.doc, Chunks{chunk}, &opts);
+      expect_agrees(std::string(c.what) + ", pieces of " + std::to_string(chunk), run, dom);
+      GTEXT_XML_Error err{};
+      EXPECT_EQ(pull_status(c.doc, chunk, opts, &err), dom.status) << c.what << ", pull reader, pieces of " << chunk;
+      if (dom.status != GTEXT_XML_OK) {
+        EXPECT_EQ(err.byte_offset, dom.err.byte_offset) << c.what << ", pull reader, pieces of " << chunk;
+        EXPECT_EQ(err.line, dom.err.line) << c.what;
+        EXPECT_EQ(err.column, dom.err.column) << c.what;
+      }
+    }
+    Parsed whole;
+    run_stream(whole, c.doc, Chunks{}, &opts);
+    expect_agrees(std::string(c.what) + ", whole", whole, dom);
+  }
+}
+
+TEST(XmlStream, ALimitAndABadByteInOneRunAreReportedInInputOrderHoweverTheInputIsCut) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.max_attribute_bytes = 8;
+  check_limit_cases({
+      // Over the limit at the ninth byte; the bad byte is the twentieth.
+      {"<a v=\"0123456789012345678\xE2\xA4 \"/>", GTEXT_XML_E_LIMIT_VALUE, "limit first"},
+      // The bad byte is the third; the limit would be crossed at the ninth.
+      {"<a v=\"01\xE2\xA4 3456789012345678\"/>", GTEXT_XML_E_UTF8, "bad byte first"},
+      // Exactly at the limit, then the bad byte: the limit is not crossed.
+      {"<a v=\"01234567\xE2\xA4 \"/>", GTEXT_XML_E_UTF8, "bad byte at the limit"},
+      // One past the limit, then the bad byte: the limit is crossed first.
+      {"<a v=\"012345678\xE2\xA4 \"/>", GTEXT_XML_E_LIMIT_VALUE, "bad byte one past the limit"},
+      // A reference before the run: it is one byte of the pool, and the run starts at 1.
+      {"<a v=\"&amp;0123456789\xE2\xA4 \"/>", GTEXT_XML_E_LIMIT_VALUE, "a reference, then the limit"},
+      {"<a v=\"&amp;01\xE2\xA4 23456789\"/>", GTEXT_XML_E_UTF8, "a reference, then the bad byte"},
+      {"<a v=\"&amp;0123456\xE2\xA4 \"/>", GTEXT_XML_E_UTF8, "a reference and the pool exactly at the limit"},
+      // Three-byte characters: the limit is crossed by the third of them, in the middle of nothing
+      // and, in pieces of one or two bytes, in the middle of a character's bytes.
+      {"<a v=\"\xE2\x82\xAC\xE2\x82\xAC\xE2\x82\xAC\"/>", GTEXT_XML_E_LIMIT_VALUE, "multibyte, over"},
+      {"<a v=\"\xE2\x82\xAC\xE2\x82\xAC\"/>", GTEXT_XML_OK, "multibyte, under"},
+  }, opts);
+}
+
+TEST(XmlStream, AValueLimitOfZeroIsTheDefaultAndNotNoValue) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.max_attribute_bytes = 0;
+  // 0 selects the default (16 MiB): a long value is accepted, and a bad byte after it is the bad byte.
+  check_limit_cases({
+      {"<a v=\"" + std::string(100, 'x') + "\"/>", GTEXT_XML_OK, "a hundred bytes"},
+      {"<a v=\"" + std::string(100, 'x') + "\xE2\xA4 \"/>", GTEXT_XML_E_UTF8, "a hundred bytes and a bad byte"},
+  }, opts);
+}
+
+TEST(XmlStream, TheValueLimitCountsBytesOfTheConvertedValueInUtf16AndLatin1) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.max_attribute_bytes = 8;
+  auto utf16 = [](const std::string & ascii) {
+    std::string out = "\xFF\xFE";
+    for (char c : ascii) {
+      out += c;
+      out += '\0';
+    }
+    return out;
+  };
+  // UTF-16: the limit is on the UTF-8 form, so nine ASCII units cross it and eight do not.
+  check_limit_cases({
+      {utf16("<a v=\"012345678\"/>"), GTEXT_XML_E_LIMIT_VALUE, "UTF-16, nine bytes"},
+      {utf16("<a v=\"01234567\"/>"), GTEXT_XML_OK, "UTF-16, eight bytes"},
+      // ISO-8859-1: each of these letters is two bytes in UTF-8, so five cross the limit, four do not.
+      {"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a v=\"\xE9\xE9\xE9\xE9\xE9\"/>", GTEXT_XML_E_LIMIT_VALUE,
+          "Latin-1, ten bytes"},
+      {"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a v=\"\xE9\xE9\xE9\xE9\"/>", GTEXT_XML_OK, "Latin-1, eight bytes"},
+  }, opts);
+}
+
 } // namespace

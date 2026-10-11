@@ -1,6 +1,6 @@
 # Fuzzing
 
-Six libFuzzer harnesses:
+The libFuzzer harnesses:
 
 | Target | Harness | Build | Run |
 | --- | --- | --- | --- |
@@ -12,8 +12,10 @@ Six libFuzzer harnesses:
 | TOML writer | `fuzz_toml_writer.cpp` | `make fuzz-toml-writer` | `make fuzz-run-toml-writer` |
 | INI  | `fuzz_ini.cpp`  | `make fuzz-ini`  | `make fuzz-run-ini`  |
 | Markup tree | `fuzz_markup_tree.cpp` | `make fuzz-markup-tree` | `make fuzz-run-markup-tree` |
+| XML parsers | `fuzz_xml.cpp` | `make fuzz-xml` | `make fuzz-run-xml` |
+| XML writer | `fuzz_xml_writer.cpp` | `make fuzz-xml-writer` | `make fuzz-run-xml-writer` |
 
-`make fuzz` builds and runs all seven. Each runs for `FUZZ_TIME` seconds
+`make fuzz` builds and runs every one of them. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
 
     make fuzz FUZZ_TIME=3600
@@ -43,6 +45,100 @@ ever fired and a planted defect on a failure path went unfound. It was caught
 by planting defects on purpose, which is the only way a harness's silence means
 anything: planted, it finds a node count that stops adding up in seconds and a
 set-data that frees before it copies in a couple of minutes.
+
+## Fuzzing XML
+
+Two harnesses, on the same division as the YAML and TOML pairs and for the same
+reason: a corpus of XML documents reaches the parsers and none of the writer's
+refusals, and the writer's refusals (a comment holding `--`, a prefix with no
+declaration, a character the output encoding lacks) are reachable only through the
+tree API.
+
+**`fuzz_xml.cpp`** reads. The first four bytes choose the limits - tiny on purpose, a
+depth of 1, three attributes, a name of three bytes, a failing allocator - and the
+rest is a document. Each input is parsed by `gtext_xml_parse()`, by the event
+parser fed the whole input, one byte at a time (eager and not) and in pieces, and by
+the pull reader, whole and a byte at a time, and
+the properties are the ones that make those one parser:
+
+| property | planted defect that fires it |
+| --- | --- |
+| the DOM parse and the events agree: the same refusal, with the same status, message and position, or the same tree down to every location | the retry of a construct split across two pieces forgets to restore the column |
+| an accepted tree passes the tree's invariant checker | - |
+| an accepted tree written in UTF-8, both UTF-16s, ISO-8859-1 and US-ASCII and read back is the same tree, and writing it again gives the same bytes | a UTF-16 surrogate pair decoded to the code point above the right one |
+| an allocation that fails anywhere, in a parse or in a stream, is `E_OOM` or the answer the parse would have given, and nothing leaks | a parse whose attributes do not release their pool (LeakSanitizer) |
+| fed a byte at a time the event parser's work is linear in its input | - |
+
+**Two refusals are allowed to differ, and the harness says which.** The DOM parse
+knows the input's length before it reads a byte, and converts a UTF-16, UTF-32 or
+Latin-1 document whole before it parses any of it; the event parser meets both when
+the bytes arrive. So for the input limit, and for an invalid byte sequence in a
+converted document, the event parser may refuse the document for something else
+first. Both have refused it, and that is all the harness asks. The W3C suite needs
+the second rule for one case (`hst-lhs-009`) and the script that scores it pins that
+case by id; the harness has no such list, and a disagreement of any other kind is a
+failure.
+
+**`fuzz_xml_writer.cpp`** writes. Its input is a program that builds a tree - elements
+in the namespaces a fixed table gives them, attributes, text, CDATA, comments,
+instructions, a document type, a declaration - and then the options of the write.
+The properties:
+
+| property | planted defect that fires it |
+| --- | --- |
+| if the writer says OK the bytes parse, and parse to the tree that was written, up to the empty and adjacent text nodes XML cannot tell apart and the namespace declarations the writer was asked to add; writing that tree again gives the same bytes | the writer stops escaping `&` |
+| the sink writer and the buffer writer write the same bytes, or refuse with the same status; a refusal writes nothing to the sink, and has a documented status | - |
+| **in strict mode, where the program uses only what XML can spell, the writer must say OK** | the writer refuses a comment with a hyphen in it |
+| an allocator that fails is `E_OOM` or the normal answer, with nothing leaked; a sink that refuses is `E_WRITE` | - |
+
+The strict mode is the point of the harness and the reason the others are not enough:
+"a refusal is always a permitted answer" is the rule every other writer harness here
+uses, and it can never find a writer that refuses what it should write. Strict mode
+draws names, comments, instruction data and prefixes only from tables of what is
+spellable, so a refusal there is a defect; wild mode draws from tables that include
+`--`, `?>`, `]]>`, a carriage return, `xml`, an empty name and a prefix bound two ways,
+and there a refusal is permitted but an acceptance is held to the round trip. For the
+two one-byte encodings strict mode keeps names, comments, instruction data and CDATA to
+ASCII, which is the only place those encodings have no spelling for a character.
+
+**The seeds** (`tests/fuzz/corpus/xml/`, `.../xml-writer/`) are derived, not collected:
+`tools/xml/make-fuzz-seeds.py` writes them from the W3C XML Conformance Test Suite
+(a quarter of the documents of 300 bytes or fewer, and all the longer and the non-UTF-8
+ones up to 4,096 bytes, libFuzzer's default input size; the four option bytes of each are one of
+six sets picked by a hash of the document), one tiny document
+for each way of starting a file in an encoding, and 48 programs for the writer. The
+not-well-formed half of the suite is in: a corpus of accepted documents would teach
+the search nothing about refusals. A file named `reproducer-*.seed` is a find, kept
+because it no longer fails, and **`make test` replays every seed and every reproducer**
+through both harnesses (`tests/test-xml-fuzz-seeds.cpp` includes their sources and calls
+their entry points), so a regression is caught without building a fuzzer.
+
+**The harnesses were seen to fail.** `tools/xml/plant-fuzz.py` copies the repository to
+a scratch directory, makes one edit to one line of the library there, and runs the
+harness for the time budget; it must stop with a report, and the unedited copy must not.
+There are nine plants, six for the fuzzers (one for each row above that names one, the
+strict-comment one, and the library fix this section reports, taken out again) and three for the reference differential, one of which is a *hunt*
+(a valid UTF-16 document refused, which both references accept, and which the differential's
+classifier must not file as a reference's quirk because a UTF-8 control agrees). Each is
+found inside the default `FUZZ_TIME` of 60 seconds (`FUZZ_ARGS=-seed=1` makes the run the
+same every time), and both controls are silent. A plant counts as found only if the run
+started and then printed a sanitizer or libFuzzer banner or the harness's own property
+line: a compile error, a kill by `tools/memcap` or a timeout does not.
+
+**What they found.** One defect in the library, within seconds of the first long run, on
+a 46-byte input: an attribute value's limit was checked when a run of ordinary bytes ended, and
+a run ends where the input that has arrived ends. A value over `max_attribute_bytes` with a
+byte that is not a character further along the same run was `LIMIT_VALUE` when the document came
+in pieces that ended before the bad byte, and an invalid-character refusal when it came whole -
+one document, two answers, by how it was cut. The limit is met at the byte that crosses it now
+(`src/xml/xml_parser.c`; `tests/test-xml-stream.cpp`, seen to fail without the fix;
+`corpus/xml/reproducer-attribute-limit-before-a-bad-byte.seed`). Everything else the first runs
+reported was the harness's: the input limit and an invalid sequence in a converted document are
+reported by the DOM parse before an earlier error the event parser reaches first (allowed, above);
+an empty text node must be detached before it is freed; and a writer asked to add namespace
+declarations adds attributes the source tree never had, so the round trip compares up to them.
+Each was a property stated more strongly than the library promises, and each was fixed in the
+property, with the reason in the harness.
 
 ## Fuzzing a writer
 
@@ -802,6 +898,8 @@ of the parser it could not get to.
 | INI, four dialects | 2.5M + 578k | clean, no artifacts; the EditorConfig dialect added as a fourth arm. Two runs again and for the same reason: the second binary is the one this commit ships. It is the widest of the four, so it is the arm that actually reaches the writer and the value layer on arbitrary input - and the only one with no escape set, which is what exposed gtext_ini_unescape() refusing every backslash for an escape-free dialect |
 | INI, five dialects | 800k + 334k | the systemd dialect added, and coverage rose from 1,228 to 1,418 edges on the same corpus - the largest jump any of the four additions produced, because it is the only dialect whose continuation reaches the **line assembler** and therefore the only one under which a group name and a key are not spans of the document. Two runs for the usual reason: the second binary is the one this commit ships. The execution rate is a third of the four-dialect figure and that is expected - five parses and five write-and-reparse cycles per input, against four |
 | INI, seven dialects | 664k then 1.24M | **one defect, and it was the generic dialect's** - a key whose own first bytes are a UTF-8 BOM. `skip_bom` strips a BOM only at offset 0, so ` <BOM>j=v` is an entry whose key really is `<BOM>j`; a **normalized** write then drops the leading blank, the key lands at offset 0, and a reader strips it - so the document came back with a different key, or with no entries at all. Found at 663,648 executions on a four-byte input, ` <BOM>`, which is only that short because the seventh dialect needs no separator to make a line an entry. The generic dialect has had this for as long as it has had `skip_bom`, and 570k executions across five and six dialects never reached it: what changed is not the property but the *cost of the path to it*. Fixed by refusing a normalized write of such a name, which leaves the verbatim write - the default - working. The clean run after is 1,242,145 executions, and coverage rose from 1,580 to **1,673** edges. The Win32 arm also carries the harness's only unconditional per-dialect property: it must never refuse an input |
+| XML parsers | 9.8k (fail) then 1.78M, 1.20M | **one defect, found in seconds**: an attribute value's limit was checked when a run of ordinary bytes ended, so a value over the limit with a bad byte further along the run was `LIMIT_VALUE` or an invalid-character refusal by where the input was cut (fixed; see above). The 1.78M run is the fixed library, 1,200 s, 2,863 edges, no artifact; the 1.20M run is the last binary, 600 s, with the pull reader added, 2,993 edges, no artifact. Three harness mistakes fixed first (above) |
+| XML writer | 1.74M, 643k | clean, no artifact, 2,357 edges (1,200 s, then 600 s on the last binary). No library defect: the harness found three of its own, and its planted defects are all found inside 60 s, including the one only strict mode can find |
 
 Both TOML harnesses were re-run after `gtext_json_to_toml()` stopped refusing a
 long number lexeme (2026-09-28): 65.6k and 510.2k executions, no crash and no

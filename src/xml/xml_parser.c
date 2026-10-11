@@ -408,6 +408,14 @@ static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
           || b == '\r') {
         break;
       }
+      /* The limit is met at the byte that crosses it, wherever the run ends.
+         A run is cut at the end of what has arrived, and the event parser is fed
+         in pieces, so a limit checked only after the run would be reported or
+         not depending on where the pieces ended whenever a byte that is not a
+         character lies further along the same run. (Found by fuzz_xml.) */
+      if (p->attr_pool.length - start + (i - p->pos) > p->max_attribute_bytes) {
+        break;
+      }
       if (b >= 0x20 && b < 0x80) {
         i++;
         continue;

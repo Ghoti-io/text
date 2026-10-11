@@ -258,6 +258,54 @@ def check_matched_pins_fire():
              % problems)
 
 
+def xml_pin_problems(table):
+    """The XML pin must name both references.
+
+    The image holds two parsers that share no code, and a differential against one is
+    a weaker thing than the same differential against both. A pin edited down to one
+    version (or one that lost its image's tag) would keep every other check here green.
+    """
+    problems = []
+    if "xml" not in table:
+        return ["xml: no pin at all, and the XML differential needs one"]
+    image, version, _ = table["xml"]
+    for lib in ("libxml2 ", "expat "):
+        if lib not in version:
+            problems.append("xml: the version field %r does not name %s" % (version, lib.strip()))
+    # The built-here tag spells both versions, so a rebuilt image cannot keep an old tag.
+    # Exactly: the tag's `-` separated segments are the versions, in order. Substring
+    # containment would pass 2.9.1 against a 2.9.14 tag, and 2.8 against 2.8.3.
+    tag = image.rsplit(":", 1)[-1]
+    versions = [w.strip(",") for w in version.split() if w[:1].isdigit()]
+    if not versions or tag.split("-") != versions:
+        problems.append("xml: the image tag %r does not carry the versions in %r" % (tag, version))
+    return problems
+
+
+def check_xml_pin(table):
+    for problem in xml_pin_problems(table):
+        fail(problem)
+
+
+def check_xml_pin_fires():
+    """The control: a pin that dropped expat, one with a stale tag, and a missing one."""
+    good = {"xml": ("localhost/ghoti-text-oracle-xml:2.9.14-2.8.3", "libxml2 2.9.14, expat 2.8.3", "")}
+    if xml_pin_problems(good):
+        fail("control: a good xml pin was reported: %r" % xml_pin_problems(good))
+    one = {"xml": ("localhost/ghoti-text-oracle-xml:2.9.14", "libxml2 2.9.14", "")}
+    if not any("expat" in p for p in xml_pin_problems(one)):
+        fail("control: an xml pin without expat was not caught")
+    stale = {"xml": ("localhost/ghoti-text-oracle-xml:2.9.14-2.8.2", "libxml2 2.9.14, expat 2.8.3", "")}
+    if not any("tag" in p for p in xml_pin_problems(stale)):
+        fail("control: an xml pin with a stale tag was not caught")
+    for said in ("libxml2 2.9.1, expat 2.8.3", "libxml2 2.9.14, expat 2.8"):
+        prefix = {"xml": ("localhost/ghoti-text-oracle-xml:2.9.14-2.8.3", said, "")}
+        if not any("tag" in p for p in xml_pin_problems(prefix)):
+            fail("control: a version that is only a prefix of the tag's was not caught: %r" % said)
+    if not xml_pin_problems({}):
+        fail("control: a missing xml pin was not caught")
+
+
 def main():
     table = check_images_parses()
     check_images_rules_fire()
@@ -267,6 +315,8 @@ def main():
     check_mode_is_closed()
     check_matched_pins(table)
     check_matched_pins_fire()
+    check_xml_pin(table)
+    check_xml_pin_fires()
     if FAILURES:
         sys.stderr.write("\033[0;31m\n### The oracle pin table is wrong ###"
                          "\033[0m\n")
@@ -274,8 +324,8 @@ def main():
             sys.stderr.write("  %s\n" % message)
         return 1
     print("oracle pins: %d references, all askable; IMAGES parses; the stderr "
-          "filter fires both ways; idna and python-next name UCD %s."
-          % (len(table), pinned_ucd()))
+          "filter fires both ways; idna and python-next name UCD %s; the xml pin names "
+          "libxml2 and expat." % (len(table), pinned_ucd()))
     return 0
 
 

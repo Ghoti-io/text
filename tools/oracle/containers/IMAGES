@@ -322,3 +322,13 @@ systemd	localhost/ghoti-text-oracle-systemd:257.13	systemd 257.13-1~deb13u1	syst
 # the driver's own SHA-256 is compiled in, for the reason the gitconfig line
 # gives.
 win32	localhost/ghoti-text-oracle-win32:10.0	wine 10.0~repack-6	The Win32 profile API: what a lookup returns, and what an enumeration lists
+
+# XML: libxml2 and expat in one image, because they share no code and disagree in
+# places, and a differential scored against only one inherits that one's gaps. The
+# version field is the pair of versions the libraries report about themselves - the
+# ones that decide the answers - and the driver's line also names the Debian package
+# versions and its own SHA-256. libxml2 is run with recovery off and no entity
+# substitution, DTD loading or network; expat is run with and without namespace
+# processing. See containers/xml/Dockerfile and tools/oracle/xml_diff.py.
+
+xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML 1.0: whether a document is well-formed, and what it contains, from two parsers that share no code
