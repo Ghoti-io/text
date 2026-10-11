@@ -6,9 +6,11 @@
 UTF-16, UTF-32, ISO-8859-1 or US-ASCII, with **Namespaces in XML 1.0** and builds
 a \ref format_markup "Markup tree" from it. `GTEXT_XML_Stream` (push) and
 `GTEXT_XML_Reader` (pull) read the same documents as a stream of events, in
-pieces, without building a tree (**Event parsers** below). The writer, the file
-entry points and the reference-parser differential are the next slices and are
-not here; the **Gaps** section lists them.
+pieces, without building a tree (**Event parsers** below). `gtext_xml_write()` and
+its buffer and file forms write a tree back as XML, and `gtext_xml_parse_file()`
+reads a file (**Writer** and **Files** below). The fuzzers and the
+reference-parser differential are the next slice and are not here; the **Gaps**
+section lists them.
 Back to \ref text_format_references "Formats".
 
 ## Normative references
@@ -303,6 +305,127 @@ is finished: every later call returns it again. Events before the stop have been
 delivered, none after it. A stream is also finished by a refusal, a limit and
 out-of-memory (`GTEXT_XML_E_OOM`, with nothing leaked); `_free` is always safe.
 
+## Writer
+
+```c
+#include <ghoti.io/text/xml.h>
+
+GTEXT_XML_Write_Options o = gtext_xml_write_options_default();
+o.indent = "  ";                          /* NULL (the default) is compact */
+o.encoding = GTEXT_XML_OUTPUT_UTF16LE;    /* UTF-8 by default */
+
+GTEXT_XML_Write_Result r;
+char * bytes = NULL;
+size_t n = 0;
+if (gtext_xml_write_buffer(doc, &o, &bytes, &n, &r) != GTEXT_XML_OK) {
+  fprintf(stderr, "%s at %s\n", r.message, r.path);    /* e.g. "/a/b[2]/comment()" */
+} else {
+  /* r.elements_indented, r.elements_skipped_mixed, ... say what it did */
+  gtext_xml_write_buffer_free(doc, &o, bytes);
+}
+```
+
+`gtext_xml_write()` takes a `GTEXT_Markup_Sink` (the one `gtext_markup_escape()`
+uses: a `write(user, bytes, len)` returning a `GTEXT_Markup_Status`);
+`gtext_xml_write_buffer()` and `gtext_xml_write_file()` are the same writer into
+a buffer and into a file. A buffer is released with `gtext_xml_write_buffer_free()`
+given the same options (it belongs to `opts->allocator`, else the document's; a
+NULL document frees nothing unless the options carry the allocator). On failure
+`out` and `out_len` are untouched. The document must not be modified while a
+write is running. The file form checks the tree before it creates the temporary
+file, so a refused tree creates nothing. The options, the result and the statuses are in
+`xml_writer.h`.
+
+**The contract.** `parse(write(tree))` is a tree equal to `tree`
+(`gtext_markup_equal()`; locations are not compared), and `write(parse(write(tree)))`
+is the same bytes. That holds for every tree the writer accepts, with two
+exceptions XML cannot tell apart and the writer counts instead of hiding
+(`text_nodes_coalesced`): an empty text node, and a text node that follows another
+text node. It holds for the whole of the W3C suite (below). Pretty printing adds
+white space and so changes the tree by design.
+
+**What is refused, and how.** A tree XML has no spelling for is refused with a
+status, the path of the node (`r.path`: `/a/b[2]/@x`, an index only where there
+are same-named siblings; a long path keeps its end behind `...`) and, where a
+name is at fault, the name (`r.name`). Nothing is repaired:
+
+| The tree holds | Status |
+|---|---|
+| a comment with `--` or ending in `-`; processing instruction data with `?>` or starting with white space; a CDATA section with `]]>`; a carriage return in a comment, a processing instruction or a CDATA section (XML reads it back as a line feed, and there is no reference to hide it behind) | `_UNREPRESENTABLE` |
+| a character XML forbids (a C0 control other than tab, line feed and carriage return, U+FFFE, U+FFFF), in text, an attribute, a comment, anything | `_CHARACTER` |
+| a name that is not an NCName (an element, attribute or prefix), a document type name that is not a Name, a processing instruction target that is not an NCName or is `xml` in any case | `_NAME` |
+| an element or attribute whose prefix is not declared in scope, or is bound to another namespace; an `xmlns` attribute that contradicts the namespace of the element that carries it (or of an attribute using that prefix); a prefix with no namespace, or an attribute in a namespace with no prefix; `xmlns`, `xml` or their namespaces used for anything else; a declaration that undeclares a prefix | `_NAMESPACE` |
+| a character the output encoding has no byte for, in a place with no reference (a name, comment, processing instruction, CDATA section, identifier in the document type) | `_UNREPRESENTABLE` |
+| a public identifier with no system identifier, with a character it cannot hold or with white space the parser would collapse; a system identifier with both kinds of quote or a carriage return | `_DOCTYPE` |
+| a template element's content (it is not a child) or a document with no root element | `_UNREPRESENTABLE` |
+| a document version other than `1.0` | `_UNSUPPORTED_VERSION` |
+| nesting past `max_depth` (256), output past `max_output_bytes` (256 MiB) | `_LIMIT_DEPTH`, `_LIMIT_OUTPUT` |
+
+**A refusal writes nothing to the sink.** The writer walks the tree twice with
+the same code: first checking everything and counting the bytes, without output,
+then for real. That is how the output limit is a refusal and not a truncation, and
+why a 100,000-deep tree asked to be pretty printed (which would write depth
+squared bytes of indent) is refused at once. A sink that fails during the second
+walk (`_WRITE`, or `_OOM` when it returned `GTEXT_MARKUP_E_OOM`) has received a
+prefix; the file form writes to a temporary file and so leaves the old file alone.
+
+**Escaping.** Text: `&` `<` `>` and a carriage return as `&#13;`. Attribute values,
+in double quotes: those and `"`, and tab, line feed and carriage return as `&#9;`
+`&#10;` `&#13;`, because a raw one would be read back as a space. `>` is always
+written `&gt;`, so `]]>` cannot occur in text. Under ISO-8859-1 and US-ASCII a
+character the encoding lacks is written `&#x20AC;` in text and attribute values.
+
+**Options.**
+
+| Option | Default | |
+|---|---|---|
+| `xml_declaration` | `AUTO` | `AUTO` writes `<?xml ...?>` when the document has a version or standalone flag, or the output is ISO-8859-1; `ALWAYS`; `NEVER`. ISO-8859-1 is the one that forces it because its output can hold bytes that are not UTF-8, which only the declaration tells a reader about, so a document that had none comes back with `version="1.0"`; US-ASCII output is UTF-8 and UTF-16 has its byte order mark, so neither needs one. With `NEVER`, ISO-8859-1 output of a character from U+0080 to U+00FF is refused (`_UNREPRESENTABLE`). Version and standalone are the document's, and a version other than `1.0` is refused in every mode; the encoding is the output's (`UTF-8`, `UTF-16`, `ISO-8859-1`, `US-ASCII`), not the label the document was parsed with |
+| `encoding` | UTF-8 | UTF-16 little or big endian (with a byte order mark), ISO-8859-1, US-ASCII |
+| `expand_empty_elements` | off | `<a></a>` instead of `<a/>` |
+| `declare_namespaces` | off | add the `xmlns` declarations a name needs, on the element that needs them after its other attributes (`namespace_declarations_added`), instead of refusing. It rebinds a prefix an enclosing element bound to another namespace, never one the element's own name or another attribute already relies on, never contradicts the element's own `xmlns` attribute, and never invents a prefix for an attribute |
+| `indent`, `newline` | NULL, `"\n"` | `indent` NULL is compact; otherwise spaces and tabs. `newline` is a string of CR and LF |
+| `max_depth`, `max_output_bytes` | 256, 256 MiB | |
+| `allocator` | the document's | used for the writer's working state and for the buffer of `_write_buffer` |
+
+**Pretty printing never changes what is significant, and says what it did.** An
+element's children are put on lines of their own only when all of them are
+elements, comments and processing instructions, and never in or below an element
+with `xml:space="preserve"` (an `xml:space="default"` below it does not undo that:
+the safe reading). An element with a text or CDATA child, and everything under
+it, is left exactly as it was, as `xmllint --format` does. The result counts
+`elements_indented`, `elements_skipped_mixed` and `elements_skipped_preserve`
+(elements that have children and were not laid out, by the reason); an element
+with no children is none of them. The newline option is also what separates the
+top-level items (declaration, document type, comments, root element), whether or
+not indentation is on. A pretty-printed document read back has the white space as
+text nodes, so its elements are mixed and writing it again gives the same bytes
+when the newline is a bare line feed (with `"\r\n"` the carriage return is read
+back as a line feed).
+
+**The document type** is written from its name and public and system identifiers.
+The internal subset is not stored by the parser and cannot be written. The tree
+does not record whether the source had one, so `doctype_without_subset` is set
+for every document type written, subset or not; it says what is true of the
+output (no subset in it), not that one was lost. DTD output is a later
+phase.
+
+**Order and depth.** Attributes are written in tree order, which is source order
+for a parsed tree; the walk uses the parent and sibling links and a heap array of
+frames, never the C stack, and namespace scope is a hash table from prefix to its
+innermost binding, so a lookup costs the same at any depth. A tree 100,000 levels
+deep with a new prefix at every level is written in well under a second.
+
+## Files
+
+`gtext_xml_parse_file()` reads through the library's file layer as the CSV and
+JSON file functions do: a pipe works, the size limit (`max_input_bytes`) is applied
+while reading, and the statuses are the same ones: `GTEXT_XML_E_INVALID` with
+"No such file or directory", "Permission denied opening file" or "Failed to
+open/read file" at line 1, column 1; `_LIMIT_INPUT`; `_OOM`.
+`gtext_xml_write_file()` writes to a temporary file in the destination's directory,
+commits it and renames it over the destination, so a failed write, a refused tree
+and the output limit all leave the previous file as it was and no temporary behind.
+
 ## Conformance
 
 `make conformance-xml` scores the parser against the W3C XML Conformance Test
@@ -342,6 +465,18 @@ attribute location. A case where they differ fails the gate. The one allowed
 difference is the order of an encoding error, above; it is pinned to one case by
 id in the script, `hst-lhs-009` (a UTF-16 mark followed by single-byte text), and
 any other case that would need it fails.
+
+**The writer is held to the same suite.** For every in-scope case the parser
+accepts the runner writes the tree in UTF-8, UTF-16 LE and BE,
+ISO-8859-1 and US-ASCII, parses each output and requires a tree equal to the
+original (and the same declaration), then writes that tree again and requires the
+same bytes. ISO-8859-1 and US-ASCII may refuse a document with a character they
+lack in a name, comment, processing instruction or CDATA section
+(`_UNREPRESENTABLE`, counted, with `XMLCONF_MAX_ROUNDTRIP_REFUSED` a ceiling on
+how many); any other refusal or difference fails the gate, and
+`XMLCONF_MIN_ROUNDTRIP` is a floor on how many were run. A document with no
+declaration comes back from ISO-8859-1 with `version="1.0"` (the runner asserts
+that) and from every other output as it was.
 
 Two things the suite itself got wrong, found while scoring:
 
@@ -401,12 +536,42 @@ Two things the suite itself got wrong, found while scoring:
   of the byte kept behind the cursor, or making the scan for the end of a
   construct restart or get a quote or a dash count wrong each fails one.
 
+- **The writer** (`tests/test-xml-writer.cpp`): every row of the
+  specification's matrix; each refusal with its status and path, and that the sink
+  was not called; every way a namespace can be wrong and the option that adds the
+  declarations; shapes the tree itself does not allow, pinned so a change to the
+  tree would show; every output encoding byte for byte, including supplementary
+  characters in UTF-16 and references in the one-byte encodings; the declaration
+  modes; pretty printing, its counts, `xml:space`, the newline and indent; the
+  document type; empty and adjacent text nodes; the depth and output limits at,
+  one under and one over their values; a tree 100,000 levels deep written and read
+  back; a 100,000-deep scope with a new prefix per level, with a time bound; the
+  sink failing at every call and the allocator failing at every allocation
+  (compact, pretty, UTF-16, ASCII, namespace-adding, and the document's
+  allocator), each time with the right status and nothing leaked; files (round
+  trip in two encodings, missing, unreadable, over the limit, refused trees
+  leaving the old file and creating none, the allocator failing at every point of
+  a file write). **A model that shares no code**: random trees generated as a
+  plain C++ structure, serialized by a second implementation of the rules
+  (compact and pretty), built into the library's tree and written - the two byte
+  strings must be equal - then parsed back equal and written again identically,
+  in UTF-16 too; more in the one-byte encodings; and more with every declaration
+  stripped and `declare_namespaces` on, whose names must come back in their
+  namespaces. `XML_WRITER_SEEDS=<n>` runs those sweeps with that many seeds. The
+  tests were checked by mutation: deliberate defects in the writer (a refusal
+  check removed, the dry walk removed, a limit off by one, `xml:space` not
+  inherited, mixed content indented, a contradiction ignored, swapped surrogates,
+  a leaked array, ...) are each caught by the test meant to catch them.
+
 ## Gaps
 
-- No writer, no `gtext_xml_parse_file` / `_write_file`, no round trip.
+- The writer has no streaming (event) form, no canonicalization (C14N), no HTML
+  serialization and no DTD output; the internal subset of a document type is not
+  written because it is not stored.
 - Encodings other than UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are declined (see Encodings).
-- No fuzzers and no reference-parser differential (libxml2, expat): the scores
-  above are against the specification's own suite only. Where those two disagree
+- No fuzzers (the parser's, the event parser's and the writer's are slice 1e) and
+  no reference-parser differential (libxml2, expat): the scores above are against
+  the specification's own suite only. Where those two disagree
   with each other about names, the Markup tree page has the measurement.
 - No DTD processing: declarations are skipped, entities other than the
   predefined five are refused, and 340 not-well-formed documents whose fault is

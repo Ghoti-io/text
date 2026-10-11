@@ -23,6 +23,14 @@ INVALID_SEQUENCE and the event parser instead refuses the document for a
 well-formedness reason at or before that offset, both have refused it and the
 case is counted apart ("conversion error ordering"), not failed.
 
+A fourth way, `roundtrip`, is run on every case the parser accepted: the document
+is written in UTF-8, UTF-16 (both byte orders), ISO-8859-1 and US-ASCII, and each
+output must parse to a tree equal to the original (the XML declaration included),
+and writing that tree again must give the same bytes. ISO-8859-1 and US-ASCII
+may refuse a document with characters they lack in a name, comment, instruction or
+CDATA section (GTEXT_XML_E_UNREPRESENTABLE, counted); every other refusal or
+difference fails the gate.
+
 What is scored, by the case's TYPE in the catalogue:
 
   not-wf    must be REFUSED.
@@ -216,6 +224,9 @@ failures = []                            # unexplained scored failures
 explained = []                           # (id, reason) exceptions seen to fail
 crashes = []
 disagreements = []                       # (id, mode, dom line, stream line)
+round_trip_failures = []                 # (id, runner line)
+round_trip_checked = 0
+round_trip_refusals = 0                  # documents some one-byte encoding refused
 ordering = collections.Counter()         # mode -> cases refused first for another reason
 stream_checked = 0
 seen_ids = set()
@@ -257,6 +268,15 @@ for t, path, beside in cases:
         unsupported[(kind, outcome)] += 1
         continue
     accepted = outcome == 'OK'
+    if accepted:
+        line, died = run_line(path, 'roundtrip')
+        if died:
+            crashes.append((ident + ' [roundtrip]', died[0], died[1]))
+        elif line.split(' ')[0] == 'OK':
+            round_trip_checked += 1
+            round_trip_refusals += 1 if line.split(' ')[1:] not in ([], ['0']) else 0
+        else:
+            round_trip_failures.append((ident, line))
     if kind == 'not-wf':
         passed = outcome in WELL_FORMEDNESS
     elif kind in ('valid', 'invalid'):
@@ -312,6 +332,10 @@ print("event parser, whole and by bytes, against the DOM parse: %d runs, %d disa
 print("  (conversion error ordering, both refused: %d whole, %d by bytes)" % (
     ordering['whole'], ordering['bytes']))
 print()
+print("round trip (written in UTF-8, UTF-16 LE and BE, ISO-8859-1, US-ASCII; read back equal; written again identically):")
+print("  %d accepted documents, %d differ; %d refused by a one-byte encoding for a character it lacks" % (
+    round_trip_checked + len(round_trip_failures), len(round_trip_failures), round_trip_refusals))
+print()
 print("exceptions (scored cases that fail, each with its reason): %d" % len(explained))
 reasons = collections.Counter(r for _, r in explained)
 for r, v in reasons.most_common():
@@ -333,6 +357,12 @@ if disagreements:
         print("  %-40s %s" % (ident, mode))
         print("      dom:    %s" % dom_line)
         print("      stream: %s" % stream_line)
+if round_trip_failures:
+    status = 1
+    print()
+    print("ROUND TRIP FAILURES: %d" % len(round_trip_failures))
+    for ident, line in round_trip_failures[:60]:
+        print("  %-40s %s" % (ident, line))
 if crashes:
     status = 1
     print()
@@ -363,6 +393,20 @@ for name, have, env in (
         status = 1
         print()
         print("conformance: %d cases %s, above the ceiling of %s" % (have, name, ceiling))
+
+rt_ceiling = os.environ.get('XMLCONF_MAX_ROUNDTRIP_REFUSED')
+if rt_ceiling and round_trip_refusals > int(rt_ceiling):
+    status = 1
+    print()
+    print("conformance: %d documents refused by a one-byte encoding, above the ceiling of %s" % (
+        round_trip_refusals, rt_ceiling))
+
+rt_floor = os.environ.get('XMLCONF_MIN_ROUNDTRIP')
+if rt_floor and round_trip_checked < int(rt_floor):
+    status = 1
+    print()
+    print("conformance: only %d documents were round-tripped, below the floor of %s" % (
+        round_trip_checked, rt_floor))
 
 floor = os.environ.get('XMLCONF_MIN_SCORED')
 if floor and total_scored < int(floor):

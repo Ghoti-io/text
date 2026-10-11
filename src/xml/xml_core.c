@@ -82,6 +82,14 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "more input is needed";
     case GTEXT_XML_E_STATE:
       return "wrong state for this call";
+    case GTEXT_XML_E_WRITE:
+      return "output refused";
+    case GTEXT_XML_E_UNREPRESENTABLE:
+      return "no XML spelling for this";
+    case GTEXT_XML_E_NAME:
+      return "not an XML name";
+    case GTEXT_XML_E_LIMIT_OUTPUT:
+      return "output too long";
   }
   return "unknown status";
 }
@@ -165,4 +173,14 @@ GTEXT_XML_Status xml_from_markup(xml_ctx * p, GTEXT_Markup_Status status) {
          that the input could not be turned into a tree. */
       return xml_fail(p, GTEXT_XML_E_INVALID, "the tree refused a node");
   }
+}
+
+GTEXT_XML_Write_Options gtext_xml_write_options_default(void) {
+  GTEXT_XML_Write_Options opts;
+  memset(&opts, 0, sizeof(opts));
+  opts.xml_declaration = GTEXT_XML_DECLARATION_AUTO;
+  opts.encoding = GTEXT_XML_OUTPUT_UTF8;
+  opts.max_depth = XML_WRITE_DEFAULT_MAX_DEPTH;
+  opts.max_output_bytes = XML_WRITE_DEFAULT_MAX_OUTPUT;
+  return opts;
 }

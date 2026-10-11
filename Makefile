@@ -1085,11 +1085,13 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/xml/xml_core.c \
 	src/xml/xml_doctype.c \
 	src/xml/xml_encoding.c \
+	src/xml/xml_file_io.c \
 	src/xml/xml_lexer.c \
 	src/xml/xml_namespace.c \
 	src/xml/xml_parser.c \
 	src/xml/xml_reader.c \
-	src/xml/xml_stream.c
+	src/xml/xml_stream.c \
+	src/xml/xml_writer.c
 
 check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
 	@python3 tools/check-allocator-callees.py
@@ -2021,7 +2023,7 @@ XML_DATA_DIR := third_party/xml
 conformance-xml: ## Score the XML parser against the pinned W3C XML Conformance Test Suite
 conformance-xml: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
-	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MAX_ENTITY=83 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
+	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MIN_ROUNDTRIP=1222 XMLCONF_MAX_ROUNDTRIP_REFUSED=17 XMLCONF_MAX_ENTITY=83 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)

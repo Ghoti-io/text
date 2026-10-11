@@ -68,6 +68,17 @@ extern "C" {
 #define XML_DEFAULT_MAX_NAME_BYTES ((size_t)8192)
 #define XML_DEFAULT_MAX_NODES ((size_t)10000000)
 #define XML_DEFAULT_MAX_NAMESPACES ((size_t)256)
+#define XML_WRITE_DEFAULT_MAX_DEPTH ((size_t)256)
+#define XML_WRITE_DEFAULT_MAX_OUTPUT ((size_t)256 * 1024 * 1024)
+
+/* ---- Writer (xml_writer.c) ---------------------------------------------- */
+
+/** The writer's checking walk alone: everything gtext_xml_write() would refuse
+ *  is refused, and nothing is written. For the file form, which must not create
+ *  a file for a tree it is going to refuse. */
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_write_check(
+    const GTEXT_Markup_Document * doc, const GTEXT_XML_Write_Options * opts,
+    GTEXT_XML_Write_Result * result);
 
 /* ---- Encodings (xml_encoding.c) ----------------------------------------- */
 

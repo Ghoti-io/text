@@ -23,9 +23,10 @@
  * @brief Public umbrella header for XML.
  *
  * Include <ghoti.io/text/xml.h> to parse XML into the markup tree or as a stream
- * of events: the status codes, options and errors in xml_core.h, the tree parser
- * in xml_parse.h and the push and pull event parsers in xml_stream.h. The
- * tree is described in <ghoti.io/text/markup.h>, which this includes.
+ * of events, or to write a tree as XML: the status codes, options and errors
+ * in xml_core.h, the tree parser in xml_parse.h, the push and pull event
+ * parsers in xml_stream.h and the writer in xml_writer.h. The tree is
+ * described in <ghoti.io/text/markup.h>, which this includes.
  */
 
 #ifndef GHOTI_IO_GTEXT_XML_H
@@ -42,5 +43,6 @@
 /* Public module headers */
 #include <ghoti.io/text/xml/xml_parse.h>
 #include <ghoti.io/text/xml/xml_stream.h>
+#include <ghoti.io/text/xml/xml_writer.h>
 
 #endif // GHOTI_IO_GTEXT_XML_H

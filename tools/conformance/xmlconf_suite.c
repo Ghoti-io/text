@@ -125,6 +125,101 @@ static void run_stream(const char *buf, size_t n, int by_bytes) {
   xml_replay_free(&replay);
 }
 
+/* The accepted document written in every output encoding and read back: the
+   tree must be equal, the declaration the same, and writing what was read must
+   give the bytes that were read. Latin-1 and US-ASCII may refuse a document
+   whose names, comments, instructions or CDATA hold characters they lack, and
+   only with that status; everything else must write. */
+static const struct {
+  GTEXT_XML_Output_Encoding enc;
+  const char *name;
+  int may_refuse;
+} round_trip_configs[] = {
+  {GTEXT_XML_OUTPUT_UTF8, "utf-8", 0},
+  {GTEXT_XML_OUTPUT_UTF16LE, "utf-16le", 0},
+  {GTEXT_XML_OUTPUT_UTF16BE, "utf-16be", 0},
+  {GTEXT_XML_OUTPUT_ISO_8859_1, "iso-8859-1", 1},
+  {GTEXT_XML_OUTPUT_US_ASCII, "us-ascii", 1},
+};
+
+static void run_round_trip(const char *buf, size_t n) {
+  GTEXT_Markup_Document *doc = NULL;
+  GTEXT_XML_Error err;
+  if (gtext_xml_parse(buf, n, NULL, &doc, &err) != GTEXT_XML_OK) {
+    print_failure(err.code, &err);
+    return;
+  }
+  int refused = 0;
+  for (size_t i = 0; i < sizeof(round_trip_configs) / sizeof(round_trip_configs[0]); i++) {
+    GTEXT_XML_Write_Options o = gtext_xml_write_options_default();
+    o.encoding = round_trip_configs[i].enc;
+    GTEXT_XML_Write_Result r;
+    char *out = NULL;
+    size_t out_len = 0;
+    GTEXT_XML_Status st = gtext_xml_write_buffer(doc, &o, &out, &out_len, &r);
+    if (st == GTEXT_XML_E_UNREPRESENTABLE && round_trip_configs[i].may_refuse) {
+      refused++;
+      continue;
+    }
+    if (st != GTEXT_XML_OK) {
+      printf("FAIL ROUNDTRIP 0 0 0 %s: write refused: %s at %s\n", round_trip_configs[i].name,
+          r.message ? r.message : "?", r.path);
+      gtext_markup_document_free(doc);
+      return;
+    }
+    GTEXT_Markup_Document *back = NULL;
+    st = gtext_xml_parse(out, out_len, NULL, &back, &err);
+    const char *why = NULL;
+    if (st != GTEXT_XML_OK) {
+      why = "the output does not parse";
+    }
+    else if (!gtext_markup_equal(gtext_markup_document_root(doc), gtext_markup_document_root(back))) {
+      why = "the output parses to a different tree";
+    }
+    else {
+      GTEXT_Markup_Standalone sa, sb;
+      const char *va = gtext_markup_document_xml_version(doc, &sa);
+      const char *vb = gtext_markup_document_xml_version(back, &sb);
+      /* A document with no declaration comes back with one only in ISO-8859-1,
+         whose output can hold bytes that are not UTF-8 and so must say what it
+         is; the version it says is 1.0. Everywhere else it comes back as it
+         was. */
+      const int forced = va == NULL && round_trip_configs[i].enc == GTEXT_XML_OUTPUT_ISO_8859_1;
+      if (forced) {
+        if (!vb || strcmp(vb, "1.0") != 0 || sb != GTEXT_MARKUP_STANDALONE_UNSPECIFIED) {
+          why = "the declaration written for a document with none is not version 1.0";
+        }
+      }
+      else if (sa != sb || (va == NULL) != (vb == NULL) || (va && strcmp(va, vb) != 0)) {
+        why = "the XML declaration differs";
+      }
+      if (!why) {
+        char *again = NULL;
+        size_t again_len = 0;
+        st = gtext_xml_write_buffer(back, &o, &again, &again_len, &r);
+        if (st != GTEXT_XML_OK) {
+          why = "the tree read back cannot be written";
+        }
+        else if (again_len != out_len || memcmp(again, out, out_len) != 0) {
+          why = "writing what was read is not the same bytes";
+        }
+        gtext_xml_write_buffer_free(back, &o, again);
+      }
+    }
+    gtext_xml_write_buffer_free(doc, &o, out);
+    if (back) {
+      gtext_markup_document_free(back);
+    }
+    if (why) {
+      printf("FAIL ROUNDTRIP 0 0 0 %s: %s\n", round_trip_configs[i].name, why);
+      gtext_markup_document_free(doc);
+      return;
+    }
+  }
+  gtext_markup_document_free(doc);
+  printf("OK %d\n", refused);
+}
+
 int main(int argc, char **argv) {
   const char *mode = argc > 1 ? argv[1] : "dom";
   size_t cap = 1 << 16, n = 0;
@@ -138,6 +233,12 @@ int main(int argc, char **argv) {
     char *grown = realloc(buf, cap);
     if (!grown) { printf("FAIL GTEXT_XML_E_OOM 0 0 0 runner\n"); return 0; }
     buf = grown;
+  }
+
+  if (strcmp(mode, "roundtrip") == 0) {
+    run_round_trip(buf, n);
+    free(buf);
+    return 0;
   }
 
   if (strcmp(mode, "whole") == 0 || strcmp(mode, "bytes") == 0) {

@@ -101,6 +101,31 @@ GTEXT_API GTEXT_XML_Status gtext_xml_parse(const void * data, size_t len,
     const GTEXT_XML_Parse_Options * opts, GTEXT_Markup_Document ** out,
     GTEXT_XML_Error * err);
 
+/**
+ * @brief Parse an XML file into a tree.
+ *
+ * Reads the file through the library's file layer (so a pipe works, and the
+ * size limit is applied while reading, not after) and parses it as
+ * gtext_xml_parse() does; byte offsets in an error are offsets into the file.
+ * Failures to read are reported the way the CSV and JSON file functions report
+ * them: a path that cannot be opened or read is GTEXT_XML_E_INVALID with a
+ * message that says which ("No such file or directory", "Permission denied
+ * opening file", ...), a file longer than `max_input_bytes` is
+ * GTEXT_XML_E_LIMIT_INPUT, and an allocation that failed is GTEXT_XML_E_OOM. The
+ * position of such an error is line 1, column 1, offset 0.
+ *
+ * @param path The file. Not NULL.
+ * @param opts Options, or NULL for gtext_xml_parse_options_default().
+ * @param out  Receives the document, which the caller frees with
+ *             gtext_markup_document_free(). Written **only on success**.
+ * @param err  Receives the failure, or a cleared error on success; may be NULL.
+ * @return GTEXT_XML_OK, or why not. On failure there is no tree and nothing is
+ *   leaked.
+ */
+GTEXT_API GTEXT_XML_Status gtext_xml_parse_file(const char * path,
+    const GTEXT_XML_Parse_Options * opts, GTEXT_Markup_Document ** out,
+    GTEXT_XML_Error * err);
+
 #ifdef __cplusplus
 }
 #endif

@@ -20,7 +20,7 @@
 
 /**
  * @file xml_core.h
- * @brief Status codes, options and errors of the XML parser.
+ * @brief Status codes, options and errors of the XML parser and writer.
  *
  * The parser reads UTF-8 XML 1.0 (Fifth Edition) with Namespaces in XML 1.0
  * and builds a @ref GTEXT_Markup_Document; the tree itself is described in
@@ -112,9 +112,31 @@ typedef enum {
   GTEXT_XML_E_INCOMPLETE, ///< Event parsers only: the pull reader has no event
                        ///< to give until it is fed more input. Not an error
                        ///< in the document.
-  GTEXT_XML_E_STATE    ///< Event parsers only: the call does not fit the
+  GTEXT_XML_E_STATE,   ///< Event parsers only: the call does not fit the
                        ///< parser's state - input after the end of input, or
                        ///< a pull reader that has delivered its last event.
+
+  GTEXT_XML_E_WRITE,   ///< Writer only: a sink (or the file being written)
+                       ///< refused output.
+  GTEXT_XML_E_UNREPRESENTABLE, ///< Writer only: the tree holds something XML
+                       ///< has no spelling for: `--` in or a trailing `-` on a
+                       ///< comment, `?>` or leading white space in processing
+                       ///< instruction data, `]]>` in a CDATA section, a
+                       ///< carriage return in a comment, processing
+                       ///< instruction or CDATA section; a document with no
+                       ///< root element or a second one; template content; a
+                       ///< node of a kind with no place where it is; or a
+                       ///< character the output encoding has no byte for in a
+                       ///< place with no character reference (a name, comment,
+                       ///< processing instruction, CDATA section or
+                       ///< identifier).
+  GTEXT_XML_E_NAME,    ///< Writer only: a name that is not an XML name: an
+                       ///< element, attribute or prefix that is not an NCName,
+                       ///< a processing instruction target that is not an
+                       ///< NCName or is `xml` in any case, or a document type
+                       ///< name that is not a Name.
+  GTEXT_XML_E_LIMIT_OUTPUT ///< Writer only: the output would be longer than
+                       ///< `max_output_bytes`.
 } GTEXT_XML_Status;
 
 /**
