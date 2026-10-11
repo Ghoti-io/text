@@ -1075,7 +1075,13 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
 	src/ini/ini_file_io.c \
-	src/html/html_charref.c
+	src/html/html_charref.c \
+	src/markup/markup_check.c \
+	src/markup/markup_core.c \
+	src/markup/markup_escape.c \
+	src/markup/markup_support.c \
+	src/markup/markup_tree.c \
+	src/markup/markup_walk.c
 
 check-allocator-callees: ## Fail if a converted file calls into an unconverted one that allocates
 	@python3 tools/check-allocator-callees.py
@@ -1933,6 +1939,7 @@ $(eval $(call fuzz-rule,fuzz_csv_writer,csv-writer))
 $(eval $(call fuzz-rule,fuzz_ini_writer,ini-writer))
 $(eval $(call fuzz-rule,fuzz_json_records,json-records))
 $(eval $(call fuzz-rule,fuzz_json_dupkeys,json-dupkeys))
+$(eval $(call fuzz-rule,fuzz_markup_tree,markup-tree))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -1944,7 +1951,7 @@ fuzz: ## Build and run every fuzzer for $(FUZZ_TIME) seconds each
 fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
 fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
-fuzz: fuzz-run-json-records fuzz-run-json-dupkeys
+fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:

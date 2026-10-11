@@ -11,6 +11,7 @@ Six libFuzzer harnesses:
 | TOML | `fuzz_toml.cpp` | `make fuzz-toml` | `make fuzz-run-toml` |
 | TOML writer | `fuzz_toml_writer.cpp` | `make fuzz-toml-writer` | `make fuzz-run-toml-writer` |
 | INI  | `fuzz_ini.cpp`  | `make fuzz-ini`  | `make fuzz-run-ini`  |
+| Markup tree | `fuzz_markup_tree.cpp` | `make fuzz-markup-tree` | `make fuzz-run-markup-tree` |
 
 `make fuzz` builds and runs all seven. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
@@ -24,6 +25,24 @@ and against an uninstrumented library it sees only the harness and degrades
 into random input generation. AddressSanitizer and UndefinedBehaviorSanitizer
 are enabled, since a parser reading one byte past a buffer is exactly the bug
 being looked for and will not usually crash on its own.
+
+## Fuzzing the markup tree
+
+`fuzz_markup_tree.cpp` reads nothing: its input is a *program* for building and
+rearranging a tree, with allocation failures as part of the program. After every
+operation the tree's invariants must hold, and an operation that returns
+anything but OK must have changed nothing - checked by comparing the library's
+own dump of every top-level node before and after. The first two bytes pick the
+limits, so one harness covers them at every value.
+
+It is not a hand-written model of the tree; `tests/test-markup-model.cpp` is
+that. What it adds is the coverage-guided search for the sequences no one
+thought to write down. A first version of it armed the injected allocation
+failure and then disarmed it at the end of the same operation, so no failure
+ever fired and a planted defect on a failure path went unfound. It was caught
+by planting defects on purpose, which is the only way a harness's silence means
+anything: planted, it finds a node count that stops adding up in seconds and a
+set-data that frees before it copies in a couple of minutes.
 
 ## Fuzzing a writer
 
