@@ -380,6 +380,22 @@ KNOWN_CAUSES = (
 )
 
 
+def known_both_cause(cat, detail):
+    """The cause of a difference that BOTH references share on a tree with no hazards, when it is one understood
+    and the standard decides: feDropShadow is in the standard's table of SVG element names whose case an HTML
+    parser restores, and neither reference's copy of the table has it, so both read `feDropShadow` as
+    `fedropshadow`. (The writer's vocabulary, markup_html.c, took the entry from the standard in stage 3e; it had
+    been copied from parse5, which lacks it.)"""
+    if cat != "element name":
+        return None
+    # `path what: ours A, theirs B` is what html_equivalent.h writes: the path of the element where the trees
+    # first differ, the kind of difference (the category, checked above) and the two names.
+    m = re.match(r"(\S+) element name: ours (\S+), theirs (\S+)$", detail)
+    if not m or re.sub(r"\[\d+\]", "", m.group(1)).rsplit("/", 1)[-1] != "svg":
+        return None
+    return "feDropShadow" if (m.group(2), m.group(3)) == ("feDropShadow", "fedropshadow") else None
+
+
 def known_cause(outcome, ctx):
     """The cause of a one-reference difference, decided from the names of the elements in the subtrees
     where the two trees first differ (not from the whole document, where an unrelated element could
@@ -532,6 +548,8 @@ def main(argv):
             sourcefail.append((ident, detail))
         elif outcome == "xml-defect":
             xml_defects.append((ident, cat, detail, it))
+        elif free and outcome == "both" and known_both_cause(cat, detail):
+            free_disagreements.append((ident, outcome, cat, detail, it, raw))
         elif free and outcome == "both":
             free_defects.append((ident, cat, detail, it, raw))
         elif free:
@@ -564,7 +582,8 @@ def main(argv):
     listed = {} if plant == "no-list" else load_list()
     found = {}
     for ident, outcome, cat, detail, it, raw in free_disagreements:
-        cause = known_cause(outcome, raw[1][1 if outcome == "html5lib" else 2][3])
+        cause = known_both_cause(cat, detail) if outcome == "both" else known_cause(
+            outcome, raw[1][1 if outcome == "html5lib" else 2][3])
         key = "ref:%s:%s" % (outcome, cause) if cause else "ref:%s:unexplained:%s" % (outcome, ident)
         found.setdefault(key, (outcome, [], detail))[1].append(ident)
     for (kind, outcome, cat), rows in hazardous.items():
@@ -572,7 +591,10 @@ def main(argv):
         # same first hazard shows up as a different first difference from tree to tree.
         entry = found.setdefault("hazard:%s:%s" % (kind, outcome), (outcome, [], rows[0][1]))
         entry[1].extend(r[0] for r in rows)
-    sigs = {k: "n=%d" % len(v[1]) for k, v in found.items()}
+    # The signature of a count: n, and for a cause shared by both references also which trees (their ids are the
+    # fixed table entries, so a change of the population or of the cause shows).
+    sigs = {k: ("n=%d" % len(v[1])) if not k.startswith("ref:both:") else
+            "n=%d;%s" % (len(v[1]), ",".join(sorted(set(v[1])))) for k, v in found.items()}
     if plant == "stale-entry" and listed:
         victim = sorted(k for k in listed if k in found)[0]
         del found[victim]

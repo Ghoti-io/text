@@ -188,12 +188,13 @@ PY
 		echo "control tree-$name: the plant did not change $file ('$pattern' is not there)" >&2
 		exit 1
 	fi
-	for f in html_tree.c html_tree_modes.c; do
+	for f in html_tree.c html_tree_modes.c html_tree_foreign.c html_tree_fragment.c; do
 		cc -std=gnu17 -O1 -fPIC -DGTEXT_BUILD -I"$scratch/tplant/src/html" -I"$root/include" -I"$generated" $cflags \
 			-c "$scratch/tplant/src/html/$f" -o "$scratch/tplant/$f.o"
 	done
 	cc -std=gnu17 -D_GNU_SOURCE -O1 -o "$scratch/trree-$name" "$root/tools/conformance/html_tree_suite.c" \
 		"$scratch/tplant/html_tree.c.o" "$scratch/tplant/html_tree_modes.c.o" \
+		"$scratch/tplant/html_tree_foreign.c.o" "$scratch/tplant/html_tree_fragment.c.o" \
 		-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
 	expect "tree-$name" "$heading" "$detail" \
 		python3 "$root/tools/oracle/oracle_run.py" html -- \
@@ -337,10 +338,58 @@ check_controls() {
 	tree_plant_lit template-end-tag-pops-no-mode html_tree_modes.c 'ht_fmt_clear_to_marker(tb);\n  ht_tmpl_pop(tb);\n  tb->mode = ht_tree_reset_mode(tb);\n  return tb->status' 'ht_fmt_clear_to_marker(tb);\n  tb->mode = ht_tree_reset_mode(tb);\n  return tb->status'
 	tree_plant_lit template-start-pushes-no-marker html_tree_modes.c 'HT_CK(ht_fmt_push_marker(tb));\n          tb->frameset_ok = false;\n          HT_CK(ht_tmpl_push' 'tb->frameset_ok = false;\n          HT_CK(ht_tmpl_push'
 	tree_plant_lit template-end-of-file-ignored html_tree_modes.c 'if (tb->ntmpl > 0) {\n        return h_in_template(tb, tk);' 'if (0) {\n        return h_in_template(tb, tk);'
-	tree_plant_lit body-form-start-tag-sets-the-pointer-in-a-template html_tree_modes.c 'case T_FORM: {\n      const bool in_template = template_open(tb);' 'case T_FORM: {\n      const bool in_template = false;'
-	tree_plant_lit html-start-tag-merges-attributes-in-a-template html_tree_modes.c 'if (template_open(tb)) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]' 'if (0) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]'
-	tree_plant_lit form-end-tag-in-a-template-asks-for-the-pointer html_tree_modes.c 'if (template_open(tb)) {\n        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {' 'if (0) {\n        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {'
+	tree_plant_lit body-form-start-tag-sets-the-pointer-in-a-template html_tree_modes.c 'const bool in_template = parsing_template_contents(tb);\n      if (form_pointer_set(tb)' 'const bool in_template = false;\n      if (form_pointer_set(tb)'
+	tree_plant_lit html-start-tag-merges-attributes-in-a-template html_tree_modes.c 'if (template_on_stack(tb)) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]' 'if (0) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]'
+	tree_plant_lit form-end-tag-in-a-template-asks-for-the-pointer html_tree_modes.c 'if (parsing_template_contents(tb)) {\n        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {' 'if (0) {\n        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {'
 	tree_plant_lit reset-mode-ignores-the-template-mode html_tree_modes.c 'return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;' 'return M_IN_TEMPLATE;'
+	# Stage 3e: a rule of foreign content or of the fragment algorithm undone, per group: the adjustments of names and
+	# attributes, the integration points, the breakout list and its end tags, the foreign end tag's walk, the text rules,
+	# CDATA, and the fragment algorithm (the tokenizer state, the reset from the context, the select, template and
+	# frameset contexts, the integration point contexts, the result). A fragment context that is a form, a quirks mode and
+	# the encoding of an annotation-xml context cannot be given to a reference, so those have no plant here.
+	tree_plant_lit svg-attribute-case-not-adjusted html_tree.c 'adjusted = ht_svg_attribute_adjusted(name, len);' 'adjusted = NULL;'
+	tree_plant_lit math-definitionurl-not-adjusted html_tree.c 'else if (ns == NS_MATH && len == 13 && memcmp(name, "definitionurl", 13) == 0) {' 'else if (0) {'
+	tree_plant_lit foreign-attributes-not-namespaced html_tree.c 'if (ht_adjust_foreign_attribute(name, len, &which)) {' 'if (0) {'
+	tree_plant_lit svg-element-case-not-adjusted html_tree.c 's->disp = ns == NS_SVG ? ht_svg_tag_adjusted(bytes, len) : NULL;' 's->disp = NULL;'
+	tree_plant_lit annotation-xml-encoding-not-honoured html_tree.c 'ht_ci_equal(a->value, a->value_length, "text/html")' '0'
+	tree_plant_lit foreign-elements-end-nothing-with-html-ancestors html_tree.c 'e->fl_html = e->ns == NS_HTML ? (uint32_t)i : below ? below->fl_html : 0;' 'e->fl_html = 0;'
+	tree_plant_lit breakout-never html_tree_foreign.c 'if (is_breakout_start(tk)) {' 'if (0) {'
+	tree_plant_lit breakout-list-misses-span html_tree_foreign.c '    case T_SPAN:\n' ''
+	tree_plant_lit font-face-is-not-a-breakout-attribute html_tree_foreign.c '|| (a->name_length == 4 && memcmp(a->name, "face", 4) == 0)' ''
+	tree_plant_lit end-tag-p-does-not-break-out html_tree_foreign.c "|| (t->name_length == 1 && t->name[0] == 'p')) {" ") {"
+	tree_plant_lit end-tag-br-does-not-break-out html_tree_foreign.c '(t->name_length == 2 && memcmp(t->name, "br", 2) == 0)' '0'
+	tree_plant_lit breakout-pops-past-integration-points html_tree_foreign.c '      && !(HT_STACK_TOP(tb).flags & (F_MTIP | F_HIP))) {' '      && 1) {'
+	tree_plant_lit foreign-end-tag-pops-only-the-current-node html_tree_foreign.c '    while (tb->n > j) {\n      ht_stack_pop(tb);\n    }' '    ht_stack_pop(tb);'
+	tree_plant_lit foreign-end-tag-walks-past-html-elements html_tree_foreign.c 'if (j != NONE_IDX && j > HT_STACK_TOP(tb).fl_html) {' 'if (j != NONE_IDX) {'
+	tree_plant_lit foreign-end-tag-looks-only-in-svg html_tree_foreign.c 'for (unsigned ns = NS_SVG; ns <= NS_MATH; ns++) {' 'for (unsigned ns = NS_SVG; ns <= NS_SVG; ns++) {'
+	tree_plant_lit svg-script-end-tag-not-popped html_tree_foreign.c '          ht_stack_pop(tb);\n          return R_DONE;' '          return R_DONE;'
+	tree_plant_lit foreign-self-closing-not-popped html_tree_foreign.c '      if (tk->self_closing) {\n        /* "If the token' '      if (0) {\n        /* "If the token'
+	tree_plant_lit body-svg-start-does-not-reconstruct html_tree_foreign.c 'int ht_body_start_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, unsigned ns) {\n  HT_CK(ht_fmt_reconstruct(tb));' 'int ht_body_start_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, unsigned ns) {'
+	tree_plant_lit mathml-text-integration-points-are-foreign html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_MTIP;' 'return F_SPECIAL | F_SC_GEN;'
+	tree_plant_lit svg-integration-points-are-foreign html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_HIP;' 'return F_SPECIAL | F_SC_GEN;'
+	tree_plant_lit integration-points-are-not-scope-boundaries html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_HIP;' 'return F_SPECIAL | F_HIP;'
+	tree_plant_lit mglyph-is-html-in-a-text-integration-point html_tree_foreign.c '    if (start && !(tk->tok->name_length == 6 && memcmp(tk->tok->name, "mglyph", 6) == 0)' '    if (start && !(0)'
+	tree_plant_lit svg-in-annotation-xml-is-foreign html_tree_foreign.c 'if ((flags & F_ANNOT) && start && tk->id == T_SVG) {' 'if (0) {'
+	tree_plant_lit characters-in-html-integration-points-are-foreign html_tree_foreign.c 'if ((flags & F_HIP) && (start || character)) {' 'if ((flags & F_HIP) && start) {'
+	tree_plant_lit start-tags-in-html-integration-points-are-foreign html_tree_foreign.c 'if ((flags & F_HIP) && (start || character)) {' 'if ((flags & F_HIP) && character) {'
+	tree_plant_lit nul-in-foreign-content-dropped html_tree_foreign.c 'if (!ht_insert_text(tb, "\xEF\xBF\xBD", 3)) {' 'if (0) {'
+	tree_plant_lit foreign-characters-keep-frameset-ok html_tree_foreign.c '        if (!is_ws_char(p[i])) {' '        if (0) {'
+	tree_plant_lit cdata-never-allowed html_tree_foreign.c 'return tb && ht_adjusted_ns(tb) != NS_HTML;' 'return false;'
+	tree_plant_lit cdata-always-allowed html_tree_foreign.c 'return tb && ht_adjusted_ns(tb) != NS_HTML;' 'return true;'
+	tree_plant_lit adjusted-current-node-ignores-the-fragment-context html_tree_foreign.c '  if (tb->frag && tb->n == 1) {\n    *ns = tb->ctx_ns;' '  if (0) {\n    *ns = tb->ctx_ns;'
+	tree_plant_lit fragment-tokenizer-state-never-set html_tree_fragment.c '    if (state != GTEXT_HTML_STATE_DATA) {' '    if (0) {'
+	tree_plant_lit fragment-title-is-not-rcdata html_tree_fragment.c 'if (tb->ctx_id == T_TITLE || tb->ctx_id == T_TEXTAREA) {' 'if (tb->ctx_id == T_TEXTAREA) {'
+	tree_plant_lit fragment-mode-not-reset-from-the-context html_tree_fragment.c '  tb->mode = ht_tree_reset_mode(tb);\n  /* Step 21. */' '  tb->mode = M_IN_BODY;\n  /* Step 21. */'
+	tree_plant_lit fragment-reset-ignores-the-context-element html_tree_modes.c '        id = tb->ctx_id;' '        id = tb->stack[0].id;'
+	tree_plant_lit fragment-result-not-moved html_tree_fragment.c '  markup_move_children_unchecked(tb->stack[0].node, tb->frag_node);' '  (void)0;'
+	tree_plant_lit fragment-select-context-allows-select html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */' '      if (0) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */'
+	tree_plant_lit fragment-select-context-allows-input html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case). */' '      if (0) {\n        /* The fragment context element is a select element (fragment case). */'
+	tree_plant_lit fragment-template-context-is-not-template-contents html_tree_modes.c '  return template_on_stack(tb) || tb->ctx_template;' '  return template_on_stack(tb);'
+	tree_plant_lit fragment-end-html-after-body-not-ignored html_tree_modes.c '        if (tb->frag) {\n          /* The fragment context element is non-null' '        if (0) {\n          /* The fragment context element is non-null'
+	tree_plant_lit fragment-frameset-end-switches-mode html_tree_modes.c 'if (!tb->frag && !is_current(tb, T_FRAMESET)) {' 'if (!is_current(tb, T_FRAMESET)) {'
+	tree_plant_lit fragment-integration-point-context-is-foreign html_tree_fragment.c '    if (name_is(c, "foreignObject") || name_is(c, "desc") || name_is(c, "title")) {' '    if (0) {'
+	tree_plant_lit fragment-text-integration-point-context-is-foreign html_tree_fragment.c '    if (name_is(c, "mi") || name_is(c, "mo") || name_is(c, "mn") || name_is(c, "ms")\n        || name_is(c, "mtext")) {' '    if (0) {'
+	tree_plant_lit fragment-context-namespace-ignored html_tree_fragment.c '  tb->ctx_ns = (uint8_t)c->ns;' '  tb->ctx_ns = NS_HTML;'
 }
 
 run_tree_diff() {

@@ -147,9 +147,10 @@ class HtmlTreeFuzzSeeds : public ::testing::Test {
 TEST_F(HtmlTreeFuzzSeeds, EverySeedHoldsEveryProperty) {
   const std::string dir = corpus_dir() + "/html-tree";
   const auto files = seeds(dir);
-  // tools/html/make-tree-fuzz-seeds.py writes 1,500 to 2,100.
-  constexpr size_t kMinSeeds = 1500;
-  ASSERT_GT(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir
+  // The floor. tools/html/make-tree-fuzz-seeds.py reads this very line for the lower end of the size it accepts
+  // (its upper end, 2,700, is its own), so the two cannot disagree.
+  constexpr size_t kMinSeeds = 2100;
+  ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir
                                  << "; tools/html/make-tree-fuzz-seeds.py writes it";
   // The recorded finds are not generated, so nothing else notices one going missing.
   for (const char * name : {"deep-div.seed", "many-attributes.seed", "adoption-nine-blocks.seed"}) {

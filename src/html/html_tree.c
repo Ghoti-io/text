@@ -31,7 +31,7 @@
  * and so foster parenting, 13.2.6.3 "Closing elements that have implied end tags",
  * and the adoption agency algorithm in 13.2.6.4.7), as served at
  * html.spec.whatwg.org/multipage/parsing.html (last updated 9 October 2026;
- * fetched 2026-10-11 and again 2026-10-12 for stage 3d).
+ * fetched 2026-10-11 and again 2026-10-12 for stages 3d and 3e).
  *
  * ## Foster parenting costs one comparison
  *
@@ -83,13 +83,6 @@ bool ht_tree_fail(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeStatus status) {
     tb->status = status;
   }
   return false;
-}
-
-bool ht_tree_not_yet(GTEXT_HTML_Tree * tb, GTEXT_HTML_NotYet what) {
-  if (tb->status == GTEXT_HTML_TREE_OK) {
-    tb->not_yet = what;
-  }
-  return ht_tree_fail(tb, GTEXT_HTML_TREE_E_NOT_YET);
 }
 
 bool ht_tree_markup_status(GTEXT_HTML_Tree * tb, GTEXT_Markup_Status status) {
@@ -205,6 +198,13 @@ static int compare_known(const char * bytes, size_t len, const char * name) {
   return len < nl ? -1 : len > nl ? 1 : 0;
 }
 
+/* The hash of a name in a namespace: a slot of the dynamic table is the pair (namespace, name), and the
+   namespace is mixed into the seed, so the same bytes in two namespaces are two probe sequences. */
+static size_t slot_hash(const GTEXT_HTML_Tree * tb, unsigned ns, const char * bytes, size_t len) {
+  return (size_t)gtext_html_tokenizer_name_hash(
+      tb->seed + (uint64_t)ns * 0x9E3779B97F4A7C15ULL, bytes, len);
+}
+
 static bool dyn_grow(GTEXT_HTML_Tree * tb) {
   const size_t cap = tb->dyn_cap ? tb->dyn_cap * 2 : 64;
   uint32_t * tab = gtext_allocator_calloc(&tb->alloc, cap, sizeof(uint32_t));
@@ -214,8 +214,7 @@ static bool dyn_grow(GTEXT_HTML_Tree * tb) {
   for (size_t i = 0; i < tb->dyn_cap; i++) {
     if (tb->dyn_tab[i]) {
       const name_slot * s = &tb->names[tb->dyn_tab[i] - 1];
-      size_t j = (size_t)gtext_html_tokenizer_name_hash(tb->seed, s->text, s->len)
-          & (cap - 1);
+      size_t j = slot_hash(tb, s->ns, s->text, s->len) & (cap - 1);
       while (tab[j]) {
         j = (j + 1) & (cap - 1);
       }
@@ -228,30 +227,33 @@ static bool dyn_grow(GTEXT_HTML_Tree * tb) {
   return true;
 }
 
-bool ht_names_lookup(GTEXT_HTML_Tree * tb, const char * bytes, size_t len,
+bool ht_names_lookup_ns(GTEXT_HTML_Tree * tb, unsigned ns, const char * bytes, size_t len,
     bool insert, uint32_t * id) {
-  size_t lo = 0;
-  size_t hi = T__COUNT;
-  while (lo < hi) {
-    const size_t mid = lo + (hi - lo) / 2;
-    const int c = compare_known(bytes, len, gtext_html_tag_table[mid].name);
-    if (c == 0) {
-      *id = (uint32_t)mid;
-      return true;
-    }
-    if (c < 0) {
-      hi = mid;
-    }
-    else {
-      lo = mid + 1;
+  if (ns == NS_HTML) {
+    /* The names the algorithms mention: a binary search of the sorted table. */
+    size_t lo = 0;
+    size_t hi = T__COUNT;
+    while (lo < hi) {
+      const size_t mid = lo + (hi - lo) / 2;
+      const int c = compare_known(bytes, len, gtext_html_tag_table[mid].name);
+      if (c == 0) {
+        *id = (uint32_t)mid;
+        return true;
+      }
+      if (c < 0) {
+        hi = mid;
+      }
+      else {
+        lo = mid + 1;
+      }
     }
   }
   if (tb->dyn_cap) {
     const size_t mask = tb->dyn_cap - 1;
-    size_t j = (size_t)gtext_html_tokenizer_name_hash(tb->seed, bytes, len) & mask;
+    size_t j = slot_hash(tb, ns, bytes, len) & mask;
     while (tb->dyn_tab[j]) {
       const name_slot * s = &tb->names[tb->dyn_tab[j] - 1];
-      if (s->len == len && memcmp(s->text, bytes, len) == 0) {
+      if (s->ns == ns && s->len == len && memcmp(s->text, bytes, len) == 0) {
         *id = tb->dyn_tab[j] - 1;
         return true;
       }
@@ -288,8 +290,13 @@ bool ht_names_lookup(GTEXT_HTML_Tree * tb, const char * bytes, size_t len,
   s->len = (uint32_t)len;
   s->topidx = NONE_IDX;
   s->dynamic = 1;
+  s->ns = (uint8_t)ns;
+  if (ns != NS_HTML) {
+    s->flags = ht_foreign_flags(ns, bytes, len);
+    s->disp = ns == NS_SVG ? ht_svg_tag_adjusted(bytes, len) : NULL;
+  }
   const size_t mask = tb->dyn_cap - 1;
-  size_t j = (size_t)gtext_html_tokenizer_name_hash(tb->seed, bytes, len) & mask;
+  size_t j = slot_hash(tb, ns, bytes, len) & mask;
   while (tb->dyn_tab[j]) {
     j = (j + 1) & mask;
   }
@@ -297,6 +304,11 @@ bool ht_names_lookup(GTEXT_HTML_Tree * tb, const char * bytes, size_t len,
   tb->dyn_count++;
   *id = nid;
   return true;
+}
+
+bool ht_names_lookup(GTEXT_HTML_Tree * tb, const char * bytes, size_t len,
+    bool insert, uint32_t * id) {
+  return ht_names_lookup_ns(tb, NS_HTML, bytes, len, insert, id);
 }
 
 /* ---- the stack of open elements ----------------------------------------- */
@@ -316,6 +328,7 @@ static void derive_entry(GTEXT_HTML_Tree * tb, size_t i) {
   e->fl_table = (f & F_SC_TABLE) ? (uint32_t)i : below ? below->fl_table : 0;
   e->fl_special = special ? (uint32_t)i : below ? below->fl_special : 0;
   e->fl_li = li_barrier ? (uint32_t)i : below ? below->fl_li : 0;
+  e->fl_html = e->ns == NS_HTML ? (uint32_t)i : below ? below->fl_html : 0;
   if (e->fmt) {
     e->fmt->stack_idx = i;
   }
@@ -344,6 +357,7 @@ bool ht_stack_push(
   e->fmt = fmt;
   e->id = id;
   e->flags = (uint16_t)tb->names[id].flags;
+  e->ns = tb->names[id].ns;
   e->removed = 0;
   derive_entry(tb, tb->n);
   tb->n++;
@@ -526,26 +540,135 @@ static void place(GTEXT_HTML_Tree * tb, HtNode * node) {
   }
 }
 
+/* An atom of the builder's, interned the first time it is needed. */
+static markup_atom * lazy_atom(GTEXT_HTML_Tree * tb, markup_atom ** slot, const char * text) {
+  if (!*slot) {
+    *slot = markup_atom_intern(tb->doc, text, strlen(text));
+    if (!*slot) {
+      ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
+    }
+  }
+  return *slot;
+}
+
+/* The namespace atom of a namespace of the builder's, or NULL (HTML's is kept from the start). */
+static markup_atom * element_ns_atom(GTEXT_HTML_Tree * tb, unsigned ns) {
+  switch (ns) {
+    case NS_SVG:
+      return lazy_atom(tb, &tb->ns_svg, GTEXT_MARKUP_NS_SVG);
+    case NS_MATH:
+      return lazy_atom(tb, &tb->ns_math, GTEXT_MARKUP_NS_MATHML);
+    default:
+      return tb->ns_html;
+  }
+}
+
+/* Add the attributes of a token to a foreign element: "adjust SVG attributes" or "adjust MathML
+   attributes" for the element's namespace, then "adjust foreign attributes" (the namespaced ones). Then
+   the check at the end of "create an element for a token": an `xmlns` attribute in the XMLNS namespace
+   that is not the element's namespace, or an `xmlns:xlink` that is not the XLink namespace, is a parse
+   error. */
+static bool append_foreign_attributes(GTEXT_HTML_Tree * tb, HtNode * el, unsigned ns,
+    const GTEXT_HTML_Attribute * attrs, size_t nattrs) {
+  const char * want_xmlns = ns == NS_SVG ? GTEXT_MARKUP_NS_SVG : GTEXT_MARKUP_NS_MATHML;
+  for (size_t i = 0; i < nattrs; i++) {
+    const char * name = attrs[i].name;
+    size_t len = attrs[i].name_length;
+    markup_atom * ans = NULL;
+    markup_atom * apfx = NULL;
+    unsigned which = 0;
+    if (ht_adjust_foreign_attribute(name, len, &which)) {
+      /* The table: xlink:* in the XLink namespace, xml:lang and xml:space in the XML namespace, xmlns and
+         xmlns:xlink in the XMLNS namespace (which = 1..3 names the namespace, the prefix is the one the
+         table gives, the local name is what follows it). */
+      switch (which) {
+        case 1:
+          ans = lazy_atom(tb, &tb->ns_xlink, GTEXT_MARKUP_NS_XLINK);
+          apfx = lazy_atom(tb, &tb->pfx_xlink, "xlink");
+          break;
+        case 2:
+          ans = lazy_atom(tb, &tb->ns_xml, GTEXT_MARKUP_NS_XML);
+          apfx = lazy_atom(tb, &tb->pfx_xml, "xml");
+          break;
+        case 3:
+          ans = lazy_atom(tb, &tb->ns_xmlns, GTEXT_MARKUP_NS_XMLNS);
+          apfx = len > 5 ? lazy_atom(tb, &tb->pfx_xmlns, "xmlns") : NULL;
+          break;
+        default:
+          break;
+      }
+      if (tb->status != GTEXT_HTML_TREE_OK) {
+        return false;
+      }
+      const size_t skip = which == 3 ? (len > 5 ? 6 : 0) : (which == 1 ? 6 : 4);
+      if (which == 3) {
+        const bool is_xlink = len > 5;
+        const char * v = attrs[i].value;
+        const size_t vl = attrs[i].value_length;
+        const char * w = is_xlink ? GTEXT_MARKUP_NS_XLINK : want_xmlns;
+        if (vl != strlen(w) || memcmp(v, w, vl) != 0) {
+          ht_tree_error(tb, GTEXT_HTML_TREE_ERR_XMLNS_MISMATCH);
+        }
+      }
+      if (!ht_tree_markup_status(tb,
+              markup_element_append_attribute(tb->doc, el, ans, apfx, name + skip,
+                  len - skip, attrs[i].value, attrs[i].value_length))) {
+        return false;
+      }
+      continue;
+    }
+    const char * adjusted = NULL;
+    if (ns == NS_SVG) {
+      adjusted = ht_svg_attribute_adjusted(name, len);
+    }
+    else if (ns == NS_MATH && len == 13 && memcmp(name, "definitionurl", 13) == 0) {
+      adjusted = "definitionURL";
+    }
+    if (adjusted) {
+      name = adjusted;
+      len = strlen(adjusted);
+    }
+    if (!ht_tree_markup_status(tb,
+            markup_element_append_attribute(tb->doc, el, NULL, NULL, name, len,
+                attrs[i].value, attrs[i].value_length))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool make_element(GTEXT_HTML_Tree * tb, uint32_t id,
     const GTEXT_HTML_Attribute * attrs, size_t nattrs, HtNode ** out) {
   name_slot * s = &tb->names[id];
   if (!s->atom) {
-    s->atom = markup_atom_intern(tb->doc, s->text, s->len);
+    s->atom = markup_atom_intern(tb->doc, s->disp ? s->disp : s->text,
+        s->disp ? strlen(s->disp) : s->len);
     if (!s->atom) {
       return ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
     }
   }
-  HtNode * el = NULL;
-  if (!ht_tree_markup_status(tb,
-          markup_element_create_atoms(tb->doc, tb->ns_html, s->atom, &el))) {
+  markup_atom * ns_atom = element_ns_atom(tb, s->ns);
+  if (!ns_atom) {
     return false;
   }
-  for (size_t i = 0; i < nattrs; i++) {
-    if (!ht_tree_markup_status(tb,
-            markup_element_append_attribute(tb->doc, el, NULL, NULL,
-                attrs[i].name, attrs[i].name_length, attrs[i].value,
-                attrs[i].value_length))) {
+  HtNode * el = NULL;
+  if (!ht_tree_markup_status(tb,
+          markup_element_create_atoms(tb->doc, ns_atom, s->atom, &el))) {
+    return false;
+  }
+  if (s->ns != NS_HTML) {
+    if (!append_foreign_attributes(tb, el, s->ns, attrs, nattrs)) {
       return false;
+    }
+  }
+  else {
+    for (size_t i = 0; i < nattrs; i++) {
+      if (!ht_tree_markup_status(tb,
+              markup_element_append_attribute(tb->doc, el, NULL, NULL,
+                  attrs[i].name, attrs[i].name_length, attrs[i].value,
+                  attrs[i].value_length))) {
+        return false;
+      }
     }
   }
   if (id == T_TEMPLATE) {
@@ -639,6 +762,33 @@ bool ht_insert_element(GTEXT_HTML_Tree * tb, const Tk * tk, HtNode ** out) {
   HtPlace at;
   ht_place_at(tb, tb->n - 1, &at);
   return insert_element_at(tb, at, tk->id, tk->attrs, tk->nattrs, out);
+}
+
+bool ht_insert_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, uint32_t id, HtNode ** out) {
+  HtPlace at;
+  ht_place_at(tb, tb->n - 1, &at);
+  HtNode * el = NULL;
+  if (!insert_element_at(tb, at, id, tk->attrs, tk->nattrs, &el)) {
+    return false;
+  }
+  /* A MathML annotation-xml element is an HTML integration point when its start tag had an `encoding`
+     attribute that is "text/html" or "application/xhtml+xml" (ASCII case-insensitively): the token's
+     attribute, as it came, not the element's. */
+  const name_slot * s = &tb->names[id];
+  if (s->flags & F_ANNOT) {
+    for (size_t i = 0; i < tk->nattrs; i++) {
+      const GTEXT_HTML_Attribute * a = &tk->attrs[i];
+      if (a->name_length == 8 && memcmp(a->name, "encoding", 8) == 0
+          && (ht_ci_equal(a->value, a->value_length, "text/html")
+              || ht_ci_equal(a->value, a->value_length, "application/xhtml+xml"))) {
+        HT_STACK_TOP(tb).flags |= F_HIP;
+      }
+    }
+  }
+  if (out) {
+    *out = el;
+  }
+  return true;
 }
 
 bool ht_insert_element_bare(GTEXT_HTML_Tree * tb, uint32_t id, HtNode ** out) {
@@ -1320,9 +1470,13 @@ static void release_atoms(GTEXT_HTML_Tree * tb) {
       tb->names[i].atom = NULL;
     }
   }
-  if (tb->ns_html) {
-    markup_atom_release(tb->doc, tb->ns_html);
-    tb->ns_html = NULL;
+  markup_atom ** const others[] = {&tb->ns_html, &tb->ns_svg, &tb->ns_math, &tb->ns_xlink,
+      &tb->ns_xml, &tb->ns_xmlns, &tb->pfx_xlink, &tb->pfx_xml, &tb->pfx_xmlns};
+  for (size_t i = 0; i < sizeof(others) / sizeof(others[0]); i++) {
+    if (*others[i]) {
+      markup_atom_release(tb->doc, *others[i]);
+      *others[i] = NULL;
+    }
   }
 }
 
@@ -1353,11 +1507,6 @@ void gtext_html_tree_free(GTEXT_HTML_Tree * tb) {
   gtext_allocator_free(&alloc, tb->fmt_blocks);
   gtext_allocator_free(&alloc, tb->errors);
   gtext_allocator_free(&alloc, tb);
-}
-
-static bool allow_cdata_never(void * user) {
-  (void)user;
-  return false;
 }
 
 GTEXT_HTML_Tree * gtext_html_tree_new(const GTEXT_HTML_TreeOptions * options) {
@@ -1425,7 +1574,8 @@ GTEXT_HTML_Tree * gtext_html_tree_new(const GTEXT_HTML_TreeOptions * options) {
   to.max_attributes = o.max_attributes;
   to.max_errors = tb->max_errors;
   to.hash_seed = o.hash_seed;
-  to.allow_cdata = allow_cdata_never;
+  to.allow_cdata = ht_allow_cdata;
+  to.allow_cdata_user = tb;
   tb->tok = gtext_html_tokenizer_new(&to);
   if (!tb->tok) {
     gtext_html_tree_free(tb);
@@ -1525,8 +1675,8 @@ GTEXT_HTML_TreeStatus gtext_html_tree_finish(GTEXT_HTML_Tree * tb) {
 }
 
 GTEXT_Markup_Document * gtext_html_tree_take_document(GTEXT_HTML_Tree * tb) {
-  if (!tb || !tb->finished || tb->status != GTEXT_HTML_TREE_OK || tb->doc_taken) {
-    return NULL;
+  if (!tb || !tb->finished || tb->status != GTEXT_HTML_TREE_OK || tb->doc_taken || tb->frag) {
+    return NULL; /* a fragment builder hands over its document with the fragment */
   }
   tb->doc_taken = true;
   GTEXT_Markup_Document * doc = tb->doc;
@@ -1536,11 +1686,6 @@ GTEXT_Markup_Document * gtext_html_tree_take_document(GTEXT_HTML_Tree * tb) {
 
 GTEXT_HTML_TreeStatus gtext_html_tree_status(const GTEXT_HTML_Tree * tb) {
   return tb ? tb->status : GTEXT_HTML_TREE_E_INVALID;
-}
-
-GTEXT_HTML_NotYet gtext_html_tree_not_yet(const GTEXT_HTML_Tree * tb) {
-  return tb && tb->status == GTEXT_HTML_TREE_E_NOT_YET ? tb->not_yet
-                                                       : GTEXT_HTML_NOT_YET_NONE;
 }
 
 GTEXT_HTML_TreeStatus gtext_html_parse(const void * data, size_t length,
@@ -1620,6 +1765,8 @@ static const char * const k_tree_error_names[GTEXT_HTML_TREE_ERR_COUNT] = {
     "nested-form",
     "unexpected-element-in-context",
     "deprecated-tag",
+    "html-in-foreign-content",
+    "xmlns-attribute-mismatch",
 };
 
 const char * gtext_html_tree_error_name(int code) {
@@ -1631,22 +1778,4 @@ const char * gtext_html_tree_error_name(int code) {
     return k_tree_error_names[code - GTEXT_HTML_TREE_ERROR_BASE];
   }
   return "unknown";
-}
-
-const char * gtext_html_not_yet_stage(GTEXT_HTML_NotYet what) {
-  switch (what) {
-    case GTEXT_HTML_NOT_YET_FOREIGN:
-      return "3e";
-    default:
-      return "";
-  }
-}
-
-const char * gtext_html_not_yet_name(GTEXT_HTML_NotYet what) {
-  switch (what) {
-    case GTEXT_HTML_NOT_YET_FOREIGN:
-      return "foreign";
-    default:
-      return "";
-  }
 }

@@ -32,9 +32,10 @@ extra file (tools/conformance/html_tree_extra.dat) holds hand-chosen cases in th
 format whose expected trees are what both reference parsers answer; they are scored like the
 others, with no `#errors` comparison.
 
-**Scope.** A vector is run when it is an initial-document vector (no
-`#document-fragment`) and not one of the four `scripted_*.dat` files, whose trees are
-what a script makes. One written for a scripting setting (`#script-on`, `#script-off`)
+**Scope.** A vector is run unless it is one of the four `scripted_*.dat` files, whose trees are
+what a script makes. A vector with a `#document-fragment` line is parsed by the fragment parsing
+algorithm in the context element it names (`td`; `svg path` and `math mi` for the other namespaces),
+and its `#document` section is the dump of the fragment's children. One written for a scripting setting (`#script-on`, `#script-off`)
 runs with it; one that names none runs with the flag off and with it on, and must give
 the expected tree both times. Every run is also cut every way the runner knows (every
 two-way split, a byte at a time, pieces of 2 to 9 bytes, random pieces) and the tree,
@@ -43,7 +44,8 @@ the errors and the status must be identical; the tree's invariant checker must h
 **The exceptions file** (HTML_TREE_EXCEPTIONS) is the stage's honest scope: one line for
 each vector that is not in scope yet, `<id>TAB<stage>TAB<what>TAB<reason>`, where the
 stage (`3d` or `3e`) is the stage that will remove it and `what` is why it is out
-(`table`, `template`, `foreign`, `fragment`). One more kind is not a stage: stage `none`,
+(`table`, `template`, `foreign`, `fragment`). Every stage is built, so none is listed now: the
+tree builder stops for no construct, and the format is kept for the next one that is not. The one kind that is not a stage: stage `none`,
 what `dom`, which the tree builder cannot pass because the expected tree is made by a DOM
 behaviour outside the parsing chapter (a fifth column locks the digest of the first
 difference, so a different failure of the same vector cannot hide behind the entry). The
@@ -86,7 +88,7 @@ def parse_dat(path, name):
                 current = {s: [] for s in SECTIONS}
                 current["flags"] = set()
                 tests.append(current)
-            if heading in ("script-on", "script-off"):
+            if heading in ("script-on", "script-off", "document-fragment"):
                 current["flags"].add(heading)
             section = heading
             continue
@@ -106,12 +108,24 @@ def parse_dat(path, name):
         out.append({
             "id": "%s#%d" % (name, n),
             "data": "\n".join(t["data"]),
-            "fragment": bool(t["document-fragment"]),
+            "fragment": "document-fragment" in t["flags"],
+            # The context element of a fragment vector: `td`, or `svg path`, `math mi`.
+            "context": fragment_context(name, n, t["document-fragment"]) if "document-fragment" in t["flags"] else None,
             "scripting": scripting,
             "expected": "\n".join(doc),
             "nerrors": len(errors),
         })
     return out
+
+
+def fragment_context(name, n, lines):
+    """The context line of a vector with a `#document-fragment` section. A section with no context line (or a blank one,
+    or one of more than two words, or `svg` / `math` with no name) is a malformed vector, not a document."""
+    ctx = next((l for l in lines if l.strip()), None)
+    words = ctx.split(" ") if ctx is not None else []
+    if not (1 <= len(words) <= 2) or any(w == "" for w in words) or (len(words) == 2 and words[0] not in ("svg", "math")):
+        raise SystemExit("%s: vector %d has a #document-fragment section without a usable context line (%r)" % (name, n, ctx))
+    return ctx
 
 
 def load(dirpath):
@@ -201,14 +215,12 @@ def run_all(runner, requests):
 
 
 def parse_answer(lines):
-    a = {"status": None, "notyet": None, "errors": 0, "dump": None, "cut": None, "inv": "OK",
+    a = {"status": None, "errors": 0, "dump": None, "cut": None, "inv": "OK",
          "end": None, "mode": None}
     for line in lines:
         f = line.split(" ")
         if f[0] == "STATUS":
             a["status"] = f[1]
-        elif f[0] == "NOTYET":
-            a["notyet"] = (f[1], f[2])
         elif f[0] == "ERRORS":
             a["errors"] = int(f[1]) + int(f[2])
         elif f[0] == "MODE":
@@ -265,29 +277,27 @@ def main(argv):
     # Requests: each scripting setting a vector is run under.
     requests, owners = [], []
     for v in vectors:
-        if v["fragment"]:
-            continue
         settings = [v["scripting"]] if v["scripting"] is not None else [False, True]
         for sc in settings:
-            requests.append("cuts %d %s" % (1 if sc else 0, hexs(v["data"])))
+            request = "cuts %d %s" % (1 if sc else 0, hexs(v["data"]))
+            if v["fragment"]:
+                # The fragment parsing algorithm, in the context element the vector names.
+                request += " ctx:" + hexs(v["context"])
+            requests.append(request)
             owners.append((v, sc))
     answers, crashed = run_all(runner, requests)
 
     known_by_id = {v["id"]: v for v in vectors}
-    outcome = {}  # id -> ("pass"|"notyet"|"fail"|"fragment", detail)
+    outcome = {}  # id -> ("pass"|"fail", detail)
     err_exact = err_total = 0
     err_higher = collections.Counter()
     higher_ids = set()
     err_lower = []
-    for v in vectors:
-        if v["fragment"]:
-            outcome[v["id"]] = ("fragment", ("3e", "fragment"))
     per = collections.defaultdict(list)
     for i, (v, sc) in enumerate(owners):
         per[v["id"]].append((i, v, sc))
     for vid, runs in per.items():
         problem = None
-        notyet = None
         errs_ok = True
         for i, v, sc in runs:
             if i in crashed or answers[i] is None:
@@ -301,9 +311,6 @@ def main(argv):
             if a["cut"] != "OK":
                 problem = "THE ANSWER DEPENDS ON HOW THE INPUT WAS CUT: %s" % a["cut"]
                 break
-            if a["status"] == "E_NOT_YET":
-                notyet = notyet or a["notyet"]
-                continue
             if a["status"] != "OK":
                 problem = "status %s (scripting %s)" % (a["status"], sc)
                 break
@@ -322,8 +329,6 @@ def main(argv):
                     err_lower.append(v["id"])
         if problem:
             outcome[vid] = ("fail", problem)
-        elif notyet:
-            outcome[vid] = ("notyet", (("3d" if notyet[1] == "3d" else "3e"), notyet[0]))
         else:
             outcome[vid] = ("pass", errs_ok)
             if v_has_errors(known_by_id, vid):
@@ -338,13 +343,6 @@ def main(argv):
             kind, detail = outcome[vid]
             if kind == "fail":
                 print("%s\tnone\tdom\tUNREAD: %s\t%s" % (vid, detail[:100], digest(detail)))
-            if kind in ("notyet", "fragment"):
-                stage, what = detail
-                why = {"table": "needs the table insertion modes",
-                       "template": "needs the template insertion modes",
-                       "foreign": "needs foreign content (svg, math)",
-                       "fragment": "a fragment vector (the fragment parsing algorithm)"}[what]
-                print("%s\t%s\t%s\t%s" % (vid, stage, what, why))
         return 0
 
     unexplained = []
@@ -363,11 +361,6 @@ def main(argv):
                 stale.append("%s  fails differently now: %s [%s]" % (vid, detail[:100], digest(detail)))
                 continue
             unexplained.append("%s  %s  [%s]" % (vid, detail, digest(detail)))
-        else:
-            if not tag:
-                unexplained.append("%s  stops at %s (%s) and is not listed" % (vid, detail[1], detail[0]))
-            elif tag[0] == "none" or (tag[0], tag[1]) != detail:
-                stale.append("%s  listed %s %s, now %s %s" % (vid, tag[0], tag[1], detail[0], detail[1]))
     for vid in listed:
         if vid not in known:
             stale.append("%s  is not a vector" % vid)
@@ -377,7 +370,7 @@ def main(argv):
     whats = collections.Counter(listed[v][1] for v in listed)
     print("vectors: %d in %d files, and %d extra (+%d not run: %s)" % (
         len(vectors) - extras, files, extras, len(scripted), ", ".join(SCRIPT_EXECUTING)))
-    print("in scope (initial document): %d; passing: %d; listed as not parsing-chapter behaviour: %d; failing: %d" % (
+    print("in scope (documents and fragments): %d; passing: %d; listed as not parsing-chapter behaviour: %d; failing: %d" % (
         scored, passes, scored - passes - in_scope_failing, in_scope_failing))
     print("tagged exceptions: %d (%s); by reason: %s" % (
         len(listed), ", ".join("%s %d" % kv for kv in sorted(stages.items())),

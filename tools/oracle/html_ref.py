@@ -93,3 +93,51 @@ def ask_all(requests, chunk=20000):
                 raise SystemExit("%s: sent %d requests, got %d answers" % (name, len(part), len(lines)))
             answers[name].extend(json.loads(l) for l in lines)
     return answers
+
+
+def _label_key(line):
+    # The dump's own order: UTF-16 code units of the label (the part before `=`), which for the labels here
+    # is code point order.
+    return [ord(c) for c in line.split("=", 1)[0]]
+
+
+def normalize_dump(dump):
+    """A reference's dump in the web-platform-tests format.
+
+    The drivers write an `xmlns` attribute in the XMLNS namespace as `xmlns="..."`, the label of an attribute in
+    no namespace; the WPT serializer (resources/test.js) writes any attribute with a namespace as its prefix
+    word and local name, so `xmlns xmlns="..."`. The attributes of an SVG or MathML element that are named xmlns
+    are always the namespaced one (the parser makes them so), so the rewrite is made under those elements only,
+    and the attributes of such an element are sorted again, since the new label sorts elsewhere (`xmlns xlink`
+    before `xmlns xmlns`).
+    """
+    if not isinstance(dump, str) or "xmlns=" not in dump:
+        return dump
+    lines = dump.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        if not line.startswith("| "):
+            continue
+        body = line[2:].lstrip(" ")
+        indent = len(line) - 2 - len(body)
+        if not (body.startswith("<") and not body.startswith("<!") and not body.startswith("<?") and body.endswith(">")):
+            continue
+        if not (body[1:].startswith("svg ") or body[1:].startswith("math ")):
+            continue
+        # The attribute lines of this element: the lines one level in that are not elements, text or comments.
+        run = []
+        while i < len(lines) and lines[i].startswith("| " + " " * (indent + 2)):
+            inner = lines[i][2 + indent + 2:]
+            if inner.startswith("<") or inner.startswith('"') or inner == "content" or inner.startswith(" "):
+                break
+            if inner.startswith("xmlns="):
+                inner = "xmlns " + inner
+            run.append("| " + " " * (indent + 2) + inner)
+            i += 1
+        run.sort(key=lambda l: _label_key(l[2 + indent + 2:]))
+        out.extend(run)
+    return "\n".join(out)

@@ -27,29 +27,26 @@
  *
  * ## What it is
  *
- * The standard's second stage, for ordinary documents: the stack of open
- * elements, the list of active formatting elements with the Noah's Ark clause,
- * the head and form element pointers, the frameset-ok flag, quirks mode from
- * the doctype, every insertion mode but the foreign-content rules (the table
- * modes, "in template" with the stack of template insertion modes and the
- * template contents, foster parenting in the appropriate place for inserting a
- * node), the adoption agency algorithm, and the reconstruction of the active
- * formatting elements. Read from the standard's text as served at
+ * The standard's second stage: the stack of open elements, the list of active
+ * formatting elements with the Noah's Ark clause, the head and form element
+ * pointers, the frameset-ok flag, quirks mode from the doctype, every
+ * insertion mode (the table modes, "in template" with the stack of template
+ * insertion modes and the template contents, foster parenting in the
+ * appropriate place for inserting a node), the rules for parsing tokens in
+ * foreign content (SVG and MathML: the adjusted current node, the integration
+ * points, the name and attribute adjustments, the breakout tags), the adoption
+ * agency algorithm, the reconstruction of the active formatting elements, and
+ * the HTML fragment parsing algorithm with a context element
+ * (gtext_html_tree_new_fragment()). Read from the standard's text as served at
  * html.spec.whatwg.org (Living Standard, last updated 9 October 2026; fetched
- * 2026-10-11 for 3c and again 2026-10-12 04:25 UTC for 3d, the same revision);
- * see documentation/formats/html.md for the section list and for what is not
- * here.
+ * 2026-10-11 for 3c and again 2026-10-12 for 3d and 3e, the same revision:
+ * Last-Modified Fri, 09 Oct 2026 08:28:19 GMT); see
+ * documentation/formats/html.md for the section list.
  *
- * ## What is not here yet (the stage gate)
+ * ## What is not here
  *
- * Foreign content (`svg`, `math`) belongs to the next stage (3e). A document
- * that reaches one of them fails with the distinct status
- * GTEXT_HTML_TREE_E_NOT_YET and gtext_html_tree_not_yet() says which stage owns
- * the construct. The failure is sticky and returns no tree; the conformance
- * gate lists every vector that stops there, tagged with its stage, so that the
- * list shrinks as the stages land. Fragment parsing is 3e. There is no public
- * HTML API, no encoding determination (3f), no serialization and no script
- * execution.
+ * There is no public HTML API, no encoding determination (3f), no
+ * serialization and no script execution.
  *
  * ## How it is driven
  *
@@ -69,7 +66,11 @@
  * ## The tree
  *
  * Elements are in the HTML namespace with their attributes in no namespace, in
- * source order (duplicates removed by the tokenizer); a doctype node, comments,
+ * source order (duplicates removed by the tokenizer), except the elements of foreign
+ * content: those in the SVG and MathML namespaces have the names and attributes the
+ * standard's tables give them (`viewBox`, `foreignObject`, `definitionURL`) and the
+ * attributes `xlink:*`, `xml:lang`, `xml:space`, `xmlns` and `xmlns:xlink` are in the
+ * XLink, XML and XMLNS namespaces; a doctype node, comments,
  * processing instructions (the pinned standard makes them nodes), and text with
  * adjacent runs merged. A `template` element owns a content document fragment (made with
  * the element, so it is never absent), which is where the builder inserts what the standard
@@ -174,6 +175,8 @@ typedef enum {
   GTEXT_HTML_TREE_ERR_NESTED_FORM,                ///< A `form` start tag inside a form.
   GTEXT_HTML_TREE_ERR_UNEXPECTED_ELEMENT_IN_CONTEXT, ///< `h1` in `h1`, a `button` in a button, `select` in `select`...
   GTEXT_HTML_TREE_ERR_DEPRECATED_TAG,             ///< `image` read as `img`; `</br>` read as `<br>`.
+  GTEXT_HTML_TREE_ERR_HTML_IN_FOREIGN_CONTENT,    ///< An HTML start tag (or `</p>`, `</br>`) that ends foreign content.
+  GTEXT_HTML_TREE_ERR_XMLNS_MISMATCH,             ///< An `xmlns` attribute that is not the element's namespace.
   GTEXT_HTML_TREE_ERR_COUNT
 } GTEXT_HTML_TreeErrorCode;
 
@@ -201,7 +204,6 @@ typedef enum {
   GTEXT_HTML_TREE_E_INVALID,   ///< A NULL where a value is needed.
   GTEXT_HTML_TREE_E_STATE,     ///< feed() after a successful finish(); and nothing else (a failed builder repeats its failure).
   GTEXT_HTML_TREE_E_OOM,       ///< The allocator returned NULL.
-  GTEXT_HTML_TREE_E_NOT_YET,   ///< A construct that belongs to a later stage (see gtext_html_tree_not_yet()).
   GTEXT_HTML_TREE_E_REPROCESS, ///< A token was handled again in a new mode more often than any rule can need: a defect, never content.
   GTEXT_HTML_TREE_E_LIMIT_DEPTH,      ///< More than `max_open_elements` open at once.
   GTEXT_HTML_TREE_E_LIMIT_NODES,      ///< More than `max_nodes` nodes.
@@ -216,17 +218,6 @@ typedef enum {
 /// Whether `status` is one of the limit statuses.
 #define GTEXT_HTML_TREE_IS_LIMIT(status) \
   ((status) >= GTEXT_HTML_TREE_E_LIMIT_DEPTH)
-
-/// The stage that owns a construct the builder does not parse yet.
-typedef enum {
-  GTEXT_HTML_NOT_YET_NONE = 0,
-  GTEXT_HTML_NOT_YET_FOREIGN   ///< `svg` or `math`: stage 3e.
-} GTEXT_HTML_NotYet;
-
-/// "3e" for a construct, "" for NONE.
-GTEXT_INTERNAL_API const char * gtext_html_not_yet_stage(GTEXT_HTML_NotYet what);
-/// "foreign", or "".
-GTEXT_INTERNAL_API const char * gtext_html_not_yet_name(GTEXT_HTML_NotYet what);
 
 /**
  * @brief Options for gtext_html_tree_new(). Zero-initialising gives the
@@ -294,10 +285,6 @@ GTEXT_INTERNAL_API GTEXT_Markup_Document * gtext_html_tree_take_document(
 GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_status(
     const GTEXT_HTML_Tree * tree);
 
-/// After E_NOT_YET: which construct. NONE otherwise.
-GTEXT_INTERNAL_API GTEXT_HTML_NotYet gtext_html_tree_not_yet(
-    const GTEXT_HTML_Tree * tree);
-
 /**
  * @brief Parse a whole buffer.
  *
@@ -314,7 +301,83 @@ GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_parse(const void * data,
     size_t length, const GTEXT_HTML_TreeOptions * options,
     GTEXT_Markup_Document ** out, GTEXT_HTML_Tree ** tree_out);
 
+/* ---- Fragments ----------------------------------------------------------- */
+
+/// The namespace of a fragment's context element.
+typedef enum {
+  GTEXT_HTML_NS_HTML = 0,
+  GTEXT_HTML_NS_SVG,
+  GTEXT_HTML_NS_MATHML
+} GTEXT_HTML_Namespace;
+
+/**
+ * @brief The context element of the HTML fragment parsing algorithm (13.4), described by value.
+ *
+ * No tree node is needed and none is touched: the algorithm reads the context element's namespace and
+ * name (the tokenizer's initial state, "reset the insertion mode appropriately", the adjusted current
+ * node), its start tag's attributes (`encoding` on a MathML annotation-xml), whether it or an ancestor
+ * is a form (the form element pointer) and its document's mode.
+ */
+typedef struct {
+  GTEXT_HTML_Namespace ns;            ///< The namespace of the context element.
+  const char * local_name;            ///< Its local name, as the element has it (exact case). Not NULL.
+  size_t local_name_length;           ///< Bytes, at least 1.
+  /// The attributes of the context element (borrowed; may be NULL when `attribute_count` is 0).
+  const GTEXT_HTML_Attribute * attributes;
+  size_t attribute_count;
+  bool form_ancestor;                 ///< The context element is a form or has a form ancestor.
+  GTEXT_Markup_Mode quirks;           ///< The mode of the context element's document.
+  bool scripting;                     ///< The scripting flag (noscript as the context; noscript in the head).
+} GTEXT_HTML_FragmentContext;
+
+/**
+ * @brief Make a tree builder for a fragment: the HTML fragment parsing algorithm, step by step.
+ *
+ * The result is used like gtext_html_tree_new(): feed(), finish(), and then
+ * gtext_html_tree_take_fragment() in place of take_document(). The context is not kept past the
+ * call.
+ *
+ * @param status If non-NULL, receives OK, E_INVALID (a bad context) or E_OOM.
+ * @return The builder, or NULL.
+ */
+GTEXT_INTERNAL_API GTEXT_HTML_Tree * gtext_html_tree_new_fragment(
+    const GTEXT_HTML_TreeOptions * options, const GTEXT_HTML_FragmentContext * context,
+    GTEXT_HTML_TreeStatus * status);
+
+/**
+ * @brief Take the fragment, once a fragment builder has finished successfully.
+ *
+ * The children of the root `html` element are moved into the document fragment (the standard's
+ * "return a DocumentFragment"). The fragment belongs to the document that is handed over with it: free
+ * the document and the fragment goes too.
+ *
+ * @param doc_out Receives the document that owns the fragment (and the root element, now empty).
+ * @return The fragment, or NULL if the builder is not a finished fragment builder or it was taken.
+ */
+GTEXT_INTERNAL_API GTEXT_Markup_Node * gtext_html_tree_take_fragment(
+    GTEXT_HTML_Tree * tree, GTEXT_Markup_Document ** doc_out);
+
+/**
+ * @brief Parse a whole buffer as a fragment.
+ *
+ * `doc_out` and `fragment_out` are written only on OK. `tree_out`, if non-NULL, receives the builder for
+ * its errors and status, as for gtext_html_parse().
+ */
+GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_parse_fragment(
+    const GTEXT_HTML_FragmentContext * context, const void * data, size_t length,
+    const GTEXT_HTML_TreeOptions * options, GTEXT_Markup_Document ** doc_out,
+    GTEXT_Markup_Node ** fragment_out, GTEXT_HTML_Tree ** tree_out);
+
 /* ---- Errors and tests --------------------------------------------------- */
+
+/// Tests: the foreign-content tables of the standard, as data. `which` is 0 for the SVG element names
+/// (lower case name and the name it becomes), 1 for the SVG attribute names, 2 for the namespaced attributes
+/// (the name with its prefix and the namespace's short name: "xlink", "xml" or "xmlns"). Returns the number
+/// of rows for `which`, 0 for any other.
+GTEXT_INTERNAL_API size_t gtext_html_tree_test_table_size(int which);
+/// Tests: row `i` of a table. False past the end.
+GTEXT_INTERNAL_API bool gtext_html_tree_test_table_at(
+    int which, size_t i, const char ** from, const char ** to);
 
 /// How many parse errors are kept (0 for a NULL tree).
 GTEXT_INTERNAL_API size_t gtext_html_tree_error_count(const GTEXT_HTML_Tree * tree);

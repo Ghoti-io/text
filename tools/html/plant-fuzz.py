@@ -55,10 +55,11 @@ fails. The control is searched as well.
                    a few hundred attributes costs the square of that: the fuzzer's work
                    bound, fed a byte at a time. The seed `many-attributes` is a tag of 900.
 
-The tree builder's fuzzer (tests/fuzz/fuzz_html_tree.cpp, target `html-tree`) has fifteen, five of
+The tree builder's fuzzer (tests/fuzz/fuzz_html_tree.cpp, target `html-tree`) has twenty-one, eight of
 them replayed from a seed (`tree-text-not-merged`, `tree-atom-leak`, `tree-pending-text-leak`,
-`tree-template-modes-leak`, `tree-text-capacity-stale`) and ten searched for from the seeds, with
-its own unedited control (`control-tree`):
+`tree-template-modes-leak`, `tree-text-capacity-stale`, `tree-foreign-atoms-leak`,
+`tree-svg-attribute-case-not-restored`, `tree-foreign-nul-kept`) and thirteen searched for from the
+seeds, with its own unedited control (`control-tree`):
 
   tree-text-not-merged   adjacent runs of text are not appended to one node: the fuzzer's
                    validity property (no two adjacent text nodes).
@@ -96,6 +97,23 @@ and, for stage 3d, nine that break a property of the shapes the table and templa
   tree-foster-into-the-wrong-template   the template that foster parenting finds is read from
                    the wrong place in the stack: AddressSanitizer.           (foster parenting)
 
+and, for stage 3e, six (three replayed, three searched):
+
+  tree-foreign-atoms-leak   the namespaces and prefixes interned for foreign content are not released
+                   when the parse ends: the invariant checker's reference counts.  Replayed from
+                   `foreign-attributes`.
+  tree-svg-case-not-restored   the SVG element names the standard restores are left lower case: the
+                   property that a foreign element has a name an HTML parser can have made (searched).
+  tree-svg-attribute-case-not-restored   the same for attributes.  Replayed from `svg-attribute-table`.
+  tree-foreign-nul-kept   a NUL in foreign content is inserted as it is and not as U+FFFD: the property
+                   that no text holds a NUL.  Replayed from `nul-in-foreign`.
+  tree-foreign-attribute-oom-absorbed   an allocation failure while an attribute of a foreign element is
+                   added is ignored: the tree silently lacks the attribute, which the allocation-failure
+                   sweep sees (searched). (Ignoring the result of an insert that records its failure in the
+                   builder's status is no defect: the failure is sticky anyway.)
+  tree-fragment-result-not-moved   the root element's children are not moved into the fragment: the
+                   property that a fragment's document has an empty root element (searched).
+
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
 corpus.
@@ -117,7 +135,8 @@ PLANTS = {
     "tree-text-not-merged": ("html-tree", "src/html/html_tree.c",
                              "  if (last && last->kind == GTEXT_MARKUP_KIND_TEXT) {", "  if (0) {"),
     "tree-atom-leak": ("html-tree", "src/html/html_tree.c",
-                       "  if (tb->ns_html) {\n    markup_atom_release(tb->doc, tb->ns_html);\n    tb->ns_html = NULL;\n  }\n", ""),
+                       "  markup_atom ** const others[] = {&tb->ns_html, &tb->ns_svg,",
+                       "  markup_atom ** const others[] = {&tb->ns_svg,"),
     "tree-dyn-table-leak": ("html-tree", "src/html/html_tree.c",
                             "  gtext_allocator_free(&alloc, tb->dyn_tab);\n", ""),
     "tree-fmt-blocks-leak": ("html-tree", "src/html/html_tree.c",
@@ -156,6 +175,32 @@ PLANTS = {
     "tree-foster-into-the-wrong-template": ("html-tree", "src/html/html_tree.c",
                                             "      target = tb->stack[lt].node;\n      tmpl = true;",
                                             "      target = tb->stack[lt + tb->cap].node;\n      tmpl = true;"),
+    # Stage 3e: foreign content and fragments. The properties are a valid shape (a foreign element named
+    # as the standard's table names it, attributes in the three namespaces of the adjustment table, no NUL
+    # in text, a fragment's root element empty), the reference counts of the invariant checker, the
+    # allocation-failure sweep and the work bound; that the foreign rules build the *right* tree is the
+    # vectors' and the differential's.
+    "tree-foreign-atoms-leak": ("html-tree", "src/html/html_tree.c",
+                                "  markup_atom ** const others[] = {&tb->ns_html, &tb->ns_svg, &tb->ns_math, &tb->ns_xlink,\n"
+                                "      &tb->ns_xml, &tb->ns_xmlns, &tb->pfx_xlink, &tb->pfx_xml, &tb->pfx_xmlns};",
+                                "  markup_atom ** const others[] = {&tb->ns_html};"),
+    "tree-svg-case-not-restored": ("html-tree", "src/html/html_tree.c",
+                                   "    s->disp = ns == NS_SVG ? ht_svg_tag_adjusted(bytes, len) : NULL;",
+                                   "    s->disp = NULL;"),
+    "tree-svg-attribute-case-not-restored": ("html-tree", "src/html/html_tree.c",
+                                             "      adjusted = ht_svg_attribute_adjusted(name, len);",
+                                             "      adjusted = NULL;"),
+    "tree-foreign-nul-kept": ("html-tree", "src/html/html_tree_foreign.c",
+                              "    if (!ht_insert_text(tb, \"\\xEF\\xBF\\xBD\", 3)) {",
+                              "    if (!ht_insert_text(tb, \"\\0\", 1)) {"),
+    "tree-foreign-attribute-oom-absorbed": ("html-tree", "src/html/html_tree.c",
+                                            "    if (!ht_tree_markup_status(tb,\n            markup_element_append_attribute(tb->doc, el, NULL, NULL, name, len,\n"
+                                            "                attrs[i].value, attrs[i].value_length))) {\n      return false;\n    }\n",
+                                            "    (void)markup_element_append_attribute(tb->doc, el, NULL, NULL, name, len,\n"
+                                            "        attrs[i].value, attrs[i].value_length);\n"),
+    "tree-fragment-result-not-moved": ("html-tree", "src/html/html_tree_fragment.c",
+                                       "  markup_move_children_unchecked(tb->stack[0].node, tb->frag_node);\n",
+                                       ""),
     "cr-at-a-cut": ("html-tokenizer", "src/html/html_tokenizer.c",
                     "      if (p + 1 >= len) {\n        if (!t->final) {\n          return false;\n        }\n        *cp = '\\n';",
                     "      if (p + 1 >= len) {\n        *cp = '\\n';"),
@@ -208,6 +253,9 @@ REPRODUCERS = {
     "tree-pending-text-leak": "tests/fuzz/corpus/html-tree/table-text-pending.seed",
     "tree-template-modes-leak": "tests/fuzz/corpus/html-tree/nested-templates.seed",
     "tree-text-capacity-stale": "tests/fuzz/corpus/html-tree/text-in-pieces.seed",
+    "tree-foreign-atoms-leak": "tests/fuzz/corpus/html-tree/foreign-attributes.seed",
+    "tree-svg-attribute-case-not-restored": "tests/fuzz/corpus/html-tree/svg-attribute-table.seed",
+    "tree-foreign-nul-kept": "tests/fuzz/corpus/html-tree/nul-in-foreign.seed",
 }
 
 

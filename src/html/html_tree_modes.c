@@ -43,9 +43,12 @@
  * one of the boundaries of "has an element in scope". They are implemented here
  * and are not a stub.
  *
- * Not here (a later stage; the construct fails the parse with
- * GTEXT_HTML_TREE_E_NOT_YET and the stage that owns it): `svg` and `math` start
- * tags so foreign content (3e).
+ * Foreign content (3e) is in html_tree_foreign.c: the tree construction
+ * dispatcher below picks its rules for a token before the current insertion mode
+ * is asked, and `math` and `svg` start tags of "in body" call it. The fragment
+ * parsing algorithm (13.4) is html_tree_fragment.c; the modes here read its
+ * context element where the standard says "fragment case" (reset the insertion
+ * mode, the select context, `</html>` after the body, `</frameset>`).
  *
  * Every function that handles a token returns R_DONE (consumed), R_REPROCESS
  * (the mode changed; handle the same token again in the new mode) or R_FAIL
@@ -162,6 +165,10 @@ static bool ci_equal(const char * a, size_t an, const char * b) {
   return an == strlen(b) && ci_prefix_eq(a, b, an);
 }
 
+bool ht_ci_equal(const char * a, size_t an, const char * b) {
+  return ci_equal(a, an, b);
+}
+
 static bool ci_starts(const char * s, size_t n, const char * prefix) {
   const size_t pn = strlen(prefix);
   return n >= pn && ci_prefix_eq(s, prefix, pn);
@@ -269,10 +276,20 @@ static bool is_current(const GTEXT_HTML_Tree * tb, uint32_t id) {
   return tb->n > 0 && HT_STACK_TOP(tb).id == id;
 }
 
-/* Is there a template element on the stack of open elements? (The standard's "parsing template
-   contents", fragment contexts aside.) */
-static bool template_open(const GTEXT_HTML_Tree * tb) {
+/* Is there a template element on the stack of open elements? */
+static bool template_on_stack(const GTEXT_HTML_Tree * tb) {
   return tb->names[T_TEMPLATE].topidx != NONE_IDX;
+}
+
+/* "An HTML parser is parsing template contents if there is a template element on the stack of open
+   elements, or the parser's fragment context element is a template element." */
+/* Is the form element pointer set? (To an element made by this parser, or to the fragment context's form.) */
+static bool form_pointer_set(const GTEXT_HTML_Tree * tb) {
+  return tb->form_el != NULL || tb->form_ctx;
+}
+
+static bool parsing_template_contents(const GTEXT_HTML_Tree * tb) {
+  return template_on_stack(tb) || tb->ctx_template;
 }
 
 /* Is there an element open that "has not been closed" as the end of a body means it:
@@ -409,7 +426,7 @@ static int h_before_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
 
 /* The end tag "template" of "in head" (and so of every mode that defers to it). */
 static int end_template(GTEXT_HTML_Tree * tb) {
-  if (!template_open(tb)) {
+  if (!template_on_stack(tb)) {
     return IGNORE_END(tb);
   }
   ht_generate_all_implied_end_tags_thoroughly(tb);
@@ -758,7 +775,7 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->id) {
     case T_HTML:
       ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
-      if (template_open(tb)) {
+      if (template_on_stack(tb)) {
         return R_DONE;
       }
       HT_CK(ht_merge_attributes(tb, tb->stack[0].node, tk->attrs, tk->nattrs));
@@ -777,7 +794,7 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
       return h_in_head(tb, tk);
     case T_BODY:
       ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
-      if (tb->n == 1 || tb->stack[1].id != T_BODY || template_open(tb)) {
+      if (tb->n == 1 || tb->stack[1].id != T_BODY || template_on_stack(tb)) {
         return R_DONE;
       }
       tb->frameset_ok = false;
@@ -844,8 +861,12 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
       tb->frameset_ok = false;
       return R_DONE;
     case T_FORM: {
-      const bool in_template = template_open(tb);
-      if (tb->form_el && !in_template) {
+      /* "If the form element pointer is not null, and the parser is not parsing template contents, then this
+         is a parse error; ignore the token. Otherwise: ... Insert an HTML element for the token, and, if the
+         parser is not parsing template contents, set the form element pointer to point to the element
+         created." (13.2.6.4.7; "parsing template contents" includes a template fragment context.) */
+      const bool in_template = parsing_template_contents(tb);
+      if (form_pointer_set(tb) && !in_template) {
         ht_tree_error(tb, GTEXT_HTML_TREE_ERR_NESTED_FORM);
         return R_DONE;
       }
@@ -914,6 +935,10 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
     case T_WBR:
       return body_start_void(tb, tk);
     case T_INPUT:
+      if (tb->ctx_select) {
+        /* The fragment context element is a select element (fragment case). */
+        return IGNORE_START(tb);
+      }
       if (ht_stack_in_scope(tb, T_SELECT, SCOPE_GEN)) {
         ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_ELEMENT_IN_CONTEXT);
         ht_stack_pop_until(tb, T_SELECT);
@@ -976,6 +1001,11 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
       HT_CK(ht_insert_element(tb, tk, NULL));
       return R_DONE;
     case T_SELECT:
+      if (tb->ctx_select) {
+        /* The fragment context element is a select element (fragment case): "Parse error. Ignore
+           the token." */
+        return IGNORE_START(tb);
+      }
       if (ht_stack_in_scope(tb, T_SELECT, SCOPE_GEN)) {
         ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_ELEMENT_IN_CONTEXT);
         ht_stack_pop_until(tb, T_SELECT);
@@ -1010,9 +1040,9 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
       HT_CK(ht_insert_element(tb, tk, NULL));
       return R_DONE;
     case T_MATH:
+      return ht_body_start_foreign(tb, tk, NS_MATH);
     case T_SVG:
-      ht_tree_not_yet(tb, GTEXT_HTML_NOT_YET_FOREIGN);
-      return R_FAIL;
+      return ht_body_start_foreign(tb, tk, NS_SVG);
     case T_CAPTION:
     case T_COL:
     case T_COLGROUP:
@@ -1095,7 +1125,7 @@ static int body_end(GTEXT_HTML_Tree * tb, const Tk * tk) {
       ht_stack_pop_until(tb, tk->id);
       return R_DONE;
     case T_FORM: {
-      if (template_open(tb)) {
+      if (parsing_template_contents(tb)) {
         if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {
           return IGNORE_END(tb);
         }
@@ -1106,8 +1136,13 @@ static int body_end(GTEXT_HTML_Tree * tb, const Tk * tk) {
         ht_stack_pop_until(tb, T_FORM);
         return R_DONE;
       }
+      /* "If the parser is not parsing template contents: 1. Let node be the element that the form element
+         pointer is set to, or null if it is not set to an element. 2. Set the form element pointer to null.
+         3. If node is null or if the stack of open elements does not have node in scope, ... ignore the
+         token." A context's form is such an element, and is never on the stack. */
       HtNode * node = tb->form_el;
       tb->form_el = NULL;
+      tb->form_ctx = false;
       size_t at = SIZE_MAX;
       if (node) {
         at = stack_find_node(tb, node);
@@ -1281,6 +1316,10 @@ static int h_after_body(GTEXT_HTML_Tree * tb, const Tk * tk) {
       break;
     case TK_END:
       if (tk->id == T_HTML) {
+        if (tb->frag) {
+          /* The fragment context element is non-null: a parse error, ignore the token (fragment case). */
+          return IGNORE_END(tb);
+        }
         tb->mode = M_AFTER_AFTER_BODY;
         return R_DONE;
       }
@@ -1329,7 +1368,9 @@ static int h_in_frameset(GTEXT_HTML_Tree * tb, const Tk * tk) {
           return IGNORE_END(tb);
         }
         ht_stack_pop(tb);
-        if (!is_current(tb, T_FRAMESET)) {
+        /* "If the parser's fragment context element is null and the current node is no longer a frameset
+           element, then switch the insertion mode to "after frameset"." */
+        if (!tb->frag && !is_current(tb, T_FRAMESET)) {
           tb->mode = M_AFTER_FRAMESET;
         }
         return R_DONE;
@@ -1671,8 +1712,11 @@ static int h_in_table(GTEXT_HTML_Tree * tb, const Tk * tk) {
           return R_DONE;
         case T_FORM: {
           ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
-          const bool in_template = template_open(tb);
-          if (tb->form_el && !in_template) {
+          const bool in_template = parsing_template_contents(tb);
+          /* "In table", form: "If the form element pointer is not null, and the parser is not parsing template
+             contents, then ignore the token. Otherwise: Insert an HTML element for the token, and, if the parser
+             is not parsing template contents, set the form element pointer ...; pop that form element". */
+          if (form_pointer_set(tb) && !in_template) {
             return R_DONE;
           }
           HT_CK(ht_insert_element(tb, tk, in_template ? NULL : &tb->form_el));
@@ -2119,7 +2163,7 @@ static int h_in_template(GTEXT_HTML_Tree * tb, const Tk * tk) {
       }
       return IGNORE_END(tb);
     case TK_EOF:
-      if (!template_open(tb)) {
+      if (!template_on_stack(tb)) {
         /* No template element is open: stop. (A template insertion mode left over, which the
            algorithms cannot leave, is dropped rather than trusted.) */
         tb->ntmpl = 0;
@@ -2131,7 +2175,7 @@ static int h_in_template(GTEXT_HTML_Tree * tb, const Tk * tk) {
          open. Every mode but "in template" hands the end of the file to "in body", which hands it back
          here while a template insertion mode is left, so the reprocessing between two templates only
          ever comes back to this rule: it is done as a loop, and the chain does not grow with the nesting. */
-      while (template_open(tb)) {
+      while (template_on_stack(tb)) {
         ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_EOF);
         ht_stack_pop_until(tb, T_TEMPLATE);
         ht_fmt_clear_to_marker(tb);
@@ -2192,6 +2236,10 @@ static const char * const k_mode_names[M__COUNT] = {
     [M_AFTER_AFTER_FRAMESET] = "after after frameset",
 };
 
+int ht_html_mode_token(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  return k_modes[tb->mode](tb, tk);
+}
+
 const char * ht_tree_mode_name(InsertionMode m) {
   return (unsigned)m < M__COUNT ? k_mode_names[m] : "";
 }
@@ -2202,12 +2250,16 @@ InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb) {
   size_t i = tb->n;
   bool last = false;
   while (i > 0) {
-    const stack_entry * node = &tb->stack[i - 1];
+    uint32_t id = tb->stack[i - 1].id;
     if (i == 1) {
       last = true;
-      /* The fragment case would put the context element here. */
+      /* "If the parser's fragment context element is non-null, then set node to that element (fragment
+         case)." The context is described by its name slot. */
+      if (tb->frag) {
+        id = tb->ctx_id;
+      }
     }
-    switch (node->id) {
+    switch (id) {
       case T_TD:
       case T_TH:
         if (!last) {
@@ -2311,6 +2363,9 @@ static bool handle_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n) {
     left = n;
     if (stalled > tb->reprocess_limit) {
       return ht_tree_fail(tb, GTEXT_HTML_TREE_E_REPROCESS);
+    }
+    if (ht_use_foreign_rules(tb, NULL, true)) {
+      return ht_foreign_chars(tb, p, n);
     }
     size_t k;
     switch (tb->mode) {
@@ -2532,7 +2587,9 @@ bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
       return ht_tree_fail(tb, GTEXT_HTML_TREE_E_INVALID);
   }
   for (size_t again = 0; again <= tb->reprocess_limit; again++) {
-    const int r = k_modes[tb->mode](tb, &tk);
+    /* The tree construction dispatcher: the rules of foreign content, or the current insertion mode's. */
+    const int r = ht_use_foreign_rules(tb, &tk, false) ? ht_foreign_token(tb, &tk)
+                                                       : k_modes[tb->mode](tb, &tk);
     if (r == R_FAIL || tb->status != GTEXT_HTML_TREE_OK) {
       return false;
     }

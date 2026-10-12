@@ -54,9 +54,9 @@ cc -O1 -D_GNU_SOURCE $CFLAGS -o "$runner" "$root/tools/conformance/html_tree_sui
 suite_py=$root/tools/conformance/html_tree_suite.py
 exceptions=$root/tools/conformance/HTML_TREE_EXCEPTIONS
 extra=$root/tools/conformance/html_tree_extra.dat
-export HTML_TREE_MIN_VECTORS=${HTML_TREE_MIN_VECTORS:-1900}
-export HTML_TREE_MIN_PASS=${HTML_TREE_MIN_PASS:-1590}
-export HTML_TREE_MIN_EXACT_ERRORS=${HTML_TREE_MIN_EXACT_ERRORS:-1396}
+export HTML_TREE_MIN_VECTORS=${HTML_TREE_MIN_VECTORS:-2050}
+export HTML_TREE_MIN_PASS=${HTML_TREE_MIN_PASS:-2085}
+export HTML_TREE_MIN_EXACT_ERRORS=${HTML_TREE_MIN_EXACT_ERRORS:-1792}
 
 # --sanitize: the same gate with the library and the runner built with AddressSanitizer and
 # UndefinedBehaviorSanitizer, the library from its sources (the archive is not instrumented). The runner
@@ -81,13 +81,19 @@ if [ "$1" = "--sanitize" ]; then
 	exit $?
 fi
 
-if [ "$1" != "--controls" ]; then
+# --control NAME runs one control of the list below and no other (a plant is not even built for the others).
+only=
+if [ "$1" = "--control" ]; then
+	only=$2
+	[ -n "$only" ] || { echo "usage: run-html-tree.sh --control NAME" >&2; exit 2; }
+elif [ "$1" != "--controls" ]; then
 	exec python3 "$suite_py" "$suite" "$runner" "$exceptions" "$extra"
 fi
 
 # --controls: the gate is made to fail on purpose, and must, each time, say why. A gate whose
 # assertion no longer reaches its subject prints the same clean line as one that passes.
 scratch=$(mktemp -d)
+ran=0
 log=$(mktemp)
 trap 'rm -rf "$scratch" "$log"' EXIT
 
@@ -95,6 +101,10 @@ trap 'rm -rf "$scratch" "$log"' EXIT
 expect() {
 	what=$1 want=$2
 	shift 2
+	if [ -n "$only" ] && [ "$only" != "$what" ]; then
+		return 0
+	fi
+	ran=$((ran + 1))
 	status=0
 	"$@" </dev/null >"$log" 2>&1 || status=$?
 	if [ "$status" = 0 ] || ! grep -q "$want" "$log"; then
@@ -126,8 +136,10 @@ expect no-exceptions "UNEXPLAINED FAILURES" python3 "$suite_py" "$suite" "$runne
 expect stale-exception "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/stale" "$extra"
 { cat "$exceptions"; printf 'nothing.dat#1\t3d\ttable\tplanted: no such vector\n'; } > "$scratch/gone"
 expect exception-for-nothing "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/gone" "$extra"
-awk -F'\t' 'BEGIN{OFS="\t"} !done && $2=="3e" && $3=="foreign" {$3="fragment"; done=1} {print}' "$exceptions" > "$scratch/wrongstage"
-expect exception-in-the-wrong-stage "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/wrongstage" "$extra"
+# A listed construct that parses now (a foreign content or fragment vector that stage 3e removed from the list):
+# the entry is stale.
+{ cat "$exceptions"; printf 'svg.dat#1\t3e\tforeign\tplanted: foreign content parses\n'; } > "$scratch/wrongstage"
+expect exception-for-a-construct-that-parses "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/wrongstage" "$extra"
 awk -F'\t' 'BEGIN{OFS="\t"} $2=="none" && !done {$5="0000000000"; done=1} {print}' "$exceptions" > "$scratch/wrongdigest"
 expect exception-with-another-failure "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/wrongdigest" "$extra"
 
@@ -136,19 +148,25 @@ expect floor-passing "below the floor" env HTML_TREE_MIN_PASS=99999 python3 "$su
 expect floor-loaded "below the floor" env HTML_TREE_MIN_VECTORS=99999 python3 "$suite_py" "$suite" "$runner" "$exceptions" "$extra"
 
 # The runner refuses a request it does not understand, loudly, and runs nothing for it.
-good="whole 0 x3c613e"
-n_bad=0
-for bad in "bogus 0 x3c613e" "whole 2 x3c613e" "whole 0 x3c613" "whole 0 xzz" "whole 0 3c613e" \
-		"chunks:x 0 x3c613e" "chunks: 0 x3c613e" "split:99 0 x3c613e" "split:x 0 x3c613e" "whole 0 x3c613e loose" "whole 0" ""; do
-	n_bad=$((n_bad + 1))
-	printf '%s\n' "$bad" "$good" | "$runner" > "$log"
-	if [ "$(grep -c '^END E_REQUEST' "$log")" != 1 ] || [ "$(grep -c '^END DONE' "$log")" != 1 ]; then
-		echo "control bad-request: '$bad' was not answered E_REQUEST (and the next request DONE)" >&2
-		cat "$log" >&2
-		exit 1
-	fi
-done
-echo "control bad-requests: caught ($n_bad)"
+if [ -z "$only" ] || [ "$only" = bad-requests ]; then
+	good="whole 0 x3c613e"
+	n_bad=0
+	for bad in "bogus 0 x3c613e" "whole 2 x3c613e" "whole 0 x3c613" "whole 0 xzz" "whole 0 3c613e" \
+			"chunks:x 0 x3c613e" "chunks: 0 x3c613e" "split:99 0 x3c613e" "split:x 0 x3c613e" "whole 0 x3c613e loose" "whole 0" "" \
+			"whole 0 x3c613e ctx:xzz" "whole 0 x3c613e ctx:" "whole 0 x3c613e ctx:x" "whole 0 x3c613e form" "whole 0 x3c613e quirks" \
+			"whole 0 x3c613e ctx:x6469 ctx:x6469" "whole 0 x3c613e ctx:x6469 loose" "whole 0 x3c613e ctx:x6469 quirks form quirks2" \
+			"whole 0 x3c613e ctx:x73766720" "whole 0 x3c613e ctx:x6d61746820"; do
+		n_bad=$((n_bad + 1))
+		printf '%s\n' "$bad" "$good" | "$runner" > "$log"
+		if [ "$(grep -c '^END E_REQUEST' "$log")" != 1 ] || [ "$(grep -c '^END DONE' "$log")" != 1 ]; then
+			echo "control bad-request: '$bad' was not answered E_REQUEST (and the next request DONE)" >&2
+			cat "$log" >&2
+			exit 1
+		fi
+	done
+	echo "control bad-requests: caught ($n_bad)"
+	ran=$((ran + 1))
+fi
 
 # The exact-count floor, and a vector that has fewer parse errors than the list.
 expect floor-exact-errors "below the floor" env HTML_TREE_MIN_EXACT_ERRORS=99999 python3 "$suite_py" "$suite" "$runner" "$exceptions" "$extra"
@@ -163,6 +181,9 @@ plant_with() {
 	how=$1
 	shift
 	name=$1 heading=$2 file=$3 pattern=$4 replacement=$5
+	if [ -n "$only" ] && [ "$only" != "$name" ]; then
+		return 0
+	fi
 	rm -rf "$scratch/plant"
 	mkdir -p "$scratch/plant/src"
 	cp -r "$root/src/html" "$root/src/markup" "$scratch/plant/src/"
@@ -186,12 +207,13 @@ PY
 		echo "control $name: the plant did not change $file ('$pattern' is not there)" >&2
 		exit 1
 	fi
-	for f in html_tree.c html_tree_modes.c; do
+	for f in html_tree.c html_tree_modes.c html_tree_foreign.c html_tree_fragment.c; do
 		cc -std=gnu17 -O1 -fPIC -DGTEXT_BUILD -I"$scratch/plant/src/html" -I"$root/include" -I"$generated" $cflags \
 			-c "$scratch/plant/src/html/$f" -o "$scratch/plant/$f.o"
 	done
 	cc -O1 -D_GNU_SOURCE -o "$scratch/runner-$name" "$root/tools/conformance/html_tree_suite.c" \
 		"$scratch/plant/html_tree.c.o" "$scratch/plant/html_tree_modes.c.o" \
+		"$scratch/plant/html_tree_foreign.c.o" "$scratch/plant/html_tree_fragment.c.o" \
 		-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
 	expect "$name" "$heading" python3 "$suite_py" "$suite" "$scratch/runner-$name" "$exceptions" "$extra"
 }
@@ -217,8 +239,8 @@ plant pre-newline-kept "$fails" html_tree_modes.c 'tb->skip_lf = true;' 'tb->ski
 plant html-attributes-not-merged "$fails" html_tree.c 'present = true;' 'present = false;'
 plant p-closed-outside-button-scope "$fails" html_tree.c 'if (ht_stack_in_scope(tb, T_P, SCOPE_BUTTON)) {' 'if (ht_stack_in_scope(tb, T_P, SCOPE_GEN)) {'
 plant implied-end-tags-stop "$fails" html_tree.c 'while (tb->n > 0 \&\& (HT_STACK_TOP(tb).flags \& F_IMPLIED)' 'while (0 \&\& (HT_STACK_TOP(tb).flags \& F_IMPLIED)'
-plant_lit body-form-start-tag-ignored-for-an-open-form "$fails" html_tree_modes.c 'const bool in_template = template_open(tb);\n      if (tb->form_el && !in_template) {' 'const bool in_template = template_open(tb);\n      if (0) {'
-plant_lit table-form-start-tag-ignored-for-an-open-form "$fails" html_tree_modes.c 'const bool in_template = template_open(tb);\n          if (tb->form_el && !in_template) {' 'const bool in_template = template_open(tb);\n          if (0) {'
+plant_lit body-form-start-tag-ignored-for-an-open-form "$fails" html_tree_modes.c 'const bool in_template = parsing_template_contents(tb);\n      if (form_pointer_set(tb) && !in_template) {' 'const bool in_template = parsing_template_contents(tb);\n      if (0) {'
+plant_lit table-form-start-tag-ignored-for-an-open-form "$fails" html_tree_modes.c 'if (form_pointer_set(tb) && !in_template) {\n            return R_DONE;' 'if (0) {\n            return R_DONE;'
 plant noscript-flag-ignored "$fails" html_tree_modes.c 'if (!tb->opt.scripting) {' 'if (1) {'
 plant text-not-merged "$fails" html_tree.c 'if (last \&\& last->kind == GTEXT_MARKUP_KIND_TEXT) {' 'if (0) {'
 plant marquee-is-not-a-scope-boundary "$fails" html_tree_private.h 'X(T_MARQUEE, "marquee", F_SPECIAL | F_SC_GEN)' 'X(T_MARQUEE, "marquee", F_SPECIAL)'
@@ -275,10 +297,84 @@ plant_lit template-end-tag-pops-no-mode "$fails" html_tree_modes.c 'ht_fmt_clear
 # (ATemplateEndTagClosesTheTableStuffInsideIt, ErrorsInTablesAreNamedAndPositioned).
 plant_lit template-end-tag-implied-tags-not-thorough "below the floor" html_tree_modes.c 'ht_generate_all_implied_end_tags_thoroughly(tb);' 'ht_generate_implied_end_tags(tb, NONE_IDX);'
 plant_lit template-end-of-file-ignored "$fails" html_tree_modes.c 'if (tb->ntmpl > 0) {\n        return h_in_template(tb, tk);' 'if (0) {\n        return h_in_template(tb, tk);'
-plant_lit html-start-tag-merges-attributes-in-a-template "$fails" html_tree_modes.c 'if (template_open(tb)) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]' 'if (0) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]'
-plant_lit body-form-start-tag-sets-the-pointer-in-a-template "$fails" html_tree_modes.c 'case T_FORM: {\n      const bool in_template = template_open(tb);' 'case T_FORM: {\n      const bool in_template = false;'
-plant_lit body-start-tag-ignores-the-template "$fails" html_tree_modes.c '|| template_open(tb)) {' ') {'
+plant_lit html-start-tag-merges-attributes-in-a-template "$fails" html_tree_modes.c 'if (template_on_stack(tb)) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]' 'if (0) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]'
+plant_lit body-form-start-tag-sets-the-pointer-in-a-template "$fails" html_tree_modes.c 'const bool in_template = parsing_template_contents(tb);\n      if (form_pointer_set(tb)' 'const bool in_template = false;\n      if (form_pointer_set(tb)'
+plant_lit body-start-tag-ignores-the-template "$fails" html_tree_modes.c '|| template_on_stack(tb)) {' ') {'
 plant_lit reset-mode-ignores-the-template-mode "$fails" html_tree_modes.c 'return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;' 'return M_IN_TEMPLATE;'
 plant_lit open-element-error-for-the-table-end-tag-dropped "UNEXPLAINED ERROR COUNTS" html_tree_modes.c '            ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);\n          }\n          ht_stack_pop_until(tb, T_TABLE);\n          tb->mode = ht_tree_reset_mode(tb);\n          return R_DONE;' '          }\n          ht_stack_pop_until(tb, T_TABLE);\n          tb->mode = ht_tree_reset_mode(tb);\n          return R_DONE;'
+# Stage 3e: foreign content and fragments, one rule undone each. The groups are the ones the stage was scored in
+# (the adjustments of names and attributes; the integration points, the breakout and the end tag rules; the fragment
+# algorithm). Rules that no vector reaches have no plant here and are listed in documentation/formats/html.md: the form
+# element pointer of a context with a form ancestor, the quirks mode of the context's document and the encoding attribute
+# of an annotation-xml context cannot be written in the vectors' format (tests/test-html-tree-foreign.cpp has them, and
+# a hand-made plant of each was seen to fail it), and the seeding of the template mode stack by a template context has no
+# observable effect (the reset falls back to "in template", and the first start tag replaces the mode).
+plant_lit svg-attribute-case-not-adjusted "$fails" html_tree.c 'adjusted = ht_svg_attribute_adjusted(name, len);' 'adjusted = NULL;'
+plant_lit math-definitionurl-not-adjusted "$fails" html_tree.c 'else if (ns == NS_MATH && len == 13 && memcmp(name, "definitionurl", 13) == 0) {' 'else if (0) {'
+plant_lit foreign-attributes-not-namespaced "$fails" html_tree.c 'if (ht_adjust_foreign_attribute(name, len, &which)) {' 'if (0) {'
+plant_lit svg-element-case-not-adjusted "$fails" html_tree.c 's->disp = ns == NS_SVG ? ht_svg_tag_adjusted(bytes, len) : NULL;' 's->disp = NULL;'
+plant_lit svg-tag-name-table-misses-an-entry "$fails" html_tree_foreign.c '    {"foreignobject", "foreignObject"},\n' ''
+plant_lit svg-attribute-name-table-misses-an-entry "$fails" html_tree_foreign.c '    {"viewbox", "viewBox"},\n' ''
+plant_lit foreign-attribute-table-misses-xml-lang "$fails" html_tree_foreign.c '    {"xml:lang", 2},\n' ''
+plant_lit annotation-xml-encoding-not-honoured "$fails" html_tree.c 'ht_ci_equal(a->value, a->value_length, "text/html")' '0'
+plant_lit annotation-xml-xhtml-encoding-not-honoured "$fails" html_tree.c 'ht_ci_equal(a->value, a->value_length, "application/xhtml+xml")' '0'
+plant_lit foreign-elements-end-nothing-with-html-ancestors "$fails" html_tree.c 'e->fl_html = e->ns == NS_HTML ? (uint32_t)i : below ? below->fl_html : 0;' 'e->fl_html = 0;'
+plant_lit breakout-never "$fails" html_tree_foreign.c 'if (is_breakout_start(tk)) {' 'if (0) {'
+plant_lit breakout-list-misses-span "$fails" html_tree_foreign.c '    case T_SPAN:\n' ''
+plant_lit breakout-list-misses-table "$fails" html_tree_foreign.c '    case T_TABLE:\n' ''
+plant_lit breakout-list-misses-p "$fails" html_tree_foreign.c '    case T_P:\n' ''
+plant_lit font-face-is-not-a-breakout-attribute "$fails" html_tree_foreign.c '|| (a->name_length == 4 && memcmp(a->name, "face", 4) == 0)' ''
+plant_lit font-without-attributes-breaks-out "$fails" html_tree_foreign.c '    case T_FONT:\n      for (size_t i = 0; i < tk->nattrs; i++) {' '    case T_FONT:\n      return true;\n      for (size_t i = 0; i < tk->nattrs; i++) {'
+plant_lit end-tag-p-does-not-break-out "$fails" html_tree_foreign.c "|| (t->name_length == 1 && t->name[0] == 'p')) {" ") {"
+plant_lit end-tag-br-does-not-break-out "$fails" html_tree_foreign.c '(t->name_length == 2 && memcmp(t->name, "br", 2) == 0)' '0'
+plant_lit breakout-pops-past-integration-points "$fails" html_tree_foreign.c '      && !(HT_STACK_TOP(tb).flags & (F_MTIP | F_HIP))) {' '      && 1) {'
+plant_lit breakout-leaves-foreign-elements-open "$fails" html_tree_foreign.c '    ht_stack_pop(tb);\n  }\n  if (tb->status != GTEXT_HTML_TREE_OK) {\n    return R_FAIL;\n  }\n  return ht_html_mode_token(tb, tk);' '    break;\n  }\n  if (tb->status != GTEXT_HTML_TREE_OK) {\n    return R_FAIL;\n  }\n  return ht_html_mode_token(tb, tk);'
+plant_lit foreign-end-tag-pops-only-the-current-node "$fails" html_tree_foreign.c '    while (tb->n > j) {\n      ht_stack_pop(tb);\n    }' '    ht_stack_pop(tb);'
+plant_lit foreign-end-tag-walks-past-html-elements "$fails" html_tree_foreign.c 'if (j != NONE_IDX && j > HT_STACK_TOP(tb).fl_html) {' 'if (j != NONE_IDX) {'
+plant_lit foreign-end-tag-never-reaches-the-html-rules "$fails" html_tree_foreign.c '  /* 7. Otherwise, process the token according to the rules of the current insertion mode. */\n  return ht_html_mode_token(tb, tk);' '  return R_DONE;'
+plant_lit foreign-end-tag-looks-only-in-svg "$fails" html_tree_foreign.c 'for (unsigned ns = NS_SVG; ns <= NS_MATH; ns++) {' 'for (unsigned ns = NS_SVG; ns <= NS_SVG; ns++) {'
+plant_lit svg-script-end-tag-not-popped "$fails" html_tree_foreign.c '          ht_stack_pop(tb);\n          return R_DONE;' '          return R_DONE;'
+plant_lit foreign-self-closing-not-popped "$fails" html_tree_foreign.c '      if (tk->self_closing) {\n        /* "If the token' '      if (0) {\n        /* "If the token'
+plant_lit body-svg-self-closing-not-popped "$fails" html_tree_foreign.c '  if (tk->self_closing) {\n    HT_CK(ht_pop_current_acknowledge(tb, tk));\n  }\n  return R_DONE;\n}' '  return R_DONE;\n}'
+plant_lit body-svg-start-does-not-reconstruct "$fails" html_tree_foreign.c 'int ht_body_start_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, unsigned ns) {\n  HT_CK(ht_fmt_reconstruct(tb));' 'int ht_body_start_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, unsigned ns) {'
+plant_lit mathml-text-integration-points-are-foreign "$fails" html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_MTIP;' 'return F_SPECIAL | F_SC_GEN;'
+plant_lit svg-integration-points-are-foreign "$fails" html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_HIP;' 'return F_SPECIAL | F_SC_GEN;'
+plant_lit integration-points-are-not-scope-boundaries "$fails" html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_HIP;' 'return F_SPECIAL | F_HIP;'
+plant_lit integration-points-are-not-special "$fails" html_tree_foreign.c 'return F_SPECIAL | F_SC_GEN | F_MTIP;' 'return F_SC_GEN | F_MTIP;'
+plant_lit mglyph-is-html-in-a-text-integration-point "$fails" html_tree_foreign.c '    if (start && !(tk->tok->name_length == 6 && memcmp(tk->tok->name, "mglyph", 6) == 0)' '    if (start && !(0)'
+plant_lit malignmark-is-html-in-a-text-integration-point "$fails" html_tree_foreign.c '        && !(tk->tok->name_length == 10 && memcmp(tk->tok->name, "malignmark", 10) == 0)) {' '        && !(0)) {'
+plant_lit svg-in-annotation-xml-is-foreign "$fails" html_tree_foreign.c 'if ((flags & F_ANNOT) && start && tk->id == T_SVG) {' 'if (0) {'
+plant_lit characters-in-html-integration-points-are-foreign "$fails" html_tree_foreign.c 'if ((flags & F_HIP) && (start || character)) {' 'if ((flags & F_HIP) && start) {'
+plant_lit start-tags-in-html-integration-points-are-foreign "$fails" html_tree_foreign.c 'if ((flags & F_HIP) && (start || character)) {' 'if ((flags & F_HIP) && character) {'
+plant_lit characters-in-text-integration-points-are-foreign "$fails" html_tree_foreign.c '  if (flags & F_MTIP) {\n    if (character) {\n      return false;\n    }' '  if (flags & F_MTIP) {'
+plant_lit end-of-file-handled-by-foreign-rules "$fails" html_tree_foreign.c '  if (!character && tk->type == TK_EOF) {\n    return false;\n  }' ''
+plant_lit nul-in-foreign-content-dropped "$fails" html_tree_foreign.c 'if (!ht_insert_text(tb, "\xEF\xBF\xBD", 3)) {' 'if (0) {'
+plant_lit foreign-characters-keep-frameset-ok "$fails" html_tree_foreign.c '        if (!is_ws_char(p[i])) {' '        if (0) {'
+plant_lit cdata-never-allowed "$fails" html_tree_foreign.c 'return tb && ht_adjusted_ns(tb) != NS_HTML;' 'return false;'
+plant_lit cdata-always-allowed "$fails" html_tree_foreign.c 'return tb && ht_adjusted_ns(tb) != NS_HTML;' 'return true;'
+plant_lit foreign-elements-take-the-html-namespace-name-slots "$fails" html_tree_foreign.c '      const unsigned ns = ht_adjusted_ns(tb);\n      uint32_t id = 0;' '      const unsigned ns = NS_SVG;\n      uint32_t id = 0;'
+plant_lit adjusted-current-node-ignores-the-fragment-context "$fails" html_tree_foreign.c '  if (tb->frag && tb->n == 1) {\n    *ns = tb->ctx_ns;' '  if (0) {\n    *ns = tb->ctx_ns;'
+plant_lit dispatcher-ignores-foreign-characters "$fails" html_tree_modes.c '    if (ht_use_foreign_rules(tb, NULL, true)) {' '    if (0) {'
+# Fragments.
+plant_lit fragment-tokenizer-state-never-set "$fails" html_tree_fragment.c '    if (state != GTEXT_HTML_STATE_DATA) {' '    if (0) {'
+plant_lit fragment-title-is-not-rcdata "$fails" html_tree_fragment.c 'if (tb->ctx_id == T_TITLE || tb->ctx_id == T_TEXTAREA) {' 'if (tb->ctx_id == T_TEXTAREA) {'
+plant_lit fragment-script-is-not-script-data "$fails" html_tree_fragment.c 'else if (tb->ctx_id == T_SCRIPT) {' 'else if (0) {'
+plant_lit fragment-plaintext-is-not-plaintext "$fails" html_tree_fragment.c 'else if (tb->ctx_id == T_PLAINTEXT) {' 'else if (0) {'
+plant_lit fragment-noscript-ignores-scripting "$fails" html_tree_fragment.c 'state = c->scripting ? GTEXT_HTML_STATE_RAWTEXT : GTEXT_HTML_STATE_DATA;' 'state = GTEXT_HTML_STATE_DATA;'
+plant_lit fragment-mode-not-reset-from-the-context "$fails" html_tree_fragment.c '  tb->mode = ht_tree_reset_mode(tb);\n  /* Step 21. */' '  tb->mode = M_IN_BODY;\n  /* Step 21. */'
+plant_lit fragment-reset-ignores-the-context-element "$fails" html_tree_modes.c '        id = tb->ctx_id;' '        id = tb->stack[0].id;'
+plant_lit fragment-result-not-moved "$fails" html_tree_fragment.c '  markup_move_children_unchecked(tb->stack[0].node, tb->frag_node);' '  (void)0;'
+plant_lit fragment-select-context-allows-select "$fails" html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */' '      if (0) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */'
+plant_lit fragment-select-context-allows-input "$fails" html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case). */' '      if (0) {\n        /* The fragment context element is a select element (fragment case). */'
+plant_lit fragment-template-context-is-not-template-contents "$fails" html_tree_modes.c '  return template_on_stack(tb) || tb->ctx_template;' '  return template_on_stack(tb);'
+plant_lit fragment-end-html-after-body-not-ignored "$fails" html_tree_modes.c '        if (tb->frag) {\n          /* The fragment context element is non-null' '        if (0) {\n          /* The fragment context element is non-null'
+plant_lit fragment-frameset-end-switches-mode "$fails" html_tree_modes.c 'if (!tb->frag && !is_current(tb, T_FRAMESET)) {' 'if (!is_current(tb, T_FRAMESET)) {'
+plant_lit fragment-integration-point-context-is-foreign "$fails" html_tree_fragment.c '    if (name_is(c, "foreignObject") || name_is(c, "desc") || name_is(c, "title")) {' '    if (0) {'
+plant_lit fragment-text-integration-point-context-is-foreign "$fails" html_tree_fragment.c '    if (name_is(c, "mi") || name_is(c, "mo") || name_is(c, "mn") || name_is(c, "ms")\n        || name_is(c, "mtext")) {' '    if (0) {'
+plant_lit fragment-context-namespace-ignored "$fails" html_tree_fragment.c '  tb->ctx_ns = (uint8_t)c->ns;' '  tb->ctx_ns = NS_HTML;'
 # A crash is a failure, not a missing answer.
 plant crash "$fails" html_tree_modes.c 'static bool is_ws(char c) {' 'static bool is_ws(char c) { if (c == 0x61) { *(volatile int *)0 = 0; }'
+if [ -n "$only" ] && [ "$ran" = 0 ]; then
+	echo "no control is named $only" >&2
+	exit 1
+fi

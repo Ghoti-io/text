@@ -4,7 +4,7 @@
     html_tree_diff.py <tree-runner> [--count N] [--seed S] [--plant KIND] [--propose]
                                     [--no-corpus] [--explain N]
 
-The tree builder (src/html/html_tree*.c, stages 3c and 3d) is scored on the standard's own vectors by
+The tree builder (src/html/html_tree*.c, stages 3c, 3d and 3e) is scored on the standard's own vectors by
 `make conformance-html-tree`. This asks the same question of a population nobody wrote: documents
 generated from the vocabulary of the constructs the stage implements, mutated documents, and the
 inputs of the vectors, each put to **html5lib 1.1 and parse5 8.0.1** (the pinned image,
@@ -28,17 +28,35 @@ The population, each document tagged with where it came from:
          (alone, around table parts, nested, in tables, tables in them), and select, option and
          optgroup
   mut    those, with tokens deleted, duplicated, swapped, inserted, or the document cut
+  fgn    since 3e: documents with svg and math embedded in HTML at awkward places (in formatting
+         elements, paragraphs, tables and cells, templates, lists, selects, forms), holding every
+         SVG name whose case is restored, attributes that need adjusting (the SVG table, the MathML
+         one, xlink, xml and xmlns), the integration points (foreignObject, desc, title; mi, mo, mn,
+         ms, mtext; annotation-xml with each kind of encoding) with HTML content and foreign content
+         again inside, the breakout tags and `font` with and without color, face and size, the end
+         tags `</p>` and `</br>`, end tags that match, do not match, differ in case, CDATA sections
+         and scripts
+  fgm    those, mutated
+  frg    fragments: random contexts (HTML ones, SVG and MathML ones) and token soup, table soup or
+         foreign content for the input
+  wptf   the fragment vectors, in their contexts
 
-**The generator avoids the constructs of later stages** (svg, math) and processing instructions,
-which neither reference has: a document that reaches one is counted as "stopped", and the run fails
-if that is more than a small share of the generated ones, so that the generator cannot drift out of
-the implemented constructs unnoticed. `select` is asked: the references parse it by the rules the
+An SVG or MathML fragment context can only be given to parse5 (html5lib's fragment API takes an HTML
+element name), so those documents have one reference: html5lib must say it cannot, and a divergence
+from parse5 is counted as uncorroborated.
+
+**The generator avoids processing instructions**, which neither reference has: a document that
+reaches a limit is counted as "stopped", and the run fails if that is more than a small share of the
+generated ones, so that the generator cannot drift out of the implemented constructs unnoticed. `select` is asked: the references parse it by the rules the
 standard has replaced, and a divergence in a document with one is explained (verified by removal)
 like any other element they read by older rules.
 
 **What fails the run.** A document on which this library's tree differs from a reference's is a
 divergence, and its *kind* is the pair (reference, signature), the signature being why: the
-elements the reference reads by older rules (verified: removing them makes the two agree), or, for
+elements the reference reads by older rules (verified: removing them makes the two agree), the
+transformations that stand for a reference limit in foreign content (`@endtags`, `@cdata`, `@context`,
+`@noscript`, `@selectctx`: each keeps everything else of the document in the question; see the list's
+header), or, for
 html5lib alone with parse5 agreeing with this library, its older adoption agency rules. Every kind is a line of tools/oracle/html_tree_divergences.txt with a count and
 a reason (a reference older than the standard, or the standard decides), or the run fails on
 
@@ -80,7 +98,7 @@ EXTRA = os.path.join(ROOT, "tools", "conformance", "html_tree_extra.dat")
 WPT = os.path.join(ROOT, "third_party", "html", "wpt", "html", "syntax", "parsing", "resources")
 EXCEPTIONS = os.path.join(ROOT, "tools", "conformance", "HTML_TREE_EXCEPTIONS")
 DEFAULT_COUNT, DEFAULT_SEED = 6000, 1
-MIN_DOCUMENTS = 8000
+MIN_DOCUMENTS = 17000
 PLANTS = {
     "ours-extra-line": "one of our trees gets a line it should not have",
     "ours-lost-line": "one of our trees loses a line",
@@ -120,6 +138,52 @@ COMMENTS = ["<!-- c -->", "<!---->", "<!--a-->"]
 DOCTYPES = ["<!DOCTYPE html>", "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\">",
             "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://x\">", "<!doctype HTML>",
             "<!DOCTYPE>", "<!DOCTYPE foo>"]
+
+# ---- foreign content (stage 3e) ----
+# The SVG element names whose case the standard restores (the 37 of the "any other start tag" rule), as the
+# tokenizer would lower them; the rest are ordinary SVG names, a few of them also HTML names.
+SVG_ADJUSTED = ["altglyph", "altglyphdef", "altglyphitem", "animatecolor", "animatemotion", "animatetransform",
+                "clippath", "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix",
+                "fediffuselighting", "fedisplacementmap", "fedistantlight", "fedropshadow", "feflood", "fefunca",
+                "fefuncb", "fefuncg", "fefuncr", "fegaussianblur", "feimage", "femerge", "femergenode",
+                "femorphology", "feoffset", "fepointlight", "fespecularlighting", "fespotlight", "fetile",
+                "feturbulence", "foreignobject", "glyphref", "lineargradient", "radialgradient", "textpath"]
+SVG_PLAIN = ["g", "path", "rect", "circle", "text", "tspan", "use", "defs", "symbol", "a", "style", "script", "metadata",
+             "stop", "mask", "filter", "line", "polygon", "image", "switch", "marker", "pattern", "view", "set",
+             "animate", "desc", "title", "foo", "x-y", "td", "tr", "table", "button", "select", "option", "form",
+             "input", "textarea", "caption", "template", "section", "main", "nav", "details", "dialog", "summary",
+             "font", "head", "frame", "col", "tbody"]
+SVG_HTML_IP = ["foreignobject", "desc", "title"]
+SVG_ATTRS = ["viewbox", "viewBox", "preserveaspectratio", "attributename", "attributetype", "basefrequency",
+             "clippathunits", "gradientunits", "gradienttransform", "markerheight", "markerwidth", "maskunits",
+             "patterncontentunits", "pathlength", "refx", "refy", "repeatcount", "startoffset", "stddeviation",
+             "targetx", "textlength", "zoomandpan", "xchannelselector", "d", "fill", "class", "id", "style",
+             "x", "width", "xlink:href", "xlink:title", "xlink:type", "xlink:role", "xlink:show", "xlink:actuate",
+             "xlink:arcrole", "xml:lang", "xml:space", "xmlns", "xmlns:xlink", "xlink:foo", "xml:base", "xmlns:x",
+             "definitionurl", "href", "lang", "systemlanguage", "tablevalues"]
+MATH_TAGS = ["mi", "mo", "mn", "ms", "mtext", "mrow", "mfrac", "msup", "msub", "mglyph", "malignmark",
+             "annotation-xml", "semantics", "mstyle", "mfenced", "mspace", "mtable", "mtr", "mtd", "annotation",
+             "g", "clippath", "foreignobject", "desc", "title", "svg", "td", "tr", "table", "p", "div", "b"]
+MATH_TEXT_IP = ["mi", "mo", "mn", "ms", "mtext"]
+MATH_ATTRS = ["definitionurl", "definitionURL", "xlink:href", "xml:lang", "xmlns", "xmlns:xlink", "display", "class",
+              "id", "mathvariant", "viewbox", "href", "encoding"]
+ENCODINGS = ["text/html", "TEXT/HTML", "application/xhtml+xml", "Application/XHTML+XML", "text/plain", "", "text/html ",
+             "application/xml", "xhtml", "image/svg+xml"]
+BREAKOUT = ["b", "big", "blockquote", "body", "br", "center", "code", "dd", "div", "dl", "dt", "em", "embed", "h1", "h2",
+            "h3", "h4", "h5", "h6", "head", "hr", "i", "img", "li", "listing", "menu", "meta", "nobr", "ol", "p", "pre",
+            "ruby", "s", "small", "span", "strong", "strike", "sub", "sup", "table", "tt", "u", "ul", "var"]
+BREAKOUT_FONT = ["font color=r", "font face=x", "font size=3", "font COLOR", "font", "font id=a class=b"]
+FOREIGN_TEXTS = ["x", "y z", " ", "\n", "a&amp;b", "&lt;", "t\tu", "&#65;", "q"]
+CDATAS = ["<![CDATA[x]]>", "<![CDATA[a b]]>", "<![CDATA[]]>", "<![CDATA[x]]]]>"]
+CONTEXTS_HTML = ["div", "td", "th", "tr", "tbody", "thead", "tfoot", "caption", "colgroup", "table", "template", "select",
+                 "body", "html", "head", "frameset", "title", "textarea", "style", "script", "plaintext", "xmp",
+                 "iframe", "noembed", "noframes", "noscript", "p", "li", "form", "span", "b", "a", "option", "optgroup",
+                 "button", "dl", "h1", "ruby", "nobr", "foo"]
+CONTEXTS_SVG = ["svg svg", "svg g", "svg path", "svg foreignObject", "svg desc", "svg title", "svg text", "svg td",
+                "svg template", "svg select", "svg script"]
+CONTEXTS_MATH = ["math math", "math mi", "math mo", "math mn", "math ms", "math mtext", "math annotation-xml",
+                 "math mrow", "math mglyph", "math td", "math table", "math select"]
+
 ALL_NAMES = BLOCKS + HEADINGS + LISTS + FORMATTING + INLINE + MARKERS + RAW + HEADISH + RUBY + FORMS + UNKNOWN
 # Inputs the references cannot judge: processing instructions (neither has the states). The vectors
 # that hold them are the conformance gate's. (`select` was one until 3d: the references parse it by the
@@ -395,6 +459,178 @@ class Gen:
         return head + body
 
 
+    # ---- foreign content ------------------------------------------------------------------------
+
+    def fattrs(self, pool, k=2):
+        """Zero to k attributes from the pool, with a value."""
+        out = []
+        for _ in range(self.r.randint(0, k)):
+            name = self.pick(pool)
+            if any(a.split("=")[0] == name for a in out):
+                continue
+            out.append("%s=%s" % (name, self.pick(["1", "a", "\"x y\"", "'q'", "u"])) if self.r.random() < 0.95 else name)
+        return (" " + " ".join(out)) if out else ""
+
+    def fname(self, ns):
+        pool = SVG_ADJUSTED + SVG_PLAIN if ns == "svg" else MATH_TAGS
+        name = self.pick(pool + (SVG_ADJUSTED[:8] if ns == "svg" else []))
+        # The input's case does not matter to the tokenizer, but a case variant makes the point.
+        r = self.r.random()
+        return name.upper() if r < 0.05 else name
+
+    def annotation(self):
+        enc = self.pick(ENCODINGS)
+        return "<annotation-xml%s>" % ("" if self.r.random() < 0.2 else " encoding=\"%s\"" % enc)
+
+    def html_in_ip(self, depth):
+        """What goes into an HTML integration point: ordinary content, and foreign content again."""
+        out = []
+        for _ in range(self.r.randint(0, 3)):
+            r = self.r.random()
+            if r < 0.25:
+                out.append(self.pick(TEXTS))
+            elif r < 0.45:
+                name = self.pick(BLOCKS + HEADINGS + LISTS + FORMATTING + INLINE)
+                out.append(self.start(name) + self.pick(TEXTS) + (self.end(name) if self.r.random() < 0.6 else ""))
+            elif r < 0.60 and depth < 4:
+                out.append(self.foreign(depth + 1))
+            elif r < 0.68 and depth < 3:
+                out.append(self.table(2))
+            elif r < 0.74:
+                out.append(self.pick(CDATAS))
+            elif r < 0.82:
+                out.append(self.start(self.pick(UNKNOWN + SVG_PLAIN[:12])))
+            elif r < 0.90:
+                out.append(self.end(self.pick(SVG_PLAIN + MATH_TAGS + BLOCKS)))
+            else:
+                out.append(self.pick(COMMENTS))
+        return "".join(out)
+
+    def foreign_children(self, ns, depth, ip):
+        out = []
+        for _ in range(self.r.randint(0, 4)):
+            r = self.r.random()
+            if r < 0.14:
+                out.append(self.pick(FOREIGN_TEXTS))
+            elif r < 0.20:
+                out.append(self.pick(CDATAS))
+            elif r < 0.24:
+                out.append(self.pick(COMMENTS))
+            elif r < 0.42 and depth < 5:
+                out.append(self.foreign_element(ns, depth + 1))
+            elif r < 0.48:
+                out.append("<%s>" % self.pick(BREAKOUT + BREAKOUT_FONT))
+            elif r < 0.52:
+                out.append("</%s>" % self.pick(["p", "br", "p", "br", "div", "b", "span"]))
+            elif r < 0.62:
+                out.append(self.end(self.fname(ns) if self.r.random() < 0.6 else self.pick(SVG_PLAIN + MATH_TAGS)))
+            elif r < 0.70 and depth < 5:
+                out.append(self.foreign(depth + 1))
+            elif r < 0.78:
+                out.append(self.start(self.pick(FORMATTING)) + self.pick(FOREIGN_TEXTS))
+            elif r < 0.84:
+                out.append(self.end(self.pick(FORMATTING)))
+            elif r < 0.88:
+                out.append(self.start(self.pick(TABLE_PARTS)))
+            elif r < 0.91:
+                out.append("<script>%s</script>" % self.pick(FOREIGN_TEXTS))
+            else:
+                out.append(self.pick(TEXTS))
+        return "".join(out)
+
+    def foreign_element(self, ns, depth):
+        name = self.fname(ns)
+        low = name.lower()
+        if ns == "math" and low == "annotation-xml":
+            tag = self.annotation()
+        else:
+            tag = "<%s%s" % (name, self.fattrs(SVG_ATTRS if ns == "svg" else MATH_ATTRS))
+            tag += ("/>" if self.r.random() < 0.15 else ">")
+        if tag.endswith("/>"):
+            return tag
+        inner = ""
+        if (ns == "svg" and low in SVG_HTML_IP) or (ns == "math" and low in MATH_TEXT_IP + ["annotation-xml"]):
+            inner = self.html_in_ip(depth) if self.r.random() < 0.75 else self.foreign_children(ns, depth, True)
+        else:
+            inner = self.foreign_children(ns, depth, False)
+        close = self.r.random()
+        if close < 0.6:
+            return tag + inner + "</%s>" % (name.lower() if self.r.random() < 0.8 else name)
+        if close < 0.8:
+            return tag + inner
+        return tag + inner + "</%s>" % self.fname(ns)
+
+    def foreign(self, depth=0):
+        """An svg or math element with content."""
+        ns = "svg" if self.r.random() < 0.6 else "math"
+        tag = "<%s%s>" % (ns, self.fattrs(SVG_ATTRS if ns == "svg" else MATH_ATTRS, 3))
+        if self.r.random() < 0.06:
+            return tag[:-1] + "/>"
+        out = tag + self.foreign_children(ns, depth, False)
+        r = self.r.random()
+        if r < 0.65:
+            out += "</%s>" % ns
+        elif r < 0.75:
+            out += "</%s>" % ("math" if ns == "svg" else "svg")
+        return out
+
+    def foreign_document(self):
+        """A document in which svg and math are embedded in HTML at awkward places."""
+        r = self.r.random()
+        head = self.pick(DOCTYPES) if self.r.random() < 0.3 else ""
+        parts = []
+        for _ in range(self.r.randint(1, 4)):
+            r = self.r.random()
+            f = self.foreign()
+            if r < 0.25:
+                parts.append(f)
+            elif r < 0.37:
+                name = self.pick(FORMATTING)
+                parts.append(self.start(name) + f + (self.end(name) if self.r.random() < 0.6 else "") + self.pick(TEXTS))
+            elif r < 0.47:
+                parts.append(self.start(self.pick(BLOCKS + ["p"])) + self.pick(TEXTS) + f + self.pick(["", "</p>", "</div>"]))
+            elif r < 0.60:
+                parts.append(self.start("table") + (self.start("tr") + self.start("td") if self.r.random() < 0.6 else "")
+                             + f + self.pick(["", "</td>", "</table>", "x"]))
+            elif r < 0.68:
+                parts.append(self.start("template") + f + self.maybe(self.end("template"), 0.6))
+            elif r < 0.74:
+                parts.append(self.start(self.pick(["ul", "ol", "dl"])) + self.start(self.pick(["li", "dd", "dt"])) + f
+                             + self.start(self.pick(["li", "dd", "dt"])))
+            elif r < 0.80:
+                parts.append(self.start("select") + self.start("option") + f + self.maybe(self.end("select"), 0.5))
+            elif r < 0.85:
+                parts.append(self.start("form") + f + self.start("form") + self.maybe(self.end("form"), 0.5))
+            elif r < 0.90:
+                parts.append(self.pick(["<head>", "<frameset>", "<body>", "<title>t</title>", ""]) + f)
+            elif r < 0.95:
+                parts.append(self.pick(TEXTS) + f + self.token())
+            else:
+                parts.append(self.table() if False else self.table(1) + f)
+        return head + "".join(parts) + ("".join(self.token() for _ in range(self.r.randint(0, 4))) if self.r.random() < 0.4 else "")
+
+    def context(self):
+        r = self.r.random()
+        if r < 0.55:
+            return self.pick(CONTEXTS_HTML)
+        if r < 0.80:
+            return self.pick(CONTEXTS_SVG)
+        return self.pick(CONTEXTS_MATH)
+
+    def fragment_input(self, ctx):
+        """The input of a fragment: token soup, table stuff or foreign content, to suit the context."""
+        r = self.r.random()
+        if r < 0.30:
+            return "".join(self.token() for _ in range(self.r.randint(1, 12)))
+        if r < 0.50:
+            return "".join(self.table_token() for _ in range(self.r.randint(1, 10)))
+        if r < 0.58:
+            return self.tabular()
+        if r < 0.90:
+            return "".join(self.foreign() if self.r.random() < 0.6 else self.token() for _ in range(self.r.randint(1, 4)))
+        return self.nested(0)
+
+
 TOKEN_RE = re.compile(r"<[^>]*>|[^<]+|<")
 
 
@@ -426,12 +662,16 @@ def hexs(s):
 
 
 def ours_batch(runner, items):
-    """[(status, notyet, dump)] for each (html, scripting)."""
+    """[(status, dump, invariants)] for each (html, scripting) or (html, scripting, context): a
+    context is the fragment parsing algorithm's (`td`, `svg path`, `math mi`)."""
     answers = []
     step = 400
     for lo in range(0, len(items), step):
         part = items[lo:lo + step]
-        reqs = ["whole %d %s" % (1 if sc else 0, hexs(h)) for h, sc in part]
+        # A context that is a form element has a form ancestor (itself): the caller that has the element says so.
+        reqs = ["whole %d %s%s%s" % (1 if it[1] else 0, hexs(it[0]),
+                                    (" ctx:" + hexs(it[2])) if len(it) > 2 and it[2] else "",
+                                    " form" if len(it) > 2 and it[2] == "form" else "") for it in part]
         got, _ = suite.run_batch(runner, reqs)
         if got is None:
             # isolate a crash
@@ -441,7 +681,7 @@ def ours_batch(runner, items):
                 got.append(one[0] if one else ["STATUS CRASH", "END CRASH"])
         for lines in got:
             a = suite.parse_answer(lines)
-            answers.append((a["status"], a["notyet"], a["dump"], a["inv"]))
+            answers.append((a["status"], a["dump"], a["inv"]))
     return answers
 
 
@@ -531,8 +771,17 @@ NAME_RE = re.compile(r"<([A-Za-z][A-Za-z0-9$-]*)")
 # (so the claim is checked on every run, and goes stale if the reference is fixed).
 KNOWN_OLD = {
     "html5lib": ["search", "summary", "dialog", "isindex", "ruby", "rb", "rt", "rp", "rtc", "main", "hgroup",
-                 "figcaption", "command", "menuitem", "menu", "frameset", "select", "template"],
-    "parse5": ["search", "select", "template", "/tbody", "/thead", "/tfoot", "form"],
+                 "figcaption", "command", "menuitem", "menu", "frameset", "select", "template",
+                 # Stage 3e: the foreign elements the standard makes special and html5lib 1.1 does not
+                 # (it has foreignObject only), `</p>` and `</br>` in foreign content (it keeps them inside), the
+                 # element the SVG name table gained, and the two reference limits below.
+                 "mi", "mo", "mn", "ms", "mtext", "annotation-xml", "desc", "title", "/p", "/br", "fedropshadow",
+                 "@cdata", "@noscript", "@endtags", "@selectctx", "@resetnames"],
+    "parse5": ["search", "select", "template", "/tbody", "/thead", "/tfoot", "form", "fedropshadow",
+               # A CDATA section inside an integration point is a comment in parse5 (the standard has the
+               # adjusted current node decide); a foreign fragment context named like an HTML element is read as
+               # that element; the noscript context ignores the scripting flag.
+               "@cdata", "@context", "@noscript", "@endtags", "@selectctx", "@rootend", "@resetnames"],
 }
 KNOWN_OLD["both"] = KNOWN_OLD["parse5"]
 KNOWN_OLD["three-way"] = KNOWN_OLD["parse5"]
@@ -541,10 +790,77 @@ KNOWN_OLD["three-way"] = KNOWN_OLD["parse5"]
 END_TAG_RE = re.compile(r"</([A-Za-z][A-Za-z0-9$-]*)")
 
 
-def candidates(who, html):
+# The HTML element names that parse5 reads a foreign fragment context as (it takes the context's local name
+# without its namespace): not the names of the integration points, which it also gets right by name.
+CONTEXT_NAMES = {"select", "table", "tr", "td", "th", "tbody", "thead", "tfoot", "caption", "colgroup", "template",
+                 "html", "head", "body", "frameset", "textarea", "style", "script", "plaintext", "xmp", "iframe",
+                 "noembed", "noframes", "noscript", "frame", "col", "option", "optgroup", "p", "li", "form"}
+CDATA_RE = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.S)
+
+
+def foreign_context(context):
+    return bool(context) and (context.startswith("svg ") or context.startswith("math "))
+
+
+FOREIGN_LINE = re.compile(r"^\|\s*<(?:svg|math) ([^ >]+)>$", re.M)
+
+
+FOREIGN_SPECIAL = ("mi", "mo", "mn", "ms", "mtext", "annotation-xml", "foreignobject", "desc", "title")
+
+
+def foreign_end_tags(html, ours):
+    """The end tags of the document that name an element of the SVG or MathML namespace in this library's tree,
+    and the end tags of the nine foreign special elements the document has start tags for (a tree that a frameset
+    replaced no longer shows the elements that were there)."""
+    names = {n.lower() for n in FOREIGN_LINE.findall(ours or "")}
+    names |= {n for n in FOREIGN_SPECIAL if re.search(r"<%s[\s/>]" % re.escape(n), html, re.I)}
+    return sorted(n for n in names if re.search(r"</%s[\s/>]" % re.escape(n), html, re.I))
+
+
+ROOT_END_NAMES = ("a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u", "form")
+ROOT_END_RE = re.compile(r"</(?:%s)(?=[\s/>])[^>]*>?" % "|".join(ROOT_END_NAMES), re.I)
+
+
+RESET_NAMES = ("table", "tbody", "thead", "tfoot", "tr", "td", "th", "caption", "colgroup", "template", "head", "body",
+               "frameset", "html")
+
+
+def reset_names(html, ours):
+    """The names of elements of foreign content in this library's tree that "reset the insertion mode
+    appropriately" would read as the HTML element of the same name if it looked at names alone (both references
+    do): a MathML or SVG `tr` on the stack puts them "in row"."""
+    names = {n.lower() for n in FOREIGN_LINE.findall(ours or "")}
+    return sorted(n for n in names if n in RESET_NAMES)
+
+
+def applies(name, html, context, scripting, ours=None):
+    """Does the explanation `name` (a pseudo-name starting with @) apply to this document?"""
+    if name == "@resetnames":
+        return bool(reset_names(html, ours))
+    if name == "@rootend":
+        # A fragment with foreign content (in the document or as the context) and an end tag whose HTML handling
+        # changes the builder's state (the list of active formatting elements, the form element pointer).
+        return bool(context) and ("<svg" in html.lower() or "<math" in html.lower() or foreign_context(context)) \
+            and bool(ROOT_END_RE.search(html))
+    if name == "@endtags":
+        return bool(foreign_end_tags(html, ours))
+    if name == "@selectctx":
+        return context == "select"
+    if name == "@cdata":
+        return "<![CDATA[" in html
+    if name == "@context":
+        return foreign_context(context) and context.split(" ", 1)[1] in CONTEXT_NAMES
+    if name == "@noscript":
+        return context == "noscript" and not scripting
+    return False
+
+
+def candidates(who, html, context=None, scripting=False, ours=None):
     present = set(n.lower() for n in NAME_RE.findall(html))
     ends = set("/" + n.lower() for n in END_TAG_RE.findall(html))
-    return [n for n in KNOWN_OLD[who] if n in present or n in ends]
+    return [n for n in KNOWN_OLD[who]
+            if (n.startswith("@") and applies(n, html, context, scripting, ours))
+            or (not n.startswith("@") and (n in present or n in ends))]
 
 
 # A reference's known deviations from the standard, each as a document whose tree was worked out by
@@ -581,6 +897,50 @@ WITNESSES = [
     ("both", "<select><div>x</select>",
      "| <html>\n|   <head>\n|   <body>\n|     <select>\n|       <div>\n|         \"x\"",
      "an element in a select is kept (the standard has no \"in select\" mode; the references drop the tag)"),
+    # Stage 3e. An entry may name a fragment context and the scripting flag it is asked with (6 fields).
+    ("parse5", "<math><mn><u>x</mn>y",
+     "| <html>\n|   <head>\n|   <body>\n|     <math math>\n|       <math mn>\n|         <u>\n|           \"xy\"",
+     "an end tag mn in the HTML rules closes the MathML mn, though the standard asks for an HTML element of that name "
+     "and mn is special (parse5 finds the element by its name alone)"),
+    ("html5lib", "<span><math><mi>x</span>y",
+     "| <html>\n|   <head>\n|   <body>\n|     <span>\n|       <math math>\n|         <math mi>\n|           \"xy\"",
+     "the MathML text integration points and annotation-xml, and SVG desc and title, are special in the standard "
+     "(\"any other end tag\" stops at them); html5lib 1.1 has foreignObject only"),
+    ("parse5", "<math><mi><![CDATA[x]]>",
+     "| <html>\n|   <head>\n|   <body>\n|     <math math>\n|       <math mi>\n|         \"x\"",
+     "a CDATA section is text when the adjusted current node is not in the HTML namespace, an integration point included "
+     "(parse5 makes a comment)"),
+    ("both", "<svg><fedropshadow/>",
+     "| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       <svg feDropShadow>",
+     "feDropShadow is in the standard's table of SVG names whose case is restored (both references lack it)"),
+    ("html5lib", "<svg></p>x",
+     "| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     <p>\n|     \"x\"",
+     "an end tag p in foreign content breaks out of it (html5lib 1.1 keeps it inside)"),
+    ("html5lib", "<svg></br>x",
+     "| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     <br>\n|     \"x\"",
+     "an end tag br in foreign content breaks out of it (html5lib 1.1 keeps it inside)"),
+    ("both", "<b>x</b>",
+     "| <b>\n|   \"x\"",
+     "the noscript context leaves the tokenizer in the data state when scripting is disabled (both references make "
+     "its content text whatever the flag)", "noscript", False),
+    ("both", "<dt class=a>",
+     "| <dt>\n|   class=\"a\"",
+     "the select context is read by the \"in body\" rules (the standard has no \"in select\" mode); the references "
+     "read the whole fragment by the mode the standard replaced and drop it", "select", False),
+    ("parse5", "<table a></table>",
+     "| <table>\n|   a=\"\"",
+     "a context in the SVG namespace is not an HTML select: parse5 reads its local name without the namespace",
+     "svg select", False),
+    ("parse5", "<math><tr><annotation-xml encoding=text/html><table><table>",
+     "| <html>\n|   <head>\n|   <body>\n|     <math math>\n|       <math tr>\n|         <math annotation-xml>\n"
+     "|           encoding=\"text/html\"\n|           <table>\n|           <table>",
+     "\"reset the insertion mode appropriately\" asks for an HTML tr element: a MathML tr on the stack is not one (parse5 reads "
+     "the name alone, goes \"in row\" after the first table and drops the second)"),
+    ("parse5", "<li><em></li><main></em><strong>",
+     "| <li>\n|   <em>\n| <svg main>\n| <strong>",
+     "in a fragment, an end tag that closes no foreign element is handled by the HTML rules (here the adoption agency drops the "
+     "em that </li> left in the list); parse5's walk down the stack stops before the root element and never hands it over",
+     "svg g", False),
 ]
 
 
@@ -589,19 +949,24 @@ def check_witnesses(runner):
 
     A witness holds when this library gives the hand-worked tree and each named reference **answered** (a
     dump, not an error, a crash or a time-out) with a different one. It is asked with the scripting flag off
-    and on, and must hold both ways."""
-    docs = [w[1] for w in WITNESSES]
+    and on, and must hold both ways, unless the entry fixes the flag (and a context, for a fragment)."""
+    entries = [w + (None, None) if len(w) == 4 else w for w in WITNESSES]
     bad = set()
     for scripting in (False, True):
-        mine = ours_batch(runner, [(d, scripting) for d in docs])
-        theirs = html_ref.ask_all([html_ref.request(d, scripting) for d in docs])
-        for i, (who, doc, tree, why) in enumerate(WITNESSES):
-            status, notyet, dump, inv = mine[i]
+        asked = [(i, w) for i, w in enumerate(entries) if w[5] is None or w[5] == scripting]
+        mine = ours_batch(runner, [(w[1], scripting, w[4]) for _, w in asked])
+        theirs = html_ref.ask_all([html_ref.request(w[1], scripting, w[4]) for _, w in asked])
+        for name in html_ref.REFERENCES:
+            for a in theirs[name]:
+                if "dump" in a:
+                    a["dump"] = html_ref.normalize_dump(a["dump"])
+        for k, (i, (who, doc, tree, why, ctx, _sc)) in enumerate(asked):
+            status, dump, inv = mine[k]
             got = dump[:-1] if dump.endswith("\n") else dump
             if status != "OK" or got != tree:
                 bad.add((i, "%r (scripting %s): this library's tree is not the one worked out by hand" % (doc, scripting)))
             for ref in (html_ref.REFERENCES if who == "both" else (who,)):
-                answer = theirs[ref][i]
+                answer = theirs[ref][k]
                 if "dump" not in answer or not isinstance(answer["dump"], str):
                     bad.add((i, "%r (scripting %s): %s did not answer (%s): a crash or an error is not a deviation" % (
                         doc, scripting, ref, answer.get("error", "no dump"))))
@@ -609,13 +974,24 @@ def check_witnesses(runner):
                     bad.add((i, "%r (scripting %s): %s now gives the standard's tree (%s): the entry is stale" % (
                         doc, scripting, ref, why)))
     failures = sorted(bad)
-    return len(WITNESSES) - len({i for i, _ in failures}), [m for _, m in failures]
+    return len(entries) - len({i for i, _ in failures}), [m for _, m in failures]
 
 
-def without(html, names):
-    """The document with every tag of the named elements removed; a name that starts with `/` is just that
-    element's end tags."""
-    whole = [n for n in names if not n.startswith("/")]
+def without(html, names, scripting=False, context=None, ours=None):
+    """(html, scripting, context) with the named explanations applied: every tag of a named element removed (a
+    name that starts with `/` is just that element's end tags), and for a name starting with `@` the one change
+    it stands for: `@cdata` turns each CDATA section into its text (the generator's sections hold no markup),
+    `@context` renames a foreign fragment context that is named like an HTML element, `@noscript` turns the
+    scripting flag on for the noscript context, `@selectctx` makes a select context a div (the references parse
+    the whole of a select context by the "in select" mode the standard replaced), and `@endtags` deletes the end
+    tags that name an element of foreign content in this library's tree (the references find the element an end
+    tag closes by its name alone, in the HTML rules, where the standard asks for an HTML element), and `@resetnames`
+    renames the elements, named like an HTML table part, that foreign content holds in this library's tree (the
+    references' "reset the insertion mode" reads names without namespaces: a MathML `tr` is "in row"), and `@rootend`
+    deletes the end tags of formatting elements and `form` in a fragment with foreign content (parse5's walk down
+    the stack in foreign content stops before the root element, so an end tag that matches no foreign element is
+    never handed to the HTML rules in a fragment). Each leaves everything else of the document in the question."""
+    whole = [n for n in names if not n.startswith("/") and not n.startswith("@")]
     ends = [n[1:] for n in names if n.startswith("/")]
     if whole:
         pattern = "|".join(re.escape(n) for n in sorted(whole))
@@ -623,7 +999,25 @@ def without(html, names):
     if ends:
         pattern = "|".join(re.escape(n) for n in sorted(ends))
         html = re.sub(r"</(?:%s)(?=[\s/>])[^>]*>?" % pattern, "", html, flags=re.I)
-    return html
+    if "@cdata" in names:
+        html = CDATA_RE.sub(lambda m: m.group(1), html)
+    if "@endtags" in names:
+        gone = foreign_end_tags(html, ours)
+        if gone:
+            html = re.sub(r"</(?:%s)(?=[\s/>])[^>]*>?" % "|".join(re.escape(n) for n in gone), "", html, flags=re.I)
+    if "@selectctx" in names and context == "select":
+        context = "div"
+    if "@rootend" in names:
+        html = ROOT_END_RE.sub("", html)
+    if "@resetnames" in names:
+        gone = reset_names(html, ours)
+        if gone:
+            html = re.sub(r"(</?)(%s)(?=[\s/>])" % "|".join(re.escape(n) for n in gone), r"\1\2-x", html, flags=re.I)
+    if "@context" in names and foreign_context(context):
+        context = context.split(" ", 1)[0] + " zz"
+    if "@noscript" in names and context == "noscript":
+        scripting = True
+    return html, scripting, context
 
 
 def explain_all(runner, divergent):
@@ -640,17 +1034,23 @@ def explain_all(runner, divergent):
     keys = [""] * len(divergent)
     queries = []  # (index of the divergence, key, the document with them removed, scripting)
     for idx, (it, who, theirs, p5) in enumerate(divergent):
-        cand = candidates(who, it["html"])
+        cand = candidates(who, it["html"], it.get("context"), it["scripting"], it["ours"])
         if not cand:
             continue
         for name in cand:
-            queries.append((idx, name, without(it["html"], [name]), it["scripting"]))
+            h, sc, ctx = without(it["html"], [name], it["scripting"], it.get("context"), it["ours"])
+            queries.append((idx, name, h, sc, ctx))
         if len(cand) > 1:
-            queries.append((idx, "multiple", without(it["html"], cand), it["scripting"]))
+            h, sc, ctx = without(it["html"], cand, it["scripting"], it.get("context"), it["ours"])
+            queries.append((idx, "multiple", h, sc, ctx))
     if queries:
-        ours = ours_batch(runner_global, [(q[2], q[3]) for q in queries])
-        answers = html_ref.ask_all([html_ref.request(q[2], q[3]) for q in queries])
-        for (idx, key, v, sc), (status, notyet, dump, inv), a5, p5 in zip(
+        ours = ours_batch(runner_global, [(q[2], q[3], q[4]) for q in queries])
+        answers = html_ref.ask_all([html_ref.request(q[2], q[3], q[4]) for q in queries])
+        for name in html_ref.REFERENCES:
+            for a in answers[name]:
+                if "dump" in a:
+                    a["dump"] = html_ref.normalize_dump(a["dump"])
+        for (idx, key, v, sc, qctx), (status, dump, inv), a5, p5 in zip(
                 queries, ours, answers["html5lib"], answers["parse5"]):
             if keys[idx]:
                 continue
@@ -671,15 +1071,22 @@ def explain_all(runner, divergent):
 # reference agrees** with this library is *uncorroborated*: nothing but the hand-worked witnesses and the pinned
 # vectors stands behind this library there. The number of such documents is gated like the kinds' counts (the
 # `@uncorroborated` line of the list), so a change of behaviour in those constructs cannot pass unseen.
-SUSPECT = ("template", "select", "form", "multiple")
+SUSPECT = ("template", "select", "form", "multiple", "@endtags", "@cdata", "@context", "@selectctx", "@noscript",
+           "fedropshadow", "@rootend")
 
 
 def uncorroborated(kinds):
+    """Documents where nothing but the hand-worked witnesses and the pinned vectors stands behind this library: a
+    divergence of both references in a document whose explanation is one of the SUSPECT ones, and, since stage
+    3e, a divergence of parse5 in a fragment whose context is in the SVG or MathML namespace (html5lib cannot
+    take one, so no second reference exists)."""
     n = 0
     for key, docs in kinds.items():
         who, _, cause = key.partition(":")
         if who in ("both", "three-way") and cause in SUSPECT:
             n += len(docs)
+        elif who == "parse5":
+            n += sum(1 for it, _ in docs if foreign_context(it.get("context")) or it.get("html5lib_crashed"))
     return n
 
 
@@ -731,7 +1138,8 @@ def population(runner, count, seed, corpus):
             for sc in settings:
                 items.append({"id": "wpt:%s" % v["id"], "html": v["data"], "scripting": bool(sc)})
         for v in suite.parse_dat(EXTRA, "extra"):
-            items.append({"id": "extra:%s" % v["id"], "html": v["data"], "scripting": v["scripting"] is True})
+            items.append({"id": "extra:%s" % v["id"], "html": v["data"], "scripting": v["scripting"] is True,
+                          "context": v["context"] if v["fragment"] else None})
     base = len(items)
     for i in range(count):
         h = gen.document()
@@ -742,6 +1150,30 @@ def population(runner, count, seed, corpus):
         h = mutate(rng, src, gen)
         sc = bool(rng.getrandbits(1)) if "noscript" in h else False
         items.append({"id": "mut:%d" % i, "html": h, "scripting": sc})
+    # Stage 3e: documents with svg and math embedded in HTML, mutated ones, and fragments in random contexts.
+    fbase = len(items)
+    for i in range(count // 2):
+        h = gen.foreign_document()
+        sc = bool(rng.getrandbits(1)) if "noscript" in h else False
+        items.append({"id": "fgn:%d" % i, "html": h, "scripting": sc})
+    for i in range(count // 4):
+        h = mutate(rng, items[fbase + rng.randrange(count // 2)]["html"], gen)
+        items.append({"id": "fgm:%d" % i, "html": h, "scripting": False})
+    for i in range(count // 2):
+        ctx = gen.context()
+        h = gen.fragment_input(ctx)
+        sc = bool(rng.getrandbits(1)) if ctx == "noscript" or "noscript" in h else False
+        items.append({"id": "frg:%d" % i, "html": h, "scripting": sc, "context": ctx})
+    if corpus:
+        # The fragment vectors, in their contexts.
+        for v in vectors:
+            if not v["fragment"] or v["id"] in listed or UNASKABLE_RE.search(v["data"]):
+                continue
+            settings = [v["scripting"]] if v["scripting"] is not None else [False]
+            if v["scripting"] is None and ("noscript" in v["data"] or v["context"] == "noscript"):
+                settings = [False, True]
+            for sc in settings:
+                items.append({"id": "wptf:%s" % v["id"], "html": v["data"], "scripting": bool(sc), "context": v["context"]})
     return items
 
 
@@ -783,13 +1215,13 @@ def main(argv):
     hunting = (count, seed) != (DEFAULT_COUNT, DEFAULT_SEED) or not corpus
 
     items = population(runner, count, seed, corpus)
-    ours = ours_batch(runner, [(it["html"], it["scripting"]) for it in items])
+    ours = ours_batch(runner, [(it["html"], it["scripting"], it.get("context")) for it in items])
     stopped = collections.Counter()
     asked = []
-    for it, (status, notyet, dump, inv) in zip(items, ours):
+    for it, (status, dump, inv) in zip(items, ours):
         src = it["id"].split(":")[0]
-        if status == "E_NOT_YET" or status.startswith("E_LIMIT"):
-            stopped[(src, status if status != "E_NOT_YET" else "not yet: %s" % notyet[0])] += 1
+        if status.startswith("E_LIMIT"):
+            stopped[(src, status)] += 1
             continue
         if status != "OK":
             # A crash, an out-of-memory, an invalid-argument status: HTML parsing never fails for content.
@@ -801,7 +1233,11 @@ def main(argv):
             return 3
         it["ours"] = dump[:-1] if dump.endswith("\n") else dump
         asked.append(it)
-    answers = html_ref.ask_all([html_ref.request(it["html"], it["scripting"]) for it in asked])
+    answers = html_ref.ask_all([html_ref.request(it["html"], it["scripting"], it.get("context")) for it in asked])
+    for name in html_ref.REFERENCES:
+        for a in answers[name]:
+            if "dump" in a:
+                a["dump"] = html_ref.normalize_dump(a["dump"])
 
     if plant == "ours-extra-line" and asked:
         asked[0]["ours"] += "\n| <planted>"
@@ -820,9 +1256,39 @@ def main(argv):
     kinds = collections.defaultdict(list)
     agree_refs = 0
     equal_html5lib = equal_parse5 = equal_both = 0
+    foreign_only = 0
+    html5lib_crashed = 0
     refs_failed = []
     divergent = []  # (item, who, theirs, parse5's)
     for it, a5, p5 in zip(asked, answers["html5lib"], answers["parse5"]):
+        ctx = it.get("context")
+        foreign_ctx = bool(ctx) and (ctx.startswith("svg ") or ctx.startswith("math "))
+        if foreign_ctx:
+            # html5lib takes a fragment context by HTML name only: it must say so (that is the API's limit, and
+            # the check that it still has it); parse5 alone judges these.
+            if "error" not in a5:
+                refs_failed.append((it, "answered a foreign context", p5.get("error")))
+                continue
+            if "dump" not in p5:
+                refs_failed.append((it, a5.get("error"), p5.get("error")))
+                continue
+            foreign_only += 1
+            if it["ours"] == p5["dump"]:
+                equal_parse5 += 1
+            else:
+                divergent.append((it, "parse5", p5["dump"], p5["dump"]))
+            continue
+        if "dump" not in a5 and "dump" in p5 and a5.get("error", "").startswith("AssertionError"):
+            # html5lib 1.1 stops on an assertion in its older template handling for a few documents (a hunt
+            # finds them): that is its crash, not an answer. parse5 alone judges the document, as for a foreign
+            # context, and the divergence is counted with the uncorroborated ones.
+            html5lib_crashed += 1
+            it["html5lib_crashed"] = True
+            if it["ours"] == p5["dump"]:
+                equal_parse5 += 1
+            else:
+                divergent.append((it, "parse5", p5["dump"], p5["dump"]))
+            continue
         if "dump" not in a5 or "dump" not in p5:
             refs_failed.append((it, a5.get("error"), p5.get("error")))
             continue
@@ -847,6 +1313,9 @@ def main(argv):
     n = len(asked)
     print("compared %d documents: ours equals html5lib on %d, parse5 on %d, both on %d; the references equal each other on %d" % (
         n, equal_html5lib, equal_parse5, equal_both, agree_refs))
+    print("fragments in an SVG or MathML context, judged by parse5 alone (html5lib's API cannot take one): %d" % foreign_only)
+    if html5lib_crashed:
+        print("documents on which html5lib 1.1 stopped on an assertion (judged by parse5 alone): %d" % html5lib_crashed)
     print("divergence kinds: %d, documents in them: %d" % (len(kinds), sum(len(v) for v in kinds.values())))
 
     listed = {} if plant == "no-list" else load_list(LIST)
@@ -865,7 +1334,7 @@ def main(argv):
     if explain:
         for k in sorted(kinds):
             for it, theirs in kinds[k][:explain]:
-                print("== %s %s %r" % (k, it["id"], it["html"]))
+                print("== %s %s %s %r" % (k, it["id"], ("ctx=%r" % it["context"]) if it.get("context") else "", it["html"]))
                 print("ours:\n" + it["ours"] + "\ntheirs:\n" + theirs)
         return 0
 
@@ -893,13 +1362,15 @@ def main(argv):
             it, theirs = kinds[k][0]
             sys.stderr.write("  %s  x%d\n    e.g. %s %r\n" % (k, len(kinds[k]), it["id"], it["html"][:160]))
     gone = sorted(k for k in listed if k not in kinds and listed[k][0] != "hunt")
+    if hunting:
+        gone = []  # the list describes the default population: a hunt need not reach every one of its kinds
     if gone:
         failed = True
         sys.stderr.write("\033[0;31m\n### Listed divergences that are gone ###\033[0m\n")
         for k in gone:
             sys.stderr.write("  %s  %s\n" % (k, listed[k][2][:100]))
     unc = uncorroborated(kinds)
-    print("uncorroborated (a template, select or form explanation, and neither reference agrees with this library): %d documents" % unc)
+    print("uncorroborated (neither reference agrees with this library and the explanation could hide a defect of it, or only parse5 could be asked): %d documents" % unc)
     listed_unc = load_uncorroborated(LIST)
     if plant == "uncorroborated" and listed_unc is not None:
         listed_unc += 1

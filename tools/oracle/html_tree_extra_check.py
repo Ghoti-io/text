@@ -7,7 +7,9 @@ tools/conformance/html_tree_extra.dat holds cases whose expected trees are NOT t
 are what html5lib 1.1 and parse5 8.0.1 both answer, so that `make conformance-html-tree` can hold the
 tree builder to them without a container. This asks both references again and fails if either no
 longer gives the expected tree (the pin moved, or a case was edited by hand) or if they no longer
-agree with each other.
+agree with each other. A case with a `#document-fragment` line is asked as a fragment in that
+context. html5lib takes a context by HTML name only, so a case in an SVG or MathML context is
+asked of parse5 alone, and html5lib must say it cannot (that is the check that it still cannot).
 
 `--plant expectation` changes one expected tree and must fail; the controls of run-html-oracle.sh
 require it.
@@ -36,11 +38,22 @@ def main(argv):
     expected = [v["expected"] for v in vectors]
     if plant == "expectation":
         expected[0] += "\n| <planted>"
-    answers = html_ref.ask_all([html_ref.request(v["data"], v["scripting"] is True) for v in vectors])
+    answers = html_ref.ask_all([
+        html_ref.request(v["data"], v["scripting"] is True, v["context"] if v["fragment"] else None)
+        for v in vectors])
+    for name in html_ref.REFERENCES:
+        for a in answers[name]:
+            if "dump" in a:
+                a["dump"] = html_ref.normalize_dump(a["dump"])
     bad = []
     for i, v in enumerate(vectors):
+        foreign = v["fragment"] and (v["context"].startswith("svg ") or v["context"].startswith("math "))
         for name in html_ref.REFERENCES:
             got = answers[name][i]
+            if foreign and name == "html5lib":
+                if "error" not in got:
+                    bad.append((v["id"], name + " now answers a foreign context", v["data"][:80]))
+                continue
             if got.get("dump") != expected[i]:
                 bad.append((v["id"], name, v["data"][:80]))
     print("extra cases: %d; both references reproduce each expected tree: %d" % (

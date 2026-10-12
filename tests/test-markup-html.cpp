@@ -398,7 +398,8 @@ TEST(MarkupHtml, ForeignNamesSurviveWhenHtmlRestoresTheirCase) {
   const char * math = "http://www.w3.org/1998/Math/MathML";
   const char * const tags[] = {"altGlyph", "altGlyphDef", "altGlyphItem", "animateColor", "animateMotion",
       "animateTransform", "clipPath", "feBlend", "feColorMatrix", "feComponentTransfer", "feComposite",
-      "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feFlood", "feFuncA",
+      "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feDropShadow", "feFlood",
+      "feFuncA",
       "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology",
       "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight", "feTile", "feTurbulence",
       "foreignObject", "glyphRef", "linearGradient", "radialGradient", "textPath"};

@@ -60,8 +60,16 @@ enum {
   F_SC_LIST = 8,    /* also a boundary of list item scope (ol, ul) */
   F_SC_BUTTON = 16, /* also a boundary of button scope (button) */
   F_SC_TABLE = 32,  /* a boundary of table scope (html, table, template) */
-  F_IMPLIED = 64    /* ended by "generate implied end tags" */
+  F_IMPLIED = 64,   /* ended by "generate implied end tags" */
+  F_MTIP = 128,     /* a MathML text integration point (mi, mo, mn, ms, mtext) */
+  F_ANNOT = 512,    /* a MathML annotation-xml (an HTML integration point if its start tag said so) */
+  F_HIP = 256       /* an HTML integration point (SVG foreignObject, desc, title; a MathML
+                       annotation-xml whose start tag had a matching `encoding`, set when it is pushed) */
 };
+
+/* The namespace of an element, as the builder keeps it: the HTML namespace is 0, so that every table
+   of HTML names is the table of namespace 0. */
+enum { NS_HTML = 0, NS_SVG = 1, NS_MATH = 2 };
 
 /* Every name the algorithms mention, in byte order of the names (the table is
    searched with a binary search, and a table out of order would miss names without a
@@ -155,10 +163,13 @@ enum {
   X(T_SELECT, "select", F_SPECIAL | F_SC_GEN) \
   X(T_SMALL, "small", F_FMT) \
   X(T_SOURCE, "source", F_SPECIAL) \
+  X(T_SPAN, "span", 0) \
   X(T_STRIKE, "strike", F_FMT) \
   X(T_STRONG, "strong", F_FMT) \
   X(T_STYLE, "style", F_SPECIAL) \
+  X(T_SUB, "sub", 0) \
   X(T_SUMMARY, "summary", F_SPECIAL) \
+  X(T_SUP, "sup", 0) \
   X(T_SVG, "svg", 0) \
   X(T_TABLE, "table", F_SPECIAL | F_SC_GEN | F_SC_TABLE) \
   X(T_TBODY, "tbody", F_SPECIAL) \
@@ -174,6 +185,7 @@ enum {
   X(T_TT, "tt", F_FMT) \
   X(T_U, "u", F_FMT) \
   X(T_UL, "ul", F_SPECIAL | F_SC_LIST) \
+  X(T_VAR, "var", 0) \
   X(T_WBR, "wbr", F_SPECIAL) \
   X(T_XMP, "xmp", F_SPECIAL)
 
@@ -253,7 +265,9 @@ typedef struct {
   uint32_t fl_table;
   uint32_t fl_special;
   uint32_t fl_li;        /* topmost special element that is not address, div or p */
-  uint16_t flags;        /* F_* of the name */
+  uint32_t fl_html;      /* the nearest element in the HTML namespace at or below this entry */
+  uint16_t flags;        /* F_* of the name (and F_HIP of an annotation-xml that is one) */
+  uint8_t ns;            /* NS_* */
   uint8_t removed;       /* adoption agency scratch */
 } stack_entry;
 
@@ -262,10 +276,12 @@ typedef struct {
 typedef struct {
   markup_atom * atom;   /* interned lazily; the builder holds a reference */
   fmt_entry * fmt_last; /* the last formatting-list entry with this name */
-  const char * text;
+  const char * text;    /* the name as the tokenizer gives it: lower case (the key of the slot) */
+  const char * disp;    /* the element's local name where it differs (SVG `foreignObject`), else NULL */
   uint32_t topidx;      /* topmost stack index with this name, or NONE_IDX */
   uint32_t len;
   uint32_t flags;
+  uint8_t ns;           /* NS_*: a name is the pair (namespace, name); the 119 of the table are HTML's */
   uint8_t dynamic;      /* text is owned */
 } name_slot;
 
@@ -337,7 +353,6 @@ struct GTEXT_HTML_Tree {
   attr_index merge_index[2];
   bool tok_done; /* the tokenizer delivered its end-of-file token */
   GTEXT_HTML_TreeStatus status;
-  GTEXT_HTML_NotYet not_yet;
 
   InsertionMode mode;
   InsertionMode orig_mode;
@@ -382,6 +397,27 @@ struct GTEXT_HTML_Tree {
   size_t dyn_count;
   uint64_t seed;
   markup_atom * ns_html;
+  /* The other namespaces and prefixes, interned when first needed (foreign content). */
+  markup_atom * ns_svg;
+  markup_atom * ns_math;
+  markup_atom * ns_xlink;
+  markup_atom * ns_xml;
+  markup_atom * ns_xmlns;
+  markup_atom * pfx_xlink;
+  markup_atom * pfx_xml;
+  markup_atom * pfx_xmlns;
+
+  /* The fragment parsing algorithm: the context element (by value; no node), and, when the context has a
+     form ancestor, the form element pointer's "set to an element that is not on the stack" (form_ctx). */
+  bool frag;
+  HtNode * frag_node;    /* the document fragment the result goes into (made with the parser) */
+  bool ctx_template;     /* the context is an HTML template: "parsing template contents" with none open */
+  bool ctx_select;       /* the context is an HTML select */
+  uint8_t ctx_ns;        /* NS_* */
+  uint32_t ctx_id;       /* its name slot */
+  uint16_t ctx_flags;    /* F_MTIP, F_HIP of the context element (the fake start tag's attributes decide) */
+  bool form_ctx;         /* the form element pointer is set to the context element (or its form ancestor), which is
+                            not on the stack and never will be: it only makes the pointer "not null" */
 
   fmt_entry * fmt_head;
   fmt_entry * fmt_tail;
@@ -418,7 +454,6 @@ typedef enum { R_DONE = 0, R_REPROCESS = 1, R_FAIL = -1 } HandlerResult;
   } while (0)
 
 bool ht_tree_fail(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeStatus status);
-bool ht_tree_not_yet(GTEXT_HTML_Tree * tb, GTEXT_HTML_NotYet what);
 bool ht_tree_markup_status(GTEXT_HTML_Tree * tb, GTEXT_Markup_Status status);
 void ht_tree_error(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code);
 void ht_tree_error_raw(GTEXT_HTML_Tree * tb, int code);
@@ -427,6 +462,10 @@ void ht_tree_error_at(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code, size_
 
 /* names */
 bool ht_names_lookup(GTEXT_HTML_Tree * tb, const char * bytes, size_t len,
+    bool insert, uint32_t * id);
+/* The same for a name in the SVG or MathML namespace (`bytes` lower case, the key; the slot knows the
+   element's name as written and its integration point flags). */
+bool ht_names_lookup_ns(GTEXT_HTML_Tree * tb, unsigned ns, const char * bytes, size_t len,
     bool insert, uint32_t * id);
 
 /* the stack */
@@ -455,6 +494,9 @@ bool ht_insert_element_bare(GTEXT_HTML_Tree * tb, uint32_t id, HtNode ** out);
 bool ht_insert_element_into(GTEXT_HTML_Tree * tb, HtNode * parent, uint32_t id,
     const GTEXT_HTML_Attribute * attrs, size_t nattrs, HtNode ** out);
 bool ht_insert_text(GTEXT_HTML_Tree * tb, const char * data, size_t length);
+/* "Insert a foreign element for the token" with an SVG or MathML name slot (`id` from
+   ht_names_lookup_ns), the attributes adjusted for the namespace; `out` receives the element. */
+bool ht_insert_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, uint32_t id, HtNode ** out);
 bool ht_insert_comment(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);
 bool ht_insert_pi(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);
 bool ht_insert_comment_into(GTEXT_HTML_Tree * tb, HtNode * parent, const GTEXT_HTML_Token * t);
@@ -472,6 +514,32 @@ bool ht_fmt_reconstruct(GTEXT_HTML_Tree * tb);
 bool ht_fmt_after_marker(const GTEXT_HTML_Tree * tb, const fmt_entry * e);
 void ht_fmt_remove(GTEXT_HTML_Tree * tb, fmt_entry * e);
 bool ht_adoption_agency(GTEXT_HTML_Tree * tb, uint32_t subject);
+
+/* ASCII case-insensitive equality of `a` (`an` bytes) with the NUL-terminated `b`. */
+bool ht_ci_equal(const char * a, size_t an, const char * b);
+
+/* foreign content (html_tree_foreign.c) */
+/* The tree construction dispatcher's decision (13.2.6): is this token handled by the rules for parsing tokens
+   in foreign content (true) or by the current insertion mode (false)? It reads the adjusted current node.
+   For a character token `character` is true and `tk` is not read (it may be NULL); otherwise `tk` is the token. */
+bool ht_use_foreign_rules(const GTEXT_HTML_Tree * tb, const Tk * tk, bool character);
+bool ht_foreign_start_tag(GTEXT_HTML_Tree * tb, const Tk * tk);
+int ht_foreign_token(GTEXT_HTML_Tree * tb, const Tk * tk);
+bool ht_foreign_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n);
+bool ht_allow_cdata(void * user);
+/* "math" and "svg" start tags of "in body". */
+int ht_body_start_foreign(GTEXT_HTML_Tree * tb, const Tk * tk, unsigned ns);
+/* The token handled by the rules of the current insertion mode in HTML content. */
+int ht_html_mode_token(GTEXT_HTML_Tree * tb, const Tk * tk);
+/* The tables: the lower case name's SVG element name (NULL if it has none), and the same for attributes. */
+const char * ht_svg_tag_adjusted(const char * lower, size_t len);
+const char * ht_svg_attribute_adjusted(const char * lower, size_t len);
+bool ht_adjust_foreign_attribute(const char * name, size_t len, unsigned * which);
+/* The decisions on an element's kind: its flags by (ns, lower case name). */
+uint32_t ht_foreign_flags(unsigned ns, const char * lower, size_t len);
+/* The namespace (NS_*) of the adjusted current node: the fragment context element while the stack holds only
+   the root of a fragment, else the current node; NS_HTML when the stack is empty. */
+unsigned ht_adjusted_ns(const GTEXT_HTML_Tree * tb);
 
 /* modes (html_tree_modes.c) */
 bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);

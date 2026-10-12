@@ -24,7 +24,12 @@
  *
  * A request is
  *
- *   <mode> <scripting> x<hex input>
+ *   <mode> <scripting> x<hex input> [ctx:x<hex context> [form] [quirks | limited-quirks]]
+ *
+ * With a context the input is parsed by the HTML fragment parsing algorithm in that context element
+ * (the vectors' `#document-fragment` line: `td`, `svg path`, `math mi`; the words `svg ` and `math ` say
+ * the namespace, as the vectors' README does), `form` says the context element has a form ancestor, and
+ * the last word the mode of its document (no-quirks without one). The DUMP is then the fragment's.
  *
  * where `mode` is `whole` (the input in one feed), `bytes` (one byte per feed),
  * `chunks:<seed>` (feeds of 1 to 9 bytes chosen by a generator from the seed), `split:<k>`
@@ -34,8 +39,7 @@
  * is 0 or 1. A request that is not exactly this is answered `END E_REQUEST` and run as
  * nothing. The answer is, for the whole-input run:
  *
- *   STATUS <name>                       OK, or the failure (E_NOT_YET, E_LIMIT_DEPTH, ...)
- *   NOTYET <what> <stage>               after E_NOT_YET: foreign 3e
+ *   STATUS <name>                       OK, or the failure (E_LIMIT_DEPTH, ...)
  *   ERRORS <kept> <dropped> <tokenizer> the parse errors, then one line each:
  *   X <name> <line> <column> <offset>
  *   MODE <document mode>                no-quirks, limited-quirks, quirks (OK only)
@@ -63,7 +67,6 @@ static const char * status_name(GTEXT_HTML_TreeStatus s) {
     case GTEXT_HTML_TREE_E_INVALID: return "E_INVALID";
     case GTEXT_HTML_TREE_E_STATE: return "E_STATE";
     case GTEXT_HTML_TREE_E_OOM: return "E_OOM";
-    case GTEXT_HTML_TREE_E_NOT_YET: return "E_NOT_YET";
     case GTEXT_HTML_TREE_E_REPROCESS: return "E_REPROCESS";
     case GTEXT_HTML_TREE_E_LIMIT_DEPTH: return "E_LIMIT_DEPTH";
     case GTEXT_HTML_TREE_E_LIMIT_NODES: return "E_LIMIT_NODES";
@@ -122,10 +125,19 @@ static unsigned long long lcg(unsigned long long * s) {
   return *s >> 33;
 }
 
+/* The context of a fragment request. */
+typedef struct {
+  bool present;
+  GTEXT_HTML_Namespace ns;
+  const char * name;
+  size_t name_length;
+  bool form;
+  GTEXT_Markup_Mode quirks;
+} Ctx;
+
 /* What one run produced. */
 typedef struct {
   GTEXT_HTML_TreeStatus status;
-  GTEXT_HTML_NotYet not_yet;
   char * dump;
   size_t dump_length;
   const char * invariants; /* NULL when it holds (or there is no tree) */
@@ -145,14 +157,33 @@ static void result_free(Result * r) {
 /* Feed `input` in pieces: `pieces` is NULL for the whole, else the lengths to use in turn
    (cycled), or if `split` >= 0 two pieces cut there. */
 static void run(const unsigned char * input, size_t n, bool scripting, int how,
-    unsigned long long seed, size_t split, Result * out) {
+    unsigned long long seed, size_t split, const Ctx * ctx, Result * out) {
   memset(out, 0, sizeof(*out));
   GTEXT_HTML_TreeOptions opts;
   memset(&opts, 0, sizeof(opts));
   opts.scripting = scripting;
   opts.max_errors = 1u << 20;
   opts.hash_seed = 12345;
-  GTEXT_HTML_Tree * tree = gtext_html_tree_new(&opts);
+  GTEXT_HTML_Tree * tree = NULL;
+  if (ctx && ctx->present) {
+    GTEXT_HTML_FragmentContext fc;
+    memset(&fc, 0, sizeof(fc));
+    fc.ns = ctx->ns;
+    fc.local_name = ctx->name;
+    fc.local_name_length = ctx->name_length;
+    fc.form_ancestor = ctx->form;
+    fc.quirks = ctx->quirks;
+    fc.scripting = scripting;
+    GTEXT_HTML_TreeStatus st = GTEXT_HTML_TREE_OK;
+    tree = gtext_html_tree_new_fragment(&opts, &fc, &st);
+    if (!tree) {
+      out->status = st;
+      return;
+    }
+  }
+  else {
+    tree = gtext_html_tree_new(&opts);
+  }
   if (!tree) {
     out->status = GTEXT_HTML_TREE_E_OOM;
     return;
@@ -202,7 +233,6 @@ static void run(const unsigned char * input, size_t n, bool scripting, int how,
     s = gtext_html_tree_finish(tree);
   }
   out->status = s;
-  out->not_yet = gtext_html_tree_not_yet(tree);
   out->nerrors = gtext_html_tree_error_count(tree);
   out->dropped = gtext_html_tree_errors_dropped(tree);
   if (out->nerrors) {
@@ -216,7 +246,17 @@ static void run(const unsigned char * input, size_t n, bool scripting, int how,
       }
     }
   }
-  if (s == GTEXT_HTML_TREE_OK) {
+  if (s == GTEXT_HTML_TREE_OK && ctx && ctx->present) {
+    GTEXT_Markup_Document * doc = NULL;
+    GTEXT_Markup_Node * frag = gtext_html_tree_take_fragment(tree, &doc);
+    if (doc && frag) {
+      out->mode = (int)gtext_markup_document_mode(doc);
+      out->invariants = markup_check_invariants(doc);
+      out->dump = htd_dump_children(frag, &out->dump_length);
+      gtext_markup_document_free(doc);
+    }
+  }
+  else if (s == GTEXT_HTML_TREE_OK) {
     GTEXT_Markup_Document * doc = gtext_html_tree_take_document(tree);
     if (doc) {
       out->mode = (int)gtext_markup_document_mode(doc);
@@ -236,9 +276,6 @@ static const char * mode_name(int m) {
 static const char * differ(const Result * a, const Result * b) {
   if (a->status != b->status) {
     return "status";
-  }
-  if (a->not_yet != b->not_yet) {
-    return "not-yet";
   }
   if (a->nerrors != b->nerrors || a->dropped != b->dropped) {
     return "error count";
@@ -270,16 +307,64 @@ static int run_request(char * line) {
   char * mode = strtok(line, " \n");
   char * script = strtok(NULL, " \n");
   char * hex = strtok(NULL, " \n");
-  if (!mode || !script || !hex || strtok(NULL, " \n")) {
+  if (!mode || !script || !hex) {
     return -1;
   }
+  Ctx ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  unsigned char * ctx_text = NULL;
+  for (char * word = strtok(NULL, " \n"); word; word = strtok(NULL, " \n")) {
+    if (strncmp(word, "ctx:", 4) == 0 && !ctx.present) {
+      size_t cn = 0;
+      ctx_text = from_hex(word + 4, &cn);
+      if (!ctx_text || cn == 0) {
+        free(ctx_text);
+        return -1;
+      }
+      ctx.present = true;
+      ctx.ns = GTEXT_HTML_NS_HTML;
+      ctx.name = (const char *)ctx_text;
+      ctx.name_length = cn;
+      if ((cn >= 4 && memcmp(ctx_text, "svg ", 4) == 0 && cn == 4)
+          || (cn >= 5 && memcmp(ctx_text, "math ", 5) == 0 && cn == 5)) {
+        /* A namespace word with no local name is not a context (and is not the HTML element "svg "). */
+        free(ctx_text);
+        return -1;
+      }
+      if (cn > 4 && memcmp(ctx_text, "svg ", 4) == 0) {
+        ctx.ns = GTEXT_HTML_NS_SVG;
+        ctx.name += 4;
+        ctx.name_length -= 4;
+      }
+      else if (cn > 5 && memcmp(ctx_text, "math ", 5) == 0) {
+        ctx.ns = GTEXT_HTML_NS_MATHML;
+        ctx.name += 5;
+        ctx.name_length -= 5;
+      }
+    }
+    else if (strcmp(word, "form") == 0 && ctx.present) {
+      ctx.form = true;
+    }
+    else if (strcmp(word, "quirks") == 0 && ctx.present) {
+      ctx.quirks = GTEXT_MARKUP_MODE_QUIRKS;
+    }
+    else if (strcmp(word, "limited-quirks") == 0 && ctx.present) {
+      ctx.quirks = GTEXT_MARKUP_MODE_LIMITED_QUIRKS;
+    }
+    else {
+      free(ctx_text);
+      return -1;
+    }
+  }
   if (strcmp(script, "0") != 0 && strcmp(script, "1") != 0) {
+    free(ctx_text);
     return -1;
   }
   const bool scripting = script[0] == '1';
   size_t n = 0;
   unsigned char * input = from_hex(hex, &n);
   if (!input) {
+    free(ctx_text);
     return -1;
   }
   int how = 0;
@@ -297,6 +382,7 @@ static int run_request(char * line) {
     seed = strtoull(mode + 7, &end, 10);
     if (*end) {
       free(input);
+      free(ctx_text);
       return -1;
     }
     how = 2;
@@ -305,6 +391,7 @@ static int run_request(char * line) {
     split = (size_t)strtoull(mode + 6, &end, 10);
     if (*end || split > n) {
       free(input);
+      free(ctx_text);
       return -1;
     }
     how = 3;
@@ -314,15 +401,12 @@ static int run_request(char * line) {
   }
   else {
     free(input);
+    free(ctx_text);
     return -1;
   }
   Result whole;
-  run(input, n, scripting, how, seed, split, &whole);
+  run(input, n, scripting, how, seed, split, &ctx, &whole);
   printf("STATUS %s\n", status_name(whole.status));
-  if (whole.status == GTEXT_HTML_TREE_E_NOT_YET) {
-    printf("NOTYET %s %s\n", gtext_html_not_yet_name(whole.not_yet),
-        gtext_html_not_yet_stage(whole.not_yet));
-  }
   printf("ERRORS %zu %zu %zu\n", whole.nerrors, whole.dropped, whole.tokenizer_errors);
   for (size_t i = 0; i < whole.nerrors && whole.errors; i++) {
     printf("X %s %zu %zu %zu\n", gtext_html_tree_error_name(whole.errors[i].code),
@@ -340,7 +424,7 @@ static int run_request(char * line) {
     char which[64] = "";
     Result r;
     for (size_t k = 0; k <= n && !what; k++) {
-      run(input, n, scripting, 3, 0, k, &r);
+      run(input, n, scripting, 3, 0, k, &ctx, &r);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "split at %zu", k);
@@ -348,7 +432,7 @@ static int run_request(char * line) {
       result_free(&r);
     }
     if (!what) {
-      run(input, n, scripting, 1, 0, 0, &r);
+      run(input, n, scripting, 1, 0, 0, &ctx, &r);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "a byte at a time");
@@ -356,7 +440,7 @@ static int run_request(char * line) {
       result_free(&r);
     }
     for (unsigned long long p = 2; p <= 9 && !what; p++) {
-      run(input, n, scripting, 4, p - 2, 0, &r);
+      run(input, n, scripting, 4, p - 2, 0, &ctx, &r);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "pieces of %llu", p);
@@ -364,7 +448,7 @@ static int run_request(char * line) {
       result_free(&r);
     }
     for (unsigned long long sd = 1; sd <= 4 && !what; sd++) {
-      run(input, n, scripting, 2, sd, 0, &r);
+      run(input, n, scripting, 2, sd, 0, &ctx, &r);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "random pieces, seed %llu", sd);
@@ -380,6 +464,7 @@ static int run_request(char * line) {
   }
   result_free(&whole);
   free(input);
+  free(ctx_text);
   printf("END DONE\n");
   return 0;
 }

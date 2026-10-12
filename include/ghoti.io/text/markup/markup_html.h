@@ -147,7 +147,7 @@ GTEXT_API bool gtext_markup_html_is_boolean_attribute(
  * @brief Would an HTML parser read this SVG or MathML name back as written?
  *
  * An HTML parser lower-cases every element and attribute name, then restores the
- * case of the names in two tables of the standard: the 36 SVG element names
+ * case of the names in two tables of the standard: the 37 SVG element names
  * (`foreignObject`, `linearGradient`, ...), the 58 SVG attribute names (`viewBox`,
  * `preserveAspectRatio`, ...) and MathML's `definitionURL`. A name with an upper
  * case letter that is not in the table for its kind and namespace comes back

@@ -23,20 +23,27 @@
  *
  * libFuzzer harness for the HTML tree builder (src/html/html_tree*.c).
  *
- * The input is four option bytes and then bytes for the parser. The same bytes are
+ * The input is four option bytes and then bytes for the parser. Bit 1 of the first option byte says the
+ * bytes are a fragment, and its high six bits choose the context element of the HTML fragment parsing
+ * algorithm from a table (kContexts: HTML elements of every mode and tokenizer state, SVG and MathML
+ * elements including each integration point, an annotation-xml with and without the encoding that makes
+ * it one, a form, a document in quirks mode); otherwise the bytes are a document. The same bytes are
  * parsed whole, a byte at a time, in pieces of a size the options choose and in
  * pieces of random sizes, and the properties are the ones that make those one parse:
  *
- *     the status, the tree (in the tree-construction dump), the document mode and
+ *     the status, the tree (in the tree-construction dump, a fragment's too), the document mode and
  *     every parse error (code, line, column, offset) are the same however the bytes
  *     were cut;
  *     the tree's invariant checker holds on every tree the parser returns, and the
- *     tree is a valid HTML tree: one `html` element in the document with a `head`
+ *     tree is a valid HTML tree: a document has one `html` element with a `head`
  *     and then a `body` or a `frameset` and nothing else among its elements but
- *     `noframes` after a frameset, all
- *     elements in the HTML namespace with lower-case names, attributes in no
- *     namespace, no CDATA section, no empty text node and no two adjacent ones, and
- *     the document mode is set to one of the three; and, since stage 3d, the shapes
+ *     `noframes` after a frameset (a fragment's document has an empty `html` and its
+ *     fragment holds the result), every
+ *     element is in the HTML, SVG or MathML namespace, an HTML one with a lower-case name and
+ *     a foreign one with a name an HTML parser reads back as written (the standard's table for
+ *     SVG), attributes in no namespace except on foreign elements, where the XLink, XML and
+ *     XMLNS namespaces are allowed, no CDATA section, no empty text node and no two adjacent
+ *     ones, and the document mode is set to one of the three; and, since stage 3d, the shapes
  *     the table modes and the template modes make: a template element has a content
  *     fragment and no children of its own and nothing else has a content; a tr is
  *     in a tbody, thead, tfoot or a template's content; a td or th in a tr or a
@@ -45,8 +52,7 @@
  *     the text directly in a table, tbody, thead, tfoot or tr is white space (the
  *     rest is foster parented); the walk visits the template contents too;
  *     a parse that is not OK is one of the distinct failure statuses, has no tree,
- *     and says the same on every call after it (it is sticky), and E_NOT_YET names
- *     a stage;
+ *     and says the same on every call after it (it is sticky);
  *     a limit that is tiny (open elements 1 to 8, nodes) is its own status and when
  *     the parse still succeeds the tree is the roomy run's;
  *     an allocation that fails - the first to the last of a run - is OOM
@@ -70,6 +76,7 @@
 #include <string>
 #include <vector>
 
+#include "../../include/ghoti.io/text/markup/markup_html.h"
 #include "../../src/html/html_tree_internal.h"
 #include "../../src/markup/markup_internal.h"
 #include "../../tools/conformance/html_tree_dump.h"
@@ -92,9 +99,83 @@ namespace {
   std::abort();
 }
 
+// The contexts the fuzzer parses fragments in (index = the first option byte >> 2).
+struct FuzzCtx {
+  GTEXT_HTML_Namespace ns;
+  const char * name;
+  const char * encoding; // an `encoding` attribute of the context element, or null
+  bool form;
+  GTEXT_Markup_Mode quirks;
+};
+const FuzzCtx kContexts[64] = {
+    {GTEXT_HTML_NS_HTML, "div", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "td", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "th", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "tr", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "tbody", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "thead", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "tfoot", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "caption", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "colgroup", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "table", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "template", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "select", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "body", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "html", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "head", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "frameset", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "title", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "textarea", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "style", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "script", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "plaintext", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "noscript", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "xmp", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "iframe", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "form", nullptr, true, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "div", nullptr, true, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "div", nullptr, false, GTEXT_MARKUP_MODE_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "p", nullptr, false, GTEXT_MARKUP_MODE_LIMITED_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "span", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "option", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "svg", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "math", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "svg", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "g", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "path", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "foreignObject", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "desc", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "title", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "td", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "select", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "template", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "foreignobject", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "math", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mi", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mo", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mn", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "ms", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mtext", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "annotation-xml", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "annotation-xml", "text/html", false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "annotation-xml", "Application/XHTML+xml", false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "annotation-xml", "text/plain", false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mrow", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mglyph", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "table", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "td", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "select", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "script", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_SVG, "text", nullptr, false, GTEXT_MARKUP_MODE_QUIRKS},
+    {GTEXT_HTML_NS_MATHML, "mfrac", nullptr, true, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "td", nullptr, true, GTEXT_MARKUP_MODE_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "tr", nullptr, false, GTEXT_MARKUP_MODE_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "dd", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+    {GTEXT_HTML_NS_HTML, "nobr", nullptr, false, GTEXT_MARKUP_MODE_NO_QUIRKS},
+};
+
 struct Result {
   GTEXT_HTML_TreeStatus status = GTEXT_HTML_TREE_OK;
-  GTEXT_HTML_NotYet not_yet = GTEXT_HTML_NOT_YET_NONE;
   bool has_tree = false;
   std::string dump;
   int mode = 0;
@@ -105,7 +186,7 @@ struct Result {
 };
 
 bool same(const Result & a, const Result & b) {
-  if (a.status != b.status || a.not_yet != b.not_yet || a.has_tree != b.has_tree || a.dump != b.dump
+  if (a.status != b.status || a.has_tree != b.has_tree || a.dump != b.dump
       || a.mode != b.mode || a.dropped != b.dropped || a.errors.size() != b.errors.size()) {
     return false;
   }
@@ -119,7 +200,7 @@ bool same(const Result & a, const Result & b) {
 }
 
 // The properties of a tree, checked with the public accessors and an explicit stack.
-std::string check_tree(const GTEXT_Markup_Document * doc) {
+std::string check_tree(const GTEXT_Markup_Document * doc, const GTEXT_Markup_Node * fragment) {
   const char * invariants = markup_check_invariants(doc);
   if (invariants) {
     return std::string("the invariant checker: ") + invariants;
@@ -135,6 +216,16 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
     return "the document has no html element";
   }
   size_t elements = 0;
+  if (fragment) {
+    // The root element's children were moved into the fragment.
+    if (gtext_markup_node_first_child(html)) {
+      return "a fragment's root html element still has children";
+    }
+    if (gtext_markup_node_kind(fragment) != GTEXT_MARKUP_KIND_FRAGMENT || gtext_markup_node_parent(fragment)) {
+      return "the fragment is not a detached document fragment";
+    }
+    elements = 2; // no head and body to ask for
+  }
   for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(html); c; c = gtext_markup_node_next_sibling(c)) {
     if (gtext_markup_node_kind(c) != GTEXT_MARKUP_KIND_ELEMENT) {
       continue;
@@ -158,6 +249,9 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
   // template's content.
   std::vector<const GTEXT_Markup_Node *> todo;
   todo.push_back(root);
+  if (fragment) {
+    todo.push_back(fragment);
+  }
   while (!todo.empty()) {
     const GTEXT_Markup_Node * n = todo.back();
     todo.pop_back();
@@ -167,14 +261,25 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
     switch (gtext_markup_node_kind(n)) {
       case GTEXT_MARKUP_KIND_ELEMENT: {
         const char * ns = gtext_markup_element_namespace(n);
-        if (!ns || std::strcmp(ns, GTEXT_MARKUP_NS_HTML) != 0) {
-          return "an element outside the HTML namespace";
+        if (!ns) {
+          return "an element in no namespace";
+        }
+        const bool is_html = std::strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0;
+        const bool is_svg = std::strcmp(ns, GTEXT_MARKUP_NS_SVG) == 0;
+        const bool is_math = std::strcmp(ns, GTEXT_MARKUP_NS_MATHML) == 0;
+        if (!is_html && !is_svg && !is_math) {
+          return "an element outside the HTML, SVG and MathML namespaces";
         }
         const char * name = gtext_markup_element_local_name(n);
-        for (const char * p = name; *p; p++) {
-          if (*p >= 'A' && *p <= 'Z') {
-            return "an element name with an upper case letter";
+        if (is_html) {
+          for (const char * p = name; *p; p++) {
+            if (*p >= 'A' && *p <= 'Z') {
+              return "an HTML element name with an upper case letter";
+            }
           }
+        }
+        else if (!gtext_markup_html_foreign_name_survives(ns, false, name)) {
+          return "a foreign element name that an HTML parser could not have made (not in the standard's table)";
         }
         for (size_t i = 0; i < gtext_markup_element_attribute_count(n); i++) {
           GTEXT_Markup_Attribute a;
@@ -182,11 +287,20 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
             return "an attribute that cannot be read";
           }
           if (a.ns) {
-            return "an attribute in a namespace";
+            if (is_html) {
+              return "an attribute in a namespace on an HTML element";
+            }
+            if (std::strcmp(a.ns, GTEXT_MARKUP_NS_XLINK) != 0 && std::strcmp(a.ns, GTEXT_MARKUP_NS_XML) != 0
+                && std::strcmp(a.ns, GTEXT_MARKUP_NS_XMLNS) != 0) {
+              return "an attribute in a namespace the adjustment table does not make";
+            }
+          }
+          else if (!is_html && !gtext_markup_html_foreign_name_survives(ns, true, a.local)) {
+            return "a foreign attribute name that an HTML parser could not have made";
           }
         }
         const GTEXT_Markup_Node * content = gtext_markup_element_template_content(n);
-        if (std::strcmp(name, "template") == 0) {
+        if (is_html && std::strcmp(name, "template") == 0) {
           if (!content) {
             return "a template without a content fragment";
           }
@@ -215,6 +329,9 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
           }
           return false;
         };
+        if (!is_html) {
+          break; // the shapes below are HTML's
+        }
         if (std::strcmp(name, "tr") == 0 && !parent_is({"tbody", "thead", "tfoot"})) {
           return "a tr that is not in a table section";
         }
@@ -244,6 +361,9 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
         if (len == 0) {
           return "an empty text node";
         }
+        if (std::memchr(data, 0, len)) {
+          return "a text node with a NUL (the tree builder drops it or makes a U+FFFD of it)";
+        }
         const GTEXT_Markup_Node * next = gtext_markup_node_next_sibling(n);
         if (next && gtext_markup_node_kind(next) == GTEXT_MARKUP_KIND_TEXT) {
           return "two adjacent text nodes";
@@ -252,7 +372,8 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
         if (gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_DOCUMENT) {
           return "text directly in the document";
         }
-        if (gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_ELEMENT) {
+        if (gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_ELEMENT
+            && gtext_markup_element_is(parent, GTEXT_MARKUP_NS_HTML, gtext_markup_element_local_name(parent))) {
           const char * pn = gtext_markup_element_local_name(parent);
           if (std::strcmp(pn, "table") == 0 || std::strcmp(pn, "tbody") == 0 || std::strcmp(pn, "thead") == 0
               || std::strcmp(pn, "tfoot") == 0 || std::strcmp(pn, "tr") == 0) {
@@ -274,6 +395,7 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
 }
 
 struct Config {
+  const FuzzCtx * ctx = nullptr; // a fragment in this context, or a document
   bool scripting = false;
   size_t max_open = 0;
   size_t max_nodes = 0;
@@ -295,7 +417,39 @@ Result run(const std::string & input, const Config & cfg, const std::vector<size
     o.allocator = &cfg.fa->alloc;
     cfg.fa->arm(cfg.arm);
   }
-  GTEXT_HTML_Tree * tree = gtext_html_tree_new(&o);
+  GTEXT_HTML_Tree * tree = nullptr;
+  if (cfg.ctx) {
+    GTEXT_HTML_FragmentContext fc;
+    std::memset(&fc, 0, sizeof(fc));
+    fc.ns = cfg.ctx->ns;
+    fc.local_name = cfg.ctx->name;
+    fc.local_name_length = std::strlen(cfg.ctx->name);
+    GTEXT_HTML_Attribute enc;
+    std::memset(&enc, 0, sizeof(enc));
+    if (cfg.ctx->encoding) {
+      enc.name = "encoding";
+      enc.name_length = 8;
+      enc.value = cfg.ctx->encoding;
+      enc.value_length = std::strlen(cfg.ctx->encoding);
+      fc.attributes = &enc;
+      fc.attribute_count = 1;
+    }
+    fc.form_ancestor = cfg.ctx->form;
+    fc.quirks = cfg.ctx->quirks;
+    fc.scripting = cfg.scripting;
+    GTEXT_HTML_TreeStatus st = GTEXT_HTML_TREE_OK;
+    tree = gtext_html_tree_new_fragment(&o, &fc, &st);
+    if (!tree) {
+      if (st != GTEXT_HTML_TREE_E_OOM && !GTEXT_HTML_TREE_IS_LIMIT(st)) {
+        fail("a fragment builder could not be made, and not for memory or a limit", std::to_string((int)st), input);
+      }
+      r.status = st;
+      return r;
+    }
+  }
+  else {
+    tree = gtext_html_tree_new(&o);
+  }
   if (!tree) {
     r.status = GTEXT_HTML_TREE_E_OOM;
     return r;
@@ -325,7 +479,6 @@ Result run(const std::string & input, const Config & cfg, const std::vector<size
     s = gtext_html_tree_finish(tree);
   }
   r.status = s;
-  r.not_yet = gtext_html_tree_not_yet(tree);
   for (size_t i = 0; i < gtext_html_tree_error_count(tree); i++) {
     r.errors.push_back(*gtext_html_tree_error_at(tree, i));
   }
@@ -345,22 +498,40 @@ Result run(const std::string & input, const Config & cfg, const std::vector<size
     if (gtext_html_tree_take_document(tree) != nullptr) {
       fail("a failed parse gave a document", "", input);
     }
-    if (s == GTEXT_HTML_TREE_E_NOT_YET && std::strlen(gtext_html_not_yet_stage(r.not_yet)) != 2) {
-      fail("E_NOT_YET without a stage", "", input);
+    GTEXT_Markup_Document * none = nullptr;
+    if (gtext_html_tree_take_fragment(tree, &none) != nullptr || none != nullptr) {
+      fail("a failed parse gave a fragment", "", input);
     }
   }
   else {
-    GTEXT_Markup_Document * doc = gtext_html_tree_take_document(tree);
-    if (!doc) {
-      fail("a successful parse gave no document", "", input);
+    GTEXT_Markup_Document * doc = nullptr;
+    GTEXT_Markup_Node * frag = nullptr;
+    if (cfg.ctx) {
+      if (gtext_html_tree_take_document(tree) != nullptr) {
+        fail("a fragment builder gave a document of its own", "", input);
+      }
+      frag = gtext_html_tree_take_fragment(tree, &doc);
+      if (!frag || !doc) {
+        fail("a successful fragment parse gave no fragment", "", input);
+      }
+      GTEXT_Markup_Document * again = nullptr;
+      if (gtext_html_tree_take_fragment(tree, &again) != nullptr || again != nullptr) {
+        fail("a fragment was given twice", "", input);
+      }
+    }
+    else {
+      doc = gtext_html_tree_take_document(tree);
+      if (!doc) {
+        fail("a successful parse gave no document", "", input);
+      }
     }
     r.has_tree = true;
     if (check) {
-      r.problem = check_tree(doc);
+      r.problem = check_tree(doc, frag);
     }
     r.mode = (int)gtext_markup_document_mode(doc);
     size_t n = 0;
-    char * d = htd_dump(doc, &n);
+    char * d = frag ? htd_dump_children(frag, &n) : htd_dump(doc, &n);
     r.dump = d ? std::string(d, n) : "";
     std::free(d);
     gtext_markup_document_free(doc);
@@ -370,7 +541,7 @@ Result run(const std::string & input, const Config & cfg, const std::vector<size
 }
 
 bool is_failure_status(GTEXT_HTML_TreeStatus s) {
-  return s == GTEXT_HTML_TREE_E_OOM || s == GTEXT_HTML_TREE_E_NOT_YET || GTEXT_HTML_TREE_IS_LIMIT(s);
+  return s == GTEXT_HTML_TREE_E_OOM || GTEXT_HTML_TREE_IS_LIMIT(s);
 }
 
 } // namespace
@@ -384,6 +555,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
 
   Config roomy;
   roomy.scripting = (o0 & 1) != 0;
+  if ((o0 & 2) != 0) {
+    roomy.ctx = &kContexts[(o0 >> 2) & 63];
+  }
   roomy.max_open = 64; // a fixed limit, so that the work bound below is a bound
   Result whole = run(input, roomy, {}, false, 0, true);
   if (whole.status != GTEXT_HTML_TREE_OK && !is_failure_status(whole.status)) {
@@ -443,7 +617,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       fail("the depth limit left a tree", "", input);
     }
   }
-  else if (small.status != whole.status && small.status != GTEXT_HTML_TREE_E_NOT_YET
+  else if (small.status != whole.status
       && !GTEXT_HTML_TREE_IS_LIMIT(small.status)) {
     fail("an unexpected status under a tiny limit", std::to_string((int)small.status), input);
   }

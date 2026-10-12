@@ -557,7 +557,8 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-fuzz-harnesses \
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
-	check-metaschema check-html-tables check-xhtml-test-data
+	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
+	check-conformance-vectors
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -937,7 +938,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-xml-fuzz-plants check-html-fuzz-plants oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-xml-fuzz-plants check-html-fuzz-plants oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1079,6 +1080,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/html/html_tokenizer.c \
 	src/html/html_tokenizer_errors.c \
 	src/html/html_tree.c \
+	src/html/html_tree_foreign.c \
+	src/html/html_tree_fragment.c \
 	src/html/html_tree_modes.c \
 	src/markup/markup_check.c \
 	src/markup/markup_core.c \
@@ -2049,7 +2052,7 @@ conformance-csv: ## Score the CSV parser against csv-spectrum (clones it on firs
 conformance-csv: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-csv.sh
 
-# Outside TEST_GATES, like every conformance target: it wants the pinned suite,
+# The target itself is outside TEST_GATES (its scoring half runs in check-conformance-vectors, below): it wants the pinned suite,
 # which a fresh clone does not have until tools/xml/fetch.sh has run. With the
 # data absent it fails and says so; it does not skip. The data directory is
 # named here, and not only in the script, so that this target and
@@ -2061,7 +2064,7 @@ conformance-xml: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
 	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MIN_ROUNDTRIP=1222 XMLCONF_MAX_ROUNDTRIP_REFUSED=17 XMLCONF_MAX_ENTITY=83 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
 
-# Outside TEST_GATES, like every conformance target: it wants the pinned vectors,
+# The target itself is outside TEST_GATES (its scoring half runs in check-conformance-vectors, below): it wants the pinned vectors,
 # which a fresh clone does not have until tools/html/fetch.sh has run. With the
 # data absent it fails and says so; it does not skip.
 conformance-html-tokenizer: ## Score the HTML tokenizer against the pinned html5lib-tests tokenizer vectors
@@ -2080,6 +2083,22 @@ conformance-html-tree-asan: ## The HTML tree builder's vector gate with the libr
 conformance-html-tree-asan: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh --sanitize
+
+# The vector gates of the XML parser, the HTML tokenizer and the HTML tree builder, in `make test`.
+# Measured 2026-10-12 on the development machine: the XML suite 24 s, the tokenizer 28 s (its controls
+# included), the tree vectors 20 s, together under two minutes. What stays out of `make test` is the tree
+# gate's controls (`conformance-html-tree`, about five minutes: it builds and runs 130 planted defects) and
+# the oracle. The vectors are not tracked: with them absent REQUIRE_DATA fails the gate and names
+# tools/html/fetch.sh or tools/xml/fetch.sh, as for every gate that reads third_party/. Dropping it is
+# `make test TEST_GATES='$(filter-out check-conformance-vectors,$(ALL_TEST_GATES))'`.
+check-conformance-vectors: ## The XML, HTML tokenizer and HTML tree vector gates (no tree controls), part of make test
+check-conformance-vectors: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
+	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/tokenizer,tools/html/fetch.sh)
+	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
+	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MIN_ROUNDTRIP=1222 XMLCONF_MAX_ROUNDTRIP_REFUSED=17 XMLCONF_MAX_ENTITY=83 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
+	@$(CONFORMANCE_ENV) HTML_TOKENIZER_MIN_SCORED=7000 tools/conformance/run-html-tokenizer.sh
+	@$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)
@@ -2209,6 +2228,13 @@ check-xhtml-test-data: ## Fail, with the fetch command, if the data the XHTML te
 	@$(call REQUIRE_DATA,third_party/html/html5lib-tests/serializer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,third_party/html/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,third_party/xml/xmlconf,tools/xml/fetch.sh)
+
+# The SVG/MathML name tables of foreign content are kept by hand in several sources. tools/html/foreign_tables.txt
+# is the one transcription of the standard's tables; the checker reads every other copy and fails on any
+# difference in either direction (feDropShadow was once missing from all but one).
+check-foreign-tables: ## Fail if a copy of the SVG/MathML foreign-content name tables differs from tools/html/foreign_tables.txt
+	@$(call REQUIRE_PYTHON3)
+	@python3 tools/html/check-foreign-tables.py
 
 check-html-tables: ## Fail if the committed HTML character reference table is not what the generator produces
 	@$(REQUIRE_PYTHON3); \

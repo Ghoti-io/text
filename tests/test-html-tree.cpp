@@ -21,7 +21,8 @@
 /**
  * @file
  *
- * The HTML tree builder (src/html/html_tree*.c), stages 3c and 3d.
+ * The HTML tree builder (src/html/html_tree*.c), stages 3c and 3d. (Foreign content and the fragment parsing
+ * algorithm, stage 3e, are in tests/test-html-tree-foreign.cpp.)
  *
  * Every expectation here is worked out by hand from the standard's tree
  * construction chapter (13.2.6, read 2026-10-11) and written as the tree-
@@ -66,7 +67,6 @@ namespace {
 
 struct Parsed {
   GTEXT_HTML_TreeStatus status = GTEXT_HTML_TREE_OK;
-  GTEXT_HTML_NotYet not_yet = GTEXT_HTML_NOT_YET_NONE;
   bool has_tree = false;
   std::string dump;
   std::string invariants; // empty when they hold
@@ -84,7 +84,7 @@ struct Parsed {
     return out;
   }
   bool same_as(const Parsed & o) const {
-    if (status != o.status || not_yet != o.not_yet || has_tree != o.has_tree || dump != o.dump
+    if (status != o.status || has_tree != o.has_tree || dump != o.dump
         || mode != o.mode || dropped != o.dropped || errors.size() != o.errors.size()) {
       return false;
     }
@@ -140,7 +140,6 @@ Parsed parse(const std::string & input, const GTEXT_HTML_TreeOptions & opts = {}
     s = gtext_html_tree_finish(tree);
   }
   r.status = s;
-  r.not_yet = gtext_html_tree_not_yet(tree);
   for (size_t i = 0; i < gtext_html_tree_error_count(tree); i++) {
     r.errors.push_back(*gtext_html_tree_error_at(tree, i));
   }
@@ -319,25 +318,13 @@ TEST(HtmlTree, TheScriptingFlagDecidesWhatNoscriptInTheHeadIs) {
       tree({"<html>", "  <head>", "    <noscript>", "      <link>", "  <body>", "    \"x\""}));
 }
 
-TEST(HtmlTree, ConstructsOfLaterStagesStopWithADistinctStatusAndTheirStage) {
-  struct Case {
-    const char * input;
-    GTEXT_HTML_NotYet what;
-    const char * stage;
-  };
-  const Case cases[] = {
-      {"<table><tr><td><svg>", GTEXT_HTML_NOT_YET_FOREIGN, "3e"},
-      {"<template><math>", GTEXT_HTML_NOT_YET_FOREIGN, "3e"},
-      {"<svg>", GTEXT_HTML_NOT_YET_FOREIGN, "3e"},
-      {"<p><math>", GTEXT_HTML_NOT_YET_FOREIGN, "3e"},
-  };
-  for (const Case & c : cases) {
-    SCOPED_TRACE(c.input);
-    const Parsed r = parse(c.input);
-    EXPECT_EQ(r.status, GTEXT_HTML_TREE_E_NOT_YET);
-    EXPECT_EQ(r.not_yet, c.what);
-    EXPECT_STREQ(gtext_html_not_yet_stage(r.not_yet), c.stage);
-    EXPECT_FALSE(r.has_tree);
+TEST(HtmlTree, SvgAndMathAreParsedWhereverTheyStartATag) {
+  for (const char * input : {"<table><tr><td><svg>", "<template><math>", "<svg>", "<p><math>"}) {
+    SCOPED_TRACE(input);
+    const Parsed r = parse(input);
+    EXPECT_EQ(r.status, GTEXT_HTML_TREE_OK);
+    EXPECT_TRUE(r.has_tree);
+    EXPECT_EQ(r.invariants, "");
   }
   // select is not one of them: the standard has no "in select" mode, so it is parsed by "in body".
   EXPECT_EQ(dump_of("<select><option>a<option>b</select>c"),
@@ -930,7 +917,7 @@ TEST(HtmlTreeChunking, EveryTwoWaySplitAndAByteAtATimeGiveTheWholeInputsAnswer) 
     }
   }
   EXPECT_GT(cut_runs, 100000u);
-  EXPECT_GT(stopped, 300u) << "the corpus holds foreign vectors (svg, math); they stop in 3e";
+  EXPECT_EQ(stopped, 0u) << "every vector of the corpus is parsed to a tree: foreign content is built";
 }
 
 TEST(HtmlTreeChunking, ThreeWayCutsOfTheAwkwardInputsToo) {
@@ -2933,11 +2920,10 @@ TEST(HtmlTreeTables, ASelectInATableIsParsedByTheBodyRules) {
 )");
 }
 
-TEST(HtmlTreeTables, ForeignContentInATableStillStopsWithItsOwnStage) {
-  // A table inside svg is foreign content; it fails with the stage that owns it, not with a table error.
-  const Parsed r = parse("<table><tr><td><svg>");
-  EXPECT_EQ(r.status, GTEXT_HTML_TREE_E_NOT_YET);
-  EXPECT_EQ(r.not_yet, GTEXT_HTML_NOT_YET_FOREIGN);
+TEST(HtmlTreeTables, ForeignContentInATableCellIsAnElementOfTheCell) {
+  EXPECT_EQ(dump_of("<table><tr><td><svg><g>x</g></svg>y"),
+      tree({"<html>", "  <head>", "  <body>", "    <table>", "      <tbody>", "        <tr>", "          <td>",
+          "            <svg svg>", "              <svg g>", "                \"x\"", "            \"y\""}));
 }
 
 // ---- Work: tables, templates and foster parenting ------------------------------

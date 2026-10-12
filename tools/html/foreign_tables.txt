@@ -1,0 +1,118 @@
+# The tables of "adjust SVG attributes", "adjust MathML attributes", "adjust foreign attributes" and the
+# "any other start tag" SVG tag-name table of the HTML tree construction chapter (parsing.html, 13.2.6.1 and
+# 13.2.6.5), transcribed once. tools/html/check-foreign-tables.py checks every other copy against this file
+# (src/html/html_tree_foreign.c, src/markup/markup_html.c, tests/test-markup-html.cpp,
+# tools/oracle/html_tree_diff.py, tools/html/make-tree-fuzz-seeds.py) and fails on any difference, so a name
+# missing from one copy (feDropShadow once was, in all of them but one) cannot be missing silently.
+#
+# To change it, read the chapter, edit this file, then make the checker agree by editing the copies.
+# The file is data: `svg-tag NAME` and `svg-attr NAME` are the mixed-case names the parser restores,
+# `math-attr NAME` likewise, `foreign-attr NAME KIND` the attributes that become namespaced (1 XLink, 2 XML,
+# 3 XMLNS). Counts as served: 37, 58, 1, 11.
+svg-tag altGlyph
+svg-tag altGlyphDef
+svg-tag altGlyphItem
+svg-tag animateColor
+svg-tag animateMotion
+svg-tag animateTransform
+svg-tag clipPath
+svg-tag feBlend
+svg-tag feColorMatrix
+svg-tag feComponentTransfer
+svg-tag feComposite
+svg-tag feConvolveMatrix
+svg-tag feDiffuseLighting
+svg-tag feDisplacementMap
+svg-tag feDistantLight
+svg-tag feDropShadow
+svg-tag feFlood
+svg-tag feFuncA
+svg-tag feFuncB
+svg-tag feFuncG
+svg-tag feFuncR
+svg-tag feGaussianBlur
+svg-tag feImage
+svg-tag feMerge
+svg-tag feMergeNode
+svg-tag feMorphology
+svg-tag feOffset
+svg-tag fePointLight
+svg-tag feSpecularLighting
+svg-tag feSpotLight
+svg-tag feTile
+svg-tag feTurbulence
+svg-tag foreignObject
+svg-tag glyphRef
+svg-tag linearGradient
+svg-tag radialGradient
+svg-tag textPath
+svg-attr attributeName
+svg-attr attributeType
+svg-attr baseFrequency
+svg-attr baseProfile
+svg-attr calcMode
+svg-attr clipPathUnits
+svg-attr diffuseConstant
+svg-attr edgeMode
+svg-attr filterUnits
+svg-attr glyphRef
+svg-attr gradientTransform
+svg-attr gradientUnits
+svg-attr kernelMatrix
+svg-attr kernelUnitLength
+svg-attr keyPoints
+svg-attr keySplines
+svg-attr keyTimes
+svg-attr lengthAdjust
+svg-attr limitingConeAngle
+svg-attr markerHeight
+svg-attr markerUnits
+svg-attr markerWidth
+svg-attr maskContentUnits
+svg-attr maskUnits
+svg-attr numOctaves
+svg-attr pathLength
+svg-attr patternContentUnits
+svg-attr patternTransform
+svg-attr patternUnits
+svg-attr pointsAtX
+svg-attr pointsAtY
+svg-attr pointsAtZ
+svg-attr preserveAlpha
+svg-attr preserveAspectRatio
+svg-attr primitiveUnits
+svg-attr refX
+svg-attr refY
+svg-attr repeatCount
+svg-attr repeatDur
+svg-attr requiredExtensions
+svg-attr requiredFeatures
+svg-attr specularConstant
+svg-attr specularExponent
+svg-attr spreadMethod
+svg-attr startOffset
+svg-attr stdDeviation
+svg-attr stitchTiles
+svg-attr surfaceScale
+svg-attr systemLanguage
+svg-attr tableValues
+svg-attr targetX
+svg-attr targetY
+svg-attr textLength
+svg-attr viewBox
+svg-attr viewTarget
+svg-attr xChannelSelector
+svg-attr yChannelSelector
+svg-attr zoomAndPan
+math-attr definitionURL
+foreign-attr xlink:actuate 1
+foreign-attr xlink:arcrole 1
+foreign-attr xlink:href 1
+foreign-attr xlink:role 1
+foreign-attr xlink:show 1
+foreign-attr xlink:title 1
+foreign-attr xlink:type 1
+foreign-attr xml:lang 2
+foreign-attr xml:space 2
+foreign-attr xmlns 3
+foreign-attr xmlns:xlink 3

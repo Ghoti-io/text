@@ -276,13 +276,20 @@ typedef struct {
    array of frames, so it needs neither recursion nor parent links: a template's content (which
    has no parent as far as the accessors say) is written under a `content` line, before the
    element's own children. */
+static char * htd_dump_children(const GTEXT_Markup_Node * root, size_t * length_out);
+
 static char * htd_dump(const GTEXT_Markup_Document * doc, size_t * length_out) {
+  return htd_dump_children(gtext_markup_document_root(doc), length_out);
+}
+
+/* The same for the children of any container: a document's root, or the document fragment the
+   fragment parsing algorithm returns (whose dump has the same shape: the vectors' `#document` section). */
+static char * htd_dump_children(const GTEXT_Markup_Node * root, size_t * length_out) {
   HtdBuf b;
   memset(&b, 0, sizeof(b));
   HtdFrame * frames = NULL;
   size_t nframes = 0;
   size_t cap = 0;
-  const GTEXT_Markup_Node * root = gtext_markup_document_root(doc);
   int ok = 1;
 #define HTD_PUSH(first, d) \
   do { \

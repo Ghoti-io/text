@@ -16,6 +16,18 @@
 # column group, the cell and the caption closing the list of active formatting elements, the implied sections,
 # foster parenting of text and of elements, the formatting elements reopened after a table, the adoption agency
 # moving a block in front of a table. (Templates are not here: html5lib 1.1 reads them by older rules.)
+#
+# Stage 3e (foreign content and fragments) are the cases from `<svg><g><b>` on (61).
+# Each case fails when one of the new rules is undone (the plants in run-html-tree.sh): the breakout list
+# (six cases, the 44 names in groups of seven, each as `<svg><g><name>`), the attributes that make a font
+# break out, the formatting elements reopened before an svg or math element, the foreign end tag's walk
+# (past integration points, across namespaces, not past an HTML element), the special foreign elements
+# (their end tags and list items are stopped by them), CDATA, the attribute adjustments, and fragments (the
+# contexts of the algorithm: the tokenizer state, the template modes, the select and frameset contexts, a
+# foreign context). A case in an SVG or MathML context is answered by parse5 alone (html5lib's API cannot take
+# one), and html_tree_extra_check.py checks that it still cannot. The reference-only gaps are not here: a case
+# a reference answers differently is a witness of tools/oracle/html_tree_diff.py instead (the integration
+# points as special elements in html5lib, the noscript context with scripting off, feDropShadow).
 
 #data
 <a><b><div>x</a>y</div>z
@@ -823,7 +835,6 @@ x<html>y<body>z</body>w</html>v
 |       <c-2>
 |     "x"
 
-
 #data
 <table><caption><b>x</caption>y</table>z
 #errors
@@ -1009,4 +1020,789 @@ x<html>y<body>z</body>w</html>v
 |       <template>
 |         content
 |           "x"
+
+#data
+<svg><g><b><svg><g><big><svg><g><blockquote><svg><g><body><svg><g><br><svg><g><center><svg><g><code>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <b>
+|       <svg svg>
+|         <svg g>
+|       <big>
+|         <svg svg>
+|           <svg g>
+|         <blockquote>
+|           <svg svg>
+|             <svg g>
+|           <svg svg>
+|             <svg g>
+|           <br>
+|           <svg svg>
+|             <svg g>
+|           <center>
+|             <svg svg>
+|               <svg g>
+|             <code>
+
+#data
+<svg><g><dd><svg><g><div><svg><g><dl><svg><g><dt><svg><g><em><svg><g><embed><svg><g><h1>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <dd>
+|       <svg svg>
+|         <svg g>
+|       <div>
+|         <svg svg>
+|           <svg g>
+|         <dl>
+|           <svg svg>
+|             <svg g>
+|           <dt>
+|             <svg svg>
+|               <svg g>
+|             <em>
+|               <svg svg>
+|                 <svg g>
+|               <embed>
+|               <svg svg>
+|                 <svg g>
+|               <h1>
+
+#data
+<svg><g><h2><svg><g><h3><svg><g><h4><svg><g><h5><svg><g><h6><svg><g><head><svg><g><hr>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <h2>
+|       <svg svg>
+|         <svg g>
+|     <h3>
+|       <svg svg>
+|         <svg g>
+|     <h4>
+|       <svg svg>
+|         <svg g>
+|     <h5>
+|       <svg svg>
+|         <svg g>
+|     <h6>
+|       <svg svg>
+|         <svg g>
+|       <svg svg>
+|         <svg g>
+|       <hr>
+
+#data
+<svg><g><i><svg><g><img><svg><g><li><svg><g><listing><svg><g><menu><svg><g><meta><svg><g><nobr>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <i>
+|       <svg svg>
+|         <svg g>
+|       <img>
+|       <svg svg>
+|         <svg g>
+|       <li>
+|         <svg svg>
+|           <svg g>
+|         <listing>
+|           <svg svg>
+|             <svg g>
+|           <menu>
+|             <svg svg>
+|               <svg g>
+|             <meta>
+|             <svg svg>
+|               <svg g>
+|             <nobr>
+
+#data
+<svg><g><ol><svg><g><p><svg><g><pre><svg><g><ruby><svg><g><s><svg><g><small><svg><g><span>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <ol>
+|       <svg svg>
+|         <svg g>
+|       <p>
+|         <svg svg>
+|           <svg g>
+|       <pre>
+|         <svg svg>
+|           <svg g>
+|         <ruby>
+|           <svg svg>
+|             <svg g>
+|           <s>
+|             <svg svg>
+|               <svg g>
+|             <small>
+|               <svg svg>
+|                 <svg g>
+|               <span>
+
+#data
+<svg><g><strong><svg><g><strike><svg><g><sub><svg><g><sup><svg><g><table><svg><g><tt><svg><g><u>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <strong>
+|       <svg svg>
+|         <svg g>
+|       <strike>
+|         <svg svg>
+|           <svg g>
+|         <sub>
+|           <svg svg>
+|             <svg g>
+|           <sup>
+|             <svg svg>
+|               <svg g>
+|             <svg svg>
+|               <svg g>
+|             <tt>
+|               <svg svg>
+|                 <svg g>
+|               <u>
+|             <table>
+
+#data
+<svg><g><ul><svg><g><var>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|     <ul>
+|       <svg svg>
+|         <svg g>
+|       <var>
+
+#data
+<svg><font face=x><svg><font size=1><svg><font id=1><svg><font color=c>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|     <font>
+|       face="x"
+|       <svg svg>
+|       <font>
+|         size="1"
+|         <svg svg>
+|           <svg font>
+|             id="1"
+|             <svg svg>
+|         <font>
+|           color="c"
+
+#data
+<math><mi><font face=x>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <math math>
+|       <math mi>
+|         <font>
+|           face="x"
+|           "y"
+
+#data
+<p><b>1</p><svg><g/></svg>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       <b>
+|         "1"
+|     <b>
+|       <svg svg>
+|         <svg g>
+
+#data
+<p><b>1</p><math><mi/></math>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       <b>
+|         "1"
+|     <b>
+|       <math math>
+|         <math mi>
+
+#data
+<b><svg><foreignObject>x</b>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <svg svg>
+|         <svg foreignObject>
+|           "xy"
+
+#data
+<ul><li>a<math><mi><li>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <ul>
+|       <li>
+|         "a"
+|         <math math>
+|           <math mi>
+|             <li>
+|               "b"
+
+#data
+<ul><li>a<svg><desc><li>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <ul>
+|       <li>
+|         "a"
+|         <svg svg>
+|           <svg desc>
+|             <li>
+|               "b"
+
+#data
+<svg><![CDATA[a<b>]]>c
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       "a<b>c"
+
+#data
+<math><![CDATA[a]]>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <math math>
+|       "ab"
+
+#data
+<p><![CDATA[x]]>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       <!-- [CDATA[x]] -->
+|       "y"
+
+#data
+<svg xlink:href=a xml:lang=b xml:space=c xmlns:xlink=d xmlns=e xlink:role=f>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       xlink href="a"
+|       xlink role="f"
+|       xml lang="b"
+|       xml space="c"
+|       xmlns xlink="d"
+|       xmlns xmlns="e"
+
+#data
+<math xlink:href=a definitionurl=b viewbox=c><mi xml:lang=d>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <math math>
+|       definitionURL="b"
+|       viewbox="c"
+|       xlink href="a"
+|       <math mi>
+|         xml lang="d"
+
+#data
+<svg viewbox=1 attributename=2 xlink:href=3><clippath feblend=4><lineargradient/></clippath>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       attributeName="2"
+|       viewBox="1"
+|       xlink href="3"
+|       <svg clipPath>
+|         feblend="4"
+|         <svg linearGradient>
+
+#data
+<svg><foreignObject><svg><g><g><p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg foreignObject>
+|         <svg svg>
+|           <svg g>
+|             <svg g>
+|         <p>
+|           "x"
+
+#data
+<math><mi><math><g><h1>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <math math>
+|       <math mi>
+|         <math math>
+|           <math g>
+|         <h1>
+|           "x"
+
+#data
+<svg><foreignObject><div><svg><g></foreignObject>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg foreignObject>
+|         <div>
+|           <svg svg>
+|             <svg g>
+|               "x"
+
+#data
+<svg><g><path></g>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg g>
+|         <svg path>
+|       "x"
+
+#data
+<math><g><annotation-xml encoding=text/html><svg><g></g></g>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <math math>
+|       <math g>
+|         <math annotation-xml>
+|           encoding="text/html"
+|           <svg svg>
+|             <svg g>
+|       "x"
+
+#data
+<svg><foreignObject><math><mrow></svg>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <svg svg>
+|       <svg foreignObject>
+|         <math math>
+|           <math mrow>
+|     "x"
+
+#data
+<table><tr><td><svg><td><p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <table>
+|       <tbody>
+|         <tr>
+|           <td>
+|             <svg svg>
+|               <svg td>
+|             <p>
+|               "x"
+
+#data
+<p>a<svg><desc></p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       "a"
+|       <svg svg>
+|         <svg desc>
+|           <p>
+|           "x"
+
+#data
+<ul><li>a<svg><foreignObject><li>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <ul>
+|       <li>
+|         "a"
+|         <svg svg>
+|           <svg foreignObject>
+|             <li>
+|               "b"
+
+#data
+<b>x</b>
+#errors
+#document-fragment
+noscript
+#script-on
+#document
+| "<b>x</b>"
+
+#data
+<option>a<select>b
+#errors
+#document-fragment
+select
+#document
+| <option>
+|   "ab"
+
+#data
+<input>a
+#errors
+#document-fragment
+select
+#document
+| "a"
+
+#data
+<select>a<input>b
+#errors
+#document-fragment
+div
+#document
+| <select>
+|   "a"
+| <input>
+| "b"
+
+#data
+</frameset><frame>
+#errors
+#document-fragment
+frameset
+#document
+| <frame>
+
+#data
+<frameset></frameset><frame>
+#errors
+#document-fragment
+frameset
+#document
+| <frameset>
+| <frame>
+
+#data
+<frameset><frame></frameset> <frame>
+#errors
+#document-fragment
+frameset
+#document
+| <frameset>
+|   <frame>
+| " "
+| <frame>
+
+#data
+
+#errors
+#document-fragment
+html
+#document
+| <head>
+| <body>
+
+#data
+<frameset><frame>
+#errors
+#document-fragment
+html
+#document
+| <head>
+| <frameset>
+|   <frame>
+
+#data
+a</html>b
+#errors
+#document-fragment
+body
+#document
+| "ab"
+
+#data
+<table><b>x<tr><td>y
+#errors
+#document-fragment
+tbody
+#document
+| <b>
+|   "x"
+| <tr>
+|   <td>
+|     "y"
+
+#data
+<b>a<td>c
+#errors
+#document-fragment
+caption
+#document
+| <b>
+|   "ac"
+
+#data
+<path/>x<p>y
+#errors
+#document-fragment
+svg g
+#document
+| <svg path>
+| "x"
+| <p>
+|   "y"
+
+#data
+<g><path/>x
+#errors
+#document-fragment
+svg svg
+#document
+| <svg g>
+|   <svg path>
+|   "x"
+
+#data
+<div>x</div>y
+#errors
+#document-fragment
+svg desc
+#document
+| <div>
+|   "x"
+| "y"
+
+#data
+<g>
+#errors
+#document-fragment
+svg foreignObject
+#document
+| <g>
+
+#data
+<g>
+#errors
+#document-fragment
+svg foreignobject
+#document
+| <svg g>
+
+#data
+<b>x</b><mglyph/>
+#errors
+#document-fragment
+math mi
+#document
+| <b>
+|   "x"
+| <math mglyph>
+
+#data
+<g>
+#errors
+#document-fragment
+math annotation-xml
+#document
+| <math g>
+
+#data
+<svg><g>
+#errors
+#document-fragment
+math annotation-xml
+#document
+| <svg svg>
+|   <svg g>
+
+#data
+</path>x
+#errors
+#document-fragment
+svg path
+#document
+| "x"
+
+#data
+<!--c-->xy
+#errors
+#document-fragment
+svg svg
+#document
+| <!-- c -->
+| "xy"
+
+#data
+<td>a<td>b
+#errors
+#document-fragment
+tr
+#document
+| <td>
+|   "a"
+| <td>
+|   "b"
+
+#data
+<tr><td>a
+#errors
+#document-fragment
+table
+#document
+| <tbody>
+|   <tr>
+|     <td>
+|       "a"
+
+#data
+<col><col>
+#errors
+#document-fragment
+colgroup
+#document
+| <col>
+| <col>
+
+#data
+<b>x</b>
+#errors
+#document-fragment
+title
+#document
+| "<b>x</b>"
+
+#data
+a&amp;b<x>
+#errors
+#document-fragment
+textarea
+#document
+| "a&b<x>"
+
+#data
+a</script>b
+#errors
+#document-fragment
+script
+#document
+| "a</script>b"
+
+#data
+<!--x--><b>
+#errors
+#document-fragment
+plaintext
+#document
+| "<!--x--><b>"
+
+#data
+<b>x
+#errors
+#document-fragment
+svg title
+#document
+| <b>
+|   "x"
+
+#data
+<![CDATA[x]]>y
+#errors
+#document-fragment
+svg path
+#document
+| "xy"
+
+#data
+<![CDATA[x]]>y
+#errors
+#document-fragment
+div
+#document
+| <!-- [CDATA[x]] -->
+| "y"
 

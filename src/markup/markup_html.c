@@ -48,10 +48,14 @@
  * k_svg_attributes, k_math_attributes) are the standard's tables in
  * parsing.html, "Tree construction": "adjust MathML attributes" (definitionURL),
  * "adjust SVG attributes" (58 names) and the SVG tag name table of the "any
- * other start tag" rule for foreign content (36 names). They were transcribed
+ * other start tag" rule for foreign content (37 names). They were transcribed
  * from parse5 8.0.1's copy of those tables, read out of the pinned image
  * (tools/oracle/containers/html) on 2026-10-11, not from the standard's text,
- * so they are as good as that parser is. tools/oracle/html_diff.py's fixed case writes
+ * so they were as good as that parser is: **stage 3e checked them against the
+ * standard as served on 2026-10-12** (the tree builder's own tables,
+ * src/html/html_tree_foreign.c, were extracted from it by script) and parse5's
+ * copy was missing `feDropShadow` (its lower case form `fedropshadow` is in the
+ * standard's table); it is added here. The attribute tables agree. tools/oracle/html_diff.py's fixed case writes
  * every entry of every table in this file (the elements, the boolean attributes, the SVG and
  * MathML names, and the folded form of each SVG name) and puts it through both references, so a
  * transcription error shows there; that is a check on what the references do, not on the standard. They do not carry contentScriptType, which
@@ -168,8 +172,8 @@ static const char * const k_svg_tags[] = {
     "animateMotion", "animateTransform", "clipPath", "feBlend",
     "feColorMatrix", "feComponentTransfer", "feComposite",
     "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap",
-    "feDistantLight", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR",
-    "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology",
+    "feDistantLight", "feDropShadow", "feFlood", "feFuncA", "feFuncB", "feFuncG",
+    "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology",
     "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight",
     "feTile", "feTurbulence", "foreignObject", "glyphRef", "linearGradient",
     "radialGradient", "textPath",
