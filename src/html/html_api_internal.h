@@ -67,6 +67,14 @@ void html_result_set_failure(
 bool html_result_set_errors(GTEXT_HTML_Result * result, const GTEXT_Allocator * allocator,
     const GTEXT_HTML_Tree * tree);
 
+/// Is this one of the Encoding standard's labels of UTF-8 (trimmed of ASCII white space, ASCII
+/// case-insensitive)? The only encoding the parser reads and the serializer writes in this release.
+bool html_label_is_utf8(const char * label);
+
+/// Check serializer options without making a serializer: OK, E_OPTIONS or E_UNSUPPORTED_ENCODING (NULL is the
+/// defaults).
+GTEXT_HTML_Status html_serialize_check_options(const GTEXT_HTML_Serialize_Options * opts);
+
 /// The tree builder's status as the public one.
 GTEXT_HTML_Status html_status_from_tree(GTEXT_HTML_TreeStatus status);
 

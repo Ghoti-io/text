@@ -1,0 +1,33 @@
+# Defects planted in a copy of src/html/html_serialize.c by tools/oracle/run-html-serialize-oracle.sh --controls, one per line:
+#
+#   <name> TAB <old text> TAB <new text>
+#
+# The old text is literal (a `\n` in it is a line feed) and must be in the file exactly once. The differential
+# (html_serialize_diff.py) is run with this library's serializer so edited and must fail with a heading it prints for a
+# divergence it cannot account for: a divergence with no entry, a listed divergence that is gone or whose count changed, or a
+# tree the serializer refused. The plants are rules the standard's text states and a reference also implements, so that
+# undoing one makes this library disagree with the references in a way the list does not describe.
+text-nbsp-not-escaped	rep = "&nbsp;";	rep = "\xC2\xA0";
+text-ampersand-not-escaped	case '&':\n        rep = "&amp;";	case '&':\n        rep = "&";
+text-lt-not-escaped	rep = "&lt;";	rep = "<";
+text-gt-not-escaped	rep = "&gt;";	rep = ">";
+attribute-quote-reference-changed	rep = "&quot;";	rep = "&#34;";
+attribute-value-single-quoted	char q = s->o.quote_char ? s->o.quote_char : '"';	char q = s->o.quote_char ? s->o.quote_char : '\'';
+void-element-has-an-end-tag	return html && !prefix && gtext_markup_html_is_void(GTEXT_MARKUP_NS_HTML, local);	return false;
+void-element-children-written	    if (is_void_name(html, prefix, local)) {\n      continue; /* a void element has no end tag, and its children are not written */\n    }	    if (is_void_name(html, prefix, local) && 0) {\n      continue;\n    }
+raw-text-escaped	return (flags & EF_RAW) || ((flags & EF_RAW_SCRIPTING) && s->o.scripting);	return false;
+noscript-ignores-the-scripting-flag	return (flags & EF_RAW) || ((flags & EF_RAW_SCRIPTING) && s->o.scripting);	return (flags & (EF_RAW | EF_RAW_SCRIPTING)) != 0;
+plaintext-not-raw	{"plaintext", EF_RAW | EF_PRESERVE}	{"plaintext", EF_PRESERVE}
+xmp-not-raw	{"xmp", EF_RAW | EF_PRESERVE}	{"xmp", EF_PRESERVE}
+template-contents-not-written	        html && strcmp(local, "template") == 0 ? gtext_markup_element_template_content(n) : NULL;	        NULL;
+xlink-prefix-lost	lead = "xlink:";	lead = NULL;
+xml-prefix-lost	lead = "xml:";	lead = NULL;
+xmlns-prefix-lost	      if (strcmp(a->local, "xmlns") != 0) {\n        lead = "xmlns:";\n      }	      lead = NULL;
+other-namespace-prefix-lost	    else if (a->prefix) {\n      if (outs(s, a->prefix) != GTEXT_HTML_OK || outc(s, ':') != GTEXT_HTML_OK) {\n        return s->status;\n      }\n    }	    else if (0) {\n    }
+foreign-element-prefix-lost	  if (prefix && (outs(s, prefix) != GTEXT_HTML_OK || outc(s, ':') != GTEXT_HTML_OK)) {\n    return s->status;\n  }\n  return outs(s, local);	  return outs(s, local);
+html-element-prefix-written	  if (!prefix || !ns) {\n    return NULL;\n  }\n  if (strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0 || strcmp(ns, GTEXT_MARKUP_NS_SVG) == 0\n      || strcmp(ns, GTEXT_MARKUP_NS_MATHML) == 0) {\n    return NULL;\n  }\n  return prefix;	  return prefix;
+comment-written-without-data	if (outs(s, "<!--") != GTEXT_HTML_OK || out(s, data, length) != GTEXT_HTML_OK) {	if (outs(s, "<!--") != GTEXT_HTML_OK || out(s, data, 0) != GTEXT_HTML_OK) {
+processing-instruction-without-question-mark	  return outs(s, "?>");	  return outs(s, ">");
+doctype-name-lowercased	  if (outs(s, "<!DOCTYPE ") != GTEXT_HTML_OK || outs(s, name ? name : "") != GTEXT_HTML_OK) {	  if (outs(s, "<!DOCTYPE ") != GTEXT_HTML_OK || outs(s, "html") != GTEXT_HTML_OK) {
+doctype-identifiers-written	  if (s->o.doctype_identifiers) {\n    const bool has_pub	  if (1) {\n    const bool has_pub
+cdata-section-dropped	    case GTEXT_MARKUP_KIND_TEXT:\n    case GTEXT_MARKUP_KIND_CDATA: {\n      const char * d = gtext_markup_node_data(n, &len);	    case GTEXT_MARKUP_KIND_TEXT: {\n      const char * d = gtext_markup_node_data(n, &len);

@@ -64,6 +64,9 @@ static const char * status_name(GTEXT_HTML_Status s) {
     case GTEXT_HTML_E_LIMIT_COMMENT: return "E_LIMIT_COMMENT";
     case GTEXT_HTML_E_LIMIT_TEXT: return "E_LIMIT_TEXT";
     case GTEXT_HTML_E_LIMIT_ATTRIBUTES: return "E_LIMIT_ATTRIBUTES";
+    case GTEXT_HTML_E_WRITE: return "E_WRITE";
+    case GTEXT_HTML_E_LIMIT_OUTPUT: return "E_LIMIT_OUTPUT";
+    case GTEXT_HTML_E_OPTIONS: return "E_OPTIONS";
   }
   return "E_UNKNOWN";
 }

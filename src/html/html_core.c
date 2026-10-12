@@ -75,6 +75,12 @@ const char * gtext_html_status_string(GTEXT_HTML_Status status) {
       return "run of text too long";
     case GTEXT_HTML_E_LIMIT_ATTRIBUTES:
       return "too many attributes on a tag";
+    case GTEXT_HTML_E_WRITE:
+      return "output refused";
+    case GTEXT_HTML_E_LIMIT_OUTPUT:
+      return "output too long";
+    case GTEXT_HTML_E_OPTIONS:
+      return "unusable combination of options";
   }
   return "unknown status";
 }

@@ -75,9 +75,9 @@ static bool is_ascii_space(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
 }
 
-/* The Encoding standard's labels of UTF-8, matched ASCII case-insensitively after trimming ASCII
-   white space as "get an encoding" does. */
-static bool is_utf8_label(const char * label) {
+/// The Encoding standard's labels of UTF-8, matched ASCII case-insensitively after trimming ASCII
+/// white space as "get an encoding" does (declared in html_api_internal.h; the serializer's labels too).
+bool html_label_is_utf8(const char * label) {
   static const char * const names[] = {"unicode-1-1-utf-8", "unicode11utf8", "unicode20utf8", "utf-8",
       "utf8", "x-unicode20utf8"};
   while (is_ascii_space(*label)) {
@@ -187,8 +187,8 @@ static GTEXT_HTML_Status parser_make(const GTEXT_HTML_Parse_Options * opts,
   if ((unsigned)o.transport_encoding_certainty > (unsigned)GTEXT_HTML_TENTATIVE) {
     return GTEXT_HTML_E_INVALID;
   }
-  if ((o.transport_encoding && !is_utf8_label(o.transport_encoding))
-      || (o.default_encoding && !is_utf8_label(o.default_encoding))) {
+  if ((o.transport_encoding && !html_label_is_utf8(o.transport_encoding))
+      || (o.default_encoding && !html_label_is_utf8(o.default_encoding))) {
     return GTEXT_HTML_E_UNSUPPORTED_ENCODING;
   }
   const GTEXT_Allocator * allocator = o.allocator ? o.allocator : gtext_allocator_default();

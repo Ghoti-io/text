@@ -1,0 +1,39 @@
+# Divergences of the HTML serializer from html5lib 1.1's and parse5 8.0.1's that are expected and understood, for the
+# default population of tools/oracle/html_serialize_diff.py (the documents and fragments of html_tree_diff.py's population
+# with 3,000 generated documents, the in-scope tree-construction vectors the references can judge, 3,030 trees no parser
+# makes, each written two ways, at the standard's settings; seed 1). The gate is html_serialize_diff.py: it fails on a
+# divergence of a kind that is not here, on an entry that no longer occurs, on one whose count has changed (the count is
+# the signature of the population), and on a divergence no feature of the tree explains. A count of `hunt` is an entry seen
+# only on the larger populations a hunt generates.
+#
+# Columns, tab separated: key, count, class, reason.
+#
+# The key is `<reference>:<feature>`. A feature is a property of the tree with a transformation that removes it; a
+# divergence is explained by the smallest set of features that makes this library and the reference write the tree alike
+# once they are removed (verified for each divergence, not assumed), and it counts once for each feature in its set. So the
+# counts add up to more than the divergences, and a tree with a no-break space and a prefixed attribute is in two lines.
+#
+# The standard is the default, the served text of 2026-10-12 ("Serializing HTML fragments"); neither reference is
+# wrong about what it set out to do, and where the standard decides the reason quotes it. Classes: standard-newer (the
+# standard has moved past the reference), reference-old (the reference has never done it), reference-wrong (it disagrees
+# with the standard in a way no change of the standard explains).
+#
+# **A limit of the method, and what stands in for it.** A feature explains *any* divergence in a tree that has it, so a
+# defect of this library in the same construct could hide there. Every reference deviation therefore has a WITNESS in the
+# script: a small tree and the output worked out by hand from the standard's text, which this library gives and the
+# reference does not, checked on every run.
+
+html5lib:angle-in-attribute	1178	standard-newer	the standard (served 2026-10-12) escapes `<` and `>` in an attribute value as in text ("Replace any occurrences of the \"<\" character by \"&lt;\"", the escaping steps apply in attribute mode too); html5lib 1.1 escapes the ampersand and the quote only
+html5lib:attribute-namespace	4183	reference-old	html5lib writes an attribute's local name and drops its namespace (its serializer says "Add namespace support here"); the standard's table writes `xml:`, `xmlns:`, `xlink:` and the qualified name otherwise
+html5lib:doctype-identifiers	2230	reference-old	html5lib writes the public and system identifiers of a document type; the standard writes "<!DOCTYPE ", the name and ">" (the option doctype_identifiers writes html5lib's form)
+html5lib:nbsp-in-attribute	737	reference-old	html5lib does not escape U+00A0; the standard's escaping steps replace it by "&nbsp;" in attribute mode as in text
+html5lib:nbsp-in-text	4135	reference-old	html5lib does not escape U+00A0; the standard's escaping steps replace it by "&nbsp;"
+html5lib:noscript	30	reference-old	html5lib's raw text flag is set by a noscript start tag whatever the scripting flag; the standard reads the text of a noscript as raw text only "if scripting is enabled for the node"
+html5lib:plaintext	58	reference-old	html5lib's list of raw text elements has no plaintext, the standard's has ("style, script, xmp, iframe, noembed, noframes, or plaintext")
+html5lib:processing-instruction	388	reference-old	html5lib has no token for a processing instruction and writes nothing; the standard appends "<?", the target, a space, the data and "?>"
+html5lib:raw-name-in-foreign-namespace	698	reference-old	html5lib decides raw text by the element's name alone, so an SVG or MathML `style` or `script` is raw; the standard's rule is about the parent being a `style` (an HTML element) and the SVG one is escaped
+html5lib:raw-text-with-elements	87	reference-old	html5lib's raw text flag stays set until the next raw text end tag, so the text of an element inside a `script` is raw too; the standard asks about the text's own parent
+html5lib:void-set	1014	reference-old	html5lib's list of void elements has `command` and `event-source` and lacks `wbr`, `keygen`, `basefont`, `bgsound` and `frame`; the standard's: "an element serializes as void if its element type is one of the void elements, or is basefont, bgsound, frame, keygen, or param"
+parse5:angle-in-attribute	1195	standard-newer	as html5lib's: parse5 8.0.1 escapes the ampersand, U+00A0 and the quote in an attribute value, and not `<` and `>`, which the standard now does
+parse5:attribute-namespace-without-prefix	256	reference-wrong	an attribute in a namespace other than XML, XMLNS and XLink that has no prefix is written `undefined:name` by parse5; the standard writes "the attribute's qualified name", which with no prefix is the local name
+parse5:processing-instruction	373	reference-old	parse5's tree has no processing instruction and its serializer writes nothing for a node it does not know; the standard appends "<?", the target, a space, the data and "?>"

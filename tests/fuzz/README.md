@@ -17,6 +17,7 @@ The libFuzzer harnesses:
 | HTML tokenizer | `fuzz_html_tokenizer.cpp` | `make fuzz-html-tokenizer` | `make fuzz-run-html-tokenizer` |
 | HTML tree builder | `fuzz_html_tree.cpp` | `make fuzz-html-tree` | `make fuzz-run-html-tree` |
 | HTML public API | `fuzz_html.cpp` | `make fuzz-html` | `make fuzz-run-html` |
+| HTML serializer | `fuzz_html_serialize.cpp` | `make fuzz-html-serialize` | `make fuzz-run-html-serialize` |
 
 `make fuzz` builds and runs every one of them. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
@@ -999,3 +1000,23 @@ input), made by `tools/html/make-api-fuzz-seeds.py`. The script leaves `reproduc
 `tests/test-html-api-fuzz-seeds.cpp` replays every seed in `make test`. `make check-html-fuzz-plants`
 (`tools/html/plant-fuzz.py`) plants twelve defects in a copy of the layer, each replayed from a seed, as the unedited
 control (`control-api`) must stay silent under the search.
+
+## Fuzzing the HTML serializer
+
+`fuzz_html_serialize.cpp` writes the HTML parser's trees (the parser makes a tree of every shape, from any bytes) under options
+chosen by the first six bytes, and holds the serializer to: the output is a model's, written again in the harness from the
+standard's text (at the defaults); the token-stream serializer, fed the tokens the tree gives in pieces cut between characters, writes
+the same bytes as the walk under every option; the counts (nodes visited, bytes written, tags omitted only with the option);
+the output parses, and a tree that comes back equal is written as the same bytes; OUTER is the start tag, CHILDREN and the end
+tag; an unusable option combination is refused with nothing written, through all three entry points; a sink that refuses the
+n-th call gets exactly the chunks before it and is not asked again; the output limit and the depth limit are exact; and an
+allocation failed at every point of a call (the sink, the buffer, the token stream) is `E_OOM` or the normal answer, with no leak.
+
+Seeds: `tests/fuzz/corpus/html-serialize` (750, made by `tools/html/make-serialize-fuzz-seeds.py`: every third tree-builder seed with
+one of fourteen option profiles, and 38 of its own), replayed by `make test` (`tests/test-html-serialize-fuzz-seeds.cpp`), and
+`reproducer-*.seed` for finds. `make check-html-fuzz-plants` plants eleven defects in the serializer and shows the fuzzer find each
+(eight replayed from a seed, three searched for from the seeds), with its own unedited control. **The first search found a real defect in seconds**: with
+`inject_meta_charset`, the tokens held back for a `head` were counted against `max_output_bytes` at their size in the queue, which
+is bigger than their output, so an output exactly at the limit was refused (`reproducer-output-limit-with-a-held-head.seed`; the
+queue is now bounded by eight times the limit and kept small by varint lengths).
+

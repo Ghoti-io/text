@@ -140,6 +140,27 @@ own unedited control (`control-api`):
   api-oom-absorbed-in-report   the result is returned incomplete when its error list cannot be
                    allocated: the allocation-failure sweep's property that a success is the normal answer.
 
+The serializer's fuzzer (tests/fuzz/fuzz_html_serialize.cpp, target `html-serialize`) has eleven, eight replayed from a
+seed of tests/fuzz/corpus/html-serialize and three searched for from the seeds (`serialize-nodes-not-counted`,
+`serialize-solidus-space-not-checked`, `serialize-output-limit-off-by-one`), with its own unedited control
+(`control-serialize`):
+
+  serialize-nbsp-not-escaped   a no-break space in text is written as it is: the model, which writes `&nbsp;`.
+  serialize-stream-drops-a-character   the token stream ignores a text of one character: the property that it
+                   writes what the walk writes.
+  serialize-sink-asked-again   a sink that refused is given the rest of the buffer when the walk stops: the sink is not
+                   called again after a refusal.
+  serialize-template-children-written   a template's own children are written in place of its contents: the model.
+  serialize-xlink-prefix-lost   an attribute in the XLink namespace is written without `xlink:`: the model.
+  serialize-raw-text-escaped   the text of a script is escaped like other text: the model.
+  serialize-stack-leak   the stack of open elements is not freed with the serializer: the counting allocator and
+                   LeakSanitizer.
+  serialize-oom-absorbed-in-growth   a failed growth of an array is not recorded: a success that is not the normal answer.
+  serialize-nodes-not-counted   the result's count of nodes visited stays zero: the counts.
+  serialize-solidus-space-not-checked   `space_before_trailing_solidus` without `use_trailing_solidus` is accepted: an unusable combination
+                   of options is refused.
+  serialize-output-limit-off-by-one   an output exactly at the limit is refused: the limit is exact.
+
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
 corpus.
@@ -260,6 +281,35 @@ PLANTS = {
                                  "  p->bom_open = context == NULL;", "  p->bom_open = true;"),
     "api-oom-absorbed-in-report": ("html", "src/html/html_api.c",
                                    "    if (!result->internal) {", "    if (0) {"),
+    # The serializer (tests/fuzz/fuzz_html_serialize.cpp). Each breaks a property it holds the serializer to - the model, the
+    # token stream against the walk, the counts, the limits, the sink, the allocator.
+    "serialize-nbsp-not-escaped": ("html-serialize", "src/html/html_serialize.c",
+                                   '          rep = "&nbsp;";', '          rep = "\\xC2\\xA0";'),
+    "serialize-stream-drops-a-character": ("html-serialize", "src/html/html_serialize.c",
+                                           "  if (length == 0) {\n    return s->status;\n  }\n  if (fe_queueing(s)) {\n    if (q_byte(s, Q_CHARS)) {",
+                                           "  if (length <= 1) {\n    return s->status;\n  }\n  if (fe_queueing(s)) {\n    if (q_byte(s, Q_CHARS)) {"),
+    "serialize-sink-asked-again": ("html-serialize", "src/html/html_serialize.c",
+                                   "  if (s->used == 0 || s->sink_failed) {", "  if (s->used == 0) {"),
+    "serialize-template-children-written": ("html-serialize", "src/html/html_serialize.c",
+                                            "    cursor = gtext_markup_node_first_child(content ? content : n);",
+                                            "    cursor = gtext_markup_node_first_child(n);"),
+    "serialize-xlink-prefix-lost": ("html-serialize", "src/html/html_serialize.c",
+                                    '      lead = "xlink:";', "      lead = NULL;"),
+    "serialize-raw-text-escaped": ("html-serialize", "src/html/html_serialize.c",
+                                   "  return (flags & EF_RAW) || ((flags & EF_RAW_SCRIPTING) && s->o.scripting);",
+                                   "  return false;"),
+    "serialize-stack-leak": ("html-serialize", "src/html/html_serialize.c",
+                             "  gtext_allocator_free(&alloc, s->stack);\n", ""),
+    "serialize-oom-absorbed-in-growth": ("html-serialize", "src/html/html_serialize.c",
+                                         "  if (!grown) {\n    oom(s);\n    return false;\n  }\n  *array = grown;",
+                                         "  if (!grown) {\n    return false;\n  }\n  *array = grown;"),
+    "serialize-nodes-not-counted": ("html-serialize", "src/html/html_serialize.c",
+                                    "    s->r.nodes_visited++;\n", ""),
+    "serialize-solidus-space-not-checked": ("html-serialize", "src/html/html_serialize.c",
+                                            "  if (o->space_before_trailing_solidus && !o->use_trailing_solidus) {\n    return GTEXT_HTML_E_OPTIONS;\n  }\n",
+                                            ""),
+    "serialize-output-limit-off-by-one": ("html-serialize", "src/html/html_serialize.c",
+                                          "  if (n > s->o.max_output_bytes - s->total) {", "  if (n >= s->o.max_output_bytes - s->total) {"),
     "cr-at-a-cut": ("html-tokenizer", "src/html/html_tokenizer.c",
                     "      if (p + 1 >= len) {\n        if (!t->final) {\n          return false;\n        }\n        *cp = '\\n';",
                     "      if (p + 1 >= len) {\n        *cp = '\\n';"),
@@ -315,6 +365,14 @@ REPRODUCERS = {
     "tree-foreign-atoms-leak": "tests/fuzz/corpus/html-tree/foreign-attributes.seed",
     "tree-svg-attribute-case-not-restored": "tests/fuzz/corpus/html-tree/svg-attribute-table.seed",
     "tree-foreign-nul-kept": "tests/fuzz/corpus/html-tree/nul-in-foreign.seed",
+    "serialize-nbsp-not-escaped": "tests/fuzz/corpus/html-serialize/ser-nbsp.seed",
+    "serialize-stream-drops-a-character": "tests/fuzz/corpus/html-serialize/ser-one-character-of-text.seed",
+    "serialize-sink-asked-again": "tests/fuzz/corpus/html-serialize/ser-ampersands-sink-fails-midway.seed",
+    "serialize-template-children-written": "tests/fuzz/corpus/html-serialize/ser-template.seed",
+    "serialize-xlink-prefix-lost": "tests/fuzz/corpus/html-serialize/ser-svg-xlink.seed",
+    "serialize-raw-text-escaped": "tests/fuzz/corpus/html-serialize/ser-raw-text.seed",
+    "serialize-stack-leak": "tests/fuzz/corpus/html-serialize/ser-alloc-sweep-all-forms.seed",
+    "serialize-oom-absorbed-in-growth": "tests/fuzz/corpus/html-serialize/ser-alloc-sweep-all-forms.seed",
     "api-bom-needs-one-feed": "tests/fuzz/corpus/html/api-bom-cut-byte-at-a-time.seed",
     "api-held-bytes-dropped": "tests/fuzz/corpus/html/api-bom-prefix-then-text.seed",
     "api-result-leak": "tests/fuzz/corpus/html/api-rich-document.seed",
@@ -354,6 +412,8 @@ def target_of(name):
         return "html-tree"
     if name == "control-api":
         return "html"
+    if name == "control-serialize":
+        return "html-serialize"
     return PLANTS[name][0]
 
 
@@ -402,7 +462,7 @@ def run(name, seconds):
 # harness's own "property failed" lines. The build's command lines mention the harness names,
 # and a compiler error, a kill by memcap (exit 137) or a timeout all exit non-zero too, so none
 # of those counts: the run must have started (libFuzzer printed its seed) and then reported.
-REPORT = re.compile(r"^(fuzz_html(_tokenizer|_tree)?: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_html(_tokenizer|_tree|_serialize)?: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer).*)$", re.M)
 
 
@@ -422,11 +482,11 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    names = names or ["control", "control-tree", "control-api"] + list(PLANTS)
+    names = names or ["control", "control-tree", "control-api", "control-serialize"] + list(PLANTS)
     bad = []
     for name in names:
         if not name.startswith("control") and name not in PLANTS:
-            raise SystemExit("unknown plant %r (one of control, control-tree, control-api, %s)" % (name, ", ".join(PLANTS)))
+            raise SystemExit("unknown plant %r (one of control, control-tree, control-api, control-serialize, %s)" % (name, ", ".join(PLANTS)))
         status, out = run(name, seconds)
         reported = found_by_fuzzer(status, out)
         if name.startswith("control"):

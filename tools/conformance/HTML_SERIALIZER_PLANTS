@@ -1,0 +1,44 @@
+# Defects planted in a copy of src/html/html_serialize.c by tools/conformance/run-html-serializer.sh --controls, one per line:
+#
+#   <name> TAB <F|T|S> TAB <old text> TAB <new text>
+#
+# The old text is literal (a `\n` in it is a line feed) and must be in the file exactly once; the gate is run with the
+# edited serializer and must fail with the heading the letter names: F, UNEXPLAINED FAILURES (a serializer vector);
+# T, UNEXPLAINED ROUND TRIPS (a tree vector that no longer reads back as the standard allows); S, STALE EXCEPTIONS (a
+# vector the serializer was listed as failing now passes). A plant that no gate sees is a rule nothing holds.
+#
+# Rules no vector reaches have no plant here and are held by tests/test-html-serialize.cpp instead: the standard's newer
+# optional tags (an option or optgroup before an hr, a p before dialog or search), the end tag of a p inside an element
+# that forbids it, the serialized name of every namespace, and the quoting and escaping of a no-break space, and a noscript's text with and without the scripting flag.
+ampersand-not-escaped	F	case '&':\n        rep = "&amp;";	case '&':\n        rep = "&";
+less-than-not-escaped	F	rep = "&lt;";	rep = "<";
+greater-than-not-escaped	F	rep = "&gt;";	rep = ">";
+double-quote-reference-changed	F	rep = "&quot;";	rep = "&#34;";
+apostrophe-reference-changed	F	rep = "&#39;";	rep = "&apos;";
+best-quote-reversed	F	if (has_sq && !has_dq) {\n        q = '"';	if (has_sq && !has_dq) {\n        q = '\'';
+minimize-never	F	if (s->o.minimize_boolean_attributes && html && !a->ns	if (0 && html && !a->ns
+solidus-space-reversed	F	if (s->o.space_before_trailing_solidus && outc(s, ' ')	if (!s->o.space_before_trailing_solidus && outc(s, ' ')
+white-space-not-collapsed	F	if (!s->in_space_run && outc(s, ' ') != GTEXT_HTML_OK) {	if (outc(s, ' ') != GTEXT_HTML_OK) {
+meta-never-injected	F	if (!s->meta_found && s->status == GTEXT_HTML_OK && (s->qlen > 0 || s->ij_context_head)) {	if (0) {
+charset-never-replaced	F	if (equal_nocase(a.local, strlen(a.local), "charset", 7)) {	if (0) {
+http-equiv-never-replaced	F	"content-type", 12)) {\n      http_equiv_ct = true;	"content-typo", 12)) {\n      http_equiv_ct = true;
+doctype-public-as-system	F	outs(s, " PUBLIC ") != GTEXT_HTML_OK	outs(s, " SYSTEM ") != GTEXT_HTML_OK
+attributes-not-sorted	F	if (as->n > 1 && s->o.alphabetical_attributes) {	if (0) {
+comment-start-changed	F	outs(s, "<!--") != GTEXT_HTML_OK || out(s, data, length) != GTEXT_HTML_OK) {\n    return s->status;\n  }\n  return outs(s, "-->");	outs(s, "<!-- ") != GTEXT_HTML_OK || out(s, data, length) != GTEXT_HTML_OK) {\n    return s->status;\n  }\n  return outs(s, "-->");
+void-elements-have-end-tags	F	return html && !prefix && gtext_markup_html_is_void(GTEXT_MARKUP_NS_HTML, local);	return false;
+raw-text-is-escaped	F	return (flags & EF_RAW) || ((flags & EF_RAW_SCRIPTING) && s->o.scripting);	return false;
+li-end-kept-at-the-end	F	return start_is(n, I_LI) || no_more(n);	return start_is(n, I_LI);
+p-end-not-omitted-before-a-block	F	if (n->kind == N_START && (id_flags(n->id) & EF_PNEXT)) {	if (0) {
+head-start-needs-an-element	F	return no_more(n) || n->kind == N_START;	return no_more(n);
+head-end-before-a-comment	F	    case I_HEAD:\n    case I_COLGROUP:\n    case I_CAPTION:\n      return !white_or_comment(n);	    case I_HEAD:\n    case I_COLGROUP:\n    case I_CAPTION:\n      return true;
+body-start-before-white-space	F	      if (white_or_comment(n)) {\n        return false;\n      }\n      return !(n->kind == N_START	      return !(n->kind == N_START
+html-end-before-a-comment	F	    case I_HTML:\n    case I_BODY:\n      return n->kind != N_COMMENT;	    case I_HTML:\n    case I_BODY:\n      return true;
+tbody-start-after-an-omitted-thead-end	F	return start_is(n, I_TR) && s->last_end_omitted != I_TBODY && s->last_end_omitted != I_THEAD\n          && s->last_end_omitted != I_TFOOT;	return start_is(n, I_TR);
+colgroup-start-after-an-omitted-colgroup-end	F	return start_is(n, I_COL) && s->last_end_omitted != I_COLGROUP;	return start_is(n, I_COL);
+tfoot-end-before-a-tbody	S	case I_TFOOT:\n      return no_more(n);	case I_TFOOT:\n      return start_is(n, I_TBODY) || no_more(n);
+xlink-attribute-prefix-changed	T	lead = "xlink:";	lead = "xl:";
+xml-attribute-prefix-lost	T	lead = "xml:";	lead = NULL;
+template-contents-not-written	T	        html && strcmp(local, "template") == 0 ? gtext_markup_element_template_content(n) : NULL;	        NULL;
+nbsp-written-twice	T	rep = "&nbsp;";	rep = "&nbsp;&nbsp;";
+comment-data-lost	T	if (outs(s, "<!--") != GTEXT_HTML_OK || out(s, data, length) != GTEXT_HTML_OK) {	if (outs(s, "<!--") != GTEXT_HTML_OK || out(s, data, 0) != GTEXT_HTML_OK) {
+doctype-name-replaced	T	outs(s, name ? name : "") != GTEXT_HTML_OK) {\n    return s->status;\n  }\n  if (s->o.doctype_identifiers) {	outs(s, "html") != GTEXT_HTML_OK) {\n    return s->status;\n  }\n  if (s->o.doctype_identifiers) {

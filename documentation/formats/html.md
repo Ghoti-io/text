@@ -6,7 +6,8 @@
 Standard says a browser does, and builds a \ref format_markup "Markup tree" from it;
 `gtext_html_parse_fragment()` does what `innerHTML` does, in a context element you
 describe; `GTEXT_HTML_Parser` takes the document in pieces as it arrives; and
-`gtext_html_parse_file()` reads a file. HTML has no malformed documents: **every input has
+`gtext_html_parse_file()` reads a file; and `gtext_html_serialize()` writes a tree back as HTML (the standard's
+"serializing HTML fragments" algorithm, \ref format_html "see Writing HTML" below). HTML has no malformed documents: **every input has
 a tree**, and the mistakes in it are *parse errors*, listed in the result with the
 standard's names and positions, which are not failures. A parse fails only for an
 argument, a limit, memory, or an encoding this release cannot read. Back to
@@ -478,6 +479,362 @@ The document is a `GTEXT_Markup_Document` in HTML mode, as the standard's tree c
 A document with no `html`, `head` or `body` gets them. Nothing is ever
 resolved: a `<link>`, `<img src>`, `<script src>` or a form action is only an attribute value.
 
+## Writing HTML
+
+`gtext_html_serialize()` writes a node as HTML by the standard's "serializing HTML fragments" algorithm (section 13.3 of
+the Living Standard, **read as served on 2026-10-12**); `gtext_html_serialize_buffer()` writes to a new buffer,
+`gtext_html_serialize_file()` to a file that is replaced atomically, and `GTEXT_HTML_Serializer` takes the tokens one at a
+time (the walk over a tree is made of exactly that). Include `<ghoti.io/text/html.h>`.
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Parse a fragment and write it back. The output is the standard's serialization: every attribute double quoted,
+   `&`, `<`, `>` and the no-break space escaped, no end tag for a void element, and nothing left out. */
+static void serialize_fragment(void) {
+  const char * text = "<p class=a title='x\"y'>one &amp; two<br><b>three</p>";
+  GTEXT_HTML_Fragment_Context context;
+  memset(&context, 0, sizeof(context));
+  context.local_name = "div";
+
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_Markup_Node * fragment = NULL;
+  if (gtext_html_parse_fragment(&context, text, strlen(text), NULL, &doc, &fragment, NULL) != GTEXT_HTML_OK) {
+    return;
+  }
+
+  char * out = NULL;
+  size_t length = 0;
+  GTEXT_HTML_Serialize_Result result;
+  if (gtext_html_serialize_buffer(fragment, GTEXT_HTML_SERIALIZE_CHILDREN, NULL, &out, &length, &result)
+      == GTEXT_HTML_OK) {
+    printf("%s\n%zu bytes, %zu nodes\n", out, result.bytes_written, result.nodes_visited);
+    gtext_html_serialize_buffer_free(doc, NULL, out);
+  }
+
+  /* One element, itself: `outerHTML`. */
+  const GTEXT_Markup_Node * p = gtext_markup_node_first_child(fragment);
+  if (gtext_html_serialize_buffer(p, GTEXT_HTML_SERIALIZE_OUTER, NULL, &out, &length, NULL) == GTEXT_HTML_OK) {
+    printf("%s\n", out);
+    gtext_html_serialize_buffer_free(doc, NULL, out);
+  }
+  gtext_markup_document_free(doc);
+}
+```
+
+### What is written
+
+The defaults are the standard's output and nothing else; **nothing is added and nothing is removed**.
+
+- An element is `<`, its name and its attributes in tree order, `>`; then its children and `</name>`. The name is the local name
+  in the HTML, SVG and MathML namespaces and the qualified name (`prefix:local`) in any other. A **void element** (the thirteen
+  of the standard, and `basefont`, `bgsound`, `frame`, `keygen` and `param`) has no end tag and its children, if the tree has
+  any, are not written. A `template` writes its **contents** in place of its children. Names are written as the tree has them: a
+  `BR` is not void.
+- An attribute is its serialized name, an equals sign, its value in double quotes. The name is the local name for an attribute in no namespace,
+  `xml:` and the local name, `xmlns` or `xmlns:` and the local name, `xlink:` and the local name, and the qualified name for any
+  other namespace.
+- Text is escaped for `&`, U+00A0 (`&nbsp;`), `<` and `>`; an attribute value the same and the double quote (`&quot;`). **Escaping `<` and
+  `>` in a value is the standard's now** (the escaping steps are shared by the two modes; the vectors of html5lib-tests agree,
+  html5lib 1.1 and parse5 8.0.1 do not, see below). Text is written **as it is** when its parent is an HTML `style`, `script`,
+  `xmp`, `iframe`, `noembed`, `noframes` or `plaintext`, or a `noscript` with the scripting flag (`scripting` in the options).
+- A comment is `<!--data-->`, a processing instruction `<?target data?>`, a document type `<!DOCTYPE name>` (the identifiers
+  are not written; the option `doctype_identifiers` writes them). A CDATA section is text. A `pre`, `textarea` or `listing`
+  gets **no** extra line feed, and a text that starts with one is written with it, which a parser then drops (the standard says
+  so).
+- Characters are not checked: control characters and noncharacters are written as they are. HTML has a spelling for every
+  tree, so **a tree is never refused** (compare the XML writer, which refuses what XML cannot spell): a comment with `-->`, a
+  `script` that holds `</script>` and a `p` that holds a `ul` are written as they are and do not read back as written (see
+  "Round trips").
+
+The standard's steps for a shadow root and for an element's `is` value have nothing to write here: the tree has neither.
+
+### Scope: children, outer, and the context
+
+`GTEXT_HTML_SERIALIZE_CHILDREN` is `innerHTML` (for a document or a fragment, its children; for a template its contents; for a
+void element nothing) and `GTEXT_HTML_SERIALIZE_OUTER` is `outerHTML` (the node itself; for a document or fragment the same as
+children). The parent of what is written decides whether text is raw: the children of an element written as `CHILDREN` are the
+contents of that element, so `style`'s text comes out as it is, and a text node written alone as `OUTER` is escaped for *its*
+parent. **A fragment parsed in a context element has no such parent in the tree**: to write it as `innerHTML` of that element, set
+`context_name` (and `context_namespace`, when not HTML) in the options, which needs no copy of the tree, or give a token stream
+the context (`gtext_html_serializer_context()`).
+
+### Options
+
+Zeroed is the defaults, which are the standard's. The others are a **superset of the standard**, kept so that html5lib's own
+serializer vectors can be scored; each is off unless asked for, and the vector (html5lib-tests, `serializer/`) that defines it is
+named. A combination that means nothing is `GTEXT_HTML_E_OPTIONS` before any byte is written.
+
+| Option | Default | What it does | Defined by |
+|---|---|---|---|
+| `allocator` | the tree's | allocator of everything the call allocates, and of the buffer | |
+| `max_depth` | 1024 | deepest element nesting; past it `GTEXT_HTML_E_LIMIT_DEPTH` (twice the parser's default of 512 open elements) | |
+| `max_output_bytes` | 256 MiB | most bytes; past it `GTEXT_HTML_E_LIMIT_OUTPUT` | |
+| `scripting` | off | a `noscript`'s text is raw text | |
+| `encoding` | UTF-8 | the label; **only UTF-8 labels** are accepted, any other (the empty string too) is `GTEXT_HTML_E_UNSUPPORTED_ENCODING`; 3h and 3i write others | `core.test` "character data" |
+| `quote_attr_values` | `ALWAYS` | `WHEN_NEEDED`: quotes only for an empty value or one with ASCII white space, a double quote, an apostrophe, an equals sign, a greater-than sign or a backquote in it (a less-than sign is escaped and needs none) | `core.test` "proper attribute value non-quoting" and its neighbours |
+| `quote_char` | double quote | the double quote or the apostrophe (an apostrophe in a value is then `&#39;`); not with `use_best_quote_char` | `options.test` "quote_char" |
+| `use_best_quote_char` | off | the quote that needs no escape: the double quote for a value with an apostrophe, the apostrophe for one with a double quote, else `quote_char` | `core.test` "proper attribute value quoting (with ...)" |
+| `omit_optional_tags` | off | leave out the start and end tags HTML makes optional, see below | `optionaltags.test` |
+| `minimize_boolean_attributes` | off | a boolean attribute (the standard's attribute index) whose value is empty or its name is written as the name | `options.test` "quote_attr_values=true" |
+| `use_trailing_solidus` | off | `<br/>`; with `space_before_trailing_solidus` `<br />` (without `use_trailing_solidus` that is an error). The last attribute is quoted when the solidus would follow it directly, because `<br class=a/>` has the class `a/` | `options.test` "use_trailing_solidus=true with void element" |
+| `escape_rcdata` | off | the text of `style`, `script` and the other raw text parents is escaped like other text | `options.test` "rcdata" |
+| `strip_whitespace` | off | every run of ASCII white space in text becomes one space, except under `pre`, `textarea`, `plaintext` and the raw text elements; adjacent text is one run | `whitespace.test` |
+| `inject_meta_charset` | off | with `encoding`: a `meta` in the `head` that has `charset`, or `http-equiv=content-type` and `content`, gets the label (`text/html; charset=LABEL`); if there is none a `<meta charset=LABEL>` is the first thing in the `head`. The token stream keeps the `head`'s tokens until its end tag, in a queue bounded by eight times `max_output_bytes` and 4 KiB (the most memory a `head` can cost, apart from the output limit, which counts the bytes written) | `injectmeta.test` |
+| `alphabetical_attributes` | off | attributes sorted by namespace and name | `injectmeta.test` ("head w/robots") |
+| `doctype_identifiers` | off | `<!DOCTYPE html PUBLIC "p" "s">` and `SYSTEM "s"` | `core.test` "HTML 4.01 DOCTYPE" |
+| `context_name`, `context_namespace` | none | the element whose contents the output is (a fragment's context, or the parent of a token stream): decides whether text is raw. `context_namespace` (NULL for HTML) needs a `context_name` | the standard, 13.3 |
+
+Two of html5lib's options are **not** offered, and why: `escape_lt_in_attrs`, because the standard escapes `<` and `>` in an
+attribute value always now, so there is nothing to switch (the vector that sets it passes with the defaults); and
+`resolve_entities`, because no vector has an entity token and the tree has no entity node. `quote_attr_values` has two of
+html5lib's three modes; its third, "legacy", also quotes the control characters and the Unicode spaces, which no vector needs.
+`sanitize` is not offered at all: this library does not sanitize.
+
+### The optional tags
+
+With `omit_optional_tags` the tags that section 13.1.2.4 of the standard lets a document leave out are left out, by its rules
+exactly as served on 2026-10-12: `html`, `head` and `body` (start and end), `li`, `dt`, `dd`, `p`, `rt`, `rp`, `optgroup`, `option`,
+`colgroup` (start and end), `caption`, `thead`, `tbody` (start and end), `tfoot`, `tr`, `td` and `th` (end), and **never a start
+tag that has an attribute**. The serializer holds one tag back until it has seen the next token (that is the whole of its
+lookahead), so a tag may be written a call late; `GTEXT_HTML_Serialize_Result::omitted_start_tags` and `omitted_end_tags` count
+what was left out. "No more content in the parent" is the next token being an end tag, or the end of the stream with the
+context element (when the stream has one) not being one of those the standard excludes for `p` (`a`, `audio`, `del`, `ins`,
+`map`, `noscript`, `video`, an autonomous custom element). The standard assumes a conforming document: on a tree that is not
+one, leaving tags out can change what a parser reads, which is why it is an option.
+
+Seven of html5lib's vectors disagree with the standard's text and are **listed exceptions with the reason**
+(`tools/conformance/HTML_SERIALIZER_EXCEPTIONS`), not options:
+
+| Vector | html5lib expects | The standard (served 2026-10-12) says |
+|---|---|---|
+| `optionaltags.test` #3, "html start-tag followed by space character" | `<html> foo` | the start tag may be omitted "if the first thing inside the html element is not a comment" |
+| #9 and #35, "html end-tag" and "body end-tag followed by space character" | `</html> foo`, `</body> foo` | may be omitted if "not immediately followed by a comment" (and the parenthesis: "any spaces after those get parsed into the body element anyway") |
+| #71 and #73, "p end-tag followed by datagrid / dir start-tag" | `<datagrid>`, `<dir>` | the list that ends a `p` (`address`, `article`, `aside`, ...) has neither |
+| #156, "tfoot end-tag followed by tbody start-tag" | `<tbody>` | a `tfoot` end tag may be omitted "if there is no more content in the parent element", and no other case |
+| `options.test` #3, "quote_attr_values=true with irrelevant" | `<div irrelevant>` | `irrelevant` is not in the attribute index's boolean attributes (html5lib's table is older) |
+
+Rules no vector reaches (`option`/`optgroup` before an `hr`, a `p` before `dialog` or `search`, a `p` at the end of an `a`) are
+held by `tests/test-html-serialize.cpp`.
+
+### Token by token
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+static GTEXT_Markup_Status to_stdout(void * user, const char * bytes, size_t length) {
+  (void)user;
+  return fwrite(bytes, 1, length, stdout) == length ? GTEXT_MARKUP_OK : GTEXT_MARKUP_E_WRITE;
+}
+
+/* Write HTML that is not a markup tree: the token stream the tree walk is made of. The serializer holds back at most one
+   tag, so `</li>` can be left out when `<li>` follows. */
+static void serialize_stream(void) {
+  GTEXT_HTML_Serialize_Options opts = gtext_html_serialize_options_default();
+  opts.omit_optional_tags = true;
+  GTEXT_Markup_Sink sink = {to_stdout, NULL};
+  GTEXT_HTML_Serializer * ser = NULL;
+  if (gtext_html_serializer_new(&opts, &sink, &ser) != GTEXT_HTML_OK) {
+    return;
+  }
+
+  GTEXT_Markup_Attribute id;
+  memset(&id, 0, sizeof(id));
+  id.local = "id";
+  id.value = "list";
+  id.value_length = 4;
+
+  gtext_html_serializer_start_tag(ser, NULL, "ul", &id, 1);
+  for (int i = 1; i <= 3; i++) {
+    char item[32];
+    snprintf(item, sizeof(item), "item <%d>", i);
+    gtext_html_serializer_start_tag(ser, NULL, "li", NULL, 0);
+    gtext_html_serializer_characters(ser, item, strlen(item));
+    gtext_html_serializer_end_tag(ser, NULL, "li");
+  }
+  gtext_html_serializer_end_tag(ser, NULL, "ul");
+
+  GTEXT_HTML_Serialize_Result result;
+  gtext_html_serializer_finish(ser, &result);
+  printf("\n%zu bytes, %zu end tags left out\n", result.bytes_written, result.omitted_end_tags);
+  gtext_html_serializer_free(ser);
+}
+```
+
+The stream need not be balanced (a vector is a few tokens cut out of a document): the serializer keeps a stack of the elements it
+has seen open, pops one for every end tag, and ignores an end tag with nothing open. A namespace of NULL is HTML; a void HTML
+element given as a start tag is written as an empty tag and its end tag is dropped; text is passed in pieces cut **between
+characters** (a U+00A0 cut in two is not escaped). Once a call has failed every later call returns the failure.
+
+The options that change tokens are applied in the order html5lib's filters are: the meta charset first, then the sorted
+attributes, the collapsed white space, and the optional tags.
+
+### Options, limits and files
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The options are a superset of the standard's, off unless asked for. Here the tags HTML lets a document leave out are
+   left out, and an attribute is quoted only where the syntax needs it. */
+static void serialize_options(void) {
+  const char * text = "<!DOCTYPE html><html><head><title>Hello</title></head><body>"
+                      "<ul><li class=a>one<li>two</ul><p title=\"a b\">Welcome</p></body></html>";
+  GTEXT_Markup_Document * doc = NULL;
+  if (gtext_html_parse(text, strlen(text), NULL, &doc, NULL) != GTEXT_HTML_OK) {
+    return;
+  }
+
+  GTEXT_HTML_Serialize_Options opts = gtext_html_serialize_options_default();
+  opts.omit_optional_tags = true;
+  opts.quote_attr_values = GTEXT_HTML_QUOTE_WHEN_NEEDED;
+
+  char * out = NULL;
+  size_t length = 0;
+  GTEXT_HTML_Serialize_Result result;
+  if (gtext_html_serialize_buffer(gtext_markup_document_root(doc), GTEXT_HTML_SERIALIZE_CHILDREN, &opts, &out,
+          &length, &result) == GTEXT_HTML_OK) {
+    printf("%s\n%zu start tags and %zu end tags left out\n", out, result.omitted_start_tags,
+        result.omitted_end_tags);
+    gtext_html_serialize_buffer_free(doc, &opts, out);
+  }
+
+  /* A combination that means nothing is refused before anything is written. */
+  opts.space_before_trailing_solidus = true;
+  GTEXT_HTML_Status status = gtext_html_serialize_buffer(gtext_markup_document_root(doc),
+      GTEXT_HTML_SERIALIZE_CHILDREN, &opts, &out, &length, NULL);
+  printf("%s\n", gtext_html_status_string(status));
+  gtext_markup_document_free(doc);
+}
+```
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A file is replaced atomically: a write that fails leaves the previous one as it was. The limits are statuses of their own. */
+static void serialize_file(void) {
+  const char * path = "doc-example-out.html";
+  const char * text = "<!DOCTYPE html><title>t</title><div><div><div>deep</div></div></div>";
+  GTEXT_Markup_Document * doc = NULL;
+  if (gtext_html_parse(text, strlen(text), NULL, &doc, NULL) != GTEXT_HTML_OK) {
+    return;
+  }
+  const GTEXT_Markup_Node * root = gtext_markup_document_root(doc);
+
+  GTEXT_HTML_Serialize_Result result;
+  GTEXT_HTML_Status status = gtext_html_serialize_file(root, GTEXT_HTML_SERIALIZE_CHILDREN, path, NULL, &result);
+  printf("%s: %zu bytes\n", gtext_html_status_string(status), result.bytes_written);
+
+  GTEXT_HTML_Serialize_Options opts = gtext_html_serialize_options_default();
+  opts.max_depth = 4;                        /* html, body and two more; 0 is the default, 1024, never "none" */
+  status = gtext_html_serialize_file(root, GTEXT_HTML_SERIALIZE_CHILDREN, path, &opts, &result);
+  printf("%s\n", gtext_html_status_string(status));
+
+  FILE * in = fopen(path, "rb");             /* the first file is still there */
+  if (in) {
+    char line[200];
+    printf("%s\n", fgets(line, sizeof(line), in) ? line : "");
+    fclose(in);
+  }
+  remove(path);
+  gtext_markup_document_free(doc);
+}
+```
+
+The statuses (`GTEXT_HTML_Status`, shared with the parser): `GTEXT_HTML_E_INVALID` (a NULL or unusable argument, a scope out of
+range, a path that cannot be opened), `GTEXT_HTML_E_OPTIONS`, `GTEXT_HTML_E_UNSUPPORTED_ENCODING` (both before any byte is
+written), `GTEXT_HTML_E_OOM`, `GTEXT_HTML_E_WRITE` (the sink returned anything but `GTEXT_MARKUP_OK`, or the file layer
+failed), `GTEXT_HTML_E_LIMIT_DEPTH`, `GTEXT_HTML_E_LIMIT_OUTPUT` and, for a call out of order, `GTEXT_HTML_E_STATE`.
+**There is no first pass**: the sink receives bytes as the walk produces them, in chunks of up to 4 KiB cut anywhere, so a failing call has given the sink
+a *prefix* (never more than `max_output_bytes`, and for a depth failure the start tags down to the limit), and a sink that has refused is not
+called again. The XML writer checks the whole document first and writes nothing on a refusal; HTML has nothing to refuse, so the
+second walk would buy nothing. The file form writes a temporary file and replaces the destination only when the whole output was written, so a failure leaves the previous file (or none) and the result counts nothing. The tree must not
+be modified, from another thread or from the sink, while it is written.
+
+### Round trips
+
+**`parse(serialize(tree))` is not the tree for every tree**, and the standard says so itself; for a tree the parser made from
+conforming input it is, and then `serialize(parse(serialize(t)))` is `serialize(t)`. The standard's own examples are tested
+(`tests/test-html-serialize-roundtrip.cpp`): a `form` inside a `form` made by foster parenting, `<a><table><a>` (the second `a` is
+a child of the first and comes back as its sibling), the line feed of a `pre`; and the cases that follow from the algorithm: a
+`script` that holds its own end tag or opens the double-escaped state (`<!--<script`), a comment with `-->`, a `textarea` with a
+comment, a `p` with a `ul`, a `plaintext` element (its end tag is written and read back as text), a carriage return that came
+from `&#13;` (written as it is, read as a line feed), and a document type with identifiers (the standard writes the name only).
+An omitted tag is no loss for a conforming document and one for a document that is not.
+
+Over the **2,095 inputs of the tree-construction vectors** (the 2,091 in scope and the four `none dom`, each parsed under the scripting
+settings it names or both: 4,150 runs, as a document or as a fragment in its context), `make conformance-html-serializer` parses, writes with the standard's defaults, parses again
+and writes again: **3,969 runs come back as the same tree and the same bytes**; 181 runs of 91 inputs do not, and each has a cause
+the gate recognizes in the first tree (a predicate on the vectors' dump, see `tools/conformance/html_serializer_suite.py`) --
+`plaintext` 57, `script-double-escape` 48, `doctype-identifiers` 42, `leading-newline` 14, `nested-a` 12, `p-contains-block` 8,
+`carriage-return` 2, `nested-form` 2, `nested-nobr` 2 (a run can have several) -- and a cause only counts for the difference
+it can make: the first line at which the two trees differ must be the line of the node that carries the cause or a later one (identifiers
+change the document type line and nothing else), so a defect before the cause is not hidden by it, and the gate checks that rule on a
+planted pair on every run. A run that is neither stable nor explained
+fails the gate, and so does a tree that comes back the same with other bytes. The gate is shown to fail by 41 controls: 32 defects planted in
+the serializer, one that asks the runner 18 requests it must refuse, and eight that corrupt the vectors, the exceptions and the floors.
+
+### Compared with html5lib and parse5
+
+`make check-html-serialize-oracle` puts **one tree to three serializers** -- html5lib 1.1's, parse5 8.0.1's and this library's, at the
+standard's settings -- and compares the bytes, over the trees of the tree-construction vectors and of generated and mutated documents
+(parsed by this library) and over trees no parser makes (a void element with children, a script that holds markup, elements in
+other namespaces, attributes of every namespace, every character that has an escape). The tree travels as a list of operations,
+not as markup (that would compare parsers) and not as the vectors' dump (it sorts the attributes). Every divergence is explained by
+features of the tree *verified by taking them out*, and is a line of `tools/oracle/html_serialize_divergences.txt`; the 14 kinds:
+
+| Reference | Feature | The difference |
+|---|---|---|
+| html5lib | `nbsp-in-text`, `nbsp-in-attribute` | does not escape U+00A0 |
+| html5lib, parse5 | `angle-in-attribute` | do not escape `<` and `>` in a value (the standard now does; the vectors do) |
+| html5lib | `attribute-namespace` | writes the local name only (`href` for `xlink:href`) |
+| parse5 | `attribute-namespace-without-prefix` | writes `undefined:name` |
+| html5lib | `doctype-identifiers` | always writes the public and system identifiers |
+| html5lib | `noscript`, `plaintext`, `raw-text-with-elements`, `raw-name-in-foreign-namespace` | its raw text flag is set by an element's name, whatever the scripting flag and the namespace, has no `plaintext`, and outlasts an element's children |
+| html5lib | `void-set` | has `command` and `event-source`, lacks `wbr`, `keygen`, `basefont`, `bgsound`, `frame` |
+| html5lib, parse5 | `processing-instruction` | neither has a node for one |
+
+Every reference deviation has a **witness**, a small tree and the output worked out by hand from the standard's text, that this library
+gives and the reference does not. Checked on every run: 14 of 14.
+
+### Security
+
+Serialization is **not sanitization**. Writing a tree writes what is in it, `javascript:` URLs and `on*` attributes included, and
+the standard warns that the output may not read back as the same tree: that is the mutation XSS this algorithm is known for
+(a `style` that holds `</style><script>`, a comment that holds `-->`). Escape for the place the output is going and sanitize the tree
+before writing it. Limits are finite by default; set `max_output_bytes` and `max_depth` to what you can hold. The walk is iterative: no
+tree is deep enough to exhaust the C stack (a 100,000-deep tree is tested), and the work is linear in the tree (counted: nodes
+visited, allocations, sink calls).
+
+### Departures from the XML writer and from the HTML parsing API
+
+The shape is the XML writer's -- an options struct with a `_default()`, the same sink type, a buffer form with a `_free` that takes
+the document and the options, a file form through the same atomic layer, a result with counts, distinct statuses for the limits -- and
+these are the departures and why:
+
+- **No refusals, so no first pass and no path.** XML refuses a tree it cannot spell and says where (`/a/b[2]/@x`); HTML refuses
+  nothing, so the walk is one pass, a failure has given the sink a prefix, and the result has no path.
+- **The statuses are `GTEXT_HTML_Status`'s**, appended: `GTEXT_HTML_E_WRITE`, `GTEXT_HTML_E_LIMIT_OUTPUT` and `GTEXT_HTML_E_OPTIONS`
+  (XML's `E_INVALID` covers a bad option; here an option combination that means nothing has a status of its own).
+- **The functions take a node and a scope**, `(node, scope, opts, sink, result)`, not a document: `innerHTML` and `outerHTML` of
+  any node are what HTML is written for, where XML writes documents. The buffer form's `_free` takes the node's *document*, as XML's.
+- **The result has no `free` and no error list** (it holds nothing but counts and a static message), unlike `GTEXT_HTML_Result`; the
+  parsing API's `max_open_elements` is this API's `max_depth`, with the default twice as large so that a tree the parser built with its
+  defaults is always written.
+- **A token-stream serializer**, which XML's writer has no analogue of (it writes documents), because the optional-tag rules are rules
+  about the next token and html5lib's vectors are token streams.
+- **A `GTEXT_Markup_Sink` that is called with a prefix after a failure**, where XML's writer promises it nothing until the document is checked.
+- **UTF-8 only** (an `encoding` label is validated, as the parser's are); XML writes five encodings. Phases 3h and 3i.
+- **Options beyond the standard** (the table above), where XML's writer has `xhtml` and `indent`. Pretty printing is not part of
+  this stage: it changes the tree, and the standard's algorithm has no whitespace of its own to add.
+
 ## The media-type trap
 
 The same bytes are two different trees depending on the media type they arrive under, and this library
@@ -501,7 +858,7 @@ Choose the parser by the media type, not by the bytes; no function here sniffs f
   attributes are text and attribute values in the tree.
 - **The tree is not sanitized.** A parsed page contains whatever it contained, `javascript:` URLs, `on*` attributes and
   `<script>` elements included; there is no sanitizer here yet. Parsing, serializing and parsing again is not a
-  sanitization either (mutation XSS is a property of the serialization, which is not here yet, see below).
+  sanitization either (mutation XSS is a property of the serialization, see "Writing HTML").
 - The parse errors and positions are for the author of the page; do not treat their absence as a verdict.
 - A fragment is parsed in a context you choose; choose the one the result will be inserted in.
 
@@ -527,14 +884,13 @@ Everything the two share is the same on purpose. These are the departures and wh
 - **The incremental parser builds the tree**, and `finish` returns the document (once) and the result; XML's stream delivers events and a
   separate DOM function builds a tree. There is no pull reader and no event stream for HTML.
 - **A fragment function and a fragment parser**, which XML has no analogue of.
-- **No writer yet.** Serialization is phase 3g.
+- **The writer is under "Writing HTML"**, with its own list of departures.
 - **Encoding options** that are validated but mostly inert until 3h; XML reads five encodings.
 
 ## What is not here yet
 
 | Planned | Where |
 |---|---|
-| serialization (the fragment serialization algorithm; parse, serialize, parse round trips) | phase 3g |
 | other encodings: UTF-16, the legacy encodings, the `<meta>` prescan, `ignore_meta`, a tentative label overridden by a declaration | phases 3h and 3i |
 | sanitization | not planned in this phase |
 | script execution | never |
@@ -568,6 +924,35 @@ Public API (phase 3f), measured 2026-10-12 on the development machine:
   witnesses, as before this phase. Its controls are 98 plants and over an hour: **65 were run, all caught** (every one whose
   anchor is in `html_tree.c`, `html_tokenizer.c` or `html_tree_fragment.c`, 45, and 20 spread over the rest of the list), and every tree
   plant's anchor was checked to be still in the source.
+
+
+Serializer (phase 3g), measured 2026-10-12 on the development machine:
+
+- `make conformance-html-serializer`: html5lib-tests' serializer vectors, **248 (the 230 and the 18 that have an XHTML variant) -- 241 pass,
+  7 are listed exceptions with a reason** (4 where the standard's text decides otherwise, 3 where the vector depends on a table of
+  html5lib's), none stale; floors 248 / 241 / 3,950. The round trip of the **2,095 tree-vector inputs** (4,150 runs under the
+  scripting settings they name): 3,969 stable, 181 runs of 91 inputs not, all 181 explained by a case the standard names, 0 unexplained.
+  Shown to fail by 41 controls (32 planted defects, 18 bad requests in one, 8 corrupting the vectors, the exceptions and the floors),
+  all caught; `make check-conformance-vectors` runs the scoring in `make test`, and `conformance-html-serializer-asan` under ASan and UBSan.
+- `make check-html-serialize-oracle`: 13,241 trees (10,211 parsed by this library from the tree-construction vectors' inputs and from
+  generated and mutated documents, foreign content and fragments, and 3,030 built with no parser), each written two ways, 26,398 questions asked of each
+  reference; ours equals html5lib's on 16,130 and parse5's on 24,902; **11,764 divergences in 14 kinds, every one explained by
+  features of the tree verified by taking them out**, none unexplained, 14 of 14 witnesses hold; shown to fail by 30 controls
+  (6 corrupting the answer, the list and a witness, 24 planted defects), all caught. **Hunts of 222,326 trees** (six seeds, in chunks of 32,041 to 39,561)
+  found no kind the list lacks and nothing unexplained.
+- Tests: `testHtmlSerialize` (52, ten of them added by the review: the matrix, escaping per context, the serialized name of every attribute kind, templates, void elements
+  with children, every option, the combinations refused, the standard's own optional-tag examples and each rule, the token stream's
+  arguments and states), `testHtmlSerializeLimits` (13: the sink refusing every call of a 70 KiB document, the allocator refusing every
+  allocation through the sink, the buffer and the token stream and the file, the output limit at every value, the depth limit around every
+  depth, a tree 100,000 deep, the work counted, the file form, eight threads), `testHtmlSerializeRoundtrip` (3: 250 generated
+  conforming documents under five option sets come back as the same tree and the same bytes, and the cases that do not), and
+  `testHtmlSerializeFuzzSeeds` (751 seeds), `testHtmlDocExamples` (12 snippets). `make test`: 170 programs, 4,124 tests, 0 failures;
+  `test-asan` 166 programs and `test-tsan` 166, 0 reports; `check-windows-cross` 105 sources, 0 failed.
+- Fuzz: `fuzz_html_serialize` 751 seeds; the first search found a defect in nine seconds (the held head counted against the output
+  limit, fixed, its reproducer kept), and then 1,023,111 runs in 762 s were clean; 11 planted defects, eight found by replaying a seed and three by
+  searching, and the unedited control silent (`make check-html-fuzz-plants`).
+- Documentation: 54 installed headers compile standalone as C and C++; the Doxygen warning count of the whole project is 1,628 before and
+  after, none in this stage's headers, sources or this page.
 
 
 \anchor format_html_internals
@@ -791,7 +1176,7 @@ switch to "after frameset"), the `select` and `input` start tags when the contex
 template context (the `form` rules), the end of the file in "in template" with no template on the stack (stop), foster parenting that
 returns the root, table-context clearing and the table and caption end tags that find nothing in scope.
 
-The public API is the layer above; the builder has no `<meta>` encoding step (3h), no serialization (3g), no scripts. The "not yet" status of the earlier stages
+The public API is the layer above; the builder has no `<meta>` encoding step (3h), no serialization (that is 3g, below), no scripts. The "not yet" status of the earlier stages
 (`GTEXT_HTML_TREE_E_NOT_YET` and its accessors) is removed: nothing raised it once foreign content was built. The scorer's exceptions
 format keeps its stage column, for a future construct that is not.
 
@@ -958,5 +1343,36 @@ named so they can be run again.
 
 ## Not done
 
-Encoding determination and the `<meta>` steps (3h, 3i), serialization (3g), sanitization, scripts (the `scripted_*.dat` vectors stay
+Encoding determination and the `<meta>` steps (3h, 3i), sanitization, scripts (the `scripted_*.dat` vectors stay
 out of scope: `scripted_adoption01.dat`, `scripted_ark.dat`, `scripted_foster01.dat`, `scripted_webkit01.dat`, 6 vectors).
+
+# The serializer (stage 3g)
+
+## Specification
+
+The WHATWG HTML Living Standard, "Serializing HTML fragments" (13.3) and "Optional tags" (13.1.2.4), **retrieved 2026-10-12**; html5lib-tests'
+`serializer/*.test` (230 vectors, 18 with an XHTML variant) pinned by `tools/html/HTML5LIB_TESTS_COMMIT`. Where the standard and html5lib's
+serializer differ, the standard is the default and the vectors are scored through options (`quote_attr_values`, `omit_optional_tags`, ...);
+where a vector asks for something the standard does not say and no option stands for it, it is a listed exception with the reason.
+
+## Design
+
+Three layers in `src/html/html_serialize.c`. **The front** checks arguments and, with `inject_meta_charset`, keeps a `head`'s tokens (as bytes in
+one growing queue with varint lengths, bounded by eight times the output limit) until its end tag. **The stream** turns white space into one
+space where asked, keeps the stack of open elements (two bytes each: the parent of a text, of an end tag), and holds **one** tag back when
+the HTML syntax may leave it out: a start tag of `html`, `head`, `body`, `colgroup` or `tbody` with no attributes, or the end tag of one of
+nineteen elements; the next token (its kind, its name, whether its text starts with white space) or the end of the stream decides it. Nothing
+else is ever asked of the future, which is why a single slot is the whole lookahead. **The writer** is one door that counts bytes against the
+limit and batches them for the sink (4 KiB), the escapes, and the attributes (sorted through a scratch array only when asked). The tree walk is an
+explicit stack of (element, next sibling), so depth is a heap array bounded by `max_depth`; a template's contents are entered in place of its
+children, and a void element's children are skipped.
+
+Two decisions came from the tests. A solidus after an unquoted value is part of the value (`<br class=a/>`), so with no space before it the last
+attribute is quoted. And the tokens held for a meta charset are bigger than the text they make, so they are bounded apart from the output limit:
+an output exactly at the limit was refused until the fuzzer found it.
+
+## Not done (serializer)
+
+Output encodings other than UTF-8 (3h, 3i); pretty printing; sanitization; `escape_lt_in_attrs` and `resolve_entities` (html5lib's options with
+nothing to switch or no token to act on); html5lib's "legacy" quoting mode; a shadow root and an element's `is` value (the tree has neither).
+

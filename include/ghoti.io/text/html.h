@@ -26,9 +26,10 @@
  * defines it into the markup tree: a whole document, a fragment in a context
  * element, a document in pieces, or a file. The status codes, options and result
  * are in html_core.h, the parse errors in html_error.h and the parsers in
- * html_parse.h. The tree is described in <ghoti.io/text/markup.h>, which this
- * includes; writing it back out is html's counterpart of xml_writer.h and is
- * not here yet.
+ * html_parse.h, and writing a tree back out as HTML (the standard's fragment
+ * serialization algorithm, to a sink, a buffer, a file or token by token) in
+ * html_serialize.h. The tree is described in <ghoti.io/text/markup.h>, which
+ * this includes.
  */
 
 #ifndef GHOTI_IO_GTEXT_HTML_H
@@ -45,5 +46,6 @@
 
 /* Public module headers */
 #include <ghoti.io/text/html/html_parse.h>
+#include <ghoti.io/text/html/html_serialize.h>
 
 #endif // GHOTI_IO_GTEXT_HTML_H

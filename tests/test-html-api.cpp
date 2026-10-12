@@ -1134,7 +1134,7 @@ TEST(HtmlApiFragment, ItAgreesWithTheBuilderForEveryContextInTheFuzzerTable) {
 
 TEST(HtmlApiNames, EveryStatusAndErrorHasAnotherName) {
   std::set<std::string> seen;
-  for (int s = GTEXT_HTML_OK; s <= GTEXT_HTML_E_LIMIT_ATTRIBUTES; s++) {
+  for (int s = GTEXT_HTML_OK; s <= GTEXT_HTML_E_OPTIONS; s++) {
     const std::string n = gtext_html_status_string((GTEXT_HTML_Status)s);
     EXPECT_NE(n, "");
     EXPECT_NE(n, "unknown status") << s;

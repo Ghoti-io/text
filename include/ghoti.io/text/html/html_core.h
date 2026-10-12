@@ -53,7 +53,7 @@ extern "C" {
 
 /**
  * @enum GTEXT_HTML_Status
- * @brief What parsing HTML reports.
+ * @brief What parsing and serializing HTML report.
  *
  * The first block is not about the document. The limits are each their own
  * status, because a document that is refused for being too deep is not a
@@ -97,7 +97,15 @@ typedef enum {
                                  ///< data, longer than `max_comment_bytes`.
   GTEXT_HTML_E_LIMIT_TEXT,       ///< A run of characters longer than
                                  ///< `max_text_bytes`.
-  GTEXT_HTML_E_LIMIT_ATTRIBUTES  ///< More than `max_attributes` on one tag.
+  GTEXT_HTML_E_LIMIT_ATTRIBUTES, ///< More than `max_attributes` on one tag.
+
+  /* Appended by the serializer (html_serialize.h); the parser never returns these. */
+  GTEXT_HTML_E_WRITE,            ///< Serializer: the sink (or the file) refused output.
+  GTEXT_HTML_E_LIMIT_OUTPUT,     ///< Serializer: more than `max_output_bytes` of output.
+  GTEXT_HTML_E_OPTIONS           ///< Serializer: an option value out of range, or a
+                                 ///< combination that means nothing (`space_before_trailing_solidus`
+                                 ///< without `use_trailing_solidus`, a quote character that
+                                 ///< is no quote, `use_best_quote_char` with a fixed one).
 } GTEXT_HTML_Status;
 
 /**

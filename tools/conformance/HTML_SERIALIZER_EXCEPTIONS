@@ -1,0 +1,22 @@
+# Serializer vectors the HTML serializer does not pass, one per line:
+#
+#   <file>#<n>[:xhtml] TAB <kind> TAB <reason> TAB <digest>
+#
+# The id is the file in third_party/html/html5lib-tests/serializer and the vector's position in it, from 1, with
+# `:xhtml` for the variant written as XHTML. The kind is `standard` (the vector expects something other than the
+# standard's algorithm gives; the reason quotes the served sentence, 2026-10-12) or `vocabulary` (the vector depends
+# on a table of html5lib's that the standard does not have). The digest locks what this serializer produces, so a
+# different failure of the same vector is a stale entry and not a hidden one.
+# tools/conformance/html_serializer_suite.py fails the gate on a vector that fails and is not listed, on a listed one
+# that passes or fails otherwise, and on an entry for nothing.
+#
+# The standard is the default. html5lib's options are a superset of it, and these seven are the places where its
+# vectors ask for something the standard does not say.
+
+optionaltags.test#3	standard	html5lib keeps <html> before white space; the standard (served 2026-10-12, 13.1.2.4) says "may be omitted if the first thing inside the html element is not a comment", and white space is not one	3680f6fccf
+optionaltags.test#9	standard	html5lib keeps </html> before white space; the standard says "may be omitted if the html element is not immediately followed by a comment"	4c6759798c
+optionaltags.test#35	standard	html5lib keeps </body> before white space; the standard says "may be omitted if the body element is not immediately followed by a comment" and adds that "any spaces after those get parsed into the body element anyway"	c3141ebe6b
+optionaltags.test#71	vocabulary	html5lib's list of what ends a p includes datagrid, which the standard's list does not ("address, article, aside, blockquote, details, dialog, div, ..."); the element is not in the standard	bc6e4e3948
+optionaltags.test#73	vocabulary	html5lib's list of what ends a p includes dir (obsolete), which the standard's list of the p end tag's followers does not	bbae02a212
+optionaltags.test#156	standard	html5lib omits </tfoot> before a tbody; the standard says only "may be omitted if there is no more content in the parent element" (neither listed output is the one that keeps the tbody start tag)	91da9bc6fc
+options.test#3	vocabulary	irrelevant is a boolean attribute in html5lib's table and not in the standard's attribute index, so it is not minimized (gtext_markup_html_is_boolean_attribute)	88a1793df2

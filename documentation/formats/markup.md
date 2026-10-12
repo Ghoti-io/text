@@ -204,7 +204,8 @@ in `src/markup/markup_html.c`), and the XHTML writer uses it.
 ## Gaps
 
 - The XML parser fills the tree and the XML writer reads it back
-  (\ref format_xml "XML"); the HTML parser and serializer are later phases.
+  (\ref format_xml "XML"); the HTML parser and the HTML serializer (\ref format_html "HTML") fill
+  it and read it back the same way.
 - HTML's escaping modes (`&nbsp;`, attribute quoting) belong to the HTML
   serializer and are not here.
 - The vocabulary is the standard's lists as of its date; it does not follow the

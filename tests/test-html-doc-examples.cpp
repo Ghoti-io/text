@@ -56,6 +56,10 @@ namespace snippets {
 #include "doc-snippets/html/limits.c"
 #include "doc-snippets/html/encoding.c"
 #include "doc-snippets/html/scripting.c"
+#include "doc-snippets/html/serialize.c"
+#include "doc-snippets/html/serialize-options.c"
+#include "doc-snippets/html/serialize-stream.c"
+#include "doc-snippets/html/serialize-file.c"
 } // namespace snippets
 
 namespace {
@@ -77,6 +81,17 @@ const Snippet kSnippets[] = {
     {"limits.c", snippets::limits, "refused: too many elements open at once\naccepted under the default limit\n"},
     {"encoding.c", snippets::encoding, "UTF-8, from a byte order mark: 1\nunsupported encoding\n"},
     {"scripting.c", snippets::scripting, "scripting 0: the noscript holds a <p> element\nscripting 1: the noscript holds the text \"<p>enable scripts</p>\"\n"},
+    {"serialize.c", snippets::serialize_fragment,
+        "<p class=\"a\" title=\"x&quot;y\">one &amp; two<br><b>three</b></p>\n63 bytes, 5 nodes\n"
+        "<p class=\"a\" title=\"x&quot;y\">one &amp; two<br><b>three</b></p>\n"},
+    {"serialize-options.c", snippets::serialize_options,
+        "<!DOCTYPE html><title>Hello</title><ul><li class=a>one<li>two</ul><p title=\"a b\">Welcome\n"
+        "3 start tags and 6 end tags left out\nunusable combination of options\n"},
+    {"serialize-stream.c", snippets::serialize_stream,
+        "<ul id=\"list\"><li>item &lt;1&gt;<li>item &lt;2&gt;<li>item &lt;3&gt;</ul>\n73 bytes, 3 end tags left out\n"},
+    {"serialize-file.c", snippets::serialize_file,
+        "ok: 107 bytes\ntoo many elements open at once\n"
+        "<!DOCTYPE html><html><head><title>t</title></head><body><div><div><div>deep</div></div></div></body></html>\n"},
 };
 
 std::string slurp(const std::string & path) {

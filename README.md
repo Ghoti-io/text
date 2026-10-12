@@ -282,8 +282,11 @@ outside this repository:
 | `make conformance-xml` | XML against the W3C XML Conformance Test Suite |
 | `make check-xml-oracle` | The XML parser against libxml2 and expat, every disagreement listed, and the gate shown to fail |
 | `make conformance-html-tree` | The HTML tree builder, and the public HTML API over it, against the web-platform-tests tree-construction vectors (those they parse; the rest are tagged with the stage that will remove them), cut every way, and the gate shown to fail |
+| `make conformance-html-serializer` | The HTML serializer against html5lib-tests' serializer vectors (with the 7 listed exceptions), the round trip of the tree-construction vectors' inputs (stable, or explained by a case the standard names), and the gate shown to fail 41 ways |
+| `make check-html-serialize-oracle` | The HTML serializer against html5lib's and parse5's on one tree at a time (parsed trees and trees no parser makes), every divergence explained by features of the tree, and the gate shown to fail |
 | `make check-html-oracle` | The XHTML write mode, the HTML tokenizer and the HTML tree builder against html5lib and parse5 (after proving both on the standard's tree-construction vectors), every divergence classified, and the gates shown to fail |
 | `make fuzz-run-xml`, `make fuzz-run-xml-writer` | The XML parsers' and the XML writer's fuzzers |
+| `make fuzz-run-html-serialize` | The HTML serializer's fuzzer (a model of the algorithm, the token stream against the walk, the sink, the limits and the allocator; `make check-html-fuzz-plants` plants eleven defects in the serializer and shows it find each) |
 | `make fuzz-run-html` | The public HTML API's fuzzer (`make check-html-fuzz-plants` plants defects in the tokenizer, the tree builder and the API and shows each fuzzer find them) |
 | `make check-xml-fuzz-plants` | Plant a defect in a copy of the library and show each XML fuzzer and the differential find it |
 | `make fuzz` | Build and run the parsers' fuzzers |
