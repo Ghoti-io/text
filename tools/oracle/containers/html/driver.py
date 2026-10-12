@@ -26,6 +26,27 @@ difference between their answers is a difference between the parsers and not
 between two dump writers. No newline is added after the last line; the caller
 joins with LF.
 
+**Tokenizer requests.** A request with a `tokenize` field asks for the tokenizer alone:
+
+    {"tokenize": "<text>", "state": "data", "last": null}
+
+(`state` is one of data, rcdata, rawtext, script, plaintext, cdata - the initial states
+of the html5lib-tests tokenizer vectors - and `last` the name of the last start tag
+emitted, or null) and is answered with
+
+    {"tokens": [["DOCTYPE", name, public, system, correctness],
+                ["StartTag", name, [[name, value], ...], selfclosing],
+                ["EndTag", name], ["Comment", data], ["Character", data], ...],
+     "errors": [{"code": ..., "line": ..., "col": ...}, ...]}
+
+the vectors' shape (README.md of html5lib-tests/tokenizer) with two changes: attributes
+are a list of pairs in source order, because a JSON object does not carry order, and a
+start tag always has its self-closing flag as the fourth entry. Adjacent characters are
+one token and the end-of-file token is not listed. **html5lib's errors have no position
+and are its own codes** (`expected-tag-name`, not the standard's names): they are
+returned as `{"code": ..., "line": null, "col": null}`, and are for counting. parse5's
+are the standard's codes with a line and a column.
+
 This file is the html5lib half; the Dockerfile copies both halves and the
 version line carries the SHA-256 of the pair, so that an image built from an
 older copy of either answers under a name that no longer matches the pin.
@@ -143,13 +164,59 @@ def ask(request):
     return {"dump": "\n".join(lines), "errors": len(parser.errors)}
 
 
+TOKENIZER_STATES = {
+    "data": "dataState",
+    "rcdata": "rcdataState",
+    "rawtext": "rawtextState",
+    "script": "scriptDataState",
+    "plaintext": "plaintextState",
+    "cdata": "cdataSectionState",
+}
+
+
+def ask_tokens(request):
+    from html5lib import constants
+    from html5lib._tokenizer import HTMLTokenizer
+    tokenizer = HTMLTokenizer(request["tokenize"])
+    tokenizer.state = getattr(tokenizer, TOKENIZER_STATES[request["state"]])
+    if request.get("last") is not None:
+        tokenizer.currentToken = {"type": constants.tokenTypes["StartTag"], "name": request["last"]}
+    out, errors = [], []
+
+    def character(data):
+        if out and out[-1][0] == "Character":
+            out[-1][1] += data
+        else:
+            out.append(["Character", data])
+
+    kinds = {v: k for k, v in constants.tokenTypes.items()}
+    for token in tokenizer:
+        kind = kinds[token["type"]]
+        if kind == "Doctype":
+            out.append(["DOCTYPE", token["name"], token["publicId"], token["systemId"], token["correct"]])
+        elif kind == "StartTag":
+            out.append(["StartTag", token["name"], [[k, v] for k, v in token["data"].items()], bool(token["selfClosing"])])
+        elif kind == "EndTag":
+            out.append(["EndTag", token["name"]])
+        elif kind == "Comment":
+            out.append(["Comment", token["data"]])
+        elif kind in ("Characters", "SpaceCharacters"):
+            character(token["data"])
+        elif kind == "ParseError":
+            errors.append({"code": str(token["data"]), "line": None, "col": None})
+        else:
+            raise ValueError("unknown token %r" % (token,))
+    return {"tokens": out, "errors": errors}
+
+
 def serve():
     for line in sys.stdin:
         line = line.strip()
         if not line:
             continue
         try:
-            out = ask(json.loads(line))
+            request = json.loads(line)
+            out = ask_tokens(request) if "tokenize" in request else ask(request)
         except Exception as why:  # a crash is an answer, not a missing one
             out = {"error": "%s: %s" % (type(why).__name__, why)}
         sys.stdout.write(json.dumps(out, ensure_ascii=True) + "\n")

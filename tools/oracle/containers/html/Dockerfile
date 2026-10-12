@@ -54,4 +54,9 @@ RUN sha=$(cat driver.py driver.mjs | sha256sum | cut -d' ' -f1) \
  && html-driver html5lib < /tmp/req > /tmp/h5 \
  && html-driver parse5 < /tmp/req > /tmp/p5 \
  && cat /tmp/h5 /tmp/p5 \
- && python3 -c "import json; a, b = (json.loads(open(f).read())['dump'] for f in ('/tmp/h5', '/tmp/p5')); assert a == b and a.count(chr(10)) == 9, (a, b)"
+ && python3 -c "import json; a, b = (json.loads(open(f).read())['dump'] for f in ('/tmp/h5', '/tmp/p5')); assert a == b and a.count(chr(10)) == 9, (a, b)" \
+ && printf '%s\n' '{"tokenize":"<a b=1 b=2>x&amp;y<!--c-->","state":"data","last":null}' > /tmp/treq \
+ && html-driver html5lib < /tmp/treq > /tmp/th5 \
+ && html-driver parse5 < /tmp/treq > /tmp/tp5 \
+ && cat /tmp/th5 /tmp/tp5 \
+ && python3 -c "import json; a, b = (json.loads(open(f).read())['tokens'] for f in ('/tmp/th5', '/tmp/tp5')); assert a == b and len(a) == 3, (a, b)"

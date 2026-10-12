@@ -1,0 +1,41 @@
+# Divergences of the HTML tokenizer from html5lib's and parse5's tokenizers that are expected and
+# understood: every input on which a reference's tokens or errors differ from ours, grouped by cause,
+# for the default population of tools/oracle/html_tokenizer_diff.py (6,000 generated and mutated
+# inputs, seed 1; the input of every html5lib-tests tokenizer vector, in its initial states; the
+# input of every tree-construction vector, with a fifth of them in another state). The gate is
+# html_tokenizer_diff.py, and it fails on a divergence that is not here, on an entry that no longer
+# occurs, and on one whose count has changed (the count is the signature: a different set of inputs
+# for the same cause is a different count or a different entry).
+#
+# Columns, tab separated: key, count, class, reason. The key is <reference>:<tokens|errors>:<cause>
+# and the cause is a mapper, predicate or answer cause in html_tokenizer_diff.py (MAPPERS, PREDICATES,
+# ANSWER_CAUSES), as narrow as the cause: it states the whole difference (this input's token list is that of the
+# reference once such-and-such is mapped; this input's errors are the reference's plus these),
+# so an input with a second, unrelated difference is not explained by it.
+#
+# **A tokenizer defect is never listed.** Every entry is a behaviour of a reference that the standard
+# (the text retrieved 2026-10-11) does not have, established by reading the standard's state and the
+# reference's source and by a direct probe, and the standard is the arbiter:
+#
+#   reference-old     the reference predates a change to the standard (html5lib 1.1 is from 2020)
+#   reference-wrong   the reference disagrees with the standard in a way no change explains
+#   standard-newer    the standard (or this tokenizer's reading of it) differs from the reference's
+#                     choice where the older text left it open
+#   reference-api     the reference's API cannot express what the vectors do
+#
+# **What is not here, and why.** parse5 agrees with this tokenizer's tokens on every input of the
+# default population, and on its errors on all but the 30 inputs of the three parse5 entries below.
+# Inputs containing `<?` are not run (see the script): neither reference has processing
+# instruction states, and the vectors that do are scored by `make conformance-html-tokenizer`.
+# html5lib's errors are not compared at all: its codes are its own and carry no positions.
+#
+# A count of `hunt` is an entry seen only on the larger populations a hunt generates (other seeds,
+# 100,000 inputs from other seeds, `--count 100000 --seed N`; the list describes the default only): it need not occur in the default population, and if
+# it does, its count is written here.
+html5lib:tokens:doctype-name-empty-not-missing	n=73	reference-old	html5lib's tokenizer gives a DOCTYPE with no name the name "" and not None; the standard (and the vectors) have a distinct missing name, which parse5 and this tokenizer keep. Every other field agrees.
+html5lib:tokens:nul-in-cdata-section	n=57	standard-newer	html5lib replaces a U+0000 in a CDATA section with U+FFFD in the tokenizer; the standard emits it as it is ("U+0000 NULL characters are handled in the tree construction stage, as part of the rules for parsing tokens in foreign content"), so a tree builder can tell it from a replacement character. Only the NULs before the first `]]>` are in the CDATA section; after it the state is data, and html5lib keeps them there too.
+parse5:errors:line-feed-after-ampersand-counted-twice	n=5	reference-wrong	parse5 8.0.1 counts a line feed that directly follows an `&` as two lines (`&\n` then any error reports line 3), because it reads the character to see whether a reference follows, and reads it again. Lines after such a line feed are one too many for each; columns are right. Ours are the lines of the normalized input.
+parse5:errors:stream-error-after-reference-errors	n=4	reference-wrong	parse5 reports the input stream's error for the character that ends a character reference (`&#xD` then U+FFFF) after the reference's own errors, because its reference decoder reads ahead of the preprocessor; the standard's input stream errors belong to the character, which the state machine consumes first, and this tokenizer raises it then. The same errors, at the same positions, in another order.
+parse5:errors:unknown-named-reference-in-attribute	n=21	reference-wrong	parse5 does not report unknown-named-character-reference for a reference in an attribute value (`<a b='&foo;'>`); the ambiguous ampersand state raises it on the semicolon wherever the reference is, and the vectors only cover it in text and RCDATA. What is missing from parse5's list is that error alone, each at a semicolon inside the value of a tag's attribute.
+html5lib:tokens:nul-after-comment-open-keeps-the-start-state	hunt	reference-wrong	html5lib 1.1 does not leave the comment start state (or the comment start dash state) when it reads a U+0000: `<!--\x00>` ends the comment at the `>` (the standard goes to the comment state, where `>` is data) and `<!---\x00!` puts a second hyphen before the `!`. The standard's states are 13.2.5.43 and 13.2.5.44. The input has a NUL directly after `<!--` or `<!---`, and the first token that differs is a comment.
+parse5:answer:throws-on-two-low-surrogates	hunt	reference-wrong	parse5 8.0.1 throws `RangeError: Invalid code point` on two lone low surrogates in a row (U+DC00 to U+DFFF, twice), as if they were a pair. Lone surrogates cannot occur in UTF-8 and the vectors have them only as JSON escapes; the inputs here are the vectors' and their mutations. The tokenizer reads each as a surrogate (surrogate-in-input-stream) in WTF-8 mode.

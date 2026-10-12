@@ -937,7 +937,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-xml-fuzz-plants oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-xml-fuzz-plants check-html-fuzz-plants oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1076,6 +1076,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_writer.c \
 	src/ini/ini_file_io.c \
 	src/html/html_charref.c \
+	src/html/html_tokenizer.c \
+	src/html/html_tokenizer_errors.c \
 	src/markup/markup_check.c \
 	src/markup/markup_core.c \
 	src/markup/markup_escape.c \
@@ -1955,6 +1957,7 @@ $(eval $(call fuzz-rule,fuzz_json_dupkeys,json-dupkeys))
 $(eval $(call fuzz-rule,fuzz_markup_tree,markup-tree))
 $(eval $(call fuzz-rule,fuzz_xml,xml))
 $(eval $(call fuzz-rule,fuzz_xml_writer,xml-writer))
+$(eval $(call fuzz-rule,fuzz_html_tokenizer,html-tokenizer))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -1967,7 +1970,7 @@ fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
 fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
-fuzz: fuzz-run-xml fuzz-run-xml-writer
+fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer
 
 check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each XML fuzzer finds it
 # A fuzzer that has never failed has not been shown able to. tools/xml/plant-fuzz.py copies
@@ -1980,6 +1983,17 @@ check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each 
 check-xml-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/xml/plant-fuzz.py --time $(FUZZ_TIME)
+
+check-html-fuzz-plants: ## Plant a defect in a copy of the library and show the HTML tokenizer's fuzzer finds it
+# The same check as check-xml-fuzz-plants, for tests/fuzz/fuzz_html_tokenizer.cpp:
+# tools/html/plant-fuzz.py copies this tree to a scratch directory, edits one line of the
+# tokenizer there, and runs the harness for FUZZ_TIME seconds (or replays a recorded
+# reproducer); it must stop with a report, and an unedited copy must not. Needs clang,
+# the dependencies on PREFIX, and about a minute a plant. Outside TEST_GATES: it builds and
+# runs a fuzzer.
+check-html-fuzz-plants:
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" python3 tools/html/plant-fuzz.py --time $(FUZZ_TIME)
 
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
@@ -2042,6 +2056,15 @@ conformance-xml: ## Score the XML parser against the pinned W3C XML Conformance 
 conformance-xml: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
 	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MIN_ROUNDTRIP=1222 XMLCONF_MAX_ROUNDTRIP_REFUSED=17 XMLCONF_MAX_ENTITY=83 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
+
+# Outside TEST_GATES, like every conformance target: it wants the pinned vectors,
+# which a fresh clone does not have until tools/html/fetch.sh has run. With the
+# data absent it fails and says so; it does not skip.
+conformance-html-tokenizer: ## Score the HTML tokenizer against the pinned html5lib-tests tokenizer vectors
+conformance-html-tokenizer: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/tokenizer,tools/html/fetch.sh)
+	@$(CONFORMANCE_ENV) HTML_TOKENIZER_MIN_SCORED=7000 tools/conformance/run-html-tokenizer.sh && \
+	$(CONFORMANCE_ENV) tools/conformance/run-html-tokenizer.sh --controls
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)
@@ -2803,7 +2826,7 @@ conformance-all: ## Score every parser against its external corpus
 # Adding it would quietly change this target's contract from "needs this machine" to
 # "needs podman", so it sits with the oracle gates instead, where that requirement is
 # already the rule. `make conformance-ini-win32` runs it.
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-html-tokenizer conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

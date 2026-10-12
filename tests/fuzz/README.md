@@ -14,6 +14,7 @@ The libFuzzer harnesses:
 | Markup tree | `fuzz_markup_tree.cpp` | `make fuzz-markup-tree` | `make fuzz-run-markup-tree` |
 | XML parsers | `fuzz_xml.cpp` | `make fuzz-xml` | `make fuzz-run-xml` |
 | XML writer | `fuzz_xml_writer.cpp` | `make fuzz-xml-writer` | `make fuzz-run-xml-writer` |
+| HTML tokenizer | `fuzz_html_tokenizer.cpp` | `make fuzz-html-tokenizer` | `make fuzz-run-html-tokenizer` |
 
 `make fuzz` builds and runs every one of them. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
@@ -926,3 +927,21 @@ inputs cannot phrase, and it turns out to ask a lot of them.
 CSV is much slower per execution because the harness reads back every field of
 every parsed table; that is deliberate, since indexing is where a row/column
 mismatch would show.
+
+## Fuzzing the HTML tokenizer
+
+`fuzz_html_tokenizer.cpp`: five option bytes (tiny limits, the initial state, WTF-8, the
+tree builder's CDATA answer, allocation-failure runs, an input limit, the last start tag) and then bytes. Each
+input is tokenized whole, a byte at a time, in pieces and in random pieces, and the token
+stream, the errors (code, line, column, offset) and the status must be identical; every token
+must be well formed (UTF-8, lower-case names, unique attributes, flags that say what the bytes
+are, one end-of-file token); stream errors are raised once per character; limits are their own
+sticky status with the tokens before them a prefix of a roomy run's; an allocation that fails
+anywhere is OOM or the normal answer and leaks nothing; and the work stays linear.
+Seeds (`tests/fuzz/corpus/html-tokenizer`) are made from the html5lib-tests vectors by
+`tools/html/make-tokenizer-fuzz-seeds.py`; `reproducer-*.seed` are finds kept because they no
+longer fail and are replayed by `make test` (`tests/test-html-tokenizer-fuzz-seeds.cpp`).
+`make check-html-fuzz-plants` (`tools/html/plant-fuzz.py`) plants eight defects in a copy of
+the tokenizer: six are found by replaying a recorded input (which shows the harness can see
+them), two (a white-space flag never cleared, an upper-case tag name) must be found by the
+time-boxed search from the seeds, as the unedited control must stay silent under it.

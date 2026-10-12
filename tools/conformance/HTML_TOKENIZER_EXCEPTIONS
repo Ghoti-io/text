@@ -1,0 +1,57 @@
+# Tokenizer vector runs this tokenizer gets "wrong", one per line: <id><TAB><reason>.
+#
+# The id is <file>#<index> (the position in the file's list, from 0), with
+# @<state> if the run starts in a state other than the data state.
+#
+# tools/conformance/html_tokenizer_suite.py fails the gate on a run that fails
+# and is not listed here, AND on a listed run that no longer fails, so an entry
+# cannot outlive its reason. None of these is a defect found and left: each is a
+# vector that disagrees with the standard's text (retrieved 2026-10-11) and was
+# read against it. The standard decides; the vectors are checked against it.
+#
+# Group 1: vectors that predate the processing instruction states (13.2.5.72 to
+# 13.2.5.76). They were written when `<?` began a bogus comment with the error
+# unexpected-question-mark-instead-of-tag-name, which is no longer in the list
+# of parse errors. The comment they expect is the comment the tokenizer makes;
+# only the error differs: it is raised as invalid-first-character-of-processing-
+# instruction-target, one character later, by the state the standard now has.
+domjs.test#0	predates the processing instruction states: expects unexpected-question-mark-instead-of-tag-name at the `?`; the standard raises invalid-first-character-of-processing-instruction-target at the character after it (the comment produced is the same)
+domjs.test#1	predates the processing instruction states: expects unexpected-question-mark-instead-of-tag-name at the `?`; the standard raises invalid-first-character-of-processing-instruction-target at the character after it (the comment produced is the same)
+domjs.test#2	predates the processing instruction states: expects unexpected-question-mark-instead-of-tag-name at the `?`; the standard raises invalid-first-character-of-processing-instruction-target at the character after it (the comment produced is the same)
+#
+# Group 2: eof-in-processing-instruction after a target and a space. The
+# standard says the error is raised when the end of the file is read, so at the
+# end of the input; these sixteen vectors put it at the column of the space that
+# ended the target (column 4 in every one, wherever the input ends: `<?Z Z?` ends
+# at column 7). The sibling vectors with no space (`<?a`: column 4 for both
+# readings) pass. Neither reference has processing instructions, so neither can
+# say which reading the author meant; the standard's text is unambiguous.
+test3.test#1167	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1168	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1169	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1170	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1171	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1172	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1173	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1174	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1175	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1176	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1177	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1178	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1179	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1180	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1181	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+test3.test#1182	the vector puts eof-in-processing-instruction at the end of the target, not at the end of the input (the standard: where the end of the file is read)
+#
+# Group 3: the order of two errors for one character.
+test3.test#1186	lists invalid-first-character-of-processing-instruction-target before the input stream's control-character-in-input-stream for the same character; the standard preprocesses the input first, and every other vector with both (`<!\u000B` among them) has them in that order
+#
+# Group 4: xmlViolation.test. Its expectations are for a tokenizer that applies
+# the tweaks of "Coercing an HTML DOM into an infoset" (a non-XML character
+# becomes U+FFFD, a form feed becomes a space, `--` in a comment becomes `- -`).
+# That is a serialization concern for XML output, not the tokenizer's; the same
+# input is read as HTML everywhere else in the suite. The fourth case in the file
+# ("FF between attributes") has no tweak that changes the tokens and passes.
+xmlViolation.test#0	expects the infoset coercion (a noncharacter becomes U+FFFD), which is not tokenization
+xmlViolation.test#1	expects the infoset coercion (a form feed becomes a space), which is not tokenization
+xmlViolation.test#2	expects the infoset coercion (`--` in a comment becomes `- -`), which is not tokenization

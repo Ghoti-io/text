@@ -1,7 +1,7 @@
 // The parse5 half of the HTML reference driver; driver.py describes the protocol.
 //
 // Copyright 2026 by Corey Pennycuff
-import { parse, parseFragment, defaultTreeAdapter } from "parse5";
+import { parse, parseFragment, defaultTreeAdapter, Tokenizer, TokenizerMode } from "parse5";
 import { createInterface } from "node:readline";
 
 const NS_HTML = "http://www.w3.org/1999/xhtml";
@@ -87,13 +87,50 @@ function ask(req) {
   return { dump: dump(root), errors };
 }
 
+// The tokenizer alone; driver.py describes the request and the answer.
+const MODES = {
+  data: TokenizerMode.DATA,
+  rcdata: TokenizerMode.RCDATA,
+  rawtext: TokenizerMode.RAWTEXT,
+  script: TokenizerMode.SCRIPT_DATA,
+  plaintext: TokenizerMode.PLAINTEXT,
+  cdata: TokenizerMode.CDATA_SECTION,
+};
+
+function askTokens(req) {
+  const tokens = [];
+  const errors = [];
+  const character = (chars) => {
+    const last = tokens[tokens.length - 1];
+    if (last && last[0] === "Character") last[1] += chars;
+    else tokens.push(["Character", chars]);
+  };
+  const handler = {
+    onComment: (t) => tokens.push(["Comment", t.data]),
+    onDoctype: (t) => tokens.push(["DOCTYPE", t.name, t.publicId, t.systemId, !t.forceQuirks]),
+    onStartTag: (t) => tokens.push(["StartTag", t.tagName, t.attrs.map((a) => [a.name, a.value]), !!t.selfClosing]),
+    onEndTag: (t) => tokens.push(["EndTag", t.tagName]),
+    onEof: () => {},
+    onCharacter: (t) => character(t.chars),
+    onNullCharacter: (t) => character(t.chars),
+    onWhitespaceCharacter: (t) => character(t.chars),
+    onParseError: (e) => errors.push({ code: e.code, line: e.startLine, col: e.startCol }),
+  };
+  const tokenizer = new Tokenizer({ sourceCodeLocationInfo: false }, handler);
+  tokenizer.state = MODES[req.state];
+  if (req.last !== null && req.last !== undefined) tokenizer.lastStartTagName = req.last;
+  tokenizer.write(req.tokenize, true);
+  return { tokens, errors };
+}
+
 const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const out = [];
 for await (const line of rl) {
   if (!line.trim()) continue;
   let answer;
   try {
-    answer = ask(JSON.parse(line));
+    const req = JSON.parse(line);
+    answer = req.tokenize !== undefined ? askTokens(req) : ask(req);
   } catch (e) {
     answer = { error: `${e && e.name}: ${e && e.message}` };
   }
