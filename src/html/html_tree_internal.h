@@ -45,8 +45,8 @@
  *
  * ## What is not here
  *
- * There is no public HTML API, no encoding determination (3f), no
- * serialization and no script execution.
+ * There is no encoding determination beyond a UTF-8 byte order mark that the public layer
+ * (html_api.c) skips, no serialization and no script execution.
  *
  * ## How it is driven
  *
@@ -58,7 +58,7 @@
  * gtext_html_tree_free(tree);
  * ```
  *
- * or gtext_html_parse() for a whole buffer. A chunk is borrowed only for the
+ * or gtext_html_tree_parse() for a whole buffer. A chunk is borrowed only for the
  * duration of feed(). **The tree and the errors are the same however the input
  * is cut** (the one exception is `max_input_bytes`, which the tokenizer
  * documents).
@@ -100,13 +100,14 @@
  * formatting element that it shifts. No code here recurses; the stack is an
  * array.
  *
- * Internal. Nothing here is public API until the HTML parser is.
+ * Internal. The public API (include/ghoti.io/text/html.h) is in src/html/html_api.c and wraps this.
  */
 
 #ifndef GHOTI_IO_GTEXT_SRC_HTML_HTML_TREE_INTERNAL_H
 #define GHOTI_IO_GTEXT_SRC_HTML_HTML_TREE_INTERNAL_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/html/html_core.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup.h>
 #include <stdbool.h>
@@ -240,6 +241,9 @@ typedef struct {
   bool scripting;
   /// Seed of the tokenizer's attribute-name hash (0: its own). Tests set it.
   uint64_t hash_seed;
+  /// Keep no errors at all and only count them (gtext_html_tree_errors_dropped()): `max_errors`
+  /// cannot say 0, because 0 there means the default. Appended after `hash_seed`.
+  bool count_errors_only;
 } GTEXT_HTML_TreeOptions;
 
 /* ---- Lifecycle and input ------------------------------------------------ */
@@ -252,6 +256,17 @@ typedef struct {
  */
 GTEXT_INTERNAL_API GTEXT_HTML_Tree * gtext_html_tree_new(
     const GTEXT_HTML_TreeOptions * options);
+
+/**
+ * @brief Say that the first `count` bytes of the input were consumed by the caller (a byte order mark).
+ *
+ * Must come before the first feed(). The bytes are counted in the byte offsets of every error and node
+ * location and in the input limit, but are not read.
+ *
+ * @return OK, E_STATE if input was fed already, or the failure the limit makes.
+ */
+GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_skip_input(
+    GTEXT_HTML_Tree * tree, size_t count);
 
 /// Free the builder, the document it still holds (if take_document() did not
 /// take it) and everything else. NULL is ignored.
@@ -297,18 +312,13 @@ GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_status(
  *   failure; NULL if even the builder could not be made).
  * @return OK or the failure.
  */
-GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_parse(const void * data,
+GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_parse(const void * data,
     size_t length, const GTEXT_HTML_TreeOptions * options,
     GTEXT_Markup_Document ** out, GTEXT_HTML_Tree ** tree_out);
 
 /* ---- Fragments ----------------------------------------------------------- */
 
-/// The namespace of a fragment's context element.
-typedef enum {
-  GTEXT_HTML_NS_HTML = 0,
-  GTEXT_HTML_NS_SVG,
-  GTEXT_HTML_NS_MATHML
-} GTEXT_HTML_Namespace;
+/* GTEXT_HTML_Namespace (GTEXT_HTML_NS_HTML, _SVG, _MATHML) is public: html/html_core.h. */
 
 /**
  * @brief The context element of the HTML fragment parsing algorithm (13.4), described by value.
@@ -361,9 +371,9 @@ GTEXT_INTERNAL_API GTEXT_Markup_Node * gtext_html_tree_take_fragment(
  * @brief Parse a whole buffer as a fragment.
  *
  * `doc_out` and `fragment_out` are written only on OK. `tree_out`, if non-NULL, receives the builder for
- * its errors and status, as for gtext_html_parse().
+ * its errors and status, as for gtext_html_tree_parse().
  */
-GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_parse_fragment(
+GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_parse_fragment(
     const GTEXT_HTML_FragmentContext * context, const void * data, size_t length,
     const GTEXT_HTML_TreeOptions * options, GTEXT_Markup_Document ** doc_out,
     GTEXT_Markup_Node ** fragment_out, GTEXT_HTML_Tree ** tree_out);

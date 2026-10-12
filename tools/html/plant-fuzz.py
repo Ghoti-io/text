@@ -16,7 +16,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""Plant a defect in a scratch copy of the library and show the HTML tokenizer's and tree builder's fuzzers find it.
+"""Plant a defect in a scratch copy of the library and show the HTML tokenizer's, tree builder's and public API's fuzzers find it.
 
     tools/html/plant-fuzz.py [--time SECONDS] [name ...]
 
@@ -114,6 +114,32 @@ and, for stage 3e, six (three replayed, three searched):
   tree-fragment-result-not-moved   the root element's children are not moved into the fragment: the
                    property that a fragment's document has an empty root element (searched).
 
+The public API's fuzzer (tests/fuzz/fuzz_html.cpp, target `html`) has twelve, all replayed from a seed of
+tests/fuzz/corpus/html and all in the layer over the builder (src/html/html_api.c, html_core.c), with its
+own unedited control (`control-api`):
+
+  api-bom-needs-one-feed   the byte order mark is recognized only in a feed of three bytes or more: a
+                   document fed a byte at a time reads the mark as text, which the property that
+                   the answer is the same however the input is cut sees.
+  api-held-bytes-dropped   the bytes of a mark that turned out not to be one are never given to the
+                   builder: the property that the answer is the builder's own.
+  api-result-leak   the result's error list is not freed by gtext_html_result_free(): the counting
+                   allocator, and LeakSanitizer.
+  api-encoding-not-recorded   the document does not record its encoding: the property that it
+                   records the one the result gives.
+  api-count-only-ignored   the count-only option is dropped: count-only keeps no error.
+  api-error-total-short   the dropped count is zero: kept plus dropped is every error.
+  api-second-finish-gives-document   a second finish is not refused as a state error.
+  api-input-limit-off-by-one   an input exactly at its limit is refused: the boundary is exact.
+  api-fragment-bom-skipped   a fragment skips a byte order mark: the characters of a fragment are
+                   already decoded and U+FEFF is text.
+  api-sticky-feed-checks-arguments-first   a failed parser answers a NULL buffer with a length with the
+                   argument error and not its failure.
+  api-sticky-finish-checks-kind-first   a failed parser answers the wrong kind of finish with the state
+                   error and not its failure.
+  api-oom-absorbed-in-report   the result is returned incomplete when its error list cannot be
+                   allocated: the allocation-failure sweep's property that a success is the normal answer.
+
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
 corpus.
@@ -201,6 +227,39 @@ PLANTS = {
     "tree-fragment-result-not-moved": ("html-tree", "src/html/html_tree_fragment.c",
                                        "  markup_move_children_unchecked(tb->stack[0].node, tb->frag_node);\n",
                                        ""),
+
+    # The public API (tests/fuzz/fuzz_html.cpp). Each is in the layer over the builder.
+    "api-bom-needs-one-feed": ("html", "src/html/html_api.c",
+                               "  while (p->bom_open && len > 0) {", "  while (p->bom_open && len >= 3) {"),
+    "api-held-bytes-dropped": ("html", "src/html/html_api.c",
+                               "  const size_t n = p->held;\n  p->held = 0;", "  const size_t n = 0;\n  p->held = 0;"),
+    "api-result-leak": ("html", "src/html/html_core.c",
+                        "    gtext_allocator_free(&allocator, internal);\n", "    (void)allocator;\n"),
+    "api-encoding-not-recorded": ("html", "src/html/html_api.c",
+                                  "    if (gtext_markup_document_set_encoding(doc, \"UTF-8\",\n"
+                                  "            p->has_bom ? GTEXT_MARKUP_ENCODING_BOM : p->source)\n        != GTEXT_MARKUP_OK) {",
+                                  "    if (0) {"),
+    "api-count-only-ignored": ("html", "src/html/html_api.c",
+                               "  to.count_errors_only = o.count_errors_only || !errors_wanted;",
+                               "  to.count_errors_only = !errors_wanted;"),
+    "api-error-total-short": ("html", "src/html/html_core.c",
+                              "  internal->dropped = dropped;", "  internal->dropped = 0;"),
+    "api-second-finish-gives-document": ("html", "src/html/html_api.c",
+                                         "  if (p->fragment != fragment || p->taken) {",
+                                         "  if (p->fragment != fragment) {"),
+    "api-input-limit-off-by-one": ("html", "src/html/html_api.c",
+                                   "  if (p->fed > p->max_input || len > p->max_input - p->fed) {",
+                                   "  if (p->fed > p->max_input || len >= p->max_input - p->fed) {"),
+    "api-sticky-feed-checks-arguments-first": ("html", "src/html/html_api.c",
+                                               "  if (p->status != GTEXT_HTML_OK) {\n    return p->status;\n  }\n  if (!data && len != 0) {\n    return GTEXT_HTML_E_INVALID;\n  }",
+                                               "  if (!data && len != 0) {\n    return GTEXT_HTML_E_INVALID;\n  }\n  if (p->status != GTEXT_HTML_OK) {\n    return p->status;\n  }"),
+    "api-sticky-finish-checks-kind-first": ("html", "src/html/html_api.c",
+                                            "  if (p->status != GTEXT_HTML_OK) {\n    /* The sticky failure comes before",
+                                            "  if (p->fragment != fragment) {\n    html_result_set_failure(result, GTEXT_HTML_E_STATE, NULL);\n    return GTEXT_HTML_E_STATE;\n  }\n  if (p->status != GTEXT_HTML_OK) {\n    /* The sticky failure comes before"),
+    "api-fragment-bom-skipped": ("html", "src/html/html_api.c",
+                                 "  p->bom_open = context == NULL;", "  p->bom_open = true;"),
+    "api-oom-absorbed-in-report": ("html", "src/html/html_api.c",
+                                   "    if (!result->internal) {", "    if (0) {"),
     "cr-at-a-cut": ("html-tokenizer", "src/html/html_tokenizer.c",
                     "      if (p + 1 >= len) {\n        if (!t->final) {\n          return false;\n        }\n        *cp = '\\n';",
                     "      if (p + 1 >= len) {\n        *cp = '\\n';"),
@@ -256,6 +315,18 @@ REPRODUCERS = {
     "tree-foreign-atoms-leak": "tests/fuzz/corpus/html-tree/foreign-attributes.seed",
     "tree-svg-attribute-case-not-restored": "tests/fuzz/corpus/html-tree/svg-attribute-table.seed",
     "tree-foreign-nul-kept": "tests/fuzz/corpus/html-tree/nul-in-foreign.seed",
+    "api-bom-needs-one-feed": "tests/fuzz/corpus/html/api-bom-cut-byte-at-a-time.seed",
+    "api-held-bytes-dropped": "tests/fuzz/corpus/html/api-bom-prefix-then-text.seed",
+    "api-result-leak": "tests/fuzz/corpus/html/api-rich-document.seed",
+    "api-encoding-not-recorded": "tests/fuzz/corpus/html/api-rich-document.seed",
+    "api-count-only-ignored": "tests/fuzz/corpus/html/api-errors-count-only.seed",
+    "api-error-total-short": "tests/fuzz/corpus/html/api-errors-cap-one.seed",
+    "api-second-finish-gives-document": "tests/fuzz/corpus/html/api-rich-document.seed",
+    "api-input-limit-off-by-one": "tests/fuzz/corpus/html/api-rich-document.seed",
+    "api-fragment-bom-skipped": "tests/fuzz/corpus/html/api-bom-fragment-added.seed",
+    "api-oom-absorbed-in-report": "tests/fuzz/corpus/html/api-rich-document.seed",
+    "api-sticky-feed-checks-arguments-first": "tests/fuzz/corpus/html/api-sticky-deep.seed",
+    "api-sticky-finish-checks-kind-first": "tests/fuzz/corpus/html/api-sticky-deep-fragment.seed",
 }
 
 
@@ -281,6 +352,8 @@ def target_of(name):
         return "html-tokenizer"
     if name == "control-tree":
         return "html-tree"
+    if name == "control-api":
+        return "html"
     return PLANTS[name][0]
 
 
@@ -329,7 +402,7 @@ def run(name, seconds):
 # harness's own "property failed" lines. The build's command lines mention the harness names,
 # and a compiler error, a kill by memcap (exit 137) or a timeout all exit non-zero too, so none
 # of those counts: the run must have started (libFuzzer printed its seed) and then reported.
-REPORT = re.compile(r"^(fuzz_html_(tokenizer|tree): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_html(_tokenizer|_tree)?: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer).*)$", re.M)
 
 
@@ -349,11 +422,11 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    names = names or ["control", "control-tree"] + list(PLANTS)
+    names = names or ["control", "control-tree", "control-api"] + list(PLANTS)
     bad = []
     for name in names:
         if not name.startswith("control") and name not in PLANTS:
-            raise SystemExit("unknown plant %r (one of control, control-tree, %s)" % (name, ", ".join(PLANTS)))
+            raise SystemExit("unknown plant %r (one of control, control-tree, control-api, %s)" % (name, ", ".join(PLANTS)))
         status, out = run(name, seconds)
         reported = found_by_fuzzer(status, out)
         if name.startswith("control"):

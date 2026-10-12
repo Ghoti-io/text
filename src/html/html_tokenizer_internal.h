@@ -429,6 +429,17 @@ GTEXT_INTERNAL_API GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed(
     GTEXT_HTML_Tokenizer * tok, const void * data, size_t length);
 
 /**
+ * @brief Count `count` bytes the caller consumed itself (a byte order mark) before the first byte fed.
+ *
+ * Must come before the first feed(). The bytes are not read: they are added to the byte offset of
+ * every character and error after them and to the input limit, as if they had been fed.
+ *
+ * @return OK, E_STATE if input was fed already, E_LIMIT_INPUT if `count` alone is over the limit.
+ */
+GTEXT_INTERNAL_API GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_skip_input(
+    GTEXT_HTML_Tokenizer * tok, size_t count);
+
+/**
  * @brief Say that there is no more input.
  *
  * After this, next() eventually produces the EOF token and then DONE.

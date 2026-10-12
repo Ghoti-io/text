@@ -1,11 +1,586 @@
-@page format_html HTML tokenizer and tree builder (internal)
+@page format_html HTML
 
-# HTML tokenizer and tree builder
+# HTML
 
-**Status: internal.** There is no public HTML API yet. `src/html/html_tokenizer_internal.h`
-and `src/html/html_tree_internal.h` are the interfaces of the two stages (the tree builder
-drives the tokenizer); nothing here is installed or exported. The tokenizer comes first on this
-page, the tree builder after it (\ref format_html_tree "below"). Back to \ref text_format_references "Formats".
+`gtext_html_parse()` reads a whole **HTML document** the way the WHATWG HTML Living
+Standard says a browser does, and builds a \ref format_markup "Markup tree" from it;
+`gtext_html_parse_fragment()` does what `innerHTML` does, in a context element you
+describe; `GTEXT_HTML_Parser` takes the document in pieces as it arrives; and
+`gtext_html_parse_file()` reads a file. HTML has no malformed documents: **every input has
+a tree**, and the mistakes in it are *parse errors*, listed in the result with the
+standard's names and positions, which are not failures. A parse fails only for an
+argument, a limit, memory, or an encoding this release cannot read. Back to
+\ref text_format_references "Formats".
+
+The API has the shape of the \ref format_xml "XML" one (an options struct with a
+`_default()`, a status enum with a distinct status for every limit, a whole-input parse, a
+file form, an incremental parser, the same allocator and file layer), and
+**what differs is listed under "How this differs from the XML API"**. The tokenizer and
+the tree builder under it are described, with their numbers, in the second half of this page
+(\ref format_html_internals "Internals").
+
+Include `<ghoti.io/text/html.h>`, which brings in the markup tree's headers too.
+
+## Quick start
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Parse a document, say how it was read, and print its title. */
+static void quick_start(void) {
+  const char * text = "<!DOCTYPE html><title>Hi</title><p class=a>one<p>two</b>";
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_HTML_Result result;
+
+  if (gtext_html_parse(text, strlen(text), NULL, &doc, &result) != GTEXT_HTML_OK) {
+    fprintf(stderr, "not parsed: %s\n", result.message);
+    gtext_html_result_free(&result);
+    return;
+  }
+
+  const char * mode = result.mode == GTEXT_MARKUP_MODE_NO_QUIRKS ? "no-quirks"
+      : result.mode == GTEXT_MARKUP_MODE_LIMITED_QUIRKS ? "limited-quirks" : "quirks";
+  printf("%s mode, %zu parse errors, read as %s\n", mode,
+      gtext_html_result_error_count(&result), result.encoding);
+
+  /* The title is the text of the first element of that name. */
+  const GTEXT_Markup_Node * root = gtext_markup_document_root(doc);
+  for (const GTEXT_Markup_Node * n = gtext_markup_node_next_in_order(root, root, false); n;
+       n = gtext_markup_node_next_in_order(root, n, false)) {
+    if (gtext_markup_node_kind(n) == GTEXT_MARKUP_KIND_ELEMENT
+        && gtext_markup_element_is(n, GTEXT_MARKUP_NS_HTML, "title")) {
+      char * title = NULL;
+      if (gtext_markup_node_text_content(n, NULL, &title, NULL) == GTEXT_MARKUP_OK) {
+        printf("title: %s\n", title);
+        gtext_markup_string_free(NULL, title);
+      }
+      break;
+    }
+  }
+
+  gtext_html_result_free(&result);   /* the result and the document are separate */
+  gtext_markup_document_free(doc);
+}
+```
+
+`gtext_html_parse(data, len, opts, &doc, &result)` returns `GTEXT_HTML_OK` and a document the
+caller frees with `gtext_markup_document_free()`, or a status and no document; `opts` NULL is
+the defaults, `data` need not be NUL-terminated and is not kept, and `result` may be NULL if
+you do not want the errors. The **result** is a separate object, filled for failures as well
+as successes and freed with `gtext_html_result_free()`; freeing it does not touch the
+document, and the other way round, in either order.
+
+## Five ways in
+
+| You have | Call | Notes |
+|---|---|---|
+| a buffer | `gtext_html_parse()` | the document is the tree of the standard's "parse a document" |
+| a buffer that is the inside of an element | `gtext_html_parse_fragment()` | the context element is described by value (`GTEXT_HTML_Fragment_Context`); the result is a fragment node owned by a scratch document |
+| bytes arriving in pieces | `gtext_html_parser_new()`, `_feed()`, `_finish()`, `_free()` | the tree and the errors are identical however the bytes are cut |
+| pieces of a fragment | `gtext_html_parser_new_fragment()`, `_feed()`, `_finish_fragment()`, `_free()` | the same, for a fragment |
+| a path | `gtext_html_parse_file()` | read through the library's file layer (a pipe works; the size limit applies while reading) |
+
+### In pieces
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Feed a document as it arrives. The tree is the same however the bytes are cut. */
+static void incremental(void) {
+  const char * pieces[] = {"<!DOCTYPE html><ti", "tle>Caf\xc3", "\xa9</title><p>a&am", "p;b"};
+  GTEXT_HTML_Parser * parser = NULL;
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_HTML_Result result;
+
+  if (gtext_html_parser_new(NULL, &parser) != GTEXT_HTML_OK) {
+    return;
+  }
+  for (size_t i = 0; i < sizeof(pieces) / sizeof(pieces[0]); i++) {
+    GTEXT_HTML_Status status = gtext_html_parser_feed(parser, pieces[i], strlen(pieces[i]));
+    if (status != GTEXT_HTML_OK) {
+      printf("stopped: %s\n", gtext_html_status_string(status));
+      break;                              /* every later call says the same */
+    }
+  }
+  if (gtext_html_parser_finish(parser, &doc, &result) == GTEXT_HTML_OK) {
+    printf("%zu nodes, %zu bytes\n", result.node_count, result.input_bytes);
+    gtext_markup_document_free(doc);
+  }
+  gtext_html_result_free(&result);
+  gtext_html_parser_free(parser);        /* after the document, or before: it makes no difference */
+}
+```
+
+`feed` builds as much of the tree as the bytes so far decide, and the bytes are not kept past the
+call. A character, a tag, a character reference, or the byte order mark may be cut between
+calls; **a cut never changes the answer** (tested at every split offset, a byte at a time and
+in random pieces, on every vector and in the fuzzer). A run of text between tags is held
+until something that is not text ends it, so `max_text_bytes` bounds the memory of that;
+the tokens are bounded by their own limits and the tree by `max_nodes`. Once a call has
+failed the parser is finished and every later call returns the same status; after a
+successful `finish` a second `finish` or a `feed` is `GTEXT_HTML_E_STATE`, and the document
+stays with the first caller. A `feed` the caller got wrong (a NULL buffer with a length) is
+`GTEXT_HTML_E_INVALID` and does not end the parser.
+
+### Fragments
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* What `td.innerHTML = "<p>x</p>y"` builds, and moving it into another document. */
+static void fragment(void) {
+  GTEXT_HTML_Fragment_Context context;
+  memset(&context, 0, sizeof(context));
+  context.ns = GTEXT_HTML_NS_HTML;
+  context.local_name = "td";
+
+  const char * text = "<p>x</p>y";
+  GTEXT_Markup_Document * scratch = NULL;     /* owns the fragment */
+  GTEXT_Markup_Node * fragment = NULL;
+  if (gtext_html_parse_fragment(&context, text, strlen(text), NULL, &scratch, &fragment, NULL)
+      != GTEXT_HTML_OK) {
+    return;
+  }
+  printf("%zu children\n", gtext_markup_node_child_count(fragment));
+
+  /* A page of your own to put it in. */
+  const char * html = "<table><tr><td id=t>";
+  GTEXT_Markup_Document * page = NULL;
+  if (gtext_html_parse(html, strlen(html), NULL, &page, NULL) == GTEXT_HTML_OK) {
+    const GTEXT_Markup_Node * root = gtext_markup_document_root(page);
+    GTEXT_Markup_Node * cell = NULL;
+    for (GTEXT_Markup_Node * n = gtext_markup_node_next_in_order(root, root, false); n && !cell;
+         n = gtext_markup_node_next_in_order(root, n, false)) {
+      if (gtext_markup_node_kind(n) == GTEXT_MARKUP_KIND_ELEMENT
+          && gtext_markup_element_is(n, GTEXT_MARKUP_NS_HTML, "td")) {
+        cell = n;
+      }
+    }
+    GTEXT_Markup_Node * copy = NULL;
+    /* Clone the fragment into the page, then insert the copy: a fragment inserts its children. */
+    if (cell && gtext_markup_clone(page, fragment, true, &copy) == GTEXT_MARKUP_OK
+        && gtext_markup_append_child(cell, copy) == GTEXT_MARKUP_OK) {
+      printf("the cell now has %zu children\n", gtext_markup_node_child_count(cell));
+    }
+    gtext_markup_document_free(page);
+  }
+  gtext_markup_document_free(scratch);       /* and the fragment is gone with it */
+}
+```
+
+The context element decides how the input is read (`td` takes cells' contents, `select`
+takes options, `textarea` takes text, `svg` takes SVG), and is described by its namespace,
+local name (in the exact case the element has, `foreignObject`), its attributes (only a MathML
+`annotation-xml` reads them: its `encoding` makes it an HTML integration point), whether it
+is or is inside a `form`, and the mode of its document. **The fragment belongs to the
+scratch document that is returned with it**: freeing the document frees the fragment, and
+the fragment must not be used afterwards. To keep the contents, clone the fragment into a
+document of your own (`gtext_markup_clone()` with `deep` true, then insert the copy, which inserts
+its children), as above. The input is characters already decoded, as `innerHTML`'s is, so a
+leading U+FEFF is text and not a byte order mark. `max_open_elements` counts the scratch
+document's `html` root, which is always open, so a fragment has room for one more level than a document with the
+same limit has (which also has `body`).
+
+### Files
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+
+/* Parse a file. A path that cannot be read is an ordinary failure with a message. */
+static void file(void) {
+  const char * path = "doc-example.html";
+  FILE * out = fopen(path, "wb");          /* something to read */
+  if (!out) {
+    return;
+  }
+  fputs("<!DOCTYPE html><title>t</title><p>hello\n", out);
+  fclose(out);
+
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_HTML_Result result;
+  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
+  opts.max_input_bytes = 1 << 20;         /* refuse a file over a megabyte while it is read */
+
+  GTEXT_HTML_Status status = gtext_html_parse_file(path, &opts, &doc, &result);
+  if (status == GTEXT_HTML_OK) {
+    printf("read %zu bytes\n", result.input_bytes);
+    gtext_markup_document_free(doc);
+  }
+  else {
+    printf("%s: %s\n", gtext_html_status_string(status), result.message);
+  }
+  gtext_html_result_free(&result);
+
+  remove(path);
+  status = gtext_html_parse_file(path, NULL, &doc, &result);   /* gone now */
+  printf("%s: %s\n", gtext_html_status_string(status), result.message);
+  gtext_html_result_free(&result);
+}
+```
+
+A path that cannot be opened or read is `GTEXT_HTML_E_INVALID` with a message that says
+which, as `gtext_xml_parse_file()` and the CSV and JSON file functions say it: "No such file or
+directory", "Permission denied opening file", "Failed to open file", "Failed to read file" (a
+directory opens and then will not read). A file longer than `max_input_bytes` is
+`GTEXT_HTML_E_LIMIT_INPUT`, refused while it is read, and a failed allocation is
+`GTEXT_HTML_E_OOM`. The byte offsets in the parse errors are offsets into the file.
+
+## Options and limits
+
+`GTEXT_HTML_Parse_Options` is zeroed to mean the defaults, `gtext_html_parse_options_default()`
+spells them out, and **0 in a limit selects its default and never means "unlimited"**
+(`SIZE_MAX` is as close as the type allows). New fields are only ever appended.
+
+| Field | Default | What it does when it is reached |
+|---|---|---|
+| `allocator` | the default allocator | every allocation of the parse, the document and the result goes through it; its `ctx` must outlive them |
+| `max_input_bytes` | 64 MiB | `GTEXT_HTML_E_LIMIT_INPUT`; a whole input over it is refused before a byte is read, a byte order mark counts |
+| `max_open_elements` | 512 | `GTEXT_HTML_E_LIMIT_DEPTH`: the stack of open elements, `html` and `body` included (510 `div`s fit under the defaults); this is the parser's depth limit, and what bounds the work |
+| `max_nodes` | 10,000,000 | `GTEXT_HTML_E_LIMIT_NODES`, the document node included |
+| `max_name_bytes` | 8192 | `GTEXT_HTML_E_LIMIT_NAME`: a tag, attribute or doctype name, a processing instruction target |
+| `max_attribute_bytes` | 16 MiB | `GTEXT_HTML_E_LIMIT_VALUE`: an attribute value (after references are decoded) or a doctype identifier |
+| `max_comment_bytes` | 16 MiB | `GTEXT_HTML_E_LIMIT_COMMENT`: a comment, a processing instruction's data |
+| `max_text_bytes` | 64 MiB | `GTEXT_HTML_E_LIMIT_TEXT`: one run of characters between tags |
+| `max_attributes` | 1024 | `GTEXT_HTML_E_LIMIT_ATTRIBUTES`: on one tag |
+| `max_errors` | 1024 | not a failure: the first ones are kept, the rest counted |
+| `count_errors_only` | false | keep none, count all (`max_errors` cannot say 0) |
+| `scripting` | false | the standard's scripting flag: with it `noscript` is raw text, without it elements |
+| `transport_encoding`, `transport_encoding_certainty` | NULL, certain | a label from a `Content-Type`; UTF-8's only, until 3h |
+| `default_encoding` | NULL (UTF-8) | the label to assume when nothing else says; UTF-8's only, until 3h |
+| `ignore_meta` | false | skip the `<meta>` prescan; accepted, and changes nothing yet |
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Limits keep untrusted input in bounds. Hitting one is a failure with a status of its own. */
+static void limits(void) {
+  const char * text = "<div><div><div><div><div>deep";
+  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_HTML_Result result;
+
+  opts.max_open_elements = 4;            /* html, body and two more */
+  GTEXT_HTML_Status status = gtext_html_parse(text, strlen(text), &opts, &doc, &result);
+  if (status == GTEXT_HTML_E_LIMIT_DEPTH) {
+    printf("refused: %s\n", result.message);   /* and there is no document to free */
+  }
+  gtext_html_result_free(&result);
+
+  opts.max_open_elements = 0;            /* 0 is the default, 512; it is never "no limit" */
+  status = gtext_html_parse(text, strlen(text), &opts, &doc, &result);
+  if (status == GTEXT_HTML_OK) {
+    printf("accepted under the default limit\n");
+    gtext_markup_document_free(doc);
+  }
+  gtext_html_result_free(&result);
+}
+```
+
+Each limit is a status of its own, because a document refused for being too deep is not one
+that is malformed. Under a limit that is not reached the tree is the unlimited parse's, and the
+limits are exact: a limit of `n` admits `n` and refuses `n + 1` (tested for all eight, in every
+entry point). The only one that depends on how the input is cut is `max_input_bytes`, which
+is on what has been fed: a failed parse counts the bytes it got to.
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The scripting flag decides how <noscript> is read. Nothing is ever executed. */
+static void scripting(void) {
+  const char * text = "<body><noscript><p>enable scripts</p></noscript>";
+  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
+
+  for (int flag = 0; flag < 2; flag++) {
+    opts.scripting = flag != 0;
+    GTEXT_Markup_Document * doc = NULL;
+    if (gtext_html_parse(text, strlen(text), &opts, &doc, NULL) != GTEXT_HTML_OK) {
+      continue;
+    }
+    const GTEXT_Markup_Node * root = gtext_markup_document_root(doc);
+    for (const GTEXT_Markup_Node * n = gtext_markup_node_next_in_order(root, root, false); n;
+         n = gtext_markup_node_next_in_order(root, n, false)) {
+      if (gtext_markup_node_kind(n) == GTEXT_MARKUP_KIND_ELEMENT
+          && gtext_markup_element_is(n, GTEXT_MARKUP_NS_HTML, "noscript")) {
+        const GTEXT_Markup_Node * child = gtext_markup_node_first_child(n);
+        if (gtext_markup_node_kind(child) == GTEXT_MARKUP_KIND_TEXT) {
+          printf("scripting %d: the noscript holds the text \"%s\"\n", flag, gtext_markup_node_data(child, NULL));
+        }
+        else {
+          printf("scripting %d: the noscript holds a <%s> element\n", flag, gtext_markup_element_local_name(child));
+        }
+      }
+    }
+    gtext_markup_document_free(doc);
+  }
+}
+```
+
+## The result
+
+`GTEXT_HTML_Result` holds, after every call:
+
+| Field | |
+|---|---|
+| `status`, `message` | the call's status and a static description of it (for a file, which way it could not be read) |
+| `mode` | the document mode, `GTEXT_MARKUP_MODE_NO_QUIRKS`, `_LIMITED_QUIRKS` or `_QUIRKS`, also set on the document (`gtext_markup_document_mode()`); for a fragment, its context's |
+| `encoding`, `encoding_source` | "UTF-8", and how that was decided: `GTEXT_MARKUP_ENCODING_BOM`, `_CALLER`, `_DECLARATION` or `_DEFAULT` |
+| `input_bytes` | bytes read (a failed parse: as far as it got) |
+| `node_count` | nodes in the document, 0 when there is none |
+| the errors | `gtext_html_result_error_count()`, `_errors_dropped()`, `_error_at()` |
+
+On a failure the result still has the status, the message, the parse errors
+raised before the failure (best effort: if the memory for the list is the thing that failed
+it is not there), `input_bytes` (the bytes accepted before the one that failed: 0 for a whole
+input refused for its length) and, once a parser was made, the encoding (`"UTF-8"`, source
+`DEFAULT`, `CALLER` or, if the mark had been seen, `BOM`); a failure before there was a parser (an
+argument, an unsupported label, OOM making it, a file that could not be read) has `encoding` NULL.
+The document is not written.
+
+**Reuse.** A call overwrites the result without freeing what it held, because it cannot tell
+a live result from uninitialized memory: zero a result before its first use, and free it before passing it to another call.
+
+### Parse errors
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A document that is wrong in three ways still has a tree. The mistakes are in the result. */
+static void errors(void) {
+  const char * text = "<p>one<b>two</p>\n</i><p a=1 a=2>";
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_HTML_Result result;
+  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
+  opts.max_errors = 4;                   /* keep the first four, count the rest */
+
+  if (gtext_html_parse(text, strlen(text), &opts, &doc, &result) == GTEXT_HTML_OK) {
+    for (size_t i = 0; i < gtext_html_result_error_count(&result); i++) {
+      GTEXT_HTML_Error e;
+      if (gtext_html_result_error_at(&result, i, &e)) {
+        printf("%zu:%zu (byte %zu) %s\n", e.line, e.column, e.byte_offset, e.name);
+      }
+    }
+    printf("and %zu more\n", gtext_html_result_errors_dropped(&result));
+    gtext_markup_document_free(doc);
+  }
+  gtext_html_result_free(&result);
+}
+```
+
+Each is a `GTEXT_HTML_Error`: a `code` (a number that does not change between releases), its
+`name`, `line`, `column` and `byte_offset`. The names are the standard's (`duplicate-attribute`,
+`end-tag-with-attributes`); there are 69 codes, no two share a name, and
+`gtext_html_error_name()` maps a code to its name, `"unknown"` for a number that is not one.
+Numbers 0 to 52 are the tokenizer's list (52 is `invalid-utf-8-in-input-stream`, which the standard leaves
+unnamed; 41, `non-void-html-element-start-tag-with-trailing-solidus`, is raised by the tree builder), 64 to 79 are the tree builder's; the standard says only "this is a parse error" in the tree
+builder's places, so those are named for what happened (`unexpected-end-tag`,
+`misnested-formatting`, `html-in-foreign-content`...). The tree builder's reading of a U+0000
+is `unexpected-null-character-in-content`, so that it is not the tokenizer's
+`unexpected-null-character`. Positions: lines start at 1 and end at LF, CR or CR LF; **columns
+count UTF-16 code units** (a character outside the Basic Multilingual Plane is 2), as the
+test suites of the standard and a DOM script reckon them; `byte_offset` is 0-based into the bytes given, a
+byte order mark counted.
+
+With `max_errors` the first ones are kept in the order raised and the rest are only counted:
+`gtext_html_result_error_count() + gtext_html_result_errors_dropped()` is every error whatever the
+cap. Parse errors are not a conformance verdict about a page: the tree builder also raises them where the standard says
+"parse error" and a browser silently repairs.
+
+### Statuses
+
+| Status | When |
+|---|---|
+| `GTEXT_HTML_OK` | success |
+| `GTEXT_HTML_E_INVALID` | an unusable argument (NULL output, NULL data with a length, an unusable context), or a file that could not be opened or read |
+| `GTEXT_HTML_E_OOM` | out of memory: no document, nothing leaked |
+| `GTEXT_HTML_E_STATE` | the incremental parser: input after the end, a second finish, the wrong finish for its kind |
+| `GTEXT_HTML_E_UNSUPPORTED_ENCODING` | a label that is not UTF-8's |
+| `GTEXT_HTML_E_INTERNAL` | a defect in this library (a rule did not terminate); never content |
+| `GTEXT_HTML_E_LIMIT_INPUT`, `_DEPTH`, `_NODES`, `_NAME`, `_VALUE`, `_COMMENT`, `_TEXT`, `_ATTRIBUTES` | the limits above |
+
+`gtext_html_status_string()` gives each a name of its own.
+
+## Document mode
+
+The mode comes from the doctype (or its absence) by the standard's table: no doctype is quirks mode,
+`<!DOCTYPE html>` is no-quirks, and the legacy public and system identifiers choose quirks or limited quirks.
+It matters because it changes how the rest of the document is read (a `table` closes an open `p`
+only outside quirks mode). It is in `result.mode` and on the document, and a fragment is parsed in the mode its
+context says.
+
+## Encodings
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The encoding the bytes were read as, and how that was decided. */
+static void encoding(void) {
+  const char * with_mark = "\xef\xbb\xbf<p>x";
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_HTML_Result result;
+
+  if (gtext_html_parse(with_mark, strlen(with_mark), NULL, &doc, &result) == GTEXT_HTML_OK) {
+    printf("%s, from a byte order mark: %d\n", result.encoding,
+        result.encoding_source == GTEXT_MARKUP_ENCODING_BOM);
+    gtext_markup_document_free(doc);
+  }
+  gtext_html_result_free(&result);
+
+  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
+  opts.transport_encoding = "windows-1252";   /* a Content-Type header said so */
+  GTEXT_HTML_Status status = gtext_html_parse("<p>x", 4, &opts, &doc, &result);
+  printf("%s\n", gtext_html_status_string(status));
+  gtext_html_result_free(&result);
+}
+```
+
+This release reads **UTF-8**. A leading UTF-8 byte order mark is skipped (and the source is then
+`BOM`, whatever the transport label says, as the standard orders it), counted in the offsets and the input limit; bytes that
+are not UTF-8 are replaced by U+FFFD with the error `invalid-utf-8-in-input-stream`, one per maximal
+invalid subpart as the Encoding standard's decoder does. The document records `"UTF-8"` and the source
+(`gtext_markup_document_encoding()`), and so does the result. A fragment's result reports the encoding and its source, but its scratch document records none: it is characters, not a document's bytes, so a leading `EF BB BF` is the text U+FEFF there and is never a byte order mark. The option fields for the rest are already here and final, so that adding the rest changes no structure:
+`transport_encoding` with its certainty, `default_encoding` and `ignore_meta`. A label is matched as the Encoding standard
+matches one (ASCII case-insensitively, surrounding white space ignored): `utf-8`, `utf8`, `unicode-1-1-utf-8`,
+`unicode11utf8`, `unicode20utf8` and `x-unicode20utf8` are accepted in either label field, and **any other string,
+the empty one included, is `GTEXT_HTML_E_UNSUPPORTED_ENCODING`** before the document is examined, so a program
+can pass what it knows today and get its encoding when the library does. UTF-16, the legacy encodings of the Encoding
+standard, the `<meta>` prescan and the transcoding are planned (phases 3h and 3i).
+
+## What the tree is
+
+The document is a `GTEXT_Markup_Document` in HTML mode, as the standard's tree construction leaves it:
+
+- elements in the **HTML** namespace with lower-case names and attributes in no namespace, in source order with the
+  duplicates removed (the first of two equal names stays, the second is the parse error `duplicate-attribute`);
+- inside `svg` and `math`, elements in the **SVG** and **MathML** namespaces with the names and attributes the
+  standard's tables give them (`foreignObject`, `viewBox`, `definitionURL`), and the attributes `xlink:*`, `xml:lang`,
+  `xml:space`, `xmlns` and `xmlns:xlink` in the XLink, XML and XMLNS namespaces;
+- a `template` element owns its content as a document fragment
+  (`gtext_markup_element_template_content()`) and has no children of its own;
+- text with character references decoded and line ends normalized to LF, and adjacent runs one node; comments;
+  processing instructions where the standard's tokenizer makes them; a doctype node;
+- source locations (byte offset, line, column) on elements, text, comments, processing instructions, doctypes and attributes.
+
+A document with no `html`, `head` or `body` gets them. Nothing is ever
+resolved: a `<link>`, `<img src>`, `<script src>` or a form action is only an attribute value.
+
+## The media-type trap
+
+The same bytes are two different trees depending on the media type they arrive under, and this library
+never guesses. `text/html` is read by this API; `application/xhtml+xml` is XML and is read by
+`gtext_xml_parse()`, which refuses what is not well-formed and reads `<br/>`, `<script/>` and a CDATA section as XML
+does. XHTML served as `text/html` is HTML to every browser: `<p/>` opens a paragraph, `<script/>` swallows the rest of the
+document, a processing instruction is a comment. The XML writer's `xhtml` mode exists to write trees that both
+readings agree on, and refuses or reports the ones they do not (see \ref format_xml "XML", "XHTML-compatible output").
+Choose the parser by the media type, not by the bytes; no function here sniffs for "HTML-ness".
+
+## Security
+
+- **Limits are the defence against untrusted input**, and every default is finite. The depth of the stack
+  of open elements bounds the work (the tree builder is linear in the input at a fixed depth: no pattern of input
+  makes it quadratic in the input alone, and nothing recurses, so no input exhausts the C stack); the other limits bound memory. Set `max_input_bytes`
+  to what you can hold, and `max_open_elements` low (the browsers' 512 is generous) for hostile input. A run of text is
+  held in memory until it ends, so `max_text_bytes` bounds that for a stream.
+- **Nothing is loaded.** No `link`, `img`, `script`, `iframe`, `object`, stylesheet `@import`, `meta refresh`, or entity is ever fetched
+  or resolved; `gtext_html_parse_file()` opens exactly the path it is given.
+- **No script is executed**, and `scripting` is only a flag about how `noscript` is read. Scripts and event handler
+  attributes are text and attribute values in the tree.
+- **The tree is not sanitized.** A parsed page contains whatever it contained, `javascript:` URLs, `on*` attributes and
+  `<script>` elements included; there is no sanitizer here yet. Parsing, serializing and parsing again is not a
+  sanitization either (mutation XSS is a property of the serialization, which is not here yet, see below).
+- The parse errors and positions are for the author of the page; do not treat their absence as a verdict.
+- A fragment is parsed in a context you choose; choose the one the result will be inserted in.
+
+## Threads
+
+Independent parses share nothing, and any number may run at once (`make test-tsan` runs eight threads parsing
+the same documents with the default allocator). A parser and a result are not synchronized: use each from one thread at a time.
+A custom allocator is called from the threads that use it.
+
+## How this differs from the XML API
+
+Everything the two share is the same on purpose. These are the departures and why:
+
+- **A result struct instead of an error struct.** XML's `GTEXT_XML_Error` says why one parse failed and where; HTML has no
+  failure that has a position, and has a list of errors, a mode and an encoding to report on success, so `GTEXT_HTML_Result` carries those
+  (freed by `gtext_html_result_free()`, which XML's error has no need of beyond a reset), and every function fills it on success and failure.
+- **No `GTEXT_HTML_E_SYNTAX` family**: there are no malformed HTML documents. The statuses are arguments, memory, state, the encoding, and
+  one per limit.
+- **`max_open_elements`, not `max_depth`**, for the option (it is the standard's stack of open elements and counts `html` and `body`);
+  its status is `GTEXT_HTML_E_LIMIT_DEPTH`, as XML's is.
+- **The parser is created with a status** (`gtext_html_parser_new(opts, &parser)`), where XML's `gtext_xml_stream_new()` returns NULL on
+  failure: there is more than one way for it to fail (an encoding label, an unusable context), and a caller wants to tell them apart.
+- **The incremental parser builds the tree**, and `finish` returns the document (once) and the result; XML's stream delivers events and a
+  separate DOM function builds a tree. There is no pull reader and no event stream for HTML.
+- **A fragment function and a fragment parser**, which XML has no analogue of.
+- **No writer yet.** Serialization is phase 3g.
+- **Encoding options** that are validated but mostly inert until 3h; XML reads five encodings.
+
+## What is not here yet
+
+| Planned | Where |
+|---|---|
+| serialization (the fragment serialization algorithm; parse, serialize, parse round trips) | phase 3g |
+| other encodings: UTF-16, the legacy encodings, the `<meta>` prescan, `ignore_meta`, a tentative label overridden by a declaration | phases 3h and 3i |
+| sanitization | not planned in this phase |
+| script execution | never |
+| the `scripted_*.dat` vectors (6), which need scripts | out of scope |
+
+## Measured
+
+Numbers are from the gates' output; the commands are named so they can be run again.
+
+Public API (phase 3f), measured 2026-10-12 on the development machine:
+
+- `make conformance-html-tree`: the pinned tree-construction vectors through the public API
+  (`tools/conformance/html_api_suite.c`, the same scorer and exceptions as the builder's own runner): 2,095 in
+  scope, **2,091 pass, 4 tagged `none dom`**, identical to the builder's; `#errors` exact on 1,792, never fewer.
+  Cut every way (every split, a byte at a time, pieces of 2 to 9, random) with the identical answer. The gate is shown
+  to fail 146 ways (136 plants, 8 of them in the public layer, and 22 bad requests asked of both runners). `make
+  check-conformance-vectors` runs both passes in `make test`; `--sanitize` runs both under ASan and UBSan.
+- Tests: `testHtmlApi` (140: the arguments, the eight limits at their exact boundaries, the options, the error cap and
+  count-only, the encoding labels and the byte order mark, ownership, the sticky failure, the fragment context, the names, and
+  more than 5,000 cut comparisons including every split offset, a byte at a time and random pieces, for documents and nine
+  fragment contexts, and eight threads), `testHtmlApiOom` (19: the n-th allocation failed for every n, through nine
+  entry points, with and without a result), `testHtmlApiFile` (12, every limit's boundary for a file too), `testHtmlApiFuzzSeeds` (750 seeds: 0.3 s, 1.9 s under ASan, 3.5 s under TSan, bounded at a minute), `testHtmlDocExamples`
+  (the 8 snippets of this page compiled and run, and held byte for byte to the page). `make test`: 166 programs, 4,059 tests,
+  0 failures; `test-asan` 161 programs and `test-tsan` 161, 0 reports; `check-windows-cross` 104 sources, 0 failed.
+- Fuzz: `fuzz_html` 750 seeds; 111,917 runs in four searches (240 s, 421 s, 301 s and an earlier harness) clean; 12 planted defects in the public
+  layer, all found by replaying a seed, and the 29 earlier plants and three controls still found or silent
+  (`make check-html-fuzz-plants`, in batches).
+- Documentation: 53 installed headers compile standalone as C and C++; no Doxygen warning in the public headers,
+  this page or the new sources.
+- The oracle (`make check-html-oracle`, scoring half): 18,461 documents compared, 58 divergence kinds, 19 of 19
+  witnesses, as before this phase. Its controls are 98 plants and over an hour: **65 were run, all caught** (every one whose
+  anchor is in `html_tree.c`, `html_tokenizer.c` or `html_tree_fragment.c`, 45, and 20 spread over the rest of the list), and every tree
+  plant's anchor was checked to be still in the source.
+
+
+\anchor format_html_internals
+# Internals: the tokenizer and the tree builder
+
+Everything above is the public layer (`src/html/html_api.c`, `html_core.c`, `html_file_io.c`). It drives the two
+stages below, whose interfaces (`src/html/html_tokenizer_internal.h`, `src/html/html_tree_internal.h`) are internal:
+nothing in them is installed or exported. The tokenizer comes first, the tree builder after it
+(\ref format_html_tree "below"). The names below that read `gtext_html_tree_*` are the internal builder's;
+its whole-buffer functions were `gtext_html_parse()` and `gtext_html_parse_fragment()` until the public ones took those names, and are
+`gtext_html_tree_parse()` and `gtext_html_tree_parse_fragment()` now.
+
+# The tokenizer
 
 ## Specification
 
@@ -51,7 +626,7 @@ for one tokenizer do not for another.
 
 Input is UTF-8; an invalid sequence is one U+FFFD per maximal subpart (the Encoding
 standard's decoder) and the non-standard error `invalid-utf-8-in-input-stream`. A byte
-order mark is not stripped and other encodings are not read: that is Phase 3f. The
+order mark is not stripped by the tokenizer (the public layer skips one and tells it the three bytes with `gtext_html_tokenizer_skip_input()`, so offsets still count them) and other encodings are not read: that is phases 3h and 3i. The
 `wtf8` option reads the three-byte forms of lone surrogates, which the html5lib vectors
 contain.
 
@@ -111,7 +686,7 @@ Numbers are from the gates' output; the commands are named so they can be run ag
 
 ## Not done (tokenizer)
 
-A public API, encoding determination (3f), scripting beyond the states a tree builder sets.
+Encoding determination beyond a UTF-8 byte order mark, which the public layer skips (3h), scripting beyond the states a tree builder sets.
 
 
 \anchor format_html_tree
@@ -216,19 +791,19 @@ switch to "after frameset"), the `select` and `input` start tags when the contex
 template context (the `form` rules), the end of the file in "in template" with no template on the stack (stop), foster parenting that
 returns the root, table-context clearing and the table and caption end tags that find nothing in scope.
 
-There is no public HTML API, no `<meta>` encoding step (3f), no serialization, no scripts. The "not yet" status of the earlier stages
+The public API is the layer above; the builder has no `<meta>` encoding step (3h), no serialization (3g), no scripts. The "not yet" status of the earlier stages
 (`GTEXT_HTML_TREE_E_NOT_YET` and its accessors) is removed: nothing raised it once foreign content was built. The scorer's exceptions
 format keeps its stage column, for a future construct that is not.
 
 ## Interface
 
 `gtext_html_tree_new(&options)`, `feed()` (any chunking; the chunk is not kept), `finish()`,
-`take_document()`, `free()`, or `gtext_html_parse()` for a whole buffer. The tree and the errors are
+`take_document()`, `free()`, or `gtext_html_tree_parse()` for a whole buffer. The tree and the errors are
 identical however the input is cut (tested at every split offset, a byte at a time and in random pieces,
 on every vector, and in the fuzzer). Options: the allocator (used for the document too), `max_open_elements`
 (default 512 and it counts `html` and `body`, as the browsers' limit does: 510 `div`s fit, the 511th is
 `GTEXT_HTML_TREE_E_LIMIT_DEPTH`), `max_nodes` (10,000,000, `E_LIMIT_NODES`), the tokenizer's six limits
-(each its own status, passed through), `max_errors`, `scripting`, `hash_seed`. A failure is sticky and
+(each its own status, passed through), `max_errors`, `count_errors_only`, `scripting`, `hash_seed`. A failure is sticky and
 returns no document and no partial tree; an allocation failure at any point is `E_OOM` and leaks nothing
 (swept at every allocation, on three documents and two cuts, in the tests and in the fuzzer). The document is
 made with no depth limit of its own: the parser's limit is the stack's.
@@ -383,5 +958,5 @@ named so they can be run again.
 
 ## Not done
 
-A public HTML API, encoding determination and the `<meta>` steps (3f), serialization, sanitization, scripts (the `scripted_*.dat` vectors stay
+Encoding determination and the `<meta>` steps (3h, 3i), serialization (3g), sanitization, scripts (the `scripted_*.dat` vectors stay
 out of scope: `scripted_adoption01.dat`, `scripted_ark.dat`, `scripted_foster01.dat`, `scripted_webkit01.dat`, 6 vectors).

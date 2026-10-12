@@ -355,7 +355,7 @@ TEST(HtmlTreeForeign, NamespacedAttributesAreAdjusted) {
   EXPECT_EQ(doc_of("<p xlink:href=a xml:lang=b xmlns=c>"), in_body({"<p>", "  xlink:href=\"a\"", "  xml:lang=\"b\"", "  xmlns=\"c\""}));
   // The attribute is in a namespace of the tree, not just spelled with a prefix.
   GTEXT_Markup_Document * doc = nullptr;
-  ASSERT_EQ(gtext_html_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
   const GTEXT_Markup_Node * body = gtext_markup_node_last_child(gtext_markup_node_last_child(gtext_markup_document_root(doc)));
   const GTEXT_Markup_Node * svg = gtext_markup_node_first_child(body);
   ASSERT_NE(svg, nullptr);
@@ -1143,14 +1143,14 @@ TEST(HtmlTreeFragment, ArgumentsAreChecked) {
   GTEXT_HTML_Tree * pt = nullptr;
   c.local_name = "td";
   c.local_name_length = 2;
-  EXPECT_EQ(gtext_html_parse_fragment(&c, "<b>x", 4, nullptr, &pd, &pf, &pt), GTEXT_HTML_TREE_OK);
+  EXPECT_EQ(gtext_html_tree_parse_fragment(&c, "<b>x", 4, nullptr, &pd, &pf, &pt), GTEXT_HTML_TREE_OK);
   ASSERT_NE(pf, nullptr);
   EXPECT_EQ(gtext_markup_element_local_name(gtext_markup_node_first_child(pf)), std::string("b"));
   gtext_markup_document_free(pd);
   gtext_html_tree_free(pt);
-  EXPECT_EQ(gtext_html_parse_fragment(&c, nullptr, 3, nullptr, &pd, &pf, nullptr), GTEXT_HTML_TREE_E_INVALID);
-  EXPECT_EQ(gtext_html_parse_fragment(&c, nullptr, 0, nullptr, nullptr, &pf, nullptr), GTEXT_HTML_TREE_E_INVALID);
-  EXPECT_EQ(gtext_html_parse_fragment(nullptr, "x", 1, nullptr, &pd, &pf, nullptr), GTEXT_HTML_TREE_E_INVALID);
+  EXPECT_EQ(gtext_html_tree_parse_fragment(&c, nullptr, 3, nullptr, &pd, &pf, nullptr), GTEXT_HTML_TREE_E_INVALID);
+  EXPECT_EQ(gtext_html_tree_parse_fragment(&c, nullptr, 0, nullptr, nullptr, &pf, nullptr), GTEXT_HTML_TREE_E_INVALID);
+  EXPECT_EQ(gtext_html_tree_parse_fragment(nullptr, "x", 1, nullptr, &pd, &pf, nullptr), GTEXT_HTML_TREE_E_INVALID);
 }
 
 TEST(HtmlTreeFragment, TheContextIsDescribedByValueAndNeverKept) {
@@ -1685,7 +1685,7 @@ TEST(HtmlTreeFragment, ParseFragmentSetsItsOutputsAtEntryAndLeavesThemNullOnFail
   // Success with no builder asked for: the builder is freed inside, and the fragment and its document are the caller's.
   GTEXT_Markup_Document * doc = garbage_doc();
   GTEXT_Markup_Node * frag = garbage_node();
-  ASSERT_EQ(gtext_html_parse_fragment(&c, "<b>x</b>y", 9, nullptr, &doc, &frag, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse_fragment(&c, "<b>x</b>y", 9, nullptr, &doc, &frag, nullptr), GTEXT_HTML_TREE_OK);
   ASSERT_NE(frag, nullptr);
   size_t n = 0;
   char * d = htd_dump_children(frag, &n);
@@ -1699,7 +1699,7 @@ TEST(HtmlTreeFragment, ParseFragmentSetsItsOutputsAtEntryAndLeavesThemNullOnFail
   doc = garbage_doc();
   frag = garbage_node();
   GTEXT_HTML_Tree * tree_out = nullptr;
-  EXPECT_EQ(gtext_html_parse_fragment(&c, "<div><div><div><div>", 20, &o, &doc, &frag, &tree_out),
+  EXPECT_EQ(gtext_html_tree_parse_fragment(&c, "<div><div><div><div>", 20, &o, &doc, &frag, &tree_out),
       GTEXT_HTML_TREE_E_LIMIT_DEPTH);
   EXPECT_EQ(doc, nullptr);
   EXPECT_EQ(frag, nullptr);
@@ -1709,13 +1709,13 @@ TEST(HtmlTreeFragment, ParseFragmentSetsItsOutputsAtEntryAndLeavesThemNullOnFail
   // The same with no builder asked for: nothing leaks (a sanitizer checks), the outputs are null.
   doc = garbage_doc();
   frag = garbage_node();
-  EXPECT_EQ(gtext_html_parse_fragment(&c, "<div><div><div><div>", 20, &o, &doc, &frag, nullptr), GTEXT_HTML_TREE_E_LIMIT_DEPTH);
+  EXPECT_EQ(gtext_html_tree_parse_fragment(&c, "<div><div><div><div>", 20, &o, &doc, &frag, nullptr), GTEXT_HTML_TREE_E_LIMIT_DEPTH);
   EXPECT_EQ(doc, nullptr);
   EXPECT_EQ(frag, nullptr);
   // A bad request: invalid, and the outputs it can reach are null.
   doc = garbage_doc();
   frag = garbage_node();
-  EXPECT_EQ(gtext_html_parse_fragment(nullptr, "x", 1, nullptr, &doc, &frag, nullptr), GTEXT_HTML_TREE_E_INVALID);
+  EXPECT_EQ(gtext_html_tree_parse_fragment(nullptr, "x", 1, nullptr, &doc, &frag, nullptr), GTEXT_HTML_TREE_E_INVALID);
   EXPECT_EQ(doc, nullptr);
   EXPECT_EQ(frag, nullptr);
   // A failing allocator at every point: OOM, null outputs, nothing left over.
@@ -1726,7 +1726,7 @@ TEST(HtmlTreeFragment, ParseFragmentSetsItsOutputsAtEntryAndLeavesThemNullOnFail
     doc = garbage_doc();
     frag = garbage_node();
     fa.arm(k);
-    const GTEXT_HTML_TreeStatus s = gtext_html_parse_fragment(&c, "<b>x</b><svg><g>y", 17, &fo, &doc, &frag, nullptr);
+    const GTEXT_HTML_TreeStatus s = gtext_html_tree_parse_fragment(&c, "<b>x</b><svg><g>y", 17, &fo, &doc, &frag, nullptr);
     if (!fa.failed) {
       EXPECT_EQ(s, GTEXT_HTML_TREE_OK);
       gtext_markup_document_free(doc);

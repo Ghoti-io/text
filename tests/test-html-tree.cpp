@@ -418,20 +418,20 @@ TEST(HtmlTree, TheInterfaceRefusesMisuse) {
   gtext_markup_document_free(doc);
   GTEXT_Markup_Document * out = nullptr;
   GTEXT_HTML_Tree * kept = reinterpret_cast<GTEXT_HTML_Tree *>(0x1);
-  EXPECT_EQ(gtext_html_parse(nullptr, 3, nullptr, &out, &kept), GTEXT_HTML_TREE_E_INVALID);
+  EXPECT_EQ(gtext_html_tree_parse(nullptr, 3, nullptr, &out, &kept), GTEXT_HTML_TREE_E_INVALID);
   EXPECT_EQ(kept, nullptr) << "the builder out-parameter is cleared at entry";
   EXPECT_EQ(out, nullptr);
   // A failed parse leaves *out alone and hands the builder back for its status.
   GTEXT_HTML_TreeOptions tiny = {};
   tiny.max_open_elements = 3;
   out = nullptr;
-  EXPECT_EQ(gtext_html_parse("<div><div><div>", 15, &tiny, &out, &kept), GTEXT_HTML_TREE_E_LIMIT_DEPTH);
+  EXPECT_EQ(gtext_html_tree_parse("<div><div><div>", 15, &tiny, &out, &kept), GTEXT_HTML_TREE_E_LIMIT_DEPTH);
   EXPECT_EQ(out, nullptr);
   ASSERT_NE(kept, nullptr);
   EXPECT_EQ(gtext_html_tree_status(kept), GTEXT_HTML_TREE_E_LIMIT_DEPTH);
   gtext_html_tree_free(kept);
-  EXPECT_EQ(gtext_html_parse("x", 1, nullptr, nullptr, nullptr), GTEXT_HTML_TREE_E_INVALID);
-  EXPECT_EQ(gtext_html_parse("<p>x", 4, nullptr, &out, nullptr), GTEXT_HTML_TREE_OK);
+  EXPECT_EQ(gtext_html_tree_parse("x", 1, nullptr, nullptr, nullptr), GTEXT_HTML_TREE_E_INVALID);
+  EXPECT_EQ(gtext_html_tree_parse("<p>x", 4, nullptr, &out, nullptr), GTEXT_HTML_TREE_OK);
   ASSERT_NE(out, nullptr);
   gtext_markup_document_free(out);
 }
@@ -1152,7 +1152,7 @@ TEST(HtmlTree, ParsersInSeveralThreadsShareNothing) {
       for (int round = 0; round < 200; round++) {
         for (size_t i = 0; i < inputs.size(); i++) {
           GTEXT_Markup_Document * doc = nullptr;
-          if (gtext_html_parse(inputs[i].data(), inputs[i].size(), nullptr, &doc, nullptr) != GTEXT_HTML_TREE_OK) {
+          if (gtext_html_tree_parse(inputs[i].data(), inputs[i].size(), nullptr, &doc, nullptr) != GTEXT_HTML_TREE_OK) {
             bad[t]++;
             continue;
           }
@@ -1359,10 +1359,10 @@ TEST(HtmlTreeErrors, AnAbsentSystemIdentifierAndAnEmptyOneAreNotTheSame) {
   // The distinction is kept in the tree: a missing identifier is NULL, an empty one is "".
   GTEXT_Markup_Document * doc = nullptr;
   std::string a = "<!DOCTYPE html PUBLIC \"p\">", b = "<!DOCTYPE html PUBLIC \"p\" \"\">";
-  ASSERT_EQ(gtext_html_parse(a.data(), a.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse(a.data(), a.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
   EXPECT_EQ(gtext_markup_doctype_system_id(gtext_markup_document_doctype(doc)), nullptr);
   gtext_markup_document_free(doc);
-  ASSERT_EQ(gtext_html_parse(b.data(), b.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse(b.data(), b.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
   ASSERT_NE(gtext_markup_doctype_system_id(gtext_markup_document_doctype(doc)), nullptr);
   EXPECT_STREQ(gtext_markup_doctype_system_id(gtext_markup_document_doctype(doc)), "");
   gtext_markup_document_free(doc);
@@ -1399,7 +1399,7 @@ TEST(HtmlTreeLocations, EveryNodeKnowsWhereItsTokenStarted) {
   // line 4 `  <b>t</b>` from 38.
   const std::string in = "<!DOCTYPE html>\n<p>x\n<!--c--><?pi d?>\n  <b>t</b>";
   GTEXT_Markup_Document * doc = nullptr;
-  ASSERT_EQ(gtext_html_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
   const GTEXT_Markup_Node * root = gtext_markup_document_root(doc);
   const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(root);
   EXPECT_TRUE(is_at(doctype, 1, 1, 0));
@@ -1429,7 +1429,7 @@ TEST(HtmlTreeLocations, ACopyMadeByReconstructionOrAdoptionKeepsTheOriginalsPlac
   // `<p><b></p>x`: the b is at offset 3; the b that holds the x is a copy of it, made when x arrived.
   std::string in = "<p><b></p>x";
   GTEXT_Markup_Document * doc = nullptr;
-  ASSERT_EQ(gtext_html_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
   const GTEXT_Markup_Node * body = gtext_markup_node_last_child(gtext_markup_document_element(doc));
   const GTEXT_Markup_Node * p = gtext_markup_node_first_child(body);
   const GTEXT_Markup_Node * b1 = gtext_markup_node_first_child(p);
@@ -1440,7 +1440,7 @@ TEST(HtmlTreeLocations, ACopyMadeByReconstructionOrAdoptionKeepsTheOriginalsPlac
   gtext_markup_document_free(doc);
   // `<a><div>x</a>`: the adoption agency's copy of the a is at the a's place.
   in = "<a><div>x</a>";
-  ASSERT_EQ(gtext_html_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
+  ASSERT_EQ(gtext_html_tree_parse(in.data(), in.size(), nullptr, &doc, nullptr), GTEXT_HTML_TREE_OK);
   body = gtext_markup_node_last_child(gtext_markup_document_element(doc));
   const GTEXT_Markup_Node * div = gtext_markup_node_next_sibling(gtext_markup_node_first_child(body));
   const GTEXT_Markup_Node * copy = gtext_markup_node_first_child(div);

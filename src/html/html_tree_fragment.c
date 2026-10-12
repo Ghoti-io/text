@@ -228,7 +228,7 @@ GTEXT_Markup_Node * gtext_html_tree_take_fragment(
   return tb->frag_node;
 }
 
-GTEXT_HTML_TreeStatus gtext_html_parse_fragment(const GTEXT_HTML_FragmentContext * context,
+GTEXT_HTML_TreeStatus gtext_html_tree_parse_fragment(const GTEXT_HTML_FragmentContext * context,
     const void * data, size_t length, const GTEXT_HTML_TreeOptions * options,
     GTEXT_Markup_Document ** doc_out, GTEXT_Markup_Node ** fragment_out,
     GTEXT_HTML_Tree ** tree_out) {

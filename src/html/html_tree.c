@@ -1529,6 +1529,9 @@ GTEXT_HTML_Tree * gtext_html_tree_new(const GTEXT_HTML_TreeOptions * options) {
     tb->max_open = (size_t)UINT32_MAX - 2;
   }
   tb->max_errors = o.max_errors ? o.max_errors : GTEXT_HTML_TOKENIZER_DEFAULT_MAX_ERRORS;
+  if (o.count_errors_only) {
+    tb->max_errors = 0;
+  }
   tb->seed = o.hash_seed ? o.hash_seed
                          : ((uint64_t)(uintptr_t)tb * 0x9E3779B97F4A7C15ULL) | 1;
   tb->mode = M_INITIAL;
@@ -1573,6 +1576,7 @@ GTEXT_HTML_Tree * gtext_html_tree_new(const GTEXT_HTML_TreeOptions * options) {
   to.max_text_bytes = o.max_text_bytes;
   to.max_attributes = o.max_attributes;
   to.max_errors = tb->max_errors;
+  to.count_errors_only = o.count_errors_only;
   to.hash_seed = o.hash_seed;
   to.allow_cdata = ht_allow_cdata;
   to.allow_cdata_user = tb;
@@ -1674,6 +1678,23 @@ GTEXT_HTML_TreeStatus gtext_html_tree_finish(GTEXT_HTML_Tree * tb) {
   return tb->status;
 }
 
+GTEXT_HTML_TreeStatus gtext_html_tree_skip_input(GTEXT_HTML_Tree * tb, size_t count) {
+  if (!tb) {
+    return GTEXT_HTML_TREE_E_INVALID;
+  }
+  if (tb->status != GTEXT_HTML_TREE_OK) {
+    return tb->status;
+  }
+  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_skip_input(tb->tok, count);
+  if (s == GTEXT_HTML_TOKENIZER_E_STATE) {
+    return GTEXT_HTML_TREE_E_STATE;
+  }
+  if (s != GTEXT_HTML_TOKENIZER_OK) {
+    ht_tree_fail(tb, status_from_tokenizer(s));
+  }
+  return tb->status;
+}
+
 GTEXT_Markup_Document * gtext_html_tree_take_document(GTEXT_HTML_Tree * tb) {
   if (!tb || !tb->finished || tb->status != GTEXT_HTML_TREE_OK || tb->doc_taken || tb->frag) {
     return NULL; /* a fragment builder hands over its document with the fragment */
@@ -1688,7 +1709,7 @@ GTEXT_HTML_TreeStatus gtext_html_tree_status(const GTEXT_HTML_Tree * tb) {
   return tb ? tb->status : GTEXT_HTML_TREE_E_INVALID;
 }
 
-GTEXT_HTML_TreeStatus gtext_html_parse(const void * data, size_t length,
+GTEXT_HTML_TreeStatus gtext_html_tree_parse(const void * data, size_t length,
     const GTEXT_HTML_TreeOptions * options, GTEXT_Markup_Document ** out,
     GTEXT_HTML_Tree ** tree_out) {
   if (tree_out) {

@@ -540,8 +540,8 @@ document of the W3C suite and random trees (see Tested scope). The HTML half: wr
 `tools/oracle/html_equivalent.h`, and tested against the XML side in
 `tests/test-xhtml-writer.cpp`. The XML declaration is written by the usual rules (an HTML
 parser reads it as a comment), so output meant for both should use
-`GTEXT_XML_DECLARATION_NEVER`. This library has no HTML parser yet; the HTML half is checked
-against html5lib and parse5, and will be against this library's own when it exists.
+`GTEXT_XML_DECLARATION_NEVER`. The HTML half is checked
+against html5lib and parse5; this library's own HTML parser (\ref format_html "HTML") exists now, and the writer is not yet compared against it.
 
 ## Files
 

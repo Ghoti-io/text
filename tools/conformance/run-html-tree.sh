@@ -51,6 +51,13 @@ cc -O1 -D_GNU_SOURCE $CFLAGS -o "$runner" "$root/tools/conformance/html_tree_sui
 	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
 	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
 
+# The same vectors through the public API (include/ghoti.io/text/html.h): the layer over the builder is held to
+# the same standard, with the same scorer and the same exceptions.
+api_runner=$root/build/html-api-runner
+cc -O1 -D_GNU_SOURCE $CFLAGS -o "$api_runner" "$root/tools/conformance/html_api_suite.c" \
+	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
+	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
+
 suite_py=$root/tools/conformance/html_tree_suite.py
 exceptions=$root/tools/conformance/HTML_TREE_EXCEPTIONS
 extra=$root/tools/conformance/html_tree_extra.dat
@@ -73,12 +80,16 @@ if [ "$1" = "--sanitize" ]; then
 	done | xargs -P "$(nproc)" -I{} sh -c '{}'
 	cc -D_GNU_SOURCE $san -o "$objdir/runner" "$root/tools/conformance/html_tree_suite.c" "$objdir"/*.o \
 		-I"$root/include" -I"$generated" $cflags $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
-	echo "html tree gate under ASan + UBSan"
-	LD_PRELOAD= ASAN_OPTIONS=detect_leaks=1:allocator_may_return_null=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
-		HTML_TREE_RUNNER_TIMEOUT=1800 \
-		python3 "$root/tools/conformance/html_tree_suite.py" "$suite" "$objdir/runner" "$root/tools/conformance/HTML_TREE_EXCEPTIONS" \
-		"$root/tools/conformance/html_tree_extra.dat"
-	exit $?
+	cc -D_GNU_SOURCE $san -o "$objdir/api-runner" "$root/tools/conformance/html_api_suite.c" "$objdir"/*.o \
+		-I"$root/include" -I"$generated" $cflags $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
+	for which in runner api-runner; do
+		echo "html tree gate under ASan + UBSan ($which)"
+		LD_PRELOAD= ASAN_OPTIONS=detect_leaks=1:allocator_may_return_null=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+			HTML_TREE_RUNNER_TIMEOUT=1800 \
+			python3 "$root/tools/conformance/html_tree_suite.py" "$suite" "$objdir/$which" "$root/tools/conformance/HTML_TREE_EXCEPTIONS" \
+			"$root/tools/conformance/html_tree_extra.dat" || exit $?
+	done
+	exit 0
 fi
 
 # --control NAME runs one control of the list below and no other (a plant is not even built for the others).
@@ -87,7 +98,10 @@ if [ "$1" = "--control" ]; then
 	only=$2
 	[ -n "$only" ] || { echo "usage: run-html-tree.sh --control NAME" >&2; exit 2; }
 elif [ "$1" != "--controls" ]; then
-	exec python3 "$suite_py" "$suite" "$runner" "$exceptions" "$extra"
+	echo "through the tree builder:"
+	python3 "$suite_py" "$suite" "$runner" "$exceptions" "$extra" || exit $?
+	echo "through the public API:"
+	exec python3 "$suite_py" "$suite" "$api_runner" "$exceptions" "$extra"
 fi
 
 # --controls: the gate is made to fail on purpose, and must, each time, say why. A gate whose
@@ -157,13 +171,24 @@ if [ -z "$only" ] || [ "$only" = bad-requests ]; then
 			"whole 0 x3c613e ctx:x6469 ctx:x6469" "whole 0 x3c613e ctx:x6469 loose" "whole 0 x3c613e ctx:x6469 quirks form quirks2" \
 			"whole 0 x3c613e ctx:x73766720" "whole 0 x3c613e ctx:x6d61746820"; do
 		n_bad=$((n_bad + 1))
-		printf '%s\n' "$bad" "$good" | "$runner" > "$log"
-		if [ "$(grep -c '^END E_REQUEST' "$log")" != 1 ] || [ "$(grep -c '^END DONE' "$log")" != 1 ]; then
-			echo "control bad-request: '$bad' was not answered E_REQUEST (and the next request DONE)" >&2
-			cat "$log" >&2
-			exit 1
-		fi
+		for which in "$runner" "$api_runner"; do
+			printf '%s\n' "$bad" "$good" | "$which" > "$log"
+			if [ "$(grep -c '^END E_REQUEST' "$log")" != 1 ] || [ "$(grep -c '^END DONE' "$log")" != 1 ]; then
+				echo "control bad-request: '$bad' was not answered E_REQUEST (and the next request DONE) by $which" >&2
+				cat "$log" >&2
+				exit 1
+			fi
+		done
 	done
+	# A context name with a NUL in it cannot be given to the public API (a C string), so its runner refuses it
+	# rather than parse a shorter name; the builder's runner takes lengths and runs it.
+	printf '%s\n' "whole 0 x3c613e ctx:x640064" "$good" | "$api_runner" > "$log"
+	if [ "$(grep -c '^END E_REQUEST' "$log")" != 1 ] || [ "$(grep -c '^END DONE' "$log")" != 1 ]; then
+		echo "control bad-request: a context name with a NUL was not refused by the public API's runner" >&2
+		cat "$log" >&2
+		exit 1
+	fi
+	n_bad=$((n_bad + 1))
 	echo "control bad-requests: caught ($n_bad)"
 	ran=$((ran + 1))
 fi
@@ -207,13 +232,17 @@ PY
 		echo "control $name: the plant did not change $file ('$pattern' is not there)" >&2
 		exit 1
 	fi
-	for f in html_tree.c html_tree_modes.c html_tree_foreign.c html_tree_fragment.c; do
+	for f in html_tree.c html_tree_modes.c html_tree_foreign.c html_tree_fragment.c html_api.c html_core.c; do
 		cc -std=gnu17 -O1 -fPIC -DGTEXT_BUILD -I"$scratch/plant/src/html" -I"$root/include" -I"$generated" $cflags \
 			-c "$scratch/plant/src/html/$f" -o "$scratch/plant/$f.o"
 	done
-	cc -O1 -D_GNU_SOURCE -o "$scratch/runner-$name" "$root/tools/conformance/html_tree_suite.c" \
+	# A plant in the public layer (html_api.c, html_core.c) is scored by the runner that drives that layer.
+	runner_src=html_tree_suite.c
+	case $file in html_api.c|html_core.c) runner_src=html_api_suite.c ;; esac
+	cc -O1 -D_GNU_SOURCE -o "$scratch/runner-$name" "$root/tools/conformance/$runner_src" \
 		"$scratch/plant/html_tree.c.o" "$scratch/plant/html_tree_modes.c.o" \
 		"$scratch/plant/html_tree_foreign.c.o" "$scratch/plant/html_tree_fragment.c.o" \
+		"$scratch/plant/html_api.c.o" "$scratch/plant/html_core.c.o" \
 		-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
 	expect "$name" "$heading" python3 "$suite_py" "$suite" "$scratch/runner-$name" "$exceptions" "$extra"
 }
@@ -372,6 +401,15 @@ plant_lit fragment-frameset-end-switches-mode "$fails" html_tree_modes.c 'if (!t
 plant_lit fragment-integration-point-context-is-foreign "$fails" html_tree_fragment.c '    if (name_is(c, "foreignObject") || name_is(c, "desc") || name_is(c, "title")) {' '    if (0) {'
 plant_lit fragment-text-integration-point-context-is-foreign "$fails" html_tree_fragment.c '    if (name_is(c, "mi") || name_is(c, "mo") || name_is(c, "mn") || name_is(c, "ms")\n        || name_is(c, "mtext")) {' '    if (0) {'
 plant_lit fragment-context-namespace-ignored "$fails" html_tree_fragment.c '  tb->ctx_ns = (uint8_t)c->ns;' '  tb->ctx_ns = NS_HTML;'
+# The public layer over the builder (html_api.c, html_core.c), scored through the public API.
+plant_lit api-scripting-flag-dropped "$fails" html_api.c '  to.scripting = o.scripting;' '  to.scripting = false;'
+plant_lit api-fragment-context-name-cut-short "$fails" html_api.c '  fc.local_name_length = strlen(context->local_name);' '  fc.local_name_length = 1;'
+plant_lit api-fragment-namespace-dropped "$fails" html_api.c '  fc.ns = context->ns;' '  fc.ns = GTEXT_HTML_NS_HTML;'
+plant_lit api-fragment-scripting-dropped "$fails" html_api.c '  fc.scripting = o.scripting;' '  fc.scripting = false;'
+plant_lit api-feed-loses-its-last-byte "$fails" html_api.c '    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, d, len);' '    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, d, len > 1 ? len - 1 : len);'
+plant_lit api-finish-does-not-finish "$fails" html_api.c '  const GTEXT_HTML_TreeStatus ts = gtext_html_tree_finish(p->tree);\n  if (ts != GTEXT_HTML_TREE_OK) {\n    return parser_fail_tree(p, ts);\n  }\n  p->finished = true;' '  const GTEXT_HTML_TreeStatus ts = GTEXT_HTML_TREE_OK;\n  p->finished = true;'
+plant_lit api-result-mode-lies "$fails" html_api.c '    result->mode = gtext_markup_document_mode(doc);' '    result->mode = GTEXT_MARKUP_MODE_NO_QUIRKS;'
+plant_lit api-error-list-is-empty "below the floor" html_core.c '  const size_t count = gtext_html_tree_error_count(tree);' '  const size_t count = 0;'
 # A crash is a failure, not a missing answer.
 plant crash "$fails" html_tree_modes.c 'static bool is_ws(char c) {' 'static bool is_ws(char c) { if (c == 0x61) { *(volatile int *)0 = 0; }'
 if [ -n "$only" ] && [ "$ran" = 0 ]; then

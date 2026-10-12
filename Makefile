@@ -1076,7 +1076,10 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
 	src/ini/ini_file_io.c \
+	src/html/html_api.c \
 	src/html/html_charref.c \
+	src/html/html_core.c \
+	src/html/html_file_io.c \
 	src/html/html_tokenizer.c \
 	src/html/html_tokenizer_errors.c \
 	src/html/html_tree.c \
@@ -1964,6 +1967,7 @@ $(eval $(call fuzz-rule,fuzz_xml,xml))
 $(eval $(call fuzz-rule,fuzz_xml_writer,xml-writer))
 $(eval $(call fuzz-rule,fuzz_html_tokenizer,html-tokenizer))
 $(eval $(call fuzz-rule,fuzz_html_tree,html-tree))
+$(eval $(call fuzz-rule,fuzz_html,html))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -1976,7 +1980,7 @@ fuzz: fuzz-run-json fuzz-run-yaml fuzz-run-yaml-writer fuzz-run-csv
 fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
-fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree
+fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html
 
 check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each XML fuzzer finds it
 # A fuzzer that has never failed has not been shown able to. tools/xml/plant-fuzz.py copies
@@ -1990,7 +1994,7 @@ check-xml-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/xml/plant-fuzz.py --time $(FUZZ_TIME)
 
-check-html-fuzz-plants: ## Plant a defect in a copy of the library and show the HTML tokenizer's and tree builder's fuzzers find it
+check-html-fuzz-plants: ## Plant a defect in a copy of the library and show the HTML tokenizer's, tree builder's and public API's fuzzers find it
 # The same check as check-xml-fuzz-plants, for tests/fuzz/fuzz_html_tokenizer.cpp and
 # tests/fuzz/fuzz_html_tree.cpp:
 # tools/html/plant-fuzz.py copies this tree to a scratch directory, edits one line of the

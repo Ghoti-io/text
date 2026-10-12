@@ -3101,6 +3101,26 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed(
   return t->has_failed ? t->failed : GTEXT_HTML_TOKENIZER_OK;
 }
 
+GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_skip_input(
+    GTEXT_HTML_Tokenizer * t, size_t count) {
+  if (!t) {
+    return GTEXT_HTML_TOKENIZER_E_INVALID;
+  }
+  if (t->has_failed) {
+    return t->failed;
+  }
+  if (t->total_fed != 0 || t->base_offset != 0 || t->in_length != 0 || t->borrowed || t->final) {
+    return GTEXT_HTML_TOKENIZER_E_STATE;
+  }
+  if (count > t->max_input) {
+    fail(t, GTEXT_HTML_TOKENIZER_E_LIMIT_INPUT);
+    return t->failed;
+  }
+  t->total_fed = count;
+  t->base_offset = count;
+  return GTEXT_HTML_TOKENIZER_OK;
+}
+
 void gtext_html_tokenizer_finish(GTEXT_HTML_Tokenizer * t) {
   if (t) {
     t->final = true;
