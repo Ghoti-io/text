@@ -281,7 +281,8 @@ outside this repository:
 | `make check-toml-1-1-oracle` | The v1.1.0 reader against toml++'s unreleased set |
 | `make conformance-xml` | XML against the W3C XML Conformance Test Suite |
 | `make check-xml-oracle` | The XML parser against libxml2 and expat, every disagreement listed, and the gate shown to fail |
-| `make check-html-oracle` | The XHTML write mode against html5lib and parse5 (after proving both on the standard's tree-construction vectors), every divergence classified, and both gates shown to fail |
+| `make conformance-html-tree` | The HTML tree builder against the web-platform-tests tree-construction vectors (those it parses; the rest are tagged with the stage that will remove them), cut every way, and the gate shown to fail |
+| `make check-html-oracle` | The XHTML write mode, the HTML tokenizer and the HTML tree builder against html5lib and parse5 (after proving both on the standard's tree-construction vectors), every divergence classified, and the gates shown to fail |
 | `make fuzz-run-xml`, `make fuzz-run-xml-writer` | The XML parsers' and the XML writer's fuzzers |
 | `make check-xml-fuzz-plants` | Plant a defect in a copy of the library and show each XML fuzzer and the differential find it |
 | `make fuzz` | Build and run the parsers' fuzzers |

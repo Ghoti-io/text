@@ -1,0 +1,46 @@
+# Divergences of the HTML tree builder from html5lib 1.1 and parse5 8.0.1 that are expected and
+# understood, for the default population of tools/oracle/html_tree_diff.py (6,000 generated
+# documents, 3,000 mutated ones, the in-scope tree-construction vectors the references can judge,
+# and tools/conformance/html_tree_extra.dat; seed 1). The gate is html_tree_diff.py: it fails on a
+# divergence of a kind that is not here, on an entry that no longer occurs, and on one whose count has
+# changed (the count is the signature of the population). A count of `hunt` is an entry seen only
+# on the larger populations a hunt generates.
+#
+# Columns, tab separated: key, count, class, reason.
+#
+# The key is `<who>:<why>`. <why> is the first of the elements the reference reads by older rules (KNOWN_OLD in
+# the script) that the document holds, and the entry is there only because the divergence was verified: the
+# document was asked again with those elements removed, and this library and the reference then agreed.
+#   parse5:<name>        parse5 differs from this library (html5lib does not, or is not asked).
+#   both:<name>          both references differ from this library and agree with each other.
+#   three-way:<name>     both references differ from this library and from each other; judged against parse5.
+#   html5lib:alone:<name>  html5lib differs and parse5 agrees with this library.
+#   html5lib:alone:unverified  the same, and removing those elements does not make html5lib agree: its
+#                        older adoption agency and Noah's Ark rules, for which no element name stands.
+# parse5 8.0.1 is the newer reference; html5lib 1.1 is from 2020, the oldest.
+#
+# Classes: standard-newer (the standard has moved past both references), reference-old (the
+# reference is older than the standard), reference-wrong (it disagrees with the standard in a way no
+# change explains).
+#
+# **A divergence in a document with none of the elements the script knows to be read by older rules
+# is never listed**: it is an unexplained divergence, and fails the run.
+#
+both:search	93	standard-newer	the search element (added to the standard in 2023: special, and it closes a p) is unknown to both references, which read it as an ordinary element
+html5lib:alone:command	1	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is command) makes it agree (html5lib 1.1 still treats command as a void element, which the standard removed)
+html5lib:alone:dialog	108	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is dialog) makes it agree (html5lib 1.1 (2020) predates the standard making dialog an ordinary block element for p closing)
+html5lib:alone:figcaption	23	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is figcaption) makes it agree (html5lib 1.1 does not treat figcaption as a block element that closes a p)
+html5lib:alone:frameset	23	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is frameset) makes it agree (html5lib 1.1 reads frameset documents by older rules (white space and comments after the frameset))
+html5lib:alone:hgroup	32	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is hgroup) makes it agree (html5lib 1.1 does not treat hgroup as a block element that closes a p)
+html5lib:alone:isindex	5	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is isindex) makes it agree (html5lib 1.1 still implements isindex, which the standard removed)
+html5lib:alone:main	56	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is main) makes it agree (html5lib 1.1 does not close a p at main in some positions (main is in the standard's block list))
+html5lib:alone:menu	1	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is menu) makes it agree (html5lib 1.1 does not close a p at menu)
+html5lib:alone:rb	3	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rb) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:rp	2	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rp) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:rt	4	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rt) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:rtc	4	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rtc) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:ruby	21	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is ruby) makes it agree (html5lib 1.1 implements the older ruby rules (the standard has rb, rtc and the implied end tags of rp and rt))
+html5lib:alone:search	278	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is search) makes it agree (it has no search element, which parse5 8.0.1 also lacks)
+html5lib:alone:summary	207	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is summary) makes it agree (html5lib 1.1 does not count summary among the special elements)
+html5lib:alone:unverified	230	reference-old	html5lib 1.1 (2020) alone differs and parse5 agrees with this library, and removing the elements html5lib reads by older rules does not make html5lib agree: its adoption agency algorithm nests the copies of the formatting elements the other way round
+three-way:search	181	standard-newer	the search element (added to the standard in 2023: special, and it closes a p) is unknown to both references, which differ from each other as well (html5lib reads other things by older rules); judged against parse5, removing search makes parse5 and this library agree

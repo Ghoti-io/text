@@ -15,6 +15,7 @@ The libFuzzer harnesses:
 | XML parsers | `fuzz_xml.cpp` | `make fuzz-xml` | `make fuzz-run-xml` |
 | XML writer | `fuzz_xml_writer.cpp` | `make fuzz-xml-writer` | `make fuzz-run-xml-writer` |
 | HTML tokenizer | `fuzz_html_tokenizer.cpp` | `make fuzz-html-tokenizer` | `make fuzz-run-html-tokenizer` |
+| HTML tree builder | `fuzz_html_tree.cpp` | `make fuzz-html-tree` | `make fuzz-run-html-tree` |
 
 `make fuzz` builds and runs every one of them. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
@@ -945,3 +946,26 @@ longer fail and are replayed by `make test` (`tests/test-html-tokenizer-fuzz-see
 the tokenizer: six are found by replaying a recorded input (which shows the harness can see
 them), two (a white-space flag never cleared, an upper-case tag name) must be found by the
 time-boxed search from the seeds, as the unedited control must stay silent under it.
+
+## Fuzzing the HTML tree builder
+
+`fuzz_html_tree.cpp`: four option bytes (scripting, the size of the pieces and a tiny open-element
+limit, the seed of a random cut, the cut and the allocation-failure modes) and then bytes. Each input is
+parsed whole, a byte at a time, in pieces of a chosen size, in random pieces and in two at a chosen cut,
+and the status, the tree (in the tree-construction dump), the document mode and every parse error (code,
+line, column, offset) must be identical. The tree must pass the library's invariant checker and be a valid
+HTML tree (one `html` with a `head` and then a `body` or `frameset`, `noframes` the only thing that may
+follow, every element in the HTML namespace with a lower-case name, attributes in no namespace, no CDATA
+section, no empty text node and no two adjacent ones, the document mode set). A parse that does not
+succeed is one of the distinct failure statuses, is sticky, gives no document, and says which stage owns
+a construct it does not parse yet. A tiny open-element limit or node limit is its own status, and a run
+that survives one gives the roomy run's tree. An allocation that fails, the first to the four-hundredth of
+a run, is OOM with no tree or the normal answer, and never a leak or a bad free. The work stays linear at a
+fixed open-element limit (64).
+Seeds (`tests/fuzz/corpus/html-tree`) are made from the web-platform-tests tree-construction vectors, the
+hand-chosen cases and a few deep and wide inputs by `tools/html/make-tree-fuzz-seeds.py`;
+`reproducer-*.seed` are finds kept because they no longer fail and are replayed by `make test`
+(`tests/test-html-tree-fuzz-seeds.cpp`, which replays every seed). `make check-html-fuzz-plants`
+(`tools/html/plant-fuzz.py`) plants six defects in a copy of the tree builder: two are found by replaying a
+seed, four must be found by the time-boxed search from the seeds, as the unedited control (`control-tree`)
+must stay silent under it.

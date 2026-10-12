@@ -20,6 +20,12 @@
 #      tools/oracle/html_tokenizer_divergences.txt (a behaviour of a reference the standard does not
 #      have) or fails the run.
 #
+#   4. tools/oracle/html_tree_diff.py - the HTML tree builder (src/html/html_tree*.c) against the same two
+#      references over generated, mutated and vector documents restricted to the constructs it parses; every
+#      divergence is a line of tools/oracle/html_tree_divergences.txt or fails the run. (--tree)
+#      tools/oracle/html_tree_extra_check.py checks the hand-chosen cases of tools/conformance/
+#      html_tree_extra.dat against both references.
+#
 # HTML_ORACLE_COUNT and HTML_ORACLE_SEED size and seed the generated part of the second
 # (the list describes the default 4000 and seed 1; any other is a hunt). Needs the
 # built-here image: make oracle-images.
@@ -49,6 +55,11 @@ cc -std=gnu17 -D_GNU_SOURCE -O1 -Wall -Wextra -o "$trunner" "$root/tools/conform
 	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
 	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
 
+trree=$root/build/html-tree-runner-oracle
+cc -std=gnu17 -D_GNU_SOURCE -O1 -Wall -Wextra -o "$trree" "$root/tools/conformance/html_tree_suite.c" \
+	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
+	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
+
 mode=${1:-all}
 [ $# -gt 0 ] && shift
 if [ "$1" = "--" ]; then
@@ -62,6 +73,13 @@ run_vectors() {
 run_diff() {
 	python3 "$root/tools/oracle/oracle_run.py" html -- \
 		python3 "$root/tools/oracle/html_diff.py" "$runner" "$@"
+}
+
+run_tree() {
+	python3 "$root/tools/oracle/oracle_run.py" html -- \
+		python3 "$root/tools/oracle/html_tree_diff.py" "$trree" "$@" && \
+	python3 "$root/tools/oracle/oracle_run.py" html -- \
+		python3 "$root/tools/oracle/html_tree_extra_check.py"
 }
 
 run_tokens() {
@@ -133,6 +151,34 @@ tokenizer_plant() {
 	expect "tok-$name" "$heading" "$detail" \
 		python3 "$root/tools/oracle/oracle_run.py" html -- \
 		python3 "$root/tools/oracle/html_tokenizer_diff.py" "$scratch/trunner-$name"
+}
+
+# The tree builder's own source with one rule undone, compiled into a runner of its own (its objects
+# are linked ahead of the archive and supply every symbol of the two files). The differential must
+# fail on it. The plant copies src/html and src/markup, since the tag table is in a header both read.
+tree_plant() {
+	name=$1 file=$2 pattern=$3 replacement=$4 heading=${5:-Divergences with no entry\\|Listed divergences whose count has changed\\|Listed divergences that are gone\\|The invariant checker failed} detail=${6:-.}
+	if [ -n "$only" ] && [ "$only" != "tree-$name" ]; then
+		return 0
+	fi
+	rm -rf "$scratch/tplant"
+	mkdir -p "$scratch/tplant/src"
+	cp -r "$root/src/html" "$root/src/markup" "$scratch/tplant/src/"
+	sed -i "s#$pattern#$replacement#g" "$scratch/tplant/src/html/$file"
+	if cmp -s "$root/src/html/$file" "$scratch/tplant/src/html/$file"; then
+		echo "control tree-$name: the plant did not change $file ('$pattern' is not there)" >&2
+		exit 1
+	fi
+	for f in html_tree.c html_tree_modes.c; do
+		cc -std=gnu17 -O1 -fPIC -DGTEXT_BUILD -I"$scratch/tplant/src/html" -I"$root/include" -I"$generated" $cflags \
+			-c "$scratch/tplant/src/html/$f" -o "$scratch/tplant/$f.o"
+	done
+	cc -std=gnu17 -D_GNU_SOURCE -O1 -o "$scratch/trree-$name" "$root/tools/conformance/html_tree_suite.c" \
+		"$scratch/tplant/html_tree.c.o" "$scratch/tplant/html_tree_modes.c.o" \
+		-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
+	expect "tree-$name" "$heading" "$detail" \
+		python3 "$root/tools/oracle/oracle_run.py" html -- \
+		python3 "$root/tools/oracle/html_tree_diff.py" "$scratch/trree-$name"
 }
 
 check_controls() {
@@ -214,6 +260,37 @@ check_controls() {
 	tokenizer_plant unknown-named-missing-in-attribute 'perr(t, GTEXT_HTML_ERR_UNKNOWN_NAMED_CHARACTER_REFERENCE);' 'if (!in_attribute(t)) { perr(t, GTEXT_HTML_ERR_UNKNOWN_NAMED_CHARACTER_REFERENCE); }' 'Listed divergences that are gone' 'unknown-named-reference-in-attribute'
 	tokenizer_plant after-doctype-name-error 'perr(t, GTEXT_HTML_ERR_INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME);' '(void)0;'
 
+
+	# The tree builder's differential: its answer corrupted two ways, the list three ways, the extra
+	# cases' expectation once, and the builder compiled with one rule undone.
+	for plant in ours-extra-line ours-lost-line; do
+		expect "tree-$plant" "Divergences with no entry" "unexplained" run_tree_diff --plant "$plant"
+	done
+	expect tree-stale-entry "Listed divergences that are gone" "planted-gone" run_tree_diff --plant stale-entry
+	expect tree-change-count "Listed divergences whose count has changed" "listed" run_tree_diff --plant change-count
+	expect tree-no-list "Divergences with no entry" "alone" run_tree_diff --plant no-list
+	expect tree-extra-expectation "Extra cases a reference does not reproduce" "html_tree_extra" \
+		python3 "$root/tools/oracle/oracle_run.py" html -- \
+		python3 "$root/tools/oracle/html_tree_extra_check.py" --plant expectation
+	tree_plant noahs-ark-keeps-four html_tree.c 'if (count >= 3) {' 'if (count >= 4) {'
+	tree_plant adoption-outer-loop-once html_tree.c 'outer < 8' 'outer < 1'
+	tree_plant adoption-inner-loop-limit html_tree.c 'inner > 3' 'inner > 300'
+	tree_plant adoption-no-bookmark-move html_tree.c 'if (last_node == fb_node) {' 'if (0) {'
+	tree_plant li-does-not-close-li html_tree_modes.c 'if (j != NONE_IDX \&\& j >= HT_STACK_TOP(tb).fl_li) {' 'if (0) {'
+	tree_plant reconstruct-skipped html_tree_modes.c 'if (!ht_fmt_reconstruct(tb) || !ht_insert_text(tb, p, len)) {' 'if (!ht_insert_text(tb, p, len)) {'
+	tree_plant p-closed-outside-button-scope html_tree.c 'if (ht_stack_in_scope(tb, T_P, SCOPE_BUTTON)) {' 'if (ht_stack_in_scope(tb, T_P, SCOPE_GEN)) {'
+	tree_plant text-not-merged html_tree.c 'if (last \&\& last->kind == GTEXT_MARKUP_KIND_TEXT) {' 'if (0) {'
+	tree_plant marquee-is-not-a-scope-boundary html_tree_private.h 'X(T_MARQUEE, "marquee", F_SPECIAL | F_SC_GEN)' 'X(T_MARQUEE, "marquee", F_SPECIAL)'
+	tree_plant ol-is-not-a-list-scope-boundary html_tree_private.h 'X(T_OL, "ol", F_SPECIAL | F_SC_LIST)' 'X(T_OL, "ol", F_SPECIAL)'
+	tree_plant implied-end-tags-stop html_tree.c 'while (tb->n > 0 \&\& (HT_STACK_TOP(tb).flags \& F_IMPLIED)' 'while (0 \&\& (HT_STACK_TOP(tb).flags \& F_IMPLIED)'
+	tree_plant frameset-ok-never-cleared html_tree_modes.c 'if (ws_prefix(p, len) != len) {' 'if (0) {'
+	tree_plant pre-newline-kept html_tree_modes.c 'tb->skip_lf = true;' 'tb->skip_lf = false;'
+	tree_plant html-attributes-not-merged html_tree.c 'present = true;' 'present = false;'
+}
+
+run_tree_diff() {
+	python3 "$root/tools/oracle/oracle_run.py" html -- \
+		python3 "$root/tools/oracle/html_tree_diff.py" "$trree" "$@"
 }
 
 only=
@@ -222,7 +299,8 @@ case "$mode" in
 	--vectors) run_vectors "$@" ;;
 	--diff) run_diff "$@" ;;
 	--tokens) run_tokens "$@" ;;
+	--tree) run_tree "$@" ;;
 	--controls) check_controls ;;
-	all) run_vectors && run_diff "$@" && run_tokens ;;
-	*) echo "usage: run-html-oracle.sh [--vectors | --diff | --tokens | --controls | --control NAME]" >&2; exit 2 ;;
+	all) run_vectors && run_diff "$@" && run_tokens && run_tree ;;
+	*) echo "usage: run-html-oracle.sh [--vectors | --diff | --tokens | --tree | --controls | --control NAME]" >&2; exit 2 ;;
 esac

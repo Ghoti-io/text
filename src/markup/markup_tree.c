@@ -1409,3 +1409,186 @@ void markup_discard_detached(GTEXT_Markup_Document * doc, node_t * node) {
   detached_remove(doc, node);
   markup_free_subtree(doc, node);
 }
+
+/* ---- for the HTML tree builder ------------------------------------------ */
+
+/* The tree builder makes tens of thousands of elements from names it has
+   already interned and attributes the tokenizer has already deduplicated and
+   checked as UTF-8, so these skip the lookups and the checks the public calls
+   make. Each does the same allocation work as its public twin and leaves
+   nothing behind on failure. */
+
+GTEXT_Markup_Status markup_element_create_atoms(GTEXT_Markup_Document * doc,
+    markup_atom * ns, markup_atom * local, node_t ** out) {
+  node_t * node = NULL;
+  const GTEXT_Markup_Status status =
+      node_new(doc, GTEXT_MARKUP_KIND_ELEMENT, &node);
+  if (status != GTEXT_MARKUP_OK) {
+    return status;
+  }
+  markup_element * e = (markup_element *)node;
+  if (ns) {
+    ns->refs++;
+  }
+  local->refs++;
+  e->ns = ns;
+  e->local = local;
+  detached_push(doc, node);
+  *out = node;
+  return GTEXT_MARKUP_OK;
+}
+
+GTEXT_Markup_Status markup_element_append_attribute(
+    GTEXT_Markup_Document * doc, node_t * element, markup_atom * ns,
+    markup_atom * prefix, const char * local, size_t local_length,
+    const char * value, size_t value_length) {
+  markup_element * e = (markup_element *)element;
+  if (e->attr_count == e->attr_capacity) {
+    const size_t cap = e->attr_capacity ? e->attr_capacity * 2 : 4;
+    if (cap > SIZE_MAX / sizeof(markup_attr)) {
+      return GTEXT_MARKUP_E_OOM;
+    }
+    markup_attr * grown = markup_realloc(doc, e->attrs, cap * sizeof(markup_attr));
+    if (!grown) {
+      return GTEXT_MARKUP_E_OOM;
+    }
+    e->attrs = grown;
+    e->attr_capacity = cap;
+  }
+  char * copy = markup_copy(doc, value, value_length);
+  if (!copy) {
+    return GTEXT_MARKUP_E_OOM;
+  }
+  markup_atom * a_local = markup_atom_intern(doc, local, local_length);
+  if (!a_local) {
+    markup_free(doc, copy);
+    return GTEXT_MARKUP_E_OOM;
+  }
+  if (ns) {
+    ns->refs++;
+  }
+  if (prefix) {
+    prefix->refs++;
+  }
+  markup_attr * a = &e->attrs[e->attr_count++];
+  memset(a, 0, sizeof(*a));
+  a->ns = ns;
+  a->prefix = prefix;
+  a->local = a_local;
+  a->value = copy;
+  a->value_length = value_length;
+  return GTEXT_MARKUP_OK;
+}
+
+GTEXT_Markup_Status markup_element_clone_shallow(
+    GTEXT_Markup_Document * doc, const node_t * src, node_t ** out) {
+  const markup_element * s = (const markup_element *)src;
+  node_t * copy = NULL;
+  GTEXT_Markup_Status status =
+      markup_element_create_atoms(doc, s->ns, s->local, &copy);
+  if (status != GTEXT_MARKUP_OK) {
+    return status;
+  }
+  markup_element * d = (markup_element *)copy;
+  if (s->prefix) {
+    s->prefix->refs++;
+    d->prefix = s->prefix;
+  }
+  if (s->attr_count > 0) {
+    d->attrs = markup_alloc(doc, s->attr_count * sizeof(markup_attr));
+    if (!d->attrs) {
+      markup_discard_detached(doc, copy);
+      return GTEXT_MARKUP_E_OOM;
+    }
+    d->attr_capacity = s->attr_count;
+    for (size_t i = 0; i < s->attr_count; i++) {
+      const markup_attr * a = &s->attrs[i];
+      char * value = markup_copy(doc, a->value, a->value_length);
+      if (!value) {
+        markup_discard_detached(doc, copy);
+        return GTEXT_MARKUP_E_OOM;
+      }
+      markup_attr * b = &d->attrs[i];
+      *b = *a;
+      b->value = value;
+      if (b->ns) {
+        b->ns->refs++;
+      }
+      if (b->prefix) {
+        b->prefix->refs++;
+      }
+      b->local->refs++;
+      d->attr_count = i + 1;
+    }
+  }
+  if (src->flags & MARKUP_F_LOCATION) {
+    copy->flags = (uint8_t)(copy->flags | MARKUP_F_LOCATION);
+    copy->offset = src->offset;
+    copy->line = src->line;
+    copy->column = src->column;
+  }
+  *out = copy;
+  return GTEXT_MARKUP_OK;
+}
+
+void markup_insert_unchecked(node_t * parent, node_t * child, node_t * reference) {
+  if (child->parent) {
+    unlink_child(child);
+  }
+  else {
+    detached_remove(child->doc, child);
+  }
+  link_before(parent, child, reference);
+}
+
+void markup_detach_unchecked(node_t * node) {
+  if (node->parent) {
+    unlink_child(node);
+    detached_push(node->doc, node);
+  }
+}
+
+void markup_move_children_unchecked(node_t * from, node_t * to) {
+  node_t * first = from->first_child;
+  if (!first) {
+    return;
+  }
+  for (node_t * c = first; c; c = c->next) {
+    c->parent = to;
+  }
+  first->prev = to->last_child;
+  if (to->last_child) {
+    to->last_child->next = first;
+  }
+  else {
+    to->first_child = first;
+  }
+  to->last_child = from->last_child;
+  from->first_child = NULL;
+  from->last_child = NULL;
+}
+
+GTEXT_Markup_Status markup_text_append(GTEXT_Markup_Document * doc, node_t * node,
+    size_t * capacity, const char * bytes, size_t length) {
+  markup_text * t = (markup_text *)node;
+  if (length > SIZE_MAX - t->length - 1) {
+    return GTEXT_MARKUP_E_OOM;
+  }
+  const size_t need = t->length + length + 1;
+  if (*capacity < need) {
+    size_t cap = *capacity > t->length ? *capacity : t->length + 1;
+    while (cap < need) {
+      cap = cap > SIZE_MAX / 2 ? need : cap * 2;
+    }
+    char * grown = markup_realloc(doc, t->data, cap);
+    if (!grown) {
+      return GTEXT_MARKUP_E_OOM;
+    }
+    t->data = grown;
+    *capacity = cap;
+  }
+  memcpy(t->data + t->length, bytes, length);
+  t->length += length;
+  t->data[t->length] = '\0';
+  return GTEXT_MARKUP_OK;
+}

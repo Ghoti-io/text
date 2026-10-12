@@ -220,6 +220,40 @@ void markup_set_content_unchecked(
 void markup_discard_detached(
     struct GTEXT_Markup_Document * doc, struct GTEXT_Markup_Node * node);
 
+/* ---- for the HTML tree builder ------------------------------------------ */
+
+/** A detached element named by atoms already interned in `doc`; takes a
+ *  reference on each (`ns` may be NULL). No name or UTF-8 check. */
+GTEXT_Markup_Status markup_element_create_atoms(struct GTEXT_Markup_Document * doc,
+    markup_atom * ns, markup_atom * local, struct GTEXT_Markup_Node ** out);
+/** Add an attribute with no check for a duplicate and no limit (the tokenizer
+ *  has removed duplicates and counted). `ns` and `prefix` may be NULL. */
+GTEXT_Markup_Status markup_element_append_attribute(
+    struct GTEXT_Markup_Document * doc, struct GTEXT_Markup_Node * element,
+    markup_atom * ns, markup_atom * prefix, const char * local,
+    size_t local_length, const char * value, size_t value_length);
+/** A detached copy of an element: name, prefix, attributes and location, no
+ *  children. */
+GTEXT_Markup_Status markup_element_clone_shallow(
+    struct GTEXT_Markup_Document * doc, const struct GTEXT_Markup_Node * src,
+    struct GTEXT_Markup_Node ** out);
+/** Put `child` in `parent` before `reference` (NULL: last), from wherever it is,
+ *  with no rule checked and no limit counted. */
+void markup_insert_unchecked(struct GTEXT_Markup_Node * parent,
+    struct GTEXT_Markup_Node * child, struct GTEXT_Markup_Node * reference);
+/** Take a node out of its parent, onto the detached list. A no-op for a node
+ *  that has no parent. */
+void markup_detach_unchecked(struct GTEXT_Markup_Node * node);
+/** Move every child of `from` to the end of `to`'s children. O(children). */
+void markup_move_children_unchecked(
+    struct GTEXT_Markup_Node * from, struct GTEXT_Markup_Node * to);
+/** Append bytes to a text node's data. `*capacity` is the size of the node's
+ *  data buffer as the caller last knew it (0 if unknown); the buffer grows
+ *  geometrically and the new size is stored back. */
+GTEXT_Markup_Status markup_text_append(struct GTEXT_Markup_Document * doc,
+    struct GTEXT_Markup_Node * node, size_t * capacity, const char * bytes,
+    size_t length);
+
 /* ---- a growable buffer -------------------------------------------------- */
 
 typedef struct {

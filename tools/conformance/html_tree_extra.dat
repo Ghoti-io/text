@@ -1,0 +1,819 @@
+# Hand-chosen tree-construction cases for the HTML tree builder, in the .dat format of the
+# web-platform-tests vectors (the format is described in third_party/html/wpt/.../README.md).
+#
+# Why they exist: the WPT vectors are what the standard's authors wrote, and a planted
+# defect (tools/conformance/run-html-tree.sh --controls) showed rules they never exercise:
+# where the adoption agency algorithm's bookmark goes, `ol` and `ul` as the boundaries of
+# list item scope, the scopes of `button` and `marquee`. Each case below is one that fails
+# when its rule is undone. The expected trees are NOT ours: they are what html5lib 1.1 and
+# parse5 8.0.1 both answer (tools/oracle/html_tree_extra_check.py asks them again and fails
+# if either has changed or they no longer agree), and the tree builder agrees with both.
+# Cases where a reference is older than the standard (select, ruby) or lacks a feature
+# (processing instructions) are left out. No #errors section is compared for this file.
+
+#data
+<a><b><div>x</a>y</div>z
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       <b>
+|     <b>
+|       <div>
+|         <a>
+|           "x"
+|         "y"
+|       "z"
+
+#data
+<a><b><i><div>x</a>y</div>z
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       <b>
+|         <i>
+|     <b>
+|       <i>
+|         <div>
+|           <a>
+|             "x"
+|           "y"
+|         "z"
+
+#data
+<b><i><div>x</b>y</div>z
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <i>
+|     <i>
+|       <div>
+|         <b>
+|           "x"
+|         "y"
+|       "z"
+
+#data
+<a><b><p>x</a>y</p>z
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       <b>
+|     <b>
+|       <p>
+|         <a>
+|           "x"
+|         "y"
+|       "z"
+
+#data
+<a><b><c><div>x</a>y</div>z
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       <b>
+|         <c>
+|     <b>
+|       <div>
+|         <a>
+|           "x"
+|         "y"
+|       "z"
+
+#data
+<li><ol></li>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <li>
+|       <ol>
+|         "x"
+
+#data
+<li><ul></li>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <li>
+|       <ul>
+|         "x"
+
+#data
+<ul><li><div></li>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <ul>
+|       <li>
+|         <div>
+|       "x"
+
+#data
+<li><button></li>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <li>
+|       <button>
+|     "x"
+
+#data
+<p><button><p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       <button>
+|         <p>
+|           "x"
+
+#data
+<p><button></p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       <button>
+|         <p>
+|         "x"
+
+#data
+<p><div></p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|     <div>
+|       <p>
+|       "x"
+
+#data
+<button><button>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <button>
+|     <button>
+|       "x"
+
+#data
+<dl><dd><dt>x<dd>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <dl>
+|       <dd>
+|       <dt>
+|         "x"
+|       <dd>
+|         "y"
+
+#data
+<dd><div><dt>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <dd>
+|       <div>
+|     <dt>
+|       "x"
+
+#data
+<dd><ul><li><dt>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <dd>
+|       <ul>
+|         <li>
+|           <dt>
+|             "x"
+
+#data
+<dl><dt><span><dd>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <dl>
+|       <dt>
+|         <span>
+|       <dd>
+|         "x"
+
+#data
+<h1><h2>x</h1>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <h1>
+|     <h2>
+|       "x"
+|     "y"
+
+#data
+<h1><div></h2>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <h1>
+|       <div>
+|     "x"
+
+#data
+<b><marquee><i>x</marquee>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <marquee>
+|         <i>
+|           "x"
+|       "y"
+
+#data
+<b><object><i>x</object>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <object>
+|         <i>
+|           "x"
+|       "y"
+
+#data
+<a><applet></a>x</applet>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       <applet>
+|         "x"
+|       "y"
+
+#data
+<select><option>a<option>b</select>c
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|       <option>
+|         "a"
+|       <option>
+|         "b"
+|     "c"
+
+#data
+<select><optgroup><option>a<optgroup>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|       <optgroup>
+|         <option>
+|           "a"
+|       <optgroup>
+|         "b"
+
+#data
+<select><select>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|     "x"
+
+#data
+<select><input>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|     <input>
+|     "x"
+
+#data
+<p>a<pre>
+b</pre>c<listing>
+
+d
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       "a"
+|     <pre>
+|       "b"
+|     "c"
+|     <listing>
+|       "
+d"
+
+#data
+<textarea>
+
+x</textarea>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <textarea>
+|       "
+x"
+
+#data
+<form><div><form></form>x</form>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <form>
+|       <div>
+|         "x"
+
+#data
+<body><body class=a><html id=b>x
+#errors
+#document
+| <html>
+|   id="b"
+|   <head>
+|   <body>
+|     class="a"
+|     "x"
+
+#data
+<frameset><frame><frameset><frame></frameset></frameset>
+#errors
+#document
+| <html>
+|   <head>
+|   <frameset>
+|     <frame>
+|     <frameset>
+|       <frame>
+
+#data
+<body><frameset>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+
+#data
+<b></b><frameset>
+#errors
+#document
+| <html>
+|   <head>
+|   <frameset>
+
+#data
+<noscript><p>x</noscript>
+#errors
+#script-off
+#document
+| <html>
+|   <head>
+|     <noscript>
+|   <body>
+|     <p>
+|       "x"
+
+#data
+<head><noscript><p>x</noscript>
+#errors
+#script-off
+#document
+| <html>
+|   <head>
+|     <noscript>
+|   <body>
+|     <p>
+|       "x"
+
+#data
+<head><noscript><link></noscript>x
+#errors
+#script-off
+#document
+| <html>
+|   <head>
+|     <noscript>
+|       <link>
+|   <body>
+|     "x"
+
+#data
+<nobr>a<nobr>b</nobr>c
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <nobr>
+|       "a"
+|     <nobr>
+|       "b"
+|     "c"
+
+#data
+<a>1<p><a>2
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       "1"
+|     <p>
+|       <a>
+|       <a>
+|         "2"
+
+#data
+<a>1<div><a>2
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|       "1"
+|     <div>
+|       <a>
+|       <a>
+|         "2"
+
+#data
+<i>a<i>a<i>a<i>a<i>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <i>
+|       "a"
+|       <i>
+|         "a"
+|         <i>
+|           "a"
+|           <i>
+|             "a"
+|             <i>
+|               "b"
+
+#data
+<i class=a>a<i class=a>a<i class=a>a<i class=b>a<i class=a>b
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <i>
+|       class="a"
+|       "a"
+|       <i>
+|         class="a"
+|         "a"
+|         <i>
+|           class="a"
+|           "a"
+|           <i>
+|             class="b"
+|             "a"
+|             <i>
+|               class="a"
+|               "b"
+
+#data
+<b><u><i><s><em><strong><small><big><font><tt><code>x</b>y
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <u>
+|         <i>
+|           <s>
+|             <em>
+|               <strong>
+|                 <small>
+|                   <big>
+|                     <font>
+|                       <tt>
+|                         <code>
+|                           "x"
+|     <u>
+|       <i>
+|         <s>
+|           <em>
+|             <strong>
+|               <small>
+|                 <big>
+|                   <font>
+|                     <tt>
+|                       <code>
+|                         "y"
+
+#data
+<b>1<p>2<b>3<p>4</b>5
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       "1"
+|       <p>
+|         "2"
+|         <b>
+|           "3"
+|       <p>
+|         <b>
+|           "4"
+|         "5"
+
+#data
+<p><b></p>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       <b>
+|     <b>
+|       "x"
+
+#data
+<b><i></b></i>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       <i>
+
+#data
+<a><a>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a>
+|     <a>
+
+#data
+<br></br><image>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <br>
+|     <br>
+|     <img>
+
+#data
+</br>x</p>y</body>z</html>w
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <br>
+|     "x"
+|     <p>
+|     "yzw"
+
+#data
+<!DOCTYPE html><!-- a --><html><!-- b --><head><!-- c --></head><!-- d --><body></body><!-- e --></html><!-- f -->
+#errors
+#document
+| <!DOCTYPE html>
+| <!--  a  -->
+| <html>
+|   <!--  b  -->
+|   <head>
+|     <!--  c  -->
+|   <!--  d  -->
+|   <body>
+|   <!--  e  -->
+| <!--  f  -->
+
+#data
+x<html>y<body>z</body>w</html>v
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "xyzwv"
+
+#data
+<title>a<b>c</title><style>x<y></style><script>if (a<b) x</script><xmp><b></xmp><iframe><b></iframe><noembed><b></noembed>
+#errors
+#document
+| <html>
+|   <head>
+|     <title>
+|       "a<b>c"
+|     <style>
+|       "x<y>"
+|     <script>
+|       "if (a<b) x"
+|   <body>
+|     <xmp>
+|       "<b>"
+|     <iframe>
+|       "<b>"
+|     <noembed>
+|       "<b>"
+
+#data
+<plaintext><b>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <plaintext>
+|       "<b>x"
+
+#data
+<img/><div/>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <img>
+|     <div>
+|       "x"
+
+#data
+<section><a><i><u><div><div><p><div><div><i><div><div><div><i><p>x</a>y</section>z
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <section>
+|       <a>
+|         <i>
+|           <u>
+|       <i>
+|         <u>
+|           <div>
+|             <a>
+|             <div>
+|               <a>
+|                 <p>
+|               <div>
+|                 <a>
+|                 <div>
+|                   <a>
+|                     <i>
+|                   <i>
+|                     <div>
+|                       <a>
+|                       <div>
+|                         <a>
+|                         <div>
+|                           <a>
+|                             <i>
+|                           <i>
+|                             <p>
+|                               <a>
+|                                 "xy"
+|     <i>
+|       <u>
+|         <i>
+|           <i>
+|             <a>
+|               "z"
+
+#data
+<a$b><x:y>t</x:y></a$b>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <a$b>
+|       <x:y>
+|         "t"
+
+#data
+<p a"b=1 a<b=2 é=3 a'b=4>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       a"b="1"
+|       a'b="4"
+|       a<b="2"
+|       é="3"
+|       "x"
+
+#data
+<p>￾﷐</p><!--￾-->
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       "￾﷐"
+|     <!-- ￾ -->
+
+#data
+<!DOCTYPE a$b é><b é=1>x
+#errors
+#document
+| <!DOCTYPE a$b>
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       é="1"
+|       "x"
+
+#data
+<c-1><c-2></c-3></c-1>x
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <c-1>
+|       <c-2>
+|     "x"
+

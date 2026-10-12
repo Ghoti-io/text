@@ -16,12 +16,12 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""Plant a defect in a scratch copy of the library and show the HTML tokenizer's fuzzer finds it.
+"""Plant a defect in a scratch copy of the library and show the HTML tokenizer's and tree builder's fuzzers find it.
 
     tools/html/plant-fuzz.py [--time SECONDS] [name ...]
 
 A fuzzer that has never failed has not been shown to be able to. Each plant here is one edit
-to one place in src/html/html_tokenizer.c, applied to a **copy** of this repository in a
+to one place in src/html/html_tokenizer.c (or, for the `tree-` plants, src/html/html_tree*.c), applied to a **copy** of this repository in a
 scratch directory (the working tree is never touched), and tests/fuzz/fuzz_html_tokenizer.cpp
 is run on the copy for the time budget (60 seconds by default, the same `FUZZ_TIME` the
 Makefile's fuzz-run-* targets use), or, if the defect has a recorded reproducer
@@ -55,6 +55,23 @@ fails. The control is searched as well.
                    a few hundred attributes costs the square of that: the fuzzer's work
                    bound, fed a byte at a time. The seed `many-attributes` is a tag of 900.
 
+The tree builder's fuzzer (tests/fuzz/fuzz_html_tree.cpp, target `html-tree`) has six, two of
+them replayed from a seed (`tree-text-not-merged`, `tree-atom-leak`) and four searched for from
+the seeds, with its own unedited control (`control-tree`):
+
+  tree-text-not-merged   adjacent runs of text are not appended to one node: the fuzzer's
+                   validity property (no two adjacent text nodes).
+  tree-atom-leak   the namespace name the builder interned is not released when the parse ends:
+                   the invariant checker's reference counts.
+  tree-dyn-table-leak  the table of element names the vocabulary does not know is not freed with
+                   the builder: the counting allocator and LeakSanitizer.
+  tree-fmt-blocks-leak the formatting list's entries are not freed: the same.
+  tree-cut-dependence  a feed of one byte clears the frameset-ok flag: the answer depends on how
+                   the input was cut (a frameset after content, fed a byte at a time).
+  tree-absorbed-oom  an allocation failure while a run of text is appended to a text node is
+                   ignored: the tree is silently short, which the allocation-failure sweep sees
+                   as an answer that is not the normal one.
+
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
 corpus.
@@ -73,6 +90,21 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 WORKSPACE = os.path.dirname(os.path.dirname(ROOT))
 
 PLANTS = {
+    "tree-text-not-merged": ("html-tree", "src/html/html_tree.c",
+                             "  if (last && last->kind == GTEXT_MARKUP_KIND_TEXT) {", "  if (0) {"),
+    "tree-atom-leak": ("html-tree", "src/html/html_tree.c",
+                       "  if (tb->ns_html) {\n    markup_atom_release(tb->doc, tb->ns_html);\n    tb->ns_html = NULL;\n  }\n", ""),
+    "tree-dyn-table-leak": ("html-tree", "src/html/html_tree.c",
+                            "  gtext_allocator_free(&alloc, tb->dyn_tab);\n", ""),
+    "tree-fmt-blocks-leak": ("html-tree", "src/html/html_tree.c",
+                             "    gtext_allocator_free(&alloc, tb->fmt_blocks[i]);\n", ""),
+    "tree-cut-dependence": ("html-tree", "src/html/html_tree.c",
+                            "  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_feed(tb->tok, data, length);\n",
+                            "  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_feed(tb->tok, data, length);\n"
+                            "  if (length == 1) {\n    tb->frameset_ok = false;\n  }\n"),
+    "tree-absorbed-oom": ("html-tree", "src/html/html_tree.c",
+                          "    if (!ht_tree_markup_status(\n            tb, markup_text_append(tb->doc, last, &cap, data, length))) {\n      return false;\n    }\n",
+                          "    (void)markup_text_append(tb->doc, last, &cap, data, length);\n"),
     "cr-at-a-cut": ("html-tokenizer", "src/html/html_tokenizer.c",
                     "      if (p + 1 >= len) {\n        if (!t->final) {\n          return false;\n        }\n        *cp = '\\n';",
                     "      if (p + 1 >= len) {\n        *cp = '\\n';"),
@@ -120,6 +152,8 @@ REPRODUCERS = {
     "names-leak": "tests/fuzz/corpus/html-tokenizer/reproducer-attribute-table-leak.seed",
     "attribute-table": "tests/fuzz/corpus/html-tokenizer/many-attributes.seed",
     "two-byte-utf8": "tests/fuzz/corpus/html-tokenizer/reproducer-two-byte-utf8.seed",
+    "tree-text-not-merged": "tests/fuzz/corpus/html-tree/text-in-pieces.seed",
+    "tree-atom-leak": "tests/fuzz/corpus/html-tree/deep-div.seed",
 }
 
 
@@ -140,15 +174,23 @@ TIMEOUT = 3  # a multiple of the fuzz budget; a build and a run each fit well in
 TIMED_OUT = -999
 
 
+def target_of(name):
+    if name == "control":
+        return "html-tokenizer"
+    if name == "control-tree":
+        return "html-tree"
+    return PLANTS[name][0]
+
+
 def run(name, seconds):
     """(exit status, output) of one plant or of the control; the status is TIMED_OUT if it hung."""
-    target = "html-tokenizer"
+    target = target_of(name)
     scratch = tempfile.mkdtemp(prefix="plant-fuzz-", dir=os.environ.get("TMPDIR", tempfile.gettempdir()))
     budget = seconds * TIMEOUT + 900
     try:
         copy_tree(os.path.join(scratch, "text"))
         text = os.path.join(scratch, "text")
-        if name != "control":
+        if not name.startswith("control"):
             _target, path, old, new = PLANTS[name]
             with open(os.path.join(text, path), encoding="utf-8") as fh:
                 source = fh.read()
@@ -167,7 +209,7 @@ def run(name, seconds):
                                        env=env, capture_output=True, text=True, timeout=budget)
                 if built.returncode != 0:
                     return built.returncode, built.stdout + built.stderr
-                app = os.path.join(text, make_variables(prefix, ("FUZZ_APP_DIR",))["FUZZ_APP_DIR"], "fuzz_html_tokenizer")
+                app = os.path.join(text, make_variables(prefix, ("FUZZ_APP_DIR",))["FUZZ_APP_DIR"], "fuzz_" + target.replace("-", "_"))
                 done = subprocess.run(capped + [app, "-runs=0", os.path.join(text, REPRODUCERS[name])], env=env,
                                       capture_output=True, text=True, timeout=budget)
                 return done.returncode, done.stdout + done.stderr
@@ -185,7 +227,7 @@ def run(name, seconds):
 # harness's own "property failed" lines. The build's command lines mention the harness names,
 # and a compiler error, a kill by memcap (exit 137) or a timeout all exit non-zero too, so none
 # of those counts: the run must have started (libFuzzer printed its seed) and then reported.
-REPORT = re.compile(r"^(fuzz_html_tokenizer: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_html_(tokenizer|tree): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer).*)$", re.M)
 
 
@@ -205,16 +247,16 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    names = names or ["control"] + list(PLANTS)
+    names = names or ["control", "control-tree"] + list(PLANTS)
     bad = []
     for name in names:
-        if name != "control" and name not in PLANTS:
-            raise SystemExit("unknown plant %r (one of control, %s)" % (name, ", ".join(PLANTS)))
+        if not name.startswith("control") and name not in PLANTS:
+            raise SystemExit("unknown plant %r (one of control, control-tree, %s)" % (name, ", ".join(PLANTS)))
         status, out = run(name, seconds)
         reported = found_by_fuzzer(status, out)
-        if name == "control":
+        if name.startswith("control"):
             ok = status == 0
-            print("control (no edit): %s" % ("silent, as it must be" if ok else "FAILED (exit %d)" % status))
+            print("%s (no edit): %s" % (name, "silent, as it must be" if ok else "FAILED (exit %d)" % status))
             if not ok:
                 sys.stderr.write(out[-3000:])
         else:

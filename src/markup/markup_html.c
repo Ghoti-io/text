@@ -283,6 +283,65 @@ unsigned gtext_markup_html_element_flags(const char * ns, const char * local) {
   return 0;
 }
 
+/* ---- the parser's categories ------------------------------------------- */
+
+/* The standard's "special" category, HTML members, from parsing.html section
+   13.2.4.2 "The stack of open elements" as retrieved 2026-10-11. Sorted. (`image`
+   is not in it: it is a token the tree builder turns into `img`. `dialog` is not
+   in it either, though `dialog` has start and end tag rules.) */
+static const char * const k_special_html[] = {"address", "applet", "area",
+    "article", "aside", "base", "basefont", "bgsound", "blockquote", "body",
+    "br", "button", "caption", "center", "col", "colgroup", "dd", "details",
+    "dir", "div", "dl", "dt", "embed", "fieldset", "figcaption", "figure",
+    "footer", "form", "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6",
+    "head", "header", "hgroup", "hr", "html", "iframe", "img", "input", "keygen",
+    "li", "link", "listing", "main", "marquee", "menu", "meta", "nav", "noembed",
+    "noframes", "noscript", "object", "ol", "p", "param", "plaintext", "pre",
+    "script", "search", "section", "select", "source", "style", "summary",
+    "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead",
+    "title", "tr", "track", "ul", "wbr", "xmp"};
+/* MathML members, and SVG members. Sorted. */
+static const char * const k_special_math[] = {
+    "annotation-xml", "mi", "mn", "mo", "ms", "mtext"};
+static const char * const k_special_svg[] = {"desc", "foreignObject", "title"};
+/* The "formatting" category (HTML only). Sorted. */
+static const char * const k_formatting_html[] = {"a", "b", "big", "code", "em",
+    "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u"};
+
+unsigned gtext_markup_html_category(const char * ns, const char * local) {
+  if (!ns || !local) {
+    return 0;
+  }
+  if (strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0) {
+    unsigned bits = 0;
+    if (listed(k_special_html, sizeof(k_special_html) / sizeof(k_special_html[0]), local)) {
+      bits |= GTEXT_MARKUP_HTML_SPECIAL;
+    }
+    if (listed(k_formatting_html,
+            sizeof(k_formatting_html) / sizeof(k_formatting_html[0]), local)) {
+      bits |= GTEXT_MARKUP_HTML_FORMATTING;
+    }
+    return bits;
+  }
+  if (strcmp(ns, "http://www.w3.org/1998/Math/MathML") == 0) {
+    return listed(k_special_math, sizeof(k_special_math) / sizeof(k_special_math[0]), local)
+        ? GTEXT_MARKUP_HTML_SPECIAL : 0;
+  }
+  if (strcmp(ns, "http://www.w3.org/2000/svg") == 0) {
+    return listed(k_special_svg, sizeof(k_special_svg) / sizeof(k_special_svg[0]), local)
+        ? GTEXT_MARKUP_HTML_SPECIAL : 0;
+  }
+  return 0;
+}
+
+bool gtext_markup_html_is_special(const char * ns, const char * local) {
+  return (gtext_markup_html_category(ns, local) & GTEXT_MARKUP_HTML_SPECIAL) != 0;
+}
+
+bool gtext_markup_html_is_formatting(const char * ns, const char * local) {
+  return (gtext_markup_html_category(ns, local) & GTEXT_MARKUP_HTML_FORMATTING) != 0;
+}
+
 bool gtext_markup_html_is_void(const char * ns, const char * local) {
   return (gtext_markup_html_element_flags(ns, local) & GTEXT_MARKUP_HTML_VOID)
       != 0;

@@ -458,3 +458,48 @@ TEST(MarkupHtml, ForeignNamesSurviveWhenHtmlRestoresTheirCase) {
 }
 
 }  // namespace
+
+// ---- The parser's categories (special, formatting) ---------------------------
+
+TEST(MarkupHtml, TheSpecialAndFormattingCategoriesAreTheStandardsLists) {
+  const char * special[] = {"address", "applet", "area", "article", "aside", "base", "basefont", "bgsound",
+      "blockquote", "body", "br", "button", "caption", "center", "col", "colgroup", "dd", "details", "dir", "div",
+      "dl", "dt", "embed", "fieldset", "figcaption", "figure", "footer", "form", "frame", "frameset", "h1", "h2",
+      "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "iframe", "img", "input", "keygen", "li",
+      "link", "listing", "main", "marquee", "menu", "meta", "nav", "noembed", "noframes", "noscript", "object",
+      "ol", "p", "param", "plaintext", "pre", "script", "search", "section", "select", "source", "style", "summary",
+      "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "title", "tr", "track", "ul", "wbr",
+      "xmp"};
+  const char * formatting[] = {"a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u"};
+  std::set<std::string> sp(std::begin(special), std::end(special));
+  std::set<std::string> fm(std::begin(formatting), std::end(formatting));
+  EXPECT_EQ(sp.size(), 83u);
+  for (const std::string & name : everything()) {
+    SCOPED_TRACE(name);
+    EXPECT_EQ(gtext_markup_html_is_special(XHTML, name.c_str()), sp.count(name) != 0);
+    EXPECT_EQ(gtext_markup_html_is_formatting(XHTML, name.c_str()), fm.count(name) != 0);
+  }
+  for (const std::string & name : sp) {
+    SCOPED_TRACE(name);
+    EXPECT_EQ(gtext_markup_html_category(XHTML, name.c_str()) & GTEXT_MARKUP_HTML_SPECIAL, GTEXT_MARKUP_HTML_SPECIAL);
+    EXPECT_EQ(gtext_markup_html_category(XHTML, (name + "x").c_str()), 0u);
+    EXPECT_FALSE(gtext_markup_html_is_special("urn:other", name.c_str()));
+  }
+  // The foreign members, in their own namespaces only.
+  for (const char * n : {"mi", "mo", "mn", "ms", "mtext", "annotation-xml"}) {
+    EXPECT_TRUE(gtext_markup_html_is_special("http://www.w3.org/1998/Math/MathML", n)) << n;
+    EXPECT_FALSE(gtext_markup_html_is_special("http://www.w3.org/2000/svg", n)) << n;
+  }
+  for (const char * n : {"foreignObject", "desc", "title"}) {
+    EXPECT_TRUE(gtext_markup_html_is_special("http://www.w3.org/2000/svg", n)) << n;
+    EXPECT_FALSE(gtext_markup_html_is_special("http://www.w3.org/1998/Math/MathML", n)) << n;
+  }
+  EXPECT_FALSE(gtext_markup_html_is_special("http://www.w3.org/2000/svg", "foreignobject"));
+  EXPECT_EQ(gtext_markup_html_category(XHTML, "a"), GTEXT_MARKUP_HTML_FORMATTING);
+  EXPECT_EQ(gtext_markup_html_category(XHTML, "div"), GTEXT_MARKUP_HTML_SPECIAL);
+  EXPECT_EQ(gtext_markup_html_category(XHTML, "span"), 0u);
+  // The bits do not collide with the existing flags.
+  EXPECT_EQ(GTEXT_MARKUP_HTML_SPECIAL & (GTEXT_MARKUP_HTML_VOID | GTEXT_MARKUP_HTML_RAW_TEXT
+                | GTEXT_MARKUP_HTML_ESCAPABLE_RAW_TEXT | GTEXT_MARKUP_HTML_DROPS_FIRST_NEWLINE), 0u);
+  EXPECT_EQ(GTEXT_MARKUP_HTML_FORMATTING & GTEXT_MARKUP_HTML_SPECIAL, 0u);
+}

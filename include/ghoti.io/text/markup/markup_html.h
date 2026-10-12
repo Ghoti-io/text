@@ -92,6 +92,39 @@ GTEXT_API bool gtext_markup_html_is_escapable_raw_text(
 GTEXT_API bool gtext_markup_html_drops_first_newline(
     const char * ns, const char * local);
 
+/** In the parser's "special" category (the standard's list of elements with
+ *  special parsing rules, `address` to `xmp`, and in MathML `mi mo mn ms mtext
+ *  annotation-xml` and in SVG `foreignObject desc title`). Reported by
+ *  gtext_markup_html_category(), not gtext_markup_html_element_flags(), because
+ *  it is a property of the tree builder's stack and not of how an element is
+ *  written. */
+#define GTEXT_MARKUP_HTML_SPECIAL 0x10u
+/** In the "formatting" category: `a b big code em font i nobr s small strike
+ *  strong tt u` (the elements the list of active formatting elements holds). */
+#define GTEXT_MARKUP_HTML_FORMATTING 0x20u
+
+/**
+ * @brief The parser categories of an element: GTEXT_MARKUP_HTML_SPECIAL and
+ *   GTEXT_MARKUP_HTML_FORMATTING.
+ *
+ * Unlike the functions above this answers for the SVG and MathML namespaces as
+ * well, because the standard's "special" category names elements of all three.
+ *
+ * @param ns    The element's namespace URI, or NULL.
+ * @param local The element's local name, or NULL.
+ * @return A combination of those two bits; 0 for any other element, a name in
+ *   no namespace, or a NULL argument.
+ */
+GTEXT_API unsigned gtext_markup_html_category(
+    const char * ns, const char * local);
+
+/** @brief GTEXT_MARKUP_HTML_SPECIAL set? See gtext_markup_html_category(). */
+GTEXT_API bool gtext_markup_html_is_special(const char * ns, const char * local);
+
+/** @brief GTEXT_MARKUP_HTML_FORMATTING set? */
+GTEXT_API bool gtext_markup_html_is_formatting(
+    const char * ns, const char * local);
+
 /**
  * @brief Is this a boolean attribute of this element?
  *
