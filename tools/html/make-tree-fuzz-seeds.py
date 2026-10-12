@@ -77,6 +77,22 @@ EXTRAS = [
     ("odd-names", "<a$b><x:y c\"d=1 e<f=2 \u00e9=3><\u00e9>\x01\ufffe<!--\x01-->\ufdd0<!DOCTYPE a$b \u00e9>x"),
     ("custom-elements", "".join("<c-%d>%s" % (i % 230, "</c-%d>" % (i % 7) if i % 5 == 0 else "x") for i in range(400))),
     ("stray-end-tags", "</p></div></b></html></body></head>x</br>" * 5),
+    # Stage 3d: the table modes, foster parenting and the template modes, at the sizes that make a
+    # naive implementation quadratic or overflow a fixed table.
+    ("deep-tables", "<table><tr><td>" * 40 + "x" + "</td></tr></table>" * 5 + "y"),
+    ("wide-table", "<table>" + "<tr><td>x<td>y<th>z" * 100 + "</table>"),
+    ("foster-text-runs", "<table>" + "x</z> </z>" * 200 + "</table>"),
+    ("table-text-pending", "<table> \x00 \n <!--c--> \t</table> x <table>\x00 y\x00</table>"),
+    ("nested-templates", "<template>" * 30 + "<tr><td>x" + "</template>" * 12 + "y"),
+    ("template-end-chain", "<template>" * 60 + "x" + "</template>" * 30),
+    ("templates-in-tables", "<table><template><tr><td><template><col></template>x</template><tr><td>y" * 3),
+    ("table-adoption", "<b><table><tr><b><div>x</b>y</table><i>z" * 4 + "<a><table><a>"),
+    ("table-modes-everywhere", "<table><caption>c<col><colgroup> <col> x <tbody><td>a<th>b<tr><tfoot><tr><td>c</table>d"),
+    ("forms-in-tables", "<form><table><form><input type=hidden><tr><td><form>x</form></table></form><input type=hidden>"),
+    ("selects-in-tables", "<table><tr><td><select><option>a<optgroup><td>b<select><tr><select></table>"),
+    ("long-table-white-space", "<table>" + " \n\t" * 600 + "<tr><td>x</td></tr>" + " \n" * 300 + "</table> " + "\r\n " * 100 + "<table> " * 5 + "y"),
+    ("table-text-positions", "<table>" + "a&amp;b\r\n \u00e9\U0001F600\x00 y&#65;" * 30 + "</table>"),
+    ("template-forms-and-bodies", "<template><html a=1><body b=2><form><form></form></form><p></template><form><form>"),
 ]
 
 

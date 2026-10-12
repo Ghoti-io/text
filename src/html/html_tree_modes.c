@@ -29,10 +29,13 @@
  * Implemented here: initial (13.2.6.4.1), before html (.2), before head (.3), in
  * head (.4), in head noscript (.5), after head (.6), in body (.7), text (.8),
  * after body (.17), in frameset (.18), after frameset (.19), after after body
- * (.20), after after frameset (.21); "reset the insertion mode appropriately"
- * (13.2.4.1) with its table, caption, column group and template branches; the
- * quirks-mode determination of the initial mode; the generic raw text and RCDATA
- * element parsing algorithms (13.2.6.2).
+ * (.20), after after frameset (.21), and since stage 3d in table (.9), in table
+ * text (.10), in caption (.11), in column group (.12), in table body (.13), in
+ * row (.14), in cell (.15) and in template (.16); "reset the insertion mode
+ * appropriately" (13.2.4.1); the quirks-mode determination of the initial mode;
+ * the generic raw text and RCDATA element parsing algorithms (13.2.6.2). Foster
+ * parenting is not a mode: "in table" switches the flag on around the "in body"
+ * rules, and the appropriate place for inserting a node (html_tree.c) reads it.
  *
  * **There is no "in select" mode in the standard as served on that date**: the
  * select element is parsed by ordinary "in body" rules (a `select` start tag,
@@ -41,9 +44,8 @@
  * and are not a stub.
  *
  * Not here (a later stage; the construct fails the parse with
- * GTEXT_HTML_TREE_E_NOT_YET and the stage that owns it): a `table` start tag in
- * body and so the table modes (3d), `template` anywhere (3d), and `svg` and
- * `math` start tags so foreign content (3e).
+ * GTEXT_HTML_TREE_E_NOT_YET and the stage that owns it): `svg` and `math` start
+ * tags so foreign content (3e).
  *
  * Every function that handles a token returns R_DONE (consumed), R_REPROCESS
  * (the mode changed; handle the same token again in the new mode) or R_FAIL
@@ -260,8 +262,17 @@ static int unexpected(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code) {
 #define IGNORE_START(tb) unexpected((tb), GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG)
 #define IGNORE_END(tb) unexpected((tb), GTEXT_HTML_TREE_ERR_UNEXPECTED_END_TAG)
 
+static int end_template(GTEXT_HTML_Tree * tb);
+static int h_in_template(GTEXT_HTML_Tree * tb, const Tk * tk);
+
 static bool is_current(const GTEXT_HTML_Tree * tb, uint32_t id) {
   return tb->n > 0 && HT_STACK_TOP(tb).id == id;
+}
+
+/* Is there a template element on the stack of open elements? (The standard's "parsing template
+   contents", fragment contexts aside.) */
+static bool template_open(const GTEXT_HTML_Tree * tb) {
+  return tb->names[T_TEMPLATE].topidx != NONE_IDX;
 }
 
 /* Is there an element open that "has not been closed" as the end of a body means it:
@@ -364,10 +375,10 @@ static int h_before_html(GTEXT_HTML_Tree * tb, const Tk * tk) {
 static int h_before_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->type) {
     case TK_COMMENT:
-      HT_CK(ht_insert_comment_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_comment(tb, tk->tok));
       return R_DONE;
     case TK_PI:
-      HT_CK(ht_insert_pi_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_pi(tb, tk->tok));
       return R_DONE;
     case TK_DOCTYPE:
       return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
@@ -396,13 +407,29 @@ static int h_before_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
 
 /* ---- "in head" ---------------------------------------------------------- */
 
+/* The end tag "template" of "in head" (and so of every mode that defers to it). */
+static int end_template(GTEXT_HTML_Tree * tb) {
+  if (!template_open(tb)) {
+    return IGNORE_END(tb);
+  }
+  ht_generate_all_implied_end_tags_thoroughly(tb);
+  if (!is_current(tb, T_TEMPLATE)) {
+    ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);
+  }
+  ht_stack_pop_until(tb, T_TEMPLATE);
+  ht_fmt_clear_to_marker(tb);
+  ht_tmpl_pop(tb);
+  tb->mode = ht_tree_reset_mode(tb);
+  return tb->status == GTEXT_HTML_TREE_OK ? R_DONE : R_FAIL;
+}
+
 static int h_in_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->type) {
     case TK_COMMENT:
-      HT_CK(ht_insert_comment_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_comment(tb, tk->tok));
       return R_DONE;
     case TK_PI:
-      HT_CK(ht_insert_pi_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_pi(tb, tk->tok));
       return R_DONE;
     case TK_DOCTYPE:
       return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
@@ -433,8 +460,15 @@ static int h_in_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
         case T_SCRIPT:
           return generic_text(tb, tk, GTEXT_HTML_STATE_SCRIPT_DATA);
         case T_TEMPLATE:
-          ht_tree_not_yet(tb, GTEXT_HTML_NOT_YET_TEMPLATE);
-          return R_FAIL;
+          /* The scripting-facing steps of the standard's template start tag (declarative shadow
+             roots, content patching) need a live document to act on; without one they end in
+             "insert an HTML element for the token", which is what is done. */
+          HT_CK(ht_fmt_push_marker(tb));
+          tb->frameset_ok = false;
+          HT_CK(ht_tmpl_push(tb, M_IN_TEMPLATE));
+          HT_CK(ht_insert_element(tb, tk, NULL));
+          tb->mode = M_IN_TEMPLATE;
+          return R_DONE;
         case T_HEAD:
           return IGNORE_START(tb);
         default:
@@ -448,8 +482,7 @@ static int h_in_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
         return R_DONE;
       }
       if (tk->id == T_TEMPLATE) {
-        /* No template element is ever open in this stage. */
-        return IGNORE_END(tb);
+        return end_template(tb);
       }
       if (tk->id != T_BODY && tk->id != T_HTML && tk->id != T_BR) {
         return IGNORE_END(tb);
@@ -517,10 +550,10 @@ static int h_in_head_noscript(GTEXT_HTML_Tree * tb, const Tk * tk) {
 static int h_after_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->type) {
     case TK_COMMENT:
-      HT_CK(ht_insert_comment_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_comment(tb, tk->tok));
       return R_DONE;
     case TK_PI:
-      HT_CK(ht_insert_pi_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_pi(tb, tk->tok));
       return R_DONE;
     case TK_DOCTYPE:
       return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
@@ -538,8 +571,6 @@ static int h_after_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
           tb->mode = M_IN_FRAMESET;
           return R_DONE;
         case T_TEMPLATE:
-          ht_tree_not_yet(tb, GTEXT_HTML_NOT_YET_TEMPLATE);
-          return R_FAIL;
         case T_BASE:
         case T_BASEFONT:
         case T_BGSOUND:
@@ -568,7 +599,7 @@ static int h_after_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
       break;
     case TK_END:
       if (tk->id == T_TEMPLATE) {
-        return IGNORE_END(tb);
+        return h_in_head(tb, tk);
       }
       if (tk->id != T_BODY && tk->id != T_HTML && tk->id != T_BR) {
         return IGNORE_END(tb);
@@ -727,6 +758,9 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->id) {
     case T_HTML:
       ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
+      if (template_open(tb)) {
+        return R_DONE;
+      }
       HT_CK(ht_merge_attributes(tb, tb->stack[0].node, tk->attrs, tk->nattrs));
       return R_DONE;
     case T_BASE:
@@ -740,11 +774,10 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
     case T_TITLE:
       return h_in_head(tb, tk);
     case T_TEMPLATE:
-      ht_tree_not_yet(tb, GTEXT_HTML_NOT_YET_TEMPLATE);
-      return R_FAIL;
+      return h_in_head(tb, tk);
     case T_BODY:
       ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
-      if (tb->n == 1 || tb->stack[1].id != T_BODY) {
+      if (tb->n == 1 || tb->stack[1].id != T_BODY || template_open(tb)) {
         return R_DONE;
       }
       tb->frameset_ok = false;
@@ -810,14 +843,16 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
       tb->skip_lf = true;
       tb->frameset_ok = false;
       return R_DONE;
-    case T_FORM:
-      if (tb->form_el) {
+    case T_FORM: {
+      const bool in_template = template_open(tb);
+      if (tb->form_el && !in_template) {
         ht_tree_error(tb, GTEXT_HTML_TREE_ERR_NESTED_FORM);
         return R_DONE;
       }
       HT_CK(ht_close_p_if_in_button_scope(tb));
-      HT_CK(ht_insert_element(tb, tk, &tb->form_el));
+      HT_CK(ht_insert_element(tb, tk, in_template ? NULL : &tb->form_el));
       return R_DONE;
+    }
     case T_LI:
       return body_start_li(tb, tk);
     case T_DD:
@@ -864,8 +899,13 @@ static int body_start(GTEXT_HTML_Tree * tb, const Tk * tk) {
       tb->frameset_ok = false;
       return R_DONE;
     case T_TABLE:
-      ht_tree_not_yet(tb, GTEXT_HTML_NOT_YET_TABLE);
-      return R_FAIL;
+      if (gtext_markup_document_mode(tb->doc) != GTEXT_MARKUP_MODE_QUIRKS) {
+        HT_CK(ht_close_p_if_in_button_scope(tb));
+      }
+      HT_CK(ht_insert_element(tb, tk, NULL));
+      tb->frameset_ok = false;
+      tb->mode = M_IN_TABLE;
+      return R_DONE;
     case T_AREA:
     case T_BR:
     case T_EMBED:
@@ -1006,7 +1046,7 @@ static size_t stack_find_node(GTEXT_HTML_Tree * tb, const HtNode * node) {
 static int body_end(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->id) {
     case T_TEMPLATE:
-      return IGNORE_END(tb);
+      return h_in_head(tb, tk);
     case T_BODY:
     case T_HTML:
       if (!ht_stack_in_scope(tb, T_BODY, SCOPE_GEN)) {
@@ -1055,6 +1095,17 @@ static int body_end(GTEXT_HTML_Tree * tb, const Tk * tk) {
       ht_stack_pop_until(tb, tk->id);
       return R_DONE;
     case T_FORM: {
+      if (template_open(tb)) {
+        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {
+          return IGNORE_END(tb);
+        }
+        ht_generate_implied_end_tags(tb, NONE_IDX);
+        if (!is_current(tb, T_FORM)) {
+          ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);
+        }
+        ht_stack_pop_until(tb, T_FORM);
+        return R_DONE;
+      }
       HtNode * node = tb->form_el;
       tb->form_el = NULL;
       size_t at = SIZE_MAX;
@@ -1163,10 +1214,10 @@ static int body_end(GTEXT_HTML_Tree * tb, const Tk * tk) {
 static int h_in_body(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->type) {
     case TK_COMMENT:
-      HT_CK(ht_insert_comment_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_comment(tb, tk->tok));
       return R_DONE;
     case TK_PI:
-      HT_CK(ht_insert_pi_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_pi(tb, tk->tok));
       return R_DONE;
     case TK_DOCTYPE:
       return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
@@ -1175,6 +1226,9 @@ static int h_in_body(GTEXT_HTML_Tree * tb, const Tk * tk) {
     case TK_END:
       return body_end(tb, tk);
     case TK_EOF:
+      if (tb->ntmpl > 0) {
+        return h_in_template(tb, tk);
+      }
       if (has_unclosed_element(tb)) {
         ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_EOF);
       }
@@ -1246,10 +1300,10 @@ static int h_after_body(GTEXT_HTML_Tree * tb, const Tk * tk) {
 static int h_in_frameset(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->type) {
     case TK_COMMENT:
-      HT_CK(ht_insert_comment_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_comment(tb, tk->tok));
       return R_DONE;
     case TK_PI:
-      HT_CK(ht_insert_pi_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_pi(tb, tk->tok));
       return R_DONE;
     case TK_DOCTYPE:
       return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
@@ -1295,10 +1349,10 @@ static int h_in_frameset(GTEXT_HTML_Tree * tb, const Tk * tk) {
 static int h_after_frameset(GTEXT_HTML_Tree * tb, const Tk * tk) {
   switch (tk->type) {
     case TK_COMMENT:
-      HT_CK(ht_insert_comment_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_comment(tb, tk->tok));
       return R_DONE;
     case TK_PI:
-      HT_CK(ht_insert_pi_into(tb, HT_STACK_TOP(tb).node, tk->tok));
+      HT_CK(ht_insert_pi(tb, tk->tok));
       return R_DONE;
     case TK_DOCTYPE:
       return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
@@ -1377,13 +1431,717 @@ static int h_after_after_frameset(GTEXT_HTML_Tree * tb, const Tk * tk) {
   }
 }
 
-/* The table modes, template and foreign content are later stages: nothing in this
-   stage can enter them (their only way in is a start tag that fails first). */
-static int h_stub(GTEXT_HTML_Tree * tb, const Tk * tk) {
+/* ---- the table modes ---------------------------------------------------- */
+
+/* Is the current node a table, tbody, template, tfoot, thead or tr? */
+static bool current_is_table_part(const GTEXT_HTML_Tree * tb) {
+  switch (HT_STACK_TOP(tb).id) {
+    case T_TABLE:
+    case T_TBODY:
+    case T_TEMPLATE:
+    case T_TFOOT:
+    case T_THEAD:
+    case T_TR:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/* "Clear the stack back to a table context / a table body context / a table row context": pop
+   until the current node is one of the named kinds, a template or the html element. Every pop
+   undoes a push, so the cost is amortised over the tokens that opened the elements. */
+enum { CTX_TABLE, CTX_BODY, CTX_ROW };
+
+static void clear_to_context(GTEXT_HTML_Tree * tb, int ctx) {
+  while (tb->n > 1) {
+    const uint32_t id = HT_STACK_TOP(tb).id;
+    if (id == T_TEMPLATE || id == T_HTML) {
+      break;
+    }
+    if (ctx == CTX_TABLE && id == T_TABLE) {
+      break;
+    }
+    if (ctx == CTX_BODY && (id == T_TBODY || id == T_TFOOT || id == T_THEAD)) {
+      break;
+    }
+    if (ctx == CTX_ROW && id == T_TR) {
+      break;
+    }
+    ht_stack_pop(tb);
+  }
+}
+
+static bool in_table_scope(const GTEXT_HTML_Tree * tb, uint32_t id) {
+  return ht_stack_in_scope(tb, id, SCOPE_TABLE);
+}
+
+/* Errors for characters that are about to be handled as "anything else" (foster parented, or ignored in a
+   column group): one for each character, at the place of that character. `c` describes where the bytes of
+   `base` came from and is moved forward; `p` is in `base`. A UTF-8 continuation byte is not a character, and
+   a NUL is not counted here: "in body" reports it (once). */
+static void char_errors(GTEXT_HTML_Tree * tb, SegCursor * c, const char * base, const char * p, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    const unsigned char b = (unsigned char)p[i];
+    if ((b & 0xC0) != 0x80 && b != 0) {
+      ht_seg_cursor_advance(c, (size_t)(p - base) + i);
+      ht_tree_error_at(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_CHARACTER, c->line, c->column, c->offset);
+    }
+  }
+}
+
+/* The "anything else" entry of "in table" for characters: a parse error each, then "in body" with
+   foster parenting enabled. */
+static bool foster_chars(GTEXT_HTML_Tree * tb, SegCursor * c, const char * base, const char * p, size_t n) {
+  char_errors(tb, c, base, p, n);
+  tb->foster = true;
+  const bool ok = body_chars(tb, p, n);
+  tb->foster = false;
+  return ok;
+}
+
+static bool pend_push(GTEXT_HTML_Tree * tb, size_t index, size_t line, size_t column, size_t offset) {
+  if (tb->pend_nsegs >= GTEXT_HTML_MAX_TEXT_SEGMENTS) {
+    return true; /* bounded: the rest are counted on from the last, as the tokenizer's are */
+  }
+  if (tb->pend_nsegs == tb->pend_segs_cap) {
+    const size_t cap = tb->pend_segs_cap ? tb->pend_segs_cap * 2 : 8;
+    GTEXT_HTML_TextSegment * grown =
+        gtext_allocator_realloc(&tb->alloc, tb->pend_segs, cap * sizeof(*grown));
+    if (!grown) {
+      return ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
+    }
+    tb->pend_segs = grown;
+    tb->pend_segs_cap = cap;
+  }
+  GTEXT_HTML_TextSegment * seg = &tb->pend_segs[tb->pend_nsegs++];
+  seg->index = index;
+  seg->line = line;
+  seg->column = column;
+  seg->offset = offset;
+  return true;
+}
+
+/* Remember where the chunk [a, a + len) of the token's data came from, for the errors of the characters
+   that wait: the chunk's start, and each segment of the token that starts inside it. */
+static bool pend_note(GTEXT_HTML_Tree * tb, size_t a, size_t len) {
+  SegCursor * c = &tb->tcur;
+  ht_seg_cursor_advance(c, a);
+  if (!pend_push(tb, tb->pend_len, c->line, c->column, c->offset)) {
+    return false;
+  }
+  for (size_t k = c->next; k < c->nsegs && c->segs[k].index < a + len; k++) {
+    if (!pend_push(tb, tb->pend_len + (c->segs[k].index - a), c->segs[k].line, c->segs[k].column,
+            c->segs[k].offset)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* "In table text": the characters of a token. NUL is a parse error and dropped. Nothing that is
+   not white space can be inserted in a table, so once a character that is not white space is
+   seen, what is pending and what follows is foster parented; until then the white space waits.
+   The pending characters are never more than the token's run, which the tokenizer's text limit
+   bounds; the check below states it. */
+static bool table_text_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n) {
+  const char * base = tb->cur->data;
+  while (n > 0) {
+    const char * nul = memchr(p, '\0', n);
+    const size_t len = nul ? (size_t)(nul - p) : n;
+    if (len > 0) {
+      if (!tb->pend_foster && ws_prefix(p, len) != len) {
+        if (tb->pend_len > 0) {
+          SegCursor pc;
+          ht_seg_cursor_init(&pc, tb->pend, tb->pend_segs, tb->pend_nsegs, tb->cur->line,
+              tb->cur->column, tb->cur->offset);
+          if (!foster_chars(tb, &pc, tb->pend, tb->pend, tb->pend_len)) {
+            return false;
+          }
+        }
+        tb->pend_len = 0;
+        tb->pend_nsegs = 0;
+        tb->pend_foster = true;
+      }
+      if (tb->pend_foster) {
+        if (!foster_chars(tb, &tb->tcur, base, p, len)) {
+          return false;
+        }
+      }
+      else {
+        const size_t limit = tb->opt.max_text_bytes ? tb->opt.max_text_bytes
+                                                    : GTEXT_HTML_TOKENIZER_DEFAULT_MAX_TEXT;
+        if (len > limit || tb->pend_len > limit - len) {
+          return ht_tree_fail(tb, GTEXT_HTML_TREE_E_LIMIT_TEXT);
+        }
+        if (tb->pend_len + len > tb->pend_cap) {
+          size_t cap = tb->pend_cap ? tb->pend_cap : 256;
+          while (cap < tb->pend_len + len) {
+            cap = cap > SIZE_MAX / 2 ? tb->pend_len + len : cap * 2;
+          }
+          char * grown = gtext_allocator_realloc(&tb->alloc, tb->pend, cap);
+          if (!grown) {
+            return ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
+          }
+          tb->pend = grown;
+          tb->pend_cap = cap;
+        }
+        if (!pend_note(tb, (size_t)(p - base), len)) {
+          return false;
+        }
+        memcpy(tb->pend + tb->pend_len, p, len);
+        tb->pend_len += len;
+      }
+    }
+    if (!nul) {
+      break;
+    }
+    ht_seg_cursor_advance(&tb->tcur, (size_t)(nul - base));
+    ht_tree_error_at(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_NULL_CHARACTER, tb->tcur.line,
+        tb->tcur.column, tb->tcur.offset);
+    p += len + 1;
+    n -= len + 1;
+  }
+  return tb->status == GTEXT_HTML_TREE_OK;
+}
+
+static int h_in_table(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  switch (tk->type) {
+    case TK_COMMENT:
+      HT_CK(ht_insert_comment(tb, tk->tok));
+      return R_DONE;
+    case TK_PI:
+      HT_CK(ht_insert_pi(tb, tk->tok));
+      return R_DONE;
+    case TK_DOCTYPE:
+      return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
+    case TK_EOF:
+      return h_in_body(tb, tk);
+    case TK_START:
+      switch (tk->id) {
+        case T_CAPTION:
+          clear_to_context(tb, CTX_TABLE);
+          HT_CK(ht_fmt_push_marker(tb));
+          HT_CK(ht_insert_element(tb, tk, NULL));
+          tb->mode = M_IN_CAPTION;
+          return R_DONE;
+        case T_COLGROUP:
+          clear_to_context(tb, CTX_TABLE);
+          HT_CK(ht_insert_element(tb, tk, NULL));
+          tb->mode = M_IN_COLUMN_GROUP;
+          return R_DONE;
+        case T_COL:
+          clear_to_context(tb, CTX_TABLE);
+          HT_CK(ht_insert_element_bare(tb, T_COLGROUP, NULL));
+          tb->mode = M_IN_COLUMN_GROUP;
+          return R_REPROCESS;
+        case T_TBODY:
+        case T_TFOOT:
+        case T_THEAD:
+          clear_to_context(tb, CTX_TABLE);
+          HT_CK(ht_insert_element(tb, tk, NULL));
+          tb->mode = M_IN_TABLE_BODY;
+          return R_DONE;
+        case T_TD:
+        case T_TH:
+        case T_TR:
+          clear_to_context(tb, CTX_TABLE);
+          HT_CK(ht_insert_element_bare(tb, T_TBODY, NULL));
+          tb->mode = M_IN_TABLE_BODY;
+          return R_REPROCESS;
+        case T_TABLE:
+          ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
+          if (!in_table_scope(tb, T_TABLE)) {
+            return R_DONE;
+          }
+          ht_stack_pop_until(tb, T_TABLE);
+          tb->mode = ht_tree_reset_mode(tb);
+          return R_REPROCESS;
+        case T_STYLE:
+        case T_SCRIPT:
+        case T_TEMPLATE:
+          return h_in_head(tb, tk);
+        case T_INPUT:
+          if (!has_attribute(tk, "type") || !attribute_is(tk, "type", "hidden")) {
+            break;
+          }
+          ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
+          HT_CK(ht_insert_element(tb, tk, NULL));
+          HT_CK(ht_pop_current_acknowledge(tb, tk));
+          return R_DONE;
+        case T_FORM: {
+          ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
+          const bool in_template = template_open(tb);
+          if (tb->form_el && !in_template) {
+            return R_DONE;
+          }
+          HT_CK(ht_insert_element(tb, tk, in_template ? NULL : &tb->form_el));
+          ht_stack_pop(tb);
+          return R_DONE;
+        }
+        default:
+          break;
+      }
+      break;
+    case TK_END:
+      switch (tk->id) {
+        case T_TABLE:
+          if (!in_table_scope(tb, T_TABLE)) {
+            return IGNORE_END(tb);
+          }
+          if (!is_current(tb, T_TABLE)) {
+            /* The chapter names no error here, but the vectors list one (html5lib's
+               end-tag-too-early-named): elements the table closes by popping them. */
+            ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);
+          }
+          ht_stack_pop_until(tb, T_TABLE);
+          tb->mode = ht_tree_reset_mode(tb);
+          return R_DONE;
+        case T_BODY:
+        case T_CAPTION:
+        case T_COL:
+        case T_COLGROUP:
+        case T_HTML:
+        case T_TBODY:
+        case T_TD:
+        case T_TFOOT:
+        case T_TH:
+        case T_THEAD:
+        case T_TR:
+          return IGNORE_END(tb);
+        case T_TEMPLATE:
+          return h_in_head(tb, tk);
+        default:
+          break;
+      }
+      break;
+    default:
+      break;
+  }
+  /* Anything else: a parse error, and "in body" with foster parenting enabled. */
+  ht_tree_error(tb, tk->type == TK_START ? GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG
+                                         : GTEXT_HTML_TREE_ERR_UNEXPECTED_END_TAG);
+  tb->foster = true;
+  const int r = h_in_body(tb, tk);
+  tb->foster = false;
+  return r;
+}
+
+/* Done with the pending characters (the token that ended them is not a character): white space
+   that waited goes into the table, the rest was inserted as it came. */
+static int h_in_table_text(GTEXT_HTML_Tree * tb, const Tk * tk) {
   (void)tk;
-  ht_tree_not_yet(tb, tb->mode == M_IN_TEMPLATE ? GTEXT_HTML_NOT_YET_TEMPLATE
-                                             : GTEXT_HTML_NOT_YET_TABLE);
-  return R_FAIL;
+  if (!tb->pend_foster && tb->pend_len > 0) {
+    HT_CK(ht_insert_text(tb, tb->pend, tb->pend_len));
+  }
+  tb->pend_len = 0;
+  tb->pend_nsegs = 0;
+  tb->pend_foster = false;
+  tb->mode = tb->orig_mode;
+  return R_REPROCESS;
+}
+
+/* Close a caption (the end tag "caption", or a token that implies it). */
+static int close_caption(GTEXT_HTML_Tree * tb) {
+  ht_generate_implied_end_tags(tb, NONE_IDX);
+  if (!is_current(tb, T_CAPTION)) {
+    ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);
+  }
+  ht_stack_pop_until(tb, T_CAPTION);
+  ht_fmt_clear_to_marker(tb);
+  tb->mode = M_IN_TABLE;
+  return tb->status == GTEXT_HTML_TREE_OK ? R_DONE : R_FAIL;
+}
+
+static int h_in_caption(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  if (tk->type == TK_END) {
+    switch (tk->id) {
+      case T_CAPTION:
+        if (!in_table_scope(tb, T_CAPTION)) {
+          return IGNORE_END(tb);
+        }
+        return close_caption(tb);
+      case T_TABLE:
+        if (!in_table_scope(tb, T_CAPTION)) {
+          return IGNORE_END(tb);
+        }
+        close_caption(tb);
+        return tb->status == GTEXT_HTML_TREE_OK ? R_REPROCESS : R_FAIL;
+      case T_BODY:
+      case T_COL:
+      case T_COLGROUP:
+      case T_HTML:
+      case T_TBODY:
+      case T_TD:
+      case T_TFOOT:
+      case T_TH:
+      case T_THEAD:
+      case T_TR:
+        return IGNORE_END(tb);
+      default:
+        break;
+    }
+  }
+  else if (tk->type == TK_START) {
+    switch (tk->id) {
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_TBODY:
+      case T_TD:
+      case T_TFOOT:
+      case T_TH:
+      case T_THEAD:
+      case T_TR:
+        if (!in_table_scope(tb, T_CAPTION)) {
+          return IGNORE_START(tb);
+        }
+        close_caption(tb);
+        return tb->status == GTEXT_HTML_TREE_OK ? R_REPROCESS : R_FAIL;
+      default:
+        break;
+    }
+  }
+  return h_in_body(tb, tk);
+}
+
+static int h_in_column_group(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  switch (tk->type) {
+    case TK_COMMENT:
+      HT_CK(ht_insert_comment(tb, tk->tok));
+      return R_DONE;
+    case TK_PI:
+      HT_CK(ht_insert_pi(tb, tk->tok));
+      return R_DONE;
+    case TK_DOCTYPE:
+      return unexpected(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_DOCTYPE);
+    case TK_EOF:
+      return h_in_body(tb, tk);
+    case TK_START:
+      if (tk->id == T_HTML) {
+        return h_in_body(tb, tk);
+      }
+      if (tk->id == T_COL) {
+        HT_CK(ht_insert_element(tb, tk, NULL));
+        HT_CK(ht_pop_current_acknowledge(tb, tk));
+        return R_DONE;
+      }
+      if (tk->id == T_TEMPLATE) {
+        return h_in_head(tb, tk);
+      }
+      break;
+    case TK_END:
+      if (tk->id == T_COLGROUP) {
+        if (!is_current(tb, T_COLGROUP)) {
+          return IGNORE_END(tb);
+        }
+        ht_stack_pop(tb);
+        tb->mode = M_IN_TABLE;
+        return R_DONE;
+      }
+      if (tk->id == T_COL) {
+        return IGNORE_END(tb);
+      }
+      if (tk->id == T_TEMPLATE) {
+        return h_in_head(tb, tk);
+      }
+      break;
+    default:
+      break;
+  }
+  if (!is_current(tb, T_COLGROUP)) {
+    return unexpected(tb, tk->type == TK_START ? GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG
+                                               : GTEXT_HTML_TREE_ERR_UNEXPECTED_END_TAG);
+  }
+  ht_stack_pop(tb);
+  tb->mode = M_IN_TABLE;
+  return R_REPROCESS;
+}
+
+static int h_in_table_body(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  if (tk->type == TK_START) {
+    switch (tk->id) {
+      case T_TR:
+        clear_to_context(tb, CTX_BODY);
+        HT_CK(ht_insert_element(tb, tk, NULL));
+        tb->mode = M_IN_ROW;
+        return R_DONE;
+      case T_TH:
+      case T_TD:
+        ht_tree_error(tb, GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG);
+        clear_to_context(tb, CTX_BODY);
+        HT_CK(ht_insert_element_bare(tb, T_TR, NULL));
+        tb->mode = M_IN_ROW;
+        return R_REPROCESS;
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_TBODY:
+      case T_TFOOT:
+      case T_THEAD:
+        goto leave_body;
+      default:
+        break;
+    }
+  }
+  else if (tk->type == TK_END) {
+    switch (tk->id) {
+      case T_TBODY:
+      case T_TFOOT:
+      case T_THEAD:
+        if (!in_table_scope(tb, tk->id)) {
+          return IGNORE_END(tb);
+        }
+        clear_to_context(tb, CTX_BODY);
+        ht_stack_pop(tb);
+        tb->mode = M_IN_TABLE;
+        return R_DONE;
+      case T_TABLE:
+        goto leave_body;
+      case T_BODY:
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_HTML:
+      case T_TD:
+      case T_TH:
+      case T_TR:
+        return IGNORE_END(tb);
+      default:
+        break;
+    }
+  }
+  return h_in_table(tb, tk);
+leave_body:
+  if (!in_table_scope(tb, T_TBODY) && !in_table_scope(tb, T_THEAD)
+      && !in_table_scope(tb, T_TFOOT)) {
+    return unexpected(tb, tk->type == TK_START ? GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG
+                                               : GTEXT_HTML_TREE_ERR_UNEXPECTED_END_TAG);
+  }
+  clear_to_context(tb, CTX_BODY);
+  ht_stack_pop(tb);
+  tb->mode = M_IN_TABLE;
+  return R_REPROCESS;
+}
+
+static int h_in_row(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  if (tk->type == TK_START) {
+    switch (tk->id) {
+      case T_TH:
+      case T_TD:
+        clear_to_context(tb, CTX_ROW);
+        HT_CK(ht_insert_element(tb, tk, NULL));
+        tb->mode = M_IN_CELL;
+        HT_CK(ht_fmt_push_marker(tb));
+        return R_DONE;
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_TBODY:
+      case T_TFOOT:
+      case T_THEAD:
+      case T_TR:
+        goto leave_row;
+      default:
+        break;
+    }
+  }
+  else if (tk->type == TK_END) {
+    switch (tk->id) {
+      case T_TR:
+        if (!in_table_scope(tb, T_TR)) {
+          return IGNORE_END(tb);
+        }
+        clear_to_context(tb, CTX_ROW);
+        ht_stack_pop(tb);
+        tb->mode = M_IN_TABLE_BODY;
+        return R_DONE;
+      case T_TABLE:
+        goto leave_row;
+      case T_TBODY:
+      case T_TFOOT:
+      case T_THEAD:
+        if (!in_table_scope(tb, tk->id) || !in_table_scope(tb, T_TR)) {
+          return IGNORE_END(tb);
+        }
+        goto leave_row;
+      case T_BODY:
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_HTML:
+      case T_TD:
+      case T_TH:
+        return IGNORE_END(tb);
+      default:
+        break;
+    }
+  }
+  return h_in_table(tb, tk);
+leave_row:
+  if (!in_table_scope(tb, T_TR)) {
+    return unexpected(tb, tk->type == TK_START ? GTEXT_HTML_TREE_ERR_UNEXPECTED_START_TAG
+                                               : GTEXT_HTML_TREE_ERR_UNEXPECTED_END_TAG);
+  }
+  clear_to_context(tb, CTX_ROW);
+  ht_stack_pop(tb);
+  tb->mode = M_IN_TABLE_BODY;
+  return R_REPROCESS;
+}
+
+/* "Close the cell". */
+static int close_cell(GTEXT_HTML_Tree * tb) {
+  ht_generate_implied_end_tags(tb, NONE_IDX);
+  if (!is_current(tb, T_TD) && !is_current(tb, T_TH)) {
+    ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);
+  }
+  while (tb->n > 0) {
+    const uint32_t popped = HT_STACK_TOP(tb).id;
+    ht_stack_pop(tb);
+    if (popped == T_TD || popped == T_TH) {
+      break;
+    }
+  }
+  ht_fmt_clear_to_marker(tb);
+  tb->mode = M_IN_ROW;
+  return tb->status == GTEXT_HTML_TREE_OK ? R_DONE : R_FAIL;
+}
+
+static int h_in_cell(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  if (tk->type == TK_END) {
+    switch (tk->id) {
+      case T_TD:
+      case T_TH:
+        if (!in_table_scope(tb, tk->id)) {
+          return IGNORE_END(tb);
+        }
+        ht_generate_implied_end_tags(tb, NONE_IDX);
+        if (!is_current(tb, tk->id)) {
+          ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);
+        }
+        ht_stack_pop_until(tb, tk->id);
+        ht_fmt_clear_to_marker(tb);
+        tb->mode = M_IN_ROW;
+        return R_DONE;
+      case T_BODY:
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_HTML:
+        return IGNORE_END(tb);
+      case T_TABLE:
+      case T_TBODY:
+      case T_TFOOT:
+      case T_THEAD:
+      case T_TR:
+        if (!in_table_scope(tb, tk->id)) {
+          return IGNORE_END(tb);
+        }
+        close_cell(tb);
+        return tb->status == GTEXT_HTML_TREE_OK ? R_REPROCESS : R_FAIL;
+      default:
+        break;
+    }
+  }
+  else if (tk->type == TK_START) {
+    switch (tk->id) {
+      case T_CAPTION:
+      case T_COL:
+      case T_COLGROUP:
+      case T_TBODY:
+      case T_TD:
+      case T_TFOOT:
+      case T_TH:
+      case T_THEAD:
+      case T_TR:
+        /* The standard asserts a td or th in table scope; the stack cannot be otherwise here,
+           and a stack that were would be ignored, not closed. */
+        if (!in_table_scope(tb, T_TD) && !in_table_scope(tb, T_TH)) {
+          return IGNORE_START(tb);
+        }
+        close_cell(tb);
+        return tb->status == GTEXT_HTML_TREE_OK ? R_REPROCESS : R_FAIL;
+      default:
+        break;
+    }
+  }
+  return h_in_body(tb, tk);
+}
+
+/* ---- "in template" ------------------------------------------------------ */
+
+/* Replace the current template insertion mode and switch to it. */
+static int template_to(GTEXT_HTML_Tree * tb, InsertionMode m) {
+  ht_tmpl_pop(tb);
+  HT_CK(ht_tmpl_push(tb, m));
+  tb->mode = m;
+  return R_REPROCESS;
+}
+
+static int h_in_template(GTEXT_HTML_Tree * tb, const Tk * tk) {
+  switch (tk->type) {
+    case TK_COMMENT:
+    case TK_PI:
+    case TK_DOCTYPE:
+      return h_in_body(tb, tk);
+    case TK_START:
+      switch (tk->id) {
+        case T_BASE:
+        case T_BASEFONT:
+        case T_BGSOUND:
+        case T_LINK:
+        case T_META:
+        case T_NOFRAMES:
+        case T_SCRIPT:
+        case T_STYLE:
+        case T_TEMPLATE:
+        case T_TITLE:
+          return h_in_head(tb, tk);
+        case T_CAPTION:
+        case T_COLGROUP:
+        case T_TBODY:
+        case T_TFOOT:
+        case T_THEAD:
+          return template_to(tb, M_IN_TABLE);
+        case T_COL:
+          return template_to(tb, M_IN_COLUMN_GROUP);
+        case T_TR:
+          return template_to(tb, M_IN_TABLE_BODY);
+        case T_TD:
+        case T_TH:
+          return template_to(tb, M_IN_ROW);
+        default:
+          return template_to(tb, M_IN_BODY);
+      }
+    case TK_END:
+      if (tk->id == T_TEMPLATE) {
+        return h_in_head(tb, tk);
+      }
+      return IGNORE_END(tb);
+    case TK_EOF:
+      if (!template_open(tb)) {
+        /* No template element is open: stop. (A template insertion mode left over, which the
+           algorithms cannot leave, is dropped rather than trusted.) */
+        tb->ntmpl = 0;
+        tb->stopped = true;
+        return R_DONE;
+      }
+      /* "Pop until a template has been popped, clear the formatting list to the marker, pop the template
+         insertion mode, reset the insertion mode, reprocess the token", once for each template that is
+         open. Every mode but "in template" hands the end of the file to "in body", which hands it back
+         here while a template insertion mode is left, so the reprocessing between two templates only
+         ever comes back to this rule: it is done as a loop, and the chain does not grow with the nesting. */
+      while (template_open(tb)) {
+        ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_EOF);
+        ht_stack_pop_until(tb, T_TEMPLATE);
+        ht_fmt_clear_to_marker(tb);
+        ht_tmpl_pop(tb);
+        tb->mode = ht_tree_reset_mode(tb);
+      }
+      return R_REPROCESS;
+    default:
+      return R_DONE;
+  }
 }
 
 static const mode_fn k_modes[M__COUNT] = {
@@ -1395,14 +2153,14 @@ static const mode_fn k_modes[M__COUNT] = {
     [M_AFTER_HEAD] = h_after_head,
     [M_IN_BODY] = h_in_body,
     [M_TEXT] = h_text,
-    [M_IN_TABLE] = h_stub,
-    [M_IN_TABLE_TEXT] = h_stub,
-    [M_IN_CAPTION] = h_stub,
-    [M_IN_COLUMN_GROUP] = h_stub,
-    [M_IN_TABLE_BODY] = h_stub,
-    [M_IN_ROW] = h_stub,
-    [M_IN_CELL] = h_stub,
-    [M_IN_TEMPLATE] = h_stub,
+    [M_IN_TABLE] = h_in_table,
+    [M_IN_TABLE_TEXT] = h_in_table_text,
+    [M_IN_CAPTION] = h_in_caption,
+    [M_IN_COLUMN_GROUP] = h_in_column_group,
+    [M_IN_TABLE_BODY] = h_in_table_body,
+    [M_IN_ROW] = h_in_row,
+    [M_IN_CELL] = h_in_cell,
+    [M_IN_TEMPLATE] = h_in_template,
     [M_AFTER_BODY] = h_after_body,
     [M_IN_FRAMESET] = h_in_frameset,
     [M_AFTER_FRAMESET] = h_after_frameset,
@@ -1440,7 +2198,7 @@ const char * ht_tree_mode_name(InsertionMode m) {
 
 /* ---- reset the insertion mode appropriately ----------------------------- */
 
-InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb, bool * unsupported) {
+InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb) {
   size_t i = tb->n;
   bool last = false;
   while (i > 0) {
@@ -1469,11 +2227,8 @@ InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb, bool * unsupported)
       case T_TABLE:
         return M_IN_TABLE;
       case T_TEMPLATE:
-        /* The current template insertion mode: the stack of them is stage 3d's. */
-        if (unsupported) {
-          *unsupported = true;
-        }
-        return M_IN_TEMPLATE;
+        /* The current template insertion mode. */
+        return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;
       case T_HEAD:
         if (!last) {
           return M_IN_HEAD;
@@ -1507,8 +2262,24 @@ const char * gtext_html_tree_test_reset_mode(
   for (size_t i = 0; i < count && ok; i++) {
     uint32_t id = 0;
     HtNode * el = NULL;
-    ok = ht_names_lookup(tb, names[i], strlen(names[i]), true, &id)
+    /* "template/in table" is a template whose template insertion mode is "in table" (a plain
+       "template" is "in template"): the stack of those modes is built beside the stack of elements. */
+    const char * slash = strchr(names[i], '/');
+    const size_t nl = slash ? (size_t)(slash - names[i]) : strlen(names[i]);
+    ok = ht_names_lookup(tb, names[i], nl, true, &id)
         && ht_insert_element_into(tb, parent, id, NULL, 0, &el);
+    if (ok && id == T_TEMPLATE) {
+      InsertionMode m = M_IN_TEMPLATE;
+      bool known = slash == NULL;
+      for (unsigned k = 0; slash && k < M__COUNT; k++) {
+        if (strcmp(ht_tree_mode_name((InsertionMode)k), slash + 1) == 0) {
+          m = (InsertionMode)k;
+          known = true;
+        }
+      }
+      /* A suffix that names no insertion mode is a mistake in the test, not "in template". */
+      ok = known && ht_tmpl_push(tb, m);
+    }
     parent = el;
   }
   const char * result = NULL;
@@ -1516,8 +2287,7 @@ const char * gtext_html_tree_test_reset_mode(
     if (head_set) {
       tb->head_el = tb->n > 0 ? tb->stack[tb->n - 1].node : NULL;
     }
-    bool unsupported = false;
-    result = ht_tree_mode_name(ht_tree_reset_mode(tb, &unsupported));
+    result = ht_tree_mode_name(ht_tree_reset_mode(tb));
   }
   gtext_html_tree_free(tb);
   return result;
@@ -1528,14 +2298,19 @@ const char * gtext_html_tree_test_reset_mode(
 /* Characters, a run at a time, in whatever mode the tree is in. A mode that takes only
    leading white space consumes that and hands the rest to the next mode (or drops it). */
 static bool handle_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n) {
-  unsigned guard = 0;
+  /* Every pass either consumes characters or changes the mode toward one that does: the longest run of
+     passes that consume nothing is a chain of modes ("initial" to "in body" is six), bounded as a token's
+     reprocessing is. */
+  size_t stalled = 0;
+  size_t left = n;
   while (n > 0) {
     if (tb->status != GTEXT_HTML_TREE_OK) {
       return false;
     }
-    if (++guard > 64 + n) {
-      /* Every pass either consumes characters or changes the mode toward one that does. */
-      return ht_tree_fail(tb, GTEXT_HTML_TREE_E_INVALID);
+    stalled = n == left ? stalled + 1 : 0;
+    left = n;
+    if (stalled > tb->reprocess_limit) {
+      return ht_tree_fail(tb, GTEXT_HTML_TREE_E_REPROCESS);
     }
     size_t k;
     switch (tb->mode) {
@@ -1648,10 +2423,59 @@ static bool handle_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n) {
           n -= bad;
         }
         return tb->status == GTEXT_HTML_TREE_OK;
+      case M_IN_TABLE:
+      case M_IN_TABLE_BODY:
+      case M_IN_ROW:
+        if (current_is_table_part(tb)) {
+          /* "In table text" collects the characters; a token that is not one ends it. */
+          tb->pend_len = 0;
+          tb->pend_nsegs = 0;
+          tb->pend_foster = false;
+          tb->orig_mode = tb->mode;
+          tb->mode = M_IN_TABLE_TEXT;
+          break;
+        }
+        return foster_chars(tb, &tb->tcur, tb->cur->data, p, n);
+      case M_IN_TABLE_TEXT:
+        return table_text_chars(tb, p, n);
+      case M_IN_CAPTION:
+      case M_IN_CELL:
+      case M_IN_TEMPLATE:
+        return body_chars(tb, p, n);
+      case M_IN_COLUMN_GROUP:
+        /* White space is inserted. Anything else leaves the column group when it is the current
+           node ("anything else": pop it, switch to "in table", reprocess) and is a parse error
+           that is ignored when it is not (a template, say): each such character is dropped, and
+           the white space among them still goes in. */
+        while (n > 0) {
+          k = ws_prefix(p, n);
+          if (k > 0 && !ht_insert_text(tb, p, k)) {
+            return false;
+          }
+          p += k;
+          n -= k;
+          if (n == 0) {
+            return true;
+          }
+          if (is_current(tb, T_COLGROUP)) {
+            ht_stack_pop(tb);
+            tb->mode = M_IN_TABLE;
+            break;
+          }
+          size_t bad = 0;
+          while (bad < n && !is_ws(p[bad])) {
+            bad++;
+          }
+          char_errors(tb, &tb->tcur, tb->cur->data, p, bad);
+          p += bad;
+          n -= bad;
+        }
+        if (n == 0) {
+          return tb->status == GTEXT_HTML_TREE_OK;
+        }
+        break;
       default:
-        return ht_tree_not_yet(tb,
-            tb->mode == M_IN_TEMPLATE ? GTEXT_HTML_NOT_YET_TEMPLATE
-                                      : GTEXT_HTML_NOT_YET_TABLE);
+        return ht_tree_fail(tb, GTEXT_HTML_TREE_E_INVALID);
     }
   }
   return tb->status == GTEXT_HTML_TREE_OK;
@@ -1674,6 +2498,7 @@ bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
         p++;
         n--;
       }
+      ht_seg_cursor_init(&tb->tcur, t->data, t->segments, t->segment_count, t->line, t->column, t->offset);
       return handle_chars(tb, p, n);
     }
     case GTEXT_HTML_TOKEN_DOCTYPE:
@@ -1706,7 +2531,7 @@ bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
     default:
       return ht_tree_fail(tb, GTEXT_HTML_TREE_E_INVALID);
   }
-  for (unsigned guard = 0; guard < 16; guard++) {
+  for (size_t again = 0; again <= tb->reprocess_limit; again++) {
     const int r = k_modes[tb->mode](tb, &tk);
     if (r == R_FAIL || tb->status != GTEXT_HTML_TREE_OK) {
       return false;
@@ -1719,5 +2544,5 @@ bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
       return tb->status == GTEXT_HTML_TREE_OK;
     }
   }
-  return ht_tree_fail(tb, GTEXT_HTML_TREE_E_INVALID);
+  return ht_tree_fail(tb, GTEXT_HTML_TREE_E_REPROCESS);
 }

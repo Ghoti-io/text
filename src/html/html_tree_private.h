@@ -202,14 +202,14 @@ typedef enum {
   M_AFTER_HEAD,
   M_IN_BODY,
   M_TEXT,
-  M_IN_TABLE,        /* 3d: not parsed yet */
-  M_IN_TABLE_TEXT,   /* 3d */
-  M_IN_CAPTION,      /* 3d */
-  M_IN_COLUMN_GROUP, /* 3d */
-  M_IN_TABLE_BODY,   /* 3d */
-  M_IN_ROW,          /* 3d */
-  M_IN_CELL,         /* 3d */
-  M_IN_TEMPLATE,     /* 3d */
+  M_IN_TABLE,
+  M_IN_TABLE_TEXT,
+  M_IN_CAPTION,
+  M_IN_COLUMN_GROUP,
+  M_IN_TABLE_BODY,
+  M_IN_ROW,
+  M_IN_CELL,
+  M_IN_TEMPLATE,
   M_AFTER_BODY,
   M_IN_FRAMESET,
   M_AFTER_FRAMESET,
@@ -298,6 +298,30 @@ typedef struct {
   size_t count;
 } attr_index;
 
+/* An insertion location of the standard: a target parent and the child to insert before
+   (NULL: at the end). */
+typedef struct {
+  HtNode * parent;
+  HtNode * ref;
+} HtPlace;
+
+/* A cursor over the position of the bytes of some characters, given where its pieces start
+   (GTEXT_HTML_TextSegment). advance() moves it forward, never back. */
+typedef struct {
+  const char * data;
+  const GTEXT_HTML_TextSegment * segs;
+  size_t nsegs;
+  size_t next; /* the first segment not applied yet */
+  size_t idx;
+  size_t line;
+  size_t column;
+  size_t offset;
+} SegCursor;
+
+void ht_seg_cursor_init(SegCursor * c, const char * data, const GTEXT_HTML_TextSegment * segs,
+    size_t nsegs, size_t line, size_t column, size_t offset);
+void ht_seg_cursor_advance(SegCursor * c, size_t target);
+
 /* ---- the builder -------------------------------------------------------- */
 
 struct GTEXT_HTML_Tree {
@@ -320,8 +344,31 @@ struct GTEXT_HTML_Tree {
   bool frameset_ok;
   bool skip_lf;
   bool ack_self_closing;
+  bool foster; /* "foster parenting" is enabled (only while "in table" hands a token to "in body") */
   HtNode * head_el;
   HtNode * form_el;
+
+  /* The stack of template insertion modes (InsertionMode values). */
+  uint8_t * tmpl;
+  size_t ntmpl;
+  size_t cap_tmpl;
+
+  /* The "pending table character tokens" of "in table text": the characters, whether any of them
+     is not ASCII white space, and the position of the first token, for the errors. When a token
+     with something other than white space arrives with nothing pending, it is inserted
+     (foster parented) at once and `pend_foster` says the rest of the run follows it. */
+  char * pend;
+  size_t pend_len;
+  size_t pend_cap;
+  bool pend_foster;
+  GTEXT_HTML_TextSegment * pend_segs; /* where the pending characters came from, for their errors */
+  size_t pend_nsegs;
+  size_t pend_segs_cap;
+  /* The position of the characters of the character token being handled, advanced as the run is
+     taken apart (errors are raised for each character, at its own place). */
+  SegCursor tcur;
+  /* The most times one token may be handled again in another mode (see ht_tree_handle_token). */
+  size_t reprocess_limit;
 
   stack_entry * stack;
   size_t n;      /* entries */
@@ -347,9 +394,6 @@ struct GTEXT_HTML_Tree {
   size_t fmt_nblocks;
   size_t fmt_block_cap;
 
-  /* the text node being extended and the capacity of its buffer */
-  HtNode * text_node;
-  size_t text_cap;
 
   /* the token being handled, for error positions and locations */
   const GTEXT_HTML_Token * cur;
@@ -378,6 +422,8 @@ bool ht_tree_not_yet(GTEXT_HTML_Tree * tb, GTEXT_HTML_NotYet what);
 bool ht_tree_markup_status(GTEXT_HTML_Tree * tb, GTEXT_Markup_Status status);
 void ht_tree_error(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code);
 void ht_tree_error_raw(GTEXT_HTML_Tree * tb, int code);
+void ht_tree_error_at(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code, size_t line,
+    size_t column, size_t offset);
 
 /* names */
 bool ht_names_lookup(GTEXT_HTML_Tree * tb, const char * bytes, size_t len,
@@ -394,17 +440,23 @@ enum { SCOPE_GEN, SCOPE_LIST, SCOPE_BUTTON, SCOPE_TABLE };
 bool ht_stack_has_heading_in_scope(const GTEXT_HTML_Tree * tb);
 void ht_stack_pop_until_heading(GTEXT_HTML_Tree * tb);
 void ht_generate_implied_end_tags(GTEXT_HTML_Tree * tb, uint32_t except);
+void ht_generate_all_implied_end_tags_thoroughly(GTEXT_HTML_Tree * tb);
+bool ht_tmpl_push(GTEXT_HTML_Tree * tb, InsertionMode m);
+void ht_tmpl_pop(GTEXT_HTML_Tree * tb);
 bool ht_close_p_element(GTEXT_HTML_Tree * tb);
 bool ht_close_p_if_in_button_scope(GTEXT_HTML_Tree * tb);
 bool ht_any_other_end_tag(GTEXT_HTML_Tree * tb, uint32_t id);
 bool ht_is_heading_id(uint32_t id);
 
 /* insertion */
+void ht_place_at(const GTEXT_HTML_Tree * tb, size_t idx, HtPlace * out);
 bool ht_insert_element(GTEXT_HTML_Tree * tb, const Tk * tk, HtNode ** out);
 bool ht_insert_element_bare(GTEXT_HTML_Tree * tb, uint32_t id, HtNode ** out);
 bool ht_insert_element_into(GTEXT_HTML_Tree * tb, HtNode * parent, uint32_t id,
     const GTEXT_HTML_Attribute * attrs, size_t nattrs, HtNode ** out);
 bool ht_insert_text(GTEXT_HTML_Tree * tb, const char * data, size_t length);
+bool ht_insert_comment(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);
+bool ht_insert_pi(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);
 bool ht_insert_comment_into(GTEXT_HTML_Tree * tb, HtNode * parent, const GTEXT_HTML_Token * t);
 bool ht_insert_pi_into(GTEXT_HTML_Tree * tb, HtNode * parent, const GTEXT_HTML_Token * t);
 bool ht_merge_attributes(GTEXT_HTML_Tree * tb, HtNode * element, const GTEXT_HTML_Attribute * attrs, size_t n);
@@ -423,7 +475,7 @@ bool ht_adoption_agency(GTEXT_HTML_Tree * tb, uint32_t subject);
 
 /* modes (html_tree_modes.c) */
 bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);
-InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb, bool * unsupported);
+InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb);
 const char * ht_tree_mode_name(InsertionMode m);
 int ht_tree_quirks_mode(bool has_name, const char * name, size_t name_len,
     bool has_pub, const char * pub, size_t pub_len, bool has_sys,

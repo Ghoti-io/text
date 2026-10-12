@@ -33,10 +33,16 @@
 
 #include <ghoti.io/text/macros.h>
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "markup_internal.h"
+
+/* The byte `cap_log2` is in the padding after `flags`, not a new field: the 32-bit `line` that follows
+   stays at offset 4, so no node got bigger. */
+_Static_assert(offsetof(struct GTEXT_Markup_Node, cap_log2) == 2 && offsetof(struct GTEXT_Markup_Node, line) == 4,
+    "cap_log2 must fit in the padding between flags and line");
 
 typedef struct GTEXT_Markup_Node node_t;
 
@@ -679,6 +685,7 @@ GTEXT_Markup_Status gtext_markup_node_set_data(
   markup_free(node->doc, *slot);
   *slot = copy;
   *len_slot = length;
+  node->cap_log2 = 0;
   return GTEXT_MARKUP_OK;
 }
 
@@ -1575,17 +1582,31 @@ GTEXT_Markup_Status markup_text_append(GTEXT_Markup_Document * doc, node_t * nod
     return GTEXT_MARKUP_E_OOM;
   }
   const size_t need = t->length + length + 1;
-  if (*capacity < need) {
-    size_t cap = *capacity > t->length ? *capacity : t->length + 1;
-    while (cap < need) {
-      cap = cap > SIZE_MAX / 2 ? need : cap * 2;
+  /* What the buffer holds: the size the node recorded when it last grew, else exactly the data and its NUL
+     (how every path that makes or replaces the data leaves it). The caller's `*capacity` is only an output:
+     a size it remembered would go stale when the data is replaced. */
+  const size_t have = node->cap_log2 ? ((size_t)1 << node->cap_log2) : t->length + 1;
+  if (have < need) {
+    size_t cap = 16;
+    unsigned log2 = 4;
+    while (cap < need && cap <= SIZE_MAX / 2) {
+      cap *= 2;
+      log2++;
+    }
+    if (cap < need) {
+      cap = need;
+      log2 = 0;
     }
     char * grown = markup_realloc(doc, t->data, cap);
     if (!grown) {
       return GTEXT_MARKUP_E_OOM;
     }
     t->data = grown;
+    node->cap_log2 = (uint8_t)log2;
     *capacity = cap;
+  }
+  else {
+    *capacity = have;
   }
   memcpy(t->data + t->length, bytes, length);
   t->length += length;

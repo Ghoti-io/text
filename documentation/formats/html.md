@@ -115,7 +115,7 @@ A public API, encoding determination (3f), scripting beyond the states a tree bu
 
 
 \anchor format_html_tree
-# The tree builder (stage 3c)
+# The tree builder (stages 3c and 3d)
 
 `src/html/html_tree.c`, `html_tree_modes.c`, `html_tree_internal.h` (the contract) and
 `html_tree_private.h`. It drives the tokenizer above and builds a \ref format_markup "Markup"
@@ -127,18 +127,21 @@ only, as the tokenizer is.
 
 WHATWG HTML, "Tree construction" (13.2.4 "Parse state", 13.2.6 "Tree construction"), **as served
 at html.spec.whatwg.org/multipage/parsing.html on 2026-10-11** (Living Standard, last updated 9
-October 2026, the revision the tokenizer was written from; fetched again for this stage), read mode by mode. Implemented:
+October 2026, the revision the tokenizer was written from; fetched again for 3c, and again **2026-10-12 04:25 UTC for
+3d**: the same revision, Last-Modified 9 October 2026 08:28 GMT), read mode by mode. Implemented:
 
 | Section | What |
 | --- | --- |
-| 13.2.4.1 to 13.2.4.5 | the insertion mode, **reset the insertion mode appropriately** (complete: the table, caption, column group and template branches are there, tested over stacks the stage cannot reach), the stack of open elements and its scopes (general, list item, button, table), the list of active formatting elements with **the Noah's Ark clause** (three), reconstruct the active formatting elements, clear up to the last marker, the head, form and frameset-ok state |
+| 13.2.4.1 to 13.2.4.5 | the insertion mode, **reset the insertion mode appropriately** (complete: the table, caption, column group and template branches, the template's branch reading the current template insertion mode; tested over 33 stacks, templates with their modes included), the stack of open elements and its scopes (general, list item, button, table), the list of active formatting elements with **the Noah's Ark clause** (three), reconstruct the active formatting elements, clear up to the last marker, the head, form and frameset-ok state |
 | 13.2.6.1, 13.2.6.2, 13.2.6.3 | inserting nodes, the generic raw text and RCDATA parsing algorithms, generate implied end tags |
 | 13.2.6.4.1 to 13.2.6.4.8 | the modes initial, before html, before head, in head, in head noscript (the scripting flag is an option, off by default), after head, **in body (every start and end tag rule)**, text |
+| 13.2.6.4.9 to 13.2.6.4.16 | **(3d)** in table, in table text, in caption, in column group, in table body, in row, in cell, in template |
+| 13.2.6.1, 13.2.4 | **(3d)** the appropriate place for inserting a node with foster parenting, the stack of template insertion modes, the template contents, "generate all implied end tags thoroughly" |
 | 13.2.6.4.17 to 13.2.6.4.21 | after body, in frameset, after frameset, after after body, after after frameset |
 | 13.2.6.4.7 | **the adoption agency algorithm**, outer-loop limit 8 and inner-loop limit 3, and "any other end tag" |
 | 13.2.6.4.1 | the quirks-mode determination from the doctype (public and system identifier tables) |
 
-Two things in the standard as served that the task statement did not expect, and what was done (the quirks rule
+Five things in the standard as served that the task statements did not expect, and what was done (the quirks rule
 for the 4.01 Frameset and Transitional identifiers says "the system identifier is *missing or the empty string*" in
 the copy served 2026-10-11, so an empty one counts as absent for it, as the code has it; absent and empty stay two
 states from the tokenizer's flag to the tree's NULL and ""):
@@ -146,20 +149,39 @@ states from the tokenizer's flag to the tree's NULL and ""):
 - **There is no "in select" insertion mode.** The `select` element is parsed by ordinary "in body" rules
   (`select`, `option`, `optgroup`, `hr`, `input` and the `select` end tag), and `select` is one of the
   boundaries of "has an element in scope". They are implemented, not stubbed, and `<select>` parses.
-  (html5lib 1.1 and parse5 8.0.1 parse it by the older rules; their documents with a `select` are left out
-  of the differential, and the vectors that hold one are the conformance gate's.)
+  (html5lib 1.1 and parse5 8.0.1 parse it by the older rules. Until 3d their documents with a `select` were
+  left out of the differential; now they are asked, and a divergence in one is explained by removing the select
+  elements, a method with a blind spot stated under "Measured".)
 - **Processing instructions are nodes.** The standard's tokenizer has processing instruction states and the
   tree builder inserts them as nodes (`<?php echo?>` is a processing instruction node, `<?a$>` a comment,
   per the tokenizer); the pinned vectors expect nodes (`processing-instructions.dat`). The task statement said
   "no PIs (bogus comments instead)"; the standard and the vectors win. Neither reference has them.
 
-## Not here yet: the stage gates
+- **The template start tag has two branches this parser cannot take**: declarative shadow roots (it needs the
+  "allow declarative shadow roots" option, false by default, and a host element) and content patching by a `for`
+  attribute (it needs a live document to patch). Without those both end in "insert an HTML element for the token",
+  which is what is done; the "insertion target" and "insertion end marker" the appropriate-place algorithm reads are never
+  set, so a template's place is its contents.
+- **A form start tag in a table inside a template inserts the form** (and sets no pointer), and after head's anything-else
+  sets frameset-ok to "ok" again when it makes the body: html5lib 1.1 and parse5 8.0.1 read both by the older rules.
+  Both are the served text, re-read 2026-10-12 (the page unchanged: Last-Modified 9 October 2026 08:28 GMT). "In table",
+  start tag "form": "Parse error. If the form element pointer is not null, and the parser is not parsing template
+  contents, then ignore the token. Otherwise: Insert an HTML element for the token, and, if the parser is not parsing
+  template contents, set the form element pointer to point to the element created. Pop that form element off the stack of
+  open elements." (The older text, which both references follow, ignored the token when there was a template on the
+  stack or the pointer was set.) "After head", anything else: "Insert an HTML element for a "body" start tag token with no
+  attributes. Set the frameset-ok flag to "ok". Switch the insertion mode to "in body". Reprocess the current token.", and
+  the template start tag in "in head" says "Set the frameset-ok flag to "not ok"." The witnesses
+  `<form><template><table><form>` and `<head><template></template></head><p><frameset>` pin both.
+- **The chapter names no error for an end tag `table` that pops open elements**, but the vectors list one, so one is raised
+  (`open-elements-at-end-tag`). The `#errors` count is not gating beyond the floors.
 
-`table` (in body), `template` (anywhere) and `svg` and `math` start tags are constructs of the next stages.
-A document that reaches one fails with `GTEXT_HTML_TREE_E_NOT_YET`, sticky, no tree, and
-`gtext_html_tree_not_yet()` says which (`table` and `template` are stage 3d, foreign content 3e). End tags
-for them are ordinary ignored end tags (no template is ever open). The fragment parsing algorithm is 3e.
-Not done at all in this stage: a public API, the `<meta>` encoding steps (3f), serialization, scripts.
+## Not here yet: the stage gate
+
+`svg` and `math` start tags (foreign content) are a construct of the next stage. A document that reaches one fails with
+`GTEXT_HTML_TREE_E_NOT_YET`, sticky, no tree, and `gtext_html_tree_not_yet()` says which (foreign content, 3e); the 3d
+values for table and template are gone. The fragment parsing algorithm is 3e as well. Not done at all in this stage: a public
+API, the `<meta>` encoding steps (3f), serialization, scripts.
 
 ## Interface
 
@@ -179,7 +201,7 @@ tokenizer's) and byte offset, capped by `max_errors`, the rest counted. The stan
 error (`non-void-html-element-start-tag-with-trailing-solidus`, raised for a start tag with a trailing
 solidus that nothing acknowledged, an ignored one included); for the rest it says "parse error", and the 14
 codes here are named for what happened (`missing-doctype`, `unexpected-end-tag`, `misnested-formatting`...).
-A tree-stage error is positioned at the first character of the token that caused it (for a NUL in a run of text, the start of the run; tokenizer errors are at the character). Ten of the tree stage's kinds have tests with exact name, line, column and byte offset (`ParseErrorsAreNamedAndPositioned`).
+A tree-stage error is positioned at the first character of the token that caused it, except the errors raised for each character of a run (text foster parented out of a table, characters ignored in a column group, a NUL in the white space that waits in a table), which are at their own character: the tokenizer gives a character token the places its pieces came from (`segments`: a character reference, a carriage return and line feed, a replaced byte each start a piece), the first 1,024 of a run exact and the rest counted on from the last, so the memory is bounded however many references a run holds. Tokenizer errors are at the character. Ten of the tree stage's kinds have tests with exact name, line, column and byte offset (`ParseErrorsAreNamedAndPositioned`).
 
 ## Design
 
@@ -204,56 +226,103 @@ shifts; a repeated `<html>` or `<body>` start tag costs the product of its attri
 
 ## Measured
 
-Numbers are from the gates' output; the commands are named so they can be run again.
+Numbers are from the gates' output, one run of each after the last change to the code (2026-10-12); the commands are
+named so they can be run again.
 
 - `make conformance-html-tree`: the web-platform-tests tree-construction vectors at the commit pinned in
-  `tools/html/WPT_COMMIT`: 1,962 vectors in 58 files, and 59 hand-chosen ones
+  `tools/html/WPT_COMMIT`: 1,962 vectors in 58 files, and 72 hand-chosen ones
   (`tools/conformance/html_tree_extra.dat`, expected trees that html5lib and parse5 both give, rechecked by
-  `tools/oracle/html_tree_extra_check.py`; they exist because the gate's own plants showed rules the vectors
-  never exercise: the adoption agency's bookmark, `ol` and `ul` as list item scope boundaries). The four
-  `scripted_*.dat` files (6 vectors, trees that scripts make) are not run. **1,319 vectors are in scope
-  (initial documents the builder parses); 1,315 pass; 4 are listed because no tree builder following the
-  chapter can pass them** (`webkit02.dat` 45 to 48 expect a `selectedcontent` element to be filled with the
-  selected option's content, a DOM behaviour of the form controls), and 706 are the **tagged exceptions**
-  (`tools/conformance/HTML_TREE_EXCEPTIONS`): stage 3d 318 (219 table, 99 template), stage 3e 384 (178
-  foreign content, 206 fragment vectors), none 4. `make conformance-html-tree-asan` runs the same gate with the library and the runner built with ASan and UBSan (the runner frees each chunk at once). A vector written for a scripting setting runs with it, the
-  others with the flag off and on. Every run is also cut every way (every two-way split, a byte at a time,
-  pieces of 2 to 9, random pieces) and must give the same answer, and the tree passes the invariant checker.
-  `#errors` is compared by count and reported, not gating: 1,129 of the 1,256 passing vectors have exactly the
-  count (every difference is ours being higher, 120 of them in the processing instruction vectors, whose
-  expected counts predate the states). The gate fails on an unlisted failure, a stale exception (one that
-  now passes, or stops elsewhere), and below 1,300 passing; **it is made to fail 48 ways**
-  (`run-html-tree.sh --controls`: the vectors lie, the list lies five ways, three floors (passing, loaded, exact `#errors`), twelve bad requests,
-  and 27 planted defects in the builder, one rule undone each: the Noah's Ark count, both adoption agency
-  limits and its bookmark, the scope tables, the `li`/`dd`/`dt` loops, the form pointer, text merging, `pre`'s
-  line feed, the scripting flag...). Plants of the quirks tables cannot be seen by vectors (the document mode
-  is not in the dump, and the vectors that show it use tables): the tables are tested directly instead
-  (`TheDoctypeDecidesTheDocumentMode`, 43 doctypes).
-- `tests/test-html-tree.cpp` (54 tests): the matrix rows by name, hand-worked adoption agency and Noah's Ark
-  cases, the tag table against the vocabulary, "reset the insertion mode" over 23 stacks, quirks over 43
-  doctypes, every split offset of every vector (two settings of the scripting flag; over 100,000 cut runs)
-  and every three-way cut of six awkward inputs, an allocation failure at every point, the limits, eight
-  threads, and **the work counted at two sizes** (n and 4n) on deep `div`, `p` after 3,000 `span`s, `li`, `dd`/
-  `dt`, stray end tags, `b`/`i` mis-nesting, runs of `a`, `i`, `nobr`, and attributes on many elements: the
-  ratio stays under 6, and the work is under `GTEXT_HTML_TREE_WORK_BOUND(n)` (64 n + 4096). A plant that
-  makes the scope check walk the stack fails them, as it must.
-- `make check-html-oracle` (the tree part, `run-html-oracle.sh --tree`): 10,143 documents (the 1,084 in-scope
-  vectors that have no `select` or processing instruction, the 59 extras, 6,000 generated, 3,000 mutated)
-  put to html5lib 1.1 and parse5 8.0.1 and this builder; none stopped at a later stage. This builder
-  equals parse5 on 9,869 and html5lib on 8,871. **Every divergence is one of 18 kinds** in
-  `tools/oracle/html_tree_divergences.txt`: both references do not know `search` (a 2023 addition: special, and
-  it closes a `p`; `both:` where they agree with each other, `three-way:` where they differ from each other too,
-  judged against parse5), and html5lib 1.1 (2020) alone differs where parse5 agrees with this builder. Every
-  explanation is **verified** by asking again with the elements the reference reads by older rules removed
-  (`search`, `dialog`, `main`, `hgroup`, `figcaption`, `summary`, `menu`, `isindex`, `command`, the ruby parts,
-  `frameset`): the divergence is explained only if the two then agree; 230 of html5lib's do not (`alone:unverified`:
-  its older adoption agency rules, which nest the copies of the formatting elements the other way round). A divergence in a document with none of them, or one
-  that survives their removal, is unexplained and fails; so does a stale entry or a changed count. **Made to
-  fail 20 ways** (the answer corrupted two ways, the list three, the extra cases once, and 14 planted
-  defects). Two hunts beyond the default (`HTML_TREE_ORACLE_COUNT=30000`, seeds 21 and 22: 46,138 documents each, 90,000 of them generated or mutated) found nothing unexplained, in the same 18 kinds.
-- `make fuzz-html-tree`: `fuzz_html_tree` (whole, a byte at a time, pieces, random pieces and one cut: the
-  tree, the errors and the status identical; valid tree; sticky failures; tiny limits; an allocation failing at
-  each allocation up to the last of the parse, which the harness checks it reached; linear work), 1,807 seeds from the vectors and the extras plus 13 deep and wide ones,
-  replayed by `make test`; 31,410 runs of 150 seconds found nothing (before the sweep was made to run to the last allocation of each parse). `make check-html-fuzz-plants` plants six
-  defects: two are *replayed* from a seed, four are *searched for* from the seeds within the time budget, and so
-  is the unedited control, which stays silent.
+  `tools/oracle/html_tree_extra_check.py`; 13 of them are the table modes'). The four
+  `scripted_*.dat` files (6 vectors, trees that scripts make) are not run. **What the denominators are**:
+  1,962 + 72 = 2,034 vectors are run; 206 of them are fragment vectors and 218 stop at foreign content (3e), which
+  leaves **1,610 in scope** (initial documents the builder parses to a tree); **1,606 pass; 4 are listed because no
+  tree builder following the chapter can pass them** (`webkit02.dat` 45 to 48 expect a `selectedcontent` element to
+  be filled with the selected option's content, a DOM behaviour of the form controls). The 428 **tagged exceptions**
+  (`tools/conformance/HTML_TREE_EXCEPTIONS`) are those 206 + 218 + the 4: stage 3d **0** (it was 318: 219 table, 99
+  template), stage 3e 424 (it was 384: 40 vectors that were 3d also hold svg or math, and say "was 3d"), none 4. In the
+  order the plan asks for, reproduced by undoing the groups in scratch copies, on the same 2,034 vectors: the table,
+  section, row, cell, caption and column group modes alone pass 1,402 of the 1,487 in scope (a template stops a
+  document, so the denominator is smaller; 85 need foster parenting); with foster parenting 1,483 of 1,487; with the
+  template modes 1,606 of 1,610. (3c's own run, before the 13 new extras: 1,315 of 1,319.)
+  `make conformance-html-tree-asan` runs the same gate with the library and the runner built with ASan and UBSan (the
+  runner frees each chunk at once). A vector written for a scripting setting runs with it, the others with the flag off
+  and on. Every run is also cut every way (every two-way split, a byte at a time, pieces of 2 to 9, random pieces) and
+  must give the same answer, errors and their places included, and the tree passes the invariant checker (template
+  contents included). `#errors` is compared by count and reported, not gating: 1,396 of the 1,534 vectors that list
+  errors have exactly the count (every difference is ours being higher, 124 of them in the processing instruction vectors,
+  whose expected counts predate the states). The gate fails on an unlisted failure, a stale exception, and below 1,590
+  passing. **It is made to fail 87 ways** (`run-html-tree.sh --controls`, 76 lines of output because the twelve bad requests
+  print as one): 21 that are not planted defects (the vectors lie, the list lies five ways, three floors, twelve bad
+  requests), and **66 planted defects**, one rule undone each, 26 written as sed patterns (3c's; 27 before, one of them split into two literal plants) and 40 as literal texts (38
+  of 3d's, and those two). The 3d ones: the stack not cleared to a table context, the
+  implied colgroup, tbody and tr, a table start tag closing a `p` in quirks mode or never, white space or other text of a
+  table always or never foster parented, the caption, the cell and the close-the-cell algorithm not clearing the
+  formatting list, the column group mode never entered, a `col` left open, the table body and row contexts not cleared, a
+  cell start tag not closing the cell, the form in a table left open or ignored for an open form (twice, one for each of
+  the two modes that have the rule), a hidden input foster parented, foster parenting never enabled / after the table /
+  preferring the table to the template, the adoption agency and reconstruction ignoring foster parenting, text merging
+  with the wrong neighbour, the template contents unused, the template mode stack not replaced / not popped, the
+  template's end of the file ignored, the `html` start tag merging attributes in a template, the body start tag
+  ignoring the template, the body form start tag setting a pointer in a template, the reset ignoring the template mode.
+  **Two of the plants are error-count-only defects**: no tree differs (the end tag `template` popping the cell, row and
+  section without an error whether or not its implied end tags are thorough; the error for the elements a table end tag
+  pops), so only the `#errors` floors see them; their exact error lists are pinned by unit tests instead. **Rules no
+  vector reaches, so no plant here**: the template start tag's marker, the end tag `form` in a template, and the
+  pointer a form in a table in a template does not set (unit tests with exact trees; the first two also by the
+  differential's plants).
+- `tests/test-html-tree.cpp` (85 tests; 54 before 3d) and `tests/test-html-tokenizer.cpp` (84; one new, for the places
+  of a character token's pieces): the matrix rows by name (implied sections, foster parenting, nested tables, cell close,
+  form in a table, template and its modes, EOF, quirks, adoption with foster parenting, depth), the insertion mode after
+  prefixes of tags, error names and places in tables (each character of a foster parented run at its own line, column
+  and byte, across references, CR LF, astral characters, NULs, pieces of the input and the pending white space),
+  "reset the insertion mode" over 33 stacks (a mode name it does not know fails the call), quirks over 43 doctypes, the
+  text of the served standard for the form and the frameset-ok rules, the markup text node's buffer size after each way
+  its data is made, replaced or copied (under ASan), the reprocess limit as its own sticky status, nested templates closed by
+  the end of the file as a loop (50,000 of them with a raised limit), every split offset of every vector (two settings of the
+  scripting flag; over 100,000 cut runs), three-way cuts of ten awkward inputs, an allocation failure at every point (five
+  documents, two cuts, and the white space that waits), the limits (600 templates or tables deep, each its own status and no
+  tree), eight threads, and **the work counted at two sizes** (n and 4n) on deep `div`, `p` after 3,000 `span`s, `li`,
+  `dd`/`dt`, stray end tags, `b`/`i` mis-nesting, runs of `a`, `i`, `nobr`, attributes on many elements, and, new, nested tables,
+  thousands of rows and cells, cells left open, row closes, captions, column groups, long foster-parented text runs, text
+  alternating between the text before a table and the text in it, foster-parented elements and blocks, the adoption agency
+  moving blocks before a table, nested templates and templates in cells: the ratio stays under 6, and the work is under
+  `GTEXT_HTML_TREE_WORK_BOUND(n)` (64 n + 4096). Text and white space are also measured in bytes asked of realloc, which the
+  work counter cannot see (a text node keeps the size of its buffer, so a document that alternates between nodes does not
+  copy a long one on each append; the pending white space of a table doubles).
+- `make check-html-oracle` (the tree part, `run-html-oracle.sh --tree`): 10,476 documents (1,404 vectors in scope without a
+  processing instruction, the 72 extras, 6,000 generated, 3,000 mutated; the generated ones hold tables with every
+  combination of caption, colgroup, col, section, row and cell and tags missing, nested tables, strays that foster parent,
+  misnested forms and hidden inputs, `p` and formatting elements around and inside tables, templates alone, around table
+  parts, nested, in tables and with tables in them, and `select`, `option` and `optgroup`) put to html5lib 1.1 and parse5
+  8.0.1 and this builder; none stopped at a later stage. This builder equals parse5 on 9,497 and html5lib on 7,237. **Every
+  divergence (3,242 documents) is one of 29 kinds** in `tools/oracle/html_tree_divergences.txt`, each **verified** by asking
+  again with the elements the reference reads by older rules removed, one at a time and then all of them (`search`, `dialog`,
+  `main`, `hgroup`, `figcaption`, `summary`, `menu`, `isindex`, `command`, the ruby parts, `frameset`, and for 3d `select`,
+  `template`, the end tags `tbody`, `thead` and `tfoot` (parse5 ends a row at one with no such section open), and `form`
+  (parse5 asks whether any form is in scope at `</form>`)); a divergence in a document with none of them, or one that
+  survives their removal, is unexplained and fails; so does a stale entry or a changed count. **The blind spot**: `template`,
+  `select` and `form` explain *any* divergence in a document that holds the element, so a defect of this library there could
+  hide. It could not be narrowed to signatures (parse5's table scope reaches past a template into rows and tables outside it).
+  Instead: each deviation of a reference is a **witness**, eight small documents whose trees were worked out from the chapter
+  by hand (parse5's table scope does not stop at a template; its row accepts an end tag `thead` with no thead; it ignores a
+  form in a template; it asks about any form at `</form>`; both ignore a form in a table in a template when a form is open
+  outside it, and keep frameset-ok cleared after a template; both read `select` by the old rules; html5lib 1.1 puts a template
+  in the head into the body), which this builder gives and the reference does not, checked on every run with the scripting flag
+  off and on and only if the reference answered (a crash or an error is not a deviation); and the documents in those kinds
+  where **neither reference agrees** with this builder (651 in the default population) are counted, and the count is gated
+  like a kind's. **Made to fail 44 ways** (`run-html-oracle.sh --control NAME`, one at a time: the answer corrupted two
+  ways, the list three, the witnesses once, the uncorroborated count once, the extra cases once, 14 planted defects of 3c and
+  22 of 3d, written as literal texts: one or more per mode, foster parenting four ways, the template and form rules nine). Three
+  hunts beyond the default (`HTML_TREE_ORACLE_COUNT=30000`, seeds 21, 22 and 23: 46,476 + 46,476 + 46,475 = 139,427
+  documents) found nothing unexplained; eight kinds appear only in hunts (`hunt` in the list).
+- `make fuzz-html-tree`: `fuzz_html_tree` (whole, a byte at a time, pieces, random pieces and one cut: the tree, the errors with
+  their places and the status identical; valid tree, and since 3d the shapes the table and template modes make (a tr in a table
+  section, a td in a tr, a col empty and in a colgroup, a template with a content and no children, text directly in a table part
+  only white space, the template contents walked too); sticky failures; tiny limits; an allocation failing at each allocation
+  up to the last of the parse; linear work), 1,839 seeds: the vectors and the extras and 27 deep, wide, table and template
+  ones (a long run of white space in a table, a run with references, CR LF, NULs and astral characters among them), replayed by
+  `make test`; **90,653 runs in 942 seconds** (three runs of 270, 270 and 402 seconds) after the last change found nothing.
+  `make check-html-fuzz-plants` plants fifteen defects in the tree builder: ten are searched for, five replayed from a seed,
+  and so is the unedited control, which stays silent. Nine are 3d's (a shape, a leak, a heap overflow: text left in a table,
+  a template with children, the pending text and the template mode stack not freed, a text buffer size recorded wrongly,
+  no implied tr or tbody, a col not closed, the template that foster parenting finds read from the wrong place).

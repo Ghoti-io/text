@@ -257,6 +257,9 @@ struct GTEXT_HTML_Tokenizer {
 
   /* Output queue: text, then a token, then EOF. */
   vec text;
+  GTEXT_HTML_TextSegment * text_segs;
+  size_t text_nsegs;
+  size_t text_segs_cap;
   where text_where;
   bool text_whitespace;
   bool text_null;
@@ -716,6 +719,34 @@ static void skip(GTEXT_HTML_Tokenizer * t, size_t n) {
 
 /* ---- Text (character tokens) -------------------------------------------- */
 
+/* Remember where the data about to be added starts, when that is not where the data so far would
+   run on to (a reference, a carriage return, a replaced byte). */
+static void text_note_segment(GTEXT_HTML_Tokenizer * t, const where * at) {
+  const size_t len = t->text.length;
+  if (t->text_nsegs > 0) {
+    const GTEXT_HTML_TextSegment * last = &t->text_segs[t->text_nsegs - 1];
+    if (at->offset == last->offset + (len - last->index) || t->text_nsegs >= GTEXT_HTML_MAX_TEXT_SEGMENTS) {
+      return;
+    }
+  }
+  if (t->text_nsegs == t->text_segs_cap) {
+    const size_t cap = t->text_segs_cap ? t->text_segs_cap * 2 : 8;
+    GTEXT_HTML_TextSegment * grown =
+        gtext_allocator_realloc(&t->allocator, t->text_segs, cap * sizeof(*grown));
+    if (!grown) {
+      fail(t, GTEXT_HTML_TOKENIZER_E_OOM);
+      return;
+    }
+    t->text_segs = grown;
+    t->text_segs_cap = cap;
+  }
+  GTEXT_HTML_TextSegment * s = &t->text_segs[t->text_nsegs++];
+  s->index = len;
+  s->line = at->line;
+  s->column = at->column;
+  s->offset = at->offset;
+}
+
 static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
     const where * at, bool whitespace, bool is_null) {
   if (t->has_failed) {
@@ -725,10 +756,17 @@ static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
     t->text_where = *at;
     t->text_whitespace = true;
     t->text_null = false;
+    t->text_nsegs = 0;
   }
   if (n > t->max_text || t->text.length > t->max_text - n) {
     fail(t, GTEXT_HTML_TOKENIZER_E_LIMIT_TEXT);
     return;
+  }
+  if (n > 0) {
+    text_note_segment(t, at);
+    if (t->has_failed) {
+      return;
+    }
   }
   vec_put(t, &t->text, bytes, n);
   if (!whitespace) {
@@ -2969,6 +3007,7 @@ void gtext_html_tokenizer_free(GTEXT_HTML_Tokenizer * t) {
   GTEXT_Allocator a = t->allocator;
   gtext_allocator_free(&a, t->pend);
   gtext_allocator_free(&a, t->text.data);
+  gtext_allocator_free(&a, t->text_segs);
   gtext_allocator_free(&a, t->ar.data);
   gtext_allocator_free(&a, t->temp.data);
   gtext_allocator_free(&a, t->last_start.data);
@@ -3128,6 +3167,8 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_next(
         k->data_length = t->text.length;
         k->all_whitespace = t->text_whitespace;
         k->has_null = t->text_null;
+        k->segments = t->text_segs;
+        k->segment_count = t->text_nsegs;
         k->line = t->text_where.line;
         k->column = t->text_where.column;
         k->offset = t->text_where.offset;

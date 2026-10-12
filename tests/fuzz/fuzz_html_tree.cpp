@@ -36,7 +36,14 @@
  *     `noframes` after a frameset, all
  *     elements in the HTML namespace with lower-case names, attributes in no
  *     namespace, no CDATA section, no empty text node and no two adjacent ones, and
- *     the document mode is set to one of the three;
+ *     the document mode is set to one of the three; and, since stage 3d, the shapes
+ *     the table modes and the template modes make: a template element has a content
+ *     fragment and no children of its own and nothing else has a content; a tr is
+ *     in a tbody, thead, tfoot or a template's content; a td or th in a tr or a
+ *     template's content; a caption, colgroup, tbody, thead or tfoot in a table or a
+ *     template's content; a col in a colgroup or a template's content, and empty;
+ *     the text directly in a table, tbody, thead, tfoot or tr is white space (the
+ *     rest is foster parented); the walk visits the template contents too;
  *     a parse that is not OK is one of the distinct failure statuses, has no tree,
  *     and says the same on every call after it (it is sticky), and E_NOT_YET names
  *     a stage;
@@ -147,14 +154,24 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
   if (elements < 2) {
     return "html does not have a head and a body (or frameset)";
   }
-  for (const GTEXT_Markup_Node * n = root; n; n = gtext_markup_node_next_in_order(root, n, false)) {
+  // Every node, template contents included, with an explicit stack: the public walk does not enter a
+  // template's content.
+  std::vector<const GTEXT_Markup_Node *> todo;
+  todo.push_back(root);
+  while (!todo.empty()) {
+    const GTEXT_Markup_Node * n = todo.back();
+    todo.pop_back();
+    for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(n); c; c = gtext_markup_node_next_sibling(c)) {
+      todo.push_back(c);
+    }
     switch (gtext_markup_node_kind(n)) {
       case GTEXT_MARKUP_KIND_ELEMENT: {
         const char * ns = gtext_markup_element_namespace(n);
         if (!ns || std::strcmp(ns, GTEXT_MARKUP_NS_HTML) != 0) {
           return "an element outside the HTML namespace";
         }
-        for (const char * p = gtext_markup_element_local_name(n); *p; p++) {
+        const char * name = gtext_markup_element_local_name(n);
+        for (const char * p = name; *p; p++) {
           if (*p >= 'A' && *p <= 'Z') {
             return "an element name with an upper case letter";
           }
@@ -168,8 +185,54 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
             return "an attribute in a namespace";
           }
         }
-        if (gtext_markup_element_template_content(n)) {
-          return "a template content, which this stage never makes";
+        const GTEXT_Markup_Node * content = gtext_markup_element_template_content(n);
+        if (std::strcmp(name, "template") == 0) {
+          if (!content) {
+            return "a template without a content fragment";
+          }
+          if (gtext_markup_node_first_child(n)) {
+            return "a template element with children of its own";
+          }
+          if (gtext_markup_node_kind(content) != GTEXT_MARKUP_KIND_FRAGMENT) {
+            return "a template content that is not a document fragment";
+          }
+          todo.push_back(content);
+        }
+        else if (content) {
+          return "a template content on an element that is not a template";
+        }
+        const GTEXT_Markup_Node * parent = gtext_markup_node_parent(n);
+        const GTEXT_Markup_Kind pk = parent ? gtext_markup_node_kind(parent) : GTEXT_MARKUP_KIND_NONE;
+        const bool in_content = pk == GTEXT_MARKUP_KIND_FRAGMENT;
+        auto parent_is = [&](std::initializer_list<const char *> names) {
+          if (in_content) {
+            return true;
+          }
+          for (const char * want : names) {
+            if (parent && pk == GTEXT_MARKUP_KIND_ELEMENT && gtext_markup_element_is(parent, GTEXT_MARKUP_NS_HTML, want)) {
+              return true;
+            }
+          }
+          return false;
+        };
+        if (std::strcmp(name, "tr") == 0 && !parent_is({"tbody", "thead", "tfoot"})) {
+          return "a tr that is not in a table section";
+        }
+        if ((std::strcmp(name, "td") == 0 || std::strcmp(name, "th") == 0) && !parent_is({"tr"})) {
+          return "a td or th that is not in a row";
+        }
+        if ((std::strcmp(name, "caption") == 0 || std::strcmp(name, "colgroup") == 0 || std::strcmp(name, "tbody") == 0
+                || std::strcmp(name, "thead") == 0 || std::strcmp(name, "tfoot") == 0)
+            && !parent_is({"table"})) {
+          return "a caption, colgroup or table section that is not in a table";
+        }
+        if (std::strcmp(name, "col") == 0) {
+          if (!parent_is({"colgroup"})) {
+            return "a col that is not in a colgroup";
+          }
+          if (gtext_markup_node_first_child(n)) {
+            return "a col with children";
+          }
         }
         break;
       }
@@ -177,7 +240,7 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
         return "a CDATA section";
       case GTEXT_MARKUP_KIND_TEXT: {
         size_t len = 0;
-        gtext_markup_node_data(n, &len);
+        const char * data = gtext_markup_node_data(n, &len);
         if (len == 0) {
           return "an empty text node";
         }
@@ -185,8 +248,21 @@ std::string check_tree(const GTEXT_Markup_Document * doc) {
         if (next && gtext_markup_node_kind(next) == GTEXT_MARKUP_KIND_TEXT) {
           return "two adjacent text nodes";
         }
-        if (gtext_markup_node_kind(gtext_markup_node_parent(n)) == GTEXT_MARKUP_KIND_DOCUMENT) {
+        const GTEXT_Markup_Node * parent = gtext_markup_node_parent(n);
+        if (gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_DOCUMENT) {
           return "text directly in the document";
+        }
+        if (gtext_markup_node_kind(parent) == GTEXT_MARKUP_KIND_ELEMENT) {
+          const char * pn = gtext_markup_element_local_name(parent);
+          if (std::strcmp(pn, "table") == 0 || std::strcmp(pn, "tbody") == 0 || std::strcmp(pn, "thead") == 0
+              || std::strcmp(pn, "tfoot") == 0 || std::strcmp(pn, "tr") == 0) {
+            for (size_t i = 0; i < len; i++) {
+              const char c = data[i];
+              if (c != ' ' && c != '\t' && c != '\n' && c != '\f' && c != '\r') {
+                return "text that is not white space directly in a table part";
+              }
+            }
+          }
         }
         break;
       }

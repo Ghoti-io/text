@@ -1,7 +1,8 @@
 # Divergences of the HTML tree builder from html5lib 1.1 and parse5 8.0.1 that are expected and
 # understood, for the default population of tools/oracle/html_tree_diff.py (6,000 generated
-# documents, 3,000 mutated ones, the in-scope tree-construction vectors the references can judge,
-# and tools/conformance/html_tree_extra.dat; seed 1). The gate is html_tree_diff.py: it fails on a
+# documents (tables, templates and selects among them since stage 3d), 3,000 mutated ones, the
+# in-scope tree-construction vectors the references can judge, and
+# tools/conformance/html_tree_extra.dat; seed 1). The gate is html_tree_diff.py: it fails on a
 # divergence of a kind that is not here, on an entry that no longer occurs, and on one whose count has
 # changed (the count is the signature of the population). A count of `hunt` is an entry seen only
 # on the larger populations a hunt generates.
@@ -9,8 +10,12 @@
 # Columns, tab separated: key, count, class, reason.
 #
 # The key is `<who>:<why>`. <why> is the first of the elements the reference reads by older rules (KNOWN_OLD in
-# the script) that the document holds, and the entry is there only because the divergence was verified: the
-# document was asked again with those elements removed, and this library and the reference then agreed.
+# the script) that the document holds (`/name`: the end tags of that element), and the entry is there only
+# because the divergence was verified: the document was asked again with those elements removed, and this
+# library and the reference then agreed. Since stage 3d `template` and `select` are among them, and an
+# explanation by them could hide a defect of this library, so every reference deviation also has a WITNESS in
+# the script: a small document and the tree worked out by hand from the chapter, which this library gives and
+# the reference does not, checked on every run.
 #   parse5:<name>        parse5 differs from this library (html5lib does not, or is not asked).
 #   both:<name>          both references differ from this library and agree with each other.
 #   three-way:<name>     both references differ from this library and from each other; judged against parse5.
@@ -23,24 +28,53 @@
 # reference is older than the standard), reference-wrong (it disagrees with the standard in a way no
 # change explains).
 #
+# **A limit of the method, and what stands in for it.** `template`, `select`, `form` (and `multiple`, which includes
+# them) explain *any* divergence in a document that holds the element, because removing it is what is tried; a defect
+# of this library in those constructs could hide there. It could not be narrowed to signatures: the deviations of the
+# references are not local (parse5's table scope reaches past a template into rows and tables outside it). What
+# stands in for a narrower test: every deviation has a witness (a hand-worked tree, in the script, checked on every run
+# with the scripting flag both ways, and the reference must answer); the pinned vectors (template.dat, the tables
+# files) are the conformance gate's; and the documents in those kinds where **neither reference agrees with this
+# library** (`both:` and `three-way:`) are counted, the count is the `@uncorroborated` line below, and a change of it
+# fails the run like a change of a kind's count.
+#
 # **A divergence in a document with none of the elements the script knows to be read by older rules
 # is never listed**: it is an unexplained divergence, and fails the run.
 #
-both:search	93	standard-newer	the search element (added to the standard in 2023: special, and it closes a p) is unknown to both references, which read it as an ordinary element
+both:form	hunt	reference-wrong	both references differ from this library and agree with each other, in a document with a form. Verified: removing the forms makes this library and parse5 agree (both ignore a form start tag in a table in a template when a form is open outside it, which the standard inserts; witness: <form><template><table><form>)
+both:multiple	hunt	reference-old	both references differ from this library and agree with each other. Verified: removing any one of the elements they read by older rules that the document holds does not make parse5 and this library agree, removing all of them does
+both:search	102	standard-newer	the search element (added to the standard in 2023: special, and it closes a p) is unknown to both references, which read it as an ordinary element
+both:select	104	standard-newer	both references parse select by the "in select" insertion mode that the standard as served no longer has (the relaxed rules are in "in body"), and agree with each other; this library follows the standard. Verified: removing the select elements makes this library and parse5 agree
+both:template	hunt	reference-wrong	both references agree with each other and differ from this library, in a document with a template. Verified: removing the templates makes this library and parse5 agree. Every one found reduces to the form start tag in a table in a template when a form is open outside it, which both ignore and the standard inserts (witness: <form><template><table><form>)
 html5lib:alone:command	1	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is command) makes it agree (html5lib 1.1 still treats command as a void element, which the standard removed)
-html5lib:alone:dialog	108	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is dialog) makes it agree (html5lib 1.1 (2020) predates the standard making dialog an ordinary block element for p closing)
-html5lib:alone:figcaption	23	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is figcaption) makes it agree (html5lib 1.1 does not treat figcaption as a block element that closes a p)
-html5lib:alone:frameset	23	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is frameset) makes it agree (html5lib 1.1 reads frameset documents by older rules (white space and comments after the frameset))
-html5lib:alone:hgroup	32	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is hgroup) makes it agree (html5lib 1.1 does not treat hgroup as a block element that closes a p)
+html5lib:alone:dialog	57	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is dialog) makes it agree (html5lib 1.1 (2020) predates the standard making dialog an ordinary block element for p closing)
+html5lib:alone:figcaption	100	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is figcaption) makes it agree (html5lib 1.1 does not treat figcaption as a block element that closes a p)
+html5lib:alone:frameset	30	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is frameset) makes it agree (html5lib 1.1 reads frameset documents by older rules (white space and comments after the frameset))
+html5lib:alone:hgroup	83	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is hgroup) makes it agree (html5lib 1.1 does not treat hgroup as a block element that closes a p)
 html5lib:alone:isindex	5	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is isindex) makes it agree (html5lib 1.1 still implements isindex, which the standard removed)
-html5lib:alone:main	56	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is main) makes it agree (html5lib 1.1 does not close a p at main in some positions (main is in the standard's block list))
-html5lib:alone:menu	1	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is menu) makes it agree (html5lib 1.1 does not close a p at menu)
-html5lib:alone:rb	3	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rb) makes it agree (html5lib 1.1 implements the older ruby rules)
-html5lib:alone:rp	2	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rp) makes it agree (html5lib 1.1 implements the older ruby rules)
-html5lib:alone:rt	4	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rt) makes it agree (html5lib 1.1 implements the older ruby rules)
-html5lib:alone:rtc	4	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rtc) makes it agree (html5lib 1.1 implements the older ruby rules)
-html5lib:alone:ruby	21	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is ruby) makes it agree (html5lib 1.1 implements the older ruby rules (the standard has rb, rtc and the implied end tags of rp and rt))
-html5lib:alone:search	278	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is search) makes it agree (it has no search element, which parse5 8.0.1 also lacks)
-html5lib:alone:summary	207	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is summary) makes it agree (html5lib 1.1 does not count summary among the special elements)
-html5lib:alone:unverified	230	reference-old	html5lib 1.1 (2020) alone differs and parse5 agrees with this library, and removing the elements html5lib reads by older rules does not make html5lib agree: its adoption agency algorithm nests the copies of the formatting elements the other way round
-three-way:search	181	standard-newer	the search element (added to the standard in 2023: special, and it closes a p) is unknown to both references, which differ from each other as well (html5lib reads other things by older rules); judged against parse5, removing search makes parse5 and this library agree
+html5lib:alone:main	89	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is main) makes it agree (html5lib 1.1 does not close a p at main in some positions (main is in the standard's block list))
+html5lib:alone:menu	hunt	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is menu) makes it agree (html5lib 1.1 does not close a p at menu)
+html5lib:alone:multiple	242	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing any one of the elements it reads by older rules that the document holds does not make it agree, removing all of them does (two or more of the old rules at once)
+html5lib:alone:rb	1	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rb) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:rt	hunt	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rt) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:rtc	2	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is rtc) makes it agree (html5lib 1.1 implements the older ruby rules)
+html5lib:alone:ruby	13	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is ruby) makes it agree (html5lib 1.1 implements the older ruby rules (the standard has rb, rtc and the implied end tags of rp and rt))
+html5lib:alone:search	85	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is search) makes it agree (it has no search element, which parse5 8.0.1 also lacks)
+html5lib:alone:select	22	standard-newer	html5lib 1.1 parses select by the "in select" mode the standard replaced; parse5 8.0.1 agrees with this library here. Verified: removing the select elements makes html5lib agree
+html5lib:alone:summary	93	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the elements it reads by older rules (the first the document holds is summary) makes it agree (html5lib 1.1 does not count summary among the special elements)
+html5lib:alone:template	1236	reference-old	html5lib 1.1 differs, parse5 and this library agree. Verified: removing the templates makes it agree (html5lib 1.1 puts a template that follows nothing into the body, keeps a table part in a template apart from its template, and has older template insertion modes; witness: <template>Hello</template>)
+html5lib:alone:unverified	204	reference-old	html5lib 1.1 (2020) alone differs and parse5 agrees with this library, and removing the elements html5lib reads by older rules does not make html5lib agree: its adoption agency algorithm nests the copies of the formatting elements the other way round
+parse5:/tbody	hunt	reference-wrong	parse5 differs, html5lib and this library agree. Verified: removing the end tags tbody makes it agree (parse5 ends a row at an end tag tbody, thead or tfoot when there is a tr in table scope even if there is no such section; the standard needs both; witness: <table><tr><th></th></thead> )
+parse5:/tfoot	1	reference-wrong	parse5 differs, html5lib and this library agree. Verified: removing the end tags tfoot makes it agree (see parse5:/tbody)
+parse5:/thead	1	reference-wrong	parse5 differs, html5lib and this library agree. Verified: removing the end tags thead makes it agree (see parse5:/tbody)
+parse5:multiple	hunt	reference-old	parse5 differs, html5lib and this library agree. Verified: removing any one of the elements it reads by older rules that the document holds does not make it agree, removing all of them does
+parse5:template	1	reference-wrong	parse5 differs, html5lib and this library agree, in a document with a template. Verified: removing the templates makes them agree (parse5 ignores a form start tag in a table in a template, as the standard did until 2023-24)
+three-way:/tbody	1	reference-wrong	both references differ from this library and from each other, in a document with an end tag tbody in a row (see parse5:/tbody); judged against parse5, removing those end tags makes parse5 and this library agree
+three-way:/tfoot	2	reference-wrong	both references differ from this library and from each other, in a document with an end tag tfoot in a row (see parse5:/tbody); judged against parse5, removing those end tags makes parse5 and this library agree
+three-way:/thead	2	reference-wrong	both references differ from this library and from each other, in a document with an end tag thead in a row (see parse5:/tbody); judged against parse5, removing those end tags makes parse5 and this library agree
+three-way:form	4	reference-wrong	both references differ from this library and from each other, in a document with a form. Verified against parse5: removing the forms makes parse5 and this library agree (parse5 asks whether any form is in scope at an end tag form, where the standard asks about the one the form element pointer names; witness in html_tree_diff.py)
+three-way:multiple	157	reference-old	both references differ from this library and from each other. Verified against parse5: removing any one of the elements the references read by older rules that the document holds does not make parse5 and this library agree, removing all of them does
+three-way:search	218	standard-newer	the search element (added to the standard in 2023: special, and it closes a p) is unknown to both references, which differ from each other as well (html5lib reads other things by older rules); judged against parse5, removing search makes parse5 and this library agree
+three-way:select	100	standard-newer	both references parse select by the replaced "in select" mode and differ from each other as well (inside tables and templates especially); judged against parse5, removing the select elements makes parse5 and this library agree
+three-way:template	286	reference-wrong	both references differ from this library and from each other, in a document with a template. Verified against parse5: removing the templates makes parse5 and this library agree. parse5 does not stop its table scope at a template (an end tag tr, tbody or table closes rows and tables outside it), ignores a form start tag in a table in a template, and keeps frameset-ok cleared after a template; html5lib 1.1 has its own older template handling. The standard decides, and the witnesses in html_tree_diff.py are the hand-worked trees
+@uncorroborated	651	(documents in the kinds both:/three-way: whose cause is template, select, form or multiple)

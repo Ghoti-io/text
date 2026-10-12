@@ -55,8 +55,8 @@ suite_py=$root/tools/conformance/html_tree_suite.py
 exceptions=$root/tools/conformance/HTML_TREE_EXCEPTIONS
 extra=$root/tools/conformance/html_tree_extra.dat
 export HTML_TREE_MIN_VECTORS=${HTML_TREE_MIN_VECTORS:-1900}
-export HTML_TREE_MIN_PASS=${HTML_TREE_MIN_PASS:-1300}
-export HTML_TREE_MIN_EXACT_ERRORS=${HTML_TREE_MIN_EXACT_ERRORS:-1129}
+export HTML_TREE_MIN_PASS=${HTML_TREE_MIN_PASS:-1590}
+export HTML_TREE_MIN_EXACT_ERRORS=${HTML_TREE_MIN_EXACT_ERRORS:-1396}
 
 # --sanitize: the same gate with the library and the runner built with AddressSanitizer and
 # UndefinedBehaviorSanitizer, the library from its sources (the archive is not instrumented). The runner
@@ -126,7 +126,7 @@ expect no-exceptions "UNEXPLAINED FAILURES" python3 "$suite_py" "$suite" "$runne
 expect stale-exception "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/stale" "$extra"
 { cat "$exceptions"; printf 'nothing.dat#1\t3d\ttable\tplanted: no such vector\n'; } > "$scratch/gone"
 expect exception-for-nothing "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/gone" "$extra"
-awk -F'\t' 'BEGIN{OFS="\t"} !done && $2=="3d" && $3=="table" {$2="3e"; done=1} {print}' "$exceptions" > "$scratch/wrongstage"
+awk -F'\t' 'BEGIN{OFS="\t"} !done && $2=="3e" && $3=="foreign" {$3="fragment"; done=1} {print}' "$exceptions" > "$scratch/wrongstage"
 expect exception-in-the-wrong-stage "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/wrongstage" "$extra"
 awk -F'\t' 'BEGIN{OFS="\t"} $2=="none" && !done {$5="0000000000"; done=1} {print}' "$exceptions" > "$scratch/wrongdigest"
 expect exception-with-another-failure "STALE EXCEPTIONS" python3 "$suite_py" "$suite" "$runner" "$scratch/wrongdigest" "$extra"
@@ -156,12 +156,32 @@ expect floor-exact-errors "below the floor" env HTML_TREE_MIN_EXACT_ERRORS=99999
 # The tree builder with one rule undone. Each of these is a defect a vector must catch. The
 # plant copies the whole of src/html (the tag table is in a header both files read), edits one
 # file, and builds the runner against it in front of the archive.
-plant() {
+# plant_with <sed|lit> <name> <heading> <file> <pattern> <replacement>: with `sed` the pattern is a sed
+# expression and every match is replaced; with `lit` it is a literal text (a `\n` in it is a line feed) that must
+# be in the file once or more. The way is an argument, not a variable of the environment.
+plant_with() {
+	how=$1
+	shift
 	name=$1 heading=$2 file=$3 pattern=$4 replacement=$5
 	rm -rf "$scratch/plant"
 	mkdir -p "$scratch/plant/src"
 	cp -r "$root/src/html" "$root/src/markup" "$scratch/plant/src/"
-	sed -i "s#$pattern#$replacement#g" "$scratch/plant/src/html/$file"
+	if [ "$how" = lit ]; then
+		# A literal replacement (the text may span lines: \n in it is a line feed), checked to be there.
+		python3 - "$scratch/plant/src/html/$file" "$pattern" "$replacement" <<'PY'
+import sys
+path, old, new = sys.argv[1:4]
+# The only escape is \n (a line feed); a backslash is otherwise itself.
+old = old.replace("\\n", "\n")
+new = new.replace("\\n", "\n")
+text = open(path).read()
+if old not in text:
+    raise SystemExit("the plant's text is not in %s: %r" % (path, old))
+open(path, "w").write(text.replace(old, new))
+PY
+	else
+		sed -i "s#$pattern#$replacement#g" "$scratch/plant/src/html/$file"
+	fi
 	if cmp -s "$root/src/html/$file" "$scratch/plant/src/html/$file"; then
 		echo "control $name: the plant did not change $file ('$pattern' is not there)" >&2
 		exit 1
@@ -174,6 +194,14 @@ plant() {
 		"$scratch/plant/html_tree.c.o" "$scratch/plant/html_tree_modes.c.o" \
 		-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm -Wl,-rpath,"$PREFIX/lib/ghoti.io"
 	expect "$name" "$heading" python3 "$suite_py" "$suite" "$scratch/runner-$name" "$exceptions" "$extra"
+}
+# The same with a literal text (which may span lines) in place of a sed pattern.
+plant_lit() {
+	plant_with lit "$@"
+}
+
+plant() {
+	plant_with sed "$@"
 }
 fails="UNEXPLAINED FAILURES"
 plant noahs-ark-keeps-four "$fails" html_tree.c 'if (count >= 3) {' 'if (count >= 4) {'
@@ -189,7 +217,8 @@ plant pre-newline-kept "$fails" html_tree_modes.c 'tb->skip_lf = true;' 'tb->ski
 plant html-attributes-not-merged "$fails" html_tree.c 'present = true;' 'present = false;'
 plant p-closed-outside-button-scope "$fails" html_tree.c 'if (ht_stack_in_scope(tb, T_P, SCOPE_BUTTON)) {' 'if (ht_stack_in_scope(tb, T_P, SCOPE_GEN)) {'
 plant implied-end-tags-stop "$fails" html_tree.c 'while (tb->n > 0 \&\& (HT_STACK_TOP(tb).flags \& F_IMPLIED)' 'while (0 \&\& (HT_STACK_TOP(tb).flags \& F_IMPLIED)'
-plant form-pointer-ignored "$fails" html_tree_modes.c 'if (tb->form_el) {' 'if (0) {'
+plant_lit body-form-start-tag-ignored-for-an-open-form "$fails" html_tree_modes.c 'const bool in_template = template_open(tb);\n      if (tb->form_el && !in_template) {' 'const bool in_template = template_open(tb);\n      if (0) {'
+plant_lit table-form-start-tag-ignored-for-an-open-form "$fails" html_tree_modes.c 'const bool in_template = template_open(tb);\n          if (tb->form_el && !in_template) {' 'const bool in_template = template_open(tb);\n          if (0) {'
 plant noscript-flag-ignored "$fails" html_tree_modes.c 'if (!tb->opt.scripting) {' 'if (1) {'
 plant text-not-merged "$fails" html_tree.c 'if (last \&\& last->kind == GTEXT_MARKUP_KIND_TEXT) {' 'if (0) {'
 plant marquee-is-not-a-scope-boundary "$fails" html_tree_private.h 'X(T_MARQUEE, "marquee", F_SPECIAL | F_SC_GEN)' 'X(T_MARQUEE, "marquee", F_SPECIAL)'
@@ -202,5 +231,54 @@ plant image-is-not-img "$fails" html_tree_modes.c 'img.id = T_IMG;' 'img.id = T_
 plant head-element-not-removed-after-head "$fails" html_tree_modes.c 'const int r = h_in_head(tb, tk);' 'const int r = h_in_head(tb, tk); if (r != R_FAIL) { return r; }'
 plant a-in-a-not-closed "$fails" html_tree_modes.c 'HT_CK(ht_adoption_agency(tb, T_A));' '(void)0;'
 plant nobr-in-nobr-not-closed "$fails" html_tree_modes.c 'HT_CK(ht_adoption_agency(tb, T_NOBR));' '(void)0;'
+# Stage 3d: each new mode, foster parenting and the template modes, one rule undone. (The template start tag's
+# marker, the end tag form in a template and the pointer a form in a table in a template does not set have no
+# plant here: no vector reopens a formatting element inside a template, ends a form in one or opens two forms in one
+# table, so none sees those rules go (the two forms are only a unit test: both references ignore them).
+# tests/test-html-tree.cpp does, with a document html5lib 1.1 reads differently from parse5 and this library,
+# and the differential's plants do.)
+plant_lit stack-not-cleared-to-a-table-context "$fails" html_tree_modes.c 'if (ctx == CTX_TABLE && id == T_TABLE) {' 'if (0) {'
+plant_lit no-implied-colgroup-for-col "$fails" html_tree_modes.c 'HT_CK(ht_insert_element_bare(tb, T_COLGROUP, NULL));' '(void)0;'
+plant_lit no-implied-tbody "$fails" html_tree_modes.c 'HT_CK(ht_insert_element_bare(tb, T_TBODY, NULL));' '(void)0;'
+plant_lit no-implied-tr "$fails" html_tree_modes.c 'HT_CK(ht_insert_element_bare(tb, T_TR, NULL));' '(void)0;'
+plant_lit table-start-closes-p-in-quirks-mode "$fails" html_tree_modes.c 'if (gtext_markup_document_mode(tb->doc) != GTEXT_MARKUP_MODE_QUIRKS) {' 'if (1) {'
+plant_lit table-start-never-closes-p "$fails" html_tree_modes.c 'if (gtext_markup_document_mode(tb->doc) != GTEXT_MARKUP_MODE_QUIRKS) {' 'if (0) {'
+plant_lit table-text-white-space-always-foster-parented "$fails" html_tree_modes.c '!tb->pend_foster && ws_prefix(p, len) != len' '!tb->pend_foster && 1'
+plant_lit table-text-never-foster-parented "$fails" html_tree_modes.c '!tb->pend_foster && ws_prefix(p, len) != len' '!tb->pend_foster && 0'
+plant_lit pending-white-space-dropped "$fails" html_tree_modes.c 'if (!tb->pend_foster && tb->pend_len > 0) {\n    HT_CK(ht_insert_text' 'if (0) {\n    HT_CK(ht_insert_text'
+plant_lit caption-mode-never-entered "$fails" html_tree_modes.c 'tb->mode = M_IN_CAPTION;' 'tb->mode = M_IN_TABLE;'
+plant_lit caption-end-keeps-formatting "$fails" html_tree_modes.c 'ht_stack_pop_until(tb, T_CAPTION);\n  ht_fmt_clear_to_marker(tb);' 'ht_stack_pop_until(tb, T_CAPTION);'
+plant_lit column-group-mode-never-entered "$fails" html_tree_modes.c 'tb->mode = M_IN_COLUMN_GROUP;' 'tb->mode = M_IN_TABLE;'
+plant_lit col-not-popped "$fails" html_tree_modes.c 'HT_CK(ht_insert_element(tb, tk, NULL));\n        HT_CK(ht_pop_current_acknowledge(tb, tk));\n        return R_DONE;\n      }\n      if (tk->id == T_TEMPLATE) {' 'HT_CK(ht_insert_element(tb, tk, NULL));\n        return R_DONE;\n      }\n      if (tk->id == T_TEMPLATE) {'
+plant_lit table-body-context-not-cleared "$fails" html_tree_modes.c 'clear_to_context(tb, CTX_BODY);' '(void)0;'
+plant_lit row-context-not-cleared "$fails" html_tree_modes.c 'clear_to_context(tb, CTX_ROW);' '(void)0;'
+plant_lit cell-start-pushes-no-marker "$fails" html_tree_modes.c 'tb->mode = M_IN_CELL;\n        HT_CK(ht_fmt_push_marker(tb));' 'tb->mode = M_IN_CELL;'
+plant_lit cell-end-keeps-formatting "$fails" html_tree_modes.c 'ht_stack_pop_until(tb, tk->id);\n        ht_fmt_clear_to_marker(tb);\n        tb->mode = M_IN_ROW;' 'ht_stack_pop_until(tb, tk->id);\n        tb->mode = M_IN_ROW;'
+plant_lit close-cell-keeps-formatting "$fails" html_tree_modes.c '  ht_fmt_clear_to_marker(tb);\n  tb->mode = M_IN_ROW;' '  tb->mode = M_IN_ROW;'
+plant_lit cell-start-tag-does-not-close-the-cell "$fails" html_tree_modes.c 'close_cell(tb);\n        return tb->status == GTEXT_HTML_TREE_OK ? R_REPROCESS : R_FAIL;\n      default:\n        break;\n    }\n  }\n  return h_in_body(tb, tk);' 'return IGNORE_START(tb);\n      default:\n        break;\n    }\n  }\n  return h_in_body(tb, tk);'
+plant_lit form-in-table-keeps-the-form-open "$fails" html_tree_modes.c 'HT_CK(ht_insert_element(tb, tk, in_template ? NULL : &tb->form_el));\n          ht_stack_pop(tb);' 'HT_CK(ht_insert_element(tb, tk, in_template ? NULL : &tb->form_el));'
+plant_lit hidden-input-in-table-foster-parented "$fails" html_tree_modes.c 'if (!has_attribute(tk, "type") || !attribute_is(tk, "type", "hidden")) {\n            break;' 'if (1) {\n            break;'
+plant_lit table-end-tag-ignores-the-scope "$fails" html_tree_modes.c 'if (!in_table_scope(tb, T_TABLE)) {\n            return IGNORE_END(tb);' 'if (0) {\n            return IGNORE_END(tb);'
+plant_lit foster-parenting-never-enabled "$fails" html_tree_modes.c 'tb->foster = true;' 'tb->foster = false;'
+plant_lit foster-parented-after-the-table "$fails" html_tree.c 'ref = table;' 'ref = table->next;'
+plant_lit foster-parenting-prefers-the-table-to-the-template "$fails" html_tree.c 'else if (lb == NONE_IDX || (lt != NONE_IDX && lt > lb)) {' 'else if (lb == NONE_IDX) {'
+plant_lit adoption-agency-ignores-foster-parenting "$fails" html_tree.c 'ht_place_at(tb, idx - 1, &at);' 'at.parent = tb->stack[idx - 1].node; at.ref = NULL;'
+plant_lit reconstruction-ignores-foster-parenting "$fails" html_tree.c '    ht_place_at(tb, tb->n - 1, &at);\n    markup_insert_unchecked(at.parent, fresh, at.ref);' '    at.parent = HT_STACK_TOP(tb).node; at.ref = NULL;\n    markup_insert_unchecked(at.parent, fresh, at.ref);'
+plant_lit text-merges-with-the-wrong-neighbour "$fails" html_tree.c 'HtNode * last = at.ref ? at.ref->prev : at.parent->last_child;' 'HtNode * last = at.parent->last_child;'
+plant_lit template-contents-not-used "$fails" html_tree.c '  if (tmpl) {\n    target = ((markup_element *)target)->content;' '  if (0) {\n    target = ((markup_element *)target)->content;'
+plant_lit template-mode-stack-not-replaced "$fails" html_tree_modes.c '  ht_tmpl_pop(tb);\n  HT_CK(ht_tmpl_push(tb, m));' '  HT_CK(ht_tmpl_push(tb, m));'
+plant_lit template-end-tag-pops-no-mode "$fails" html_tree_modes.c 'ht_fmt_clear_to_marker(tb);\n  ht_tmpl_pop(tb);\n  tb->mode = ht_tree_reset_mode(tb);\n  return tb->status' 'ht_fmt_clear_to_marker(tb);\n  tb->mode = ht_tree_reset_mode(tb);\n  return tb->status'
+# Two of the 3d plants below are **error-count-only defects**: no tree differs when they are in, so only the `#errors`
+# floors can see them (their heading is the floor's): the end tag template popping the cell, row and section without
+# an error (the tree is the same whether the implied end tags are thorough or not), and the table end tag's error for
+# the elements it pops. Their exact error lists are pinned by tests/test-html-tree.cpp instead
+# (ATemplateEndTagClosesTheTableStuffInsideIt, ErrorsInTablesAreNamedAndPositioned).
+plant_lit template-end-tag-implied-tags-not-thorough "below the floor" html_tree_modes.c 'ht_generate_all_implied_end_tags_thoroughly(tb);' 'ht_generate_implied_end_tags(tb, NONE_IDX);'
+plant_lit template-end-of-file-ignored "$fails" html_tree_modes.c 'if (tb->ntmpl > 0) {\n        return h_in_template(tb, tk);' 'if (0) {\n        return h_in_template(tb, tk);'
+plant_lit html-start-tag-merges-attributes-in-a-template "$fails" html_tree_modes.c 'if (template_open(tb)) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]' 'if (0) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]'
+plant_lit body-form-start-tag-sets-the-pointer-in-a-template "$fails" html_tree_modes.c 'case T_FORM: {\n      const bool in_template = template_open(tb);' 'case T_FORM: {\n      const bool in_template = false;'
+plant_lit body-start-tag-ignores-the-template "$fails" html_tree_modes.c '|| template_open(tb)) {' ') {'
+plant_lit reset-mode-ignores-the-template-mode "$fails" html_tree_modes.c 'return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;' 'return M_IN_TEMPLATE;'
+plant_lit open-element-error-for-the-table-end-tag-dropped "UNEXPLAINED ERROR COUNTS" html_tree_modes.c '            ht_tree_error(tb, GTEXT_HTML_TREE_ERR_OPEN_ELEMENTS_AT_END_TAG);\n          }\n          ht_stack_pop_until(tb, T_TABLE);\n          tb->mode = ht_tree_reset_mode(tb);\n          return R_DONE;' '          }\n          ht_stack_pop_until(tb, T_TABLE);\n          tb->mode = ht_tree_reset_mode(tb);\n          return R_DONE;'
 # A crash is a failure, not a missing answer.
 plant crash "$fails" html_tree_modes.c 'static bool is_ws(char c) {' 'static bool is_ws(char c) { if (c == 0x61) { *(volatile int *)0 = 0; }'

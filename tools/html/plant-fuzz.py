@@ -55,9 +55,10 @@ fails. The control is searched as well.
                    a few hundred attributes costs the square of that: the fuzzer's work
                    bound, fed a byte at a time. The seed `many-attributes` is a tag of 900.
 
-The tree builder's fuzzer (tests/fuzz/fuzz_html_tree.cpp, target `html-tree`) has six, two of
-them replayed from a seed (`tree-text-not-merged`, `tree-atom-leak`) and four searched for from
-the seeds, with its own unedited control (`control-tree`):
+The tree builder's fuzzer (tests/fuzz/fuzz_html_tree.cpp, target `html-tree`) has fifteen, five of
+them replayed from a seed (`tree-text-not-merged`, `tree-atom-leak`, `tree-pending-text-leak`,
+`tree-template-modes-leak`, `tree-text-capacity-stale`) and ten searched for from the seeds, with
+its own unedited control (`control-tree`):
 
   tree-text-not-merged   adjacent runs of text are not appended to one node: the fuzzer's
                    validity property (no two adjacent text nodes).
@@ -71,6 +72,29 @@ the seeds, with its own unedited control (`control-tree`):
   tree-absorbed-oom  an allocation failure while a run of text is appended to a text node is
                    ignored: the tree is silently short, which the allocation-failure sweep sees
                    as an answer that is not the normal one.
+
+and, for stage 3d, nine that break a property of the shapes the table and template modes build
+(the fuzzer cannot say a tree is the *right* one; the vectors and the differential do that):
+
+  tree-table-text-in-table   text that is not white space is left in a table instead of being
+                   foster parented: the property that the text directly in a table part is
+                   white space.                                   (in table text)
+  tree-template-children   the appropriate place for inserting a node never uses a template's
+                   content: the template element gets children of its own.        (template)
+  tree-pending-text-leak   the pending table text is not freed with the builder: the counting
+                   allocator and LeakSanitizer.  Replayed from `table-text-pending`.
+  tree-template-modes-leak   the stack of template insertion modes is not freed: the same,
+                   replayed from `nested-templates`.
+  tree-text-capacity-stale   a new text node is recorded with a capacity it does not have, so
+                   the next piece of text is written past the end: AddressSanitizer.  Replayed
+                   from `text-in-pieces`.                      (foster parenting's two nodes)
+  tree-no-implied-tr   a td in a table body is not given a tr: a td that is not in a row.
+                   (in table body)
+  tree-no-implied-tbody   a tr in a table is not given a tbody.                   (in table)
+  tree-col-not-popped   a col in a column group stays open and takes what follows as children:
+                   a col with children.                                  (in column group)
+  tree-foster-into-the-wrong-template   the template that foster parenting finds is read from
+                   the wrong place in the stack: AddressSanitizer.           (foster parenting)
 
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
@@ -103,8 +127,35 @@ PLANTS = {
                             "  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_feed(tb->tok, data, length);\n"
                             "  if (length == 1) {\n    tb->frameset_ok = false;\n  }\n"),
     "tree-absorbed-oom": ("html-tree", "src/html/html_tree.c",
-                          "    if (!ht_tree_markup_status(\n            tb, markup_text_append(tb->doc, last, &cap, data, length))) {\n      return false;\n    }\n",
-                          "    (void)markup_text_append(tb->doc, last, &cap, data, length);\n"),
+                          "    return ht_tree_markup_status(\n        tb, markup_text_append(tb->doc, last, &cap, data, length));\n",
+                          "    (void)markup_text_append(tb->doc, last, &cap, data, length);\n    return true;\n"),
+    # Stage 3d. Each breaks a property the fuzzer holds the tree to (a valid shape, no leak, no heap
+    # overflow); that the table and template modes build the *right* tree is the vectors' and the
+    # differential's, which a property cannot say.
+    "tree-table-text-in-table": ("html-tree", "src/html/html_tree_modes.c",
+                                 "      if (!tb->pend_foster && ws_prefix(p, len) != len) {",
+                                 "      if (!tb->pend_foster && 0) {"),
+    "tree-template-children": ("html-tree", "src/html/html_tree.c",
+                               "  if (tmpl) {\n    target = ((markup_element *)target)->content;\n  }\n", ""),
+    "tree-pending-text-leak": ("html-tree", "src/html/html_tree.c",
+                               "  gtext_allocator_free(&alloc, tb->pend);\n", ""),
+    "tree-template-modes-leak": ("html-tree", "src/html/html_tree.c",
+                                 "  gtext_allocator_free(&alloc, tb->tmpl);\n", ""),
+    "tree-text-capacity-stale": ("html-tree", "src/markup/markup_tree.c",
+                                 "    node->cap_log2 = (uint8_t)log2;\n    *capacity = cap;\n",
+                                 "    node->cap_log2 = (uint8_t)(log2 + 3);\n    *capacity = cap;\n"),
+    "tree-no-implied-tr": ("html-tree", "src/html/html_tree_modes.c",
+                           "        HT_CK(ht_insert_element_bare(tb, T_TR, NULL));\n", "        (void)0;\n"),
+    "tree-no-implied-tbody": ("html-tree", "src/html/html_tree_modes.c",
+                              "          HT_CK(ht_insert_element_bare(tb, T_TBODY, NULL));\n", "          (void)0;\n"),
+    "tree-col-not-popped": ("html-tree", "src/html/html_tree_modes.c",
+                            "        HT_CK(ht_insert_element(tb, tk, NULL));\n        HT_CK(ht_pop_current_acknowledge(tb, tk));\n"
+                            "        return R_DONE;\n      }\n      if (tk->id == T_TEMPLATE) {",
+                            "        HT_CK(ht_insert_element(tb, tk, NULL));\n"
+                            "        return R_DONE;\n      }\n      if (tk->id == T_TEMPLATE) {"),
+    "tree-foster-into-the-wrong-template": ("html-tree", "src/html/html_tree.c",
+                                            "      target = tb->stack[lt].node;\n      tmpl = true;",
+                                            "      target = tb->stack[lt + tb->cap].node;\n      tmpl = true;"),
     "cr-at-a-cut": ("html-tokenizer", "src/html/html_tokenizer.c",
                     "      if (p + 1 >= len) {\n        if (!t->final) {\n          return false;\n        }\n        *cp = '\\n';",
                     "      if (p + 1 >= len) {\n        *cp = '\\n';"),
@@ -154,6 +205,9 @@ REPRODUCERS = {
     "two-byte-utf8": "tests/fuzz/corpus/html-tokenizer/reproducer-two-byte-utf8.seed",
     "tree-text-not-merged": "tests/fuzz/corpus/html-tree/text-in-pieces.seed",
     "tree-atom-leak": "tests/fuzz/corpus/html-tree/deep-div.seed",
+    "tree-pending-text-leak": "tests/fuzz/corpus/html-tree/table-text-pending.seed",
+    "tree-template-modes-leak": "tests/fuzz/corpus/html-tree/nested-templates.seed",
+    "tree-text-capacity-stale": "tests/fuzz/corpus/html-tree/text-in-pieces.seed",
 }
 
 

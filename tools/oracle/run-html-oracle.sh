@@ -156,7 +156,11 @@ tokenizer_plant() {
 # The tree builder's own source with one rule undone, compiled into a runner of its own (its objects
 # are linked ahead of the archive and supply every symbol of the two files). The differential must
 # fail on it. The plant copies src/html and src/markup, since the tag table is in a header both read.
-tree_plant() {
+# tree_plant_with <sed|lit> <name> <file> <pattern> <replacement> [heading [detail]]: `sed` takes a sed
+# expression, `lit` a literal text (a `\n` in it is a line feed); the way is an argument.
+tree_plant_with() {
+	how=$1
+	shift
 	name=$1 file=$2 pattern=$3 replacement=$4 heading=${5:-Divergences with no entry\\|Listed divergences whose count has changed\\|Listed divergences that are gone\\|The invariant checker failed} detail=${6:-.}
 	if [ -n "$only" ] && [ "$only" != "tree-$name" ]; then
 		return 0
@@ -164,7 +168,22 @@ tree_plant() {
 	rm -rf "$scratch/tplant"
 	mkdir -p "$scratch/tplant/src"
 	cp -r "$root/src/html" "$root/src/markup" "$scratch/tplant/src/"
-	sed -i "s#$pattern#$replacement#g" "$scratch/tplant/src/html/$file"
+	if [ "$how" = lit ]; then
+		# A literal text (which may span lines: \n in it is a line feed), checked to be there.
+		python3 - "$scratch/tplant/src/html/$file" "$pattern" "$replacement" <<'PY'
+import sys
+path, old, new = sys.argv[1:4]
+# The only escape is \n (a line feed); a backslash is otherwise itself.
+old = old.replace("\\n", "\n")
+new = new.replace("\\n", "\n")
+text = open(path).read()
+if old not in text:
+    raise SystemExit("the plant's text is not in %s: %r" % (path, old))
+open(path, "w").write(text.replace(old, new))
+PY
+	else
+		sed -i "s#$pattern#$replacement#g" "$scratch/tplant/src/html/$file"
+	fi
 	if cmp -s "$root/src/html/$file" "$scratch/tplant/src/html/$file"; then
 		echo "control tree-$name: the plant did not change $file ('$pattern' is not there)" >&2
 		exit 1
@@ -179,6 +198,15 @@ tree_plant() {
 	expect "tree-$name" "$heading" "$detail" \
 		python3 "$root/tools/oracle/oracle_run.py" html -- \
 		python3 "$root/tools/oracle/html_tree_diff.py" "$scratch/trree-$name"
+}
+
+# The same with a literal text in place of a sed pattern.
+tree_plant_lit() {
+	tree_plant_with lit "$@"
+}
+
+tree_plant() {
+	tree_plant_with sed "$@"
 }
 
 check_controls() {
@@ -269,6 +297,8 @@ check_controls() {
 	expect tree-stale-entry "Listed divergences that are gone" "planted-gone" run_tree_diff --plant stale-entry
 	expect tree-change-count "Listed divergences whose count has changed" "listed" run_tree_diff --plant change-count
 	expect tree-no-list "Divergences with no entry" "alone" run_tree_diff --plant no-list
+	expect tree-witness "A witness of a reference deviation does not hold" "planted" run_tree_diff --plant witness
+	expect tree-uncorroborated "Uncorroborated documents whose count has changed" "listed" run_tree_diff --plant uncorroborated
 	expect tree-extra-expectation "Extra cases a reference does not reproduce" "html_tree_extra" \
 		python3 "$root/tools/oracle/oracle_run.py" html -- \
 		python3 "$root/tools/oracle/html_tree_extra_check.py" --plant expectation
@@ -286,6 +316,31 @@ check_controls() {
 	tree_plant frameset-ok-never-cleared html_tree_modes.c 'if (ws_prefix(p, len) != len) {' 'if (0) {'
 	tree_plant pre-newline-kept html_tree_modes.c 'tb->skip_lf = true;' 'tb->skip_lf = false;'
 	tree_plant html-attributes-not-merged html_tree.c 'present = true;' 'present = false;'
+	# Stage 3d: a rule of each new mode undone, foster parenting four ways, the template modes five, and the quirks
+	# rule of the table start tag. The population holds tables and templates (generated, and the vectors'), so a
+	# plant that changes a tree there is a divergence with no entry or a changed count.
+	tree_plant_lit table-stack-not-cleared-to-a-table-context html_tree_modes.c 'if (ctx == CTX_TABLE && id == T_TABLE) {' 'if (0) {'
+	tree_plant_lit table-start-closes-p-in-quirks-mode html_tree_modes.c 'if (gtext_markup_document_mode(tb->doc) != GTEXT_MARKUP_MODE_QUIRKS) {' 'if (1) {'
+	tree_plant_lit table-text-never-foster-parented html_tree_modes.c '!tb->pend_foster && ws_prefix(p, len) != len' '!tb->pend_foster && 0'
+	tree_plant_lit caption-end-keeps-formatting html_tree_modes.c 'ht_stack_pop_until(tb, T_CAPTION);\n  ht_fmt_clear_to_marker(tb);' 'ht_stack_pop_until(tb, T_CAPTION);'
+	tree_plant_lit column-group-col-not-popped html_tree_modes.c 'HT_CK(ht_insert_element(tb, tk, NULL));\n        HT_CK(ht_pop_current_acknowledge(tb, tk));\n        return R_DONE;\n      }\n      if (tk->id == T_TEMPLATE) {' 'HT_CK(ht_insert_element(tb, tk, NULL));\n        return R_DONE;\n      }\n      if (tk->id == T_TEMPLATE) {'
+	tree_plant_lit table-body-context-not-cleared html_tree_modes.c 'clear_to_context(tb, CTX_BODY);' '(void)0;'
+	tree_plant_lit row-context-not-cleared html_tree_modes.c 'clear_to_context(tb, CTX_ROW);' '(void)0;'
+	tree_plant_lit close-cell-keeps-formatting html_tree_modes.c '  ht_fmt_clear_to_marker(tb);\n  tb->mode = M_IN_ROW;' '  tb->mode = M_IN_ROW;'
+	tree_plant_lit cell-start-tag-does-not-close-the-cell html_tree_modes.c 'close_cell(tb);\n        return tb->status == GTEXT_HTML_TREE_OK ? R_REPROCESS : R_FAIL;\n      default:\n        break;\n    }\n  }\n  return h_in_body(tb, tk);' 'return IGNORE_START(tb);\n      default:\n        break;\n    }\n  }\n  return h_in_body(tb, tk);'
+	tree_plant_lit foster-parented-after-the-table html_tree.c 'ref = table;' 'ref = table->next;'
+	tree_plant_lit foster-parenting-prefers-the-table-to-the-template html_tree.c 'else if (lb == NONE_IDX || (lt != NONE_IDX && lt > lb)) {' 'else if (lb == NONE_IDX) {'
+	tree_plant_lit adoption-agency-ignores-foster-parenting html_tree.c 'ht_place_at(tb, idx - 1, &at);' 'at.parent = tb->stack[idx - 1].node; at.ref = NULL;'
+	tree_plant_lit reconstruction-ignores-foster-parenting html_tree.c '    ht_place_at(tb, tb->n - 1, &at);\n    markup_insert_unchecked(at.parent, fresh, at.ref);' '    at.parent = HT_STACK_TOP(tb).node; at.ref = NULL;\n    markup_insert_unchecked(at.parent, fresh, at.ref);'
+	tree_plant_lit template-contents-not-used html_tree.c '  if (tmpl) {\n    target = ((markup_element *)target)->content;' '  if (0) {\n    target = ((markup_element *)target)->content;'
+	tree_plant_lit template-mode-stack-not-replaced html_tree_modes.c '  ht_tmpl_pop(tb);\n  HT_CK(ht_tmpl_push(tb, m));' '  HT_CK(ht_tmpl_push(tb, m));'
+	tree_plant_lit template-end-tag-pops-no-mode html_tree_modes.c 'ht_fmt_clear_to_marker(tb);\n  ht_tmpl_pop(tb);\n  tb->mode = ht_tree_reset_mode(tb);\n  return tb->status' 'ht_fmt_clear_to_marker(tb);\n  tb->mode = ht_tree_reset_mode(tb);\n  return tb->status'
+	tree_plant_lit template-start-pushes-no-marker html_tree_modes.c 'HT_CK(ht_fmt_push_marker(tb));\n          tb->frameset_ok = false;\n          HT_CK(ht_tmpl_push' 'tb->frameset_ok = false;\n          HT_CK(ht_tmpl_push'
+	tree_plant_lit template-end-of-file-ignored html_tree_modes.c 'if (tb->ntmpl > 0) {\n        return h_in_template(tb, tk);' 'if (0) {\n        return h_in_template(tb, tk);'
+	tree_plant_lit body-form-start-tag-sets-the-pointer-in-a-template html_tree_modes.c 'case T_FORM: {\n      const bool in_template = template_open(tb);' 'case T_FORM: {\n      const bool in_template = false;'
+	tree_plant_lit html-start-tag-merges-attributes-in-a-template html_tree_modes.c 'if (template_open(tb)) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]' 'if (0) {\n        return R_DONE;\n      }\n      HT_CK(ht_merge_attributes(tb, tb->stack[0]'
+	tree_plant_lit form-end-tag-in-a-template-asks-for-the-pointer html_tree_modes.c 'if (template_open(tb)) {\n        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {' 'if (0) {\n        if (!ht_stack_in_scope(tb, T_FORM, SCOPE_GEN)) {'
+	tree_plant_lit reset-mode-ignores-the-template-mode html_tree_modes.c 'return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;' 'return M_IN_TEMPLATE;'
 }
 
 run_tree_diff() {

@@ -4,7 +4,7 @@
     html_tree_diff.py <tree-runner> [--count N] [--seed S] [--plant KIND] [--propose]
                                     [--no-corpus] [--explain N]
 
-The tree builder (src/html/html_tree*.c, stage 3c) is scored on the standard's own vectors by
+The tree builder (src/html/html_tree*.c, stages 3c and 3d) is scored on the standard's own vectors by
 `make conformance-html-tree`. This asks the same question of a population nobody wrote: documents
 generated from the vocabulary of the constructs the stage implements, mutated documents, and the
 inputs of the vectors, each put to **html5lib 1.1 and parse5 8.0.1** (the pinned image,
@@ -21,14 +21,20 @@ The population, each document tagged with where it came from:
   gen    generated documents: well-formed-ish nesting of blocks, lists, headings, formatting
          elements (with attributes, for the Noah's Ark clause), void elements, raw text
          elements, head elements, framesets, forms, buttons, markers, comments, text with
-         references and white space, end tags of anything in any place
+         references and white space, end tags of anything in any place; and, since 3d, tables
+         (every combination of caption, colgroup, col, section, row and cell with tags
+         missing, nested tables, text and elements in a table that foster parent, misnested
+         forms, hidden inputs, `p` and formatting elements around and inside tables), templates
+         (alone, around table parts, nested, in tables, tables in them), and select, option and
+         optgroup
   mut    those, with tokens deleted, duplicated, swapped, inserted, or the document cut
 
-**The generator avoids the constructs of later stages** (tables, template, svg, math) and the
-ones the references parse by the older rules (select; processing instructions, which neither
-reference has): a document that reaches one is counted as "stopped", and the run fails if that is
-more than a small share of the generated ones, so that the generator cannot drift out of the
-implemented constructs unnoticed.
+**The generator avoids the constructs of later stages** (svg, math) and processing instructions,
+which neither reference has: a document that reaches one is counted as "stopped", and the run fails
+if that is more than a small share of the generated ones, so that the generator cannot drift out of
+the implemented constructs unnoticed. `select` is asked: the references parse it by the rules the
+standard has replaced, and a divergence in a document with one is explained (verified by removal)
+like any other element they read by older rules.
 
 **What fails the run.** A document on which this library's tree differs from a reference's is a
 divergence, and its *kind* is the pair (reference, signature), the signature being why: the
@@ -81,6 +87,8 @@ PLANTS = {
     "stale-entry": "the list gets an entry for a divergence that does not occur",
     "change-count": "the count of one listed entry is changed",
     "no-list": "the list is empty",
+    "witness": "a witness of a reference deviation does not hold",
+    "uncorroborated": "the listed number of uncorroborated documents is changed",
 }
 
 # ---- the generator ----------------------------------------------------------------------------
@@ -101,7 +109,9 @@ HEADISH = ["title", "meta", "link", "base", "script", "style", "noscript", "nofr
 RUBY = ["ruby", "rb", "rt", "rp", "rtc"]
 FRAMES = ["frameset", "frame"]
 FORMS = ["form", "button", "legend", "optgroup", "option", "caption", "col", "colgroup", "td", "tr", "th",
-         "tbody", "thead", "tfoot"]  # the table ones are ignored in the body; none enters a table mode
+         "tbody", "thead", "tfoot"]  # the table ones are ignored in the body
+TABLE_PARTS = ["table", "caption", "colgroup", "col", "tbody", "thead", "tfoot", "tr", "td", "th"]
+SELECTS = ["select", "option", "optgroup"]
 UNKNOWN = ["foo", "bar", "x-y", "a$b"]
 ATTRS = ["", "", "", " class=a", " class=b", " id=x", " a", " a b", " b a", " href=u", " type=hidden",
          " data-x=\"1 2\"", " class=a id=x", " id=x class=a", " style='x:y'"]
@@ -111,10 +121,11 @@ DOCTYPES = ["<!DOCTYPE html>", "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//E
             "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://x\">", "<!doctype HTML>",
             "<!DOCTYPE>", "<!DOCTYPE foo>"]
 ALL_NAMES = BLOCKS + HEADINGS + LISTS + FORMATTING + INLINE + MARKERS + RAW + HEADISH + RUBY + FORMS + UNKNOWN
-# Inputs the references cannot judge: select (they parse it by the rules the standard has replaced),
-# and processing instructions (neither has the states). The vectors that hold them are the
-# conformance gate's.
-UNASKABLE_RE = re.compile(r"<\s*/?\s*select\b|<\?", re.I)
+# Inputs the references cannot judge: processing instructions (neither has the states). The vectors
+# that hold them are the conformance gate's. (`select` was one until 3d: the references parse it by the
+# rules the standard has replaced; now a divergence in a document with a select is explained, and
+# verified, like the other elements they read by older rules.)
+UNASKABLE_RE = re.compile(r"<\?", re.I)
 
 
 class Gen:
@@ -172,6 +183,172 @@ class Gen:
             return self.start(self.pick(RUBY + FRAMES))
         return self.end(self.pick(RUBY + FRAMES))
 
+    def table_token(self):
+        """One token of the table family: a part, a template, a form or input, a select, text."""
+        r = self.r.random()
+        if r < 0.30:
+            return self.start(self.pick(TABLE_PARTS))
+        if r < 0.50:
+            return self.end(self.pick(TABLE_PARTS))
+        if r < 0.58:
+            return self.start("template")
+        if r < 0.64:
+            return self.end("template")
+        if r < 0.69:
+            return self.start("form")
+        if r < 0.72:
+            return self.end("form")
+        if r < 0.76:
+            return "<input type=hidden>" if self.r.random() < 0.6 else "<input%s>" % self.pick(ATTRS)
+        if r < 0.81:
+            return self.start(self.pick(SELECTS))
+        if r < 0.85:
+            return self.end(self.pick(SELECTS))
+        if r < 0.92:
+            return self.pick(TEXTS)
+        if r < 0.96:
+            return self.start(self.pick(FORMATTING)) if self.r.random() < 0.7 else self.end(self.pick(FORMATTING))
+        if r < 0.98:
+            return self.start(self.pick(BLOCKS + ["p"])) if self.r.random() < 0.7 else self.end(self.pick(BLOCKS + ["p"]))
+        return self.pick(COMMENTS)
+
+    def cell_content(self, depth):
+        """What goes in a cell, a caption or a template: text, inline and block elements,
+        formatting elements (some left open), forms, nested tables."""
+        out = []
+        for _ in range(self.r.randint(0, 4)):
+            r = self.r.random()
+            if r < 0.30:
+                out.append(self.pick(TEXTS))
+            elif r < 0.50:
+                name = self.pick(FORMATTING + INLINE)
+                out.append(self.start(name) + self.pick(TEXTS) + (self.end(name) if self.r.random() < 0.6 else ""))
+            elif r < 0.62:
+                name = self.pick(BLOCKS + HEADINGS + ["li", "dd"])
+                out.append(self.start(name) + self.pick(TEXTS) + (self.end(name) if self.r.random() < 0.5 else ""))
+            elif r < 0.70 and depth < 3:
+                out.append(self.table(depth + 1))
+            elif r < 0.78:
+                out.append(self.start("form") + self.pick(TEXTS) + (self.end("form") if self.r.random() < 0.6 else ""))
+            elif r < 0.84 and depth < 3:
+                out.append(self.template(depth + 1))
+            elif r < 0.90:
+                out.append(self.start(self.pick(SELECTS)) + self.pick(TEXTS))
+            else:
+                out.append(self.table_token())
+        return "".join(out)
+
+    def maybe(self, tag_end, p=0.7):
+        return tag_end if self.r.random() < p else ""
+
+    def cell(self, depth):
+        name = self.pick(["td", "td", "td", "th"])
+        return self.start(name) + self.cell_content(depth) + self.maybe(self.end(name), 0.6)
+
+    def stray(self):
+        """Something between the parts of a table that is not a part of it: it foster parents or is ignored."""
+        r = self.r.random()
+        if r < 0.35:
+            return self.pick(TEXTS)
+        if r < 0.55:
+            return self.start(self.pick(FORMATTING + INLINE + BLOCKS))
+        if r < 0.65:
+            return self.end(self.pick(FORMATTING + INLINE + BLOCKS + TABLE_PARTS))
+        if r < 0.75:
+            return self.pick(COMMENTS)
+        if r < 0.85:
+            return "<input type=hidden>"
+        if r < 0.92:
+            return self.start("form")
+        return self.table_token()
+
+    def row(self, depth):
+        out = [self.start("tr")] if self.r.random() < 0.85 else []
+        for _ in range(self.r.randint(0, 4)):
+            out.append(self.cell(depth) if self.r.random() < 0.8 else self.stray())
+        out.append(self.maybe(self.end("tr"), 0.7))
+        return "".join(out)
+
+    def section(self, depth):
+        name = self.pick(["tbody", "tbody", "thead", "tfoot"])
+        out = [self.start(name)] if self.r.random() < 0.7 else []
+        for _ in range(self.r.randint(0, 3)):
+            out.append(self.row(depth) if self.r.random() < 0.85 else self.stray())
+        if out:
+            out.append(self.maybe(self.end(name), 0.6))
+        return "".join(out)
+
+    def table(self, depth):
+        """A table, with tags missing and strays in it."""
+        out = [self.start("table")]
+        if self.r.random() < 0.2:
+            out.append(self.start("caption") + self.cell_content(depth) + self.maybe(self.end("caption"), 0.7))
+        if self.r.random() < 0.25:
+            out.append(self.start("colgroup") if self.r.random() < 0.7 else "")
+            out.append("<col>" * self.r.randint(0, 3))
+            out.append(self.maybe(self.end("colgroup"), 0.6))
+        elif self.r.random() < 0.1:
+            out.append(self.start("col"))
+        for _ in range(self.r.randint(0, 3)):
+            r = self.r.random()
+            if r < 0.5:
+                out.append(self.section(depth))
+            elif r < 0.75:
+                out.append(self.row(depth))
+            elif r < 0.85:
+                out.append(self.cell(depth))
+            else:
+                out.append(self.stray())
+        out.append(self.maybe(self.end("table"), 0.75))
+        return "".join(out)
+
+    def template(self, depth):
+        """A template with table parts or ordinary content, or other templates, inside."""
+        out = [self.start("template")]
+        for _ in range(self.r.randint(0, 3)):
+            r = self.r.random()
+            if r < 0.15:
+                out.append(self.row(depth))
+            elif r < 0.25:
+                out.append(self.cell(depth))
+            elif r < 0.35:
+                out.append(self.section(depth))
+            elif r < 0.43:
+                out.append("<col>")
+            elif r < 0.50:
+                out.append(self.start("caption") + self.pick(TEXTS))
+            elif r < 0.56:
+                out.append(self.start("colgroup"))
+            elif r < 0.68 and depth < 3:
+                out.append(self.table(depth + 1))
+            elif r < 0.76 and depth < 3:
+                out.append(self.template(depth + 1))
+            elif r < 0.88:
+                out.append(self.cell_content(depth))
+            else:
+                out.append(self.table_token())
+        out.append(self.maybe(self.end("template"), 0.7))
+        return "".join(out)
+
+    def tabular(self):
+        """A document built around tables and templates."""
+        out = []
+        for _ in range(self.r.randint(1, 3)):
+            r = self.r.random()
+            if r < 0.55:
+                out.append(self.table(0))
+            elif r < 0.75:
+                out.append(self.template(0))
+            elif r < 0.85:
+                out.append(self.start("p") + self.pick(TEXTS))
+            elif r < 0.92:
+                out.append(self.start(self.pick(FORMATTING)))
+            else:
+                out.append("".join(self.table_token() for _ in range(self.r.randint(1, 6))))
+        if self.r.random() < 0.4:
+            out.append("".join(self.table_token() for _ in range(self.r.randint(1, 5))))
+        return "".join(out)
+
     def nested(self, depth):
         """Mostly well-formed nesting with some end tags missing or in the wrong order."""
         out = []
@@ -197,8 +374,13 @@ class Gen:
         head = ""
         if self.r.random() < 0.4:
             head = self.pick(DOCTYPES)
-        if r < 0.55:
-            body = "".join(self.token() for _ in range(self.r.randint(1, 24)))
+        if r < 0.28:
+            body = self.tabular()
+        elif r < 0.36:
+            body = "".join(self.table_token() for _ in range(self.r.randint(1, 20)))
+        elif r < 0.55:
+            body = "".join(self.token() if self.r.random() < 0.88 else self.table_token()
+                           for _ in range(self.r.randint(1, 24)))
         elif r < 0.90:
             body = self.nested(0)
             if self.r.random() < 0.5:
@@ -206,7 +388,8 @@ class Gen:
         else:
             pre = "".join(self.pick(["<html%s>" % self.pick(ATTRS), "<head>", "</head>", "<body%s>" % self.pick(ATTRS),
                                       self.pick(COMMENTS), " ", "<title>t</title>", "<frameset>", "<frame>",
-                                      "<noscript>", "</noscript>", "<style>x</style>", "<script>y</script>"])
+                                      "<noscript>", "</noscript>", "<style>x</style>", "<script>y</script>",
+                                      "<template>", "</template>"])
                           for _ in range(self.r.randint(1, 6)))
             body = pre + "".join(self.token() for _ in range(self.r.randint(0, 10)))
         return head + body
@@ -331,52 +514,182 @@ NAME_RE = re.compile(r"<([A-Za-z][A-Za-z0-9$-]*)")
 # has no `search`, treats `summary`, `main`, `hgroup`, `figcaption` and `dialog` as ordinary
 # elements in places the standard makes special or block, keeps `isindex`, `command` and
 # `menuitem`, and has the older ruby and frameset rules. parse5 8.0.1 has everything but `search`.
+#
+# Stage 3d adds three. `select`: both parse it by the "in select" mode the standard no longer has
+# (the standard as served has the relaxed rules in "in body"). `template`: html5lib 1.1 puts a
+# template that follows nothing into the body and keeps its tables apart; parse5 ignores a form in
+# a template, does not stop its table scope at a template (so an end tag `tr` or `table` closes
+# rows and tables outside it), and keeps frameset-ok cleared after a template that "after head"
+# makes the body from (the standard sets it again). A name that starts with `/` is the end tags of
+# that element alone: parse5 ends a row at `</tbody>`, `</thead>` or `</tfoot>` when there is a tr
+# in scope even if there is no such section (the standard needs both), and for `form` it asks whether
+# any form is in scope at an end tag form, where the standard asks about the one the form element
+# pointer names (it can have been popped already). Because "template" and
+# "select" explain every divergence in a document that holds one, and a bug of ours would hide
+# there, each reference deviation is also a WITNESS below: a small document, its tree worked out
+# from the standard and written out by hand, which this library gives and the reference does not
+# (so the claim is checked on every run, and goes stale if the reference is fixed).
 KNOWN_OLD = {
     "html5lib": ["search", "summary", "dialog", "isindex", "ruby", "rb", "rt", "rp", "rtc", "main", "hgroup",
-                 "figcaption", "command", "menuitem", "menu", "frameset"],
-    "parse5": ["search"],
+                 "figcaption", "command", "menuitem", "menu", "frameset", "select", "template"],
+    "parse5": ["search", "select", "template", "/tbody", "/thead", "/tfoot", "form"],
 }
 KNOWN_OLD["both"] = KNOWN_OLD["parse5"]
 KNOWN_OLD["three-way"] = KNOWN_OLD["parse5"]
 
 
+END_TAG_RE = re.compile(r"</([A-Za-z][A-Za-z0-9$-]*)")
+
+
+def candidates(who, html):
+    present = set(n.lower() for n in NAME_RE.findall(html))
+    ends = set("/" + n.lower() for n in END_TAG_RE.findall(html))
+    return [n for n in KNOWN_OLD[who] if n in present or n in ends]
+
+
+# A reference's known deviations from the standard, each as a document whose tree was worked out by
+# hand from the chapter (not taken from any parser): (who, document, the tree, what the reference does
+# otherwise). `who` is a reference name, or "both". The run asks this library and the references
+# and requires this library to give exactly the tree and each named reference not to.
+WITNESSES = [
+    ("parse5", "<table><tr><template><td></tr><dir>",
+     "| <html>\n|   <head>\n|   <body>\n|     <table>\n|       <tbody>\n|         <tr>\n|           <template>\n"
+     "|             content\n|               <td>\n|                 <dir>",
+     "table scope does not stop at a template: the end tag tr in the cell inside the template closes the row outside it"),
+    ("parse5", "<template><tr><form>",
+     "| <html>\n|   <head>\n|     <template>\n|       content\n|         <tr>\n|           <form>\n|   <body>",
+     "a form start tag in a table inside a template is ignored (the standard inserted it only from 2023-24)"),
+    ("parse5", "<table><tr><th></th></thead> ",
+     "| <html>\n|   <head>\n|   <body>\n|     <table>\n|       <tbody>\n|         <tr>\n|           <th>\n|           \" \"",
+     "an end tag thead in a row ends the row when a tr is in scope, though no thead is: the standard asks for both"),
+    ("html5lib", "<template>Hello</template>",
+     "| <html>\n|   <head>\n|     <template>\n|       content\n|         \"Hello\"\n|   <body>",
+     "a template in the head ends up in the body (html5lib 1.1's template support predates the standard's)"),
+    ("parse5", "<form><p><table><th><table></form></table><form></table></form>x",
+     "| <html>\n|   <head>\n|   <body>\n|     <form>\n|       <p>\n|         <table>\n|           <tbody>\n|             <tr>\n"
+     "|               <th>\n|                 <table>\n|                 <form>\n|         \"x\"",
+     "an end tag form closes the open p when some form is in scope, though the one the form element pointer names (a form "
+     "that a cell took with it) is not"),
+    ("both", "<form><template><table><form>",
+     "| <html>\n|   <head>\n|   <body>\n|     <form>\n|       <template>\n|         content\n|           <table>\n"
+     "|             <form>",
+     "a form start tag in a table in a template is ignored when the form element pointer is set outside it (the standard "
+     "ignores the pointer inside a template)"),
+    ("both", "<head><template></template></head><p><frameset>",
+     "| <html>\n|   <head>\n|     <template>\n|       content\n|   <frameset>",
+     "\"after head\" sets frameset-ok back to ok when it makes the body, which a template start tag had cleared"),
+    ("both", "<select><div>x</select>",
+     "| <html>\n|   <head>\n|   <body>\n|     <select>\n|       <div>\n|         \"x\"",
+     "an element in a select is kept (the standard has no \"in select\" mode; the references drop the tag)"),
+]
+
+
+def check_witnesses(runner):
+    """(number held, [failures]) for WITNESSES.
+
+    A witness holds when this library gives the hand-worked tree and each named reference **answered** (a
+    dump, not an error, a crash or a time-out) with a different one. It is asked with the scripting flag off
+    and on, and must hold both ways."""
+    docs = [w[1] for w in WITNESSES]
+    bad = set()
+    for scripting in (False, True):
+        mine = ours_batch(runner, [(d, scripting) for d in docs])
+        theirs = html_ref.ask_all([html_ref.request(d, scripting) for d in docs])
+        for i, (who, doc, tree, why) in enumerate(WITNESSES):
+            status, notyet, dump, inv = mine[i]
+            got = dump[:-1] if dump.endswith("\n") else dump
+            if status != "OK" or got != tree:
+                bad.add((i, "%r (scripting %s): this library's tree is not the one worked out by hand" % (doc, scripting)))
+            for ref in (html_ref.REFERENCES if who == "both" else (who,)):
+                answer = theirs[ref][i]
+                if "dump" not in answer or not isinstance(answer["dump"], str):
+                    bad.add((i, "%r (scripting %s): %s did not answer (%s): a crash or an error is not a deviation" % (
+                        doc, scripting, ref, answer.get("error", "no dump"))))
+                elif answer["dump"] == tree:
+                    bad.add((i, "%r (scripting %s): %s now gives the standard's tree (%s): the entry is stale" % (
+                        doc, scripting, ref, why)))
+    failures = sorted(bad)
+    return len(WITNESSES) - len({i for i, _ in failures}), [m for _, m in failures]
+
+
 def without(html, names):
-    pattern = "|".join(re.escape(n) for n in sorted(names))
-    return re.sub(r"</?(?:%s)(?=[\s/>])[^>]*>?" % pattern, "", html, flags=re.I)
+    """The document with every tag of the named elements removed; a name that starts with `/` is just that
+    element's end tags."""
+    whole = [n for n in names if not n.startswith("/")]
+    ends = [n[1:] for n in names if n.startswith("/")]
+    if whole:
+        pattern = "|".join(re.escape(n) for n in sorted(whole))
+        html = re.sub(r"</?(?:%s)(?=[\s/>])[^>]*>?" % pattern, "", html, flags=re.I)
+    if ends:
+        pattern = "|".join(re.escape(n) for n in sorted(ends))
+        html = re.sub(r"</(?:%s)(?=[\s/>])[^>]*>?" % pattern, "", html, flags=re.I)
+    return html
 
 
 def explain_all(runner, divergent):
     """Key each divergence (item, who, theirs-dump, parse5-dump), and verify the explanation by asking again.
 
-    The explanation is a set of elements the reference reads by older rules (KNOWN_OLD): the ones the
-    document holds are removed, and the divergence is explained only if this builder and that reference then
-    agree. `who` is html5lib (alone: parse5 agrees with this builder), parse5, both (both differ from this
-    builder and agree with each other) or three-way (both differ from it and from each other; judged
-    against parse5). An explained divergence is keyed by the first such element the document holds; one
-    the removal does not explain is `unverified` (html5lib alone: its older adoption agency and Noah's Ark
-    rules, which no element name stands for) or `unexplained` and fails the run."""
+    The explanation is a set of elements the reference reads by older rules (KNOWN_OLD): the document is asked
+    again with one of the ones it holds removed, each in turn, and then with all of them removed; the divergence
+    is explained by the first that makes this builder and that reference agree, and keyed by it (by `multiple`
+    when only the removal of several does). `who` is html5lib (alone: parse5 agrees with this builder), parse5,
+    both (both differ from this builder and agree with each other) or three-way (both differ from it and from each
+    other; judged against parse5). A divergence the removal does not explain is `unverified` (html5lib alone: its
+    older adoption agency and Noah's Ark rules, which no element name stands for) or `unexplained` and fails the
+    run."""
     keys = [""] * len(divergent)
-    queries = []
+    queries = []  # (index of the divergence, key, the document with them removed, scripting)
     for idx, (it, who, theirs, p5) in enumerate(divergent):
-        present = set(n.lower() for n in NAME_RE.findall(it["html"]))
-        cand = [n for n in KNOWN_OLD[who] if n in present]
-        if cand:
-            queries.append((idx, cand, without(it["html"], cand), it["scripting"]))
+        cand = candidates(who, it["html"])
+        if not cand:
+            continue
+        for name in cand:
+            queries.append((idx, name, without(it["html"], [name]), it["scripting"]))
+        if len(cand) > 1:
+            queries.append((idx, "multiple", without(it["html"], cand), it["scripting"]))
     if queries:
         ours = ours_batch(runner_global, [(q[2], q[3]) for q in queries])
         answers = html_ref.ask_all([html_ref.request(q[2], q[3]) for q in queries])
-        for (idx, cand, v, sc), (status, notyet, dump, inv), a5, p5 in zip(
+        for (idx, key, v, sc), (status, notyet, dump, inv), a5, p5 in zip(
                 queries, ours, answers["html5lib"], answers["parse5"]):
+            if keys[idx]:
+                continue
             who = divergent[idx][1]
             ref = a5 if who == "html5lib" else p5
             mine = dump[:-1] if dump.endswith("\n") else dump
             if status == "OK" and "dump" in ref and ref["dump"] == mine:
-                keys[idx] = cand[0]
+                keys[idx] = key
     for idx, (it, who, theirs, p5) in enumerate(divergent):
         if not keys[idx]:
             keys[idx] = "unverified" if who == "html5lib" and p5 == it["ours"] else \
                 "unexplained/" + coarse(it["ours"], theirs)
     return keys
+
+
+# The causes that explain a divergence in any document that holds the element: the blind spot of the method
+# (removing the element can hide a defect of this library in it). A divergence in one of them where **neither
+# reference agrees** with this library is *uncorroborated*: nothing but the hand-worked witnesses and the pinned
+# vectors stands behind this library there. The number of such documents is gated like the kinds' counts (the
+# `@uncorroborated` line of the list), so a change of behaviour in those constructs cannot pass unseen.
+SUSPECT = ("template", "select", "form", "multiple")
+
+
+def uncorroborated(kinds):
+    n = 0
+    for key, docs in kinds.items():
+        who, _, cause = key.partition(":")
+        if who in ("both", "three-way") and cause in SUSPECT:
+            n += len(docs)
+    return n
+
+
+def load_uncorroborated(path):
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            for raw in fh:
+                if raw.startswith("@uncorroborated\t"):
+                    return int(raw.split("\t")[1])
+    return None
 
 
 def load_list(path):
@@ -386,7 +699,7 @@ def load_list(path):
     with open(path, encoding="utf-8") as fh:
         for n, raw in enumerate(fh, 1):
             raw = raw.rstrip("\n")
-            if not raw.strip() or raw.startswith("#"):
+            if not raw.strip() or raw.startswith("#") or raw.startswith("@"):
                 continue
             parts = raw.split("\t")
             if len(parts) != 4 or not parts[3].strip():
@@ -552,11 +865,21 @@ def main(argv):
     if explain:
         for k in sorted(kinds):
             for it, theirs in kinds[k][:explain]:
-                print("== %s %s %r" % (k, it["id"], it["html"][:300]))
+                print("== %s %s %r" % (k, it["id"], it["html"]))
                 print("ours:\n" + it["ours"] + "\ntheirs:\n" + theirs)
         return 0
 
     failed = False
+    held, witness_bad = check_witnesses(runner)
+    print("witnesses: %d of %d reference deviations hold (this library gives the hand-worked tree, the reference does not)" % (
+        held, len(WITNESSES)))
+    if plant == "witness":
+        witness_bad = ["planted: a witness that does not hold"]
+    if witness_bad:
+        failed = True
+        sys.stderr.write("\033[0;31m\n### A witness of a reference deviation does not hold ###\033[0m\n")
+        for line in witness_bad:
+            sys.stderr.write("  %s\n" % line)
     if refs_failed:
         failed = True
         sys.stderr.write("\033[0;31m\n### A reference could not answer ###\033[0m\n")
@@ -575,6 +898,15 @@ def main(argv):
         sys.stderr.write("\033[0;31m\n### Listed divergences that are gone ###\033[0m\n")
         for k in gone:
             sys.stderr.write("  %s  %s\n" % (k, listed[k][2][:100]))
+    unc = uncorroborated(kinds)
+    print("uncorroborated (a template, select or form explanation, and neither reference agrees with this library): %d documents" % unc)
+    listed_unc = load_uncorroborated(LIST)
+    if plant == "uncorroborated" and listed_unc is not None:
+        listed_unc += 1
+    if not hunting and listed_unc != unc:
+        failed = True
+        sys.stderr.write("\033[0;31m\n### Uncorroborated documents whose count has changed ###\033[0m\n  listed %s, now %d\n" % (
+            listed_unc, unc))
     if not hunting:
         changed = sorted(k for k in listed if k in kinds and listed[k][0] != "hunt" and int(listed[k][0]) != len(kinds[k]))
         if changed:

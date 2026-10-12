@@ -99,6 +99,9 @@ typedef struct {
 struct GTEXT_Markup_Node {
   uint8_t kind;  ///< A GTEXT_Markup_Kind.
   uint8_t flags; ///< MARKUP_F_*.
+  /// Text, CDATA and comment nodes only: log2 of the size of the data buffer once markup_text_append() has
+  /// grown it (0: the buffer is exactly the data and its NUL). It lives in the padding after `flags`.
+  uint8_t cap_log2;
   uint32_t line;
   uint32_t column;
   size_t offset;
@@ -247,9 +250,9 @@ void markup_detach_unchecked(struct GTEXT_Markup_Node * node);
 /** Move every child of `from` to the end of `to`'s children. O(children). */
 void markup_move_children_unchecked(
     struct GTEXT_Markup_Node * from, struct GTEXT_Markup_Node * to);
-/** Append bytes to a text node's data. `*capacity` is the size of the node's
- *  data buffer as the caller last knew it (0 if unknown); the buffer grows
- *  geometrically and the new size is stored back. */
+/** Append bytes to a text node's data. The buffer grows by doubling to a power of two, and the node
+ *  remembers its size (`cap_log2`), so a caller that appends to a node now and then, among others, pays
+ *  for a copy only when it grows. `*capacity` receives the size of the buffer afterwards; it is not read. */
 GTEXT_Markup_Status markup_text_append(struct GTEXT_Markup_Document * doc,
     struct GTEXT_Markup_Node * node, size_t * capacity, const char * bytes,
     size_t length);

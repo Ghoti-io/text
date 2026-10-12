@@ -248,6 +248,25 @@ typedef struct {
 } GTEXT_HTML_Attribute;
 
 /**
+ * Where a piece of a character token's data came from. The data of a run of characters is normalized
+ * (a carriage return and a line feed are one line feed, `&amp;` is one character, an invalid UTF-8
+ * sequence is U+FFFD), so the position of the i-th byte is not the token's position plus i. Each segment
+ * says where the data from `index` on starts in the input, and the data runs on from there byte for byte
+ * (a line feed starts a new line, a character is as many UTF-16 units as its code point) until the next
+ * segment. A run with more than GTEXT_HTML_MAX_TEXT_SEGMENTS pieces has its first ones exact and the rest
+ * counted on from the last, so the memory is bounded however many references a run holds.
+ */
+typedef struct {
+  size_t index;  ///< Byte index in the token's data.
+  size_t line;   ///< 1-based.
+  size_t column; ///< 1-based, in UTF-16 code units.
+  size_t offset; ///< Byte offset in the input as fed.
+} GTEXT_HTML_TextSegment;
+
+/// The most segments kept for one character token.
+#define GTEXT_HTML_MAX_TEXT_SEGMENTS ((size_t)1024)
+
+/**
  * @brief A token. Valid until the next call to gtext_html_tokenizer_next().
  *
  * Which fields mean something depends on `type`:
@@ -292,6 +311,10 @@ typedef struct {
   size_t line;   ///< Where the token starts (the `<` of a tag), 1-based.
   size_t column; ///< 1-based, in characters.
   size_t offset; ///< Byte offset in the input as fed.
+  /// CHARACTER: where each piece of the data came from (never empty for a non-empty run); see
+  /// GTEXT_HTML_TextSegment. Valid until the next call to next().
+  const GTEXT_HTML_TextSegment * segments;
+  size_t segment_count;
 } GTEXT_HTML_Token;
 
 /* ---- States the tree builder can set ------------------------------------ */

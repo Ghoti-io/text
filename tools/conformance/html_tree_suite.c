@@ -35,7 +35,7 @@
  * nothing. The answer is, for the whole-input run:
  *
  *   STATUS <name>                       OK, or the failure (E_NOT_YET, E_LIMIT_DEPTH, ...)
- *   NOTYET <what> <stage>               after E_NOT_YET: table 3d, template 3d, foreign 3e
+ *   NOTYET <what> <stage>               after E_NOT_YET: foreign 3e
  *   ERRORS <kept> <dropped> <tokenizer> the parse errors, then one line each:
  *   X <name> <line> <column> <offset>
  *   MODE <document mode>                no-quirks, limited-quirks, quirks (OK only)
@@ -64,6 +64,7 @@ static const char * status_name(GTEXT_HTML_TreeStatus s) {
     case GTEXT_HTML_TREE_E_STATE: return "E_STATE";
     case GTEXT_HTML_TREE_E_OOM: return "E_OOM";
     case GTEXT_HTML_TREE_E_NOT_YET: return "E_NOT_YET";
+    case GTEXT_HTML_TREE_E_REPROCESS: return "E_REPROCESS";
     case GTEXT_HTML_TREE_E_LIMIT_DEPTH: return "E_LIMIT_DEPTH";
     case GTEXT_HTML_TREE_E_LIMIT_NODES: return "E_LIMIT_NODES";
     case GTEXT_HTML_TREE_E_LIMIT_INPUT: return "E_LIMIT_INPUT";

@@ -437,6 +437,30 @@ TEST(HtmlTokenizerCdata, TheCallbackIsAskedAtEachOccurrenceAndAnOverrideWins) {
   gtext_html_tokenizer_free(tok);
 }
 
+TEST(HtmlTokenizer, ACharacterTokenSaysWhereEachPieceOfItsDataCameFrom) {
+  // The data of a run is normalized, so the position of a byte is not the start plus its index: a segment
+  // starts wherever the data stops running on byte for byte from the input.
+  GTEXT_HTML_Tokenizer * tok = gtext_html_tokenizer_new(nullptr);
+  ASSERT_NE(tok, nullptr);
+  const std::string in = "ab&amp;c\r\nd";
+  ASSERT_EQ(gtext_html_tokenizer_feed(tok, in.data(), in.size()), GTEXT_HTML_TOKENIZER_OK);
+  gtext_html_tokenizer_finish(tok);
+  const GTEXT_HTML_Token * t = nullptr;
+  ASSERT_EQ(gtext_html_tokenizer_next(tok, &t), GTEXT_HTML_TOKENIZER_TOKEN);
+  ASSERT_EQ(std::string(t->data, t->data_length), "ab&c\nd");
+  // "ab&" are bytes 0, 1 and 2 of the input (the `&` of the reference is where a plain character would
+  // be), so one segment; "c" is byte 7, after the five bytes of the reference, so a segment of its own; the
+  // line feed is the carriage return at 8, still running on; "d" is byte 10, two on from it, not one.
+  ASSERT_EQ(t->segment_count, 3u);
+  EXPECT_EQ(t->segments[0].index, 0u);
+  EXPECT_EQ(t->segments[0].offset, 0u);
+  EXPECT_EQ(t->segments[1].index, 3u);
+  EXPECT_EQ(t->segments[1].offset, 7u);
+  EXPECT_EQ(t->segments[2].index, 5u);
+  EXPECT_EQ(t->segments[2].offset, 10u);
+  gtext_html_tokenizer_free(tok);
+}
+
 TEST(HtmlTokenizerCdata, TheCdataSectionStateStartsInTheVectorsToo) {
   const Outcome r = tokenize("a]]b]]>c", {}, in_state(GTEXT_HTML_STATE_CDATA_SECTION));
   EXPECT_EQ(r.tokens_text(), "C\"a]]bc\" F");

@@ -27,9 +27,21 @@
  * html_tree_modes.c. See html_tree_internal.h for the contract.
  *
  * Source: WHATWG HTML, "Tree construction" (13.2.4 "Parse state", 13.2.6.1
- * "Creating and inserting nodes", 13.2.6.3 "Closing elements that have implied
- * end tags", and the adoption agency algorithm in 13.2.6.4.7), as served at
- * html.spec.whatwg.org/multipage/parsing.html on 2026-10-11.
+ * "Creating and inserting nodes" with the appropriate place for inserting a node
+ * and so foster parenting, 13.2.6.3 "Closing elements that have implied end tags",
+ * and the adoption agency algorithm in 13.2.6.4.7), as served at
+ * html.spec.whatwg.org/multipage/parsing.html (last updated 9 October 2026;
+ * fetched 2026-10-11 and again 2026-10-12 for stage 3d).
+ *
+ * ## Foster parenting costs one comparison
+ *
+ * "The last template or table element in the stack of open elements" is the
+ * larger of the topmost indexes of the names `template` and `table`, which the
+ * per-name index already holds; inserting before the table or into its parent
+ * is a linked-list edit. Text inserted there merges with the previous sibling
+ * of the place. A document can alternate between the text before a table and the
+ * text inside it, so a text node remembers the size of its own buffer (markup's
+ * `cap_log2`) instead of the builder remembering the last one or two.
  *
  * ## The indexes that keep the common questions O(1)
  *
@@ -119,6 +131,11 @@ void ht_tree_error_raw(GTEXT_HTML_Tree * tb, int code) {
   record_error(tb, code, t ? t->line : 0, t ? t->column : 0, t ? t->offset : 0);
 }
 
+void ht_tree_error_at(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code, size_t line,
+    size_t column, size_t offset) {
+  record_error(tb, GTEXT_HTML_TREE_ERROR_BASE + (int)code, line, column, offset);
+}
+
 void ht_tree_error(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code) {
   ht_tree_error_raw(tb, GTEXT_HTML_TREE_ERROR_BASE + (int)code);
 }
@@ -131,6 +148,48 @@ static void sync_tokenizer_errors(GTEXT_HTML_Tree * tb) {
         gtext_html_tokenizer_error_at(tb->tok, tb->tok_errors_seen++);
     if (e) {
       record_error(tb, (int)e->code, e->line, e->column, e->offset);
+    }
+  }
+}
+
+/* ---- positions inside a run of characters -------------------------------- */
+
+void ht_seg_cursor_init(SegCursor * c, const char * data, const GTEXT_HTML_TextSegment * segs,
+    size_t nsegs, size_t line, size_t column, size_t offset) {
+  c->data = data;
+  c->segs = segs;
+  c->nsegs = nsegs;
+  c->next = 0;
+  c->idx = 0;
+  c->line = line;
+  c->column = column;
+  c->offset = offset;
+}
+
+/* Move to the byte `target` of the data: apply each segment when its byte is reached, and count the
+   bytes between as the tokenizer does (a line feed starts a line; a character is one UTF-16 unit, two
+   for a code point above U+FFFF, in the column of its first byte). */
+void ht_seg_cursor_advance(SegCursor * c, size_t target) {
+  for (;;) {
+    while (c->next < c->nsegs && c->segs[c->next].index <= c->idx) {
+      if (c->segs[c->next].index == c->idx) {
+        c->line = c->segs[c->next].line;
+        c->column = c->segs[c->next].column;
+        c->offset = c->segs[c->next].offset;
+      }
+      c->next++;
+    }
+    if (c->idx >= target) {
+      return;
+    }
+    const unsigned char b = (unsigned char)c->data[c->idx++];
+    c->offset++;
+    if (b == '\n') {
+      c->line++;
+      c->column = 1;
+    }
+    else if ((b & 0xC0) != 0x80) {
+      c->column += b >= 0xF0 ? 2 : 1;
     }
   }
 }
@@ -379,6 +438,43 @@ void ht_stack_pop_until_heading(GTEXT_HTML_Tree * tb) {
   }
 }
 
+/* "Generate all implied end tags thoroughly": the implied end tags and the table parts. */
+void ht_generate_all_implied_end_tags_thoroughly(GTEXT_HTML_Tree * tb) {
+  while (tb->n > 0) {
+    const uint32_t id = HT_STACK_TOP(tb).id;
+    if (!(HT_STACK_TOP(tb).flags & F_IMPLIED)
+        && id != T_CAPTION && id != T_COLGROUP && id != T_TBODY && id != T_TD
+        && id != T_TFOOT && id != T_TH && id != T_THEAD && id != T_TR) {
+      break;
+    }
+    ht_stack_pop(tb);
+  }
+}
+
+/* ---- the stack of template insertion modes ------------------------------ */
+
+bool ht_tmpl_push(GTEXT_HTML_Tree * tb, InsertionMode m) {
+  if (tb->ntmpl == tb->cap_tmpl) {
+    const size_t cap = tb->cap_tmpl ? tb->cap_tmpl * 2 : 16;
+    uint8_t * grown = gtext_allocator_realloc(&tb->alloc, tb->tmpl, cap);
+    if (!grown) {
+      return ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
+    }
+    tb->tmpl = grown;
+    tb->cap_tmpl = cap;
+  }
+  tb->tmpl[tb->ntmpl++] = (uint8_t)m;
+  tb->work++;
+  return true;
+}
+
+void ht_tmpl_pop(GTEXT_HTML_Tree * tb) {
+  if (tb->ntmpl > 0) {
+    tb->ntmpl--;
+  }
+  tb->work++;
+}
+
 void ht_generate_implied_end_tags(GTEXT_HTML_Tree * tb, uint32_t except) {
   while (tb->n > 0 && (HT_STACK_TOP(tb).flags & F_IMPLIED)
       && HT_STACK_TOP(tb).id != except) {
@@ -452,12 +548,64 @@ static bool make_element(GTEXT_HTML_Tree * tb, uint32_t id,
       return false;
     }
   }
+  if (id == T_TEMPLATE) {
+    /* The template contents: a document fragment the element owns, made with it. */
+    HtNode * content = NULL;
+    if (!ht_tree_markup_status(
+            tb, gtext_markup_element_ensure_template_content(el, &content))) {
+      return false;
+    }
+  }
   place(tb, el);
   *out = el;
   return true;
 }
 
-bool ht_insert_element_into(GTEXT_HTML_Tree * tb, HtNode * parent, uint32_t id,
+/* The appropriate place for inserting a node (13.2.6.1), for the target at stack index `idx`
+   (the current node, or the common ancestor of the adoption agency algorithm): with foster
+   parenting enabled and the target a table, tbody, tfoot, thead or tr, before the last table or
+   into the last template; and a template as the target means its contents. The last template or
+   table of the stack is one comparison of the two names' topmost indexes. */
+void ht_place_at(const GTEXT_HTML_Tree * tb, size_t idx, HtPlace * out) {
+  const stack_entry * t = &tb->stack[idx];
+  HtNode * target = t->node;
+  HtNode * ref = NULL;
+  bool tmpl = t->id == T_TEMPLATE;
+  if (tb->foster
+      && (t->id == T_TABLE || t->id == T_TBODY || t->id == T_TFOOT || t->id == T_THEAD
+          || t->id == T_TR)) {
+    const uint32_t lt = tb->names[T_TEMPLATE].topidx;
+    const uint32_t lb = tb->names[T_TABLE].topidx;
+    if (lt == NONE_IDX && lb == NONE_IDX) {
+      /* The fragment case: the html element. */
+      target = tb->stack[0].node;
+      tmpl = false;
+    }
+    else if (lb == NONE_IDX || (lt != NONE_IDX && lt > lb)) {
+      target = tb->stack[lt].node;
+      tmpl = true;
+    }
+    else {
+      HtNode * table = tb->stack[lb].node;
+      if (table->parent) {
+        target = table->parent;
+        ref = table;
+        tmpl = false;
+      }
+      else {
+        target = tb->stack[lb - 1].node;
+        tmpl = tb->stack[lb - 1].id == T_TEMPLATE;
+      }
+    }
+  }
+  if (tmpl) {
+    target = ((markup_element *)target)->content;
+  }
+  out->parent = target;
+  out->ref = ref;
+}
+
+static bool insert_element_at(GTEXT_HTML_Tree * tb, HtPlace at, uint32_t id,
     const GTEXT_HTML_Attribute * attrs, size_t nattrs, HtNode ** out) {
   if (tb->n >= tb->max_open) {
     return ht_tree_fail(tb, GTEXT_HTML_TREE_E_LIMIT_DEPTH);
@@ -466,7 +614,12 @@ bool ht_insert_element_into(GTEXT_HTML_Tree * tb, HtNode * parent, uint32_t id,
   if (!make_element(tb, id, attrs, nattrs, &el)) {
     return false;
   }
-  markup_append_unchecked(parent, el);
+  if (at.ref) {
+    markup_insert_unchecked(at.parent, el, at.ref);
+  }
+  else {
+    markup_append_unchecked(at.parent, el);
+  }
   if (!ht_stack_push(tb, el, id, NULL)) {
     return false;
   }
@@ -476,13 +629,22 @@ bool ht_insert_element_into(GTEXT_HTML_Tree * tb, HtNode * parent, uint32_t id,
   return true;
 }
 
+bool ht_insert_element_into(GTEXT_HTML_Tree * tb, HtNode * parent, uint32_t id,
+    const GTEXT_HTML_Attribute * attrs, size_t nattrs, HtNode ** out) {
+  HtPlace at = {parent, NULL};
+  return insert_element_at(tb, at, id, attrs, nattrs, out);
+}
+
 bool ht_insert_element(GTEXT_HTML_Tree * tb, const Tk * tk, HtNode ** out) {
-  return ht_insert_element_into(
-      tb, HT_STACK_TOP(tb).node, tk->id, tk->attrs, tk->nattrs, out);
+  HtPlace at;
+  ht_place_at(tb, tb->n - 1, &at);
+  return insert_element_at(tb, at, tk->id, tk->attrs, tk->nattrs, out);
 }
 
 bool ht_insert_element_bare(GTEXT_HTML_Tree * tb, uint32_t id, HtNode ** out) {
-  return ht_insert_element_into(tb, HT_STACK_TOP(tb).node, id, NULL, 0, out);
+  HtPlace at;
+  ht_place_at(tb, tb->n - 1, &at);
+  return insert_element_at(tb, at, id, NULL, 0, out);
 }
 
 bool ht_pop_current_acknowledge(GTEXT_HTML_Tree * tb, const Tk * tk) {
@@ -496,48 +658,63 @@ bool ht_insert_text(GTEXT_HTML_Tree * tb, const char * data, size_t length) {
   if (length == 0) {
     return true;
   }
-  HtNode * parent = HT_STACK_TOP(tb).node;
-  HtNode * last = parent->last_child;
+  HtPlace at;
+  ht_place_at(tb, tb->n - 1, &at);
+  HtNode * last = at.ref ? at.ref->prev : at.parent->last_child;
   if (last && last->kind == GTEXT_MARKUP_KIND_TEXT) {
-    size_t cap = last == tb->text_node ? tb->text_cap : 0;
-    if (!ht_tree_markup_status(
-            tb, markup_text_append(tb->doc, last, &cap, data, length))) {
-      return false;
-    }
-    tb->text_node = last;
-    tb->text_cap = cap;
-    return true;
+    size_t cap = 0; /* the node knows how big its buffer is */
+    return ht_tree_markup_status(
+        tb, markup_text_append(tb->doc, last, &cap, data, length));
   }
   HtNode * text = NULL;
   if (!ht_tree_markup_status(
           tb, gtext_markup_create_text(tb->doc, data, length, &text))) {
     return false;
   }
-  markup_append_unchecked(parent, text);
+  if (at.ref) {
+    markup_insert_unchecked(at.parent, text, at.ref);
+  }
+  else {
+    markup_append_unchecked(at.parent, text);
+  }
   place(tb, text);
-  tb->text_node = text;
-  tb->text_cap = length + 1;
   return true;
 }
 
-bool ht_insert_comment_into(
-    GTEXT_HTML_Tree * tb, HtNode * parent, const GTEXT_HTML_Token * t) {
+static bool insert_comment_at(
+    GTEXT_HTML_Tree * tb, HtPlace at, const GTEXT_HTML_Token * t) {
   HtNode * c = NULL;
   if (!ht_tree_markup_status(tb,
           gtext_markup_create_comment(tb->doc, t->data, t->data_length, &c))) {
     return false;
   }
-  markup_append_unchecked(parent, c);
+  if (at.ref) {
+    markup_insert_unchecked(at.parent, c, at.ref);
+  }
+  else {
+    markup_append_unchecked(at.parent, c);
+  }
   place(tb, c);
   return true;
 }
 
-bool ht_insert_pi_into(
+bool ht_insert_comment_into(
     GTEXT_HTML_Tree * tb, HtNode * parent, const GTEXT_HTML_Token * t) {
+  HtPlace at = {parent, NULL};
+  return insert_comment_at(tb, at, t);
+}
+
+bool ht_insert_comment(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
+  HtPlace at;
+  ht_place_at(tb, tb->n - 1, &at);
+  return insert_comment_at(tb, at, t);
+}
+
+static bool insert_pi_at(GTEXT_HTML_Tree * tb, HtPlace at, const GTEXT_HTML_Token * t) {
   HtNode * n = NULL;
   if (t->name_length == 0) {
     /* The tokenizer never makes one; a comment is the safe reading. */
-    return ht_insert_comment_into(tb, parent, t);
+    return insert_comment_at(tb, at, t);
   }
   char * target = gtext_allocator_malloc(&tb->alloc, t->name_length + 1);
   if (!target) {
@@ -551,9 +728,26 @@ bool ht_insert_pi_into(
   if (!ht_tree_markup_status(tb, st)) {
     return false;
   }
-  markup_append_unchecked(parent, n);
+  if (at.ref) {
+    markup_insert_unchecked(at.parent, n, at.ref);
+  }
+  else {
+    markup_append_unchecked(at.parent, n);
+  }
   place(tb, n);
   return true;
+}
+
+bool ht_insert_pi_into(
+    GTEXT_HTML_Tree * tb, HtNode * parent, const GTEXT_HTML_Token * t) {
+  HtPlace at = {parent, NULL};
+  return insert_pi_at(tb, at, t);
+}
+
+bool ht_insert_pi(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
+  HtPlace at;
+  ht_place_at(tb, tb->n - 1, &at);
+  return insert_pi_at(tb, at, t);
 }
 
 /* The attribute index of `element`, built from its attributes if it is not the one the slot holds. */
@@ -963,7 +1157,9 @@ bool ht_fmt_reconstruct(GTEXT_HTML_Tree * tb) {
             tb, markup_element_clone_shallow(tb->doc, e->el, &fresh))) {
       return false;
     }
-    markup_append_unchecked(HT_STACK_TOP(tb).node, fresh);
+    HtPlace at;
+    ht_place_at(tb, tb->n - 1, &at);
+    markup_insert_unchecked(at.parent, fresh, at.ref);
     e->el = fresh;
     if (!ht_stack_push(tb, fresh, e->id, e)) {
       return false;
@@ -1014,7 +1210,6 @@ bool ht_adoption_agency(GTEXT_HTML_Tree * tb, uint32_t subject) {
       return tb->status == GTEXT_HTML_TREE_OK;
     }
 
-    HtNode * common = tb->stack[idx - 1].node;
     HtNode * fb_node = tb->stack[fb].node;
     fmt_entry * bm = &tb->bookmark;
     memset(bm, 0, sizeof(*bm));
@@ -1054,7 +1249,16 @@ bool ht_adoption_agency(GTEXT_HTML_Tree * tb, uint32_t subject) {
       markup_insert_unchecked(fresh, last_node, NULL);
       last_node = fresh;
     }
-    markup_insert_unchecked(common, last_node, NULL);
+    {
+      /* "Insert lastNode at the appropriate place for inserting a node, given the common
+         ancestor": with foster parenting enabled that can be before a table. */
+      HtPlace at;
+      ht_place_at(tb, idx - 1, &at);
+      if (at.ref == last_node) {
+        at.ref = last_node->next;
+      }
+      markup_insert_unchecked(at.parent, last_node, at.ref);
+    }
 
     HtNode * nfe = NULL;
     if (!ht_tree_markup_status(
@@ -1140,6 +1344,9 @@ void gtext_html_tree_free(GTEXT_HTML_Tree * tb) {
   gtext_allocator_free(&alloc, tb->merge_index[0].slots);
   gtext_allocator_free(&alloc, tb->merge_index[1].slots);
   gtext_allocator_free(&alloc, tb->stack);
+  gtext_allocator_free(&alloc, tb->tmpl);
+  gtext_allocator_free(&alloc, tb->pend);
+  gtext_allocator_free(&alloc, tb->pend_segs);
   for (size_t i = 0; i < tb->fmt_nblocks; i++) {
     gtext_allocator_free(&alloc, tb->fmt_blocks[i]);
   }
@@ -1176,6 +1383,7 @@ GTEXT_HTML_Tree * gtext_html_tree_new(const GTEXT_HTML_TreeOptions * options) {
   tb->seed = o.hash_seed ? o.hash_seed
                          : ((uint64_t)(uintptr_t)tb * 0x9E3779B97F4A7C15ULL) | 1;
   tb->mode = M_INITIAL;
+  tb->reprocess_limit = GTEXT_HTML_TREE_REPROCESS_LIMIT;
   tb->frameset_ok = true;
 
   GTEXT_Markup_Options mo = gtext_markup_options_default();
@@ -1385,6 +1593,12 @@ size_t gtext_html_tree_tokenizer_work(const GTEXT_HTML_Tree * tb) {
   return tb ? gtext_html_tokenizer_work(tb->tok) : 0;
 }
 
+void gtext_html_tree_test_set_reprocess_limit(GTEXT_HTML_Tree * tb, size_t n) {
+  if (tb) {
+    tb->reprocess_limit = n;
+  }
+}
+
 const char * gtext_html_tree_mode_name(const GTEXT_HTML_Tree * tb) {
   return tb ? ht_tree_mode_name(tb->mode) : "";
 }
@@ -1421,9 +1635,6 @@ const char * gtext_html_tree_error_name(int code) {
 
 const char * gtext_html_not_yet_stage(GTEXT_HTML_NotYet what) {
   switch (what) {
-    case GTEXT_HTML_NOT_YET_TABLE:
-    case GTEXT_HTML_NOT_YET_TEMPLATE:
-      return "3d";
     case GTEXT_HTML_NOT_YET_FOREIGN:
       return "3e";
     default:
@@ -1433,10 +1644,6 @@ const char * gtext_html_not_yet_stage(GTEXT_HTML_NotYet what) {
 
 const char * gtext_html_not_yet_name(GTEXT_HTML_NotYet what) {
   switch (what) {
-    case GTEXT_HTML_NOT_YET_TABLE:
-      return "table";
-    case GTEXT_HTML_NOT_YET_TEMPLATE:
-      return "template";
     case GTEXT_HTML_NOT_YET_FOREIGN:
       return "foreign";
     default:

@@ -30,23 +30,26 @@
  * The standard's second stage, for ordinary documents: the stack of open
  * elements, the list of active formatting elements with the Noah's Ark clause,
  * the head and form element pointers, the frameset-ok flag, quirks mode from
- * the doctype, the insertion modes "initial" to "in body", "text", "after
- * body", the frameset modes and the "after" modes, the adoption agency
- * algorithm, and the reconstruction of the active formatting elements. Read
- * from the standard's text as served at html.spec.whatwg.org on 2026-10-11
- * (Living Standard, last updated 9 October 2026); see documentation/formats/
- * html.md for the section list and for what is not here.
+ * the doctype, every insertion mode but the foreign-content rules (the table
+ * modes, "in template" with the stack of template insertion modes and the
+ * template contents, foster parenting in the appropriate place for inserting a
+ * node), the adoption agency algorithm, and the reconstruction of the active
+ * formatting elements. Read from the standard's text as served at
+ * html.spec.whatwg.org (Living Standard, last updated 9 October 2026; fetched
+ * 2026-10-11 for 3c and again 2026-10-12 04:25 UTC for 3d, the same revision);
+ * see documentation/formats/html.md for the section list and for what is not
+ * here.
  *
- * ## What is not here yet (the stage gates)
+ * ## What is not here yet (the stage gate)
  *
- * Tables, `template` and foreign content (`svg`, `math`) belong to the next
- * stages (3d and 3e). A document that reaches one of them fails with the
- * distinct status GTEXT_HTML_TREE_E_NOT_YET and gtext_html_tree_not_yet() says
- * which stage owns the construct. The failure is sticky and returns no tree;
- * the conformance gate lists every vector that stops there, tagged with its
- * stage, so that the list shrinks as the stages land. Fragment parsing is 3e.
- * There is no public HTML API, no encoding determination (3f), no
- * serialization and no script execution.
+ * Foreign content (`svg`, `math`) belongs to the next stage (3e). A document
+ * that reaches one of them fails with the distinct status
+ * GTEXT_HTML_TREE_E_NOT_YET and gtext_html_tree_not_yet() says which stage owns
+ * the construct. The failure is sticky and returns no tree; the conformance
+ * gate lists every vector that stops there, tagged with its stage, so that the
+ * list shrinks as the stages land. Fragment parsing is 3e. There is no public
+ * HTML API, no encoding determination (3f), no serialization and no script
+ * execution.
  *
  * ## How it is driven
  *
@@ -68,8 +71,12 @@
  * Elements are in the HTML namespace with their attributes in no namespace, in
  * source order (duplicates removed by the tokenizer); a doctype node, comments,
  * processing instructions (the pinned standard makes them nodes), and text with
- * adjacent runs merged. The document mode is set. A DOCTYPE token that names no
- * public or system identifier leaves them NULL in the node (the standard says
+ * adjacent runs merged. A `template` element owns a content document fragment (made with
+ * the element, so it is never absent), which is where the builder inserts what the standard
+ * puts "in the template"; the element has no children of its own (the adoption agency algorithm
+ * cannot make a template the furthest block: `template` is a boundary of "in scope", so a
+ * formatting element below one is never adopted). The document mode is set. A DOCTYPE token
+ * that names no public or system identifier leaves them NULL in the node (the standard says
  * the empty string; the tree distinguishes absent from empty and the dump
  * format does not).
  *
@@ -120,6 +127,13 @@ typedef struct GTEXT_HTML_Tree GTEXT_HTML_Tree;
 #define GTEXT_HTML_TREE_DEFAULT_MAX_OPEN_ELEMENTS ((size_t)512)
 /// Most nodes a document may hold.
 #define GTEXT_HTML_TREE_DEFAULT_MAX_NODES ((size_t)10 * 1000 * 1000)
+
+/// The most times one token is handled again in another mode (the standard's "reprocess the token"). The
+/// longest chain any input makes is 8 (an end tag `table` in a cell: close the cell, the row, the section,
+/// the table; the end of the file in a template in a table cell). Nothing in a chain depends on the depth
+/// of the stack: closing nested templates at the end of the file is a loop, not a chain. Exceeding the limit
+/// is GTEXT_HTML_TREE_E_REPROCESS, sticky, no tree.
+#define GTEXT_HTML_TREE_REPROCESS_LIMIT ((size_t)32)
 
 /// The most work (see gtext_html_tree_work()) the tree builder does beyond the tokenizer's for `n`
 /// bytes of input when the stack of open elements is limited to `limit`: each token costs at most
@@ -188,6 +202,7 @@ typedef enum {
   GTEXT_HTML_TREE_E_STATE,     ///< feed() after a successful finish(); and nothing else (a failed builder repeats its failure).
   GTEXT_HTML_TREE_E_OOM,       ///< The allocator returned NULL.
   GTEXT_HTML_TREE_E_NOT_YET,   ///< A construct that belongs to a later stage (see gtext_html_tree_not_yet()).
+  GTEXT_HTML_TREE_E_REPROCESS, ///< A token was handled again in a new mode more often than any rule can need: a defect, never content.
   GTEXT_HTML_TREE_E_LIMIT_DEPTH,      ///< More than `max_open_elements` open at once.
   GTEXT_HTML_TREE_E_LIMIT_NODES,      ///< More than `max_nodes` nodes.
   GTEXT_HTML_TREE_E_LIMIT_INPUT,      ///< The tokenizer's: more than `max_input_bytes` fed.
@@ -205,14 +220,12 @@ typedef enum {
 /// The stage that owns a construct the builder does not parse yet.
 typedef enum {
   GTEXT_HTML_NOT_YET_NONE = 0,
-  GTEXT_HTML_NOT_YET_TABLE,    ///< `table`: stage 3d.
-  GTEXT_HTML_NOT_YET_TEMPLATE, ///< `template`: stage 3d.
   GTEXT_HTML_NOT_YET_FOREIGN   ///< `svg` or `math`: stage 3e.
 } GTEXT_HTML_NotYet;
 
-/// "3d" or "3e" for a construct, "" for NONE.
+/// "3e" for a construct, "" for NONE.
 GTEXT_INTERNAL_API const char * gtext_html_not_yet_stage(GTEXT_HTML_NotYet what);
-/// "table", "template", "foreign", or "".
+/// "foreign", or "".
 GTEXT_INTERNAL_API const char * gtext_html_not_yet_name(GTEXT_HTML_NotYet what);
 
 /**
@@ -317,17 +330,21 @@ GTEXT_INTERNAL_API size_t gtext_html_tree_work(const GTEXT_HTML_Tree * tree);
 /// Tests: the tokenizer's work (gtext_html_tokenizer_work()).
 GTEXT_INTERNAL_API size_t gtext_html_tree_tokenizer_work(const GTEXT_HTML_Tree * tree);
 
+/// Tests: allow a token to be handled again in another mode only `n` times (the default is
+/// GTEXT_HTML_TREE_REPROCESS_LIMIT), so that the status for exceeding it can be reached.
+GTEXT_INTERNAL_API void gtext_html_tree_test_set_reprocess_limit(GTEXT_HTML_Tree * tree, size_t n);
+
 /// Tests: the insertion mode, as its name ("initial", "in body", ...).
 GTEXT_INTERNAL_API const char * gtext_html_tree_mode_name(const GTEXT_HTML_Tree * tree);
 
 /**
  * @brief Tests: what "reset the insertion mode appropriately" picks for a stack.
  *
- * The algorithm is complete here, including the table, caption, column group
- * and template branches that stage 3d needs, but nothing in this stage can
- * reach them, so this runs it over a stack that the caller describes: the
- * names of the open elements from the root down (HTML namespace), and whether
- * the head element pointer is set.
+ * Runs the algorithm over a stack that the caller describes: the names of the
+ * open elements from the root down (HTML namespace), and whether the head
+ * element pointer is set. A name "template/in table" is a template element
+ * whose template insertion mode (the stack of them has one per template) is
+ * "in table"; a plain "template" has "in template".
  *
  * @return The mode's name, or NULL on failure.
  */
