@@ -2,7 +2,7 @@
 # fail when they should: tools/oracle/run-encoding-oracle.sh --controls compiles the source with one edit into a runner of its own and requires that the
 # suite's counts or the differential's populations catch it, each for the right reason. `--control NAME` runs one.
 #
-# name <TAB> file under src/encoding <TAB> old text (unique in the file; \n is a newline) <TAB> new text
+# name <TAB> file under src/encoding <TAB> old text (unique in the file; \n is a newline) <TAB> new text [<TAB> extra arguments of the differential, for a defect only longer sequences show]
 #
 utf8-surrogates-allowed	encoding_decode.c	      if (byte == 0xED) {\n        s->upper = 0x9F;\n      }\n	
 utf8-overlong-e0	encoding_decode.c	        s->lower = 0xA0;\n	
@@ -23,7 +23,7 @@ bom-removal-strips-every-mark	encoding_decode.c	    dec->strip_pending = false;\
 bom-sniff-be-wrong	encoding_decode.c	    if (h[1] == 0xFF) {\n      *enc = GTEXT_ENCODING_UTF_16BE;	    if (h[1] == 0xFE) {\n      *enc = GTEXT_ENCODING_UTF_16BE;
 bom-sniffing-never-starts	encoding_decode.c	  dec->sniff_pending = dec->opts.bom_sniffing;	  dec->sniff_pending = false;
 bom-held-bytes-dropped	encoding_decode.c	  run_items(dec, copy, n, false, taken, false, call);\n	
-decoder-not-reset-after-flush	encoding_decode.c	  fill_result(result, status, used, &call, delivered);\n  stream_start(dec);\n  return status;	  fill_result(result, status, used, &call, delivered);\n  return status;
+decoder-not-reset-after-flush	encoding_decode.c	  stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);\n  return status;	  return status;
 label-vt-is-white-space	encoding_core.c	c == 0x09 || c == 0x0A	c == 0x09 || c == 0x0B || c == 0x0A
 label-z-not-lowered	encoding_core.c	c >= 'A' && c <= 'Z'	c >= 'A' && c < 'Z'
 label-longest-refused	encoding_core.c	len > gtext_encoding_label_longest	len >= gtext_encoding_label_longest
@@ -33,3 +33,65 @@ encoder-replacement-mark	encoding_encode.c	gtext_out_put(&enc->out, "?", 1)	gtex
 table-windows-1252-8d	tables/encoding_tables.c	0x0152, 0x008D, 0x017D, 0x008F	0x0152, 0x008C, 0x017D, 0x008F
 label-key-too-small	encoding_core.c	  unsigned char key[GTEXT_ENCODING_LABEL_KEY];	  unsigned char key[16];
 sniffed-mark-not-counted-in-offsets	encoding_decode.c	    dec->pos += len;\n	
+#
+# The multi-byte codecs (src/encoding/encoding_cjk.c, the generated tables/encoding_tables_cjk.c, and the drivers' handling of two code points and of ISO-2022-JP's
+# state): one rule of the standard undone each.
+#
+gb18030-third-byte-range	encoding_cjk.c	if (!in_range(byte, 0x30, 0x39)) {\n      out->restore_n = 3;	if (!in_range(byte, 0x30, 0x3A)) {\n      out->restore_n = 3;
+gb18030-restore-two	encoding_cjk.c	out->restore_n = 3;	out->restore_n = 2;
+gb18030-ranges-e7c7	encoding_cjk.c	  if (pointer == 7457) {\n    return 0xE7C7;\n  }	  if (pointer == 7458) {\n    return 0xE7C7;\n  }
+gb18030-ranges-upper-bound	encoding_cjk.c	pointer > 1237575)	pointer > 1237576)
+gb18030-ranges-gap	encoding_cjk.c	(pointer > 39419 && pointer < 189000)	(pointer > 39419 && pointer < 189001)
+gb18030-0x80-is-c1	encoding_cjk.c	emit1(out, 0x20AC);	emit1(out, 0x0080);
+gb18030-trail-offset	encoding_cjk.c	const int offset = byte < 0x7F ? 0x40 : 0x41;\n    /* If byte is in the range 0x40 to 0x7E, inclusive, or 0x80 to 0xFE, inclusive, then set pointer to (leading - 0x81) x 190	const int offset = byte < 0x7F ? 0x40 : 0x42;\n    /* If byte is in the range 0x40 to 0x7E, inclusive, or 0x80 to 0xFE, inclusive, then set pointer to (leading - 0x81) x 190
+gb18030-ascii-trail-swallowed	encoding_cjk.c	    /* If byte is an ASCII byte, then restore byte to ioQueue. */\n    if (byte <= 0x7F) {\n      out->restore_n = 1;\n      out->restore[0] = (uint8_t)byte;\n    }\n    /* Return error. */\n    return GTEXT_DEC_ERROR;\n  }\n  /* If byte is an ASCII byte, then return a code point whose value is byte. */\n  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is 0x80	    /* If byte is an ASCII byte, then restore byte to ioQueue. */\n    /* Return error. */\n    return GTEXT_DEC_ERROR;\n  }\n  /* If byte is an ASCII byte, then return a code point whose value is byte. */\n  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is 0x80
+gb18030-enc-gbk-flag-inverted	encoding_cjk.c	if (is_gbk && cp == 0x20AC) {	if (!is_gbk && cp == 0x20AC) {
+gb18030-enc-e5e5-written	encoding_cjk.c	  if (cp == 0xE5E5) {\n    return GTEXT_ENC_ERROR;\n  }	  if (cp == 0xE5E6) {\n    return GTEXT_ENC_ERROR;\n  }
+gb18030-enc-side-table	encoding_cjk.c	{0xE864, 0xFE, 0xA0}	{0xE864, 0xFE, 0xA1}
+gb18030-enc-gbk-has-four-bytes	encoding_cjk.c	  if (is_gbk) {\n    return GTEXT_ENC_ERROR;\n  }\n  /* Set pointer to the index gb18030 ranges pointer	  if (0) {\n    return GTEXT_ENC_ERROR;\n  }\n  /* Set pointer to the index gb18030 ranges pointer
+gb18030-enc-ranges-e7c7	encoding_cjk.c	  if (cp == 0xE7C7) {\n    return 7457;\n  }	  if (cp == 0xE7C8) {\n    return 7457;\n  }
+gb18030-enc-trailing-offset	encoding_cjk.c	const uint32_t offset = trailing < 0x3F ? 0x40 : 0x41;\n    out->bytes[0] = (uint8_t)(pointer / 190 + 0x81);	const uint32_t offset = trailing < 0x40 ? 0x40 : 0x41;\n    out->bytes[0] = (uint8_t)(pointer / 190 + 0x81);
+big5-sequence-1133	encoding_cjk.c	case 1133:	case 1134:
+big5-sequence-1166-mark	encoding_cjk.c	out->cp[0] = 0x00EA;\n      out->cp[1] = 0x030C;	out->cp[0] = 0x00EA;\n      out->cp[1] = 0x0304;
+big5-trail-offset	encoding_cjk.c	const int offset = byte < 0x7F ? 0x40 : 0x62;	const int offset = byte < 0x7F ? 0x40 : 0x61;
+big5-ascii-trail-swallowed	encoding_cjk.c	    /* If byte is an ASCII byte, restore byte to ioQueue. */\n    if (byte <= 0x7F) {\n      out->restore_n = 1;\n      out->restore[0] = (uint8_t)byte;\n    }	    /* If byte is an ASCII byte, restore byte to ioQueue. */
+big5-lead-0xff	encoding_cjk.c	if (in_range(byte, 0x81, 0xFE)) {\n    s->leading = (uint8_t)byte;\n    return GTEXT_DEC_CONTINUE;\n  }\n  /* Return error. */\n  return GTEXT_DEC_ERROR;\n}\n\n/// Big5's encoder	if (in_range(byte, 0x81, 0xFF)) {\n    s->leading = (uint8_t)byte;\n    return GTEXT_DEC_CONTINUE;\n  }\n  /* Return error. */\n  return GTEXT_DEC_ERROR;\n}\n\n/// Big5's encoder
+big5-enc-trailing-offset	encoding_cjk.c	const uint32_t offset = trailing < 0x3F ? 0x40 : 0x62;	const uint32_t offset = trailing < 0x3F ? 0x40 : 0x61;
+euc-jp-0212-flag-kept	encoding_cjk.c	    /* Set EUC-JP jis0212 to false. */\n    s->jis0212 = false;	    /* Set EUC-JP jis0212 to false. */
+euc-jp-katakana-upper	encoding_cjk.c	s->leading == 0x8E && in_range(byte, 0xA1, 0xDF)	s->leading == 0x8E && in_range(byte, 0xA1, 0xE0)
+euc-jp-0212-lead-lower	encoding_cjk.c	s->leading == 0x8F && in_range(byte, 0xA1, 0xFE)	s->leading == 0x8F && in_range(byte, 0xA0, 0xFE)	--only mb-decode --mb-bytes 3 --no-strata --mb-only euc-jp
+euc-jp-ascii-trail-swallowed	encoding_cjk.c	    /* If byte is an ASCII byte, then restore byte to ioQueue. */\n    if (byte <= 0x7F) {\n      out->restore_n = 1;\n      out->restore[0] = (uint8_t)byte;\n    }\n    /* Return error. */\n    return GTEXT_DEC_ERROR;\n  }\n  /* If byte is an ASCII byte, then return a code point whose value is byte. */\n  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is 0x8E, 0x8F	    /* If byte is an ASCII byte, then restore byte to ioQueue. */\n    /* Return error. */\n    return GTEXT_DEC_ERROR;\n  }\n  /* If byte is an ASCII byte, then return a code point whose value is byte. */\n  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is 0x8E, 0x8F
+euc-jp-enc-yen	encoding_cjk.c	  if (cp == 0x00A5) {\n    out->bytes[0] = 0x5C;\n    out->n = 1;\n    return GTEXT_ENC_OK;\n  }\n  /* If codePoint is U+203E, then return byte 0x7E. */\n  if (cp == 0x203E) {\n    out->bytes[0] = 0x7E;	  if (cp == 0x00A6) {\n    out->bytes[0] = 0x5C;\n    out->n = 1;\n    return GTEXT_ENC_OK;\n  }\n  /* If codePoint is U+203E, then return byte 0x7E. */\n  if (cp == 0x203E) {\n    out->bytes[0] = 0x7E;
+euc-jp-enc-minus	encoding_cjk.c	  /* If codePoint is U+2212, then set it to U+FF0D. */\n  if (cp == 0x2212) {\n    cp = 0xFF0D;\n  }\n  /* Let pointer be the index pointer for codePoint in index jis0208. If pointer is null, then return error with codePoint. */	  /* If codePoint is U+2212, then set it to U+FF0D. */\n  if (cp == 0x2213) {\n    cp = 0xFF0D;\n  }\n  /* Let pointer be the index pointer for codePoint in index jis0208. If pointer is null, then return error with codePoint. */
+euc-jp-enc-katakana-range	encoding_cjk.c	if (cp >= 0xFF61 && cp <= 0xFF9F) {\n    out->bytes[0] = 0x8E;	if (cp >= 0xFF61 && cp <= 0xFF9E) {\n    out->bytes[0] = 0x8E;
+iso-escape-output-flag	encoding_cjk.c	return output ? GTEXT_DEC_ERROR : GTEXT_DEC_CONTINUE;	return GTEXT_DEC_CONTINUE;
+iso-roman-backslash	encoding_cjk.c	    if (byte == 0x5C) { /* Set output to false and return code point U+00A5. */	    if (byte == 0x5D) { /* Set output to false and return code point U+00A5. */
+iso-katakana-offset	encoding_cjk.c	emit1(out, 0xFF61u - 0x21u + (uint32_t)byte);\n      return GTEXT_DEC_EMIT;\n    }\n    if (byte < 0) {\n      return GTEXT_DEC_FINISHED;\n    }\n    s->output = false;\n    return GTEXT_DEC_ERROR;\n  case ISO_LEAD_BYTE:	emit1(out, 0xFF61u - 0x20u + (uint32_t)byte);\n      return GTEXT_DEC_EMIT;\n    }\n    if (byte < 0) {\n      return GTEXT_DEC_FINISHED;\n    }\n    s->output = false;\n    return GTEXT_DEC_ERROR;\n  case ISO_LEAD_BYTE:
+iso-trail-escape-is-error	encoding_cjk.c	    if (byte == 0x1B) { /* Set decoder state to escape start and return error. */\n      s->state = ISO_ESCAPE_START;\n      return GTEXT_DEC_ERROR;	    if (byte == 0x1B) { /* Set decoder state to escape start and return error. */\n      s->state = ISO_ESCAPE_START;\n      return GTEXT_DEC_CONTINUE;
+iso-escape-eoq-restore-lost	encoding_cjk.c	    if (byte < 0) {\n      out->restore_n = 1;\n      out->restore[0] = (uint8_t)leading;\n    } else {	    if (byte < 0) {\n      out->restore_n = 0;\n    } else {
+iso-escape-start-byte-lost	encoding_cjk.c	    if (byte >= 0) {\n      out->restore_n = 1;\n      out->restore[0] = (uint8_t)byte;\n    }\n    /* Set output to false, decoder state to the decoder output state, and return error. */	    /* Set output to false, decoder state to the decoder output state, and return error. */
+iso-escape-final-i	encoding_cjk.c	if (leading == 0x28 && byte == 0x49) {	if (leading == 0x28 && byte == 0x48) {
+iso-enc-controls-written	encoding_cjk.c	(cp == 0x0E || cp == 0x0F || cp == 0x1B)) {\n    out->error_cp = 0xFFFD;	(cp == 0x0E || cp == 0x0F)) {\n    out->error_cp = 0xFFFD;
+iso-enc-error-names-the-control	encoding_cjk.c	    out->error_cp = 0xFFFD;\n    return GTEXT_ENC_ERROR;	    out->error_cp = (uint32_t)cp;\n    return GTEXT_ENC_ERROR;
+iso-enc-roman-backslash	encoding_cjk.c	((cp <= 0x7F && cp != 0x5C && cp != 0x7E) || cp == 0x00A5 || cp == 0x203E)	((cp <= 0x7F && cp != 0x7E) || cp == 0x00A5 || cp == 0x203E)
+iso-enc-flush-escape	encoding_cjk.c	    *mode = ISO_ASCII;\n    iso_escape(out, 0x28, 0x42);\n    return GTEXT_ENC_OK;\n  }\n  /* If codePoint is end-of-queue and the encoder state is ASCII, then return finished. */	    *mode = ISO_ASCII;\n    iso_escape(out, 0x28, 0x4A);\n    return GTEXT_ENC_OK;\n  }\n  /* If codePoint is end-of-queue and the encoder state is ASCII, then return finished. */
+iso-enc-no-escape-before-reference	encoding_cjk.c	    if (*mode == ISO_JIS0208) {\n      out->restore = true;\n      out->restore_cp = (uint32_t)cp;\n      *mode = ISO_ASCII;	    if (0) {\n      out->restore = true;\n      out->restore_cp = (uint32_t)cp;\n      *mode = ISO_ASCII;
+iso-enc-katakana-not-mapped	encoding_cjk.c	    cp = gtext_encoding_iso_2022_jp_katakana_decode[cp - 0xFF61];	    cp = cp;
+shift-jis-eudc-upper	encoding_cjk.c	pointer >= 8836 && pointer <= 10715	pointer >= 8836 && pointer <= 10714
+shift-jis-0x80-is-error	encoding_cjk.c	  if (byte <= 0x80) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is in the range 0xA1 to 0xDF, inclusive, then return a code point whose value is 0xFF61 - 0xA1 + byte. */	  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is in the range 0xA1 to 0xDF, inclusive, then return a code point whose value is 0xFF61 - 0xA1 + byte. */
+shift-jis-lead-offset	encoding_cjk.c	leading < 0xA0 ? 0x81 : 0xC1	leading < 0x9F ? 0x81 : 0xC1
+shift-jis-lead-fd	encoding_cjk.c	in_range(byte, 0xE0, 0xFC)) {\n    s->leading	in_range(byte, 0xE0, 0xFD)) {\n    s->leading
+shift-jis-enc-0x80	encoding_cjk.c	  if (cp <= 0x80) {\n    out->bytes[0] = (uint8_t)cp;\n    out->n = 1;\n    return GTEXT_ENC_OK;\n  }\n  /* If codePoint is U+00A5, then return byte 0x5C. If codePoint is U+203E, then return byte 0x7E. */	  if (cp <= 0x7F) {\n    out->bytes[0] = (uint8_t)cp;\n    out->n = 1;\n    return GTEXT_ENC_OK;\n  }\n  /* If codePoint is U+00A5, then return byte 0x5C. If codePoint is U+203E, then return byte 0x7E. */
+shift-jis-enc-leading-offset	encoding_cjk.c	leading < 0x1F ? 0x81 : 0xC1	leading < 0x20 ? 0x81 : 0xC1
+shift-jis-enc-trailing-offset	encoding_cjk.c	const uint32_t offset = trailing < 0x3F ? 0x40 : 0x41;\n  out->bytes[0] = (uint8_t)(leading + leading_offset);	const uint32_t offset = trailing < 0x40 ? 0x40 : 0x41;\n  out->bytes[0] = (uint8_t)(leading + leading_offset);
+euc-kr-trail-lower	encoding_cjk.c	if (in_range(byte, 0x41, 0xFE)) {\n      pointer = (int64_t)(leading - 0x81) * 190 + (byte - 0x41);	if (in_range(byte, 0x42, 0xFE)) {\n      pointer = (int64_t)(leading - 0x81) * 190 + (byte - 0x41);
+euc-kr-ascii-trail-swallowed	encoding_cjk.c	    /* If byte is an ASCII byte, then restore byte to ioQueue. */\n    if (byte <= 0x7F) {\n      out->restore_n = 1;\n      out->restore[0] = (uint8_t)byte;\n    }\n    /* Return error. */\n    return GTEXT_DEC_ERROR;\n  }\n  /* If byte is an ASCII byte, then return a code point whose value is byte. */\n  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is in the range 0x81 to 0xFE, inclusive, then set EUC-KR leading	    /* If byte is an ASCII byte, then restore byte to ioQueue. */\n    /* Return error. */\n    return GTEXT_DEC_ERROR;\n  }\n  /* If byte is an ASCII byte, then return a code point whose value is byte. */\n  if (byte <= 0x7F) {\n    emit1(out, (uint32_t)byte);\n    return GTEXT_DEC_EMIT;\n  }\n  /* If byte is in the range 0x81 to 0xFE, inclusive, then set EUC-KR leading
+euc-kr-enc-trailing	encoding_cjk.c	out->bytes[1] = (uint8_t)(pointer % 190 + 0x41);	out->bytes[1] = (uint8_t)(pointer % 190 + 0x42);
+cjk-lead-idle-always	encoding_cjk.c	return state->lead.leading == 0;	return true;
+cjk-pair-second-lost	encoding_decode.c	: step.n == 2 ? dec_put_cp2(dec, step.cp[0], step.cp[1]) : dec_put_cp(dec, step.cp[0]);	: dec_put_cp(dec, step.cp[0]);
+iso-state-reset-after-fatal	encoding_decode.c	status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP	false
+cjk-error-code-point-ignored	encoding_encode.c	put_reference(&enc->out, step.error_cp)	put_reference(&enc->out, cp)
+table-jis0208-first-entry	tables/encoding_tables_cjk.c	12288,12289,12290,65292,65294,12539	12288,12289,12291,65292,65294,12539
+table-big5-reverse-plane-2	tables/encoding_tables_cjk.c	static const uint16_t big5_sup_ptr[291] = {\n  11207,11205,19386	static const uint16_t big5_sup_ptr[291] = {\n  11207,11206,19386
+table-gb18030-ranges-pointer	tables/encoding_tables_cjk.c	  0,36,38,45,50,81,89,95,96,100	  0,36,38,45,51,81,89,95,96,100
+table-euc-kr-reverse-index	tables/encoding_tables_cjk.c	static const uint16_t euc_kr_index[2048] = {\n  0,0,0,0,0,1,2,3	static const uint16_t euc_kr_index[2048] = {\n  0,0,0,0,0,2,1,3

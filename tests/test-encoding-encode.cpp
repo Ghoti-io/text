@@ -467,10 +467,12 @@ TEST(EncodingEncodeArguments, EveryMisuseHasItsOwnStatus) {
     gtext_encoder_free(e);
     e = nullptr;
   }
+  // The multi-byte encodings have encoders now (they were E_UNSUPPORTED in the first release of the module).
   for (GTEXT_Encoding enc : {GTEXT_ENCODING_GBK, GTEXT_ENCODING_GB18030, GTEXT_ENCODING_BIG5, GTEXT_ENCODING_EUC_JP,
            GTEXT_ENCODING_ISO_2022_JP, GTEXT_ENCODING_SHIFT_JIS, GTEXT_ENCODING_EUC_KR}) {
-    EXPECT_EQ(gtext_encoder_new(enc, nullptr, &e), GTEXT_ENCODING_E_UNSUPPORTED) << gtext_encoding_name(enc);
-    EXPECT_EQ(e, nullptr);
+    ASSERT_EQ(gtext_encoder_new(enc, nullptr, &e), GTEXT_ENCODING_OK) << gtext_encoding_name(enc);
+    gtext_encoder_free(e);
+    e = nullptr;
   }
   GTEXT_Encoder_Options bad = gtext_encoder_options_default();
   poke(bad.error_mode, 3u);
@@ -501,7 +503,7 @@ TEST(EncodingEncodeArguments, EveryMisuseHasItsOwnStatus) {
   EXPECT_EQ(gtext_encoding_encode_buffer(GTEXT_ENCODING_UTF_8, nullptr, "a", 1, nullptr, &n, &r), GTEXT_ENCODING_E_INVALID);
   EXPECT_EQ(gtext_encoding_encode_buffer(GTEXT_ENCODING_UTF_8, nullptr, nullptr, 3, &out, &n, &r), GTEXT_ENCODING_E_INVALID);
   EXPECT_EQ(gtext_encoding_encode_buffer(GTEXT_ENCODING_UTF_16LE, nullptr, "a", 1, &out, &n, &r), GTEXT_ENCODING_E_NO_ENCODER);
-  EXPECT_EQ(gtext_encoding_encode_buffer(GTEXT_ENCODING_SHIFT_JIS, nullptr, "a", 1, &out, &n, &r), GTEXT_ENCODING_E_UNSUPPORTED);
+  EXPECT_EQ(gtext_encoding_encode_buffer(GTEXT_ENCODING_SHIFT_JIS, nullptr, "\xE2\x82\xAC", 3, &out, &n, &r), GTEXT_ENCODING_E_UNENCODABLE);
   EXPECT_EQ(out, reinterpret_cast<char *>(0x1));
   EXPECT_EQ(n, 9u);
   ASSERT_EQ(gtext_encoding_encode_buffer(GTEXT_ENCODING_WINDOWS_1252, nullptr, nullptr, 0, &out, &n, nullptr), GTEXT_ENCODING_OK);

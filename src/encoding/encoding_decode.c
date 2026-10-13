@@ -268,7 +268,7 @@ const GTEXT_Dec_Codec * gtext_encoding_dec_codec(GTEXT_Encoding encoding) {
   case GTEXT_ENCODING_X_USER_DEFINED:
     return &codec_x_user_defined;
   default:
-    return gtext_encoding_sb_index[encoding] >= 0 ? &codec_single_byte : NULL;
+    return gtext_encoding_sb_index[encoding] >= 0 ? &codec_single_byte : gtext_encoding_cjk_dec_codec(encoding);
   }
 }
 
@@ -305,11 +305,16 @@ static bool unicode_bom_encoding(GTEXT_Encoding e) {
   return e == GTEXT_ENCODING_UTF_8 || e == GTEXT_ENCODING_UTF_16BE || e == GTEXT_ENCODING_UTF_16LE;
 }
 
-/// Begin a stream: the state the decoder has when made, after a flush and after a failure.
-static void stream_start(GTEXT_Decoder * dec) {
+/// Begin a stream: the state the decoder has when made, after a flush and after a failure. `keep_handler`: keep ISO-2022-JP's mode and nothing else of the
+/// handler (see gtext_decoder_decode() and gtext_encoding_iso_2022_jp_dec_resume()).
+static void stream_start(GTEXT_Decoder * dec, bool keep_handler) {
   dec->active = dec->requested;
   dec->codec = gtext_encoding_dec_codec(dec->active);
-  dec->codec->init(&dec->state, dec->active);
+  if (!keep_handler) {
+    dec->codec->init(&dec->state, dec->active);
+  } else {
+    gtext_encoding_iso_2022_jp_dec_resume(&dec->state);
+  }
   dec->pos = 0;
   dec->held_n = 0;
   dec->sniff_pending = dec->opts.bom_sniffing;
@@ -328,6 +333,16 @@ static bool dec_put_cp(GTEXT_Decoder * dec, uint32_t cp) {
     }
   }
   return gtext_out_put_cp(&dec->out, cp);
+}
+
+static bool dec_put_cp2(GTEXT_Decoder * dec, uint32_t cp0, uint32_t cp1) {
+  if (dec->strip_pending) {
+    dec->strip_pending = false;
+    if (cp0 == 0xFEFF) {
+      return gtext_out_put_cp(&dec->out, cp1);
+    }
+  }
+  return gtext_out_put_cp2(&dec->out, cp0, cp1);
 }
 
 /// Run `len` bytes of `in`, and the end of the stream if `eoq`, through the handler. Everything the standard's
@@ -382,18 +397,20 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
     GTEXT_Dec_Step step;
     step.n = 0;
     step.restore_n = 0;
+    step.cp[0] = step.cp[1] = 0;
     call->steps++;
     const GTEXT_Dec_Result r = codec->step(&dec->state, byte, &step);
     if (r == GTEXT_DEC_CONTINUE) {
       continue;
     }
     if (r == GTEXT_DEC_EMIT) {
-      for (uint8_t k = 0; k < step.n; k++) {
-        if (!dec_put_cp(dec, step.cp[k])) {
-          call->status = dec->out.status;
-          call->taken = taken_base + (count_in ? i : 0);
-          return;
-        }
+      /* Two code points of one step (Big5's sequences) are written together, so that a limit or a refusing sink never splits a character. */
+      const bool ok = step.n == 0 ? true /* an EMIT of nothing writes nothing (and reads no code point the handler never set) */
+                    : step.n == 2 ? dec_put_cp2(dec, step.cp[0], step.cp[1]) : dec_put_cp(dec, step.cp[0]);
+      if (!ok) {
+        call->status = dec->out.status;
+        call->taken = taken_base + (count_in ? i : 0);
+        return;
       }
       continue;
     }
@@ -592,7 +609,7 @@ GTEXT_Encoding_Status gtext_decoder_new(GTEXT_Encoding encoding, const GTEXT_Dec
   }
   dec->requested = encoding;
   dec->out.limit = dec->opts.max_output_bytes;
-  stream_start(dec);
+  stream_start(dec, false);
   *out = dec;
   return GTEXT_ENCODING_OK;
 }
@@ -607,7 +624,7 @@ void gtext_decoder_free(GTEXT_Decoder * decoder) {
 
 void gtext_decoder_reset(GTEXT_Decoder * decoder) {
   if (decoder) {
-    stream_start(decoder);
+    stream_start(decoder, false);
   }
 }
 
@@ -644,7 +661,12 @@ GTEXT_Encoding_Status gtext_decoder_decode(GTEXT_Decoder * dec, const void * in,
     return status;
   }
   fill_result(result, status, used, &call, delivered);
-  stream_start(dec);
+  /* The stream is over (a flush or a failure) and the next call begins a new one - with one exception the standard's own tests insist on: "ISO-2022-JP ... is
+     the only decoder which does not clear internal state before throwing in stream mode", so after a fatal error in a call that did not flush, its handler
+     goes on in the mode it was in (the Roman or katakana state an escape sequence selected). The other encodings start over, as before: their handlers clear their
+     own state when they return an error (all but `replacement`'s, whose first error would then be the last); the driver's own state (positions, byte order mark
+     handling, the count of output) always starts over. */
+  stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);
   return status;
 }
 

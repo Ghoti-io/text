@@ -13,7 +13,8 @@
 //   E <utf8>                        `new TextEncoder().encode(string)`, the string the standard's decode of the bytes   -> OUT <utf8>
 //   PING                            -> PONG
 //
-// and, as a command line, `node encoding.mjs enum <label> <n> <flags> <start> <count>`, the records of tools/oracle/encoding_ours.c.
+// and, as a command line, `node encoding.mjs enum <label> <n> <flags> <start> <count>`, the records of tools/oracle/encoding_ours.c, and
+// `node encoding.mjs enumx <label> <flags> <spec>`, the records of the product of byte sets of the spec (see encoding_ours.c).
 //
 // Copyright 2026 by Corey Pennycuff
 import { createInterface } from "node:readline";
@@ -75,7 +76,57 @@ function answer(line) {
   }
 }
 
-if (process.argv[2] === "enum") {
+function parseSpec(text) {
+  return text.split(":").map((set) => {
+    const bytes = new Set();
+    for (const item of set.split(",")) {
+      const [lo, hi] = item.split("-").map((x) => parseInt(x, 16));
+      for (let b = lo; b <= (hi === undefined ? lo : hi); b++) bytes.add(b);
+    }
+    return [...bytes].sort((a, b) => a - b);
+  });
+}
+
+if (process.argv[2] === "enumx") {
+  const [label, flags, specText] = [process.argv[3], process.argv[4], process.argv[5]];
+  const name = Buffer.from(label === "-" ? "" : label, "hex").toString("utf8");
+  const dec = new TextDecoder(name, options(flags));
+  const sets = parseSpec(specText);
+  const n = sets.length;
+  const input = new Uint8Array(n);
+  const idx = new Array(n).fill(0);
+  let rec = Buffer.alloc(1 << 20);
+  let used = 0;
+  const flush = () => {
+    let off = 0;
+    while (off < used) off += writeSync(1, rec, off, used - off);
+    used = 0;
+  };
+  for (;;) {
+    for (let k = 0; k < n; k++) input[k] = sets[k][idx[k]];
+    let r;
+    try {
+      r = Buffer.from(dec.decode(input), "utf8");
+    } catch (e) {
+      r = null;
+    }
+    if (used + 300 > rec.length) flush();
+    if (r === null) {
+      rec[used++] = 255;
+    } else {
+      rec[used++] = r.length;
+      r.copy(rec, used);
+      used += r.length;
+    }
+    let k = n - 1;
+    while (k >= 0 && ++idx[k] === sets[k].length) {
+      idx[k] = 0;
+      k--;
+    }
+    if (k < 0) break;
+  }
+  flush();
+} else if (process.argv[2] === "enum") {
   const [label, n, flags, start, count] = [process.argv[3], Number(process.argv[4]), process.argv[5], BigInt(process.argv[6]), BigInt(process.argv[7])];
   const name = Buffer.from(label === "-" ? "" : label, "hex").toString("utf8");
   const dec = new TextDecoder(name, options(flags));

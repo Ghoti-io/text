@@ -121,9 +121,20 @@ class EncodingFuzzSeeds : public ::testing::Test {
 TEST_F(EncodingFuzzSeeds, EverySeedHoldsEveryProperty) {
   const std::string dir = corpus_dir() + "/encoding";
   const auto files = seeds(dir);
-  // The floor. tools/encoding/make-fuzz-seeds.py writes the corpus.
-  constexpr size_t kMinSeeds = 900;
-  ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/encoding/make-fuzz-seeds.py writes it";
+  // The corpus is what tools/encoding/make-fuzz-seeds.py wrote (its count is in tools/encoding/FUZZ_SEED_COUNT) and the reproducers, which it keeps.
+  size_t generated = 0;
+  for (const std::string & f : files) {
+    if (fs::path(f).filename().string().rfind("reproducer-", 0) != 0) {
+      generated++;
+    }
+  }
+  const fs::path count_file = fs::path(dir).parent_path().parent_path().parent_path().parent_path() / "tools" / "encoding" / "FUZZ_SEED_COUNT";
+  std::ifstream count_in(count_file);
+  size_t expected = 0;
+  ASSERT_TRUE(static_cast<bool>(count_in >> expected)) << count_file.string() << " is not there; tools/encoding/make-fuzz-seeds.py writes it";
+  ASSERT_GT(expected, 0u);
+  EXPECT_EQ(generated, expected) << "the generator wrote " << expected << " seeds and " << dir << " has " << generated << " that are not reproducers";
+  ASSERT_GE(files.size(), expected) << "the seed corpus is missing from " << dir << "; tools/encoding/make-fuzz-seeds.py writes it";
   for (const char * name : {"utf-8-utf8-ill-formed-table.seed", "windows-1252-all-bytes.seed", "utf-16le-bom-utf16le.seed",
            "x-user-defined-utf8-euro-emoji-alloc.seed", "not-an-encoding-0.seed"}) {
     const std::string path = dir + "/" + name;
@@ -144,7 +155,14 @@ TEST_F(EncodingFuzzSeeds, EverySeedHoldsEveryProperty) {
   EXPECT_EQ(encoding_harness::g_refused_values, 8u);
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
   RecordProperty("replay_seconds", std::to_string(seconds));
-  EXPECT_LT(seconds, 60.0) << files.size() << " seeds took " << seconds << " s";
+  // About five seconds for the 2,600 seeds of a plain build; a sanitizer is up to twenty times slower, and the bound is for a replay that has gone quadratic.
+  // (GTEXT_TEST_FULL=1 in the environment, the switch of the other multi-byte tests for their sanitizer reductions, lifts the bound to ten times that.)
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+  const double kSecondsAllowed = std::getenv("GTEXT_TEST_FULL") ? 3000.0 : 300.0;
+#else
+  const double kSecondsAllowed = 60.0;
+#endif
+  EXPECT_LT(seconds, kSecondsAllowed) << files.size() << " seeds took " << seconds << " s";
 }
 
 } // namespace

@@ -248,9 +248,24 @@ inline GTEXT_Encoding encoding_by_name(const std::string & name) {
   return GTEXT_ENCODING_NONE;
 }
 
+// The seven multi-byte legacy encodings (sections 10 to 13 of the standard), in the order of the enum.
+inline std::vector<GTEXT_Encoding> multi_byte_encodings() {
+  return {GTEXT_ENCODING_GBK, GTEXT_ENCODING_GB18030, GTEXT_ENCODING_BIG5, GTEXT_ENCODING_EUC_JP, GTEXT_ENCODING_ISO_2022_JP,
+      GTEXT_ENCODING_SHIFT_JIS, GTEXT_ENCODING_EUC_KR};
+}
+
+inline bool is_multi_byte(GTEXT_Encoding e) {
+  for (GTEXT_Encoding m : multi_byte_encodings()) {
+    if (m == e) {
+      return true;
+    }
+  }
+  return false;
+}
+
 inline bool is_single_byte(GTEXT_Encoding e) {
   if (e == GTEXT_ENCODING_UTF_8 || e == GTEXT_ENCODING_REPLACEMENT || e == GTEXT_ENCODING_UTF_16BE
-      || e == GTEXT_ENCODING_UTF_16LE || e == GTEXT_ENCODING_X_USER_DEFINED) {
+      || e == GTEXT_ENCODING_UTF_16LE || e == GTEXT_ENCODING_X_USER_DEFINED || is_multi_byte(e)) {
     return false;
   }
   return gtext_encoding_is_supported(e);

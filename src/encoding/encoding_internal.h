@@ -44,8 +44,11 @@
  *   same code point to be handled again (ISO-2022-JP's "prepend code point"). The driver owns the UTF-8 reading,
  *   the three error modes and the buffer.
  *
- * The multi-byte stage adds rows and handlers, and their index tables to the
- * generated file. It does not touch the public headers, the drivers or the callers.
+ * The multi-byte stage adds rows and handlers (encoding_cjk.c) and their index tables (tables/encoding_tables_cjk.c).
+ * It does not touch the public headers or the callers. Inside, the drivers learned three small things: a decoder
+ * step may emit two code points that are written together or not at all, an encoder step may ask for a different
+ * code point than the one it was given to be handled again, and may name the code point an error is "with"
+ * (ISO-2022-JP needs both); the pushback and the idle test were already what the multi-byte decoders need.
  */
 
 #ifndef GHOTI_IO_GTEXT_SRC_ENCODING_ENCODING_INTERNAL_H
@@ -95,6 +98,83 @@ extern const uint16_t gtext_encoding_sb_encode_cp[GTEXT_ENCODING_SB_TABLES][128]
 /// The byte of each code point of gtext_encoding_sb_encode_cp.
 extern const uint8_t gtext_encoding_sb_encode_byte[GTEXT_ENCODING_SB_TABLES][128];
 
+/* ---- the multi-byte indexes (tables/encoding_tables_cjk.c) ----------------------------- */
+
+/// How many pointers each forward array holds (the generator checks that this is what it wrote; the generated file includes this header, so a
+/// different count is also a compile error).
+#define GTEXT_JIS0208_POINTERS 11280
+#define GTEXT_JIS0212_POINTERS 8836
+#define GTEXT_GB18030_POINTERS 23940
+#define GTEXT_BIG5_POINTERS 19782
+#define GTEXT_EUC_KR_POINTERS 23940
+#define GTEXT_ISO_2022_JP_KATAKANA_POINTERS 63
+/// Bytes of the bit array that says which Big5 pointers map to plane 2.
+#define GTEXT_BIG5_PLANE2_BYTES ((GTEXT_BIG5_POINTERS + 7) / 8)
+/// Rows of index gb18030 ranges.
+#define GTEXT_GB18030_RANGES 207
+/// A forward array's entry (and a reverse table's) for "none".
+#define GTEXT_INDEX_NONE 0xFFFFu
+
+/// index jis0208, jis0212, gb18030, EUC-KR and Big5 (low 16 bits; see gtext_encoding_big5_plane2): pointer to code point, 0xFFFF for none.
+extern const uint16_t gtext_encoding_jis0208_decode[GTEXT_JIS0208_POINTERS];
+extern const uint16_t gtext_encoding_jis0212_decode[GTEXT_JIS0212_POINTERS];
+extern const uint16_t gtext_encoding_gb18030_decode[GTEXT_GB18030_POINTERS];
+extern const uint16_t gtext_encoding_euc_kr_decode[GTEXT_EUC_KR_POINTERS];
+extern const uint16_t gtext_encoding_big5_decode[GTEXT_BIG5_POINTERS];
+/// Bit `pointer` of the Big5 index is set when its code point is 0x20000 plus the entry of gtext_encoding_big5_decode.
+extern const uint8_t gtext_encoding_big5_plane2[GTEXT_BIG5_PLANE2_BYTES];
+/// index ISO-2022-JP katakana: halfwidth U+FF61 + pointer to the code point the encoder writes instead.
+extern const uint16_t gtext_encoding_iso_2022_jp_katakana_decode[GTEXT_ISO_2022_JP_KATAKANA_POINTERS];
+/// index gb18030 ranges: the rows' pointers and code points, both ascending.
+extern const uint32_t gtext_encoding_gb18030_ranges_pointer[GTEXT_GB18030_RANGES];
+extern const uint32_t gtext_encoding_gb18030_ranges_cp[GTEXT_GB18030_RANGES];
+
+/// A reverse table, code point to pointer: the BMP in blocks of 1 << shift pointers (`index` says which block of `pool` a range of code points
+/// uses; the block 0 is empty), the code points above it in two sorted arrays. 0xFFFF is "none".
+typedef struct {
+  const uint16_t * index;
+  const uint16_t * pool;
+  uint32_t limit;           ///< Code points of the BMP at or above this have no pointer.
+  uint8_t shift;
+  const uint32_t * sup_cp;  ///< Ascending code points above the BMP that have a pointer, or NULL.
+  const uint16_t * sup_ptr; ///< ... and the pointer of each.
+  uint32_t sup_count;
+} GTEXT_Rev_Index;
+
+/// "The index pointer for codePoint in index" of jis0208 (the first pointer), of "index Shift_JIS pointer" (the first pointer of jis0208 without
+/// the entries 8272 to 8835), of "index Big5 pointer" (the first pointer of the entries from 5024 on, the last for six code points), of gb18030
+/// and of EUC-KR (the first).
+extern const GTEXT_Rev_Index gtext_encoding_jis0208_rev;
+extern const GTEXT_Rev_Index gtext_encoding_shift_jis_rev;
+extern const GTEXT_Rev_Index gtext_encoding_big5_rev;
+extern const GTEXT_Rev_Index gtext_encoding_gb18030_rev;
+extern const GTEXT_Rev_Index gtext_encoding_euc_kr_rev;
+
+/// The pointer of a code point in a reverse table, or GTEXT_INDEX_NONE.
+static inline uint32_t gtext_rev_lookup(const GTEXT_Rev_Index * r, uint32_t cp) {
+  if (cp < 0x10000) {
+    if (cp >= r->limit) {
+      return GTEXT_INDEX_NONE;
+    }
+    const uint32_t block = r->index[cp >> r->shift];
+    return r->pool[(block << r->shift) + (cp & ((1u << r->shift) - 1))];
+  }
+  size_t lo = 0;
+  size_t hi = r->sup_count;
+  while (lo < hi) {
+    const size_t mid = lo + (hi - lo) / 2;
+    if (r->sup_cp[mid] == cp) {
+      return r->sup_ptr[mid];
+    }
+    if (r->sup_cp[mid] < cp) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return GTEXT_INDEX_NONE;
+}
+
 /* ---- decoders ------------------------------------------------------------------------- */
 
 /// What a decoder handler returns (the standard's "finished", "one or more items", "error", "continue").
@@ -129,10 +209,34 @@ typedef struct {
   bool big_endian;
 } GTEXT_Utf16_State;
 
+/// gb18030's and GBK's decoder (section 10.2.1): "gb18030 first", "second" and "third", each 0x00 for none.
+typedef struct {
+  uint8_t first;
+  uint8_t second;
+  uint8_t third;
+} GTEXT_Gb18030_State;
+
+/// The decoders with one leading byte (Big5, Shift_JIS, EUC-KR: section 11.1.1, 12.3.1, 13.1.1) and EUC-JP's (12.1.1, which adds "jis0212").
+typedef struct {
+  uint8_t leading;
+  bool jis0212;
+} GTEXT_Lead_State;
+
+/// ISO-2022-JP's decoder (section 12.2.1): the decoder state, the output state, the leading byte and "output".
+typedef struct {
+  uint8_t state;
+  uint8_t output_state;
+  uint8_t leading;
+  bool output;
+} GTEXT_Iso2022jp_State;
+
 /// A decoder's state. The union grows with the encodings; the driver treats it as opaque.
 typedef union {
   GTEXT_Utf8_State utf8;
   GTEXT_Utf16_State utf16;
+  GTEXT_Gb18030_State gb18030;
+  GTEXT_Lead_State lead;
+  GTEXT_Iso2022jp_State iso2022jp;
   bool replacement_error_returned;
   const uint16_t * sb_table;
 } GTEXT_Dec_State;
@@ -150,6 +254,10 @@ typedef struct {
 
 /// The decoder of an encoding, or NULL if this release has none.
 const GTEXT_Dec_Codec * gtext_encoding_dec_codec(GTEXT_Encoding encoding);
+/// The decoder of a multi-byte encoding (encoding_cjk.c), or NULL for any other.
+const GTEXT_Dec_Codec * gtext_encoding_cjk_dec_codec(GTEXT_Encoding encoding);
+/// ISO-2022-JP's decoder after a fatal error in a call that did not flush: the mode survives, nothing else (encoding_cjk.c).
+void gtext_encoding_iso_2022_jp_dec_resume(GTEXT_Dec_State * state);
 
 /* ---- encoders ------------------------------------------------------------------------- */
 
@@ -162,7 +270,10 @@ typedef enum {
 typedef struct {
   uint8_t bytes[8];
   uint8_t n;
-  bool restore;        ///< Handle the same code point again after writing `bytes`.
+  bool restore;        ///< Handle a code point again after writing `bytes`: `restore_cp`, which is the one handled unless the handler changed it
+                       ///< ("restore codePoint to ioQueue" after "set it to"; ISO-2022-JP).
+  uint32_t restore_cp; ///< preset by the driver to the code point handled; a handler changes it only when the standard sets codePoint before restoring it
+  uint32_t error_cp;   ///< ERROR: the code point the error is "with", which the HTML mode writes as a reference; preset to the code point handled (ISO-2022-JP returns U+FFFD for U+000E, U+000F and U+001B). The fatal status carries the code point handled.
 } GTEXT_Enc_Step;
 
 typedef union {
@@ -171,7 +282,7 @@ typedef union {
     const uint8_t * bytes;
     size_t count;
   } sb;
-  uint32_t reserved[4];       ///< Room for the state of the multi-byte stage's encoders (ISO-2022-JP keeps its mode, two words at most); the union is the size of its largest member.
+  uint32_t reserved[4];       ///< The state of the multi-byte encoders: ISO-2022-JP keeps its mode in reserved[0]; the others have none.
 } GTEXT_Enc_State;
 
 typedef GTEXT_Enc_Result (*GTEXT_Enc_Handler)(GTEXT_Enc_State * state, int32_t code_point, GTEXT_Enc_Step * out);
@@ -185,6 +296,8 @@ typedef struct {
 
 /// The encoder of an encoding, or NULL.
 const GTEXT_Enc_Codec * gtext_encoding_enc_codec(GTEXT_Encoding encoding);
+/// The encoder of a multi-byte encoding (encoding_cjk.c), or NULL for any other.
+const GTEXT_Enc_Codec * gtext_encoding_cjk_enc_codec(GTEXT_Encoding encoding);
 
 /* ---- shared by the drivers -------------------------------------------------------------- */
 
@@ -250,30 +363,41 @@ static inline bool gtext_out_put(GTEXT_Out * out, const void * bytes, size_t n) 
 /// `accepted` receives how many bytes were taken, so that the byte at which a limit or a sink failed is exact: it is the one after them.
 bool gtext_out_put_run(GTEXT_Out * out, const unsigned char * bytes, size_t n, size_t * accepted);
 
-/// Add the UTF-8 of a scalar value.
-static inline bool gtext_out_put_cp(GTEXT_Out * out, uint32_t cp) {
-  unsigned char b[4];
-  size_t n;
+/// The UTF-8 of a scalar value into `b` (at least 4 bytes); returns how many.
+static inline size_t gtext_utf8_bytes(unsigned char * b, uint32_t cp) {
   if (cp < 0x80) {
     b[0] = (unsigned char)cp;
-    n = 1;
-  } else if (cp < 0x800) {
+    return 1;
+  }
+  if (cp < 0x800) {
     b[0] = (unsigned char)(0xC0 | (cp >> 6));
     b[1] = (unsigned char)(0x80 | (cp & 0x3F));
-    n = 2;
-  } else if (cp < 0x10000) {
+    return 2;
+  }
+  if (cp < 0x10000) {
     b[0] = (unsigned char)(0xE0 | (cp >> 12));
     b[1] = (unsigned char)(0x80 | ((cp >> 6) & 0x3F));
     b[2] = (unsigned char)(0x80 | (cp & 0x3F));
-    n = 3;
-  } else {
-    b[0] = (unsigned char)(0xF0 | (cp >> 18));
-    b[1] = (unsigned char)(0x80 | ((cp >> 12) & 0x3F));
-    b[2] = (unsigned char)(0x80 | ((cp >> 6) & 0x3F));
-    b[3] = (unsigned char)(0x80 | (cp & 0x3F));
-    n = 4;
+    return 3;
   }
-  return gtext_out_put(out, b, n);
+  b[0] = (unsigned char)(0xF0 | (cp >> 18));
+  b[1] = (unsigned char)(0x80 | ((cp >> 12) & 0x3F));
+  b[2] = (unsigned char)(0x80 | ((cp >> 6) & 0x3F));
+  b[3] = (unsigned char)(0x80 | (cp & 0x3F));
+  return 4;
+}
+
+/// Add the UTF-8 of a scalar value.
+static inline bool gtext_out_put_cp(GTEXT_Out * out, uint32_t cp) {
+  unsigned char b[4];
+  return gtext_out_put(out, b, gtext_utf8_bytes(b, cp));
+}
+
+/// Add the UTF-8 of two scalar values together: both or, when the limit or the sink refuses, neither (Big5's four two-code-point sequences).
+static inline bool gtext_out_put_cp2(GTEXT_Out * out, uint32_t cp0, uint32_t cp1) {
+  unsigned char b[8];
+  const size_t n = gtext_utf8_bytes(b, cp0);
+  return gtext_out_put(out, b, n + gtext_utf8_bytes(b + n, cp1));
 }
 
 /// A buffer in front of which the allocator it was made with is kept (see gtext_encoding_buffer_free()).

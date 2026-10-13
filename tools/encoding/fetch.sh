@@ -10,6 +10,9 @@
 #                    multi-byte ones that the next stage will read). The
 #                    generator builds the single-byte decode tables and their
 #                    reverse (encoder) tables from it.
+#   encoding.bs      The standard's own source (Bikeshed) at the same commit: the text of the
+#                    algorithms, which tools/encoding/check-transcription.py reads to check the
+#                    constants of the multi-byte handlers against it.
 #   wpt/             web-platform-tests, sparse: only encoding/. The decoder and
 #                    label vectors (textdecoder-*.any.js and the rest) that
 #                    tools/oracle/encoding_wpt.py runs against this library.
@@ -93,6 +96,7 @@ fetch_pinned() {
 
 fetch_pinned encodings.json ENCODINGS_SHA256
 fetch_pinned indexes.json INDEXES_SHA256
+fetch_pinned encoding.bs ENCODING_BS_SHA256
 
 # ---- web-platform-tests, encoding/ only ---------------------------------
 # A blobless, shallow, sparse checkout: the repository is enormous and the part

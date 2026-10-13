@@ -6,8 +6,20 @@
 url:             https://encoding.spec.whatwg.org/
 fetched:         2026-10-12
 last-updated:    21 May 2026 (the page's "Last Updated")
-pinned-commit:   see ENCODING_COMMIT (whatwg/encoding; its encodings.json and indexes.json are the bytes the site served)
+pinned-commit:   see ENCODING_COMMIT (whatwg/encoding; its encodings.json, indexes.json and encoding.bs, the Bikeshed source, are pinned by SHA-256)
 commit-snapshot: https://encoding.spec.whatwg.org/commit-snapshots/a985b62a9b45c17da3e17a9f0a0b4e30c34c4a8a/
 http:            last-modified Thu, 21 May 2026 05:11:18 GMT; etag "6a0e93f6-94d98"; 609688 bytes
 labels:          228 labels of 40 encodings; the table of section 4.2 as served was compared with
                  encodings.json and is identical
+
+# Read again for the multi-byte encodings (text, Phase 3i): sections 4.1 (process an item), 5 (the index operations), 10 to 13 (gb18030 and GBK, Big5, EUC-JP,
+# ISO-2022-JP, Shift_JIS, EUC-KR), as served.
+fetched:         2026-10-13 (03:31 GMT; the machine's date was 2026-10-12 in the evening)
+compared:        the same revision as the one read for 3h: last-modified Thu, 21 May 2026 05:11:18 GMT, etag "6a0e93f6-94d98", 609688 bytes, so the same bytes; sha256 of
+                 the page as fetched 6dc34b5b039ed96a492ac4816fa5c9b5124edc9846fe29b52423b6fb4077eeea
+note:            the served text of the decoders and encoders is what tools/oracle/encoding_model.py and src/encoding/encoding_cjk.c follow; where Node's ICU, Python's codecs or an
+                 older description differ, the served sentence is quoted in tools/oracle/encoding_divergences.txt and in documentation/formats/encoding.md
+independence:    the library's handlers, tools/oracle/encoding_model.py and tests/encoding_cjk_model.h were all written from this text, by one author, handler for handler;
+                 they are three transcriptions, not three readings. Independent of them: Node's ICU converters, CPython's codecs and the standard's own web-platform-tests pages.
+                 The one mechanical check of the transcription is tools/encoding/check-transcription.py (make check-encoding-transcription), which reads the standard's source
+                 (encoding.bs at the pinned commit, ENCODING_BS_SHA256) and compares the numbers of each algorithm with those of its handlers.

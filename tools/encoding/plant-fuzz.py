@@ -25,8 +25,8 @@ this repository in a scratch directory (the working tree is never touched), and 
 (60 seconds by default, the same `FUZZ_TIME` the Makefile's fuzz-run-* targets use), or, if the defect has a recorded reproducer (REPRODUCERS), over that
 file with -runs=0, which is the same every time. It must stop with a report. The **control** is the same run with no edit, and it must not.
 
-Thirteen plants are replayed from a recorded input (the files `reproducer-*.seed` of tests/fuzz/corpus/encoding, which `make test` replays as well), so the
-check is the same every time: that shows the harness *can* see the defect, not that the search reaches it. Six are deliberately **searched for** from the
+Twenty-two plants are replayed from a recorded input (the files `reproducer-*.seed` of tests/fuzz/corpus/encoding, which `make test` replays as well), so the
+check is the same every time: that shows the harness *can* see the defect, not that the search reaches it. Nine are deliberately **searched for** from the
 seeds, the way a real find would be: if the search stops finding them quickly the check fails.
 
 replayed:
@@ -44,8 +44,21 @@ replayed:
   decoder-input-bytes-run-end   input_bytes of a limit failure inside a run of ASCII is the end of the run and not the byte (the prefix property).
   encoder-input-bytes-run-end   the same for the encoder.
   buffer-growth-absorbed     a failed growth of the output buffer is ignored (the allocation-failure sweep: a success that is not the normal answer, or a crash).
+  cjk-gb18030-restore-two    gb18030's decoder restores two bytes of a four-byte form broken at its last byte and not three (the multi-byte model).
+  cjk-pair-second-lost       the second code point of one of Big5's four pairs is not written (the model).
+  cjk-pair-written-apart     the two code points of such a pair are written one at a time, so that an output limit can fall between them (the model's boundaries).
+  cjk-iso-escape-eoq-restore-lost   an escape sequence cut by the end of the input does not give back its first byte (the model).
+  cjk-error-code-point-ignored   the encoder names the control that ISO-2022-JP refuses and not U+FFFD, so a reference reads `&#14;` (the model).
+  cjk-sjis-eudc-upper        the last private use pointer of Shift_JIS (10715) is an error (the model).
+  cjk-eucjp-0212-flag-kept   EUC-JP's "jis0212" survives a character (the model).
+  cjk-iso-flush-escape       the escape written when ISO-2022-JP's input ends in the jis0208 or Roman state is the Roman one (the model).
+  cjk-iso-reference-escape   a reference is written in the jis0208 state without the escape back to ASCII before it (the model).
 
-searched:
+searched (from the seeds: the corpus is replayed first, and the seeds of the multi-byte encodings reach these):
+
+  cjk-euc-kr-trail-lower     EUC-KR's trail byte 0x41 is an error (the model).
+  cjk-big5-trail-offset      Big5's offset for a trail byte above 0x7F is 0x61 and not 0x62 (the model).
+  cjk-gb18030-ranges-gap     one more pointer of the ranges index is in the gap (the model).
 
   utf8-overlong-e0           the lower boundary after 0xE0 is not raised: an overlong form is accepted (the reference decoder).
   utf16-trail-range          the last trailing surrogate is not one (the reference decoder).
@@ -93,11 +106,34 @@ PLANTS = {
     "utf8-overlong-e0": ("src/encoding/encoding_decode.c", "        s->lower = 0xA0;\n", ""),
     "utf16-trail-range": ("src/encoding/encoding_decode.c", "    if (code_unit >= 0xDC00 && code_unit <= 0xDFFF) {\n      out->cp[0] = 0x10000", "    if (code_unit >= 0xDC00 && code_unit <= 0xDFFE) {\n      out->cp[0] = 0x10000"),
     "x-user-defined-offset": ("src/encoding/encoding_decode.c", "0xF780u + (uint32_t)byte - 0x80u", "0xF781u + (uint32_t)byte - 0x80u"),
-    "decoder-not-reset-after-flush": ("src/encoding/encoding_decode.c", "  fill_result(result, status, used, &call, delivered);\n  stream_start(dec);\n  return status;",
-                                      "  fill_result(result, status, used, &call, delivered);\n  return status;"),
+    "decoder-not-reset-after-flush": ("src/encoding/encoding_decode.c",
+                                      "  stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);\n  return status;",
+                                      "  return status;"),
     "bom-removal-strips-every-mark": ("src/encoding/encoding_decode.c", "    dec->strip_pending = false;\n    if (cp == 0xFEFF) {", "    if (cp == 0xFEFF) {"),
     "encoder-malformed-not-counted": ("src/encoding/encoding_encode.c", "    call->replacements++;\n    if (!encode_cp(enc, 0xFFFD, true, call)) {", "    if (!encode_cp(enc, 0xFFFD, true, call)) {"),
 }
+
+
+def _oracle_plant(oracle_name):
+    """A plant of tools/oracle/ENCODING_ORACLE_PLANTS (the same defects the differential's controls plant), by its name there."""
+    for path in (os.path.join(ROOT, "tools", "oracle", "ENCODING_ORACLE_PLANTS"), os.path.join(ROOT, "tools", "encoding", "UNIT_PLANTS")):
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 4 and parts[0] == oracle_name:
+                    return ("src/encoding/" + parts[1], parts[2], parts[3])
+    raise SystemExit("no plant %s in ENCODING_ORACLE_PLANTS or UNIT_PLANTS" % oracle_name)
+
+
+for _name, _oracle in (("cjk-gb18030-restore-two", "gb18030-restore-two"), ("cjk-pair-second-lost", "cjk-pair-second-lost"),
+                       ("cjk-pair-written-apart", "cjk-pair-written-apart"), ("cjk-iso-escape-eoq-restore-lost", "iso-escape-eoq-restore-lost"),
+                       ("cjk-error-code-point-ignored", "cjk-error-code-point-ignored"), ("cjk-sjis-eudc-upper", "shift-jis-eudc-upper"),
+                       ("cjk-eucjp-0212-flag-kept", "euc-jp-0212-flag-kept"), ("cjk-iso-flush-escape", "iso-enc-flush-escape"),
+                       ("cjk-iso-reference-escape", "iso-enc-no-escape-before-reference"), ("cjk-euc-kr-trail-lower", "euc-kr-trail-lower"),
+                       ("cjk-big5-trail-offset", "big5-trail-offset"), ("cjk-gb18030-ranges-gap", "gb18030-ranges-gap"),
+                       ("cjk-iso-resume-keeps-all", "iso-resume-keeps-the-whole-handler"), ("cjk-iso-resume-keeps-escape", "iso-resume-keeps-a-half-read-escape"),
+                       ("cjk-iso-resume-keeps-output-flag", "iso-resume-keeps-the-output-flag"), ("cjk-iso-fatal-names-fffd", "iso-fatal-status-names-u-fffd")):
+    PLANTS[_name] = _oracle_plant(_oracle)
 for _name, (_f, _old, _new) in list(PLANTS.items()):
     PLANTS[_name] = (_f, _old.replace("\\n", "\n"), _new.replace("\\n", "\n"))
 
@@ -116,6 +152,10 @@ def copy_tree(dest):
         return out
 
     shutil.copytree(ROOT, dest, ignore=ignore, symlinks=True, ignore_dangling_symlinks=True)
+    # The harness reads the pinned indexes (the multi-byte model) from the directory it runs in; nothing else of third_party/ is needed.
+    os.makedirs(os.path.join(dest, "third_party", "encoding"), exist_ok=True)
+    for name in ("indexes.json", "encodings.json"):
+        shutil.copy(os.path.join(ROOT, "third_party", "encoding", name), os.path.join(dest, "third_party", "encoding", name))
 
 
 # A plant whose defect has a recorded reproducer is found by replaying that file, which is the same every time, and not by a time-boxed search, which is
@@ -134,6 +174,19 @@ REPRODUCERS = {
     "buffer-growth-absorbed": "tests/fuzz/corpus/encoding/reproducer-allocation-sweep-decode.seed",
     "decoder-input-bytes-run-end": "tests/fuzz/corpus/encoding/reproducer-limit-in-an-ascii-run.seed",
     "encoder-input-bytes-run-end": "tests/fuzz/corpus/encoding/reproducer-limit-in-an-ascii-run.seed",
+    "cjk-gb18030-restore-two": "tests/fuzz/corpus/encoding/reproducer-cjk-gb18030-restore.seed",
+    "cjk-pair-second-lost": "tests/fuzz/corpus/encoding/reproducer-cjk-big5-pair.seed",
+    "cjk-pair-written-apart": "tests/fuzz/corpus/encoding/reproducer-cjk-big5-pair.seed",
+    "cjk-iso-escape-eoq-restore-lost": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-escape-cut.seed",
+    "cjk-error-code-point-ignored": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-control-html-reference.seed",
+    "cjk-sjis-eudc-upper": "tests/fuzz/corpus/encoding/reproducer-cjk-sjis-eudc.seed",
+    "cjk-eucjp-0212-flag-kept": "tests/fuzz/corpus/encoding/reproducer-cjk-eucjp-flag.seed",
+    "cjk-iso-flush-escape": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-flush-escape.seed",
+    "cjk-iso-reference-escape": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-reference-escape.seed",
+    "cjk-iso-fatal-names-fffd": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-control-reference.seed",
+    "cjk-iso-resume-keeps-all": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-resume-after-fatal.seed",
+    "cjk-iso-resume-keeps-escape": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-resume-after-fatal.seed",
+    "cjk-iso-resume-keeps-output-flag": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-resume-output-flag.seed",
 }
 
 

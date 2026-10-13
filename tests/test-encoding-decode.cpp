@@ -789,10 +789,11 @@ TEST(EncodingDecodeArguments, EveryMisuseHasItsOwnStatus) {
   EXPECT_EQ(gtext_decoder_new(GTEXT_Encoding(63), nullptr, &d), GTEXT_ENCODING_E_INVALID);
   EXPECT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_8, nullptr, nullptr), GTEXT_ENCODING_E_INVALID);
   EXPECT_EQ(d, nullptr);
-  for (GTEXT_Encoding e : {GTEXT_ENCODING_GBK, GTEXT_ENCODING_GB18030, GTEXT_ENCODING_BIG5, GTEXT_ENCODING_EUC_JP,
-           GTEXT_ENCODING_ISO_2022_JP, GTEXT_ENCODING_SHIFT_JIS, GTEXT_ENCODING_EUC_KR}) {
-    EXPECT_EQ(gtext_decoder_new(e, nullptr, &d), GTEXT_ENCODING_E_UNSUPPORTED) << gtext_encoding_name(e);
-    EXPECT_EQ(d, nullptr);
+  // The seven multi-byte encodings, which the first release of the module answered E_UNSUPPORTED, have decoders: no encoding does not.
+  for (int e = 1; e < GTEXT_ENCODING_COUNT; e++) {
+    ASSERT_EQ(gtext_decoder_new(GTEXT_Encoding(e), nullptr, &d), GTEXT_ENCODING_OK) << gtext_encoding_name(GTEXT_Encoding(e));
+    gtext_decoder_free(d);
+    d = nullptr;
   }
   GTEXT_Decoder_Options bad = gtext_decoder_options_default();
   poke(bad.error_mode, 2u);
@@ -824,7 +825,8 @@ TEST(EncodingDecodeArguments, EveryMisuseHasItsOwnStatus) {
   EXPECT_EQ(gtext_encoding_decode_buffer(GTEXT_ENCODING_UTF_8, nullptr, "a", 1, nullptr, &n, &r), GTEXT_ENCODING_E_INVALID);
   EXPECT_EQ(gtext_encoding_decode_buffer(GTEXT_ENCODING_UTF_8, nullptr, nullptr, 3, &out, &n, &r), GTEXT_ENCODING_E_INVALID);
   EXPECT_EQ(gtext_encoding_decode_buffer(GTEXT_ENCODING_NONE, nullptr, "a", 1, &out, &n, &r), GTEXT_ENCODING_E_INVALID);
-  EXPECT_EQ(gtext_encoding_decode_buffer(GTEXT_ENCODING_BIG5, nullptr, "a", 1, &out, &n, &r), GTEXT_ENCODING_E_UNSUPPORTED);
+  GTEXT_Decoder_Options fatal_opts = decoder_options(GTEXT_DECODER_FATAL);
+  EXPECT_EQ(gtext_encoding_decode_buffer(GTEXT_ENCODING_BIG5, &fatal_opts, "\x81", 1, &out, &n, &r), GTEXT_ENCODING_E_MALFORMED);
   EXPECT_EQ(out, reinterpret_cast<char *>(0x1)); // untouched on failure
   EXPECT_EQ(n, 77u);
   EXPECT_EQ(gtext_encoding_decode_buffer(GTEXT_ENCODING_UTF_8, nullptr, nullptr, 0, &out, &n, nullptr), GTEXT_ENCODING_OK);

@@ -14,8 +14,12 @@ trimming and lowercasing the input), the 40 encodings' names indexed by the publ
 enum, the 27 single-byte indexes of section 5 as decode tables (byte - 0x80 to
 code point) and as encode tables (the first pointer for each code point, sorted by
 code point for a binary search). The multi-byte indexes (gb18030, big5, jis0208,
-jis0212, euc-kr) are in indexes.json too and are read by the next stage; they are
-not emitted yet, because a table nothing reads is a table nothing checks.
+jis0212, euc-kr, gb18030 ranges, ISO-2022-JP katakana) go to a second file,
+``src/encoding/tables/encoding_tables_cjk.c``: each index as a forward array
+(pointer to code point, one 16-bit load) and, for those an encoder reads, a
+two-level reverse table (code point to pointer, with the standard's tie-breaking:
+the first pointer, the last for six Big5 code points, and "index Shift_JIS pointer"
+and "index Big5 pointer" as the standard excludes entries from their indexes).
 
 The public ``GTEXT_Encoding`` enum is hand-written in encoding_core.h; this
 script reads it and fails unless it lists exactly the standard's encodings in the
@@ -285,6 +289,214 @@ _Static_assert(GTEXT_ENCODING_SB_TABLES == %d, "the generator and encoding_inter
     return "".join(out), len(order), len(labels)
 
 
+# ---- the multi-byte indexes ------------------------------------------------------------------------
+
+# The pointer counts the C side declares (GTEXT_*_POINTERS in encoding_internal.h); the generated file
+# includes that header, so a count that differs is a compile error as well as a failure here.
+POINTERS = {"jis0208": 11280, "jis0212": 8836, "gb18030": 23940, "big5": 19782, "euc-kr": 23940,
+            "iso-2022-jp-katakana": 63}
+RANGES = 207
+PTR_NONE = 0xFFFF
+SIX_LAST = (0x2550, 0x255E, 0x2561, 0x256A, 0x5341, 0x5345)  # Big5: "return the last pointer"
+BIG5_FIRST_POINTER = (0xA1 - 0x81) * 157                       # index Big5 excludes pointers below this
+SJIS_EXCLUDED = range(8272, 8835 + 1)                              # index Shift_JIS excludes these jis0208 pointers
+
+
+def first_pointers(index, skip=lambda p: False, last=()):
+    """code point -> pointer: 'the index pointer for a code point' is the first pointer of the (filtered) index."""
+    found = {}
+    for pointer, cp in enumerate(index):
+        if cp is None or skip(pointer):
+            continue
+        if cp in found and cp not in last:
+            continue
+        found[cp] = pointer
+    return found
+
+
+def reverse_family(maps):
+    """Two-level reverse tables for several code point -> pointer maps that share one block pool.
+
+    The BMP part of each map is split into blocks of 1 << shift pointers (the shift that makes the family smallest);
+    a block that repeats is stored once and block 0 is the empty block. Code points above the BMP go to a sorted list.
+    Returns (shift, pool, [(block_index, limit, supplementary_cps, supplementary_pointers)])."""
+    best = None
+    for shift in (5, 6, 7, 8):
+        size = 1 << shift
+        pool = [tuple([PTR_NONE] * size)]
+        where = {pool[0]: 0}
+        entries = []
+        for m in maps:
+            bmp = {c: p for c, p in m.items() if c < 0x10000}
+            limit = (max(bmp) + 1) if bmp else 0
+            nblocks = (limit + size - 1) // size
+            block_index = []
+            for b in range(nblocks):
+                key = tuple(bmp.get(c, PTR_NONE) for c in range(b * size, (b + 1) * size))
+                if key not in where:
+                    where[key] = len(pool)
+                    pool.append(key)
+                block_index.append(where[key])
+            sup = sorted((c, p) for c, p in m.items() if c >= 0x10000)
+            entries.append((block_index, limit, [c for c, _ in sup], [p for _, p in sup]))
+        total = len(pool) * size * 2 + sum(len(e[0]) * 2 for e in entries)
+        if best is None or total < best[0]:
+            best = (total, shift, pool, entries)
+    if len(best[2]) > 0xFFFF:
+        raise SystemExit("reverse block pool too large for 16-bit block numbers")
+    return best[1], best[2], best[3]
+
+
+def cells(values, fmt, per_line):
+    """Lines of `per_line` cells; PTR_NONE is written N (defined at the top of the file) so that the many empty cells cost two bytes."""
+    out = []
+    for i in range(0, len(values), per_line):
+        out.append("  " + ",".join("N" if v == PTR_NONE and fmt == "%d" else fmt % v for v in values[i:i + per_line]) + ",\n")
+    return "".join(out)
+
+
+# The code points of Big5 above the BMP, which the tables keep as 16 bits plus a plane bit (gtext_encoding_big5_plane2): the exact set is pinned, so that a
+# changed index is a decision made here and not a silent truncation. 1,713 pointers, all in plane 2 (U+20000 to U+2FFFF), as served on 2026-10-13.
+BIG5_SUPPLEMENTARY_COUNT = 1713
+BIG5_SUPPLEMENTARY_SHA256 = "4c2d9ddc8cff8eaeb360e69a3b4252646b0439d7d2a79d02527a2b14bd6f0252"
+
+
+def check_cjk_code_points(indexes):
+    """Refuse an index the 16-bit forward tables cannot hold; return Big5's (pointer, code point) pairs above the BMP."""
+    for name in ("jis0208", "jis0212", "gb18030", "big5", "euc-kr", "iso-2022-jp-katakana"):
+        for cp in indexes[name]:
+            if cp is None:
+                continue
+            if 0xD800 <= cp <= 0xDFFF or cp == 0xFFFF:
+                raise SystemExit("%s: U+%04X is outside what the tables hold" % (name, cp))
+            if cp >= 0x10000 and name != "big5":
+                raise SystemExit("%s: U+%04X is above the BMP and only Big5 has a plane bit; the 16-bit table would truncate it" % (name, cp))
+            if cp > 0x2FFFF:
+                raise SystemExit("%s: U+%04X is outside what the tables hold" % (name, cp))
+    sup = [(p, c) for p, c in enumerate(indexes["big5"]) if c is not None and c >= 0x10000]
+    if any(not 0x20000 <= c <= 0x2FFFF for _, c in sup):
+        raise SystemExit("big5: a code point above the BMP is outside plane 2")
+    digest = hashlib.sha256(repr(sup).encode()).hexdigest()
+    if len(sup) != BIG5_SUPPLEMENTARY_COUNT or digest != BIG5_SUPPLEMENTARY_SHA256:
+        raise SystemExit("big5: the supplementary code points are not the pinned set (%d, sha256 %s); decide the change here" % (len(sup), digest))
+    return sup
+
+
+def emit_cjk(indexes, enc_sha, idx_sha):
+    for name, count in POINTERS.items():
+        if len(indexes[name]) != count:
+            raise SystemExit("index %s has %d entries; the C side declares %d" % (name, len(indexes[name]), count))
+    ranges = indexes["gb18030-ranges"]
+    if len(ranges) != RANGES:
+        raise SystemExit("gb18030-ranges has %d rows; the C side declares %d" % (len(ranges), RANGES))
+    # The two functions over the ranges need both columns ascending ("the last pointer ... less than or equal").
+    for a, b in zip(ranges, ranges[1:]):
+        if not (a[0] < b[0] and a[1] < b[1]):
+            raise SystemExit("gb18030-ranges are not ascending in both columns")
+    big5_sup = check_cjk_code_points(indexes)
+
+    out = [LICENSE]
+    out.append("""
+/**
+ * @file
+ *
+ * GENERATED by tools/encoding/gen_tables.py from the Encoding Standard's
+ * indexes.json (sha256 %s;
+ * encodings.json sha256 %s).
+ * Do not edit.
+ *
+ * The multi-byte indexes: forward arrays (pointer to code point, 0xFFFF for none)
+ * and two-level reverse tables (code point to pointer).
+ *
+ * Regenerate with:  tools/encoding/gen_tables.py
+ * Verify with:      make check-encoding-tables
+ */
+
+#include "../encoding_internal.h"
+
+/** An empty cell, which most of the reverse tables' cells are (undefined again at the end). */
+#define N GTEXT_INDEX_NONE
+
+""" % (idx_sha, enc_sha))
+
+    def forward(cname, macro, doc, index, plane_bit=False):
+        if not plane_bit and any(c is not None and c >= 0x10000 for c in index):
+            raise SystemExit("%s: a code point above the BMP and no plane bit for it" % cname)
+        out.append("/// %s\n" % doc)
+        out.append("const uint16_t %s[%s] = {\n" % (cname, macro))
+        out.append(cells([PTR_NONE if c is None else (c & 0xFFFF) for c in index], "%d", 24))
+        out.append("};\n\n")
+
+    forward("gtext_encoding_jis0208_decode", "GTEXT_JIS0208_POINTERS", "index jis0208: pointer to code point.", indexes["jis0208"])
+    forward("gtext_encoding_jis0212_decode", "GTEXT_JIS0212_POINTERS", "index jis0212: pointer to code point.", indexes["jis0212"])
+    forward("gtext_encoding_gb18030_decode", "GTEXT_GB18030_POINTERS", "index gb18030: pointer to code point.", indexes["gb18030"])
+    forward("gtext_encoding_euc_kr_decode", "GTEXT_EUC_KR_POINTERS", "index EUC-KR: pointer to code point.", indexes["euc-kr"])
+    # Big5 holds 1,713 code points of plane 2: the low 16 bits are in the array and a bit says "plus 0x20000".
+    forward("gtext_encoding_big5_decode", "GTEXT_BIG5_POINTERS", "index Big5: the low 16 bits of the code point of each pointer.", indexes["big5"], plane_bit=True)
+    plane2 = bytearray((len(indexes["big5"]) + 7) // 8)
+    for p, c in big5_sup:
+        plane2[p // 8] |= 1 << (p % 8)
+    out.append("/// index Big5: bit `pointer` is set when the code point is in plane 2 (add 0x20000 to the low 16 bits).\n")
+    out.append("const uint8_t gtext_encoding_big5_plane2[GTEXT_BIG5_PLANE2_BYTES] = {\n")
+    out.append(cells(list(plane2), "%d", 32))
+    out.append("};\n\n")
+    forward("gtext_encoding_iso_2022_jp_katakana_decode", "GTEXT_ISO_2022_JP_KATAKANA_POINTERS",
+            "index ISO-2022-JP katakana: pointer to code point (halfwidth to fullwidth).", indexes["iso-2022-jp-katakana"])
+
+    out.append("/// index gb18030 ranges: the pointer of each row, ascending.\n")
+    out.append("const uint32_t gtext_encoding_gb18030_ranges_pointer[GTEXT_GB18030_RANGES] = {\n")
+    out.append(cells([r[0] for r in ranges], "%d", 16))
+    out.append("};\n\n")
+    out.append("/// index gb18030 ranges: the code point of each row, ascending.\n")
+    out.append("const uint32_t gtext_encoding_gb18030_ranges_cp[GTEXT_GB18030_RANGES] = {\n")
+    out.append(cells([r[1] for r in ranges], "%d", 16))
+    out.append("};\n\n")
+
+    # The reverse tables. jis0208 has two (its own and index Shift_JIS's) over one pool; the others one each.
+    jis_first = first_pointers(indexes["jis0208"])
+    jis_sjis = first_pointers(indexes["jis0208"], skip=lambda p: p in SJIS_EXCLUDED)
+    big5_map = first_pointers(indexes["big5"], skip=lambda p: p < BIG5_FIRST_POINTER, last=SIX_LAST)
+    families = [
+        ("jis0208", [("jis0208", jis_first), ("shift_jis", jis_sjis)]),
+        ("gb18030", [("gb18030", first_pointers(indexes["gb18030"]))]),
+        ("big5", [("big5", big5_map)]),
+        ("euc_kr", [("euc_kr", first_pointers(indexes["euc-kr"]))]),
+    ]
+    sizes = []
+    for fam, members in families:
+        shift, pool, entries = reverse_family([m for _, m in members])
+        size = 1 << shift
+        out.append("/// The reverse tables of %s: blocks of %d pointers (0xFFFF for none).\n" % (fam, size))
+        out.append("static const uint16_t %s_pool[%d] = {\n" % (fam, len(pool) * size))
+        flat = [v for blk in pool for v in blk]
+        out.append(cells(flat, "%d", 24))
+        out.append("};\n\n")
+        total = len(pool) * size * 2
+        for (name, _), (bidx, limit, sup_cp, sup_ptr) in zip(members, entries):
+            out.append("static const uint16_t %s_index[%d] = {\n" % (name, max(len(bidx), 1)))
+            out.append(cells(bidx if bidx else [0], "%d", 32))
+            out.append("};\n")
+            total += len(bidx) * 2 + len(sup_cp) * 6
+            if sup_cp:
+                out.append("static const uint32_t %s_sup_cp[%d] = {\n" % (name, len(sup_cp)))
+                out.append(cells(sup_cp, "0x%05X", 8))
+                out.append("};\n")
+                out.append("static const uint16_t %s_sup_ptr[%d] = {\n" % (name, len(sup_ptr)))
+                out.append(cells(sup_ptr, "%d", 16))
+                out.append("};\n")
+            out.append("/// Code point to pointer for %s.\n" % name)
+            out.append("const GTEXT_Rev_Index gtext_encoding_%s_rev = {\n" % name)
+            out.append("  %s_index, %s_pool, %du, %d,\n" % (name, fam, limit, shift))
+            if sup_cp:
+                out.append("  %s_sup_cp, %s_sup_ptr, %du,\n" % (name, name, len(sup_cp)))
+            else:
+                out.append("  NULL, NULL, 0u,\n")
+            out.append("};\n\n")
+        sizes.append((fam, total))
+    out.append("#undef N\n")
+    return "".join(out), sizes
+
+
 def single_byte_names(path):
     """The names of the single-byte encodings: the group the standard gives that heading."""
     with open(path, encoding="utf-8") as handle:
@@ -312,10 +524,14 @@ def main(argv):
     with open(args.indexes, encoding="utf-8") as handle:
         indexes = json.load(handle)
     text, tables, labels = emit(encodings, indexes, single_byte_names(args.encodings), enc_sha, idx_sha)
+    cjk_text, sizes = emit_cjk(indexes, enc_sha, idx_sha)
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "encoding_tables.c"), "w", encoding="ascii", newline="\n") as handle:
         handle.write(text)
-    print("%d encodings, %d labels, %d single-byte tables" % (len(encodings), labels, tables))
+    with open(os.path.join(args.out, "encoding_tables_cjk.c"), "w", encoding="ascii", newline="\n") as handle:
+        handle.write(cjk_text)
+    print("%d encodings, %d labels, %d single-byte tables, multi-byte reverse tables %s bytes" % (
+        len(encodings), labels, tables, ", ".join("%s %d" % z for z in sizes)))
 
 
 if __name__ == "__main__":

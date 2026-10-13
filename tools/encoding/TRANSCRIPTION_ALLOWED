@@ -1,0 +1,26 @@
+# Numbers on which the code of a multi-byte encoding (src/encoding/encoding_cjk.c) and the standard's text of it differ, for tools/encoding/check-transcription.py,
+# each with where it is and the reason it is not a mistake. A number on one side only that is not here fails the check; so does an entry that no longer differs.
+#
+# region <TAB> number (decimal or 0x hex) <TAB> where <TAB> reason
+#
+# where: `note`  - the standard names it in a note or a name, not in a step;
+#        `code`  - the code uses it and the standard's text does not name it (an implementation detail);
+#        a path  - the standard's step names it and the code of the handlers does not, because the file named (relative to this library) holds it: the number must
+#                  be used there.
+gb18030 and GBK	0xA3	note	the standard names it in a note on index gb18030 ("0xA3 0xA0 which maps to U+3000"), a property of the index, carried by the generated table
+gb18030 and GBK	0x3000	note	same note
+gb18030 and GBK	2005	note	the year of the GB18030-2005 revision, in a note on the ranges index
+Big5	0x20000	code	the forward table holds 16 bits and a bit array says "plus 0x20000" for the 1,713 code points of plane 2 (gtext_encoding_big5_plane2)
+EUC-JP	8836	note	the number of pointers of index jis0212 and the bound of a note ("less than 8836 due to the nature of index jis0208"), neither a step
+EUC-JP	0x7F	code	the code writes "an ASCII byte" as byte <= 0x7F
+ISO-2022-JP	2022	note	the 2022 of the name ISO-2022-JP, which the text of the algorithm repeats
+ISO-2022-JP	8836	note	the bound of a note on the encoder ("less than 8836 due to the nature of index jis0208"), not a step
+EUC-KR	0x7F	code	the code writes "an ASCII byte" as byte <= 0x7F
+Big5	0x2550	tools/encoding/gen_tables.py	the "index Big5 pointer": the last pointer of these six code points is chosen when the reverse table is generated (SIX_LAST)
+Big5	0x255E	tools/encoding/gen_tables.py	the "index Big5 pointer": the last pointer of these six code points is chosen when the reverse table is generated (SIX_LAST)
+Big5	0x2561	tools/encoding/gen_tables.py	the "index Big5 pointer": the last pointer of these six code points is chosen when the reverse table is generated (SIX_LAST)
+Big5	0x256A	tools/encoding/gen_tables.py	the "index Big5 pointer": the last pointer of these six code points is chosen when the reverse table is generated (SIX_LAST)
+Big5	0x5341	tools/encoding/gen_tables.py	the "index Big5 pointer": the last pointer of these six code points is chosen when the reverse table is generated (SIX_LAST)
+Big5	0x5345	tools/encoding/gen_tables.py	the "index Big5 pointer": the last pointer of these six code points is chosen when the reverse table is generated (SIX_LAST)
+Shift_JIS	8272	tools/encoding/gen_tables.py	the "index Shift_JIS pointer": the exclusion of the jis0208 pointers 8272 to 8835 is made when the reverse table is generated (SJIS_EXCLUDED)
+Shift_JIS	8835	tools/encoding/gen_tables.py	the "index Shift_JIS pointer": the exclusion of the jis0208 pointers 8272 to 8835 is made when the reverse table is generated (SJIS_EXCLUDED)

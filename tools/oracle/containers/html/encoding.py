@@ -12,7 +12,9 @@ Read from the repository by the gate, not copied into the image. Every string is
   PE <codec> <errors> <utf8>      str.encode(codec, errors) with strict | xmlcharrefreplace    -> OUT <bytes> | ERR <exception name>
   PING                                                                                         -> PONG
 
-and, as a command line, `encoding.py enum <codec> <n> <errors> <start> <count>`, the records of tools/oracle/encoding_ours.c.
+and, as a command line, `encoding.py enum <codec> <n> <errors> <start> <count>`, the records of tools/oracle/encoding_ours.c, and
+`encoding.py enumx <codec> <errors> <spec>`, the records of the product of byte sets of the spec (see encoding_ours.c), and
+`encoding.py encenum <codec> <errors> <first> <last>`, the records of encoding each code point by itself (255 for a failure).
 
 Copyright 2026 by Corey Pennycuff
 """
@@ -68,7 +70,71 @@ def enum(codec, n, errors, start, count):
     out.flush()
 
 
+def parse_spec(text):
+    sets = []
+    for item_list in text.split(":"):
+        bytes_ = set()
+        for item in item_list.split(","):
+            if "-" in item:
+                lo, hi = (int(x, 16) for x in item.split("-"))
+            else:
+                lo = hi = int(item, 16)
+            bytes_.update(range(lo, hi + 1))
+        sets.append(sorted(bytes_))
+    return sets
+
+
+def enumx(codec, errors, spec):
+    import itertools
+    out = sys.stdout.buffer
+    buf = bytearray()
+    for combo in itertools.product(*parse_spec(spec)):
+        data = bytes(combo)
+        try:
+            r = data.decode(codec, errors).encode("utf-8", "surrogatepass")
+            buf.append(len(r))
+            buf += r
+        except Exception:  # noqa: BLE001
+            buf.append(255)
+        if len(buf) > (1 << 20):
+            out.write(buf)
+            buf.clear()
+    out.write(buf)
+    out.flush()
+
+
+def encenum(codec, errors, first, last):
+    """For each code point: the length (255 for a failure) and the bytes of its encoding, and one more byte after them: 1 if the codec decodes those
+    bytes back to the code point, 0 if it decodes them to something else, 2 if it cannot."""
+    out = sys.stdout.buffer
+    buf = bytearray()
+    for cp in range(first, last + 1):
+        if 0xD800 <= cp <= 0xDFFF:
+            continue
+        try:
+            r = chr(cp).encode(codec, errors)
+            buf.append(len(r))
+            buf += r
+            try:
+                buf.append(1 if r.decode(codec) == chr(cp) else 0)
+            except Exception:  # noqa: BLE001
+                buf.append(2)
+        except Exception:  # noqa: BLE001
+            buf.append(255)
+        if len(buf) > (1 << 20):
+            out.write(buf)
+            buf.clear()
+    out.write(buf)
+    out.flush()
+
+
 def main():
+    if len(sys.argv) == 6 and sys.argv[1] == "encenum":
+        encenum(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]))
+        return
+    if len(sys.argv) == 5 and sys.argv[1] == "enumx":
+        enumx(sys.argv[2], sys.argv[3], sys.argv[4])
+        return
     if len(sys.argv) == 7 and sys.argv[1] == "enum":
         enum(sys.argv[2], int(sys.argv[3]), sys.argv[4], int(sys.argv[5]), int(sys.argv[6]))
         return

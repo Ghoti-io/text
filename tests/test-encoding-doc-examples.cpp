@@ -52,6 +52,8 @@ namespace snippets {
 #include "doc-snippets/encoding/bom.c"
 #include "doc-snippets/encoding/encode.c"
 #include "doc-snippets/encoding/limits.c"
+#include "doc-snippets/encoding/cjk-decode.c"
+#include "doc-snippets/encoding/iso-2022-jp-encode.c"
 } // namespace snippets
 
 namespace {
@@ -71,6 +73,9 @@ const Snippet kSnippets[] = {
         "ISO-8859-2: price &#8364;5 (1 written as a reference)\nwindows-1252: the euro sign is byte 0x80, 0 references\n"
         "fatal: a code point the encoding cannot represent, U+20AC at byte 6\n"},
     {"limits.c", snippets::limits, "output limit exceeded after 4 bytes of output\n"},
+    {"cjk-decode.c", snippets::cjk_decode, "Shift_JIS: \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\xEF\xBF\xBD end (1 replaced)\n"
+        "gb18030: 5 bytes of UTF-8 for 5 bytes (U+0080 and U+20AC), 0 replaced\n"},
+    {"iso-2022-jp-encode.c", snippets::iso_2022_jp_encode, "<ESC>$B$\"<ESC>(B&#233; (14 bytes, 1 written as a reference)\n"},
 };
 
 std::string slurp(const std::string & path) {

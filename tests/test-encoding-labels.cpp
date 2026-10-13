@@ -271,16 +271,13 @@ TEST(EncodingFacts, OutputEncodings) {
   EXPECT_EQ(gtext_encoding_output_encoding(GTEXT_ENCODING_COUNT), GTEXT_ENCODING_NONE);
 }
 
-TEST(EncodingFacts, SupportIsEverythingButTheMultiByteEncodings) {
-  const std::set<GTEXT_Encoding> multi = {GTEXT_ENCODING_GBK, GTEXT_ENCODING_GB18030, GTEXT_ENCODING_BIG5,
-      GTEXT_ENCODING_EUC_JP, GTEXT_ENCODING_ISO_2022_JP, GTEXT_ENCODING_SHIFT_JIS, GTEXT_ENCODING_EUC_KR};
+TEST(EncodingFacts, SupportIsEveryEncodingOfTheStandard) {
   size_t supported = 0;
   for (int e = 1; e < GTEXT_ENCODING_COUNT; e++) {
-    const bool want = multi.count(GTEXT_Encoding(e)) == 0;
-    EXPECT_EQ(gtext_encoding_is_supported(GTEXT_Encoding(e)), want) << gtext_encoding_name(GTEXT_Encoding(e));
-    supported += want;
+    EXPECT_TRUE(gtext_encoding_is_supported(GTEXT_Encoding(e))) << gtext_encoding_name(GTEXT_Encoding(e));
+    supported++;
   }
-  EXPECT_EQ(supported, 33u);
+  EXPECT_EQ(supported, 40u);
   EXPECT_FALSE(gtext_encoding_is_supported(GTEXT_ENCODING_NONE));
   EXPECT_FALSE(gtext_encoding_is_supported(GTEXT_Encoding(60)));
 }

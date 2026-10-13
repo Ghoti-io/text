@@ -33,12 +33,13 @@
  * `replacement` encoding, `x-user-defined` and all 28 single-byte encodings
  * (`ibm866`, the ISO-8859 family, `koi8-r`, `koi8-u`, `macintosh`,
  * `windows-874`, `windows-1250` to `windows-1258`, `x-mac-cyrillic`, and
- * `ISO-8859-8-I`). **The multi-byte legacy encodings** (`gbk`, `gb18030`,
- * `Big5`, `EUC-JP`, `ISO-2022-JP`, `Shift_JIS` and `EUC-KR`) have labels that
- * resolve and names that print, and **no codec yet**: asking for a decoder
- * or an encoder for one is GTEXT_ENCODING_E_UNSUPPORTED, which is the only
- * thing that changes when they arrive (gtext_encoding_is_supported() tells
- * the two apart in advance). Nothing else in the interface is affected.
+ * `ISO-8859-8-I`), and **the seven multi-byte legacy encodings** (`gbk`,
+ * `gb18030`, `Big5`, `EUC-JP`, `ISO-2022-JP`, `Shift_JIS` and `EUC-KR`), each
+ * as the standard defines it (which is not always what iconv, Python or ICU do:
+ * see the manual's page for the Encoding module). Every encoding of the standard
+ * has a decoder and all but `replacement` and the two UTF-16 encodings an
+ * encoder, so GTEXT_ENCODING_E_UNSUPPORTED is no longer returned; it stays in
+ * the enum for the callers and programs that name it.
  */
 
 #ifndef GHOTI_IO_GTEXT_ENCODING_ENCODING_CORE_H
@@ -97,13 +98,13 @@ typedef enum {
   GTEXT_ENCODING_WINDOWS_1258, ///< windows-1258 (Vietnamese).
   GTEXT_ENCODING_X_MAC_CYRILLIC, ///< x-mac-cyrillic.
 
-  GTEXT_ENCODING_GBK,          ///< GBK. No codec in this release.
-  GTEXT_ENCODING_GB18030,      ///< gb18030. No codec in this release.
-  GTEXT_ENCODING_BIG5,         ///< Big5. No codec in this release.
-  GTEXT_ENCODING_EUC_JP,       ///< EUC-JP. No codec in this release.
-  GTEXT_ENCODING_ISO_2022_JP,  ///< ISO-2022-JP. No codec in this release.
-  GTEXT_ENCODING_SHIFT_JIS,    ///< Shift_JIS. No codec in this release.
-  GTEXT_ENCODING_EUC_KR,       ///< EUC-KR. No codec in this release.
+  GTEXT_ENCODING_GBK,          ///< GBK (its decoder is gb18030's; its encoder writes no four-byte form).
+  GTEXT_ENCODING_GB18030,      ///< gb18030.
+  GTEXT_ENCODING_BIG5,         ///< Big5 (with the Hong Kong supplementary characters).
+  GTEXT_ENCODING_EUC_JP,       ///< EUC-JP (JIS X 0208, half-width katakana, and JIS X 0212 for the decoder).
+  GTEXT_ENCODING_ISO_2022_JP,  ///< ISO-2022-JP, the stateful one: ASCII, Roman, katakana (decoder) and JIS X 0208 by escape sequences.
+  GTEXT_ENCODING_SHIFT_JIS,    ///< Shift_JIS (the Windows-31J extensions, and the end-user-defined area as private use).
+  GTEXT_ENCODING_EUC_KR,       ///< EUC-KR (the Unified Hangul Code, Windows code page 949).
 
   GTEXT_ENCODING_REPLACEMENT,  ///< replacement: what `hz-gb-2312`, `iso-2022-kr` and the like decode as (one U+FFFD).
   GTEXT_ENCODING_UTF_16BE,     ///< UTF-16BE. A decoder only.
@@ -128,8 +129,8 @@ typedef enum {
                               ///< output, an encoding that is `GTEXT_ENCODING_NONE` or out of range).
   GTEXT_ENCODING_E_OOM,       ///< Out of memory. Nothing is leaked.
   GTEXT_ENCODING_E_OPTIONS,   ///< An option value out of range (an error mode that is none of the enum).
-  GTEXT_ENCODING_E_UNSUPPORTED, ///< The encoding is one of the standard's but this release has no codec
-                              ///< for it (the multi-byte encodings; see gtext_encoding_is_supported()).
+  GTEXT_ENCODING_E_UNSUPPORTED, ///< The encoding is one of the standard's but this release has no codec for it. Every encoding of the
+                              ///< standard has a decoder now, so no function returns this (see gtext_encoding_is_supported()).
   GTEXT_ENCODING_E_NO_ENCODER,  ///< The encoding has no encoder: `replacement`, UTF-16BE and UTF-16LE.
                               ///< The standard encodes for these as UTF-8; see gtext_encoding_output_encoding().
   GTEXT_ENCODING_E_MALFORMED, ///< Fatal mode: the input is not well-formed in the encoding (for a decoder),
@@ -234,10 +235,10 @@ GTEXT_API GTEXT_Encoding gtext_encoding_output_encoding(GTEXT_Encoding encoding)
 /**
  * @brief Whether this release has a decoder for the encoding.
  *
- * True for everything but the seven multi-byte legacy encodings (GBK,
- * gb18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR), whose decoders and
- * encoders arrive with the next stage. An encoder exists for the supported
- * encodings except `replacement`, UTF-16BE and UTF-16LE.
+ * True for every encoding of the standard (the multi-byte legacy encodings
+ * GBK, gb18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS and EUC-KR have decoders and
+ * encoders since the stage that added them). An encoder exists for all of them
+ * but `replacement`, UTF-16BE and UTF-16LE.
  *
  * @param encoding Any value; false for anything that is not an encoding.
  */
@@ -246,9 +247,8 @@ GTEXT_API bool gtext_encoding_is_supported(GTEXT_Encoding encoding);
 /**
  * @brief Whether this release has an encoder for the encoding.
  *
- * False for `replacement`, UTF-16BE and UTF-16LE (the standard gives them none: encode with gtext_encoding_output_encoding(), which is UTF-8), for
- * the multi-byte legacy encodings until the next stage, and for anything that is not an encoding. gtext_encoder_new() says
- * the same with GTEXT_ENCODING_E_NO_ENCODER or GTEXT_ENCODING_E_UNSUPPORTED.
+ * False for `replacement`, UTF-16BE and UTF-16LE (the standard gives them none: encode with gtext_encoding_output_encoding(), which is UTF-8) and for
+ * anything that is not an encoding. gtext_encoder_new() says the same with GTEXT_ENCODING_E_NO_ENCODER.
  *
  * @param encoding Any value.
  */

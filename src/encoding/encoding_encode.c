@@ -149,7 +149,7 @@ const GTEXT_Enc_Codec * gtext_encoding_enc_codec(GTEXT_Encoding encoding) {
   case GTEXT_ENCODING_X_USER_DEFINED:
     return &enc_x_user_defined;
   default:
-    return gtext_encoding_sb_index[encoding] >= 0 ? &enc_single_byte : NULL;
+    return gtext_encoding_sb_index[encoding] >= 0 ? &enc_single_byte : gtext_encoding_cjk_enc_codec(encoding);
   }
 }
 
@@ -214,6 +214,8 @@ static bool encode_cp(GTEXT_Encoder * enc, uint32_t cp, bool counted, Call * cal
     GTEXT_Enc_Step step;
     step.n = 0;
     step.restore = false;
+    step.restore_cp = cp; /* a handler that restores without naming a code point gives back the one it was given, never U+0000 */
+    step.error_cp = cp;
     call->steps++;
     const GTEXT_Enc_Result r = enc->codec->step(&enc->state, (int32_t)cp, &step);
     if (r == GTEXT_ENC_OK) {
@@ -224,15 +226,18 @@ static bool encode_cp(GTEXT_Encoder * enc, uint32_t cp, bool counted, Call * cal
       if (!step.restore) {
         return true;
       }
+      cp = step.restore_cp; /* "restore codePoint to ioQueue": what the handler gave back, which it may have changed */
       continue;
     }
     if (r == GTEXT_ENC_FINISHED) {
       return true;
     }
-    /* ERROR: the code point cannot be represented. */
+    /* ERROR: the code point cannot be represented. The standard's "error with codePoint" is `step.error_cp` (ISO-2022-JP: U+FFFD for the three controls it
+       will not write, "rather than codePoint to prevent attacks"), and it is what the HTML mode writes as a reference. The fatal status names the code point
+       that was handled, so that a caller can tell which character it was (a control, for ISO-2022-JP, not U+FFFD). */
     switch (enc->opts.error_mode) {
     case GTEXT_ENCODER_HTML:
-      if (!put_reference(&enc->out, cp)) {
+      if (!put_reference(&enc->out, step.error_cp)) {
         call->status = enc->out.status;
         return false;
       }
@@ -305,13 +310,14 @@ static void run_input(GTEXT_Encoder * enc, const unsigned char * in, size_t len,
     GTEXT_Dec_Step step;
     step.n = 0;
     step.restore_n = 0;
+    step.cp[0] = step.cp[1] = 0;
     call->steps++;
     const GTEXT_Dec_Result r = gtext_utf8_step(&enc->input, byte, &step);
     if (r == GTEXT_DEC_CONTINUE) {
       continue;
     }
     if (r == GTEXT_DEC_EMIT) {
-      if (!encode_cp(enc, step.cp[0], false, call)) {
+      if (step.n > 0 && !encode_cp(enc, step.cp[0], false, call)) {
         call->taken = i;
         return;
       }

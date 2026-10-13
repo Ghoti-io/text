@@ -558,7 +558,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
-	check-encoding-tables check-conformance-vectors
+	check-encoding-tables check-encoding-transcription check-conformance-vectors
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -938,7 +938,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-encoding-oracle check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-tables oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1076,6 +1076,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
 	src/ini/ini_file_io.c \
+	src/encoding/encoding_cjk.c \
 	src/encoding/encoding_core.c \
 	src/encoding/encoding_decode.c \
 	src/encoding/encoding_encode.c \
@@ -2306,6 +2307,7 @@ check-encoding-tables: ## Fail if the committed Encoding Standard tables are not
 		printf "Nothing under third_party/ is tracked; fetch it with:\n\n  tools/encoding/fetch.sh\n\n" >&2; \
 		exit 1; \
 	fi; \
+	python3 tools/encoding/test_gen_tables.py $(ENCODING_DATA_DIR)/indexes.json || exit 1; \
 	tmp=$$(mktemp -d) || exit 1; \
 	trap 'rm -rf "$$tmp"' EXIT; \
 	mkdir -p "$$tmp/out"; \
@@ -2373,8 +2375,11 @@ check-encoding-oracle: ## Run the Encoding Standard's own tests and compare the 
 # **Both are then made to fail.** `run-encoding-oracle.sh --controls` corrupts the runner's bridge, the counts, the differential's answers, the list and the
 # standard's data, and compiles this library's sources with one rule undone for each line of tools/oracle/ENCODING_ORACLE_PLANTS, and requires that a gate
 # fails with a heading each time. `--control NAME` runs one. ENCODING_ORACLE_COUNT, _SEED and _FATAL_STRIDE size and seed the generated part (a hunt: the lists
-# describe the default). The default run takes minutes (the three-byte Node enumeration is most of it), the controls longer. Outside TEST_GATES, like every gate
-# here that consults an oracle.
+# describe the default). The default run takes about half an hour with the multi-byte populations (every sequence of one to three bytes and the stratified ones
+# of four, against Node, Python and two models), the controls longer. **Run it under tools/memcap** (`tools/memcap -m 6G -- make check-encoding-oracle ...`, as the
+# workspace's CLAUDE.md says of heavy work), in the foreground in chunks if the tool that runs it has a time limit: `tools/oracle/run-encoding-oracle.sh --diff --
+# --mb-only NAME` is one encoding of the multi-byte populations, `--wpt` the standard's suite, `--control NAME` one control; or, for the whole thing at once,
+# `tools/evo` (a job of its own, with its own prefix). Outside TEST_GATES, like every gate here that consults an oracle.
 check-encoding-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(ENCODING_DATA_DIR)/wpt/encoding,tools/encoding/fetch.sh); \
@@ -2388,6 +2393,27 @@ check-encoding-fuzz-plants: ## Plant a defect in a copy of the library and show 
 check-encoding-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/encoding/plant-fuzz.py --time $(FUZZ_TIME)
+
+check-encoding-unit-plants: ## Plant each defect of the Encoding plant lists in the sources and show a unit test finds it
+# tools/encoding/plant-unit.py compiles the source of src/encoding/ with one rule undone (the lines of tools/oracle/ENCODING_ORACLE_PLANTS, the differential's controls, and of
+# tools/encoding/UNIT_PLANTS, the defects only a unit test can see) into the unit test programs, cheapest first, and requires that one fail. Outside TEST_GATES: it compiles
+# and links the programs for each plant (the lines of the two lists, `wc -l`), a quarter of a minute apiece, after one run of the unmutated programs, which must pass.
+# Run it under tools/memcap, in chunks of plants (`NAME...` on tools/encoding/plant-unit.py) if the tool that runs it has a time limit.
+check-encoding-unit-plants: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(CONFORMANCE_ENV) python3 tools/encoding/plant-unit.py
+
+check-encoding-transcription: ## Fail if a number of the multi-byte handlers is not the standard's, or the standard names one the handlers lack
+# tools/encoding/check-transcription.py reads the standard's source at the pinned commit (third_party/encoding/encoding.bs, tools/encoding/fetch.sh) and compares the
+# numbers of each multi-byte encoding's algorithm with those of its handlers in src/encoding/encoding_cjk.c, then misreads each shared number by one and requires
+# that it be found. It is the one check of the transcription that does not go through the models, which were written from the same reading as the handlers.
+check-encoding-transcription:
+	@$(REQUIRE_PYTHON3); \
+	if [ ! -s $(ENCODING_DATA_DIR)/encoding.bs ]; then \
+		printf "\033[0;31m\n\#\#\# $@: $(ENCODING_DATA_DIR)/encoding.bs is not here \#\#\#\033[0m\n\nFetch it:\n\n  tools/encoding/fetch.sh\n\n" >&2; \
+		exit 1; \
+	fi; \
+	python3 tools/encoding/check-transcription.py
 
 check-oracle-env: ## Fail if the oracle pin table or the code reading it has rotted
 # In TEST_GATES, unlike every gate that consults an oracle, because it needs no

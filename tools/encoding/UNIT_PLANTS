@@ -1,0 +1,15 @@
+# Defects planted in this library's Encoding sources that only a unit test can see, because the references cannot: tools/encoding/plant-unit.py (make
+# check-encoding-unit-plants) compiles each into the unit test programs together with the plants of tools/oracle/ENCODING_ORACLE_PLANTS and requires that a test fail.
+# (Node and Python have no output limit and no ASCII fast path to count, and their decoders keep no state across a failure.)
+#
+# name <TAB> file under src/encoding <TAB> old text (unique in the file; \n is a newline) <TAB> new text
+#
+cjk-idle-never	encoding_cjk.c	return state->gb18030.first == 0;	return false;
+cjk-pair-written-apart	encoding_decode.c	const bool ok = step.n == 0 ? true /* an EMIT of nothing writes nothing (and reads no code point the handler never set) */\n                    : step.n == 2 ? dec_put_cp2(dec, step.cp[0], step.cp[1]) : dec_put_cp(dec, step.cp[0]);	const bool ok = step.n == 0 ? true /* an EMIT of nothing writes nothing (and reads no code point the handler never set) */\n                    : step.n == 2 ? (dec_put_cp(dec, step.cp[0]) && dec_put_cp(dec, step.cp[1])) : dec_put_cp(dec, step.cp[0]);
+iso-state-kept-after-flush	encoding_decode.c	status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP	status == GTEXT_ENCODING_E_MALFORMED && dec->active == GTEXT_ENCODING_ISO_2022_JP
+iso-resume-keeps-the-whole-handler	encoding_cjk.c	  s->state = s->output_state;\n  s->leading = 0;\n  s->output = false;\n	
+iso-resume-keeps-a-half-read-escape	encoding_cjk.c	  s->state = s->output_state;\n  s->leading = 0;\n  s->output = false;\n	  s->leading = 0;\n  s->output = false;\n
+iso-resume-keeps-the-output-flag	encoding_cjk.c	  s->leading = 0;\n  s->output = false;\n}	  s->leading = 0;\n}
+iso-state-not-kept-after-a-fatal-error	encoding_decode.c	  if (!keep_handler) {\n    dec->codec->init(&dec->state, dec->active);\n  } else {	  if (true) {\n    dec->codec->init(&dec->state, dec->active);\n  } else {
+iso-fatal-status-names-u-fffd	encoding_encode.c	call->error_code_point = cp;	call->error_code_point = step.error_cp;
+iso-escape-to-ascii-before-a-reference-from-roman	encoding_cjk.c	    if (*mode == ISO_JIS0208) {\n      out->restore = true;	    if (*mode != ISO_ASCII) {\n      out->restore = true;

@@ -22,8 +22,8 @@
  * @file encoding_encode.h
  * @brief The standard's encoders: UTF-8 to the bytes of an encoding.
  *
- * A GTEXT_Encoder takes UTF-8 in pieces of any size and writes the bytes of a
- * legacy or Unicode encoding to a sink, with the standard's behaviour for a code
+ * A GTEXT_Encoder takes UTF-8 in pieces of any size and writes the bytes of UTF-8 or of a
+ * legacy encoding (single-byte or multi-byte) to a sink, with the standard's behaviour for a code
  * point the encoding cannot represent: HTML's numeric character reference
  * (`&#8364;`, the standard's "html" error mode, which is what forms and the
  * HTML serializer use), a status (the standard's "fatal", which URL
@@ -41,8 +41,16 @@
  * **Which encodings have an encoder.** The UTF-8 encoder and the single-byte
  * encodings' (and `x-user-defined`'s). `replacement`, UTF-16BE and UTF-16LE have none
  * (GTEXT_ENCODING_E_NO_ENCODER): "get an output encoding" gives UTF-8 for them
- * (gtext_encoding_output_encoding()). The multi-byte encodings are
- * GTEXT_ENCODING_E_UNSUPPORTED until the next stage.
+ * (gtext_encoding_output_encoding()). The multi-byte encodings have encoders as the standard defines them:
+ * GBK and gb18030 (GBK writes no four-byte form; gb18030 writes every scalar value but U+E5E5), Big5, EUC-JP, Shift_JIS
+ * and EUC-KR (stateless; their special cases, such as U+00A5 as 0x5C, are the standard's) and **ISO-2022-JP, which keeps a
+ * state** (ASCII, Roman or JIS X 0208) between code points and between calls. It writes an escape sequence only where the standard's
+ * encoder does: `ESC ( B` before an ASCII code point when the state is Roman or JIS X 0208, and before a code point JIS X 0208 cannot
+ * write **when the state is JIS X 0208** (so that a numeric reference in HTML mode reads as text); in the Roman state an
+ * unencodable character is an error at once, with no escape before its reference, which is still ASCII text there; and `ESC ( B`
+ * at the end of the stream (flush) when the state is not ASCII. A limit never falls inside a character, a reference or an
+ * escape sequence. U+000E, U+000F and U+001B are errors in the ASCII and Roman states; the HTML mode writes the reference of
+ * U+FFFD for them ("rather than codePoint to prevent attacks"), while the fatal status carries the control itself.
  *
  * End of input is a call with `flush` set, as for the decoder; after any non-OK
  * status the encoder is back at its starting state.
@@ -136,8 +144,7 @@ typedef struct GTEXT_Encoder GTEXT_Encoder;
  * @param opts     Options, or NULL for the defaults.
  * @param out      Receives the encoder. Written only on success; free it with gtext_encoder_free().
  * @return GTEXT_ENCODING_OK; E_INVALID (NULL `out`, `encoding` that is not an encoding); E_OPTIONS (an error mode that is
- *   none of the enum); E_NO_ENCODER (`replacement`, UTF-16BE, UTF-16LE); E_UNSUPPORTED (a multi-byte
- *   encoding); E_OOM.
+ *   none of the enum); E_NO_ENCODER (`replacement`, UTF-16BE, UTF-16LE); E_OOM.
  */
 GTEXT_API GTEXT_Encoding_Status gtext_encoder_new(
     GTEXT_Encoding encoding, const GTEXT_Encoder_Options * opts, GTEXT_Encoder ** out);

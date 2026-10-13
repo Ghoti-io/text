@@ -28,17 +28,27 @@ against the library's own code, which is independent evidence in a way that tabl
 single-byte encodings the suite's expectations *are* the indexes, but for UTF-8, UTF-16, the labels, streaming, the fatal flag and the byte order mark
 handling they are written by people who found the bugs.
 
-**What runs.** The files of RUN below, some of which have a part for the multi-byte encodings (the next stage) whose
-tests are **deferred**, not failed, when the library says it has no codec for the encoding (E_UNSUPPORTED). **What does not**, and why, is NOT_RUN and NOT_RUN_DIRECTORIES: the
-HTML pages (a browser is the runner), the streams (the Streams API), `encodeInto` (an API of its own), the legacy multi-byte vectors (the next stage),
-and the files about the JavaScript bindings. A file or directory that is in neither list fails the run.
+**What runs.** The JavaScript files of RUN below (tests of the Encoding API, three of them for the multi-byte encodings), and the HTML pages of the legacy multi-byte
+vectors (`legacy-mb-*/`: decode pages and decode-errors pages that read the text a document of the encoding becomes; form pages and href pages that read what a
+browser makes of each character in a document of the encoding; the `<a>` pages with a list of characters): see the header of containers/html/wpt.mjs for what of the
+browser is emulated and what is not. Every page is classified by what it includes (`classify()`), and a page that is not run is in NOT_RUN_PAGES with its reason: the
+browser's own loader (a byte order mark deciding a document's encoding, sniffing, subresources), rendering (the reftests of a truncated sequence at the end of a file), and
+a form posted to a `data:` URL and read back through `postMessage`. **What does not**, and why, is NOT_RUN and NOT_RUN_DIRECTORIES: the streams (the Streams API),
+`encodeInto` (an API of its own), and the files about the JavaScript bindings. A file or directory that is in none of the lists fails the run.
 
-The count of passed, deferred and failed tests of each file is in tools/oracle/encoding_wpt_expected.txt, and the run fails on a failure, on a count
+The count of passed and failed tests of each file is in tools/oracle/encoding_wpt_expected.txt, and the run fails on a failure, on a count
 that has changed (in either direction: a test that passes now and did not is a change to read, not a gain to keep) and on a file that ran nothing.
-`--update` prints the list the run found. When the multi-byte stage lands every deferred count goes to zero and the file is regenerated.
+`--update` prints the list the run found. A file named in RUN, NOT_RUN, NOT_RUN_PAGES or NOT_RUN_DIRECTORIES that is not in the suite, one that is listed as not run
+and has a line in the counts (it runs), and one listed twice, fail the run.
+
+**The one page that cannot be emulated** (iso2022jp-encode-form-errors-stateful.html: a form posted to a `data:` URL in an iframe and read back through postMessage) is
+not run, and is not left to a copy of its vector either: `check_stateful_page()` reads the page's own two expected strings (the form's value and the ISO-2022-JP bytes
+the page asserts) out of its source, and requires this library's encoder, in the HTML mode a form uses, to write exactly those bytes, and this library's decoder to
+read them back to the page's own `utf16` string.
 
 --plant NAME corrupts the run, to show the gate fails (run-encoding-oracle.sh --controls): bridge-drops-a-byte (the bridge loses the last byte of
-every input of more than three), expected-count (the list says one test more), no-such-file (a file that is not in the suite).
+every input of more than three), expected-count (the list says one test more), no-such-file (a file that is not in the suite), unlisted-file, stale-listing (a file listed as not run that
+is not in the suite), stateful-expectation (the page's expected bytes are changed).
 
 Copyright 2026 by Corey Pennycuff
 """
@@ -46,6 +56,7 @@ Copyright 2026 by Corey Pennycuff
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -69,6 +80,8 @@ RUN = [
     "api-replacement-encodings.any.js",
     "api-surrogates-utf8.any.js",
     "iso-2022-jp-decoder.any.js",
+    "legacy-mb-schinese/gb18030/gb18030-decoder.any.js",
+    "legacy-mb-schinese/gbk/gbk-decoder.any.js",
     "replacement-encodings.any.js",
     "single-byte-decoder.any.js",
     "textdecoder-byte-order-marks.any.js",
@@ -87,8 +100,8 @@ RUN = [
     "unsupported-encodings.any.js",
 ]
 
-# Every JavaScript test file of the suite's directory is in RUN or here, by name, and every directory is in NOT_RUN_DIRECTORIES: a bumped WPT_COMMIT that
-# adds a file or a directory makes the run fail until somebody has said what to do with it. (The HTML pages, `*.html`, are for a browser and are all skipped.)
+# Every JavaScript test file and every HTML page of the suite's directory is run, or here, by name, and every directory is in NOT_RUN_DIRECTORIES: a bumped
+# WPT_COMMIT that adds a file or a directory makes the run fail until somebody has said what to do with it.
 NOT_RUN = OrderedDict([
     ("encodeInto.any.js", "TextEncoder.encodeInto: an API of its own, with a destination of fixed size"),
     ("idlharness.any.js", "the Web IDL interface checks"),
@@ -99,24 +112,65 @@ NOT_RUN = OrderedDict([
 NOT_RUN_DIRECTORIES = OrderedDict([
     ("streams", "TextDecoderStream and TextEncoderStream: the Streams API"),
     ("resources", "helpers of the tests, not tests"),
-    ("legacy-mb-japanese", "the multi-byte vectors: the next stage"),
-    ("legacy-mb-korean", "the multi-byte vectors: the next stage"),
-    ("legacy-mb-schinese", "the multi-byte vectors: the next stage"),
-    ("legacy-mb-tchinese", "the multi-byte vectors: the next stage"),
+])
+# The HTML pages that are tests and are not run, with the reason (a page that includes testharness.js and is neither emulated by wpt.mjs nor here fails the run).
+NOT_RUN_PAGES = OrderedDict([
+    ("bom-handling.html", "the browser's loader: `document.characterSet` of a page that starts with a byte order mark"),
+    ("json-document-utf8.html", "the browser's loader: the encoding of a JSON document fetched into an iframe"),
+    ("remove-only-one-bom.html", "the browser's loader: the text of iframes whose documents start with two byte order marks"),
+    ("sharedarraybuffer.https.html", "needs a cross-origin isolated https page (a SharedArrayBuffer); the decoding of a view over one is in textdecoder-copy.any.js and the unit tests"),
+    ("sniffing.html", "the browser's loader: a page must not be sniffed as UTF-8"),
+    ("utf-32-from-win1252.html", "the browser's loader: UTF-32 documents and subresources"),
+    ("utf-32.html", "the browser's loader: UTF-32 documents and subresources"),
+    ("eof-shift_jis.html", "a reftest: the rendering of a document that ends in a truncated Shift_JIS sequence (the decode is in the unit tests and the differential)"),
+    ("eof-utf-8-one.html", "a reftest: the rendering of a document that ends in a truncated UTF-8 sequence"),
+    ("eof-utf-8-two.html", "a reftest: the rendering of a document that ends in a truncated UTF-8 sequence"),
+    ("eof-utf-8-three.html", "a reftest: the rendering of a document that ends in a truncated UTF-8 sequence"),
+    ("legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-errors-stateful.html",
+     "a form posted to a data: URL in an iframe whose document is read back through postMessage; its expectations are read out of its source and held to the library by check_stateful_page() (and its vector is in tests/test-encoding-cjk.cpp)"),
 ])
 
 
+def classify(path):
+    """What kind of page a *.html file of the suite is, by what it includes: decode, form, href, reftest, data (a fixture the other pages read), or other."""
+    with open(path, "rb") as fh:
+        text = fh.read().decode("latin-1")
+    if "testharness.js" not in text:
+        return "reftest" if re.search(r"rel=[\"']?match", text) else "data"
+    if "decode-common.js" in text or 'getElementById("scrwin")' in text:
+        return "decode"
+    if "encode-form-common.js" in text:
+        return "form"
+    if "encode-href-common.js" in text or re.search(r"createElement\([\"']a[\"']\)", text):
+        return "href"
+    return "other"
+
+
+def pages():
+    """[(kind, relative path)] of the pages that are run, and the files and directories of the suite that are neither run nor listed."""
+    run, unlisted = [], []
+    for root, dirs, files in os.walk(SUITE):
+        rel_root = os.path.relpath(root, SUITE)
+        dirs[:] = sorted(d for d in dirs if not (rel_root == "." and d in NOT_RUN_DIRECTORIES) and d != ".git")
+        for name in sorted(files):
+            rel = name if rel_root == "." else os.path.join(rel_root, name)
+            if name.endswith(".html"):
+                kind = classify(os.path.join(root, name))
+                if kind in ("decode", "form", "href") and rel not in NOT_RUN_PAGES:
+                    run.append((kind, rel))
+                elif kind in ("data",):
+                    continue
+                elif rel not in NOT_RUN_PAGES:
+                    unlisted.append(rel)
+            elif name.endswith((".any.js", ".window.js")):
+                if rel not in RUN and rel not in NOT_RUN:
+                    unlisted.append(rel)
+    return run, unlisted
+
+
 def unaccounted():
-    """The files and directories of the suite that are neither run nor listed as skipped."""
-    out = []
-    for name in sorted(os.listdir(SUITE)):
-        path = os.path.join(SUITE, name)
-        if os.path.isdir(path):
-            if name not in NOT_RUN_DIRECTORIES:
-                out.append(name + "/")
-        elif name.endswith(".js") and name not in RUN and name not in NOT_RUN:
-            out.append(name)
-    return out
+    """The files of the suite that are neither run nor listed as skipped."""
+    return pages()[1]
 
 
 def read_expected(path):
@@ -127,8 +181,8 @@ def read_expected(path):
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             parts = line.split("\t")
-            if len(parts) != 4 or not all(p.isdigit() for p in parts[1:]):
-                raise SystemExit("%s:%d: not four tab-separated fields (file, passed, deferred, failed): %r" % (path, number, line[:80]))
+            if len(parts) != 3 or not all(p.isdigit() for p in parts[1:]):
+                raise SystemExit("%s:%d: not three tab-separated fields (file, passed, failed): %r" % (path, number, line[:80]))
             out[parts[0]] = tuple(int(p) for p in parts[1:])
     return out
 
@@ -164,10 +218,69 @@ def run_suite(binary, files, plant):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+STATEFUL_PAGE = "legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-errors-stateful.html"
+
+
+def js_string(text):
+    """The value of a JavaScript string literal of the page (single-quoted; \\xNN is the only escape the page uses)."""
+    return re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), text)
+
+
+def check_stateful_page(binary, plant=None):
+    """The expectations of the page that cannot be run, read from its source: the form's value, the bytes the browser must post and the text they read back as.
+    Returns a list of failure lines (empty when this library's encoder writes the page's bytes and its decoder reads them back to the page's text)."""
+    path = os.path.join(SUITE, STATEFUL_PAGE)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    value = re.search(r"name: 'utf16',\s*value: '([^']*)'", text)
+    expect = re.search(r"assert_equals\(\s*iso2022jp,\s*'([^']*)'\);", text)
+    decoded = re.search(r"assert_equals\(utf16, '([^']*)'\);", text)
+    if not (value and expect and decoded):
+        return ["%s: the page's expectations are not where this check reads them (the form's value, the two assert_equals)" % STATEFUL_PAGE]
+    want_bytes = js_string(expect.group(1)).encode("latin-1")
+    if plant == "stateful-expectation":
+        want_bytes = want_bytes.replace(b"\x1b(B", b"", 1)
+    ask = ["NE 0 %s H" % b"iso-2022-jp".hex(), "E 0 1 %s" % js_string(value.group(1)).encode("utf-8").hex(),
+           "ND 1 %s -" % b"iso-2022-jp".hex(), "D 1 1 %s" % want_bytes.hex()]
+    done = subprocess.run([binary, "serve"], input=("\n".join(ask) + "\n").encode("ascii"), capture_output=True)
+    answers = done.stdout.decode("ascii").split("\n")
+    if done.returncode != 0 or len(answers) < 4:
+        return ["%s: the library's runner failed" % STATEFUL_PAGE]
+    out = []
+    enc = answers[1].split()
+    if enc[0] != "OUT" or bytes.fromhex(enc[1] if enc[1] != "-" else "") != want_bytes:
+        out.append("%s: the form's value is written as %s, the page expects %r" % (STATEFUL_PAGE, answers[1][:200], want_bytes))
+    dec = answers[3].split()
+    got = bytes.fromhex(dec[1] if dec[0] == "OUT" and dec[1] != "-" else "").decode("utf-8") if dec[0] == "OUT" else None
+    if got != js_string(decoded.group(1)):
+        out.append("%s: the page's bytes read back as %r, the page expects %r" % (STATEFUL_PAGE, got, js_string(decoded.group(1))))
+    return out
+
+
+def stale_listings(expected):
+    """Lines for what the lists name and the suite or the counts contradict: a file or directory that is not there, one listed as not run that has counts
+    (so it runs), and one named twice."""
+    out = []
+    for name, table, want_dir in (("RUN", RUN, False), ("NOT_RUN", NOT_RUN, False), ("NOT_RUN_PAGES", NOT_RUN_PAGES, False), ("NOT_RUN_DIRECTORIES", NOT_RUN_DIRECTORIES, True)):
+        for item in table:
+            full = os.path.join(SUITE, item)
+            if not (os.path.isdir(full) if want_dir else os.path.isfile(full)):
+                out.append("%s names %s, which is not in the suite" % (name, item))
+    for name, table in (("NOT_RUN", NOT_RUN), ("NOT_RUN_PAGES", NOT_RUN_PAGES)):
+        for item in table:
+            if item in expected:
+                out.append("%s names %s, which has counts in encoding_wpt_expected.txt: it runs" % (name, item))
+            if item in RUN:
+                out.append("%s names %s, which is also in RUN" % (name, item))
+    if len(set(RUN)) != len(RUN):
+        out.append("RUN names a file twice")
+    return out
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("binary")
-    ap.add_argument("--plant", choices=("bridge-drops-a-byte", "expected-count", "no-such-file", "unlisted-file"))
+    ap.add_argument("--plant", choices=("bridge-drops-a-byte", "expected-count", "no-such-file", "unlisted-file", "stale-listing", "stateful-expectation"))
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
@@ -175,31 +288,44 @@ def main(argv):
     if not os.path.isdir(SUITE):
         sys.stderr.write("%s is not here: run tools/encoding/fetch.sh\n" % SUITE)
         return 2
-    extra = unaccounted() if args.plant != "unlisted-file" else unaccounted() + ["new-file.any.js"]
+    page_list, extra = pages()
+    if args.plant == "unlisted-file":
+        extra = extra + ["new-file.any.js"]
     if extra:
         sys.stderr.write("\033[0;31m\n### Files of the suite that are neither run nor listed as skipped ###\033[0m\n  %s\n" % "\n  ".join(extra))
         return 3
-    files = list(RUN) + (["no-such-file.any.js"] if args.plant == "no-such-file" else [])
+    files = list(RUN) + [rel for _, rel in page_list] + (["no-such-file.any.js"] if args.plant == "no-such-file" else [])
     missing = [f for f in files if not os.path.exists(os.path.join(SUITE, f))]
     if missing:
         sys.stderr.write("\033[0;31m\n### Test files that are not in the suite ###\033[0m\n  %s\n" % "\n  ".join(missing))
         return 3
+    expected_early = read_expected(EXPECTED)
+    if args.plant == "stale-listing":
+        NOT_RUN["no-longer-in-the-suite.any.js"] = "planted"
+    stale = stale_listings(expected_early)
+    if stale:
+        sys.stderr.write("\033[0;31m\n### Listed files of the suite that are gone, or that run ###\033[0m\n  %s\n" % "\n  ".join(stale))
+        return 3
     R.check_image()
-    results = run_suite(args.binary, files, args.plant)
+    entries = list(RUN) + ["%s=%s" % (kind, rel) for kind, rel in page_list] + (["no-such-file.any.js"] if args.plant == "no-such-file" else [])
+    results = run_suite(args.binary, entries, args.plant)
 
-    tally = OrderedDict((f, [0, 0, 0]) for f in files)
+    tally = OrderedDict((f, [0, 0]) for f in files)
     failures = []
     for r in results:
         t = tally[r["file"]]
-        t[{"pass": 0, "deferred": 1, "fail": 2}[r["status"]]] += 1
-        if r["status"] == "fail":
+        if r["status"] == "pass":
+            t[0] += r.get("count", 1)
+        else:
+            t[1] += 1
             failures.append("%s: %s -- %s" % (r["file"], r["name"], r["message"]))
     if args.update:
-        for f, (p, d, x) in tally.items():
-            print("%s\t%d\t%d\t%d" % (f, p, d, x))
+        for f, (p, x) in tally.items():
+            print("%s\t%d\t%d" % (f, p, x))
         return 0
 
     status = 0
+    failures.extend(check_stateful_page(args.binary, args.plant))
     if failures:
         sys.stderr.write("\033[0;31m\n### Failed tests of the standard's suite ###\033[0m\n")
         for line in failures[:40]:
@@ -214,8 +340,8 @@ def main(argv):
     expected = read_expected(EXPECTED)
     if args.plant == "expected-count":
         first = next(iter(expected))
-        p, d, x = expected[first]
-        expected[first] = (p + 1, d, x)
+        p, x = expected[first]
+        expected[first] = (p + 1, x)
     changed = []
     for f in files:
         got = tuple(tally[f])
@@ -225,16 +351,29 @@ def main(argv):
         if f not in tally:
             changed.append("%s: listed and not run" % f)
     if changed:
-        sys.stderr.write("\033[0;31m\n### Counts of the suite's tests that have changed ###\033[0m\n  %s\n" % "\n  ".join(changed))
+        sys.stderr.write("\033[0;31m\n### Counts of the suite's tests that have changed ###\033[0m\n  %s\n" % "\n  ".join(changed[:60]))
         status = 3
     passed = sum(t[0] for t in tally.values())
-    deferred = sum(t[1] for t in tally.values())
-    failed = sum(t[2] for t in tally.values())
-    if args.verbose or status == 0:
-        for f, (p, d, x) in tally.items():
-            print("  %-46s %5d passed %4d deferred %3d failed" % (f, p, d, x))
-    print("encoding suite: %d files, %d tests: %d passed, %d deferred to the multi-byte stage, %d failed%s" % (
-        len(files), passed + deferred + failed, passed, deferred, failed, "" if status == 0 else "  FAILED"))
+    failed = sum(t[1] for t in tally.values())
+    if args.verbose:
+        for f, (p, x) in tally.items():
+            print("  %-70s %7d passed %3d failed" % (f, p, x))
+    elif status == 0:
+        for f, (p, x) in tally.items():
+            if f in RUN:
+                print("  %-70s %7d passed %3d failed" % (f, p, x))
+        by_kind = OrderedDict()
+        for kind, rel in page_list:
+            k = by_kind.setdefault(kind, [0, 0, 0])
+            k[0] += 1
+            k[1] += tally[rel][0]
+            k[2] += tally[rel][1]
+        for kind, (n, p, x) in by_kind.items():
+            print("  %-70s %7d passed %3d failed" % ("%d %s pages of the legacy multi-byte vectors" % (n, kind), p, x))
+    if status == 0:
+        print("  %-70s the page's own expected bytes and text, read from its source: written and read back by the library" % STATEFUL_PAGE.split("/")[-1])
+    print("encoding suite: %d JavaScript files and %d pages, %d tests: %d passed, %d failed; %d pages are for a browser and are listed with the reason%s" % (
+        len(RUN), len(page_list), passed + failed, passed, failed, len(NOT_RUN_PAGES), "" if status == 0 else "  FAILED"))
     return status
 
 

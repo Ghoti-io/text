@@ -31,6 +31,17 @@
  * it is cut. o3: bits 0 to 2 the output limit (none, the length, one less, half, one, three), bits 3 to 5 which call of the
  * sink is refused, bit 6 the allocation-failure sweep, bit 7 the misuse of every entry point.
  *
+ * The multi-byte encodings (GBK, gb18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR) are held to the model of tests/encoding_cjk_model.h, the
+ * standard's handlers written again over the pinned indexes.json (which the harness reads, from the library's directory): the decoder's output, its error
+ * and the offset of the error, the points at which an output limit may cut (a Big5 pair of code points is not cut), and the encoder's output in all three modes,
+ * with the code point and the offset of a failure and the places a limit may cut (the escape sequences of ISO-2022-JP are not cut).
+ * That includes `bom_sniffing`: a mark makes the decoder the UTF one it names and the UTF reference decodes what follows it; no mark leaves the model of the
+ * encoding asked for, over the whole input. And, for ISO-2022-JP in fatal mode, the state across a failure: the input is cut (at every place of a short one, at
+ * eight of a long one), and when the first piece fails with a fatal error in a call that does not flush the second, decoded by the same decoder, must equal the
+ * model begun in the mode the failure left (tests/encoding_cjk_model.h, ModelDecoded::iso_mode) - a half-read escape, a leading byte or the output flag that
+ * survived would show. The fatal status of the encoder names the code point that was handled (for ISO-2022-JP the control, not U+FFFD), and the HTML mode's
+ * reference is the one the standard returns.
+ *
  * The properties, for the decoder:
  *
  *     the answer - status, output, offset, count, encoding, mark - is the same for the whole input, for every
@@ -66,11 +77,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <ghoti.io/text/encoding.h>
 
+#include "../encoding_cjk_model.h"
 #include "../encoding_model.h"
 #include "../markup_test_support.h"
 
@@ -239,6 +252,57 @@ Out decode_with(GTEXT_Encoding e, const GTEXT_Decoder_Options & o, const std::st
   return out;
 }
 
+// ISO-2022-JP's decoder after a fatal error in a call that did not flush: the next call decodes as the model does from the mode the failure left, with
+// nothing else of the old state (tests/encoding_cjk_model.h: ModelDecoded::iso_mode). The input is cut at a random place; when the first piece fails, the
+// second is decoded by the same decoder, and it must equal the model begun in that mode (a stale escape, leading byte or output flag shows).
+void check_iso_resume_at(const Ctx & ctx, const GTEXT_Decoder_Options & o, const std::string & in, size_t cut) {
+  const std::string a = in.substr(0, cut), b = in.substr(cut);
+  if (o.bom_sniffing) {
+    // A first byte that could begin a mark is held until the sniff decides, so the first call may not fail yet; and a second stream that begins with a mark
+    // is decoded as the UTF the mark names, which is not the mode the failure left. Both are the sniff's (checked above), not this property's.
+    auto may_begin_mark = [](const std::string & x) { return !x.empty() && ((unsigned char)x[0] == 0xEF || (unsigned char)x[0] == 0xFE || (unsigned char)x[0] == 0xFF); };
+    if (may_begin_mark(a) || may_begin_mark(b)) {
+      return;
+    }
+  }
+  const ModelDecoded fa = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(a.data()), a.size(), true);
+  // (a failure of the first piece, as it would be without the end of the queue: the model is run over the piece alone, with the end of the queue, so only
+  // a piece whose failure is before its last byte is certain to be a failure of the unfinished call)
+  if (!fa.failed || fa.error_offset >= a.size()) {
+    return;
+  }
+  GTEXT_Decoder * d = nullptr;
+  ctx.check(gtext_decoder_new(GTEXT_ENCODING_ISO_2022_JP, &o, &d) == GTEXT_ENCODING_OK, "decoder: new failed");
+  Collect c1;
+  GTEXT_Encoding_Sink s1 = sink_of(c1);
+  GTEXT_Decoder_Result r1;
+  ctx.check(gtext_decoder_decode(d, a.data(), a.size(), false, &s1, &r1) == GTEXT_ENCODING_E_MALFORMED, "decoder: the first piece did not fail as the model's did", show(a) + " cut " + std::to_string(cut) + " model offset " + std::to_string(fa.error_offset) + " of " + std::to_string(a.size()));
+  Collect c2;
+  GTEXT_Encoding_Sink s2 = sink_of(c2);
+  GTEXT_Decoder_Result r2;
+  const GTEXT_Encoding_Status st = gtext_decoder_decode(d, b.data(), b.size(), true, &s2, &r2);
+  gtext_decoder_free(d);
+  const ModelDecoded fb = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(b.data()), b.size(), true, fa.iso_mode);
+  ctx.check((st == GTEXT_ENCODING_E_MALFORMED) == fb.failed, "decoder: after a failure, the next call's verdict is not the model's from the mode it left");
+  ctx.check(c2.bytes == utf8_of_cps(fb.cps), "decoder: after a failure, the next call's output is not the model's from the mode it left", show(c2.bytes) + " vs " + show(utf8_of_cps(fb.cps)));
+  if (fb.failed) {
+    ctx.check(r2.error_offset == fb.error_offset, "decoder: after a failure, the next call's offset is not the model's from the mode it left");
+  }
+}
+
+// ... at every cut of a short input, and at a few random ones of a long one.
+void check_iso_resume(const Ctx & ctx, const GTEXT_Decoder_Options & o, const std::string & in, Rng & rng) {
+  if (in.size() <= 48) {
+    for (size_t cut = 0; cut <= in.size(); cut++) {
+      check_iso_resume_at(ctx, o, in, cut);
+    }
+  } else {
+    for (int k = 0; k < 8; k++) {
+      check_iso_resume_at(ctx, o, in, rng.next() % (in.size() + 1));
+    }
+  }
+}
+
 void check_decoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o1, unsigned o3, const std::string & in, Rng & rng) {
   GTEXT_Decoder_Options o = gtext_decoder_options_default();
   o.error_mode = (o1 & 1) ? GTEXT_DECODER_FATAL : GTEXT_DECODER_REPLACEMENT;
@@ -303,6 +367,42 @@ void check_decoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o1, unsigned o3, 
     ctx.check(rep.replacements == ref.replacements, "decoder: not the reference's count");
     ctx.check(rep.bom_found == mark, "decoder: the mark");
     ctx.check(rep.encoding == active, "decoder: the encoding");
+  } else if (is_multi_byte(e)) {
+    // The standard's handlers, written again (tests/encoding_cjk_model.h): the output, the count, and in fatal mode the error and its offset. With
+    // `bom_sniffing` a mark makes the decoder a UTF one (the UTF reference decodes what follows it) and none leaves the encoding asked for, over the whole input.
+    size_t skip = 0;
+    GTEXT_Encoding chosen = e;
+    if (o.bom_sniffing) {
+      if (in.compare(0, 3, "\xEF\xBB\xBF") == 0) {
+        chosen = GTEXT_ENCODING_UTF_8;
+        skip = 3;
+      } else if (in.compare(0, 2, "\xFE\xFF") == 0) {
+        chosen = GTEXT_ENCODING_UTF_16BE;
+        skip = 2;
+      } else if (in.compare(0, 2, "\xFF\xFE") == 0) {
+        chosen = GTEXT_ENCODING_UTF_16LE;
+        skip = 2;
+      }
+    }
+    if (skip != 0) {
+      const RefResult ref = chosen == GTEXT_ENCODING_UTF_8 ? ref_utf8(in.substr(skip)) : ref_utf16(in.substr(skip), chosen == GTEXT_ENCODING_UTF_16BE);
+      ctx.check(rep.bytes == utf8_of_cps(ref.cps) && rep.replacements == ref.replacements, "decoder: after a mark, not the reference's output",
+          show(rep.bytes) + " vs " + show(utf8_of_cps(ref.cps)));
+    } else {
+      const ModelDecoded m = model_decode(e, reinterpret_cast<const unsigned char *>(in.data()), in.size(), false);
+      ctx.check(rep.bytes == utf8_of_cps(m.cps) && rep.replacements == m.replacements, "decoder: not the model's output", show(rep.bytes) + " vs " + show(utf8_of_cps(m.cps)));
+      if (o1 & 1) {
+        const ModelDecoded mf = model_decode(e, reinterpret_cast<const unsigned char *>(in.data()), in.size(), true);
+        ctx.check((whole.status == GTEXT_ENCODING_E_MALFORMED) == mf.failed, "decoder: fatal mode's verdict is not the model's");
+        ctx.check(whole.bytes == utf8_of_cps(mf.cps), "decoder: fatal mode's output before the failure is not the model's", show(whole.bytes) + " vs " + show(utf8_of_cps(mf.cps)));
+        if (mf.failed) {
+          ctx.check(whole.error_offset == mf.error_offset, "decoder: fatal mode's offset is not the model's", std::to_string(whole.error_offset) + " vs " + std::to_string(mf.error_offset));
+        }
+      }
+    }
+    if (e == GTEXT_ENCODING_ISO_2022_JP && (o1 & 1)) {
+      check_iso_resume(ctx, o, in, rng);
+    }
   } else if (gtext_encoding_is_supported(e) && !o.bom_sniffing) {
     // One byte at a time as separate streams is the model of the encodings without state.
     std::string expect;
@@ -391,8 +491,21 @@ void check_decoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o1, unsigned o3, 
       ctx.check(l.status == GTEXT_ENCODING_OK && l.bytes == rep.bytes, "decoder: a limit that fits changed the answer");
     } else {
       ctx.check(l.status == GTEXT_ENCODING_E_LIMIT_OUTPUT, "decoder: a limit below the output was not E_LIMIT_OUTPUT", show(l));
-      ctx.check(l.bytes == boundary_prefix(rep.bytes, eff), "decoder: the prefix before the limit is not the longest whole one",
-          show(l.bytes) + " vs " + show(boundary_prefix(rep.bytes, eff)));
+      std::string expected_prefix = boundary_prefix(rep.bytes, eff);
+      if (is_multi_byte(rep.encoding)) {
+        // (the encoding that decoded: with `bom_sniffing` a mark makes it a UTF one, and none leaves it the one asked for, over the whole input)
+        // Two code points that one pair of bytes decodes to (Big5's four sequences) are written together or not at all.
+        const ModelDecoded m = model_decode(e, reinterpret_cast<const unsigned char *>(in.data()), in.size(), false);
+        size_t best = 0;
+        for (uint32_t upto : m.steps) {
+          const size_t end = utf8_of_cps(std::vector<uint32_t>(m.cps.begin(), m.cps.begin() + upto)).size();
+          if (end <= eff) {
+            best = end;
+          }
+        }
+        expected_prefix = rep.bytes.substr(0, best);
+      }
+      ctx.check(l.bytes == expected_prefix, "decoder: the prefix before the limit is not the longest whole one", show(l.bytes) + " vs " + show(expected_prefix));
     }
   }
 
@@ -535,12 +648,34 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
   const Out randomly = encode_with(e, o, in, random_cuts(rng, in.size(), fineness));
   ctx.check(randomly == whole, "encoder: random cuts differ from whole", show(randomly) + " vs " + show(whole));
 
-  // The model: each code point of the reference decoder on its own.
+  // The model: each code point of the reference decoder on its own; for the multi-byte encodings the standard's encoders written again (their escape sequences of
+  // ISO-2022-JP make the code points not independent).
   const RefResult ref = ref_utf8(in);
   std::string html_expected, repl_expected;
   std::vector<size_t> ends_html, ends_repl; // where each code point's output ends: the limit never cuts inside one
   size_t unencodable = 0, first_bad = SIZE_MAX, first_unencodable = SIZE_MAX;
-  for (size_t k = 0; k < ref.cps.size(); k++) {
+  const bool multi = is_multi_byte(e);
+  ModelEncodeResult m_html, m_repl, m_fatal;
+  std::set<size_t> m_errors;
+  if (multi) {
+    m_html = model_encode_ex(e, ref.cps, ModelMode::Html);
+    m_repl = model_encode_ex(e, ref.cps, ModelMode::Replacement);
+    m_fatal = model_encode_ex(e, ref.cps, ModelMode::Fatal);
+    html_expected = m_html.bytes;
+    repl_expected = m_repl.bytes;
+    ends_html = m_html.atoms;
+    ends_repl = m_repl.atoms;
+    m_errors.insert(m_html.errors.begin(), m_html.errors.end());
+    unencodable = m_errors.size();
+    first_unencodable = m_fatal.failed ? m_fatal.error_index : SIZE_MAX;
+    for (size_t k = 0; k < ref.cps.size(); k++) {
+      if (ref.bad[k]) {
+        first_bad = k;
+        break;
+      }
+    }
+  }
+  for (size_t k = 0; !multi && k < ref.cps.size(); k++) {
     std::string b;
     if (ref.bad[k] && first_bad == SIZE_MAX) {
       first_bad = k;
@@ -571,14 +706,19 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
       ctx.check(whole.status == (malformed ? GTEXT_ENCODING_E_MALFORMED : GTEXT_ENCODING_E_UNENCODABLE), "encoder: fatal mode's status",
           show(whole));
       std::string prefix;
-      for (size_t k = 0; k < stop; k++) {
-        std::string b;
-        encode_one(e, ref.cps[k], &b);
-        prefix += b;
+      if (multi) {
+        // The stream is over at the error: no closing escape. At an unencodable code point the model stops where the library does.
+        prefix = malformed ? model_encode_ex(e, std::vector<uint32_t>(ref.cps.begin(), ref.cps.begin() + stop), ModelMode::Fatal, false).bytes : m_fatal.bytes;
+      } else {
+        for (size_t k = 0; k < stop; k++) {
+          std::string b;
+          encode_one(e, ref.cps[k], &b);
+          prefix += b;
+        }
       }
       ctx.check(whole.bytes == prefix, "encoder: fatal mode's output before the failure", show(whole) + " vs " + show(prefix));
       if (!malformed) {
-        ctx.check(whole.error_code_point == ref.cps[stop], "encoder: the code point of the failure");
+        ctx.check(whole.error_code_point == (multi ? m_fatal.error_cp : ref.cps[stop]), "encoder: the code point of the failure");
         ctx.check(whole.error_offset == ref.starts[stop], "encoder: the offset of the failure",
             std::to_string(whole.error_offset) + " vs " + std::to_string(ref.starts[stop]));
       }
@@ -591,7 +731,7 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
     size_t expect_count = 0;
     for (size_t k = 0; k < ref.cps.size(); k++) {
       std::string b;
-      if (ref.bad[k] || !encode_one(e, ref.cps[k], &b)) {
+      if (multi ? (ref.bad[k] || m_errors.count(k)) : (ref.bad[k] || !encode_one(e, ref.cps[k], &b))) {
         expect_count++;
       }
     }
@@ -604,6 +744,15 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
     if (f.status == GTEXT_ENCODING_OK) {
       ctx.check(f.bytes == whole.bytes, "encoder: fatal succeeded with other output");
     }
+  }
+
+  // What a multi-byte encoder writes decodes, without an error, as the standard's decoder reads it (the model: not always as the text, which the standard folds
+  // in places).
+  if (multi && whole.status == GTEXT_ENCODING_OK && o.error_mode != GTEXT_ENCODER_FATAL) {
+    const Out back = decode_whole(e, whole.bytes);
+    const ModelDecoded m = model_decode(e, reinterpret_cast<const unsigned char *>(whole.bytes.data()), whole.bytes.size(), false);
+    ctx.check(back.status == GTEXT_ENCODING_OK && back.bytes == utf8_of_cps(m.cps), "encoder: what was written is not read as the model reads it", show(back));
+    ctx.check(m.replacements == 0, "encoder: what was written has an error in it", show(whole.bytes));
   }
 
   // What is written decodes back to the repaired text, where the encoding is one whose decoder is faithful.
@@ -791,7 +940,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     g_decoded_inputs++;
     check_decoder(ctx, e, o1, o3, in, rng);
   } else {
-    ctx.check(ds == GTEXT_ENCODING_E_UNSUPPORTED && !gtext_encoding_is_supported(e), "a decoder that is neither made nor unsupported");
+    ctx.check(false, "no decoder for an encoding of the standard", gtext_encoding_status_string(ds)); // (every one of the 40 has one)
   }
   GTEXT_Encoder * enc = nullptr;
   const GTEXT_Encoding_Status es = gtext_encoder_new(e, nullptr, &enc);
@@ -801,8 +950,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     check_encoder(ctx, e, o2, o3, in, rng);
   } else {
     const bool no_encoder = e == GTEXT_ENCODING_REPLACEMENT || e == GTEXT_ENCODING_UTF_16BE || e == GTEXT_ENCODING_UTF_16LE;
-    ctx.check(es == (no_encoder ? GTEXT_ENCODING_E_NO_ENCODER : GTEXT_ENCODING_E_UNSUPPORTED), "an encoder with the wrong status",
-        gtext_encoding_status_string(es));
+    ctx.check(no_encoder && es == GTEXT_ENCODING_E_NO_ENCODER, "an encoder with the wrong status", gtext_encoding_status_string(es));
   }
   if (o3 & 0x80) {
     check_misuse(ctx, e, in);

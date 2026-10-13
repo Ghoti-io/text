@@ -23,6 +23,10 @@
  *   encoding-ours serve [<requests> <answers>]     one request per line from stdin / the named pipe, one answer per line
  *   encoding-ours enum <label> <n> <flags> <start> <count>   write the records of the decodes of the n-byte sequences
  *                                                  start .. start+count-1 (their bytes the big-endian digits of the number)
+ *   encoding-ours encenum <label> <F|H> <first> <last>   write the records of the encodes of each code point first .. last (surrogates skipped) by
+ *                                                  itself, in fatal (F) or HTML (H) mode: one byte, the length of the output (255 for a failure in fatal mode), and the output
+ *   encoding-ours enumx <label> <flags> <spec>     the same for the sequences of a product: <spec> is the set of each byte, separated by ':' (two to eight bytes), each set a
+ *                                                  comma-separated list of hex bytes and ranges (`81-FE:30-39:81-FE:30-39`); in the order of the nested loops, first byte outermost
  *
  * Every string is hex, "-" for none. Flags are letters, "-" for none: f the decoder's fatal mode, s `bom_sniffing`,
  * r `bom_removal`. Requests:
@@ -39,7 +43,9 @@
  *   LIMIT <label> <max> <bytes>     a whole decode with an output limit           -> as D
  *   PING                            -> PONG
  *
- * An enum record is one byte, the length of the output (255 for a failure in fatal mode), and the output.
+ * An enum or enumx record is one byte, the length of the output (255 for a failure in fatal mode), and the output. An encenum record is the same and, after a
+ * successful encode, one byte more: 1 if the encoding's decoder reads the bytes back to the code point, 0 if to something else, 2 if it cannot - the record of
+ * containers/html/encoding.py's encenum, which encoding_mb.encode_records reads for both.
  *
  * Copyright 2026 by Corey Pennycuff
  */
@@ -204,6 +210,177 @@ static int run_enum(const char * label, int n, const char * flags, uint64_t star
   return 0;
 }
 
+/* The sets of an enumx spec: up to 8 positions of up to 256 bytes each. */
+typedef struct {
+  int n;
+  int count[8];
+  unsigned char byte[8][256];
+} Spec;
+
+static bool parse_spec(const char * text, Spec * spec) {
+  memset(spec, 0, sizeof *spec);
+  const char * p = text;
+  for (;;) {
+    if (spec->n >= 8) {
+      return false;
+    }
+    unsigned char seen[256] = {0};
+    for (;;) {
+      char * end = NULL;
+      const long lo = strtol(p, &end, 16);
+      if (end == p || lo < 0 || lo > 255) {
+        return false;
+      }
+      long hi = lo;
+      p = end;
+      if (*p == '-') {
+        hi = strtol(p + 1, &end, 16);
+        if (end == p + 1 || hi < lo || hi > 255) {
+          return false;
+        }
+        p = end;
+      }
+      for (long b = lo; b <= hi; b++) {
+        seen[b] = 1;
+      }
+      if (*p == ',') {
+        p++;
+        continue;
+      }
+      break;
+    }
+    int c = 0;
+    for (int b = 0; b < 256; b++) {
+      if (seen[b]) {
+        spec->byte[spec->n][c++] = (unsigned char)b;
+      }
+    }
+    spec->count[spec->n++] = c;
+    if (*p == ':') {
+      p++;
+      continue;
+    }
+    return *p == 0 && spec->n >= 1;
+  }
+}
+
+static int run_enumx(const char * label, const char * flags, const char * spec_text) {
+  Bytes lb = {0};
+  unhex(label, &lb);
+  const GTEXT_Encoding e = gtext_encoding_for_label((const char *)lb.data, lb.len);
+  GTEXT_Decoder_Options o = decoder_flags(flags);
+  GTEXT_Decoder * d = NULL;
+  Spec spec;
+  if (e == GTEXT_ENCODING_NONE || gtext_decoder_new(e, &o, &d) != GTEXT_ENCODING_OK || !parse_spec(spec_text, &spec)) {
+    fprintf(stderr, "encoding-ours enumx: no decoder for the label, or a bad spec\n");
+    return 2;
+  }
+  Bytes out = {0};
+  const GTEXT_Encoding_Sink sink = {sink_write, &out};
+  Bytes rec = {0};
+  int idx[8] = {0};
+  for (;;) {
+    unsigned char in[8];
+    for (int k = 0; k < spec.n; k++) {
+      in[k] = spec.byte[k][idx[k]];
+    }
+    out.len = 0;
+    const GTEXT_Encoding_Status s = gtext_decoder_decode(d, in, (size_t)spec.n, true, &sink, NULL);
+    if (s != GTEXT_ENCODING_OK) {
+      const unsigned char x = 255;
+      bytes_add(&rec, &x, 1);
+    } else {
+      const unsigned char len = (unsigned char)out.len;
+      bytes_add(&rec, &len, 1);
+      bytes_add(&rec, out.data, out.len);
+    }
+    if (rec.len > (1 << 20)) {
+      fwrite(rec.data, 1, rec.len, stdout);
+      rec.len = 0;
+    }
+    int k = spec.n - 1;
+    while (k >= 0 && ++idx[k] == spec.count[k]) {
+      idx[k] = 0;
+      k--;
+    }
+    if (k < 0) {
+      break;
+    }
+  }
+  fwrite(rec.data, 1, rec.len, stdout);
+  fflush(stdout);
+  gtext_decoder_free(d);
+  return 0;
+}
+
+static int run_encenum(const char * label, const char * mode, uint32_t first, uint32_t last) {
+  Bytes lb = {0};
+  unhex(label, &lb);
+  const GTEXT_Encoding e = gtext_encoding_for_label((const char *)lb.data, lb.len);
+  GTEXT_Encoder_Options o = gtext_encoder_options_default();
+  if (strcmp(mode, "F") != 0 && strcmp(mode, "H") != 0) {
+    fprintf(stderr, "encoding-ours encenum: the mode is F (fatal) or H (html), not \"%s\"\n", mode);
+    return 2;
+  }
+  o.error_mode = mode[0] == 'H' ? GTEXT_ENCODER_HTML : GTEXT_ENCODER_FATAL;
+  GTEXT_Encoder * enc = NULL;
+  GTEXT_Decoder * back = NULL; /* the same encoding's decoder, for the record's last byte */
+  if (e == GTEXT_ENCODING_NONE || gtext_encoder_new(e, &o, &enc) != GTEXT_ENCODING_OK) {
+    fprintf(stderr, "encoding-ours encenum: no encoder for the label\n");
+    return 2;
+  }
+  if (gtext_decoder_new(e, NULL, &back) != GTEXT_ENCODING_OK) {
+    back = NULL;
+  }
+  Bytes out = {0};
+  const GTEXT_Encoding_Sink sink = {sink_write, &out};
+  Bytes rec = {0};
+  for (uint32_t cp = first; cp <= last && cp <= 0x10FFFF; cp++) {
+    if (cp >= 0xD800 && cp <= 0xDFFF) {
+      continue;
+    }
+    char u[4];
+    size_t n;
+    if (cp < 0x80) { u[0] = (char)cp; n = 1; }
+    else if (cp < 0x800) { u[0] = (char)(0xC0 | (cp >> 6)); u[1] = (char)(0x80 | (cp & 0x3F)); n = 2; }
+    else if (cp < 0x10000) { u[0] = (char)(0xE0 | (cp >> 12)); u[1] = (char)(0x80 | ((cp >> 6) & 0x3F)); u[2] = (char)(0x80 | (cp & 0x3F)); n = 3; }
+    else { u[0] = (char)(0xF0 | (cp >> 18)); u[1] = (char)(0x80 | ((cp >> 12) & 0x3F)); u[2] = (char)(0x80 | ((cp >> 6) & 0x3F)); u[3] = (char)(0x80 | (cp & 0x3F)); n = 4; }
+    out.len = 0;
+    const GTEXT_Encoding_Status s = gtext_encoder_encode(enc, u, n, true, &sink, NULL);
+    if (s != GTEXT_ENCODING_OK) {
+      const unsigned char x = 255;
+      bytes_add(&rec, &x, 1);
+    } else {
+      const unsigned char len = (unsigned char)out.len;
+      bytes_add(&rec, &len, 1);
+      bytes_add(&rec, out.data, out.len);
+      /* ... and one more byte, as encoding.py's encenum writes: 1 if the encoding's decoder reads those bytes back to the code point, 0 to something else,
+         2 if it cannot. (One definition of the record for both, which encoding_mb.encode_records reads.) */
+      unsigned char flag = 2;
+      if (back) {
+        Bytes got = {0};
+        const GTEXT_Encoding_Sink back_sink = {sink_write, &got};
+        if (gtext_decoder_decode(back, out.data, out.len, true, &back_sink, NULL) == GTEXT_ENCODING_OK) {
+          flag = (got.len == n && memcmp(got.data, u, n) == 0) ? 1 : 0;
+        }
+        free(got.data);
+      }
+      bytes_add(&rec, &flag, 1);
+    }
+    if (rec.len > (1 << 20)) {
+      fwrite(rec.data, 1, rec.len, stdout);
+      rec.len = 0;
+    }
+  }
+  fwrite(rec.data, 1, rec.len, stdout);
+  fflush(stdout);
+  gtext_encoder_free(enc);
+  if (back) {
+    gtext_decoder_free(back);
+  }
+  return 0;
+}
+
 static void answer_decode(FILE * out, GTEXT_Encoding_Status s, const Bytes * b, const GTEXT_Decoder_Result * r) {
   if (s == GTEXT_ENCODING_OK) {
     fputs("OUT ", out);
@@ -360,6 +537,12 @@ int main(int argc, char ** argv) {
     }
     return run_enum(argv[2], n, argv[4], strtoull(argv[5], NULL, 10), strtoull(argv[6], NULL, 10));
   }
+  if (argc == 6 && strcmp(argv[1], "encenum") == 0) {
+    return run_encenum(argv[2], argv[3], (uint32_t)strtoul(argv[4], NULL, 10), (uint32_t)strtoul(argv[5], NULL, 10));
+  }
+  if (argc == 5 && strcmp(argv[1], "enumx") == 0) {
+    return run_enumx(argv[2], argv[3], argv[4]);
+  }
   if (argc >= 2 && strcmp(argv[1], "serve") == 0) {
     if (argc == 4) {
       FILE * in = fopen(argv[2], "r");
@@ -372,6 +555,6 @@ int main(int argc, char ** argv) {
     }
     return serve(stdin, stdout);
   }
-  fprintf(stderr, "usage: encoding-ours serve [<requests> <answers>] | enum <label> <n> <flags> <start> <count>\n");
+  fprintf(stderr, "usage: encoding-ours serve [<requests> <answers>] | enum <label> <n> <flags> <start> <count> | enumx <label> <flags> <spec> | encenum <label> <F|H> <first> <last>\n");
   return 2;
 }

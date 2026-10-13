@@ -41,7 +41,23 @@
  * can read any number of streams. After any non-OK status **but E_INVALID** the decoder is in
  * its starting state as well, and the next call begins a new stream (a failed
  * decode does not poison it: the Encoding API's `TextDecoder` is specified the
- * same way, and the standard's web-platform-tests check it).
+ * same way, and the standard's web-platform-tests check it). **One exception, the standard's own:**
+ * after a fatal error (E_MALFORMED) in a call that did not flush, an ISO-2022-JP decoder goes on in the
+ * **mode** it was in (ASCII, Roman, katakana or JIS X 0208, as the last escape sequence selected: the standard's
+ * "decoder output state"), because "this is the only decoder which does not clear internal state before throwing
+ * in stream mode" (the web-platform-tests' own words; their cases are a mode of Roman and of katakana). Nothing
+ * else of it survives: not a half-read escape sequence or a leading byte (the next stream does not begin by finishing
+ * them), not the "output" flag that makes two escape sequences with nothing between an error; and its position, the
+ * offsets it reports and everything else start over. A flush, gtext_decoder_reset(), a failure that is not an error in
+ * the data (a limit, a refusing sink) and an error in a call that did flush abandon the stream like any other,
+ * mode included.
+ *
+ * **The multi-byte encodings** (GBK, gb18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR) are the
+ * standard's decoders, whose error handling puts a byte back where the standard says "restore byte to
+ * ioQueue": an invalid pair does not swallow an ASCII trail byte, and a four-byte form of gb18030
+ * broken at its last byte gives back the three bytes after the first. Two code points that one pair of
+ * bytes decodes to (Big5's four sequences) are written together or not at all, so an output limit
+ * never falls between them.
  *
  * **Byte order marks.** The three variants of the standard are two options:
  * `bom_sniffing` is "decode" (a UTF-8 or UTF-16 mark at the start chooses the
@@ -150,11 +166,11 @@ typedef struct GTEXT_Decoder GTEXT_Decoder;
  * @brief Make a decoder.
  *
  * @param encoding The encoding to decode (the one to fall back on, with `bom_sniffing`). Any of the standard's
- *   except the multi-byte ones of the next stage.
+ *   (the seven multi-byte legacy encodings included).
  * @param opts     Options, or NULL for the defaults.
  * @param out      Receives the decoder. Written only on success; free it with gtext_decoder_free().
  * @return GTEXT_ENCODING_OK; E_INVALID (NULL `out`, `encoding` that is not an encoding); E_OPTIONS (an error mode that is
- *   none of the enum); E_UNSUPPORTED (a multi-byte encoding); E_OOM.
+ *   none of the enum); E_OOM.
  */
 GTEXT_API GTEXT_Encoding_Status gtext_decoder_new(
     GTEXT_Encoding encoding, const GTEXT_Decoder_Options * opts, GTEXT_Decoder ** out);

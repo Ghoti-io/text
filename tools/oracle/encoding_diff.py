@@ -67,6 +67,8 @@ from collections import defaultdict
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import encoding_mb as MB  # noqa: E402
+import encoding_model as M  # noqa: E402
 import encoding_ref as R  # noqa: E402
 import oracle_env  # noqa: E402
 
@@ -94,9 +96,11 @@ class Run:
         self.args = args
         self.sections = []
         self.divergences = defaultdict(lambda: {"count": 0, "examples": []})
+        self.executed = set()   # (population, who) of the multi-byte populations that ran: what the list's lines for them are checked against
         self.unexplained = []   # divergences with no entry in the list, that the data does not settle
         self.defects = []       # divergences the standard's data does not side with this library on
         self.requests = 0
+        self.ran = set()        # the populations that ran (by the names --only and --except use)
 
     def note(self, line):
         print(line, flush=True)
@@ -106,8 +110,12 @@ class Run:
         if not standard_agrees:
             self.defects.append("%s/%s/%s: %s" % (reference, population, cls, example if len(example) < 200 else example[:197] + "..."))
             return
+        self.add(reference, population, cls, 1, example)
+
+    def add(self, reference, population, cls, count, example):
+        """`count` divergences of one class at once (the multi-byte populations count in worker processes)."""
         d = self.divergences[(reference, population, cls)]
-        d["count"] += 1
+        d["count"] += count
         if len(d["examples"]) < 3:
             d["examples"].append(example if len(example) < 200 else example[:197] + "...")
 
@@ -178,6 +186,18 @@ class Ours:
         elif self.plant == "ours-lost-char":
             out = [("OUT -" if a.startswith("OUT ") and len(a) > 6 else a) if i % 991 == 5 else a for i, a in enumerate(out)]
         return out
+
+    def encenum(self, label_hex, mode, first, last):
+        done = subprocess.run([self.binary, "encenum", label_hex, mode, str(first), str(last)], capture_output=True)
+        if done.returncode != 0:
+            raise Failure("the library's encenum exited %d:\n%s" % (done.returncode, done.stderr.decode("utf-8", "replace")[-1500:]))
+        return done.stdout
+
+    def enumx(self, label_hex, flags, spec):
+        done = subprocess.run([self.binary, "enumx", label_hex, flags, spec], capture_output=True)
+        if done.returncode != 0:
+            raise Failure("the library's enumx exited %d:\n%s" % (done.returncode, done.stderr.decode("utf-8", "replace")[-1500:]))
+        return done.stdout
 
     def enum(self, label_hex, n, flags, start, count):
         done = subprocess.run([self.binary, "enum", label_hex, str(n), flags, str(start), str(count)], capture_output=True)
@@ -713,6 +733,398 @@ def population_buffer(run, std, ours, rng_seed):
     run.note("buffer: %d decodes through the buffer form and the stream agree" % len(datas))
 
 
+# ---- the multi-byte encodings ------------------------------------------------------------------------------------------------------------
+
+BOUNDARY_BYTES = "00,0A,0E,0F,1B,20,21,24,28,2F,30,39,3A,40,41,42,49,4A,5C,5F,60,7E,7F,80,81,8E,8F,9F,A0,A1,DF,E0,FC,FD,FE,FF"
+# ISO-2022-JP's escape sequences, its three kinds of byte, a control and a high byte.
+ISO_ESCAPE_BYTES = "1B,24,28,40,42,49,4A,21,5C,0E,80"
+
+
+def mb_populations(run):
+    """[(population name, encodings, source, shapes)]: every sequence of n bytes, then the stratified products (see encoding_mb.decode_job)."""
+    encs = [e for e in MB.MB_ENCODINGS if not run.args.mb_only or e in run.args.mb_only]
+    pops = []
+    for n in range(1, run.args.mb_bytes + 1):
+        pops.append(("mb-decode-%d" % n, encs, n, True))
+    if run.args.mb_bytes >= 3 and not run.args.no_strata:
+        # Four bytes: the valid form of gb18030's long characters (every one), the bytes that matter to some decoder (every sequence), and random sets.
+        pops.append(("mb-decode-4-valid-form", [e for e in encs if e in ("gbk", "gb18030")], "81-FE:30-39:81-FE:30-39", True))
+        pops.append(("mb-decode-4-boundary", encs, ":".join([BOUNDARY_BYTES] * 4), False))
+        for seed in range(1, run.args.mb_seeds + 1):
+            rng = random.Random(1000 + seed)
+            sets = []
+            for _ in range(4):
+                values = set(rng.sample(range(0x80, 0x100), 12)) | set(rng.sample(range(0x100), 12))
+                sets.append(sorted(values))
+            pops.append(("mb-decode-4-random-%d" % seed, encs, MB.spec_of(sets), False))
+        pops.append(("mb-decode-iso-2022-jp-escapes", [e for e in encs if e == "iso-2022-jp"], ":".join([ISO_ESCAPE_BYTES] * 6), False))
+    return pops
+
+
+def population_mb_decode(run, std, ours):
+    """Every sequence of one to three bytes of each multi-byte decoder, in both modes, against Node and each Python codec (see encoding_mb.py)."""
+    import concurrent.futures
+    jobs = []
+    names = []
+    for name, encs, source, shapes in mb_populations(run):
+        for enc in encs:
+            jobs.append((ours.binary, enc, "node", None, source, True, run.args.plant, shapes))
+            names.append(name)
+            for codec in MB.CODECS[enc]:
+                jobs.append((ours.binary, enc, "python", codec, source, True, run.args.plant, shapes))
+                names.append(name)
+    order = sorted(range(len(jobs)), key=lambda i: -(jobs[i][4] if isinstance(jobs[i][4], int) else 2))
+    summary = defaultdict(lambda: [0, 0, 0, 0, 0, 0])
+    witnessed = 0
+    with concurrent.futures.ProcessPoolExecutor(max_workers=run.args.jobs) as pool:
+        results = list(pool.map(MB.decode_job, [jobs[i] for i in order]))
+    for i, result in zip(order, results):
+        job, population = jobs[i], names[i]
+        _, enc, ref, codec, _, _, _, _ = job
+        who = codec if ref == "python" else enc
+        run.executed.add((population, who))
+        run.executed.add((population + "-fatal", who))
+        for d in result["defects"]:
+            run.defects.append("%s: %s" % (population, d))
+        for name, (count, examples) in result["classes"].items():
+            run.add(ref, population, "%s %s" % (who, name), count, examples[0])
+        if result["composed"]:
+            run.add(ref, population, "%s composed %s" % (who, MB.signature(result["composed_sig"])), result["composed"], "differences made of differences of shorter pieces")
+        for what, (count, example) in result["fatal"].items():
+            run.add(ref, population + "-fatal", "%s fatal: %s" % (who, what), count, example)
+        st = result["stats"]
+        key = (population, ref)
+        summary[key][0] += st["compared"]
+        summary[key][1] += st["diverged"]
+        summary[key][2] += st["fatal_compared"]
+        summary[key][3] += st["fatal_diverged"]
+        witnessed += st.get("witness_planted", 0)
+        summary[key][4] += st["checked_against_model"] + st["fatal_checked_against_model"]
+        summary[key][5] += st["checked_against_cpp_model"] + st["fatal_checked_against_cpp_model"]
+        run.requests += st["compared"] + st["fatal_compared"]
+    # The witnesses of the aggregate classes (encoding_mb_witnesses.txt), for the encodings that ran.
+    wit_defects, wit_checked = MB.check_witnesses(ours.binary, {e for j in jobs for e in (j[1],)}, run.args.plant)
+    for d in wit_defects:
+        run.defects.append("mb-decode: " + d)
+    run.requests += wit_checked
+    run.note("mb-decode: %d witnesses of the aggregate classes (composed, uncomposed, the three kinds of fatal difference), worked out from the standard, hold" % wit_checked
+             if not wit_defects else "mb-decode: %d witnesses checked, %d do not hold" % (wit_checked, len(wit_defects)))
+    if run.args.plant in ("mb-witness", "cpp-model-witness") and not witnessed:
+        # A control that was not put in place cannot fail: say so, and stop (the control would otherwise read as passing nothing, or failing for another reason).
+        raise Failure("the %s control was planted in no worker process of the multi-byte populations" % run.args.plant)
+    for (population, ref), v in sorted(summary.items()):
+        run.note("%s against %s: %d sequence comparisons in each mode, %d differ in replacement mode and %d in fatal mode%s" % (
+            population, ref, v[0], v[1], v[3],
+            "; the library is also equal to the Python model on %d and to the C++ model on %d sequence decodes (both modes)" % (v[4], v[5]) if ref == "node" else ""))
+
+def population_mb_encode(run, std, ours):
+    """Every code point through each multi-byte encoder, against the standard (the model), against each Python codec's encoder and, through Node's decoder, against Node."""
+    import concurrent.futures
+    jobs = []
+    for enc in MB.MB_ENCODINGS:
+        if run.args.mb_only and enc not in run.args.mb_only:
+            continue
+        jobs.append((ours.binary, enc, None, True, run.args.plant))
+        for codec in MB.CODECS[enc]:
+            jobs.append((ours.binary, enc, codec, False, run.args.plant))
+    with concurrent.futures.ProcessPoolExecutor(max_workers=run.args.jobs) as pool:
+        results = list(pool.map(MB.encode_job, jobs))
+    totals = defaultdict(int)
+    for job, result in zip(jobs, results):
+        _, enc, codec, node, _ = job
+        run.executed.add(("mb-encode", codec or enc))
+        for d in result["defects"]:
+            run.defects.append("mb-encode: " + d)
+        for name, (count, examples) in result["classes"].items():
+            ref = "node" if name.startswith("node-reads: ") else "python"
+            run.add(ref, "mb-encode", "%s %s" % (codec or enc, name), count, examples[0])
+        for k, v in result["stats"].items():
+            totals[k] += v
+        run.requests += result["stats"]["code_points"]
+    run.note("mb-encode: %d encoders x %d code points (U+0000 to U+10FFFF but the surrogates), each checked against the standard (the model, %d checks) and %d Python "
+             "encoders (%d code points differ), and what the library writes through Node's decoder (%d differ)" % (
+                 len({j[1] for j in jobs}), jobs and results[0]["stats"]["code_points"], totals["model_checked"], sum(1 for j in jobs if j[2]),
+                 totals["python_differs"], totals["node_differs"]))
+
+
+def mb_piece_catalogue(std, enc, node_agrees):
+    """The complete pieces a stream of `enc` is made of when it is to be decoded alike by the standard and by Node: [(kind, bytes)].
+
+    A piece is complete when the standard decodes it, and decodes it followed by an ASCII byte, as itself and the byte (it leaves no lead byte waiting); and when
+    Node decodes it as the standard does. ISO-2022-JP's pieces are whole runs between escape sequences."""
+    pieces = []
+    if enc == "iso-2022-jp":
+        rows = std.indexes["jis0208"]
+        two = [bytes([p // 94 + 0x21, p % 94 + 0x21]) for p, cp in enumerate(rows[:8836]) if cp is not None]
+        pieces.append(("ascii", b"abc 123 .,;"))
+        pieces.append(("ascii", b"The quick brown fox"))
+        for k in (1, 2, 5):
+            for _ in range(8):
+                pieces.append(("jis", None, k))
+        pieces.append(("roman", None, 3))
+        pieces.append(("katakana", None, 3))
+        return pieces, two
+    # A piece is complete when whatever follows it is decoded as if it stood alone: tried with every byte for a single byte, and with the bytes that matter for a
+    # pair (a piece that leaves a lead byte waiting, or that an error consumes a following byte of, is not one).
+    followers_all = list(range(256))
+    followers_few = [0x00, 0x20, 0x41, 0x7F, 0x80, 0x81, 0x8E, 0x8F, 0xA1, 0xDF, 0xFE, 0xFF, 0x30, 0x1B, 0x24, 0x28]
+    alone = {y: M.decode(enc, bytes([y]))[0] for y in range(256)}
+
+    def complete(data, followers):
+        cps, _ = M.decode(enc, data)
+        return all(M.decode(enc, data + bytes([y]))[0] == cps + alone[y] for y in followers)
+
+    for b in range(256):
+        data = bytes([b])
+        if complete(data, followers_all):
+            pieces.append(("byte", data))
+    for lead in range(0x81, 0xFF):
+        for trail in range(256):
+            data = bytes([lead, trail])
+            cps, _ = M.decode(enc, data)
+            if 0xFFFD in cps:
+                continue
+            if complete(data, followers_few):
+                pieces.append(("pair", data))
+    if enc == "euc-jp":
+        # JIS X 0212's three-byte form: a sample of those the standard decodes (Node is asked below, with the rest).
+        rng_ = random.Random(77)
+        for _ in range(300):
+            data = bytes([0x8F, rng_.randrange(0xA1, 0xFF), rng_.randrange(0xA1, 0xFF)])
+            cps, _ = M.decode(enc, data)
+            if 0xFFFD not in cps and complete(data, followers_few):
+                pieces.append(("triple", data))
+    return pieces, None
+
+
+def population_mb_stream(run, std, ours):
+    """Random and mutated streams of each multi-byte encoding, cut at random places, in both error modes: the library, chunked, against the standard (the model) for all of
+    them, and against Node's TextDecoder with {stream: true} for those made of pieces on which Node and the standard agree. And ISO-2022-JP's escape sequences, fuzzed."""
+    rng = random.Random(run.args.seed + 21)
+    encs = [e for e in MB.MB_ENCODINGS if not run.args.mb_only or e in run.args.mb_only]
+    per = max(8, run.args.count // (len(encs) * 4))
+    total = {"agree": 0, "mutated": 0, "random": 0, "escapes": 0}
+    node_total = 0
+    for enc in encs:
+        # The pieces on which Node and the standard agree (from the one- and two-byte populations, both of which are enumerated exhaustively above).
+        pieces, jis = mb_piece_catalogue(std, enc, None)
+        label = hx(enc.encode())
+        if enc != "iso-2022-jp":
+            probe = [p[1] for p in pieces]
+            node_ans = R.ask_node(["D %s i %s" % (label, hx(d)) for d in probe])
+            keep = []
+            for (kind, d), a in zip(pieces, node_ans):
+                t = a.split()
+                cps, _ = M.decode(enc, d)
+                if t[0] == "OUT" and R.unhex(t[1]) == MB.u8(cps):
+                    keep.append((kind, d))
+            pieces = keep
+            four = []
+            if enc == "gb18030":
+                for _ in range(400):
+                    d = bytes([rng.randrange(0x81, 0xFF), rng.randrange(0x30, 0x3A), rng.randrange(0x81, 0xFF), rng.randrange(0x30, 0x3A)])
+                    cps, _ = M.decode(enc, d)
+                    if 0xFFFD not in cps:
+                        four.append(d)
+                if four:
+                    ans = R.ask_node(["D %s i %s" % (label, hx(d)) for d in four])
+                    four = [d for d, a in zip(four, ans) if a.split()[0] == "OUT" and R.unhex(a.split()[1]) == MB.u8(M.decode(enc, d)[0])]
+                pieces += [("four", d) for d in four]
+        cases = []  # (kind, bytes, compare with Node)
+        for kind in ("agree", "mutated", "random", "escapes"):
+            if kind == "escapes" and enc != "iso-2022-jp":
+                continue
+            for _ in range(per):
+                if kind in ("agree", "mutated"):
+                    data = bytearray()
+                    for _ in range(rng.choice((0, 1, 2, 3, 5, 8, 20, 60))):
+                        pc = rng.choice(pieces)
+                        if enc == "iso-2022-jp":
+                            if pc[0] == "ascii":
+                                data += pc[1]
+                            elif pc[0] == "jis":
+                                data += b"\x1b$B" + b"".join(rng.choice(jis) for _ in range(pc[2])) + b"\x1b(B"
+                            elif pc[0] == "roman":
+                                data += b"\x1b(J" + bytes(rng.choice(b"abcxyz 019\\~") for _ in range(pc[2])) + b"\x1b(B"
+                            else:
+                                data += b"\x1b(I" + bytes(rng.randrange(0x21, 0x60) for _ in range(pc[2])) + b"\x1b(B"
+                        else:
+                            data += pc[1]
+                    if kind == "mutated" and data:
+                        for _ in range(rng.choice((1, 1, 2, 3))):
+                            op = rng.randrange(3)
+                            at = rng.randrange(len(data) + 1)
+                            if op == 0 and at < len(data):
+                                data[at] = rng.randrange(256)
+                            elif op == 1:
+                                data.insert(at, rng.choice((0x1B, 0x24, 0x28, 0x42, 0x8E, 0x8F, 0x80, 0xFF, 0x30, 0x81, rng.randrange(256))))
+                            elif at < len(data):
+                                del data[at]
+                    cases.append((kind, bytes(data), kind == "agree" and enc != "iso-2022-jp"))
+                elif kind == "random":
+                    cases.append((kind, bytes(rng.choice((rng.randrange(256), 0x1B, 0x24, 0x28, 0x81, 0xA1, 0x8E, 0x8F, 0x30, 0x40, 0xFF)) for _ in range(rng.choice((1, 2, 3, 4, 6, 12, 40)))), False))
+                else:
+                    alphabet = bytes.fromhex(ISO_ESCAPE_BYTES.replace(",", ""))
+                    cases.append((kind, bytes(rng.choice(alphabet) for _ in range(rng.randrange(1, 40))), False))
+        for i in range(0, len(cases), 4000):
+            batch = cases[i:i + 4000]
+            lines = []
+            plan = []
+            for kind, data, with_node in batch:
+                for fatal in (False, True):
+                    cuts = sorted(rng.randrange(len(data) + 1) for _ in range(rng.choice((0, 1, 2, 4)))) if data else []
+                    chunks = []
+                    prev = 0
+                    for c in cuts:
+                        chunks.append(data[prev:c])
+                        prev = c
+                    chunks.append(data[prev:])
+                    lines.append("ND 0 %s %s" % (label, "f" if fatal else "-"))
+                    for j, ch in enumerate(chunks):
+                        lines.append("D 0 %d %s" % (1 if j == len(chunks) - 1 else 0, hx(ch)))
+                    plan.append((kind, data, fatal, chunks, with_node))
+            out = ours.run(lines)
+            run.requests += len(lines)
+            k = 0
+            node_lines = []
+            node_plan = []
+            for kind, data, fatal, chunks, with_node in plan:
+                k += 1
+                got = bytearray()
+                failed_at = None
+                for ch in chunks:
+                    t = out[k].split()
+                    k += 1
+                    if failed_at is not None:
+                        continue
+                    if t[0] == "OUT":
+                        got += R.unhex(t[1])
+                    else:
+                        failed_at = int(t[2])
+                        got += R.unhex(t[3]) if len(t) > 3 else b""
+                cps, offset = M.decode(enc, data, fatal=fatal)
+                want = MB.u8(cps)
+                if offset is None:
+                    ok = failed_at is None and bytes(got) == want
+                else:
+                    ok = failed_at == offset and bytes(got) == want
+                if not ok:
+                    run.defects.append("mb-stream: %s %s %s cut %s: the library %s [%s] at %s, the standard (the model) %s [%s]" % (
+                        enc, kind, "fatal" if fatal else "replacement", "|".join(c.hex() for c in chunks), "failed" if failed_at is not None else "decoded",
+                        bytes(got).decode("utf-8", "replace"), failed_at, "fails" if offset is not None else "decodes", want.decode("utf-8", "replace")))
+                total[kind] += 1
+                if with_node:
+                    node_lines.append("D %s %s %s" % (label, "fi" if fatal else "i", ",".join(hx(c) for c in chunks)))
+                    node_plan.append((data, fatal, offset, want))
+            if node_lines:
+                answers = R.ask_node(node_lines)
+                for (data, fatal, offset, want), a in zip(node_plan, answers):
+                    t = a.split()
+                    if offset is not None:
+                        ok = t[0] == "ERR" and t[1] == "TypeError"
+                    else:
+                        ok = t[0] == "OUT" and R.unhex(t[1]) == want
+                    if not ok:
+                        run.diverge("node", "mb-stream", "%s agree-stream" % enc, "%s %s: Node %s, the standard %s" % (
+                            data.hex(), "fatal" if fatal else "replacement", a[:80], "error" if offset is not None else want.decode("utf-8", "replace")), False)
+                    node_total += 1
+                run.requests += len(node_lines)
+    run.note("mb-stream: %d streams in %d encodings (%d of pieces on which Node agrees, %d mutated, %d random, %d of ISO-2022-JP escape sequences), cut into 1 to 5 pieces, in "
+             "both modes, the library against the standard (the model) in all, and against Node (%d comparisons) for the first kind" % (
+                 sum(total.values()) // 2, len(encs), total["agree"] // 2, total["mutated"] // 2, total["random"] // 2, total["escapes"] // 2, node_total))
+
+
+def population_mb_encode_text(run, std, ours):
+    """Random text through each multi-byte encoder in HTML mode, cut anywhere inside its UTF-8: the library against the standard (the model, byte for byte), and against each
+    Python codec's encoder (`xmlcharrefreplace`) for the text made of characters on which the two agree one by one - what is left to differ is the state of ISO-2022-JP:
+    the Roman state, which the standard leaves only when a character needs another and Python's codec leaves after each character."""
+    rng = random.Random(run.args.seed + 31)
+    count = max(200, run.args.count // 60)
+    total = 0
+    roman_differences = defaultdict(int)
+    roman_example = {}
+    for enc in MB.MB_ENCODINGS:
+        if run.args.mb_only and enc not in run.args.mb_only:
+            continue
+        label = hx(enc.encode())
+        index_chars = []
+        for _ in range(400):
+            while True:
+                lead = rng.randrange(0x81, 0xFF)
+                data = bytes([lead, rng.randrange(0x40, 0xFF)]) if enc != "iso-2022-jp" else bytes([0x1B, 0x24, 0x42, rng.randrange(0x21, 0x7F), rng.randrange(0x21, 0x7F)])
+                cps, _ = M.decode(enc, data)
+                if cps and 0xFFFD not in cps and cps[0] > 0x7F:
+                    index_chars.append(cps[0])
+                    break
+        special = [0xA5, 0x203E, 0x2212, 0xFF0D, 0xFF71, 0xFF9F, 0x80, 0x20AC, 0xE9, 0x1F4A9, 0xFFFD, 0xE5E5, 0x2550, 0x5341, 0x3042, 0x10000, 0x10FFFF]
+        if enc == "iso-2022-jp":
+            special += [0x0E, 0x0F, 0x1B]
+        pool = index_chars + special * 6 + list(range(0x20, 0x7F)) * 2
+        texts = [[rng.choice(pool) for _ in range(rng.choice((0, 1, 2, 3, 6, 12, 30, 80)))] for _ in range(count)]
+        lines = ["NE 0 %s H" % label]
+        plan = []
+        for cps in texts:
+            data = "".join(chr(c) for c in cps).encode("utf-8")
+            cuts = sorted(rng.randrange(len(data) + 1) for _ in range(rng.choice((0, 1, 3)))) if data else []
+            chunks = []
+            prev = 0
+            for c in cuts:
+                chunks.append(data[prev:c])
+                prev = c
+            chunks.append(data[prev:])
+            for j, ch in enumerate(chunks):
+                lines.append("E 0 %d %s" % (1 if j == len(chunks) - 1 else 0, hx(ch)))
+            plan.append((cps, len(chunks)))
+        out = ours.run(lines)
+        run.requests += len(lines)
+        k = 1
+        mine = []
+        for cps, nchunks in plan:
+            got = bytearray()
+            for _ in range(nchunks):
+                t = out[k].split()
+                k += 1
+                got += R.unhex(t[1]) if t[0] == "OUT" else b"<" + t[1].encode() + b">"
+            mine.append(bytes(got))
+        # the standard
+        for cps, got in zip(texts, mine):
+            want, _ = M.encode(enc, cps, "html")
+            if got != want:
+                run.defects.append("mb-encode-text: %s %s -> %r, the standard (the model) says %r" % (enc, ["U+%04X" % c for c in cps][:12], got, want))
+            total += 1
+        # Python: the characters on which it agrees with the library, one by one
+        for codec in MB.CODECS[enc]:
+            chars = sorted(set(pool))
+            single = ours.run(["NE 0 %s H" % label] + ["E 0 1 %s" % hx(chr(c).encode("utf-8")) for c in chars])[1:]
+            py = R.ask_python(["PE %s xmlcharrefreplace %s" % (codec, hx(chr(c).encode("utf-8"))) for c in chars])
+            run.requests += 2 * len(chars)
+            agree = set()
+            for c, o, p_ in zip(chars, single, py):
+                if o.split()[0] == "OUT" and p_.split()[0] == "OUT" and R.unhex(o.split()[1]) == R.unhex(p_.split()[1]):
+                    agree.add(c)
+            roman = {0xA5, 0x203E, 0x5C, 0x7E}
+            tests = [cps for cps in texts if cps and all(c in agree for c in cps)]
+            if not tests:
+                continue
+            py_out = R.ask_python(["PE %s xmlcharrefreplace %s" % (codec, hx("".join(chr(c) for c in cps).encode("utf-8"))) for cps in tests])
+            run.requests += len(tests)
+            for cps, p_ in zip(tests, py_out):
+                want, _ = M.encode(enc, cps, "html")
+                if p_.split()[0] == "OUT" and R.unhex(p_.split()[1]) == want:
+                    continue
+                key = (codec, "Roman" if (enc == "iso-2022-jp" and roman & set(cps)) else "other")
+                example = "%s: standard %r, %s %r" % ("".join(chr(c) for c in cps)[:20].encode("unicode_escape").decode(), want, codec, R.unhex(p_.split()[1]) if p_.split()[0] == "OUT" else p_)
+                if key[1] == "Roman":
+                    roman_differences[key] += 1
+                    roman_example.setdefault(key, example)
+                else:
+                    run.diverge("python", "mb-encode-text", "%s other" % codec, example, False)
+    for (codec, kind), n in roman_differences.items():
+        run.add("python", "mb-encode-text", "%s text with U+00A5 or U+203E (the Roman state)" % codec, n, roman_example[(codec, kind)])
+    run.note("mb-encode-text: %d random texts (cut inside their UTF-8) through the encoders in HTML mode, each equal to the standard's (the model); against the Python encoders where the "
+             "characters agree one by one" % total)
+
+
 # ---- the list of divergences ---------------------------------------------------------------------------------------------------
 
 def read_list(path):
@@ -754,44 +1166,68 @@ def judge(run, listed):
         for k in missing:
             sys.stderr.write("  %s: %d, e.g. %s\n" % ("/".join(k), found[k]["count"], found[k]["examples"][0]))
         failures += 1
-    if not run.args.hunt:
-        gone = sorted(k for k in listed if k not in found)
-        if gone:
-            heading("Listed divergences that are gone")
-            for k in gone:
-                sys.stderr.write("  %s: listed with %d\n" % ("/".join(k), listed[k][0]))
-            failures += 1
-        changed = sorted(k for k in listed if k in found and found[k]["count"] != listed[k][0])
-        if changed:
-            heading("Listed divergences whose count has changed")
-            for k in changed:
-                sys.stderr.write("  %s: listed %d, found %d, e.g. %s\n" % ("/".join(k), listed[k][0], found[k]["count"], found[k]["examples"][0]))
-            failures += 1
+    def in_scope(key):
+        """Is a line of the list checked against this run? The multi-byte lines are, when the population ran for the encoding or codec the class names; the others
+        when their population ran (not left out by --only or --except) at the default size: a hunt of other sizes checks that every divergence has a line, and not the counts."""
+        _, population, cls = key
+        if population.startswith("mb-"):
+            who = cls.split(" ", 1)[0]
+            return (population, who) in run.executed or (population == "mb-encode-text" and "mb-encode-text" in run.ran and not run.args.sized and not run.args.mb_only)
+        return population in run.ran and not run.args.sized
+
+    gone = sorted(k for k in listed if k not in found and in_scope(k))
+    if gone:
+        heading("Listed divergences that are gone")
+        for k in gone:
+            sys.stderr.write("  %s: listed with %d\n" % ("/".join(k), listed[k][0]))
+        failures += 1
+    changed = sorted(k for k in listed if k in found and in_scope(k) and found[k]["count"] != listed[k][0])
+    if changed:
+        heading("Listed divergences whose count has changed")
+        for k in changed:
+            sys.stderr.write("  %s: listed %d, found %d, e.g. %s\n" % ("/".join(k), listed[k][0], found[k]["count"], found[k]["examples"][0]))
+        failures += 1
     return 3 if failures else 0
 
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("binary", help="encoding-ours, built by run-encoding-oracle.sh")
-    ap.add_argument("--plant", choices=("ours-extra-char", "ours-lost-char", "stale-entry", "change-count", "no-list", "witness"))
+    ap.add_argument("--plant", choices=("ours-extra-char", "ours-lost-char", "stale-entry", "change-count", "no-list", "witness", "stale-mb-entry", "change-mb-count", "mb-witness", "cpp-model-witness", "stale-witness", "change-signature"))
     ap.add_argument("--seed", type=int, default=int(os.environ.get("ENCODING_ORACLE_SEED", "1")))
     ap.add_argument("--count", type=int, default=int(os.environ.get("ENCODING_ORACLE_COUNT", "60000")),
                     help="random byte strings for the streaming comparison (the list describes the default)")
     ap.add_argument("--fatal-stride", type=int, default=int(os.environ.get("ENCODING_ORACLE_FATAL_STRIDE", "13")),
                     help="one in this many three-byte sequences is compared in fatal mode")
     ap.add_argument("--utf-bytes", type=int, default=3, help="longest sequence of the utf population (3 is every one of one to three bytes)")
+    ap.add_argument("--mb-bytes", type=int, default=int(os.environ.get("ENCODING_ORACLE_MB_BYTES", "3")),
+                    help="longest sequence of the mb-decode population (3 is every one of one to three bytes)")
+    ap.add_argument("--propose", metavar="FILE", help="write the lines of the list for what this run found (with the reasons of encoding_mb.reason) and exit 0, instead of judging")
+    ap.add_argument("--mb-seeds", type=int, default=int(os.environ.get("ENCODING_ORACLE_MB_SEEDS", "3")),
+                    help="how many random strata of four bytes the multi-byte decoders are compared on")
+    ap.add_argument("--no-strata", action="store_true", help="leave the stratified four-byte and escape-sequence populations out of mb-decode")
+    ap.add_argument("--mb-only", action="append", default=[], help="run the multi-byte populations for this encoding only (a name of MB_ENCODINGS)")
+    ap.add_argument("--jobs", type=int, default=int(os.environ.get("ENCODING_ORACLE_JOBS", "6")), help="worker processes of the multi-byte populations")
     ap.add_argument("--only", action="append", default=[], help="run only this population")
-    ap.add_argument("--except", dest="skip", action="append", default=[], help="leave this population out (the counts of the list are still checked)")
+    ap.add_argument("--except", dest="skip", action="append", default=[], help="leave this population out: the lines of the list for a population that did not run are not checked (there is nothing to count), and the run is a hunt")
     args = ap.parse_args(argv)
     default_size = (args.count == 60000 and args.seed == 1 and args.fatal_stride == 13)
-    args.hunt = not default_size or bool(args.only) or args.utf_bytes != 3
+    # A hunt is any run that is not the default: of another size or seed, of fewer populations or encodings, of other strata. `sized` is the part of it that changes the
+    # counts of the populations that did run (the generated ones and the utf and multi-byte sizes).
+    args.sized = not default_size or args.utf_bytes != 3
+    args.hunt = args.sized or bool(args.only) or bool(args.skip) or args.mb_bytes != 3 or bool(args.mb_only) or args.mb_seeds != 3 or args.no_strata
 
     run = Run(args)
     std = Standard(corrupt_witness=args.plant == "witness")
+    # (the "mb-witness" control is applied in the worker processes of the multi-byte populations, which is where the model is read: see encoding_mb.py)
     ours = Ours(args.binary, args.plant)
     try:
         R.check_image()
-        wanted = lambda name: (not args.only or name in args.only) and name not in args.skip  # noqa: E731
+        def wanted(name):
+            ok = (not args.only or name in args.only) and name not in args.skip
+            if ok:
+                run.ran.add(name)
+            return ok
         exclusions = {}
         if wanted("labels"):
             population_labels(run, std, ours)
@@ -815,16 +1251,48 @@ def main(argv):
             population_utf8_encode(run, std, ours)
         if wanted("buffer"):
             population_buffer(run, std, ours, args.seed + 2)
+        if wanted("mb-decode"):
+            population_mb_decode(run, std, ours)
+        if wanted("mb-encode"):
+            population_mb_encode(run, std, ours)
+        if wanted("mb-stream"):
+            population_mb_stream(run, std, ours)
+        if wanted("mb-encode-text"):
+            population_mb_encode_text(run, std, ours)
     except Failure as why:
         sys.stderr.write("%s\n" % why)
         return 2
 
+    if args.propose:
+        with open(args.propose, "w", encoding="utf-8") as fh:
+            for (reference, population, cls), d in sorted(run.divergences.items()):
+                why = MB.reason(reference, population, cls, d["examples"][0]) if population.startswith("mb-") else None
+                if why:
+                    fh.write("%s\t%s\t%s\t%d\t%s\n" % (reference, population, cls, d["count"], why))
+                    if os.environ.get("ENCODING_ORACLE_PROPOSE_EXAMPLES"):
+                        sys.stderr.write("example\t%s\t%s\t%s\t%s\n" % (reference, population, cls, " | ".join(d["examples"])))
+        if run.defects:
+            heading("The library disagrees with the standard's data")
+            for d in run.defects[:40]:
+                sys.stderr.write("  %s\n" % d)
+            return 3
+        print("proposed %d classes to %s" % (len(run.divergences), args.propose))
+        return 0
     listed = {} if args.plant == "no-list" else read_list(LIST)
     if args.plant == "stale-entry":
         listed[("node", "labels", "no-such-encoding")] = (3, "planted")
     if args.plant == "change-count" and listed:
-        key = sorted(listed)[0]
+        key = sorted(k for k in listed if not k[1].startswith("mb-"))[0]
         listed[key] = (listed[key][0] + 1, listed[key][1])
+    if args.plant == "stale-mb-entry":
+        listed[("node", "mb-decode-1", "gb18030 no such class")] = (3, "planted")
+    if args.plant == "change-mb-count":
+        key = sorted(k for k in listed if k[1] == "mb-decode-1" and k[0] == "node" and k[2].startswith("shift_jis"))[0]
+        listed[key] = (listed[key][0] + 1, listed[key][1])
+    if args.plant == "change-signature":
+        # A control: one aggregate class has the members it has, but not the ones it had (its signature is another).
+        key = sorted(k for k in run.divergences if " composed sig=" in k[2])[0]
+        run.divergences[(key[0], key[1], key[2][:-8] + "deadbeef")] = run.divergences.pop(key)
     status = judge(run, listed)
     if status == 0:
         for key in sorted(run.divergences):

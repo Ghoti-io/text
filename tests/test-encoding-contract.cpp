@@ -316,7 +316,7 @@ TEST(EncodingContractEncoders, WhichEncodingsHaveOne) {
     with += s == GTEXT_ENCODING_OK;
     gtext_encoder_free(x);
   }
-  EXPECT_EQ(with, 30u); // UTF-8, the 28 single-byte encodings, x-user-defined
+  EXPECT_EQ(with, 37u); // UTF-8, the 28 single-byte encodings, x-user-defined, and the 7 multi-byte encodings
   EXPECT_FALSE(gtext_encoding_has_encoder(GTEXT_ENCODING_UTF_16LE));
   EXPECT_FALSE(gtext_encoding_has_encoder(GTEXT_ENCODING_REPLACEMENT));
   EXPECT_FALSE(gtext_encoding_has_encoder(GTEXT_ENCODING_NONE));
