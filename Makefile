@@ -558,7 +558,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
-	check-conformance-vectors
+	check-encoding-tables check-conformance-vectors
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -938,7 +938,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-xml-fuzz-plants check-html-fuzz-plants oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-encoding-oracle check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-tables oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1076,6 +1076,9 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/ini/ini_value.c \
 	src/ini/ini_writer.c \
 	src/ini/ini_file_io.c \
+	src/encoding/encoding_core.c \
+	src/encoding/encoding_decode.c \
+	src/encoding/encoding_encode.c \
 	src/html/html_api.c \
 	src/html/html_charref.c \
 	src/html/html_core.c \
@@ -1970,6 +1973,7 @@ $(eval $(call fuzz-rule,fuzz_html_tokenizer,html-tokenizer))
 $(eval $(call fuzz-rule,fuzz_html_tree,html-tree))
 $(eval $(call fuzz-rule,fuzz_html,html))
 $(eval $(call fuzz-rule,fuzz_html_serialize,html-serialize))
+$(eval $(call fuzz-rule,fuzz_encoding,encoding))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -1983,6 +1987,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
+fuzz: fuzz-run-encoding
 
 check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each XML fuzzer finds it
 # A fuzzer that has never failed has not been shown able to. tools/xml/plant-fuzz.py copies
@@ -2285,6 +2290,40 @@ check-html-tables: ## Fail if the committed HTML character reference table is no
 	fi; \
 	printf "\033[0;32mThe HTML character reference table is byte-identical to the generator's output ($$(sed -n 's/^const size_t gtext_html_charref_count = \([0-9]*\);/\1/p' $(HTML_TABLES)/charref_table.c) names).\033[0m\n"
 
+# The Encoding Standard's tables (the label table, the names, the single-byte indexes) are generated from the pinned
+# encodings.json and indexes.json and committed, so a build needs neither the network nor Python. This is the same
+# gate as check-html-tables, and fails, not skips, without the data: the generator checks both files against their
+# hashes (tools/encoding/ENCODINGS_SHA256 and INDEXES_SHA256) itself, so a changed file fails here rather than
+# regenerating quietly, and it checks the public GTEXT_Encoding enum against the standard's list.
+ENCODING_DATA_DIR := third_party/encoding
+ENCODING_TABLES := src/encoding/tables
+
+check-encoding-tables: ## Fail if the committed Encoding Standard tables are not what the generator produces
+	@$(REQUIRE_PYTHON3); \
+	if [ ! -s $(ENCODING_DATA_DIR)/encodings.json ] || [ ! -s $(ENCODING_DATA_DIR)/indexes.json ]; then \
+		printf "\033[0;31m\n\#\#\# $@: $(ENCODING_DATA_DIR)/encodings.json or indexes.json is not here \#\#\#\033[0m\n" >&2; \
+		printf "\nThis gate compares committed output against the data it was generated from.\n" >&2; \
+		printf "Nothing under third_party/ is tracked; fetch it with:\n\n  tools/encoding/fetch.sh\n\n" >&2; \
+		exit 1; \
+	fi; \
+	tmp=$$(mktemp -d) || exit 1; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	mkdir -p "$$tmp/out"; \
+	if ! python3 tools/encoding/gen_tables.py --out "$$tmp/out" >"$$tmp/log" 2>"$$tmp/err"; then \
+		printf "\033[0;31m\n### The Encoding table generator failed ###\033[0m\n" >&2; \
+		cat "$$tmp/err" >&2; \
+		exit 1; \
+	fi; \
+	if ! diff -ru $(ENCODING_TABLES) "$$tmp/out" >"$$tmp/diff" 2>&1; then \
+		printf "\033[0;31m\n### The committed Encoding Standard tables are stale ###\033[0m\n" >&2; \
+		head -40 "$$tmp/diff" >&2; \
+		printf "\nThe tables under $(ENCODING_TABLES) are committed so that a build needs\n" >&2; \
+		printf "neither the network nor Python. Regenerate with:\n" >&2; \
+		printf "  tools/encoding/gen_tables.py\n" >&2; \
+		exit 1; \
+	fi; \
+	printf "\033[0;32mThe Encoding Standard tables are byte-identical to the generator's output ($$(cat "$$tmp/log")).\033[0m\n"
+
 # ---------------------------------------------------------------------------
 # Oracles
 #
@@ -2322,6 +2361,33 @@ ORACLE_ENV = GHOTI_ORACLE_MODE=$(ORACLE_MODE) \
 	GHOTI_ORACLE_REQUIRED=$(ORACLE_REQUIRED) GHOTI_ORACLE_GATE=$@
 ORACLE_RUN = $(ORACLE_ENV) python3 tools/oracle/oracle_run.py
 ORACLE_IMAGES := tools/oracle/containers
+
+check-encoding-oracle: ## Run the Encoding Standard's own tests and compare the codecs with Node's and Python's, and show the gates fail when they should
+# One pinned image (containers/IMAGES, `encoding`: the html image, asked about Node, its ICU and Python), two gates, one script
+# (tools/oracle/run-encoding-oracle.sh; its header says what each compares, and documentation/formats/encoding.md, "Measured", has the numbers):
+#
+#   tools/oracle/encoding_wpt.py    the web-platform-tests `encoding/` suite run in Node against this library through a pair of named pipes.
+#   tools/oracle/encoding_diff.py   the library against Node's TextDecoder/TextEncoder and CPython's codecs. Every difference is explained by indexes.json and
+#                                   encodings.json and is a line of tools/oracle/encoding_divergences.txt.
+#
+# **Both are then made to fail.** `run-encoding-oracle.sh --controls` corrupts the runner's bridge, the counts, the differential's answers, the list and the
+# standard's data, and compiles this library's sources with one rule undone for each line of tools/oracle/ENCODING_ORACLE_PLANTS, and requires that a gate
+# fails with a heading each time. `--control NAME` runs one. ENCODING_ORACLE_COUNT, _SEED and _FATAL_STRIDE size and seed the generated part (a hunt: the lists
+# describe the default). The default run takes minutes (the three-byte Node enumeration is most of it), the controls longer. Outside TEST_GATES, like every gate
+# here that consults an oracle.
+check-encoding-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,$(ENCODING_DATA_DIR)/wpt/encoding,tools/encoding/fetch.sh); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-encoding-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-encoding-oracle.sh --controls
+
+check-encoding-fuzz-plants: ## Plant a defect in a copy of the library and show the Encoding fuzzer finds it
+# The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_encoding.cpp: tools/encoding/plant-fuzz.py copies this tree to a scratch directory, edits one
+# line of src/encoding/ there, and runs the harness for FUZZ_TIME seconds (or replays a recorded reproducer); it must stop with a report, and an unedited copy must
+# not. Needs clang, the dependencies on PREFIX, and about a minute a plant. Outside TEST_GATES: it builds and runs a fuzzer.
+check-encoding-fuzz-plants:
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" python3 tools/encoding/plant-fuzz.py --time $(FUZZ_TIME)
 
 check-oracle-env: ## Fail if the oracle pin table or the code reading it has rotted
 # In TEST_GATES, unlike every gate that consults an oracle, because it needs no

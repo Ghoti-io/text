@@ -1,0 +1,35 @@
+# Defects planted in this library's Encoding sources, one rule undone each, to show the Encoding gates (the web-platform-tests runner and the differential)
+# fail when they should: tools/oracle/run-encoding-oracle.sh --controls compiles the source with one edit into a runner of its own and requires that the
+# suite's counts or the differential's populations catch it, each for the right reason. `--control NAME` runs one.
+#
+# name <TAB> file under src/encoding <TAB> old text (unique in the file; \n is a newline) <TAB> new text
+#
+utf8-surrogates-allowed	encoding_decode.c	      if (byte == 0xED) {\n        s->upper = 0x9F;\n      }\n	
+utf8-overlong-e0	encoding_decode.c	        s->lower = 0xA0;\n	
+utf8-above-10ffff	encoding_decode.c	        s->upper = 0x8F;\n	
+utf8-overlong-f0	encoding_decode.c	        s->lower = 0x90;\n	
+utf8-restore-lost	encoding_decode.c	    out->restore_n = 1; /* Restore byte to ioQueue. */\n	
+utf8-truncated-at-end-silent	encoding_decode.c	  if (byte < 0 && s->bytes_needed != 0) {	  if (0) {
+utf16-restore-swapped	encoding_decode.c	    out->restore[0] = s->big_endian ? byte1 : byte2;\n    out->restore[1] = s->big_endian ? byte2 : byte1;	    out->restore[0] = s->big_endian ? byte2 : byte1;\n    out->restore[1] = s->big_endian ? byte1 : byte2;
+utf16-not-restored	encoding_decode.c	    out->restore_n = 2;\n	    out->restore_n = 0;\n
+utf16-truncated-at-end-silent	encoding_decode.c	      s->lead_byte = -1;\n      s->lead_surrogate = 0;\n      return GTEXT_DEC_ERROR;\n    }\n    return GTEXT_DEC_FINISHED;	      return GTEXT_DEC_FINISHED;\n    }\n    return GTEXT_DEC_FINISHED;
+utf16-trail-range	encoding_decode.c	    if (code_unit >= 0xDC00 && code_unit <= 0xDFFF) {\n      out->cp[0] = 0x10000	    if (code_unit >= 0xDC00 && code_unit <= 0xDFFE) {\n      out->cp[0] = 0x10000
+replacement-one-per-byte	encoding_decode.c	    state->replacement_error_returned = true;\n	
+x-user-defined-offset	encoding_decode.c	0xF780u + (uint32_t)byte - 0x80u	0xF781u + (uint32_t)byte - 0x80u
+single-byte-null-ignored	encoding_decode.c	  if (cp == 0xFFFF) { /* the index has no code point for this byte */	  if (0) { /* the index has no code point for this byte */
+ascii-fast-path-too-wide	encoding_decode.c	        while (j < len && in[j] < 0x80) {\n          j++;\n        }\n        if (j > i) {\n          dec->strip_pending = false;	        while (j < len && in[j] < 0xC0) {\n          j++;\n        }\n        if (j > i) {\n          dec->strip_pending = false;
+fatal-mode-ignored	encoding_decode.c	    if (dec->opts.error_mode == GTEXT_DECODER_FATAL) {\n      call->status = GTEXT_ENCODING_E_MALFORMED;	    if (0) {\n      call->status = GTEXT_ENCODING_E_MALFORMED;
+bom-removal-strips-every-mark	encoding_decode.c	    dec->strip_pending = false;\n    if (cp == 0xFEFF) {	    if (cp == 0xFEFF) {
+bom-sniff-be-wrong	encoding_decode.c	    if (h[1] == 0xFF) {\n      *enc = GTEXT_ENCODING_UTF_16BE;	    if (h[1] == 0xFE) {\n      *enc = GTEXT_ENCODING_UTF_16BE;
+bom-sniffing-never-starts	encoding_decode.c	  dec->sniff_pending = dec->opts.bom_sniffing;	  dec->sniff_pending = false;
+bom-held-bytes-dropped	encoding_decode.c	  run_items(dec, copy, n, false, taken, false, call);\n	
+decoder-not-reset-after-flush	encoding_decode.c	  fill_result(result, status, used, &call, delivered);\n  stream_start(dec);\n  return status;	  fill_result(result, status, used, &call, delivered);\n  return status;
+label-vt-is-white-space	encoding_core.c	c == 0x09 || c == 0x0A	c == 0x09 || c == 0x0B || c == 0x0A
+label-z-not-lowered	encoding_core.c	c >= 'A' && c <= 'Z'	c >= 'A' && c < 'Z'
+label-longest-refused	encoding_core.c	len > gtext_encoding_label_longest	len >= gtext_encoding_label_longest
+encoder-ascii-fast-path-too-wide	encoding_encode.c	        while (j < len && in[j] < 0x80) {\n          j++;\n        }\n        if (j > i) {\n          size_t accepted = 0;	        while (j < len && in[j] < 0xC0) {\n          j++;\n        }\n        if (j > i) {\n          size_t accepted = 0;
+encoder-reference-hex	encoding_encode.c	  b[n++] = '#';	  b[n++] = 'x';
+encoder-replacement-mark	encoding_encode.c	gtext_out_put(&enc->out, "?", 1)	gtext_out_put(&enc->out, "!", 1)
+table-windows-1252-8d	tables/encoding_tables.c	0x0152, 0x008D, 0x017D, 0x008F	0x0152, 0x008C, 0x017D, 0x008F
+label-key-too-small	encoding_core.c	  unsigned char key[GTEXT_ENCODING_LABEL_KEY];	  unsigned char key[16];
+sniffed-mark-not-counted-in-offsets	encoding_decode.c	    dec->pos += len;\n	

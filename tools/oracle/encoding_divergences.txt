@@ -1,0 +1,47 @@
+# The differences between this library and the two references of the Encoding differential (tools/oracle/encoding_diff.py), each explained by the
+# standard's own data and counted: "the standard decides", and the decision is read by the script from third_party/encoding/indexes.json and
+# encodings.json, not from the library (whose tables a different program generates from the same files).
+#
+# reference <TAB> population <TAB> class <TAB> count <TAB> why
+#
+# A class is the encoding (or label target) the reference differs about; the count is of what the population counts (label spellings, or
+# (byte, mode) pairs, or code points). The run fails on a divergence with no line here, on a line whose divergence is gone, and on a line whose count
+# has changed: a difference that moves is a difference to read, not to re-record. Hunts with other sizes (ENCODING_ORACLE_COUNT and the rest) check that
+# every divergence has a line and not the counts.
+#
+# Where the references AGREE with the library and the standard - which is most of the work - there is no line: UTF-8 and UTF-16LE/BE decoded by Node over every sequence
+# of one, two and three bytes (replacement mode: all 16,843,008 of each; fatal mode: all of one and two bytes, one in 13 of three; and once, outside the
+# gate, all of three), by Python over all of one and two bytes and one in seven of three; the 228 labels in 14 spellings; every other byte of every other
+# single-byte encoding; 60,000 random streamed strings; 15,000 UTF-8 encodes; the sniffing of a byte order mark against Python.
+#
+node	labels	replacement	48	Node refuses the six labels of the replacement encoding (hz-gb-2312, iso-2022-cn, iso-2022-cn-ext, iso-2022-kr, csiso2022kr, replacement) in all 8 of their spellings that the standard trims to a label: that is the Encoding API's TextDecoder constructor ("If encoding is failure or replacement, then throw a RangeError."), not the label algorithm, which this library implements ("get an encoding": "If label is an ASCII case-insensitive match for any of the labels listed in the table below, then return the corresponding encoding"). The labels resolve here because HTML needs them to.
+node	labels	iso-8859-16	8	Node has no converter for ISO-8859-16 (ICU lacks it) and throws for its one label in its 8 spellings; the label table has it ("iso-8859-16"), so this library resolves it. Node does not implement an encoding the standard lists ("User agents must not support any other encodings or labels" is about the converse).
+node	labels	x-user-defined	8	Node has no x-user-defined (ICU lacks it) and throws for its one label in its 8 spellings; the standard's TextDecoder constructor excludes only failure and replacement, and section 14.5 defines the decoder and encoder.
+node	single-byte	ISO-8859-16	512	Node cannot construct an ISO-8859-16 decoder at all (see the label line above): 256 bytes in two modes. The standard's section 9 lists ISO-8859-16 and its index (indexes.json "iso-8859-16").
+node	single-byte	IBM866	6	ICU's IBM866 swaps three C0/DEL controls (0x1A, 0x1C, 0x7F) as IBM code page 866 does; the standard's single-byte decoder says "If byte is an ASCII byte, then return a code point whose value is byte." Bytes 0x1A, 0x1C and 0x7F in two modes. (The suite's textdecoder-mistakes.any.js has the test Node fails, which this library passes.)
+node	single-byte	KOI8-U	4	ICU's KOI8-U has box-drawing characters U+255D and U+256C at 0xAE and 0xBE; the standard's index koi8-u (indexes.json) has U+045E and U+040E there (the RFC 2319 form). Two bytes in two modes.
+node	single-byte	windows-1252	54	Node decodes the label as ISO-8859-1, so 0x80 to 0x9F come out as the C1 controls: 27 bytes (32, less the 5 the index also maps to the C1 control of the same value) in two modes. The standard: "any software following this standard will, for example, decode 0x80 as U+20AC (€) when asked for the \"Latin1\" or \"ASCII\" decoding of that byte." (Node issue 40091; the suite's textdecoder-mistakes.any.js has the tests.)
+node	single-byte	windows-1253	2	ICU maps 0xAA to U+00AA; the standard's index windows-1253 (indexes.json) has no code point there, so its decoder returns an error (U+FFFD, or a TypeError when fatal). One byte in two modes.
+node	single-byte	windows-1255	2	ICU has no code point for 0xCA; the standard's index windows-1255 (indexes.json) has U+05BA (HEBREW POINT HOLAM HASER FOR VAV). One byte in two modes.
+node	single-byte	windows-874	16	ICU maps 0xDB to 0xDE and 0xFC to 0xFF to private-use code points (U+F8C1 to U+F8C4, U+F8C5 to U+F8C8); the standard's index windows-874 (indexes.json) has no code point at those 8 bytes. Two modes.
+node	ignore-bom	windows-1252	1	With ignoreBOM: true Node drops a leading 0xFF of a windows-1252 stream (0xFF 0x41 decodes as "A"). The standard reads the flag only for UTF-8 and UTF-16: "If decoder's encoding is UTF-8 or UTF-16BE/LE, and decoder's ignore BOM and BOM seen are false" (the serialize I/O queue algorithm), so for windows-1252 it changes nothing and the answer is U+00FF then "A".
+python	single-byte	windows-1250	5	Python's cp1250 leaves 0x81 0x83 0x88 0x90 0x98 undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1250" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1251	1	Python's cp1251 leaves 0x98 undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0098 there): "windows-1251" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1252	5	Python's cp1252 leaves 0x81 0x8D 0x8F 0x90 0x9D undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1252" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1253	14	Python's cp1253 leaves 14 bytes (the standard has a code point for 14 that Python lacks) undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1253" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1254	7	Python's cp1254 leaves 7 bytes undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1254" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1255	13	Python's cp1255 leaves 13 bytes undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1255" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1257	10	Python's cp1257 leaves 10 bytes undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1257" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-1258	9	Python's cp1258 leaves 9 bytes undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-1258" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	windows-874	23	Python's cp874 leaves 23 bytes (0x81 to 0x84, 0x86 to 0x90 and the like) undefined (UnicodeDecodeError) where the standard maps the byte to the C1 control of the same value (the index has U+0081 and so on there): "windows-874" in indexes.json. This is the skew the manual documents (cp1252 leaves 5 bytes undefined).
+python	single-byte	KOI8-U	2	Python's koi8_u has box-drawing U+255D and U+256C at 0xAE and 0xBE (as ICU's); the standard's index koi8-u has U+045E and U+040E.
+python	sb-encode	windows-1250	5	The encoder side of the same skew: Python cannot encode U+0081, U+0083, U+0088, U+0090, U+0098 in cp1250; the standard's encoder finds them in the index (the first pointer) and writes the byte.
+python	sb-encode	windows-1251	1	The encoder side of the skew: U+0098.
+python	sb-encode	windows-1252	5	The encoder side of the skew: U+0081, U+008D, U+008F, U+0090, U+009D.
+python	sb-encode	windows-1253	14	The encoder side of the skew: the 14 C1 controls the index maps.
+python	sb-encode	windows-1254	7	The encoder side of the skew: the 7 C1 controls the index maps.
+python	sb-encode	windows-1255	13	The encoder side of the skew: the 13 C1 controls the index maps.
+python	sb-encode	windows-1257	10	The encoder side of the skew: the 10 C1 controls the index maps.
+python	sb-encode	windows-1258	9	The encoder side of the skew: the 9 C1 controls the index maps.
+python	sb-encode	windows-874	23	The encoder side of the skew: the 23 C1 controls the index maps.
+python	sb-encode	KOI8-U	4	Python encodes U+255D and U+256C (as 0xAE and 0xBE) and cannot encode U+040E and U+045E; the standard's index has the latter two and not the former.

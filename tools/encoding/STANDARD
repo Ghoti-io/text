@@ -1,0 +1,13 @@
+# The Encoding Standard as read for this module (text, Phase 3h).
+#
+# It is a Living Standard, so the pins that decide what the generated tables are
+# (ENCODINGS_SHA256, INDEXES_SHA256) are by content. This file records what was read
+# and when; nothing reads it.
+url:             https://encoding.spec.whatwg.org/
+fetched:         2026-10-12
+last-updated:    21 May 2026 (the page's "Last Updated")
+pinned-commit:   see ENCODING_COMMIT (whatwg/encoding; its encodings.json and indexes.json are the bytes the site served)
+commit-snapshot: https://encoding.spec.whatwg.org/commit-snapshots/a985b62a9b45c17da3e17a9f0a0b4e30c34c4a8a/
+http:            last-modified Thu, 21 May 2026 05:11:18 GMT; etag "6a0e93f6-94d98"; 609688 bytes
+labels:          228 labels of 40 encodings; the table of section 4.2 as served was compared with
+                 encodings.json and is identical

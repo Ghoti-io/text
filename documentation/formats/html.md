@@ -459,7 +459,7 @@ matches one (ASCII case-insensitively, surrounding white space ignored): `utf-8`
 `unicode11utf8`, `unicode20utf8` and `x-unicode20utf8` are accepted in either label field, and **any other string,
 the empty one included, is `GTEXT_HTML_E_UNSUPPORTED_ENCODING`** before the document is examined, so a program
 can pass what it knows today and get its encoding when the library does. UTF-16, the legacy encodings of the Encoding
-standard, the `<meta>` prescan and the transcoding are planned (phases 3h and 3i).
+standard, the `<meta>` prescan and the transcoding are planned: the labels and the codecs exist now, as the \ref format_encoding "Encoding" module (phase 3h; the multi-byte encodings are 3i), and the parser does not use them yet (phase 3i).
 
 ## What the tree is
 
@@ -885,13 +885,13 @@ Everything the two share is the same on purpose. These are the departures and wh
   separate DOM function builds a tree. There is no pull reader and no event stream for HTML.
 - **A fragment function and a fragment parser**, which XML has no analogue of.
 - **The writer is under "Writing HTML"**, with its own list of departures.
-- **Encoding options** that are validated but mostly inert until 3h; XML reads five encodings.
+- **Encoding options** that are validated but mostly inert until the parser uses the \ref format_encoding "Encoding" module (3i); XML reads five encodings.
 
 ## What is not here yet
 
 | Planned | Where |
 |---|---|
-| other encodings: UTF-16, the legacy encodings, the `<meta>` prescan, `ignore_meta`, a tentative label overridden by a declaration | phases 3h and 3i |
+| other encodings: UTF-16, the legacy encodings, the `<meta>` prescan, `ignore_meta`, a tentative label overridden by a declaration | phase 3i (the codecs are phase 3h, built: \ref format_encoding "Encoding") |
 | sanitization | not planned in this phase |
 | script execution | never |
 | the `scripted_*.dat` vectors (6), which need scripts | out of scope |

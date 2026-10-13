@@ -219,7 +219,7 @@ typedef struct {
    * space ignored), or NULL for none. **Only UTF-8 labels are accepted in this
    * release** (`utf-8`, `utf8`, `unicode-1-1-utf-8`, `unicode11utf8`,
    * `unicode20utf8`, `x-unicode20utf8`); any other string, the empty one
-   * included, is GTEXT_HTML_E_UNSUPPORTED_ENCODING. Phase 3h reads the others.
+   * included, is GTEXT_HTML_E_UNSUPPORTED_ENCODING. The Encoding module (encoding.h) has the others; the parser reads them when it uses it (phase 3i).
    */
   const char * transport_encoding;
 
@@ -235,7 +235,7 @@ typedef struct {
 
   /**
    * Skip the `<meta>` prescan that looks for a declared encoding. Accepted
-   * and recorded; this release has no prescan to skip (phase 3h), so it
+   * and recorded; this release has no prescan to skip (phase 3i), so it
    * changes nothing yet.
    */
   bool ignore_meta;

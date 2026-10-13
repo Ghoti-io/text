@@ -1,0 +1,30 @@
+# The Encoding Standard's own tests (web-platform-tests, encoding/, pinned by tools/encoding/WPT_COMMIT), run against this library by
+# tools/oracle/encoding_wpt.py: for each file the number of tests that passed, that were deferred to the multi-byte stage (the library has
+# no codec for an encoding the test names: E_UNSUPPORTED) and that failed.
+#
+# The run fails on a failed test, on a file that ran nothing, and on any of these numbers changing, in either direction. A deferred count that
+# goes down means the multi-byte stage is arriving and the line is to be rewritten (`encoding_wpt.py --update` prints the new list); a passed
+# count that goes up means the suite changed under the pin, or a test that was deferred now passes. Either is a change to read.
+#
+# file <TAB> passed <TAB> deferred <TAB> failed
+api-basics.any.js	6	0	0
+api-invalid-label.any.js	3421	0	0
+api-replacement-encodings.any.js	6	0	0
+api-surrogates-utf8.any.js	6	0	0
+iso-2022-jp-decoder.any.js	0	38	0
+replacement-encodings.any.js	12	0	0
+single-byte-decoder.any.js	168	0	0
+textdecoder-byte-order-marks.any.js	3	0	0
+textdecoder-copy.any.js	2	0	0
+textdecoder-eof.any.js	0	2	0
+textdecoder-fatal-single-byte.any.js	7168	0	0
+textdecoder-fatal-streaming.any.js	2	0	0
+textdecoder-fatal.any.js	36	0	0
+textdecoder-ignorebom.any.js	4	0	0
+textdecoder-labels.any.js	222	0	0
+textdecoder-mistakes.any.js	51	36	0
+textdecoder-streaming.any.js	32	0	0
+textdecoder-utf16-surrogates.any.js	10	0	0
+textencoder-constructor-non-utf.any.js	79	0	0
+textencoder-utf16-surrogates.any.js	7	0	0
+unsupported-encodings.any.js	14	0	0

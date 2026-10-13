@@ -350,6 +350,48 @@ def check_html_pin_fires():
         fail("control: a missing html pin was not caught")
 
 
+def encoding_pin_problems(table):
+    """The Encoding pin must be the html pin's image, and its version field must name Node, ICU and Python.
+
+    It asks Node and CPython in the html image, and does not build one: a pin that drifted to another tag would answer from a
+    different Node, and one whose line lost ICU would keep every other check here green while the comparison it describes (the
+    standard's labels over ICU's converters) changed under it.
+    """
+    if "encoding" not in table:
+        return ["encoding: no pin at all, and the Encoding differential needs one"]
+    image, version, _ = table["encoding"]
+    problems = []
+    for word in ("node ", "icu ", "python "):
+        if word not in version:
+            problems.append("encoding: the version field %r does not name %s" % (version, word.strip()))
+    if "html" not in table:
+        problems.append("encoding: there is no html pin whose image it could share")
+    elif table["html"][0] != image:
+        problems.append("encoding: the image %r is not the html pin's, %r" % (image, table["html"][0]))
+    return problems
+
+
+def check_encoding_pin(table):
+    for problem in encoding_pin_problems(table):
+        fail(problem)
+
+
+def check_encoding_pin_fires():
+    """The control: a pin without ICU, one on another image, and a missing one."""
+    html = ("localhost/ghoti-text-oracle-html:1.1-8.0.1", "html5lib 1.1, parse5 8.0.1", "")
+    good = {"html": html, "encoding": (html[0], "node 20.19.2, icu 76.1, python 3.13.5", "")}
+    if encoding_pin_problems(good):
+        fail("control: a good encoding pin was reported: %r" % encoding_pin_problems(good))
+    no_icu = {"html": html, "encoding": (html[0], "node 20.19.2, python 3.13.5", "")}
+    if not any("icu" in p for p in encoding_pin_problems(no_icu)):
+        fail("control: an encoding pin without ICU was not caught")
+    other = {"html": html, "encoding": ("localhost/ghoti-text-oracle-html:1.1-8.0.2", "node 20.19.2, icu 76.1, python 3.13.5", "")}
+    if not any("not the html pin" in p for p in encoding_pin_problems(other)):
+        fail("control: an encoding pin on another image was not caught")
+    if not encoding_pin_problems({"html": html}):
+        fail("control: a missing encoding pin was not caught")
+
+
 def main():
     table = check_images_parses()
     check_images_rules_fire()
@@ -363,6 +405,8 @@ def main():
     check_xml_pin_fires()
     check_html_pin(table)
     check_html_pin_fires()
+    check_encoding_pin(table)
+    check_encoding_pin_fires()
     if FAILURES:
         sys.stderr.write("\033[0;31m\n### The oracle pin table is wrong ###"
                          "\033[0m\n")
@@ -371,7 +415,7 @@ def main():
         return 1
     print("oracle pins: %d references, all askable; IMAGES parses; the stderr "
           "filter fires both ways; idna and python-next name UCD %s; the xml pin names "
-          "libxml2 and expat; the html pin names html5lib and parse5." % (len(table), pinned_ucd()))
+          "libxml2 and expat; the html pin names html5lib and parse5; the encoding pin names node, icu and python, in the html image." % (len(table), pinned_ucd()))
     return 0
 
 

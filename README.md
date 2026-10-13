@@ -288,6 +288,9 @@ outside this repository:
 | `make fuzz-run-xml`, `make fuzz-run-xml-writer` | The XML parsers' and the XML writer's fuzzers |
 | `make fuzz-run-html-serialize` | The HTML serializer's fuzzer (a model of the algorithm, the token stream against the walk, the sink, the limits and the allocator; `make check-html-fuzz-plants` plants eleven defects in the serializer and shows it find each) |
 | `make fuzz-run-html` | The public HTML API's fuzzer (`make check-html-fuzz-plants` plants defects in the tokenizer, the tree builder and the API and shows each fuzzer find them) |
+| `make check-encoding-tables` | The committed Encoding Standard tables (labels, names, the single-byte indexes) against the generator and the pinned `encodings.json` and `indexes.json`; fails without the data (`tools/encoding/fetch.sh`) |
+| `make check-encoding-oracle` | The Encoding module against the standard's own web-platform-tests `encoding/` suite and against Node's `TextDecoder`/`TextEncoder` and CPython's codecs (every difference explained by the standard's data), and both gates shown to fail; the numbers are in the manual's "Measured" |
+| `make fuzz-run-encoding` | The Encoding fuzzer (decoders and encoders of the encodings that have a codec, and of the ones that have none, against reference decoders and a model, cut anywhere, limits, a refusing sink, a failing allocator; `make check-encoding-fuzz-plants` plants defects and shows it find each) |
 | `make check-xml-fuzz-plants` | Plant a defect in a copy of the library and show each XML fuzzer and the differential find it |
 | `make fuzz` | Build and run the parsers' fuzzers |
 | `make docs` | The Doxygen manual, into `./docs` |

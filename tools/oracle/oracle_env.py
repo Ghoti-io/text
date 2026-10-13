@@ -152,6 +152,13 @@ PROBE = {
     # both, so there is one probe; the line names both package versions, the Debian
     # interpreter packages and the SHA-256 of the two driver files.
     "html": (["html-driver", "--version"], "html5lib ", None),
+    # The Encoding references are the **same image** as html's, asked a different question: Node (whose `TextDecoder` and
+    # `TextEncoder` are the Encoding Standard's API over ICU) and CPython's codecs. What decides these answers is Node's and ICU's
+    # versions, so the line names them and Python's, and the pin is that line.
+    "encoding": (["sh", "-c",
+                  "printf 'node %s, icu %s, python %s\\n' \"$(node -p process.version | sed 's/^v//')\""
+                  " \"$(node -p process.versions.icu)\" \"$(python3 -c 'import sys; print(sys.version.split()[0])')\""],
+                 "node ", None),
     "idna": (["python3", "-c",
               "import idna, idna.idnadata, idna.uts46data;"
               " print('idna %s, idnadata %s, uts46data %s'"
@@ -229,11 +236,12 @@ def _have_image(image):
 
 def ensure(name):
     """Make the reference runnable, or raise saying what is missing."""
-    if MODE == "host" and name.split("-", 1)[0] == "html":
+    if MODE == "host" and name.split("-", 1)[0] in ("html", "encoding"):
         # The HTML references are two packages at pinned versions that no host has installed together, and
-        # a differential against whatever a host has would score a different question under the same name.
+        # a differential against whatever a host has would score a different question under the same name. The Encoding
+        # references are a Node with a particular ICU and a Python, in that same image.
         raise OracleUnavailable(
-            "the html references have no host mode: they exist only in the pinned image "
+            "the html and encoding references have no host mode: they exist only in the pinned image "
             "(make oracle-images builds it)")
     if MODE == "host":
         binary = _probe(name, ([name], "", None))[0][0]

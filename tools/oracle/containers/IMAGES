@@ -346,3 +346,15 @@ xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML
 # containers/html/Dockerfile, tools/oracle/html_vectors.py and html_diff.py.
 
 html	localhost/ghoti-text-oracle-html:1.1-8.0.1	html5lib 1.1, parse5 8.0.1	HTML5 parsing: the tree a document or fragment becomes, from two parsers that share no code
+
+# Encoding: Node's `TextDecoder`/`TextEncoder` and CPython's codecs, in **the html image** (the one pinned above), asked a different
+# question: what the WHATWG Encoding Standard's labels, decoders and encoders do. They are two readings and neither is the standard.
+# Node's API is the standard's own (the label table, streaming, fatal, ignoreBOM) over ICU's converters, which agree with it for UTF-8
+# and UTF-16 and differ from its single-byte indexes in places; CPython's codecs agree where they do and are listed where they do not
+# (cp1252 leaves five bytes undefined). **What the pin is:** the version field is the line containers/html's drivers print about
+# the interpreters - Node, its ICU and Python - and the gate checks it; the image is the html pin's (its tag is the same, so one
+# `docker build` serves both, and it was not rebuilt for this); the two drivers are read from the repository on the bind mount, not
+# baked in, so the gate hashes them (tools/oracle/encoding_ref.py). No host mode. See tools/oracle/encoding_diff.py and
+# tools/oracle/encoding_divergences.txt.
+
+encoding	localhost/ghoti-text-oracle-html:1.1-8.0.1	node 20.19.2, icu 76.1, python 3.13.5	The Encoding Standard: what a label names and what each decoder does, from Node's TextDecoder and CPython's codecs
