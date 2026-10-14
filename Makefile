@@ -558,7 +558,8 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-oracle-env \
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
-	check-encoding-tables check-encoding-transcription check-conformance-vectors
+	check-encoding-tables check-encoding-transcription check-conformance-vectors \
+	check-html-quadratic
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -938,7 +939,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-html-sniff-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2015,6 +2016,37 @@ check-html-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/html/plant-fuzz.py --time $(FUZZ_TIME)
 
+# The quadratic-nesting suite (tests/test-quadratic.cpp, about two seconds): every shape of the spec's list (deep nesting up to and
+# past the open-element limit, formatting mis-nesting, the adoption agency, reconstruction, implied ends, tables and templates,
+# foster parenting, foreign content, fragments, attributes, runs of comments/NULs/references, every tokenizer state, the serializer,
+# the decoders and encoders, the sniffer on 1 MiB of junk) at n, 4n and 16n units, with the work counters (the tree builder's and
+# the tokenizer's, the serializer's, the Encoding module's `steps`, the prescan's) held to a bound by ratio. No wall clock. The
+# program is also one of the test programs `make test` runs; this is the named gate, and part of TEST_GATES.
+check-html-quadratic: ## Hold the work counters of the quadratic-nesting shapes to a ratio bound at n, 4n and 16n
+check-html-quadratic: $(APP_DIR)/$(TARGET) $(APP_DIR)/testQuadratic$(EXE_EXTENSION)
+	@LD_LIBRARY_PATH="$(APP_DIR)" $(APP_DIR)/testQuadratic$(EXE_EXTENSION) --gtest_brief=1 --gtest_filter='Quadratic.EveryShape*:Quadratic.EveryGroup*:QuadraticControls.*' > $(APP_DIR)/quadratic.out 2>&1; \
+	status=$$?; \
+	grep -E '^[0-9]+ shapes, [0-9]+ failures$$|^group [a-z]' $(APP_DIR)/quadratic.out | tail -n 13; \
+	if [ $$status -ne 0 ]; then cat $(APP_DIR)/quadratic.out >&2; printf "\033[0;31mcheck-html-quadratic: a shape grew faster than its bound\033[0m\n" >&2; exit 1; fi; \
+	printf "\033[0;32mThe quadratic-nesting suite holds (%s).\033[0m\n" "$$(grep -E '^[0-9]+ shapes, [0-9]+ failures$$' $(APP_DIR)/quadratic.out)"
+
+check-html-quadratic-plants: ## Plant a quadratic in each layer and show the quadratic-nesting suite fails on the shapes it should
+# tools/html/plant-quadratic.py: seven edits (the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
+# re-derives it all, the attribute table has one bucket, the serializer finds its ancestors by walking them, the decoder looks back
+# over the stream, the sniffer reads past its window), each compiled alone and linked ahead of the library into tests/test-quadratic.cpp,
+# which must fail naming a shape the plant is meant to slow; and the unedited control, which must pass. About a minute. Outside TEST_GATES.
+check-html-quadratic-plants: $(APP_DIR)/$(STATIC_TARGET)
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/html/plant-quadratic.py
+
+check-html-quadratic-instructions: ## Record the instructions callgrind counts for the quadratic-nesting shapes (not a gate): the counters' cross-check
+# tools/html/quadratic-instructions.py runs each shape at n, 4n and 16n under valgrind --tool=callgrind and prints the growth of the
+# instructions beside the growth of the counter, flagging a shape where the machine's work grows faster than the counted work (the
+# counters see only what their author put them beside). About five minutes with three jobs. Exit status 0 whatever is flagged.
+check-html-quadratic-instructions: $(APP_DIR)/testQuadratic$(EXE_EXTENSION)
+	@$(REQUIRE_PYTHON3); \
+	python3 tools/html/quadratic-instructions.py --binary $(APP_DIR)/testQuadratic$(EXE_EXTENSION) --jobs 3
+
 fuzz-clean: ## Remove the fuzz build (keeps the corpus)
 fuzz-clean:
 	-@rm -rf $(FUZZ_DIR)
@@ -2688,6 +2720,25 @@ check-html-sniff-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-sniff-oracle.sh && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-sniff-oracle.sh --controls
+
+check-html-pipeline-oracle: ## Compare the whole HTML pipeline (bytes in, tree and serialization out) against html5lib and parse5, and show the gate fails when it should
+# The same pinned image as check-html-oracle (containers/html: html5lib 1.1 and parse5 8.0.1). The one gate,
+#   tools/oracle/html_pipeline_diff.py   bytes in the encodings of the Encoding Standard (with and without a byte order mark, a `<meta>`, a transport
+#                                        label certain or tentative, a default) and fragments in random contexts, through the public API: the encoding
+#                                        decision against html5lib's, the reading of the bytes against html5lib's codec (and the standard's model), the
+#                                        tree for the bytes and for their text against both, the serializer against each reference's own, the serialization
+#                                        read again by this library and both references, and the verdict "the second tree equals the first" against parse5's.
+#                                        Every divergence of a tree is reduced to a minimal reproducer and named by what that holds; the classes are
+#                                        the lines of tools/oracle/html_pipeline_divergences.txt. About 6,000 items, a minute and a half.
+# **It is then made to fail.** `run-html-pipeline-oracle.sh --controls` corrupts the gate's answers and the list (eight ways), and compiles this library
+# with one rule undone in each layer (tools/oracle/HTML_PIPELINE_ORACLE_PLANTS: sniffing, the Encoding module, the tokenizer, the tree builder, the
+# serializer) and requires exit 3 each time; about twenty minutes. HTML_PIPELINE_ORACLE_COUNT sizes a hunt (see tools/oracle/run-html-pipeline-oracle.sh).
+check-html-pipeline-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,third_party/html/wpt/html/syntax/parsing/resources,tools/html/fetch.sh); \
+	$(call REQUIRE_DATA,third_party/encoding,tools/encoding/fetch.sh); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-pipeline-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-pipeline-oracle.sh --controls
 
 check-ini-git-oracle: ## Compare the git config reader against git itself
 # git config has **one** reference, unlike Desktop Entry's two, and that is the

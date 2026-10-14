@@ -237,6 +237,7 @@ struct GTEXT_HTML_Serializer {
                                    ///< a numeric character reference there, and nowhere else.
 
   GTEXT_HTML_Serialize_Result r;   ///< The counts.
+  size_t work;                     ///< Tests: units of work (nodes, attributes, bytes examined or written, sort steps); see gtext_html_serialize_work().
 
   size_t total;                    ///< Bytes produced, against the limit.
   size_t sent;                     ///< Bytes the sink accepted.
@@ -335,6 +336,7 @@ static GTEXT_HTML_Status out_raw(GTEXT_HTML_Serializer * s, const void * p, size
     return fail(s, GTEXT_HTML_E_LIMIT_OUTPUT, "output too long");
   }
   s->total += n;
+  s->work += n;
   const unsigned char * b = p;
   while (n > 0) {
     const size_t room = SER_BUFFER - s->used;
@@ -442,6 +444,7 @@ static GTEXT_HTML_Status outc(GTEXT_HTML_Serializer * s, char c) {
    value written between quotes the quote itself (`"` as &quot;, `'` as &#39;, which is what html5lib's
    vector for quote_char defines). `quote` is 0 for text and for an unquoted value. */
 static GTEXT_HTML_Status put_escaped_inner(GTEXT_HTML_Serializer * s, const char * p, size_t n, char quote) {
+  s->work += n;
   size_t run = 0;
   size_t i = 0;
   while (i < n) {
@@ -603,6 +606,7 @@ static GTEXT_HTML_Status put_attr(GTEXT_HTML_Serializer * s, bool html, const ch
   }
   const char * v = a->value ? a->value : "";
   const size_t n = a->value_length;
+  s->work += 1 + n;
   if (s->o.minimize_boolean_attributes && html && !a->ns && element_local
       && gtext_markup_html_is_boolean_attribute(GTEXT_MARKUP_NS_HTML, element_local, a->local)
       && (n == 0 || equal_nocase(v, n, a->local, strlen(a->local)))) {
@@ -683,6 +687,9 @@ static GTEXT_HTML_Status put_attrs(GTEXT_HTML_Serializer * s, bool html, const c
       e[i].index = i;
     }
     qsort(e, as->n, sizeof(SortEntry), attr_compare);
+    for (size_t k = as->n; k > 1; k >>= 1) {
+      s->work += as->n; /* n log n: the comparisons of the sort */
+    }
     for (size_t i = 0; i < as->n; i++) {
       if (put_attr(s, html, element_local, &e[i].a, last_quoted && i + 1 == as->n) != GTEXT_HTML_OK) {
         return s->status;
@@ -1893,6 +1900,7 @@ static GTEXT_HTML_Status walk(GTEXT_HTML_Serializer * s, const GTEXT_Markup_Node
         goto done;
       }
       const WalkFrame wf = frames[--nframes];
+      s->work++;
       cursor = wf.next;
       const char * element_ns = gtext_markup_element_namespace(wf.element);
       if (fe_end(s, element_ns ? element_ns : "", tag_prefix(element_ns, gtext_markup_element_prefix(wf.element)),
@@ -1906,6 +1914,7 @@ static GTEXT_HTML_Status walk(GTEXT_HTML_Serializer * s, const GTEXT_Markup_Node
     cursor = single ? NULL : gtext_markup_node_next_sibling(n);
     single = false; /* the node to write is the first one only: below it the walk goes on as usual */
     s->r.nodes_visited++;
+    s->work++;
     const GTEXT_Markup_Kind kind = gtext_markup_node_kind(n);
     if (kind != GTEXT_MARKUP_KIND_ELEMENT) {
       if (walk_leaf(s, n) != GTEXT_HTML_OK) {
@@ -1966,7 +1975,7 @@ static void fail_result(GTEXT_HTML_Serialize_Result * r, GTEXT_HTML_Status statu
 
 static GTEXT_HTML_Status serialize_impl(const GTEXT_Markup_Node * node, GTEXT_HTML_Serialize_Scope scope,
     const GTEXT_HTML_Serialize_Options * opts, const GTEXT_Markup_Sink * sink,
-    GTEXT_HTML_Serialize_Result * result) {
+    GTEXT_HTML_Serialize_Result * result, size_t * work) {
   if (!node || !kind_usable(gtext_markup_node_kind(node))) {
     fail_result(result, GTEXT_HTML_E_INVALID, "node must not be NULL");
     return GTEXT_HTML_E_INVALID;
@@ -2002,6 +2011,9 @@ static GTEXT_HTML_Status serialize_impl(const GTEXT_Markup_Node * node, GTEXT_HT
   else {
     result_fill(s, result);
   }
+  if (work) {
+    *work = s->work;
+  }
   gtext_html_serializer_free(s);
   return status;
 }
@@ -2009,7 +2021,21 @@ static GTEXT_HTML_Status serialize_impl(const GTEXT_Markup_Node * node, GTEXT_HT
 GTEXT_HTML_Status gtext_html_serialize(const GTEXT_Markup_Node * node, GTEXT_HTML_Serialize_Scope scope,
     const GTEXT_HTML_Serialize_Options * opts, const GTEXT_Markup_Sink * sink,
     GTEXT_HTML_Serialize_Result * result) {
-  return serialize_impl(node, scope, opts, sink, result);
+  return serialize_impl(node, scope, opts, sink, result, NULL);
+}
+
+static GTEXT_Markup_Status discard_write(void * user, const char * bytes, size_t len) {
+  (void)user;
+  (void)bytes;
+  (void)len;
+  return GTEXT_MARKUP_OK;
+}
+
+GTEXT_HTML_Status gtext_html_serialize_work(const GTEXT_Markup_Node * node, GTEXT_HTML_Serialize_Scope scope,
+    const GTEXT_HTML_Serialize_Options * opts, size_t * work) {
+  const GTEXT_Markup_Sink sink = {discard_write, NULL};
+  GTEXT_HTML_Serialize_Result r;
+  return serialize_impl(node, scope, opts, &sink, &r, work);
 }
 
 /* ---- to a buffer -------------------------------------------------------------- */
@@ -2072,7 +2098,7 @@ GTEXT_HTML_Status gtext_html_serialize_buffer(const GTEXT_Markup_Node * node,
   }
   WBuf b = {alloc, NULL, 0, 0};
   const GTEXT_Markup_Sink sink = {wbuf_write, &b};
-  const GTEXT_HTML_Status status = serialize_impl(node, scope, opts, &sink, result);
+  const GTEXT_HTML_Status status = serialize_impl(node, scope, opts, &sink, result, NULL);
   if (status != GTEXT_HTML_OK) {
     gtext_allocator_free(alloc, b.base);
     return status;

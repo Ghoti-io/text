@@ -653,7 +653,7 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
   const RefResult ref = ref_utf8(in);
   std::string html_expected, repl_expected;
   std::vector<size_t> ends_html, ends_repl; // where each code point's output ends: the limit never cuts inside one
-  size_t unencodable = 0, first_bad = SIZE_MAX, first_unencodable = SIZE_MAX;
+  size_t first_bad = SIZE_MAX, first_unencodable = SIZE_MAX;
   const bool multi = is_multi_byte(e);
   ModelEncodeResult m_html, m_repl, m_fatal;
   std::set<size_t> m_errors;
@@ -666,7 +666,6 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
     ends_html = m_html.atoms;
     ends_repl = m_repl.atoms;
     m_errors.insert(m_html.errors.begin(), m_html.errors.end());
-    unencodable = m_errors.size();
     first_unencodable = m_fatal.failed ? m_fatal.error_index : SIZE_MAX;
     for (size_t k = 0; k < ref.cps.size(); k++) {
       if (ref.bad[k]) {
@@ -686,7 +685,6 @@ void check_encoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o2, unsigned o3, 
     } else {
       html_expected += "&#" + std::to_string(ref.cps[k]) + ";";
       repl_expected += "?";
-      unencodable++;
       if (first_unencodable == SIZE_MAX) {
         first_unencodable = k;
       }

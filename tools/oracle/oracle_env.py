@@ -55,6 +55,11 @@ Modes, from GHOTI_ORACLE_MODE:
 
   container  (default) run the reference in its pinned image
   host                 run this machine's own tool, and print what it is
+  inside               this process is itself running in the pinned html image (on a machine whose container
+                       engine cannot be reached from a job, tools/evo run --image): the reference is run
+                       directly, the pin is asserted exactly as in container mode (the version line names the
+                       driver's SHA-256 and the packages), and only the `html` and `encoding` references exist
+                       in such an image
 
 Copyright 2026 by Corey Pennycuff
 """
@@ -243,6 +248,12 @@ def ensure(name):
         raise OracleUnavailable(
             "the html and encoding references have no host mode: they exist only in the pinned image "
             "(make oracle-images builds it)")
+    if MODE == "inside":
+        if name.split("-", 1)[0] not in ("html", "encoding") or not os.path.exists("/opt/html-oracle/DRIVER_SHA"):
+            raise OracleUnavailable(
+                "GHOTI_ORACLE_MODE=inside is for a process running in the pinned html image (/opt/html-oracle/DRIVER_SHA is not here, "
+                "or %r is not a reference of that image)" % name)
+        return
     if MODE == "host":
         binary = _probe(name, ([name], "", None))[0][0]
         if shutil.which(binary) is None:
@@ -317,7 +328,7 @@ def command(name, argv=None, scratch=None, readonly=None, env=None):
     name = ALIAS.get(name, name)
     ensure(name)
     inner = argv if argv is not None else [_probe(name, ([name],))[0][0]]
-    if MODE == "host":
+    if MODE in ("host", "inside"):
         return list(inner)
     image = pins()[name][0]
     out = [ENGINE, "run", "--rm", "-i",
@@ -452,7 +463,7 @@ def provenance(names):
     enforced; it does not tell them that the `idna` which just answered is two
     UCD releases behind the tables it was checking.
     """
-    where = "container" if MODE == "container" else "host, unpinned"
+    where = "container" if MODE == "container" else "inside the pinned image" if MODE == "inside" else "host, unpinned"
     table = pins()
     parts = []
     for name in names:

@@ -1,0 +1,1204 @@
+/*
+ * SPDX-License-Identifier: LGPL-3.0-only
+ *
+ * Copyright (C) 2026 Corey Pennycuff
+ *
+ * This file is part of Ghoti.io Text.
+ *
+ * Ghoti.io Text is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * Ghoti.io Text is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * @file
+ *
+ * The quadratic-nesting suite (`make check-html-quadratic`): the inputs that make a naive HTML parser,
+ * serializer, decoder or sniffer quadratic, each run at three sizes (n, 4n and 16n units) with the work
+ * counted, and the growth held to a bound by ratio. No wall clock is read anywhere.
+ *
+ * **What is counted.** The tree builder's work and the tokenizer's (gtext_html_tree_work() and
+ * gtext_html_tree_tokenizer_work(): tokens handled, stack entries walked, formatting elements reopened or
+ * shifted, characters decoded, look-ahead steps), the serializer's (gtext_html_serialize_work(): nodes,
+ * attributes, bytes examined and written, sort steps), the Encoding module's `steps` (handler steps, the
+ * figure its header documents as at most four per byte for a decoder and three for an encoder) and the
+ * sniffer's (html_prescan_counted()). A counter sees only what its author put it beside, so
+ * `tools/html/quadratic-instructions.py` records the instructions the same shapes execute under callgrind
+ * and compares the growth of the two: a counter that stops tracking the machine's work shows there (not a
+ * gate: the instruction counts depend on the toolchain, and the counters do not).
+ *
+ * **The bound.** For each shape the work at 4n over the work at n, and at 16n over 4n, must stay below the
+ * shape's `bound`: a linear shape grows by 4 (less, while a constant is amortised), a quadratic one by 16.
+ * The default is 5.0, which a quadratic shape cannot meet at any size here (the smallest n is chosen so
+ * that the quadratic term dominates the constant at n), and a shape with a larger bound says why in its
+ * `note`. A shape also has an absolute bound, `per_byte`: its work may not exceed that many units per
+ * byte of input plus a constant, which is the documented bound (GTEXT_HTML_TOKENIZER_WORK_BOUND and
+ * GTEXT_HTML_TREE_WORK_BOUND) or the module's own. The shapes whose cost depends on a limit and not on the
+ * input (a document past the open-element limit, a tag past the attribute limit, the sniffer's 1024-byte
+ * window) are `flat`: the work at 16n may not exceed 1.5 times the work at n.
+ *
+ * **Controls.** `TheSuiteFailsOnAQuadraticShape` and the others of `QuadraticControls` hand the checker
+ * measures that grow quadratically, by a bound's margin, and in the other direction; `make
+ * check-html-quadratic-plants` compiles the library with a defect planted in each layer and requires this
+ * program to fail.
+ *
+ * Environment: `GTEXT_QUAD_REPORT=<file>` writes a tab-separated line per shape (name, bytes and work at
+ * n, 4n and 16n); `GTEXT_QUAD_ONE=<name>:<units>` makes `Quadratic.RunOne` run one shape once (what the
+ * callgrind tool runs).
+ *
+ * Copyright 2026 by Corey Pennycuff
+ */
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <map>
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+#include <ghoti.io/text/encoding.h>
+#include <ghoti.io/text/html.h>
+
+#include "../src/html/html_sniff_internal.h"
+#include "../src/html/html_tree_internal.h"
+
+// (src/html/html_api_internal.h has a flexible array member, which C++ forbids: the one function of it that is used is declared here.)
+extern "C" GTEXT_HTML_Status gtext_html_serialize_work(const GTEXT_Markup_Node * node, GTEXT_HTML_Serialize_Scope scope,
+    const GTEXT_HTML_Serialize_Options * opts, size_t * work);
+
+namespace {
+
+std::string repeat(const std::string & unit, size_t k) {
+  std::string out;
+  out.reserve(unit.size() * k);
+  for (size_t i = 0; i < k; i++) {
+    out += unit;
+  }
+  return out;
+}
+
+// What one run of a shape measured.
+struct Measured {
+  size_t work = 0;    // the shape's counter(s), summed
+  size_t bytes = 0;   // the input's size
+  bool ok = true;     // the run ended as the shape expects
+  std::string why;    // when it did not
+};
+
+struct Shape {
+  Shape(std::string g, std::string nm, size_t units, std::function<Measured(size_t)> r)
+      : group(std::move(g)), name(std::move(nm)), n(units), run(std::move(r)) {}
+  std::string group;
+  std::string name;
+  size_t n;                                // the smallest size, in the shape's units
+  std::function<Measured(size_t)> run;     // units -> measurement
+  double bound = 5.0;                      // the most the work may grow for 4x the units
+  double per_byte = 112.0;                 // the most work per byte of input (plus 8192)
+  bool flat = false;                       // the work is independent of the input (a limit decides it)
+  std::string note;                        // why a bound other than the default
+};
+
+// ---- the tree builder ---------------------------------------------------------------------------
+
+struct Ctx {
+  GTEXT_HTML_Namespace ns = GTEXT_HTML_NS_HTML;
+  std::string name;
+  std::vector<std::pair<std::string, std::string>> attrs;
+};
+
+struct TreeRun {
+  std::string input;
+  const Ctx * ctx = nullptr;
+  size_t max_open = 100000000; // "no limit to speak of" unless the shape is about the limit
+  size_t max_attributes = 100000000;
+  bool expect_ok = true;
+  GTEXT_HTML_TreeStatus expect_status = GTEXT_HTML_TREE_OK;
+  bool scripting = false;
+};
+
+Measured tree_run(const TreeRun & r) {
+  Measured m;
+  m.bytes = r.input.size();
+  GTEXT_HTML_TreeOptions o;
+  std::memset(&o, 0, sizeof(o));
+  o.max_open_elements = r.max_open;
+  o.max_nodes = 1000000000;
+  o.max_attributes = r.max_attributes;
+  o.max_name_bytes = (size_t)1 << 30; // a name as long as the run asks for: the limit is not what is measured
+  o.max_value_bytes = (size_t)1 << 30;
+  o.max_comment_bytes = (size_t)1 << 30;
+  o.max_text_bytes = (size_t)1 << 30;
+  o.scripting = r.scripting;
+  o.count_errors_only = true;
+  GTEXT_HTML_Tree * tree = nullptr;
+  std::vector<char *> owned;
+  if (r.ctx) {
+    GTEXT_HTML_FragmentContext fc;
+    std::memset(&fc, 0, sizeof(fc));
+    fc.ns = r.ctx->ns;
+    char * name = static_cast<char *>(std::malloc(r.ctx->name.size() + 1));
+    std::memcpy(name, r.ctx->name.c_str(), r.ctx->name.size() + 1);
+    owned.push_back(name);
+    fc.local_name = name;
+    fc.local_name_length = r.ctx->name.size();
+    std::vector<GTEXT_HTML_Attribute> attrs(r.ctx->attrs.size());
+    for (size_t i = 0; i < r.ctx->attrs.size(); i++) {
+      char * a = static_cast<char *>(std::malloc(r.ctx->attrs[i].first.size() + 1));
+      char * v = static_cast<char *>(std::malloc(r.ctx->attrs[i].second.size() + 1));
+      std::memcpy(a, r.ctx->attrs[i].first.c_str(), r.ctx->attrs[i].first.size() + 1);
+      std::memcpy(v, r.ctx->attrs[i].second.c_str(), r.ctx->attrs[i].second.size() + 1);
+      owned.push_back(a);
+      owned.push_back(v);
+      std::memset(&attrs[i], 0, sizeof(attrs[i]));
+      attrs[i].name = a;
+      attrs[i].name_length = r.ctx->attrs[i].first.size();
+      attrs[i].value = v;
+      attrs[i].value_length = r.ctx->attrs[i].second.size();
+    }
+    fc.attributes = attrs.empty() ? nullptr : attrs.data();
+    fc.attribute_count = attrs.size();
+    fc.scripting = r.scripting;
+    GTEXT_HTML_TreeStatus st = GTEXT_HTML_TREE_OK;
+    tree = gtext_html_tree_new_fragment(&o, &fc, &st);
+  }
+  else {
+    tree = gtext_html_tree_new(&o);
+  }
+  for (char * p : owned) {
+    std::free(p);
+  }
+  if (!tree) {
+    m.ok = false;
+    m.why = "no tree builder";
+    return m;
+  }
+  GTEXT_HTML_TreeStatus s = gtext_html_tree_feed(tree, r.input.data(), r.input.size());
+  if (s == GTEXT_HTML_TREE_OK) {
+    s = gtext_html_tree_finish(tree);
+  }
+  m.work = gtext_html_tree_work(tree) + gtext_html_tree_tokenizer_work(tree);
+  if (s != r.expect_status) {
+    m.ok = false;
+    m.why = "the parse ended with status " + std::to_string((int)s) + ", not " + std::to_string((int)r.expect_status);
+  }
+  if (s == GTEXT_HTML_TREE_OK) {
+    if (r.ctx) {
+      GTEXT_Markup_Document * doc = nullptr;
+      gtext_html_tree_take_fragment(tree, &doc);
+      gtext_markup_document_free(doc);
+    }
+    else {
+      gtext_markup_document_free(gtext_html_tree_take_document(tree));
+    }
+  }
+  gtext_html_tree_free(tree);
+  return m;
+}
+
+std::function<Measured(size_t)> doc(std::function<std::string(size_t)> make, size_t max_open = 100000000) {
+  return [=](size_t k) {
+    TreeRun r;
+    r.input = make(k);
+    r.max_open = max_open;
+    return tree_run(r);
+  };
+}
+
+std::function<Measured(size_t)> frag(Ctx ctx, std::function<std::string(size_t)> make) {
+  return [=](size_t k) {
+    TreeRun r;
+    r.input = make(k);
+    r.ctx = &ctx;
+    return tree_run(r);
+  };
+}
+
+// A parse that must stop at a limit: the work may not depend on how much input follows.
+std::function<Measured(size_t)> limited(std::function<std::string(size_t)> make, size_t max_open, size_t max_attributes,
+    GTEXT_HTML_TreeStatus status) {
+  return [=](size_t k) {
+    TreeRun r;
+    r.input = make(k);
+    r.max_open = max_open;
+    r.max_attributes = max_attributes;
+    r.expect_status = status;
+    return tree_run(r);
+  };
+}
+
+// ---- the public parser, the serializer ------------------------------------------------------------
+
+// Parse `html` (a document, or a fragment in a div) with the public API, to a tree with no limit in the way.
+GTEXT_Markup_Document * parse_public(const std::string & html, bool fragment, GTEXT_Markup_Node ** top) {
+  GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
+  o.max_open_elements = 100000000;
+  o.max_nodes = 1000000000;
+  o.max_attributes = 100000000;
+  o.max_input_bytes = SIZE_MAX;
+  GTEXT_Markup_Document * d = nullptr;
+  GTEXT_HTML_Result res;
+  std::memset(&res, 0, sizeof(res));
+  GTEXT_HTML_Status st;
+  if (fragment) {
+    GTEXT_HTML_Fragment_Context c;
+    std::memset(&c, 0, sizeof(c));
+    c.ns = GTEXT_HTML_NS_HTML;
+    c.local_name = "div";
+    st = gtext_html_parse_fragment(&c, html.data(), html.size(), &o, &d, top, &res);
+  }
+  else {
+    st = gtext_html_parse(html.data(), html.size(), &o, &d, &res);
+    if (top && d) {
+      *top = const_cast<GTEXT_Markup_Node *>(gtext_markup_document_root(d));
+    }
+  }
+  gtext_html_result_free(&res);
+  if (st != GTEXT_HTML_OK) {
+    return nullptr;
+  }
+  return d;
+}
+
+enum class SerializeOptions { Default, Omit, Everything, Alphabetical, Strip };
+
+Measured serialize_run(const std::string & html, bool fragment, SerializeOptions which) {
+  Measured m;
+  m.bytes = html.size();
+  GTEXT_Markup_Node * top = nullptr;
+  GTEXT_Markup_Document * d = parse_public(html, fragment, &top);
+  if (!d || !top) {
+    m.ok = false;
+    m.why = "the input did not parse";
+    gtext_markup_document_free(d);
+    return m;
+  }
+  GTEXT_HTML_Serialize_Options o = gtext_html_serialize_options_default();
+  o.max_depth = 100000000;
+  o.max_output_bytes = SIZE_MAX;
+  switch (which) {
+    case SerializeOptions::Default: break;
+    case SerializeOptions::Omit: o.omit_optional_tags = true; break;
+    case SerializeOptions::Alphabetical: o.alphabetical_attributes = true; break;
+    case SerializeOptions::Strip: o.strip_whitespace = true; break;
+    case SerializeOptions::Everything:
+      o.omit_optional_tags = true;
+      o.minimize_boolean_attributes = true;
+      o.use_best_quote_char = true;
+      o.quote_attr_values = GTEXT_HTML_QUOTE_WHEN_NEEDED;
+      o.alphabetical_attributes = true;
+      o.strip_whitespace = true;
+      o.escape_rcdata = true;
+      o.inject_meta_charset = true;
+      o.encoding = "utf-8";
+      break;
+  }
+  size_t work = 0;
+  const GTEXT_HTML_Serialize_Scope scope = fragment ? GTEXT_HTML_SERIALIZE_CHILDREN : GTEXT_HTML_SERIALIZE_CHILDREN;
+  const GTEXT_HTML_Status st = gtext_html_serialize_work(top, scope, &o, &work);
+  m.work = work;
+  if (st != GTEXT_HTML_OK) {
+    m.ok = false;
+    m.why = std::string("the serializer ended with ") + gtext_html_status_string(st);
+  }
+  gtext_markup_document_free(d);
+  return m;
+}
+
+std::function<Measured(size_t)> ser(std::function<std::string(size_t)> make, bool fragment = true,
+    SerializeOptions which = SerializeOptions::Default) {
+  return [=](size_t k) { return serialize_run(make(k), fragment, which); };
+}
+
+// ---- the public parser, by the memory it asks for ---------------------------------------------------------
+
+// An allocator that adds up what is asked of it: the bytes requested by malloc, calloc and realloc (a realloc may copy as much as
+// the size it is given) and the calls. A copy is work no counter of the builder sees (the text node that a builder remembered the
+// capacity of wrongly, 3d), and a parser that grows a buffer by a constant instead of a factor shows here as a sum that grows by 16,
+// not 4, for 4 times the input.
+struct CountingAllocator {
+  GTEXT_Allocator alloc;
+  size_t bytes = 0;
+  size_t calls = 0;
+  CountingAllocator() {
+    alloc.ctx = this;
+    alloc.malloc_fn = [](void * c, size_t n) -> void * {
+      auto * self = static_cast<CountingAllocator *>(c);
+      self->bytes += n;
+      self->calls++;
+      return std::malloc(n ? n : 1);
+    };
+    alloc.calloc_fn = [](void * c, size_t m, size_t n) -> void * {
+      auto * self = static_cast<CountingAllocator *>(c);
+      if (n != 0 && m > SIZE_MAX / n) {
+        return nullptr;
+      }
+      self->bytes += m * n;
+      self->calls++;
+      return std::calloc(m ? m : 1, n ? n : 1);
+    };
+    alloc.realloc_fn = [](void * c, void * p, size_t n) -> void * {
+      auto * self = static_cast<CountingAllocator *>(c);
+      self->bytes += n;
+      self->calls++;
+      return std::realloc(p, n ? n : 1);
+    };
+    alloc.free_fn = [](void *, void * p) { std::free(p); };
+  }
+};
+
+struct ApiRun {
+  std::string input;
+  size_t chunk = 0;                  // 0: gtext_html_parse(); else the incremental parser fed this many bytes at a time
+  size_t max_errors = 0;             // 0: the default
+  const char * transport = nullptr;
+  GTEXT_HTML_Encoding_Certainty certainty = GTEXT_HTML_CERTAIN;
+  const char * default_encoding = nullptr;
+  bool fragment = false;
+};
+
+Measured api_run(const ApiRun & r) {
+  Measured m;
+  m.bytes = r.input.size();
+  CountingAllocator counting;
+  GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
+  o.allocator = &counting.alloc;
+  o.max_open_elements = 100000000;
+  o.max_nodes = 1000000000;
+  o.max_attributes = 100000000;
+  o.max_name_bytes = (size_t)1 << 30;
+  o.max_attribute_bytes = (size_t)1 << 30;
+  o.max_comment_bytes = (size_t)1 << 30;
+  o.max_text_bytes = (size_t)1 << 30;
+  o.max_input_bytes = SIZE_MAX;
+  o.max_reparse_bytes = SIZE_MAX;
+  if (r.max_errors) {
+    o.max_errors = r.max_errors;
+  }
+  o.transport_encoding = r.transport;
+  o.transport_encoding_certainty = r.certainty;
+  o.default_encoding = r.default_encoding;
+  GTEXT_Markup_Document * d = nullptr;
+  GTEXT_HTML_Result res;
+  std::memset(&res, 0, sizeof(res));
+  GTEXT_HTML_Status st = GTEXT_HTML_OK;
+  GTEXT_HTML_Fragment_Context fc;
+  std::memset(&fc, 0, sizeof(fc));
+  fc.local_name = "div";
+  GTEXT_Markup_Node * frag = nullptr;
+  if (r.chunk == 0) {
+    st = r.fragment ? gtext_html_parse_fragment(&fc, r.input.data(), r.input.size(), &o, &d, &frag, &res)
+                    : gtext_html_parse(r.input.data(), r.input.size(), &o, &d, &res);
+  }
+  else {
+    GTEXT_HTML_Parser * p = nullptr;
+    st = r.fragment ? gtext_html_parser_new_fragment(&fc, &o, &p) : gtext_html_parser_new(&o, &p);
+    for (size_t at = 0; st == GTEXT_HTML_OK && at < r.input.size(); at += r.chunk) {
+      st = gtext_html_parser_feed(p, r.input.data() + at, std::min(r.chunk, r.input.size() - at));
+    }
+    if (st == GTEXT_HTML_OK) {
+      st = r.fragment ? gtext_html_parser_finish_fragment(p, &d, &frag, &res) : gtext_html_parser_finish(p, &d, &res);
+    }
+    gtext_html_parser_free(p);
+  }
+  m.work = counting.bytes + 16 * counting.calls;
+  if (st != GTEXT_HTML_OK) {
+    m.ok = false;
+    m.why = std::string("the parse ended with ") + gtext_html_status_string(st);
+  }
+  gtext_markup_document_free(d);
+  gtext_html_result_free(&res);
+  return m;
+}
+
+std::function<Measured(size_t)> api(std::function<std::string(size_t)> make, size_t chunk, size_t max_errors = 0, bool fragment = false) {
+  return [=](size_t k) {
+    ApiRun r;
+    r.input = make(k);
+    r.chunk = chunk;
+    r.max_errors = max_errors;
+    r.fragment = fragment;
+    return api_run(r);
+  };
+}
+
+// ---- the Encoding module -----------------------------------------------------------------------------
+
+struct Counter {
+  size_t bytes = 0;
+};
+
+bool count_write(void * user, const char *, size_t len) {
+  static_cast<Counter *>(user)->bytes += len;
+  return true;
+}
+
+Measured decode_run(GTEXT_Encoding e, const std::string & in, size_t chunk) {
+  Measured m;
+  m.bytes = in.size();
+  GTEXT_Decoder_Options o = gtext_decoder_options_default();
+  o.max_output_bytes = SIZE_MAX;
+  GTEXT_Decoder * dec = nullptr;
+  if (gtext_decoder_new(e, &o, &dec) != GTEXT_ENCODING_OK) {
+    m.ok = false;
+    m.why = "no decoder";
+    return m;
+  }
+  Counter c;
+  const GTEXT_Encoding_Sink sink = {count_write, &c};
+  size_t steps = 0;
+  for (size_t at = 0; at < in.size() || at == 0; at += chunk) {
+    const size_t n = std::min(chunk, in.size() - at);
+    const bool last = at + n >= in.size();
+    GTEXT_Decoder_Result r;
+    const GTEXT_Encoding_Status st = gtext_decoder_decode(dec, in.data() + at, n, last, &sink, &r);
+    steps += r.steps;
+    if (st != GTEXT_ENCODING_OK) {
+      m.ok = false;
+      m.why = "the decoder ended with status " + std::to_string((int)st);
+      break;
+    }
+    if (last) {
+      break;
+    }
+  }
+  m.work = steps;
+  gtext_decoder_free(dec);
+  return m;
+}
+
+Measured encode_run(GTEXT_Encoding e, const std::string & utf8, bool references) {
+  Measured m;
+  m.bytes = utf8.size();
+  GTEXT_Encoder_Options o = gtext_encoder_options_default();
+  o.max_output_bytes = SIZE_MAX;
+  o.error_mode = references ? GTEXT_ENCODER_HTML : GTEXT_ENCODER_REPLACEMENT;
+  GTEXT_Encoder * enc = nullptr;
+  if (gtext_encoder_new(e, &o, &enc) != GTEXT_ENCODING_OK) {
+    m.ok = false;
+    m.why = "no encoder";
+    return m;
+  }
+  Counter c;
+  const GTEXT_Encoding_Sink sink = {count_write, &c};
+  GTEXT_Encoder_Result r;
+  const GTEXT_Encoding_Status st = gtext_encoder_encode(enc, utf8.data(), utf8.size(), true, &sink, &r);
+  m.work = r.steps;
+  if (st != GTEXT_ENCODING_OK) {
+    m.ok = false;
+    m.why = "the encoder ended with status " + std::to_string((int)st);
+  }
+  gtext_encoder_free(enc);
+  return m;
+}
+
+Measured sniff_run(const std::string & in) {
+  Measured m;
+  m.bytes = in.size();
+  size_t work = 0;
+  html_prescan_counted(reinterpret_cast<const unsigned char *>(in.data()), in.size(), &work);
+  m.work = work;
+  // ... and the public decision (it reads the same window), which must not fail on the input.
+  GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
+  GTEXT_HTML_Sniff_Result r;
+  if (gtext_html_sniff_encoding(in.data(), in.size(), &o, &r) != GTEXT_HTML_OK) {
+    m.ok = false;
+    m.why = "the sniffer failed";
+  }
+  return m;
+}
+
+// ---- the shapes ---------------------------------------------------------------------------------------
+
+std::string attrs_n(size_t k, const char * prefix = "a", const char * value = "v") {
+  std::string out;
+  for (size_t i = 0; i < k; i++) {
+    out += std::string(" ") + prefix + std::to_string(i) + "=" + value;
+  }
+  return out;
+}
+
+std::string numbers(size_t k) {
+  std::string out;
+  for (size_t i = 0; i < k; i++) {
+    out += std::to_string(i);
+    out += ' ';
+  }
+  return out;
+}
+
+std::vector<Shape> build_shapes() {
+  std::vector<Shape> s;
+  auto add = [&](const char * group, const char * name, size_t n, std::function<Measured(size_t)> run) -> Shape & {
+    s.emplace_back(group, name, n, std::move(run));
+    return s.back();
+  };
+
+  // ---- deep nesting, up to and past the open-element limit ----
+  add("nesting", "div", 800, doc([](size_t k) { return repeat("<div>", k); }));
+  add("nesting", "span", 800, doc([](size_t k) { return repeat("<span>", k); }));
+  add("nesting", "div with text", 800, doc([](size_t k) { return repeat("<div>x", k); }));
+  add("nesting", "div then ends", 800, doc([](size_t k) { return repeat("<div>", k) + repeat("</div>", k); }));
+  add("nesting", "span then a stray end tag per level", 800,
+      doc([](size_t k) { return repeat("<span>", k) + repeat("</i>", k); }));
+  add("nesting", "span and div alternating", 600, doc([](size_t k) { return repeat("<span><div>", k); }));
+  add("nesting", "div then p after each", 600, doc([](size_t k) { return repeat("<div><p>x", k); }));
+  add("nesting", "past the open-element limit (64)", 400,
+      limited([](size_t k) { return repeat("<div>", k); }, 64, 100000000, GTEXT_HTML_TREE_E_LIMIT_DEPTH))
+      .flat = true;
+  add("nesting", "past the open-element limit (512, the default)", 2000,
+      limited([](size_t k) { return repeat("<span>x", k); }, 512, 100000000, GTEXT_HTML_TREE_E_LIMIT_DEPTH))
+      .flat = true;
+  add("nesting", "at the limit, then a flood of siblings", 500, [](size_t k) {
+    TreeRun r;
+    r.input = repeat("<div>", 60) + repeat("<p>y</p><span>z</span>", k);
+    r.max_open = 64;
+    return tree_run(r);
+  });
+
+  // ---- formatting elements: mis-nesting, the adoption agency, reconstruction ----
+  add("formatting", "b i b ... then the end tags", 600, doc([](size_t k) { return repeat("<b><i><b>", k) + repeat("</b>", 3 * k); }));
+  add("formatting", "b i misnested", 600, doc([](size_t k) { return repeat("<b><i>x</b></i>", k); }));
+  add("formatting", "b i misnested, ends last", 600, doc([](size_t k) { return repeat("<b><i>", k) + repeat("</b>", k) + repeat("</i>", k); }));
+  add("formatting", "adoption: a b then </a>", 600, doc([](size_t k) { return repeat("<a><b></a>", k); }));
+  add("formatting", "adoption: chain of a with a block inside", 600,
+      doc([](size_t k) { return repeat("<a><div>", k) + repeat("</a>", k); }));
+  add("formatting", "adoption: b around many blocks, one end tag", 600,
+      doc([](size_t k) { return "<b>" + repeat("<div>x", k) + "</b>y"; }));
+  add("formatting", "adoption: b around many blocks, end tag per block", 600,
+      doc([](size_t k) { return "<b>" + repeat("<div>x</b>", k); }));
+  add("formatting", "adoption: the 8x3 loop (eight formatting elements, three furthest blocks)", 300, doc([](size_t k) {
+        return repeat("<b><i><u><s><em><strong><tt><code><div><div><div>x</b>", k);
+      }));
+  add("formatting", "adoption: nested formatting around a table", 300,
+      doc([](size_t k) { return repeat("<b><i><table><tr><td></b>", k); }));
+  add("formatting", "adoption: formatting element deep in the stack, end tag per level", 500,
+      doc([](size_t k) { return "<b>" + repeat("<span>", k) + repeat("</b>", k); }));
+  add("formatting", "adoption: furthest block with many children above the element", 500,
+      doc([](size_t k) { return "<a>" + repeat("<span>", k) + "<p>x</a>y"; }));
+  add("formatting", "reconstruction: p closes, b reopened each time", 600, doc([](size_t k) { return repeat("<p><b>x</p>", k); }));
+  add("formatting", "reconstruction: eight formatting elements, a text per paragraph", 500,
+      doc([](size_t k) { return "<b><i><u><s><em><strong><tt><code>" + repeat("<p>x</p>", k); }));
+  add("formatting", "reconstruction: the same formatting element three times (the clause for 3)", 500,
+      doc([](size_t k) { return repeat("<b class=a><b class=a><b class=a><b class=a>x<p>", k); }));
+  add("formatting", "reconstruction: after a table", 500, doc([](size_t k) { return repeat("<i>x<table></table>", k); }));
+  add("formatting", "reconstruction: nobr runs", 600, doc([](size_t k) { return repeat("<nobr>x", k); }));
+  add("formatting", "reconstruction: a runs", 600, doc([](size_t k) { return repeat("<a href=u>x", k); }));
+  add("formatting", "reconstruction: markers (applet, object, marquee) between", 500,
+      doc([](size_t k) { return repeat("<b><object><b>x</object>", k); }));
+  add("formatting", "reset the insertion mode: end tag table, deep stack of formatting elements", 500,
+      doc([](size_t k) { return repeat("<i>x<table></table>", k); }));
+  add("formatting", "reset the insertion mode: end tag template, deep stack", 500,
+      doc([](size_t k) { return repeat("<span><template></template>", k); }));
+  add("formatting", "reset the insertion mode: caption and select, deep stack", 400,
+      doc([](size_t k) { return repeat("<span><table><caption></caption></table><select></select>", k); }));
+  add("formatting", "end tag body repeated after text, deep stack", 400,
+      doc([](size_t k) { return repeat("<span>", 400) + repeat("</body>x", k); }));
+  add("formatting", "end tag html repeated after text, deep stack", 400,
+      doc([](size_t k) { return repeat("<span>", 400) + repeat("</html>x", k); }));
+  add("formatting", "end tag body repeated after text, stack as deep as the repeats", 400,
+      doc([](size_t k) { return repeat("<span>", k) + repeat("</body>x", k); }));
+  add("formatting", "end tag html repeated after text, stack as deep as the repeats", 400,
+      doc([](size_t k) { return repeat("<span>", k) + repeat("</html>x", k); }));
+  add("formatting", "end of file with a deep stack, in a template", 400,
+      doc([](size_t k) { return repeat("<template><span>", k); }));
+  add("formatting", "end tags with no formatting element, deep stack", 600,
+      doc([](size_t k) { return repeat("<i>", 1000) + repeat("</b>", k); }));
+
+  // ---- p, li, dd, option: implied ends ----
+  add("implied ends", "p closes p", 800, doc([](size_t k) { return repeat("<p>x", k); }));
+  add("implied ends", "p in a deep stack", 600, doc([](size_t k) { return repeat("<span>", 500) + repeat("<p>x", k); }));
+  add("implied ends", "div closes p", 600, doc([](size_t k) { return repeat("<p>x<div>y", k); }));
+  add("implied ends", "end tag p with no p", 800, doc([](size_t k) { return repeat("</p>", k); }));
+  add("implied ends", "li closes li", 800, doc([](size_t k) { return "<ul>" + repeat("<li>x", k); }));
+  add("implied ends", "li nested in ul", 400, doc([](size_t k) { return repeat("<ul><li>x", k); }));
+  add("implied ends", "li in a deep stack", 600, doc([](size_t k) { return repeat("<span>", 500) + repeat("<li>x", k); }));
+  add("implied ends", "dd and dt", 600, doc([](size_t k) { return "<dl>" + repeat("<dd>x<dt>y", k); }));
+  add("implied ends", "dd in nested dl", 400, doc([](size_t k) { return repeat("<dl><dd>x", k); }));
+  add("implied ends", "option closes option", 800, doc([](size_t k) { return "<select>" + repeat("<option>x", k); }));
+  add("implied ends", "optgroup and option", 600, doc([](size_t k) { return "<select>" + repeat("<optgroup><option>x", k); }));
+  add("implied ends", "select in select", 500, doc([](size_t k) { return repeat("<select><option>x", k); }));
+  add("implied ends", "headings", 600, doc([](size_t k) { return repeat("<h1>x<h2>y", k); }));
+  add("implied ends", "rb rt rp rtc", 500, doc([](size_t k) { return "<ruby>" + repeat("<rb>x<rt>y<rp>z<rtc>w", k); }));
+  add("implied ends", "button in button", 600, doc([](size_t k) { return repeat("<button>x", k); }));
+  add("implied ends", "form in form", 600, doc([](size_t k) { return repeat("<form>x", k); }));
+
+  // ---- tables ----
+  add("tables", "td in tr in table (no ends)", 400, doc([](size_t k) { return repeat("<table><tr><td>", k); }));
+  add("tables", "nested tables closed at the end", 300,
+      doc([](size_t k) { return repeat("<table><tr><td>", k) + repeat("</table>", k); }));
+  add("tables", "nested tables closed by end tags in order", 300,
+      doc([](size_t k) { return repeat("<table><tr><td>", k) + repeat("</td></tr></table>", k); }));
+  add("tables", "cells in one row", 800, doc([](size_t k) { return "<table><tr>" + repeat("<td>x", k); }));
+  add("tables", "rows in one table", 800, doc([](size_t k) { return "<table>" + repeat("<tr><td>x", k); }));
+  add("tables", "sections and rows", 500, doc([](size_t k) { return "<table>" + repeat("<tbody><tr><td>x<thead><tr><th>y", k); }));
+  add("tables", "caption and colgroup", 500, doc([](size_t k) { return "<table>" + repeat("<caption>x<colgroup><col><col>", k); }));
+  add("tables", "tables nested in cells of a deep stack", 400,
+      doc([](size_t k) { return repeat("<span>", 400) + repeat("<table><td>", k); }));
+  add("tables", "table in table (stray table start tag)", 500, doc([](size_t k) { return repeat("<table>", k); }));
+  add("tables", "end tag table with open cells", 400, doc([](size_t k) { return repeat("<table><td><table><td></table>", k); }));
+  add("tables", "foster parenting: text", 800, doc([](size_t k) { return "<table>" + repeat("x", k); }));
+  add("tables", "foster parenting: elements", 600, doc([](size_t k) { return "<table>" + repeat("<b>y", k); }));
+  add("tables", "foster parenting: text and elements alternating", 600, doc([](size_t k) { return "<table>" + repeat("x<b>y", k); }));
+  add("tables", "foster parenting: in rows", 500, doc([](size_t k) { return "<table>" + repeat("<tr>x</tr>", k); }));
+  add("tables", "foster parenting: after nested tables", 300,
+      doc([](size_t k) { return repeat("<table><tr><td>", 50) + repeat("<table>x<i>y", k); }));
+  add("tables", "templates in tables", 300, doc([](size_t k) { return "<table>" + repeat("<template><tr><td>x", k); }));
+  add("tables", "tables in templates", 300, doc([](size_t k) { return repeat("<template><table><tr><td>", k); }));
+  add("tables", "template nesting", 400, doc([](size_t k) { return repeat("<template>", k); }));
+  add("tables", "templates closed in order", 300, doc([](size_t k) { return repeat("<template><tr>", k) + repeat("</template>", k); }));
+  add("tables", "template with table parts in a deep stack", 300,
+      doc([](size_t k) { return repeat("<span>", 300) + repeat("<template><tr><td>x</template>", k); }));
+  add("tables", "select in a table", 400, doc([](size_t k) { return "<table><tr><td>" + repeat("<select><option>x", k); }));
+
+  // ---- foreign content ----
+  add("foreign", "svg nesting", 600, doc([](size_t k) { return repeat("<svg>", k); }));
+  add("foreign", "svg g nesting", 600, doc([](size_t k) { return "<svg>" + repeat("<g>", k); }));
+  add("foreign", "math mrow nesting", 600, doc([](size_t k) { return "<math>" + repeat("<mrow>", k); }));
+  add("foreign", "breakout: p in svg", 600, doc([](size_t k) { return repeat("<svg><p>", k); }));
+  add("foreign", "breakout: tags popping a deep foreign stack", 500,
+      doc([](size_t k) { return "<svg>" + repeat("<g>", k) + "<p>x"; }));
+  add("foreign", "breakout: runs of div/b/img in svg", 500, doc([](size_t k) { return repeat("<svg><g><g><b>x<img><div>", k); }));
+  add("foreign", "breakout: font with color", 600, doc([](size_t k) { return repeat("<svg><font color=a>x", k); }));
+  add("foreign", "integration points: foreignObject, desc, title", 400,
+      doc([](size_t k) { return repeat("<svg><foreignObject><p>x<svg><desc><div>", k); }));
+  add("foreign", "integration points: mi mo mn ms mtext, annotation-xml", 400,
+      doc([](size_t k) { return repeat("<math><mi><b>x</b><mo><i>y<annotation-xml encoding=text/html><p>z", k); }));
+  add("foreign", "end tags that match the foreign stack deep down", 500,
+      doc([](size_t k) { return "<svg>" + repeat("<g>", k) + repeat("</g>", k); }));
+  add("foreign", "end tags that match nothing, deep foreign stack", 600,
+      doc([](size_t k) { return "<svg>" + repeat("<g>", 1500) + repeat("</path>", k); }));
+  add("foreign", "adjusted names (viewBox, foreignObject, xlink:href)", 600,
+      doc([](size_t k) { return "<svg>" + repeat("<foreignobject viewbox=1 xlink:href=a attributename=b>", k); }));
+  add("foreign", "cdata sections", 800, doc([](size_t k) { return "<svg>" + repeat("<![CDATA[x]]>", k); }));
+  add("foreign", "many distinct element names", 800, doc([](size_t k) {
+        std::string out = "<svg>";
+        for (size_t i = 0; i < k; i++) {
+          out += "<e" + std::to_string(i) + "/>";
+        }
+        return out;
+      }));
+
+  // ---- fragments ----
+  {
+    Ctx td;
+    td.name = "td";
+    Ctx tbody;
+    tbody.name = "tbody";
+    Ctx tmpl;
+    tmpl.name = "template";
+    Ctx sel;
+    sel.name = "select";
+    Ctx svg;
+    svg.ns = GTEXT_HTML_NS_SVG;
+    svg.name = "svg";
+    Ctx fo;
+    fo.ns = GTEXT_HTML_NS_SVG;
+    fo.name = "foreignObject";
+    Ctx mi;
+    mi.ns = GTEXT_HTML_NS_MATHML;
+    mi.name = "mi";
+    Ctx many;
+    many.name = "div";
+    add("fragments", "deep div in td", 600, frag(td, [](size_t k) { return repeat("<div>", k); }));
+    add("fragments", "deep span in tbody", 600, frag(tbody, [](size_t k) { return "<tr><td>" + repeat("<span>", k); }));
+    add("fragments", "misnested formatting in td", 500, frag(td, [](size_t k) { return repeat("<b><i>x</b></i>", k); }));
+    add("fragments", "foster parented text in tbody", 600, frag(tbody, [](size_t k) { return repeat("x<b>y", k); }));
+    add("fragments", "templates", 400, frag(tmpl, [](size_t k) { return repeat("<template><tr><td>x</template>", k); }));
+    add("fragments", "svg g", 600, frag(svg, [](size_t k) { return repeat("<g>", k); }));
+    add("fragments", "foreignObject with html", 400, frag(fo, [](size_t k) { return repeat("<div>x<p>", k); }));
+    add("fragments", "mi with breakouts", 400, frag(mi, [](size_t k) { return repeat("<b>x</b><mglyph/>", k); }));
+    add("fragments", "select context", 500, frag(sel, [](size_t k) { return repeat("<option>x<select>y", k); }));
+    add("fragments", "adoption agency", 400, frag(td, [](size_t k) { return "<b>" + repeat("<div>x</b>", k); }));
+    add("fragments", "context element with many attributes", 400, [many](size_t k) mutable {
+      Ctx c = many;
+      for (size_t i = 0; i < k; i++) {
+        c.attrs.push_back({"a" + std::to_string(i), "v"});
+      }
+      TreeRun r;
+      r.input = "<p>x";
+      r.ctx = &c;
+      Measured m = tree_run(r);
+      m.bytes += k * 8; // the context's attributes are input of the same kind
+      return m;
+    });
+  }
+
+  // ---- attributes ----
+  add("attributes", "one tag, many attributes", 300, doc([](size_t k) { return "<div" + attrs_n(k) + ">"; }));
+  add("attributes", "one tag, many attributes of the same length (hash buckets)", 300,
+      doc([](size_t k) { return "<div" + attrs_n(k, "a", "") + ">"; }));
+  add("attributes", "one tag, many duplicates of one attribute", 300,
+      doc([](size_t k) { return "<div" + repeat(" a=1", k) + ">"; }));
+  add("attributes", "one tag, many duplicates alternating two names", 300,
+      doc([](size_t k) { return "<div" + repeat(" a=1 b=2", k) + ">"; }));
+  add("attributes", "one tag, names that differ in the last byte only", 300, doc([](size_t k) {
+        std::string out = "<div";
+        for (size_t i = 0; i < k; i++) {
+          out += " attribute-name-that-is-long-" + std::string(1, static_cast<char>('a' + i % 26)) + std::to_string(i);
+        }
+        return out + ">";
+      }));
+  add("attributes", "one tag, a long value", 800, doc([](size_t k) { return "<div a=\"" + repeat("x", 40 * k) + "\">"; }));
+  add("attributes", "one tag, a long unquoted value of references", 800, doc([](size_t k) { return "<div a=" + repeat("&amp;", 8 * k) + ">"; }));
+  add("attributes", "many tags, a few attributes each", 500, doc([](size_t k) { return repeat("<div class=a id=b data-x=c>", k); }));
+  add("attributes", "many a elements with attributes (Noah's Ark, distinct)", 400,
+      doc([](size_t k) {
+        std::string out;
+        for (size_t i = 0; i < k; i++) {
+          out += "<a href=h" + std::to_string(i) + " id=i" + std::to_string(i) + ">x";
+        }
+        return out;
+      }));
+  add("attributes", "repeated html and body tags with attributes", 300,
+      doc([](size_t k) { return repeat("<html" + attrs_n(8) + "><body" + attrs_n(8) + ">", k); }));
+  add("attributes", "past the attribute limit (1024)", 3000,
+      limited([](size_t k) { return "<div" + attrs_n(k) + ">"; }, 100000000, 1024, GTEXT_HTML_TREE_E_LIMIT_ATTRIBUTES))
+      .flat = true;
+
+  // ---- long runs: comments, NULs, character references, white space ----
+  add("runs", "comments", 1000, doc([](size_t k) { return repeat("<!--c-->", k); }));
+  add("runs", "empty comments and bogus comments", 1000, doc([](size_t k) { return repeat("<!----><!x><?y>", k); }));
+  add("runs", "NUL in data", 4000, doc([](size_t k) { return repeat(std::string("a\0", 2), k); }));
+  add("runs", "NUL in body, after a table", 3000, doc([](size_t k) { return "<table>" + repeat(std::string("\0", 1), k); }));
+  add("runs", "NUL in attribute values and names", 800, doc([](size_t k) { return repeat(std::string("<a b=\"\0\" c\0=d>", 14), k); }));
+  add("runs", "NUL in script and rcdata", 1500,
+      doc([](size_t k) { return "<script>" + repeat(std::string("\0", 1), k) + "</script><title>" + repeat(std::string("\0", 1), k); }));
+  add("runs", "named references", 1000, doc([](size_t k) { return repeat("&amp;&lt;&gt;&quot;&nbsp;", k); }));
+  add("runs", "named references, no semicolon (legacy)", 1000, doc([](size_t k) { return repeat("&amp&lt&gt&copy&notit;", k); }));
+  add("runs", "ampersands that name nothing", 2000, doc([](size_t k) { return repeat("&zzz;&x&", k); }));
+  add("runs", "a long name that is almost a reference", 800, doc([](size_t k) { return repeat("&CounterClockwiseContourIntegra", k); }));
+  add("runs", "a long run of letters after an ampersand", 800, doc([](size_t k) { return "&" + repeat("abcdefghij", k); }));
+  add("runs", "numeric references", 1000, doc([](size_t k) { return repeat("&#65;&#x41;&#0;&#x110000;&#xD800;&#128;", k); }));
+  add("runs", "numeric references, a long run of digits", 800, doc([](size_t k) { return "&#" + repeat("1234567890", k) + ";"; }));
+  add("runs", "numeric references with no digits", 2000, doc([](size_t k) { return repeat("&#;&#x;&#", k); }));
+  add("runs", "references in attribute values", 800, doc([](size_t k) { return "<a href=\"" + repeat("?a=1&b=2&copy=3&amp;", k) + "\">"; }));
+  add("runs", "white space", 4000, doc([](size_t k) { return "<table>" + repeat(" \n\t", k); }));
+  add("runs", "carriage returns", 4000, doc([](size_t k) { return repeat("a\r\nb\rc", k); }));
+  add("runs", "text", 6000, doc([](size_t k) { return repeat("lorem ipsum ", k); }));
+  add("runs", "text split by ignored tags", 800, doc([](size_t k) { return "<table><tr><td>" + repeat("x</foo>", k); }));
+  add("runs", "doctypes", 800, doc([](size_t k) { return repeat("<!DOCTYPE html>", k); }));
+  add("runs", "processing instructions", 800, doc([](size_t k) { return repeat("<?php x ?>", k); }));
+  add("runs", "meta charset elements", 800, doc([](size_t k) { return repeat("<meta charset=utf-8><meta http-equiv=content-type content='text/html; charset=utf-8'>", k); }));
+
+  // ---- tokenizer states: unterminated constructs, in every escape state ----
+  add("tokenizer", "unterminated comment", 8000, doc([](size_t k) { return "<!--" + repeat("x", k); }));
+  add("tokenizer", "unterminated comment of dashes", 8000, doc([](size_t k) { return "<!--" + repeat("-", k); }));
+  add("tokenizer", "unterminated comment of dash-bang", 4000, doc([](size_t k) { return "<!--" + repeat("--!", k); }));
+  add("tokenizer", "unterminated comment of <!-- (nested)", 3000, doc([](size_t k) { return "<!--" + repeat("<!--", k); }));
+  add("tokenizer", "unterminated bogus comment", 8000, doc([](size_t k) { return "<!" + repeat("x", k); }));
+  add("tokenizer", "unterminated processing instruction", 8000, doc([](size_t k) { return "<?" + repeat("x", k); }));
+  add("tokenizer", "unterminated tag name", 4000, doc([](size_t k) { return "<a" + repeat("b", k); }));
+  add("tokenizer", "unterminated tag with attributes", 2000, doc([](size_t k) { return "<a" + repeat(" b=c", k); }));
+  add("tokenizer", "unterminated tag with quoted value", 8000, doc([](size_t k) { return "<a b=\"" + repeat("c", k); }));
+  add("tokenizer", "unterminated tag with solidi", 6000, doc([](size_t k) { return "<a" + repeat("/", k); }));
+  add("tokenizer", "unterminated end tag", 6000, doc([](size_t k) { return "</a" + repeat(" b", k); }));
+  add("tokenizer", "unterminated doctype", 6000, doc([](size_t k) { return "<!DOCTYPE" + repeat(" x", k); }));
+  add("tokenizer", "unterminated doctype public identifier", 6000, doc([](size_t k) { return "<!DOCTYPE html PUBLIC \"" + repeat("x", k); }));
+  add("tokenizer", "unterminated doctype system identifier", 6000, doc([](size_t k) { return "<!DOCTYPE html SYSTEM '" + repeat("x", k); }));
+  add("tokenizer", "doctype keywords repeated", 2000, doc([](size_t k) { return "<!DOCTYPE html PUBLIC" + repeat(" PUBLIC SYSTEM", k); }));
+  add("tokenizer", "script data", 8000, doc([](size_t k) { return "<script>" + repeat("x", k); }));
+  add("tokenizer", "script data: lone less-than signs", 4000, doc([](size_t k) { return "<script>" + repeat("<", k); }));
+  add("tokenizer", "script data: partial end tags", 2000, doc([](size_t k) { return "<script>" + repeat("</scrip", k); }));
+  add("tokenizer", "script data: end tags that do not match", 2000, doc([](size_t k) { return "<script>" + repeat("</scriptx ", k); }));
+  add("tokenizer", "script data escaped", 2000, doc([](size_t k) { return "<script><!--" + repeat("x", k); }));
+  add("tokenizer", "script data escaped: dashes", 4000, doc([](size_t k) { return "<script><!--" + repeat("-", k); }));
+  add("tokenizer", "script data escaped: dash less-than", 3000, doc([](size_t k) { return "<script><!--" + repeat("-<", k); }));
+  add("tokenizer", "script data escaped: partial end tags", 2000, doc([](size_t k) { return "<script><!--" + repeat("</scrip", k); }));
+  add("tokenizer", "script data double escaped", 2000, doc([](size_t k) { return "<script><!--<script>" + repeat("x", k); }));
+  add("tokenizer", "script data double escaped: dashes and less-than", 2000, doc([](size_t k) { return "<script><!--<script>" + repeat("-<", k); }));
+  add("tokenizer", "script data double escaped: partial end tags", 2000, doc([](size_t k) { return "<script><!--<script>" + repeat("</scrip", k); }));
+  add("tokenizer", "script data double escaped: repeated start", 1500, doc([](size_t k) { return "<script>" + repeat("<!--<script>", k); }));
+  add("tokenizer", "script data double escape start/end, unterminated", 1500,
+      doc([](size_t k) { return "<script><!--<script>" + repeat("</script", k); }));
+  add("tokenizer", "rcdata (title)", 6000, doc([](size_t k) { return "<title>" + repeat("x", k); }));
+  add("tokenizer", "rcdata: partial end tags", 2000, doc([](size_t k) { return "<title>" + repeat("</titl", k); }));
+  add("tokenizer", "rcdata: references", 1500, doc([](size_t k) { return "<textarea>" + repeat("&amp&lt;&", k); }));
+  add("tokenizer", "rawtext (style)", 6000, doc([](size_t k) { return "<style>" + repeat("x", k); }));
+  add("tokenizer", "rawtext: partial end tags", 2000, doc([](size_t k) { return "<style>" + repeat("</styl", k); }));
+  add("tokenizer", "rawtext: xmp, iframe, noembed", 2000, doc([](size_t k) { return "<xmp>" + repeat("</xm", k) + "<iframe>" + repeat("</ifram", k); }));
+  add("tokenizer", "plaintext", 8000, doc([](size_t k) { return "<plaintext>" + repeat("<x>", k); }));
+  add("tokenizer", "cdata section unterminated", 6000, doc([](size_t k) { return "<svg><![CDATA[" + repeat("x", k); }));
+  add("tokenizer", "cdata section with brackets", 4000, doc([](size_t k) { return "<svg><![CDATA[" + repeat("]", k); }));
+  add("tokenizer", "cdata section with partial ends", 2000, doc([](size_t k) { return "<svg><![CDATA[" + repeat("]]", k); }));
+  add("tokenizer", "cdata in html content (a bogus comment)", 4000, doc([](size_t k) { return "<![CDATA[" + repeat("x", k); }));
+  add("tokenizer", "after-name states: equals signs", 4000, doc([](size_t k) { return "<a" + repeat("=", k); }));
+  add("tokenizer", "attribute names of quotes and angle brackets", 2000, doc([](size_t k) { return "<a " + repeat("\"'<", k); }));
+  add("tokenizer", "self-closing solidus runs", 2000, doc([](size_t k) { return repeat("<br/ /><div/ x/>", k); }));
+  add("tokenizer", "bytes of every value (no state is special)", 800, doc([](size_t k) {
+        std::string unit;
+        for (int c = 1; c < 256; c++) {
+          unit += static_cast<char>(c);
+        }
+        return repeat(unit, k);
+      }));
+  add("tokenizer", "mixed tag soup", 800, doc([](size_t k) { return repeat("<a<b<c<!-<?<![<!d<&<", k); }));
+
+  // ---- the serializer ----
+  add("serializer", "a tree 16n deep", 800, ser([](size_t k) { return repeat("<div>", k) + "x"; }));
+  add("serializer", "a tree 16n wide", 1500, ser([](size_t k) { return repeat("<li>x</li>", k); }));
+  add("serializer", "wide and deep", 400, ser([](size_t k) { return repeat("<div><span>x</span><p>y<b>z</b>", k); }));
+  add("serializer", "many attributes on one element", 500, ser([](size_t k) { return "<div" + attrs_n(k) + ">"; }));
+  add("serializer", "many attributes sorted", 500, ser([](size_t k) { return "<div" + attrs_n(k) + ">"; }, true, SerializeOptions::Alphabetical));
+  add("serializer", "many elements with attributes sorted", 500, ser([](size_t k) { return repeat("<a z=1 y=2 x=3 b=4 a=5>x", k); }, true, SerializeOptions::Alphabetical));
+  add("serializer", "long text with specials", 1500, ser([](size_t k) { return repeat("a&b<c>d\xc2\xa0", 8 * k); }));
+  add("serializer", "long attribute values with specials", 800, ser([](size_t k) { return "<a b=\"" + repeat("&amp;&quot;x", 8 * k) + "\">"; }));
+  add("serializer", "comments in a tree", 1500, ser([](size_t k) { return repeat("<!--c-->", k); }));
+  add("serializer", "optional tags omitted, p and li", 800, ser([](size_t k) { return repeat("<p>x<ul><li>y<li>z</ul>", k); }, true, SerializeOptions::Omit));
+  add("serializer", "optional tags omitted, a table", 500, ser([](size_t k) { return "<table>" + repeat("<tr><td>x<td>y", k); }, true, SerializeOptions::Omit));
+  add("serializer", "optional tags omitted, a whole document", 500,
+      ser([](size_t k) { return "<!DOCTYPE html><html><head></head><body>" + repeat("<p>x<dl><dt>a<dd>b</dl>", k); }, false, SerializeOptions::Omit));
+  add("serializer", "every option on, wide", 800, ser([](size_t k) { return repeat("<a href=u disabled class=x>t <b>u</b> </a>\n", k); }, true, SerializeOptions::Everything));
+  add("serializer", "every option on, deep", 600, ser([](size_t k) { return repeat("<div class=a>", k) + "x"; }, true, SerializeOptions::Everything));
+  add("serializer", "white space stripped", 1500, ser([](size_t k) { return repeat("a  \n\t b <pre>  x  </pre> ", k); }, true, SerializeOptions::Strip));
+  add("serializer", "templates in a tree", 400, ser([](size_t k) { return repeat("<template><div>x</div></template>", k); }));
+  add("serializer", "nested templates", 400, ser([](size_t k) { return repeat("<template>", k) + "x"; }));
+  add("serializer", "foreign content", 400, ser([](size_t k) { return repeat("<svg><g><path d=a /></g></svg>", k); }));
+
+  // ---- the public parser: the memory it asks for, whole and in pieces ----
+  {
+    auto note = [&](Shape & sh) -> Shape & {
+      sh.per_byte = 0;
+      sh.note = "counted in bytes requested of the allocator (a realloc counted at its new size) plus 16 per call";
+      return sh;
+    };
+    note(add("api", "text, whole", 20000, api([](size_t k) { return repeat("lorem ", k); }, 0)));
+    note(add("api", "text, a byte at a time", 6000, api([](size_t k) { return repeat("lorem ", k); }, 1)));
+    note(add("api", "text, 7 bytes at a time", 6000, api([](size_t k) { return repeat("lorem ", k); }, 7)));
+    note(add("api", "text split by an ignored tag, a byte at a time", 20000, api([](size_t k) { return "<table><tr><td>" + repeat("x</foo>", k); }, 1)));
+    note(add("api", "one comment, a byte at a time", 40000, api([](size_t k) { return "<!--" + repeat("c", k); }, 1)));
+    note(add("api", "one attribute value, a byte at a time", 40000, api([](size_t k) { return "<a b=\"" + repeat("c", k) + "\">"; }, 1)));
+    note(add("api", "one tag name, a byte at a time", 40000, api([](size_t k) { return "<a" + repeat("c", k); }, 1)));
+    note(add("api", "script data, a byte at a time", 8000, api([](size_t k) { return "<script>" + repeat("<!--<script>x", k / 10); }, 1)));
+    note(add("api", "references, a byte at a time", 20000, api([](size_t k) { return repeat("&amp;&notit;&#x41;&", k); }, 1)));
+    note(add("api", "elements, whole", 4000, api([](size_t k) { return repeat("<p class=a>x</p>", k); }, 0)));
+    note(add("api", "elements, 5 bytes at a time", 2000, api([](size_t k) { return repeat("<p class=a>x</p>", k); }, 5)));
+    note(add("api", "deep nesting, a byte at a time", 600, api([](size_t k) { return repeat("<div>", k); }, 1)));
+    note(add("api", "parse errors kept (no limit)", 3000, api([](size_t k) { return repeat("</x>", k); }, 0, (size_t)1 << 30)));
+    note(add("api", "parse errors kept (no limit), a byte at a time", 3000, api([](size_t k) { return repeat("</x>&zz;", k); }, 1, (size_t)1 << 30)));
+    note(add("api", "parse errors past the default limit", 3000, api([](size_t k) { return repeat("</x>", k); }, 0)));
+    note(add("api", "head open, the bytes kept for a restart", 20000, api([](size_t k) { return "<html><head><title>" + repeat("t", 2 * k) + "</title>"; }, 1)));
+    note(add("api", "head open, a restart at the end", 3000, api([](size_t k) { return "<html><head>" + repeat("<title>x</title>", k) + "<meta charset=windows-1251>"; }, 3)));
+    note(add("api", "a document in Shift_JIS, a byte at a time", 20000, [](size_t k) {
+      ApiRun r;
+      r.input = "<p>" + repeat("\x82\xa0\x83\x41 x ", k) + "</p>";
+      r.chunk = 1;
+      r.transport = "shift_jis";
+      return api_run(r);
+    }));
+    note(add("api", "a document in UTF-16LE, whole", 30000, [](size_t k) {
+      ApiRun r;
+      std::string utf16("\xff\xfe", 2);
+      for (const char c : std::string("<p>") + repeat("ab ", k) + "</p>") {
+        utf16 += c;
+        utf16 += '\0';
+      }
+      r.input = utf16;
+      return api_run(r);
+    }));
+    note(add("api", "fragment, whole", 4000, api([](size_t k) { return repeat("<li>x<b>y", k); }, 0, 0, true)));
+    note(add("api", "fragment, a byte at a time", 2000, api([](size_t k) { return repeat("<li>x<b>y", k); }, 1, 0, true)));
+  }
+
+  // ---- the Encoding module ----
+  struct Dec {
+    const char * name;
+    GTEXT_Encoding e;
+    std::function<std::string(size_t)> make;
+  };
+  const std::vector<Dec> decs = {
+      {"utf-8 truncated sequences", GTEXT_ENCODING_UTF_8, [](size_t k) { return repeat("\xe2\x82", k); }},
+      {"utf-8 overlong and surrogates", GTEXT_ENCODING_UTF_8, [](size_t k) { return repeat("\xc0\x80\xed\xa0\x80\xf4\x90\x80\x80", k); }},
+      {"utf-8 four-byte lead then ascii", GTEXT_ENCODING_UTF_8, [](size_t k) { return repeat("\xf0\x90\x80x", k); }},
+      {"utf-16le odd length and lone surrogates", GTEXT_ENCODING_UTF_16LE, [](size_t k) { return repeat(std::string("\x00\xd8\x41\x00\x00\xdc\x00", 7), k); }},
+      {"utf-16be lead surrogates", GTEXT_ENCODING_UTF_16BE, [](size_t k) { return repeat(std::string("\xd8\x00\xd8\x00\xdc", 5), k); }},
+      {"windows-1252", GTEXT_ENCODING_WINDOWS_1252, [](size_t k) { return repeat("\x80\x81\xe9\xff", k); }},
+      {"iso-8859-2", GTEXT_ENCODING_ISO_8859_2, [](size_t k) { return repeat("\xa1\xb2\xff", k); }},
+      {"x-user-defined", GTEXT_ENCODING_X_USER_DEFINED, [](size_t k) { return repeat("\x80\xff", k); }},
+      {"shift_jis lead bytes then ascii", GTEXT_ENCODING_SHIFT_JIS, [](size_t k) { return repeat("\x81x\x82\x20\xa1\xe0", k); }},
+      {"shift_jis pairs", GTEXT_ENCODING_SHIFT_JIS, [](size_t k) { return repeat("\x82\xa0\x83\x41", k); }},
+      {"euc-jp three-byte forms and bad trails", GTEXT_ENCODING_EUC_JP, [](size_t k) { return repeat("\x8f\xa1x\x8e\x41\xa4\xa2", k); }},
+      {"euc-kr bad trails", GTEXT_ENCODING_EUC_KR, [](size_t k) { return repeat("\xb0x\xb0\xa1\xff", k); }},
+      {"gbk bad trails", GTEXT_ENCODING_GBK, [](size_t k) { return repeat("\x81x\x81\x30\x81\x41", k); }},
+      {"gb18030 partial four-byte forms", GTEXT_ENCODING_GB18030, [](size_t k) { return repeat("\x81\x30\x81x\x81\x30x\x81\x35\xf4\x37", k); }},
+      {"big5 pairs of two code points and bad trails", GTEXT_ENCODING_BIG5, [](size_t k) { return repeat("\x88\x62\x88\x64\x88x\xa1\xa1", k); }},
+      {"iso-2022-jp escapes", GTEXT_ENCODING_ISO_2022_JP, [](size_t k) { return repeat("\x1b$B$\"\x1b(B\x1b(J\x1b$@a\x1b\x1b", k); }},
+      {"iso-2022-jp unfinished escape sequences", GTEXT_ENCODING_ISO_2022_JP, [](size_t k) { return repeat("\x1b$\x1b(\x1b$(", k); }},
+      {"replacement", GTEXT_ENCODING_REPLACEMENT, [](size_t k) { return repeat("abc", k); }},
+  };
+  for (const Dec & d : decs) {
+    Shape & sh = add("encoding", (std::string("decode ") + d.name).c_str(), 3000,
+        [d](size_t k) { return decode_run(d.e, d.make(k), 1 << 20); });
+    sh.per_byte = 4.0; // gtext_decoder_decode's documented bound: at most four handler steps per byte
+    sh.note = "documented: at most four handler steps per byte";
+    Shape & by = add("encoding", (std::string("decode a byte at a time ") + d.name).c_str(), 1500,
+        [d](size_t k) { return decode_run(d.e, d.make(k), 1); });
+    by.per_byte = 4.0;
+    by.note = "documented: at most four handler steps per byte, and the same however the input is cut";
+  }
+  const std::string text_cjk = std::string("a\xe3\x81\x82\xe6\xbc\xa2\xef\xbf\xbd\xf0\x9f\x98\x80\xc3\xa9", 16);
+  for (const auto & e : std::vector<std::pair<const char *, GTEXT_Encoding>>{
+           {"shift_jis", GTEXT_ENCODING_SHIFT_JIS}, {"euc-jp", GTEXT_ENCODING_EUC_JP}, {"iso-2022-jp", GTEXT_ENCODING_ISO_2022_JP},
+           {"gb18030", GTEXT_ENCODING_GB18030}, {"gbk", GTEXT_ENCODING_GBK}, {"big5", GTEXT_ENCODING_BIG5},
+           {"euc-kr", GTEXT_ENCODING_EUC_KR}, {"windows-1252", GTEXT_ENCODING_WINDOWS_1252}, {"utf-8", GTEXT_ENCODING_UTF_8}}) {
+    Shape & sh = add("encoding", (std::string("encode with references ") + e.first).c_str(), 2000,
+        [e, text_cjk](size_t k) { return encode_run(e.second, repeat(text_cjk, k), true); });
+    sh.per_byte = 3.0;
+    sh.note = "documented: at most three handler steps per byte";
+  }
+
+  // ---- sniffing ----
+  const std::vector<std::pair<const char *, std::string>> junk = {
+      {"<meta with no attributes", "<meta "},
+      {"<meta charset= never closed", "<meta charset="},
+      {"<meta http-equiv content never closed", "<meta http-equiv=content-type content=\""},
+      {"<meta repeated attribute names", "<meta a=b a=c a=d "},
+      {"<meta/ and <meta> forms", "<meta/ x=y><meta>"},
+      {"<!-- comment openers", "<!--"},
+      {"<! and <? and </ runs", "<!x </ <? <x"},
+      {"less-than signs", "<"},
+      {"partial meta", "<met"},
+      {"long attribute name", "<meta aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  };
+  for (const auto & j : junk) {
+    const std::string unit = j.second;
+    Shape & sh = add("sniffing", (std::string("1 MiB of ") + j.first).c_str(), 64 * 1024 / unit.size(),
+        [unit](size_t k) { return sniff_run(repeat(unit, k)); });
+    sh.flat = true;
+    sh.per_byte = 0;
+    sh.note = "the prescan reads the first 1024 bytes only";
+  }
+  add("sniffing", "the whole parse of 1 MiB of <meta junk", 2000, [](size_t k) {
+    TreeRun r;
+    r.input = repeat("<meta http-equiv=content-type content=\"x\" charset=y ", k);
+    return tree_run(r);
+  });
+  return s;
+}
+
+// ---- the checker --------------------------------------------------------------------------------
+
+struct Row {
+  const Shape * shape;
+  size_t units[3];
+  Measured m[3];
+};
+
+// The failures of a measured shape, empty if it holds.
+std::vector<std::string> judge(const Shape & sh, const Row & row) {
+  std::vector<std::string> bad;
+  for (int i = 0; i < 3; i++) {
+    if (!row.m[i].ok) {
+      bad.push_back("at " + std::to_string(row.units[i]) + " units: " + row.m[i].why);
+    }
+  }
+  const double w0 = (double)std::max<size_t>(row.m[0].work, 1);
+  const double w1 = (double)std::max<size_t>(row.m[1].work, 1);
+  const double w2 = (double)std::max<size_t>(row.m[2].work, 1);
+  if (sh.flat) {
+    if (w2 / w0 > 1.5) {
+      bad.push_back("the work should not depend on the input, and grew " + std::to_string(w2 / w0) + " times for 16 times the input");
+    }
+  }
+  else {
+    if (w1 / w0 > sh.bound) {
+      bad.push_back("work grew " + std::to_string(w1 / w0) + " times for 4 times the input (n to 4n); the bound is " + std::to_string(sh.bound));
+    }
+    if (w2 / w1 > sh.bound) {
+      bad.push_back("work grew " + std::to_string(w2 / w1) + " times for 4 times the input (4n to 16n); the bound is " + std::to_string(sh.bound));
+    }
+  }
+  if (sh.per_byte > 0) {
+    for (int i = 0; i < 3; i++) {
+      const double cap = sh.per_byte * (double)row.m[i].bytes + 8192.0;
+      if ((double)row.m[i].work > cap) {
+        bad.push_back("work " + std::to_string(row.m[i].work) + " for " + std::to_string(row.m[i].bytes) + " bytes exceeds " +
+                      std::to_string(sh.per_byte) + " per byte");
+      }
+    }
+  }
+  return bad;
+}
+
+Row measure(const Shape & sh) {
+  Row row;
+  row.shape = &sh;
+  const size_t mult[3] = {1, 4, 16};
+  for (int i = 0; i < 3; i++) {
+    row.units[i] = sh.n * mult[i];
+    row.m[i] = sh.run(row.units[i]);
+  }
+  return row;
+}
+
+} // namespace
+
+// ---- the suite ----------------------------------------------------------------------------------
+
+TEST(Quadratic, EveryShapeGrowsLinearly) {
+  const std::vector<Shape> shapes = build_shapes();
+  ASSERT_GE(shapes.size(), 190u);
+  std::map<std::string, size_t> per_group;
+  FILE * report = nullptr;
+  if (const char * path = std::getenv("GTEXT_QUAD_REPORT")) {
+    report = std::fopen(path, "w");
+  }
+  size_t failures = 0;
+  std::printf("%-12s %-72s %10s %10s %10s %7s %7s\n", "group", "shape", "work(n)", "work(4n)", "work(16n)", "4n/n", "16n/4n");
+  for (const Shape & sh : shapes) {
+    per_group[sh.group]++;
+    const Row row = measure(sh);
+    const double w0 = (double)std::max<size_t>(row.m[0].work, 1);
+    std::printf("%-12s %-72s %10zu %10zu %10zu %7.2f %7.2f\n", sh.group.c_str(), sh.name.substr(0, 72).c_str(), row.m[0].work, row.m[1].work,
+        row.m[2].work, (double)row.m[1].work / w0, (double)row.m[2].work / (double)std::max<size_t>(row.m[1].work, 1));
+    if (report) {
+      std::fprintf(report, "%s\t%s\t%zu\t%zu\t%zu\t%zu\t%zu\t%zu\t%zu\n", sh.group.c_str(), sh.name.c_str(), row.units[0], row.m[0].bytes,
+          row.m[0].work, row.m[1].bytes, row.m[1].work, row.m[2].bytes, row.m[2].work);
+    }
+    for (const std::string & why : judge(sh, row)) {
+      failures++;
+      ADD_FAILURE() << "[" << sh.group << "] " << sh.name << ": " << why << (sh.note.empty() ? "" : " (" + sh.note + ")");
+    }
+  }
+  if (report) {
+    std::fclose(report);
+  }
+  for (const auto & g : per_group) {
+    std::printf("group %-12s %zu shapes\n", g.first.c_str(), g.second);
+  }
+  std::printf("%zu shapes, %zu failures\n", shapes.size(), failures);
+}
+
+TEST(Quadratic, EveryGroupTheSpecNamesHasShapes) {
+  const std::vector<Shape> shapes = build_shapes();
+  std::map<std::string, size_t> count;
+  for (const Shape & sh : shapes) {
+    count[sh.group]++;
+  }
+  for (const char * g : {"nesting", "formatting", "implied ends", "tables", "foreign", "fragments", "attributes", "runs", "tokenizer",
+           "serializer", "encoding", "sniffing", "api"}) {
+    EXPECT_GT(count[g], 0u) << g;
+  }
+  // The shape names are unique (the callgrind tool finds a shape by name).
+  std::map<std::string, int> names;
+  for (const Shape & sh : shapes) {
+    EXPECT_EQ(++names[sh.name], 1) << sh.name;
+  }
+}
+
+// Controls: the checker must say no to a measure that grows too fast, and yes to one that does not.
+
+namespace {
+Shape synthetic(const char * name, std::function<size_t(size_t)> work, bool flat = false) {
+  Shape s("control", name, 1000, [work](size_t k) {
+    Measured m;
+    m.bytes = k;
+    m.work = work(k);
+    return m;
+  });
+  s.flat = flat;
+  s.per_byte = 0;
+  return s;
+}
+} // namespace
+
+TEST(QuadraticControls, TheSuiteFailsOnAQuadraticShape) {
+  const Shape sh = synthetic("n squared", [](size_t k) { return k * k; });
+  EXPECT_FALSE(judge(sh, measure(sh)).empty());
+}
+
+TEST(QuadraticControls, TheSuiteFailsOnAShapeThatIsQuadraticOnlyPastTheSmallestSize) {
+  const Shape sh = synthetic("linear then quadratic", [](size_t k) { return k < 5000 ? 8 * k : k * k / 600; });
+  EXPECT_FALSE(judge(sh, measure(sh)).empty());
+}
+
+TEST(QuadraticControls, TheSuiteFailsOnN4OverNAndN16OverN4Separately) {
+  // Linear from n to 4n and quadratic from 4n to 16n, and the other way round.
+  EXPECT_FALSE(judge(synthetic("late", [](size_t k) { return k <= 4000 ? 10 * k : 10 * 4000 + (k - 4000) * (k - 4000) / 4; }),
+      measure(synthetic("late", [](size_t k) { return k <= 4000 ? 10 * k : 10 * 4000 + (k - 4000) * (k - 4000) / 4; }))).empty());
+  EXPECT_FALSE(judge(synthetic("early", [](size_t k) { return k <= 4000 ? k * k / 40 : 400000 + 100 * k; }),
+      measure(synthetic("early", [](size_t k) { return k <= 4000 ? k * k / 40 : 400000 + 100 * k; }))).empty());
+}
+
+TEST(QuadraticControls, TheSuiteFailsOnAFlatShapeThatGrows) {
+  const Shape sh = synthetic("grows", [](size_t k) { return 2000 + k; }, true);
+  EXPECT_FALSE(judge(sh, measure(sh)).empty());
+}
+
+TEST(QuadraticControls, TheSuiteAcceptsLinearAndFlatShapes) {
+  EXPECT_TRUE(judge(synthetic("linear", [](size_t k) { return 7 * k + 300; }), measure(synthetic("linear", [](size_t k) { return 7 * k + 300; }))).empty());
+  const Shape flat = synthetic("flat", [](size_t) { return 3000; }, true);
+  EXPECT_TRUE(judge(flat, measure(flat)).empty());
+  const Shape nlogn = synthetic("n log n", [](size_t k) { return (size_t)((double)k * std::log2((double)k)); });
+  EXPECT_TRUE(judge(nlogn, measure(nlogn)).empty()) << "an n log n shape (the attribute sort) is within the default bound at these sizes";
+}
+
+TEST(QuadraticControls, TheAbsoluteBoundIsEnforced) {
+  Shape sh = synthetic("heavy", [](size_t k) { return 500 * k; });
+  sh.per_byte = 112;
+  EXPECT_FALSE(judge(sh, measure(sh)).empty());
+}
+
+TEST(QuadraticControls, AShapeThatFailsToRunIsAFailureNotAZero) {
+  Shape sh("control", "broken", 10, [](size_t) {
+    Measured m;
+    m.ok = false;
+    m.why = "did not run";
+    return m;
+  });
+  EXPECT_FALSE(judge(sh, measure(sh)).empty());
+}
+
+// One shape at its three sizes, each in a function of its own that callgrind collects (--toggle-collect): what
+// tools/html/quadratic-instructions.py runs. Not volatile and not inlined, so that the name is in the profile.
+extern "C" {
+__attribute__((noinline, used)) size_t quad_region_1(const void * shape, size_t units) {
+  return static_cast<const Shape *>(shape)->run(units).work;
+}
+__attribute__((noinline, used)) size_t quad_region_4(const void * shape, size_t units) {
+  return static_cast<const Shape *>(shape)->run(units).work;
+}
+__attribute__((noinline, used)) size_t quad_region_16(const void * shape, size_t units) {
+  return static_cast<const Shape *>(shape)->run(units).work;
+}
+}
+
+TEST(Quadratic, ListShapes) {
+  if (!std::getenv("GTEXT_QUAD_LIST")) {
+    GTEST_SKIP() << "GTEXT_QUAD_LIST=1 lists the shapes, one per line: group, name, units";
+  }
+  for (const Shape & sh : build_shapes()) {
+    std::printf("SHAPE\t%s\t%s\t%zu\n", sh.group.c_str(), sh.name.c_str(), sh.n);
+  }
+}
+
+TEST(Quadratic, RunOne) {
+  const char * which = std::getenv("GTEXT_QUAD_ONE");
+  if (!which) {
+    GTEST_SKIP() << "GTEXT_QUAD_ONE=<shape name> runs one shape at n, 4n and 16n, each in a function callgrind can collect";
+  }
+  const std::vector<Shape> shapes = build_shapes();
+  for (const Shape & sh : shapes) {
+    if (sh.name == which) {
+      const size_t a = quad_region_1(&sh, sh.n);
+      const size_t b = quad_region_4(&sh, sh.n * 4);
+      const size_t c = quad_region_16(&sh, sh.n * 16);
+      std::printf("RUNONE\t%s\t%zu\t%zu\t%zu\n", sh.name.c_str(), a, b, c);
+      return;
+    }
+  }
+  FAIL() << "no shape named " << which;
+}

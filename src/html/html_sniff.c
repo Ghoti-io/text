@@ -217,11 +217,13 @@ typedef struct {
   size_t n;                ///< Their number (at most 1024).
   size_t pos;              ///< The position pointer.
   bool out;                ///< The position went past the last byte.
+  size_t work;             ///< Tests: positions advanced and bytes looked at by the scans that do not go through adv().
 } Scan;
 
 /// Advance the position to the next byte; "runs out of bytes" if there is none.
 static bool adv(Scan * s) {
   s->pos++;
+  s->work++;
   if (s->pos >= s->n) {
     s->out = true;
     return false;
@@ -348,6 +350,13 @@ typedef enum { CS_NULL, CS_FAILURE, CS_ENCODING } CharsetState;
 
 /// The prescan of the first 1024 bytes of `d[0..n)`: the encoding it finds, or NONE.
 GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
+  return html_prescan_counted(d, n, NULL);
+}
+
+GTEXT_Encoding html_prescan_counted(const unsigned char * d, size_t n, size_t * work) {
+  if (work) {
+    *work = 0;
+  }
   if (n > GTEXT_HTML_PRESCAN_BYTES) {
     n = GTEXT_HTML_PRESCAN_BYTES; /* "the end condition" */
   }
@@ -359,7 +368,8 @@ GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
   if (n >= 6 && d[0] == 0 && d[1] == 0x3C && d[2] == 0 && d[3] == 0x3F && d[4] == 0 && d[5] == 0x78) {
     return GTEXT_ENCODING_UTF_16BE;
   }
-  Scan s = {d, n, 0, n == 0};
+  Scan s = {d, n, 0, n == 0, 0};
+  GTEXT_Encoding result = GTEXT_ENCODING_NONE;
   while (!s.out) {
     /* "Loop: If position points to:" */
     const size_t left = s.n - s.pos;
@@ -373,6 +383,7 @@ GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
           break;
         }
       }
+      s.work += j - s.pos;
       if (j >= s.n) {
         break; /* ran out of bytes */
       }
@@ -401,6 +412,7 @@ GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
         }
         /* "If the attribute's name is already in attribute list, then return to the step labeled attributes." */
         bool seen = false;
+        s.work += names_len;
         for (size_t i = 0; i < names_len && !seen;) {
           const size_t len = names[i];
           if (len == a.name_len && memcmp(names + i + 1, a.name, len) == 0) {
@@ -451,7 +463,8 @@ GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
         else if (charset == GTEXT_ENCODING_X_USER_DEFINED) {
           charset = GTEXT_ENCODING_WINDOWS_1252;
         }
-        return charset;
+        result = charset;
+        goto done;
       }
     }
     else if (left >= 2 && p[0] == '<' && ((left >= 3 && p[1] == '/' && ((p[2] | 0x20) >= 'a' && (p[2] | 0x20) <= 'z'))
@@ -485,6 +498,7 @@ GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
     else if (left >= 2 && p[0] == '<' && (p[1] == '!' || p[1] == '/' || p[1] == '?')) {
       /* "Advance the position pointer so that it points at the first 0x3E byte (>) that comes after the 0x3C byte that was found." */
       const unsigned char * gt = memchr(p + 1, '>', left - 1);
+      s.work += gt ? (size_t)(gt - p) : left;
       if (!gt) {
         break;
       }
@@ -498,5 +512,10 @@ GTEXT_Encoding html_prescan(const unsigned char * d, size_t n) {
   }
   /* "If at any point ... the user agent either runs out of bytes ... or reaches its end condition, then abort the prescan a byte stream to
      determine its encoding algorithm and return the result get an XML encoding applied to the same bytes." */
-  return html_get_xml_encoding(d, n);
+  result = html_get_xml_encoding(d, n);
+done:
+  if (work) {
+    *work = s.work + n; /* (the fallback reads the same window once more) */
+  }
+  return result;
 }

@@ -733,6 +733,99 @@ TEST(HtmlTreeTables, ResetTheInsertionModeAppropriately) {
   }
 }
 
+// "Reset the insertion mode appropriately" is found from the topmost open element of each name the loop stops at, not by the
+// standard's walk down the stack (which costs the depth for every end tag table: tests/test-quadratic.cpp). The walk, written
+// out here from the standard's steps, must give the same mode for every stack of a few names, in every order.
+TEST(HtmlTreeTables, ResettingTheModeFromTheNameIndexesIsTheStandardsWalk) {
+  const char * pool[] = {"html", "head", "body", "table", "tbody", "thead", "tfoot", "tr", "td", "th", "caption", "colgroup",
+      "template", "template/in table", "template/in row", "template/in body", "div", "span", "select", "frameset", "p", "i"};
+  const size_t np = sizeof(pool) / sizeof(pool[0]);
+  uint64_t state = 12345;
+  auto next = [&]() {
+    state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+    return (size_t)(state >> 33);
+  };
+  size_t checked = 0;
+  for (size_t round = 0; round < 6000; round++) {
+    std::vector<const char *> stack;
+    const size_t n = 1 + next() % 9;
+    for (size_t i = 0; i < n; i++) {
+      stack.push_back(pool[next() % np]);
+    }
+    const bool head_set = next() % 2;
+    // The standard's loop: node is the last node in the stack; "if node is the first node in the stack, set last to true";
+    // td and th (if not last), head (if not last), tr, tbody/thead/tfoot, caption, colgroup, table, template (the current
+    // template insertion mode), body, frameset, html (before head, or after head once the head element pointer is set); else
+    // the node before it; at last: in body.
+    std::string want = "in body";
+    std::vector<std::string> modes; // template insertion modes, innermost last
+    for (const char * name : stack) {
+      const std::string nm = name;
+      if (nm.rfind("template", 0) == 0) {
+        modes.push_back(nm.size() > 9 ? nm.substr(9) : "in template");
+      }
+    }
+    for (size_t i = stack.size(); i > 0; i--) {
+      const bool last = i == 1;
+      std::string nm = stack[i - 1];
+      if (nm.rfind("template", 0) == 0) {
+        nm = "template";
+      }
+      std::string found;
+      if ((nm == "td" || nm == "th") && !last) {
+        found = "in cell";
+      }
+      else if (nm == "tr") {
+        found = "in row";
+      }
+      else if (nm == "tbody" || nm == "thead" || nm == "tfoot") {
+        found = "in table body";
+      }
+      else if (nm == "caption") {
+        found = "in caption";
+      }
+      else if (nm == "colgroup") {
+        found = "in column group";
+      }
+      else if (nm == "table") {
+        found = "in table";
+      }
+      else if (nm == "template") {
+        found = modes.back();
+      }
+      else if (nm == "head" && !last) {
+        found = "in head";
+      }
+      else if (nm == "body") {
+        found = "in body";
+      }
+      else if (nm == "frameset") {
+        found = "in frameset";
+      }
+      else if (nm == "html") {
+        found = head_set ? "after head" : "before head";
+      }
+      if (!found.empty()) {
+        want = found;
+        break;
+      }
+      if (last) {
+        want = "in body";
+      }
+    }
+    std::string label;
+    for (const char * nm : stack) {
+      label += std::string(nm) + " ";
+    }
+    SCOPED_TRACE(label + (head_set ? "(head set)" : "(no head)"));
+    const char * got = gtext_html_tree_test_reset_mode(stack.data(), stack.size(), head_set);
+    ASSERT_NE(got, nullptr);
+    EXPECT_EQ(std::string(got), want);
+    checked++;
+  }
+  EXPECT_EQ(checked, 6000u);
+}
+
 TEST(HtmlTreeTables, TheDoctypeDecidesTheDocumentMode) {
   struct Case {
     const char * name;

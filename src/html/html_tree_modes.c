@@ -2260,59 +2260,81 @@ const char * ht_tree_mode_name(InsertionMode m) {
 
 /* ---- reset the insertion mode appropriately ----------------------------- */
 
-InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb) {
-  size_t i = tb->n;
+/* The names the loop of "reset the insertion mode appropriately" stops at. */
+static const uint32_t k_reset_ids[] = {T_TD, T_TH, T_TR, T_TBODY, T_THEAD, T_TFOOT, T_CAPTION, T_COLGROUP, T_TABLE,
+    T_TEMPLATE, T_HEAD, T_BODY, T_FRAMESET, T_HTML};
+
+/* The standard walks the stack from the top, node by node, until a node is one the loop stops at. The answer is the topmost
+   of those, and the stack already knows the topmost element of each name (the index the scope checks use), so it is found
+   with fourteen lookups and not a walk: on a stack of n elements the walk costs n for every `</table>` or `</template>`,
+   which is quadratic for a document of `<i>x<table></table>` repeated (tests/test-quadratic.cpp, "reconstruction: after a
+   table"). The bottom node of the stack ("the first node in the stack": last is true) is the one the standard replaces with
+   the fragment context element, and is read as it always was. */
+InsertionMode ht_tree_reset_mode(GTEXT_HTML_Tree * tb) {
+  tb->work += sizeof(k_reset_ids) / sizeof(k_reset_ids[0]);
+  if (tb->n == 0) {
+    return M_IN_BODY;
+  }
+  size_t best = 0; /* the index in the stack of the topmost node (above the bottom one) that the loop stops at */
+  for (size_t k = 0; k < sizeof(k_reset_ids) / sizeof(k_reset_ids[0]); k++) {
+    const uint32_t id = k_reset_ids[k];
+    if (id >= tb->nnames) {
+      continue;
+    }
+    const uint32_t j = tb->names[id].topidx;
+    if (j != NONE_IDX && j >= 1 && j < tb->n && j > best) {
+      best = j;
+    }
+  }
   bool last = false;
-  while (i > 0) {
-    uint32_t id = tb->stack[i - 1].id;
-    if (i == 1) {
-      last = true;
-      /* "If the parser's fragment context element is non-null, then set node to that element (fragment
-         case)." The context is described by its name slot. */
-      if (tb->frag) {
-        id = tb->ctx_id;
+  uint32_t id;
+  if (best >= 1) {
+    id = tb->stack[best].id;
+  }
+  else {
+    last = true;
+    id = tb->stack[0].id;
+    /* "If the parser's fragment context element is non-null, then set node to that element (fragment
+       case)." The context is described by its name slot. */
+    if (tb->frag) {
+      id = tb->ctx_id;
+    }
+  }
+  switch (id) {
+    case T_TD:
+    case T_TH:
+      if (!last) {
+        return M_IN_CELL;
       }
-    }
-    switch (id) {
-      case T_TD:
-      case T_TH:
-        if (!last) {
-          return M_IN_CELL;
-        }
-        break;
-      case T_TR:
-        return M_IN_ROW;
-      case T_TBODY:
-      case T_THEAD:
-      case T_TFOOT:
-        return M_IN_TABLE_BODY;
-      case T_CAPTION:
-        return M_IN_CAPTION;
-      case T_COLGROUP:
-        return M_IN_COLUMN_GROUP;
-      case T_TABLE:
-        return M_IN_TABLE;
-      case T_TEMPLATE:
-        /* The current template insertion mode. */
-        return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;
-      case T_HEAD:
-        if (!last) {
-          return M_IN_HEAD;
-        }
-        break;
-      case T_BODY:
-        return M_IN_BODY;
-      case T_FRAMESET:
-        return M_IN_FRAMESET;
-      case T_HTML:
-        return tb->head_el == NULL ? M_BEFORE_HEAD : M_AFTER_HEAD;
-      default:
-        break;
-    }
-    if (last) {
+      break;
+    case T_TR:
+      return M_IN_ROW;
+    case T_TBODY:
+    case T_THEAD:
+    case T_TFOOT:
+      return M_IN_TABLE_BODY;
+    case T_CAPTION:
+      return M_IN_CAPTION;
+    case T_COLGROUP:
+      return M_IN_COLUMN_GROUP;
+    case T_TABLE:
+      return M_IN_TABLE;
+    case T_TEMPLATE:
+      /* The current template insertion mode. */
+      return tb->ntmpl > 0 ? (InsertionMode)tb->tmpl[tb->ntmpl - 1] : M_IN_TEMPLATE;
+    case T_HEAD:
+      if (!last) {
+        return M_IN_HEAD;
+      }
+      break;
+    case T_BODY:
       return M_IN_BODY;
-    }
-    i--;
+    case T_FRAMESET:
+      return M_IN_FRAMESET;
+    case T_HTML:
+      return tb->head_el == NULL ? M_BEFORE_HEAD : M_AFTER_HEAD;
+    default:
+      break;
   }
   return M_IN_BODY;
 }

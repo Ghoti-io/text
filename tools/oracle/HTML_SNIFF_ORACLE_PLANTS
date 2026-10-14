@@ -7,7 +7,7 @@ duplicates-counted	html_sniff.c	if (seen) {	if (false) {
 first-charset-only	html_sniff.c	s[position] != '=') {\n      continue;	s[position] != '=') {\n      return GTEXT_ENCODING_NONE;
 content-value-to-white-space	html_sniff.c	!is_ascii_ws((unsigned char)s[end]) && s[end] != ';'	!is_ascii_ws((unsigned char)s[end])
 utf16-prescan-removed	html_sniff.c	if (n >= 6 && d[0] == 0x3C && d[1] == 0 &&	if (false && d[0] == 0x3C && d[1] == 0 &&
-xml-fallback-removed	html_sniff.c	return html_get_xml_encoding(d, n);	return GTEXT_ENCODING_NONE;
+xml-fallback-removed	html_sniff.c	result = html_get_xml_encoding(d, n);	result = GTEXT_ENCODING_NONE;
 xml-declaration-controls-allowed	html_sniff.c	if (d[pos + i] <= 0x20) {	if (d[pos + i] < 0x20) {
 utf16be-mark-read-as-le	html_sniff.c	*length = 2;\n    return GTEXT_ENCODING_UTF_16BE;	*length = 2;\n    return GTEXT_ENCODING_UTF_16LE;
 byte-after-bang-skipped	html_sniff.c	s.pos = (size_t)(gt - d);	s.pos = (size_t)(gt - d) + 1;

@@ -1060,7 +1060,7 @@ Choose the parser by the media type, not by the bytes; no function here sniffs f
 
 - **Limits are the defence against untrusted input**, and every default is finite. The depth of the stack
   of open elements bounds the work (the tree builder is linear in the input at a fixed depth: no pattern of input
-  makes it quadratic in the input alone, and nothing recurses, so no input exhausts the C stack); the other limits bound memory. Set `max_input_bytes`
+  makes it quadratic in the input alone, and nothing recurses, so no input exhausts the C stack; `make check-html-quadratic` holds the work of every shape that makes a naive parser quadratic to a ratio bound at three sizes, and the instructions callgrind counts agree with the counters); the other limits bound memory. Set `max_input_bytes`
   to what you can hold, and `max_open_elements` low (the browsers' 512 is generous) for hostile input. A run of text is
   held in memory until it ends, so `max_text_bytes` bounds that for a stream.
 - **Nothing is loaded.** No `link`, `img`, `script`, `iframe`, `object`, stylesheet `@import`, `meta refresh`, or entity is ever fetched

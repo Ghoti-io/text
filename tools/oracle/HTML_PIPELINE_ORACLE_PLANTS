@@ -1,0 +1,15 @@
+# The library with one rule undone in each layer, each of which tools/oracle/run-html-pipeline-oracle.sh --controls compiles into a runner of its
+# own and requires the whole-pipeline differential to catch (exit 3 on the control population, held to the unplanted library's summary).
+# Tab separated: name, the file under src/, the text (it must occur once; \n is a line break), what replaces it. A plant that is not caught is
+# a gap in the differential, not a plant to drop.
+sniff-duplicates-counted	html/html_sniff.c	if (seen) {	if (false) {
+sniff-utf16be-mark-read-as-le	html/html_sniff.c	*length = 2;\n    return GTEXT_ENCODING_UTF_16BE;	*length = 2;\n    return GTEXT_ENCODING_UTF_16LE;
+sniff-xml-fallback-removed	html/html_sniff.c	result = html_get_xml_encoding(d, n);	result = GTEXT_ENCODING_NONE;
+decode-single-byte-high-half-wrong	encoding/encoding_decode.c	const uint16_t cp = state->sb_table[byte - 0x80];	const uint16_t cp = state->sb_table[(byte - 0x80) ^ ((byte == 0xE9) ? 1 : 0)];
+tokenizer-c1-reference-wrong	html/html_tokenizer.c	0x20AC, 0x0081, 0x201A, 0x0192,	0x20AB, 0x0081, 0x201A, 0x0192,
+tokenizer-cr-not-folded	html/html_tokenizer.c	if (b == '\r') {	if (b == '\r' && false) {
+builder-noah-ark-four	html/html_tree.c	if (count >= 3) {	if (count >= 4) {
+builder-nobr-not-closed	html/html_tree_modes.c	if (ht_stack_in_scope(tb, T_NOBR, SCOPE_GEN)) {	if (false) {
+builder-reset-caption-as-table	html/html_tree_modes.c	      return M_IN_CAPTION;\n    case T_COLGROUP:	      return M_IN_TABLE;\n    case T_COLGROUP:
+serializer-ampersand-not-escaped	html/html_serialize.c	rep = "&amp;";	rep = "&";
+serializer-nbsp-literal	html/html_serialize.c	rep = "&nbsp;";	rep = "&nbsp";

@@ -558,7 +558,7 @@ unsigned ht_adjusted_ns(const GTEXT_HTML_Tree * tb);
 
 /* modes (html_tree_modes.c) */
 bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t);
-InsertionMode ht_tree_reset_mode(const GTEXT_HTML_Tree * tb);
+InsertionMode ht_tree_reset_mode(GTEXT_HTML_Tree * tb);
 const char * ht_tree_mode_name(InsertionMode m);
 int ht_tree_quirks_mode(bool has_name, const char * name, size_t name_len,
     bool has_pub, const char * pub, size_t pub_len, bool has_sys,

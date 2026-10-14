@@ -85,6 +85,13 @@ GTEXT_INTERNAL_API size_t html_parser_kept_bytes(const struct GTEXT_HTML_Parser 
 /// defaults).
 GTEXT_HTML_Status html_serialize_check_options(const GTEXT_HTML_Serialize_Options * opts);
 
+/// Tests: serialize `node` as gtext_html_serialize() does, to a sink that discards the bytes, and report the units of work the
+/// serializer did (nodes and end tags walked, attributes and the bytes of their values, bytes examined for escaping and written, and
+/// the comparisons of an attribute sort): the deterministic measure the quadratic-nesting suite (tests/test-quadratic.cpp) holds to a
+/// ratio. `work` may be NULL.
+GTEXT_INTERNAL_API GTEXT_HTML_Status gtext_html_serialize_work(const GTEXT_Markup_Node * node,
+    GTEXT_HTML_Serialize_Scope scope, const GTEXT_HTML_Serialize_Options * opts, size_t * work);
+
 /// The tree builder's status as the public one.
 GTEXT_HTML_Status html_status_from_tree(GTEXT_HTML_TreeStatus status);
 

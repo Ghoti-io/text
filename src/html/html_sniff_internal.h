@@ -57,6 +57,11 @@ GTEXT_Encoding html_bom_sniff(const unsigned char * d, size_t n, size_t * length
 /// standard says; `x-user-defined` is `windows-1252`.
 GTEXT_Encoding html_prescan(const unsigned char * d, size_t n);
 
+/// html_prescan() and, in `*work` if it is not NULL, the units of work it did (positions advanced, bytes scanned for the end of a comment or a
+/// tag, the attribute names compared), the deterministic measure the quadratic-nesting suite (tests/test-quadratic.cpp) holds to a bound: it is
+/// at most a constant multiple of GTEXT_HTML_PRESCAN_BYTES however long the input is.
+GTEXT_Encoding html_prescan_counted(const unsigned char * d, size_t n, size_t * work);
+
 /// The standard's "get an XML encoding" alone, over `d[0..n)`.
 GTEXT_Encoding html_get_xml_encoding(const unsigned char * d, size_t n);
 

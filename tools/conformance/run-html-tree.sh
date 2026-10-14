@@ -392,7 +392,7 @@ plant_lit fragment-script-is-not-script-data "$fails" html_tree_fragment.c 'else
 plant_lit fragment-plaintext-is-not-plaintext "$fails" html_tree_fragment.c 'else if (tb->ctx_id == T_PLAINTEXT) {' 'else if (0) {'
 plant_lit fragment-noscript-ignores-scripting "$fails" html_tree_fragment.c 'state = c->scripting ? GTEXT_HTML_STATE_RAWTEXT : GTEXT_HTML_STATE_DATA;' 'state = GTEXT_HTML_STATE_DATA;'
 plant_lit fragment-mode-not-reset-from-the-context "$fails" html_tree_fragment.c '  tb->mode = ht_tree_reset_mode(tb);\n  /* Step 21. */' '  tb->mode = M_IN_BODY;\n  /* Step 21. */'
-plant_lit fragment-reset-ignores-the-context-element "$fails" html_tree_modes.c '        id = tb->ctx_id;' '        id = tb->stack[0].id;'
+plant_lit fragment-reset-ignores-the-context-element "$fails" html_tree_modes.c '      id = tb->ctx_id;' '      id = tb->stack[0].id;'
 plant_lit fragment-result-not-moved "$fails" html_tree_fragment.c '  markup_move_children_unchecked(tb->stack[0].node, tb->frag_node);' '  (void)0;'
 plant_lit fragment-select-context-allows-select "$fails" html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */' '      if (0) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */'
 plant_lit fragment-select-context-allows-input "$fails" html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case). */' '      if (0) {\n        /* The fragment context element is a select element (fragment case). */'
