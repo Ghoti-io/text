@@ -67,6 +67,7 @@
 #include <string.h>
 
 #include "html_tree_private.h"
+#include "html_sniff_internal.h"
 
 /* ---- the tag table ------------------------------------------------------ */
 
@@ -148,7 +149,9 @@ static void sync_tokenizer_errors(GTEXT_HTML_Tree * tb) {
 /* ---- positions inside a run of characters -------------------------------- */
 
 void ht_seg_cursor_init(SegCursor * c, const char * data, const GTEXT_HTML_TextSegment * segs,
-    size_t nsegs, size_t line, size_t column, size_t offset) {
+    size_t nsegs, size_t line, size_t column, size_t offset, const uint8_t * dl, size_t dl_len) {
+  c->dl = dl;
+  c->dl_len = dl_len;
   c->data = data;
   c->segs = segs;
   c->nsegs = nsegs;
@@ -161,7 +164,8 @@ void ht_seg_cursor_init(SegCursor * c, const char * data, const GTEXT_HTML_TextS
 
 /* Move to the byte `target` of the data: apply each segment when its byte is reached, and count the
    bytes between as the tokenizer does (a line feed starts a line; a character is one UTF-16 unit, two
-   for a code point above U+FFFF, in the column of its first byte). */
+   for a code point above U+FFFF, in the column of its first byte; each byte is one more offset, or with a
+   source map the character begins as many original bytes on as its delta says). */
 void ht_seg_cursor_advance(SegCursor * c, size_t target) {
   for (;;) {
     while (c->next < c->nsegs && c->segs[c->next].index <= c->idx) {
@@ -176,7 +180,18 @@ void ht_seg_cursor_advance(SegCursor * c, size_t target) {
       return;
     }
     const unsigned char b = (unsigned char)c->data[c->idx++];
-    c->offset++;
+    if (!c->dl) {
+      c->offset++;
+    }
+    else if (c->idx < c->dl_len) {
+      /* A source map: the next character begins where its delta says (the bytes that continue a character change nothing). */
+      if (((unsigned char)c->data[c->idx] & 0xC0) != 0x80) {
+        c->offset += c->dl[c->idx];
+      }
+    }
+    else {
+      c->offset++; /* the end of the data: no character is there to say */
+    }
     if (b == '\n') {
       c->line++;
       c->column = 1;
@@ -1500,6 +1515,7 @@ void gtext_html_tree_free(GTEXT_HTML_Tree * tb) {
   gtext_allocator_free(&alloc, tb->stack);
   gtext_allocator_free(&alloc, tb->tmpl);
   gtext_allocator_free(&alloc, tb->pend);
+  gtext_allocator_free(&alloc, tb->pend_dl);
   gtext_allocator_free(&alloc, tb->pend_segs);
   for (size_t i = 0; i < tb->fmt_nblocks; i++) {
     gtext_allocator_free(&alloc, tb->fmt_blocks[i]);
@@ -1537,6 +1553,8 @@ GTEXT_HTML_Tree * gtext_html_tree_new(const GTEXT_HTML_TreeOptions * options) {
   tb->mode = M_INITIAL;
   tb->reprocess_limit = GTEXT_HTML_TREE_REPROCESS_LIMIT;
   tb->frameset_ok = true;
+  tb->enc_current = o.encoding;
+  tb->enc_tentative = o.encoding_tentative && o.encoding != 0;
 
   GTEXT_Markup_Options mo = gtext_markup_options_default();
   mo.allocator = &tb->alloc;
@@ -1624,6 +1642,12 @@ static void drain(GTEXT_HTML_Tree * tb) {
       if (!ht_tree_handle_token(tb, t)) {
         return;
       }
+      /* Leaving the head is a fact about the token stream, so it is the same however the input was cut. */
+      if (!tb->head_left && tb->mode != M_INITIAL && tb->mode != M_BEFORE_HTML && tb->mode != M_BEFORE_HEAD
+          && tb->mode != M_IN_HEAD && tb->mode != M_IN_HEAD_NOSCRIPT && tb->mode != M_AFTER_HEAD
+          && tb->mode != M_TEXT && tb->mode != M_IN_TEMPLATE) {
+        tb->head_left = true;
+      }
       continue;
     }
     if (s == GTEXT_HTML_TOKENIZER_NEED_INPUT) {
@@ -1638,9 +1662,9 @@ static void drain(GTEXT_HTML_Tree * tb) {
   }
 }
 
-GTEXT_HTML_TreeStatus gtext_html_tree_feed(
-    GTEXT_HTML_Tree * tb, const void * data, size_t length) {
-  if (!tb || (!data && length != 0)) {
+static GTEXT_HTML_TreeStatus tree_feed(
+    GTEXT_HTML_Tree * tb, const void * data, size_t length, const size_t * source) {
+  if (!tb || (!data && length != 0) || (source == NULL && tb->src_mapped && length != 0)) {
     return GTEXT_HTML_TREE_E_INVALID;
   }
   if (tb->status != GTEXT_HTML_TREE_OK) {
@@ -1649,7 +1673,11 @@ GTEXT_HTML_TreeStatus gtext_html_tree_feed(
   if (tb->finished) {
     return GTEXT_HTML_TREE_E_STATE;
   }
-  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_feed(tb->tok, data, length);
+  if (source) {
+    tb->src_mapped = true;
+  }
+  const GTEXT_HTML_TokenizerStatus s = source ? gtext_html_tokenizer_feed_mapped(tb->tok, data, length, source)
+                                              : gtext_html_tokenizer_feed(tb->tok, data, length);
   if (s != GTEXT_HTML_TOKENIZER_OK) {
     ht_tree_fail(tb, status_from_tokenizer(s));
     return tb->status;
@@ -1658,14 +1686,33 @@ GTEXT_HTML_TreeStatus gtext_html_tree_feed(
   return tb->status;
 }
 
-GTEXT_HTML_TreeStatus gtext_html_tree_finish(GTEXT_HTML_Tree * tb) {
+GTEXT_HTML_TreeStatus gtext_html_tree_feed(
+    GTEXT_HTML_Tree * tb, const void * data, size_t length) {
+  return tree_feed(tb, data, length, NULL);
+}
+
+/// Feed UTF-8 from a decoder with `source`, the offset of the original byte of each byte (see gtext_html_tokenizer_feed_mapped()).
+GTEXT_HTML_TreeStatus gtext_html_tree_feed_mapped(
+    GTEXT_HTML_Tree * tb, const void * data, size_t length, const size_t * source) {
+  if (length > 0 && !source) {
+    return GTEXT_HTML_TREE_E_INVALID;
+  }
+  return tree_feed(tb, data, length, length > 0 ? source : NULL);
+}
+
+static GTEXT_HTML_TreeStatus tree_finish(GTEXT_HTML_Tree * tb, bool mapped, size_t source_length) {
   if (!tb) {
     return GTEXT_HTML_TREE_E_INVALID;
   }
   if (tb->status != GTEXT_HTML_TREE_OK || tb->finished) {
     return tb->status;
   }
-  gtext_html_tokenizer_finish(tb->tok);
+  if (mapped) {
+    gtext_html_tokenizer_finish_mapped(tb->tok, source_length);
+  }
+  else {
+    gtext_html_tokenizer_finish(tb->tok);
+  }
   drain(tb);
   if (tb->status == GTEXT_HTML_TREE_OK && !(tb->tok_done && tb->stopped)) {
     /* The tokenizer must have delivered its end-of-file token and the builder must have handled it. */
@@ -1676,6 +1723,87 @@ GTEXT_HTML_TreeStatus gtext_html_tree_finish(GTEXT_HTML_Tree * tb) {
     release_atoms(tb);
   }
   return tb->status;
+}
+
+GTEXT_HTML_TreeStatus gtext_html_tree_finish(GTEXT_HTML_Tree * tb) {
+  return tree_finish(tb, false, 0);
+}
+
+/// The end of the input, for a builder fed with source maps: `source_length` is the length of the original input.
+GTEXT_HTML_TreeStatus gtext_html_tree_finish_mapped(GTEXT_HTML_Tree * tb, size_t source_length) {
+  return tree_finish(tb, true, source_length);
+}
+
+/// The encoding a `<meta>` declared when the builder stopped with GTEXT_HTML_TREE_E_ENCODING (a GTEXT_Encoding), else 0.
+int gtext_html_tree_declared_encoding(const GTEXT_HTML_Tree * tb) {
+  return tb ? tb->enc_declared : 0;
+}
+
+/// Whether the head section is behind the builder.
+bool gtext_html_tree_head_left(const GTEXT_HTML_Tree * tb) {
+  return tb && tb->head_left;
+}
+
+/// The caller will not be able to start again (it has let go of the bytes): a `<meta>` from now on is an ordinary element.
+void gtext_html_tree_stop_reparse(GTEXT_HTML_Tree * tb) {
+  if (tb) {
+    tb->head_left = true;
+  }
+}
+
+/// Whether the encoding in use is tentative, so that a `<meta>` may still change it.
+bool gtext_html_tree_encoding_tentative(const GTEXT_HTML_Tree * tb) {
+  return tb && tb->enc_tentative;
+}
+
+/// "Change the encoding", the builder's part. Called for a `meta` start tag the "in head" rules handled.
+bool ht_meta_encoding(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Attribute * attrs, size_t nattrs) {
+  if (!tb->enc_tentative || tb->head_left || tb->frag) {
+    return true;
+  }
+  const GTEXT_HTML_Attribute * charset = NULL;
+  const GTEXT_HTML_Attribute * http_equiv = NULL;
+  const GTEXT_HTML_Attribute * content = NULL;
+  for (size_t i = 0; i < nattrs; i++) {
+    const GTEXT_HTML_Attribute * a = &attrs[i];
+    if (a->name_length == 7 && memcmp(a->name, "charset", 7) == 0) {
+      charset = a;
+    }
+    else if (a->name_length == 10 && memcmp(a->name, "http-equiv", 10) == 0) {
+      http_equiv = a;
+    }
+    else if (a->name_length == 7 && memcmp(a->name, "content", 7) == 0) {
+      content = a;
+    }
+  }
+  GTEXT_Encoding found = GTEXT_ENCODING_NONE;
+  if (charset) {
+    found = gtext_encoding_for_label(charset->value, charset->value_length);
+  }
+  if (found == GTEXT_ENCODING_NONE && http_equiv && content && html_ascii_equals_nocase(http_equiv->value, http_equiv->value_length, "content-type")) {
+    found = html_meta_extract_encoding(content->value, content->value_length);
+  }
+  if (found == GTEXT_ENCODING_NONE) {
+    return true;
+  }
+  /* "Change the encoding while parsing" (13.2.3.4). */
+  const GTEXT_Encoding current = (GTEXT_Encoding)tb->enc_current;
+  if (current == GTEXT_ENCODING_UTF_16BE || current == GTEXT_ENCODING_UTF_16LE) {
+    tb->enc_tentative = false; /* the new encoding is ignored */
+    return true;
+  }
+  if (found == GTEXT_ENCODING_UTF_16BE || found == GTEXT_ENCODING_UTF_16LE) {
+    found = GTEXT_ENCODING_UTF_8;
+  }
+  else if (found == GTEXT_ENCODING_X_USER_DEFINED) {
+    found = GTEXT_ENCODING_WINDOWS_1252;
+  }
+  if (found == current) {
+    tb->enc_tentative = false; /* it was right */
+    return true;
+  }
+  tb->enc_declared = (int)found;
+  return ht_tree_fail(tb, GTEXT_HTML_TREE_E_ENCODING);
 }
 
 GTEXT_HTML_TreeStatus gtext_html_tree_skip_input(GTEXT_HTML_Tree * tb, size_t count) {

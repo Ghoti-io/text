@@ -637,7 +637,7 @@ TEST(HtmlSerializeFile, WritesAtomicallyAndAFailureLeavesThePreviousFile) {
   EXPECT_EQ(r.status, GTEXT_HTML_E_OPTIONS);
   EXPECT_NE(access(fresh.c_str(), F_OK), 0);
   o = defaults();
-  o.encoding = "windows-1252";
+  o.encoding = "no-such-encoding";
   EXPECT_EQ(gtext_html_serialize_file(p.top(), CHILDREN, fresh.c_str(), &o, &r), GTEXT_HTML_E_UNSUPPORTED_ENCODING);
   EXPECT_NE(access(fresh.c_str(), F_OK), 0);
   EXPECT_EQ(gtext_html_serialize_file(nullptr, CHILDREN, fresh.c_str(), nullptr, &r), GTEXT_HTML_E_INVALID);

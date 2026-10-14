@@ -25,12 +25,17 @@ which tools/html/make-tree-fuzz-seeds.py made from the pinned web-platform-tests
 hand-chosen extras): every third one is kept, with a fifth option byte added. That byte is chosen by a hash
 of the seed, so that adding or removing a seed changes no other file, from eight sets that between them
 turn on every part of the API's options (count-only mode, a byte order mark in front, the cap on kept
-errors, a UTF-8 transport label, the failure sweep without a result struct, each refused label). The rest
+errors, a UTF-8 transport label, the failure sweep without a result struct). The rest
 are the seeds below, which hold what the vectors do not: a byte order mark whole, cut and half-formed,
-inputs with more parse errors than the cap, the empty input, the largest runs the API's limits are about.
+inputs with more parse errors than the cap, the empty input, the largest runs the API's limits are about; and
+the **encoding world's**: a document in each of the twenty encodings of the fuzzer's table, announced by a
+certain label, a `<meta>` inside the first 1024 bytes, a `<meta>` after them (so that the parse restarts),
+a tentative label that a late `<meta>` overrides, and a byte order mark (UTF-16), and each encoding's
+bytes with ill-formed sequences among them.
 
 Each seed is five option bytes and then the bytes to parse (the layout is in tests/fuzz/fuzz_html.cpp:
-o0 to o3 are the tree builder's fuzzer's, o4 is the API's). Files named `reproducer-*.seed` are not
+o0 to o3 are the tree builder's fuzzer's, o4 is the API's, and when o4's top bits are not zero three more bytes,
+e0 to e2, choose the encoding world's options). Files named `reproducer-*.seed` are not
 touched by this script, so a find can be kept there and replayed by `make test`
 (tests/test-html-api-fuzz-seeds.cpp, which replays every `*.seed`) and by every fuzz run. There are none yet.
 
@@ -64,8 +69,8 @@ def _min_seeds():
 EXPECTED = (_min_seeds(), 1100)  # the size of the corpus; a selection that drifts out of it is a mistake
 
 # o4: bit 0 count-only, bit 1 a byte order mark in front, bits 2-3 the cap, bit 4 a transport label,
-# bit 5 no result struct in the failure sweep, bits 6-7 which label is refused.
-O4_SETS = (0x00, 0x02, 0x04 | 0x10, 0x08 | 0x01, 0x0A | 0x40, 0x20 | 0x80, 0x0C | 0x02 | 0xC0, 0x10 | 0x40)
+# bit 5 no result struct in the failure sweep, bits 6-7 the world (0: UTF-8; else the encoding world, with three more bytes).
+O4_SETS = (0x00, 0x02, 0x04 | 0x10, 0x08 | 0x01, 0x0A, 0x20, 0x0C | 0x02, 0x10)
 
 # (name, o0..o3, text or bytes, o4)
 HAND = [
@@ -89,10 +94,6 @@ HAND = [
     ("errors-cap-ten", (0, 0, 0, 0), b"<p></b></i></u>" * 60, 0x08),
     ("errors-cap-one", (0, 0, 0, 0), b"&#0;&#xD800;&bogus;&notin " * 40, 0x04),
     ("errors-fragment", (2, 0, 0, 0), b"</x>" * 300, 0x04),
-    ("refused-windows-1252", (0, 0, 0, 0), b"<p>x", 0x00),
-    ("refused-utf-16", (0, 0, 0, 0), b"<p>x", 0x40),
-    ("refused-empty", (0, 0, 0, 0), b"<p>x", 0x80),
-    ("refused-utf-8x", (0, 0, 0, 0), b"<p>x", 0xC0),
     ("transport-utf-8", (0, 0, 0, 0), b"<!DOCTYPE html><p>x", 0x10),
     ("transport-utf-8-fragment", (2, 0, 0, 0), b"<b>x", 0x10),
     ("limit-depth", (0, 0x10, 0, 0), b"<div>" * 20 + b"x", 0x00),
@@ -111,9 +112,80 @@ HAND = [
      b"<!DOCTYPE html><title>t</title><p class=a id=b>caf\xc3\xa9 &amp; &lt; &#x1F600; <!--c--><br/></p>", 0x04),
     ("rich-document-sweep-bytes", (0, 0x00, 0, 0x03), b"<p>a<b>b</p>c<table><tr><td>x</table>", 0x20),
     ("rich-fragment-sweep", (2 | (1 << 2), 0x00, 0, 0x01), b"<p>x</p>y<!--c--><td>z", 0x00),
+    ("bom-errors", (0, 0, 0, 0), b"\xef\xbb\xbf<p>x</b>y<!DOCTYPE html>\n<p>z", 0x00),
     ("huge-attribute", (0, 0, 0, 0), b"<a href=\"" + b"x" * 3000 + b"\">y", 0x00),
     ("huge-text", (0, 0, 0, 0), b"<p>" + b"abc &amp; " * 400, 0x00),
 ]
+
+
+# The fuzzer's table of encodings (kEncodings in tests/fuzz/fuzz_html.cpp), with Python's codec for each and a text it can write.
+ENCODINGS = (
+    ("utf-8", "utf-8", "caf\u00e9 \u65e5\u672c \U0001F600"),
+    ("utf-16le", "utf-16-le", "caf\u00e9 \u65e5\u672c \U0001F600"),
+    ("utf-16be", "utf-16-be", "caf\u00e9 \u65e5\u672c \U0001F600"),
+    ("windows-1252", "cp1252", "caf\u00e9 \u20ac \u00fc"),
+    ("iso-8859-2", "iso8859-2", "\u011b\u0161\u010d\u0159"),
+    ("koi8-r", "koi8_r", "\u041f\u0440\u0438\u0432\u0435\u0442"),
+    ("windows-1251", "cp1251", "\u041f\u0440\u0438\u0432\u0435\u0442"),
+    ("shift_jis", "cp932", "\u65e5\u672c\u8a9e\u3042\uff71"),
+    ("euc-jp", "euc_jp", "\u65e5\u672c\u8a9e\u3042\uff71"),
+    ("iso-2022-jp", "iso2022_jp", "\u65e5\u672c\u8a9e\u3042"),
+    ("gbk", "gbk", "\u4e2d\u6587\u6c49\u5b57"),
+    ("gb18030", "gb18030", "\u4e2d\u6587\U00010000"),
+    ("big5", "big5", "\u4e2d\u6587\u6f22\u5b57"),
+    ("euc-kr", "euc_kr", "\ud55c\uad6d\uc5b4"),
+    ("x-user-defined", None, None),
+    ("hz-gb-2312", None, None),
+    ("iso-8859-8-i", "iso8859-8", "\u05e9\u05dc\u05d5\u05dd"),
+    ("windows-874", "cp874", "\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35"),
+    ("macintosh", "mac_roman", "caf\u00e9"),
+    ("ibm866", "cp866", "\u041f\u0440\u0438\u0432\u0435\u0442"),
+)
+
+
+def encoded(index, markup):
+    """The markup (a str with @ where the sample goes) in the table's encoding `index`, as bytes."""
+    label, codec, sample = ENCODINGS[index]
+    if codec is None:
+        text = markup.replace("@", "abc")
+        if label == "x-user-defined":
+            return text.encode("ascii").replace(b"abc", b"\x80\xa0\xff")
+        return text.encode("ascii")
+    return markup.replace("@", sample).encode(codec)
+
+
+def encoding_seeds():
+    """(name, (o0, o1, o2, o3), o4, (e0, e1, e2), data) for the encoding world."""
+    doc = "<!DOCTYPE html><title>@</title><p class=a>@<b>x</b></p><table>@<tr><td>@</td></tr></table><!--@-->"
+    out = []
+    for i, (label, codec, sample) in enumerate(ENCODINGS):
+        body = encoded(i, doc)
+        o = (0, 0x03 + (i % 5), i, 0x01 if i % 3 == 0 else 0x00)
+        # a certain label
+        out.append(("label", i, o, 0x40, (i, 0, 0), body))
+        # a meta inside the first 1024 bytes decides (nothing else is announced)
+        out.append(("meta-early", i, o, 0x80, (i | (3 << 5), i, 0), body))
+        # a meta after the first 1024 bytes restarts the parse
+        out.append(("meta-late", i, (0, 0x00, i, 0x03), 0xC0, (i | (3 << 5), i | (3 << 4), 0), body))
+        # http-equiv, upper case, and a second meta after the first
+        out.append(("meta-late-http-equiv", i, o, 0x40, ((i + 3) % 20 | (1 << 5), i | (2 << 4), 1 | 2 | 4), body))
+        # a tentative label that the late meta overrides, with ignore_meta off and on
+        out.append(("tentative-overridden", i, o, 0x80, ((i + 7) % 20 | (1 << 5), i | (2 << 4), 2), body))
+        out.append(("ignore-meta", i, o, 0x40, (i | (2 << 5) | 128, (i + 1) % 20 | (3 << 4), 0), body))
+        # ill-formed bytes among the markup
+        bad = b"<p>" + bytes(range(0x80, 0x100)) + b"</p>\xff\xfe<b>\x1b$B\x24\x22\x1b(B</b>"
+        out.append(("ill-formed", i, o, 0xC0, (i | (3 << 5) if i % 2 else i, 0, 0), bad))
+        # the input ends inside a tag, so that the error at the end of the input has the offset of the end of the bytes
+        out.append(("eof", i, o, 0x40, (i, 0, 0), encoded(i, "<p>@<b title=\"@")))
+        # multi-byte text with errors in the middle of the run (a null byte, a character reference, a control character, text in a table),
+        # so that the places of the characters of a run are seen
+        out.append(("run-errors", i, o, 0x40, (i, 0, 0), encoded(i, "<p>@\x00@\x00@&#0;@&bogus;@\x01@</p><table>@x@\x00@</table>@")))
+    # byte order marks (e1's top bits: 1 UTF-8, 2 UTF-16LE, 3 UTF-16BE), in front of a document in each of three encodings
+    for k, (mark, name) in enumerate(((1, "utf-8"), (2, "utf-16le"), (3, "utf-16be"))):
+        for j in (0, 3, 7):
+            body = encoded(1 if mark == 2 else 2 if mark == 3 else 0, "<!DOCTYPE html><p>@</p>")
+            out.append(("bom-" + name, j, (0, 0x01, j, 0), 0x40, (j | (3 << 5), mark << 6, 0), body))
+    return out
 
 
 def main():
@@ -144,9 +216,16 @@ def main():
         with open(os.path.join(CORPUS, "api-%s.seed" % name), "wb") as fh:
             fh.write(bytes((o0, o1, o2, o3, o4)) + data)
         kept += 1
+    for what, index, (o0, o1, o2, o3), o4, (e0, e1, e2), data in encoding_seeds():
+        name = "api-enc-%s-%s.seed" % (what, ENCODINGS[index][0] if what != "bom-utf-8" and not what.startswith("bom-utf-16") else "%d" % index)
+        if len(data) + OPTION_BYTES + 3 > MAX_SEED:
+            sys.exit("the seed %s is too long" % name)
+        with open(os.path.join(CORPUS, name), "wb") as fh:
+            fh.write(bytes((o0, o1, o2, o3, o4, e0, e1, e2)) + data)
+        kept += 1
     if not EXPECTED[0] <= kept <= EXPECTED[1]:
         sys.exit("%d seeds written; the documentation says %d to %d" % ((kept,) + EXPECTED))
-    print("fuzz_html: %d seeds (every third tree-builder seed, and %d of its own)" % (kept, len(HAND)))
+    print("fuzz_html: %d seeds (every third tree-builder seed, %d of its own, and the encoding world's)" % (kept, len(HAND)))
 
 
 if __name__ == "__main__":

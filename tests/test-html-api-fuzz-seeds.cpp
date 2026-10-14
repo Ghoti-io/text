@@ -135,7 +135,7 @@ TEST_F(HtmlApiFuzzSeeds, EverySeedHoldsEveryProperty) {
   const auto files = seeds(dir);
   // The floor. tools/html/make-api-fuzz-seeds.py reads this very line for the lower end of the size it accepts
   // (its upper end, 1,100, is its own), so the two cannot disagree.
-  constexpr size_t kMinSeeds = 700;
+  constexpr size_t kMinSeeds = 850;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir
                                  << "; tools/html/make-api-fuzz-seeds.py writes it";
   // The seeds of the API's own are not derived from the tree builder's, and the recorded finds are

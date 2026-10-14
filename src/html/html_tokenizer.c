@@ -195,11 +195,22 @@ typedef struct {
   size_t capacity;
 } vec;
 
+/* A place in the input. `offset` is the one that is reported: the byte offset in the bytes the caller gave (the
+   tokenizer's own input when it reads UTF-8 itself, the original bytes when it reads a decoder's output with a source
+   map). `u` is the offset in the stream the machine reads, which is what "contiguous" means for the segments of a run of
+   text. The two are equal when the tokenizer reads its input itself. */
 typedef struct {
-  size_t line;
-  size_t column;
-  size_t offset;
+  size_t line;   ///< The line, from 1.
+  size_t column; ///< The column, from 1.
+  size_t offset; ///< The reported offset.
+  size_t u;      ///< The offset in the stream the machine reads.
 } where;
+
+/* In a source map, the flag on an offset that says the code point is a U+FFFD for ill-formed input. */
+#define SRC_REPLACED GTEXT_HTML_SOURCE_REPLACED ///< The flag on a source offset: a U+FFFD for ill-formed input.
+#define SRC_START(e) ((e) & GTEXT_HTML_SOURCE_START_MASK) ///< The offset of the first byte of a character in the original, from its entry.
+/// The offset just after a character in the original, from its entry.
+#define SRC_END(e) (SRC_START(e) + (((e) >> GTEXT_HTML_SOURCE_WIDTH_SHIFT) & 15))
 
 /* An attribute as the arena holds it. */
 typedef struct {
@@ -236,9 +247,19 @@ struct GTEXT_HTML_Tokenizer {
   uint8_t * pend;
   size_t pend_length;
   size_t pend_capacity;
-  size_t base_offset; /* the input-as-fed offset of in[0] */
+  size_t base_offset; /* the input-as-fed offset of in[0] (in the stream the machine reads) */
   size_t total_fed;
   bool final;
+
+  /* A source map (gtext_html_tokenizer_feed_mapped): for each byte of the input, the offset of the original byte its
+     character was decoded from, with SRC_REPLACED set on a character that stands for ill-formed input. `in_src` goes
+     with `in`, `rest_src` with `rest` and `pend_src` with `pend`. */
+  bool mapped;                ///< Reading a decoder's output with a source map.
+  const size_t * in_src;      ///< The map of `in`.
+  const size_t * rest_src;    ///< The map of `rest`.
+  size_t * pend_src;          ///< The map of `pend`.
+  size_t src_total;           ///< The end of the original input, once it has ended.
+  size_t carry_end;           ///< The offset just after the last character that is no longer in the buffer.
 
   /* The cursor, and the start of the last consume(). */
   size_t line;
@@ -246,7 +267,8 @@ struct GTEXT_HTML_Tokenizer {
   size_t prev_pos;
   size_t prev_line;
   size_t prev_column;
-  size_t prev_offset; /* the input-as-fed offset of the same, kept across buffer moves */
+  size_t prev_offset; /* the reported offset of the same, kept across buffer moves */
+  size_t prev_u;      ///< ... and its place in the stream the machine reads.
   size_t err_high; /* input-stream errors are raised for offsets >= this */
 
   /* The machine. */
@@ -261,9 +283,14 @@ struct GTEXT_HTML_Tokenizer {
   size_t text_nsegs;
   size_t text_segs_cap;
   where text_where;
+  vec text_dl;            ///< Mapped: for each byte of `text`, at the first byte of a character, how far its offset is from the one before.
+  size_t text_seg_u;      ///< The place in the stream of the last segment's first byte.
+  size_t text_last_s;     ///< Mapped: the reported offset of the last character of `text`.
   bool text_whitespace;
   bool text_null;
   bool text_taken;
+  bool text_flush;        ///< The character token being collected has all the segments it may have: deliver it, and go on in another.
+  size_t text_carry;      ///< Bytes of the run (between two tokens that are not characters) already delivered in tokens of their own.
   bool token_ready;
   bool eof_ready;
   bool done;
@@ -276,6 +303,7 @@ struct GTEXT_HTML_Tokenizer {
   vec ar;
   where start; /* where the construct began: the `<` */
   where amp;   /* the `&` of the character reference in progress */
+  size_t start2_offset; ///< The reported offset of the character after the `<` when it is a `/` (or the `!` of `<!`).
   size_t section_start;
   size_t section_max;
   GTEXT_HTML_TokenizerStatus section_status;
@@ -457,6 +485,12 @@ static void temp_put(GTEXT_HTML_Tokenizer * t, char c) {
 
 /* ---- Errors ------------------------------------------------------------- */
 
+static size_t src_mapped_offset(const GTEXT_HTML_Tokenizer * t, size_t p);
+static inline size_t src_offset(const GTEXT_HTML_Tokenizer * t, size_t p) {
+  return t->mapped ? src_mapped_offset(t, p) : t->base_offset + p;
+}
+static size_t src_after(const GTEXT_HTML_Tokenizer * t, size_t p);
+
 static void error_at(GTEXT_HTML_Tokenizer * t, GTEXT_HTML_ErrorCode code,
     size_t line, size_t column, size_t offset) {
   if (t->has_failed) {
@@ -498,10 +532,31 @@ static void perr(GTEXT_HTML_Tokenizer * t, GTEXT_HTML_ErrorCode code) {
    are reported there by the vectors, because they are decided after the
    characters of the reference have been consumed. */
 static void perr_next(GTEXT_HTML_Tokenizer * t, GTEXT_HTML_ErrorCode code) {
-  error_at(t, code, t->line, t->column, t->base_offset + t->pos);
+  error_at(t, code, t->line, t->column, src_after(t, t->pos));
 }
 
 /* ---- The input stream --------------------------------------------------- */
+
+/* The offset to report for the byte at p of the input buffer (p may be the end of it): its place in the input as fed, or
+   with a source map the original byte its character came from. At the end of the buffer there is no character, and the
+   place reported is the end of the input if it is over (the only time a place past the last character is reported). */
+static size_t src_mapped_offset(const GTEXT_HTML_Tokenizer * t, size_t p) {
+  if (p < t->in_length) {
+    return SRC_START(t->in_src[p]);
+  }
+  return t->final ? t->src_total : (t->in_length > 0 ? SRC_END(t->in_src[t->in_length - 1]) : t->carry_end);
+}
+
+/* The offset to report for the place between the character before p and the one at p: the native offset of p, and with a source
+   map the end of the character before it, which is where the character at p begins unless something that is no character (a shift
+   sequence) lies between them. It is the end of the one before because that is all a reader cut at p can know: the next may not have
+   arrived, and what lies before it is not known until it has. */
+static size_t src_after(const GTEXT_HTML_Tokenizer * t, size_t p) {
+  if (!t->mapped) {
+    return t->base_offset + p;
+  }
+  return p > 0 ? SRC_END(t->in_src[p - 1]) : t->carry_end;
+}
 
 /* Decode one character at p. Returns false if more bytes are needed to decide;
    otherwise *cp, *n (bytes used) and *bad (replaced) are set. This is the
@@ -609,7 +664,13 @@ static int32_t consume(GTEXT_HTML_Tokenizer * t) {
   t->prev_pos = p;
   t->prev_line = t->line;
   t->prev_column = t->column;
-  t->prev_offset = t->base_offset + p;
+  if (t->mapped) {
+    t->prev_offset = src_mapped_offset(t, p);
+    t->prev_u = t->base_offset + p;
+  }
+  else {
+    t->prev_offset = t->base_offset + p; /* (and prev_u is not kept: it is the same place) */
+  }
   if (p >= t->in_length) {
     return t->final ? CP_EOF : CP_NEED;
   }
@@ -618,6 +679,9 @@ static int32_t consume(GTEXT_HTML_Tokenizer * t) {
   bool bad;
   if (!decode_at(t, p, &cp, &n, &bad)) {
     return CP_NEED;
+  }
+  if (t->mapped && (t->in_src[p] & SRC_REPLACED)) {
+    bad = true;
   }
   t->pos = p + n;
   if (cp == '\n') {
@@ -720,12 +784,19 @@ static void skip(GTEXT_HTML_Tokenizer * t, size_t n) {
 /* ---- Text (character tokens) -------------------------------------------- */
 
 /* Remember where the data about to be added starts, when that is not where the data so far would
-   run on to (a reference, a carriage return, a replaced byte). */
+   run on to (a reference, a carriage return, a replaced byte). "Run on" is in the stream the machine reads,
+   byte for byte; with a source map it is also that the characters' original offsets are close enough for the
+   deltas of text_dl to carry (a gap of more than 255 bytes, which no encoding makes between two characters
+   that follow one another, starts a segment too). */
 static void text_note_segment(GTEXT_HTML_Tokenizer * t, const where * at) {
   const size_t len = t->text.length;
   if (t->text_nsegs > 0) {
     const GTEXT_HTML_TextSegment * last = &t->text_segs[t->text_nsegs - 1];
-    if (at->offset == last->offset + (len - last->index) || t->text_nsegs >= GTEXT_HTML_MAX_TEXT_SEGMENTS) {
+    bool runs_on = at->u == t->text_seg_u + (len - last->index);
+    if (runs_on && t->mapped && (at->offset < t->text_last_s || at->offset - t->text_last_s > 255)) {
+      runs_on = false;
+    }
+    if (runs_on || t->text_nsegs >= 2 * GTEXT_HTML_MAX_TEXT_SEGMENTS) { /* (the second is a backstop: the token is cut at the first, below) */
       return;
     }
   }
@@ -745,10 +816,59 @@ static void text_note_segment(GTEXT_HTML_Tokenizer * t, const where * at) {
   s->line = at->line;
   s->column = at->column;
   s->offset = at->offset;
+  t->text_seg_u = at->u;
+  if (t->text_nsegs >= GTEXT_HTML_MAX_TEXT_SEGMENTS && t->text_nsegs > 1) {
+    const GTEXT_HTML_TextSegment * before = s - 1;
+    /* A piece anchored where the one before it was (the letters of a name that turned out not to be a reference all stand at its `&`) says nothing
+       new: it needs no token of its own. */
+    if (before->line != s->line || before->column != s->column || before->offset != s->offset) {
+      t->text_flush = true; /* the token is delivered as it is and the run goes on in another: every piece keeps its own place */
+    }
+  }
 }
 
-static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
-    const where * at, bool whitespace, bool is_null) {
+/* The deltas of a piece of text (source map only): at the first byte of each character, how many original bytes after the
+   character before it this one begins; 0 at the other bytes. The first character of a piece is `at`, the others follow it
+   by `offs[k] - offs[k - 1]` when the caller knows their places and by 1 when it does not (the way the machine counts
+   a run that has no segment of its own: byte for byte). Appended before the bytes themselves. */
+static void text_dl_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n, const where * at, const size_t * offs) {
+  const size_t base = t->text.length;
+  if (t->has_failed || !vec_grow(t, &t->text_dl, n)) {
+    return;
+  }
+  uint8_t * dl = (uint8_t *)t->text_dl.data + t->text_dl.length;
+  size_t k = 0;
+  size_t prev = t->text_last_s;
+  for (size_t i = 0; i < n; i++) {
+    if (((unsigned char)bytes[i] & 0xC0) == 0x80) {
+      dl[i] = 0;
+      continue;
+    }
+    size_t here_s;
+    size_t delta;
+    if (k == 0) {
+      here_s = at->offset;
+      delta = (base > 0 && here_s >= prev && here_s - prev <= 255) ? here_s - prev : 0;
+    }
+    else if (offs) {
+      here_s = offs[k];
+      delta = (here_s >= prev && here_s - prev <= 255) ? here_s - prev : 1;
+    }
+    else {
+      here_s = prev + 1;
+      delta = 1;
+    }
+    dl[i] = (uint8_t)delta;
+    prev = here_s;
+    k++;
+  }
+  t->text_last_s = prev;
+  t->text_dl.length += n;
+  t->work += n;
+}
+
+static void text_put_offs(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
+    const where * at, const size_t * offs, bool whitespace, bool is_null) {
   if (t->has_failed) {
     return;
   }
@@ -757,8 +877,9 @@ static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
     t->text_whitespace = true;
     t->text_null = false;
     t->text_nsegs = 0;
+    t->text_dl.length = 0;
   }
-  if (n > t->max_text || t->text.length > t->max_text - n) {
+  if (n > t->max_text || t->text.length > t->max_text - n || t->text_carry > t->max_text - n - t->text.length) {
     fail(t, GTEXT_HTML_TOKENIZER_E_LIMIT_TEXT);
     return;
   }
@@ -766,6 +887,12 @@ static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
     text_note_segment(t, at);
     if (t->has_failed) {
       return;
+    }
+    if (t->mapped) {
+      text_dl_put(t, bytes, n, at, offs);
+      if (t->has_failed) {
+        return;
+      }
     }
   }
   vec_put(t, &t->text, bytes, n);
@@ -777,8 +904,13 @@ static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
   }
 }
 
+static void text_put(GTEXT_HTML_Tokenizer * t, const char * bytes, size_t n,
+    const where * at, bool whitespace, bool is_null) {
+  text_put_offs(t, bytes, n, at, NULL, whitespace, is_null);
+}
+
 static where here(const GTEXT_HTML_Tokenizer * t) {
-  where w = {t->prev_line, t->prev_column, t->prev_offset};
+  where w = {t->prev_line, t->prev_column, t->prev_offset, t->mapped ? t->prev_u : t->prev_offset};
   return w;
 }
 
@@ -789,9 +921,15 @@ static void text_cp(GTEXT_HTML_Tokenizer * t, uint32_t cp) {
   text_put(t, b, utf8_encode(cp, b), &w, is_ws((int32_t)cp), cp == 0);
 }
 
-/* ASCII characters whose position is the construct's start (the `<` of `</`). */
+/* ASCII characters whose position is the construct's start (the `<` of `<`, `<!` and `</`). The second character of the two
+   that make a pair is where `second` says (its reported offset): the `/` or `!` consumed after the `<`. */
 static void text_at(GTEXT_HTML_Tokenizer * t, const char * s, size_t n,
     const where * at) {
+  if (n == 2) {
+    const size_t offs[2] = {at->offset, t->start2_offset};
+    text_put_offs(t, s, n, at, offs, false, false);
+    return;
+  }
   text_put(t, s, n, at, false, false);
 }
 
@@ -1203,6 +1341,9 @@ static run_result run(GTEXT_HTML_Tokenizer * t) {
     if (t->has_failed) {
       return RUN_FAIL;
     }
+    if (t->text_flush) {
+      return RUN_TOKEN; /* between two characters: the machine is where it should be to go on */
+    }
     switch (t->state) {
       /* 13.2.5.1 Data state */
       case ST_DATA:
@@ -1297,6 +1438,7 @@ static run_result run(GTEXT_HTML_Tokenizer * t) {
           SWITCH(ST_MARKUP_DECL_OPEN);
         }
         else if (c == '/') {
+          t->start2_offset = t->prev_offset;
           SWITCH(ST_END_TAG_OPEN);
         }
         else if (is_alpha(c)) {
@@ -1383,6 +1525,7 @@ static run_result run(GTEXT_HTML_Tokenizer * t) {
       case ST_RAWTEXT_LT:
         GET();
         if (c == '/') {
+          t->start2_offset = t->prev_offset;
           t->temp.length = 0;
           SWITCH(t->state == ST_RCDATA_LT ? ST_RCDATA_END_OPEN
                                           : ST_RAWTEXT_END_OPEN);
@@ -1397,10 +1540,12 @@ static run_result run(GTEXT_HTML_Tokenizer * t) {
       case ST_SCRIPT_LT:
         GET();
         if (c == '/') {
+          t->start2_offset = t->prev_offset;
           t->temp.length = 0;
           SWITCH(ST_SCRIPT_END_OPEN);
         }
         else if (c == '!') {
+          t->start2_offset = t->prev_offset;
           SWITCH(ST_SCRIPT_ESC_START);
           text_at(t, "<!", 2, &t->start);
         }
@@ -1575,6 +1720,7 @@ static run_result run(GTEXT_HTML_Tokenizer * t) {
       case ST_SCRIPT_ESC_LT:
         GET();
         if (c == '/') {
+          t->start2_offset = t->prev_offset;
           t->temp.length = 0;
           SWITCH(ST_SCRIPT_ESC_END_OPEN);
         }
@@ -3006,6 +3152,8 @@ void gtext_html_tokenizer_free(GTEXT_HTML_Tokenizer * t) {
   }
   GTEXT_Allocator a = t->allocator;
   gtext_allocator_free(&a, t->pend);
+  gtext_allocator_free(&a, t->pend_src);
+  gtext_allocator_free(&a, t->text_dl.data);
   gtext_allocator_free(&a, t->text.data);
   gtext_allocator_free(&a, t->text_segs);
   gtext_allocator_free(&a, t->ar.data);
@@ -3021,6 +3169,49 @@ void gtext_html_tokenizer_free(GTEXT_HTML_Tokenizer * t) {
 /* How many bytes of a chunk are copied after a tail at a time. */
 #define FEED_WINDOW 256
 
+/* Make `pend` (and with a source map `pend_src`) hold `need` entries, keeping the first `keep` of what they hold now, which is
+   `t->in[from..)` and `t->in_src[from..)`. Fails the tokenizer for memory. */
+static bool pend_reserve(GTEXT_HTML_Tokenizer * t, size_t need, size_t from, size_t keep, size_t first_cap) {
+  if (need <= t->pend_capacity) {
+    if (keep > 0) {
+      memmove(t->pend, t->in + from, keep);
+      if (t->mapped) {
+        memmove(t->pend_src, t->in_src + from, keep * sizeof(size_t));
+      }
+    }
+    return true;
+  }
+  size_t cap = t->pend_capacity ? t->pend_capacity : first_cap;
+  while (cap < need) {
+    cap *= 2;
+  }
+  uint8_t * grown = gtext_allocator_malloc(&t->allocator, cap);
+  size_t * grown_src = NULL;
+  if (grown && t->mapped) {
+    grown_src = cap > SIZE_MAX / sizeof(size_t) ? NULL : gtext_allocator_malloc(&t->allocator, cap * sizeof(size_t));
+    if (!grown_src) {
+      gtext_allocator_free(&t->allocator, grown);
+      grown = NULL;
+    }
+  }
+  if (!grown) {
+    fail(t, GTEXT_HTML_TOKENIZER_E_OOM);
+    return false;
+  }
+  if (keep > 0) {
+    memcpy(grown, t->in + from, keep);
+    if (t->mapped) {
+      memcpy(grown_src, t->in_src + from, keep * sizeof(size_t));
+    }
+  }
+  gtext_allocator_free(&t->allocator, t->pend);
+  gtext_allocator_free(&t->allocator, t->pend_src);
+  t->pend = grown;
+  t->pend_src = grown_src;
+  t->pend_capacity = cap;
+  return true;
+}
+
 /* Make the next bytes of the caller's chunk (`rest`) visible. If everything before them has
    been read, the machine reads the chunk itself, in place. If a tail is waiting for the rest of
    its character or look-ahead, the tail and the first FEED_WINDOW bytes are joined in `pend`
@@ -3028,54 +3219,53 @@ void gtext_html_tokenizer_free(GTEXT_HTML_Tokenizer * t) {
    tail and the window, not by the chunk, and each byte is copied once. */
 static void advance_input(GTEXT_HTML_Tokenizer * t) {
   const size_t tail = t->in_length - t->pos;
+  /* (taken before anything is moved: the entry is in the buffer that is about to be written over) */
+  const size_t carry = t->mapped && t->pos > 0 ? SRC_END(t->in_src[t->pos - 1]) : t->carry_end;
   if (tail == 0) {
+    t->carry_end = carry;
     t->base_offset += t->pos;
     t->in = t->rest;
+    t->in_src = t->rest_src;
     t->in_length = t->rest_length;
     t->pos = 0;
     t->prev_pos = 0;
     t->rest = NULL;
+    t->rest_src = NULL;
     t->rest_length = 0;
     t->pend_length = 0;
     return;
   }
   const size_t take = t->rest_length < FEED_WINDOW ? t->rest_length : FEED_WINDOW;
-  if (tail + take > t->pend_capacity) {
-    size_t cap = t->pend_capacity ? t->pend_capacity : 512;
-    while (cap < tail + take) {
-      cap *= 2;
-    }
-    uint8_t * grown = gtext_allocator_malloc(&t->allocator, cap);
-    if (!grown) {
-      fail(t, GTEXT_HTML_TOKENIZER_E_OOM);
-      return;
-    }
-    memcpy(grown, t->in + t->pos, tail);
-    gtext_allocator_free(&t->allocator, t->pend);
-    t->pend = grown;
-    t->pend_capacity = cap;
-  }
-  else {
-    memmove(t->pend, t->in + t->pos, tail);
+  if (!pend_reserve(t, tail + take, t->pos, tail, 512)) {
+    return;
   }
   memcpy(t->pend + tail, t->rest, take);
+  if (t->mapped) {
+    memcpy(t->pend_src + tail, t->rest_src, take * sizeof(size_t));
+  }
   t->work += tail + take;
+  t->carry_end = carry;
   t->base_offset += t->pos;
   t->in = t->pend;
+  t->in_src = t->pend_src;
   t->in_length = tail + take;
   t->pend_length = t->in_length;
   t->pos = 0;
   t->prev_pos = 0;
   t->rest += take;
+  if (t->mapped) {
+    t->rest_src += take;
+  }
   t->rest_length -= take;
   if (t->rest_length == 0) {
     t->rest = NULL;
+    t->rest_src = NULL;
     t->borrowed = false;
   }
 }
 
-GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed(
-    GTEXT_HTML_Tokenizer * t, const void * data, size_t length) {
+static GTEXT_HTML_TokenizerStatus feed_common(
+    GTEXT_HTML_Tokenizer * t, const void * data, size_t length, const size_t * src) {
   if (!t || (!data && length)) {
     return GTEXT_HTML_TOKENIZER_E_INVALID;
   }
@@ -3093,12 +3283,36 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed(
   if (length == 0) {
     return GTEXT_HTML_TOKENIZER_OK;
   }
+  /* A tokenizer reads either its own input or a decoder's, from its first byte to its last. */
+  if (t->total_fed != 0 || t->base_offset != 0 || t->in_length != 0) {
+    if (t->mapped != (src != NULL)) {
+      return GTEXT_HTML_TOKENIZER_E_INVALID;
+    }
+  }
+  else {
+    t->mapped = src != NULL;
+  }
   t->total_fed += length;
   t->rest = (const uint8_t *)data;
+  t->rest_src = src;
   t->rest_length = length;
   t->borrowed = true;
   advance_input(t);
   return t->has_failed ? t->failed : GTEXT_HTML_TOKENIZER_OK;
+}
+
+GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed(
+    GTEXT_HTML_Tokenizer * t, const void * data, size_t length) {
+  return feed_common(t, data, length, NULL);
+}
+
+/// Feed bytes that are a decoder's UTF-8 with `source`, one entry per byte, for the offset of the original byte each came from (see gtext_decoder_decode_mapped()).
+GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed_mapped(
+    GTEXT_HTML_Tokenizer * t, const void * data, size_t length, const size_t * source) {
+  if (length > 0 && !source) {
+    return GTEXT_HTML_TOKENIZER_E_INVALID;
+  }
+  return feed_common(t, data, length, length > 0 ? source : NULL);
 }
 
 GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_skip_input(
@@ -3127,34 +3341,33 @@ void gtext_html_tokenizer_finish(GTEXT_HTML_Tokenizer * t) {
   }
 }
 
+/// The end of the input, for a tokenizer fed with source maps: `source_length` is the length of the original input.
+void gtext_html_tokenizer_finish_mapped(GTEXT_HTML_Tokenizer * t, size_t source_length) {
+  if (t) {
+    if (t->total_fed == 0 && t->base_offset == 0 && t->in_length == 0) {
+      t->mapped = true; /* nothing was fed (an input that was all byte order mark): the end is still a place in the original */
+    }
+    t->src_total = source_length;
+    t->final = true;
+  }
+}
+
 /* The machine needs more than is here: keep what it has not used, and let go
    of the caller's chunk. */
 static void keep_tail(GTEXT_HTML_Tokenizer * t) {
   const size_t rest = t->in_length - t->pos;
+  const size_t carry = t->mapped && t->pos > 0 ? SRC_END(t->in_src[t->pos - 1]) : t->carry_end;
   if (rest > 0) {
-    if (rest > t->pend_capacity) {
-      size_t cap = t->pend_capacity ? t->pend_capacity : 256;
-      while (cap < rest) {
-        cap *= 2;
-      }
-      uint8_t * grown = gtext_allocator_malloc(&t->allocator, cap);
-      if (!grown) {
-        fail(t, GTEXT_HTML_TOKENIZER_E_OOM);
-        return;
-      }
-      memcpy(grown, t->in + t->pos, rest);
-      gtext_allocator_free(&t->allocator, t->pend);
-      t->pend = grown;
-      t->pend_capacity = cap;
-    }
-    else {
-      memmove(t->pend, t->in + t->pos, rest);
+    if (!pend_reserve(t, rest, t->pos, rest, 256)) {
+      return;
     }
     t->work += rest;
   }
   t->pend_length = rest;
+  t->carry_end = carry;
   t->base_offset += t->pos;
   t->in = t->pend;
+  t->in_src = t->pend_src;
   t->in_length = rest;
   t->pos = 0;
   t->prev_pos = 0; /* unread() is only ever used before the machine returns */
@@ -3177,9 +3390,20 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_next(
     return GTEXT_HTML_TOKENIZER_DONE;
   }
   for (;;) {
-    if (t->token_ready || t->eof_ready) {
+    if (t->token_ready || t->eof_ready || t->text_flush) {
+      if (t->text_flush && t->text.length == 0) {
+        t->text_flush = false; /* (nothing to deliver: not reached) */
+        continue;
+      }
       /* Characters first: they came before whatever ended the run. */
       if (t->text.length > 0) {
+        if (t->text_flush) {
+          t->text_carry += t->text.length; /* (still the same run: the limit on it counts what went before) */
+          t->text_flush = false;
+        }
+        else {
+          t->text_carry = 0;
+        }
         GTEXT_HTML_Token * k = &t->out;
         memset(k, 0, sizeof(*k));
         k->type = GTEXT_HTML_TOKEN_CHARACTER;
@@ -3189,6 +3413,7 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_next(
         k->has_null = t->text_null;
         k->segments = t->text_segs;
         k->segment_count = t->text_nsegs;
+        k->deltas = t->mapped ? (const uint8_t *)t->text_dl.data : NULL;
         k->line = t->text_where.line;
         k->column = t->text_where.column;
         k->offset = t->text_where.offset;
@@ -3196,6 +3421,7 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_next(
         *out = k;
         return GTEXT_HTML_TOKENIZER_TOKEN;
       }
+      t->text_carry = 0; /* a token that is not characters: the run is over */
       if (t->token_ready) {
         if (!token_finish(t)) {
           return t->failed;
@@ -3210,7 +3436,7 @@ GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_next(
       k->type = GTEXT_HTML_TOKEN_EOF;
       k->line = t->line;
       k->column = t->column;
-      k->offset = t->base_offset + t->pos;
+      k->offset = src_offset(t, t->pos);
       t->eof_ready = false;
       t->done = true;
       *out = k;

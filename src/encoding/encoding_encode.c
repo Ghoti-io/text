@@ -438,6 +438,12 @@ void gtext_encoder_free(GTEXT_Encoder * encoder) {
   gtext_allocator_free(&alloc, encoder);
 }
 
+void gtext_encoder_set_error_mode(GTEXT_Encoder * encoder, GTEXT_Encoder_Error_Mode mode) {
+  if (encoder && (int)mode >= (int)GTEXT_ENCODER_FATAL && (int)mode <= (int)GTEXT_ENCODER_REPLACEMENT) {
+    encoder->opts.error_mode = mode;
+  }
+}
+
 void gtext_encoder_reset(GTEXT_Encoder * encoder) {
   if (encoder) {
     stream_start(encoder);

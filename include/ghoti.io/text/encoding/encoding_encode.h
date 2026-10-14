@@ -168,6 +168,18 @@ GTEXT_API GTEXT_Encoding_Status gtext_encoder_encode(GTEXT_Encoder * encoder, co
     size_t len, bool flush, const GTEXT_Encoding_Sink * sink, GTEXT_Encoder_Result * result);
 
 /**
+ * @brief Change what the encoder does with a code point it cannot represent, between calls.
+ *
+ * The stream goes on: nothing else about the encoder changes (an ISO-2022-JP encoder keeps its mode). For a writer
+ * that has some places where a numeric reference reads as text (HTML text and attribute values) and others where it does not
+ * (a comment, a script), and wants the one stream. Takes effect with the next call.
+ *
+ * @param encoder The encoder. NULL is ignored.
+ * @param mode    The new mode; a value that is none of the enum is ignored.
+ */
+GTEXT_API void gtext_encoder_set_error_mode(GTEXT_Encoder * encoder, GTEXT_Encoder_Error_Mode mode);
+
+/**
  * @brief Abandon the stream in progress and start over, as after a flush.
  *
  * @param encoder The encoder. NULL is ignored.

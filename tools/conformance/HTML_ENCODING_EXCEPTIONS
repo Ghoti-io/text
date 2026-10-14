@@ -1,0 +1,6 @@
+# HTML encoding exceptions: vectors of html5lib-tests' encoding/ directory that this library does not pass, one per line, tab separated:
+#   <file>#<n>  <sniff|parse>  <the vector's expected encoding>  <what this library answers>  <the reason>
+# There are none, on purpose: all 82 vectors pass. An entry that is not needed fails the run (stale), and so does a vector that fails with no
+# entry. The first and the last line of this file are required by tools/conformance/html_encoding_suite.py, so that a file that was cut short
+# (and an empty one) is not mistaken for "no exceptions".
+# end of exceptions

@@ -66,6 +66,12 @@ struct Outcome {
   std::string message;
   size_t input_bytes = 0;
   size_t node_count = 0;
+  GTEXT_HTML_Encoding_Certainty confidence = GTEXT_HTML_CERTAIN;
+  bool reparsed = false;
+  bool reparse_abandoned = false;
+  size_t bom_length = 0;
+  bool transport_ignored = false;
+  bool default_ignored = false;
   std::vector<Err> errors;
   size_t dropped = 0;
 
@@ -89,6 +95,12 @@ struct Outcome {
       message = std::move(o.message);
       input_bytes = o.input_bytes;
       node_count = o.node_count;
+      confidence = o.confidence;
+      reparsed = o.reparsed;
+      reparse_abandoned = o.reparse_abandoned;
+      bom_length = o.bom_length;
+      transport_ignored = o.transport_ignored;
+      default_ignored = o.default_ignored;
       errors = std::move(o.errors);
       dropped = o.dropped;
       o.doc = nullptr;
@@ -120,6 +132,12 @@ inline void harvest(Outcome & o, GTEXT_HTML_Result & r) {
   o.message = r.message ? r.message : "";
   o.input_bytes = r.input_bytes;
   o.node_count = r.node_count;
+  o.confidence = r.encoding_confidence;
+  o.reparsed = r.reparsed;
+  o.reparse_abandoned = r.reparse_abandoned;
+  o.bom_length = r.bom_length;
+  o.transport_ignored = r.transport_encoding_ignored;
+  o.default_ignored = r.default_encoding_ignored;
   for (size_t i = 0; i < gtext_html_result_error_count(&r); i++) {
     GTEXT_HTML_Error e;
     if (gtext_html_result_error_at(&r, i, &e)) {

@@ -595,8 +595,8 @@ TEST(HtmlSerializeOptions, TheCombinationsThatMeanNothingAreRefusedBeforeAnythin
       {"another quote that is no quote", [](Opts & o) { o.quote_char = 'x'; }, GTEXT_HTML_E_OPTIONS},
       {"a quoting mode out of range", [](Opts & o) { o.quote_attr_values = (GTEXT_HTML_Quote_Mode)7; }, GTEXT_HTML_E_OPTIONS},
       {"a negative quoting mode", [](Opts & o) { o.quote_attr_values = (GTEXT_HTML_Quote_Mode)-1; }, GTEXT_HTML_E_OPTIONS},
-      {"latin-1", [](Opts & o) { o.encoding = "iso-8859-1"; }, GTEXT_HTML_E_UNSUPPORTED_ENCODING},
-      {"utf-16", [](Opts & o) { o.encoding = "utf-16le"; }, GTEXT_HTML_E_UNSUPPORTED_ENCODING},
+      {"a label for nothing", [](Opts & o) { o.encoding = "no-such-encoding"; }, GTEXT_HTML_E_UNSUPPORTED_ENCODING},
+      {"utf-7 is not a label", [](Opts & o) { o.encoding = "utf-7"; }, GTEXT_HTML_E_UNSUPPORTED_ENCODING},
       {"the empty label", [](Opts & o) { o.encoding = ""; }, GTEXT_HTML_E_UNSUPPORTED_ENCODING},
       {"a label that is almost utf-8", [](Opts & o) { o.encoding = "utf-8x"; }, GTEXT_HTML_E_UNSUPPORTED_ENCODING},
   };
@@ -718,14 +718,17 @@ TEST(HtmlSerializeOptions, InjectMetaCharsetThroughTheTree) {
   EXPECT_EQ(children(find(q.top(), "head"), quoting), "<meta charset=utf-8 />");
 }
 
-TEST(HtmlSerializeOptions, TheEncodingLabelIsWrittenTrimmedAndAsGiven) {
+TEST(HtmlSerializeOptions, TheEncodingIsDeclaredByItsNameInLowerCase) {
   Opts o = defaults();
   o.inject_meta_charset = true;
   o.encoding = "  UTF8 ";
   Parsed p = parse_document("<head><meta http-equiv=content-type content=x></head>");
-  EXPECT_EQ(children(find(p.top(), "head"), o), "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF8\">");
+  EXPECT_EQ(children(find(p.top(), "head"), o), "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">");
   Parsed q = parse_document("<head></head>");
-  EXPECT_EQ(children(find(q.top(), "head"), o), "<meta charset=\"UTF8\">");
+  EXPECT_EQ(children(find(q.top(), "head"), o), "<meta charset=\"utf-8\">");
+  // a label is not the name: the name of the encoding it names is what is written
+  o.encoding = "SJIS";
+  EXPECT_EQ(children(find(q.top(), "head"), o), "<meta charset=\"shift_jis\">");
 }
 
 // ---- optional tags -----------------------------------------------------------------------------------

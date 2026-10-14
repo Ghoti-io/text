@@ -27,9 +27,9 @@
  * algorithm) and builds a @ref GTEXT_Markup_Document in HTML mode; the tree
  * itself is described in markup.h. **HTML parsing does not fail on
  * content**: every input has a tree. A parse fails only for an argument, a
- * limit, memory, or an encoding this release cannot read; the mistakes in the
- * document are parse errors, which are reported (html_error.h) and are not
- * failures.
+ * limit or memory; the mistakes in the document are parse errors, which are
+ * reported (html_error.h) and are not failures. The bytes are read in the
+ * encoding that the standard's sniffing algorithm picks (html_parse.h).
  *
  * It has the shape of xml_core.h: an options struct with a `_default()`, a
  * status enum, and `_free()` for what the result holds. The differences are
@@ -42,6 +42,7 @@
 #define GHOTI_IO_GTEXT_HTML_HTML_CORE_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/encoding/encoding_core.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup/markup_core.h>
 #include <stdbool.h>
@@ -72,12 +73,10 @@ typedef enum {
                         ///< or a second finish whose document was already
                         ///< handed out, or the wrong finish function for the
                         ///< kind of parser.
-  GTEXT_HTML_E_UNSUPPORTED_ENCODING, ///< An encoding label (`transport_encoding`
-                        ///< or `default_encoding`) that names anything but
-                        ///< UTF-8. This release reads UTF-8 only; the
-                        ///< other encodings, and the `<meta>` prescan, arrive
-                        ///< with phases 3h and 3i. Not a verdict on the
-                        ///< document, which is never examined.
+  GTEXT_HTML_E_UNSUPPORTED_ENCODING, ///< Serializer: an output encoding label that names no encoding.
+                        ///< The parsers no longer return it: a label they do not know is
+                        ///< ignored, as the standard says, and reported in the result
+                        ///< (`transport_encoding_ignored`, `default_encoding_ignored`).
   GTEXT_HTML_E_INTERNAL, ///< A defect in this library, never content: a rule
                         ///< of the tree builder did not terminate. Reported
                         ///< rather than looping; please report it.
@@ -102,10 +101,15 @@ typedef enum {
   /* Appended by the serializer (html_serialize.h); the parser never returns these. */
   GTEXT_HTML_E_WRITE,            ///< Serializer: the sink (or the file) refused output.
   GTEXT_HTML_E_LIMIT_OUTPUT,     ///< Serializer: more than `max_output_bytes` of output.
-  GTEXT_HTML_E_OPTIONS           ///< Serializer: an option value out of range, or a
+  GTEXT_HTML_E_OPTIONS,          ///< Serializer: an option value out of range, or a
                                  ///< combination that means nothing (`space_before_trailing_solidus`
                                  ///< without `use_trailing_solidus`, a quote character that
                                  ///< is no quote, `use_best_quote_char` with a fixed one).
+  GTEXT_HTML_E_UNREPRESENTABLE   ///< Serializer: a character that the output encoding cannot write in
+                                 ///< a place where a numeric character reference would not be read as
+                                 ///< one (a comment, a name, the contents of `script`, `style` and the
+                                 ///< other raw text elements...). The sink has received the output up
+                                 ///< to the character; the result says which character.
 } GTEXT_HTML_Status;
 
 /**
@@ -120,18 +124,22 @@ GTEXT_API const char * gtext_html_status_string(GTEXT_HTML_Status status);
 
 /**
  * @enum GTEXT_HTML_Encoding_Certainty
- * @brief How much a caller-supplied encoding label counts for.
+ * @brief How much an encoding counts for: the standard's "confidence".
  *
- * The standard's "certain" and "tentative". Both are accepted and, in this
- * release, both mean the same thing for the one encoding that is read; the
- * distinction is part of the options now so that the structure does not
- * change when other encodings arrive (a tentative label can be overridden by
- * a `<meta>` declaration, a certain one cannot).
+ * The standard's "certain", "tentative" and "irrelevant". For a caller's label it says whether a
+ * `<meta>` declaration may override it (a tentative one can be, a certain one cannot). In a result it
+ * says how the encoding that was used was reached.
  */
 typedef enum {
-  GTEXT_HTML_CERTAIN = 0, ///< As a transport header's: nothing in the
-                          ///< document overrides it. The default.
-  GTEXT_HTML_TENTATIVE    ///< A guess that the document may override.
+  GTEXT_HTML_CERTAIN = 0, ///< As a transport header's, or a byte order mark's: nothing in the
+                          ///< document overrides it. The default for a label.
+  GTEXT_HTML_TENTATIVE,   ///< A guess that the document may override: a caller's tentative label, a
+                          ///< default, or a declaration found in the first 1024 bytes that the parse
+                          ///< has not yet met as a `meta` element.
+  GTEXT_HTML_IRRELEVANT,  ///< Results only: there is no encoding to be sure of, because the input is
+                          ///< characters already (a fragment).
+  GTEXT_HTML_UNDECIDED    ///< Results only: no encoding was decided (`encoding` is NULL): the call failed before
+                          ///< there was a parser. Never valid in an option.
 } GTEXT_HTML_Encoding_Certainty;
 
 /**
@@ -215,11 +223,15 @@ typedef struct {
 
   /**
    * The encoding the bytes came with from outside - the `charset` of a
-   * `Content-Type` header - as a label (case-insensitive, surrounding white
-   * space ignored), or NULL for none. **Only UTF-8 labels are accepted in this
-   * release** (`utf-8`, `utf8`, `unicode-1-1-utf-8`, `unicode11utf8`,
-   * `unicode20utf8`, `x-unicode20utf8`); any other string, the empty one
-   * included, is GTEXT_HTML_E_UNSUPPORTED_ENCODING. The Encoding module (encoding.h) has the others; the parser reads them when it uses it (phase 3i).
+   * `Content-Type` header - as a label of the Encoding Standard (case-insensitive,
+   * surrounding ASCII white space ignored; see gtext_encoding_for_label()), or NULL
+   * for none. A label that names no encoding is **ignored**, as the standard says of
+   * a transport layer's ("if the label is not recognised"), and the result says so
+   * (`transport_encoding_ignored`); the empty string is such a label. With
+   * `transport_encoding_certainty` certain (the default) it is used for the bytes
+   * unless they begin with a byte order mark, whatever the document declares. Nothing
+   * is read from a locale or a browser setting: this and `default_encoding` are the
+   * caller's.
    */
   const char * transport_encoding;
 
@@ -228,17 +240,34 @@ typedef struct {
 
   /**
    * The encoding to assume when nothing else says (no byte order mark, no
-   * transport label, no declaration), as a label, or NULL for UTF-8. The same
-   * labels are accepted as for `transport_encoding`.
+   * certain transport label, no declaration in the first 1024 bytes), as a label, or
+   * NULL for UTF-8. It is tentative: a `<meta>` the parser meets later in the head
+   * can still override it. A label that names no encoding is ignored
+   * (`default_encoding_ignored`) and UTF-8 is the default.
    */
   const char * default_encoding;
 
   /**
-   * Skip the `<meta>` prescan that looks for a declared encoding. Accepted
-   * and recorded; this release has no prescan to skip (phase 3i), so it
-   * changes nothing yet.
+   * Do not look for a declared encoding: no prescan of the first 1024 bytes (nor the XML
+   * declaration it falls back to), and a `<meta>` the parser meets later does not change
+   * the encoding. The bytes are then read as the byte order mark, the transport label or
+   * the default say. (A `<meta>` is still an element, with its attributes.) Default false.
    */
   bool ignore_meta;
+
+  /**
+   * The most bytes an incremental parser (GTEXT_HTML_Parser) keeps for a restart while the encoding is
+   * tentative and the head is open: a `<meta>` that declares another encoding makes the parser begin again
+   * with the bytes it was given, so it keeps them. When the input has gone on past this many bytes (counted
+   * from the first, the 1024 of the prescan included; never less than 1024) without leaving the head, the
+   * parser lets them go, `reparse_abandoned` says so in the result, and a later `<meta>` is an ordinary
+   * element that changes nothing. 0 selects the default (4 MiB); SIZE_MAX keeps without limit (up to
+   * `max_input_bytes`). Not used by gtext_html_parse(), which has the whole input and keeps nothing, and
+   * not used when the encoding is certain or `ignore_meta` is set (nothing is kept then). A `<meta>` that
+   * ends within these bytes restarts the parse however the input is cut. The text of a parse that gives up
+   * at this size is therefore not always the text of the same bytes given whole.
+   */
+  size_t max_reparse_bytes;
 } GTEXT_HTML_Parse_Options;
 
 /**
@@ -322,18 +351,37 @@ typedef struct {
                             ///< quirks), as it is also set on the document;
                             ///< for a fragment the mode of the context's
                             ///< document. NO_QUIRKS unless the parse succeeded.
-  const char * encoding;    ///< The encoding the bytes were read as: "UTF-8". Set by every call that got as far
-                            ///< as making a parser, failures after that included (the labels were accepted, and
-                            ///< UTF-8 is what is read); NULL only for a failure before there was a parser
-                            ///< (an unusable argument, an unsupported label, OOM making it, an unreadable
-                            ///< file). Static; never freed.
+  const char * encoding;    ///< The encoding the bytes were read as, by the Encoding Standard's name ("UTF-8",
+                            ///< "windows-1252", "Shift_JIS", ...). Set by every call that got as far as making a
+                            ///< parser, failures after that included (for a failure before the encoding was decided
+                            ///< it is what the bytes so far say); NULL only for a failure before there was a parser
+                            ///< (an unusable argument, OOM making it, an unreadable file). A fragment is characters,
+                            ///< and says "UTF-8". Static; never freed.
   GTEXT_Markup_Encoding_Source encoding_source; ///< How it was decided:
-                            ///< GTEXT_MARKUP_ENCODING_BOM (a UTF-8 byte order
-                            ///< mark, which is skipped, found in the bytes fed so far), _CALLER (the
-                            ///< `transport_encoding` label), _DECLARATION
-                            ///< (a `<meta>`; never yet) or _DEFAULT. UNKNOWN
-                            ///< with `encoding` NULL. For a fragment this is reported but not recorded on
-                            ///< the fragment's scratch document (it has no encoding of its own).
+                            ///< GTEXT_MARKUP_ENCODING_BOM (a byte order mark, which is skipped, in the bytes fed so
+                            ///< far), _CALLER (a certain `transport_encoding`), _DECLARATION (the first 1024 bytes
+                            ///< declared it: a `<meta>`, or an XML declaration; or the parser met a `<meta>` that
+                            ///< overrode a tentative encoding and parsed again: see `reparsed`),
+                            ///< _CALLER_DEFAULT (the caller's guess: `default_encoding`, or a tentative
+                            ///< `transport_encoding` that nothing overrode) or _DEFAULT (UTF-8 because nothing said
+                            ///< anything). UNKNOWN with `encoding` NULL. For a fragment this is _CALLER if a
+                            ///< recognised `transport_encoding` was given and _DEFAULT otherwise; it is reported but
+                            ///< not recorded on the fragment's scratch document (it has no encoding of its own).
+  GTEXT_HTML_Encoding_Certainty encoding_confidence; ///< _UNDECIDED when `encoding` is NULL. Otherwise the standard's confidence in `encoding`: _CERTAIN for a
+                            ///< byte order mark, a certain transport label, and any encoding after the parser
+                            ///< parsed again or met a `<meta>` that agreed with it; _TENTATIVE for the rest (a
+                            ///< declaration the parser has not met as an element - the `meta` was after the head, or
+                            ///< `ignore_meta` -, a default); _IRRELEVANT for a fragment.
+  bool reparse_abandoned;   ///< The parser gave up keeping the input for a restart (`max_reparse_bytes`): a `<meta>` after
+                            ///< that point did not change the encoding even if it declared another. Only an incremental
+                            ///< parser does.
+  bool reparsed;            ///< A `<meta>` declared another encoding than the tentative one in use, and the document
+                            ///< was parsed again from its start in the declared one: the tree, the errors and
+                            ///< their offsets are exactly those of a parse that began in it.
+  size_t bom_length;        ///< Bytes of the byte order mark that began the input (3 or 2), or 0. Counted in every
+                            ///< offset and in `input_bytes`.
+  bool transport_encoding_ignored; ///< `transport_encoding` was given and names no encoding.
+  bool default_encoding_ignored;   ///< `default_encoding` was given and names no encoding.
   size_t input_bytes;       ///< Bytes of input accepted, a byte order mark
                             ///< included. For a failed parse, the bytes accepted before the one that failed it:
                             ///< a whole input refused for its length is 0, an input fed in pieces counts the

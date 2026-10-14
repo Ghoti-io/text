@@ -206,6 +206,8 @@ typedef enum {
   GTEXT_HTML_TREE_E_STATE,     ///< feed() after a successful finish(); and nothing else (a failed builder repeats its failure).
   GTEXT_HTML_TREE_E_OOM,       ///< The allocator returned NULL.
   GTEXT_HTML_TREE_E_REPROCESS, ///< A token was handled again in a new mode more often than any rule can need: a defect, never content.
+  GTEXT_HTML_TREE_E_ENCODING,  ///< A `<meta>` declared an encoding other than the tentative one in use (see GTEXT_HTML_TreeOptions::encoding): not a
+                               ///< failure of the input. Stop, and parse the same bytes again as gtext_html_tree_declared_encoding() says. Sticky.
   GTEXT_HTML_TREE_E_LIMIT_DEPTH,      ///< More than `max_open_elements` open at once.
   GTEXT_HTML_TREE_E_LIMIT_NODES,      ///< More than `max_nodes` nodes.
   GTEXT_HTML_TREE_E_LIMIT_INPUT,      ///< The tokenizer's: more than `max_input_bytes` fed.
@@ -244,6 +246,12 @@ typedef struct {
   /// Keep no errors at all and only count them (gtext_html_tree_errors_dropped()): `max_errors`
   /// cannot say 0, because 0 there means the default. Appended after `hash_seed`.
   bool count_errors_only;
+  /// The character encoding the bytes are being read as (a GTEXT_Encoding, 0 for none) and whether that is only tentative. A `<meta>` start tag
+  /// seen while the encoding is tentative, before the builder has left the head (see gtext_html_tree_head_left()), that declares another
+  /// encoding makes feed() or finish() return GTEXT_HTML_TREE_E_ENCODING ("change the encoding": the caller parses again); one that
+  /// declares the same encoding makes it certain. Appended after `count_errors_only`; zero, the default, is never tentative.
+  int encoding;
+  bool encoding_tentative;
 } GTEXT_HTML_TreeOptions;
 
 /* ---- Lifecycle and input ------------------------------------------------ */
@@ -267,6 +275,34 @@ GTEXT_INTERNAL_API GTEXT_HTML_Tree * gtext_html_tree_new(
  */
 GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_skip_input(
     GTEXT_HTML_Tree * tree, size_t count);
+
+/**
+ * @brief Hand the builder some input that a decoder produced, with where each character of it came from.
+ *
+ * As feed(), for the tokenizer's gtext_html_tokenizer_feed_mapped(): `data` is well-formed UTF-8 and `source` has an entry for every byte of it
+ * (the offset in the original bytes, with the top bit set on a U+FFFD that stands for ill-formed input). Errors and locations are in the
+ * original offsets. A builder is fed with one of the two for its whole life. `max_input_bytes` counts `data`.
+ */
+GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_feed_mapped(
+    GTEXT_HTML_Tree * tree, const void * data, size_t length, const size_t * source);
+
+/// Say that there is no more input to a builder that is fed with feed_mapped(), and that the original input was `source_length` bytes long.
+GTEXT_INTERNAL_API GTEXT_HTML_TreeStatus gtext_html_tree_finish_mapped(
+    GTEXT_HTML_Tree * tree, size_t source_length);
+
+/// After GTEXT_HTML_TREE_E_ENCODING: the encoding (a GTEXT_Encoding) the `<meta>` declared, with the rules of "change the encoding" applied.
+GTEXT_INTERNAL_API int gtext_html_tree_declared_encoding(const GTEXT_HTML_Tree * tree);
+
+/// Whether the builder has left the head: a token has been handled in an insertion mode that is not one of the head's (initial, before html,
+/// before head, in head, in head noscript, after head, text, in template). Once true, always true. A `<meta>` after that is an ordinary
+/// element; the incremental parser may let go of the bytes it kept for a restart.
+GTEXT_INTERNAL_API bool gtext_html_tree_head_left(const GTEXT_HTML_Tree * tree);
+
+/// The caller will not be able to start again (it has let go of the bytes): a `<meta>` from now on is an ordinary element and changes nothing.
+GTEXT_INTERNAL_API void gtext_html_tree_stop_reparse(GTEXT_HTML_Tree * tree);
+
+/// Whether the encoding is still tentative (false once a `<meta>` has confirmed it, or when the options said it was not).
+GTEXT_INTERNAL_API bool gtext_html_tree_encoding_tentative(const GTEXT_HTML_Tree * tree);
 
 /// Free the builder, the document it still holds (if take_document() did not
 /// take it) and everything else. NULL is ignored.

@@ -191,6 +191,8 @@ typedef struct {
   uint8_t n;              ///< EMIT: how many.
   uint8_t restore_n;      ///< ERROR: bytes to put back in front of the input.
   uint8_t restore[4];     ///< ... first to be read first (GTEXT_ENCODING_RESTORE_MAX of them).
+  bool skip;              ///< CONTINUE: the bytes read so far make no code point and never will (an ISO-2022-JP escape sequence), so the
+                          ///< character after them begins after them. Only the source map reads it.
 } GTEXT_Dec_Step;
 
 /// UTF-8's decoder state (section 8.1.1).
@@ -324,7 +326,7 @@ _Static_assert(GTEXT_ENCODING_RESTORE_MAX <= GTEXT_ENCODING_PUSHBACK, "a step mu
 #define GTEXT_ENCODING_DEFAULT_MAX_OUTPUT ((size_t)256 * 1024 * 1024)
 
 /// Bytes the chunk buffer holds; the sink is called with up to this many at a time.
-#define GTEXT_ENCODING_CHUNK 4096
+#define GTEXT_ENCODING_CHUNK GTEXT_ENCODING_MAX_CHUNK
 
 /**
  * The output side: a chunk buffer in front of the sink, the byte count and the limit. Whole code points (or whole
@@ -339,6 +341,16 @@ typedef struct {
   size_t delivered;             ///< Bytes given to the sink during this call.
   const GTEXT_Encoding_Sink * sink;
   GTEXT_Encoding_Status status; ///< OK until a put or flush fails.
+  /* The source map of a decoder that was asked for one (all NULL and zero otherwise, which is every encoder): for each byte of `buf` the offset of the
+     input byte that began the code point it belongs to and whether that code point is a U+FFFD for ill-formed input. `cur_off` and `cur_rep` describe the
+     code point about to be put; a run of ASCII (gtext_out_put_run) is linear from `cur_off`. */
+  const GTEXT_Encoding_Mapped_Sink * msink; ///< Where a mapped chunk goes (instead of `sink`), or NULL.
+  size_t * off;                 ///< GTEXT_ENCODING_CHUNK offsets, or NULL.
+  unsigned char * rep;          ///< GTEXT_ENCODING_CHUNK flags, or NULL.
+  unsigned char * wid;          ///< GTEXT_ENCODING_CHUNK widths (bytes of the input of each code point), or NULL.
+  size_t cur_off;
+  unsigned char cur_rep;
+  unsigned char cur_w;
 } GTEXT_Out;
 
 /// Give the buffered bytes to the sink. false (with `status` set) if it refused.
@@ -354,6 +366,13 @@ static inline bool gtext_out_put(GTEXT_Out * out, const void * bytes, size_t n) 
     return false;
   }
   memcpy(out->buf + out->n, bytes, n);
+  if (out->off) {
+    for (size_t k = 0; k < n; k++) {
+      out->off[out->n + k] = out->cur_off;
+      out->rep[out->n + k] = out->cur_rep;
+      out->wid[out->n + k] = out->cur_w;
+    }
+  }
   out->n += n;
   out->total += n;
   return true;

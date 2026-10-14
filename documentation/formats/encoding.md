@@ -13,7 +13,7 @@ web: HTML's encoding sniffing, forms, URLs, `TextDecoder`. This module implement
 the 28 single-byte encodings (`ibm866`, ISO-8859-2 to -16, `koi8-r`, `koi8-u`, `macintosh`, `windows-874`, `windows-1250` to `windows-1258`,
 `x-mac-cyrillic`, and ISO-8859-8-I) and **the seven multi-byte legacy encodings** - GBK, gb18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS and EUC-KR - which have
 \ref format_encoding_multi_byte "a section of their own" below. `GTEXT_ENCODING_E_UNSUPPORTED`, which the first release answered for them, is no longer returned by any function (it stays in the
-enum, and `gtext_encoding_is_supported()` is true for every encoding). HTML's encoding sniffing and its use of this module are the stage after this one.
+enum, and `gtext_encoding_is_supported()` is true for every encoding). HTML's encoding sniffing and its use of this module are \ref format_html "the HTML module's": the parser decodes with this module in replacement mode, and the serializer writes with its encoders in HTML mode.
 
 ## Quick start
 
@@ -381,10 +381,19 @@ allocate nothing.
 The differences from the two references that were *measured* (Node's `TextDecoder` and Python's codecs) are the classes of `tools/oracle/encoding_divergences.txt` (31 lines for the first release's populations and the rest for the multi-byte ones; `tools/encoding/counts.py` counts them), each with a count and the sentence or the index entry that
 decides it; the table of them is under "Measured".
 
+## Where a code point came from {#format_encoding_mapped}
+
+A parser that reports positions needs to know, for each character it was given, which byte of the **original** input it came from; for a multi-byte or UTF-16 encoding the offset in the
+decoded text is not that byte. A decoder made with `GTEXT_Decoder_Options::track_offsets` can say: `gtext_decoder_decode_mapped()` is `gtext_decoder_decode()` (the same output, in the same chunks, whatever
+the cuts of the input) with a sink that is also given, for every byte of each chunk, the stream offset of the first input byte of its code point and whether it is a U+FFFD for ill-formed
+input (`GTEXT_Encoding_Source_Map`), and how many bytes of the input it came from (`widths`, so that `offsets[i] + widths[i]` is the place just after it). An ill-formed sequence points at its first byte and is as wide as its replaced subpart; an ISO-2022-JP character at its own bytes and not the escape sequence that selected the set (the escape shows only as a gap
+between one character's end and the next one's offset, which is why both are given: a reader that is cut after a character has to report the place after it, and cannot know yet where the next begins); a restored byte (the decoder puts back at most four, once each) keeps the offset it had. The HTML parser is the user: it carries the map through the tokenizer and the tree builder, so that the lines,
+columns and offsets of its errors and nodes are those of the bytes fed. `gtext_encoder_set_error_mode()` changes an encoder's error mode between calls (the HTML serializer switches to the HTML mode only where a numeric
+character reference would be read as one).
+
 ## What is not here yet
 
-HTML's use of the module: the `<meta>` prescan, the byte order mark sniff of the standard's "decode" with a transport label, `Content-Type`, the parse of a document in another encoding, and the output of the serializer in another encoding. The HTML parser's labels are UTF-8 only today and
-will then be this module's. The module is complete as a library of codecs: all 40 encodings, with no public function, type or option added by the multi-byte stage.
+The module is complete as a library of codecs: all 40 encodings. HTML's use of it is done (sniffing, the parser's decoding, the serializer's encoding: the \ref format_html "HTML" page); what the standard's other users need (forms, URLs, `TextDecoder`) is not this library's.
 
 ## Measured
 

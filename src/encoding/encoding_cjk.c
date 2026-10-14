@@ -721,6 +721,7 @@ static GTEXT_Dec_Result iso_2022_jp_step(GTEXT_Dec_State * state, int byte, GTEX
       const bool output = s->output;
       s->output = true;
       /* Return continue, if output is false, and error otherwise. */
+      out->skip = true; /* (the escape sequence is not part of the character after it: the source map) */
       return output ? GTEXT_DEC_ERROR : GTEXT_DEC_CONTINUE;
     }
     /* If byte is end-of-queue, then restore leading to ioQueue; otherwise, restore « leading, byte » to ioQueue. */

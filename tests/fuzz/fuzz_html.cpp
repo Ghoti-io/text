@@ -33,7 +33,28 @@
  * four). o2: the seed of the random cut. o3: the failure sweep's mode (bit 0 cuts, bit 1 a byte at a
  * time, bit 2 the fragment/document alternative) and the single cut (bits 3 to 7). o4: bit 0 count-only,
  * bit 1 a byte order mark in front, bits 2 and 3 the error cap, bit 4 a UTF-8 transport label, bit 5 no
- * result struct in the failure sweep, bits 6 and 7 the label that must be refused.
+ * result struct in the failure sweep, bits 6 and 7 the world: 0 is the UTF-8 world described below, and
+ * anything else (for a document) is the **encoding world**, in which three more bytes follow the five.
+ *
+ * **The encoding world** reads the bytes in any encoding of a table of twenty, announced as the options
+ * choose (a certain or a tentative transport label, a default, or nothing), with `ignore_meta` or not, with
+ * a byte order mark in front or not and with a `<meta>` in front of the bytes, inside the first 1024 or
+ * after them (so that the parser reads it only as it parses, and restarts): e0 is the encoding (bits 0 to
+ * 4), how it is announced (5 and 6) and ignore_meta (7); e1 is the encoding the `<meta>` names (low four
+ * bits, 0 for none), the padding before it (4 and 5) and the mark (6 and 7); e2 is the form of the `<meta>`
+ * (charset or http-equiv), its case, and a second, later one. The properties, besides every one of the
+ * UTF-8 world's that does not name UTF-8 (the cuts, the limits, the failure sweep, the incremental
+ * parser's states):
+ *     the encoding is a name of the Encoding Standard, the document records it and the source the result
+ *     gives; the confidence and the flags make sense (a restart is source DECLARATION, certain, and
+ *     the declared encoding is not the one the bytes began as); a byte order mark has its length;
+ *     the decision is the sniff function's (gtext_html_sniff_encoding()) when the parse did not restart;
+ *     **the oracle**: the Encoding module decodes the input as the encoding the result names, with the
+ *     decoder's source map, and the tree builder reads that UTF-8 itself; the tree, the mode and
+ *     the errors are the same (the errors for ill-formed bytes are the decoder's replacements), and
+ *     every offset is the oracle's taken back through the map;
+ *     a restart is what a parse that began in the declared encoding gives;
+ *     UTF-8 read through the decoder and the source map is UTF-8 read by the tokenizer.
  *
  *     the answer - status, tree (in the tree-construction dump), document mode, every error (code,
  *     name, line, column, offset), the dropped count, the encoding and its source, the input and node
@@ -51,8 +72,7 @@
  *     the error cap keeps the first errors, in order, and kept plus dropped is the same number whatever
  *     the cap; count-only keeps none and counts all;
  *     a byte order mark in front of a document changes nothing but the encoding's source and the
- *     offsets, which are three more, and is text in a fragment; a label other than UTF-8 is refused
- *     with its status and no document, and a UTF-8 transport label is the source CALLER;
+ *     offsets, which are three more, and is text in a fragment; a UTF-8 transport label is the source CALLER;
  *     a limit that is tiny (open elements 1 to 8, nodes, input) is its own status, with no document,
  *     the boundary is exact for the input (the size passes, one byte less is refused, however the input
  *     is cut), and when a run under a limit succeeds it is the roomy run's;
@@ -72,6 +92,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -80,12 +101,16 @@
 #include <string>
 #include <vector>
 
+#include <ghoti.io/text/encoding.h>
+
 #include "../../include/ghoti.io/text/markup/markup_html.h"
 #include "../../src/html/html_tree_internal.h"
 #include "../../src/markup/markup_internal.h"
 #include "../../tools/conformance/html_tree_dump.h"
 #include "../html_api_test_support.h"
 #include "../markup_test_support.h"
+
+extern "C" GTEXT_HTML_Status html_parser_force_transcode(GTEXT_HTML_Parser * parser);
 
 namespace {
 
@@ -377,8 +402,23 @@ std::string check_tree(const GTEXT_Markup_Document * doc, const GTEXT_Markup_Nod
 }
 
 
-// The label that must be refused, by o4's top two bits.
-const char * const kRefused[4] = {"windows-1252", "utf-16", "", "UTF-8x"};
+// The encodings of the encoding world: a label for each, in the order e0 and e1 choose them (modulo the count).
+struct EncChoice {
+  const char * label;
+};
+const EncChoice kEncodings[20] = {{"utf-8"}, {"utf-16le"}, {"utf-16be"}, {"windows-1252"}, {"iso-8859-2"}, {"koi8-r"}, {"windows-1251"},
+    {"shift_jis"}, {"euc-jp"}, {"iso-2022-jp"}, {"gbk"}, {"gb18030"}, {"big5"}, {"euc-kr"}, {"x-user-defined"}, {"hz-gb-2312"},
+    {"iso-8859-8-i"}, {"windows-874"}, {"macintosh"}, {"ibm866"}};
+
+// The encoding (the library's enum) that the standard's name `name` is, or NONE.
+GTEXT_Encoding encoding_named(const std::string & name) {
+  for (int e = (int)GTEXT_ENCODING_NONE + 1; e < (int)GTEXT_ENCODING_COUNT; e++) {
+    if (name == gtext_encoding_name((GTEXT_Encoding)e)) {
+      return (GTEXT_Encoding)e;
+    }
+  }
+  return GTEXT_ENCODING_NONE;
+}
 
 bool is_failure_status(GTEXT_HTML_Status s) {
   return s == GTEXT_HTML_E_OOM || (s >= GTEXT_HTML_E_LIMIT_INPUT && s <= GTEXT_HTML_E_LIMIT_ATTRIBUTES);
@@ -407,7 +447,7 @@ struct Reference {
   size_t dropped = 0;
 };
 
-Reference reference(const std::string & input, const FuzzCtx * c, bool scripting, size_t max_open) {
+Reference reference(const std::string & input, const FuzzCtx * c, bool scripting, size_t max_open, bool skip_bom = true) {
   Reference r;
   GTEXT_HTML_TreeOptions o = {};
   o.scripting = scripting;
@@ -443,7 +483,7 @@ Reference reference(const std::string & input, const FuzzCtx * c, bool scripting
     return r;
   }
   size_t skip = 0;
-  if (!c && input.size() >= 3 && input.compare(0, 3, "\xEF\xBB\xBF") == 0) {
+  if (skip_bom && !c && input.size() >= 3 && input.compare(0, 3, "\xEF\xBB\xBF") == 0) {
     skip = 3;
     if (gtext_html_tree_skip_input(tree, 3) != GTEXT_HTML_TREE_OK) {
       fail("the builder refused to skip the byte order mark", "", input);
@@ -487,7 +527,10 @@ struct Config {
   size_t max_errors = 1u << 20;
   bool count_only = false;
   const char * transport = nullptr;
-  const char * refused = nullptr; // a default_encoding that must be refused
+  bool tentative = false;           // the transport label is only the caller's guess
+  const char * fallback = nullptr;  // default_encoding
+  bool ignore_meta = false;
+  bool enc_world = false;           // the encoding is not UTF-8 by construction (see the file's comment)
   FaultAllocator * fa = nullptr;
   size_t arm = 0;
   bool want_result = true;
@@ -502,7 +545,9 @@ Outcome exec(const std::string & input, const Config & cfg, const Call & call) {
   o.max_errors = cfg.max_errors;
   o.count_errors_only = cfg.count_only;
   o.transport_encoding = cfg.transport;
-  o.default_encoding = cfg.refused;
+  o.transport_encoding_certainty = cfg.tentative ? GTEXT_HTML_TENTATIVE : GTEXT_HTML_CERTAIN;
+  o.default_encoding = cfg.fallback;
+  o.ignore_meta = cfg.ignore_meta;
   if (cfg.fa) {
     o.allocator = &cfg.fa->alloc;
     cfg.fa->arm(cfg.arm);
@@ -523,7 +568,7 @@ Outcome exec(const std::string & input, const Config & cfg, const Call & call) {
 
 // The properties of one outcome, whatever the input.
 void check_outcome(const Outcome & o, const Config & cfg, const std::string & input, size_t input_bytes) {
-  if (o.status != GTEXT_HTML_OK && !is_failure_status(o.status) && o.status != GTEXT_HTML_E_UNSUPPORTED_ENCODING) {
+  if (o.status != GTEXT_HTML_OK && !is_failure_status(o.status)) {
     fail("an unexpected status", std::to_string((int)o.status), input);
   }
   if (cfg.want_result && o.result_status != o.status) {
@@ -557,18 +602,40 @@ void check_outcome(const Outcome & o, const Config & cfg, const std::string & in
   if (o.node_count != gtext_markup_document_node_count(o.doc)) {
     fail("the result's node count is not the document's", "", input);
   }
-  if (o.encoding != "UTF-8") {
+  if (!cfg.enc_world && o.encoding != "UTF-8") {
     fail("the encoding is not UTF-8", o.encoding, input);
+  }
+  if (cfg.enc_world && !o.fragment && encoding_named(o.encoding) == GTEXT_ENCODING_NONE) {
+    fail("the encoding is not a name of the standard", o.encoding, input);
   }
   if (!o.fragment) {
     GTEXT_Markup_Encoding_Source source = GTEXT_MARKUP_ENCODING_UNKNOWN;
     const char * label = gtext_markup_document_encoding(o.doc, &source);
-    if (!label || std::strcmp(label, "UTF-8") != 0 || source != o.source) {
+    if (!label || o.encoding != label || source != o.source) {
       fail("the document does not record the encoding the result gives", "", input);
     }
+    if (o.confidence != GTEXT_HTML_CERTAIN && o.confidence != GTEXT_HTML_TENTATIVE) {
+      fail("a document's confidence is neither certain nor tentative", std::to_string((int)o.confidence), input);
+    }
+    if (o.reparsed && (o.source != GTEXT_MARKUP_ENCODING_DECLARATION || o.confidence != GTEXT_HTML_CERTAIN || o.bom_length != 0)) {
+      fail("a restart that is not a certain declaration", "", input);
+    }
+    if (o.source == GTEXT_MARKUP_ENCODING_BOM && (o.bom_length < 2 || o.bom_length > 3 || o.confidence != GTEXT_HTML_CERTAIN)) {
+      fail("a byte order mark without its length, or not certain", "", input);
+    }
+    if (o.source != GTEXT_MARKUP_ENCODING_BOM && o.bom_length != 0) {
+      fail("a byte order mark length without a byte order mark", "", input);
+    }
+    if (o.source == GTEXT_MARKUP_ENCODING_CALLER && o.confidence != GTEXT_HTML_CERTAIN) {
+      fail("a transport label that is not certain is the source CALLER", "", input);
+    }
+  }
+  else if (o.confidence != GTEXT_HTML_IRRELEVANT) {
+    fail("a fragment's confidence is not irrelevant", "", input);
   }
   if (o.source != GTEXT_MARKUP_ENCODING_BOM && o.source != GTEXT_MARKUP_ENCODING_CALLER
-      && o.source != GTEXT_MARKUP_ENCODING_DEFAULT) {
+      && o.source != GTEXT_MARKUP_ENCODING_DEFAULT && o.source != GTEXT_MARKUP_ENCODING_DECLARATION
+      && o.source != GTEXT_MARKUP_ENCODING_CALLER_DEFAULT) {
     fail("an encoding source that cannot be", std::to_string((int)o.source), input);
   }
   if (o.input_bytes != input_bytes) {
@@ -614,7 +681,8 @@ std::string differ(const Outcome & a, const Outcome & b) {
   if (a.mode != b.mode) {
     return "mode";
   }
-  if (a.encoding != b.encoding || a.source != b.source) {
+  if (a.encoding != b.encoding || a.source != b.source || a.confidence != b.confidence || a.reparsed != b.reparsed
+      || a.bom_length != b.bom_length || a.transport_ignored != b.transport_ignored || a.default_ignored != b.default_ignored) {
     return "encoding";
   }
   if (a.status == GTEXT_HTML_OK && a.input_bytes != b.input_bytes) { // (a failed parse counts what it got to)
@@ -630,6 +698,184 @@ bool same(const Outcome & a, const Outcome & b) {
   return differ(a, b).empty();
 }
 
+struct MapSink {
+  std::string utf8;
+  std::vector<size_t> offsets;
+  std::vector<unsigned char> replaced;
+  std::vector<unsigned char> widths;
+};
+
+bool map_write(void * user, const char * bytes, size_t len, const GTEXT_Encoding_Source_Map * map) {
+  auto * m = static_cast<MapSink *>(user);
+  m->utf8.append(bytes, len);
+  m->offsets.insert(m->offsets.end(), map->offsets, map->offsets + len);
+  m->replaced.insert(m->replaced.end(), map->replaced, map->replaced + len);
+  m->widths.insert(m->widths.end(), map->widths, map->widths + len);
+  return true;
+}
+
+// The Encoding module's decode of the input as `enc`, byte order mark sniffed as the standard's "decode" does, with the decoder's map.
+bool decode_with_map(GTEXT_Encoding enc, const std::string & input, MapSink * out) {
+  GTEXT_Decoder_Options o = gtext_decoder_options_default();
+  o.track_offsets = true;
+  o.bom_sniffing = true;
+  o.max_output_bytes = SIZE_MAX;
+  GTEXT_Decoder * d = nullptr;
+  if (gtext_decoder_new(enc, &o, &d) != GTEXT_ENCODING_OK) {
+    return false;
+  }
+  GTEXT_Encoding_Mapped_Sink sink = {map_write, out};
+  const bool ok = gtext_decoder_decode_mapped(d, input.data(), input.size(), true, &sink, nullptr) == GTEXT_ENCODING_OK;
+  gtext_decoder_free(d);
+  return ok;
+}
+
+// The oracle: what the tree builder says for the Encoding module's decode of the input, with every offset taken back through the map.
+void check_against_the_oracle(const std::string & input, const Outcome & whole, const Config & cfg) {
+  const GTEXT_Encoding enc = encoding_named(whole.encoding);
+  if (enc == GTEXT_ENCODING_NONE) {
+    fail("the encoding the result names is not an encoding", whole.encoding, input);
+  }
+  MapSink m;
+  if (!decode_with_map(enc, input, &m)) {
+    fail("the oracle's decoder failed", whole.encoding, input);
+  }
+  // (no byte order mark is skipped here: the decoder took it, and a U+FEFF left in the text is a character)
+  Reference ref = reference(m.utf8, nullptr, cfg.scripting, cfg.max_open, false);
+  if (!ref.ok || ref.dump != whole.tree || ref.mode != whole.mode) {
+    fail("the parse is not the tree builder's on the decoder's output", whole.encoding, input);
+  }
+  size_t replaced = 0;
+  for (size_t i = 0; i < m.utf8.size(); i++) {
+    const unsigned char b = (unsigned char)m.utf8[i];
+    if ((b & 0xC0) != 0x80 && m.replaced[i]) {
+      replaced++;
+    }
+  }
+  std::vector<Err> mine;
+  size_t invalid = 0;
+  for (const Err & e : whole.errors) {
+    if (e.name == "invalid-utf-8-in-input-stream") {
+      invalid++;
+    }
+    else {
+      mine.push_back(e);
+    }
+  }
+  if (invalid != replaced) {
+    fail("the errors for ill-formed bytes are not the decoder's replacements", std::to_string(invalid) + " vs " + std::to_string(replaced), input);
+  }
+  if (mine.size() != ref.errors.size() || whole.dropped != 0) {
+    fail("the errors are not the tree builder's on the decoder's output", std::to_string(mine.size()) + " vs " + std::to_string(ref.errors.size()), input);
+  }
+  for (size_t i = 0; i < mine.size(); i++) {
+    // An error at the place after the character just read is at the end of that character in the original; any other is at the start of
+    // the character its position names (a shift sequence can lie between the two).
+    const bool after = ref.errors[i].code == GTEXT_HTML_ERR_NULL_CHARACTER_REFERENCE
+        || ref.errors[i].code == GTEXT_HTML_ERR_CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
+        || ref.errors[i].code == GTEXT_HTML_ERR_SURROGATE_CHARACTER_REFERENCE
+        || ref.errors[i].code == GTEXT_HTML_ERR_NONCHARACTER_CHARACTER_REFERENCE
+        || ref.errors[i].code == GTEXT_HTML_ERR_CONTROL_CHARACTER_REFERENCE
+        || ref.errors[i].code == GTEXT_HTML_ERR_INCORRECTLY_OPENED_COMMENT;
+    const size_t at = ref.errors[i].offset;
+    const size_t want_after = at == 0 ? 0 : (at <= m.offsets.size() ? m.offsets[at - 1] + m.widths[at - 1] : input.size());
+    const size_t want_start = at < m.offsets.size() ? m.offsets[at] : input.size();
+    // (a missing semicolon is at the place after the name of a named reference and at the character that ended a numeric one: either)
+    const bool either = ref.errors[i].code == GTEXT_HTML_ERR_MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE;
+    const size_t want = after ? want_after : want_start;
+    if (mine[i].code != ref.errors[i].code || mine[i].line != ref.errors[i].line || mine[i].column != ref.errors[i].column
+        || (either ? (mine[i].offset != want_after && mine[i].offset != want_start) : mine[i].offset != want)) {
+      fail("an error is not the oracle's (code, line, column, or the offset taken back through the map)", mine[i].name, input);
+    }
+  }
+}
+
+// The decision is the sniff function's when the parse did not restart, and is not the sniffed encoding when it did.
+void check_the_decision(const std::string & input, const Outcome & whole, const Config & cfg) {
+  GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
+  o.transport_encoding = cfg.transport;
+  o.transport_encoding_certainty = cfg.tentative ? GTEXT_HTML_TENTATIVE : GTEXT_HTML_CERTAIN;
+  o.default_encoding = cfg.fallback;
+  o.ignore_meta = cfg.ignore_meta;
+  GTEXT_HTML_Sniff_Result r;
+  if (gtext_html_sniff_encoding(input.data(), input.size(), &o, &r) != GTEXT_HTML_OK) {
+    fail("the sniff function failed", "", input);
+  }
+  const std::string sniffed = r.encoding_name ? r.encoding_name : "";
+  if (!whole.reparsed) {
+    if (whole.encoding != sniffed || whole.source != r.source || whole.bom_length != r.bom_length
+        || whole.transport_ignored != r.transport_encoding_ignored || whole.default_ignored != r.default_encoding_ignored) {
+      fail("the parser's decision is not the sniff function's", whole.encoding + " vs " + sniffed, input);
+    }
+    if (r.confidence == GTEXT_HTML_CERTAIN && whole.confidence != GTEXT_HTML_CERTAIN) {
+      fail("a certain decision became tentative", "", input);
+    }
+  }
+  else if (whole.encoding == sniffed || r.confidence == GTEXT_HTML_CERTAIN) {
+    fail("a restart to the encoding it began as, or from a certain one", whole.encoding, input);
+  }
+}
+
+// A restart is what a parse that began in the declared encoding gives.
+void check_the_restart(const std::string & input, const Outcome & whole, const Config & cfg) {
+  Config direct = cfg;
+  direct.transport = nullptr;
+  std::string label = whole.encoding;
+  direct.transport = label.c_str();
+  direct.tentative = false;
+  direct.fallback = nullptr;
+  Outcome o;
+  {
+    // (the name of an encoding is not always a label of it: `replacement` is the one that is not)
+    if (whole.encoding == "replacement") {
+      return;
+    }
+    o = exec(input, direct, {"parse", false, false, {}});
+  }
+  if (!o.ok() || o.tree != whole.tree || o.errors != whole.errors || o.reparsed) {
+    fail("a restart is not what a parse that began in the declared encoding gives", whole.encoding, input);
+  }
+}
+
+// UTF-8 through the decoder and the source map is UTF-8 through the tokenizer.
+void check_the_transcoded_route(const std::string & input, const Outcome & whole, const Config & cfg) {
+  GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
+  o.scripting = cfg.scripting;
+  o.max_open_elements = cfg.max_open;
+  o.max_errors = cfg.max_errors;
+  o.transport_encoding = cfg.transport;
+  o.transport_encoding_certainty = cfg.tentative ? GTEXT_HTML_TENTATIVE : GTEXT_HTML_CERTAIN;
+  o.default_encoding = cfg.fallback;
+  o.ignore_meta = cfg.ignore_meta;
+  for (int how = 0; how < 3; how++) {
+    GTEXT_HTML_Parser * p = nullptr;
+    if (gtext_html_parser_new(&o, &p) != GTEXT_HTML_OK) {
+      fail("a parser could not be made", "", input);
+    }
+    html_parser_force_transcode(p);
+    GTEXT_HTML_Status st = GTEXT_HTML_OK;
+    const size_t step = how == 0 ? input.size() : how == 1 ? 1 : 7;
+    for (size_t at = 0; at < input.size() && st == GTEXT_HTML_OK; at += step) {
+      st = gtext_html_parser_feed(p, input.data() + at, std::min(step, input.size() - at));
+    }
+    GTEXT_Markup_Document * doc = nullptr;
+    GTEXT_HTML_Result r;
+    const GTEXT_HTML_Status fin = gtext_html_parser_finish(p, &doc, &r);
+    if (st != GTEXT_HTML_OK || fin != GTEXT_HTML_OK || !doc) {
+      fail("the decoder's route failed where the other did not", std::to_string((int)fin), input);
+    }
+    Outcome got;
+    got.doc = doc;
+    got.tree = dump_doc(doc);
+    harvest(got, r);
+    gtext_html_parser_free(p);
+    if (got.tree != whole.tree || got.errors != whole.errors || got.encoding != whole.encoding || got.reparsed != whole.reparsed
+        || got.source != whole.source) {
+      fail("UTF-8 through the decoder is not UTF-8 through the tokenizer", "feed " + std::to_string(how), input);
+    }
+  }
+}
+
 } // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
@@ -637,27 +883,78 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     return 0;
   }
   const uint8_t o0 = data[0], o1 = data[1], o2 = data[2], o3 = data[3], o4 = data[4];
-  const std::string body((const char *)data + 5, size - 5);
   const bool fragment = (o0 & 2) != 0;
+  // The encoding world: for a document, when o4's top bits say so; three more option bytes follow.
+  const bool enc_world = !fragment && (o4 >> 6) != 0 && size >= 8;
+  const uint8_t e0 = enc_world ? data[5] : 0, e1 = enc_world ? data[6] : 0, e2 = enc_world ? data[7] : 0;
+  std::string body((const char *)data + (enc_world ? 8 : 5), size - (enc_world ? 8 : 5));
   const FuzzCtx * context = fragment ? &kContexts[(o0 >> 2) & 63] : nullptr;
   const std::string bom = "\xEF\xBB\xBF";
-  // A byte order mark in front of a document, when o4 says so.
-  const bool add_bom = !fragment && (o4 & 2) != 0;
-  const std::string input = add_bom ? bom + body : body;
-  const bool has_bom = !fragment && input.size() >= 3 && input.compare(0, 3, bom) == 0;
-
+  if (!enc_world && !fragment && body.size() >= 2
+      && (((unsigned char)body[0] == 0xFF && (unsigned char)body[1] == 0xFE) || ((unsigned char)body[0] == 0xFE && (unsigned char)body[1] == 0xFF))) {
+    body[0] = 'x'; // (a UTF-16 byte order mark in front would make the UTF-8 world something else)
+  }
+  // A byte order mark in front of a document, when o4 says so (the UTF-8 world).
+  const bool add_bom = !fragment && !enc_world && (o4 & 2) != 0;
+  std::string input = add_bom ? bom + body : body;
   Config roomy;
   roomy.ctx = context;
   roomy.scripting = (o0 & 1) != 0;
   roomy.max_open = 64; // fixed, as the builder's fuzzer does
   roomy.transport = (o4 & 16) ? (const char *)"UTF-8" : nullptr;
+  roomy.enc_world = enc_world;
+  if (!fragment && !enc_world) {
+    roomy.ignore_meta = true; // (a `<meta>` among the bytes would make the parse another encoding: that is the other world's)
+  }
+  if (enc_world) {
+    // The encoding the bytes are in, how it is announced, and what is put in front of them.
+    const char * label = kEncodings[(e0 & 31) % 20].label;
+    roomy.transport = nullptr;
+    switch ((e0 >> 5) & 3) {
+      case 0: roomy.transport = label; break;
+      case 1: roomy.transport = label; roomy.tentative = true; break;
+      case 2: roomy.fallback = label; break;
+      default: break;
+    }
+    roomy.ignore_meta = (e0 & 128) != 0;
+    std::string front;
+    switch (e1 >> 6) {
+      case 1: front += bom; break;
+      case 2: front += std::string("\xFF\xFE", 2); break;
+      case 3: front += std::string("\xFE\xFF", 2); break;
+      default: break;
+    }
+    static const size_t pads[4] = {0, 980, 1000, 1100};
+    const size_t pad = pads[(e1 >> 4) & 3];
+    if (pad >= 8) {
+      front += "<!--" + std::string(pad - 7, ' ') + "-->";
+    }
+    const unsigned meta_idx = e1 & 15;
+    if (meta_idx != 0) {
+      const char * named = kEncodings[meta_idx % 20].label;
+      std::string tag = (e2 & 2) ? "<META " : "<meta ";
+      if (e2 & 1) {
+        tag += std::string("http-equiv=Content-Type content=\"text/html; charset=") + named + "\">";
+      }
+      else {
+        tag += std::string("charset=") + named + ">";
+      }
+      front += tag;
+      if (e2 & 4) {
+        front += std::string("<meta charset=") + kEncodings[(meta_idx + 3) % 20].label + ">";
+      }
+    }
+    input = front + body;
+  }
+  const bool has_bom = !fragment && input.size() >= 3 && input.compare(0, 3, bom) == 0;
+
   const Call whole_call = {"parse", fragment, false, {}};
   const Outcome whole = exec(input, roomy, whole_call);
   check_outcome(whole, roomy, input, input.size());
   if (whole.status == GTEXT_HTML_E_OOM) {
     fail("OOM with the default allocator", "", input);
   }
-  if (whole.ok()) {
+  if (whole.ok() && !enc_world) {
     const GTEXT_Markup_Encoding_Source want =
         has_bom ? GTEXT_MARKUP_ENCODING_BOM : (roomy.transport ? GTEXT_MARKUP_ENCODING_CALLER : GTEXT_MARKUP_ENCODING_DEFAULT);
     if (whole.source != want) {
@@ -665,8 +962,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     }
   }
 
+  // The encoding world: the decision, the oracle, the restart, and the other route for UTF-8.
+  if (whole.ok() && enc_world) {
+    check_the_decision(input, whole, roomy);
+    check_against_the_oracle(input, whole, roomy);
+    if (whole.reparsed) {
+      check_the_restart(input, whole, roomy);
+    }
+    if (whole.encoding == "UTF-8") {
+      check_the_transcoded_route(input, whole, roomy);
+    }
+  }
+
   // The tree builder's own answer, with the mark skipped.
-  if (whole.ok()) {
+  if (whole.ok() && !enc_world) {
     const Reference ref = reference(input, context, roomy.scripting, roomy.max_open);
     if (!ref.ok || ref.dump != whole.tree || ref.mode != whole.mode || ref.dropped != whole.dropped
         || ref.errors.size() != whole.errors.size()) {
@@ -701,7 +1010,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
 
   // A byte order mark in front of a document changes the source and the offsets and nothing else.
-  if (!fragment && !has_bom && whole.ok()) {
+  if (!fragment && !enc_world && !has_bom && whole.ok()) {
     const Outcome marked = exec(bom + input, roomy, whole_call);
     if (!marked.ok() || marked.tree != whole.tree || marked.source != GTEXT_MARKUP_ENCODING_BOM
         || marked.errors.size() != whole.errors.size() || marked.dropped != whole.dropped
@@ -748,21 +1057,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     check_outcome(k, count, input, input.size());
     if (!k.ok() || !k.errors.empty() || k.dropped != total || k.tree != whole.tree) {
       fail("count-only is not the whole count and no errors", "", input);
-    }
-  }
-
-  // Encoding labels.
-  if (whole.ok() || !is_failure_status(whole.status)) {
-    Config refused = roomy;
-    refused.refused = kRefused[(o4 >> 6) & 3];
-    const Outcome r = exec(input, refused, whole_call);
-    if (r.status != GTEXT_HTML_E_UNSUPPORTED_ENCODING || r.doc || r.result_status != r.status) {
-      fail("a label that is not UTF-8 was not refused", refused.refused, input);
-    }
-    const Call pcall = {"parser", fragment, true, {Cut::PIECES, piece}};
-    const Outcome rp = exec(input, refused, pcall);
-    if (rp.status != GTEXT_HTML_E_UNSUPPORTED_ENCODING || rp.doc) {
-      fail("the parser did not refuse a label that is not UTF-8", refused.refused, input);
     }
   }
 

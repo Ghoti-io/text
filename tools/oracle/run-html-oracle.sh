@@ -87,13 +87,28 @@ run_tokens() {
 		python3 "$root/tools/oracle/html_tokenizer_diff.py" "$trunner" "$@"
 }
 
+# skipped <control>: true when this control is not to be run: another one was asked for (--control NAME), or it comes before the one a
+# resumed run starts at (HTML_ORACLE_FROM=NAME, so that the whole list can be run in pieces when one call may not take as long as all of it).
+skipped() {
+	if [ -n "$only" ] && [ "$only" != "$1" ]; then
+		return 0
+	fi
+	if [ -n "$from" ]; then
+		if [ "$from" = "$1" ]; then
+			from=
+		else
+			return 0
+		fi
+	fi
+	return 1
+}
 # expect <what> <heading> <detail> <command...>: the command must exit 3 and say both.
 log=$(mktemp)
 scratch=$(mktemp -d)
 trap 'rm -f "$log"; rm -rf "$scratch"' EXIT
 expect() {
 	what=$1 want=$2 detail=$3
-	if [ -n "$only" ] && [ "$only" != "$what" ]; then
+	if skipped "$what"; then
 		return 0
 	fi
 	shift 3
@@ -114,7 +129,7 @@ expect() {
 # find it again.
 source_plant() {
 	name=$1 pattern=$2 replacement=$3 heading=$4 detail=$5
-	if [ -n "$only" ] && [ "$only" != "$name" ]; then
+	if skipped "$name"; then
 		return 0
 	fi
 	cp "$root/src/xml/xml_writer.c" "$scratch/xml_writer.c"
@@ -136,7 +151,7 @@ source_plant() {
 # is never pulled in). The differential must fail on it, and say it found a divergence.
 tokenizer_plant() {
 	name=$1 pattern=$2 replacement=$3 heading=${4:-Divergences with no entry} detail=${5:-parse5}
-	if [ -n "$only" ] && [ "$only" != "tok-$name" ]; then
+	if skipped "tok-$name"; then
 		return 0
 	fi
 	cp "$root/src/html/html_tokenizer.c" "$scratch/html_tokenizer.c"
@@ -162,7 +177,7 @@ tree_plant_with() {
 	how=$1
 	shift
 	name=$1 file=$2 pattern=$3 replacement=$4 heading=${5:-Divergences with no entry\\|Listed divergences whose count has changed\\|Listed divergences that are gone\\|The invariant checker failed} detail=${6:-.}
-	if [ -n "$only" ] && [ "$only" != "tree-$name" ]; then
+	if skipped "tree-$name"; then
 		return 0
 	fi
 	rm -rf "$scratch/tplant"
@@ -398,6 +413,7 @@ run_tree_diff() {
 }
 
 only=
+from=${HTML_ORACLE_FROM:-}
 case "$mode" in
 	--control) only=$1; check_controls ;;
 	--vectors) run_vectors "$@" ;;

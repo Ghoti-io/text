@@ -167,6 +167,55 @@ typedef struct {
 } GTEXT_Encoding_Sink;
 
 /**
+ * @brief The most bytes of UTF-8 that a sink (gtext_decoder_decode(), gtext_decoder_decode_mapped()) is given in one call.
+ *
+ * A caller that keeps something for each byte of a chunk (a source map in another form) can size it with this.
+ */
+#define GTEXT_ENCODING_MAX_CHUNK 4096
+
+/**
+ * @struct GTEXT_Encoding_Source_Map
+ * @brief Where the code points of a decoded chunk came from.
+ *
+ * Given to a mapped sink (gtext_decoder_decode_mapped()) with each chunk of UTF-8, as two arrays with **one entry for
+ * every byte of the chunk**. All the bytes of a code point share their entry. `offsets[i]` is the offset, from the start of
+ * the stream (the first byte after the last flush or failure, a byte order mark included), of the first byte of the input that
+ * the code point was decoded from: for an ill-formed sequence the first byte of the replaced subpart, for an ISO-2022-JP
+ * character the first byte of its own bytes (not the escape sequence that selected the mode). `replaced[i]` is non-zero when the
+ * code point is the U+FFFD that stands for ill-formed input (the decoder's replacement mode), and zero for every other code
+ * point, a U+FFFD that the input spelled included. `widths[i]` is how many bytes of the input the code point was decoded from, so that
+ * `offsets[i] + widths[i]` is the offset just after it: for an ill-formed sequence the bytes of the replaced subpart, for an ISO-2022-JP
+ * character its own bytes (not the escape sequences before it), and 15 at most. The place after a code point is not always the place
+ * where the next one begins, because shift sequences and the like lie between them, and a reader that is cut anywhere has to know the
+ * one before it knows the other. All three arrays are valid only for the call.
+ */
+typedef struct {
+  const size_t * offsets;          ///< One per byte of the chunk.
+  const unsigned char * replaced;  ///< One per byte of the chunk.
+  const unsigned char * widths;    ///< One per byte of the chunk: the bytes of the input that the code point was decoded from.
+} GTEXT_Encoding_Source_Map;
+
+/**
+ * @brief Where a decoder's output goes when the caller also wants to know where it came from.
+ *
+ * As GTEXT_Encoding_Write_Function, with the chunk's GTEXT_Encoding_Source_Map. The chunks are cut as for the plain sink: only
+ * between code points, of up to a few kilobytes.
+ *
+ * @return true to continue; false to stop (GTEXT_ENCODING_E_WRITE).
+ */
+typedef bool (*GTEXT_Encoding_Mapped_Write_Function)(
+    void * user, const char * bytes, size_t len, const GTEXT_Encoding_Source_Map * map);
+
+/**
+ * @struct GTEXT_Encoding_Mapped_Sink
+ * @brief A sink that receives the source map of each chunk.
+ */
+typedef struct {
+  GTEXT_Encoding_Mapped_Write_Function write; ///< Called for each chunk. Not NULL.
+  void * user;                                ///< Passed back unchanged.
+} GTEXT_Encoding_Mapped_Sink;
+
+/**
  * @brief A static, human-readable name for a status.
  *
  * Every status has a name of its own, and no two are alike.

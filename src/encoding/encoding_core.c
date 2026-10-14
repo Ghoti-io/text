@@ -178,13 +178,26 @@ bool gtext_encoding_is_supported(GTEXT_Encoding encoding) {
 /* ---- the output buffer -------------------------------------------------------------------- */
 
 /// Give the buffered bytes to the sink; false (with `status` set) if it refused. The buffer is empty afterwards either way, so a sink that refused is not asked again.
+/* The chunk a sink is given is the one the public constant promises: callers size what they keep for each byte of it by that. */
+_Static_assert(sizeof(((GTEXT_Out *)0)->buf) == GTEXT_ENCODING_MAX_CHUNK, "GTEXT_ENCODING_MAX_CHUNK is the size of the chunk buffer");
+
 bool gtext_out_flush(GTEXT_Out * out) {
   if (out->n == 0) {
     return true;
   }
   const size_t n = out->n;
   out->n = 0;
-  if (!out->sink->write(out->sink->user, (const char *)out->buf, n)) {
+  bool accepted;
+  if (out->msink) {
+    GTEXT_Encoding_Source_Map map;
+    map.offsets = out->off;
+    map.replaced = out->rep;
+    map.widths = out->wid;
+    accepted = out->msink->write(out->msink->user, (const char *)out->buf, n, &map);
+  } else {
+    accepted = out->sink->write(out->sink->user, (const char *)out->buf, n);
+  }
+  if (!accepted) {
     out->status = GTEXT_ENCODING_E_WRITE;
     return false;
   }
@@ -213,6 +226,13 @@ bool gtext_out_put_run(GTEXT_Out * out, const unsigned char * bytes, size_t n, s
     }
     const size_t take = n < room ? n : room;
     memcpy(out->buf + out->n, bytes, take);
+    if (out->off) {
+      for (size_t k = 0; k < take; k++) {
+        out->off[out->n + k] = out->cur_off + taken + k;
+        out->rep[out->n + k] = 0;
+        out->wid[out->n + k] = 1; /* (a run of ASCII is one byte a code point: only codecs that read ASCII that way are run so) */
+      }
+    }
     out->n += take;
     out->total += take;
     bytes += take;

@@ -68,6 +68,7 @@ static const char * status_name(GTEXT_HTML_TreeStatus s) {
     case GTEXT_HTML_TREE_E_STATE: return "E_STATE";
     case GTEXT_HTML_TREE_E_OOM: return "E_OOM";
     case GTEXT_HTML_TREE_E_REPROCESS: return "E_REPROCESS";
+    case GTEXT_HTML_TREE_E_ENCODING: return "E_ENCODING";
     case GTEXT_HTML_TREE_E_LIMIT_DEPTH: return "E_LIMIT_DEPTH";
     case GTEXT_HTML_TREE_E_LIMIT_NODES: return "E_LIMIT_NODES";
     case GTEXT_HTML_TREE_E_LIMIT_INPUT: return "E_LIMIT_INPUT";

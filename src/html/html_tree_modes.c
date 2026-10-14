@@ -458,9 +458,13 @@ static int h_in_head(GTEXT_HTML_Tree * tb, const Tk * tk) {
         case T_BASEFONT:
         case T_BGSOUND:
         case T_LINK:
+          HT_CK(ht_insert_element(tb, tk, NULL));
+          HT_CK(ht_pop_current_acknowledge(tb, tk));
+          return R_DONE;
         case T_META:
           HT_CK(ht_insert_element(tb, tk, NULL));
           HT_CK(ht_pop_current_acknowledge(tb, tk));
+          HT_CK(ht_meta_encoding(tb, tk->attrs, tk->nattrs));
           return R_DONE;
         case T_TITLE:
           return generic_text(tb, tk, GTEXT_HTML_STATE_RCDATA);
@@ -1595,7 +1599,7 @@ static bool table_text_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n) {
         if (tb->pend_len > 0) {
           SegCursor pc;
           ht_seg_cursor_init(&pc, tb->pend, tb->pend_segs, tb->pend_nsegs, tb->cur->line,
-              tb->cur->column, tb->cur->offset);
+              tb->cur->column, tb->cur->offset, tb->pend_dl, tb->pend_len);
           if (!foster_chars(tb, &pc, tb->pend, tb->pend, tb->pend_len)) {
             return false;
           }
@@ -1625,12 +1629,22 @@ static bool table_text_chars(GTEXT_HTML_Tree * tb, const char * p, size_t n) {
             return ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
           }
           tb->pend = grown;
+          if (tb->cur->deltas) { /* a source map: the deltas of the data go with the data */
+            uint8_t * grown_dl = gtext_allocator_realloc(&tb->alloc, tb->pend_dl, cap);
+            if (!grown_dl) {
+              return ht_tree_fail(tb, GTEXT_HTML_TREE_E_OOM);
+            }
+            tb->pend_dl = grown_dl;
+          }
           tb->pend_cap = cap;
         }
         if (!pend_note(tb, (size_t)(p - base), len)) {
           return false;
         }
         memcpy(tb->pend + tb->pend_len, p, len);
+        if (tb->cur->deltas) {
+          memcpy(tb->pend_dl + tb->pend_len, tb->cur->deltas + (size_t)(p - base), len);
+        }
         tb->pend_len += len;
       }
     }
@@ -2553,7 +2567,8 @@ bool ht_tree_handle_token(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Token * t) {
         p++;
         n--;
       }
-      ht_seg_cursor_init(&tb->tcur, t->data, t->segments, t->segment_count, t->line, t->column, t->offset);
+      ht_seg_cursor_init(&tb->tcur, t->data, t->segments, t->segment_count, t->line, t->column, t->offset,
+          t->deltas, t->data_length);
       return handle_chars(tb, p, n);
     }
     case GTEXT_HTML_TOKEN_DOCTYPE:

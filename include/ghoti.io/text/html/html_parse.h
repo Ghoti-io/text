@@ -47,27 +47,69 @@
  * - The **document mode** is set (gtext_markup_document_mode()) from the
  *   doctype, and the encoding is recorded (gtext_markup_document_encoding()).
  * - **Source locations** on elements, text, comments, processing instructions
- *   and doctypes, and on attributes; offsets count bytes of the input.
+ *   and doctypes, and on attributes; offsets count bytes of the input **as the
+ *   caller gave it**, whatever its encoding (see "Encodings").
  *
  * Every input has a tree: a document with no `html` element gets one, with
  * a `head` and a `body`, and the mistakes in the document are parse errors
- * (html_error.h), not failures. A parse fails only for an argument, a limit,
- * memory, or an encoding label this release cannot read. Nothing is read from
+ * (html_error.h), not failures. A parse fails only for an argument, a limit
+ * or memory. Nothing is read from
  * a file or a network except by gtext_html_parse_file() for the file it is
  * given, no script is executed, and a reference to an external resource is
  * only an attribute value.
  *
  * ## Encodings
  *
- * This release reads **UTF-8**. A leading UTF-8 byte order mark is skipped
- * (the encoding's source is then `BOM`; offsets and the input limit still
- * count its three bytes), and a byte sequence that is not UTF-8 is replaced
- * by U+FFFD with the parse error `invalid-utf-8-in-input-stream`. The
- * encoding labels in the options are validated: UTF-8's are accepted and any
- * other is GTEXT_HTML_E_UNSUPPORTED_ENCODING, so a program can already pass
- * what it knows. UTF-16, the legacy encodings, the `<meta>` prescan and
- * the transcoding are later phases (3h and 3i) and fill in fields that are
- * already here.
+ * The input is bytes, and the parser decides what they are as the standard's
+ * **encoding sniffing algorithm** does (html.spec.whatwg.org, "Determining the
+ * character encoding"), in this order, the first that answers:
+ *
+ * 1. a **byte order mark** (UTF-8, UTF-16LE, UTF-16BE): certain, and skipped;
+ * 2. the caller's **transport label** (`transport_encoding`, the `charset` of a
+ *    `Content-Type`), if `transport_encoding_certainty` is certain: certain;
+ * 3. unless `ignore_meta`: the **`<meta>` prescan** of the first 1024 bytes -
+ *    `<meta charset>`, `<meta http-equiv=content-type content=...>`, an XML
+ *    declaration's `encoding` or a UTF-16 one - tentative. A UTF-16 label found
+ *    this way means UTF-8, as the standard says (a document whose markup reads as
+ *    ASCII is not in UTF-16), and `x-user-defined` means windows-1252;
+ * 4. a tentative `transport_encoding`, then `default_encoding`, then UTF-8:
+ *    tentative.
+ *
+ * **Nothing is guessed from the content** (no frequency analysis, no detector): the
+ * standard allows it and leaves it to the user agent, and it is a source of
+ * encodings that neither the document nor the caller named; the caller
+ * supplies the default.
+ *
+ * The parser looks at the first 1024 bytes (or the whole input, if it is shorter)
+ * before it builds anything, so an incremental parser holds back its first 1024
+ * bytes. While the encoding is **tentative** it also keeps every byte it is
+ * given until the tree builder leaves the head (its insertion mode is one of
+ * `initial` to `after head`, `text` and `in template`), or the input ends, because a
+ * `<meta>` that declares another encoding in the head makes the standard
+ * "change the encoding": the parse starts again from the first byte in the
+ * declared one (`reparsed`), and the tree, the errors and their offsets are exactly those
+ * of a parse that had begun in it. A `<meta>` after the head is an ordinary
+ * element, and so is every `<meta>` after a restart (the encoding is then certain). Once
+ * the head is behind it the parser lets go of what it kept and the rest streams;
+ * the memory this costs is the head and is bounded by `max_input_bytes`.
+ * gtext_html_parse() and the file functions do not copy the input for it at all.
+ *
+ * The bytes are decoded with the Encoding Standard's decoders (encoding.h), in
+ * their replacement mode: an ill-formed byte sequence is a U+FFFD and the parse
+ * error `invalid-utf-8-in-input-stream` (named for UTF-8, raised for the same
+ * thing in every encoding), never a failure. **Offsets** in the errors and the
+ * locations of the nodes are offsets into the bytes **given**, so that they stay
+ * right for a document in Shift_JIS or UTF-16 (the decoder reports where each code
+ * point began); a byte order mark and the bytes of an ISO-2022-JP escape sequence
+ * are counted. **Line and column count characters**, a column being a UTF-16 unit as
+ * before. `max_input_bytes` counts the bytes given. Chunking, and a restart,
+ * change none of this.
+ *
+ * Which encoding was used, how it was decided and how sure the parser is are in the
+ * result and on the document (gtext_markup_document_encoding()).
+ * gtext_html_sniff_encoding() runs the algorithm alone. A fragment is characters, not
+ * bytes: it is not decoded or sniffed, and `transport_encoding` and `default_encoding`
+ * are only checked and reported.
  *
  * ## Results
  *
@@ -118,9 +160,8 @@ extern "C" {
  *               anything to say; may be NULL. Free it with
  *               gtext_html_result_free().
  * @return GTEXT_HTML_OK, or why the parse failed: GTEXT_HTML_E_INVALID (NULL
- *   `out`, NULL `data` with a length), GTEXT_HTML_E_UNSUPPORTED_ENCODING,
- *   GTEXT_HTML_E_OOM, or a limit's status. On any failure there is no tree and
- *   nothing is leaked.
+ *   `out`, NULL `data` with a length), GTEXT_HTML_E_OOM, or a limit's status. On any
+ *   failure there is no tree and nothing is leaked.
  */
 GTEXT_API GTEXT_HTML_Status gtext_html_parse(const void * data, size_t len,
     const GTEXT_HTML_Parse_Options * opts, GTEXT_Markup_Document ** out,
@@ -144,8 +185,9 @@ GTEXT_API GTEXT_HTML_Status gtext_html_parse(const void * data, size_t len,
  * inserting a fragment inserts its children. Then free `doc`.
  *
  * The input is characters already decoded, as `innerHTML`'s is: a leading
- * U+FEFF is text, not a byte order mark. The encoding options are validated and
- * reported as for a document, with the source `DEFAULT` or `CALLER`.
+ * U+FEFF is text, not a byte order mark. The encoding options are checked and
+ * reported (the labels they name or do not), with the source `DEFAULT` or `CALLER`
+ * and the confidence irrelevant.
  * `max_open_elements` counts the context element's `html` root, so a limit of
  * 1 admits no element at all. The result's `mode` is the context's `quirks`. The
  * result's `encoding` and `encoding_source` are reported but **not recorded on the
@@ -196,6 +238,42 @@ GTEXT_API GTEXT_HTML_Status gtext_html_parse_file(const char * path,
     GTEXT_HTML_Result * result);
 
 /**
+ * @struct GTEXT_HTML_Sniff_Result
+ * @brief What the encoding sniffing algorithm picked for some bytes.
+ */
+typedef struct {
+  GTEXT_HTML_Status status;         ///< GTEXT_HTML_OK, or GTEXT_HTML_E_INVALID for an unusable argument or option (then nothing else is set).
+  GTEXT_Encoding encoding;          ///< The encoding picked.
+  const char * encoding_name;       ///< Its name by the Encoding Standard ("windows-1252", "Shift_JIS"...). Static; never freed.
+  GTEXT_Markup_Encoding_Source source; ///< How it was decided, as in GTEXT_HTML_Result::encoding_source (a restart never happens here).
+  GTEXT_HTML_Encoding_Certainty confidence; ///< _CERTAIN (a byte order mark, a certain transport label) or _TENTATIVE.
+  size_t bom_length;                ///< Bytes of the byte order mark, or 0.
+  bool transport_encoding_ignored;  ///< `transport_encoding` was given and names no encoding.
+  bool default_encoding_ignored;    ///< `default_encoding` was given and names no encoding.
+} GTEXT_HTML_Sniff_Result;
+
+/**
+ * @brief The encoding the parser would pick for these bytes, without parsing them.
+ *
+ * Runs the encoding sniffing algorithm of the standard - the byte order mark, the caller's
+ * transport label, the `<meta>` prescan, the caller's default - over the first 1024 bytes of
+ * `data` (or all of it if it is shorter, which the prescan reads as the end of the input), exactly as
+ * gtext_html_parse() does before it begins. Only the options that decide it are read: `transport_encoding`,
+ * `transport_encoding_certainty`, `default_encoding`, `ignore_meta`. **It is what the parser starts with, not
+ * always what it ends with**: a tentative encoding can still be changed by a `<meta>` the parser meets in the
+ * head after the first 1024 bytes, or one the prescan read differently from the tokenizer. No memory is allocated.
+ *
+ * @param data   The beginning of the document. May be NULL if `len` is 0.
+ * @param len    Bytes of `data`.
+ * @param opts   Options, or NULL for the defaults.
+ * @param result Receives the answer. Not NULL.
+ * @return The result's status: GTEXT_HTML_OK, or GTEXT_HTML_E_INVALID (NULL `result`, NULL `data` with a length, a
+ *   certainty that is none of the enum).
+ */
+GTEXT_API GTEXT_HTML_Status gtext_html_sniff_encoding(const void * data, size_t len,
+    const GTEXT_HTML_Parse_Options * opts, GTEXT_HTML_Sniff_Result * result);
+
+/**
  * @brief Opaque incremental parser.
  *
  * Chunk boundaries do not matter: a document fed whole, a byte at a time, or
@@ -211,9 +289,8 @@ GTEXT_API GTEXT_HTML_Status gtext_html_parse_file(const char * path,
  * is not a character ends it, so `max_text_bytes` bounds it; the other tokens
  * are bounded by their own limits.
  *
- * Once any call has failed - a limit was reached, memory ran out, the encoding
- * was unsupported - the parser is finished: every later call returns the
- * same status.
+ * Once any call has failed - a limit was reached, memory ran out - the parser is
+ * finished: every later call returns the same status.
  */
 typedef struct GTEXT_HTML_Parser GTEXT_HTML_Parser;
 
@@ -226,7 +303,7 @@ typedef struct GTEXT_HTML_Parser GTEXT_HTML_Parser;
  * @param out  Receives the parser, which the caller frees with
  *             gtext_html_parser_free(). Set to NULL on failure.
  * @return GTEXT_HTML_OK; GTEXT_HTML_E_INVALID for a NULL `out`;
- *   GTEXT_HTML_E_UNSUPPORTED_ENCODING; GTEXT_HTML_E_OOM. (Unlike
+ *   GTEXT_HTML_E_INVALID for a certainty that is none of the enum; GTEXT_HTML_E_OOM. (Unlike
  *   gtext_xml_stream_new() this returns a status, because there is more than
  *   one way for it to fail.)
  */
@@ -260,7 +337,7 @@ GTEXT_API GTEXT_HTML_Status gtext_html_parser_new_fragment(
  *               reference may be cut between calls.
  * @param len    Their number.
  * @return GTEXT_HTML_OK; GTEXT_HTML_E_INVALID for a NULL parser or `data` NULL
- *   with a length; the sticky failure if there was one (the encoding, a limit,
+ *   with a length; the sticky failure if there was one (a limit,
  *   memory); GTEXT_HTML_E_STATE after the parser was finished.
  */
 GTEXT_API GTEXT_HTML_Status gtext_html_parser_feed(GTEXT_HTML_Parser * parser,

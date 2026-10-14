@@ -120,6 +120,16 @@ extern "C" {
 /// A tokenizer. Opaque.
 typedef struct GTEXT_HTML_Tokenizer GTEXT_HTML_Tokenizer;
 
+/// An entry of the source map of gtext_html_tokenizer_feed_mapped() (one for every byte of the UTF-8 it is given; all the bytes of a
+/// character share theirs): the offset in the original input of the character's first byte (the low bits), the number of bytes of the
+/// original it was decoded from (the four bits below the flag, so that the place just after it is known), and the flag in the top bit
+/// that says the character stands for ill-formed input.
+#define GTEXT_HTML_SOURCE_REPLACED ((size_t)1 << (sizeof(size_t) * 8 - 1))
+/// Where the width of a character in the original starts, in an entry of the source map.
+#define GTEXT_HTML_SOURCE_WIDTH_SHIFT (sizeof(size_t) * 8 - 5)
+/// The bits of an entry that are the offset: an input past them cannot be given with a source map.
+#define GTEXT_HTML_SOURCE_START_MASK ((((size_t)1) << GTEXT_HTML_SOURCE_WIDTH_SHIFT) - 1)
+
 /* ---- Defaults ----------------------------------------------------------- */
 
 #define GTEXT_HTML_TOKENIZER_DEFAULT_MAX_INPUT ((size_t)64 * 1024 * 1024)
@@ -253,8 +263,9 @@ typedef struct {
  * sequence is U+FFFD), so the position of the i-th byte is not the token's position plus i. Each segment
  * says where the data from `index` on starts in the input, and the data runs on from there byte for byte
  * (a line feed starts a new line, a character is as many UTF-16 units as its code point) until the next
- * segment. A run with more than GTEXT_HTML_MAX_TEXT_SEGMENTS pieces has its first ones exact and the rest
- * counted on from the last, so the memory is bounded however many references a run holds.
+ * segment. A run with more than GTEXT_HTML_MAX_TEXT_SEGMENTS pieces is delivered as several character
+ * tokens (each with at most that many, every one exact), so the memory is bounded however many references
+ * a run holds; consecutive character tokens are one run of text, and `max_text_bytes` counts the run.
  */
 typedef struct {
   size_t index;  ///< Byte index in the token's data.
@@ -315,6 +326,11 @@ typedef struct {
   /// GTEXT_HTML_TextSegment. Valid until the next call to next().
   const GTEXT_HTML_TextSegment * segments;
   size_t segment_count;
+  /// CHARACTER from a tokenizer that reads a source map (feed_mapped), else NULL: one byte for every byte of `data`, which
+  /// at the first byte of a character is how many original bytes after the character before it this one begins (0 at the
+  /// bytes that continue a character). Between the segments, the offset of a character is the one before it plus this; the
+  /// segments say where it starts anew. Valid until the next call to next().
+  const uint8_t * deltas;
 } GTEXT_HTML_Token;
 
 /* ---- States the tree builder can set ------------------------------------ */
@@ -427,6 +443,34 @@ GTEXT_INTERNAL_API void gtext_html_tokenizer_free(GTEXT_HTML_Tokenizer * tok);
  */
 GTEXT_INTERNAL_API GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed(
     GTEXT_HTML_Tokenizer * tok, const void * data, size_t length);
+
+/**
+ * @brief Hand the tokenizer some input that a decoder produced, with where each character of it came from.
+ *
+ * `data` is UTF-8 (well-formed: a decoder's output) and `source` has one entry for every byte of it: the offset, in the
+ * bytes the decoder read, of the byte its character began at (the same for every byte of a character), with the top bit
+ * set when the character is a U+FFFD that stands for ill-formed input (which then raises
+ * GTEXT_HTML_ERR_INVALID_UTF8, as an ill-formed sequence in the tokenizer's own reading does). Errors, tokens and the
+ * positions inside a run of characters are then reported in **those** offsets, so that a document in Shift_JIS or UTF-16
+ * has its positions in its own bytes. The machine itself reads `data` and is exactly the one that reads UTF-8: line
+ * and column count characters, a carriage return and a line feed are one line feed, and everything that was said of
+ * chunking holds. A tokenizer is fed with one of feed() and feed_mapped() for its whole life (the other is
+ * GTEXT_HTML_TOKENIZER_E_INVALID). The same borrowing rule as feed(): data and source stay valid until next() returns
+ * NEED_INPUT. `max_input_bytes` counts `data`: the caller of this function, which knows the original bytes, keeps its own
+ * limit on them and gives this tokenizer none to speak of.
+ *
+ * @return As feed(); E_INVALID also for a NULL `source` with a length.
+ */
+GTEXT_INTERNAL_API GTEXT_HTML_TokenizerStatus gtext_html_tokenizer_feed_mapped(
+    GTEXT_HTML_Tokenizer * tok, const void * data, size_t length, const size_t * source);
+
+/**
+ * @brief Say that there is no more input, and how long the original input was.
+ *
+ * As finish() for a tokenizer that reads a source map: `source_length` is the offset reported for the end of the input
+ * (the end-of-file token, an error at the end).
+ */
+GTEXT_INTERNAL_API void gtext_html_tokenizer_finish_mapped(GTEXT_HTML_Tokenizer * tok, size_t source_length);
 
 /**
  * @brief Count `count` bytes the caller consumed itself (a byte order mark) before the first byte fed.

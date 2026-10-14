@@ -938,7 +938,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-html-sniff-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1085,6 +1085,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/html/html_core.c \
 	src/html/html_file_io.c \
 	src/html/html_serialize.c \
+	src/html/html_sniff.c \
 	src/html/html_tokenizer.c \
 	src/html/html_tokenizer_errors.c \
 	src/html/html_tree.c \
@@ -2091,6 +2092,14 @@ conformance-html-tree: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh && \
 	$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh --controls
 
+# The encoding vectors of html5lib-tests (82 of them): which encoding the parser decides on, held to the prescan alone and to the whole parser, and
+# to the incremental parser cut every way. The scoring half is in check-conformance-vectors; this adds the controls (about fifteen seconds).
+conformance-html-encoding: ## Score the HTML parser's choice of encoding against html5lib-tests' encoding vectors
+conformance-html-encoding: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/encoding,tools/html/fetch.sh)
+	@$(CONFORMANCE_ENV) tools/conformance/run-html-encoding.sh && \
+	$(CONFORMANCE_ENV) tools/conformance/run-html-encoding.sh --controls
+
 conformance-html-tree-asan: ## The HTML tree builder's vector gate with the library and the runner under ASan + UBSan
 conformance-html-tree-asan: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
@@ -2126,10 +2135,12 @@ check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/tokenizer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/serializer,tools/html/fetch.sh)
+	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/encoding,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
 	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED=1800 XMLCONF_MIN_ROUNDTRIP=1222 XMLCONF_MAX_ROUNDTRIP_REFUSED=17 XMLCONF_MAX_ENTITY=83 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
 	@$(CONFORMANCE_ENV) HTML_TOKENIZER_MIN_SCORED=7000 tools/conformance/run-html-tokenizer.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh
+	@$(CONFORMANCE_ENV) tools/conformance/run-html-encoding.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-serializer.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
@@ -2656,6 +2667,28 @@ check-html-serialize-oracle: $(CONFORMANCE_LIB)
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-serialize-oracle.sh && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-serialize-oracle.sh --controls
 
+check-html-sniff-oracle: ## Compare the HTML encoding sniffing against html5lib's and a second reading of the standard, and show the gate fails when it should
+# The same pinned image as check-html-oracle (containers/html: html5lib 1.1). The one gate,
+#
+#   tools/oracle/html_sniff_diff.py   generated documents (byte order marks, XML declarations, `<meta>` in every spelling, the edge of
+#                                     the 1024 bytes, transport labels certain and tentative, defaults) put to gtext_html_sniff_encoding(),
+#                                     to the whole parser and to the incremental one, and to html5lib's input stream (`useChardet` off).
+#                                     html_sniff_model.py is a second reading of the standard, written from its text: with html5lib's
+#                                     departures switched off it must answer as this library does on every document, and with the smallest
+#                                     set of them on, as html5lib did; the switches are the lines of tools/oracle/html_sniff_divergences.txt,
+#                                     each with a witness and a control. A disagreement no set explains, a label table that differs, an
+#                                     incremental answer that differs from the whole one fail the run.
+#
+# **It is then made to fail.** `run-html-sniff-oracle.sh --controls` corrupts the gate's answers and the list, breaks a witness, and compiles
+# the sniffer (and the decision in html_api.c) with one rule undone 22 times (tools/oracle/HTML_SNIFF_ORACLE_PLANTS), and requires exit 3 with
+# a heading each time. `--control NAME` runs one. HTML_SNIFF_ORACLE_COUNT and HTML_SNIFF_ORACLE_SEED size and seed the population (a hunt: the
+# list describes the default, 6,000 and seed 1; a chunk of 25,000 takes about a minute). Outside TEST_GATES, like every gate here that
+# consults an oracle.
+check-html-sniff-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-sniff-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-sniff-oracle.sh --controls
+
 check-ini-git-oracle: ## Compare the git config reader against git itself
 # git config has **one** reference, unlike Desktop Entry's two, and that is the
 # weakness this gate is built around rather than a convenience: the same program
@@ -3016,7 +3049,7 @@ conformance-all: ## Score every parser against its external corpus
 # Adding it would quietly change this target's contract from "needs this machine" to
 # "needs podman", so it sits with the oracle gates instead, where that requirement is
 # already the rule. `make conformance-ini-win32` runs it.
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-serializer conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-serializer conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

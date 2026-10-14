@@ -101,7 +101,8 @@ elif [ "$1" != "--controls" ]; then
 	echo "through the tree builder:"
 	python3 "$suite_py" "$suite" "$runner" "$exceptions" "$extra" || exit $?
 	echo "through the public API:"
-	exec python3 "$suite_py" "$suite" "$api_runner" "$exceptions" "$extra"
+	# (and every vector's UTF-8 through the decoder's route too, which the public API's runner compares: about 3,700 runs)
+	exec env HTML_TREE_MIN_EQUIV=${HTML_TREE_MIN_EQUIV:-3600} python3 "$suite_py" "$suite" "$api_runner" "$exceptions" "$extra"
 fi
 
 # --controls: the gate is made to fail on purpose, and must, each time, say why. A gate whose
@@ -402,13 +403,15 @@ plant_lit fragment-integration-point-context-is-foreign "$fails" html_tree_fragm
 plant_lit fragment-text-integration-point-context-is-foreign "$fails" html_tree_fragment.c '    if (name_is(c, "mi") || name_is(c, "mo") || name_is(c, "mn") || name_is(c, "ms")\n        || name_is(c, "mtext")) {' '    if (0) {'
 plant_lit fragment-context-namespace-ignored "$fails" html_tree_fragment.c '  tb->ctx_ns = (uint8_t)c->ns;' '  tb->ctx_ns = NS_HTML;'
 # The public layer over the builder (html_api.c, html_core.c), scored through the public API.
-plant_lit api-scripting-flag-dropped "$fails" html_api.c '  to.scripting = o.scripting;' '  to.scripting = false;'
+plant_lit api-scripting-flag-dropped "$fails" html_api.c '  to->scripting = o.scripting;' '  to->scripting = false;'
 plant_lit api-fragment-context-name-cut-short "$fails" html_api.c '  fc.local_name_length = strlen(context->local_name);' '  fc.local_name_length = 1;'
 plant_lit api-fragment-namespace-dropped "$fails" html_api.c '  fc.ns = context->ns;' '  fc.ns = GTEXT_HTML_NS_HTML;'
 plant_lit api-fragment-scripting-dropped "$fails" html_api.c '  fc.scripting = o.scripting;' '  fc.scripting = false;'
-plant_lit api-feed-loses-its-last-byte "$fails" html_api.c '    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, d, len);' '    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, d, len > 1 ? len - 1 : len);'
-plant_lit api-finish-does-not-finish "$fails" html_api.c '  const GTEXT_HTML_TreeStatus ts = gtext_html_tree_finish(p->tree);\n  if (ts != GTEXT_HTML_TREE_OK) {\n    return parser_fail_tree(p, ts);\n  }\n  p->finished = true;' '  const GTEXT_HTML_TreeStatus ts = GTEXT_HTML_TREE_OK;\n  p->finished = true;'
+plant_lit api-feed-loses-its-last-byte "$fails" html_api.c '    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, bytes, n);' '    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, bytes, n > 1 ? n - 1 : n);'
+plant_lit api-finish-does-not-finish "$fails" html_api.c '    return tree_verdict(p, gtext_html_tree_finish(p->tree));' '    return tree_verdict(p, GTEXT_HTML_TREE_OK);'
 plant_lit api-result-mode-lies "$fails" html_api.c '    result->mode = gtext_markup_document_mode(doc);' '    result->mode = GTEXT_MARKUP_MODE_NO_QUIRKS;'
+# (A defect in the mapped route's offsets is not here: the vectors have almost no error inside a run of multi-byte text, which is
+# what the deltas place. tests/test-html-encoding.cpp and the fuzz plants of tools/html/plant-fuzz.py are the controls of that.)
 plant_lit api-error-list-is-empty "below the floor" html_core.c '  const size_t count = gtext_html_tree_error_count(tree);' '  const size_t count = 0;'
 # A crash is a failure, not a missing answer.
 plant crash "$fails" html_tree_modes.c 'static bool is_ws(char c) {' 'static bool is_ws(char c) { if (c == 0x61) { *(volatile int *)0 = 0; }'

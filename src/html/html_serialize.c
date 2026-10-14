@@ -63,6 +63,7 @@
 
 #include "../markup/markup_internal.h"
 #include "html_api_internal.h"
+#include "html_sniff_internal.h"
 
 /// The size of the buffer the sink is given pieces of.
 #define SER_BUFFER 4096
@@ -222,10 +223,18 @@ struct GTEXT_HTML_Serializer {
   GTEXT_HTML_Status status;        ///< The sticky failure, or OK.
   const char * message;            ///< Its static description.
   bool finished;                   ///< finish has been called.
+  bool closing;                    ///< A failure is being closed over (see close_encoding()).
+  bool jis;                        ///< The output encoding is ISO-2022-JP: the escapes in what is written are followed (`jis_set`).
+  uint8_t jis_esc[3];              ///< ... the escape sequence being read, if any (`jis_n` bytes of it).
+  uint8_t jis_n;                   ///< ... bytes of it seen so far (the escape byte included).
+  uint8_t jis_set;                 ///< ... the character set the output is in: 0 ASCII, 1 JIS X 0201 Roman, 2 JIS X 0208.
   bool sink_failed;                ///< The sink has refused: it is not asked again.
   bool started;                    ///< A token has been given.
   bool inject;                     ///< inject_meta_charset with an encoding.
-  char label[32];                  ///< The encoding label, trimmed (the longest UTF-8 label is 17 bytes).
+  char label[32];                  ///< The label `inject_meta_charset` writes: the output encoding's name in lower case ASCII.
+  GTEXT_Encoder * enc;             ///< The encoder of the output encoding, or NULL for UTF-8 (written as it is).
+  bool refs_ok;                    ///< The text being written is text or an attribute value: a character the encoding cannot write may be
+                                   ///< a numeric character reference there, and nowhere else.
 
   GTEXT_HTML_Serialize_Result r;   ///< The counts.
 
@@ -276,8 +285,13 @@ static GTEXT_HTML_Status flush(GTEXT_HTML_Serializer * s);
 /* The first failure is the serializer's status for good. Whatever bytes it had produced are given to the sink then and
    there, so that the walk and the token stream hand over the same prefix (everything but a tag the lookahead was still
    holding); a sink that has refused is not asked again. */
+static void close_encoding(GTEXT_HTML_Serializer * s);
+
 static GTEXT_HTML_Status fail(GTEXT_HTML_Serializer * s, GTEXT_HTML_Status status, const char * message) {
   if (s->status == GTEXT_HTML_OK) {
+    if (s->enc && !s->closing && status != GTEXT_HTML_E_WRITE && status != GTEXT_HTML_E_OOM) {
+      close_encoding(s); /* a prefix that ends in a shifted state would not be read as ASCII after it: best effort, below */
+    }
     s->status = status;
     s->message = message;
     (void)flush(s);
@@ -298,6 +312,9 @@ static GTEXT_HTML_Status flush(GTEXT_HTML_Serializer * s) {
   const GTEXT_Markup_Status st = s->sink.write(s->sink.user, (const char *)s->buf, s->used);
   if (st != GTEXT_MARKUP_OK) {
     s->sink_failed = true; /* a sink that has refused is not asked again */
+    if (s->closing) {
+      return GTEXT_HTML_E_WRITE; /* (the failure that is being closed over stays the status) */
+    }
     return st == GTEXT_MARKUP_E_OOM ? oom(s) : fail(s, GTEXT_HTML_E_WRITE, "output refused");
   }
   s->sent += s->used;
@@ -305,11 +322,16 @@ static GTEXT_HTML_Status flush(GTEXT_HTML_Serializer * s) {
   return GTEXT_HTML_OK;
 }
 
-static GTEXT_HTML_Status out(GTEXT_HTML_Serializer * s, const void * p, size_t n) {
+/* The one door to the buffer: the bytes are the output (already in the output encoding), counted against the limit and given
+   to the sink in pieces. */
+static GTEXT_HTML_Status out_raw(GTEXT_HTML_Serializer * s, const void * p, size_t n) {
   if (s->status != GTEXT_HTML_OK) {
     return s->status;
   }
   if (n > s->o.max_output_bytes - s->total) {
+    if (s->closing) {
+      return GTEXT_HTML_E_LIMIT_OUTPUT; /* (no room to close the shift state: the prefix is as it is) */
+    }
     return fail(s, GTEXT_HTML_E_LIMIT_OUTPUT, "output too long");
   }
   s->total += n;
@@ -328,6 +350,86 @@ static GTEXT_HTML_Status out(GTEXT_HTML_Serializer * s, const void * p, size_t n
   return GTEXT_HTML_OK;
 }
 
+/* The encoder's sink: what it writes is the output. */
+static bool enc_sink_write(void * user, const char * bytes, size_t len) {
+  GTEXT_HTML_Serializer * s = user;
+  const bool ok = out_raw(user, bytes, len) == GTEXT_HTML_OK;
+  if (ok && s->jis) { /* follow the shift sequences that were written (an encoder put back at the start by a failure cannot say where it was) */
+    for (size_t i = 0; i < len; i++) {
+      const uint8_t b = (uint8_t)bytes[i];
+      if (b == 0x1B) {
+        s->jis_n = 1;
+      }
+      else if (s->jis_n > 0) {
+        s->jis_esc[s->jis_n - 1 + 0] = b;
+        if (++s->jis_n == 3) {
+          s->jis_n = 0;
+          if (s->jis_esc[0] == '$' && (s->jis_esc[1] == 'B' || s->jis_esc[1] == '@')) {
+            s->jis_set = 2;
+          }
+          else if (s->jis_esc[0] == '(' && s->jis_esc[1] == 'B') {
+            s->jis_set = 0;
+          }
+          else if (s->jis_esc[0] == '(' && s->jis_esc[1] == 'J') {
+            s->jis_set = 1;
+          }
+        }
+      }
+    }
+  }
+  return ok;
+}
+
+/* After a failure: if the encoder is in a shifted state (ISO-2022-JP's two-byte set), write the escape back to ASCII, so that the prefix
+   that was delivered ends in ASCII as a complete output does. Best effort: not after a refusing sink or when memory ran out, and not
+   when the output limit leaves no room for it. */
+static void close_encoding(GTEXT_HTML_Serializer * s) {
+  if (!s->jis || s->jis_set == 0) {
+    return;
+  }
+  s->closing = true;
+  (void)out_raw(s, "\x1B(B", 3); /* (a refusal is a refusal: the status stays the failure being closed over) */
+  s->closing = false;
+  s->jis_set = 0;
+}
+
+/* UTF-8 (the text of the tree, and what is written for UTF-8) to the output encoding. In text and attribute values a character that the
+   encoding cannot write is a numeric character reference, which a reader decodes back to the character; anywhere else (a name, a comment,
+   raw text, a document type) a reference would be read as the characters it is made of, so the character has no spelling, and that is
+   GTEXT_HTML_E_UNREPRESENTABLE, with the output so far delivered. */
+static GTEXT_HTML_Status out_encoded(GTEXT_HTML_Serializer * s, const void * p, size_t n, bool flush_end) {
+  gtext_encoder_set_error_mode(s->enc, s->refs_ok ? GTEXT_ENCODER_HTML : GTEXT_ENCODER_FATAL);
+  const GTEXT_Encoding_Sink sink = {enc_sink_write, s};
+  GTEXT_Encoder_Result r;
+  const GTEXT_Encoding_Status st = gtext_encoder_encode(s->enc, p, n, flush_end, &sink, &r);
+  s->r.references_written += r.replacements;
+  switch (st) {
+    case GTEXT_ENCODING_OK:
+      return s->status;
+    case GTEXT_ENCODING_E_UNENCODABLE:
+    case GTEXT_ENCODING_E_MALFORMED:
+      s->r.unrepresentable_code_point = st == GTEXT_ENCODING_E_UNENCODABLE ? r.error_code_point : 0xFFFD;
+      return fail(s, GTEXT_HTML_E_UNREPRESENTABLE,
+          "a character that the output encoding cannot write, where a character reference would not be read as one");
+    case GTEXT_ENCODING_E_WRITE:
+      return s->status != GTEXT_HTML_OK ? s->status : fail(s, GTEXT_HTML_E_WRITE, "output refused");
+    case GTEXT_ENCODING_E_OOM:
+      return oom(s);
+    default:
+      return fail(s, GTEXT_HTML_E_INTERNAL, "the encoder failed");
+  }
+}
+
+static GTEXT_HTML_Status out(GTEXT_HTML_Serializer * s, const void * p, size_t n) {
+  if (!s->enc) {
+    return out_raw(s, p, n);
+  }
+  if (s->status != GTEXT_HTML_OK) {
+    return s->status;
+  }
+  return n == 0 ? GTEXT_HTML_OK : out_encoded(s, p, n, false);
+}
+
 static GTEXT_HTML_Status outs(GTEXT_HTML_Serializer * s, const char * text) {
   return out(s, text, strlen(text));
 }
@@ -339,7 +441,7 @@ static GTEXT_HTML_Status outc(GTEXT_HTML_Serializer * s, char c) {
 /* Text or an attribute value, escaped as the standard says: `&`, U+00A0, `<`, `>`, and in an attribute
    value written between quotes the quote itself (`"` as &quot;, `'` as &#39;, which is what html5lib's
    vector for quote_char defines). `quote` is 0 for text and for an unquoted value. */
-static GTEXT_HTML_Status put_escaped(GTEXT_HTML_Serializer * s, const char * p, size_t n, char quote) {
+static GTEXT_HTML_Status put_escaped_inner(GTEXT_HTML_Serializer * s, const char * p, size_t n, char quote) {
   size_t run = 0;
   size_t i = 0;
   while (i < n) {
@@ -390,6 +492,13 @@ static GTEXT_HTML_Status put_escaped(GTEXT_HTML_Serializer * s, const char * p, 
     }
   }
   return n > run ? out(s, p + run, n - run) : s->status;
+}
+
+static GTEXT_HTML_Status put_escaped(GTEXT_HTML_Serializer * s, const char * p, size_t n, char quote) {
+  s->refs_ok = true; /* text and attribute values: here a numeric character reference stands for a character the encoding lacks */
+  const GTEXT_HTML_Status st = put_escaped_inner(s, p, n, quote);
+  s->refs_ok = false;
+  return st;
 }
 
 static bool is_white(unsigned char c) {
@@ -1317,7 +1426,7 @@ static bool fe_queueing(const GTEXT_HTML_Serializer * s) {
 /* ---- creating -------------------------------------------------------------- */
 
 static GTEXT_HTML_Status check_options_of(const GTEXT_HTML_Serialize_Options * o) {
-  if (o->encoding && !html_label_is_utf8(o->encoding)) {
+  if (o->encoding && html_label_encoding(o->encoding) == GTEXT_ENCODING_NONE) {
     return GTEXT_HTML_E_UNSUPPORTED_ENCODING;
   }
   if ((int)o->quote_attr_values < GTEXT_HTML_QUOTE_ALWAYS || o->quote_attr_values > GTEXT_HTML_QUOTE_WHEN_NEEDED) {
@@ -1365,7 +1474,7 @@ static GTEXT_HTML_Status create(const GTEXT_Allocator * alloc, const GTEXT_HTML_
   const GTEXT_HTML_Status st = check_options_of(&o);
   if (st != GTEXT_HTML_OK) {
     *message = st == GTEXT_HTML_E_OPTIONS ? "unusable combination of options"
-                                          : "the encoding is not one this release writes";
+                                          : "the encoding label names no encoding";
     return st;
   }
   if (o.max_depth == 0) {
@@ -1386,16 +1495,30 @@ static GTEXT_HTML_Status create(const GTEXT_Allocator * alloc, const GTEXT_HTML_
   s->o.context_namespace = NULL;
   s->sink = *sink;
   s->inject = o.inject_meta_charset && o.encoding != NULL;
-  if (o.encoding) {
-    const char * b = o.encoding;
-    while (is_white((unsigned char)*b)) {
-      b++;
+  {
+    /* The encoding written: the label's, or for one with no encoder (UTF-16, `replacement`) UTF-8, as "get an output encoding" says. */
+    const GTEXT_Encoding asked = o.encoding ? html_label_encoding(o.encoding) : GTEXT_ENCODING_UTF_8;
+    const GTEXT_Encoding written = gtext_encoding_output_encoding(asked);
+    const char * name = gtext_encoding_name(written);
+    s->r.encoding = name;
+    s->r.encoding_substituted = written != asked;
+    for (size_t i = 0; i + 1 < sizeof(s->label) && name[i]; i++) { /* (the label inject_meta_charset writes: the name in lower case) */
+      const char c = name[i];
+      s->label[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 0x20) : c;
     }
-    size_t n = strlen(b);
-    while (n > 0 && is_white((unsigned char)b[n - 1])) {
-      n--;
+    if (written != GTEXT_ENCODING_UTF_8) {
+      GTEXT_Encoder_Options eo = gtext_encoder_options_default();
+      eo.allocator = &s->alloc;
+      eo.error_mode = GTEXT_ENCODER_FATAL;
+      eo.max_output_bytes = SIZE_MAX;
+      s->jis = written == GTEXT_ENCODING_ISO_2022_JP;
+      const GTEXT_Encoding_Status es = gtext_encoder_new(written, &eo, &s->enc);
+      if (es != GTEXT_ENCODING_OK) {
+        gtext_allocator_free(alloc, s);
+        *message = "out of memory";
+        return es == GTEXT_ENCODING_E_OOM ? GTEXT_HTML_E_OOM : GTEXT_HTML_E_INTERNAL;
+      }
     }
-    memcpy(s->label, b, n < sizeof(s->label) - 1 ? n : sizeof(s->label) - 1);
   }
   s->meta_found = !s->inject;
   if (o.context_name) {
@@ -1410,6 +1533,7 @@ void gtext_html_serializer_free(GTEXT_HTML_Serializer * s) {
     return;
   }
   const GTEXT_Allocator alloc = s->alloc;
+  gtext_encoder_free(s->enc);
   gtext_allocator_free(&alloc, s->stack);
   gtext_allocator_free(&alloc, s->q);
   gtext_allocator_free(&alloc, s->scratch);
@@ -1604,6 +1728,10 @@ GTEXT_HTML_Status gtext_html_serializer_finish(
     }
     const Next n = {N_NONE, I_NONE, false};
     resolve_pending(s, &n);
+    if (s->enc && s->status == GTEXT_HTML_OK) {
+      s->refs_ok = false;
+      out_encoded(s, NULL, 0, true); /* the end of the stream: an encoder with a state (ISO-2022-JP) goes back to ASCII */
+    }
     flush(s);
   }
   result_fill(s, result);

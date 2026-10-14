@@ -325,8 +325,10 @@ TEST(HtmlApiFile, TheOptionsReachTheParse) {
   o.default_encoding = "windows-1252";
   FileOutcome u;
   u.status = gtext_html_parse_file(f.c_str(), &o, &u.doc, &u.result);
-  EXPECT_EQ(u.status, GTEXT_HTML_E_UNSUPPORTED_ENCODING);
-  EXPECT_EQ(u.doc, nullptr);
+  EXPECT_EQ(u.status, GTEXT_HTML_OK) << "every encoding of the standard is read now";
+  EXPECT_STREQ(u.result.encoding, "windows-1252");
+  EXPECT_EQ(u.result.encoding_source, GTEXT_MARKUP_ENCODING_CALLER_DEFAULT);
+  EXPECT_NE(u.doc, nullptr);
 }
 
 #ifndef _WIN32

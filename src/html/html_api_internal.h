@@ -68,8 +68,18 @@ bool html_result_set_errors(GTEXT_HTML_Result * result, const GTEXT_Allocator * 
     const GTEXT_HTML_Tree * tree);
 
 /// Is this one of the Encoding standard's labels of UTF-8 (trimmed of ASCII white space, ASCII
-/// case-insensitive)? The only encoding the parser reads and the serializer writes in this release.
-bool html_label_is_utf8(const char * label);
+/// case-insensitive)? A thin question over gtext_encoding_for_label(); kept for the tests that compare the
+/// readers with the Encoding module.
+GTEXT_INTERNAL_API bool html_label_is_utf8(const char * label);
+
+/// Tests: make the parser read even UTF-8 through the Encoding module's decoder and the tokenizer's source map, the way it
+/// reads every other encoding, instead of by the tokenizer's own reading of UTF-8. Must be called before the first byte is
+/// fed (otherwise GTEXT_HTML_E_STATE, and nothing changes). The two must give the same tree, errors and locations; nothing else asks for this.
+GTEXT_INTERNAL_API GTEXT_HTML_Status html_parser_force_transcode(struct GTEXT_HTML_Parser * parser);
+
+/// Tests: the bytes the parser is holding for the sake of the encoding (the window it has not decided on, or the bytes it keeps for a
+/// restart while the encoding is tentative and the head is not over): what "memory is bounded by the head" is measured by.
+GTEXT_INTERNAL_API size_t html_parser_kept_bytes(const struct GTEXT_HTML_Parser * parser);
 
 /// Check serializer options without making a serializer: OK, E_OPTIONS or E_UNSUPPORTED_ENCODING (NULL is the
 /// defaults).

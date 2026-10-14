@@ -41,9 +41,13 @@
  * contains `-->`, a `script` that holds `</script>`, or a void element with
  * children: the standard writes them as they are and says that the output
  * "will not return the original tree structure". The statuses here are for
- * an argument, an option combination, a limit, memory, a sink that failed, and
- * an encoding this release cannot write. Characters are never validated:
- * control characters and noncharacters are written as they are.
+ * an argument, an option combination, a limit, memory, a sink that failed, an
+ * output encoding that has no name, and one place where the encoding matters: a
+ * character that the output encoding cannot write, in a place where a numeric
+ * character reference would not be read as one (GTEXT_HTML_E_UNREPRESENTABLE;
+ * see `encoding`). In UTF-8, the default, there is no such character. Characters
+ * are never validated: control characters and noncharacters are written as they
+ * are.
  *
  * Because nothing is refused there is **no first pass**: the sink receives
  * bytes as the walk produces them, so a sink that is given a failure status
@@ -102,6 +106,7 @@
 #include <ghoti.io/text/markup/markup_tree.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -169,12 +174,23 @@ typedef struct {
   bool scripting;
 
   /**
-   * The output encoding as a label, or NULL for UTF-8. **Only UTF-8 labels are
-   * accepted** (`utf-8`, `utf8`, `unicode-1-1-utf-8`, `unicode11utf8`,
-   * `unicode20utf8`, `x-unicode20utf8`; case-insensitive, surrounding white
-   * space ignored): any other string, the empty one included, is
-   * GTEXT_HTML_E_UNSUPPORTED_ENCODING, as it is for the parser; phases 3h and
-   * 3i write the others. It is the label `inject_meta_charset` writes.
+   * The output encoding as a label of the Encoding Standard (case-insensitive, surrounding
+   * ASCII white space ignored; see gtext_encoding_for_label()), or NULL for UTF-8. A string that
+   * names no encoding, the empty one included, is GTEXT_HTML_E_UNSUPPORTED_ENCODING before any byte is
+   * written. The standard's "get an output encoding" applies: a label for UTF-16LE, UTF-16BE or
+   * `replacement` means UTF-8 (they have no encoder), and the result says that it did
+   * (`encoding_substituted`). Every other encoding is written: a character that it cannot write
+   * is a **numeric character reference** in text and in attribute values (`&#8364;`, the standard's
+   * "html" error mode of the encoder, which a reader decodes back to the character) and is
+   * GTEXT_HTML_E_UNREPRESENTABLE everywhere else - a comment, a tag or attribute name, a
+   * document type, a processing instruction, the contents of `script`, `style`, `xmp`, `iframe`,
+   * `noembed`, `noframes`, `plaintext` and (with `scripting`) `noscript` - because a reference
+   * there is read as the characters it is made of. An encoding with a state (ISO-2022-JP) is back in
+   * ASCII before a reference, as the encoder writes it, and at the end of the output. **After a failure** the prefix that was delivered
+   * ends in ASCII too, as far as that can be done: the escape back to ASCII (`ESC ( B`) is appended when the output was in another
+   * set at the failure (the failure is a character that has no spelling, or a limit) and the output limit leaves room for its three
+   * bytes. It is not appended after a sink that refused (nothing more can be written to it) or when memory ran out. It is the
+   * encoding `inject_meta_charset` declares, by its name in lower case (`shift_jis`).
    */
   const char * encoding;
 
@@ -297,6 +313,12 @@ typedef struct {
   size_t minimized_attributes; ///< By minimize_boolean_attributes.
   size_t meta_charset_replaced; ///< `meta` elements inject_meta_charset rewrote.
   size_t meta_charset_injected; ///< 0 or 1: a `meta` it added.
+  const char * encoding;        ///< The encoding the output is in, by the standard's name ("UTF-8", "Shift_JIS"...). Static. NULL
+                                ///< only for a call that failed before there was a serializer.
+  bool encoding_substituted;    ///< The label named an encoding with no encoder (UTF-16, `replacement`): the output is UTF-8.
+  size_t references_written;    ///< Numeric character references written for characters the encoding cannot write.
+  uint32_t unrepresentable_code_point; ///< With GTEXT_HTML_E_UNREPRESENTABLE: the code point that has no spelling there (0xFFFD for text that
+                                ///< was not well-formed UTF-8). 0 otherwise.
 } GTEXT_HTML_Serialize_Result;
 
 /**
@@ -323,7 +345,7 @@ typedef struct {
  *   argument, a scope out of range), GTEXT_HTML_E_OPTIONS,
  *   GTEXT_HTML_E_UNSUPPORTED_ENCODING (all three before any byte is written),
  *   GTEXT_HTML_E_OOM, GTEXT_HTML_E_WRITE, GTEXT_HTML_E_LIMIT_DEPTH,
- *   GTEXT_HTML_E_LIMIT_OUTPUT. Nothing is leaked on any of them.
+ *   GTEXT_HTML_E_LIMIT_OUTPUT, GTEXT_HTML_E_UNREPRESENTABLE. Nothing is leaked on any of them.
  */
 GTEXT_API GTEXT_HTML_Status gtext_html_serialize(const GTEXT_Markup_Node * node,
     GTEXT_HTML_Serialize_Scope scope, const GTEXT_HTML_Serialize_Options * opts,

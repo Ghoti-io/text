@@ -470,6 +470,7 @@ TEST_P(HtmlApi, TheScriptingFlagChangesHowNoscriptParses) {
 
 TEST_P(HtmlApi, EncodingLabels) {
   const std::string input = "<p>x";
+  const bool fragment = GetParam().fragment;
   for (const char * label : {"utf-8", "UTF-8", "Utf8", "  utf-8\n", "unicode-1-1-utf-8", "unicode11utf8",
            "unicode20utf8", "x-unicode20utf8"}) {
     for (int which = 0; which < 2; which++) {
@@ -478,10 +479,16 @@ TEST_P(HtmlApi, EncodingLabels) {
       const Outcome got = run(input, &o);
       ASSERT_TRUE(got.ok()) << label << " " << which;
       EXPECT_EQ(got.encoding, "UTF-8");
-      EXPECT_EQ(got.source, which == 0 ? GTEXT_MARKUP_ENCODING_CALLER : GTEXT_MARKUP_ENCODING_DEFAULT) << label;
+      // A certain label is the caller's word; a default is its guess (a fragment has no guess to make: its characters are decoded).
+      EXPECT_EQ(got.source, which == 0 ? GTEXT_MARKUP_ENCODING_CALLER
+                                       : (fragment ? GTEXT_MARKUP_ENCODING_DEFAULT : GTEXT_MARKUP_ENCODING_CALLER_DEFAULT))
+          << label;
+      EXPECT_EQ(got.confidence, fragment ? GTEXT_HTML_IRRELEVANT : (which == 0 ? GTEXT_HTML_CERTAIN : GTEXT_HTML_TENTATIVE));
+      EXPECT_FALSE(got.transport_ignored);
+      EXPECT_FALSE(got.default_ignored);
     }
   }
-  // A certain or a tentative label, and ignore_meta, change nothing yet.
+  // A tentative label is the caller's guess; ignore_meta changes nothing about the source.
   for (GTEXT_HTML_Encoding_Certainty certainty : {GTEXT_HTML_CERTAIN, GTEXT_HTML_TENTATIVE}) {
     GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
     o.transport_encoding = "utf-8";
@@ -489,27 +496,46 @@ TEST_P(HtmlApi, EncodingLabels) {
     o.ignore_meta = true;
     const Outcome got = run(input, &o);
     ASSERT_TRUE(got.ok());
-    EXPECT_EQ(got.source, GTEXT_MARKUP_ENCODING_CALLER);
+    EXPECT_EQ(got.source, fragment || certainty == GTEXT_HTML_CERTAIN ? GTEXT_MARKUP_ENCODING_CALLER
+                                                                       : GTEXT_MARKUP_ENCODING_CALLER_DEFAULT);
   }
-  // Anything else is the distinct status until phase 3h, whichever option carries it and
-  // whether or not the document would have been fine.
-  for (const char * label : {"windows-1252", "utf-16", "UTF-16LE", "iso-8859-1", "shift_jis", "utf-80", "", " ",
-           "utf-8x", "utf 8", "latin1", "ascii", "nonsense"}) {
+  // Every other encoding of the standard is read now; a document names it as the standard does.
+  struct Name { const char * label; const char * name; };
+  for (const Name & n : {Name{"windows-1252", "windows-1252"}, Name{"latin1", "windows-1252"}, Name{"ascii", "windows-1252"},
+           Name{"iso-8859-1", "windows-1252"}, Name{"utf-16", "UTF-16LE"}, Name{"UTF-16LE", "UTF-16LE"}, Name{"unicodefffe", "UTF-16BE"},
+           Name{"shift_jis", "Shift_JIS"}, Name{"sjis", "Shift_JIS"}, Name{"EUC-KR", "EUC-KR"}, Name{"gbk", "GBK"}, Name{"big5", "Big5"},
+           Name{"iso-2022-jp", "ISO-2022-JP"}, Name{"x-user-defined", "x-user-defined"}, Name{"hz-gb-2312", "replacement"}}) {
+    for (int which = 0; which < 2; which++) {
+      GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
+      (which == 0 ? o.transport_encoding : o.default_encoding) = n.label;
+      const Outcome got = run(input, &o);
+      ASSERT_TRUE(got.ok()) << n.label;
+      EXPECT_EQ(got.encoding, fragment ? "UTF-8" : n.name) << n.label << " " << which;
+      EXPECT_FALSE(got.transport_ignored);
+    }
+  }
+  // A label that names no encoding is ignored, whichever option carries it, and the result says so.
+  for (const char * label : {"utf-80", "", " ", "utf-8x", "utf 8", "nonsense", "utf-7", "cp1252x"}) {
     for (int which = 0; which < 2; which++) {
       GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
       (which == 0 ? o.transport_encoding : o.default_encoding) = label;
       const Outcome got = run(input, &o);
-      EXPECT_EQ(got.status, GTEXT_HTML_E_UNSUPPORTED_ENCODING) << "[" << label << "] " << which;
-      EXPECT_EQ(got.doc, nullptr);
-      EXPECT_EQ(got.result_status, GTEXT_HTML_E_UNSUPPORTED_ENCODING);
-      EXPECT_EQ(got.message, gtext_html_status_string(GTEXT_HTML_E_UNSUPPORTED_ENCODING));
+      ASSERT_TRUE(got.ok()) << "[" << label << "] " << which;
+      EXPECT_EQ(got.encoding, "UTF-8");
+      EXPECT_EQ(got.source, GTEXT_MARKUP_ENCODING_DEFAULT);
+      EXPECT_EQ(got.transport_ignored, which == 0) << label;
+      EXPECT_EQ(got.default_ignored, which == 1) << label;
     }
   }
-  // Both labels are checked.
+  // Both labels: the transport label's word stands, and an unknown default beside it is still reported.
   GTEXT_HTML_Parse_Options both = gtext_html_parse_options_default();
-  both.transport_encoding = "utf-8";
-  both.default_encoding = "windows-1252";
-  EXPECT_EQ(run(input, &both).status, GTEXT_HTML_E_UNSUPPORTED_ENCODING);
+  both.transport_encoding = "windows-1252";
+  both.default_encoding = "nonsense";
+  const Outcome two = run(input, &both);
+  ASSERT_TRUE(two.ok());
+  EXPECT_EQ(two.encoding, fragment ? "UTF-8" : "windows-1252");
+  EXPECT_TRUE(two.default_ignored);
+  EXPECT_FALSE(two.transport_ignored);
 }
 
 TEST_P(HtmlApi, ABomIsSkippedAndCountedInTheOffsets) {
@@ -829,8 +855,8 @@ TEST(HtmlApiParser, ConstructionAndTheOrderOfCalls) {
   GTEXT_HTML_Parser * p = reinterpret_cast<GTEXT_HTML_Parser *>(0x1);
   EXPECT_EQ(gtext_html_parser_new(nullptr, nullptr), GTEXT_HTML_E_INVALID);
   GTEXT_HTML_Parse_Options bad = gtext_html_parse_options_default();
-  bad.default_encoding = "windows-1252";
-  EXPECT_EQ(gtext_html_parser_new(&bad, &p), GTEXT_HTML_E_UNSUPPORTED_ENCODING);
+  bad.transport_encoding_certainty = static_cast<GTEXT_HTML_Encoding_Certainty>(7);
+  EXPECT_EQ(gtext_html_parser_new(&bad, &p), GTEXT_HTML_E_INVALID);
   EXPECT_EQ(p, nullptr) << "set to NULL on failure";
   EXPECT_EQ(gtext_html_parser_new_fragment(nullptr, nullptr, &p), GTEXT_HTML_E_INVALID);
   EXPECT_EQ(p, nullptr);
@@ -883,6 +909,7 @@ TEST(HtmlApiParser, ConstructionAndTheOrderOfCalls) {
 TEST(HtmlApiParser, AFailureIsStickyAndItsResultIsRepeated) {
   GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
   o.max_text_bytes = 4;
+  o.transport_encoding = "utf-8"; // a certain label: the parser need not hold the first 1024 bytes back to decide
   GTEXT_HTML_Parser * p = nullptr;
   ASSERT_EQ(gtext_html_parser_new(&o, &p), GTEXT_HTML_OK);
   EXPECT_EQ(gtext_html_parser_feed(p, "<p>ab", 5), GTEXT_HTML_OK);
@@ -1278,6 +1305,7 @@ TEST(HtmlApiThreads, IndependentParsesShareNothing) {
 TEST(HtmlApiParser, AFailureIsStickyForEveryCallAndEveryKindOfParser) {
   GTEXT_HTML_Parse_Options o = gtext_html_parse_options_default();
   o.max_text_bytes = 4;
+  o.transport_encoding = "utf-8"; // (see AFailureIsStickyAndItsResultIsRepeated)
   const GTEXT_HTML_Fragment_Context td = ctx(GTEXT_HTML_NS_HTML, "td");
   for (int fragment = 0; fragment < 2; fragment++) {
     GTEXT_HTML_Parser * p = nullptr;
@@ -1360,8 +1388,8 @@ TEST(HtmlApiParser, WhatAFailedResultSays) {
 
   // A failure before there was a parser has no encoding at all.
   o = gtext_html_parse_options_default();
-  o.default_encoding = "windows-1252";
-  EXPECT_EQ(gtext_html_parse("x", 1, &o, &doc, &r), GTEXT_HTML_E_UNSUPPORTED_ENCODING);
+  o.transport_encoding_certainty = static_cast<GTEXT_HTML_Encoding_Certainty>(9);
+  EXPECT_EQ(gtext_html_parse("x", 1, &o, &doc, &r), GTEXT_HTML_E_INVALID);
   EXPECT_EQ(r.encoding, nullptr);
   EXPECT_EQ(r.encoding_source, GTEXT_MARKUP_ENCODING_UNKNOWN);
   EXPECT_EQ(r.input_bytes, 0u);

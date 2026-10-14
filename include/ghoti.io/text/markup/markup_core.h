@@ -138,7 +138,9 @@ typedef enum {
                                      ///< header would.
   GTEXT_MARKUP_ENCODING_DECLARATION, ///< The document's own declaration: an XML
                                      ///< declaration or an HTML `<meta>`.
-  GTEXT_MARKUP_ENCODING_DEFAULT      ///< Nothing said anything; the default.
+  GTEXT_MARKUP_ENCODING_DEFAULT,     ///< Nothing said anything; the default.
+  GTEXT_MARKUP_ENCODING_CALLER_DEFAULT ///< The caller's guess, not its word: the HTML parser's `default_encoding`,
+                                     ///< or a transport label the caller said was only tentative.
 } GTEXT_Markup_Encoding_Source;
 
 /**

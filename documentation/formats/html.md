@@ -10,7 +10,7 @@ describe; `GTEXT_HTML_Parser` takes the document in pieces as it arrives; and
 "serializing HTML fragments" algorithm, \ref format_html "see Writing HTML" below). HTML has no malformed documents: **every input has
 a tree**, and the mistakes in it are *parse errors*, listed in the result with the
 standard's names and positions, which are not failures. A parse fails only for an
-argument, a limit, memory, or an encoding this release cannot read. Back to
+argument, a limit, or memory (an encoding label the library does not know is ignored, and the result says so). Back to
 \ref text_format_references "Formats".
 
 The API has the shape of the \ref format_xml "XML" one (an options struct with a
@@ -253,9 +253,10 @@ spells them out, and **0 in a limit selects its default and never means "unlimit
 | `max_errors` | 1024 | not a failure: the first ones are kept, the rest counted |
 | `count_errors_only` | false | keep none, count all (`max_errors` cannot say 0) |
 | `scripting` | false | the standard's scripting flag: with it `noscript` is raw text, without it elements |
-| `transport_encoding`, `transport_encoding_certainty` | NULL, certain | a label from a `Content-Type`; UTF-8's only, until 3h |
-| `default_encoding` | NULL (UTF-8) | the label to assume when nothing else says; UTF-8's only, until 3h |
-| `ignore_meta` | false | skip the `<meta>` prescan; accepted, and changes nothing yet |
+| `transport_encoding`, `transport_encoding_certainty` | NULL, certain | a label from a `Content-Type`, or a guess of the caller's (`GTEXT_HTML_TENTATIVE`: a `<meta>` overrides it); a label that names no encoding is ignored and `transport_encoding_ignored` says so |
+| `default_encoding` | NULL (UTF-8) | the label to assume when nothing else says; one that names no encoding is ignored (`default_encoding_ignored`) |
+| `ignore_meta` | false | read no declaration: no `<meta>` prescan, no `<?xml` declaration, and the parser never starts again on a `<meta>` |
+| `max_reparse_bytes` | 0 (4 MiB) | the most an incremental parser keeps for a restart while the head is open (never less than 1024); past it `reparse_abandoned` and a later `<meta>` is an ordinary element; SIZE_MAX keeps without limit; `gtext_html_parse()` keeps nothing and ignores it |
 
 ```c
 #include <ghoti.io/text/html.h>
@@ -335,7 +336,9 @@ static void scripting(void) {
 |---|---|
 | `status`, `message` | the call's status and a static description of it (for a file, which way it could not be read) |
 | `mode` | the document mode, `GTEXT_MARKUP_MODE_NO_QUIRKS`, `_LIMITED_QUIRKS` or `_QUIRKS`, also set on the document (`gtext_markup_document_mode()`); for a fragment, its context's |
-| `encoding`, `encoding_source` | "UTF-8", and how that was decided: `GTEXT_MARKUP_ENCODING_BOM`, `_CALLER`, `_DECLARATION` or `_DEFAULT` |
+| `encoding`, `encoding_source` | the encoding's name by the Encoding standard ("UTF-8", "Shift_JIS"...), and how that was decided: `GTEXT_MARKUP_ENCODING_BOM`, `_CALLER` (a certain label), `_DECLARATION` (a `<meta>` or an XML declaration), `_CALLER_DEFAULT` (a tentative label, or `default_encoding`) or `_DEFAULT` (UTF-8, nothing said) |
+| `encoding_confidence`, `reparsed`, `reparse_abandoned`, `bom_length` | `GTEXT_HTML_CERTAIN`, `_TENTATIVE` (nothing in the document said so, and no `<meta>` confirmed it), `_IRRELEVANT` (a fragment) or `_UNDECIDED` (`encoding` is NULL: the call failed before there was a parser; zero is `_CERTAIN`, so test `encoding` first); whether a `<meta>` made the parser start again with another encoding; whether the incremental parser let go of the bytes it keeps for that (`max_reparse_bytes`); the bytes of the byte order mark |
+| `transport_encoding_ignored`, `default_encoding_ignored` | the label was given and names no encoding |
 | `input_bytes` | bytes read (a failed parse: as far as it got) |
 | `node_count` | nodes in the document, 0 when there is none |
 | the errors | `gtext_html_result_error_count()`, `_errors_dropped()`, `_error_at()` |
@@ -343,9 +346,8 @@ static void scripting(void) {
 On a failure the result still has the status, the message, the parse errors
 raised before the failure (best effort: if the memory for the list is the thing that failed
 it is not there), `input_bytes` (the bytes accepted before the one that failed: 0 for a whole
-input refused for its length) and, once a parser was made, the encoding (`"UTF-8"`, source
-`DEFAULT`, `CALLER` or, if the mark had been seen, `BOM`); a failure before there was a parser (an
-argument, an unsupported label, OOM making it, a file that could not be read) has `encoding` NULL.
+input refused for its length) and, once the encoding was decided, the encoding and how it was decided (UTF-8 and `DEFAULT` if the input ended before enough of it had arrived to decide); a failure before there was a parser (an
+argument, OOM making it, a file that could not be read) has `encoding` NULL.
 The document is not written.
 
 **Reuse.** A call overwrites the result without freeing what it held, because it cannot tell
@@ -407,7 +409,8 @@ cap. Parse errors are not a conformance verdict about a page: the tree builder a
 | `GTEXT_HTML_E_INVALID` | an unusable argument (NULL output, NULL data with a length, an unusable context), or a file that could not be opened or read |
 | `GTEXT_HTML_E_OOM` | out of memory: no document, nothing leaked |
 | `GTEXT_HTML_E_STATE` | the incremental parser: input after the end, a second finish, the wrong finish for its kind |
-| `GTEXT_HTML_E_UNSUPPORTED_ENCODING` | a label that is not UTF-8's |
+| `GTEXT_HTML_E_UNSUPPORTED_ENCODING` | the serializer's `encoding` is a label that names no encoding (the parsers ignore such a label and say so in the result) |
+| `GTEXT_HTML_E_UNREPRESENTABLE` | the serializer was asked for an encoding that cannot write a character where a numeric reference would not be read as one (a name, a comment, raw text, a document type); `unrepresentable_code_point` says which |
 | `GTEXT_HTML_E_INTERNAL` | a defect in this library (a rule did not terminate); never content |
 | `GTEXT_HTML_E_LIMIT_INPUT`, `_DEPTH`, `_NODES`, `_NAME`, `_VALUE`, `_COMMENT`, `_TEXT`, `_ATTRIBUTES` | the limits above |
 
@@ -423,43 +426,238 @@ context says.
 
 ## Encodings
 
+The parser takes **bytes** and decides how to read them with the standard's encoding sniffing algorithm
+("Determining the character encoding", HTML Standard 13.2.3). In this order, the first that answers wins:
+
+1. a **byte order mark** (`EF BB BF`, `FE FF`, `FF FE`): the encoding is certain, and the mark is skipped (but counted
+   in the offsets and the input limit). A UTF-32 mark is not one: `FF FE 00 00` is UTF-16LE and then a NUL, as the standard has it;
+2. a **certain transport label** (`transport_encoding`, from a `Content-Type` header, say): certain;
+3. unless `ignore_meta`, the **prescan** of the first 1024 bytes for `<meta charset>` and `<meta http-equiv=content-type content=...>`,
+   and, when it finds none, for a leading `<?xml ... encoding="...">` declaration, and for the bytes of a UTF-16 `<?x`: tentative;
+4. a **tentative transport label**, which is the caller's guess, then **`default_encoding`**: tentative;
+5. UTF-8: tentative.
+
+A tentative encoding is held until the document confirms or overrides it. When the tree builder meets a `<meta>` in the head that
+declares another encoding (the standard's "change the encoding"), the parser throws the tree away and **starts again** with the declared
+one, and the result says `reparsed`; a declaration of the same encoding makes it certain without starting again. A declaration of UTF-16
+means UTF-8 (the bytes of a declaration were read as ASCII, so the document is not UTF-16), and `x-user-defined` means windows-1252,
+as the standard says. **Nothing is guessed from
+the content**: there is no statistical detection and there will be none, because it is not interoperable and because what it gets
+wrong looks like a valid document in another encoding.
+
+A label is matched as the Encoding standard matches one (ASCII case-insensitively, surrounding white space ignored; see
+\ref format_encoding "Encoding"), so `latin1`, `UTF8` and `x-sjis` work. **A label that names no encoding is ignored**, not an error: the
+next step answers, and `transport_encoding_ignored` or `default_encoding_ignored` says it happened. Two labels name encodings the library
+reads but not as themselves: `replacement` (and the labels of `hz-gb-2312`, `iso-2022-kr`, `iso-2022-cn`...) decodes to one U+FFFD, as the Encoding
+standard has it, and UTF-7 is not an encoding the standard knows, so a document that declares it is read as the default.
+
+The bytes are then decoded by the \ref format_encoding "Encoding" module in its replacement mode (an invalid sequence is U+FFFD and the parse
+error `invalid-utf-8-in-input-stream`, whatever the encoding: the error name is the one the standard gives for the UTF-8 decoder and is
+kept), and the tokenizer reads characters. **Every position stays exact.** Offsets and the lines and columns are those of the *bytes
+fed*, not of the characters decoded: a character that was two bytes in Shift_JIS has its offset and the next starts two bytes on, a
+sequence that turned into U+FFFD points at the byte it began at, and the ISO-2022-JP escape sequences, which are not characters, are
+counted in the bytes. An error at "the place after" a character (the end of a numeric character reference, say) is at the end of that
+character in the bytes, which in UTF-16 is two bytes on and in ISO-2022-JP is before the escape sequence that may follow, so that it is
+the same whatever has arrived. A document gives the same tree, errors and positions whole, fed a byte at a time or cut anywhere
+(`gtext_html_parser_feed()`), and after a restart: the restarted parse reads the same bytes from the start.
+
+**Where this departs from the standard.** The standard's rule for a `meta` start tag in the head insertion mode says that, for a `charset`
+attribute that names an encoding while the confidence is tentative, the parser must "then change the encoding to the resulting encoding"
+(and the same for `http-equiv=content-type` with a `content` that names one); the "in body" and the other insertion modes hand a `meta` to
+those rules, so a declaration counts wherever the tree builder meets the tag, after the head as well. A browser can start again at any
+point because it still has the bytes. **This library changes the encoding only while the head section is open** (the insertion modes
+from the initial one to "after head", the text modes of `title` and `script` in it, and "in template"); a `meta` after that is an
+ordinary element and changes nothing. The reason is that a restart needs every byte the parser was given, which an incremental parser
+must otherwise let go of (see Cost). A caller who knows the encoding passes it as a certain `transport_encoding`, and then nothing is kept
+and nothing is waited for; a caller who wants a declaration anywhere in the document honoured can use `gtext_html_parse()`, which has the
+whole input and keeps nothing, and restarts for a declaration anywhere in the head section (and so is not limited by `max_reparse_bytes`).
+
+**Cost.**
+- *Time, UTF-8.* UTF-8 input goes straight to the tokenizer with no copy; the sniffing and the machinery for other encodings add a little to it
+  (about 5% more instructions and 5 to 15% more time on a large document than reading UTF-8 alone).
+- *Latency.* Unless a certain `transport_encoding` or `ignore_meta` makes the prescan unnecessary, the incremental parser **waits for 1024
+  bytes, or the end of the input, before it produces anything**: the first tokens of a slow stream are late by that much. With either of them
+  it decides on the first 3 bytes. A caller who wants to decide early can call `gtext_html_sniff_encoding()` on the bytes it has and
+  pass the answer as `transport_encoding`.
+- *Memory, decoding.* A parser that decodes (any encoding but UTF-8) holds the decoder's map of a chunk, 40 KiB, and the scratch for the
+  tokenizer's form of it, 32 KiB: 72 KiB more per parser, with a 64-bit `size_t`. Nothing is copied for UTF-8.
+- *Memory, restart.* While the encoding is tentative and the builder has not left the head, the incremental parser keeps the bytes it was
+  given so far, because a `meta` that declares another encoding makes it begin again with them. It lets them go when the head is left or
+  the encoding becomes certain, **and in any case at `max_reparse_bytes` (4 MiB by default)**: then `reparse_abandoned` says so in the result, and a
+  later `meta` is an ordinary element. A `meta` that ends within those bytes restarts the parse however the input was cut. A document that
+  holds the head open (an unclosed `title`, `template` or comment) is thereby held to that size, not to `max_input_bytes`. `gtext_html_parse()`
+  copies and keeps nothing: it has the whole input.
+
+A fragment is always the UTF-8 text of its characters, never sniffed (its `encoding_confidence` is `GTEXT_HTML_IRRELEVANT`).
+
+**Security.** Encoding confusion is a real class of bug: a filter that sees one reading of the bytes and a browser another. Two consequences:
+a *certain* label is never overridden, and a document cannot change it by a `<meta>` (`transport_encoding_certainty` is the caller's
+statement of that); and a document read as ISO-2022-JP or UTF-16 sees `<` where a Latin-1 reader sees other bytes, so decide the encoding once, at the
+edge, and use `gtext_html_sniff_encoding()` or the result's `encoding` to say what was done.
+
+To see the decision without parsing:
+
 ```c
 #include <ghoti.io/text/html.h>
 #include <stdio.h>
 #include <string.h>
 
-/* The encoding the bytes were read as, and how that was decided. */
-static void encoding(void) {
-  const char * with_mark = "\xef\xbb\xbf<p>x";
-  GTEXT_Markup_Document * doc = NULL;
-  GTEXT_HTML_Result result;
-
-  if (gtext_html_parse(with_mark, strlen(with_mark), NULL, &doc, &result) == GTEXT_HTML_OK) {
-    printf("%s, from a byte order mark: %d\n", result.encoding,
-        result.encoding_source == GTEXT_MARKUP_ENCODING_BOM);
-    gtext_markup_document_free(doc);
+static const char * how(GTEXT_Markup_Encoding_Source source) {
+  switch (source) {
+    case GTEXT_MARKUP_ENCODING_BOM: return "from a byte order mark";
+    case GTEXT_MARKUP_ENCODING_CALLER: return "from the caller's label";
+    case GTEXT_MARKUP_ENCODING_DECLARATION: return "from a declaration";
+    case GTEXT_MARKUP_ENCODING_CALLER_DEFAULT: return "from the caller's default";
+    case GTEXT_MARKUP_ENCODING_DEFAULT: return "by default";
+    default: return "unknown";
   }
-  gtext_html_result_free(&result);
+}
 
-  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
-  opts.transport_encoding = "windows-1252";   /* a Content-Type header said so */
-  GTEXT_HTML_Status status = gtext_html_parse("<p>x", 4, &opts, &doc, &result);
-  printf("%s\n", gtext_html_status_string(status));
-  gtext_html_result_free(&result);
+/* Which encoding would these bytes be read as, and why? Nothing is parsed: this is the decision the parser starts with. */
+static void encoding_sniff(void) {
+  const char * documents[] = {
+    "\xef\xbb\xbf<p>x",                                   /* a byte order mark */
+    "<!doctype html><meta charset=windows-1251><p>x",     /* a declaration in the first 1024 bytes */
+    "<p>x",                                               /* nothing says */
+  };
+  for (size_t i = 0; i < sizeof(documents) / sizeof(documents[0]); i++) {
+    GTEXT_HTML_Sniff_Result r;
+    if (gtext_html_sniff_encoding(documents[i], strlen(documents[i]), NULL, &r) == GTEXT_HTML_OK) {
+      printf("%s, %s, %s\n", r.encoding_name, how(r.source), r.confidence == GTEXT_HTML_CERTAIN ? "certain" : "tentative");
+    }
+  }
 }
 ```
 
-This release reads **UTF-8**. A leading UTF-8 byte order mark is skipped (and the source is then
-`BOM`, whatever the transport label says, as the standard orders it), counted in the offsets and the input limit; bytes that
-are not UTF-8 are replaced by U+FFFD with the error `invalid-utf-8-in-input-stream`, one per maximal
-invalid subpart as the Encoding standard's decoder does. The document records `"UTF-8"` and the source
-(`gtext_markup_document_encoding()`), and so does the result. A fragment's result reports the encoding and its source, but its scratch document records none: it is characters, not a document's bytes, so a leading `EF BB BF` is the text U+FEFF there and is never a byte order mark. The option fields for the rest are already here and final, so that adding the rest changes no structure:
-`transport_encoding` with its certainty, `default_encoding` and `ignore_meta`. A label is matched as the Encoding standard
-matches one (ASCII case-insensitively, surrounding white space ignored): `utf-8`, `utf8`, `unicode-1-1-utf-8`,
-`unicode11utf8`, `unicode20utf8` and `x-unicode20utf8` are accepted in either label field, and **any other string,
-the empty one included, is `GTEXT_HTML_E_UNSUPPORTED_ENCODING`** before the document is examined, so a program
-can pass what it knows today and get its encoding when the library does. UTF-16, the legacy encodings of the Encoding
-standard, the `<meta>` prescan and the transcoding are planned: the labels and the codecs exist now, as the \ref format_encoding "Encoding" module (phases 3h and 3i: the multi-byte encodings too), and the parser does not use them yet (that is the stage after 3i).
+Prints:
+
+```
+UTF-8, from a byte order mark, certain
+windows-1251, from a declaration, tentative
+UTF-8, by default, tentative
+```
+
+Bytes in an encoding the document declares:
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Bytes in an encoding the document declares. The title is "Привет" in windows-1251. The first document declares it in the first 1024
+   bytes, which the parser reads before it begins; in the second the declaration comes after a long comment, so the parser meets it as an
+   element, throws what it has built away and begins again in that encoding. The tree is the same. */
+static void encoding_meta(void) {
+  static char late[1400];
+  snprintf(late, sizeof(late), "<!doctype html><!--%*s--><meta charset=windows-1251><title>\xcf\xf0\xe8\xe2\xe5\xf2</title>", 1100, "");
+  const char * documents[] = {
+    "<!doctype html><meta charset=windows-1251><title>\xcf\xf0\xe8\xe2\xe5\xf2</title>",
+    late,
+  };
+  for (size_t i = 0; i < 2; i++) {
+    GTEXT_Markup_Document * doc = NULL;
+    GTEXT_HTML_Result result;
+    if (gtext_html_parse(documents[i], strlen(documents[i]), NULL, &doc, &result) == GTEXT_HTML_OK) {
+      printf("%s, parsed again: %s\n", result.encoding, result.reparsed ? "yes" : "no");
+      gtext_markup_document_free(doc);
+    }
+    gtext_html_result_free(&result);
+  }
+}
+```
+
+Prints:
+
+```
+windows-1251, parsed again: no
+windows-1251, parsed again: yes
+```
+
+The caller's own information, which is the transport label:
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A Content-Type header says ISO-8859-2 and the document says windows-1251. A certain label wins and the declaration is not read;
+   a tentative one (a guess of the caller's) yields to the declaration. An unusable label is ignored and the result says so. */
+static void encoding_transport(void) {
+  const char * bytes = "<meta charset=windows-1251><p>x";
+  GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
+  GTEXT_HTML_Sniff_Result r;
+
+  opts.transport_encoding = "iso-8859-2";
+  gtext_html_sniff_encoding(bytes, strlen(bytes), &opts, &r);
+  printf("certain label: %s\n", r.encoding_name);
+
+  opts.transport_encoding_certainty = GTEXT_HTML_TENTATIVE;
+  gtext_html_sniff_encoding(bytes, strlen(bytes), &opts, &r);
+  printf("tentative label: %s\n", r.encoding_name);
+
+  opts.transport_encoding = "no-such-encoding";
+  opts.transport_encoding_certainty = GTEXT_HTML_CERTAIN;
+  gtext_html_sniff_encoding(bytes, strlen(bytes), &opts, &r);
+  printf("unusable label: %s, label ignored: %s\n", r.encoding_name, r.transport_encoding_ignored ? "yes" : "no");
+}
+```
+
+Prints:
+
+```
+certain label: ISO-8859-2
+tentative label: windows-1251
+unusable label: windows-1251, label ignored: yes
+```
+
+Writing a tree in an encoding is \ref format_html "the serializer's `encoding` option": see "Output encodings" below.
+
+```c
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Write a tree in Shift_JIS. A character the encoding has is written as its bytes; one it has not is written as a numeric
+   character reference where the standard allows one (text and attribute values), so the output reads back as the same text. */
+static void encoding_serialize(void) {
+  const char * text = "<p title=\"\xe2\x82\xac\">\xe6\x97\xa5\xe6\x9c\xac \xe2\x82\xac</p>";   /* "日本 €" twice */
+  GTEXT_HTML_Fragment_Context context;
+  memset(&context, 0, sizeof(context));
+  context.local_name = "div";
+
+  GTEXT_Markup_Document * doc = NULL;
+  GTEXT_Markup_Node * fragment = NULL;
+  if (gtext_html_parse_fragment(&context, text, strlen(text), NULL, &doc, &fragment, NULL) != GTEXT_HTML_OK) {
+    return;
+  }
+  GTEXT_HTML_Serialize_Options opts = gtext_html_serialize_options_default();
+  opts.encoding = "shift_jis";
+
+  char * out = NULL;
+  size_t length = 0;
+  GTEXT_HTML_Serialize_Result result;
+  if (gtext_html_serialize_buffer(fragment, GTEXT_HTML_SERIALIZE_CHILDREN, &opts, &out, &length, &result) == GTEXT_HTML_OK) {
+    printf("%s, %zu bytes, %zu references: ", result.encoding, length, result.references_written);
+    for (size_t i = 0; i < length; i++) {   /* (the bytes that are not ASCII, in hexadecimal) */
+      if ((unsigned char)out[i] < 0x80) {
+        putchar(out[i]);
+      }
+      else {
+        printf("\\x%02x", (unsigned char)out[i]);
+      }
+    }
+    printf("\n");
+    gtext_html_serialize_buffer_free(doc, NULL, out);
+  }
+  gtext_markup_document_free(doc);
+}
+```
+
+Prints:
+
+```
+Shift_JIS, 35 bytes, 2 references: <p title="&#8364;">\x93\xfa\x96{ &#8364;</p>
+```
 
 ## What the tree is
 
@@ -573,7 +771,7 @@ named. A combination that means nothing is `GTEXT_HTML_E_OPTIONS` before any byt
 | `max_depth` | 1024 | deepest element nesting; past it `GTEXT_HTML_E_LIMIT_DEPTH` (twice the parser's default of 512 open elements) | |
 | `max_output_bytes` | 256 MiB | most bytes; past it `GTEXT_HTML_E_LIMIT_OUTPUT` | |
 | `scripting` | off | a `noscript`'s text is raw text | |
-| `encoding` | UTF-8 | the label; **only UTF-8 labels** are accepted, any other (the empty string too) is `GTEXT_HTML_E_UNSUPPORTED_ENCODING`; 3h and 3i write others | `core.test` "character data" |
+| `encoding` | UTF-8 | the label (any the Encoding standard has); a label that names nothing, the empty string too, is `GTEXT_HTML_E_UNSUPPORTED_ENCODING` before a byte is written. See "Output encodings" below | `core.test` "character data" |
 | `quote_attr_values` | `ALWAYS` | `WHEN_NEEDED`: quotes only for an empty value or one with ASCII white space, a double quote, an apostrophe, an equals sign, a greater-than sign or a backquote in it (a less-than sign is escaped and needs none) | `core.test` "proper attribute value non-quoting" and its neighbours |
 | `quote_char` | double quote | the double quote or the apostrophe (an apostrophe in a value is then `&#39;`); not with `use_best_quote_char` | `options.test` "quote_char" |
 | `use_best_quote_char` | off | the quote that needs no escape: the double quote for a value with an apostrophe, the apostrophe for one with a double quote, else `quote_char` | `core.test` "proper attribute value quoting (with ...)" |
@@ -831,9 +1029,22 @@ these are the departures and why:
 - **A token-stream serializer**, which XML's writer has no analogue of (it writes documents), because the optional-tag rules are rules
   about the next token and html5lib's vectors are token streams.
 - **A `GTEXT_Markup_Sink` that is called with a prefix after a failure**, where XML's writer promises it nothing until the document is checked.
-- **UTF-8 only** (an `encoding` label is validated, as the parser's are); XML writes five encodings. Phases 3h and 3i.
+- **Any encoding the Encoding standard has can be written** (see "Output encodings"), where XML writes five; an unusable `encoding` label is an error here and is ignored by the parser.
 - **Options beyond the standard** (the table above), where XML's writer has `xhtml` and `indent`. Pretty printing is not part of
   this stage: it changes the tree, and the standard's algorithm has no whitespace of its own to add.
+
+### Output encodings
+
+`encoding` names the encoding the bytes are written in, and the output is bytes in it (`result.encoding` says which, by the standard's name). The
+standard's "get an output encoding" applies: a label for UTF-16LE, UTF-16BE or `replacement` has no encoder, so the output is UTF-8 and
+`encoding_substituted` says so. In **text and in attribute values**, a character the encoding cannot write is written as a decimal numeric character
+reference (`&#8364;`), which an HTML parser reads back as that character, and `references_written` counts them. **Anywhere else** (tag and attribute
+names, comments, raw text such as `script` and `style`, the doctype, a processing instruction), a reference would be read as the characters it is
+made of, so the character has no spelling: the status is `GTEXT_HTML_E_UNREPRESENTABLE` and `unrepresentable_code_point` names the character
+(a prefix of the output has been written, as for any failure that comes during the walk). ISO-2022-JP is written in its own state: the escape sequences
+are emitted as needed, the text before a reference or a tag is back in ASCII, and the output ends in ASCII. After a failure the prefix that was delivered ends in ASCII as well: the escape back (`ESC ( B`) is appended when the output was in another set, the failure is an unrepresentable character or a limit, and the output limit has room for the three bytes; it is not appended after a sink that refused or when memory ran out. With `inject_meta_charset` the `meta`
+says the encoding by its lower-case name (`shift_jis`), which is a label a parser accepts. The example (`gtext_html_serialize_buffer()` with
+`opts.encoding = "shift_jis"`) is the last one in "Encodings" above.
 
 ## The media-type trap
 
@@ -885,13 +1096,12 @@ Everything the two share is the same on purpose. These are the departures and wh
   separate DOM function builds a tree. There is no pull reader and no event stream for HTML.
 - **A fragment function and a fragment parser**, which XML has no analogue of.
 - **The writer is under "Writing HTML"**, with its own list of departures.
-- **Encoding options** that are validated but mostly inert until the parser uses the \ref format_encoding "Encoding" module (3i); XML reads five encodings.
+- **The parser reads every encoding the Encoding standard has**, by the standard's own sniffing algorithm (see "Encodings"), where XML reads five; a label it does not know is ignored and flagged, not refused.
 
 ## What is not here yet
 
 | Planned | Where |
 |---|---|
-| other encodings: UTF-16, the legacy encodings, the `<meta>` prescan, `ignore_meta`, a tentative label overridden by a declaration | the stage that wires the module in, after 3i (the codecs are built: phases 3h and 3i, \ref format_encoding "Encoding") |
 | sanitization | not planned in this phase |
 | script execution | never |
 | the `scripted_*.dat` vectors (6), which need scripts | out of scope |
@@ -1011,7 +1221,7 @@ for one tokenizer do not for another.
 
 Input is UTF-8; an invalid sequence is one U+FFFD per maximal subpart (the Encoding
 standard's decoder) and the non-standard error `invalid-utf-8-in-input-stream`. A byte
-order mark is not stripped by the tokenizer (the public layer skips one and tells it the three bytes with `gtext_html_tokenizer_skip_input()`, so offsets still count them) and other encodings are not read: that is phases 3h and 3i. The
+order mark is not stripped by the tokenizer (the public layer skips one and tells it the three bytes with `gtext_html_tokenizer_skip_input()`, so offsets still count them) and other encodings are not read by the tokenizer, which takes UTF-8: the public layer decodes the rest (see "Encodings", and a mapped feed that carries the original byte offsets). The
 `wtf8` option reads the three-byte forms of lone surrogates, which the html5lib vectors
 contain.
 
@@ -1071,7 +1281,7 @@ Numbers are from the gates' output; the commands are named so they can be run ag
 
 ## Not done (tokenizer)
 
-Encoding determination beyond a UTF-8 byte order mark, which the public layer skips (3h), scripting beyond the states a tree builder sets.
+Scripting beyond the states a tree builder sets. (Encoding determination is the public layer's.)
 
 
 \anchor format_html_tree
@@ -1176,7 +1386,7 @@ switch to "after frameset"), the `select` and `input` start tags when the contex
 template context (the `form` rules), the end of the file in "in template" with no template on the stack (stop), foster parenting that
 returns the root, table-context clearing and the table and caption end tags that find nothing in scope.
 
-The public API is the layer above; the builder has no `<meta>` encoding step (3h), no serialization (that is 3g, below), no scripts. The "not yet" status of the earlier stages
+The public API is the layer above; the builder's `<meta>` encoding step only reports (the public layer restarts), no serialization (that is 3g, below), no scripts. The "not yet" status of the earlier stages
 (`GTEXT_HTML_TREE_E_NOT_YET` and its accessors) is removed: nothing raised it once foreign content was built. The scorer's exceptions
 format keeps its stage column, for a future construct that is not.
 
@@ -1343,7 +1553,7 @@ named so they can be run again.
 
 ## Not done
 
-Encoding determination and the `<meta>` steps (3h, 3i), sanitization, scripts (the `scripted_*.dat` vectors stay
+Sanitization, scripts (the `scripted_*.dat` vectors stay
 out of scope: `scripted_adoption01.dat`, `scripted_ark.dat`, `scripted_foster01.dat`, `scripted_webkit01.dat`, 6 vectors).
 
 # The serializer (stage 3g)
@@ -1373,6 +1583,6 @@ an output exactly at the limit was refused until the fuzzer found it.
 
 ## Not done (serializer)
 
-Output encodings other than UTF-8 (3h, 3i); pretty printing; sanitization; `escape_lt_in_attrs` and `resolve_entities` (html5lib's options with
+Pretty printing; sanitization; `escape_lt_in_attrs` and `resolve_entities` (html5lib's options with
 nothing to switch or no token to act on); html5lib's "legacy" quoting mode; a shadow root and an element's `is` value (the tree has neither).
 

@@ -48,6 +48,9 @@
 #include "../../src/markup/markup_internal.h"
 #include "html_tree_dump.h"
 
+/* Tests: read UTF-8 through the decoder and the source map, as every other encoding is read (src/html/html_api_internal.h). */
+extern GTEXT_HTML_Status html_parser_force_transcode(GTEXT_HTML_Parser * parser);
+
 static const char * status_name(GTEXT_HTML_Status s) {
   switch (s) {
     case GTEXT_HTML_OK: return "OK";
@@ -67,6 +70,7 @@ static const char * status_name(GTEXT_HTML_Status s) {
     case GTEXT_HTML_E_WRITE: return "E_WRITE";
     case GTEXT_HTML_E_LIMIT_OUTPUT: return "E_LIMIT_OUTPUT";
     case GTEXT_HTML_E_OPTIONS: return "E_OPTIONS";
+    case GTEXT_HTML_E_UNREPRESENTABLE: return "E_UNREPRESENTABLE";
   }
   return "E_UNKNOWN";
 }
@@ -137,12 +141,57 @@ typedef struct {
   size_t nerrors;
   GTEXT_HTML_Error * errors;
   size_t dropped;
+  char * locs;       /* every node's kind, name and location, one line each (NULL when there is no tree) */
+  size_t locs_length;
 } Result;
 
 static void result_free(Result * r) {
   free(r->dump);
   free(r->errors);
+  free(r->locs);
   memset(r, 0, sizeof(*r));
+}
+
+/* The locations of the nodes from `n` on, and of their children and template contents, into a growing buffer: the
+   offsets are the point (byte offsets of the input as given), so two runs that agree on these agree on every place the
+   tree says. */
+static void locs_put(char ** buf, size_t * len, size_t * cap, const char * text) {
+  const size_t n = strlen(text);
+  if (*len + n + 1 > *cap) {
+    size_t c = *cap ? *cap : 4096;
+    while (c < *len + n + 1) {
+      c *= 2;
+    }
+    char * grown = realloc(*buf, c);
+    if (!grown) {
+      return;
+    }
+    *buf = grown;
+    *cap = c;
+  }
+  memcpy(*buf + *len, text, n + 1);
+  *len += n;
+}
+
+static void locs_walk(const GTEXT_Markup_Node * first, char ** buf, size_t * len, size_t * cap) {
+  for (const GTEXT_Markup_Node * c = first; c; c = gtext_markup_node_next_sibling(c)) {
+    GTEXT_Markup_Location where;
+    memset(&where, 0, sizeof(where));
+    const bool has = gtext_markup_node_location(c, &where);
+    char line[256];
+    const GTEXT_Markup_Kind kind = gtext_markup_node_kind(c);
+    snprintf(line, sizeof(line), "%d %.150s %d %zu %zu %zu\n", (int)kind,
+        kind == GTEXT_MARKUP_KIND_ELEMENT ? gtext_markup_element_local_name(c) : "", has ? 1 : 0, where.offset,
+        where.line, where.column);
+    locs_put(buf, len, cap, line);
+    locs_walk(gtext_markup_node_first_child(c), buf, len, cap);
+    if (kind == GTEXT_MARKUP_KIND_ELEMENT) {
+      const GTEXT_Markup_Node * content = gtext_markup_element_template_content(c);
+      if (content) {
+        locs_walk(gtext_markup_node_first_child(content), buf, len, cap);
+      }
+    }
+  }
 }
 
 /* Take what a finished parse produced. */
@@ -169,6 +218,12 @@ static void take(Result * out, GTEXT_HTML_Status s, GTEXT_Markup_Document * doc,
     }
     out->invariants = markup_check_invariants(doc);
     out->dump = frag ? htd_dump_children(frag, &out->dump_length) : htd_dump(doc, &out->dump_length);
+    size_t cap = 0;
+    locs_walk(frag ? gtext_markup_node_first_child(frag) : gtext_markup_document_root(doc), &out->locs, &out->locs_length,
+        &cap);
+    if (!out->locs) {
+      out->locs = calloc(1, 1);
+    }
   }
   else if (s == GTEXT_HTML_OK) {
     out->status = GTEXT_HTML_E_INTERNAL;
@@ -178,9 +233,10 @@ static void take(Result * out, GTEXT_HTML_Status s, GTEXT_Markup_Document * doc,
 }
 
 /* Feed `input` in pieces: `how` is 0 for gtext_html_parse(), 1 a byte at a time, 2 random pieces from `seed`,
-   3 two feeds cut at `split`, 4 pieces of 2 + seed bytes. */
+   3 two feeds cut at `split`, 4 pieces of 2 + seed bytes, 5 one feed. `force` reads a document's UTF-8 through the
+   decoder and the source map (not for how 0, which makes its own parser, nor for a fragment, which is characters). */
 static void run(const unsigned char * input, size_t n, bool scripting, int how, unsigned long long seed,
-    size_t split, const Ctx * ctx, Result * out) {
+    size_t split, const Ctx * ctx, Result * out, bool force) {
   memset(out, 0, sizeof(*out));
   GTEXT_HTML_Parse_Options opts = gtext_html_parse_options_default();
   opts.scripting = scripting;
@@ -223,6 +279,9 @@ static void run(const unsigned char * input, size_t n, bool scripting, int how, 
     out->status = s;
     return;
   }
+  if (force && !fragment) {
+    html_parser_force_transcode(p);
+  }
   size_t at = 0;
   if (how == 3) {
     for (int part = 0; part < 2 && s == GTEXT_HTML_OK; part++) {
@@ -242,6 +301,9 @@ static void run(const unsigned char * input, size_t n, bool scripting, int how, 
     size_t amount = n - at;
     if (how == 1) {
       amount = 1;
+    }
+    else if (how == 5) {
+      amount = n - at;
     }
     else if (how == 2) {
       amount = 1 + lcg(&seed) % 9;
@@ -296,6 +358,10 @@ static const char * differ(const Result * a, const Result * b) {
   if ((a->dump == NULL) != (b->dump == NULL)
       || (a->dump && (a->dump_length != b->dump_length || memcmp(a->dump, b->dump, a->dump_length) != 0))) {
     return "tree";
+  }
+  if ((a->locs == NULL) != (b->locs == NULL)
+      || (a->locs && (a->locs_length != b->locs_length || memcmp(a->locs, b->locs, a->locs_length) != 0))) {
+    return "node locations";
   }
   return NULL;
 }
@@ -413,7 +479,7 @@ static int run_request(char * line) {
     return -1;
   }
   Result whole;
-  run(input, n, scripting, how, seed, split, &ctx, &whole);
+  run(input, n, scripting, how, seed, split, &ctx, &whole, false);
   printf("STATUS %s\n", status_name(whole.status));
   printf("ERRORS %zu %zu 0\n", whole.nerrors, whole.dropped);
   for (size_t i = 0; i < whole.nerrors && whole.errors; i++) {
@@ -432,7 +498,7 @@ static int run_request(char * line) {
     char which[64] = "";
     Result r;
     for (size_t k = 0; k <= n && !what; k++) {
-      run(input, n, scripting, 3, 0, k, &ctx, &r);
+      run(input, n, scripting, 3, 0, k, &ctx, &r, false);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "split at %zu", k);
@@ -440,7 +506,7 @@ static int run_request(char * line) {
       result_free(&r);
     }
     if (!what) {
-      run(input, n, scripting, 1, 0, 0, &ctx, &r);
+      run(input, n, scripting, 1, 0, 0, &ctx, &r, false);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "a byte at a time");
@@ -448,7 +514,7 @@ static int run_request(char * line) {
       result_free(&r);
     }
     for (unsigned long long p = 2; p <= 9 && !what; p++) {
-      run(input, n, scripting, 4, p - 2, 0, &ctx, &r);
+      run(input, n, scripting, 4, p - 2, 0, &ctx, &r, false);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "pieces of %llu", p);
@@ -456,7 +522,7 @@ static int run_request(char * line) {
       result_free(&r);
     }
     for (unsigned long long sd = 1; sd <= 4 && !what; sd++) {
-      run(input, n, scripting, 2, sd, 0, &ctx, &r);
+      run(input, n, scripting, 2, sd, 0, &ctx, &r, false);
       what = differ(&whole, &r);
       if (what) {
         snprintf(which, sizeof(which), "random pieces, seed %llu", sd);
@@ -468,6 +534,44 @@ static int run_request(char * line) {
     }
     else {
       printf("CUT OK\n");
+    }
+    /* The other route: the same bytes through the decoder and the source map instead of the tokenizer's own reading of UTF-8
+       (a document only). Every answer must be the same: the tree, the parse errors with their lines, columns and offsets, the
+       mode, and the location of every node; in one feed, a byte at a time, at every split, and in random pieces. */
+    if (!ctx.present) {
+      what = NULL;
+      which[0] = '\0';
+      static const struct { int how; } routes[] = {{5}, {1}};
+      for (size_t k = 0; k < 2 && !what; k++) {
+        run(input, n, scripting, routes[k].how, 0, 0, &ctx, &r, true);
+        what = differ(&whole, &r);
+        if (what) {
+          snprintf(which, sizeof(which), routes[k].how == 5 ? "in one feed" : "a byte at a time");
+        }
+        result_free(&r);
+      }
+      for (size_t k = 0; k <= n && !what; k++) {
+        run(input, n, scripting, 3, 0, k, &ctx, &r, true);
+        what = differ(&whole, &r);
+        if (what) {
+          snprintf(which, sizeof(which), "split at %zu", k);
+        }
+        result_free(&r);
+      }
+      for (unsigned long long sd = 1; sd <= 3 && !what; sd++) {
+        run(input, n, scripting, 2, sd, 0, &ctx, &r, true);
+        what = differ(&whole, &r);
+        if (what) {
+          snprintf(which, sizeof(which), "random pieces, seed %llu", sd);
+        }
+        result_free(&r);
+      }
+      if (what) {
+        printf("EQUIV DIFF %s: %s\n", which, what);
+      }
+      else {
+        printf("EQUIV OK\n");
+      }
     }
   }
   result_free(&whole);

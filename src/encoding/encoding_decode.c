@@ -288,6 +288,11 @@ struct GTEXT_Decoder {
   bool sniff_pending;         ///< The first bytes are still held back.
   bool strip_pending;         ///< The first item written has not been seen yet (BOM removal).
   bool finished;              ///< The handler said "finished" before the end (replacement); the rest is ignored.
+  size_t seq_start;           ///< Source map: offset of the first byte not yet accounted to a code point (the sequence being read).
+  size_t hist_off[GTEXT_ENCODING_RESTORE_MAX]; ///< Source map: offsets of the last items read, newest last ...
+  uint8_t hist_val[GTEXT_ENCODING_RESTORE_MAX]; ///< ... and their values (a handler restores the last few).
+  uint8_t hist_n;             ///< How many of the two are filled.
+  void * map_block;           ///< The arrays `out.off` and `out.rep` point into, or NULL (track_offsets).
   GTEXT_Out out;              ///< The chunk buffer, the limit and the count of the stream.
 };
 
@@ -320,6 +325,8 @@ static void stream_start(GTEXT_Decoder * dec, bool keep_handler) {
   dec->sniff_pending = dec->opts.bom_sniffing;
   dec->strip_pending = !dec->opts.bom_sniffing && dec->opts.bom_removal && unicode_bom_encoding(dec->active);
   dec->finished = false;
+  dec->seq_start = 0;
+  dec->hist_n = 0;
   dec->out.n = 0;
   dec->out.total = 0;
   dec->out.status = GTEXT_ENCODING_OK;
@@ -345,6 +352,12 @@ static bool dec_put_cp2(GTEXT_Decoder * dec, uint32_t cp0, uint32_t cp1) {
   return gtext_out_put_cp2(&dec->out, cp0, cp1);
 }
 
+/// The width of a code point that began at `start` and ended at `end` in the stream, as the source map says it (15 at most).
+static unsigned char width_of(size_t start, size_t end) {
+  const size_t w = end > start ? end - start : 0;
+  return (unsigned char)(w > 15 ? 15 : w);
+}
+
 /// Run `len` bytes of `in`, and the end of the stream if `eoq`, through the handler. Everything the standard's
 /// "process a queue" does, for the items it is given.
 ///
@@ -357,13 +370,17 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
   }
   const GTEXT_Dec_Codec * codec = dec->codec;
   uint8_t pb[GTEXT_ENCODING_PUSHBACK]; /* the restore stack: the top is read next */
+  size_t pb_off[GTEXT_ENCODING_PUSHBACK]; /* ... and the offset in the stream of each item on it (source map only) */
   size_t pb_n = 0;
   size_t i = 0;
   size_t offset = dec->pos;
+  const bool track = dec->out.off != NULL; /* a source map was asked for */
   for (;;) {
     int byte;
+    size_t item_off = 0; /* the offset in the stream of the item being read (source map only) */
     if (pb_n > 0) {
       byte = pb[--pb_n];
+      item_off = pb_off[pb_n];
     } else if (i < len) {
       if (codec->idle && codec->idle(&dec->state)) {
         size_t j = i;
@@ -373,6 +390,8 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
         if (j > i) {
           dec->strip_pending = false;
           size_t accepted = 0;
+          dec->out.cur_off = dec->pos; /* a run of ASCII: each byte is its own code point, linear from here */
+          dec->out.cur_rep = 0;
           if (!gtext_out_put_run(&dec->out, in + i, j - i, &accepted)) {
             call->status = dec->out.status;
             /* the byte at which it failed is the one after those accepted */
@@ -381,6 +400,10 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
           }
           dec->pos += j - i;
           i = j;
+          if (track) { /* the codec is between characters, so nothing before the end of the run is unaccounted */
+            dec->seq_start = dec->pos;
+            dec->hist_n = 0;
+          }
           if (i == len) {
             continue;
           }
@@ -388,29 +411,50 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
       }
       byte = in[i++];
       offset = dec->pos++;
+      item_off = offset;
     } else if (eoq) {
       byte = -1;
       offset = dec->pos;
     } else {
       break;
     }
+    if (track && byte >= 0) { /* remember the last items, for the restore of a handler */
+      if (dec->hist_n == GTEXT_ENCODING_RESTORE_MAX) {
+        memmove(dec->hist_off, dec->hist_off + 1, (GTEXT_ENCODING_RESTORE_MAX - 1) * sizeof(dec->hist_off[0]));
+        memmove(dec->hist_val, dec->hist_val + 1, GTEXT_ENCODING_RESTORE_MAX - 1);
+        dec->hist_n--;
+      }
+      dec->hist_off[dec->hist_n] = item_off;
+      dec->hist_val[dec->hist_n] = (uint8_t)byte;
+      dec->hist_n++;
+    }
     GTEXT_Dec_Step step;
     step.n = 0;
     step.restore_n = 0;
     step.cp[0] = step.cp[1] = 0;
+    step.skip = false;
     call->steps++;
     const GTEXT_Dec_Result r = codec->step(&dec->state, byte, &step);
     if (r == GTEXT_DEC_CONTINUE) {
+      if (track && step.skip) { /* bytes that make no character: the next one begins after them */
+        dec->seq_start = pb_n > 0 ? pb_off[pb_n - 1] : dec->pos;
+      }
       continue;
     }
     if (r == GTEXT_DEC_EMIT) {
       /* Two code points of one step (Big5's sequences) are written together, so that a limit or a refusing sink never splits a character. */
+      dec->out.cur_off = dec->seq_start;
+      dec->out.cur_rep = 0;
+      dec->out.cur_w = width_of(dec->seq_start, pb_n > 0 ? pb_off[pb_n - 1] : dec->pos);
       const bool ok = step.n == 0 ? true /* an EMIT of nothing writes nothing (and reads no code point the handler never set) */
                     : step.n == 2 ? dec_put_cp2(dec, step.cp[0], step.cp[1]) : dec_put_cp(dec, step.cp[0]);
       if (!ok) {
         call->status = dec->out.status;
         call->taken = taken_base + (count_in ? i : 0);
         return;
+      }
+      if (track) {
+        dec->seq_start = pb_n > 0 ? pb_off[pb_n - 1] : dec->pos;
       }
       continue;
     }
@@ -434,6 +478,17 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
       call->taken = taken_base + (count_in ? i : 0);
       return;
     }
+    /* A handler that restores more than it read is a defect: reported before the replacement is delivered, not after. */
+    if (track && step.restore_n > dec->hist_n) {
+      call->status = GTEXT_ENCODING_E_INTERNAL;
+      call->taken = taken_base + (count_in ? i : 0);
+      return;
+    }
+    dec->out.cur_off = dec->seq_start;
+    dec->out.cur_rep = 1;
+    /* The replaced subpart ends where the first restored byte began, else after the byte just read. */
+    dec->out.cur_w = width_of(dec->seq_start, track && step.restore_n > 0
+        ? dec->hist_off[dec->hist_n - step.restore_n] : (pb_n > 0 ? pb_off[pb_n - 1] : dec->pos));
     if (!dec_put_cp(dec, 0xFFFD)) {
       call->status = dec->out.status;
       call->taken = taken_base + (count_in ? i : 0);
@@ -447,7 +502,24 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
       return;
     }
     for (size_t k = step.restore_n; k > 0; k--) {
+      if (track) {
+        /* The restored bytes are the last ones read, in order: the standard's "restore" puts back what was just taken. Their offsets are known
+           because of that, and a handler that restored anything else is a defect, not a map that lies. */
+        const size_t h = dec->hist_n - step.restore_n + (k - 1);
+        if (dec->hist_val[h] != step.restore[k - 1]) {
+          call->status = GTEXT_ENCODING_E_INTERNAL;
+          call->taken = taken_base + (count_in ? i : 0);
+          return;
+        }
+        pb_off[pb_n] = dec->hist_off[h];
+      }
       pb[pb_n++] = step.restore[k - 1];
+    }
+    if (track) {
+      dec->seq_start = pb_n > 0 ? pb_off[pb_n - 1] : dec->pos;
+      if (step.restore_n > 0) { /* those items will be read again, and so enter the history again */
+        dec->hist_n = (uint8_t)(dec->hist_n - step.restore_n);
+      }
     }
   }
 }
@@ -507,6 +579,7 @@ static void sniff_resolve(GTEXT_Decoder * dec, int verdict, GTEXT_Encoding enc, 
     dec->codec = gtext_encoding_dec_codec(enc);
     dec->codec->init(&dec->state, enc);
     dec->pos += len;
+    dec->seq_start = dec->pos;
     call->bom_found = true;
     return;
   }
@@ -609,6 +682,17 @@ GTEXT_Encoding_Status gtext_decoder_new(GTEXT_Encoding encoding, const GTEXT_Dec
   }
   dec->requested = encoding;
   dec->out.limit = dec->opts.max_output_bytes;
+  if (o.track_offsets) {
+    /* The source map of a chunk: an offset and a flag for every byte of it, allocated once and kept for the life of the decoder. */
+    dec->map_block = gtext_allocator_malloc(&alloc, GTEXT_ENCODING_CHUNK * (sizeof(size_t) + 2));
+    if (!dec->map_block) {
+      gtext_allocator_free(&alloc, dec);
+      return GTEXT_ENCODING_E_OOM;
+    }
+    dec->out.off = dec->map_block;
+    dec->out.rep = (unsigned char *)dec->map_block + GTEXT_ENCODING_CHUNK * sizeof(size_t);
+    dec->out.wid = dec->out.rep + GTEXT_ENCODING_CHUNK;
+  }
   stream_start(dec, false);
   *out = dec;
   return GTEXT_ENCODING_OK;
@@ -619,6 +703,7 @@ void gtext_decoder_free(GTEXT_Decoder * decoder) {
     return;
   }
   GTEXT_Allocator alloc = decoder->alloc;
+  gtext_allocator_free(&alloc, decoder->map_block);
   gtext_allocator_free(&alloc, decoder);
 }
 
@@ -632,16 +717,14 @@ GTEXT_Encoding gtext_decoder_encoding(const GTEXT_Decoder * decoder) {
   return decoder ? decoder->active : GTEXT_ENCODING_NONE;
 }
 
-GTEXT_Encoding_Status gtext_decoder_decode(GTEXT_Decoder * dec, const void * in, size_t len, bool flush,
-    const GTEXT_Encoding_Sink * sink, GTEXT_Decoder_Result * result) {
-  if (!dec || !sink || !sink->write || (!in && len > 0)) {
-    fill_result(result, GTEXT_ENCODING_E_INVALID, dec ? dec->active : GTEXT_ENCODING_NONE, NULL, 0);
-    return GTEXT_ENCODING_E_INVALID;
-  }
+/// The one decode call: `sink` (plain) or `msink` (mapped), exactly one of them.
+static GTEXT_Encoding_Status decode_call(GTEXT_Decoder * dec, const void * in, size_t len, bool flush,
+    const GTEXT_Encoding_Sink * sink, const GTEXT_Encoding_Mapped_Sink * msink, GTEXT_Decoder_Result * result) {
   Call call;
   memset(&call, 0, sizeof(call));
   call.status = GTEXT_ENCODING_OK;
   dec->out.sink = sink;
+  dec->out.msink = msink;
   dec->out.delivered = 0;
   dec->out.status = GTEXT_ENCODING_OK;
   GTEXT_Encoding_Status status = decode_impl(dec, (const unsigned char *)in, len, flush, &call);
@@ -668,6 +751,24 @@ GTEXT_Encoding_Status gtext_decoder_decode(GTEXT_Decoder * dec, const void * in,
      handling, the count of output) always starts over. */
   stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);
   return status;
+}
+
+GTEXT_Encoding_Status gtext_decoder_decode(GTEXT_Decoder * dec, const void * in, size_t len, bool flush,
+    const GTEXT_Encoding_Sink * sink, GTEXT_Decoder_Result * result) {
+  if (!dec || !sink || !sink->write || (!in && len > 0)) {
+    fill_result(result, GTEXT_ENCODING_E_INVALID, dec ? dec->active : GTEXT_ENCODING_NONE, NULL, 0);
+    return GTEXT_ENCODING_E_INVALID;
+  }
+  return decode_call(dec, in, len, flush, sink, NULL, result);
+}
+
+GTEXT_Encoding_Status gtext_decoder_decode_mapped(GTEXT_Decoder * dec, const void * in, size_t len, bool flush,
+    const GTEXT_Encoding_Mapped_Sink * sink, GTEXT_Decoder_Result * result) {
+  if (!dec || !dec->map_block || !sink || !sink->write || (!in && len > 0)) {
+    fill_result(result, GTEXT_ENCODING_E_INVALID, dec ? dec->active : GTEXT_ENCODING_NONE, NULL, 0);
+    return GTEXT_ENCODING_E_INVALID;
+  }
+  return decode_call(dec, in, len, flush, NULL, sink, result);
 }
 
 GTEXT_Encoding_Status gtext_encoding_decode_buffer(GTEXT_Encoding encoding, const GTEXT_Decoder_Options * opts,

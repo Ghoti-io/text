@@ -122,6 +122,12 @@ typedef struct {
    *  256 MiB; SIZE_MAX removes the cap in effect. A flush ends a stream and starts the count again. Exceeding it is GTEXT_ENCODING_E_LIMIT_OUTPUT, and the sink has then received a prefix of the
    *  output, never more than the limit and never part of a code point. */
   size_t max_output_bytes;
+
+  /** Make a decoder that can report where its output came from: gtext_decoder_decode_mapped() needs one, and it allocates
+   *  the arrays that map a chunk once, here: for each of the 4096 bytes of a chunk an offset (a `size_t`), a flag and a
+   *  width, which is 40 KiB with a 64-bit `size_t`. (A caller that passes the map on in another form pays for that too: the HTML parser
+   *  keeps 32 KiB more, per parser that decodes.) Default false; it changes nothing about what is decoded. */
+  bool track_offsets;
 } GTEXT_Decoder_Options;
 
 /**
@@ -196,6 +202,31 @@ GTEXT_API GTEXT_Encoding_Status gtext_decoder_new(
  */
 GTEXT_API GTEXT_Encoding_Status gtext_decoder_decode(GTEXT_Decoder * decoder, const void * in,
     size_t len, bool flush, const GTEXT_Encoding_Sink * sink, GTEXT_Decoder_Result * result);
+
+/**
+ * @brief Decode the next piece of the input, telling the sink where each code point came from.
+ *
+ * Exactly gtext_decoder_decode() (the output is the same bytes, in the same chunks, whatever the cuts of the input), with a sink
+ * that is also given the GTEXT_Encoding_Source_Map of each chunk: for every output byte, the offset in the stream of the input byte
+ * that began its code point, and whether it is a U+FFFD for ill-formed input. This is how a caller that reads positions in the
+ * decoded text (a parser reporting a line, a column and a byte offset) keeps them as offsets into the **original** bytes
+ * for a multi-byte or a UTF-16 encoding, where the two are not the same length.
+ *
+ * The offset of a code point is the offset of the first byte of the sequence that gave it (the stream's offset, not the call's).
+ * Bytes that give no code point (an ISO-2022-JP escape sequence, a byte order mark) have no entry; they show only as a gap
+ * between two offsets. A code point written for the end of the input (a truncated sequence) has the offset of the first byte
+ * of that sequence. Equal inputs give equal maps however the input is cut.
+ *
+ * @param decoder A decoder made with `track_offsets`.
+ * @param in      The bytes; may be NULL if `len` is 0.
+ * @param len     Their number.
+ * @param flush   Whether this is the end of the input.
+ * @param sink    Where the UTF-8 and its map go. Not NULL; its `write` not NULL.
+ * @param result  Receives the outcome, or NULL.
+ * @return As gtext_decoder_decode(); GTEXT_ENCODING_E_INVALID also for a decoder made without `track_offsets`.
+ */
+GTEXT_API GTEXT_Encoding_Status gtext_decoder_decode_mapped(GTEXT_Decoder * decoder, const void * in,
+    size_t len, bool flush, const GTEXT_Encoding_Mapped_Sink * sink, GTEXT_Decoder_Result * result);
 
 /**
  * @brief Abandon the stream in progress and start over, as after a flush.

@@ -26,7 +26,8 @@ from the pinned web-platform-tests vectors and the hand-chosen extras): every th
 choice and the scripting flag of its first byte, and with the other five option bytes taken from one of fourteen profiles chosen
 by a hash of the seed, so that adding or removing a seed changes no other file. The profiles between them turn on every option
 of the serializer, each entry point of the failure sweep, the sink that fails, both limits, the outer scope, and the two option
-combinations that are refused. The rest are the seeds below, which hold what the vectors do not: a no-break space in text and
+combinations that are refused, and four of the eighteen write in an output encoding (o2's top bits, with o4's bits 3 to 7 choosing which of
+the twenty). The rest are the seeds below, which hold what the vectors do not: a no-break space in text and
 attributes, a text of thousands of ampersands (the sink fails in the middle of a walk), templates inside templates, foreign
 attributes, raw text elements, a tree of every nesting the limits are about.
 
@@ -62,9 +63,9 @@ EXPECTED = (_min_seeds(), 1100)
 
 # (o1, o2, o3, o4, o5)
 #   o1: omit 1, when-needed 2, best 4, solidus 8, space 16, minimize 32, alphabetical 64, strip 128
-#   o2: escape_rcdata 1, doctype ids 2, inject 4, outer 8, quote char (default 0, `"` 16, `'` 32)
+#   o2: escape_rcdata 1, doctype ids 2, inject 4, outer 8, quote char (default 0, `"` 16, `'` 32), an output encoding (bits 6-7)
 #   o3: the sink call that fails (low nibble), the size of the pieces of text for the token stream (high nibble)
-#   o4: failure sweeps: sink 1, buffer 2, token stream 4
+#   o4: failure sweeps: sink 1, buffer 2, token stream 4; bits 3-7: which output encoding
 #   o5: the output limit (bit 7 on; bits 0-2: the length, one less, half, one more, small ones)
 PROFILES = (
     (0x00, 0x00, 0x00, 0x00, 0x00),
@@ -81,7 +82,15 @@ PROFILES = (
     (0x00, 0x00, 0x00, 0x00, 0x80),                   # the output limit at the length
     (0x00, 0x00, 0x00, 0x00, 0x81),                   # ... and one less
     (0x02, 0x20, 0x01, 0x03, 0x83),                   # the quote character, a failing sink, the sweeps, the output limit
+    (0x01, 0x40 | 0x04, 0x00, 0x10, 0x00),            # an output encoding, the optional tags and the meta it declares
+    (0x00, 0x80, 0x31, 0x20 | 0x07, 0x00),            # another, the sweeps, text fed in pieces
+    (0x08, 0xC0, 0x00, 0x30, 0x83),                   # another, <br/>, the output limit
+    (0x00, 0x40 | 0x08, 0x00, 0x40 | 0x01, 0x00),     # another, the first child itself, a failing sink
 )
+
+# The output encodings (kOutEncodings in tests/fuzz/fuzz_html_serialize.cpp) in the order o4 >> 3 and o2 >> 6 choose them.
+OUT = ("iso-8859-2", "windows-1252", "shift_jis", "euc-jp", "iso-2022-jp", "gbk", "gb18030", "big5", "euc-kr", "utf-16le", "utf-16be",
+       "koi8-r", "windows-1251", "x-user-defined", "hz-gb-2312", "windows-874", "ibm866", "macintosh", "iso-8859-8", "utf-8")
 
 # (name, o0, o1..o5, data)
 HAND = [
@@ -127,6 +136,20 @@ HAND = [
     ("only-text", 0, (0x01, 0, 0, 0, 0), b"just text"),
 ]
 
+# The encoded seeds: (name, encoding index, o1, extra o2 bits, data). o2's top bits are 01; o4's bits 3-7 are (index - 1) so that
+# (o4 >> 3) + (o2 >> 6) names the index.
+ENC_DOCS = {
+    "references": "<p title=\"\u20ac \u65e5\u672c\">\u20ac \u65e5\u672c \U0001F600 &amp; \u00e9</p><table>\u20ac<tr><td>\u65e5</td></tr></table><textarea>\u20ac</textarea>",
+    "errors-in-raw-text": "<p>ok</p><script>var s = '\u20ac';</script><p>after</p>",
+    "errors-in-a-comment": "<p>\u65e5</p><!-- \u20ac --><p>x</p>",
+    "errors-in-a-name": "<p>x</p><\u65e5-tag class=a>y</\u65e5-tag>",
+    "errors-in-an-attribute-name": "<p \u20ac=1>x</p>",
+    "errors-in-a-doctype": "<!DOCTYPE \u20ac><p>x",
+    "representable": "<p class=a>caf\u00e9</p>",
+    "iso-2022-jp": "<p>\u65e5\u672c\u20ac\u65e5</p><b>x</b>\u65e5",
+    "style-and-xmp": "<style>a { content: '\u65e5' }</style><xmp>\u20ac</xmp><iframe>\u00e9</iframe>",
+}
+
 
 def main():
     os.makedirs(CORPUS, exist_ok=True)
@@ -156,6 +179,22 @@ def main():
         with open(os.path.join(CORPUS, "ser-%s.seed" % name), "wb") as fh:
             fh.write(bytes((o0,) + opts) + data)
         kept += 1
+    for what, text in sorted(ENC_DOCS.items()):
+        for index, label in enumerate(OUT):
+            if label == "utf-8" and what != "references":
+                continue
+            o2 = 0x40 | (0x04 if index % 5 == 0 else 0)
+            o4 = ((index - 1) % 20) << 3
+            o1 = (0x01 if index % 4 == 0 else 0) | (0x02 if index % 3 == 0 else 0)
+            o3 = 0x01 if index % 7 == 0 else 0x00
+            o5 = 0x80 | (index % 5) if index % 6 == 0 else 0
+            name = "ser-enc-%s-%s.seed" % (what, label)
+            data = text.encode("utf-8")
+            if len(data) + OPTION_BYTES > MAX_SEED:
+                sys.exit("the seed %s is too long" % name)
+            with open(os.path.join(CORPUS, name), "wb") as fh:
+                fh.write(bytes((0, o1, o2, o3, o4, o5)) + data)
+            kept += 1
     if not EXPECTED[0] <= kept <= EXPECTED[1]:
         sys.exit("%d seeds written; the documentation says %d to %d" % ((kept,) + EXPECTED))
     print("fuzz_html_serialize: %d seeds (every third tree-builder seed, and %d of its own)" % (kept, len(HAND)))

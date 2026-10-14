@@ -975,18 +975,18 @@ must stay silent under it.
 ## Fuzzing the public HTML API
 
 `fuzz_html.cpp`: five option bytes (the tree builder's four, and a fifth for the API's options: count-only, a byte
-order mark in front, the error cap, a UTF-8 transport label, no result struct in the failure sweep, a refused
-encoding label) and then bytes. The builder's own harness holds the builder to the properties that make a parse one
+order mark in front, the error cap, a UTF-8 transport label, no result struct in the failure sweep, and the
+encoding world below) and then bytes. The builder's own harness holds the builder to the properties that make a parse one
 parse; this one holds the layer over it, through `gtext_html_parse()`, `gtext_html_parse_fragment()` and the incremental
 parser, to the properties of a public API. The answer (status, tree, document mode, every error with its code,
 name, line, column and offset, the dropped count, the encoding and its source, the input and node counts) must be
 the same whole, by the parser whole, a byte at a time, in pieces, in random pieces and cut once, and must be the tree
 builder's own answer for the same bytes with a leading byte order mark skipped. The result must agree with the call
-(its status, a failure with no document, no nodes and no mode; a success whose document records `UTF-8` with the
+(its status, a failure with no document, no nodes and no mode; a success whose document records the encoding the result gives, with the
 result's source and whose mode and node count are the document's), every error's name must be its code's, the cap
 must keep the first errors and kept plus dropped must be the same number whatever the cap, count-only must keep none,
-a byte order mark must change nothing but the source and the offsets (and is text in a fragment), a label that is
-not UTF-8 must be refused with no document, the input limit must be exact at the size and refuse one byte less
+a byte order mark must change nothing but the source and the offsets (and is text in a fragment), a label that names
+no encoding must be ignored and said so, the input limit must be exact at the size and refuse one byte less
 however the input is cut, the other tiny limits must be their own status and a run that survives one must give the
 roomy run's tree, a failed parser must repeat its failure, a finished one must refuse a second finish and a feed, the
 document and the result must be freeable in either order, a fragment must clone into another document equal to the
@@ -994,11 +994,23 @@ original, and an allocation that fails, the first to the last of the call, throu
 choose (the whole-buffer form, the parser whole, in pieces or a byte at a time, document or fragment, with a result
 or without), must be OOM with no document or the answer the call would have given, complete, and never a leak or a
 free of a block the allocator did not make.
-Seeds (`tests/fuzz/corpus/html`) are every third seed of the tree builder's corpus with the fifth byte added, and 38
-of the API's own (byte order marks whole, cut and half-formed; more errors than the cap; refused labels; the empty
-input), made by `tools/html/make-api-fuzz-seeds.py`. The script leaves `reproducer-*.seed` alone, so a find can be kept there once the fuzzer has made one (there are none yet).
+
+**The encoding world** (o4's top two bits non-zero, three more option bytes): the bytes are in one of twenty encodings, announced by a
+certain or tentative label, a default or nothing, with `ignore_meta` or not, a byte order mark in front or not, and a `<meta>` in
+front of them, inside the first 1024 bytes or after (so that the parse restarts). The properties are those above for the bytes, and
+the decision is the sniffing function's when the parse did not restart; a restart is a certain declaration of another encoding; and
+**the oracle**: the Encoding module decodes the bytes with the decoder's source map, the tree builder reads that UTF-8 itself, and the
+tree, the mode and the errors are the same, every offset the oracle's taken back through the map (an error at the place after a
+character is at the end of that character in the bytes, which the map's widths give); and UTF-8 read through the decoder is UTF-8
+read by the tokenizer. The first run of the encoding seeds with errors in the middle of a run of ISO-2022-JP and UTF-16 text found a
+real defect: the place after a character was the start of the next one when the next had arrived and the end of the last when it had
+not, so an error at the end of a numeric character reference had another offset when the input was cut there.
+Seeds (`tests/fuzz/corpus/html`, 936) are every third seed of the tree builder's corpus with the fifth byte added, 35 of the API's
+own (byte order marks whole, cut and half-formed; more errors than the cap; the empty input), and the encoding
+world's (a certain label, a `<meta>` early and late, a tentative label overridden, `ignore_meta`, ill-formed bytes, the end of the input
+inside a tag, errors in the middle of a run of text, byte order marks of three kinds: for each of twenty encodings), made by `tools/html/make-api-fuzz-seeds.py`. The script leaves `reproducer-*.seed` alone, so a find can be kept there once the fuzzer has made one (there are none yet).
 `tests/test-html-api-fuzz-seeds.cpp` replays every seed in `make test`. `make check-html-fuzz-plants`
-(`tools/html/plant-fuzz.py`) plants twelve defects in a copy of the layer, each replayed from a seed, as the unedited
+(`tools/html/plant-fuzz.py`) plants twenty-one defects in a copy of the layer, each replayed from a seed, as the unedited
 control (`control-api`) must stay silent under the search.
 
 ## Fuzzing the HTML serializer
@@ -1012,10 +1024,14 @@ tag; an unusable option combination is refused with nothing written, through all
 n-th call gets exactly the chunks before it and is not asked again; the output limit and the depth limit are exact; and an
 allocation failed at every point of a call (the sink, the buffer, the token stream) is `E_OOM` or the normal answer, with no leak.
 
-Seeds: `tests/fuzz/corpus/html-serialize` (750, made by `tools/html/make-serialize-fuzz-seeds.py`: every third tree-builder seed with
-one of fourteen option profiles, and 38 of its own), replayed by `make test` (`tests/test-html-serialize-fuzz-seeds.cpp`), and
-`reproducer-*.seed` for finds. `make check-html-fuzz-plants` plants eleven defects in the serializer and shows the fuzzer find each
-(eight replayed from a seed, three searched for from the seeds), with its own unedited control. **The first search found a real defect in seconds**: with
+Seeds: `tests/fuzz/corpus/html-serialize` (922, made by `tools/html/make-serialize-fuzz-seeds.py`: every third tree-builder seed with
+one of fourteen option profiles, 38 of its own, and the output-encoding mode's: nine documents in each of twenty encodings), replayed by `make test` (`tests/test-html-serialize-fuzz-seeds.cpp`), and
+`reproducer-*.seed` for finds. `make check-html-fuzz-plants` plants seventeen defects in the serializer and shows the fuzzer find each
+(fourteen replayed from a seed, three searched for from the seeds), with its own unedited control. **The output-encoding mode** (o2's top bits
+and o4's top five name one of twenty encodings) holds the output to: it is the Encoding module's HTML-mode encoding of the UTF-8 output
+where a reference is allowed; a character the encoding lacks in a name, a comment, a document type or the text of a raw text element is
+`E_UNREPRESENTABLE` naming it; the count of references says whether the text could be written as it is; UTF-16 and `replacement`
+write UTF-8; the encoder does not leak and is flushed at the end. **The first search found a real defect in seconds**: with
 `inject_meta_charset`, the tokens held back for a `head` were counted against `max_output_bytes` at their size in the queue, which
 is bigger than their output, so an output exactly at the limit was refused (`reproducer-output-limit-with-a-held-head.seed`; the
 queue is now bounded by eight times the limit and kept small by varint lengths).

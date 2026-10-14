@@ -114,9 +114,31 @@ and, for stage 3e, six (three replayed, three searched):
   tree-fragment-result-not-moved   the root element's children are not moved into the fragment: the
                    property that a fragment's document has an empty root element (searched).
 
-The public API's fuzzer (tests/fuzz/fuzz_html.cpp, target `html`) has twelve, all replayed from a seed of
-tests/fuzz/corpus/html and all in the layer over the builder (src/html/html_api.c, html_core.c), with its
-own unedited control (`control-api`):
+The public API's fuzzer (tests/fuzz/fuzz_html.cpp, target `html`) has twenty-one, all replayed from a seed of
+tests/fuzz/corpus/html and all in the layer over the builder (src/html/html_api.c, html_core.c) or in the path
+that carries a decoded document's positions (src/html/html_tree.c, html_tokenizer.c), with its
+own unedited control (`control-api`). The first twelve are the UTF-8 world's, the last nine the encoding world's:
+
+  api-restart-drops-the-kept-bytes   a restart replays only the last piece of the input, not the bytes kept
+                   before it: the answer depends on how the input is cut (replayed from a document in
+                   Shift_JIS whose meta comes after the first 1024 bytes).
+  api-restart-keeps-the-old-source   a restart is not recorded as a declaration: the property that a restart is
+                   source DECLARATION and certain.
+  api-replacement-flag-lost   the decoder's flag on a replacement character is not passed on: the errors for
+                   ill-formed bytes are the decoder's replacements (the oracle).
+  api-end-of-input-off-by-one   the end of the original input is one byte too far for the tokenizer: an error at
+                   the end of the input is not the oracle's.
+  api-bom-not-counted   a skipped UTF-8 byte order mark is one byte short in every offset after it: the
+                   layer's answer is not the builder's.
+  tree-cursor-ignores-the-deltas   a position inside a run of text counts one original byte for each character
+                   instead of the bytes it had: the oracle's offsets (replayed from a Shift_JIS table).
+  tokenizer-delta-lost   the distances between the characters of a run are all 1: the same.
+  tokenizer-after-offset-is-the-next-start   an error at the place after the character just read (the end of a numeric character
+                   reference) is at the start of the next character when it has arrived and at the end of the last when it has
+                   not: a shift sequence or a wide character between them makes the answer depend on how the input is cut (the
+                   oracle sees it: replayed from an ISO-2022-JP document with `&#0;` before an escape).
+  tokenizer-width-lost   the width of a character in the original is not passed on: the place after a character is its start plus
+                   one (replayed from a UTF-16 document).
 
   api-bom-needs-one-feed   the byte order mark is recognized only in a feed of three bytes or more: a
                    document fed a byte at a time reads the mark as text, which the property that
@@ -140,11 +162,21 @@ own unedited control (`control-api`):
   api-oom-absorbed-in-report   the result is returned incomplete when its error list cannot be
                    allocated: the allocation-failure sweep's property that a success is the normal answer.
 
-The serializer's fuzzer (tests/fuzz/fuzz_html_serialize.cpp, target `html-serialize`) has eleven, eight replayed from a
+The serializer's fuzzer (tests/fuzz/fuzz_html_serialize.cpp, target `html-serialize`) has seventeen, fourteen replayed from a
 seed of tests/fuzz/corpus/html-serialize and three searched for from the seeds (`serialize-nodes-not-counted`,
 `serialize-solidus-space-not-checked`, `serialize-output-limit-off-by-one`), with its own unedited control
 (`control-serialize`):
 
+  serialize-references-in-raw-text   a character that the output encoding lacks is written as a numeric reference in the text of a
+                   script, where it would not be read as one: the property that a name, comment, document type or raw text with such a
+                   character is refused (replayed from an ISO-8859-2 document with a euro sign in a script).
+  serialize-encoder-not-flushed   the encoder is not flushed at the end: an ISO-2022-JP output does not end in ASCII, and the output
+                   is not the Encoding module's own encoding of the UTF-8 output.
+  serialize-code-point-not-named   the refusal does not say which character has no spelling.
+  serialize-references-not-counted   the count of references written stays zero: it says whether the text could be written as it is.
+  serialize-encoder-leak   the encoder is not freed with the serializer: the counting allocator and LeakSanitizer.
+  serialize-failure-leaves-the-shifted-set   after a failure the escape back to ASCII is not appended: the prefix before an
+                   unrepresentable character ends in the Roman or the two-byte set of ISO-2022-JP (replayed from a find of the fuzzer's).
   serialize-nbsp-not-escaped   a no-break space in text is written as it is: the model, which writes `&nbsp;`.
   serialize-stream-drops-a-character   the token stream ignores a text of one character: the property that it
                    writes what the walk writes.
@@ -189,8 +221,10 @@ PLANTS = {
     "tree-fmt-blocks-leak": ("html-tree", "src/html/html_tree.c",
                              "    gtext_allocator_free(&alloc, tb->fmt_blocks[i]);\n", ""),
     "tree-cut-dependence": ("html-tree", "src/html/html_tree.c",
-                            "  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_feed(tb->tok, data, length);\n",
-                            "  const GTEXT_HTML_TokenizerStatus s = gtext_html_tokenizer_feed(tb->tok, data, length);\n"
+                            "  const GTEXT_HTML_TokenizerStatus s = source ? gtext_html_tokenizer_feed_mapped(tb->tok, data, length, source)\n"
+                            "                                              : gtext_html_tokenizer_feed(tb->tok, data, length);\n",
+                            "  const GTEXT_HTML_TokenizerStatus s = source ? gtext_html_tokenizer_feed_mapped(tb->tok, data, length, source)\n"
+                            "                                              : gtext_html_tokenizer_feed(tb->tok, data, length);\n"
                             "  if (length == 1) {\n    tb->frameset_ok = false;\n  }\n"),
     "tree-absorbed-oom": ("html-tree", "src/html/html_tree.c",
                           "    return ht_tree_markup_status(\n        tb, markup_text_append(tb->doc, last, &cap, data, length));\n",
@@ -251,18 +285,17 @@ PLANTS = {
 
     # The public API (tests/fuzz/fuzz_html.cpp). Each is in the layer over the builder.
     "api-bom-needs-one-feed": ("html", "src/html/html_api.c",
-                               "  while (p->bom_open && len > 0) {", "  while (p->bom_open && len >= 3) {"),
+                               "    if (p->win_len < p->need) {", "    if (p->win_len < 1) {"),
     "api-held-bytes-dropped": ("html", "src/html/html_api.c",
-                               "  const size_t n = p->held;\n  p->held = 0;", "  const size_t n = 0;\n  p->held = 0;"),
+                               "    st = run_bytes(p, NULL, 0, all, n, true);", "    st = run_bytes(p, NULL, 0, all, 0, true);"),
     "api-result-leak": ("html", "src/html/html_core.c",
                         "    gtext_allocator_free(&allocator, internal);\n", "    (void)allocator;\n"),
     "api-encoding-not-recorded": ("html", "src/html/html_api.c",
-                                  "    if (gtext_markup_document_set_encoding(doc, \"UTF-8\",\n"
-                                  "            p->has_bom ? GTEXT_MARKUP_ENCODING_BOM : p->source)\n        != GTEXT_MARKUP_OK) {",
+                                  "    if (gtext_markup_document_set_encoding(doc, gtext_encoding_name(p->enc), p->source) != GTEXT_MARKUP_OK) {",
                                   "    if (0) {"),
     "api-count-only-ignored": ("html", "src/html/html_api.c",
-                               "  to.count_errors_only = o.count_errors_only || !errors_wanted;",
-                               "  to.count_errors_only = !errors_wanted;"),
+                               "  to->count_errors_only = o.count_errors_only || !errors_wanted;",
+                               "  to->count_errors_only = !errors_wanted;"),
     "api-error-total-short": ("html", "src/html/html_core.c",
                               "  internal->dropped = dropped;", "  internal->dropped = 0;"),
     "api-second-finish-gives-document": ("html", "src/html/html_api.c",
@@ -278,11 +311,56 @@ PLANTS = {
                                             "  if (p->status != GTEXT_HTML_OK) {\n    /* The sticky failure comes before",
                                             "  if (p->fragment != fragment) {\n    html_result_set_failure(result, GTEXT_HTML_E_STATE, NULL);\n    return GTEXT_HTML_E_STATE;\n  }\n  if (p->status != GTEXT_HTML_OK) {\n    /* The sticky failure comes before"),
     "api-fragment-bom-skipped": ("html", "src/html/html_api.c",
-                                 "  p->bom_open = context == NULL;", "  p->bom_open = true;"),
+                                 "    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, data, len);\n    return ts == GTEXT_HTML_TREE_OK",
+                                 "    const unsigned char * fd = data;\n    size_t fl = len;\n"
+                                 "    if (p->fed == len && fl >= 3 && fd[0] == 0xEF && fd[1] == 0xBB && fd[2] == 0xBF) {\n      fd += 3;\n      fl -= 3;\n    }\n"
+                                 "    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_feed(p->tree, fd, fl);\n    return ts == GTEXT_HTML_TREE_OK"),
+    # The encodings (the encoding world of the same harness). Each is in the layer or in the source map's reach.
+    "api-restart-drops-the-kept-bytes": ("html", "src/html/html_api.c",
+                                         "    if (prev_len > 0) {\n      st = process(p, prev, prev_len, false);",
+                                         "    if (0) {\n      st = process(p, prev, prev_len, false);"),
+    "api-restart-keeps-the-old-source": ("html", "src/html/html_api.c",
+                                         "  p->source = GTEXT_MARKUP_ENCODING_DECLARATION;\n  p->confidence = GTEXT_HTML_CERTAIN;",
+                                         "  p->confidence = GTEXT_HTML_CERTAIN;"),
+    "api-replacement-flag-lost": ("html", "src/html/html_api.c",
+                                  "        | (map->replaced[i] ? GTEXT_HTML_SOURCE_REPLACED : (size_t)0);",
+                                  "        | (size_t)0;"),
+    "api-end-of-input-off-by-one": ("html", "src/html/html_api.c",
+                                    "      return tree_verdict(p, gtext_html_tree_finish_mapped(p->tree, p->fed));",
+                                    "      return tree_verdict(p, gtext_html_tree_finish_mapped(p->tree, p->fed + 1));"),
+    "api-bom-not-counted": ("html", "src/html/html_api.c",
+                            "    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_skip_input(p->tree, p->bom_length);",
+                            "    const GTEXT_HTML_TreeStatus ts = gtext_html_tree_skip_input(p->tree, p->bom_length - 1);"),
+    "tree-cursor-ignores-the-deltas": ("html", "src/html/html_tree.c",
+                                       "        c->offset += c->dl[c->idx];", "        c->offset += 1;"),
+    "tokenizer-delta-lost": ("html", "src/html/html_tokenizer.c",
+                             "    dl[i] = (uint8_t)delta;", "    dl[i] = 1;"),
+    "tokenizer-after-offset-is-the-next-start": ("html", "src/html/html_tokenizer.c",
+                                                 "  return p > 0 ? SRC_END(t->in_src[p - 1]) : t->carry_end;",
+                                                 "  return p < t->in_length ? SRC_START(t->in_src[p]) : (p > 0 ? SRC_END(t->in_src[p - 1]) : t->carry_end);"),
+    "tokenizer-width-lost": ("html", "src/html/html_api.c",
+                             "    p->flagged[i] = map->offsets[i] | ((size_t)map->widths[i] << GTEXT_HTML_SOURCE_WIDTH_SHIFT)",
+                             "    p->flagged[i] = map->offsets[i] | ((size_t)(map->widths[i] ? 1 : 0) << GTEXT_HTML_SOURCE_WIDTH_SHIFT)"),
     "api-oom-absorbed-in-report": ("html", "src/html/html_api.c",
                                    "    if (!result->internal) {", "    if (0) {"),
     # The serializer (tests/fuzz/fuzz_html_serialize.cpp). Each breaks a property it holds the serializer to - the model, the
     # token stream against the walk, the counts, the limits, the sink, the allocator.
+    "serialize-references-in-raw-text": ("html-serialize", "src/html/html_serialize.c",
+                                         "  gtext_encoder_set_error_mode(s->enc, s->refs_ok ? GTEXT_ENCODER_HTML : GTEXT_ENCODER_FATAL);",
+                                         "  gtext_encoder_set_error_mode(s->enc, GTEXT_ENCODER_HTML);"),
+    "serialize-encoder-not-flushed": ("html-serialize", "src/html/html_serialize.c",
+                                      "      out_encoded(s, NULL, 0, true); /* the end of the stream",
+                                      "      (void)out_encoded; /* the end of the stream"),
+    "serialize-code-point-not-named": ("html-serialize", "src/html/html_serialize.c",
+                                       "      s->r.unrepresentable_code_point = st == GTEXT_ENCODING_E_UNENCODABLE ? r.error_code_point : 0xFFFD;",
+                                       "      s->r.unrepresentable_code_point = 0;"),
+    "serialize-references-not-counted": ("html-serialize", "src/html/html_serialize.c",
+                                         "  s->r.references_written += r.replacements;", "  (void)r.replacements;"),
+    "serialize-encoder-leak": ("html-serialize", "src/html/html_serialize.c",
+                               "  gtext_encoder_free(s->enc);\n", ""),
+    "serialize-failure-leaves-the-shifted-set": ("html-serialize", "src/html/html_serialize.c",
+                                                 "  if (!s->jis || s->jis_set == 0) {\n    return;\n  }",
+                                                 "  if (true) {\n    return;\n  }"),
     "serialize-nbsp-not-escaped": ("html-serialize", "src/html/html_serialize.c",
                                    '          rep = "&nbsp;";', '          rep = "\\xC2\\xA0";'),
     "serialize-stream-drops-a-character": ("html-serialize", "src/html/html_serialize.c",
@@ -314,8 +392,8 @@ PLANTS = {
                     "      if (p + 1 >= len) {\n        if (!t->final) {\n          return false;\n        }\n        *cp = '\\n';",
                     "      if (p + 1 >= len) {\n        *cp = '\\n';"),
     "offset-at-a-cut": ("html-tokenizer", "src/html/html_tokenizer.c",
-                        "  t->pend_length = rest;\n  t->base_offset += t->pos;\n  t->in = t->pend;",
-                        "  t->pend_length = rest;\n  t->in = t->pend;"),
+                        "  t->pend_length = rest;\n  t->carry_end = carry;\n  t->base_offset += t->pos;\n  t->in = t->pend;",
+                        "  t->pend_length = rest;\n  t->carry_end = carry;\n  t->in = t->pend;"),
     "stream-errors-twice": ("html-tokenizer", "src/html/html_tokenizer.c",
                             "    t->err_high = off + n;", "    t->err_high = 0;"),
     "names-leak": ("html-tokenizer", "src/html/html_tokenizer.c",
@@ -373,16 +451,31 @@ REPRODUCERS = {
     "serialize-raw-text-escaped": "tests/fuzz/corpus/html-serialize/ser-raw-text.seed",
     "serialize-stack-leak": "tests/fuzz/corpus/html-serialize/ser-alloc-sweep-all-forms.seed",
     "serialize-oom-absorbed-in-growth": "tests/fuzz/corpus/html-serialize/ser-alloc-sweep-all-forms.seed",
+    "api-restart-drops-the-kept-bytes": "tests/fuzz/corpus/html/api-enc-meta-late-shift_jis.seed",
+    "api-restart-keeps-the-old-source": "tests/fuzz/corpus/html/api-enc-meta-late-shift_jis.seed",
+    "api-replacement-flag-lost": "tests/fuzz/corpus/html/api-enc-ill-formed-shift_jis.seed",
+    "api-end-of-input-off-by-one": "tests/fuzz/corpus/html/api-enc-eof-shift_jis.seed",
+    "api-bom-not-counted": "tests/fuzz/corpus/html/api-bom-errors.seed",
+    "tree-cursor-ignores-the-deltas": "tests/fuzz/corpus/html/api-enc-run-errors-shift_jis.seed",
+    "tokenizer-delta-lost": "tests/fuzz/corpus/html/api-enc-run-errors-shift_jis.seed",
+    "serialize-failure-leaves-the-shifted-set": "tests/fuzz/corpus/html-serialize/reproducer-iso-2022-jp-roman-prefix.seed",
+    "serialize-references-in-raw-text": "tests/fuzz/corpus/html-serialize/ser-enc-errors-in-raw-text-iso-8859-2.seed",
+    "serialize-encoder-not-flushed": "tests/fuzz/corpus/html-serialize/ser-enc-iso-2022-jp-iso-2022-jp.seed",
+    "serialize-code-point-not-named": "tests/fuzz/corpus/html-serialize/ser-enc-errors-in-a-comment-iso-8859-2.seed",
+    "serialize-references-not-counted": "tests/fuzz/corpus/html-serialize/ser-enc-references-shift_jis.seed",
+    "serialize-encoder-leak": "tests/fuzz/corpus/html-serialize/ser-enc-references-windows-1252.seed",
     "api-bom-needs-one-feed": "tests/fuzz/corpus/html/api-bom-cut-byte-at-a-time.seed",
-    "api-held-bytes-dropped": "tests/fuzz/corpus/html/api-bom-prefix-then-text.seed",
+    "api-held-bytes-dropped": "tests/fuzz/corpus/html/api-enc-meta-early-shift_jis.seed",
     "api-result-leak": "tests/fuzz/corpus/html/api-rich-document.seed",
     "api-encoding-not-recorded": "tests/fuzz/corpus/html/api-rich-document.seed",
     "api-count-only-ignored": "tests/fuzz/corpus/html/api-errors-count-only.seed",
     "api-error-total-short": "tests/fuzz/corpus/html/api-errors-cap-one.seed",
     "api-second-finish-gives-document": "tests/fuzz/corpus/html/api-rich-document.seed",
     "api-input-limit-off-by-one": "tests/fuzz/corpus/html/api-rich-document.seed",
-    "api-fragment-bom-skipped": "tests/fuzz/corpus/html/api-bom-fragment-added.seed",
+    "api-fragment-bom-skipped": "tests/fuzz/corpus/html/api-bom-fragment.seed",
     "api-oom-absorbed-in-report": "tests/fuzz/corpus/html/api-rich-document.seed",
+    "tokenizer-after-offset-is-the-next-start": "tests/fuzz/corpus/html/api-enc-run-errors-iso-2022-jp.seed",
+    "tokenizer-width-lost": "tests/fuzz/corpus/html/api-enc-run-errors-utf-16le.seed",
     "api-sticky-feed-checks-arguments-first": "tests/fuzz/corpus/html/api-sticky-deep.seed",
     "api-sticky-finish-checks-kind-first": "tests/fuzz/corpus/html/api-sticky-deep-fragment.seed",
 }

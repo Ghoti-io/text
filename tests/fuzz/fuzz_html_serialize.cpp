@@ -29,7 +29,8 @@
  * its context element. o1: omit_optional_tags, quote_attr_values, use_best_quote_char, use_trailing_solidus,
  * space_before_trailing_solidus, minimize_boolean_attributes, alphabetical_attributes, strip_whitespace. o2: escape_rcdata,
  * doctype_identifiers, inject_meta_charset (with the label utf-8), the scope (children or the first child itself), and the
- * quote character (default, `"`, `'`). o3: the call of the sink that fails, and the size of the pieces the token stream is
+ * quote character (default, `"`, `'`), and (bits 6 and 7, when not zero) an **output encoding**, one of twenty, chosen with o4's
+ * bits 3 to 7. o3: the call of the sink that fails, and the size of the pieces the token stream is
  * fed text in. o4: the failure sweep of the allocator (bit 0 through the sink, bit 1 through the buffer, bit 2 the token
  * stream). o5: the output limit (bit 7 on; bits 0 to 2 pick it: the length, one less, half, one more, and small ones; the depth
  * limit is always tried at the depth of the tree and one less).
@@ -55,7 +56,12 @@
  *     the output limit is exact (the length passes, one byte less is E_LIMIT_OUTPUT with a prefix of the output no longer than
  *     the limit), and so is the depth (the depth of the tree passes, one less is E_LIMIT_DEPTH with the start tags down to it);
  *     an allocation that fails - the first to the last of a call, through the sink, the buffer or the token stream - is
- *     E_OOM, or the normal answer, and never a leak or a free of a block the allocator did not make.
+ *     E_OOM, or the normal answer, and never a leak or a free of a block the allocator did not make;
+ *     **in an output encoding**: the bytes are the Encoding module's encoding, in its "html" mode, of what UTF-8 gets (a character the
+ *     encoding cannot write is a numeric character reference), or the status is E_UNREPRESENTABLE and then some character of the
+ *     UTF-8 output is one the encoder refuses, the code point the result names is such a character, and the sink has a prefix of the
+ *     bytes the "html" encoding gives; a success that wrote no reference is for text the encoding can write wholly; the counts of
+ *     references agree; UTF-16 labels write UTF-8 and say so; the token stream, the limits and the sink are as for UTF-8.
  *
  * Build with: make fuzz-html-serialize      Run: make fuzz-run-html-serialize
  *
@@ -70,6 +76,7 @@
 #include <string>
 #include <vector>
 
+#include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/html.h>
 
 #include "../markup_test_support.h"
@@ -127,6 +134,102 @@ const FuzzCtx kContexts[16] = {
     {GTEXT_HTML_NS_MATHML, "mi"}, {GTEXT_HTML_NS_HTML, "html"}};
 
 using Node = GTEXT_Markup_Node;
+
+// The output encodings (labels), twenty of them.
+const char * const kOutEncodings[20] = {"iso-8859-2", "windows-1252", "shift_jis", "euc-jp", "iso-2022-jp", "gbk", "gb18030", "big5",
+    "euc-kr", "utf-16le", "utf-16be", "koi8-r", "windows-1251", "x-user-defined", "hz-gb-2312", "windows-874", "ibm866", "macintosh",
+    "iso-8859-8", "utf-8"};
+
+// The strings of a tree in which a numeric character reference would not be read as one: names, comments, processing instructions,
+// document types, and the text of the raw text elements. A character of these that the output encoding lacks has no spelling.
+void collect_forbidden(const Node * n, const GTEXT_HTML_Serialize_Options & o, bool raw_parent, std::vector<std::string> & out,
+    bool siblings = true) {
+  for (const Node * c = n; c; c = siblings ? gtext_markup_node_next_sibling(c) : nullptr) {
+    size_t len = 0;
+    switch (gtext_markup_node_kind(c)) {
+      case GTEXT_MARKUP_KIND_COMMENT: {
+        const char * d = gtext_markup_node_data(c, &len);
+        out.emplace_back(d ? d : "", len);
+        break;
+      }
+      case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
+        const char * d = gtext_markup_node_data(c, &len);
+        out.emplace_back(gtext_markup_pi_target(c) ? gtext_markup_pi_target(c) : "");
+        out.emplace_back(d ? d : "", len);
+        break;
+      }
+      case GTEXT_MARKUP_KIND_DOCTYPE: {
+        out.emplace_back(gtext_markup_doctype_name(c) ? gtext_markup_doctype_name(c) : "");
+        if (o.doctype_identifiers) {
+          out.emplace_back(gtext_markup_doctype_public_id(c) ? gtext_markup_doctype_public_id(c) : "");
+          out.emplace_back(gtext_markup_doctype_system_id(c) ? gtext_markup_doctype_system_id(c) : "");
+        }
+        break;
+      }
+      case GTEXT_MARKUP_KIND_TEXT:
+      case GTEXT_MARKUP_KIND_CDATA: {
+        if (raw_parent && !o.escape_rcdata) {
+          const char * d = gtext_markup_node_data(c, &len);
+          out.emplace_back(d ? d : "", len);
+        }
+        break;
+      }
+      case GTEXT_MARKUP_KIND_ELEMENT: {
+        const char * local = gtext_markup_element_local_name(c);
+        if (gtext_markup_element_prefix(c)) {
+          out.emplace_back(gtext_markup_element_prefix(c));
+        }
+        out.emplace_back(local);
+        for (size_t i = 0; i < gtext_markup_element_attribute_count(c); i++) {
+          GTEXT_Markup_Attribute a;
+          if (gtext_markup_element_attribute_at(c, i, &a) == GTEXT_MARKUP_OK) {
+            out.emplace_back(a.local ? a.local : "");
+            if (a.prefix) {
+              out.emplace_back(a.prefix);
+            }
+          }
+        }
+        const bool html = gtext_markup_element_is(c, GTEXT_MARKUP_NS_HTML, local);
+        const bool raw = html
+            && (std::strcmp(local, "style") == 0 || std::strcmp(local, "script") == 0 || std::strcmp(local, "xmp") == 0
+                || std::strcmp(local, "iframe") == 0 || std::strcmp(local, "noembed") == 0 || std::strcmp(local, "noframes") == 0
+                || std::strcmp(local, "plaintext") == 0 || (o.scripting && std::strcmp(local, "noscript") == 0));
+        const Node * content = html && std::strcmp(local, "template") == 0 ? gtext_markup_element_template_content(c) : nullptr;
+        collect_forbidden(gtext_markup_node_first_child(content ? content : c), o, raw, out);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+}
+
+// `text` (UTF-8) in the encoding, as the Encoding module writes it in the given mode; false if it refuses (and `refused` is the code point).
+bool encode_with(GTEXT_Encoding enc, GTEXT_Encoder_Error_Mode mode, const std::string & text, std::string * out, uint32_t * refused) {
+  GTEXT_Encoder_Options eo = gtext_encoder_options_default();
+  eo.error_mode = mode;
+  eo.max_output_bytes = SIZE_MAX;
+  GTEXT_Encoder * e = nullptr;
+  if (gtext_encoder_new(enc, &eo, &e) != GTEXT_ENCODING_OK) {
+    return false;
+  }
+  struct Sink {
+    std::string bytes;
+    static bool write(void * u, const char * b, size_t n) {
+      static_cast<Sink *>(u)->bytes.append(b, n);
+      return true;
+    }
+  } sink;
+  const GTEXT_Encoding_Sink es = {Sink::write, &sink};
+  GTEXT_Encoder_Result r;
+  const GTEXT_Encoding_Status st = gtext_encoder_encode(e, text.data(), text.size(), true, &es, &r);
+  gtext_encoder_free(e);
+  if (refused) {
+    *refused = r.error_code_point;
+  }
+  *out = sink.bytes;
+  return st == GTEXT_ENCODING_OK;
+}
 
 // ---- the model: the standard's algorithm, written again --------------------------------------------------------------
 
@@ -484,6 +587,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     o.inject_meta_charset = true;
     o.encoding = "utf-8";
   }
+  const char * enc_label = nullptr;
+  if ((o2 >> 6) != 0) {
+    enc_label = kOutEncodings[((o4 >> 3) + (o2 >> 6)) % 20];
+    o.encoding = enc_label;
+  }
+  const GTEXT_Encoding wanted = enc_label ? gtext_encoding_for_label(enc_label, std::strlen(enc_label)) : GTEXT_ENCODING_UTF_8;
+  const GTEXT_Encoding written = gtext_encoding_output_encoding(wanted);
   const GTEXT_HTML_Serialize_Scope scope = (o2 & 8) ? GTEXT_HTML_SERIALIZE_OUTER : GTEXT_HTML_SERIALIZE_CHILDREN;
   o.quote_char = ((o2 >> 4) & 3) == 1 ? '"' : ((o2 >> 4) & 3) == 2 ? '\'' : 0;
   const bool valid = !(o.use_best_quote_char && o.quote_char) && !(o.space_before_trailing_solidus && !o.use_trailing_solidus);
@@ -515,10 +625,163 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     gtext_markup_document_free(doc);
     return 0;
   }
+  if (enc_label && st == GTEXT_HTML_E_UNREPRESENTABLE) {
+    // A character that the encoding cannot write where a reference would not be read as one.
+    if (written == GTEXT_ENCODING_UTF_8 || r.status != st || plain.data.size() != r.bytes_written) {
+      fail("UTF-8 has an unrepresentable character, or the result does not agree", "", input);
+    }
+    GTEXT_HTML_Serialize_Options u = o;
+    u.encoding = o.inject_meta_charset ? "utf-8" : nullptr;
+    Collect m;
+    GTEXT_Markup_Sink ms = m.sink();
+    if (gtext_html_serialize(target, scope, &u, &ms, nullptr) != GTEXT_HTML_OK) {
+      fail("the UTF-8 write failed where the encoded one reported an unrepresentable character", "", input);
+    }
+    std::string strict, html;
+    uint32_t refused = 0;
+    if (encode_with(written, GTEXT_ENCODER_FATAL, m.data, &strict, &refused)) {
+      fail("E_UNREPRESENTABLE for text that the encoding can wholly write", "", input);
+    }
+    {
+      std::vector<std::string> forbidden;
+      collect_forbidden(scope == GTEXT_HTML_SERIALIZE_OUTER ? target : gtext_markup_node_first_child(root), o, false, forbidden,
+          scope != GTEXT_HTML_SERIALIZE_OUTER);
+      bool some = false;
+      for (const std::string & f : forbidden) {
+        std::string tmp;
+        if (!encode_with(written, GTEXT_ENCODER_FATAL, f, &tmp, nullptr)) {
+          some = true;
+        }
+      }
+      if (!some) {
+        fail("E_UNREPRESENTABLE, but every name, comment and raw text can be written in the encoding", "", input);
+      }
+    }
+    // The code point the result names is one the encoding cannot write.
+    std::string one, cp8;
+    {
+      const uint32_t cp = r.unrepresentable_code_point;
+      if (cp == 0 || cp > 0x10FFFF) {
+        fail("E_UNREPRESENTABLE without a code point", std::to_string(cp), input);
+      }
+      if (cp < 0x80) {
+        cp8 += (char)cp;
+      }
+      else if (cp < 0x800) {
+        cp8 += (char)(0xC0 | (cp >> 6));
+        cp8 += (char)(0x80 | (cp & 0x3F));
+      }
+      else if (cp < 0x10000) {
+        cp8 += (char)(0xE0 | (cp >> 12));
+        cp8 += (char)(0x80 | ((cp >> 6) & 0x3F));
+        cp8 += (char)(0x80 | (cp & 0x3F));
+      }
+      else {
+        cp8 += (char)(0xF0 | (cp >> 18));
+        cp8 += (char)(0x80 | ((cp >> 12) & 0x3F));
+        cp8 += (char)(0x80 | ((cp >> 6) & 0x3F));
+        cp8 += (char)(0x80 | (cp & 0x3F));
+      }
+      if (cp != 0xFFFD && encode_with(written, GTEXT_ENCODER_FATAL, cp8, &one, nullptr)) {
+        fail("the code point E_UNREPRESENTABLE names can be written", std::to_string(cp), input);
+      }
+    }
+    if (!o.inject_meta_charset) {
+      // (a prefix that ends in a shifted set of ISO-2022-JP has the escape back to ASCII appended, which the encoding of the whole text does not
+      // have at that place when the next thing it writes is in the same set, or in the Roman set, where an error has no escape of its own)
+      std::string head = plain.data;
+      if (written == GTEXT_ENCODING_ISO_2022_JP && head.size() >= 3 && head.compare(head.size() - 3, 3, "\x1B(B") == 0) {
+        std::string shorter = head.substr(0, head.size() - 3);
+        if (encode_with(written, GTEXT_ENCODER_HTML, m.data, &html, nullptr) && html.compare(0, head.size(), head) != 0
+            && html.compare(0, shorter.size(), shorter) == 0) {
+          head = shorter;
+        }
+      }
+      if (!encode_with(written, GTEXT_ENCODER_HTML, m.data, &html, nullptr) || html.compare(0, head.size(), head) != 0) {
+        size_t k = 0;
+        while (k < plain.data.size() && k < html.size() && plain.data[k] == html[k]) {
+          k++;
+        }
+        auto hexs = [](const std::string & t, size_t from) {
+          std::string h;
+          char b[4];
+          for (size_t i = from; i < t.size() && i < from + 16; i++) {
+            std::snprintf(b, sizeof b, "%02x", (unsigned char)t[i]);
+            h += b;
+          }
+          return h;
+        };
+        fail("the bytes before an unrepresentable character are not a prefix of the html-mode encoding",
+            "they agree for " + std::to_string(k) + " of " + std::to_string(plain.data.size()) + " bytes; delivered: " + hexs(plain.data, k > 8 ? k - 8 : 0)
+                + " ...; html mode: " + hexs(html, k > 8 ? k - 8 : 0),
+            input);
+      }
+    }
+    if (written == GTEXT_ENCODING_ISO_2022_JP) {
+      // the delivered prefix ends in ASCII: the last escape sequence in it is the one back to ASCII, or there is none
+      int set = 0;
+      for (size_t i = 0; i + 2 < plain.data.size(); i++) {
+        if (plain.data[i] == '\x1B') {
+          set = (plain.data[i + 1] == '$') ? 2 : (plain.data[i + 2] == 'J') ? 1 : 0;
+        }
+      }
+      if (set != 0) {
+        fail("the prefix before an unrepresentable character ends in a shifted set of ISO-2022-JP", "", input);
+      }
+    }
+    if (scope == GTEXT_HTML_SERIALIZE_CHILDREN) {
+      GTEXT_HTML_Status ts;
+      size_t tdepth = 0, tnodes = 0;
+      const size_t piece = (o3 >> 4) ? 1 + (o3 >> 4) : 0;
+      const std::string streamed = serialize_tokens(root, o, piece, o3, &ts, &tdepth, &tnodes);
+      if (ts != GTEXT_HTML_E_UNREPRESENTABLE || streamed != plain.data) {
+        fail("the token stream does not stop where the walk stops", "status " + std::to_string(ts), input);
+      }
+    }
+    gtext_markup_document_free(doc);
+    return 0;
+  }
   if (st != GTEXT_HTML_OK) {
     fail("a tree the parser built was not written", std::string(gtext_html_status_string(st)), input);
   }
   const std::string full = plain.data;
+  if (enc_label) {
+    if (!r.encoding || std::strcmp(r.encoding, gtext_encoding_name(written)) != 0 || r.encoding_substituted != (written != wanted)) {
+      fail("the result does not name the encoding written", r.encoding ? r.encoding : "(null)", input);
+    }
+    {
+      // A success: no name, comment, document type or raw text has a character the encoding lacks (a reference there would be read as text).
+      std::vector<std::string> forbidden;
+      collect_forbidden(scope == GTEXT_HTML_SERIALIZE_OUTER ? target : gtext_markup_node_first_child(root), o, false, forbidden,
+          scope != GTEXT_HTML_SERIALIZE_OUTER);
+      for (const std::string & f : forbidden) {
+        std::string tmp;
+        if (!encode_with(written, GTEXT_ENCODER_FATAL, f, &tmp, nullptr)) {
+          fail("a success, but a name, comment, document type or raw text has a character the encoding cannot write", f, input);
+        }
+      }
+    }
+    if (!o.inject_meta_charset) {
+      GTEXT_HTML_Serialize_Options u = o;
+      u.encoding = nullptr;
+      Collect m;
+      GTEXT_Markup_Sink ms = m.sink();
+      if (gtext_html_serialize(target, scope, &u, &ms, nullptr) != GTEXT_HTML_OK) {
+        fail("the UTF-8 write failed", "", input);
+      }
+      std::string expect, strict;
+      if (!encode_with(written, GTEXT_ENCODER_HTML, m.data, &expect, nullptr)) {
+        fail("the encoder refused text in html mode", "", input);
+      }
+      if (expect != full) {
+        fail("the output is not the Encoding module's html-mode encoding of the UTF-8 output", "", input);
+      }
+      const bool wholly = encode_with(written, GTEXT_ENCODER_FATAL, m.data, &strict, nullptr);
+      if (wholly != (r.references_written == 0)) {
+        fail("the count of references does not say whether the text could be written as it is", std::to_string(r.references_written), input);
+      }
+    }
+  }
   if (r.status != GTEXT_HTML_OK || r.bytes_written != full.size()) {
     fail("the result does not say what was written", "bytes " + std::to_string(r.bytes_written) + " of " + std::to_string(full.size()), input);
   }
@@ -535,7 +798,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   // ---- the model, for the standard's defaults and the children of the root
   const bool defaults_only = !o.omit_optional_tags && o.quote_attr_values == GTEXT_HTML_QUOTE_ALWAYS && !o.use_best_quote_char
       && !o.use_trailing_solidus && !o.minimize_boolean_attributes && !o.alphabetical_attributes && !o.strip_whitespace
-      && !o.escape_rcdata && !o.doctype_identifiers && !o.inject_meta_charset && o.quote_char == 0;
+      && !o.escape_rcdata && !o.doctype_identifiers && !o.inject_meta_charset && o.quote_char == 0 && !enc_label;
   if (defaults_only) {
     std::string model;
     if (scope == GTEXT_HTML_SERIALIZE_CHILDREN) {
@@ -628,7 +891,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
 
   // ---- idempotence and "the output is HTML"
   if (scope == GTEXT_HTML_SERIALIZE_CHILDREN && !fragment && !o.escape_rcdata && !o.strip_whitespace && !o.alphabetical_attributes
-      && !o.minimize_boolean_attributes && !o.inject_meta_charset) {
+      && !o.minimize_boolean_attributes && !o.inject_meta_charset && !enc_label) {
     GTEXT_Markup_Document * back = nullptr;
     GTEXT_HTML_Parse_Options bo = gtext_html_parse_options_default();
     bo.scripting = scripting;

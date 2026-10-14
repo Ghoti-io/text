@@ -122,7 +122,7 @@ TEST_F(HtmlSerializeFuzzSeeds, EverySeedHoldsEveryProperty) {
   const std::string dir = corpus_dir() + "/html-serialize";
   const auto files = seeds(dir);
   // The floor. tools/html/make-serialize-fuzz-seeds.py reads this very line for the lower end of the size it accepts.
-  constexpr size_t kMinSeeds = 700;
+  constexpr size_t kMinSeeds = 850;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir
                                  << "; tools/html/make-serialize-fuzz-seeds.py writes it";
   for (const char * name : {"ser-nbsp.seed", "ser-ampersands-sink-fails-midway.seed", "ser-alloc-sweep-all-forms.seed"}) {

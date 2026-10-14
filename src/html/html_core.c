@@ -81,6 +81,8 @@ const char * gtext_html_status_string(GTEXT_HTML_Status status) {
       return "output too long";
     case GTEXT_HTML_E_OPTIONS:
       return "unusable combination of options";
+    case GTEXT_HTML_E_UNREPRESENTABLE:
+      return "a character the output encoding cannot write here";
   }
   return "unknown status";
 }
@@ -117,6 +119,7 @@ const char * gtext_html_error_name(GTEXT_HTML_Error_Code code) {
 void html_result_clear(GTEXT_HTML_Result * result) {
   if (result) {
     memset(result, 0, sizeof(*result));
+    result->encoding_confidence = GTEXT_HTML_UNDECIDED; /* (zero is "certain": nothing is decided yet) */
   }
 }
 
@@ -171,7 +174,7 @@ void gtext_html_result_free(GTEXT_HTML_Result * result) {
     const GTEXT_Allocator allocator = internal->allocator;
     gtext_allocator_free(&allocator, internal);
   }
-  memset(result, 0, sizeof(*result));
+  html_result_clear(result);
 }
 
 size_t gtext_html_result_error_count(const GTEXT_HTML_Result * result) {

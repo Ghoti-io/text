@@ -54,7 +54,10 @@ namespace snippets {
 #include "doc-snippets/html/fragment.c"
 #include "doc-snippets/html/file.c"
 #include "doc-snippets/html/limits.c"
-#include "doc-snippets/html/encoding.c"
+#include "doc-snippets/html/encoding-sniff.c"
+#include "doc-snippets/html/encoding-meta.c"
+#include "doc-snippets/html/encoding-transport.c"
+#include "doc-snippets/html/encoding-serialize.c"
 #include "doc-snippets/html/scripting.c"
 #include "doc-snippets/html/serialize.c"
 #include "doc-snippets/html/serialize-options.c"
@@ -79,7 +82,10 @@ const Snippet kSnippets[] = {
     {"fragment.c", snippets::fragment, "2 children\nthe cell now has 2 children\n"},
     {"file.c", snippets::file, "read 40 bytes\ninvalid argument: No such file or directory\n"},
     {"limits.c", snippets::limits, "refused: too many elements open at once\naccepted under the default limit\n"},
-    {"encoding.c", snippets::encoding, "UTF-8, from a byte order mark: 1\nunsupported encoding\n"},
+    {"encoding-sniff.c", snippets::encoding_sniff, "UTF-8, from a byte order mark, certain\nwindows-1251, from a declaration, tentative\nUTF-8, by default, tentative\n"},
+    {"encoding-meta.c", snippets::encoding_meta, "windows-1251, parsed again: no\nwindows-1251, parsed again: yes\n"},
+    {"encoding-transport.c", snippets::encoding_transport, "certain label: ISO-8859-2\ntentative label: windows-1251\nunusable label: windows-1251, label ignored: yes\n"},
+    {"encoding-serialize.c", snippets::encoding_serialize, "Shift_JIS, 35 bytes, 2 references: <p title=\"&#8364;\">\\x93\\xfa\\x96{ &#8364;</p>\n"},
     {"scripting.c", snippets::scripting, "scripting 0: the noscript holds a <p> element\nscripting 1: the noscript holds the text \"<p>enable scripts</p>\"\n"},
     {"serialize.c", snippets::serialize_fragment,
         "<p class=\"a\" title=\"x&quot;y\">one &amp; two<br><b>three</b></p>\n63 bytes, 5 nodes\n"

@@ -332,10 +332,13 @@ typedef struct {
   size_t line;
   size_t column;
   size_t offset;
+  const uint8_t * dl; ///< With a source map: the deltas of the data (GTEXT_HTML_Token::deltas), else NULL.
+  size_t dl_len;      ///< Their number.
 } SegCursor;
 
+/// Set up a cursor over a text token (with a source map's deltas `dl`, or NULL).
 void ht_seg_cursor_init(SegCursor * c, const char * data, const GTEXT_HTML_TextSegment * segs,
-    size_t nsegs, size_t line, size_t column, size_t offset);
+    size_t nsegs, size_t line, size_t column, size_t offset, const uint8_t * dl, size_t dl_len);
 void ht_seg_cursor_advance(SegCursor * c, size_t target);
 
 /* ---- the builder -------------------------------------------------------- */
@@ -376,6 +379,7 @@ struct GTEXT_HTML_Tree {
   size_t pend_len;
   size_t pend_cap;
   bool pend_foster;
+  uint8_t * pend_dl;                  ///< The deltas of the pending characters (a source map), parallel to `pend`, or NULL.
   GTEXT_HTML_TextSegment * pend_segs; /* where the pending characters came from, for their errors */
   size_t pend_nsegs;
   size_t pend_segs_cap;
@@ -384,6 +388,13 @@ struct GTEXT_HTML_Tree {
   SegCursor tcur;
   /* The most times one token may be handled again in another mode (see ht_tree_handle_token). */
   size_t reprocess_limit;
+
+  /* "Change the encoding": the one in use, whether it is tentative, the one a `<meta>` declared, and whether the head is behind us. */
+  int enc_current;       ///< The encoding in use (a GTEXT_Encoding).
+  bool enc_tentative;    ///< It is tentative: a `<meta>` may change it.
+  int enc_declared;      ///< The encoding a `<meta>` declared, when the builder stopped to change it.
+  bool head_left;        ///< The head section is behind us: a `<meta>` is no longer a declaration.
+  bool src_mapped;       ///< Fed with feed_mapped().
 
   stack_entry * stack;
   size_t n;      /* entries */
@@ -454,6 +465,10 @@ typedef enum { R_DONE = 0, R_REPROCESS = 1, R_FAIL = -1 } HandlerResult;
   } while (0)
 
 bool ht_tree_fail(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeStatus status);
+
+/// The tree builder's half of "change the encoding" (html_tree.c): called for the attributes of a `meta` start tag handled by the "in head" rules.
+/// Returns false only when the builder has failed, which includes GTEXT_HTML_TREE_E_ENCODING.
+bool ht_meta_encoding(GTEXT_HTML_Tree * tb, const GTEXT_HTML_Attribute * attrs, size_t nattrs);
 bool ht_tree_markup_status(GTEXT_HTML_Tree * tb, GTEXT_Markup_Status status);
 void ht_tree_error(GTEXT_HTML_Tree * tb, GTEXT_HTML_TreeErrorCode code);
 void ht_tree_error_raw(GTEXT_HTML_Tree * tb, int code);

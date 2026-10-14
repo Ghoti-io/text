@@ -216,7 +216,7 @@ def run_all(runner, requests):
 
 def parse_answer(lines):
     a = {"status": None, "errors": 0, "dump": None, "cut": None, "inv": "OK",
-         "end": None, "mode": None}
+         "end": None, "mode": None, "equiv": None}
     for line in lines:
         f = line.split(" ")
         if f[0] == "STATUS":
@@ -231,6 +231,8 @@ def parse_answer(lines):
             a["dump"] = bytes.fromhex(f[1][1:]).decode("utf-8", "surrogatepass")
         elif f[0] == "CUT":
             a["cut"] = " ".join(f[1:])
+        elif f[0] == "EQUIV":
+            a["equiv"] = " ".join(f[1:])
         elif f[0] == "END":
             a["end"] = f[1]
     return a
@@ -264,6 +266,7 @@ def main(argv):
     min_vectors = int(os.environ.get("HTML_TREE_MIN_VECTORS", "1900"))
     min_pass = int(os.environ.get("HTML_TREE_MIN_PASS", "0"))
     min_exact = int(os.environ.get("HTML_TREE_MIN_EXACT_ERRORS", "0"))
+    min_equiv = int(os.environ.get("HTML_TREE_MIN_EQUIV", "0"))
     vectors, scripted, files = load(resources)
     listed = load_exceptions(exceptions_path)
     extras = 0
@@ -296,6 +299,7 @@ def main(argv):
     per = collections.defaultdict(list)
     for i, (v, sc) in enumerate(owners):
         per[v["id"]].append((i, v, sc))
+    equiv_checked = 0
     for vid, runs in per.items():
         problem = None
         errs_ok = True
@@ -311,6 +315,11 @@ def main(argv):
             if a["cut"] != "OK":
                 problem = "THE ANSWER DEPENDS ON HOW THE INPUT WAS CUT: %s" % a["cut"]
                 break
+            if a["equiv"] is not None:
+                equiv_checked += 1
+                if a["equiv"] != "OK":
+                    problem = "THE DECODER ROUTE (UTF-8 through the Encoding module and a source map) DISAGREES WITH THE TOKENIZER'S OWN READING: %s" % a["equiv"]
+                    break
             if a["status"] != "OK":
                 problem = "status %s (scripting %s)" % (a["status"], sc)
                 break
@@ -375,6 +384,10 @@ def main(argv):
     print("tagged exceptions: %d (%s); by reason: %s" % (
         len(listed), ", ".join("%s %d" % kv for kv in sorted(stages.items())),
         ", ".join("%s %d" % kv for kv in sorted(whats.items()))))
+    if equiv_checked or min_equiv:
+        print("UTF-8 through the decoder and the source map equals the tokenizer's own reading (tree, errors with offsets, "
+              "mode, node locations; whole, every split, a byte at a time, random pieces): %d runs, %d vectors" % (
+                  equiv_checked, len(per)))
     print("#errors by count, on the %d passing vectors: %d exact; ours higher on %d (%s), lower on %d" % (
         err_total, err_exact, sum(err_higher.values()),
         ", ".join("%s %d" % kv for kv in err_higher.most_common(3)), len(err_lower)))
@@ -397,6 +410,10 @@ def main(argv):
         failed = True
         sys.stderr.write("\033[0;31m\n### below the floor: %d vectors with the exact #errors count, floor %d ###\033[0m\n" % (
             err_exact, min_exact))
+    if equiv_checked < min_equiv:
+        failed = True
+        sys.stderr.write("\033[0;31m\n### below the floor: %d runs of the decoder route compared, floor %d ###\033[0m\n" % (
+            equiv_checked, min_equiv))
     if err_lower:
         failed = True
         sys.stderr.write("\033[0;31m\n### UNEXPLAINED ERROR COUNTS: fewer parse errors than the vector lists (%d) ###\033[0m\n" % len(err_lower))

@@ -162,6 +162,98 @@ TEST_P(HtmlApiOom, EveryAllocationCanFailAndNothingLeaks) {
   }
 }
 
+/// A document in another encoding, or one that restarts: the decoder, the source map, the restart's new builder and the bytes it keeps
+/// are allocations of the call too, and each can fail.
+struct Encoded {
+  const char * name;
+  std::string input;
+  const char * transport;
+  const char * default_encoding;
+};
+
+std::vector<Encoded> encoded_inputs() {
+  // "<p>nihon</p>" in Shift_JIS: the two characters are 93 FA 96 7B.
+  const std::string sjis_text = "\x93\xFA\x96\x7B";
+  std::vector<Encoded> v;
+  v.push_back({"shift_jis by label",
+      "<!DOCTYPE html><title>" + sjis_text + "</title><p class=\"" + sjis_text + "\">" + sjis_text + " &amp; <b>" + sjis_text
+          + "</b><table><tr><td>" + sjis_text + "</td></tr></table><!-- " + sjis_text + " --><textarea>" + sjis_text + "</textarea>",
+      "shift_jis", nullptr});
+  const std::string pad = "<!--" + std::string(1100, 'x') + "-->";
+  v.push_back({"a late meta restarts the parse",
+      pad + "<meta charset=shift_jis><title>" + sjis_text + "</title><p>" + sjis_text + "<b>" + sjis_text + "</b></p>", nullptr, nullptr});
+  v.push_back({"a tentative label, a late meta", pad + "<meta charset=koi8-r><p>\xA3", "windows-1252", nullptr});
+  std::string u16 = "\xFF\xFE";
+  for (unsigned char c : std::string("<!DOCTYPE html><title>t</title><p class=a>x &amp; ")) {
+    u16 += char(c);
+    u16 += '\0';
+  }
+  u16 += std::string("\x3D\xD8\x00\xDE\x00\xDC\xE5\x65", 8); // a surrogate pair, a lone trail surrogate, a kanji
+  v.push_back({"utf-16 with a mark", u16, nullptr, nullptr});
+  // The bytes kept for a restart are let go at 1024: the keep path (growing, dropping) is allocation too.
+  v.push_back({"the bytes for a restart are let go",
+      "<!--" + std::string(1500, 'x') + "--><title>" + sjis_text + "</title><p>" + std::string(3000, 'y') + "<meta charset=shift_jis>" + sjis_text, nullptr, nullptr});
+  v.push_back({"ill-formed bytes in windows-1253", "<p>a\x81" "b\xAA</p>\xFF", nullptr, "windows-1253"});
+  return v;
+}
+
+TEST_P(HtmlApiOom, EveryAllocationOfADocumentInAnotherEncodingCanFail) {
+  const Mode & mode = GetParam();
+  if (mode.call.fragment) {
+    GTEST_SKIP() << "a fragment is characters: nothing is decoded";
+  }
+  for (const Encoded & e : encoded_inputs()) {
+    GTEXT_HTML_Parse_Options base = gtext_html_parse_options_default();
+    base.transport_encoding = e.transport;
+    base.default_encoding = e.default_encoding;
+    if (std::string(e.name) == "a tentative label, a late meta") {
+      base.transport_encoding_certainty = GTEXT_HTML_TENTATIVE;
+    }
+    if (std::string(e.name) == "the bytes for a restart are let go") {
+      base.max_reparse_bytes = 1024;
+    }
+    Outcome baseline = run_call(mode.call, e.input, &base, nullptr, mode.want_result);
+    ASSERT_TRUE(baseline.ok()) << mode.name << " " << e.name;
+    bool reached_the_end = false;
+    size_t oom_runs = 0;
+    for (size_t n = 1; n <= 5000 && !reached_the_end; n++) {
+      FaultAllocator fa;
+      GTEXT_HTML_Parse_Options o = base;
+      o.allocator = &fa.alloc;
+      {
+        fa.arm(n);
+        Outcome got = run_call(mode.call, e.input, &o, nullptr, mode.want_result);
+        fa.disarm();
+        if (!fa.failed) {
+          ASSERT_TRUE(got.ok()) << mode.name << " " << e.name << " " << n;
+          EXPECT_EQ(got.tree, baseline.tree) << mode.name << " " << e.name << " " << n;
+          reached_the_end = true;
+        }
+        else if (got.ok()) {
+          EXPECT_EQ(got.tree, baseline.tree) << mode.name << " " << e.name << " " << n;
+          if (mode.want_result) {
+            EXPECT_EQ(got.errors, baseline.errors) << mode.name << " " << e.name << " " << n;
+            EXPECT_EQ(got.encoding, baseline.encoding);
+            EXPECT_EQ(got.reparsed, baseline.reparsed);
+          }
+        }
+        else {
+          oom_runs++;
+          EXPECT_EQ(got.status, GTEXT_HTML_E_OOM) << mode.name << " " << e.name << " " << n << ": " << gtext_html_status_string(got.status);
+          EXPECT_EQ(got.doc, nullptr);
+        }
+      }
+      EXPECT_EQ(fa.bad_frees, 0u) << mode.name << " " << e.name << " " << n;
+      EXPECT_TRUE(fa.live.empty()) << mode.name << " " << e.name << " " << n << ": " << fa.live.size() << " blocks leaked";
+      if (::testing::Test::HasFailure()) {
+        break;
+      }
+    }
+    EXPECT_TRUE(reached_the_end) << mode.name << " " << e.name << ": the sweep did not reach the end of the call";
+    EXPECT_GT(oom_runs, 10u) << mode.name << " " << e.name;
+  }
+}
+
 TEST_P(HtmlApiOom, TheAllocatorSeesEveryAllocationOfTheCall) {
   const Mode & mode = GetParam();
   FaultAllocator fa;

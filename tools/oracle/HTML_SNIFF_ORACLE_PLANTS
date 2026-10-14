@@ -1,0 +1,25 @@
+# The encoding sniffer with one rule undone, each of which tools/oracle/run-html-sniff-oracle.sh --controls compiles into a runner of its
+# own and requires the differential to catch (exit 3 with a heading). Tab separated: name, the file under src/html, the text (it must occur
+# once; \n is a line break), what replaces it. A plant that is not caught is a gap in the differential, not a plant to drop.
+comment-dashes-lost	html_sniff.c	size_t j = s.pos + 4;	size_t j = s.pos + 6;
+meta-needs-whitespace	html_sniff.c	|| p[5] == 0x20 || p[5] == 0x2F)) {	|| p[5] == 0x20)) {
+duplicates-counted	html_sniff.c	if (seen) {	if (false) {
+first-charset-only	html_sniff.c	s[position] != '=') {\n      continue;	s[position] != '=') {\n      return GTEXT_ENCODING_NONE;
+content-value-to-white-space	html_sniff.c	!is_ascii_ws((unsigned char)s[end]) && s[end] != ';'	!is_ascii_ws((unsigned char)s[end])
+utf16-prescan-removed	html_sniff.c	if (n >= 6 && d[0] == 0x3C && d[1] == 0 &&	if (false && d[0] == 0x3C && d[1] == 0 &&
+xml-fallback-removed	html_sniff.c	return html_get_xml_encoding(d, n);	return GTEXT_ENCODING_NONE;
+xml-declaration-controls-allowed	html_sniff.c	if (d[pos + i] <= 0x20) {	if (d[pos + i] < 0x20) {
+utf16be-mark-read-as-le	html_sniff.c	*length = 2;\n    return GTEXT_ENCODING_UTF_16BE;	*length = 2;\n    return GTEXT_ENCODING_UTF_16LE;
+byte-after-bang-skipped	html_sniff.c	s.pos = (size_t)(gt - d);	s.pos = (size_t)(gt - d) + 1;
+slash-not-skipped-before-attributes	html_sniff.c	\n      || s->d[s->pos] == 0x2F) {	) {
+attribute-name-not-lowered	html_sniff.c	a->name[a->name_len++] = lower(b);	a->name[a->name_len++] = b;
+quoted-value-not-lowered	html_sniff.c	a->value[a->value_len++] = lower(s->d[s->pos]);	a->value[a->value_len++] = s->d[s->pos];
+utf16-label-kept	html_sniff.c	if (charset == GTEXT_ENCODING_UTF_16BE || charset == GTEXT_ENCODING_UTF_16LE) {\n          charset = GTEXT_ENCODING_UTF_8;	if (false) {\n          charset = GTEXT_ENCODING_UTF_8;
+x-user-defined-kept	html_sniff.c	else if (charset == GTEXT_ENCODING_X_USER_DEFINED) {	else if (false) {
+pragma-not-needed	html_sniff.c	!(need_pragma == 1 && !got_pragma)	true
+tag-cut-off-decides	html_sniff.c	if (s.out) {\n        break;\n      }\n      /* "Processing:	/* "Processing:
+window-short	html_api.c	? 3 : GTEXT_HTML_PRESCAN_BYTES;	? 3 : GTEXT_HTML_PRESCAN_BYTES - 24;
+tentative-label-taken-as-certain	html_api.c	if (transport != GTEXT_ENCODING_NONE && transport_certain) {	if (transport != GTEXT_ENCODING_NONE) {
+caller-default-dropped	html_api.c	else if (fallback != GTEXT_ENCODING_NONE) {	else if (false && fallback != GTEXT_ENCODING_NONE) {
+label-before-the-prescan	html_api.c	if (!ignore_meta) {\n    const GTEXT_Encoding declared	if (!ignore_meta && transport == GTEXT_ENCODING_NONE) {\n    const GTEXT_Encoding declared
+ignore-meta-ignored	html_api.c	if (!ignore_meta) {\n    const GTEXT_Encoding declared	if (true) {\n    const GTEXT_Encoding declared

@@ -152,7 +152,7 @@ plant script-escape-start "$fails" 'SWITCH(ST_SCRIPT_ESC_START);' 'SWITCH(ST_SCR
 plant cdata-bracket-pair "$fails" 'text_cp(t, .\].);' '(void)0;'
 plant ambiguous-ampersand-error "$fails" 'perr(t, GTEXT_HTML_ERR_UNKNOWN_NAMED_CHARACTER_REFERENCE);' '(void)0;'
 plant after-doctype-name-error "$fails" 'perr(t, GTEXT_HTML_ERR_INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME);' '(void)0;'
-plant numeric-error-position "$fails" 'error_at(t, code, t->line, t->column, t->base_offset + t->pos);' 'error_at(t, code, t->prev_line, t->prev_column, t->prev_offset);'
+plant numeric-error-position "$fails" 'error_at(t, code, t->line, t->column, src_after(t, t->pos));' 'error_at(t, code, t->prev_line, t->prev_column, t->prev_offset);'
 plant markup-declaration-error-position "$fails" 'perr_next(t, GTEXT_HTML_ERR_INCORRECTLY_OPENED_COMMENT);' 'error_at(t, GTEXT_HTML_ERR_INCORRECTLY_OPENED_COMMENT, t->line, t->column - 1, t->base_offset + t->pos);'
 plant utf16-columns "$fails" 't->column += cp > 0xFFFF ? 2 : 1;' 't->column++;'
 # The strict UTF-8 path is scored, and the tiny-limits pass: a defect only one of them sees.
