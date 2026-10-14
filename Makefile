@@ -199,9 +199,15 @@ OPT_CFLAGS := -O2
 endif
 
 CXX := g++
-CXXFLAGS := -pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function -Wfatal-errors -std=c++20 -O1 -g $(EXTRA_CXXFLAGS)
+# -D_FILE_OFFSET_BITS=64 is the default on a 64-bit target and changes nothing there.  On a 32-bit one it is what makes
+# stat() and readdir() work on a file system whose inode numbers or sizes do not fit 32 bits: without it they fail with
+# EOVERFLOW ("Value too large for defined data type"), which the Phase 3k run under qemu-i386 on the EVO-X2 met first in
+# the tests that list a directory (suite/tools/xarch/text.sh i686).  Nothing in this library's headers or sources names
+# off_t, ino_t or struct stat, so the choice cannot change its ABI.
+LFS_FLAGS := -D_FILE_OFFSET_BITS=64
+CXXFLAGS := -pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function -Wfatal-errors -std=c++20 -O1 -g $(LFS_FLAGS) $(EXTRA_CXXFLAGS)
 CC := cc
-CFLAGS := -pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function -Wfatal-errors -std=c17 $(OPT_CFLAGS) -g $(EXTRA_CFLAGS)
+CFLAGS := -pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function -Wfatal-errors -std=c17 $(OPT_CFLAGS) -g $(LFS_FLAGS) $(EXTRA_CFLAGS)
 # Library-specific compile flags (export symbols on Windows, PIC on Linux)
 # GTEXT_BUILD enables DLL export on Windows (checked by GTEXT_API macro)
 # GTEXT_TEST_BUILD enables export of internal functions for testing (checked by GTEXT_INTERNAL_API macro)

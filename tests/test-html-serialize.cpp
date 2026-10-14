@@ -1081,6 +1081,115 @@ TEST(HtmlSerializeStream, ArgumentsAreChecked) {
   EXPECT_EQ(gtext_html_serializer_new(nullptr, &ok, nullptr), GTEXT_HTML_E_INVALID);
 }
 
+// While the head is open and a meta charset is to be injected, the tokens are held until the place for it is known
+// (the first meta, or the end of the head). Every kind of token can be held - a processing instruction and a document
+// type declaration too, which a parser never puts in a head but a caller's stream can - and what comes out is the
+// stream without the injection, with the one meta right after the head's start tag.
+TEST(HtmlSerializeStream, EveryKindOfTokenHeldInTheHeadComesOutInOrderBehindTheInjectedMeta) {
+  auto run = [](bool inject) {
+    Opts o = defaults();
+    o.inject_meta_charset = inject;
+    o.encoding = "utf-8";
+    Stream s(o);
+    s.start("html");
+    s.start("head");
+    s.comment("c");
+    EXPECT_EQ(gtext_html_serializer_processing_instruction(s.ser, "t", "d e", 3), GTEXT_HTML_OK);
+    EXPECT_EQ(gtext_html_serializer_doctype(s.ser, "n", "pub", "sys"), GTEXT_HTML_OK);
+    EXPECT_EQ(gtext_html_serializer_doctype(s.ser, nullptr, nullptr, nullptr), GTEXT_HTML_OK);
+    s.chars("x");
+    s.start("title");
+    s.chars("T");
+    s.end("title");
+    s.end("head");
+    s.end("html");
+    return s.finish();
+  };
+  const std::string plain = run(false);
+  const std::string injected = run(true);
+  const std::string head = "<html><head>";
+  ASSERT_EQ(plain.compare(0, head.size(), head), 0) << plain;
+  EXPECT_EQ(injected, head + "<meta charset=\"utf-8\">" + plain.substr(head.size())) << plain;
+  EXPECT_NE(plain.find("<?t d e?>"), std::string::npos) << plain;
+  EXPECT_NE(plain.find("<!DOCTYPE n><!DOCTYPE >"), std::string::npos) << plain;  // (the identifiers are an option, off)
+}
+
+TEST(HtmlSerializeStream, ATagWithNoNameIsInvalidAndAFailedStreamKeepsItsStatus) {
+  Stream s;
+  EXPECT_EQ(gtext_html_serializer_start_tag(s.ser, nullptr, nullptr, nullptr, 0), GTEXT_HTML_E_INVALID);
+  EXPECT_EQ(gtext_html_serializer_start_tag(s.ser, nullptr, "", nullptr, 0), GTEXT_HTML_E_INVALID);
+  EXPECT_EQ(gtext_html_serializer_empty_tag(s.ser, nullptr, "", nullptr, 0), GTEXT_HTML_E_INVALID);
+  // The refusal did not spoil the stream.
+  s.start("a");
+  EXPECT_EQ(s.finish(), "<a>");
+}
+
+TEST(HtmlSerializeTree, TheChildrenOfALeafAreNotAThingAndTheAnswerSaysSo) {
+  Parsed p = parse_document("<p>text<!--c--></p>");
+  const Node * para = find(p.top(), "p");
+  ASSERT_NE(para, nullptr);
+  const Node * text = gtext_markup_node_first_child(para);
+  ASSERT_NE(text, nullptr);
+  ASSERT_EQ(gtext_markup_node_kind(text), GTEXT_MARKUP_KIND_TEXT);
+  Out out = serialize_with(text, CHILDREN, defaults());
+  EXPECT_EQ(out.status, GTEXT_HTML_E_INVALID);
+  EXPECT_TRUE(out.bytes.empty());
+  const Node * comment = gtext_markup_node_next_sibling(text);
+  ASSERT_NE(comment, nullptr);
+  out = serialize_with(comment, CHILDREN, defaults());
+  EXPECT_EQ(out.status, GTEXT_HTML_E_INVALID);
+  // The node itself is another matter.
+  out = serialize_with(text, OUTER, defaults());
+  EXPECT_EQ(out.status, GTEXT_HTML_OK);
+  EXPECT_EQ(out.bytes, "text");
+}
+
+// The tree walk holds the same things back while the head is open as the token stream does: a processing instruction, an element in a
+// namespace the queue has no short code for, and a `meta` whose only `charset` is in a namespace (which is no declaration). A parser makes
+// none of them in a head; a tree built by hand can.
+TEST(HtmlSerializeTree, WhatAHandBuiltHeadHoldsIsWrittenInOrderBehindTheInjectedMeta) {
+  GTEXT_Markup_Document * doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &doc), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node *html, *head, *pi, *foreign, *meta, *text;
+  ASSERT_EQ(gtext_markup_create_element(doc, GTEXT_MARKUP_NS_HTML, nullptr, "html", &html), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_create_element(doc, GTEXT_MARKUP_NS_HTML, nullptr, "head", &head), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_create_processing_instruction(doc, "t", "d e", 3, &pi), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_create_element(doc, "urn:x-other", nullptr, "thing", &foreign), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_create_element(doc, GTEXT_MARKUP_NS_HTML, nullptr, "meta", &meta), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_element_set_attribute(meta, "urn:x-q", "q", "charset", "ascii", 5), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_create_text(doc, "x", 1, &text), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(foreign, text), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(head, pi), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(head, foreign), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(head, meta), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(html, head), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(gtext_markup_document_root(doc), html), GTEXT_MARKUP_OK);
+  Opts o = defaults();
+  o.inject_meta_charset = true;
+  o.encoding = "utf-8";
+  const Out injected = serialize_with(html, CHILDREN, o);
+  Opts plain_options = defaults();
+  const Out plain = serialize_with(html, CHILDREN, plain_options);
+  ASSERT_EQ(injected.status, GTEXT_HTML_OK);
+  ASSERT_EQ(plain.status, GTEXT_HTML_OK);
+  const std::string head_start = "<head>";
+  ASSERT_EQ(plain.bytes.compare(0, head_start.size(), head_start), 0) << plain.bytes;
+  EXPECT_EQ(injected.bytes, head_start + "<meta charset=\"utf-8\">" + plain.bytes.substr(head_start.size())) << plain.bytes;
+  EXPECT_NE(plain.bytes.find("<?t d e?>"), std::string::npos) << plain.bytes;
+  EXPECT_NE(plain.bytes.find("<thing>x</thing>"), std::string::npos) << plain.bytes;
+  EXPECT_EQ(injected.r.meta_charset_injected, 1u) << "a charset in another namespace is not a declaration";
+  gtext_markup_document_free(doc);
+}
+
+TEST(HtmlSerializeStream, AContextWithNoNameIsInvalid) {
+  Stream s;
+  EXPECT_EQ(gtext_html_serializer_context(s.ser, nullptr, nullptr), GTEXT_HTML_E_INVALID);
+  EXPECT_EQ(gtext_html_serializer_context(s.ser, nullptr, ""), GTEXT_HTML_E_INVALID);
+  EXPECT_EQ(gtext_html_serializer_context(nullptr, nullptr, "div"), GTEXT_HTML_E_INVALID);
+  s.start("a");
+  EXPECT_EQ(s.finish(), "<a>");
+}
+
 TEST(HtmlSerializeStream, AfterFinishEveryTokenIsAStateError) {
   Stream s;
   s.start("a");

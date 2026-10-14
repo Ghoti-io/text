@@ -53,6 +53,9 @@
 #include <vector>
 
 #include <dirent.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -1319,8 +1322,13 @@ struct TempDir {
   std::string path;
   TempDir() {
     path = "build/xml-writer-test-" + std::to_string(::getpid());
+#ifdef _WIN32
+    ::_mkdir("build");
+    ::_mkdir(path.c_str());
+#else
     ::mkdir("build", 0777);
     ::mkdir(path.c_str(), 0777);
+#endif
   }
   ~TempDir() {
     if (DIR * d = ::opendir(path.c_str())) {

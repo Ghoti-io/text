@@ -18,6 +18,7 @@ The libFuzzer harnesses:
 | HTML tree builder | `fuzz_html_tree.cpp` | `make fuzz-html-tree` | `make fuzz-run-html-tree` |
 | HTML public API | `fuzz_html.cpp` | `make fuzz-html` | `make fuzz-run-html` |
 | HTML serializer | `fuzz_html_serialize.cpp` | `make fuzz-html-serialize` | `make fuzz-run-html-serialize` |
+| Encoding Standard | `fuzz_encoding.cpp` | `make fuzz-encoding` | `make fuzz-run-encoding` |
 
 `make fuzz` builds and runs every one of them. Each runs for `FUZZ_TIME` seconds
 (default 60); override it for a real campaign:
@@ -1036,3 +1037,25 @@ write UTF-8; the encoder does not leak and is flushed at the end. **The first se
 is bigger than their output, so an output exactly at the limit was refused (`reproducer-output-limit-with-a-held-head.seed`; the
 queue is now bounded by eight times the limit and kept small by varint lengths).
 
+
+## The Phase 3 soak (2026-10-14)
+
+Every harness of the XML, HTML, Encoding and markup work is run for at least 40 minutes, twice (`-seed=1` and `-seed=2`, separate output
+corpora, the tracked seeds read as a second corpus), in parallel on the EVO-X2, by **`tools/soak/soak-job.sh`** (a job of `tools/evo`: it builds
+the dependencies, fetches the pinned data the harnesses read, builds the harnesses once, runs them, then reduces each corpus with
+`-merge=1` and writes `results/summary.txt` through `tools/soak/summary.py`):
+
+    tools/evo new text-soak cutil unicode chron regex text
+    tools/evo run JOB -m 40G -t 3h -- sh /work/src/text/tools/soak/soak-job.sh 2400 [harness...]
+
+The machine-grown corpora stay untracked (this directory's `.gitignore` tracks only `*.seed`); a find that no longer fails is kept as
+`reproducer-*.seed`, and `make test` replays it. The figures, the finds and what became of them are in the plan record
+(`notes/text/XML-HTML-PLAN.md`, "Phase 3k part B as built"). **The first run found four things, none of them in the library**, and each is the
+kind of thing only a long run shows: `fuzz_encoding` aborted in its first four executions because `third_party/encoding/indexes.json` was not on
+the box (the script now fetches, and fails if a fetch does); `fuzz_markup_tree` was given a corpus directory that did not exist; `fuzz_html` built
+its incremental parser from fewer of the options than the whole parse it compares with (`transport_encoding`, `default_encoding` and
+`ignore_meta` were missing, so the same bytes were another document to the two) - two reproducers; and `fuzz_html_serialize` held the prefix a refused write
+delivers to be a prefix of the whole output, which is not true of ISO-2022-JP, whose refusal puts the encoder back in ASCII with a three-byte escape
+that the whole output has only if its next character is ASCII - two reproducers. (The harness already knew this about the other check that reads the
+delivered bytes.) A 3,410-byte input that libFuzzer reported as a 10-second "slow unit" is the allocation-failure sweep working as designed, one parse for
+every allocation; the library parses it, whole and a byte at a time, in a few milliseconds.

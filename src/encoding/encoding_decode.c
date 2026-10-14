@@ -370,7 +370,10 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
   }
   const GTEXT_Dec_Codec * codec = dec->codec;
   uint8_t pb[GTEXT_ENCODING_PUSHBACK]; /* the restore stack: the top is read next */
-  size_t pb_off[GTEXT_ENCODING_PUSHBACK]; /* ... and the offset in the stream of each item on it (source map only) */
+  /* ... and the offset in the stream of each item on it (source map only). Zeroed: without a source map the values are read (a restored byte is
+     copied with its offset, the width of a replacement is computed from it) and never used, and an uninitialised read is one valgrind reports
+     870,838 times in testEncodingCjk (found by the Phase 3k run of the Valgrind gate, which no sanitizer of this build sees). */
+  size_t pb_off[GTEXT_ENCODING_PUSHBACK] = {0};
   size_t pb_n = 0;
   size_t i = 0;
   size_t offset = dec->pos;

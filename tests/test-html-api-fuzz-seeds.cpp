@@ -87,7 +87,7 @@ std::vector<std::string> seeds(const std::string & directory) {
   for (const auto & entry : fs::directory_iterator(directory, ec)) {
     const std::string name = entry.path().filename().string();
     if (name.size() > 5 && name.compare(name.size() - 5, 5, ".seed") == 0) {
-      out.push_back(entry.path().string());
+      out.push_back(entry.path().generic_string()); // (generic: "/" on every host, so the names the test builds with "/" compare equal)
     }
   }
   std::sort(out.begin(), out.end());
@@ -107,7 +107,7 @@ std::string corpus_dir() {
   if (const char * env = std::getenv("GTEXT_FUZZ_CORPUS")) {
     candidates.push_back(env);
   }
-  candidates.push_back((fs::path(__FILE__).parent_path() / "fuzz" / "corpus").string());
+  candidates.push_back((fs::path(__FILE__).parent_path() / "fuzz" / "corpus").generic_string());
   candidates.push_back("tests/fuzz/corpus");
   candidates.push_back("../tests/fuzz/corpus");
   candidates.push_back("../../tests/fuzz/corpus");

@@ -23,6 +23,10 @@
 #include <set>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/markup.h>
 
@@ -117,6 +121,29 @@ struct FaultAllocator {
 
 // A node's subtree, or a whole document, as the library's own dump writes it.
 inline std::string dump_to_string(const GTEXT_Markup_Node * node) {
+#ifdef _WIN32
+  // open_memstream is POSIX 2008 and MinGW has none: the dump goes to a file in the temporary directory and is read back.
+  char dir[MAX_PATH + 1];
+  char name[MAX_PATH + 1];
+  std::string out;
+  if (GetTempPathA(sizeof dir, dir) == 0 || GetTempFileNameA(dir, "gtx", 0, name) == 0) {
+    return out;
+  }
+  if (FILE * f = std::fopen(name, "wb")) {
+    gtext_markup_dump(node, f);
+    std::fclose(f);
+  }
+  if (FILE * f = std::fopen(name, "rb")) {
+    char chunk[4096];
+    size_t n;
+    while ((n = std::fread(chunk, 1, sizeof chunk, f)) > 0) {
+      out.append(chunk, n);
+    }
+    std::fclose(f);
+  }
+  std::remove(name);
+  return out;
+#else
   char * buffer = nullptr;
   size_t size = 0;
   FILE * f = open_memstream(&buffer, &size);
@@ -125,6 +152,7 @@ inline std::string dump_to_string(const GTEXT_Markup_Node * node) {
   std::string out(buffer ? buffer : "", size);
   std::free(buffer);
   return out;
+#endif
 }
 
 #endif // GHOTI_IO_GTEXT_TESTS_MARKUP_TEST_SUPPORT_H

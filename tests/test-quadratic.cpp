@@ -531,15 +531,6 @@ std::string attrs_n(size_t k, const char * prefix = "a", const char * value = "v
   return out;
 }
 
-std::string numbers(size_t k) {
-  std::string out;
-  for (size_t i = 0; i < k; i++) {
-    out += std::to_string(i);
-    out += ' ';
-  }
-  return out;
-}
-
 std::vector<Shape> build_shapes() {
   std::vector<Shape> s;
   auto add = [&](const char * group, const char * name, size_t n, std::function<Measured(size_t)> run) -> Shape & {

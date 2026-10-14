@@ -124,6 +124,7 @@ std::string corpus_dir() {
   const size_t slash = here.rfind('/');
   candidates.push_back((slash == std::string::npos ? std::string(".") : here.substr(0, slash)) + "/fuzz/corpus");
   candidates.push_back("tests/fuzz/corpus");
+#ifndef _WIN32 // (the executable's place: /proc; a Windows run starts in the library's directory, which the candidate above names)
   char exe[4096];
   const ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
   if (n > 0) {
@@ -134,6 +135,7 @@ std::string corpus_dir() {
     }
     candidates.push_back(path + "/tests/fuzz/corpus");
   }
+#endif
   for (const std::string & c : candidates) {
     if (DIR * d = opendir((c + "/xml").c_str())) {
       closedir(d);

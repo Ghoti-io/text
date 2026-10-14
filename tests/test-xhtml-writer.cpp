@@ -58,6 +58,7 @@
 
 #include <gtest/gtest.h>
 
+#include <ghoti.io/text/html.h>
 #include <ghoti.io/text/xml.h>
 
 #include "markup_test_support.h"
@@ -1092,6 +1093,48 @@ struct Gen {
   }
 };
 
+// The HTML half of the Phase 2 exit gate with this library's own HTML parser (the plan's "Phase 3 exit item"; the two reference
+// parsers did it in Phase 3a, tools/oracle/html_diff.py): the bytes a hazard-free tree is written to, with no XML declaration, are read
+// by the XML parser and by gtext_html_parse(), and html_equivalent() holds between the two trees. A document the mode accepted with
+// a hazard is allowed to differ (that is what a hazard is) and is counted, so that the test cannot pass on trees that are all hazards.
+TEST(XhtmlWriter, WhatTheModeCallsFreeOfHazardsIsTheSameTreeToThisLibrarysHtmlParser) {
+  size_t compared = 0, with_hazards = 0, differ_with_hazards = 0;
+  for (uint64_t seed = 1; seed <= 4000; seed++) {
+    Gen g(seed);
+    Build b;
+    Node * html = html_root(b, true);
+    g.fill(b, b.el(html, "body"), 0);
+    Opts o = xopts();
+    o.xml_declaration = GTEXT_XML_DECLARATION_NEVER;
+    const Out out = write_with(b.doc, o);
+    if (out.status != GTEXT_XML_OK) {
+      continue;
+    }
+    Doc * xml_tree = parse(out.bytes);
+    ASSERT_NE(xml_tree, nullptr) << seed;
+    Doc * html_tree = nullptr;
+    GTEXT_HTML_Result r;
+    ASSERT_EQ(gtext_html_parse(out.bytes.data(), out.bytes.size(), nullptr, &html_tree, &r), GTEXT_HTML_OK) << seed;
+    gtext_html_result_free(&r);
+    const bool same = html_equivalent(gtext_markup_document_root(xml_tree), gtext_markup_document_root(html_tree));
+    if (out.r.xhtml_hazards == 0) {
+      compared++;
+      ASSERT_TRUE(same) << "seed " << seed << ", no hazard reported:\n" << out.bytes;
+    }
+    else {
+      with_hazards++;
+      differ_with_hazards += same ? 0 : 1;
+    }
+    gtext_markup_document_free(html_tree);
+    gtext_markup_document_free(xml_tree);
+  }
+  EXPECT_GT(compared, 500u) << "too few hazard-free documents to say anything";
+  EXPECT_GT(with_hazards, 50u);
+  RecordProperty("compared", std::to_string(compared));
+  RecordProperty("with_hazards", std::to_string(with_hazards));
+  RecordProperty("differ_with_hazards", std::to_string(differ_with_hazards));
+}
+
 TEST(XhtmlWriter, RandomTreesAreAcceptedAndRoundTripOrRefusedAndNeverWritten) {
   size_t accepted = 0, refused_x = 0, refused_other = 0, with_hazards = 0;
   for (uint64_t seed = 1; seed <= 4000; seed++) {
@@ -1842,6 +1885,36 @@ TEST(XhtmlWriter, ForeignNamesAndAttributesHtmlWouldChangeAreHazards) {
          b.xmlns(s, "q", "urn:q");
          b.attr(s, "a", "1", "urn:q", "q");
        }, F, "/html/body/svg"},
+  });
+}
+
+// MathML's annotation-xml is an HTML integration point only when its `encoding` says text/html or
+// application/xhtml+xml (compared without regard to case): inside it an HTML parser makes HTML elements again,
+// so a MathML element there that is not `math` is no longer foreign content - the hazard. Without the attribute,
+// or with another value (one a byte short of either, one of another case), it is not one, and the same child is fine.
+TEST(XhtmlWriter, AnnotationXmlIsAnIntegrationPointOnlyForTheTwoEncodingsTheStandardNames) {
+  const GTEXT_XML_Xhtml_Hazard F = GTEXT_XML_XHTML_HAZARD_FOREIGN_CONTENT;
+  const GTEXT_XML_Xhtml_Hazard N = GTEXT_XML_XHTML_HAZARD_NONE;
+  auto annotation = [](const char * encoding) {
+    return [encoding](Build & b, Node * body) {
+      Node * m = b.el(body, "math", MATHML);
+      b.xmlns(m, nullptr, MATHML);
+      Node * a = b.el(m, "annotation-xml", MATHML);
+      if (encoding) {
+        b.attr(a, "encoding", encoding);
+      }
+      b.el(a, "mi", MATHML);
+    };
+  };
+  check_hazard_cases({
+      {"no encoding", annotation(nullptr), N, ""},
+      {"another encoding", annotation("text/plain"), N, ""},
+      {"a byte short of text/html", annotation("text/htm"), N, ""},
+      {"a byte short of application/xhtml+xml", annotation("application/xhtml+xm"), N, ""},
+      {"text/html", annotation("text/html"), F, "/html/body/math/annotation-xml/mi"},
+      {"TEXT/HTML", annotation("TEXT/HTML"), F, "/html/body/math/annotation-xml/mi"},
+      {"application/xhtml+xml", annotation("application/xhtml+xml"), F, "/html/body/math/annotation-xml/mi"},
+      {"Application/XHTML+xml", annotation("Application/XHTML+xml"), F, "/html/body/math/annotation-xml/mi"},
   });
 }
 

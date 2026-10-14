@@ -1119,12 +1119,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     GTEXT_HTML_Parse_Options po = gtext_html_parse_options_default();
     po.scripting = roomy.scripting;
     po.max_open_elements = roomy.max_open;
+    // The same encoding options as the whole parse it is compared with: without them the bytes are another document (a `<meta>` or a
+    // sniffed label reads them in another encoding, which changes the depth and the tree), which the first soak of Phase 3k found.
+    po.transport_encoding = roomy.transport;
+    po.transport_encoding_certainty = roomy.tentative ? GTEXT_HTML_TENTATIVE : GTEXT_HTML_CERTAIN;
+    po.default_encoding = roomy.fallback;
+    po.ignore_meta = roomy.ignore_meta;
     GTEXT_HTML_Parser * p = nullptr;
     if ((context ? gtext_html_parser_new_fragment(&fc, &po, &p) : gtext_html_parser_new(&po, &p)) != GTEXT_HTML_OK) {
       fail("a parser could not be made", "", input);
     }
-    if (gtext_html_parser_feed(p, input.data(), input.size()) != GTEXT_HTML_OK) {
-      fail("a feed failed", "", input);
+    const GTEXT_HTML_Status fed = gtext_html_parser_feed(p, input.data(), input.size());
+    if (fed != GTEXT_HTML_OK) {
+      fail("a feed failed", std::string(gtext_html_status_string(fed)) + (context ? ", in a fragment context" : ", as a document"), input);
     }
     GTEXT_Markup_Document * doc = nullptr;
     GTEXT_Markup_Node * frag = nullptr;

@@ -541,7 +541,7 @@ document of the W3C suite and random trees (see Tested scope). The HTML half: wr
 `tests/test-xhtml-writer.cpp`. The XML declaration is written by the usual rules (an HTML
 parser reads it as a comment), so output meant for both should use
 `GTEXT_XML_DECLARATION_NEVER`. The HTML half is checked
-against html5lib and parse5; this library's own HTML parser (\ref format_html "HTML") exists now, and the writer is not yet compared against it.
+against html5lib and parse5, and against this library's own HTML parser (\ref format_html "HTML"): the bytes of a tree the mode calls free of hazards, written with no declaration, are read by `gtext_html_parse()` and the XML parser and the two trees are `html_equivalent` over 4,000 random trees (`XhtmlWriter.WhatTheModeCallsFreeOfHazardsIsTheSameTreeToThisLibrarysHtmlParser`; the trees with a hazard are counted, and nearly all of them do differ, which shows the comparison can fail).
 
 ## Files
 

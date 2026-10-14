@@ -77,7 +77,7 @@ std::vector<std::string> seeds(const std::string & directory) {
   for (const auto & entry : fs::directory_iterator(directory, ec)) {
     const std::string name = entry.path().filename().string();
     if (name.size() > 5 && name.compare(name.size() - 5, 5, ".seed") == 0) {
-      out.push_back(entry.path().string());
+      out.push_back(entry.path().generic_string()); // (generic: "/" on every host, so the names the test builds with "/" compare equal)
     }
   }
   std::sort(out.begin(), out.end());
@@ -95,7 +95,7 @@ std::string corpus_dir() {
   if (const char * env = std::getenv("GTEXT_FUZZ_CORPUS")) {
     candidates.push_back(env);
   }
-  candidates.push_back((fs::path(__FILE__).parent_path() / "fuzz" / "corpus").string());
+  candidates.push_back((fs::path(__FILE__).parent_path() / "fuzz" / "corpus").generic_string());
   candidates.push_back("tests/fuzz/corpus");
   candidates.push_back("../tests/fuzz/corpus");
   candidates.push_back("../../tests/fuzz/corpus");
@@ -157,11 +157,20 @@ TEST_F(EncodingFuzzSeeds, EverySeedHoldsEveryProperty) {
   RecordProperty("replay_seconds", std::to_string(seconds));
   // About five seconds for the 2,600 seeds of a plain build; a sanitizer is up to twenty times slower, and the bound is for a replay that has gone quadratic.
   // (GTEXT_TEST_FULL=1 in the environment, the switch of the other multi-byte tests for their sanitizer reductions, lifts the bound to ten times that.)
+  // GTEXT_TEST_SLOWDOWN=<factor> multiplies it for a host that is slow by a known factor and not by this library: an emulator (qemu-user runs
+  // this replay in 74 s as AArch64, against 60 s allowed), which suite/tools/xarch/text.sh sets. The work counters of testQuadratic, which do not
+  // read a clock, are what says a decoder has gone quadratic there.
 #if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-  const double kSecondsAllowed = std::getenv("GTEXT_TEST_FULL") ? 3000.0 : 300.0;
+  double kSecondsAllowed = std::getenv("GTEXT_TEST_FULL") ? 3000.0 : 300.0;
 #else
-  const double kSecondsAllowed = 60.0;
+  double kSecondsAllowed = 60.0;
 #endif
+  if (const char * slow = std::getenv("GTEXT_TEST_SLOWDOWN")) {
+    const double factor = std::atof(slow);
+    if (factor >= 1.0 && factor <= 1000.0) {
+      kSecondsAllowed *= factor;
+    }
+  }
   EXPECT_LT(seconds, kSecondsAllowed) << files.size() << " seeds took " << seconds << " s";
 }
 

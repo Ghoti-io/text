@@ -481,6 +481,12 @@ whole input and keeps nothing, and restarts for a declaration anywhere in the he
   pass the answer as `transport_encoding`.
 - *Memory, decoding.* A parser that decodes (any encoding but UTF-8) holds the decoder's map of a chunk, 40 KiB, and the scratch for the
   tokenizer's form of it, 32 KiB: 72 KiB more per parser, with a 64-bit `size_t`. Nothing is copied for UTF-8.
+- *Size, decoding, a 32-bit `size_t`.* The offsets that are exact in the original bytes of a document in another encoding are kept in the
+  same word as the width of the character and a flag, so a build whose `size_t` has 32 bits keeps 27 bits of offset: **such a document is
+  refused with `GTEXT_HTML_E_LIMIT_INPUT` at its 2^27th byte (128 MiB)**, whatever `max_input_bytes` says, and the failure is sticky like any
+  other. The refusal is the status, not an offset that wrapped, and UTF-8, which is read without that map, has no such limit (only
+  `max_input_bytes`). A 64-bit `size_t` has 59 bits and cannot reach it. Tested on a 32-bit build under qemu-i386
+  (`HtmlSourceMapLimit` in `tests/test-html-source-map-limit.cpp`, run by `suite/tools/xarch/text.sh i686`, which requires that the tests ran and did not skip).
 - *Memory, restart.* While the encoding is tentative and the builder has not left the head, the incremental parser keeps the bytes it was
   given so far, because a `meta` that declares another encoding makes it begin again with them. It lets them go when the head is left or
   the encoding becomes certain, **and in any case at `max_reparse_bytes` (4 MiB by default)**: then `reparse_abandoned` says so in the result, and a
@@ -1108,7 +1114,7 @@ Everything the two share is the same on purpose. These are the departures and wh
 
 ## Measured
 
-Numbers are from the gates' output; the commands are named so they can be run again.
+Numbers are from the gates' output; the commands are named so they can be run again. **They are a log**: each block says which stage it measured and on what date, and none is kept current by hand. The figures of today's tree - vectors, exceptions, plants, seeds, divergence entries, shapes, tests - are the output of `tools/phase3-counts.py` (and `tools/html/counts.py` and `tools/encoding/counts.py` under it), which is what the plan record (`notes/text/XML-HTML-PLAN.md`, "Phase 3k as built") quotes.
 
 Public API (phase 3f), measured 2026-10-12 on the development machine:
 

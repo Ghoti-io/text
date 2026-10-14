@@ -253,6 +253,21 @@ bool is_html(const Node * e) {
   return ns && std::strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0;
 }
 
+// Is `got` what a refused write delivered of `full`: a prefix of it? A refusal in ISO-2022-JP puts the encoder back in ASCII (the
+// escape ESC ( B, three bytes) so that the prefix is a text in itself; the whole output has that escape there only if its next character
+// is in ASCII, so the bytes before the escape are the prefix. (The 3j review made the encoder do this; the first soak of Phase 3k found
+// that these two checks of the harness had not been told.)
+bool delivered_prefix(const std::string & got, const std::string & full) {
+  if (full.compare(0, got.size(), got) == 0) {
+    return got.size() <= full.size();
+  }
+  if (got.size() >= 3 && got.compare(got.size() - 3, 3, "\x1B(B") == 0) {
+    const std::string shorter = got.substr(0, got.size() - 3);
+    return shorter.size() <= full.size() && full.compare(0, shorter.size(), shorter) == 0;
+  }
+  return false;
+}
+
 void escape(std::string & out, const char * s, size_t n, bool attribute) {
   for (size_t i = 0; i < n; i++) {
     const unsigned char c = s[i];
@@ -843,9 +858,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         GTEXT_Markup_Sink s2 = c2.sink();
         d.max_depth = max_depth - 1;
         GTEXT_HTML_Status ds = d.max_depth == 0 ? GTEXT_HTML_E_LIMIT_DEPTH : gtext_html_serialize(root, scope, &d, &s2, nullptr);
-        if (d.max_depth != 0 && (ds != GTEXT_HTML_E_LIMIT_DEPTH || c2.data.size() > full.size()
-                || full.compare(0, c2.data.size(), c2.data) != 0)) {
-          fail("a tree one level too deep for the limit was not refused with a prefix", "depth " + std::to_string(max_depth) + " status " + std::to_string(ds), input);
+        if (d.max_depth != 0 && (ds != GTEXT_HTML_E_LIMIT_DEPTH || !delivered_prefix(c2.data, full))) {
+          fail("a tree one level too deep for the limit was not refused with a prefix", "depth " + std::to_string(max_depth) + " status " + std::to_string(ds) + "\nfull:   " + full + "\nlimited: " + c2.data, input);
         }
       }
     }
@@ -865,7 +879,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
             fail("an output exactly at the limit was refused", "limit " + std::to_string(limit), input);
           }
         }
-        else if (ls != GTEXT_HTML_E_LIMIT_OUTPUT || c3.data.size() > limit || full.compare(0, c3.data.size(), c3.data) != 0) {
+        else if (ls != GTEXT_HTML_E_LIMIT_OUTPUT || c3.data.size() > limit || !delivered_prefix(c3.data, full)) {
           fail("an output over the limit was not refused with a prefix", "limit " + std::to_string(limit) + " got " + std::to_string(c3.data.size()), input);
         }
       }
@@ -926,9 +940,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       }
       const size_t open = full.find('>');
       const std::string tail = "</";
+      // A write in ISO-2022-JP ends with the escape back to ASCII when it is left in another set (the encoder's flush), which for the
+      // children comes after their last tag and for the outer text after the end tag: so the children without it are what is looked for
+      // (the second soak of Phase 3k found this one, in a document whose last character was in the Roman set).
+      std::string in = inner.data;
+      if (in.size() >= 3 && in.compare(in.size() - 3, 3, "\x1B(B") == 0) {
+        in.resize(in.size() - 3);
+      }
       // the outer text is: <start tag> inner </end tag>
-      if (open == std::string::npos || full.size() < open + 1 + inner.data.size() || full.compare(open + 1, inner.data.size(), inner.data) != 0
-          || full.compare(open + 1 + inner.data.size(), 2, tail) != 0) {
+      if (open == std::string::npos || full.size() < open + 1 + in.size() || full.compare(open + 1, in.size(), in) != 0
+          || full.compare(open + 1 + in.size(), 2, tail) != 0) {
         // the children are written with the element's own context (raw text) in CHILDREN and the same in OUTER
         fail("the outer text is not the start tag, the children and the end tag", full + "\n" + inner.data, input);
       }

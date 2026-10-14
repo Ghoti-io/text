@@ -18,6 +18,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <string>
@@ -1011,12 +1012,17 @@ TEST_F(MarkupTree, ANodeBuiltByHandHasNoLocationAndOneSetIsKept) {
 
 TEST_F(MarkupTree, ALineBeyondThirtyTwoBitsSaturatesAndTheOffsetDoesNot) {
   Node * e = element("e");
-  const GTEXT_Markup_Location where = {(size_t)1 << 40, (size_t)1 << 33, (size_t)5};
+  // (As wide as a size_t allows: with a 64-bit one the line is far past 32 bits and saturates; with a 32-bit one no line
+  // can be, and the test says only that nothing changes. suite/tools/xarch/text.sh i686 runs that arm.)
+  const GTEXT_Markup_Location where = {SIZE_MAX / 3, SIZE_MAX / 5, (size_t)5};
   gtext_markup_node_set_location(e, &where);
   GTEXT_Markup_Location got = {};
   ASSERT_TRUE(gtext_markup_node_location(e, &got));
-  EXPECT_EQ(got.offset, (size_t)1 << 40);
-  EXPECT_EQ(got.line, (size_t)UINT32_MAX);
+  EXPECT_EQ(got.offset, SIZE_MAX / 3);
+  EXPECT_EQ(got.line, (size_t)std::min<unsigned long long>(SIZE_MAX / 5, UINT32_MAX));
+  if (sizeof(size_t) > 4) {
+    EXPECT_EQ(got.line, (size_t)UINT32_MAX);
+  }
   EXPECT_EQ(got.column, 5u);
 }
 

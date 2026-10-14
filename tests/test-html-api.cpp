@@ -293,7 +293,7 @@ TEST_P(HtmlApi, AHugeLengthIsALimitAndNothingIsRead) {
   if (c.via_parser && c.cut.kind != Cut::WHOLE) {
     GTEST_SKIP() << "the huge length is one feed";
   }
-  for (size_t len : {SIZE_MAX, SIZE_MAX / 2, (size_t)1 << 40}) {
+  for (size_t len : {SIZE_MAX, SIZE_MAX / 2, SIZE_MAX / 4 + 1}) { // (a shift by 40 does not exist on a 32-bit size_t)
     GTEXT_Markup_Document * doc = nullptr;
     GTEXT_Markup_Node * frag = nullptr;
     GTEXT_HTML_Result r;
@@ -1222,7 +1222,9 @@ TEST(HtmlApiResult, TheAccessorsRefuseWhatIsNotThere) {
   EXPECT_FALSE(gtext_html_result_error_at(&r, n, &e));
   EXPECT_FALSE(gtext_html_result_error_at(&r, SIZE_MAX, &e));
   EXPECT_FALSE(gtext_html_result_error_at(&r, 0, nullptr));
-  EXPECT_EQ(std::memcmp(&before, &e, sizeof(e)), 0) << "written only on success";
+  // (field by field: the struct has padding after `code`, and a memcmp reads it - which Valgrind reports, in the first run of this program under it)
+  EXPECT_TRUE(before.code == e.code && before.name == e.name && before.line == e.line && before.column == e.column
+      && before.byte_offset == e.byte_offset) << "written only on success";
   // The positions of this one are hand-counted: no doctype at the start, then the end tag `</x>` at
   // column 1 offset 0 with nothing to close.
   EXPECT_TRUE(gtext_html_result_error_at(&r, 0, &e));
