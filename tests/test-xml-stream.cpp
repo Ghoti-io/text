@@ -2825,4 +2825,299 @@ TEST(XmlStream, DtdModeAndPolicyAreValidatedAtConstruction) {
   EXPECT_EQ(gtext_xml_reader_new(&opts), nullptr);
 }
 
+struct ResolverProbe {
+  std::string bytes = "<!ELEMENT a EMPTY>";
+  size_t offset = 0;
+  size_t opens = 0;
+  size_t closes = 0;
+  size_t reads = 0;
+  bool fail_read = false;
+  bool cancel_read = false;
+  bool declined_open = false;
+  bool missing_read = false;
+  bool missing_identity = false;
+  bool data_without_bytes = false;
+  bool eof_with_bytes = false;
+  GTEXT_XML_Stream * reenter = nullptr;
+  bool reenter_on_open = false;
+  bool saw_request = false;
+  GTEXT_XML_Resource_Kind kind = GTEXT_XML_RESOURCE_GENERAL_ENTITY;
+  std::string public_id;
+  std::string system_id;
+  std::string base_uri;
+};
+
+GTEXT_XML_Source_Read_Result resolver_probe_read(void * opaque,
+    unsigned char * buffer, size_t capacity, size_t * count) {
+  ResolverProbe * probe = static_cast<ResolverProbe *>(opaque);
+  probe->reads++;
+  *count = 0;
+  if (probe->data_without_bytes) {
+    return GTEXT_XML_SOURCE_DATA;
+  }
+  if (probe->eof_with_bytes) {
+    buffer[0] = 'x';
+    *count = 1;
+    return GTEXT_XML_SOURCE_EOF;
+  }
+  if (probe->reenter) {
+    const char byte = ' ';
+    EXPECT_EQ(gtext_xml_stream_feed(probe->reenter, &byte, 1, nullptr),
+        GTEXT_XML_E_STATE);
+  }
+  if (probe->cancel_read) return GTEXT_XML_SOURCE_CANCELLED;
+  if (probe->fail_read) return GTEXT_XML_SOURCE_ERROR;
+  if (probe->offset == probe->bytes.size()) return GTEXT_XML_SOURCE_EOF;
+  *count = std::min(capacity, std::min(size_t(2),
+      probe->bytes.size() - probe->offset));
+  std::memcpy(buffer, probe->bytes.data() + probe->offset, *count);
+  probe->offset += *count;
+  return GTEXT_XML_SOURCE_DATA;
+}
+
+void resolver_probe_close(void * opaque) {
+  static_cast<ResolverProbe *>(opaque)->closes++;
+}
+
+GTEXT_XML_Resolver_Result resolver_probe_open(
+    const GTEXT_XML_Resolve_Request * request, void * opaque,
+    GTEXT_XML_External_Source * source) {
+  ResolverProbe * probe = static_cast<ResolverProbe *>(opaque);
+  probe->opens++;
+  probe->saw_request = true;
+  probe->kind = request->kind;
+  if (request->public_id) probe->public_id = request->public_id;
+  if (request->system_id) probe->system_id = request->system_id;
+  if (request->base_uri) probe->base_uri = request->base_uri;
+  if (probe->reenter_on_open && probe->reenter) {
+    const char byte = ' ';
+    EXPECT_EQ(gtext_xml_stream_feed(probe->reenter, &byte, 1, nullptr),
+        GTEXT_XML_E_STATE);
+  }
+  source->handle = probe;
+  source->identity = probe->missing_identity ? nullptr : probe;
+  source->base_uri = "memory:/resolved.dtd";
+  source->read = probe->missing_read ? nullptr : resolver_probe_read;
+  source->close = resolver_probe_close;
+  return probe->declined_open ? GTEXT_XML_RESOLVER_DECLINED
+      : GTEXT_XML_RESOLVER_OPENED;
+}
+
+TEST(XmlResolver, DefaultAndDeniedPoliciesNeverCallTheResolver) {
+  ResolverProbe probe;
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  const char * doc = "<!DOCTYPE a SYSTEM 'urn:caller:resource'><a/>";
+  GTEXT_Markup_Document * tree = nullptr;
+  EXPECT_EQ(gtext_xml_parse(doc, std::strlen(doc), &opts, &tree, nullptr),
+      GTEXT_XML_OK);
+  ASSERT_NE(tree, nullptr);
+  gtext_markup_document_free(tree);
+  EXPECT_EQ(probe.opens, 0u);
+  // No syscall interceptor is needed here: the XML parser has no external
+  // open/connect implementation; this guarded callback is the only path to
+  // caller-owned external I/O. Its non-invocation is the no-I/O canary.
+
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  EXPECT_EQ(gtext_xml_parse(doc, std::strlen(doc), &opts, &tree, nullptr),
+      GTEXT_XML_OK);
+  ASSERT_NE(tree, nullptr);
+  gtext_markup_document_free(tree);
+  EXPECT_EQ(probe.opens, 0u);
+}
+
+TEST(XmlResolver, DeclinedAndMalformedOpenedSourcesFollowTheirCloseRules) {
+  const char * doc = "<!DOCTYPE a SYSTEM 'urn:caller:resource'><a/>";
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+
+  ResolverProbe declined;
+  declined.declined_open = true;
+  opts.resolver_user_data = &declined;
+  GTEXT_Markup_Document * tree = nullptr;
+  EXPECT_EQ(gtext_xml_parse(doc, std::strlen(doc), &opts, &tree, nullptr),
+      GTEXT_XML_OK);
+  ASSERT_NE(tree, nullptr);
+  gtext_markup_document_free(tree);
+  EXPECT_EQ(declined.opens, 1u);
+  EXPECT_EQ(declined.closes, 0u);
+  EXPECT_EQ(declined.reads, 0u);
+
+  for (int malformed = 0; malformed < 2; malformed++) {
+    ResolverProbe probe;
+    probe.missing_read = malformed == 0;
+    probe.missing_identity = malformed == 1;
+    opts.resolver_user_data = &probe;
+    tree = nullptr;
+    EXPECT_EQ(gtext_xml_parse(doc, std::strlen(doc), &opts, &tree, nullptr),
+        GTEXT_XML_E_RESOLVER);
+    EXPECT_EQ(tree, nullptr);
+    EXPECT_EQ(probe.closes, 1u);
+    EXPECT_EQ(probe.reads, 0u);
+  }
+}
+
+TEST(XmlResolver, InvalidDataAndEofResultsChargeBytesAndCloseOnce) {
+  const char * doc = "<!DOCTYPE a SYSTEM 'urn:caller:resource'><a/>";
+  for (int invalid = 0; invalid < 2; invalid++) {
+    ResolverProbe probe;
+    probe.data_without_bytes = invalid == 0;
+    probe.eof_with_bytes = invalid == 1;
+    GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+    opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    opts.resolver = resolver_probe_open;
+    opts.resolver_user_data = &probe;
+    GTEXT_Markup_Document * tree = nullptr;
+    EXPECT_EQ(gtext_xml_parse(doc, std::strlen(doc), &opts, &tree, nullptr),
+        GTEXT_XML_E_RESOLVER);
+    EXPECT_EQ(tree, nullptr);
+    EXPECT_EQ(probe.closes, 1u);
+    EXPECT_EQ(probe.reads, 1u);
+  }
+}
+
+TEST(XmlResolver, OptInPassesMetadataReadsChunksAndClosesOnce) {
+  ResolverProbe probe;
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  opts.base_uri = "memory:/document.xml";
+  const char * doc = "<!DOCTYPE a PUBLIC 'pub-id' 'child.dtd'><a/>";
+  GTEXT_Markup_Document * tree = nullptr;
+  EXPECT_EQ(gtext_xml_parse(doc, std::strlen(doc), &opts, &tree, nullptr),
+      GTEXT_XML_OK);
+  ASSERT_NE(tree, nullptr);
+  gtext_markup_document_free(tree);
+  EXPECT_TRUE(probe.saw_request);
+  EXPECT_EQ(probe.kind, GTEXT_XML_RESOURCE_EXTERNAL_SUBSET);
+  EXPECT_EQ(probe.public_id, "pub-id");
+  EXPECT_EQ(probe.system_id, "child.dtd");
+  EXPECT_EQ(probe.base_uri, "memory:/document.xml");
+  EXPECT_GT(probe.reads, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+}
+
+TEST(XmlResolver, ReadFailureCancellationAndLimitFailureCloseExactlyOnce) {
+  const char * doc = "<!DOCTYPE a SYSTEM 'urn:caller:resource'><a/>";
+  for (int failure = 0; failure < 3; failure++) {
+    ResolverProbe probe;
+    if (failure == 0) probe.fail_read = true;
+    if (failure == 1) probe.cancel_read = true;
+    GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+    opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    opts.resolver = resolver_probe_open;
+    opts.resolver_user_data = &probe;
+    if (failure == 2) opts.max_external_source_bytes = 1;
+    GTEXT_Markup_Document * tree = nullptr;
+    const GTEXT_XML_Status status = gtext_xml_parse(doc, std::strlen(doc),
+        &opts, &tree, nullptr);
+    EXPECT_EQ(status, failure == 0 ? GTEXT_XML_E_RESOLVER
+        : failure == 1 ? GTEXT_XML_E_CANCELLED
+        : GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
+    EXPECT_EQ(tree, nullptr);
+    EXPECT_EQ(probe.closes, 1u);
+  }
+}
+
+TEST(XmlResolver, TheChunkThatCrossesALimitIsStillCharged) {
+  xml_ctx parser{};
+  static const char document[] = "<a/>";
+  static int document_identity;
+  static int external_identity;
+  parser.in = reinterpret_cast<const unsigned char *>(document);
+  parser.length = sizeof(document) - 1;
+  parser.line = 1;
+  parser.column = 1;
+  parser.allocator = gtext_allocator_default();
+  parser.max_source_depth = 8;
+  parser.max_external_source_bytes = 1;
+  parser.max_external_bytes = 8;
+  ASSERT_EQ(xml_source_init(&parser, &document_identity), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&parser, XML_SOURCE_EXTERNAL_SUBSET,
+      &external_identity, document, 0), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_charge_external(&parser, 2),
+      GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
+  EXPECT_EQ(parser.sources[1].bytes_charged, 2u);
+  EXPECT_EQ(parser.external_bytes, 2u);
+  EXPECT_EQ(xml_source_pop(&parser), GTEXT_XML_OK);
+  xml_source_free(&parser);
+}
+
+TEST(XmlResolver, PullReaderUsesResolverAndRepeatsReadFailure) {
+  const char * doc = "<!DOCTYPE a SYSTEM 'urn:caller:resource'><a/>";
+  ResolverProbe probe;
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, doc, std::strlen(doc), nullptr),
+      GTEXT_XML_OK);
+  EXPECT_EQ(probe.opens, 1u);
+  EXPECT_GT(probe.reads, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  GTEXT_XML_Status last = GTEXT_XML_OK;
+  (void)drain(reader, &last);
+  EXPECT_EQ(last, GTEXT_XML_E_STATE);
+  gtext_xml_reader_free(reader);
+
+  ResolverProbe failing;
+  failing.fail_read = true;
+  opts.resolver_user_data = &failing;
+  reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_reader_feed(reader, doc, std::strlen(doc), &err),
+      GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(err.code, GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(failing.opens, 1u);
+  EXPECT_EQ(failing.reads, 1u);
+  EXPECT_EQ(failing.closes, 1u);
+  (void)drain(reader, &last);
+  EXPECT_EQ(last, GTEXT_XML_E_RESOLVER);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlResolver, CallbackReentryIsAStateFailureAndStillCloses) {
+  ResolverProbe probe;
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  probe.reenter = stream;
+  const char * doc = "<!DOCTYPE a SYSTEM 'urn:caller:resource'><a/>";
+  EXPECT_EQ(gtext_xml_stream_feed(stream, doc, std::strlen(doc), nullptr),
+      GTEXT_XML_E_STATE);
+  EXPECT_EQ(probe.closes, 1u);
+  probe.reenter = nullptr;
+  gtext_xml_stream_free(stream);
+
+  ResolverProbe open_probe;
+  opts.resolver_user_data = &open_probe;
+  stream = gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  open_probe.reenter = stream;
+  open_probe.reenter_on_open = true;
+  EXPECT_EQ(gtext_xml_stream_feed(stream, doc, std::strlen(doc), nullptr),
+      GTEXT_XML_E_STATE);
+  EXPECT_EQ(open_probe.closes, 1u);
+  open_probe.reenter = nullptr;
+  gtext_xml_stream_free(stream);
+}
+
 } // namespace

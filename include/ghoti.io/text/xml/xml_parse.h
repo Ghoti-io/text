@@ -65,10 +65,16 @@ extern "C" {
  * - **Source locations** on every element, text, comment, processing
  *   instruction and doctype node, and on every attribute.
  *
- * Nothing is read from a file or a network: a reference to any entity but the
- * five predefined ones is an error (GTEXT_XML_E_ENTITY), whether or not the
- * document type declares it, and an external identifier is recorded and never
- * opened.
+ * The library never opens a file, URL or network connection for an external
+ * identifier. In PROCESS mode only, a caller resolver may be invoked when
+ * `external_access` is ALLOW; the resolver receives opaque identifiers and
+ * the document base URI and supplies a synchronous chunked source. Resolver
+ * callbacks may perform I/O and must enforce the application's allowlist.
+ * Reads are charged before bytes are retained, and a successfully opened
+ * source is closed exactly once on every path. At this implementation stage,
+ * acquired external-subset bytes are not yet interpreted by the DTD grammar.
+ * A reference to an entity other than the five predefined ones remains an
+ * error (GTEXT_XML_E_ENTITY), whether or not the document type declares it.
  *
  * `dtd_mode` is shared by memory, file, push and pull readers. `OFF` preserves
  * the behavior above. `PROCESS` selects non-validating DTD processing, but

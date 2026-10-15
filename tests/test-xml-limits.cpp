@@ -416,7 +416,8 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   EXPECT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
   EXPECT_EQ(p.expanded_bytes, 5u);
   EXPECT_EQ(xml_source_charge_external(&p, 1), GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
-  EXPECT_EQ(p.external_bytes, 5u);
+  EXPECT_EQ(p.external_bytes, 6u);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 6u);
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   xml_source_free(&p);
 
@@ -434,9 +435,9 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
       GTEXT_XML_OK);
   ASSERT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
   EXPECT_EQ(xml_source_charge_external(&p, 1), GTEXT_XML_E_LIMIT_EXPANSION);
-  EXPECT_EQ(p.external_bytes, 5u);
-  EXPECT_EQ(p.expanded_bytes, 5u);
-  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 5u);
+  EXPECT_EQ(p.external_bytes, 6u);
+  EXPECT_EQ(p.expanded_bytes, 6u);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 6u);
   xml_source_free(&p);
 }
 
@@ -507,9 +508,9 @@ TEST(XmlLimits, EveryLedgerCounterRejectsOverflowWithoutChangingCounters) {
   p.expanded_bytes = 0;
   EXPECT_EQ(xml_source_charge_external(&p, 2),
       GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
-  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, SIZE_MAX - 1);
-  EXPECT_EQ(p.external_bytes, 1u);
-  EXPECT_EQ(p.expanded_bytes, 0u);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, SIZE_MAX);
+  EXPECT_EQ(p.external_bytes, 3u);
+  EXPECT_EQ(p.expanded_bytes, 2u);
 
   p.err = {};
   p.sources[p.source_count - 1].bytes_charged = 0;
@@ -517,9 +518,9 @@ TEST(XmlLimits, EveryLedgerCounterRejectsOverflowWithoutChangingCounters) {
   p.expanded_bytes = 0;
   EXPECT_EQ(xml_source_charge_external(&p, 2),
       GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL);
-  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 0u);
-  EXPECT_EQ(p.external_bytes, SIZE_MAX - 1);
-  EXPECT_EQ(p.expanded_bytes, 0u);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 2u);
+  EXPECT_EQ(p.external_bytes, SIZE_MAX);
+  EXPECT_EQ(p.expanded_bytes, 2u);
   xml_source_free(&p);
 }
 

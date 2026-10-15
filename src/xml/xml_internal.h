@@ -284,6 +284,12 @@ typedef struct {
   xml_seams seams;
   GTEXT_XML_DTD_Mode dtd_mode;
   GTEXT_XML_DTD_External_Policy dtd_external_policy;
+  GTEXT_XML_External_Access external_access;
+  GTEXT_XML_Resolver_cb resolver;
+  void * resolver_user_data;
+  const char * base_uri;
+  unsigned int resolver_callback_active;
+  unsigned int resolver_reentered;
 
   /** Non-NULL when the parse delivers events (xml_stream.c) instead of building
    *  a tree: every place the tree parser would make a node calls an xml_emit_*
@@ -426,6 +432,13 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
 GTEXT_XML_Status xml_source_charge_external(xml_ctx * p, size_t amount);
 GTEXT_XML_Status xml_source_pop(xml_ctx * p);
 void xml_source_free(xml_ctx * p);
+/** Acquire and account for one explicitly authorized external subset. The
+ *  current story establishes source ownership; DTD grammar is handled by the
+ *  external-subset parser story. */
+GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
+    const char * public_id, const char * system_id);
+int xml_stream_resolver_callback_active(const struct GTEXT_XML_Stream * stream);
+void xml_stream_note_resolver_reentry(struct GTEXT_XML_Stream * stream);
 
 /** Result of decoding one character. */
 typedef enum {

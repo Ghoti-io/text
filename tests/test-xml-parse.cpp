@@ -34,6 +34,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -1158,6 +1159,87 @@ TEST_F(XmlParse, FileModeValidationRunsBeforeOpeningTheFile) {
       GTEXT_XML_E_UNSUPPORTED_MODE);
   EXPECT_STREQ(err.message, "DTD validation is not implemented");
   EXPECT_EQ(doc, nullptr);
+}
+
+struct FileResolverProbe {
+  size_t opens = 0;
+  size_t reads = 0;
+  size_t closes = 0;
+  size_t offset = 0;
+  bool fail_read = false;
+  std::string base_uri;
+};
+
+GTEXT_XML_Source_Read_Result file_resolver_read(void * opaque,
+    unsigned char * buffer, size_t capacity, size_t * count) {
+  FileResolverProbe * probe = static_cast<FileResolverProbe *>(opaque);
+  probe->reads++;
+  *count = 0;
+  if (probe->fail_read) return GTEXT_XML_SOURCE_ERROR;
+  static const char bytes[] = "<!ELEMENT a EMPTY>";
+  if (probe->offset == sizeof(bytes) - 1) {
+    probe->offset = 0;
+    return GTEXT_XML_SOURCE_EOF;
+  }
+  *count = std::min(capacity, sizeof(bytes) - 1 - probe->offset);
+  std::memcpy(buffer, bytes + probe->offset, *count);
+  probe->offset += *count;
+  return GTEXT_XML_SOURCE_DATA;
+}
+
+void file_resolver_close(void * opaque) {
+  static_cast<FileResolverProbe *>(opaque)->closes++;
+}
+
+GTEXT_XML_Resolver_Result file_resolver_open(
+    const GTEXT_XML_Resolve_Request * request, void * opaque,
+    GTEXT_XML_External_Source * source) {
+  FileResolverProbe * probe = static_cast<FileResolverProbe *>(opaque);
+  probe->opens++;
+  if (request->base_uri) probe->base_uri = request->base_uri;
+  source->handle = probe;
+  source->identity = probe;
+  source->base_uri = "memory:/resolved.dtd";
+  source->read = file_resolver_read;
+  source->close = file_resolver_close;
+  return GTEXT_XML_RESOLVER_OPENED;
+}
+
+TEST_F(XmlParse, FileParserUsesCallerResolverAndPropagatesReadFailure) {
+  const std::string path = "build/test-xml-caller-resolver.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  docs.push_back(doc);
+  EXPECT_EQ(probe.opens, 1u);
+  EXPECT_GT(probe.reads, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+  EXPECT_EQ(probe.base_uri, path);
+
+  FileResolverProbe failing;
+  failing.fail_read = true;
+  opts.resolver_user_data = &failing;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(failing.opens, 1u);
+  EXPECT_EQ(failing.reads, 1u);
+  EXPECT_EQ(failing.closes, 1u);
+  std::remove(path.c_str());
 }
 
 TEST_F(XmlParse, ADeepDocumentNeedsNoCStack) {

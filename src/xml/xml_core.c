@@ -108,6 +108,10 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "too many DTD declarations";
     case GTEXT_XML_E_LIMIT_WORK:
       return "XML parser work limit exceeded";
+    case GTEXT_XML_E_RESOLVER:
+      return "external resource resolver failed";
+    case GTEXT_XML_E_CANCELLED:
+      return "external resource read cancelled";
   }
   return "unknown status";
 }
@@ -117,6 +121,8 @@ GTEXT_XML_Status xml_validate_dtd_options(
   const GTEXT_XML_DTD_Mode mode = options ? options->dtd_mode : GTEXT_XML_DTD_OFF;
   const GTEXT_XML_DTD_External_Policy policy = options
       ? options->dtd_external_policy : GTEXT_XML_DTD_EXTERNAL_DENY;
+  const GTEXT_XML_External_Access access = options
+      ? options->external_access : GTEXT_XML_EXTERNAL_ACCESS_DENY;
   GTEXT_XML_Status status = GTEXT_XML_OK;
   const char * message = NULL;
 
@@ -129,6 +135,16 @@ GTEXT_XML_Status xml_validate_dtd_options(
       && policy != GTEXT_XML_DTD_EXTERNAL_SKIP) {
     status = GTEXT_XML_E_INVALID;
     message = "invalid external entity policy";
+  }
+  else if (access != GTEXT_XML_EXTERNAL_ACCESS_DENY
+      && access != GTEXT_XML_EXTERNAL_ACCESS_ALLOW) {
+    status = GTEXT_XML_E_INVALID;
+    message = "invalid external access policy";
+  }
+  else if (access == GTEXT_XML_EXTERNAL_ACCESS_ALLOW
+      && mode != GTEXT_XML_DTD_PROCESS) {
+    status = GTEXT_XML_E_INVALID;
+    message = "external access requires DTD processing mode";
   }
   else if (policy == GTEXT_XML_DTD_EXTERNAL_SKIP
       && mode != GTEXT_XML_DTD_PROCESS) {

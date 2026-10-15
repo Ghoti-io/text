@@ -81,8 +81,11 @@ GTEXT_XML_Status gtext_xml_parse_file(const char * path,
     return GTEXT_XML_E_INVALID;
   }
 
-  const GTEXT_XML_Parse_Options effective =
+  GTEXT_XML_Parse_Options effective =
       opts ? *opts : gtext_xml_parse_options_default();
+  if (!effective.base_uri) {
+    effective.base_uri = path;
+  }
   const GTEXT_XML_Status option_status =
       xml_validate_dtd_options(&effective, err);
   if (option_status != GTEXT_XML_OK) {

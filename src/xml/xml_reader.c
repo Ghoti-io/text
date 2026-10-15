@@ -44,6 +44,8 @@
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/xml/xml_stream.h>
 
+#include "xml_internal.h"
+
 typedef struct {
   GTEXT_XML_Event event;
   void * block; /* what the event's pointers point into */
@@ -286,6 +288,10 @@ GTEXT_API GTEXT_XML_Status gtext_xml_reader_next(
   if (!r || !out_event) {
     return GTEXT_XML_E_INVALID;
   }
+  if (xml_stream_resolver_callback_active(r->stream)) {
+    xml_stream_note_resolver_reentry(r->stream);
+    return GTEXT_XML_E_STATE;
+  }
   if (r->has_last) {
     item_release(&r->allocator, &r->last);
     r->has_last = false;
@@ -306,6 +312,10 @@ GTEXT_API GTEXT_XML_Status gtext_xml_reader_next(
 
 GTEXT_API void gtext_xml_reader_free(GTEXT_XML_Reader * r) {
   if (!r) {
+    return;
+  }
+  if (xml_stream_resolver_callback_active(r->stream)) {
+    xml_stream_note_resolver_reentry(r->stream);
     return;
   }
   GTEXT_Allocator allocator = r->allocator;

@@ -169,6 +169,14 @@ struct GTEXT_XML_Stream {
   size_t attributes_capacity;
 };
 
+int xml_stream_resolver_callback_active(const GTEXT_XML_Stream * stream) {
+  return stream && stream->p.resolver_callback_active != 0;
+}
+
+void xml_stream_note_resolver_reentry(GTEXT_XML_Stream * stream) {
+  if (stream) stream->p.resolver_reentered = 1;
+}
+
 static const unsigned char kEmpty[1] = {0};
 
 /* How much of a document is held waiting for the end of an XML declaration, which
@@ -1254,6 +1262,10 @@ GTEXT_INTERNAL_API GTEXT_XML_Stream * xml_stream_new_with_seams(
       ? SIZE_MAX : p->max_entity_depth + 2;
   p->dtd_mode = use.dtd_mode;
   p->dtd_external_policy = use.dtd_external_policy;
+  p->external_access = use.external_access;
+  p->resolver = use.resolver;
+  p->resolver_user_data = use.resolver_user_data;
+  p->base_uri = use.base_uri;
   if (seams) {
     p->seams = *seams;
   }
@@ -1279,6 +1291,10 @@ GTEXT_API void gtext_xml_stream_free(GTEXT_XML_Stream * s) {
     return;
   }
   xml_ctx * p = &s->p;
+  if (p->resolver_callback_active) {
+    p->resolver_reentered = 1;
+    return;
+  }
   markup_buf_free(&s->input);
   markup_buf_free(&s->arena);
   markup_buf_free(&p->text);
@@ -1337,6 +1353,11 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_feed(GTEXT_XML_Stream * s,
   if (!s) {
     return misuse(NULL, GTEXT_XML_E_INVALID, "invalid argument", err);
   }
+  if (s->p.resolver_callback_active) {
+    s->p.resolver_reentered = 1;
+    return misuse(s, GTEXT_XML_E_STATE,
+        "resolver callback reentered the active XML parser", err);
+  }
   if (s->failed) {
     return conclude(s, GTEXT_XML_OK, err);
   }
@@ -1372,6 +1393,11 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_finish(
     GTEXT_XML_Stream * s, GTEXT_XML_Error * err) {
   if (!s) {
     return misuse(NULL, GTEXT_XML_E_INVALID, "invalid argument", err);
+  }
+  if (s->p.resolver_callback_active) {
+    s->p.resolver_reentered = 1;
+    return misuse(s, GTEXT_XML_E_STATE,
+        "resolver callback reentered the active XML parser", err);
   }
   if (s->failed || s->finished) {
     return conclude(s, GTEXT_XML_OK, err);

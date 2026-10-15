@@ -152,7 +152,9 @@ typedef enum {
   GTEXT_XML_E_LIMIT_ENTITY_DEPTH, ///< Active entity nesting exceeded its budget.
   GTEXT_XML_E_LIMIT_REFERENCES, ///< XML references exceeded their budget.
   GTEXT_XML_E_LIMIT_DECLARATIONS, ///< DTD declarations exceeded their budget.
-  GTEXT_XML_E_LIMIT_WORK ///< Parser work exceeded its deterministic budget.
+  GTEXT_XML_E_LIMIT_WORK, ///< Parser work exceeded its deterministic budget.
+  GTEXT_XML_E_RESOLVER, ///< The caller's resolver or source read failed.
+  GTEXT_XML_E_CANCELLED ///< The caller cancelled an external source read.
 } GTEXT_XML_Status;
 
 /** DTD behavior selected for a parse. Zero preserves the historical default. */
@@ -174,6 +176,67 @@ typedef enum {
   GTEXT_XML_DTD_EXTERNAL_DENY = 0,
   GTEXT_XML_DTD_EXTERNAL_SKIP = 1
 } GTEXT_XML_DTD_External_Policy;
+
+/** External resource kind requested from a caller resolver. */
+typedef enum {
+  GTEXT_XML_RESOURCE_EXTERNAL_SUBSET = 0,
+  GTEXT_XML_RESOURCE_GENERAL_ENTITY,
+  GTEXT_XML_RESOURCE_PARAMETER_ENTITY
+} GTEXT_XML_Resource_Kind;
+
+/** Explicit per-parse permission to ask the caller resolver for external data. */
+typedef enum {
+  GTEXT_XML_EXTERNAL_ACCESS_DENY = 0,
+  GTEXT_XML_EXTERNAL_ACCESS_ALLOW = 1
+} GTEXT_XML_External_Access;
+
+/** Resolver request metadata. Identifier strings are opaque and borrowed for
+ *  the duration of the resolver callback. The trail is bounded by the parser
+ *  and is empty for a top-level external subset. */
+typedef struct {
+  GTEXT_XML_Resource_Kind kind;
+  const char * public_id;
+  const char * system_id;
+  const char * base_uri;
+  const char * const * reference_trail;
+  size_t reference_trail_count;
+} GTEXT_XML_Resolve_Request;
+
+/** Outcome of reading a caller-owned synchronous source. */
+typedef enum {
+  GTEXT_XML_SOURCE_DATA = 0,
+  GTEXT_XML_SOURCE_EOF,
+  GTEXT_XML_SOURCE_ERROR,
+  GTEXT_XML_SOURCE_CANCELLED
+} GTEXT_XML_Source_Read_Result;
+
+/** Source callbacks are synchronous. The parser copies each returned chunk
+ *  before the next read and calls close exactly once after a successful open.
+ *  `identity` and the resolved `base_uri` must be non-NULL; identity stays
+ *  stable for the source lifetime. */
+typedef struct {
+  void * handle;
+  const void * identity;
+  const char * base_uri;
+  GTEXT_XML_Source_Read_Result (*read)(void * handle, unsigned char * buffer,
+      size_t capacity, size_t * bytes_read);
+  void (*close)(void * handle);
+} GTEXT_XML_External_Source;
+
+/** Outcome of asking the resolver to open a resource. */
+typedef enum {
+  GTEXT_XML_RESOLVER_OPENED = 0,
+  GTEXT_XML_RESOLVER_DECLINED,
+  GTEXT_XML_RESOLVER_FAILED
+} GTEXT_XML_Resolver_Result;
+
+/** Caller callback. Return OPENED only after filling every source field,
+ *  including a non-NULL close callback; OPENED transfers the exactly-once
+ *  close obligation to the parser. Return DECLINED when unavailable, or FAILED
+ *  for an operation failure. */
+typedef GTEXT_XML_Resolver_Result (*GTEXT_XML_Resolver_cb)(
+    const GTEXT_XML_Resolve_Request * request, void * user_data,
+    GTEXT_XML_External_Source * out_source);
 
 /**
  * @brief A static, human-readable name for a status.
@@ -272,6 +335,18 @@ typedef struct {
 
   /** External entity policy; zero selects GTEXT_XML_DTD_EXTERNAL_DENY. */
   GTEXT_XML_DTD_External_Policy dtd_external_policy;
+
+  /** External resources are never requested unless this is ALLOW. */
+  GTEXT_XML_External_Access external_access;
+  /** Optional resolver; used only with PROCESS mode and external_access ALLOW.
+   *  A resolver may perform I/O, so applications must enforce their own
+   *  allowlists and transport limits. */
+  GTEXT_XML_Resolver_cb resolver;
+  void * resolver_user_data;
+  /** Base URI of the document source, or NULL when unknown. The string must
+   *  remain valid until a streaming parser is freed; whole-input parsing uses
+   *  it only for the duration of the call. */
+  const char * base_uri;
 } GTEXT_XML_Parse_Options;
 
 /**

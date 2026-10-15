@@ -810,6 +810,15 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   status = xml_consume(p, 1);
   if (status != GTEXT_XML_OK) goto done;
 
+  /* External bytes are obtained only from a caller resolver after explicit
+     per-parse authorization. Story 2.7 feeds the acquired source into the DTD
+     grammar; this slice establishes the bounded read and ownership contract. */
+  if (has_system) {
+    status = xml_resolve_external_subset(p,
+        has_public ? pub.data : NULL, sys.data);
+    if (status != GTEXT_XML_OK) goto done;
+  }
+
   if (p->stream) {
     status = xml_emit_doctype(p, &start, name.data,
         has_public ? pub.data : NULL, has_system ? sys.data : NULL);

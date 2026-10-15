@@ -1363,6 +1363,10 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
       ? SIZE_MAX : p.max_entity_depth + 2;
   p.dtd_mode = use.dtd_mode;
   p.dtd_external_policy = use.dtd_external_policy;
+  p.external_access = use.external_access;
+  p.resolver = use.resolver;
+  p.resolver_user_data = use.resolver_user_data;
+  p.base_uri = use.base_uri;
   if (seams) {
     p.seams = *seams;
   }
