@@ -319,6 +319,16 @@ TEST(XmlLimits, ReferenceAndDeclarationBudgetsAreChargedAtUse) {
   EXPECT_EQ(parse_with("<a>&amp;</a>", o), GTEXT_XML_OK);
   EXPECT_EQ(parse_with("<a>&amp;&lt;</a>", o), GTEXT_XML_E_LIMIT_REFERENCES);
 
+  o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  EXPECT_EQ(parse_with("<!DOCTYPE a [<!ENTITY e '&amp;'>]><a/>", o),
+      GTEXT_XML_OK);
+  EXPECT_EQ(parse_with("<!DOCTYPE a [<!ENTITY e '&amp;&#65;'>]><a/>", o),
+      GTEXT_XML_E_LIMIT_REFERENCES);
+  EXPECT_EQ(parse_with("<!DOCTYPE a [<!ATTLIST a x CDATA '&amp;'>]><a/>", o),
+      GTEXT_XML_OK);
+  EXPECT_EQ(parse_with("<!DOCTYPE a [<!ATTLIST a x CDATA '&amp;&#65;'>]><a/>", o),
+      GTEXT_XML_E_LIMIT_REFERENCES);
+
   const std::string one = "<!DOCTYPE a [<!ELEMENT a EMPTY>]><a/>";
   o.max_declarations = 1;
   EXPECT_EQ(parse_with(one, o), GTEXT_XML_OK);

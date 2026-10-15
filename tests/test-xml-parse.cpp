@@ -209,13 +209,15 @@ TEST_F(XmlParse, DtdProcessingRejectsMalformedInternalDeclarations) {
   options.dtd_mode = GTEXT_XML_DTD_PROCESS;
   for (const std::string & declaration : {
            std::string("<!ELEMENT a (b|)>") ,
-           std::string("<!ELEMENT a (b)>") ,
            std::string("<!ELEMENT a (b?*)>") ,
+           std::string("<!ELEMENT a (b ?)>") ,
+           std::string("<!ELEMENT a (b,c) *>") ,
            std::string("<!ELEMENT a (x|(y,z),q)>") ,
            std::string("<!ATTLIST a id ID>"),
            std::string("<!ATTLIST a id CDATA '<'>"),
            std::string("<!ATTLIST a id CDATA '&broken'>"),
            std::string("<!ENTITY e SYSTEM>"),
+           std::string("<!ENTITY e SYSTEM 'x'NDATA n>"),
            std::string("<!ENTITY e '&broken'>"),
            std::string("<!NOTATION n bogus 'x'>")}) {
     Result result = parse("<!DOCTYPE a [" + declaration + "]><a/>", &options);
@@ -242,6 +244,8 @@ TEST_F(XmlParse, DtdProcessingRejectsMalformedInternalDeclarations) {
   }
   Result nested = parse("<!DOCTYPE a [<!ELEMENT a (x|(y,z))>]><a/>", &options);
   EXPECT_EQ(nested.status, GTEXT_XML_OK) << nested.err.message;
+  Result one_item_sequence = parse("<!DOCTYPE a [<!ELEMENT a (x)>]><a/>", &options);
+  EXPECT_EQ(one_item_sequence.status, GTEXT_XML_OK) << one_item_sequence.err.message;
 }
 
 TEST_F(XmlParse, DtdProcessingAcceptsEmptyAttlistAndPcdataStar) {
@@ -260,6 +264,26 @@ TEST_F(XmlParse, DtdProcessingRejectsNdataOnParameterEntity) {
   EXPECT_NE(result.status, GTEXT_XML_OK);
   EXPECT_NE(result.err.message, nullptr);
   EXPECT_GT(result.err.byte_offset, 0u);
+}
+
+TEST_F(XmlParse, DtdProcessingAcceptsSeparatedNdataOnGeneralEntity) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result result = parse("<!DOCTYPE a [<!ENTITY e SYSTEM 'x' NDATA n>]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+}
+
+TEST_F(XmlParse, DifferentDtdSyntaxMakesOtherwiseEqualDoctypesUnequal) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result empty = parse("<!DOCTYPE a [<!ELEMENT a EMPTY>]><a/>", &options);
+  Result any = parse("<!DOCTYPE a [<!ELEMENT a ANY>]><a/>", &options);
+  ASSERT_EQ(empty.status, GTEXT_XML_OK);
+  ASSERT_EQ(any.status, GTEXT_XML_OK);
+  ASSERT_NE(gtext_markup_document_doctype(empty.doc), nullptr);
+  ASSERT_NE(gtext_markup_document_doctype(any.doc), nullptr);
+  EXPECT_FALSE(gtext_markup_equal(gtext_markup_document_doctype(empty.doc),
+      gtext_markup_document_doctype(any.doc)));
 }
 
 TEST_F(XmlParse, DtdProcessingFailureDoesNotLeakDoctypeOrSyntaxRecords) {

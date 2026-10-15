@@ -183,6 +183,11 @@ static GTEXT_XML_Status dtd_quoted(xml_ctx * p, int is_public) {
   return s;
 }
 
+static GTEXT_XML_Status dtd_charge_reference(xml_ctx * p) {
+  return xml_charge(p, &p->references, p->max_references, 1,
+      GTEXT_XML_E_LIMIT_REFERENCES, "XML reference limit exceeded");
+}
+
 static int dtd_xml_char(const xml_ctx * p, uint32_t c);
 
 /* EntityValue has reference syntax of its own. Validate references here but
@@ -197,6 +202,8 @@ static GTEXT_XML_Status dtd_entity_value(xml_ctx * p) {
     if (work != GTEXT_XML_OK) return work;
     if (p->in[p->pos] == '&' || p->in[p->pos] == '%') {
       unsigned char sigil = p->in[p->pos];
+      GTEXT_XML_Status reference = dtd_charge_reference(p);
+      if (reference != GTEXT_XML_OK) return reference;
       XML_CONSUME_OR_RETURN(p, 1);
       if (sigil == '&' && p->pos < p->length && p->in[p->pos] == '#') {
         XML_CONSUME_OR_RETURN(p, 1);
@@ -256,6 +263,8 @@ static GTEXT_XML_Status dtd_attribute_value(xml_ctx * p) {
     unsigned char c = p->in[p->pos];
     if (c == '<') return dtd_bad(p, "'<' is not allowed in an attribute default value");
     if (c == '&') {
+      GTEXT_XML_Status reference = dtd_charge_reference(p);
+      if (reference != GTEXT_XML_OK) return reference;
       XML_CONSUME_OR_RETURN(p, 1);
       if (p->pos < p->length && p->in[p->pos] == '#') {
         XML_CONSUME_OR_RETURN(p, 1);
@@ -353,9 +362,14 @@ static GTEXT_XML_Status dtd_content_model_impl(xml_ctx * p,
   int separator = 0;
   int has_indicator = 0;
   for (;;) {
+    size_t before_space = p->pos;
     DTD_SKIP_SPACE_OR_RETURN(p);
+    size_t skipped_space = p->pos - before_space;
     if (p->pos >= p->length) return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unterminated content model");
     unsigned char c = p->in[p->pos];
+    if (!need_particle && !has_indicator && skipped_space != 0
+        && (c == '?' || c == '*' || c == '+'))
+      return dtd_bad(p, "an occurrence indicator must immediately follow its particle");
     if (need_particle) {
       if (c == '(') {
         XML_CONSUME_OR_RETURN(p, 1);
@@ -392,8 +406,6 @@ static GTEXT_XML_Status dtd_content_model_impl(xml_ctx * p,
     }
     if (c == ')') {
       if (need_particle) return dtd_bad(p, "a content particle was expected before ')'");
-      if (separators[depth - 1] == 0)
-        return dtd_bad(p, "a children content group must contain ',' or '|'");
       XML_CONSUME_OR_RETURN(p, 1);
       if (--depth == 0) break;
       separator = separators[depth - 1];
@@ -530,9 +542,12 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
     }
     else {
       s = dtd_external_id(p, 0);
-      DTD_SKIP_SPACE_OR_RETURN(p);
+      size_t separator_space = xml_skip_space(p);
+      if (p->err.code != GTEXT_XML_OK) return p->err.code;
       if (s == GTEXT_XML_OK && xml_looking_at(p, "NDATA", 5)) {
         if (parameter_entity) return dtd_bad(p, "a parameter entity cannot have NDATA");
+        if (separator_space == 0)
+          return dtd_bad(p, "white space is required before NDATA");
         s = xml_consume(p, 5);
         if (s == GTEXT_XML_OK) s = dtd_need_space(p);
         if (s == GTEXT_XML_OK) s = dtd_name(p);
@@ -645,8 +660,7 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
     if (b == '%') {
       const size_t start = p->pos;
       const GTEXT_Markup_Location at = xml_here(p);
-      status = xml_charge(p, &p->references, p->max_references, 1,
-          GTEXT_XML_E_LIMIT_REFERENCES, "XML reference limit exceeded");
+      status = dtd_charge_reference(p);
       if (status != GTEXT_XML_OK) {
         return status;
       }
