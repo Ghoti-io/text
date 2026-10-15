@@ -150,6 +150,10 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
         markup_free(doc, d->syntax[i].source);
       }
       markup_free(doc, d->syntax);
+      for (size_t i = 0; i < d->external_syntax_count; i++) {
+        markup_free(doc, d->external_syntax[i].source);
+      }
+      markup_free(doc, d->external_syntax);
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -611,6 +615,36 @@ GTEXT_Markup_Status markup_doctype_append_syntax(GTEXT_Markup_Node * node,
   return GTEXT_MARKUP_OK;
 }
 
+GTEXT_Markup_Status markup_doctype_append_external_syntax(
+    GTEXT_Markup_Node * node, int kind, const char * source, size_t length,
+    const GTEXT_Markup_Location * location) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !source || !location) {
+    return GTEXT_MARKUP_E_INVALID;
+  }
+  markup_doctype * d = (markup_doctype *)node;
+  if (d->external_syntax_count == d->external_syntax_capacity) {
+    size_t capacity = d->external_syntax_capacity
+        ? d->external_syntax_capacity * 2 : 8;
+    if (capacity < d->external_syntax_capacity
+        || capacity > SIZE_MAX / sizeof(*d->external_syntax)) {
+      return GTEXT_MARKUP_E_LIMIT;
+    }
+    markup_dtd_syntax * grown = markup_realloc(node->doc, d->external_syntax,
+        capacity * sizeof(*d->external_syntax));
+    if (!grown) return GTEXT_MARKUP_E_OOM;
+    d->external_syntax = grown;
+    d->external_syntax_capacity = capacity;
+  }
+  char * copy = markup_copy(node->doc, source, length);
+  if (!copy) return GTEXT_MARKUP_E_OOM;
+  markup_dtd_syntax * item = &d->external_syntax[d->external_syntax_count++];
+  item->kind = kind;
+  item->source = copy;
+  item->length = length;
+  item->location = *location;
+  return GTEXT_MARKUP_OK;
+}
+
 GTEXT_Markup_Status gtext_markup_create_fragment(
     GTEXT_Markup_Document * doc, GTEXT_Markup_Node ** out) {
   if (!doc || !out) {
@@ -866,6 +900,25 @@ bool gtext_markup_doctype_syntax(const GTEXT_Markup_Node * node, size_t index,
   const markup_doctype * d = (const markup_doctype *)node;
   if (index >= d->syntax_count) return false;
   const markup_dtd_syntax * item = &d->syntax[index];
+  out->kind = (GTEXT_Markup_DTD_Syntax_Kind)item->kind;
+  out->source = item->source;
+  out->source_length = item->length;
+  out->location = item->location;
+  return true;
+}
+
+size_t gtext_markup_doctype_external_syntax_count(
+    const GTEXT_Markup_Node * node) {
+  return (node && node->kind == GTEXT_MARKUP_KIND_DOCTYPE)
+      ? ((const markup_doctype *)node)->external_syntax_count : 0;
+}
+
+bool gtext_markup_doctype_external_syntax(const GTEXT_Markup_Node * node,
+    size_t index, GTEXT_Markup_DTD_Syntax * out) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !out) return false;
+  const markup_doctype * d = (const markup_doctype *)node;
+  if (index >= d->external_syntax_count) return false;
+  const markup_dtd_syntax * item = &d->external_syntax[index];
   out->kind = (GTEXT_Markup_DTD_Syntax_Kind)item->kind;
   out->source = item->source;
   out->source_length = item->length;

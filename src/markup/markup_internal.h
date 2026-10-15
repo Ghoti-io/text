@@ -171,6 +171,9 @@ typedef struct {
   markup_dtd_syntax * syntax;
   size_t syntax_count;
   size_t syntax_capacity;
+  markup_dtd_syntax * external_syntax;
+  size_t external_syntax_count;
+  size_t external_syntax_capacity;
 } markup_doctype;
 
 struct GTEXT_Markup_Document {
@@ -203,6 +206,9 @@ void markup_free(struct GTEXT_Markup_Document * doc, void * ptr);
 char * markup_copy(
     struct GTEXT_Markup_Document * doc, const char * bytes, size_t len);
 GTEXT_Markup_Status markup_doctype_append_syntax(
+    struct GTEXT_Markup_Node * node, int kind, const char * source,
+    size_t length, const GTEXT_Markup_Location * location);
+GTEXT_Markup_Status markup_doctype_append_external_syntax(
     struct GTEXT_Markup_Node * node, int kind, const char * source,
     size_t length, const GTEXT_Markup_Location * location);
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,

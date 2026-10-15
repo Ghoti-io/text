@@ -59,6 +59,7 @@ GTEXT_XML_Status xml_source_init(xml_ctx * p, const void * identity) {
   memset(f, 0, sizeof(*f));
   f->kind = XML_SOURCE_DOCUMENT;
   f->identity = identity;
+  f->base_uri = p->base_uri;
   f->source_id = 1;
   p->next_source_id = 1;
   if (p->doc && markup_source_add(p->doc, 1, 0,
@@ -184,6 +185,7 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
   child->kind = kind;
   child->bytes_charged = external ? length : 0;
   child->identity = identity;
+  child->base_uri = parent->base_uri;
   child->owned_name = owned_name;
   child->source_id = ++p->next_source_id;
   child->reference_source_id = parent->source_id;
@@ -303,7 +305,8 @@ void xml_source_free(xml_ctx * p) {
 }
 
 GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
-    const char * public_id, const char * system_id) {
+    GTEXT_Markup_Node * doctype, const char * public_id,
+    const char * system_id) {
   if (p->dtd_mode != GTEXT_XML_DTD_PROCESS
       || p->external_access != GTEXT_XML_EXTERNAL_ACCESS_ALLOW
       || !p->resolver || !system_id) {
@@ -319,7 +322,8 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
     .kind = GTEXT_XML_RESOURCE_EXTERNAL_SUBSET,
     .public_id = public_id,
     .system_id = system_id,
-    .base_uri = p->base_uri,
+    .base_uri = p->source_count != 0
+        ? p->sources[p->source_count - 1].base_uri : p->base_uri,
     .reference_trail = NULL,
     .reference_trail_count = 0
   };
@@ -368,6 +372,7 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
   if (status != GTEXT_XML_OK) {
     goto close_source;
   }
+  p->sources[p->source_count - 1].base_uri = source.base_uri;
 
   for (;;) {
     unsigned char chunk[4096];
@@ -424,6 +429,11 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
       status = xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
       break;
     }
+  }
+  if (status == GTEXT_XML_OK) {
+    status = xml_parse_external_subset(p, doctype,
+        bytes.data ? (const unsigned char *)bytes.data : empty,
+        bytes.length, source.base_uri);
   }
   if (p->source_count > 1
       && p->sources[p->source_count - 1].identity == source.identity) {

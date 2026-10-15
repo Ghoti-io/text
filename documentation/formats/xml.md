@@ -151,12 +151,31 @@ Each has a default from the first release; `0` in the options selects it, and
 | DTD declarations | 100,000 | `_LIMIT_DECLARATIONS` |
 | charged parser work units | 256 MiB | `_LIMIT_WORK` |
 
-The DTD counters are ready for the source and declaration processing added by
-the following implementation slices; the current parser still does not
-resolve external resources or expand DTD declarations. External limits count
-bytes supplied by a caller, never bytes opened by the library. Every option
-can be overridden independently with a nonzero finite ceiling; zero selects
-the default, including in a zero-initialized options struct.
+The DTD counters bound source and declaration processing. External subsets
+are read only through the caller's resolver; the library does not open
+resources itself. It validates external-subset declarations and retains their
+syntax snapshot, but does not expand entity declarations or build effective
+DTD bindings. The snapshot preserves declarations, comments, and processing
+instructions in source order from included sections. It excludes the text
+declaration, conditional-section delimiters, and ignored-section contents.
+Snapshots are retained only for DOM parses; event-only parsing has no doctype
+node to own one. Snapshot source text is decoded UTF-8 and preserves the source's
+line-end code points and markup spelling; transcoded input therefore differs
+from the resolver bytes. Its locations use the decoded source coordinate: a
+UTF-8 BOM counts in the byte offset, while a BOM consumed during transcoding
+does not. External declaration errors identify the external source and byte
+offset, with a reference trail to the document's doctype. External limits count
+bytes supplied by a caller, never bytes opened by the library. If the resolver
+declines an external subset, parsing continues without that subset and its
+snapshot is empty. Every option can be overridden independently with a nonzero
+finite ceiling; zero selects the default, including in a zero-initialized
+options struct.
+
+In DTD processing mode, the caller may provide an external-subset resolver.
+External parameter-entity references are currently unsupported: encountering
+one in an external subset fails the parse with a DTD error. They are not
+silently ignored or fetched. Parameter-entity expansion belongs to a later DTD
+processing phase.
 
 These defaults retain the 64 MiB document ceiling and bound additional work
 separately. The checked-in pinned XML conformance corpus occupies 17 MiB and

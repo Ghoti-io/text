@@ -207,6 +207,7 @@ typedef struct {
   unsigned int grammar_context;
   xml_source_kind kind;
   const void * identity;
+  const char * base_uri; ///< Physical base for relative external identifiers.
   char * owned_name;
   uint32_t source_id;
   uint32_t reference_source_id;
@@ -447,7 +448,11 @@ void xml_source_free(xml_ctx * p);
  *  current story establishes source ownership; DTD grammar is handled by the
  *  external-subset parser story. */
 GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
-    const char * public_id, const char * system_id);
+    GTEXT_Markup_Node * doctype, const char * public_id, const char * system_id);
+/** Parse a decoded external subset, whose source frame is currently active. */
+GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
+    GTEXT_Markup_Node * doctype, const unsigned char * bytes, size_t length,
+    const char * base_uri);
 int xml_stream_resolver_callback_active(const struct GTEXT_XML_Stream * stream);
 void xml_stream_note_resolver_reentry(struct GTEXT_XML_Stream * stream);
 

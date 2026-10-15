@@ -46,6 +46,14 @@ static void count_atom(markup_atom * a) {
   }
 }
 
+static bool source_id_known(const GTEXT_Markup_Document * doc, uint32_t id) {
+  if (id == 0) return true;
+  for (size_t i = 0; i < doc->source_count; i++) {
+    if (doc->sources[i].view.id == id) return true;
+  }
+  return false;
+}
+
 static bool kind_valid(uint8_t kind) {
   return kind >= GTEXT_MARKUP_KIND_DOCUMENT
       && kind <= GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION;
@@ -202,8 +210,24 @@ static const char * check_node(const GTEXT_Markup_Document * doc, node_t * n) {
         const markup_dtd_syntax * item = &d->syntax[i];
         if (!item->source || item->source[item->length] != '\0'
             || item->kind < GTEXT_MARKUP_DTD_ELEMENT
-            || item->kind > GTEXT_MARKUP_DTD_PARAMETER_REFERENCE) {
+            || item->kind > GTEXT_MARKUP_DTD_PARAMETER_REFERENCE
+            || !source_id_known(doc, item->location.source_id)
+            || !source_id_known(doc, item->location.reference_source_id)) {
           return "a doctype has an invalid syntax record";
+        }
+      }
+      if (d->external_syntax_count > d->external_syntax_capacity
+          || (d->external_syntax_count && !d->external_syntax)) {
+        return "a doctype's external syntax array is inconsistent";
+      }
+      for (size_t i = 0; i < d->external_syntax_count; i++) {
+        const markup_dtd_syntax * item = &d->external_syntax[i];
+        if (!item->source || item->source[item->length] != '\0'
+            || item->kind < GTEXT_MARKUP_DTD_ELEMENT
+            || item->kind > GTEXT_MARKUP_DTD_PARAMETER_REFERENCE
+            || !source_id_known(doc, item->location.source_id)
+            || !source_id_known(doc, item->location.reference_source_id)) {
+          return "a doctype has an invalid external syntax record";
         }
       }
       break;

@@ -1238,6 +1238,61 @@ TEST_F(MarkupTree, ADeepCloneIsEqualToTheOriginalAndSharesNothingWithIt) {
   EXPECT_EQ(std::string(a.value, a.value_length), "root");
 }
 
+TEST_F(MarkupTree, ADoctypeExternalSnapshotIsReadOnlyOwnedAndCloned) {
+  Node * original = doctype("root");
+  GTEXT_Markup_Location where = {12, 2, 4, 0, 0, 12, true};
+  ASSERT_EQ(markup_doctype_append_syntax(original, GTEXT_MARKUP_DTD_ENTITY,
+      "<!ENTITY internal 'i'>", 22, &where), GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_doctype_append_external_syntax(original,
+      GTEXT_MARKUP_DTD_ENTITY, "<!ENTITY external 'e'>", 22, &where),
+      GTEXT_MARKUP_OK);
+
+  EXPECT_EQ(gtext_markup_doctype_syntax_count(original), 1u);
+  EXPECT_EQ(gtext_markup_doctype_external_syntax_count(original), 1u);
+  GTEXT_Markup_DTD_Syntax got = {};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(original, 0, &got));
+  EXPECT_EQ(got.kind, GTEXT_MARKUP_DTD_ENTITY);
+  EXPECT_EQ(std::string(got.source, got.source_length), "<!ENTITY external 'e'>");
+  EXPECT_EQ(got.location.offset, 12u);
+
+  GTEXT_Markup_DTD_Syntax unchanged = {};
+  unchanged.source = "sentinel";
+  EXPECT_FALSE(gtext_markup_doctype_external_syntax(original, 1, &unchanged));
+  EXPECT_STREQ(unchanged.source, "sentinel");
+  EXPECT_FALSE(gtext_markup_doctype_external_syntax(original, 0, nullptr));
+
+  Node * copy = nullptr;
+  ASSERT_EQ(gtext_markup_clone(doc, original, true, &copy), GTEXT_MARKUP_OK);
+  EXPECT_TRUE(gtext_markup_equal(original, copy));
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(copy, 0, &got));
+  EXPECT_EQ(std::string(got.source, got.source_length), "<!ENTITY external 'e'>");
+  EXPECT_EQ(got.location.source_id, where.source_id);
+  EXPECT_EQ(got.location.reference_source_id, where.reference_source_id);
+  EXPECT_EQ(got.location.offset, where.offset);
+
+  Node * different = doctype("root");
+  ASSERT_EQ(markup_doctype_append_external_syntax(different,
+      GTEXT_MARKUP_DTD_ENTITY, "<!ENTITY external 'other'>",
+      sizeof("<!ENTITY external 'other'>") - 1, &where),
+      GTEXT_MARKUP_OK);
+  EXPECT_FALSE(gtext_markup_equal(original, different));
+  EXPECT_STREQ(got.source, "<!ENTITY external 'e'>");
+}
+
+TEST_F(MarkupTree, DtdSyntaxLocationsMustReferenceDocumentSources) {
+  GTEXT_Markup_Document * invalid_doc =
+      new_doc(gtext_markup_options_default());
+  Node * node = nullptr;
+  ASSERT_EQ(gtext_markup_create_doctype(invalid_doc, "root", nullptr, nullptr,
+      &node), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Location where = {0, 0, 0, 7, 0, 0, false};
+  ASSERT_EQ(markup_doctype_append_external_syntax(node,
+      GTEXT_MARKUP_DTD_ELEMENT, "<!ELEMENT root EMPTY>",
+      sizeof("<!ELEMENT root EMPTY>") - 1, &where), GTEXT_MARKUP_OK);
+  EXPECT_NE(markup_check_invariants(invalid_doc), nullptr);
+  gtext_markup_document_free(invalid_doc);
+}
+
 TEST_F(MarkupTree, ACloneKeepsLocationsAndTheTemplateContent) {
   Node * original = build_sample(doc);
   Node * copy = nullptr;

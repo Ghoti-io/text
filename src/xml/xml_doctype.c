@@ -202,6 +202,11 @@ static GTEXT_XML_Status dtd_entity_value(xml_ctx * p) {
     if (work != GTEXT_XML_OK) return work;
     if (p->in[p->pos] == '&' || p->in[p->pos] == '%') {
       unsigned char sigil = p->in[p->pos];
+      if (sigil == '%' && p->source_count != 0
+          && p->sources[p->source_count - 1].kind == XML_SOURCE_EXTERNAL_SUBSET) {
+        return dtd_bad(p,
+            "parameter entity references in external subsets are not supported in this DTD phase");
+      }
       GTEXT_XML_Status reference = dtd_charge_reference(p);
       if (reference != GTEXT_XML_OK) return reference;
       XML_CONSUME_OR_RETURN(p, 1);
@@ -625,6 +630,262 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
 
 #undef DTD_SKIP_SPACE_OR_RETURN
 
+/* External subsets use the same declaration validators as the internal
+   subset. Conditional sections share one heap-backed depth stack, so both
+   INCLUDE and IGNORE nesting is bounded without consuming the C stack. */
+static GTEXT_XML_Status external_conditional_header(xml_ctx * p,
+    int * include) {
+  XML_CONSUME_OR_RETURN(p, 3); /* <![ */
+  xml_skip_space(p);
+  if (p->err.code != GTEXT_XML_OK) return p->err.code;
+  if (xml_looking_at(p, "INCLUDE", 7)) *include = 1;
+  else if (xml_looking_at(p, "IGNORE", 6)) *include = 0;
+  else return dtd_bad(p, "INCLUDE or IGNORE was expected in a conditional section");
+  XML_CONSUME_OR_RETURN(p, *include ? 7 : 6);
+  xml_skip_space(p);
+  if (p->err.code != GTEXT_XML_OK) return p->err.code;
+  if (p->pos >= p->length || p->in[p->pos] != '[')
+    return dtd_bad(p, "'[' was expected in a conditional section");
+  XML_CONSUME_OR_RETURN(p, 1);
+  return GTEXT_XML_OK;
+}
+
+static GTEXT_XML_Status external_subset_body(xml_ctx * p,
+    GTEXT_Markup_Node * doctype) {
+  static const char * const keywords[] = {
+      "<!ELEMENT", "<!ATTLIST", "<!ENTITY", "<!NOTATION"};
+  unsigned char * modes = NULL; /* one means INCLUDE; zero means IGNORE */
+  size_t depth = 0, capacity = 0;
+  GTEXT_XML_Status result = GTEXT_XML_OK;
+  for (;;) {
+    const int ignoring = depth != 0 && !modes[depth - 1];
+    if (!ignoring) {
+      xml_skip_space(p);
+      if (p->err.code != GTEXT_XML_OK) { result = p->err.code; break; }
+    }
+    if (p->pos >= p->length) {
+      result = depth ? xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
+          "unterminated conditional section") : GTEXT_XML_OK;
+      break;
+    }
+    uint32_t codepoint = 0;
+    size_t codepoint_length = 0;
+    if (xml_decode(p, p->pos, &codepoint, &codepoint_length) != XML_CHAR_OK) {
+      result = xml_unexpected(p, "invalid UTF-8 in external subset");
+      break;
+    }
+    (void)codepoint;
+    (void)codepoint_length;
+    if (depth && xml_looking_at(p, "]]>", 3)) {
+      result = xml_consume(p, 3);
+      if (result != GTEXT_XML_OK) break;
+      --depth;
+      continue;
+    }
+    if (ignoring && !xml_looking_at(p, "<![", 3)) {
+      uint32_t cp = 0;
+      size_t n = 0;
+      if (xml_decode(p, p->pos, &cp, &n) != XML_CHAR_OK) {
+        result = xml_unexpected(p, "invalid character in ignored conditional section");
+        break;
+      }
+      result = xml_charge_work(p, 1);
+      if (result != GTEXT_XML_OK) break;
+      result = xml_consume(p, n);
+      if (result != GTEXT_XML_OK) break;
+      continue;
+    }
+    if (!ignoring && p->in[p->pos] == '%') {
+      result = dtd_bad(p,
+          "parameter entity references in external subsets are not supported in this DTD phase");
+      break;
+    }
+    if (xml_looking_at(p, "<![", 3)) {
+      if (depth >= p->max_depth) {
+        result = xml_fail(p, GTEXT_XML_E_LIMIT_DEPTH,
+            "conditional section nesting limit exceeded");
+        break;
+      }
+      int include = 0;
+      if (ignoring) {
+        /* ignoreSectContents nests delimiters directly: bytes after this
+           opener are opaque, and no INCLUDE/IGNORE header is parsed here. */
+        result = xml_consume(p, 3);
+        if (result != GTEXT_XML_OK) break;
+      }
+      else {
+        result = external_conditional_header(p, &include);
+        if (result != GTEXT_XML_OK) break;
+      }
+      result = xml_grow(p, (void **)&modes, &capacity, sizeof(*modes), depth + 1);
+      if (result != GTEXT_XML_OK) break;
+      modes[depth++] = (unsigned char)include;
+      continue;
+    }
+    if (xml_looking_at(p, "<!--", 4) || xml_looking_at(p, "<?", 2)) {
+      const size_t start = p->pos;
+      const GTEXT_Markup_Location at = xml_here(p);
+      const GTEXT_Markup_DTD_Syntax_Kind kind =
+          xml_looking_at(p, "<!--", 4) ? GTEXT_MARKUP_DTD_COMMENT
+              : GTEXT_MARKUP_DTD_PROCESSING_INSTRUCTION;
+      GTEXT_XML_Status status = kind == GTEXT_MARKUP_DTD_COMMENT
+          ? xml_parse_comment(p, 0) : xml_parse_pi(p, 0);
+      if (status != GTEXT_XML_OK) { result = status; break; }
+      if (doctype && !p->stream) {
+        status = xml_from_markup(p, markup_doctype_append_external_syntax(
+            doctype, kind, (const char *)p->in + start, p->pos - start, &at));
+        if (status != GTEXT_XML_OK) { result = status; break; }
+      }
+      continue;
+    }
+    if (p->in[p->pos] != '<') {
+      result = dtd_bad(p, "unexpected content in external subset");
+      break;
+    }
+    size_t k = 0;
+    for (; k < sizeof(keywords) / sizeof(keywords[0]); ++k)
+      if (xml_looking_at(p, keywords[k], strlen(keywords[k]))) break;
+    if (k == sizeof(keywords) / sizeof(keywords[0])) {
+      result = dtd_bad(p, "not a declaration, comment, PI or conditional section");
+      break;
+    }
+    const size_t start = p->pos;
+    const GTEXT_Markup_Location at = xml_here(p);
+    GTEXT_XML_Status status = xml_charge(p, &p->declarations,
+        p->max_declarations, 1, GTEXT_XML_E_LIMIT_DECLARATIONS,
+        "DTD declaration limit exceeded");
+    if (status != GTEXT_XML_OK) { result = status; break; }
+    result = xml_consume(p, strlen(keywords[k]));
+    if (result != GTEXT_XML_OK) break;
+    if (p->pos >= p->length || xml_space_bytes(p, p->pos) == 0) {
+      result = bad(p, "white space is required after the declaration keyword");
+      break;
+    }
+    status = validate_declaration(p, (int)k);
+    if (status != GTEXT_XML_OK) { result = status; break; }
+    if (doctype && !p->stream) {
+      status = xml_from_markup(p, markup_doctype_append_external_syntax(
+          doctype, (int)k, (const char *)p->in + start, p->pos - start, &at));
+      if (status != GTEXT_XML_OK) { result = status; break; }
+    }
+  }
+  xml_release(p, modes);
+  return result;
+}
+
+static GTEXT_XML_Status text_decl_value(xml_ctx * p, size_t * at,
+    size_t * length) {
+  if (p->pos >= p->length || (p->in[p->pos] != '\'' && p->in[p->pos] != '"'))
+    return dtd_bad(p, "a quoted text declaration value was expected");
+  const unsigned char quote = p->in[p->pos];
+  XML_CONSUME_OR_RETURN(p, 1);
+  *at = p->pos;
+  while (p->pos < p->length && p->in[p->pos] != quote) {
+    if (p->in[p->pos] < 0x20 || p->in[p->pos] >= 0x80)
+      return xml_unexpected(p, "non-ASCII character in text declaration");
+    XML_CONSUME_OR_RETURN(p, 1);
+  }
+  if (p->pos >= p->length)
+    return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
+        "unterminated text declaration value");
+  *length = p->pos - *at;
+  return xml_consume(p, 1);
+}
+
+static GTEXT_XML_Status external_text_declaration(xml_ctx * p) {
+  if (!xml_looking_at(p, "<?xml", 5) || p->pos + 5 >= p->length
+      || xml_space_bytes(p, p->pos + 5) == 0)
+    return GTEXT_XML_OK;
+  XML_CONSUME_OR_RETURN(p, 5);
+  if (xml_skip_space(p) == 0) return dtd_bad(p,
+      "white space is required in a text declaration");
+  size_t version_at = 0, version_length = 0;
+  if (xml_looking_at(p, "version", 7)) {
+    XML_CONSUME_OR_RETURN(p, 7);
+    xml_skip_space(p);
+    if (p->pos >= p->length || p->in[p->pos] != '=')
+      return dtd_bad(p, "'=' was expected after version");
+    XML_CONSUME_OR_RETURN(p, 1); xml_skip_space(p);
+    GTEXT_Markup_Location where = xml_here(p);
+    GTEXT_XML_Status s = text_decl_value(p, &version_at, &version_length);
+    if (s != GTEXT_XML_OK) return s;
+    if (!((version_length == 3 && p->in[version_at] == '1'
+            && p->in[version_at + 1] == '.'
+            && (p->in[version_at + 2] == '0' || p->in[version_at + 2] == '1'))))
+      return xml_fail_at(p, GTEXT_XML_E_UNSUPPORTED_VERSION,
+          "only XML 1.0 and XML 1.1 text declarations are supported", &where);
+    const xml_version declared = p->in[version_at + 2] == '1'
+        ? XML_VERSION_11 : XML_VERSION_10;
+    /* XML 1.1 permits an external entity labelled 1.0; the document's
+       selected profile still governs processing. XML 1.0 cannot consume an
+       entity labelled 1.1. */
+    if (declared == XML_VERSION_11 && p->version == XML_VERSION_10)
+      return xml_fail_at(p, GTEXT_XML_E_UNSUPPORTED_VERSION,
+          "an XML 1.0 document cannot use an XML 1.1 external entity", &where);
+    if (xml_skip_space(p) == 0)
+      return dtd_bad(p, "encoding is required after the text declaration version");
+  }
+  if (!xml_looking_at(p, "encoding", 8))
+    return dtd_bad(p, "encoding is required in a text declaration");
+  XML_CONSUME_OR_RETURN(p, 8); xml_skip_space(p);
+  if (p->pos >= p->length || p->in[p->pos] != '=')
+    return dtd_bad(p, "'=' was expected after encoding");
+  XML_CONSUME_OR_RETURN(p, 1); xml_skip_space(p);
+  size_t encoding_at = 0, encoding_length = 0;
+  GTEXT_Markup_Location where = xml_here(p);
+  GTEXT_XML_Status s = text_decl_value(p, &encoding_at, &encoding_length);
+  if (s != GTEXT_XML_OK) return s;
+  int valid = encoding_length > 0
+      && ((p->in[encoding_at] | 0x20) >= 'a'
+          && (p->in[encoding_at] | 0x20) <= 'z');
+  for (size_t i = 1; valid && i < encoding_length; ++i) {
+    unsigned char c = p->in[encoding_at + i];
+    valid = ((c | 0x20) >= 'a' && (c | 0x20) <= 'z')
+        || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+  }
+  if (!valid) return xml_fail_at(p, GTEXT_XML_E_SYNTAX,
+      "not an encoding name", &where);
+  s = xml_check_label(p, p->in + encoding_at, encoding_length, &where);
+  if (s != GTEXT_XML_OK) return s;
+  xml_skip_space(p);
+  return xml_expect(p, "?>", 2,
+      "'?>' was expected to end the text declaration");
+}
+
+GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
+    GTEXT_Markup_Node * doctype, const unsigned char * bytes, size_t length,
+    const char * base_uri) {
+  xml_ctx ext = *p;
+  ext.in = bytes;
+  ext.length = length;
+  ext.pos = 0;
+  ext.line = 1;
+  ext.column = 1;
+  ext.cursor_previous = 0;
+  ext.err = (GTEXT_XML_Error){0};
+  ext.base_uri = base_uri;
+  markup_buf_init(&ext.decoded, ext.allocator);
+  GTEXT_XML_Status status = xml_detect_encoding(&ext);
+  if (status == GTEXT_XML_OK) {
+    /* The source frame records the active decoded coordinates for location
+       queries while the resolver-owned source is still open. */
+    if (ext.source_count != 0) {
+      xml_source_frame * f = &ext.sources[ext.source_count - 1];
+      f->bytes = ext.in; f->length = ext.length; f->pos = ext.pos;
+      f->line = 1; f->column = 1; f->cursor_previous = 0;
+    }
+    status = external_text_declaration(&ext);
+  }
+  if (status == GTEXT_XML_OK)
+    status = external_subset_body(&ext, doctype);
+  p->references = ext.references;
+  p->declarations = ext.declarations;
+  p->total_work = ext.total_work;
+  if (status != GTEXT_XML_OK) p->err = ext.err;
+  markup_buf_free(&ext.decoded);
+  return status;
+}
+
 static GTEXT_XML_Status retain_syntax(xml_ctx * p, GTEXT_Markup_Node * doctype,
     GTEXT_Markup_DTD_Syntax_Kind kind, size_t start,
     const GTEXT_Markup_Location * at) {
@@ -828,7 +1089,7 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
      per-parse authorization. Story 2.7 feeds the acquired source into the DTD
      grammar; this slice establishes the bounded read and ownership contract. */
   if (has_system) {
-    status = xml_resolve_external_subset(p,
+    status = xml_resolve_external_subset(p, doctype,
         has_public ? pub.data : NULL, sys.data);
     if (status != GTEXT_XML_OK) goto done;
   }

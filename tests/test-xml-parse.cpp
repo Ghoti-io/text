@@ -43,6 +43,7 @@
 #include <gtest/gtest.h>
 
 #include <ghoti.io/text/xml.h>
+#include <ghoti.io/text/xml/xml_stream.h>
 
 #include "../src/markup/markup_internal.h"
 #include "markup_test_support.h"
@@ -1196,6 +1197,9 @@ struct FileResolverProbe {
   size_t offset = 0;
   bool fail_read = false;
   std::string base_uri;
+  std::string system_id;
+  std::string bytes = "<!ELEMENT a EMPTY>";
+  size_t chunk_size = 4096;
 };
 
 GTEXT_XML_Source_Read_Result file_resolver_read(void * opaque,
@@ -1204,13 +1208,13 @@ GTEXT_XML_Source_Read_Result file_resolver_read(void * opaque,
   probe->reads++;
   *count = 0;
   if (probe->fail_read) return GTEXT_XML_SOURCE_ERROR;
-  static const char bytes[] = "<!ELEMENT a EMPTY>";
-  if (probe->offset == sizeof(bytes) - 1) {
+  if (probe->offset == probe->bytes.size()) {
     probe->offset = 0;
     return GTEXT_XML_SOURCE_EOF;
   }
-  *count = std::min(capacity, sizeof(bytes) - 1 - probe->offset);
-  std::memcpy(buffer, bytes + probe->offset, *count);
+  *count = std::min({capacity, probe->chunk_size,
+      probe->bytes.size() - probe->offset});
+  std::memcpy(buffer, probe->bytes.data() + probe->offset, *count);
   probe->offset += *count;
   return GTEXT_XML_SOURCE_DATA;
 }
@@ -1219,12 +1223,18 @@ void file_resolver_close(void * opaque) {
   static_cast<FileResolverProbe *>(opaque)->closes++;
 }
 
+GTEXT_XML_Resolver_Result file_resolver_decline(
+    const GTEXT_XML_Resolve_Request *, void *, GTEXT_XML_External_Source *) {
+  return GTEXT_XML_RESOLVER_DECLINED;
+}
+
 GTEXT_XML_Resolver_Result file_resolver_open(
     const GTEXT_XML_Resolve_Request * request, void * opaque,
     GTEXT_XML_External_Source * source) {
   FileResolverProbe * probe = static_cast<FileResolverProbe *>(opaque);
   probe->opens++;
   if (request->base_uri) probe->base_uri = request->base_uri;
+  if (request->system_id) probe->system_id = request->system_id;
   source->handle = probe;
   source->identity = probe;
   source->base_uri = "memory:/resolved.dtd";
@@ -1256,6 +1266,21 @@ TEST_F(XmlParse, FileParserUsesCallerResolverAndPropagatesReadFailure) {
   EXPECT_GT(probe.reads, 1u);
   EXPECT_EQ(probe.closes, 1u);
   EXPECT_EQ(probe.base_uri, path);
+  EXPECT_EQ(probe.system_id, "caller.dtd");
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_NE(doctype, nullptr);
+  EXPECT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 1u);
+  GTEXT_Markup_DTD_Syntax syntax{};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 0, &syntax));
+  EXPECT_EQ(syntax.location.reference_source_id, 1u);
+  EXPECT_STREQ(std::string(syntax.source, syntax.source_length).c_str(),
+      "<!ELEMENT a EMPTY>");
+  GTEXT_Markup_Source external_source{};
+  ASSERT_TRUE(gtext_markup_document_source(doc, syntax.location.source_id,
+      &external_source));
+  EXPECT_EQ(external_source.kind, GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET);
+  EXPECT_STREQ(external_source.name, "memory:/resolved.dtd");
 
   FileResolverProbe failing;
   failing.fail_read = true;
@@ -1267,6 +1292,578 @@ TEST_F(XmlParse, FileParserUsesCallerResolverAndPropagatesReadFailure) {
   EXPECT_EQ(failing.opens, 1u);
   EXPECT_EQ(failing.reads, 1u);
   EXPECT_EQ(failing.closes, 1u);
+
+  FileResolverProbe based;
+  opts.base_uri = "memory:/catalog/main.xml";
+  opts.resolver_user_data = &based;
+  doc = nullptr;
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  EXPECT_EQ(based.base_uri, "memory:/catalog/main.xml");
+  EXPECT_EQ(based.system_id, "caller.dtd");
+  EXPECT_EQ(based.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, DeclinedExternalSubsetIsSkippedWithoutImplicitIo) {
+  const std::string path = "build/test-xml-declined-external-subset.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_decline;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  docs.push_back(doc);
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_NE(doctype, nullptr);
+  EXPECT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 0u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, EventAndPullReadersRejectMalformedExternalDeclarations) {
+  const char * document = "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+
+  FileResolverProbe stream_source;
+  stream_source.bytes = "<!ELEMENT a>";
+  opts.resolver_user_data = &stream_source;
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_stream_feed(stream, document, std::strlen(document),
+      &err), GTEXT_XML_E_DOCTYPE);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.reference_source_id, 1u);
+  EXPECT_EQ(stream_source.closes, 1u);
+  gtext_xml_stream_free(stream);
+
+  FileResolverProbe reader_source;
+  reader_source.bytes = "<!ELEMENT a>";
+  opts.resolver_user_data = &reader_source;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  EXPECT_EQ(gtext_xml_reader_feed(reader, document, std::strlen(document),
+      &err), GTEXT_XML_E_DOCTYPE);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.reference_source_id, 1u);
+  EXPECT_EQ(reader_source.closes, 1u);
+  gtext_xml_reader_free(reader);
+}
+
+TEST_F(XmlParse, ExternalSubsetDecodesUtf16AcrossResolverChunks) {
+  const std::string path = "build/test-xml-utf16-external-subset.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  const std::string text = "<?xml version='1.0' encoding='UTF-16'?>"
+      "<!ELEMENT a EMPTY>";
+  FileResolverProbe probe;
+  probe.bytes.assign("\xFF\xFE", 2);
+  for (unsigned char byte : text) {
+    probe.bytes.push_back(static_cast<char>(byte));
+    probe.bytes.push_back('\0');
+  }
+  probe.chunk_size = 3;
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  EXPECT_EQ(probe.closes, 1u);
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_NE(doctype, nullptr);
+  ASSERT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 1u);
+  GTEXT_Markup_DTD_Syntax syntax{};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 0, &syntax));
+  EXPECT_EQ(syntax.kind, GTEXT_MARKUP_DTD_ELEMENT);
+  EXPECT_EQ(syntax.location.source_id, 2u);
+  EXPECT_EQ(syntax.location.reference_source_id, 1u);
+  EXPECT_EQ(syntax.location.offset, text.find("<!ELEMENT a EMPTY>"));
+  EXPECT_EQ(syntax.location.line, 1u);
+  EXPECT_EQ(syntax.location.column, text.find("<!ELEMENT a EMPTY>") + 1);
+  EXPECT_STREQ(std::string(syntax.source, syntax.source_length).c_str(),
+      "<!ELEMENT a EMPTY>");
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ExternalSubsetDecodesLatin1AndRecordsUtf8BomLocations) {
+  const std::string path = "build/test-xml-encoded-external-subset.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  FileResolverProbe latin1;
+  latin1.bytes = "<?xml version='1.0' encoding='ISO-8859-1'?>"
+      "<!ENTITY e 'caf";
+  latin1.bytes.push_back(static_cast<char>(0xE9));
+  latin1.bytes += "'>";
+  opts.resolver_user_data = &latin1;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 1u);
+  GTEXT_Markup_DTD_Syntax syntax{};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 0, &syntax));
+  EXPECT_STREQ(std::string(syntax.source, syntax.source_length).c_str(),
+      "<!ENTITY e 'caf\xC3\xA9'>");
+  EXPECT_EQ(latin1.closes, 1u);
+
+  FileResolverProbe ascii;
+  ascii.bytes = "<?xml version='1.0' encoding='US-ASCII'?>"
+      "<!ELEMENT a EMPTY>";
+  opts.resolver_user_data = &ascii;
+  doc = nullptr;
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  doctype = gtext_markup_node_first_child(gtext_markup_document_root(doc));
+  ASSERT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 1u);
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 0, &syntax));
+  EXPECT_STREQ(std::string(syntax.source, syntax.source_length).c_str(),
+      "<!ELEMENT a EMPTY>");
+  EXPECT_EQ(ascii.closes, 1u);
+
+  FileResolverProbe utf8_bom;
+  utf8_bom.bytes.assign("\xEF\xBB\xBF", 3);
+  utf8_bom.bytes += "<!ELEMENT a EMPTY>";
+  opts.resolver_user_data = &utf8_bom;
+  doc = nullptr;
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  doctype = gtext_markup_node_first_child(gtext_markup_document_root(doc));
+  ASSERT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 1u);
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 0, &syntax));
+  EXPECT_EQ(syntax.location.offset, 3u);
+  EXPECT_EQ(syntax.location.line, 1u);
+  EXPECT_EQ(syntax.location.column, 1u);
+  EXPECT_EQ(utf8_bom.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, Xml11ExternalSubsetNormalizesNelForLocations) {
+  const std::string path = "build/test-xml-11-external-line-end.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<?xml version='1.1'?><!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  FileResolverProbe probe;
+  probe.bytes = "<?xml version='1.1' encoding='UTF-8'?>"
+      "<!ELEMENT a EMPTY>\xC2\x85<!ATTLIST a id ID #IMPLIED>";
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 2u);
+  GTEXT_Markup_DTD_Syntax second{};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 1, &second));
+  EXPECT_EQ(second.kind, GTEXT_MARKUP_DTD_ATTLIST);
+  EXPECT_EQ(second.location.line, 2u);
+  EXPECT_EQ(second.location.column, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ResolverSubsetHonorsByteWorkAndDeclarationBudgets) {
+  const std::string path = "build/test-xml-external-budgets.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  const auto options = [] {
+    GTEXT_XML_Parse_Options value = gtext_xml_parse_options_default();
+    value.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    value.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    value.resolver = file_resolver_open;
+    return value;
+  };
+  GTEXT_XML_Error err{};
+  Doc * doc = nullptr;
+
+  FileResolverProbe too_many_bytes;
+  too_many_bytes.bytes = "<!ELEMENT a EMPTY>";
+  GTEXT_XML_Parse_Options opts = options();
+  opts.max_external_source_bytes = 8;
+  opts.resolver_user_data = &too_many_bytes;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(too_many_bytes.closes, 1u);
+
+  FileResolverProbe too_much_work;
+  too_much_work.bytes.assign(4096, ' ');
+  opts = options();
+  opts.max_total_work = 1024;
+  opts.resolver_user_data = &too_much_work;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_LIMIT_WORK);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(too_much_work.closes, 1u);
+
+  FileResolverProbe declarations;
+  declarations.bytes = "<!ATTLIST a id ID #IMPLIED>";
+  opts = options();
+  opts.max_declarations = 1;
+  opts.resolver_user_data = &declarations;
+  const char * input = "<!DOCTYPE a SYSTEM 'caller.dtd' [<!ELEMENT a EMPTY>]><a/>";
+  EXPECT_EQ(gtext_xml_parse(input, std::strlen(input), &opts, &doc, &err),
+      GTEXT_XML_E_LIMIT_DECLARATIONS);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(declarations.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ExternalSubsetRetainsDeclarationKindsAndOrder) {
+  const std::string path = "build/test-xml-external-syntax-order.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT a EMPTY>\n"
+      "<!ATTLIST a id ID #IMPLIED>\n"
+      "<!ENTITY e 'x'>\n"
+      "<!NOTATION n SYSTEM 'n'>\n"
+      "<!-- external\r\ncomment -->\n"
+      "<?external audit?>";
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  EXPECT_EQ(probe.closes, 1u);
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_NE(doctype, nullptr);
+  const std::vector<GTEXT_Markup_DTD_Syntax_Kind> expected = {
+      GTEXT_MARKUP_DTD_ELEMENT, GTEXT_MARKUP_DTD_ATTLIST,
+      GTEXT_MARKUP_DTD_ENTITY, GTEXT_MARKUP_DTD_NOTATION,
+      GTEXT_MARKUP_DTD_COMMENT, GTEXT_MARKUP_DTD_PROCESSING_INSTRUCTION};
+  ASSERT_EQ(gtext_markup_doctype_external_syntax_count(doctype), expected.size());
+  for (size_t i = 0; i < expected.size(); ++i) {
+    GTEXT_Markup_DTD_Syntax syntax{};
+    ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, i, &syntax));
+    EXPECT_EQ(syntax.kind, expected[i]) << i;
+    EXPECT_GT(syntax.source_length, 0u) << i;
+    if (i == 4) {
+      EXPECT_EQ(std::string(syntax.source, syntax.source_length),
+          "<!-- external\r\ncomment -->");
+    }
+  }
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ExternalSubsetTextDeclarationAndConditionalSections) {
+  const std::string path = "build/test-xml-external-subset.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.chunk_size = 1;
+  probe.bytes = "<?xml version='1.0' encoding='UTF-8'?>\r\n"
+      "<![INCLUDE[<![INCLUDE[<!ELEMENT a EMPTY>]]>]]>"
+      "<![IGNORE[<![INCLUDE[<!ELEMENT ghost EMPTY>]]>]]>";
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  docs.push_back(doc);
+  EXPECT_EQ(probe.closes, 1u);
+  const GTEXT_Markup_Node * doctype = gtext_markup_node_first_child(
+      gtext_markup_document_root(doc));
+  ASSERT_NE(doctype, nullptr);
+  EXPECT_EQ(gtext_markup_doctype_external_syntax_count(doctype), 1u);
+  GTEXT_Markup_DTD_Syntax syntax{};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(doctype, 0, &syntax));
+  EXPECT_EQ(syntax.location.source_id, 2u);
+  EXPECT_EQ(syntax.location.reference_source_id, 1u);
+  EXPECT_EQ(syntax.location.offset,
+      probe.bytes.find("<!ELEMENT a EMPTY>"));
+  EXPECT_EQ(syntax.location.line, 2u);
+  EXPECT_EQ(syntax.location.column, 23u);
+  Doc * clone_doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &clone_doc), GTEXT_MARKUP_OK);
+  docs.push_back(clone_doc);
+  GTEXT_Markup_Node * cloned_doctype = nullptr;
+  ASSERT_EQ(gtext_markup_clone(clone_doc, doctype, true, &cloned_doctype),
+      GTEXT_MARKUP_OK);
+  GTEXT_Markup_DTD_Syntax cloned_syntax{};
+  ASSERT_TRUE(gtext_markup_doctype_external_syntax(cloned_doctype, 0,
+      &cloned_syntax));
+  EXPECT_EQ(cloned_syntax.location.offset, syntax.location.offset);
+  EXPECT_EQ(cloned_syntax.location.line, syntax.location.line);
+  EXPECT_EQ(cloned_syntax.location.column, syntax.location.column);
+  GTEXT_Markup_Source cloned_source{};
+  ASSERT_TRUE(gtext_markup_document_source(clone_doc,
+      cloned_syntax.location.source_id, &cloned_source));
+  EXPECT_EQ(cloned_source.kind, GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET);
+  GTEXT_Markup_Source cloned_reference{};
+  ASSERT_TRUE(gtext_markup_document_source(clone_doc,
+      cloned_syntax.location.reference_source_id, &cloned_reference));
+  EXPECT_EQ(cloned_reference.kind, GTEXT_MARKUP_SOURCE_DOCUMENT);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ExternalConditionalDepthIsSharedAndUnterminatedIsDiagnosed) {
+  const std::string path = "build/test-xml-nested-conditional.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  opts.max_depth = 2;
+  FileResolverProbe probe;
+  probe.bytes = "<![INCLUDE[<![IGNORE[x]]>]]>";
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  docs.push_back(doc);
+  EXPECT_EQ(probe.closes, 1u);
+
+  FileResolverProbe too_deep;
+  too_deep.bytes = "<![INCLUDE[<![IGNORE[<![INCLUDE[x]]>]]>]]>";
+  opts.resolver_user_data = &too_deep;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_LIMIT_DEPTH);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(too_deep.closes, 1u);
+
+  FileResolverProbe unterminated;
+  unterminated.bytes = "<![INCLUDE[<![IGNORE[x";
+  opts.max_depth = 8;
+  opts.resolver_user_data = &unterminated;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_UNEXPECTED_EOF);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.line, 1u);
+  EXPECT_EQ(unterminated.closes, 1u);
+
+  FileResolverProbe malformed_header;
+  malformed_header.bytes = "<![BROKEN[x]]>";
+  opts.resolver_user_data = &malformed_header;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(malformed_header.closes, 1u);
+
+  FileResolverProbe unmatched_close;
+  unmatched_close.bytes = "]]>";
+  opts.resolver_user_data = &unmatched_close;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(unmatched_close.closes, 1u);
+
+  FileResolverProbe forbidden_in_ignore;
+  forbidden_in_ignore.bytes = "<![IGNORE[";
+  forbidden_in_ignore.bytes.push_back('\1');
+  forbidden_in_ignore.bytes += "]]>";
+  opts.resolver_user_data = &forbidden_in_ignore;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_CHARACTER);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(forbidden_in_ignore.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, MalformedExternalTextDeclarationClosesExactlyOnce) {
+  const std::string path = "build/test-xml-bad-external-subset.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<?xml encoding='UTF-16'?>";
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_ENCODING_MISMATCH);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(probe.closes, 1u);
+  EXPECT_GT(err.source_id, 1u);
+
+  const std::vector<std::string> malformed = {
+      "<?xml version='1.0'?>", // required encoding is absent
+      "<?xml encoding='UTF-8'", // closing ?> is absent
+      "<?xml encoding='UTF-8' version='1.0'?>", // wrong pseudoattribute order
+      "<?xml encoding='bad name'?>" // invalid EncName
+  };
+  for (const std::string & bytes : malformed) {
+    FileResolverProbe invalid;
+    invalid.bytes = bytes;
+    opts.resolver_user_data = &invalid;
+    doc = nullptr;
+    EXPECT_NE(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+        GTEXT_XML_OK) << bytes;
+    EXPECT_EQ(doc, nullptr) << bytes;
+    EXPECT_GT(err.source_id, 1u) << bytes;
+    EXPECT_EQ(invalid.closes, 1u) << bytes;
+  }
+
+  FileResolverProbe bad_declaration;
+  bad_declaration.bytes = "<!ELEMENT a>";
+  opts.resolver_user_data = &bad_declaration;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.reference_source_id, 1u);
+  EXPECT_EQ(err.byte_offset, bad_declaration.bytes.find('>'));
+  EXPECT_EQ(bad_declaration.closes, 1u);
+
+  FileResolverProbe parameter_reference;
+  parameter_reference.bytes = "%external;";
+  opts.resolver_user_data = &parameter_reference;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.byte_offset, 0u);
+  EXPECT_EQ(err.line, 1u);
+  EXPECT_EQ(err.column, 1u);
+  EXPECT_EQ(parameter_reference.closes, 1u);
+
+  FileResolverProbe parameter_entity_value;
+  parameter_entity_value.bytes = "<!ENTITY e '%external;'>";
+  opts.resolver_user_data = &parameter_entity_value;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.byte_offset,
+      parameter_entity_value.bytes.find("%external;"));
+  EXPECT_EQ(parameter_entity_value.closes, 1u);
+
+  FileResolverProbe invalid_utf8;
+  invalid_utf8.bytes = "<!ELEMENT a EMPTY>";
+  invalid_utf8.bytes.push_back(static_cast<char>(0xFF));
+  opts.resolver_user_data = &invalid_utf8;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_UTF8);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_EQ(err.byte_offset, invalid_utf8.bytes.size() - 1);
+  EXPECT_EQ(invalid_utf8.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ExternalTextDeclarationUsesDocumentVersionCompatibility) {
+  const std::string path = "build/test-xml-versioned-external-subset.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<?xml version='1.1'?><!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<?xml version='1.0' encoding='UTF-8'?>"
+      "<!ELEMENT a EMPTY>";
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  docs.push_back(doc);
+  EXPECT_EQ(probe.closes, 1u);
+
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  FileResolverProbe forbidden;
+  forbidden.bytes = "<?xml version='1.1' encoding='UTF-8'?>"
+      "<!ELEMENT a EMPTY>";
+  opts.resolver_user_data = &forbidden;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_UNSUPPORTED_VERSION);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(forbidden.closes, 1u);
+  EXPECT_GT(err.source_id, 1u);
   std::remove(path.c_str());
 }
 

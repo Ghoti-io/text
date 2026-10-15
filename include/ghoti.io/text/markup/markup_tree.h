@@ -510,7 +510,7 @@ typedef enum {
  */
 typedef struct {
   GTEXT_Markup_DTD_Syntax_Kind kind;
-  const char * source; ///< Complete lexical construct, valid while the doctype lives.
+  const char * source; ///< Decoded UTF-8 construct; valid while the doctype lives.
   size_t source_length;
   GTEXT_Markup_Location location;
 } GTEXT_Markup_DTD_Syntax;
@@ -524,6 +524,35 @@ GTEXT_API size_t gtext_markup_doctype_syntax_count(
 GTEXT_API bool gtext_markup_doctype_syntax(
     const GTEXT_Markup_Node * node, size_t index,
     GTEXT_Markup_DTD_Syntax * out);
+
+/**
+ * Number of constructs in the caller-resolved external subset retained as a
+ * read-only snapshot when a DOM tree is built. Event-only parsing has no
+ * doctype node and therefore retains no snapshot. The snapshot has independent ownership from the
+ * editable internal subset. It contains declarations, comments and processing
+ * instructions in source order, including constructs in INCLUDE sections.
+ * The text declaration and conditional-section delimiters are parser controls
+ * and are not snapshot
+ * entries; ignored-section contents are not retained. `source` contains the
+ * complete construct after source decoding, with its original line-end code
+ * points retained; it may differ from the resolver bytes when transcoding was
+ * needed. Each construct's location identifies its start in the physical external source: source_id is
+ * that source, offset is its decoded UTF-8 byte coordinate (a UTF-8 BOM counts;
+ * a BOM consumed while transcoding does not), and line/column are relative to
+ * that source.
+ */
+GTEXT_API size_t gtext_markup_doctype_external_syntax_count(
+    const GTEXT_Markup_Node * node);
+
+/**
+ * Read one retained external-subset construct in declaration order. The
+ * returned source is borrowed from the doctype and remains valid while it
+ * lives. Its location identifies the construct start in the physical external
+ * source, including that source's ID, decoded offset, line and column.
+ * False for an invalid index or NULL output; `out` is unchanged then.
+ */
+GTEXT_API bool gtext_markup_doctype_external_syntax(
+    const GTEXT_Markup_Node * node, size_t index, GTEXT_Markup_DTD_Syntax * out);
 
 /**
  * @brief Where in the source a node came from.

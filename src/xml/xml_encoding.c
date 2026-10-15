@@ -175,9 +175,9 @@ static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message,
   where.offset = c->total;
   where.line = c->line;
   where.column = c->column;
-  /* Conversion runs before the document source frame is installed, but this
-     input is still the physical document source (ID 1). */
-  where.source_id = 1;
+  /* Conversion can run for a resolver-owned physical source. */
+  where.source_id = c->p->source_count
+      ? c->p->sources[c->p->source_count - 1].source_id : 1;
   where.raw_offset = raw_offset;
   where.has_raw_offset = 1;
   return xml_fail_at(c->p, GTEXT_XML_E_INVALID_SEQUENCE, message, &where);
