@@ -143,8 +143,16 @@ typedef enum {
                        ///< `<` in a script, a processing instruction, ...), or,
                        ///< with `xhtml_strict`, one with a tree-construction
                        ///< hazard. The result's message and path say which.
-  GTEXT_XML_E_UNSUPPORTED_MODE ///< A requested processing mode is not
+  GTEXT_XML_E_UNSUPPORTED_MODE, ///< A requested processing mode is not
                        ///< implemented by this library version.
+  /* New statuses are appended to keep the values above source and ABI stable. */
+  GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE, ///< One external source exceeded its byte budget.
+  GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL, ///< Aggregate external bytes exceeded their budget.
+  GTEXT_XML_E_LIMIT_EXPANSION, ///< Cumulative entity replacement bytes exceeded their budget.
+  GTEXT_XML_E_LIMIT_ENTITY_DEPTH, ///< Active entity nesting exceeded its budget.
+  GTEXT_XML_E_LIMIT_REFERENCES, ///< XML references exceeded their budget.
+  GTEXT_XML_E_LIMIT_DECLARATIONS, ///< DTD declarations exceeded their budget.
+  GTEXT_XML_E_LIMIT_WORK ///< Parser work exceeded its deterministic budget.
 } GTEXT_XML_Status;
 
 /** DTD behavior selected for a parse. Zero preserves the historical default. */
@@ -244,6 +252,21 @@ typedef struct {
    *  redeclaration of a prefix separately. Default 256. */
   size_t max_namespaces;
 
+  /** Maximum bytes read from one external source. Default 16 MiB. */
+  size_t max_external_source_bytes;
+  /** Maximum bytes read across all external sources. Default 64 MiB. */
+  size_t max_external_bytes;
+  /** Maximum replacement bytes processed cumulatively. Default 64 MiB. */
+  size_t max_expanded_bytes;
+  /** Maximum active entity sources, excluding the document. Default 32. */
+  size_t max_entity_depth;
+  /** Maximum general and parameter entity references processed. Default 1,000,000. */
+  size_t max_references;
+  /** Maximum DTD declarations processed. Default 100,000. */
+  size_t max_declarations;
+  /** Maximum charged parser work units. Default 256 MiB. */
+  size_t max_total_work;
+
   /** DTD mode; zero selects GTEXT_XML_DTD_OFF. */
   GTEXT_XML_DTD_Mode dtd_mode;
 
@@ -256,7 +279,11 @@ typedef struct {
  *
  * @return The defaults, by value: allocator NULL, 64 MiB of input, depth 256,
  *   1024 attributes, 16 MiB of attribute value, 8192 bytes of name, ten million
- *   nodes, 256 namespace declarations, DTD_OFF mode, and external DENY policy.
+ *   nodes, 256 namespace declarations, 16 MiB per external source, 64 MiB
+ *   aggregate external bytes and expanded bytes, entity depth 32, one million
+ *   references, 100,000 declarations, 256 MiB total work, DTD_OFF mode, and
+ *   external DENY policy. All zero-valued limit overrides select these finite
+ *   defaults.
  */
 GTEXT_API GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void);
 

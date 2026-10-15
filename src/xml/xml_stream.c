@@ -804,7 +804,7 @@ static GTEXT_XML_Status step_content(GTEXT_XML_Stream * s, int * progress) {
   if (appended != GTEXT_XML_OK) {
     return appended;
   }
-  xml_consume(p, end - p->pos);
+  XML_CONSUME_OR_RETURN(p, end - p->pos);
   *progress = 1;
   return GTEXT_XML_OK;
 }
@@ -836,10 +836,16 @@ static GTEXT_XML_Status step(GTEXT_XML_Stream * s, int * progress) {
 /* Read everything the buffer completes. */
 static GTEXT_XML_Status drive(GTEXT_XML_Stream * s) {
   for (;;) {
+    if (s->p.err.code != GTEXT_XML_OK) {
+      return s->p.err.code;
+    }
     int progress = 0;
     const GTEXT_XML_Status status = step(s, &progress);
     if (status != GTEXT_XML_OK) {
       return status;
+    }
+    if (s->p.err.code != GTEXT_XML_OK) {
+      return s->p.err.code;
     }
     if (!progress) {
       return GTEXT_XML_OK;
@@ -1231,7 +1237,21 @@ GTEXT_INTERNAL_API GTEXT_XML_Stream * xml_stream_new_with_seams(
       limit_or(use.max_attribute_bytes, XML_DEFAULT_MAX_ATTRIBUTE_BYTES);
   p->max_name_bytes = limit_or(use.max_name_bytes, XML_DEFAULT_MAX_NAME_BYTES);
   p->max_namespaces = limit_or(use.max_namespaces, XML_DEFAULT_MAX_NAMESPACES);
-  p->max_source_depth = XML_DEFAULT_MAX_SOURCE_DEPTH;
+  p->max_external_source_bytes = limit_or(use.max_external_source_bytes,
+      XML_DEFAULT_MAX_EXTERNAL_SOURCE_BYTES);
+  p->max_external_bytes = limit_or(use.max_external_bytes,
+      XML_DEFAULT_MAX_EXTERNAL_BYTES);
+  p->max_expanded_bytes = limit_or(use.max_expanded_bytes,
+      XML_DEFAULT_MAX_EXPANDED_BYTES);
+  p->max_entity_depth = limit_or(use.max_entity_depth,
+      XML_DEFAULT_MAX_ENTITY_DEPTH);
+  p->max_references = limit_or(use.max_references, XML_DEFAULT_MAX_REFERENCES);
+  p->max_declarations = limit_or(use.max_declarations,
+      XML_DEFAULT_MAX_DECLARATIONS);
+  p->max_total_work = limit_or(use.max_total_work, XML_DEFAULT_MAX_TOTAL_WORK);
+  /* Document source + the configured entity nesting + one external subset. */
+  p->max_source_depth = p->max_entity_depth >= SIZE_MAX - 2
+      ? SIZE_MAX : p->max_entity_depth + 2;
   p->dtd_mode = use.dtd_mode;
   p->dtd_external_policy = use.dtd_external_policy;
   if (seams) {

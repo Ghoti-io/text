@@ -74,7 +74,7 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
   if (quote != '"' && quote != '\'') {
     return bad(p, "a quoted literal was expected");
   }
-  xml_consume(p, 1);
+  XML_CONSUME_OR_RETURN(p, 1);
   /* An empty literal is present and empty, which is not the same as absent:
      make sure there is a string to hand over. */
   GTEXT_XML_Status status = xml_append(p, out, "", 0);
@@ -84,10 +84,14 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
   const size_t start = p->pos;
   size_t i = start;
   while (i < p->length && p->in[i] != quote) {
+    GTEXT_XML_Status work = xml_charge_work(p, 1);
+    if (work != GTEXT_XML_OK) {
+      return work;
+    }
     const unsigned char b = p->in[i];
     if (is_public) {
       if (!pubid_char(b, quote)) {
-        xml_consume(p, i - p->pos);
+        XML_CONSUME_OR_RETURN(p, i - p->pos);
         return bad(p, "character not allowed in a public identifier");
       }
       i++;
@@ -101,19 +105,21 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
     uint32_t cp = 0;
     size_t n = 0;
     if (xml_decode(p, i, &cp, &n) != XML_CHAR_OK) {
-      xml_consume(p, i - p->pos);
+      XML_CONSUME_OR_RETURN(p, i - p->pos);
       return xml_unexpected(p, "invalid character");
     }
     i += n;
   }
   if (i >= p->length) {
-    xml_consume(p, i - p->pos);
+    XML_CONSUME_OR_RETURN(p, i - p->pos);
     return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unterminated literal");
   }
   if (is_public) {
     size_t words = 0;
     size_t j = start;
     while (j < i) {
+      status = xml_charge_work(p, 1);
+      if (status != GTEXT_XML_OK) return status;
       while (j < i) {
         const size_t whitespace = xml_space_bytes(p, j);
         if (whitespace == 0 || j + whitespace > i) {
@@ -145,7 +151,7 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
       return status;
     }
   }
-  xml_consume(p, i + 1 - p->pos);
+  XML_CONSUME_OR_RETURN(p, i + 1 - p->pos);
   return GTEXT_XML_OK;
 }
 
@@ -153,8 +159,15 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
    '>' that ends it. Literals are skipped whole. */
 static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
   for (;;) {
+    if (p->err.code != GTEXT_XML_OK) {
+      return p->err.code;
+    }
     size_t i = p->pos;
     while (i < p->length) {
+      GTEXT_XML_Status work = xml_charge_work(p, 1);
+      if (work != GTEXT_XML_OK) {
+        return work;
+      }
       const unsigned char b = p->in[i];
       if (b == '"' || b == '\'' || b == '>' || b == '<' || b == ']' || b == '%') {
         break;
@@ -171,19 +184,19 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
       uint32_t cp = 0;
       size_t n = 0;
       if (xml_decode(p, i, &cp, &n) != XML_CHAR_OK) {
-        xml_consume(p, i - p->pos);
+        XML_CONSUME_OR_RETURN(p, i - p->pos);
         return xml_unexpected(p, "invalid character");
       }
       i += n;
     }
-    xml_consume(p, i - p->pos);
+    XML_CONSUME_OR_RETURN(p, i - p->pos);
     if (p->pos >= p->length) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "unterminated declaration in the internal subset");
     }
     const unsigned char b = p->in[p->pos];
     if (b == '>') {
-      xml_consume(p, 1);
+      XML_CONSUME_OR_RETURN(p, 1);
       return GTEXT_XML_OK;
     }
     if (b == '<' || b == ']') {
@@ -197,7 +210,7 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
         && xml_space_bytes(p, p->pos + 1) > 0) {
       /* `<!ENTITY % name ...>`: the percent sign that makes it a parameter
          entity declaration, not a reference. */
-      xml_consume(p, 1);
+      XML_CONSUME_OR_RETURN(p, 1);
       continue;
     }
     if (b == '%') {
@@ -208,9 +221,13 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
     }
     /* A quoted literal: find its end, checking what is inside. */
     const unsigned char quote = b;
-    xml_consume(p, 1);
+    XML_CONSUME_OR_RETURN(p, 1);
     i = p->pos;
     while (i < p->length && p->in[i] != quote) {
+      GTEXT_XML_Status work = xml_charge_work(p, 1);
+      if (work != GTEXT_XML_OK) {
+        return work;
+      }
       const unsigned char c = p->in[i];
       if ((c >= 0x20 && c < 0x80
               && !(c == 0x7F && p->version == XML_VERSION_11))
@@ -221,17 +238,17 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
       uint32_t cp = 0;
       size_t n = 0;
       if (xml_decode(p, i, &cp, &n) != XML_CHAR_OK) {
-        xml_consume(p, i - p->pos);
+        XML_CONSUME_OR_RETURN(p, i - p->pos);
         return xml_unexpected(p, "invalid character");
       }
       i += n;
     }
-    xml_consume(p, i - p->pos);
+    XML_CONSUME_OR_RETURN(p, i - p->pos);
     if (p->pos >= p->length) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "unterminated literal in the internal subset");
     }
-    xml_consume(p, 1);
+    XML_CONSUME_OR_RETURN(p, 1);
   }
 }
 
@@ -240,7 +257,13 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p) {
   static const char * const keywords[] = {
       "<!ELEMENT", "<!ATTLIST", "<!ENTITY", "<!NOTATION"};
   for (;;) {
+    if (p->err.code != GTEXT_XML_OK) {
+      return p->err.code;
+    }
     xml_skip_space(p);
+    if (p->err.code != GTEXT_XML_OK) {
+      return p->err.code;
+    }
     if (p->pos >= p->length) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "unterminated internal subset");
@@ -248,17 +271,22 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p) {
     const unsigned char b = p->in[p->pos];
     GTEXT_XML_Status status;
     if (b == ']') {
-      xml_consume(p, 1);
+      XML_CONSUME_OR_RETURN(p, 1);
       return GTEXT_XML_OK;
     }
     if (b == '%') {
-      xml_consume(p, 1);
+      status = xml_charge(p, &p->references, p->max_references, 1,
+          GTEXT_XML_E_LIMIT_REFERENCES, "XML reference limit exceeded");
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
+      XML_CONSUME_OR_RETURN(p, 1);
       size_t length = 0;
       status = xml_scan_name(p, &length);
       if (status != GTEXT_XML_OK) {
         return status;
       }
-      xml_consume(p, length);
+      XML_CONSUME_OR_RETURN(p, length);
       status = xml_expect(p, ";", 1, "a parameter entity reference ends with ';'");
       if (status != GTEXT_XML_OK) {
         return status;
@@ -291,7 +319,12 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p) {
         return xml_fail(p, GTEXT_XML_E_DOCTYPE,
             "not a declaration, comment or processing instruction");
       }
-      xml_consume(p, strlen(keywords[k]));
+      status = xml_charge(p, &p->declarations, p->max_declarations, 1,
+          GTEXT_XML_E_LIMIT_DECLARATIONS, "DTD declaration limit exceeded");
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
+      XML_CONSUME_OR_RETURN(p, strlen(keywords[k]));
       if (p->pos >= p->length || xml_space_bytes(p, p->pos) == 0) {
         return bad(p, "white space is required after the declaration keyword");
       }
@@ -316,7 +349,8 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   GTEXT_XML_Status status = GTEXT_XML_OK;
   size_t length = 0;
 
-  xml_consume(p, 9); /* "<!DOCTYPE" */
+  status = xml_consume(p, 9); /* "<!DOCTYPE" */
+  if (status != GTEXT_XML_OK) goto done;
   if (xml_skip_space(p) == 0) {
     status = bad(p, "white space is required after <!DOCTYPE");
     goto done;
@@ -329,7 +363,8 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     goto done;
   }
-  xml_consume(p, length);
+  status = xml_consume(p, length);
+  if (status != GTEXT_XML_OK) goto done;
   size_t space = xml_skip_space(p);
 
   if (xml_cut_literal(p, "SYSTEM", 6) || xml_cut_literal(p, "PUBLIC", 6)) {
@@ -343,7 +378,8 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
       status = bad(p, "white space is required before the external identifier");
       goto done;
     }
-    xml_consume(p, 6);
+    status = xml_consume(p, 6);
+    if (status != GTEXT_XML_OK) goto done;
     if (xml_skip_space(p) == 0) {
       status = bad(p, "white space is required after SYSTEM or PUBLIC");
       goto done;
@@ -369,7 +405,8 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   (void)space;
 
   if (p->pos < p->length && p->in[p->pos] == '[') {
-    xml_consume(p, 1);
+    status = xml_consume(p, 1);
+    if (status != GTEXT_XML_OK) goto done;
     status = skip_internal_subset(p);
     if (status != GTEXT_XML_OK) {
       goto done;
@@ -380,7 +417,8 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
     status = bad(p, "'>' was expected to end the document type declaration");
     goto done;
   }
-  xml_consume(p, 1);
+  status = xml_consume(p, 1);
+  if (status != GTEXT_XML_OK) goto done;
 
   if (p->stream) {
     status = xml_emit_doctype(p, &start, name.data,

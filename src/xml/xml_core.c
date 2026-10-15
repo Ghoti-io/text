@@ -94,6 +94,20 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "not the same tree for an HTML parser";
     case GTEXT_XML_E_UNSUPPORTED_MODE:
       return "requested XML mode is not implemented";
+    case GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE:
+      return "external source too large";
+    case GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL:
+      return "external input too large in total";
+    case GTEXT_XML_E_LIMIT_EXPANSION:
+      return "entity expansion too large";
+    case GTEXT_XML_E_LIMIT_ENTITY_DEPTH:
+      return "entity nesting too deep";
+    case GTEXT_XML_E_LIMIT_REFERENCES:
+      return "too many entity references";
+    case GTEXT_XML_E_LIMIT_DECLARATIONS:
+      return "too many DTD declarations";
+    case GTEXT_XML_E_LIMIT_WORK:
+      return "XML parser work limit exceeded";
   }
   return "unknown status";
 }
@@ -146,6 +160,13 @@ GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void) {
   opts.max_name_bytes = XML_DEFAULT_MAX_NAME_BYTES;
   opts.max_nodes = XML_DEFAULT_MAX_NODES;
   opts.max_namespaces = XML_DEFAULT_MAX_NAMESPACES;
+  opts.max_external_source_bytes = XML_DEFAULT_MAX_EXTERNAL_SOURCE_BYTES;
+  opts.max_external_bytes = XML_DEFAULT_MAX_EXTERNAL_BYTES;
+  opts.max_expanded_bytes = XML_DEFAULT_MAX_EXPANDED_BYTES;
+  opts.max_entity_depth = XML_DEFAULT_MAX_ENTITY_DEPTH;
+  opts.max_references = XML_DEFAULT_MAX_REFERENCES;
+  opts.max_declarations = XML_DEFAULT_MAX_DECLARATIONS;
+  opts.max_total_work = XML_DEFAULT_MAX_TOTAL_WORK;
   return opts;
 }
 
@@ -216,6 +237,23 @@ GTEXT_XML_Status xml_from_markup(xml_ctx * p, GTEXT_Markup_Status status) {
          that the input could not be turned into a tree. */
       return xml_fail(p, GTEXT_XML_E_INVALID, "the tree refused a node");
   }
+}
+
+GTEXT_XML_Status xml_charge(xml_ctx * p, size_t * counter, size_t limit,
+    size_t amount, GTEXT_XML_Status code, const char * message) {
+  if (*counter > limit || amount > SIZE_MAX - *counter
+      || amount > limit - *counter) {
+    return xml_fail(p, code, message);
+  }
+  *counter += amount;
+  return GTEXT_XML_OK;
+}
+
+GTEXT_XML_Status xml_charge_work(xml_ctx * p, size_t amount) {
+  const size_t limit = p->max_total_work != 0
+      ? p->max_total_work : XML_DEFAULT_MAX_TOTAL_WORK;
+  return xml_charge(p, &p->total_work, limit, amount,
+      GTEXT_XML_E_LIMIT_WORK, "XML parser work limit exceeded");
 }
 
 GTEXT_XML_Write_Options gtext_xml_write_options_default(void) {

@@ -77,6 +77,13 @@ TEST(XmlLimits, TheDefaultsAreSpelledOutAndZeroMeansTheDefault) {
   EXPECT_EQ(d.max_name_bytes, 8192u);
   EXPECT_EQ(d.max_nodes, 10000000u);
   EXPECT_EQ(d.max_namespaces, 256u);
+  EXPECT_EQ(d.max_external_source_bytes, 16u * 1024 * 1024);
+  EXPECT_EQ(d.max_external_bytes, 64u * 1024 * 1024);
+  EXPECT_EQ(d.max_expanded_bytes, 64u * 1024 * 1024);
+  EXPECT_EQ(d.max_entity_depth, 32u);
+  EXPECT_EQ(d.max_references, 1000000u);
+  EXPECT_EQ(d.max_declarations, 100000u);
+  EXPECT_EQ(d.max_total_work, 256u * 1024 * 1024);
 
   // A zeroed struct is the defaults: no field's zero means "unlimited".
   GTEXT_XML_Parse_Options zero;
@@ -292,12 +299,226 @@ TEST(XmlLimits, NamespacesInScope) {
 TEST(XmlLimits, EveryLimitIsItsOwnStatus) {
   std::vector<GTEXT_XML_Status> seen = {GTEXT_XML_E_LIMIT_INPUT, GTEXT_XML_E_LIMIT_DEPTH,
       GTEXT_XML_E_LIMIT_ATTRIBUTES, GTEXT_XML_E_LIMIT_VALUE, GTEXT_XML_E_LIMIT_NAME,
-      GTEXT_XML_E_LIMIT_NODES, GTEXT_XML_E_LIMIT_NAMESPACES};
+      GTEXT_XML_E_LIMIT_NODES, GTEXT_XML_E_LIMIT_NAMESPACES,
+      GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE, GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL,
+      GTEXT_XML_E_LIMIT_EXPANSION, GTEXT_XML_E_LIMIT_ENTITY_DEPTH,
+      GTEXT_XML_E_LIMIT_REFERENCES, GTEXT_XML_E_LIMIT_DECLARATIONS,
+      GTEXT_XML_E_LIMIT_WORK};
   for (size_t i = 0; i < seen.size(); i++) {
     for (size_t j = i + 1; j < seen.size(); j++) {
       EXPECT_NE(seen[i], seen[j]);
     }
   }
+}
+
+TEST(XmlLimits, ReferenceAndDeclarationBudgetsAreChargedAtUse) {
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  o.max_references = 1;
+  EXPECT_EQ(parse_with("<a>&amp;</a>", o), GTEXT_XML_OK);
+  EXPECT_EQ(parse_with("<a>&amp;&lt;</a>", o), GTEXT_XML_E_LIMIT_REFERENCES);
+
+  const std::string one = "<!DOCTYPE a [<!ELEMENT a EMPTY>]><a/>";
+  o.max_declarations = 1;
+  EXPECT_EQ(parse_with(one, o), GTEXT_XML_OK);
+  const std::string two =
+      "<!DOCTYPE a [<!ELEMENT a EMPTY><!ATTLIST a id ID #IMPLIED>]><a/>";
+  EXPECT_EQ(parse_with(two, o), GTEXT_XML_E_LIMIT_DECLARATIONS);
+}
+
+TEST(XmlLimits, FiniteDefaultsAdmitDenseDeclarationAndRepeatedReferenceWork) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  std::string input = "<!DOCTYPE r [";
+  for (size_t i = 0; i < options.max_declarations; i++) {
+    input += "<!ELEMENT r EMPTY>";
+  }
+  input += "]><r>";
+  for (size_t i = 0; i < 100000; i++) {
+    input += "&amp;";
+  }
+  input += "</r>";
+  EXPECT_EQ(parse_with(input, options), GTEXT_XML_OK);
+}
+
+TEST(XmlLimits, WorkFailureInDoctypeReleasesItsTemporaryBuffers) {
+  const std::string input = "<!DOCTYPE r SYSTEM 'system-id'><r/>";
+  const auto failing_parse_allocations = [&](size_t work_limit) {
+    FaultAllocator allocator;
+    GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+    options.allocator = &allocator.alloc;
+    options.max_total_work = work_limit;
+    GTEXT_Markup_Document * doc = nullptr;
+    EXPECT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, nullptr),
+        GTEXT_XML_E_LIMIT_WORK);
+    EXPECT_EQ(doc, nullptr);
+    EXPECT_TRUE(allocator.live.empty());
+    EXPECT_EQ(allocator.bad_frees, 0u);
+    return allocator.calls;
+  };
+  const size_t before_name_copy = failing_parse_allocations(14);
+  const size_t after_name_copy = failing_parse_allocations(15);
+  // At 15 work units, the doctype name has been copied into its temporary
+  // buffer before whitespace scanning/consumption exhausts the work budget.
+  EXPECT_GT(after_name_copy, before_name_copy);
+}
+
+TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
+  static const unsigned char root[] = "document";
+  static const unsigned char five[] = "12345";
+  static const unsigned char one[] = "x";
+  xml_ctx p{};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 4;
+  p.max_entity_depth = 4;
+  p.max_external_source_bytes = 5;
+  p.max_external_bytes = 5;
+  p.max_expanded_bytes = 32;
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, five, five, 5), GTEXT_XML_OK);
+  EXPECT_EQ(p.external_bytes, 5u);
+  ASSERT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  std::memset(&p.err, 0, sizeof(p.err));
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, one, 1),
+      GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL);
+  EXPECT_EQ(p.source_count, 1u);
+  xml_source_free(&p);
+
+  p = {};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 4;
+  p.max_entity_depth = 4;
+  p.max_external_source_bytes = 4;
+  p.max_external_bytes = 32;
+  p.max_expanded_bytes = 32;
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, five, five, 5),
+      GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
+  EXPECT_EQ(p.source_count, 1u);
+  xml_source_free(&p);
+
+  p = {};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 4;
+  p.max_entity_depth = 4;
+  p.max_external_source_bytes = 5;
+  p.max_external_bytes = 5;
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0),
+      GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
+  EXPECT_EQ(p.expanded_bytes, 5u);
+  EXPECT_EQ(xml_source_charge_external(&p, 1), GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
+  EXPECT_EQ(p.external_bytes, 5u);
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  xml_source_free(&p);
+
+  p = {};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 4;
+  p.max_entity_depth = 4;
+  p.max_external_source_bytes = 10;
+  p.max_external_bytes = 10;
+  p.max_expanded_bytes = 5;
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0),
+      GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_charge_external(&p, 1), GTEXT_XML_E_LIMIT_EXPANSION);
+  EXPECT_EQ(p.external_bytes, 5u);
+  EXPECT_EQ(p.expanded_bytes, 5u);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 5u);
+  xml_source_free(&p);
+}
+
+TEST(XmlLimits, TotalWorkUsesCheckedArithmeticAndRejectsBeforeMoreParsing) {
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  const std::string input = "<root>content</root>";
+  size_t low = 1;
+  size_t high = 1024;
+  while (low < high) {
+    const size_t mid = low + (high - low) / 2;
+    o.max_total_work = mid;
+    if (parse_with(input, o) == GTEXT_XML_OK) high = mid;
+    else low = mid + 1;
+  }
+  ASSERT_GT(low, 1u);
+  o.max_total_work = low;
+  EXPECT_EQ(parse_with(input, o), GTEXT_XML_OK);
+  o.max_total_work = low - 1;
+  EXPECT_EQ(parse_with(input, o), GTEXT_XML_E_LIMIT_WORK);
+
+  xml_ctx p{};
+  p.allocator = gtext_allocator_default();
+  p.max_total_work = 10;
+  EXPECT_EQ(xml_charge_work(&p, 10), GTEXT_XML_OK);
+  EXPECT_EQ(xml_charge_work(&p, 1), GTEXT_XML_E_LIMIT_WORK);
+  p.err = {};
+  p.total_work = SIZE_MAX - 1;
+  EXPECT_EQ(xml_charge_work(&p, 2), GTEXT_XML_E_LIMIT_WORK);
+}
+
+TEST(XmlLimits, EveryLedgerCounterRejectsOverflowWithoutChangingCounters) {
+  xml_ctx p{};
+  p.allocator = gtext_allocator_default();
+  p.max_expanded_bytes = SIZE_MAX;
+  p.expanded_bytes = SIZE_MAX - 1;
+  EXPECT_EQ(xml_charge(&p, &p.expanded_bytes, SIZE_MAX, 2,
+      GTEXT_XML_E_LIMIT_EXPANSION, "expansion"), GTEXT_XML_E_LIMIT_EXPANSION);
+  EXPECT_EQ(p.expanded_bytes, SIZE_MAX - 1);
+
+  p.err = {};
+  p.references = SIZE_MAX - 1;
+  EXPECT_EQ(xml_charge(&p, &p.references, SIZE_MAX, 2,
+      GTEXT_XML_E_LIMIT_REFERENCES, "references"), GTEXT_XML_E_LIMIT_REFERENCES);
+  EXPECT_EQ(p.references, SIZE_MAX - 1);
+
+  p.err = {};
+  p.declarations = SIZE_MAX - 1;
+  EXPECT_EQ(xml_charge(&p, &p.declarations, SIZE_MAX, 2,
+      GTEXT_XML_E_LIMIT_DECLARATIONS, "declarations"),
+      GTEXT_XML_E_LIMIT_DECLARATIONS);
+  EXPECT_EQ(p.declarations, SIZE_MAX - 1);
+
+  unsigned char root[] = "<r/>";
+  unsigned char external[] = "x";
+  p = {};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 4;
+  p.max_entity_depth = 4;
+  p.max_external_source_bytes = SIZE_MAX;
+  p.max_external_bytes = SIZE_MAX;
+  p.max_expanded_bytes = SIZE_MAX;
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, external,
+      external, 1), GTEXT_XML_OK);
+  p.sources[p.source_count - 1].bytes_charged = SIZE_MAX - 1;
+  p.expanded_bytes = 0;
+  EXPECT_EQ(xml_source_charge_external(&p, 2),
+      GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, SIZE_MAX - 1);
+  EXPECT_EQ(p.external_bytes, 1u);
+  EXPECT_EQ(p.expanded_bytes, 0u);
+
+  p.err = {};
+  p.sources[p.source_count - 1].bytes_charged = 0;
+  p.external_bytes = SIZE_MAX - 1;
+  p.expanded_bytes = 0;
+  EXPECT_EQ(xml_source_charge_external(&p, 2),
+      GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL);
+  EXPECT_EQ(p.sources[p.source_count - 1].bytes_charged, 0u);
+  EXPECT_EQ(p.external_bytes, SIZE_MAX - 1);
+  EXPECT_EQ(p.expanded_bytes, 0u);
+  xml_source_free(&p);
 }
 
 // ---- allocation failure --------------------------------------------------
@@ -576,6 +797,49 @@ std::string parse_dump(const std::string & text, const xml_seams * seams,
   return out;
 }
 
+TEST(XmlLimits, EachEntityUsePaysExpansionAndDepthBudgets) {
+  SeamLog log;
+  xml_seams seams{};
+  seams.resolve_entity = resolve_stub;
+  seams.user = &log;
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  o.max_expanded_bytes = 6;
+  Doc * doc = nullptr;
+  const std::string repeated = "<a>&e;&e;</a>";
+  EXPECT_EQ(xml_parse_with_seams(repeated.data(), repeated.size(), &o, &seams,
+                &doc, nullptr), GTEXT_XML_OK);
+  gtext_markup_document_free(doc);
+  doc = nullptr;
+  o.max_expanded_bytes = 5;
+  EXPECT_EQ(xml_parse_with_seams(repeated.data(), repeated.size(), &o, &seams,
+                &doc, nullptr), GTEXT_XML_E_LIMIT_EXPANSION);
+  EXPECT_EQ(doc, nullptr);
+
+  DepthEntitySources sources;
+  init_depth_entity_sources(&sources);
+  xml_seams nested{};
+  nested.open_entity_source = open_depth_entity_source;
+  nested.user = &sources;
+  o = gtext_xml_parse_options_default();
+  o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  o.max_entity_depth = 1;
+  const std::string entity = "<a>&e0;</a>";
+  EXPECT_EQ(xml_parse_with_seams(entity.data(), entity.size(), &o, &nested,
+                &doc, nullptr), GTEXT_XML_E_LIMIT_ENTITY_DEPTH);
+  EXPECT_EQ(doc, nullptr);
+
+  std::strcpy(sources.replacements[31], "terminal");
+  o.max_entity_depth = 32;
+  EXPECT_EQ(xml_parse_with_seams(entity.data(), entity.size(), &o, &nested,
+                &doc, nullptr), GTEXT_XML_OK);
+  gtext_markup_document_free(doc);
+  doc = nullptr;
+  o.max_entity_depth = 31;
+  EXPECT_EQ(xml_parse_with_seams(entity.data(), entity.size(), &o, &nested,
+                &doc, nullptr), GTEXT_XML_E_LIMIT_ENTITY_DEPTH);
+  EXPECT_EQ(doc, nullptr);
+}
+
 TEST(XmlSeams, NullSeamsChangeNothing) {
   const std::string rich = rich_document();
   const char * docs[] = {"<a x=\"1\">t&amp;</a>", "<a xmlns:p=\"u\"><p:b/></a>", rich.c_str()};
@@ -727,6 +991,29 @@ TEST(XmlSourceStack, RejectsPhysicalNestingAndTheBound) {
   xml_source_free(&p);
 }
 
+TEST(XmlSourceStack, ExternalSubsetDoesNotConsumeEntityDepth) {
+  xml_ctx p{};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 4;
+  p.max_entity_depth = 1;
+  static const unsigned char root[] = "document";
+  static const unsigned char subset[] = "<!ELEMENT r EMPTY>";
+  static const unsigned char entity[] = "replacement";
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, subset, subset,
+      sizeof(subset) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(p.entity_depth, 0u);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, entity,
+      sizeof(entity) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(p.entity_depth, 1u);
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  EXPECT_EQ(p.entity_depth, 0u);
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  xml_source_free(&p);
+}
+
 TEST(XmlSourceStack, RejectsMissingIdentityAndInvalidBytes) {
   xml_ctx p{};
   p.allocator = gtext_allocator_default();
@@ -744,10 +1031,12 @@ TEST(XmlSourceStack, RejectsMissingIdentityAndInvalidBytes) {
                 nullptr, 0), GTEXT_XML_OK);
   EXPECT_NE(p.in, nullptr);
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
-  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, entity,
-                entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
-  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, entity,
-                entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, entity,
+                entity, sizeof(entity) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, entity,
+                entity, sizeof(entity) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   xml_source_free(&p);
 }
 
@@ -788,7 +1077,7 @@ TEST(XmlSourceStack, DomEnforcesTheDefaultNestedSourceDepth) {
   Doc * doc = nullptr;
   const std::string input = "<a>&e0;</a>";
   EXPECT_EQ(xml_parse_with_seams(input.data(), input.size(), &options, &seams,
-                &doc, nullptr), GTEXT_XML_E_LIMIT_DEPTH);
+                &doc, nullptr), GTEXT_XML_E_LIMIT_ENTITY_DEPTH);
   EXPECT_EQ(doc, nullptr);
 }
 

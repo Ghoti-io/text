@@ -37,7 +37,14 @@
 
 /* ---- the cursor --------------------------------------------------------- */
 
-void xml_consume(xml_ctx * p, size_t n) {
+GTEXT_XML_Status xml_consume(xml_ctx * p, size_t n) {
+  if (p->err.code != GTEXT_XML_OK) {
+    return p->err.code;
+  }
+  GTEXT_XML_Status charged = xml_charge_work(p, n);
+  if (charged != GTEXT_XML_OK) {
+    return charged;
+  }
   const unsigned char * in = p->in;
   const size_t end = p->pos + n;
   for (size_t i = p->pos; i < end;) {
@@ -76,6 +83,7 @@ void xml_consume(xml_ctx * p, size_t n) {
     i += width;
   }
   p->pos += n;
+  return GTEXT_XML_OK;
 }
 
 int xml_looking_at(const xml_ctx * p, const char * literal, size_t length) {
@@ -99,19 +107,24 @@ int xml_at_end(const xml_ctx * p, size_t at) {
 
 GTEXT_XML_Status xml_expect(
     xml_ctx * p, const char * literal, size_t length, const char * message) {
+  if (p->err.code != GTEXT_XML_OK) {
+    return p->err.code;
+  }
   if (!xml_looking_at(p, literal, length)) {
     if (xml_cut_literal(p, literal, length)) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
     }
     return xml_unexpected(p, message);
   }
-  xml_consume(p, length);
-  return GTEXT_XML_OK;
+  return xml_consume(p, length);
 }
 
 size_t xml_skip_space(xml_ctx * p) {
   size_t i = p->pos;
   while (i < p->length) {
+    if (xml_charge_work(p, 1) != GTEXT_XML_OK) {
+      return 0;
+    }
     const size_t width = xml_space_bytes(p, i);
     if (width == 0) {
       break;
@@ -120,7 +133,9 @@ size_t xml_skip_space(xml_ctx * p) {
   }
   const size_t n = i - p->pos;
   if (n > 0) {
-    xml_consume(p, n);
+    if (xml_consume(p, n) != GTEXT_XML_OK) {
+      return 0;
+    }
   }
   return n;
 }
@@ -239,6 +254,9 @@ GTEXT_XML_Status xml_grow(xml_ctx * p, void ** array, size_t * capacity,
 
 GTEXT_XML_Status xml_append(
     xml_ctx * p, markup_buf * buf, const char * bytes, size_t length) {
+  if (p->err.code != GTEXT_XML_OK) {
+    return p->err.code;
+  }
   if (markup_buf_append(buf, bytes, length) != GTEXT_MARKUP_OK) {
     return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
   }
@@ -387,6 +405,10 @@ void xml_probe_xml11_declaration(xml_ctx * p) {
 
 GTEXT_XML_Status xml_append_normalized(
     xml_ctx * p, markup_buf * buf, size_t from, size_t to) {
+  GTEXT_XML_Status work = xml_charge_work(p, to - from);
+  if (work != GTEXT_XML_OK) {
+    return work;
+  }
   const char * in = (const char *)p->in;
   size_t run = from;
   for (size_t i = from; i < to;) {
@@ -421,10 +443,13 @@ GTEXT_XML_Status xml_append_normalized(
    longer than the limit. Never consumes. A character that ends the name because
    it is not a name character - including bytes that are not UTF-8 - is left for
    the caller to meet, which is when it is reported. */
-static int name_at(const xml_ctx * p, size_t start, size_t * length) {
+static int name_at(xml_ctx * p, size_t start, size_t * length) {
   size_t i = start;
   int first = 1;
   while (i < p->length) {
+    if (xml_charge_work(p, 1) != GTEXT_XML_OK) {
+      return 3;
+    }
     const unsigned char b = p->in[i];
     if (b < 0x80) {
       const int letter = (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
@@ -459,7 +484,14 @@ static int name_at(const xml_ctx * p, size_t start, size_t * length) {
 }
 
 GTEXT_XML_Status xml_scan_name(xml_ctx * p, size_t * length) {
-  switch (name_at(p, p->pos, length)) {
+  if (p->err.code != GTEXT_XML_OK) {
+    return p->err.code;
+  }
+  const int result = name_at(p, p->pos, length);
+  if (result == 3) {
+    return p->err.code;
+  }
+  switch (result) {
     case 0:
       if (p->partial && xml_at_end(p, p->pos + *length)) {
         /* It may go on: a name that ends where the input does has not ended. */
@@ -490,6 +522,12 @@ static int hex_value(unsigned char c) {
 
 GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
   const GTEXT_Markup_Location at = xml_here(p);
+  GTEXT_XML_Status charged = xml_charge(p, &p->references,
+      p->max_references, 1, GTEXT_XML_E_LIMIT_REFERENCES,
+      "XML reference limit exceeded");
+  if (charged != GTEXT_XML_OK) {
+    return charged;
+  }
   const unsigned char * in = p->in;
   size_t i = p->pos + 1;
 
@@ -502,6 +540,10 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     uint32_t value = 0;
     size_t digits = 0;
     while (i < p->length) {
+      GTEXT_XML_Status scan_work = xml_charge_work(p, 1);
+      if (scan_work != GTEXT_XML_OK) {
+        return scan_work;
+      }
       const int d = hex ? hex_value(in[i])
                         : (in[i] >= '0' && in[i] <= '9' ? in[i] - '0' : -1);
       if (d < 0) {
@@ -524,11 +566,22 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       return xml_fail_at(p, GTEXT_XML_E_CHARACTER,
           "character reference to a character XML does not allow", &at);
     }
+    const size_t encoded_length = value <= 0x7F ? 1
+        : value <= 0x7FF ? 2 : value <= 0xFFFF ? 3 : 4;
+    charged = xml_charge(p, &p->expanded_bytes, p->max_expanded_bytes,
+        encoded_length, GTEXT_XML_E_LIMIT_EXPANSION,
+        "entity expansion byte limit exceeded");
+    if (charged != GTEXT_XML_OK) {
+      return charged;
+    }
+    charged = xml_consume(p, i + 1 - p->pos);
+    if (charged != GTEXT_XML_OK) {
+      return charged;
+    }
     const GTEXT_XML_Status status = xml_append_code_point(p, buf, value);
     if (status != GTEXT_XML_OK) {
       return status;
     }
-    xml_consume(p, i + 1 - p->pos);
     return GTEXT_XML_OK;
   }
 
@@ -547,6 +600,14 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     return xml_fail_at(p,
         xml_at_end(p, end) ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_SYNTAX,
         "reference not terminated by ';'", &at);
+  }
+  GTEXT_XML_Status work = xml_charge_work(p, end + 1 - p->pos);
+  if (work != GTEXT_XML_OK) {
+    return work;
+  }
+  work = xml_consume(p, end + 1 - p->pos);
+  if (work != GTEXT_XML_OK) {
+    return work;
   }
   const char * name = (const char *)in + i;
   const char * replacement = NULL;
@@ -569,7 +630,6 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     if (flushed != GTEXT_XML_OK) {
       return flushed;
     }
-    xml_consume(p, end + 1 - p->pos);
     const GTEXT_XML_Status pushed = xml_source_push(p,
         XML_SOURCE_INTERNAL_ENTITY, source_identity, source_bytes, source_length);
     if (pushed != GTEXT_XML_OK) {
@@ -602,12 +662,17 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     return xml_fail_at(p, GTEXT_XML_E_ENTITY,
         "entity reference other than the five predefined ones", &at);
   }
+  charged = xml_charge(p, &p->expanded_bytes, p->max_expanded_bytes,
+      replacement_length, GTEXT_XML_E_LIMIT_EXPANSION,
+      "entity expansion byte limit exceeded");
+  if (charged != GTEXT_XML_OK) {
+    return xml_fail_at(p, charged, "entity expansion byte limit exceeded", &at);
+  }
   const GTEXT_XML_Status status =
       xml_append(p, buf, replacement, replacement_length);
   if (status != GTEXT_XML_OK) {
     return status;
   }
-  xml_consume(p, end + 1 - p->pos);
   return GTEXT_XML_OK;
 }
 
@@ -617,13 +682,17 @@ GTEXT_XML_Status xml_scan_text_run(xml_ctx * p, size_t * end) {
   const unsigned char * in = p->in;
   size_t i = p->pos;
   while (i < p->length) {
+    GTEXT_XML_Status work = xml_charge_work(p, 1);
+    if (work != GTEXT_XML_OK) {
+      return work;
+    }
     const unsigned char b = in[i];
     if (b == '<' || b == '&') {
       break;
     }
     if (b >= 0x20 && (b < 0x7F || (b == 0x7F && p->version == XML_VERSION_10))) {
       if (b == '>' && i >= p->pos + 2 && in[i - 1] == ']' && in[i - 2] == ']') {
-        xml_consume(p, i - 2 - p->pos);
+        XML_CONSUME_OR_RETURN(p, i - 2 - p->pos);
         return xml_fail(p, GTEXT_XML_E_SYNTAX,
             "\"]]>\" is not allowed in character data");
       }
@@ -641,7 +710,7 @@ GTEXT_XML_Status xml_scan_text_run(xml_ctx * p, size_t * end) {
       continue;
     }
     /* Go to the character and let it say what is wrong with it. */
-    xml_consume(p, i - p->pos);
+    XML_CONSUME_OR_RETURN(p, i - p->pos);
     return xml_unexpected(p, "invalid character");
   }
   *end = i;

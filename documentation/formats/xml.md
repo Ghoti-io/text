@@ -143,6 +143,42 @@ Each has a default from the first release; `0` in the options selects it, and
 | a name, in bytes | 8192 | `_LIMIT_NAME` |
 | nodes in the document, the document node included | 10,000,000 | `_LIMIT_NODES` |
 | namespace declarations in scope at once | 256 | `_LIMIT_NAMESPACES` |
+| bytes in one external source | 16 MiB | `_LIMIT_EXTERNAL_SOURCE` |
+| bytes across external sources | 64 MiB | `_LIMIT_EXTERNAL_TOTAL` |
+| entity replacement bytes, cumulatively | 64 MiB | `_LIMIT_EXPANSION` |
+| active entity sources | 32 | `_LIMIT_ENTITY_DEPTH` |
+| entity references | 1,000,000 | `_LIMIT_REFERENCES` |
+| DTD declarations | 100,000 | `_LIMIT_DECLARATIONS` |
+| charged parser work units | 256 MiB | `_LIMIT_WORK` |
+
+The DTD counters are ready for the source and declaration processing added by
+the following implementation slices; the current parser still does not
+resolve external resources or expand DTD declarations. External limits count
+bytes supplied by a caller, never bytes opened by the library. Every option
+can be overridden independently with a nonzero finite ceiling; zero selects
+the default, including in a zero-initialized options struct.
+
+These defaults retain the 64 MiB document ceiling and bound additional work
+separately. The checked-in pinned XML conformance corpus occupies 17 MiB and
+its largest source is 313,076 bytes, leaving more than 50 times that largest
+case under the document ceiling. A 16 MiB per-source and 64 MiB aggregate
+external ceiling allows large caller-supplied resources while bounding their
+combined cost; the 64 MiB expansion ceiling bounds materialization, and the
+256 MiB work ceiling permits four times the main-input budget for scanner and
+parser passes while keeping repeated work finite. The reference and declaration
+ceilings allow dense tables without permitting unbounded bookkeeping. A pinned
+regression workload parses 100,000 declarations and 100,000 repeated predefined
+references under these defaults; separate boundary tests refuse the next
+declaration/reference and repeated parsed-source tests charge each use. This
+workload demonstrates that the defaults admit a dense but bounded DTD and
+reference stream, while the input, work, and expansion ceilings still bound
+larger adversarial inputs independently.
+
+Total work is charged with checked `size_t` arithmetic as the shared cursor
+advances and as scanner paths revisit candidate bytes. Entity references and
+replacement sources are charged on every use, including repeated uses of the
+same source identity. A limit failure is reported before its corresponding
+replacement is appended or source frame is pushed.
 
 The parser holds its open elements in a heap array, so a document nested a
 million deep is refused at the limit and never reaches the C stack; with the

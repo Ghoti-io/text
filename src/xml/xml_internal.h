@@ -70,6 +70,13 @@ extern "C" {
 #define XML_DEFAULT_MAX_NODES ((size_t)10000000)
 #define XML_DEFAULT_MAX_NAMESPACES ((size_t)256)
 #define XML_DEFAULT_MAX_SOURCE_DEPTH ((size_t)64)
+#define XML_DEFAULT_MAX_EXTERNAL_SOURCE_BYTES ((size_t)16 * 1024 * 1024)
+#define XML_DEFAULT_MAX_EXTERNAL_BYTES ((size_t)64 * 1024 * 1024)
+#define XML_DEFAULT_MAX_EXPANDED_BYTES ((size_t)64 * 1024 * 1024)
+#define XML_DEFAULT_MAX_ENTITY_DEPTH ((size_t)32)
+#define XML_DEFAULT_MAX_REFERENCES ((size_t)1000000)
+#define XML_DEFAULT_MAX_DECLARATIONS ((size_t)100000)
+#define XML_DEFAULT_MAX_TOTAL_WORK ((size_t)256 * 1024 * 1024)
 #define XML_WRITE_DEFAULT_MAX_DEPTH ((size_t)256)
 #define XML_WRITE_DEFAULT_MAX_OUTPUT ((size_t)256 * 1024 * 1024)
 
@@ -196,6 +203,7 @@ typedef struct {
   uint32_t cursor_previous;
   size_t entry_element_depth;
   size_t entry_binding_count;
+  size_t bytes_charged;
   unsigned int grammar_context;
   xml_source_kind kind;
   const void * identity;
@@ -257,6 +265,19 @@ typedef struct {
   size_t max_name_bytes;
   size_t max_namespaces;
   size_t max_source_depth;
+  size_t max_external_source_bytes;
+  size_t max_external_bytes;
+  size_t max_expanded_bytes;
+  size_t max_entity_depth;
+  size_t max_references;
+  size_t max_declarations;
+  size_t max_total_work;
+  size_t external_bytes;
+  size_t expanded_bytes;
+  size_t references;
+  size_t declarations;
+  size_t total_work;
+  size_t entity_depth;
 
   GTEXT_Markup_Document * doc;       ///< NULL when parsing events.
   const GTEXT_Allocator * allocator; ///< The document's copy.
@@ -383,16 +404,26 @@ GTEXT_XML_Status xml_unexpected(xml_ctx * p, const char * message);
 GTEXT_Markup_Location xml_here(const xml_ctx * p);
 /** Map a markup status from the tree to the parser's. */
 GTEXT_XML_Status xml_from_markup(xml_ctx * p, GTEXT_Markup_Status status);
+/** Charge a checked counter before work or allocation; zero selects defaults upstream. */
+GTEXT_XML_Status xml_charge(xml_ctx * p, size_t * counter, size_t limit,
+    size_t amount, GTEXT_XML_Status code, const char * message);
+GTEXT_XML_Status xml_charge_work(xml_ctx * p, size_t amount);
 
 /* ---- Cursor and characters (xml_lexer.c) -------------------------------- */
 
 /** Move the cursor over `n` bytes that have already been validated. */
-void xml_consume(xml_ctx * p, size_t n);
+GTEXT_XML_Status xml_consume(xml_ctx * p, size_t n);
+#define XML_CONSUME_OR_RETURN(p, n) do { \
+  GTEXT_XML_Status xml_consume_status__ = xml_consume((p), (n)); \
+  if (xml_consume_status__ != GTEXT_XML_OK) return xml_consume_status__; \
+} while (0)
 
 /** Initialize, push, or pop one physical source on the bounded heap stack. */
 GTEXT_XML_Status xml_source_init(xml_ctx * p, const void * identity);
 GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
     const void * identity, const void * bytes, size_t length);
+/** Charge another chunk read from the active external source. */
+GTEXT_XML_Status xml_source_charge_external(xml_ctx * p, size_t amount);
 GTEXT_XML_Status xml_source_pop(xml_ctx * p);
 void xml_source_free(xml_ctx * p);
 

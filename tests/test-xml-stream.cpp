@@ -45,6 +45,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -794,6 +795,37 @@ TEST(XmlStream, NestedEntitySourcesWorkAcrossOneByteFeeds) {
   gtext_xml_stream_free(stream);
 }
 
+TEST(XmlStream, ExpandedSourcesCountHypotheticalNodesAgainstMaxNodes) {
+  xml_seams seams{};
+  seams.open_entity_source = stream_entity_source;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.max_nodes = 3; // document + doctype + root; replacement child is next
+  const std::string input = "<!DOCTYPE a><a>&e;</a>";
+  Recorder rec;
+  rec.replaying = false;
+  GTEXT_XML_Stream * stream = xml_stream_new_with_seams(
+      &options, record, &rec, &seams);
+  ASSERT_NE(stream, nullptr);
+  GTEXT_XML_Error err{};
+  GTEXT_XML_Status status = gtext_xml_stream_feed(
+      stream, input.data(), input.size(), &err);
+  if (status == GTEXT_XML_OK) {
+    status = gtext_xml_stream_finish(stream, &err);
+  }
+  EXPECT_EQ(status, GTEXT_XML_E_LIMIT_NODES);
+  EXPECT_EQ(rec.log.size(), 3u);
+  EXPECT_EQ(rec.log[0].find("DOCUMENT_START"), 0u);
+  EXPECT_EQ(rec.log[1].find("DOCTYPE"), 0u);
+  EXPECT_EQ(rec.log[2].find("START"), 0u);
+  gtext_xml_stream_free(stream);
+
+  GTEXT_Markup_Document * doc = nullptr;
+  EXPECT_EQ(xml_parse_with_seams(input.data(), input.size(), &options, &seams,
+      &doc, &err), GTEXT_XML_E_LIMIT_NODES);
+  EXPECT_EQ(doc, nullptr);
+}
+
 TEST(XmlStream, EnforcesTheDefaultNestedSourceDepth) {
   StreamDepthEntitySources sources;
   init_stream_depth_entity_sources(&sources);
@@ -814,7 +846,7 @@ TEST(XmlStream, EnforcesTheDefaultNestedSourceDepth) {
   if (status == GTEXT_XML_OK) {
     status = gtext_xml_stream_finish(stream, &err);
   }
-  EXPECT_EQ(status, GTEXT_XML_E_LIMIT_DEPTH) << err.message;
+  EXPECT_EQ(status, GTEXT_XML_E_LIMIT_ENTITY_DEPTH) << err.message;
   gtext_xml_stream_free(stream);
 }
 
@@ -2381,6 +2413,70 @@ TEST(XmlStream, WorkIsLinearInTheLengthOfAConstructFedAByteAtATime) {
   const double small = time_by_bytes("<a><!--" + std::string(mega / 4, 'c') + "--></a>");
   const double large = time_by_bytes("<a><!--" + std::string(mega, 'c') + "--></a>");
   EXPECT_LT(large, std::max(small * 12.0, 0.5)) << small << "s then " << large << "s";
+}
+
+TEST(XmlStream, WorkExhaustionIsReturnedByDomAndStreamSyntaxPaths) {
+  const std::vector<std::string> docs = {
+      "<r><!--comment--></r>", "<r><?pi data?></r>",
+      "<r><![CDATA[data]]></r>", "<r a='value'/>", "<r></r>",
+      "<!DOCTYPE r [<!ELEMENT r EMPTY>]><r/>"};
+  for (const std::string & doc : docs) {
+    GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+    size_t low = 1;
+    size_t high = 4096;
+    while (low < high) {
+      const size_t mid = low + (high - low) / 2;
+      options.max_total_work = mid;
+      Parsed run;
+      run_stream(run, doc, {}, &options);
+      if (run.status == GTEXT_XML_OK) {
+        high = mid;
+      }
+      else {
+        low = mid + 1;
+      }
+    }
+    ASSERT_GT(low, 1u) << doc;
+    options.max_total_work = low - 1;
+    Parsed stream;
+    run_stream(stream, doc, {}, &options);
+    EXPECT_EQ(stream.status, GTEXT_XML_E_LIMIT_WORK) << doc;
+    GTEXT_Markup_Document * tree = nullptr;
+    EXPECT_EQ(gtext_xml_parse(doc.data(), doc.size(), &options, &tree, nullptr),
+        GTEXT_XML_E_LIMIT_WORK) << doc;
+    EXPECT_EQ(tree, nullptr);
+  }
+}
+
+TEST(XmlStream, ACommentIsNotEmittedWhenItsClosingDelimiterExceedsWork) {
+  const std::string doc = "<r><!--comment--></r>";
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  size_t low = 1;
+  size_t high = 4096;
+  while (low < high) {
+    const size_t mid = low + (high - low) / 2;
+    options.max_total_work = mid;
+    Parsed run;
+    run_stream(run, doc, {}, &options);
+    const bool delivered = std::any_of(run.rec.log.begin(), run.rec.log.end(),
+        [](const std::string & event) {
+          return event.find("COMMENT") != std::string::npos;
+        });
+    if (delivered) {
+      high = mid;
+    }
+    else {
+      low = mid + 1;
+    }
+  }
+  ASSERT_GT(low, 1u);
+  options.max_total_work = low - 1;
+  Parsed refused;
+  run_stream(refused, doc, {}, &options);
+  EXPECT_EQ(refused.status, GTEXT_XML_E_LIMIT_WORK);
+  for (const std::string & event : refused.rec.log) {
+    EXPECT_EQ(event.find("COMMENT"), std::string::npos) << event;
+  }
 }
 
 struct CountingAllocator {

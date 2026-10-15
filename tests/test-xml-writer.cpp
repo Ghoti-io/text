@@ -1816,7 +1816,7 @@ TEST(XmlWriter, TheResultIsClearedEachCallAndNullIsAccepted) {
 
 TEST(XmlWriter, TheNewStatusesHaveNamesAndAreDistinct) {
   std::vector<std::string> names;
-  for (int s = GTEXT_XML_OK; s <= GTEXT_XML_E_LIMIT_OUTPUT; s++) {
+  for (int s = GTEXT_XML_OK; s <= GTEXT_XML_E_LIMIT_WORK; s++) {
     const char * name = gtext_xml_status_string(static_cast<GTEXT_XML_Status>(s));
     ASSERT_NE(name, nullptr);
     EXPECT_STRNE(name, "unknown status") << s;
