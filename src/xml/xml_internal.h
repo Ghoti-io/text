@@ -103,6 +103,12 @@ typedef enum {
   XML_LABEL_ASCII
 } xml_label;
 
+/** The effective XML character profile. Zero initialization means XML 1.0. */
+typedef enum {
+  XML_VERSION_10 = 0,
+  XML_VERSION_11
+} xml_version;
+
 /* ---- Seams -------------------------------------------------------------- */
 
 /** An attribute a declaration supplies when the start tag omits it. */
@@ -224,6 +230,7 @@ typedef struct {
   int partial;
 
   xml_family enc_family; ///< What the document was found to be in.
+  xml_version version;   ///< Effective profile; defaults to XML 1.0.
   int enc_bom;           ///< It began with a byte order mark.
   markup_buf decoded;    ///< The UTF-8 form of converted input; `in` points here.
 
@@ -331,7 +338,8 @@ typedef enum {
   XML_CHAR_OK = 0,
   XML_CHAR_EOF,
   XML_CHAR_BAD_UTF8,
-  XML_CHAR_FORBIDDEN ///< UTF-8 is fine; XML's Char production excludes it.
+  XML_CHAR_FORBIDDEN, ///< UTF-8 is fine; XML's Char production excludes it.
+  XML_CHAR_RESTRICTED ///< XML 1.1 Char, but forbidden as a literal.
 } xml_char_status;
 
 /** Decode and classify the character at `at`. */

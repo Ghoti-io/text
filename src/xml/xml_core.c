@@ -154,6 +154,7 @@ GTEXT_XML_Status xml_unexpected(xml_ctx * p, const char * message) {
     case XML_CHAR_BAD_UTF8:
       return xml_fail(p, GTEXT_XML_E_UTF8, "invalid UTF-8");
     case XML_CHAR_FORBIDDEN:
+    case XML_CHAR_RESTRICTED:
       return xml_fail(p, GTEXT_XML_E_CHARACTER, "character not allowed in XML");
     case XML_CHAR_OK:
       break;

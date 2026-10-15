@@ -699,6 +699,30 @@ TEST(XmlStream, TheEventsOfAKnownDocument) {
   expect_agrees("known document", run, dom);
 }
 
+TEST(XmlStream, Xml11ProfileAndCharacterReferencesSurviveChunking) {
+  const std::string doc = "<?xml version='1.1'?><a>&#x1;&#x85;</a>";
+  Parsed run;
+  run_stream(run, doc, Chunks{1});
+  ASSERT_EQ(run.status, GTEXT_XML_OK);
+  ASSERT_FALSE(run.rec.log.empty());
+  EXPECT_NE(run.rec.log[0].find("DOCUMENT_START version='1.1'"), std::string::npos);
+  EXPECT_NE(run.rec.log[2].find("TEXT '\\x01\\xC2\\x85'"), std::string::npos);
+
+  Parsed bad;
+  run_stream(bad, "<?xml version='1.1'?><a>\xC2\x86</a>", Chunks{1});
+  EXPECT_EQ(bad.status, GTEXT_XML_E_CHARACTER);
+  EXPECT_EQ(bad.err.byte_offset, 24u);
+
+  for (const std::string & body : {
+           std::string("<a v='\x7F'/>"), std::string("<a><!--\x7F--></a>"),
+           std::string("<a><?p \x7F?></a>"),
+           std::string("<a><![CDATA[\x7F]]></a>")}) {
+    Parsed restricted;
+    run_stream(restricted, "<?xml version='1.1'?>" + body, Chunks{1});
+    EXPECT_EQ(restricted.status, GTEXT_XML_E_CHARACTER);
+  }
+}
+
 TEST(XmlStream, TheEmptyElementTagIsAStartAndAnEnd) {
   Parsed run;
   run_stream(run, "<a><b x='1'/>\n</a>", {});

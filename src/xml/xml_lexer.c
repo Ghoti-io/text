@@ -109,6 +109,17 @@ static int is_xml_char(uint32_t c) {
       || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF);
 }
 
+static int is_xml11_char(uint32_t c) {
+  return (c >= 0x1 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD)
+      || (c >= 0x10000 && c <= 0x10FFFF);
+}
+
+static int is_xml11_restricted(uint32_t c) {
+  return (c >= 0x1 && c <= 0x8) || c == 0xB || c == 0xC
+      || (c >= 0xE && c <= 0x1F) || (c >= 0x7F && c <= 0x84)
+      || (c >= 0x86 && c <= 0x9F);
+}
+
 xml_char_status xml_decode(
     const xml_ctx * p, size_t at, uint32_t * code_point, size_t * bytes) {
   if (at >= p->length) {
@@ -160,6 +171,12 @@ xml_char_status xml_decode(
   }
   *code_point = cp;
   *bytes = n;
+  if (p->version == XML_VERSION_11) {
+    if (!is_xml11_char(cp)) {
+      return XML_CHAR_FORBIDDEN;
+    }
+    return is_xml11_restricted(cp) ? XML_CHAR_RESTRICTED : XML_CHAR_OK;
+  }
   return is_xml_char(cp) ? XML_CHAR_OK : XML_CHAR_FORBIDDEN;
 }
 
@@ -362,7 +379,8 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
           i >= p->length ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_SYNTAX,
           "malformed character reference", &at);
     }
-    if (!is_xml_char(value)) {
+    if (!(p->version == XML_VERSION_11 ? is_xml11_char(value)
+                                       : is_xml_char(value))) {
       return xml_fail_at(p, GTEXT_XML_E_CHARACTER,
           "character reference to a character XML does not allow", &at);
     }
@@ -436,7 +454,7 @@ GTEXT_XML_Status xml_scan_text_run(xml_ctx * p, size_t * end) {
     if (b == '<' || b == '&') {
       break;
     }
-    if (b >= 0x20 && b < 0x80) {
+    if (b >= 0x20 && (b < 0x7F || (b == 0x7F && p->version == XML_VERSION_10))) {
       if (b == '>' && i >= p->pos + 2 && in[i - 1] == ']' && in[i - 2] == ']') {
         xml_consume(p, i - 2 - p->pos);
         return xml_fail(p, GTEXT_XML_E_SYNTAX,

@@ -92,7 +92,7 @@ GTEXT_XML_Status xml_parse_comment(xml_ctx * p, int keep) {
       }
       i++;
     }
-    else if ((b >= 0x20 && b < 0x80) || b == '\t' || b == '\n' || b == '\r') {
+    else if ((b >= 0x20 && (b < 0x7F || (b == 0x7F && p->version == XML_VERSION_10))) || b == '\t' || b == '\n' || b == '\r') {
       i++;
     }
     else {
@@ -179,7 +179,7 @@ GTEXT_XML_Status xml_parse_pi(xml_ctx * p, int keep) {
         found = 1;
         break;
       }
-      if ((b >= 0x20 && b < 0x80) || b == '\t' || b == '\n' || b == '\r') {
+      if ((b >= 0x20 && (b < 0x7F || (b == 0x7F && p->version == XML_VERSION_10))) || b == '\t' || b == '\n' || b == '\r') {
         i++;
         continue;
       }
@@ -281,7 +281,7 @@ GTEXT_XML_Status xml_parse_cdata(xml_ctx * p) {
       found = 1;
       break;
     }
-    if ((b >= 0x20 && b < 0x80) || b == '\t' || b == '\n' || b == '\r') {
+    if ((b >= 0x20 && (b < 0x7F || (b == 0x7F && p->version == XML_VERSION_10))) || b == '\t' || b == '\n' || b == '\r') {
       i++;
       continue;
     }
@@ -416,7 +416,7 @@ static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
       if (p->attr_pool.length - start + (i - p->pos) > p->max_attribute_bytes) {
         break;
       }
-      if (b >= 0x20 && b < 0x80) {
+      if (b >= 0x20 && (b < 0x7F || (b == 0x7F && p->version == XML_VERSION_10))) {
         i++;
         continue;
       }
@@ -1010,9 +1010,11 @@ GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
     return xml_fail_at(p, GTEXT_XML_E_SYNTAX,
         "the version must be 1. followed by digits", &where);
   }
-  if (!(length == 3 && p->in[at + 2] == '0')) {
+  const int version_10 = length == 3 && p->in[at + 2] == '0';
+  const int version_11 = length == 3 && p->in[at + 2] == '1';
+  if (!version_10 && !version_11) {
     return xml_fail_at(p, GTEXT_XML_E_UNSUPPORTED_VERSION,
-        "only XML 1.0 is supported", &where);
+        "only XML 1.0 and XML 1.1 are supported", &where);
   }
 
   const char * label = NULL;
@@ -1077,8 +1079,12 @@ GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
     return status;
   }
 
+  /* Select the profile only after the complete declaration is known valid. */
+  p->version = version_11 ? XML_VERSION_11 : XML_VERSION_10;
+  const char * version = version_11 ? "1.1" : "1.0";
+
   if (p->stream) {
-    return xml_emit_document_start(p, "1.0",
+    return xml_emit_document_start(p, version,
         label ? label : xml_family_name(p->enc_family),
         label ? label_length : strlen(xml_family_name(p->enc_family)),
         p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM
@@ -1087,7 +1093,7 @@ GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
         standalone);
   }
   status = xml_from_markup(p,
-      gtext_markup_document_set_xml_declaration(p->doc, "1.0", standalone));
+      gtext_markup_document_set_xml_declaration(p->doc, version, standalone));
   if (status != GTEXT_XML_OK) {
     return status;
   }

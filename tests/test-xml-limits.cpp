@@ -410,6 +410,15 @@ TEST(XmlOom, EveryAllocationOfARichDocumentFailsInTurn) {
   EXPECT_LE(s.swallowed, 2u);
 }
 
+TEST(XmlOom, EveryAllocationOfAnXml11DocumentFailsInTurn) {
+  const Sweep s = sweep(
+      "<?xml version=\"1.1\"?><r a='&#x1;'>&#x85;<child/></r>",
+      gtext_xml_parse_options_default(), GTEXT_XML_OK);
+  EXPECT_EQ(s.successes, 1u);
+  EXPECT_GT(s.failures, 10u);
+  EXPECT_EQ(s.reached_error, 0u);
+}
+
 TEST(XmlOom, ZeroBudgetIsOutOfMemory) {
   FaultAllocator fa;
   GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();

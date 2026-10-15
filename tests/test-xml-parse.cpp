@@ -252,7 +252,9 @@ TEST_F(XmlParse, TheXmlDeclarationIsStrict) {
 
 TEST_F(XmlParse, VersionsAndEncodingsAreStatementsAboutTheParser) {
   Result r = parse("<?xml version=\"1.1\"?><a/>");
-  EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_VERSION);
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  GTEXT_Markup_Standalone standalone;
+  EXPECT_STREQ(gtext_markup_document_xml_version(r.doc, &standalone), "1.1");
   EXPECT_EQ(parse("<?xml version=\"1.2\"?><a/>").status, GTEXT_XML_E_UNSUPPORTED_VERSION);
   r = parse("<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>");
   EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_ENCODING);
@@ -268,6 +270,43 @@ TEST_F(XmlParse, VersionsAndEncodingsAreStatementsAboutTheParser) {
   // An encoding name that is not one is a syntax error, not a statement.
   EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"8bit\"?><a/>").status, GTEXT_XML_E_SYNTAX);
   EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"\"?><a/>").status, GTEXT_XML_E_SYNTAX);
+}
+
+TEST_F(XmlParse, Xml11CharacterAndReferenceRules) {
+  EXPECT_EQ(parse("<a>\x01</a>").status, GTEXT_XML_E_CHARACTER);
+  EXPECT_EQ(parse("<a>&#x1;</a>").status, GTEXT_XML_E_CHARACTER);
+  Result r = parse("<?xml version=\"1.1\"?><a>&#x1;&#x7F;&#x85;&#x9F;</a>");
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  GTEXT_Markup_Standalone standalone;
+  EXPECT_STREQ(gtext_markup_document_xml_version(r.doc, &standalone), "1.1");
+  EXPECT_EQ(parse("<?xml version=\"1.1\"?><a>\xC2\x85</a>").status, GTEXT_XML_OK);
+  for (const std::string & literal : {
+           std::string("\x01"), std::string("\x7F"),
+           std::string("\xC2\x80"), std::string("\xC2\x86")}) {
+    const std::string input = "<?xml version=\"1.1\"?><a>" + literal + "</a>";
+    Result bad = parse(input);
+    EXPECT_EQ(bad.status, GTEXT_XML_E_CHARACTER);
+    EXPECT_EQ(bad.doc, nullptr);
+  }
+  for (const std::string & body : {
+           std::string("<a v='\x7F'/>"), std::string("<a><!--\x7F--></a>"),
+           std::string("<a><?p \x7F?></a>"),
+           std::string("<a><![CDATA[\x7F]]></a>")}) {
+    const std::string input = "<?xml version=\"1.1\"?>" + body;
+    EXPECT_EQ(parse(input).status, GTEXT_XML_E_CHARACTER);
+  }
+  EXPECT_EQ(parse("<?xml version=\"1.1\"?><a>&#0;</a>").status,
+      GTEXT_XML_E_CHARACTER);
+  expect_error("<?xml version=\"1.1\"?><a>\x01</a>",
+      GTEXT_XML_E_CHARACTER, 24, 1, 25);
+  std::string nul = "<?xml version=\"1.1\"?><a></a>";
+  nul.insert(24, 1, '\0');
+  EXPECT_EQ(parse(nul).status, GTEXT_XML_E_CHARACTER);
+  // XML 1.0 Fifth Edition and XML 1.1 Second Edition share the name ranges.
+  EXPECT_EQ(parse("<?xml version=\"1.0\"?><\xC3\x80/>").status, GTEXT_XML_OK);
+  EXPECT_EQ(parse("<?xml version=\"1.1\"?><\xC3\x80/>").status, GTEXT_XML_OK);
+  EXPECT_EQ(parse("<?xml version=\"1.0\"?><\xCC\x80/>").status, GTEXT_XML_E_SYNTAX);
+  EXPECT_EQ(parse("<?xml version=\"1.1\"?><\xCC\x80/>").status, GTEXT_XML_E_SYNTAX);
 }
 
 TEST_F(XmlParse, ByteOrderMarksAndWideEncodings) {
