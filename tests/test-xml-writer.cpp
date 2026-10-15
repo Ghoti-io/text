@@ -839,13 +839,14 @@ TEST(XmlWriter, Xml11ReferencesPreserveRestrictedAndNormalizedCharacters) {
   Build b;
   gtext_markup_document_set_xml_declaration(b.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
   Node * a = b.el(nullptr, "a");
-  const std::string value = std::string("x\x01\x7F\xC2\x85\xE2\x80\xA8\r", 9);
-  const std::string attribute = value + "\t\n";
+  const std::string value = std::string("x&<>\x01\x7F\xC2\x85\xE2\x80\xA8\r", 12);
+  const std::string attribute = value + "\t\n\"&<>";
   b.text(a, value);
   b.attr(a, "v", attribute);
   const Out out = write_default(b.doc);
   ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
-  EXPECT_NE(out.bytes.find("x&#x1;&#x7F;&#x85;&#x2028;"), std::string::npos);
+  EXPECT_NE(out.bytes.find("x&amp;&lt;&gt;&#x1;&#x7F;&#x85;&#x2028;"), std::string::npos);
+  EXPECT_NE(out.bytes.find("&quot;&amp;&lt;&gt;"), std::string::npos);
   EXPECT_NE(out.bytes.find("&#xD;"), std::string::npos);
   EXPECT_NE(out.bytes.find("&#x9;&#xA;"), std::string::npos);
   Doc * back = parse(out.bytes);
@@ -885,6 +886,22 @@ TEST(XmlWriter, Xml11RawRestrictedCharactersAndInvalidCharactersRefusePreflight)
   refuses_before_output([](Build & b, const std::string & raw) {
     b.comment(b.el(nullptr, "a"), raw);
   }, normalized);
+  for (const std::string & line_end : {
+           std::string("x\r", 2), std::string("x\xE2\x80\xA8", 4)}) {
+    refuses_before_output([](Build & b, const std::string & raw) {
+      b.comment(b.el(nullptr, "a"), raw);
+    }, line_end);
+    refuses_before_output([](Build & b, const std::string & raw) {
+      b.pi(nullptr, "p", raw);
+    }, line_end);
+    refuses_before_output([](Build & b, const std::string & raw) {
+      b.cdata(b.el(nullptr, "a"), raw);
+    }, line_end);
+    refuses_before_output([](Build & b, const std::string & raw) {
+      b.doctype("a", nullptr, raw.c_str());
+      b.el(nullptr, "a");
+    }, line_end);
+  }
   Build bad;
   gtext_markup_document_set_xml_declaration(bad.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
   bad.text(bad.el(nullptr, "a"), std::string("\0", 1));

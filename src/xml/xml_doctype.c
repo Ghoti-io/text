@@ -93,7 +93,8 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
       i++;
       continue;
     }
-    if (b >= 0x20 && b < 0x80) {
+    if (b >= 0x20 && b < 0x80
+        && !(b == 0x7F && p->version == XML_VERSION_11)) {
       i++;
       continue;
     }
@@ -158,7 +159,8 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
       if (b == '"' || b == '\'' || b == '>' || b == '<' || b == ']' || b == '%') {
         break;
       }
-      if (b >= 0x20 && b < 0x80) {
+      if (b >= 0x20 && b < 0x80
+          && !(b == 0x7F && p->version == XML_VERSION_11)) {
         i++;
         continue;
       }
@@ -210,7 +212,9 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
     i = p->pos;
     while (i < p->length && p->in[i] != quote) {
       const unsigned char c = p->in[i];
-      if ((c >= 0x20 && c < 0x80) || c == '\t' || c == '\n' || c == '\r') {
+      if ((c >= 0x20 && c < 0x80
+              && !(c == 0x7F && p->version == XML_VERSION_11))
+          || c == '\t' || c == '\n' || c == '\r') {
         i++;
         continue;
       }

@@ -1061,9 +1061,8 @@ static GTEXT_XML_Status write_declaration(wctx * w) {
   GTEXT_Markup_Standalone standalone = GTEXT_MARKUP_STANDALONE_UNSPECIFIED;
   const char * version = gtext_markup_document_xml_version(w->doc, &standalone);
   w->at = NULL;
-  /* Whatever the declaration mode: a document that says it is not XML 1.0 is
-     not one this writer can write, and leaving the declaration out would
-     hide that rather than fix it. */
+  /* Whatever the declaration mode, a document that records an unsupported
+     XML version is not one this writer can write. */
   if (version && strcmp(version, "1.0") != 0 && strcmp(version, "1.1") != 0) {
     return fail_name(w, GTEXT_XML_E_UNSUPPORTED_VERSION,
         "only XML 1.0 and 1.1 can be written", version, strlen(version));

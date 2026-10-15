@@ -297,6 +297,13 @@ TEST_F(XmlParse, Xml11CharacterAndReferenceRules) {
   }
   EXPECT_EQ(parse("<?xml version=\"1.1\"?><a>&#0;</a>").status,
       GTEXT_XML_E_CHARACTER);
+  for (const std::string & doctype : {
+           std::string("<!DOCTYPE a SYSTEM '\x7F'><a/>"),
+           std::string("<!DOCTYPE a [<!ENTITY e '\x7F'>]><a/>")}) {
+    Result bad_doctype = parse("<?xml version='1.1'?>" + doctype);
+    EXPECT_EQ(bad_doctype.status, GTEXT_XML_E_CHARACTER);
+    EXPECT_EQ(bad_doctype.doc, nullptr);
+  }
   expect_error("<?xml version=\"1.1\"?><a>\x01</a>",
       GTEXT_XML_E_CHARACTER, 24, 1, 25);
   std::string nul = "<?xml version=\"1.1\"?><a></a>";
@@ -864,6 +871,10 @@ TEST_F(XmlParse, DoctypeIdentifiersAndForms) {
 }
 
 TEST_F(XmlParse, TheInternalSubsetIsSkippedByItsRealEnd) {
+  const std::string xml11_subset = "<?xml version='1.1'?><!DOCTYPE a [<!ELEMENT\xC2\x85" "a EMPTY>"
+      "<!ENTITY %\xE2\x80\xA8" "p 'value'>]><a/>";
+  EXPECT_EQ(parse(xml11_subset).status, GTEXT_XML_OK);
+
   struct Case {
     const char * subset;
     bool ok;

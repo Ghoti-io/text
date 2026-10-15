@@ -991,6 +991,32 @@ TEST(XmlStream, NamespacesAreResolvedAsInTheTree) {
   EXPECT_EQ(bad.status, GTEXT_XML_E_NAMESPACE);
 }
 
+TEST(XmlStream, Xml11InternalSubsetWhitespaceAgreesAcrossReaders) {
+  const std::string doc = "<?xml version='1.1'?><!DOCTYPE a [<!ELEMENT\xC2\x85" "a EMPTY>"
+      "<!ENTITY %\xE2\x80\xA8" "p 'value'>]><a/>";
+  Dom dom;
+  run_dom(dom, doc);
+  ASSERT_EQ(dom.status, GTEXT_XML_OK) << dom.err.message;
+
+  Parsed push;
+  run_stream(push, doc, Chunks{1});
+  ASSERT_EQ(push.status, GTEXT_XML_OK) << push.err.message;
+  expect_agrees("XML 1.1 internal-subset whitespace", push, dom);
+
+  for (const std::string & invalid : {
+           std::string("<?xml version='1.1'?><!DOCTYPE a SYSTEM '\x7F'><a/>"),
+           std::string("<?xml version='1.1'?><!DOCTYPE a [<!ENTITY e '\x7F'>]><a/>")}) {
+    Dom failed_dom;
+    run_dom(failed_dom, invalid);
+    EXPECT_EQ(failed_dom.status, GTEXT_XML_E_CHARACTER);
+    EXPECT_EQ(failed_dom.doc, nullptr);
+    Parsed failed_stream;
+    run_stream(failed_stream, invalid, Chunks{1});
+    EXPECT_EQ(failed_stream.status, failed_dom.status);
+    EXPECT_EQ(failed_stream.err.byte_offset, failed_dom.err.byte_offset);
+  }
+}
+
 TEST(XmlStream, Xml11PrefixUndeclarationsMatchDomOneByteAtATime) {
   const std::string valid =
       "<?xml version='1.1'?><p:a xmlns:p='u'><b xmlns:p=''>"
