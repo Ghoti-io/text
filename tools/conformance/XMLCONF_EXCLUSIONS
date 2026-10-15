@@ -1,0 +1,773 @@
+# Explicit catalogue cases outside the supported recommendation/edition or parser namespace contract.
+# <case-id>	<stable reason>
+ibm-1-1-valid-P04-ibm04v01.xml	catalogue requires a non-namespace-aware processor
+ibm-1-1-valid-P05-ibm05v01.xml	catalogue requires a non-namespace-aware processor
+ibm-1-1-valid-P05-ibm05v02.xml	catalogue requires a non-namespace-aware processor
+ibm-1-1-valid-P05-ibm05v03.xml	catalogue requires a non-namespace-aware processor
+ibm-1-1-valid-P05-ibm05v05.xml	catalogue requires a non-namespace-aware processor
+ibm-invalid-P89-ibm89n06.xml	unsupported recommendation XML1.0-errata4e
+ibm-invalid-P89-ibm89n07.xml	unsupported recommendation XML1.0-errata4e
+ibm-invalid-P89-ibm89n08.xml	unsupported recommendation XML1.0-errata4e
+ibm-invalid-P89-ibm89n09.xml	unsupported recommendation XML1.0-errata4e
+ibm-invalid-P89-ibm89n10.xml	unsupported recommendation XML1.0-errata4e
+ibm-invalid-P89-ibm89n11.xml	unsupported recommendation XML1.0-errata4e
+ibm-invalid-P89-ibm89n12.xml	unsupported recommendation XML1.0-errata4e
+ibm-not-wf-P85-ibm85n03.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n04.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n05.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n06.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n07.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n08.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n09.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n10.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n100.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n101.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n102.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n103.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n104.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n105.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n106.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n107.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n108.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n109.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n11.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n110.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n111.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n112.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n113.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n114.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n115.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n116.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n117.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n118.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n119.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n12.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n120.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n121.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n122.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n123.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n124.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n125.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n126.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n127.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n128.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n129.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n13.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n130.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n131.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n132.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n133.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n134.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n135.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n136.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n137.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n138.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n139.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n14.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n140.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n141.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n142.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n143.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n144.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n145.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n146.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n147.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n148.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n149.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n15.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n150.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n151.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n152.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n153.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n154.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n155.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n156.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n157.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n158.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n159.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n16.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n160.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n161.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n162.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n163.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n164.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n165.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n166.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n167.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n168.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n169.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n17.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n170.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n171.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n172.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n173.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n174.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n175.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n176.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n177.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n178.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n179.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n18.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n180.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n181.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n182.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n183.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n184.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n185.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n186.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n187.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n188.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n189.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n19.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n190.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n191.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n192.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n193.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n194.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n195.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n196.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n197.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n198.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n20.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n21.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n22.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n23.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n24.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n25.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n26.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n27.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n28.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n29.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n30.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n31.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n32.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n33.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n34.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n35.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n36.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n37.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n38.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n39.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n40.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n41.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n42.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n43.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n44.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n45.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n46.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n47.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n48.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n49.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n50.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n51.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n52.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n53.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n54.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n55.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n56.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n57.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n58.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n59.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n60.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n61.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n62.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n63.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n64.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n65.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n66.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n67.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n68.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n69.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n70.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n71.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n72.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n73.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n74.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n75.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n76.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n77.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n78.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n79.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n80.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n81.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n82.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n83.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n84.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n85.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n86.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n87.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n88.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n89.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n90.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n91.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n92.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n93.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n94.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n95.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n96.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n97.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n98.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P85-ibm85n99.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P86-ibm86n01.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P86-ibm86n02.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P86-ibm86n03.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P86-ibm86n04.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n01.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n02.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n03.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n04.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n05.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n06.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n07.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n08.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n09.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n10.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n11.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n12.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n13.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n14.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n15.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n16.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n17.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n18.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n19.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n20.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n21.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n22.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n23.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n24.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n25.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n26.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n27.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n28.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n29.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n30.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n31.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n32.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n33.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n34.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n35.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n36.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n37.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n38.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n39.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n40.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n41.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n42.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n43.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n44.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n45.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n46.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n47.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n48.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n49.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n50.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n51.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n52.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n53.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n54.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n55.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n56.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n57.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n58.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n59.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n60.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n61.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n62.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n63.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n64.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n66.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n67.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n68.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n69.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n70.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n71.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n72.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n73.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n74.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n75.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n76.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n77.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n78.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n79.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n80.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n81.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n82.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n83.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n84.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P87-ibm87n85.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n03.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n04.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n05.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n06.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n08.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n09.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n10.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n11.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n12.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n13.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n14.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n15.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P88-ibm88n16.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n03.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n04.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n05.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n06.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n07.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n08.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n09.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n10.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n11.xml	catalogue targets an XML edition before Fifth Edition
+ibm-not-wf-P89-ibm89n12.xml	catalogue targets an XML edition before Fifth Edition
+ibm-valid-P85-ibm85n03.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n04.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n05.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n06.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n07.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n08.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n09.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n10.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n100.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n101.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n102.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n103.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n104.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n105.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n106.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n107.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n108.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n109.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n11.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n110.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n111.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n112.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n113.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n114.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n115.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n116.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n117.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n118.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n119.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n12.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n120.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n121.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n122.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n123.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n124.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n125.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n126.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n127.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n128.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n129.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n13.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n130.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n131.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n132.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n133.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n134.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n135.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n136.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n137.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n138.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n139.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n14.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n140.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n141.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n142.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n143.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n144.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n145.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n146.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n147.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n148.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n149.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n15.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n150.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n151.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n152.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n153.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n154.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n155.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n156.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n157.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n158.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n159.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n16.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n160.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n161.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n162.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n163.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n164.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n165.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n166.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n167.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n168.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n169.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n17.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n170.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n171.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n172.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n173.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n174.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n175.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n176.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n177.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n178.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n179.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n18.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n180.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n181.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n182.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n183.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n184.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n185.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n186.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n187.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n188.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n189.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n19.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n190.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n191.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n192.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n193.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n194.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n195.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n196.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n197.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n198.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n20.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n21.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n22.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n23.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n24.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n25.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n26.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n27.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n28.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n29.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n30.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n31.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n32.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n33.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n34.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n35.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n36.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n37.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n38.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n39.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n40.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n41.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n42.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n43.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n44.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n45.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n46.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n47.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n48.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n49.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n50.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n51.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n52.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n53.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n54.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n55.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n56.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n57.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n58.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n59.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n60.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n61.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n62.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n63.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n64.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n65.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n66.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n67.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n68.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n69.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n70.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n71.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n72.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n73.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n74.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n75.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n76.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n77.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n78.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n79.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n80.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n81.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n82.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n83.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n84.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n85.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n86.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n87.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n88.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n89.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n90.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n91.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n92.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n93.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n94.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n95.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n96.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n97.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n98.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P85-ibm85n99.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P86-ibm86n01.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P86-ibm86n02.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P86-ibm86n03.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P86-ibm86n04.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n01.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n02.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n03.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n04.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n05.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n06.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n07.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n08.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n09.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n10.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n11.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n12.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n13.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n14.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n15.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n16.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n17.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n18.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n19.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n20.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n21.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n22.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n23.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n24.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n25.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n26.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n27.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n28.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n29.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n30.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n31.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n32.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n33.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n34.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n35.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n36.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n37.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n38.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n39.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n40.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n41.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n42.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n43.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n44.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n45.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n46.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n47.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n48.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n49.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n50.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n51.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n52.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n53.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n54.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n55.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n56.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n57.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n58.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n59.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n60.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n61.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n62.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n63.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n64.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n66.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n67.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n68.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n69.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n70.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n71.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n72.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n73.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n74.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n75.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n76.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n77.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n78.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n79.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n80.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n81.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n82.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n83.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n84.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P87-ibm87n85.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n03.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n04.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n05.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n06.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n08.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n09.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n10.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n11.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n12.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n13.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n14.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n15.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P88-ibm88n16.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P89-ibm89n03.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P89-ibm89n04.xml	unsupported recommendation XML1.0-errata4e
+ibm-valid-P89-ibm89n05.xml	unsupported recommendation XML1.0-errata4e
+invalid-bo-1	unsupported recommendation XML1.0-errata4e
+invalid-bo-2	unsupported recommendation XML1.0-errata4e
+invalid-bo-3	unsupported recommendation XML1.0-errata4e
+invalid-bo-4	unsupported recommendation XML1.0-errata4e
+invalid-bo-5	unsupported recommendation XML1.0-errata4e
+invalid-bo-6	unsupported recommendation XML1.0-errata4e
+invalid-bo-7	unsupported recommendation XML1.0-errata4e
+invalid-bo-8	unsupported recommendation XML1.0-errata4e
+invalid-bo-9	unsupported recommendation XML1.0-errata4e
+invalid-sa-140	unsupported recommendation XML1.0-errata4e
+invalid-sa-141	unsupported recommendation XML1.0-errata4e
+not-wf-sa-140	catalogue targets an XML edition before Fifth Edition
+not-wf-sa-141	catalogue targets an XML edition before Fifth Edition
+o-p04pass1	catalogue requires a non-namespace-aware processor
+o-p05pass1	catalogue requires a non-namespace-aware processor
+o-p08pass1	catalogue requires a non-namespace-aware processor
+rmt-014	catalogue targets an XML edition before Fifth Edition
+rmt-016	catalogue targets an XML edition before Fifth Edition
+rmt-019	catalogue targets an XML edition before Fifth Edition
+rmt-e2e-14	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15a	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15b	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15c	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15d	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15e	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15f	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15g	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15h	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15i	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15j	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15k	unsupported recommendation XML1.0-errata2e
+rmt-e2e-15l	unsupported recommendation XML1.0-errata2e
+rmt-e2e-18	unsupported recommendation XML1.0-errata2e
+rmt-e2e-19	unsupported recommendation XML1.0-errata2e
+rmt-e2e-20	unsupported recommendation XML1.0-errata2e
+rmt-e2e-22	unsupported recommendation XML1.0-errata2e
+rmt-e2e-24	unsupported recommendation XML1.0-errata2e
+rmt-e2e-27	unsupported recommendation XML1.0-errata2e
+rmt-e2e-29	unsupported recommendation XML1.0-errata2e
+rmt-e2e-2a	unsupported recommendation XML1.0-errata2e
+rmt-e2e-2b	unsupported recommendation XML1.0-errata2e
+rmt-e2e-34	unsupported recommendation XML1.0-errata2e
+rmt-e2e-36	unsupported recommendation XML1.0-errata2e
+rmt-e2e-38	unsupported recommendation XML1.0-errata2e
+rmt-e2e-41	unsupported recommendation XML1.0-errata2e
+rmt-e2e-48	unsupported recommendation XML1.0-errata2e
+rmt-e2e-50	unsupported recommendation XML1.0-errata2e
+rmt-e2e-55	unsupported recommendation XML1.0-errata2e
+rmt-e2e-57	unsupported recommendation XML1.0-errata2e
+rmt-e2e-60	unsupported recommendation XML1.0-errata2e
+rmt-e2e-61	unsupported recommendation XML1.0-errata2e
+rmt-e2e-9a	unsupported recommendation XML1.0-errata2e
+rmt-e2e-9b	unsupported recommendation XML1.0-errata2e
+rmt-e3e-05a	unsupported recommendation XML1.0-errata3e
+rmt-e3e-05b	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06a	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06b	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06c	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06d	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06e	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06f	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06g	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06h	unsupported recommendation XML1.0-errata3e
+rmt-e3e-06i	unsupported recommendation XML1.0-errata3e
+rmt-e3e-12	unsupported recommendation XML1.0-errata3e
+rmt-e3e-13	unsupported recommendation XML1.0-errata3e
+rmt-ns-e1.0-13a	unsupported recommendation NS1.0-errata1e
+rmt-ns-e1.0-13b	unsupported recommendation NS1.0-errata1e
+rmt-ns-e1.0-13c	unsupported recommendation NS1.0-errata1e
+valid-sa-012	catalogue requires a non-namespace-aware processor
+x-ibm-1-0.5-not-wf-P04-ibm04n02.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n03.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n04.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n05.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n06.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n07.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n08.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n09.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n10.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n11.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n12.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n13.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n14.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n15.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n16.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n17.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n18.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n19.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n20.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n21.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n22.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n23.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n24.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n25.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n26.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n27.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04-ibm04n28.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an01.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an02.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an03.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an04.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an05.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an06.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an07.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an08.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an09.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an10.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an11.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an12.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an13.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an14.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an15.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an16.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an17.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an18.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an19.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an20.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an21.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an22.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an23.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an24.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an25.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an26.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an27.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P04a-ibm04an28.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P05-ibm05n01.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P05-ibm05n02.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P05-ibm05n03.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P05-ibm05n04.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P05-ibm05n05.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-not-wf-P05-ibm05n06.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P04-ibm04av01.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P04-ibm04v01.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P047-ibm07v01.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P05-ibm05v01.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P05-ibm05v02.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P05-ibm05v03.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P05-ibm05v04.xml	unsupported recommendation XML1.0-errata4e
+x-ibm-1-0.5-valid-P05-ibm05v05.xml	unsupported recommendation XML1.0-errata4e
+x-rmt-008	unsupported recommendation XML1.0-errata4e
+x-rmt-008b	unsupported recommendation XML1.0-errata4e
+x-rmt5-014	unsupported recommendation XML1.0-errata4e
+x-rmt5-014a	unsupported recommendation XML1.0-errata4e
+x-rmt5-016	unsupported recommendation XML1.0-errata4e
+x-rmt5-019	unsupported recommendation XML1.0-errata4e
+pr-xml-euc-jp	parser does not support UNSUPPORTED_ENCODING for this case
+pr-xml-iso-2022-jp	parser does not support UNSUPPORTED_ENCODING for this case
+pr-xml-shift_jis	parser does not support UNSUPPORTED_ENCODING for this case
+weekly-euc-jp	parser does not support UNSUPPORTED_ENCODING for this case
+weekly-iso-2022-jp	parser does not support UNSUPPORTED_ENCODING for this case
+weekly-shift_jis	parser does not support UNSUPPORTED_ENCODING for this case
+ibm-not-wf-P23-ibm23n05.xml	parser does not support UNSUPPORTED_ENCODING for this case

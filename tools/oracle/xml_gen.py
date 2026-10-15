@@ -98,24 +98,31 @@ def _walk(node, base, subdir, out, suite):
             out.append((child, where, beside))
 
 
-def xmlconf_cases(suite=SUITE):
+def xmlconf_cases(suite=SUITE, include_excluded=False):
     """[(id, bytes, tags)] for every case in the catalogue.
 
     Every type: `not-wf` and `error` are in the denominator along with `valid` and
     `invalid`. The tags carry the type and the edition/version/namespace
-    attributes, which the report prints and which the classification of a
-    disagreement can name (an XML 1.1 case is refused by this parser on purpose).
+    attributes, which the report uses to separate the two supported XML profiles.
     """
     if not os.path.exists(os.path.join(suite, "xmlconf.xml")):
         raise SystemExit("%s is not here. Fetch the pinned suite: tools/xml/fetch.sh"
                          % os.path.join(suite, "xmlconf.xml"))
     cases = []
     _walk(_catalogue(suite), "", "", cases, suite)
+    exclusions_path = os.path.join(os.path.dirname(HERE), "conformance", "XMLCONF_EXCLUSIONS")
+    excluded = set()
+    with open(exclusions_path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip() and not line.startswith("#"):
+                excluded.add(line.split("\t", 1)[0])
     out = []
     for t, where, beside in cases:
         path = where if os.path.exists(where) else beside
         if not os.path.exists(path):
             raise SystemExit("catalogue case %s has no file at %s" % (t.get("ID"), where))
+        if not include_excluded and t.get("ID") in excluded:
+            continue
         with open(path, "rb") as fh:
             data = fh.read()
         tags = ["xmlconf", "type:" + (t.get("TYPE") or "?")]
@@ -134,8 +141,14 @@ def seed_cases(directory=SEED_DIR):
     out = []
     if not os.path.isdir(directory):
         return out
+    exclusions_path = os.path.join(os.path.dirname(HERE), "conformance", "XMLCONF_EXCLUSIONS")
+    with open(exclusions_path, encoding="utf-8") as fh:
+        excluded = {line.split("\t", 1)[0] for line in fh
+                    if line.strip() and not line.startswith("#")}
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".seed"):
+            continue
+        if name.startswith("xmlconf-") and name[len("xmlconf-"):-len(".seed")] in excluded:
             continue
         with open(os.path.join(directory, name), "rb") as fh:
             data = fh.read()
@@ -377,7 +390,8 @@ def corpus(count, seed):
     """Every input: suite, seeds, generated. Deduplicated by content, the first
     name kept, so a seed that is a suite document is counted once."""
     suite = xmlconf_cases()
-    items = suite + seed_cases() + generated(count, seed, suite)
+    source_suite = xmlconf_cases(include_excluded=True)
+    items = suite + seed_cases() + generated(count, seed, source_suite)
     seen = {}
     out = []
     for ident, data, tags in items:

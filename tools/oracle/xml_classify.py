@@ -17,7 +17,6 @@ is itself a measurement**, taken from the programs that disagreed.
                     ASCII, in a document libxml2 and this parser both accept. The
                     offending character is one of the Fifth Edition's, which
                     expat's Fourth Edition tables do not have.
-  scope-xml11,      the XML declaration's version, read from the bytes.
   scope-unsupported
   reference-wrong   a control again: the same document with the one thing the specification
                     forbids put right (the declared version made `1.0`; the bytes after a NUL
@@ -305,7 +304,49 @@ def dump_difference(ours, ref, normalize):
     return None
 
 
-def classify(data, ours, ref, sig, detail, ctl, normalize):
+def xml11_line_end_difference(data, ours, ref, normalize):
+    """Whether XML 1.1 line-end normalization alone explains both event diffs."""
+    decoded = decode_text(data)
+    if not decoded or declared_version(decoded[0]) != "1.1":
+        return None
+    ours_events = normalize(ours["dump"])
+
+    def normalize_reference(events):
+        # The reference normalizes CR to LF but leaves the following XML 1.1
+        # separator visible. Collapse only the pairs that were CR+NEL or CR+LS
+        # in the input; an ordinary LF followed by either character is two ends.
+        remaining_pairs = {
+            b"\n\xc2\x85": decoded[0].count("\r\u0085"),
+            b"\n\xe2\x80\xa8": decoded[0].count("\r\u2028"),
+        }
+        out = []
+        for event in events:
+            fields = []
+            for index, field in enumerate(event):
+                if isinstance(field, bytes):
+                    replacement = b" " if event[0] == "A" and index == 4 else b"\n"
+                    for pair in remaining_pairs:
+                        while remaining_pairs[pair] and pair in field:
+                            field = field.replace(pair, replacement, 1)
+                            remaining_pairs[pair] -= 1
+                    field = field.replace(b"\xe2\x80\xa8", replacement).replace(b"\xc2\x85", replacement)
+                fields.append(field)
+            out.append(tuple(fields))
+        return out
+
+    for name in ("xml2", "expat"):
+        if not ref[name].get("dump"):
+            return None
+        reference_events = normalize(ref[name]["dump"])
+        if normalize_reference(reference_events) != ours_events:
+            return None
+    if not any(ch in decoded[0] for ch in ("\u0085", "\u2028")):
+        return None
+    return ("reference-wrong", "XML 1.1 section 2.11 requires literal NEL and LINE SEPARATOR line ends "
+            "to normalize to LF; both references retain the literal character")
+
+
+def classify(data, ours, ref, sig, detail, ctl, normalize, tags=()):
     """(class, reason) for a disagreement, or ("unclassified", detail).
 
     `ctl` maps a control's name to (agrees, ours_answer, ref_answers) for the
@@ -315,13 +356,41 @@ def classify(data, ours, ref, sig, detail, ctl, normalize):
     got = decode_text(data)
     text = got[0] if got else None
 
+    # xmlconf TYPE is normative for well-formedness. An independent reference
+    # that disagrees with the selected class is evidence of a reference gap,
+    # provided our own verdict matches the W3C expectation.
+    expected_type = next((tag.split(":", 1)[1] for tag in tags if tag.startswith("type:")), None)
+    if expected_type in ("not-wf", "valid", "invalid"):
+        expected = "REFUSE" if expected_type == "not-wf" else "ACCEPT"
+        if ours["verdict"] == expected:
+            xml2 = "A" if ref["xml2"]["wf"] and ref["xml2"]["ns"] else "R"
+            expat = "A" if ref["expat"]["ok"] else "R"
+            if xml2 != expected[0] or expat != expected[0]:
+                return "reference-wrong", ("pinned W3C xmlconf TYPE=%s expects %s under its XML/Namespaces "
+                                            "Recommendation; the pinned references disagree" %
+                                            (expected_type, expected.lower()))
+
+    if text is not None and declared_version(text) == "1.1" and ours["verdict"] == "REFUSE":
+        restricted = any((1 <= ord(c) <= 8) or 11 <= ord(c) <= 12 or 14 <= ord(c) <= 31
+                         or 0x7f <= ord(c) <= 0x84 or 0x86 <= ord(c) <= 0x9f for c in text)
+        xml2 = "A" if ref["xml2"]["wf"] and ref["xml2"]["ns"] else "R"
+        expat = "A" if ref["expat"]["ok"] else "R"
+        if restricted and xml2 == expat == "A":
+            return "reference-wrong", ("XML 1.1 section 2.2 forbids RestrictedChar literals; the character must "
+                                        "be written as a reference, but both pinned references accept it literally")
+
+    if ours["verdict"] == "ACCEPT" and " dump=" in sig:
+        found = xml11_line_end_difference(data, ours, ref, normalize)
+        if found:
+            return found
+
     if ours["verdict"] == "DECLINE":
         if status == "UNSUPPORTED_VERSION" and text is not None:
             v = declared_version(text) or ""
             if v == "1.1":
-                return "scope-xml11", "XML 1.1 is declined on purpose (declaration version 1.1)"
+                return "unclassified", "XML 1.1 is a supported parser profile; this refusal must be investigated"
             if re.fullmatch(r"1\.[0-9]+", v):
-                return "scope-unsupported", "declaration version %s is declined: only 1.0 is read" % v
+                return "scope-unsupported", "declaration version %s is declined" % v
         if status == "UNSUPPORTED_ENCODING":
             m = re.match(rb"(?:\xef\xbb\xbf)?<\?xml[^>]*?\sencoding\s*=\s*[\"']([^\"']*)[\"']", data)
             label = m.group(1).decode("latin-1") if m else None

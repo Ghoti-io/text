@@ -33,6 +33,7 @@ cc -O1 -o "$runner" "$root/tools/oracle/xml_ours.c" \
 if [ "$1" = "--controls" ]; then
 	log=$(mktemp)
 	trap 'rm -f "$log"' EXIT
+	python3 "$root/tools/oracle/test_xml_classify.py"
 	# <plant> <heading it must produce> <what the difference must look like>
 	while read -r plant want detail; do
 		status=0

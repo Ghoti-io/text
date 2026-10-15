@@ -10,13 +10,14 @@
 # get it; it never skips, because a run that scored nothing and exited 0 would
 # say the parser conforms having read none of the suite.
 #
-# XMLCONF_MIN_SCORED sets a floor on how many cases were actually scored, so
-# that a truncated corpus cannot pass by being small.
+# XMLCONF_MIN_SCORED_10 and XMLCONF_MIN_SCORED_11 set profile-specific floors
+# so that a truncated corpus cannot pass by being small.
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/tools/conformance/lib.sh"
 suite=${XMLCONF_SUITE:-$root/third_party/xml/xmlconf}
+python3 "$root/tools/conformance/test_xml_profile.py"
 
 if [ ! -f "$suite/xmlconf.xml" ]; then
 	echo "$suite/xmlconf.xml is not here." >&2

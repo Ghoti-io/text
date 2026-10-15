@@ -49,7 +49,6 @@ cannot outlive its reason either. The classes are:
   representation    equal information, reported differently
   reference-scope   a reference does not read this encoding or how it is presented
   scope-dtd         needs DTD processing, which this parser does not do
-  scope-xml11       XML 1.1, which this parser refuses on purpose
   scope-unsupported an encoding or version this parser declines to read
   scope-limit       a limit this parser enforces and the references do not
 
@@ -83,7 +82,7 @@ LIST = os.path.join(HERE, "xml_disagreements.txt")
 DEFAULT_COUNT, DEFAULT_SEED = 4000, 1
 
 CLASSES = ("reference-wrong", "version-specific", "spec-ambiguity", "representation",
-           "reference-scope", "scope-dtd", "scope-xml11", "scope-unsupported", "scope-limit")
+           "reference-scope", "scope-dtd", "scope-unsupported", "scope-limit")
 
 PLANTS = {
     "flip-verdict": "our verdict on every 37th input is the opposite one",
@@ -305,6 +304,23 @@ def score(ident, ours, ref):
     return sig, "we decline (%s), a reference reads it" % ours["status"].replace("GTEXT_XML_E_", "")
 
 
+def profile_name(tags, data):
+    """Selected XML/Namespaces profile for comparison totals."""
+    version = next((tag.split(":", 1)[1] for tag in tags if tag.startswith("version:")), None)
+    recommendation = next((tag.split(":", 1)[1] for tag in tags if tag.startswith("rec:")), None)
+    if version is None:
+        decoded = xml_classify.decode_text(data)
+        version = xml_classify.declared_version(decoded[0]) if decoded else None
+    xml_version = "1.1" if version == "1.1" or recommendation == "XML1.1" else "1.0"
+    if "not-namespace-aware" in tags:
+        ns_version = "none"
+    elif recommendation == "NS1.1" or (xml_version == "1.1" and recommendation != "NS1.0"):
+        ns_version = "1.1"
+    else:
+        ns_version = "1.0"
+    return "XML%s/NS%s" % (xml_version, ns_version)
+
+
 # ---- the list -------------------------------------------------------------------------
 
 def load_list(path=LIST):
@@ -519,6 +535,7 @@ def main(argv):
     verdicts = collections.Counter()
     refref = collections.Counter()
     by_tag = collections.defaultdict(collections.Counter)
+    by_profile = collections.defaultdict(collections.Counter)
     keep = {}
     uri_checks = 0
     nsaxis = collections.Counter()
@@ -534,6 +551,11 @@ def main(argv):
             ours, did = plant(planted, i, ours)
             fired += did
         xml2, expat, plain = ref_verdicts(ref)
+        profile = profile_name(tags, data)
+        by_profile[profile]["inputs"] += 1
+        by_profile[profile]["ours accepts"] += ours["verdict"] == "ACCEPT"
+        by_profile[profile]["libxml2 accepts"] += xml2 == "A"
+        by_profile[profile]["expat accepts"] += expat == "A"
         pop["inputs"] += 1
         verdicts["ours " + ours["verdict"]] += 1
         verdicts["libxml2 " + xml2] += 1
@@ -594,6 +616,12 @@ def main(argv):
     print("  (axes)  " + "  ".join(
         "%s %d/%d" % (t, c["disagree"], c["inputs"]) for t, c in sorted(by_tag.items())
         if t.startswith(("enc:", "not-namespace", "type:", "gen:", "fuzz-seed"))))
+    print("by profile:")
+    for profile in ("XML1.0/NS1.0", "XML1.0/NS1.1", "XML1.1/NS1.0",
+                    "XML1.1/NS1.1", "XML1.0/NSnone", "XML1.1/NSnone"):
+        counts = by_profile[profile]
+        print("  %-14s %5d inputs; ours %5d accept; libxml2 %5d accept; expat %5d accept" % (
+            profile, counts["inputs"], counts["ours accepts"], counts["libxml2 accepts"], counts["expat accepts"]))
     classes = collections.Counter(listed[k][1] for k in found if k in listed)
     print("disagreements: %d found, %d listed (%s), %d unlisted, %d stale, %d with a changed signature"
           % (len(found), sum(1 for k in found if k in listed),
@@ -607,7 +635,7 @@ def main(argv):
         for k in hunted:
             sig, detail, tags, data = found[k]
             ours, ref = keep[k]
-            cls, _reason = xml_classify.classify(data, ours, ref, sig, detail, ctl.get(k, {}), normalize)
+            cls, _reason = xml_classify.classify(data, ours, ref, sig, detail, ctl.get(k, {}), normalize, tags)
             classes_seen[cls] += 1
             if cls == "unclassified":
                 unexplained.append(k)
@@ -617,7 +645,8 @@ def main(argv):
             sys.stderr.write("\033[0;31m\n### Generated disagreements no class explains ###\033[0m\n")
             for k in unexplained[:40]:
                 sig, detail, tags, data = found[k]
-                sys.stderr.write("  %s  [%s]\n    %s\n    %r\n" % (k, sig, detail[:300], data[:160]))
+                sys.stderr.write("  %s [%s]  [%s]\n    %s\n    %r\n" % (
+                    k, profile_name(tags, data), sig, detail[:300], data[:160]))
             return 3
 
     if propose:
@@ -625,7 +654,7 @@ def main(argv):
         for k in unlisted + (hunted if hunting else []):
             sig, detail, tags, data = found[k]
             ours, ref = keep[k]
-            cls, reason = xml_classify.classify(data, ours, ref, sig, detail, ctl.get(k, {}), normalize)
+            cls, reason = xml_classify.classify(data, ours, ref, sig, detail, ctl.get(k, {}), normalize, tags)
             print("%s\t%s\t%s\t%s" % (k, sig, cls, reason.replace("\t", " ")))
         return 0
 
@@ -642,7 +671,8 @@ def main(argv):
         sys.stderr.write("\033[0;31m\n### %s ###\033[0m\n" % heading)
         for k in group[:40]:
             sig, detail, tags, data = found[k]
-            sys.stderr.write("  %s  [%s]\n    %s\n    %r\n" % (k, sig, detail[:300], data[:160]))
+            sys.stderr.write("  %s [%s]  [%s]\n    %s\n    %r\n" % (
+                k, profile_name(tags, data), sig, detail[:300], data[:160]))
         if len(group) > 40:
             sys.stderr.write("  ... and %d more (--propose prints them all)\n" % (len(group) - 40))
     if stale:

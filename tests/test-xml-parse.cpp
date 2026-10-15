@@ -309,6 +309,26 @@ TEST_F(XmlParse, Xml11CharacterAndReferenceRules) {
   EXPECT_EQ(parse("<?xml version=\"1.1\"?><\xCC\x80/>").status, GTEXT_XML_E_SYNTAX);
 }
 
+TEST_F(XmlParse, VersionSensitiveCharacterReferencesHaveOppositeProfiles) {
+  // XML 1.0 permits U+0086 in a character reference, so use U+0001 for the
+  // same-character profile pair: forbidden in XML 1.0, reference-only in 1.1.
+  const std::string xml10_reference = "<r>&#x1;</r>";
+  const std::string xml11_reference = "<?xml version='1.1'?><r>&#x1;</r>";
+  EXPECT_EQ(parse(xml10_reference).status, GTEXT_XML_E_CHARACTER);
+  Result xml11 = parse(xml11_reference);
+  ASSERT_EQ(xml11.status, GTEXT_XML_OK);
+  size_t length = 0;
+  Node * text = gtext_markup_node_first_child(gtext_markup_document_element(xml11.doc));
+  ASSERT_NE(text, nullptr);
+  ASSERT_EQ(gtext_markup_node_kind(text), GTEXT_MARKUP_KIND_TEXT);
+  const char * expanded = gtext_markup_node_data(text, &length);
+  EXPECT_EQ(length, 1u);
+  EXPECT_EQ(std::string(expanded, length), "\x01");
+
+  const std::string xml11_literal = "<?xml version='1.1'?><r>\x01</r>";
+  EXPECT_EQ(parse(xml11_literal).status, GTEXT_XML_E_CHARACTER);
+}
+
 TEST_F(XmlParse, ByteOrderMarksAndWideEncodings) {
   // A UTF-8 mark is skipped and counted in the offsets, not in the columns.
   Result r = parse("\xEF\xBB\xBF<a/>");
@@ -783,6 +803,13 @@ TEST_F(XmlParse, NamespaceErrors) {
   // The default namespace is not a prefix: an unprefixed attribute named
   // xmlns is the declaration, and p:xmlns is an ordinary attribute.
   EXPECT_EQ(parse("<a xmlns:p=\"u\" p:xmlns=\"1\"/>").status, GTEXT_XML_OK);
+}
+
+TEST_F(XmlParse, PrefixUndeclarationHasOppositeXmlProfiles) {
+  const std::string undeclare = "<r xmlns:p='urn:p'><child xmlns:p=''/></r>";
+  EXPECT_EQ(parse(undeclare).status, GTEXT_XML_E_NAMESPACE);
+  Result xml11 = parse("<?xml version='1.1'?>" + undeclare);
+  ASSERT_EQ(xml11.status, GTEXT_XML_OK);
 }
 
 TEST_F(XmlParse, DoctypeIdentifiersAndForms) {

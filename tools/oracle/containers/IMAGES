@@ -331,7 +331,7 @@ win32	localhost/ghoti-text-oracle-win32:10.0	wine 10.0~repack-6	The Win32 profil
 # substitution, DTD loading or network; expat is run with and without namespace
 # processing. See containers/xml/Dockerfile and tools/oracle/xml_diff.py.
 
-xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML 1.0: whether a document is well-formed, and what it contains, from two parsers that share no code
+xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML 1.0 and 1.1: well-formedness and event comparison by profile where the pinned references support it
 
 # HTML: html5lib and parse5 in one image, because they share no code (Python and
 # JavaScript), and a differential scored against only one inherits that one's gaps.

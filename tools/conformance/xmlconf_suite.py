@@ -42,19 +42,14 @@ What is scored, by the case's TYPE in the catalogue:
             never scored.
   error     the specification leaves it to the processor: reported, unscored.
 
-What is out of scope and is counted, not scored, with the reason:
-
-  XML 1.1, or Namespaces 1.1, cases      (XML 1.1 is not planned)
-  cases for a processor that is not namespace aware  (NAMESPACE="no")
-  cases that apply only to editions before the fifth (EDITION without "5")
-  cases the parser answered with UNSUPPORTED_ENCODING / UNSUPPORTED_VERSION
-                                          (UTF-16/32 and other encodings are
-                                          a later slice; the answer is a
-                                          statement about the parser, not about
-                                          the document)
+Every case is assigned to XML 1.0 or XML 1.1 from catalogue metadata and, when
+metadata is absent, its XML declaration (an absent declaration means 1.0).
+Namespaced cases also identify the applicable Namespaces Recommendation.
+Cases intentionally excluded from scoring are listed by ID and reason in the
+exclusions manifest; unlisted and stale exclusions fail the gate.
 
 A scored case that fails is a failure of the gate unless it is listed in the
-exceptions file as `<id><TAB><reason>`. An exception that no longer fails is
+exceptions file as `<id><TAB><profile><TAB><reason>`. An exception that no longer fails is
 also a failure: a list that cannot shrink stops meaning anything. The exit
 status is the verdict; it is non-zero if any scored case fails unexplained, if
 any exception is stale, if the runner crashed on any case, or if fewer than
@@ -66,6 +61,8 @@ import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+
+from xml_profile import profile_for
 
 SUITE = sys.argv[1]
 RUNNER = sys.argv[2]
@@ -130,17 +127,15 @@ def walk(node, base, subdir, out):
 
 
 def classify_scope(t):
-    """Why a case is not for this parser, or None."""
-    version = t.get('VERSION')
-    if version is not None and '1.0' not in version.split():
-        return 'XML 1.1'
-    if t.get('RECOMMENDATION') in ('XML1.1', 'NS1.1'):
-        return 'XML 1.1'
+    """Stable reason a catalogue case is outside this gate's contract."""
+    recommendation = t.get('RECOMMENDATION')
+    if recommendation and recommendation not in ('XML1.0', 'NS1.0', 'XML1.1', 'NS1.1'):
+        return 'unsupported recommendation %s' % recommendation
     if t.get('NAMESPACE') == 'no':
-        return 'not namespace aware'
+        return 'catalogue requires a non-namespace-aware processor'
     edition = t.get('EDITION')
     if edition is not None and '5' not in edition.split():
-        return 'before the fifth edition'
+        return 'catalogue targets an XML edition before Fifth Edition'
     return None
 
 
@@ -170,18 +165,21 @@ def run(path):
     return (parts[1], '%s:%s %s' % (parts[3], parts[4], parts[5]), line)
 
 
-def load_exceptions():
+def load_manifest(path, label, fields):
     table = {}
-    if EXCEPTIONS and os.path.exists(EXCEPTIONS):
-        with open(EXCEPTIONS, encoding='utf-8') as fh:
+    if path and os.path.exists(path):
+        with open(path, encoding='utf-8') as fh:
             for raw in fh:
                 raw = raw.rstrip('\n')
                 if not raw.strip() or raw.startswith('#'):
                     continue
-                ident, _, reason = raw.partition('\t')
-                if not reason.strip():
-                    sys.exit("exception %r has no reason" % ident)
-                table[ident] = reason.strip()
+                parts = raw.split('\t')
+                if len(parts) != fields or not all(p.strip() for p in parts):
+                    sys.exit("%s entry must have %d nonempty tab-separated fields: %r" % (label, fields, raw))
+                ident = parts[0].strip()
+                if ident in table:
+                    sys.exit("duplicate %s entry %r" % (label, ident))
+                table[ident] = tuple(p.strip() for p in parts[1:])
     return table
 
 
@@ -214,18 +212,22 @@ cases = []
 walk(load_catalogue(), '', '', cases)
 if not cases:
     sys.exit("the catalogue yields no cases")
-exceptions = load_exceptions()
+exceptions = load_manifest(EXCEPTIONS, 'exception', 3)
+EXCLUSIONS = os.path.join(os.path.dirname(EXCEPTIONS), 'XMLCONF_EXCLUSIONS') if EXCEPTIONS else None
+exclusions = load_manifest(EXCLUSIONS, 'exclusion', 2)
 
 out_of_scope = collections.Counter()
+profile_scored = collections.Counter()
 unsupported = collections.Counter()
 scored = collections.Counter()           # (type, outcome) over scored cases
 unscored = collections.Counter()         # (type, outcome) over reported-only cases
 failures = []                            # unexplained scored failures
-explained = []                           # (id, reason) exceptions seen to fail
+explained = []                           # (id, profile, reason) exceptions seen to fail
 crashes = []
 disagreements = []                       # (id, mode, dom line, stream line)
 round_trip_failures = []                 # (id, runner line)
 round_trip_checked = 0
+round_trip_checked_by_version = collections.Counter()
 round_trip_refusals = 0                  # documents some one-byte encoding refused
 ordering = collections.Counter()         # mode -> cases refused first for another reason
 stream_checked = 0
@@ -233,18 +235,25 @@ seen_ids = set()
 missing = []
 
 rebased = 0
+seen_exclusions = set()
 for t, path, beside in cases:
     ident = t.get('ID')
     seen_ids.add(ident)
-    why = classify_scope(t)
-    if why:
-        out_of_scope[why] += 1
-        continue
     if not os.path.exists(path) and os.path.exists(beside):
         path = beside
         rebased += 1
     if not os.path.exists(path):
         missing.append((ident, path))
+        continue
+    profile = profile_for(t, path)
+    why = classify_scope(t)
+    if why:
+        entry = exclusions.get(ident)
+        if entry != (why,):
+            failures.append((ident, 'excluded', 'exclusion manifest says %r; current reason is %r' % (entry, why), path))
+        else:
+            seen_exclusions.add(ident)
+        out_of_scope[(profile, why)] += 1
         continue
     kind = t.get('TYPE')
     outcome, detail, dom_line = run(path)
@@ -265,7 +274,13 @@ for t, path, beside in cases:
                 disagreements.append((ident, mode, dom_line, line))
         stream_checked += 1
     if outcome in UNSUPPORTED:
-        unsupported[(kind, outcome)] += 1
+        reason = 'parser does not support %s for this case' % outcome.replace('GTEXT_XML_E_', '')
+        entry = exclusions.get(ident)
+        if entry != (reason,):
+            failures.append((ident, 'excluded', 'exclusion manifest says %r; current reason is %r' % (entry, reason), path))
+        else:
+            seen_exclusions.add(ident)
+        unsupported[(profile, kind, outcome)] += 1
         continue
     accepted = outcome == 'OK'
     if accepted:
@@ -274,6 +289,7 @@ for t, path, beside in cases:
             crashes.append((ident + ' [roundtrip]', died[0], died[1]))
         elif line.split(' ')[0] == 'OK':
             round_trip_checked += 1
+            round_trip_checked_by_version[profile.split('/', 1)[0]] += 1
             round_trip_refusals += 1 if line.split(' ')[1:] not in ([], ['0']) else 0
         else:
             round_trip_failures.append((ident, line))
@@ -292,40 +308,50 @@ for t, path, beside in cases:
     else:
         unscored[(kind, 'accepted' if accepted else 'refused')] += 1
         continue
-    scored[(kind, 'pass' if passed else 'fail')] += 1
+    scored[(profile, kind, 'pass' if passed else 'fail')] += 1
+    profile_scored[(profile, kind, 'pass' if passed else 'fail')] += 1
     if not passed:
         expected = 'refused' if kind == 'not-wf' else 'accepted'
-        entry = (ident, kind, '%s expected; got %s %s' % (expected, outcome, detail), path)
+        entry = (ident, profile, '%s: %s expected; got %s %s' % (kind, expected, outcome, detail), path)
         if ident in exceptions:
-            explained.append((ident, exceptions[ident]))
+            if exceptions[ident][0] != profile:
+                failures.append((ident, profile, 'exception profile mismatch (%s vs %s): %s' % (
+                    exceptions[ident][0], profile, kind), path))
+            else:
+                explained.append((ident, profile, exceptions[ident][1]))
         else:
             failures.append(entry)
 
 total_scored = sum(scored.values())
-total_pass = sum(v for (k, o), v in scored.items() if o == 'pass')
+total_pass = sum(v for (_profile, _kind, outcome), v in scored.items() if outcome == 'pass')
 
+for ident, entry in exclusions.items():
+    if ident not in seen_exclusions:
+        failures.append((ident, 'excluded', 'stale exclusion: %s' % entry[0], ''))
 print("W3C XML Conformance Test Suite: %d cases in the catalogue" % len(cases))
 if rebased:
     print("(%d found in their sub-catalogue's folder: the catalogue's xml:base for them names a folder with no files)" % rebased)
 print()
-print("scored:")
-for kind in ('not-wf', 'valid', 'invalid'):
-    p = scored[(kind, 'pass')]
-    f = scored[(kind, 'fail')]
-    if p + f:
+print("scored by profile and expected class:")
+for profile in ('XML1.0/NS1.0', 'XML1.0/NS1.1', 'XML1.1/NS1.0',
+                'XML1.1/NS1.1', 'XML1.0/NSnone', 'XML1.1/NSnone'):
+    print("  %s" % profile)
+    for kind in ('not-wf', 'valid', 'invalid'):
+        p = scored[(profile, kind, 'pass')]
+        f = scored[(profile, kind, 'fail')]
         what = 'refused' if kind == 'not-wf' else 'accepted (well-formed)'
-        print("  %-8s %4d of %4d %s" % (kind, p, p + f, what))
+        print("    %-8s %4d of %4d %s" % (kind, p, p + f, what))
 print("  total    %4d of %4d" % (total_pass, total_scored))
 print()
 print("reported, not scored (the valid and invalid classes are never scored for validity here):")
 for (kind, outcome), v in sorted(unscored.items()):
     print("  %-34s %-9s %4d" % (kind, outcome, v))
-for (kind, outcome), v in sorted(unsupported.items()):
-    print("  %-34s %-9s %4d" % (kind + ' [' + outcome[len('GTEXT_XML_E_'):].lower() + ']', 'declined', v))
+for (profile, kind, outcome), v in sorted(unsupported.items()):
+    print("  %-14s %-10s %-34s %-9s %4d" % (profile, kind, outcome[len('GTEXT_XML_E_'):].lower(), 'declined', v))
 print()
 print("out of scope:")
-for why, v in sorted(out_of_scope.items()):
-    print("  %-34s %4d" % (why, v))
+for (profile, why), v in sorted(out_of_scope.items()):
+    print("  %-14s %-54s %4d" % (profile, why, v))
 print()
 print("event parser, whole and by bytes, against the DOM parse: %d runs, %d disagree" % (
     stream_checked, len(disagreements)))
@@ -335,9 +361,11 @@ print()
 print("round trip (written in UTF-8, UTF-16 LE and BE, ISO-8859-1, US-ASCII; read back equal; written again identically):")
 print("  %d accepted documents, %d differ; %d refused by a one-byte encoding for a character it lacks" % (
     round_trip_checked + len(round_trip_failures), len(round_trip_failures), round_trip_refusals))
+print("  by XML version: XML1.0 %d successful round trips; XML1.1 %d" % (
+    round_trip_checked_by_version['XML1.0'], round_trip_checked_by_version['XML1.1']))
 print()
 print("exceptions (scored cases that fail, each with its reason): %d" % len(explained))
-reasons = collections.Counter(r for _, r in explained)
+reasons = collections.Counter(r for _, _, r in explained)
 for r, v in reasons.most_common():
     print("  %4d  %s" % (v, r))
 
@@ -347,7 +375,7 @@ if failures:
     print()
     print("UNEXPLAINED FAILURES: %d" % len(failures))
     for ident, kind, detail, path in failures[:200]:
-        print("  %-40s %-7s %s" % (ident, kind, detail))
+        print("  %-40s %-14s %s" % (ident, kind, detail))
         print("  %-40s         %s" % ('', os.path.relpath(path, SUITE)))
 if disagreements:
     status = 1
@@ -401,17 +429,26 @@ if rt_ceiling and round_trip_refusals > int(rt_ceiling):
     print("conformance: %d documents refused by a one-byte encoding, above the ceiling of %s" % (
         round_trip_refusals, rt_ceiling))
 
-rt_floor = os.environ.get('XMLCONF_MIN_ROUNDTRIP')
-if rt_floor and round_trip_checked < int(rt_floor):
-    status = 1
-    print()
-    print("conformance: only %d documents were round-tripped, below the floor of %s" % (
-        round_trip_checked, rt_floor))
+for xml_version, env in (('XML1.0', 'XMLCONF_MIN_ROUNDTRIP_10'),
+                         ('XML1.1', 'XMLCONF_MIN_ROUNDTRIP_11')):
+    rt_floor = os.environ.get(env)
+    have = round_trip_checked_by_version[xml_version]
+    if rt_floor and have < int(rt_floor):
+        status = 1
+        print()
+        print("conformance: %s has %d successful round trips, below the floor of %s" % (
+            xml_version, have, rt_floor))
 
+for xml_version, env in (('XML1.0', 'XMLCONF_MIN_SCORED_10'),
+                         ('XML1.1', 'XMLCONF_MIN_SCORED_11')):
+    floor = os.environ.get(env)
+    have = sum(v for (p, _k, _o), v in scored.items() if p.startswith(xml_version + '/'))
+    if floor and have < int(floor):
+        status = 1
+        print("conformance: %s scored %d cases, below the floor of %s" % (xml_version, have, floor))
 floor = os.environ.get('XMLCONF_MIN_SCORED')
 if floor and total_scored < int(floor):
     status = 1
-    print()
     print("conformance: only %d cases were scored, below the floor of %s" % (total_scored, floor))
 if status == 0:
     print()
