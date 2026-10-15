@@ -980,7 +980,7 @@ TEST_F(MarkupTree, AnAttributeLocationIsRememberedPerAttribute) {
   ASSERT_EQ(gtext_markup_element_set_attribute(e, nullptr, nullptr, "b", "2", 1),
       GTEXT_MARKUP_OK);
   EXPECT_FALSE(gtext_markup_element_attribute_location(e, 0, nullptr));
-  const GTEXT_Markup_Location where = {40, 3, 9};
+  const GTEXT_Markup_Location where = {40, 3, 9, 0, 0, 0, false};
   ASSERT_EQ(gtext_markup_element_set_attribute_location(e, 1, &where), GTEXT_MARKUP_OK);
   GTEXT_Markup_Location got = {};
   ASSERT_TRUE(gtext_markup_element_attribute_location(e, 1, &got));
@@ -999,7 +999,7 @@ TEST_F(MarkupTree, AnAttributeLocationIsRememberedPerAttribute) {
 TEST_F(MarkupTree, ANodeBuiltByHandHasNoLocationAndOneSetIsKept) {
   Node * e = element("e");
   EXPECT_FALSE(gtext_markup_node_location(e, nullptr));
-  const GTEXT_Markup_Location where = {1234, 7, 22};
+  const GTEXT_Markup_Location where = {1234, 7, 22, 0, 0, 0, false};
   gtext_markup_node_set_location(e, &where);
   GTEXT_Markup_Location got = {};
   ASSERT_TRUE(gtext_markup_node_location(e, &got));
@@ -1014,7 +1014,7 @@ TEST_F(MarkupTree, ALineBeyondThirtyTwoBitsSaturatesAndTheOffsetDoesNot) {
   Node * e = element("e");
   // (As wide as a size_t allows: with a 64-bit one the line is far past 32 bits and saturates; with a 32-bit one no line
   // can be, and the test says only that nothing changes. suite/tools/xarch/text.sh i686 runs that arm.)
-  const GTEXT_Markup_Location where = {SIZE_MAX / 3, SIZE_MAX / 5, (size_t)5};
+  const GTEXT_Markup_Location where = {SIZE_MAX / 3, SIZE_MAX / 5, (size_t)5, 0, 0, 0, false};
   gtext_markup_node_set_location(e, &where);
   GTEXT_Markup_Location got = {};
   ASSERT_TRUE(gtext_markup_node_location(e, &got));
@@ -1201,7 +1201,7 @@ Node * build_sample(GTEXT_Markup_Document * doc) {
   gtext_markup_element_set_attribute(e, nullptr, nullptr, "id", "root", 4);
   gtext_markup_element_set_attribute(
       e, GTEXT_MARKUP_NS_XLINK, "xlink", "href", "#a", 2);
-  const GTEXT_Markup_Location where = {7, 2, 3};
+  const GTEXT_Markup_Location where = {7, 2, 3, 0, 0, 0, false};
   gtext_markup_element_set_attribute_location(e, 0, &where);
   gtext_markup_node_set_location(e, &where);
   gtext_markup_create_text(doc, "hello", 5, &t);
@@ -1271,6 +1271,27 @@ TEST_F(MarkupTree, AShallowCloneOfATemplateDoesNotCopyItsContent) {
   Node * copy = nullptr;
   ASSERT_EQ(gtext_markup_clone(doc, t, false, &copy), GTEXT_MARKUP_OK);
   EXPECT_EQ(gtext_markup_element_template_content(copy), nullptr);
+}
+
+TEST_F(MarkupTree, FailedMixedTextCloneDoesNotLeaveDetachedNodeBehind) {
+  Node * original = text("source");
+  const GTEXT_Markup_Location where{};
+  ASSERT_EQ(markup_text_add_span(doc, original, 0, 6, &where),
+      GTEXT_MARKUP_OK);
+  const size_t nodes_before = gtext_markup_document_node_count(doc);
+  Node * copy = reinterpret_cast<Node *>(0x1);
+
+  // Text creation takes two allocations; span copying is the third.
+  fa.arm(3);
+  const GTEXT_Markup_Status status = gtext_markup_clone(doc, original, false,
+      &copy);
+  fa.disarm();
+
+  EXPECT_EQ(status, GTEXT_MARKUP_E_OOM);
+  EXPECT_EQ(copy, reinterpret_cast<Node *>(0x1));
+  EXPECT_TRUE(fa.failed);
+  EXPECT_EQ(gtext_markup_document_node_count(doc), nodes_before);
+  EXPECT_EQ(markup_check_invariants(doc), nullptr);
 }
 
 TEST_F(MarkupTree, CloningIsHowANodeCrossesDocuments) {

@@ -907,6 +907,7 @@ static GTEXT_XML_Status detect(GTEXT_XML_Stream * s) {
   markup_buf raw = s->input;
   markup_buf_init(&s->input, &s->allocator);
   xml_converter_init(&s->converter, p, &s->input, family);
+  s->converter.raw_total = skip;
   s->converting = 1;
   const GTEXT_XML_Status status = xml_converter_feed(&s->converter,
       (const unsigned char *)raw.data + skip, raw.length - skip, 0);
@@ -977,11 +978,21 @@ static GTEXT_XML_Status count_node(xml_ctx * p) {
   return GTEXT_XML_OK;
 }
 
-static void event_init(GTEXT_XML_Event * e, GTEXT_XML_Event_Type type,
+static void event_init(xml_ctx * p, GTEXT_XML_Event * e, GTEXT_XML_Event_Type type,
     const GTEXT_Markup_Location * at) {
   memset(e, 0, sizeof(*e));
   e->type = type;
   e->location = *at;
+  if (at->source_id != 0 && at->source_id <= p->source_name_count) {
+    e->source_name = p->source_names[at->source_id - 1];
+  }
+  const size_t retained = p->source_count > 32 ? 32 : p->source_count;
+  const size_t first = p->source_count - retained;
+  e->reference_trail_count = (uint8_t)retained;
+  e->reference_trail_truncated = first != 0;
+  for (size_t i = 0; i < retained; i++) {
+    e->reference_trail[i] = p->sources[first + i].source_id;
+  }
 }
 
 /* A NUL-terminated copy in the arena; its offset. */
@@ -1006,9 +1017,9 @@ GTEXT_XML_Status xml_emit_document_start(xml_ctx * p, const char * version,
   if (status != GTEXT_XML_OK) {
     return status;
   }
-  const GTEXT_Markup_Location origin = {0, 1, 1};
+  const GTEXT_Markup_Location origin = {0, 1, 1, 1, 0, 0, false};
   GTEXT_XML_Event e;
-  event_init(&e, GTEXT_XML_EVENT_DOCUMENT_START, &origin);
+  event_init(p, &e, GTEXT_XML_EVENT_DOCUMENT_START, &origin);
   e.version = version;
   e.encoding = s->arena.data + at;
   e.encoding_source = source;
@@ -1023,7 +1034,7 @@ GTEXT_XML_Status xml_emit_doctype(xml_ctx * p, const GTEXT_Markup_Location * at,
     return status;
   }
   GTEXT_XML_Event e;
-  event_init(&e, GTEXT_XML_EVENT_DOCTYPE, at);
+  event_init(p, &e, GTEXT_XML_EVENT_DOCTYPE, at);
   e.name = name;
   e.public_id = public_id;
   e.system_id = system_id;
@@ -1103,7 +1114,7 @@ GTEXT_XML_Status xml_emit_element_start(xml_ctx * p,
     out->location = a->where;
   }
   GTEXT_XML_Event e;
-  event_init(&e, GTEXT_XML_EVENT_ELEMENT_START, at);
+  event_init(p, &e, GTEXT_XML_EVENT_ELEMENT_START, at);
   e.namespace_uri = element_ns;
   e.prefix = prefix == SIZE_MAX ? NULL : base + prefix;
   e.local_name = base + local;
@@ -1132,7 +1143,7 @@ GTEXT_XML_Status xml_emit_element_end(xml_ctx * p,
     return status;
   }
   GTEXT_XML_Event e;
-  event_init(&e, GTEXT_XML_EVENT_ELEMENT_END, at);
+  event_init(p, &e, GTEXT_XML_EVENT_ELEMENT_END, at);
   e.namespace_uri = ns;
   e.prefix = prefix == SIZE_MAX ? NULL : s->arena.data + prefix;
   e.local_name = s->arena.data + local;
@@ -1146,7 +1157,7 @@ static GTEXT_XML_Status emit_data(xml_ctx * p, GTEXT_XML_Event_Type type,
     return status;
   }
   GTEXT_XML_Event e;
-  event_init(&e, type, at);
+  event_init(p, &e, type, at);
   e.data = data;
   e.data_length = length;
   return deliver(p, &e);
@@ -1181,7 +1192,7 @@ GTEXT_XML_Status xml_emit_pi(xml_ctx * p, const GTEXT_Markup_Location * at,
     return status;
   }
   GTEXT_XML_Event e;
-  event_init(&e, GTEXT_XML_EVENT_PROCESSING_INSTRUCTION, at);
+  event_init(p, &e, GTEXT_XML_EVENT_PROCESSING_INSTRUCTION, at);
   e.name = s->arena.data + name;
   e.data = data;
   e.data_length = length;
@@ -1374,7 +1385,7 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_feed(GTEXT_XML_Stream * s,
   if (len > s->max_input - s->fed) {
     /* As for the DOM parse, which refuses an over-long input before reading it:
        the refusal is of the document, so it is at the start. */
-    const GTEXT_Markup_Location origin = {0, 1, 1};
+    const GTEXT_Markup_Location origin = {0, 1, 1, 1, 0, 0, false};
     return conclude(s,
         xml_fail_at(p, GTEXT_XML_E_LIMIT_INPUT, "input too long", &origin), err);
   }
@@ -1422,7 +1433,7 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_finish(
   if (status == GTEXT_XML_OK) {
     GTEXT_XML_Event e;
     const GTEXT_Markup_Location here = xml_here(p);
-    event_init(&e, GTEXT_XML_EVENT_DOCUMENT_END, &here);
+    event_init(p, &e, GTEXT_XML_EVENT_DOCUMENT_END, &here);
     status = deliver(p, &e);
   }
   if (status == GTEXT_XML_OK) {

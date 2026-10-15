@@ -378,11 +378,13 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, five, five, 5), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, five, nullptr, 0,
+      five, 5), GTEXT_XML_OK);
   EXPECT_EQ(p.external_bytes, 5u);
   ASSERT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   std::memset(&p.err, 0, sizeof(p.err));
-  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, one, 1),
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0,
+      one, 1),
       GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL);
   EXPECT_EQ(p.source_count, 1u);
   xml_source_free(&p);
@@ -397,7 +399,8 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, five, five, 5),
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, five, nullptr, 0,
+      five, 5),
       GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
   EXPECT_EQ(p.source_count, 1u);
   xml_source_free(&p);
@@ -411,7 +414,8 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0),
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0,
+      nullptr, 0),
       GTEXT_XML_OK);
   EXPECT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
   EXPECT_EQ(p.expanded_bytes, 5u);
@@ -431,7 +435,8 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0),
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0,
+      nullptr, 0),
       GTEXT_XML_OK);
   ASSERT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
   EXPECT_EQ(xml_source_charge_external(&p, 1), GTEXT_XML_E_LIMIT_EXPANSION);
@@ -503,7 +508,7 @@ TEST(XmlLimits, EveryLedgerCounterRejectsOverflowWithoutChangingCounters) {
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
   ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, external,
-      external, 1), GTEXT_XML_OK);
+      nullptr, 0, external, 1), GTEXT_XML_OK);
   p.sources[p.source_count - 1].bytes_charged = SIZE_MAX - 1;
   p.expanded_bytes = 0;
   EXPECT_EQ(xml_source_charge_external(&p, 2),
@@ -946,8 +951,8 @@ TEST(XmlSourceStack, PushPopRestoresTheParentCursorAndGrammarContext) {
   p.version = XML_VERSION_10;
   p.frame_count = 1;
   ASSERT_EQ(xml_source_init(&p, parent), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, child, child,
-                sizeof(child) - 1), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, child, nullptr, 0,
+                child, sizeof(child) - 1), GTEXT_XML_OK);
   EXPECT_EQ(p.in, child);
   EXPECT_EQ(p.pos, 0u);
   EXPECT_EQ(p.line, 1u);
@@ -978,8 +983,8 @@ TEST(XmlSourceStack, RejectsPhysicalNestingAndTheBound) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, entity,
-                sizeof(entity) - 1), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, nullptr, 0,
+                entity, sizeof(entity) - 1), GTEXT_XML_OK);
   p.frame_count = 1;
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_E_MISMATCHED_TAG);
   p.frame_count = 0;
@@ -987,10 +992,10 @@ TEST(XmlSourceStack, RejectsPhysicalNestingAndTheBound) {
   // The parser preserves its first error; clear it here because the second
   // half isolates the independent depth-limit outcome.
   std::memset(&p.err, 0, sizeof(p.err));
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, entity,
-                sizeof(entity) - 1), GTEXT_XML_OK);
-  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, deep, deep,
-                sizeof(deep) - 1), GTEXT_XML_E_LIMIT_DEPTH);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, nullptr, 0,
+                entity, sizeof(entity) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, deep, nullptr, 0,
+                deep, sizeof(deep) - 1), GTEXT_XML_E_LIMIT_DEPTH);
   xml_source_free(&p);
 }
 
@@ -1005,11 +1010,11 @@ TEST(XmlSourceStack, ExternalSubsetDoesNotConsumeEntityDepth) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, subset, subset,
-      sizeof(subset) - 1), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, subset, nullptr, 0,
+      subset, sizeof(subset) - 1), GTEXT_XML_OK);
   EXPECT_EQ(p.entity_depth, 0u);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, entity,
-      sizeof(entity) - 1), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, nullptr, 0,
+      entity, sizeof(entity) - 1), GTEXT_XML_OK);
   EXPECT_EQ(p.entity_depth, 1u);
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   EXPECT_EQ(p.entity_depth, 0u);
@@ -1027,18 +1032,18 @@ TEST(XmlSourceStack, RejectsMissingIdentityAndInvalidBytes) {
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
   EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, nullptr,
-                entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
+                nullptr, 0, entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
   EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity,
-                nullptr, 1), GTEXT_XML_E_INVALID);
+                nullptr, 0, nullptr, 1), GTEXT_XML_E_INVALID);
   EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity,
-                nullptr, 0), GTEXT_XML_OK);
+                nullptr, 0, nullptr, 0), GTEXT_XML_OK);
   EXPECT_NE(p.in, nullptr);
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   ASSERT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, entity,
-                entity, sizeof(entity) - 1), GTEXT_XML_OK);
+                nullptr, 0, entity, sizeof(entity) - 1), GTEXT_XML_OK);
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, entity,
-                entity, sizeof(entity) - 1), GTEXT_XML_OK);
+                nullptr, 0, entity, sizeof(entity) - 1), GTEXT_XML_OK);
   EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
   xml_source_free(&p);
 }

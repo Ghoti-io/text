@@ -207,6 +207,9 @@ typedef struct {
   unsigned int grammar_context;
   xml_source_kind kind;
   const void * identity;
+  char * owned_name;
+  uint32_t source_id;
+  uint32_t reference_source_id;
   xml_version version;
   unsigned char suspended;
 } xml_source_frame;
@@ -334,6 +337,10 @@ typedef struct {
   xml_source_frame * sources;
   size_t source_count;
   size_t source_capacity;
+  uint32_t next_source_id;
+  char ** source_names; ///< Owned labels retained through parser/reader lifetime.
+  size_t source_name_count;
+  size_t source_name_capacity;
 } xml_ctx;
 
 /**
@@ -364,6 +371,9 @@ typedef struct {
   markup_buf * out;
   xml_family family;
   size_t total;        ///< Bytes of UTF-8 produced so far.
+  size_t raw_total;    ///< Original encoded bytes accepted so far.
+  size_t raw_unit_offset; ///< Start of the current encoded unit.
+  size_t high_raw_offset; ///< Start of a pending UTF-16 high surrogate.
   size_t line;
   size_t column;
   uint32_t previous;
@@ -427,7 +437,8 @@ GTEXT_XML_Status xml_consume(xml_ctx * p, size_t n);
 /** Initialize, push, or pop one physical source on the bounded heap stack. */
 GTEXT_XML_Status xml_source_init(xml_ctx * p, const void * identity);
 GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
-    const void * identity, const void * bytes, size_t length);
+    const void * identity, const char * name, size_t name_length,
+    const void * bytes, size_t length);
 /** Charge another chunk read from the active external source. */
 GTEXT_XML_Status xml_source_charge_external(xml_ctx * p, size_t amount);
 GTEXT_XML_Status xml_source_pop(xml_ctx * p);

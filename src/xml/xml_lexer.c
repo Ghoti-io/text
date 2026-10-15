@@ -631,7 +631,8 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       return flushed;
     }
     const GTEXT_XML_Status pushed = xml_source_push(p,
-        XML_SOURCE_INTERNAL_ENTITY, source_identity, source_bytes, source_length);
+        XML_SOURCE_INTERNAL_ENTITY, source_identity, name, length,
+        source_bytes, source_length);
     if (pushed != GTEXT_XML_OK) {
       return xml_fail_at(p, pushed,
           "could not enter parsed entity source", &at);

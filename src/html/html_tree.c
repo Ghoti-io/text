@@ -550,7 +550,8 @@ bool ht_any_other_end_tag(GTEXT_HTML_Tree * tb, uint32_t id) {
 static void place(GTEXT_HTML_Tree * tb, HtNode * node) {
   const GTEXT_HTML_Token * t = tb->cur;
   if (t) {
-    GTEXT_Markup_Location where = {t->offset, t->line, t->column};
+    GTEXT_Markup_Location where = {t->offset, t->line, t->column,
+        0, 0, 0, false};
     gtext_markup_node_set_location(node, &where);
   }
 }

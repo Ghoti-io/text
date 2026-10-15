@@ -1276,7 +1276,7 @@ TEST(HtmlTreeMarkupHelpers, ShallowCloneKeepsNameAttributesAndLocationAndNoChild
   ASSERT_EQ(gtext_markup_create_element(doc, GTEXT_MARKUP_NS_HTML, nullptr, "b", &el), GTEXT_MARKUP_OK);
   ASSERT_EQ(gtext_markup_element_set_attribute(el, nullptr, nullptr, "class", "a b", 3), GTEXT_MARKUP_OK);
   ASSERT_EQ(gtext_markup_element_set_attribute(el, nullptr, nullptr, "id", "", 0), GTEXT_MARKUP_OK);
-  GTEXT_Markup_Location where = {7, 2, 3};
+  GTEXT_Markup_Location where = {7, 2, 3, 0, 0, 0, false};
   gtext_markup_node_set_location(el, &where);
   GTEXT_Markup_Node * kid = nullptr;
   ASSERT_EQ(gtext_markup_create_text(doc, "x", 1, &kid), GTEXT_MARKUP_OK);

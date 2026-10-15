@@ -280,13 +280,33 @@ GTEXT_XML_Status xml_flush_text(xml_ctx * p) {
     buf_reset(&p->text);
     return GTEXT_XML_OK;
   }
-  GTEXT_Markup_Node * node = NULL;
-  const GTEXT_XML_Status status = xml_from_markup(p,
-      gtext_markup_create_text(p->doc, p->text.data, p->text.length, &node));
-  if (status != GTEXT_XML_OK) {
-    return status;
+  GTEXT_Markup_Node * parent = current_parent(p);
+  if (p->dtd_mode == GTEXT_XML_DTD_PROCESS && parent->last_child
+      && parent->last_child->kind == GTEXT_MARKUP_KIND_TEXT) {
+    markup_text * previous = (markup_text *)parent->last_child;
+    const size_t start = previous->length;
+    size_t capacity = 0;
+    GTEXT_Markup_Status markup_status = markup_text_append(p->doc,
+        parent->last_child, &capacity, p->text.data, p->text.length);
+    if (markup_status == GTEXT_MARKUP_OK) {
+      markup_status = markup_text_add_span(p->doc, parent->last_child, start,
+          p->text.length, &p->text_where);
+    }
+    if (markup_status != GTEXT_MARKUP_OK) return xml_from_markup(p, markup_status);
   }
-  xml_attach(current_parent(p), node, &p->text_where);
+  else {
+    GTEXT_Markup_Node * node = NULL;
+    GTEXT_XML_Status status = xml_from_markup(p,
+        gtext_markup_create_text(p->doc, p->text.data, p->text.length, &node));
+    if (status != GTEXT_XML_OK) return status;
+    GTEXT_Markup_Status markup_status = markup_text_add_span(p->doc, node,
+        0, p->text.length, &p->text_where);
+    if (markup_status != GTEXT_MARKUP_OK) {
+      gtext_markup_node_free(node);
+      return xml_from_markup(p, markup_status);
+    }
+    xml_attach(parent, node, &p->text_where);
+  }
   buf_reset(&p->text);
   return GTEXT_XML_OK;
 }

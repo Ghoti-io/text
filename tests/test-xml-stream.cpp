@@ -142,6 +142,8 @@ std::string describe(const GTEXT_XML_Event & e) {
 
 struct Recorder {
   std::vector<std::string> log;
+  std::vector<std::string> source_names;
+  std::vector<GTEXT_Markup_Location> locations;
   xml_replay replay;
   bool replaying = true;
   size_t stop_after = SIZE_MAX; // return an error after this many events
@@ -158,6 +160,8 @@ GTEXT_XML_Status record(const GTEXT_XML_Event * e, void * user) {
     return r->stop_with;
   }
   r->log.push_back(describe(*e));
+  r->source_names.emplace_back(e->source_name ? e->source_name : "");
+  r->locations.push_back(e->location);
   if (r->replaying) {
     return xml_replay_event(e, &r->replay);
   }
@@ -881,6 +885,100 @@ TEST(XmlStream, RecursiveEntitySourceIdentityFailsWithoutStalling) {
   gtext_xml_stream_free(stream);
 }
 
+TEST(XmlStream, DtdEntityEventsKeepPhysicalSourceBoundaries) {
+  static const char replacement[] = "z";
+  auto open_entity = [](void *, const char * name, size_t length,
+                        const void ** identity, const void ** bytes,
+                        size_t * source_length) -> int {
+    if (length != 1 || name[0] != 'e') return 0;
+    *identity = replacement;
+    *bytes = replacement;
+    *source_length = sizeof(replacement) - 1;
+    return 1;
+  };
+  xml_seams seams{};
+  seams.open_entity_source = open_entity;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Recorder rec;
+  rec.replaying = false;
+  GTEXT_XML_Stream * stream = xml_stream_new_with_seams(
+      &options, record, &rec, &seams);
+  ASSERT_NE(stream, nullptr);
+  const char input[] = "<a>x&e;y</a>";
+  GTEXT_XML_Error err{};
+  GTEXT_XML_Status status = gtext_xml_stream_feed(
+      stream, input, sizeof(input) - 1, &err);
+  if (status == GTEXT_XML_OK) status = gtext_xml_stream_finish(stream, &err);
+  ASSERT_EQ(status, GTEXT_XML_OK) << err.message;
+  std::vector<GTEXT_Markup_Location> text_locations;
+  for (size_t i = 0; i < rec.log.size(); ++i) {
+    if (rec.log[i].find("TEXT ") == 0) text_locations.push_back(rec.locations[i]);
+  }
+  ASSERT_EQ(text_locations.size(), 3u);
+  EXPECT_EQ(text_locations[0].source_id, 1u);
+  EXPECT_EQ(text_locations[1].source_id, 2u);
+  EXPECT_EQ(text_locations[1].reference_source_id, 1u);
+  EXPECT_EQ(text_locations[2].source_id, 1u);
+  bool found_entity_label = false;
+  for (const std::string & source_name : rec.source_names) {
+    if (source_name == "e") found_entity_label = true;
+  }
+  EXPECT_TRUE(found_entity_label);
+  gtext_xml_stream_free(stream);
+}
+
+TEST(XmlDom, AdjacentEntityTextCoalescesWithOwnedSourceSpans) {
+  static const char replacement[] = "z";
+  auto open_entity = [](void *, const char * name, size_t length,
+                        const void ** identity, const void ** bytes,
+                        size_t * source_length) -> int {
+    if (length != 1 || name[0] != 'e') return 0;
+    *identity = replacement;
+    *bytes = replacement;
+    *source_length = sizeof(replacement) - 1;
+    return 1;
+  };
+  xml_seams seams{};
+  seams.open_entity_source = open_entity;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const char input[] = "<a>x&e;y</a>";
+  GTEXT_Markup_Document * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(xml_parse_with_seams(input, sizeof(input) - 1, &options, &seams,
+      &doc, &err), GTEXT_XML_OK) << err.message;
+  GTEXT_Markup_Node * element = gtext_markup_document_element(doc);
+  GTEXT_Markup_Node * text = gtext_markup_node_first_child(element);
+  ASSERT_EQ(gtext_markup_node_kind(text), GTEXT_MARKUP_KIND_TEXT);
+  ASSERT_EQ(gtext_markup_text_span_count(text), 3u);
+  GTEXT_Markup_Text_Span span{};
+  ASSERT_TRUE(gtext_markup_text_span_at(text, 0, &span));
+  EXPECT_EQ(span.text_offset, 0u);
+  EXPECT_EQ(span.length, 1u);
+  EXPECT_EQ(span.location.source_id, 1u);
+  ASSERT_TRUE(gtext_markup_text_span_at(text, 1, &span));
+  EXPECT_EQ(span.text_offset, 1u);
+  EXPECT_EQ(span.length, 1u);
+  EXPECT_EQ(span.location.source_id, 2u);
+  ASSERT_TRUE(gtext_markup_text_span_at(text, 2, &span));
+  EXPECT_EQ(span.text_offset, 2u);
+  EXPECT_EQ(span.location.source_id, 1u);
+  GTEXT_Markup_Source source{};
+  ASSERT_TRUE(gtext_markup_document_source(doc, 2, &source));
+  EXPECT_STREQ(source.name, "e");
+
+  GTEXT_Markup_Document * clone_doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &clone_doc), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node * clone = nullptr;
+  ASSERT_EQ(gtext_markup_clone(clone_doc, text, true, &clone), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_text_span_count(clone), 3u);
+  ASSERT_TRUE(gtext_markup_document_source(clone_doc, 2, &source));
+  EXPECT_STREQ(source.name, "e");
+  gtext_markup_document_free(clone_doc);
+  gtext_markup_document_free(doc);
+}
+
 TEST(XmlStream, IncompleteMarkupInEntitySourceFailsAtItsBoundary) {
   static const char replacement[] = "<b";
   auto open_incomplete_source = [](void *, const char * name, size_t length,
@@ -1055,12 +1153,18 @@ TEST(XmlStream, Xml11LineEndsAgreeAcrossDomPushAndPullReaders) {
   EXPECT_EQ(bad_dom.status, GTEXT_XML_E_UTF8);
   EXPECT_EQ(bad_dom.doc, nullptr);
   EXPECT_EQ(bad_dom.err.line, 2u);
+  EXPECT_EQ(bad_dom.err.source_id, 1u);
+  EXPECT_TRUE(bad_dom.err.has_raw_byte_offset);
+  EXPECT_EQ(bad_dom.err.raw_byte_offset, bad_dom.err.byte_offset);
   Parsed bad_push;
   run_stream(bad_push, malformed, Chunks{1});
   EXPECT_EQ(bad_push.status, bad_dom.status);
   EXPECT_EQ(bad_push.err.byte_offset, bad_dom.err.byte_offset);
   EXPECT_EQ(bad_push.err.line, bad_dom.err.line);
   EXPECT_EQ(bad_push.err.column, bad_dom.err.column);
+  EXPECT_EQ(bad_push.err.source_id, 1u);
+  EXPECT_TRUE(bad_push.err.has_raw_byte_offset);
+  EXPECT_EQ(bad_push.err.raw_byte_offset, bad_dom.err.raw_byte_offset);
 
   const std::string malformed_prefix = "<?xml version='1.1'?><a>x";
   for (const std::string & line_end : {std::string("\xC2\x85"), std::string("\xE2\x80\xA8")}) {
@@ -1149,12 +1253,17 @@ TEST(XmlStream, Xml11LineEndsAgreeAcrossDomPushAndPullReaders) {
   EXPECT_EQ(malformed_utf16_dom.doc, nullptr);
   EXPECT_EQ(malformed_utf16_dom.err.line, 2u);
   EXPECT_EQ(malformed_utf16_dom.err.column, 1u);
+  EXPECT_TRUE(malformed_utf16_dom.err.has_raw_byte_offset);
+  EXPECT_EQ(malformed_utf16_dom.err.raw_byte_offset, malformed_utf16.size() - 2);
   Parsed malformed_utf16_stream;
   run_stream(malformed_utf16_stream, malformed_utf16, Chunks{1});
   EXPECT_EQ(malformed_utf16_stream.status, malformed_utf16_dom.status);
   EXPECT_EQ(malformed_utf16_stream.err.byte_offset, malformed_utf16_dom.err.byte_offset);
   EXPECT_EQ(malformed_utf16_stream.err.line, malformed_utf16_dom.err.line);
   EXPECT_EQ(malformed_utf16_stream.err.column, malformed_utf16_dom.err.column);
+  EXPECT_TRUE(malformed_utf16_stream.err.has_raw_byte_offset);
+  EXPECT_EQ(malformed_utf16_stream.err.raw_byte_offset,
+      malformed_utf16_dom.err.raw_byte_offset);
 
   for (const bool big : {false, true}) {
     std::string malformed_utf32 = utf32(
@@ -1167,12 +1276,18 @@ TEST(XmlStream, Xml11LineEndsAgreeAcrossDomPushAndPullReaders) {
     EXPECT_EQ(malformed_utf32_dom.doc, nullptr);
     EXPECT_EQ(malformed_utf32_dom.err.line, 2u);
     EXPECT_EQ(malformed_utf32_dom.err.column, 1u);
+    EXPECT_TRUE(malformed_utf32_dom.err.has_raw_byte_offset);
+    EXPECT_EQ(malformed_utf32_dom.err.raw_byte_offset,
+        malformed_utf32.size() - 4);
     Parsed malformed_utf32_stream;
     run_stream(malformed_utf32_stream, malformed_utf32, Chunks{1});
     EXPECT_EQ(malformed_utf32_stream.status, malformed_utf32_dom.status);
     EXPECT_EQ(malformed_utf32_stream.err.byte_offset, malformed_utf32_dom.err.byte_offset);
     EXPECT_EQ(malformed_utf32_stream.err.line, malformed_utf32_dom.err.line);
     EXPECT_EQ(malformed_utf32_stream.err.column, malformed_utf32_dom.err.column);
+    EXPECT_TRUE(malformed_utf32_stream.err.has_raw_byte_offset);
+    EXPECT_EQ(malformed_utf32_stream.err.raw_byte_offset,
+        malformed_utf32_dom.err.raw_byte_offset);
   }
 
   std::string malformed_after_decl_eol = utf16(
@@ -3041,13 +3156,56 @@ TEST(XmlResolver, TheChunkThatCrossesALimitIsStillCharged) {
   parser.max_external_bytes = 8;
   ASSERT_EQ(xml_source_init(&parser, &document_identity), GTEXT_XML_OK);
   ASSERT_EQ(xml_source_push(&parser, XML_SOURCE_EXTERNAL_SUBSET,
-      &external_identity, document, 0), GTEXT_XML_OK);
+      &external_identity, "memory:/test", 13, document, 0), GTEXT_XML_OK);
   EXPECT_EQ(xml_source_charge_external(&parser, 2),
       GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE);
   EXPECT_EQ(parser.sources[1].bytes_charged, 2u);
   EXPECT_EQ(parser.external_bytes, 2u);
   EXPECT_EQ(xml_source_pop(&parser), GTEXT_XML_OK);
   xml_source_free(&parser);
+}
+
+TEST(XmlProvenance, DocumentLocationsHaveStablePhysicalSourceIdentity) {
+  const char document[] = "<a x='1'>text</a>";
+  GTEXT_Markup_Document * tree = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(document, sizeof(document) - 1, nullptr, &tree,
+      &error), GTEXT_XML_OK);
+  auto * root = gtext_markup_document_element(tree);
+  GTEXT_Markup_Location location{};
+  ASSERT_TRUE(gtext_markup_node_location(root, &location));
+  EXPECT_EQ(location.source_id, 1u);
+  EXPECT_EQ(location.reference_source_id, 0u);
+  GTEXT_Markup_Source source{};
+  ASSERT_TRUE(gtext_markup_document_source(tree, location.source_id, &source));
+  EXPECT_EQ(source.kind, GTEXT_MARKUP_SOURCE_DOCUMENT);
+  EXPECT_EQ(source.reference_source_id, 0u);
+  GTEXT_Markup_Location attr_location{};
+  ASSERT_TRUE(gtext_markup_element_attribute_location(root, 0, &attr_location));
+  EXPECT_EQ(attr_location.source_id, 1u);
+  EXPECT_EQ(attr_location.offset, 3u);
+  GTEXT_Markup_Node * copy = nullptr;
+  ASSERT_EQ(gtext_markup_clone(tree, root, true, &copy), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Location clone_location{};
+  ASSERT_TRUE(gtext_markup_node_location(copy, &clone_location));
+  EXPECT_EQ(clone_location.source_id, 1u);
+  EXPECT_EQ(clone_location.offset, location.offset);
+  const char second_document[] = "<b/>";
+  GTEXT_Markup_Document * second_tree = nullptr;
+  ASSERT_EQ(gtext_xml_parse(second_document, sizeof(second_document) - 1,
+      nullptr, &second_tree, &error), GTEXT_XML_OK);
+  GTEXT_Markup_Node * cross_copy = nullptr;
+  ASSERT_EQ(gtext_markup_clone(second_tree, root, true, &cross_copy),
+      GTEXT_MARKUP_OK);
+  GTEXT_Markup_Location cross_location{};
+  ASSERT_TRUE(gtext_markup_node_location(cross_copy, &cross_location));
+  EXPECT_NE(cross_location.source_id, location.source_id);
+  GTEXT_Markup_Source cross_source{};
+  ASSERT_TRUE(gtext_markup_document_source(second_tree,
+      cross_location.source_id, &cross_source));
+  EXPECT_EQ(cross_source.kind, GTEXT_MARKUP_SOURCE_DOCUMENT);
+  gtext_markup_document_free(second_tree);
+  gtext_markup_document_free(tree);
 }
 
 TEST(XmlResolver, PullReaderUsesResolverAndRepeatsReadFailure) {

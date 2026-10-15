@@ -38,6 +38,7 @@
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -259,6 +260,11 @@ GTEXT_API const char * gtext_xml_status_string(GTEXT_XML_Status status);
  * the `</` of a mismatched end tag, the second of two equal attributes, the
  * token that went over a limit; for anything else, the first character the
  * parser could not accept.
+ *
+ * `source_id` and `reference_source_id` identify the physical source and its
+ * immediate reference parent. `raw_byte_offset` is set for decoding faults
+ * when available; `byte_offset` remains the decoded coordinate for parser
+ * errors.
  */
 typedef struct {
   GTEXT_XML_Status code; ///< The status; GTEXT_XML_OK if nothing failed.
@@ -266,6 +272,13 @@ typedef struct {
   size_t byte_offset;    ///< Byte offset into the input (0-based).
   size_t line;           ///< Line (1-based).
   size_t column;         ///< Column, in characters (1-based).
+  uint32_t source_id;    ///< Physical source number, zero if unavailable.
+  uint32_t reference_source_id; ///< Source that referenced source_id, if any.
+  size_t raw_byte_offset; ///< Original-byte coordinate for decoding faults.
+  bool has_raw_byte_offset;
+  uint8_t reference_trail_count;
+  bool reference_trail_truncated;
+  uint32_t reference_trail[32]; ///< Source IDs from outermost retained parent to fault source.
 } GTEXT_XML_Error;
 
 /**

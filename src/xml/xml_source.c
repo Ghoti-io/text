@@ -28,6 +28,11 @@ static GTEXT_XML_Status source_reserve(xml_ctx * p, size_t needed) {
       sizeof(*p->sources), needed);
 }
 
+static GTEXT_XML_Status source_name_reserve(xml_ctx * p, size_t needed) {
+  return xml_grow(p, (void **)&p->source_names, &p->source_name_capacity,
+      sizeof(*p->source_names), needed);
+}
+
 static void save_active(xml_ctx * p, xml_source_frame * f) {
   f->bytes = p->in;
   f->length = p->length;
@@ -46,10 +51,20 @@ GTEXT_XML_Status xml_source_init(xml_ctx * p, const void * identity) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  status = source_name_reserve(p, 1);
+  if (status != GTEXT_XML_OK) return status;
+  p->source_names[0] = NULL;
+  p->source_name_count = 1;
   xml_source_frame * f = &p->sources[0];
   memset(f, 0, sizeof(*f));
   f->kind = XML_SOURCE_DOCUMENT;
   f->identity = identity;
+  f->source_id = 1;
+  p->next_source_id = 1;
+  if (p->doc && markup_source_add(p->doc, 1, 0,
+          GTEXT_MARKUP_SOURCE_DOCUMENT, NULL) != GTEXT_MARKUP_OK) {
+    return xml_fail(p, GTEXT_XML_E_OOM, "out of memory recording XML source");
+  }
   f->entry_element_depth = 0;
   f->entry_binding_count = 0;
   f->version = p->version;
@@ -59,7 +74,8 @@ GTEXT_XML_Status xml_source_init(xml_ctx * p, const void * identity) {
 }
 
 GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
-    const void * identity, const void * bytes, size_t length) {
+    const void * identity, const char * name, size_t name_length,
+    const void * bytes, size_t length) {
   if (p->source_count == 0 || !identity || (!bytes && length != 0)
       || (kind != XML_SOURCE_INTERNAL_ENTITY
           && kind != XML_SOURCE_EXTERNAL_ENTITY
@@ -89,6 +105,10 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
   }
   if (p->source_count >= p->max_source_depth) {
     return xml_fail(p, GTEXT_XML_E_LIMIT_DEPTH, "XML source nesting limit exceeded");
+  }
+  if (p->next_source_id == UINT32_MAX) {
+    return xml_fail(p, GTEXT_XML_E_LIMIT_REFERENCES,
+        "physical source identifier limit exceeded");
   }
   for (size_t i = 0; i < p->source_count; i++) {
     if (identity && p->sources[i].identity == identity) {
@@ -124,6 +144,36 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  const uint32_t source_id = p->next_source_id + 1;
+  status = source_name_reserve(p, source_id);
+  if (status != GTEXT_XML_OK) return status;
+  char * owned_name = NULL;
+  if (name) {
+    owned_name = xml_alloc(p, name_length + 1);
+    if (!owned_name) {
+      return xml_fail(p, GTEXT_XML_E_OOM,
+          "could not retain XML source name");
+    }
+    memcpy(owned_name, name, name_length);
+    owned_name[name_length] = '\0';
+  }
+  if (name && p->doc) {
+    const GTEXT_Markup_Source_Kind public_kind =
+        kind == XML_SOURCE_INTERNAL_ENTITY ? GTEXT_MARKUP_SOURCE_INTERNAL_ENTITY
+        : kind == XML_SOURCE_EXTERNAL_ENTITY ? GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
+        : kind == XML_SOURCE_PARAMETER_ENTITY ? GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+        : GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET;
+    const GTEXT_Markup_Status recorded = markup_source_add(p->doc, source_id,
+        p->sources[p->source_count - 1].source_id, public_kind, owned_name);
+    if (recorded != GTEXT_MARKUP_OK) {
+      xml_release(p, owned_name);
+      return xml_fail(p, recorded == GTEXT_MARKUP_E_OOM
+          ? GTEXT_XML_E_OOM : GTEXT_XML_E_LIMIT_REFERENCES,
+          "could not retain XML source descriptor");
+    }
+  }
+  p->source_names[source_id - 1] = owned_name;
+  if (p->source_name_count < source_id) p->source_name_count = source_id;
   xml_source_frame * parent = &p->sources[p->source_count - 1];
   parent->version = p->version;
   save_active(p, parent);
@@ -134,6 +184,9 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
   child->kind = kind;
   child->bytes_charged = external ? length : 0;
   child->identity = identity;
+  child->owned_name = owned_name;
+  child->source_id = ++p->next_source_id;
+  child->reference_source_id = parent->source_id;
   child->entry_element_depth = p->frame_count;
   child->entry_binding_count = p->binding_count;
   child->grammar_context = XML_SOURCE_GRAMMAR_CONTENT;
@@ -236,6 +289,13 @@ GTEXT_XML_Status xml_source_pop(xml_ctx * p) {
 }
 
 void xml_source_free(xml_ctx * p) {
+  for (size_t i = 0; i < p->source_name_count; i++) {
+    xml_release(p, p->source_names[i]);
+  }
+  xml_release(p, p->source_names);
+  p->source_names = NULL;
+  p->source_name_count = 0;
+  p->source_name_capacity = 0;
   xml_release(p, p->sources);
   p->sources = NULL;
   p->source_count = 0;
@@ -304,7 +364,7 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
     goto close_source;
   }
   status = xml_source_push(p, XML_SOURCE_EXTERNAL_SUBSET,
-      source.identity, empty, 0);
+      source.identity, source.base_uri, strlen(source.base_uri), empty, 0);
   if (status != GTEXT_XML_OK) {
     goto close_source;
   }

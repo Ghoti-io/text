@@ -40,6 +40,7 @@
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -157,16 +158,73 @@ typedef enum {
  * @struct GTEXT_Markup_Location
  * @brief Where in the source a node or attribute came from.
  *
- * `offset` counts bytes of the input the parser was given, 0-based. `line` and
- * `column` are 1-based, and `column` counts characters. A node built by hand
- * has no location. `line` and `column` are held in 32 bits and saturate at
- * UINT32_MAX in a document longer than that; `offset` does not.
+ * `offset` counts decoded UTF-8 bytes in the physical input source, 0-based.
+ * `line` and `column` are 1-based, and `column` counts characters. XML assigns
+ * a nonzero `source_id` to each physical source; `reference_source_id` names
+ * the source whose reference entered it. Zero is the no-source sentinel used
+ * by hand-built and non-XML nodes. `raw_offset` is present only when a decoder
+ * fault can be mapped to an original byte. `line` and `column` are held in 32
+ * bits and saturate at UINT32_MAX; `offset` does not.
  */
 typedef struct {
   size_t offset; ///< Byte offset into the input.
   size_t line;   ///< Line, 1-based.
   size_t column; ///< Column in characters, 1-based.
+  /** Stable physical source number; zero means no XML source (hand-built or
+   * non-XML node). The document source is 1; entity sources are assigned
+   * monotonically for the parse. */
+  uint32_t source_id;
+  /** Source ID that referenced this source, or zero for the document source. */
+  uint32_t reference_source_id;
+  /** Original input byte offset when decoding changed the byte stream. */
+  size_t raw_offset;
+  /** Whether raw_offset is meaningful. */
+  bool has_raw_offset;
 } GTEXT_Markup_Location;
+
+/** Kind of physical source recorded by an XML parse. */
+typedef enum {
+  GTEXT_MARKUP_SOURCE_DOCUMENT = 0,
+  GTEXT_MARKUP_SOURCE_INTERNAL_ENTITY,
+  GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY,
+  GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY,
+  GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET
+} GTEXT_Markup_Source_Kind;
+
+/**
+ * @struct GTEXT_Markup_Source
+ * @brief Borrowed view of a document-owned physical source descriptor.
+ *
+ * Source IDs are local to one XML parse and remain stable for the lifetime of
+ * its document. The document source has ID 1; zero is reserved for nodes with
+ * no physical XML source. `reference_source_id` is zero for the document and
+ * otherwise identifies the physical source that entered this source. The
+ * descriptor's `name` is copied into the document and remains valid until the
+ * document is freed. A clone imports the descriptors needed by cloned nodes.
+ */
+typedef struct {
+  uint32_t id;
+  uint32_t reference_source_id;
+  GTEXT_Markup_Source_Kind kind;
+  const char * name; ///< Entity name or resolved base URI; NULL if unknown.
+} GTEXT_Markup_Source;
+
+/**
+ * @struct GTEXT_Markup_Text_Span
+ * @brief One contiguous run in a text node's mixed-source provenance map.
+ *
+ * `text_offset` and `length` are byte offsets into the node's UTF-8 text.
+ * The associated location identifies the physical source and its decoded
+ * offset at the start of the run. Adjacent source runs are retained when XML
+ * DTD processing coalesces replacement text into one DOM text node. A span
+ * array belongs to its node and is copied by clone; its descriptor IDs resolve
+ * through the owning document's source table.
+ */
+typedef struct {
+  size_t text_offset;
+  size_t length;
+  GTEXT_Markup_Location location;
+} GTEXT_Markup_Text_Span;
 
 /**
  * @struct GTEXT_Markup_Options

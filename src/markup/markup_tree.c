@@ -133,6 +133,7 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
     case GTEXT_MARKUP_KIND_CDATA:
     case GTEXT_MARKUP_KIND_COMMENT:
       markup_free(doc, ((markup_text *)node)->data);
+      markup_free(doc, ((markup_text *)node)->spans);
       break;
     case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
       markup_pi * p = (markup_pi *)node;
@@ -242,12 +243,59 @@ void gtext_markup_document_free(GTEXT_Markup_Document * doc) {
   markup_free(doc, doc->buckets);
   markup_free(doc, doc->encoding);
   markup_free(doc, doc->xml_version);
+  for (size_t i = 0; i < doc->source_count; i++) {
+    markup_free(doc, doc->sources[i].owned_name);
+  }
+  markup_free(doc, doc->sources);
   const GTEXT_Allocator allocator = doc->allocator;
   gtext_allocator_free(&allocator, doc);
 }
 
 GTEXT_Markup_Node * gtext_markup_document_root(const GTEXT_Markup_Document * doc) {
   return doc ? doc->root : NULL;
+}
+
+GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
+    uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
+    const char * name) {
+  if (!doc || id == 0) return GTEXT_MARKUP_E_INVALID;
+  for (size_t i = 0; i < doc->source_count; i++) {
+    if (doc->sources[i].view.id == id) return GTEXT_MARKUP_E_INVALID;
+  }
+  if (doc->source_count == doc->source_capacity) {
+    size_t capacity = doc->source_capacity ? doc->source_capacity * 2 : 8;
+    if (capacity < doc->source_capacity
+        || capacity > SIZE_MAX / sizeof(*doc->sources)) {
+      return GTEXT_MARKUP_E_LIMIT;
+    }
+    markup_source * grown = markup_realloc(doc, doc->sources,
+        capacity * sizeof(*doc->sources));
+    if (!grown) return GTEXT_MARKUP_E_OOM;
+    doc->sources = grown;
+    doc->source_capacity = capacity;
+  }
+  char * copy = name ? markup_copy(doc, name, strlen(name)) : NULL;
+  if (name && !copy) return GTEXT_MARKUP_E_OOM;
+  markup_source * entry = &doc->sources[doc->source_count++];
+  memset(entry, 0, sizeof(*entry));
+  entry->view.id = id;
+  entry->view.reference_source_id = parent_id;
+  entry->view.kind = kind;
+  entry->owned_name = copy;
+  entry->view.name = copy;
+  return GTEXT_MARKUP_OK;
+}
+
+bool gtext_markup_document_source(const GTEXT_Markup_Document * doc,
+    uint32_t source_id, GTEXT_Markup_Source * out) {
+  if (!doc || source_id == 0) return false;
+  for (size_t i = 0; i < doc->source_count; i++) {
+    if (doc->sources[i].view.id == source_id) {
+      if (out) *out = doc->sources[i].view;
+      return true;
+    }
+  }
+  return false;
 }
 
 static node_t * find_child_of_kind(const GTEXT_Markup_Document * doc,
@@ -559,9 +607,7 @@ GTEXT_Markup_Status markup_doctype_append_syntax(GTEXT_Markup_Node * node,
   item->kind = kind;
   item->source = copy;
   item->length = length;
-  item->offset = location->offset;
-  item->line = location->line > UINT32_MAX ? UINT32_MAX : (uint32_t)location->line;
-  item->column = location->column > UINT32_MAX ? UINT32_MAX : (uint32_t)location->column;
+  item->location = *location;
   return GTEXT_MARKUP_OK;
 }
 
@@ -823,22 +869,30 @@ bool gtext_markup_doctype_syntax(const GTEXT_Markup_Node * node, size_t index,
   out->kind = (GTEXT_Markup_DTD_Syntax_Kind)item->kind;
   out->source = item->source;
   out->source_length = item->length;
-  out->location.offset = item->offset;
-  out->location.line = item->line;
-  out->location.column = item->column;
+  out->location = item->location;
   return true;
 }
 
 static void store_location(uint8_t * flags, size_t * offset, uint32_t * line,
-    uint32_t * column, const GTEXT_Markup_Location * location) {
+    uint32_t * column, uint32_t * source_id, uint32_t * reference_source_id,
+    size_t * raw_offset, uint8_t * has_raw_offset,
+    const GTEXT_Markup_Location * location) {
   if (!location) {
     *flags = (uint8_t)(*flags & ~MARKUP_F_LOCATION);
+    *source_id = 0;
+    *reference_source_id = 0;
+    *raw_offset = 0;
+    *has_raw_offset = 0;
     return;
   }
   *flags = (uint8_t)(*flags | MARKUP_F_LOCATION);
   *offset = location->offset;
   *line = location->line > UINT32_MAX ? UINT32_MAX : (uint32_t)location->line;
   *column = location->column > UINT32_MAX ? UINT32_MAX : (uint32_t)location->column;
+  *source_id = location->source_id;
+  *reference_source_id = location->reference_source_id;
+  *raw_offset = location->raw_offset;
+  *has_raw_offset = location->has_raw_offset ? 1 : 0;
 }
 
 bool gtext_markup_node_location(
@@ -850,15 +904,58 @@ bool gtext_markup_node_location(
     out->offset = node->offset;
     out->line = node->line;
     out->column = node->column;
+    out->source_id = node->source_id;
+    out->reference_source_id = node->reference_source_id;
+    out->raw_offset = node->raw_offset;
+    out->has_raw_offset = node->has_raw_offset != 0;
   }
   return true;
+}
+
+size_t gtext_markup_text_span_count(const GTEXT_Markup_Node * node) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_TEXT) return 0;
+  return ((const markup_text *)node)->span_count;
+}
+
+bool gtext_markup_text_span_at(const GTEXT_Markup_Node * node, size_t index,
+    GTEXT_Markup_Text_Span * out) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_TEXT || !out) return false;
+  const markup_text * text = (const markup_text *)node;
+  if (index >= text->span_count) return false;
+  *out = text->spans[index];
+  return true;
+}
+
+GTEXT_Markup_Status markup_text_add_span(GTEXT_Markup_Document * doc,
+    node_t * node, size_t start, size_t length,
+    const GTEXT_Markup_Location * location) {
+  if (!doc || !node || node->kind != GTEXT_MARKUP_KIND_TEXT || !location) {
+    return GTEXT_MARKUP_E_INVALID;
+  }
+  markup_text * text = (markup_text *)node;
+  if (text->span_count == text->span_capacity) {
+    size_t capacity = text->span_capacity ? text->span_capacity * 2 : 2;
+    if (capacity < text->span_capacity
+        || capacity > SIZE_MAX / sizeof(*text->spans)) {
+      return GTEXT_MARKUP_E_LIMIT;
+    }
+    GTEXT_Markup_Text_Span * grown = markup_realloc(doc, text->spans,
+        capacity * sizeof(*text->spans));
+    if (!grown) return GTEXT_MARKUP_E_OOM;
+    text->spans = grown;
+    text->span_capacity = capacity;
+  }
+  text->spans[text->span_count++] = (GTEXT_Markup_Text_Span){
+      start, length, *location};
+  return GTEXT_MARKUP_OK;
 }
 
 void gtext_markup_node_set_location(
     GTEXT_Markup_Node * node, const GTEXT_Markup_Location * location) {
   if (node) {
     store_location(&node->flags, &node->offset, &node->line, &node->column,
-        location);
+        &node->source_id, &node->reference_source_id, &node->raw_offset,
+        &node->has_raw_offset, location);
   }
 }
 
@@ -1048,7 +1145,8 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute_location(
   }
   markup_attr * a = &e->attrs[index];
   uint8_t flags = a->has_location ? MARKUP_F_LOCATION : 0;
-  store_location(&flags, &a->offset, &a->line, &a->column, location);
+  store_location(&flags, &a->offset, &a->line, &a->column, &a->source_id,
+      &a->reference_source_id, &a->raw_offset, &a->has_raw_offset, location);
   a->has_location = (flags & MARKUP_F_LOCATION) ? 1 : 0;
   return GTEXT_MARKUP_OK;
 }
@@ -1063,6 +1161,10 @@ bool gtext_markup_element_attribute_location(const GTEXT_Markup_Node * element,
     out->offset = e->attrs[index].offset;
     out->line = e->attrs[index].line;
     out->column = e->attrs[index].column;
+    out->source_id = e->attrs[index].source_id;
+    out->reference_source_id = e->attrs[index].reference_source_id;
+    out->raw_offset = e->attrs[index].raw_offset;
+    out->has_raw_offset = e->attrs[index].has_raw_offset != 0;
   }
   return true;
 }
@@ -1587,6 +1689,10 @@ GTEXT_Markup_Status markup_element_clone_shallow(
     copy->offset = src->offset;
     copy->line = src->line;
     copy->column = src->column;
+    copy->source_id = src->source_id;
+    copy->reference_source_id = src->reference_source_id;
+    copy->raw_offset = src->raw_offset;
+    copy->has_raw_offset = src->has_raw_offset;
   }
   *out = copy;
   return GTEXT_MARKUP_OK;

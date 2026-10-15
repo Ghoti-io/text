@@ -167,12 +167,19 @@ void xml_converter_init(
 
 static int conv_select_profile(xml_converter * c);
 
-static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message) {
+static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message,
+    size_t raw_offset) {
   conv_select_profile(c);
   GTEXT_Markup_Location where;
+  memset(&where, 0, sizeof(where));
   where.offset = c->total;
   where.line = c->line;
   where.column = c->column;
+  /* Conversion runs before the document source frame is installed, but this
+     input is still the physical document source (ID 1). */
+  where.source_id = 1;
+  where.raw_offset = raw_offset;
+  where.has_raw_offset = 1;
   return xml_fail_at(c->p, GTEXT_XML_E_INVALID_SEQUENCE, message, &where);
 }
 
@@ -313,11 +320,15 @@ GTEXT_XML_Status xml_converter_feed(xml_converter * c,
     const unsigned char * data, size_t n, int final) {
   GTEXT_XML_Status status = GTEXT_XML_OK;
   const xml_family family = c->family;
+  const unsigned char * const chunk = data;
+  const size_t chunk_offset = c->raw_total;
+  c->raw_total = n > SIZE_MAX - c->raw_total ? SIZE_MAX : c->raw_total + n;
 
   if (family == XML_FAMILY_LATIN1 || family == XML_FAMILY_ASCII) {
     for (size_t i = 0; i < n && status == GTEXT_XML_OK; i++) {
       if (data[i] >= 0x80 && family == XML_FAMILY_ASCII) {
-        return conv_invalid(c, "a byte above 0x7F in a US-ASCII document");
+        return conv_invalid(c, "a byte above 0x7F in a US-ASCII document",
+            chunk_offset + i);
       }
       status = conv_put(c, data[i]);
     }
@@ -326,20 +337,29 @@ GTEXT_XML_Status xml_converter_feed(xml_converter * c,
   if (family == XML_FAMILY_UTF16LE || family == XML_FAMILY_UTF16BE) {
     const int big = family == XML_FAMILY_UTF16BE;
     uint32_t u;
-    while (take_unit(c, &data, &n, 2, big, &u)) {
+    for (;;) {
+      const size_t left_before = c->left_n;
+      const unsigned char * const before = data;
+      if (!take_unit(c, &data, &n, 2, big, &u)) break;
+      c->raw_unit_offset = left_before != 0
+          ? chunk_offset - left_before
+          : chunk_offset + (size_t)(before - chunk);
       if (c->high != 0) {
         if (u < 0xDC00 || u > 0xDFFF) {
-          return conv_invalid(c, "a high surrogate not followed by a low one");
+          return conv_invalid(c, "a high surrogate not followed by a low one",
+              c->high_raw_offset);
         }
         const uint32_t cp = 0x10000 + ((c->high - 0xD800) << 10) + (u - 0xDC00);
         c->high = 0;
         status = conv_put(c, cp);
       }
       else if (u >= 0xDC00 && u <= 0xDFFF) {
-        return conv_invalid(c, "a low surrogate with no high surrogate before it");
+        return conv_invalid(c, "a low surrogate with no high surrogate before it",
+            c->raw_unit_offset);
       }
       else if (u >= 0xD800 && u <= 0xDBFF) {
         c->high = u;
+        c->high_raw_offset = c->raw_unit_offset;
         continue;
       }
       else {
@@ -351,10 +371,12 @@ GTEXT_XML_Status xml_converter_feed(xml_converter * c,
     }
     if (final) {
       if (c->high != 0 && c->left_n == 0) {
-        return conv_invalid(c, "a high surrogate at the end of the document");
+        return conv_invalid(c, "a high surrogate at the end of the document",
+            c->high_raw_offset);
       }
       if (c->left_n != 0 || c->high != 0) {
-        return conv_invalid(c, "a UTF-16 document ends inside a code unit");
+        return conv_invalid(c, "a UTF-16 document ends inside a code unit",
+            c->raw_total - c->left_n);
       }
     }
     return GTEXT_XML_OK;
@@ -362,9 +384,16 @@ GTEXT_XML_Status xml_converter_feed(xml_converter * c,
   { /* UTF-32 */
     const int big = family == XML_FAMILY_UTF32BE;
     uint32_t u;
-    while (take_unit(c, &data, &n, 4, big, &u)) {
+    for (;;) {
+      const size_t left_before = c->left_n;
+      const unsigned char * const before = data;
+      if (!take_unit(c, &data, &n, 4, big, &u)) break;
+      c->raw_unit_offset = left_before != 0
+          ? chunk_offset - left_before
+          : chunk_offset + (size_t)(before - chunk);
       if (u > 0x10FFFF || (u >= 0xD800 && u <= 0xDFFF)) {
-        return conv_invalid(c, "a UTF-32 unit that is not a Unicode scalar value");
+        return conv_invalid(c, "a UTF-32 unit that is not a Unicode scalar value",
+            c->raw_unit_offset);
       }
       status = conv_put(c, u);
       if (status != GTEXT_XML_OK) {
@@ -372,7 +401,8 @@ GTEXT_XML_Status xml_converter_feed(xml_converter * c,
       }
     }
     if (final && c->left_n != 0) {
-      return conv_invalid(c, "a UTF-32 document ends inside a code unit");
+      return conv_invalid(c, "a UTF-32 document ends inside a code unit",
+          c->raw_total - c->left_n);
     }
     return GTEXT_XML_OK;
   }
@@ -381,6 +411,7 @@ GTEXT_XML_Status xml_converter_feed(xml_converter * c,
 static GTEXT_XML_Status convert(xml_ctx * p, xml_family family, size_t skip) {
   xml_converter c;
   xml_converter_init(&c, p, &p->decoded, family);
+  c.raw_total = skip;
   const GTEXT_XML_Status status =
       xml_converter_feed(&c, p->in + skip, p->length - skip, 1);
   if (status != GTEXT_XML_OK) {

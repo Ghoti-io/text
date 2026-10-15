@@ -92,6 +92,10 @@ typedef struct {
   size_t offset;        ///< Location, if `has_location`.
   uint32_t line;
   uint32_t column;
+  uint32_t source_id;
+  uint32_t reference_source_id;
+  size_t raw_offset;
+  uint8_t has_raw_offset;
   uint8_t has_location;
 } markup_attr;
 
@@ -105,6 +109,10 @@ struct GTEXT_Markup_Node {
   uint32_t line;
   uint32_t column;
   size_t offset;
+  uint32_t source_id;
+  uint32_t reference_source_id;
+  size_t raw_offset;
+  uint8_t has_raw_offset;
   struct GTEXT_Markup_Document * doc;
   struct GTEXT_Markup_Node * parent;
   struct GTEXT_Markup_Node * first_child;
@@ -129,6 +137,9 @@ typedef struct {
   struct GTEXT_Markup_Node base;
   char * data;
   size_t length;
+  GTEXT_Markup_Text_Span * spans;
+  size_t span_count;
+  size_t span_capacity;
 } markup_text;
 
 typedef struct {
@@ -142,10 +153,15 @@ typedef struct {
   int kind;
   char * source;
   size_t length;
-  size_t offset;
-  uint32_t line;
-  uint32_t column;
+  GTEXT_Markup_Location location;
 } markup_dtd_syntax;
+
+typedef struct {
+  GTEXT_Markup_Source view;
+  char * owned_name;
+  const struct GTEXT_Markup_Document * origin_doc;
+  uint32_t origin_id;
+} markup_source;
 
 typedef struct {
   struct GTEXT_Markup_Node base;
@@ -172,6 +188,9 @@ struct GTEXT_Markup_Document {
   GTEXT_Markup_Encoding_Source encoding_source;
   char * xml_version;
   GTEXT_Markup_Standalone standalone;
+  markup_source * sources;
+  size_t source_count;
+  size_t source_capacity;
 };
 
 /* ---- memory ------------------------------------------------------------- */
@@ -186,6 +205,12 @@ char * markup_copy(
 GTEXT_Markup_Status markup_doctype_append_syntax(
     struct GTEXT_Markup_Node * node, int kind, const char * source,
     size_t length, const GTEXT_Markup_Location * location);
+GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
+    uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
+    const char * name);
+GTEXT_Markup_Status markup_text_add_span(GTEXT_Markup_Document * doc,
+    struct GTEXT_Markup_Node * node, size_t start, size_t length,
+    const GTEXT_Markup_Location * location);
 
 /* ---- atoms -------------------------------------------------------------- */
 

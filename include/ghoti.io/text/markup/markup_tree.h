@@ -174,6 +174,18 @@ GTEXT_API GTEXT_Markup_Node * gtext_markup_document_doctype(
     const GTEXT_Markup_Document * doc);
 
 /**
+ * @brief Look up a document-owned XML source descriptor by location source ID.
+ *
+ * The returned `name` is borrowed from `doc` and remains valid until the
+ * document is freed. The output is written only on success. IDs from a
+ * different document have no meaning unless that document's descriptors were
+ * imported by cloning its nodes.
+ */
+GTEXT_API bool gtext_markup_document_source(
+    const GTEXT_Markup_Document * doc, uint32_t source_id,
+    GTEXT_Markup_Source * out);
+
+/**
  * @brief How many nodes the document holds, detached ones and template
  *   contents included.
  *
@@ -522,6 +534,24 @@ GTEXT_API bool gtext_markup_doctype_syntax(
  */
 GTEXT_API bool gtext_markup_node_location(
     const GTEXT_Markup_Node * node, GTEXT_Markup_Location * out);
+
+/**
+ * @brief Number of physical-source runs retained for a text node.
+ *
+ * XML parsing with DTD processing can produce one text node from adjacent
+ * physical sources; each run is represented by a span. Other node kinds and
+ * nodes without recorded provenance report zero.
+ */
+GTEXT_API size_t gtext_markup_text_span_count(const GTEXT_Markup_Node * node);
+/**
+ * @brief Read one text provenance span.
+ *
+ * The span is copied to `out`; it remains meaningful while the node's owning
+ * document is alive. Returns false for a non-text node, a NULL output, or an
+ * out-of-range index.
+ */
+GTEXT_API bool gtext_markup_text_span_at(const GTEXT_Markup_Node * node,
+    size_t index, GTEXT_Markup_Text_Span * out);
 
 /**
  * @brief Record where a node came from.

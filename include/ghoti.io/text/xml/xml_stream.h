@@ -144,6 +144,14 @@ typedef struct {
  * construct begins: the `<` for markup, the first character for text. Offsets
  * count bytes of the document as UTF-8 (see gtext_xml_parse() for what that
  * means for the other encodings), a byte order mark included for UTF-8.
+ * `source_name` is an owned physical-source label when known and is valid for
+ * the event lifetime (callback duration or until the reader's next advance).
+ * `location.source_id` identifies that physical source, and
+ * `location.reference_source_id` identifies its immediate parent source.
+ * `reference_trail` stores the retained source IDs from the outermost active
+ * source through the current one; `reference_trail_truncated` says older IDs
+ * were omitted. Names and trail IDs are copied into parser-owned event storage,
+ * so resolver buffers may be released as soon as their source is closed.
  *
  * | type                    | fields |
  * |-------------------------|--------|
@@ -158,6 +166,10 @@ typedef struct {
 typedef struct {
   GTEXT_XML_Event_Type type;
   GTEXT_Markup_Location location;
+  const char * source_name; ///< Entity name or resolved base URI, if known.
+  uint8_t reference_trail_count;
+  bool reference_trail_truncated;
+  uint32_t reference_trail[32];
 
   /* ELEMENT_START, ELEMENT_END */
   const char * namespace_uri; ///< NULL for none.

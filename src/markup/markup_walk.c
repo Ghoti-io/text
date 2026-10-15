@@ -36,6 +36,112 @@
 
 typedef struct GTEXT_Markup_Node node_t;
 
+static markup_source * find_imported_source(GTEXT_Markup_Document * doc,
+    const GTEXT_Markup_Document * origin, uint32_t origin_id) {
+  for (size_t i = 0; i < doc->source_count; i++) {
+    if (doc->sources[i].origin_doc == origin
+        && doc->sources[i].origin_id == origin_id) return &doc->sources[i];
+  }
+  return NULL;
+}
+
+static GTEXT_Markup_Status import_source(GTEXT_Markup_Document * dst,
+    const GTEXT_Markup_Document * src, uint32_t id) {
+  if (id == 0) return GTEXT_MARKUP_OK;
+  if (dst == src) return GTEXT_MARKUP_OK;
+  if (find_imported_source(dst, src, id)) return GTEXT_MARKUP_OK;
+
+  /* Source ancestry follows nested entity references. Build it explicitly so
+     cloning a document with deep entity nesting never recurses on the C stack. */
+  size_t count = 0;
+  uint32_t cursor = id;
+  while (cursor && !find_imported_source(dst, src, cursor)) {
+    GTEXT_Markup_Source source;
+    if (!gtext_markup_document_source(src, cursor, &source)) {
+      return GTEXT_MARKUP_E_INVALID;
+    }
+    if (count == SIZE_MAX / sizeof(uint32_t)) return GTEXT_MARKUP_E_LIMIT;
+    count++;
+    cursor = source.reference_source_id;
+  }
+  if (count == 0) return GTEXT_MARKUP_OK;
+  uint32_t * chain = markup_alloc(dst, count * sizeof(*chain));
+  if (!chain) return GTEXT_MARKUP_E_OOM;
+
+  cursor = id;
+  for (size_t i = 0; i < count; i++) {
+    chain[i] = cursor;
+    GTEXT_Markup_Source source;
+    if (!gtext_markup_document_source(src, cursor, &source)) {
+      markup_free(dst, chain);
+      return GTEXT_MARKUP_E_INVALID;
+    }
+    cursor = source.reference_source_id;
+  }
+
+  const size_t original_count = dst->source_count;
+  GTEXT_Markup_Status status = GTEXT_MARKUP_OK;
+  for (size_t i = count; i > 0; i--) {
+    GTEXT_Markup_Source source;
+    if (!gtext_markup_document_source(src, chain[i - 1], &source)) {
+      status = GTEXT_MARKUP_E_INVALID;
+      break;
+    }
+    uint32_t parent = 0;
+    if (source.reference_source_id) {
+      markup_source * imported = find_imported_source(dst, src,
+          source.reference_source_id);
+      if (!imported) {
+        status = GTEXT_MARKUP_E_INVALID;
+        break;
+      }
+      parent = imported->view.id;
+    }
+    uint32_t new_id = 1;
+    for (size_t j = 0; j < dst->source_count; j++) {
+      if (dst->sources[j].view.id >= new_id) {
+        if (dst->sources[j].view.id == UINT32_MAX) {
+          status = GTEXT_MARKUP_E_LIMIT;
+          break;
+        }
+        new_id = dst->sources[j].view.id + 1;
+      }
+    }
+    if (status != GTEXT_MARKUP_OK) break;
+    status = markup_source_add(dst, new_id, parent, source.kind, source.name);
+    if (status != GTEXT_MARKUP_OK) break;
+    markup_source * added = &dst->sources[dst->source_count - 1];
+    added->origin_doc = src;
+    added->origin_id = source.id;
+  }
+  markup_free(dst, chain);
+  if (status != GTEXT_MARKUP_OK) {
+    while (dst->source_count > original_count) {
+      markup_source * added = &dst->sources[--dst->source_count];
+      markup_free(dst, added->owned_name);
+      memset(added, 0, sizeof(*added));
+    }
+  }
+  return status;
+}
+
+static uint32_t cloned_source_id(const GTEXT_Markup_Document * dst,
+    const GTEXT_Markup_Document * src, uint32_t id) {
+  if (!id || dst == src) return id;
+  for (size_t i = 0; i < dst->source_count; i++)
+    if (dst->sources[i].origin_doc == src
+        && dst->sources[i].origin_id == id) return dst->sources[i].view.id;
+  return 0;
+}
+
+static void remap_location(GTEXT_Markup_Location * location,
+    const GTEXT_Markup_Document * dst, const GTEXT_Markup_Document * src) {
+  if (dst == src) return;
+  location->source_id = cloned_source_id(dst, src, location->source_id);
+  location->reference_source_id = cloned_source_id(dst, src,
+      location->reference_source_id);
+}
+
 /* ---- cloning ------------------------------------------------------------ */
 
 static const char * opt_text(const markup_atom * a) {
@@ -46,6 +152,37 @@ static const char * opt_text(const markup_atom * a) {
    children, detached in `dst`. */
 static GTEXT_Markup_Status clone_one(
     GTEXT_Markup_Document * dst, const node_t * src, node_t ** out) {
+  GTEXT_Markup_Status provenance_status = GTEXT_MARKUP_OK;
+  if (src->flags & MARKUP_F_LOCATION) {
+    provenance_status = import_source(dst, src->doc, src->source_id);
+  }
+  if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+  if (src->kind == GTEXT_MARKUP_KIND_ELEMENT) {
+    const markup_element * element = (const markup_element *)src;
+    for (size_t i = 0; i < element->attr_count; i++) {
+      if (element->attrs[i].has_location) {
+        provenance_status = import_source(dst, src->doc,
+            element->attrs[i].source_id);
+        if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+      }
+    }
+  }
+  if (src->kind == GTEXT_MARKUP_KIND_DOCTYPE) {
+    const markup_doctype * doctype = (const markup_doctype *)src;
+    for (size_t i = 0; i < doctype->syntax_count; i++) {
+      provenance_status = import_source(dst, src->doc,
+          doctype->syntax[i].location.source_id);
+      if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+    }
+  }
+  if (src->kind == GTEXT_MARKUP_KIND_TEXT) {
+    const markup_text * text = (const markup_text *)src;
+    for (size_t i = 0; i < text->span_count; i++) {
+      provenance_status = import_source(dst, src->doc,
+          text->spans[i].location.source_id);
+      if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+    }
+  }
   node_t * copy = NULL;
   GTEXT_Markup_Status status;
   switch ((GTEXT_Markup_Kind)src->kind) {
@@ -65,7 +202,10 @@ static GTEXT_Markup_Status clone_one(
           return status;
         }
         if (a->has_location) {
-          GTEXT_Markup_Location where = {a->offset, a->line, a->column};
+          GTEXT_Markup_Location where = {a->offset, a->line, a->column,
+              a->source_id, a->reference_source_id, a->raw_offset,
+              a->has_raw_offset != 0};
+          remap_location(&where, dst, src->doc);
           gtext_markup_element_set_attribute_location(copy, i, &where);
         }
       }
@@ -80,6 +220,17 @@ static GTEXT_Markup_Status clone_one(
           : src->kind == GTEXT_MARKUP_KIND_CDATA
           ? gtext_markup_create_cdata(dst, t->data, t->length, &copy)
           : gtext_markup_create_comment(dst, t->data, t->length, &copy);
+      for (size_t i = 0; status == GTEXT_MARKUP_OK && i < t->span_count; i++) {
+        const GTEXT_Markup_Text_Span * span = &t->spans[i];
+        GTEXT_Markup_Location where = span->location;
+        remap_location(&where, dst, src->doc);
+        status = markup_text_add_span(dst, copy, span->text_offset,
+            span->length, &where);
+      }
+      if (status != GTEXT_MARKUP_OK && copy) {
+        gtext_markup_node_free(copy);
+        copy = NULL;
+      }
       break;
     }
     case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
@@ -94,7 +245,8 @@ static GTEXT_Markup_Status clone_one(
           dst, d->name, d->public_id, d->system_id, &copy);
       for (size_t i = 0; status == GTEXT_MARKUP_OK && i < d->syntax_count; i++) {
         const markup_dtd_syntax * item = &d->syntax[i];
-        GTEXT_Markup_Location where = {item->offset, item->line, item->column};
+        GTEXT_Markup_Location where = item->location;
+        remap_location(&where, dst, src->doc);
         status = markup_doctype_append_syntax(copy, item->kind, item->source,
             item->length, &where);
       }
@@ -113,7 +265,10 @@ static GTEXT_Markup_Status clone_one(
     return status;
   }
   if (src->flags & MARKUP_F_LOCATION) {
-    GTEXT_Markup_Location where = {src->offset, src->line, src->column};
+    GTEXT_Markup_Location where = {src->offset, src->line, src->column,
+        src->source_id, src->reference_source_id, src->raw_offset,
+        src->has_raw_offset != 0};
+    remap_location(&where, dst, src->doc);
     gtext_markup_node_set_location(copy, &where);
   }
   *out = copy;

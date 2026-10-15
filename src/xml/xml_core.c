@@ -204,15 +204,35 @@ GTEXT_XML_Status xml_fail_at(xml_ctx * p, GTEXT_XML_Status code,
     p->err.byte_offset = where->offset;
     p->err.line = where->line;
     p->err.column = where->column;
+    p->err.source_id = where->source_id;
+    p->err.reference_source_id = where->reference_source_id;
+    p->err.raw_byte_offset = where->raw_offset;
+    p->err.has_raw_byte_offset = where->has_raw_offset;
+    const size_t retained = p->source_count > 32 ? 32 : p->source_count;
+    const size_t first = p->source_count - retained;
+    p->err.reference_trail_count = (uint8_t)retained;
+    p->err.reference_trail_truncated = first != 0;
+    for (size_t i = 0; i < retained; i++) {
+      p->err.reference_trail[i] = p->sources[first + i].source_id;
+    }
   }
   return p->err.code;
 }
 
 GTEXT_Markup_Location xml_here(const xml_ctx * p) {
   GTEXT_Markup_Location here;
+  memset(&here, 0, sizeof(here));
   here.offset = p->base + p->pos;
   here.line = p->line;
   here.column = p->column;
+  if (p->source_count != 0) {
+    const xml_source_frame * source = &p->sources[p->source_count - 1];
+    here.source_id = source->source_id;
+    here.reference_source_id = source->reference_source_id;
+  }
+  else {
+    here.source_id = 1;
+  }
   return here;
 }
 
@@ -229,7 +249,13 @@ GTEXT_XML_Status xml_unexpected(xml_ctx * p, const char * message) {
     case XML_CHAR_EOF:
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
     case XML_CHAR_BAD_UTF8:
-      return xml_fail(p, GTEXT_XML_E_UTF8, "invalid UTF-8");
+    {
+      GTEXT_Markup_Location where = xml_here(p);
+      /* UTF-8 decoding preserves byte positions, including the BOM base. */
+      where.raw_offset = where.offset;
+      where.has_raw_offset = true;
+      return xml_fail_at(p, GTEXT_XML_E_UTF8, "invalid UTF-8", &where);
+    }
     case XML_CHAR_FORBIDDEN:
     case XML_CHAR_RESTRICTED:
       return xml_fail(p, GTEXT_XML_E_CHARACTER, "character not allowed in XML");
