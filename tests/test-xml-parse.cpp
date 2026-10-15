@@ -427,6 +427,68 @@ TEST_F(XmlParse, LineEndsBecomeLineFeedsInEveryKindOfText) {
   EXPECT_STREQ(gtext_markup_node_data(cdata, &n), "e\nf");
 }
 
+TEST_F(XmlParse, Xml11NormalizesEveryLiteralLineEndButNotReferences) {
+  const std::string doc =
+      "<?xml version='1.1'?><a v='q\r\nr\r\xC2\x85s\xC2\x85t\xE2\x80\xA8u&#x85;&#x2028;'>"
+      "first\r\nsecond\r\xC2\x85third\xC2\x85"
+      "fourth\xE2\x80\xA8"
+      "fifth"
+      "&#xD;&#x85;&#x2028;</a>";
+  Result r = parse(doc);
+  ASSERT_EQ(r.status, GTEXT_XML_OK) << r.err.message;
+  EXPECT_STREQ(gtext_markup_document_xml_version(r.doc, nullptr), "1.1");
+  Node * root = gtext_markup_document_element(r.doc);
+  GTEXT_Markup_Attribute value;
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "v", &value));
+  EXPECT_EQ(std::string(value.value, value.value_length),
+      "q r s t u\xC2\x85\xE2\x80\xA8");
+  Node * text = gtext_markup_node_first_child(root);
+  size_t length = 0;
+  ASSERT_EQ(gtext_markup_node_kind(text), GTEXT_MARKUP_KIND_TEXT);
+  const char * data = gtext_markup_node_data(text, &length);
+  EXPECT_EQ(std::string(data, length),
+      "first\nsecond\nthird\nfourth\nfifth\r\xC2\x85\xE2\x80\xA8");
+
+  Result nodes = parse("<?xml version='1.1'?><a><!--c\xC2\x85" "d\xE2\x80\xA8" "e-->"
+      "<?p x\xC2\x85y\xE2\x80\xA8z?><![CDATA[m\xC2\x85n\xE2\x80\xA8o]]></a>");
+  ASSERT_EQ(nodes.status, GTEXT_XML_OK) << nodes.err.message;
+  Node * child = gtext_markup_node_first_child(
+      gtext_markup_document_element(nodes.doc));
+  ASSERT_EQ(gtext_markup_node_kind(child), GTEXT_MARKUP_KIND_COMMENT);
+  EXPECT_STREQ(gtext_markup_node_data(child, &length), "c\nd\ne");
+  child = gtext_markup_node_next_sibling(child);
+  ASSERT_EQ(gtext_markup_node_kind(child), GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION);
+  EXPECT_STREQ(gtext_markup_node_data(child, &length), "x\ny\nz");
+  child = gtext_markup_node_next_sibling(child);
+  ASSERT_EQ(gtext_markup_node_kind(child), GTEXT_MARKUP_KIND_CDATA);
+  EXPECT_STREQ(gtext_markup_node_data(child, &length), "m\nn\no");
+
+  Result doctype = parse("<?xml version='1.1'?><!DOCTYPE a SYSTEM 'x\r\xC2\x85y\xE2\x80\xA8z'><a/>");
+  ASSERT_EQ(doctype.status, GTEXT_XML_OK) << doctype.err.message;
+  EXPECT_STREQ(gtext_markup_doctype_system_id(
+      gtext_markup_document_doctype(doctype.doc)), "x\ny\nz");
+
+  Result location = parse("<?xml version='1.1'?><a>x\r\xC2\x85<b></c></a>");
+  EXPECT_EQ(location.status, GTEXT_XML_E_MISMATCHED_TAG);
+  EXPECT_EQ(location.err.byte_offset, 31u);
+  EXPECT_EQ(location.err.line, 2u);
+  EXPECT_EQ(location.err.column, 4u);
+
+  Result declaration_space = parse("<?xml\xC2\x85version='1.1'?><a\xE2\x80\xA8x='1'/>");
+  ASSERT_EQ(declaration_space.status, GTEXT_XML_OK) << declaration_space.err.message;
+  EXPECT_STREQ(gtext_markup_document_xml_version(declaration_space.doc, nullptr), "1.1");
+}
+
+TEST_F(XmlParse, Xml10DoesNotTreatNelOrLineSeparatorAsLineEnds) {
+  Result r = parse("<a>x\xC2\x85y\xE2\x80\xA8z</a>");
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  Node * text = gtext_markup_node_first_child(gtext_markup_document_element(r.doc));
+  size_t length = 0;
+  const char * data = gtext_markup_node_data(text, &length);
+  EXPECT_EQ(std::string(data, length),
+      "x\xC2\x85y\xE2\x80\xA8z");
+}
+
 TEST_F(XmlParse, AttributeValuesAreNormalizedAsCdata) {
   // Literal tab, line feed and carriage return (with or without its line
   // feed) become one space each; a reference to any of them stays itself;

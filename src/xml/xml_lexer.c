@@ -39,22 +39,41 @@
 
 void xml_consume(xml_ctx * p, size_t n) {
   const unsigned char * in = p->in;
-  for (size_t i = p->pos; i < p->pos + n; i++) {
+  const size_t end = p->pos + n;
+  for (size_t i = p->pos; i < end;) {
     const unsigned char b = in[i];
-    if (b == '\n') {
-      /* The LF of a CR LF was counted with its CR. */
-      if (i == 0 || in[i - 1] != '\r') {
-        p->line++;
-        p->column = 1;
+    uint32_t cp = b;
+    size_t width = 1;
+    if (b >= 0x80) {
+      const xml_char_status decoded = xml_decode(p, i, &cp, &width);
+      if (decoded == XML_CHAR_BAD_UTF8 || decoded == XML_CHAR_EOF) {
+        /* Invalid input is reported by the caller; preserve the old cursor
+           convention while it advances to the offending byte. */
+        cp = UINT32_MAX;
+        width = 1;
+        if ((b & 0xC0) == 0x80) {
+          i++;
+          continue;
+        }
       }
     }
-    else if (b == '\r') {
+    if (cp == '\r') {
       p->line++;
       p->column = 1;
     }
-    else if ((b & 0xC0) != 0x80) {
+    else if (cp == '\n' || (p->version == XML_VERSION_11
+        && (cp == 0x85 || cp == 0x2028))) {
+      /* LF and XML 1.1 NEL following CR are one logical line end. */
+      if (p->cursor_previous != '\r') {
+        p->line++;
+      }
+      p->column = 1;
+    }
+    else {
       p->column++;
     }
+    p->cursor_previous = cp;
+    i += width;
   }
   p->pos += n;
 }
@@ -92,8 +111,12 @@ GTEXT_XML_Status xml_expect(
 
 size_t xml_skip_space(xml_ctx * p) {
   size_t i = p->pos;
-  while (i < p->length && xml_is_space(p->in[i])) {
-    i++;
+  while (i < p->length) {
+    const size_t width = xml_space_bytes(p, i);
+    if (width == 0) {
+      break;
+    }
+    i += width;
   }
   const size_t n = i - p->pos;
   if (n > 0) {
@@ -251,12 +274,131 @@ GTEXT_XML_Status xml_append_code_point(
   return xml_append(p, buf, out, n);
 }
 
+static size_t line_end_bytes_for_version(
+    const xml_ctx * p, size_t at, int xml11) {
+  if (at >= p->length) {
+    return 0;
+  }
+  uint32_t cp = 0;
+  size_t width = 0;
+  const xml_char_status decoded = xml_decode(p, at, &cp, &width);
+  if (decoded == XML_CHAR_BAD_UTF8 || decoded == XML_CHAR_EOF) {
+    return 0;
+  }
+  if (cp == '\r') {
+    const size_t next = at + width;
+    if (next < p->length) {
+      uint32_t following = 0;
+      size_t following_width = 0;
+      const xml_char_status following_status =
+          xml_decode(p, next, &following, &following_width);
+      if (following_status != XML_CHAR_BAD_UTF8
+          && following_status != XML_CHAR_EOF
+          && (following == '\n' || (xml11 && following == 0x85))) {
+        return width + following_width;
+      }
+    }
+    return width;
+  }
+  if (cp == '\n' || (xml11 && (cp == 0x85 || cp == 0x2028))) {
+    return width;
+  }
+  return 0;
+}
+
+size_t xml_line_end_bytes(const xml_ctx * p, size_t at) {
+  return line_end_bytes_for_version(p, at, p->version == XML_VERSION_11);
+}
+
+size_t xml_xml11_line_end_bytes(const xml_ctx * p, size_t at) {
+  return line_end_bytes_for_version(p, at, 1);
+}
+
+size_t xml_space_bytes(const xml_ctx * p, size_t at) {
+  if (at >= p->length) {
+    return 0;
+  }
+  const unsigned char b = p->in[at];
+  if (b == ' ' || b == '\t') {
+    return 1;
+  }
+  return xml_line_end_bytes(p, at);
+}
+
+void xml_probe_xml11_declaration(xml_ctx * p) {
+  if (p->version == XML_VERSION_11 || !xml_looking_at(p, "<?xml", 5)) {
+    return;
+  }
+  size_t i = p->pos + 5;
+  size_t sep = xml_xml11_line_end_bytes(p, i);
+  if (sep == 0 && i < p->length
+      && (p->in[i] == ' ' || p->in[i] == '\t')) {
+    sep = 1;
+  }
+  if (sep == 0) {
+    return;
+  }
+  do {
+    i += sep;
+    if (i >= p->length) {
+      return;
+    }
+    sep = xml_xml11_line_end_bytes(p, i);
+    if (sep == 0 && (p->in[i] == ' ' || p->in[i] == '\t')) {
+      sep = 1;
+    }
+  } while (sep != 0);
+  if (p->length - i < 7 || memcmp(p->in + i, "version", 7) != 0) {
+    return;
+  }
+  i += 7;
+  while (i < p->length) {
+    sep = xml_xml11_line_end_bytes(p, i);
+    if (sep == 0 && (p->in[i] == ' ' || p->in[i] == '\t')) {
+      sep = 1;
+    }
+    if (sep == 0) {
+      break;
+    }
+    i += sep;
+  }
+  if (i >= p->length || p->in[i++] != '=') {
+    return;
+  }
+  while (i < p->length) {
+    sep = xml_xml11_line_end_bytes(p, i);
+    if (sep == 0 && (p->in[i] == ' ' || p->in[i] == '\t')) {
+      sep = 1;
+    }
+    if (sep == 0) {
+      break;
+    }
+    i += sep;
+  }
+  if (i >= p->length || (p->in[i] != '\'' && p->in[i] != '"')) {
+    return;
+  }
+  const unsigned char quote = p->in[i++];
+  if (p->length - i >= 4 && memcmp(p->in + i, "1.1", 3) == 0
+      && p->in[i + 3] == quote) {
+    p->version = XML_VERSION_11;
+  }
+}
+
 GTEXT_XML_Status xml_append_normalized(
     xml_ctx * p, markup_buf * buf, size_t from, size_t to) {
   const char * in = (const char *)p->in;
   size_t run = from;
-  for (size_t i = from; i < to; i++) {
-    if (in[i] != '\r') {
+  for (size_t i = from; i < to;) {
+    const size_t eol = xml_line_end_bytes(p, i);
+    if (eol == 0 || i + eol > to) {
+      uint32_t cp = 0;
+      size_t width = 1;
+      const xml_char_status decoded = xml_decode(p, i, &cp, &width);
+      if (decoded == XML_CHAR_BAD_UTF8 || decoded == XML_CHAR_EOF || width == 0) {
+        width = 1;
+      }
+      i += width;
       continue;
     }
     GTEXT_XML_Status status = xml_append(p, buf, in + run, i - run);
@@ -267,10 +409,8 @@ GTEXT_XML_Status xml_append_normalized(
     if (status != GTEXT_XML_OK) {
       return status;
     }
-    if (i + 1 < to && in[i + 1] == '\n') {
-      i++;
-    }
-    run = i + 1;
+    i += eol;
+    run = i;
   }
   return run < to ? xml_append(p, buf, in + run, to - run) : GTEXT_XML_OK;
 }

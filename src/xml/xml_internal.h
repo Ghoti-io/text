@@ -202,6 +202,7 @@ typedef struct {
                ///< bytes already read are dropped. Always 0 for a DOM parse.
   size_t line;
   size_t column;
+  uint32_t cursor_previous; ///< Previous decoded source character for CR pairs.
 
   size_t max_depth;
   size_t max_attributes;
@@ -285,6 +286,7 @@ typedef struct {
   size_t line;
   size_t column;
   uint32_t previous;
+  xml_version version; ///< Declared profile, when the XML declaration is present.
   unsigned char left[4]; ///< A partial code unit carried from the last piece.
   size_t left_n;
   uint32_t high;       ///< A high surrogate waiting for its low one.
@@ -381,6 +383,14 @@ GTEXT_XML_Status xml_scan_name(xml_ctx * p, size_t * length);
 /** Append `[from, to)` of the input to `buf`, line ends normalized to LF. */
 GTEXT_XML_Status xml_append_normalized(
     xml_ctx * p, markup_buf * buf, size_t from, size_t to);
+/** Byte length of one XML source line-end sequence at `at`, or zero. */
+size_t xml_line_end_bytes(const xml_ctx * p, size_t at);
+/** XML whitespace at `at`, including line ends normalized for the profile. */
+size_t xml_space_bytes(const xml_ctx * p, size_t at);
+/** Probe the first declaration pseudo-attribute to select XML 1.1 early. */
+void xml_probe_xml11_declaration(xml_ctx * p);
+/** XML 1.1 line-end sequence length, independent of the current profile. */
+size_t xml_xml11_line_end_bytes(const xml_ctx * p, size_t at);
 /** Append a code point as UTF-8. */
 GTEXT_XML_Status xml_append_code_point(
     xml_ctx * p, markup_buf * buf, uint32_t code_point);

@@ -518,6 +518,7 @@ static GTEXT_XML_Status attempt(
   const size_t pos = p->pos;
   const size_t line = p->line;
   const size_t column = p->column;
+  const uint32_t cursor_previous = p->cursor_previous;
   const GTEXT_XML_Status status = fn(p);
   if (status == GTEXT_XML_OK) {
     *done = 1;
@@ -528,6 +529,7 @@ static GTEXT_XML_Status attempt(
     p->pos = pos;
     p->line = line;
     p->column = column;
+    p->cursor_previous = cursor_previous;
     memset(&p->err, 0, sizeof(p->err));
     s->scan.unreliable = 1;
     *done = 0;
@@ -562,19 +564,27 @@ static GTEXT_XML_Status emit_default_document_start(GTEXT_XML_Stream * s) {
 
 static GTEXT_XML_Status step_declaration(GTEXT_XML_Stream * s, int * progress) {
   xml_ctx * p = &s->p;
+  xml_probe_xml11_declaration(p);
   const look_result m = look(s, "<?xml");
   if (m == LOOK_MORE) {
     return GTEXT_XML_OK;
   }
   int declared = 0;
   if (m == LOOK_MATCH) {
+    if (!s->final && available(s) >= 6
+        && !xml_space_bytes(p, p->pos + 5)
+        && (xml_xml11_line_end_bytes(p, p->pos + 5) > 0
+            || xml_at_end(p, p->pos + 5))
+        && p->version != XML_VERSION_11) {
+      return GTEXT_XML_OK;
+    }
     if (available(s) < 6) {
       if (!s->final) {
         return GTEXT_XML_OK;
       }
     }
     else {
-      declared = xml_is_space(p->in[p->pos + 5]);
+      declared = xml_space_bytes(p, p->pos + 5) > 0;
     }
   }
   if (declared) {

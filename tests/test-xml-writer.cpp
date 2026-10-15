@@ -1389,6 +1389,34 @@ TEST(XmlWriter, WriteFileThenParseFileGivesAnEqualTree) {
   gtext_markup_document_free(doc);
 }
 
+TEST(XmlWriter, ParseFileUsesXml11LineEndingNormalization) {
+  TempDir dir;
+  const std::string path = dir.file("xml11-lines.xml");
+  const std::string xml =
+      "<?xml version='1.1'?><a v='a\r" "\xC2\x85" "b\xE2\x80\xA8" "c'>"
+      "one\r" "\xC2\x85" "two\xE2\x80\xA8three</a>";
+  {
+    std::ofstream out(path, std::ios::binary);
+    ASSERT_TRUE(out.good());
+    out.write(xml.data(), (std::streamsize)xml.size());
+    ASSERT_TRUE(out.good());
+  }
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err;
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), nullptr, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  GTEXT_Markup_Attribute attr;
+  ASSERT_TRUE(gtext_markup_element_get_attribute(
+      gtext_markup_document_element(doc), nullptr, "v", &attr));
+  EXPECT_EQ(std::string(attr.value, attr.value_length), "a b c");
+  size_t length = 0;
+  const char * data = gtext_markup_node_data(
+      gtext_markup_node_first_child(gtext_markup_document_element(doc)), &length);
+  EXPECT_EQ(std::string(data, length), "one\ntwo\nthree");
+  gtext_markup_document_free(doc);
+}
+
 TEST(XmlWriter, AFileThatCannotBeReadIsReportedTheWayCsvAndJsonReportIt) {
   TempDir dir;
   Doc * back = reinterpret_cast<Doc *>(0x1);

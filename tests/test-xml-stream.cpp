@@ -233,9 +233,14 @@ void expect_agrees(const std::string & what, const Parsed & run, const Dom & dom
   EXPECT_STREQ(problem ? problem : "ok", "ok") << what;
 }
 
+std::vector<std::string> drain(GTEXT_XML_Reader * r, GTEXT_XML_Status * last);
+
 std::string show(const std::string & data) {
   return "\"" + escape(data.data(), data.size()) + "\"";
 }
+
+std::string utf16(const std::string & utf8, bool big, bool bom);
+std::string utf32(const std::string & utf8, bool big, bool bom);
 
 // ---- a generator of documents ---------------------------------------------
 
@@ -721,6 +726,200 @@ TEST(XmlStream, Xml11ProfileAndCharacterReferencesSurviveChunking) {
     run_stream(restricted, "<?xml version='1.1'?>" + body, Chunks{1});
     EXPECT_EQ(restricted.status, GTEXT_XML_E_CHARACTER);
   }
+}
+
+TEST(XmlStream, Xml11LineEndsAgreeAcrossDomPushAndPullReaders) {
+  const std::string doc =
+      "<?xml version='1.1'?><a v='q\r\n\r\xC2\x85\xE2\x80\xA8z'>"
+      "x\r\ny\r\xC2\x85z\xC2\x85w\xE2\x80\xA8v&#x85;"
+      "<!--c\xC2\x85" "d\xE2\x80\xA8" "e--><?p x\xC2\x85y\xE2\x80\xA8z?>"
+      "<![CDATA[m\xC2\x85n\xE2\x80\xA8o]]></a>";
+  Dom dom;
+  run_dom(dom, doc);
+  ASSERT_EQ(dom.status, GTEXT_XML_OK) << dom.err.message;
+
+  Parsed push;
+  run_stream(push, doc, Chunks{1});
+  ASSERT_EQ(push.status, GTEXT_XML_OK) << push.err.message;
+  expect_agrees("XML 1.1 line ends", push, dom);
+
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(nullptr);
+  ASSERT_NE(reader, nullptr);
+  std::vector<std::string> pulled;
+  GTEXT_XML_Status last = GTEXT_XML_OK;
+  for (size_t at = 0; at < doc.size(); at++) {
+    ASSERT_EQ(gtext_xml_reader_feed(reader, doc.data() + at, 1, nullptr), GTEXT_XML_OK);
+    for (const std::string & event : drain(reader, &last)) {
+      pulled.push_back(event);
+    }
+    ASSERT_EQ(last, GTEXT_XML_E_INCOMPLETE);
+  }
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  for (const std::string & event : drain(reader, &last)) {
+    pulled.push_back(event);
+  }
+  EXPECT_EQ(pulled, push.rec.log);
+  gtext_xml_reader_free(reader);
+
+  for (const std::string & prolog : {
+           std::string("<!--a\r\xC2\x85" "b-->"),
+           std::string("<?p a\r\xC2\x85" "b?>"),
+           std::string("<!DOCTYPE a [<!--a\r\xC2\x85" "b-->] >"),
+           std::string("<!DOCTYPE a [<!ELEMENT a (#PCDATA)\r\xC2\x85>]>")}) {
+    const std::string malformed_after_construct =
+        "<?xml version='1.1'?>" + prolog + "\n<a></b>";
+    Dom construct_dom;
+    run_dom(construct_dom, malformed_after_construct);
+    ASSERT_EQ(construct_dom.status, GTEXT_XML_E_MISMATCHED_TAG)
+        << construct_dom.err.message << " in " << show(prolog);
+    EXPECT_EQ(construct_dom.err.line, 3u);
+    EXPECT_EQ(construct_dom.err.column, 4u);
+    Parsed construct_push;
+    run_stream(construct_push, malformed_after_construct, Chunks{1});
+    expect_agrees("XML 1.1 CR/NEL in a complete prolog construct", construct_push, construct_dom);
+  }
+
+  const std::string malformed = "<?xml version='1.1'?><a>x\r\xC2\x85\xE2x</a>";
+  Dom bad_dom;
+  run_dom(bad_dom, malformed);
+  EXPECT_EQ(bad_dom.status, GTEXT_XML_E_UTF8);
+  EXPECT_EQ(bad_dom.doc, nullptr);
+  EXPECT_EQ(bad_dom.err.line, 2u);
+  Parsed bad_push;
+  run_stream(bad_push, malformed, Chunks{1});
+  EXPECT_EQ(bad_push.status, bad_dom.status);
+  EXPECT_EQ(bad_push.err.byte_offset, bad_dom.err.byte_offset);
+  EXPECT_EQ(bad_push.err.line, bad_dom.err.line);
+  EXPECT_EQ(bad_push.err.column, bad_dom.err.column);
+
+  const std::string malformed_prefix = "<?xml version='1.1'?><a>x";
+  for (const std::string & line_end : {std::string("\xC2\x85"), std::string("\xE2\x80\xA8")}) {
+    const std::string malformed_after_line_end =
+        malformed_prefix + line_end + "\xE2x</a>";
+    Dom line_end_dom;
+    run_dom(line_end_dom, malformed_after_line_end);
+    ASSERT_EQ(line_end_dom.status, GTEXT_XML_E_UTF8);
+    EXPECT_EQ(line_end_dom.doc, nullptr);
+    EXPECT_EQ(line_end_dom.err.byte_offset, malformed_prefix.size() + line_end.size());
+    EXPECT_EQ(line_end_dom.err.line, 2u);
+    EXPECT_EQ(line_end_dom.err.column, 1u);
+    Parsed line_end_push;
+    run_stream(line_end_push, malformed_after_line_end, Chunks{1});
+    EXPECT_EQ(line_end_push.status, line_end_dom.status);
+    EXPECT_EQ(line_end_push.err.byte_offset, line_end_dom.err.byte_offset);
+    EXPECT_EQ(line_end_push.err.line, line_end_dom.err.line);
+    EXPECT_EQ(line_end_push.err.column, line_end_dom.err.column);
+
+    GTEXT_XML_Reader * error_reader = gtext_xml_reader_new(nullptr);
+    ASSERT_NE(error_reader, nullptr);
+    GTEXT_XML_Error pull_error{};
+    GTEXT_XML_Status pull_status = GTEXT_XML_OK;
+    for (size_t at = 0; at < malformed_after_line_end.size(); at++) {
+      pull_status = gtext_xml_reader_feed(
+          error_reader, malformed_after_line_end.data() + at, 1, &pull_error);
+      if (pull_status != GTEXT_XML_OK) {
+        break;
+      }
+    }
+    if (pull_status == GTEXT_XML_OK) {
+      pull_status = gtext_xml_reader_feed(error_reader, nullptr, 0, &pull_error);
+    }
+    EXPECT_EQ(pull_status, line_end_dom.status);
+    EXPECT_EQ(pull_error.byte_offset, line_end_dom.err.byte_offset);
+    EXPECT_EQ(pull_error.line, line_end_dom.err.line);
+    EXPECT_EQ(pull_error.column, line_end_dom.err.column);
+    gtext_xml_reader_free(error_reader);
+  }
+
+  const std::string declaration_space =
+      "<?xml\xC2\x85version='1.1'?><a\xE2\x80\xA8x='1'/>";
+  Dom declaration_dom;
+  run_dom(declaration_dom, declaration_space);
+  ASSERT_EQ(declaration_dom.status, GTEXT_XML_OK) << declaration_dom.err.message;
+  Parsed declaration_stream;
+  run_stream(declaration_stream, declaration_space, Chunks{1});
+  ASSERT_EQ(declaration_stream.status, GTEXT_XML_OK) << declaration_stream.err.message;
+  expect_agrees("XML 1.1 declaration and markup whitespace", declaration_stream,
+      declaration_dom);
+
+  for (const std::string & encoded : {
+           utf16("<?xml version='1.1' encoding='UTF-16'?><a>\r\xC2\x85\xE2\x80\xA8</a>", false, true),
+           utf16("<?xml version='1.1' encoding='UTF-16'?><a>\r\xC2\x85\xE2\x80\xA8</a>", true, true),
+           utf32("<?xml version='1.1' encoding='UTF-32'?><a>\r\xC2\x85\xE2\x80\xA8</a>", false, true),
+           utf32("<?xml version='1.1' encoding='UTF-32'?><a>\r\xC2\x85\xE2\x80\xA8</a>", true, true)}) {
+    Dom encoded_dom;
+    run_dom(encoded_dom, encoded);
+    ASSERT_EQ(encoded_dom.status, GTEXT_XML_OK) << encoded_dom.err.message;
+    Parsed encoded_stream;
+    run_stream(encoded_stream, encoded, Chunks{1});
+    ASSERT_EQ(encoded_stream.status, GTEXT_XML_OK) << encoded_stream.err.message;
+    expect_agrees("XML 1.1 encoded line ends", encoded_stream, encoded_dom);
+  }
+
+  for (const std::string & encoded : {
+           utf16("<?xml\xC2\x85version='1.1' encoding='UTF-16'?><a/>", false, true),
+           utf16("<?xml\xC2\x85version='1.1' encoding='UTF-16'?><a/>", true, true),
+           utf32("<?xml\xC2\x85version='1.1' encoding='UTF-32'?><a/>", false, true),
+           utf32("<?xml\xC2\x85version='1.1' encoding='UTF-32'?><a/>", true, true)}) {
+    Dom declaration_dom;
+    run_dom(declaration_dom, encoded);
+    ASSERT_EQ(declaration_dom.status, GTEXT_XML_OK) << declaration_dom.err.message;
+    Parsed declaration_push;
+    run_stream(declaration_push, encoded, Chunks{1});
+    ASSERT_EQ(declaration_push.status, GTEXT_XML_OK) << declaration_push.err.message;
+    expect_agrees("XML 1.1 encoded declaration line end", declaration_push, declaration_dom);
+  }
+
+  std::string malformed_utf16 = utf16(
+      "<?xml version='1.1' encoding='UTF-16'?><a>\xC2\x85", false, true);
+  malformed_utf16 += std::string("\x3D\xD8", 2); // unpaired high surrogate
+  Dom malformed_utf16_dom;
+  run_dom(malformed_utf16_dom, malformed_utf16);
+  ASSERT_EQ(malformed_utf16_dom.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_EQ(malformed_utf16_dom.doc, nullptr);
+  EXPECT_EQ(malformed_utf16_dom.err.line, 2u);
+  EXPECT_EQ(malformed_utf16_dom.err.column, 1u);
+  Parsed malformed_utf16_stream;
+  run_stream(malformed_utf16_stream, malformed_utf16, Chunks{1});
+  EXPECT_EQ(malformed_utf16_stream.status, malformed_utf16_dom.status);
+  EXPECT_EQ(malformed_utf16_stream.err.byte_offset, malformed_utf16_dom.err.byte_offset);
+  EXPECT_EQ(malformed_utf16_stream.err.line, malformed_utf16_dom.err.line);
+  EXPECT_EQ(malformed_utf16_stream.err.column, malformed_utf16_dom.err.column);
+
+  for (const bool big : {false, true}) {
+    std::string malformed_utf32 = utf32(
+        "<?xml version='1.1' encoding='UTF-32'?><a>\xC2\x85", big, true);
+    malformed_utf32 += big ? std::string("\x00\x11\x00\x00", 4)
+                            : std::string("\x00\x00\x11\x00", 4);
+    Dom malformed_utf32_dom;
+    run_dom(malformed_utf32_dom, malformed_utf32);
+    ASSERT_EQ(malformed_utf32_dom.status, GTEXT_XML_E_INVALID_SEQUENCE);
+    EXPECT_EQ(malformed_utf32_dom.doc, nullptr);
+    EXPECT_EQ(malformed_utf32_dom.err.line, 2u);
+    EXPECT_EQ(malformed_utf32_dom.err.column, 1u);
+    Parsed malformed_utf32_stream;
+    run_stream(malformed_utf32_stream, malformed_utf32, Chunks{1});
+    EXPECT_EQ(malformed_utf32_stream.status, malformed_utf32_dom.status);
+    EXPECT_EQ(malformed_utf32_stream.err.byte_offset, malformed_utf32_dom.err.byte_offset);
+    EXPECT_EQ(malformed_utf32_stream.err.line, malformed_utf32_dom.err.line);
+    EXPECT_EQ(malformed_utf32_stream.err.column, malformed_utf32_dom.err.column);
+  }
+
+  std::string malformed_after_decl_eol = utf16(
+      "<?xml\xC2\x85version='1.1' encoding='UTF-16'?><a>\xC2\x85", false, true);
+  malformed_after_decl_eol += std::string("\x3D\xD8", 2);
+  Dom declaration_eol_dom;
+  run_dom(declaration_eol_dom, malformed_after_decl_eol);
+  ASSERT_EQ(declaration_eol_dom.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_EQ(declaration_eol_dom.doc, nullptr);
+  EXPECT_EQ(declaration_eol_dom.err.line, 3u);
+  EXPECT_EQ(declaration_eol_dom.err.column, 1u);
+  Parsed declaration_eol_stream;
+  run_stream(declaration_eol_stream, malformed_after_decl_eol, Chunks{1});
+  EXPECT_EQ(declaration_eol_stream.status, declaration_eol_dom.status);
+  EXPECT_EQ(declaration_eol_stream.err.byte_offset, declaration_eol_dom.err.byte_offset);
+  EXPECT_EQ(declaration_eol_stream.err.line, declaration_eol_dom.err.line);
+  EXPECT_EQ(declaration_eol_stream.err.column, declaration_eol_dom.err.column);
 }
 
 TEST(XmlStream, TheEmptyElementTagIsAStartAndAnEnd) {

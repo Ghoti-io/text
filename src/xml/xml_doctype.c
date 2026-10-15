@@ -113,11 +113,15 @@ static GTEXT_XML_Status literal(xml_ctx * p, markup_buf * out, int is_public) {
     size_t words = 0;
     size_t j = start;
     while (j < i) {
-      while (j < i && xml_is_space(p->in[j])) {
-        j++;
+      while (j < i) {
+        const size_t whitespace = xml_space_bytes(p, j);
+        if (whitespace == 0 || j + whitespace > i) {
+          break;
+        }
+        j += whitespace;
       }
       const size_t word = j;
-      while (j < i && !xml_is_space(p->in[j])) {
+      while (j < i && xml_space_bytes(p, j) == 0) {
         j++;
       }
       if (j > word) {
@@ -188,7 +192,7 @@ static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
     }
     if (b == '%' && is_entity && p->pos + 1 < p->length
-        && xml_is_space(p->in[p->pos + 1])) {
+        && xml_space_bytes(p, p->pos + 1) > 0) {
       /* `<!ENTITY % name ...>`: the percent sign that makes it a parameter
          entity declaration, not a reference. */
       xml_consume(p, 1);
@@ -284,7 +288,7 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p) {
             "not a declaration, comment or processing instruction");
       }
       xml_consume(p, strlen(keywords[k]));
-      if (p->pos >= p->length || !xml_is_space(p->in[p->pos])) {
+      if (p->pos >= p->length || xml_space_bytes(p, p->pos) == 0) {
         return bad(p, "white space is required after the declaration keyword");
       }
       status = skip_declaration(p, k == 2);

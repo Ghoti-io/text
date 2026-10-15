@@ -423,6 +423,9 @@ static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
       uint32_t cp = 0;
       size_t n = 0;
       if (b >= 0x80 && xml_decode(p, i, &cp, &n) == XML_CHAR_OK) {
+        if (p->version == XML_VERSION_11 && (cp == 0x85 || cp == 0x2028)) {
+          break;
+        }
         i += n;
         continue;
       }
@@ -454,15 +457,14 @@ static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
       return xml_fail(p, GTEXT_XML_E_SYNTAX,
           "'<' is not allowed in an attribute value");
     }
+    const size_t line_end = xml_line_end_bytes(p, p->pos);
     if (b == '&') {
       status = xml_parse_reference(p, &p->attr_pool);
     }
-    else {
-      /* Tab, line feed, and a carriage return with or without its line feed,
-         each one space. */
+    else if (b == '\t' || line_end > 0) {
+      /* Literal XML whitespace and normalized line ends become one space. */
       status = xml_append(p, &p->attr_pool, " ", 1);
-      xml_consume(p,
-          b == '\r' && p->pos + 1 < p->length && p->in[p->pos + 1] == '\n' ? 2 : 1);
+      xml_consume(p, line_end > 0 ? line_end : 1);
     }
     if (status != GTEXT_XML_OK) {
       return status;
@@ -1152,9 +1154,10 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  xml_probe_xml11_declaration(p);
   int declared = 0;
   if (xml_looking_at(p, "<?xml", 5) && p->pos + 5 < p->length
-      && xml_is_space(p->in[p->pos + 5])) {
+      && xml_space_bytes(p, p->pos + 5) > 0) {
     status = xml_parse_xml_declaration(p);
     if (status != GTEXT_XML_OK) {
       return status;

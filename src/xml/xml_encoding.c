@@ -165,12 +165,78 @@ void xml_converter_init(
   c->column = 1;
 }
 
+static int conv_select_profile(xml_converter * c);
+
 static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message) {
+  conv_select_profile(c);
   GTEXT_Markup_Location where;
   where.offset = c->total;
   where.line = c->line;
   where.column = c->column;
   return xml_fail_at(c->p, GTEXT_XML_E_INVALID_SEQUENCE, message, &where);
+}
+
+/* The version is the first pseudo-attribute in an XML declaration. The
+   converter needs it only to locate a later decoding error correctly; the XML
+   parser remains the authority that validates the complete declaration. */
+static int conv_select_profile(xml_converter * c) {
+  if (c->version == XML_VERSION_11) {
+    return 0;
+  }
+  xml_ctx probe;
+  memset(&probe, 0, sizeof(probe));
+  probe.in = (const unsigned char *)c->out->data;
+  probe.length = c->out->length;
+  xml_probe_xml11_declaration(&probe);
+  if (probe.version != XML_VERSION_11) {
+    return 0;
+  }
+  c->version = probe.version;
+  c->line = 1;
+  c->column = 1;
+  c->previous = 0;
+  for (size_t i = 0; i < c->out->length;) {
+    const unsigned char b = (unsigned char)c->out->data[i];
+    uint32_t cp = b;
+    size_t width = 1;
+    if (b >= 0x80) {
+      const size_t left = c->out->length - i;
+      if (b >= 0xC2 && b <= 0xDF && left >= 2) {
+        cp = ((uint32_t)(b & 0x1F) << 6)
+            | ((unsigned char)c->out->data[i + 1] & 0x3F);
+        width = 2;
+      }
+      else if (b >= 0xE0 && b <= 0xEF && left >= 3) {
+        cp = ((uint32_t)(b & 0x0F) << 12)
+            | (((unsigned char)c->out->data[i + 1] & 0x3F) << 6)
+            | ((unsigned char)c->out->data[i + 2] & 0x3F);
+        width = 3;
+      }
+      else if (b >= 0xF0 && b <= 0xF4 && left >= 4) {
+        cp = ((uint32_t)(b & 0x07) << 18)
+            | (((unsigned char)c->out->data[i + 1] & 0x3F) << 12)
+            | (((unsigned char)c->out->data[i + 2] & 0x3F) << 6)
+            | ((unsigned char)c->out->data[i + 3] & 0x3F);
+        width = 4;
+      }
+    }
+    if (cp == '\r') {
+      c->line++;
+      c->column = 1;
+    }
+    else if (cp == '\n' || cp == 0x85 || cp == 0x2028) {
+      if (c->previous != '\r') {
+        c->line++;
+      }
+      c->column = 1;
+    }
+    else {
+      c->column++;
+    }
+    c->previous = cp;
+    i += width;
+  }
+  return 1;
 }
 
 /* Append one character, keeping the line and column of the original. */
@@ -180,8 +246,18 @@ static GTEXT_XML_Status conv_put(xml_converter * c, uint32_t cp) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  const int selected = conv_select_profile(c);
   c->total += c->out->length - before;
+  if (selected) {
+    return GTEXT_XML_OK;
+  }
   if (cp == '\n') {
+    if (c->previous != '\r') {
+      c->line++;
+    }
+    c->column = 1;
+  }
+  else if (c->version == XML_VERSION_11 && (cp == 0x85 || cp == 0x2028)) {
     if (c->previous != '\r') {
       c->line++;
     }
