@@ -816,18 +816,98 @@ TEST(XmlWriter, TheXmlDeclarationFollowsTheDocumentAndTheEncoding) {
   EXPECT_EQ(write_with(latin, o).bytes, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<a/>");
   gtext_markup_document_free(latin);
 
-  // A version XML 1.0 cannot be written as.
+  // Unsupported versions cannot be hidden by omitting the declaration.
   Build odd;
   gtext_markup_document_set_xml_declaration(odd.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
   odd.el(nullptr, "a");
   const Out out = write_default(odd.doc);
-  EXPECT_EQ(out.status, GTEXT_XML_E_UNSUPPORTED_VERSION);
-  EXPECT_STREQ(out.r.name, "1.1");
+  EXPECT_EQ(out.status, GTEXT_XML_OK);
+  EXPECT_NE(out.bytes.find("version=\"1.1\""), std::string::npos);
   // Leaving the declaration out would hide it, so NEVER does not allow it.
   o.xml_declaration = GTEXT_XML_DECLARATION_NEVER;
-  EXPECT_EQ(write_with(odd.doc, o).status, GTEXT_XML_E_UNSUPPORTED_VERSION);
+  EXPECT_EQ(write_with(odd.doc, o).status, GTEXT_XML_E_INVALID);
+  Collect sink;
+  GTEXT_XML_Write_Result result;
+  const auto s = sink.sink();
+  EXPECT_EQ(gtext_xml_write(&s, odd.doc, &o, &result), GTEXT_XML_E_INVALID);
+  EXPECT_EQ(sink.calls, 0u);
   o.xml_declaration = GTEXT_XML_DECLARATION_ALWAYS;
-  EXPECT_EQ(write_with(odd.doc, o).status, GTEXT_XML_E_UNSUPPORTED_VERSION);
+  EXPECT_EQ(write_with(odd.doc, o).status, GTEXT_XML_OK);
+}
+
+TEST(XmlWriter, Xml11ReferencesPreserveRestrictedAndNormalizedCharacters) {
+  Build b;
+  gtext_markup_document_set_xml_declaration(b.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+  Node * a = b.el(nullptr, "a");
+  const std::string value = std::string("x\x01\x7F\xC2\x85\xE2\x80\xA8\r", 9);
+  const std::string attribute = value + "\t\n";
+  b.text(a, value);
+  b.attr(a, "v", attribute);
+  const Out out = write_default(b.doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_NE(out.bytes.find("x&#x1;&#x7F;&#x85;&#x2028;"), std::string::npos);
+  EXPECT_NE(out.bytes.find("&#xD;"), std::string::npos);
+  EXPECT_NE(out.bytes.find("&#x9;&#xA;"), std::string::npos);
+  Doc * back = parse(out.bytes);
+  ASSERT_NE(back, nullptr);
+  EXPECT_TRUE(gtext_markup_equal(b.root(), gtext_markup_document_root(back)));
+  gtext_markup_document_free(back);
+}
+
+TEST(XmlWriter, Xml11RawRestrictedCharactersAndInvalidCharactersRefusePreflight) {
+  const auto refuses_before_output = [](const std::function<void(Build &, const std::string &)> & add,
+                                         const std::string & raw) {
+    Build b;
+    gtext_markup_document_set_xml_declaration(b.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+    add(b, raw);
+    Collect sink;
+    GTEXT_XML_Write_Result result;
+    const auto s = sink.sink();
+    EXPECT_EQ(gtext_xml_write(&s, b.doc, nullptr, &result),
+        GTEXT_XML_E_UNREPRESENTABLE);
+    EXPECT_EQ(sink.calls, 0u);
+  };
+  const std::string restricted("x\x01", 2);
+  const std::string normalized("x\xC2\x85", 3);
+  refuses_before_output([](Build & b, const std::string & raw) {
+    b.comment(b.el(nullptr, "a"), raw);
+  }, restricted);
+  refuses_before_output([](Build & b, const std::string & raw) {
+    b.pi(nullptr, "p", raw);
+  }, restricted);
+  refuses_before_output([](Build & b, const std::string & raw) {
+    b.cdata(b.el(nullptr, "a"), raw);
+  }, restricted);
+  refuses_before_output([](Build & b, const std::string & raw) {
+    b.doctype("a", nullptr, raw.c_str());
+    b.el(nullptr, "a");
+  }, restricted);
+  refuses_before_output([](Build & b, const std::string & raw) {
+    b.comment(b.el(nullptr, "a"), raw);
+  }, normalized);
+  Build bad;
+  gtext_markup_document_set_xml_declaration(bad.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+  bad.text(bad.el(nullptr, "a"), std::string("\0", 1));
+  EXPECT_EQ(write_default(bad.doc).status, GTEXT_XML_E_CHARACTER);
+}
+
+TEST(XmlWriter, Xml11PrefixUndeclarationIsScopedAndRoundTrips) {
+  Build b;
+  gtext_markup_document_set_xml_declaration(b.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+  Node * root = b.el(nullptr, "r", "urn:p", "p");
+  b.xmlns(root, "p", "urn:p");
+  Node * hidden = b.el(root, "plain");
+  b.xmlns(hidden, "p", "");
+  b.el(root, "again", "urn:p", "p");
+  const Out out = write_default(b.doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_NE(out.bytes.find("xmlns:p=\"\""), std::string::npos);
+  Doc * back = parse(out.bytes);
+  ASSERT_NE(back, nullptr);
+  EXPECT_TRUE(gtext_markup_equal(b.root(), gtext_markup_document_root(back)));
+  gtext_markup_document_free(back);
+  gtext_markup_document_set_xml_declaration(b.doc, "1.0", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+  EXPECT_EQ(write_default(b.doc).status, GTEXT_XML_E_NAMESPACE);
 }
 
 TEST(XmlWriter, EmptyElementsAreSelfClosedOrExpanded) {
@@ -1502,6 +1582,14 @@ TEST(XmlWriter, AFailedFileWriteLeavesTheOldFileAndNoTemporary) {
   // A refused tree, and no file there before: none appears.
   const std::string fresh = dir.file("fresh.xml");
   EXPECT_EQ(gtext_xml_write_file(fresh.c_str(), bad.doc, nullptr, nullptr), GTEXT_XML_E_UNREPRESENTABLE);
+  EXPECT_EQ(dir.list(), std::vector<std::string>{"keep.xml"});
+
+  Build bad11;
+  gtext_markup_document_set_xml_declaration(bad11.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+  bad11.text(bad11.el(nullptr, "a"), std::string("\0", 1));
+  const std::string fresh11 = dir.file("fresh11.xml");
+  EXPECT_EQ(gtext_xml_write_file(fresh11.c_str(), bad11.doc, nullptr, &r),
+      GTEXT_XML_E_CHARACTER);
   EXPECT_EQ(dir.list(), std::vector<std::string>{"keep.xml"});
 
   // The output limit, which is a refusal too.

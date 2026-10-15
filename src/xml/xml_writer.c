@@ -133,6 +133,7 @@ typedef struct {
   bool dry;
   bool bom;      /* UTF-8 output starts with a byte order mark */
   bool declared; /* the XML declaration is being written in this pass */
+  bool xml11;    /* version profile selected by the document */
   bool xhtml;    /* GTEXT_XML_Write_Options::xhtml */
   bool declare_now; /* xhtml: the root element's XHTML namespace is declared
                        here if it is not already */
@@ -171,6 +172,8 @@ typedef struct {
 /* ---- failing ------------------------------------------------------------ */
 
 static void build_path(const GTEXT_Markup_Node * node, int attr, char * out);
+static GTEXT_XML_Status check_raw_data(
+    wctx * w, const char * data, size_t len, const char * what);
 
 static GTEXT_XML_Status fail(
     wctx * w, GTEXT_XML_Status code, const char * message) {
@@ -558,6 +561,59 @@ static GTEXT_XML_Status enc_cp(wctx * w, uint32_t cp, bool ref_ok) {
   return fail(w, GTEXT_XML_E_INVALID, "unknown output encoding");
 }
 
+static bool xml11_char(uint32_t cp) {
+  return (cp >= 0x1 && cp <= 0xD7FF)
+      || (cp >= 0xE000 && cp <= 0xFFFD)
+      || (cp >= 0x10000 && cp <= 0x10FFFF);
+}
+
+static bool xml11_restricted(uint32_t cp) {
+  return (cp >= 0x1 && cp <= 0x8) || cp == 0xB || cp == 0xC
+      || (cp >= 0xE && cp <= 0x1F) || (cp >= 0x7F && cp <= 0x84)
+      || (cp >= 0x86 && cp <= 0x9F);
+}
+
+static GTEXT_XML_Status put_char_ref(wctx * w, uint32_t cp) {
+  char ref[16];
+  size_t n = 0;
+  ref[n++] = '&'; ref[n++] = '#'; ref[n++] = 'x';
+  char digits[8];
+  size_t d = 0;
+  do { digits[d++] = "0123456789ABCDEF"[cp & 0xF]; cp >>= 4; } while (cp);
+  while (d) ref[n++] = digits[--d];
+  ref[n++] = ';';
+  COUNT(w, references_written);
+  return put_ascii(w, ref, n);
+}
+
+static GTEXT_XML_Status put_escaped_xml11(wctx * w,
+    GTEXT_Markup_Escape_Mode mode, const char * text, size_t len) {
+  size_t i = 0;
+  while (i < len) {
+    uint32_t cp = 0;
+    bool valid = false;
+    size_t used = guni_utf8_decode(text + i, len - i, &cp, &valid);
+    if (!valid || !used) return fail(w, GTEXT_XML_E_UTF8, "invalid UTF-8");
+    if (!xml11_char(cp)) return fail(w, GTEXT_XML_E_CHARACTER, "character not allowed in XML 1.1");
+    const char * escaped = NULL;
+    if (cp == '&') escaped = "&amp;";
+    else if (cp == '<') escaped = "&lt;";
+    else if (cp == '>') escaped = "&gt;";
+    else if (mode == GTEXT_MARKUP_ESCAPE_XML_ATTRIBUTE && cp == '"') escaped = "&quot;";
+    else if (cp == '\r' || (mode == GTEXT_MARKUP_ESCAPE_XML_ATTRIBUTE && (cp == '\t' || cp == '\n'))
+        || cp == 0x85 || cp == 0x2028 || xml11_restricted(cp)) {
+      if (put_char_ref(w, cp) != GTEXT_XML_OK) return w->status;
+      i += used;
+      continue;
+    }
+    if (escaped) {
+      if (put_str(w, escaped) != GTEXT_XML_OK) return w->status;
+    } else if (enc_cp(w, cp, true) != GTEXT_XML_OK) return w->status;
+    i += used;
+  }
+  return GTEXT_XML_OK;
+}
+
 /* Text that is already valid UTF-8 and already escaped. */
 static GTEXT_XML_Status put_text(
     wctx * w, const char * bytes, size_t len, bool ref_ok) {
@@ -607,6 +663,7 @@ static GTEXT_XML_Status put_escaped(wctx * w, GTEXT_Markup_Escape_Mode mode,
   if (w->status != GTEXT_XML_OK) {
     return w->status;
   }
+  if (w->xml11) return put_escaped_xml11(w, mode, text, len);
   const GTEXT_Markup_Sink sink = {escape_sink, w};
   const GTEXT_Markup_Status st = gtext_markup_escape(mode, text, len, &sink);
   if (st == GTEXT_MARKUP_OK) {
@@ -918,7 +975,7 @@ static GTEXT_XML_Status check_attribute_shape(
       return fail_name(w, GTEXT_XML_E_NAMESPACE,
           "the prefix xmlns cannot be declared", a->local, 5);
     }
-    if (a->value_length == 0) {
+    if (a->value_length == 0 && !w->xml11) {
       return fail_name(w, GTEXT_XML_E_NAMESPACE,
           "a prefix cannot be undeclared (Namespaces in XML 1.0)", a->local,
           strlen(a->local));
@@ -1007,9 +1064,9 @@ static GTEXT_XML_Status write_declaration(wctx * w) {
   /* Whatever the declaration mode: a document that says it is not XML 1.0 is
      not one this writer can write, and leaving the declaration out would
      hide that rather than fix it. */
-  if (version && strcmp(version, "1.0") != 0) {
+  if (version && strcmp(version, "1.0") != 0 && strcmp(version, "1.1") != 0) {
     return fail_name(w, GTEXT_XML_E_UNSUPPORTED_VERSION,
-        "only XML 1.0 can be written", version, strlen(version));
+        "only XML 1.0 and 1.1 can be written", version, strlen(version));
   }
   bool declare;
   switch (w->o.xml_declaration) {
@@ -1029,9 +1086,14 @@ static GTEXT_XML_Status write_declaration(wctx * w) {
   }
   w->declared = declare;
   if (!declare) {
+    if (w->xml11) {
+      return fail(w, GTEXT_XML_E_INVALID,
+          "XML 1.1 output needs its version declaration so readers select the "
+          "same XML profile");
+    }
     return GTEXT_XML_OK;
   }
-  if (put_str(w, "<?xml version=\"1.0\" encoding=\"") != GTEXT_XML_OK
+  if (put_str(w, w->xml11 ? "<?xml version=\"1.1\" encoding=\"" : "<?xml version=\"1.0\" encoding=\"") != GTEXT_XML_OK
       || put_str(w, encoding_label(w->o.encoding)) != GTEXT_XML_OK
       || put_str(w, "\"") != GTEXT_XML_OK) {
     return w->status;
@@ -1104,16 +1166,22 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
   }
   if (sys) {
     const size_t sl = strlen(sys);
-    const GTEXT_Markup_Status st = gtext_markup_check_xml_chars(sys, sl);
-    if (st != GTEXT_MARKUP_OK) {
-      return st == GTEXT_MARKUP_E_ENCODING
-          ? fail(w, GTEXT_XML_E_UTF8, "invalid UTF-8")
-          : fail(w, GTEXT_XML_E_CHARACTER, "character not allowed in XML");
-    }
-    if (memchr(sys, '\r', sl)) {
-      return fail(w, GTEXT_XML_E_DOCTYPE,
-          "a carriage return in a system identifier would be read back as a "
-          "line feed");
+    if (w->xml11) {
+      if (check_raw_data(w, sys, sl,
+              "a line end or restricted character in a system identifier has "
+              "no character-reference spelling") != GTEXT_XML_OK) return w->status;
+    } else {
+      const GTEXT_Markup_Status st = gtext_markup_check_xml_chars(sys, sl);
+      if (st != GTEXT_MARKUP_OK) {
+        return st == GTEXT_MARKUP_E_ENCODING
+            ? fail(w, GTEXT_XML_E_UTF8, "invalid UTF-8")
+            : fail(w, GTEXT_XML_E_CHARACTER, "character not allowed in XML");
+      }
+      if (memchr(sys, '\r', sl)) {
+        return fail(w, GTEXT_XML_E_DOCTYPE,
+            "a carriage return in a system identifier would be read back as a "
+            "line feed");
+      }
     }
   }
   if (put_str(w, "<!DOCTYPE ") != GTEXT_XML_OK
@@ -1147,6 +1215,19 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
    a carriage return behind, and that XML would read back with a line feed. */
 static GTEXT_XML_Status check_raw_data(
     wctx * w, const char * data, size_t len, const char * what) {
+  if (w->xml11) {
+    size_t i = 0;
+    while (i < len) {
+      uint32_t cp = 0; bool valid = false;
+      size_t used = guni_utf8_decode(data + i, len - i, &cp, &valid);
+      if (!valid || !used) return fail(w, GTEXT_XML_E_UTF8, "invalid UTF-8");
+      if (!xml11_char(cp)) return fail(w, GTEXT_XML_E_CHARACTER, "character not allowed in XML 1.1");
+      if (xml11_restricted(cp) || cp == 0x85 || cp == 0x2028 || cp == '\r')
+        return fail(w, GTEXT_XML_E_UNREPRESENTABLE, what);
+      i += used;
+    }
+    return GTEXT_XML_OK;
+  }
   const GTEXT_Markup_Status st = gtext_markup_check_xml_chars(data, len);
   if (st == GTEXT_MARKUP_E_ENCODING) {
     return fail(w, GTEXT_XML_E_UTF8, "invalid UTF-8");
@@ -2586,6 +2667,8 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
   }
   w->alloc = alloc;
   w->doc = doc;
+  const char * doc_version = gtext_markup_document_xml_version(doc, NULL);
+  w->xml11 = doc_version && strcmp(doc_version, "1.1") == 0;
   if (sink) {
     w->sink = *sink;
   }

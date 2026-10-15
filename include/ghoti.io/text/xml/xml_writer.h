@@ -20,9 +20,12 @@
 
 /**
  * @file xml_writer.h
- * @brief Write a markup document as XML 1.0, to a sink, a buffer or a file.
+ * @brief Write a markup document as XML 1.0 or XML 1.1, to a sink, a buffer or a file.
  *
- * XML 1.0 (Fifth Edition) and Namespaces in XML 1.0 (Third Edition).
+ * The document's recorded version selects XML 1.0 (Fifth Edition) or XML 1.1
+ * (Second Edition) and the matching Namespaces Recommendation. No declaration
+ * selects XML 1.0. Unsupported recorded versions are refused even when the
+ * output declaration is omitted.
  *
  * ## The contract
  *
@@ -45,7 +48,11 @@
  *   (XML reads every carriage return as a line feed, and these have no
  *   reference to hide it behind), and processing instruction data that starts
  *   with white space (the parser takes it as the separator);
- * - a character XML 1.0 forbids (GTEXT_XML_E_CHARACTER);
+ * - a character forbidden by the selected XML version (GTEXT_XML_E_CHARACTER);
+ *   in XML 1.1, restricted characters, NEL and LINE SEPARATOR in text and
+ *   attribute values are written as character references to preserve their
+ *   values; these characters are refused in names and raw syntax such as
+ *   comments, processing instructions, CDATA and document type identifiers;
  * - a name that is not an XML name, or a processing instruction target `xml`
  *   in any case (GTEXT_XML_E_NAME);
  * - an element or attribute whose prefix has no in-scope declaration for its
@@ -74,6 +81,8 @@
  *   value is escaped for its place: `&`, `<`, `>`, `"` (attributes only), a
  *   carriage return as `&#13;`, and a tab or line feed in an attribute value as
  *   `&#9;` and `&#10;`, which is what keeps them from being read back as spaces.
+ * - XML 1.1 prefix undeclarations are written when present; XML 1.0 prefix
+ *   undeclarations remain a namespace error.
  * - Under ISO-8859-1 and US-ASCII a character the encoding lacks is written as
  *   a hexadecimal character reference in text and attribute values (counted in
  *   GTEXT_XML_Write_Result::references_written).
@@ -187,8 +196,10 @@ typedef enum {
    */
   GTEXT_XML_DECLARATION_AUTO = 0,
   GTEXT_XML_DECLARATION_ALWAYS, ///< Always. A document with no version gets "1.0".
-  GTEXT_XML_DECLARATION_NEVER   ///< Never. With ISO-8859-1 output a character
-                                ///< from U+0080 to U+00FF is then refused
+  GTEXT_XML_DECLARATION_NEVER   ///< Never. Refused for an XML 1.1 tree because
+                                ///< omission makes readers select XML 1.0.
+                                ///< With ISO-8859-1 output a character from
+                                ///< U+0080 to U+00FF is also refused
                                 ///< (GTEXT_XML_E_UNREPRESENTABLE): the bytes
                                 ///< would not read back.
 } GTEXT_XML_Declaration_Mode;
