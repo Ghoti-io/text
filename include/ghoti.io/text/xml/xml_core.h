@@ -260,7 +260,7 @@ typedef struct {
   size_t max_expanded_bytes;
   /** Maximum active entity sources, excluding the document. Default 32. */
   size_t max_entity_depth;
-  /** Maximum general and parameter entity references processed. Default 1,000,000. */
+  /** Maximum XML references processed, including entity and character references. Default 1,000,000. */
   size_t max_references;
   /** Maximum DTD declarations processed. Default 100,000. */
   size_t max_declarations;
@@ -281,7 +281,7 @@ typedef struct {
  *   1024 attributes, 16 MiB of attribute value, 8192 bytes of name, ten million
  *   nodes, 256 namespace declarations, 16 MiB per external source, 64 MiB
  *   aggregate external bytes and expanded bytes, entity depth 32, one million
- *   references, 100,000 declarations, 256 MiB total work, DTD_OFF mode, and
+ *   XML references, 100,000 declarations, 256 MiB total work, DTD_OFF mode, and
  *   external DENY policy. All zero-valued limit overrides select these finite
  *   defaults.
  */

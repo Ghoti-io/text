@@ -309,6 +309,8 @@ TEST(XmlLimits, EveryLimitIsItsOwnStatus) {
       EXPECT_NE(seen[i], seen[j]);
     }
   }
+  EXPECT_STREQ(gtext_xml_status_string(GTEXT_XML_E_LIMIT_REFERENCES),
+      "too many XML references");
 }
 
 TEST(XmlLimits, ReferenceAndDeclarationBudgetsAreChargedAtUse) {
@@ -477,7 +479,7 @@ TEST(XmlLimits, EveryLedgerCounterRejectsOverflowWithoutChangingCounters) {
   p.err = {};
   p.references = SIZE_MAX - 1;
   EXPECT_EQ(xml_charge(&p, &p.references, SIZE_MAX, 2,
-      GTEXT_XML_E_LIMIT_REFERENCES, "references"), GTEXT_XML_E_LIMIT_REFERENCES);
+      GTEXT_XML_E_LIMIT_REFERENCES, "XML references"), GTEXT_XML_E_LIMIT_REFERENCES);
   EXPECT_EQ(p.references, SIZE_MAX - 1);
 
   p.err = {};

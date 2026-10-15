@@ -92,6 +92,13 @@ static GTEXT_Markup_Status clone_one(
       const markup_doctype * d = (const markup_doctype *)src;
       status = gtext_markup_create_doctype(
           dst, d->name, d->public_id, d->system_id, &copy);
+      for (size_t i = 0; status == GTEXT_MARKUP_OK && i < d->syntax_count; i++) {
+        const markup_dtd_syntax * item = &d->syntax[i];
+        GTEXT_Markup_Location where = {item->offset, item->line, item->column};
+        status = markup_doctype_append_syntax(copy, item->kind, item->source,
+            item->length, &where);
+      }
+      if (status != GTEXT_MARKUP_OK && copy) gtext_markup_node_free(copy);
       break;
     }
     case GTEXT_MARKUP_KIND_FRAGMENT:
@@ -241,8 +248,16 @@ static bool node_equal(const node_t * a, const node_t * b) {
     case GTEXT_MARKUP_KIND_DOCTYPE: {
       const markup_doctype * x = (const markup_doctype *)a;
       const markup_doctype * y = (const markup_doctype *)b;
-      return same_text(x->name, y->name) && same_text(x->public_id, y->public_id)
-          && same_text(x->system_id, y->system_id);
+      if (!same_text(x->name, y->name) || !same_text(x->public_id, y->public_id)
+          || !same_text(x->system_id, y->system_id)
+          || x->syntax_count != y->syntax_count) return false;
+      for (size_t i = 0; i < x->syntax_count; i++) {
+        const markup_dtd_syntax * p = &x->syntax[i];
+        const markup_dtd_syntax * q = &y->syntax[i];
+        if (p->kind != q->kind || !same_bytes(p->source, p->length,
+              q->source, q->length)) return false;
+      }
+      return true;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:
     case GTEXT_MARKUP_KIND_FRAGMENT:

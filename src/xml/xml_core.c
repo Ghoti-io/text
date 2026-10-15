@@ -103,7 +103,7 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
     case GTEXT_XML_E_LIMIT_ENTITY_DEPTH:
       return "entity nesting too deep";
     case GTEXT_XML_E_LIMIT_REFERENCES:
-      return "too many entity references";
+      return "too many XML references";
     case GTEXT_XML_E_LIMIT_DECLARATIONS:
       return "too many DTD declarations";
     case GTEXT_XML_E_LIMIT_WORK:

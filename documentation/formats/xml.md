@@ -147,7 +147,7 @@ Each has a default from the first release; `0` in the options selects it, and
 | bytes across external sources | 64 MiB | `_LIMIT_EXTERNAL_TOTAL` |
 | entity replacement bytes, cumulatively | 64 MiB | `_LIMIT_EXPANSION` |
 | active entity sources | 32 | `_LIMIT_ENTITY_DEPTH` |
-| entity references | 1,000,000 | `_LIMIT_REFERENCES` |
+| XML references, including entity and character references | 1,000,000 | `_LIMIT_REFERENCES` |
 | DTD declarations | 100,000 | `_LIMIT_DECLARATIONS` |
 | charged parser work units | 256 MiB | `_LIMIT_WORK` |
 

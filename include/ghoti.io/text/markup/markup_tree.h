@@ -480,6 +480,39 @@ GTEXT_API const char * gtext_markup_doctype_public_id(
 GTEXT_API const char * gtext_markup_doctype_system_id(
     const GTEXT_Markup_Node * node);
 
+/** The retained source kind of one internal-subset item. */
+typedef enum {
+  GTEXT_MARKUP_DTD_ELEMENT,
+  GTEXT_MARKUP_DTD_ATTLIST,
+  GTEXT_MARKUP_DTD_ENTITY,
+  GTEXT_MARKUP_DTD_NOTATION,
+  GTEXT_MARKUP_DTD_COMMENT,
+  GTEXT_MARKUP_DTD_PROCESSING_INSTRUCTION,
+  GTEXT_MARKUP_DTD_PARAMETER_REFERENCE
+} GTEXT_Markup_DTD_Syntax_Kind;
+
+/**
+ * One ordered, raw internal-subset construct retained by an XML parse in DTD
+ * processing mode. The parser validates its production but does not expand
+ * parameter entities or compile effective declaration bindings.
+ */
+typedef struct {
+  GTEXT_Markup_DTD_Syntax_Kind kind;
+  const char * source; ///< Complete lexical construct, valid while the doctype lives.
+  size_t source_length;
+  GTEXT_Markup_Location location;
+} GTEXT_Markup_DTD_Syntax;
+
+/** Number of retained internal-subset constructs (zero for non-doctypes). */
+GTEXT_API size_t gtext_markup_doctype_syntax_count(
+    const GTEXT_Markup_Node * node);
+
+/** Read a retained construct in declaration order. False for an invalid index;
+ * `out` is unchanged when false is returned. */
+GTEXT_API bool gtext_markup_doctype_syntax(
+    const GTEXT_Markup_Node * node, size_t index,
+    GTEXT_Markup_DTD_Syntax * out);
+
 /**
  * @brief Where in the source a node came from.
  *

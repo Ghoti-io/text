@@ -35,6 +35,7 @@
  */
 
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -161,6 +162,126 @@ TEST_F(XmlParse, TheMatrixsDoctypeRows) {
   expect_error("<!DOCTYPE a [ <!ENTITY e \"x\">", GTEXT_XML_E_UNEXPECTED_EOF, 29, 1, 30);
   expect_error("<!DOCTYPE a [ <!ENTITY e \"x]>", GTEXT_XML_E_UNEXPECTED_EOF, 29, 1, 30);
   expect_error("<!DOCTYPE a [ <!-- ]> ", GTEXT_XML_E_UNEXPECTED_EOF, 14, 1, 15);
+}
+
+TEST_F(XmlParse, DtdProcessingRetainsOrderedRawSyntax) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const std::string input =
+      "<!DOCTYPE a [<!ELEMENT a (b|(c,d))*><!-- note --><?keep data?>"
+      "<!ATTLIST a id ID #IMPLIED choice (1st|blue) #IMPLIED value CDATA '&amp;&#x41;'>"
+      "<!ENTITY % p 'x&#65;&amp;'>%p;"
+      "<!NOTATION n SYSTEM 'n'>]><a/>";
+  Result result = parse(input, &options);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+  Node * doctype = gtext_markup_document_doctype(result.doc);
+  ASSERT_NE(doctype, nullptr);
+  ASSERT_EQ(gtext_markup_doctype_syntax_count(doctype), 7u);
+  const GTEXT_Markup_DTD_Syntax_Kind kinds[] = {
+      GTEXT_MARKUP_DTD_ELEMENT, GTEXT_MARKUP_DTD_COMMENT,
+      GTEXT_MARKUP_DTD_PROCESSING_INSTRUCTION, GTEXT_MARKUP_DTD_ATTLIST,
+      GTEXT_MARKUP_DTD_ENTITY, GTEXT_MARKUP_DTD_PARAMETER_REFERENCE,
+      GTEXT_MARKUP_DTD_NOTATION};
+  for (size_t i = 0; i < 7; ++i) {
+    GTEXT_Markup_DTD_Syntax item{};
+    ASSERT_TRUE(gtext_markup_doctype_syntax(doctype, i, &item));
+    EXPECT_EQ(item.kind, kinds[i]);
+    ASSERT_NE(item.source, nullptr);
+    EXPECT_GT(item.source_length, 0u);
+    EXPECT_EQ(item.location.offset, input.find(item.source));
+  }
+  EXPECT_FALSE(gtext_markup_doctype_syntax(doctype, 7, nullptr));
+  Node * clone = nullptr;
+  ASSERT_EQ(gtext_markup_clone(result.doc, doctype, true, &clone), GTEXT_MARKUP_OK);
+  ASSERT_NE(clone, nullptr);
+  EXPECT_EQ(gtext_markup_doctype_syntax_count(clone), 7u);
+  EXPECT_TRUE(gtext_markup_equal(doctype, clone));
+  gtext_markup_node_free(clone);
+  GTEXT_Markup_Node * off = gtext_markup_document_doctype(
+      parse("<!DOCTYPE a [<!ELEMENT a EMPTY>]><a/>").doc);
+  ASSERT_NE(off, nullptr);
+  EXPECT_EQ(gtext_markup_doctype_syntax_count(off), 0u);
+}
+
+TEST_F(XmlParse, DtdProcessingRejectsMalformedInternalDeclarations) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  for (const std::string & declaration : {
+           std::string("<!ELEMENT a (b|)>") ,
+           std::string("<!ELEMENT a (b)>") ,
+           std::string("<!ELEMENT a (b?*)>") ,
+           std::string("<!ELEMENT a (x|(y,z),q)>") ,
+           std::string("<!ATTLIST a id ID>"),
+           std::string("<!ATTLIST a id CDATA '<'>"),
+           std::string("<!ATTLIST a id CDATA '&broken'>"),
+           std::string("<!ENTITY e SYSTEM>"),
+           std::string("<!ENTITY e '&broken'>"),
+           std::string("<!NOTATION n bogus 'x'>")}) {
+    Result result = parse("<!DOCTYPE a [" + declaration + "]><a/>", &options);
+    EXPECT_NE(result.status, GTEXT_XML_OK) << declaration;
+    EXPECT_NE(result.err.message, nullptr) << declaration;
+    EXPECT_GT(result.err.byte_offset, 0u) << declaration;
+
+    const std::string path = "build/test-xml-malformed-dtd.xml";
+    {
+      std::ofstream file(path, std::ios::binary | std::ios::trunc);
+      ASSERT_TRUE(file.good());
+      file << "<!DOCTYPE a [" << declaration << "]><a/>";
+    }
+    Doc * file_doc = nullptr;
+    GTEXT_XML_Error file_error{};
+    const GTEXT_XML_Status file_status = gtext_xml_parse_file(
+        path.c_str(), &options, &file_doc, &file_error);
+    EXPECT_EQ(file_status, result.status) << declaration;
+    EXPECT_EQ(file_doc, nullptr) << declaration;
+    EXPECT_EQ(file_error.byte_offset, result.err.byte_offset) << declaration;
+    EXPECT_EQ(file_error.line, result.err.line) << declaration;
+    EXPECT_EQ(file_error.column, result.err.column) << declaration;
+    std::remove(path.c_str());
+  }
+  Result nested = parse("<!DOCTYPE a [<!ELEMENT a (x|(y,z))>]><a/>", &options);
+  EXPECT_EQ(nested.status, GTEXT_XML_OK) << nested.err.message;
+}
+
+TEST_F(XmlParse, DtdProcessingAcceptsEmptyAttlistAndPcdataStar) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result empty = parse("<!DOCTYPE a [<!ATTLIST a>]><a/>", &options);
+  ASSERT_EQ(empty.status, GTEXT_XML_OK) << empty.err.message;
+  Result mixed = parse("<!DOCTYPE a [<!ELEMENT a (#PCDATA)*>]><a/>", &options);
+  ASSERT_EQ(mixed.status, GTEXT_XML_OK) << mixed.err.message;
+}
+
+TEST_F(XmlParse, DtdProcessingRejectsNdataOnParameterEntity) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result result = parse("<!DOCTYPE a [<!ENTITY % p SYSTEM 'p' NDATA n>]><a/>", &options);
+  EXPECT_NE(result.status, GTEXT_XML_OK);
+  EXPECT_NE(result.err.message, nullptr);
+  EXPECT_GT(result.err.byte_offset, 0u);
+}
+
+TEST_F(XmlParse, DtdProcessingFailureDoesNotLeakDoctypeOrSyntaxRecords) {
+  const std::string input = "<!DOCTYPE a [<!ELEMENT a EMPTY><!ATTLIST a id CDATA #IMPLIED><!BOGUS x>]><a/>";
+  for (size_t fail_on = 1; fail_on <= 40; ++fail_on) {
+    FaultAllocator allocator;
+    allocator.arm(fail_on);
+    GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+    options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    options.allocator = &allocator.alloc;
+    Doc * doc = nullptr;
+    GTEXT_XML_Error error{};
+    GTEXT_XML_Status status = gtext_xml_parse(input.data(), input.size(), &options, &doc, &error);
+    if (doc) gtext_markup_document_free(doc);
+    EXPECT_TRUE(allocator.live.empty()) << "allocation failure point " << fail_on;
+    EXPECT_EQ(allocator.bad_frees, 0u) << "allocation failure point " << fail_on;
+    if (!allocator.failed) {
+      EXPECT_NE(status, GTEXT_XML_OK); // The trailing declaration is intentionally invalid.
+      break;
+    }
+    EXPECT_NE(status, GTEXT_XML_OK) << "allocation failure point " << fail_on;
+    EXPECT_EQ(doc, nullptr) << "allocation failure point " << fail_on;
+  }
 }
 
 TEST_F(XmlParse, TheMatrixsLimitRows) {

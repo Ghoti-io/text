@@ -1192,6 +1192,63 @@ TEST(XmlStream, Xml11LineEndsAgreeAcrossDomPushAndPullReaders) {
   EXPECT_EQ(declaration_eol_stream.err.column, declaration_eol_dom.err.column);
 }
 
+TEST(XmlStream, MalformedDtdDeclarationsAgreeAcrossChunkedReaders) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const std::vector<std::string> documents = {
+      "<!DOCTYPE a [<!ELEMENT a (b|)>]><a/>",
+      "<!DOCTYPE a [<!ATTLIST a id ID>]><a/>",
+      "<!DOCTYPE a [<!ENTITY e SYSTEM>]><a/>",
+      "<!DOCTYPE a [<!NOTATION n bogus 'x'>]><a/>"};
+  for (const std::string & doc_text : documents) {
+    Dom dom;
+    run_dom(dom, doc_text, &opts);
+    ASSERT_NE(dom.status, GTEXT_XML_OK) << dom.err.message;
+    EXPECT_EQ(dom.doc, nullptr);
+
+    Parsed push;
+    run_stream(push, doc_text, Chunks{1}, &opts);
+    expect_agrees("one-byte DTD feed", push, dom);
+
+    GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+    ASSERT_NE(reader, nullptr);
+    GTEXT_XML_Error err{};
+    GTEXT_XML_Status status = GTEXT_XML_OK;
+    for (size_t i = 0; i < doc_text.size() && status == GTEXT_XML_OK; ++i) {
+      status = gtext_xml_reader_feed(reader, doc_text.data() + i, 1, &err);
+    }
+    if (status == GTEXT_XML_OK) status = gtext_xml_reader_feed(reader, nullptr, 0, &err);
+    EXPECT_EQ(status, dom.status);
+    EXPECT_EQ(err.byte_offset, dom.err.byte_offset);
+    EXPECT_EQ(err.line, dom.err.line);
+    EXPECT_EQ(err.column, dom.err.column);
+    gtext_xml_reader_free(reader);
+  }
+}
+
+TEST(XmlStream, ValidInternalSubsetSurvivesEverySingleByteCut) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const std::string text =
+      "<!DOCTYPE a [<!ELEMENT a (b|(c,d))*><!ATTLIST a id ID #IMPLIED>"
+      "<!ENTITY e 'x'><!NOTATION n PUBLIC 'pub'>]><a/>";
+  Dom dom;
+  run_dom(dom, text, &opts);
+  ASSERT_EQ(dom.status, GTEXT_XML_OK) << dom.err.message;
+  Parsed push;
+  run_stream(push, text, Chunks{1}, &opts);
+  expect_agrees("one-byte valid DTD feed", push, dom);
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  GTEXT_XML_Error err{};
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  for (size_t i = 0; i < text.size() && status == GTEXT_XML_OK; ++i)
+    status = gtext_xml_reader_feed(reader, text.data() + i, 1, &err);
+  if (status == GTEXT_XML_OK) status = gtext_xml_reader_feed(reader, nullptr, 0, &err);
+  EXPECT_EQ(status, GTEXT_XML_OK) << err.message;
+  gtext_xml_reader_free(reader);
+}
+
 TEST(XmlStream, TheEmptyElementTagIsAStartAndAnEnd) {
   Parsed run;
   run_stream(run, "<a><b x='1'/>\n</a>", {});

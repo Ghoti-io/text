@@ -145,6 +145,10 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
       markup_free(doc, d->name);
       markup_free(doc, d->public_id);
       markup_free(doc, d->system_id);
+      for (size_t i = 0; i < d->syntax_count; i++) {
+        markup_free(doc, d->syntax[i].source);
+      }
+      markup_free(doc, d->syntax);
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -531,6 +535,36 @@ GTEXT_Markup_Status gtext_markup_create_doctype(GTEXT_Markup_Document * doc,
   return GTEXT_MARKUP_OK;
 }
 
+GTEXT_Markup_Status markup_doctype_append_syntax(GTEXT_Markup_Node * node,
+    int kind, const char * source, size_t length,
+    const GTEXT_Markup_Location * location) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !source || !location) {
+    return GTEXT_MARKUP_E_INVALID;
+  }
+  markup_doctype * d = (markup_doctype *)node;
+  if (d->syntax_count == d->syntax_capacity) {
+    size_t capacity = d->syntax_capacity ? d->syntax_capacity * 2 : 8;
+    if (capacity < d->syntax_capacity || capacity > SIZE_MAX / sizeof(*d->syntax)) {
+      return GTEXT_MARKUP_E_LIMIT;
+    }
+    markup_dtd_syntax * grown = markup_realloc(node->doc, d->syntax,
+        capacity * sizeof(*d->syntax));
+    if (!grown) return GTEXT_MARKUP_E_OOM;
+    d->syntax = grown;
+    d->syntax_capacity = capacity;
+  }
+  char * copy = markup_copy(node->doc, source, length);
+  if (!copy) return GTEXT_MARKUP_E_OOM;
+  markup_dtd_syntax * item = &d->syntax[d->syntax_count++];
+  item->kind = kind;
+  item->source = copy;
+  item->length = length;
+  item->offset = location->offset;
+  item->line = location->line > UINT32_MAX ? UINT32_MAX : (uint32_t)location->line;
+  item->column = location->column > UINT32_MAX ? UINT32_MAX : (uint32_t)location->column;
+  return GTEXT_MARKUP_OK;
+}
+
 GTEXT_Markup_Status gtext_markup_create_fragment(
     GTEXT_Markup_Document * doc, GTEXT_Markup_Node ** out) {
   if (!doc || !out) {
@@ -773,6 +807,26 @@ const char * gtext_markup_doctype_public_id(const GTEXT_Markup_Node * node) {
 const char * gtext_markup_doctype_system_id(const GTEXT_Markup_Node * node) {
   return (node && node->kind == GTEXT_MARKUP_KIND_DOCTYPE)
       ? ((const markup_doctype *)node)->system_id : NULL;
+}
+
+size_t gtext_markup_doctype_syntax_count(const GTEXT_Markup_Node * node) {
+  return (node && node->kind == GTEXT_MARKUP_KIND_DOCTYPE)
+      ? ((const markup_doctype *)node)->syntax_count : 0;
+}
+
+bool gtext_markup_doctype_syntax(const GTEXT_Markup_Node * node, size_t index,
+    GTEXT_Markup_DTD_Syntax * out) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !out) return false;
+  const markup_doctype * d = (const markup_doctype *)node;
+  if (index >= d->syntax_count) return false;
+  const markup_dtd_syntax * item = &d->syntax[index];
+  out->kind = (GTEXT_Markup_DTD_Syntax_Kind)item->kind;
+  out->source = item->source;
+  out->source_length = item->length;
+  out->location.offset = item->offset;
+  out->location.line = item->line;
+  out->location.column = item->column;
+  return true;
 }
 
 static void store_location(uint8_t * flags, size_t * offset, uint32_t * line,

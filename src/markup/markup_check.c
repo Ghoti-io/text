@@ -194,6 +194,18 @@ static const char * check_node(const GTEXT_Markup_Document * doc, node_t * n) {
       if (!d->name) {
         return "a doctype has no name";
       }
+      if (d->syntax_count > d->syntax_capacity
+          || (d->syntax_count && !d->syntax)) {
+        return "a doctype's syntax array is inconsistent";
+      }
+      for (size_t i = 0; i < d->syntax_count; i++) {
+        const markup_dtd_syntax * item = &d->syntax[i];
+        if (!item->source || item->source[item->length] != '\0'
+            || item->kind < GTEXT_MARKUP_DTD_ELEMENT
+            || item->kind > GTEXT_MARKUP_DTD_PARAMETER_REFERENCE) {
+          return "a doctype has an invalid syntax record";
+        }
+      }
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:

@@ -139,10 +139,22 @@ typedef struct {
 } markup_pi;
 
 typedef struct {
+  int kind;
+  char * source;
+  size_t length;
+  size_t offset;
+  uint32_t line;
+  uint32_t column;
+} markup_dtd_syntax;
+
+typedef struct {
   struct GTEXT_Markup_Node base;
   char * name;
   char * public_id; ///< NULL when absent.
   char * system_id; ///< NULL when absent.
+  markup_dtd_syntax * syntax;
+  size_t syntax_count;
+  size_t syntax_capacity;
 } markup_doctype;
 
 struct GTEXT_Markup_Document {
@@ -171,6 +183,9 @@ void markup_free(struct GTEXT_Markup_Document * doc, void * ptr);
 /** Copy `len` bytes and a NUL. NULL on allocation failure. */
 char * markup_copy(
     struct GTEXT_Markup_Document * doc, const char * bytes, size_t len);
+GTEXT_Markup_Status markup_doctype_append_syntax(
+    struct GTEXT_Markup_Node * node, int kind, const char * source,
+    size_t length, const GTEXT_Markup_Location * location);
 
 /* ---- atoms -------------------------------------------------------------- */
 
