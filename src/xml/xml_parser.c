@@ -1235,6 +1235,11 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
     return GTEXT_XML_E_INVALID;
   }
 
+  GTEXT_XML_Status option_status = xml_validate_dtd_options(opts, err);
+  if (option_status != GTEXT_XML_OK) {
+    return option_status;
+  }
+
   GTEXT_XML_Parse_Options use = opts ? *opts : gtext_xml_parse_options_default();
   const size_t max_input = limit_or(use.max_input_bytes, XML_DEFAULT_MAX_INPUT);
   const GTEXT_Allocator * allocator =
@@ -1256,6 +1261,8 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
       limit_or(use.max_attribute_bytes, XML_DEFAULT_MAX_ATTRIBUTE_BYTES);
   p.max_name_bytes = limit_or(use.max_name_bytes, XML_DEFAULT_MAX_NAME_BYTES);
   p.max_namespaces = limit_or(use.max_namespaces, XML_DEFAULT_MAX_NAMESPACES);
+  p.dtd_mode = use.dtd_mode;
+  p.dtd_external_policy = use.dtd_external_policy;
   if (seams) {
     p.seams = *seams;
   }

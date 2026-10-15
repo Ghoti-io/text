@@ -213,6 +213,8 @@ typedef struct {
   GTEXT_Markup_Document * doc;       ///< NULL when parsing events.
   const GTEXT_Allocator * allocator; ///< The document's copy.
   xml_seams seams;
+  GTEXT_XML_DTD_Mode dtd_mode;
+  GTEXT_XML_DTD_External_Policy dtd_external_policy;
 
   /** Non-NULL when the parse delivers events (xml_stream.c) instead of building
    *  a tree: every place the tree parser would make a node calls an xml_emit_*
@@ -541,6 +543,10 @@ GTEXT_INTERNAL_API void xml_stream_set_eager(struct GTEXT_XML_Stream * stream, i
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_parse_with_seams(const void * data,
     size_t len, const GTEXT_XML_Parse_Options * opts, const xml_seams * seams,
     GTEXT_Markup_Document ** out, GTEXT_XML_Error * err);
+
+/** Validate public mode options before an input source is consumed. */
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_validate_dtd_options(
+    const GTEXT_XML_Parse_Options * options, GTEXT_XML_Error * err);
 
 #ifdef __cplusplus
 }

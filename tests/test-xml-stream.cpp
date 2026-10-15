@@ -2381,4 +2381,57 @@ TEST(XmlStream, TheValueLimitCountsBytesOfTheConvertedValueInUtf16AndLatin1) {
   }, opts);
 }
 
+TEST(XmlStream, DtdModeAndPolicyAreValidatedAtConstruction) {
+  GTEXT_XML_Parse_Options opts{};
+  EXPECT_EQ(opts.dtd_mode, GTEXT_XML_DTD_OFF);
+  EXPECT_EQ(opts.dtd_external_policy, GTEXT_XML_DTD_EXTERNAL_DENY);
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  const char * default_doc = "<a>&unknown;</a>";
+  EXPECT_EQ(gtext_xml_stream_feed(stream, default_doc, std::strlen(default_doc), nullptr),
+      GTEXT_XML_E_ENTITY);
+  gtext_xml_stream_free(stream);
+
+  GTEXT_XML_Reader * default_reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(default_reader, nullptr);
+  EXPECT_EQ(gtext_xml_reader_feed(default_reader, default_doc, std::strlen(default_doc), nullptr),
+      GTEXT_XML_E_ENTITY);
+  gtext_xml_reader_free(default_reader);
+
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  stream = gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  const char * external_doc =
+      "<!DOCTYPE a SYSTEM 'file:///this-must-not-be-opened'><a/>";
+  EXPECT_EQ(gtext_xml_stream_feed(stream, external_doc, std::strlen(external_doc), nullptr),
+      GTEXT_XML_OK);
+  EXPECT_EQ(gtext_xml_stream_finish(stream, nullptr), GTEXT_XML_OK);
+  gtext_xml_stream_free(stream);
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  EXPECT_EQ(gtext_xml_reader_feed(reader, external_doc, std::strlen(external_doc), nullptr),
+      GTEXT_XML_OK);
+  EXPECT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  gtext_xml_reader_free(reader);
+
+  opts.dtd_mode = GTEXT_XML_DTD_OFF;
+  opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  EXPECT_EQ(gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr), nullptr);
+
+  opts.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_DENY;
+  EXPECT_EQ(gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr), nullptr);
+
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.dtd_external_policy = static_cast<GTEXT_XML_DTD_External_Policy>(91);
+  EXPECT_EQ(gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr), nullptr);
+  EXPECT_EQ(gtext_xml_reader_new(&opts), nullptr);
+}
+
 } // namespace

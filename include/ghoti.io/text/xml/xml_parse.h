@@ -70,6 +70,18 @@ extern "C" {
  * document type declares it, and an external identifier is recorded and never
  * opened.
  *
+ * `dtd_mode` is shared by memory, file, push and pull readers. `OFF` preserves
+ * the behavior above. `PROCESS` selects non-validating DTD processing, but
+ * this implementation stage does not process declarations; callers cannot
+ * rely on declared entities or default attributes being applied. `VALIDATE`
+ * returns GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external
+ * policy defaults to DENY; SKIP is valid only with PROCESS and never grants
+ * the library filesystem or network access. Once external entity processing
+ * is implemented, SKIP preserves an unavailable referenced external entity as
+ * an unresolved placeholder and emits a skipped-entity event; it does not
+ * replace the reference with empty text. That behavior is not yet implemented
+ * at this stage.
+ *
  * **Encodings.** UTF-8 (a byte order mark is accepted and skipped), UTF-16 and
  * UTF-32 in either byte order (by their mark, or by the first bytes of
  * `<?xml` as in XML 1.0 Appendix F), and documents whose declaration says

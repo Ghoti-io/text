@@ -137,19 +137,43 @@ typedef enum {
                        ///< name that is not a Name.
   GTEXT_XML_E_LIMIT_OUTPUT, ///< Writer only: the output would be longer than
                        ///< `max_output_bytes`.
-  GTEXT_XML_E_XHTML    ///< Writer only: `xhtml` mode refuses a tree that is
+  GTEXT_XML_E_XHTML,   ///< Writer only: `xhtml` mode refuses a tree that is
                        ///< XML but that an HTML parser would read as a
                        ///< different tree (a void element with children,
                        ///< `<` in a script, a processing instruction, ...), or,
                        ///< with `xhtml_strict`, one with a tree-construction
                        ///< hazard. The result's message and path say which.
+  GTEXT_XML_E_UNSUPPORTED_MODE ///< A requested processing mode is not
+                       ///< implemented by this library version.
 } GTEXT_XML_Status;
+
+/** DTD behavior selected for a parse. Zero preserves the historical default. */
+typedef enum {
+  GTEXT_XML_DTD_OFF = 0,
+  GTEXT_XML_DTD_PROCESS = 1,
+  GTEXT_XML_DTD_VALIDATE = 2
+} GTEXT_XML_DTD_Mode;
+
+/**
+ * Policy for unavailable external general entities. External access is never
+ * implicit; SKIP is valid only with non-validating PROCESS mode. Once external
+ * entity processing is implemented, SKIP preserves a referenced entity as an
+ * unresolved placeholder and emits a skipped-entity event; it does not mean an
+ * empty replacement. The current implementation stage does not yet apply this
+ * policy to entity references.
+ */
+typedef enum {
+  GTEXT_XML_DTD_EXTERNAL_DENY = 0,
+  GTEXT_XML_DTD_EXTERNAL_SKIP = 1
+} GTEXT_XML_DTD_External_Policy;
 
 /**
  * @brief A static, human-readable name for a status.
  *
  * @param status Any value; an unknown one returns "unknown status".
- * @return A string that is never freed.
+ * @return A string that is never freed. GTEXT_XML_E_UNSUPPORTED_MODE returns
+ *   "requested XML mode is not implemented" when a parse requests an
+ *   unsupported processing mode such as DTD validation.
  */
 GTEXT_API const char * gtext_xml_status_string(GTEXT_XML_Status status);
 
@@ -179,7 +203,8 @@ typedef struct {
  *
  * Every limit has a default from the first release: a field left at 0 selects
  * it, and 0 never means "unlimited" (SIZE_MAX is as close as the type allows).
- * Zeroed is therefore the same as gtext_xml_parse_options_default().
+ * Zeroed is therefore the same as gtext_xml_parse_options_default(). DTD mode
+ * and external-entity policy are also zero-defaulted: DTD_OFF and DENY.
  */
 typedef struct {
   /**
@@ -218,6 +243,12 @@ typedef struct {
   /** Most namespace declarations in scope at one element, counting a nested
    *  redeclaration of a prefix separately. Default 256. */
   size_t max_namespaces;
+
+  /** DTD mode; zero selects GTEXT_XML_DTD_OFF. */
+  GTEXT_XML_DTD_Mode dtd_mode;
+
+  /** External entity policy; zero selects GTEXT_XML_DTD_EXTERNAL_DENY. */
+  GTEXT_XML_DTD_External_Policy dtd_external_policy;
 } GTEXT_XML_Parse_Options;
 
 /**
@@ -225,7 +256,7 @@ typedef struct {
  *
  * @return The defaults, by value: allocator NULL, 64 MiB of input, depth 256,
  *   1024 attributes, 16 MiB of attribute value, 8192 bytes of name, ten million
- *   nodes, 256 namespace declarations.
+ *   nodes, 256 namespace declarations, DTD_OFF mode, and external DENY policy.
  */
 GTEXT_API GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void);
 

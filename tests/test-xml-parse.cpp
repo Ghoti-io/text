@@ -978,7 +978,7 @@ TEST_F(XmlParse, ArgumentsAndStatuses) {
 
   // Every status has a name, and no two share one.
   std::vector<std::string> names;
-  for (int s = GTEXT_XML_OK; s <= GTEXT_XML_E_XHTML; s++) {
+  for (int s = GTEXT_XML_OK; s <= GTEXT_XML_E_UNSUPPORTED_MODE; s++) {
     const char * name = gtext_xml_status_string(static_cast<GTEXT_XML_Status>(s));
     ASSERT_NE(name, nullptr);
     EXPECT_STRNE(name, "unknown status") << s;
@@ -988,6 +988,55 @@ TEST_F(XmlParse, ArgumentsAndStatuses) {
     names.push_back(name);
   }
   EXPECT_STREQ(gtext_xml_status_string(static_cast<GTEXT_XML_Status>(9999)), "unknown status");
+}
+
+TEST_F(XmlParse, DtdModeDefaultsAndRejectsUnsupportedOrConflictingOptions) {
+  GTEXT_XML_Parse_Options zero{};
+  Result r = parse("<a>&unknown;</a>", &zero);
+  EXPECT_EQ(r.status, GTEXT_XML_E_ENTITY);
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  r = parse("<!DOCTYPE a SYSTEM 'file:///this-must-not-be-opened'><a/>", &opts);
+  EXPECT_EQ(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(parse("<!DOCTYPE a [<!ENTITY e 'v'>]><a>&e;</a>", &opts).status,
+      GTEXT_XML_E_ENTITY);
+
+  opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  EXPECT_EQ(parse("<a/>", &opts).status, GTEXT_XML_OK);
+  opts.dtd_mode = GTEXT_XML_DTD_OFF;
+  EXPECT_EQ(parse("<a/>", &opts).status, GTEXT_XML_E_INVALID);
+
+  opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  r = parse("<a/>", &opts);
+  EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_MODE);
+  EXPECT_STREQ(r.err.message, "DTD validation is not implemented");
+  EXPECT_EQ(r.err.byte_offset, 0u);
+
+  opts.dtd_mode = static_cast<GTEXT_XML_DTD_Mode>(77);
+  EXPECT_EQ(parse("<a/>", &opts).status, GTEXT_XML_E_INVALID);
+
+  opts.dtd_mode = GTEXT_XML_DTD_OFF;
+  opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  EXPECT_EQ(parse("<a/>", &opts).status, GTEXT_XML_E_INVALID);
+
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.dtd_external_policy = static_cast<GTEXT_XML_DTD_External_Policy>(91);
+  r = parse("<a/>", &opts);
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID);
+  EXPECT_STREQ(r.err.message, "invalid external entity policy");
+}
+
+TEST_F(XmlParse, FileModeValidationRunsBeforeOpeningTheFile) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_parse_file("/path/that/does/not/exist", &opts, &doc, &err),
+      GTEXT_XML_E_UNSUPPORTED_MODE);
+  EXPECT_STREQ(err.message, "DTD validation is not implemented");
+  EXPECT_EQ(doc, nullptr);
 }
 
 TEST_F(XmlParse, ADeepDocumentNeedsNoCStack) {

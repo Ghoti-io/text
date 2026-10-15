@@ -203,7 +203,9 @@ typedef struct GTEXT_XML_Stream GTEXT_XML_Stream;
 /**
  * @brief Create a push parser.
  *
- * @param opts      Options (limits and allocator), or NULL for the defaults.
+ * @param opts      Options (limits, allocator, DTD mode and external policy),
+ *                  or NULL for the defaults. Unsupported validation mode and
+ *                  invalid mode/policy combinations make construction fail.
  *                  `max_input_bytes` counts all the bytes fed. `max_nodes`
  *                  counts the nodes gtext_xml_parse() would have built, the
  *                  document node included, so a document is refused by both or

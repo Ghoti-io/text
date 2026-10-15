@@ -1174,6 +1174,9 @@ GTEXT_API GTEXT_XML_Stream * gtext_xml_stream_new(
   }
   const GTEXT_XML_Parse_Options use =
       opts ? *opts : gtext_xml_parse_options_default();
+  if (xml_validate_dtd_options(&use, NULL) != GTEXT_XML_OK) {
+    return NULL;
+  }
   const GTEXT_Allocator * allocator =
       use.allocator ? use.allocator : gtext_allocator_default();
   GTEXT_XML_Stream * s = gtext_allocator_calloc(allocator, 1, sizeof(*s));
@@ -1200,6 +1203,8 @@ GTEXT_API GTEXT_XML_Stream * gtext_xml_stream_new(
       limit_or(use.max_attribute_bytes, XML_DEFAULT_MAX_ATTRIBUTE_BYTES);
   p->max_name_bytes = limit_or(use.max_name_bytes, XML_DEFAULT_MAX_NAME_BYTES);
   p->max_namespaces = limit_or(use.max_namespaces, XML_DEFAULT_MAX_NAMESPACES);
+  p->dtd_mode = use.dtd_mode;
+  p->dtd_external_policy = use.dtd_external_policy;
   const size_t max_nodes = limit_or(use.max_nodes, XML_DEFAULT_MAX_NODES);
   s->max_nodes = max_nodes == SIZE_MAX ? 0 : max_nodes;
   s->nodes = 1; /* the document node */

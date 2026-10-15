@@ -92,8 +92,48 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "output too long";
     case GTEXT_XML_E_XHTML:
       return "not the same tree for an HTML parser";
+    case GTEXT_XML_E_UNSUPPORTED_MODE:
+      return "requested XML mode is not implemented";
   }
   return "unknown status";
+}
+
+GTEXT_XML_Status xml_validate_dtd_options(
+    const GTEXT_XML_Parse_Options * options, GTEXT_XML_Error * err) {
+  const GTEXT_XML_DTD_Mode mode = options ? options->dtd_mode : GTEXT_XML_DTD_OFF;
+  const GTEXT_XML_DTD_External_Policy policy = options
+      ? options->dtd_external_policy : GTEXT_XML_DTD_EXTERNAL_DENY;
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  const char * message = NULL;
+
+  if (mode != GTEXT_XML_DTD_OFF && mode != GTEXT_XML_DTD_PROCESS
+      && mode != GTEXT_XML_DTD_VALIDATE) {
+    status = GTEXT_XML_E_INVALID;
+    message = "invalid DTD mode";
+  }
+  else if (policy != GTEXT_XML_DTD_EXTERNAL_DENY
+      && policy != GTEXT_XML_DTD_EXTERNAL_SKIP) {
+    status = GTEXT_XML_E_INVALID;
+    message = "invalid external entity policy";
+  }
+  else if (policy == GTEXT_XML_DTD_EXTERNAL_SKIP
+      && mode != GTEXT_XML_DTD_PROCESS) {
+    status = GTEXT_XML_E_INVALID;
+    message = "external entity skip policy requires DTD processing mode";
+  }
+  else if (mode == GTEXT_XML_DTD_VALIDATE) {
+    status = GTEXT_XML_E_UNSUPPORTED_MODE;
+    message = "DTD validation is not implemented";
+  }
+
+  if (err && status != GTEXT_XML_OK) {
+    memset(err, 0, sizeof(*err));
+    err->code = status;
+    err->message = message;
+    err->line = 1;
+    err->column = 1;
+  }
+  return status;
 }
 
 GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void) {

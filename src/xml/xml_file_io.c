@@ -83,6 +83,11 @@ GTEXT_XML_Status gtext_xml_parse_file(const char * path,
 
   const GTEXT_XML_Parse_Options effective =
       opts ? *opts : gtext_xml_parse_options_default();
+  const GTEXT_XML_Status option_status =
+      xml_validate_dtd_options(&effective, err);
+  if (option_status != GTEXT_XML_OK) {
+    return option_status;
+  }
   /* The limit is applied while reading, so a file far larger than the caller
      allows is refused without being held in memory first. */
   const size_t max_bytes = effective.max_input_bytes

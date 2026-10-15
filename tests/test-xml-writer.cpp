@@ -1514,6 +1514,32 @@ TEST(XmlWriter, ParseFileUsesXml11LineEndingNormalization) {
   gtext_markup_document_free(doc);
 }
 
+TEST(XmlWriter, ParseFileCarriesExplicitDtdModeWithoutExternalAccess) {
+  TempDir dir;
+  const std::string path = dir.file("dtd-mode.xml");
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_DENY;
+
+  // The external identifier is recorded but never opened. DTD declaration
+  // processing is not implemented in this story, so the internal entity still
+  // follows the established DTD-off failure behavior.
+  std::ofstream(path, std::ios::binary)
+      << "<!DOCTYPE a SYSTEM 'file:///this-must-not-be-opened'><a/>";
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  gtext_markup_document_free(doc);
+
+  std::ofstream(path, std::ios::binary)
+      << "<!DOCTYPE a [<!ENTITY e 'v'>]><a>&e;</a>";
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_E_ENTITY);
+  EXPECT_EQ(doc, nullptr);
+}
+
 TEST(XmlWriter, AFileThatCannotBeReadIsReportedTheWayCsvAndJsonReportIt) {
   TempDir dir;
   Doc * back = reinterpret_cast<Doc *>(0x1);
