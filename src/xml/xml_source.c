@@ -81,10 +81,13 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
       || (kind != XML_SOURCE_INTERNAL_ENTITY
           && kind != XML_SOURCE_EXTERNAL_ENTITY
           && kind != XML_SOURCE_PARAMETER_ENTITY
+          && kind != XML_SOURCE_INTERNAL_PARAMETER_ENTITY
           && kind != XML_SOURCE_EXTERNAL_SUBSET)) {
     return xml_fail(p, GTEXT_XML_E_INVALID, "invalid XML source transition");
   }
-  const int external = kind != XML_SOURCE_INTERNAL_ENTITY;
+  const int external = kind == XML_SOURCE_EXTERNAL_ENTITY
+      || kind == XML_SOURCE_PARAMETER_ENTITY
+      || kind == XML_SOURCE_EXTERNAL_SUBSET;
   const size_t max_expanded = p->max_expanded_bytes != 0
       ? p->max_expanded_bytes : XML_DEFAULT_MAX_EXPANDED_BYTES;
   const size_t max_entity_depth = p->max_entity_depth != 0
@@ -162,7 +165,9 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
     const GTEXT_Markup_Source_Kind public_kind =
         kind == XML_SOURCE_INTERNAL_ENTITY ? GTEXT_MARKUP_SOURCE_INTERNAL_ENTITY
         : kind == XML_SOURCE_EXTERNAL_ENTITY ? GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
-        : kind == XML_SOURCE_PARAMETER_ENTITY ? GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+        : (kind == XML_SOURCE_PARAMETER_ENTITY
+            || kind == XML_SOURCE_INTERNAL_PARAMETER_ENTITY)
+            ? GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
         : GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET;
     const GTEXT_Markup_Status recorded = markup_source_add(p->doc, source_id,
         p->sources[p->source_count - 1].source_id, public_kind, owned_name);
@@ -183,6 +188,7 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
   xml_source_frame * child = &p->sources[p->source_count];
   memset(child, 0, sizeof(*child));
   child->kind = kind;
+  child->external_source = (unsigned char)external;
   child->bytes_charged = external ? length : 0;
   child->identity = identity;
   child->base_uri = parent->base_uri;
@@ -265,13 +271,24 @@ GTEXT_XML_Status xml_source_pop(xml_ctx * p) {
   if (p->source_count <= 1) {
     return xml_fail(p, GTEXT_XML_E_STATE, "cannot pop the XML document source");
   }
-  const xml_source_frame * child = &p->sources[p->source_count - 1];
+  xml_source_frame * child = &p->sources[p->source_count - 1];
   if (p->frame_count != child->entry_element_depth
       || p->binding_count != child->entry_binding_count) {
     return xml_fail(p, GTEXT_XML_E_MISMATCHED_TAG,
         "element nesting crosses a physical XML source boundary");
   }
 
+  if (child->external_close) {
+    p->resolver_reentered = 0;
+    p->resolver_callback_active = 1;
+    child->external_close(child->external_handle);
+    p->resolver_callback_active = 0;
+    child->external_close = NULL;
+    child->external_handle = NULL;
+    if (p->resolver_reentered)
+      return xml_fail(p, GTEXT_XML_E_STATE,
+          "resolver callback reentered the active XML parser");
+  }
   p->source_count--;
   if (child->kind != XML_SOURCE_EXTERNAL_SUBSET && p->entity_depth > 0) {
     p->entity_depth--;
@@ -286,11 +303,32 @@ GTEXT_XML_Status xml_source_pop(xml_ctx * p) {
   p->cursor_previous = parent->cursor_previous;
   p->version = parent->version;
   parent->suspended = 0;
+  xml_release(p, child->owned_bytes);
+  xml_release(p, child->owned_decoded);
   memset(&p->sources[p->source_count], 0, sizeof(*p->sources));
   return GTEXT_XML_OK;
 }
 
 void xml_source_free(xml_ctx * p) {
+  xml_release(p, p->dtd_name_token);
+  p->dtd_name_token = NULL;
+  p->dtd_name_token_length = p->dtd_name_token_capacity = 0;
+  for (size_t i = 1; i < p->source_count; ++i) {
+    xml_source_frame * f = &p->sources[i];
+    if (f->external_close) f->external_close(f->external_handle);
+    xml_release(p, f->owned_bytes);
+    xml_release(p, f->owned_decoded);
+  }
+  for (size_t i = 0; i < p->parameter_entity_count; i++) {
+    xml_release(p, p->parameter_entities[i].name);
+    xml_release(p, p->parameter_entities[i].replacement);
+    xml_release(p, p->parameter_entities[i].public_id);
+    xml_release(p, p->parameter_entities[i].system_id);
+  }
+  xml_release(p, p->parameter_entities);
+  p->parameter_entities = NULL;
+  p->parameter_entity_count = 0;
+  p->parameter_entity_capacity = 0;
   for (size_t i = 0; i < p->source_name_count; i++) {
     xml_release(p, p->source_names[i]);
   }
@@ -304,42 +342,58 @@ void xml_source_free(xml_ctx * p) {
   p->source_capacity = 0;
 }
 
-GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
-    GTEXT_Markup_Node * doctype, const char * public_id,
-    const char * system_id) {
+GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
+    GTEXT_XML_Resource_Kind resource_kind, xml_source_kind source_kind,
+    const char * source_name, const char * public_id, const char * system_id,
+    xml_resolved_resource * out) {
+  if (!p || !out || (source_kind != XML_SOURCE_EXTERNAL_SUBSET
+          && source_kind != XML_SOURCE_PARAMETER_ENTITY))
+    return xml_fail(p, GTEXT_XML_E_INVALID, "invalid external resource request");
+  memset(out, 0, sizeof(*out));
+  out->source_kind = source_kind;
+  markup_buf_init(&out->bytes, p->allocator);
   if (p->dtd_mode != GTEXT_XML_DTD_PROCESS
       || p->external_access != GTEXT_XML_EXTERNAL_ACCESS_ALLOW
-      || !p->resolver || !system_id) {
-    return GTEXT_XML_OK;
-  }
+      || !p->resolver || !system_id) return GTEXT_XML_OK;
   if (p->resolver_callback_active) {
     p->resolver_reentered = 1;
     return xml_fail(p, GTEXT_XML_E_STATE,
         "resolver callback reentered the active XML parser");
   }
 
+  /* Keep resolver ancestry available while the callback runs. Like event
+     provenance, the public trail retains the nearest 32 physical sources. */
+  const char * reference_trail[32];
+  size_t reference_trail_count = 0;
+  const size_t first_trail_frame = p->source_count > 33
+      ? p->source_count - 32 : 1;
+  for (size_t i = first_trail_frame; i < p->source_count; ++i) {
+    const uint32_t source_id = p->sources[i].source_id;
+    if (source_id == 0 || source_id > p->source_name_count) continue;
+    const char * label = p->source_names[source_id - 1];
+    if (label) reference_trail[reference_trail_count++] = label;
+  }
   const GTEXT_XML_Resolve_Request request = {
-    .kind = GTEXT_XML_RESOURCE_EXTERNAL_SUBSET,
+    .kind = resource_kind,
     .public_id = public_id,
     .system_id = system_id,
     .base_uri = p->source_count != 0
         ? p->sources[p->source_count - 1].base_uri : p->base_uri,
-    .reference_trail = NULL,
-    .reference_trail_count = 0
+    .reference_trail = reference_trail_count ? reference_trail : NULL,
+    .reference_trail_count = reference_trail_count
   };
-  GTEXT_XML_External_Source source;
-  memset(&source, 0, sizeof(source));
+  GTEXT_XML_External_Source * source = &out->source;
   p->resolver_callback_active = 1;
   const GTEXT_XML_Resolver_Result opened = p->resolver(&request,
-      p->resolver_user_data, &source);
+      p->resolver_user_data, source);
   p->resolver_callback_active = 0;
   if (p->resolver_reentered) {
     /* OPENED transfers a close obligation even when the callback also tried
        to reenter the parser before returning. */
-    if (opened == GTEXT_XML_RESOLVER_OPENED && source.close) {
+    if (opened == GTEXT_XML_RESOLVER_OPENED && source->close) {
       p->resolver_reentered = 0;
       p->resolver_callback_active = 1;
-      source.close(source.handle);
+      source->close(source->handle);
       p->resolver_callback_active = 0;
     }
     return xml_fail(p, GTEXT_XML_E_STATE,
@@ -353,33 +407,34 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
         "external resource resolver failed");
   }
 
+  out->opened = 1;
   GTEXT_XML_Status status = GTEXT_XML_OK;
-  markup_buf bytes;
-  markup_buf_init(&bytes, p->allocator);
   static const unsigned char empty[1] = {0};
-  if (!source.close) {
+  if (!source->close) {
     status = xml_fail(p, GTEXT_XML_E_RESOLVER,
         "opened external source has no close callback");
-    goto close_source;
+    goto fail;
   }
-  if (!source.identity || !source.base_uri || !source.read) {
+  if (!source->identity || !source->base_uri || !source->read) {
     status = xml_fail(p, GTEXT_XML_E_RESOLVER,
         "opened external source is missing identity, base URI or read callback");
-    goto close_source;
+    goto fail;
   }
-  status = xml_source_push(p, XML_SOURCE_EXTERNAL_SUBSET,
-      source.identity, source.base_uri, strlen(source.base_uri), empty, 0);
+  const char * retained_name = source_name ? source_name : source->base_uri;
+  status = xml_source_push(p, source_kind, source->identity, retained_name,
+      strlen(retained_name), empty, 0);
   if (status != GTEXT_XML_OK) {
-    goto close_source;
+    goto fail;
   }
-  p->sources[p->source_count - 1].base_uri = source.base_uri;
+  out->frame_pushed = 1;
+  p->sources[p->source_count - 1].base_uri = source->base_uri;
 
   for (;;) {
     unsigned char chunk[4096];
     size_t count = 0;
     p->resolver_reentered = 0;
     p->resolver_callback_active = 1;
-    const GTEXT_XML_Source_Read_Result result = source.read(source.handle,
+    const GTEXT_XML_Source_Read_Result result = source->read(source->handle,
         chunk, sizeof(chunk), &count);
     p->resolver_callback_active = 0;
     if (p->resolver_reentered) {
@@ -424,34 +479,55 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
     if (status != GTEXT_XML_OK) {
       break;
     }
-    if (markup_buf_append(&bytes, (const char *)chunk, count)
+    if (markup_buf_append(&out->bytes, (const char *)chunk, count)
         != GTEXT_MARKUP_OK) {
       status = xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
       break;
     }
   }
-  if (status == GTEXT_XML_OK) {
-    status = xml_parse_external_subset(p, doctype,
-        bytes.data ? (const unsigned char *)bytes.data : empty,
-        bytes.length, source.base_uri);
-  }
-  if (p->source_count > 1
-      && p->sources[p->source_count - 1].identity == source.identity) {
+  if (status != GTEXT_XML_OK) return status;
+  return GTEXT_XML_OK;
+
+fail:
+  return status;
+}
+
+GTEXT_XML_Status xml_finish_external_resource(xml_ctx * p,
+    xml_resolved_resource * resource, GTEXT_XML_Status status) {
+  if (!p || !resource) return GTEXT_XML_E_INVALID;
+  if (resource->frame_pushed && p->source_count > 1
+      && p->sources[p->source_count - 1].identity == resource->source.identity) {
     const GTEXT_XML_Status popped = xml_source_pop(p);
     if (status == GTEXT_XML_OK) status = popped;
   }
-
-close_source:
-  if (source.close) {
+  resource->frame_pushed = 0;
+  if (resource->opened && resource->source.close) {
     p->resolver_reentered = 0;
     p->resolver_callback_active = 1;
-    source.close(source.handle);
+    resource->source.close(resource->source.handle);
     p->resolver_callback_active = 0;
     if (p->resolver_reentered && status == GTEXT_XML_OK) {
       status = xml_fail(p, GTEXT_XML_E_STATE,
           "resolver callback reentered the active XML parser");
     }
   }
-  markup_buf_free(&bytes);
+  resource->opened = 0;
+  markup_buf_free(&resource->bytes);
   return status;
+}
+
+GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
+    GTEXT_Markup_Node * doctype, const char * public_id,
+    const char * system_id) {
+  xml_resolved_resource resource;
+  GTEXT_XML_Status status = xml_resolve_external_resource(p,
+      GTEXT_XML_RESOURCE_EXTERNAL_SUBSET, XML_SOURCE_EXTERNAL_SUBSET,
+      NULL, public_id, system_id, &resource);
+  if (status == GTEXT_XML_OK && resource.opened) {
+    static const unsigned char empty[1] = {0};
+    status = xml_parse_external_subset(p, doctype,
+        resource.bytes.data ? (const unsigned char *)resource.bytes.data : empty,
+        resource.bytes.length, resource.source.base_uri);
+  }
+  return xml_finish_external_resource(p, &resource, status);
 }

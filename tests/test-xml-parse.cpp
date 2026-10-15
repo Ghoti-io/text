@@ -172,7 +172,7 @@ TEST_F(XmlParse, DtdProcessingRetainsOrderedRawSyntax) {
   const std::string input =
       "<!DOCTYPE a [<!ELEMENT a (b|(c,d))*><!-- note --><?keep data?>"
       "<!ATTLIST a id ID #IMPLIED choice (1st|blue) #IMPLIED value CDATA '&amp;&#x41;'>"
-      "<!ENTITY % p 'x&#65;&amp;'>%p;"
+      "<!ENTITY % p '<!ELEMENT generated EMPTY>'>%p;"
       "<!NOTATION n SYSTEM 'n'>]><a/>";
   Result result = parse(input, &options);
   ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
@@ -192,6 +192,13 @@ TEST_F(XmlParse, DtdProcessingRetainsOrderedRawSyntax) {
     EXPECT_GT(item.source_length, 0u);
     EXPECT_EQ(item.location.offset, input.find(item.source));
   }
+  ASSERT_EQ(gtext_markup_doctype_generated_syntax_count(doctype), 1u);
+  GTEXT_Markup_DTD_Syntax generated{};
+  ASSERT_TRUE(gtext_markup_doctype_generated_syntax(doctype, 0, &generated));
+  EXPECT_EQ(generated.kind, GTEXT_MARKUP_DTD_ELEMENT);
+  EXPECT_STREQ(generated.parameter_entity, "p");
+  EXPECT_STREQ(std::string(generated.source, generated.source_length).c_str(),
+      "<!ELEMENT generated EMPTY>");
   EXPECT_FALSE(gtext_markup_doctype_syntax(doctype, 7, nullptr));
   Node * clone = nullptr;
   ASSERT_EQ(gtext_markup_clone(result.doc, doctype, true, &clone), GTEXT_MARKUP_OK);
@@ -269,6 +276,69 @@ TEST_F(XmlParse, DtdProcessingRejectsNdataOnParameterEntity) {
   EXPECT_NE(result.status, GTEXT_XML_OK);
   EXPECT_NE(result.err.message, nullptr);
   EXPECT_GT(result.err.byte_offset, 0u);
+}
+
+TEST_F(XmlParse, DtdProcessingExpandsParameterEntitiesInSubsetContext) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result direct = parse(
+      "<!DOCTYPE a [<!ENTITY % decl '<!ELEMENT generated EMPTY>'>%decl;]><a/>",
+      &options);
+  ASSERT_EQ(direct.status, GTEXT_XML_OK) << direct.err.message;
+
+  Result nested = parse(
+      "<!DOCTYPE a [<!ENTITY % inner '<!ELEMENT generated EMPTY>'>"
+      "<!ENTITY % outer '%inner;'>%outer;]><a/>", &options);
+  EXPECT_EQ(nested.status, GTEXT_XML_OK) << nested.err.message;
+
+  Result forward = parse(
+      "<!DOCTYPE a [%later;<!ENTITY % later '<!ELEMENT generated EMPTY>'>]><a/>",
+      &options);
+  EXPECT_EQ(forward.status, GTEXT_XML_E_DOCTYPE);
+  EXPECT_NE(forward.err.message, nullptr);
+}
+
+TEST_F(XmlParse, DtdProcessingRejectsParameterEntityCyclesAndSplitDeclarations) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  for (const std::string & subset : {
+           std::string("<!ENTITY % self '%self;'>%self;"),
+           std::string("<!ENTITY % first '%second;'>"
+               "<!ENTITY % second '%first;'>%first;"),
+           std::string("<!ENTITY % part '<!ELEMENT a EMPTY'>%part;>")}) {
+    Result result = parse("<!DOCTYPE a [" + subset + "]><a/>", &options);
+    EXPECT_NE(result.status, GTEXT_XML_OK) << subset;
+    EXPECT_NE(result.err.message, nullptr) << subset;
+  }
+}
+
+TEST_F(XmlParse, DtdProcessingChargesEveryParameterEntityUse) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.max_references = 2;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % decl '<!ELEMENT generated EMPTY>'>"
+      "%decl;%decl;%decl;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_E_LIMIT_REFERENCES);
+}
+
+TEST_F(XmlParse, ParameterEntityReferencesExpandInsideEntityValues) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % model 'EMPTY'>"
+      "<!ENTITY % declaration '<!ELEMENT a %model;>'>"
+      "%declaration;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message << " at " << result.err.byte_offset;
+}
+
+TEST_F(XmlParse, ParameterEntityValueCharacterReferencesBecomeCharacters) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % declaration '<!ELEMENT a &#69;MPTY>'>"
+      "%declaration;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
 }
 
 TEST_F(XmlParse, DtdProcessingAcceptsSeparatedNdataOnGeneralEntity) {
@@ -1198,8 +1268,13 @@ struct FileResolverProbe {
   bool fail_read = false;
   std::string base_uri;
   std::string system_id;
+  GTEXT_XML_Resource_Kind kind = GTEXT_XML_RESOURCE_EXTERNAL_SUBSET;
   std::string bytes = "<!ELEMENT a EMPTY>";
   size_t chunk_size = 4096;
+  bool nested_requests = false;
+  bool unique_identities = false;
+  int identities[8]{};
+  std::vector<std::vector<std::string>> reference_trails;
 };
 
 GTEXT_XML_Source_Read_Result file_resolver_read(void * opaque,
@@ -1235,12 +1310,394 @@ GTEXT_XML_Resolver_Result file_resolver_open(
   probe->opens++;
   if (request->base_uri) probe->base_uri = request->base_uri;
   if (request->system_id) probe->system_id = request->system_id;
+  probe->kind = request->kind;
+  std::vector<std::string> trail;
+  for (size_t i = 0; i < request->reference_trail_count; ++i)
+    trail.emplace_back(request->reference_trail[i]);
+  probe->reference_trails.push_back(std::move(trail));
+  if (probe->nested_requests) {
+    probe->offset = 0;
+    if (probe->system_id == "caller.dtd")
+      probe->bytes = "<!ENTITY % outer SYSTEM 'outer.dtd'>%outer;";
+    else if (probe->system_id == "outer.dtd")
+      probe->bytes = "<!ENTITY % inner SYSTEM 'inner.dtd'>%inner;";
+    else
+      probe->bytes = "<!ELEMENT a EMPTY>";
+  }
   source->handle = probe;
-  source->identity = probe;
+  source->identity = probe->unique_identities
+      ? static_cast<const void *>(&probe->identities[probe->opens - 1])
+      : static_cast<const void *>(probe);
   source->base_uri = "memory:/resolved.dtd";
   source->read = file_resolver_read;
   source->close = file_resolver_close;
   return GTEXT_XML_RESOLVER_OPENED;
+}
+
+TEST_F(XmlParse, EntityValueExpansionConsumesNestedExternalPEOnSourceStack) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "middle";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % ext SYSTEM 'piece.ent'>"
+      "<!ENTITY % inner 'pre%ext;post'>"
+      "<!ENTITY % outer '%inner;'>]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+  EXPECT_EQ(probe.opens, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+}
+
+TEST_F(XmlParse, ExternalParameterEntityUsesCallerResolverAndRetainsProvenance) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT generated EMPTY>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % ext SYSTEM 'parameter.dtd'>%ext;]><a/>",
+      &options);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message << " at " << result.err.byte_offset;
+  EXPECT_EQ(probe.kind, GTEXT_XML_RESOURCE_PARAMETER_ENTITY);
+  EXPECT_STREQ(probe.system_id.c_str(), "parameter.dtd");
+  EXPECT_EQ(probe.opens, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+  Node * doctype = gtext_markup_document_doctype(result.doc);
+  ASSERT_NE(doctype, nullptr);
+  ASSERT_EQ(gtext_markup_doctype_generated_syntax_count(doctype), 1u);
+  GTEXT_Markup_DTD_Syntax generated{};
+  ASSERT_TRUE(gtext_markup_doctype_generated_syntax(doctype, 0, &generated));
+  EXPECT_STREQ(generated.parameter_entity, "ext");
+  Doc * clone_doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &clone_doc), GTEXT_MARKUP_OK);
+  docs.push_back(clone_doc);
+  Node * cloned_doctype = nullptr;
+  ASSERT_EQ(gtext_markup_clone(clone_doc, doctype, true, &cloned_doctype),
+      GTEXT_MARKUP_OK);
+  GTEXT_Markup_DTD_Syntax cloned_generated{};
+  ASSERT_TRUE(gtext_markup_doctype_generated_syntax(cloned_doctype, 0,
+      &cloned_generated));
+  EXPECT_EQ(cloned_generated.location.source_id, generated.location.source_id);
+  EXPECT_STREQ(cloned_generated.parameter_entity, "ext");
+  GTEXT_Markup_Source cloned_source{};
+  ASSERT_TRUE(gtext_markup_document_source(clone_doc,
+      cloned_generated.location.source_id, &cloned_source));
+  EXPECT_EQ(cloned_source.kind, GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY);
+  EXPECT_STREQ(cloned_source.name, "ext");
+}
+
+TEST_F(XmlParse, ParameterEntityReferencesStayOpaqueInLiteralsAndIgnoredSyntax) {
+  for (const std::string & bytes : {
+      std::string("<!-- %undeclared; -->"),
+      std::string("<?target %undeclared;?>"),
+      std::string("<![IGNORE[%undeclared;]]>"),
+      std::string("<!ENTITY sys SYSTEM '%undeclared;'>"),
+      std::string("<!ENTITY pub PUBLIC '%undeclared;' '%undeclared;'>"),
+      std::string("<!ATTLIST a value CDATA '%undeclared;'>")}) {
+    GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+    options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    options.resolver = file_resolver_open;
+    FileResolverProbe probe;
+    probe.bytes = bytes;
+    options.resolver_user_data = &probe;
+    Result result = parse(
+        "<!DOCTYPE a SYSTEM 'external.dtd'><a/>", &options);
+    EXPECT_EQ(result.status, GTEXT_XML_OK) << bytes << ": " << result.err.message;
+    EXPECT_EQ(probe.opens, 1u) << bytes;
+    EXPECT_EQ(probe.closes, 1u) << bytes;
+  }
+}
+
+TEST_F(XmlParse, ExternalSubsetAllowsPEInsideContentModelWithProvenance) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT a %model;><!ATTLIST a value %kind; #IMPLIED>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % model '(b,c)'><!ENTITY % kind 'CDATA'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+  Node * doctype = gtext_markup_document_doctype(result.doc);
+  ASSERT_NE(doctype, nullptr);
+  bool found_generated = false;
+  bool found_attribute_type = false;
+  for (size_t i = 0; i < gtext_markup_doctype_generated_syntax_count(doctype); ++i) {
+    GTEXT_Markup_DTD_Syntax syntax{};
+    ASSERT_TRUE(gtext_markup_doctype_generated_syntax(doctype, i, &syntax));
+    if (std::strcmp(syntax.parameter_entity, "model") == 0)
+      found_generated = true;
+    if (std::strcmp(syntax.parameter_entity, "kind") == 0)
+      found_attribute_type = true;
+  }
+  EXPECT_TRUE(found_generated);
+  EXPECT_TRUE(found_attribute_type);
+
+  GTEXT_XML_Parse_Options internal = gtext_xml_parse_options_default();
+  internal.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result rejected = parse(
+      "<!DOCTYPE a [<!ENTITY % model '(b,c)'>"
+      "<!ELEMENT a %model;>]><a/>", &internal);
+  EXPECT_EQ(rejected.status, GTEXT_XML_E_DOCTYPE);
+}
+
+TEST_F(XmlParse, ExternalMarkupDeclarationCanResumeAcrossParameterEntityBoundary) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT a %open;b,c)>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % open '('>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message << " at " << result.err.byte_offset;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECanSplitDeclarationName) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT fo%tail; EMPTY>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % tail 'o'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message << " at " << result.err.byte_offset;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECanSplitEnumerationToken) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ATTLIST a value (fo%tail;|bar) #IMPLIED>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % tail 'o'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECanSplitContentKeyword) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT a EM%tail;TY>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % tail 'P'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECanSplitAttributeAndExternalIdKeywords) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ATTLIST a value CDA%type; #RE%required;>"
+      "<!ENTITY external SYS%tem; 'entity.txt'>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % type 'TA'>"
+      "<!ENTITY % required 'QUIRED'>"
+      "<!ENTITY % tem 'TEM'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECanSplitConditionalKeyword) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<![INC%lude;[<!ELEMENT a EMPTY>]]>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % lude 'LUDE'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message << " at " << result.err.byte_offset;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECannotSupplyConditionalSectionDelimiterCharacter) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<![INCLUDE[<!ELEMENT a EMPTY>]]%close;";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % close '>'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_E_DOCTYPE) << result.err.message;
+}
+
+TEST_F(XmlParse, ExternalSubsetPECanSupplyContentModelClosingAndOccurrence) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT a (b%close;%star;>"
+      "<!ELEMENT c (#PCDATA)%star;>"
+      "<!ELEMENT d (b%star;,c)>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % close ')'>"
+      "<!ENTITY % star '*'>"
+      "<!ENTITY % ext SYSTEM 'external.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+}
+
+TEST_F(XmlParse, ExternalParameterEntityAliasCycleInsideDeclarationClosesSources) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ELEMENT a %loop;>";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % loop SYSTEM 'same.dtd'>"
+      "<!ENTITY % ext SYSTEM 'same.dtd'>%ext;]><a/>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_E_ENTITY);
+  EXPECT_EQ(probe.opens, 2u);
+  EXPECT_EQ(probe.closes, 2u);
+}
+
+struct NestedPEHandle {
+  size_t offset = 0;
+  size_t closes = 0;
+  std::string bytes;
+};
+
+struct NestedPEProbe {
+  size_t opens = 0;
+  NestedPEHandle handles[160];
+};
+
+GTEXT_XML_Source_Read_Result nested_pe_read(void * opaque,
+    unsigned char * buffer, size_t capacity, size_t * count) {
+  NestedPEHandle * handle = static_cast<NestedPEHandle *>(opaque);
+  const size_t length = handle->bytes.size();
+  if (handle->offset == length) { *count = 0; return GTEXT_XML_SOURCE_EOF; }
+  *count = std::min(capacity, length - handle->offset);
+  std::memcpy(buffer, handle->bytes.data() + handle->offset, *count);
+  handle->offset += *count;
+  return GTEXT_XML_SOURCE_DATA;
+}
+
+void nested_pe_close(void * opaque) {
+  static_cast<NestedPEHandle *>(opaque)->closes++;
+}
+
+GTEXT_XML_Resolver_Result nested_pe_open(
+    const GTEXT_XML_Resolve_Request * request, void * opaque,
+    GTEXT_XML_External_Source * source) {
+  NestedPEProbe * probe = static_cast<NestedPEProbe *>(opaque);
+  const size_t index = probe->opens++;
+  if (index >= 160) return GTEXT_XML_RESOLVER_DECLINED;
+  NestedPEHandle * handle = &probe->handles[index];
+  const size_t number = static_cast<size_t>(std::strtoul(
+      request->system_id + 1, nullptr, 10));
+  handle->bytes = number + 1 < 128
+      ? "%p" + std::to_string(number + 1) + ";"
+      : "<!ELEMENT generated EMPTY>";
+  source->handle = handle;
+  source->identity = handle;
+  source->base_uri = "memory:/nested/";
+  source->read = nested_pe_read;
+  source->close = nested_pe_close;
+  return GTEXT_XML_RESOLVER_OPENED;
+}
+
+TEST_F(XmlParse, DeepExternalParameterEntitiesUseIterativeSourceFrames) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = nested_pe_open;
+  options.max_entity_depth = SIZE_MAX;
+  NestedPEProbe probe;
+  options.resolver_user_data = &probe;
+  std::string document = "<!DOCTYPE a [";
+  for (size_t i = 0; i < 128; ++i) {
+    document += "<!ENTITY % p" + std::to_string(i) + " SYSTEM 'p"
+        + std::to_string(i) + ".dtd'>";
+  }
+  document += "%p0;]><a/>";
+  Result result = parse(document, &options);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+  EXPECT_EQ(probe.opens, 128u);
+  EXPECT_EQ(probe.handles[0].closes, 1u);
+  EXPECT_EQ(probe.handles[127].closes, 1u);
+}
+
+TEST_F(XmlParse, ExternalParameterEntityAliasCycleClosesEveryResolverSource) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "%second;";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % first SYSTEM 'one.dtd'>"
+      "<!ENTITY % second SYSTEM 'two.dtd'>%first;]><a/>", &options);
+  EXPECT_NE(result.status, GTEXT_XML_OK);
+  EXPECT_EQ(probe.opens, 2u);
+  EXPECT_EQ(probe.closes, 2u);
+}
+
+TEST_F(XmlParse, ExternalParameterEntityReadFailureClosesResolverSource) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.fail_read = true;
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % ext SYSTEM 'parameter.dtd'>%ext;]><a/>",
+      &options);
+  EXPECT_EQ(result.status, GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(probe.opens, 1u);
+  EXPECT_EQ(probe.reads, 1u);
+  EXPECT_EQ(probe.closes, 1u);
+}
+
+TEST_F(XmlParse, RepeatedExternalParameterEntityUseChargesExpansionBytes) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_open;
+  options.max_expanded_bytes = 40;
+  FileResolverProbe probe;
+  probe.bytes = "<!--12345678901234567890-->";
+  options.resolver_user_data = &probe;
+  Result result = parse(
+      "<!DOCTYPE a [<!ENTITY % ext SYSTEM 'parameter.dtd'>%ext;%ext;]><a/>",
+      &options);
+  EXPECT_EQ(result.status, GTEXT_XML_E_LIMIT_EXPANSION);
+  EXPECT_EQ(probe.opens, 2u);
+  EXPECT_EQ(probe.closes, 2u);
 }
 
 TEST_F(XmlParse, FileParserUsesCallerResolverAndPropagatesReadFailure) {
@@ -1562,8 +2019,8 @@ TEST_F(XmlParse, ExternalSubsetRetainsDeclarationKindsAndOrder) {
     file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
   }
   FileResolverProbe probe;
-  probe.bytes = "<!ELEMENT a EMPTY>\n"
-      "<!ATTLIST a id ID #IMPLIED>\n"
+  probe.bytes = "<![INCLUDE[<!ELEMENT a EMPTY>\n"
+      "<!ATTLIST a id ID #IMPLIED>]]>\n"
       "<!ENTITY e 'x'>\n"
       "<!NOTATION n SYSTEM 'n'>\n"
       "<!-- external\r\ncomment -->\n"
@@ -1733,6 +2190,58 @@ TEST_F(XmlParse, ExternalConditionalDepthIsSharedAndUnterminatedIsDiagnosed) {
   EXPECT_EQ(doc, nullptr);
   EXPECT_EQ(forbidden_in_ignore.closes, 1u);
   std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, ConditionalSectionDelimiterCannotCrossParameterEntityBoundary) {
+  const std::string path = "build/test-xml-conditional-boundary.xml";
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file << "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  }
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  FileResolverProbe probe;
+  probe.bytes = "<!ENTITY % close \"]]\"><![INCLUDE[x%close;>";
+  opts.resolver_user_data = &probe;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_GT(err.source_id, 1u);
+  EXPECT_NE(err.message[0], '\0');
+  EXPECT_EQ(probe.closes, 1u);
+  std::remove(path.c_str());
+}
+
+TEST_F(XmlParse, NestedExternalParameterResolverReceivesPhysicalReferenceTrail) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = file_resolver_open;
+  opts.base_uri = "memory:/document.xml";
+  FileResolverProbe probe;
+  probe.nested_requests = true;
+  probe.unique_identities = true;
+  opts.resolver_user_data = &probe;
+  const char * document = "<!DOCTYPE a SYSTEM 'caller.dtd'><a/>";
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  ASSERT_EQ(gtext_xml_parse(document, std::strlen(document), &opts, &doc,
+      &err), GTEXT_XML_OK) << err.message;
+  ASSERT_NE(doc, nullptr);
+  docs.push_back(doc);
+  ASSERT_EQ(probe.reference_trails.size(), 3u);
+  EXPECT_TRUE(probe.reference_trails[0].empty());
+  ASSERT_EQ(probe.reference_trails[1].size(), 1u);
+  EXPECT_EQ(probe.reference_trails[1][0], "memory:/resolved.dtd");
+  ASSERT_EQ(probe.reference_trails[2].size(), 2u);
+  EXPECT_EQ(probe.reference_trails[2][0], "memory:/resolved.dtd");
+  EXPECT_EQ(probe.reference_trails[2][1], "outer");
+  EXPECT_EQ(probe.closes, 3u);
 }
 
 TEST_F(XmlParse, MalformedExternalTextDeclarationClosesExactlyOnce) {

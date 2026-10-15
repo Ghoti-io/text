@@ -504,15 +504,17 @@ typedef enum {
 } GTEXT_Markup_DTD_Syntax_Kind;
 
 /**
- * One ordered, raw internal-subset construct retained by an XML parse in DTD
- * processing mode. The parser validates its production but does not expand
- * parameter entities or compile effective declaration bindings.
+ * One retained DTD construct. Raw internal and external syntax entries have a
+ * NULL `parameter_entity`. Generated entries identify the PE that supplied
+ * the declaration text.
  */
 typedef struct {
   GTEXT_Markup_DTD_Syntax_Kind kind;
   const char * source; ///< Decoded UTF-8 construct; valid while the doctype lives.
   size_t source_length;
   GTEXT_Markup_Location location;
+  /** NULL for raw syntax; the PE name that generated this declaration otherwise. */
+  const char * parameter_entity;
 } GTEXT_Markup_DTD_Syntax;
 
 /** Number of retained internal-subset constructs (zero for non-doctypes). */
@@ -552,6 +554,28 @@ GTEXT_API size_t gtext_markup_doctype_external_syntax_count(
  * False for an invalid index or NULL output; `out` is unchanged then.
  */
 GTEXT_API bool gtext_markup_doctype_external_syntax(
+    const GTEXT_Markup_Node * node, size_t index, GTEXT_Markup_DTD_Syntax * out);
+
+/**
+ * @brief Get the number of declarations parsed from parameter-entity text.
+ * @param node A doctype node; may be NULL or another node kind.
+ * @return The generated declaration count, or zero for other nodes.
+ */
+GTEXT_API size_t gtext_markup_doctype_generated_syntax_count(
+    const GTEXT_Markup_Node * node);
+/**
+ * @brief Read a declaration parsed from parameter-entity replacement text.
+ * @param node A doctype node.
+ * @param index Zero-based generated declaration index.
+ * @param out Receives the declaration kind, source, location, and PE name.
+ * @return True when `index` is in range; false otherwise. `out` is unchanged
+ *   on failure.
+ *
+ * The returned `source` and `parameter_entity` strings are borrowed from the
+ * doctype and remain valid while it lives. `parameter_entity` is the lexical
+ * name of the PE frame that supplied the declaration text.
+ */
+GTEXT_API bool gtext_markup_doctype_generated_syntax(
     const GTEXT_Markup_Node * node, size_t index, GTEXT_Markup_DTD_Syntax * out);
 
 /**

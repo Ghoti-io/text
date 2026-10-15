@@ -156,22 +156,98 @@ static GTEXT_XML_Status dtd_bad(xml_ctx * p, const char * message) {
   return xml_fail(p, GTEXT_XML_E_DOCTYPE, message);
 }
 
+static GTEXT_XML_Status dtd_expand_inline_reference(xml_ctx * p);
+static GTEXT_XML_Status dtd_pop_finished_parameter_sources(xml_ctx * p);
+static int dtd_pe_references_allowed(const xml_ctx * p);
+static GTEXT_XML_Status dtd_consume_logical_keyword(xml_ctx * p,
+    const char * keyword, size_t length);
+static GTEXT_XML_Status dtd_expand_current_references(xml_ctx * p);
+
+static size_t dtd_skip_space(xml_ctx * p) {
+  size_t total = 0;
+  for (;;) {
+    total += xml_skip_space(p);
+    if (p->err.code != GTEXT_XML_OK) return total;
+    if (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      if (xml_source_pop(p) != GTEXT_XML_OK) return total;
+      continue;
+    }
+    if (p->pos >= p->length || p->in[p->pos] != '%'
+        || p->pos + 1 >= p->length
+        || xml_space_bytes(p, p->pos + 1) != 0) return total;
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return total;
+  }
+}
+
 #define DTD_SKIP_SPACE_OR_RETURN(p) do { \
-  xml_skip_space(p); \
+  dtd_skip_space(p); \
   if ((p)->err.code != GTEXT_XML_OK) return (p)->err.code; \
 } while (0)
 
 static GTEXT_XML_Status dtd_need_space(xml_ctx * p) {
-  size_t skipped = xml_skip_space(p);
+  size_t skipped = dtd_skip_space(p);
   if (p->err.code != GTEXT_XML_OK) return p->err.code;
   if (skipped == 0) return dtd_bad(p, "white space is required in a DTD declaration");
   return p->err.code;
 }
 
+static GTEXT_XML_Status dtd_name_impl(xml_ctx * p) {
+  p->dtd_name_token_length = 0;
+  for (;;) {
+    if (p->pos >= p->length) {
+      if (p->source_count > 1 && XML_SOURCE_IS_PARAMETER_ENTITY(
+              p->sources[p->source_count - 1].kind)) {
+        GTEXT_XML_Status s = xml_source_pop(p);
+        if (s != GTEXT_XML_OK) return s;
+        continue;
+      }
+      break;
+    }
+    if (p->in[p->pos] == '%' && dtd_pe_references_allowed(p)) {
+      GTEXT_XML_Status s = dtd_expand_inline_reference(p);
+      if (s != GTEXT_XML_OK) return s;
+      continue;
+    }
+    uint32_t cp = 0;
+    size_t n = 0;
+    if (xml_decode(p, p->pos, &cp, &n) != XML_CHAR_OK)
+      return xml_unexpected(p, "invalid character in DTD name");
+    if (!(p->dtd_name_token_length ? markup_xml_name_char(cp)
+            : markup_xml_name_start_char(cp))) break;
+    GTEXT_XML_Status s = xml_charge_work(p, 1);
+    if (s != GTEXT_XML_OK) return s;
+    if (n > p->max_name_bytes
+        || p->dtd_name_token_length > p->max_name_bytes - n)
+      return xml_fail(p, GTEXT_XML_E_LIMIT_NAME, "DTD Name exceeds the name byte limit");
+    s = xml_grow(p, (void **)&p->dtd_name_token,
+        &p->dtd_name_token_capacity, 1,
+        p->dtd_name_token_length + n + 1);
+    if (s != GTEXT_XML_OK) return s;
+    memcpy(p->dtd_name_token + p->dtd_name_token_length,
+        p->in + p->pos, n);
+    p->dtd_name_token_length += n;
+    p->dtd_name_token[p->dtd_name_token_length] = 0;
+    XML_CONSUME_OR_RETURN(p, n);
+  }
+  if (!p->dtd_name_token_length) return dtd_bad(p, "a Name was expected");
+  return GTEXT_XML_OK;
+}
+
 static GTEXT_XML_Status dtd_name(xml_ctx * p) {
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+  return dtd_name_impl(p);
+}
+
+static GTEXT_XML_Status dtd_plain_name(xml_ctx * p) {
   size_t n = 0;
-  GTEXT_XML_Status s = xml_scan_name(p, &n);
-  if (s != GTEXT_XML_OK) return s;
+  GTEXT_XML_Status status = xml_scan_name(p, &n);
+  if (status != GTEXT_XML_OK) return status;
   return xml_consume(p, n);
 }
 
@@ -190,62 +266,284 @@ static GTEXT_XML_Status dtd_charge_reference(xml_ctx * p) {
 
 static int dtd_xml_char(const xml_ctx * p, uint32_t c);
 
-/* EntityValue has reference syntax of its own. Validate references here but
-   leave them lexical: this story retains DTD text and does not expand PEs. */
-static GTEXT_XML_Status dtd_entity_value(xml_ctx * p) {
+static xml_parameter_entity * dtd_find_parameter_entity(xml_ctx * p,
+    const unsigned char * name, size_t name_length) {
+  for (size_t i = 0; i < p->parameter_entity_count; i++) {
+    xml_parameter_entity * item = &p->parameter_entities[i];
+    if (item->name_length == name_length
+        && memcmp(item->name, name, name_length) == 0) return item;
+  }
+  return NULL;
+}
+
+static GTEXT_XML_Status dtd_add_parameter_entity(xml_ctx * p,
+    const unsigned char * name, size_t name_length,
+    const unsigned char * replacement, size_t replacement_length) {
+  /* The first declaration is the binding; later ones remain inspectable. */
+  if (dtd_find_parameter_entity(p, name, name_length)) return GTEXT_XML_OK;
+  GTEXT_XML_Status status = xml_grow(p,
+      (void **)&p->parameter_entities, &p->parameter_entity_capacity,
+      sizeof(*p->parameter_entities), p->parameter_entity_count + 1);
+  if (status != GTEXT_XML_OK) return status;
+  char * owned_name = xml_alloc(p, name_length + 1);
+  unsigned char * owned_replacement = xml_alloc(p,
+      replacement_length ? replacement_length : 1);
+  if (!owned_name || !owned_replacement) {
+    xml_release(p, owned_name);
+    xml_release(p, owned_replacement);
+    return xml_fail(p, GTEXT_XML_E_OOM,
+        "could not retain parameter entity replacement text");
+  }
+  memcpy(owned_name, name, name_length);
+  owned_name[name_length] = '\0';
+  if (replacement_length) memcpy(owned_replacement, replacement,
+      replacement_length);
+  xml_parameter_entity * item =
+      &p->parameter_entities[p->parameter_entity_count++];
+  item->name = owned_name;
+  item->name_length = name_length;
+  item->replacement = owned_replacement;
+  item->replacement_length = replacement_length;
+  item->public_id = NULL;
+  item->system_id = NULL;
+  item->external = 0;
+  item->identity = owned_name;
+  return GTEXT_XML_OK;
+}
+
+static GTEXT_XML_Status dtd_add_external_parameter_entity(xml_ctx * p,
+    const unsigned char * name, size_t name_length, const char * public_id,
+    const char * system_id) {
+  if (dtd_find_parameter_entity(p, name, name_length)) return GTEXT_XML_OK;
+  GTEXT_XML_Status status = xml_grow(p,
+      (void **)&p->parameter_entities, &p->parameter_entity_capacity,
+      sizeof(*p->parameter_entities), p->parameter_entity_count + 1);
+  if (status != GTEXT_XML_OK) return status;
+  char * owned_name = xml_alloc(p, name_length + 1);
+  const size_t public_length = public_id ? strlen(public_id) : 0;
+  const size_t system_length = strlen(system_id);
+  char * owned_public = public_id ? xml_alloc(p, public_length + 1) : NULL;
+  char * owned_system = xml_alloc(p, system_length + 1);
+  if (!owned_name || !owned_system || (public_id && !owned_public)) {
+    xml_release(p, owned_name); xml_release(p, owned_public);
+    xml_release(p, owned_system);
+    return xml_fail(p, GTEXT_XML_E_OOM,
+        "could not retain external parameter entity identifiers");
+  }
+  memcpy(owned_name, name, name_length);
+  owned_name[name_length] = '\0';
+  if (owned_public) {
+    memcpy(owned_public, public_id, public_length);
+    owned_public[public_length] = '\0';
+  }
+  memcpy(owned_system, system_id, system_length);
+  owned_system[system_length] = '\0';
+  xml_parameter_entity * item =
+      &p->parameter_entities[p->parameter_entity_count++];
+  memset(item, 0, sizeof(*item));
+  item->name = owned_name;
+  item->name_length = name_length;
+  item->public_id = owned_public;
+  item->system_id = owned_system;
+  item->external = 1;
+  item->identity = owned_name;
+  return GTEXT_XML_OK;
+}
+
+static GTEXT_XML_Status dtd_expand_parameter_entity(xml_ctx * p,
+    const unsigned char * name, size_t name_length,
+    const GTEXT_Markup_Location * reference_at,
+    GTEXT_Markup_Node * doctype) {
+  (void)doctype; /* Parsing resumes in the caller's iterative DTD loop. */
+  xml_parameter_entity * entity = dtd_find_parameter_entity(p,
+      name, name_length);
+  if (!entity) return xml_fail_at(p, GTEXT_XML_E_DOCTYPE,
+      "parameter entity reference has no preceding declaration", reference_at);
+  if (entity->external) {
+    xml_resolved_resource resource;
+    GTEXT_XML_Status status = xml_resolve_external_resource(p,
+        GTEXT_XML_RESOURCE_PARAMETER_ENTITY, XML_SOURCE_PARAMETER_ENTITY,
+        entity->name, entity->public_id, entity->system_id, &resource);
+    if (status == GTEXT_XML_OK && !resource.opened) {
+      status = xml_fail_at(p, GTEXT_XML_E_RESOLVER,
+          "external parameter entity was not resolved by the caller",
+          reference_at);
+    }
+    if (status == GTEXT_XML_OK)
+      status = xml_activate_external_parameter_entity(p, &resource);
+    if (resource.opened)
+      return xml_finish_external_resource(p, &resource, status);
+    markup_buf_free(&resource.bytes);
+    return status;
+  }
+  return xml_source_push(p, XML_SOURCE_INTERNAL_PARAMETER_ENTITY, entity->identity,
+      entity->name, entity->name_length, entity->replacement,
+      entity->replacement_length);
+}
+
+/* EntityValue has reference syntax of its own. */
+static GTEXT_XML_Status dtd_entity_value(xml_ctx * p,
+    unsigned char ** output, size_t * output_length) {
   if (p->pos >= p->length || (p->in[p->pos] != '\'' && p->in[p->pos] != '"'))
     return dtd_bad(p, "an entity value was expected");
+  markup_buf expanded;
+  markup_buf_init(&expanded, p->allocator);
+#define DTD_ENTITY_CONSUME(count) do { \
+  GTEXT_XML_Status consume_status = xml_consume(p, (count)); \
+  if (consume_status != GTEXT_XML_OK) { \
+    markup_buf_free(&expanded); \
+    return consume_status; \
+  } \
+} while (0)
   unsigned char quote = p->in[p->pos];
-  XML_CONSUME_OR_RETURN(p, 1);
-  while (p->pos < p->length && p->in[p->pos] != quote) {
+  const void * base_identity = p->sources[p->source_count - 1].identity;
+  DTD_ENTITY_CONSUME(1);
+  for (;;) {
+    if (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      GTEXT_XML_Status popped = xml_source_pop(p);
+      if (popped != GTEXT_XML_OK) { markup_buf_free(&expanded); return popped; }
+      continue;
+    }
+    if (p->pos >= p->length) {
+      markup_buf_free(&expanded);
+      return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unterminated entity value");
+    }
+    const int at_base = p->sources[p->source_count - 1].identity == base_identity;
+    if (at_base && p->in[p->pos] == quote) break;
     GTEXT_XML_Status work = xml_charge_work(p, 1);
-    if (work != GTEXT_XML_OK) return work;
-    if (p->in[p->pos] == '&' || p->in[p->pos] == '%') {
-      unsigned char sigil = p->in[p->pos];
-      if (sigil == '%' && p->source_count != 0
-          && p->sources[p->source_count - 1].kind == XML_SOURCE_EXTERNAL_SUBSET) {
-        return dtd_bad(p,
-            "parameter entity references in external subsets are not supported in this DTD phase");
-      }
+    if (work != GTEXT_XML_OK) { markup_buf_free(&expanded); return work; }
+    if (p->in[p->pos] == '%') {
+      const GTEXT_Markup_Location reference_at = xml_here(p);
       GTEXT_XML_Status reference = dtd_charge_reference(p);
-      if (reference != GTEXT_XML_OK) return reference;
-      XML_CONSUME_OR_RETURN(p, 1);
-      if (sigil == '&' && p->pos < p->length && p->in[p->pos] == '#') {
-        XML_CONSUME_OR_RETURN(p, 1);
+      if (reference != GTEXT_XML_OK) { markup_buf_free(&expanded); return reference; }
+      DTD_ENTITY_CONSUME(1);
+      const size_t name_at = p->pos;
+      size_t name_length = 0;
+      reference = xml_scan_name(p, &name_length);
+      if (reference != GTEXT_XML_OK) { markup_buf_free(&expanded); return reference; }
+      xml_parameter_entity * entity = dtd_find_parameter_entity(p,
+          p->in + name_at, name_length);
+      if (!entity) {
+        markup_buf_free(&expanded);
+        return xml_fail_at(p, GTEXT_XML_E_DOCTYPE,
+            "parameter entity reference has no preceding declaration", &reference_at);
+      }
+      DTD_ENTITY_CONSUME(name_length);
+      reference = xml_expect(p, ";", 1,
+          "a reference in an entity value ends with ';'");
+      if (reference != GTEXT_XML_OK) { markup_buf_free(&expanded); return reference; }
+      p->dtd_generated_parameter_entity = entity->name;
+      reference = dtd_expand_parameter_entity(p,
+          (const unsigned char *)entity->name, entity->name_length,
+          &reference_at, NULL);
+      if (reference != GTEXT_XML_OK) { markup_buf_free(&expanded); return reference; }
+      continue;
+    }
+    if (p->in[p->pos] == '&') {
+      const size_t reference_start = p->pos;
+      GTEXT_XML_Status reference = dtd_charge_reference(p);
+      if (reference != GTEXT_XML_OK) {
+        markup_buf_free(&expanded);
+        return reference;
+      }
+      DTD_ENTITY_CONSUME(1);
+      int character_reference = 0;
+      uint32_t character_value = 0;
+      if (p->pos < p->length && p->in[p->pos] == '#') {
+        character_reference = 1;
+        DTD_ENTITY_CONSUME(1);
         int hex = p->pos < p->length && (p->in[p->pos] == 'x' || p->in[p->pos] == 'X');
-        if (hex) XML_CONSUME_OR_RETURN(p, 1);
+        if (hex) DTD_ENTITY_CONSUME(1);
         size_t digits = 0;
-        uint32_t value = 0;
         while (p->pos < p->length) {
           unsigned char c = p->in[p->pos];
           unsigned int digit = c >= '0' && c <= '9' ? (unsigned)(c - '0')
               : hex && c >= 'a' && c <= 'f' ? (unsigned)(c - 'a' + 10)
               : hex && c >= 'A' && c <= 'F' ? (unsigned)(c - 'A' + 10) : UINT_MAX;
           if (digit == UINT_MAX) break;
-          if (value > (UINT32_MAX - digit) / (hex ? 16 : 10))
+          if (character_value > (UINT32_MAX - digit) / (hex ? 16 : 10)) {
+            markup_buf_free(&expanded);
             return dtd_bad(p, "character reference is out of range");
-          value = value * (hex ? 16 : 10) + digit;
-          XML_CONSUME_OR_RETURN(p, 1); ++digits;
+          }
+          character_value = character_value * (hex ? 16 : 10) + digit;
+          DTD_ENTITY_CONSUME(1); ++digits;
         }
-        if (!digits) return dtd_bad(p, "a character reference needs digits");
-        if (!dtd_xml_char(p, value)) return xml_fail(p, GTEXT_XML_E_CHARACTER,
-            "character reference is not allowed in this XML version");
+        if (!digits) {
+          markup_buf_free(&expanded);
+          return dtd_bad(p, "a character reference needs digits");
+        }
+        if (!dtd_xml_char(p, character_value)) {
+          markup_buf_free(&expanded);
+          return xml_fail(p, GTEXT_XML_E_CHARACTER,
+              "character reference is not allowed in this XML version");
+        }
       }
       else {
-        GTEXT_XML_Status s = dtd_name(p);
-        if (s != GTEXT_XML_OK) return s;
+        GTEXT_XML_Status s = dtd_plain_name(p);
+        if (s != GTEXT_XML_OK) { markup_buf_free(&expanded); return s; }
       }
-      if (p->pos >= p->length || p->in[p->pos] != ';') return dtd_bad(p, "a reference in an entity value ends with ';'");
-      XML_CONSUME_OR_RETURN(p, 1);
+      if (p->pos >= p->length || p->in[p->pos] != ';') {
+        markup_buf_free(&expanded);
+        return dtd_bad(p, "a reference in an entity value ends with ';'");
+      }
+      DTD_ENTITY_CONSUME(1);
+      if (character_reference) {
+        unsigned char encoded[4];
+        size_t encoded_length;
+        if (character_value < 0x80) {
+          encoded[0] = (unsigned char)character_value; encoded_length = 1;
+        }
+        else if (character_value < 0x800) {
+          encoded[0] = (unsigned char)(0xC0 | (character_value >> 6));
+          encoded[1] = (unsigned char)(0x80 | (character_value & 0x3F)); encoded_length = 2;
+        }
+        else if (character_value < 0x10000) {
+          encoded[0] = (unsigned char)(0xE0 | (character_value >> 12));
+          encoded[1] = (unsigned char)(0x80 | ((character_value >> 6) & 0x3F));
+          encoded[2] = (unsigned char)(0x80 | (character_value & 0x3F)); encoded_length = 3;
+        }
+        else {
+          encoded[0] = (unsigned char)(0xF0 | (character_value >> 18));
+          encoded[1] = (unsigned char)(0x80 | ((character_value >> 12) & 0x3F));
+          encoded[2] = (unsigned char)(0x80 | ((character_value >> 6) & 0x3F));
+          encoded[3] = (unsigned char)(0x80 | (character_value & 0x3F)); encoded_length = 4;
+        }
+        if (markup_buf_append(&expanded, (const char *)encoded,
+                encoded_length) != GTEXT_MARKUP_OK) {
+          markup_buf_free(&expanded);
+          return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
+        }
+      }
+      else if (markup_buf_append(&expanded,
+              (const char *)p->in + reference_start,
+              p->pos - reference_start) != GTEXT_MARKUP_OK) {
+        markup_buf_free(&expanded);
+        return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
+      }
       continue;
     }
     uint32_t cp = 0;
     size_t n = 0;
-    if (xml_decode(p, p->pos, &cp, &n) != XML_CHAR_OK) return xml_unexpected(p, "invalid character in entity value");
-    XML_CONSUME_OR_RETURN(p, n);
+    if (xml_decode(p, p->pos, &cp, &n) != XML_CHAR_OK) {
+      markup_buf_free(&expanded);
+      return xml_unexpected(p, "invalid character in entity value");
+    }
+    if (markup_buf_append(&expanded, (const char *)p->in + p->pos, n)
+        != GTEXT_MARKUP_OK) {
+      markup_buf_free(&expanded);
+      return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
+    }
+    DTD_ENTITY_CONSUME(n);
   }
-  if (p->pos >= p->length) return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unterminated entity value");
-  return xml_consume(p, 1);
+  DTD_ENTITY_CONSUME(1);
+  *output = (unsigned char *)expanded.data;
+  *output_length = expanded.length;
+  expanded.data = NULL;
+  markup_buf_free(&expanded);
+#undef DTD_ENTITY_CONSUME
+  return GTEXT_XML_OK;
 }
 
 static int dtd_xml_char(const xml_ctx * p, uint32_t c) {
@@ -293,7 +591,7 @@ static GTEXT_XML_Status dtd_attribute_value(xml_ctx * p) {
             "character reference is not allowed in this XML version");
       }
       else {
-        GTEXT_XML_Status s = dtd_name(p);
+        GTEXT_XML_Status s = dtd_plain_name(p);
         if (s != GTEXT_XML_OK) return s;
       }
       if (p->pos >= p->length || p->in[p->pos] != ';')
@@ -311,34 +609,60 @@ static GTEXT_XML_Status dtd_attribute_value(xml_ctx * p) {
   return xml_consume(p, 1);
 }
 
-static GTEXT_XML_Status dtd_nmtoken(xml_ctx * p) {
+static GTEXT_XML_Status dtd_nmtoken_impl(xml_ctx * p) {
   size_t start = p->pos;
-  while (p->pos < p->length) {
+  size_t total = 0;
+  for (;;) {
+    if (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      GTEXT_XML_Status s = xml_source_pop(p);
+      if (s != GTEXT_XML_OK) return s;
+      continue;
+    }
+    if (p->pos >= p->length) break;
+    if (p->in[p->pos] == '%' && dtd_pe_references_allowed(p)) {
+      GTEXT_XML_Status s = dtd_expand_inline_reference(p);
+      if (s != GTEXT_XML_OK) return s;
+      continue;
+    }
     uint32_t cp = 0;
     size_t n = 0;
     if (xml_decode(p, p->pos, &cp, &n) != XML_CHAR_OK || !markup_xml_name_char(cp)) break;
     GTEXT_XML_Status work = xml_charge_work(p, 1);
     if (work != GTEXT_XML_OK) return work;
-    XML_CONSUME_OR_RETURN(p, n);
-    if (p->pos - start > p->max_name_bytes)
+    if (n > p->max_name_bytes || total > p->max_name_bytes - n)
       return xml_fail(p, GTEXT_XML_E_LIMIT_NAME, "DTD Nmtoken exceeds the name byte limit");
+    total += n;
+    XML_CONSUME_OR_RETURN(p, n);
   }
-  if (p->pos == start) return dtd_bad(p, "an Nmtoken was expected");
+  if (total == 0 && p->pos == start) return dtd_bad(p, "an Nmtoken was expected");
   return GTEXT_XML_OK;
+}
+
+static GTEXT_XML_Status dtd_nmtoken(xml_ctx * p) {
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+  return dtd_nmtoken_impl(p);
 }
 
 /* XML content particles are nested, but XML's grammar bounds their nesting by
    the parser's input/depth limits. This iterative form avoids C recursion. */
 static GTEXT_XML_Status dtd_content_model_impl(xml_ctx * p,
     unsigned char * separators, size_t separator_capacity) {
-  if (xml_looking_at(p, "EMPTY", 5)) return xml_consume(p, 5);
-  if (xml_looking_at(p, "ANY", 3)) return xml_consume(p, 3);
+  if (p->pos < p->length && p->in[p->pos] == 'E')
+    return dtd_consume_logical_keyword(p, "EMPTY", 5);
+  if (p->pos < p->length && p->in[p->pos] == 'A')
+    return dtd_consume_logical_keyword(p, "ANY", 3);
   if (p->pos >= p->length || p->in[p->pos] != '(')
     return dtd_bad(p, "an element content specification was expected");
   XML_CONSUME_OR_RETURN(p, 1);
   DTD_SKIP_SPACE_OR_RETURN(p);
-  if (xml_looking_at(p, "#PCDATA", 7)) {
-    XML_CONSUME_OR_RETURN(p, 7);
+  if (p->pos < p->length && p->in[p->pos] == '#') {
+    GTEXT_XML_Status keyword = dtd_consume_logical_keyword(p, "#PCDATA", 7);
+    if (keyword != GTEXT_XML_OK) return keyword;
     DTD_SKIP_SPACE_OR_RETURN(p);
     size_t names = 0;
     while (p->pos < p->length && p->in[p->pos] == '|') {
@@ -352,6 +676,8 @@ static GTEXT_XML_Status dtd_content_model_impl(xml_ctx * p,
     if (p->pos >= p->length || p->in[p->pos] != ')')
       return dtd_bad(p, "')' was expected to end a mixed content model");
     XML_CONSUME_OR_RETURN(p, 1);
+    GTEXT_XML_Status expand = dtd_expand_current_references(p);
+    if (expand != GTEXT_XML_OK) return expand;
     if (names != 0) {
       if (p->pos >= p->length || p->in[p->pos] != '*')
         return dtd_bad(p, "a mixed content choice must end with '*'");
@@ -370,6 +696,13 @@ static GTEXT_XML_Status dtd_content_model_impl(xml_ctx * p,
     size_t before_space = p->pos;
     DTD_SKIP_SPACE_OR_RETURN(p);
     size_t skipped_space = p->pos - before_space;
+    if (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      GTEXT_XML_Status popped = xml_source_pop(p);
+      if (popped != GTEXT_XML_OK) return popped;
+      continue;
+    }
     if (p->pos >= p->length) return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unterminated content model");
     unsigned char c = p->in[p->pos];
     if (!need_particle && !has_indicator && skipped_space != 0
@@ -420,12 +753,99 @@ static GTEXT_XML_Status dtd_content_model_impl(xml_ctx * p,
     }
     return dtd_bad(p, "unexpected token in an element content model");
   }
+  GTEXT_XML_Status expand = dtd_expand_current_references(p);
+  if (expand != GTEXT_XML_OK) return expand;
   if (xml_looking_at(p, "?", 1) || xml_looking_at(p, "*", 1) || xml_looking_at(p, "+", 1))
     XML_CONSUME_OR_RETURN(p, 1);
   return GTEXT_XML_OK;
 }
 
+static int dtd_pe_references_allowed(const xml_ctx * p) {
+  for (size_t i = 1; i < p->source_count; ++i)
+    if (p->sources[i].external_source) return 1;
+  return 0;
+}
+
+static GTEXT_XML_Status dtd_expand_inline_reference(xml_ctx * p) {
+  if (!dtd_pe_references_allowed(p))
+    return dtd_bad(p,
+        "parameter entity references are not allowed inside internal-subset declarations");
+  const GTEXT_Markup_Location at = xml_here(p);
+  GTEXT_XML_Status status = dtd_charge_reference(p);
+  if (status != GTEXT_XML_OK) return status;
+  XML_CONSUME_OR_RETURN(p, 1);
+  const size_t name_at = p->pos;
+  size_t name_length = 0;
+  status = xml_scan_name(p, &name_length);
+  if (status != GTEXT_XML_OK) return status;
+  xml_parameter_entity * entity = dtd_find_parameter_entity(p,
+      p->in + name_at, name_length);
+  if (!entity) return xml_fail_at(p, GTEXT_XML_E_DOCTYPE,
+      "parameter entity reference has no preceding declaration", &at);
+  XML_CONSUME_OR_RETURN(p, name_length);
+  status = xml_expect(p, ";", 1,
+      "a parameter entity reference ends with ';'");
+  if (status != GTEXT_XML_OK) return status;
+  p->dtd_generated_parameter_entity = entity->name;
+  return dtd_expand_parameter_entity(p, (const unsigned char *)entity->name,
+      entity->name_length, &at, NULL);
+}
+
+static GTEXT_XML_Status dtd_consume_logical_keyword(xml_ctx * p,
+    const char * keyword, size_t length) {
+  for (size_t i = 0; i < length;) {
+    if (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      GTEXT_XML_Status status = xml_source_pop(p);
+      if (status != GTEXT_XML_OK) return status;
+      continue;
+    }
+    if (p->pos >= p->length)
+      return dtd_bad(p, "a DTD keyword was split before it was complete");
+    if (p->in[p->pos] == '%' && dtd_pe_references_allowed(p)) {
+      GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+      if (status != GTEXT_XML_OK) return status;
+      continue;
+    }
+    if (p->in[p->pos] != (unsigned char)keyword[i])
+      return dtd_bad(p, "an unexpected token was found in the DTD");
+    XML_CONSUME_OR_RETURN(p, 1);
+    ++i;
+  }
+  return GTEXT_XML_OK;
+}
+
+static GTEXT_XML_Status dtd_expand_current_references(xml_ctx * p) {
+  for (;;) {
+    while (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      GTEXT_XML_Status status = xml_source_pop(p);
+      if (status != GTEXT_XML_OK) return status;
+    }
+    if (p->pos >= p->length || p->in[p->pos] != '%')
+      return GTEXT_XML_OK;
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+}
+
+static GTEXT_XML_Status dtd_pop_finished_parameter_sources(xml_ctx * p) {
+  while (p->source_count > 1
+      && XML_SOURCE_IS_PARAMETER_ENTITY(p->sources[p->source_count - 1].kind)
+      && p->pos >= p->length) {
+    GTEXT_XML_Status status = xml_source_pop(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+  return GTEXT_XML_OK;
+}
+
 static GTEXT_XML_Status dtd_content_model(xml_ctx * p) {
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status expand = dtd_expand_inline_reference(p);
+    if (expand != GTEXT_XML_OK) return expand;
+  }
   size_t capacity = p->length / 2 + 1;
   if (capacity > p->max_depth) capacity = p->max_depth;
   if (capacity == 0) return xml_fail(p, GTEXT_XML_E_LIMIT_DEPTH,
@@ -438,22 +858,35 @@ static GTEXT_XML_Status dtd_content_model(xml_ctx * p) {
   memset(separators, 0, capacity * sizeof(*separators));
   GTEXT_XML_Status status = dtd_content_model_impl(p, separators, capacity);
   xml_release(p, separators);
+  if (status == GTEXT_XML_OK) {
+    GTEXT_XML_Status popped = dtd_pop_finished_parameter_sources(p);
+    if (popped != GTEXT_XML_OK) return popped;
+  }
   return status;
 }
 
-static GTEXT_XML_Status dtd_attribute_type(xml_ctx * p) {
+static GTEXT_XML_Status dtd_attribute_type_impl(xml_ctx * p) {
   static const char * const words[] = {"CDATA", "IDREFS", "IDREF", "ID", "ENTITIES", "ENTITY", "NMTOKENS", "NMTOKEN"};
   int notation = 0;
-  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); ++i) {
-    size_t n = strlen(words[i]);
-    if (xml_looking_at(p, words[i], n)) return xml_consume(p, n);
-  }
-  if (xml_looking_at(p, "NOTATION", 8)) {
-    notation = 1;
-    GTEXT_XML_Status s = xml_consume(p, 8);
+  if (p->pos < p->length && p->in[p->pos] != '(') {
+    GTEXT_XML_Status s = dtd_name(p);
     if (s != GTEXT_XML_OK) return s;
-    s = dtd_need_space(p);
-    if (s != GTEXT_XML_OK) return s;
+    int recognized = 0;
+    for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); ++i) {
+      if (p->dtd_name_token_length == strlen(words[i])
+          && memcmp(p->dtd_name_token, words[i], p->dtd_name_token_length) == 0) {
+        recognized = 1;
+        break;
+      }
+    }
+    if (recognized) return GTEXT_XML_OK;
+    if (p->dtd_name_token_length == 8
+        && memcmp(p->dtd_name_token, "NOTATION", 8) == 0) {
+      notation = 1;
+      s = dtd_need_space(p);
+      if (s != GTEXT_XML_OK) return s;
+    }
+    else return dtd_bad(p, "an attribute type was expected");
   }
   if (p->pos >= p->length || p->in[p->pos] != '(') return dtd_bad(p, "an attribute type was expected");
   XML_CONSUME_OR_RETURN(p, 1);
@@ -470,12 +903,31 @@ static GTEXT_XML_Status dtd_attribute_type(xml_ctx * p) {
   return xml_consume(p, 1);
 }
 
-static GTEXT_XML_Status dtd_default_decl(xml_ctx * p) {
-  if (xml_looking_at(p, "#REQUIRED", 9)) return xml_consume(p, 9);
-  if (xml_looking_at(p, "#IMPLIED", 8)) return xml_consume(p, 8);
-  if (xml_looking_at(p, "#FIXED", 6)) {
-    GTEXT_XML_Status s = xml_consume(p, 6);
+static GTEXT_XML_Status dtd_attribute_type(xml_ctx * p) {
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+  GTEXT_XML_Status status = dtd_attribute_type_impl(p);
+  if (status == GTEXT_XML_OK)
+    status = dtd_pop_finished_parameter_sources(p);
+  return status;
+}
+
+static GTEXT_XML_Status dtd_default_decl_impl(xml_ctx * p) {
+  if (p->pos < p->length && p->in[p->pos] == '#') {
+    XML_CONSUME_OR_RETURN(p, 1);
+    GTEXT_XML_Status s = dtd_name(p);
     if (s != GTEXT_XML_OK) return s;
+    int required = p->dtd_name_token_length == 8
+        && memcmp(p->dtd_name_token, "REQUIRED", 8) == 0;
+    int implied = p->dtd_name_token_length == 7
+        && memcmp(p->dtd_name_token, "IMPLIED", 7) == 0;
+    int fixed = p->dtd_name_token_length == 5
+        && memcmp(p->dtd_name_token, "FIXED", 5) == 0;
+    if (!required && !implied && !fixed)
+      return dtd_bad(p, "#REQUIRED, #IMPLIED, or #FIXED was expected");
+    if (!fixed) return GTEXT_XML_OK;
     s = dtd_need_space(p);
     if (s != GTEXT_XML_OK) return s;
     return dtd_attribute_value(p);
@@ -483,27 +935,73 @@ static GTEXT_XML_Status dtd_default_decl(xml_ctx * p) {
   return dtd_attribute_value(p);
 }
 
-static GTEXT_XML_Status dtd_external_id(xml_ctx * p, int allow_public_only) {
-  GTEXT_XML_Status s;
-  if (xml_looking_at(p, "SYSTEM", 6)) {
-    s = xml_consume(p, 6); if (s != GTEXT_XML_OK) return s;
-    s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
-    return dtd_quoted(p, 0);
+static GTEXT_XML_Status dtd_default_decl(xml_ctx * p) {
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
   }
-  if (!xml_looking_at(p, "PUBLIC", 6)) return dtd_bad(p, "SYSTEM or PUBLIC was expected");
-  s = xml_consume(p, 6); if (s != GTEXT_XML_OK) return s;
+  GTEXT_XML_Status status = dtd_default_decl_impl(p);
+  if (status == GTEXT_XML_OK)
+    status = dtd_pop_finished_parameter_sources(p);
+  return status;
+}
+
+static GTEXT_XML_Status dtd_external_id_capture_impl(xml_ctx * p,
+    int allow_public_only, markup_buf * public_id, markup_buf * system_id) {
+  GTEXT_XML_Status s;
+  if (p->pos < p->length && p->in[p->pos] == 'S') {
+    s = dtd_consume_logical_keyword(p, "SYSTEM", 6);
+    if (s != GTEXT_XML_OK) return s;
+    s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
+    return literal(p, system_id, 0);
+  }
+  if (p->pos >= p->length || p->in[p->pos] != 'P')
+    return dtd_bad(p, "SYSTEM or PUBLIC was expected");
+  s = dtd_consume_logical_keyword(p, "PUBLIC", 6);
+  if (s != GTEXT_XML_OK) return s;
   s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
-  s = dtd_quoted(p, 1); if (s != GTEXT_XML_OK) return s;
+  s = literal(p, public_id, 1); if (s != GTEXT_XML_OK) return s;
   size_t space = xml_skip_space(p);
   if (p->err.code != GTEXT_XML_OK) return p->err.code;
   if (allow_public_only && (p->pos >= p->length || p->in[p->pos] == '>')) return GTEXT_XML_OK;
   if (space == 0) return dtd_bad(p, "white space and a system literal were expected after a public identifier");
-  return dtd_quoted(p, 0);
+  return literal(p, system_id, 0);
+}
+
+static GTEXT_XML_Status dtd_external_id_capture(xml_ctx * p,
+    int allow_public_only, markup_buf * public_id, markup_buf * system_id) {
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+  GTEXT_XML_Status status = dtd_external_id_capture_impl(p,
+      allow_public_only, public_id, system_id);
+  if (status == GTEXT_XML_OK)
+    status = dtd_pop_finished_parameter_sources(p);
+  return status;
+}
+
+static GTEXT_XML_Status dtd_external_id(xml_ctx * p, int allow_public_only) {
+  markup_buf public_id, system_id;
+  markup_buf_init(&public_id, p->allocator);
+  markup_buf_init(&system_id, p->allocator);
+  GTEXT_XML_Status status = dtd_external_id_capture(p, allow_public_only,
+      &public_id, &system_id);
+  markup_buf_free(&public_id);
+  markup_buf_free(&system_id);
+  return status;
 }
 
 /* Parse one complete declaration body (cursor is immediately after keyword). */
 static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
   GTEXT_XML_Status s;
+  const unsigned char * pe_name = NULL;
+  size_t pe_name_length = 0;
+  const unsigned char * pe_replacement = NULL;
+  size_t pe_replacement_length = 0;
+  unsigned char * pe_owned_replacement = NULL;
+  markup_buf pe_public, pe_system;
+  int pe_external = 0;
   /* The caller has checked that S follows the keyword; consume it here. */
   DTD_SKIP_SPACE_OR_RETURN(p);
   if (kind == 0) { /* ELEMENT */
@@ -541,16 +1039,35 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
       s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
     }
     s = dtd_name(p); if (s != GTEXT_XML_OK) return s;
+    if (parameter_entity) {
+      pe_name = p->dtd_name_token;
+      pe_name_length = p->dtd_name_token_length;
+    }
     s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
     if (p->pos < p->length && (p->in[p->pos] == '\'' || p->in[p->pos] == '"')) {
-      s = dtd_entity_value(p);
+      s = dtd_entity_value(p, &pe_owned_replacement,
+          &pe_replacement_length);
+      if (s == GTEXT_XML_OK && parameter_entity)
+        pe_replacement = pe_owned_replacement;
     }
     else {
-      s = dtd_external_id(p, 0);
+      if (parameter_entity) {
+        markup_buf_init(&pe_public, p->allocator);
+        markup_buf_init(&pe_system, p->allocator);
+        pe_external = 1;
+        s = dtd_external_id_capture(p, 0, &pe_public, &pe_system);
+      }
+      else s = dtd_external_id(p, 0);
       size_t separator_space = xml_skip_space(p);
-      if (p->err.code != GTEXT_XML_OK) return p->err.code;
+      if (p->err.code != GTEXT_XML_OK) {
+        if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+        return p->err.code;
+      }
       if (s == GTEXT_XML_OK && xml_looking_at(p, "NDATA", 5)) {
-        if (parameter_entity) return dtd_bad(p, "a parameter entity cannot have NDATA");
+        if (parameter_entity) {
+          if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+          return dtd_bad(p, "a parameter entity cannot have NDATA");
+        }
         if (separator_space == 0)
           return dtd_bad(p, "white space is required before NDATA");
         s = xml_consume(p, 5);
@@ -558,16 +1075,41 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
         if (s == GTEXT_XML_OK) s = dtd_name(p);
       }
     }
-    if (s != GTEXT_XML_OK) return s;
+    if (s != GTEXT_XML_OK) {
+      if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+      xml_release(p, pe_owned_replacement);
+      return s;
+    }
   }
   else { /* NOTATION */
     s = dtd_name(p); if (s != GTEXT_XML_OK) return s;
     s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
     s = dtd_external_id(p, 1); if (s != GTEXT_XML_OK) return s;
   }
-  DTD_SKIP_SPACE_OR_RETURN(p);
-  if (p->pos >= p->length || p->in[p->pos] != '>') return dtd_bad(p, "'>' was expected to end the DTD declaration");
-  return xml_consume(p, 1);
+  xml_skip_space(p);
+  if (p->err.code != GTEXT_XML_OK) {
+    if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+    xml_release(p, pe_owned_replacement);
+    return p->err.code;
+  }
+  if (p->pos >= p->length || p->in[p->pos] != '>') {
+    if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+    xml_release(p, pe_owned_replacement);
+    return dtd_bad(p, "'>' was expected to end the DTD declaration");
+  }
+  s = xml_consume(p, 1);
+  if (s == GTEXT_XML_OK && pe_name) {
+    if (pe_external) {
+      s = dtd_add_external_parameter_entity(p, pe_name, pe_name_length,
+          pe_public.length ? pe_public.data : NULL,
+          pe_system.data ? pe_system.data : "");
+    }
+    else s = dtd_add_parameter_entity(p, pe_name, pe_name_length,
+        pe_replacement, pe_replacement_length);
+  }
+  if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+  xml_release(p, pe_owned_replacement);
+  return s;
 }
 
 /* DTD-off preserves the original skip-only behavior. DTD processing performs
@@ -638,16 +1180,36 @@ static GTEXT_XML_Status external_conditional_header(xml_ctx * p,
   XML_CONSUME_OR_RETURN(p, 3); /* <![ */
   xml_skip_space(p);
   if (p->err.code != GTEXT_XML_OK) return p->err.code;
-  if (xml_looking_at(p, "INCLUDE", 7)) *include = 1;
-  else if (xml_looking_at(p, "IGNORE", 6)) *include = 0;
+  while (p->pos < p->length && p->in[p->pos] == '%') {
+    GTEXT_XML_Status status = dtd_expand_inline_reference(p);
+    if (status != GTEXT_XML_OK) return status;
+  }
+  GTEXT_XML_Status status = dtd_name(p);
+  if (status != GTEXT_XML_OK) return status;
+  if (p->dtd_name_token_length == 7
+      && memcmp(p->dtd_name_token, "INCLUDE", 7) == 0) *include = 1;
+  else if (p->dtd_name_token_length == 6
+      && memcmp(p->dtd_name_token, "IGNORE", 6) == 0) *include = 0;
   else return dtd_bad(p, "INCLUDE or IGNORE was expected in a conditional section");
-  XML_CONSUME_OR_RETURN(p, *include ? 7 : 6);
   xml_skip_space(p);
   if (p->err.code != GTEXT_XML_OK) return p->err.code;
+  GTEXT_XML_Status pop_status = dtd_pop_finished_parameter_sources(p);
+  if (pop_status != GTEXT_XML_OK) return pop_status;
   if (p->pos >= p->length || p->in[p->pos] != '[')
     return dtd_bad(p, "'[' was expected in a conditional section");
   XML_CONSUME_OR_RETURN(p, 1);
   return GTEXT_XML_OK;
+}
+
+/* Conditional-section delimiters are physical grammar boundaries. Do not
+   assemble one by expanding a parameter entity between its characters. */
+static GTEXT_XML_Status external_conditional_end(xml_ctx * p) {
+  if (p->length - p->pos < 3)
+    return dtd_bad(p,
+        "a conditional-section delimiter crosses a parameter-entity boundary");
+  if (memcmp(p->in + p->pos, "]]>", 3) != 0)
+    return dtd_bad(p, "a conditional section must end with ']]>'");
+  return xml_consume(p, 3);
 }
 
 static GTEXT_XML_Status external_subset_body(xml_ctx * p,
@@ -656,12 +1218,20 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       "<!ELEMENT", "<!ATTLIST", "<!ENTITY", "<!NOTATION"};
   unsigned char * modes = NULL; /* one means INCLUDE; zero means IGNORE */
   size_t depth = 0, capacity = 0;
+  const size_t entry_source_count = p->source_count;
   GTEXT_XML_Status result = GTEXT_XML_OK;
   for (;;) {
     const int ignoring = depth != 0 && !modes[depth - 1];
     if (!ignoring) {
       xml_skip_space(p);
       if (p->err.code != GTEXT_XML_OK) { result = p->err.code; break; }
+    }
+    if (p->pos >= p->length && p->source_count > entry_source_count
+        && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+      result = xml_source_pop(p);
+      if (result != GTEXT_XML_OK) break;
+      continue;
     }
     if (p->pos >= p->length) {
       result = depth ? xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
@@ -676,8 +1246,8 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
     }
     (void)codepoint;
     (void)codepoint_length;
-    if (depth && xml_looking_at(p, "]]>", 3)) {
-      result = xml_consume(p, 3);
+    if (depth && p->in[p->pos] == ']') {
+      result = external_conditional_end(p);
       if (result != GTEXT_XML_OK) break;
       --depth;
       continue;
@@ -696,9 +1266,24 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       continue;
     }
     if (!ignoring && p->in[p->pos] == '%') {
-      result = dtd_bad(p,
-          "parameter entity references in external subsets are not supported in this DTD phase");
-      break;
+      const GTEXT_Markup_Location at = xml_here(p);
+      result = dtd_charge_reference(p);
+      if (result != GTEXT_XML_OK) break;
+      result = xml_consume(p, 1);
+      if (result != GTEXT_XML_OK) break;
+      const size_t name_at = p->pos;
+      size_t name_length = 0;
+      result = xml_scan_name(p, &name_length);
+      if (result != GTEXT_XML_OK) break;
+      result = xml_consume(p, name_length);
+      if (result != GTEXT_XML_OK) break;
+      result = xml_expect(p, ";", 1,
+          "a parameter entity reference ends with ';'");
+      if (result != GTEXT_XML_OK) break;
+      result = dtd_expand_parameter_entity(p, p->in + name_at,
+          name_length, &at, doctype);
+      if (result != GTEXT_XML_OK) break;
+      continue;
     }
     if (xml_looking_at(p, "<![", 3)) {
       if (depth >= p->max_depth) {
@@ -732,7 +1317,13 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
           ? xml_parse_comment(p, 0) : xml_parse_pi(p, 0);
       if (status != GTEXT_XML_OK) { result = status; break; }
       if (doctype && !p->stream) {
-        status = xml_from_markup(p, markup_doctype_append_external_syntax(
+        if (p->source_count > 1 && XML_SOURCE_IS_PARAMETER_ENTITY(
+            p->sources[p->source_count - 1].kind)) {
+          status = xml_from_markup(p, markup_doctype_append_generated_syntax(
+              doctype, kind, (const char *)p->in + start, p->pos - start, &at,
+              p->sources[p->source_count - 1].owned_name));
+        }
+        else status = xml_from_markup(p, markup_doctype_append_external_syntax(
             doctype, kind, (const char *)p->in + start, p->pos - start, &at));
         if (status != GTEXT_XML_OK) { result = status; break; }
       }
@@ -751,20 +1342,41 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
     }
     const size_t start = p->pos;
     const GTEXT_Markup_Location at = xml_here(p);
+    const void * declaration_source_identity = p->sources[p->source_count - 1].identity;
+    p->dtd_generated_parameter_entity = NULL;
     GTEXT_XML_Status status = xml_charge(p, &p->declarations,
         p->max_declarations, 1, GTEXT_XML_E_LIMIT_DECLARATIONS,
         "DTD declaration limit exceeded");
     if (status != GTEXT_XML_OK) { result = status; break; }
     result = xml_consume(p, strlen(keywords[k]));
     if (result != GTEXT_XML_OK) break;
-    if (p->pos >= p->length || xml_space_bytes(p, p->pos) == 0) {
+    if (dtd_skip_space(p) == 0) {
+      if (p->err.code != GTEXT_XML_OK) { result = p->err.code; break; }
       result = bad(p, "white space is required after the declaration keyword");
       break;
     }
     status = validate_declaration(p, (int)k);
     if (status != GTEXT_XML_OK) { result = status; break; }
+    if (p->source_count == 0
+        || p->sources[p->source_count - 1].identity
+            != declaration_source_identity) {
+      result = xml_fail_at(p, GTEXT_XML_E_DOCTYPE,
+          "a markup declaration crosses a parameter entity boundary", &at);
+      break;
+    }
     if (doctype && !p->stream) {
-      status = xml_from_markup(p, markup_doctype_append_external_syntax(
+      if (p->dtd_generated_parameter_entity) {
+        status = xml_from_markup(p, markup_doctype_append_generated_syntax(
+            doctype, (int)k, (const char *)p->in + start, p->pos - start, &at,
+            p->dtd_generated_parameter_entity));
+      }
+      else if (p->source_count > 1 && XML_SOURCE_IS_PARAMETER_ENTITY(
+          p->sources[p->source_count - 1].kind)) {
+        status = xml_from_markup(p, markup_doctype_append_generated_syntax(
+            doctype, (int)k, (const char *)p->in + start, p->pos - start, &at,
+            p->sources[p->source_count - 1].owned_name));
+      }
+      else status = xml_from_markup(p, markup_doctype_append_external_syntax(
           doctype, (int)k, (const char *)p->in + start, p->pos - start, &at));
       if (status != GTEXT_XML_OK) { result = status; break; }
     }
@@ -881,7 +1493,74 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->references = ext.references;
   p->declarations = ext.declarations;
   p->total_work = ext.total_work;
+  p->sources = ext.sources;
+  p->source_count = ext.source_count;
+  p->source_capacity = ext.source_capacity;
+  p->source_names = ext.source_names;
+  p->source_name_count = ext.source_name_count;
+  p->source_name_capacity = ext.source_name_capacity;
+  p->next_source_id = ext.next_source_id;
+  p->parameter_entities = ext.parameter_entities;
+  p->parameter_entity_count = ext.parameter_entity_count;
+  p->parameter_entity_capacity = ext.parameter_entity_capacity;
   if (status != GTEXT_XML_OK) p->err = ext.err;
+  markup_buf_free(&ext.decoded);
+  return status;
+}
+
+/* Turn an already pushed resolver frame into the active DTD input. The
+   external_subset_body loop consumes it and pops it, so nested PEs use heap
+   source frames rather than the C call stack. */
+GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
+    xml_resolved_resource * resource) {
+  if (!p || !resource || !resource->opened || !resource->frame_pushed
+      || p->source_count <= 1
+      || p->sources[p->source_count - 1].identity != resource->source.identity)
+    return xml_fail(p, GTEXT_XML_E_STATE,
+        "external parameter entity source frame is not active");
+  static const unsigned char empty[1] = {0};
+  xml_ctx ext = *p;
+  ext.in = resource->bytes.data
+      ? (const unsigned char *)resource->bytes.data : empty;
+  ext.length = resource->bytes.length;
+  ext.pos = 0; ext.line = 1; ext.column = 1; ext.cursor_previous = 0;
+  ext.err = (GTEXT_XML_Error){0};
+  ext.base_uri = resource->source.base_uri;
+  markup_buf_init(&ext.decoded, ext.allocator);
+  GTEXT_XML_Status status = xml_detect_encoding(&ext);
+  if (status == GTEXT_XML_OK) status = external_text_declaration(&ext);
+  if (status == GTEXT_XML_OK) {
+    xml_source_frame * f = &ext.sources[ext.source_count - 1];
+    f->bytes = ext.in; f->length = ext.length; f->pos = ext.pos;
+    f->line = ext.line; f->column = ext.column;
+    f->cursor_previous = ext.cursor_previous;
+    f->owned_bytes = resource->bytes.data;
+    resource->bytes.data = NULL;
+    resource->bytes.length = resource->bytes.capacity = 0;
+    f->owned_decoded = ext.decoded.data;
+    ext.decoded.data = NULL; ext.decoded.length = ext.decoded.capacity = 0;
+    f->external_close = resource->source.close;
+    f->external_handle = resource->source.handle;
+    resource->source.close = NULL;
+    resource->opened = 0;
+    resource->frame_pushed = 0;
+    p->in = ext.in; p->length = ext.length; p->pos = ext.pos;
+    p->line = ext.line; p->column = ext.column;
+    p->cursor_previous = ext.cursor_previous; p->base = ext.base;
+    p->references = ext.references; p->declarations = ext.declarations;
+    p->total_work = ext.total_work;
+    p->sources = ext.sources; p->source_count = ext.source_count;
+    p->source_capacity = ext.source_capacity;
+    p->source_names = ext.source_names;
+    p->source_name_count = ext.source_name_count;
+    p->source_name_capacity = ext.source_name_capacity;
+    p->next_source_id = ext.next_source_id;
+    p->parameter_entities = ext.parameter_entities;
+    p->parameter_entity_count = ext.parameter_entity_count;
+    p->parameter_entity_capacity = ext.parameter_entity_capacity;
+    p->base_uri = f->base_uri;
+  }
+  else p->err = ext.err;
   markup_buf_free(&ext.decoded);
   return status;
 }
@@ -890,8 +1569,22 @@ static GTEXT_XML_Status retain_syntax(xml_ctx * p, GTEXT_Markup_Node * doctype,
     GTEXT_Markup_DTD_Syntax_Kind kind, size_t start,
     const GTEXT_Markup_Location * at) {
   if (!doctype || p->stream) return GTEXT_XML_OK;
-  GTEXT_Markup_Status status = markup_doctype_append_syntax(doctype, kind,
-      (const char *)p->in + start, p->pos - start, at);
+  GTEXT_Markup_Status status;
+  if (p->dtd_generated_parameter_entity) {
+    status = markup_doctype_append_generated_syntax(doctype, kind,
+        (const char *)p->in + start, p->pos - start, at,
+        p->dtd_generated_parameter_entity);
+  }
+  else if (p->source_count > 1
+      && XML_SOURCE_IS_PARAMETER_ENTITY(p->sources[p->source_count - 1].kind)) {
+    status = markup_doctype_append_generated_syntax(doctype, kind,
+        (const char *)p->in + start, p->pos - start, at,
+        p->sources[p->source_count - 1].owned_name);
+  }
+  else {
+    status = markup_doctype_append_syntax(doctype, kind,
+        (const char *)p->in + start, p->pos - start, at);
+  }
   return xml_from_markup(p, status);
 }
 
@@ -901,6 +1594,7 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
   static const char * const keywords[] = {
       "<!ELEMENT", "<!ATTLIST", "<!ENTITY", "<!NOTATION"};
   for (;;) {
+    GTEXT_XML_Status status;
     if (p->err.code != GTEXT_XML_OK) {
       return p->err.code;
     }
@@ -908,12 +1602,17 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
     if (p->err.code != GTEXT_XML_OK) {
       return p->err.code;
     }
+    if (p->pos >= p->length && p->source_count > 1
+        && XML_SOURCE_IS_PARAMETER_ENTITY(p->sources[p->source_count - 1].kind)) {
+      status = xml_source_pop(p);
+      if (status != GTEXT_XML_OK) return status;
+      continue;
+    }
     if (p->pos >= p->length) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "unterminated internal subset");
     }
     const unsigned char b = p->in[p->pos];
-    GTEXT_XML_Status status;
     if (b == ']') {
       XML_CONSUME_OR_RETURN(p, 1);
       return GTEXT_XML_OK;
@@ -939,6 +1638,17 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
       status = retain_syntax(p, doctype,
           GTEXT_MARKUP_DTD_PARAMETER_REFERENCE, start, &at);
       if (status != GTEXT_XML_OK) return status;
+      if (p->dtd_mode != GTEXT_XML_DTD_PROCESS) continue;
+      const unsigned char * reference_name = p->in + start + 1;
+      const size_t reference_length = p->pos - start - 2;
+      status = dtd_expand_parameter_entity(p, reference_name,
+          reference_length, &at, doctype);
+      if (status != GTEXT_XML_OK) return status;
+      if (p->source_count > 1
+          && p->sources[p->source_count - 1].external_source) {
+        status = external_subset_body(p, doctype);
+        if (status != GTEXT_XML_OK) return status;
+      }
       continue;
     }
     if (b != '<') {
@@ -973,18 +1683,29 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
             "not a declaration, comment or processing instruction");
       }
       kind = (GTEXT_Markup_DTD_Syntax_Kind)k;
+      const void * declaration_source_identity =
+          p->sources[p->source_count - 1].identity;
+      p->dtd_generated_parameter_entity = NULL;
       status = xml_charge(p, &p->declarations, p->max_declarations, 1,
           GTEXT_XML_E_LIMIT_DECLARATIONS, "DTD declaration limit exceeded");
       if (status != GTEXT_XML_OK) {
         return status;
       }
       XML_CONSUME_OR_RETURN(p, strlen(keywords[k]));
-      if (p->pos >= p->length || xml_space_bytes(p, p->pos) == 0) {
+      if (dtd_skip_space(p) == 0) {
+        if (p->err.code != GTEXT_XML_OK) return p->err.code;
         return bad(p, "white space is required after the declaration keyword");
       }
       status = p->dtd_mode == GTEXT_XML_DTD_PROCESS
           ? validate_declaration(p, (int)k)
           : skip_declaration(p, k == 2);
+      if (status == GTEXT_XML_OK && p->dtd_mode == GTEXT_XML_DTD_PROCESS
+          && (p->source_count == 0
+              || p->sources[p->source_count - 1].identity
+                  != declaration_source_identity)) {
+        status = xml_fail_at(p, GTEXT_XML_E_DOCTYPE,
+            "a markup declaration crosses a parameter entity boundary", &at);
+      }
     }
     if (status != GTEXT_XML_OK) {
       return status;

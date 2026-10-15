@@ -2,8 +2,8 @@
 
 # XML
 
-`gtext_xml_parse()` reads a whole **XML 1.0 (Fifth Edition)** document, in UTF-8,
-UTF-16, UTF-32, ISO-8859-1 or US-ASCII, with **Namespaces in XML 1.0** and builds
+`gtext_xml_parse()` reads a whole **XML 1.0 (Fifth Edition) or XML 1.1
+(Second Edition)** document, in UTF-8, UTF-16, UTF-32, ISO-8859-1 or US-ASCII, with **Namespaces in XML 1.0** and builds
 a \ref format_markup "Markup tree" from it. `GTEXT_XML_Stream` (push) and
 `GTEXT_XML_Reader` (pull) read the same documents as a stream of events, in
 pieces, without building a tree (**Event parsers** below). `gtext_xml_write()` and
@@ -14,11 +14,11 @@ Back to \ref text_format_references "Formats".
 
 ## Normative references
 
-- [Extensible Markup Language (XML) 1.0 (Fifth Edition)](https://www.w3.org/TR/xml/):
-  well-formedness, the character and name productions, line-end normalization
-  (2.11), attribute-value normalization (3.3.3), the document type declaration
-  (2.8, only as far as finding its end), and the byte order and encoding rules
-  of Appendix F, and 4.3.3 for the declaration checked against the bytes.
+- [Extensible Markup Language (XML) 1.0 (Fifth Edition)](https://www.w3.org/TR/xml/)
+  and [XML 1.1 (Second Edition)](https://www.w3.org/TR/xml11/): well-formedness,
+  version-specific character/name/line-end rules, DTD declaration and parameter
+  entity grammar (2.8-2.12, 4.2), attribute-value normalization (3.3.3), and
+  byte-order/encoding rules (Appendix F and 4.3.3).
 - [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/xml-names/):
   prefix declaration and scope, the reserved `xml` and `xmlns`, qualified names.
 - The [W3C XML Conformance Test Suite](https://www.w3.org/XML/Test/) (release
@@ -30,51 +30,47 @@ Back to \ref text_format_references "Formats".
 |---|---|
 | element | an element with namespace URI, prefix and local name; the default namespace applies to it and **not** to its attributes |
 | `xmlns="u"`, `xmlns:p="u"` | kept as attributes in the namespace `http://www.w3.org/2000/xmlns/` (prefix NULL and local `xmlns`; prefix `xmlns` and local `p`), in source order with the others |
-| character data | one text node up to the next markup, with the five predefined entities and numeric references already expanded and CR LF and lone CR turned into LF |
+| character data | one text node up to the next markup, with the five predefined entities and numeric references already expanded and line endings normalized for the document version |
 | CDATA section | a CDATA node of its own; adjacent ones are not merged |
 | comment, processing instruction | their nodes |
 | white space outside the root element | not kept |
 | attribute value | normalized as CDATA: each literal tab, line feed and carriage return becomes one space; a *reference* to one stays itself |
-| `<?xml ... ?>` | the document's version (`"1.0"`), standalone flag and encoding label; with no declaration the version is NULL and the encoding is `UTF-8` from the default |
+| `<?xml ... ?>` | the document's version (`"1.0"` or `"1.1"`), standalone flag and encoding label; with no declaration the version is NULL and the encoding is `UTF-8` from the default |
 | `<!DOCTYPE ...>` | a doctype node: name, public identifier (white space collapsed, as the specification asks), system identifier |
 
 Every element, text, CDATA, comment, processing instruction and doctype node
 carries its source location, and so does every attribute. A location is the
 byte offset, the line and the column of the construct's first character; a line
-ends at LF, CR or CR LF, a column counts characters, and a UTF-8 byte order mark
+ends according to the document version, a column counts characters, and a UTF-8 byte order mark
 counts in the offset and not in the columns. For input that is converted (UTF-16,
 UTF-32, ISO-8859-1, US-ASCII) a line and column still count characters of the
 original, but the **offset counts bytes of the UTF-8 form** the parser read, and
 a byte order mark is not counted at all.
 
-## The document type declaration is recognized, not processed
+## DTD processing
 
-The internal subset is **skipped by a bounded scanner**. It knows where each
-kind of token ends - a comment at `-->`, a processing instruction at `?>`, a
-declaration at the first `>` outside a quoted literal - so a `]` inside a
-literal, a comment or a processing instruction does not end the subset (the
-classic miss), and an unterminated subset is an error. It moves forward on every
-step and is linear in the input.
+DTD processing is opt-in; the default mode keeps declarations unprocessed and
+preserves compatibility. In that mode, the internal subset is skipped by a
+bounded scanner that recognizes comments, processing instructions, quoted
+literals, and declaration boundaries.
 
-It checks characters, that each declaration is delimited, that nothing which
-cannot occur in a declaration (a `<`, a `]`, a parameter entity reference)
-appears outside a literal, and that white space follows the declaration keyword.
-It does **not** check a declaration's grammar. No declaration takes effect: not
-an entity, not a default attribute, not an attribute type. Consequently:
+In processing mode, internal-subset declarations are parsed against the DTD
+grammar. Parameter entities expand in permitted DTD positions in declaration
+order. Recursive and aliased active sources fail, and each use charges the
+source, reference, and work limits. Internal raw syntax, the caller-resolved
+external-subset snapshot, and declarations generated from PE replacement text
+are separate doctype collections. The parser does not compile effective DTD
+bindings, validate documents against declarations, or apply general-entity
+content expansion, attribute types, or default attributes. A conditional-section
+closing delimiter must occur in one physical source; a PE cannot supply part
+of that delimiter.
 
-- **Any entity reference other than the five predefined ones and numeric
-  references is an error** (`GTEXT_XML_E_ENTITY`), declared or not, and the
-  position is the `&`.
-- External identifiers (`SYSTEM`, `PUBLIC`) are recorded in the doctype node and
-  **never opened**. The parser reads no file and makes no network request, and
-  there is no option that turns that on; this is the XXE decision, made once.
-- Attribute values are normalized as CDATA, because no attribute is typed.
-
-The parser keeps three internal function pointers where the DTD phase attaches
-(entity replacement text, attribute types, default attributes). They are NULL
-for every public parse, each is consulted at exactly one place, and
-`tests/test-xml-limits.cpp` checks both that NULL changes nothing and that a
-non-NULL one is honoured.
+External access is explicit: only a caller-supplied resolver may provide an
+external subset or external parameter entity. With access denied or no
+resolver, no external resource is opened. A resolver decline for a referenced external PE returns
+`GTEXT_XML_E_RESOLVER`; resolver read, cancellation, and budget failures return
+their corresponding operation status. A declined external subset is omitted
+without failing the document parse.
 
 ## Encodings
 
@@ -97,7 +93,7 @@ says `UTF-16` from `BOM`, and one declared `ISO-8859-1` says `ISO-8859-1` from
 | the labels `UTF-16LE`, `UTF-16BE`, `UTF-32LE`, `UTF-32BE` and aliases such as `UCS-2` or `latin1` (declined on purpose) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` at the label |
 | EBCDIC, by its first bytes; any other label (`windows-1252`, `Shift_JIS`, ...) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` (offset 0 for EBCDIC, the label otherwise) |
 | an XML declaration whose `encoding` is not an `EncName` | `GTEXT_XML_E_SYNTAX` |
-| a version other than 1.0 | `GTEXT_XML_E_UNSUPPORTED_VERSION` for `1.<digits>`, `GTEXT_XML_E_SYNTAX` for anything the production does not allow |
+| a version other than 1.0 or 1.1 | `GTEXT_XML_E_UNSUPPORTED_VERSION` for `1.<digits>`, `GTEXT_XML_E_SYNTAX` for anything the production does not allow |
 | bytes that are not UTF-8 | `GTEXT_XML_E_UTF8` |
 | UTF-8 that is not an XML character | `GTEXT_XML_E_CHARACTER` |
 
@@ -153,9 +149,9 @@ Each has a default from the first release; `0` in the options selects it, and
 
 The DTD counters bound source and declaration processing. External subsets
 are read only through the caller's resolver; the library does not open
-resources itself. It validates external-subset declarations and retains their
-syntax snapshot, but does not expand entity declarations or build effective
-DTD bindings. The snapshot preserves declarations, comments, and processing
+resources itself. It parses external-subset declarations against the DTD grammar and retains
+their syntax snapshot, but does not check document validity against those
+declarations or build effective DTD bindings. The snapshot preserves declarations, comments, and processing
 instructions in source order from included sections. It excludes the text
 declaration, conditional-section delimiters, and ignored-section contents.
 Snapshots are retained only for DOM parses; event-only parsing has no doctype
@@ -171,11 +167,25 @@ snapshot is empty. Every option can be overridden independently with a nonzero
 finite ceiling; zero selects the default, including in a zero-initialized
 options struct.
 
-In DTD processing mode, the caller may provide an external-subset resolver.
-External parameter-entity references are currently unsupported: encountering
-one in an external subset fails the parse with a DTD error. They are not
-silently ignored or fetched. Parameter-entity expansion belongs to a later DTD
-processing phase.
+In DTD processing mode, the caller may provide a resolver for external
+subsets and external parameter entities. The resolver receives the resource
+kind, public and system identifiers, the base URI of the active declaration
+source, and a bounded trail of active physical-source labels. The trail is empty
+for a top-level external subset and records nested parameter-entity ancestry
+for subsequent requests. The parser keeps the resolved source identity active while parsing, so
+recursive or aliased external PEs fail even when their system identifiers
+differ. A declined PE returns `GTEXT_XML_E_RESOLVER`; read, cancellation, and
+budget failures return their corresponding statuses. No resource is opened unless the
+caller enables external access and supplies the resolver.
+
+Internal-subset syntax remains available through
+`gtext_markup_doctype_syntax()`, and a resolved external-subset snapshot is
+available through `gtext_markup_doctype_external_syntax()`. Declarations
+parsed from parameter-entity replacement text are retained separately through
+`gtext_markup_doctype_generated_syntax()`. Each generated entry reports the
+physical source location and the lexical name of the PE frame that supplied
+it. These collections preserve parsed syntax; they do not compile effective
+DTD bindings.
 
 These defaults retain the 64 MiB document ceiling and bound additional work
 separately. The checked-in pinned XML conformance corpus occupies 17 MiB and

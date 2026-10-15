@@ -179,6 +179,11 @@ static GTEXT_Markup_Status clone_one(
           doctype->external_syntax[i].location.source_id);
       if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
     }
+    for (size_t i = 0; i < doctype->generated_syntax_count; i++) {
+      provenance_status = import_source(dst, src->doc,
+          doctype->generated_syntax[i].location.source_id);
+      if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+    }
   }
   if (src->kind == GTEXT_MARKUP_KIND_TEXT) {
     const markup_text * text = (const markup_text *)src;
@@ -262,6 +267,14 @@ static GTEXT_Markup_Status clone_one(
         remap_location(&where, dst, src->doc);
         status = markup_doctype_append_external_syntax(copy, item->kind,
             item->source, item->length, &where);
+      }
+      for (size_t i = 0; status == GTEXT_MARKUP_OK
+          && i < d->generated_syntax_count; i++) {
+        const markup_dtd_syntax * item = &d->generated_syntax[i];
+        GTEXT_Markup_Location where = item->location;
+        remap_location(&where, dst, src->doc);
+        status = markup_doctype_append_generated_syntax(copy, item->kind,
+            item->source, item->length, &where, item->parameter_entity);
       }
       if (status != GTEXT_MARKUP_OK && copy) gtext_markup_node_free(copy);
       break;
@@ -419,7 +432,8 @@ static bool node_equal(const node_t * a, const node_t * b) {
       if (!same_text(x->name, y->name) || !same_text(x->public_id, y->public_id)
           || !same_text(x->system_id, y->system_id)
           || x->syntax_count != y->syntax_count
-          || x->external_syntax_count != y->external_syntax_count) return false;
+          || x->external_syntax_count != y->external_syntax_count
+          || x->generated_syntax_count != y->generated_syntax_count) return false;
       for (size_t i = 0; i < x->syntax_count; i++) {
         const markup_dtd_syntax * p = &x->syntax[i];
         const markup_dtd_syntax * q = &y->syntax[i];
@@ -430,6 +444,13 @@ static bool node_equal(const node_t * a, const node_t * b) {
         const markup_dtd_syntax * p = &x->external_syntax[i];
         const markup_dtd_syntax * q = &y->external_syntax[i];
         if (p->kind != q->kind || !same_bytes(p->source, p->length,
+              q->source, q->length)) return false;
+      }
+      for (size_t i = 0; i < x->generated_syntax_count; i++) {
+        const markup_dtd_syntax * p = &x->generated_syntax[i];
+        const markup_dtd_syntax * q = &y->generated_syntax[i];
+        if (p->kind != q->kind || !same_text(p->parameter_entity,
+              q->parameter_entity) || !same_bytes(p->source, p->length,
               q->source, q->length)) return false;
       }
       return true;

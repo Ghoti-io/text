@@ -144,7 +144,7 @@ typedef enum {
                        ///< `<` in a script, a processing instruction, ...), or,
                        ///< with `xhtml_strict`, one with a tree-construction
                        ///< hazard. The result's message and path say which.
-  GTEXT_XML_E_UNSUPPORTED_MODE, ///< A requested processing mode is not
+  GTEXT_XML_E_UNSUPPORTED_MODE, ///< Requested DTD validation, which is not
                        ///< implemented by this library version.
   /* New statuses are appended to keep the values above source and ABI stable. */
   GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE, ///< One external source exceeded its byte budget.
@@ -192,8 +192,10 @@ typedef enum {
 } GTEXT_XML_External_Access;
 
 /** Resolver request metadata. Identifier strings are opaque and borrowed for
- *  the duration of the resolver callback. The trail is bounded by the parser
- *  and is empty for a top-level external subset. */
+ *  the duration of the resolver callback. base_uri is the active declaration
+ *  source's base URI. The bounded reference_trail contains labels for active
+ *  physical sources from outermost retained parent to innermost source; it is
+ *  empty for a top-level external subset. */
 typedef struct {
   GTEXT_XML_Resource_Kind kind;
   const char * public_id;

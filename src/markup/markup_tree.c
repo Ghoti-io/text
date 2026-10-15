@@ -148,12 +148,19 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
       markup_free(doc, d->system_id);
       for (size_t i = 0; i < d->syntax_count; i++) {
         markup_free(doc, d->syntax[i].source);
+        markup_free(doc, d->syntax[i].parameter_entity);
       }
       markup_free(doc, d->syntax);
       for (size_t i = 0; i < d->external_syntax_count; i++) {
         markup_free(doc, d->external_syntax[i].source);
+        markup_free(doc, d->external_syntax[i].parameter_entity);
       }
       markup_free(doc, d->external_syntax);
+      for (size_t i = 0; i < d->generated_syntax_count; i++) {
+        markup_free(doc, d->generated_syntax[i].source);
+        markup_free(doc, d->generated_syntax[i].parameter_entity);
+      }
+      markup_free(doc, d->generated_syntax);
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -612,6 +619,7 @@ GTEXT_Markup_Status markup_doctype_append_syntax(GTEXT_Markup_Node * node,
   item->source = copy;
   item->length = length;
   item->location = *location;
+  item->parameter_entity = NULL;
   return GTEXT_MARKUP_OK;
 }
 
@@ -642,6 +650,42 @@ GTEXT_Markup_Status markup_doctype_append_external_syntax(
   item->source = copy;
   item->length = length;
   item->location = *location;
+  item->parameter_entity = NULL;
+  return GTEXT_MARKUP_OK;
+}
+
+GTEXT_Markup_Status markup_doctype_append_generated_syntax(
+    GTEXT_Markup_Node * node, int kind, const char * source, size_t length,
+    const GTEXT_Markup_Location * location, const char * parameter_entity) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !source || !location
+      || !parameter_entity) return GTEXT_MARKUP_E_INVALID;
+  markup_doctype * d = (markup_doctype *)node;
+  if (d->generated_syntax_count == d->generated_syntax_capacity) {
+    size_t capacity = d->generated_syntax_capacity
+        ? d->generated_syntax_capacity * 2 : 8;
+    if (capacity < d->generated_syntax_capacity
+        || capacity > SIZE_MAX / sizeof(*d->generated_syntax))
+      return GTEXT_MARKUP_E_LIMIT;
+    markup_dtd_syntax * grown = markup_realloc(node->doc, d->generated_syntax,
+        capacity * sizeof(*d->generated_syntax));
+    if (!grown) return GTEXT_MARKUP_E_OOM;
+    d->generated_syntax = grown;
+    d->generated_syntax_capacity = capacity;
+  }
+  char * source_copy = markup_copy(node->doc, source, length);
+  char * entity_copy = markup_copy(node->doc, parameter_entity,
+      strlen(parameter_entity));
+  if (!source_copy || !entity_copy) {
+    markup_free(node->doc, source_copy);
+    markup_free(node->doc, entity_copy);
+    return GTEXT_MARKUP_E_OOM;
+  }
+  markup_dtd_syntax * item = &d->generated_syntax[d->generated_syntax_count++];
+  item->kind = kind;
+  item->source = source_copy;
+  item->length = length;
+  item->location = *location;
+  item->parameter_entity = entity_copy;
   return GTEXT_MARKUP_OK;
 }
 
@@ -904,6 +948,7 @@ bool gtext_markup_doctype_syntax(const GTEXT_Markup_Node * node, size_t index,
   out->source = item->source;
   out->source_length = item->length;
   out->location = item->location;
+  out->parameter_entity = item->parameter_entity;
   return true;
 }
 
@@ -923,6 +968,27 @@ bool gtext_markup_doctype_external_syntax(const GTEXT_Markup_Node * node,
   out->source = item->source;
   out->source_length = item->length;
   out->location = item->location;
+  out->parameter_entity = item->parameter_entity;
+  return true;
+}
+
+size_t gtext_markup_doctype_generated_syntax_count(
+    const GTEXT_Markup_Node * node) {
+  return node && node->kind == GTEXT_MARKUP_KIND_DOCTYPE
+      ? ((const markup_doctype *)node)->generated_syntax_count : 0;
+}
+
+bool gtext_markup_doctype_generated_syntax(const GTEXT_Markup_Node * node,
+    size_t index, GTEXT_Markup_DTD_Syntax * out) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !out) return false;
+  const markup_doctype * d = (const markup_doctype *)node;
+  if (index >= d->generated_syntax_count) return false;
+  const markup_dtd_syntax * item = &d->generated_syntax[index];
+  out->kind = (GTEXT_Markup_DTD_Syntax_Kind)item->kind;
+  out->source = item->source;
+  out->source_length = item->length;
+  out->location = item->location;
+  out->parameter_entity = item->parameter_entity;
   return true;
 }
 

@@ -38,7 +38,8 @@ extern "C" {
 /**
  * @brief Parse a whole XML document into a tree.
  *
- * The input is UTF-8 XML 1.0 with Namespaces in XML 1.0. What is built:
+ * The input is UTF-8 XML 1.0 or 1.1 with Namespaces in XML 1.0. The XML
+ * declaration selects the version; when absent, XML 1.0 applies. What is built:
  *
  * - **Elements** with their namespace URI, prefix and local name; a default
  *   namespace applies to elements and not to attributes. Namespace
@@ -46,18 +47,20 @@ extern "C" {
  *   (`xmlns="u"` is prefix NULL, local `xmlns`; `xmlns:p="u"` is prefix
  *   `xmlns`, local `p`), in source order with the others.
  * - **Text**, with references to the five predefined entities and to
- *   characters already expanded, and CR LF and lone CR already turned into LF.
- *   Adjacent character data is one node; a CDATA section is a node of its own,
- *   a comment and a processing instruction likewise. Whitespace outside the
- *   root element is not kept.
+ *   characters already expanded, and line endings normalized by the selected
+ *   XML version. Adjacent character data is one node; a CDATA section is a
+ *   node of its own, a comment and a processing instruction likewise.
+ *   Whitespace outside the root element is not kept.
  * - **Attribute values** normalized as for CDATA: each tab, line feed and
  *   carriage return, written literally, becomes a space; a character
  *   reference to one stays itself.
  * - **The document type** as a doctype node (name, public and system
- *   identifier). Its internal subset is **skipped, not processed**: a bounded
- *   scanner finds its true end, so a `]` inside a quoted literal or a comment
- *   does not end it, and an unterminated subset is an error. No declaration in
- *   it takes effect - not an entity, not a default attribute.
+ *   identifier). With DTD mode OFF, its internal subset is skipped by a
+ *   bounded scanner. With PROCESS, declarations are grammar-checked, parameter
+ *   entities expand in permitted contexts, and raw, external-subset, and
+ *   generated syntax are retained in separate ordered collections. Processing
+ *   is non-validating: it does not apply default attributes or expand general
+ *   entity references in document content.
  * - **The XML declaration** as the document's version, standalone flag and
  *   encoding label (see gtext_markup_document_xml_version() and
  *   gtext_markup_document_encoding()). With no declaration the version is NULL
@@ -67,26 +70,25 @@ extern "C" {
  *
  * The library never opens a file, URL or network connection for an external
  * identifier. In PROCESS mode only, a caller resolver may be invoked when
- * `external_access` is ALLOW; the resolver receives opaque identifiers and
- * the document base URI and supplies a synchronous chunked source. Resolver
- * callbacks may perform I/O and must enforce the application's allowlist.
- * Reads are charged before bytes are retained, and a successfully opened
- * source is closed exactly once on every path. At this implementation stage,
- * acquired external-subset bytes are not yet interpreted by the DTD grammar.
- * A reference to an entity other than the five predefined ones remains an
- * error (GTEXT_XML_E_ENTITY), whether or not the document type declares it.
+ * `external_access` is ALLOW; it receives opaque identifiers, the base URI of
+ * the active declaration source, and a bounded trail of active physical-source
+ * labels (empty for the top-level external subset). It supplies a synchronous
+ * chunked source. Resolver callbacks may perform I/O and must enforce the
+ * application's allowlist. Reads are charged before bytes are retained, and a
+ * successfully opened source is closed exactly once on every path. External
+ * subset declarations are parsed against the DTD grammar, but semantic DTD
+ * validity is not checked. Resolver decline for an external subset means it is
+ * omitted; a declined external parameter entity is GTEXT_XML_E_RESOLVER.
  *
  * `dtd_mode` is shared by memory, file, push and pull readers. `OFF` preserves
- * the behavior above. `PROCESS` selects non-validating DTD processing, but
- * this implementation stage does not process declarations; callers cannot
- * rely on declared entities or default attributes being applied. `VALIDATE`
- * returns GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external
- * policy defaults to DENY; SKIP is valid only with PROCESS and never grants
- * the library filesystem or network access. Once external entity processing
- * is implemented, SKIP preserves an unavailable referenced external entity as
- * an unresolved placeholder and emits a skipped-entity event; it does not
- * replace the reference with empty text. That behavior is not yet implemented
- * at this stage.
+ * the skipped-subset behavior above. `PROCESS` performs non-validating DTD
+ * declaration processing and parameter-entity expansion. General entity
+ * references beyond the five predefined entities remain errors until their
+ * processing story is implemented. `VALIDATE` returns
+ * GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external policy
+ * defaults to DENY; SKIP is valid only with PROCESS and never grants the
+ * library filesystem or network access. Placeholder and skipped-event
+ * behavior for unavailable external general entities is not implemented yet.
  *
  * **Encodings.** UTF-8 (a byte order mark is accepted and skipped), UTF-16 and
  * UTF-32 in either byte order (by their mark, or by the first bytes of
@@ -99,7 +101,7 @@ extern "C" {
  * and its source describe the original. A declared `encoding` naming another
  * family than the document is in is GTEXT_XML_E_ENCODING_MISMATCH, and bytes
  * that are not valid in the encoding are GTEXT_XML_E_INVALID_SEQUENCE. An XML
- * declaration with a version other than 1.0 returns
+ * declaration with a version other than 1.0 or 1.1 returns
  * GTEXT_XML_E_UNSUPPORTED_VERSION.
  *
  * @param data   The document. Need not be NUL-terminated and is not kept; may

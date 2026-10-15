@@ -181,10 +181,14 @@ typedef enum {
   XML_SOURCE_INTERNAL_ENTITY,
   XML_SOURCE_EXTERNAL_ENTITY,
   XML_SOURCE_PARAMETER_ENTITY,
+  XML_SOURCE_INTERNAL_PARAMETER_ENTITY,
   XML_SOURCE_EXTERNAL_SUBSET
 } xml_source_kind;
 
 enum { XML_SOURCE_GRAMMAR_CONTENT = 1 };
+#define XML_SOURCE_IS_PARAMETER_ENTITY(kind) \
+  ((kind) == XML_SOURCE_PARAMETER_ENTITY \
+      || (kind) == XML_SOURCE_INTERNAL_PARAMETER_ENTITY)
 
 /**
  * Heap frame for a physical XML source. The active parser cursor remains in
@@ -209,11 +213,36 @@ typedef struct {
   const void * identity;
   const char * base_uri; ///< Physical base for relative external identifiers.
   char * owned_name;
+  char * owned_bytes;
+  char * owned_decoded;
+  void (*external_close)(void *);
+  void * external_handle;
   uint32_t source_id;
   uint32_t reference_source_id;
   xml_version version;
   unsigned char suspended;
+  unsigned char external_source;
 } xml_source_frame;
+
+/** A parameter entity declaration encountered earlier in the DTD. */
+typedef struct {
+  char * name;
+  size_t name_length;
+  unsigned char * replacement;
+  size_t replacement_length;
+  char * public_id;
+  char * system_id;
+  unsigned char external;
+  const void * identity;
+} xml_parameter_entity;
+
+typedef struct {
+  GTEXT_XML_External_Source source;
+  markup_buf bytes;
+  xml_source_kind source_kind;
+  unsigned char opened;
+  unsigned char frame_pushed;
+} xml_resolved_resource;
 
 /** An attribute of the start tag being read. */
 typedef struct {
@@ -338,6 +367,13 @@ typedef struct {
   xml_source_frame * sources;
   size_t source_count;
   size_t source_capacity;
+  xml_parameter_entity * parameter_entities;
+  size_t parameter_entity_count;
+  size_t parameter_entity_capacity;
+  const char * dtd_generated_parameter_entity;
+  unsigned char * dtd_name_token;
+  size_t dtd_name_token_length;
+  size_t dtd_name_token_capacity;
   uint32_t next_source_id;
   char ** source_names; ///< Owned labels retained through parser/reader lifetime.
   size_t source_name_count;
@@ -449,10 +485,18 @@ void xml_source_free(xml_ctx * p);
  *  external-subset parser story. */
 GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
     GTEXT_Markup_Node * doctype, const char * public_id, const char * system_id);
+GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
+    GTEXT_XML_Resource_Kind resource_kind, xml_source_kind source_kind,
+    const char * source_name, const char * public_id, const char * system_id,
+    xml_resolved_resource * out);
+GTEXT_XML_Status xml_finish_external_resource(xml_ctx * p,
+    xml_resolved_resource * resource, GTEXT_XML_Status status);
 /** Parse a decoded external subset, whose source frame is currently active. */
 GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
     GTEXT_Markup_Node * doctype, const unsigned char * bytes, size_t length,
     const char * base_uri);
+GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
+    xml_resolved_resource * resource);
 int xml_stream_resolver_callback_active(const struct GTEXT_XML_Stream * stream);
 void xml_stream_note_resolver_reentry(struct GTEXT_XML_Stream * stream);
 
