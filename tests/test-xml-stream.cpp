@@ -991,6 +991,31 @@ TEST(XmlStream, NamespacesAreResolvedAsInTheTree) {
   EXPECT_EQ(bad.status, GTEXT_XML_E_NAMESPACE);
 }
 
+TEST(XmlStream, Xml11PrefixUndeclarationsMatchDomOneByteAtATime) {
+  const std::string valid =
+      "<?xml version='1.1'?><p:a xmlns:p='u'><b xmlns:p=''>"
+      "<c xmlns:p='v'><p:d/></c></b><p:f/></p:a>";
+  Parsed run;
+  run_stream(run, valid, Chunks{1});
+  ASSERT_EQ(run.status, GTEXT_XML_OK);
+  Dom dom;
+  run_dom(dom, valid);
+  expect_agrees("XML 1.1 prefix undeclare/rebind", run, dom);
+
+  for (const char * invalid : {
+           "<?xml version='1.1'?><p:a xmlns:p='u'><b xmlns:p=''><p:c/>"
+           "</b></p:a>",
+           "<?xml version='1.1'?><a xmlns:p='u'><b xmlns:p='' p:x='1'/>"
+           "</a>"}) {
+    Parsed failed;
+    run_stream(failed, invalid, Chunks{1});
+    Dom failed_dom;
+    run_dom(failed_dom, invalid);
+    expect_agrees("XML 1.1 unbound tombstone prefix", failed, failed_dom);
+    EXPECT_EQ(failed.status, GTEXT_XML_E_NAMESPACE);
+  }
+}
+
 // ---- generated documents, cut every way ------------------------------------
 
 TEST(XmlStream, GeneratedDocumentsGiveOneEventSequenceHoweverCut) {

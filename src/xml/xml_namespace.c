@@ -23,9 +23,9 @@
  *
  * Namespace scope for the XML parser.
  *
- * Namespaces in XML 1.0 (Third Edition): [4] NCName, [7] QName, the reserved
- * prefixes `xml` and `xmlns`, and the constraints "Prefix Declared", "No Prefix
- * Undeclaring", "Reserved Prefixes and Namespace Names".
+ * Namespaces in XML 1.0 and 1.1: [4] NCName, [7] QName, the reserved
+ * prefixes `xml` and `xmlns`, and the constraints "Prefix Declared", prefix
+ * undeclaration, and "Reserved Prefixes and Namespace Names".
  *
  * The scope is a stack of declarations. An element remembers the height of the
  * stack when it opened and drops back to it when it closes, so a declaration is
@@ -88,8 +88,10 @@ GTEXT_XML_Status xml_scope_declare(xml_ctx * p, const char * prefix,
         "the xmlns namespace cannot be declared", where);
   }
   if (prefix_length > 0 && uri_length == 0) {
-    return xml_fail_at(p, GTEXT_XML_E_NAMESPACE,
-        "a prefix cannot be undeclared (Namespaces in XML 1.0)", where);
+    if (p->version != XML_VERSION_11) {
+      return xml_fail_at(p, GTEXT_XML_E_NAMESPACE,
+          "a prefix cannot be undeclared (Namespaces in XML 1.0)", where);
+    }
   }
   if (p->binding_count >= p->max_namespaces) {
     return xml_fail_at(p, GTEXT_XML_E_LIMIT_NAMESPACES,
@@ -124,6 +126,12 @@ int xml_scope_lookup(const xml_ctx * p, const char * prefix,
     if (b->prefix_length == prefix_length
         && memcmp(b->data, prefix, prefix_length) == 0) {
       *uri = b->uri_length ? b->data + b->prefix_length + 1 : NULL;
+      /* An empty default namespace is a valid "no namespace" binding. An
+         empty prefixed binding is an XML 1.1 tombstone: it shadows ancestors
+         but the prefix is unbound for name resolution. */
+      if (prefix_length > 0 && b->uri_length == 0) {
+        return 0;
+      }
       return 1;
     }
   }

@@ -723,6 +723,20 @@ TEST_F(XmlParse, NamespaceDeclarationsAndScope) {
     ASSERT_EQ(gtext_markup_element_attribute_at(a, i, &at), GTEXT_MARKUP_OK);
     EXPECT_STREQ(at.local, order[i]) << i;
   }
+
+  // XML 1.1 prefix undeclaration shadows the outer binding through its
+  // element, permits a descendant rebind, and restores the ancestor on exit.
+  EXPECT_EQ(tree("<?xml version='1.1'?><p:a xmlns:p='u'><b xmlns:p=''>"
+                 "<c xmlns:p='v'><p:d/></c></b><p:f/></p:a>"),
+      "#document\n"
+      "  <{u}p:a>\n"
+      "    @{http://www.w3.org/2000/xmlns/}xmlns:p=\"u\"\n"
+      "    <b>\n"
+      "      @{http://www.w3.org/2000/xmlns/}xmlns:p=\"\"\n"
+      "      <c>\n"
+      "        @{http://www.w3.org/2000/xmlns/}xmlns:p=\"v\"\n"
+      "        <{v}p:d>\n"
+      "    <{u}p:f>\n");
 }
 
 TEST_F(XmlParse, NamespaceErrors) {
@@ -740,6 +754,17 @@ TEST_F(XmlParse, NamespaceErrors) {
   expect_error("<a xmlns:xml=\"u\"/>", GTEXT_XML_E_NAMESPACE, 3, 1, 4);
   expect_error("<xmlns:a xmlns:xmlns2=\"u\"/>", GTEXT_XML_E_NAMESPACE, 1, 1, 2);
   expect_error("<a xmlns:p=\"\"/>", GTEXT_XML_E_NAMESPACE, 3, 1, 4);
+  EXPECT_EQ(parse("<?xml version='1.1'?><p:a xmlns:p='u'><b xmlns:p=''><p:c/>"
+                  "</b></p:a>").status, GTEXT_XML_E_NAMESPACE);
+  EXPECT_EQ(parse("<?xml version='1.1'?><a xmlns:p='u'><b xmlns:p='' p:x='1'/>"
+                  "</a>").status, GTEXT_XML_E_NAMESPACE);
+  // The XML 1.1 undeclaration support does not relax reserved bindings or
+  // duplicate-expanded-name checks.
+  EXPECT_EQ(parse("<?xml version='1.1'?><a xmlns:xml='u'/>").status,
+      GTEXT_XML_E_NAMESPACE);
+  EXPECT_EQ(parse("<?xml version='1.1'?><a xmlns:p='u' xmlns:q='u' "
+                  "p:x='1' q:x='2'/>").status,
+      GTEXT_XML_E_DUPLICATE_ATTRIBUTE);
   // Not a QName: two colons, a colon at either end, a bad local part.
   expect_error("<a:b:c/>", GTEXT_XML_E_NAMESPACE, 1, 1, 2);
   expect_error("<:a/>", GTEXT_XML_E_NAMESPACE, 1, 1, 2);
