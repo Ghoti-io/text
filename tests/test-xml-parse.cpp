@@ -246,6 +246,10 @@ TEST_F(XmlParse, DtdProcessingRejectsMalformedInternalDeclarations) {
   EXPECT_EQ(nested.status, GTEXT_XML_OK) << nested.err.message;
   Result one_item_sequence = parse("<!DOCTYPE a [<!ELEMENT a (x)>]><a/>", &options);
   EXPECT_EQ(one_item_sequence.status, GTEXT_XML_OK) << one_item_sequence.err.message;
+  Result optional_particle = parse("<!DOCTYPE a [<!ELEMENT a (x)? >]><a/>", &options);
+  EXPECT_EQ(optional_particle.status, GTEXT_XML_OK) << optional_particle.err.message;
+  Result repeated_sequence = parse("<!DOCTYPE a [<!ELEMENT a (x,y)* >]><a/>", &options);
+  EXPECT_EQ(repeated_sequence.status, GTEXT_XML_OK) << repeated_sequence.err.message;
 }
 
 TEST_F(XmlParse, DtdProcessingAcceptsEmptyAttlistAndPcdataStar) {

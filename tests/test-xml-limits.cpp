@@ -324,6 +324,8 @@ TEST(XmlLimits, ReferenceAndDeclarationBudgetsAreChargedAtUse) {
       GTEXT_XML_OK);
   EXPECT_EQ(parse_with("<!DOCTYPE a [<!ENTITY e '&amp;&#65;'>]><a/>", o),
       GTEXT_XML_E_LIMIT_REFERENCES);
+  EXPECT_EQ(parse_with("<!DOCTYPE a [<!ENTITY e '%p;%q;'>]><a/>", o),
+      GTEXT_XML_E_LIMIT_REFERENCES);
   EXPECT_EQ(parse_with("<!DOCTYPE a [<!ATTLIST a x CDATA '&amp;'>]><a/>", o),
       GTEXT_XML_OK);
   EXPECT_EQ(parse_with("<!DOCTYPE a [<!ATTLIST a x CDATA '&amp;&#65;'>]><a/>", o),
