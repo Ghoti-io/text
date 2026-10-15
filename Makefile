@@ -1114,6 +1114,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/xml/xml_namespace.c \
 	src/xml/xml_parser.c \
 	src/xml/xml_reader.c \
+	src/xml/xml_source.c \
 	src/xml/xml_stream.c \
 	src/xml/xml_writer.c
 

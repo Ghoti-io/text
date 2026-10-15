@@ -178,8 +178,15 @@ static const unsigned char kEmpty[1] = {0};
 /* ---- Small things ------------------------------------------------------- */
 
 static void refresh(GTEXT_XML_Stream * s) {
-  s->p.in = s->input.data ? (const unsigned char *)s->input.data : kEmpty;
-  s->p.length = s->input.length;
+  if (s->p.source_count > 1) {
+    const xml_source_frame * f = &s->p.sources[s->p.source_count - 1];
+    s->p.in = f->bytes ? f->bytes : kEmpty;
+    s->p.length = f->length;
+  }
+  else {
+    s->p.in = s->input.data ? (const unsigned char *)s->input.data : kEmpty;
+    s->p.length = s->input.length;
+  }
 }
 
 static size_t available(const GTEXT_XML_Stream * s) {
@@ -513,7 +520,7 @@ static GTEXT_XML_Status run_reference(xml_ctx * p) {
    attempt is undone, and the scan will not be trusted again until the end. Any
    other status is the verdict. */
 static GTEXT_XML_Status attempt(
-    GTEXT_XML_Stream * s, lexer_fn fn, int * done) {
+    GTEXT_XML_Stream * s, lexer_fn fn, int * done, int source_complete) {
   xml_ctx * p = &s->p;
   const size_t pos = p->pos;
   const size_t line = p->line;
@@ -525,7 +532,8 @@ static GTEXT_XML_Status attempt(
     s->scan.kind = SC_NONE;
     return GTEXT_XML_OK;
   }
-  if (!s->final && !s->stopped && p->err.code == GTEXT_XML_E_UNEXPECTED_EOF) {
+  if (!s->final && !source_complete && !s->stopped
+      && p->err.code == GTEXT_XML_E_UNEXPECTED_EOF) {
     p->pos = pos;
     p->line = line;
     p->column = column;
@@ -542,12 +550,13 @@ static GTEXT_XML_Status attempt(
    yet, say so. */
 static GTEXT_XML_Status construct(GTEXT_XML_Stream * s, scan_kind kind,
     lexer_fn fn, int * progress) {
+  const int source_complete = s->p.source_count > 1;
   scan_begin(s, kind);
-  if (!s->final && !s->eager && !scan_ready(s)) {
+  if (!s->final && !s->eager && !scan_ready(s) && !source_complete) {
     return GTEXT_XML_OK;
   }
   int done = 0;
-  const GTEXT_XML_Status status = attempt(s, fn, &done);
+  const GTEXT_XML_Status status = attempt(s, fn, &done, source_complete);
   *progress = done;
   return status;
 }
@@ -593,7 +602,7 @@ static GTEXT_XML_Status step_declaration(GTEXT_XML_Stream * s, int * progress) {
       return GTEXT_XML_OK;
     }
     int done = 0;
-    const GTEXT_XML_Status status = attempt(s, run_declaration, &done);
+    const GTEXT_XML_Status status = attempt(s, run_declaration, &done, 0);
     if (status != GTEXT_XML_OK || !done) {
       return status;
     }
@@ -708,6 +717,19 @@ static size_t text_safe_end(const GTEXT_XML_Stream * s) {
 static GTEXT_XML_Status step_content(GTEXT_XML_Stream * s, int * progress) {
   xml_ctx * p = &s->p;
   if (available(s) == 0) {
+    if (p->source_count > 1) {
+      GTEXT_XML_Status status = xml_flush_text(p);
+      if (status == GTEXT_XML_OK) {
+        status = xml_source_pop(p);
+      }
+      if (status != GTEXT_XML_OK) {
+        return status;
+      }
+      refresh(s);
+      s->scan.kind = SC_NONE;
+      *progress = 1;
+      return GTEXT_XML_OK;
+    }
     if (!s->final) {
       return GTEXT_XML_OK;
     }
@@ -1169,6 +1191,12 @@ static size_t limit_or(size_t given, size_t fallback) {
 GTEXT_API GTEXT_XML_Stream * gtext_xml_stream_new(
     const GTEXT_XML_Parse_Options * opts, GTEXT_XML_Event_cb callback,
     void * user_data) {
+  return xml_stream_new_with_seams(opts, callback, user_data, NULL);
+}
+
+GTEXT_INTERNAL_API GTEXT_XML_Stream * xml_stream_new_with_seams(
+    const GTEXT_XML_Parse_Options * opts, GTEXT_XML_Event_cb callback,
+    void * user_data, const xml_seams * seams) {
   if (!callback) {
     return NULL;
   }
@@ -1203,8 +1231,12 @@ GTEXT_API GTEXT_XML_Stream * gtext_xml_stream_new(
       limit_or(use.max_attribute_bytes, XML_DEFAULT_MAX_ATTRIBUTE_BYTES);
   p->max_name_bytes = limit_or(use.max_name_bytes, XML_DEFAULT_MAX_NAME_BYTES);
   p->max_namespaces = limit_or(use.max_namespaces, XML_DEFAULT_MAX_NAMESPACES);
+  p->max_source_depth = XML_DEFAULT_MAX_SOURCE_DEPTH;
   p->dtd_mode = use.dtd_mode;
   p->dtd_external_policy = use.dtd_external_policy;
+  if (seams) {
+    p->seams = *seams;
+  }
   const size_t max_nodes = limit_or(use.max_nodes, XML_DEFAULT_MAX_NODES);
   s->max_nodes = max_nodes == SIZE_MAX ? 0 : max_nodes;
   s->nodes = 1; /* the document node */
@@ -1215,6 +1247,10 @@ GTEXT_API GTEXT_XML_Stream * gtext_xml_stream_new(
   markup_buf_init(&p->attr_pool, &s->allocator);
   markup_buf_init(&p->scratch, &s->allocator);
   markup_buf_init(&p->names, &s->allocator);
+  if (xml_source_init(p, p->in) != GTEXT_XML_OK) {
+    gtext_xml_stream_free(s);
+    return NULL;
+  }
   return s;
 }
 
@@ -1236,6 +1272,7 @@ GTEXT_API void gtext_xml_stream_free(GTEXT_XML_Stream * s) {
   xml_hset_free(p, &p->raw_names);
   xml_hset_free(p, &p->expanded_names);
   xml_scope_free(p);
+  xml_source_free(p);
   GTEXT_Allocator allocator = s->allocator;
   gtext_allocator_free(&allocator, s);
 }

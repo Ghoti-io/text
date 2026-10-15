@@ -551,6 +551,33 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
   const char * name = (const char *)in + i;
   const char * replacement = NULL;
   size_t replacement_length = 0;
+  const void * source_identity = NULL;
+  const void * source_bytes = NULL;
+  size_t source_length = 0;
+  const int predefined = (length == 2 &&
+          (memcmp(name, "lt", 2) == 0 || memcmp(name, "gt", 2) == 0))
+      || (length == 3 && memcmp(name, "amp", 3) == 0)
+      || (length == 4 &&
+          (memcmp(name, "apos", 4) == 0 || memcmp(name, "quot", 4) == 0));
+  const int parsed_source = p->dtd_mode == GTEXT_XML_DTD_PROCESS
+      && !predefined && buf == &p->text
+      && p->seams.open_entity_source
+      && p->seams.open_entity_source(p->seams.user, name, length,
+          &source_identity, &source_bytes, &source_length);
+  if (parsed_source) {
+    const GTEXT_XML_Status flushed = xml_flush_text(p);
+    if (flushed != GTEXT_XML_OK) {
+      return flushed;
+    }
+    xml_consume(p, end + 1 - p->pos);
+    const GTEXT_XML_Status pushed = xml_source_push(p,
+        XML_SOURCE_INTERNAL_ENTITY, source_identity, source_bytes, source_length);
+    if (pushed != GTEXT_XML_OK) {
+      return xml_fail_at(p, pushed,
+          "could not enter parsed entity source", &at);
+    }
+    return GTEXT_XML_OK;
+  }
   if (length == 2 && memcmp(name, "lt", 2) == 0) {
     replacement = "<";
   }

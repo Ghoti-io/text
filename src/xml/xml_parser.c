@@ -852,6 +852,11 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
 
 GTEXT_XML_Status xml_parse_end_tag(xml_ctx * p) {
   const GTEXT_Markup_Location at = xml_here(p);
+  if (p->source_count > 1
+      && p->frame_count <= p->sources[p->source_count - 1].entry_element_depth) {
+    return xml_fail_at(p, GTEXT_XML_E_MISMATCHED_TAG,
+        "an entity source cannot close an element opened by its parent source", &at);
+  }
   xml_consume(p, 2); /* "</" */
   size_t length = 0;
   GTEXT_XML_Status status = xml_scan_name(p, &length);
@@ -891,6 +896,17 @@ static GTEXT_XML_Status parse_element(xml_ctx * p) {
   }
   while (p->frame_count > 0) {
     if (p->pos >= p->length) {
+      if (p->source_count > 1) {
+        status = xml_flush_text(p);
+        if (status != GTEXT_XML_OK) {
+          return status;
+        }
+        status = xml_source_pop(p);
+        if (status != GTEXT_XML_OK) {
+          return status;
+        }
+        continue;
+      }
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "the input ended inside an element");
     }
@@ -1154,6 +1170,10 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  status = xml_source_init(p, p->in);
+  if (status != GTEXT_XML_OK) {
+    return status;
+  }
   xml_probe_xml11_declaration(p);
   int declared = 0;
   if (xml_looking_at(p, "<?xml", 5) && p->pos + 5 < p->length
@@ -1217,6 +1237,7 @@ static void cleanup(xml_ctx * p) {
   xml_hset_free(p, &p->raw_names);
   xml_hset_free(p, &p->expanded_names);
   xml_scope_free(p);
+  xml_source_free(p);
 }
 
 GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
@@ -1261,6 +1282,7 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
       limit_or(use.max_attribute_bytes, XML_DEFAULT_MAX_ATTRIBUTE_BYTES);
   p.max_name_bytes = limit_or(use.max_name_bytes, XML_DEFAULT_MAX_NAME_BYTES);
   p.max_namespaces = limit_or(use.max_namespaces, XML_DEFAULT_MAX_NAMESPACES);
+  p.max_source_depth = XML_DEFAULT_MAX_SOURCE_DEPTH;
   p.dtd_mode = use.dtd_mode;
   p.dtd_external_policy = use.dtd_external_policy;
   if (seams) {

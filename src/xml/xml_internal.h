@@ -50,6 +50,7 @@
 
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/xml.h>
+#include <ghoti.io/text/xml/xml_stream.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -68,6 +69,7 @@ extern "C" {
 #define XML_DEFAULT_MAX_NAME_BYTES ((size_t)8192)
 #define XML_DEFAULT_MAX_NODES ((size_t)10000000)
 #define XML_DEFAULT_MAX_NAMESPACES ((size_t)256)
+#define XML_DEFAULT_MAX_SOURCE_DEPTH ((size_t)64)
 #define XML_WRITE_DEFAULT_MAX_DEPTH ((size_t)256)
 #define XML_WRITE_DEFAULT_MAX_OUTPUT ((size_t)256 * 1024 * 1024)
 
@@ -127,6 +129,16 @@ typedef struct {
    *  data; zero for "not declared", which is an error. */
   int (*resolve_entity)(void * user, const char * name, size_t name_length,
       const char ** text, size_t * length);
+  /**
+   * Test/internal seam for a parsed replacement source. A successful callback
+   * returns borrowed UTF-8 replacement bytes and a non-NULL stable identity.
+   * Identity values must uniquely identify sources among active expansions so
+   * recursive inclusion can be detected. The bytes and identity storage must
+   * remain valid until the corresponding source frame is popped.
+   */
+  int (*open_entity_source)(void * user, const char * name,
+      size_t name_length, const void ** identity, const void ** bytes,
+      size_t * length);
   /** Non-zero if the attribute is declared with a tokenized type, so that its
    *  value is normalized further (runs of spaces collapse, the ends trim). */
   int (*attribute_type)(void * user, const char * element, size_t element_length,
@@ -155,6 +167,41 @@ typedef struct {
   size_t name_offset;  ///< Event parsing: where the name is kept, in `names`,
                        ///< because the input it was read from is not kept.
 } xml_frame;
+
+/** Physical input kinds understood by the shared parser. */
+typedef enum {
+  XML_SOURCE_DOCUMENT = 0,
+  XML_SOURCE_INTERNAL_ENTITY,
+  XML_SOURCE_EXTERNAL_ENTITY,
+  XML_SOURCE_PARAMETER_ENTITY,
+  XML_SOURCE_EXTERNAL_SUBSET
+} xml_source_kind;
+
+enum { XML_SOURCE_GRAMMAR_CONTENT = 1 };
+
+/**
+ * Heap frame for a physical XML source. The active parser cursor remains in
+ * xml_ctx for compatibility with the lexer; a suspended parent frame records
+ * its cursor and grammar boundary so push/pop never recurse in C.
+ * `bytes` are borrowed until pop (resolver ownership is added with the resolver
+ * API); identity is a stable opaque value supplied by the caller/test seam.
+ */
+typedef struct {
+  const unsigned char * bytes;
+  size_t length;
+  size_t pos;
+  size_t base;
+  size_t line;
+  size_t column;
+  uint32_t cursor_previous;
+  size_t entry_element_depth;
+  size_t entry_binding_count;
+  unsigned int grammar_context;
+  xml_source_kind kind;
+  const void * identity;
+  xml_version version;
+  unsigned char suspended;
+} xml_source_frame;
 
 /** An attribute of the start tag being read. */
 typedef struct {
@@ -209,6 +256,7 @@ typedef struct {
   size_t max_attribute_bytes;
   size_t max_name_bytes;
   size_t max_namespaces;
+  size_t max_source_depth;
 
   GTEXT_Markup_Document * doc;       ///< NULL when parsing events.
   const GTEXT_Allocator * allocator; ///< The document's copy.
@@ -255,6 +303,10 @@ typedef struct {
   xml_binding * bindings;
   size_t binding_count;
   size_t binding_capacity;
+
+  xml_source_frame * sources;
+  size_t source_count;
+  size_t source_capacity;
 } xml_ctx;
 
 /**
@@ -336,6 +388,13 @@ GTEXT_XML_Status xml_from_markup(xml_ctx * p, GTEXT_Markup_Status status);
 
 /** Move the cursor over `n` bytes that have already been validated. */
 void xml_consume(xml_ctx * p, size_t n);
+
+/** Initialize, push, or pop one physical source on the bounded heap stack. */
+GTEXT_XML_Status xml_source_init(xml_ctx * p, const void * identity);
+GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
+    const void * identity, const void * bytes, size_t length);
+GTEXT_XML_Status xml_source_pop(xml_ctx * p);
+void xml_source_free(xml_ctx * p);
 
 /** Result of decoding one character. */
 typedef enum {
@@ -543,6 +602,10 @@ GTEXT_INTERNAL_API void xml_stream_set_eager(struct GTEXT_XML_Stream * stream, i
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_parse_with_seams(const void * data,
     size_t len, const GTEXT_XML_Parse_Options * opts, const xml_seams * seams,
     GTEXT_Markup_Document ** out, GTEXT_XML_Error * err);
+
+GTEXT_INTERNAL_API struct GTEXT_XML_Stream * xml_stream_new_with_seams(
+    const GTEXT_XML_Parse_Options * options, GTEXT_XML_Event_cb callback,
+    void * user_data, const xml_seams * seams);
 
 /** Validate public mode options before an input source is consumed. */
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_validate_dtd_options(

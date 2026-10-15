@@ -34,6 +34,7 @@
  */
 
 #include <cstring>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -496,10 +497,75 @@ size_t defaults_stub(void *, const char * element, size_t element_length,
   return 0;
 }
 
-std::string parse_dump(const std::string & text, const xml_seams * seams, GTEXT_XML_Status * status) {
+int parsed_source_stub(void *, const char * name, size_t length,
+    const void ** identity, const void ** bytes, size_t * source_length) {
+  static const char replacement[] = "<b>&n;</b><c/>";
+  static const char nested[] = "deep";
+  if (length == 1 && name[0] == 'e') {
+    *identity = replacement;
+    *bytes = replacement;
+    *source_length = sizeof(replacement) - 1;
+    return 1;
+  }
+  if (length == 1 && name[0] == 'n') {
+    *identity = nested;
+    *bytes = nested;
+    *source_length = sizeof(nested) - 1;
+    return 1;
+  }
+  return 0;
+}
+
+int predefined_source_stub(void * user, const char *, size_t,
+    const void ** identity, const void ** bytes, size_t * source_length) {
+  ++*static_cast<size_t *>(user);
+  static const char replacement[] = "<b/>";
+  *identity = replacement;
+  *bytes = replacement;
+  *source_length = sizeof(replacement) - 1;
+  return 1;
+}
+
+struct DepthEntitySources {
+  char identities[64]{};
+  char replacements[65][8]{};
+};
+
+void init_depth_entity_sources(DepthEntitySources * sources) {
+  for (size_t i = 0; i < 64; ++i) {
+    if (i == 63) {
+      std::strcpy(sources->replacements[i], "terminal");
+    }
+    else {
+      std::snprintf(sources->replacements[i], sizeof(sources->replacements[i]),
+          "&e%zu;", i + 1);
+    }
+  }
+}
+
+int open_depth_entity_source(void * user, const char * name, size_t length,
+    const void ** identity, const void ** bytes, size_t * source_length) {
+  if (length < 2 || name[0] != 'e') return 0;
+  size_t index = 0;
+  for (size_t i = 1; i < length; ++i) {
+    if (name[i] < '0' || name[i] > '9') return 0;
+    const size_t digit = static_cast<size_t>(name[i] - '0');
+    if (index > (63 - digit) / 10) return 0;
+    index = index * 10 + digit;
+  }
+  if (index >= 64) return 0;
+  auto * sources = static_cast<DepthEntitySources *>(user);
+  *identity = &sources->identities[index];
+  *bytes = sources->replacements[index];
+  *source_length = std::strlen(sources->replacements[index]);
+  return 1;
+}
+
+std::string parse_dump(const std::string & text, const xml_seams * seams,
+    GTEXT_XML_Status * status, const GTEXT_XML_Parse_Options * options = nullptr) {
   Doc * doc = nullptr;
   GTEXT_XML_Error err;
-  *status = xml_parse_with_seams(text.data(), text.size(), nullptr, seams, &doc, &err);
+  *status = xml_parse_with_seams(text.data(), text.size(), options, seams, &doc, &err);
   if (*status != GTEXT_XML_OK) {
     return "";
   }
@@ -595,6 +661,197 @@ TEST(XmlSeams, DefaultAttributesAreAddedWhenAbsent) {
   const std::string text = "<a xmlns:p=\"u\" x=\"1\"/>";
   EXPECT_EQ(xml_parse_with_seams(text.data(), text.size(), &o, &seams, &doc, nullptr),
       GTEXT_XML_E_LIMIT_ATTRIBUTES);
+}
+
+TEST(XmlSourceStack, PushPopRestoresTheParentCursorAndGrammarContext) {
+  xml_ctx p{};
+  const GTEXT_Allocator * allocator = gtext_allocator_default();
+  p.allocator = allocator;
+  p.max_source_depth = 3;
+  static const unsigned char parent[] = "<root>";
+  static const unsigned char child[] = "text";
+  p.in = parent;
+  p.length = sizeof(parent) - 1;
+  p.pos = 2;
+  p.line = 4;
+  p.column = 3;
+  p.cursor_previous = 'o';
+  p.version = XML_VERSION_10;
+  p.frame_count = 1;
+  ASSERT_EQ(xml_source_init(&p, parent), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, child, child,
+                sizeof(child) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(p.in, child);
+  EXPECT_EQ(p.pos, 0u);
+  EXPECT_EQ(p.line, 1u);
+  EXPECT_EQ(p.column, 1u);
+  EXPECT_EQ(p.source_count, 2u);
+
+  p.pos = 4;
+  p.version = XML_VERSION_11;
+  ASSERT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  EXPECT_EQ(p.in, parent);
+  EXPECT_EQ(p.length, sizeof(parent) - 1);
+  EXPECT_EQ(p.pos, 2u);
+  EXPECT_EQ(p.line, 4u);
+  EXPECT_EQ(p.column, 3u);
+  EXPECT_EQ(p.cursor_previous, static_cast<uint32_t>('o'));
+  EXPECT_EQ(p.version, XML_VERSION_10);
+  EXPECT_EQ(p.source_count, 1u);
+  xml_source_free(&p);
+}
+
+TEST(XmlSourceStack, RejectsPhysicalNestingAndTheBound) {
+  xml_ctx p{};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 2;
+  static const unsigned char root[] = "document";
+  static const unsigned char entity[] = "replacement";
+  static const unsigned char deep[] = "deep";
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, entity,
+                sizeof(entity) - 1), GTEXT_XML_OK);
+  p.frame_count = 1;
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_E_MISMATCHED_TAG);
+  p.frame_count = 0;
+  ASSERT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  // The parser preserves its first error; clear it here because the second
+  // half isolates the independent depth-limit outcome.
+  std::memset(&p.err, 0, sizeof(p.err));
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity, entity,
+                sizeof(entity) - 1), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, deep, deep,
+                sizeof(deep) - 1), GTEXT_XML_E_LIMIT_DEPTH);
+  xml_source_free(&p);
+}
+
+TEST(XmlSourceStack, RejectsMissingIdentityAndInvalidBytes) {
+  xml_ctx p{};
+  p.allocator = gtext_allocator_default();
+  p.max_source_depth = 2;
+  static const unsigned char root[] = "document";
+  static const unsigned char entity[] = "replacement";
+  p.in = root;
+  p.length = sizeof(root) - 1;
+  ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, nullptr,
+                entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity,
+                nullptr, 1), GTEXT_XML_E_INVALID);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_INTERNAL_ENTITY, entity,
+                nullptr, 0), GTEXT_XML_OK);
+  EXPECT_NE(p.in, nullptr);
+  EXPECT_EQ(xml_source_pop(&p), GTEXT_XML_OK);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, entity,
+                entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
+  EXPECT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_SUBSET, entity,
+                entity, sizeof(entity) - 1), GTEXT_XML_E_INVALID);
+  xml_source_free(&p);
+}
+
+TEST(XmlSourceStack, DomParsesNestedMarkupAndResumesTheParent) {
+  xml_seams seams{};
+  seams.open_entity_source = parsed_source_stub;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  const std::string tree = parse_dump("<!DOCTYPE a><a>left&e;right</a>",
+      &seams, &status, &options);
+  EXPECT_EQ(status, GTEXT_XML_OK);
+  EXPECT_EQ(tree,
+      "#document\n  <!DOCTYPE \"a\" - ->\n  <a>\n    \"left\"\n    <b>\n      \"deep\"\n    <c>\n    \"right\"\n");
+}
+
+TEST(XmlSourceStack, CompletedEntityIdentityCanBeEnteredAgain) {
+  xml_seams seams{};
+  seams.open_entity_source = parsed_source_stub;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  const std::string tree = parse_dump("<a>&e;&e;</a>", &seams, &status, &options);
+  EXPECT_EQ(status, GTEXT_XML_OK);
+  EXPECT_EQ(tree,
+      "#document\n  <a>\n    <b>\n      \"deep\"\n    <c>\n"
+      "    <b>\n      \"deep\"\n    <c>\n");
+}
+
+TEST(XmlSourceStack, DomEnforcesTheDefaultNestedSourceDepth) {
+  DepthEntitySources sources;
+  init_depth_entity_sources(&sources);
+  xml_seams seams{};
+  seams.open_entity_source = open_depth_entity_source;
+  seams.user = &sources;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc * doc = nullptr;
+  const std::string input = "<a>&e0;</a>";
+  EXPECT_EQ(xml_parse_with_seams(input.data(), input.size(), &options, &seams,
+                &doc, nullptr), GTEXT_XML_E_LIMIT_DEPTH);
+  EXPECT_EQ(doc, nullptr);
+}
+
+TEST(XmlSourceStack, ParsedSourceSeamCannotReplacePredefinedEntities) {
+  size_t calls = 0;
+  xml_seams seams{};
+  seams.open_entity_source = predefined_source_stub;
+  seams.user = &calls;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  EXPECT_EQ(parse_dump("<a>&lt;</a>", &seams, &status, &options),
+      "#document\n  <a>\n    \"<\"\n");
+  EXPECT_EQ(status, GTEXT_XML_OK);
+  EXPECT_EQ(calls, 0u);
+
+  EXPECT_EQ(parse_dump("<a>&e;</a>", &seams, &status), "");
+  EXPECT_EQ(status, GTEXT_XML_E_ENTITY);
+  EXPECT_EQ(calls, 0u);
+}
+
+TEST(XmlSourceStack, DomRejectsEntityBoundaryCrossingsAndCycles) {
+  static const char closes_parent[] = "</a>";
+  static const char opens_child[] = "<b>";
+  struct BadSource { const char * bytes; };
+  auto bad_source = [](void * user, const char * name, size_t length,
+                        const void ** identity, const void ** bytes,
+                        size_t * source_length) -> int {
+    if (length != 1 || name[0] != 'e') return 0;
+    const auto * source = static_cast<BadSource *>(user);
+    *identity = source->bytes;
+    *bytes = source->bytes;
+    *source_length = std::strlen(source->bytes);
+    return 1;
+  };
+  for (const char * source : {closes_parent, opens_child}) {
+    BadSource user{source};
+    xml_seams seams{};
+    seams.open_entity_source = bad_source;
+    seams.user = &user;
+    GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+    options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    Doc * doc = nullptr;
+    const std::string input = "<!DOCTYPE a><a>&e;</a>";
+    GTEXT_XML_Error err;
+    const GTEXT_XML_Status status = xml_parse_with_seams(input.data(), input.size(),
+        &options, &seams, &doc, &err);
+    EXPECT_EQ(status, GTEXT_XML_E_MISMATCHED_TAG);
+    EXPECT_EQ(doc, nullptr);
+  }
+
+  static const char recursive[] = "<b>&e;</b>";
+  BadSource user{recursive};
+  xml_seams seams{};
+  seams.open_entity_source = bad_source;
+  seams.user = &user;
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc * doc = nullptr;
+  const std::string input = "<!DOCTYPE a><a>&e;</a>";
+  EXPECT_EQ(xml_parse_with_seams(input.data(), input.size(), &options,
+                &seams, &doc, nullptr), GTEXT_XML_E_ENTITY);
+  EXPECT_EQ(doc, nullptr);
 }
 
 }  // namespace
