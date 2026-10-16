@@ -29,10 +29,14 @@
  *
  * ## The contract
  *
- * For every tree the writer accepts, `gtext_xml_parse(write(tree))` gives back
- * a tree equal to it (gtext_markup_equal(); locations are not compared), and
- * writing that tree again gives the same bytes. The two exceptions are the
- * ones XML cannot tell apart, and they are reported rather than hidden
+ * For documents without a doctype, `gtext_xml_parse(write(tree))` gives
+ * back a tree equal to it (gtext_markup_equal(); locations are not compared),
+ * and writing that tree again gives the same bytes. For DTD-aware round trips,
+ * the reader must use matching DTD processing and identifier policy, and any
+ * external resources must be equivalent to those supplied for the original
+ * parse. Default omission of an external identifier is reported as reduced
+ * output and does not claim full DTD-semantic equivalence. The two exceptions
+ * are the ones XML cannot tell apart, and they are reported rather than hidden
  * (GTEXT_XML_Write_Result::text_nodes_coalesced): an empty text node, and a text
  * node next to another text node, read back as nothing and as one node. Pretty
  * printing (GTEXT_XML_Write_Options::indent) adds white space and so changes the
@@ -84,8 +88,9 @@
  * - XML 1.1 prefix undeclarations are written when present; XML 1.0 prefix
  *   undeclarations remain a namespace error.
  * - Under ISO-8859-1 and US-ASCII a character the encoding lacks is written as
- *   a hexadecimal character reference in text and attribute values (counted in
- *   GTEXT_XML_Write_Result::references_written).
+ *   a hexadecimal character reference in text and attribute values. XML 1.1
+ *   restricted characters are also written as references. Both are counted in
+ *   GTEXT_XML_Write_Result::references_written.
  * - Pretty printing indents only inside an element whose children are all
  *   elements, comments and processing instructions, and never in or below an
  *   element with `xml:space="preserve"` (an `xml:space="default"` below it does
@@ -101,8 +106,12 @@
  *   External snapshots and declarations generated or indexed from them are
  *   not copied into the internal subset. The syntax is validated against the
  *   document's XML version and converted through the selected output encoding.
- *   GTEXT_XML_Write_Result::doctype_without_subset is true only when a doctype
- *   was written with no retained internal syntax.
+ *   `internal_subset_emitted` reports whether retained internal syntax was
+ *   written. `doctype_without_subset` is its inverse for a written doctype;
+ *   both are false when no doctype was written. `external_subset_omitted` and
+ *   `output_reduced` report an omitted top-level external identifier.
+ *   `references_written` counts character references generated for XML 1.1
+ *   restricted characters or characters unavailable in the output encoding.
  * - A template element's content, being no child of the element, is refused
  *   rather than dropped.
  *
@@ -154,7 +163,9 @@
  * The XML declaration is written under the usual rules; an HTML parser reads it
  * as a comment, so use GTEXT_XML_DECLARATION_NEVER for output meant for both.
  * The guarantee for the XML side is the round trip: for every tree the mode
- * accepts, parsing the output with the XML parser gives an equal tree. The
+ * accepts, parsing the output with the XML parser gives an equal tree, subject
+ * to the DTD mode, identifier policy, and equivalent external resources
+ * described above. The
  * HTML-parser half is checked against html5lib and parse5 (`make
  * check-html-oracle`; see notes/text/XML-HTML-PLAN.md), and will be against this
  * library's own HTML parser when there is one. The mode never applies a
@@ -403,8 +414,8 @@ typedef enum {
    *  Also a namespace declaration other than on the root element or the
    *  default declaration of the XHTML namespace itself. */
   GTEXT_XML_XHTML_HAZARD_NAMESPACED_ATTRIBUTE,
-  /** A document type other than `<!DOCTYPE html>` with no identifiers (HTML
-   *  derives quirks mode from it, and keeps the identifiers). */
+  /** The serialized doctype is not `<!DOCTYPE html>` without an internal
+   *  subset (HTML derives quirks mode from it and does not support subsets). */
   GTEXT_XML_XHTML_HAZARD_DOCTYPE
 } GTEXT_XML_Xhtml_Hazard;
 
@@ -434,8 +445,9 @@ typedef struct {
                            ///< because they, or an ancestor, hold text or CDATA.
   size_t elements_skipped_preserve; ///< Elements with children left as they were
                            ///< because of `xml:space="preserve"` on them or above.
-  size_t references_written; ///< Characters written as references because the
-                           ///< output encoding lacks them.
+  size_t references_written; ///< Generated character references, for XML 1.1
+                             ///< restricted characters or characters the
+                             ///< output encoding cannot represent.
   size_t namespace_declarations_added; ///< By GTEXT_XML_Write_Options::declare_namespaces.
   size_t text_nodes_coalesced; ///< Empty text nodes, and text nodes that follow
                            ///< another: XML reads them back as one node or none.
@@ -456,6 +468,7 @@ typedef struct {
   size_t unresolved_references_written; ///< Unresolved entity-reference nodes
                            ///< emitted as `&name;`; zero when none were
                            ///< emitted.
+  bool internal_subset_emitted; ///< Retained internal DTD syntax was emitted.
 } GTEXT_XML_Write_Result;
 
 /**

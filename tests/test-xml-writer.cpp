@@ -1153,6 +1153,7 @@ TEST(XmlWriter, TheDocumentTypeIsWrittenFromItsNameAndIdentifiers) {
     const Out out = write_with(b.doc, options);
     EXPECT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
     EXPECT_TRUE(out.r.doctype_without_subset);
+    EXPECT_FALSE(out.r.internal_subset_emitted);
     return out.bytes;
   };
   EXPECT_EQ(doctype("r", nullptr, nullptr), "<!DOCTYPE r>\n<r/>");
@@ -1164,7 +1165,9 @@ TEST(XmlWriter, TheDocumentTypeIsWrittenFromItsNameAndIdentifiers) {
   // A document with no doctype does not say it dropped one.
   Build none;
   none.el(nullptr, "r");
-  EXPECT_FALSE(write_default(none.doc).r.doctype_without_subset);
+  const Out no_doctype = write_default(none.doc);
+  EXPECT_FALSE(no_doctype.r.doctype_without_subset);
+  EXPECT_FALSE(no_doctype.r.internal_subset_emitted);
 
   // A parsed doctype retains and emits its internal subset.
   GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
@@ -1173,6 +1176,7 @@ TEST(XmlWriter, TheDocumentTypeIsWrittenFromItsNameAndIdentifiers) {
   const Out out = write_default(doc);
   EXPECT_EQ(out.bytes, "<!DOCTYPE r [<!ENTITY e \"x\">]>\n<r/>");
   EXPECT_FALSE(out.r.doctype_without_subset);
+  EXPECT_TRUE(out.r.internal_subset_emitted);
   gtext_markup_document_free(doc);
 }
 
@@ -1186,12 +1190,98 @@ TEST(XmlWriter, OmitsTopLevelExternalSubsetByDefaultAndReportsReducedOutput) {
   EXPECT_TRUE(out.r.output_reduced);
   EXPECT_TRUE(out.r.external_subset_omitted);
   EXPECT_TRUE(out.r.doctype_without_subset);
+  EXPECT_FALSE(out.r.internal_subset_emitted);
 
   Opts zeroed{};
   const Out zeroed_out = write_with(b.doc, zeroed);
   EXPECT_EQ(zeroed_out.bytes, out.bytes);
   EXPECT_TRUE(zeroed_out.r.output_reduced);
   EXPECT_TRUE(zeroed_out.r.external_subset_omitted);
+}
+
+TEST(XmlWriter, XHTMLDoctypeFactsFollowTheSerializedIdentifierPolicy) {
+  Opts options = defaults();
+  options.xhtml = true;
+  Doc *baseline_doc = parse(
+      "<!DOCTYPE html><html xmlns='http://www.w3.org/1999/xhtml'/>");
+  ASSERT_NE(baseline_doc, nullptr);
+  const Out baseline = write_with(baseline_doc, options);
+  ASSERT_EQ(baseline.status, GTEXT_XML_OK) << baseline.r.message;
+  gtext_markup_document_free(baseline_doc);
+
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc *doc = parse_dtd("<!DOCTYPE html SYSTEM 'external.dtd'>"
+      "<html xmlns='http://www.w3.org/1999/xhtml'/>",
+      parse_options);
+  ASSERT_NE(doc, nullptr);
+
+  const Out omitted = write_with(doc, options);
+  ASSERT_EQ(omitted.status, GTEXT_XML_OK) << omitted.r.message;
+  EXPECT_EQ(omitted.bytes,
+      "<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"></html>");
+  EXPECT_TRUE(omitted.r.external_subset_omitted);
+  EXPECT_TRUE(omitted.r.output_reduced);
+  EXPECT_FALSE(omitted.r.internal_subset_emitted);
+  EXPECT_TRUE(omitted.r.doctype_without_subset);
+  EXPECT_EQ(omitted.r.xhtml_hazards, baseline.r.xhtml_hazards);
+
+  options.emit_external_identifiers = true;
+  const Out emitted = write_with(doc, options);
+  ASSERT_EQ(emitted.status, GTEXT_XML_OK) << emitted.r.message;
+  EXPECT_FALSE(emitted.r.external_subset_omitted);
+  EXPECT_FALSE(emitted.r.output_reduced);
+  EXPECT_EQ(emitted.r.xhtml_hazards, baseline.r.xhtml_hazards + 1u);
+  EXPECT_EQ(emitted.r.xhtml_hazard_kind, GTEXT_XML_XHTML_HAZARD_DOCTYPE);
+  gtext_markup_document_free(doc);
+
+  doc = parse_dtd("<!DOCTYPE html [<!ENTITY e 'v'>]>"
+      "<html xmlns='http://www.w3.org/1999/xhtml'/>",
+      parse_options);
+  ASSERT_NE(doc, nullptr);
+  const Out retained = write_with(doc, options);
+  ASSERT_EQ(retained.status, GTEXT_XML_OK) << retained.r.message;
+  EXPECT_TRUE(retained.r.internal_subset_emitted);
+  EXPECT_FALSE(retained.r.doctype_without_subset);
+  EXPECT_NE(retained.bytes.find("[<!ENTITY e 'v'>]"), std::string::npos);
+  EXPECT_EQ(retained.r.xhtml_hazards, baseline.r.xhtml_hazards + 1u);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, ReportsInternalSubsetAndGeneratedReferencesForBothXmlVersions) {
+  const std::vector<std::pair<std::string, std::string>> documents = {
+      {"<?xml version='1.0'?><!DOCTYPE html [<!ENTITY e 'v'>]>"
+       "<html xmlns='http://www.w3.org/1999/xhtml'>\xF0\x9F\x98\x80</html>",
+       "&#x1F600;"},
+      {"<?xml version='1.1'?><!DOCTYPE html [<!ENTITY e 'v'>]>"
+       "<html xmlns='http://www.w3.org/1999/xhtml'>&#x1;</html>",
+       "&#x1;"}};
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  for (const auto & item : documents) {
+    Doc *doc = parse_dtd(item.first, parse_options);
+    ASSERT_NE(doc, nullptr);
+    Opts options = defaults();
+    options.encoding = GTEXT_XML_OUTPUT_US_ASCII;
+    const Out out = write_with(doc, options);
+    ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+    EXPECT_TRUE(out.r.internal_subset_emitted);
+    EXPECT_FALSE(out.r.doctype_without_subset);
+    EXPECT_EQ(out.r.references_written, 1u);
+    EXPECT_NE(out.bytes.find(item.second), std::string::npos);
+
+    options.xhtml = true;
+    const Out xhtml = write_with(doc, options);
+    ASSERT_EQ(xhtml.status, GTEXT_XML_OK) << xhtml.r.message;
+    EXPECT_EQ(xhtml.r.internal_subset_emitted, out.r.internal_subset_emitted);
+    EXPECT_EQ(xhtml.r.doctype_without_subset, out.r.doctype_without_subset);
+    EXPECT_EQ(xhtml.r.external_subset_omitted, out.r.external_subset_omitted);
+    EXPECT_EQ(xhtml.r.output_reduced, out.r.output_reduced);
+    EXPECT_EQ(xhtml.r.references_written, out.r.references_written);
+    EXPECT_GT(xhtml.r.xhtml_hazards, 0u);
+    EXPECT_EQ(xhtml.r.xhtml_hazard_kind, GTEXT_XML_XHTML_HAZARD_DOCTYPE);
+    gtext_markup_document_free(doc);
+  }
 }
 
 TEST(XmlWriter, RequiresExplicitOptInForInternalExternalDeclarations) {

@@ -1248,7 +1248,8 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
     return w->status;
   }
   if (w->dry) {
-    w->r->doctype_without_subset = syntax_count == 0;
+    w->r->internal_subset_emitted = syntax_count != 0;
+    w->r->doctype_without_subset = !w->r->internal_subset_emitted;
     w->r->external_subset_omitted |= !w->o.emit_external_identifiers
         && (pub != NULL || sys != NULL);
     w->r->output_reduced |= w->r->external_subset_omitted;
@@ -2875,13 +2876,18 @@ static GTEXT_XML_Status run_pass(wctx * w) {
         seen_doctype = true;
         if (w->xhtml) {
           const char * dn = gtext_markup_doctype_name(n);
-          if (!dn || strcmp(dn, "html") != 0 || gtext_markup_doctype_public_id(n)
-              || gtext_markup_doctype_system_id(n)) {
+          const bool emits_external_ids = w->o.emit_external_identifiers
+              && (gtext_markup_doctype_public_id(n)
+                  || gtext_markup_doctype_system_id(n));
+          const bool emits_internal_subset =
+              gtext_markup_doctype_syntax_count(n) != 0;
+          if (!dn || strcmp(dn, "html") != 0 || emits_external_ids
+              || emits_internal_subset) {
             w->at = n;
             if (hazard(w, n, GTEXT_XML_XHTML_HAZARD_DOCTYPE,
-                    "an HTML parser derives quirks mode from the document "
-                    "type and keeps its identifiers; only <!DOCTYPE html> "
-                    "is read back as written")
+                    "an HTML parser derives quirks mode from the serialized "
+                    "document type; only <!DOCTYPE html> without an internal "
+                    "subset is read back as written")
                 != GTEXT_XML_OK) {
               return w->status;
             }
