@@ -427,7 +427,7 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0,
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, one, nullptr, 0,
       nullptr, 0),
       GTEXT_XML_OK);
   EXPECT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
@@ -448,7 +448,7 @@ TEST(XmlLimits, SourceAndAggregateExternalByteBudgetsAreCheckedBeforePush) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, one, nullptr, 0,
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, one, nullptr, 0,
       nullptr, 0),
       GTEXT_XML_OK);
   ASSERT_EQ(xml_source_charge_external(&p, 5), GTEXT_XML_OK);
@@ -520,7 +520,7 @@ TEST(XmlLimits, EveryLedgerCounterRejectsOverflowWithoutChangingCounters) {
   p.in = root;
   p.length = sizeof(root) - 1;
   ASSERT_EQ(xml_source_init(&p, root), GTEXT_XML_OK);
-  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_EXTERNAL_ENTITY, external,
+  ASSERT_EQ(xml_source_push(&p, XML_SOURCE_PARAMETER_ENTITY, external,
       nullptr, 0, external, 1), GTEXT_XML_OK);
   p.sources[p.source_count - 1].bytes_charged = SIZE_MAX - 1;
   p.expanded_bytes = 0;
