@@ -512,7 +512,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
 
   if (st1 != GTEXT_XML_OK) {
-    if (!refusal_allowed(st1, o.xhtml) && !(no_such_mark && st1 == GTEXT_XML_E_INVALID)) {
+    const char * document_version = gtext_markup_document_xml_version(doc, NULL);
+    const bool missing_xml11_declaration = st1 == GTEXT_XML_E_INVALID
+        && document_version && std::strcmp(document_version, "1.1") == 0
+        && o.xml_declaration == GTEXT_XML_DECLARATION_NEVER && r1.message
+        && std::strstr(r1.message, "XML 1.1 output needs its version declaration");
+    if (!refusal_allowed(st1, o.xhtml) && !(no_such_mark && st1 == GTEXT_XML_E_INVALID)
+        && !missing_xml11_declaration) {
       fail("a refusal with a status the writer does not document", gtext_xml_status_string(st1), program);
     }
     if (!sink.bytes.empty()) {

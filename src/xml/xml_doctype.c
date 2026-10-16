@@ -2317,6 +2317,29 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->general_entity_count = ext.general_entity_count;
   p->general_entity_capacity = ext.general_entity_capacity;
   p->dtd_external_modes = ext.dtd_external_modes;
+  /* DTD names are tokenized into a reusable context buffer.  The external
+     subset parser runs on a context copy, so propagate reallocations back to
+     the owning parser before its cleanup runs. */
+  p->dtd_name_token = ext.dtd_name_token;
+  p->dtd_name_token_length = ext.dtd_name_token_length;
+  p->dtd_name_token_capacity = ext.dtd_name_token_capacity;
+  /* Validation models and their accounting are also mutable parser state:
+     declarations in this subset grow the index on the copied context. */
+  p->validation_work = ext.validation_work;
+  p->validation_memory = ext.validation_memory;
+  p->validation_dtd_key_bytes = ext.validation_dtd_key_bytes;
+  p->validation_content_decls_bytes = ext.validation_content_decls_bytes;
+  p->validation_diagnostic_count = ext.validation_diagnostic_count;
+  p->validation_diagnostics_truncated = ext.validation_diagnostics_truncated;
+  p->validation_has_violation = ext.validation_has_violation;
+  p->content_decls = ext.content_decls;
+  p->content_decl_count = ext.content_decl_count;
+  p->content_decl_capacity = ext.content_decl_capacity;
+  p->validation_scratch = ext.validation_scratch;
+  p->validation_scratch_bytes = ext.validation_scratch_bytes;
+  p->validation_worklist = ext.validation_worklist;
+  p->validation_worklist_capacity = ext.validation_worklist_capacity;
+  p->validation_worklist_bytes = ext.validation_worklist_bytes;
   p->dtd_external_depth = ext.dtd_external_depth;
   p->dtd_external_capacity = ext.dtd_external_capacity;
   p->dtd_external_entry_source_count = ext.dtd_external_entry_source_count;

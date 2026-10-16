@@ -2165,6 +2165,10 @@ GTEXT_XML_Status gtext_xml_refresh_external_dtd(GTEXT_Markup_Document *doc,
     status = rebuild_status;
     if (error) *error = rebuild_ctx.err;
   }
+  /* The rebuilt markup bindings belong to the document, but the temporary
+     parser indexes and validation model belong to rebuild_ctx. */
+  xml_source_free(&rebuild_ctx);
+  xml_validation_cleanup(&rebuild_ctx);
 
   if (status == GTEXT_XML_OK)
     status = gtext_xml_revalidate(doc, NULL, result, error);
