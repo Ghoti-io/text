@@ -115,7 +115,8 @@ static GTEXT_Markup_Status import_source(GTEXT_Markup_Document * dst,
     added->origin_id = source.id;
     if (source.has_sha256) {
       status = markup_source_set_external_metadata(dst, new_id,
-          source.base_uri, source.encoding, source.byte_count, source.sha256);
+          source.base_uri, source.encoding, source.resolver_identity_token,
+          source.byte_count, source.sha256);
       if (status != GTEXT_MARKUP_OK) break;
     }
   }
@@ -511,6 +512,9 @@ static bool source_metadata_equal(const GTEXT_Markup_Document *a,
   if (x.kind != y.kind || !same_text(x.name, y.name)
       || !same_text(x.base_uri, y.base_uri)
       || !same_text(x.encoding, y.encoding)
+      || x.has_resolver_identity_token != y.has_resolver_identity_token
+      || (x.has_resolver_identity_token
+          && x.resolver_identity_token != y.resolver_identity_token)
       || x.byte_count != y.byte_count || x.has_sha256 != y.has_sha256
       || (x.has_sha256 && memcmp(x.sha256, y.sha256, sizeof(x.sha256)) != 0))
     return false;

@@ -285,7 +285,8 @@ GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
     const char * name);
 GTEXT_Markup_Status markup_source_set_external_metadata(
     GTEXT_Markup_Document *doc, uint32_t id, const char *base_uri,
-    const char *encoding, size_t byte_count, const unsigned char sha256[32]);
+    const char *encoding, uintptr_t resolver_identity_token,
+    size_t byte_count, const unsigned char sha256[32]);
 GTEXT_Markup_Status markup_document_add_unread_resource(
     GTEXT_Markup_Document * doc, GTEXT_Markup_DTD_Resource_Kind kind,
     const char * name, const char * system_id,

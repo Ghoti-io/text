@@ -346,7 +346,11 @@ const char * markup_check_invariants(const GTEXT_Markup_Document * doc) {
             && (!external || !source->owned_base_uri || !source->owned_encoding))
         || (!source->view.has_sha256
             && (source->view.byte_count || source->owned_base_uri
-                || source->owned_encoding)))
+                || source->owned_encoding
+                || source->view.has_resolver_identity_token))
+        || (source->view.has_sha256
+            && (!source->view.has_resolver_identity_token
+                || !source->view.resolver_identity_token)))
       return "a physical-source descriptor has invalid retained metadata";
     for (size_t j = i + 1; j < doc->source_count; ++j)
       if (source->view.id == doc->sources[j].view.id)

@@ -203,7 +203,9 @@ typedef enum {
  * no physical XML source. `reference_source_id` is zero for the document and
  * otherwise identifies the physical source that entered this source. The
  * descriptor's `name` is copied into the document and remains valid until the
- * document is freed. A clone imports the descriptors needed by cloned nodes.
+ * document is freed. A resolver identity is retained only as a numeric opaque
+ * token captured before close; it is never a dereferenceable pointer. A clone
+ * imports the descriptors needed by cloned nodes.
  */
 typedef struct {
   uint32_t id;
@@ -212,6 +214,8 @@ typedef struct {
   const char * name; ///< Entity name or resolved base URI; NULL if unknown.
   const char * base_uri; ///< Copied resolver base URI, NULL for internal sources.
   const char * encoding; ///< Detected source encoding label, when known.
+  uintptr_t resolver_identity_token; ///< Opaque numeric copy; never dereference.
+  bool has_resolver_identity_token;
   size_t byte_count; ///< Raw bytes read from a successfully resolved resource.
   unsigned char sha256[32]; ///< Content fingerprint; not an authenticity proof.
   bool has_sha256;

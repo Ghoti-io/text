@@ -1998,6 +1998,10 @@ GTEXT_XML_Status gtext_xml_refresh_external_dtd(GTEXT_Markup_Document *doc,
   if (!stage_doc || stage_doc->dtd_knowledge_incomplete
       || stage_doc->dtd_knowledge_stale) {
     gtext_markup_document_free(stage_doc);
+    if (error) {
+      error->code = GTEXT_XML_E_UNAVAILABLE_RESOURCE;
+      error->message = "external DTD evidence is incomplete after refresh";
+    }
     return GTEXT_XML_E_UNAVAILABLE_RESOURCE;
   }
   GTEXT_Markup_Node *stage_node = gtext_markup_document_doctype(stage_doc);

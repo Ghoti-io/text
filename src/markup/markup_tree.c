@@ -319,8 +319,10 @@ GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
 
 GTEXT_Markup_Status markup_source_set_external_metadata(
     GTEXT_Markup_Document *doc, uint32_t id, const char *base_uri,
-    const char *encoding, size_t byte_count, const unsigned char sha256[32]) {
-  if (!doc || !id || !sha256) return GTEXT_MARKUP_E_INVALID;
+    const char *encoding, uintptr_t resolver_identity_token,
+    size_t byte_count, const unsigned char sha256[32]) {
+  if (!doc || !id || !resolver_identity_token || !sha256)
+    return GTEXT_MARKUP_E_INVALID;
   markup_source *entry = NULL;
   for (size_t i = 0; i < doc->source_count; ++i)
     if (doc->sources[i].view.id == id) { entry = &doc->sources[i]; break; }
@@ -339,6 +341,8 @@ GTEXT_Markup_Status markup_source_set_external_metadata(
   entry->owned_encoding = encoding_copy;
   entry->view.base_uri = uri_copy;
   entry->view.encoding = encoding_copy;
+  entry->view.resolver_identity_token = resolver_identity_token;
+  entry->view.has_resolver_identity_token = true;
   entry->view.byte_count = byte_count;
   memcpy(entry->view.sha256, sha256, 32);
   entry->view.has_sha256 = true;

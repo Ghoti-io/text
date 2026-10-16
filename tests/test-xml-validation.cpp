@@ -10,6 +10,7 @@
 #include <vector>
 #include <unistd.h>
 #include <gtest/gtest.h>
+#include <ghoti.io/security/sha256.h>
 #include <ghoti.io/text/xml.h>
 #include <ghoti.io/text/xml/xml_parse.h>
 #include <ghoti.io/text/xml/xml_stream.h>
@@ -337,10 +338,15 @@ TEST(XmlValidation, ExplicitRefreshUsesEditedInternalParameterEntity) {
       external.location.source_id, &source));
   EXPECT_STREQ(source.base_uri, "memory:/validation.dtd");
   EXPECT_STREQ(source.encoding, "UTF-8");
+  EXPECT_TRUE(source.has_resolver_identity_token);
+  EXPECT_EQ(source.resolver_identity_token, reinterpret_cast<uintptr_t>(&dtd));
   EXPECT_EQ(source.byte_count, dtd.bytes.size());
   EXPECT_TRUE(source.has_sha256);
-  EXPECT_FALSE(std::all_of(std::begin(source.sha256), std::end(source.sha256),
-      [](unsigned char b) { return b == 0; }));
+  unsigned char expected_sha256[32];
+  ASSERT_EQ(gsec_sha256(dtd.bytes.data(), dtd.bytes.size(), expected_sha256),
+      GSEC_OK);
+  EXPECT_EQ(std::memcmp(source.sha256, expected_sha256,
+      sizeof(expected_sha256)), 0);
   GTEXT_Markup_Document *clone_doc = nullptr;
   ASSERT_EQ(gtext_markup_document_new(nullptr, &clone_doc), GTEXT_MARKUP_OK);
   GTEXT_Markup_Node *clone_root = nullptr;
@@ -359,6 +365,10 @@ TEST(XmlValidation, ExplicitRefreshUsesEditedInternalParameterEntity) {
   EXPECT_STREQ(cloned_source.encoding, source.encoding);
   EXPECT_EQ(cloned_source.byte_count, source.byte_count);
   EXPECT_EQ(cloned_source.has_sha256, source.has_sha256);
+  EXPECT_EQ(cloned_source.has_resolver_identity_token,
+      source.has_resolver_identity_token);
+  EXPECT_EQ(cloned_source.resolver_identity_token,
+      source.resolver_identity_token);
   EXPECT_EQ(std::memcmp(cloned_source.sha256, source.sha256,
       sizeof(source.sha256)), 0);
   gtext_markup_document_free(clone_doc);
@@ -419,6 +429,11 @@ TEST(XmlValidation, ExplicitRefreshFailuresPreserveSnapshotAndCloseSources) {
         parsed.doc, &refresh, &result, &error);
     if (expected != GTEXT_XML_E_STATE) EXPECT_EQ(refresh_status, expected);
     else EXPECT_NE(refresh_status, GTEXT_XML_OK);
+    if (expected == GTEXT_XML_E_UNAVAILABLE_RESOURCE) {
+      EXPECT_EQ(error.code, GTEXT_XML_E_UNAVAILABLE_RESOURCE);
+      EXPECT_STREQ(error.message,
+          "external DTD evidence is incomplete after refresh");
+    }
     EXPECT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(parsed.doc));
     EXPECT_TRUE(gtext_markup_equal(gtext_markup_document_doctype(parsed.doc), copy));
     EXPECT_TRUE(gtext_markup_equal(gtext_markup_document_element(parsed.doc),
