@@ -267,14 +267,14 @@ parser could not accept.
 | `_UTF8`, `_CHARACTER` | the bytes, or the character, as above; also a numeric reference to a character XML forbids |
 | `_MISMATCHED_TAG` | an end tag that is not its start tag's |
 | `_DUPLICATE_ATTRIBUTE` | the same name twice, or two names with the same namespace and local name |
-| `_ENTITY` | an undeclared, unresolved external, unparsed, or otherwise unusable entity reference |
+| `_ENTITY` | an undeclared or unparsed entity, a declined external general entity, or an otherwise unusable entity reference |
 | `_NAMESPACE` | an unbound prefix, a name with two colons, `xmlns` or `xml` misused, a prefix undeclared, a colon in a processing-instruction target |
 | `_DOCTYPE` | a malformed document type declaration or internal subset |
 | `_UNSUPPORTED_ENCODING`, `_UNSUPPORTED_VERSION` | as above |
 | `_INVALID_SEQUENCE` | bytes that are not valid in the document's encoding, positioned at the unit |
 | `_ENCODING_MISMATCH` | the declaration names a different family from the one the document is in, positioned at the label |
 | `_LIMIT_*` | a limit above, each its own status |
-| `_RESOLVER` | an external parameter entity resolver open failed or was declined, OPENED metadata was malformed, or a source read failed or returned an invalid byte count |
+| `_RESOLVER` | the resolver returned FAILED for any resource, an external parameter entity open was declined, OPENED metadata was malformed, or a source read failed or returned an invalid byte count; a declined external subset is omitted |
 | `_CANCELLED` | the caller cancelled an external source read |
 | `_INVALID`, `_OOM` | an unusable argument; an allocation failed |
 | `_INCOMPLETE`, `_STATE` | event parsers only: the pull reader needs more input; a call that does not fit the state (input after the end) |

@@ -154,9 +154,10 @@ typedef enum {
   GTEXT_XML_E_LIMIT_REFERENCES, ///< XML references exceeded their budget.
   GTEXT_XML_E_LIMIT_DECLARATIONS, ///< DTD declarations exceeded their budget.
   GTEXT_XML_E_LIMIT_WORK, ///< Parser work exceeded its deterministic budget.
-  GTEXT_XML_E_RESOLVER, ///< An external parameter entity open was declined or
-                        ///< failed, OPENED metadata was malformed, or a source
-                        ///< read returned an error or invalid byte count.
+  GTEXT_XML_E_RESOLVER, ///< The resolver returned FAILED for any resource,
+                        ///< an external parameter entity open was declined,
+                        ///< OPENED metadata was malformed, or a source read
+                        ///< returned an error or invalid byte count.
   GTEXT_XML_E_CANCELLED ///< The caller cancelled an external source read.
 } GTEXT_XML_Status;
 
@@ -242,9 +243,10 @@ typedef enum {
  *  close obligation to the parser. Malformed OPENED metadata fails immediately
  *  with GTEXT_XML_E_RESOLVER and is not retried. Return DECLINED when
  *  unavailable, or FAILED for an operation failure. DECLINED for an external
- *  parameter entity and FAILED both produce GTEXT_XML_E_RESOLVER. An
- *  unavailable external general entity produces GTEXT_XML_E_ENTITY; a
- *  declined external subset is omitted. A source read error also produces
+ *  parameter entity produces GTEXT_XML_E_RESOLVER; DECLINED for an external
+ *  general entity produces GTEXT_XML_E_ENTITY, and DECLINED for an external
+ *  subset omits that subset. FAILED for any resource kind produces
+ *  GTEXT_XML_E_RESOLVER. A source read error also produces
  *  GTEXT_XML_E_RESOLVER; SOURCE_CANCELLED produces GTEXT_XML_E_CANCELLED. */
 typedef GTEXT_XML_Resolver_Result (*GTEXT_XML_Resolver_cb)(
     const GTEXT_XML_Resolve_Request * request, void * user_data,
