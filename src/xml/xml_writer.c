@@ -174,6 +174,8 @@ typedef struct {
 static void build_path(const GTEXT_Markup_Node * node, int attr, char * out);
 static GTEXT_XML_Status check_raw_data(
     wctx * w, const char * data, size_t len, const char * what);
+static GTEXT_XML_Status check_dtd_syntax(wctx * w,
+    const GTEXT_Markup_Node * doctype, size_t syntax_count);
 
 static GTEXT_XML_Status fail(
     wctx * w, GTEXT_XML_Status code, const char * message) {
@@ -1202,10 +1204,144 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
       return w->status;
     }
   }
+  const size_t syntax_count = gtext_markup_doctype_syntax_count(n);
+  if (syntax_count != 0) {
+    if (w->dry && check_dtd_syntax(w, n, syntax_count) != GTEXT_XML_OK) {
+      return w->status;
+    }
+    if (put_str(w, " [") != GTEXT_XML_OK) {
+      return w->status;
+    }
+    for (size_t i = 0; i < syntax_count; ++i) {
+      GTEXT_Markup_DTD_Syntax item;
+      if (!gtext_markup_doctype_syntax(n, i, &item) || !item.source
+          || item.source_length == 0
+          || item.kind < GTEXT_MARKUP_DTD_ELEMENT
+          || item.kind > GTEXT_MARKUP_DTD_PARAMETER_REFERENCE) {
+        return fail(w, GTEXT_XML_E_DOCTYPE,
+            "invalid retained internal DTD syntax");
+      }
+      if (check_raw_data(w, item.source, item.source_length,
+              "a character in retained DTD syntax cannot be represented in the selected XML version")
+          != GTEXT_XML_OK) {
+        return w->status;
+      }
+      /* DTD syntax is markup, so it must pass through raw and must never be
+         escaped as character data. A newline separates retained constructs. */
+      if (i != 0 && put_ascii(w, "\n", 1) != GTEXT_XML_OK) {
+        return w->status;
+      }
+      if (put_text(w, item.source, item.source_length, false) != GTEXT_XML_OK) {
+        return w->status;
+      }
+    }
+    if (put_str(w, "]") != GTEXT_XML_OK) {
+      return w->status;
+    }
+  }
   if (w->dry) {
-    w->r->doctype_without_subset = true;
+    w->r->doctype_without_subset = syntax_count == 0;
   }
   return put_str(w, ">");
+}
+
+/* A retained tree can contain balanced DTD declaration text that was not
+   checked by the DTD grammar. Reparse the complete subset in a synthetic document
+   during the dry writer pass so malformed productions are refused before the
+   sink is reached. The fixed input/work/declaration limits keep this semantic
+   check bounded, and external access is disabled because only internal syntax
+   is being checked. */
+static GTEXT_XML_Status check_dtd_syntax(wctx *w,
+    const GTEXT_Markup_Node *doctype, size_t syntax_count) {
+  const size_t name_len = strlen(gtext_markup_doctype_name(doctype));
+  const char *version = gtext_markup_document_xml_version(w->doc, NULL);
+  const char *version_prefix = version && strcmp(version, "1.1") == 0
+      ? "<?xml version='1.1'?>" : "";
+  const size_t version_len = strlen(version_prefix);
+  size_t input_len = version_len;
+  const size_t fixed[] = {sizeof("<!DOCTYPE ") - 1, name_len,
+      sizeof(" [") - 1, sizeof("]><") - 1, name_len,
+      sizeof("/>") - 1};
+  for (size_t i = 0; i < sizeof(fixed) / sizeof(fixed[0]); ++i) {
+    if (fixed[i] > SIZE_MAX - input_len) {
+      return fail(w, GTEXT_XML_E_LIMIT_WORK,
+          "retained DTD syntax exceeds the preflight work limit");
+    }
+    input_len += fixed[i];
+  }
+  size_t work = input_len;
+  for (size_t i = 0; i < syntax_count; ++i) {
+    GTEXT_Markup_DTD_Syntax item;
+    if (!gtext_markup_doctype_syntax(doctype, i, &item) || !item.source
+        || item.source_length == 0) {
+      return fail(w, GTEXT_XML_E_DOCTYPE,
+          "invalid retained internal DTD syntax");
+    }
+    if (item.source_length > SIZE_MAX - input_len
+        || item.source_length > SIZE_MAX - work
+        || work + item.source_length > w->o.max_dtd_work) {
+      return fail(w, GTEXT_XML_E_LIMIT_WORK,
+          "retained DTD syntax exceeds the preflight work limit");
+    }
+    input_len += item.source_length;
+    work += item.source_length;
+  }
+  if (input_len > w->o.max_dtd_work || input_len == SIZE_MAX) {
+    return fail(w, GTEXT_XML_E_LIMIT_WORK,
+        "retained DTD syntax exceeds the preflight work limit");
+  }
+  char *input = gtext_allocator_malloc(w->alloc, input_len + 1);
+  if (!input) return oom(w);
+  size_t at = 0;
+  memcpy(input + at, version_prefix, version_len); at += version_len;
+  memcpy(input + at, "<!DOCTYPE ", fixed[0]); at += fixed[0];
+  memcpy(input + at, gtext_markup_doctype_name(doctype), name_len);
+  at += name_len;
+  memcpy(input + at, " [", fixed[2]); at += fixed[2];
+  for (size_t i = 0; i < syntax_count; ++i) {
+    GTEXT_Markup_DTD_Syntax item;
+    (void)gtext_markup_doctype_syntax(doctype, i, &item);
+    memcpy(input + at, item.source, item.source_length);
+    at += item.source_length;
+  }
+  memcpy(input + at, "]><", fixed[3]); at += fixed[3];
+  memcpy(input + at, gtext_markup_doctype_name(doctype), name_len);
+  at += name_len;
+  input[at++] = '/';
+  input[at++] = '>';
+  input[at] = '\0';
+
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.allocator = w->alloc;
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_DENY;
+  options.max_input_bytes = w->o.max_dtd_work;
+  options.max_total_work = w->o.max_dtd_work;
+  GTEXT_Markup_Document *parsed = NULL;
+  GTEXT_XML_Error error;
+  const GTEXT_XML_Status status = gtext_xml_parse(
+      input, input_len, &options, &parsed, &error);
+  gtext_allocator_free(w->alloc, input);
+  if (status == GTEXT_XML_E_OOM) return oom(w);
+  if (status == GTEXT_XML_E_LIMIT_WORK || status == GTEXT_XML_E_LIMIT_INPUT) {
+    return fail(w, GTEXT_XML_E_LIMIT_WORK,
+        "retained DTD syntax exceeds the preflight work limit");
+  }
+  if (status == GTEXT_XML_E_LIMIT_DECLARATIONS
+      || status == GTEXT_XML_E_LIMIT_EXPANSION
+      || status == GTEXT_XML_E_LIMIT_ENTITY_DEPTH
+      || status == GTEXT_XML_E_LIMIT_REFERENCES) {
+    if (parsed) gtext_markup_document_free(parsed);
+    return fail(w, status,
+        "retained DTD syntax exceeds a parser safety limit");
+  }
+  if (status != GTEXT_XML_OK) {
+    if (parsed) gtext_markup_document_free(parsed);
+    return fail(w, GTEXT_XML_E_DOCTYPE,
+        "retained internal DTD syntax is malformed");
+  }
+  gtext_markup_document_free(parsed);
+  return GTEXT_XML_OK;
 }
 
 /* ---- leaves ------------------------------------------------------------- */
@@ -2658,6 +2794,9 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
   }
   if (o.max_output_bytes == 0) {
     o.max_output_bytes = XML_WRITE_DEFAULT_MAX_OUTPUT;
+  }
+  if (o.max_dtd_work == 0) {
+    o.max_dtd_work = XML_DEFAULT_MAX_VALIDATION_WORK;
   }
   const GTEXT_Allocator * alloc =
       o.allocator ? o.allocator : &doc->allocator;

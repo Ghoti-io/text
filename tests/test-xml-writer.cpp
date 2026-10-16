@@ -92,6 +92,17 @@ Doc * parse(const std::string & text) {
   return st == GTEXT_XML_OK ? doc : nullptr;
 }
 
+Doc * parse_dtd(const std::string & text, GTEXT_XML_Parse_Options options) {
+  options.max_depth = 0x7fffffff;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  const GTEXT_XML_Status st =
+      gtext_xml_parse(text.data(), text.size(), &options, &doc, &err);
+  EXPECT_EQ(st, GTEXT_XML_OK)
+      << text << ": " << (err.message ? err.message : "");
+  return st == GTEXT_XML_OK ? doc : nullptr;
+}
+
 struct Out {
   GTEXT_XML_Status status;
   std::string bytes;
@@ -225,6 +236,38 @@ std::string le16(const std::string & ascii) {
   return s;
 }
 
+struct WriterResolver {
+  std::string bytes;
+  size_t offset = 0;
+  size_t opens = 0;
+};
+
+GTEXT_XML_Source_Read_Result writer_resolver_read(void * opaque,
+    unsigned char * buffer, size_t capacity, size_t * count) {
+  auto * resolver = static_cast<WriterResolver *>(opaque);
+  *count = std::min(capacity, resolver->bytes.size() - resolver->offset);
+  if (*count == 0) return GTEXT_XML_SOURCE_EOF;
+  std::memcpy(buffer, resolver->bytes.data() + resolver->offset, *count);
+  resolver->offset += *count;
+  return GTEXT_XML_SOURCE_DATA;
+}
+
+void writer_resolver_close(void *) {}
+
+GTEXT_XML_Resolver_Result writer_resolver_open(
+    const GTEXT_XML_Resolve_Request *, void * opaque,
+    GTEXT_XML_External_Source * source) {
+  auto * resolver = static_cast<WriterResolver *>(opaque);
+  resolver->opens++;
+  resolver->offset = 0;
+  source->handle = resolver;
+  source->identity = resolver;
+  source->base_uri = "memory:/writer.dtd";
+  source->read = writer_resolver_read;
+  source->close = writer_resolver_close;
+  return GTEXT_XML_RESOLVER_OPENED;
+}
+
 // ---- the matrix, row by row ---------------------------------------------
 
 TEST(XmlWriter, TheDefaultsAreSpelledOutAndZeroIsTheDefault) {
@@ -262,11 +305,13 @@ TEST(XmlWriter, ARichDocumentRoundTripsAndTheSecondWriteIsIdentical) {
       "text &lt; &amp; ]]&gt; \xC3\xA9 &#x20AC; &#13;end<![CDATA[<raw> & stuff]]>"
       "<p:child p:x=\"1\"/><!--c--><?t?>\n<empty></empty>"
       "<inner xmlns=\"\"><u/></inner><![CDATA[]]>tail</root>\n<!-- after -->";
-  Doc * a = parse(text);
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc * a = parse_dtd(text, parse_options);
   ASSERT_NE(a, nullptr);
   const Out first = write_default(a);
   ASSERT_EQ(first.status, GTEXT_XML_OK) << first.r.message << " " << first.r.path;
-  Doc * b = parse(first.bytes);
+  Doc * b = parse_dtd(first.bytes, parse_options);
   ASSERT_NE(b, nullptr) << first.bytes;
   EXPECT_TRUE(gtext_markup_equal(gtext_markup_document_root(a), gtext_markup_document_root(b)))
       << first.bytes;
@@ -277,10 +322,12 @@ TEST(XmlWriter, ARichDocumentRoundTripsAndTheSecondWriteIsIdentical) {
   const Out second = write_default(b);
   EXPECT_EQ(second.bytes, first.bytes);
   EXPECT_EQ(first.r.bytes_written, first.bytes.size());
-  EXPECT_TRUE(first.r.doctype_without_subset);
+  EXPECT_FALSE(first.r.doctype_without_subset);
   EXPECT_EQ(first.r.text_nodes_coalesced, 0u);
   EXPECT_EQ(first.bytes.rfind("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<!-- before -->\n<?pi some data?>\n<!DOCTYPE", 0), 0u);
-  EXPECT_NE(first.bytes.find("<!DOCTYPE root PUBLIC \"-//A B//EN\" \"p.dtd\">"), std::string::npos);
+  EXPECT_NE(first.bytes.find(
+                "<!DOCTYPE root PUBLIC \"-//A B//EN\" \"p.dtd\" ["),
+      std::string::npos);
   EXPECT_NE(first.bytes.find("<empty/>"), std::string::npos);
   gtext_markup_document_free(a);
   gtext_markup_document_free(b);
@@ -1100,11 +1147,245 @@ TEST(XmlWriter, TheDocumentTypeIsWrittenFromItsNameAndIdentifiers) {
   none.el(nullptr, "r");
   EXPECT_FALSE(write_default(none.doc).r.doctype_without_subset);
 
-  // A parsed doctype with an internal subset is written without it, and says so.
-  Doc * doc = parse("<!DOCTYPE r [<!ENTITY e \"x\">]><r/>");
+  // A parsed doctype retains and emits its internal subset.
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc * doc = parse_dtd("<!DOCTYPE r [<!ENTITY e \"x\">]><r/>", options);
   const Out out = write_default(doc);
-  EXPECT_EQ(out.bytes, "<!DOCTYPE r>\n<r/>");
-  EXPECT_TRUE(out.r.doctype_without_subset);
+  EXPECT_EQ(out.bytes, "<!DOCTYPE r [<!ENTITY e \"x\">]>\n<r/>");
+  EXPECT_FALSE(out.r.doctype_without_subset);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, WritesRetainedDtdKindsInOrderAndRoundTripsTheGrammar) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc * doc = nullptr;
+  GTEXT_XML_Error error{};
+  const std::string input =
+      "<!DOCTYPE a [<!ELEMENT a EMPTY><!-- note --><!-- repeated --><?keep data?>"
+      "<!ENTITY % p '<!ELEMENT generated EMPTY>'>%p;"
+      "<!ENTITY % q '<!-- generated comment -->'>%q;%q;"
+      "<!ATTLIST a id ID #IMPLIED><!NOTATION n SYSTEM 'n'>]><a/>";
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
+      GTEXT_XML_OK) << (error.message ? error.message : "");
+  const Out out = write_default(doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  const size_t element = out.bytes.find("<!ELEMENT a EMPTY>");
+  const size_t comment = out.bytes.find("<!-- note -->");
+  const size_t repeated_comment = out.bytes.find("<!-- repeated -->");
+  const size_t pi = out.bytes.find("<?keep data?>");
+  const size_t entity =
+      out.bytes.find("<!ENTITY % p '<!ELEMENT generated EMPTY>'>");
+  const size_t reference = out.bytes.find("%p;");
+  const size_t entity_q = out.bytes.find("<!ENTITY % q '<!-- generated comment -->'>");
+  const size_t reference_q = out.bytes.find("%q;", reference + 1);
+  const size_t reference_q_again = out.bytes.find("%q;", reference_q + 1);
+  const size_t attlist = out.bytes.find("<!ATTLIST a id ID #IMPLIED>");
+  const size_t notation = out.bytes.find("<!NOTATION n SYSTEM 'n'>");
+  ASSERT_NE(element, std::string::npos);
+  ASSERT_NE(comment, std::string::npos);
+  ASSERT_NE(repeated_comment, std::string::npos);
+  ASSERT_NE(pi, std::string::npos);
+  ASSERT_NE(entity, std::string::npos);
+  ASSERT_NE(reference, std::string::npos);
+  ASSERT_NE(entity_q, std::string::npos);
+  ASSERT_NE(reference_q, std::string::npos);
+  ASSERT_NE(reference_q_again, std::string::npos);
+  ASSERT_NE(attlist, std::string::npos);
+  ASSERT_NE(notation, std::string::npos);
+  EXPECT_LT(element, comment);
+  EXPECT_LT(comment, repeated_comment);
+  EXPECT_LT(repeated_comment, pi);
+  EXPECT_LT(pi, entity);
+  EXPECT_LT(entity, reference);
+  EXPECT_LT(reference, entity_q);
+  EXPECT_LT(entity_q, reference_q);
+  EXPECT_LT(reference_q, reference_q_again);
+  EXPECT_LT(reference_q_again, attlist);
+  EXPECT_LT(attlist, notation);
+  EXPECT_EQ(out.bytes.find("\n<!ELEMENT generated EMPTY>"), std::string::npos);
+  EXPECT_EQ(out.bytes.find("\n<!-- generated comment -->"), std::string::npos);
+  Doc * reparsed = nullptr;
+  ASSERT_EQ(gtext_xml_parse(out.bytes.data(), out.bytes.size(), &options,
+                &reparsed, &error),
+      GTEXT_XML_OK) << out.bytes << ": "
+                    << (error.message ? error.message : "");
+  EXPECT_EQ(gtext_markup_doctype_syntax_count(
+                gtext_markup_document_doctype(reparsed)), 11u);
+  const GTEXT_Markup_Node * reparsed_doctype =
+      gtext_markup_document_doctype(reparsed);
+  ASSERT_EQ(gtext_markup_doctype_generated_syntax_count(reparsed_doctype), 3u);
+  bool saw_generated_element = false;
+  size_t generated_comments = 0;
+  for (size_t i = 0;
+       i < gtext_markup_doctype_generated_syntax_count(reparsed_doctype); ++i) {
+    GTEXT_Markup_DTD_Syntax generated{};
+    ASSERT_TRUE(gtext_markup_doctype_generated_syntax(
+        reparsed_doctype, i, &generated));
+    if (generated.kind == GTEXT_MARKUP_DTD_ELEMENT
+        && std::string(generated.source, generated.source_length)
+            == "<!ELEMENT generated EMPTY>") {
+      saw_generated_element = true;
+    }
+    if (generated.kind == GTEXT_MARKUP_DTD_COMMENT) ++generated_comments;
+  }
+  EXPECT_TRUE(saw_generated_element);
+  EXPECT_EQ(generated_comments, 2u);
+  gtext_markup_document_free(reparsed);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, BoundsRetainedDtdSemanticPreflightBeforeTheSink) {
+  Build b;
+  Node * doctype = b.doctype("a", nullptr, nullptr);
+  b.el(nullptr, "a");
+  const std::string syntax = "<!--" + std::string(256, 'x') + "-->";
+  GTEXT_Markup_Location location{};
+  ASSERT_EQ(markup_doctype_append_syntax(doctype, GTEXT_MARKUP_DTD_COMMENT,
+                syntax.data(), syntax.size(), &location),
+      GTEXT_MARKUP_OK);
+
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  Opts options = defaults();
+  options.max_dtd_work = 128;
+  EXPECT_EQ(gtext_xml_write(&output, b.doc, &options, &result),
+      GTEXT_XML_E_LIMIT_WORK);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+}
+
+TEST(XmlWriter, DtdPreflightDefaultIs64MiBAndZeroedOptionsUseIt) {
+  EXPECT_EQ(defaults().max_dtd_work, size_t{64} * 1024 * 1024);
+  Build b;
+  Node * doctype = b.doctype("a", nullptr, nullptr);
+  b.el(nullptr, "a");
+  const std::string syntax = "<!--" + std::string(256, 'x') + "-->";
+  ASSERT_EQ(gtext_markup_doctype_insert_syntax(doctype, 0,
+                GTEXT_MARKUP_DTD_COMMENT, syntax.data(), syntax.size(), nullptr),
+      GTEXT_MARKUP_OK);
+  const Opts zeroed{};
+  const Out out = write_with(b.doc, zeroed);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_NE(out.bytes.find(syntax), std::string::npos);
+}
+
+TEST(XmlWriter, DoesNotFlattenResolvedExternalSyntaxIntoTheInternalSubset) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  WriterResolver resolver{"<!ATTLIST a external CDATA 'from external'>"};
+  options.resolver = writer_resolver_open;
+  options.resolver_user_data = &resolver;
+  const std::string input =
+      "<!DOCTYPE a SYSTEM 'external.dtd' [<!ELEMENT a EMPTY>]><a/>";
+  Doc * doc = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
+      GTEXT_XML_OK) << (error.message ? error.message : "");
+  ASSERT_GT(gtext_markup_doctype_external_syntax_count(
+                gtext_markup_document_doctype(doc)), 0u);
+  const Out out = write_default(doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(resolver.opens, 1u);
+  EXPECT_NE(out.bytes.find("<!ELEMENT a EMPTY>"), std::string::npos);
+  EXPECT_EQ(out.bytes.find("<!ATTLIST a external"), std::string::npos);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, DtdSyntaxUsesOutputEncodingAndPreflightBeforeTheSink) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const std::string input =
+      "<!DOCTYPE a [<!ENTITY e 'caf\xC3\xA9'>]><a/>";
+  Doc * doc = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &parse_options, &doc,
+                &error),
+      GTEXT_XML_OK) << (error.message ? error.message : "");
+  Opts options = defaults();
+  options.encoding = GTEXT_XML_OUTPUT_US_ASCII;
+  Collect refused;
+  GTEXT_Markup_Sink sink = refused.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&sink, doc, &options, &result),
+      GTEXT_XML_E_UNREPRESENTABLE);
+  EXPECT_EQ(refused.calls, 0u);
+  EXPECT_STREQ(result.path, "/doctype()");
+
+  options = defaults();
+  options.encoding = GTEXT_XML_OUTPUT_UTF16LE;
+  const Out utf16 = write_with(doc, options);
+  ASSERT_EQ(utf16.status, GTEXT_XML_OK) << utf16.r.message;
+  EXPECT_EQ(utf16.bytes.substr(0, 2), std::string("\xFF\xFE", 2));
+  Doc * reparsed = parse_dtd(utf16.bytes, parse_options);
+  ASSERT_NE(reparsed, nullptr);
+  EXPECT_EQ(gtext_markup_doctype_syntax_count(
+                gtext_markup_document_doctype(reparsed)), 1u);
+  gtext_markup_document_free(reparsed);
+
+  options = defaults();
+  options.max_output_bytes = 20;
+  Collect limited;
+  sink = limited.sink();
+  EXPECT_EQ(gtext_xml_write(&sink, doc, &options, &result),
+      GTEXT_XML_E_LIMIT_OUTPUT);
+  EXPECT_EQ(limited.calls, 0u);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, EmitsCheckedProgrammaticDtdEdits) {
+  Build b;
+  Node * doctype = b.doctype("a", nullptr, nullptr);
+  b.el(nullptr, "a");
+  ASSERT_EQ(gtext_markup_doctype_insert_syntax(doctype, 0,
+                GTEXT_MARKUP_DTD_ELEMENT, "<!ELEMENT a EMPTY>", 18, nullptr),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_doctype_insert_syntax(doctype, 1,
+                GTEXT_MARKUP_DTD_COMMENT, "<!-- edited -->", 15, nullptr),
+      GTEXT_MARKUP_OK);
+  const Out out = write_default(b.doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes, "<!DOCTYPE a [<!ELEMENT a EMPTY>\n<!-- edited -->]>\n<a/>");
+  EXPECT_FALSE(out.r.doctype_without_subset);
+}
+
+TEST(XmlWriter, Xml11RetainedDtdSyntaxRejectsRawNelBeforeTheSink) {
+  Build b;
+  gtext_markup_document_set_xml_declaration(
+      b.doc, "1.1", GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
+  Node * doctype = b.doctype("a", nullptr, nullptr);
+  b.el(nullptr, "a");
+  const std::string syntax = "<!-- raw\xC2\x85" " -->";
+  ASSERT_EQ(gtext_markup_doctype_insert_syntax(doctype, 0,
+                GTEXT_MARKUP_DTD_COMMENT, syntax.data(), syntax.size(), nullptr),
+      GTEXT_MARKUP_OK);
+
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, b.doc, nullptr, &result),
+      GTEXT_XML_E_UNREPRESENTABLE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+  EXPECT_STREQ(result.path, "/doctype()");
+}
+
+TEST(XmlWriter, Xml11RetainedDtdCharacterReferenceRoundTrips) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const std::string input =
+      "<?xml version='1.1'?><!DOCTYPE a [<!ENTITY e '&#x1;'>]><a>&e;</a>";
+  Doc * doc = parse_dtd(input, options);
+  ASSERT_NE(doc, nullptr);
+  const Out out = write_default(doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_NE(out.bytes.find("<!ENTITY e '&#x1;'>"), std::string::npos);
+  Doc * reparsed = parse_dtd(out.bytes, options);
+  ASSERT_NE(reparsed, nullptr);
+  gtext_markup_document_free(reparsed);
   gtext_markup_document_free(doc);
 }
 
@@ -1454,6 +1735,59 @@ struct TempDir {
     return names;
   }
 };
+
+TEST(XmlWriter, RejectsMalformedRetainedDtdSyntaxBeforeTheSink) {
+  // Model syntax retained without DTD processing (or by an older producer):
+  // that path can preserve balanced markup without checking its production.
+  Build b;
+  Node * doctype = b.doctype("a", nullptr, nullptr);
+  b.el(nullptr, "a");
+  const std::string syntax = "<!ELEMENT a NOT_VALID>";
+  GTEXT_Markup_Location location{};
+  ASSERT_EQ(markup_doctype_append_syntax(doctype, GTEXT_MARKUP_DTD_ELEMENT,
+                syntax.data(), syntax.size(), &location),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_doctype_syntax_count(
+                gtext_markup_document_doctype(b.doc)), 1u);
+
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, b.doc, nullptr, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+  EXPECT_STREQ(result.path, "/doctype()");
+
+  TempDir dir;
+  ASSERT_TRUE(dir.list().empty());
+  const std::string path = dir.file("bad-dtd.xml");
+  EXPECT_EQ(gtext_xml_write_file(path.c_str(), b.doc, nullptr, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_TRUE(dir.list().empty());
+}
+
+TEST(XmlWriter, RejectsMalformedRetainedDtdCommentsAndPIsBeforeTheSink) {
+  const auto refuses = [](GTEXT_Markup_DTD_Syntax_Kind kind,
+                           const std::string & syntax) {
+    Build b;
+    Node * doctype = b.doctype("a", nullptr, nullptr);
+    b.el(nullptr, "a");
+    GTEXT_Markup_Location location{};
+    ASSERT_EQ(markup_doctype_append_syntax(doctype, kind, syntax.data(),
+                  syntax.size(), &location),
+        GTEXT_MARKUP_OK);
+    Collect sink;
+    const GTEXT_Markup_Sink output = sink.sink();
+    GTEXT_XML_Write_Result result{};
+    EXPECT_EQ(gtext_xml_write(&output, b.doc, nullptr, &result),
+        GTEXT_XML_E_DOCTYPE);
+    EXPECT_EQ(sink.calls, 0u);
+    EXPECT_EQ(result.bytes_written, 0u);
+  };
+  refuses(GTEXT_MARKUP_DTD_COMMENT, "<!-- bad -- comment -->");
+  refuses(GTEXT_MARKUP_DTD_PROCESSING_INSTRUCTION, "<?xml bad?>");
+}
 
 std::string slurp(const std::string & path) {
   std::ifstream in(path, std::ios::binary);

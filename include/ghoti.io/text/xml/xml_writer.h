@@ -95,9 +95,14 @@
  *   the root element, whether or not indentation is on. Because the result is
  *   read back as extra text nodes, `write(parse(write(t)))` is the same bytes
  *   for a pretty-printed tree only when the newline is a bare line feed.
- * - The document type is written from its name and identifiers. The internal
- *   subset is not stored by the parser and so cannot be written;
- *   GTEXT_XML_Write_Result::doctype_without_subset says so.
+ * - A document type is written from its name, identifiers, and retained raw
+ *   internal syntax. The declarations, parameter-entity references, comments,
+ *   and processing instructions in that subset are emitted in retained order.
+ *   External snapshots and declarations generated or indexed from them are
+ *   not copied into the internal subset. The syntax is validated against the
+ *   document's XML version and converted through the selected output encoding.
+ *   GTEXT_XML_Write_Result::doctype_without_subset is true only when a doctype
+ *   was written with no retained internal syntax.
  * - A template element's content, being no child of the element, is refused
  *   rather than dropped.
  *
@@ -300,13 +305,22 @@ typedef struct {
    *  GTEXT_XML_E_XHTML, not a count. Without `xhtml` it is
    *  GTEXT_XML_E_INVALID. */
   bool xhtml_strict;
+
+  /** Maximum parser work used to check a retained internal DTD subset, or 0
+   *  for the default of 64 MiB. Exceeding it is GTEXT_XML_E_LIMIT_WORK before
+   *  any output is written. This bounds the synthetic input and parser work;
+   *  the parser's separate declaration, expansion, reference, and nesting
+   *  safeguards remain in force and report their own limit statuses. Appended
+   *  so zeroed remains the default. */
+  size_t max_dtd_work;
 } GTEXT_XML_Write_Options;
 
 /**
  * @brief The defaults, spelled out.
  *
  * @return Allocator NULL, declaration AUTO, UTF-8, `<a/>`, no namespace
- *   declarations added, compact, "\n", depth 256, 256 MiB.
+ *   declarations added, compact, "\n", depth 256, 256 MiB output, and 64 MiB
+ *   retained-DTD preflight work.
  */
 GTEXT_API GTEXT_XML_Write_Options gtext_xml_write_options_default(void);
 
@@ -418,10 +432,9 @@ typedef struct {
   size_t namespace_declarations_added; ///< By GTEXT_XML_Write_Options::declare_namespaces.
   size_t text_nodes_coalesced; ///< Empty text nodes, and text nodes that follow
                            ///< another: XML reads them back as one node or none.
-  bool doctype_without_subset; ///< A document type was written. The tree does
-                           ///< not record whether the source had an internal
-                           ///< subset, and none is written: this is set for every
-                           ///< document type written, subset or not.
+  bool doctype_without_subset; ///< A doctype was written without a retained
+                           ///< internal subset. False when retained syntax was
+                           ///< emitted in its original order.
   size_t xhtml_hazards;    ///< `xhtml` only: how many hazards were found
                            ///< (GTEXT_XML_Xhtml_Hazard). With `xhtml_strict` the
                            ///< first one is the refusal, so this is 1.
