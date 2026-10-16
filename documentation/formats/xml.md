@@ -34,7 +34,7 @@ Back to \ref text_format_references "Formats".
 | CDATA section | a CDATA node of its own; adjacent ones are not merged |
 | comment, processing instruction | their nodes |
 | white space outside the root element | not kept |
-| attribute value | normalized as CDATA: each literal tab, line feed and carriage return becomes one space; a *reference* to one stays itself |
+| attribute value | literal whitespace normalization, plus declared tokenized-type normalization in DTD PROCESS mode; DTD defaults are added before namespace resolution |
 | `<?xml ... ?>` | the document's version (`"1.0"` or `"1.1"`), standalone flag and encoding label; with no declaration the version is NULL and the encoding is `UTF-8` from the default |
 | `<!DOCTYPE ...>` | a doctype node: name, public identifier (white space collapsed, as the specification asks), system identifier |
 
@@ -65,8 +65,14 @@ subset declarations, and the first applicable declaration at that precedence
 wins. ATTLIST bindings are keyed by element and attribute, so declarations
 merge across distinct attributes while the first declaration for each
 attribute wins. The index is separate from retained syntax and can be rebuilt
-from it. The parser does not validate documents against declarations or apply
-attribute types or default attributes. In PROCESS mode, internal parsed general
+from it. Declared tokenized types normalize explicit values and declared
+default/fixed values are added before namespace binding; this makes a defaulted
+`xmlns` declaration affect the element and all attributes on its tag. Required
+and implied declarations do not add attributes. Tree and event attributes
+retain whether they were explicit or supplied by a DTD; prefix and local name
+retain the lexical QName alongside the resolved namespace. This is not DTD
+validity checking: required/fixed constraints and declared value constraints
+remain for the validation epic. In PROCESS mode, internal parsed general
 entities are expanded in content by the shared XML parser, including replacement
 markup, and recursively expanded and normalized in attribute values. External
 parsed general entities in content are read only through the caller's resolver;
@@ -74,8 +80,8 @@ they are decoded, their text declaration is removed, and their body is parsed as
 replacement content. External entities in attributes fail. A declined,
 unavailable, or unresolved external general entity fails even when
 `GTEXT_XML_DTD_EXTERNAL_SKIP` is selected; SKIP does not insert empty content or
-an unresolved placeholder. A
-conditional-section closing delimiter must occur in one physical source; a PE
+an unresolved placeholder. A conditional-section closing delimiter must occur
+in one physical source (the document or one entity replacement stream); a PE
 cannot supply part of that delimiter.
 
 External access is explicit: only a caller-supplied resolver may provide an
@@ -155,8 +161,8 @@ Each has a default from the first release; `0` in the options selects it, and
 | a name, in bytes | 8192 | `_LIMIT_NAME` |
 | nodes in the document, the document node included | 10,000,000 | `_LIMIT_NODES` |
 | namespace declarations in scope at once | 256 | `_LIMIT_NAMESPACES` |
-| bytes in one external source | 16 MiB | `_LIMIT_EXTERNAL_SOURCE` |
-| bytes across external sources | 64 MiB | `_LIMIT_EXTERNAL_TOTAL` |
+| bytes in one external source | 16 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_SOURCE` |
+| bytes across external sources | 64 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_TOTAL` |
 | entity replacement bytes, cumulatively | 64 MiB | `_LIMIT_EXPANSION` |
 | active entity sources | 32 | `_LIMIT_ENTITY_DEPTH` |
 | XML references, including entity and character references | 1,000,000 | `_LIMIT_REFERENCES` |
@@ -169,7 +175,9 @@ resources itself. It parses external-subset declarations against the DTD grammar
 their syntax snapshot, but does not check document validity against those
 declarations. The derived index applies internal-over-external precedence and
 first-applicable declaration rules; each element/attribute pair in an ATTLIST
-has its own binding. This index is separate from the retained syntax
+has its own binding. For duplicate declarations, the declaration encountered
+first in the applicable internal subset, then the applicable external subset,
+wins; PE replacement participates at its point of inclusion. This index is separate from the retained syntax
 collections and can be rebuilt from them. The external snapshot preserves
 declarations, comments, and processing instructions in source order from
 included sections, but not raw parameter-entity reference constructs. It
@@ -344,7 +352,8 @@ status is checked there, not only at the end of the loop.
 
 **The events.** `DOCUMENT_START` (version, encoding and why, standalone),
 `DOCTYPE`, `ELEMENT_START` (namespace, prefix, local name, and the attributes, each
-resolved and located; `xmlns` declarations are attributes, as in the tree),
+resolved and located, with explicit/defaulted origin; `xmlns` declarations are
+attributes, as in the tree),
 `ELEMENT_END` (the same names; an empty-element tag is a start and an end),
 `TEXT`, `CDATA`, `COMMENT`, `PROCESSING_INSTRUCTION`, `DOCUMENT_END`. Every event
 has the location of its construct, the same one the tree's node would have, and
@@ -524,11 +533,11 @@ when the newline is a bare line feed (with `"\r\n"` the carriage return is read
 back as a line feed).
 
 **The document type** is written from its name and public and system identifiers.
-The internal subset is not stored by the parser and cannot be written. The tree
-does not record whether the source had one, so `doctype_without_subset` is set
-for every document type written, subset or not; it says what is true of the
-output (no subset in it), not that one was lost. DTD output is a later
-phase.
+The parser retains internal and resolved external declarations in the doctype,
+but the writer does not emit them yet. The tree does not record whether the
+source had a subset, so `doctype_without_subset` is set for every document type
+written; it describes the output (no subset in it), not whether one was read.
+DTD output is a later phase.
 
 **Order and depth.** Attributes are written in tree order, which is source order
 for a parsed tree; the walk uses the parent and sibling links and a heap array of
@@ -1052,8 +1061,8 @@ parser reaches first.
 ## Gaps
 
 - The writer has no streaming (event) form, no canonicalization (C14N), no HTML
-  serialization and no DTD output; the internal subset of a document type is not
-  written because it is not stored.
+  serialization and no DTD output yet; parsed declarations are retained but not
+  emitted.
 - Encodings other than UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are declined (see Encodings).
 - The reference differential and the fuzzers (above) have limits of their own. The gate's
   generated population is small (3,997 documents), so the references' leniencies (above)
@@ -1063,7 +1072,7 @@ parser reaches first.
 - No DTD processing: declarations are skipped, entities other than the
   predefined five are refused, and 340 not-well-formed documents whose fault is
   inside a DTD are accepted (listed, with their reasons).
-- No XML 1.1, no canonicalization, no XPath. None is planned in this phase.
+- No canonicalization or XPath. Neither is planned in this phase.
 
 For `gtext_xml_parse()`, conversion happens before parsing, so an invalid sequence
 anywhere in a non-UTF-8 document is reported in preference to an earlier syntax

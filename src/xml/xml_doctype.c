@@ -1247,7 +1247,8 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
     const unsigned char *element, size_t element_len,
     const unsigned char *name, size_t name_len, int external,
     GTEXT_Markup_Node *doctype, const unsigned char *decl, size_t decl_len,
-    const GTEXT_Markup_Location *where) {
+    const GTEXT_Markup_Location *where, xml_dtd_binding **effective) {
+  if (effective) *effective = NULL;
   for (size_t i = 0; i < p->dtd_binding_count; ++i) {
     GTEXT_XML_Status charged = xml_charge_work(p, 1);
     if (charged != GTEXT_XML_OK) return charged;
@@ -1269,9 +1270,16 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
       memcpy(copy, name, name_len); copy[name_len] = 0;
       if (element_len) { memcpy(element_copy, element, element_len); element_copy[element_len] = 0; }
       xml_release(p, b->name); xml_release(p, b->element_name);
+      xml_release(p, b->attribute_default_value);
       b->name = copy; b->element_name = element_copy;
       b->name_length = name_len; b->element_name_length = element_len;
       b->external = 0;
+      b->attribute_tokenized = 0;
+      b->attribute_default_kind = 0;
+      b->attribute_default_value = NULL;
+      b->attribute_default_length = 0;
+      if (where) b->declaration_location = *where;
+      if (effective) *effective = b;
       if (doctype) {
         GTEXT_Markup_Status ms = markup_doctype_set_binding(doctype, kind,
             (const char *)element, element_len, (const char *)name, name_len,
@@ -1296,8 +1304,10 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
   p->dtd_bindings[binding_index] = (xml_dtd_binding){
       .kind = kind, .element_name = element_copy, .element_name_length = element_len,
       .name = copy, .name_length = name_len,
-      .syntax_index = binding_index, .external = (unsigned char)external};
+      .syntax_index = binding_index, .external = (unsigned char)external,
+      .declaration_location = where ? *where : (GTEXT_Markup_Location){0}};
   p->dtd_binding_count = binding_index + 1;
+  if (effective) *effective = &p->dtd_bindings[binding_index];
   if (doctype) {
     GTEXT_Markup_Status ms = markup_doctype_set_binding(doctype, kind,
         (const char *)element, element_len, (const char *)name, name_len,
@@ -1334,7 +1344,7 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
   name_at = at - name_len;
   if (!name_len) return GTEXT_XML_OK; /* grammar parser already diagnosed it */
   if (kind != 1) return bind_key(p, key_kind, NULL, 0, s + name_at,
-      name_len, external, doctype, s, n, where);
+      name_len, external, doctype, s, n, where, NULL);
   const unsigned char *element = s + name_at;
   size_t element_len = name_len;
   while (at < n) {
@@ -1342,12 +1352,15 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
     if (at >= n || s[at] == '>') break;
     name_at = at; name_len = decl_name(s, n, &at);
     if (!name_len) break;
+    const size_t attr_name_at = name_at;
+    xml_dtd_binding *effective = NULL;
     GTEXT_XML_Status status = bind_key(p, kind, element, element_len,
-        s + name_at, name_len, external, doctype, s, n, where);
+        s + name_at, name_len, external, doctype, s, n, where, &effective);
     if (status != GTEXT_XML_OK) return status;
-    /* Skip the type (including a parenthesized enumeration) and default
-       declaration, respecting quoted literals. */
+    /* Retain the effective normalization/default metadata separately from
+       the ordered source syntax. */
     while (at < n && xml_is_space(s[at])) ++at;
+    const size_t type_at = at;
     int parens = 0; unsigned char quote = 0;
     while (at < n) {
       unsigned char c = s[at++];
@@ -1357,15 +1370,38 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
       else if (c == ')' && parens) --parens;
       else if (xml_is_space(c) && parens == 0) break;
     }
+    const size_t type_end = at;
     while (at < n && xml_is_space(s[at])) ++at;
+    int default_kind = 0;
     if (at < n && s[at] == '#') {
+      const size_t marker = ++at;
       while (at < n && !xml_is_space(s[at]) && s[at] != '>' && s[at] != '\'' && s[at] != '"') ++at;
+      if (at - marker == 5 && memcmp(s + marker, "FIXED", 5) == 0) default_kind = 2;
       while (at < n && xml_is_space(s[at])) ++at;
     }
+    else if (at < n && (s[at] == '\'' || s[at] == '"')) default_kind = 1;
+    const size_t value_at = at < n && (s[at] == '\'' || s[at] == '"') ? at + 1 : at;
+    size_t value_length = 0;
     if (at < n && (s[at] == '\'' || s[at] == '"')) {
-      quote = s[at++]; while (at < n && s[at] != quote) ++at;
+      quote = s[at++]; const size_t begin = at; while (at < n && s[at] != quote) ++at;
+      value_length = at - begin;
       if (at < n) ++at;
     }
+    if (effective) {
+      effective->attribute_tokenized = !(type_end - type_at == 5
+          && memcmp(s + type_at, "CDATA", 5) == 0);
+      effective->attribute_default_kind = (unsigned char)default_kind;
+      if (default_kind) {
+        char *value = xml_alloc(p, value_length + 1);
+        if (!value) return xml_fail(p, GTEXT_XML_E_OOM,
+            "could not retain an attribute default value");
+        memcpy(value, s + value_at, value_length); value[value_length] = 0;
+        xml_release(p, effective->attribute_default_value);
+        effective->attribute_default_value = value;
+        effective->attribute_default_length = value_length;
+      }
+    }
+    (void)attr_name_at;
   }
   return GTEXT_XML_OK;
 }
@@ -1437,6 +1473,7 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
       for (size_t i = 0; i < p->dtd_binding_count; ++i) {
         xml_release(p, p->dtd_bindings[i].element_name);
         xml_release(p, p->dtd_bindings[i].name);
+        xml_release(p, p->dtd_bindings[i].attribute_default_value);
       }
       xml_release(p, p->dtd_bindings);
       p->dtd_bindings = old_parse;
@@ -1452,6 +1489,7 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
     for (size_t i = 0; i < old_parse_count; ++i) {
       xml_release(p, old_parse[i].element_name);
       xml_release(p, old_parse[i].name);
+      xml_release(p, old_parse[i].attribute_default_value);
     }
     xml_release(p, old_parse);
     }

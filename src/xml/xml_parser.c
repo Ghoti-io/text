@@ -416,6 +416,73 @@ static int same_expanded_name(
       && memcmp(local, k->local, length) == 0;
 }
 
+static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
+    const GTEXT_Markup_Location * attribute_at, size_t * value_offset,
+    size_t * value_length);
+
+static const xml_dtd_binding * find_attribute_binding(const xml_ctx * p,
+    const unsigned char * element, size_t element_length,
+    const unsigned char * attribute, size_t attribute_length) {
+  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+    const xml_dtd_binding * b = &p->dtd_bindings[i];
+    if (b->kind != GTEXT_MARKUP_DTD_ATTLIST
+        || b->element_name_length != element_length
+        || memcmp(b->element_name, element, element_length) != 0
+        || b->name_length != attribute_length
+        || memcmp(b->name, attribute, attribute_length) != 0) continue;
+    return b;
+  }
+  return NULL;
+}
+
+/* A DTD default is an attribute value, so run it through the same reference
+   and whitespace path as an explicit value before it enters the start tag. */
+static GTEXT_XML_Status append_default_value(xml_ctx * p,
+    const xml_dtd_binding * binding, const GTEXT_Markup_Location * at,
+    size_t * offset, size_t * length) {
+  markup_buf input;
+  markup_buf_init(&input, p->allocator);
+  GTEXT_XML_Status status = xml_append(p, &input, "\"", 1);
+  if (status == GTEXT_XML_OK)
+    status = xml_append(p, &input, binding->attribute_default_value,
+        binding->attribute_default_length);
+  if (status == GTEXT_XML_OK) status = xml_append(p, &input, "\"", 1);
+  if (status != GTEXT_XML_OK) { markup_buf_free(&input); return status; }
+
+  xml_ctx nested = *p;
+  markup_buf_init(&nested.attr_pool, p->allocator);
+  nested.in = (const unsigned char *)input.data;
+  nested.length = input.length;
+  nested.pos = 0;
+  nested.err = (GTEXT_XML_Error){0};
+  nested.err.code = GTEXT_XML_OK;
+  status = parse_attribute_value(&nested, at, offset, length);
+  p->references = nested.references;
+  p->expanded_bytes = nested.expanded_bytes;
+  p->total_work = nested.total_work;
+  if (status == GTEXT_XML_OK) {
+    *offset = p->attr_pool.length;
+    *length = nested.attr_pool.length;
+    status = xml_append(p, &p->attr_pool, nested.attr_pool.data,
+        nested.attr_pool.length);
+  }
+  else if (nested.err.code != GTEXT_XML_OK) {
+    p->err = nested.err;
+    /* The temporary input is the retained DTD literal. Report its physical
+       declaration location rather than the synthetic buffer's coordinates. */
+    p->err.byte_offset = at->offset;
+    p->err.line = at->line;
+    p->err.column = at->column;
+    p->err.source_id = at->source_id;
+    p->err.reference_source_id = at->reference_source_id;
+    p->err.raw_byte_offset = at->raw_offset;
+    p->err.has_raw_byte_offset = at->has_raw_offset;
+  }
+  markup_buf_free(&nested.attr_pool);
+  markup_buf_free(&input);
+  return status;
+}
+
 /* Collapse runs of spaces and trim, in place: what a tokenized attribute type
    adds to CDATA normalization. */
 static void normalize_tokenized(markup_buf * pool, size_t start) {
@@ -666,9 +733,13 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
     }
     a = &p->attrs[p->attr_count - 1];
 
-    if (p->seams.attribute_type
+    const xml_dtd_binding * attribute_decl = p->dtd_mode == GTEXT_XML_DTD_PROCESS
+        ? find_attribute_binding(p, name, name_length, a->name_ptr,
+            a->name_length) : NULL;
+    if ((attribute_decl && attribute_decl->attribute_tokenized)
+        || (p->seams.attribute_type
         && p->seams.attribute_type(p->seams.user, (const char *)name,
-            name_length, (const char *)a->name_ptr, a->name_length)) {
+            name_length, (const char *)a->name_ptr, a->name_length))) {
       normalize_tokenized(&p->attr_pool, a->value_offset);
       a->value_length = p->attr_pool.length - a->value_offset;
     }
@@ -723,7 +794,8 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
       a->name_ptr = key.name;
       a->name_length = dl;
       a->where = at;
-      status = xml_check_qname(p, a->name_ptr, dl, &a->colon, &at);
+      a->defaulted = 1;
+      status = xml_check_qname(p, a->name_ptr, dl, &a->colon, &a->where);
       if (status != GTEXT_XML_OK) {
         return status;
       }
@@ -732,6 +804,41 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
       status = xml_append(p, &p->attr_pool, list[k].value, a->value_length);
       if (status != GTEXT_XML_OK) {
         return status;
+      }
+    }
+  }
+
+  if (p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+    for (size_t k = 0; k < p->dtd_binding_count; k++) {
+      const xml_dtd_binding * binding = &p->dtd_bindings[k];
+      if (binding->kind != GTEXT_MARKUP_DTD_ATTLIST
+          || binding->element_name_length != name_length
+          || memcmp(binding->element_name, name, name_length) != 0
+          || binding->attribute_default_kind == 0) continue;
+      name_key key = {(const unsigned char *)binding->name, binding->name_length};
+      int present = 0;
+      for (size_t j = 0; j < p->attr_count && !present; j++)
+        present = same_raw_name(p, (uint32_t)j, &key);
+      if (present) continue;
+      if (p->attr_count >= p->max_attributes)
+        return xml_fail_at(p, GTEXT_XML_E_LIMIT_ATTRIBUTES,
+            "too many attributes on one element", &at);
+      xml_attr * a = NULL;
+      status = push_attribute(p, &a);
+      if (status != GTEXT_XML_OK) return status;
+      a->name_ptr = (const unsigned char *)binding->name;
+      a->name_length = binding->name_length;
+      a->where = binding->declaration_location;
+      a->defaulted = 1;
+      status = xml_check_qname(p, a->name_ptr, a->name_length, &a->colon,
+          &a->where);
+      if (status == GTEXT_XML_OK)
+      status = append_default_value(p, binding, &a->where,
+            &a->value_offset, &a->value_length);
+      if (status != GTEXT_XML_OK) return status;
+      if (binding->attribute_tokenized) {
+        normalize_tokenized(&p->attr_pool, a->value_offset);
+        a->value_length = p->attr_pool.length - a->value_offset;
       }
     }
   }
@@ -892,6 +999,10 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
     if (status == GTEXT_XML_OK) {
       status = xml_from_markup(p,
           gtext_markup_element_set_attribute_location(element, i, &a->where));
+    }
+    if (status == GTEXT_XML_OK && a->defaulted) {
+      status = xml_from_markup(p, gtext_markup_element_set_attribute_origin(
+          element, i, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED));
     }
     if (status != GTEXT_XML_OK) {
       xml_scope_release(p, mark);

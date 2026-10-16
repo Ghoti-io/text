@@ -166,6 +166,7 @@ static const char * check_node(const GTEXT_Markup_Document * doc, node_t * n) {
       for (size_t i = 0; i < e->attr_count; i++) {
         const markup_attr * a = &e->attrs[i];
         if (!a->local || !a->value || a->local->length == 0
+            || a->origin > GTEXT_MARKUP_ATTRIBUTE_DEFAULTED
             || a->value[a->value_length] != '\0') {
           return "an attribute is missing its name or its terminated value";
         }

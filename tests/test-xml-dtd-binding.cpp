@@ -157,6 +157,17 @@ TEST(XmlDtdBinding, ExternalBindingsFollowInternalPrecedenceAndAttlistsMerge) {
   EXPECT_FALSE(notation->external_context);
   EXPECT_NE(std::string(notation->source, notation->source_length).find("internal-image"),
       std::string::npos);
+  auto *root = gtext_markup_node_first_child(gtext_markup_document_root(doc));
+  while (root && gtext_markup_node_kind(root) != GTEXT_MARKUP_KIND_ELEMENT)
+    root = gtext_markup_node_next_sibling(root);
+  ASSERT_NE(root, nullptr);
+  GTEXT_Markup_Attribute attr{};
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "a", &attr));
+  EXPECT_STREQ(attr.value, "external-a");
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "b", &attr));
+  EXPECT_STREQ(attr.value, "internal-b");
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
 
   auto binding_snapshot = [](const markup_doctype *doctype) {
     std::vector<std::string> snapshot;
@@ -182,6 +193,144 @@ TEST(XmlDtdBinding, ExternalBindingsFollowInternalPrecedenceAndAttlistsMerge) {
   EXPECT_EQ(markup_check_invariants(doc), nullptr);
   xml_source_free(&rebuild);
   gtext_markup_document_free(doc);
+}
+
+TEST(XmlDtdBinding, DeclaredDefaultsAndTokenizedValuesPrecedeNamespaceBinding) {
+  const std::string input =
+      "<!DOCTYPE root ["
+      "<!ENTITY ent 'entity-value'>"
+      "<!ATTLIST root xmlns CDATA 'urn:default' xmlns:p CDATA 'urn:p' "
+      "id ID '  a   b  ' explicit ID 'default-id' "
+      "fixed CDATA #FIXED 'fixed-value' token NMTOKEN #IMPLIED "
+      "char CDATA 'x&#x20;y' entity CDATA '&ent;' empty CDATA '' "
+      "p:code CDATA 'default-code' required CDATA #REQUIRED "
+      "implied CDATA #IMPLIED>"
+      "]><root explicit='  custom  ' token='  x  y  '/>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document *doc = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
+      GTEXT_XML_OK) << error.message;
+  ASSERT_NE(doc, nullptr);
+  auto *root = gtext_markup_node_next_sibling(
+      gtext_markup_node_first_child(gtext_markup_document_root(doc)));
+  ASSERT_NE(root, nullptr);
+  EXPECT_STREQ(gtext_markup_element_namespace(root), "urn:default");
+  GTEXT_Markup_Attribute attr{};
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "id", &attr));
+  EXPECT_STREQ(attr.value, "a b");
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "explicit", &attr));
+  EXPECT_STREQ(attr.value, "custom");
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_EXPLICIT);
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "char", &attr));
+  EXPECT_STREQ(attr.value, "x y");
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "entity", &attr));
+  EXPECT_STREQ(attr.value, "entity-value");
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "empty", &attr));
+  EXPECT_STREQ(attr.value, "");
+  EXPECT_FALSE(gtext_markup_element_get_attribute(root, nullptr, "required", &attr));
+  EXPECT_FALSE(gtext_markup_element_get_attribute(root, nullptr, "implied", &attr));
+  bool saw_code = false;
+  for (size_t i = 0; i < gtext_markup_element_attribute_count(root); i++) {
+    GTEXT_Markup_Attribute candidate{};
+    ASSERT_EQ(gtext_markup_element_attribute_at(root, i, &candidate), GTEXT_MARKUP_OK);
+    if (std::strcmp(candidate.local, "code") == 0) {
+      saw_code = true;
+      EXPECT_STREQ(candidate.ns, "urn:p");
+      EXPECT_STREQ(candidate.value, "default-code");
+      EXPECT_EQ(candidate.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+    }
+  }
+  EXPECT_TRUE(saw_code);
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "fixed", &attr));
+  EXPECT_STREQ(attr.value, "fixed-value");
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root, nullptr, "token", &attr));
+  EXPECT_STREQ(attr.value, "x y");
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_EXPLICIT);
+  GTEXT_Markup_Attribute xmlns{};
+  ASSERT_TRUE(gtext_markup_element_get_attribute(root,
+      GTEXT_MARKUP_NS_XMLNS, "xmlns", &xmlns));
+  EXPECT_STREQ(xmlns.value, "urn:default");
+  GTEXT_Markup_Document *clone_doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &clone_doc), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node *clone = nullptr;
+  ASSERT_EQ(gtext_markup_clone(clone_doc, root, true, &clone), GTEXT_MARKUP_OK);
+  EXPECT_TRUE(gtext_markup_equal(root, clone));
+  GTEXT_Markup_Attribute cloned_attr{};
+  ASSERT_TRUE(gtext_markup_element_get_attribute(clone, nullptr, "id", &cloned_attr));
+  EXPECT_EQ(cloned_attr.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+  gtext_markup_document_free(clone_doc);
+  gtext_markup_document_free(doc);
+
+  GTEXT_XML_Reader *reader = gtext_xml_reader_new(&options);
+  ASSERT_NE(reader, nullptr);
+  for (size_t i = 0; i < input.size(); i++)
+    ASSERT_EQ(gtext_xml_reader_feed(reader, input.data() + i, 1, &error),
+        GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, &error), GTEXT_XML_OK)
+      << error.message;
+  bool saw_root = false;
+  GTEXT_XML_Event event{};
+  while (gtext_xml_reader_next(reader, &event) == GTEXT_XML_OK) {
+    if (event.type != GTEXT_XML_EVENT_ELEMENT_START
+        || std::strcmp(event.local_name, "root") != 0) continue;
+    saw_root = true;
+    EXPECT_STREQ(event.namespace_uri, "urn:default");
+    bool saw_defaulted_id = false;
+    bool saw_explicit_token = false;
+    for (size_t i = 0; i < event.attribute_count; i++) {
+      const auto &attribute = event.attributes[i];
+      if (std::strcmp(attribute.local_name, "id") == 0) {
+        saw_defaulted_id = true;
+        EXPECT_STREQ(attribute.value, "a b");
+        EXPECT_EQ(attribute.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+      }
+      if (std::strcmp(attribute.local_name, "token") == 0) {
+        saw_explicit_token = true;
+        EXPECT_STREQ(attribute.value, "x y");
+        EXPECT_EQ(attribute.origin, GTEXT_MARKUP_ATTRIBUTE_EXPLICIT);
+      }
+    }
+    EXPECT_TRUE(saw_defaulted_id);
+    EXPECT_TRUE(saw_explicit_token);
+  }
+  EXPECT_TRUE(saw_root);
+  gtext_xml_reader_free(reader);
+
+  options.max_attributes = 1;
+  doc = nullptr;
+  EXPECT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
+      GTEXT_XML_E_LIMIT_ATTRIBUTES);
+  EXPECT_EQ(doc, nullptr);
+}
+
+TEST(XmlDtdBinding, DefaultedAttributesAreCheckedAfterNamespaceBinding) {
+  const std::string input =
+      "<!DOCTYPE root [<!ATTLIST root p:a CDATA 'one' q:a CDATA 'two'>]>"
+      "<root xmlns:p='urn:same' xmlns:q='urn:same'/>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document *doc = nullptr;
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
+      GTEXT_XML_E_DUPLICATE_ATTRIBUTE);
+  EXPECT_EQ(doc, nullptr);
+}
+
+TEST(XmlDtdBinding, UnresolvedDefaultReferencesFailWithoutPublishingATree) {
+  const std::string input =
+      "<!DOCTYPE root [<!ATTLIST root value CDATA '&missing;'>]><root/>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document *doc = nullptr;
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
+      GTEXT_XML_E_ENTITY);
+  EXPECT_EQ(doc, nullptr);
+  EXPECT_EQ(error.byte_offset, input.find("<!ATTLIST"));
 }
 
 } // namespace

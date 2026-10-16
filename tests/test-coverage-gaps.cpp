@@ -169,7 +169,8 @@ TEST(CoverageGapsMarkup, AnAttributeIndexPastTheEndIsInvalidAndWritesNothing) {
   ASSERT_EQ(gtext_xml_parse(text, strlen(text), nullptr, &doc, &err), GTEXT_XML_OK);
   const GTEXT_Markup_Node * a = gtext_markup_document_element(doc);
   static const char sentinel[] = "sentinel";
-  GTEXT_Markup_Attribute out = {nullptr, nullptr, sentinel, nullptr, 7};
+  GTEXT_Markup_Attribute out = {nullptr, nullptr, sentinel, nullptr, 7,
+      GTEXT_MARKUP_ATTRIBUTE_EXPLICIT};
   EXPECT_EQ(gtext_markup_element_attribute_at(a, 1, &out), GTEXT_MARKUP_E_INVALID);
   EXPECT_EQ(gtext_markup_element_attribute_at(a, SIZE_MAX, &out), GTEXT_MARKUP_E_INVALID);
   EXPECT_EQ(gtext_markup_element_attribute_at(a, 0, nullptr), GTEXT_MARKUP_E_INVALID);

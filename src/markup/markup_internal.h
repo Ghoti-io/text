@@ -97,6 +97,7 @@ typedef struct {
   size_t raw_offset;
   uint8_t has_raw_offset;
   uint8_t has_location;
+  uint8_t origin;
 } markup_attr;
 
 /** The part of every node. */

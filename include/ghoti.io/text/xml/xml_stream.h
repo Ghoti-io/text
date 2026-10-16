@@ -84,6 +84,7 @@
 
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup/markup_core.h>
+#include <ghoti.io/text/markup/markup_tree.h>
 #include <ghoti.io/text/xml/xml_core.h>
 #include <stddef.h>
 
@@ -124,6 +125,8 @@ typedef enum {
  * `http://www.w3.org/2000/xmlns/`. An unprefixed attribute has no namespace
  * (the default namespace does not apply to attributes). Attributes are in source
  * order. The value has its line ends and references already normalized.
+ * `origin` distinguishes attributes written in the start tag from values
+ * supplied by a processed DTD.
  */
 typedef struct {
   const char * namespace_uri; ///< NULL for none.
@@ -132,6 +135,7 @@ typedef struct {
   const char * value;         ///< NUL-terminated; never contains a NUL.
   size_t value_length;
   GTEXT_Markup_Location location; ///< Where the attribute's name begins.
+  GTEXT_Markup_Attribute_Origin origin; ///< Explicit or supplied by the DTD.
 } GTEXT_XML_Event_Attribute;
 
 /**

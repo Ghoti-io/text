@@ -212,6 +212,7 @@ typedef struct {
   xml_source_kind kind;
   const void * identity;
   const char * base_uri; ///< Physical base for relative external identifiers.
+  char * owned_base_uri; ///< Resolver URI retained until this source is popped.
   char * owned_name;
   char * owned_bytes;
   char * owned_decoded;
@@ -262,6 +263,11 @@ typedef struct {
   size_t name_length;
   size_t syntax_index;
   unsigned char external;
+  unsigned char attribute_tokenized;
+  unsigned char attribute_default_kind; /* 0 none, 1 default, 2 fixed */
+  char * attribute_default_value;
+  size_t attribute_default_length;
+  GTEXT_Markup_Location declaration_location;
 } xml_dtd_binding;
 
 typedef struct {
@@ -284,6 +290,7 @@ typedef struct {
                                   ///< seam's string for a defaulted attribute.
   int kind;           ///< XML_ATTR_*.
   const char * ns;    ///< Resolved namespace URI, or NULL.
+  unsigned char defaulted;
 } xml_attr;
 
 /** What an attribute of a start tag is. */

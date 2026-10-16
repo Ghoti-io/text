@@ -34,6 +34,58 @@ struct ExternalEntity {
   GTEXT_XML_Resource_Kind kind = GTEXT_XML_RESOURCE_GENERAL_ENTITY;
 };
 
+struct ClosingSource {
+  std::string bytes;
+  size_t offset = 0;
+  size_t closes = 0;
+  int identity = 0;
+  std::string base_uri;
+};
+
+struct ClosingResolver {
+  ClosingSource subset;
+  ClosingSource entity;
+  std::string entity_request_base_uri;
+};
+
+static GTEXT_XML_Source_Read_Result read_closing_source(void * handle,
+    unsigned char * buffer, size_t capacity, size_t * count) {
+  auto * source = static_cast<ClosingSource *>(handle);
+  const size_t amount = std::min(capacity, source->bytes.size() - source->offset);
+  if (amount == 0) { *count = 0; return GTEXT_XML_SOURCE_EOF; }
+  std::memcpy(buffer, source->bytes.data() + source->offset, amount);
+  source->offset += amount;
+  *count = amount;
+  return GTEXT_XML_SOURCE_DATA;
+}
+
+static void close_closing_source(void * handle) {
+  auto * source = static_cast<ClosingSource *>(handle);
+  ++source->closes;
+  source->base_uri.clear();
+}
+
+static GTEXT_XML_Resolver_Result resolve_closing_source(
+    const GTEXT_XML_Resolve_Request * request, void * user,
+    GTEXT_XML_External_Source * out) {
+  auto * resolver = static_cast<ClosingResolver *>(user);
+  ClosingSource * source = nullptr;
+  if (request->kind == GTEXT_XML_RESOURCE_EXTERNAL_SUBSET) {
+    source = &resolver->subset;
+  }
+  else if (request->kind == GTEXT_XML_RESOURCE_GENERAL_ENTITY) {
+    resolver->entity_request_base_uri = request->base_uri
+        ? request->base_uri : "";
+    source = &resolver->entity;
+  }
+  else {
+    return GTEXT_XML_RESOLVER_DECLINED;
+  }
+  *out = {source, &source->identity, source->base_uri.c_str(),
+      read_closing_source, close_closing_source};
+  return GTEXT_XML_RESOLVER_OPENED;
+}
+
 static GTEXT_XML_Source_Read_Result read_entity(void * handle,
     unsigned char * buffer, size_t capacity, size_t * count) {
   auto * source = static_cast<ExternalEntity *>(handle);
@@ -161,6 +213,80 @@ TEST(XmlGeneralEntity, CallerResolvedExternalReplacementUsesTheSharedParser) {
   GTEXT_Markup_Location location{};
   ASSERT_TRUE(gtext_markup_node_location(child, &location));
   EXPECT_GT(location.source_id, 1u);
+  gtext_markup_document_free(document);
+}
+
+TEST(XmlGeneralEntity, CallerResolvedExternalReplacementWorksInBothReaders) {
+  const std::string input =
+      "<!DOCTYPE root [<!ENTITY ext SYSTEM 'memory:entity'>]>"
+      "<root>&ext;</root>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = resolve_entity;
+  options.base_uri = "memory:document";
+
+  ExternalEntity push_source;
+  push_source.bytes = "<child>external</child>";
+  options.resolver_user_data = &push_source;
+  Events pushed;
+  GTEXT_XML_Error error{};
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&options, collect,
+      &pushed);
+  ASSERT_NE(stream, nullptr);
+  ASSERT_EQ(gtext_xml_stream_feed(stream, input.data(), input.size(), &error),
+      GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_stream_finish(stream, &error), GTEXT_XML_OK)
+      << error.message;
+  EXPECT_EQ(pushed.values, (std::vector<std::string>{
+      "start:root", "start:child", "text:external", "end:child",
+      "end:root"}));
+  EXPECT_EQ(push_source.closes, 1u);
+  gtext_xml_stream_free(stream);
+
+  ExternalEntity pull_source;
+  pull_source.bytes = "<child>external</child>";
+  options.resolver_user_data = &pull_source;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&options);
+  ASSERT_NE(reader, nullptr);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, input.data(), input.size(), &error),
+      GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, &error), GTEXT_XML_OK)
+      << error.message;
+  Events pulled;
+  GTEXT_XML_Event event{};
+  GTEXT_XML_Status pull_status = GTEXT_XML_OK;
+  while ((pull_status = gtext_xml_reader_next(reader, &event)) == GTEXT_XML_OK) {
+    collect(&event, &pulled);
+  }
+  EXPECT_EQ(pull_status, GTEXT_XML_E_STATE);
+  EXPECT_EQ(pulled.values, pushed.values);
+  EXPECT_EQ(pull_source.closes, 1u);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlGeneralEntity, DeclarationRetainsResolverBaseUriAfterSubsetClose) {
+  ClosingResolver resolver;
+  resolver.subset.bytes = "<!ENTITY ext SYSTEM 'memory:ext'>";
+  resolver.subset.base_uri = "memory:dtd-base";
+  resolver.entity.bytes = "<child/>";
+  resolver.entity.base_uri = "memory:entity-base";
+  const std::string input =
+      "<!DOCTYPE root SYSTEM 'memory:dtd'><root>&ext;</root>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = resolve_closing_source;
+  options.resolver_user_data = &resolver;
+  GTEXT_Markup_Document * document = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options,
+      &document, &error), GTEXT_XML_OK) << error.message;
+  ASSERT_NE(document, nullptr);
+  EXPECT_EQ(resolver.subset.closes, 1u);
+  EXPECT_TRUE(resolver.subset.base_uri.empty());
+  EXPECT_EQ(resolver.entity_request_base_uri, "memory:dtd-base");
+  EXPECT_EQ(resolver.entity.closes, 1u);
   gtext_markup_document_free(document);
 }
 

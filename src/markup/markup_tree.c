@@ -1189,6 +1189,7 @@ static void view_of(const markup_attr * a, GTEXT_Markup_Attribute * out) {
   out->local = a->local->text;
   out->value = a->value;
   out->value_length = a->value_length;
+  out->origin = (GTEXT_Markup_Attribute_Origin)a->origin;
 }
 
 GTEXT_Markup_Status gtext_markup_element_attribute_at(
@@ -1289,6 +1290,7 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute(
     a->prefix = new_prefix;
     a->value = copy;
     a->value_length = value_length;
+    a->origin = GTEXT_MARKUP_ATTRIBUTE_EXPLICIT;
     return GTEXT_MARKUP_OK;
   }
 
@@ -1365,6 +1367,18 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute_location(
   store_location(&flags, &a->offset, &a->line, &a->column, &a->source_id,
       &a->reference_source_id, &a->raw_offset, &a->has_raw_offset, location);
   a->has_location = (flags & MARKUP_F_LOCATION) ? 1 : 0;
+  return GTEXT_MARKUP_OK;
+}
+
+GTEXT_Markup_Status gtext_markup_element_set_attribute_origin(
+    GTEXT_Markup_Node * element, size_t index,
+    GTEXT_Markup_Attribute_Origin origin) {
+  markup_element * e = (markup_element *)as_element(element);
+  if (!e || index >= e->attr_count
+      || (origin != GTEXT_MARKUP_ATTRIBUTE_EXPLICIT
+          && origin != GTEXT_MARKUP_ATTRIBUTE_DEFAULTED))
+    return GTEXT_MARKUP_E_INVALID;
+  e->attrs[index].origin = (uint8_t)origin;
   return GTEXT_MARKUP_OK;
 }
 

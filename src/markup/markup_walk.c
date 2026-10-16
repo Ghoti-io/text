@@ -211,6 +211,8 @@ static GTEXT_Markup_Status clone_one(
           gtext_markup_node_free(copy);
           return status;
         }
+        gtext_markup_element_set_attribute_origin(copy, i,
+            (GTEXT_Markup_Attribute_Origin)a->origin);
         if (a->has_location) {
           GTEXT_Markup_Location where = {a->offset, a->line, a->column,
               a->source_id, a->reference_source_id, a->raw_offset,
@@ -425,7 +427,8 @@ static bool node_equal(const node_t * a, const node_t * b) {
           found = same_text(opt_text(p->ns), opt_text(q->ns))
               && same_text(p->local->text, q->local->text)
               && same_text(opt_text(p->prefix), opt_text(q->prefix))
-              && same_bytes(p->value, p->value_length, q->value, q->value_length);
+              && same_bytes(p->value, p->value_length, q->value, q->value_length)
+              && p->origin == q->origin;
         }
         if (!found) {
           return false;

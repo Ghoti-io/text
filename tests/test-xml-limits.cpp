@@ -327,6 +327,9 @@ TEST(XmlLimits, ReferenceAndDeclarationBudgetsAreChargedAtUse) {
   EXPECT_EQ(parse_with("<!DOCTYPE a [<!ENTITY % p ''><!ENTITY % q ''>"
       "<!ENTITY e '%p;%q;'>]><a/>", o),
       GTEXT_XML_E_LIMIT_REFERENCES);
+  // A DTD reference is charged when parsed and again when a default value is
+  // applied to an element.
+  o.max_references = 2;
   EXPECT_EQ(parse_with("<!DOCTYPE a [<!ATTLIST a x CDATA '&amp;'>]><a/>", o),
       GTEXT_XML_OK);
   EXPECT_EQ(parse_with("<!DOCTYPE a [<!ATTLIST a x CDATA '&amp;&#65;'>]><a/>", o),

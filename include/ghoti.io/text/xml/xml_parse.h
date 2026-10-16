@@ -54,7 +54,10 @@ extern "C" {
  *   a comment and a processing instruction likewise.
  *   Whitespace outside the root element is not kept.
  * - **Attribute values** expand declared internal general entities in DTD
- *   PROCESS mode and then apply XML attribute normalization: literal tabs, line
+ *   PROCESS mode, apply XML attribute and declared tokenized-type
+ *   normalization, then add declared default/fixed values before namespace
+ *   resolution. Required/fixed validity constraints are not checked. Defaults
+ *   can supply namespace declarations. Literal tabs, line
  *   feeds and carriage returns become spaces; character references to them
  *   stay themselves. Markup and external-entity references are forbidden.
  * - **The document type** as a doctype node (name, public and system
@@ -62,7 +65,8 @@ extern "C" {
  *   bounded scanner. With PROCESS, declarations are grammar-checked, parameter
  *   entities expand in permitted contexts, and raw, external-subset, and
  *   generated syntax are retained in separate ordered collections. Processing
- *   is non-validating: it does not apply default attributes.
+ *   is non-validating: declared defaults are applied but validity constraints
+ *   are not checked.
  * - **The XML declaration** as the document's version, standalone flag and
  *   encoding label (see gtext_markup_document_xml_version() and
  *   gtext_markup_document_encoding()). With no declaration the version is NULL
@@ -74,7 +78,9 @@ extern "C" {
  * identifier. In PROCESS mode only, a caller resolver may be invoked when
  * `external_access` is ALLOW; it receives opaque identifiers, the base URI of
  * the active declaration source, and a bounded trail of active physical-source
- * labels (empty for the top-level external subset). It supplies a synchronous
+ * labels (empty for the top-level external subset). The source base URI is
+ * copied before its first read and retained for nested-resource resolution.
+ * It supplies a synchronous
  * chunked source for external subsets, parameter entities and general
  * entities. Resolver callbacks may perform I/O and must enforce the
  * application's allowlist. Reads are charged before bytes are retained, and a
@@ -91,8 +97,9 @@ extern "C" {
  * unavailable external general entities fail when referenced. `VALIDATE` returns
  * GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external policy
  * defaults to DENY; SKIP is valid only with PROCESS and never grants the
- * library filesystem or network access. Placeholder and skipped-event
- * behavior for unavailable external general entities is not implemented yet.
+ * library filesystem or network access. An unavailable external general entity
+ * currently fails when referenced, including when SKIP is selected; placeholder
+ * and skipped-event behavior remains planned.
  *
  * **Encodings.** UTF-8 (a byte order mark is accepted and skipped), UTF-16 and
  * UTF-32 in either byte order (by their mark, or by the first bytes of

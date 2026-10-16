@@ -307,6 +307,7 @@ GTEXT_XML_Status xml_source_pop(xml_ctx * p) {
   parent->suspended = 0;
   xml_release(p, child->owned_bytes);
   xml_release(p, child->owned_decoded);
+  xml_release(p, child->owned_base_uri);
   memset(&p->sources[p->source_count], 0, sizeof(*p->sources));
   return GTEXT_XML_OK;
 }
@@ -320,6 +321,7 @@ void xml_source_free(xml_ctx * p) {
     if (f->external_close) f->external_close(f->external_handle);
     xml_release(p, f->owned_bytes);
     xml_release(p, f->owned_decoded);
+    xml_release(p, f->owned_base_uri);
   }
   for (size_t i = 0; i < p->parameter_entity_count; i++) {
     xml_release(p, p->parameter_entities[i].name);
@@ -343,6 +345,7 @@ void xml_source_free(xml_ctx * p) {
   for (size_t i = 0; i < p->dtd_binding_count; ++i) {
     xml_release(p, p->dtd_bindings[i].element_name);
     xml_release(p, p->dtd_bindings[i].name);
+    xml_release(p, p->dtd_bindings[i].attribute_default_value);
   }
   xml_release(p, p->dtd_bindings);
   p->dtd_bindings = NULL;
@@ -447,7 +450,16 @@ GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
     goto fail;
   }
   out->frame_pushed = 1;
-  p->sources[p->source_count - 1].base_uri = source->base_uri;
+  const size_t base_uri_length = strlen(source->base_uri);
+  char * retained_base_uri = xml_alloc(p, base_uri_length + 1);
+  if (!retained_base_uri) {
+    status = xml_fail(p, GTEXT_XML_E_OOM,
+        "could not retain external source base URI");
+    goto fail;
+  }
+  memcpy(retained_base_uri, source->base_uri, base_uri_length + 1);
+  p->sources[p->source_count - 1].owned_base_uri = retained_base_uri;
+  p->sources[p->source_count - 1].base_uri = retained_base_uri;
 
   for (;;) {
     unsigned char chunk[4096];

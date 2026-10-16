@@ -170,11 +170,10 @@ typedef enum {
 
 /**
  * Policy for unavailable external general entities. External access is never
- * implicit; SKIP is valid only with non-validating PROCESS mode. Once external
- * entity processing is implemented, SKIP preserves a referenced entity as an
- * unresolved placeholder and emits a skipped-entity event; it does not mean an
- * empty replacement. The current implementation stage does not yet apply this
- * policy to entity references.
+ * implicit; SKIP is valid only with non-validating PROCESS mode. Currently an
+ * unavailable external general entity fails when referenced under either
+ * policy. A future SKIP implementation will preserve a referenced entity as an
+ * unresolved placeholder and emit a skipped-entity event, not use empty text.
  */
 typedef enum {
   GTEXT_XML_DTD_EXTERNAL_DENY = 0,
@@ -220,8 +219,9 @@ typedef enum {
  *  bytes; EOF must return zero bytes. Other result/count combinations fail
  *  with GTEXT_XML_E_RESOLVER. The parser copies each returned chunk before the
  *  next read and calls close exactly once after a successful open.
- *  `identity`, `base_uri`, `read`, and `close` must be non-NULL; identity stays
- *  stable for the source lifetime. */
+ *  `identity`, `base_uri`, `read`, and `close` must be non-NULL; identity and
+ *  base_uri stay valid until close returns. The parser copies base_uri for
+ *  later nested-resource resolution. */
 typedef struct {
   void * handle;
   const void * identity;

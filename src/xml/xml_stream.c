@@ -1112,6 +1112,8 @@ GTEXT_XML_Status xml_emit_element_start(xml_ctx * p,
     out->value = base + o->value;
     out->value_length = a->value_length;
     out->location = a->where;
+    out->origin = a->defaulted ? GTEXT_MARKUP_ATTRIBUTE_DEFAULTED
+                               : GTEXT_MARKUP_ATTRIBUTE_EXPLICIT;
   }
   GTEXT_XML_Event e;
   event_init(p, &e, GTEXT_XML_EVENT_ELEMENT_START, at);

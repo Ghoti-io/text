@@ -106,6 +106,11 @@ typedef struct GTEXT_Markup_Node GTEXT_Markup_Node;
 /** The XLink namespace, which SVG's `href` has used. */
 #define GTEXT_MARKUP_NS_XLINK "http://www.w3.org/1999/xlink"
 
+typedef enum {
+  GTEXT_MARKUP_ATTRIBUTE_EXPLICIT = 0,
+  GTEXT_MARKUP_ATTRIBUTE_DEFAULTED = 1
+} GTEXT_Markup_Attribute_Origin;
+
 /**
  * @struct GTEXT_Markup_Attribute
  * @brief A view of one attribute.
@@ -113,6 +118,8 @@ typedef struct GTEXT_Markup_Node GTEXT_Markup_Node;
  * Valid until the owning element's attributes are next changed or the element
  * is freed. `value` is always NUL-terminated, in addition to `value_length`
  * saying how long it is, so a value without an embedded NUL is a C string.
+ * `origin` reports whether a DTD supplied the attribute or it appeared in the
+ * start tag. Programmatically created attributes are explicit by default.
  */
 typedef struct {
   const char * ns;     ///< Namespace URI, or NULL for none.
@@ -120,6 +127,7 @@ typedef struct {
   const char * local;  ///< Local name. Never NULL, never empty.
   const char * value;  ///< The value.
   size_t value_length; ///< Bytes of `value`.
+  GTEXT_Markup_Attribute_Origin origin; ///< Explicit or supplied by the DTD.
 } GTEXT_Markup_Attribute;
 
 /* ---- Documents ---------------------------------------------------------- */
@@ -704,6 +712,11 @@ GTEXT_API bool gtext_markup_element_remove_attribute(
 GTEXT_API GTEXT_Markup_Status gtext_markup_element_set_attribute_location(
     GTEXT_Markup_Node * element, size_t index,
     const GTEXT_Markup_Location * location);
+
+/** Set whether a parsed attribute was explicit or supplied by a DTD. */
+GTEXT_API GTEXT_Markup_Status gtext_markup_element_set_attribute_origin(
+    GTEXT_Markup_Node * element, size_t index,
+    GTEXT_Markup_Attribute_Origin origin);
 
 /**
  * @brief Where an attribute came from.
