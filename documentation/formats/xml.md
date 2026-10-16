@@ -235,6 +235,38 @@ physical source location and lexical name of the PE frame that supplied it.
 Effective declaration bindings are derived separately from these retained
 syntax collections.
 
+Programmatic doctypes can use the checked internal-syntax edit API:
+`gtext_markup_doctype_insert_syntax()`,
+`gtext_markup_doctype_replace_syntax()`,
+`gtext_markup_doctype_move_syntax()`, and
+`gtext_markup_doctype_remove_syntax()`. Insert and replace take one complete
+construct spelling and a `GTEXT_Markup_DTD_Syntax_Kind`; the library parses
+the proposed complete internal subset with the same DTD parser used for XML
+input before publishing it. This covers element, ATTLIST, entity, notation,
+comment, processing-instruction, and recorded parameter-reference syntax.
+Indexes and PE-generated syntax are discarded after a successful edit so they
+cannot describe the prior declaration list. The resolved external snapshot is
+read-only and remains unchanged.
+
+Edits are validate-then-swap. A malformed resulting subset returns
+`GTEXT_MARKUP_E_DTD_SYNTAX`; allocation failure returns
+`GTEXT_MARKUP_E_OOM`; the finite work ceiling returns
+`GTEXT_MARKUP_E_LIMIT_WORK`. All failures leave the retained syntax untouched.
+`GTEXT_Markup_DTD_Edit_Options.max_work` is a zero-means-default limit; the
+default is 1 MiB of charged candidate bytes, parser input, and syntax-item
+work. For example:
+
+```c
+const char declaration[] = "<!ELEMENT item EMPTY>";
+GTEXT_Markup_Status status = gtext_markup_doctype_insert_syntax(
+    doctype, 0, GTEXT_MARKUP_DTD_ELEMENT, declaration,
+    sizeof(declaration) - 1, NULL);
+```
+
+`move_syntax` names the item's final index after the move. The API operates on
+the ordered internal collection only; it never edits the resolver-owned
+external snapshot.
+
 These defaults retain the 64 MiB document ceiling and bound additional work
 separately. The checked-in pinned XML conformance corpus occupies 17 MiB and
 its largest source is 313,076 bytes, leaving more than 50 times that largest

@@ -50,6 +50,10 @@ const char * gtext_markup_status_string(GTEXT_Markup_Status status) {
       return "bytes that are not well-formed UTF-8";
     case GTEXT_MARKUP_E_UNREPRESENTABLE:
       return "the language has no spelling for this text";
+    case GTEXT_MARKUP_E_DTD_SYNTAX:
+      return "invalid DTD declaration syntax";
+    case GTEXT_MARKUP_E_LIMIT_WORK:
+      return "the DTD edit work limit was exceeded";
     case GTEXT_MARKUP_E_WRITE:
       return "a sink refused output";
   }

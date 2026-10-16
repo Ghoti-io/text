@@ -80,6 +80,8 @@ typedef enum {
                               ///< no spelling for it: a control character XML
                               ///< 1.0 forbids even as a reference, `--` in a
                               ///< comment, `]]>` in a CDATA section.
+  GTEXT_MARKUP_E_DTD_SYNTAX,  ///< A DTD edit has invalid declaration syntax.
+  GTEXT_MARKUP_E_LIMIT_WORK,  ///< A DTD edit exceeded its finite work ceiling.
   GTEXT_MARKUP_E_WRITE        ///< A sink refused output.
 } GTEXT_Markup_Status;
 

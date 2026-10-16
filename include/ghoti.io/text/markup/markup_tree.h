@@ -569,6 +569,40 @@ GTEXT_API bool gtext_markup_doctype_syntax(
     const GTEXT_Markup_Node * node, size_t index,
     GTEXT_Markup_DTD_Syntax * out);
 
+/** Finite work ceiling for checked internal DTD edits. Zero selects 1 MiB. */
+typedef struct {
+  size_t max_work;
+} GTEXT_Markup_DTD_Edit_Options;
+
+/** Return the finite default DTD edit limits. */
+GTEXT_API GTEXT_Markup_DTD_Edit_Options
+gtext_markup_dtd_edit_options_default(void);
+
+/**
+ * Insert or replace one checked internal-subset construct. `source` is the
+ * complete XML spelling (for example `<!ELEMENT item EMPTY>`). The kind
+ * selects the grammar production, and the shared XML DTD parser verifies both
+ * that construct and the resulting complete internal subset before it is
+ * published. External syntax remains read-only. Every failure leaves the
+ * doctype unchanged.
+ */
+GTEXT_API GTEXT_Markup_Status gtext_markup_doctype_insert_syntax(
+    GTEXT_Markup_Node * doctype, size_t index,
+    GTEXT_Markup_DTD_Syntax_Kind kind, const char * source, size_t length,
+    const GTEXT_Markup_DTD_Edit_Options * options);
+GTEXT_API GTEXT_Markup_Status gtext_markup_doctype_replace_syntax(
+    GTEXT_Markup_Node * doctype, size_t index,
+    GTEXT_Markup_DTD_Syntax_Kind kind, const char * source, size_t length,
+    const GTEXT_Markup_DTD_Edit_Options * options);
+/** Move an item to `to_index` in the final list. */
+GTEXT_API GTEXT_Markup_Status gtext_markup_doctype_move_syntax(
+    GTEXT_Markup_Node * doctype, size_t from_index, size_t to_index,
+    const GTEXT_Markup_DTD_Edit_Options * options);
+/** Remove one internal-subset item. */
+GTEXT_API GTEXT_Markup_Status gtext_markup_doctype_remove_syntax(
+    GTEXT_Markup_Node * doctype, size_t index,
+    const GTEXT_Markup_DTD_Edit_Options * options);
+
 /**
  * Number of constructs in the caller-resolved external subset retained as a
  * read-only snapshot when a DOM tree is built. Event-only parsing has no
