@@ -112,7 +112,9 @@ typedef enum {
   GTEXT_XML_EVENT_CDATA,          ///< A CDATA section.
   GTEXT_XML_EVENT_COMMENT,        ///< A comment.
   GTEXT_XML_EVENT_PROCESSING_INSTRUCTION, ///< A processing instruction.
-  GTEXT_XML_EVENT_DOCUMENT_END    ///< The end of a well-formed document.
+  GTEXT_XML_EVENT_DOCUMENT_END,   ///< The end of a well-formed document.
+  GTEXT_XML_EVENT_SKIPPED_ENTITY, ///< `name` is an unresolved entity reference.
+  GTEXT_XML_EVENT_UNREAD_RESOURCE ///< An external DTD resource was not read.
 } GTEXT_XML_Event_Type;
 
 /**
@@ -166,9 +168,12 @@ typedef struct {
  * | TEXT, CDATA, COMMENT    | `data`, `data_length` |
  * | PROCESSING_INSTRUCTION  | `name` (the target), `data`, `data_length` |
  * | DOCUMENT_END            | none; `location` is the end of the document |
+ * | SKIPPED_ENTITY          | `name` is the unresolved general entity |
+ * | UNREAD_RESOURCE         | `resource_kind`, `name`, and `system_id` identify missing external material |
  */
 typedef struct {
   GTEXT_XML_Event_Type type;
+  GTEXT_XML_Resource_Kind resource_kind; ///< UNREAD_RESOURCE only.
   GTEXT_Markup_Location location;
   const char * source_name; ///< Entity name or resolved base URI, if known.
   uint8_t reference_trail_count;

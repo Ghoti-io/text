@@ -725,10 +725,30 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
           entity->base_uri, &resource);
       if (resolved != GTEXT_XML_OK)
         return xml_finish_external_resource(p, &resource, resolved);
+      if (!resource.opened && resource.declined
+          && p->dtd_external_policy == GTEXT_XML_DTD_EXTERNAL_SKIP
+          && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+        if (p->doc) {
+          GTEXT_Markup_Node * placeholder = NULL;
+          GTEXT_XML_Status skipped = xml_from_markup(p,
+              gtext_markup_create_entity_reference(p->doc, entity->name,
+                  entity->name_length, &placeholder));
+          if (skipped == GTEXT_XML_OK) {
+            gtext_markup_node_set_location(placeholder, &at);
+            GTEXT_Markup_Node * parent = p->frame_count
+                ? p->frames[p->frame_count - 1].node : p->doc->root;
+            xml_attach(parent, placeholder, &at);
+          }
+          return xml_finish_external_resource(p, &resource, skipped);
+        }
+        return xml_finish_external_resource(p, &resource,
+            xml_emit_skipped_entity(p, &at, entity->name,
+                entity->name_length));
+      }
       if (!resource.opened)
         return xml_finish_external_resource(p, &resource,
-            xml_fail_at(p, GTEXT_XML_E_ENTITY,
-                "external general entity was not resolved by the caller", &at));
+            xml_fail_at(p, GTEXT_XML_E_UNAVAILABLE_RESOURCE,
+                "external general entity was not available from the caller", &at));
       resolved = xml_activate_external_parameter_entity(p, &resource);
       return xml_finish_external_resource(p, &resource, resolved);
     }

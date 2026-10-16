@@ -1201,6 +1201,41 @@ GTEXT_XML_Status xml_emit_pi(xml_ctx * p, const GTEXT_Markup_Location * at,
   return deliver(p, &e);
 }
 
+GTEXT_XML_Status xml_emit_skipped_entity(xml_ctx * p,
+    const GTEXT_Markup_Location * at, const char * name, size_t length) {
+  GTEXT_XML_Stream * s = p->stream;
+  GTEXT_XML_Status status = count_node(p);
+  if (status != GTEXT_XML_OK) return status;
+  s->arena.length = 0;
+  size_t name_at = 0;
+  status = arena_put(p, name, length, &name_at);
+  if (status != GTEXT_XML_OK) return status;
+  GTEXT_XML_Event e;
+  event_init(p, &e, GTEXT_XML_EVENT_SKIPPED_ENTITY, at);
+  e.name = s->arena.data + name_at;
+  return deliver(p, &e);
+}
+
+GTEXT_XML_Status xml_emit_unread_resource(xml_ctx * p,
+    const GTEXT_Markup_Location * at, GTEXT_XML_Resource_Kind kind,
+    const char * name, const char * system_id) {
+  GTEXT_XML_Stream * s = p->stream;
+  s->arena.length = 0;
+  size_t name_at = SIZE_MAX;
+  size_t system_at = SIZE_MAX;
+  GTEXT_XML_Status status = name
+      ? arena_put(p, name, strlen(name), &name_at) : GTEXT_XML_OK;
+  if (status == GTEXT_XML_OK && system_id)
+    status = arena_put(p, system_id, strlen(system_id), &system_at);
+  if (status != GTEXT_XML_OK) return status;
+  GTEXT_XML_Event e;
+  event_init(p, &e, GTEXT_XML_EVENT_UNREAD_RESOURCE, at);
+  e.resource_kind = kind;
+  e.name = name_at == SIZE_MAX ? NULL : s->arena.data + name_at;
+  e.system_id = system_at == SIZE_MAX ? NULL : s->arena.data + system_at;
+  return deliver(p, &e);
+}
+
 /* ---- The public interface ----------------------------------------------- */
 
 size_t xml_stream_work(const struct GTEXT_XML_Stream * stream) {

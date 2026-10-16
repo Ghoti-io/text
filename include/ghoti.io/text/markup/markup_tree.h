@@ -205,6 +205,31 @@ GTEXT_API bool gtext_markup_document_source(
 GTEXT_API size_t gtext_markup_document_node_count(
     const GTEXT_Markup_Document * doc);
 
+/** Whether DTD processing of this document encountered unavailable material. */
+GTEXT_API bool gtext_markup_document_dtd_knowledge_incomplete(
+    const GTEXT_Markup_Document * doc);
+
+typedef enum {
+  GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET = 0,
+  GTEXT_MARKUP_DTD_RESOURCE_PARAMETER_ENTITY,
+  GTEXT_MARKUP_DTD_RESOURCE_GENERAL_ENTITY
+} GTEXT_Markup_DTD_Resource_Kind;
+
+typedef struct {
+  GTEXT_Markup_DTD_Resource_Kind kind;
+  const char * name;      ///< Entity name, or NULL for the external subset.
+  const char * system_id; ///< Identifier requested from the resolver.
+  GTEXT_Markup_Location location; ///< Request location in the document/source.
+} GTEXT_Markup_DTD_Unread_Resource;
+
+/** Count external resources declined or unavailable during DTD processing. */
+GTEXT_API size_t gtext_markup_document_dtd_unread_resource_count(
+    const GTEXT_Markup_Document * doc);
+/** Read one unavailable resource record; strings are borrowed from the doc. */
+GTEXT_API bool gtext_markup_document_dtd_unread_resource(
+    const GTEXT_Markup_Document * doc, size_t index,
+    GTEXT_Markup_DTD_Unread_Resource * out);
+
 /** @brief The document mode; NO_QUIRKS unless something set it. */
 GTEXT_API GTEXT_Markup_Mode gtext_markup_document_mode(
     const GTEXT_Markup_Document * doc);
@@ -315,6 +340,15 @@ GTEXT_API GTEXT_Markup_Status gtext_markup_create_comment(
 GTEXT_API GTEXT_Markup_Status gtext_markup_create_processing_instruction(
     GTEXT_Markup_Document * doc, const char * target, const char * data,
     size_t length, GTEXT_Markup_Node ** out);
+
+/** Create an unresolved entity-reference placeholder, used by XML parsers
+ * when the caller explicitly elects to skip an unavailable external entity. */
+GTEXT_API GTEXT_Markup_Status gtext_markup_create_entity_reference(
+    GTEXT_Markup_Document * doc, const char * name, size_t length,
+    GTEXT_Markup_Node ** out);
+/** The unresolved entity's lexical name, or NULL for another node kind. */
+GTEXT_API const char * gtext_markup_entity_reference_name(
+    const GTEXT_Markup_Node * node);
 
 /**
  * @brief Create a doctype. It is detached.

@@ -67,8 +67,8 @@ WORKSPACE = os.path.dirname(os.path.dirname(ROOT))
 
 PLANTS = {
     "event-column": ("xml", "src/xml/xml_stream.c",
-                     "    p->line = line;\n    p->column = column;\n    memset(&p->err, 0, sizeof(p->err));",
-                     "    p->line = line;\n    memset(&p->err, 0, sizeof(p->err));"),
+                     "    p->pos = pos;\n    p->line = line;\n    p->column = column;\n    p->cursor_previous = cursor_previous;\n    memset(&p->err, 0, sizeof(p->err));",
+                     "    p->pos = pos;\n    p->line = line;\n    p->cursor_previous = cursor_previous;\n    memset(&p->err, 0, sizeof(p->err));"),
     "limit-after-run": ("xml", "src/xml/xml_parser.c",
                         "      if (p->attr_pool.length - start + (i - p->pos) > p->max_attribute_bytes) {\n        break;\n      }\n",
                         ""),
@@ -89,11 +89,11 @@ PLANTS = {
                            "    if (!xml_scope_lookup(p, (const char *)a->name_ptr, a->colon, &a->ns)) {\n      xml_scope_release(p, mark);\n      return xml_fail_at(p, GTEXT_XML_E_NAMESPACE,\n          \"the attribute's prefix is not bound to a namespace\", &a->where);\n    }",
                            "    if (!xml_scope_lookup(p, (const char *)a->name_ptr, a->colon, &a->ns)) {\n      a->ns = \"urn:unbound\";\n    }"),
     "oracle-hunt-utf16": ("oracle", "src/xml/xml_encoding.c",
-                          "        if (u < 0xDC00 || u > 0xDFFF) {\n          return conv_invalid(c, \"a high surrogate not followed by a low one\");",
-                          "        if (1) {\n          return conv_invalid(c, \"a high surrogate not followed by a low one\");"),
+                          "        if (u < 0xDC00 || u > 0xDFFF) {\n          return conv_invalid(c, \"a high surrogate not followed by a low one\",\n              c->high_raw_offset);\n        }",
+                          "        if (1) {\n          return conv_invalid(c, \"a high surrogate not followed by a low one\",\n              c->high_raw_offset);\n        }"),
     "oracle-attr-space": ("oracle", "src/xml/xml_parser.c",
-                          "      status = xml_append(p, &p->attr_pool, \" \", 1);\n      xml_consume(p,\n          b == '\\r'",
-                          "      status = xml_append(p, &p->attr_pool, b == '\\n' ? \"\\n\" : \" \", 1);\n      xml_consume(p,\n          b == '\\r'"),
+                          "    else if (b == '\\t' || line_end > 0) {\n      /* Literal XML whitespace and normalized line ends become one space. */\n      status = xml_append(p, &p->attr_pool, \" \", 1);\n      XML_CONSUME_OR_RETURN(p, line_end > 0 ? line_end : 1);\n    }",
+                          "    else if (b == '\\t' || line_end > 0) {\n      /* Literal XML whitespace and normalized line ends become one space. */\n      status = xml_append(p, &p->attr_pool, b == '\\n' ? \"\\n\" : \" \", 1);\n      XML_CONSUME_OR_RETURN(p, line_end > 0 ? line_end : 1);\n    }"),
 }
 
 

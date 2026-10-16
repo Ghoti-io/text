@@ -86,20 +86,24 @@ extern "C" {
  * application's allowlist. Reads are charged before bytes are retained, and a
  * successfully opened source is closed exactly once on every path. External
  * subset declarations are parsed against the DTD grammar, but semantic DTD
- * validity is not checked. Resolver decline for an external subset means it is
- * omitted; a declined external parameter entity is GTEXT_XML_E_RESOLVER.
+ * validity is not checked. Unavailable external subsets and parameter entities
+ * are recorded on the document as unread resources; non-validating processing
+ * continues with the material it did read.
  *
  * `dtd_mode` is shared by memory, file, push and pull readers. `OFF` preserves
  * the skipped-subset behavior above. `PROCESS` performs non-validating DTD
  * declaration processing and parameter-entity expansion. Internal parsed
  * general entities are expanded in content and attributes; caller-resolved
- * external parsed entities are expanded in content. Unparsed entities and
- * unavailable external general entities fail when referenced. `VALIDATE` returns
+ * external parsed entities are expanded in content. Unparsed entities fail
+ * when referenced. An unavailable external entity returns
+ * GTEXT_XML_E_UNAVAILABLE_RESOURCE by default. With the explicit non-validating
+ * SKIP policy, a declined external general entity is retained as an unresolved
+ * entity-reference node and DTD knowledge is marked incomplete; resolver
+ * callback failures remain GTEXT_XML_E_RESOLVER. `VALIDATE` returns
  * GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external policy
  * defaults to DENY; SKIP is valid only with PROCESS and never grants the
- * library filesystem or network access. An unavailable external general entity
- * currently fails when referenced, including when SKIP is selected; placeholder
- * and skipped-event behavior remains planned.
+ * library filesystem or network access. A parse result exposes incomplete
+ * knowledge and the typed unread-resource records on its document.
  *
  * **Encodings.** UTF-8 (a byte order mark is accepted and skipped), UTF-16 and
  * UTF-32 in either byte order (by their mark, or by the first bytes of

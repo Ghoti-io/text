@@ -2198,6 +2198,9 @@ static GTEXT_XML_Status write_leaf(wctx * w, const GTEXT_Markup_Node * n) {
       }
       return put_str(w, "?>");
     }
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
+      return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
+          "an unresolved entity reference cannot be written under the current DTD output policy");
     default:
       return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
           "this kind of node has no place in an XML element");

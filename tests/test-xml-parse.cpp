@@ -38,6 +38,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -1308,6 +1309,32 @@ GTEXT_XML_Resolver_Result file_resolver_decline(
   return GTEXT_XML_RESOLVER_DECLINED;
 }
 
+GTEXT_XML_Resolver_Result file_resolver_fail(
+    const GTEXT_XML_Resolve_Request *, void *, GTEXT_XML_External_Source *) {
+  return GTEXT_XML_RESOLVER_FAILED;
+}
+
+struct SkippedEntityEvents {
+  size_t count = 0;
+  std::string name;
+  size_t unread_count = 0;
+  GTEXT_XML_Resource_Kind unread_kind = GTEXT_XML_RESOURCE_EXTERNAL_SUBSET;
+};
+
+GTEXT_XML_Status on_skipped_entity(const GTEXT_XML_Event * event, void * user) {
+  if (event->type == GTEXT_XML_EVENT_SKIPPED_ENTITY) {
+    auto * seen = static_cast<SkippedEntityEvents *>(user);
+    seen->count++;
+    seen->name = event->name ? event->name : "";
+  }
+  else if (event->type == GTEXT_XML_EVENT_UNREAD_RESOURCE) {
+    auto * seen = static_cast<SkippedEntityEvents *>(user);
+    seen->unread_count++;
+    seen->unread_kind = event->resource_kind;
+  }
+  return GTEXT_XML_OK;
+}
+
 GTEXT_XML_Resolver_Result file_resolver_open(
     const GTEXT_XML_Resolve_Request * request, void * opaque,
     GTEXT_XML_External_Source * source) {
@@ -1337,6 +1364,15 @@ GTEXT_XML_Resolver_Result file_resolver_open(
   source->read = file_resolver_read;
   source->close = file_resolver_close;
   return GTEXT_XML_RESOLVER_OPENED;
+}
+
+GTEXT_XML_Resolver_Result external_dtd_with_declined_pe(
+    const GTEXT_XML_Resolve_Request * request, void * opaque,
+    GTEXT_XML_External_Source * source) {
+  if (request->system_id && std::strcmp(request->system_id, "external.dtd") == 0) {
+    return file_resolver_open(request, opaque, source);
+  }
+  return GTEXT_XML_RESOLVER_DECLINED;
 }
 
 TEST_F(XmlParse, EntityValueExpansionConsumesNestedExternalPEOnSourceStack) {
@@ -1394,6 +1430,185 @@ TEST_F(XmlParse, ExternalParameterEntityUsesCallerResolverAndRetainsProvenance) 
       cloned_generated.location.source_id, &cloned_source));
   EXPECT_EQ(cloned_source.kind, GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY);
   EXPECT_STREQ(cloned_source.name, "ext");
+}
+
+TEST_F(XmlParse, DeclinedExternalEntityFailsUnlessExplicitlySkipped) {
+  const char * input = "<!DOCTYPE a [<!ENTITY ext SYSTEM 'external.ent'>]>"
+      "<a>&ext;</a>";
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = file_resolver_decline;
+
+  Result failed = parse(input, &options);
+  EXPECT_EQ(failed.status, GTEXT_XML_E_UNAVAILABLE_RESOURCE);
+  EXPECT_EQ(failed.doc, nullptr);
+
+  options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  Result skipped = parse(input, &options);
+  ASSERT_EQ(skipped.status, GTEXT_XML_OK) << skipped.err.message;
+  ASSERT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(skipped.doc));
+  ASSERT_EQ(gtext_markup_document_dtd_unread_resource_count(skipped.doc), 1u);
+  GTEXT_Markup_DTD_Unread_Resource unread{};
+  ASSERT_TRUE(gtext_markup_document_dtd_unread_resource(skipped.doc, 0, &unread));
+  EXPECT_EQ(unread.kind, GTEXT_MARKUP_DTD_RESOURCE_GENERAL_ENTITY);
+  EXPECT_STREQ(unread.name, "ext");
+  EXPECT_STREQ(unread.system_id, "external.ent");
+  EXPECT_GT(unread.location.line, 0u);
+  Node * root = gtext_markup_document_element(skipped.doc);
+  Node * reference = gtext_markup_node_first_child(root);
+  ASSERT_NE(reference, nullptr);
+  EXPECT_EQ(gtext_markup_node_kind(reference), GTEXT_MARKUP_KIND_ENTITY_REFERENCE);
+  EXPECT_STREQ(gtext_markup_entity_reference_name(reference), "ext");
+
+  SkippedEntityEvents seen;
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&options,
+      on_skipped_entity, &seen);
+  ASSERT_NE(stream, nullptr);
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_stream_feed(stream, input, strlen(input), &error), GTEXT_XML_OK);
+  EXPECT_EQ(gtext_xml_stream_finish(stream, &error), GTEXT_XML_OK);
+  EXPECT_EQ(seen.count, 1u);
+  EXPECT_EQ(seen.name, "ext");
+  EXPECT_EQ(seen.unread_count, 1u);
+  EXPECT_EQ(seen.unread_kind, GTEXT_XML_RESOURCE_GENERAL_ENTITY);
+  gtext_xml_stream_free(stream);
+
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&options);
+  ASSERT_NE(reader, nullptr);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, input, strlen(input), &error),
+      GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, &error), GTEXT_XML_OK)
+      << error.message;
+  size_t pulled_skipped = 0;
+  size_t pulled_unread = 0;
+  GTEXT_XML_Event event{};
+  GTEXT_XML_Status reader_status = GTEXT_XML_OK;
+  while ((reader_status = gtext_xml_reader_next(reader, &event))
+      == GTEXT_XML_OK) {
+    if (event.type == GTEXT_XML_EVENT_SKIPPED_ENTITY) {
+      ++pulled_skipped;
+      EXPECT_STREQ(event.name, "ext");
+    }
+    else if (event.type == GTEXT_XML_EVENT_UNREAD_RESOURCE) {
+      ++pulled_unread;
+      EXPECT_EQ(event.resource_kind, GTEXT_XML_RESOURCE_GENERAL_ENTITY);
+    }
+  }
+  EXPECT_EQ(reader_status, GTEXT_XML_E_STATE);
+  EXPECT_EQ(pulled_skipped, 1u);
+  EXPECT_EQ(pulled_unread, 1u);
+  gtext_xml_reader_free(reader);
+
+  GTEXT_Markup_Document * clone_doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &clone_doc), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node * clone_doctype = nullptr;
+  ASSERT_EQ(gtext_markup_clone(clone_doc,
+      gtext_markup_document_doctype(skipped.doc), true, &clone_doctype),
+      GTEXT_MARKUP_OK);
+  EXPECT_TRUE(gtext_markup_equal(gtext_markup_document_doctype(skipped.doc),
+      clone_doctype));
+  EXPECT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(clone_doc));
+  EXPECT_EQ(gtext_markup_document_dtd_unread_resource_count(clone_doc), 1u);
+  gtext_markup_document_free(clone_doc);
+}
+
+TEST_F(XmlParse, UnreadExternalSubsetAndParameterEntityAreRecorded) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Result subset = parse("<!DOCTYPE a SYSTEM 'external.dtd'><a/>", &options);
+  ASSERT_EQ(subset.status, GTEXT_XML_OK) << subset.err.message;
+  ASSERT_EQ(gtext_markup_document_dtd_unread_resource_count(subset.doc), 1u);
+  GTEXT_Markup_DTD_Unread_Resource unread{};
+  ASSERT_TRUE(gtext_markup_document_dtd_unread_resource(subset.doc, 0, &unread));
+  EXPECT_EQ(unread.kind, GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET);
+  EXPECT_STREQ(unread.system_id, "external.dtd");
+
+  Result parameter = parse("<!DOCTYPE a [<!ENTITY % ext SYSTEM 'p.ent'>%ext;]><a/>",
+      &options);
+  ASSERT_EQ(parameter.status, GTEXT_XML_OK) << parameter.err.message;
+  ASSERT_EQ(gtext_markup_document_dtd_unread_resource_count(parameter.doc), 1u);
+  ASSERT_TRUE(gtext_markup_document_dtd_unread_resource(parameter.doc, 0, &unread));
+  EXPECT_EQ(unread.kind, GTEXT_MARKUP_DTD_RESOURCE_PARAMETER_ENTITY);
+  EXPECT_STREQ(unread.name, "ext");
+  EXPECT_STREQ(unread.system_id, "p.ent");
+
+  const std::vector<std::pair<std::string, GTEXT_XML_Resource_Kind>> cases = {
+      {"<!DOCTYPE a SYSTEM 'external.dtd'><a/>",
+          GTEXT_XML_RESOURCE_EXTERNAL_SUBSET},
+      {"<!DOCTYPE a [<!ENTITY % ext SYSTEM 'p.ent'>%ext;]><a/>",
+          GTEXT_XML_RESOURCE_PARAMETER_ENTITY}};
+  for (const auto & [input, expected_kind] : cases) {
+    SkippedEntityEvents events;
+    GTEXT_XML_Stream * stream = gtext_xml_stream_new(&options,
+        on_skipped_entity, &events);
+    ASSERT_NE(stream, nullptr);
+    GTEXT_XML_Error error{};
+    ASSERT_EQ(gtext_xml_stream_feed(stream, input.data(), input.size(), &error),
+        GTEXT_XML_OK) << error.message;
+    ASSERT_EQ(gtext_xml_stream_finish(stream, &error), GTEXT_XML_OK)
+        << error.message;
+    EXPECT_EQ(events.unread_count, 1u);
+    EXPECT_EQ(events.unread_kind, expected_kind);
+    gtext_xml_stream_free(stream);
+  }
+}
+
+TEST_F(XmlParse, UnreadParameterEntityCreatesDeclarationBarrierUnlessStandaloneYes) {
+  for (const auto & [declaration, expect_default] : {
+      std::pair{" standalone=\"no\"", false},
+      std::pair{" standalone=\"yes\"", true}}) {
+    GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+    options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    options.resolver = external_dtd_with_declined_pe;
+    FileResolverProbe probe;
+    probe.bytes = "<!ENTITY % missing SYSTEM 'missing.ent'>%missing;"
+        "<!ATTLIST a external-default CDATA 'present'>";
+    options.resolver_user_data = &probe;
+    const std::string input = "<?xml version=\"1.0\"" + std::string(declaration)
+        + "?><!DOCTYPE a SYSTEM 'external.dtd'><a/>";
+    Result result = parse(input.c_str(), &options);
+    ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+    ASSERT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(result.doc));
+    Node * root = gtext_markup_document_element(result.doc);
+    ASSERT_NE(root, nullptr);
+    GTEXT_Markup_Attribute attribute{};
+    EXPECT_EQ(gtext_markup_element_get_attribute(root, nullptr,
+                  "external-default", &attribute), expect_default);
+  }
+}
+
+TEST_F(XmlParse, DeclinedParameterEntityInsideDeclarationDiscardsIncompleteTail) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = external_dtd_with_declined_pe;
+  FileResolverProbe probe;
+  probe.bytes = "<!ENTITY % missing SYSTEM 'missing.ent'>"
+      "<!ATTLIST a value CDATA %missing;>"
+      "<!ATTLIST a later CDATA 'must-not-apply'>";
+  options.resolver_user_data = &probe;
+  Result result = parse("<!DOCTYPE a SYSTEM 'external.dtd'><a/>", &options);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.err.message;
+  ASSERT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(result.doc));
+  Node * root = gtext_markup_document_element(result.doc);
+  ASSERT_NE(root, nullptr);
+  GTEXT_Markup_Attribute attribute{};
+  EXPECT_FALSE(gtext_markup_element_get_attribute(root, nullptr,
+      "later", &attribute));
+}
+
+TEST_F(XmlParse, ResolverFailureIsNotAnUnavailableResourceDecline) {
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  options.resolver = file_resolver_fail;
+  Result result = parse("<!DOCTYPE a [<!ENTITY ext SYSTEM 'external.ent'>]>"
+                        "<a>&ext;</a>", &options);
+  EXPECT_EQ(result.status, GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(result.doc, nullptr);
 }
 
 TEST_F(XmlParse, ParameterEntityReferencesStayOpaqueInLiteralsAndIgnoredSyntax) {

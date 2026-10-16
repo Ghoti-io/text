@@ -112,6 +112,8 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "external resource resolver failed";
     case GTEXT_XML_E_CANCELLED:
       return "external resource read cancelled";
+    case GTEXT_XML_E_UNAVAILABLE_RESOURCE:
+      return "external entity resource unavailable";
   }
   return "unknown status";
 }

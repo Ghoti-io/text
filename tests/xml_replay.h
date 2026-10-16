@@ -171,6 +171,15 @@ static GTEXT_XML_Status xml_replay_event(const GTEXT_XML_Event * e, void * user)
         return xml_replay_fail(r, "create_processing_instruction");
       }
       return xml_replay_attach(r, node, &e->location);
+    case GTEXT_XML_EVENT_SKIPPED_ENTITY:
+      if (gtext_markup_create_entity_reference(r->doc, e->name,
+              strlen(e->name), &node) != GTEXT_MARKUP_OK) {
+        return xml_replay_fail(r, "create_entity_reference");
+      }
+      return xml_replay_attach(r, node, &e->location);
+    case GTEXT_XML_EVENT_UNREAD_RESOURCE:
+      /* This event records parser knowledge, not a tree node. */
+      return GTEXT_XML_OK;
   }
   return xml_replay_fail(r, "an unknown event type");
 }

@@ -56,7 +56,7 @@ static bool source_id_known(const GTEXT_Markup_Document * doc, uint32_t id) {
 
 static bool kind_valid(uint8_t kind) {
   return kind >= GTEXT_MARKUP_KIND_DOCUMENT
-      && kind <= GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION;
+      && kind <= GTEXT_MARKUP_KIND_ENTITY_REFERENCE;
 }
 
 static bool child_allowed(GTEXT_Markup_Kind parent, GTEXT_Markup_Kind child) {
@@ -67,6 +67,9 @@ static bool child_allowed(GTEXT_Markup_Kind parent, GTEXT_Markup_Kind child) {
     case GTEXT_MARKUP_KIND_COMMENT:
     case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
       return container;
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
+      return parent == GTEXT_MARKUP_KIND_ELEMENT
+          || parent == GTEXT_MARKUP_KIND_FRAGMENT;
     case GTEXT_MARKUP_KIND_TEXT:
     case GTEXT_MARKUP_KIND_CDATA:
       return parent == GTEXT_MARKUP_KIND_ELEMENT
@@ -195,6 +198,13 @@ static const char * check_node(const GTEXT_Markup_Document * doc, node_t * n) {
       if (!p->target || !p->data || p->data[p->length] != '\0') {
         return "a processing instruction is missing its target or data";
       }
+      count_atom(p->target);
+      break;
+    }
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE: {
+      const markup_pi * p = (const markup_pi *)n;
+      if (!p->target || !p->data || p->data[p->length] != '\0')
+        return "an entity reference is missing its name";
       count_atom(p->target);
       break;
     }

@@ -82,6 +82,7 @@ static size_t size_of_kind(GTEXT_Markup_Kind kind) {
     case GTEXT_MARKUP_KIND_COMMENT:
       return sizeof(markup_text);
     case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
       return sizeof(markup_pi);
     case GTEXT_MARKUP_KIND_DOCTYPE:
       return sizeof(markup_doctype);
@@ -135,7 +136,8 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
       markup_free(doc, ((markup_text *)node)->data);
       markup_free(doc, ((markup_text *)node)->spans);
       break;
-    case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
+    case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE: {
       markup_pi * p = (markup_pi *)node;
       markup_atom_release(doc, p->target);
       markup_free(doc, p->data);
@@ -263,6 +265,11 @@ void gtext_markup_document_free(GTEXT_Markup_Document * doc) {
     markup_free(doc, doc->sources[i].owned_name);
   }
   markup_free(doc, doc->sources);
+  for (size_t i = 0; i < doc->dtd_unread_resource_count; i++) {
+    markup_free(doc, doc->dtd_unread_resources[i].owned_name);
+    markup_free(doc, doc->dtd_unread_resources[i].owned_system_id);
+  }
+  markup_free(doc, doc->dtd_unread_resources);
   const GTEXT_Allocator allocator = doc->allocator;
   gtext_allocator_free(&allocator, doc);
 }
@@ -339,6 +346,68 @@ GTEXT_Markup_Node * gtext_markup_document_doctype(
 
 size_t gtext_markup_document_node_count(const GTEXT_Markup_Document * doc) {
   return doc ? doc->node_count : 0;
+}
+
+bool gtext_markup_document_dtd_knowledge_incomplete(
+    const GTEXT_Markup_Document * doc) {
+  return doc && doc->dtd_knowledge_incomplete;
+}
+
+GTEXT_Markup_Status markup_document_add_unread_resource(
+    GTEXT_Markup_Document * doc, GTEXT_Markup_DTD_Resource_Kind kind,
+    const char * name, const char * system_id,
+    const GTEXT_Markup_Location * location) {
+  if (!doc || !location) return GTEXT_MARKUP_E_INVALID;
+  char * name_copy = name ? markup_copy(doc, name, strlen(name)) : NULL;
+  char * system_copy = system_id
+      ? markup_copy(doc, system_id, strlen(system_id)) : NULL;
+  if ((name && !name_copy) || (system_id && !system_copy)) {
+    markup_free(doc, name_copy);
+    markup_free(doc, system_copy);
+    return GTEXT_MARKUP_E_OOM;
+  }
+  if (doc->dtd_unread_resource_count == doc->dtd_unread_resource_capacity) {
+    size_t capacity = doc->dtd_unread_resource_capacity
+        ? doc->dtd_unread_resource_capacity * 2 : 4;
+    if (capacity < doc->dtd_unread_resource_capacity
+        || capacity > SIZE_MAX / sizeof(*doc->dtd_unread_resources)) {
+      markup_free(doc, name_copy);
+      markup_free(doc, system_copy);
+      return GTEXT_MARKUP_E_LIMIT;
+    }
+    markup_dtd_unread_resource * grown = markup_realloc(doc,
+        doc->dtd_unread_resources, capacity * sizeof(*doc->dtd_unread_resources));
+    if (!grown) {
+      markup_free(doc, name_copy);
+      markup_free(doc, system_copy);
+      return GTEXT_MARKUP_E_OOM;
+    }
+    doc->dtd_unread_resources = grown;
+    doc->dtd_unread_resource_capacity = capacity;
+  }
+  markup_dtd_unread_resource * item =
+      &doc->dtd_unread_resources[doc->dtd_unread_resource_count++];
+  item->view.kind = kind;
+  item->view.name = name_copy;
+  item->view.system_id = system_copy;
+  item->view.location = *location;
+  item->owned_name = name_copy;
+  item->owned_system_id = system_copy;
+  doc->dtd_knowledge_incomplete = 1;
+  return GTEXT_MARKUP_OK;
+}
+
+size_t gtext_markup_document_dtd_unread_resource_count(
+    const GTEXT_Markup_Document * doc) {
+  return doc ? doc->dtd_unread_resource_count : 0;
+}
+
+bool gtext_markup_document_dtd_unread_resource(
+    const GTEXT_Markup_Document * doc, size_t index,
+    GTEXT_Markup_DTD_Unread_Resource * out) {
+  if (!doc || !out || index >= doc->dtd_unread_resource_count) return false;
+  *out = doc->dtd_unread_resources[index].view;
+  return true;
 }
 
 GTEXT_Markup_Mode gtext_markup_document_mode(const GTEXT_Markup_Document * doc) {
@@ -565,6 +634,32 @@ GTEXT_Markup_Status gtext_markup_create_processing_instruction(
   return GTEXT_MARKUP_OK;
 }
 
+GTEXT_Markup_Status gtext_markup_create_entity_reference(
+    GTEXT_Markup_Document * doc, const char * name, size_t length,
+    GTEXT_Markup_Node ** out) {
+  if (!doc || !out || !name || !length) return GTEXT_MARKUP_E_INVALID;
+  GTEXT_Markup_Status status = markup_check_utf8(name, length);
+  if (status != GTEXT_MARKUP_OK) return status;
+  node_t * node = NULL;
+  status = node_new(doc, GTEXT_MARKUP_KIND_ENTITY_REFERENCE, &node);
+  if (status != GTEXT_MARKUP_OK) return status;
+  markup_pi * p = (markup_pi *)node;
+  p->target = markup_atom_intern(doc, name, length);
+  p->data = markup_copy(doc, "", 0);
+  if (!p->target || !p->data) {
+    new_node_discard(doc, node);
+    return GTEXT_MARKUP_E_OOM;
+  }
+  detached_push(doc, node);
+  *out = node;
+  return GTEXT_MARKUP_OK;
+}
+
+const char * gtext_markup_entity_reference_name(const GTEXT_Markup_Node * node) {
+  return node && node->kind == GTEXT_MARKUP_KIND_ENTITY_REFERENCE
+      ? ((const markup_pi *)node)->target->text : NULL;
+}
+
 GTEXT_Markup_Status gtext_markup_create_doctype(GTEXT_Markup_Document * doc,
     const char * name, const char * public_id, const char * system_id,
     GTEXT_Markup_Node ** out) {
@@ -627,6 +722,7 @@ GTEXT_Markup_Status markup_doctype_append_syntax(GTEXT_Markup_Node * node,
   item->parameter_entity = NULL;
   item->sequence = d->next_syntax_sequence++;
   item->external_context = 0;
+  item->applies_to_document = 1;
   return GTEXT_MARKUP_OK;
 }
 
@@ -660,6 +756,7 @@ GTEXT_Markup_Status markup_doctype_append_external_syntax(
   item->parameter_entity = NULL;
   item->sequence = d->next_syntax_sequence++;
   item->external_context = 1;
+  item->applies_to_document = 1;
   return GTEXT_MARKUP_OK;
 }
 
@@ -698,7 +795,24 @@ GTEXT_Markup_Status markup_doctype_append_generated_syntax(
   item->parameter_entity = entity_copy;
   item->sequence = d->next_syntax_sequence++;
   item->external_context = (uint8_t)!!external_context;
+  item->applies_to_document = 1;
   return GTEXT_MARKUP_OK;
+}
+
+void markup_doctype_mark_last_syntax_unapplied(GTEXT_Markup_Node * node) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE) return;
+  markup_doctype * d = (markup_doctype *)node;
+  markup_dtd_syntax * latest = NULL;
+  if (d->syntax_count) latest = &d->syntax[d->syntax_count - 1];
+  if (d->external_syntax_count) {
+    markup_dtd_syntax * candidate = &d->external_syntax[d->external_syntax_count - 1];
+    if (!latest || candidate->sequence > latest->sequence) latest = candidate;
+  }
+  if (d->generated_syntax_count) {
+    markup_dtd_syntax * candidate = &d->generated_syntax[d->generated_syntax_count - 1];
+    if (!latest || candidate->sequence > latest->sequence) latest = candidate;
+  }
+  if (latest) latest->applies_to_document = 0;
 }
 
 static const markup_dtd_syntax *find_doctype_syntax(
@@ -895,6 +1009,8 @@ const char * gtext_markup_node_data(
       }
       return p->data;
     }
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
+      break;
     case GTEXT_MARKUP_KIND_ELEMENT:
     case GTEXT_MARKUP_KIND_DOCTYPE:
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -923,6 +1039,8 @@ GTEXT_Markup_Status gtext_markup_node_set_data(
       slot = &((markup_pi *)node)->data;
       len_slot = &((markup_pi *)node)->length;
       break;
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
+      return GTEXT_MARKUP_E_INVALID;
     case GTEXT_MARKUP_KIND_ELEMENT:
     case GTEXT_MARKUP_KIND_DOCTYPE:
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -1494,6 +1612,9 @@ static bool kind_allowed(GTEXT_Markup_Kind parent, GTEXT_Markup_Kind child) {
     case GTEXT_MARKUP_KIND_COMMENT:
     case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
       return is_container(parent);
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
+      return parent == GTEXT_MARKUP_KIND_ELEMENT
+          || parent == GTEXT_MARKUP_KIND_FRAGMENT;
     case GTEXT_MARKUP_KIND_TEXT:
     case GTEXT_MARKUP_KIND_CDATA:
       return parent == GTEXT_MARKUP_KIND_ELEMENT

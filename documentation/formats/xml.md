@@ -49,8 +49,9 @@ a byte order mark is not counted at all.
 
 ## DTD processing
 
-DTD processing is opt-in; the default mode keeps declarations unprocessed and
-preserves compatibility. In that mode, the internal subset is skipped by a
+DTD processing is opt-in (`options.dtd_mode = GTEXT_XML_DTD_PROCESS`); the
+default mode keeps declarations unprocessed and preserves compatibility. In
+that mode, the internal subset is skipped by a
 bounded scanner that recognizes comments, processing instructions, quoted
 literals, and declaration boundaries.
 
@@ -77,21 +78,25 @@ entities are expanded in content by the shared XML parser, including replacement
 markup, and recursively expanded and normalized in attribute values. External
 parsed general entities in content are read only through the caller's resolver;
 they are decoded, their text declaration is removed, and their body is parsed as
-replacement content. External entities in attributes fail. A declined,
-unavailable, or unresolved external general entity fails even when
-`GTEXT_XML_DTD_EXTERNAL_SKIP` is selected; SKIP does not insert empty content or
-an unresolved placeholder. A conditional-section closing delimiter must occur
-in one physical source (the document or one entity replacement stream); a PE
-cannot supply part of that delimiter.
+replacement content. External entities in attributes fail. An unavailable
+referenced external entity fails with `GTEXT_XML_E_UNAVAILABLE_RESOURCE` by
+default; under explicit non-validating `GTEXT_XML_DTD_EXTERNAL_SKIP`, the DOM
+keeps an unresolved entity-reference node and marks DTD knowledge incomplete.
+A conditional-section
+closing delimiter must occur in one physical source (the document or one entity
+replacement stream); a PE cannot supply part of that delimiter.
 
 External access is explicit: only a caller-supplied resolver may provide an
 external subset, external parameter entity, or external parsed general entity.
-With access denied or no resolver, no external resource is opened. A resolver
-decline for a referenced external PE returns `GTEXT_XML_E_RESOLVER`; an
-unavailable external general entity returns `GTEXT_XML_E_ENTITY`. Resolver
-read failures return `GTEXT_XML_E_RESOLVER`, cancellation returns
-`GTEXT_XML_E_CANCELLED`, and budget failures return their corresponding limit
-status. A declined external subset is omitted without failing the document
+With access denied or no resolver, no external resource is opened. A DOM parse
+(`gtext_xml_parse()` or `gtext_xml_parse_file()`) exposes unread external subsets
+and parameter entities through the document's unread-resource records. Push
+(`gtext_xml_stream_*`) and pull (`gtext_xml_reader_*`) parsing report those
+resources as `UNREAD_RESOURCE` events; skipped external general entities produce
+`SKIPPED_ENTITY` events. Resolver read failures return
+`GTEXT_XML_E_RESOLVER`, cancellation returns `GTEXT_XML_E_CANCELLED`, and budget
+failures return their corresponding limit status. A declined external subset is
+omitted without failing the document
 parse.
 
 ## Encodings
@@ -152,22 +157,22 @@ event parsers too, however the bytes arrive. The writer gives a mark back throug
 Each has a default from the first release; `0` in the options selects it, and
 `0` never means "unlimited" (`SIZE_MAX` is as close as the type allows).
 
-| Limit | Default | Status when exceeded |
-|---|---|---|
-| input length | 64 MiB | `GTEXT_XML_E_LIMIT_INPUT`, before anything is read |
-| element depth (the root is 1) | 256 | `_LIMIT_DEPTH` |
-| attributes on one element, declarations included | 1024 | `_LIMIT_ATTRIBUTES` |
-| an attribute value, after expansion | 16 MiB | `_LIMIT_VALUE` |
-| a name, in bytes | 8192 | `_LIMIT_NAME` |
-| nodes in the document, the document node included | 10,000,000 | `_LIMIT_NODES` |
-| namespace declarations in scope at once | 256 | `_LIMIT_NAMESPACES` |
-| bytes in one external source | 16 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_SOURCE` |
-| bytes across external sources | 64 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_TOTAL` |
-| entity replacement bytes, cumulatively | 64 MiB | `_LIMIT_EXPANSION` |
-| active entity sources | 32 | `_LIMIT_ENTITY_DEPTH` |
-| XML references, including entity and character references | 1,000,000 | `_LIMIT_REFERENCES` |
-| DTD declarations | 100,000 | `_LIMIT_DECLARATIONS` |
-| charged parser work units | 256 MiB | `_LIMIT_WORK` |
+| Limit | Option field | Default | Status when exceeded |
+|---|---|---|---|
+| input length | `max_input_bytes` | 64 MiB | `GTEXT_XML_E_LIMIT_INPUT`, before anything is read |
+| element depth (the root is 1) | `max_depth` | 256 | `_LIMIT_DEPTH` |
+| attributes on one element, declarations included | `max_attributes` | 1024 | `_LIMIT_ATTRIBUTES` |
+| an attribute value, after expansion | `max_attribute_bytes` | 16 MiB | `_LIMIT_VALUE` |
+| a name, in bytes | `max_name_bytes` | 8192 | `_LIMIT_NAME` |
+| nodes in the document, the document node included | `max_nodes` | 10,000,000 | `_LIMIT_NODES` |
+| namespace declarations in scope at once | `max_namespaces` | 256 | `_LIMIT_NAMESPACES` |
+| bytes in one external source | `max_external_source_bytes` | 16 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_SOURCE` |
+| bytes across external sources | `max_external_bytes` | 64 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_TOTAL` |
+| entity replacement bytes, cumulatively | `max_expanded_bytes` | 64 MiB | `_LIMIT_EXPANSION` |
+| active entity sources | `max_entity_depth` | 32 | `_LIMIT_ENTITY_DEPTH` |
+| XML references, including entity and character references | `max_references` | 1,000,000 | `_LIMIT_REFERENCES` |
+| DTD declarations | `max_declarations` | 100,000 | `_LIMIT_DECLARATIONS` |
+| charged parser work units | `max_total_work` | 256 MiB | `_LIMIT_WORK` |
 
 The DTD counters bound source and declaration processing. External subsets
 are read only through the caller's resolver; the library does not open
@@ -180,9 +185,11 @@ first in the applicable internal subset, then the applicable external subset,
 wins; PE replacement participates at its point of inclusion. This index is separate from the retained syntax
 collections and can be rebuilt from them. The external snapshot preserves
 declarations, comments, and processing instructions in source order from
-included sections, but not raw parameter-entity reference constructs. It
-excludes the text
-declaration, conditional-section delimiters, and ignored-section contents.
+included sections after PE expansion. It excludes raw PE-reference constructs
+and constructs parsed from PE replacement text; those generated constructs
+appear once in `gtext_markup_doctype_generated_syntax()`, with source and PE
+provenance. The external snapshot also excludes the text declaration,
+conditional-section delimiters, and ignored-section contents.
 Snapshots are retained only for DOM parses; event-only parsing has no doctype
 node to own one. Snapshot source text is decoded UTF-8 and preserves the source's
 line-end code points and markup spelling; transcoded input therefore differs
@@ -200,12 +207,16 @@ In DTD processing mode, the caller may provide a resolver for external
 subsets and external parameter entities. The resolver receives the resource
 kind, public and system identifiers, the base URI of the active declaration
 source, and a bounded trail of active physical-source labels. The trail is empty
-for a top-level external subset and records nested parameter-entity ancestry
-for subsequent requests. The parser keeps the resolved source identity active while parsing, so
+for a top-level external subset. A parameter-entity request made while parsing
+that subset includes its active source label; nested requests include the
+active parameter-entity labels. The parser keeps the resolved source identity active while parsing, so
 recursive or aliased external PEs fail even when their system identifiers
-differ. A declined PE returns `GTEXT_XML_E_RESOLVER`; read, cancellation, and
-budget failures return their corresponding statuses. No resource is opened unless the
-caller enables external access and supplies the resolver.
+differ. A declined PE is recorded as unread DTD knowledge, and non-validating
+processing continues under the XML standalone and declaration rules. Callback
+read failures, cancellation, and budget failures return their corresponding
+statuses. No
+resource is opened unless the caller enables external access and supplies the
+resolver.
 
 The syntax collections retain constructs rather than declarations alone:
 element, ATTLIST, entity, and notation declarations; comments and processing
@@ -238,7 +249,8 @@ references under these defaults; separate boundary tests refuse the next
 declaration/reference and repeated parsed-source tests charge each use. This
 workload demonstrates that the defaults admit a dense but bounded DTD and
 reference stream, while the input, work, and expansion ceilings still bound
-larger adversarial inputs independently.
+larger adversarial inputs independently. The focused regressions are in
+`tests/test-xml-parse.cpp` and run with `make -C libs/text test`.
 
 Total work is charged with checked `size_t` arithmetic as the shared cursor
 advances and as scanner paths revisit candidate bytes. Entity references and
@@ -275,14 +287,15 @@ parser could not accept.
 | `_UTF8`, `_CHARACTER` | the bytes, or the character, as above; also a numeric reference to a character XML forbids |
 | `_MISMATCHED_TAG` | an end tag that is not its start tag's |
 | `_DUPLICATE_ATTRIBUTE` | the same name twice, or two names with the same namespace and local name |
-| `_ENTITY` | an undeclared or unparsed entity, a declined external general entity, or an otherwise unusable entity reference |
+| `_ENTITY` | an undeclared or unparsed entity, or an otherwise unusable entity reference |
+| `_UNAVAILABLE_RESOURCE` | a declared external general entity could not be read under the default policy |
 | `_NAMESPACE` | an unbound prefix, a name with two colons, `xmlns` or `xml` misused, a prefix undeclared, a colon in a processing-instruction target |
 | `_DOCTYPE` | a malformed document type declaration or internal subset |
 | `_UNSUPPORTED_ENCODING`, `_UNSUPPORTED_VERSION` | as above |
 | `_INVALID_SEQUENCE` | bytes that are not valid in the document's encoding, positioned at the unit |
 | `_ENCODING_MISMATCH` | the declaration names a different family from the one the document is in, positioned at the label |
 | `_LIMIT_*` | a limit above, each its own status |
-| `_RESOLVER` | the resolver returned FAILED for any resource, an external parameter entity open was declined, OPENED metadata was malformed, or a source read failed or returned an invalid byte count; a declined external subset is omitted |
+| `_RESOLVER` | the resolver returned FAILED for any resource, OPENED metadata was malformed, or a source read failed or returned an invalid byte count |
 | `_CANCELLED` | the caller cancelled an external source read |
 | `_INVALID`, `_OOM` | an unusable argument; an allocation failed |
 | `_INCOMPLETE`, `_STATE` | event parsers only: the pull reader needs more input; a call that does not fit the state (input after the end) |
@@ -355,7 +368,10 @@ status is checked there, not only at the end of the loop.
 resolved and located, with explicit/defaulted origin; `xmlns` declarations are
 attributes, as in the tree),
 `ELEMENT_END` (the same names; an empty-element tag is a start and an end),
-`TEXT`, `CDATA`, `COMMENT`, `PROCESSING_INSTRUCTION`, `DOCUMENT_END`. Every event
+`TEXT`, `CDATA`, `COMMENT`, `PROCESSING_INSTRUCTION`, `SKIPPED_ENTITY`,
+`UNREAD_RESOURCE`, `DOCUMENT_END`. A skipped-entity event names the unresolved
+reference; an unread-resource event identifies declined external DTD material.
+Every event
 has the location of its construct, the same one the tree's node would have, and
 replaying the events into a tree gives a tree equal to `gtext_xml_parse()`'s,
 with the location of every node and attribute (the tests and the conformance

@@ -158,7 +158,8 @@ typedef enum {
                         ///< an external parameter entity open was declined,
                         ///< OPENED metadata was malformed, or a source read
                         ///< returned an error or invalid byte count.
-  GTEXT_XML_E_CANCELLED ///< The caller cancelled an external source read.
+  GTEXT_XML_E_CANCELLED, ///< The caller cancelled an external source read.
+  GTEXT_XML_E_UNAVAILABLE_RESOURCE ///< A referenced external entity was unavailable.
 } GTEXT_XML_Status;
 
 /** DTD behavior selected for a parse. Zero preserves the historical default. */
@@ -170,10 +171,9 @@ typedef enum {
 
 /**
  * Policy for unavailable external general entities. External access is never
- * implicit; SKIP is valid only with non-validating PROCESS mode. Currently an
- * unavailable external general entity fails when referenced under either
- * policy. A future SKIP implementation will preserve a referenced entity as an
- * unresolved placeholder and emit a skipped-entity event, not use empty text.
+ * implicit; SKIP is valid only with non-validating PROCESS mode. A declined
+ * referenced external entity is retained as an unresolved placeholder and
+ * reported as a skipped-entity event, not replaced with empty text.
  */
 typedef enum {
   GTEXT_XML_DTD_EXTERNAL_DENY = 0,
@@ -220,8 +220,10 @@ typedef enum {
  *  with GTEXT_XML_E_RESOLVER. The parser copies each returned chunk before the
  *  next read and calls close exactly once after a successful open.
  *  `identity`, `base_uri`, `read`, and `close` must be non-NULL; identity and
- *  base_uri stay valid until close returns. The parser copies base_uri for
- *  later nested-resource resolution. */
+ *  base_uri stay valid until close returns. Identity is compared by pointer
+ *  value against active sources: return the same identity token for the same
+ *  physical resource, including aliases, and distinct tokens for distinct
+ *  resources. The parser copies base_uri for later nested-resource resolution. */
 typedef struct {
   void * handle;
   const void * identity;
@@ -243,9 +245,10 @@ typedef enum {
  *  close obligation to the parser. Malformed OPENED metadata fails immediately
  *  with GTEXT_XML_E_RESOLVER and is not retried. Return DECLINED when
  *  unavailable, or FAILED for an operation failure. DECLINED for an external
- *  parameter entity produces GTEXT_XML_E_RESOLVER; DECLINED for an external
- *  general entity produces GTEXT_XML_E_ENTITY, and DECLINED for an external
- *  subset omits that subset. FAILED for any resource kind produces
+ *  parameter entity or subset records incomplete DTD knowledge and continues
+ *  non-validating processing. A declined external general entity produces
+ *  GTEXT_XML_E_UNAVAILABLE_RESOURCE by default, or is skipped only under the
+ *  explicit SKIP policy. FAILED for any resource kind produces
  *  GTEXT_XML_E_RESOLVER. A source read error also produces
  *  GTEXT_XML_E_RESOLVER; SOURCE_CANCELLED produces GTEXT_XML_E_CANCELLED. */
 typedef GTEXT_XML_Resolver_Result (*GTEXT_XML_Resolver_cb)(

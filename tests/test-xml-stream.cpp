@@ -134,6 +134,14 @@ std::string describe(const GTEXT_XML_Event & e) {
     case GTEXT_XML_EVENT_DOCUMENT_END:
       out = "DOCUMENT_END";
       break;
+    case GTEXT_XML_EVENT_SKIPPED_ENTITY:
+      out = "SKIPPED_ENTITY " + opt(e.name);
+      break;
+    case GTEXT_XML_EVENT_UNREAD_RESOURCE:
+      out = "UNREAD_RESOURCE "
+          + std::to_string(static_cast<int>(e.resource_kind)) + " "
+          + opt(e.name) + " " + opt(e.system_id);
+      break;
   }
   return out + " @" + where(e.location);
 }

@@ -276,6 +276,7 @@ typedef struct {
   xml_source_kind source_kind;
   unsigned char opened;
   unsigned char frame_pushed;
+  unsigned char declined;
 } xml_resolved_resource;
 
 /** An attribute of the start tag being read. */
@@ -352,6 +353,11 @@ typedef struct {
   xml_seams seams;
   GTEXT_XML_DTD_Mode dtd_mode;
   GTEXT_XML_DTD_External_Policy dtd_external_policy;
+  GTEXT_Markup_Standalone standalone;
+  unsigned char dtd_unread_parameter_entity;
+  unsigned char dtd_in_markup_declaration;
+  unsigned char dtd_incomplete_declaration;
+  unsigned char dtd_suppress_declaration_effects;
   GTEXT_XML_External_Access external_access;
   GTEXT_XML_Resolver_cb resolver;
   void * resolver_user_data;
@@ -733,6 +739,11 @@ GTEXT_XML_Status xml_emit_comment(xml_ctx * p, const GTEXT_Markup_Location * at,
     const char * data, size_t length);
 GTEXT_XML_Status xml_emit_pi(xml_ctx * p, const GTEXT_Markup_Location * at,
     const char * target, size_t target_length, const char * data, size_t length);
+GTEXT_XML_Status xml_emit_skipped_entity(xml_ctx * p,
+    const GTEXT_Markup_Location * at, const char * name, size_t length);
+GTEXT_XML_Status xml_emit_unread_resource(xml_ctx * p,
+    const GTEXT_Markup_Location * at, GTEXT_XML_Resource_Kind kind,
+    const char * name, const char * system_id);
 
 /**
  * Make the event parser take an attempt at every construct whenever any input

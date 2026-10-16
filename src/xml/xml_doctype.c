@@ -180,7 +180,11 @@ static size_t dtd_skip_space(xml_ctx * p) {
         || p->pos + 1 >= p->length
         || xml_space_bytes(p, p->pos + 1) != 0) return total;
     GTEXT_XML_Status status = dtd_expand_inline_reference(p);
-    if (status != GTEXT_XML_OK) return total;
+    if (status != GTEXT_XML_OK) {
+      if (status == GTEXT_XML_E_INCOMPLETE && p->dtd_incomplete_declaration)
+        p->err.code = GTEXT_XML_E_INCOMPLETE;
+      return total;
+    }
   }
 }
 
@@ -437,8 +441,18 @@ static GTEXT_XML_Status dtd_expand_parameter_entity(xml_ctx * p,
         GTEXT_XML_RESOURCE_PARAMETER_ENTITY, XML_SOURCE_PARAMETER_ENTITY,
         entity->name, entity->public_id, entity->system_id, NULL, &resource);
     if (status == GTEXT_XML_OK && !resource.opened) {
-      status = xml_fail_at(p, GTEXT_XML_E_RESOLVER,
-          "external parameter entity was not resolved by the caller",
+      if (resource.declined && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+        p->dtd_unread_parameter_entity = 1;
+        if (p->doc) p->doc->dtd_knowledge_incomplete = 1;
+        markup_buf_free(&resource.bytes);
+        if (p->dtd_in_markup_declaration) {
+          p->dtd_incomplete_declaration = 1;
+          return GTEXT_XML_E_INCOMPLETE;
+        }
+        return GTEXT_XML_OK;
+      }
+      status = xml_fail_at(p, GTEXT_XML_E_UNAVAILABLE_RESOURCE,
+          "external parameter entity was not available from the caller",
           reference_at);
     }
     if (status == GTEXT_XML_OK)
@@ -1216,7 +1230,8 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
     return dtd_bad(p, "'>' was expected to end the DTD declaration");
   }
   s = xml_consume(p, 1);
-  if (s == GTEXT_XML_OK && pe_name) {
+  if (s == GTEXT_XML_OK && pe_name
+      && !p->dtd_suppress_declaration_effects) {
     if (pe_external) {
       s = dtd_add_external_parameter_entity(p, pe_name, pe_name_length,
           pe_public.length ? pe_public.data : NULL,
@@ -1225,7 +1240,8 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
     else s = dtd_add_parameter_entity(p, pe_name, pe_name_length,
         pe_replacement, pe_replacement_length);
   }
-  if (s == GTEXT_XML_OK && general_name) {
+  if (s == GTEXT_XML_OK && general_name
+      && !p->dtd_suppress_declaration_effects) {
     s = dtd_add_general_entity(p, general_name, general_name_length,
         general_replacement, general_replacement_length,
         general_external && general_public.length ? general_public.data : NULL,
@@ -1461,6 +1477,7 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
     for (size_t i = 0; status == GTEXT_XML_OK && i < count; ++i) {
       const markup_dtd_syntax *item = items[i].syntax;
       if (item->kind > GTEXT_MARKUP_DTD_NOTATION) continue;
+      if (!item->applies_to_document) continue;
       status = compile_decl_bindings(p, item->kind,
           (const unsigned char *)item->source, item->length, items[i].external,
           node, &item->location);
@@ -1742,7 +1759,23 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       result = bad(p, "white space is required after the declaration keyword");
       break;
     }
+    p->dtd_suppress_declaration_effects = p->dtd_unread_parameter_entity
+        && p->standalone != GTEXT_MARKUP_STANDALONE_YES && (k == 1 || k == 2);
+    p->dtd_in_markup_declaration = 1;
     status = validate_declaration(p, (int)k);
+    p->dtd_in_markup_declaration = 0;
+    p->dtd_suppress_declaration_effects = 0;
+      if (status == GTEXT_XML_E_INCOMPLETE
+          && p->dtd_incomplete_declaration) {
+        p->dtd_incomplete_declaration = 0;
+        p->err = (GTEXT_XML_Error){0};
+        /* The missing replacement could contain delimiters. Discard the
+           remainder of this physical source so no partial declaration or
+           later declaration from it can affect the document. */
+        status = xml_consume(p, p->length - p->pos);
+        if (status != GTEXT_XML_OK) { result = status; break; }
+        continue;
+      }
     if (status != GTEXT_XML_OK) { result = status; break; }
     if (p->source_count == 0
         || p->sources[p->source_count - 1].identity
@@ -1768,11 +1801,19 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       else status = xml_from_markup(p, markup_doctype_append_external_syntax(
           doctype, (int)k, (const char *)p->in + start, p->pos - start, &at));
       if (status != GTEXT_XML_OK) { result = status; break; }
+      if (p->dtd_unread_parameter_entity
+          && p->standalone != GTEXT_MARKUP_STANDALONE_YES
+          && (k == 1 || k == 2))
+        markup_doctype_mark_last_syntax_unapplied(doctype);
     }
-    status = compile_decl_bindings(p, (int)k, p->in + start, p->pos - start,
-        p->source_count != 0 && p->sources[p->source_count - 1].external_source,
-        doctype && !p->stream ? doctype : NULL, &at);
-    if (status != GTEXT_XML_OK) { result = status; break; }
+    if (!(p->dtd_unread_parameter_entity
+        && p->standalone != GTEXT_MARKUP_STANDALONE_YES
+        && (k == 1 || k == 2))) {
+      status = compile_decl_bindings(p, (int)k, p->in + start, p->pos - start,
+          p->source_count != 0 && p->sources[p->source_count - 1].external_source,
+          doctype && !p->stream ? doctype : NULL, &at);
+      if (status != GTEXT_XML_OK) { result = status; break; }
+    }
   }
   xml_release(p, modes);
   return result;
@@ -1893,6 +1934,8 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->source_name_count = ext.source_name_count;
   p->source_name_capacity = ext.source_name_capacity;
   p->next_source_id = ext.next_source_id;
+  p->dtd_unread_parameter_entity = ext.dtd_unread_parameter_entity;
+  p->dtd_incomplete_declaration = ext.dtd_incomplete_declaration;
   p->parameter_entities = ext.parameter_entities;
   p->parameter_entity_count = ext.parameter_entity_count;
   p->parameter_entity_capacity = ext.parameter_entity_capacity;
@@ -2112,9 +2155,16 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
         if (p->err.code != GTEXT_XML_OK) return p->err.code;
         return bad(p, "white space is required after the declaration keyword");
       }
+      p->dtd_suppress_declaration_effects =
+          p->dtd_unread_parameter_entity
+          && p->standalone != GTEXT_MARKUP_STANDALONE_YES
+          && (k == 1 || k == 2);
+      p->dtd_in_markup_declaration = p->dtd_mode == GTEXT_XML_DTD_PROCESS;
       status = p->dtd_mode == GTEXT_XML_DTD_PROCESS
           ? validate_declaration(p, (int)k)
           : skip_declaration(p, k == 2);
+      p->dtd_in_markup_declaration = 0;
+      p->dtd_suppress_declaration_effects = 0;
       if (status == GTEXT_XML_OK && p->dtd_mode == GTEXT_XML_DTD_PROCESS
           && (p->source_count == 0
               || p->sources[p->source_count - 1].identity
@@ -2128,7 +2178,16 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
     }
     status = retain_syntax(p, doctype, kind, start, &at);
     if (status != GTEXT_XML_OK) return status;
-    if (kind <= GTEXT_MARKUP_DTD_NOTATION && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+    if (p->dtd_unread_parameter_entity
+        && p->standalone != GTEXT_MARKUP_STANDALONE_YES
+        && (kind == GTEXT_MARKUP_DTD_ATTLIST
+            || kind == GTEXT_MARKUP_DTD_ENTITY))
+      markup_doctype_mark_last_syntax_unapplied(doctype);
+    if (kind <= GTEXT_MARKUP_DTD_NOTATION && p->dtd_mode == GTEXT_XML_DTD_PROCESS
+        && !(p->dtd_unread_parameter_entity
+            && p->standalone != GTEXT_MARKUP_STANDALONE_YES
+            && (kind == GTEXT_MARKUP_DTD_ATTLIST
+                || kind == GTEXT_MARKUP_DTD_ENTITY))) {
       status = compile_decl_bindings(p, (int)kind, p->in + start,
           p->pos - start,
           p->source_count != 0 && p->sources[p->source_count - 1].external_source,

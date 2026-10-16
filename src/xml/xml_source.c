@@ -363,6 +363,34 @@ void xml_source_free(xml_ctx * p) {
   p->source_capacity = 0;
 }
 
+static GTEXT_XML_Status record_unread_resource(xml_ctx * p,
+    GTEXT_XML_Resource_Kind kind, const char * name, const char * system_id) {
+  const GTEXT_Markup_Location at = xml_here(p);
+  if (p->doc) {
+    GTEXT_Markup_DTD_Resource_Kind markup_kind;
+    switch (kind) {
+      case GTEXT_XML_RESOURCE_EXTERNAL_SUBSET:
+        markup_kind = GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET;
+        break;
+      case GTEXT_XML_RESOURCE_PARAMETER_ENTITY:
+        markup_kind = GTEXT_MARKUP_DTD_RESOURCE_PARAMETER_ENTITY;
+        break;
+      case GTEXT_XML_RESOURCE_GENERAL_ENTITY:
+        markup_kind = GTEXT_MARKUP_DTD_RESOURCE_GENERAL_ENTITY;
+        break;
+      default:
+        return xml_fail(p, GTEXT_XML_E_INVALID,
+            "invalid unread external resource kind");
+    }
+    const GTEXT_Markup_Status recorded = markup_document_add_unread_resource(
+        p->doc, markup_kind, name, system_id, &at);
+    if (recorded != GTEXT_MARKUP_OK) return xml_from_markup(p, recorded);
+  }
+  if (p->stream)
+    return xml_emit_unread_resource(p, &at, kind, name, system_id);
+  return GTEXT_XML_OK;
+}
+
 GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
     GTEXT_XML_Resource_Kind resource_kind, xml_source_kind source_kind,
     const char * source_name, const char * public_id, const char * system_id,
@@ -374,9 +402,11 @@ GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
   memset(out, 0, sizeof(*out));
   out->source_kind = source_kind;
   markup_buf_init(&out->bytes, p->allocator);
-  if (p->dtd_mode != GTEXT_XML_DTD_PROCESS
-      || p->external_access != GTEXT_XML_EXTERNAL_ACCESS_ALLOW
-      || !p->resolver || !system_id) return GTEXT_XML_OK;
+  if (p->dtd_mode != GTEXT_XML_DTD_PROCESS || !system_id) return GTEXT_XML_OK;
+  if (p->external_access != GTEXT_XML_EXTERNAL_ACCESS_ALLOW || !p->resolver) {
+    out->declined = 1;
+    return record_unread_resource(p, resource_kind, source_name, system_id);
+  }
   if (p->resolver_callback_active) {
     p->resolver_reentered = 1;
     return xml_fail(p, GTEXT_XML_E_STATE,
@@ -423,7 +453,8 @@ GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
         "resolver callback reentered the active XML parser");
   }
   if (opened == GTEXT_XML_RESOLVER_DECLINED) {
-    return GTEXT_XML_OK;
+    out->declined = 1;
+    return record_unread_resource(p, resource_kind, source_name, system_id);
   }
   if (opened != GTEXT_XML_RESOLVER_OPENED) {
     return xml_fail(p, GTEXT_XML_E_RESOLVER,

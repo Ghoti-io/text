@@ -1279,6 +1279,7 @@ GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
 
   /* Select the profile only after the complete declaration is known valid. */
   p->version = version_11 ? XML_VERSION_11 : XML_VERSION_10;
+  p->standalone = standalone;
   const char * version = version_11 ? "1.1" : "1.0";
 
   if (p->stream) {

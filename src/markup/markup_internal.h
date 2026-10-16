@@ -158,6 +158,7 @@ typedef struct {
   char * parameter_entity;
   uint64_t sequence;
   uint8_t external_context;
+  uint8_t applies_to_document;
 } markup_dtd_syntax;
 
 typedef struct {
@@ -178,6 +179,12 @@ typedef struct {
   const struct GTEXT_Markup_Document * origin_doc;
   uint32_t origin_id;
 } markup_source;
+
+typedef struct {
+  GTEXT_Markup_DTD_Unread_Resource view;
+  char * owned_name;
+  char * owned_system_id;
+} markup_dtd_unread_resource;
 
 typedef struct {
   struct GTEXT_Markup_Node base;
@@ -214,9 +221,13 @@ struct GTEXT_Markup_Document {
   GTEXT_Markup_Encoding_Source encoding_source;
   char * xml_version;
   GTEXT_Markup_Standalone standalone;
+  uint8_t dtd_knowledge_incomplete;
   markup_source * sources;
   size_t source_count;
   size_t source_capacity;
+  markup_dtd_unread_resource * dtd_unread_resources;
+  size_t dtd_unread_resource_count;
+  size_t dtd_unread_resource_capacity;
 };
 
 /* ---- memory ------------------------------------------------------------- */
@@ -238,6 +249,8 @@ GTEXT_Markup_Status markup_doctype_append_generated_syntax(
     struct GTEXT_Markup_Node * node, int kind, const char * source,
     size_t length, const GTEXT_Markup_Location * location,
     const char * parameter_entity, int external_context);
+void markup_doctype_mark_last_syntax_unapplied(
+    struct GTEXT_Markup_Node * node);
 GTEXT_Markup_Status markup_doctype_set_binding(
     struct GTEXT_Markup_Node * node, int kind, const char * element_name,
     size_t element_name_length, const char * name, size_t name_length,
@@ -247,6 +260,10 @@ void markup_doctype_clear_bindings(struct GTEXT_Markup_Node * node);
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
     uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
     const char * name);
+GTEXT_Markup_Status markup_document_add_unread_resource(
+    GTEXT_Markup_Document * doc, GTEXT_Markup_DTD_Resource_Kind kind,
+    const char * name, const char * system_id,
+    const GTEXT_Markup_Location * location);
 GTEXT_Markup_Status markup_text_add_span(GTEXT_Markup_Document * doc,
     struct GTEXT_Markup_Node * node, size_t start, size_t length,
     const GTEXT_Markup_Location * location);

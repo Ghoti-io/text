@@ -108,7 +108,8 @@ typedef enum {
   GTEXT_MARKUP_KIND_TEXT,         ///< Character data.
   GTEXT_MARKUP_KIND_CDATA,        ///< An XML CDATA section. HTML has none.
   GTEXT_MARKUP_KIND_COMMENT,      ///< `<!-- ... -->`.
-  GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION ///< `<?target data?>`.
+  GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION, ///< `<?target data?>`.
+  GTEXT_MARKUP_KIND_ENTITY_REFERENCE ///< An unresolved XML entity reference.
 } GTEXT_Markup_Kind;
 
 /**

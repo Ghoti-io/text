@@ -245,10 +245,14 @@ static GTEXT_Markup_Status clone_one(
       }
       break;
     }
-    case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
+    case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE: {
       const markup_pi * p = (const markup_pi *)src;
-      status = gtext_markup_create_processing_instruction(
-          dst, p->target->text, p->data, p->length, &copy);
+      status = src->kind == GTEXT_MARKUP_KIND_ENTITY_REFERENCE
+          ? gtext_markup_create_entity_reference(dst, p->target->text,
+              p->target->length, &copy)
+          : gtext_markup_create_processing_instruction(
+              dst, p->target->text, p->data, p->length, &copy);
       break;
     }
     case GTEXT_MARKUP_KIND_DOCTYPE: {
@@ -261,6 +265,8 @@ static GTEXT_Markup_Status clone_one(
         remap_location(&where, dst, src->doc);
         status = markup_doctype_append_syntax(copy, item->kind, item->source,
             item->length, &where);
+        if (status == GTEXT_MARKUP_OK && !item->applies_to_document)
+          markup_doctype_mark_last_syntax_unapplied(copy);
       }
       for (size_t i = 0; status == GTEXT_MARKUP_OK
           && i < d->external_syntax_count; i++) {
@@ -269,6 +275,8 @@ static GTEXT_Markup_Status clone_one(
         remap_location(&where, dst, src->doc);
         status = markup_doctype_append_external_syntax(copy, item->kind,
             item->source, item->length, &where);
+        if (status == GTEXT_MARKUP_OK && !item->applies_to_document)
+          markup_doctype_mark_last_syntax_unapplied(copy);
       }
       for (size_t i = 0; status == GTEXT_MARKUP_OK
           && i < d->generated_syntax_count; i++) {
@@ -278,6 +286,8 @@ static GTEXT_Markup_Status clone_one(
         status = markup_doctype_append_generated_syntax(copy, item->kind,
             item->source, item->length, &where, item->parameter_entity,
             item->external_context);
+        if (status == GTEXT_MARKUP_OK && !item->applies_to_document)
+          markup_doctype_mark_last_syntax_unapplied(copy);
       }
       for (size_t i = 0; status == GTEXT_MARKUP_OK
           && i < d->binding_count; ++i) {
@@ -287,6 +297,16 @@ static GTEXT_Markup_Status clone_one(
         status = markup_doctype_set_binding(copy, b->kind, b->element_name,
             b->element_name_length, b->name, b->name_length, b->source,
             b->source_length, &where, b->external_context);
+      }
+      for (size_t i = 0; status == GTEXT_MARKUP_OK
+          && i < src->doc->dtd_unread_resource_count; ++i) {
+        const markup_dtd_unread_resource * unread =
+            &src->doc->dtd_unread_resources[i];
+        GTEXT_Markup_Location where = unread->view.location;
+        remap_location(&where, dst, src->doc);
+        status = markup_document_add_unread_resource(dst,
+            unread->view.kind, unread->view.name, unread->view.system_id,
+            &where);
       }
       if (status == GTEXT_MARKUP_OK) {
         markup_doctype *cloned = (markup_doctype *)copy;
@@ -443,11 +463,13 @@ static bool node_equal(const node_t * a, const node_t * b) {
       const markup_text * y = (const markup_text *)b;
       return same_bytes(x->data, x->length, y->data, y->length);
     }
-    case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
+    case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE: {
       const markup_pi * x = (const markup_pi *)a;
       const markup_pi * y = (const markup_pi *)b;
       return same_text(x->target->text, y->target->text)
-          && same_bytes(x->data, x->length, y->data, y->length);
+          && (a->kind == GTEXT_MARKUP_KIND_ENTITY_REFERENCE
+              || same_bytes(x->data, x->length, y->data, y->length));
     }
     case GTEXT_MARKUP_KIND_DOCTYPE: {
       const markup_doctype * x = (const markup_doctype *)a;
@@ -456,23 +478,37 @@ static bool node_equal(const node_t * a, const node_t * b) {
           || !same_text(x->system_id, y->system_id)
           || x->syntax_count != y->syntax_count
           || x->external_syntax_count != y->external_syntax_count
-          || x->generated_syntax_count != y->generated_syntax_count) return false;
+          || x->generated_syntax_count != y->generated_syntax_count
+          || a->doc->dtd_knowledge_incomplete != b->doc->dtd_knowledge_incomplete
+          || a->doc->dtd_unread_resource_count != b->doc->dtd_unread_resource_count)
+        return false;
+      for (size_t i = 0; i < a->doc->dtd_unread_resource_count; ++i) {
+        const GTEXT_Markup_DTD_Unread_Resource *p =
+            &a->doc->dtd_unread_resources[i].view;
+        const GTEXT_Markup_DTD_Unread_Resource *q =
+            &b->doc->dtd_unread_resources[i].view;
+        if (p->kind != q->kind || !same_text(p->name, q->name)
+            || !same_text(p->system_id, q->system_id)) return false;
+      }
       for (size_t i = 0; i < x->syntax_count; i++) {
         const markup_dtd_syntax * p = &x->syntax[i];
         const markup_dtd_syntax * q = &y->syntax[i];
-        if (p->kind != q->kind || p->sequence != q->sequence || !same_bytes(p->source, p->length,
+        if (p->kind != q->kind || p->sequence != q->sequence
+            || p->applies_to_document != q->applies_to_document || !same_bytes(p->source, p->length,
               q->source, q->length)) return false;
       }
       for (size_t i = 0; i < x->external_syntax_count; i++) {
         const markup_dtd_syntax * p = &x->external_syntax[i];
         const markup_dtd_syntax * q = &y->external_syntax[i];
-        if (p->kind != q->kind || p->sequence != q->sequence || !same_bytes(p->source, p->length,
+        if (p->kind != q->kind || p->sequence != q->sequence
+            || p->applies_to_document != q->applies_to_document || !same_bytes(p->source, p->length,
               q->source, q->length)) return false;
       }
       for (size_t i = 0; i < x->generated_syntax_count; i++) {
         const markup_dtd_syntax * p = &x->generated_syntax[i];
         const markup_dtd_syntax * q = &y->generated_syntax[i];
         if (p->kind != q->kind || p->sequence != q->sequence
+            || p->applies_to_document != q->applies_to_document
             || p->external_context != q->external_context || !same_text(p->parameter_entity,
               q->parameter_entity) || !same_bytes(p->source, p->length,
               q->source, q->length)) return false;
@@ -656,6 +692,11 @@ static void dump_one(FILE * file, const node_t * n, size_t depth) {
       fprintf(file, "<?%s ", p->target->text);
       put_quoted(file, p->data, p->length);
       fputs("?>\n", file);
+      break;
+    }
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE: {
+      const markup_pi * p = (const markup_pi *)n;
+      fprintf(file, "&%s;\n", p->target->text);
       break;
     }
     case GTEXT_MARKUP_KIND_NONE:
