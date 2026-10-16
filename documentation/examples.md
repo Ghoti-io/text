@@ -11,6 +11,7 @@ The examples are organized by module:
 
 - **JSON Examples** - Demonstrate JSON parsing, writing, streaming, and advanced features
 - **CSV Examples** - Demonstrate CSV reading, writing, streaming, and dialect handling
+- **XML Examples** - Show the DTD-off default and explicitly resolved DTD processing
 - **YAML Examples** - `yaml_writer_formatting.c` and `yaml_validate.c` are the programs in the tree. The security, streaming and config pages are guides for programs that have not been written
 
 All examples are located in the `examples/` directory and can be built using the Makefile.
@@ -76,6 +77,17 @@ For detailed YAML examples, see the [YAML Examples](@ref yaml_examples) page.
 
 ---
 
+## XML Module Examples
+
+[`xml_dtd_contract.c`](../examples/xml/xml_dtd_contract.c) demonstrates the
+XML 1.0 DTD-off default, its no-partial-tree failure result, and XML 1.1 DTD
+processing with a resolver that accepts only one fixed in-memory external
+subset. It checks the entity-expanded text and exactly-once source cleanup.
+`make examples` builds it into `build/<platform>/<config>/apps/examples/xml/`.
+The complete reader contract is in [XML](@ref format_xml).
+
+---
+
 ## Building Examples
 
 ### Using the Makefile (Recommended)
@@ -101,6 +113,10 @@ LD_LIBRARY_PATH=build/linux/release/apps \
 # CSV example
 LD_LIBRARY_PATH=build/linux/release/apps \
     build/linux/release/apps/examples/csv/csv_basic
+
+# XML DTD reading contract
+LD_LIBRARY_PATH=build/linux/release/apps \
+    build/linux/release/apps/examples/xml/xml_dtd_contract
 ```
 
 On other platforms, adjust the library path as needed for your system.
@@ -114,6 +130,7 @@ library:
 ```bash
 cc -o json_basic examples/json/json_basic.c $(pkg-config --cflags --libs ghoti.io-text-0)
 cc -o csv_basic examples/csv/csv_basic.c $(pkg-config --cflags --libs ghoti.io-text-0)
+cc -o xml_dtd_contract examples/xml/xml_dtd_contract.c $(pkg-config --cflags --libs ghoti.io-text-0)
 ```
 
 ---

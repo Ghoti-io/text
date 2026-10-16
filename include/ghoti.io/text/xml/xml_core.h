@@ -22,8 +22,9 @@
  * @file xml_core.h
  * @brief Status codes, options and errors of the XML parser and writer.
  *
- * The parser reads UTF-8 XML 1.0 (Fifth Edition) with Namespaces in XML 1.0
- * and builds a @ref GTEXT_Markup_Document; the tree itself is described in
+ * The parser reads XML 1.0 (Fifth Edition) or XML 1.1 (Second Edition), selected
+ * by the XML declaration (XML 1.0 when absent), and builds a
+ * @ref GTEXT_Markup_Document; the tree itself is described in
  * markup_tree.h. Well-formedness is the contract: a document that violates it
  * yields an error with a position and **no tree**.
  *
@@ -64,10 +65,8 @@ typedef enum {
   GTEXT_XML_E_UNEXPECTED_EOF, ///< The input ended inside a construct, or
                        ///< before the root element.
   GTEXT_XML_E_UTF8,    ///< Bytes that are not well-formed UTF-8.
-  GTEXT_XML_E_CHARACTER, ///< Well-formed UTF-8 that is not an XML 1.0
-                       ///< character (a C0 control other than tab, line feed
-                       ///< and carriage return, U+FFFE, U+FFFF), or a numeric
-                       ///< character reference to one.
+  GTEXT_XML_E_CHARACTER, ///< A character forbidden by the selected XML
+                       ///< version, or a numeric character reference to one.
   GTEXT_XML_E_MISMATCHED_TAG, ///< An end tag that does not match its start
                        ///< tag. The position is the end tag's.
   GTEXT_XML_E_DUPLICATE_ATTRIBUTE, ///< The same attribute name twice on one
@@ -87,7 +86,7 @@ typedef enum {
                        ///< Not a verdict on the document: it may be
                        ///< well-formed.
   GTEXT_XML_E_UNSUPPORTED_VERSION, ///< An XML declaration with a version other
-                       ///< than 1.0. Not a verdict on the document.
+                       ///< than 1.0 or 1.1. Not a verdict on the document.
 
   GTEXT_XML_E_LIMIT_INPUT,      ///< The input is longer than `max_input_bytes`.
   GTEXT_XML_E_LIMIT_DEPTH,      ///< Elements nested deeper than `max_depth`.

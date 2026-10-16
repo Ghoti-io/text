@@ -55,6 +55,14 @@ JSON Schema validation example. Demonstrates:
 - Validating JSON values against a schema
 - Handling validation errors
 
+## XML Examples
+
+### xml_dtd_contract.c
+Demonstrates the XML 1.0 DTD-off default, the failure contract for an
+undeclared entity in that mode, and XML 1.1 DTD processing with a narrowly
+allowlisted in-memory resolver. The resolver source is closed once and the
+document is freed by its owner.
+
 ## Building Examples
 
 `make examples` builds every example into `build/linux/release/apps/examples/`.

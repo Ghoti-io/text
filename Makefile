@@ -632,18 +632,20 @@ TSAN_TEST_EXECUTABLES := $(patsubst $(APP_DIR)/%,$(TSAN_APP_DIR)/%,$(TEST_EXECUT
 # module's examples are picked up by adding it to EXAMPLE_MODULES; yaml was
 # omitted here for a long time, so its examples were never compiled and nothing
 # noticed when they stopped building.
-EXAMPLE_MODULES := json csv yaml
+EXAMPLE_MODULES := json csv yaml xml
 
 JSON_EXAMPLE_SOURCES := $(shell find examples/json -type f -name '*.c' 2>/dev/null)
 CSV_EXAMPLE_SOURCES := $(shell find examples/csv -type f -name '*.c' 2>/dev/null)
 YAML_EXAMPLE_SOURCES := $(shell find examples/yaml -type f -name '*.c' 2>/dev/null)
-EXAMPLE_SOURCES := $(JSON_EXAMPLE_SOURCES) $(CSV_EXAMPLE_SOURCES) $(YAML_EXAMPLE_SOURCES)
+XML_EXAMPLE_SOURCES := $(shell find examples/xml -type f -name '*.c' 2>/dev/null)
+EXAMPLE_SOURCES := $(JSON_EXAMPLE_SOURCES) $(CSV_EXAMPLE_SOURCES) $(YAML_EXAMPLE_SOURCES) $(XML_EXAMPLE_SOURCES)
 
 # Convert each example source file path to an executable path.
 JSON_EXAMPLES := $(patsubst examples/json/%.c,$(APP_DIR)/examples/json/%$(EXE_EXTENSION),$(JSON_EXAMPLE_SOURCES))
 CSV_EXAMPLES := $(patsubst examples/csv/%.c,$(APP_DIR)/examples/csv/%$(EXE_EXTENSION),$(CSV_EXAMPLE_SOURCES))
 YAML_EXAMPLES := $(patsubst examples/yaml/%.c,$(APP_DIR)/examples/yaml/%$(EXE_EXTENSION),$(YAML_EXAMPLE_SOURCES))
-EXAMPLES := $(JSON_EXAMPLES) $(CSV_EXAMPLES) $(YAML_EXAMPLES)
+XML_EXAMPLES := $(patsubst examples/xml/%.c,$(APP_DIR)/examples/xml/%$(EXE_EXTENSION),$(XML_EXAMPLE_SOURCES))
+EXAMPLES := $(JSON_EXAMPLES) $(CSV_EXAMPLES) $(YAML_EXAMPLES) $(XML_EXAMPLES)
 
 
 all: $(APP_DIR)/$(TARGET) $(APP_DIR)/$(STATIC_TARGET) ## Build the shared and static libraries
@@ -854,6 +856,13 @@ $(APP_DIR)/examples/yaml/%$(EXE_EXTENSION): examples/yaml/%.c \
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $< $(TEXTLIBRARY) $(LDFLAGS)
 
+# Pattern rule for XML examples
+$(APP_DIR)/examples/xml/%$(EXE_EXTENSION): examples/xml/%.c \
+		$(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
+	@printf "\n### Compiling Example: $* ###\n"
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $< $(TEXTLIBRARY) $(LDFLAGS)
+
 ####################################################################
 # Sanitizer Builds (ASan + UBSan)
 ####################################################################
@@ -977,7 +986,7 @@ test-watch: ## Watch the file directory for changes and run the unit tests
 		inotifywait -qr -e modify -e create -e delete -e move src include tests Makefile --exclude '/\.'; \
 		done
 
-examples: ## Build all JSON, CSV and YAML examples
+examples: ## Build all JSON, CSV, YAML and XML examples
 examples: $(APP_DIR)/$(TARGET) $(EXAMPLES)
 	@printf "\033[0;32m\n"
 	@printf "############################\n"
@@ -987,6 +996,7 @@ examples: $(APP_DIR)/$(TARGET) $(EXAMPLES)
 	@printf "JSON examples are available in: $(APP_DIR)/examples/json/\n"
 	@printf "CSV examples are available in: $(APP_DIR)/examples/csv/\n"
 	@printf "YAML examples are available in: $(APP_DIR)/examples/yaml/\n"
+	@printf "XML examples are available in: $(APP_DIR)/examples/xml/\n"
 	@printf "\n"
 	@printf "\033[0;33mTo run examples:\033[0m\n"
 ifeq ($(OS_NAME), Linux)

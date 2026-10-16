@@ -38,8 +38,9 @@ extern "C" {
 /**
  * @brief Parse a whole XML document into a tree.
  *
- * The input is UTF-8 XML 1.0 or 1.1 with Namespaces in XML 1.0. The XML
- * declaration selects the version; when absent, XML 1.0 applies. What is built:
+ * The input is XML 1.0 or 1.1 in one of the supported encodings, with the
+ * matching Namespaces in XML rules. The XML declaration selects the version;
+ * when absent, XML 1.0 applies. What is built:
  *
  * - **Elements** with their namespace URI, prefix and local name; a default
  *   namespace applies to elements and not to attributes. Namespace

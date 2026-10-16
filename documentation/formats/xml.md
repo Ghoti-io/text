@@ -3,14 +3,54 @@
 # XML
 
 `gtext_xml_parse()` reads a whole **XML 1.0 (Fifth Edition) or XML 1.1
-(Second Edition)** document, in UTF-8, UTF-16, UTF-32, ISO-8859-1 or US-ASCII, with **Namespaces in XML 1.0** and builds
-a \ref format_markup "Markup tree" from it. `GTEXT_XML_Stream` (push) and
+(Second Edition)** document, in UTF-8, UTF-16, UTF-32, ISO-8859-1 or US-ASCII,
+with the matching Namespaces in XML 1.0 or 1.1 rules, and builds a
+\ref format_markup "Markup tree" from it. `GTEXT_XML_Stream` (push) and
 `GTEXT_XML_Reader` (pull) read the same documents as a stream of events, in
 pieces, without building a tree (**Event parsers** below). `gtext_xml_write()` and
 its buffer and file forms write a tree back as XML, and `gtext_xml_parse_file()`
 reads a file (**Writer** and **Files** below). It is scored against the W3C
 suite, against libxml2 and expat (**Reference parsers**) and fuzzed (**Fuzzers**).
 Back to \ref text_format_references "Formats".
+
+## Reader contract at a glance
+
+XML 1.0 is selected when there is no XML declaration. A declaration selects
+XML 1.0 or XML 1.1 for the entire document, including each parsed entity's
+version-sensitive character and line-end checks. Every reader entry point uses
+the same version-aware parser and `GTEXT_XML_Parse_Options`:
+
+| Entry point | Input and result ownership |
+|---|---|
+| `gtext_xml_parse()` | Parses caller bytes synchronously; it does not retain the input. On success, the caller owns the document and releases it with `gtext_markup_document_free()`. |
+| `gtext_xml_parse_file()` | Reads the named file through the library file layer, then returns the same owned document. File input is separate from external DTD resolution. |
+| `gtext_xml_stream_new/feed/finish()` | Pushes chunks to a callback. Event data and strings are borrowed for the callback only. Free the stream with `gtext_xml_stream_free()`. |
+| `gtext_xml_reader_new/feed/next()` | Pulls events from chunks. Event data and strings remain valid until the next `gtext_xml_reader_next()` call. Free the reader with `gtext_xml_reader_free()`. |
+
+`NULL` options and a zero-initialized options struct select the same finite
+defaults: DTD mode OFF, external access DENY, external entity policy DENY,
+64 MiB input, depth 256, 1,024 attributes per element, 16 MiB normalized
+attribute values, 8,192-byte names, 10,000,000 nodes, 256 in-scope namespaces,
+16 MiB per external source, 64 MiB total external bytes and expanded bytes,
+entity depth 32, 1,000,000 references, 100,000 declarations, 256 MiB charged
+work, and a pull queue of 1 MiB / 256 events. Every zero-valued limit override
+selects its finite default; zero never means unlimited. Use
+`gtext_xml_parse_options_default()` when setting options explicitly.
+
+Fatal parse failures return no DOM tree and leave the output pointer untouched.
+Errors have a static message, status, physical source ID, parent source ID,
+location and a bounded reference trail. Lines and columns are 1-based;
+locations identify the physical source that supplied the construct. Offsets
+count decoded UTF-8 bytes, while `raw_byte_offset` is available for decoding
+faults when the original coordinate is known. Source descriptors and DOM
+locations remain valid until the owning document is freed. DTD processing may
+coalesce text from several sources; `gtext_markup_text_span_count()` and
+`gtext_markup_text_span_at()` expose those source runs.
+
+The runnable example [`examples/xml/xml_dtd_contract.c`](../../examples/xml/xml_dtd_contract.c)
+shows the DTD-off failure contract and XML 1.1 processing with an exact
+in-memory resolver allowlist. Build it with `make examples`; run it from the
+library build directory with `LD_LIBRARY_PATH=build/linux/release/apps`.
 
 ## Normative references
 
@@ -19,8 +59,10 @@ Back to \ref text_format_references "Formats".
   version-specific character/name/line-end rules, DTD declaration and parameter
   entity grammar (2.8-2.12, 4.2), attribute-value normalization (3.3.3), and
   byte-order/encoding rules (Appendix F and 4.3.3).
-- [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/xml-names/):
-  prefix declaration and scope, the reserved `xml` and `xmlns`, qualified names.
+- [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/xml-names/) and
+  [Namespaces in XML 1.1 (Second Edition)](https://www.w3.org/TR/xml-names11/):
+  version-matched prefix declaration and scope, the reserved `xml` and `xmlns`,
+  and qualified names.
 - The [W3C XML Conformance Test Suite](https://www.w3.org/XML/Test/) (release
   `xmlts20130923`), pinned by hash, as the score below.
 
@@ -55,6 +97,13 @@ that mode, the internal subset is skipped by a
 bounded scanner that recognizes comments, processing instructions, quoted
 literals, and declaration boundaries.
 
+`GTEXT_XML_DTD_OFF` is the zero/default mode. `GTEXT_XML_DTD_PROCESS` reads
+declarations without checking document validity. `GTEXT_XML_DTD_VALIDATE` is
+reserved for the validation phase and returns `GTEXT_XML_E_UNSUPPORTED_MODE`
+before reading input. The external general-entity policy also defaults to
+DENY; `GTEXT_XML_DTD_EXTERNAL_SKIP` is an explicit non-validating choice that
+applies only with PROCESS mode.
+
 In processing mode, internal-subset declarations are parsed against the DTD
 grammar. Parameter entities expand in permitted DTD positions in declaration
 order. Recursive and aliased active sources fail, and each use charges the
@@ -88,7 +137,30 @@ replacement stream); a PE cannot supply part of that delimiter.
 
 External access is explicit: only a caller-supplied resolver may provide an
 external subset, external parameter entity, or external parsed general entity.
-With access denied or no resolver, no external resource is opened. A DOM parse
+With access denied or no resolver, no external resource is opened. The library
+never opens a file, URL, or network connection to resolve an external
+identifier. A resolver callback can perform I/O; the application must restrict
+the identifiers and destinations it accepts and enforce its own transport,
+authentication, and size policies. Resolver
+callbacks are synchronous and must not reenter the active parser. The request's
+identifier strings and trail are borrowed for that callback. On `OPENED`, the
+source's identity token, base URI, read callback and close callback must be
+valid; identity is stable for a physical resource (including aliases), and
+identity/base URI stay valid through `close`. The parser copies every returned
+chunk before the next read and closes every successfully opened source exactly
+once on success, parse failure, cancellation, or a limit failure. It copies the
+base URI before reading so nested requests can use it.
+
+A resolver returns `DECLINED` for unavailable material or `FAILED` for an
+operation failure. A declined external subset or parameter entity records
+unread DTD knowledge and processing continues under non-validating XML rules.
+A declined referenced external general entity fails with
+`GTEXT_XML_E_UNAVAILABLE_RESOURCE` by default; only an explicit
+`GTEXT_XML_DTD_EXTERNAL_SKIP` policy retains a placeholder and emits the skipped
+entity event. `FAILED`, malformed opened-source metadata, and read errors return
+`GTEXT_XML_E_RESOLVER`; a cancelled read returns `GTEXT_XML_E_CANCELLED`.
+
+A DOM parse
 (`gtext_xml_parse()` or `gtext_xml_parse_file()`) exposes unread external subsets
 and parameter entities through the document's unread-resource records. Push
 (`gtext_xml_stream_*`) and pull (`gtext_xml_reader_*`) parsing report those
@@ -101,9 +173,9 @@ parse.
 
 ## Encodings
 
-The parser reads UTF-8. Anything else it supports is converted to UTF-8 first,
-in one pass and through the document's allocator, so the parse itself is the same
-for every encoding. The document's encoding name and its source (`BOM`,
+Input is decoded to UTF-8 before parsing. Supported non-UTF-8 encodings are
+converted in one pass through the document's allocator, so the parse itself is
+the same for every encoding. The document's encoding name and its source (`BOM`,
 `DECLARATION`, `DEFAULT`) describe the **original**: a UTF-16 document with a mark
 says `UTF-16` from `BOM`, and one declared `ISO-8859-1` says `ISO-8859-1` from
 `DECLARATION`. The input limit applies to the original bytes.
@@ -329,6 +401,7 @@ parser could not accept.
 | `_LIMIT_*` | a limit above, each its own status |
 | `_RESOLVER` | the resolver returned FAILED for any resource, OPENED metadata was malformed, or a source read failed or returned an invalid byte count |
 | `_CANCELLED` | the caller cancelled an external source read |
+| `_UNSUPPORTED_MODE` | DTD validation was requested before that mode is available |
 | `_INVALID`, `_OOM` | an unusable argument; an allocation failed |
 | `_INCOMPLETE`, `_STATE` | event parsers only: the pull reader needs more input; a call that does not fit the state (input after the end) |
 
@@ -744,12 +817,13 @@ suite's `error` class (left to the processor by the specification).
 A not-well-formed case scores only if refused for a well-formedness reason (a
 limit or out-of-memory refusal does not count). A scored case that fails and is not in `tools/conformance/XMLCONF_EXCEPTIONS`
 fails the gate, **and so does an exception that no longer fails**, so the list
-cannot outlive its reasons. Every exception is a not-well-formed document that is
-not-well-formed only through something inside a DTD - a declaration's grammar,
-a reference that is wrong against a declaration, or an external subset - which
-this parser skips and a later DTD-processing step will parse.
+cannot outlive its reasons. In this default-off conformance run, each exception
+is a not-well-formed document whose fault is inside the skipped subset: a
+declaration's grammar, a reference that is wrong against a declaration, or an
+external subset. DTD PROCESS behavior has its own matrix and binding tests.
 
-**The event parsers are held to the same suite.** The runner is run three ways on
+**The event parsers are held to the same suite.** The default-off conformance
+runner is run three ways on
 every case that is in scope: `gtext_xml_parse()`, the event parser fed the whole
 document in one call, and the event parser fed one byte at a time. The second and
 third must give **exactly the DOM parse's line**: the same status, offset, line,
@@ -832,8 +906,8 @@ regression, a valid UTF-16 document refused, and requires the hunt to fail on it
 
 | class | count | what it is |
 |---|---:|---|
-| `scope-dtd` | 1,070 | needs DTD processing, which this parser does not do. 1,004 of them are suite documents that declare entities, attribute defaults or types, or whose declaration is malformed; the parser skips a declaration's grammar (above), so it accepts the not-well-formed ones and refuses a reference to a declared entity |
-| `scope-xml11` | 130 | the document says `version="1.1"`, which is declined on purpose |
+| `scope-dtd` | 1,070 | historical differential results used DTD_OFF defaults and references with DTD loading disabled. 1,004 are suite documents that declare entities, attribute defaults or types, or whose declaration is malformed. This default-off population does not measure DTD PROCESS. |
+| `scope-xml11` | 130 | historical differential results predate XML 1.1 support; the current parser selects XML 1.1 from the declaration. |
 | `scope-unsupported` | 13 | an encoding label (`euc-jp`, `Shift_JIS`, `iso-2022-jp`, `latin1`, `windows-1252`) or a version (`1.7`) that is declined; libxml2 reads most of them through iconv, expat none |
 | `version-specific` | 21 | expat's name tables are XML 1.0 **Fourth** Edition's: it refuses an element named `eggſ` (U+017F, a letter) and one named with a supplementary-plane character, name characters since the Fifth. The suite says so itself: `x-rmt5-014` and `x-rmt5-016` are marked `EDITION="5"`, and the `ibm-invalid-P89-*` documents say "only legal per 5th edition" |
 | `reference-wrong` | 20 | libxml2 accepts a document whose declared encoding contradicts its bytes (XML 4.3.3), 9 times, expat refusing it as this parser does; expat accepts a version that is not `1.` and digits (`2.0`, `1`, `42.88`), 11 times |
@@ -1125,11 +1199,11 @@ parser reaches first.
 - The reference differential and the fuzzers (above) have limits of their own. The gate's
   generated population is small (3,997 documents), so the references' leniencies (above)
   are found by a hunt on a larger one and not by the gate; and the fuzzers have run for
-  minutes to an hour, not for days. 1,070 of the 1,266 listed disagreements are the
-  absence of DTD processing.
-- No DTD processing: declarations are skipped, entities other than the
-  predefined five are refused, and 340 not-well-formed documents whose fault is
-  inside a DTD are accepted (listed, with their reasons).
+  minutes to an hour, not for days. The listed XML oracle results are historical
+  default-off measurements; they do not measure the DTD PROCESS implementation.
+- DTD PROCESS is non-validating. It reads the internal subset and only caller-
+  supplied external resources; it applies supported declarations and reports
+  incomplete knowledge when external DTD material is unavailable.
 - No canonicalization or XPath. Neither is planned in this phase.
 
 For `gtext_xml_parse()`, conversion happens before parsing, so an invalid sequence
