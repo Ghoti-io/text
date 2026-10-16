@@ -178,6 +178,9 @@ static GTEXT_XML_Status check_dtd_syntax(wctx * w,
     const GTEXT_Markup_Node * doctype, size_t syntax_count);
 static bool dtd_syntax_has_external_identifier(
     const GTEXT_Markup_DTD_Syntax * syntax);
+static GTEXT_XML_Status audit_unresolved_references(wctx *w,
+    const GTEXT_Markup_Node *doctype,
+    const GTEXT_Markup_Node *compiled_internal_doctype);
 
 static GTEXT_XML_Status fail(
     wctx * w, GTEXT_XML_Status code, const char * message) {
@@ -1240,6 +1243,9 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
     if (put_str(w, "]") != GTEXT_XML_OK) {
       return w->status;
     }
+  } else if (w->dry
+      && audit_unresolved_references(w, n, NULL) != GTEXT_XML_OK) {
+    return w->status;
   }
   if (w->dry) {
     w->r->doctype_without_subset = syntax_count == 0;
@@ -1365,7 +1371,116 @@ static GTEXT_XML_Status check_dtd_syntax(wctx *w,
       }
     }
   }
+  const GTEXT_XML_Status audit = audit_unresolved_references(
+      w, doctype, gtext_markup_document_doctype(parsed));
+  if (audit != GTEXT_XML_OK) {
+    gtext_markup_document_free(parsed);
+    return audit;
+  }
   gtext_markup_document_free(parsed);
+  return GTEXT_XML_OK;
+}
+
+static GTEXT_XML_Status audit_unresolved_references(wctx *w,
+    const GTEXT_Markup_Node *doctype,
+    const GTEXT_Markup_Node *compiled_internal_doctype) {
+  size_t work = 0;
+  size_t unresolved = 0;
+  const markup_doctype *internal = compiled_internal_doctype
+      ? (const markup_doctype *)compiled_internal_doctype : NULL;
+  const markup_doctype *retained = doctype
+      ? (const markup_doctype *)doctype : NULL;
+  const GTEXT_Markup_Node *root = gtext_markup_document_root(w->doc);
+  const GTEXT_Markup_Node *n = gtext_markup_node_first_child(root);
+  const GTEXT_Markup_Node *saved_at = w->at;
+  const int saved_attr = w->at_attr;
+
+  while (n) {
+    if (work == SIZE_MAX || ++work > w->o.max_dtd_work) {
+      w->at = n;
+      return fail(w, GTEXT_XML_E_LIMIT_WORK,
+          "unresolved-reference preflight exceeds the DTD work limit");
+    }
+    if (gtext_markup_node_kind(n) == GTEXT_MARKUP_KIND_ENTITY_REFERENCE) {
+      const char *name = gtext_markup_entity_reference_name(n);
+      w->at = n;
+      w->at_attr = -1;
+      if (!name) {
+        return fail_name(w, GTEXT_XML_E_NAME,
+            "an unresolved entity reference has an invalid XML name",
+            name, 0);
+      }
+      const size_t available = w->o.max_dtd_work - work;
+      size_t name_length = 0;
+      while (name_length <= available && name[name_length] != '\0') {
+        ++name_length;
+      }
+      if (name_length > available) {
+        return fail(w, GTEXT_XML_E_LIMIT_WORK,
+            "unresolved-reference name work exceeds the DTD work limit");
+      }
+      if (!name_length || !gtext_markup_is_xml_name(name, name_length)) {
+        return fail_name(w, GTEXT_XML_E_NAME,
+            "an unresolved entity reference has an invalid XML name",
+            name, name_length);
+      }
+      work += name_length;
+      bool declared = false;
+      const markup_doctype *sets[2] = {internal, retained};
+      for (size_t set = 0; set < 2 && !declared; ++set) {
+        const markup_doctype *d = sets[set];
+        if (!d) continue;
+        for (size_t i = 0; i < d->binding_count; ++i) {
+          if (work == SIZE_MAX || ++work > w->o.max_dtd_work) {
+            return fail(w, GTEXT_XML_E_LIMIT_WORK,
+                "unresolved-reference declaration work exceeds the DTD work limit");
+          }
+          const markup_dtd_binding *b = &d->bindings[i];
+          if (set == 1 && !b->external_context) continue;
+          if (b->kind != GTEXT_MARKUP_DTD_ENTITY
+              || b->name_length != name_length
+              || memcmp(b->name, name, name_length) != 0) {
+            continue;
+          }
+          if (b->external_context
+              && (!w->o.emit_external_identifiers
+                  || w->doc->dtd_knowledge_stale)) {
+            continue;
+          }
+          if (b->entity_unparsed) {
+            return fail_name(w, GTEXT_XML_E_DOCTYPE,
+                "an unparsed entity cannot be referenced in document content",
+                name, name_length);
+          }
+          declared = true;
+          break;
+        }
+      }
+      if (!declared) {
+        return fail_name(w, GTEXT_XML_E_DOCTYPE,
+            "the unresolved entity reference has no declaration in the emitted DTD",
+            name, name_length);
+      }
+      if (unresolved == SIZE_MAX) {
+        return fail(w, GTEXT_XML_E_LIMIT_WORK,
+            "unresolved-reference count exceeds the DTD work limit");
+      }
+      ++unresolved;
+    }
+    const GTEXT_Markup_Node *child = gtext_markup_node_first_child(n);
+    if (child) {
+      n = child;
+      continue;
+    }
+    while (n != root && !gtext_markup_node_next_sibling(n)) {
+      n = gtext_markup_node_parent(n);
+    }
+    if (n == root) break;
+    n = gtext_markup_node_next_sibling(n);
+  }
+  if (w->dry) w->r->unresolved_references_written = unresolved;
+  w->at = saved_at;
+  w->at_attr = saved_attr;
   return GTEXT_XML_OK;
 }
 
@@ -2406,9 +2521,23 @@ static GTEXT_XML_Status write_leaf(wctx * w, const GTEXT_Markup_Node * n) {
       }
       return put_str(w, "?>");
     }
-    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE:
-      return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
-          "an unresolved entity reference cannot be written under the current DTD output policy");
+    case GTEXT_MARKUP_KIND_ENTITY_REFERENCE: {
+      const char *name = gtext_markup_entity_reference_name(n);
+      if (put_str(w, "&") != GTEXT_XML_OK
+          || put_text(w, name, strlen(name), false) != GTEXT_XML_OK
+          || put_str(w, ";") != GTEXT_XML_OK) {
+        return w->status;
+      }
+      if (!w->dry) {
+        if (flush(w) != GTEXT_XML_OK) return w->status;
+        if (w->r->unresolved_references_written == SIZE_MAX) {
+          return fail(w, GTEXT_XML_E_LIMIT_WORK,
+              "unresolved-reference count exceeds the DTD work limit");
+        }
+        ++w->r->unresolved_references_written;
+      }
+      return GTEXT_XML_OK;
+    }
     default:
       return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
           "this kind of node has no place in an XML element");
@@ -2702,6 +2831,10 @@ static GTEXT_XML_Status run_pass(wctx * w) {
     return fail(w, GTEXT_XML_E_UNREPRESENTABLE,
         "the document has no root element");
   }
+  if (w->dry && !gtext_markup_document_doctype(w->doc)
+      && audit_unresolved_references(w, NULL, NULL) != GTEXT_XML_OK) {
+    return w->status;
+  }
   if (w->bom) {
     static const unsigned char mark[3] = {0xEF, 0xBB, 0xBF};
     if (out_raw(w, mark, 3) != GTEXT_XML_OK) {
@@ -2906,7 +3039,11 @@ static GTEXT_XML_Status write_impl(const GTEXT_Markup_Sink * sink,
   }
   w->dry = true;
   GTEXT_XML_Status status = run_pass(w);
+  if (status != GTEXT_XML_OK && !check_only) {
+    r->unresolved_references_written = 0;
+  }
   if (status == GTEXT_XML_OK && !check_only) {
+    r->unresolved_references_written = 0;
     w->dry = false;
     status = run_pass(w);
   }

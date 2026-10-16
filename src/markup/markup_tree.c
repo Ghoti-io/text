@@ -880,7 +880,7 @@ GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
     int kind, const char *element_name, size_t element_name_length,
     const char *name, size_t name_length, const char *source,
     size_t source_length, const GTEXT_Markup_Location *location,
-    int external_context) {
+    int external_context, int entity_unparsed) {
   if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !name || !name_length
       || !source || !location || (element_name_length && !element_name))
     return GTEXT_MARKUP_E_INVALID;
@@ -962,7 +962,7 @@ GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
   }
   d->bindings[found] = (markup_dtd_binding){kind, element_copy,
       element_name_length, name_copy, name_length, retained->source, source_length,
-      *location, (uint8_t)!!external_context};
+      *location, (uint8_t)!!external_context, (uint8_t)!!entity_unparsed};
   return GTEXT_MARKUP_OK;
 }
 

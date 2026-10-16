@@ -1252,7 +1252,7 @@ TEST_F(MarkupTree, ADoctypeExternalSnapshotIsReadOnlyOwnedAndCloned) {
       GTEXT_MARKUP_OK);
   ASSERT_EQ(markup_doctype_set_binding(original, GTEXT_MARKUP_DTD_ENTITY,
       nullptr, 0, "internal", 8, "<!ENTITY internal 'i'>", 22, &where,
-      false), GTEXT_MARKUP_OK);
+      false, false), GTEXT_MARKUP_OK);
 
   EXPECT_EQ(gtext_markup_doctype_syntax_count(original), 1u);
   EXPECT_EQ(gtext_markup_doctype_external_syntax_count(original), 1u);
@@ -1295,7 +1295,7 @@ TEST_F(MarkupTree, ADoctypeExternalSnapshotIsReadOnlyOwnedAndCloned) {
       GTEXT_MARKUP_OK);
   ASSERT_EQ(markup_doctype_set_binding(binding_difference,
       GTEXT_MARKUP_DTD_ENTITY, nullptr, 0, "other", 5,
-      "<!ENTITY internal 'i'>", 22, &where, false),
+      "<!ENTITY internal 'i'>", 22, &where, false, false),
       GTEXT_MARKUP_OK);
   EXPECT_FALSE(gtext_markup_equal(original, binding_difference));
   EXPECT_STREQ(got.source, "<!ENTITY external 'e'>");

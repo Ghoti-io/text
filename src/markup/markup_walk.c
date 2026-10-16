@@ -377,7 +377,8 @@ static GTEXT_Markup_Status clone_one(
         remap_location(&where, dst, src->doc);
         status = markup_doctype_set_binding(copy, b->kind, b->element_name,
             b->element_name_length, b->name, b->name_length, b->source,
-            b->source_length, &where, b->external_context);
+            b->source_length, &where, b->external_context,
+            b->entity_unparsed);
       }
       if (status == GTEXT_MARKUP_OK) {
         markup_doctype *cloned = (markup_doctype *)copy;

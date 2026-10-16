@@ -172,6 +172,7 @@ typedef struct {
   size_t source_length;
   GTEXT_Markup_Location location;
   uint8_t external_context;
+  uint8_t entity_unparsed;
 } markup_dtd_binding;
 
 typedef struct {
@@ -277,7 +278,8 @@ GTEXT_Markup_Status markup_doctype_set_binding(
     struct GTEXT_Markup_Node * node, int kind, const char * element_name,
     size_t element_name_length, const char * name, size_t name_length,
     const char * source, size_t source_length,
-    const GTEXT_Markup_Location * location, int external_context);
+    const GTEXT_Markup_Location * location, int external_context,
+    int entity_unparsed);
 void markup_doctype_clear_bindings(struct GTEXT_Markup_Node * node);
 void markup_doctype_free_bindings(struct GTEXT_Markup_Node * node);
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,

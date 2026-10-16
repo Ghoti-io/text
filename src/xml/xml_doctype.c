@@ -1319,6 +1319,7 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
 static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
     const unsigned char *element, size_t element_len,
     const unsigned char *name, size_t name_len, int external,
+    int entity_unparsed,
     GTEXT_Markup_Node *doctype, const unsigned char *decl, size_t decl_len,
     const GTEXT_Markup_Location *where, xml_dtd_binding **effective) {
   if (effective) *effective = NULL;
@@ -1373,7 +1374,7 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
       if (doctype) {
         GTEXT_Markup_Status ms = markup_doctype_set_binding(doctype, kind,
             (const char *)element, element_len, (const char *)name, name_len,
-            (const char *)decl, decl_len, where, 0);
+            (const char *)decl, decl_len, where, 0, entity_unparsed);
         if (ms != GTEXT_MARKUP_OK) return xml_from_markup(p, ms);
       }
     }
@@ -1405,7 +1406,7 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
   if (doctype) {
     GTEXT_Markup_Status ms = markup_doctype_set_binding(doctype, kind,
         (const char *)element, element_len, (const char *)name, name_len,
-        (const char *)decl, decl_len, where, external);
+        (const char *)decl, decl_len, where, external, entity_unparsed);
     if (ms != GTEXT_MARKUP_OK) return xml_from_markup(p, ms);
   }
   return GTEXT_XML_OK;
@@ -1417,6 +1418,36 @@ static size_t decl_name(const unsigned char *s, size_t n, size_t *at) {
   while (*at < n && !xml_is_space(s[*at]) && s[*at] != '>'
       && s[*at] != '(' && s[*at] != ')' && s[*at] != '\'' && s[*at] != '"') ++*at;
   return *at - begin;
+}
+
+static bool entity_declaration_is_unparsed(
+    const unsigned char *s, size_t n) {
+  size_t at = sizeof("<!ENTITY") - 1;
+  while (at < n && xml_is_space(s[at])) ++at;
+  if (at < n && s[at] == '%') return false;
+  (void)decl_name(s, n, &at);
+  while (at < n && xml_is_space(s[at])) ++at;
+  if (at >= n || s[at] == '\'' || s[at] == '"') return false;
+  size_t keyword_length = 0;
+  bool public_id = false;
+  if (n - at >= 6 && memcmp(s + at, "SYSTEM", 6) == 0)
+    keyword_length = 6;
+  else if (n - at >= 6 && memcmp(s + at, "PUBLIC", 6) == 0) {
+    keyword_length = 6;
+    public_id = true;
+  } else return false;
+  at += keyword_length;
+  for (int literal = 0; literal < (public_id ? 2 : 1); ++literal) {
+    while (at < n && xml_is_space(s[at])) ++at;
+    if (at >= n || (s[at] != '\'' && s[at] != '"')) return false;
+    const unsigned char quote = s[at++];
+    while (at < n && s[at] != quote) ++at;
+    if (at >= n) return false;
+    ++at;
+  }
+  while (at < n && xml_is_space(s[at])) ++at;
+  return n - at >= 5 && memcmp(s + at, "NDATA", 5) == 0
+      && (at + 5 == n || xml_is_space(s[at + 5]));
 }
 
 static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
@@ -1444,7 +1475,9 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
     if (validated != GTEXT_XML_OK) return validated;
   }
   if (kind != 1) return bind_key(p, key_kind, NULL, 0, s + name_at,
-      name_len, external, doctype, s, n, where, NULL);
+      name_len, external,
+      kind == GTEXT_MARKUP_DTD_ENTITY && entity_declaration_is_unparsed(s, n),
+      doctype, s, n, where, NULL);
   const unsigned char *element = s + name_at;
   size_t element_len = name_len;
   while (at < n) {
@@ -1455,7 +1488,7 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
     const size_t attr_name_at = name_at;
     xml_dtd_binding *effective = NULL;
     GTEXT_XML_Status status = bind_key(p, kind, element, element_len,
-        s + name_at, name_len, external, doctype, s, n, where, &effective);
+        s + name_at, name_len, external, 0, doctype, s, n, where, &effective);
     if (status != GTEXT_XML_OK) return status;
     /* Retain the effective normalization/default metadata separately from
        the ordered source syntax. */

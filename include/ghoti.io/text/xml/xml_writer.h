@@ -453,6 +453,9 @@ typedef struct {
                            ///< longer than 255 bytes keeps its end behind `...`
                            ///< (truncated, not wrapped). Empty when there is
                            ///< none.
+  size_t unresolved_references_written; ///< Unresolved entity-reference nodes
+                           ///< emitted as `&name;`; zero when none were
+                           ///< emitted.
 } GTEXT_XML_Write_Result;
 
 /**

@@ -240,6 +240,7 @@ struct WriterResolver {
   std::string bytes;
   size_t offset = 0;
   size_t opens = 0;
+  bool decline_general_entity = false;
 };
 
 GTEXT_XML_Source_Read_Result writer_resolver_read(void * opaque,
@@ -255,9 +256,13 @@ GTEXT_XML_Source_Read_Result writer_resolver_read(void * opaque,
 void writer_resolver_close(void *) {}
 
 GTEXT_XML_Resolver_Result writer_resolver_open(
-    const GTEXT_XML_Resolve_Request *, void * opaque,
+    const GTEXT_XML_Resolve_Request * request, void * opaque,
     GTEXT_XML_External_Source * source) {
   auto * resolver = static_cast<WriterResolver *>(opaque);
+  if (resolver->decline_general_entity
+      && request->kind == GTEXT_XML_RESOURCE_GENERAL_ENTITY) {
+    return GTEXT_XML_RESOLVER_DECLINED;
+  }
   resolver->opens++;
   resolver->offset = 0;
   source->handle = resolver;
@@ -1240,6 +1245,238 @@ TEST(XmlWriter, ExplicitExternalIdentifierEmissionWritesWithoutResolving) {
   gtext_markup_document_free(doc);
 }
 
+TEST(XmlWriter, EmitsOnlyDeclaredSkippedReferencesAndReportsTheirCount) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  const std::string input =
+      "<!DOCTYPE a [<!ENTITY skipped SYSTEM 'skipped.ent'>]>"
+      "<a>&skipped;&skipped;</a>";
+  Doc *doc = parse_dtd(input, parse_options);
+  ASSERT_NE(doc, nullptr);
+
+  Collect sink;
+  GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, doc, nullptr, &result), GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.unresolved_references_written, 0u);
+
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  options.max_dtd_work = 1;
+  EXPECT_EQ(gtext_xml_write(&output, doc, &options, &result),
+      GTEXT_XML_E_LIMIT_WORK);
+  EXPECT_EQ(sink.calls, 0u);
+  options.max_dtd_work = 0;
+  const Out written = write_with(doc, options);
+  ASSERT_EQ(written.status, GTEXT_XML_OK) << written.r.message;
+  EXPECT_NE(written.bytes.find("&skipped;&skipped;"), std::string::npos);
+  EXPECT_EQ(written.r.unresolved_references_written, 2u);
+  EXPECT_EQ(written.bytes.find("replacement"), std::string::npos);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, CountsUnresolvedReferencesInsideNestedElements) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a [<!ENTITY skipped SYSTEM 'skipped.ent'>]>"
+      "<a><b><c>&skipped;</c></b></a>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  const Out written = write_with(doc, options);
+  ASSERT_EQ(written.status, GTEXT_XML_OK) << written.r.message;
+  EXPECT_NE(written.bytes.find("<b><c>&skipped;</c></b>"), std::string::npos);
+  EXPECT_EQ(written.r.unresolved_references_written, 1u);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, ExternalSubsetEntityBindingRequiresCurrentEmittedEvidence) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  parse_options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  WriterResolver resolver{"<!ENTITY skipped SYSTEM 'skipped.ent'>", 0, 0, true};
+  parse_options.resolver = writer_resolver_open;
+  parse_options.resolver_user_data = &resolver;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a SYSTEM 'external.dtd'><a>&skipped;</a>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  ASSERT_EQ(resolver.opens, 1u);
+
+  Collect omitted_sink;
+  const GTEXT_Markup_Sink omitted_output = omitted_sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&omitted_output, doc, nullptr, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(omitted_sink.calls, 0u);
+
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  const Out emitted = write_with(doc, options);
+  ASSERT_EQ(emitted.status, GTEXT_XML_OK) << emitted.r.message;
+  EXPECT_NE(emitted.bytes.find("SYSTEM \"external.dtd\""), std::string::npos);
+  EXPECT_NE(emitted.bytes.find("&skipped;"), std::string::npos);
+  EXPECT_EQ(emitted.r.unresolved_references_written, 1u);
+  EXPECT_EQ(resolver.opens, 1u);
+
+  Node *doctype = gtext_markup_document_doctype(doc);
+  ASSERT_NE(doctype, nullptr);
+  const char changed[] = "<!-- stale evidence -->";
+  ASSERT_EQ(gtext_markup_doctype_insert_syntax(doctype, 0,
+                GTEXT_MARKUP_DTD_COMMENT, changed, sizeof(changed) - 1, nullptr),
+      GTEXT_MARKUP_OK);
+  Collect stale_sink;
+  const GTEXT_Markup_Sink stale_output = stale_sink.sink();
+  EXPECT_EQ(gtext_xml_write(&stale_output, doc, &options, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(stale_sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, DoesNotEmitUnparsedEntityReferences) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a [<!NOTATION image SYSTEM 'image/png'>"
+      "<!ENTITY logo SYSTEM 'logo.png' NDATA image>]><a/>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  Node *root = const_cast<Node *>(gtext_markup_document_element(doc));
+  Node *reference = nullptr;
+  ASSERT_EQ(gtext_markup_create_entity_reference(doc, "logo", 4, &reference),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(root, reference), GTEXT_MARKUP_OK);
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, doc, nullptr, &result), GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, SinkFailureAtAnUnresolvedReferenceDoesNotReportItWritten) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a [<!ENTITY skipped SYSTEM 'skipped.ent'>]>"
+      "<a>&skipped;</a>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  Collect sink;
+  sink.fail_on = 1;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, doc, &options, &result), GTEXT_XML_E_WRITE);
+  EXPECT_EQ(result.unresolved_references_written, 0u);
+  EXPECT_EQ(sink.data, "");
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, FailedDryPreflightDoesNotReportEarlierReferencesWritten) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a [<!ENTITY skipped SYSTEM 'skipped.ent'>]>"
+      "<a>&skipped;</a>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  Node *later_doctype = nullptr;
+  ASSERT_EQ(gtext_markup_create_doctype(doc, "a", nullptr, nullptr,
+                &later_doctype), GTEXT_MARKUP_OK);
+  markup_append_unchecked(gtext_markup_document_root(doc), later_doctype);
+
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, doc, &options, &result), GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.unresolved_references_written, 0u);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, BoundsUnresolvedReferenceNameScanByRemainingDtdWork) {
+  Build b;
+  Node *root = b.el(nullptr, "a");
+  Node *reference = nullptr;
+  ASSERT_EQ(gtext_markup_create_entity_reference(
+                b.doc, "longname", 8, &reference), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(root, reference), GTEXT_MARKUP_OK);
+  Opts options = defaults();
+  options.max_dtd_work = 3;
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, b.doc, &options, &result),
+      GTEXT_XML_E_LIMIT_WORK);
+  EXPECT_EQ(sink.calls, 0u);
+}
+
+TEST(XmlWriter, RefusesUnresolvedReferencesWithoutDeclarationBeforeOutput) {
+  Build b;
+  Node *root = b.el(nullptr, "a");
+  Node *ref = nullptr;
+  ASSERT_EQ(gtext_markup_create_entity_reference(
+                b.doc, "missing", 7, &ref), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(root, ref), GTEXT_MARKUP_OK);
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, b.doc, nullptr, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+  EXPECT_STREQ(result.path, "/a/node()");
+}
+
+TEST(XmlWriter, RefusesInvalidUnresolvedReferenceNamesBeforeOutput) {
+  Build b;
+  Node *root = b.el(nullptr, "a");
+  Node *ref = nullptr;
+  ASSERT_EQ(gtext_markup_create_entity_reference(
+                b.doc, "bad name", 8, &ref), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(root, ref), GTEXT_MARKUP_OK);
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, b.doc, nullptr, &result),
+      GTEXT_XML_E_NAME);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_STREQ(result.path, "/a/node()");
+}
+
+TEST(XmlWriter, RemovingADeclarationMakesItsSkippedReferenceUnwritable) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a [<!ENTITY skipped SYSTEM 'skipped.ent'>]>"
+      "<a>&skipped;</a>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  Node *doctype = gtext_markup_document_doctype(doc);
+  ASSERT_NE(doctype, nullptr);
+  ASSERT_EQ(gtext_markup_doctype_remove_syntax(doctype, 0, nullptr),
+      GTEXT_MARKUP_OK);
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  Collect sink;
+  const GTEXT_Markup_Sink output = sink.sink();
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write(&output, doc, &options, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(sink.calls, 0u);
+  EXPECT_EQ(result.bytes_written, 0u);
+  gtext_markup_document_free(doc);
+}
+
 TEST(XmlWriter, ExplicitEmissionKeepsExternalParameterEntityReferenceWithoutIo) {
   GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
   parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
@@ -1898,6 +2135,30 @@ TEST(XmlWriter, InternalExternalDeclarationsRefuseBeforeCreatingOutputFile) {
     EXPECT_TRUE(dir.list().empty()) << declaration;
     gtext_markup_document_free(doc);
   }
+}
+
+TEST(XmlWriter, RemovedSkippedEntityDeclarationRefusesBeforeCreatingFile) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  Doc *doc = parse_dtd(
+      "<!DOCTYPE a [<!ENTITY skipped SYSTEM 'skipped.ent'>]>"
+      "<a>&skipped;</a>", parse_options);
+  ASSERT_NE(doc, nullptr);
+  Node *doctype = gtext_markup_document_doctype(doc);
+  ASSERT_NE(doctype, nullptr);
+  ASSERT_EQ(gtext_markup_doctype_remove_syntax(doctype, 0, nullptr),
+      GTEXT_MARKUP_OK);
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  TempDir dir;
+  const std::string path = dir.file("refused.xml");
+  GTEXT_XML_Write_Result result{};
+  EXPECT_EQ(gtext_xml_write_file(path.c_str(), doc, &options, &result),
+      GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(result.bytes_written, 0u);
+  EXPECT_TRUE(dir.list().empty());
+  gtext_markup_document_free(doc);
 }
 
 TEST(XmlWriter, RejectsMalformedRetainedDtdSyntaxBeforeTheSink) {
