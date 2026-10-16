@@ -199,6 +199,13 @@ typedef struct {
   size_t diagnostic_count;
 } GTEXT_XML_Validation_Result;
 
+/** Finite resource bounds for explicit tree validation; zero selects defaults. */
+typedef struct {
+  size_t max_work;
+  size_t max_memory;
+  size_t max_diagnostics;
+} GTEXT_XML_Revalidation_Options;
+
 /** DTD behavior selected for a parse. Zero preserves the historical default. */
 typedef enum {
   GTEXT_XML_DTD_OFF = 0,

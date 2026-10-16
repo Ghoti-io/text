@@ -354,6 +354,8 @@ void xml_source_free(xml_ctx * p) {
     xml_release(p, p->dtd_bindings[i].attribute_enumeration);
   }
   xml_release(p, p->dtd_bindings);
+  xml_validation_memory_release(p, p->validation_dtd_key_bytes);
+  p->validation_dtd_key_bytes = 0;
   p->dtd_bindings = NULL;
   p->dtd_binding_count = p->dtd_binding_capacity = 0;
   for (size_t i = 0; i < p->source_name_count; i++) {

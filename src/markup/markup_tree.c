@@ -46,6 +46,11 @@ _Static_assert(offsetof(struct GTEXT_Markup_Node, cap_log2) == 2 && offsetof(str
 
 typedef struct GTEXT_Markup_Node node_t;
 
+void markup_validation_invalidate(GTEXT_Markup_Document *doc) {
+  if (!doc) return;
+  doc->xml_validation_stale = 1;
+}
+
 /* ---- the detached list -------------------------------------------------- */
 
 static void detached_push(GTEXT_Markup_Document * doc, node_t * node) {
@@ -454,6 +459,7 @@ GTEXT_Markup_Status gtext_markup_document_set_encoding(
   const GTEXT_Markup_Status status = replace_string(doc, &doc->encoding, label);
   if (status == GTEXT_MARKUP_OK) {
     doc->encoding_source = label ? source : GTEXT_MARKUP_ENCODING_UNKNOWN;
+    markup_validation_invalidate(doc);
   }
   return status;
 }
@@ -479,6 +485,7 @@ GTEXT_Markup_Status gtext_markup_document_set_xml_declaration(
       replace_string(doc, &doc->xml_version, version);
   if (status == GTEXT_MARKUP_OK) {
     doc->standalone = version ? standalone : GTEXT_MARKUP_STANDALONE_UNSPECIFIED;
+    markup_validation_invalidate(doc);
   }
   return status;
 }
@@ -860,11 +867,24 @@ GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
   }
   if (found != SIZE_MAX && (external_context || !d->bindings[found].external_context))
     return GTEXT_MARKUP_OK;
+  if (name_length == SIZE_MAX || element_name_length == SIZE_MAX
+      || (element_name_length && element_name_length + 1
+          > SIZE_MAX - name_length - 1))
+    return GTEXT_MARKUP_E_LIMIT;
+  const size_t new_strings = name_length + 1
+      + (element_name_length ? element_name_length + 1 : 0);
+  if (d->validation_memory_used) {
+    if (new_strings > d->validation_memory_limit
+        || *d->validation_memory_used > d->validation_memory_limit - new_strings)
+      return GTEXT_MARKUP_E_LIMIT;
+    *d->validation_memory_used += new_strings;
+  }
   char *element_copy = element_name_length
       ? markup_copy(node->doc, element_name, element_name_length) : NULL;
   char *name_copy = markup_copy(node->doc, name, name_length);
   if ((element_name_length && !element_copy) || !name_copy) {
     markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+    if (d->validation_memory_used) *d->validation_memory_used -= new_strings;
     return GTEXT_MARKUP_E_OOM;
   }
   if (found == SIZE_MAX) {
@@ -872,17 +892,37 @@ GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
       size_t cap = d->binding_capacity ? d->binding_capacity * 2 : 8;
       if (cap < d->binding_capacity || cap > SIZE_MAX / sizeof(*d->bindings)) {
         markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+        if (d->validation_memory_used) *d->validation_memory_used -= new_strings;
         return GTEXT_MARKUP_E_LIMIT;
       }
+      const size_t new_array_bytes = cap * sizeof(*d->bindings);
+      const size_t old_array_bytes = d->binding_capacity * sizeof(*d->bindings);
+      if (d->validation_memory_used) {
+        if (new_array_bytes > d->validation_memory_limit
+            || *d->validation_memory_used > d->validation_memory_limit - new_array_bytes) {
+          markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+          *d->validation_memory_used -= new_strings;
+          return GTEXT_MARKUP_E_LIMIT;
+        }
+        *d->validation_memory_used += new_array_bytes;
+      }
       markup_dtd_binding *grown = markup_realloc(node->doc, d->bindings,
-          cap * sizeof(*d->bindings));
+          new_array_bytes);
       if (!grown) { markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+        if (d->validation_memory_used) {
+          *d->validation_memory_used -= new_strings + new_array_bytes;
+        }
         return GTEXT_MARKUP_E_OOM; }
+      if (d->validation_memory_used) *d->validation_memory_used -= old_array_bytes;
       d->bindings = grown; d->binding_capacity = cap;
     }
     found = d->binding_count++;
   }
   else {
+    if (d->validation_memory_used)
+      *d->validation_memory_used -= (d->bindings[found].element_name_length
+          ? d->bindings[found].element_name_length + 1 : 0)
+          + d->bindings[found].name_length + 1;
     markup_free(node->doc, d->bindings[found].element_name);
     markup_free(node->doc, d->bindings[found].name);
   }
@@ -896,10 +936,25 @@ void markup_doctype_clear_bindings(GTEXT_Markup_Node *node) {
   if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE) return;
   markup_doctype *d = (markup_doctype *)node;
   for (size_t i = 0; i < d->binding_count; ++i) {
+    if (d->validation_memory_used)
+      *d->validation_memory_used -= (d->bindings[i].element_name_length
+          ? d->bindings[i].element_name_length + 1 : 0)
+          + d->bindings[i].name_length + 1;
     markup_free(node->doc, d->bindings[i].element_name);
     markup_free(node->doc, d->bindings[i].name);
   }
   d->binding_count = 0;
+}
+
+void markup_doctype_free_bindings(GTEXT_Markup_Node *node) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE) return;
+  markup_doctype *d = (markup_doctype *)node;
+  markup_doctype_clear_bindings(node);
+  if (d->validation_memory_used && d->binding_capacity)
+    *d->validation_memory_used -= d->binding_capacity * sizeof(*d->bindings);
+  markup_free(node->doc, d->bindings);
+  d->bindings = NULL;
+  d->binding_capacity = 0;
 }
 
 GTEXT_Markup_Status gtext_markup_create_fragment(
@@ -1061,6 +1116,7 @@ GTEXT_Markup_Status gtext_markup_node_set_data(
   *slot = copy;
   *len_slot = length;
   node->cap_log2 = 0;
+  markup_validation_invalidate(node->doc);
   return GTEXT_MARKUP_OK;
 }
 
@@ -1292,6 +1348,7 @@ void gtext_markup_node_set_location(
     store_location(&node->flags, &node->offset, &node->line, &node->column,
         &node->source_id, &node->reference_source_id, &node->raw_offset,
         &node->has_raw_offset, location);
+  markup_validation_invalidate(node->doc);
   }
 }
 
@@ -1410,6 +1467,8 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute(
     a->value = copy;
     a->value_length = value_length;
     a->origin = GTEXT_MARKUP_ATTRIBUTE_EXPLICIT;
+    a->normalization_changed = 0;
+    markup_validation_invalidate(doc);
     return GTEXT_MARKUP_OK;
   }
 
@@ -1450,6 +1509,7 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute(
   a->local = a_local;
   a->value = copy;
   a->value_length = value_length;
+  markup_validation_invalidate(doc);
   return GTEXT_MARKUP_OK;
 }
 
@@ -1471,6 +1531,7 @@ bool gtext_markup_element_remove_attribute(
   memmove(&e->attrs[i], &e->attrs[i + 1],
       (e->attr_count - i - 1) * sizeof(markup_attr));
   e->attr_count--;
+  markup_validation_invalidate(doc);
   return true;
 }
 
@@ -1486,6 +1547,7 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute_location(
   store_location(&flags, &a->offset, &a->line, &a->column, &a->source_id,
       &a->reference_source_id, &a->raw_offset, &a->has_raw_offset, location);
   a->has_location = (flags & MARKUP_F_LOCATION) ? 1 : 0;
+  markup_validation_invalidate(element->doc);
   return GTEXT_MARKUP_OK;
 }
 
@@ -1498,6 +1560,7 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute_origin(
           && origin != GTEXT_MARKUP_ATTRIBUTE_DEFAULTED))
     return GTEXT_MARKUP_E_INVALID;
   e->attrs[index].origin = (uint8_t)origin;
+  markup_validation_invalidate(element->doc);
   return GTEXT_MARKUP_OK;
 }
 
@@ -1851,6 +1914,7 @@ GTEXT_Markup_Status gtext_markup_insert_before(GTEXT_Markup_Node * parent,
     return status;
   }
   commit_insert(parent, child, reference);
+  markup_validation_invalidate(parent->doc);
   return GTEXT_MARKUP_OK;
 }
 
@@ -1869,6 +1933,7 @@ GTEXT_Markup_Status gtext_markup_remove(GTEXT_Markup_Node * node) {
   }
   unlink_child(node);
   detached_push(node->doc, node);
+  markup_validation_invalidate(node->doc);
   return GTEXT_MARKUP_OK;
 }
 
@@ -1890,6 +1955,7 @@ GTEXT_Markup_Status gtext_markup_replace(
   commit_insert(parent, new_child, old_child);
   unlink_child(old_child);
   detached_push(old_child->doc, old_child);
+  markup_validation_invalidate(parent->doc);
   return GTEXT_MARKUP_OK;
 }
 

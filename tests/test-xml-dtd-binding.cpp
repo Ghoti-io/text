@@ -185,6 +185,7 @@ TEST(XmlDtdBinding, ExternalBindingsFollowInternalPrecedenceAndAttlistsMerge) {
   xml_ctx rebuild{};
   rebuild.allocator = &doc->allocator;
   rebuild.max_total_work = XML_DEFAULT_MAX_TOTAL_WORK;
+  rebuild.max_validation_memory = XML_DEFAULT_MAX_VALIDATION_MEMORY;
   ASSERT_EQ(xml_doctype_rebuild_indexes(&rebuild,
       gtext_markup_document_doctype(doc)), GTEXT_XML_OK) << rebuild.err.message;
   EXPECT_EQ(rebuild.dtd_binding_count, 5u);

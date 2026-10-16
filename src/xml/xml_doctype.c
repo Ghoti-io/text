@@ -402,15 +402,52 @@ static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
     memcpy(base_copy, declaration_base_uri, strlen(declaration_base_uri) + 1);
   if (notation_copy) { memcpy(notation_copy, notation, notation_length); notation_copy[notation_length] = 0; }
   if (!old) {
+    size_t replay_array_growth = 0;
+    if (p->validation_replay_entities_active
+        && p->general_entity_count + 1 > p->general_entity_capacity) {
+      size_t capacity = p->general_entity_capacity
+          ? p->general_entity_capacity : 8;
+      while (capacity < p->general_entity_count + 1) {
+        if (capacity > SIZE_MAX / 2) {
+          xml_release(p, name_copy); xml_release(p, public_copy);
+          xml_release(p, system_copy); xml_release(p, base_copy);
+          xml_release(p, notation_copy); xml_release(p, replacement);
+          return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
+              "DTD entity replay memory size overflow");
+        }
+        capacity *= 2;
+      }
+      if (capacity > SIZE_MAX / sizeof(*p->general_entities)) {
+        xml_release(p, name_copy); xml_release(p, public_copy);
+        xml_release(p, system_copy); xml_release(p, base_copy);
+        xml_release(p, notation_copy); xml_release(p, replacement);
+        return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
+            "DTD entity replay memory size overflow");
+      }
+      const size_t new_bytes = capacity * sizeof(*p->general_entities);
+      const size_t old_bytes = p->general_entity_capacity
+          * sizeof(*p->general_entities);
+      replay_array_growth = new_bytes - old_bytes;
+      GTEXT_XML_Status budget = xml_validation_memory_reserve(p,
+          replay_array_growth);
+      if (budget != GTEXT_XML_OK) {
+        xml_release(p, name_copy); xml_release(p, public_copy);
+        xml_release(p, system_copy); xml_release(p, base_copy);
+        xml_release(p, notation_copy); xml_release(p, replacement);
+        return budget;
+      }
+    }
     GTEXT_XML_Status status = xml_grow(p, (void **)&p->general_entities,
         &p->general_entity_capacity, sizeof(*p->general_entities),
         p->general_entity_count + 1);
     if (status != GTEXT_XML_OK) {
+      xml_validation_memory_release(p, replay_array_growth);
       xml_release(p, name_copy); xml_release(p, public_copy);
       xml_release(p, system_copy); xml_release(p, base_copy); xml_release(p, notation_copy);
       xml_release(p, replacement);
       return status;
     }
+    p->validation_replay_entity_array_bytes += replay_array_growth;
     old = &p->general_entities[p->general_entity_count++];
     memset(old, 0, sizeof(*old));
   }
@@ -1284,6 +1321,10 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
     GTEXT_Markup_Node *doctype, const unsigned char *decl, size_t decl_len,
     const GTEXT_Markup_Location *where, xml_dtd_binding **effective) {
   if (effective) *effective = NULL;
+  if (name_len == SIZE_MAX || element_len == SIZE_MAX
+      || (element_len && element_len + 1 > SIZE_MAX - name_len - 1))
+    return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD binding key size overflow");
+  const size_t key_bytes = name_len + 1 + (element_len ? element_len + 1 : 0);
   for (size_t i = 0; i < p->dtd_binding_count; ++i) {
     GTEXT_XML_Status charged = xml_charge_work(p, 1);
     if (charged != GTEXT_XML_OK) return charged;
@@ -1296,15 +1337,23 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
     /* Internal declarations outrank external declarations even when an
        external PE was encountered earlier while reading the internal subset. */
     if (!external && b->external) {
+      GTEXT_XML_Status memory = xml_validation_memory_reserve(p, key_bytes);
+      if (memory != GTEXT_XML_OK) return memory;
       char *copy = xml_alloc(p, name_len + 1);
       char *element_copy = element_len ? xml_alloc(p, element_len + 1) : NULL;
       if (!copy || (element_len && !element_copy)) {
         xml_release(p, copy); xml_release(p, element_copy);
+        xml_validation_memory_release(p, key_bytes);
         return xml_fail(p, GTEXT_XML_E_OOM, "out of memory compiling DTD bindings");
       }
       memcpy(copy, name, name_len); copy[name_len] = 0;
       if (element_len) { memcpy(element_copy, element, element_len); element_copy[element_len] = 0; }
+      const size_t old_key_bytes = b->name_length + 1
+          + (b->element_name_length ? b->element_name_length + 1 : 0);
       xml_release(p, b->name); xml_release(p, b->element_name);
+      xml_validation_memory_release(p, old_key_bytes);
+      p->validation_dtd_key_bytes -= old_key_bytes;
+      p->validation_dtd_key_bytes += key_bytes;
       xml_release(p, b->attribute_default_value);
       xml_release(p, b->attribute_enumeration);
       b->name = copy; b->element_name = element_copy;
@@ -1332,12 +1381,16 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
   GTEXT_XML_Status s = xml_grow(p, (void **)&p->dtd_bindings,
       &p->dtd_binding_capacity, sizeof(*p->dtd_bindings), p->dtd_binding_count + 1);
   if (s != GTEXT_XML_OK) return s;
+  s = xml_validation_memory_reserve(p, key_bytes);
+  if (s != GTEXT_XML_OK) return s;
   char *copy = xml_alloc(p, name_len + 1);
   char *element_copy = element_len ? xml_alloc(p, element_len + 1) : NULL;
   if (!copy || (element_len && !element_copy)) {
     xml_release(p, copy); xml_release(p, element_copy);
+    xml_validation_memory_release(p, key_bytes);
     return xml_fail(p, GTEXT_XML_E_OOM, "out of memory compiling DTD bindings");
   }
+  p->validation_dtd_key_bytes += key_bytes;
   memcpy(copy, name, name_len); copy[name_len] = 0;
   if (element_len) { memcpy(element_copy, element, element_len); element_copy[element_len] = 0; }
   const size_t binding_index = p->dtd_binding_count;
@@ -1514,10 +1567,15 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
       + d->generated_syntax_count;
   if (count > SIZE_MAX / sizeof(ordered_dtd_item))
     return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD index rebuild size overflow");
+  const size_t item_bytes = count * sizeof(ordered_dtd_item);
+  GTEXT_XML_Status budget = xml_validation_memory_reserve(p, item_bytes);
+  if (budget != GTEXT_XML_OK) return budget;
   ordered_dtd_item *items = count
-      ? markup_alloc(node->doc, count * sizeof(*items)) : NULL;
-  if (count && !items)
+      ? markup_alloc(node->doc, item_bytes) : NULL;
+  if (count && !items) {
+    xml_validation_memory_release(p, item_bytes);
     return xml_fail(p, GTEXT_XML_E_OOM, "could not allocate DTD index rebuild order");
+  }
   size_t at = 0;
   for (size_t i = 0; i < d->syntax_count; ++i)
     items[at++] = (ordered_dtd_item){&d->syntax[i], 0};
@@ -1554,13 +1612,17 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
           node, &item->location);
     }
     if (status != GTEXT_XML_OK) {
-      markup_doctype_clear_bindings(node);
-      markup_free(node->doc, d->bindings);
+      markup_doctype_free_bindings(node);
       d->bindings = old_model; d->binding_count = old_model_count;
       d->binding_capacity = old_model_capacity;
       for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+        const size_t key_bytes = p->dtd_bindings[i].name_length + 1
+            + (p->dtd_bindings[i].element_name_length
+                ? p->dtd_bindings[i].element_name_length + 1 : 0);
         xml_release(p, p->dtd_bindings[i].element_name);
         xml_release(p, p->dtd_bindings[i].name);
+        xml_validation_memory_release(p, key_bytes);
+        p->validation_dtd_key_bytes -= key_bytes;
         xml_release(p, p->dtd_bindings[i].attribute_default_value);
         xml_release(p, p->dtd_bindings[i].attribute_enumeration);
       }
@@ -1576,8 +1638,13 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
     }
     markup_free(node->doc, old_model);
     for (size_t i = 0; i < old_parse_count; ++i) {
+      const size_t key_bytes = old_parse[i].name_length + 1
+          + (old_parse[i].element_name_length
+              ? old_parse[i].element_name_length + 1 : 0);
       xml_release(p, old_parse[i].element_name);
       xml_release(p, old_parse[i].name);
+      xml_validation_memory_release(p, key_bytes);
+      p->validation_dtd_key_bytes -= key_bytes;
       xml_release(p, old_parse[i].attribute_default_value);
       xml_release(p, old_parse[i].attribute_enumeration);
     }
@@ -1585,7 +1652,160 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
     }
   }
   markup_free(node->doc, items);
+  xml_validation_memory_release(p, item_bytes);
   return status;
+}
+
+static int retained_space(unsigned char c) {
+  return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+static size_t retained_skip_space(const unsigned char *s, size_t n, size_t at) {
+  while (at < n && retained_space(s[at])) ++at;
+  return at;
+}
+
+static int retained_word(const unsigned char *s, size_t n, size_t *at,
+    const char *word) {
+  const size_t len = strlen(word);
+  if (*at > n || n - *at < len || memcmp(s + *at, word, len) != 0) return 0;
+  *at += len;
+  return 1;
+}
+
+static int retained_literal(const unsigned char *s, size_t n, size_t *at) {
+  if (*at >= n || (s[*at] != '\'' && s[*at] != '"')) return 0;
+  const unsigned char quote = s[(*at)++];
+  while (*at < n && s[*at] != quote) ++*at;
+  if (*at == n) return 0;
+  ++*at;
+  return 1;
+}
+
+static size_t replay_entity_bytes(const xml_general_entity *entity) {
+  return entity->name_length + 1
+      + (entity->unparsed ? entity->notation_name_length + 1 : 0);
+}
+
+static GTEXT_XML_Status replay_add_general_entity(xml_ctx *p,
+    const unsigned char *name, size_t name_length,
+    const unsigned char *notation, size_t notation_length,
+    const GTEXT_Markup_Location *location, int external, int unparsed) {
+  xml_general_entity *old = dtd_find_general_entity(p, name, name_length);
+  if (old && (external || !old->external_context)) return GTEXT_XML_OK;
+  if (name_length == SIZE_MAX || (unparsed && notation_length == SIZE_MAX)
+      || (unparsed && name_length > SIZE_MAX - notation_length - 2)) {
+    return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
+        "DTD entity replay memory size overflow");
+  }
+  const size_t bytes = name_length + 1
+      + (unparsed ? notation_length + 1 : 0);
+  const size_t replaced_bytes = old ? replay_entity_bytes(old) : 0;
+  GTEXT_XML_Status status = xml_validation_memory_reserve(p, bytes);
+  if (status != GTEXT_XML_OK) return status;
+  status = dtd_add_general_entity(p, name, name_length, NULL, 0,
+      NULL, NULL, notation, notation_length, location, external, unparsed);
+  if (status != GTEXT_XML_OK) {
+    xml_validation_memory_release(p, bytes);
+    return status;
+  }
+  p->validation_replay_entity_bytes += bytes;
+  if (replaced_bytes) {
+    xml_validation_memory_release(p, replaced_bytes);
+    p->validation_replay_entity_bytes -= replaced_bytes;
+  }
+  return GTEXT_XML_OK;
+}
+
+GTEXT_XML_Status xml_doctype_rebuild_general_entities(xml_ctx *p,
+    GTEXT_Markup_Node *node) {
+  if (!p) return GTEXT_XML_E_INVALID;
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE)
+    return xml_fail(p, GTEXT_XML_E_INVALID,
+        "a doctype is required to rebuild entity validation records");
+  markup_doctype *d = (markup_doctype *)node;
+  xml_source_frame source = {0};
+  p->sources = &source;
+  p->source_count = 1;
+  for (size_t i = 0; i < d->binding_count; ++i) {
+    markup_dtd_binding *b = &d->bindings[i];
+    if (b->kind != GTEXT_MARKUP_DTD_ENTITY || !b->source) continue;
+    const unsigned char *s = (const unsigned char *)b->source;
+    const size_t n = b->source_length;
+    size_t at = 0;
+    if (!retained_word(s, n, &at, "<!ENTITY")) continue;
+    at = retained_skip_space(s, n, at);
+    if (at < n && s[at] == '%') continue;
+    const size_t name_at = at;
+    while (at < n && !retained_space(s[at]) && s[at] != '>'
+        && s[at] != '\'' && s[at] != '"') ++at;
+    const size_t name_length = at - name_at;
+    if (!name_length) continue;
+    at = retained_skip_space(s, n, at);
+    if (at < n && (s[at] == '\'' || s[at] == '"')) {
+      /* Retain internal declarations too: entity presence and declaration
+         provenance affect ENTITY attributes and standalone validity. */
+      if (!retained_literal(s, n, &at)) continue;
+      if (n > p->max_validation_work
+          || p->validation_work > p->max_validation_work - n) {
+        p->sources = NULL; p->source_count = 0;
+        return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
+            "DTD entity replay work limit exceeded");
+      }
+      p->validation_work += n;
+      source.external_source = b->external_context;
+      GTEXT_XML_Status status = replay_add_general_entity(p, s + name_at,
+          name_length, NULL, 0, &b->location, 0, 0);
+      if (status != GTEXT_XML_OK) {
+        p->sources = NULL; p->source_count = 0;
+        return status;
+      }
+      continue;
+    }
+    int external = 0, unparsed = 0;
+    const unsigned char *notation = NULL;
+    size_t notation_length = 0;
+    if (retained_word(s, n, &at, "SYSTEM")) {
+      external = 1;
+      at = retained_skip_space(s, n, at);
+      if (!retained_literal(s, n, &at)) continue;
+    }
+    else if (retained_word(s, n, &at, "PUBLIC")) {
+      external = 1;
+      at = retained_skip_space(s, n, at);
+      if (!retained_literal(s, n, &at)) continue;
+      at = retained_skip_space(s, n, at);
+      if (!retained_literal(s, n, &at)) continue;
+    }
+    else continue;
+    at = retained_skip_space(s, n, at);
+    if (retained_word(s, n, &at, "NDATA")) {
+      at = retained_skip_space(s, n, at);
+      const size_t begin = at;
+      while (at < n && !retained_space(s[at]) && s[at] != '>') ++at;
+      notation = s + begin;
+      notation_length = at - begin;
+      unparsed = notation_length != 0;
+    }
+    if (n > p->max_validation_work
+        || p->validation_work > p->max_validation_work - n) {
+      p->sources = NULL; p->source_count = 0;
+      return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
+          "DTD entity replay work limit exceeded");
+    }
+    p->validation_work += n;
+    source.external_source = b->external_context;
+    GTEXT_XML_Status status = replay_add_general_entity(p, s + name_at,
+        name_length, notation, notation_length, &b->location, external,
+        unparsed);
+    if (status != GTEXT_XML_OK) {
+      p->sources = NULL; p->source_count = 0;
+      return status;
+    }
+  }
+  p->sources = NULL;
+  p->source_count = 0;
+  return GTEXT_XML_OK;
 }
 
 /* DTD-off preserves the original skip-only behavior. DTD processing validates

@@ -164,6 +164,12 @@ GTEXT_API bool gtext_xml_validation_result(
     const GTEXT_Markup_Document * document,
     GTEXT_XML_Validation_Result * out);
 
+/** Revalidate the current concrete tree and retained DTD evidence without I/O. */
+GTEXT_API GTEXT_XML_Status gtext_xml_revalidate(
+    GTEXT_Markup_Document *document,
+    const GTEXT_XML_Revalidation_Options *options,
+    GTEXT_XML_Validation_Result *result, GTEXT_XML_Error *error);
+
 /**
  * @brief Parse an XML file into a tree.
  *

@@ -21,6 +21,47 @@ struct ExternalDtd {
   size_t opens = 0;
   size_t closes = 0;
 };
+struct ExternalPair {
+  ExternalDtd subset;
+  ExternalDtd entity;
+  size_t opens = 0;
+  size_t closes = 0;
+};
+struct LiveAllocator {
+  GTEXT_Allocator allocator{};
+  size_t blocks = 0;
+  LiveAllocator() {
+    allocator.ctx = this;
+    allocator.malloc_fn = [](void *ctx, size_t size) {
+      auto *self = static_cast<LiveAllocator *>(ctx);
+      void *memory = std::malloc(size ? size : 1);
+      if (memory) ++self->blocks;
+      return memory;
+    };
+    allocator.calloc_fn = [](void *ctx, size_t count, size_t size) {
+      auto *self = static_cast<LiveAllocator *>(ctx);
+      if (size && count > SIZE_MAX / size) return static_cast<void *>(nullptr);
+      void *memory = std::calloc(count && size ? count : 1,
+          count && size ? size : 1);
+      if (memory) ++self->blocks;
+      return memory;
+    };
+    allocator.realloc_fn = [](void *ctx, void *old, size_t size) {
+      auto *self = static_cast<LiveAllocator *>(ctx);
+      void *memory = std::realloc(old, size ? size : 1);
+      if (memory && !old) ++self->blocks;
+      return memory;
+    };
+    allocator.free_fn = [](void *ctx, void *memory) {
+      auto *self = static_cast<LiveAllocator *>(ctx);
+      if (memory) {
+        EXPECT_GT(self->blocks, 0u);
+        --self->blocks;
+      }
+      std::free(memory);
+    };
+  }
+};
 GTEXT_XML_Source_Read_Result read_external(void *opaque, unsigned char *buffer,
     size_t capacity, size_t *count) {
   auto *source = static_cast<ExternalDtd *>(opaque);
@@ -41,6 +82,21 @@ GTEXT_XML_Resolver_Result open_external(
   source->handle = dtd;
   source->identity = dtd;
   source->base_uri = "memory:/validation.dtd";
+  source->read = read_external;
+  source->close = close_external;
+  return GTEXT_XML_RESOLVER_OPENED;
+}
+GTEXT_XML_Resolver_Result open_external_pair(
+    const GTEXT_XML_Resolve_Request *request, void *opaque,
+    GTEXT_XML_External_Source *source) {
+  auto *pair = static_cast<ExternalPair *>(opaque);
+  ++pair->opens;
+  ExternalDtd *selected = request->kind == GTEXT_XML_RESOURCE_GENERAL_ENTITY
+      ? &pair->entity : &pair->subset;
+  source->handle = selected;
+  source->identity = selected;
+  source->base_uri = request->kind == GTEXT_XML_RESOURCE_GENERAL_ENTITY
+      ? "memory:/entity.xml" : "memory:/validation.dtd";
   source->read = read_external;
   source->close = close_external;
   return GTEXT_XML_RESOLVER_OPENED;
@@ -303,9 +359,13 @@ TEST(XmlValidation, MarksExternalKnowledgeStaleAfterInternalDtdEdit) {
       GTEXT_MARKUP_DTD_ELEMENT, replacement, sizeof(replacement) - 1, nullptr),
       GTEXT_MARKUP_OK);
   EXPECT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(parsed.doc));
-  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &result));
+  EXPECT_FALSE(gtext_xml_validation_result(parsed.doc, &result));
+  GTEXT_XML_Error revalidate_error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result,
+      &revalidate_error), GTEXT_XML_OK) << revalidate_error.message;
   EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INCOMPLETE);
   EXPECT_FALSE(result.knowledge_complete);
+  EXPECT_EQ(dtd.opens, 1u);
 }
 
 TEST(XmlValidation, PullNeedMoreInputDoesNotProduceAValidityResult) {
@@ -674,4 +734,287 @@ TEST(XmlValidation, WorkAndDiagnosticBudgetsAreDistinct) {
   EXPECT_EQ(limited.status, GTEXT_XML_E_LIMIT_WORK);
   EXPECT_EQ(limited.doc, nullptr);
 }
+TEST(XmlValidation, RevalidatesCurrentTreeAndInvalidatesPreviousResult) {
+  Parsed parsed = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>]><root/>");
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  GTEXT_XML_Validation_Result result{};
+  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &result));
+  ASSERT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+
+  GTEXT_Markup_Node *root = gtext_markup_document_element(parsed.doc);
+  GTEXT_Markup_Node *text = nullptr;
+  ASSERT_EQ(gtext_markup_create_text(parsed.doc, "content", 7, &text),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(root, text), GTEXT_MARKUP_OK);
+  EXPECT_FALSE(gtext_xml_validation_result(parsed.doc, &result));
+  EXPECT_EQ(gtext_xml_validation_diagnostic_count(parsed.doc), 0u);
+
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_EQ(result.diagnostic_count, 1u);
+  EXPECT_EQ(count(parsed.doc, GTEXT_XML_VALIDATION_ELEMENT_CONTENT), 1u);
+}
+
+TEST(XmlValidation, RevalidationLimitFailurePreservesTreeAndOldResult) {
+  Parsed parsed = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>]><root/>");
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  GTEXT_XML_Validation_Result before{};
+  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &before));
+  GTEXT_XML_Revalidation_Options limits{.max_work = 1,
+      .max_memory = 0, .max_diagnostics = 0};
+  GTEXT_XML_Validation_Result after{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, &limits, &after, &error),
+      GTEXT_XML_E_LIMIT_WORK);
+  EXPECT_EQ(gtext_markup_node_kind(gtext_markup_document_element(parsed.doc)),
+      GTEXT_MARKUP_KIND_ELEMENT);
+  GTEXT_XML_Validation_Result still_current{};
+  EXPECT_TRUE(gtext_xml_validation_result(parsed.doc, &still_current));
+  EXPECT_EQ(still_current.verdict, before.verdict);
+}
+
+TEST(XmlValidation, RevalidationMemoryBudgetIncludesRetainedDtdReplay) {
+  std::string input = "<!DOCTYPE root [<!ELEMENT root EMPTY>";
+  for (unsigned i = 0; i < 32; ++i) {
+    input += "<!ELEMENT item" + std::to_string(i) + " EMPTY>";
+  }
+  input += "]><root/>";
+  Parsed parsed = parse(input);
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  GTEXT_XML_Validation_Result before{};
+  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &before));
+  GTEXT_XML_Revalidation_Options limits{.max_work = 0,
+      .max_memory = 256, .max_diagnostics = 0};
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, &limits, &result, &error),
+      GTEXT_XML_E_LIMIT_WORK);
+  GTEXT_XML_Validation_Result still_current{};
+  EXPECT_TRUE(gtext_xml_validation_result(parsed.doc, &still_current));
+  EXPECT_EQ(still_current.verdict, before.verdict);
+}
+
+TEST(XmlValidation, RevalidationMemoryBudgetIncludesEntityRecordCapacity) {
+  Parsed parsed = parse("<!DOCTYPE root [<!ENTITY e 'x'>]><root/>");
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+
+  /* A single replayed entity causes the scratch entity table to reserve its
+     initial geometric capacity; charging only the retained name would miss
+     that larger allocation under this cap. */
+  GTEXT_XML_Revalidation_Options limits{.max_work = 0,
+      .max_memory = 1024, .max_diagnostics = 0};
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, &limits, &result, &error),
+      GTEXT_XML_E_LIMIT_WORK);
+}
+
+TEST(XmlValidation, RevalidationReleasesEntityReplayAllocations) {
+  LiveAllocator allocator;
+  auto options = gtext_xml_parse_options_default();
+  options.allocator = &allocator.allocator;
+  Parsed parsed = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ENTITY e 'x'>]><root/>", options);
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  const size_t before = allocator.blocks;
+
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(allocator.blocks, before);
+
+  gtext_markup_document_free(parsed.doc);
+  parsed.doc = nullptr;
+
+  std::string many_children = "<!DOCTYPE root [<!ENTITY e 'x'>]><root>";
+  for (size_t i = 0; i < 50; ++i) many_children += "<child/>";
+  many_children += "</root>";
+  Parsed limited = parse(many_children, options);
+  ASSERT_EQ(limited.status, GTEXT_XML_OK) << limited.error.message;
+  const size_t before_limited = allocator.blocks;
+  GTEXT_XML_Revalidation_Options work_limit{.max_work = 100,
+      .max_memory = 0, .max_diagnostics = 0};
+  EXPECT_EQ(gtext_xml_revalidate(limited.doc, &work_limit, &result, &error),
+      GTEXT_XML_E_LIMIT_WORK);
+  EXPECT_EQ(allocator.blocks, before_limited);
+  gtext_markup_document_free(limited.doc);
+  limited.doc = nullptr;
+  EXPECT_EQ(allocator.blocks, 0u);
+}
+
+TEST(XmlValidation, RevalidationNeverCallsTheOriginalResolver) {
+  ExternalDtd dtd;
+  dtd.bytes = "<!ELEMENT root EMPTY>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = open_external;
+  options.resolver_user_data = &dtd;
+  const std::string input = "<!DOCTYPE root SYSTEM 'urn:validation'><root/>";
+  Parsed parsed;
+  parsed.status = gtext_xml_parse(input.data(), input.size(), &options,
+      &parsed.doc, &parsed.error);
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  ASSERT_EQ(dtd.opens, 1u);
+
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+  EXPECT_EQ(dtd.opens, 1u);
+  EXPECT_EQ(dtd.closes, 1u);
+}
+
+TEST(XmlValidation, RevalidatesStoredDefaultsAndExpandedEntityNodes) {
+  Parsed parsed = parse("<!DOCTYPE root [<!ELEMENT root (item)><!ELEMENT item EMPTY>"
+      "<!ATTLIST root mode CDATA 'safe'><!ENTITY kid '<item/>'>]><root>&kid;</root>");
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  GTEXT_Markup_Attribute attr{};
+  ASSERT_TRUE(gtext_markup_element_get_attribute(
+      gtext_markup_document_element(parsed.doc), nullptr, "mode", &attr));
+  EXPECT_EQ(attr.origin, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED);
+  EXPECT_EQ(gtext_markup_node_kind(gtext_markup_node_first_child(
+      gtext_markup_document_element(parsed.doc))), GTEXT_MARKUP_KIND_ELEMENT);
+
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+}
+
+TEST(XmlValidation, RevalidatesProgrammaticallyCreatedDocument) {
+  GTEXT_Markup_Document *doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &doc), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node *doctype = nullptr;
+  ASSERT_EQ(gtext_markup_create_doctype(doc, "root", nullptr, nullptr,
+      &doctype), GTEXT_MARKUP_OK);
+  const char declaration[] = "<!ELEMENT root EMPTY>";
+  ASSERT_EQ(gtext_markup_doctype_insert_syntax(doctype, 0,
+      GTEXT_MARKUP_DTD_ELEMENT, declaration, sizeof(declaration) - 1, nullptr),
+      GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node *root = nullptr;
+  ASSERT_EQ(gtext_markup_create_element(doc, nullptr, nullptr, "root", &root),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(gtext_markup_document_root(doc), doctype),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(gtext_markup_document_root(doc), root),
+      GTEXT_MARKUP_OK);
+
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(doc, nullptr, &result, &error), GTEXT_XML_OK)
+      << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlValidation, RevalidationWithoutDoctypeReportsIncompleteKnowledge) {
+  GTEXT_Markup_Document *doc = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &doc), GTEXT_MARKUP_OK);
+  GTEXT_Markup_Node *root = nullptr;
+  ASSERT_EQ(gtext_markup_create_element(doc, nullptr, nullptr, "root", &root),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(gtext_markup_document_root(doc), root),
+      GTEXT_MARKUP_OK);
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(doc, nullptr, &result, &error), GTEXT_XML_OK)
+      << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INCOMPLETE);
+  EXPECT_FALSE(result.knowledge_complete);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlValidation, RevalidationRebuildsUnparsedEntityAndNotationRules) {
+  const auto valid = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!NOTATION image SYSTEM 'image/gif'>"
+      "<!ENTITY icon SYSTEM 'icon.gif' NDATA image>"
+      "<!ATTLIST root one ENTITY #IMPLIED many ENTITIES #IMPLIED>]><root"
+      " one='icon' many='icon icon'/>");
+  ASSERT_EQ(valid.status, GTEXT_XML_OK) << valid.error.message;
+  GTEXT_XML_Validation_Result valid_result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(valid.doc, nullptr, &valid_result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(valid_result.verdict, GTEXT_XML_VALIDATION_VALID);
+
+  const auto invalid_notation = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ENTITY icon SYSTEM 'icon.gif' NDATA absent>]><root/>");
+  ASSERT_EQ(invalid_notation.status, GTEXT_XML_OK) << invalid_notation.error.message;
+  GTEXT_XML_Validation_Result invalid_result{};
+  EXPECT_EQ(gtext_xml_revalidate(invalid_notation.doc, nullptr,
+      &invalid_result, &error), GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(invalid_result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_GE(count(invalid_notation.doc,
+      GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE), 1u);
+
+  const auto invalid_attribute = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!NOTATION image SYSTEM 'image/gif'>"
+      "<!ENTITY icon SYSTEM 'icon.gif' NDATA image>"
+      "<!ENTITY text 'parsed'>"
+      "<!ATTLIST root one ENTITY #IMPLIED many ENTITIES #IMPLIED>]><root"
+      " one='text' many='icon text'/>");
+  ASSERT_EQ(invalid_attribute.status, GTEXT_XML_OK) << invalid_attribute.error.message;
+  EXPECT_EQ(gtext_xml_revalidate(invalid_attribute.doc, nullptr,
+      &invalid_result, &error), GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(invalid_result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_GE(count(invalid_attribute.doc,
+      GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 2u);
+}
+
+TEST(XmlValidation, RevalidationRetainsStandaloneExternalEntityFinding) {
+  ExternalPair resources;
+  resources.subset.bytes = "<!ELEMENT root ANY><!ELEMENT child EMPTY>"
+      "<!ENTITY external SYSTEM 'entity.xml'>";
+  resources.entity.bytes = "<child/>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = open_external_pair;
+  options.resolver_user_data = &resources;
+  const std::string input = "<?xml version='1.0' standalone='yes'?>"
+      "<!DOCTYPE root SYSTEM 'urn:validation'><root>&external;</root>";
+  Parsed parsed;
+  parsed.status = gtext_xml_parse(input.data(), input.size(), &options,
+      &parsed.doc, &parsed.error);
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  ASSERT_EQ(resources.opens, 2u);
+  EXPECT_GE(count(parsed.doc, GTEXT_XML_VALIDATION_STANDALONE), 1u);
+
+  GTEXT_XML_Validation_Result result{};
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_GE(count(parsed.doc, GTEXT_XML_VALIDATION_STANDALONE), 1u);
+  EXPECT_EQ(resources.opens, 2u);
+}
+
+TEST(XmlValidation, RevalidationSeesEditedEnumeratedAttribute) {
+  const auto parsed = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ATTLIST root mode (fast|safe) #REQUIRED>]><root mode='fast'/>");
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  GTEXT_XML_Validation_Result result{};
+  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &result));
+  ASSERT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+  GTEXT_Markup_Node *document_root = gtext_markup_document_root(parsed.doc);
+  GTEXT_Markup_Node *root = gtext_markup_node_first_child(document_root);
+  while (root && gtext_markup_node_kind(root) != GTEXT_MARKUP_KIND_ELEMENT)
+    root = gtext_markup_node_next_in_order(document_root, root, false);
+  ASSERT_NE(root, nullptr);
+  ASSERT_EQ(gtext_markup_element_set_attribute(root, nullptr, nullptr,
+      "mode", "invalid", 7), GTEXT_MARKUP_OK);
+  EXPECT_FALSE(gtext_xml_validation_result(parsed.doc, &result));
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_revalidate(parsed.doc, nullptr, &result, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_GE(count(parsed.doc, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 1u);
+}
+
 } // namespace

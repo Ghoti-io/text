@@ -1052,6 +1052,9 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
       status = xml_from_markup(p, gtext_markup_element_set_attribute_origin(
           element, i, GTEXT_MARKUP_ATTRIBUTE_DEFAULTED));
     }
+    if (status == GTEXT_XML_OK)
+      ((markup_element *)element)->attrs[i].normalization_changed =
+          a->normalization_changed;
     if (status != GTEXT_XML_OK) {
       xml_scope_release(p, mark);
       return status;

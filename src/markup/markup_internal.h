@@ -98,6 +98,7 @@ typedef struct {
   uint8_t has_raw_offset;
   uint8_t has_location;
   uint8_t origin;
+  uint8_t normalization_changed;
 } markup_attr;
 
 /** The part of every node. */
@@ -204,6 +205,9 @@ typedef struct {
   size_t binding_count;
   size_t binding_capacity;
   uint64_t next_syntax_sequence;
+  /* Optional transient budget used while XML revalidation rebuilds indexes. */
+  size_t *validation_memory_used;
+  size_t validation_memory_limit;
 } markup_doctype;
 
 struct GTEXT_Markup_Document {
@@ -234,6 +238,7 @@ struct GTEXT_Markup_Document {
   unsigned char xml_validation_diagnostics_truncated;
   unsigned char xml_validation_ran;
   unsigned char xml_validation_has_violation;
+  unsigned char xml_validation_stale;
 };
 
 typedef struct markup_xml_validation_diagnostic {
@@ -241,6 +246,9 @@ typedef struct markup_xml_validation_diagnostic {
   GTEXT_Markup_Location location;
   const char * message;
 } markup_xml_validation_diagnostic;
+
+/** Mark document-scoped validity evidence as stale after a semantic edit. */
+void markup_validation_invalidate(GTEXT_Markup_Document *doc);
 
 /* ---- memory ------------------------------------------------------------- */
 
@@ -269,6 +277,7 @@ GTEXT_Markup_Status markup_doctype_set_binding(
     const char * source, size_t source_length,
     const GTEXT_Markup_Location * location, int external_context);
 void markup_doctype_clear_bindings(struct GTEXT_Markup_Node * node);
+void markup_doctype_free_bindings(struct GTEXT_Markup_Node * node);
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
     uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
     const char * name);

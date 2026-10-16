@@ -786,6 +786,7 @@
 #define gtext_xml_validation_diagnostic GHOTIIO_TEXT(gtext_xml_validation_diagnostic)
 #define gtext_xml_validation_diagnostics_truncated GHOTIIO_TEXT(gtext_xml_validation_diagnostics_truncated)
 #define gtext_xml_validation_result GHOTIIO_TEXT(gtext_xml_validation_result)
+#define gtext_xml_revalidate GHOTIIO_TEXT(gtext_xml_revalidate)
 #define gtext_xml_reader_feed GHOTIIO_TEXT(gtext_xml_reader_feed)
 #define gtext_xml_reader_free GHOTIIO_TEXT(gtext_xml_reader_free)
 #define gtext_xml_reader_new GHOTIIO_TEXT(gtext_xml_reader_new)

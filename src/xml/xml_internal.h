@@ -439,10 +439,14 @@ typedef struct {
   size_t total_work;
   size_t validation_work;
   size_t validation_memory;
+  size_t validation_replay_entity_bytes;
+  size_t validation_replay_entity_array_bytes;
+  size_t validation_dtd_key_bytes;
   size_t validation_content_decls_bytes;
   size_t validation_frames_bytes;
   size_t validation_diagnostic_count;
   unsigned char validation_diagnostics_truncated;
+  unsigned char validation_replay_entities_active;
   unsigned char validation_has_violation;
   xml_content_decl * content_decls;
   size_t content_decl_count;
@@ -834,6 +838,12 @@ void xml_doctype_continuation_reset(xml_ctx * p);
 /** Rebuild the derived declaration indexes from retained doctype syntax. */
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_doctype_rebuild_indexes(
     xml_ctx * p, GTEXT_Markup_Node * doctype);
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_doctype_rebuild_general_entities(
+    xml_ctx *p, GTEXT_Markup_Node *doctype);
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_validation_memory_reserve(
+    xml_ctx *p, size_t amount);
+GTEXT_INTERNAL_API void xml_validation_memory_release(xml_ctx *p,
+    size_t amount);
 
 /* ---- Structural DTD validation (xml_validation.c) ----------------------- */
 GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,

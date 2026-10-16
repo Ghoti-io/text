@@ -254,6 +254,7 @@ static GTEXT_Markup_Status edit_syntax(GTEXT_Markup_Node *node,
     if (doctype->external_syntax[i].sequence >= doctype->next_syntax_sequence)
       doctype->next_syntax_sequence = doctype->external_syntax[i].sequence + 1;
   if (doctype->external_syntax_count) node->doc->dtd_knowledge_stale = 1;
+  markup_validation_invalidate(node->doc);
   return GTEXT_MARKUP_OK;
 }
 

@@ -282,6 +282,8 @@ static GTEXT_Markup_Status clone_one(
         }
         gtext_markup_element_set_attribute_origin(copy, i,
             (GTEXT_Markup_Attribute_Origin)a->origin);
+        ((markup_element *)copy)->attrs[i].normalization_changed =
+            a->normalization_changed;
         if (a->has_location) {
           GTEXT_Markup_Location where = {a->offset, a->line, a->column,
               a->source_id, a->reference_source_id, a->raw_offset,

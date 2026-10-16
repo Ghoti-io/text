@@ -33,13 +33,17 @@ static GTEXT_XML_Status validation_charge(xml_ctx *p, size_t amount) {
   return GTEXT_XML_OK;
 }
 
-static GTEXT_XML_Status validation_memory_reserve(xml_ctx *p, size_t amount) {
+GTEXT_XML_Status xml_validation_memory_reserve(xml_ctx *p, size_t amount) {
   if (amount > p->max_validation_memory
       || p->validation_memory > p->max_validation_memory - amount)
     return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
         "DTD validation memory limit exceeded");
   p->validation_memory += amount;
   return GTEXT_XML_OK;
+}
+
+void xml_validation_memory_release(xml_ctx *p, size_t amount) {
+  if (p && amount <= p->validation_memory) p->validation_memory -= amount;
 }
 
 static size_t validation_array_capacity(size_t capacity, size_t needed) {
@@ -152,7 +156,7 @@ static GTEXT_XML_Status retain_identity(xml_ctx *p, int reference,
   size_t *count = reference ? &p->validation_idref_count : &p->validation_id_count;
   size_t *capacity = reference ? &p->validation_idref_capacity : &p->validation_id_capacity;
   if (validation_charge(p, length + 1) != GTEXT_XML_OK) return p->err.code;
-  if (validation_memory_reserve(p, length + 1) != GTEXT_XML_OK) return p->err.code;
+  if (xml_validation_memory_reserve(p, length + 1) != GTEXT_XML_OK) return p->err.code;
   size_t next = validation_array_capacity(*capacity, *count + 1);
   if (!next || next > SIZE_MAX / sizeof(**items) || next > SIZE_MAX / sizeof(**lengths))
     return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD identity table is too large");
@@ -163,7 +167,7 @@ static GTEXT_XML_Status retain_identity(xml_ctx *p, int reference,
       return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD identity table is too large");
     size_t old_bytes = *capacity * per_entry;
     size_t new_bytes = next * per_entry;
-    if (validation_memory_reserve(p, new_bytes - old_bytes) != GTEXT_XML_OK) return p->err.code;
+    if (xml_validation_memory_reserve(p, new_bytes - old_bytes) != GTEXT_XML_OK) return p->err.code;
     void *a = xml_alloc(p, next * sizeof(**items));
     void *b = xml_alloc(p, next * sizeof(**lengths));
     if (!a || !b) { xml_release(p, a); xml_release(p, b); return xml_fail(p, GTEXT_XML_E_OOM, "could not grow DTD identity table"); }
@@ -588,7 +592,7 @@ GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,
     return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
         "DTD validation model memory estimate overflow");
   const size_t model_budget = sizeof(xml_content_decl) + length * per_byte;
-  status = validation_memory_reserve(p, model_budget);
+  status = xml_validation_memory_reserve(p, model_budget);
   if (status != GTEXT_XML_OK) return status;
   xml_content_decl model;
   status = compile_content_decl(p, source, length,
@@ -635,7 +639,7 @@ GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,
   const size_t new_bytes = new_capacity * sizeof(*p->content_decls);
   const size_t extra_bytes = new_bytes > p->validation_content_decls_bytes
       ? new_bytes - p->validation_content_decls_bytes : 0;
-  status = validation_memory_reserve(p, extra_bytes);
+  status = xml_validation_memory_reserve(p, extra_bytes);
   if (status != GTEXT_XML_OK) { free_model(p, &model); return status; }
   status = xml_grow(p, (void **)&p->content_decls,
       &p->content_decl_capacity, sizeof(*p->content_decls),
@@ -914,7 +918,7 @@ static GTEXT_XML_Status frame_push(xml_ctx *p, const xml_content_decl *m,
   const size_t new_bytes = new_capacity * sizeof(*p->validation_frames);
   const size_t extra_bytes = new_bytes > p->validation_frames_bytes
       ? new_bytes - p->validation_frames_bytes : 0;
-  GTEXT_XML_Status status = validation_memory_reserve(p, extra_bytes);
+  GTEXT_XML_Status status = xml_validation_memory_reserve(p, extra_bytes);
   if (status != GTEXT_XML_OK) return status;
   status = xml_grow(p, (void **)&p->validation_frames,
       &p->validation_frame_capacity, sizeof(*p->validation_frames),
@@ -1337,7 +1341,10 @@ GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
       if (s != GTEXT_XML_OK) return s;
     }
   }
-  if (p->doc) p->doc->xml_validation_ran = 1;
+  if (p->doc) {
+    p->doc->xml_validation_ran = 1;
+    p->doc->xml_validation_stale = 0;
+  }
   return GTEXT_XML_OK;
 }
 
@@ -1399,12 +1406,14 @@ void xml_validation_cleanup(xml_ctx *p) {
 
 size_t gtext_xml_validation_diagnostic_count(
     const GTEXT_Markup_Document *document) {
-  return document ? document->xml_validation_diagnostic_count : 0;
+  return document && !document->xml_validation_stale
+      ? document->xml_validation_diagnostic_count : 0;
 }
 
 bool gtext_xml_validation_diagnostic(const GTEXT_Markup_Document *document,
     size_t index, GTEXT_XML_Validation_Diagnostic *out) {
-  if (!document || !out || index >= document->xml_validation_diagnostic_count)
+  if (!document || document->xml_validation_stale || !out
+      || index >= document->xml_validation_diagnostic_count)
     return false;
   const markup_xml_validation_diagnostic *source =
       &document->xml_validation_diagnostics[index];
@@ -1416,12 +1425,14 @@ bool gtext_xml_validation_diagnostic(const GTEXT_Markup_Document *document,
 
 bool gtext_xml_validation_diagnostics_truncated(
     const GTEXT_Markup_Document *document) {
-  return document && document->xml_validation_diagnostics_truncated;
+  return document && !document->xml_validation_stale
+      && document->xml_validation_diagnostics_truncated;
 }
 
 bool gtext_xml_validation_result(const GTEXT_Markup_Document *document,
     GTEXT_XML_Validation_Result *out) {
-  if (!document || !out || !document->xml_validation_ran) return false;
+  if (!document || !out || !document->xml_validation_ran
+      || document->xml_validation_stale) return false;
   GTEXT_XML_Validation_Result result = {
       .verdict = GTEXT_XML_VALIDATION_NOT_RUN,
       .knowledge_complete = !(document->dtd_knowledge_incomplete
@@ -1436,4 +1447,417 @@ bool gtext_xml_validation_result(const GTEXT_Markup_Document *document,
     result.verdict = GTEXT_XML_VALIDATION_VALID;
   *out = result;
   return true;
+}
+
+typedef struct {
+  const GTEXT_Markup_Node *node;
+  char *name;
+  size_t name_length;
+  GTEXT_Markup_Location location;
+} revalidation_open;
+
+static char *revalidation_qname(xml_ctx *p, const markup_atom *prefix,
+    const markup_atom *local, size_t *length) {
+  if (!local) return NULL;
+  size_t prefix_length = 0;
+  if (prefix) {
+    if (prefix->length == SIZE_MAX) return NULL;
+    prefix_length = prefix->length + 1;
+  }
+  if (prefix_length >= SIZE_MAX
+      || local->length > SIZE_MAX - prefix_length - 1) return NULL;
+  *length = local->length + prefix_length;
+  if (validation_charge(p, *length + 1) != GTEXT_XML_OK
+      || xml_validation_memory_reserve(p, *length + 1) != GTEXT_XML_OK)
+    return NULL;
+  char *name = markup_alloc(p->doc, *length + 1);
+  if (!name) { p->validation_memory -= *length + 1; return NULL; }
+  size_t at = 0;
+  if (prefix) {
+    memcpy(name, prefix->text, prefix->length);
+    at = prefix->length;
+    name[at++] = ':';
+  }
+  memcpy(name + at, local->text, local->length);
+  name[*length] = 0;
+  return name;
+}
+
+static void revalidation_qname_free(xml_ctx *p, char *name, size_t length) {
+  if (!name) return;
+  markup_free(p->doc, name);
+  p->validation_memory -= length + 1;
+}
+
+static int revalidation_is_ancestor(xml_ctx *p,
+    const GTEXT_Markup_Node *ancestor, const GTEXT_Markup_Node *node) {
+  for (const GTEXT_Markup_Node *at = node; at; at = at->parent) {
+    if (validation_charge(p, 1) != GTEXT_XML_OK) return 0;
+    if (at == ancestor) return 1;
+  }
+  return 0;
+}
+
+GTEXT_XML_Status gtext_xml_revalidate(GTEXT_Markup_Document *doc,
+    const GTEXT_XML_Revalidation_Options *options,
+    GTEXT_XML_Validation_Result *result, GTEXT_XML_Error *error) {
+  if (error) memset(error, 0, sizeof(*error));
+  if (!doc || !result) return GTEXT_XML_E_INVALID;
+  GTEXT_XML_Revalidation_Options use = options ? *options
+      : (GTEXT_XML_Revalidation_Options){0};
+  xml_ctx p;
+  memset(&p, 0, sizeof(p));
+  p.doc = doc;
+  p.allocator = &doc->allocator;
+  p.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  p.standalone = doc->standalone;
+  p.max_validation_work = use.max_work ? use.max_work
+      : XML_DEFAULT_MAX_VALIDATION_WORK;
+  p.max_total_work = p.max_validation_work;
+  p.max_depth = XML_DEFAULT_MAX_DEPTH;
+  p.max_name_bytes = XML_DEFAULT_MAX_NAME_BYTES;
+  p.max_validation_memory = use.max_memory ? use.max_memory
+      : XML_DEFAULT_MAX_VALIDATION_MEMORY;
+  p.max_validation_diagnostics = use.max_diagnostics ? use.max_diagnostics
+      : XML_DEFAULT_MAX_VALIDATION_DIAGNOSTICS;
+  p.dtd_knowledge_incomplete = doc->dtd_knowledge_incomplete
+      || doc->dtd_knowledge_stale;
+
+  /* Stage all result writes in a shallow document view. The old successful
+     result remains untouched if any checked work or allocation fails. */
+  GTEXT_Markup_Document staged = *doc;
+  staged.xml_validation_diagnostics = NULL;
+  staged.xml_validation_diagnostic_count = 0;
+  staged.xml_validation_diagnostics_truncated = 0;
+  staged.xml_validation_ran = 0;
+  staged.xml_validation_has_violation = 0;
+  staged.xml_validation_stale = 0;
+  p.doc = &staged;
+
+  size_t doctype_name_budget = 0;
+  GTEXT_Markup_Node *doctype = gtext_markup_document_doctype(doc);
+  if (doctype) {
+    markup_doctype replay_doctype = *(markup_doctype *)doctype;
+    replay_doctype.bindings = NULL;
+    replay_doctype.binding_count = replay_doctype.binding_capacity = 0;
+    replay_doctype.validation_memory_used = &p.validation_memory;
+    replay_doctype.validation_memory_limit = p.max_validation_memory;
+    GTEXT_Markup_Node *replay_node = (GTEXT_Markup_Node *)&replay_doctype;
+    const char *doctype_name = gtext_markup_doctype_name(doctype);
+    if (doctype_name) {
+      p.validation_doctype_name_length = strlen(doctype_name);
+      if (p.validation_doctype_name_length == SIZE_MAX) {
+        p.err.code = GTEXT_XML_E_LIMIT_WORK;
+      }
+      else if (xml_validation_memory_reserve(&p,
+              p.validation_doctype_name_length + 1) != GTEXT_XML_OK) {
+        p.err.code = GTEXT_XML_E_LIMIT_WORK;
+      }
+      else {
+        doctype_name_budget = p.validation_doctype_name_length + 1;
+        p.validation_doctype_name = xml_alloc(&p, doctype_name_budget);
+      }
+      if (!p.validation_doctype_name && p.err.code == GTEXT_XML_OK) {
+        p.err.code = GTEXT_XML_E_OOM;
+        p.err.message = "out of memory preparing revalidation";
+      }
+      else if (p.validation_doctype_name) memcpy(p.validation_doctype_name, doctype_name,
+          p.validation_doctype_name_length + 1);
+    }
+    if (p.err.code == GTEXT_XML_OK) {
+      const GTEXT_XML_Status rebuilt = xml_doctype_rebuild_indexes(&p, replay_node);
+      if (rebuilt != GTEXT_XML_OK) p.err.code = rebuilt;
+      else {
+        p.validation_replay_entities_active = 1;
+        const GTEXT_XML_Status entities =
+            xml_doctype_rebuild_general_entities(&p, replay_node);
+        p.validation_replay_entities_active = 0;
+        if (entities != GTEXT_XML_OK) p.err.code = entities;
+      }
+    }
+    markup_doctype_free_bindings(replay_node);
+  }
+
+  revalidation_open *stack = NULL;
+  uint32_t *external_sources_seen = NULL;
+  size_t external_sources_seen_count = 0;
+  size_t external_sources_budget = 0;
+  if (doc->standalone == GTEXT_MARKUP_STANDALONE_YES && doc->source_count) {
+    if (doc->source_count > SIZE_MAX / sizeof(*external_sources_seen)) {
+      p.err.code = GTEXT_XML_E_LIMIT_WORK;
+    }
+    else if ((external_sources_budget = doc->source_count
+          * sizeof(*external_sources_seen),
+        xml_validation_memory_reserve(&p, external_sources_budget)) != GTEXT_XML_OK) {
+      p.err.code = GTEXT_XML_E_LIMIT_WORK;
+    }
+    else {
+      if (validation_charge(&p, doc->source_count) != GTEXT_XML_OK)
+        p.err.code = GTEXT_XML_E_LIMIT_WORK;
+      if (p.err.code == GTEXT_XML_OK)
+        external_sources_seen = xml_alloc(&p,
+            doc->source_count * sizeof(*external_sources_seen));
+      if (!external_sources_seen && p.err.code == GTEXT_XML_OK) {
+        p.err.code = GTEXT_XML_E_OOM;
+        p.err.message = "out of memory tracking external source provenance";
+      }
+    }
+  }
+  size_t depth = 0, capacity = 0;
+  if (p.err.code == GTEXT_XML_OK) {
+    GTEXT_Markup_Node *root = gtext_markup_document_root(doc);
+    for (GTEXT_Markup_Node *node = gtext_markup_node_next_in_order(root, root,
+            false); node; node = gtext_markup_node_next_in_order(root, node,
+            false)) {
+      if (p.validation_work >= p.max_validation_work) {
+        p.err.code = GTEXT_XML_E_LIMIT_WORK;
+        p.err.message = "tree revalidation work limit exceeded";
+        break;
+      }
+      p.validation_work++;
+      if (external_sources_seen && p.err.code == GTEXT_XML_OK) {
+        GTEXT_Markup_Location source_location = {0};
+        if (gtext_markup_node_location(node, &source_location)
+            && source_location.source_id) {
+          GTEXT_Markup_Source source_info;
+          if (gtext_markup_document_source(doc, source_location.source_id,
+                  &source_info)
+              && source_info.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY) {
+            int declared_externally = 0;
+            for (size_t i = 0; i < p.general_entity_count; ++i) {
+              if (validation_charge(&p, 1) != GTEXT_XML_OK) break;
+              xml_general_entity *entity = &p.general_entities[i];
+              size_t source_name_length = 0;
+              while (source_info.name && source_info.name[source_name_length]) {
+                if (validation_charge(&p, 1) != GTEXT_XML_OK) break;
+                ++source_name_length;
+              }
+              if (entity->external_context && source_info.name
+                  && source_name_length == entity->name_length
+                  && memcmp(source_info.name, entity->name,
+                      entity->name_length) == 0) {
+                declared_externally = 1;
+                break;
+              }
+            }
+            int known = 0;
+            for (size_t i = 0; i < external_sources_seen_count; ++i) {
+              if (validation_charge(&p, 1) != GTEXT_XML_OK) break;
+              if (external_sources_seen[i] == source_location.source_id) { known = 1; break; }
+            }
+            if (declared_externally && !known && p.err.code == GTEXT_XML_OK) {
+              external_sources_seen[external_sources_seen_count++] =
+                  source_location.source_id;
+              GTEXT_XML_Status reported = validation_report(&p,
+                  GTEXT_XML_VALIDATION_STANDALONE, &source_location,
+                  "a document declared standalone references an entity declared by an external markup declaration");
+              if (reported != GTEXT_XML_OK) p.err.code = reported;
+            }
+          }
+        }
+      }
+      if (p.err.code != GTEXT_XML_OK) break;
+      while (depth && !revalidation_is_ancestor(&p, stack[depth - 1].node, node)) {
+        if (p.err.code != GTEXT_XML_OK) break;
+        revalidation_open *open = &stack[--depth];
+        GTEXT_XML_Status s = xml_validation_end_element(&p,
+            (const unsigned char *)open->name, open->name_length,
+            &open->location);
+        revalidation_qname_free(&p, open->name, open->name_length);
+        if (s != GTEXT_XML_OK) { p.err.code = s; break; }
+      }
+      if (p.err.code != GTEXT_XML_OK) break;
+      const GTEXT_Markup_Kind kind = gtext_markup_node_kind(node);
+      if (kind == GTEXT_MARKUP_KIND_ELEMENT) {
+        markup_element *element = (markup_element *)node;
+        size_t name_length = 0;
+        char *name = revalidation_qname(&p, element->prefix, element->local,
+            &name_length);
+        if (!name) { if (p.err.code == GTEXT_XML_OK) p.err.code = GTEXT_XML_E_OOM; p.err.message = "out of memory walking tree"; break; }
+        if (depth == capacity) {
+          size_t next = capacity ? capacity * 2 : 16;
+          if (next < capacity || next > SIZE_MAX / sizeof(*stack)
+              || xml_validation_memory_reserve(&p,
+                  (next - capacity) * sizeof(*stack)) != GTEXT_XML_OK) {
+            revalidation_qname_free(&p, name, name_length); p.err.code = GTEXT_XML_E_LIMIT_WORK;
+            p.err.message = "tree revalidation memory limit exceeded"; break;
+          }
+          revalidation_open *grown = markup_realloc(doc, stack,
+              next * sizeof(*stack));
+          if (!grown) { p.validation_memory -= (next - capacity) * sizeof(*stack); revalidation_qname_free(&p, name, name_length); p.err.code = GTEXT_XML_E_OOM; p.err.message = "out of memory walking tree"; break; }
+          stack = grown; capacity = next;
+        }
+        GTEXT_Markup_Location where = {0};
+        (void)gtext_markup_node_location(node, &where);
+        if (element->attr_count > SIZE_MAX / sizeof(xml_attr)) {
+          revalidation_qname_free(&p, name, name_length);
+          p.err.code = GTEXT_XML_E_LIMIT_WORK; break;
+        }
+        size_t attr_budget = element->attr_count * sizeof(xml_attr);
+        if (xml_validation_memory_reserve(&p, attr_budget) != GTEXT_XML_OK) {
+          revalidation_qname_free(&p, name, name_length); p.err.code = GTEXT_XML_E_LIMIT_WORK; break;
+        }
+        xml_attr *attrs = element->attr_count ? xml_alloc(&p, attr_budget) : NULL;
+        if (validation_charge(&p, element->attr_count) != GTEXT_XML_OK) {
+          xml_release(&p, attrs); p.validation_memory -= attr_budget;
+          revalidation_qname_free(&p, name, name_length); break;
+        }
+        size_t pool_size = 0;
+        for (size_t i = 0; i < element->attr_count; ++i) {
+          markup_attr *a = &element->attrs[i];
+          if (!a->local || (a->prefix && a->prefix->length == SIZE_MAX)) {
+            p.err.code = GTEXT_XML_E_LIMIT_WORK; break;
+          }
+          size_t prefix_length = a->prefix ? a->prefix->length + 1 : 0;
+          if (prefix_length > SIZE_MAX - a->local->length) {
+            p.err.code = GTEXT_XML_E_LIMIT_WORK; break;
+          }
+          size_t qn = a->local->length + prefix_length;
+          if (pool_size == SIZE_MAX || qn > SIZE_MAX - pool_size - 1) { p.err.code = GTEXT_XML_E_LIMIT_WORK; break; }
+          pool_size += qn + 1;
+        }
+        int pool_reserved = 0;
+        if (p.err.code == GTEXT_XML_OK && pool_size) {
+          if (xml_validation_memory_reserve(&p, pool_size) != GTEXT_XML_OK)
+            p.err.code = GTEXT_XML_E_LIMIT_WORK;
+          else pool_reserved = 1;
+        }
+        char *pool_data = p.err.code == GTEXT_XML_OK && pool_size
+            ? xml_alloc(&p, pool_size) : NULL;
+        if (p.err.code == GTEXT_XML_OK
+            && ((element->attr_count && !attrs) || (pool_size && !pool_data))) {
+          p.err.code = GTEXT_XML_E_OOM;
+        }
+        markup_buf pool = {.data = pool_data, .length = pool_size,
+            .capacity = pool_size};
+        size_t off = 0;
+        if (p.err.code == GTEXT_XML_OK) for (size_t i = 0; i < element->attr_count; ++i) {
+          markup_attr *a = &element->attrs[i];
+          size_t qn = 0;
+          char *qname = revalidation_qname(&p, a->prefix, a->local, &qn);
+          if (!qname) { if (p.err.code == GTEXT_XML_OK) p.err.code = GTEXT_XML_E_OOM; break; }
+          memcpy(pool_data + off, qname, qn + 1);
+          attrs[i] = (xml_attr){.name_length = qn, .name_ptr = (unsigned char *)pool_data + off,
+              .value_offset = 0, .value_length = a->value_length,
+              .where = {0}, .defaulted = a->origin == GTEXT_MARKUP_ATTRIBUTE_DEFAULTED,
+              .normalization_changed = a->normalization_changed};
+          const xml_dtd_binding *binding = attribute_binding(&p,
+              (const unsigned char *)name, name_length,
+              attrs[i].name_ptr, qn);
+          if (binding && binding->attribute_default_kind == 2
+              && binding->attribute_default_length == a->value_length
+              && memcmp(binding->attribute_default_value, a->value,
+                  a->value_length) == 0)
+            attrs[i].fixed_value_matches = 1;
+          off += qn + 1;
+          revalidation_qname_free(&p, qname, qn);
+        }
+        /* Validation consumes a shared value pool. Build it after lexical names. */
+        if (p.err.code == GTEXT_XML_OK) {
+          size_t values = 0;
+          for (size_t i = 0; i < element->attr_count; ++i) {
+            if (element->attrs[i].value_length > SIZE_MAX - values) { p.err.code = GTEXT_XML_E_LIMIT_WORK; break; }
+            values += element->attrs[i].value_length;
+          }
+          int values_reserved = 0;
+          if (values && p.err.code == GTEXT_XML_OK) {
+            if (xml_validation_memory_reserve(&p, values) != GTEXT_XML_OK)
+              p.err.code = GTEXT_XML_E_LIMIT_WORK;
+            else values_reserved = 1;
+          }
+          char *value_pool = p.err.code == GTEXT_XML_OK && values
+              ? xml_alloc(&p, values) : NULL;
+          if (values && p.err.code == GTEXT_XML_OK && !value_pool) {
+            p.err.code = GTEXT_XML_E_OOM;
+          }
+          if (values && !value_pool && p.err.code == GTEXT_XML_OK)
+            p.err.code = GTEXT_XML_E_OOM;
+          if (p.err.code == GTEXT_XML_OK) {
+            size_t value_at = 0;
+            for (size_t i = 0; i < element->attr_count; ++i) {
+              attrs[i].value_offset = value_at;
+              if (element->attrs[i].value_length)
+                memcpy(value_pool + value_at, element->attrs[i].value,
+                    element->attrs[i].value_length);
+              value_at += element->attrs[i].value_length;
+              (void)gtext_markup_element_attribute_location(node, i, &attrs[i].where);
+            }
+            pool.data = value_pool; pool.length = values; pool.capacity = values;
+            GTEXT_XML_Status s = xml_validation_start_element(&p,
+                (const unsigned char *)name, name_length, &where,
+                node->first_child == NULL, attrs, element->attr_count, &pool);
+            if (s != GTEXT_XML_OK) p.err.code = s;
+          }
+          xml_release(&p, value_pool);
+          if (values_reserved) p.validation_memory -= values;
+        }
+        xml_release(&p, attrs); xml_release(&p, pool_data);
+        if (pool_reserved) p.validation_memory -= pool_size;
+        p.validation_memory -= attr_budget;
+        if (p.err.code != GTEXT_XML_OK) { revalidation_qname_free(&p, name, name_length); break; }
+        stack[depth++] = (revalidation_open){node, name, name_length, where};
+      }
+      else if (kind == GTEXT_MARKUP_KIND_TEXT || kind == GTEXT_MARKUP_KIND_CDATA) {
+        size_t length = 0; const char *text = gtext_markup_node_data(node, &length);
+        GTEXT_Markup_Location where = {0}; (void)gtext_markup_node_location(node, &where);
+        GTEXT_XML_Status s = xml_validation_text(&p, text, length, &where,
+            kind == GTEXT_MARKUP_KIND_CDATA);
+        if (s != GTEXT_XML_OK) p.err.code = s;
+      }
+      else if (kind == GTEXT_MARKUP_KIND_ENTITY_REFERENCE) {
+        p.dtd_knowledge_incomplete = 1;
+      }
+      if (p.err.code != GTEXT_XML_OK) break;
+    }
+  }
+  while (depth) {
+    revalidation_open *open = &stack[--depth];
+    if (p.err.code == GTEXT_XML_OK) {
+      GTEXT_XML_Status s = xml_validation_end_element(&p,
+          (const unsigned char *)open->name, open->name_length, &open->location);
+      if (s != GTEXT_XML_OK) p.err.code = s;
+    }
+    revalidation_qname_free(&p, open->name, open->name_length);
+  }
+  if (capacity <= SIZE_MAX / sizeof(*stack))
+    p.validation_memory -= capacity * sizeof(*stack);
+  markup_free(doc, stack);
+  xml_release(&p, external_sources_seen);
+  if (external_sources_budget) p.validation_memory -= external_sources_budget;
+  if (p.err.code == GTEXT_XML_OK) p.err.code = xml_validation_finish(&p);
+
+  if (p.err.code == GTEXT_XML_OK) {
+    staged.xml_validation_stale = 0;
+    staged.xml_validation_ran = 1;
+    staged.xml_validation_has_violation = p.validation_has_violation;
+    staged.xml_validation_diagnostics_truncated = p.validation_diagnostics_truncated;
+    markup_free(doc, doc->xml_validation_diagnostics);
+    doc->xml_validation_diagnostics = staged.xml_validation_diagnostics;
+    doc->xml_validation_diagnostic_count = staged.xml_validation_diagnostic_count;
+    doc->xml_validation_diagnostics_truncated = staged.xml_validation_diagnostics_truncated;
+    doc->xml_validation_ran = staged.xml_validation_ran;
+    doc->xml_validation_has_violation = staged.xml_validation_has_violation;
+    doc->xml_validation_stale = 0;
+    doc->dtd_knowledge_incomplete |= staged.dtd_knowledge_incomplete;
+    xml_validation_result_from_context(&p, result);
+    if (doc->xml_validation_has_violation) result->verdict = GTEXT_XML_VALIDATION_INVALID;
+    else if (doc->dtd_knowledge_incomplete || doc->dtd_knowledge_stale) result->verdict = GTEXT_XML_VALIDATION_INCOMPLETE;
+    else result->verdict = GTEXT_XML_VALIDATION_VALID;
+    result->knowledge_complete = !(doc->dtd_knowledge_incomplete || doc->dtd_knowledge_stale);
+    result->diagnostic_count = doc->xml_validation_diagnostic_count;
+    result->diagnostics_truncated = doc->xml_validation_diagnostics_truncated;
+    staged.xml_validation_diagnostics = NULL;
+  }
+  else {
+    if (error) { error->code = p.err.code; error->message = p.err.message; }
+    markup_free(doc, staged.xml_validation_diagnostics);
+  }
+  p.doc = &staged;
+  xml_validation_cleanup(&p);
+  xml_source_free(&p);
+  xml_release(&p, p.validation_doctype_name);
+  xml_validation_memory_release(&p, doctype_name_budget);
+  xml_validation_memory_release(&p, p.validation_replay_entity_bytes);
+  xml_validation_memory_release(&p, p.validation_replay_entity_array_bytes);
+  return p.err.code;
 }
