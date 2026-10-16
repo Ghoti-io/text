@@ -364,6 +364,13 @@ last event of a finished document, and the parse error, again and again, once on
 has happened (events queued before it are delivered first). Input after the end is
 `E_STATE`. The two statuses are appended to the enumeration.
 
+The pull reader pauses parsing when its configured queued-byte or queued-event
+threshold is reached, and resumes as `_next()` drains events. The thresholds
+bound undelivered queue residency; the event most recently returned remains
+valid until the following `_next()`. A single parser step may cross a threshold
+before the pause takes effect, but long DTD parameter-entity sequences yield
+between references.
+
 A pull loop, reading a file in pieces:
 
 ```c
@@ -459,10 +466,13 @@ and are by construction:
   complete (or at `_finish`), not at the byte itself, and the events before the
   construct have been delivered. A document that ends too soon is refused by
   `_finish` (`GTEXT_XML_E_UNEXPECTED_EOF`).
-- *Bytes invalid in the encoding.* `gtext_xml_parse()` converts a UTF-16, UTF-32,
-  ISO-8859-1 or US-ASCII document whole before reading it, so it reports a bad
-  unit (`_INVALID_SEQUENCE`) even if the document is not well-formed earlier. The
-  event parser converts as bytes arrive and reports whichever comes first.
+- *Bytes invalid in the encoding.* `gtext_xml_parse()` validates the complete
+  input encoding before applying XML grammar, so it reports a later malformed
+  byte sequence even if the document is not well-formed earlier. UTF-8 errors
+  use `_UTF8`; malformed UTF-16, UTF-32, ISO-8859-1 or US-ASCII input uses
+  `_INVALID_SEQUENCE`. An unsupported or mismatched encoding declaration is
+  still reported at the declaration. The event parser validates as bytes arrive
+  and reports whichever error it encounters first.
 - *`max_input_bytes`.* It counts everything fed; when the total passes it the
   call fails with `_LIMIT_INPUT` at offset 0, line 1, column 1, as the DOM parse
   does, even if a syntax error would have been found in what came before.
@@ -745,10 +755,10 @@ document in one call, and the event parser fed one byte at a time. The second an
 third must give **exactly the DOM parse's line**: the same status, offset, line,
 column and message for a refusal, and for an acceptance a tree - built from the
 replayed events - equal to the DOM parse's in every name, value and node and
-attribute location. A case where they differ fails the gate. The one allowed
-difference is the order of an encoding error, above; it is pinned to one case by
-id in the script, `hst-lhs-009` (a UTF-16 mark followed by single-byte text), and
-any other case that would need it fails.
+attribute location. A case where they differ fails the gate, except for the
+documented encoding-error ordering above: when the whole-input parse finds a
+later malformed encoding unit and the event parser finds an earlier
+well-formedness error, both refusals are counted as that ordering difference.
 
 **The writer is held to the same suite.** For every in-scope case the parser
 accepts the runner writes the tree in UTF-8, UTF-16 LE and BE,

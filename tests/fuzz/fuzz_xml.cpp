@@ -91,6 +91,10 @@ bool is_refusal(GTEXT_XML_Status s) {
   return s >= GTEXT_XML_E_SYNTAX && s <= GTEXT_XML_E_ENCODING_MISMATCH;
 }
 
+bool is_predecode_encoding_error(GTEXT_XML_Status s) {
+  return s == GTEXT_XML_E_INVALID_SEQUENCE || s == GTEXT_XML_E_UTF8;
+}
+
 struct Run {
   GTEXT_XML_Status status = GTEXT_XML_OK;
   GTEXT_XML_Error err{};
@@ -201,7 +205,7 @@ bool status_allowed(GTEXT_XML_Status dom_status, const Run & run, size_t input_l
   if (run.status == dom_status) {
     return true;
   }
-  if (dom_status == GTEXT_XML_E_INVALID_SEQUENCE) {
+  if (is_predecode_encoding_error(dom_status)) {
     return is_refusal(run.status);
   }
   if (dom_status == GTEXT_XML_E_LIMIT_INPUT) {
@@ -224,7 +228,7 @@ void agree(const char * how, const std::string & input, GTEXT_XML_Status dom_sta
             == std::string(dom_err.message ? dom_err.message : "")) {
       return;
     }
-    if (dom_status == GTEXT_XML_E_INVALID_SEQUENCE && is_refusal(run.status)
+    if (is_predecode_encoding_error(dom_status) && is_refusal(run.status)
         && run.err.byte_offset <= dom_err.byte_offset) {
       g_reordered++;
       return;

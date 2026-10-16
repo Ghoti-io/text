@@ -185,6 +185,8 @@ GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void) {
   opts.max_references = XML_DEFAULT_MAX_REFERENCES;
   opts.max_declarations = XML_DEFAULT_MAX_DECLARATIONS;
   opts.max_total_work = XML_DEFAULT_MAX_TOTAL_WORK;
+  opts.max_pull_queue_bytes = XML_DEFAULT_MAX_PULL_QUEUE_BYTES;
+  opts.max_pull_queue_events = XML_DEFAULT_MAX_PULL_QUEUE_EVENTS;
   return opts;
 }
 

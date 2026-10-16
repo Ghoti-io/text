@@ -30,8 +30,9 @@
  * every string, and it is released by the call after the one that handed the
  * event out.
  *
- * The queue holds what one feed produced. A document fed in one piece is queued
- * whole; feeding in pieces is how a caller bounds that.
+ * Reaching either configured queue threshold pauses the push parser; taking
+ * events resumes it. A single parser step can cross a threshold, while DTD
+ * parameter-reference processing yields between references.
  */
 
 #include <ghoti.io/text/macros.h>
@@ -49,6 +50,7 @@
 typedef struct {
   GTEXT_XML_Event event;
   void * block; /* what the event's pointers point into */
+  size_t bytes;
 } reader_item;
 
 struct GTEXT_XML_Reader {
@@ -58,6 +60,9 @@ struct GTEXT_XML_Reader {
   size_t head;
   size_t count;
   size_t capacity;
+  size_t queue_bytes;
+  size_t max_queue_bytes;
+  size_t max_queue_events;
   reader_item last;    /* handed out by the latest next(), released by the one after */
   bool has_last;
   bool finished;
@@ -67,13 +72,20 @@ struct GTEXT_XML_Reader {
 
 /* ---- Copying an event --------------------------------------------------- */
 
-static size_t text_size(const char * s) {
-  return s ? strlen(s) + 1 : 0;
-}
-
 static size_t align_up(size_t n) {
   const size_t a = sizeof(void *) > 8 ? sizeof(void *) : 8;
+  if (n > SIZE_MAX - (a - 1)) return SIZE_MAX;
   return (n + a - 1) / a * a;
+}
+
+static bool size_add(size_t * total, size_t amount) {
+  if (amount > SIZE_MAX - *total) return false;
+  *total += amount;
+  return true;
+}
+
+static bool add_text_size(size_t * total, const char * s) {
+  return !s || size_add(total, strlen(s) + 1);
 }
 
 static const char * put_text(char * block, size_t * at, const char * s) {
@@ -91,22 +103,36 @@ static const char * put_text(char * block, size_t * at, const char * s) {
 static bool item_copy(const GTEXT_Allocator * allocator,
     const GTEXT_XML_Event * src, reader_item * dst) {
   memset(dst, 0, sizeof(*dst));
-  size_t total = align_up(src->attribute_count * sizeof(GTEXT_XML_Event_Attribute));
-  total += text_size(src->namespace_uri) + text_size(src->prefix)
-      + text_size(src->local_name) + (src->data ? src->data_length + 1 : 0)
-      + text_size(src->name) + text_size(src->public_id)
-      + text_size(src->system_id) + text_size(src->version)
-      + text_size(src->encoding);
+  if (src->attribute_count && !src->attributes) return false;
+  if (src->attribute_count
+      > SIZE_MAX / sizeof(GTEXT_XML_Event_Attribute)) return false;
+  const size_t attribute_bytes = align_up(
+      src->attribute_count * sizeof(GTEXT_XML_Event_Attribute));
+  if (attribute_bytes == SIZE_MAX) return false;
+  size_t total = attribute_bytes;
+  if (!add_text_size(&total, src->namespace_uri)
+      || !add_text_size(&total, src->prefix)
+      || !add_text_size(&total, src->local_name)
+      || (src->data && (src->data_length == SIZE_MAX
+          || !size_add(&total, src->data_length + 1)))
+      || !add_text_size(&total, src->name)
+      || !add_text_size(&total, src->public_id)
+      || !add_text_size(&total, src->system_id)
+      || !add_text_size(&total, src->version)
+      || !add_text_size(&total, src->encoding)) return false;
   for (size_t i = 0; i < src->attribute_count; i++) {
     const GTEXT_XML_Event_Attribute * a = &src->attributes[i];
-    total += text_size(a->namespace_uri) + text_size(a->prefix)
-        + text_size(a->local_name) + a->value_length + 1;
+    if (!add_text_size(&total, a->namespace_uri)
+        || !add_text_size(&total, a->prefix)
+        || !add_text_size(&total, a->local_name)
+        || !size_add(&total, a->value_length)
+        || !size_add(&total, 1)) return false;
   }
   char * block = gtext_allocator_malloc(allocator, total ? total : 1);
   if (!block) {
     return false;
   }
-  size_t at = align_up(src->attribute_count * sizeof(GTEXT_XML_Event_Attribute));
+  size_t at = attribute_bytes;
   GTEXT_XML_Event * e = &dst->event;
   *e = *src;
   e->namespace_uri = put_text(block, &at, src->namespace_uri);
@@ -146,6 +172,7 @@ static bool item_copy(const GTEXT_Allocator * allocator,
     e->attributes = out;
   }
   dst->block = block;
+  dst->bytes = total ? total : 1;
   return true;
 }
 
@@ -191,12 +218,21 @@ static GTEXT_XML_Status on_event(const GTEXT_XML_Event * event, void * user) {
   if (!item_copy(&r->allocator, event, &copy)) {
     return GTEXT_XML_E_OOM;
   }
-  if (!queue_reserve(r, r->count + 1)) {
+  if (copy.bytes > SIZE_MAX - r->queue_bytes) {
+    item_release(&r->allocator, &copy);
+    return GTEXT_XML_E_OOM;
+  }
+  if (r->count == SIZE_MAX || !queue_reserve(r, r->count + 1)) {
     item_release(&r->allocator, &copy);
     return GTEXT_XML_E_OOM;
   }
   r->items[(r->head + r->count) % r->capacity] = copy;
   r->count++;
+  r->queue_bytes += copy.bytes;
+  if (r->count >= r->max_queue_events
+      || r->queue_bytes >= r->max_queue_bytes) {
+    xml_stream_request_pause(r->stream);
+  }
   return GTEXT_XML_OK;
 }
 
@@ -213,6 +249,10 @@ GTEXT_API GTEXT_XML_Reader * gtext_xml_reader_new(
   r->allocator = *allocator;
   /* The stream gets the same allocator, through this copy. */
   GTEXT_XML_Parse_Options use = opts ? *opts : gtext_xml_parse_options_default();
+  r->max_queue_bytes = use.max_pull_queue_bytes
+      ? use.max_pull_queue_bytes : XML_DEFAULT_MAX_PULL_QUEUE_BYTES;
+  r->max_queue_events = use.max_pull_queue_events
+      ? use.max_pull_queue_events : XML_DEFAULT_MAX_PULL_QUEUE_EVENTS;
   use.allocator = &r->allocator;
   r->stream = gtext_xml_stream_new(&use, on_event, r);
   if (!r->stream) {
@@ -305,8 +345,20 @@ GTEXT_API GTEXT_XML_Status gtext_xml_reader_next(
   r->last = r->items[r->head];
   r->head = (r->head + 1) % r->capacity;
   r->count--;
+  r->queue_bytes -= r->last.bytes;
   r->has_last = true;
   *out_event = r->last.event;
+  /* A crossing parser step may leave the queue above its threshold. Keep the
+     stream paused until draining brings both dimensions below their limits. */
+  if (r->failed == GTEXT_XML_OK && r->count < r->max_queue_events
+      && r->queue_bytes < r->max_queue_bytes) {
+    GTEXT_XML_Error error;
+    const GTEXT_XML_Status status = xml_stream_resume(r->stream, &error);
+    if (status != GTEXT_XML_OK) {
+      r->failed = status;
+      r->failure = error;
+    }
+  }
   return GTEXT_XML_OK;
 }
 
@@ -328,4 +380,14 @@ GTEXT_API void gtext_xml_reader_free(GTEXT_XML_Reader * r) {
   gtext_allocator_free(&allocator, r->items);
   gtext_xml_stream_free(r->stream);
   gtext_allocator_free(&allocator, r);
+}
+
+GTEXT_INTERNAL_API size_t xml_reader_queue_count(
+    const GTEXT_XML_Reader * r) {
+  return r ? r->count : 0;
+}
+
+GTEXT_INTERNAL_API size_t xml_reader_queue_bytes(
+    const GTEXT_XML_Reader * r) {
+  return r ? r->queue_bytes : 0;
 }

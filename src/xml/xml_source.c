@@ -316,6 +316,10 @@ void xml_source_free(xml_ctx * p) {
   xml_release(p, p->dtd_name_token);
   p->dtd_name_token = NULL;
   p->dtd_name_token_length = p->dtd_name_token_capacity = 0;
+  xml_release(p, p->dtd_external_modes);
+  p->dtd_external_modes = NULL;
+  p->dtd_external_depth = p->dtd_external_capacity = 0;
+  p->dtd_external_active = 0;
   for (size_t i = 1; i < p->source_count; ++i) {
     xml_source_frame * f = &p->sources[i];
     if (f->external_close) f->external_close(f->external_handle);
@@ -591,6 +595,30 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
     status = xml_parse_external_subset(p, doctype,
         resource.bytes.data ? (const unsigned char *)resource.bytes.data : empty,
         resource.bytes.length, resource.source.base_uri);
+    if (status == GTEXT_XML_OK && p->dtd_yielded) {
+      xml_source_frame * frame = NULL;
+      for (size_t i = 1; i < p->source_count; ++i) {
+        if (p->sources[i].kind == XML_SOURCE_EXTERNAL_SUBSET
+            && p->sources[i].identity == resource.source.identity) {
+          frame = &p->sources[i];
+          break;
+        }
+      }
+      if (!frame) {
+        status = xml_fail(p, GTEXT_XML_E_STATE,
+            "resolved external subset source frame was lost");
+        return xml_finish_external_resource(p, &resource, status);
+      }
+      frame->owned_bytes = resource.bytes.data;
+      resource.bytes.data = NULL;
+      resource.bytes.length = resource.bytes.capacity = 0;
+      frame->external_close = resource.source.close;
+      frame->external_handle = resource.source.handle;
+      resource.source.close = NULL;
+      resource.opened = 0;
+      resource.frame_pushed = 0;
+      return GTEXT_XML_OK;
+    }
   }
   return xml_finish_external_resource(p, &resource, status);
 }

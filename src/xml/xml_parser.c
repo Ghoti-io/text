@@ -1362,6 +1362,46 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
     return status;
   }
   xml_probe_xml11_declaration(p);
+  /* Whole-input parsing validates the complete byte encoding before applying
+     XML grammar. The stream parser intentionally reports whichever failure it
+     encounters first as bytes arrive. Non-UTF-8 conversion already validates
+     its complete source in xml_detect_encoding(). */
+  int declared_unsupported_encoding = 0;
+  if (p->enc_family == XML_FAMILY_UTF8 && xml_looking_at(p, "<?xml", 5)
+      && p->pos + 5 < p->length && xml_space_bytes(p, p->pos + 5) > 0) {
+    /* An unsupported encoding label is itself the decisive parse error. Probe
+       a copy so malformed bytes later in the document do not replace that
+       established declaration error. */
+    xml_ctx declaration = *p;
+    declaration.doc = NULL;
+    declaration.allocator = gtext_allocator_default();
+    status = xml_parse_xml_declaration(&declaration);
+    declared_unsupported_encoding = status == GTEXT_XML_E_UNSUPPORTED_ENCODING
+        || status == GTEXT_XML_E_ENCODING_MISMATCH;
+  }
+  if (p->enc_family == XML_FAMILY_UTF8 && !declared_unsupported_encoding) {
+    xml_ctx scan = *p;
+    scan.err.code = GTEXT_XML_OK;
+    scan.err.message = NULL;
+    scan.partial = 0;
+    while (scan.pos < scan.length) {
+      uint32_t code_point = 0;
+      size_t width = 0;
+      const xml_char_status decoded =
+          xml_decode(&scan, scan.pos, &code_point, &width);
+      if (decoded == XML_CHAR_BAD_UTF8 || decoded == XML_CHAR_EOF) {
+        status = xml_unexpected(&scan, "invalid UTF-8");
+        p->err = scan.err;
+        return status;
+      }
+      status = xml_consume(&scan, width);
+      if (status != GTEXT_XML_OK) {
+        p->err = scan.err;
+        return status;
+      }
+    }
+    p->total_work = scan.total_work;
+  }
   int declared = 0;
   if (xml_looking_at(p, "<?xml", 5) && p->pos + 5 < p->length
       && xml_space_bytes(p, p->pos + 5) > 0) {
@@ -1424,6 +1464,7 @@ static size_t limit_or(size_t given, size_t fallback) {
 }
 
 static void cleanup(xml_ctx * p) {
+  xml_doctype_continuation_reset(p);
   markup_buf_free(&p->decoded);
   markup_buf_free(&p->text);
   markup_buf_free(&p->attr_pool);

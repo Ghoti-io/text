@@ -291,8 +291,8 @@ typedef struct GTEXT_XML_Reader GTEXT_XML_Reader;
  * The push parser calls the caller; this lets the caller call the parser. It
  * wraps a GTEXT_XML_Stream and copies every event, with its strings, into a
  * queue, so an event stays valid until the next gtext_xml_reader_next() and not
- * only for a callback. The queue holds what one feed produced, so a document fed
- * in one piece is queued whole: feed in pieces to bound it.
+ * only for a callback. The queue has finite byte and event limits from the
+ * parse options. Reaching either pauses parsing; taking events resumes it.
  *
  * @param opts Options as for gtext_xml_stream_new(); the allocator covers the
  *             reader, its queue and the copies.
@@ -304,10 +304,11 @@ GTEXT_API GTEXT_XML_Reader * gtext_xml_reader_new(
 /**
  * @brief Feed the reader.
  *
- * `data` NULL with `len` 0 ends the input (and queues what the end completes,
- * DOCUMENT_END last); doing it twice is accepted. Bytes after the end are
- * GTEXT_XML_E_STATE. Any other status is the parse error, and is returned by
- * every later call.
+ * `data` NULL with `len` 0 ends the input; doing it twice is accepted. The
+ * reader may retain unparsed bytes when its event queue reaches a configured
+ * threshold. `next()` drains queued events and resumes parsing, including the
+ * final DOCUMENT_END event. Bytes after the end are GTEXT_XML_E_STATE. Any
+ * parse failure is returned by every later feed call.
  *
  * @param reader The reader.
  * @param data   The next bytes, or NULL to end the input.
@@ -328,7 +329,8 @@ GTEXT_API GTEXT_XML_Status gtext_xml_reader_feed(GTEXT_XML_Reader * reader,
  *   finished document; or the parse error, which every later call repeats so
  *   that a failure is never mistaken for the end. Events that were queued
  *   before the error are delivered first. The error's position is what the
- *   failing gtext_xml_reader_feed() reported.
+ *   failing gtext_xml_reader_feed() reported. If resuming parsing finds an
+ *   error, events already queued are still returned before that error.
  *
  * The event's pointers stay valid until the next call to this function or to
  * gtext_xml_reader_free().

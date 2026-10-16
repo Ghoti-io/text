@@ -373,10 +373,12 @@ TEST(XmlLimits, WorkFailureInDoctypeReleasesItsTemporaryBuffers) {
     EXPECT_EQ(allocator.bad_frees, 0u);
     return allocator.calls;
   };
-  const size_t before_name_copy = failing_parse_allocations(14);
-  const size_t after_name_copy = failing_parse_allocations(15);
-  // At 15 work units, the doctype name has been copied into its temporary
-  // buffer before whitespace scanning/consumption exhausts the work budget.
+  const size_t before_name_copy =
+      failing_parse_allocations(input.size() + 14);
+  const size_t after_name_copy =
+      failing_parse_allocations(input.size() + 15);
+  // After the complete-input validation pass, the doctype name has been copied
+  // into its temporary buffer before whitespace scanning exhausts the budget.
   EXPECT_GT(after_name_copy, before_name_copy);
 }
 

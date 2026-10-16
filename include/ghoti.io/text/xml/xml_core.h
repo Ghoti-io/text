@@ -376,6 +376,18 @@ typedef struct {
    *  remain valid until a streaming parser is freed; whole-input parsing uses
    *  it only for the duration of the call. */
   const char * base_uri;
+
+  /** Byte threshold for queued event copies in a pull reader. Default 1 MiB.
+   *  This counts undelivered events; the most recently returned event remains
+   *  valid until the next reader_next() call and is outside the queue threshold.
+   *  A parser step may cross the threshold before pausing; DTD parameter
+   *  references yield individually so a long subset cannot fill the queue in
+   *  one step. */
+  size_t max_pull_queue_bytes;
+  /** Event threshold for the pull queue. Default 256. Parsing pauses after
+   *  completing the step that reaches it and does not resume until drained
+   *  below both limits. */
+  size_t max_pull_queue_events;
 } GTEXT_XML_Parse_Options;
 
 /**
@@ -386,8 +398,8 @@ typedef struct {
  *   nodes, 256 namespace declarations, 16 MiB per external source, 64 MiB
  *   aggregate external bytes and expanded bytes, entity depth 32, one million
  *   XML references, 100,000 declarations, 256 MiB total work, DTD_OFF mode, and
- *   external DENY policy. All zero-valued limit overrides select these finite
- *   defaults.
+ *   external DENY policy, 1 MiB / 256 queued pull events. All zero-valued
+ *   limit overrides select these finite defaults.
  */
 GTEXT_API GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void);
 

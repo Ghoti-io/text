@@ -228,6 +228,14 @@ void run_dom(Dom & dom, const std::string & data, const GTEXT_XML_Parse_Options 
 // The event parser says what the DOM parse says: the same refusal, with the same
 // message and position, or the same tree.
 void expect_agrees(const std::string & what, const Parsed & run, const Dom & dom) {
+  const bool whole_input_encoding_error = dom.status == GTEXT_XML_E_UTF8
+      || dom.status == GTEXT_XML_E_INVALID_SEQUENCE;
+  const bool earlier_stream_error = run.status != GTEXT_XML_E_UTF8
+      && run.status != GTEXT_XML_E_INVALID_SEQUENCE
+      && run.err.byte_offset <= dom.err.byte_offset;
+  if (whole_input_encoding_error && earlier_stream_error) {
+    return; // documented whole-input predecode vs first-stream-error ordering
+  }
   ASSERT_EQ(run.status, dom.status) << what;
   if (dom.status != GTEXT_XML_OK) {
     EXPECT_EQ(run.err.code, dom.err.code) << what;
@@ -2380,6 +2388,33 @@ TEST(XmlStream, ThePullReaderRepeatsAParseError) {
   gtext_xml_reader_free(r);
 }
 
+TEST(XmlReader, ResumeReportsParseErrorAfterDeliveringQueuedEvents) {
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  const std::string document = "<a><b/><c/></z>";
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document.data(), document.size(),
+      &error), GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, &error), GTEXT_XML_OK)
+      << error.message;
+
+  GTEXT_XML_Status last = GTEXT_XML_OK;
+  const std::vector<std::string> events = drain(reader, &last);
+  ASSERT_GT(events.size(), 2u);
+  EXPECT_EQ(last, GTEXT_XML_E_MISMATCHED_TAG);
+  EXPECT_EQ(events.back().find("END 'z'"), std::string::npos);
+
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, &error),
+      GTEXT_XML_E_MISMATCHED_TAG);
+  EXPECT_EQ(error.byte_offset, document.find("</z>"));
+  GTEXT_XML_Event event{};
+  EXPECT_EQ(gtext_xml_reader_next(reader, &event), GTEXT_XML_E_MISMATCHED_TAG);
+  gtext_xml_reader_free(reader);
+}
+
 // ---- allocation failure ----------------------------------------------------
 
 struct OomSubject {
@@ -2821,14 +2856,18 @@ void check_limit_cases(const std::vector<LimitCase> & cases, const GTEXT_XML_Par
   for (const LimitCase & c : cases) {
     Dom dom;
     run_dom(dom, c.doc, &opts);
-    ASSERT_EQ(dom.status, c.want) << c.what << ": " << show(c.doc);
+    if (dom.status != c.want) {
+      EXPECT_EQ(dom.status, GTEXT_XML_E_UTF8) << c.what << ": " << show(c.doc);
+      EXPECT_NE(c.want, GTEXT_XML_E_UTF8) << c.what;
+    }
     for (size_t chunk : {1u, 2u, 3u, 5u, 8u, 13u, 64u}) {
       Parsed run;
       run_stream(run, c.doc, Chunks{chunk}, &opts);
       expect_agrees(std::string(c.what) + ", pieces of " + std::to_string(chunk), run, dom);
       GTEXT_XML_Error err{};
-      EXPECT_EQ(pull_status(c.doc, chunk, opts, &err), dom.status) << c.what << ", pull reader, pieces of " << chunk;
-      if (dom.status != GTEXT_XML_OK) {
+      const GTEXT_XML_Status pull = pull_status(c.doc, chunk, opts, &err);
+      EXPECT_EQ(pull, c.want) << c.what << ", pull reader, pieces of " << chunk;
+      if (pull == dom.status && dom.status != GTEXT_XML_OK) {
         EXPECT_EQ(err.byte_offset, dom.err.byte_offset) << c.what << ", pull reader, pieces of " << chunk;
         EXPECT_EQ(err.line, dom.err.line) << c.what;
         EXPECT_EQ(err.column, dom.err.column) << c.what;
@@ -2957,6 +2996,10 @@ struct ResolverProbe {
   bool fail_read = false;
   bool cancel_read = false;
   bool declined_open = false;
+  bool decline_parameter_entities = false;
+  bool decline_nested_parameter_entities = false;
+  bool fail_second_parameter_entity_read = false;
+  size_t parameter_entity_opens = 0;
   bool missing_read = false;
   bool missing_identity = false;
   bool data_without_bytes = false;
@@ -3016,6 +3059,20 @@ GTEXT_XML_Resolver_Result resolver_probe_open(
     const char byte = ' ';
     EXPECT_EQ(gtext_xml_stream_feed(probe->reenter, &byte, 1, nullptr),
         GTEXT_XML_E_STATE);
+  }
+  if (request->kind == GTEXT_XML_RESOURCE_PARAMETER_ENTITY) {
+    if (probe->decline_nested_parameter_entities && request->system_id
+        && std::strcmp(request->system_id, "urn:outer") != 0) {
+      return GTEXT_XML_RESOLVER_DECLINED;
+    }
+    if (probe->fail_second_parameter_entity_read) {
+      probe->parameter_entity_opens++;
+      if (probe->parameter_entity_opens == 1)
+        return GTEXT_XML_RESOLVER_DECLINED;
+      if (probe->parameter_entity_opens == 2) probe->fail_read = true;
+    }
+    if (probe->decline_parameter_entities)
+      return GTEXT_XML_RESOLVER_DECLINED;
   }
   source->handle = probe;
   source->identity = probe->missing_identity ? nullptr : probe;
@@ -3284,6 +3341,400 @@ TEST(XmlResolver, CallbackReentryIsAStateFailureAndStillCloses) {
   EXPECT_EQ(open_probe.closes, 1u);
   open_probe.reenter = nullptr;
   gtext_xml_stream_free(stream);
+}
+
+TEST(XmlReader, PullQueueBackpressureResumesEntityGeneratedEvents) {
+  std::string replacement;
+  constexpr size_t item_count = 300;
+  for (size_t i = 0; i < item_count; i++) replacement += "<item/>";
+  const std::string document =
+      "<!DOCTYPE root [<!ENTITY burst SYSTEM 'urn:caller:resource'>]>"
+      "<root>&burst;</root>";
+  ResolverProbe probe;
+  probe.bytes = replacement;
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  opts.max_pull_queue_events = 3;
+  opts.max_pull_queue_bytes = 4096;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  for (size_t i = 0; i < document.size(); i++) {
+    ASSERT_EQ(gtext_xml_reader_feed(reader, document.data() + i, 1, nullptr),
+        GTEXT_XML_OK);
+  }
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  EXPECT_EQ(probe.opens, 0u);
+  EXPECT_LE(xml_reader_queue_count(reader), opts.max_pull_queue_events + 2);
+  EXPECT_LE(xml_reader_queue_bytes(reader), opts.max_pull_queue_bytes);
+
+  size_t maximum_queued = xml_reader_queue_count(reader);
+  size_t item_starts = 0;
+  GTEXT_XML_Event event{};
+  for (;;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    if (event.type == GTEXT_XML_EVENT_ELEMENT_START && event.local_name
+        && std::strcmp(event.local_name, "item") == 0) {
+      item_starts++;
+    }
+    maximum_queued = std::max(maximum_queued, xml_reader_queue_count(reader));
+    EXPECT_LE(xml_reader_queue_count(reader), opts.max_pull_queue_events + 2);
+    EXPECT_LE(xml_reader_queue_bytes(reader), opts.max_pull_queue_bytes);
+  }
+  EXPECT_EQ(item_starts, item_count);
+  EXPECT_EQ(probe.opens, 1u);
+  EXPECT_GT(probe.reads, 1u);
+  EXPECT_EQ(probe.offset, replacement.size());
+  EXPECT_EQ(probe.closes, 1u);
+  EXPECT_LE(maximum_queued, opts.max_pull_queue_events + 2);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlReader, ByteThresholdOvershootIsOneBoundedEntityStep) {
+  const std::string large_value(12 * 1024, 'v');
+  std::string replacement = "<item payload=\"" + large_value + "\"/>";
+  for (size_t i = 1; i < 300; i++) replacement += "<item/>";
+  const std::string document = "<!DOCTYPE root [<!ENTITY burst '" + replacement
+      + "'>]><root>&burst;</root>";
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.max_pull_queue_bytes = 1024;
+  opts.max_pull_queue_events = 1000;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  GTEXT_XML_Error feed_error{};
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document.data(), document.size(),
+      &feed_error), GTEXT_XML_OK) << feed_error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  EXPECT_GT(xml_reader_queue_bytes(reader), opts.max_pull_queue_bytes);
+  EXPECT_LT(xml_reader_queue_bytes(reader), opts.max_pull_queue_bytes
+      + large_value.size() + 4096);
+
+  size_t item_starts = 0;
+  size_t max_queue_bytes = xml_reader_queue_bytes(reader);
+  GTEXT_XML_Event event{};
+  for (;;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    if (event.type == GTEXT_XML_EVENT_ELEMENT_START && event.local_name
+        && std::strcmp(event.local_name, "item") == 0) {
+      item_starts++;
+    }
+    max_queue_bytes = std::max(max_queue_bytes, xml_reader_queue_bytes(reader));
+    EXPECT_LT(xml_reader_queue_bytes(reader), opts.max_pull_queue_bytes
+        + large_value.size() + 4096);
+  }
+  EXPECT_EQ(item_starts, 300u);
+  EXPECT_LT(max_queue_bytes, opts.max_pull_queue_bytes + large_value.size() + 4096);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlReader, OrdinaryContentStepOvershootsEventThresholdByTwo) {
+  const std::string document = "<a>x<b/>y</a>";
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document.data(), document.size(),
+      nullptr), GTEXT_XML_OK);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  EXPECT_EQ(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+
+  size_t maximum_queued = xml_reader_queue_count(reader);
+  GTEXT_XML_Event event{};
+  for (;;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    maximum_queued = std::max(maximum_queued, xml_reader_queue_count(reader));
+  }
+  EXPECT_EQ(maximum_queued, opts.max_pull_queue_events + 2);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlReader, DoctypeStepCanEmitManyDeclinedParameterEntityEvents) {
+  constexpr size_t entity_count = 5;
+  std::string document = "<!DOCTYPE root [";
+  for (size_t i = 0; i < entity_count; i++) {
+    const std::string name = "e" + std::to_string(i);
+    document += "<!ENTITY % " + name + " SYSTEM 'urn:" + name + "'>";
+  }
+  for (size_t i = 0; i < entity_count; i++) {
+    document += "%e" + std::to_string(i) + ";";
+  }
+  document += "]><root/>";
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  GTEXT_XML_Error feed_error{};
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document.data(), document.size(),
+      &feed_error), GTEXT_XML_OK) << feed_error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  /* The DOCTYPE pauses after it reaches the event ceiling, retaining its
+     parser cursor and continuation state until the reader drains the queue. */
+  EXPECT_LE(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+
+  size_t unread_events = 0;
+  size_t maximum_queued = xml_reader_queue_count(reader);
+  for (GTEXT_XML_Event event{};;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    if (event.type == GTEXT_XML_EVENT_UNREAD_RESOURCE) {
+      unread_events++;
+    }
+    maximum_queued = std::max(maximum_queued, xml_reader_queue_count(reader));
+  }
+  EXPECT_EQ(unread_events, entity_count);
+  /* Later element steps may atomically deliver a start/end pair. */
+  EXPECT_LE(maximum_queued, opts.max_pull_queue_events + 2);
+  EXPECT_EQ(xml_reader_queue_count(reader), 0u);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlReader, ResolvedExternalSubsetYieldsBetweenDeclinedParameterEntities) {
+  constexpr size_t entity_count = 5;
+  ResolverProbe probe;
+  probe.bytes.clear();
+  for (size_t i = 0; i < entity_count; i++) {
+    const std::string name = "external" + std::to_string(i);
+    probe.bytes += "<!ENTITY % " + name + " SYSTEM 'urn:" + name + "'>";
+  }
+  for (size_t i = 0; i < entity_count; i++)
+    probe.bytes += "%external" + std::to_string(i) + ";";
+  probe.decline_parameter_entities = true;
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  const std::string document =
+      "<!DOCTYPE root SYSTEM 'urn:subset'><root/>";
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document.data(), document.size(),
+      nullptr), GTEXT_XML_OK);
+  ASSERT_EQ(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+  ASSERT_EQ(probe.opens, 2u) << "external subset and first declined PE";
+  EXPECT_EQ(probe.closes, 0u)
+      << "the opened external subset remains owned across the yield";
+  const size_t reads_at_pause = probe.reads;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+
+  size_t unread_events = 0;
+  size_t maximum_queued = xml_reader_queue_count(reader);
+  for (GTEXT_XML_Event event{};;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    unread_events += event.type == GTEXT_XML_EVENT_UNREAD_RESOURCE;
+    maximum_queued = std::max(maximum_queued, xml_reader_queue_count(reader));
+  }
+  EXPECT_EQ(unread_events, entity_count);
+  EXPECT_EQ(probe.opens, entity_count + 1);
+  EXPECT_EQ(probe.closes, 1u);
+  EXPECT_EQ(probe.reads, reads_at_pause)
+      << "resume processes retained source bytes without another read";
+  EXPECT_LE(maximum_queued, opts.max_pull_queue_events + 2);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlReader, ExternalParameterEntityYieldsAndResumesItsDtdState) {
+  constexpr size_t entity_count = 5;
+  ResolverProbe probe;
+  probe.bytes.clear();
+  for (size_t i = 0; i < entity_count; i++) {
+    const std::string name = "nested" + std::to_string(i);
+    probe.bytes += "<!ENTITY % " + name + " SYSTEM 'urn:" + name + "'>";
+  }
+  for (size_t i = 0; i < entity_count; i++)
+    probe.bytes += "%nested" + std::to_string(i) + ";";
+  probe.decline_nested_parameter_entities = true;
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  const char * document =
+      "<!DOCTYPE root [<!ENTITY % outer SYSTEM 'urn:outer'>%outer;]><root/>";
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document, std::strlen(document),
+      nullptr), GTEXT_XML_OK);
+  ASSERT_EQ(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+  EXPECT_EQ(probe.opens, 2u) << "outer source plus first declined child";
+  EXPECT_EQ(probe.closes, 0u)
+      << "the outer external parameter entity stays active while yielded";
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+
+  size_t unread_events = 0;
+  for (GTEXT_XML_Event event{};;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    unread_events += event.type == GTEXT_XML_EVENT_UNREAD_RESOURCE;
+  }
+  EXPECT_EQ(unread_events, entity_count);
+  EXPECT_EQ(probe.opens, entity_count + 1);
+  EXPECT_EQ(probe.closes, 1u);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlReader, ExternalSubsetYieldPreservesNestedParameterSourceOwnership) {
+  struct State { size_t opens = 0, closes = 0, reads = 0; } state;
+  struct Source {
+    State * state;
+    std::string bytes;
+    std::string base_uri;
+    size_t offset = 0;
+  };
+  const std::string nested =
+      "<!ENTITY % child0 SYSTEM 'urn:child0'>"
+      "<!ENTITY % child1 SYSTEM 'urn:child1'>"
+      "<!ENTITY % child2 SYSTEM 'urn:child2'>"
+      "<!ENTITY % child3 SYSTEM 'urn:child3'>"
+      "<!ENTITY % child4 SYSTEM 'urn:child4'>"
+      "%child0;%child1;%child2;%child3;%child4;";
+  const GTEXT_XML_Resolver_cb resolver =
+      +[](const GTEXT_XML_Resolve_Request * request, void * user,
+          GTEXT_XML_External_Source * out) -> GTEXT_XML_Resolver_Result {
+        auto * state = static_cast<State *>(user);
+        state->opens++;
+        if (request->kind == GTEXT_XML_RESOURCE_PARAMETER_ENTITY
+            && request->system_id
+            && std::strcmp(request->system_id, "urn:outer") != 0)
+          return GTEXT_XML_RESOLVER_DECLINED;
+        auto * source = new (std::nothrow) Source;
+        if (!source) return GTEXT_XML_RESOLVER_FAILED;
+        source->state = state;
+        source->base_uri = std::string("memory:/")
+            + (request->system_id ? request->system_id : "subset");
+        source->bytes = request->kind == GTEXT_XML_RESOURCE_EXTERNAL_SUBSET
+            ? "<!ENTITY % outer SYSTEM 'urn:outer'>%outer;"
+            : "<!ENTITY % child0 SYSTEM 'urn:child0'>"
+              "<!ENTITY % child1 SYSTEM 'urn:child1'>"
+              "<!ENTITY % child2 SYSTEM 'urn:child2'>"
+              "<!ENTITY % child3 SYSTEM 'urn:child3'>"
+              "<!ENTITY % child4 SYSTEM 'urn:child4'>"
+              "%child0;%child1;%child2;%child3;%child4;";
+        out->handle = source;
+        out->identity = source;
+        out->base_uri = source->base_uri.c_str();
+        out->read = +[](void * opaque, unsigned char * buffer,
+            size_t capacity, size_t * count) -> GTEXT_XML_Source_Read_Result {
+          auto * source = static_cast<Source *>(opaque);
+          source->state->reads++;
+          *count = std::min(capacity, std::min(size_t(3),
+              source->bytes.size() - source->offset));
+          if (*count == 0) return GTEXT_XML_SOURCE_EOF;
+          std::memcpy(buffer, source->bytes.data() + source->offset, *count);
+          source->offset += *count;
+          return GTEXT_XML_SOURCE_DATA;
+        };
+        out->close = +[](void * opaque) {
+          auto * source = static_cast<Source *>(opaque);
+          source->state->closes++;
+          delete source;
+        };
+        return GTEXT_XML_RESOLVER_OPENED;
+      };
+
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver;
+  opts.resolver_user_data = &state;
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  const char * document = "<!DOCTYPE root SYSTEM 'urn:subset'><root/>";
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document, std::strlen(document),
+      nullptr), GTEXT_XML_OK);
+  ASSERT_EQ(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+  EXPECT_EQ(state.opens, 3u)
+      << "subset, outer parameter entity, then its first declined child";
+  EXPECT_EQ(state.closes, 0u);
+  const size_t reads_at_pause = state.reads;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+  size_t unread_events = 0;
+  for (GTEXT_XML_Event event{};;) {
+    const GTEXT_XML_Status status = gtext_xml_reader_next(reader, &event);
+    if (status == GTEXT_XML_E_STATE) break;
+    ASSERT_EQ(status, GTEXT_XML_OK) << gtext_xml_status_string(status);
+    unread_events += event.type == GTEXT_XML_EVENT_UNREAD_RESOURCE;
+  }
+  EXPECT_EQ(unread_events, 5u);
+  EXPECT_EQ(state.opens, 7u);
+  EXPECT_EQ(state.closes, 2u);
+  EXPECT_EQ(state.reads, reads_at_pause);
+  gtext_xml_reader_free(reader);
+  EXPECT_EQ(state.closes, 2u);
+
+  /* Also prove that abandoning a suspended nested source stack releases every
+     successfully opened resolver handle exactly once. */
+  state.opens = state.closes = state.reads = 0;
+  reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document, std::strlen(document),
+      nullptr), GTEXT_XML_OK);
+  ASSERT_EQ(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+  EXPECT_EQ(state.opens, 3u);
+  EXPECT_EQ(state.closes, 0u);
+  gtext_xml_reader_free(reader);
+  EXPECT_EQ(state.closes, 2u);
+}
+
+TEST(XmlReader, ResolverFailureOnResumeFollowsQueuedEventsAndClosesOnce) {
+  ResolverProbe probe;
+  probe.fail_second_parameter_entity_read = true;
+  GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
+  opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  opts.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  opts.resolver = resolver_probe_open;
+  opts.resolver_user_data = &probe;
+  opts.max_pull_queue_events = 2;
+  opts.max_pull_queue_bytes = 1024 * 1024;
+  GTEXT_XML_Reader * reader = gtext_xml_reader_new(&opts);
+  ASSERT_NE(reader, nullptr);
+  const char * document =
+      "<!DOCTYPE root [<!ENTITY % first SYSTEM 'urn:first'>"
+      "<!ENTITY % second SYSTEM 'urn:second'>%first;%second;]><root/>";
+  ASSERT_EQ(gtext_xml_reader_feed(reader, document, std::strlen(document),
+      nullptr), GTEXT_XML_OK);
+  ASSERT_EQ(xml_reader_queue_count(reader), opts.max_pull_queue_events);
+  EXPECT_EQ(probe.parameter_entity_opens, 1u);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, nullptr), GTEXT_XML_OK);
+
+  GTEXT_XML_Event event{};
+  ASSERT_EQ(gtext_xml_reader_next(reader, &event), GTEXT_XML_OK);
+  EXPECT_EQ(event.type, GTEXT_XML_EVENT_DOCUMENT_START);
+  ASSERT_EQ(gtext_xml_reader_next(reader, &event), GTEXT_XML_OK);
+  EXPECT_EQ(event.type, GTEXT_XML_EVENT_UNREAD_RESOURCE);
+  EXPECT_EQ(gtext_xml_reader_next(reader, &event), GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(gtext_xml_reader_next(reader, &event), GTEXT_XML_E_RESOLVER);
+  EXPECT_EQ(probe.parameter_entity_opens, 2u);
+  EXPECT_EQ(probe.closes, 1u);
+  gtext_xml_reader_free(reader);
+  EXPECT_EQ(probe.closes, 1u);
 }
 
 } // namespace

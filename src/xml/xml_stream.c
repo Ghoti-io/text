@@ -144,11 +144,16 @@ struct GTEXT_XML_Stream {
   xml_scan scan;
   int final;    /* finish() was called */
   int finished; /* ...and succeeded */
+  int final_prepared; /* decoder flushed after finish() */
+  int document_end_sent;
+  int pause_requested;
+  int paused;
   int stopped;  /* the callback returned an error */
   int failed;
   int last_empty; /* the start tag just read was an empty-element tag */
   int eager;      /* tests: attempt every construct whenever input arrives */
   int seen_doctype;
+  int doctype_active; /* a pull reader yielded inside this declaration */
 
   size_t max_input;
   size_t fed;
@@ -175,6 +180,12 @@ int xml_stream_resolver_callback_active(const GTEXT_XML_Stream * stream) {
 
 void xml_stream_note_resolver_reentry(GTEXT_XML_Stream * stream) {
   if (stream) stream->p.resolver_reentered = 1;
+}
+
+void xml_stream_request_pause(GTEXT_XML_Stream * stream) {
+  if (stream) {
+    stream->pause_requested = 1;
+  }
 }
 
 static const unsigned char kEmpty[1] = {0};
@@ -535,6 +546,11 @@ static GTEXT_XML_Status attempt(
   const size_t column = p->column;
   const uint32_t cursor_previous = p->cursor_previous;
   const GTEXT_XML_Status status = fn(p);
+  if (p->dtd_yielded) {
+    p->dtd_yielded = 0;
+    *done = 0;
+    return GTEXT_XML_OK;
+  }
   if (status == GTEXT_XML_OK) {
     *done = 1;
     s->scan.kind = SC_NONE;
@@ -630,6 +646,15 @@ static GTEXT_XML_Status step_declaration(GTEXT_XML_Stream * s, int * progress) {
    the root element; and the root element's start tag. */
 static GTEXT_XML_Status step_misc(GTEXT_XML_Stream * s, int * progress) {
   xml_ctx * p = &s->p;
+  if (s->doctype_active) {
+    const GTEXT_XML_Status status =
+        construct(s, SC_DOCTYPE, run_doctype, progress);
+    if (*progress) {
+      s->doctype_active = 0;
+      s->seen_doctype = 1;
+    }
+    return status;
+  }
   const int prolog = s->state == ST_PROLOG;
   xml_skip_space(p);
   if (available(s) == 0) {
@@ -663,6 +688,9 @@ static GTEXT_XML_Status step_misc(GTEXT_XML_Stream * s, int * progress) {
           construct(s, SC_DOCTYPE, run_doctype, progress);
       if (*progress) {
         s->seen_doctype = 1;
+      }
+      else if (p->doctype_continuation.active) {
+        s->doctype_active = 1;
       }
       return status;
     }
@@ -843,9 +871,17 @@ static GTEXT_XML_Status step(GTEXT_XML_Stream * s, int * progress) {
 
 /* Read everything the buffer completes. */
 static GTEXT_XML_Status drive(GTEXT_XML_Stream * s) {
+  if (s->paused) {
+    return GTEXT_XML_OK;
+  }
   for (;;) {
     if (s->p.err.code != GTEXT_XML_OK) {
       return s->p.err.code;
+    }
+    if (s->pause_requested) {
+      s->pause_requested = 0;
+      s->paused = 1;
+      return GTEXT_XML_OK;
     }
     int progress = 0;
     const GTEXT_XML_Status status = step(s, &progress);
@@ -854,6 +890,14 @@ static GTEXT_XML_Status drive(GTEXT_XML_Stream * s) {
     }
     if (s->p.err.code != GTEXT_XML_OK) {
       return s->p.err.code;
+    }
+    /* An emitting step can finish without consuming parser input (for example,
+       flushing pending text). Honor the queue pause before the no-progress
+       return so the next feed/resume cannot run ahead. */
+    if (s->pause_requested) {
+      s->pause_requested = 0;
+      s->paused = 1;
+      return GTEXT_XML_OK;
     }
     if (!progress) {
       return GTEXT_XML_OK;
@@ -865,6 +909,11 @@ static GTEXT_XML_Status drive(GTEXT_XML_Stream * s) {
    at least as much has been read as is left, so the copying is paid for. */
 static void compact(GTEXT_XML_Stream * s) {
   xml_ctx * p = &s->p;
+  /* p->pos is relative to the active physical source, while `input` is the
+     document buffer. Only compact it when the document source is active. */
+  if (p->source_count > 1) {
+    return;
+  }
   if (p->pos < 4096 || p->pos < p->length - p->pos) {
     return;
   }
@@ -1246,6 +1295,11 @@ void xml_stream_set_eager(GTEXT_XML_Stream * stream, int eager) {
   stream->eager = eager;
 }
 
+GTEXT_INTERNAL_API int xml_stream_pause_pending(
+    const GTEXT_XML_Stream * stream) {
+  return stream && stream->pause_requested;
+}
+
 static size_t limit_or(size_t given, size_t fallback) {
   return given != 0 ? given : fallback;
 }
@@ -1345,6 +1399,7 @@ GTEXT_API void gtext_xml_stream_free(GTEXT_XML_Stream * s) {
   }
   markup_buf_free(&s->input);
   markup_buf_free(&s->arena);
+  xml_doctype_continuation_reset(p);
   markup_buf_free(&p->text);
   markup_buf_free(&p->attr_pool);
   markup_buf_free(&p->scratch);
@@ -1451,30 +1506,74 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_finish(
     return conclude(s, GTEXT_XML_OK, err);
   }
   xml_ctx * p = &s->p;
-  s->final = 1;
   GTEXT_XML_Status status = GTEXT_XML_OK;
-  if (!s->detected) {
-    status = detect(s);
-  }
-  if (status == GTEXT_XML_OK && s->converting) {
-    status = xml_converter_feed(&s->converter, NULL, 0, 1);
-    refresh(s);
+  if (!s->final_prepared) {
+    s->final = 1;
+    if (!s->detected) {
+      status = detect(s);
+    }
+    if (status == GTEXT_XML_OK && s->converting) {
+      status = xml_converter_feed(&s->converter, NULL, 0, 1);
+      refresh(s);
+    }
+    if (status == GTEXT_XML_OK) {
+      s->final_prepared = 1;
+    }
   }
   if (status == GTEXT_XML_OK) {
     status = drive(s);
   }
-  if (status == GTEXT_XML_OK && s->state != ST_DONE) {
+  if (status == GTEXT_XML_OK && !s->paused && s->state != ST_DONE) {
     /* Not reachable: at the end every state either finishes or says why not. */
     status = xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "the document is incomplete");
   }
-  if (status == GTEXT_XML_OK) {
+  if (status == GTEXT_XML_OK && !s->paused && !s->document_end_sent) {
     GTEXT_XML_Event e;
     const GTEXT_Markup_Location here = xml_here(p);
     event_init(p, &e, GTEXT_XML_EVENT_DOCUMENT_END, &here);
     status = deliver(p, &e);
+    if (status == GTEXT_XML_OK) {
+      s->document_end_sent = 1;
+    }
   }
-  if (status == GTEXT_XML_OK) {
+  if (status == GTEXT_XML_OK && s->document_end_sent) {
     s->finished = 1;
+  }
+  return conclude(s, status, err);
+}
+
+GTEXT_XML_Status xml_stream_resume(GTEXT_XML_Stream * s, GTEXT_XML_Error * err) {
+  if (!s) {
+    return misuse(NULL, GTEXT_XML_E_INVALID, "invalid argument", err);
+  }
+  if (s->p.resolver_callback_active) {
+    s->p.resolver_reentered = 1;
+    return misuse(s, GTEXT_XML_E_STATE,
+        "resolver callback reentered the active XML parser", err);
+  }
+  if (s->failed || s->finished) {
+    return conclude(s, GTEXT_XML_OK, err);
+  }
+  s->paused = 0;
+  GTEXT_XML_Status status = drive(s);
+  if (status == GTEXT_XML_OK) {
+    compact(s);
+  }
+  if (status == GTEXT_XML_OK && s->final && s->final_prepared && !s->paused
+      && s->state != ST_DONE) {
+    status = xml_fail(&s->p, GTEXT_XML_E_UNEXPECTED_EOF,
+        "the document is incomplete");
+  }
+  if (status == GTEXT_XML_OK && s->final && s->final_prepared && !s->paused
+      && !s->document_end_sent) {
+    GTEXT_XML_Event e;
+    const GTEXT_Markup_Location here = xml_here(&s->p);
+    event_init(&s->p, &e, GTEXT_XML_EVENT_DOCUMENT_END, &here);
+    status = deliver(&s->p, &e);
+    if (status == GTEXT_XML_OK) {
+      s->document_end_sent = 1;
+      s->finished = 1;
+    }
   }
   return conclude(s, status, err);
 }

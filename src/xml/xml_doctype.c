@@ -1619,17 +1619,23 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
     GTEXT_Markup_Node * doctype) {
   static const char * const keywords[] = {
       "<!ELEMENT", "<!ATTLIST", "<!ENTITY", "<!NOTATION"};
-  unsigned char * modes = NULL; /* one means INCLUDE; zero means IGNORE */
-  size_t depth = 0, capacity = 0;
-  const size_t entry_source_count = p->source_count;
+  if (!p->dtd_external_active) {
+    p->dtd_external_modes = NULL; /* one means INCLUDE; zero means IGNORE */
+    p->dtd_external_depth = 0;
+    p->dtd_external_capacity = 0;
+    p->dtd_external_entry_source_count = p->source_count;
+    p->dtd_external_active = 1;
+  }
   GTEXT_XML_Status result = GTEXT_XML_OK;
   for (;;) {
-    const int ignoring = depth != 0 && !modes[depth - 1];
+    const int ignoring = p->dtd_external_depth != 0
+        && !p->dtd_external_modes[p->dtd_external_depth - 1];
     if (!ignoring) {
       xml_skip_space(p);
       if (p->err.code != GTEXT_XML_OK) { result = p->err.code; break; }
     }
-    if (p->pos >= p->length && p->source_count > entry_source_count
+    if (p->pos >= p->length
+        && p->source_count > p->dtd_external_entry_source_count
         && XML_SOURCE_IS_PARAMETER_ENTITY(
             p->sources[p->source_count - 1].kind)) {
       result = xml_source_pop(p);
@@ -1637,7 +1643,7 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       continue;
     }
     if (p->pos >= p->length) {
-      result = depth ? xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
+      result = p->dtd_external_depth ? xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "unterminated conditional section") : GTEXT_XML_OK;
       break;
     }
@@ -1649,10 +1655,10 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
     }
     (void)codepoint;
     (void)codepoint_length;
-    if (depth && p->in[p->pos] == ']') {
+    if (p->dtd_external_depth && p->in[p->pos] == ']') {
       result = external_conditional_end(p);
       if (result != GTEXT_XML_OK) break;
-      --depth;
+      --p->dtd_external_depth;
       continue;
     }
     if (ignoring && !xml_looking_at(p, "<![", 3)) {
@@ -1686,10 +1692,14 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       result = dtd_expand_parameter_entity(p, p->in + name_at,
           name_length, &at, doctype);
       if (result != GTEXT_XML_OK) break;
+      if (xml_stream_pause_pending(p->stream)) {
+        p->dtd_yielded = 1;
+        break;
+      }
       continue;
     }
     if (xml_looking_at(p, "<![", 3)) {
-      if (depth >= p->max_depth) {
+      if (p->dtd_external_depth >= p->max_depth) {
         result = xml_fail(p, GTEXT_XML_E_LIMIT_DEPTH,
             "conditional section nesting limit exceeded");
         break;
@@ -1705,9 +1715,11 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
         result = external_conditional_header(p, &include);
         if (result != GTEXT_XML_OK) break;
       }
-      result = xml_grow(p, (void **)&modes, &capacity, sizeof(*modes), depth + 1);
+      result = xml_grow(p, (void **)&p->dtd_external_modes,
+          &p->dtd_external_capacity, sizeof(*p->dtd_external_modes),
+          p->dtd_external_depth + 1);
       if (result != GTEXT_XML_OK) break;
-      modes[depth++] = (unsigned char)include;
+      p->dtd_external_modes[p->dtd_external_depth++] = (unsigned char)include;
       continue;
     }
     if (xml_looking_at(p, "<!--", 4) || xml_looking_at(p, "<?", 2)) {
@@ -1815,7 +1827,13 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       if (status != GTEXT_XML_OK) { result = status; break; }
     }
   }
-  xml_release(p, modes);
+  if (!p->dtd_yielded) {
+    xml_release(p, p->dtd_external_modes);
+    p->dtd_external_modes = NULL;
+    p->dtd_external_depth = p->dtd_external_capacity = 0;
+    p->dtd_external_entry_source_count = 0;
+    p->dtd_external_active = 0;
+  }
   return result;
 }
 
@@ -1924,6 +1942,7 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   }
   if (status == GTEXT_XML_OK)
     status = external_subset_body(&ext, doctype);
+  const int yielded = ext.dtd_yielded != 0;
   p->references = ext.references;
   p->declarations = ext.declarations;
   p->total_work = ext.total_work;
@@ -1945,9 +1964,52 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->general_entities = ext.general_entities;
   p->general_entity_count = ext.general_entity_count;
   p->general_entity_capacity = ext.general_entity_capacity;
+  p->dtd_external_modes = ext.dtd_external_modes;
+  p->dtd_external_depth = ext.dtd_external_depth;
+  p->dtd_external_capacity = ext.dtd_external_capacity;
+  p->dtd_external_entry_source_count = ext.dtd_external_entry_source_count;
+  p->dtd_external_active = ext.dtd_external_active;
+  if (yielded) {
+    xml_source_frame * external_subset = NULL;
+    for (size_t i = 1; i < p->source_count; ++i) {
+      if (p->sources[i].kind == XML_SOURCE_EXTERNAL_SUBSET) {
+        external_subset = &p->sources[i];
+        break;
+      }
+    }
+    if (!external_subset) {
+      status = xml_fail(&ext, GTEXT_XML_E_STATE,
+          "suspended external subset source frame was lost");
+      goto external_subset_done;
+    }
+    external_subset->owned_decoded = ext.decoded.data;
+    ext.decoded.data = NULL; ext.decoded.length = ext.decoded.capacity = 0;
+    p->in = ext.in; p->length = ext.length; p->pos = ext.pos;
+    p->base = ext.base; p->line = ext.line; p->column = ext.column;
+    p->cursor_previous = ext.cursor_previous; p->version = ext.version;
+    p->dtd_yielded = 1;
+  }
+external_subset_done:
   if (status != GTEXT_XML_OK) p->err = ext.err;
   markup_buf_free(&ext.decoded);
   return status;
+}
+
+GTEXT_XML_Status xml_resume_external_subset(
+    xml_ctx * p, GTEXT_Markup_Node * doctype) {
+  int found = 0;
+  if (p) for (size_t i = 1; i < p->source_count; ++i)
+    found |= p->sources[i].kind == XML_SOURCE_EXTERNAL_SUBSET;
+  if (!p || !p->dtd_external_active || !found)
+    return xml_fail(p, GTEXT_XML_E_STATE,
+        "no suspended external subset is active");
+  const GTEXT_XML_Status status = external_subset_body(p, doctype);
+  if (p->dtd_yielded || status != GTEXT_XML_OK) return status;
+  if (p->source_count < 2
+      || p->sources[p->source_count - 1].kind != XML_SOURCE_EXTERNAL_SUBSET)
+    return xml_fail(p, GTEXT_XML_E_STATE,
+        "external subset did not return to its source frame");
+  return xml_source_pop(p);
 }
 
 /* Turn an already pushed resolver frame into the active DTD input. The
@@ -2054,6 +2116,11 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
       "<!ELEMENT", "<!ATTLIST", "<!ENTITY", "<!NOTATION"};
   for (;;) {
     GTEXT_XML_Status status;
+    if (p->dtd_external_active) {
+      status = external_subset_body(p, doctype);
+      if (p->dtd_yielded) return GTEXT_XML_OK;
+      if (status != GTEXT_XML_OK) return status;
+    }
     if (p->err.code != GTEXT_XML_OK) {
       return p->err.code;
     }
@@ -2107,6 +2174,13 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
           && p->sources[p->source_count - 1].external_source) {
         status = external_subset_body(p, doctype);
         if (status != GTEXT_XML_OK) return status;
+      }
+      /* A pull reader can pause in the middle of one DOCTYPE. Stop only after
+         the reference has been fully processed, so resume starts at the next
+         source position and cannot repeat resolver work or emit a duplicate. */
+      if (xml_stream_pause_pending(p->stream)) {
+        p->dtd_yielded = 1;
+        return GTEXT_XML_OK;
       }
       continue;
     }
@@ -2197,131 +2271,144 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
   }
 }
 
+void xml_doctype_continuation_reset(xml_ctx * p) {
+  xml_doctype_continuation * c = &p->doctype_continuation;
+  if (c->active) {
+    markup_buf_free(&c->name);
+    markup_buf_free(&c->public_id);
+    markup_buf_free(&c->system_id);
+    if (c->node) gtext_markup_node_free(c->node);
+  }
+  memset(c, 0, sizeof(*c));
+}
+
 GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
-  const GTEXT_Markup_Location start = xml_here(p);
-  markup_buf name;
-  markup_buf pub;
-  markup_buf sys;
-  markup_buf_init(&name, p->allocator);
-  markup_buf_init(&pub, p->allocator);
-  markup_buf_init(&sys, p->allocator);
-  int has_public = 0;
-  int has_system = 0;
-  GTEXT_Markup_Node * doctype = NULL;
+  xml_doctype_continuation * c = &p->doctype_continuation;
   GTEXT_XML_Status status = GTEXT_XML_OK;
   size_t length = 0;
-
-  status = xml_consume(p, 9); /* "<!DOCTYPE" */
-  if (status != GTEXT_XML_OK) goto done;
-  if (xml_skip_space(p) == 0) {
-    status = bad(p, "white space is required after <!DOCTYPE");
-    goto done;
+  if (!c->active) {
+    memset(c, 0, sizeof(*c));
+    markup_buf_init(&c->name, p->allocator);
+    markup_buf_init(&c->public_id, p->allocator);
+    markup_buf_init(&c->system_id, p->allocator);
+    c->start = xml_here(p);
+    c->active = 1;
   }
-  status = xml_scan_name(p, &length);
-  if (status != GTEXT_XML_OK) {
-    goto done;
-  }
-  status = xml_append(p, &name, (const char *)p->in + p->pos, length);
-  if (status != GTEXT_XML_OK) {
-    goto done;
-  }
-  status = xml_consume(p, length);
-  if (status != GTEXT_XML_OK) goto done;
-  size_t space = xml_skip_space(p);
-
-  if (xml_cut_literal(p, "SYSTEM", 6) || xml_cut_literal(p, "PUBLIC", 6)) {
-    status = xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
-    goto done;
-  }
-  const int is_system = xml_looking_at(p, "SYSTEM", 6);
-  const int is_public = !is_system && xml_looking_at(p, "PUBLIC", 6);
-  if (is_system || is_public) {
-    if (space == 0) {
-      status = bad(p, "white space is required before the external identifier");
-      goto done;
-    }
-    status = xml_consume(p, 6);
-    if (status != GTEXT_XML_OK) goto done;
+  if (!c->header_done) {
+    status = xml_consume(p, 9); /* "<!DOCTYPE" */
+    if (status != GTEXT_XML_OK) goto failed;
     if (xml_skip_space(p) == 0) {
-      status = bad(p, "white space is required after SYSTEM or PUBLIC");
-      goto done;
+      status = bad(p, "white space is required after <!DOCTYPE");
+      goto failed;
     }
-    if (is_public) {
-      status = literal(p, &pub, 1);
-      if (status != GTEXT_XML_OK) {
-        goto done;
+    status = xml_scan_name(p, &length);
+    if (status != GTEXT_XML_OK) goto failed;
+    status = xml_append(p, &c->name, (const char *)p->in + p->pos, length);
+    if (status != GTEXT_XML_OK) goto failed;
+    status = xml_consume(p, length);
+    if (status != GTEXT_XML_OK) goto failed;
+    size_t space = xml_skip_space(p);
+    if (xml_cut_literal(p, "SYSTEM", 6) || xml_cut_literal(p, "PUBLIC", 6)) {
+      status = xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
+          "unexpected end of input");
+      goto failed;
+    }
+    const int is_system = xml_looking_at(p, "SYSTEM", 6);
+    const int is_public = !is_system && xml_looking_at(p, "PUBLIC", 6);
+    if (is_system || is_public) {
+      if (space == 0) {
+        status = bad(p,
+            "white space is required before the external identifier");
+        goto failed;
       }
-      has_public = 1;
+      status = xml_consume(p, 6);
+      if (status != GTEXT_XML_OK) goto failed;
       if (xml_skip_space(p) == 0) {
-        status = bad(p, "white space is required before the system identifier");
-        goto done;
+        status = bad(p, "white space is required after SYSTEM or PUBLIC");
+        goto failed;
       }
+      if (is_public) {
+        status = literal(p, &c->public_id, 1);
+        if (status != GTEXT_XML_OK) goto failed;
+        c->has_public = 1;
+        if (xml_skip_space(p) == 0) {
+          status = bad(p,
+              "white space is required before the system identifier");
+          goto failed;
+        }
+      }
+      status = literal(p, &c->system_id, 0);
+      if (status != GTEXT_XML_OK) goto failed;
+      c->has_system = 1;
+      space = xml_skip_space(p);
     }
-    status = literal(p, &sys, 0);
-    if (status != GTEXT_XML_OK) {
-      goto done;
+    (void)space;
+    if (p->dtd_mode == GTEXT_XML_DTD_PROCESS && !p->stream) {
+      status = xml_from_markup(p, gtext_markup_create_doctype(p->doc,
+          c->name.data, c->has_public ? c->public_id.data : NULL,
+          c->has_system ? c->system_id.data : NULL, &c->node));
+      if (status != GTEXT_XML_OK) goto failed;
     }
-    has_system = 1;
-    space = xml_skip_space(p);
+    if (p->pos < p->length && p->in[p->pos] == '[') {
+      status = xml_consume(p, 1);
+      if (status != GTEXT_XML_OK) goto failed;
+      c->has_subset = 1;
+    }
+    c->header_done = 1;
   }
-  (void)space;
-
-  if (p->dtd_mode == GTEXT_XML_DTD_PROCESS && !p->stream) {
-    status = xml_from_markup(p, gtext_markup_create_doctype(p->doc, name.data,
-        has_public ? pub.data : NULL, has_system ? sys.data : NULL, &doctype));
-    if (status != GTEXT_XML_OK) goto done;
-  }
-
-  if (p->pos < p->length && p->in[p->pos] == '[') {
-    status = xml_consume(p, 1);
-    if (status != GTEXT_XML_OK) goto done;
-    status = skip_internal_subset(p, doctype);
-    if (status != GTEXT_XML_OK) {
-      goto done;
-    }
+  if (c->has_subset && !c->internal_subset_done) {
+    status = skip_internal_subset(p, c->node);
+    if (p->dtd_yielded) return GTEXT_XML_OK;
+    if (status != GTEXT_XML_OK) goto failed;
     xml_skip_space(p);
+    c->internal_subset_done = 1;
   }
-  if (p->pos >= p->length || p->in[p->pos] != '>') {
-    status = bad(p, "'>' was expected to end the document type declaration");
-    goto done;
-  }
-  status = xml_consume(p, 1);
-  if (status != GTEXT_XML_OK) goto done;
-
-  /* External bytes are obtained only from a caller resolver after explicit
-     per-parse authorization. Story 2.7 feeds the acquired source into the DTD
-     grammar; this slice establishes the bounded read and ownership contract. */
-  if (has_system) {
-    status = xml_resolve_external_subset(p, doctype,
-        has_public ? pub.data : NULL, sys.data);
-    if (status != GTEXT_XML_OK) goto done;
+  if (!c->doctype_closed) {
+    if (p->pos >= p->length || p->in[p->pos] != '>') {
+      status = bad(p, "'>' was expected to end the document type declaration");
+      goto failed;
+    }
+    status = xml_consume(p, 1);
+    if (status != GTEXT_XML_OK) goto failed;
+    c->doctype_closed = 1;
   }
 
-  if (doctype && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
-    status = xml_doctype_rebuild_indexes(p, doctype);
-    if (status != GTEXT_XML_OK) goto done;
+  if (c->has_system && !c->external_subset_done) {
+    status = c->external_subset_pending
+        ? xml_resume_external_subset(p, c->node)
+        : xml_resolve_external_subset(p, c->node,
+            c->has_public ? c->public_id.data : NULL, c->system_id.data);
+    if (p->dtd_yielded) {
+      c->external_subset_pending = 1;
+      return GTEXT_XML_OK;
+    }
+    if (status != GTEXT_XML_OK) goto failed;
+    c->external_subset_pending = 0;
+    c->external_subset_done = 1;
   }
-
+  if (c->node && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+    status = xml_doctype_rebuild_indexes(p, c->node);
+    if (status != GTEXT_XML_OK) goto failed;
+  }
   if (p->stream) {
-    status = xml_emit_doctype(p, &start, name.data,
-        has_public ? pub.data : NULL, has_system ? sys.data : NULL);
+    status = xml_emit_doctype(p, &c->start, c->name.data,
+        c->has_public ? c->public_id.data : NULL,
+        c->has_system ? c->system_id.data : NULL);
   }
   else {
-    GTEXT_Markup_Node * node = doctype;
+    GTEXT_Markup_Node * node = c->node;
+    c->node = NULL;
     if (!node) status = xml_from_markup(p,
-        gtext_markup_create_doctype(p->doc, name.data,
-            has_public ? pub.data : NULL, has_system ? sys.data : NULL, &node));
-    if (status == GTEXT_XML_OK) {
-      xml_attach(p->doc->root, node, &start);
-    }
+        gtext_markup_create_doctype(p->doc, c->name.data,
+            c->has_public ? c->public_id.data : NULL,
+            c->has_system ? c->system_id.data : NULL, &node));
+    if (status == GTEXT_XML_OK) xml_attach(p->doc->root, node, &c->start);
+    else if (node) gtext_markup_node_free(node);
   }
+  xml_doctype_continuation_reset(p);
+  return status;
 
-done:
-  if (status != GTEXT_XML_OK && doctype) {
-    gtext_markup_node_free(doctype);
-  }
-  markup_buf_free(&name);
-  markup_buf_free(&pub);
-  markup_buf_free(&sys);
+failed:
+  xml_doctype_continuation_reset(p);
   return status;
 }

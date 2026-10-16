@@ -77,6 +77,8 @@ extern "C" {
 #define XML_DEFAULT_MAX_REFERENCES ((size_t)1000000)
 #define XML_DEFAULT_MAX_DECLARATIONS ((size_t)100000)
 #define XML_DEFAULT_MAX_TOTAL_WORK ((size_t)256 * 1024 * 1024)
+#define XML_DEFAULT_MAX_PULL_QUEUE_BYTES ((size_t)1024 * 1024)
+#define XML_DEFAULT_MAX_PULL_QUEUE_EVENTS ((size_t)256)
 #define XML_WRITE_DEFAULT_MAX_DEPTH ((size_t)256)
 #define XML_WRITE_DEFAULT_MAX_OUTPUT ((size_t)256 * 1024 * 1024)
 
@@ -279,6 +281,25 @@ typedef struct {
   unsigned char declined;
 } xml_resolved_resource;
 
+/** Persistent DOCTYPE header and node while a pull reader yields inside its
+ * internal subset. The parser owns this until the declaration completes. */
+typedef struct {
+  markup_buf name;
+  markup_buf public_id;
+  markup_buf system_id;
+  GTEXT_Markup_Location start;
+  GTEXT_Markup_Node * node;
+  unsigned char active;
+  unsigned char header_done;
+  unsigned char has_subset;
+  unsigned char internal_subset_done;
+  unsigned char doctype_closed;
+  unsigned char external_subset_pending;
+  unsigned char external_subset_done;
+  unsigned char has_public;
+  unsigned char has_system;
+} xml_doctype_continuation;
+
 /** An attribute of the start tag being read. */
 typedef struct {
   size_t name_length;
@@ -420,6 +441,13 @@ typedef struct {
   size_t dtd_binding_count;
   size_t dtd_binding_capacity;
   const char * dtd_generated_parameter_entity;
+  unsigned char * dtd_external_modes;
+  size_t dtd_external_depth;
+  size_t dtd_external_capacity;
+  size_t dtd_external_entry_source_count;
+  unsigned char dtd_external_active;
+  xml_doctype_continuation doctype_continuation;
+  unsigned char dtd_yielded;
   unsigned char * dtd_name_token;
   size_t dtd_name_token_length;
   size_t dtd_name_token_capacity;
@@ -544,10 +572,19 @@ GTEXT_XML_Status xml_finish_external_resource(xml_ctx * p,
 GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
     GTEXT_Markup_Node * doctype, const unsigned char * bytes, size_t length,
     const char * base_uri);
+GTEXT_XML_Status xml_resume_external_subset(
+    xml_ctx * p, GTEXT_Markup_Node * doctype);
 GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
     xml_resolved_resource * resource);
 int xml_stream_resolver_callback_active(const struct GTEXT_XML_Stream * stream);
 void xml_stream_note_resolver_reentry(struct GTEXT_XML_Stream * stream);
+void xml_stream_request_pause(struct GTEXT_XML_Stream * stream);
+GTEXT_XML_Status xml_stream_resume(struct GTEXT_XML_Stream * stream,
+    GTEXT_XML_Error * err);
+GTEXT_INTERNAL_API size_t xml_reader_queue_count(
+    const struct GTEXT_XML_Reader * reader);
+GTEXT_INTERNAL_API size_t xml_reader_queue_bytes(
+    const struct GTEXT_XML_Reader * reader);
 
 /** Result of decoding one character. */
 typedef enum {
@@ -693,6 +730,7 @@ void xml_attach(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node,
 
 /** Parse `<!DOCTYPE ...>` at the cursor and add the doctype node. */
 GTEXT_XML_Status xml_parse_doctype(xml_ctx * p);
+void xml_doctype_continuation_reset(xml_ctx * p);
 /** Rebuild the derived declaration indexes from retained doctype syntax. */
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_doctype_rebuild_indexes(
     xml_ctx * p, GTEXT_Markup_Node * doctype);
@@ -753,6 +791,8 @@ GTEXT_XML_Status xml_emit_unread_resource(xml_ctx * p,
  */
 GTEXT_INTERNAL_API size_t xml_stream_work(const struct GTEXT_XML_Stream * stream);
 GTEXT_INTERNAL_API void xml_stream_set_eager(struct GTEXT_XML_Stream * stream, int eager);
+GTEXT_INTERNAL_API int xml_stream_pause_pending(
+    const struct GTEXT_XML_Stream * stream);
 
 /* ---- Entry (xml_parser.c) ----------------------------------------------- */
 

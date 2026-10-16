@@ -17,9 +17,13 @@
 #define GHOTI_IO_GTEXT_TESTS_XML_REPLAY_H
 
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <ghoti.io/text/xml.h>
+
+#include "../src/markup/markup_internal.h"
 
 typedef struct {
   GTEXT_Markup_Document * doc;
@@ -147,6 +151,28 @@ static GTEXT_XML_Status xml_replay_event(const GTEXT_XML_Event * e, void * user)
       return GTEXT_XML_OK;
     }
     case GTEXT_XML_EVENT_TEXT:
+      {
+        GTEXT_Markup_Node * previous =
+            gtext_markup_node_last_child(r->current);
+        if (previous && gtext_markup_node_kind(previous)
+                == GTEXT_MARKUP_KIND_TEXT) {
+          size_t old_length = 0;
+          const char * old_data = gtext_markup_node_data(previous, &old_length);
+          if (old_length == SIZE_MAX
+              || e->data_length > SIZE_MAX - old_length - 1)
+            return xml_replay_fail(r, "text size overflow");
+          char * joined = (char *)malloc(old_length + e->data_length + 1);
+          if (!joined) return xml_replay_fail(r, "allocate combined text");
+          memcpy(joined, old_data, old_length);
+          memcpy(joined + old_length, e->data, e->data_length);
+          joined[old_length + e->data_length] = '\0';
+          const GTEXT_Markup_Status append_status = gtext_markup_node_set_data(
+              previous, joined, old_length + e->data_length);
+          free(joined);
+          return append_status == GTEXT_MARKUP_OK ? GTEXT_XML_OK
+              : xml_replay_fail(r, "append text");
+        }
+      }
       if (gtext_markup_create_text(r->doc, e->data, e->data_length, &node)
           != GTEXT_MARKUP_OK) {
         return xml_replay_fail(r, "create_text");
@@ -178,7 +204,29 @@ static GTEXT_XML_Status xml_replay_event(const GTEXT_XML_Event * e, void * user)
       }
       return xml_replay_attach(r, node, &e->location);
     case GTEXT_XML_EVENT_UNREAD_RESOURCE:
-      /* This event records parser knowledge, not a tree node. */
+      /* This event records parser knowledge, not a tree node. Retain it on the
+         replay tree so stream-vs-DOM comparisons include incomplete DTD state. */
+      if (!r->doc) return xml_replay_fail(r, "UNREAD_RESOURCE before document");
+      {
+        GTEXT_Markup_DTD_Resource_Kind kind;
+        switch (e->resource_kind) {
+          case GTEXT_XML_RESOURCE_EXTERNAL_SUBSET:
+            kind = GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET;
+            break;
+          case GTEXT_XML_RESOURCE_PARAMETER_ENTITY:
+            kind = GTEXT_MARKUP_DTD_RESOURCE_PARAMETER_ENTITY;
+            break;
+          case GTEXT_XML_RESOURCE_GENERAL_ENTITY:
+            kind = GTEXT_MARKUP_DTD_RESOURCE_GENERAL_ENTITY;
+            break;
+          default:
+            return xml_replay_fail(r, "unknown unread resource kind");
+        }
+        if (markup_document_add_unread_resource(r->doc, kind, e->name,
+                e->system_id, &e->location) != GTEXT_MARKUP_OK) {
+          return xml_replay_fail(r, "retain unread resource");
+        }
+      }
       return GTEXT_XML_OK;
   }
   return xml_replay_fail(r, "an unknown event type");
@@ -219,6 +267,30 @@ static const char * xml_replay_compare(
           gtext_markup_document_encoding(y, &ey))
       || ex != ey) {
     return "encoding";
+  }
+  if (gtext_markup_document_dtd_knowledge_incomplete(x)
+      != gtext_markup_document_dtd_knowledge_incomplete(y)) {
+    return "DTD knowledge completeness";
+  }
+  const size_t unread_count = gtext_markup_document_dtd_unread_resource_count(x);
+  if (unread_count != gtext_markup_document_dtd_unread_resource_count(y)) {
+    return "unread DTD resource count";
+  }
+  for (size_t i = 0; i < unread_count; i++) {
+    GTEXT_Markup_DTD_Unread_Resource ux;
+    GTEXT_Markup_DTD_Unread_Resource uy;
+    if (!gtext_markup_document_dtd_unread_resource(x, i, &ux)
+        || !gtext_markup_document_dtd_unread_resource(y, i, &uy)
+        || ux.kind != uy.kind
+        || !xml_replay_same_text(ux.name, uy.name)
+        || !xml_replay_same_text(ux.system_id, uy.system_id)
+        || ux.location.offset != uy.location.offset
+        || ux.location.line != uy.location.line
+        || ux.location.column != uy.location.column
+        || ux.location.source_id != uy.location.source_id
+        || ux.location.reference_source_id != uy.location.reference_source_id) {
+      return "unread DTD resource";
+    }
   }
   const GTEXT_Markup_Node * rx = gtext_markup_document_root(x);
   const GTEXT_Markup_Node * ry = gtext_markup_document_root(y);

@@ -14,14 +14,15 @@ case on which they differ is a failure of the gate, with no exceptions list: the
 event parsers claim the DOM parser's verdicts, and a case where they do not is a
 defect in one of them.
 
-There is one difference, and it is by construction: gtext_xml_parse() converts
-the whole of a UTF-16, UTF-32, ISO-8859-1 or US-ASCII document before it reads
-any of it, so it reports a byte that is not valid in the encoding
-(GTEXT_XML_E_INVALID_SEQUENCE) even if the document is not well-formed earlier;
-the event parser reports whichever comes first. Where the DOM parse says
-INVALID_SEQUENCE and the event parser instead refuses the document for a
-well-formedness reason at or before that offset, both have refused it and the
-case is counted apart ("conversion error ordering"), not failed.
+There is one difference, and it is by construction: gtext_xml_parse() validates
+the encoding of the whole input before reading XML grammar, so it reports a
+byte that is not valid in the encoding (GTEXT_XML_E_INVALID_SEQUENCE) even if
+the document is not well-formed earlier; the event parser reports whichever it
+encounters first as input arrives. Where the DOM parse says INVALID_SEQUENCE
+and the event parser instead refuses the document for a well-formedness reason
+at or before that offset, both have refused it and the case is counted apart
+("conversion error ordering"), not failed. UTF-8 failures use
+GTEXT_XML_E_UTF8; failures during conversion use GTEXT_XML_E_INVALID_SEQUENCE.
 
 A fourth way, `roundtrip`, is run on every case the parser accepted: the document
 is written in UTF-8, UTF-16 (both byte orders), ISO-8859-1 and US-ASCII, and each
@@ -193,17 +194,12 @@ WELL_FORMEDNESS = tuple('GTEXT_XML_E_' + n for n in (
 
 UNSUPPORTED = ('GTEXT_XML_E_UNSUPPORTED_ENCODING', 'GTEXT_XML_E_UNSUPPORTED_VERSION')
 
-# The cases allowed to differ by the conversion-ordering rule, by id. Any other
-# case that needs the rule is a failure: the list is the whole exemption.
-REORDERED_IDS = {'hst-lhs-009'}
-
-
 def reordered(dom_line, stream_line):
     """Both refused it; the DOM parse reached the encoding error first."""
     d = dom_line.split(' ', 5)
     s = stream_line.split(' ', 5)
     return (d[0] == 'FAIL' and s[0] == 'FAIL'
-            and d[1] == 'GTEXT_XML_E_INVALID_SEQUENCE'
+            and d[1] in ('GTEXT_XML_E_UTF8', 'GTEXT_XML_E_INVALID_SEQUENCE')
             and s[1] in WELL_FORMEDNESS and s[1] != d[1]
             and int(s[2]) <= int(d[2]))
 
@@ -268,7 +264,7 @@ for t, path, beside in cases:
         if died:
             crashes.append((ident + ' [' + mode + ']', died[0], died[1]))
         elif line != dom_line:
-            if reordered(dom_line, line) and ident in REORDERED_IDS:
+            if reordered(dom_line, line):
                 ordering[mode] += 1
             else:
                 disagreements.append((ident, mode, dom_line, line))
@@ -376,7 +372,8 @@ if failures:
     print("UNEXPLAINED FAILURES: %d" % len(failures))
     for ident, kind, detail, path in failures[:200]:
         print("  %-40s %-14s %s" % (ident, kind, detail))
-        print("  %-40s         %s" % ('', os.path.relpath(path, SUITE)))
+        display_path = os.path.relpath(path, SUITE) if path else "(manifest entry)"
+        print("  %-40s         %s" % ('', display_path))
 if disagreements:
     status = 1
     print()
