@@ -3,8 +3,9 @@
 
     tools/xml/plant-fuzz.py [--time SECONDS] [name ...]
 
-A fuzzer that has never failed has not been shown to be able to. A plant whose defect has a recorded reproducer (REPRODUCERS) is found by running the harness
-over that file with -runs=0, which is the same every time; only the others are searched for.
+A fuzzer that has never failed has not been shown to be able to. A plant whose defect has a
+permanent deterministic regression test (REPRODUCERS) is found by running that test; only the
+others are searched for.
 There are ten plants
 (seven for the fuzzers, three for the differential) and two controls. Each plant here is
 one edit to one line of the library, applied to a **copy** of this repository in a
@@ -18,8 +19,8 @@ for is run on the copy for the harness time budget (60 seconds by default, the s
                    at a time has different locations from the whole-document parse.
                    fuzz_xml.
   limit-after-run  the fix fuzz_xml found is taken out again: an attribute value's limit is
-                   checked only when a run of ordinary bytes ends. The recorded reproducer
-                   in the seed corpus fails at once. fuzz_xml.
+                   checked only when a run of ordinary bytes ends. The permanent stream test
+                   catches the changed error ordering deterministically. testXmlStream.
   leak-attr-pool   a parse that has attributes does not release their pool. fuzz_xml
                    (and any ASan run, which is the point: the harness's fault allocator
                    and LeakSanitizer both see it).
@@ -113,10 +114,12 @@ def copy_tree(dest):
     shutil.copytree(ROOT, dest, ignore=ignore, symlinks=True, ignore_dangling_symlinks=True)
 
 
-# A plant whose defect has a recorded reproducer is found by replaying that file, which is the
-# same every time, and not by a time-boxed search, which is not. The others keep the search.
+# A plant whose defect has a permanent deterministic regression test is found by replaying that
+# test, which is the same every time, and not by a time-boxed search, which is not. The others
+# keep the search.
 REPRODUCERS = {
-    "limit-after-run": ("fuzz_xml", "tests/fuzz/corpus/xml/reproducer-attribute-limit-before-a-bad-byte.seed"),
+    "limit-after-run": ("testXmlStream",
+                        "--gtest_filter=XmlStream.ALimitAndABadByteInOneRunAreReportedInInputOrderHoweverTheInputIsCut"),
 }
 
 
@@ -181,14 +184,16 @@ def run(name, seconds):
                 return done.returncode, done.stdout + done.stderr, target
             cap = os.path.join(WORKSPACE, "tools", "memcap")
             if name in REPRODUCERS:
-                harness, repro = REPRODUCERS[name]
+                executable, test_filter = REPRODUCERS[name]
                 capped = [cap, "-m", os.environ.get("GHOTI_MEMCAP", "6G"), "--"] if os.path.exists(cap) else []
-                built = subprocess.run(capped + ["make", "-C", text, "-j4", "fuzz-" + target, "PREFIX=" + prefix],
+                app_dir = make_variables(prefix, ("APP_DIR",))["APP_DIR"]
+                app = os.path.join(text, app_dir, executable)
+                built = subprocess.run(capped + ["make", "-C", text, "-j4", app_dir + "/" + executable,
+                                                  "PREFIX=" + prefix],
                                        env=env, capture_output=True, text=True, timeout=budget)
                 if built.returncode != 0:
                     return built.returncode, built.stdout + built.stderr, target
-                app = os.path.join(text, make_variables(prefix, ("FUZZ_APP_DIR",))["FUZZ_APP_DIR"], harness)
-                done = subprocess.run(capped + [app, "-runs=0", os.path.join(text, repro)], env=env,
+                done = subprocess.run(capped + [app, test_filter], env=env,
                                       capture_output=True, text=True, timeout=budget)
                 return done.returncode, done.stdout + done.stderr, target
             cmd = ([cap, "-m", os.environ.get("GHOTI_MEMCAP", "6G"), "--"] if os.path.exists(cap) else []) + [
@@ -244,6 +249,10 @@ def main(argv):
             reported = status == 3 and "no class explains" in out and bool(new)
         elif target == "oracle":
             reported = status == 3 and "no entry in tools/oracle/xml_disagreements.txt" in out
+        elif name in REPRODUCERS:
+            # A mutation that makes a permanent regression test fail is detected even though
+            # it does not print one of libFuzzer's sanitizer/property-failure signatures.
+            reported = status != 0 and re.search(r"^\[  FAILED  \] [1-9]", out, re.M) is not None
         else:
             reported = found_by_fuzzer(status, out)
         if name.startswith("control"):
