@@ -338,6 +338,7 @@ void xml_source_free(xml_ctx * p) {
     xml_release(p, item->name); xml_release(p, item->replacement);
     xml_release(p, item->public_id); xml_release(p, item->system_id);
     xml_release(p, item->base_uri);
+    xml_release(p, item->notation_name);
   }
   xml_release(p, p->general_entities);
   p->general_entities = NULL;
@@ -350,6 +351,7 @@ void xml_source_free(xml_ctx * p) {
     xml_release(p, p->dtd_bindings[i].element_name);
     xml_release(p, p->dtd_bindings[i].name);
     xml_release(p, p->dtd_bindings[i].attribute_default_value);
+    xml_release(p, p->dtd_bindings[i].attribute_enumeration);
   }
   xml_release(p, p->dtd_bindings);
   p->dtd_bindings = NULL;

@@ -511,6 +511,18 @@ static void normalize_tokenized(markup_buf * pool, size_t start) {
   pool->data[pool->length] = '\0';
 }
 
+static int tokenized_normalization_changes(const markup_buf *pool,
+    size_t start, size_t length) {
+  int seen = 0, previous_space = 0;
+  for (size_t i = 0; i < length; ++i) {
+    int space = pool->data[start + i] == ' ';
+    if (space && (!seen || previous_space)) return 1;
+    seen = 1;
+    previous_space = space;
+  }
+  return previous_space;
+}
+
 /* The value at the cursor, quotes and all, into the pool. */
 static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
     const GTEXT_Markup_Location * attribute_at, size_t * value_offset,
@@ -745,6 +757,8 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
         || (p->seams.attribute_type
         && p->seams.attribute_type(p->seams.user, (const char *)name,
             name_length, (const char *)a->name_ptr, a->name_length))) {
+      a->normalization_changed = tokenized_normalization_changes(&p->attr_pool,
+          a->value_offset, a->value_length);
       normalize_tokenized(&p->attr_pool, a->value_offset);
       a->value_length = p->attr_pool.length - a->value_offset;
     }
@@ -938,7 +952,30 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
     }
   }
 
-  status = xml_validation_start_element(p, name, name_length, &at, *is_empty);
+  if (p->dtd_mode == GTEXT_XML_DTD_VALIDATE) {
+    for (size_t i = 0; i < p->attr_count; ++i) {
+      xml_attr *a = &p->attrs[i];
+      const xml_dtd_binding *b = find_attribute_binding(p, name, name_length,
+          a->name_ptr, a->name_length);
+      if (!b || b->attribute_default_kind != 2 || a->defaulted) continue;
+      size_t expected_offset = 0, expected_length = 0;
+      status = append_default_value(p, b, &b->declaration_location,
+          &expected_offset, &expected_length);
+      if (status != GTEXT_XML_OK) { xml_scope_release(p, mark); return status; }
+      if (b->attribute_tokenized) {
+        normalize_tokenized(&p->attr_pool, expected_offset);
+        expected_length = p->attr_pool.length - expected_offset;
+      }
+      a->fixed_value_matches = expected_length == a->value_length
+          && memcmp(p->attr_pool.data + expected_offset,
+              p->attr_pool.data + a->value_offset, expected_length) == 0;
+      p->attr_pool.length = expected_offset;
+      p->attr_pool.data[p->attr_pool.length] = '\0';
+    }
+  }
+
+  status = xml_validation_start_element(p, name, name_length, &at, *is_empty,
+      p->attrs, p->attr_count, &p->attr_pool);
   if (status != GTEXT_XML_OK) {
     xml_scope_release(p, mark);
     return status;
@@ -1467,7 +1504,7 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
   if (p->pos < p->length) {
     return xml_unexpected(p, "content is not allowed after the root element");
   }
-  return GTEXT_XML_OK;
+  return xml_validation_finish(p);
 }
 
 /* ---- the entry point ---------------------------------------------------- */

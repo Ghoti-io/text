@@ -665,6 +665,8 @@ static GTEXT_XML_Status step_misc(GTEXT_XML_Stream * s, int * progress) {
       return xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF,
           "the document has no root element");
     }
+    const GTEXT_XML_Status validation = xml_validation_finish(p);
+    if (validation != GTEXT_XML_OK) return validation;
     s->state = ST_DONE;
     return GTEXT_XML_OK;
   }

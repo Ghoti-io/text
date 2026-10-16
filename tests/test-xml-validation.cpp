@@ -89,7 +89,7 @@ size_t count(GTEXT_Markup_Document *doc, GTEXT_XML_Validation_Code code) {
   }
   return result;
 }
-struct Events { size_t diagnostics = 0; size_t content = 0; size_t undeclared = 0; size_t truncated = 0; };
+struct Events { size_t diagnostics = 0; size_t content = 0; size_t undeclared = 0; size_t attribute = 0; size_t idref = 0; size_t truncated = 0; };
 GTEXT_XML_Status receive(const GTEXT_XML_Event *event, void *opaque) {
   auto *events = static_cast<Events *>(opaque);
   if (event->type == GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC) {
@@ -98,6 +98,10 @@ GTEXT_XML_Status receive(const GTEXT_XML_Event *event, void *opaque) {
       ++events->content;
     if (event->validation_diagnostic.code == GTEXT_XML_VALIDATION_UNDECLARED_ELEMENT)
       ++events->undeclared;
+    if (event->validation_diagnostic.code == GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE)
+      ++events->attribute;
+    if (event->validation_diagnostic.code == GTEXT_XML_VALIDATION_UNRESOLVED_IDREF)
+      ++events->idref;
   }
   if (event->type == GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED)
     ++events->truncated;
@@ -108,6 +112,122 @@ TEST(XmlValidation, AcceptsElementOnlyAndSingleParticleSequence) {
   const auto p = parse("<!DOCTYPE root [<!ELEMENT root (item)><!ELEMENT item EMPTY>]><root><item/></root>");
   ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
   EXPECT_EQ(gtext_xml_validation_diagnostic_count(p.doc), 0u);
+}
+
+TEST(XmlValidation, ChecksRequiredAndEnumeratedAttributes) {
+  const auto p = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ATTLIST root mode (fast|safe) #REQUIRED>]><root mode='unknown'/>");
+  ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
+  EXPECT_EQ(count(p, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 1u);
+  const auto missing = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ATTLIST root mode (fast|safe) #REQUIRED>]><root/>");
+  ASSERT_EQ(missing.status, GTEXT_XML_OK) << missing.error.message;
+  EXPECT_EQ(count(missing, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 1u);
+}
+
+TEST(XmlValidation, ChecksFixedAndIdentityAttributesAcrossDocument) {
+  const auto p = parse("<!DOCTYPE root [<!ELEMENT root (item*)>"
+      "<!ELEMENT item EMPTY><!ATTLIST item id ID #IMPLIED ref IDREF #IMPLIED"
+      " mode CDATA #FIXED 'safe'>]><root><item id='same' mode='unsafe'/>"
+      "<item id='same' ref='missing'/></root>");
+  ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
+  EXPECT_EQ(count(p, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 1u);
+  EXPECT_EQ(count(p, GTEXT_XML_VALIDATION_DUPLICATE_ID), 1u);
+  EXPECT_EQ(count(p, GTEXT_XML_VALIDATION_UNRESOLVED_IDREF), 1u);
+}
+
+TEST(XmlValidation, ResolvesIdrefsAtDocumentEndForPushReaders) {
+  const std::string input = "<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ATTLIST root ref IDREF #IMPLIED>]><root ref='absent'/>";
+  const auto dom = parse(input);
+  ASSERT_EQ(dom.status, GTEXT_XML_OK) << dom.error.message;
+  ASSERT_EQ(count(dom, GTEXT_XML_VALIDATION_UNRESOLVED_IDREF), 1u);
+  Events events;
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  auto *stream = gtext_xml_stream_new(&options, receive, &events);
+  ASSERT_NE(stream, nullptr);
+  GTEXT_XML_Error error{};
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  for (char c : input) {
+    status = gtext_xml_stream_feed(stream, &c, 1, &error);
+    if (status != GTEXT_XML_OK) break;
+  }
+  if (status == GTEXT_XML_OK) status = gtext_xml_stream_finish(stream, &error);
+  EXPECT_EQ(status, GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(events.idref, 1u);
+  gtext_xml_stream_free(stream);
+}
+
+TEST(XmlValidation, ReportsExternalNormalizationInStandaloneDocument) {
+  ExternalDtd dtd;
+  dtd.bytes = "<!ELEMENT root EMPTY><!ATTLIST root words NMTOKENS #IMPLIED>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = open_external;
+  options.resolver_user_data = &dtd;
+  const std::string input = "<?xml version='1.0' standalone='yes'?>"
+      "<!DOCTYPE root SYSTEM 'urn:validation'><root words=' a  b '/>";
+  Parsed result;
+  result.status = gtext_xml_parse(input.data(), input.size(), &options,
+      &result.doc, &result.error);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.error.message;
+  EXPECT_GE(count(result, GTEXT_XML_VALIDATION_STANDALONE), 1u);
+}
+
+TEST(XmlValidation, ChecksEntityAndNotationAttributeReferences) {
+  const std::string prefix = "<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!NOTATION gif SYSTEM 'image/gif'>"
+      "<!ENTITY logo SYSTEM 'logo.gif' NDATA gif>"
+      "<!ATTLIST root image ENTITY #IMPLIED format NOTATION (gif) #IMPLIED>]><root ";
+  const auto valid = parse(prefix + "image='logo' format='gif'/>");
+  ASSERT_EQ(valid.status, GTEXT_XML_OK) << valid.error.message;
+  EXPECT_EQ(count(valid, GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE), 0u);
+  const auto invalid = parse(prefix + "image='missing' format='unknown'/>");
+  ASSERT_EQ(invalid.status, GTEXT_XML_OK) << invalid.error.message;
+  EXPECT_EQ(count(invalid, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 2u);
+}
+
+TEST(XmlValidation, ChecksUnparsedEntityNotationCrossReference) {
+  const std::string input = "<!DOCTYPE root [<!ELEMENT root EMPTY>"
+      "<!ENTITY image SYSTEM 'image.bin' NDATA missing>]><root/>";
+  const auto p = parse(input);
+  ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
+  ASSERT_EQ(count(p, GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE), 1u);
+  for (size_t i = 0; i < gtext_xml_validation_diagnostic_count(p.doc); ++i) {
+    GTEXT_XML_Validation_Diagnostic diagnostic{};
+    ASSERT_TRUE(gtext_xml_validation_diagnostic(p.doc, i, &diagnostic));
+    if (diagnostic.code == GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE) {
+      EXPECT_EQ(diagnostic.location.offset,
+          input.find("missing"));
+    }
+  }
+}
+
+TEST(XmlValidation, ResolvesForwardIdrefToLaterElement) {
+  const auto p = parse("<!DOCTYPE root [<!ELEMENT root (item,item)>"
+      "<!ELEMENT item EMPTY><!ATTLIST item id ID #IMPLIED ref IDREF #IMPLIED>]><root>"
+      "<item ref='later'/><item id='later'/></root>");
+  ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
+  EXPECT_EQ(count(p, GTEXT_XML_VALIDATION_UNRESOLVED_IDREF), 0u);
+}
+
+TEST(XmlValidation, ReportsEntityFromExternalDeclarationInStandaloneContent) {
+  ExternalDtd dtd;
+  dtd.bytes = "<!ELEMENT root (#PCDATA)><!ENTITY ext 'replacement'>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = open_external;
+  options.resolver_user_data = &dtd;
+  const std::string input = "<?xml version='1.0' standalone='yes'?>"
+      "<!DOCTYPE root SYSTEM 'urn:validation'><root>&ext;</root>";
+  Parsed result;
+  result.status = gtext_xml_parse(input.data(), input.size(), &options,
+      &result.doc, &result.error);
+  ASSERT_EQ(result.status, GTEXT_XML_OK) << result.error.message;
+  EXPECT_EQ(count(result, GTEXT_XML_VALIDATION_STANDALONE), 1u);
 }
 
 TEST(XmlValidation, ChecksRootUndeclaredAndContent) {

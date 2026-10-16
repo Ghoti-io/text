@@ -251,6 +251,9 @@ typedef struct {
   char * public_id;
   char * system_id;
   char * base_uri;
+  char * notation_name;
+  size_t notation_name_length;
+  GTEXT_Markup_Location declaration_location;
   const void * identity;
   unsigned char external;
   unsigned char unparsed;
@@ -269,11 +272,19 @@ typedef struct {
   size_t syntax_index;
   unsigned char external;
   unsigned char attribute_tokenized;
+  unsigned char attribute_type; /* CDATA..NOTATION, private XML_ATYPE_* */
+  unsigned char attribute_required;
   unsigned char attribute_default_kind; /* 0 none, 1 default, 2 fixed */
   char * attribute_default_value;
   size_t attribute_default_length;
+  char * attribute_enumeration;
+  size_t attribute_enumeration_length;
   GTEXT_Markup_Location declaration_location;
 } xml_dtd_binding;
+
+enum { XML_ATYPE_CDATA, XML_ATYPE_ID, XML_ATYPE_IDREF, XML_ATYPE_IDREFS,
+  XML_ATYPE_ENTITY, XML_ATYPE_ENTITIES, XML_ATYPE_NMTOKEN, XML_ATYPE_NMTOKENS,
+  XML_ATYPE_ENUMERATION, XML_ATYPE_NOTATION };
 
 typedef struct {
   size_t target;
@@ -367,6 +378,8 @@ typedef struct {
   int kind;           ///< XML_ATTR_*.
   const char * ns;    ///< Resolved namespace URI, or NULL.
   unsigned char defaulted;
+  unsigned char normalization_changed;
+  unsigned char fixed_value_matches;
 } xml_attr;
 
 /** What an attribute of a start tag is. */
@@ -443,6 +456,15 @@ typedef struct {
   size_t validation_worklist_bytes;
   char * validation_doctype_name;
   size_t validation_doctype_name_length;
+  char ** validation_ids;
+  size_t * validation_id_lengths;
+  size_t validation_id_count;
+  size_t validation_id_capacity;
+  char ** validation_idrefs;
+  size_t * validation_idref_lengths;
+  GTEXT_Markup_Location * validation_idref_locations;
+  size_t validation_idref_count;
+  size_t validation_idref_capacity;
   size_t entity_depth;
 
   GTEXT_Markup_Document * doc;       ///< NULL when parsing events.
@@ -818,10 +840,14 @@ GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,
     const GTEXT_Markup_Location *location, int external);
 GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
     const unsigned char *name, size_t name_length,
-    const GTEXT_Markup_Location *location, int is_empty);
+    const GTEXT_Markup_Location *location, int is_empty,
+    const xml_attr *attrs, size_t attr_count, const markup_buf *attr_pool);
 GTEXT_XML_Status xml_validation_end_element(xml_ctx *p,
     const unsigned char *name, size_t name_length,
     const GTEXT_Markup_Location *location);
+GTEXT_XML_Status xml_validation_finish(xml_ctx *p);
+GTEXT_XML_Status xml_validation_external_entity_reference(xml_ctx *p,
+    const xml_general_entity *entity, const GTEXT_Markup_Location *where);
 GTEXT_XML_Status xml_validation_text(xml_ctx *p, const char *text,
     size_t length, const GTEXT_Markup_Location *location,
     int cdata);

@@ -714,6 +714,9 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     if (entity->unparsed)
       return xml_fail_at(p, GTEXT_XML_E_ENTITY,
           "an unparsed entity cannot be used as parsed content", &at);
+    GTEXT_XML_Status standalone = xml_validation_external_entity_reference(
+        p, entity, &at);
+    if (standalone != GTEXT_XML_OK) return standalone;
     if (entity->external) {
       if (buf == &p->attr_pool)
         return xml_fail_at(p, GTEXT_XML_E_ENTITY,

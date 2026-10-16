@@ -162,16 +162,21 @@ typedef enum {
   GTEXT_XML_E_UNAVAILABLE_RESOURCE ///< A referenced external entity was unavailable.
 } GTEXT_XML_Status;
 
-/** A bounded structural validity finding produced by DTD_VALIDATE mode. */
+/** A bounded DTD validity finding produced by DTD_VALIDATE mode. */
 typedef enum {
   GTEXT_XML_VALIDATION_ROOT_TYPE,
   GTEXT_XML_VALIDATION_UNDECLARED_ELEMENT,
   GTEXT_XML_VALIDATION_ELEMENT_CONTENT,
   GTEXT_XML_VALIDATION_NONDETERMINISTIC_MODEL,
-  GTEXT_XML_VALIDATION_DUPLICATE_ELEMENT_DECLARATION
+  GTEXT_XML_VALIDATION_DUPLICATE_ELEMENT_DECLARATION,
+  GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE,
+  GTEXT_XML_VALIDATION_DUPLICATE_ID,
+  GTEXT_XML_VALIDATION_UNRESOLVED_IDREF,
+  GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
+  GTEXT_XML_VALIDATION_STANDALONE
 } GTEXT_XML_Validation_Code;
 
-/** One structural validity finding. `message` is library-owned static text. */
+/** One DTD validity finding. `message` is library-owned static text. */
 typedef struct {
   GTEXT_XML_Validation_Code code;
   GTEXT_Markup_Location location;

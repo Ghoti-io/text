@@ -51,6 +51,143 @@ static size_t validation_array_capacity(size_t capacity, size_t needed) {
   return result;
 }
 
+static int next_utf8_value(const unsigned char *s, size_t n, size_t *at,
+    uint32_t *out) {
+  if (*at >= n) return 0;
+  const unsigned char lead = s[(*at)++];
+  if (lead < 0x80) { *out = lead; return 1; }
+  unsigned int more;
+  uint32_t value;
+  if (lead >= 0xc2 && lead <= 0xdf) { more = 1; value = lead & 0x1f; }
+  else if (lead >= 0xe0 && lead <= 0xef) { more = 2; value = lead & 0x0f; }
+  else if (lead >= 0xf0 && lead <= 0xf4) { more = 3; value = lead & 0x07; }
+  else return 0;
+  if (n - *at < more) return 0;
+  for (unsigned int i = 0; i < more; ++i) {
+    unsigned char byte = s[(*at)++];
+    if ((byte & 0xc0) != 0x80) return 0;
+    if (i == 0 && ((lead == 0xe0 && byte < 0xa0)
+        || (lead == 0xed && byte >= 0xa0)
+        || (lead == 0xf0 && byte < 0x90)
+        || (lead == 0xf4 && byte >= 0x90))) return 0;
+    value = (value << 6) | (byte & 0x3f);
+  }
+  *out = value;
+  return 1;
+}
+
+static int xml_name_value(const char *s, size_t n) {
+  size_t i = 0; int first = 1;
+  if (!n) return 0;
+  while (i < n) {
+    uint32_t c;
+    if (!next_utf8_value((const unsigned char *)s, n, &i, &c)
+        || (first ? !markup_xml_name_start_char(c) : !markup_xml_name_char(c))) return 0;
+    first = 0;
+  }
+  return 1;
+}
+
+static int xml_nmtoken_value(const char *s, size_t n) {
+  size_t i = 0;
+  if (!n) return 0;
+  while (i < n) {
+    uint32_t c;
+    if (!next_utf8_value((const unsigned char *)s, n, &i, &c)
+        || !markup_xml_name_char(c)) return 0;
+  }
+  return 1;
+}
+
+static const xml_dtd_binding * attribute_binding(const xml_ctx *p,
+    const unsigned char *element, size_t element_length,
+    const unsigned char *attribute, size_t attribute_length) {
+  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+    const xml_dtd_binding *b = &p->dtd_bindings[i];
+    if (b->kind == GTEXT_MARKUP_DTD_ATTLIST
+        && b->element_name_length == element_length
+        && b->name_length == attribute_length
+        && memcmp(b->element_name, element, element_length) == 0
+        && memcmp(b->name, attribute, attribute_length) == 0) return b;
+  }
+  return NULL;
+}
+
+static int value_in_enumeration(const xml_dtd_binding *b,
+    const char *value, size_t length) {
+  size_t at = 0;
+  while (at < b->attribute_enumeration_length) {
+    while (at < b->attribute_enumeration_length
+        && (xml_is_space((unsigned char)b->attribute_enumeration[at])
+            || b->attribute_enumeration[at] == '|')) ++at;
+    size_t begin = at;
+    while (at < b->attribute_enumeration_length
+        && !xml_is_space((unsigned char)b->attribute_enumeration[at])
+        && b->attribute_enumeration[at] != '|') ++at;
+    if (at - begin == length && memcmp(b->attribute_enumeration + begin, value, length) == 0) return 1;
+  }
+  return 0;
+}
+
+static int declared_notation(const xml_ctx *p, const char *name, size_t n) {
+  for (size_t i = 0; i < p->dtd_binding_count; ++i)
+    if (p->dtd_bindings[i].kind == GTEXT_MARKUP_DTD_NOTATION
+        && p->dtd_bindings[i].name_length == n
+        && memcmp(p->dtd_bindings[i].name, name, n) == 0) return 1;
+  return 0;
+}
+
+static int declared_unparsed_entity(const xml_ctx *p, const char *name, size_t n) {
+  for (size_t i = 0; i < p->general_entity_count; ++i)
+    if (p->general_entities[i].name_length == n
+        && memcmp(p->general_entities[i].name, name, n) == 0
+        && p->general_entities[i].unparsed) return 1;
+  return 0;
+}
+
+static GTEXT_XML_Status retain_identity(xml_ctx *p, int reference,
+    const char *value, size_t length, const GTEXT_Markup_Location *where) {
+  char ***items = reference ? &p->validation_idrefs : &p->validation_ids;
+  size_t **lengths = reference ? &p->validation_idref_lengths : &p->validation_id_lengths;
+  size_t *count = reference ? &p->validation_idref_count : &p->validation_id_count;
+  size_t *capacity = reference ? &p->validation_idref_capacity : &p->validation_id_capacity;
+  if (validation_charge(p, length + 1) != GTEXT_XML_OK) return p->err.code;
+  if (validation_memory_reserve(p, length + 1) != GTEXT_XML_OK) return p->err.code;
+  size_t next = validation_array_capacity(*capacity, *count + 1);
+  if (!next || next > SIZE_MAX / sizeof(**items) || next > SIZE_MAX / sizeof(**lengths))
+    return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD identity table is too large");
+  if (next != *capacity) {
+    size_t per_entry = sizeof(**items) + sizeof(**lengths)
+        + (reference ? sizeof(*p->validation_idref_locations) : 0);
+    if (next > SIZE_MAX / per_entry)
+      return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD identity table is too large");
+    size_t old_bytes = *capacity * per_entry;
+    size_t new_bytes = next * per_entry;
+    if (validation_memory_reserve(p, new_bytes - old_bytes) != GTEXT_XML_OK) return p->err.code;
+    void *a = xml_alloc(p, next * sizeof(**items));
+    void *b = xml_alloc(p, next * sizeof(**lengths));
+    if (!a || !b) { xml_release(p, a); xml_release(p, b); return xml_fail(p, GTEXT_XML_E_OOM, "could not grow DTD identity table"); }
+    if (*count) { memcpy(a, *items, *count * sizeof(**items)); memcpy(b, *lengths, *count * sizeof(**lengths)); }
+    xml_release(p, *items); xml_release(p, *lengths);
+    *items = a; *lengths = b;
+    if (reference) {
+      GTEXT_Markup_Location *loc = xml_alloc(p, next * sizeof(*loc));
+      if (!loc) return xml_fail(p, GTEXT_XML_E_OOM, "could not grow DTD IDREF locations");
+      if (*count) memcpy(loc, p->validation_idref_locations, *count * sizeof(*loc));
+      xml_release(p, p->validation_idref_locations);
+      p->validation_idref_locations = loc;
+    }
+    *capacity = next;
+  }
+  char *copy = xml_alloc(p, length + 1);
+  if (!copy) return xml_fail(p, GTEXT_XML_E_OOM, "could not retain DTD identity value");
+  memcpy(copy, value, length); copy[length] = 0;
+  (*items)[*count] = copy; (*lengths)[*count] = length;
+  if (reference) p->validation_idref_locations[*count] = where ? *where : (GTEXT_Markup_Location){0};
+  ++*count;
+  return GTEXT_XML_OK;
+}
+
 static GTEXT_XML_Status validation_report(xml_ctx *p,
     GTEXT_XML_Validation_Code code, const GTEXT_Markup_Location *where,
     const char *message) {
@@ -890,9 +1027,138 @@ static GTEXT_XML_Status match_child(xml_ctx *p, xml_validation_frame *frame,
 
 GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
     const unsigned char *name, size_t name_length,
-    const GTEXT_Markup_Location *location, int is_empty) {
+    const GTEXT_Markup_Location *location, int is_empty,
+    const xml_attr *attrs, size_t attr_count, const markup_buf *attr_pool) {
   if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE) return GTEXT_XML_OK;
   GTEXT_XML_Status status = GTEXT_XML_OK;
+  for (size_t bi = 0; bi < p->dtd_binding_count; ++bi) {
+    status = validation_charge(p, 1);
+    if (status != GTEXT_XML_OK) return status;
+    const xml_dtd_binding *b = &p->dtd_bindings[bi];
+    if (b->kind != GTEXT_MARKUP_DTD_ATTLIST
+        || b->element_name_length != name_length
+        || memcmp(b->element_name, name, name_length) != 0
+        || !b->attribute_required) continue;
+    int found = 0;
+    for (size_t ai = 0; ai < attr_count; ++ai) {
+      status = validation_charge(p, 1);
+      if (status != GTEXT_XML_OK) return status;
+      if (attrs[ai].name_length == b->name_length
+          && memcmp(attrs[ai].name_ptr, b->name, b->name_length) == 0) { found = 1; break; }
+    }
+    if (!found) {
+      status = validation_report(p, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE,
+          location, "a required DTD attribute is missing");
+      if (status != GTEXT_XML_OK) return status;
+    }
+  }
+  for (size_t ai = 0; ai < attr_count; ++ai) {
+    status = validation_charge(p, p->dtd_binding_count);
+    if (status != GTEXT_XML_OK) return status;
+    status = validation_charge(p, attrs[ai].value_length);
+    if (status != GTEXT_XML_OK) return status;
+    const xml_attr *a = &attrs[ai];
+    const xml_dtd_binding *b = attribute_binding(p, name, name_length,
+        a->name_ptr, a->name_length);
+    if (!b) continue;
+    const char *value = attr_pool->data + a->value_offset;
+    size_t length = a->value_length;
+    int valid = 1;
+    if (b->attribute_default_kind == 2 && !a->defaulted
+        && !a->fixed_value_matches) {
+      status = validation_report(p, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE,
+          &a->where, "an attribute value differs from its DTD #FIXED value");
+      if (status != GTEXT_XML_OK) return status;
+    }
+    if (b->attribute_type == XML_ATYPE_ENUMERATION) {
+      status = validation_charge(p, b->attribute_enumeration_length);
+      if (status != GTEXT_XML_OK) return status;
+      if (!value_in_enumeration(b, value, length)) valid = 0;
+    }
+    if (b->attribute_type == XML_ATYPE_ID || b->attribute_type == XML_ATYPE_IDREF
+        || b->attribute_type == XML_ATYPE_ENTITY || b->attribute_type == XML_ATYPE_NOTATION)
+      valid = xml_name_value(value, length);
+    if (b->attribute_type == XML_ATYPE_NMTOKEN) {
+      valid = xml_nmtoken_value(value, length);
+    }
+    if (b->attribute_type == XML_ATYPE_IDREFS || b->attribute_type == XML_ATYPE_ENTITIES
+        || b->attribute_type == XML_ATYPE_NMTOKENS) {
+      size_t at = 0, tokens = 0;
+      while (at < length) {
+        while (at < length && xml_is_space((unsigned char)value[at])) ++at;
+        if (at == length) break;
+        size_t begin = at;
+        while (at < length && !xml_is_space((unsigned char)value[at])) ++at;
+        ++tokens;
+        if (b->attribute_type == XML_ATYPE_ENTITIES) {
+          status = validation_charge(p, p->general_entity_count);
+          if (status != GTEXT_XML_OK) return status;
+        }
+        if (b->attribute_type == XML_ATYPE_NMTOKENS) {
+          if (!xml_nmtoken_value(value + begin, at - begin)) valid = 0;
+        }
+        else if (!xml_name_value(value + begin, at - begin)) valid = 0;
+        if (valid && b->attribute_type == XML_ATYPE_ENTITIES
+            && !declared_unparsed_entity(p, value + begin, at - begin)) valid = 0;
+        if (valid && b->attribute_type == XML_ATYPE_IDREFS)
+          status = retain_identity(p, 1, value + begin, at - begin, &a->where);
+        if (status != GTEXT_XML_OK) return status;
+      }
+      if (!tokens) valid = 0;
+    }
+    if (b->attribute_type == XML_ATYPE_IDREF && valid) {
+      status = retain_identity(p, 1, value, length, &a->where);
+      if (status != GTEXT_XML_OK) return status;
+    }
+    if (valid && b->attribute_type == XML_ATYPE_ENTITY
+        && (validation_charge(p, p->general_entity_count) != GTEXT_XML_OK
+            || !declared_unparsed_entity(p, value, length))) {
+      if (p->err.code != GTEXT_XML_OK) return p->err.code;
+      valid = 0;
+    }
+    if (valid && b->attribute_type == XML_ATYPE_NOTATION
+        && (validation_charge(p, p->dtd_binding_count) != GTEXT_XML_OK
+            || !declared_notation(p, value, length))) {
+      if (p->err.code != GTEXT_XML_OK) return p->err.code;
+      valid = 0;
+    }
+    if (valid && b->attribute_type == XML_ATYPE_NOTATION) {
+      status = validation_charge(p, b->attribute_enumeration_length);
+      if (status != GTEXT_XML_OK) return status;
+      if (!value_in_enumeration(b, value, length)) valid = 0;
+    }
+    if (b->attribute_type == XML_ATYPE_ID && valid) {
+      for (size_t i = 0; i < p->validation_id_count; ++i) {
+        status = validation_charge(p, length + 1);
+        if (status != GTEXT_XML_OK) return status;
+        if (p->validation_id_lengths[i] == length
+            && memcmp(p->validation_ids[i], value, length) == 0) {
+          status = validation_report(p, GTEXT_XML_VALIDATION_DUPLICATE_ID,
+              &a->where, "an ID attribute value is not unique");
+          if (status != GTEXT_XML_OK) return status;
+          break;
+        }
+      }
+      status = retain_identity(p, 0, value, length, &a->where);
+      if (status != GTEXT_XML_OK) return status;
+    }
+    if (!valid) {
+      status = validation_report(p, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE,
+          &a->where, "an attribute value does not satisfy its DTD type");
+      if (status != GTEXT_XML_OK) return status;
+    }
+    if (p->standalone == GTEXT_MARKUP_STANDALONE_YES && a->defaulted && b->external) {
+      status = validation_report(p, GTEXT_XML_VALIDATION_STANDALONE,
+          &a->where, "an external DTD declaration supplied an attribute default in a standalone document");
+      if (status != GTEXT_XML_OK) return status;
+    }
+    if (p->standalone == GTEXT_MARKUP_STANDALONE_YES
+        && !a->defaulted && a->normalization_changed && b->external) {
+      status = validation_report(p, GTEXT_XML_VALIDATION_STANDALONE,
+          &a->where, "an external DTD declaration changed attribute normalization in a standalone document");
+      if (status != GTEXT_XML_OK) return status;
+    }
+  }
   if (p->validation_frame_count) {
     xml_validation_frame *parent =
         &p->validation_frames[p->validation_frame_count - 1];
@@ -956,6 +1222,124 @@ GTEXT_XML_Status xml_validation_text(xml_ctx *p, const char *text,
   return GTEXT_XML_OK;
 }
 
+GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
+  if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE) return GTEXT_XML_OK;
+  for (size_t i = 0; i < p->general_entity_count; ++i) {
+    GTEXT_XML_Status charged = validation_charge(p, 1);
+    if (charged != GTEXT_XML_OK) return charged;
+    const xml_general_entity *entity = &p->general_entities[i];
+    if (!entity->unparsed) continue;
+    charged = validation_charge(p, p->dtd_binding_count);
+    if (charged != GTEXT_XML_OK) return charged;
+    if (!declared_notation(p, entity->notation_name,
+        entity->notation_name_length)) {
+      GTEXT_XML_Status s = validation_report(p,
+          GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
+          &entity->declaration_location,
+          "an unparsed entity names an undeclared notation");
+      if (s != GTEXT_XML_OK) return s;
+    }
+  }
+  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+    GTEXT_XML_Status charged = validation_charge(p, 1);
+    if (charged != GTEXT_XML_OK) return charged;
+    const xml_dtd_binding *b = &p->dtd_bindings[i];
+    if (b->kind != GTEXT_MARKUP_DTD_ATTLIST) continue;
+    if (b->attribute_type == XML_ATYPE_ID) {
+      if (b->attribute_default_kind != 0) {
+        GTEXT_XML_Status s = validation_report(p,
+            GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
+            &b->declaration_location,
+            "an ID attribute declaration may only be #IMPLIED or #REQUIRED");
+        if (s != GTEXT_XML_OK) return s;
+      }
+      for (size_t j = 0; j < i; ++j) {
+        charged = validation_charge(p, 1);
+        if (charged != GTEXT_XML_OK) return charged;
+        const xml_dtd_binding *prior = &p->dtd_bindings[j];
+        if (prior->kind == GTEXT_MARKUP_DTD_ATTLIST
+            && prior->attribute_type == XML_ATYPE_ID
+            && prior->element_name_length == b->element_name_length
+            && memcmp(prior->element_name, b->element_name,
+                b->element_name_length) == 0) {
+          GTEXT_XML_Status s = validation_report(p,
+              GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
+              &b->declaration_location,
+              "an element type has more than one ID attribute declaration");
+          if (s != GTEXT_XML_OK) return s;
+          break;
+        }
+      }
+    }
+    if (b->attribute_type == XML_ATYPE_NOTATION) {
+      for (size_t j = 0; j < i; ++j) {
+        charged = validation_charge(p, 1);
+        if (charged != GTEXT_XML_OK) return charged;
+        const xml_dtd_binding *prior = &p->dtd_bindings[j];
+        if (prior->kind == GTEXT_MARKUP_DTD_ATTLIST
+            && prior->attribute_type == XML_ATYPE_NOTATION
+            && prior->element_name_length == b->element_name_length
+            && memcmp(prior->element_name, b->element_name,
+                b->element_name_length) == 0) {
+          GTEXT_XML_Status s = validation_report(p,
+              GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
+              &b->declaration_location,
+              "an element type has more than one NOTATION attribute declaration");
+          if (s != GTEXT_XML_OK) return s;
+          break;
+        }
+      }
+      size_t at = 0;
+      charged = validation_charge(p, b->attribute_enumeration_length);
+      if (charged != GTEXT_XML_OK) return charged;
+      while (at < b->attribute_enumeration_length) {
+        while (at < b->attribute_enumeration_length
+            && (xml_is_space((unsigned char)b->attribute_enumeration[at])
+                || b->attribute_enumeration[at] == '|')) ++at;
+        size_t begin = at;
+        while (at < b->attribute_enumeration_length
+            && !xml_is_space((unsigned char)b->attribute_enumeration[at])
+            && b->attribute_enumeration[at] != '|') ++at;
+        if (at > begin && !declared_notation(p,
+            b->attribute_enumeration + begin, at - begin)) {
+          GTEXT_XML_Status s = validation_report(p,
+              GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
+              &b->declaration_location,
+              "a NOTATION attribute names an undeclared notation");
+          if (s != GTEXT_XML_OK) return s;
+        }
+      }
+    }
+  }
+  for (size_t i = 0; i < p->validation_idref_count; ++i) {
+    int found = 0;
+    for (size_t j = 0; j < p->validation_id_count; ++j) {
+      GTEXT_XML_Status s = validation_charge(p, p->validation_idref_lengths[i] + 1);
+      if (s != GTEXT_XML_OK) return s;
+      if (p->validation_idref_lengths[i] == p->validation_id_lengths[j]
+          && memcmp(p->validation_idrefs[i], p->validation_ids[j],
+              p->validation_id_lengths[j]) == 0) { found = 1; break; }
+    }
+    if (!found) {
+      GTEXT_XML_Status s = validation_report(p,
+          GTEXT_XML_VALIDATION_UNRESOLVED_IDREF,
+          &p->validation_idref_locations[i],
+          "an IDREF value has no matching ID");
+      if (s != GTEXT_XML_OK) return s;
+    }
+  }
+  return GTEXT_XML_OK;
+}
+
+GTEXT_XML_Status xml_validation_external_entity_reference(xml_ctx *p,
+    const xml_general_entity *entity, const GTEXT_Markup_Location *where) {
+  if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE
+      || p->standalone != GTEXT_MARKUP_STANDALONE_YES
+      || !entity || !entity->external_context) return GTEXT_XML_OK;
+  return validation_report(p, GTEXT_XML_VALIDATION_STANDALONE, where,
+      "a document declared standalone references an entity declared by an external markup declaration");
+}
+
 void xml_validation_cleanup(xml_ctx *p) {
   for (size_t i = 0; i < p->content_decl_count; ++i)
     free_model(p, &p->content_decls[i]);
@@ -972,10 +1356,18 @@ void xml_validation_cleanup(xml_ctx *p) {
   xml_release(p, p->validation_scratch);
   xml_release(p, p->validation_worklist);
   xml_release(p, p->validation_doctype_name);
+  for (size_t i = 0; i < p->validation_id_count; ++i) xml_release(p, p->validation_ids[i]);
+  for (size_t i = 0; i < p->validation_idref_count; ++i) xml_release(p, p->validation_idrefs[i]);
+  xml_release(p, p->validation_ids); xml_release(p, p->validation_id_lengths);
+  xml_release(p, p->validation_idrefs); xml_release(p, p->validation_idref_lengths);
+  xml_release(p, p->validation_idref_locations);
   p->validation_frames = NULL;
   p->validation_scratch = NULL;
   p->validation_worklist = NULL;
   p->validation_doctype_name = NULL;
+  p->validation_ids = p->validation_idrefs = NULL;
+  p->validation_id_lengths = p->validation_idref_lengths = NULL;
+  p->validation_idref_locations = NULL;
 }
 
 size_t gtext_xml_validation_diagnostic_count(

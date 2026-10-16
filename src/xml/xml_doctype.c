@@ -370,6 +370,8 @@ static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
     const unsigned char * name, size_t name_length,
     unsigned char * replacement, size_t replacement_length,
     const char * public_id, const char * system_id,
+    const unsigned char *notation, size_t notation_length,
+    const GTEXT_Markup_Location *declaration_location,
     int external, int unparsed) {
   const int external_context = p->source_count != 0
       && p->sources[p->source_count - 1].external_source;
@@ -385,10 +387,11 @@ static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
   char * system_copy = system_id ? xml_alloc(p, strlen(system_id) + 1) : NULL;
   char * base_copy = declaration_base_uri
       ? xml_alloc(p, strlen(declaration_base_uri) + 1) : NULL;
+  char * notation_copy = unparsed ? xml_alloc(p, notation_length + 1) : NULL;
   if (!name_copy || (public_id && !public_copy) || (system_id && !system_copy)
-      || (declaration_base_uri && !base_copy)) {
+      || (declaration_base_uri && !base_copy) || (unparsed && !notation_copy)) {
     xml_release(p, name_copy); xml_release(p, public_copy);
-    xml_release(p, system_copy); xml_release(p, base_copy);
+    xml_release(p, system_copy); xml_release(p, base_copy); xml_release(p, notation_copy);
     xml_release(p, replacement);
     return xml_fail(p, GTEXT_XML_E_OOM, "could not retain general entity declaration");
   }
@@ -397,13 +400,14 @@ static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
   if (system_id) memcpy(system_copy, system_id, strlen(system_id) + 1);
   if (declaration_base_uri)
     memcpy(base_copy, declaration_base_uri, strlen(declaration_base_uri) + 1);
+  if (notation_copy) { memcpy(notation_copy, notation, notation_length); notation_copy[notation_length] = 0; }
   if (!old) {
     GTEXT_XML_Status status = xml_grow(p, (void **)&p->general_entities,
         &p->general_entity_capacity, sizeof(*p->general_entities),
         p->general_entity_count + 1);
     if (status != GTEXT_XML_OK) {
       xml_release(p, name_copy); xml_release(p, public_copy);
-      xml_release(p, system_copy); xml_release(p, base_copy);
+      xml_release(p, system_copy); xml_release(p, base_copy); xml_release(p, notation_copy);
       xml_release(p, replacement);
       return status;
     }
@@ -414,12 +418,15 @@ static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
     xml_release(p, old->name); xml_release(p, old->replacement);
     xml_release(p, old->public_id); xml_release(p, old->system_id);
     xml_release(p, old->base_uri);
+    xml_release(p, old->notation_name);
   }
   *old = (xml_general_entity){
       .name = name_copy, .name_length = name_length,
       .replacement = replacement, .replacement_length = replacement_length,
       .public_id = public_copy, .system_id = system_copy,
       .base_uri = base_copy,
+      .notation_name = notation_copy, .notation_name_length = notation_length,
+      .declaration_location = declaration_location ? *declaration_location : (GTEXT_Markup_Location){0},
       .identity = name_copy, .external = (unsigned char)external,
       .unparsed = (unsigned char)unparsed,
       .external_context = (unsigned char)external_context};
@@ -1103,6 +1110,9 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
   markup_buf general_public, general_system;
   int general_external = 0;
   int general_unparsed = 0;
+  const unsigned char *general_notation = NULL;
+  size_t general_notation_length = 0;
+  GTEXT_Markup_Location general_notation_location = {0};
   /* The caller has checked that S follows the keyword; consume it here. */
   DTD_SKIP_SPACE_OR_RETURN(p);
   if (kind == 0) { /* ELEMENT */
@@ -1198,7 +1208,15 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
         }
         s = xml_consume(p, 5);
         if (s == GTEXT_XML_OK) s = dtd_need_space(p);
-        if (s == GTEXT_XML_OK) { general_unparsed = 1; s = dtd_name(p); }
+        if (s == GTEXT_XML_OK) {
+          general_unparsed = 1;
+          general_notation_location = xml_here(p);
+          s = dtd_name(p);
+          if (s == GTEXT_XML_OK) {
+            general_notation = p->dtd_name_token;
+            general_notation_length = p->dtd_name_token_length;
+          }
+        }
       }
     }
     if (s != GTEXT_XML_OK) {
@@ -1246,6 +1264,7 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
         general_replacement, general_replacement_length,
         general_external && general_public.length ? general_public.data : NULL,
         general_external && general_system.data ? general_system.data : NULL,
+        general_notation, general_notation_length, &general_notation_location,
         general_external, general_unparsed);
     general_replacement = NULL;
   }
@@ -1287,13 +1306,18 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
       if (element_len) { memcpy(element_copy, element, element_len); element_copy[element_len] = 0; }
       xml_release(p, b->name); xml_release(p, b->element_name);
       xml_release(p, b->attribute_default_value);
+      xml_release(p, b->attribute_enumeration);
       b->name = copy; b->element_name = element_copy;
       b->name_length = name_len; b->element_name_length = element_len;
       b->external = 0;
       b->attribute_tokenized = 0;
+      b->attribute_type = XML_ATYPE_CDATA;
+      b->attribute_required = 0;
       b->attribute_default_kind = 0;
       b->attribute_default_value = NULL;
       b->attribute_default_length = 0;
+      b->attribute_enumeration = NULL;
+      b->attribute_enumeration_length = 0;
       if (where) b->declaration_location = *where;
       if (effective) *effective = b;
       if (doctype) {
@@ -1392,13 +1416,15 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
       else if (c == ')' && parens) --parens;
       else if (xml_is_space(c) && parens == 0) break;
     }
-    const size_t type_end = at;
+    size_t type_end = at;
+    while (type_end > type_at && xml_is_space(s[type_end - 1])) --type_end;
     while (at < n && xml_is_space(s[at])) ++at;
-    int default_kind = 0;
+    int default_kind = 0, required = 0;
     if (at < n && s[at] == '#') {
       const size_t marker = ++at;
       while (at < n && !xml_is_space(s[at]) && s[at] != '>' && s[at] != '\'' && s[at] != '"') ++at;
       if (at - marker == 5 && memcmp(s + marker, "FIXED", 5) == 0) default_kind = 2;
+      if (at - marker == 8 && memcmp(s + marker, "REQUIRED", 8) == 0) required = 1;
       while (at < n && xml_is_space(s[at])) ++at;
     }
     else if (at < n && (s[at] == '\'' || s[at] == '"')) default_kind = 1;
@@ -1412,6 +1438,45 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
     if (effective) {
       effective->attribute_tokenized = !(type_end - type_at == 5
           && memcmp(s + type_at, "CDATA", 5) == 0);
+      effective->attribute_required = (unsigned char)required;
+      effective->attribute_type = XML_ATYPE_CDATA;
+      static const char *const simple_types[] = {"CDATA", "ID", "IDREF", "IDREFS", "ENTITY", "ENTITIES", "NMTOKEN", "NMTOKENS"};
+      for (unsigned int ti = 0; ti < sizeof(simple_types)/sizeof(simple_types[0]); ++ti) {
+        size_t tl = strlen(simple_types[ti]);
+        if (type_end - type_at == tl && memcmp(s + type_at, simple_types[ti], tl) == 0) {
+          effective->attribute_type = (unsigned char)ti;
+          break;
+        }
+      }
+      size_t enum_at = type_at;
+      while (enum_at < type_end && xml_is_space(s[enum_at])) ++enum_at;
+      if (enum_at < type_end && s[enum_at] == '(') {
+        effective->attribute_type = XML_ATYPE_ENUMERATION;
+        ++enum_at;
+        while (enum_at < type_end && xml_is_space(s[enum_at])) ++enum_at;
+        size_t enum_end = type_end;
+        while (enum_end > enum_at && (xml_is_space(s[enum_end-1]) || s[enum_end-1] == ')')) --enum_end;
+        char *choices = xml_alloc(p, enum_end - enum_at + 1);
+        if (!choices) return xml_fail(p, GTEXT_XML_E_OOM, "could not retain an attribute enumeration");
+        memcpy(choices, s + enum_at, enum_end - enum_at); choices[enum_end-enum_at] = 0;
+        xml_release(p, effective->attribute_enumeration);
+        effective->attribute_enumeration = choices;
+        effective->attribute_enumeration_length = enum_end - enum_at;
+      }
+      else if (enum_at + 8 <= type_end && memcmp(s + enum_at, "NOTATION", 8) == 0) {
+        effective->attribute_type = XML_ATYPE_NOTATION;
+        enum_at += 8;
+        while (enum_at < type_end && xml_is_space(s[enum_at])) ++enum_at;
+        size_t enum_end = type_end;
+        while (enum_end > enum_at && (xml_is_space(s[enum_end-1]) || s[enum_end-1] == ')')) --enum_end;
+        if (enum_at < enum_end && s[enum_at] == '(') ++enum_at;
+        char *choices = xml_alloc(p, enum_end - enum_at + 1);
+        if (!choices) return xml_fail(p, GTEXT_XML_E_OOM, "could not retain a notation enumeration");
+        memcpy(choices, s + enum_at, enum_end - enum_at); choices[enum_end-enum_at] = 0;
+        xml_release(p, effective->attribute_enumeration);
+        effective->attribute_enumeration = choices;
+        effective->attribute_enumeration_length = enum_end - enum_at;
+      }
       effective->attribute_default_kind = (unsigned char)default_kind;
       if (default_kind) {
         char *value = xml_alloc(p, value_length + 1);
@@ -1497,6 +1562,7 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
         xml_release(p, p->dtd_bindings[i].element_name);
         xml_release(p, p->dtd_bindings[i].name);
         xml_release(p, p->dtd_bindings[i].attribute_default_value);
+        xml_release(p, p->dtd_bindings[i].attribute_enumeration);
       }
       xml_release(p, p->dtd_bindings);
       p->dtd_bindings = old_parse;
@@ -1513,6 +1579,7 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
       xml_release(p, old_parse[i].element_name);
       xml_release(p, old_parse[i].name);
       xml_release(p, old_parse[i].attribute_default_value);
+      xml_release(p, old_parse[i].attribute_enumeration);
     }
     xml_release(p, old_parse);
     }
