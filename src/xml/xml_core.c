@@ -144,7 +144,7 @@ GTEXT_XML_Status xml_validate_dtd_options(
     message = "invalid external access policy";
   }
   else if (access == GTEXT_XML_EXTERNAL_ACCESS_ALLOW
-      && mode != GTEXT_XML_DTD_PROCESS) {
+      && mode == GTEXT_XML_DTD_OFF) {
     status = GTEXT_XML_E_INVALID;
     message = "external access requires DTD processing mode";
   }
@@ -153,11 +153,6 @@ GTEXT_XML_Status xml_validate_dtd_options(
     status = GTEXT_XML_E_INVALID;
     message = "external entity skip policy requires DTD processing mode";
   }
-  else if (mode == GTEXT_XML_DTD_VALIDATE) {
-    status = GTEXT_XML_E_UNSUPPORTED_MODE;
-    message = "DTD validation is not implemented";
-  }
-
   if (err && status != GTEXT_XML_OK) {
     memset(err, 0, sizeof(*err));
     err->code = status;
@@ -185,6 +180,9 @@ GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void) {
   opts.max_references = XML_DEFAULT_MAX_REFERENCES;
   opts.max_declarations = XML_DEFAULT_MAX_DECLARATIONS;
   opts.max_total_work = XML_DEFAULT_MAX_TOTAL_WORK;
+  opts.max_validation_work = XML_DEFAULT_MAX_VALIDATION_WORK;
+  opts.max_validation_memory = XML_DEFAULT_MAX_VALIDATION_MEMORY;
+  opts.max_validation_diagnostics = XML_DEFAULT_MAX_VALIDATION_DIAGNOSTICS;
   opts.max_pull_queue_bytes = XML_DEFAULT_MAX_PULL_QUEUE_BYTES;
   opts.max_pull_queue_events = XML_DEFAULT_MAX_PULL_QUEUE_EVENTS;
   return opts;

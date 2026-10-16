@@ -441,7 +441,7 @@ static GTEXT_XML_Status dtd_expand_parameter_entity(xml_ctx * p,
         GTEXT_XML_RESOURCE_PARAMETER_ENTITY, XML_SOURCE_PARAMETER_ENTITY,
         entity->name, entity->public_id, entity->system_id, NULL, &resource);
     if (status == GTEXT_XML_OK && !resource.opened) {
-      if (resource.declined && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+      if (resource.declined && p->dtd_mode != GTEXT_XML_DTD_OFF) {
         p->dtd_unread_parameter_entity = 1;
         if (p->doc) p->doc->dtd_knowledge_incomplete = 1;
         markup_buf_free(&resource.bytes);
@@ -1359,6 +1359,12 @@ static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
   size_t name_at = at, name_len = decl_name(s, n, &at);
   name_at = at - name_len;
   if (!name_len) return GTEXT_XML_OK; /* grammar parser already diagnosed it */
+  if (kind == GTEXT_MARKUP_DTD_ELEMENT
+      && p->dtd_mode == GTEXT_XML_DTD_VALIDATE) {
+    GTEXT_XML_Status validated = xml_validation_add_element_decl(p, s, n,
+        where, external);
+    if (validated != GTEXT_XML_OK) return validated;
+  }
   if (kind != 1) return bind_key(p, key_kind, NULL, 0, s + name_at,
       name_len, external, doctype, s, n, where, NULL);
   const unsigned char *element = s + name_at;
@@ -2164,7 +2170,7 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
       status = retain_syntax(p, doctype,
           GTEXT_MARKUP_DTD_PARAMETER_REFERENCE, start, &at);
       if (status != GTEXT_XML_OK) return status;
-      if (p->dtd_mode != GTEXT_XML_DTD_PROCESS) continue;
+      if (p->dtd_mode == GTEXT_XML_DTD_OFF) continue;
       const unsigned char * reference_name = p->in + start + 1;
       const size_t reference_length = p->pos - start - 2;
       status = dtd_expand_parameter_entity(p, reference_name,
@@ -2233,13 +2239,13 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
           p->dtd_unread_parameter_entity
           && p->standalone != GTEXT_MARKUP_STANDALONE_YES
           && (k == 1 || k == 2);
-      p->dtd_in_markup_declaration = p->dtd_mode == GTEXT_XML_DTD_PROCESS;
-      status = p->dtd_mode == GTEXT_XML_DTD_PROCESS
+      p->dtd_in_markup_declaration = p->dtd_mode != GTEXT_XML_DTD_OFF;
+      status = p->dtd_mode != GTEXT_XML_DTD_OFF
           ? validate_declaration(p, (int)k)
           : skip_declaration(p, k == 2);
       p->dtd_in_markup_declaration = 0;
       p->dtd_suppress_declaration_effects = 0;
-      if (status == GTEXT_XML_OK && p->dtd_mode == GTEXT_XML_DTD_PROCESS
+      if (status == GTEXT_XML_OK && p->dtd_mode != GTEXT_XML_DTD_OFF
           && (p->source_count == 0
               || p->sources[p->source_count - 1].identity
                   != declaration_source_identity)) {
@@ -2257,7 +2263,7 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
         && (kind == GTEXT_MARKUP_DTD_ATTLIST
             || kind == GTEXT_MARKUP_DTD_ENTITY))
       markup_doctype_mark_last_syntax_unapplied(doctype);
-    if (kind <= GTEXT_MARKUP_DTD_NOTATION && p->dtd_mode == GTEXT_XML_DTD_PROCESS
+    if (kind <= GTEXT_MARKUP_DTD_NOTATION && p->dtd_mode != GTEXT_XML_DTD_OFF
         && !(p->dtd_unread_parameter_entity
             && p->standalone != GTEXT_MARKUP_STANDALONE_YES
             && (kind == GTEXT_MARKUP_DTD_ATTLIST
@@ -2343,7 +2349,7 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
       space = xml_skip_space(p);
     }
     (void)space;
-    if (p->dtd_mode == GTEXT_XML_DTD_PROCESS && !p->stream) {
+    if (p->dtd_mode != GTEXT_XML_DTD_OFF && !p->stream) {
       status = xml_from_markup(p, gtext_markup_create_doctype(p->doc,
           c->name.data, c->has_public ? c->public_id.data : NULL,
           c->has_system ? c->system_id.data : NULL, &c->node));
@@ -2355,6 +2361,18 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
       c->has_subset = 1;
     }
     c->header_done = 1;
+    if (p->dtd_mode == GTEXT_XML_DTD_VALIDATE
+        && !p->validation_doctype_name) {
+      p->validation_doctype_name = xml_alloc(p, c->name.length + 1);
+      if (!p->validation_doctype_name) {
+        status = xml_fail(p, GTEXT_XML_E_OOM,
+            "could not retain the document type name for validation");
+        goto failed;
+      }
+      memcpy(p->validation_doctype_name, c->name.data, c->name.length);
+      p->validation_doctype_name[c->name.length] = 0;
+      p->validation_doctype_name_length = c->name.length;
+    }
   }
   if (c->has_subset && !c->internal_subset_done) {
     status = skip_internal_subset(p, c->node);
@@ -2386,7 +2404,7 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
     c->external_subset_pending = 0;
     c->external_subset_done = 1;
   }
-  if (c->node && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+  if (c->node && p->dtd_mode != GTEXT_XML_DTD_OFF) {
     status = xml_doctype_rebuild_indexes(p, c->node);
     if (status != GTEXT_XML_OK) goto failed;
   }

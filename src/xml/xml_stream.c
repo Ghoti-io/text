@@ -1285,6 +1285,24 @@ GTEXT_XML_Status xml_emit_unread_resource(xml_ctx * p,
   return deliver(p, &e);
 }
 
+GTEXT_XML_Status xml_emit_validation_diagnostic(xml_ctx *p,
+    GTEXT_XML_Validation_Code code, const GTEXT_Markup_Location *where,
+    const char *message) {
+  GTEXT_XML_Event event;
+  event_init(p, &event, GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC, where);
+  event.validation_diagnostic = (GTEXT_XML_Validation_Diagnostic){
+      code, where ? *where : (GTEXT_Markup_Location){0}, message};
+  return deliver(p, &event);
+}
+
+GTEXT_XML_Status xml_emit_validation_diagnostics_truncated(xml_ctx *p,
+    const GTEXT_Markup_Location *where) {
+  GTEXT_XML_Event event;
+  event_init(p, &event, GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED,
+      where);
+  return deliver(p, &event);
+}
+
 /* ---- The public interface ----------------------------------------------- */
 
 size_t xml_stream_work(const struct GTEXT_XML_Stream * stream) {
@@ -1359,6 +1377,12 @@ GTEXT_INTERNAL_API GTEXT_XML_Stream * xml_stream_new_with_seams(
   p->max_declarations = limit_or(use.max_declarations,
       XML_DEFAULT_MAX_DECLARATIONS);
   p->max_total_work = limit_or(use.max_total_work, XML_DEFAULT_MAX_TOTAL_WORK);
+  p->max_validation_work = limit_or(use.max_validation_work,
+      XML_DEFAULT_MAX_VALIDATION_WORK);
+  p->max_validation_memory = limit_or(use.max_validation_memory,
+      XML_DEFAULT_MAX_VALIDATION_MEMORY);
+  p->max_validation_diagnostics = limit_or(use.max_validation_diagnostics,
+      XML_DEFAULT_MAX_VALIDATION_DIAGNOSTICS);
   /* Document source + the configured entity nesting + one external subset. */
   p->max_source_depth = p->max_entity_depth >= SIZE_MAX - 2
       ? SIZE_MAX : p->max_entity_depth + 2;
@@ -1412,6 +1436,7 @@ GTEXT_API void gtext_xml_stream_free(GTEXT_XML_Stream * s) {
   xml_hset_free(p, &p->expanded_names);
   xml_scope_free(p);
   xml_source_free(p);
+  xml_validation_cleanup(p);
   GTEXT_Allocator allocator = s->allocator;
   gtext_allocator_free(&allocator, s);
 }

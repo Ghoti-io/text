@@ -228,7 +228,16 @@ struct GTEXT_Markup_Document {
   markup_dtd_unread_resource * dtd_unread_resources;
   size_t dtd_unread_resource_count;
   size_t dtd_unread_resource_capacity;
+  struct markup_xml_validation_diagnostic * xml_validation_diagnostics;
+  size_t xml_validation_diagnostic_count;
+  unsigned char xml_validation_diagnostics_truncated;
 };
+
+typedef struct markup_xml_validation_diagnostic {
+  uint32_t code;
+  GTEXT_Markup_Location location;
+  const char * message;
+} markup_xml_validation_diagnostic;
 
 /* ---- memory ------------------------------------------------------------- */
 

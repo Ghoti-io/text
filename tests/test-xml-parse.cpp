@@ -1212,7 +1212,7 @@ TEST_F(XmlParse, ArgumentsAndStatuses) {
   EXPECT_STREQ(gtext_xml_status_string(static_cast<GTEXT_XML_Status>(9999)), "unknown status");
 }
 
-TEST_F(XmlParse, DtdModeDefaultsAndRejectsUnsupportedOrConflictingOptions) {
+TEST_F(XmlParse, DtdModeDefaultsAndRejectsConflictingOptions) {
   GTEXT_XML_Parse_Options zero{};
   Result r = parse("<a>&unknown;</a>", &zero);
   EXPECT_EQ(r.status, GTEXT_XML_E_ENTITY);
@@ -1237,9 +1237,9 @@ TEST_F(XmlParse, DtdModeDefaultsAndRejectsUnsupportedOrConflictingOptions) {
   opts = gtext_xml_parse_options_default();
   opts.dtd_mode = GTEXT_XML_DTD_VALIDATE;
   r = parse("<a/>", &opts);
-  EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_MODE);
-  EXPECT_STREQ(r.err.message, "DTD validation is not implemented");
-  EXPECT_EQ(r.err.byte_offset, 0u);
+  EXPECT_EQ(r.status, GTEXT_XML_OK);
+  ASSERT_NE(r.doc, nullptr);
+  EXPECT_EQ(gtext_xml_validation_diagnostic_count(r.doc), 0u);
 
   opts.dtd_mode = static_cast<GTEXT_XML_DTD_Mode>(77);
   EXPECT_EQ(parse("<a/>", &opts).status, GTEXT_XML_E_INVALID);
@@ -1255,14 +1255,14 @@ TEST_F(XmlParse, DtdModeDefaultsAndRejectsUnsupportedOrConflictingOptions) {
   EXPECT_STREQ(r.err.message, "invalid external entity policy");
 }
 
-TEST_F(XmlParse, FileModeValidationRunsBeforeOpeningTheFile) {
+TEST_F(XmlParse, FileModeValidationIsSupported) {
   GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
   opts.dtd_mode = GTEXT_XML_DTD_VALIDATE;
   Doc * doc = nullptr;
   GTEXT_XML_Error err{};
   EXPECT_EQ(gtext_xml_parse_file("/path/that/does/not/exist", &opts, &doc, &err),
-      GTEXT_XML_E_UNSUPPORTED_MODE);
-  EXPECT_STREQ(err.message, "DTD validation is not implemented");
+      GTEXT_XML_E_INVALID);
+  EXPECT_STREQ(err.message, "No such file or directory");
   EXPECT_EQ(doc, nullptr);
 }
 

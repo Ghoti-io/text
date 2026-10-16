@@ -77,6 +77,9 @@ extern "C" {
 #define XML_DEFAULT_MAX_REFERENCES ((size_t)1000000)
 #define XML_DEFAULT_MAX_DECLARATIONS ((size_t)100000)
 #define XML_DEFAULT_MAX_TOTAL_WORK ((size_t)256 * 1024 * 1024)
+#define XML_DEFAULT_MAX_VALIDATION_WORK ((size_t)64 * 1024 * 1024)
+#define XML_DEFAULT_MAX_VALIDATION_MEMORY ((size_t)16 * 1024 * 1024)
+#define XML_DEFAULT_MAX_VALIDATION_DIAGNOSTICS ((size_t)256)
 #define XML_DEFAULT_MAX_PULL_QUEUE_BYTES ((size_t)1024 * 1024)
 #define XML_DEFAULT_MAX_PULL_QUEUE_EVENTS ((size_t)256)
 #define XML_WRITE_DEFAULT_MAX_DEPTH ((size_t)256)
@@ -273,6 +276,57 @@ typedef struct {
 } xml_dtd_binding;
 
 typedef struct {
+  size_t target;
+  size_t name_offset; /* SIZE_MAX denotes epsilon. */
+  size_t name_length;
+} xml_nfa_edge;
+
+typedef struct {
+  xml_nfa_edge edges[2];
+  unsigned char edge_count;
+} xml_nfa_state;
+
+typedef struct {
+  size_t name_offset;
+  size_t name_length;
+} xml_content_name;
+
+typedef enum {
+  XML_CONTENT_EMPTY,
+  XML_CONTENT_ANY,
+  XML_CONTENT_MIXED,
+  XML_CONTENT_CHILDREN
+} xml_content_kind;
+
+typedef struct {
+  char * element_name;
+  size_t element_name_length;
+  char * declaration;
+  size_t declaration_length;
+  GTEXT_Markup_Location location;
+  xml_content_kind kind;
+  xml_nfa_state * states;
+  size_t state_count;
+  size_t state_capacity;
+  size_t start_state;
+  size_t accept_state;
+  xml_content_name * mixed_names;
+  size_t mixed_name_count;
+  unsigned char external;
+  unsigned char ambiguity_reported;
+  unsigned char duplicate_reported;
+  size_t validation_budget_bytes;
+} xml_content_decl;
+
+typedef struct {
+  const xml_content_decl * model;
+  unsigned char * active;
+  size_t active_bytes;
+  GTEXT_Markup_Location location;
+  GTEXT_Markup_Location child_location;
+} xml_validation_frame;
+
+typedef struct {
   GTEXT_XML_External_Source source;
   markup_buf bytes;
   xml_source_kind source_kind;
@@ -362,11 +416,33 @@ typedef struct {
   size_t max_references;
   size_t max_declarations;
   size_t max_total_work;
+  size_t max_validation_work;
+  size_t max_validation_memory;
+  size_t max_validation_diagnostics;
   size_t external_bytes;
   size_t expanded_bytes;
   size_t references;
   size_t declarations;
   size_t total_work;
+  size_t validation_work;
+  size_t validation_memory;
+  size_t validation_content_decls_bytes;
+  size_t validation_frames_bytes;
+  size_t validation_diagnostic_count;
+  unsigned char validation_diagnostics_truncated;
+  xml_content_decl * content_decls;
+  size_t content_decl_count;
+  size_t content_decl_capacity;
+  xml_validation_frame * validation_frames;
+  size_t validation_frame_count;
+  size_t validation_frame_capacity;
+  unsigned char * validation_scratch;
+  size_t validation_scratch_bytes;
+  size_t * validation_worklist;
+  size_t validation_worklist_capacity;
+  size_t validation_worklist_bytes;
+  char * validation_doctype_name;
+  size_t validation_doctype_name_length;
   size_t entity_depth;
 
   GTEXT_Markup_Document * doc;       ///< NULL when parsing events.
@@ -379,6 +455,7 @@ typedef struct {
   unsigned char dtd_in_markup_declaration;
   unsigned char dtd_incomplete_declaration;
   unsigned char dtd_suppress_declaration_effects;
+  unsigned char dtd_knowledge_incomplete;
   GTEXT_XML_External_Access external_access;
   GTEXT_XML_Resolver_cb resolver;
   void * resolver_user_data;
@@ -735,6 +812,21 @@ void xml_doctype_continuation_reset(xml_ctx * p);
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_doctype_rebuild_indexes(
     xml_ctx * p, GTEXT_Markup_Node * doctype);
 
+/* ---- Structural DTD validation (xml_validation.c) ----------------------- */
+GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,
+    const unsigned char *source, size_t length,
+    const GTEXT_Markup_Location *location, int external);
+GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
+    const unsigned char *name, size_t name_length,
+    const GTEXT_Markup_Location *location, int is_empty);
+GTEXT_XML_Status xml_validation_end_element(xml_ctx *p,
+    const unsigned char *name, size_t name_length,
+    const GTEXT_Markup_Location *location);
+GTEXT_XML_Status xml_validation_text(xml_ctx *p, const char *text,
+    size_t length, const GTEXT_Markup_Location *location,
+    int cdata);
+void xml_validation_cleanup(xml_ctx *p);
+
 /* ---- Pieces the event parser drives (xml_parser.c) ---------------------- */
 
 /** The XML declaration at the cursor (on `<?xml`). */
@@ -782,6 +874,11 @@ GTEXT_XML_Status xml_emit_skipped_entity(xml_ctx * p,
 GTEXT_XML_Status xml_emit_unread_resource(xml_ctx * p,
     const GTEXT_Markup_Location * at, GTEXT_XML_Resource_Kind kind,
     const char * name, const char * system_id);
+GTEXT_XML_Status xml_emit_validation_diagnostic(xml_ctx *p,
+    GTEXT_XML_Validation_Code code, const GTEXT_Markup_Location *where,
+    const char *message);
+GTEXT_XML_Status xml_emit_validation_diagnostics_truncated(xml_ctx *p,
+    const GTEXT_Markup_Location *where);
 
 /**
  * Make the event parser take an attempt at every construct whenever any input

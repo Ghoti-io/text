@@ -270,6 +270,7 @@ void gtext_markup_document_free(GTEXT_Markup_Document * doc) {
     markup_free(doc, doc->dtd_unread_resources[i].owned_system_id);
   }
   markup_free(doc, doc->dtd_unread_resources);
+  markup_free(doc, doc->xml_validation_diagnostics);
   const GTEXT_Allocator allocator = doc->allocator;
   gtext_allocator_free(&allocator, doc);
 }

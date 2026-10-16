@@ -342,6 +342,13 @@ std::string describe(const GTEXT_XML_Event & e) {
           + std::to_string(static_cast<int>(e.resource_kind)) + " "
           + opt(e.name) + " " + opt(e.system_id);
       break;
+    case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC:
+      out = "VALIDATION_DIAGNOSTIC "
+          + std::to_string(static_cast<int>(e.validation_diagnostic.code));
+      break;
+    case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED:
+      out = "VALIDATION_DIAGNOSTICS_TRUNCATED";
+      break;
   }
   return out + " @" + std::to_string(e.location.offset) + ":" + std::to_string(e.location.line) + ":"
       + std::to_string(e.location.column);

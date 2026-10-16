@@ -228,6 +228,11 @@ static GTEXT_XML_Status xml_replay_event(const GTEXT_XML_Event * e, void * user)
         }
       }
       return GTEXT_XML_OK;
+    case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC:
+    case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED:
+      /* Validity evidence is compared by dedicated validator tests; it is not
+         part of the replayed markup tree. */
+      return GTEXT_XML_OK;
   }
   return xml_replay_fail(r, "an unknown event type");
 }

@@ -114,7 +114,9 @@ typedef enum {
   GTEXT_XML_EVENT_PROCESSING_INSTRUCTION, ///< A processing instruction.
   GTEXT_XML_EVENT_DOCUMENT_END,   ///< The end of a well-formed document.
   GTEXT_XML_EVENT_SKIPPED_ENTITY, ///< `name` is an unresolved entity reference.
-  GTEXT_XML_EVENT_UNREAD_RESOURCE ///< An external DTD resource was not read.
+  GTEXT_XML_EVENT_UNREAD_RESOURCE, ///< An external DTD resource was not read.
+  GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC, ///< A structural validity finding.
+  GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED ///< Diagnostic cap reached.
 } GTEXT_XML_Event_Type;
 
 /**
@@ -170,6 +172,8 @@ typedef struct {
  * | DOCUMENT_END            | none; `location` is the end of the document |
  * | SKIPPED_ENTITY          | `name` is the unresolved general entity |
  * | UNREAD_RESOURCE         | `resource_kind`, `name`, and `system_id` identify missing external material |
+ * | VALIDATION_DIAGNOSTIC   | `validation_diagnostic` identifies a structural DTD validity finding |
+ * | VALIDATION_DIAGNOSTICS_TRUNCATED | The configured diagnostic cap omitted additional findings |
  */
 typedef struct {
   GTEXT_XML_Event_Type type;
@@ -205,6 +209,7 @@ typedef struct {
   GTEXT_Markup_Encoding_Source encoding_source; ///< Why: BOM, declaration or
                                              ///< default.
   GTEXT_Markup_Standalone standalone;
+  GTEXT_XML_Validation_Diagnostic validation_diagnostic; ///< Validation event only.
 } GTEXT_XML_Event;
 
 /**
@@ -225,8 +230,9 @@ typedef struct GTEXT_XML_Stream GTEXT_XML_Stream;
  * @brief Create a push parser.
  *
  * @param opts      Options (limits, allocator, DTD mode and external policy),
- *                  or NULL for the defaults. Unsupported validation mode and
- *                  invalid mode/policy combinations make construction fail.
+ *                  or NULL for the defaults. Invalid mode/policy combinations
+ *                  make construction fail; VALIDATE emits bounded structural
+ *                  validity diagnostic events.
  *                  `max_input_bytes` counts all the bytes fed. `max_nodes`
  *                  counts the nodes gtext_xml_parse() would have built, the
  *                  document node included, so a document is refused by both or

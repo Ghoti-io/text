@@ -37,6 +37,7 @@
 
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/macros.h>
+#include <ghoti.io/text/markup/markup_core.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -143,8 +144,7 @@ typedef enum {
                        ///< `<` in a script, a processing instruction, ...), or,
                        ///< with `xhtml_strict`, one with a tree-construction
                        ///< hazard. The result's message and path say which.
-  GTEXT_XML_E_UNSUPPORTED_MODE, ///< Requested DTD validation, which is not
-                       ///< implemented by this library version.
+  GTEXT_XML_E_UNSUPPORTED_MODE, ///< Reserved for an unavailable optional mode.
   /* New statuses are appended to keep the values above source and ABI stable. */
   GTEXT_XML_E_LIMIT_EXTERNAL_SOURCE, ///< One external source exceeded its byte budget.
   GTEXT_XML_E_LIMIT_EXTERNAL_TOTAL, ///< Aggregate external bytes exceeded their budget.
@@ -161,6 +161,22 @@ typedef enum {
   GTEXT_XML_E_CANCELLED, ///< The caller cancelled an external source read.
   GTEXT_XML_E_UNAVAILABLE_RESOURCE ///< A referenced external entity was unavailable.
 } GTEXT_XML_Status;
+
+/** A bounded structural validity finding produced by DTD_VALIDATE mode. */
+typedef enum {
+  GTEXT_XML_VALIDATION_ROOT_TYPE,
+  GTEXT_XML_VALIDATION_UNDECLARED_ELEMENT,
+  GTEXT_XML_VALIDATION_ELEMENT_CONTENT,
+  GTEXT_XML_VALIDATION_NONDETERMINISTIC_MODEL,
+  GTEXT_XML_VALIDATION_DUPLICATE_ELEMENT_DECLARATION
+} GTEXT_XML_Validation_Code;
+
+/** One structural validity finding. `message` is library-owned static text. */
+typedef struct {
+  GTEXT_XML_Validation_Code code;
+  GTEXT_Markup_Location location;
+  const char * message;
+} GTEXT_XML_Validation_Diagnostic;
 
 /** DTD behavior selected for a parse. Zero preserves the historical default. */
 typedef enum {
@@ -262,9 +278,8 @@ typedef GTEXT_XML_Resolver_Result (*GTEXT_XML_Resolver_cb)(
  * @brief A static, human-readable name for a status.
  *
  * @param status Any value; an unknown one returns "unknown status".
- * @return A string that is never freed. GTEXT_XML_E_UNSUPPORTED_MODE returns
- *   "requested XML mode is not implemented" when a parse requests an
- *   unsupported processing mode such as DTD validation.
+ * @return A string that is never freed. GTEXT_XML_E_UNSUPPORTED_MODE names an
+ *   XML mode the library does not implement.
  */
 GTEXT_API const char * gtext_xml_status_string(GTEXT_XML_Status status);
 
@@ -362,6 +377,13 @@ typedef struct {
   /** Maximum charged parser work units. Default 256 MiB. */
   size_t max_total_work;
 
+  /** Maximum DTD content-model compilation and matching work units. Default 64 Mi. */
+  size_t max_validation_work;
+  /** Maximum temporary matcher and determinism-analysis state. Default 16 MiB. */
+  size_t max_validation_memory;
+  /** Maximum retained/emitted structural validity findings. Default 256. */
+  size_t max_validation_diagnostics;
+
   /** DTD mode; zero selects GTEXT_XML_DTD_OFF. */
   GTEXT_XML_DTD_Mode dtd_mode;
 
@@ -370,7 +392,8 @@ typedef struct {
 
   /** External resources are never requested unless this is ALLOW. */
   GTEXT_XML_External_Access external_access;
-  /** Optional resolver; used only with PROCESS mode and external_access ALLOW.
+  /** Optional resolver; used with PROCESS or VALIDATE mode and
+   *  external_access ALLOW.
    *  A resolver may perform I/O, so applications must enforce their own
    *  allowlists and transport limits. */
   GTEXT_XML_Resolver_cb resolver;

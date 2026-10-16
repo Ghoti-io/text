@@ -271,6 +271,9 @@ GTEXT_XML_Status xml_flush_text(xml_ctx * p) {
   if (p->text.length == 0) {
     return GTEXT_XML_OK;
   }
+  GTEXT_XML_Status validation = xml_validation_text(p, p->text.data,
+      p->text.length, &p->text_where, 0);
+  if (validation != GTEXT_XML_OK) return validation;
   if (p->stream) {
     const GTEXT_XML_Status emitted =
         xml_emit_text(p, &p->text_where, p->text.data, p->text.length);
@@ -281,7 +284,7 @@ GTEXT_XML_Status xml_flush_text(xml_ctx * p) {
     return GTEXT_XML_OK;
   }
   GTEXT_Markup_Node * parent = current_parent(p);
-  if (p->dtd_mode == GTEXT_XML_DTD_PROCESS && parent->last_child
+  if (p->dtd_mode != GTEXT_XML_DTD_OFF && parent->last_child
       && parent->last_child->kind == GTEXT_MARKUP_KIND_TEXT) {
     markup_text * previous = (markup_text *)parent->last_child;
     const size_t start = previous->length;
@@ -359,6 +362,8 @@ GTEXT_XML_Status xml_parse_cdata(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  status = xml_validation_text(p, p->scratch.data, p->scratch.length, &at, 1);
+  if (status != GTEXT_XML_OK) return status;
   if (p->stream) {
     status = xml_emit_cdata(p, &at, p->scratch.data, p->scratch.length);
     if (status != GTEXT_XML_OK) {
@@ -733,7 +738,7 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
     }
     a = &p->attrs[p->attr_count - 1];
 
-    const xml_dtd_binding * attribute_decl = p->dtd_mode == GTEXT_XML_DTD_PROCESS
+    const xml_dtd_binding * attribute_decl = p->dtd_mode != GTEXT_XML_DTD_OFF
         ? find_attribute_binding(p, name, name_length, a->name_ptr,
             a->name_length) : NULL;
     if ((attribute_decl && attribute_decl->attribute_tokenized)
@@ -808,7 +813,7 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
     }
   }
 
-  if (p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+  if (p->dtd_mode != GTEXT_XML_DTD_OFF) {
     for (size_t k = 0; k < p->dtd_binding_count; k++) {
       const xml_dtd_binding * binding = &p->dtd_bindings[k];
       if (binding->kind != GTEXT_MARKUP_DTD_ATTLIST
@@ -933,6 +938,12 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
     }
   }
 
+  status = xml_validation_start_element(p, name, name_length, &at, *is_empty);
+  if (status != GTEXT_XML_OK) {
+    xml_scope_release(p, mark);
+    return status;
+  }
+
   if (p->stream) {
     /* Events, not a tree. */
     status = xml_emit_element_start(p, &at, name, name_length, colon, element_ns);
@@ -1054,6 +1065,8 @@ GTEXT_XML_Status xml_parse_end_tag(xml_ctx * p) {
   if (status != GTEXT_XML_OK) {
     return status;
   }
+  status = xml_validation_end_element(p, open_name, f->name_length, &at);
+  if (status != GTEXT_XML_OK) return status;
   if (p->stream) {
     status = xml_emit_element_end(p, &at, open_name, f->name_length);
     if (status != GTEXT_XML_OK) {
@@ -1465,6 +1478,7 @@ static size_t limit_or(size_t given, size_t fallback) {
 
 static void cleanup(xml_ctx * p) {
   xml_doctype_continuation_reset(p);
+  xml_validation_cleanup(p);
   markup_buf_free(&p->decoded);
   markup_buf_free(&p->text);
   markup_buf_free(&p->attr_pool);
@@ -1531,6 +1545,12 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
   p.max_declarations = limit_or(use.max_declarations,
       XML_DEFAULT_MAX_DECLARATIONS);
   p.max_total_work = limit_or(use.max_total_work, XML_DEFAULT_MAX_TOTAL_WORK);
+  p.max_validation_work = limit_or(use.max_validation_work,
+      XML_DEFAULT_MAX_VALIDATION_WORK);
+  p.max_validation_memory = limit_or(use.max_validation_memory,
+      XML_DEFAULT_MAX_VALIDATION_MEMORY);
+  p.max_validation_diagnostics = limit_or(use.max_validation_diagnostics,
+      XML_DEFAULT_MAX_VALIDATION_DIAGNOSTICS);
   /* Document source + the configured entity nesting + one external subset. */
   p.max_source_depth = p.max_entity_depth >= SIZE_MAX - 2
       ? SIZE_MAX : p.max_entity_depth + 2;

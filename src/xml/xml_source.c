@@ -369,6 +369,7 @@ void xml_source_free(xml_ctx * p) {
 
 static GTEXT_XML_Status record_unread_resource(xml_ctx * p,
     GTEXT_XML_Resource_Kind kind, const char * name, const char * system_id) {
+  p->dtd_knowledge_incomplete = 1;
   const GTEXT_Markup_Location at = xml_here(p);
   if (p->doc) {
     GTEXT_Markup_DTD_Resource_Kind markup_kind;
@@ -406,7 +407,7 @@ GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
   memset(out, 0, sizeof(*out));
   out->source_kind = source_kind;
   markup_buf_init(&out->bytes, p->allocator);
-  if (p->dtd_mode != GTEXT_XML_DTD_PROCESS || !system_id) return GTEXT_XML_OK;
+  if (p->dtd_mode == GTEXT_XML_DTD_OFF || !system_id) return GTEXT_XML_OK;
   if (p->external_access != GTEXT_XML_EXTERNAL_ACCESS_ALLOW || !p->resolver) {
     out->declined = 1;
     return record_unread_resource(p, resource_kind, source_name, system_id);

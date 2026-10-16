@@ -142,6 +142,13 @@ std::string describe(const GTEXT_XML_Event & e) {
           + std::to_string(static_cast<int>(e.resource_kind)) + " "
           + opt(e.name) + " " + opt(e.system_id);
       break;
+    case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC:
+      out = "VALIDATION_DIAGNOSTIC "
+          + std::to_string(static_cast<int>(e.validation_diagnostic.code));
+      break;
+    case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED:
+      out = "VALIDATION_DIAGNOSTICS_TRUNCATED";
+      break;
   }
   return out + " @" + where(e.location);
 }
@@ -2977,8 +2984,10 @@ TEST(XmlStream, DtdModeAndPolicyAreValidatedAtConstruction) {
 
   opts.dtd_mode = GTEXT_XML_DTD_VALIDATE;
   opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_DENY;
-  EXPECT_EQ(gtext_xml_stream_new(&opts,
-      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr), nullptr);
+  stream = gtext_xml_stream_new(&opts,
+      [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  gtext_xml_stream_free(stream);
 
   opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
   opts.dtd_external_policy = static_cast<GTEXT_XML_DTD_External_Policy>(91);

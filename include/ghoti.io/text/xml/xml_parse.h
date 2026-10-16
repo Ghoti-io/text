@@ -55,7 +55,7 @@ extern "C" {
  *   a comment and a processing instruction likewise.
  *   Whitespace outside the root element is not kept.
  * - **Attribute values** expand declared internal general entities in DTD
- *   PROCESS mode, apply XML attribute and declared tokenized-type
+ *   PROCESS and VALIDATE modes, apply XML attribute and declared tokenized-type
  *   normalization, then add declared default/fixed values before namespace
  *   resolution. Required/fixed validity constraints are not checked. Defaults
  *   can supply namespace declarations. Literal tabs, line
@@ -67,7 +67,9 @@ extern "C" {
  *   entities expand in permitted contexts, and raw, external-subset, and
  *   generated syntax are retained in separate ordered collections. Processing
  *   is non-validating: declared defaults are applied but validity constraints
- *   are not checked.
+ *   are not checked. VALIDATE additionally checks the document type's root
+ *   name, declared element types, content models, and content-model
+ *   determinism, retaining bounded validity findings on the returned tree.
  * - **The XML declaration** as the document's version, standalone flag and
  *   encoding label (see gtext_markup_document_xml_version() and
  *   gtext_markup_document_encoding()). With no declaration the version is NULL
@@ -76,7 +78,7 @@ extern "C" {
  *   instruction and doctype node, and on every attribute.
  *
  * The library never opens a file, URL or network connection for an external
- * identifier. In PROCESS mode only, a caller resolver may be invoked when
+ * identifier. In PROCESS or VALIDATE mode, a caller resolver may be invoked when
  * `external_access` is ALLOW; it receives opaque identifiers, the base URI of
  * the active declaration source, and a bounded trail of active physical-source
  * labels (empty for the top-level external subset). The source base URI is
@@ -86,8 +88,7 @@ extern "C" {
  * entities. Resolver callbacks may perform I/O and must enforce the
  * application's allowlist. Reads are charged before bytes are retained, and a
  * successfully opened source is closed exactly once on every path. External
- * subset declarations are parsed against the DTD grammar, but semantic DTD
- * validity is not checked. Unavailable external subsets and parameter entities
+ * subset declarations are parsed against the DTD grammar. Unavailable external subsets and parameter entities
  * are recorded on the document as unread resources; non-validating processing
  * continues with the material it did read.
  *
@@ -100,8 +101,9 @@ extern "C" {
  * GTEXT_XML_E_UNAVAILABLE_RESOURCE by default. With the explicit non-validating
  * SKIP policy, a declined external general entity is retained as an unresolved
  * entity-reference node and DTD knowledge is marked incomplete; resolver
- * callback failures remain GTEXT_XML_E_RESOLVER. `VALIDATE` returns
- * GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external policy
+ * callback failures remain GTEXT_XML_E_RESOLVER. `VALIDATE` performs DTD
+ * processing and reports bounded structural validity diagnostics without
+ * turning a well-formed but invalid document into a fatal parse error. The external policy
  * defaults to DENY; SKIP is valid only with PROCESS and never grants the
  * library filesystem or network access. A parse result exposes incomplete
  * knowledge and the typed unread-resource records on its document.
@@ -136,6 +138,17 @@ extern "C" {
 GTEXT_API GTEXT_XML_Status gtext_xml_parse(const void * data, size_t len,
     const GTEXT_XML_Parse_Options * opts, GTEXT_Markup_Document ** out,
     GTEXT_XML_Error * err);
+
+/** Number of bounded structural validity findings retained by a VALIDATE parse. */
+GTEXT_API size_t gtext_xml_validation_diagnostic_count(
+    const GTEXT_Markup_Document * document);
+/** Copy one finding to `out`; false leaves `out` unchanged. */
+GTEXT_API bool gtext_xml_validation_diagnostic(
+    const GTEXT_Markup_Document * document, size_t index,
+    GTEXT_XML_Validation_Diagnostic * out);
+/** Whether additional findings were omitted at the configured diagnostic cap. */
+GTEXT_API bool gtext_xml_validation_diagnostics_truncated(
+    const GTEXT_Markup_Document * document);
 
 /**
  * @brief Parse an XML file into a tree.

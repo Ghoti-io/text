@@ -708,7 +708,7 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       || (length == 3 && memcmp(name, "amp", 3) == 0)
       || (length == 4 &&
           (memcmp(name, "apos", 4) == 0 || memcmp(name, "quot", 4) == 0));
-  xml_general_entity * entity = !predefined && p->dtd_mode == GTEXT_XML_DTD_PROCESS
+  xml_general_entity * entity = !predefined && p->dtd_mode != GTEXT_XML_DTD_OFF
       ? find_general_entity(p, (const unsigned char *)name, length) : NULL;
   if (entity) {
     if (entity->unparsed)
@@ -769,7 +769,7 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       return xml_fail_at(p, pushed, "could not enter parsed entity source", &at);
     return GTEXT_XML_OK;
   }
-  const int parsed_source = p->dtd_mode == GTEXT_XML_DTD_PROCESS
+  const int parsed_source = p->dtd_mode != GTEXT_XML_DTD_OFF
       && !predefined && buf == &p->text
       && p->seams.open_entity_source
       && p->seams.open_entity_source(p->seams.user, name, length,
