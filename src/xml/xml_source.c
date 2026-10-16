@@ -242,9 +242,11 @@ GTEXT_XML_Status xml_source_charge_external(xml_ctx * p, size_t amount) {
       ? SIZE_MAX : f->bytes_charged + amount;
   p->external_bytes = amount > SIZE_MAX - p->external_bytes
       ? SIZE_MAX : p->external_bytes + amount;
-  /* External entity bytes are also expansion output. External subsets are
-     parsed as declarations and do not contribute to replacement text. */
-  if (f->kind != XML_SOURCE_EXTERNAL_SUBSET) {
+  /* Parameter-entity bytes count as replacement output as they are read.
+     General entities are charged once their decoded body and text declaration
+     boundary are known; external subsets are declarations, not replacement. */
+  if (f->kind != XML_SOURCE_EXTERNAL_SUBSET
+      && f->kind != XML_SOURCE_EXTERNAL_ENTITY) {
     const size_t expanded_limit = p->max_expanded_bytes != 0
         ? p->max_expanded_bytes : XML_DEFAULT_MAX_EXPANDED_BYTES;
     const int expanded_exceeded = p->expanded_bytes > expanded_limit

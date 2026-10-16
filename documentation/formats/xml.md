@@ -66,17 +66,27 @@ wins. ATTLIST bindings are keyed by element and attribute, so declarations
 merge across distinct attributes while the first declaration for each
 attribute wins. The index is separate from retained syntax and can be rebuilt
 from it. The parser does not validate documents against declarations or apply
-general-entity content expansion, attribute types, or default attributes. A
-conditional-section
-closing delimiter must occur in one physical source; a PE cannot supply part
-of that delimiter.
+attribute types or default attributes. In PROCESS mode, internal parsed general
+entities are expanded in content by the shared XML parser, including replacement
+markup, and recursively expanded and normalized in attribute values. External
+parsed general entities in content are read only through the caller's resolver;
+they are decoded, their text declaration is removed, and their body is parsed as
+replacement content. External entities in attributes fail. A declined,
+unavailable, or unresolved external general entity fails even when
+`GTEXT_XML_DTD_EXTERNAL_SKIP` is selected; SKIP does not insert empty content or
+an unresolved placeholder. A
+conditional-section closing delimiter must occur in one physical source; a PE
+cannot supply part of that delimiter.
 
 External access is explicit: only a caller-supplied resolver may provide an
-external subset or external parameter entity. With access denied or no
-resolver, no external resource is opened. A resolver decline for a referenced external PE returns
-`GTEXT_XML_E_RESOLVER`; resolver read, cancellation, and budget failures return
-their corresponding operation status. A declined external subset is omitted
-without failing the document parse.
+external subset, external parameter entity, or external parsed general entity.
+With access denied or no resolver, no external resource is opened. A resolver
+decline for a referenced external PE returns `GTEXT_XML_E_RESOLVER`; an
+unavailable external general entity returns `GTEXT_XML_E_ENTITY`. Resolver
+read failures return `GTEXT_XML_E_RESOLVER`, cancellation returns
+`GTEXT_XML_E_CANCELLED`, and budget failures return their corresponding limit
+status. A declined external subset is omitted without failing the document
+parse.
 
 ## Encodings
 
@@ -225,8 +235,11 @@ larger adversarial inputs independently.
 Total work is charged with checked `size_t` arithmetic as the shared cursor
 advances and as scanner paths revisit candidate bytes. Entity references and
 replacement sources are charged on every use, including repeated uses of the
-same source identity. A limit failure is reported before its corresponding
-replacement is appended or source frame is pushed.
+same source identity. For an external parsed general entity, the decoded
+replacement body is charged once per reference after text-declaration
+processing; the text declaration is excluded. The raw resolver bytes remain
+subject to the external-source limits. A limit failure is reported before its
+corresponding replacement is appended or source frame is published.
 
 The parser holds its open elements in a heap array, so a document nested a
 million deep is refused at the limit and never reaches the C stack; with the
@@ -254,13 +267,15 @@ parser could not accept.
 | `_UTF8`, `_CHARACTER` | the bytes, or the character, as above; also a numeric reference to a character XML forbids |
 | `_MISMATCHED_TAG` | an end tag that is not its start tag's |
 | `_DUPLICATE_ATTRIBUTE` | the same name twice, or two names with the same namespace and local name |
-| `_ENTITY` | a reference other than the predefined five and numeric ones |
+| `_ENTITY` | an undeclared, unresolved external, unparsed, or otherwise unusable entity reference |
 | `_NAMESPACE` | an unbound prefix, a name with two colons, `xmlns` or `xml` misused, a prefix undeclared, a colon in a processing-instruction target |
 | `_DOCTYPE` | a malformed document type declaration or internal subset |
 | `_UNSUPPORTED_ENCODING`, `_UNSUPPORTED_VERSION` | as above |
 | `_INVALID_SEQUENCE` | bytes that are not valid in the document's encoding, positioned at the unit |
 | `_ENCODING_MISMATCH` | the declaration names a different family from the one the document is in, positioned at the label |
 | `_LIMIT_*` | a limit above, each its own status |
+| `_RESOLVER` | an external parameter entity resolver open failed or was declined, OPENED metadata was malformed, or a source read failed or returned an invalid byte count |
+| `_CANCELLED` | the caller cancelled an external source read |
 | `_INVALID`, `_OOM` | an unusable argument; an allocation failed |
 | `_INCOMPLETE`, `_STATE` | event parsers only: the pull reader needs more input; a call that does not fit the state (input after the end) |
 

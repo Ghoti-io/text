@@ -1890,6 +1890,15 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
   markup_buf_init(&ext.decoded, ext.allocator);
   GTEXT_XML_Status status = xml_detect_encoding(&ext);
   if (status == GTEXT_XML_OK) status = external_text_declaration(&ext);
+  if (status == GTEXT_XML_OK
+      && resource->source_kind == XML_SOURCE_EXTERNAL_ENTITY) {
+    const size_t body_length = ext.length - ext.pos;
+    const size_t expanded_limit = ext.max_expanded_bytes != 0
+        ? ext.max_expanded_bytes : XML_DEFAULT_MAX_EXPANDED_BYTES;
+    status = xml_charge(&ext, &ext.expanded_bytes, expanded_limit,
+        body_length, GTEXT_XML_E_LIMIT_EXPANSION,
+        "entity expansion byte limit exceeded");
+  }
   if (status == GTEXT_XML_OK) {
     xml_source_frame * f = &ext.sources[ext.source_count - 1];
     f->bytes = ext.in; f->length = ext.length; f->pos = ext.pos;
@@ -1909,7 +1918,7 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
     p->line = ext.line; p->column = ext.column;
     p->cursor_previous = ext.cursor_previous; p->base = ext.base;
     p->references = ext.references; p->declarations = ext.declarations;
-    p->total_work = ext.total_work;
+    p->expanded_bytes = ext.expanded_bytes; p->total_work = ext.total_work;
     p->sources = ext.sources; p->source_count = ext.source_count;
     p->source_capacity = ext.source_capacity;
     p->source_names = ext.source_names;

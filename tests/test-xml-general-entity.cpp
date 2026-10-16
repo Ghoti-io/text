@@ -31,6 +31,7 @@ struct ExternalEntity {
   size_t closes = 0;
   int identity = 0;
   std::string requested_base_uri;
+  GTEXT_XML_Resource_Kind kind = GTEXT_XML_RESOURCE_GENERAL_ENTITY;
 };
 
 static GTEXT_XML_Source_Read_Result read_entity(void * handle,
@@ -51,9 +52,9 @@ static void close_entity(void * handle) {
 static GTEXT_XML_Resolver_Result resolve_entity(
     const GTEXT_XML_Resolve_Request * request, void * user,
     GTEXT_XML_External_Source * out) {
-  if (request->kind != GTEXT_XML_RESOURCE_GENERAL_ENTITY)
-    return GTEXT_XML_RESOLVER_DECLINED;
   auto * source = static_cast<ExternalEntity *>(user);
+  if (request->kind != source->kind)
+    return GTEXT_XML_RESOLVER_DECLINED;
   source->requested_base_uri = request->base_uri ? request->base_uri : "";
   *out = {source, &source->identity, "memory:entity", read_entity, close_entity};
   return GTEXT_XML_RESOLVER_OPENED;
@@ -134,8 +135,8 @@ TEST(XmlGeneralEntity, AttributeExpansionKeepsCharacterReferenceWhitespace) {
 }
 
 TEST(XmlGeneralEntity, CallerResolvedExternalReplacementUsesTheSharedParser) {
-  ExternalEntity source{
-      "<?xml version='1.0' encoding='UTF-8'?><child/>", 0, 0, 0, {}};
+  ExternalEntity source;
+  source.bytes = "<?xml version='1.0' encoding='UTF-8'?><child/>";
   const std::string input =
       "<!DOCTYPE root [<!ENTITY ext SYSTEM 'memory:entity'>]>"
       "<root>&ext;</root>";
@@ -161,6 +162,82 @@ TEST(XmlGeneralEntity, CallerResolvedExternalReplacementUsesTheSharedParser) {
   ASSERT_TRUE(gtext_markup_node_location(child, &location));
   EXPECT_GT(location.source_id, 1u);
   gtext_markup_document_free(document);
+}
+
+TEST(XmlGeneralEntity, ExternalReplacementBodyCountsAgainstExpansionBudget) {
+  ExternalEntity source;
+  source.bytes = "<?xml version='1.0' encoding='UTF-8'?><child/>";
+  const std::string input =
+      "<!DOCTYPE root [<!ENTITY ext SYSTEM 'memory:entity'>]>"
+      "<root>&ext;</root>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = resolve_entity;
+  options.resolver_user_data = &source;
+  options.max_expanded_bytes = 3;
+  GTEXT_Markup_Document * document = nullptr;
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_parse(input.data(), input.size(), &options,
+      &document, &error), GTEXT_XML_E_LIMIT_EXPANSION) << error.message;
+  EXPECT_EQ(document, nullptr);
+  EXPECT_EQ(source.closes, 1u);
+}
+
+TEST(XmlGeneralEntity, RestrictedCharacterReferenceFollowsDocumentVersion) {
+  const std::string xml10 =
+      "<?xml version='1.0'?><!DOCTYPE root [<!ENTITY control '&#x1;'>]>"
+      "<root>&control;</root>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document * document = nullptr;
+  GTEXT_XML_Error error{};
+  EXPECT_EQ(gtext_xml_parse(xml10.data(), xml10.size(), &options,
+      &document, &error), GTEXT_XML_E_CHARACTER);
+  EXPECT_EQ(document, nullptr);
+
+  const std::string xml11 =
+      "<?xml version='1.1'?><!DOCTYPE root [<!ENTITY control '&#x1;'>]>"
+      "<root>&control;</root>";
+  ASSERT_EQ(gtext_xml_parse(xml11.data(), xml11.size(), &options,
+      &document, &error), GTEXT_XML_OK) << error.message;
+  ASSERT_NE(document, nullptr);
+  size_t length = 0;
+  const char * text = gtext_markup_node_data(gtext_markup_node_first_child(
+      gtext_markup_document_element(document)), &length);
+  ASSERT_NE(text, nullptr);
+  ASSERT_EQ(length, 1u);
+  EXPECT_EQ(static_cast<unsigned char>(text[0]), 1u);
+  gtext_markup_document_free(document);
+}
+
+TEST(XmlGeneralEntity, ExternalParameterEntityDeclarationWorksInPushStream) {
+  ExternalEntity source;
+  source.bytes = "<!ENTITY replacement 'streamed'>";
+  source.kind = GTEXT_XML_RESOURCE_PARAMETER_ENTITY;
+  const std::string input =
+      "<!DOCTYPE root [<!ENTITY % declarations SYSTEM 'memory:declarations'>"
+      "%declarations;]><root>&replacement;</root>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = resolve_entity;
+  options.resolver_user_data = &source;
+  Events events;
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&options, collect, &events);
+  ASSERT_NE(stream, nullptr);
+  GTEXT_XML_Error error{};
+  for (char byte : input) {
+    const GTEXT_XML_Status status = gtext_xml_stream_feed(
+        stream, &byte, 1, &error);
+    ASSERT_EQ(status, GTEXT_XML_OK) << error.message;
+  }
+  ASSERT_EQ(gtext_xml_stream_finish(stream, &error), GTEXT_XML_OK)
+      << error.message;
+  EXPECT_EQ(events.values, (std::vector<std::string>{
+      "start:root", "text:streamed", "end:root"}));
+  EXPECT_EQ(source.closes, 1u);
+  gtext_xml_stream_free(stream);
 }
 
 TEST(XmlGeneralEntity, RecursionUnparsedUseAndAttributeMarkupFailWithoutTree) {
