@@ -153,10 +153,11 @@ typedef enum {
   GTEXT_XML_E_LIMIT_REFERENCES, ///< XML references exceeded their budget.
   GTEXT_XML_E_LIMIT_DECLARATIONS, ///< DTD declarations exceeded their budget.
   GTEXT_XML_E_LIMIT_WORK, ///< Parser work exceeded its deterministic budget.
-  GTEXT_XML_E_RESOLVER, ///< The resolver returned FAILED for any resource,
-                        ///< an external parameter entity open was declined,
-                        ///< OPENED metadata was malformed, or a source read
-                        ///< returned an error or invalid byte count.
+  GTEXT_XML_E_RESOLVER, ///< The resolver returned FAILED, OPENED metadata
+                        ///< was malformed, or a source read returned an error
+                        ///< or invalid byte count. A declined external subset
+                        ///< or parameter entity continues with incomplete DTD
+                        ///< knowledge instead of returning this status.
   GTEXT_XML_E_CANCELLED, ///< The caller cancelled an external source read.
   GTEXT_XML_E_UNAVAILABLE_RESOURCE ///< A referenced external entity was unavailable.
 } GTEXT_XML_Status;
@@ -219,7 +220,10 @@ typedef enum {
  *  with GTEXT_XML_E_RESOLVER. The parser copies each returned chunk before the
  *  next read and calls close exactly once after a successful open.
  *  `identity`, `base_uri`, `read`, and `close` must be non-NULL; identity and
- *  base_uri stay valid until close returns. Identity is compared by pointer
+ *  base_uri stay valid until close returns. If other OPENED metadata is invalid
+ *  but `close` is present, the parser calls it once before returning
+ *  GTEXT_XML_E_RESOLVER. Without `close`, the resolver handle cannot be
+ *  released. Identity is compared by pointer
  *  value against active sources: return the same identity token for the same
  *  physical resource, including aliases, and distinct tokens for distinct
  *  resources. The parser copies base_uri for later nested-resource resolution. */

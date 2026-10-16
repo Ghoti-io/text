@@ -23,7 +23,7 @@ the same version-aware parser and `GTEXT_XML_Parse_Options`:
 | Entry point | Input and result ownership |
 |---|---|
 | `gtext_xml_parse()` | Parses caller bytes synchronously; it does not retain the input. On success, the caller owns the document and releases it with `gtext_markup_document_free()`. |
-| `gtext_xml_parse_file()` | Reads the named file through the library file layer, then returns the same owned document. File input is separate from external DTD resolution. |
+| `gtext_xml_parse_file()` | Reads the named file through the library file layer, then returns the same owned document. If `options.base_uri` is unset, the path is used as the base URI for relative external resolver requests. File input is separate from external DTD resolution. |
 | `gtext_xml_stream_new/feed/finish()` | Pushes chunks to a callback. Event data and strings are borrowed for the callback only. Free the stream with `gtext_xml_stream_free()`. |
 | `gtext_xml_reader_new/feed/next()` | Pulls events from chunks. Event data and strings remain valid until the next `gtext_xml_reader_next()` call. Free the reader with `gtext_xml_reader_free()`. |
 
@@ -40,9 +40,11 @@ selects its finite default; zero never means unlimited. Use
 Fatal parse failures return no DOM tree and leave the output pointer untouched.
 Errors have a static message, status, physical source ID, parent source ID,
 location and a bounded reference trail. Lines and columns are 1-based;
-locations identify the physical source that supplied the construct. Offsets
-count decoded UTF-8 bytes, while `raw_byte_offset` is available for decoding
-faults when the original coordinate is known. Source descriptors and DOM
+locations identify the physical source that supplied the construct. For direct
+UTF-8 input, `offset` is the input-byte offset and includes a UTF-8 BOM. For
+transcoded input, `offset` counts bytes in the converted UTF-8 stream after its
+BOM is removed; `raw_byte_offset` gives the original encoded-byte position for
+a decoding fault when known. Source descriptors and DOM
 locations remain valid until the owning document is freed. DTD processing may
 coalesce text from several sources; `gtext_markup_text_span_count()` and
 `gtext_markup_text_span_at()` expose those source runs.
@@ -83,19 +85,21 @@ library build directory with `LD_LIBRARY_PATH=build/linux/release/apps`.
 Every element, text, CDATA, comment, processing instruction and doctype node
 carries its source location, and so does every attribute. A location is the
 byte offset, the line and the column of the construct's first character; a line
-ends according to the document version, a column counts characters, and a UTF-8 byte order mark
-counts in the offset and not in the columns. For input that is converted (UTF-16,
-UTF-32, ISO-8859-1, US-ASCII) a line and column still count characters of the
-original, but the **offset counts bytes of the UTF-8 form** the parser read, and
-a byte order mark is not counted at all.
+ends according to the document version and a column counts characters. For direct
+UTF-8, a byte order mark counts in the offset but not in columns. For converted
+UTF-16, UTF-32, ISO-8859-1 or US-ASCII input, line and column count original
+characters, while **offset counts bytes of the converted UTF-8 form**; any
+original byte order mark is excluded.
 
 ## DTD processing
 
 DTD processing is opt-in (`options.dtd_mode = GTEXT_XML_DTD_PROCESS`); the
 default mode keeps declarations unprocessed and preserves compatibility. In
-that mode, the internal subset is skipped by a
-bounded scanner that recognizes comments, processing instructions, quoted
-literals, and declaration boundaries.
+that mode, the internal subset is skipped by a bounded scanner that checks
+declaration termination, quoted-literal termination, forbidden delimiters and
+XML characters, and the allowed `% S` parameter marker in entity declarations.
+It recognizes comments and processing instructions but does not validate DTD
+declaration grammar or expand parameter entities.
 
 `GTEXT_XML_DTD_OFF` is the zero/default mode. `GTEXT_XML_DTD_PROCESS` reads
 declarations without checking document validity. `GTEXT_XML_DTD_VALIDATE` is
@@ -147,14 +151,19 @@ identifier strings and trail are borrowed for that callback. On `OPENED`, the
 source's identity token, base URI, read callback and close callback must be
 valid; identity is stable for a physical resource (including aliases), and
 identity/base URI stay valid through `close`. The parser copies every returned
-chunk before the next read and closes every successfully opened source exactly
-once on success, parse failure, cancellation, or a limit failure. It copies the
+chunk before the next read and closes each well-formed open exactly once on
+success, parse failure, cancellation, or a limit failure. If OPENED metadata is
+malformed but includes a close callback, the parser calls it once; without a
+close callback, the resolver handle cannot be released. The parser copies the
 base URI before reading so nested requests can use it.
 
 A resolver returns `DECLINED` for unavailable material or `FAILED` for an
 operation failure. A declined external subset or parameter entity records
 unread DTD knowledge and processing continues under non-validating XML rules.
-A declined referenced external general entity fails with
+If a parameter entity needed inside an external-subset markup declaration is
+declined, that incomplete declaration is discarded, DTD knowledge remains
+incomplete, and document parsing continues. A declined referenced external
+general entity fails with
 `GTEXT_XML_E_UNAVAILABLE_RESOURCE` by default; only an explicit
 `GTEXT_XML_DTD_EXTERNAL_SKIP` policy retains a placeholder and emits the skipped
 entity event. `FAILED`, malformed opened-source metadata, and read errors return
@@ -188,12 +197,12 @@ says `UTF-16` from `BOM`, and one declared `ISO-8859-1` says `ISO-8859-1` from
 | a UTF-16 or UTF-32 document whose label names another family (`UTF-8`, `ISO-8859-1`, `US-ASCII`, or the other width) | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
 | a UTF-8 document (with or without a mark) labeled `UTF-16` or `UTF-32`, or one with a UTF-8 mark labeled `ISO-8859-1` or `US-ASCII` | the same |
 | a bare label `UTF-16` or `UTF-32` | matches either byte order |
-| a lone or reversed surrogate, a UTF-32 unit past U+10FFFF or in the surrogate range, a document that ends inside a code unit, a byte of 0x80 or above under `US-ASCII` | `GTEXT_XML_E_INVALID_SEQUENCE`, at the unit |
+| a lone or reversed surrogate, a UTF-32 unit past U+10FFFF or in the surrogate range, a document that ends inside a code unit, a byte of 0x80 or above under `US-ASCII` | `GTEXT_XML_E_INVALID_SEQUENCE`, at the original encoded-byte unit (`raw_byte_offset`); `offset` is in converted UTF-8 |
 | the labels `UTF-16LE`, `UTF-16BE`, `UTF-32LE`, `UTF-32BE` and aliases such as `UCS-2` or `latin1` (declined on purpose) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` at the label |
 | EBCDIC, by its first bytes; any other label (`windows-1252`, `Shift_JIS`, ...) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` (offset 0 for EBCDIC, the label otherwise) |
 | an XML declaration whose `encoding` is not an `EncName` | `GTEXT_XML_E_SYNTAX` |
 | a version other than 1.0 or 1.1 | `GTEXT_XML_E_UNSUPPORTED_VERSION` for `1.<digits>`, `GTEXT_XML_E_SYNTAX` for anything the production does not allow |
-| bytes that are not UTF-8 | `GTEXT_XML_E_UTF8` |
+| bytes that are not UTF-8 | `GTEXT_XML_E_UTF8`, at the input-byte offset (`offset`; includes a UTF-8 BOM if present) |
 | UTF-8 that is not an XML character | `GTEXT_XML_E_CHARACTER` |
 
 An unsupported answer is a statement about the **parser** and not about the
@@ -218,11 +227,13 @@ parser and the pull reader alike, however the input is cut:
 | UTF-16 | `UTF-8`, `ISO-8859-1`, `UTF-32` | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
 | UTF-16 | `UTF-16` | accepted |
 
-The mark is skipped: it is in the byte offsets of locations and not in columns,
-so the first element of `EF BB BF <a/>` is at offset 3, line 1, column 1. A mark cut
-short at the end of the input (`EF`, `EF BB`) is the DOM parse's error from the
-event parsers too, however the bytes arrive. The writer gives a mark back through
-`byte_order_mark` above.
+A UTF-8 mark is skipped by parsing but remains in byte offsets, not columns, so
+the first element of `EF BB BF <a/>` is at offset 3, line 1, column 1. A BOM for
+a transcoded source is removed before conversion and is not counted in converted
+UTF-8 offsets; a decoding fault uses `raw_byte_offset` for the original byte
+position when known. A mark cut short at the end of the input (`EF`, `EF BB`) is
+the DOM parse's error from the event parsers too, however the bytes arrive. The
+writer gives a mark back through `byte_order_mark` above.
 
 ## Limits
 
