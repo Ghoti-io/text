@@ -520,6 +520,94 @@ static int hex_value(unsigned char c) {
   return -1;
 }
 
+static xml_general_entity * find_general_entity(xml_ctx * p,
+    const unsigned char * name, size_t length) {
+  for (size_t i = 0; i < p->general_entity_count; ++i) {
+    xml_general_entity * entity = &p->general_entities[i];
+    if (entity->name_length == length
+        && memcmp(entity->name, name, length) == 0) return entity;
+  }
+  return NULL;
+}
+
+static GTEXT_XML_Status expand_attribute_entity(xml_ctx * p,
+    xml_general_entity * entity, markup_buf * buf) {
+  const size_t depth = p->attribute_entity_depth;
+  if (depth >= p->max_entity_depth || depth >= 64)
+    return xml_fail(p, GTEXT_XML_E_LIMIT_ENTITY_DEPTH,
+        "entity nesting limit exceeded");
+  for (size_t i = 0; i < depth; ++i) {
+    if (p->attribute_entity_stack[i] == entity)
+      return xml_fail(p, GTEXT_XML_E_ENTITY, "recursive general entity reference");
+  }
+  p->attribute_entity_stack[depth] = entity;
+  p->attribute_entity_depth++;
+  size_t i = 0;
+  while (i < entity->replacement_length) {
+    if (entity->replacement[i] == '<')
+      return xml_fail(p, GTEXT_XML_E_SYNTAX,
+          "markup is not allowed in an attribute value");
+    if (entity->replacement[i] == '&') {
+      xml_ctx nested = *p;
+      nested.in = entity->replacement;
+      nested.length = entity->replacement_length;
+      nested.pos = i;
+      nested.base = 0;
+      nested.partial = 0;
+      nested.err = (GTEXT_XML_Error){0};
+      nested.line = 1;
+      nested.column = i + 1;
+      nested.cursor_previous = 0;
+      GTEXT_XML_Status status = xml_parse_reference(&nested,
+          &nested.attr_pool);
+      *buf = nested.attr_pool;
+      p->references = nested.references;
+      p->expanded_bytes = nested.expanded_bytes;
+      p->total_work = nested.total_work;
+      p->attribute_entity_depth = nested.attribute_entity_depth;
+      if (status != GTEXT_XML_OK) {
+        return xml_fail(p, status, nested.err.message[0]
+            ? nested.err.message : "invalid reference in attribute entity");
+      }
+      i = nested.pos;
+      continue;
+    }
+    xml_ctx view = *p;
+    view.in = entity->replacement;
+    view.length = entity->replacement_length;
+    view.partial = 0;
+    const size_t line_end = xml_line_end_bytes(&view, i);
+    if (line_end != 0) {
+      GTEXT_XML_Status status = xml_append(p, buf, " ", 1);
+      if (status != GTEXT_XML_OK) return status;
+      GTEXT_XML_Status work = xml_charge_work(p, line_end);
+      if (work != GTEXT_XML_OK) return work;
+      i += line_end;
+      continue;
+    }
+    uint32_t cp = 0;
+    size_t width = 0;
+    if (xml_decode(&view, i, &cp, &width) != XML_CHAR_OK)
+      return xml_fail(p, GTEXT_XML_E_CHARACTER,
+          "invalid character in attribute entity replacement");
+    if (cp == '\t'
+        || (p->version == XML_VERSION_11 && (cp == 0x85 || cp == 0x2028))) {
+      GTEXT_XML_Status status = xml_append(p, buf, " ", 1);
+      if (status != GTEXT_XML_OK) return status;
+    }
+    else {
+      GTEXT_XML_Status status = xml_append(p, buf,
+          (const char *)entity->replacement + i, width);
+      if (status != GTEXT_XML_OK) return status;
+    }
+    GTEXT_XML_Status work = xml_charge_work(p, width);
+    if (work != GTEXT_XML_OK) return work;
+    i += width;
+  }
+  p->attribute_entity_depth--;
+  return GTEXT_XML_OK;
+}
+
 GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
   const GTEXT_Markup_Location at = xml_here(p);
   GTEXT_XML_Status charged = xml_charge(p, &p->references,
@@ -620,6 +708,47 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       || (length == 3 && memcmp(name, "amp", 3) == 0)
       || (length == 4 &&
           (memcmp(name, "apos", 4) == 0 || memcmp(name, "quot", 4) == 0));
+  xml_general_entity * entity = !predefined && p->dtd_mode == GTEXT_XML_DTD_PROCESS
+      ? find_general_entity(p, (const unsigned char *)name, length) : NULL;
+  if (entity) {
+    if (entity->unparsed)
+      return xml_fail_at(p, GTEXT_XML_E_ENTITY,
+          "an unparsed entity cannot be used as parsed content", &at);
+    if (entity->external) {
+      if (buf == &p->attr_pool)
+        return xml_fail_at(p, GTEXT_XML_E_ENTITY,
+            "an external entity cannot be referenced in an attribute value", &at);
+      xml_resolved_resource resource;
+      GTEXT_XML_Status resolved = xml_resolve_external_resource(p,
+          GTEXT_XML_RESOURCE_GENERAL_ENTITY, XML_SOURCE_EXTERNAL_ENTITY,
+          entity->name, entity->public_id, entity->system_id,
+          entity->base_uri, &resource);
+      if (resolved != GTEXT_XML_OK)
+        return xml_finish_external_resource(p, &resource, resolved);
+      if (!resource.opened)
+        return xml_finish_external_resource(p, &resource,
+            xml_fail_at(p, GTEXT_XML_E_ENTITY,
+                "external general entity was not resolved by the caller", &at));
+      resolved = xml_activate_external_parameter_entity(p, &resource);
+      return xml_finish_external_resource(p, &resource, resolved);
+    }
+    if (buf == &p->attr_pool) {
+      charged = xml_charge(p, &p->expanded_bytes, p->max_expanded_bytes,
+          entity->replacement_length, GTEXT_XML_E_LIMIT_EXPANSION,
+          "entity expansion byte limit exceeded");
+      if (charged != GTEXT_XML_OK)
+        return xml_fail_at(p, charged, "entity expansion byte limit exceeded", &at);
+      return expand_attribute_entity(p, entity, buf);
+    }
+    const GTEXT_XML_Status flushed = xml_flush_text(p);
+    if (flushed != GTEXT_XML_OK) return flushed;
+    const GTEXT_XML_Status pushed = xml_source_push(p,
+        XML_SOURCE_INTERNAL_ENTITY, entity->identity, entity->name,
+        entity->name_length, entity->replacement, entity->replacement_length);
+    if (pushed != GTEXT_XML_OK)
+      return xml_fail_at(p, pushed, "could not enter parsed entity source", &at);
+    return GTEXT_XML_OK;
+  }
   const int parsed_source = p->dtd_mode == GTEXT_XML_DTD_PROCESS
       && !predefined && buf == &p->text
       && p->seams.open_entity_source

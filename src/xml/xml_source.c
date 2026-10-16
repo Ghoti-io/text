@@ -325,6 +325,15 @@ void xml_source_free(xml_ctx * p) {
     xml_release(p, p->parameter_entities[i].public_id);
     xml_release(p, p->parameter_entities[i].system_id);
   }
+  for (size_t i = 0; i < p->general_entity_count; i++) {
+    xml_general_entity * item = &p->general_entities[i];
+    xml_release(p, item->name); xml_release(p, item->replacement);
+    xml_release(p, item->public_id); xml_release(p, item->system_id);
+    xml_release(p, item->base_uri);
+  }
+  xml_release(p, p->general_entities);
+  p->general_entities = NULL;
+  p->general_entity_count = p->general_entity_capacity = 0;
   xml_release(p, p->parameter_entities);
   p->parameter_entities = NULL;
   p->parameter_entity_count = 0;
@@ -352,9 +361,10 @@ void xml_source_free(xml_ctx * p) {
 GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
     GTEXT_XML_Resource_Kind resource_kind, xml_source_kind source_kind,
     const char * source_name, const char * public_id, const char * system_id,
-    xml_resolved_resource * out) {
+    const char * declaration_base_uri, xml_resolved_resource * out) {
   if (!p || !out || (source_kind != XML_SOURCE_EXTERNAL_SUBSET
-          && source_kind != XML_SOURCE_PARAMETER_ENTITY))
+          && source_kind != XML_SOURCE_PARAMETER_ENTITY
+          && source_kind != XML_SOURCE_EXTERNAL_ENTITY))
     return xml_fail(p, GTEXT_XML_E_INVALID, "invalid external resource request");
   memset(out, 0, sizeof(*out));
   out->source_kind = source_kind;
@@ -384,8 +394,9 @@ GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
     .kind = resource_kind,
     .public_id = public_id,
     .system_id = system_id,
-    .base_uri = p->source_count != 0
-        ? p->sources[p->source_count - 1].base_uri : p->base_uri,
+    .base_uri = declaration_base_uri ? declaration_base_uri
+        : p->source_count != 0 ? p->sources[p->source_count - 1].base_uri
+                               : p->base_uri,
     .reference_trail = reference_trail_count ? reference_trail : NULL,
     .reference_trail_count = reference_trail_count
   };
@@ -529,7 +540,7 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
   xml_resolved_resource resource;
   GTEXT_XML_Status status = xml_resolve_external_resource(p,
       GTEXT_XML_RESOURCE_EXTERNAL_SUBSET, XML_SOURCE_EXTERNAL_SUBSET,
-      NULL, public_id, system_id, &resource);
+      NULL, public_id, system_id, NULL, &resource);
   if (status == GTEXT_XML_OK && resource.opened) {
     static const unsigned char empty[1] = {0};
     status = xml_parse_external_subset(p, doctype,

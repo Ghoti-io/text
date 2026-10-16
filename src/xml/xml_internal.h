@@ -236,6 +236,21 @@ typedef struct {
   const void * identity;
 } xml_parameter_entity;
 
+/** One effective general entity declaration used while reading the document. */
+typedef struct {
+  char * name;
+  size_t name_length;
+  unsigned char * replacement;
+  size_t replacement_length;
+  char * public_id;
+  char * system_id;
+  char * base_uri;
+  const void * identity;
+  unsigned char external;
+  unsigned char unparsed;
+  unsigned char external_context;
+} xml_general_entity;
+
 /** One effective DTD binding. The declaration text remains owned by the
  * doctype syntax model; these records are temporary lookup keys for this
  * parse, so they never become writable source syntax. */
@@ -383,6 +398,11 @@ typedef struct {
   xml_parameter_entity * parameter_entities;
   size_t parameter_entity_count;
   size_t parameter_entity_capacity;
+  xml_general_entity * general_entities;
+  size_t general_entity_count;
+  size_t general_entity_capacity;
+  xml_general_entity * attribute_entity_stack[64];
+  size_t attribute_entity_depth;
   xml_dtd_binding * dtd_bindings;
   size_t dtd_binding_count;
   size_t dtd_binding_capacity;
@@ -504,7 +524,7 @@ GTEXT_XML_Status xml_resolve_external_subset(xml_ctx * p,
 GTEXT_XML_Status xml_resolve_external_resource(xml_ctx * p,
     GTEXT_XML_Resource_Kind resource_kind, xml_source_kind source_kind,
     const char * source_name, const char * public_id, const char * system_id,
-    xml_resolved_resource * out);
+    const char * declaration_base_uri, xml_resolved_resource * out);
 GTEXT_XML_Status xml_finish_external_resource(xml_ctx * p,
     xml_resolved_resource * resource, GTEXT_XML_Status status);
 /** Parse a decoded external subset, whose source frame is currently active. */

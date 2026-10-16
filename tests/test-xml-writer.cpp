@@ -1521,9 +1521,8 @@ TEST(XmlWriter, ParseFileCarriesExplicitDtdModeWithoutExternalAccess) {
   opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
   opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_DENY;
 
-  // The external identifier is recorded but never opened. DTD declaration
-  // processing is not implemented in this story, so the internal entity still
-  // follows the established DTD-off failure behavior.
+  // The external identifier is recorded but never opened. Internal entity
+  // declarations are processed when DTD processing is enabled.
   std::ofstream(path, std::ios::binary)
       << "<!DOCTYPE a SYSTEM 'file:///this-must-not-be-opened'><a/>";
   Doc * doc = nullptr;
@@ -1536,8 +1535,14 @@ TEST(XmlWriter, ParseFileCarriesExplicitDtdModeWithoutExternalAccess) {
   std::ofstream(path, std::ios::binary)
       << "<!DOCTYPE a [<!ENTITY e 'v'>]><a>&e;</a>";
   doc = nullptr;
-  EXPECT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_E_ENTITY);
-  EXPECT_EQ(doc, nullptr);
+  ASSERT_EQ(gtext_xml_parse_file(path.c_str(), &opts, &doc, &err), GTEXT_XML_OK)
+      << err.message;
+  ASSERT_NE(doc, nullptr);
+  const char * entity_value = gtext_markup_node_data(
+      gtext_markup_node_first_child(gtext_markup_document_element(doc)), nullptr);
+  ASSERT_NE(entity_value, nullptr);
+  EXPECT_STREQ(entity_value, "v");
+  gtext_markup_document_free(doc);
 }
 
 TEST(XmlWriter, AFileThatCannotBeReadIsReportedTheWayCsvAndJsonReportIt) {

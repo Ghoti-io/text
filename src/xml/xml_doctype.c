@@ -352,6 +352,76 @@ static GTEXT_XML_Status dtd_add_external_parameter_entity(xml_ctx * p,
   return GTEXT_XML_OK;
 }
 
+static xml_general_entity * dtd_find_general_entity(xml_ctx * p,
+    const unsigned char * name, size_t name_length) {
+  for (size_t i = 0; i < p->general_entity_count; ++i) {
+    xml_general_entity * item = &p->general_entities[i];
+    if (item->name_length == name_length
+        && memcmp(item->name, name, name_length) == 0) return item;
+  }
+  return NULL;
+}
+
+static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
+    const unsigned char * name, size_t name_length,
+    unsigned char * replacement, size_t replacement_length,
+    const char * public_id, const char * system_id,
+    int external, int unparsed) {
+  const int external_context = p->source_count != 0
+      && p->sources[p->source_count - 1].external_source;
+  const char * declaration_base_uri = p->source_count != 0
+      ? p->sources[p->source_count - 1].base_uri : p->base_uri;
+  xml_general_entity * old = dtd_find_general_entity(p, name, name_length);
+  if (old && (external_context || !old->external_context)) {
+    xml_release(p, replacement);
+    return GTEXT_XML_OK; /* first binding at this precedence wins */
+  }
+  char * name_copy = xml_alloc(p, name_length + 1);
+  char * public_copy = public_id ? xml_alloc(p, strlen(public_id) + 1) : NULL;
+  char * system_copy = system_id ? xml_alloc(p, strlen(system_id) + 1) : NULL;
+  char * base_copy = declaration_base_uri
+      ? xml_alloc(p, strlen(declaration_base_uri) + 1) : NULL;
+  if (!name_copy || (public_id && !public_copy) || (system_id && !system_copy)
+      || (declaration_base_uri && !base_copy)) {
+    xml_release(p, name_copy); xml_release(p, public_copy);
+    xml_release(p, system_copy); xml_release(p, base_copy);
+    xml_release(p, replacement);
+    return xml_fail(p, GTEXT_XML_E_OOM, "could not retain general entity declaration");
+  }
+  memcpy(name_copy, name, name_length); name_copy[name_length] = 0;
+  if (public_id) memcpy(public_copy, public_id, strlen(public_id) + 1);
+  if (system_id) memcpy(system_copy, system_id, strlen(system_id) + 1);
+  if (declaration_base_uri)
+    memcpy(base_copy, declaration_base_uri, strlen(declaration_base_uri) + 1);
+  if (!old) {
+    GTEXT_XML_Status status = xml_grow(p, (void **)&p->general_entities,
+        &p->general_entity_capacity, sizeof(*p->general_entities),
+        p->general_entity_count + 1);
+    if (status != GTEXT_XML_OK) {
+      xml_release(p, name_copy); xml_release(p, public_copy);
+      xml_release(p, system_copy); xml_release(p, base_copy);
+      xml_release(p, replacement);
+      return status;
+    }
+    old = &p->general_entities[p->general_entity_count++];
+    memset(old, 0, sizeof(*old));
+  }
+  else {
+    xml_release(p, old->name); xml_release(p, old->replacement);
+    xml_release(p, old->public_id); xml_release(p, old->system_id);
+    xml_release(p, old->base_uri);
+  }
+  *old = (xml_general_entity){
+      .name = name_copy, .name_length = name_length,
+      .replacement = replacement, .replacement_length = replacement_length,
+      .public_id = public_copy, .system_id = system_copy,
+      .base_uri = base_copy,
+      .identity = name_copy, .external = (unsigned char)external,
+      .unparsed = (unsigned char)unparsed,
+      .external_context = (unsigned char)external_context};
+  return GTEXT_XML_OK;
+}
+
 static GTEXT_XML_Status dtd_expand_parameter_entity(xml_ctx * p,
     const unsigned char * name, size_t name_length,
     const GTEXT_Markup_Location * reference_at,
@@ -365,7 +435,7 @@ static GTEXT_XML_Status dtd_expand_parameter_entity(xml_ctx * p,
     xml_resolved_resource resource;
     GTEXT_XML_Status status = xml_resolve_external_resource(p,
         GTEXT_XML_RESOURCE_PARAMETER_ENTITY, XML_SOURCE_PARAMETER_ENTITY,
-        entity->name, entity->public_id, entity->system_id, &resource);
+        entity->name, entity->public_id, entity->system_id, NULL, &resource);
     if (status == GTEXT_XML_OK && !resource.opened) {
       status = xml_fail_at(p, GTEXT_XML_E_RESOLVER,
           "external parameter entity was not resolved by the caller",
@@ -385,7 +455,8 @@ static GTEXT_XML_Status dtd_expand_parameter_entity(xml_ctx * p,
 
 /* EntityValue has reference syntax of its own. */
 static GTEXT_XML_Status dtd_entity_value(xml_ctx * p,
-    unsigned char ** output, size_t * output_length) {
+    unsigned char ** output, size_t * output_length,
+    int preserve_character_references) {
   if (p->pos >= p->length || (p->in[p->pos] != '\'' && p->in[p->pos] != '"'))
     return dtd_bad(p, "an entity value was expected");
   markup_buf expanded;
@@ -491,7 +562,14 @@ static GTEXT_XML_Status dtd_entity_value(xml_ctx * p,
         return dtd_bad(p, "a reference in an entity value ends with ';'");
       }
       DTD_ENTITY_CONSUME(1);
-      if (character_reference) {
+      if (character_reference && preserve_character_references) {
+        if (markup_buf_append(&expanded, (const char *)p->in + reference_start,
+                p->pos - reference_start) != GTEXT_MARKUP_OK) {
+          markup_buf_free(&expanded);
+          return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
+        }
+      }
+      else if (character_reference) {
         unsigned char encoded[4];
         size_t encoded_length;
         if (character_value < 0x80) {
@@ -1004,6 +1082,13 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
   unsigned char * pe_owned_replacement = NULL;
   markup_buf pe_public, pe_system;
   int pe_external = 0;
+  unsigned char * general_name = NULL;
+  size_t general_name_length = 0;
+  unsigned char * general_replacement = NULL;
+  size_t general_replacement_length = 0;
+  markup_buf general_public, general_system;
+  int general_external = 0;
+  int general_unparsed = 0;
   /* The caller has checked that S follows the keyword; consume it here. */
   DTD_SKIP_SPACE_OR_RETURN(p);
   if (kind == 0) { /* ELEMENT */
@@ -1046,11 +1131,24 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
       pe_name_length = p->dtd_name_token_length;
     }
     s = dtd_need_space(p); if (s != GTEXT_XML_OK) return s;
+    if (!parameter_entity) {
+      general_name_length = p->dtd_name_token_length;
+      general_name = xml_alloc(p, general_name_length + 1);
+      if (!general_name) return xml_fail(p, GTEXT_XML_E_OOM,
+          "could not retain general entity name");
+      memcpy(general_name, p->dtd_name_token, general_name_length);
+      general_name[general_name_length] = 0;
+    }
     if (p->pos < p->length && (p->in[p->pos] == '\'' || p->in[p->pos] == '"')) {
       s = dtd_entity_value(p, &pe_owned_replacement,
-          &pe_replacement_length);
+          &pe_replacement_length, !parameter_entity);
       if (s == GTEXT_XML_OK && parameter_entity)
         pe_replacement = pe_owned_replacement;
+      else if (s == GTEXT_XML_OK) {
+        general_replacement = pe_owned_replacement;
+        general_replacement_length = pe_replacement_length;
+        pe_owned_replacement = NULL;
+      }
     }
     else {
       if (parameter_entity) {
@@ -1059,27 +1157,41 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
         pe_external = 1;
         s = dtd_external_id_capture(p, 0, &pe_public, &pe_system);
       }
-      else s = dtd_external_id(p, 0);
+      else {
+        markup_buf_init(&general_public, p->allocator);
+        markup_buf_init(&general_system, p->allocator);
+        general_external = 1;
+        s = dtd_external_id_capture(p, 0, &general_public, &general_system);
+      }
       size_t separator_space = xml_skip_space(p);
       if (p->err.code != GTEXT_XML_OK) {
         if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+        xml_release(p, general_name);
+        if (general_external) { markup_buf_free(&general_public); markup_buf_free(&general_system); }
         return p->err.code;
       }
       if (s == GTEXT_XML_OK && xml_looking_at(p, "NDATA", 5)) {
         if (parameter_entity) {
           if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
+          xml_release(p, general_name);
           return dtd_bad(p, "a parameter entity cannot have NDATA");
         }
-        if (separator_space == 0)
+        if (separator_space == 0) {
+          xml_release(p, general_name);
+          markup_buf_free(&general_public);
+          markup_buf_free(&general_system);
           return dtd_bad(p, "white space is required before NDATA");
+        }
         s = xml_consume(p, 5);
         if (s == GTEXT_XML_OK) s = dtd_need_space(p);
-        if (s == GTEXT_XML_OK) s = dtd_name(p);
+        if (s == GTEXT_XML_OK) { general_unparsed = 1; s = dtd_name(p); }
       }
     }
     if (s != GTEXT_XML_OK) {
       if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
       xml_release(p, pe_owned_replacement);
+      xml_release(p, general_name); xml_release(p, general_replacement);
+      if (general_external) { markup_buf_free(&general_public); markup_buf_free(&general_system); }
       return s;
     }
   }
@@ -1092,11 +1204,15 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
   if (p->err.code != GTEXT_XML_OK) {
     if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
     xml_release(p, pe_owned_replacement);
+    xml_release(p, general_name); xml_release(p, general_replacement);
+    if (general_external) { markup_buf_free(&general_public); markup_buf_free(&general_system); }
     return p->err.code;
   }
   if (p->pos >= p->length || p->in[p->pos] != '>') {
     if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
     xml_release(p, pe_owned_replacement);
+    xml_release(p, general_name); xml_release(p, general_replacement);
+    if (general_external) { markup_buf_free(&general_public); markup_buf_free(&general_system); }
     return dtd_bad(p, "'>' was expected to end the DTD declaration");
   }
   s = xml_consume(p, 1);
@@ -1109,8 +1225,18 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
     else s = dtd_add_parameter_entity(p, pe_name, pe_name_length,
         pe_replacement, pe_replacement_length);
   }
+  if (s == GTEXT_XML_OK && general_name) {
+    s = dtd_add_general_entity(p, general_name, general_name_length,
+        general_replacement, general_replacement_length,
+        general_external && general_public.length ? general_public.data : NULL,
+        general_external && general_system.data ? general_system.data : NULL,
+        general_external, general_unparsed);
+    general_replacement = NULL;
+  }
   if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }
   xml_release(p, pe_owned_replacement);
+  xml_release(p, general_name); xml_release(p, general_replacement);
+  if (general_external) { markup_buf_free(&general_public); markup_buf_free(&general_system); }
   return s;
 }
 
@@ -1735,6 +1861,9 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->dtd_bindings = ext.dtd_bindings;
   p->dtd_binding_count = ext.dtd_binding_count;
   p->dtd_binding_capacity = ext.dtd_binding_capacity;
+  p->general_entities = ext.general_entities;
+  p->general_entity_count = ext.general_entity_count;
+  p->general_entity_capacity = ext.general_entity_capacity;
   if (status != GTEXT_XML_OK) p->err = ext.err;
   markup_buf_free(&ext.decoded);
   return status;
@@ -1793,6 +1922,9 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
     p->dtd_bindings = ext.dtd_bindings;
     p->dtd_binding_count = ext.dtd_binding_count;
     p->dtd_binding_capacity = ext.dtd_binding_capacity;
+    p->general_entities = ext.general_entities;
+    p->general_entity_count = ext.general_entity_count;
+    p->general_entity_capacity = ext.general_entity_capacity;
     p->base_uri = f->base_uri;
   }
   else p->err = ext.err;

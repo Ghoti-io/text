@@ -46,21 +46,23 @@ extern "C" {
  *   declarations stay in the tree as attributes in the `xmlns` namespace
  *   (`xmlns="u"` is prefix NULL, local `xmlns`; `xmlns:p="u"` is prefix
  *   `xmlns`, local `p`), in source order with the others.
- * - **Text**, with references to the five predefined entities and to
- *   characters already expanded, and line endings normalized by the selected
- *   XML version. Adjacent character data is one node; a CDATA section is a
- *   node of its own, a comment and a processing instruction likewise.
+ * - **Text**, with references to the five predefined entities and, in DTD
+ *   PROCESS mode, declared parsed general entities expanded through the same
+ *   parser. Entity replacement can produce elements, comments, processing
+ *   instructions or text. Line endings follow the selected XML version.
+ *   Adjacent character data is one node; a CDATA section is a node of its own,
+ *   a comment and a processing instruction likewise.
  *   Whitespace outside the root element is not kept.
- * - **Attribute values** normalized as for CDATA: each tab, line feed and
- *   carriage return, written literally, becomes a space; a character
- *   reference to one stays itself.
+ * - **Attribute values** expand declared internal general entities in DTD
+ *   PROCESS mode and then apply XML attribute normalization: literal tabs, line
+ *   feeds and carriage returns become spaces; character references to them
+ *   stay themselves. Markup and external-entity references are forbidden.
  * - **The document type** as a doctype node (name, public and system
  *   identifier). With DTD mode OFF, its internal subset is skipped by a
  *   bounded scanner. With PROCESS, declarations are grammar-checked, parameter
  *   entities expand in permitted contexts, and raw, external-subset, and
  *   generated syntax are retained in separate ordered collections. Processing
- *   is non-validating: it does not apply default attributes or expand general
- *   entity references in document content.
+ *   is non-validating: it does not apply default attributes.
  * - **The XML declaration** as the document's version, standalone flag and
  *   encoding label (see gtext_markup_document_xml_version() and
  *   gtext_markup_document_encoding()). With no declaration the version is NULL
@@ -73,7 +75,8 @@ extern "C" {
  * `external_access` is ALLOW; it receives opaque identifiers, the base URI of
  * the active declaration source, and a bounded trail of active physical-source
  * labels (empty for the top-level external subset). It supplies a synchronous
- * chunked source. Resolver callbacks may perform I/O and must enforce the
+ * chunked source for external subsets, parameter entities and general
+ * entities. Resolver callbacks may perform I/O and must enforce the
  * application's allowlist. Reads are charged before bytes are retained, and a
  * successfully opened source is closed exactly once on every path. External
  * subset declarations are parsed against the DTD grammar, but semantic DTD
@@ -82,9 +85,10 @@ extern "C" {
  *
  * `dtd_mode` is shared by memory, file, push and pull readers. `OFF` preserves
  * the skipped-subset behavior above. `PROCESS` performs non-validating DTD
- * declaration processing and parameter-entity expansion. General entity
- * references beyond the five predefined entities remain errors until their
- * processing story is implemented. `VALIDATE` returns
+ * declaration processing and parameter-entity expansion. Internal parsed
+ * general entities are expanded in content and attributes; caller-resolved
+ * external parsed entities are expanded in content. Unparsed entities and
+ * unavailable external general entities fail when referenced. `VALIDATE` returns
  * GTEXT_XML_E_UNSUPPORTED_MODE before reading input. The external policy
  * defaults to DENY; SKIP is valid only with PROCESS and never grants the
  * library filesystem or network access. Placeholder and skipped-event

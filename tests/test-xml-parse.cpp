@@ -1220,8 +1220,13 @@ TEST_F(XmlParse, DtdModeDefaultsAndRejectsUnsupportedOrConflictingOptions) {
   opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
   r = parse("<!DOCTYPE a SYSTEM 'file:///this-must-not-be-opened'><a/>", &opts);
   EXPECT_EQ(r.status, GTEXT_XML_OK);
-  EXPECT_EQ(parse("<!DOCTYPE a [<!ENTITY e 'v'>]><a>&e;</a>", &opts).status,
-      GTEXT_XML_E_ENTITY);
+  Result entity = parse("<!DOCTYPE a [<!ENTITY e 'v'>]><a>&e;</a>", &opts);
+  ASSERT_EQ(entity.status, GTEXT_XML_OK) << entity.err.message;
+  const char * value = gtext_markup_node_data(
+      gtext_markup_node_first_child(gtext_markup_document_element(entity.doc)),
+      nullptr);
+  ASSERT_NE(value, nullptr);
+  EXPECT_STREQ(value, "v");
 
   opts.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
   EXPECT_EQ(parse("<a/>", &opts).status, GTEXT_XML_OK);
