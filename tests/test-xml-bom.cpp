@@ -97,33 +97,41 @@ Opts with_bom(GTEXT_XML_Bom_Mode mode) {
 // ---- 1. the writer ---------------------------------------------------------
 
 TEST(XmlBom, ADocumentParsedWithAMarkIsWrittenWithOneByteForByte) {
-  const std::vector<std::string> documents = {
-      "<a><b/>text</a>",
-      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<a x=\"1\">t</a>",
-      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<!--c-->\n<a/>",
-      "<!DOCTYPE a SYSTEM \"a.dtd\">\n<a>caf\xC3\xA9</a>",
+  struct RoundTripCase {
+    std::string body;
+    bool emit_external_identifiers;
   };
-  for (const std::string & body : documents) {
+  const std::vector<RoundTripCase> documents = {
+      {"<a><b/>text</a>", false},
+      {"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<a x=\"1\">t</a>", false},
+      {"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<!--c-->\n<a/>", false},
+      {"<!DOCTYPE a SYSTEM \"a.dtd\">\n<a>caf\xC3\xA9</a>", true},
+  };
+  for (const RoundTripCase & test_case : documents) {
+    const std::string & body = test_case.body;
     SCOPED_TRACE(body);
     Doc * doc = parse(kBom + body);
     ASSERT_NE(doc, nullptr);
     GTEXT_Markup_Encoding_Source source;
     EXPECT_STREQ(gtext_markup_document_encoding(doc, &source), "UTF-8");
     EXPECT_EQ(source, GTEXT_MARKUP_ENCODING_BOM);
-    const Out first = write_with(doc, gtext_xml_write_options_default());
+    Opts round_trip_options = gtext_xml_write_options_default();
+    round_trip_options.emit_external_identifiers =
+        test_case.emit_external_identifiers;
+    const Out first = write_with(doc, round_trip_options);
     ASSERT_EQ(first.status, GTEXT_XML_OK);
     EXPECT_EQ(first.bytes, kBom + body);
     // The second write, from what was read back, is the same bytes.
     Doc * back = parse(first.bytes);
     ASSERT_NE(back, nullptr);
-    EXPECT_EQ(write_with(back, gtext_xml_write_options_default()).bytes, first.bytes);
+    EXPECT_EQ(write_with(back, round_trip_options).bytes, first.bytes);
     gtext_markup_document_free(back);
     gtext_markup_document_free(doc);
 
     // And one without a mark is not given one.
     Doc * plain = parse(body);
     ASSERT_NE(plain, nullptr);
-    EXPECT_EQ(write_with(plain, gtext_xml_write_options_default()).bytes, body);
+    EXPECT_EQ(write_with(plain, round_trip_options).bytes, body);
     gtext_markup_document_free(plain);
   }
 }

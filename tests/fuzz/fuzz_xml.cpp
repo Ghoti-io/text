@@ -281,6 +281,8 @@ void round_trip(GTEXT_Markup_Document * doc, const std::string & input) {
   }
   for (int i = 0; i < 5; i++) {
     GTEXT_XML_Write_Options o = gtext_xml_write_options_default();
+    /* This harness checks semantic round-trip equivalence. */
+    o.emit_external_identifiers = true;
     o.encoding = kEncodings[i];
     GTEXT_XML_Write_Result r;
     char * out = nullptr;

@@ -78,6 +78,9 @@ using Opts = GTEXT_XML_Write_Options;
 Opts xopts() {
   Opts o = gtext_xml_write_options_default();
   o.xhtml = true;
+  // XHTML corpus round trips assert tree equivalence, so preserve identifiers
+  // instead of exercising the writer's reduced default-output policy.
+  o.emit_external_identifiers = true;
   return o;
 }
 

@@ -416,6 +416,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   const uint8_t m3 = in.byte();
 
   GTEXT_XML_Write_Options o = gtext_xml_write_options_default();
+  /* This harness checks parse/write round-trip equivalence, so retain external
+     identifiers rather than exercising the writer's reduced default policy. */
+  o.emit_external_identifiers = true;
   o.encoding = kEncodings[m1 % 5];
   o.xml_declaration = static_cast<GTEXT_XML_Declaration_Mode>((m1 >> 3) % 3);
   o.expand_empty_elements = (m1 >> 5) & 1;

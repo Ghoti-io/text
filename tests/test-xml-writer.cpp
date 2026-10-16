@@ -281,6 +281,7 @@ TEST(XmlWriter, TheDefaultsAreSpelledOutAndZeroIsTheDefault) {
   EXPECT_EQ(d.newline, nullptr);
   EXPECT_EQ(d.max_depth, 256u);
   EXPECT_EQ(d.max_output_bytes, 256u * 1024 * 1024);
+  EXPECT_FALSE(d.emit_external_identifiers);
 
   Opts zero;
   std::memset(&zero, 0, sizeof(zero));
@@ -309,7 +310,9 @@ TEST(XmlWriter, ARichDocumentRoundTripsAndTheSecondWriteIsIdentical) {
   parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
   Doc * a = parse_dtd(text, parse_options);
   ASSERT_NE(a, nullptr);
-  const Out first = write_default(a);
+  Opts preserve_identifiers = defaults();
+  preserve_identifiers.emit_external_identifiers = true;
+  const Out first = write_with(a, preserve_identifiers);
   ASSERT_EQ(first.status, GTEXT_XML_OK) << first.r.message << " " << first.r.path;
   Doc * b = parse_dtd(first.bytes, parse_options);
   ASSERT_NE(b, nullptr) << first.bytes;
@@ -319,7 +322,7 @@ TEST(XmlWriter, ARichDocumentRoundTripsAndTheSecondWriteIsIdentical) {
   EXPECT_STREQ(gtext_markup_document_xml_version(a, &sa), gtext_markup_document_xml_version(b, &sb));
   EXPECT_EQ(sa, sb);
   EXPECT_EQ(sa, GTEXT_MARKUP_STANDALONE_YES);
-  const Out second = write_default(b);
+  const Out second = write_with(b, preserve_identifiers);
   EXPECT_EQ(second.bytes, first.bytes);
   EXPECT_EQ(first.r.bytes_written, first.bytes.size());
   EXPECT_FALSE(first.r.doctype_without_subset);
@@ -454,10 +457,14 @@ TEST(XmlWriter, RefusesWhatXmlCannotSpellWithAStatusAndAPathAndWritesNothing) {
     SCOPED_TRACE(c.what);
     Build b;
     c.build(b);
+    Opts options = defaults();
+    if (std::string(c.path) == "/doctype()") {
+      options.emit_external_identifiers = true;
+    }
     Collect sink;
     GTEXT_XML_Write_Result r;
     const GTEXT_Markup_Sink s = sink.sink();
-    const GTEXT_XML_Status st = gtext_xml_write(&s, b.doc, nullptr, &r);
+    const GTEXT_XML_Status st = gtext_xml_write(&s, b.doc, &options, &r);
     EXPECT_EQ(st, c.status) << (r.message ? r.message : "");
     EXPECT_EQ(r.code, c.status);
     EXPECT_NE(r.message, nullptr);
@@ -466,7 +473,7 @@ TEST(XmlWriter, RefusesWhatXmlCannotSpellWithAStatusAndAPathAndWritesNothing) {
     EXPECT_EQ(sink.calls, 0u);
     EXPECT_EQ(sink.data, "");
     // The same through the buffer form: no buffer.
-    EXPECT_EQ(write_default(b.doc).status, c.status);
+    EXPECT_EQ(write_with(b.doc, options).status, c.status);
   }
 }
 
@@ -807,6 +814,9 @@ TEST(XmlWriter, ACharacterTheEncodingLacksIsARefusalWhereNoReferenceCanStandIn) 
     c.build(b);
     Opts o = defaults();
     o.encoding = GTEXT_XML_OUTPUT_US_ASCII;
+    if (std::string(c.what) == "doctype identifier") {
+      o.emit_external_identifiers = true;
+    }
     Collect sink;
     GTEXT_XML_Write_Result r;
     const GTEXT_Markup_Sink s = sink.sink();
@@ -911,7 +921,9 @@ TEST(XmlWriter, Xml11RawRestrictedCharactersAndInvalidCharactersRefusePreflight)
     Collect sink;
     GTEXT_XML_Write_Result result;
     const auto s = sink.sink();
-    EXPECT_EQ(gtext_xml_write(&s, b.doc, nullptr, &result),
+    Opts options = defaults();
+    options.emit_external_identifiers = true;
+    EXPECT_EQ(gtext_xml_write(&s, b.doc, &options, &result),
         GTEXT_XML_E_UNREPRESENTABLE);
     EXPECT_EQ(sink.calls, 0u);
   };
@@ -1131,7 +1143,9 @@ TEST(XmlWriter, TheDocumentTypeIsWrittenFromItsNameAndIdentifiers) {
     Build b;
     b.doctype(name, pub, sys);
     b.el(nullptr, "r");
-    const Out out = write_default(b.doc);
+    Opts options = defaults();
+    options.emit_external_identifiers = true;
+    const Out out = write_with(b.doc, options);
     EXPECT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
     EXPECT_TRUE(out.r.doctype_without_subset);
     return out.bytes;
@@ -1157,6 +1171,132 @@ TEST(XmlWriter, TheDocumentTypeIsWrittenFromItsNameAndIdentifiers) {
   gtext_markup_document_free(doc);
 }
 
+TEST(XmlWriter, OmitsTopLevelExternalSubsetByDefaultAndReportsReducedOutput) {
+  Build b;
+  b.doctype("a", "-//EXAMPLE//EN", "external.dtd");
+  b.el(nullptr, "a");
+  const Out out = write_default(b.doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes, "<!DOCTYPE a>\n<a/>");
+  EXPECT_TRUE(out.r.output_reduced);
+  EXPECT_TRUE(out.r.external_subset_omitted);
+  EXPECT_TRUE(out.r.doctype_without_subset);
+
+  Opts zeroed{};
+  const Out zeroed_out = write_with(b.doc, zeroed);
+  EXPECT_EQ(zeroed_out.bytes, out.bytes);
+  EXPECT_TRUE(zeroed_out.r.output_reduced);
+  EXPECT_TRUE(zeroed_out.r.external_subset_omitted);
+}
+
+TEST(XmlWriter, RequiresExplicitOptInForInternalExternalDeclarations) {
+  const auto refuses = [](const std::string & declaration) {
+    GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+    parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    const std::string input = "<!DOCTYPE a [" + declaration + "]><a/>";
+    Doc * doc = parse_dtd(input, parse_options);
+    ASSERT_NE(doc, nullptr);
+    Collect sink;
+    const GTEXT_Markup_Sink output = sink.sink();
+    GTEXT_XML_Write_Result result{};
+    EXPECT_EQ(gtext_xml_write(&output, doc, nullptr, &result),
+        GTEXT_XML_E_DOCTYPE);
+    EXPECT_STREQ(result.path, "/doctype()");
+    EXPECT_EQ(sink.calls, 0u);
+    EXPECT_EQ(result.bytes_written, 0u);
+    gtext_markup_document_free(doc);
+  };
+  refuses("<!ENTITY logo SYSTEM 'logo.svg'>");
+  refuses("<!NOTATION image SYSTEM 'image-format'>");
+  refuses("<!ENTITY % p \"<!ENTITY logo SYSTEM 'logo.svg'>\">%p;");
+}
+
+TEST(XmlWriter, ExplicitExternalIdentifierEmissionWritesWithoutResolving) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.external_access = GTEXT_XML_EXTERNAL_ACCESS_DENY;
+  const std::string input =
+      "<!DOCTYPE a SYSTEM 'external.dtd' [<!ENTITY logo SYSTEM 'logo.svg'>]><a/>";
+  Doc * doc = parse_dtd(input, parse_options);
+  ASSERT_NE(doc, nullptr);
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  const Out out = write_with(doc, options);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes,
+      "<!DOCTYPE a SYSTEM \"external.dtd\" [<!ENTITY logo SYSTEM 'logo.svg'>]>\n<a/>");
+  EXPECT_FALSE(out.r.output_reduced);
+  EXPECT_FALSE(out.r.external_subset_omitted);
+  gtext_markup_document_free(doc);
+
+  parse_options.external_access = GTEXT_XML_EXTERNAL_ACCESS_DENY;
+  doc = parse_dtd("<!DOCTYPE a [<!NOTATION image SYSTEM 'image-format'>]><a/>",
+      parse_options);
+  ASSERT_NE(doc, nullptr);
+  const Out notation = write_with(doc, options);
+  ASSERT_EQ(notation.status, GTEXT_XML_OK) << notation.r.message;
+  EXPECT_NE(notation.bytes.find("<!NOTATION image SYSTEM 'image-format'>"),
+      std::string::npos);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, ExplicitEmissionKeepsExternalParameterEntityReferenceWithoutIo) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  parse_options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  WriterResolver resolver{"<!ENTITY generated SYSTEM 'logo.svg'>"};
+  parse_options.resolver = writer_resolver_open;
+  parse_options.resolver_user_data = &resolver;
+  const std::string input =
+      "<!DOCTYPE a [<!ENTITY % p SYSTEM 'p.dtd'>%p;]><a/>";
+  Doc * doc = parse_dtd(input, parse_options);
+  ASSERT_NE(doc, nullptr);
+  EXPECT_EQ(resolver.opens, 1u);
+  const Node * doctype = gtext_markup_document_doctype(doc);
+  ASSERT_NE(doctype, nullptr);
+  ASSERT_GT(gtext_markup_doctype_generated_syntax_count(doctype), 0u);
+
+  const Out reduced = write_default(doc);
+  EXPECT_EQ(reduced.status, GTEXT_XML_E_DOCTYPE);
+  EXPECT_EQ(reduced.r.bytes_written, 0u);
+
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
+  const Out out = write_with(doc, options);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes,
+      "<!DOCTYPE a [<!ENTITY % p SYSTEM 'p.dtd'>\n%p;]>\n<a/>");
+  EXPECT_FALSE(out.r.output_reduced);
+  EXPECT_FALSE(out.r.external_subset_omitted);
+  EXPECT_EQ(resolver.opens, 1u);
+  EXPECT_EQ(out.bytes.find("<!ENTITY generated"), std::string::npos);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, DoesNotTreatSystemWordInsideEntityLiteralAsAnIdentifier) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  const std::string input =
+      "<!DOCTYPE a [<!ENTITY note 'SYSTEM is a word'>"
+      "<!ENTITY SYSTEM 'value'>]><a/>";
+  Doc * doc = parse_dtd(input, parse_options);
+  ASSERT_NE(doc, nullptr);
+  const Out out = write_default(doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_NE(out.bytes.find("<!ENTITY note 'SYSTEM is a word'>"), std::string::npos);
+  gtext_markup_document_free(doc);
+}
+
+TEST(XmlWriter, OmittedTopLevelIdentifierIsNotValidatedOrEncoded) {
+  Build b;
+  b.doctype("a", nullptr, "bad\"and'identifier");
+  b.el(nullptr, "a");
+  const Out out = write_default(b.doc);
+  ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
+  EXPECT_EQ(out.bytes, "<!DOCTYPE a>\n<a/>");
+  EXPECT_TRUE(out.r.external_subset_omitted);
+}
+
 TEST(XmlWriter, WritesRetainedDtdKindsInOrderAndRoundTripsTheGrammar) {
   GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
   options.dtd_mode = GTEXT_XML_DTD_PROCESS;
@@ -1169,7 +1309,9 @@ TEST(XmlWriter, WritesRetainedDtdKindsInOrderAndRoundTripsTheGrammar) {
       "<!ATTLIST a id ID #IMPLIED><!NOTATION n SYSTEM 'n'>]><a/>";
   ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error),
       GTEXT_XML_OK) << (error.message ? error.message : "");
-  const Out out = write_default(doc);
+  Opts writer_options = defaults();
+  writer_options.emit_external_identifiers = true;
+  const Out out = write_with(doc, writer_options);
   ASSERT_EQ(out.status, GTEXT_XML_OK) << out.r.message;
   const size_t element = out.bytes.find("<!ELEMENT a EMPTY>");
   const size_t comment = out.bytes.find("<!-- note -->");
@@ -1736,6 +1878,28 @@ struct TempDir {
   }
 };
 
+TEST(XmlWriter, InternalExternalDeclarationsRefuseBeforeCreatingOutputFile) {
+  GTEXT_XML_Parse_Options parse_options = gtext_xml_parse_options_default();
+  parse_options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  for (const char * declaration : {
+           "<!ENTITY logo SYSTEM 'logo.svg'>",
+           "<!NOTATION image SYSTEM 'image-format'>"}) {
+    const std::string input = std::string("<!DOCTYPE a [") + declaration
+        + "]><a/>";
+    Doc * doc = parse_dtd(input, parse_options);
+    ASSERT_NE(doc, nullptr);
+    TempDir dir;
+    const std::string path = dir.file("refused.xml");
+    GTEXT_XML_Write_Result result{};
+    EXPECT_EQ(gtext_xml_write_file(path.c_str(), doc, nullptr, &result),
+        GTEXT_XML_E_DOCTYPE) << declaration;
+    EXPECT_STREQ(result.path, "/doctype()");
+    EXPECT_EQ(result.bytes_written, 0u);
+    EXPECT_TRUE(dir.list().empty()) << declaration;
+    gtext_markup_document_free(doc);
+  }
+}
+
 TEST(XmlWriter, RejectsMalformedRetainedDtdSyntaxBeforeTheSink) {
   // Model syntax retained without DTD processing (or by an older producer):
   // that path can preserve balanced markup without checking its production.
@@ -1798,9 +1962,11 @@ TEST(XmlWriter, WriteFileThenParseFileGivesAnEqualTree) {
   TempDir dir;
   Doc * doc = rich();
   const std::string path = dir.file("out.xml");
+  Opts options = defaults();
+  options.emit_external_identifiers = true;
   GTEXT_XML_Write_Result r;
-  ASSERT_EQ(gtext_xml_write_file(path.c_str(), doc, nullptr, &r), GTEXT_XML_OK) << r.message;
-  EXPECT_EQ(slurp(path), write_default(doc).bytes);
+  ASSERT_EQ(gtext_xml_write_file(path.c_str(), doc, &options, &r), GTEXT_XML_OK) << r.message;
+  EXPECT_EQ(slurp(path), write_with(doc, options).bytes);
   EXPECT_EQ(dir.list(), std::vector<std::string>{"out.xml"});  // no temporary left over
 
   Doc * back = nullptr;
@@ -1811,9 +1977,8 @@ TEST(XmlWriter, WriteFileThenParseFileGivesAnEqualTree) {
   gtext_markup_document_free(back);
 
   // Another encoding, through the file.
-  Opts o = defaults();
-  o.encoding = GTEXT_XML_OUTPUT_UTF16LE;
-  ASSERT_EQ(gtext_xml_write_file(path.c_str(), doc, &o, nullptr), GTEXT_XML_OK);
+  options.encoding = GTEXT_XML_OUTPUT_UTF16LE;
+  ASSERT_EQ(gtext_xml_write_file(path.c_str(), doc, &options, nullptr), GTEXT_XML_OK);
   ASSERT_EQ(gtext_xml_parse_file(path.c_str(), nullptr, &back, &err), GTEXT_XML_OK);
   EXPECT_TRUE(gtext_markup_equal(gtext_markup_document_root(doc), gtext_markup_document_root(back)));
   gtext_markup_document_free(back);

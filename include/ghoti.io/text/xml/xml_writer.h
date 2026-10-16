@@ -313,14 +313,21 @@ typedef struct {
    *  safeguards remain in force and report their own limit statuses. Appended
    *  so zeroed remains the default. */
   size_t max_dtd_work;
+
+  /** Emit retained external identifiers in the doctype and internal DTD
+   *  declarations. Default false: the top-level external subset identifier is
+   *  omitted, and internal external-entity/notation declarations are refused.
+   *  When true, identifiers are written as stored; the writer never resolves or
+   *  fetches their resources. Appended so zeroed remains the default. */
+  bool emit_external_identifiers;
 } GTEXT_XML_Write_Options;
 
 /**
  * @brief The defaults, spelled out.
  *
  * @return Allocator NULL, declaration AUTO, UTF-8, `<a/>`, no namespace
- *   declarations added, compact, "\n", depth 256, 256 MiB output, and 64 MiB
- *   retained-DTD preflight work.
+ *   declarations added, compact, "\n", depth 256, 256 MiB output, 64 MiB
+ *   retained-DTD preflight work, and external identifiers disabled.
  */
 GTEXT_API GTEXT_XML_Write_Options gtext_xml_write_options_default(void);
 
@@ -435,6 +442,9 @@ typedef struct {
   bool doctype_without_subset; ///< A doctype was written without a retained
                            ///< internal subset. False when retained syntax was
                            ///< emitted in its original order.
+  bool output_reduced; ///< True when external identifiers were omitted.
+  bool external_subset_omitted; ///< A top-level external subset identifier
+                           ///< was omitted by the default writer policy.
   size_t xhtml_hazards;    ///< `xhtml` only: how many hazards were found
                            ///< (GTEXT_XML_Xhtml_Hazard). With `xhtml_strict` the
                            ///< first one is the refusal, so this is 1.

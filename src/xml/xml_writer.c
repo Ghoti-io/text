@@ -176,6 +176,8 @@ static GTEXT_XML_Status check_raw_data(
     wctx * w, const char * data, size_t len, const char * what);
 static GTEXT_XML_Status check_dtd_syntax(wctx * w,
     const GTEXT_Markup_Node * doctype, size_t syntax_count);
+static bool dtd_syntax_has_external_identifier(
+    const GTEXT_Markup_DTD_Syntax * syntax);
 
 static GTEXT_XML_Status fail(
     wctx * w, GTEXT_XML_Status code, const char * message) {
@@ -1146,7 +1148,7 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
   if (!name || !gtext_markup_is_xml_name(name, strlen(name))) {
     return bad_name(w, name ? name : "");
   }
-  if (pub) {
+  if (w->o.emit_external_identifiers && pub) {
     const size_t pl = strlen(pub);
     for (size_t i = 0; i < pl; i++) {
       if (!pubid_char((unsigned char)pub[i])) {
@@ -1165,7 +1167,7 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
           "a public identifier needs a system identifier in a document type");
     }
   }
-  if (sys) {
+  if (w->o.emit_external_identifiers && sys) {
     const size_t sl = strlen(sys);
     if (w->xml11) {
       if (check_raw_data(w, sys, sl,
@@ -1189,7 +1191,7 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
       || put_text(w, name, strlen(name), false) != GTEXT_XML_OK) {
     return w->status;
   }
-  if (pub) {
+  if (w->o.emit_external_identifiers && pub) {
     if (put_str(w, " PUBLIC ") != GTEXT_XML_OK
         || put_literal(w, pub, strlen(pub), true) != GTEXT_XML_OK
         || put_str(w, " ") != GTEXT_XML_OK) {
@@ -1198,7 +1200,7 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
     if (put_literal(w, sys, strlen(sys), false) != GTEXT_XML_OK) {
       return w->status;
     }
-  } else if (sys) {
+  } else if (w->o.emit_external_identifiers && sys) {
     if (put_str(w, " SYSTEM ") != GTEXT_XML_OK
         || put_literal(w, sys, strlen(sys), false) != GTEXT_XML_OK) {
       return w->status;
@@ -1241,6 +1243,9 @@ static GTEXT_XML_Status write_doctype(wctx * w, const GTEXT_Markup_Node * n) {
   }
   if (w->dry) {
     w->r->doctype_without_subset = syntax_count == 0;
+    w->r->external_subset_omitted |= !w->o.emit_external_identifiers
+        && (pub != NULL || sys != NULL);
+    w->r->output_reduced |= w->r->external_subset_omitted;
   }
   return put_str(w, ">");
 }
@@ -1340,8 +1345,75 @@ static GTEXT_XML_Status check_dtd_syntax(wctx *w,
     return fail(w, GTEXT_XML_E_DOCTYPE,
         "retained internal DTD syntax is malformed");
   }
+  if (!w->o.emit_external_identifiers) {
+    const GTEXT_Markup_Node *parsed_doctype =
+        gtext_markup_document_doctype(parsed);
+    const size_t parsed_count =
+        gtext_markup_doctype_syntax_count(parsed_doctype);
+    const size_t generated_count =
+        gtext_markup_doctype_generated_syntax_count(parsed_doctype);
+    for (size_t i = 0; i < parsed_count + generated_count; ++i) {
+      GTEXT_Markup_DTD_Syntax item;
+      const bool found = i < parsed_count
+          ? gtext_markup_doctype_syntax(parsed_doctype, i, &item)
+          : gtext_markup_doctype_generated_syntax(
+                parsed_doctype, i - parsed_count, &item);
+      if (found && dtd_syntax_has_external_identifier(&item)) {
+        gtext_markup_document_free(parsed);
+        return fail(w, GTEXT_XML_E_DOCTYPE,
+            "an internal DTD declaration requires explicit external-identifier emission");
+      }
+    }
+  }
   gtext_markup_document_free(parsed);
   return GTEXT_XML_OK;
+}
+
+static bool dtd_identifier_space(char c) {
+  return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+/* The source has already passed the shared DTD parser. Locate the grammar
+   position after the entity/notation name before checking its external-ID
+   keyword, so names and quoted literals such as `SYSTEM` are not mistaken for
+   an identifier. */
+static bool dtd_syntax_has_external_identifier(
+    const GTEXT_Markup_DTD_Syntax *syntax) {
+  if (!syntax || !syntax->source
+      || (syntax->kind != GTEXT_MARKUP_DTD_ENTITY
+          && syntax->kind != GTEXT_MARKUP_DTD_NOTATION)) {
+    return false;
+  }
+  const char *source = syntax->source;
+  const size_t length = syntax->source_length;
+  size_t at = syntax->kind == GTEXT_MARKUP_DTD_ENTITY
+      ? sizeof("<!ENTITY") - 1 : sizeof("<!NOTATION") - 1;
+  if (length < at || memcmp(source,
+          syntax->kind == GTEXT_MARKUP_DTD_ENTITY ? "<!ENTITY" : "<!NOTATION",
+          at) != 0) return false;
+  if (at == length || !dtd_identifier_space(source[at])) return false;
+  while (at < length && dtd_identifier_space(source[at])) ++at;
+  if (syntax->kind == GTEXT_MARKUP_DTD_ENTITY && at < length
+      && source[at] == '%') {
+    ++at;
+    if (at == length || !dtd_identifier_space(source[at])) return false;
+    while (at < length && dtd_identifier_space(source[at])) ++at;
+  }
+  const size_t name_start = at;
+  while (at < length && !dtd_identifier_space(source[at])) ++at;
+  if (at == name_start || at == length) return false;
+  while (at < length && dtd_identifier_space(source[at])) ++at;
+  const char *keywords[] = {"SYSTEM", "PUBLIC"};
+  for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); ++i) {
+    const size_t keyword_length = strlen(keywords[i]);
+    if (keyword_length <= length - at
+        && memcmp(source + at, keywords[i], keyword_length) == 0
+        && at + keyword_length < length
+        && dtd_identifier_space(source[at + keyword_length])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /* ---- leaves ------------------------------------------------------------- */

@@ -153,6 +153,9 @@ static void run_round_trip(const char *buf, size_t n) {
   for (size_t i = 0; i < sizeof(round_trip_configs) / sizeof(round_trip_configs[0]); i++) {
     GTEXT_XML_Write_Options o = gtext_xml_write_options_default();
     o.encoding = round_trip_configs[i].enc;
+    /* This gate checks semantic round-trip equivalence, so keep the source
+       document's external identifiers rather than exercising reduced output. */
+    o.emit_external_identifiers = true;
     GTEXT_XML_Write_Result r;
     char *out = NULL;
     size_t out_len = 0;
