@@ -161,6 +161,11 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
         markup_free(doc, d->generated_syntax[i].parameter_entity);
       }
       markup_free(doc, d->generated_syntax);
+      for (size_t i = 0; i < d->binding_count; ++i) {
+        markup_free(doc, d->bindings[i].element_name);
+        markup_free(doc, d->bindings[i].name);
+      }
+      markup_free(doc, d->bindings);
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -620,6 +625,8 @@ GTEXT_Markup_Status markup_doctype_append_syntax(GTEXT_Markup_Node * node,
   item->length = length;
   item->location = *location;
   item->parameter_entity = NULL;
+  item->sequence = d->next_syntax_sequence++;
+  item->external_context = 0;
   return GTEXT_MARKUP_OK;
 }
 
@@ -651,12 +658,15 @@ GTEXT_Markup_Status markup_doctype_append_external_syntax(
   item->length = length;
   item->location = *location;
   item->parameter_entity = NULL;
+  item->sequence = d->next_syntax_sequence++;
+  item->external_context = 1;
   return GTEXT_MARKUP_OK;
 }
 
 GTEXT_Markup_Status markup_doctype_append_generated_syntax(
     GTEXT_Markup_Node * node, int kind, const char * source, size_t length,
-    const GTEXT_Markup_Location * location, const char * parameter_entity) {
+    const GTEXT_Markup_Location * location, const char * parameter_entity,
+    int external_context) {
   if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !source || !location
       || !parameter_entity) return GTEXT_MARKUP_E_INVALID;
   markup_doctype * d = (markup_doctype *)node;
@@ -686,7 +696,95 @@ GTEXT_Markup_Status markup_doctype_append_generated_syntax(
   item->length = length;
   item->location = *location;
   item->parameter_entity = entity_copy;
+  item->sequence = d->next_syntax_sequence++;
+  item->external_context = (uint8_t)!!external_context;
   return GTEXT_MARKUP_OK;
+}
+
+static const markup_dtd_syntax *find_doctype_syntax(
+    const markup_doctype *d, const char *source, size_t length,
+    const GTEXT_Markup_Location *location) {
+  const markup_dtd_syntax *arrays[] = {d->syntax, d->external_syntax,
+      d->generated_syntax};
+  const size_t counts[] = {d->syntax_count, d->external_syntax_count,
+      d->generated_syntax_count};
+  for (size_t a = 0; a < 3; ++a) {
+    for (size_t i = 0; i < counts[a]; ++i) {
+      const markup_dtd_syntax *item = &arrays[a][i];
+      if (item->location.source_id == location->source_id
+          && item->location.offset == location->offset
+          && item->length == length
+          && memcmp(item->source, source, length) == 0) return item;
+    }
+  }
+  return NULL;
+}
+
+GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
+    int kind, const char *element_name, size_t element_name_length,
+    const char *name, size_t name_length, const char *source,
+    size_t source_length, const GTEXT_Markup_Location *location,
+    int external_context) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !name || !name_length
+      || !source || !location || (element_name_length && !element_name))
+    return GTEXT_MARKUP_E_INVALID;
+  markup_doctype *d = (markup_doctype *)node;
+  const markup_dtd_syntax *retained = find_doctype_syntax(d, source,
+      source_length, location);
+  if (!retained) return GTEXT_MARKUP_E_INVALID;
+  size_t found = SIZE_MAX;
+  for (size_t i = 0; i < d->binding_count; ++i) {
+    markup_dtd_binding *b = &d->bindings[i];
+    if (b->kind == kind && b->name_length == name_length
+        && memcmp(b->name, name, name_length) == 0
+        && b->element_name_length == element_name_length
+        && (!element_name_length
+            || memcmp(b->element_name, element_name, element_name_length) == 0)) {
+      found = i; break;
+    }
+  }
+  if (found != SIZE_MAX && (external_context || !d->bindings[found].external_context))
+    return GTEXT_MARKUP_OK;
+  char *element_copy = element_name_length
+      ? markup_copy(node->doc, element_name, element_name_length) : NULL;
+  char *name_copy = markup_copy(node->doc, name, name_length);
+  if ((element_name_length && !element_copy) || !name_copy) {
+    markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+    return GTEXT_MARKUP_E_OOM;
+  }
+  if (found == SIZE_MAX) {
+    if (d->binding_count == d->binding_capacity) {
+      size_t cap = d->binding_capacity ? d->binding_capacity * 2 : 8;
+      if (cap < d->binding_capacity || cap > SIZE_MAX / sizeof(*d->bindings)) {
+        markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+        return GTEXT_MARKUP_E_LIMIT;
+      }
+      markup_dtd_binding *grown = markup_realloc(node->doc, d->bindings,
+          cap * sizeof(*d->bindings));
+      if (!grown) { markup_free(node->doc, element_copy); markup_free(node->doc, name_copy);
+        return GTEXT_MARKUP_E_OOM; }
+      d->bindings = grown; d->binding_capacity = cap;
+    }
+    found = d->binding_count++;
+  }
+  else {
+    markup_free(node->doc, d->bindings[found].element_name);
+    markup_free(node->doc, d->bindings[found].name);
+  }
+  d->bindings[found] = (markup_dtd_binding){kind, element_copy,
+      element_name_length, name_copy, name_length, retained->source, source_length,
+      *location, (uint8_t)!!external_context};
+  return GTEXT_MARKUP_OK;
+}
+
+void markup_doctype_clear_bindings(GTEXT_Markup_Node *node) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE) return;
+  markup_doctype *d = (markup_doctype *)node;
+  for (size_t i = 0; i < d->binding_count; ++i) {
+    markup_free(node->doc, d->bindings[i].element_name);
+    markup_free(node->doc, d->bindings[i].name);
+  }
+  d->binding_count = 0;
 }
 
 GTEXT_Markup_Status gtext_markup_create_fragment(

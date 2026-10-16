@@ -58,10 +58,16 @@ In processing mode, internal-subset declarations are parsed against the DTD
 grammar. Parameter entities expand in permitted DTD positions in declaration
 order. Recursive and aliased active sources fail, and each use charges the
 source, reference, and work limits. Internal raw syntax, the caller-resolved
-external-subset snapshot, and declarations generated from PE replacement text
-are separate doctype collections. The parser does not compile effective DTD
-bindings, validate documents against declarations, or apply general-entity
-content expansion, attribute types, or default attributes. A conditional-section
+external-subset snapshot, and constructs parsed from PE replacement text are
+separate doctype collections. The parser also builds a derived effective
+binding index: internal-subset declarations take precedence over external
+subset declarations, and the first applicable declaration at that precedence
+wins. ATTLIST bindings are keyed by element and attribute, so declarations
+merge across distinct attributes while the first declaration for each
+attribute wins. The index is separate from retained syntax and can be rebuilt
+from it. The parser does not validate documents against declarations or apply
+general-entity content expansion, attribute types, or default attributes. A
+conditional-section
 closing delimiter must occur in one physical source; a PE cannot supply part
 of that delimiter.
 
@@ -151,8 +157,13 @@ The DTD counters bound source and declaration processing. External subsets
 are read only through the caller's resolver; the library does not open
 resources itself. It parses external-subset declarations against the DTD grammar and retains
 their syntax snapshot, but does not check document validity against those
-declarations or build effective DTD bindings. The snapshot preserves declarations, comments, and processing
-instructions in source order from included sections. It excludes the text
+declarations. The derived index applies internal-over-external precedence and
+first-applicable declaration rules; each element/attribute pair in an ATTLIST
+has its own binding. This index is separate from the retained syntax
+collections and can be rebuilt from them. The external snapshot preserves
+declarations, comments, and processing instructions in source order from
+included sections, but not raw parameter-entity reference constructs. It
+excludes the text
 declaration, conditional-section delimiters, and ignored-section contents.
 Snapshots are retained only for DOM parses; event-only parsing has no doctype
 node to own one. Snapshot source text is decoded UTF-8 and preserves the source's
@@ -178,14 +189,22 @@ differ. A declined PE returns `GTEXT_XML_E_RESOLVER`; read, cancellation, and
 budget failures return their corresponding statuses. No resource is opened unless the
 caller enables external access and supplies the resolver.
 
-Internal-subset syntax remains available through
-`gtext_markup_doctype_syntax()`, and a resolved external-subset snapshot is
-available through `gtext_markup_doctype_external_syntax()`. Declarations
-parsed from parameter-entity replacement text are retained separately through
-`gtext_markup_doctype_generated_syntax()`. Each generated entry reports the
-physical source location and the lexical name of the PE frame that supplied
-it. These collections preserve parsed syntax; they do not compile effective
-DTD bindings.
+The syntax collections retain constructs rather than declarations alone:
+element, ATTLIST, entity, and notation declarations; comments and processing
+instructions; and parameter-entity reference constructs where recorded by the
+scanner. Internal-subset syntax is available through
+`gtext_markup_doctype_syntax()` and includes raw parameter-entity reference
+constructs. A resolved external-subset snapshot is available through
+`gtext_markup_doctype_external_syntax()`; it retains declarations, comments,
+and processing instructions from included sections after permitted PE
+expansion, without the raw reference spellings. Constructs parsed from PE
+replacement text are retained separately through
+`gtext_markup_doctype_generated_syntax()`. Generated entries can include
+declarations, comments, processing instructions, and nested PE-reference
+constructs where recorded by the scanner. Each generated entry reports the
+physical source location and lexical name of the PE frame that supplied it.
+Effective declaration bindings are derived separately from these retained
+syntax collections.
 
 These defaults retain the 64 MiB document ceiling and bound additional work
 separately. The checked-in pinned XML conformance corpus occupies 17 MiB and

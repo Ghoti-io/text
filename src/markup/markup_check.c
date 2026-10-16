@@ -230,6 +230,46 @@ static const char * check_node(const GTEXT_Markup_Document * doc, node_t * n) {
           return "a doctype has an invalid external syntax record";
         }
       }
+      if (d->generated_syntax_count > d->generated_syntax_capacity
+          || (d->generated_syntax_count && !d->generated_syntax))
+        return "a doctype's generated syntax array is inconsistent";
+      for (size_t i = 0; i < d->generated_syntax_count; ++i) {
+        const markup_dtd_syntax *item = &d->generated_syntax[i];
+        if (!item->source || !item->parameter_entity
+            || item->source[item->length] != '\0'
+            || item->kind < GTEXT_MARKUP_DTD_ELEMENT
+            || item->kind > GTEXT_MARKUP_DTD_PARAMETER_REFERENCE
+            || !source_id_known(doc, item->location.source_id)
+            || !source_id_known(doc, item->location.reference_source_id))
+          return "a doctype has an invalid generated syntax record";
+      }
+      if (d->binding_count > d->binding_capacity
+          || (d->binding_count && !d->bindings))
+        return "a doctype's effective binding array is inconsistent";
+      for (size_t i = 0; i < d->binding_count; ++i) {
+        const markup_dtd_binding *b = &d->bindings[i];
+        if (!b->name || !b->source || b->name[b->name_length] != '\0'
+            || (b->element_name
+                && b->element_name[b->element_name_length] != '\0')
+            || (!b->element_name && b->element_name_length)
+            || !source_id_known(doc, b->location.source_id)
+            || !source_id_known(doc, b->location.reference_source_id))
+          return "a doctype has an invalid effective binding";
+        int retained = 0;
+        const markup_dtd_syntax *arrays[] = {d->syntax, d->external_syntax,
+            d->generated_syntax};
+        const size_t counts[] = {d->syntax_count, d->external_syntax_count,
+            d->generated_syntax_count};
+        for (size_t a = 0; a < 3 && !retained; ++a)
+          for (size_t j = 0; j < counts[a]; ++j)
+            if (b->source == arrays[a][j].source
+                && b->source_length == arrays[a][j].length
+                && b->location.source_id == arrays[a][j].location.source_id
+                && b->location.offset == arrays[a][j].location.offset) {
+              retained = 1; break;
+            }
+        if (!retained) return "a DTD binding does not point into retained syntax";
+      }
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:

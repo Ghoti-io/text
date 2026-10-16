@@ -557,23 +557,29 @@ GTEXT_API bool gtext_markup_doctype_external_syntax(
     const GTEXT_Markup_Node * node, size_t index, GTEXT_Markup_DTD_Syntax * out);
 
 /**
- * @brief Get the number of declarations parsed from parameter-entity text.
+ * @brief Get the number of constructs parsed from parameter-entity text.
  * @param node A doctype node; may be NULL or another node kind.
- * @return The generated declaration count, or zero for other nodes.
+ * @return The generated construct count, or zero for other nodes.
  */
 GTEXT_API size_t gtext_markup_doctype_generated_syntax_count(
     const GTEXT_Markup_Node * node);
 /**
- * @brief Read a declaration parsed from parameter-entity replacement text.
+ * @brief Read a construct parsed from parameter-entity replacement text.
  * @param node A doctype node.
- * @param index Zero-based generated declaration index.
- * @param out Receives the declaration kind, source, location, and PE name.
+ * @param index Zero-based generated construct index.
+ * @param out Receives the construct kind, source, location, and PE name.
  * @return True when `index` is in range; false otherwise. `out` is unchanged
  *   on failure.
  *
  * The returned `source` and `parameter_entity` strings are borrowed from the
  * doctype and remain valid while it lives. `parameter_entity` is the lexical
- * name of the PE frame that supplied the declaration text.
+ * name of the PE frame that supplied the construct text. The returned kind is
+ * one of GTEXT_MARKUP_DTD_ELEMENT, GTEXT_MARKUP_DTD_ATTLIST,
+ * GTEXT_MARKUP_DTD_ENTITY, GTEXT_MARKUP_DTD_NOTATION,
+ * GTEXT_MARKUP_DTD_COMMENT, GTEXT_MARKUP_DTD_PROCESSING_INSTRUCTION, or
+ * GTEXT_MARKUP_DTD_PARAMETER_REFERENCE. Thus entries can be declarations,
+ * comments, processing instructions, or retained parameter-entity reference
+ * constructs.
  */
 GTEXT_API bool gtext_markup_doctype_generated_syntax(
     const GTEXT_Markup_Node * node, size_t index, GTEXT_Markup_DTD_Syntax * out);

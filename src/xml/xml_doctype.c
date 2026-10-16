@@ -30,12 +30,14 @@
  * The name and external identifiers are kept in a doctype node. In DTD
  * processing mode, each internal-subset construct is retained in source order
  * with its kind and physical location. Declaration evaluation is deliberately
- * separate; this scanner does not create effective binding indexes.
+ * separate; a rebuildable effective binding index is compiled from the
+ * retained records after DTD processing is complete.
  */
 
 #include <ghoti.io/text/macros.h>
 
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "xml_internal.h"
@@ -1112,8 +1114,228 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
   return s;
 }
 
-/* DTD-off preserves the original skip-only behavior. DTD processing performs
-   production validation above, but neither mode evaluates declarations. */
+/* Build the parse's effective lookup keys from each successfully parsed
+   declaration. The doctype keeps every syntax item separately, including
+   declarations that lose here. */
+static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
+    const unsigned char *element, size_t element_len,
+    const unsigned char *name, size_t name_len, int external,
+    GTEXT_Markup_Node *doctype, const unsigned char *decl, size_t decl_len,
+    const GTEXT_Markup_Location *where) {
+  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+    GTEXT_XML_Status charged = xml_charge_work(p, 1);
+    if (charged != GTEXT_XML_OK) return charged;
+    xml_dtd_binding *b = &p->dtd_bindings[i];
+    if (b->kind != kind || b->name_length != name_len
+        || memcmp(b->name, name, name_len) != 0) continue;
+    if (kind == GTEXT_MARKUP_DTD_ATTLIST
+        && (b->element_name_length != element_len
+            || memcmp(b->element_name, element, element_len) != 0)) continue;
+    /* Internal declarations outrank external declarations even when an
+       external PE was encountered earlier while reading the internal subset. */
+    if (!external && b->external) {
+      char *copy = xml_alloc(p, name_len + 1);
+      char *element_copy = element_len ? xml_alloc(p, element_len + 1) : NULL;
+      if (!copy || (element_len && !element_copy)) {
+        xml_release(p, copy); xml_release(p, element_copy);
+        return xml_fail(p, GTEXT_XML_E_OOM, "out of memory compiling DTD bindings");
+      }
+      memcpy(copy, name, name_len); copy[name_len] = 0;
+      if (element_len) { memcpy(element_copy, element, element_len); element_copy[element_len] = 0; }
+      xml_release(p, b->name); xml_release(p, b->element_name);
+      b->name = copy; b->element_name = element_copy;
+      b->name_length = name_len; b->element_name_length = element_len;
+      b->external = 0;
+      if (doctype) {
+        GTEXT_Markup_Status ms = markup_doctype_set_binding(doctype, kind,
+            (const char *)element, element_len, (const char *)name, name_len,
+            (const char *)decl, decl_len, where, 0);
+        if (ms != GTEXT_MARKUP_OK) return xml_from_markup(p, ms);
+      }
+    }
+    return GTEXT_XML_OK;
+  }
+  GTEXT_XML_Status s = xml_grow(p, (void **)&p->dtd_bindings,
+      &p->dtd_binding_capacity, sizeof(*p->dtd_bindings), p->dtd_binding_count + 1);
+  if (s != GTEXT_XML_OK) return s;
+  char *copy = xml_alloc(p, name_len + 1);
+  char *element_copy = element_len ? xml_alloc(p, element_len + 1) : NULL;
+  if (!copy || (element_len && !element_copy)) {
+    xml_release(p, copy); xml_release(p, element_copy);
+    return xml_fail(p, GTEXT_XML_E_OOM, "out of memory compiling DTD bindings");
+  }
+  memcpy(copy, name, name_len); copy[name_len] = 0;
+  if (element_len) { memcpy(element_copy, element, element_len); element_copy[element_len] = 0; }
+  const size_t binding_index = p->dtd_binding_count;
+  p->dtd_bindings[binding_index] = (xml_dtd_binding){
+      .kind = kind, .element_name = element_copy, .element_name_length = element_len,
+      .name = copy, .name_length = name_len,
+      .syntax_index = binding_index, .external = (unsigned char)external};
+  p->dtd_binding_count = binding_index + 1;
+  if (doctype) {
+    GTEXT_Markup_Status ms = markup_doctype_set_binding(doctype, kind,
+        (const char *)element, element_len, (const char *)name, name_len,
+        (const char *)decl, decl_len, where, external);
+    if (ms != GTEXT_MARKUP_OK) return xml_from_markup(p, ms);
+  }
+  return GTEXT_XML_OK;
+}
+
+static size_t decl_name(const unsigned char *s, size_t n, size_t *at) {
+  while (*at < n && xml_is_space(s[*at])) ++*at;
+  size_t begin = *at;
+  while (*at < n && !xml_is_space(s[*at]) && s[*at] != '>'
+      && s[*at] != '(' && s[*at] != ')' && s[*at] != '\'' && s[*at] != '"') ++*at;
+  return *at - begin;
+}
+
+static GTEXT_XML_Status compile_decl_bindings(xml_ctx *p, int kind,
+    const unsigned char *s, size_t n, int external,
+    GTEXT_Markup_Node *doctype, const GTEXT_Markup_Location *where) {
+  GTEXT_XML_Status charged = xml_charge_work(p, n);
+  if (charged != GTEXT_XML_OK) return charged;
+  const char *keyword = kind == 0 ? "<!ELEMENT" : kind == 1 ? "<!ATTLIST"
+      : kind == 2 ? "<!ENTITY" : "<!NOTATION";
+  size_t at = strlen(keyword);
+  int key_kind = kind;
+  while (at < n && xml_is_space(s[at])) ++at;
+  if (kind == 2 && at < n && s[at] == '%') {
+    ++at;
+    while (at < n && xml_is_space(s[at])) ++at;
+    key_kind = 4;
+  }
+  size_t name_at = at, name_len = decl_name(s, n, &at);
+  name_at = at - name_len;
+  if (!name_len) return GTEXT_XML_OK; /* grammar parser already diagnosed it */
+  if (kind != 1) return bind_key(p, key_kind, NULL, 0, s + name_at,
+      name_len, external, doctype, s, n, where);
+  const unsigned char *element = s + name_at;
+  size_t element_len = name_len;
+  while (at < n) {
+    while (at < n && xml_is_space(s[at])) ++at;
+    if (at >= n || s[at] == '>') break;
+    name_at = at; name_len = decl_name(s, n, &at);
+    if (!name_len) break;
+    GTEXT_XML_Status status = bind_key(p, kind, element, element_len,
+        s + name_at, name_len, external, doctype, s, n, where);
+    if (status != GTEXT_XML_OK) return status;
+    /* Skip the type (including a parenthesized enumeration) and default
+       declaration, respecting quoted literals. */
+    while (at < n && xml_is_space(s[at])) ++at;
+    int parens = 0; unsigned char quote = 0;
+    while (at < n) {
+      unsigned char c = s[at++];
+      if (quote) { if (c == quote) quote = 0; continue; }
+      if (c == '\'' || c == '"') quote = c;
+      else if (c == '(') ++parens;
+      else if (c == ')' && parens) --parens;
+      else if (xml_is_space(c) && parens == 0) break;
+    }
+    while (at < n && xml_is_space(s[at])) ++at;
+    if (at < n && s[at] == '#') {
+      while (at < n && !xml_is_space(s[at]) && s[at] != '>' && s[at] != '\'' && s[at] != '"') ++at;
+      while (at < n && xml_is_space(s[at])) ++at;
+    }
+    if (at < n && (s[at] == '\'' || s[at] == '"')) {
+      quote = s[at++]; while (at < n && s[at] != quote) ++at;
+      if (at < n) ++at;
+    }
+  }
+  return GTEXT_XML_OK;
+}
+
+typedef struct {
+  const markup_dtd_syntax *syntax;
+  int external;
+} ordered_dtd_item;
+
+static int compare_dtd_order(const void *a, const void *b) {
+  const ordered_dtd_item *x = a, *y = b;
+  return x->syntax->sequence < y->syntax->sequence ? -1
+      : x->syntax->sequence > y->syntax->sequence ? 1 : 0;
+}
+
+GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
+    GTEXT_Markup_Node *node) {
+  if (!p) return GTEXT_XML_E_INVALID;
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE)
+    return xml_fail(p, GTEXT_XML_E_INVALID, "a doctype is required to rebuild DTD indexes");
+  markup_doctype *d = (markup_doctype *)node;
+  size_t count = d->syntax_count + d->external_syntax_count
+      + d->generated_syntax_count;
+  if (count > SIZE_MAX / sizeof(ordered_dtd_item))
+    return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD index rebuild size overflow");
+  ordered_dtd_item *items = count
+      ? markup_alloc(node->doc, count * sizeof(*items)) : NULL;
+  if (count && !items)
+    return xml_fail(p, GTEXT_XML_E_OOM, "could not allocate DTD index rebuild order");
+  size_t at = 0;
+  for (size_t i = 0; i < d->syntax_count; ++i)
+    items[at++] = (ordered_dtd_item){&d->syntax[i], 0};
+  for (size_t i = 0; i < d->external_syntax_count; ++i)
+    items[at++] = (ordered_dtd_item){&d->external_syntax[i], 1};
+  for (size_t i = 0; i < d->generated_syntax_count; ++i)
+    items[at++] = (ordered_dtd_item){&d->generated_syntax[i],
+        d->generated_syntax[i].external_context};
+  size_t sort_work = 0;
+  for (size_t n = count; n > 1; n = (n + 1) / 2) ++sort_work;
+  if (count && sort_work > SIZE_MAX / count) {
+    markup_free(node->doc, items);
+    return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD index rebuild work overflow");
+  }
+  GTEXT_XML_Status status = xml_charge_work(p, count * sort_work);
+  if (status == GTEXT_XML_OK && count > 1)
+    qsort(items, count, sizeof(*items), compare_dtd_order);
+  if (status == GTEXT_XML_OK) {
+    markup_dtd_binding *old_model = d->bindings;
+    size_t old_model_count = d->binding_count;
+    size_t old_model_capacity = d->binding_capacity;
+    xml_dtd_binding *old_parse = p->dtd_bindings;
+    size_t old_parse_count = p->dtd_binding_count;
+    size_t old_parse_capacity = p->dtd_binding_capacity;
+    d->bindings = NULL; d->binding_count = d->binding_capacity = 0;
+    p->dtd_bindings = NULL;
+    p->dtd_binding_count = p->dtd_binding_capacity = 0;
+    for (size_t i = 0; status == GTEXT_XML_OK && i < count; ++i) {
+      const markup_dtd_syntax *item = items[i].syntax;
+      if (item->kind > GTEXT_MARKUP_DTD_NOTATION) continue;
+      status = compile_decl_bindings(p, item->kind,
+          (const unsigned char *)item->source, item->length, items[i].external,
+          node, &item->location);
+    }
+    if (status != GTEXT_XML_OK) {
+      markup_doctype_clear_bindings(node);
+      markup_free(node->doc, d->bindings);
+      d->bindings = old_model; d->binding_count = old_model_count;
+      d->binding_capacity = old_model_capacity;
+      for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+        xml_release(p, p->dtd_bindings[i].element_name);
+        xml_release(p, p->dtd_bindings[i].name);
+      }
+      xml_release(p, p->dtd_bindings);
+      p->dtd_bindings = old_parse;
+      p->dtd_binding_count = old_parse_count;
+      p->dtd_binding_capacity = old_parse_capacity;
+    }
+    else {
+    for (size_t i = 0; i < old_model_count; ++i) {
+      markup_free(node->doc, old_model[i].element_name);
+      markup_free(node->doc, old_model[i].name);
+    }
+    markup_free(node->doc, old_model);
+    for (size_t i = 0; i < old_parse_count; ++i) {
+      xml_release(p, old_parse[i].element_name);
+      xml_release(p, old_parse[i].name);
+    }
+    xml_release(p, old_parse);
+    }
+  }
+  markup_free(node->doc, items);
+  return status;
+}
+
+/* DTD-off preserves the original skip-only behavior. DTD processing validates
+   productions and compiles derived lookup keys while retaining syntax. */
 static GTEXT_XML_Status skip_declaration(xml_ctx * p, int is_entity) {
   for (;;) {
     size_t i = p->pos;
@@ -1321,7 +1543,8 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
             p->sources[p->source_count - 1].kind)) {
           status = xml_from_markup(p, markup_doctype_append_generated_syntax(
               doctype, kind, (const char *)p->in + start, p->pos - start, &at,
-              p->sources[p->source_count - 1].owned_name));
+              p->sources[p->source_count - 1].owned_name,
+              p->sources[p->source_count - 1].external_source));
         }
         else status = xml_from_markup(p, markup_doctype_append_external_syntax(
             doctype, kind, (const char *)p->in + start, p->pos - start, &at));
@@ -1368,18 +1591,24 @@ static GTEXT_XML_Status external_subset_body(xml_ctx * p,
       if (p->dtd_generated_parameter_entity) {
         status = xml_from_markup(p, markup_doctype_append_generated_syntax(
             doctype, (int)k, (const char *)p->in + start, p->pos - start, &at,
-            p->dtd_generated_parameter_entity));
+            p->dtd_generated_parameter_entity,
+            p->sources[p->source_count - 1].external_source));
       }
       else if (p->source_count > 1 && XML_SOURCE_IS_PARAMETER_ENTITY(
           p->sources[p->source_count - 1].kind)) {
         status = xml_from_markup(p, markup_doctype_append_generated_syntax(
             doctype, (int)k, (const char *)p->in + start, p->pos - start, &at,
-            p->sources[p->source_count - 1].owned_name));
+            p->sources[p->source_count - 1].owned_name,
+            p->sources[p->source_count - 1].external_source));
       }
       else status = xml_from_markup(p, markup_doctype_append_external_syntax(
           doctype, (int)k, (const char *)p->in + start, p->pos - start, &at));
       if (status != GTEXT_XML_OK) { result = status; break; }
     }
+    status = compile_decl_bindings(p, (int)k, p->in + start, p->pos - start,
+        p->source_count != 0 && p->sources[p->source_count - 1].external_source,
+        doctype && !p->stream ? doctype : NULL, &at);
+    if (status != GTEXT_XML_OK) { result = status; break; }
   }
   xml_release(p, modes);
   return result;
@@ -1503,6 +1732,9 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->parameter_entities = ext.parameter_entities;
   p->parameter_entity_count = ext.parameter_entity_count;
   p->parameter_entity_capacity = ext.parameter_entity_capacity;
+  p->dtd_bindings = ext.dtd_bindings;
+  p->dtd_binding_count = ext.dtd_binding_count;
+  p->dtd_binding_capacity = ext.dtd_binding_capacity;
   if (status != GTEXT_XML_OK) p->err = ext.err;
   markup_buf_free(&ext.decoded);
   return status;
@@ -1558,6 +1790,9 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
     p->parameter_entities = ext.parameter_entities;
     p->parameter_entity_count = ext.parameter_entity_count;
     p->parameter_entity_capacity = ext.parameter_entity_capacity;
+    p->dtd_bindings = ext.dtd_bindings;
+    p->dtd_binding_count = ext.dtd_binding_count;
+    p->dtd_binding_capacity = ext.dtd_binding_capacity;
     p->base_uri = f->base_uri;
   }
   else p->err = ext.err;
@@ -1573,13 +1808,15 @@ static GTEXT_XML_Status retain_syntax(xml_ctx * p, GTEXT_Markup_Node * doctype,
   if (p->dtd_generated_parameter_entity) {
     status = markup_doctype_append_generated_syntax(doctype, kind,
         (const char *)p->in + start, p->pos - start, at,
-        p->dtd_generated_parameter_entity);
+        p->dtd_generated_parameter_entity,
+        p->source_count && p->sources[p->source_count - 1].external_source);
   }
   else if (p->source_count > 1
       && XML_SOURCE_IS_PARAMETER_ENTITY(p->sources[p->source_count - 1].kind)) {
     status = markup_doctype_append_generated_syntax(doctype, kind,
         (const char *)p->in + start, p->pos - start, at,
-        p->sources[p->source_count - 1].owned_name);
+        p->sources[p->source_count - 1].owned_name,
+        p->sources[p->source_count - 1].external_source);
   }
   else {
     status = markup_doctype_append_syntax(doctype, kind,
@@ -1712,6 +1949,13 @@ static GTEXT_XML_Status skip_internal_subset(xml_ctx * p,
     }
     status = retain_syntax(p, doctype, kind, start, &at);
     if (status != GTEXT_XML_OK) return status;
+    if (kind <= GTEXT_MARKUP_DTD_NOTATION && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+      status = compile_decl_bindings(p, (int)kind, p->in + start,
+          p->pos - start,
+          p->source_count != 0 && p->sources[p->source_count - 1].external_source,
+          doctype && !p->stream ? doctype : NULL, &at);
+      if (status != GTEXT_XML_OK) return status;
+    }
   }
 }
 
@@ -1812,6 +2056,11 @@ GTEXT_XML_Status xml_parse_doctype(xml_ctx * p) {
   if (has_system) {
     status = xml_resolve_external_subset(p, doctype,
         has_public ? pub.data : NULL, sys.data);
+    if (status != GTEXT_XML_OK) goto done;
+  }
+
+  if (doctype && p->dtd_mode == GTEXT_XML_DTD_PROCESS) {
+    status = xml_doctype_rebuild_indexes(p, doctype);
     if (status != GTEXT_XML_OK) goto done;
   }
 

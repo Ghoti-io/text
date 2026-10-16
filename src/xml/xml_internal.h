@@ -236,6 +236,19 @@ typedef struct {
   const void * identity;
 } xml_parameter_entity;
 
+/** One effective DTD binding. The declaration text remains owned by the
+ * doctype syntax model; these records are temporary lookup keys for this
+ * parse, so they never become writable source syntax. */
+typedef struct {
+  int kind; /* GTEXT_MARKUP_DTD_* */
+  char * element_name; /* ATTLIST element name, otherwise NULL */
+  size_t element_name_length;
+  char * name; /* declaration name, or ATTLIST attribute name */
+  size_t name_length;
+  size_t syntax_index;
+  unsigned char external;
+} xml_dtd_binding;
+
 typedef struct {
   GTEXT_XML_External_Source source;
   markup_buf bytes;
@@ -370,6 +383,9 @@ typedef struct {
   xml_parameter_entity * parameter_entities;
   size_t parameter_entity_count;
   size_t parameter_entity_capacity;
+  xml_dtd_binding * dtd_bindings;
+  size_t dtd_binding_count;
+  size_t dtd_binding_capacity;
   const char * dtd_generated_parameter_entity;
   unsigned char * dtd_name_token;
   size_t dtd_name_token_length;
@@ -644,6 +660,9 @@ void xml_attach(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node,
 
 /** Parse `<!DOCTYPE ...>` at the cursor and add the doctype node. */
 GTEXT_XML_Status xml_parse_doctype(xml_ctx * p);
+/** Rebuild the derived declaration indexes from retained doctype syntax. */
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_doctype_rebuild_indexes(
+    xml_ctx * p, GTEXT_Markup_Node * doctype);
 
 /* ---- Pieces the event parser drives (xml_parser.c) ---------------------- */
 

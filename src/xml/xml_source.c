@@ -329,6 +329,13 @@ void xml_source_free(xml_ctx * p) {
   p->parameter_entities = NULL;
   p->parameter_entity_count = 0;
   p->parameter_entity_capacity = 0;
+  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
+    xml_release(p, p->dtd_bindings[i].element_name);
+    xml_release(p, p->dtd_bindings[i].name);
+  }
+  xml_release(p, p->dtd_bindings);
+  p->dtd_bindings = NULL;
+  p->dtd_binding_count = p->dtd_binding_capacity = 0;
   for (size_t i = 0; i < p->source_name_count; i++) {
     xml_release(p, p->source_names[i]);
   }
