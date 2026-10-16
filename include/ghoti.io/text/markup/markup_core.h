@@ -210,6 +210,11 @@ typedef struct {
   uint32_t reference_source_id;
   GTEXT_Markup_Source_Kind kind;
   const char * name; ///< Entity name or resolved base URI; NULL if unknown.
+  const char * base_uri; ///< Copied resolver base URI, NULL for internal sources.
+  const char * encoding; ///< Detected source encoding label, when known.
+  size_t byte_count; ///< Raw bytes read from a successfully resolved resource.
+  unsigned char sha256[32]; ///< Content fingerprint; not an authenticity proof.
+  bool has_sha256;
 } GTEXT_Markup_Source;
 
 /**

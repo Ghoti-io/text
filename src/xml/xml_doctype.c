@@ -35,6 +35,7 @@
  */
 
 #include <ghoti.io/text/macros.h>
+#include <ghoti.io/security/sha256.h>
 
 #include <limits.h>
 #include <stdlib.h>
@@ -2209,6 +2210,24 @@ static GTEXT_XML_Status external_text_declaration(xml_ctx * p) {
       "'?>' was expected to end the text declaration");
 }
 
+static GTEXT_XML_Status dtd_record_external_source(xml_ctx *p,
+    uint32_t source_id, const char *base_uri, xml_family family,
+    const void *bytes, size_t length) {
+  if (!p->doc) return GTEXT_XML_OK;
+  unsigned char digest[32];
+  if (gsec_sha256(bytes, length, digest) != GSEC_OK)
+    return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
+        "external source fingerprint length exceeded SHA-256 limits");
+  const char *encoding = xml_family_name(family);
+  const GTEXT_Markup_Status recorded = markup_source_set_external_metadata(
+      p->doc, source_id, base_uri, encoding, length, digest);
+  if (recorded != GTEXT_MARKUP_OK)
+    return xml_fail(p, recorded == GTEXT_MARKUP_E_OOM
+        ? GTEXT_XML_E_OOM : GTEXT_XML_E_LIMIT_REFERENCES,
+        "could not retain external source provenance");
+  return GTEXT_XML_OK;
+}
+
 GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
     GTEXT_Markup_Node * doctype, const unsigned char * bytes, size_t length,
     const char * base_uri) {
@@ -2223,6 +2242,10 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   ext.base_uri = base_uri;
   markup_buf_init(&ext.decoded, ext.allocator);
   GTEXT_XML_Status status = xml_detect_encoding(&ext);
+  if (status == GTEXT_XML_OK && ext.source_count != 0)
+    status = dtd_record_external_source(&ext,
+        ext.sources[ext.source_count - 1].source_id, base_uri,
+        ext.enc_family, bytes, length);
   if (status == GTEXT_XML_OK) {
     /* The source frame records the active decoded coordinates for location
        queries while the resolver-owned source is still open. */
@@ -2325,6 +2348,11 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
   ext.base_uri = resource->source.base_uri;
   markup_buf_init(&ext.decoded, ext.allocator);
   GTEXT_XML_Status status = xml_detect_encoding(&ext);
+  if (status == GTEXT_XML_OK && ext.source_count != 0)
+    status = dtd_record_external_source(&ext,
+        ext.sources[ext.source_count - 1].source_id,
+        resource->source.base_uri, ext.enc_family, resource->bytes.data,
+        resource->bytes.length);
   if (status == GTEXT_XML_OK) status = external_text_declaration(&ext);
   if (status == GTEXT_XML_OK
       && resource->source_kind == XML_SOURCE_EXTERNAL_ENTITY) {

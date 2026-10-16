@@ -329,6 +329,29 @@ const char * markup_check_invariants(const GTEXT_Markup_Document * doc) {
   if (doc->bucket_count & (doc->bucket_count - 1)) {
     return "the atom table's size is not a power of two";
   }
+  if (doc->source_count > doc->source_capacity
+      || (doc->source_count && !doc->sources))
+    return "the physical-source table is inconsistent";
+  for (size_t i = 0; i < doc->source_count; ++i) {
+    const markup_source *source = &doc->sources[i];
+    const int external = source->view.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
+        || source->view.kind == GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+        || source->view.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET;
+    if (!source->view.id || !source_id_known(doc, source->view.id)
+        || source->view.name != source->owned_name
+        || source->view.base_uri != source->owned_base_uri
+        || source->view.encoding != source->owned_encoding
+        || !source_id_known(doc, source->view.reference_source_id)
+        || (source->view.has_sha256
+            && (!external || !source->owned_base_uri || !source->owned_encoding))
+        || (!source->view.has_sha256
+            && (source->view.byte_count || source->owned_base_uri
+                || source->owned_encoding)))
+      return "a physical-source descriptor has invalid retained metadata";
+    for (size_t j = i + 1; j < doc->source_count; ++j)
+      if (source->view.id == doc->sources[j].view.id)
+        return "physical-source identifiers are duplicated";
+  }
 
   size_t atoms = 0;
   for (size_t i = 0; i < doc->bucket_count; i++) {

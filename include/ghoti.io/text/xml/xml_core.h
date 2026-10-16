@@ -302,6 +302,22 @@ typedef GTEXT_XML_Resolver_Result (*GTEXT_XML_Resolver_cb)(
     const GTEXT_XML_Resolve_Request * request, void * user_data,
     GTEXT_XML_External_Source * out_source);
 
+/** Finite bounds and the explicitly authorized resolver for an external-DTD
+ * refresh. Zero limits select the same finite defaults as XML parsing. */
+typedef struct {
+  GTEXT_XML_Resolver_cb resolver;
+  void * resolver_user_data;
+  size_t max_external_source_bytes;
+  size_t max_external_bytes;
+  size_t max_expanded_bytes;
+  size_t max_entity_depth;
+  size_t max_references;
+  size_t max_declarations;
+  size_t max_total_work;
+  size_t max_validation_work;
+  size_t max_validation_memory;
+} GTEXT_XML_External_DTD_Refresh_Options;
+
 /**
  * @brief A static, human-readable name for a status.
  *

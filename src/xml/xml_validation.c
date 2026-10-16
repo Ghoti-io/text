@@ -1861,3 +1861,343 @@ GTEXT_XML_Status gtext_xml_revalidate(GTEXT_Markup_Document *doc,
   xml_validation_memory_release(&p, p.validation_replay_entity_array_bytes);
   return p.err.code;
 }
+
+static void refresh_free_syntax(GTEXT_Markup_Document *doc,
+    markup_dtd_syntax *items, size_t count) {
+  for (size_t i = 0; i < count; ++i) {
+    markup_free(doc, items[i].source);
+    markup_free(doc, items[i].parameter_entity);
+  }
+  markup_free(doc, items);
+}
+
+static void refresh_free_bindings(GTEXT_Markup_Document *doc,
+    markup_dtd_binding *items, size_t count) {
+  for (size_t i = 0; i < count; ++i) {
+    markup_free(doc, items[i].element_name);
+    markup_free(doc, items[i].name);
+  }
+  markup_free(doc, items);
+}
+
+static uint32_t refresh_remap_source(uint32_t id, uint32_t offset) {
+  if (!id) return 0;
+  if (id == 1) return 1;
+  return id - 1 > UINT32_MAX - offset ? 0 : id - 1 + offset;
+}
+
+static void refresh_remap_location(GTEXT_Markup_Location *location,
+    uint32_t offset) {
+  location->source_id = refresh_remap_source(location->source_id, offset);
+  location->reference_source_id = refresh_remap_source(
+      location->reference_source_id, offset);
+}
+
+static uint32_t refresh_max_source_id(const GTEXT_Markup_Document *doc) {
+  uint32_t max = 0;
+  for (size_t i = 0; i < doc->source_count; ++i)
+    if (doc->sources[i].view.id > max) max = doc->sources[i].view.id;
+  return max;
+}
+
+static int refresh_append_literal(markup_buf *b, const char *s) {
+  return s && markup_buf_append(b, s, strlen(s)) == GTEXT_MARKUP_OK;
+}
+
+static int refresh_append_quoted(markup_buf *b, const char *s) {
+  if (!s) return 0;
+  const char *quote = strchr(s, '\'') ? "\"" : "'";
+  return markup_buf_append(b, quote, 1) == GTEXT_MARKUP_OK
+      && markup_buf_append(b, s, strlen(s)) == GTEXT_MARKUP_OK
+      && markup_buf_append(b, quote, 1) == GTEXT_MARKUP_OK;
+}
+
+/* Build a private document that sends the current internal subset through the
+ * ordinary parser together with a fresh external subset. The live document is
+ * not touched until parsing, index construction, and revalidation all finish. */
+GTEXT_XML_Status gtext_xml_refresh_external_dtd(GTEXT_Markup_Document *doc,
+    const GTEXT_XML_External_DTD_Refresh_Options *options,
+    GTEXT_XML_Validation_Result *result, GTEXT_XML_Error *error) {
+  if (error) memset(error, 0, sizeof(*error));
+  if (!doc || !options || !options->resolver || !result)
+    return GTEXT_XML_E_INVALID;
+  GTEXT_Markup_Node *live_node = gtext_markup_document_doctype(doc);
+  if (!live_node || !gtext_markup_doctype_system_id(live_node))
+    return GTEXT_XML_E_INVALID;
+  const char *name = gtext_markup_doctype_name(live_node);
+  const char *public_id = gtext_markup_doctype_public_id(live_node);
+  const char *system_id = gtext_markup_doctype_system_id(live_node);
+  if (!name || !system_id) return GTEXT_XML_E_INVALID;
+
+  markup_buf input;
+  markup_buf_init(&input, &doc->allocator);
+  int built = refresh_append_literal(&input, "<!DOCTYPE ")
+      && refresh_append_literal(&input, name);
+  if (built && public_id) {
+    built = refresh_append_literal(&input, " PUBLIC ")
+        && refresh_append_quoted(&input, public_id)
+        && markup_buf_append(&input, " ", 1) == GTEXT_MARKUP_OK
+        && refresh_append_quoted(&input, system_id);
+  }
+  else if (built) {
+    built = refresh_append_literal(&input, " SYSTEM ")
+        && refresh_append_quoted(&input, system_id);
+  }
+  if (built) built = markup_buf_append(&input, " [", 2) == GTEXT_MARKUP_OK;
+  for (size_t i = 0; built && i < gtext_markup_doctype_syntax_count(live_node); ++i) {
+    GTEXT_Markup_DTD_Syntax syntax;
+    if (!gtext_markup_doctype_syntax(live_node, i, &syntax)) {
+      built = 0;
+      break;
+    }
+    built = markup_buf_append(&input, syntax.source, syntax.source_length)
+        == GTEXT_MARKUP_OK;
+  }
+  if (built) built = markup_buf_append(&input, "]>", 2) == GTEXT_MARKUP_OK;
+  if (built) built = refresh_append_literal(&input, "<")
+      && refresh_append_literal(&input, name);
+  /* Give a prefixed doctype name a namespace binding in the synthetic root. */
+  const char *colon = strchr(name, ':');
+  if (built && colon) {
+    built = markup_buf_append(&input, " xmlns:", 7) == GTEXT_MARKUP_OK
+        && markup_buf_append(&input, name, (size_t)(colon - name)) == GTEXT_MARKUP_OK
+        && refresh_append_literal(&input, "='urn:ghoti:external-dtd-refresh'");
+  }
+  if (built) built = markup_buf_append(&input, "/>" , 2) == GTEXT_MARKUP_OK;
+  if (!built) {
+    markup_buf_free(&input);
+    return GTEXT_XML_E_OOM;
+  }
+
+  GTEXT_XML_Parse_Options parse = gtext_xml_parse_options_default();
+  parse.allocator = &doc->allocator;
+  parse.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  parse.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  parse.resolver = options->resolver;
+  parse.resolver_user_data = options->resolver_user_data;
+#define REFRESH_LIMIT(field) do { if (options->field) parse.field = options->field; } while (0)
+  REFRESH_LIMIT(max_external_source_bytes);
+  REFRESH_LIMIT(max_external_bytes);
+  REFRESH_LIMIT(max_expanded_bytes);
+  REFRESH_LIMIT(max_entity_depth);
+  REFRESH_LIMIT(max_references);
+  REFRESH_LIMIT(max_declarations);
+  REFRESH_LIMIT(max_total_work);
+  REFRESH_LIMIT(max_validation_work);
+  REFRESH_LIMIT(max_validation_memory);
+#undef REFRESH_LIMIT
+  GTEXT_Markup_Document *stage_doc = NULL;
+  GTEXT_XML_Error stage_error;
+  GTEXT_XML_Status status = gtext_xml_parse(input.data, input.length, &parse,
+      &stage_doc, &stage_error);
+  markup_buf_free(&input);
+  if (status != GTEXT_XML_OK) {
+    if (error) *error = stage_error;
+    return status;
+  }
+  if (!stage_doc || stage_doc->dtd_knowledge_incomplete
+      || stage_doc->dtd_knowledge_stale) {
+    gtext_markup_document_free(stage_doc);
+    return GTEXT_XML_E_UNAVAILABLE_RESOURCE;
+  }
+  GTEXT_Markup_Node *stage_node = gtext_markup_document_doctype(stage_doc);
+  if (!stage_node) {
+    gtext_markup_document_free(stage_doc);
+    return GTEXT_XML_E_STATE;
+  }
+
+  /* Keep all old arrays alive until validation of the staged declarations over
+     the caller's current tree succeeds. This gives the commit a rollback path. */
+  markup_doctype *live = (markup_doctype *)live_node;
+  markup_doctype *staged = (markup_doctype *)stage_node;
+  markup_dtd_syntax *old_external = live->external_syntax;
+  size_t old_external_count = live->external_syntax_count;
+  size_t old_external_capacity = live->external_syntax_capacity;
+  markup_dtd_syntax *old_generated = live->generated_syntax;
+  size_t old_generated_count = live->generated_syntax_count;
+  size_t old_generated_capacity = live->generated_syntax_capacity;
+  markup_dtd_binding *old_bindings = live->bindings;
+  size_t old_binding_count = live->binding_count;
+  size_t old_binding_capacity = live->binding_capacity;
+  markup_source *old_sources = doc->sources;
+  size_t old_source_count = doc->source_count;
+  size_t old_source_capacity = doc->source_capacity;
+  markup_dtd_unread_resource *old_unread = doc->dtd_unread_resources;
+  size_t old_unread_count = doc->dtd_unread_resource_count;
+  size_t old_unread_capacity = doc->dtd_unread_resource_capacity;
+  uint8_t old_incomplete = doc->dtd_knowledge_incomplete;
+  uint8_t old_stale = doc->dtd_knowledge_stale;
+
+  const uint32_t source_offset = refresh_max_source_id(doc);
+  if (stage_doc->source_count > UINT32_MAX
+      || stage_doc->source_count > SIZE_MAX - old_source_count
+      || old_source_count + stage_doc->source_count
+          > SIZE_MAX / sizeof(markup_source)
+      || source_offset > UINT32_MAX - (uint32_t)(stage_doc->source_count - 1)) {
+    gtext_markup_document_free(stage_doc);
+    return GTEXT_XML_E_LIMIT_REFERENCES;
+  }
+  const size_t merged_source_count = old_source_count + stage_doc->source_count;
+  markup_source *merged_sources = markup_alloc(doc,
+      (merged_source_count ? merged_source_count : 1) * sizeof(markup_source));
+  if (!merged_sources) {
+    gtext_markup_document_free(stage_doc);
+    return GTEXT_XML_E_OOM;
+  }
+  if (old_source_count)
+    memcpy(merged_sources, old_sources, old_source_count * sizeof(markup_source));
+  size_t merged_at = old_source_count;
+  int source_copy_ok = 1;
+  for (size_t i = 0; i < stage_doc->source_count; ++i) {
+    const markup_source *src = &stage_doc->sources[i];
+    if (src->view.id == 1) continue; /* The caller's document source stays ID 1. */
+    if (src->view.id - 1 > UINT32_MAX - source_offset) {
+      source_copy_ok = 0;
+      break;
+    }
+    markup_source *dst = &merged_sources[merged_at];
+    *dst = *src;
+    dst->owned_name = src->owned_name
+        ? markup_copy(doc, src->owned_name, strlen(src->owned_name)) : NULL;
+    if (src->owned_name && !dst->owned_name) { source_copy_ok = 0; break; }
+    dst->owned_base_uri = src->owned_base_uri
+        ? markup_copy(doc, src->owned_base_uri, strlen(src->owned_base_uri)) : NULL;
+    if (src->owned_base_uri && !dst->owned_base_uri) {
+      markup_free(doc, dst->owned_name);
+      dst->owned_name = NULL;
+      source_copy_ok = 0;
+      break;
+    }
+    dst->owned_encoding = src->owned_encoding
+        ? markup_copy(doc, src->owned_encoding, strlen(src->owned_encoding)) : NULL;
+    if (src->owned_encoding && !dst->owned_encoding) {
+      markup_free(doc, dst->owned_name);
+      markup_free(doc, dst->owned_base_uri);
+      dst->owned_name = dst->owned_base_uri = NULL;
+      source_copy_ok = 0;
+      break;
+    }
+    dst->view.name = dst->owned_name;
+    dst->view.base_uri = dst->owned_base_uri;
+    dst->view.encoding = dst->owned_encoding;
+    dst->view.id = src->view.id - 1 + source_offset;
+    dst->view.reference_source_id = refresh_remap_source(
+        src->view.reference_source_id, source_offset);
+    dst->origin_doc = NULL;
+    dst->origin_id = 0;
+    ++merged_at;
+  }
+  if (!source_copy_ok) {
+    for (size_t i = old_source_count; i < merged_at; ++i) {
+      markup_free(doc, merged_sources[i].owned_name);
+      markup_free(doc, merged_sources[i].owned_base_uri);
+      markup_free(doc, merged_sources[i].owned_encoding);
+    }
+    markup_free(doc, merged_sources);
+    gtext_markup_document_free(stage_doc);
+    return GTEXT_XML_E_OOM;
+  }
+  /* A refresh publishes a new source table atomically. Keep source 1 from the
+     original tree and append the fresh DTD resource ancestry with remapped IDs. */
+  for (size_t i = 0; i < staged->syntax_count; ++i)
+    refresh_remap_location(&staged->syntax[i].location, source_offset);
+  for (size_t i = 0; i < staged->external_syntax_count; ++i)
+    refresh_remap_location(&staged->external_syntax[i].location, source_offset);
+  for (size_t i = 0; i < staged->generated_syntax_count; ++i)
+    refresh_remap_location(&staged->generated_syntax[i].location, source_offset);
+  for (size_t i = 0; i < staged->binding_count; ++i)
+    refresh_remap_location(&staged->bindings[i].location, source_offset);
+  for (size_t i = 0; i < stage_doc->dtd_unread_resource_count; ++i)
+    refresh_remap_location(&stage_doc->dtd_unread_resources[i].view.location,
+        source_offset);
+
+  /* Transfer syntax and indexes from the isolated parse. Its allocator is the
+     same caller allocator, so ownership can move without retaining callbacks. */
+  live->external_syntax = staged->external_syntax;
+  live->external_syntax_count = staged->external_syntax_count;
+  live->external_syntax_capacity = staged->external_syntax_capacity;
+  live->generated_syntax = staged->generated_syntax;
+  live->generated_syntax_count = staged->generated_syntax_count;
+  live->generated_syntax_capacity = staged->generated_syntax_capacity;
+  live->next_syntax_sequence = staged->next_syntax_sequence;
+  staged->external_syntax = staged->generated_syntax = NULL;
+  staged->external_syntax_count = staged->external_syntax_capacity = 0;
+  staged->generated_syntax_count = staged->generated_syntax_capacity = 0;
+  doc->sources = merged_sources;
+  doc->source_count = merged_at;
+  doc->source_capacity = merged_source_count;
+  doc->dtd_unread_resources = stage_doc->dtd_unread_resources;
+  doc->dtd_unread_resource_count = stage_doc->dtd_unread_resource_count;
+  doc->dtd_unread_resource_capacity = stage_doc->dtd_unread_resource_capacity;
+  stage_doc->dtd_unread_resources = NULL;
+  stage_doc->dtd_unread_resource_count = stage_doc->dtd_unread_resource_capacity = 0;
+  doc->dtd_knowledge_incomplete = 0;
+  doc->dtd_knowledge_stale = 0;
+
+  /* Rebuild indexes against the live internal syntax. This matters because
+     edits to internal parameter entities are authoritative and the staged raw
+     internal syntax belongs to its synthetic input document. */
+  markup_doctype rebuilt = *live;
+  rebuilt.bindings = NULL;
+  rebuilt.binding_count = rebuilt.binding_capacity = 0;
+  xml_ctx rebuild_ctx;
+  memset(&rebuild_ctx, 0, sizeof(rebuild_ctx));
+  rebuild_ctx.doc = doc;
+  rebuild_ctx.allocator = &doc->allocator;
+  rebuild_ctx.max_total_work = options->max_total_work
+      ? options->max_total_work : XML_DEFAULT_MAX_TOTAL_WORK;
+  rebuild_ctx.max_validation_work = options->max_validation_work
+      ? options->max_validation_work : XML_DEFAULT_MAX_VALIDATION_WORK;
+  rebuild_ctx.max_validation_memory = options->max_validation_memory
+      ? options->max_validation_memory : XML_DEFAULT_MAX_VALIDATION_MEMORY;
+  GTEXT_XML_Status rebuild_status = xml_doctype_rebuild_indexes(&rebuild_ctx,
+      (GTEXT_Markup_Node *)&rebuilt);
+  if (rebuild_status == GTEXT_XML_OK) {
+    live->bindings = rebuilt.bindings;
+    live->binding_count = rebuilt.binding_count;
+    live->binding_capacity = rebuilt.binding_capacity;
+  }
+  else {
+    status = rebuild_status;
+    if (error) *error = rebuild_ctx.err;
+  }
+
+  if (status == GTEXT_XML_OK)
+    status = gtext_xml_revalidate(doc, NULL, result, error);
+  if (status != GTEXT_XML_OK) {
+    refresh_free_bindings(doc, live->bindings, live->binding_count);
+    refresh_free_syntax(doc, live->external_syntax, live->external_syntax_count);
+    refresh_free_syntax(doc, live->generated_syntax, live->generated_syntax_count);
+    for (size_t i = old_source_count; i < doc->source_count; ++i) {
+      markup_free(doc, doc->sources[i].owned_name);
+      markup_free(doc, doc->sources[i].owned_base_uri);
+      markup_free(doc, doc->sources[i].owned_encoding);
+    }
+    markup_free(doc, doc->sources);
+    for (size_t i = 0; i < doc->dtd_unread_resource_count; ++i) {
+      markup_free(doc, doc->dtd_unread_resources[i].owned_name);
+      markup_free(doc, doc->dtd_unread_resources[i].owned_system_id);
+    }
+    markup_free(doc, doc->dtd_unread_resources);
+    live->external_syntax = old_external; live->external_syntax_count = old_external_count; live->external_syntax_capacity = old_external_capacity;
+    live->generated_syntax = old_generated; live->generated_syntax_count = old_generated_count; live->generated_syntax_capacity = old_generated_capacity;
+    live->bindings = old_bindings; live->binding_count = old_binding_count; live->binding_capacity = old_binding_capacity;
+    doc->sources = old_sources; doc->source_count = old_source_count; doc->source_capacity = old_source_capacity;
+    doc->dtd_unread_resources = old_unread; doc->dtd_unread_resource_count = old_unread_count; doc->dtd_unread_resource_capacity = old_unread_capacity;
+    doc->dtd_knowledge_incomplete = old_incomplete;
+    doc->dtd_knowledge_stale = old_stale;
+  }
+  else {
+    refresh_free_syntax(doc, old_external, old_external_count);
+    refresh_free_syntax(doc, old_generated, old_generated_count);
+    refresh_free_bindings(doc, old_bindings, old_binding_count);
+    markup_free(doc, old_sources);
+    for (size_t i = 0; i < old_unread_count; ++i) {
+      markup_free(doc, old_unread[i].owned_name);
+      markup_free(doc, old_unread[i].owned_system_id);
+    }
+    markup_free(doc, old_unread);
+  }
+  gtext_markup_document_free(stage_doc);
+  return status;
+}

@@ -113,12 +113,19 @@ static GTEXT_Markup_Status import_source(GTEXT_Markup_Document * dst,
     markup_source * added = &dst->sources[dst->source_count - 1];
     added->origin_doc = src;
     added->origin_id = source.id;
+    if (source.has_sha256) {
+      status = markup_source_set_external_metadata(dst, new_id,
+          source.base_uri, source.encoding, source.byte_count, source.sha256);
+      if (status != GTEXT_MARKUP_OK) break;
+    }
   }
   markup_free(dst, chain);
   if (status != GTEXT_MARKUP_OK) {
     while (dst->source_count > original_count) {
       markup_source * added = &dst->sources[--dst->source_count];
       markup_free(dst, added->owned_name);
+      markup_free(dst, added->owned_base_uri);
+      markup_free(dst, added->owned_encoding);
       memset(added, 0, sizeof(*added));
     }
   }
@@ -198,6 +205,8 @@ static void rollback_imported_sources(GTEXT_Markup_Document * doc,
   while (doc->source_count > original_count) {
     markup_source * added = &doc->sources[--doc->source_count];
     markup_free(doc, added->owned_name);
+    markup_free(doc, added->owned_base_uri);
+    markup_free(doc, added->owned_encoding);
     memset(added, 0, sizeof(*added));
   }
 }
@@ -465,6 +474,13 @@ GTEXT_Markup_Status gtext_markup_clone(GTEXT_Markup_Document * doc,
   }
 cloned:
   if (node->kind == GTEXT_MARKUP_KIND_DOCTYPE) {
+    /* A doctype can retain provenance for external resources that are no
+       longer named by a current declaration (for example after a refresh).
+       Import the complete source ancestry before copying its evidence. */
+    for (size_t i = 0; i < node->doc->source_count; ++i) {
+      status = import_source(doc, node->doc, node->doc->sources[i].view.id);
+      if (status != GTEXT_MARKUP_OK) goto fail;
+    }
     status = copy_dtd_knowledge(doc, node->doc);
     if (status != GTEXT_MARKUP_OK) goto fail;
   }
@@ -484,6 +500,28 @@ static bool same_text(const char * a, const char * b) {
     return a == b;
   }
   return strcmp(a, b) == 0;
+}
+
+static bool source_metadata_equal(const GTEXT_Markup_Document *a,
+    uint32_t aid, const GTEXT_Markup_Document *b, uint32_t bid) {
+  if (aid == 0 || bid == 0) return aid == bid;
+  GTEXT_Markup_Source x, y;
+  if (!gtext_markup_document_source(a, aid, &x)
+      || !gtext_markup_document_source(b, bid, &y)) return false;
+  if (x.kind != y.kind || !same_text(x.name, y.name)
+      || !same_text(x.base_uri, y.base_uri)
+      || !same_text(x.encoding, y.encoding)
+      || x.byte_count != y.byte_count || x.has_sha256 != y.has_sha256
+      || (x.has_sha256 && memcmp(x.sha256, y.sha256, sizeof(x.sha256)) != 0))
+    return false;
+  GTEXT_Markup_Source xp, yp;
+  const bool have_xp = x.reference_source_id
+      && gtext_markup_document_source(a, x.reference_source_id, &xp);
+  const bool have_yp = y.reference_source_id
+      && gtext_markup_document_source(b, y.reference_source_id, &yp);
+  if (have_xp != have_yp) return false;
+  return !have_xp || (xp.kind == yp.kind && same_text(xp.name, yp.name)
+      && same_text(xp.base_uri, yp.base_uri));
 }
 
 static bool same_bytes(const char * a, size_t alen, const char * b, size_t blen) {
@@ -552,6 +590,37 @@ static bool node_equal(const node_t * a, const node_t * b) {
           || a->doc->dtd_knowledge_stale != b->doc->dtd_knowledge_stale
           || a->doc->dtd_unread_resource_count != b->doc->dtd_unread_resource_count)
         return false;
+      size_t external_count_a = 0, external_count_b = 0;
+      for (size_t i = 0; i < a->doc->source_count; ++i)
+        if (a->doc->sources[i].view.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
+            || a->doc->sources[i].view.kind == GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+            || a->doc->sources[i].view.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET)
+          ++external_count_a;
+      for (size_t i = 0; i < b->doc->source_count; ++i)
+        if (b->doc->sources[i].view.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
+            || b->doc->sources[i].view.kind == GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+            || b->doc->sources[i].view.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET)
+          ++external_count_b;
+      if (external_count_a != external_count_b) return false;
+      size_t external_index = 0;
+      for (size_t i = 0; i < a->doc->source_count; ++i) {
+        const GTEXT_Markup_Source *source = &a->doc->sources[i].view;
+        if (source->kind != GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
+            && source->kind != GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+            && source->kind != GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET) continue;
+        size_t found = 0;
+        const GTEXT_Markup_Source *other = NULL;
+        for (size_t j = 0; j < b->doc->source_count; ++j) {
+          const GTEXT_Markup_Source *candidate = &b->doc->sources[j].view;
+          if (candidate->kind != GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY
+              && candidate->kind != GTEXT_MARKUP_SOURCE_PARAMETER_ENTITY
+              && candidate->kind != GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET) continue;
+          if (found++ == external_index) { other = candidate; break; }
+        }
+        if (!other || !source_metadata_equal(a->doc, source->id,
+                b->doc, other->id)) return false;
+        ++external_index;
+      }
       for (size_t i = 0; i < a->doc->dtd_unread_resource_count; ++i) {
         const GTEXT_Markup_DTD_Unread_Resource *p =
             &a->doc->dtd_unread_resources[i].view;
@@ -572,7 +641,9 @@ static bool node_equal(const node_t * a, const node_t * b) {
         const markup_dtd_syntax * q = &y->external_syntax[i];
         if (p->kind != q->kind || p->sequence != q->sequence
             || p->applies_to_document != q->applies_to_document || !same_bytes(p->source, p->length,
-              q->source, q->length)) return false;
+              q->source, q->length)
+            || !source_metadata_equal(a->doc, p->location.source_id,
+                b->doc, q->location.source_id)) return false;
       }
       for (size_t i = 0; i < x->generated_syntax_count; i++) {
         const markup_dtd_syntax * p = &x->generated_syntax[i];

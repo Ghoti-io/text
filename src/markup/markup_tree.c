@@ -268,6 +268,8 @@ void gtext_markup_document_free(GTEXT_Markup_Document * doc) {
   markup_free(doc, doc->xml_version);
   for (size_t i = 0; i < doc->source_count; i++) {
     markup_free(doc, doc->sources[i].owned_name);
+    markup_free(doc, doc->sources[i].owned_base_uri);
+    markup_free(doc, doc->sources[i].owned_encoding);
   }
   markup_free(doc, doc->sources);
   for (size_t i = 0; i < doc->dtd_unread_resource_count; i++) {
@@ -312,6 +314,34 @@ GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
   entry->view.kind = kind;
   entry->owned_name = copy;
   entry->view.name = copy;
+  return GTEXT_MARKUP_OK;
+}
+
+GTEXT_Markup_Status markup_source_set_external_metadata(
+    GTEXT_Markup_Document *doc, uint32_t id, const char *base_uri,
+    const char *encoding, size_t byte_count, const unsigned char sha256[32]) {
+  if (!doc || !id || !sha256) return GTEXT_MARKUP_E_INVALID;
+  markup_source *entry = NULL;
+  for (size_t i = 0; i < doc->source_count; ++i)
+    if (doc->sources[i].view.id == id) { entry = &doc->sources[i]; break; }
+  if (!entry) return GTEXT_MARKUP_E_INVALID;
+  char *uri_copy = base_uri ? markup_copy(doc, base_uri, strlen(base_uri)) : NULL;
+  char *encoding_copy = encoding
+      ? markup_copy(doc, encoding, strlen(encoding)) : NULL;
+  if ((base_uri && !uri_copy) || (encoding && !encoding_copy)) {
+    markup_free(doc, uri_copy);
+    markup_free(doc, encoding_copy);
+    return GTEXT_MARKUP_E_OOM;
+  }
+  markup_free(doc, entry->owned_base_uri);
+  markup_free(doc, entry->owned_encoding);
+  entry->owned_base_uri = uri_copy;
+  entry->owned_encoding = encoding_copy;
+  entry->view.base_uri = uri_copy;
+  entry->view.encoding = encoding_copy;
+  entry->view.byte_count = byte_count;
+  memcpy(entry->view.sha256, sha256, 32);
+  entry->view.has_sha256 = true;
   return GTEXT_MARKUP_OK;
 }
 

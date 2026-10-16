@@ -177,6 +177,8 @@ typedef struct {
 typedef struct {
   GTEXT_Markup_Source view;
   char * owned_name;
+  char * owned_base_uri;
+  char * owned_encoding;
   const struct GTEXT_Markup_Document * origin_doc;
   uint32_t origin_id;
 } markup_source;
@@ -281,6 +283,9 @@ void markup_doctype_free_bindings(struct GTEXT_Markup_Node * node);
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
     uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
     const char * name);
+GTEXT_Markup_Status markup_source_set_external_metadata(
+    GTEXT_Markup_Document *doc, uint32_t id, const char *base_uri,
+    const char *encoding, size_t byte_count, const unsigned char sha256[32]);
 GTEXT_Markup_Status markup_document_add_unread_resource(
     GTEXT_Markup_Document * doc, GTEXT_Markup_DTD_Resource_Kind kind,
     const char * name, const char * system_id,

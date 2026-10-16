@@ -371,6 +371,19 @@ endif
 INCLUDE += $(REGEX_CFLAGS)
 LDFLAGS += $(REGEX_LIBS)
 
+# The external-DTD snapshot fingerprint uses the suite SHA-256 API. Keep the
+# implementation in the sibling security library instead of copying hash code.
+SECURITY_PC ?= ghoti.io-security$(BRANCH)
+SECURITY_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --cflags $(SECURITY_PC) 2>/dev/null)
+SECURITY_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(SECURITY_PC) 2>/dev/null)
+ifeq ($(strip $(SECURITY_CFLAGS)),)
+ifndef SKIP_DEP_CHECK
+$(error ghoti.io-security was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file.)
+endif
+endif
+INCLUDE += $(SECURITY_CFLAGS)
+LDFLAGS += $(SECURITY_LIBS)
+
 # The four above, in one place, because every consumer of this list used to
 # carry its own copy and they drifted.  When chron arrived, tools/conformance's
 # scripts still asked pkg-config for cutil alone, so `make conformance` stopped
@@ -379,9 +392,9 @@ LDFLAGS += $(REGEX_LIBS)
 # fuzzers all failed to link, in fourteen hand-written dependency lists.  So the
 # Makefile hands the list to the scripts the way it hands them PREFIX, and a
 # script with no list refuses rather than falling back to a stale one.
-DEP_PCS := $(CUTIL_PC) $(CHRON_PC) $(UNICODE_PC) $(REGEX_PC)
-DEP_CFLAGS := $(CUTIL_CFLAGS) $(CHRON_CFLAGS) $(UNICODE_CFLAGS) $(REGEX_CFLAGS)
-DEP_LIBS := $(CUTIL_LIBS) $(CHRON_LIBS) $(UNICODE_LIBS) $(REGEX_LIBS)
+DEP_PCS := $(CUTIL_PC) $(CHRON_PC) $(UNICODE_PC) $(REGEX_PC) $(SECURITY_PC)
+DEP_CFLAGS := $(CUTIL_CFLAGS) $(CHRON_CFLAGS) $(UNICODE_CFLAGS) $(REGEX_CFLAGS) $(SECURITY_CFLAGS)
+DEP_LIBS := $(CUTIL_LIBS) $(CHRON_LIBS) $(UNICODE_LIBS) $(REGEX_LIBS) $(SECURITY_LIBS)
 
 # Automatically collect all .c source files under the src directory.
 SOURCES := $(shell find src -type f -name '*.c')

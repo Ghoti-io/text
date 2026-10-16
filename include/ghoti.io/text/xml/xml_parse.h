@@ -171,6 +171,18 @@ GTEXT_API GTEXT_XML_Status gtext_xml_revalidate(
     GTEXT_XML_Validation_Result *result, GTEXT_XML_Error *error);
 
 /**
+ * Explicitly reacquire and atomically replace a stale external DTD snapshot.
+ * The supplied resolver is the only source of external bytes. All declarations
+ * and indexes are staged before publication; on failure the tree and prior
+ * evidence remain unchanged. A successful digest records content identity for
+ * comparison and diagnostics; it does not authenticate the resource.
+ */
+GTEXT_API GTEXT_XML_Status gtext_xml_refresh_external_dtd(
+    GTEXT_Markup_Document *document,
+    const GTEXT_XML_External_DTD_Refresh_Options *options,
+    GTEXT_XML_Validation_Result *result, GTEXT_XML_Error *error);
+
+/**
  * @brief Parse an XML file into a tree.
  *
  * Reads the file through the library's file layer (so a pipe works, and the
