@@ -142,6 +142,65 @@ static void remap_location(GTEXT_Markup_Location * location,
       location->reference_source_id);
 }
 
+/* DTD unread-resource state is stored on the document today, although the
+   doctype is the node that gives that state meaning. Copy it only after the
+   whole clone succeeds, so a failed clone leaves the destination untouched. */
+static GTEXT_Markup_Status copy_dtd_knowledge(
+    GTEXT_Markup_Document * dst, const GTEXT_Markup_Document * src) {
+  if (dst == src) return GTEXT_MARKUP_OK;
+  markup_dtd_unread_resource * replacement = NULL;
+  if (src->dtd_unread_resource_count) {
+    if (src->dtd_unread_resource_count
+        > SIZE_MAX / sizeof(*replacement)) return GTEXT_MARKUP_E_LIMIT;
+    replacement = markup_alloc(dst, src->dtd_unread_resource_count
+        * sizeof(*replacement));
+    if (!replacement) return GTEXT_MARKUP_E_OOM;
+    memset(replacement, 0, src->dtd_unread_resource_count
+        * sizeof(*replacement));
+    for (size_t i = 0; i < src->dtd_unread_resource_count; i++) {
+      const markup_dtd_unread_resource * from = &src->dtd_unread_resources[i];
+      markup_dtd_unread_resource * to = &replacement[i];
+      to->view = from->view;
+      to->owned_name = from->view.name
+          ? markup_copy(dst, from->view.name, strlen(from->view.name)) : NULL;
+      to->owned_system_id = from->view.system_id
+          ? markup_copy(dst, from->view.system_id,
+              strlen(from->view.system_id)) : NULL;
+      if ((from->view.name && !to->owned_name)
+          || (from->view.system_id && !to->owned_system_id)) {
+        for (size_t j = 0; j <= i; j++) {
+          markup_free(dst, replacement[j].owned_name);
+          markup_free(dst, replacement[j].owned_system_id);
+        }
+        markup_free(dst, replacement);
+        return GTEXT_MARKUP_E_OOM;
+      }
+      to->view.name = to->owned_name;
+      to->view.system_id = to->owned_system_id;
+      remap_location(&to->view.location, dst, src);
+    }
+  }
+  for (size_t i = 0; i < dst->dtd_unread_resource_count; i++) {
+    markup_free(dst, dst->dtd_unread_resources[i].owned_name);
+    markup_free(dst, dst->dtd_unread_resources[i].owned_system_id);
+  }
+  markup_free(dst, dst->dtd_unread_resources);
+  dst->dtd_unread_resources = replacement;
+  dst->dtd_unread_resource_count = src->dtd_unread_resource_count;
+  dst->dtd_unread_resource_capacity = src->dtd_unread_resource_count;
+  dst->dtd_knowledge_incomplete = src->dtd_knowledge_incomplete;
+  return GTEXT_MARKUP_OK;
+}
+
+static void rollback_imported_sources(GTEXT_Markup_Document * doc,
+    size_t original_count) {
+  while (doc->source_count > original_count) {
+    markup_source * added = &doc->sources[--doc->source_count];
+    markup_free(doc, added->owned_name);
+    memset(added, 0, sizeof(*added));
+  }
+}
+
 /* ---- cloning ------------------------------------------------------------ */
 
 static const char * opt_text(const markup_atom * a) {
@@ -182,6 +241,15 @@ static GTEXT_Markup_Status clone_one(
     for (size_t i = 0; i < doctype->generated_syntax_count; i++) {
       provenance_status = import_source(dst, src->doc,
           doctype->generated_syntax[i].location.source_id);
+      if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+    }
+    for (size_t i = 0; i < src->doc->dtd_unread_resource_count; i++) {
+      const GTEXT_Markup_Location * location =
+          &src->doc->dtd_unread_resources[i].view.location;
+      provenance_status = import_source(dst, src->doc, location->source_id);
+      if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
+      provenance_status = import_source(dst, src->doc,
+          location->reference_source_id);
       if (provenance_status != GTEXT_MARKUP_OK) return provenance_status;
     }
   }
@@ -298,16 +366,6 @@ static GTEXT_Markup_Status clone_one(
             b->element_name_length, b->name, b->name_length, b->source,
             b->source_length, &where, b->external_context);
       }
-      for (size_t i = 0; status == GTEXT_MARKUP_OK
-          && i < src->doc->dtd_unread_resource_count; ++i) {
-        const markup_dtd_unread_resource * unread =
-            &src->doc->dtd_unread_resources[i];
-        GTEXT_Markup_Location where = unread->view.location;
-        remap_location(&where, dst, src->doc);
-        status = markup_document_add_unread_resource(dst,
-            unread->view.kind, unread->view.name, unread->view.system_id,
-            &where);
-      }
       if (status == GTEXT_MARKUP_OK) {
         markup_doctype *cloned = (markup_doctype *)copy;
         cloned->next_syntax_sequence = d->next_syntax_sequence;
@@ -349,8 +407,10 @@ GTEXT_Markup_Status gtext_markup_clone(GTEXT_Markup_Document * doc,
     return GTEXT_MARKUP_E_INVALID;
   }
   node_t * copy = NULL;
+  const size_t original_source_count = doc->source_count;
   GTEXT_Markup_Status status = clone_one(doc, node, &copy);
   if (status != GTEXT_MARKUP_OK) {
+    rollback_imported_sources(doc, original_source_count);
     return status;
   }
   if (deep) {
@@ -381,8 +441,7 @@ GTEXT_Markup_Status gtext_markup_clone(GTEXT_Markup_Document * doc,
       }
       for (;;) {
         if (s == node) {
-          *out = copy;
-          return GTEXT_MARKUP_OK;
+          goto cloned;
         }
         node_t * sn = markup_ext_next(s);
         if (sn) {
@@ -401,11 +460,17 @@ GTEXT_Markup_Status gtext_markup_clone(GTEXT_Markup_Document * doc,
       }
     }
   }
+cloned:
+  if (node->kind == GTEXT_MARKUP_KIND_DOCTYPE) {
+    status = copy_dtd_knowledge(doc, node->doc);
+    if (status != GTEXT_MARKUP_OK) goto fail;
+  }
   *out = copy;
   return GTEXT_MARKUP_OK;
 
 fail:
   markup_discard_detached(doc, copy);
+  rollback_imported_sources(doc, original_source_count);
   return status;
 }
 
@@ -479,6 +544,7 @@ static bool node_equal(const node_t * a, const node_t * b) {
           || x->syntax_count != y->syntax_count
           || x->external_syntax_count != y->external_syntax_count
           || x->generated_syntax_count != y->generated_syntax_count
+          || x->binding_count != y->binding_count
           || a->doc->dtd_knowledge_incomplete != b->doc->dtd_knowledge_incomplete
           || a->doc->dtd_unread_resource_count != b->doc->dtd_unread_resource_count)
         return false;
@@ -512,6 +578,16 @@ static bool node_equal(const node_t * a, const node_t * b) {
             || p->external_context != q->external_context || !same_text(p->parameter_entity,
               q->parameter_entity) || !same_bytes(p->source, p->length,
               q->source, q->length)) return false;
+      }
+      for (size_t i = 0; i < x->binding_count; i++) {
+        const markup_dtd_binding * p = &x->bindings[i];
+        const markup_dtd_binding * q = &y->bindings[i];
+        if (p->kind != q->kind || p->external_context != q->external_context
+            || !same_bytes(p->element_name, p->element_name_length,
+                q->element_name, q->element_name_length)
+            || !same_bytes(p->name, p->name_length, q->name, q->name_length)
+            || !same_bytes(p->source, p->source_length,
+                q->source, q->source_length)) return false;
       }
       return true;
     }

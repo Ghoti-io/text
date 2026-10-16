@@ -1246,6 +1246,13 @@ TEST_F(MarkupTree, ADoctypeExternalSnapshotIsReadOnlyOwnedAndCloned) {
   ASSERT_EQ(markup_doctype_append_external_syntax(original,
       GTEXT_MARKUP_DTD_ENTITY, "<!ENTITY external 'e'>", 22, &where),
       GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_doctype_append_generated_syntax(original,
+      GTEXT_MARKUP_DTD_ENTITY, "<!ENTITY from-pe 'g'>",
+      sizeof("<!ENTITY from-pe 'g'>") - 1, &where, "declarations", true),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_doctype_set_binding(original, GTEXT_MARKUP_DTD_ENTITY,
+      nullptr, 0, "internal", 8, "<!ENTITY internal 'i'>", 22, &where,
+      false), GTEXT_MARKUP_OK);
 
   EXPECT_EQ(gtext_markup_doctype_syntax_count(original), 1u);
   EXPECT_EQ(gtext_markup_doctype_external_syntax_count(original), 1u);
@@ -1269,6 +1276,8 @@ TEST_F(MarkupTree, ADoctypeExternalSnapshotIsReadOnlyOwnedAndCloned) {
   EXPECT_EQ(got.location.source_id, where.source_id);
   EXPECT_EQ(got.location.reference_source_id, where.reference_source_id);
   EXPECT_EQ(got.location.offset, where.offset);
+  EXPECT_EQ(gtext_markup_doctype_generated_syntax_count(copy), 1u);
+  EXPECT_EQ(reinterpret_cast<markup_doctype *>(copy)->binding_count, 1u);
 
   Node * different = doctype("root");
   ASSERT_EQ(markup_doctype_append_external_syntax(different,
@@ -1276,7 +1285,152 @@ TEST_F(MarkupTree, ADoctypeExternalSnapshotIsReadOnlyOwnedAndCloned) {
       sizeof("<!ENTITY external 'other'>") - 1, &where),
       GTEXT_MARKUP_OK);
   EXPECT_FALSE(gtext_markup_equal(original, different));
+  Node * internal_difference = doctype("root");
+  ASSERT_EQ(markup_doctype_append_syntax(internal_difference,
+      GTEXT_MARKUP_DTD_ENTITY, "<!ENTITY internal 'different'>",
+      sizeof("<!ENTITY internal 'different'>") - 1, &where), GTEXT_MARKUP_OK);
+  EXPECT_FALSE(gtext_markup_equal(original, internal_difference));
+  Node * binding_difference = nullptr;
+  ASSERT_EQ(gtext_markup_clone(doc, original, true, &binding_difference),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_doctype_set_binding(binding_difference,
+      GTEXT_MARKUP_DTD_ENTITY, nullptr, 0, "other", 5,
+      "<!ENTITY internal 'i'>", 22, &where, false),
+      GTEXT_MARKUP_OK);
+  EXPECT_FALSE(gtext_markup_equal(original, binding_difference));
   EXPECT_STREQ(got.source, "<!ENTITY external 'e'>");
+}
+
+TEST_F(MarkupTree, ClonePreservesIncompleteDtdKnowledgeAcrossDocuments) {
+  Node * original = doctype("root");
+  ASSERT_EQ(markup_source_add(doc, 4, 0, GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET,
+      "urn:root.dtd"), GTEXT_MARKUP_OK);
+  const GTEXT_Markup_Location where = {19, 3, 7, 4, 0, 21, true};
+  ASSERT_EQ(markup_doctype_append_syntax(original, GTEXT_MARKUP_DTD_ENTITY,
+      "<!ENTITY local 'value'>", sizeof("<!ENTITY local 'value'>") - 1,
+      &where), GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_document_add_unread_resource(doc,
+      GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET, nullptr, "root.dtd", &where),
+      GTEXT_MARKUP_OK);
+  ASSERT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(doc));
+
+  GTEXT_Markup_Document * target = new_doc(gtext_markup_options_default());
+  Node * copy = nullptr;
+  ASSERT_EQ(gtext_markup_clone(target, original, true, &copy), GTEXT_MARKUP_OK);
+  EXPECT_TRUE(gtext_markup_equal(original, copy));
+  EXPECT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(target));
+  ASSERT_EQ(gtext_markup_document_dtd_unread_resource_count(target), 1u);
+  GTEXT_Markup_DTD_Unread_Resource unread = {};
+  ASSERT_TRUE(gtext_markup_document_dtd_unread_resource(target, 0, &unread));
+  EXPECT_EQ(unread.kind, GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET);
+  ASSERT_NE(unread.system_id, nullptr);
+  EXPECT_STREQ(unread.system_id, "root.dtd");
+  EXPECT_NE(unread.location.source_id, 4u);
+  GTEXT_Markup_DTD_Syntax syntax = {};
+  ASSERT_TRUE(gtext_markup_doctype_syntax(copy, 0, &syntax));
+  EXPECT_NE(syntax.location.source_id, 4u);
+  EXPECT_EQ(syntax.location.offset, where.offset);
+  gtext_markup_document_free(target);
+}
+
+TEST_F(MarkupTree, FailedDtdCloneLeavesNoNodesSourcesOrKnowledgeBehind) {
+  Node * original = doctype("root");
+  ASSERT_EQ(markup_source_add(doc, 9, 0, GTEXT_MARKUP_SOURCE_EXTERNAL_SUBSET,
+      "urn:root.dtd"), GTEXT_MARKUP_OK);
+  const GTEXT_Markup_Location where = {3, 1, 4, 9, 0, 5, true};
+  ASSERT_EQ(markup_doctype_append_syntax(original, GTEXT_MARKUP_DTD_ENTITY,
+      "<!ENTITY local 'value'>", sizeof("<!ENTITY local 'value'>") - 1,
+      &where), GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_document_add_unread_resource(doc,
+      GTEXT_MARKUP_DTD_RESOURCE_EXTERNAL_SUBSET, nullptr, "root.dtd", &where),
+      GTEXT_MARKUP_OK);
+
+  bool reached_success = false;
+  for (size_t fail_at = 1; fail_at < 48 && !reached_success; fail_at++) {
+    GTEXT_Markup_Document * target = new_doc(gtext_markup_options_default());
+    Node * out = reinterpret_cast<Node *>(0x1);
+    fa.arm(fail_at);
+    const GTEXT_Markup_Status status =
+        gtext_markup_clone(target, original, true, &out);
+    fa.disarm();
+    if (status == GTEXT_MARKUP_OK) {
+      reached_success = true;
+      EXPECT_NE(out, reinterpret_cast<Node *>(0x1));
+      EXPECT_TRUE(gtext_markup_equal(original, out));
+      EXPECT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(target));
+      EXPECT_EQ(gtext_markup_node_free(out), GTEXT_MARKUP_OK);
+    }
+    else {
+      EXPECT_EQ(status, GTEXT_MARKUP_E_OOM) << "allocation " << fail_at;
+      EXPECT_EQ(out, reinterpret_cast<Node *>(0x1));
+      EXPECT_EQ(gtext_markup_document_node_count(target), 1u);
+      EXPECT_EQ(target->source_count, 0u);
+      EXPECT_EQ(gtext_markup_document_dtd_unread_resource_count(target), 0u);
+      EXPECT_FALSE(gtext_markup_document_dtd_knowledge_incomplete(target));
+    }
+    gtext_markup_document_free(target);
+  }
+  EXPECT_TRUE(reached_success);
+}
+
+TEST_F(MarkupTree, ClonePreservesSkippedReferenceStateAndSourceProvenance) {
+  ASSERT_EQ(markup_source_add(doc, 4, 0,
+      GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY, "urn:entity"),
+      GTEXT_MARKUP_OK);
+  Node * original = nullptr;
+  ASSERT_EQ(gtext_markup_create_entity_reference(doc, "missing", 7, &original),
+      GTEXT_MARKUP_OK);
+  const GTEXT_Markup_Location where = {29, 4, 8, 4, 0, 31, true};
+  gtext_markup_node_set_location(original, &where);
+
+  GTEXT_Markup_Document * target = new_doc(gtext_markup_options_default());
+  Node * copy = nullptr;
+  ASSERT_EQ(gtext_markup_clone(target, original, true, &copy), GTEXT_MARKUP_OK);
+  EXPECT_EQ(gtext_markup_node_kind(copy), GTEXT_MARKUP_KIND_ENTITY_REFERENCE);
+  EXPECT_STREQ(gtext_markup_entity_reference_name(copy), "missing");
+  EXPECT_TRUE(gtext_markup_equal(original, copy));
+  GTEXT_Markup_Location cloned = {};
+  ASSERT_TRUE(gtext_markup_node_location(copy, &cloned));
+  EXPECT_NE(cloned.source_id, 0u);
+  EXPECT_EQ(cloned.offset, where.offset);
+  EXPECT_EQ(cloned.raw_offset, where.raw_offset);
+  gtext_markup_document_free(target);
+}
+
+TEST_F(MarkupTree, ClonePreservesMixedTextSpansAndDetachKeepsDtdOwnership) {
+  ASSERT_EQ(markup_source_add(doc, 5, 0,
+      GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY, "urn:first"), GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_source_add(doc, 6, 0,
+      GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY, "urn:second"), GTEXT_MARKUP_OK);
+  Node * mixed = nullptr;
+  ASSERT_EQ(gtext_markup_create_text(doc, "ab", 2, &mixed), GTEXT_MARKUP_OK);
+  const GTEXT_Markup_Location first = {0, 1, 1, 5, 0, 0, true};
+  const GTEXT_Markup_Location second = {0, 1, 1, 6, 0, 0, true};
+  ASSERT_EQ(markup_text_add_span(doc, mixed, 0, 1, &first), GTEXT_MARKUP_OK);
+  ASSERT_EQ(markup_text_add_span(doc, mixed, 1, 1, &second), GTEXT_MARKUP_OK);
+
+  GTEXT_Markup_Document * target = new_doc(gtext_markup_options_default());
+  Node * cloned = nullptr;
+  ASSERT_EQ(gtext_markup_clone(target, mixed, true, &cloned), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_text_span_count(cloned), 2u);
+  GTEXT_Markup_Text_Span span = {};
+  ASSERT_TRUE(gtext_markup_text_span_at(cloned, 0, &span));
+  EXPECT_NE(span.location.source_id, 5u);
+  ASSERT_TRUE(gtext_markup_text_span_at(cloned, 1, &span));
+  EXPECT_NE(span.location.source_id, 6u);
+  gtext_markup_document_free(target);
+
+  Node * dt = doctype("root");
+  const GTEXT_Markup_Location dtd_location = {};
+  ASSERT_EQ(markup_doctype_append_syntax(dt, GTEXT_MARKUP_DTD_COMMENT,
+      "<!-- retained -->", sizeof("<!-- retained -->") - 1,
+      &dtd_location),
+      GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(root(), dt), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_remove(dt), GTEXT_MARKUP_OK);
+  EXPECT_EQ(gtext_markup_doctype_syntax_count(dt), 1u);
+  EXPECT_EQ(gtext_markup_node_document(dt), doc);
+  ASSERT_EQ(gtext_markup_node_free(dt), GTEXT_MARKUP_OK);
 }
 
 TEST_F(MarkupTree, DtdSyntaxLocationsMustReferenceDocumentSources) {

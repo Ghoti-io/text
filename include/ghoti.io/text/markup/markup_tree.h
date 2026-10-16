@@ -914,6 +914,10 @@ GTEXT_API GTEXT_Markup_Status gtext_markup_node_free(GTEXT_Markup_Node * node);
  * clone it into the target and free the original. Namespaces and prefixes are
  * copied as written; nothing is added or repaired. A document cannot be cloned
  * (use a fragment's children), and a template's content is cloned with it.
+ * Doctypes copy retained declarations, the external snapshot, unresolved
+ * resource records and source provenance. Their destination document inherits
+ * the doctype's incomplete-knowledge state. Entity-reference nodes preserve
+ * their unresolved spelling and provenance.
  *
  * The copy is not checked against `doc`'s max_depth: it is a detached tree, and
  * the limit is applied, subtree height included, when it is inserted. The node
@@ -936,8 +940,9 @@ GTEXT_API GTEXT_Markup_Status gtext_markup_clone(
  *
  * Structural: kinds, names (namespace and local, and the prefix too), data,
  * attributes as a set - order is not significant, as in the DOM - children in
- * order, and template contents. Source locations and which document a node
- * lives in are not compared.
+ * order, template contents, and retained DTD syntax and external snapshot
+ * content. DTD source locations, identities and ownership are ignored, as are
+ * other source locations and which document a node lives in.
  *
  * @param a A node.
  * @param b A node.
