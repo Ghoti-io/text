@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include <fstream>
+#include <vector>
 #include <unistd.h>
 #include <gtest/gtest.h>
 #include <ghoti.io/text/xml.h>
@@ -89,7 +90,22 @@ size_t count(GTEXT_Markup_Document *doc, GTEXT_XML_Validation_Code code) {
   }
   return result;
 }
-struct Events { size_t diagnostics = 0; size_t content = 0; size_t undeclared = 0; size_t attribute = 0; size_t idref = 0; size_t truncated = 0; };
+struct Events {
+  size_t diagnostics = 0, content = 0, undeclared = 0, attribute = 0;
+  size_t idref = 0, truncated = 0, results = 0;
+  GTEXT_XML_Validation_Result result{};
+};
+struct OrderedEvents {
+  std::vector<GTEXT_XML_Event_Type> types;
+  GTEXT_XML_Validation_Result result{};
+};
+GTEXT_XML_Status receive_ordered(const GTEXT_XML_Event *event, void *opaque) {
+  auto *events = static_cast<OrderedEvents *>(opaque);
+  events->types.push_back(event->type);
+  if (event->type == GTEXT_XML_EVENT_VALIDATION_RESULT)
+    events->result = event->validation_result;
+  return GTEXT_XML_OK;
+}
 GTEXT_XML_Status receive(const GTEXT_XML_Event *event, void *opaque) {
   auto *events = static_cast<Events *>(opaque);
   if (event->type == GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC) {
@@ -105,6 +121,11 @@ GTEXT_XML_Status receive(const GTEXT_XML_Event *event, void *opaque) {
   }
   if (event->type == GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED)
     ++events->truncated;
+  if (event->type == GTEXT_XML_EVENT_VALIDATION_RESULT
+      && event->validation_result.verdict != GTEXT_XML_VALIDATION_NOT_RUN) {
+    ++events->results;
+    events->result = event->validation_result;
+  }
   return GTEXT_XML_OK;
 }
 
@@ -211,6 +232,179 @@ TEST(XmlValidation, ResolvesForwardIdrefToLaterElement) {
       "<item ref='later'/><item id='later'/></root>");
   ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
   EXPECT_EQ(count(p, GTEXT_XML_VALIDATION_UNRESOLVED_IDREF), 0u);
+}
+
+TEST(XmlValidation, ReportsVerdictAndKnowledgeIndependently) {
+  const auto valid = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>]><root/>");
+  ASSERT_EQ(valid.status, GTEXT_XML_OK) << valid.error.message;
+  GTEXT_XML_Validation_Result result{};
+  ASSERT_TRUE(gtext_xml_validation_result(valid.doc, &result));
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+  EXPECT_TRUE(result.knowledge_complete);
+  EXPECT_EQ(result.diagnostic_count, 0u);
+
+  const auto no_doctype = parse("<root/>");
+  ASSERT_EQ(no_doctype.status, GTEXT_XML_OK) << no_doctype.error.message;
+  ASSERT_TRUE(gtext_xml_validation_result(no_doctype.doc, &result));
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INCOMPLETE);
+  EXPECT_FALSE(result.knowledge_complete);
+
+  const auto incomplete = parse("<!DOCTYPE root SYSTEM 'urn:missing'><root/>");
+  ASSERT_EQ(incomplete.status, GTEXT_XML_OK) << incomplete.error.message;
+  ASSERT_TRUE(gtext_xml_validation_result(incomplete.doc, &result));
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INCOMPLETE);
+  EXPECT_FALSE(result.knowledge_complete);
+
+  const auto invalid_incomplete = parse("<!DOCTYPE root SYSTEM 'urn:missing' ["
+      "<!ELEMENT root EMPTY>]><root><child/></root>");
+  ASSERT_EQ(invalid_incomplete.status, GTEXT_XML_OK)
+      << invalid_incomplete.error.message;
+  ASSERT_TRUE(gtext_xml_validation_result(invalid_incomplete.doc, &result));
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_FALSE(result.knowledge_complete);
+  EXPECT_EQ(result.diagnostic_count, 1u);
+
+  const auto not_well_formed = parse("<root>");
+  EXPECT_EQ(not_well_formed.status, GTEXT_XML_E_UNEXPECTED_EOF);
+  EXPECT_EQ(not_well_formed.doc, nullptr);
+
+  auto process = gtext_xml_parse_options_default();
+  process.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document *process_doc = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse("<root/>", 7, &process, &process_doc, &error),
+      GTEXT_XML_OK) << error.message;
+  EXPECT_FALSE(gtext_xml_validation_result(process_doc, &result));
+  gtext_markup_document_free(process_doc);
+}
+
+TEST(XmlValidation, MarksExternalKnowledgeStaleAfterInternalDtdEdit) {
+  ExternalDtd dtd;
+  dtd.bytes = "<!ELEMENT other EMPTY>";
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+  options.resolver = open_external;
+  options.resolver_user_data = &dtd;
+  const std::string input = "<!DOCTYPE root SYSTEM 'urn:validation' ["
+      "<!ELEMENT root EMPTY>]><root/>";
+  Parsed parsed;
+  parsed.status = gtext_xml_parse(input.data(), input.size(), &options,
+      &parsed.doc, &parsed.error);
+  ASSERT_EQ(parsed.status, GTEXT_XML_OK) << parsed.error.message;
+  GTEXT_XML_Validation_Result result{};
+  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &result));
+  ASSERT_EQ(result.verdict, GTEXT_XML_VALIDATION_VALID);
+
+  GTEXT_Markup_Node *doctype = gtext_markup_document_doctype(parsed.doc);
+  ASSERT_NE(doctype, nullptr);
+  const char replacement[] = "<!ELEMENT root ANY>";
+  ASSERT_EQ(gtext_markup_doctype_replace_syntax(doctype, 0,
+      GTEXT_MARKUP_DTD_ELEMENT, replacement, sizeof(replacement) - 1, nullptr),
+      GTEXT_MARKUP_OK);
+  EXPECT_TRUE(gtext_markup_document_dtd_knowledge_incomplete(parsed.doc));
+  ASSERT_TRUE(gtext_xml_validation_result(parsed.doc, &result));
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INCOMPLETE);
+  EXPECT_FALSE(result.knowledge_complete);
+}
+
+TEST(XmlValidation, PullNeedMoreInputDoesNotProduceAValidityResult) {
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  GTEXT_XML_Reader *reader = gtext_xml_reader_new(&options);
+  ASSERT_NE(reader, nullptr);
+  GTEXT_XML_Error error{};
+  const std::string partial = "<!DOCTYPE root [<!ELEMENT root EMPTY>]><root";
+  ASSERT_EQ(gtext_xml_reader_feed(reader, partial.data(), partial.size(), &error), GTEXT_XML_OK)
+      << error.message;
+  GTEXT_XML_Event event{};
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  while ((status = gtext_xml_reader_next(reader, &event)) == GTEXT_XML_OK) {
+    EXPECT_FALSE(event.type == GTEXT_XML_EVENT_DOCUMENT_END
+        && event.validation_result.verdict != GTEXT_XML_VALIDATION_NOT_RUN);
+  }
+  EXPECT_EQ(status, GTEXT_XML_E_INCOMPLETE);
+  ASSERT_EQ(gtext_xml_reader_feed(reader, "/>" , 2, &error), GTEXT_XML_OK)
+      << error.message;
+  ASSERT_EQ(gtext_xml_reader_feed(reader, nullptr, 0, &error), GTEXT_XML_OK)
+      << error.message;
+  size_t result_count = 0;
+  bool saw_validation_result = false;
+  status = GTEXT_XML_OK;
+  while ((status = gtext_xml_reader_next(reader, &event)) == GTEXT_XML_OK) {
+    if (event.type == GTEXT_XML_EVENT_VALIDATION_RESULT) {
+      ++result_count;
+      EXPECT_EQ(event.validation_result.verdict, GTEXT_XML_VALIDATION_VALID);
+      EXPECT_TRUE(event.validation_result.knowledge_complete);
+      EXPECT_FALSE(event.validation_result.diagnostics_truncated);
+      EXPECT_EQ(event.validation_result.diagnostic_count, 0u);
+      saw_validation_result = true;
+    }
+    if (event.type == GTEXT_XML_EVENT_DOCUMENT_END) {
+      EXPECT_TRUE(saw_validation_result);
+      EXPECT_EQ(event.validation_result.verdict, GTEXT_XML_VALIDATION_VALID);
+    }
+  }
+  EXPECT_EQ(status, GTEXT_XML_E_STATE);
+  EXPECT_EQ(result_count, 1u);
+  gtext_xml_reader_free(reader);
+}
+
+TEST(XmlValidation, PushStreamEmitsCompleteResultBeforeDocumentEnd) {
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  OrderedEvents events;
+  GTEXT_XML_Stream *stream = gtext_xml_stream_new(&options, receive_ordered,
+      &events);
+  ASSERT_NE(stream, nullptr);
+  const std::string valid =
+      "<!DOCTYPE root [<!ELEMENT root EMPTY>]><root/>";
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_stream_feed(stream, valid.data(), valid.size(), &error),
+      GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_stream_finish(stream, &error), GTEXT_XML_OK)
+      << error.message;
+  const auto result = std::find(events.types.begin(), events.types.end(),
+      GTEXT_XML_EVENT_VALIDATION_RESULT);
+  const auto end = std::find(events.types.begin(), events.types.end(),
+      GTEXT_XML_EVENT_DOCUMENT_END);
+  ASSERT_NE(result, events.types.end());
+  ASSERT_NE(end, events.types.end());
+  EXPECT_LT(result, end);
+  EXPECT_EQ(events.result.verdict, GTEXT_XML_VALIDATION_VALID);
+  EXPECT_TRUE(events.result.knowledge_complete);
+  EXPECT_FALSE(events.result.diagnostics_truncated);
+  EXPECT_EQ(events.result.diagnostic_count, 0u);
+  gtext_xml_stream_free(stream);
+
+  events = {};
+  stream = gtext_xml_stream_new(&options, receive_ordered, &events);
+  ASSERT_NE(stream, nullptr);
+  const char without_doctype[] = "<root/>";
+  ASSERT_EQ(gtext_xml_stream_feed(stream, without_doctype,
+      sizeof(without_doctype) - 1, &error), GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(gtext_xml_stream_finish(stream, &error), GTEXT_XML_OK)
+      << error.message;
+  EXPECT_EQ(events.result.verdict, GTEXT_XML_VALIDATION_INCOMPLETE);
+  EXPECT_FALSE(events.result.knowledge_complete);
+  EXPECT_FALSE(events.result.diagnostics_truncated);
+  EXPECT_EQ(events.result.diagnostic_count, 0u);
+  gtext_xml_stream_free(stream);
+}
+
+TEST(XmlValidation, FatalStreamFailureDoesNotPublishAValidityResult) {
+  auto options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  Events events;
+  GTEXT_XML_Stream *stream = gtext_xml_stream_new(&options, receive, &events);
+  ASSERT_NE(stream, nullptr);
+  const char malformed[] = "<root>";
+  ASSERT_EQ(gtext_xml_stream_feed(stream, malformed, sizeof(malformed) - 1,
+      nullptr), GTEXT_XML_OK);
+  EXPECT_EQ(gtext_xml_stream_finish(stream, nullptr),
+      GTEXT_XML_E_UNEXPECTED_EOF);
+  EXPECT_EQ(events.results, 0u);
+  gtext_xml_stream_free(stream);
 }
 
 TEST(XmlValidation, ReportsEntityFromExternalDeclarationInStandaloneContent) {
@@ -336,6 +530,12 @@ TEST(XmlValidation, EmitsEquivalentFindingsFromPushStream) {
   if (status == GTEXT_XML_OK) status = gtext_xml_stream_finish(stream, &error);
   EXPECT_EQ(status, GTEXT_XML_OK) << error.message;
   EXPECT_EQ(events.diagnostics, gtext_xml_validation_diagnostic_count(dom.doc));
+  EXPECT_EQ(events.results, 1u);
+  EXPECT_EQ(events.result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_TRUE(events.result.knowledge_complete);
+  EXPECT_FALSE(events.result.diagnostics_truncated);
+  EXPECT_EQ(events.result.diagnostic_count,
+      gtext_xml_validation_diagnostic_count(dom.doc));
   EXPECT_EQ(events.content, count(dom, GTEXT_XML_VALIDATION_ELEMENT_CONTENT));
   EXPECT_EQ(events.undeclared, count(dom, GTEXT_XML_VALIDATION_UNDECLARED_ELEMENT));
   gtext_xml_stream_free(stream);
@@ -427,6 +627,12 @@ TEST(XmlValidation, WorkAndDiagnosticBudgetsAreDistinct) {
   const auto p = parse("<!DOCTYPE root [<!ELEMENT root EMPTY>]><wrong><x/></wrong>", options);
   ASSERT_EQ(p.status, GTEXT_XML_OK) << p.error.message;
   EXPECT_TRUE(gtext_xml_validation_diagnostics_truncated(p.doc));
+  GTEXT_XML_Validation_Result result{};
+  ASSERT_TRUE(gtext_xml_validation_result(p.doc, &result));
+  EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_TRUE(result.knowledge_complete);
+  EXPECT_TRUE(result.diagnostics_truncated);
+  EXPECT_EQ(result.diagnostic_count, 1u);
 
   Events events;
   auto truncated_options = gtext_xml_parse_options_default();
@@ -442,6 +648,11 @@ TEST(XmlValidation, WorkAndDiagnosticBudgetsAreDistinct) {
   ASSERT_EQ(gtext_xml_stream_finish(stream, &stream_error), GTEXT_XML_OK)
       << stream_error.message;
   EXPECT_EQ(events.truncated, 1u);
+  EXPECT_EQ(events.results, 1u);
+  EXPECT_EQ(events.result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  EXPECT_TRUE(events.result.knowledge_complete);
+  EXPECT_TRUE(events.result.diagnostics_truncated);
+  EXPECT_EQ(events.result.diagnostic_count, 1u);
   gtext_xml_stream_free(stream);
 
   options = gtext_xml_parse_options_default();

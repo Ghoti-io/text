@@ -146,6 +146,7 @@ struct GTEXT_XML_Stream {
   int finished; /* ...and succeeded */
   int final_prepared; /* decoder flushed after finish() */
   int document_end_sent;
+  int validation_result_sent;
   int pause_requested;
   int paused;
   int stopped;  /* the callback returned an error */
@@ -1046,6 +1047,18 @@ static void event_init(xml_ctx * p, GTEXT_XML_Event * e, GTEXT_XML_Event_Type ty
   }
 }
 
+static GTEXT_XML_Status emit_validation_result(GTEXT_XML_Stream *s) {
+  if (s->p.dtd_mode != GTEXT_XML_DTD_VALIDATE || s->validation_result_sent)
+    return GTEXT_XML_OK;
+  GTEXT_XML_Event event;
+  const GTEXT_Markup_Location here = xml_here(&s->p);
+  event_init(&s->p, &event, GTEXT_XML_EVENT_VALIDATION_RESULT, &here);
+  xml_validation_result_from_context(&s->p, &event.validation_result);
+  GTEXT_XML_Status status = deliver(&s->p, &event);
+  if (status == GTEXT_XML_OK) s->validation_result_sent = 1;
+  return status;
+}
+
 /* A NUL-terminated copy in the arena; its offset. */
 static GTEXT_XML_Status arena_put(xml_ctx * p, const char * bytes, size_t length,
     size_t * offset) {
@@ -1555,9 +1568,13 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_finish(
     status = xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "the document is incomplete");
   }
   if (status == GTEXT_XML_OK && !s->paused && !s->document_end_sent) {
+    status = emit_validation_result(s);
+  }
+  if (status == GTEXT_XML_OK && !s->paused && !s->document_end_sent) {
     GTEXT_XML_Event e;
     const GTEXT_Markup_Location here = xml_here(p);
     event_init(p, &e, GTEXT_XML_EVENT_DOCUMENT_END, &here);
+    xml_validation_result_from_context(p, &e.validation_result);
     status = deliver(p, &e);
     if (status == GTEXT_XML_OK) {
       s->document_end_sent = 1;
@@ -1593,9 +1610,14 @@ GTEXT_XML_Status xml_stream_resume(GTEXT_XML_Stream * s, GTEXT_XML_Error * err) 
   }
   if (status == GTEXT_XML_OK && s->final && s->final_prepared && !s->paused
       && !s->document_end_sent) {
+    status = emit_validation_result(s);
+  }
+  if (status == GTEXT_XML_OK && s->final && s->final_prepared && !s->paused
+      && !s->document_end_sent) {
     GTEXT_XML_Event e;
     const GTEXT_Markup_Location here = xml_here(&s->p);
     event_init(&s->p, &e, GTEXT_XML_EVENT_DOCUMENT_END, &here);
+    xml_validation_result_from_context(&s->p, &e.validation_result);
     status = deliver(&s->p, &e);
     if (status == GTEXT_XML_OK) {
       s->document_end_sent = 1;

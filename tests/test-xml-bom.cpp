@@ -349,6 +349,10 @@ std::string describe(const GTEXT_XML_Event & e) {
     case GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED:
       out = "VALIDATION_DIAGNOSTICS_TRUNCATED";
       break;
+    case GTEXT_XML_EVENT_VALIDATION_RESULT:
+      out = "VALIDATION_RESULT "
+          + std::to_string(static_cast<int>(e.validation_result.verdict));
+      break;
   }
   return out + " @" + std::to_string(e.location.offset) + ":" + std::to_string(e.location.line) + ":"
       + std::to_string(e.location.column);

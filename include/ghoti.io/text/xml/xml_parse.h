@@ -102,8 +102,12 @@ extern "C" {
  * SKIP policy, a declined external general entity is retained as an unresolved
  * entity-reference node and DTD knowledge is marked incomplete; resolver
  * callback failures remain GTEXT_XML_E_RESOLVER. `VALIDATE` performs DTD
- * processing and reports bounded structural validity diagnostics without
- * turning a well-formed but invalid document into a fatal parse error. The external policy
+ * processing and reports bounded validity diagnostics without turning a
+ * well-formed but invalid document into a fatal parse error. A successful
+ * VALIDATE parse exposes a separate verdict and knowledge-complete flag
+ * through `gtext_xml_validation_result()`: known violations yield `invalid`,
+ * missing or stale required DTD knowledge yields `incomplete` when there is no
+ * known violation, and a document without a DOCTYPE is `incomplete`. The external policy
  * defaults to DENY; SKIP is valid only with PROCESS and never grants the
  * library filesystem or network access. A parse result exposes incomplete
  * knowledge and the typed unread-resource records on its document.
@@ -139,7 +143,7 @@ GTEXT_API GTEXT_XML_Status gtext_xml_parse(const void * data, size_t len,
     const GTEXT_XML_Parse_Options * opts, GTEXT_Markup_Document ** out,
     GTEXT_XML_Error * err);
 
-/** Number of bounded structural validity findings retained by a VALIDATE parse. */
+/** Number of bounded DTD validity findings retained by a VALIDATE parse. */
 GTEXT_API size_t gtext_xml_validation_diagnostic_count(
     const GTEXT_Markup_Document * document);
 /** Copy one finding to `out`; false leaves `out` unchanged. */
@@ -149,6 +153,16 @@ GTEXT_API bool gtext_xml_validation_diagnostic(
 /** Whether additional findings were omitted at the configured diagnostic cap. */
 GTEXT_API bool gtext_xml_validation_diagnostics_truncated(
     const GTEXT_Markup_Document * document);
+/**
+ * Read the final validation result. Returns false when validation did not run
+ * or `out` is NULL. A true result describes only a successfully parsed
+ * document; parse failures are returned by the parse operation and produce no
+ * document on which to query a verdict. INVALID takes precedence over
+ * INCOMPLETE while `knowledge_complete` preserves both facts.
+ */
+GTEXT_API bool gtext_xml_validation_result(
+    const GTEXT_Markup_Document * document,
+    GTEXT_XML_Validation_Result * out);
 
 /**
  * @brief Parse an XML file into a tree.

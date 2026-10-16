@@ -443,6 +443,7 @@ typedef struct {
   size_t validation_frames_bytes;
   size_t validation_diagnostic_count;
   unsigned char validation_diagnostics_truncated;
+  unsigned char validation_has_violation;
   xml_content_decl * content_decls;
   size_t content_decl_count;
   size_t content_decl_capacity;
@@ -846,6 +847,8 @@ GTEXT_XML_Status xml_validation_end_element(xml_ctx *p,
     const unsigned char *name, size_t name_length,
     const GTEXT_Markup_Location *location);
 GTEXT_XML_Status xml_validation_finish(xml_ctx *p);
+void xml_validation_result_from_context(const xml_ctx *p,
+    GTEXT_XML_Validation_Result *out);
 GTEXT_XML_Status xml_validation_external_entity_reference(xml_ctx *p,
     const xml_general_entity *entity, const GTEXT_Markup_Location *where);
 GTEXT_XML_Status xml_validation_text(xml_ctx *p, const char *text,

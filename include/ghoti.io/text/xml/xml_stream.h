@@ -98,8 +98,9 @@ extern "C" {
  *
  * A document is DOCUMENT_START, then (in the prolog) any DOCTYPE, COMMENT and
  * PROCESSING_INSTRUCTION, then the root element and everything in it, then more
- * COMMENT and PROCESSING_INSTRUCTION events, then DOCUMENT_END. White space
- * outside the root element is not an event. An element is ELEMENT_START, its
+ * COMMENT and PROCESSING_INSTRUCTION events, then a VALIDATION_RESULT when
+ * DTD_VALIDATE completes, then DOCUMENT_END. White space outside the root
+ * element is not an event. An element is ELEMENT_START, its
  * content, ELEMENT_END; an empty-element tag `<a/>` is the pair with nothing
  * between.
  */
@@ -115,8 +116,9 @@ typedef enum {
   GTEXT_XML_EVENT_DOCUMENT_END,   ///< The end of a well-formed document.
   GTEXT_XML_EVENT_SKIPPED_ENTITY, ///< `name` is an unresolved entity reference.
   GTEXT_XML_EVENT_UNREAD_RESOURCE, ///< An external DTD resource was not read.
-  GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC, ///< A structural validity finding.
-  GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED ///< Diagnostic cap reached.
+  GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC, ///< A DTD validity finding.
+  GTEXT_XML_EVENT_VALIDATION_DIAGNOSTICS_TRUNCATED, ///< Diagnostic cap reached.
+  GTEXT_XML_EVENT_VALIDATION_RESULT ///< Final VALIDATE result, before DOCUMENT_END.
 } GTEXT_XML_Event_Type;
 
 /**
@@ -169,7 +171,8 @@ typedef struct {
  * | ELEMENT_END             | `namespace_uri`, `prefix`, `local_name` as the start had them; `location` is the end tag's `</`, or the `/` of an empty-element tag |
  * | TEXT, CDATA, COMMENT    | `data`, `data_length` |
  * | PROCESSING_INSTRUCTION  | `name` (the target), `data`, `data_length` |
- * | DOCUMENT_END            | none; `location` is the end of the document |
+ * | DOCUMENT_END            | `location` is the end |
+ * | VALIDATION_RESULT       | `validation_result` is the successful final verdict; precedes DOCUMENT_END |
  * | SKIPPED_ENTITY          | `name` is the unresolved general entity |
  * | UNREAD_RESOURCE         | `resource_kind`, `name`, and `system_id` identify missing external material |
  * | VALIDATION_DIAGNOSTIC   | `validation_diagnostic` identifies a structural DTD validity finding |
@@ -210,6 +213,7 @@ typedef struct {
                                              ///< default.
   GTEXT_Markup_Standalone standalone;
   GTEXT_XML_Validation_Diagnostic validation_diagnostic; ///< Validation event only.
+  GTEXT_XML_Validation_Result validation_result; ///< VALIDATION_RESULT; mirrored on DOCUMENT_END for compatibility.
 } GTEXT_XML_Event;
 
 /**

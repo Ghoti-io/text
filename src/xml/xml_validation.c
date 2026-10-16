@@ -191,6 +191,8 @@ static GTEXT_XML_Status retain_identity(xml_ctx *p, int reference,
 static GTEXT_XML_Status validation_report(xml_ctx *p,
     GTEXT_XML_Validation_Code code, const GTEXT_Markup_Location *where,
     const char *message) {
+  p->validation_has_violation = 1;
+  if (p->doc) p->doc->xml_validation_has_violation = 1;
   if (p->validation_diagnostic_count >= p->max_validation_diagnostics) {
     if (!p->validation_diagnostics_truncated) {
       p->validation_diagnostics_truncated = 1;
@@ -1224,6 +1226,13 @@ GTEXT_XML_Status xml_validation_text(xml_ctx *p, const char *text,
 
 GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
   if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE) return GTEXT_XML_OK;
+  /* A well-formed document without a DOCTYPE has no required DTD evidence
+     against which its validity can be established. Keep that knowledge gap
+     distinct from operation success. */
+  if (!p->validation_doctype_name) {
+    p->dtd_knowledge_incomplete = 1;
+    if (p->doc) p->doc->dtd_knowledge_incomplete = 1;
+  }
   for (size_t i = 0; i < p->general_entity_count; ++i) {
     GTEXT_XML_Status charged = validation_charge(p, 1);
     if (charged != GTEXT_XML_OK) return charged;
@@ -1328,7 +1337,25 @@ GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
       if (s != GTEXT_XML_OK) return s;
     }
   }
+  if (p->doc) p->doc->xml_validation_ran = 1;
   return GTEXT_XML_OK;
+}
+
+void xml_validation_result_from_context(const xml_ctx *p,
+    GTEXT_XML_Validation_Result *out) {
+  if (!out) return;
+  *out = (GTEXT_XML_Validation_Result){
+      .verdict = GTEXT_XML_VALIDATION_NOT_RUN,
+      .knowledge_complete = !p->dtd_knowledge_incomplete,
+      .diagnostics_truncated = p->validation_diagnostics_truncated,
+      .diagnostic_count = p->validation_diagnostic_count};
+  if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE) return;
+  if (p->validation_has_violation)
+    out->verdict = GTEXT_XML_VALIDATION_INVALID;
+  else if (p->dtd_knowledge_incomplete)
+    out->verdict = GTEXT_XML_VALIDATION_INCOMPLETE;
+  else
+    out->verdict = GTEXT_XML_VALIDATION_VALID;
 }
 
 GTEXT_XML_Status xml_validation_external_entity_reference(xml_ctx *p,
@@ -1390,4 +1417,23 @@ bool gtext_xml_validation_diagnostic(const GTEXT_Markup_Document *document,
 bool gtext_xml_validation_diagnostics_truncated(
     const GTEXT_Markup_Document *document) {
   return document && document->xml_validation_diagnostics_truncated;
+}
+
+bool gtext_xml_validation_result(const GTEXT_Markup_Document *document,
+    GTEXT_XML_Validation_Result *out) {
+  if (!document || !out || !document->xml_validation_ran) return false;
+  GTEXT_XML_Validation_Result result = {
+      .verdict = GTEXT_XML_VALIDATION_NOT_RUN,
+      .knowledge_complete = !(document->dtd_knowledge_incomplete
+          || document->dtd_knowledge_stale),
+      .diagnostics_truncated = document->xml_validation_diagnostics_truncated,
+      .diagnostic_count = document->xml_validation_diagnostic_count};
+  if (document->xml_validation_has_violation)
+    result.verdict = GTEXT_XML_VALIDATION_INVALID;
+  else if (document->dtd_knowledge_incomplete || document->dtd_knowledge_stale)
+    result.verdict = GTEXT_XML_VALIDATION_INCOMPLETE;
+  else
+    result.verdict = GTEXT_XML_VALIDATION_VALID;
+  *out = result;
+  return true;
 }

@@ -183,6 +183,22 @@ typedef struct {
   const char * message;
 } GTEXT_XML_Validation_Diagnostic;
 
+/** Final DTD validation state for a successfully completed VALIDATE parse. */
+typedef enum {
+  GTEXT_XML_VALIDATION_NOT_RUN = 0,
+  GTEXT_XML_VALIDATION_VALID,
+  GTEXT_XML_VALIDATION_INVALID,
+  GTEXT_XML_VALIDATION_INCOMPLETE
+} GTEXT_XML_Validation_Verdict;
+
+/** Summary kept separate from the XML operation status. */
+typedef struct {
+  GTEXT_XML_Validation_Verdict verdict;
+  bool knowledge_complete;
+  bool diagnostics_truncated;
+  size_t diagnostic_count;
+} GTEXT_XML_Validation_Result;
+
 /** DTD behavior selected for a parse. Zero preserves the historical default. */
 typedef enum {
   GTEXT_XML_DTD_OFF = 0,

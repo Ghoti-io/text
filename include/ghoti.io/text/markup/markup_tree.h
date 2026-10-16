@@ -205,7 +205,7 @@ GTEXT_API bool gtext_markup_document_source(
 GTEXT_API size_t gtext_markup_document_node_count(
     const GTEXT_Markup_Document * doc);
 
-/** Whether DTD processing of this document encountered unavailable material. */
+/** Whether retained DTD knowledge is incomplete or stale after an edit. */
 GTEXT_API bool gtext_markup_document_dtd_knowledge_incomplete(
     const GTEXT_Markup_Document * doc);
 

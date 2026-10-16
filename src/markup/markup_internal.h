@@ -222,6 +222,7 @@ struct GTEXT_Markup_Document {
   char * xml_version;
   GTEXT_Markup_Standalone standalone;
   uint8_t dtd_knowledge_incomplete;
+  uint8_t dtd_knowledge_stale;
   markup_source * sources;
   size_t source_count;
   size_t source_capacity;
@@ -231,6 +232,8 @@ struct GTEXT_Markup_Document {
   struct markup_xml_validation_diagnostic * xml_validation_diagnostics;
   size_t xml_validation_diagnostic_count;
   unsigned char xml_validation_diagnostics_truncated;
+  unsigned char xml_validation_ran;
+  unsigned char xml_validation_has_violation;
 };
 
 typedef struct markup_xml_validation_diagnostic {

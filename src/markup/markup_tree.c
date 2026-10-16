@@ -351,7 +351,7 @@ size_t gtext_markup_document_node_count(const GTEXT_Markup_Document * doc) {
 
 bool gtext_markup_document_dtd_knowledge_incomplete(
     const GTEXT_Markup_Document * doc) {
-  return doc && doc->dtd_knowledge_incomplete;
+  return doc && (doc->dtd_knowledge_incomplete || doc->dtd_knowledge_stale);
 }
 
 GTEXT_Markup_Status markup_document_add_unread_resource(

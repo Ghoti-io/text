@@ -189,6 +189,7 @@ static GTEXT_Markup_Status copy_dtd_knowledge(
   dst->dtd_unread_resource_count = src->dtd_unread_resource_count;
   dst->dtd_unread_resource_capacity = src->dtd_unread_resource_count;
   dst->dtd_knowledge_incomplete = src->dtd_knowledge_incomplete;
+  dst->dtd_knowledge_stale = src->dtd_knowledge_stale;
   return GTEXT_MARKUP_OK;
 }
 
@@ -546,6 +547,7 @@ static bool node_equal(const node_t * a, const node_t * b) {
           || x->generated_syntax_count != y->generated_syntax_count
           || x->binding_count != y->binding_count
           || a->doc->dtd_knowledge_incomplete != b->doc->dtd_knowledge_incomplete
+          || a->doc->dtd_knowledge_stale != b->doc->dtd_knowledge_stale
           || a->doc->dtd_unread_resource_count != b->doc->dtd_unread_resource_count)
         return false;
       for (size_t i = 0; i < a->doc->dtd_unread_resource_count; ++i) {

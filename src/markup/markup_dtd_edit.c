@@ -253,6 +253,7 @@ static GTEXT_Markup_Status edit_syntax(GTEXT_Markup_Node *node,
   for (size_t i = 0; i < doctype->external_syntax_count; ++i)
     if (doctype->external_syntax[i].sequence >= doctype->next_syntax_sequence)
       doctype->next_syntax_sequence = doctype->external_syntax[i].sequence + 1;
+  if (doctype->external_syntax_count) node->doc->dtd_knowledge_stale = 1;
   return GTEXT_MARKUP_OK;
 }
 
