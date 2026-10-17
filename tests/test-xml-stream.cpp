@@ -1339,8 +1339,11 @@ TEST(XmlStream, MalformedDtdDeclarationsAgreeAcrossChunkedReaders) {
   opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
   const std::vector<std::string> documents = {
       "<!DOCTYPE a [<!ELEMENT a (b|)>]><a/>",
+      "<!DOCTYPE a [<!ELEMENT a (b ?) >]><a/>",
+      "<!DOCTYPE a [<!ELEMENT a (b,c) *>]><a/>",
       "<!DOCTYPE a [<!ATTLIST a id ID>]><a/>",
       "<!DOCTYPE a [<!ENTITY e SYSTEM>]><a/>",
+      "<!DOCTYPE a [<!ENTITY e SYSTEM 'x'NDATA n>]><a/>",
       "<!DOCTYPE a [<!NOTATION n bogus 'x'>]><a/>"};
   for (const std::string & doc_text : documents) {
     Dom dom;
@@ -1372,8 +1375,9 @@ TEST(XmlStream, ValidInternalSubsetSurvivesEverySingleByteCut) {
   GTEXT_XML_Parse_Options opts = gtext_xml_parse_options_default();
   opts.dtd_mode = GTEXT_XML_DTD_PROCESS;
   const std::string text =
-      "<!DOCTYPE a [<!ELEMENT a (b|(c,d))*><!ATTLIST a id ID #IMPLIED>"
-      "<!ENTITY e 'x'><!NOTATION n PUBLIC 'pub'>]><a/>";
+      "<!DOCTYPE a [<!ELEMENT a (b|(c,d))*><!ELEMENT one (child)>"
+      "<!ATTLIST a id ID #IMPLIED><!ENTITY e 'x'>"
+      "<!ENTITY ext SYSTEM 'x' NDATA n><!NOTATION n PUBLIC 'pub'>]><a/>";
   Dom dom;
   run_dom(dom, text, &opts);
   ASSERT_EQ(dom.status, GTEXT_XML_OK) << dom.err.message;
