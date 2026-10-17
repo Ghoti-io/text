@@ -1415,6 +1415,9 @@ test: $(APP_DIR)/$(TARGET) $(TEST_EXECUTABLES) $(TEST_GATES)
 # a TOTAL of zero failures prints PASS. The run was green with a whole suite
 # unexecuted. Anything that exited non-zero counts as at least one failure,
 # and the passed tally never goes below zero when it does.
+testHtmlSanitize: $(APP_DIR)/testHtmlSanitize$(EXE_EXTENSION) ## Run the focused HTML sanitizer tests
+	LD_LIBRARY_PATH="$(APP_DIR)" $(APP_DIR)/testHtmlSanitize$(EXE_EXTENSION) --gtest_brief=1
+
 test-quiet: ## Run tests with minimal output (one line per test suite)
 test-quiet: $(APP_DIR)/$(TARGET) $(TEST_EXECUTABLES)
 	@total_tests=0; total_passed=0; total_failed=0; total_time=0; failed_suites=""; \
@@ -2006,6 +2009,7 @@ $(eval $(call fuzz-rule,fuzz_html_tokenizer,html-tokenizer))
 $(eval $(call fuzz-rule,fuzz_html_tree,html-tree))
 $(eval $(call fuzz-rule,fuzz_html,html))
 $(eval $(call fuzz-rule,fuzz_html_serialize,html-serialize))
+$(eval $(call fuzz-rule,fuzz_html_sanitize,html-sanitize))
 $(eval $(call fuzz-rule,fuzz_encoding,encoding))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
@@ -2528,8 +2532,9 @@ oracle-images: ## Build the oracle images that are made here rather than pulled
 			'!/^#/ && NF >= 3 && index($$2, n) == 1 { print $$2 }' \
 			$(ORACLE_IMAGES)/IMAGES | head -1); \
 		[ -n "$$image" ] || { printf "%s has a Dockerfile and no built-here line in containers/IMAGES, so nothing says what to tag it\n" "$$name" >&2; exit 1; }; \
+		tag=$${image%@*}; \
 		printf "\033[0;36mbuilding %s\033[0m\n" "$$image"; \
-		$(ORACLE_ENGINE) build -t "$$image" "$$dir"; \
+		$(ORACLE_ENGINE) build -t "$$tag" "$$dir"; \
 	done; \
 	printf "\033[0;32mOracle images built. 'make oracle-version' checks them against IMAGES.\033[0m\n"
 
@@ -2775,6 +2780,13 @@ check-html-pipeline-oracle: $(CONFORMANCE_LIB)
 	$(call REQUIRE_DATA,third_party/encoding,tools/encoding/fetch.sh); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-pipeline-oracle.sh && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-pipeline-oracle.sh --controls
+
+check-html-sanitizer-oracle: $(APP_DIR)/$(STATIC_TARGET) ## Interpret sanitizer outputs with the pinned Chromium browser
+	@set -e; \
+	runner="$(BUILD_DIR)/sanitize-html-ours"; \
+	$(CC) $(CFLAGS) $(INCLUDE) -o "$$runner" tools/oracle/sanitize_html_ours.c \
+		$(TEXTLIBRARY) $(LDFLAGS) -Wl,-rpath,"$(PREFIX)/lib/ghoti.io"; \
+	SANITIZE_OURS="$$runner" $(ORACLE_RUN) chromium -- python3 tools/oracle/sanitizer_chromium.py
 
 check-ini-git-oracle: ## Compare the git config reader against git itself
 # git config has **one** reference, unlike Desktop Entry's two, and that is the

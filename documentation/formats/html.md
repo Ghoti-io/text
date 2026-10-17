@@ -795,7 +795,7 @@ Two of html5lib's options are **not** offered, and why: `escape_lt_in_attrs`, be
 attribute value always now, so there is nothing to switch (the vector that sets it passes with the defaults); and
 `resolve_entities`, because no vector has an entity token and the tree has no entity node. `quote_attr_values` has two of
 html5lib's three modes; its third, "legacy", also quotes the control characters and the Unicode spaces, which no vector needs.
-`sanitize` is not offered at all: this library does not sanitize.
+`sanitize` is not a serializer option. Sanitization is a separate explicit operation, documented below.
 
 ### The optional tags
 
@@ -1017,6 +1017,32 @@ before writing it. Limits are finite by default; set `max_output_bytes` and `max
 tree is deep enough to exhaust the C stack (a 100,000-deep tree is tested), and the work is linear in the tree (counted: nodes
 visited, allocations, sink calls).
 
+#### Sanitizing untrusted fragments
+
+`gtext_html_sanitize_fragment()` and `gtext_html_sanitize_buffer()` apply the built-in `ghoti-html-flow-1` policy to an
+HTML fragment parsed in a synthetic `div` context. The guarantee is limited to insertion as HTML body/flow content. It does
+not cover attributes, scripts, styles, URLs used outside anchors/images, SVG, MathML, or another parser context. Parsing and
+ordinary serialization remain unsanitized operations.
+
+Use `gtext_html_sanitize_options_default()` as the starting configuration. Safe links are enabled by default; images and
+tables require `allow_images` and `allow_tables`. The link policy keeps `http`, `https`, `mailto`, and relative `href` values,
+adds `rel="nofollow"`, and drops `target`. Image URLs, when enabled, are limited to `http`, `https`, and relative URLs;
+enabling images can cause the browser displaying the result to request the image. Tables, when enabled, retain only the
+documented OWASP structure and attributes, with `colspan` in 1–1000 and `rowspan` in 0–65534. Forms, embedded media, CSS,
+event attributes, SVG, MathML and script-capable subtrees are never enabled by these options.
+
+The default element profile is `a`, `p`, `div`, `h1`–`h6`, `blockquote`, `ul`, `ol`, `li`, `br`, `strong`, `em`, `b`, `i`,
+`code` and `pre`. Benign unsupported formatting wrappers are unwrapped after their contents are sanitized; active, raw-text,
+embedded, custom and foreign-namespace subtrees are discarded. Only policy-listed attributes survive. No scripts execute and
+no URL is fetched during sanitization.
+
+`max_work_units` bounds the iterative traversal and attribute validation (default 20,000,000); the parser's finite input,
+depth, node and attribute limits also apply. `max_output_bytes` bounds buffer output (default 64 MiB). A parse, allocation,
+work or output failure returns no tree or buffer. `GTEXT_HTML_Sanitize_Result` reports the status, message, policy version and
+work charged. The returned fragment is fresh and owned by the returned document; free the document with
+`gtext_markup_document_free()`. Any later mutation requires sanitizing again. The buffer belongs to the same call and must be
+released with `gtext_html_sanitize_buffer_free()`.
+
 ### Departures from the XML writer and from the HTML parsing API
 
 The shape is the XML writer's -- an options struct with a `_default()`, the same sink type, a buffer form with a `_free` that takes
@@ -1073,9 +1099,10 @@ Choose the parser by the media type, not by the bytes; no function here sniffs f
   or resolved; `gtext_html_parse_file()` opens exactly the path it is given.
 - **No script is executed**, and `scripting` is only a flag about how `noscript` is read. Scripts and event handler
   attributes are text and attribute values in the tree.
-- **The tree is not sanitized.** A parsed page contains whatever it contained, `javascript:` URLs, `on*` attributes and
-  `<script>` elements included; there is no sanitizer here yet. Parsing, serializing and parsing again is not a
-  sanitization either (mutation XSS is a property of the serialization, see "Writing HTML").
+- **Parsing and ordinary serialization do not sanitize.** A parsed page contains whatever it contained, including
+  `javascript:` URLs, `on*` attributes and `<script>` elements. Use the explicit flow-fragment sanitizer for its documented
+  context; serializing and parsing again is not sanitization either (mutation XSS is a property of the serialization, see
+  "Writing HTML").
 - The parse errors and positions are for the author of the page; do not treat their absence as a verdict.
 - A fragment is parsed in a context you choose; choose the one the result will be inserted in.
 
@@ -1108,7 +1135,7 @@ Everything the two share is the same on purpose. These are the departures and wh
 
 | Planned | Where |
 |---|---|
-| sanitization | not planned in this phase |
+| sanitization | separate explicit flow-fragment API; see "Sanitizing untrusted fragments" above; not part of parsing or ordinary serialization |
 | script execution | never |
 | the `scripted_*.dat` vectors (6), which need scripts | out of scope |
 

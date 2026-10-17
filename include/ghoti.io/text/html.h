@@ -47,5 +47,6 @@
 /* Public module headers */
 #include <ghoti.io/text/html/html_parse.h>
 #include <ghoti.io/text/html/html_serialize.h>
+#include <ghoti.io/text/html/html_sanitize.h>
 
 #endif // GHOTI_IO_GTEXT_HTML_H

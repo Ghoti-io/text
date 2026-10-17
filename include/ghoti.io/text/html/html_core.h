@@ -105,11 +105,12 @@ typedef enum {
                                  ///< combination that means nothing (`space_before_trailing_solidus`
                                  ///< without `use_trailing_solidus`, a quote character that
                                  ///< is no quote, `use_best_quote_char` with a fixed one).
-  GTEXT_HTML_E_UNREPRESENTABLE   ///< Serializer: a character that the output encoding cannot write in
+  GTEXT_HTML_E_UNREPRESENTABLE,  ///< Serializer: a character that the output encoding cannot write in
                                  ///< a place where a numeric character reference would not be read as
                                  ///< one (a comment, a name, the contents of `script`, `style` and the
                                  ///< other raw text elements...). The sink has received the output up
                                  ///< to the character; the result says which character.
+  GTEXT_HTML_E_LIMIT_SANITIZE_WORK ///< The sanitizer's finite traversal-work bound was reached.
 } GTEXT_HTML_Status;
 
 /**

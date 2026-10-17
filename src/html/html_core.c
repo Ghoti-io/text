@@ -83,6 +83,8 @@ const char * gtext_html_status_string(GTEXT_HTML_Status status) {
       return "unusable combination of options";
     case GTEXT_HTML_E_UNREPRESENTABLE:
       return "a character the output encoding cannot write here";
+    case GTEXT_HTML_E_LIMIT_SANITIZE_WORK:
+      return "sanitizer work limit exceeded";
   }
   return "unknown status";
 }

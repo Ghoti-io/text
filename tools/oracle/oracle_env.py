@@ -157,6 +157,9 @@ PROBE = {
     # both, so there is one probe; the line names both package versions, the Debian
     # interpreter packages and the SHA-256 of the two driver files.
     "html": (["html-driver", "--version"], "html5lib ", None),
+    # The current stable Chrome for Testing, pinned by browser version and
+    # container digest in IMAGES.
+    "chromium": (["/opt/chrome/chrome", "--version"], "Google Chrome", None),
     # The Encoding references are the **same image** as html's, asked a different question: Node (whose `TextDecoder` and
     # `TextEncoder` are the Encoding Standard's API over ICU) and CPython's codecs. What decides these answers is Node's and ICU's
     # versions, so the line names them and Python's, and the pin is that line.
@@ -248,7 +251,13 @@ def ensure(name):
         raise OracleUnavailable(
             "the html and encoding references have no host mode: they exist only in the pinned image "
             "(make oracle-images builds it)")
+    if MODE == "host" and name.split("-", 1)[0] == "chromium":
+        raise OracleUnavailable(
+            "the Chromium sanitizer reference has no host mode: it exists only in its pinned image "
+            "(make oracle-images builds it)")
     if MODE == "inside":
+        if name.split("-", 1)[0] == "chromium" and os.path.exists("/opt/chrome/chrome"):
+            return
         if name.split("-", 1)[0] not in ("html", "encoding") or not os.path.exists("/opt/html-oracle/DRIVER_SHA"):
             raise OracleUnavailable(
                 "GHOTI_ORACLE_MODE=inside is for a process running in the pinned html image (/opt/html-oracle/DRIVER_SHA is not here, "

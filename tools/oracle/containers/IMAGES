@@ -346,6 +346,7 @@ xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML
 # containers/html/Dockerfile, tools/oracle/html_vectors.py and html_diff.py.
 
 html	localhost/ghoti-text-oracle-html:1.1-8.0.1	html5lib 1.1, parse5 8.0.1	HTML5 parsing: the tree a document or fragment becomes, from two parsers that share no code
+chromium	localhost/ghoti-text-oracle-chromium:155.0.8059.84@sha256:429c89fb8299e6b9e235690d75b5b8f1eca1a03ff73bd3b4a037b6d3496ca5e9	Google Chrome for Testing 155.0.8059.84	Current Stable Chromium interpreting sanitized HTML flow fragments; page scripts and outbound networking are disabled
 
 # Encoding: Node's `TextDecoder`/`TextEncoder` and CPython's codecs, in **the html image** (the one pinned above), asked a different
 # question: what the WHATWG Encoding Standard's labels, decoders and encoders do. They are two readings and neither is the standard.
