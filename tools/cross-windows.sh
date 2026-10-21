@@ -132,7 +132,7 @@ CC=x86_64-w64-mingw32-gcc
 OBJDUMP=x86_64-w64-mingw32-objdump
 
 INC="-I include/ -I build/linux/release/generated/"
-for d in cutil chron unicode regex; do
+for d in cutil chron unicode regex security; do
   INC="$INC -I $WORKROOT/.local/include/ghoti.io/$d-0"
 done
 
