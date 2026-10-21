@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 #
 # The test programs of the XML, HTML, Encoding and markup work under a checker, full strength, as one job
-# on the EVO-X2:
+# on a build host.
 #
-#   tools/evo new text-san cutil unicode chron regex text
-#   tools/evo run JOB -m 24G -t 6h -- sh /work/src/text/tools/soak/sanitizers-job.sh asan|tsan|valgrind|plain [REGEX]
+# The job directory is $JOB and holds src/<library> for cutil, unicode, chron, regex and text; PREFIX names an empty
+# prefix and RESULTS (default $JOB/results) the directory the results go to:
+#
+#   JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/sanitizers-job.sh asan|tsan|valgrind|plain [REGEX]
 #
 # asan: the Makefile's ASan+UBSan build and options; tsan: its ThreadSanitizer build and options; valgrind:
 # the release build under valgrind with the Makefile's VALGRIND_FLAGS (leaks all kinds, origins, the repository's

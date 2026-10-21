@@ -23,7 +23,7 @@ set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/tools/conformance/lib.sh"
 
-# HTML_PIPELINE_PREBUILT=<dir> runs on a machine that cannot compile (a job in the pinned image, tools/evo run --image): the runners are
+# HTML_PIPELINE_PREBUILT=<dir> runs on a machine that cannot compile (a job run in the pinned image): the runners are
 # the ones `--build-plants <dir>` made on one that can (html-pipeline-ours and runner-<plant>, with their shared libraries in <dir>/lib, which the
 # caller puts on LD_LIBRARY_PATH).
 prebuilt=${HTML_PIPELINE_PREBUILT:-}

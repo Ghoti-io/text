@@ -56,7 +56,7 @@ Modes, from GHOTI_ORACLE_MODE:
   container  (default) run the reference in its pinned image
   host                 run this machine's own tool, and print what it is
   inside               this process is itself running in the pinned html image (on a machine whose container
-                       engine cannot be reached from a job, tools/evo run --image): the reference is run
+                       engine cannot be reached from a job run in that image): the reference is run
                        directly, the pin is asserted exactly as in container mode (the version line names the
                        driver's SHA-256 and the packages), and only the `html` and `encoding` references exist
                        in such an image

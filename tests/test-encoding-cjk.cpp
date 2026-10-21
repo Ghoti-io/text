@@ -39,8 +39,8 @@
  * Basic Multilingual Plane every seventh (thirty-first), the alphabet sweeps of ISO-2022-JP and the other multi-byte decoders one byte shorter (a length of 3 for the
  * 4-byte one, 4 for the 5-byte, 5 for the 6-byte), the random streams a tenth of the rounds (3,000 for 30,000; 40 for 400), and two exact counts that depend on the whole sweep (the
  * gb18030 ranges' 39,420 + 1,048,576 characters, and the number of code points each encoder writes) are asserted only in the full run.
- * **GTEXT_TEST_FULL=1 in the environment turns every one of these reductions off**, for the same sanitizer: `GTEXT_TEST_FULL=1 tools/memcap -m 8G --
- * make test-asan PREFIX=...` (hours under TSan: run it as a job of its own, on tools/evo). Everything else is the same.
+ * **GTEXT_TEST_FULL=1 in the environment turns every one of these reductions off**, for the same sanitizer: `GTEXT_TEST_FULL=1
+ * make test-asan PREFIX=...` under a memory cap of about 8 GB (hours under TSan: run it as a job of its own on a large build host). Everything else is the same.
  *
  * Copyright 2026 by Corey Pennycuff
  */

@@ -230,7 +230,7 @@ def run(name, seconds):
         prefix = os.environ.get("PREFIX") or os.path.join(WORKSPACE, ".local")
         env = dict(os.environ)
         env["PKG_CONFIG_PATH"] = os.path.join(prefix, "share", "pkgconfig")
-        cap = os.path.join(WORKSPACE, "tools", "memcap")
+        cap = os.environ.get("MEMCAP_TOOL", "")  # a wrapper run as MEMCAP_TOOL -m SIZE -- CMD...; unset, uncapped
         capped = [cap, "-m", os.environ.get("GHOTI_MEMCAP", "6G"), "--"] if os.path.exists(cap) else []
         try:
             if name in REPRODUCERS:
@@ -254,7 +254,7 @@ def run(name, seconds):
 
 # What a fuzzer reporting a defect looks like: a sanitizer or libFuzzer banner, or one of the
 # harness's own "property failed" lines. The build's command lines mention the harness names,
-# and a compiler error, a kill by memcap (exit 137) or a timeout all exit non-zero too, so none
+# and a compiler error, a kill by the memory cap (exit 137) or a timeout all exit non-zero too, so none
 # of those counts: the run must have started (libFuzzer printed its seed) and then reported.
 REPORT = re.compile(r"^(fuzz_encoding: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer).*)$", re.M)

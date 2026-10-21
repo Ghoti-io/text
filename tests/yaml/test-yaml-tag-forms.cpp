@@ -85,7 +85,7 @@ TEST(YamlTagForms, AllThreeSpellings) {
  * have passed while the defect was fully present, and a shorter list of
  * inputs could easily have been all four.
  *
- * Found by the yaml-writer fuzz leg on the EVO-X2 at 578,031 executions,
+ * Found by the yaml-writer fuzz leg at 578,031 executions,
  * through the event pipe rather than the DOM: the streaming writer re-emitted
  * the swallowed scalar, so the round trip disagreed with itself.
  */

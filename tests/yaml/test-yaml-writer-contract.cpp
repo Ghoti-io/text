@@ -809,7 +809,7 @@ TEST(YamlWriterContract, AScalarIsNeverWrittenAsSomethingElse) {
  * which is why the long float below is tested at 8 as well as at 2 - it fails
  * at 8 where "222" does not.
  *
- * Found by the yaml-writer fuzz leg on the EVO-X2 at 4,153,232 executions,
+ * Found by the yaml-writer fuzz leg at 4,153,232 executions,
  * through the built-DOM arm: a corpus of YAML text cannot reach this, because
  * a parsed number already has a spelling that fits whatever line it arrived
  * on. It needed a document built through the API with a width set.
@@ -2504,9 +2504,9 @@ TEST(YamlWriterContract, AStoredBlockStyleIsRefusedForTextThatHasNoBlockSpelling
  * had not defined, and this library's own parser refused the output with
  * "Unknown anchor referenced by alias".
  *
- * Found by fuzz_yaml_writer on the EVO-X2, run 7, from a 376-byte unit
+ * Found by fuzz_yaml_writer, run 7, from a 376-byte unit
  * minimised to twelve bytes.  It is older than the eleven commits of that
- * session: the same input crashes at d9d85ef, which is the first of them.
+ * piece of work: the same input crashes at d9d85ef, which is the first of them.
  *
  * The rule the fix states is 3.2.2.2's: an alias refers to the most recent
  * *preceding* node carrying the anchor, so where there is no preceding one the

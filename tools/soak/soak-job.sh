@@ -1,12 +1,14 @@
 #!/bin/sh
 # SPDX-License-Identifier: LGPL-3.0-only
 #
-# The Phase 3 fuzz soak, run as one job on the EVO-X2 (see tools/evo at the workspace root).
+# The Phase 3 fuzz soak, run as one job on a build host with many cores.
 #
-#   tools/evo new text-soak cutil unicode chron regex text
-#   tools/evo run JOB -m 40G -t 3h -- sh /work/src/text/tools/soak/soak-job.sh SECONDS [harness...]
+# The job directory is $JOB and holds src/<library> for cutil, unicode, chron, regex and text; PREFIX names an empty
+# prefix and RESULTS (default $JOB/results) the directory the results go to:
 #
-# (the job is mounted at $JOB; JOB, PREFIX and RESULTS are set by tools/evo).  Builds the
+#   JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/soak-job.sh SECONDS [harness...]
+#
+# Builds the
 # dependencies into $PREFIX, builds every harness once, runs each harness with two seeds in
 # parallel for SECONDS (-seed=1 and -seed=2, separate output corpora, the tracked seeds read
 # as a second corpus), then reduces: -merge=1 of seeds + both runs into results/merged/<name>.

@@ -437,7 +437,7 @@ The numbers below are what the gates print, and the ones a list file or a test f
 - **The fuzzer** `fuzz_encoding` (all 40 encodings and the values that are none, decoders and encoders, chunking, the three error modes, limits, a refusing sink and a failing allocator, against the reference decoders and the models of the multi-byte encodings, ISO-2022-JP's state after a failure and byte order mark sniffing included) has the seeds `tools/encoding/make-fuzz-seeds.py` writes (their number is
   `tools/encoding/FUZZ_SEED_COUNT`, which the replay test holds the corpus to) and the reproducers, replayed by `make test`, and the planted defects of `tools/encoding/plant-fuzz.py` that `make check-encoding-fuzz-plants` shows it finds (most by replaying a recorded reproducer, the rest by a search).
 - **Under a sanitizer** the exhaustive sweeps of `tests/test-encoding-cjk.cpp` are **reduced** (three-byte sequences every seventh, or every thirty-first under ThreadSanitizer; code points above the Basic Multilingual Plane likewise; the alphabet sweeps one byte shorter; a tenth of the random rounds; the fuzz seed replay bounded at 300 seconds), because the plain build is what runs them whole. **`GTEXT_TEST_FULL=1`
-  in the environment turns every reduction off** (`GTEXT_TEST_FULL=1 tools/memcap -m 8G -- make test-asan PREFIX=...`; hours under ThreadSanitizer, so a job of its own, on `tools/evo`), and is the deterministic full-coverage run.
+  in the environment turns every reduction off** (`GTEXT_TEST_FULL=1 make test-asan PREFIX=...`, under a memory cap of about 8 GB; hours under ThreadSanitizer, so a job of its own on a large build host), and is the deterministic full-coverage run.
 
 ## Departures from the standard
 

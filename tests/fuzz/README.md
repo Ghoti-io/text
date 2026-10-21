@@ -128,7 +128,7 @@ classifier must not file as a reference's quirk because a UTF-8 control agrees).
 found inside the default `FUZZ_TIME` of 60 seconds (`FUZZ_ARGS=-seed=1` makes the run the
 same every time), and both controls are silent. A plant counts as found only if the run
 started and then printed a sanitizer or libFuzzer banner or the harness's own property
-line: a compile error, a kill by `tools/memcap` or a timeout does not.
+line: a compile error, a kill by a memory cap or a timeout does not.
 
 **What they found.** One defect in the library, within seconds of the first long run, on
 a 46-byte input: an attribute value's limit was checked when a run of ordinary bytes ended, and
@@ -1041,12 +1041,11 @@ queue is now bounded by eight times the limit and kept small by varint lengths).
 ## The Phase 3 soak (2026-10-14)
 
 Every harness of the XML, HTML, Encoding and markup work is run for at least 40 minutes, twice (`-seed=1` and `-seed=2`, separate output
-corpora, the tracked seeds read as a second corpus), in parallel on the EVO-X2, by **`tools/soak/soak-job.sh`** (a job of `tools/evo`: it builds
+corpora, the tracked seeds read as a second corpus), in parallel on a 32-thread x86-64 build host, by **`tools/soak/soak-job.sh`** (one job: it builds
 the dependencies, fetches the pinned data the harnesses read, builds the harnesses once, runs them, then reduces each corpus with
-`-merge=1` and writes `results/summary.txt` through `tools/soak/summary.py`):
+`-merge=1` and writes `results/summary.txt` through `tools/soak/summary.py`; its header says what the job directory holds):
 
-    tools/evo new text-soak cutil unicode chron regex text
-    tools/evo run JOB -m 40G -t 3h -- sh /work/src/text/tools/soak/soak-job.sh 2400 [harness...]
+    JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/soak-job.sh 2400 [harness...]
 
 The machine-grown corpora stay untracked (this directory's `.gitignore` tracks only `*.seed`); a find that no longer fails is kept as
 `reproducer-*.seed`, and `make test` replays it. The figures, the finds and what became of them are in the plan record

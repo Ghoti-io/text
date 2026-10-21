@@ -182,7 +182,7 @@ def run(name, seconds):
                 done = subprocess.run([os.path.join(text, "tools", "oracle", "run-xml-oracle.sh")], env=env,
                                       capture_output=True, text=True, timeout=budget)
                 return done.returncode, done.stdout + done.stderr, target
-            cap = os.path.join(WORKSPACE, "tools", "memcap")
+            cap = os.environ.get("MEMCAP_TOOL", "")  # a wrapper run as MEMCAP_TOOL -m SIZE -- CMD...; unset, uncapped
             if name in REPRODUCERS:
                 executable, test_filter = REPRODUCERS[name]
                 capped = [cap, "-m", os.environ.get("GHOTI_MEMCAP", "6G"), "--"] if os.path.exists(cap) else []
@@ -209,7 +209,7 @@ def run(name, seconds):
 
 # What a fuzzer reporting a defect looks like: a sanitizer or libFuzzer banner, or one of the
 # harness's own "property failed" lines. The build's command lines mention the harness names,
-# and a compiler error, a kill by memcap (exit 137) or a timeout all exit non-zero too, so none
+# and a compiler error, a kill by the memory cap (exit 137) or a timeout all exit non-zero too, so none
 # of those counts: the run must have started (libFuzzer printed its seed) and then reported.
 REPORT = re.compile(r"^(fuzz_xml(_writer)?: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer).*)$", re.M)

@@ -1,12 +1,14 @@
 #!/bin/sh
 # SPDX-License-Identifier: LGPL-3.0-only
 #
-# `suite/install.sh --test` for text, as one job on the EVO-X2, from a tree that has no third_party/ (tools/evo ships what git
-# tracks, so this is a fresh clone's state): the dependencies are built and installed into $PREFIX, every tools/*/fetch.sh
+# `suite/install.sh --test` for text, as one job on a build host, from a tree that has no third_party/ (a copy of what git
+# tracks, so a fresh clone's state): the dependencies are built and installed into $PREFIX, every tools/*/fetch.sh
 # runs (network), the pins are checked (tools/consumer/check-pins.sh), and `make test` runs, gates included.
 #
-#   tools/evo new text-fresh cutil unicode chron regex text
-#   tools/evo run JOB -m 16G -t 4h -- sh /work/src/text/tools/soak/fresh-test-job.sh
+# The job directory is $JOB and holds src/<library> for cutil, unicode, chron, regex and text; PREFIX names an empty
+# prefix and RESULTS (default $JOB/results) the directory the results go to:
+#
+#   JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/fresh-test-job.sh
 set -u
 R=${RESULTS:-$JOB/results}
 mkdir -p "$R"

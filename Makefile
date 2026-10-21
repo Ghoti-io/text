@@ -201,7 +201,7 @@ endif
 CXX := g++
 # -D_FILE_OFFSET_BITS=64 is the default on a 64-bit target and changes nothing there.  On a 32-bit one it is what makes
 # stat() and readdir() work on a file system whose inode numbers or sizes do not fit 32 bits: without it they fail with
-# EOVERFLOW ("Value too large for defined data type"), which the Phase 3k run under qemu-i386 on the EVO-X2 met first in
+# EOVERFLOW ("Value too large for defined data type"), which the Phase 3k run under qemu-i386 met first in
 # the tests that list a directory (suite/tools/xarch/text.sh i686).  Nothing in this library's headers or sources names
 # off_t, ino_t or struct stat, so the choice cannot change its ABI.
 LFS_FLAGS := -D_FILE_OFFSET_BITS=64
@@ -588,7 +588,7 @@ TEST_GATES ?= $(ALL_TEST_GATES)
 # a rare machine, it is **every clone**, and `make test` reported success with
 # half its gates having compared nothing.
 #
-# The rule for which way a missing tool should go, from the regex session: a
+# The rule for which way a missing tool should go, from regex: a
 # gate may skip when the property it checks *cannot exist* in that environment,
 # and must fail when the property exists and the gate merely cannot see it. A
 # wrong table is wrong whether or not this machine has python3, so exit 0 is a
@@ -2459,10 +2459,10 @@ check-encoding-oracle: ## Run the Encoding Standard's own tests and compare the 
 # standard's data, and compiles this library's sources with one rule undone for each line of tools/oracle/ENCODING_ORACLE_PLANTS, and requires that a gate
 # fails with a heading each time. `--control NAME` runs one. ENCODING_ORACLE_COUNT, _SEED and _FATAL_STRIDE size and seed the generated part (a hunt: the lists
 # describe the default). The default run takes about half an hour with the multi-byte populations (every sequence of one to three bytes and the stratified ones
-# of four, against Node, Python and two models), the controls longer. **Run it under tools/memcap** (`tools/memcap -m 6G -- make check-encoding-oracle ...`, as the
-# workspace's CLAUDE.md says of heavy work), in the foreground in chunks if the tool that runs it has a time limit: `tools/oracle/run-encoding-oracle.sh --diff --
+# of four, against Node, Python and two models), the controls longer. **Run it under a memory cap** (about 6 GB, as for any heavy
+# run), in the foreground in chunks if the tool that runs it has a time limit: `tools/oracle/run-encoding-oracle.sh --diff --
 # --mb-only NAME` is one encoding of the multi-byte populations, `--wpt` the standard's suite, `--control NAME` one control; or, for the whole thing at once,
-# `tools/evo` (a job of its own, with its own prefix). Outside TEST_GATES, like every gate here that consults an oracle.
+# a build host of its own (a job of its own, with its own prefix). Outside TEST_GATES, like every gate here that consults an oracle.
 check-encoding-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(ENCODING_DATA_DIR)/wpt/encoding,tools/encoding/fetch.sh); \
@@ -2481,7 +2481,7 @@ check-encoding-unit-plants: ## Plant each defect of the Encoding plant lists in 
 # tools/encoding/plant-unit.py compiles the source of src/encoding/ with one rule undone (the lines of tools/oracle/ENCODING_ORACLE_PLANTS, the differential's controls, and of
 # tools/encoding/UNIT_PLANTS, the defects only a unit test can see) into the unit test programs, cheapest first, and requires that one fail. Outside TEST_GATES: it compiles
 # and links the programs for each plant (the lines of the two lists, `wc -l`), a quarter of a minute apiece, after one run of the unmutated programs, which must pass.
-# Run it under tools/memcap, in chunks of plants (`NAME...` on tools/encoding/plant-unit.py) if the tool that runs it has a time limit.
+# Run it under a memory cap, in chunks of plants (`NAME...` on tools/encoding/plant-unit.py) if the tool that runs it has a time limit.
 check-encoding-unit-plants: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(CONFORMANCE_ENV) python3 tools/encoding/plant-unit.py
