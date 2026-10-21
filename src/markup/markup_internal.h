@@ -173,7 +173,35 @@ typedef struct {
   GTEXT_Markup_Location location;
   uint8_t external_context;
   uint8_t entity_unparsed;
+  /** Where the retained syntax record was when the binding was made (0 the
+   *  internal subset, 1 external, 2 generated): a hint a copy checks before
+   *  it searches, never trusted on its own. */
+  uint8_t syntax_array;
+  size_t syntax_position;
 } markup_dtd_binding;
+
+/** One slot of a doctype's binding index: the binding's position plus one
+ *  (0 is empty) and its hash. */
+typedef struct {
+  size_t position;
+  size_t hash;
+} markup_binding_slot;
+
+/**
+ * An index of a doctype's `bindings` by (kind, element, name), kept in step by
+ * markup_doctype_set_binding() and rebuilt from the array whenever it finds
+ * the array is not the one it filed. A doctype struct is copied by value in
+ * places (a staged replay, a rebuild), and a copy must not touch its
+ * original's table: `owner` is the doctype the table belongs to, and a copy
+ * that finds another owner starts a table of its own.
+ */
+typedef struct {
+  const void * owner;
+  const markup_dtd_binding * array; ///< The array the table was filed from.
+  size_t filed;                     ///< bindings[0, filed) are in the table.
+  markup_binding_slot * slots;
+  size_t capacity;                  ///< A power of two, or 0.
+} markup_binding_index;
 
 typedef struct {
   GTEXT_Markup_Source view;
@@ -207,6 +235,11 @@ typedef struct {
   markup_dtd_binding * bindings;
   size_t binding_count;
   size_t binding_capacity;
+  markup_binding_index binding_index;
+  /** Per syntax array, one past the record the last binding was made from: a
+   *  rebuild binds the records in sequence order, so the next is usually
+   *  there. A hint, checked before it is used. */
+  size_t syntax_cursor[3];
   uint64_t next_syntax_sequence;
   /* Optional transient budget used while XML revalidation rebuilds indexes. */
   size_t *validation_memory_used;
@@ -280,11 +313,26 @@ GTEXT_Markup_Status markup_doctype_set_binding(
     const char * source, size_t source_length,
     const GTEXT_Markup_Location * location, int external_context,
     int entity_unparsed);
+/** As markup_doctype_set_binding(), for a binding of another doctype whose
+ *  syntax was copied to `node` in the same order (a deep copy). */
+GTEXT_Markup_Status markup_doctype_copy_binding(
+    struct GTEXT_Markup_Node * node, const markup_dtd_binding * binding,
+    const GTEXT_Markup_Location * location);
 void markup_doctype_clear_bindings(struct GTEXT_Markup_Node * node);
+/** Free the bindings and the binding index. */
 void markup_doctype_free_bindings(struct GTEXT_Markup_Node * node);
+/** Free the binding index of `node` if `node` made it, leaving the bindings:
+ *  for a doctype copied by value whose bindings were handed to another. */
+void markup_doctype_release_binding_index(struct GTEXT_Markup_Node * node);
+/** Record a physical source. The table stays in ascending `id` order, so an
+ *  `id` above every recorded one (a parser's next) is appended in constant
+ *  time; a lower one is inserted in place. A recorded `id` is refused. */
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
     uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
     const char * name);
+/** The source recorded under `id`, by binary search, or NULL. */
+markup_source * markup_source_find(const GTEXT_Markup_Document * doc,
+    uint32_t id);
 GTEXT_Markup_Status markup_source_set_external_metadata(
     GTEXT_Markup_Document *doc, uint32_t id, const char *base_uri,
     const char *encoding, uintptr_t resolver_identity_token,

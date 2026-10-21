@@ -2068,8 +2068,10 @@ check-css-fuzz-plants:
 # The quadratic-nesting suite (tests/test-quadratic.cpp, about two seconds): every shape of the spec's list (deep nesting up to and
 # past the open-element limit, formatting mis-nesting, the adoption agency, reconstruction, implied ends, tables and templates,
 # foster parenting, foreign content, fragments, attributes, runs of comments/NULs/references, every tokenizer state, the serializer,
-# the decoders and encoders, the sniffer on 1 MiB of junk) at n, 4n and 16n units, with the work counters (the tree builder's and
-# the tokenizer's, the serializer's, the Encoding module's `steps`, the prescan's) held to a bound by ratio. No wall clock. The
+# the decoders and encoders, the sniffer on 1 MiB of junk; and the XML parser's DTD: declarations of each kind, references to many
+# entities and to one, entity expansion in content and attribute values, start tags against many attribute-list declarations) at
+# n, 4n and 16n units, with the work counters (the tree builder's and the tokenizer's, the serializer's, the Encoding module's
+# `steps`, the prescan's, the XML parser's `max_total_work` counter) held to a bound by ratio. No wall clock. The
 # program is also one of the test programs `make test` runs; this is the named gate, and part of TEST_GATES.
 check-html-quadratic: ## Hold the work counters of the quadratic-nesting shapes to a ratio bound at n, 4n and 16n
 check-html-quadratic: $(APP_DIR)/$(TARGET) $(APP_DIR)/testQuadratic$(EXE_EXTENSION)
@@ -2080,9 +2082,10 @@ check-html-quadratic: $(APP_DIR)/$(TARGET) $(APP_DIR)/testQuadratic$(EXE_EXTENSI
 	printf "\033[0;32mThe quadratic-nesting suite holds (%s).\033[0m\n" "$$(grep -E '^[0-9]+ shapes, [0-9]+ failures$$' $(APP_DIR)/quadratic.out)"
 
 check-html-quadratic-plants: ## Plant a quadratic in each layer and show the quadratic-nesting suite fails on the shapes it should
-# tools/html/plant-quadratic.py: seven edits (the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
+# tools/html/plant-quadratic.py: ten edits (the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
 # re-derives it all, the attribute table has one bucket, the serializer finds its ancestors by walking them, the decoder looks back
-# over the stream, the sniffer reads past its window), each compiled alone and linked ahead of the library into tests/test-quadratic.cpp,
+# over the stream, the sniffer reads past its window; the XML parser's declaration walks the earlier bindings, its start tag walks
+# every declaration, its reference walks every entity), each compiled alone and linked ahead of the library into tests/test-quadratic.cpp,
 # which must fail naming a shape the plant is meant to slow; and the unedited control, which must pass. About a minute. Outside TEST_GATES.
 check-html-quadratic-plants: $(APP_DIR)/$(STATIC_TARGET)
 	@$(REQUIRE_PYTHON3); \

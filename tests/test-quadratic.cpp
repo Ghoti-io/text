@@ -22,7 +22,8 @@
  * @file
  *
  * The quadratic-nesting suite (`make check-html-quadratic`): the inputs that make a naive HTML parser,
- * serializer, decoder or sniffer quadratic, each run at three sizes (n, 4n and 16n units) with the work
+ * serializer, decoder or sniffer quadratic, and the XML parser's DTD (declarations, references, entity
+ * expansion, start tags against many declarations), each run at three sizes (n, 4n and 16n units) with the work
  * counted, and the growth held to a bound by ratio. No wall clock is read anywhere.
  *
  * **What is counted.** The tree builder's work and the tokenizer's (gtext_html_tree_work() and
@@ -30,7 +31,8 @@
  * shifted, characters decoded, look-ahead steps), the serializer's (gtext_html_serialize_work(): nodes,
  * attributes, bytes examined and written, sort steps), the Encoding module's `steps` (handler steps, the
  * figure its header documents as at most four per byte for a decoder and three for an encoder) and the
- * sniffer's (html_prescan_counted()). A counter sees only what its author put it beside, so
+ * sniffer's (html_prescan_counted()), and the XML parser's `max_total_work` counter (xml_parse_counted()). A
+ * counter sees only what its author put it beside, so
  * `tools/html/quadratic-instructions.py` records the instructions the same shapes execute under callgrind
  * and compares the growth of the two: a counter that stops tracking the machine's work shows there (not a
  * gate: the instruction counts depend on the toolchain, and the counters do not).
@@ -73,6 +75,7 @@
 #include <ghoti.io/text/css.h>
 #include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/html.h>
+#include <ghoti.io/text/xml.h>
 
 #include "../src/html/html_sniff_internal.h"
 #include "../src/html/html_tree_internal.h"
@@ -85,6 +88,9 @@ extern "C" GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind entry, cons
     const GTEXT_CSS_Parse_Options * options, size_t * work);
 extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Serialize_Options * options,
     const GTEXT_Markup_Sink * sink, size_t * work);
+// (src/xml/xml_internal.h is C: the counted parse it declares for this suite is declared here.)
+extern "C" GTEXT_XML_Status xml_parse_counted(const void * data, size_t len, const GTEXT_XML_Parse_Options * opts,
+    GTEXT_Markup_Document ** out, GTEXT_XML_Error * err, size_t * work);
 
 namespace {
 
@@ -582,6 +588,46 @@ std::function<Measured(size_t)> css_serialize(std::function<std::string(size_t)>
     gtext_css_tree_free(t);
     return m;
   };
+// ---- the XML parser's DTD ----------------------------------------------------------------------------
+
+// A DOM parse with the DTD processed (external entities skipped, as a document with no resolver is), by the parser's work
+// counter (`max_total_work`'s). The limits that are not what a shape measures are out of the way.
+Measured xml_run(const std::string & input, std::function<void(GTEXT_XML_Parse_Options &)> tune = nullptr) {
+  Measured m;
+  m.bytes = input.size();
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  o.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  o.max_declarations = 10000000;
+  o.max_references = 100000000;
+  o.max_total_work = SIZE_MAX;
+  if (tune) {
+    tune(o);
+  }
+  GTEXT_Markup_Document * d = nullptr;
+  GTEXT_XML_Error e;
+  size_t work = 0;
+  const GTEXT_XML_Status st = xml_parse_counted(input.data(), input.size(), &o, &d, &e, &work);
+  m.work = work;
+  if (st != GTEXT_XML_OK) {
+    m.ok = false;
+    m.why = std::string("the parse ended with ") + gtext_xml_status_string(st);
+  }
+  gtext_markup_document_free(d);
+  return m;
+}
+
+std::function<Measured(size_t)> xml_doc(std::function<std::string(size_t)> make) {
+  return [=](size_t k) { return xml_run(make(k)); };
+}
+
+// `k` declarations, `unit(i)` each, in an internal subset, then `body(k)`.
+std::string xml_subset(size_t k, std::function<std::string(size_t)> unit, const std::string & body) {
+  std::string out = "<!DOCTYPE svg [";
+  for (size_t i = 0; i < k; i++) {
+    out += unit(i);
+  }
+  return out + "]>" + body;
 }
 
 // ---- the shapes ---------------------------------------------------------------------------------------
@@ -1082,6 +1128,67 @@ std::vector<Shape> build_shapes() {
     r.input = repeat("<meta http-equiv=content-type content=\"x\" charset=y ", k);
     return tree_run(r);
   });
+
+  // ---- the XML parser's DTD: declarations, references and the start tags that read them ----
+  // Each declaration used to be found by walking the ones before it, in the parser (charged a unit a step, so a subset of
+  // 16,384 entity declarations ran out of the default work budget) and in the doctype's bindings; each start tag walked every
+  // declaration for its defaults; every entity expansion walked the document's physical-source table.
+  const std::string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+  add("xml", "entity declarations", 1024, xml_doc([svg](size_t k) {
+    return xml_subset(k, [](size_t i) { return "<!ENTITY e" + std::to_string(i) + " \"value " + std::to_string(i) + "\">"; }, svg);
+  }));
+  add("xml", "parameter entity declarations", 1024, xml_doc([svg](size_t k) {
+    return xml_subset(k, [](size_t i) { return "<!ENTITY % p" + std::to_string(i) + " \"value\">"; }, svg);
+  }));
+  add("xml", "element declarations", 1024, xml_doc([svg](size_t k) {
+    return xml_subset(k, [](size_t i) { return "<!ELEMENT e" + std::to_string(i) + " ANY>"; }, svg);
+  }));
+  add("xml", "notation declarations", 1024, xml_doc([svg](size_t k) {
+    return xml_subset(k, [](size_t i) { return "<!NOTATION n" + std::to_string(i) + " SYSTEM \"x\">"; }, svg);
+  }));
+  add("xml", "attribute-list declarations, one element each", 1024, xml_doc([svg](size_t k) {
+    return xml_subset(k, [](size_t i) { return "<!ATTLIST e" + std::to_string(i) + " a CDATA #IMPLIED>"; }, svg);
+  }));
+  add("xml", "attribute-list declarations of one element", 1024, xml_doc([](size_t k) {
+    return xml_subset(k, [](size_t i) { return "<!ATTLIST r a" + std::to_string(i) + " CDATA #IMPLIED>"; }, "<r/>");
+  }));
+  add("xml", "a declaration repeated (the first binds)", 1024, xml_doc([svg](size_t k) {
+    return xml_subset(k, [](size_t) { return std::string("<!ENTITY e \"value\">"); }, svg);
+  }));
+  add("xml", "start tags against many attribute-list declarations", 1024, xml_doc([](size_t k) {
+    std::string body = "<r>";
+    for (size_t i = 0; i < k; i++) {
+      body += "<e" + std::to_string(i) + "/>";
+    }
+    return xml_subset(k, [](size_t i) { return "<!ATTLIST e" + std::to_string(i) + " a CDATA \"d\">"; }, body + "</r>");
+  }));
+  add("xml", "references to many entities", 1024, xml_doc([](size_t k) {
+    std::string body = "<r>";
+    for (size_t i = 0; i < k; i++) {
+      body += "&e" + std::to_string(i) + ";";
+    }
+    return xml_subset(k, [](size_t i) { return "<!ENTITY e" + std::to_string(i) + " \"v\">"; }, body + "</r>");
+  }));
+  add("xml", "references to one entity", 4096, xml_doc([](size_t k) {
+    return xml_subset(1, [](size_t) { return std::string("<!ENTITY e \"lol\">"); }, "<r>" + repeat("&e;", k) + "</r>");
+  }));
+  add("xml", "references to one entity in an attribute value", 4096, xml_doc([](size_t k) {
+    return xml_subset(1, [](size_t) { return std::string("<!ENTITY e \"lol\">"); }, "<r a=\"" + repeat("&e;", k) + "\"/>");
+  }));
+  add("xml", "parameter entity references", 4096, xml_doc([svg](size_t k) {
+    return xml_subset(1, [k](size_t) { return "<!ENTITY % p \"<!-- c -->\">" + repeat("%p;", k); }, svg);
+  }));
+  Shape & blowup = add("xml", "one large entity referenced many times", 256, xml_doc([](size_t k) {
+    return xml_subset(1, [](size_t) { return "<!ENTITY a \"" + std::string(1000, 'a') + "\">"; }, "<r>" + repeat("&a;", k) + "</r>");
+  }));
+  const char * expansion_note = "the work is the expansion's, a thousand bytes a reference, and not the input's";
+  blowup.per_byte = 0;
+  blowup.note = expansion_note; // (set before the next add, which may move the vector)
+  Shape & blowup_attribute = add("xml", "one large entity referenced many times in an attribute value", 256, xml_doc([](size_t k) {
+    return xml_subset(1, [](size_t) { return "<!ENTITY a \"" + std::string(1000, 'a') + "\">"; }, "<r a=\"" + repeat("&a;", k) + "\"/>");
+  }));
+  blowup_attribute.per_byte = 0;
+  blowup_attribute.note = expansion_note;
   return s;
 }
 
@@ -1186,6 +1293,7 @@ TEST(Quadratic, EveryGroupTheSpecNamesHasShapes) {
   }
   for (const char * g : {"nesting", "formatting", "implied ends", "tables", "foreign", "fragments", "attributes", "runs", "tokenizer",
            "serializer", "encoding", "sniffing", "api", "css"}) {
+           "serializer", "encoding", "sniffing", "api", "xml"}) {
     EXPECT_GT(count[g], 0u) << g;
   }
   // The shape names are unique (the callgrind tool finds a shape by name).

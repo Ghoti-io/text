@@ -103,18 +103,13 @@ static int xml_nmtoken_value(const char *s, size_t n) {
   return 1;
 }
 
+/* The DTD lookups below are index probes (xml_doctype.c), charged one unit
+   each; they used to walk every binding and were charged for it. */
 static const xml_dtd_binding * attribute_binding(const xml_ctx *p,
     const unsigned char *element, size_t element_length,
     const unsigned char *attribute, size_t attribute_length) {
-  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
-    const xml_dtd_binding *b = &p->dtd_bindings[i];
-    if (b->kind == GTEXT_MARKUP_DTD_ATTLIST
-        && b->element_name_length == element_length
-        && b->name_length == attribute_length
-        && memcmp(b->element_name, element, element_length) == 0
-        && memcmp(b->name, attribute, attribute_length) == 0) return b;
-  }
-  return NULL;
+  return xml_find_dtd_binding(p, GTEXT_MARKUP_DTD_ATTLIST, element,
+      element_length, attribute, attribute_length);
 }
 
 static int value_in_enumeration(const xml_dtd_binding *b,
@@ -134,19 +129,14 @@ static int value_in_enumeration(const xml_dtd_binding *b,
 }
 
 static int declared_notation(const xml_ctx *p, const char *name, size_t n) {
-  for (size_t i = 0; i < p->dtd_binding_count; ++i)
-    if (p->dtd_bindings[i].kind == GTEXT_MARKUP_DTD_NOTATION
-        && p->dtd_bindings[i].name_length == n
-        && memcmp(p->dtd_bindings[i].name, name, n) == 0) return 1;
-  return 0;
+  return xml_find_dtd_binding(p, GTEXT_MARKUP_DTD_NOTATION, NULL, 0,
+      (const unsigned char *)name, n) != NULL;
 }
 
 static int declared_unparsed_entity(const xml_ctx *p, const char *name, size_t n) {
-  for (size_t i = 0; i < p->general_entity_count; ++i)
-    if (p->general_entities[i].name_length == n
-        && memcmp(p->general_entities[i].name, name, n) == 0
-        && p->general_entities[i].unparsed) return 1;
-  return 0;
+  const xml_general_entity *entity = xml_find_general_entity(p,
+      (const unsigned char *)name, n);
+  return entity && entity->unparsed;
 }
 
 static GTEXT_XML_Status retain_identity(xml_ctx *p, int reference,
@@ -1037,14 +1027,14 @@ GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
     const xml_attr *attrs, size_t attr_count, const markup_buf *attr_pool) {
   if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE) return GTEXT_XML_OK;
   GTEXT_XML_Status status = GTEXT_XML_OK;
-  for (size_t bi = 0; bi < p->dtd_binding_count; ++bi) {
+  const xml_dtd_binding *first = xml_first_attribute_binding(p, name,
+      name_length);
+  for (size_t bi = first ? (size_t)(first - p->dtd_bindings) : SIZE_MAX;
+       bi != SIZE_MAX; bi = p->dtd_bindings[bi].next_attribute) {
     status = validation_charge(p, 1);
     if (status != GTEXT_XML_OK) return status;
     const xml_dtd_binding *b = &p->dtd_bindings[bi];
-    if (b->kind != GTEXT_MARKUP_DTD_ATTLIST
-        || b->element_name_length != name_length
-        || memcmp(b->element_name, name, name_length) != 0
-        || !b->attribute_required) continue;
+    if (!b->attribute_required) continue;
     int found = 0;
     for (size_t ai = 0; ai < attr_count; ++ai) {
       status = validation_charge(p, 1);
@@ -1059,7 +1049,7 @@ GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
     }
   }
   for (size_t ai = 0; ai < attr_count; ++ai) {
-    status = validation_charge(p, p->dtd_binding_count);
+    status = validation_charge(p, 1);
     if (status != GTEXT_XML_OK) return status;
     status = validation_charge(p, attrs[ai].value_length);
     if (status != GTEXT_XML_OK) return status;
@@ -1097,7 +1087,7 @@ GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
         while (at < length && !xml_is_space((unsigned char)value[at])) ++at;
         ++tokens;
         if (b->attribute_type == XML_ATYPE_ENTITIES) {
-          status = validation_charge(p, p->general_entity_count);
+          status = validation_charge(p, 1);
           if (status != GTEXT_XML_OK) return status;
         }
         if (b->attribute_type == XML_ATYPE_NMTOKENS) {
@@ -1117,13 +1107,13 @@ GTEXT_XML_Status xml_validation_start_element(xml_ctx *p,
       if (status != GTEXT_XML_OK) return status;
     }
     if (valid && b->attribute_type == XML_ATYPE_ENTITY
-        && (validation_charge(p, p->general_entity_count) != GTEXT_XML_OK
+        && (validation_charge(p, 1) != GTEXT_XML_OK
             || !declared_unparsed_entity(p, value, length))) {
       if (p->err.code != GTEXT_XML_OK) return p->err.code;
       valid = 0;
     }
     if (valid && b->attribute_type == XML_ATYPE_NOTATION
-        && (validation_charge(p, p->dtd_binding_count) != GTEXT_XML_OK
+        && (validation_charge(p, 1) != GTEXT_XML_OK
             || !declared_notation(p, value, length))) {
       if (p->err.code != GTEXT_XML_OK) return p->err.code;
       valid = 0;
@@ -1242,7 +1232,7 @@ GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
     if (charged != GTEXT_XML_OK) return charged;
     const xml_general_entity *entity = &p->general_entities[i];
     if (!entity->unparsed) continue;
-    charged = validation_charge(p, p->dtd_binding_count);
+    charged = validation_charge(p, 1);
     if (charged != GTEXT_XML_OK) return charged;
     if (!declared_notation(p, entity->notation_name,
         entity->notation_name_length)) {
@@ -1266,15 +1256,15 @@ GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
             "an ID attribute declaration may only be #IMPLIED or #REQUIRED");
         if (s != GTEXT_XML_OK) return s;
       }
-      for (size_t j = 0; j < i; ++j) {
+      /* The element's earlier attribute bindings, from its chain. */
+      const xml_dtd_binding *head = xml_first_attribute_binding(p,
+          (const unsigned char *)b->element_name, b->element_name_length);
+      for (size_t j = head ? (size_t)(head - p->dtd_bindings) : SIZE_MAX;
+           j != SIZE_MAX && j < i; j = p->dtd_bindings[j].next_attribute) {
         charged = validation_charge(p, 1);
         if (charged != GTEXT_XML_OK) return charged;
         const xml_dtd_binding *prior = &p->dtd_bindings[j];
-        if (prior->kind == GTEXT_MARKUP_DTD_ATTLIST
-            && prior->attribute_type == XML_ATYPE_ID
-            && prior->element_name_length == b->element_name_length
-            && memcmp(prior->element_name, b->element_name,
-                b->element_name_length) == 0) {
+        if (prior->attribute_type == XML_ATYPE_ID) {
           GTEXT_XML_Status s = validation_report(p,
               GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
               &b->declaration_location,
@@ -1285,15 +1275,15 @@ GTEXT_XML_Status xml_validation_finish(xml_ctx *p) {
       }
     }
     if (b->attribute_type == XML_ATYPE_NOTATION) {
-      for (size_t j = 0; j < i; ++j) {
+      /* The element's earlier attribute bindings, from its chain. */
+      const xml_dtd_binding *head = xml_first_attribute_binding(p,
+          (const unsigned char *)b->element_name, b->element_name_length);
+      for (size_t j = head ? (size_t)(head - p->dtd_bindings) : SIZE_MAX;
+           j != SIZE_MAX && j < i; j = p->dtd_bindings[j].next_attribute) {
         charged = validation_charge(p, 1);
         if (charged != GTEXT_XML_OK) return charged;
         const xml_dtd_binding *prior = &p->dtd_bindings[j];
-        if (prior->kind == GTEXT_MARKUP_DTD_ATTLIST
-            && prior->attribute_type == XML_ATYPE_NOTATION
-            && prior->element_name_length == b->element_name_length
-            && memcmp(prior->element_name, b->element_name,
-                b->element_name_length) == 0) {
+        if (prior->attribute_type == XML_ATYPE_NOTATION) {
           GTEXT_XML_Status s = validation_report(p,
               GTEXT_XML_VALIDATION_DTD_CROSS_REFERENCE,
               &b->declaration_location,
@@ -1624,21 +1614,17 @@ GTEXT_XML_Status gtext_xml_revalidate(GTEXT_Markup_Document *doc,
                   &source_info)
               && source_info.kind == GTEXT_MARKUP_SOURCE_EXTERNAL_ENTITY) {
             int declared_externally = 0;
-            for (size_t i = 0; i < p.general_entity_count; ++i) {
-              if (validation_charge(&p, 1) != GTEXT_XML_OK) break;
-              xml_general_entity *entity = &p.general_entities[i];
+            if (source_info.name && validation_charge(&p, 1) == GTEXT_XML_OK) {
               size_t source_name_length = 0;
-              while (source_info.name && source_info.name[source_name_length]) {
+              while (source_info.name[source_name_length]) {
                 if (validation_charge(&p, 1) != GTEXT_XML_OK) break;
                 ++source_name_length;
               }
-              if (entity->external_context && source_info.name
-                  && source_name_length == entity->name_length
-                  && memcmp(source_info.name, entity->name,
-                      entity->name_length) == 0) {
-                declared_externally = 1;
-                break;
-              }
+              const xml_general_entity *entity = p.err.code == GTEXT_XML_OK
+                  ? xml_find_general_entity(&p,
+                      (const unsigned char *)source_info.name,
+                      source_name_length) : NULL;
+              declared_externally = entity && entity->external_context;
             }
             int known = 0;
             for (size_t i = 0; i < external_sources_seen_count; ++i) {
@@ -2160,11 +2146,13 @@ GTEXT_XML_Status gtext_xml_refresh_external_dtd(GTEXT_Markup_Document *doc,
     live->bindings = rebuilt.bindings;
     live->binding_count = rebuilt.binding_count;
     live->binding_capacity = rebuilt.binding_capacity;
+    /* live's own index sees a new array and refiles it on its next use. */
   }
   else {
     status = rebuild_status;
     if (error) *error = rebuild_ctx.err;
   }
+  markup_doctype_release_binding_index((GTEXT_Markup_Node *)&rebuilt);
   /* The rebuilt markup bindings belong to the document, but the temporary
      parser indexes and validation model belong to rebuild_ctx. */
   xml_source_free(&rebuild_ctx);

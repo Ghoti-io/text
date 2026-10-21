@@ -173,6 +173,7 @@ static void node_release(GTEXT_Markup_Document * doc, node_t * node) {
         markup_free(doc, d->bindings[i].name);
       }
       markup_free(doc, d->bindings);
+      if (d->binding_index.owner == d) markup_free(doc, d->binding_index.slots);
       break;
     }
     case GTEXT_MARKUP_KIND_DOCUMENT:
@@ -286,12 +287,40 @@ GTEXT_Markup_Node * gtext_markup_document_root(const GTEXT_Markup_Document * doc
   return doc ? doc->root : NULL;
 }
 
+/* The physical-source table is kept in ascending identifier order, which is
+   the order a parser assigns them in: every entity expansion records a source,
+   so a document can hold one for each of a million references, and a lookup or
+   a duplicate check that walked the table made recording them quadratic. The
+   first index whose identifier is not below `id`, or source_count. */
+static size_t source_lower_bound(const GTEXT_Markup_Document * doc,
+    uint32_t id) {
+  size_t lo = 0, hi = doc->source_count;
+  while (lo < hi) {
+    const size_t mid = lo + (hi - lo) / 2;
+    if (doc->sources[mid].view.id < id) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+markup_source * markup_source_find(const GTEXT_Markup_Document * doc,
+    uint32_t id) {
+  if (!doc || id == 0 || doc->source_count == 0) return NULL;
+  const size_t at = source_lower_bound(doc, id);
+  return at < doc->source_count && doc->sources[at].view.id == id
+      ? &doc->sources[at] : NULL;
+}
+
 GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
     uint32_t id, uint32_t parent_id, GTEXT_Markup_Source_Kind kind,
     const char * name) {
   if (!doc || id == 0) return GTEXT_MARKUP_E_INVALID;
-  for (size_t i = 0; i < doc->source_count; i++) {
-    if (doc->sources[i].view.id == id) return GTEXT_MARKUP_E_INVALID;
+  /* A parser appends in increasing order, which is the constant-time case. */
+  size_t at = doc->source_count;
+  if (doc->source_count != 0
+      && doc->sources[doc->source_count - 1].view.id >= id) {
+    at = source_lower_bound(doc, id);
+    if (doc->sources[at].view.id == id) return GTEXT_MARKUP_E_INVALID;
   }
   if (doc->source_count == doc->source_capacity) {
     size_t capacity = doc->source_capacity ? doc->source_capacity * 2 : 8;
@@ -307,7 +336,11 @@ GTEXT_Markup_Status markup_source_add(GTEXT_Markup_Document * doc,
   }
   char * copy = name ? markup_copy(doc, name, strlen(name)) : NULL;
   if (name && !copy) return GTEXT_MARKUP_E_OOM;
-  markup_source * entry = &doc->sources[doc->source_count++];
+  if (at < doc->source_count)
+    memmove(&doc->sources[at + 1], &doc->sources[at],
+        (doc->source_count - at) * sizeof(*doc->sources));
+  doc->source_count++;
+  markup_source * entry = &doc->sources[at];
   memset(entry, 0, sizeof(*entry));
   entry->view.id = id;
   entry->view.reference_source_id = parent_id;
@@ -323,9 +356,7 @@ GTEXT_Markup_Status markup_source_set_external_metadata(
     size_t byte_count, const unsigned char sha256[32]) {
   if (!doc || !id || !resolver_identity_token || !sha256)
     return GTEXT_MARKUP_E_INVALID;
-  markup_source *entry = NULL;
-  for (size_t i = 0; i < doc->source_count; ++i)
-    if (doc->sources[i].view.id == id) { entry = &doc->sources[i]; break; }
+  markup_source *entry = markup_source_find(doc, id);
   if (!entry) return GTEXT_MARKUP_E_INVALID;
   char *uri_copy = base_uri ? markup_copy(doc, base_uri, strlen(base_uri)) : NULL;
   char *encoding_copy = encoding
@@ -351,14 +382,10 @@ GTEXT_Markup_Status markup_source_set_external_metadata(
 
 bool gtext_markup_document_source(const GTEXT_Markup_Document * doc,
     uint32_t source_id, GTEXT_Markup_Source * out) {
-  if (!doc || source_id == 0) return false;
-  for (size_t i = 0; i < doc->source_count; i++) {
-    if (doc->sources[i].view.id == source_id) {
-      if (out) *out = doc->sources[i].view;
-      return true;
-    }
-  }
-  return false;
+  const markup_source * entry = markup_source_find(doc, source_id);
+  if (!entry) return false;
+  if (out) *out = entry->view;
+  return true;
 }
 
 static node_t * find_child_of_kind(const GTEXT_Markup_Document * doc,
@@ -857,48 +884,185 @@ void markup_doctype_mark_last_syntax_unapplied(GTEXT_Markup_Node * node) {
   if (latest) latest->applies_to_document = 0;
 }
 
+static int syntax_is(const markup_dtd_syntax *item, const char *source,
+    size_t length, const GTEXT_Markup_Location *location) {
+  return item->location.source_id == location->source_id
+      && item->location.offset == location->offset
+      && item->length == length
+      && memcmp(item->source, source, length) == 0;
+}
+
+/* The retained syntax record a binding is made from. A parser binds the
+   declaration it has just retained, the last record of one of the three
+   arrays; a rebuild binds the records in sequence order, so the next record
+   after the previous one (or that one again, for an ATTLIST of several
+   attributes); a copy knows where the record was in its original. All of
+   those are tried before the search, which made binding every declaration of
+   a subset quadratic. `hint_array` 3 is no hint. */
 static const markup_dtd_syntax *find_doctype_syntax(
-    const markup_doctype *d, const char *source, size_t length,
-    const GTEXT_Markup_Location *location) {
+    markup_doctype *d, const char *source, size_t length,
+    const GTEXT_Markup_Location *location, unsigned hint_array,
+    size_t hint_position, unsigned *out_array, size_t *out_position) {
   const markup_dtd_syntax *arrays[] = {d->syntax, d->external_syntax,
       d->generated_syntax};
   const size_t counts[] = {d->syntax_count, d->external_syntax_count,
       d->generated_syntax_count};
-  for (size_t a = 0; a < 3; ++a) {
-    for (size_t i = 0; i < counts[a]; ++i) {
-      const markup_dtd_syntax *item = &arrays[a][i];
-      if (item->location.source_id == location->source_id
-          && item->location.offset == location->offset
-          && item->length == length
-          && memcmp(item->source, source, length) == 0) return item;
+  unsigned found_array = 3;
+  size_t found = 0;
+  if (hint_array < 3 && hint_position < counts[hint_array]
+      && syntax_is(&arrays[hint_array][hint_position], source, length,
+          location)) {
+    found_array = hint_array;
+    found = hint_position;
+  }
+  for (unsigned a = 0; found_array == 3 && a < 3; ++a) {
+    const size_t candidates[3] = {d->syntax_cursor[a],
+        d->syntax_cursor[a] - 1, counts[a] - 1};
+    for (size_t c = 0; c < 3; ++c) {
+      /* A cursor of 0 makes the second candidate SIZE_MAX: out of range. */
+      if (candidates[c] < counts[a]
+          && syntax_is(&arrays[a][candidates[c]], source, length, location)) {
+        found_array = a;
+        found = candidates[c];
+        break;
+      }
     }
   }
-  return NULL;
+  for (unsigned a = 0; found_array == 3 && a < 3; ++a) {
+    for (size_t i = 0; i < counts[a]; ++i) {
+      if (syntax_is(&arrays[a][i], source, length, location)) {
+        found_array = a;
+        found = i;
+        break;
+      }
+    }
+  }
+  if (found_array == 3) return NULL;
+  d->syntax_cursor[found_array] = found + 1;
+  *out_array = found_array;
+  *out_position = found;
+  return &arrays[found_array][found];
 }
 
-GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
+/* ---- the binding index ------------------------------------------------- */
+
+static size_t binding_key_hash(size_t seed, int kind, const char *element,
+    size_t element_length, const char *name, size_t name_length) {
+  uint64_t h = 0xcbf29ce484222325ull ^ (uint64_t)seed
+      ^ ((uint64_t)(unsigned)kind * 0x9E3779B97F4A7C15ull);
+  for (size_t i = 0; i < name_length; i++) {
+    h ^= (unsigned char)name[i];
+    h *= 0x100000001b3ull;
+  }
+  h ^= 0xff; /* the boundary, so that (ab, c) and (a, bc) differ */
+  h *= 0x100000001b3ull;
+  for (size_t i = 0; i < element_length; i++) {
+    h ^= (unsigned char)element[i];
+    h *= 0x100000001b3ull;
+  }
+  h ^= h >> 32;
+  h *= 0x9E3779B97F4A7C15ull;
+  h ^= h >> 29;
+  return (size_t)h;
+}
+
+static size_t binding_hash(const GTEXT_Markup_Document *doc,
+    const markup_dtd_binding *b) {
+  return binding_key_hash(doc->seed, b->kind, b->element_name,
+      b->element_name_length, b->name, b->name_length);
+}
+
+static void binding_index_place(markup_binding_index *ix, size_t hash,
+    size_t position) {
+  size_t slot = hash & (ix->capacity - 1);
+  while (ix->slots[slot].position) slot = (slot + 1) & (ix->capacity - 1);
+  ix->slots[slot].position = position + 1;
+  ix->slots[slot].hash = hash;
+}
+
+/* Bring the index up to the array: start a table of its own in a copy, start
+   again when the array was replaced or shortened, grow at half full, and file
+   the bindings appended since. Every lookup comes through here first. */
+static GTEXT_Markup_Status binding_index_sync(markup_doctype *d) {
+  markup_binding_index *ix = &d->binding_index;
+  GTEXT_Markup_Document *doc = d->base.doc;
+  if (ix->owner != d) {
+    memset(ix, 0, sizeof(*ix)); /* the table, if any, is the original's */
+    ix->owner = d;
+  }
+  if (ix->array != d->bindings || ix->filed > d->binding_count) {
+    if (ix->slots) memset(ix->slots, 0, ix->capacity * sizeof(*ix->slots));
+    ix->array = d->bindings;
+    ix->filed = 0;
+  }
+  if (d->binding_count > SIZE_MAX / 4) return GTEXT_MARKUP_E_LIMIT;
+  if (d->binding_count * 2 > ix->capacity) {
+    size_t want = ix->capacity ? ix->capacity : 16;
+    while (want < d->binding_count * 2) want *= 2;
+    if (want > SIZE_MAX / sizeof(*ix->slots)) return GTEXT_MARKUP_E_LIMIT;
+    markup_binding_slot *grown = markup_alloc(doc, want * sizeof(*grown));
+    if (!grown) return GTEXT_MARKUP_E_OOM;
+    memset(grown, 0, want * sizeof(*grown));
+    markup_free(doc, ix->slots);
+    ix->slots = grown;
+    ix->capacity = want;
+    ix->filed = 0;
+  }
+  for (; ix->filed < d->binding_count; ++ix->filed)
+    binding_index_place(ix, binding_hash(doc, &d->bindings[ix->filed]),
+        ix->filed);
+  return GTEXT_MARKUP_OK;
+}
+
+static size_t binding_index_find(const markup_doctype *d, int kind,
+    const char *element, size_t element_length, const char *name,
+    size_t name_length) {
+  const markup_binding_index *ix = &d->binding_index;
+  if (!ix->capacity) return SIZE_MAX;
+  const size_t hash = binding_key_hash(d->base.doc->seed, kind, element,
+      element_length, name, name_length);
+  for (size_t slot = hash & (ix->capacity - 1); ix->slots[slot].position;
+       slot = (slot + 1) & (ix->capacity - 1)) {
+    if (ix->slots[slot].hash != hash) continue;
+    const size_t i = ix->slots[slot].position - 1;
+    const markup_dtd_binding *b = &d->bindings[i];
+    if (b->kind == kind && b->name_length == name_length
+        && memcmp(b->name, name, name_length) == 0
+        && b->element_name_length == element_length
+        && (!element_length
+            || memcmp(b->element_name, element, element_length) == 0))
+      return i;
+  }
+  return SIZE_MAX;
+}
+
+void markup_doctype_release_binding_index(GTEXT_Markup_Node *node) {
+  if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE) return;
+  markup_doctype *d = (markup_doctype *)node;
+  if (d->binding_index.owner == d) markup_free(node->doc, d->binding_index.slots);
+  memset(&d->binding_index, 0, sizeof(d->binding_index));
+}
+
+static GTEXT_Markup_Status set_binding(GTEXT_Markup_Node *node,
     int kind, const char *element_name, size_t element_name_length,
     const char *name, size_t name_length, const char *source,
     size_t source_length, const GTEXT_Markup_Location *location,
-    int external_context, int entity_unparsed) {
+    int external_context, int entity_unparsed, unsigned hint_array,
+    size_t hint_position) {
   if (!node || node->kind != GTEXT_MARKUP_KIND_DOCTYPE || !name || !name_length
       || !source || !location || (element_name_length && !element_name))
     return GTEXT_MARKUP_E_INVALID;
   markup_doctype *d = (markup_doctype *)node;
+  unsigned syntax_array = 0;
+  size_t syntax_position = 0;
   const markup_dtd_syntax *retained = find_doctype_syntax(d, source,
-      source_length, location);
+      source_length, location, hint_array, hint_position, &syntax_array,
+      &syntax_position);
   if (!retained) return GTEXT_MARKUP_E_INVALID;
-  size_t found = SIZE_MAX;
-  for (size_t i = 0; i < d->binding_count; ++i) {
-    markup_dtd_binding *b = &d->bindings[i];
-    if (b->kind == kind && b->name_length == name_length
-        && memcmp(b->name, name, name_length) == 0
-        && b->element_name_length == element_name_length
-        && (!element_name_length
-            || memcmp(b->element_name, element_name, element_name_length) == 0)) {
-      found = i; break;
-    }
-  }
+  const GTEXT_Markup_Status synced = binding_index_sync(d);
+  if (synced != GTEXT_MARKUP_OK) return synced;
+  size_t found = binding_index_find(d, kind, element_name,
+      element_name_length, name, name_length);
   if (found != SIZE_MAX && (external_context || !d->bindings[found].external_context))
     return GTEXT_MARKUP_OK;
   if (name_length == SIZE_MAX || element_name_length == SIZE_MAX
@@ -962,8 +1126,29 @@ GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
   }
   d->bindings[found] = (markup_dtd_binding){kind, element_copy,
       element_name_length, name_copy, name_length, retained->source, source_length,
-      *location, (uint8_t)!!external_context, (uint8_t)!!entity_unparsed};
+      *location, (uint8_t)!!external_context, (uint8_t)!!entity_unparsed,
+      (uint8_t)syntax_array, syntax_position};
+  /* A new binding is filed by the next sync; a replaced one keeps its key. */
   return GTEXT_MARKUP_OK;
+}
+
+GTEXT_Markup_Status markup_doctype_set_binding(GTEXT_Markup_Node *node,
+    int kind, const char *element_name, size_t element_name_length,
+    const char *name, size_t name_length, const char *source,
+    size_t source_length, const GTEXT_Markup_Location *location,
+    int external_context, int entity_unparsed) {
+  return set_binding(node, kind, element_name, element_name_length, name,
+      name_length, source, source_length, location, external_context,
+      entity_unparsed, 3, 0);
+}
+
+GTEXT_Markup_Status markup_doctype_copy_binding(GTEXT_Markup_Node *node,
+    const markup_dtd_binding *b, const GTEXT_Markup_Location *location) {
+  if (!b) return GTEXT_MARKUP_E_INVALID;
+  return set_binding(node, b->kind, b->element_name, b->element_name_length,
+      b->name, b->name_length, b->source, b->source_length, location,
+      b->external_context, b->entity_unparsed, b->syntax_array,
+      b->syntax_position);
 }
 
 void markup_doctype_clear_bindings(GTEXT_Markup_Node *node) {
@@ -989,6 +1174,7 @@ void markup_doctype_free_bindings(GTEXT_Markup_Node *node) {
   markup_free(node->doc, d->bindings);
   d->bindings = NULL;
   d->binding_capacity = 0;
+  markup_doctype_release_binding_index(node);
 }
 
 GTEXT_Markup_Status gtext_markup_create_fragment(

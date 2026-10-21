@@ -280,6 +280,11 @@ typedef struct {
   char * attribute_enumeration;
   size_t attribute_enumeration_length;
   GTEXT_Markup_Location declaration_location;
+  /** ATTLIST only: the position of the element's next attribute binding, or
+   *  SIZE_MAX. The first binding of an element also keeps the last, so that
+   *  appending to its chain is constant time. */
+  size_t next_attribute;
+  size_t last_attribute;
 } xml_dtd_binding;
 
 enum { XML_ATYPE_CDATA, XML_ATYPE_ID, XML_ATYPE_IDREF, XML_ATYPE_IDREFS,
@@ -403,6 +408,47 @@ typedef struct {
   size_t count;
   uint32_t stamp;
 } xml_hset;
+
+/** One slot of an xml_name_index. */
+typedef struct {
+  size_t position; ///< The record's position in its owner's array, plus one;
+                   ///< 0 is an empty slot.
+  uint32_t hash;
+} xml_name_slot;
+
+/**
+ * An open-addressed index from a DTD name to the position of its record in an
+ * array the caller owns (the general entities, the parameter entities, the
+ * effective declarations). Declarations are only ever appended to those arrays
+ * or replaced in place under the same name, so the index is only ever added
+ * to. The hash is seeded per index (from the address of its first table), so
+ * a document cannot choose names that collide in every parse.
+ *
+ * It lives in xml_ctx beside the array it indexes and is copied wherever that
+ * array is copied: a context copy that can add a declaration must hand the
+ * index back with the array.
+ */
+typedef struct {
+  xml_name_slot * slots;
+  size_t capacity; ///< A power of two, or 0.
+  size_t count;
+  uint32_t seed;
+} xml_name_index;
+
+/** What an xml_name_index is asked to find or file. `kind` keeps the names of
+ *  different declaration kinds apart; `element` is the ATTLIST element, or
+ *  NULL with length 0. */
+typedef struct {
+  int kind;
+  const unsigned char * element;
+  size_t element_length;
+  const unsigned char * name;
+  size_t name_length;
+} xml_name_key;
+
+/** The key kind under which the dtd_bindings index files the first ATTLIST
+ *  binding of each element: `name` is the element's name. */
+enum { XML_DTD_KEY_ATTLIST_ELEMENT = 100 };
 
 struct GTEXT_XML_Stream;
 
@@ -536,14 +582,22 @@ typedef struct {
   xml_parameter_entity * parameter_entities;
   size_t parameter_entity_count;
   size_t parameter_entity_capacity;
+  xml_name_index parameter_entity_index;
   xml_general_entity * general_entities;
   size_t general_entity_count;
   size_t general_entity_capacity;
+  xml_name_index general_entity_index;
   xml_general_entity * attribute_entity_stack[64];
   size_t attribute_entity_depth;
   xml_dtd_binding * dtd_bindings;
   size_t dtd_binding_count;
   size_t dtd_binding_capacity;
+  /** Every binding by (kind, element, name), and under
+   *  XML_DTD_KEY_ATTLIST_ELEMENT the first ATTLIST binding of each element,
+   *  whose `next_attribute` chain lists the element's attributes in
+   *  declaration order. A start tag reads its defaults from the chain instead
+   *  of walking every declaration of the DTD. */
+  xml_name_index dtd_binding_index;
   const char * dtd_generated_parameter_entity;
   unsigned char * dtd_external_modes;
   size_t dtd_external_depth;
@@ -789,6 +843,30 @@ int xml_hset_insert(xml_ctx * p, xml_hset * set, uint32_t hash, uint32_t index,
     xml_hset_same same, const void * key);
 void xml_hset_free(xml_ctx * p, xml_hset * set);
 
+/** Does the record at `position` of the index's owner have `key`? */
+typedef int (*xml_name_index_same)(
+    const xml_ctx * p, size_t position, const xml_name_key * key);
+/** The position filed under `key`, or SIZE_MAX. */
+size_t xml_name_index_find(const xml_ctx * p, const xml_name_index * index,
+    const xml_name_key * key, xml_name_index_same same);
+/** File `position` under `key`, which the caller has found absent. */
+GTEXT_XML_Status xml_name_index_insert(xml_ctx * p, xml_name_index * index,
+    const xml_name_key * key, size_t position);
+void xml_name_index_free(xml_ctx * p, xml_name_index * index);
+
+/** The general entity, parameter entity or effective binding of a name, by
+ *  their indexes (xml_doctype.c); NULL when there is none. */
+xml_general_entity * xml_find_general_entity(const xml_ctx * p,
+    const unsigned char * name, size_t name_length);
+xml_parameter_entity * xml_find_parameter_entity(const xml_ctx * p,
+    const unsigned char * name, size_t name_length);
+xml_dtd_binding * xml_find_dtd_binding(const xml_ctx * p, int kind,
+    const unsigned char * element, size_t element_length,
+    const unsigned char * name, size_t name_length);
+/** The first ATTLIST binding of `element` (follow `next_attribute`), or NULL. */
+xml_dtd_binding * xml_first_attribute_binding(const xml_ctx * p,
+    const unsigned char * element, size_t element_length);
+
 /* ---- Namespaces (xml_namespace.c) --------------------------------------- */
 
 /** Open a scope: remember how many bindings are in effect. */
@@ -939,6 +1017,11 @@ GTEXT_INTERNAL_API int xml_stream_pause_pending(
 GTEXT_INTERNAL_API GTEXT_XML_Status xml_parse_with_seams(const void * data,
     size_t len, const GTEXT_XML_Parse_Options * opts, const xml_seams * seams,
     GTEXT_Markup_Document ** out, GTEXT_XML_Error * err);
+/** gtext_xml_parse(), and the parser work it charged (`max_total_work`'s
+ *  counter) in `*work`, on success and on failure. For the quadratic suite. */
+GTEXT_INTERNAL_API GTEXT_XML_Status xml_parse_counted(const void * data,
+    size_t len, const GTEXT_XML_Parse_Options * opts,
+    GTEXT_Markup_Document ** out, GTEXT_XML_Error * err, size_t * work);
 
 GTEXT_INTERNAL_API struct GTEXT_XML_Stream * xml_stream_new_with_seams(
     const GTEXT_XML_Parse_Options * options, GTEXT_XML_Event_cb callback,

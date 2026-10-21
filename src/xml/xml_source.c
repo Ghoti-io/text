@@ -343,10 +343,12 @@ void xml_source_free(xml_ctx * p) {
   xml_release(p, p->general_entities);
   p->general_entities = NULL;
   p->general_entity_count = p->general_entity_capacity = 0;
+  xml_name_index_free(p, &p->general_entity_index);
   xml_release(p, p->parameter_entities);
   p->parameter_entities = NULL;
   p->parameter_entity_count = 0;
   p->parameter_entity_capacity = 0;
+  xml_name_index_free(p, &p->parameter_entity_index);
   for (size_t i = 0; i < p->dtd_binding_count; ++i) {
     xml_release(p, p->dtd_bindings[i].element_name);
     xml_release(p, p->dtd_bindings[i].name);
@@ -358,6 +360,7 @@ void xml_source_free(xml_ctx * p) {
   p->validation_dtd_key_bytes = 0;
   p->dtd_bindings = NULL;
   p->dtd_binding_count = p->dtd_binding_capacity = 0;
+  xml_name_index_free(p, &p->dtd_binding_index);
   for (size_t i = 0; i < p->source_name_count; i++) {
     xml_release(p, p->source_names[i]);
   }

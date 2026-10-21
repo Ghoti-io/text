@@ -32,7 +32,8 @@ The edits make the layer's work counter grow with the depth or the position the 
 "reset the insertion mode" that this suite found is the first plant, in the form it had, counted. The `css-`
 plants do the same to CSS Syntax: the declaration attempt of a block's contents reading the blocks it should
 step over, or reading on to the end before it gives up (the two ways a literal reading of 5.5.5 is quadratic),
-a tokenizer that looks back, and identities and a serializer that walk their stacks.
+a tokenizer that looks back, and identities and a serializer that walk their stacks. The XML parser's walk of
+its earlier DTD bindings is another plant.
 
 Copyright 2026 by Corey Pennycuff
 """
@@ -96,6 +97,19 @@ PLANTS = [
      "  if (n > GTEXT_HTML_PRESCAN_BYTES) {\n    n = GTEXT_HTML_PRESCAN_BYTES; /* \"the end condition\" */\n  }\n  /* \"Prescan for UTF-16",
      "  /* \"Prescan for UTF-16",
      ["1 MiB of"]),
+    # The XML parser's DTD: the walk of the earlier bindings that each declaration made, in the form it had (a unit a binding).
+    ("xml-declaration-walks-the-bindings", "xml/xml_doctype.c",
+     "  GTEXT_XML_Status charged = xml_charge_work(p, 1);\n",
+     "  GTEXT_XML_Status charged = xml_charge_work(p, 1 + p->dtd_binding_count);\n",
+     ["entity declarations", "notation declarations", "attribute-list declarations"]),
+    ("xml-start-tag-walks-the-declarations", "xml/xml_parser.c",
+     "    const xml_dtd_binding * first =\n",
+     "    p->total_work += p->dtd_binding_count; /* every declaration, for the defaults */\n    const xml_dtd_binding * first =\n",
+     ["start tags against many attribute-list declarations"]),
+    ("xml-reference-walks-the-entities", "xml/xml_lexer.c",
+     "      ? xml_find_general_entity(p, (const unsigned char *)name, length) : NULL;\n",
+     "      ? xml_find_general_entity(p, (const unsigned char *)name, length) : NULL;\n  p->total_work += p->general_entity_count; /* a lookup that reads every entity */\n",
+     ["references to many entities"]),
 ]
 
 

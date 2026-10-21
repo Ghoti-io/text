@@ -520,16 +520,6 @@ static int hex_value(unsigned char c) {
   return -1;
 }
 
-static xml_general_entity * find_general_entity(xml_ctx * p,
-    const unsigned char * name, size_t length) {
-  for (size_t i = 0; i < p->general_entity_count; ++i) {
-    xml_general_entity * entity = &p->general_entities[i];
-    if (entity->name_length == length
-        && memcmp(entity->name, name, length) == 0) return entity;
-  }
-  return NULL;
-}
-
 static GTEXT_XML_Status expand_attribute_entity(xml_ctx * p,
     xml_general_entity * entity, markup_buf * buf) {
   const size_t depth = p->attribute_entity_depth;
@@ -709,7 +699,7 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       || (length == 4 &&
           (memcmp(name, "apos", 4) == 0 || memcmp(name, "quot", 4) == 0));
   xml_general_entity * entity = !predefined && p->dtd_mode != GTEXT_XML_DTD_OFF
-      ? find_general_entity(p, (const unsigned char *)name, length) : NULL;
+      ? xml_find_general_entity(p, (const unsigned char *)name, length) : NULL;
   if (entity) {
     if (entity->unparsed)
       return xml_fail_at(p, GTEXT_XML_E_ENTITY,
@@ -868,6 +858,90 @@ GTEXT_XML_Status xml_scan_text_run(xml_ctx * p, size_t * end) {
   }
   *end = i;
   return GTEXT_XML_OK;
+}
+
+/* ---- an index of DTD names ---------------------------------------------- */
+
+static uint32_t name_key_hash(uint32_t seed, const xml_name_key * key) {
+  uint32_t h = xml_hash(key->name, key->name_length,
+      seed ^ ((uint32_t)key->kind * 0x9E3779B9u));
+  if (key->element_length) {
+    h = xml_hash(key->element, key->element_length, h);
+  }
+  return h;
+}
+
+size_t xml_name_index_find(const xml_ctx * p, const xml_name_index * index,
+    const xml_name_key * key, xml_name_index_same same) {
+  if (!index->capacity) {
+    return SIZE_MAX;
+  }
+  const uint32_t hash = name_key_hash(index->seed, key);
+  size_t slot = hash & (index->capacity - 1);
+  while (index->slots[slot].position) {
+    const size_t position = index->slots[slot].position - 1;
+    if (index->slots[slot].hash == hash && same(p, position, key)) {
+      return position;
+    }
+    slot = (slot + 1) & (index->capacity - 1);
+  }
+  return SIZE_MAX;
+}
+
+static void name_index_place(xml_name_index * index, uint32_t hash,
+    size_t position_plus_one) {
+  size_t slot = hash & (index->capacity - 1);
+  while (index->slots[slot].position) {
+    slot = (slot + 1) & (index->capacity - 1);
+  }
+  index->slots[slot].position = position_plus_one;
+  index->slots[slot].hash = hash;
+}
+
+GTEXT_XML_Status xml_name_index_insert(xml_ctx * p, xml_name_index * index,
+    const xml_name_key * key, size_t position) {
+  if (position == SIZE_MAX) {
+    return xml_fail(p, GTEXT_XML_E_LIMIT_DECLARATIONS,
+        "DTD declaration index position overflow");
+  }
+  /* At most half full, so a probe ends at an empty slot soon. */
+  if (index->count >= SIZE_MAX / 2 - 1
+      || (index->count + 1) * 2 > index->capacity) {
+    const size_t want = index->capacity ? index->capacity * 2 : 16;
+    if (want <= index->capacity || want > SIZE_MAX / sizeof(xml_name_slot)) {
+      return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
+    }
+    xml_name_slot * grown =
+        gtext_allocator_calloc(p->allocator, want, sizeof(xml_name_slot));
+    if (!grown) {
+      return xml_fail(p, GTEXT_XML_E_OOM, "out of memory");
+    }
+    xml_name_slot * old = index->slots;
+    const size_t old_capacity = index->capacity;
+    if (!old) {
+      /* The table's address is the seed: different in every index and in
+         every run, and no global state to share between threads. */
+      const uint64_t mixed = (uint64_t)(uintptr_t)grown
+          * 0x9E3779B97F4A7C15ull;
+      index->seed = (uint32_t)(mixed >> 32) ^ (uint32_t)mixed;
+    }
+    index->slots = grown;
+    index->capacity = want;
+    for (size_t i = 0; i < old_capacity; i++) {
+      if (old[i].position) {
+        name_index_place(index, old[i].hash, old[i].position);
+      }
+    }
+    xml_release(p, old);
+  }
+  name_index_place(index, name_key_hash(index->seed, key), position + 1);
+  index->count++;
+  return GTEXT_XML_OK;
+}
+
+void xml_name_index_free(xml_ctx * p, xml_name_index * index) {
+  xml_release(p, index->slots);
+  memset(index, 0, sizeof(*index));
 }
 
 /* ---- a set that empties in constant time -------------------------------- */

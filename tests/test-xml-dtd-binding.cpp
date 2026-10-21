@@ -334,4 +334,139 @@ TEST(XmlDtdBinding, UnresolvedDefaultReferencesFailWithoutPublishingATree) {
   EXPECT_EQ(error.byte_offset, input.find("<!ATTLIST"));
 }
 
+// The declarations are found by name through indexes (the parser's and the doctype's): with thousands of them, interleaved
+// kinds and repeated names, every one is still found, the first binding of a name still wins, and an element's defaults
+// still come in declaration order however its attribute-list declarations are spread through the subset.
+TEST(XmlDtdBinding, ThousandsOfDeclarationsBindByNameAndTheFirstWins) {
+  const size_t n = 3000;
+  std::string subset = "<!DOCTYPE r [";
+  for (size_t i = 0; i < n; ++i) {
+    const std::string k = std::to_string(i);
+    subset += "<!ENTITY e" + k + " \"v" + k + ";\">";
+    subset += "<!ENTITY % p" + k + " \"<!-- " + k + " -->\">";
+    subset += "<!NOTATION n" + k + " SYSTEM \"x" + k + "\">";
+    subset += "<!ATTLIST x" + k + " a CDATA \"d" + k + "\">";
+    if (i % 30 == 0) subset += "<!ATTLIST r a" + std::to_string(i / 30) + " CDATA \"r" + std::to_string(i / 30) + "\">";
+  }
+  for (size_t i = 0; i < n; i += 7) {
+    const std::string k = std::to_string(i);
+    subset += "<!ENTITY e" + k + " \"second\">";                 // ignored: the first binds
+    subset += "<!ATTLIST x" + k + " a CDATA \"second\">";
+  }
+  subset += "<!ATTLIST r a5 CDATA \"second\" a100 CDATA \"last\">"; // a5 ignored, a100 new
+  subset += "%p0;%p2999;]>";
+  std::string body = "<r a7='explicit'>";
+  std::string expected;
+  for (size_t i = n; i-- > 0;) {
+    const std::string k = std::to_string(i);
+    body += "&e" + k + ";";
+    expected += "v" + k + ";";
+  }
+  body += "<x0/><x2999/></r>";
+  const std::string input = subset + body;
+
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document *doc = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error), GTEXT_XML_OK) << error.message;
+  EXPECT_EQ(markup_check_invariants(doc), nullptr);
+
+  GTEXT_Markup_Node *root = gtext_markup_document_element(doc);
+  char *text = nullptr;
+  size_t text_length = 0;
+  ASSERT_EQ(gtext_markup_node_text_content(root, nullptr, &text, &text_length), GTEXT_MARKUP_OK);
+  EXPECT_EQ(std::string(text, text_length), expected);
+  gtext_markup_string_free(nullptr, text);
+
+  // r: the explicit a7 first, then the declared defaults in declaration order, a5 from its first declaration.
+  ASSERT_EQ(gtext_markup_element_attribute_count(root), 101u);
+  GTEXT_Markup_Attribute a{};
+  ASSERT_EQ(gtext_markup_element_attribute_at(root, 0, &a), GTEXT_MARKUP_OK);
+  EXPECT_EQ(std::string(a.local), "a7");
+  EXPECT_EQ(std::string(a.value, a.value_length), "explicit");
+  size_t at = 1;
+  for (size_t j = 0; j <= 100; ++j) {
+    if (j == 7) continue;
+    ASSERT_EQ(gtext_markup_element_attribute_at(root, at++, &a), GTEXT_MARKUP_OK);
+    EXPECT_EQ(std::string(a.local), "a" + std::to_string(j));
+    EXPECT_EQ(std::string(a.value, a.value_length), j == 100 ? std::string("last") : "r" + std::to_string(j));
+  }
+  GTEXT_Markup_Node *x0 = gtext_markup_node_first_child(root);
+  while (x0 && gtext_markup_node_kind(x0) != GTEXT_MARKUP_KIND_ELEMENT) x0 = gtext_markup_node_next_sibling(x0);
+  ASSERT_NE(x0, nullptr);
+  ASSERT_TRUE(gtext_markup_element_get_attribute(x0, nullptr, "a", &a));
+  EXPECT_EQ(std::string(a.value, a.value_length), "d0");
+
+  // The doctype keeps one binding a key, each found, and a deep copy keeps them all.
+  const markup_doctype *d = doctype(doc);
+  ASSERT_NE(d, nullptr);
+  EXPECT_EQ(d->binding_count, 4 * n + 101);
+  for (size_t i = 0; i < n; i += 499) {
+    const std::string k = std::to_string(i);
+    const markup_dtd_binding *e = binding(d, GTEXT_MARKUP_DTD_ENTITY, nullptr, ("e" + k).c_str());
+    ASSERT_NE(e, nullptr) << k;
+    EXPECT_EQ(std::string(e->source, e->source_length), "<!ENTITY e" + k + " \"v" + k + ";\">");
+    EXPECT_NE(binding(d, GTEXT_MARKUP_DTD_NOTATION, nullptr, ("n" + k).c_str()), nullptr) << k;
+    EXPECT_NE(binding(d, GTEXT_MARKUP_DTD_ATTLIST, ("x" + k).c_str(), "a"), nullptr) << k;
+  }
+  GTEXT_Markup_Document *other = nullptr;
+  GTEXT_Markup_Node *copy = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &other), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_clone(other, gtext_markup_document_doctype(doc), true, &copy), GTEXT_MARKUP_OK);
+  const markup_doctype *c = reinterpret_cast<const markup_doctype *>(copy);
+  ASSERT_EQ(c->binding_count, d->binding_count);
+  for (size_t i = 0; i < d->binding_count; ++i) {
+    EXPECT_EQ(c->bindings[i].kind, d->bindings[i].kind);
+    EXPECT_EQ(std::string(c->bindings[i].name), std::string(d->bindings[i].name));
+    EXPECT_EQ(std::string(c->bindings[i].source, c->bindings[i].source_length),
+        std::string(d->bindings[i].source, d->bindings[i].source_length));
+  }
+  gtext_markup_node_free(copy);
+  gtext_markup_document_free(other);
+  gtext_markup_document_free(doc);
+}
+
+// Every entity expansion records a physical source; the table is kept in identifier order, which a lookup's binary
+// search relies on, and a source recorded out of order goes to its place.
+TEST(XmlDtdBinding, ExpansionSourcesStayInIdentifierOrder) {
+  std::string input = "<!DOCTYPE r [<!ENTITY a \"&b;&b;\"><!ENTITY b \"x\">]><r>";
+  for (int i = 0; i < 2000; ++i) input += "&a;";
+  input += "</r>";
+  GTEXT_XML_Parse_Options options = gtext_xml_parse_options_default();
+  options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  GTEXT_Markup_Document *doc = nullptr;
+  GTEXT_XML_Error error{};
+  ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &doc, &error), GTEXT_XML_OK) << error.message;
+  ASSERT_EQ(doc->source_count, 1u + 3 * 2000);
+  for (uint32_t id = 1; id <= doc->source_count; ++id) {
+    GTEXT_Markup_Source source{};
+    ASSERT_TRUE(gtext_markup_document_source(doc, id, &source)) << id;
+    EXPECT_EQ(source.id, id);
+    if (id > 1) {
+      EXPECT_STREQ(source.name, (id - 2) % 3 == 0 ? "a" : "b") << id;
+      // Each &a; is followed by the two &b; inside it, whose parent is that a.
+      EXPECT_EQ(source.reference_source_id, (id - 2) % 3 == 0 ? 1u : id - (id - 2) % 3) << id;
+    }
+  }
+  EXPECT_FALSE(gtext_markup_document_source(doc, (uint32_t)doc->source_count + 1, nullptr));
+  EXPECT_EQ(markup_check_invariants(doc), nullptr);
+
+  // Out of order: inserted in place; a recorded identifier is refused.
+  GTEXT_Markup_Document *table = nullptr;
+  ASSERT_EQ(gtext_markup_document_new(nullptr, &table), GTEXT_MARKUP_OK);
+  for (uint32_t id : {5u, 9u, 2u, 7u, 1u}) {
+    ASSERT_EQ(markup_source_add(table, id, 0, GTEXT_MARKUP_SOURCE_INTERNAL_ENTITY, "e"), GTEXT_MARKUP_OK) << id;
+  }
+  EXPECT_EQ(markup_source_add(table, 7, 0, GTEXT_MARKUP_SOURCE_INTERNAL_ENTITY, "e"), GTEXT_MARKUP_E_INVALID);
+  EXPECT_EQ(markup_source_add(table, 9, 0, GTEXT_MARKUP_SOURCE_INTERNAL_ENTITY, "e"), GTEXT_MARKUP_E_INVALID);
+  ASSERT_EQ(table->source_count, 5u);
+  const uint32_t order[] = {1, 2, 5, 7, 9};
+  for (size_t i = 0; i < 5; ++i) EXPECT_EQ(table->sources[i].view.id, order[i]);
+  EXPECT_FALSE(gtext_markup_document_source(table, 3, nullptr));
+  EXPECT_TRUE(gtext_markup_document_source(table, 7, nullptr));
+  gtext_markup_document_free(table);
+  gtext_markup_document_free(doc);
+}
+
 } // namespace

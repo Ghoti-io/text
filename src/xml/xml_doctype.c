@@ -273,14 +273,95 @@ static GTEXT_XML_Status dtd_charge_reference(xml_ctx * p) {
 
 static int dtd_xml_char(const xml_ctx * p, uint32_t c);
 
+/* ---- the name indexes ----------------------------------------------------
+   A declaration is found by its name through an index, never by walking the
+   declarations before it: the walk made a subset of n declarations cost n^2/2
+   comparisons (16,384 entity declarations, 400 KB, ran out of the default work
+   budget), and every reference and every start tag paid it again. */
+
+static int same_parameter_entity(const xml_ctx * p, size_t position,
+    const xml_name_key * key) {
+  const xml_parameter_entity * item = &p->parameter_entities[position];
+  return item->name_length == key->name_length
+      && memcmp(item->name, key->name, key->name_length) == 0;
+}
+
+static int same_general_entity(const xml_ctx * p, size_t position,
+    const xml_name_key * key) {
+  const xml_general_entity * item = &p->general_entities[position];
+  return item->name_length == key->name_length
+      && memcmp(item->name, key->name, key->name_length) == 0;
+}
+
+static int same_dtd_binding(const xml_ctx * p, size_t position,
+    const xml_name_key * key) {
+  const xml_dtd_binding * b = &p->dtd_bindings[position];
+  if (key->kind == XML_DTD_KEY_ATTLIST_ELEMENT) {
+    return b->kind == GTEXT_MARKUP_DTD_ATTLIST
+        && b->element_name_length == key->name_length
+        && memcmp(b->element_name, key->name, key->name_length) == 0;
+  }
+  return b->kind == key->kind && b->name_length == key->name_length
+      && memcmp(b->name, key->name, key->name_length) == 0
+      && (key->kind != GTEXT_MARKUP_DTD_ATTLIST
+          || (b->element_name_length == key->element_length
+              && memcmp(b->element_name, key->element,
+                  key->element_length) == 0));
+}
+
+xml_parameter_entity * xml_find_parameter_entity(const xml_ctx * p,
+    const unsigned char * name, size_t name_length) {
+  const xml_name_key key = {0, NULL, 0, name, name_length};
+  const size_t at = xml_name_index_find(p, &p->parameter_entity_index, &key,
+      same_parameter_entity);
+  return at < p->parameter_entity_count ? &p->parameter_entities[at] : NULL;
+}
+
+xml_general_entity * xml_find_general_entity(const xml_ctx * p,
+    const unsigned char * name, size_t name_length) {
+  const xml_name_key key = {0, NULL, 0, name, name_length};
+  const size_t at = xml_name_index_find(p, &p->general_entity_index, &key,
+      same_general_entity);
+  return at < p->general_entity_count ? &p->general_entities[at] : NULL;
+}
+
+xml_dtd_binding * xml_find_dtd_binding(const xml_ctx * p, int kind,
+    const unsigned char * element, size_t element_length,
+    const unsigned char * name, size_t name_length) {
+  const int attlist = kind == GTEXT_MARKUP_DTD_ATTLIST;
+  const xml_name_key key = {kind, attlist ? element : NULL,
+      attlist ? element_length : 0, name, name_length};
+  const size_t at = xml_name_index_find(p, &p->dtd_binding_index, &key,
+      same_dtd_binding);
+  return at < p->dtd_binding_count ? &p->dtd_bindings[at] : NULL;
+}
+
+xml_dtd_binding * xml_first_attribute_binding(const xml_ctx * p,
+    const unsigned char * element, size_t element_length) {
+  const xml_name_key key = {XML_DTD_KEY_ATTLIST_ELEMENT, NULL, 0, element,
+      element_length};
+  const size_t at = xml_name_index_find(p, &p->dtd_binding_index, &key,
+      same_dtd_binding);
+  return at < p->dtd_binding_count ? &p->dtd_bindings[at] : NULL;
+}
+
 static xml_parameter_entity * dtd_find_parameter_entity(xml_ctx * p,
     const unsigned char * name, size_t name_length) {
-  for (size_t i = 0; i < p->parameter_entity_count; i++) {
-    xml_parameter_entity * item = &p->parameter_entities[i];
-    if (item->name_length == name_length
-        && memcmp(item->name, name, name_length) == 0) return item;
-  }
-  return NULL;
+  return xml_find_parameter_entity(p, name, name_length);
+}
+
+/* File the entry just written at parameter_entities[parameter_entity_count]
+   and count it; when the index cannot take it, the entry is not counted and
+   the caller releases what it holds. */
+static GTEXT_XML_Status dtd_commit_parameter_entity(xml_ctx * p) {
+  const xml_parameter_entity * item =
+      &p->parameter_entities[p->parameter_entity_count];
+  const xml_name_key key = {0, NULL, 0, (const unsigned char *)item->name,
+      item->name_length};
+  GTEXT_XML_Status status = xml_name_index_insert(p,
+      &p->parameter_entity_index, &key, p->parameter_entity_count);
+  if (status == GTEXT_XML_OK) p->parameter_entity_count++;
+  return status;
 }
 
 static GTEXT_XML_Status dtd_add_parameter_entity(xml_ctx * p,
@@ -306,7 +387,7 @@ static GTEXT_XML_Status dtd_add_parameter_entity(xml_ctx * p,
   if (replacement_length) memcpy(owned_replacement, replacement,
       replacement_length);
   xml_parameter_entity * item =
-      &p->parameter_entities[p->parameter_entity_count++];
+      &p->parameter_entities[p->parameter_entity_count];
   item->name = owned_name;
   item->name_length = name_length;
   item->replacement = owned_replacement;
@@ -315,7 +396,12 @@ static GTEXT_XML_Status dtd_add_parameter_entity(xml_ctx * p,
   item->system_id = NULL;
   item->external = 0;
   item->identity = owned_name;
-  return GTEXT_XML_OK;
+  status = dtd_commit_parameter_entity(p);
+  if (status != GTEXT_XML_OK) {
+    xml_release(p, owned_name);
+    xml_release(p, owned_replacement);
+  }
+  return status;
 }
 
 static GTEXT_XML_Status dtd_add_external_parameter_entity(xml_ctx * p,
@@ -346,7 +432,7 @@ static GTEXT_XML_Status dtd_add_external_parameter_entity(xml_ctx * p,
   memcpy(owned_system, system_id, system_length);
   owned_system[system_length] = '\0';
   xml_parameter_entity * item =
-      &p->parameter_entities[p->parameter_entity_count++];
+      &p->parameter_entities[p->parameter_entity_count];
   memset(item, 0, sizeof(*item));
   item->name = owned_name;
   item->name_length = name_length;
@@ -354,17 +440,17 @@ static GTEXT_XML_Status dtd_add_external_parameter_entity(xml_ctx * p,
   item->system_id = owned_system;
   item->external = 1;
   item->identity = owned_name;
-  return GTEXT_XML_OK;
+  status = dtd_commit_parameter_entity(p);
+  if (status != GTEXT_XML_OK) {
+    xml_release(p, owned_name); xml_release(p, owned_public);
+    xml_release(p, owned_system);
+  }
+  return status;
 }
 
 static xml_general_entity * dtd_find_general_entity(xml_ctx * p,
     const unsigned char * name, size_t name_length) {
-  for (size_t i = 0; i < p->general_entity_count; ++i) {
-    xml_general_entity * item = &p->general_entities[i];
-    if (item->name_length == name_length
-        && memcmp(item->name, name, name_length) == 0) return item;
-  }
-  return NULL;
+  return xml_find_general_entity(p, name, name_length);
 }
 
 static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
@@ -441,6 +527,18 @@ static GTEXT_XML_Status dtd_add_general_entity(xml_ctx * p,
     GTEXT_XML_Status status = xml_grow(p, (void **)&p->general_entities,
         &p->general_entity_capacity, sizeof(*p->general_entities),
         p->general_entity_count + 1);
+    if (status != GTEXT_XML_OK) {
+      xml_validation_memory_release(p, replay_array_growth);
+      xml_release(p, name_copy); xml_release(p, public_copy);
+      xml_release(p, system_copy); xml_release(p, base_copy); xml_release(p, notation_copy);
+      xml_release(p, replacement);
+      return status;
+    }
+    /* Filed under the name first: nothing can fail between this and the
+       record being written and counted below. */
+    const xml_name_key key = {0, NULL, 0, name, name_length};
+    status = xml_name_index_insert(p, &p->general_entity_index, &key,
+        p->general_entity_count);
     if (status != GTEXT_XML_OK) {
       xml_validation_memory_release(p, replay_array_growth);
       xml_release(p, name_copy); xml_release(p, public_copy);
@@ -1327,15 +1425,14 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
       || (element_len && element_len + 1 > SIZE_MAX - name_len - 1))
     return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD binding key size overflow");
   const size_t key_bytes = name_len + 1 + (element_len ? element_len + 1 : 0);
-  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
-    GTEXT_XML_Status charged = xml_charge_work(p, 1);
-    if (charged != GTEXT_XML_OK) return charged;
-    xml_dtd_binding *b = &p->dtd_bindings[i];
-    if (b->kind != kind || b->name_length != name_len
-        || memcmp(b->name, name, name_len) != 0) continue;
-    if (kind == GTEXT_MARKUP_DTD_ATTLIST
-        && (b->element_name_length != element_len
-            || memcmp(b->element_name, element, element_len) != 0)) continue;
+  /* One unit for the lookup, which is an index probe: the walk of every
+     earlier binding it replaced was charged one unit a binding, so a subset of
+     n declarations cost n^2/2 and ran out of the work budget. */
+  GTEXT_XML_Status charged = xml_charge_work(p, 1);
+  if (charged != GTEXT_XML_OK) return charged;
+  xml_dtd_binding *b = xml_find_dtd_binding(p, kind, element, element_len,
+      name, name_len);
+  if (b) {
     /* Internal declarations outrank external declarations even when an
        external PE was encountered earlier while reading the internal subset. */
     if (!external && b->external) {
@@ -1400,7 +1497,36 @@ static GTEXT_XML_Status bind_key(xml_ctx *p, int kind,
       .kind = kind, .element_name = element_copy, .element_name_length = element_len,
       .name = copy, .name_length = name_len,
       .syntax_index = binding_index, .external = (unsigned char)external,
-      .declaration_location = where ? *where : (GTEXT_Markup_Location){0}};
+      .declaration_location = where ? *where : (GTEXT_Markup_Location){0},
+      .next_attribute = SIZE_MAX, .last_attribute = SIZE_MAX};
+  /* File it, and an ATTLIST binding on its element's chain as well: the
+     element's first is filed under the element, later ones are appended. */
+  const int attlist = kind == GTEXT_MARKUP_DTD_ATTLIST;
+  xml_dtd_binding *first = attlist
+      ? xml_first_attribute_binding(p, element, element_len) : NULL;
+  const xml_name_key key = {kind, attlist ? element : NULL,
+      attlist ? element_len : 0, name, name_len};
+  s = xml_name_index_insert(p, &p->dtd_binding_index, &key, binding_index);
+  if (s == GTEXT_XML_OK && attlist && !first) {
+    const xml_name_key head = {XML_DTD_KEY_ATTLIST_ELEMENT, NULL, 0, element,
+        element_len};
+    s = xml_name_index_insert(p, &p->dtd_binding_index, &head, binding_index);
+  }
+  if (s != GTEXT_XML_OK) {
+    /* The binding is not counted, so a slot filed above names a position
+       that no lookup accepts until a later binding takes it, and that one is
+       filed under its own key. */
+    xml_release(p, copy); xml_release(p, element_copy);
+    xml_validation_memory_release(p, key_bytes);
+    p->validation_dtd_key_bytes -= key_bytes;
+    return s;
+  }
+  if (first) {
+    const size_t last = first->last_attribute != SIZE_MAX
+        ? first->last_attribute : (size_t)(first - p->dtd_bindings);
+    p->dtd_bindings[last].next_attribute = binding_index;
+    first->last_attribute = binding_index;
+  }
   p->dtd_binding_count = binding_index + 1;
   if (effective) *effective = &p->dtd_bindings[binding_index];
   if (doctype) {
@@ -1634,9 +1760,11 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
     xml_dtd_binding *old_parse = p->dtd_bindings;
     size_t old_parse_count = p->dtd_binding_count;
     size_t old_parse_capacity = p->dtd_binding_capacity;
+    xml_name_index old_parse_index = p->dtd_binding_index;
     d->bindings = NULL; d->binding_count = d->binding_capacity = 0;
     p->dtd_bindings = NULL;
     p->dtd_binding_count = p->dtd_binding_capacity = 0;
+    memset(&p->dtd_binding_index, 0, sizeof(p->dtd_binding_index));
     for (size_t i = 0; status == GTEXT_XML_OK && i < count; ++i) {
       const markup_dtd_syntax *item = items[i].syntax;
       if (item->kind > GTEXT_MARKUP_DTD_NOTATION) continue;
@@ -1661,9 +1789,11 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
         xml_release(p, p->dtd_bindings[i].attribute_enumeration);
       }
       xml_release(p, p->dtd_bindings);
+      xml_name_index_free(p, &p->dtd_binding_index);
       p->dtd_bindings = old_parse;
       p->dtd_binding_count = old_parse_count;
       p->dtd_binding_capacity = old_parse_capacity;
+      p->dtd_binding_index = old_parse_index;
     }
     else {
     for (size_t i = 0; i < old_model_count; ++i) {
@@ -1683,6 +1813,7 @@ GTEXT_XML_Status xml_doctype_rebuild_indexes(xml_ctx *p,
       xml_release(p, old_parse[i].attribute_enumeration);
     }
     xml_release(p, old_parse);
+    xml_name_index_free(p, &old_parse_index);
     }
   }
   markup_free(node->doc, items);
@@ -2310,12 +2441,15 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   p->parameter_entities = ext.parameter_entities;
   p->parameter_entity_count = ext.parameter_entity_count;
   p->parameter_entity_capacity = ext.parameter_entity_capacity;
+  p->parameter_entity_index = ext.parameter_entity_index;
   p->dtd_bindings = ext.dtd_bindings;
   p->dtd_binding_count = ext.dtd_binding_count;
   p->dtd_binding_capacity = ext.dtd_binding_capacity;
+  p->dtd_binding_index = ext.dtd_binding_index;
   p->general_entities = ext.general_entities;
   p->general_entity_count = ext.general_entity_count;
   p->general_entity_capacity = ext.general_entity_capacity;
+  p->general_entity_index = ext.general_entity_index;
   p->dtd_external_modes = ext.dtd_external_modes;
   /* DTD names are tokenized into a reusable context buffer.  The external
      subset parser runs on a context copy, so propagate reallocations back to
@@ -2453,12 +2587,15 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
     p->parameter_entities = ext.parameter_entities;
     p->parameter_entity_count = ext.parameter_entity_count;
     p->parameter_entity_capacity = ext.parameter_entity_capacity;
+    p->parameter_entity_index = ext.parameter_entity_index;
     p->dtd_bindings = ext.dtd_bindings;
     p->dtd_binding_count = ext.dtd_binding_count;
     p->dtd_binding_capacity = ext.dtd_binding_capacity;
+    p->dtd_binding_index = ext.dtd_binding_index;
     p->general_entities = ext.general_entities;
     p->general_entity_count = ext.general_entity_count;
     p->general_entity_capacity = ext.general_entity_capacity;
+    p->general_entity_index = ext.general_entity_index;
     p->base_uri = f->base_uri;
   }
   else p->err = ext.err;

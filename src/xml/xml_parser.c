@@ -428,16 +428,8 @@ static GTEXT_XML_Status parse_attribute_value(xml_ctx * p,
 static const xml_dtd_binding * find_attribute_binding(const xml_ctx * p,
     const unsigned char * element, size_t element_length,
     const unsigned char * attribute, size_t attribute_length) {
-  for (size_t i = 0; i < p->dtd_binding_count; ++i) {
-    const xml_dtd_binding * b = &p->dtd_bindings[i];
-    if (b->kind != GTEXT_MARKUP_DTD_ATTLIST
-        || b->element_name_length != element_length
-        || memcmp(b->element_name, element, element_length) != 0
-        || b->name_length != attribute_length
-        || memcmp(b->name, attribute, attribute_length) != 0) continue;
-    return b;
-  }
-  return NULL;
+  return xml_find_dtd_binding(p, GTEXT_MARKUP_DTD_ATTLIST, element,
+      element_length, attribute, attribute_length);
 }
 
 /* A DTD default is an attribute value, so run it through the same reference
@@ -828,12 +820,14 @@ GTEXT_XML_Status xml_parse_start_tag(xml_ctx * p, int * is_empty) {
   }
 
   if (p->dtd_mode != GTEXT_XML_DTD_OFF) {
-    for (size_t k = 0; k < p->dtd_binding_count; k++) {
+    /* The element's own ATTLIST bindings, in declaration order: walking every
+       binding of the DTD here made each start tag cost the size of the DTD. */
+    const xml_dtd_binding * first =
+        xml_first_attribute_binding(p, name, name_length);
+    for (size_t k = first ? (size_t)(first - p->dtd_bindings) : SIZE_MAX;
+         k != SIZE_MAX; k = p->dtd_bindings[k].next_attribute) {
       const xml_dtd_binding * binding = &p->dtd_bindings[k];
-      if (binding->kind != GTEXT_MARKUP_DTD_ATTLIST
-          || binding->element_name_length != name_length
-          || memcmp(binding->element_name, name, name_length) != 0
-          || binding->attribute_default_kind == 0) continue;
+      if (binding->attribute_default_kind == 0) continue;
       name_key key = {(const unsigned char *)binding->name, binding->name_length};
       int present = 0;
       for (size_t j = 0; j < p->attr_count && !present; j++)
@@ -1531,9 +1525,12 @@ static void cleanup(xml_ctx * p) {
   xml_source_free(p);
 }
 
-GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
+static GTEXT_XML_Status parse_counted(const void * data, size_t len,
     const GTEXT_XML_Parse_Options * opts, const xml_seams * seams,
-    GTEXT_Markup_Document ** out, GTEXT_XML_Error * err) {
+    GTEXT_Markup_Document ** out, GTEXT_XML_Error * err, size_t * work) {
+  if (work) {
+    *work = 0;
+  }
   if (err) {
     memset(err, 0, sizeof(*err));
   }
@@ -1631,6 +1628,9 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
   markup_buf_init(&p.scratch, p.allocator);
 
   status = parse_document(&p);
+  if (work) {
+    *work = p.total_work;
+  }
   cleanup(&p);
   if (status == GTEXT_XML_OK) {
     *out = doc;
@@ -1640,6 +1640,9 @@ GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
   doc = NULL;
 
 failed:
+  if (work) {
+    *work = p.total_work;
+  }
   if (p.err.code == GTEXT_XML_OK) {
     p.err.code = status;
     p.err.message = gtext_xml_status_string(status);
@@ -1648,6 +1651,18 @@ failed:
     *err = p.err;
   }
   return p.err.code;
+}
+
+GTEXT_XML_Status xml_parse_with_seams(const void * data, size_t len,
+    const GTEXT_XML_Parse_Options * opts, const xml_seams * seams,
+    GTEXT_Markup_Document ** out, GTEXT_XML_Error * err) {
+  return parse_counted(data, len, opts, seams, out, err, NULL);
+}
+
+GTEXT_XML_Status xml_parse_counted(const void * data, size_t len,
+    const GTEXT_XML_Parse_Options * opts, GTEXT_Markup_Document ** out,
+    GTEXT_XML_Error * err, size_t * work) {
+  return parse_counted(data, len, opts, NULL, out, err, work);
 }
 
 GTEXT_XML_Status gtext_xml_parse(const void * data, size_t len,

@@ -97,17 +97,16 @@ static GTEXT_Markup_Status import_source(GTEXT_Markup_Document * dst,
       }
       parent = imported->view.id;
     }
+    /* The table is in identifier order, so the last is the largest. */
     uint32_t new_id = 1;
-    for (size_t j = 0; j < dst->source_count; j++) {
-      if (dst->sources[j].view.id >= new_id) {
-        if (dst->sources[j].view.id == UINT32_MAX) {
-          status = GTEXT_MARKUP_E_LIMIT;
-          break;
-        }
-        new_id = dst->sources[j].view.id + 1;
+    if (dst->source_count) {
+      const uint32_t last = dst->sources[dst->source_count - 1].view.id;
+      if (last == UINT32_MAX) {
+        status = GTEXT_MARKUP_E_LIMIT;
+        break;
       }
+      new_id = last + 1;
     }
-    if (status != GTEXT_MARKUP_OK) break;
     status = markup_source_add(dst, new_id, parent, source.kind, source.name);
     if (status != GTEXT_MARKUP_OK) break;
     markup_source * added = &dst->sources[dst->source_count - 1];
@@ -375,10 +374,7 @@ static GTEXT_Markup_Status clone_one(
         const markup_dtd_binding *b = &d->bindings[i];
         GTEXT_Markup_Location where = b->location;
         remap_location(&where, dst, src->doc);
-        status = markup_doctype_set_binding(copy, b->kind, b->element_name,
-            b->element_name_length, b->name, b->name_length, b->source,
-            b->source_length, &where, b->external_context,
-            b->entity_unparsed);
+        status = markup_doctype_copy_binding(copy, b, &where);
       }
       if (status == GTEXT_MARKUP_OK) {
         markup_doctype *cloned = (markup_doctype *)copy;

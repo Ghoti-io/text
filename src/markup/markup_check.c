@@ -47,11 +47,7 @@ static void count_atom(markup_atom * a) {
 }
 
 static bool source_id_known(const GTEXT_Markup_Document * doc, uint32_t id) {
-  if (id == 0) return true;
-  for (size_t i = 0; i < doc->source_count; i++) {
-    if (doc->sources[i].view.id == id) return true;
-  }
-  return false;
+  return id == 0 || markup_source_find(doc, id) != NULL;
 }
 
 static bool kind_valid(uint8_t kind) {
@@ -352,9 +348,10 @@ const char * markup_check_invariants(const GTEXT_Markup_Document * doc) {
             && (!source->view.has_resolver_identity_token
                 || !source->view.resolver_identity_token)))
       return "a physical-source descriptor has invalid retained metadata";
-    for (size_t j = i + 1; j < doc->source_count; ++j)
-      if (source->view.id == doc->sources[j].view.id)
-        return "physical-source identifiers are duplicated";
+    /* Lookups are binary searches, so the order is part of the table. */
+    if (i + 1 < doc->source_count
+        && source->view.id >= doc->sources[i + 1].view.id)
+      return "physical-source identifiers are duplicated or out of order";
   }
 
   size_t atoms = 0;
