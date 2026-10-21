@@ -588,6 +588,8 @@ std::function<Measured(size_t)> css_serialize(std::function<std::string(size_t)>
     gtext_css_tree_free(t);
     return m;
   };
+}
+
 // ---- the XML parser's DTD ----------------------------------------------------------------------------
 
 // A DOM parse with the DTD processed (external entities skipped, as a document with no resolver is), by the parser's work
@@ -1292,8 +1294,7 @@ TEST(Quadratic, EveryGroupTheSpecNamesHasShapes) {
     count[sh.group]++;
   }
   for (const char * g : {"nesting", "formatting", "implied ends", "tables", "foreign", "fragments", "attributes", "runs", "tokenizer",
-           "serializer", "encoding", "sniffing", "api", "css"}) {
-           "serializer", "encoding", "sniffing", "api", "xml"}) {
+           "serializer", "encoding", "sniffing", "api", "css", "xml"}) {
     EXPECT_GT(count[g], 0u) << g;
   }
   // The shape names are unique (the callgrind tool finds a shape by name).
