@@ -29,7 +29,10 @@ the same procedure with no edit, and the program must pass.
 
 The edits make the layer's work counter grow with the depth or the position the way a real defect would
 (a walk of the stack, a rescan of the input read, a lookup that lands in one bucket); the stack walk of
-"reset the insertion mode" that this suite found is the first plant, in the form it had, counted.
+"reset the insertion mode" that this suite found is the first plant, in the form it had, counted. The `css-`
+plants do the same to CSS Syntax: the declaration attempt of a block's contents reading the blocks it should
+step over, or reading on to the end before it gives up (the two ways a literal reading of 5.5.5 is quadratic),
+a tokenizer that looks back, and identities and a serializer that walk their stacks.
 
 Copyright 2026 by Corey Pennycuff
 """
@@ -69,6 +72,26 @@ PLANTS = [
      "    call->steps++;\n    const GTEXT_Dec_Result r = codec->step(&dec->state, byte, &step);",
      "    call->steps += 1 + (i >> 6); /* a step that looks back over what was read */\n    const GTEXT_Dec_Result r = codec->step(&dec->state, byte, &step);",
      ["decode"]),
+    ("css-speculation-reads-the-block", "css/css_parser.c",
+     "      const size_t m = s->match[j];\n      j = m >= s->n ? s->n : m + 1;",
+     "      const size_t m = s->match[j];\n      p->ctx->work += (m >= s->n ? s->n : m) - j; /* the attempt reads the block instead of stepping over it */\n      j = m >= s->n ? s->n : m + 1;",
+     ["CSS a block then more"]),
+    ("css-failed-declaration-reads-the-rest", "css/css_parser.c",
+     "  (void)qualified_start(p, s, GTEXT_CSS_TOKEN_SEMICOLON, true);\n  return true;\n}",
+     "  p->ctx->work += s->n - mark; /* the attempt read on to the end before it was given up */\n  (void)qualified_start(p, s, GTEXT_CSS_TOKEN_SEMICOLON, true);\n  return true;\n}",
+     ["CSS nested style rules", "CSS nested at-rules"]),
+    ("css-tokenizer-looks-back", "css/css_tokenizer.c",
+     "static int32_t peek(const tz * t, int k) {\n  size_t p = t->pos;\n  t->ctx->work++;",
+     "static int32_t peek(const tz * t, int k) {\n  size_t p = t->pos;\n  t->ctx->work += 1 + (t->pos >> 6); /* a look-ahead that looks back over what was read */",
+     ["CSS comments", "CSS escapes"]),
+    ("css-ids-walk-the-path", "css/css_parser.c",
+     "  while (st.len > 0 && ok(p)) {\n    p->ctx->work++;\n    walk * w",
+     "  while (st.len > 0 && ok(p)) {\n    p->ctx->work += st.len; /* each node's id found by walking up to it */\n    walk * w",
+     ["CSS nested style rules"]),
+    ("css-serializer-walks-the-stack", "css/css_serialize.c",
+     "  while (st->len > 0 && w->status == GTEXT_CSS_OK) {\n    w->work++;",
+     "  while (st->len > 0 && w->status == GTEXT_CSS_OK) {\n    w->work += st->len; /* each task looks at every task below it */",
+     ["CSS serialize nested rules"]),
     ("sniffer-reads-past-the-window", "html/html_sniff.c",
      "  if (n > GTEXT_HTML_PRESCAN_BYTES) {\n    n = GTEXT_HTML_PRESCAN_BYTES; /* \"the end condition\" */\n  }\n  /* \"Prescan for UTF-16",
      "  /* \"Prescan for UTF-16",

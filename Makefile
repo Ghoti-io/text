@@ -4,7 +4,7 @@ PROJECT := text
 BUILD ?= release
 # The version of this library. MINOR_VERSION carries the minor and the patch as
 # one dotted string; the two are split out below for the places that need three
-# separate integers. See CONVENTIONS.md section 4.
+# separate integers.
 MAJOR_VERSION := 0
 MINOR_VERSION := 0.0
 VERSION_MINOR_ONLY := $(word 1,$(subst ., ,$(MINOR_VERSION)))
@@ -42,7 +42,8 @@ endif
 BASE_NAME := lib$(SUITE)-$(PROJECT)$(BRANCH).so
 # The symbol namespace token, from BRANCH, so that the token inside every
 # exported symbol is the same one that names the .pc file, the install directory
-# and the shared library. See CONVENTIONS.md section 4.
+# and the shared library: two versions of the library can then be loaded into
+# one process without their symbols colliding.
 LIBVER_SYMBOL := $(shell echo "ghotiio_$(PROJECT)$(BRANCH)" | sed 's/[.-]/_/g')
 
 BASE_NAME_PREFIX := lib$(SUITE)-$(PROJECT)$(BRANCH)
@@ -147,7 +148,7 @@ endif
 # somewhere else - the suite's bootstrap installs every library into a local
 # prefix so that each build resolves its dependencies through pkg-config,
 # exactly as a consumer would, rather than through a second code path that
-# only in-tree builds exercise. See CONVENTIONS.md section 1.
+# only in-tree builds exercise.
 #
 #     make install PREFIX=/path/to/prefix
 # ---------------------------------------------------------------------------
@@ -268,8 +269,8 @@ INCLUDE := -I include/ -I $(GEN_DIR)/
 # this file is being *read*, so it takes out every target rather than the ones
 # that need a dependency.  `clean` is where that is least expected and least
 # visible, because nobody reads clean's output - four of the suite's nine
-# libraries were found failing it this way during a workspace-wide rebuild,
-# each reporting that the fix was to run bootstrap.sh, from inside bootstrap.
+# libraries were found failing it this way during a suite-wide rebuild,
+# each reporting that the fix was to run the suite's install, from inside it.
 #
 # The two `ifndef SKIP_DEP_CHECK` guards below have been here for as long as
 # the errors have.  Nothing ever set the variable, so both were inert, which
@@ -286,7 +287,7 @@ SKIP_DEP_CHECK := 1
 endif
 
 # ghoti.io-cutil, for GCU_Allocator.  text used to declare its own copy of that
-# vtable because CONVENTIONS.md described the library as standalone; that was a
+# vtable because the suite's rules were read as making the library standalone; that was a
 # misreading - a dependency inside the suite is fine as long as the graph stays
 # a DAG, and cutil is its root. compress, image and model all take the same
 # dependency for the same type, and one definition is what lets an allocator
@@ -296,7 +297,7 @@ CUTIL_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --c
 CUTIL_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(CUTIL_PC) 2>/dev/null)
 ifeq ($(strip $(CUTIL_CFLAGS)),)
 ifndef SKIP_DEP_CHECK
-$(error ghoti.io-cutil was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
+$(error ghoti.io-cutil was not found by pkg-config. Run suite/install.sh from a checkout of the suite to build and install it into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
 endif
 endif
 INCLUDE += $(CUTIL_CFLAGS)
@@ -318,7 +319,7 @@ CHRON_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --c
 CHRON_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(CHRON_PC) 2>/dev/null)
 ifeq ($(strip $(CHRON_CFLAGS)),)
 ifndef SKIP_DEP_CHECK
-$(error ghoti.io-chron was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
+$(error ghoti.io-chron was not found by pkg-config. Run suite/install.sh from a checkout of the suite to build and install it into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
 endif
 endif
 INCLUDE += $(CHRON_CFLAGS)
@@ -344,7 +345,7 @@ UNICODE_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config -
 UNICODE_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(UNICODE_PC) 2>/dev/null)
 ifeq ($(strip $(UNICODE_CFLAGS)),)
 ifndef SKIP_DEP_CHECK
-$(error ghoti.io-unicode was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
+$(error ghoti.io-unicode was not found by pkg-config. Run suite/install.sh from a checkout of the suite to build and install it into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
 endif
 endif
 INCLUDE += $(UNICODE_CFLAGS)
@@ -365,7 +366,7 @@ REGEX_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --c
 REGEX_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(REGEX_PC) 2>/dev/null)
 ifeq ($(strip $(REGEX_CFLAGS)),)
 ifndef SKIP_DEP_CHECK
-$(error ghoti.io-regex was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
+$(error ghoti.io-regex was not found by pkg-config. Run suite/install.sh from a checkout of the suite to build and install it into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
 endif
 endif
 INCLUDE += $(REGEX_CFLAGS)
@@ -378,7 +379,7 @@ SECURITY_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config 
 SECURITY_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(SECURITY_PC) 2>/dev/null)
 ifeq ($(strip $(SECURITY_CFLAGS)),)
 ifndef SKIP_DEP_CHECK
-$(error ghoti.io-security was not found by pkg-config. Run ./bootstrap.sh in the parent folder to build and install the suite into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file.)
+$(error ghoti.io-security was not found by pkg-config. Run suite/install.sh from a checkout of the suite to build and install it into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file.)
 endif
 endif
 INCLUDE += $(SECURITY_CFLAGS)
@@ -700,8 +701,8 @@ LIBVER_GEN := $(GEN_DIR)/ghoti.io/$(PROJECT)/libver_gen.h
 # for everyone who has built before and fails for everyone who has not, and
 # under -j it is a race rather than a clean failure.
 #
-# CONVENTIONS.md section 6 states the rule and section 12 warns that copying
-# a Makefile copies its defects. This is that: the release C rule had it and
+# The rule is that a recipe's prerequisites are what it reads, and copying a
+# Makefile copies its defects. This is that: the release C rule had it and
 # the ASan and fuzz rules did not. From a clean tree, asking for a single
 # ASan object failed outright:
 #
@@ -728,7 +729,7 @@ $(LIBVER_GEN): force-libver
 	fi
 	@mkdir -p $(@D)
 	@printf '%s\n' \
-		'// Generated by the Makefile. Do not edit; see CONVENTIONS.md section 4.' \
+		'// Generated by the Makefile from BRANCH and the version numbers. Do not edit.' \
 		'#ifndef GHOTI_IO_GTEXT_LIBVER_GEN_H' \
 		'#define GHOTI_IO_GTEXT_LIBVER_GEN_H' \
 		'' \
@@ -967,7 +968,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-encoding-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1110,6 +1111,11 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/encoding/encoding_core.c \
 	src/encoding/encoding_decode.c \
 	src/encoding/encoding_encode.c \
+	src/css/css_anb.c \
+	src/css/css_core.c \
+	src/css/css_parser.c \
+	src/css/css_serialize.c \
+	src/css/css_tokenizer.c \
 	src/html/html_api.c \
 	src/html/html_charref.c \
 	src/html/html_core.c \
@@ -1242,7 +1248,7 @@ ifeq ($(OS_NAME), Linux)
 		printf "\033[0;31m\n### Exported symbols missing the $(LIBVER_SYMBOL)_ namespace ###\033[0m\n" >&2; \
 		printf "%s\n" "$$leaked" >&2; \
 		printf "\nEach needs a '#define <name> GHOTIIO_TEXT(<name>)' line in the header\n" >&2; \
-		printf "that declares it. See CONVENTIONS.md section 4.\n" >&2; \
+		printf "that declares it, in include/ghoti.io/text/namespace.h.\n" >&2; \
 		exit 1; \
 	fi
 	@unexported=$$(find include -name '*.h' -exec awk '/^#if DOXYGEN/{d=1} d==0 && /^[a-z_][A-Za-z0-9_ ]*\**[[:space:]]*gtext_[a-z0-9_]+[[:space:]]*\(/{print FILENAME": "$$0} /^#endif/{d=0}' {} + \
@@ -1292,7 +1298,6 @@ ifeq ($(OS_NAME), Linux)
 		printf "anything, so that the renames in namespace.h are already in effect. A\n" >&2; \
 		printf "header that skips it can name a type before that type has been renamed,\n" >&2; \
 		printf "producing two different types under one spelling.\n" >&2; \
-		printf "See CONVENTIONS.md section 4.\n" >&2; \
 		exit 1; \
 	fi
 	@badguards=$$(find include src -name '*.h' -exec awk 'FNR==1{d=0} !d && /^#ifndef/{print $$2; d=1}' {} + \
@@ -2011,6 +2016,7 @@ $(eval $(call fuzz-rule,fuzz_html,html))
 $(eval $(call fuzz-rule,fuzz_html_serialize,html-serialize))
 $(eval $(call fuzz-rule,fuzz_html_sanitize,html-sanitize))
 $(eval $(call fuzz-rule,fuzz_encoding,encoding))
+$(eval $(call fuzz-rule,fuzz_css_syntax,css-syntax))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2024,7 +2030,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding
+fuzz: fuzz-run-encoding fuzz-run-css-syntax
 
 check-xml-fuzz-plants: ## Plant a defect in a copy of the library and show each XML fuzzer finds it
 # A fuzzer that has never failed has not been shown able to. tools/xml/plant-fuzz.py copies
@@ -2050,6 +2056,15 @@ check-html-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/html/plant-fuzz.py --time $(FUZZ_TIME)
 
+check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax fuzzer finds it
+# The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp: tools/css/plant-fuzz.py copies this
+# tree to a scratch directory, edits one line of src/css/ there, and runs the harness for FUZZ_TIME seconds (or
+# replays the seed that shows the defect); it must stop with a report, and an unedited copy must not. Needs clang,
+# the dependencies on PREFIX, and up to a minute a plant. Outside TEST_GATES: it builds and runs a fuzzer.
+check-css-fuzz-plants:
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" python3 tools/css/plant-fuzz.py --time $(FUZZ_TIME)
+
 # The quadratic-nesting suite (tests/test-quadratic.cpp, about two seconds): every shape of the spec's list (deep nesting up to and
 # past the open-element limit, formatting mis-nesting, the adoption agency, reconstruction, implied ends, tables and templates,
 # foster parenting, foreign content, fragments, attributes, runs of comments/NULs/references, every tokenizer state, the serializer,
@@ -2060,7 +2075,7 @@ check-html-quadratic: ## Hold the work counters of the quadratic-nesting shapes 
 check-html-quadratic: $(APP_DIR)/$(TARGET) $(APP_DIR)/testQuadratic$(EXE_EXTENSION)
 	@LD_LIBRARY_PATH="$(APP_DIR)" $(APP_DIR)/testQuadratic$(EXE_EXTENSION) --gtest_brief=1 --gtest_filter='Quadratic.EveryShape*:Quadratic.EveryGroup*:QuadraticControls.*' > $(APP_DIR)/quadratic.out 2>&1; \
 	status=$$?; \
-	grep -E '^[0-9]+ shapes, [0-9]+ failures$$|^group [a-z]' $(APP_DIR)/quadratic.out | tail -n 13; \
+	grep -E '^[0-9]+ shapes, [0-9]+ failures$$|^group [a-z]' $(APP_DIR)/quadratic.out | tail -n 15; \
 	if [ $$status -ne 0 ]; then cat $(APP_DIR)/quadratic.out >&2; printf "\033[0;31mcheck-html-quadratic: a shape grew faster than its bound\033[0m\n" >&2; exit 1; fi; \
 	printf "\033[0;32mThe quadratic-nesting suite holds (%s).\033[0m\n" "$$(grep -E '^[0-9]+ shapes, [0-9]+ failures$$' $(APP_DIR)/quadratic.out)"
 
@@ -2195,6 +2210,22 @@ conformance-html-serializer-asan: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-serializer.sh --sanitize
 
+# The CSS Syntax vector gate: css-parsing-tests (pinned by commit, tools/css/CSS_PARSING_TESTS_COMMIT) and the tables of
+# web-platform-tests' css/css-syntax (tools/css/WPT_COMMIT), turned into vectors by tools/css/extract-wpt.py; every case
+# passes or is listed in tools/conformance/CSS_SYNTAX_EXCEPTIONS with the draft's answer and its sentence, every case
+# round-trips, and there is a floor. The scoring half is in check-conformance-vectors; this target adds the controls
+# (the gate made to fail on purpose, and fifteen rules of the standard undone in a copy of the library, about twenty
+# seconds). The data is not tracked: with it absent REQUIRE_DATA fails the gate and names tools/css/fetch.sh.
+CSS_DATA_DIR := third_party/css
+CSS_SYNTAX_FLOOR := CSS_SYNTAX_MIN_SCORED=480
+
+conformance-css-syntax: ## Score CSS Syntax against the pinned css-parsing-tests and WPT css-syntax vectors, and show the gate fails
+conformance-css-syntax: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/css-parsing-tests,tools/css/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-syntax,tools/css/fetch.sh)
+	@$(CONFORMANCE_ENV) $(CSS_SYNTAX_FLOOR) tools/conformance/run-css-syntax.sh && \
+	$(CONFORMANCE_ENV) $(CSS_SYNTAX_FLOOR) tools/conformance/run-css-syntax.sh --controls
+
 # The vector gates of the XML parser, the HTML tokenizer, the HTML tree builder and the HTML serializer, in `make test`.
 # Measured 2026-10-12 on the development machine: the XML suite 24 s, the tokenizer 28 s (its controls
 # included), the tree vectors 20 s, together under two minutes. What stays out of `make test` is the tree
@@ -2202,9 +2233,11 @@ conformance-html-serializer-asan: $(CONFORMANCE_LIB)
 # the oracle. The vectors are not tracked: with them absent REQUIRE_DATA fails the gate and names
 # tools/html/fetch.sh or tools/xml/fetch.sh, as for every gate that reads third_party/. Dropping it is
 # `make test TEST_GATES='$(filter-out check-conformance-vectors,$(ALL_TEST_GATES))'`.
-check-conformance-vectors: ## The XML, HTML tokenizer, HTML tree and HTML serializer vector gates (no controls), part of make test
+check-conformance-vectors: ## The XML, HTML tokenizer, HTML tree, HTML serializer and CSS Syntax vector gates (no controls), part of make test
 check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/css-parsing-tests,tools/css/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-syntax,tools/css/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/tokenizer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/serializer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/encoding,tools/html/fetch.sh)
@@ -2214,6 +2247,7 @@ check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-encoding.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-serializer.sh
+	@$(CONFORMANCE_ENV) $(CSS_SYNTAX_FLOOR) tools/conformance/run-css-syntax.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)
@@ -3148,7 +3182,7 @@ conformance-all: ## Score every parser against its external corpus
 # Adding it would quietly change this target's contract from "needs this machine" to
 # "needs podman", so it sits with the oracle gates instead, where that requirement is
 # already the rule. `make conformance-ini-win32` runs it.
-conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-serializer conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
+conformance-all: conformance conformance-fastpath conformance-json conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-serializer conformance-css-syntax conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-json-to-toml conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser
 
 coverage: ## Build instrumented, run the tests, and report line coverage
 # Cleans first because the object files would otherwise be reused without the

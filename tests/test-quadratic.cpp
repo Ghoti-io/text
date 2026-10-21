@@ -70,6 +70,7 @@
 
 #include <gtest/gtest.h>
 
+#include <ghoti.io/text/css.h>
 #include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/html.h>
 
@@ -79,6 +80,11 @@
 // (src/html/html_api_internal.h has a flexible array member, which C++ forbids: the one function of it that is used is declared here.)
 extern "C" GTEXT_HTML_Status gtext_html_serialize_work(const GTEXT_Markup_Node * node, GTEXT_HTML_Serialize_Scope scope,
     const GTEXT_HTML_Serialize_Options * opts, size_t * work);
+// (src/css/css_internal.h has a flexible array member too: the two work counters of the CSS module.)
+extern "C" GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind entry, const char * input, size_t length,
+    const GTEXT_CSS_Parse_Options * options, size_t * work);
+extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Serialize_Options * options,
+    const GTEXT_Markup_Sink * sink, size_t * work);
 
 namespace {
 
@@ -521,6 +527,63 @@ Measured sniff_run(const std::string & in) {
   return m;
 }
 
+// ---- CSS Syntax -----------------------------------------------------------------------------------------
+
+// A CSS parse at the entry point `kind`, with every limit out of the way (the shapes measure the parser, not
+// a limit), counted by gtext_css_parse_work(): code points read and looked at, tokens visited, values copied.
+std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std::string(size_t)> make) {
+  return [kind, make](size_t k) {
+    Measured m;
+    const std::string in = make(k);
+    m.bytes = in.size();
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.max_depth = (size_t)1 << 30;
+    o.max_tokens = (size_t)1 << 30;
+    o.max_rules = (size_t)1 << 30;
+    o.max_declarations = (size_t)1 << 30;
+    o.max_total_errors = (size_t)1 << 30;
+    o.max_input_bytes = (size_t)1 << 30;
+    o.count_errors_only = true;
+    const GTEXT_CSS_Status st = gtext_css_parse_work(kind, in.data(), in.size(), &o, &m.work);
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the parse failed: ") + gtext_css_status_string(st);
+    }
+    return m;
+  };
+}
+
+GTEXT_Markup_Status css_count_sink(void * user, const char *, size_t len) {
+  *static_cast<size_t *>(user) += len;
+  return GTEXT_MARKUP_OK;
+}
+
+// The serializer over the tree a stylesheet parse made, counted by gtext_css_serialize_work(): bytes written
+// and nodes visited.
+std::function<Measured(size_t)> css_serialize(std::function<std::string(size_t)> make) {
+  return [make](size_t k) {
+    Measured m;
+    const std::string in = make(k);
+    m.bytes = in.size();
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.max_depth = (size_t)1 << 30;
+    GTEXT_CSS_Tree * t = nullptr;
+    if (gtext_css_parse_stylesheet(in.data(), in.size(), &o, &t, nullptr) != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = "the parse failed";
+      return m;
+    }
+    size_t bytes = 0;
+    GTEXT_Markup_Sink sink = {css_count_sink, &bytes};
+    if (gtext_css_serialize_work(t, nullptr, &sink, &m.work) != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = "the serializer failed";
+    }
+    gtext_css_tree_free(t);
+    return m;
+  };
+}
+
 // ---- the shapes ---------------------------------------------------------------------------------------
 
 std::string attrs_n(size_t k, const char * prefix = "a", const char * value = "v") {
@@ -951,6 +1014,48 @@ std::vector<Shape> build_shapes() {
     sh.note = "documented: at most three handler steps per byte";
   }
 
+  // ---- CSS Syntax ----
+  // The shapes that make a naive CSS parser quadratic: above all the speculation of "consume a block's
+  // contents", which reads an item as a declaration and then again as a rule, so that a block inside a
+  // block inside a block is read once for every block around it; and the long runs of every token.
+  const GTEXT_CSS_Tree_Kind sheet = GTEXT_CSS_TREE_STYLESHEET;
+  add("css", "CSS nested style rules a{a{a{...}}}", 2000, css(sheet, [](size_t k) { return repeat("a{", k) + repeat("}", k); }));
+  add("css", "CSS nested rules, never closed", 2000, css(sheet, [](size_t k) { return repeat("a{", k); }));
+  add("css", "CSS declaration then nested rule per level", 1500, css(sheet, [](size_t k) { return repeat("a{b:c;", k) + repeat("}", k); }));
+  add("css", "CSS a block then more, read as a declaration and then as a rule, nested", 1500,
+      css(sheet, [](size_t k) { return "x{" + repeat("a:{", k) + repeat("} c", k) + "}"; }));
+  add("css", "CSS a value then a block, nested", 1500, css(sheet, [](size_t k) { return "x{" + repeat("a:b{", k) + repeat("}", k) + "}"; }));
+  add("css", "CSS a custom property's value with blocks nested", 1500,
+      css(sheet, [](size_t k) { return "x{--a:" + repeat("{b ", k) + repeat("}", k) + "}"; }));
+  add("css", "CSS rules that look like custom properties, nested", 1500,
+      css(sheet, [](size_t k) { return "x{" + repeat("--a:b{", k) + repeat("}", k) + "}"; }));
+  add("css", "CSS nested at-rules", 1500, css(sheet, [](size_t k) { return repeat("@m{", k) + repeat("}", k); }));
+  add("css", "CSS many rules", 4000, css(sheet, [](size_t k) { return repeat("a b>c{d:e;f:g}", k); }));
+  add("css", "CSS many declarations in one block", 4000, css(sheet, [](size_t k) { return "a{" + repeat("b:c d;", k) + "}"; }));
+  add("css", "CSS one long declaration value", 8000, css(GTEXT_CSS_TREE_DECLARATION_LIST, [](size_t k) { return "a:" + repeat(" x", k); }));
+  add("css", "CSS a long value then !important", 8000,
+      css(GTEXT_CSS_TREE_DECLARATION_LIST, [](size_t k) { return "a:" + repeat(" x", k) + " !important"; }));
+  add("css", "CSS a long invalid declaration (its remnants)", 8000,
+      css(GTEXT_CSS_TREE_DECLARATION_LIST, [](size_t k) { return "a b" + repeat(" (x)", k) + ";c:d"; }));
+  add("css", "CSS a long unicode-range value, read twice", 4000,
+      css(GTEXT_CSS_TREE_DECLARATION_LIST, [](size_t k) { return "unicode-range:" + repeat(" u+1?-2,", k); }));
+  add("css", "CSS nested functions", 2000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("f(", k) + repeat(")", k); }));
+  add("css", "CSS nested blocks of every kind, never closed", 2000,
+      css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("([{", k); }));
+  add("css", "CSS closing tokens that match nothing", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat(")]}", k); }));
+  add("css", "CSS comments", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("/**/a", k); }));
+  add("css", "CSS one long comment, never closed", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return "/*" + repeat("*x", k); }));
+  add("css", "CSS escapes", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("\\41 \\x", k); }));
+  add("css", "CSS one long string, never closed", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return "'" + repeat("x\\'", k); }));
+  add("css", "CSS bad strings", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("'x\n", k); }));
+  add("css", "CSS bad urls and their remnants", 4000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("url(a b\\) c)", k); }));
+  add("css", "CSS numbers and dimensions", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("+1.5e-3px ", k); }));
+  add("css", "CSS a comma-separated list", 8000, css(GTEXT_CSS_TREE_COMMA_LIST, [](size_t k) { return repeat("a b,", k); }));
+  add("css", "CSS ill-formed UTF-8", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("a\xe2\x82\xed\xa0\x80", k); }));
+  add("css", "CSS serialize nested rules", 1500, css_serialize([](size_t k) { return repeat("a{", k) + repeat("}", k); }));
+  add("css", "CSS serialize tokens that need a comment between them", 8000,
+      css_serialize([](size_t k) { return "x{y:" + repeat("a/**/b/**/1/**/2", k) + "}"; }));
+
   // ---- sniffing ----
   const std::vector<std::pair<const char *, std::string>> junk = {
       {"<meta with no attributes", "<meta "},
@@ -1080,7 +1185,7 @@ TEST(Quadratic, EveryGroupTheSpecNamesHasShapes) {
     count[sh.group]++;
   }
   for (const char * g : {"nesting", "formatting", "implied ends", "tables", "foreign", "fragments", "attributes", "runs", "tokenizer",
-           "serializer", "encoding", "sniffing", "api"}) {
+           "serializer", "encoding", "sniffing", "api", "css"}) {
     EXPECT_GT(count[g], 0u) << g;
   }
   // The shape names are unique (the callgrind tool finds a shape by name).
