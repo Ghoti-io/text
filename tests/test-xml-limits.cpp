@@ -33,6 +33,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <chrono>
 #include <cstring>
 #include <cstdio>
 #include <string>
@@ -41,6 +42,7 @@
 #include <gtest/gtest.h>
 
 #include <ghoti.io/text/xml.h>
+#include <ghoti.io/text/xml/xml_stream.h>
 
 #include "../src/markup/markup_internal.h"
 #include "../src/xml/xml_internal.h"
@@ -80,6 +82,8 @@ TEST(XmlLimits, TheDefaultsAreSpelledOutAndZeroMeansTheDefault) {
   EXPECT_EQ(d.max_external_source_bytes, 16u * 1024 * 1024);
   EXPECT_EQ(d.max_external_bytes, 64u * 1024 * 1024);
   EXPECT_EQ(d.max_expanded_bytes, 64u * 1024 * 1024);
+  EXPECT_EQ(d.max_amplification, 100u);
+  EXPECT_EQ(d.amplification_threshold, 8u * 1024 * 1024);
   EXPECT_EQ(d.max_entity_depth, 32u);
   EXPECT_EQ(d.max_references, 1000000u);
   EXPECT_EQ(d.max_declarations, 100000u);
@@ -1167,6 +1171,147 @@ TEST(XmlSourceStack, DomRejectsEntityBoundaryCrossingsAndCycles) {
   EXPECT_EQ(xml_parse_with_seams(input.data(), input.size(), &options,
                 &seams, &doc, nullptr), GTEXT_XML_E_ENTITY);
   EXPECT_EQ(doc, nullptr);
+}
+
+// ---- entity amplification -------------------------------------------------------------------------
+
+std::string billion_laughs(int k) {
+  std::string out = "<!DOCTYPE lolz [<!ENTITY lol0 \"lol\">";
+  for (int level = 1; level <= 9; ++level) {
+    out += "<!ENTITY lol" + std::to_string(level) + " \"";
+    for (int j = 0; j < 10; ++j) out += "&lol" + std::to_string(level - 1) + ";";
+    out += "\">";
+  }
+  return out + "]><lolz>&lol" + std::to_string(k) + ";</lolz>";
+}
+
+GTEXT_XML_Parse_Options processing() {
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+  o.dtd_external_policy = GTEXT_XML_DTD_EXTERNAL_SKIP;
+  return o;
+}
+
+GTEXT_XML_Status counted(const std::string & text, const GTEXT_XML_Parse_Options & o, size_t * work) {
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err;
+  const GTEXT_XML_Status st = xml_parse_counted(text.data(), text.size(), &o, &doc, &err, work);
+  gtext_markup_document_free(doc);
+  return st;
+}
+
+// A billion laughs (3 x 10^9 bytes from under a kilobyte) under the default limits is refused once the amplified size
+// passes the threshold: a few megabytes of linear work. It used to run until the million-reference limit, recording a
+// source for every expansion in a table it searched each time, which took minutes. The bound is on the parser's work
+// counter; the wall clock is only a sanity bound, a hundred times what it takes.
+TEST(XmlLimits, BillionLaughsUnderTheDefaultsIsRefusedByTheAmplificationBound) {
+  const std::string bomb = billion_laughs(9);
+  const auto start = std::chrono::steady_clock::now();
+  size_t work = 0;
+  EXPECT_EQ(counted(bomb, processing(), &work), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+  const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  // 8 MiB amplified at 3 bytes and 64 a reference is about 125,000 references; the work is a few units each.
+  EXPECT_LT(work, (size_t)8 * 1024 * 1024) << "work " << work;
+  EXPECT_LT(seconds, 10.0);
+
+  // Every depth from 6 up is refused after the same work: what is refused is the expansion, not the document.
+  size_t work6 = 0;
+  EXPECT_EQ(counted(billion_laughs(6), processing(), &work6), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+  EXPECT_LE((double)work, 1.05 * (double)work6) << work << " " << work6;
+  // Depth 5 (300 KB) is below the threshold and expands.
+  EXPECT_EQ(counted(billion_laughs(5), processing(), nullptr), GTEXT_XML_OK);
+
+  // The event parser applies the same bound, the input being what was fed.
+  GTEXT_XML_Parse_Options o = processing();
+  GTEXT_XML_Stream * stream = gtext_xml_stream_new(&o, [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+  ASSERT_NE(stream, nullptr);
+  GTEXT_XML_Error err;
+  GTEXT_XML_Status st = gtext_xml_stream_feed(stream, bomb.data(), bomb.size(), &err);
+  if (st == GTEXT_XML_OK) st = gtext_xml_stream_finish(stream, &err);
+  EXPECT_EQ(st, GTEXT_XML_E_LIMIT_AMPLIFICATION);
+  EXPECT_LT(xml_stream_work(stream), (size_t)8 * 1024 * 1024);
+  gtext_xml_stream_free(stream);
+}
+
+// With the bound turned off, the expansion limit stops the bomb, and the work it takes to get there is linear in the
+// limit: the accounting does not walk anything that grows with what was expanded.
+TEST(XmlLimits, BillionLaughsWithoutTheBoundStopsAtTheExpansionLimitAfterLinearWork) {
+  GTEXT_XML_Parse_Options o = processing();
+  o.max_amplification = SIZE_MAX;
+  size_t at[2] = {0, 0};
+  const size_t limit[2] = {(size_t)1 << 20, (size_t)4 << 20};
+  for (int i = 0; i < 2; ++i) {
+    o.max_expanded_bytes = limit[i];
+    EXPECT_EQ(counted(billion_laughs(9), o, &at[i]), GTEXT_XML_E_LIMIT_EXPANSION);
+  }
+  EXPECT_GT(at[0], limit[0] / 2);
+  EXPECT_LE((double)at[1] / (double)at[0], 4.5) << at[0] << " " << at[1];
+  o.max_expanded_bytes = SIZE_MAX;
+  o.max_references = 100000;
+  size_t refs = 0;
+  EXPECT_EQ(counted(billion_laughs(9), o, &refs), GTEXT_XML_E_LIMIT_REFERENCES);
+  EXPECT_LT(refs, (size_t)100000 * 64);
+}
+
+// One large entity referenced many times (the "quadratic blowup"): each reference is cheap to write and expensive to
+// expand. Under the defaults it is refused once past the threshold, after work that does not grow with the references
+// that follow.
+TEST(XmlLimits, OneLargeEntityReferencedManyTimesIsRefusedAfterBoundedWork) {
+  auto blowup = [](size_t references, bool attribute) {
+    std::string out = "<!DOCTYPE r [<!ENTITY a \"" + std::string(10000, 'a') + "\">]>";
+    std::string refs;
+    for (size_t i = 0; i < references; ++i) refs += "&a;";
+    return out + (attribute ? "<r v=\"" + refs + "\"/>" : "<r>" + refs + "</r>");
+  };
+  for (bool attribute : {false, true}) {
+    size_t small = 0, large = 0;
+    EXPECT_EQ(counted(blowup(2000, attribute), processing(), &small), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+    EXPECT_EQ(counted(blowup(20000, attribute), processing(), &large), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+    EXPECT_LE((double)large, 1.05 * (double)small) << attribute << ": " << small << " " << large;
+    // 100 references (1 MB) are below the threshold.
+    EXPECT_EQ(counted(blowup(100, attribute), processing(), nullptr), GTEXT_XML_OK) << attribute;
+  }
+}
+
+// The amplified size of a document of three references to a ten-byte entity is 3 x 10 replacement bytes plus 3 x 64 for
+// the references: 222. Each limit at its bound passes and one past it fails, in both parsers.
+TEST(XmlLimits, AmplificationThresholdAndFactorAtTheirBounds) {
+  const std::string text = "<!DOCTYPE r [<!ENTITY a \"0123456789\">]><r>&a;&a;&a;</r>";
+  const size_t amplified = 3 * 10 + 3 * 64;
+  auto stream_status = [&](const GTEXT_XML_Parse_Options & o) {
+    GTEXT_XML_Stream * s = gtext_xml_stream_new(&o, [](const GTEXT_XML_Event *, void *) { return GTEXT_XML_OK; }, nullptr);
+    GTEXT_XML_Error err;
+    GTEXT_XML_Status st = gtext_xml_stream_feed(s, text.data(), text.size(), &err);
+    if (st == GTEXT_XML_OK) st = gtext_xml_stream_finish(s, &err);
+    gtext_xml_stream_free(s);
+    return st;
+  };
+  GTEXT_XML_Parse_Options o = processing();
+  o.max_amplification = 1; // every byte past the threshold is out of proportion
+  o.amplification_threshold = amplified;
+  EXPECT_EQ(parse_with(text, o), GTEXT_XML_OK);
+  EXPECT_EQ(stream_status(o), GTEXT_XML_OK);
+  o.amplification_threshold = amplified - 1;
+  GTEXT_XML_Error err;
+  EXPECT_EQ(parse_with(text, o, &err), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+  EXPECT_EQ(err.byte_offset, text.rfind("&a;")) << "the reference that went over";
+  EXPECT_EQ(stream_status(o), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+
+  o.amplification_threshold = 1;
+  const size_t factor = (amplified + text.size() - 1) / text.size(); // the least that admits it
+  ASSERT_GT(factor, 1u);
+  o.max_amplification = factor;
+  EXPECT_EQ(parse_with(text, o), GTEXT_XML_OK);
+  EXPECT_EQ(stream_status(o), GTEXT_XML_OK);
+  o.max_amplification = factor - 1;
+  EXPECT_EQ(parse_with(text, o), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+  EXPECT_EQ(stream_status(o), GTEXT_XML_E_LIMIT_AMPLIFICATION);
+
+  // Zero is the default, and the default does not reach a document this small.
+  o.max_amplification = 0;
+  o.amplification_threshold = 0;
+  EXPECT_EQ(parse_with(text, o), GTEXT_XML_OK);
+  EXPECT_STREQ(gtext_xml_status_string(GTEXT_XML_E_LIMIT_AMPLIFICATION), "entity amplification too large");
 }
 
 }  // namespace

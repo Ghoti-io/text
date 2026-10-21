@@ -1386,6 +1386,10 @@ GTEXT_INTERNAL_API GTEXT_XML_Stream * xml_stream_new_with_seams(
       XML_DEFAULT_MAX_EXTERNAL_BYTES);
   p->max_expanded_bytes = limit_or(use.max_expanded_bytes,
       XML_DEFAULT_MAX_EXPANDED_BYTES);
+  p->max_amplification = limit_or(use.max_amplification,
+      XML_DEFAULT_MAX_AMPLIFICATION);
+  p->amplification_threshold = limit_or(use.amplification_threshold,
+      XML_DEFAULT_AMPLIFICATION_THRESHOLD);
   p->max_entity_depth = limit_or(use.max_entity_depth,
       XML_DEFAULT_MAX_ENTITY_DEPTH);
   p->max_references = limit_or(use.max_references, XML_DEFAULT_MAX_REFERENCES);
@@ -1522,6 +1526,7 @@ GTEXT_API GTEXT_XML_Status gtext_xml_stream_feed(GTEXT_XML_Stream * s,
         xml_fail_at(p, GTEXT_XML_E_LIMIT_INPUT, "input too long", &origin), err);
   }
   s->fed += len;
+  p->input_bytes = s->fed;
   GTEXT_XML_Status status = ingest(s, data, len);
   if (status == GTEXT_XML_OK) {
     status = drive(s);

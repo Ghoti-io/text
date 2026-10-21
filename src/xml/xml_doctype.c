@@ -267,8 +267,7 @@ static GTEXT_XML_Status dtd_quoted(xml_ctx * p, int is_public) {
 }
 
 static GTEXT_XML_Status dtd_charge_reference(xml_ctx * p) {
-  return xml_charge(p, &p->references, p->max_references, 1,
-      GTEXT_XML_E_LIMIT_REFERENCES, "XML reference limit exceeded");
+  return xml_charge_reference(p);
 }
 
 static int dtd_xml_char(const xml_ctx * p, uint32_t c);
@@ -2428,6 +2427,10 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
   const int yielded = ext.dtd_yielded != 0;
   p->references = ext.references;
   p->declarations = ext.declarations;
+  /* Parameter-entity expansions inside the subset are charged on the copy;
+     without this the expansion budget (and the amplification it feeds)
+     started again after every external subset. */
+  p->expanded_bytes = ext.expanded_bytes;
   p->total_work = ext.total_work;
   p->sources = ext.sources;
   p->source_count = ext.source_count;
@@ -2552,11 +2555,7 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
   if (status == GTEXT_XML_OK
       && resource->source_kind == XML_SOURCE_EXTERNAL_ENTITY) {
     const size_t body_length = ext.length - ext.pos;
-    const size_t expanded_limit = ext.max_expanded_bytes != 0
-        ? ext.max_expanded_bytes : XML_DEFAULT_MAX_EXPANDED_BYTES;
-    status = xml_charge(&ext, &ext.expanded_bytes, expanded_limit,
-        body_length, GTEXT_XML_E_LIMIT_EXPANSION,
-        "entity expansion byte limit exceeded");
+    status = xml_charge_expansion(&ext, body_length);
   }
   if (status == GTEXT_XML_OK) {
     xml_source_frame * f = &ext.sources[ext.source_count - 1];

@@ -114,6 +114,8 @@ const char * gtext_xml_status_string(GTEXT_XML_Status status) {
       return "external resource read cancelled";
     case GTEXT_XML_E_UNAVAILABLE_RESOURCE:
       return "external entity resource unavailable";
+    case GTEXT_XML_E_LIMIT_AMPLIFICATION:
+      return "entity amplification too large";
   }
   return "unknown status";
 }
@@ -176,6 +178,8 @@ GTEXT_XML_Parse_Options gtext_xml_parse_options_default(void) {
   opts.max_external_source_bytes = XML_DEFAULT_MAX_EXTERNAL_SOURCE_BYTES;
   opts.max_external_bytes = XML_DEFAULT_MAX_EXTERNAL_BYTES;
   opts.max_expanded_bytes = XML_DEFAULT_MAX_EXPANDED_BYTES;
+  opts.max_amplification = XML_DEFAULT_MAX_AMPLIFICATION;
+  opts.amplification_threshold = XML_DEFAULT_AMPLIFICATION_THRESHOLD;
   opts.max_entity_depth = XML_DEFAULT_MAX_ENTITY_DEPTH;
   opts.max_references = XML_DEFAULT_MAX_REFERENCES;
   opts.max_declarations = XML_DEFAULT_MAX_DECLARATIONS;
@@ -298,6 +302,69 @@ GTEXT_XML_Status xml_charge_work(xml_ctx * p, size_t amount) {
       ? p->max_total_work : XML_DEFAULT_MAX_TOTAL_WORK;
   return xml_charge(p, &p->total_work, limit, amount,
       GTEXT_XML_E_LIMIT_WORK, "XML parser work limit exceeded");
+}
+
+static size_t saturating_add(size_t a, size_t b) {
+  return a > SIZE_MAX - b ? SIZE_MAX : a + b;
+}
+
+static size_t saturating_mul(size_t a, size_t b) {
+  return a != 0 && b > SIZE_MAX / a ? SIZE_MAX : a * b;
+}
+
+/* The amplified size is what the expansion made (replacement bytes) and how
+   often it entered something to make it (references, at a fixed cost each);
+   the input is what the caller gave. Both counters already exist and are
+   carried back from every nested context, so the check reads them fresh
+   wherever either is charged. */
+static int amplification_exceeded(const xml_ctx * p, size_t pending) {
+  const size_t factor = p->max_amplification != 0
+      ? p->max_amplification : XML_DEFAULT_MAX_AMPLIFICATION;
+  const size_t threshold = p->amplification_threshold != 0
+      ? p->amplification_threshold : XML_DEFAULT_AMPLIFICATION_THRESHOLD;
+  const size_t amplified = saturating_add(saturating_add(p->expanded_bytes,
+      pending), saturating_mul(p->references,
+          XML_AMPLIFICATION_REFERENCE_BYTES));
+  if (amplified <= threshold) return 0;
+  const size_t input = saturating_add(p->input_bytes, p->external_bytes);
+  return amplified > saturating_mul(input, factor);
+}
+
+GTEXT_XML_Status xml_check_amplification(xml_ctx * p) {
+  return amplification_exceeded(p, 0)
+      ? xml_fail(p, GTEXT_XML_E_LIMIT_AMPLIFICATION,
+          "entity amplification limit exceeded")
+      : GTEXT_XML_OK;
+}
+
+GTEXT_XML_Status xml_preflight_expansion(xml_ctx * p, size_t amount,
+    const GTEXT_Markup_Location * at) {
+  const size_t limit = p->max_expanded_bytes != 0
+      ? p->max_expanded_bytes : XML_DEFAULT_MAX_EXPANDED_BYTES;
+  if (p->expanded_bytes > limit || amount > limit - p->expanded_bytes)
+    return xml_fail_at(p, GTEXT_XML_E_LIMIT_EXPANSION,
+        "entity expansion byte limit exceeded", at);
+  if (amplification_exceeded(p, amount))
+    return xml_fail_at(p, GTEXT_XML_E_LIMIT_AMPLIFICATION,
+        "entity amplification limit exceeded", at);
+  return GTEXT_XML_OK;
+}
+
+GTEXT_XML_Status xml_charge_expansion(xml_ctx * p, size_t amount) {
+  const size_t limit = p->max_expanded_bytes != 0
+      ? p->max_expanded_bytes : XML_DEFAULT_MAX_EXPANDED_BYTES;
+  const GTEXT_XML_Status status = xml_charge(p, &p->expanded_bytes, limit,
+      amount, GTEXT_XML_E_LIMIT_EXPANSION,
+      "entity expansion byte limit exceeded");
+  return status != GTEXT_XML_OK ? status : xml_check_amplification(p);
+}
+
+GTEXT_XML_Status xml_charge_reference(xml_ctx * p) {
+  const size_t limit = p->max_references != 0
+      ? p->max_references : XML_DEFAULT_MAX_REFERENCES;
+  const GTEXT_XML_Status status = xml_charge(p, &p->references, limit, 1,
+      GTEXT_XML_E_LIMIT_REFERENCES, "XML reference limit exceeded");
+  return status != GTEXT_XML_OK ? status : xml_check_amplification(p);
 }
 
 GTEXT_XML_Write_Options gtext_xml_write_options_default(void) {

@@ -1965,6 +1965,8 @@ GTEXT_XML_Status gtext_xml_refresh_external_dtd(GTEXT_Markup_Document *doc,
   REFRESH_LIMIT(max_external_source_bytes);
   REFRESH_LIMIT(max_external_bytes);
   REFRESH_LIMIT(max_expanded_bytes);
+  REFRESH_LIMIT(max_amplification);
+  REFRESH_LIMIT(amplification_threshold);
   REFRESH_LIMIT(max_entity_depth);
   REFRESH_LIMIT(max_references);
   REFRESH_LIMIT(max_declarations);

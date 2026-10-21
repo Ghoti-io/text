@@ -1559,6 +1559,7 @@ static GTEXT_XML_Status parse_counted(const void * data, size_t len,
   static const unsigned char empty[1] = {0};
   p.in = data ? (const unsigned char *)data : empty;
   p.length = len;
+  p.input_bytes = len;
   p.line = 1;
   p.column = 1;
   p.max_depth = limit_or(use.max_depth, XML_DEFAULT_MAX_DEPTH);
@@ -1576,6 +1577,10 @@ static GTEXT_XML_Status parse_counted(const void * data, size_t len,
       XML_DEFAULT_MAX_EXTERNAL_BYTES);
   p.max_expanded_bytes = limit_or(use.max_expanded_bytes,
       XML_DEFAULT_MAX_EXPANDED_BYTES);
+  p.max_amplification = limit_or(use.max_amplification,
+      XML_DEFAULT_MAX_AMPLIFICATION);
+  p.amplification_threshold = limit_or(use.amplification_threshold,
+      XML_DEFAULT_AMPLIFICATION_THRESHOLD);
   p.max_entity_depth = limit_or(use.max_entity_depth,
       XML_DEFAULT_MAX_ENTITY_DEPTH);
   p.max_references = limit_or(use.max_references, XML_DEFAULT_MAX_REFERENCES);

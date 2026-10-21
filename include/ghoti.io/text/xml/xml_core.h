@@ -159,7 +159,10 @@ typedef enum {
                         ///< or parameter entity continues with incomplete DTD
                         ///< knowledge instead of returning this status.
   GTEXT_XML_E_CANCELLED, ///< The caller cancelled an external source read.
-  GTEXT_XML_E_UNAVAILABLE_RESOURCE ///< A referenced external entity was unavailable.
+  GTEXT_XML_E_UNAVAILABLE_RESOURCE, ///< A referenced external entity was unavailable.
+  GTEXT_XML_E_LIMIT_AMPLIFICATION ///< Entity expansion grew past
+                                  ///< `max_amplification` times the input,
+                                  ///< once past `amplification_threshold`.
 } GTEXT_XML_Status;
 
 /** A bounded DTD validity finding produced by DTD_VALIDATE mode. */
@@ -310,6 +313,8 @@ typedef struct {
   size_t max_external_source_bytes;
   size_t max_external_bytes;
   size_t max_expanded_bytes;
+  size_t max_amplification;
+  size_t amplification_threshold;
   size_t max_entity_depth;
   size_t max_references;
   size_t max_declarations;
@@ -412,6 +417,24 @@ typedef struct {
   size_t max_external_bytes;
   /** Maximum replacement bytes processed cumulatively. Default 64 MiB. */
   size_t max_expanded_bytes;
+  /**
+   * Most entity amplification, as a factor of the input. The amplified size
+   * is the replacement bytes processed (what `max_expanded_bytes` counts)
+   * plus 64 bytes for every reference (what `max_references` counts), so
+   * that expanding an empty or one-byte entity is not free; the input is the
+   * bytes given to the parser so far plus the bytes read from external
+   * sources. Once the amplified size passes `amplification_threshold`, it
+   * may not exceed `max_amplification` times the input:
+   * GTEXT_XML_E_LIMIT_AMPLIFICATION. Default 100. A nested-entity bomb ("a
+   * billion laughs") is refused after a few megabytes of linear work instead
+   * of running to `max_expanded_bytes` or `max_references`. SIZE_MAX
+   * disables the check.
+   */
+  size_t max_amplification;
+  /** Amplified bytes (see `max_amplification`) below which the factor is not
+   *  checked, so that a small document may use entities freely. Default
+   *  8 MiB. */
+  size_t amplification_threshold;
   /** Maximum active entity sources, excluding the document. Default 32. */
   size_t max_entity_depth;
   /** Maximum XML references processed, including entity and character references. Default 1,000,000. */
@@ -466,7 +489,8 @@ typedef struct {
  * @return The defaults, by value: allocator NULL, 64 MiB of input, depth 256,
  *   1024 attributes, 16 MiB of attribute value, 8192 bytes of name, ten million
  *   nodes, 256 namespace declarations, 16 MiB per external source, 64 MiB
- *   aggregate external bytes and expanded bytes, entity depth 32, one million
+ *   aggregate external bytes and expanded bytes, an entity amplification
+ *   factor of 100 past 8 MiB amplified, entity depth 32, one million
  *   XML references, 100,000 declarations, 256 MiB total work, DTD_OFF mode, and
  *   external DENY policy, 1 MiB / 256 queued pull events. All zero-valued
  *   limit overrides select these finite defaults.

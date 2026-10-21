@@ -135,8 +135,7 @@ GTEXT_XML_Status xml_source_push(xml_ctx * p, xml_source_kind kind,
   }
   GTEXT_XML_Status status;
   if (kind != XML_SOURCE_EXTERNAL_SUBSET) {
-    status = xml_charge(p, &p->expanded_bytes, max_expanded, length,
-        GTEXT_XML_E_LIMIT_EXPANSION, "entity expansion byte limit exceeded");
+    status = xml_charge_expansion(p, length);
     if (status != GTEXT_XML_OK) return status;
   }
   if (external) {

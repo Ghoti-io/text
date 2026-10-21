@@ -74,6 +74,11 @@ extern "C" {
 #define XML_DEFAULT_MAX_EXTERNAL_BYTES ((size_t)64 * 1024 * 1024)
 #define XML_DEFAULT_MAX_EXPANDED_BYTES ((size_t)64 * 1024 * 1024)
 #define XML_DEFAULT_MAX_ENTITY_DEPTH ((size_t)32)
+#define XML_DEFAULT_MAX_AMPLIFICATION ((size_t)100)
+#define XML_DEFAULT_AMPLIFICATION_THRESHOLD ((size_t)8 * 1024 * 1024)
+/** What one reference adds to the amplified size beyond its replacement
+ *  bytes: the cost of entering a source and recording it. */
+#define XML_AMPLIFICATION_REFERENCE_BYTES ((size_t)64)
 #define XML_DEFAULT_MAX_REFERENCES ((size_t)1000000)
 #define XML_DEFAULT_MAX_DECLARATIONS ((size_t)100000)
 #define XML_DEFAULT_MAX_TOTAL_WORK ((size_t)256 * 1024 * 1024)
@@ -471,6 +476,11 @@ typedef struct {
   size_t max_external_source_bytes;
   size_t max_external_bytes;
   size_t max_expanded_bytes;
+  size_t max_amplification;
+  size_t amplification_threshold;
+  /** Bytes the caller has given the parser: the whole input of a DOM parse,
+   *  what has been fed to a stream. The denominator of the amplification. */
+  size_t input_bytes;
   size_t max_entity_depth;
   size_t max_references;
   size_t max_declarations;
@@ -696,6 +706,19 @@ GTEXT_XML_Status xml_from_markup(xml_ctx * p, GTEXT_Markup_Status status);
 GTEXT_XML_Status xml_charge(xml_ctx * p, size_t * counter, size_t limit,
     size_t amount, GTEXT_XML_Status code, const char * message);
 GTEXT_XML_Status xml_charge_work(xml_ctx * p, size_t amount);
+/** Charge `amount` replacement bytes to `max_expanded_bytes`, then hold the
+ *  amplification to its bound. */
+GTEXT_XML_Status xml_charge_expansion(xml_ctx * p, size_t amount);
+/** Charge one reference to `max_references`, then hold the amplification to
+ *  its bound. */
+GTEXT_XML_Status xml_charge_reference(xml_ctx * p);
+/** GTEXT_XML_E_LIMIT_AMPLIFICATION if the amplified size is past the
+ *  threshold and more than the factor times the input. */
+GTEXT_XML_Status xml_check_amplification(xml_ctx * p);
+/** Would charging `amount` replacement bytes go over the expansion limit or
+ *  the amplification bound? Fails at `at` (the reference) without charging. */
+GTEXT_XML_Status xml_preflight_expansion(xml_ctx * p, size_t amount,
+    const GTEXT_Markup_Location * at);
 
 /* ---- Cursor and characters (xml_lexer.c) -------------------------------- */
 

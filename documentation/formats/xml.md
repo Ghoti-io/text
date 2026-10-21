@@ -32,6 +32,7 @@ defaults: DTD mode OFF, external access DENY, external entity policy DENY,
 64 MiB input, depth 256, 1,024 attributes per element, 16 MiB normalized
 attribute values, 8,192-byte names, 10,000,000 nodes, 256 in-scope namespaces,
 16 MiB per external source, 64 MiB total external bytes and expanded bytes,
+an entity amplification factor of 100 once 8 MiB have been amplified,
 entity depth 32, 1,000,000 references, 100,000 declarations, 256 MiB charged
 work, and a pull queue of 1 MiB / 256 events. Every zero-valued limit override
 selects its finite default; zero never means unlimited. Use
@@ -252,10 +253,39 @@ Each has a default from the first release; `0` in the options selects it, and
 | bytes in one external source | `max_external_source_bytes` | 16 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_SOURCE` |
 | bytes across external sources | `max_external_bytes` | 64 MiB, raw resolver bytes before decoding | `_LIMIT_EXTERNAL_TOTAL` |
 | entity replacement bytes, cumulatively | `max_expanded_bytes` | 64 MiB | `_LIMIT_EXPANSION` |
+| entity amplification: amplified bytes per byte of input | `max_amplification` | 100 | `_LIMIT_AMPLIFICATION` |
+| amplified bytes before the factor is checked | `amplification_threshold` | 8 MiB | (no status of its own) |
 | active entity sources | `max_entity_depth` | 32 | `_LIMIT_ENTITY_DEPTH` |
 | XML references, including entity and character references | `max_references` | 1,000,000 | `_LIMIT_REFERENCES` |
 | DTD declarations | `max_declarations` | 100,000 | `_LIMIT_DECLARATIONS` |
 | charged parser work units | `max_total_work` | 256 MiB | `_LIMIT_WORK` |
+
+**Entity amplification.** The amplified size is the replacement bytes
+processed (what `max_expanded_bytes` counts) plus 64 bytes for each reference
+(what `max_references` counts), so that expanding an empty or one-byte entity
+is not free. The input is the bytes given to the parser - the whole input of
+`gtext_xml_parse()`, what has been fed so far to a stream or reader - plus the
+bytes read from external sources. Once the amplified size passes
+`amplification_threshold`, it may not exceed `max_amplification` times the
+input, and the reference that would go over fails with
+`GTEXT_XML_E_LIMIT_AMPLIFICATION` at its `&`. Nested entities that double or
+multiply at each level ("a billion laughs": nine levels of ten references to a
+three-byte entity, three gigabytes from under a kilobyte) and one large entity
+referenced many times are both refused after about 8 MiB of amplified output,
+in linear work, instead of running to the expansion or reference limit; a
+document that uses entities for less than 8 MiB is not affected, whatever its
+ratio. `SIZE_MAX` for either option turns the check off, leaving
+`max_expanded_bytes` and `max_references`. An event parser measures against the
+bytes fed so far, so a document fed in small pieces whose expansion comes
+before most of its text is judged on less input than the same document parsed
+whole.
+
+Declarations, entities and their references are found by name through seeded
+hash indexes, so the work of a DTD is linear in its declarations, and of a
+document in its references and its start tags whatever the size of the DTD.
+Every entity expansion records a physical source in the document
+(`gtext_markup_document_source()`); recording one is constant time and finding
+one by its ID logarithmic.
 
 The DTD counters bound source and declaration processing. External subsets
 are read only through the caller's resolver; the library does not open
@@ -767,8 +797,8 @@ is `_INVALID`). **"No hazards" is a measured claim, and it is not a proof.** It 
 tree is free of the hazards above, and that over every tree the HTML differential has
 tried (see "HTML reference parsers": 3,442 comparisons on trees with no hazards in the default
 population and 139,378 in hunts of 240,000 generated trees) **both references agree with the
-tree that was written**, under the comparison fixed in `notes/text/XML-HTML-PLAN.md`
-(`tools/oracle/html_equivalent.h`): no tree with no hazards was read differently by both. "Zero
+tree that was written**, under the comparison `tools/oracle/html_equivalent.h`
+fixes: no tree with no hazards was read differently by both. "Zero
 divergences" means that and nothing wider: html5lib 1.1 alone read 88 of those trees differently
 (33 in the default population), every one for a cause listed in `KNOWN_CAUSES`
 (`tools/oracle/html_diff.py`) where it predates the standard - a `template`, an `hr` in a `select`,
@@ -1004,8 +1034,8 @@ standard has since changed: the standard decides, and the reference is only evid
 
 **The differential** (`tools/oracle/html_diff.py`, `html_ours.c`, `html_equivalent.h`).
 Trees are written with `xhtml` (declaration `NEVER`), read by both references, and the
-trees they return are held to the tree that was written under `html_equivalent`, the eight
-rules of `notes/text/XML-HTML-PLAN.md`, implemented once in C in `html_equivalent.h` and
+trees they return are held to the tree that was written under `html_equivalent`, eight
+rules implemented once in C in `html_equivalent.h` and
 included by `tests/test-xhtml-writer.cpp` as well, so the rules cannot be weakened in one
 place only. The population: generated trees (4,000 in the default run; half *tame*, built
 to keep clear of the listed hazards so that "no hazards" is tested on many non-trivial trees,
@@ -1019,8 +1049,7 @@ compared.
 
 **What it found.** Fifteen kinds of tree the hazard list or the writer had wrong, each a tree with
 `xhtml_hazards == 0` that an HTML parser read as another tree, each now a hazard or a refusal with a
-regression test (`HazardsTheHtmlDifferentialFound` and its neighbours; the list is in
-`notes/text/XML-HTML-PLAN.md`, "Phase 3a as built"): foreign names and namespaced attributes HTML does not
+regression test (`HazardsTheHtmlDifferentialFound` and its neighbours): foreign names and namespaced attributes HTML does not
 restore, and the folded form of a name it does (`viewbox` is read as `viewBox`), `plaintext`, markup and
 references inside raw-text elements, C1 characters (as references, and as bytes under ISO-8859-1), `nobr` and
 ruby parts that HTML ends, elements below the first level of a `select`, text in a `colgroup` or in a

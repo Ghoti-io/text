@@ -532,6 +532,13 @@ static GTEXT_XML_Status expand_attribute_entity(xml_ctx * p,
   }
   p->attribute_entity_stack[depth] = entity;
   p->attribute_entity_depth++;
+  /* What the decoder reads of a context (the bytes, their length, the
+     version, `partial`): made once for the entity, not once a byte, which
+     copied the whole parser context for every byte of the replacement. */
+  xml_ctx view = *p;
+  view.in = entity->replacement;
+  view.length = entity->replacement_length;
+  view.partial = 0;
   size_t i = 0;
   while (i < entity->replacement_length) {
     if (entity->replacement[i] == '<')
@@ -562,10 +569,6 @@ static GTEXT_XML_Status expand_attribute_entity(xml_ctx * p,
       i = nested.pos;
       continue;
     }
-    xml_ctx view = *p;
-    view.in = entity->replacement;
-    view.length = entity->replacement_length;
-    view.partial = 0;
     const size_t line_end = xml_line_end_bytes(&view, i);
     if (line_end != 0) {
       GTEXT_XML_Status status = xml_append(p, buf, " ", 1);
@@ -600,9 +603,7 @@ static GTEXT_XML_Status expand_attribute_entity(xml_ctx * p,
 
 GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
   const GTEXT_Markup_Location at = xml_here(p);
-  GTEXT_XML_Status charged = xml_charge(p, &p->references,
-      p->max_references, 1, GTEXT_XML_E_LIMIT_REFERENCES,
-      "XML reference limit exceeded");
+  GTEXT_XML_Status charged = xml_charge_reference(p);
   if (charged != GTEXT_XML_OK) {
     return charged;
   }
@@ -646,9 +647,7 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     }
     const size_t encoded_length = value <= 0x7F ? 1
         : value <= 0x7FF ? 2 : value <= 0xFFFF ? 3 : 4;
-    charged = xml_charge(p, &p->expanded_bytes, p->max_expanded_bytes,
-        encoded_length, GTEXT_XML_E_LIMIT_EXPANSION,
-        "entity expansion byte limit exceeded");
+    charged = xml_charge_expansion(p, encoded_length);
     if (charged != GTEXT_XML_OK) {
       return charged;
     }
@@ -745,12 +744,13 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       resolved = xml_activate_external_parameter_entity(p, &resource);
       return xml_finish_external_resource(p, &resource, resolved);
     }
+    /* Refused at the reference, before anything is charged or entered. */
+    charged = xml_preflight_expansion(p, entity->replacement_length, &at);
+    if (charged != GTEXT_XML_OK) return charged;
     if (buf == &p->attr_pool) {
-      charged = xml_charge(p, &p->expanded_bytes, p->max_expanded_bytes,
-          entity->replacement_length, GTEXT_XML_E_LIMIT_EXPANSION,
-          "entity expansion byte limit exceeded");
+      charged = xml_charge_expansion(p, entity->replacement_length);
       if (charged != GTEXT_XML_OK)
-        return xml_fail_at(p, charged, "entity expansion byte limit exceeded", &at);
+        return xml_fail_at(p, charged, p->err.message, &at);
       return expand_attribute_entity(p, entity, buf);
     }
     const GTEXT_XML_Status flushed = xml_flush_text(p);
@@ -768,6 +768,9 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
       && p->seams.open_entity_source(p->seams.user, name, length,
           &source_identity, &source_bytes, &source_length);
   if (parsed_source) {
+    const GTEXT_XML_Status preflight = xml_preflight_expansion(p,
+        source_length, &at);
+    if (preflight != GTEXT_XML_OK) return preflight;
     const GTEXT_XML_Status flushed = xml_flush_text(p);
     if (flushed != GTEXT_XML_OK) {
       return flushed;
@@ -805,11 +808,9 @@ GTEXT_XML_Status xml_parse_reference(xml_ctx * p, markup_buf * buf) {
     return xml_fail_at(p, GTEXT_XML_E_ENTITY,
         "entity reference other than the five predefined ones", &at);
   }
-  charged = xml_charge(p, &p->expanded_bytes, p->max_expanded_bytes,
-      replacement_length, GTEXT_XML_E_LIMIT_EXPANSION,
-      "entity expansion byte limit exceeded");
+  charged = xml_charge_expansion(p, replacement_length);
   if (charged != GTEXT_XML_OK) {
-    return xml_fail_at(p, charged, "entity expansion byte limit exceeded", &at);
+    return xml_fail_at(p, charged, p->err.message, &at);
   }
   const GTEXT_XML_Status status =
       xml_append(p, buf, replacement, replacement_length);
