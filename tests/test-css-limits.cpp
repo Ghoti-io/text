@@ -87,6 +87,48 @@ TEST(CssLimits, InputBytes) {
   at_and_past(gtext_css_parse_stylesheet, "a{}\nb{}x", "a{}\nb{}xy", o, GTEXT_CSS_E_LIMIT_INPUT, 8, 2, 5);
 }
 
+TEST(CssLimits, InputBytesReportsWhereTheLimitFellByTheTokenizersOwnCounting) {
+  // The failure's line and column are counted as the tokenizer counts: an ill-formed byte is one
+  // column, a code point outside the BMP is two (UTF-16 units), CR LF is one newline.
+  struct Case {
+    std::string css;
+    size_t max;
+    size_t line, column;
+  };
+  const Case cases[] = {
+      {"\x80\x80\x80\x80)", 4, 1, 5},                        // four ill-formed bytes, one column each
+      {"\xc3\xa9\xf0\x9f\x98\x80xy", 7, 1, 5},                 // e-acute (1), an emoji (2), x (1)
+      {"a\r\nb\xc3\xa9" "c", 5, 2, 3},                         // after CR LF and "b" "e-acute"
+      {"\xf0\x9f\x98\x80\xf0\x9f\x98\x80\nx\xe2\x82\xac", 10, 2, 2}, // two emoji, a newline, x
+      {"\xe2\x82", 1, 1, 2},                                  // inside a truncated sequence: after it
+      {"a\x0c" "bxc", 3, 2, 2},                              // FF is a newline
+  };
+  for (const Case & c : cases) {
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.max_input_bytes = c.max;
+    GTEXT_CSS_Tree * t = nullptr;
+    GTEXT_CSS_Result r{};
+    ASSERT_EQ(gtext_css_parse_stylesheet(c.css.data(), c.css.size(), &o, &t, &r), GTEXT_CSS_E_LIMIT_INPUT);
+    EXPECT_EQ(r.failure.offset, c.max);
+    EXPECT_EQ(r.failure.line, c.line) << c.css;
+    EXPECT_EQ(r.failure.column, c.column) << c.css;
+    EXPECT_EQ(r.input_bytes, c.css.size()) << "the input's real length, though none of it was read";
+    gtext_css_result_free(&r);
+    // The same offset, tokenized without the limit, is where the tokenizer puts the token that starts
+    // there (when one does): the one counter.
+    GTEXT_CSS_Parse_Options big = gtext_css_parse_options_default();
+    Parsed p;
+    parse_into(p, gtext_css_parse_component_values, c.css, &big);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK);
+    for (size_t i = 0; i < p.tree->value_count; i++) {
+      if (p.tree->values[i].span.offset == c.max) {
+        EXPECT_EQ(p.tree->values[i].span.line, c.line) << c.css;
+        EXPECT_EQ(p.tree->values[i].span.column, c.column) << c.css;
+      }
+    }
+  }
+}
+
 TEST(CssLimits, Tokens) {
   GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
   o.max_tokens = 5;

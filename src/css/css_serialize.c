@@ -85,7 +85,8 @@ enum {
   C_PERCENT = 1u << 11,
   C_BANG = 1u << 12,     ///< extra
   C_PLUS = 1u << 13,     ///< extra
-  C_QUESTION = 1u << 14  ///< extra
+  C_QUESTION = 1u << 14, ///< extra
+  C_URANGE = 1u << 15    ///< extra: a unicode-range token (the token after "U" and "+")
 };
 
 /// The columns of the names and urls.
@@ -96,21 +97,23 @@ enum {
 static unsigned needs_comment_before(int row) {
   switch (row) {
   case R_IDENT:
-    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_LPAREN;
+    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_LPAREN | C_URANGE;
   case R_IDENT_U:
     /* "u" then "+": in a unicode-range value, read again, the two would be
        the start of a unicode-range token. */
-    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_LPAREN | C_PLUS;
+    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_LPAREN | C_PLUS | C_URANGE;
   case R_AT_KEYWORD:
   case R_HASH:
   case R_DIMENSION:
   case R_DELIM_HASH:
   case R_DELIM_MINUS:
-    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC;
+    /* A name or a number runs on into the "U" of a unicode-range token:
+       "foo" "U+25" would read back as the ident "fooU" and a number. */
+    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_URANGE;
   case R_NUMBER:
-    return C_IDENTISH | C_NUMERIC | C_CDC | C_PERCENT;
+    return C_IDENTISH | C_NUMERIC | C_CDC | C_PERCENT | C_URANGE;
   case R_DELIM_AT:
-    return C_IDENTISH | C_MINUS | C_CDC;
+    return C_IDENTISH | C_MINUS | C_CDC | C_URANGE;
   case R_DELIM_DOT:
   case R_DELIM_PLUS:
     return C_NUMERIC;
@@ -139,6 +142,7 @@ static unsigned column_of(const GTEXT_CSS_Component_Value * v) {
   case GTEXT_CSS_TOKEN_PERCENTAGE: return C_PERCENTAGE;
   case GTEXT_CSS_TOKEN_DIMENSION: return C_DIMENSION;
   case GTEXT_CSS_TOKEN_CDC: return C_CDC;
+  case GTEXT_CSS_TOKEN_UNICODE_RANGE: return C_URANGE;
   case GTEXT_CSS_TOKEN_OPEN_PAREN: return v->kind == GTEXT_CSS_VALUE_BLOCK ? C_LPAREN : 0;
   case GTEXT_CSS_TOKEN_DELIM:
     switch (v->delim) {
@@ -198,18 +202,17 @@ typedef struct {
   size_t work; ///< bytes written and tasks run (gtext_css_serialize_work())
 } writer;
 
+/* Every call is one unit that is whole: a code point, an escape, a keyword, a
+   spelling. One that does not fit within the limit is not written at all, so
+   the sink has had a prefix of the text that ends between units - never half
+   of a multi-byte code point or half of an escape - and the status is
+   GTEXT_CSS_E_LIMIT_OUTPUT. */
 static void put(writer * w, const char * s, size_t n) {
   w->work += n;
   if (w->status != GTEXT_CSS_OK || n == 0) {
     return;
   }
   if (n > w->max - w->written) {
-    const size_t part = w->max - w->written;
-    if (part && w->sink->write(w->sink->user, s, part) != GTEXT_MARKUP_OK) {
-      w->status = GTEXT_CSS_E_WRITE;
-      return;
-    }
-    w->written = w->max;
     w->status = GTEXT_CSS_E_LIMIT_OUTPUT;
     return;
   }
@@ -287,32 +290,33 @@ static uint32_t next_cp(const unsigned char * s, size_t n, size_t * i) {
   return v;
 }
 
-static void put_cp(writer * w, uint32_t cp) {
-  char b[4];
-  size_t n;
+/* UTF-8 for `cp` into b (4 bytes); the length. */
+static size_t encode_cp(char * b, uint32_t cp) {
   if (cp < 0x80) {
     b[0] = (char)cp;
-    n = 1;
+    return 1;
   }
-  else if (cp < 0x800) {
+  if (cp < 0x800) {
     b[0] = (char)(0xC0 | (cp >> 6));
     b[1] = (char)(0x80 | (cp & 0x3F));
-    n = 2;
+    return 2;
   }
-  else if (cp < 0x10000) {
+  if (cp < 0x10000) {
     b[0] = (char)(0xE0 | (cp >> 12));
     b[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
     b[2] = (char)(0x80 | (cp & 0x3F));
-    n = 3;
+    return 3;
   }
-  else {
-    b[0] = (char)(0xF0 | (cp >> 18));
-    b[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
-    b[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
-    b[3] = (char)(0x80 | (cp & 0x3F));
-    n = 4;
-  }
-  put(w, b, n);
+  b[0] = (char)(0xF0 | (cp >> 18));
+  b[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+  b[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+  b[3] = (char)(0x80 | (cp & 0x3F));
+  return 4;
+}
+
+static void put_cp(writer * w, uint32_t cp) {
+  char b[4];
+  put(w, b, encode_cp(b, cp));
 }
 
 /* CSSOM: "escape a character as code point". */
@@ -336,8 +340,9 @@ static void put_cp_escape(writer * w, uint32_t cp) {
 
 /* CSSOM: "escape a character". */
 static void put_escaped(writer * w, uint32_t cp) {
-  put(w, "\\", 1);
-  put_cp(w, cp);
+  char b[5];
+  b[0] = '\\';
+  put(w, b, 1 + encode_cp(b + 1, cp)); /* one unit: a backslash alone is not a prefix of the text */
 }
 
 static bool is_ascii_ident(uint32_t c) {
@@ -618,7 +623,7 @@ static bool tpush(writer * w, taskstack * st, task t) {
   if (st->len == st->cap) {
     const size_t cap = st->cap ? st->cap * 2 : 32;
     if (cap > SIZE_MAX / sizeof(task)) {
-      w->status = GTEXT_CSS_E_INVALID;
+      w->status = GTEXT_CSS_E_OOM;
       return false;
     }
     task * grown = gtext_allocator_realloc(&w->alloc, st->data, cap * sizeof(task));
@@ -849,6 +854,9 @@ GTEXT_CSS_Serialize_Options gtext_css_serialize_options_default(void) {
 static GTEXT_CSS_Status serialize_tree(const GTEXT_CSS_Tree * tree,
     const GTEXT_CSS_Serialize_Options * options, const GTEXT_Markup_Sink * sink, size_t * work) {
   writer w;
+  if (work) {
+    *work = 0;
+  }
   if (!tree || !writer_init(&w, options, sink)) {
     return GTEXT_CSS_E_INVALID;
   }

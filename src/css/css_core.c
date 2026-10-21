@@ -298,6 +298,9 @@ bool css_buf_put(css_ctx * ctx, css_buf * buf, const char * s, size_t n) {
 bool css_buf_put_cp(css_ctx * ctx, css_buf * buf, uint32_t cp) {
   char b[4];
   size_t n;
+  if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+    cp = 0xFFFD; /* not a scalar value: the buffer stays UTF-8 for any caller */
+  }
   if (cp < 0x80) {
     b[0] = (char)cp;
     n = 1;
@@ -321,6 +324,22 @@ bool css_buf_put_cp(css_ctx * ctx, css_buf * buf, uint32_t cp) {
     n = 4;
   }
   return css_buf_put(ctx, buf, b, n);
+}
+
+/** The tests' view of css_buf_put_cp() (css_internal.h). */
+size_t gtext_css_encode_cp(uint32_t cp, char * out) {
+  css_ctx ctx;
+  css_ctx_init(&ctx, NULL, false);
+  css_buf buf;
+  memset(&buf, 0, sizeof buf);
+  size_t n = 0;
+  if (css_buf_put_cp(&ctx, &buf, cp)) {
+    n = buf.len;
+    memcpy(out, buf.data, n);
+  }
+  css_buf_free(&ctx, &buf);
+  css_ctx_free(&ctx, false);
+  return n;
 }
 
 /** Free a byte buffer (css_internal.h). */
@@ -432,9 +451,23 @@ void css_arena_free(css_arena * arena) {
 /* ---- small helpers ---------------------------------------------------- */
 
 /** The value of a numeric token's spelling (css_internal.h). */
-double css_number_value(css_ctx * ctx, const char * repr, size_t len) {
-  (void)len; /* repr is NUL-terminated at len */
-  return gtext_number_strtod(&ctx->alloc, repr, NULL);
+bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out) {
+  /* The conversion reads to the NUL: the contract is that repr[len] is one. */
+  if (!repr || len == 0 || repr[len] != '\0') {
+    css_fail(ctx, GTEXT_CSS_E_INTERNAL);
+    return false;
+  }
+  /* The conversion can allocate (it respells the number in a locale whose
+     decimal separator is not "."), and answers 0 with nothing consumed when
+     it cannot; a numeric token's spelling always consumes something. */
+  char * end = NULL;
+  const double v = gtext_number_strtod(&ctx->alloc, repr, &end);
+  if (end == repr) {
+    css_fail(ctx, GTEXT_CSS_E_OOM);
+    return false;
+  }
+  *out = v;
+  return true;
 }
 
 /** ASCII case-insensitive equality with a lower-case literal (css_internal.h). */

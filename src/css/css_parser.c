@@ -504,9 +504,12 @@ static bool unicode_range_value(parser * p, size_t begin, size_t end, size_t lin
   return ok(p);
 }
 
-static bool count_declaration(parser * p, const css_tok * at) {
+/* Count a declaration that the validity callback accepted (one it refused is
+   not a declaration of the tree). `d` is where the limit failure is placed. */
+static bool count_declaration(parser * p, const GTEXT_CSS_Declaration * d) {
   if (p->ctx->declaration_count >= p->ctx->max_declarations) {
-    css_fail_at(p->ctx, GTEXT_CSS_E_LIMIT_DECLARATIONS, at->start, at->line, at->column);
+    css_fail_at(p->ctx, GTEXT_CSS_E_LIMIT_DECLARATIONS, d->name_span.offset, d->name_span.line,
+        d->name_span.column);
     return false;
   }
   p->ctx->declaration_count++;
@@ -642,10 +645,7 @@ static bool build_decl(parser * p, tstream * s, bool nested, GTEXT_CSS_Declarati
   else {
     d->value_span = point_span(stop);
   }
-  if (!take_values(p, base, &d->value, &d->value_count)) {
-    return false;
-  }
-  return count_declaration(p, name);
+  return take_values(p, base, &d->value, &d->value_count);
 }
 
 /* 5.5.6, "consume the remnants of a bad declaration". */
@@ -1073,6 +1073,10 @@ static bool block_step(parser * p, tstream * s) {
   const size_t mark = s->i;
   if (spec_decl(p, s, true)) {
     GTEXT_CSS_Declaration d;
+    /* A declaration the callback refuses is read again as a qualified rule's
+       prelude, which raises the parse errors of the same tokens again: the
+       errors the first reading raised are taken back. */
+    const size_t err_mark = p->ctx->nerr, err_total = p->ctx->err_total;
     if (!build_decl(p, s, true, &d)) {
       if (ok(p)) {
         css_fail(p->ctx, GTEXT_CSS_E_INTERNAL);
@@ -1080,9 +1084,13 @@ static bool block_step(parser * p, tstream * s) {
       return true;
     }
     if (decl_valid(p, &d, true)) {
-      (void)deliver_decl(p, &d);
+      if (count_declaration(p, &d)) {
+        (void)deliver_decl(p, &d);
+      }
       return true;
     }
+    p->ctx->nerr = err_mark;
+    p->ctx->err_total = err_total;
     css_error(p->ctx, GTEXT_CSS_ERROR_INVALID_DECLARATION_IN_CONTEXT, d.span.offset, d.span.line, d.span.column);
     s->i = mark;
   }
@@ -1103,7 +1111,7 @@ static bool declaration_flat(parser * p, tstream * s, GTEXT_CSS_Declaration * d)
       return false;
     }
     if (decl_valid(p, d, false)) {
-      return true;
+      return count_declaration(p, d);
     }
     css_error(p->ctx, GTEXT_CSS_ERROR_INVALID_DECLARATION_IN_CONTEXT, d->span.offset, d->span.line,
         d->span.column);
@@ -1492,6 +1500,9 @@ static void parse_entry(parser * p, entry e, GTEXT_CSS_Tree * tree) {
     while (ok(p) && ts_peek(s)->type != GTEXT_CSS_TOKEN_EOF) {
       const css_tok * at = ts_peek(s);
       consume_list(p, s, GTEXT_CSS_TOKEN_COMMA, false, true);
+      if (ts_peek(s)->type == GTEXT_CSS_TOKEN_COMMA) {
+        p->ctx->comma_seen = true;
+      }
       GTEXT_CSS_Value_List * l = vec_push(p->ctx, &lists);
       if (!l) {
         break;
@@ -1525,34 +1536,6 @@ static void parse_entry(parser * p, entry e, GTEXT_CSS_Tree * tree) {
   }
 }
 
-/* Where the byte `offset` is: its line and column. */
-static void position_of(css_ctx * ctx, size_t offset, size_t * line, size_t * column) {
-  size_t l = 1, c = 1;
-  size_t p = 0;
-  while (p < offset && p < ctx->in_len) {
-    const unsigned char b = ctx->in[p];
-    if (b == '\n' || b == 0x0C) {
-      l++;
-      c = 1;
-      p++;
-    }
-    else if (b == '\r') {
-      l++;
-      c = 1;
-      p += (p + 1 < ctx->in_len && ctx->in[p + 1] == '\n') ? 2 : 1;
-    }
-    else if (b < 0x80 || b >= 0xC0) {
-      c += b >= 0xF0 ? 2 : 1;
-      p++;
-    }
-    else {
-      p++; /* a continuation byte: counted with its lead */
-    }
-  }
-  *line = l;
-  *column = c;
-}
-
 static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out,
     GTEXT_CSS_Result * result, const GTEXT_CSS_Grammar * grammar, bool * matched,
@@ -1583,7 +1566,7 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
   GTEXT_CSS_Tree * tree = NULL;
   if (length > ctx.max_input) {
     size_t line, column;
-    position_of(&ctx, ctx.max_input, &line, &column);
+    css_position_of(&ctx, ctx.max_input, &line, &column);
     css_fail_at(&ctx, GTEXT_CSS_E_LIMIT_INPUT, ctx.max_input, line, column);
   }
   else if (css_tokenize(&ctx, 0, length, 1, 1, false, true, &ctx.toks, &ctx.eof)) {
@@ -1629,14 +1612,35 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
       *matched = grammar->match(grammar->user, 0, tree->values, tree->value_count);
     }
     if (matched_count) {
+      /* "If input contains only whitespace-tokens, return an empty list": a
+         comma-separated list of such an input would be one empty group, so
+         an input of only white space (a comma is not white space) has no
+         groups, and the grammar is not asked. */
+      bool only_ws = !ctx.comma_seen;
+      for (size_t i = 0; i < tree->list_count && only_ws; i++) {
+        for (size_t k = 0; k < tree->lists[i].count; k++) {
+          if (tree->lists[i].values[k].type != GTEXT_CSS_TOKEN_WHITESPACE
+              || tree->lists[i].values[k].kind != GTEXT_CSS_VALUE_TOKEN) {
+            only_ws = false;
+            break;
+          }
+        }
+      }
       size_t m = 0;
-      for (size_t i = 0; i < tree->list_count; i++) {
-        m += grammar->match(grammar->user, i, tree->lists[i].values, tree->lists[i].count) ? 1 : 0;
+      if (only_ws) {
+        tree->lists = NULL;
+        tree->list_count = 0;
+        tree->node_count = 0;
+      }
+      else {
+        for (size_t i = 0; i < tree->list_count; i++) {
+          m += grammar->match(grammar->user, i, tree->lists[i].values, tree->lists[i].count) ? 1 : 0;
+        }
       }
       *matched_count = m;
     }
   }
-  status = css_finish_result(&ctx, result, length > ctx.max_input ? 0 : length);
+  status = css_finish_result(&ctx, result, length);
   if (work) {
     *work = ctx.work;
   }
@@ -1733,40 +1737,7 @@ GTEXT_CSS_Status gtext_css_parse_grammar_list(const char * input, size_t length,
     }
     return GTEXT_CSS_E_INVALID;
   }
-  /* "If input contains only whitespace-tokens, return an empty list": a
-     comma-separated list of such an input would be one empty group, so the
-     list is parsed and an all-white-space input's groups are dropped. */
-  GTEXT_CSS_Status st = parse(E_COMMA_LIST, input, length, options, out, result, NULL, NULL, NULL, NULL);
-  if (st != GTEXT_CSS_OK) {
-    return st;
-  }
-  GTEXT_CSS_Tree * tree = *out;
-  bool only_ws = true;
-  for (size_t i = 0; i < tree->list_count && only_ws; i++) {
-    for (size_t k = 0; k < tree->lists[i].count; k++) {
-      if (tree->lists[i].values[k].type != GTEXT_CSS_TOKEN_WHITESPACE
-          || tree->lists[i].values[k].kind != GTEXT_CSS_VALUE_TOKEN) {
-        only_ws = false;
-        break;
-      }
-    }
-  }
-  if (tree->list_count > 1) {
-    only_ws = false; /* a comma is not white space */
-  }
-  if (only_ws) {
-    tree->lists = NULL;
-    tree->list_count = 0;
-    tree->node_count = 0;
-    *matched_count = 0;
-    return GTEXT_CSS_OK;
-  }
-  size_t m = 0;
-  for (size_t i = 0; i < tree->list_count; i++) {
-    m += grammar->match(grammar->user, i, tree->lists[i].values, tree->lists[i].count) ? 1 : 0;
-  }
-  *matched_count = m;
-  return GTEXT_CSS_OK;
+  return parse(E_COMMA_LIST, input, length, options, out, result, grammar, NULL, matched_count, NULL);
 }
 
 bool gtext_css_match_grammar(const GTEXT_CSS_Component_Value * values, size_t count,

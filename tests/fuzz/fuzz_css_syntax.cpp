@@ -572,12 +572,46 @@ int entry(const uint8_t * data, size_t size) {
       fail("the comma-separated list and the grammar list split differently",
           std::to_string(groups) + " and " + std::to_string(list.tree->list_count), input);
     }
+    // The third splitting: parse a grammar list asks the grammar about exactly the groups that
+    // matching the component values does (a comma is not white space, so "," is one empty group), and
+    // keeps the comma-separated list's groups, except that all white space is the empty list.
+    {
+      size_t asked = 0;
+      GTEXT_CSS_Grammar counting = {[](void * user, size_t index, const GTEXT_CSS_Component_Value *, size_t) {
+                                      size_t * n = static_cast<size_t *>(user);
+                                      return index == (*n)++;
+                                    },
+          &asked};
+      Run viaparse;
+      size_t matched = 0;
+      viaparse.status = gtext_css_parse_grammar_list(input.data(), input.size(), &counting, &base, &matched,
+          &viaparse.tree, &viaparse.result);
+      if (viaparse.status == GTEXT_CSS_OK) {
+        if (asked != groups || matched != groups || viaparse.tree->list_count != groups) {
+          fail("parse a grammar list and match a grammar list split differently",
+              std::to_string(asked) + "/" + std::to_string(matched) + "/" + std::to_string(viaparse.tree->list_count)
+                  + " and " + std::to_string(groups),
+              input);
+        }
+        if (groups != (only_ws ? 0u : list.tree->list_count)) {
+          fail("the grammar list's groups are not the comma-separated list's",
+              std::to_string(groups) + " and " + std::to_string(list.tree->list_count), input);
+        }
+      }
+    }
     // An+B, read, written and read again.
     int64_t a, b;
-    if (gtext_css_anb_parse(values.tree->values, values.tree->value_count, &a, &b) && a > INT64_MIN / 2 && a < INT64_MAX / 2
-        && b > INT64_MIN / 2 && b < INT64_MAX / 2) {
+    if (gtext_css_anb_parse(values.tree->values, values.tree->value_count, &a, &b)) {
+      // The whole range, the saturating end of it too: magnitudes are held to INT64_MAX, so INT64_MIN
+      // is never read, and what is read is written and read back as the same A and B.
+      if (a == INT64_MIN || b == INT64_MIN) {
+        fail("An+B read INT64_MIN", "", input);
+      }
       char buf[64];
       const size_t n = gtext_css_anb_serialize(a, b, buf, sizeof buf);
+      if (n == 0 || n >= sizeof buf) {
+        fail("An+B serialized to an impossible length", std::to_string(n), input);
+      }
       Run r;
       parse(r, gtext_css_parse_component_values, std::string(buf, n), gtext_css_parse_options_default());
       int64_t a2 = 0, b2 = 0;

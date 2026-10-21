@@ -434,6 +434,10 @@ typedef struct {
 /**
  * @brief Release a tree and everything in it.
  *
+ * The tree struct itself lives in the memory this frees, so the pointer is
+ * dead after the call, as is every pointer into the tree (values, strings,
+ * rules); nothing in it, `kind` and the counts included, may be read.
+ *
  * @param tree A tree a parse returned; NULL is ignored.
  */
 GTEXT_API void gtext_css_tree_free(GTEXT_CSS_Tree * tree);
@@ -518,7 +522,8 @@ typedef struct {
    *  1,048,576. */
   size_t max_rules;
 
-  /** Most declarations a parse may make, counted the same way. Default
+  /** Most declarations a parse may make, counted the same way, except that a
+   *  declaration the validity callback refuses is not one. Default
    *  4,194,304. */
   size_t max_declarations;
 
@@ -527,7 +532,14 @@ typedef struct {
   size_t max_total_errors;
 
   /** Most parse errors kept in the result; the rest are only counted
-   *  (gtext_css_result_errors_dropped()). Default 1024. Not a failure. */
+   *  (gtext_css_result_errors_dropped()). Default 1024. Not a failure.
+   *
+   *  This bounds the result, not the parse's memory: the errors the result
+   *  keeps are the ones lowest in the input, so every error raised is held
+   *  until the parse ends (up to `max_total_errors` of them, about 40 bytes
+   *  each, and the same again transiently while they are sorted), unless
+   *  `count_errors_only` is set or no result is asked for. To bound the
+   *  memory, lower `max_total_errors`. */
   size_t max_errors;
 
   /** Keep no parse errors, only count them. */
@@ -577,7 +589,8 @@ typedef struct {
   GTEXT_CSS_Span failure;    ///< For a limit: where it was reached (the byte,
                              ///< line and column of the construct that went
                              ///< past it). Zero otherwise.
-  size_t input_bytes;        ///< Bytes of input read.
+  size_t input_bytes;        ///< The input's length in bytes, whatever the status (for
+                             ///< GTEXT_CSS_E_LIMIT_INPUT too, where none of it was read).
   size_t token_count;        ///< Tokens the tokenizer produced (for a failed
                              ///< parse, those produced before it failed).
   size_t rule_count;         ///< Rules made (see `max_rules`).
@@ -588,7 +601,9 @@ typedef struct {
 /**
  * @brief Release what a result holds, and reset it.
  *
- * Safe on NULL, twice, and on a zeroed result.
+ * Safe on NULL, twice, and on a zeroed result. The struct is the caller's
+ * and stays valid, zeroed; what it held (the error list) is freed, so the
+ * count and the errors read from it before are the caller's copies only.
  *
  * @param result The result.
  */

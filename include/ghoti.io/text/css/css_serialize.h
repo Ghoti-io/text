@@ -81,9 +81,12 @@ typedef struct {
   const GTEXT_Allocator * allocator;
   /** How numbers are spelled. Default GTEXT_CSS_NUMBERS_SOURCE. */
   GTEXT_CSS_Number_Style numbers;
-  /** Most bytes of output; one more fails with GTEXT_CSS_E_LIMIT_OUTPUT
-   *  (the sink has had the output up to the limit). 0 is the default,
-   *  256 MiB. */
+  /** Most bytes of output; one more fails with GTEXT_CSS_E_LIMIT_OUTPUT.
+   *  The sink has then had a valid prefix of the text, at most this many
+   *  bytes: it ends between whole code points and whole escapes (a unit that
+   *  would pass the limit is not written, so it may stop a few bytes short
+   *  of it), never in the middle of a multi-byte sequence or an escape.
+   *  0 is the default, 256 MiB. */
   size_t max_output_bytes;
 } GTEXT_CSS_Serialize_Options;
 
@@ -175,11 +178,18 @@ GTEXT_API GTEXT_CSS_Status gtext_css_serialize_string(const char * text,
 /**
  * @brief CSS Syntax 9.1, "serialize an `<an-plus-b>` value".
  *
+ * Follows the snprintf convention, so a caller can size a buffer: the text
+ * is at most 41 bytes.
+ *
  * @param a A.
  * @param b B.
- * @param buffer Receives the text, NUL-terminated (at most 43 bytes with the NUL).
- * @param size Its size; 44 is always enough.
- * @return The length written, or 0 if `buffer` is NULL or too small.
+ * @param buffer Receives the text, NUL-terminated; or NULL with `size` 0 to
+ *   ask only for the length. When `size` is smaller than the length plus one,
+ *   the text is cut to `size - 1` bytes (and NUL-terminated); nothing is
+ *   written if `buffer` is NULL or `size` is 0.
+ * @param size The size of `buffer`; 42 is always enough.
+ * @return The length of the whole text, not counting the NUL, whatever
+ *   `buffer` and `size` are. It never fails.
  */
 GTEXT_API size_t gtext_css_anb_serialize(int64_t a, int64_t b, char * buffer,
     size_t size);

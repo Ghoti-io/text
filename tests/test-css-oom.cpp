@@ -34,6 +34,12 @@
  * error list.
  */
 
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -187,6 +193,69 @@ TEST(CssOom, TheGrammarEntryPointsToo) {
     done = !fa.failed;
   }
   EXPECT_TRUE(done);
+}
+
+// A number is converted by a function that respells it in a locale whose decimal separator is not
+// ".", through the parse's allocator, when it is long. That allocation failing must fail the parse: the
+// token must not come out as the number 0 with the status OK.
+bool use_a_comma_locale() {
+  const char * names[] = {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8"};
+  auto comma = [&]() {
+    for (const char * n : names) {
+      if (setlocale(LC_NUMERIC, n) && strcmp(localeconv()->decimal_point, ",") == 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (comma()) {
+    return true;
+  }
+  char tmpl[] = "/tmp/gtext-css-locale-XXXXXX";
+  const char * dir = mkdtemp(tmpl);
+  if (!dir) {
+    return false;
+  }
+  setenv("LOCPATH", dir, 1);
+  const std::string cmd = std::string("env -u LD_PRELOAD -u LD_LIBRARY_PATH localedef -i de_DE -f UTF-8 ") + dir
+      + "/de_DE.UTF-8 >/dev/null 2>&1";
+  return system(cmd.c_str()) == 0 && comma();
+}
+
+TEST(CssOom, TheAllocationOfANumbersConversionFailsTheParseNotTheNumber) {
+  const std::string saved = setlocale(LC_NUMERIC, nullptr) ? setlocale(LC_NUMERIC, nullptr) : "C";
+  ASSERT_TRUE(use_a_comma_locale()) << "no comma-decimal locale could be made; a pass here would measure nothing";
+  // 150 digits after the point: past the conversion's own stack buffer, so it asks for memory.
+  const std::string css = "a{width:0." + std::string(150, '9') + "px}";
+  size_t refused = 0;
+  bool done = false;
+  for (size_t n = 1; n < 400 && !done; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.allocator = &fa.alloc;
+    fa.arm(n);
+    GTEXT_CSS_Tree * t = nullptr;
+    const GTEXT_CSS_Status st = gtext_css_parse_stylesheet(css.data(), css.size(), &o, &t, nullptr);
+    fa.disarm();
+    if (st == GTEXT_CSS_E_OOM) {
+      EXPECT_EQ(t, nullptr);
+      refused++;
+    }
+    else {
+      ASSERT_EQ(st, GTEXT_CSS_OK) << n;
+      ASSERT_NE(t, nullptr);
+      // 0.999...9 with 150 nines is 1 in a double; a conversion that failed would have made it 0.
+      const GTEXT_CSS_Component_Value & v = t->rules[0].declarations[0].value[0];
+      EXPECT_EQ(v.type, GTEXT_CSS_TOKEN_DIMENSION);
+      EXPECT_DOUBLE_EQ(v.number, 1.0) << "allocation " << n << " failed and the parse went on with the number " << v.number;
+    }
+    gtext_css_tree_free(t);
+    EXPECT_TRUE(fa.live.empty()) << n;
+    done = !fa.failed;
+  }
+  EXPECT_TRUE(done);
+  EXPECT_GT(refused, 10u);
+  setlocale(LC_NUMERIC, saved.c_str());
 }
 
 } // namespace

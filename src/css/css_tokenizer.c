@@ -377,7 +377,9 @@ static bool consume_number(tz * t, css_tok * tok) {
     tok->flags |= GTEXT_CSS_FLAG_INTEGER;
   }
   /* nb is NUL-terminated by css_buf_put. */
-  tok->number = css_number_value(t->ctx, nb->data, nb->len);
+  if (!css_number_value(t->ctx, nb->data, nb->len, &tok->number)) {
+    return false;
+  }
   char * repr = css_arena_strdup(&t->ctx->arena, nb->data, nb->len);
   if (!repr) {
     css_fail(t->ctx, GTEXT_CSS_E_OOM);
@@ -919,6 +921,31 @@ bool css_tokenize(css_ctx * ctx, size_t begin, size_t end, size_t line,
   gtext_allocator_free(&ctx->alloc, match.data);
   gtext_allocator_free(&ctx->alloc, open.data);
   return ok && ctx->status == GTEXT_CSS_OK;
+}
+
+/** Where the byte `offset` is (css_internal.h): the tokenizer's own counting. */
+void css_position_of(css_ctx * ctx, size_t offset, size_t * line, size_t * column) {
+  tz t;
+  memset(&t, 0, sizeof t);
+  t.ctx = ctx;
+  t.end = ctx->in_len;
+  t.line = 1;
+  t.col = 1;
+  while (t.pos < offset && t.pos < t.end) {
+    size_t n;
+    bool bad, wide;
+    const int32_t cp = decode_at(&t, t.pos, &n, &bad, &wide);
+    t.pos += n;
+    if (cp == '\n') {
+      t.line++;
+      t.col = 1;
+    }
+    else {
+      t.col += wide ? 2 : 1;
+    }
+  }
+  *line = t.line;
+  *column = t.col;
 }
 
 /* ---- original text ---------------------------------------------------- */

@@ -323,6 +323,54 @@ TEST(CssParseGrammarList, OnlyWhitespaceIsAnEmptyListAndEachGroupIsMatched) {
   }
 }
 
+TEST(CssParseGrammarList, ACommaIsNotWhiteSpaceSoTheThreeSplittingsAgree) {
+  // parse_grammar_list, match_grammar_list over the component values, and the comma-separated list
+  // entry point all split at the same commas, and the grammar is asked about every group, the empty
+  // group of a lone comma included.
+  struct Case {
+    const char * in;
+    size_t groups;
+  };
+  const Case cases[] = {{",", 1}, {" ,", 1}, {", ", 2}, {"a,", 1}, {",,", 2}, {"", 0}, {" ", 0}, {"  \n", 0},
+      {"a", 1}, {"a,b", 2}, {"/**/,", 1}, {" , ", 2}};
+  for (const Case & c : cases) {
+    SCOPED_TRACE(std::string("'") + c.in + "'");
+    GrammarLog log;
+    log.accept = "";  // everything matches
+    GTEXT_CSS_Grammar g = {log_grammar, &log};
+    size_t matched = 99;
+    Parsed p;
+    p.status = gtext_css_parse_grammar_list(c.in, strlen(c.in), &g, nullptr, &matched, &p.tree, &p.result);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK);
+    EXPECT_EQ(p.tree->list_count, c.groups);
+    EXPECT_EQ(matched, c.groups);
+    EXPECT_EQ(log.seen.size(), c.groups) << "the grammar is asked once about each group";
+    for (size_t i = 0; i < log.seen.size(); i++) {
+      EXPECT_EQ(log.seen[i].substr(0, std::to_string(i).size() + 1), std::to_string(i) + "=");
+    }
+
+    Parsed v;
+    parse_into(v, gtext_css_parse_component_values, c.in);
+    GrammarLog log2;
+    GTEXT_CSS_Grammar g2 = {log_grammar, &log2};
+    size_t groups = 99;
+    EXPECT_EQ(gtext_css_match_grammar_list(v.tree->values, v.tree->value_count, &g2, &groups), c.groups);
+    EXPECT_EQ(groups, c.groups);
+    EXPECT_EQ(log2.seen, log.seen);
+
+    Parsed l;
+    parse_into(l, gtext_css_parse_comma_list, c.in);
+    // The comma-separated list keeps the one all-white-space group that "return an empty list" drops.
+    const size_t listed = l.tree->list_count;
+    if (c.groups == 0) {
+      EXPECT_LE(listed, 1u);
+    }
+    else {
+      EXPECT_EQ(listed, c.groups);
+    }
+  }
+}
+
 TEST(CssMatchGrammar, ParsedValuesAreMatchedAsTheyAreAndSplitAtTopLevelCommasOnly) {
   Parsed p;
   parse_into(p, gtext_css_parse_component_values, "a, f(a, b), , a,");
@@ -525,6 +573,65 @@ TEST(CssValidity, AnInvalidDeclarationInABlockIsReadAgainAsARule) {
   EXPECT_EQ(p.error_names(), (std::vector<std::string>{"invalid-declaration-in-context", "semicolon-in-qualified-rule"}));
 }
 
+TEST(CssParseErrors, AnUnmatchedClosingBracketInAListOfValuesIsExactlyOneNamedError) {
+  // Each closer that matches nothing is kept as a token and is one parse error of its own name.
+  struct Case {
+    const char * in;
+    const char * error;
+  };
+  const Case cases[] = {{"a]", "unmatched-close-bracket"}, {"a)", "unmatched-close-paren"}, {"a}", "unmatched-close-brace"}};
+  for (const Case & c : cases) {
+    Parsed p;
+    parse_into(p, gtext_css_parse_component_values, c.in);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK) << c.in;
+    EXPECT_EQ(p.error_names(), (std::vector<std::string>{c.error})) << c.in;
+    ASSERT_EQ(p.errors().size(), 1u);
+    EXPECT_EQ(p.errors()[0].byte_offset, 1u) << c.in;
+  }
+}
+
+TEST(CssValidity, ADeclarationTheCallbackRefusesIsNotCountedAndItsErrorsAreRaisedOnce) {
+  // `x:y )` is refused, then read again as a prelude: the stray ")" is one parse error, not two, and
+  // the refused declarations are not declarations of the tree, so a limit of one does not stop the
+  // parse that has two of them refused and one accepted.
+  Validity v;
+  v.reject_decl = "x";
+  GTEXT_CSS_Parse_Options o = with(v);
+  o.max_declarations = 1;
+  Parsed p;
+  parse_into(p, gtext_css_parse_stylesheet, "a{x:y ); x:z ); k:l}", &o);
+  ASSERT_EQ(p.status, GTEXT_CSS_OK) << gtext_css_status_string(p.status);
+  EXPECT_EQ(p.result.declaration_count, 1u);
+  size_t paren = 0;
+  for (const auto & name : p.error_names()) {
+    paren += name == "unmatched-close-paren";
+  }
+  EXPECT_EQ(paren, 2u) << "one for each of the two refused declarations' stray parentheses";
+  Validity w;
+  w.reject_decl = "x";
+  GTEXT_CSS_Parse_Options o2 = with(w);
+  Parsed q;
+  parse_into(q, gtext_css_parse_stylesheet, "a{x:y )}", &o2);
+  EXPECT_EQ(q.error_names(),
+      (std::vector<std::string>{"invalid-declaration-in-context", "unmatched-close-paren", "close-brace-in-qualified-rule"}));
+  // The limit itself still holds for the declarations that are kept.
+  Validity u;
+  GTEXT_CSS_Parse_Options o3 = with(u);
+  o3.max_declarations = 1;
+  Parsed r;
+  parse_into(r, gtext_css_parse_stylesheet, "a{k:l; m:n}", &o3);
+  EXPECT_EQ(r.status, GTEXT_CSS_E_LIMIT_DECLARATIONS);
+  // The flat entry points count after the callback too.
+  Validity t;
+  t.reject_decl = "x";
+  GTEXT_CSS_Parse_Options o4 = with(t);
+  o4.max_declarations = 1;
+  Parsed s2;
+  parse_into(s2, gtext_css_parse_declaration_list, "x:1; x:2; k:l", &o4);
+  ASSERT_EQ(s2.status, GTEXT_CSS_OK);
+  EXPECT_EQ(s2.result.declaration_count, 1u);
+}
+
 TEST(CssValidity, AnInvalidNestedRuleEndsTheRunOfDeclarationsBeforeIt) {
   // The invalid rule error (5.5.5): the declarations after it are a list of their own.
   Validity v;
@@ -534,6 +641,14 @@ TEST(CssValidity, AnInvalidNestedRuleEndsTheRunOfDeclarationsBeforeIt) {
   // invalid-nested-rules.html: parsing goes on after the invalid rule's block.
   EXPECT_EQ(sheet(".a { .b <::::invalid::::> {} & .c {} }", &o),
       "q[delim:. ident:a ws]{ | q[delim:& ws delim:. ident:c ws]{}}");
+  // The refusing rule callback raises the parse error "invalid-rule", once for the rule it refused.
+  Parsed p;
+  parse_into(p, gtext_css_parse_stylesheet, "a { b:c; .x <y> {} d:e }", &o);
+  ASSERT_EQ(p.status, GTEXT_CSS_OK);
+  EXPECT_EQ(p.error_names(), (std::vector<std::string>{"invalid-rule"}));
+  Parsed q;
+  parse_into(q, gtext_css_parse_stylesheet, "a { b:c; .x <y> {} d:e } m <n> {}", &o);
+  EXPECT_EQ(q.error_names(), (std::vector<std::string>{"invalid-rule", "invalid-rule"}));
 }
 
 TEST(CssValidity, AnInvalidCustomPropertyThatLooksLikeARuleIsSkippedToItsEnd) {
@@ -826,14 +941,54 @@ TEST(CssAnB, ReadsEachProductionOfTheGrammar) {
   }
 }
 
-TEST(CssAnB, AAndBSaturateAtTheRangeOfInt64) {
+TEST(CssAnB, AAndBAreReadExactlyAndSaturateSymmetrically) {
   int64_t a = 0, b = 0;
   ASSERT_TRUE(anb("99999999999999999999n-99999999999999999999", &a, &b));
   EXPECT_EQ(a, INT64_MAX);
   EXPECT_EQ(b, -INT64_MAX);
-  ASSERT_TRUE(anb("-99999999999999999999", &a, &b));
-  EXPECT_EQ(b, INT64_MIN);
+  // Above 2^53 a double is wrong; the digits are read exactly.
+  ASSERT_TRUE(anb("2n+9007199254740993", &a, &b));
+  EXPECT_EQ(a, 2);
+  EXPECT_EQ(b, INT64_C(9007199254740993));
+  ASSERT_TRUE(anb("9007199254740993", &a, &b));
+  EXPECT_EQ(b, INT64_C(9007199254740993));
+  ASSERT_TRUE(anb("-9007199254740995n+1", &a, &b));
+  EXPECT_EQ(a, -INT64_C(9007199254740995));
+  ASSERT_TRUE(anb("n -9007199254740993", &a, &b));
+  EXPECT_EQ(b, -INT64_C(9007199254740993));
+  ASSERT_TRUE(anb("n - 9007199254740993", &a, &b));
+  EXPECT_EQ(b, -INT64_C(9007199254740993));
+  ASSERT_TRUE(anb("n+9223372036854775807", &a, &b));
+  EXPECT_EQ(b, INT64_MAX);
+  // One rule: the magnitude saturates at INT64_MAX, so INT64_MIN is never produced, whichever way the
+  // number is spelled (an ident's digits, a signed number, a dimension).
+  const char * most_negative[] = {"n-9223372036854775808", "n -9223372036854775808", "n - 9223372036854775808",
+      "n- 9223372036854775808", "-9223372036854775808", "-n-9223372036854775808", "-n -9223372036854775808",
+      "n-99999999999999999999", "-99999999999999999999"};
+  for (const char * in : most_negative) {
+    ASSERT_TRUE(anb(in, &a, &b)) << in;
+    EXPECT_EQ(b, -INT64_MAX) << in;
+  }
+  ASSERT_TRUE(anb("-9223372036854775808n", &a, &b));
+  EXPECT_EQ(a, -INT64_MAX);
+  ASSERT_TRUE(anb("-99999999999999999999n", &a, &b));
+  EXPECT_EQ(a, -INT64_MAX);
   EXPECT_FALSE(gtext_css_anb_parse(nullptr, 1, &a, &b));
+}
+
+TEST(CssAnB, WhatIsReadIsWrittenAndReadBackAcrossTheSaturatingRange) {
+  const char * inputs[] = {"2n+9007199254740993", "-9223372036854775808n-9223372036854775808", "n-9223372036854775808",
+      "9223372036854775807n+9223372036854775807", "99999999999999999999n+99999999999999999999", "-3n+4"};
+  for (const char * in : inputs) {
+    int64_t a = 0, b = 0;
+    ASSERT_TRUE(anb(in, &a, &b)) << in;
+    char buf[64];
+    const size_t n = gtext_css_anb_serialize(a, b, buf, sizeof buf);
+    int64_t a2 = 1, b2 = 1;
+    ASSERT_TRUE(anb(std::string(buf, n), &a2, &b2)) << buf;
+    EXPECT_EQ(a2, a) << in;
+    EXPECT_EQ(b2, b) << in;
+  }
 }
 
 } // namespace

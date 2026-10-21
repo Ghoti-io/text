@@ -28,7 +28,9 @@
 # vectors by tools/css/extract-wpt.py on every run, from the pinned checkout.
 #
 # The scorer has a floor on how many cases were scored (CSS_SYNTAX_MIN_SCORED,
-# 450 from the Makefile), so that a truncated corpus cannot pass by being small.
+# which the Makefile sets in CSS_SYNTAX_FLOOR, the one place the number is
+# written; the scorer's own default is lower), so that a truncated corpus
+# cannot pass by being small.
 #
 # --controls makes the gate fail on purpose, each way it should, and requires
 # it to say why: vectors that lie, exceptions that are missing, stale, about

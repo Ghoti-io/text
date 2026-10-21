@@ -81,6 +81,11 @@ OWN = [
     ('deep-rules', 'stylesheet', 'a{' * 30 + '}' * 30),
     ('deep-functions', 'declaration_list', 'a: ' + 'f(' * 30),
     ('speculation', 'stylesheet', 'a{' + 'b:{c} d;' * 10 + 'e:f{g:h{i:j}}}'),
+    ('lone-commas', 'component_values', ', ,, a,'),
+    ('lone-comma', 'comma_list', ','),
+    ('anb-big', 'component_values', '2n+9007199254740993'),
+    ('anb-min', 'component_values', '-9223372036854775808n-9223372036854775808'),
+    ('unicode-range-adjacent', 'declaration_list', 'unicode-range: foo/**/U+25, 5/**/U+25-2f'),
     ('two-whitespace', 'stylesheet', 'a /**/ b { c: d /**/ e; --f: g /**/ h }'),
 ]
 

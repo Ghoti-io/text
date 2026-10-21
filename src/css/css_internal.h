@@ -176,6 +176,8 @@ typedef struct {
   css_buf ubuf;                  ///< Scratch for a dimension's unit.
   css_buf nbuf;                  ///< Scratch for a number's spelling.
 
+  bool comma_seen;               ///< A comma-separated list consumed a comma.
+
   size_t rule_count;             ///< Rules made.
   size_t declaration_count;      ///< Declarations made.
   size_t work;                   ///< Units of work, for the quadratic suite:
@@ -198,7 +200,8 @@ void css_error(css_ctx * ctx, GTEXT_CSS_Error_Code code, size_t offset,
 /// Append to a byte buffer; false (and the context failed) on OOM.
 bool css_buf_put(css_ctx * ctx, css_buf * buf, const char * s, size_t n);
 
-/// Append a code point as UTF-8.
+/// Append a code point as UTF-8; anything that is not a scalar value (a
+/// surrogate, above U+10FFFF) is appended as U+FFFD.
 bool css_buf_put_cp(css_ctx * ctx, css_buf * buf, uint32_t cp);
 
 /// Free a byte buffer.
@@ -221,6 +224,14 @@ bool css_tokenize(css_ctx * ctx, size_t begin, size_t end, size_t line,
     size_t column, bool unicode_ranges, bool main, css_tokvec * out,
     css_tok * eof);
 
+/**
+ * The line and column of byte `offset` of the input (clamped to its end),
+ * counted exactly as the tokenizer counts them: one counter, so a failure's
+ * position agrees with every token's. An offset inside a sequence is placed
+ * at the end of that sequence's code point.
+ */
+void css_position_of(css_ctx * ctx, size_t offset, size_t * line, size_t * column);
+
 /// Free a token vector's array (its strings are in the arena).
 void css_tokvec_free(css_ctx * ctx, css_tokvec * vec);
 
@@ -232,9 +243,17 @@ void css_tokvec_free(css_ctx * ctx, css_tokvec * vec);
 bool css_filtered_text(css_ctx * ctx, size_t begin, size_t end,
     GTEXT_CSS_String * out);
 
-/// The number a numeric token's spelling stands for (one function, so that
-/// moving it onto the math library is one change).
-double css_number_value(css_ctx * ctx, const char * repr, size_t len);
+/**
+ * The number a numeric token's spelling stands for (one function, so that
+ * moving it onto the math library is one change).
+ *
+ * `repr` is the spelling and `repr[len]` must be a NUL (the conversion reads
+ * to it; `len` is checked against that, not used to bound the read). The
+ * conversion can allocate, so it can fail: the context is then failed with
+ * GTEXT_CSS_E_OOM (GTEXT_CSS_E_INTERNAL for a violated contract) and false is
+ * returned, with *out untouched.
+ */
+bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out);
 
 /// ASCII case-insensitive equality of a string with a lower-case literal.
 bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
@@ -278,6 +297,11 @@ GTEXT_INTERNAL_API GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind ent
 GTEXT_INTERNAL_API GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree,
     const GTEXT_CSS_Serialize_Options * options, const GTEXT_Markup_Sink * sink,
     size_t * work);
+
+/// The tests' view of css_buf_put_cp(): the UTF-8 of `cp` (U+FFFD for what is
+/// not a scalar value) into `out` (at least 4 bytes), and its length; 0 if
+/// the buffer could not be made.
+GTEXT_INTERNAL_API size_t gtext_css_encode_cp(uint32_t cp, char * out);
 
 /// Whether `cp` is a non-ASCII ident code point (CSS Syntax 4.2).
 bool css_is_non_ascii_ident(uint32_t cp);

@@ -81,8 +81,10 @@ own and not hoisted into the rule's list.
   rules); nothing of css-nesting-1 beyond that is needed to parse.
 
 Who owns what: a tree owns every node, string and array in it and is released
-by gtext_css_tree_free(); a result owns its parse errors and is released by
-gtext_css_result_free(); a buffer from a `_buffer` serializer is released by
+by gtext_css_tree_free() (the tree struct is in that memory too, so the tree
+pointer and every pointer into it are dead after the call); a result owns its
+parse errors and is released by gtext_css_result_free() (the struct is the
+caller's and is left zeroed); a buffer from a `_buffer` serializer is released by
 gtext_css_serialize_buffer_free() with the options it was written with. Every
 allocation of all three goes through the options' allocator.
 
@@ -350,10 +352,10 @@ is tested at its bound and one past it (`tests/test-css-limits.cpp`).
 | `max_tokens` | 4,194,304 | `GTEXT_CSS_E_LIMIT_TOKENS` | tokens, white space included, comments not |
 | `max_depth` | 512 | `GTEXT_CSS_E_LIMIT_DEPTH` | nesting of blocks and functions, a rule's block included |
 | `max_rules` | 1,048,576 | `GTEXT_CSS_E_LIMIT_RULES` | rules made, nested declarations rules and rules inside a dropped block included |
-| `max_declarations` | 4,194,304 | `GTEXT_CSS_E_LIMIT_DECLARATIONS` | declarations made |
+| `max_declarations` | 4,194,304 | `GTEXT_CSS_E_LIMIT_DECLARATIONS` | declarations made (one the validity callback refuses is not counted) |
 | `max_total_errors` | 1,048,576 | `GTEXT_CSS_E_LIMIT_ERRORS` | parse errors raised |
-| `max_errors` | 1024 | (none) | parse errors kept in the result; the rest are counted, which is not a failure |
-| `max_output_bytes` (serializer) | 256 MiB | `GTEXT_CSS_E_LIMIT_OUTPUT` | bytes written; the sink has the output up to the limit |
+| `max_errors` | 1024 | (none) | parse errors kept in the result; the rest are counted, which is not a failure. It does not bound memory: every error raised is held (about 40 bytes each, up to `max_total_errors`) until the parse ends, so that the lowest in the input are the ones kept |
+| `max_output_bytes` (serializer) | 256 MiB | `GTEXT_CSS_E_LIMIT_OUTPUT` | bytes written; the sink has a valid prefix of the output: whole code points and whole escapes, up to the limit |
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -486,7 +488,7 @@ writes white space that was not a token, but for the space before
 | Entry points (5.4) | all nine of the draft and the CRD's "parse a block's contents"; the grammar hooks over text and over values | the "unspecified structure" of a match is the grammar's to keep |
 | Nesting (5.5) | interleaved items, nested declarations rules, the stop token, the custom-property rules | none |
 | Validity | a callback for declarations and for rules | by default everything is valid: the grammars are above syntax |
-| An+B (6) | every production; 9.1 | A and B saturate at the range of int64_t |
+| An+B (6) | every production; 9.1 | A and B are read exactly; their magnitudes saturate at INT64_MAX (INT64_MIN is never produced). The serializer follows the snprintf convention |
 | Serialization (9) | the round trip; CSSOM's idioms; the table of section 9 and the pairs it misses | CSSOM's "serialize a URL" and function-name lowercasing are not used (below) |
 | Diagnostics | 21 parse errors, positions, order, the cap and the count | names are the library's: the draft names none |
 | Limits | seven, each its own status, each exact | none |

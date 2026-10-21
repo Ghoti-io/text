@@ -42,6 +42,9 @@
 
 using namespace css_test;
 
+// (src/css/css_internal.h has a flexible array member: the one internal function this file uses.)
+extern "C" size_t gtext_css_encode_cp(uint32_t cp, char * out);
+
 namespace {
 
 GTEXT_CSS_Parse_Options wtf8() {
@@ -429,6 +432,26 @@ TEST(CssNames, EveryErrorCodeHasADistinctName) {
   }
   EXPECT_EQ(std::string(gtext_css_error_name((GTEXT_CSS_Error_Code)10)), "unknown");
   EXPECT_EQ(std::string(gtext_css_error_name((GTEXT_CSS_Error_Code)43)), "unknown");
+}
+
+TEST(CssBuffer, ACodePointThatIsNotAScalarValueIsWrittenAsTheReplacementCharacter) {
+  // css_buf_put_cp() is the one place a code point becomes bytes: whatever the caller hands it, the
+  // buffer holds UTF-8.
+  struct Case {
+    uint32_t cp;
+    const char * want;
+  };
+  const Case cases[] = {{0x41, "A"}, {0x7F, "\x7f"}, {0x80, "\xc2\x80"}, {0x7FF, "\xdf\xbf"}, {0x800, "\xe0\xa0\x80"},
+      {0xD7FF, "\xed\x9f\xbf"}, {0xE000, "\xee\x80\x80"}, {0xFFFD, "\xef\xbf\xbd"}, {0xFFFF, "\xef\xbf\xbf"},
+      {0x10000, "\xf0\x90\x80\x80"}, {0x10FFFF, "\xf4\x8f\xbf\xbf"},
+      // Not scalar values: the surrogates, and everything above U+10FFFF (a -1 cast to unsigned included).
+      {0xD800, "\xef\xbf\xbd"}, {0xDBFF, "\xef\xbf\xbd"}, {0xDC00, "\xef\xbf\xbd"}, {0xDFFF, "\xef\xbf\xbd"},
+      {0x110000, "\xef\xbf\xbd"}, {0x1FFFFF, "\xef\xbf\xbd"}, {0x80000000u, "\xef\xbf\xbd"}, {0xFFFFFFFFu, "\xef\xbf\xbd"}};
+  for (const Case & c : cases) {
+    char out[8] = {0};
+    const size_t n = gtext_css_encode_cp(c.cp, out);
+    EXPECT_EQ(std::string(out, n), c.want) << std::hex << c.cp;
+  }
 }
 
 } // namespace

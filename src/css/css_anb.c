@@ -28,8 +28,8 @@
  * values it reads come from the tokens' values: `-n-\35` is
  * `<dashndashdigit-ident>` (an escape of a digit is a digit by then), and a
  * `+` is a `<delim-token>` only when the tokenizer did not read a number
- * with it. A and B are integers in the standard; here they saturate at the
- * range of int64_t, which the standard does not bound.
+ * with it. A and B are integers in the standard; here their magnitudes saturate at
+ * INT64_MAX, which the standard does not bound (so INT64_MIN is never read).
  */
 
 #include <ghoti.io/text/macros.h>
@@ -50,21 +50,33 @@ static size_t skip_ws(const GTEXT_CSS_Component_Value * v, size_t n, size_t i) {
   return i;
 }
 
-static int64_t saturate(double d) {
-  if (d != d) {
-    return 0;
-  }
-  if (d >= 9223372036854775807.0) {
-    return INT64_MAX;
-  }
-  if (d <= -9223372036854775808.0) {
-    return INT64_MIN;
-  }
-  return (int64_t)d;
+/* The magnitude of every value saturates at INT64_MAX, so the range is
+   symmetric, [-INT64_MAX, INT64_MAX], and negating never overflows (INT64_MIN
+   is never produced). */
+static int64_t negate(int64_t v) {
+  return -v;
 }
 
-static int64_t negate(int64_t v) {
-  return v == INT64_MIN ? INT64_MAX : -v;
+/* The value of an integer token (or a dimension's number) from its
+   spelling, exactly: a double cannot hold an integer above 2^53. */
+static int64_t integer_of(const GTEXT_CSS_Component_Value * v) {
+  const char * s = v->repr.data;
+  const size_t n = v->repr.length;
+  if (!s) {
+    return 0;
+  }
+  size_t i = 0;
+  bool minus = false;
+  if (i < n && (s[i] == '+' || s[i] == '-')) {
+    minus = s[i] == '-';
+    i++;
+  }
+  int64_t m = 0;
+  for (; i < n && s[i] >= '0' && s[i] <= '9'; i++) {
+    const int d = s[i] - '0';
+    m = m > (INT64_MAX - d) / 10 ? INT64_MAX : m * 10 + d;
+  }
+  return minus ? negate(m) : m;
 }
 
 static bool is_token(const GTEXT_CSS_Component_Value * v, GTEXT_CSS_Token_Type type) {
@@ -194,13 +206,13 @@ bool gtext_css_anb_parse(const GTEXT_CSS_Component_Value * values, size_t count,
   }
   else if (is_integer(t)) {
     A = 0;
-    B = saturate(t->number);
+    B = integer_of(t);
     i++;
   }
   else if (is_token(t, GTEXT_CSS_TOKEN_DIMENSION) && (t->flags & GTEXT_CSS_FLAG_INTEGER)) {
     const char * s = t->unit.data;
     const size_t n = t->unit.length;
-    A = saturate(t->number);
+    A = integer_of(t);
     i++;
     if (shape(s, n, "n", false, NULL)) {
       next = BPART;
@@ -223,7 +235,7 @@ bool gtext_css_anb_parse(const GTEXT_CSS_Component_Value * values, size_t count,
     if (i < count) {
       t = &values[i];
       if (is_integer(t) && has_sign(t)) {
-        B = saturate(t->number);
+        B = integer_of(t);
         i++;
       }
       else if (is_token(t, GTEXT_CSS_TOKEN_DELIM) && (t->delim == '+' || t->delim == '-')) {
@@ -232,7 +244,7 @@ bool gtext_css_anb_parse(const GTEXT_CSS_Component_Value * values, size_t count,
         if (i == count || !is_integer(&values[i]) || has_sign(&values[i])) {
           return false;
         }
-        B = saturate(values[i].number);
+        B = integer_of(&values[i]);
         if (minus) {
           B = negate(B);
         }
@@ -248,7 +260,7 @@ bool gtext_css_anb_parse(const GTEXT_CSS_Component_Value * values, size_t count,
     if (i == count || !is_integer(&values[i]) || has_sign(&values[i])) {
       return false;
     }
-    B = negate(saturate(values[i].number));
+    B = negate(integer_of(&values[i]));
     i++;
   }
   if (skip_ws(values, count, i) != count) {
@@ -303,10 +315,12 @@ size_t gtext_css_anb_serialize(int64_t a, int64_t b, char * buffer, size_t size)
       n += put_i64(out + n, b);
     }
   }
-  if (!buffer || size <= n) {
-    return 0;
+  /* As snprintf: the length the text has, whatever the buffer; what fits is
+     written, NUL-terminated, when there is room for the NUL. */
+  if (buffer && size > 0) {
+    const size_t k = n < size ? n : size - 1;
+    memcpy(buffer, out, k);
+    buffer[k] = '\0';
   }
-  memcpy(buffer, out, n);
-  buffer[n] = '\0';
   return n;
 }

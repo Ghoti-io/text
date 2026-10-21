@@ -28,6 +28,7 @@
  * buffer contract of css_serialize.h.
  */
 
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -41,6 +42,9 @@
 #include "markup_test_support.h"
 
 using namespace css_test;
+
+extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Serialize_Options * options,
+    const GTEXT_Markup_Sink * sink, size_t * work);
 
 namespace {
 
@@ -151,6 +155,27 @@ TEST(CssSerializeTokens, PairsTheTableDoesNotListAreSeparatedToo) {
   const std::string out = serialize(p.tree);
   EXPECT_EQ(out, "unicode-range:u/**/+1, U+1/**/2, U+1/**/?, U+1/**/-2, U+1/**/a;");
   EXPECT_EQ(round_trip(p.tree), "");
+}
+
+TEST(CssSerializeTokens, AUnicodeRangeTokenAfterANameOrANumberIsSeparatedFromIt) {
+  // In a unicode-range value, `foo` `U+25` written together read again as the ident `fooU` and a number.
+  const char * previous[] = {"foo", "u", "#", "#id", "@", "@kw", "-", "5", "5px", "5.5", "foo-bar"};
+  for (const char * pre : previous) {
+    const std::string in = std::string("unicode-range:") + pre + "/**/U+25, " + pre + "/**/U+25-2f";
+    Parsed p;
+    parse_into(p, gtext_css_parse_declaration_list, in);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK) << in;
+    const std::string out = serialize(p.tree);
+    EXPECT_NE(out.find(std::string(pre) + "/**/U+25"), std::string::npos) << in << " -> " << out;
+    EXPECT_EQ(round_trip(p.tree), "") << in << " -> " << out;
+    Parsed q;
+    parse_into(q, gtext_css_parse_declaration_list, out);
+    EXPECT_EQ(canon(q.tree), canon(p.tree)) << in << " -> " << out;
+  }
+  // Separated by white space, the pair is written as it was, with no comment.
+  Parsed w;
+  parse_into(w, gtext_css_parse_declaration_list, "unicode-range: foo U+25");
+  EXPECT_EQ(serialize(w.tree), "unicode-range:foo U+25;");
 }
 
 TEST(CssSerializeTokens, ABackslashDelimIsABackslashAndANewline) {
@@ -352,6 +377,90 @@ TEST(CssSerializeSink, TheOutputLimitWritesUpToItAndNoFurther) {
   EXPECT_EQ(out, "abc{def:ghi;");
 }
 
+// A prefix of text that stops in the middle of a multi-byte sequence, or of an escape, is not text.
+bool valid_utf8(const std::string & s) {
+  size_t i = 0;
+  while (i < s.size()) {
+    const unsigned char b = (unsigned char)s[i];
+    const size_t need = b < 0x80 ? 0 : (b >= 0xC2 && b <= 0xDF) ? 1 : (b >= 0xE0 && b <= 0xEF) ? 2 : (b >= 0xF0 && b <= 0xF4) ? 3 : 99;
+    if (need == 99) {
+      return false;
+    }
+    for (size_t k = 1; k <= need; k++) {
+      if (i + k >= s.size() || ((unsigned char)s[i + k] & 0xC0) != 0x80) {
+        return false;
+      }
+    }
+    i += need + 1;
+  }
+  return true;
+}
+
+bool ends_inside_an_escape(const std::string & s) {
+  const size_t at = s.rfind('\\');
+  if (at == std::string::npos) {
+    return false;
+  }
+  const std::string tail = s.substr(at + 1);
+  if (tail.empty()) {
+    return true; // a backslash alone
+  }
+  size_t hex = 0;
+  while (hex < tail.size() && std::isxdigit((unsigned char)tail[hex])) {
+    hex++;
+  }
+  // `\31 ` ends with its space; `\!` is complete; hex digits with nothing after them are not an escape yet.
+  return hex > 0 && hex == tail.size();
+}
+
+TEST(CssSerializeSink, TheOutputLimitNeverSplitsACodePointOrAnEscape) {
+  // The string holds 2-, 3- and 4-byte code points; the idents hold a numeric escape (`\31 `), a
+  // backslash escape (`\!`) and a non-ASCII escape.
+  const char * sheets[] = {"a{b:\"\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80\"}",
+      "\\31 \\!x\\1f600 {\\31 b:\\!\\;c}", "a{b:url(\\31 \\ \\22 \xc3\xa9)}"};
+  for (const char * css : sheets) {
+    Parsed p;
+    parse_into(p, gtext_css_parse_stylesheet, css);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK) << css;
+    const std::string full = serialize(p.tree);
+    ASSERT_NE(full.compare(0, 7, "status:"), 0);
+    bool saw_split_candidate = false;
+    for (size_t limit = 1; limit <= full.size(); limit++) { // 0 is the default, not a limit
+      GTEXT_CSS_Serialize_Options o = gtext_css_serialize_options_default();
+      o.max_output_bytes = limit;
+      std::string out;
+      GTEXT_Markup_Sink sink = {string_sink, &out};
+      const GTEXT_CSS_Status st = gtext_css_serialize_tree(p.tree, &o, &sink);
+      EXPECT_EQ(st, limit < full.size() ? GTEXT_CSS_E_LIMIT_OUTPUT : GTEXT_CSS_OK) << css << " limit " << limit;
+      EXPECT_LE(out.size(), limit);
+      EXPECT_EQ(full.compare(0, out.size(), out), 0) << "a prefix of the whole output: " << limit;
+      EXPECT_TRUE(valid_utf8(out)) << css << " limit " << limit << ": " << out;
+      EXPECT_FALSE(ends_inside_an_escape(out)) << css << " limit " << limit << ": " << out;
+      saw_split_candidate = saw_split_candidate || out.size() < limit;
+    }
+    EXPECT_TRUE(saw_split_candidate) << css << ": some limit fell inside a unit and the unit was left out";
+  }
+}
+
+TEST(CssSerializeSink, TheWorkCounterIsZeroWhereTheCallWasRefused) {
+  // gtext_css_serialize_work(): *work is set on every return, the early E_INVALID ones included.
+  std::string out;
+  GTEXT_Markup_Sink sink = {string_sink, &out};
+  size_t work = 12345;
+  EXPECT_EQ(gtext_css_serialize_work(nullptr, nullptr, &sink, &work), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(work, 0u);
+  Parsed p;
+  parse_into(p, gtext_css_parse_stylesheet, "a{b:c}");
+  work = 12345;
+  GTEXT_Markup_Sink none = {nullptr, nullptr};
+  EXPECT_EQ(gtext_css_serialize_work(p.tree, nullptr, &none, &work), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(work, 0u);
+  work = 12345;
+  EXPECT_EQ(gtext_css_serialize_work(p.tree, nullptr, &sink, &work), GTEXT_CSS_OK);
+  EXPECT_GT(work, 0u);
+  EXPECT_NE(work, 12345u);
+}
+
 TEST(CssSerializeSink, UnusableArgumentsAreInvalid) {
   Parsed p;
   parse_into(p, gtext_css_parse_stylesheet, "a{}");
@@ -440,9 +549,24 @@ TEST(CssSerializeAnB, FollowsSection91) {
     const size_t n = gtext_css_anb_serialize(c.a, c.b, buf, sizeof buf);
     EXPECT_EQ(std::string(buf, n), c.want);
   }
+  // The snprintf convention: the length is returned whatever the buffer, so a caller can size one.
+  EXPECT_EQ(gtext_css_anb_serialize(2, 1, nullptr, 0), 4u);
+  EXPECT_EQ(gtext_css_anb_serialize(2, 1, nullptr, 10), 4u) << "no buffer: nothing is written, the length is still known";
+  EXPECT_EQ(gtext_css_anb_serialize(INT64_MIN, INT64_MIN, nullptr, 0), 41u);
   char small[3];
-  EXPECT_EQ(gtext_css_anb_serialize(2, 1, small, sizeof small), 0u) << "a buffer too small writes nothing";
-  EXPECT_EQ(gtext_css_anb_serialize(2, 1, nullptr, 10), 0u);
+  memset(small, 'x', sizeof small);
+  EXPECT_EQ(gtext_css_anb_serialize(2, 1, small, sizeof small), 4u) << "the whole length, not what fit";
+  EXPECT_EQ(std::string(small), "2n") << "cut to size - 1 bytes and terminated";
+  char none[1] = {'x'};
+  EXPECT_EQ(gtext_css_anb_serialize(2, 1, none, 0), 4u);
+  EXPECT_EQ(none[0], 'x') << "a size of 0 writes nothing";
+  char exact[5];
+  EXPECT_EQ(gtext_css_anb_serialize(2, 1, exact, sizeof exact), 4u);
+  EXPECT_EQ(std::string(exact), "2n+1");
+  // Sized by the first call, as a caller would.
+  std::string buf(gtext_css_anb_serialize(-7, -9, nullptr, 0) + 1, '\0');
+  EXPECT_EQ(gtext_css_anb_serialize(-7, -9, &buf[0], buf.size()), buf.size() - 1);
+  EXPECT_STREQ(buf.c_str(), "-7n-9");
 }
 
 } // namespace
