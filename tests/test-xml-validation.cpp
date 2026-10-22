@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include <fstream>
+#include <ostream>
 #include <vector>
 #include <unistd.h>
 #include <gtest/gtest.h>
@@ -14,6 +15,8 @@
 #include <ghoti.io/text/xml.h>
 #include <ghoti.io/text/xml/xml_parse.h>
 #include <ghoti.io/text/xml/xml_stream.h>
+
+#include "../src/xml/xml_internal.h"
 
 namespace {
 struct LiveAllocator;
@@ -1394,6 +1397,211 @@ TEST(XmlValidation, RevalidationSeesEditedEnumeratedAttribute) {
       GTEXT_XML_OK) << error.message;
   EXPECT_EQ(result.verdict, GTEXT_XML_VALIDATION_INVALID);
   EXPECT_GE(count(parsed.doc, GTEXT_XML_VALIDATION_ATTRIBUTE_VALUE), 1u);
+}
+
+// ---- validation state across a retry -------------------------------------------------------------------
+
+// What a validating parse said: its status, and (when it parsed) the verdict and every finding in order.
+struct ValidationAnswer {
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  size_t error_offset = 0;
+  GTEXT_XML_Validation_Result result{};
+  std::vector<std::string> findings;
+  bool operator==(const ValidationAnswer & o) const {
+    return status == o.status && error_offset == o.error_offset && result.verdict == o.result.verdict
+        && result.knowledge_complete == o.result.knowledge_complete
+        && result.diagnostics_truncated == o.result.diagnostics_truncated
+        && result.diagnostic_count == o.result.diagnostic_count && findings == o.findings;
+  }
+};
+
+std::ostream & operator<<(std::ostream & os, const ValidationAnswer & a) {
+  os << gtext_xml_status_string(a.status) << " at " << a.error_offset << ", verdict " << a.result.verdict << " complete "
+     << a.result.knowledge_complete << " count " << a.result.diagnostic_count << "\n";
+  for (const std::string & f : a.findings) os << "    " << f << "\n";
+  return os;
+}
+
+std::string finding_text(const GTEXT_XML_Validation_Diagnostic & d) {
+  return std::to_string(d.code) + " @" + std::to_string(d.location.offset) + ":" + std::to_string(d.location.line) + ":"
+      + std::to_string(d.location.column) + " src" + std::to_string(d.location.source_id) + " " + (d.message ? d.message : "");
+}
+
+GTEXT_XML_Parse_Options validating() {
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  o.dtd_mode = GTEXT_XML_DTD_VALIDATE;
+  return o;
+}
+
+ValidationAnswer validation_dom(const std::string & text, const GTEXT_XML_Parse_Options & o) {
+  ValidationAnswer a;
+  GTEXT_Markup_Document * doc = nullptr;
+  GTEXT_XML_Error err{};
+  a.status = gtext_xml_parse(text.data(), text.size(), &o, &doc, &err);
+  if (a.status != GTEXT_XML_OK) {
+    a.error_offset = err.byte_offset;
+    return a;
+  }
+  gtext_xml_validation_result(doc, &a.result);
+  for (size_t i = 0; i < gtext_xml_validation_diagnostic_count(doc); ++i) {
+    GTEXT_XML_Validation_Diagnostic d{};
+    EXPECT_TRUE(gtext_xml_validation_diagnostic(doc, i, &d));
+    a.findings.push_back(finding_text(d));
+  }
+  gtext_markup_document_free(doc);
+  return a;
+}
+
+void take_validation_event(const GTEXT_XML_Event * e, ValidationAnswer * a) {
+  if (e->type == GTEXT_XML_EVENT_VALIDATION_DIAGNOSTIC) a->findings.push_back(finding_text(e->validation_diagnostic));
+  else if (e->type == GTEXT_XML_EVENT_VALIDATION_RESULT) a->result = e->validation_result;
+}
+
+ValidationAnswer validation_stream(const std::string & text, const GTEXT_XML_Parse_Options & o, size_t chunk, bool eager) {
+  ValidationAnswer a;
+  GTEXT_XML_Stream * s = gtext_xml_stream_new(&o,
+      [](const GTEXT_XML_Event * e, void * user) {
+        take_validation_event(e, static_cast<ValidationAnswer *>(user));
+        return GTEXT_XML_OK;
+      },
+      &a);
+  xml_stream_set_eager(s, eager);
+  GTEXT_XML_Error err{};
+  for (size_t at = 0; at < text.size() && a.status == GTEXT_XML_OK;) {
+    const size_t n = std::min(chunk ? chunk : text.size(), text.size() - at);
+    a.status = gtext_xml_stream_feed(s, text.data() + at, n, &err);
+    at += n;
+  }
+  if (a.status == GTEXT_XML_OK) a.status = gtext_xml_stream_finish(s, &err);
+  if (a.status != GTEXT_XML_OK) {
+    a.error_offset = err.byte_offset;
+    a.findings.clear();
+    a.result = {};
+  }
+  gtext_xml_stream_free(s);
+  return a;
+}
+
+ValidationAnswer validation_reader(const std::string & text, const GTEXT_XML_Parse_Options & o, size_t chunk) {
+  ValidationAnswer a;
+  GTEXT_XML_Reader * r = gtext_xml_reader_new(&o);
+  GTEXT_XML_Error err{};
+  auto drain = [&]() {
+    GTEXT_XML_Event e;
+    while (gtext_xml_reader_next(r, &e) == GTEXT_XML_OK) take_validation_event(&e, &a);
+  };
+  for (size_t at = 0; at < text.size() && a.status == GTEXT_XML_OK;) {
+    const size_t n = std::min(chunk ? chunk : text.size(), text.size() - at);
+    a.status = gtext_xml_reader_feed(r, text.data() + at, n, &err);
+    at += n;
+    drain();
+  }
+  if (a.status == GTEXT_XML_OK) {
+    a.status = gtext_xml_reader_feed(r, nullptr, 0, &err);
+    drain();
+  }
+  if (a.status != GTEXT_XML_OK) {
+    a.error_offset = err.byte_offset;
+    a.findings.clear();
+    a.result = {};
+  }
+  gtext_xml_reader_free(r);
+  return a;
+}
+
+void expect_one_validation(const char * what, const std::string & text, const GTEXT_XML_Parse_Options & o) {
+  const ValidationAnswer dom = validation_dom(text, o);
+  struct Way { const char * name; size_t chunk; bool eager; };
+  for (const Way & w : {Way{"whole", 0, false}, Way{"whole, eager", 0, true}, Way{"a byte at a time", 1, false},
+           Way{"a byte at a time, eager", 1, true}, Way{"three bytes at a time, eager", 3, true}}) {
+    EXPECT_EQ(validation_stream(text, o, w.chunk, w.eager), dom) << what << ": stream, " << w.name << "\n dom: " << dom;
+  }
+  EXPECT_EQ(validation_reader(text, o, 0), dom) << what << ": reader, whole\n dom: " << dom;
+  EXPECT_EQ(validation_reader(text, o, 1), dom) << what << ": reader, a byte at a time\n dom: " << dom;
+}
+
+// The event parser reads a construct again when its first reading found it unfinished, and the document type is one construct from
+// its "<!DOCTYPE" to its closing bracket. A declaration read twice must not be declared twice: the element-declaration records,
+// the entity, notation and attribute-list tables, the ID tables and the findings must be the DOM parse's, in the same order and at
+// the same places, with an invalid duplicate element declaration reported once.
+TEST(XmlValidationRetry, AReadAgainSubsetValidatesAsTheDomParseDoes) {
+  const std::string subset =
+      "<!DOCTYPE r [\n"
+      "<!ELEMENT r (a|b)*>\n"
+      "<!ELEMENT a (#PCDATA)>\n"
+      "<!ELEMENT a ANY>\n"          // genuinely invalid: a second declaration of a
+      "<!ELEMENT b EMPTY>\n"
+      "<!ATTLIST a id ID #IMPLIED ref IDREF #IMPLIED>\n"
+      "<!ATTLIST b n NMTOKEN \"x\" k CDATA #REQUIRED>\n"
+      "<!ENTITY e \"txt\">\n"
+      "<!ENTITY u SYSTEM \"u.bin\" NDATA nt>\n"
+      "<!NOTATION nt SYSTEM \"x\">\n"
+      "<!ENTITY % p \"<!-- c -->\">\n"
+      "%p;\n"
+      "]>\n";
+  const std::string body = "<r><a id=\"i1\">&e;</a><a ref=\"i1\"/><b/><a ref=\"missing\"/><a id=\"i1\"/><c/></r>";
+  GTEXT_XML_Parse_Options o = validating();
+  const ValidationAnswer dom = validation_dom(subset + body, o);
+  ASSERT_EQ(dom.status, GTEXT_XML_OK);
+  ASSERT_EQ(dom.result.verdict, GTEXT_XML_VALIDATION_INVALID);
+  // The duplicate declaration, the missing required attribute, the dangling IDREF, the repeated ID and the undeclared element.
+  EXPECT_GE(dom.findings.size(), 5u) << dom;
+  expect_one_validation("invalid document", subset + body, o);
+
+  // The same subset, with the duplicate removed and the uses made valid: valid, and a retry does not make it otherwise.
+  std::string clean = subset;
+  clean.erase(clean.find("<!ELEMENT a ANY>\n"), std::string("<!ELEMENT a ANY>\n").size());
+  const std::string valid_body = "<r><a id=\"i1\">&e;</a><a ref=\"i1\"/><b k=\"v\"/></r>";
+  const ValidationAnswer valid = validation_dom(clean + valid_body, o);
+  EXPECT_EQ(valid.result.verdict, GTEXT_XML_VALIDATION_VALID) << valid;
+  expect_one_validation("valid document", clean + valid_body, o);
+
+  // A diagnostic cap reached inside the subset's findings, and a duplicate that the cap would hide: counted once each.
+  GTEXT_XML_Parse_Options capped = o;
+  capped.max_validation_diagnostics = 2;
+  expect_one_validation("capped", subset + body, capped);
+
+  // The subset cut off before it closes: the first failure is the end of the input, whatever validation did on the way.
+  expect_one_validation("unterminated", subset.substr(0, subset.size() - 3), o);
+  // And a subset whose duplicate is the last thing before a syntax error.
+  expect_one_validation("duplicate then a syntax error",
+      "<!DOCTYPE r [<!ELEMENT r ANY><!ELEMENT r EMPTY><!ELEMENT r ( ]><r/>", o);
+}
+
+
+// The budgets of validation count the document's DTD, and a subset read again must not be charged twice. The reference here is the
+// event parser fed the whole input, and not the DOM parse: the DOM parse also rebuilds its indexes from the retained syntax after the
+// subset, which the event parser has no tree for, so its least budget is a little higher (a difference of the two parsers' accounting
+// that has nothing to do with reading again). Every cut of the same stream parser, eager or not, and the reader, must accept the least
+// budget the whole-input stream accepts, and refuse one less with the same answer.
+TEST(XmlValidationRetry, ABudgetThatAcceptsTheWholeInputAcceptsEveryCut) {
+  const std::string text =
+      "<!DOCTYPE r [<!ELEMENT r (a|b)*><!ELEMENT a (#PCDATA)><!ELEMENT a ANY><!ELEMENT b EMPTY>"
+      "<!ATTLIST a id ID #IMPLIED ref IDREF #IMPLIED><!ENTITY e \"txt\"><!NOTATION nt SYSTEM \"x\">]>"
+      "<r><a id=\"i1\">&e;</a><a ref=\"i1\"/><b/></r>";
+  using Field = size_t GTEXT_XML_Parse_Options::*;
+  for (Field field : {&GTEXT_XML_Parse_Options::max_validation_work, &GTEXT_XML_Parse_Options::max_validation_memory}) {
+    GTEXT_XML_Parse_Options o = validating();
+    size_t low = 1, high = (size_t)1 << 24;
+    while (low < high) {
+      const size_t mid = low + (high - low) / 2;
+      o.*field = mid;
+      if (validation_stream(text, o, 0, false).status == GTEXT_XML_OK) high = mid; else low = mid + 1;
+    }
+    ASSERT_LT(low, (size_t)1 << 24);
+    for (const size_t budget : {low, low - 1}) {
+      o.*field = budget;
+      const ValidationAnswer whole = validation_stream(text, o, 0, false);
+      ASSERT_EQ(whole.status == GTEXT_XML_OK, budget == low) << budget;
+      struct Way { const char * name; size_t chunk; bool eager; };
+      for (const Way & w : {Way{"whole, eager", 0, true}, Way{"a byte at a time", 1, false}, Way{"a byte at a time, eager", 1, true},
+               Way{"three bytes at a time, eager", 3, true}}) {
+        EXPECT_EQ(validation_stream(text, o, w.chunk, w.eager), whole) << "budget " << budget << ", " << w.name;
+      }
+      EXPECT_EQ(validation_reader(text, o, 0), whole) << "budget " << budget << ", reader whole";
+      EXPECT_EQ(validation_reader(text, o, 1), whole) << "budget " << budget << ", reader a byte at a time";
+    }
+  }
 }
 
 } // namespace

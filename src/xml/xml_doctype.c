@@ -1353,6 +1353,10 @@ static GTEXT_XML_Status validate_declaration(xml_ctx * p, int kind) {
           }
         }
       }
+      else if (s == GTEXT_XML_OK && xml_cut_literal(p, "NDATA", 5)) {
+        /* The buffer ends inside the keyword: the input ended, which is not a mistake in the declaration. */
+        s = xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+      }
     }
     if (s != GTEXT_XML_OK) {
       if (pe_external) { markup_buf_free(&pe_public); markup_buf_free(&pe_system); }

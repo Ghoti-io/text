@@ -545,9 +545,15 @@ static GTEXT_XML_Status run_reference(xml_ctx * p) {
    again from its start, and a limit that counted it twice would refuse a
    document the same bytes in one piece are accepted, or refuse it for a limit
    when the whole-buffer parse finds an error first. The status of a document
-   is the first failure in input order, however its bytes arrive. The work
-   budget (`max_total_work`) is not undone: it counts what was read, and
-   reading a construct again is work. */
+   is the first failure in input order, however its bytes arrive.
+
+   What a failed attempt declared stays declared, and reading the
+   declaration again finds it there and costs nothing: the first binding wins,
+   an element declaration seen again (or seen as a duplicate already reported)
+   is neither charged nor compiled again, a finding is reported once. So the
+   validation work and memory are the document's, not the number of readings,
+   and they are not restored. The work budget (`max_total_work`) is not undone:
+   it counts what was read, and reading a construct again is work. */
 static GTEXT_XML_Status attempt(
     GTEXT_XML_Stream * s, lexer_fn fn, int * done, int source_complete) {
   xml_ctx * p = &s->p;

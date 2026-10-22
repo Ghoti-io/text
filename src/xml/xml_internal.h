@@ -337,7 +337,18 @@ typedef struct {
   unsigned char ambiguity_reported;
   unsigned char duplicate_reported;
   size_t validation_budget_bytes;
+  /** Records (source and offset) of later declarations of this element that
+   *  were reported as duplicates and dropped, so that one read again is
+   *  recognized without compiling it beside the models that exist by then. */
+  struct xml_lost_declaration * lost;
+  size_t lost_count;
+  size_t lost_capacity;
 } xml_content_decl;
+
+typedef struct xml_lost_declaration {
+  uint32_t source_id;
+  size_t offset;
+} xml_lost_declaration;
 
 typedef struct {
   const xml_content_decl * model;

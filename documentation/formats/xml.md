@@ -567,7 +567,13 @@ input ends, so the cost stays linear and the verdict is still the lexer's. Undon
 includes what the attempt counted against the limits that count the document
 (`max_references`, `max_declarations`, `max_expanded_bytes` and the amplification
 that reads the last two), so a construct read twice is counted once; the work
-budget (`max_total_work`) counts what was read, and reading again is work. The
+budget (`max_total_work`) counts what was read, and reading again is work.
+What an unfinished attempt declared stays declared, and reading the declaration
+again costs nothing: the first binding of a name wins, an element declaration seen
+again (or one already reported as a duplicate) is neither charged nor compiled
+again, and a finding is reported once, so `max_validation_work`,
+`max_validation_memory` and the diagnostics are the document's and not the number
+of times a cut made the parser read it. The
 lexer, given a buffer that ends in the middle of a token (a multi-byte character,
 a name, `?>`, `SYSTEM`), says that the input ended and never invents a syntax
 error; a test runs it after every byte of many damaged documents, bypassing

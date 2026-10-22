@@ -227,6 +227,7 @@ static void free_model(xml_ctx *p, xml_content_decl *m) {
   xml_release(p, m->declaration);
   xml_release(p, m->states);
   xml_release(p, m->mixed_names);
+  xml_release(p, m->lost);
   if (m->validation_budget_bytes <= p->validation_memory)
     p->validation_memory -= m->validation_budget_bytes;
   memset(m, 0, sizeof(*m));
@@ -567,11 +568,60 @@ static xml_content_decl *find_model(xml_ctx *p,
   return NULL;
 }
 
+/* Is this very record (the same bytes at the same place) already the model of its element? The event parser reads a document type
+   again when its first reading found the input unfinished, and the final index rebuild of a tree reads every declaration again; a
+   declaration seen again is the one that is there, and is neither charged nor compiled again - so that the work and the memory it
+   takes, and the peak of the memory (a second model beside the first), are the same however often it is read. */
+static int element_decl_already_modelled(xml_ctx *p, const unsigned char *source, size_t length,
+    const GTEXT_Markup_Location *location) {
+  static const char keyword[] = "<!ELEMENT";
+  size_t at = sizeof(keyword) - 1;
+  if (length <= at || memcmp(source, keyword, at) != 0) return 0;
+  while (at < length && xml_is_space(source[at])) ++at;
+  const size_t begin = at;
+  while (at < length && !xml_is_space(source[at]) && source[at] != '(' && source[at] != '>') ++at;
+  if (at == begin) return 0;
+  const xml_content_decl *old = find_model(p, source + begin, at - begin);
+  if (!old) return 0;
+  if (old->declaration_length == length && memcmp(old->declaration, source, length) == 0
+      && old->location.source_id == location->source_id && old->location.offset == location->offset) return 1;
+  for (size_t i = 0; i < old->lost_count; ++i)
+    if (old->lost[i].source_id == location->source_id && old->lost[i].offset == location->offset) return 1;
+  return 0;
+}
+
+/* Remember that the declaration at `location` lost to the model `old`: 16 bytes of the model's own budget. */
+static GTEXT_XML_Status remember_lost_declaration(xml_ctx *p, xml_content_decl *old,
+    const GTEXT_Markup_Location *location) {
+  if (!location) return GTEXT_XML_OK;
+  if (old->lost_count == old->lost_capacity) {
+    const size_t capacity = old->lost_capacity ? old->lost_capacity * 2 : 2;
+    if (capacity > SIZE_MAX / sizeof(*old->lost))
+      return xml_fail(p, GTEXT_XML_E_LIMIT_WORK, "DTD validation duplicate index overflow");
+    const size_t extra = (capacity - old->lost_capacity) * sizeof(*old->lost);
+    GTEXT_XML_Status status = xml_validation_memory_reserve(p, extra);
+    if (status != GTEXT_XML_OK) return status;
+    xml_lost_declaration *grown = gtext_allocator_realloc(p->allocator, old->lost, capacity * sizeof(*old->lost));
+    if (!grown) {
+      xml_validation_memory_release(p, extra);
+      return xml_fail(p, GTEXT_XML_E_OOM, "could not retain a duplicate element declaration");
+    }
+    old->lost = grown;
+    old->lost_capacity = capacity;
+    old->validation_budget_bytes += extra;
+  }
+  old->lost[old->lost_count].source_id = location->source_id;
+  old->lost[old->lost_count].offset = location->offset;
+  old->lost_count++;
+  return GTEXT_XML_OK;
+}
+
 GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,
     const unsigned char *source, size_t length,
     const GTEXT_Markup_Location *location, int external) {
   if (p->dtd_mode != GTEXT_XML_DTD_VALIDATE || p->dtd_suppress_declaration_effects)
     return GTEXT_XML_OK;
+  if (location && element_decl_already_modelled(p, source, length, location)) return GTEXT_XML_OK;
   GTEXT_XML_Status status = validation_charge(p, length);
   if (status != GTEXT_XML_OK) return status;
   /* Reserve before compilation: the NFA and mixed-name arrays grow with the
@@ -616,7 +666,11 @@ GTEXT_XML_Status xml_validation_add_element_decl(xml_ctx *p,
       model.duplicate_reported = 1;
       *old = model;
     }
-    else free_model(p, &model);
+    else {
+      free_model(p, &model);
+      status = remember_lost_declaration(p, old, location);
+      if (status != GTEXT_XML_OK) return status;
+    }
     return GTEXT_XML_OK;
   }
   size_t new_capacity = validation_array_capacity(p->content_decl_capacity,
