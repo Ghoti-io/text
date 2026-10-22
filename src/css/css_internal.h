@@ -142,7 +142,7 @@ typedef struct {
   size_t src;     ///< Source offset of the first code point.
   uint32_t count; ///< Code points in the run.
   uint8_t dlen;   ///< Bytes of each in the decoded text, 1 to 4.
-  uint8_t width;  ///< Bytes of each in the source, 1 to 15.
+  uint8_t width;  ///< Bytes of each in the source, 0 to 15 (0: a U+FFFD that the Encoding module writes for an ISO-2022-JP escape it has given up on, before the byte that follows).
 } css_srcrun;
 
 /**

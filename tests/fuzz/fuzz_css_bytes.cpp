@@ -482,13 +482,23 @@ int entry(const uint8_t * data, size_t size) {
         fail("a stream cut at random does not give the one-call parse's answer", "round " + std::to_string(round), input);
       }
     }
-    // The cut at every byte of the first kilobyte and a little more: the window that decides the encoding.
+    // The cut at bytes of the first kilobyte and a little more (every byte of a short input, about a hundred cuts of a long one, from
+    // a start the input chooses: a parse of a long input per cut, at every byte, made a unit take ten seconds): the window that
+    // decides the encoding.
     const size_t limit = std::min<size_t>(input.size(), 1040);
-    for (size_t k = (o3 & 1) ? 0 : 1; k <= limit; k += 1 + (limit > 80 ? (o3 >> 1) % 17 : 0)) {
+    auto cut_in_two = [&](size_t k) {
       Outcome two;
       streamed(two, s, input, [&](size_t i) -> size_t { return i == 0 ? k : (input.size() ? input.size() : 1); });
       if (signature(two.status, two.tree, two.result, input) != sig) {
         fail("a stream cut in two does not give the one-call parse's answer", "at " + std::to_string(k), input);
+      }
+    };
+    for (size_t k = (o3 & 1) ? 0 : 1; k <= limit; k += 1 + (limit > 80 ? (o3 >> 1) % 17 : 0) + limit / 100) {
+      cut_in_two(k);
+    }
+    for (size_t k : {size_t{1022}, size_t{1023}, size_t{1024}, size_t{1025}}) { // (the window itself, whatever the stride was)
+      if (k <= input.size()) {
+        cut_in_two(k);
       }
     }
   }

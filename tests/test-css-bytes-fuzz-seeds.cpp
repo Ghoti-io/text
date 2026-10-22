@@ -133,7 +133,7 @@ TEST_F(CssBytesFuzzSeeds, EverySeedHoldsEveryProperty) {
   constexpr size_t kMinSeeds = 500;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/css/make-fuzz-bytes-seeds.py writes it";
   for (const char * name : {"own-cp1251-charset.seed", "own-iso2022jp-trailing-shift-oom-3.seed", "own-charset-ends-1024.seed",
-           "own-utf16le-long-cut-1.seed", "stylesheet-bytes-005.seed"}) { // (what check-css-fuzz-plants replays is among them)
+           "own-utf16le-long-cut-1.seed", "stylesheet-bytes-005.seed", "reproducer-iso2022jp-zero-width-replacement.seed"}) { // (what check-css-fuzz-plants replays is among them)
     const std::string path = dir + "/" + name;
     ASSERT_TRUE(std::find(files.begin(), files.end(), path) != files.end()) << path << " is not there";
   }

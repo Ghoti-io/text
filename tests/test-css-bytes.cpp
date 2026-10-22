@@ -525,4 +525,25 @@ TEST(CssBytes, EveryByteOfEveryEncodingParsesAndGivesTheSameAsAStream) {
   }
 }
 
+TEST(CssBytes, AnIso2022JpEscapeThatIsNotOneGivesAZeroWidthReplacementAndStillParses) {
+  // The Encoding module writes the U+FFFD of an escape it gives up on before it reads the byte after it, and says the character
+  // was decoded from no bytes (a width of 0). Found by the fuzzer on "@charset iso-2022-jp" with "<ESC>x" after a shifted
+  // character; the decode refused it as an internal error.
+  GTEXT_CSS_Bytes_Options o = gtext_css_bytes_options_default();
+  o.environment_encoding = GTEXT_ENCODING_ISO_2022_JP;
+  const std::vector<std::string> inputs = {
+      std::string("@charset \"iso-2022-jp\"; a\x1b(Bb\x1b(Bc{d:e}\x1b$BF|\x1b(B\x1b$BKB (\x1bx\\{y:z}"),
+      std::string("a\x1bx{b:c}"), std::string("a\x1b$x{b:c}"), std::string("a\x1b(x{b:c}"), std::string("a\x1b$(x{b:c}"),
+      std::string("a\x1b$B\x1bx{b:c}"), std::string("a\x1b$BF|\x1b$x{b:c}"), std::string("a{b:c}\x1b"), std::string("a{b:c}\x1b$"),
+      std::string("a{b:c}\x1b$B\x1b"), std::string("\x1b\x1b\x1b$B\x1b(\x1b(B x{y:z}")};
+  for (const std::string & in : inputs) {
+    const Outcome whole = whole_bytes(in, &o);
+    ASSERT_EQ(whole.status, GTEXT_CSS_OK) << in;
+    for (size_t step : {size_t{1}, size_t{2}, size_t{3}}) {
+      const Cut cut{{step}, true, false, "steps"};
+      expect_same_outcome(whole, through_stream(GTEXT_CSS_TREE_STYLESHEET, true, &o, nullptr, in, cut), "iso-2022-jp escape, step " + std::to_string(step));
+    }
+  }
+}
+
 } // namespace

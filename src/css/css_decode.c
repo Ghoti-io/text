@@ -237,7 +237,7 @@ static bool decode_sink(void * user, const char * bytes, size_t len, const GTEXT
   while (i < len) {
     const unsigned char c = (unsigned char)bytes[i];
     const size_t dlen = c < 0x80 ? 1 : c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 0;
-    if (dlen == 0 || i + dlen > len || map->widths[i] == 0) { /* the decoder writes whole code points */
+    if (dlen == 0 || i + dlen > len) { /* the decoder writes whole code points (and a width of 0 is possible: an ISO-2022-JP escape that is not one writes its U+FFFD before the byte after it is read) */
       d->status = GTEXT_CSS_E_INTERNAL;
       return false;
     }
