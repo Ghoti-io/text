@@ -33,7 +33,10 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <algorithm>
 #include <chrono>
+#include <functional>
+#include <ostream>
 #include <cstring>
 #include <cstdio>
 #include <string>
@@ -1312,6 +1315,189 @@ TEST(XmlLimits, AmplificationThresholdAndFactorAtTheirBounds) {
   o.amplification_threshold = 0;
   EXPECT_EQ(parse_with(text, o), GTEXT_XML_OK);
   EXPECT_STREQ(gtext_xml_status_string(GTEXT_XML_E_LIMIT_AMPLIFICATION), "entity amplification too large");
+}
+
+// ---- the same verdict however the input is cut ---------------------------------------------------------
+
+// What a parse of `text` said: the status and the error, to the byte.
+struct Verdict {
+  GTEXT_XML_Status status = GTEXT_XML_OK;
+  size_t offset = 0, line = 0, column = 0;
+  std::string message;
+  bool operator==(const Verdict & o) const {
+    return status == o.status && offset == o.offset && line == o.line && column == o.column && message == o.message;
+  }
+};
+
+std::ostream & operator<<(std::ostream & os, const Verdict & v) {
+  return os << gtext_xml_status_string(v.status) << " at " << v.offset << ":" << v.line << ":" << v.column << " " << v.message;
+}
+
+Verdict verdict_of(GTEXT_XML_Status st, const GTEXT_XML_Error & e) {
+  Verdict v;
+  v.status = st;
+  if (st != GTEXT_XML_OK) {
+    v.offset = e.byte_offset;
+    v.line = e.line;
+    v.column = e.column;
+    v.message = e.message ? e.message : "";
+  }
+  return v;
+}
+
+Verdict dom_verdict(const std::string & text, const GTEXT_XML_Parse_Options & o) {
+  Doc * doc = nullptr;
+  GTEXT_XML_Error err{};
+  const GTEXT_XML_Status st = gtext_xml_parse(text.data(), text.size(), &o, &doc, &err);
+  gtext_markup_document_free(doc);
+  return verdict_of(st, err);
+}
+
+GTEXT_XML_Status ignore_event(const GTEXT_XML_Event *, void *) {
+  return GTEXT_XML_OK;
+}
+
+// The event parser over `text` in pieces of `chunk` bytes (0: whole). `eager` attempts every construct whenever bytes
+// arrive, which is what a construct that its scan wrongly judged complete does: it is read, found unfinished, undone, and
+// read again at the next byte.
+Verdict stream_verdict(const std::string & text, const GTEXT_XML_Parse_Options & o, size_t chunk, bool eager) {
+  GTEXT_XML_Stream * s = gtext_xml_stream_new(&o, ignore_event, nullptr);
+  EXPECT_NE(s, nullptr);
+  xml_stream_set_eager(s, eager);
+  GTEXT_XML_Error err{};
+  GTEXT_XML_Status st = GTEXT_XML_OK;
+  for (size_t at = 0; at < text.size() && st == GTEXT_XML_OK;) {
+    const size_t n = std::min(chunk ? chunk : text.size(), text.size() - at);
+    st = gtext_xml_stream_feed(s, text.data() + at, n, &err);
+    at += n;
+  }
+  if (st == GTEXT_XML_OK) st = gtext_xml_stream_finish(s, &err);
+  gtext_xml_stream_free(s);
+  return verdict_of(st, err);
+}
+
+Verdict reader_verdict(const std::string & text, const GTEXT_XML_Parse_Options & o, size_t chunk) {
+  GTEXT_XML_Reader * r = gtext_xml_reader_new(&o);
+  EXPECT_NE(r, nullptr);
+  GTEXT_XML_Error err{};
+  GTEXT_XML_Status st = GTEXT_XML_OK;
+  auto drain = [&]() {
+    GTEXT_XML_Event e;
+    while (gtext_xml_reader_next(r, &e) == GTEXT_XML_OK) {
+    }
+  };
+  for (size_t at = 0; at < text.size() && st == GTEXT_XML_OK;) {
+    const size_t n = std::min(chunk ? chunk : text.size(), text.size() - at);
+    st = gtext_xml_reader_feed(r, text.data() + at, n, &err);
+    at += n;
+    drain();
+  }
+  if (st == GTEXT_XML_OK) {
+    st = gtext_xml_reader_feed(r, nullptr, 0, &err);
+    drain();
+  }
+  gtext_xml_reader_free(r);
+  return verdict_of(st, err);
+}
+
+// Every way of cutting `text` gives the verdict of the whole-buffer parse, which is `expected` when it is given.
+void expect_one_verdict(const char * what, const std::string & text, const GTEXT_XML_Parse_Options & o,
+    GTEXT_XML_Status expected) {
+  const Verdict dom = dom_verdict(text, o);
+  EXPECT_EQ(dom.status, expected) << what << ": " << dom;
+  struct Way { const char * name; size_t chunk; bool eager; };
+  for (const Way & w : {Way{"whole", 0, false}, Way{"whole, eager", 0, true}, Way{"a byte at a time", 1, false},
+           Way{"a byte at a time, eager", 1, true}, Way{"three bytes at a time, eager", 3, true}}) {
+    EXPECT_EQ(stream_verdict(text, o, w.chunk, w.eager), dom) << what << ": stream, " << w.name;
+  }
+  EXPECT_EQ(reader_verdict(text, o, 0), dom) << what << ": reader, whole";
+  EXPECT_EQ(reader_verdict(text, o, 1), dom) << what << ": reader, a byte at a time";
+}
+
+// A counted limit is counted once however many times the event parser reads a construct to see whether it has ended: a
+// document whose first failure is the end of its input says so, and a document that goes over the limit before that says
+// the limit, at the same place, in every cut. Found by the fuzzer: an internal subset that never closes, fed a byte at a time
+// to a parser that read each construct again at every byte, ran out of declarations that the whole-buffer parse never
+// counted twice.
+TEST(XmlLimits, ACountedLimitIsCountedOnceHoweverTheInputIsCut) {
+  const size_t limit = 8;
+  struct Kind { const char * name; std::function<std::string(size_t)> unit; };
+  const std::vector<Kind> kinds = {
+      {"ATTLIST", [](size_t i) { return "<!ATTLIST r a" + std::to_string(i) + " CDATA #IMPLIED>"; }},
+      {"ELEMENT", [](size_t i) { return "<!ELEMENT e" + std::to_string(i) + " ANY>"; }},
+      {"ENTITY", [](size_t i) { return "<!ENTITY e" + std::to_string(i) + " \"v\">"; }},
+      {"parameter ENTITY", [](size_t i) { return "<!ENTITY % p" + std::to_string(i) + " \"v\">"; }},
+      {"NOTATION", [](size_t i) { return "<!NOTATION n" + std::to_string(i) + " SYSTEM \"x\">"; }},
+      {"comment", [](size_t i) { return "<!--" + std::to_string(i) + "-->"; }},
+  };
+  for (const GTEXT_XML_DTD_Mode mode : {GTEXT_XML_DTD_OFF, GTEXT_XML_DTD_PROCESS}) {
+    GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+    o.dtd_mode = mode;
+    o.max_declarations = limit;
+    for (const Kind & k : kinds) {
+      const bool counted = std::string(k.name) != "comment";
+      std::string under = "<!DOCTYPE r [";
+      for (size_t i = 0; i < limit; ++i) under += k.unit(i);
+      // At the limit and the subset never closes: the first failure is the end of the input.
+      expect_one_verdict((std::string(k.name) + " at the limit").c_str(), under, o, GTEXT_XML_E_UNEXPECTED_EOF);
+      // One past: the limit is the first failure, where the declaration begins.
+      const std::string over = under + k.unit(limit);
+      expect_one_verdict((std::string(k.name) + " one past the limit").c_str(), over, o,
+          counted ? GTEXT_XML_E_LIMIT_DECLARATIONS : GTEXT_XML_E_UNEXPECTED_EOF);
+      // And closed, then the document: a limit passed on the way is passed in every cut.
+      expect_one_verdict((std::string(k.name) + " closed").c_str(), under + "]><r/>", o, GTEXT_XML_OK);
+      expect_one_verdict((std::string(k.name) + " closed, one past").c_str(), over + "]><r/>", o,
+          counted ? GTEXT_XML_E_LIMIT_DECLARATIONS : GTEXT_XML_OK);
+    }
+  }
+}
+
+TEST(XmlLimits, ReferencesAndExpansionAreCountedOnceHoweverTheInputIsCut) {
+  // Parameter-entity references in the subset, which the subset's declarations are read again around.
+  {
+    GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+    o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    o.max_references = 6;
+    const std::string head = "<!DOCTYPE r [<!ENTITY % p \"<!-- c -->\">";
+    expect_one_verdict("PE references at the limit", head + "%p;%p;%p;%p;%p;%p;", o, GTEXT_XML_E_UNEXPECTED_EOF);
+    expect_one_verdict("PE references one past", head + "%p;%p;%p;%p;%p;%p;%p;", o, GTEXT_XML_E_LIMIT_REFERENCES);
+  }
+  // References in a start tag that never ends: the tag is read again at each byte.
+  {
+    GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+    o.max_references = 6;
+    expect_one_verdict("references in a tag, at the limit", "<r a=\"&amp;&amp;&amp;&amp;&amp;&amp;", o, GTEXT_XML_E_UNEXPECTED_EOF);
+    expect_one_verdict("references in a tag, one past", "<r a=\"&amp;&amp;&amp;&amp;&amp;&amp;&amp;", o, GTEXT_XML_E_LIMIT_REFERENCES);
+    expect_one_verdict("references in content, at the limit", "<r>&amp;&amp;&amp;&amp;&amp;&amp;", o, GTEXT_XML_E_UNEXPECTED_EOF);
+    expect_one_verdict("references in content, one past", "<r>&amp;&amp;&amp;&amp;&amp;&amp;&amp;", o, GTEXT_XML_E_LIMIT_REFERENCES);
+  }
+  // Replacement bytes: three references to a ten-byte entity in a tag that never ends.
+  {
+    GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+    o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    const std::string head = "<!DOCTYPE r [<!ENTITY e \"0123456789\">]><r a=\"";
+    o.max_expanded_bytes = 30;
+    expect_one_verdict("expansion at the limit", head + "&e;&e;&e;", o, GTEXT_XML_E_UNEXPECTED_EOF);
+    expect_one_verdict("expansion one past", head + "&e;&e;&e;&e;", o, GTEXT_XML_E_LIMIT_EXPANSION);
+    // The amplification bound reads the same two counters.
+    o = gtext_xml_parse_options_default();
+    o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    o.amplification_threshold = 1;
+    o.max_amplification = 1;
+    const std::string text = head + "&e;&e;&e;&e;&e;&e;&e;&e;";
+    const Verdict dom = dom_verdict(text, o);
+    EXPECT_EQ(dom.status, GTEXT_XML_E_LIMIT_AMPLIFICATION) << dom;
+    expect_one_verdict("amplification", text, o, GTEXT_XML_E_LIMIT_AMPLIFICATION);
+  }
+  // The same shape in content, past a tag that did end.
+  {
+    GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+    o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    o.max_expanded_bytes = 30;
+    const std::string head = "<!DOCTYPE r [<!ENTITY e \"0123456789\">]><r>";
+    expect_one_verdict("expansion in content, at the limit", head + "&e;&e;&e;", o, GTEXT_XML_E_UNEXPECTED_EOF);
+    expect_one_verdict("expansion in content, one past", head + "&e;&e;&e;&e;", o, GTEXT_XML_E_LIMIT_EXPANSION);
+  }
 }
 
 }  // namespace

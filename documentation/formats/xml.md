@@ -563,7 +563,11 @@ a thousand declarations with `>` in their literals, a character reference of
 digits), each fed one byte at a time, finish in a fraction of a second where a
 quadratic parser would need hours. If that scan and the lexer ever disagree
 about a malformed construct, the attempt is undone and not repeated until the
-input ends, so the cost stays linear and the verdict is still the lexer's. The
+input ends, so the cost stays linear and the verdict is still the lexer's. Undone
+includes what the attempt counted against the limits that count the document
+(`max_references`, `max_declarations`, `max_expanded_bytes` and the amplification
+that reads the last two), so a construct read twice is counted once; the work
+budget (`max_total_work`) counts what was read, and reading again is work. The
 lexer, given a buffer that ends in the middle of a token (a multi-byte character,
 a name, `?>`, `SYSTEM`), says that the input ended and never invents a syntax
 error; a test runs it after every byte of many damaged documents, bypassing
@@ -573,7 +577,15 @@ the scan, to show that the verdict is the DOM parse's wherever the buffer ends.
 limits are the DOM parser's own code - the tree is the only thing the event
 parser leaves out - so a document is refused with the same status, message,
 offset, line and column, however it is cut, and `make conformance-xml` holds
-that to the whole suite (below). Three things differ from a whole-input parse
+that to the whole suite (below). The status of a document is **its first failure
+in input order**: a limit the document passes before its first error is the
+verdict (`_LIMIT_DECLARATIONS` at the declaration that is one over, for an
+internal subset that never closes after it), and an error that comes before the
+document reaches a limit is the verdict however many declarations, references or
+bytes of replacement follow it. The only exceptions are the two the fuzz harness
+names: `max_input_bytes`, which the DOM parse knows before it reads a byte, and
+a byte that is not valid in the document's encoding, which the DOM parse finds
+by converting the whole input first. Three things differ from a whole-input parse
 and are by construction:
 
 - *When.* A mistake early in a construct is reported when the construct is

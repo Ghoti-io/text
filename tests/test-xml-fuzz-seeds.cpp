@@ -161,8 +161,12 @@ TEST_F(XmlFuzzSeeds, EveryReaderSeedHoldsEveryProperty) {
   ASSERT_GT(files.size(), 700u) << "the seed corpus is missing from " << dir
                                 << "; tools/xml/make-fuzz-seeds.py writes it";
   // The recorded finds are not generated, so nothing else notices one going missing.
-  const std::string repro = dir + "/reproducer-attribute-limit-before-a-bad-byte.seed";
-  ASSERT_TRUE(std::find(files.begin(), files.end(), repro) != files.end()) << repro << " is not there";
+  for (const char * name : {"reproducer-attribute-limit-before-a-bad-byte.seed",
+           "reproducer-declaration-limit-counted-once-per-attempt.seed",
+           "reproducer-declaration-limit-counted-once-per-attempt-2.seed"}) {
+    const std::string repro = dir + "/" + name;
+    ASSERT_TRUE(std::find(files.begin(), files.end(), repro) != files.end()) << repro << " is not there";
+  }
   for (const std::string & path : files) {
     std::snprintf(g_current, sizeof g_current, "%s", path.c_str());
     const std::string data = slurp(path);

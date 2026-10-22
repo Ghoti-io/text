@@ -538,7 +538,16 @@ static GTEXT_XML_Status run_reference(xml_ctx * p) {
    (or which the end of the input has made final). OK with *done set: it was
    read. OK with *done clear: the lexer found it unfinished after all, the
    attempt is undone, and the scan will not be trusted again until the end. Any
-   other status is the verdict. */
+   other status is the verdict.
+
+   Undone includes what the attempt charged to the limits that count the
+   document (references, declarations, expanded bytes): the construct is read
+   again from its start, and a limit that counted it twice would refuse a
+   document the same bytes in one piece are accepted, or refuse it for a limit
+   when the whole-buffer parse finds an error first. The status of a document
+   is the first failure in input order, however its bytes arrive. The work
+   budget (`max_total_work`) is not undone: it counts what was read, and
+   reading a construct again is work. */
 static GTEXT_XML_Status attempt(
     GTEXT_XML_Stream * s, lexer_fn fn, int * done, int source_complete) {
   xml_ctx * p = &s->p;
@@ -546,6 +555,9 @@ static GTEXT_XML_Status attempt(
   const size_t line = p->line;
   const size_t column = p->column;
   const uint32_t cursor_previous = p->cursor_previous;
+  const size_t references = p->references;
+  const size_t declarations = p->declarations;
+  const size_t expanded_bytes = p->expanded_bytes;
   const GTEXT_XML_Status status = fn(p);
   if (p->dtd_yielded) {
     p->dtd_yielded = 0;
@@ -563,6 +575,9 @@ static GTEXT_XML_Status attempt(
     p->line = line;
     p->column = column;
     p->cursor_previous = cursor_previous;
+    p->references = references;
+    p->declarations = declarations;
+    p->expanded_bytes = expanded_bytes;
     memset(&p->err, 0, sizeof(p->err));
     s->scan.unreliable = 1;
     *done = 0;
