@@ -52,7 +52,8 @@ namespace {
 using RNode = GTEXT_Markup_Node;
 
 [[noreturn]] void fail(const char * what, const std::string & detail) {
-  std::fprintf(stderr, "%s\n%s\n", what, detail.c_str());
+  // (The prefix is what tools/markup/plant-fuzz.py looks for, as the other harnesses' reports begin "fuzz_<name>: ".)
+  std::fprintf(stderr, "fuzz_markup_tree: %s\n%s\n", what, detail.c_str());
   std::abort();
 }
 

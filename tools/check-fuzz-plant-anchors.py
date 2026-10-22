@@ -20,7 +20,7 @@
 
     tools/check-fuzz-plant-anchors.py
 
-The plant tools (tools/{xml,html,css,encoding}/plant-fuzz.py) each hold a table of
+The plant tools (tools/{xml,html,css,encoding,markup}/plant-fuzz.py) each hold a table of
 edits: a text that must appear exactly once in one source file, and what to put
 there. They apply an edit in a scratch copy and run a fuzzer for a minute, so a
 plant whose text a later commit has moved is found only by someone who runs a
@@ -28,7 +28,7 @@ gate that builds a fuzzer, and then it reads "its anchor matches 0 times", which
 is a stale table and not a missing defect. This reads the sources and nothing
 else, in a moment, so that `make test` finds it on the commit that moves the text.
 
-For every plant of the four tables: its file exists, its text matches exactly once,
+For every plant of the five tables: its file exists, its text matches exactly once,
 the edit changes something, and a recorded reproducer (a seed file, or a unit test
 named by its suite and name) exists.
 
@@ -73,7 +73,7 @@ def plants_of(tool, module):
             rel, old, new, seed = entry
             out.append((name, "src/css/" + rel, old, new,
                         "tests/fuzz/corpus/css-syntax/" + seed if seed else None, "file"))
-        elif tool == "encoding":
+        elif tool in ("encoding", "markup"):
             path, old, new = entry
             out.append((name, path, old, new, reproducers.get(name), "file"))
         else:
@@ -90,7 +90,7 @@ def plants_of(tool, module):
 def main():
     problems = []
     count = 0
-    for tool in ("xml", "html", "css", "encoding"):
+    for tool in ("xml", "html", "css", "encoding", "markup"):
         module = load(tool)
         for name, path, old, new, repro, kind in plants_of(tool, module):
             count += 1

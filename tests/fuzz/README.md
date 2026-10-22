@@ -42,6 +42,17 @@ anything but OK must have changed nothing - checked by comparing the library's
 own dump of every top-level node before and after. The first two bytes pick the
 limits, so one harness covers them at every value.
 
+Its seeds are programs, written by `tools/markup/make-fuzz-seeds.py` (about four
+hundred, a few hundred bytes each: trees of each shape under each set of limits, each
+kind of edit, the programs whose point is a refusal, an allocation failure armed for
+each of the first dozen allocations of each operation, and random programs), and
+replayed with every other harness's by `make test`
+(`tests/test-markup-tree-fuzz-seeds.cpp`). `make check-markup-fuzz-plants` plants
+seven defects in a copy of the library (a removed node forgotten, a replaced child
+forgotten, a freed node still counted, a stranger accepted as a reference, new data
+stored without its length, a template's content leaked, a failed clone's half-built
+copy kept) and replays the seed that shows each.
+
 It is not a hand-written model of the tree; `tests/test-markup-model.cpp` is
 that. What it adds is the coverage-guided search for the sequences no one
 thought to write down. A first version of it armed the injected allocation
@@ -1048,8 +1059,7 @@ the dependencies, fetches the pinned data the harnesses read, builds the harness
     JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/soak-job.sh 2400 [harness...]
 
 The machine-grown corpora stay untracked (this directory's `.gitignore` tracks only `*.seed`); a find that no longer fails is kept as
-`reproducer-*.seed`, and `make test` replays it. The figures, the finds and what became of them are in the plan record
-(`notes/text/XML-HTML-PLAN.md`, "Phase 3k part B as built"). **The first run found four things, none of them in the library**, and each is the
+`reproducer-*.seed`, and `make test` replays it. **The first run found four things, none of them in the library**, and each is the
 kind of thing only a long run shows: `fuzz_encoding` aborted in its first four executions because `third_party/encoding/indexes.json` was not on
 the box (the script now fetches, and fails if a fetch does); `fuzz_markup_tree` was given a corpus directory that did not exist; `fuzz_html` built
 its incremental parser from fewer of the options than the whole parse it compares with (`transport_encoding`, `default_encoding` and
