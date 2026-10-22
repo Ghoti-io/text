@@ -349,19 +349,52 @@ encoding is, in order, the first that applies:
 1. a **byte order mark** (UTF-8, UTF-16BE or UTF-16LE), over everything below ("decode");
 2. the **protocol's label** (`GTEXT_CSS_Bytes_Options::protocol_label`), if it names an encoding; one that does not
    is ignored;
-3. a leading **`@charset "...";`** in the first 1024 bytes, byte for byte: `@charset "`, bytes from 0x01 to 0x7F
-   except the quote, then `";`. No second space, no single quotes, no comment, no `@Charset`. UTF-16 named there
+3. a leading **`@charset "...";`** in the first 1024 bytes, byte for byte: `@charset "`, bytes from 0x00 to 0x7F
+   except the quote (the draft: "a value between 0 and 21 inclusive or a value between 23 and 7F inclusive", in
+   hexadecimal), then `";`. No second space, no single quotes, no comment, no `@Charset`. UTF-16 named there
    is UTF-8, because the declaration is ASCII; a label that names nothing is ignored;
-4. the **environment encoding** (`environment_encoding`), if the caller has one;
+4. the **environment encoding** (`environment_encoding`), if the caller has one; a value that is not an encoding is
+   `GTEXT_CSS_E_INVALID` (every encoding has a decoder);
 5. UTF-8.
 
 The result says which and why (`encoding`, `encoding_source`, `bom_length`), and gtext_css_determine_encoding()
 makes the decision alone. UTF-8 is parsed in place, a byte order mark skipped but counted in every offset. Another
-encoding is decoded through the Encoding module into a copy (up to three times the size of the bytes, so
-`max_input_bytes` limits the bytes and not the text) and a map back to the bytes: a run per stretch of code points
-that stay in step, an index per 4 KiB of text so a lookup costs a constant. An ill-formed sequence is U+FFFD with no
-parse error of its own; in UTF-8 read in place it is `invalid-utf-8`. Lines and columns count the decoded text's
-characters.
+encoding is decoded through the Encoding module into a copy and a map back to the bytes: a run per stretch of code
+points that stay in step, an index per 4 KiB of text so a lookup costs a constant. An ill-formed sequence is U+FFFD
+with no parse error of its own; in UTF-8 read in place it is `invalid-utf-8`. Lines and columns, of the parse
+errors and of a limit's `failure`, count the decoded text's characters and are not moved into the bytes; a failure
+that has no place (memory) has offset, line and column 0, and once the encoding is decided the result of a failure
+says how the bytes were read (the input limit, checked first, does not).
+
+### What a decoded stylesheet costs
+
+`max_input_bytes` counts bytes, so the copy is bounded by two limits of its own, in the options, each 0 for its
+default and each its own status, `GTEXT_CSS_E_LIMIT_DECODED`, with the `failure` at the byte of the code point that
+went past:
+
+| Option | Default | Counts |
+|---|---|---|
+| `max_decoded_bytes` | 3 times `max_input_bytes` | bytes of decoded text. A code point is at most 3 bytes of text for each byte of source (a lone replaced byte is the worst), so input at its limit just reaches the default and does not pass it |
+| `max_map_runs` | `max_input_bytes` | runs of the map, 24 bytes each. A run is as long as the code points keep their lengths in the text and the source, so text that alternates a one-byte and a two-byte character is a run for every character; ASCII in any ASCII-compatible encoding is one run |
+
+The worst case is about **27 bytes of memory for each byte of input** (3 of text and 24 of map) for an encoding
+other than UTF-8, about 1 for ordinary text, and none for UTF-8 read in place. A lower value bounds the memory more
+tightly than the input limit does. `CssDecodeLimits` (in `testCssBytes`) drives every multi-byte encoding to its map bound with an
+alternating input and one run past it, and the text to its bound with a byte that is three bytes of text.
+
+### The validity callback's offsets
+
+A validity callback is given offsets into the **decoded text** (the bytes' own only for UTF-8 with no byte order
+mark), while the tree and the result that the call returns are in the **bytes**. The callbacks have no accessor that
+maps an offset back yet; the grammar engine that will use them needs one.
+
+### The other entry points
+
+The one-call function reads a stylesheet. The other entry points have a byte form as a stream
+(gtext_css_stream_new_bytes() takes any kind, decides the encoding as above, parses a leading `@charset` as that
+entry point parses text, and one feed of all the bytes is its one-call parse); `CssStreamBytes.EveryEntryPointIsCutIndependentAndInTheBytes` cuts every kind of
+every encoding at every point and compares every root array of the tree with the text parse's, moved through a table
+of the encoding's own layout.
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -413,7 +446,10 @@ the whole input and a rule is not known until its block closes), so a stream **b
 encoding than UTF-8 the decoded text and its map, bounded by `max_input_bytes`, which the feed that goes past it
 meets with `GTEXT_CSS_E_LIMIT_INPUT` before keeping the piece. The buffers double, so the work is in proportion to
 the bytes and never to the number of calls. The encoding is decided when the first kilobyte has arrived (or the
-input ends), and a stream of text (gtext_css_stream_new()) has none to decide.
+input ends), and a stream of text (gtext_css_stream_new()) has none to decide. A failure (a limit, memory) is
+returned by the call that met it and by every feed after it, until finish; **after finish every call but
+gtext_css_stream_free() is `GTEXT_CSS_E_INVALID`**, a second finish included, which does not repeat the failure or
+fill the result again.
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -477,6 +513,7 @@ is tested at its bound and one past it (`tests/test-css-limits.cpp`).
 | `max_declarations` | 4,194,304 | `GTEXT_CSS_E_LIMIT_DECLARATIONS` | declarations made (one the validity callback refuses is not counted) |
 | `max_total_errors` | 1,048,576 | `GTEXT_CSS_E_LIMIT_ERRORS` | parse errors raised |
 | `max_errors` | 1024 | (none) | parse errors kept in the result; the rest are counted, which is not a failure. It does not bound memory: every error raised is held (about 40 bytes each, up to `max_total_errors`) until the parse ends, so that the lowest in the input are the ones kept |
+| `max_decoded_bytes`, `max_map_runs` | 3 and 1 times `max_input_bytes` | `GTEXT_CSS_E_LIMIT_DECODED` | a byte parse of an encoding other than UTF-8: bytes of decoded text, runs of the offset map (see "What a decoded stylesheet costs") |
 | `max_output_bytes` (serializer) | 256 MiB | `GTEXT_CSS_E_LIMIT_OUTPUT` | bytes written; the sink has a valid prefix of the output: whole code points and whole escapes, up to the limit |
 
 ```c

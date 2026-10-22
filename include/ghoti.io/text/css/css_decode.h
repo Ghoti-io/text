@@ -30,8 +30,10 @@
  * everything. gtext_css_parse_stylesheet_bytes() does both and parses, and
  * every position it reports is in the **caller's bytes**, whatever the
  * encoding: the spans of the tree, the byte offsets of the parse errors and the
- * place of a limit. (Lines and columns count the decoded text's characters, as
- * the HTML module's do for a document in another encoding.)
+ * place of a limit. (Lines and columns, those of the parse errors and of a
+ * limit's `failure`, count the decoded text's characters, as the HTML module's
+ * do for a document in another encoding; they are not moved into the bytes. A
+ * failure that has no place, a failed allocation, has offset, line and column 0.)
  *
  * ## The encoding
  *
@@ -42,13 +44,19 @@
  * 2. The **protocol's label** (an HTTP `charset`), if it names an encoding.
  *    A label that names none (`kamoulox`) is ignored, not an error.
  * 3. A leading **`@charset "...";`** in the first 1024 bytes, byte for byte:
- *    `@charset "`, any bytes from 0x01 to 0x7F except `"`, then `";` (so no
+ *    `@charset "`, any bytes from 0x00 to 0x7F except `"` (the draft's "a value
+ *    between 0 and 21 inclusive or a value between 23 and 7F inclusive", in
+ *    hexadecimal), then `";` (so no
  *    second space, no single quotes, no comment, no `@Charset`), and a label
  *    that names an encoding. UTF-16BE and UTF-16LE become UTF-8, because
  *    those bytes spelled the declaration in ASCII, which UTF-16 is not. A
  *    declaration whose label names nothing is ignored.
  * 4. The **environment encoding** the caller passes, if any (HTML gives one
- *    for a `<link rel=stylesheet>` from its own document's encoding).
+ *    for a `<link rel=stylesheet>` from its own document's encoding). A value
+ *    that is not an encoding (not GTEXT_ENCODING_NONE and not below
+ *    GTEXT_ENCODING_COUNT) is an argument the caller got wrong:
+ *    GTEXT_CSS_E_INVALID, with the result filled. Every encoding below
+ *    GTEXT_ENCODING_COUNT has a decoder.
  * 5. UTF-8.
  *
  * The result says which (GTEXT_CSS_Result::encoding and `encoding_source`).
@@ -57,17 +65,47 @@
  * that the syntax gives it, which a layer that checks rules against grammars
  * drops (CSS Syntax 8.3).
  *
- * ## What is read in place
+ * ## What is read in place, and what the rest costs
  *
  * UTF-8 (a byte order mark skipped) is parsed in the caller's bytes without a
  * copy, ill-formed sequences reported as `invalid-utf-8` parse errors. Every
  * other encoding is decoded into a copy first, and a byte the encoding cannot
- * map is the replacement character, with no parse error of its own. That text
- * can be three times the size of the bytes, and `max_input_bytes` applies to
- * the bytes, not to the text. A validity callback sees positions in the
- * decoded text (they are the bytes' own only for UTF-8 with no byte order
- * mark), not in the bytes; the tree and the result the call returns are in the
- * bytes.
+ * map is the replacement character, with no parse error of its own. The copy
+ * is the decoded text and a map of where each code point came from, and both
+ * are bounded by the options, so that `max_input_bytes`, which counts the
+ * bytes, bounds them too:
+ *
+ * - the text is at most `max_decoded_bytes` (default **3 bytes for each byte of
+ *   input**: a code point is at most 3 bytes of text for each byte of source
+ *   it was read from; a lone replaced byte is the worst);
+ * - the map is at most `max_map_runs` runs of 24 bytes (default **1 run for
+ *   each byte of input**, reached only by text that alternates between a
+ *   one-byte and a two-byte character, in every character; ASCII in any
+ *   ASCII-compatible encoding is one run in all).
+ *
+ * The worst case is therefore about **27 bytes of memory for each byte of
+ * input** (3 of text, 24 of map; the 8 bytes per 4096 of the lookup index are
+ * nothing), and about 1 for ordinary text; UTF-8 read in place costs none. A
+ * stylesheet that passes either bound fails with GTEXT_CSS_E_LIMIT_DECODED,
+ * the result's `failure` at the byte of the code point that went past. Lower
+ * either option to bound the memory more tightly than the input limit does.
+ *
+ * A validity callback sees positions in the **decoded text** (they are the
+ * bytes' own only for UTF-8 with no byte order mark), not in the bytes, while
+ * the tree and the result the call returns are in the bytes. The callbacks have
+ * no way to map an offset back yet; the layers that use them (the grammar
+ * engine) are owed one.
+ *
+ * ## The other entry points
+ *
+ * The one-call function reads a stylesheet. The other entry points of the syntax
+ * layer (a declaration list, a rule, a declaration, component values) have a
+ * byte form only as a stream: gtext_css_stream_new_bytes() takes any
+ * GTEXT_CSS_Tree_Kind, decides the encoding the same way (a byte order mark,
+ * the label, a leading `@charset` and the environment encoding apply to the
+ * bytes whatever the entry point; the `@charset` is text of the input and is
+ * parsed as that entry point parses it), and one feed of all the bytes is the
+ * one-call parse of them.
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_DECODE_H
@@ -136,8 +174,8 @@ typedef struct {
  * @param length Its length (a longer one than the window is fine).
  * @param options NULL for none.
  * @param out    Receives the decision; written only on success. Not NULL.
- * @return GTEXT_CSS_OK, or GTEXT_CSS_E_INVALID for a NULL output or NULL
- *   bytes with a length.
+ * @return GTEXT_CSS_OK, or GTEXT_CSS_E_INVALID for a NULL output, NULL
+ *   bytes with a length, or an environment encoding that is not one.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_determine_encoding(const void * bytes, size_t length,
     const GTEXT_CSS_Bytes_Options * options, GTEXT_CSS_Encoding_Decision * out);
@@ -152,7 +190,9 @@ GTEXT_API GTEXT_CSS_Status gtext_css_determine_encoding(const void * bytes, size
  *
  * `max_input_bytes` limits the bytes. A stylesheet longer than it fails with
  * GTEXT_CSS_E_LIMIT_INPUT, the result's `failure` at the byte where the limit
- * is reached; its line and column are 0, because nothing was decoded.
+ * is reached; its line and column are 0, because nothing was decoded. The
+ * decoded text and its map have limits of their own (above), and a failure
+ * that is not a limit (memory) has no place: `failure` is zero.
  *
  * @param bytes  The stylesheet; NULL only with `length` 0.
  * @param length Its length in bytes.
@@ -161,7 +201,9 @@ GTEXT_API GTEXT_CSS_Status gtext_css_determine_encoding(const void * bytes, size
  * @param out    Receives the tree, written only on success. Not NULL.
  * @param result NULL, or filled whatever happens (free it with
  *               gtext_css_result_free()); its `encoding`, `encoding_source`
- *               and `bom_length` say how the bytes were read.
+ *               and `bom_length` say how the bytes were read (also for a
+ *               failure once the encoding was decided, which every failure but
+ *               the input limit and an invalid argument is).
  * @return As gtext_css_parse_stylesheet().
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_parse_stylesheet_bytes(const void * bytes, size_t length,

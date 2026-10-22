@@ -58,10 +58,13 @@ GTEXT_CSS_Bytes_Options gtext_css_bytes_options_default(void) {
   return o;
 }
 
-/* A byte of the label in "@charset "XX*";": 01 to 21 and 23 to 7F, so neither
-   NUL nor the quote that ends it. */
+/* A byte of the label in "@charset "XX*";". The served draft (3.2, "determine the fallback encoding", retrieved
+   2026-10-22) says: "where each XX byte is a value between 0 (16) and 21 (16) inclusive or a value between 23 (16) and
+   7F (16) inclusive": every byte but the quote that ends the label and the bytes from 0x80 up, NUL included. (A
+   label with a NUL in it names no encoding, so whether the scan takes the NUL or stops at it changes no answer; it is
+   taken, as the sentence has it.) */
 static bool is_label_byte(unsigned char c) {
-  return (c >= 0x01 && c <= 0x21) || (c >= 0x23 && c <= 0x7F);
+  return c <= 0x21 || (c >= 0x23 && c <= 0x7F);
 }
 
 /* The label of a leading @charset declaration, byte for byte, or NULL: the
@@ -89,6 +92,10 @@ GTEXT_CSS_Status gtext_css_determine_encoding(const void * bytes, size_t length,
     const GTEXT_CSS_Bytes_Options * options, GTEXT_CSS_Encoding_Decision * out) {
   if (!out || (!bytes && length > 0)) {
     return GTEXT_CSS_E_INVALID;
+  }
+  if (options && options->environment_encoding != GTEXT_ENCODING_NONE
+      && (unsigned)options->environment_encoding >= (unsigned)GTEXT_ENCODING_COUNT) {
+    return GTEXT_CSS_E_INVALID; /* not an encoding: an argument the caller got wrong, not "no environment encoding" */
   }
   const unsigned char * b = bytes;
   GTEXT_CSS_Encoding_Decision d;
@@ -143,8 +150,7 @@ GTEXT_CSS_Status gtext_css_determine_encoding(const void * bytes, size_t length,
     }
   }
   /* "Otherwise, if an environment encoding is provided by the referring document, return it." */
-  if (options && options->environment_encoding != GTEXT_ENCODING_NONE
-      && (unsigned)options->environment_encoding < (unsigned)GTEXT_ENCODING_COUNT) {
+  if (options && options->environment_encoding != GTEXT_ENCODING_NONE) {
     d.encoding = options->environment_encoding;
     d.source = GTEXT_CSS_ENCODING_SOURCE_ENVIRONMENT;
     *out = d;
@@ -171,6 +177,11 @@ static bool map_add(css_decode * d, size_t dec, size_t src, uint8_t dlen, uint8_
       last->count++;
       return true;
     }
+  }
+  if (m->nruns >= d->max_runs) {
+    d->status = GTEXT_CSS_E_LIMIT_DECODED;
+    d->fail_at = src;
+    return false;
   }
   if (m->nruns == m->cap) {
     const size_t cap = m->cap ? m->cap * 2 : 64;
@@ -241,6 +252,11 @@ static bool decode_sink(void * user, const char * bytes, size_t len, const GTEXT
       d->status = GTEXT_CSS_E_INTERNAL;
       return false;
     }
+    if (d->max_text - d->len < i + dlen) { /* the text would pass max_decoded_bytes at this code point */
+      d->status = GTEXT_CSS_E_LIMIT_DECODED;
+      d->fail_at = map->offsets[i];
+      return false;
+    }
     if (!map_add(d, base + i, map->offsets[i], (uint8_t)dlen, map->widths[i])) {
       return false;
     }
@@ -283,10 +299,12 @@ static bool map_index(css_decode * d) {
 }
 
 /** Begin decoding (css_internal.h). */
-bool css_decode_begin(css_decode * d, const GTEXT_Allocator * alloc, GTEXT_Encoding encoding) {
+bool css_decode_begin(css_decode * d, const GTEXT_CSS_Parse_Options * options, GTEXT_Encoding encoding) {
   memset(d, 0, sizeof *d);
-  d->alloc = *(alloc ? alloc : gtext_allocator_default());
+  d->alloc = *(options && options->allocator ? options->allocator : gtext_allocator_default());
   d->status = GTEXT_CSS_OK;
+  d->max_text = css_max_decoded(options);
+  d->max_runs = css_max_runs(options);
   GTEXT_Decoder_Options o = gtext_decoder_options_default();
   o.allocator = &d->alloc;
   o.bom_sniffing = true; /* "decode": a byte order mark is not part of the text */
@@ -359,11 +377,15 @@ void css_refused_result(const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Statu
   }
   css_ctx ctx;
   css_ctx_init(&ctx, options, true);
-  if (status == GTEXT_CSS_E_OOM) {
-    css_fail(&ctx, status);
+  /* Only a limit has a place; an out-of-memory or an internal failure is not at any byte. */
+  if (status >= GTEXT_CSS_E_LIMIT_INPUT && status <= GTEXT_CSS_E_LIMIT_ERRORS) {
+    css_fail_at(&ctx, status, at, line, column);
+  }
+  else if (status == GTEXT_CSS_E_LIMIT_DECODED) {
+    css_fail_at(&ctx, status, at, line, column);
   }
   else {
-    css_fail_at(&ctx, status, at, line, column);
+    css_fail(&ctx, status);
   }
   (void)css_finish_result(&ctx, result, input_bytes);
   if (encoding) {
@@ -393,14 +415,23 @@ static GTEXT_CSS_Status parse_bytes(GTEXT_CSS_Tree_Kind kind, const void * bytes
     }
     return GTEXT_CSS_E_INVALID;
   }
+  if (!css_kind_valid(kind)) {
+    if (result) {
+      result->status = GTEXT_CSS_E_INVALID;
+      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
+    }
+    return GTEXT_CSS_E_INVALID;
+  }
   const size_t max_input = css_max_input(options);
   if (length > max_input) {
     css_refused_result(options, GTEXT_CSS_E_LIMIT_INPUT, max_input, 0, 0, length, NULL, result);
     return GTEXT_CSS_E_LIMIT_INPUT;
   }
   GTEXT_CSS_Encoding_Decision dec;
-  if (gtext_css_determine_encoding(bytes, length, bopts, &dec) != GTEXT_CSS_OK) {
-    return GTEXT_CSS_E_INTERNAL;
+  const GTEXT_CSS_Status ds = gtext_css_determine_encoding(bytes, length, bopts, &dec);
+  if (ds != GTEXT_CSS_OK) { /* (an environment encoding that is not one) */
+    css_refused_result(options, ds, 0, 0, 0, length, NULL, result);
+    return ds;
   }
   css_srcinfo info;
   memset(&info, 0, sizeof info);
@@ -420,11 +451,11 @@ static GTEXT_CSS_Status parse_bytes(GTEXT_CSS_Tree_Kind kind, const void * bytes
     return css_parse_decoded(kind, text, length - dec.bom_length, options, &info, out, result, work);
   }
   css_decode d;
-  const GTEXT_Allocator * alloc = options ? options->allocator : NULL;
-  if (!css_decode_begin(&d, alloc, dec.encoding) || !css_decode_feed(&d, bytes, length, true)) {
+  if (!css_decode_begin(&d, options, dec.encoding) || !css_decode_feed(&d, bytes, length, true)) {
     const GTEXT_CSS_Status st = d.status;
+    const size_t at = st == GTEXT_CSS_E_LIMIT_DECODED ? d.fail_at : 0;
     css_decode_free(&d);
-    css_refused_result(options, st, 0, 0, 0, length, &info.encoding, result);
+    css_refused_result(options, st, at, 0, 0, length, &info.encoding, result);
     return st;
   }
   info.map = &d.map;

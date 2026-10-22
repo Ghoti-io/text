@@ -85,6 +85,11 @@ struct GTEXT_CSS_Stream {
    sequence is the end of that sequence, so up to three bytes past the limit. */
 #define TAIL_BYTES 3
 
+/* max_input_bytes plus the tail, saturating (a limit near SIZE_MAX is a limit). */
+static size_t with_tail(size_t max_input) {
+  return max_input > SIZE_MAX - TAIL_BYTES ? SIZE_MAX : max_input + TAIL_BYTES;
+}
+
 static void stream_fail(GTEXT_CSS_Stream * s, GTEXT_CSS_Status status) {
   if (s->failed == GTEXT_CSS_OK) {
     s->failed = status;
@@ -129,6 +134,15 @@ static bool raw_append(GTEXT_CSS_Stream * s, const unsigned char * data, size_t 
   s->raw_len += n;
   s->work += n;
   return true;
+}
+
+/* Keep the bytes after a limit that place the failure in text. A tail that cannot be kept would make the failure's line and
+   column those of a shorter text than the one-call parse reads, so running out of memory here is the stream's failure
+   (the latched limit gives way to it), not a position that is quietly wrong. */
+static void tail_append(GTEXT_CSS_Stream * s, const unsigned char * data, size_t n) {
+  if (!raw_append(s, data, n)) {
+    s->failed = GTEXT_CSS_E_OOM;
+  }
 }
 
 static char * copy_string(const GTEXT_Allocator * a, const char * text) {
@@ -214,8 +228,9 @@ void gtext_css_stream_free(GTEXT_CSS_Stream * s) {
 /* The window is here (or the input has ended): decide the encoding, and from
    here on the bytes go where it says. */
 static bool decide(GTEXT_CSS_Stream * s) {
-  if (gtext_css_determine_encoding(s->raw, s->raw_len, &s->bopts, &s->dec) != GTEXT_CSS_OK) {
-    stream_fail(s, GTEXT_CSS_E_INTERNAL);
+  const GTEXT_CSS_Status ds = gtext_css_determine_encoding(s->raw, s->raw_len, &s->bopts, &s->dec);
+  if (ds != GTEXT_CSS_OK) { /* (an environment encoding that is not one) */
+    stream_fail(s, ds);
     return false;
   }
   if (s->dec.encoding == GTEXT_ENCODING_UTF_8) {
@@ -223,7 +238,7 @@ static bool decide(GTEXT_CSS_Stream * s) {
     return true;
   }
   s->d_open = true;
-  if (!css_decode_begin(&s->d, &s->alloc, s->dec.encoding)) {
+  if (!css_decode_begin(&s->d, &s->opts, s->dec.encoding)) {
     stream_fail(s, s->d.status);
     return false;
   }
@@ -248,16 +263,16 @@ GTEXT_CSS_Status gtext_css_stream_feed(GTEXT_CSS_Stream * s, const void * data, 
   }
   s->work++; /* a call costs a constant */
   const unsigned char * bytes = data;
+  if (s->finished) { /* whatever happened before it: finished is finished */
+    return GTEXT_CSS_E_INVALID;
+  }
   if (s->failed != GTEXT_CSS_OK) {
     /* A text stream that went past its limit still reads the few bytes after it, to place the failure. */
-    if (s->failed == GTEXT_CSS_E_LIMIT_INPUT && !s->bytes_mode && !s->finished && s->raw_len < s->max_input + TAIL_BYTES) {
-      size_t room = s->max_input + TAIL_BYTES - s->raw_len;
-      (void)raw_append(s, bytes, length < room ? length : room);
+    if (s->failed == GTEXT_CSS_E_LIMIT_INPUT && !s->bytes_mode && s->raw_len < with_tail(s->max_input)) {
+      const size_t room = with_tail(s->max_input) - s->raw_len;
+      tail_append(s, bytes, length < room ? length : room);
     }
     return s->failed;
-  }
-  if (s->finished) {
-    return GTEXT_CSS_E_INVALID;
   }
   if (length == 0) {
     return GTEXT_CSS_OK;
@@ -267,9 +282,9 @@ GTEXT_CSS_Status gtext_css_stream_feed(GTEXT_CSS_Stream * s, const void * data, 
     stream_fail(s, GTEXT_CSS_E_LIMIT_INPUT);
     if (!s->bytes_mode) {
       const size_t kept = s->max_input - (s->raw_len < s->max_input ? s->raw_len : s->max_input);
-      const size_t take = kept + TAIL_BYTES < length ? kept + TAIL_BYTES : length;
-      (void)raw_append(s, bytes, take);
-      if (s->failed != GTEXT_CSS_E_LIMIT_INPUT) { /* the append ran out of memory first */
+      const size_t wanted = with_tail(kept);
+      tail_append(s, bytes, wanted < length ? wanted : length);
+      if (s->failed != GTEXT_CSS_E_LIMIT_INPUT) { /* the append ran out of memory */
         return s->failed;
       }
     }
@@ -309,7 +324,7 @@ static GTEXT_CSS_Status finish(GTEXT_CSS_Stream * s, GTEXT_CSS_Tree ** out, GTEX
     }
     return GTEXT_CSS_E_INVALID;
   }
-  if (s->finished && s->failed == GTEXT_CSS_OK) {
+  if (s->finished) { /* a second finish is refused, whatever the first one said, and does not fill the result again */
     if (result) {
       result->status = GTEXT_CSS_E_INVALID;
       result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
@@ -326,16 +341,35 @@ static GTEXT_CSS_Status finish(GTEXT_CSS_Stream * s, GTEXT_CSS_Tree ** out, GTEX
     }
   }
   if (s->failed != GTEXT_CSS_OK) {
-    size_t line = 0, column = 0;
-    if (s->failed == GTEXT_CSS_E_LIMIT_INPUT && !s->bytes_mode) {
-      css_ctx ctx;
-      css_ctx_init(&ctx, &s->opts, false);
-      ctx.in = s->raw;
-      ctx.in_len = s->raw_len;
-      css_position_of(&ctx, s->max_input, &line, &column);
-      css_ctx_free(&ctx, false);
+    /* The same result as the one-call function's for the same failure: a limit has a place (the byte, and in text its
+       line and column), and an out-of-memory or an internal failure has none; the encoding is told once it was decided,
+       except for the input limit, which the one-call function checks before it decides anything. */
+    size_t at = 0, line = 0, column = 0;
+    css_enc_info enc;
+    const css_enc_info * encp = NULL;
+    if (s->failed == GTEXT_CSS_E_LIMIT_INPUT) {
+      at = s->max_input;
+      if (!s->bytes_mode) {
+        css_ctx ctx;
+        css_ctx_init(&ctx, &s->opts, false);
+        ctx.in = s->raw;
+        ctx.in_len = s->raw_len;
+        css_position_of(&ctx, s->max_input, &line, &column);
+        css_ctx_free(&ctx, false);
+      }
     }
-    css_refused_result(&s->opts, s->failed, s->max_input, line, column, s->fed, NULL, result);
+    else {
+      if (s->failed == GTEXT_CSS_E_LIMIT_DECODED) {
+        at = s->d.fail_at;
+      }
+      if (s->bytes_mode && s->dec.encoding != GTEXT_ENCODING_NONE) {
+        enc.encoding = s->dec.encoding;
+        enc.source = s->dec.source;
+        enc.bom_length = s->dec.bom_length;
+        encp = &enc;
+      }
+    }
+    css_refused_result(&s->opts, s->failed, at, line, column, s->fed, encp, result);
     if (work) {
       *work = s->work;
     }
@@ -394,7 +428,7 @@ size_t gtext_css_stream_kept_bytes(const GTEXT_CSS_Stream * s, size_t * allocate
     return 0;
   }
   if (allocated) {
-    *allocated = s->raw_cap + (s->d_open ? s->d.cap + s->d.map.cap * sizeof(css_srcrun) : 0);
+    *allocated = s->raw_cap + (s->d_open ? s->d.cap + s->d.map.cap * sizeof(css_srcrun) + s->d.map.nblocks * sizeof(size_t) : 0);
   }
   return s->raw_len + (s->d_open ? s->d.len : 0);
 }

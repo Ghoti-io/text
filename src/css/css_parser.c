@@ -1257,7 +1257,18 @@ static bool walk_rule(parser * p, vec * st, GTEXT_CSS_Rule * r, GTEXT_CSS_Id * n
 
 /* Give every node an id, from 1, in document order, without recursion. With a
    map (a byte parse) every span is moved into the bytes in the same walk, so
-   that each node is visited, and each span moved, once. */
+   that each node is visited, and each span moved, once.
+
+   Why once: the tree is built by the parser as a tree, with every node owned by one array of one parent
+   (a block item's rule is the item's alone, a rule's nested rules are its own), and this function is called once, by
+   parse(), after the tree is complete. A span moved twice would be moved into the bytes a second time as if it were
+   an offset in the text, and testCssBytes and testCssStream compare every span of every entry point with the span of
+   the text parse moved through an independent table, in encodings where the two offsets differ.
+
+   If the walk's own stack cannot grow (an allocation fails), vec_push has failed the context, `ok(p)` is false, the
+   walk stops with some spans moved and some not, and parse() then sees a status other than OK and frees the arena with
+   the tree in it: no caller ever receives a tree that was partly moved. testCssOom fails every allocation of every
+   entry point, bytes in four encodings included, and requires no tree after a failure. */
 static size_t assign_ids(parser * p, GTEXT_CSS_Tree * tree) {
   const css_srcmap * map = p->ctx->map;
   vec st;
@@ -1826,6 +1837,11 @@ size_t gtext_css_match_grammar_list(const GTEXT_CSS_Component_Value * values, si
   return matched;
 }
 
+/** Whether a value names an entry point (css_internal.h). */
+bool css_kind_valid(GTEXT_CSS_Tree_Kind kind) {
+  return (unsigned)kind <= (unsigned)GTEXT_CSS_TREE_COMMA_LIST;
+}
+
 /** The quadratic suite's view of a parse (css_internal.h). */
 GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind kind, const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, size_t * work) {
@@ -1840,6 +1856,9 @@ GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind kind, const char * inp
   case GTEXT_CSS_TREE_COMPONENT_VALUE: e = E_COMPONENT_VALUE; break;
   case GTEXT_CSS_TREE_COMPONENT_VALUE_LIST: e = E_COMPONENT_VALUES; break;
   default: e = E_COMMA_LIST; break;
+  }
+  if (!css_kind_valid(kind)) {
+    return GTEXT_CSS_E_INVALID;
   }
   GTEXT_CSS_Tree * tree = NULL;
   size_t w = 0;
@@ -1866,6 +1885,14 @@ GTEXT_CSS_Status css_parse_decoded(GTEXT_CSS_Tree_Kind kind, const char * text, 
   case GTEXT_CSS_TREE_COMPONENT_VALUE: e = E_COMPONENT_VALUE; break;
   case GTEXT_CSS_TREE_COMPONENT_VALUE_LIST: e = E_COMPONENT_VALUES; break;
   default: e = E_COMMA_LIST; break;
+  }
+  if (!css_kind_valid(kind)) { /* (the cases above name every kind; the rest is not one) */
+    if (result) {
+      memset(result, 0, sizeof *result);
+      result->status = GTEXT_CSS_E_INVALID;
+      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
+    }
+    return GTEXT_CSS_E_INVALID;
   }
   return parse(e, text, length, options, out, result, NULL, NULL, NULL, work, info);
 }

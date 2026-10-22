@@ -50,6 +50,7 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_ERRORS] = "more parse errors than max_total_errors",
   [GTEXT_CSS_E_WRITE] = "the sink refused output",
   [GTEXT_CSS_E_LIMIT_OUTPUT] = "output longer than max_output_bytes",
+  [GTEXT_CSS_E_LIMIT_DECODED] = "decoded text longer than max_decoded_bytes, or more map runs than max_map_runs",
 };
 
 const char * gtext_css_status_string(GTEXT_CSS_Status status) {
@@ -161,6 +162,17 @@ size_t css_max_input(const GTEXT_CSS_Parse_Options * options) {
   return or_default(options ? options->max_input_bytes : 0, DEFAULT_MAX_INPUT);
 }
 
+/** The most bytes of decoded text of a byte parse (css_internal.h). */
+size_t css_max_decoded(const GTEXT_CSS_Parse_Options * options) {
+  const size_t input = css_max_input(options);
+  return or_default(options ? options->max_decoded_bytes : 0, input > SIZE_MAX / 3 ? SIZE_MAX : input * 3);
+}
+
+/** The most runs in the offset map of a byte parse (css_internal.h). */
+size_t css_max_runs(const GTEXT_CSS_Parse_Options * options) {
+  return or_default(options ? options->max_map_runs : 0, css_max_input(options));
+}
+
 /** Set up a context from options (css_internal.h). */
 void css_ctx_init(css_ctx * ctx, const GTEXT_CSS_Parse_Options * options,
     bool keep_errors) {
@@ -218,6 +230,7 @@ void css_fail_at(css_ctx * ctx, GTEXT_CSS_Status status, size_t offset,
     ctx->failure.end = offset;
     ctx->failure.line = line;
     ctx->failure.column = column;
+    ctx->failure_positioned = true;
   }
 }
 
@@ -460,6 +473,9 @@ bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out
   /* The spelling is a numeric token's, which the tokenizer has already shaped
      as a signed decimal with an optional fraction and exponent, and which the
      math library's grammar reads whole. Anything else is a defect here. */
+  if (flags) {
+    *flags = 0; /* written on every path, so a caller that ignores the failure reads no stale bits */
+  }
   if (!repr || len == 0) {
     css_fail(ctx, GTEXT_CSS_E_INTERNAL);
     return false;
@@ -473,7 +489,9 @@ bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out
   }
   ctx->work += len / 64 + 1; /* a long spelling costs the conversion more than a short one */
   *out = v;
-  *flags = f;
+  if (flags) {
+    *flags = f;
+  }
   return true;
 }
 
@@ -624,7 +642,11 @@ GTEXT_CSS_Status css_finish_result(css_ctx * ctx, GTEXT_CSS_Result * result,
   result->declaration_count = ctx->declaration_count;
   if (status != GTEXT_CSS_OK) {
     result->failure = ctx->failure;
-    if (ctx->map) {
+    /* A limit has a place, and in a byte parse the place is moved into the bytes; an out-of-memory or an internal
+       failure has none (offset 0, line 0, column 0) and is not moved to the length of a byte order mark. A failure is a
+       place and not a range (css_fail_at sets end = offset), so its end moves with its offset. The line and the column
+       are the decoded text's characters, as those of the parse errors are. */
+    if (ctx->map && ctx->failure_positioned) {
       result->failure.offset = css_srcmap_start(ctx->map, ctx->failure.offset, &ctx->work);
       result->failure.end = result->failure.offset;
     }

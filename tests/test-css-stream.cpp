@@ -456,7 +456,154 @@ TEST(CssStreamState, ALimitIsEveryLaterCallsAnswerToo) {
   EXPECT_EQ(r.status, GTEXT_CSS_E_LIMIT_INPUT);
   EXPECT_EQ(r.failure.offset, 4u);
   gtext_css_result_free(&r);
-  EXPECT_EQ(gtext_css_stream_finish(s, &t, &r), GTEXT_CSS_E_LIMIT_INPUT) << "a failed stream says so again";
+  EXPECT_EQ(gtext_css_stream_finish(s, &t, &r), GTEXT_CSS_E_INVALID) << "a second finish is refused, even after a failure";
+  EXPECT_EQ(r.status, GTEXT_CSS_E_INVALID) << "and fills the result with that, not with the failure again";
+  EXPECT_EQ(r.failure.offset, 0u);
+  gtext_css_result_free(&r);
+  gtext_css_stream_free(s);
+}
+
+// One stream, driven to a failure (or not) and then through every call that can follow. The text and the bytes streams, a
+// limit met by a feed (the input's, and for a byte stream the decoded text's) and a clean stream.
+struct LifeCase {
+  const char * name;
+  bool bytes_mode;
+  GTEXT_CSS_Parse_Options opts;
+  GTEXT_CSS_Bytes_Options bopts;
+  std::string input;
+  GTEXT_CSS_Status failure; // what the feeds end up with; OK for a clean stream
+};
+
+std::vector<LifeCase> life_cases() {
+  std::vector<LifeCase> v;
+  GTEXT_CSS_Parse_Options small = gtext_css_parse_options_default();
+  small.max_input_bytes = 4;
+  GTEXT_CSS_Bytes_Options none = gtext_css_bytes_options_default();
+  v.push_back({"text, clean", false, gtext_css_parse_options_default(), none, "a{b:c}", GTEXT_CSS_OK});
+  v.push_back({"bytes, clean", true, gtext_css_parse_options_default(), none, "a{b:c}", GTEXT_CSS_OK});
+  v.push_back({"text, input limit", false, small, none, "a{b:c} d{e:f}", GTEXT_CSS_E_LIMIT_INPUT});
+  v.push_back({"bytes, input limit", true, small, none, "a{b:c} d{e:f}", GTEXT_CSS_E_LIMIT_INPUT});
+  // A byte stream decodes as it goes once the first kilobyte has decided the encoding: the decoded-text limit is met by a feed.
+  GTEXT_CSS_Parse_Options tight = gtext_css_parse_options_default();
+  tight.max_decoded_bytes = 1500;
+  GTEXT_CSS_Bytes_Options cp = gtext_css_bytes_options_default();
+  cp.protocol_label = "windows-1252";
+  v.push_back({"bytes, decoded limit", true, tight, cp, std::string(1200, '\x80'), GTEXT_CSS_E_LIMIT_DECODED});
+  return v;
+}
+
+TEST(CssStreamState, AfterFinishEverythingButFreeIsInvalidAndBeforeItAFailureIsSticky) {
+  for (const LifeCase & c : life_cases()) {
+    SCOPED_TRACE(c.name);
+    const auto make = [&](GTEXT_CSS_Stream ** out) {
+      return c.bytes_mode ? gtext_css_stream_new_bytes(GTEXT_CSS_TREE_STYLESHEET, &c.bopts, &c.opts, out)
+                          : gtext_css_stream_new(GTEXT_CSS_TREE_STYLESHEET, &c.opts, out);
+    };
+    // Fed in pieces until it fails (or all of it): the feeds that follow the failure say the same each time.
+    const auto drive = [&](GTEXT_CSS_Stream * st) {
+      GTEXT_CSS_Status last = GTEXT_CSS_OK;
+      for (size_t at = 0; at < c.input.size(); at += 600) {
+        const GTEXT_CSS_Status f = gtext_css_stream_feed(st, c.input.data() + at, std::min<size_t>(600, c.input.size() - at));
+        if (last != GTEXT_CSS_OK) {
+          EXPECT_EQ(f, last) << "a failure is sticky: the same status from every feed after it";
+        }
+        if (f != GTEXT_CSS_OK) {
+          last = f;
+        }
+      }
+      return last;
+    };
+    // finish, then feed.
+    GTEXT_CSS_Stream * st = nullptr;
+    ASSERT_EQ(make(&st), GTEXT_CSS_OK);
+    const GTEXT_CSS_Status fed = drive(st);
+    if (c.failure != GTEXT_CSS_OK) {
+      EXPECT_EQ(fed, c.failure);
+      EXPECT_EQ(gtext_css_stream_feed(st, "x", 1), c.failure) << "before finish a failed stream's feed returns the failure, even for nothing";
+      EXPECT_EQ(gtext_css_stream_feed(st, nullptr, 0), c.failure);
+    }
+    GTEXT_CSS_Tree * t = nullptr;
+    GTEXT_CSS_Result r{};
+    const GTEXT_CSS_Status fin = gtext_css_stream_finish(st, &t, &r);
+    EXPECT_EQ(fin, c.failure) << "the first finish says what the stream's life came to";
+    EXPECT_EQ(r.status, c.failure);
+    EXPECT_EQ(t != nullptr, c.failure == GTEXT_CSS_OK);
+    gtext_css_tree_free(t);
+    gtext_css_result_free(&r);
+    EXPECT_EQ(gtext_css_stream_feed(st, "x", 1), GTEXT_CSS_E_INVALID) << "finish, then feed";
+    EXPECT_EQ(gtext_css_stream_feed(st, nullptr, 0), GTEXT_CSS_E_INVALID) << "finish, then an empty feed";
+    // finish, then finish: refused, and the result it is given says so (it does not repeat the failure).
+    GTEXT_CSS_Tree * t2 = nullptr;
+    GTEXT_CSS_Result r2{};
+    r2.failure.offset = 77; // (garbage that a refusal must not leave)
+    EXPECT_EQ(gtext_css_stream_finish(st, &t2, &r2), GTEXT_CSS_E_INVALID) << "finish, then finish";
+    EXPECT_EQ(t2, nullptr);
+    EXPECT_EQ(r2.status, GTEXT_CSS_E_INVALID);
+    EXPECT_STREQ(r2.message, gtext_css_status_string(GTEXT_CSS_E_INVALID));
+    EXPECT_EQ(r2.failure.offset, 0u);
+    EXPECT_EQ(r2.internal, nullptr) << "no errors are filled in again";
+    EXPECT_EQ(gtext_css_stream_finish(st, &t2, nullptr), GTEXT_CSS_E_INVALID) << "with no result too";
+    gtext_css_stream_free(st);
+  }
+}
+
+// ---- a text stream's limit, and the bytes after it that place it ------------------------------------------------
+
+TEST(CssStreamState, TheLimitOfATextStreamIsPlacedAsTheOneCallParsePlacesIt) {
+  const std::string text = "a{b:\n\xc3\xa9\xc3\xa9\xc3\xa9 c} d{e:f}\n";
+  for (const size_t max : {size_t{1}, size_t{2}, size_t{3}, size_t{5}, size_t{7}, size_t{8}, size_t{9}}) {
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.max_input_bytes = max;
+    const Outcome want = whole_text(text, gtext_css_parse_stylesheet, &o);
+    ASSERT_EQ(want.status, GTEXT_CSS_E_LIMIT_INPUT);
+    for (const size_t step : {size_t{1}, size_t{2}, size_t{3}, size_t{100}}) {
+      const Cut cut{{step}, true, false, "steps"};
+      expect_same_outcome(want, through_stream(GTEXT_CSS_TREE_STYLESHEET, false, nullptr, &o, text, cut),
+          "limit " + std::to_string(max) + " step " + std::to_string(step), false); // (input_bytes: the bytes fed, by the header)
+    }
+  }
+}
+
+TEST(CssStreamState, ALimitNearTheLargestSizeIsALimitAndNotAnOverflow) {
+  // max_input_bytes + the tail kept after a limit must not wrap: with a limit of SIZE_MAX the stream behaves as it does
+  // with any limit larger than the input, and with SIZE_MAX - 1 and SIZE_MAX - 2 too.
+  const std::string text = "a{b:c} d{e:f}\n";
+  for (const size_t max : {SIZE_MAX, SIZE_MAX - 1, SIZE_MAX - 2, SIZE_MAX - 3}) {
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.max_input_bytes = max;
+    for (const bool bytes_mode : {false, true}) {
+      const Outcome want = bytes_mode ? whole_bytes(text, nullptr, &o) : whole_text(text, gtext_css_parse_stylesheet, &o);
+      ASSERT_EQ(want.status, GTEXT_CSS_OK);
+      const Cut one{{1}, true, false, "bytes"};
+      expect_same_outcome(want, through_stream(GTEXT_CSS_TREE_STYLESHEET, bytes_mode, nullptr, &o, text, one), "huge limit");
+    }
+  }
+}
+
+TEST(CssStreamState, TheAllocatedBytesCountTheLookupIndexOfTheMapToo) {
+  // The index that makes a lookup in the offset map cost a constant (8 bytes for each 4096 of decoded text) is made when the
+  // input ends, and is memory the stream holds: kept_bytes' "allocated" has to include it.
+  std::string src = "a{b:\"";
+  while (src.size() < 40000) {
+    src += "\xef\xf0\xe8\xe2\xe5\xf2 a\xef";
+  }
+  src += "\"}";
+  GTEXT_CSS_Bytes_Options b = gtext_css_bytes_options_default();
+  b.protocol_label = "windows-1251";
+  GTEXT_CSS_Stream * s = nullptr;
+  ASSERT_EQ(gtext_css_stream_new_bytes(GTEXT_CSS_TREE_STYLESHEET, &b, nullptr, &s), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_stream_feed(s, src.data(), src.size()), GTEXT_CSS_OK);
+  size_t before = 0;
+  (void)gtext_css_stream_kept_bytes(s, &before);
+  GTEXT_CSS_Tree * t = nullptr;
+  GTEXT_CSS_Result r{};
+  ASSERT_EQ(gtext_css_stream_finish(s, &t, &r), GTEXT_CSS_OK);
+  size_t after = 0;
+  const size_t kept = gtext_css_stream_kept_bytes(s, &after);
+  const size_t decoded = kept; // (the decoded text; the raw buffer is gone once the encoding was decided)
+  EXPECT_GE(after, before + sizeof(size_t) * (decoded / 4096)) << "the index is " << decoded / 4096 + 1 << " entries";
+  EXPECT_GT(after, before);
+  gtext_css_tree_free(t);
   gtext_css_result_free(&r);
   gtext_css_stream_free(s);
 }

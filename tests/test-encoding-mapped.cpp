@@ -490,6 +490,107 @@ bool bytes_write(void * user, const char * b, size_t n) {
 
 } // namespace
 
+// ---- a chunk is whole code points -------------------------------------------------------------------------------------------
+
+// What a mapped sink may rely on (the CSS module's decode does): every chunk it is given starts at the first byte of a code point and
+// ends at the last byte of one - never inside a sequence, whatever the encoding, the cuts, the errors, or the size of the chunk
+// (GTEXT_ENCODING_MAX_CHUNK, which the long inputs below cross many times, with 2-, 3- and 4-byte characters and U+FFFD runs) - and
+// the bytes of one code point share an offset and a width.
+struct WholeCheck {
+  size_t chunks = 0;
+  size_t bytes = 0;
+  size_t bad = 0;
+  std::string why;
+};
+
+bool whole_sink(void * user, const char * bytes, size_t len, const GTEXT_Encoding_Source_Map * map) {
+  auto * w = static_cast<WholeCheck *>(user);
+  w->chunks++;
+  w->bytes += len;
+  size_t i = 0;
+  while (i < len) {
+    const unsigned char c = static_cast<unsigned char>(bytes[i]);
+    const size_t n = c < 0x80 ? 1 : (c >= 0xC2 && c < 0xE0) ? 2 : (c >= 0xE0 && c < 0xF0) ? 3 : (c >= 0xF0 && c < 0xF5) ? 4 : 0;
+    if (n == 0 || i + n > len) {
+      w->bad++;
+      w->why = "a chunk starts or ends inside a sequence at byte " + std::to_string(i) + " of " + std::to_string(len);
+      return true;
+    }
+    for (size_t k = 1; k < n; k++) {
+      if ((static_cast<unsigned char>(bytes[i + k]) & 0xC0) != 0x80 || map->offsets[i + k] != map->offsets[i]
+          || map->widths[i + k] != map->widths[i] || map->replaced[i + k] != map->replaced[i]) {
+        w->bad++;
+        w->why = "the bytes of one code point do not share a map entry at byte " + std::to_string(i);
+        return true;
+      }
+    }
+    i += n;
+  }
+  return true;
+}
+
+TEST(EncodingMapped, EveryChunkIsWholeCodePointsInEveryEncoding) {
+  // Inputs that put every kind of code point and every kind of error across the 4096-byte chunk boundary.
+  std::vector<std::pair<std::string, std::string>> inputs;
+  std::string three, four, bad8, kanji2022, mixed;
+  for (int i = 0; i < 6000; i++) {
+    three += "\xe3\x81\x82";
+    four += "\xf0\x9f\x98\x80";
+    bad8 += "\xff\xc3";
+    mixed += (i % 3 == 0) ? "\xc3\xa9" : (i % 3 == 1) ? "a" : "\xe2\x82\xac";
+  }
+  kanji2022 = "\x1b$B";
+  for (int i = 0; i < 6000; i++) {
+    kanji2022 += "F|";
+    if (i % 997 == 0) {
+      kanji2022 += "\x1b(B" "a" "\x1b$B";
+    }
+  }
+  inputs.push_back({"three-byte characters", three});
+  inputs.push_back({"four-byte characters", four});
+  inputs.push_back({"ill-formed", bad8});
+  inputs.push_back({"mixed lengths", mixed});
+  inputs.push_back({"iso-2022-jp", kanji2022});
+  uint64_t x = 88172645463325252ULL;
+  std::string noise;
+  for (int i = 0; i < 40000; i++) {
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    noise += static_cast<char>((x >> 11) & 0xff);
+    if (x % 29 == 0) {
+      noise += '\x1b';
+    }
+  }
+  inputs.push_back({"noise", noise});
+  for (int e = 1; e < GTEXT_ENCODING_COUNT; e++) {
+    const GTEXT_Encoding enc = static_cast<GTEXT_Encoding>(e);
+    for (const auto & in : inputs) {
+      for (const size_t piece : {size_t{0}, size_t{1000}, size_t{4093}}) { // 0: one call
+        GTEXT_Decoder_Options o = gtext_decoder_options_default();
+        o.track_offsets = true;
+        o.max_output_bytes = SIZE_MAX;
+        GTEXT_Decoder * d = nullptr;
+        ASSERT_EQ(gtext_decoder_new(enc, &o, &d), GTEXT_ENCODING_OK);
+        WholeCheck w;
+        const GTEXT_Encoding_Mapped_Sink sink = {whole_sink, &w};
+        const size_t step = piece ? piece : in.second.size();
+        for (size_t at = 0; at < in.second.size(); at += step) {
+          const size_t n = std::min(step, in.second.size() - at);
+          GTEXT_Decoder_Result r;
+          std::memset(&r, 0, sizeof r);
+          ASSERT_EQ(gtext_decoder_decode_mapped(d, reinterpret_cast<const unsigned char *>(in.second.data()) + at, n,
+                        at + n >= in.second.size(), &sink, &r),
+              GTEXT_ENCODING_OK);
+        }
+        gtext_decoder_free(d);
+        EXPECT_EQ(w.bad, 0u) << gtext_encoding_name(enc) << " / " << in.first << " / piece " << piece << ": " << w.why;
+        EXPECT_GT(w.chunks, 0u);
+      }
+    }
+  }
+}
+
 TEST(EncoderErrorMode, NullAndOutOfRangeAreIgnored) {
   gtext_encoder_set_error_mode(nullptr, GTEXT_ENCODER_HTML); // (nothing to check but that it returns)
   GTEXT_Encoder * e = nullptr;

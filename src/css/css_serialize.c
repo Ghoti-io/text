@@ -473,6 +473,15 @@ static void put_url(writer * w, const char * text, size_t len) {
    number is always digits. */
 enum { CSSOM_MAX_DIGITS = 17, CSSOM_MAX_TEXT = 330 };
 
+/* The bound on the spelling, which the buffer below and the copies into it rest on. The shortest digits of a double are
+   at most CSSOM_MAX_DIGITS (17). A value is below 1.8e308, so an integer spelling has at most 309 digits (DBL_MAX is 17
+   digits and 292 zeros), and a sign makes it 310. A fraction keeps at most six decimals, so it is a sign, at most 17
+   digits and a point, or "0." and at most five zeros before the digits: 26 at most. Rounding up can add one digit
+   (99.9 -> 100), which digits[] has room for (CSSOM_MAX_DIGITS + 2). Nothing is ever cut short: the guard on the zeros
+   below is a guard and not a truncation, and testCssNumbers writes DBL_MAX, DBL_TRUE_MIN and 1e-300. */
+_Static_assert(CSSOM_MAX_TEXT >= 1 + 309, "an integer below 1.8e308 and its sign fit the CSSOM buffer");
+_Static_assert(CSSOM_MAX_TEXT >= 1 + CSSOM_MAX_DIGITS + 1 + 8, "a fraction fits the CSSOM buffer");
+
 static void put_cssom_number(writer * w, double v, bool integer) {
   if (v != v) {
     puts_(w, "0");
@@ -489,19 +498,19 @@ static void put_cssom_number(writer * w, double v, bool integer) {
   char digits[CSSOM_MAX_DIGITS + 2];
   size_t n = d.length;
   memcpy(digits, d.digits, n);
-  int64_t exp10 = d.exponent; /* the value is the digits times ten to this */
+  int64_t tens = d.exponent; /* the value is the digits times ten to this */
   const int64_t keep = integer ? 0 : 6; /* decimals allowed */
-  if (-exp10 > keep) {
-    const int64_t drop = -exp10 - keep; /* digits to remove from the right */
+  if (-tens > keep) {
+    const int64_t drop = -tens - keep; /* digits to remove from the right */
     if (drop > (int64_t)n) { /* below half of the last place kept */
       digits[0] = '0';
       n = 1;
-      exp10 = 0;
+      tens = 0;
     }
     else {
       const bool up = digits[n - (size_t)drop] >= '5'; /* the first digit removed */
       n -= (size_t)drop;
-      exp10 += drop;
+      tens += drop;
       if (up) {
         size_t k = n;
         while (k > 0 && digits[k - 1] == '9') {
@@ -519,14 +528,14 @@ static void put_cssom_number(writer * w, double v, bool integer) {
       if (n == 0) { /* every digit was removed and the rounding did not go up */
         digits[0] = '0';
         n = 1;
-        exp10 = 0;
+        tens = 0;
       }
     }
   }
   /* Strip zeros made by the rounding (or the shortest form's own) off the right of the fraction. */
-  while (n > 1 && digits[n - 1] == '0' && exp10 < 0) {
+  while (n > 1 && digits[n - 1] == '0' && tens < 0) {
     n--;
-    exp10++;
+    tens++;
   }
   bool zero = true;
   for (size_t i = 0; i < n; i++) {
@@ -543,15 +552,15 @@ static void put_cssom_number(writer * w, double v, bool integer) {
   if (d.negative) {
     out[len++] = '-';
   }
-  if (exp10 >= 0) { /* an integer: the digits and their zeros */
+  if (tens >= 0) { /* an integer: the digits and their zeros */
     memcpy(out + len, digits, n);
     len += n;
-    for (int64_t i = 0; i < exp10 && len < CSSOM_MAX_TEXT; i++) {
+    for (int64_t i = 0; i < tens && len < CSSOM_MAX_TEXT; i++) {
       out[len++] = '0';
     }
   }
-  else if ((int64_t)n + exp10 > 0) { /* digits before and after the point */
-    const size_t before = (size_t)((int64_t)n + exp10);
+  else if ((int64_t)n + tens > 0) { /* digits before and after the point */
+    const size_t before = (size_t)((int64_t)n + tens);
     memcpy(out + len, digits, before);
     len += before;
     out[len++] = '.';
@@ -561,7 +570,7 @@ static void put_cssom_number(writer * w, double v, bool integer) {
   else { /* 0.000ddd */
     out[len++] = '0';
     out[len++] = '.';
-    for (int64_t i = 0; i < -((int64_t)n + exp10); i++) {
+    for (int64_t i = 0; i < -((int64_t)n + tens); i++) {
       out[len++] = '0';
     }
     memcpy(out + len, digits, n);

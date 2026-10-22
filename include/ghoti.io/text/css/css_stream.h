@@ -45,12 +45,27 @@
  * bytes cost nothing. The parse itself is iterative and bounded by the same
  * limits as the one-call functions.
  *
- * ## Failure
+ * The memory is that of the one-call function's decode (css_decode.h, "What is
+ * read in place, and what the rest costs"): for an encoding other than UTF-8,
+ * the decoded text (at most `max_decoded_bytes`) and its map (at most
+ * `max_map_runs` runs of 24 bytes), about 27 bytes for each byte fed in the
+ * worst case, and the same limit status, GTEXT_CSS_E_LIMIT_DECODED.
  *
- * A failure of the stream (a limit, memory) is returned by the call that met
- * it and by every call after it, the same status each time; it is also the
- * status gtext_css_stream_finish() returns, with the result filled in. There
- * is no status for a syntax error, because CSS has none.
+ * ## Failure, and the life of a stream
+ *
+ * Until gtext_css_stream_finish() is called, a failure of the stream (a limit,
+ * memory) is returned by the call that met it and by every feed after it, the
+ * same status each time (it is sticky); it is also the status finish returns,
+ * once, with the result filled in. **After finish, every call but
+ * gtext_css_stream_free() returns GTEXT_CSS_E_INVALID**: a feed, and a second
+ * finish, which does not repeat the failure and does not fill the result again
+ * (a result it is given is set to GTEXT_CSS_E_INVALID). There is no status for a
+ * syntax error, because CSS has none.
+ *
+ * The result of a failed finish is the one-call function's for the same
+ * failure: a limit has a place (the byte; in text input the line and column),
+ * a failed allocation has none (`failure` is zero), and once the encoding of a
+ * byte stream was decided the result says so, except for the input limit.
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_STREAM_H
@@ -76,7 +91,8 @@ typedef struct GTEXT_CSS_Stream GTEXT_CSS_Stream;
  * GTEXT_CSS_TREE_STYLESHEET, gtext_css_parse_stylesheet()). A byte order mark
  * is not looked for.
  *
- * @param kind    Which entry point's tree to build. Not a value that is not a kind.
+ * @param kind    Which entry point's tree to build: any GTEXT_CSS_Tree_Kind;
+ *                a value that is not one is GTEXT_CSS_E_INVALID.
  * @param options NULL for the defaults. Copied (the allocator's struct and the
  *                `location` string too); the allocator's `ctx` and the
  *                validity callbacks' `user` must outlive the stream.
@@ -93,9 +109,16 @@ GTEXT_API GTEXT_CSS_Status gtext_css_stream_new(GTEXT_CSS_Tree_Kind kind,
  * The encoding is decided from the first GTEXT_CSS_ENCODING_WINDOW bytes (or
  * all of them, if there are fewer), as gtext_css_determine_encoding() does; the
  * result of gtext_css_stream_finish() is that of
- * gtext_css_parse_stylesheet_bytes() for `kind` GTEXT_CSS_TREE_STYLESHEET.
+ * gtext_css_parse_stylesheet_bytes() for `kind` GTEXT_CSS_TREE_STYLESHEET. For
+ * another kind the bytes are decoded the same way (a byte order mark, the
+ * label, a leading `@charset` and the environment encoding decide the encoding
+ * whatever the kind, and the `@charset` text is parsed as that entry point
+ * parses it) and the result is that entry point's on the decoded text, with
+ * every position in the bytes. There is no one-call byte function for those
+ * kinds: one feed of all the bytes is it.
  *
- * @param kind    Which entry point's tree to build.
+ * @param kind    Which entry point's tree to build; a value that is not a
+ *                GTEXT_CSS_Tree_Kind is GTEXT_CSS_E_INVALID.
  * @param bytes_options NULL for none. Copied, the label too.
  * @param options NULL for the defaults. Copied as for gtext_css_stream_new().
  * @param out     Receives the stream. Not NULL.
@@ -113,9 +136,10 @@ GTEXT_API GTEXT_CSS_Status gtext_css_stream_new_bytes(GTEXT_CSS_Tree_Kind kind,
  *               `length` of 0.
  * @param length Its length, which may be 0.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID for a NULL stream, NULL data with
- *   a length, or a stream already finished; GTEXT_CSS_E_LIMIT_INPUT when the
- *   input has gone past `max_input_bytes`; GTEXT_CSS_E_OOM. The last two are
- *   the stream's failure, and are returned by every later call too.
+ *   a length, or a stream already finished (a failed one too: finished wins);
+ *   GTEXT_CSS_E_LIMIT_INPUT when the input has gone past `max_input_bytes`;
+ *   GTEXT_CSS_E_LIMIT_DECODED; GTEXT_CSS_E_OOM. The last three are the
+ *   stream's failure, and are returned by every feed until finish.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_stream_feed(GTEXT_CSS_Stream * stream,
     const void * data, size_t length);
@@ -123,9 +147,9 @@ GTEXT_API GTEXT_CSS_Status gtext_css_stream_feed(GTEXT_CSS_Stream * stream,
 /**
  * @brief End the input and take the tree.
  *
- * The stream is finished whatever the result; feed and finish are refused
- * after it with GTEXT_CSS_E_INVALID, and gtext_css_stream_free() still has to
- * be called.
+ * The stream is finished whatever the result; feed and a second finish are
+ * refused after it with GTEXT_CSS_E_INVALID (even when the stream had failed),
+ * and gtext_css_stream_free() still has to be called.
  *
  * @param stream A stream.
  * @param out    Receives the tree, written only on success. Not NULL.

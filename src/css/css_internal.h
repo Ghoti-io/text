@@ -179,8 +179,11 @@ typedef struct css_srcmap {
 size_t css_srcmap_start(const css_srcmap * map, size_t dec, size_t * work);
 
 /// The source offset just after the code point that ends at decoded offset
-/// `dec` (so after its last byte, and before any shift sequence that follows).
-/// At the end of the text: the length of the source.
+/// `dec` (so after its last byte, and before any shift sequence that follows,
+/// where another code point follows). At or past the end of the text: the length of
+/// the source, so that the last span of a document reaches the end of the bytes and
+/// takes with it a shift sequence that no code point owns (ISO-2022-JP's return to
+/// ASCII at the end, say); testCssBytes holds it.
 size_t css_srcmap_end(const css_srcmap * map, size_t dec, size_t * work);
 
 /// Where the encoding of a byte parse came from, for the result.
@@ -218,6 +221,7 @@ typedef struct {
 
   GTEXT_CSS_Status status;       ///< OK until something fails.
   GTEXT_CSS_Span failure;        ///< Where a limit was reached.
+  bool failure_positioned;       ///< `failure` is a place (a limit); an OOM or an internal failure has none.
 
   css_arena arena;               ///< Where the tree goes.
 
@@ -321,7 +325,7 @@ bool css_filtered_text(css_ctx * ctx, size_t begin, size_t end,
  *
  * It cannot run out of memory. A spelling the math library does not read whole
  * is not a token's: the context is then failed with GTEXT_CSS_E_INTERNAL and
- * false is returned, with *out untouched.
+ * false is returned, with *out untouched and *flags 0 (it is written on every path).
  */
 bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out, unsigned * flags);
 
@@ -376,14 +380,19 @@ typedef struct {
   size_t len;             ///< Its length.
   size_t cap;             ///< Allocated.
   css_srcmap map;         ///< Where each part came from.
-  GTEXT_CSS_Status status; ///< OK, or OOM / INTERNAL once something failed.
+  GTEXT_CSS_Status status; ///< OK, or OOM / INTERNAL / LIMIT_DECODED once something failed.
   size_t work;            ///< Units of work: bytes taken, decoder steps, bytes of text and map made.
   size_t src_fed;         ///< Bytes of source given so far.
+  size_t max_text;        ///< Most bytes of decoded text (css_max_decoded).
+  size_t max_runs;        ///< Most runs of the map (css_max_runs).
+  size_t fail_at;         ///< For GTEXT_CSS_E_LIMIT_DECODED: the source offset of the code point that went past.
 } css_decode;
 
 /// Begin decoding `encoding` (with byte order mark sniffing, as the Encoding
-/// Standard's "decode" has it). False (and `status`) on failure.
-bool css_decode_begin(css_decode * d, const GTEXT_Allocator * alloc, GTEXT_Encoding encoding);
+/// Standard's "decode" has it). The text and the map are bounded by the options'
+/// `max_decoded_bytes` and `max_map_runs` (their defaults from `max_input_bytes`).
+/// False (and `status`) on failure.
+bool css_decode_begin(css_decode * d, const GTEXT_CSS_Parse_Options * options, GTEXT_Encoding encoding);
 
 /// Decode `n` more bytes (and the end of the input if `final`).
 bool css_decode_feed(css_decode * d, const unsigned char * bytes, size_t n, bool final);
@@ -427,6 +436,15 @@ GTEXT_INTERNAL_API size_t gtext_css_stream_kept_bytes(const GTEXT_CSS_Stream * s
 
 /// The input limit of a parse with these options (the default if unset).
 size_t css_max_input(const GTEXT_CSS_Parse_Options * options);
+
+/// Whether `kind` names one of the entry points (a GTEXT_CSS_Tree_Kind).
+bool css_kind_valid(GTEXT_CSS_Tree_Kind kind);
+
+/// The most bytes of decoded text of a byte parse: `max_decoded_bytes`, or 3 times the input limit.
+size_t css_max_decoded(const GTEXT_CSS_Parse_Options * options);
+
+/// The most runs of the offset map of a byte parse: `max_map_runs`, or the input limit.
+size_t css_max_runs(const GTEXT_CSS_Parse_Options * options);
 
 /// The same for the serializer: the units of work (bytes written, nodes
 /// visited) of writing `tree` to `sink`.

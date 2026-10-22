@@ -43,6 +43,7 @@
 #include <ghoti.io/text/encoding/encoding_decode.h>
 
 #include "css_bytes_test_support.h"
+#include "markup_test_support.h"
 
 using namespace css_test;
 
@@ -166,10 +167,38 @@ TEST(CssDecode, ArgumentsAreChecked) {
   EXPECT_EQ(d.encoding, GTEXT_ENCODING_UTF_8);
   GTEXT_CSS_Bytes_Options o = gtext_css_bytes_options_default();
   o.environment_encoding = static_cast<GTEXT_Encoding>(9999);
-  EXPECT_EQ(gtext_css_determine_encoding("a", 1, &o, &d), GTEXT_CSS_OK);
-  EXPECT_EQ(d.source, GTEXT_CSS_ENCODING_SOURCE_DEFAULT) << "an environment encoding that is not one is none";
+  EXPECT_EQ(gtext_css_determine_encoding("a", 1, &o, &d), GTEXT_CSS_E_INVALID) << "an environment encoding that is not one";
+  o.environment_encoding = GTEXT_ENCODING_COUNT;
+  EXPECT_EQ(gtext_css_determine_encoding("a", 1, &o, &d), GTEXT_CSS_E_INVALID) << "the count is not an encoding";
+  o.environment_encoding = static_cast<GTEXT_Encoding>(-1);
+  EXPECT_EQ(gtext_css_determine_encoding("a", 1, &o, &d), GTEXT_CSS_E_INVALID);
+  o.environment_encoding = static_cast<GTEXT_Encoding>(GTEXT_ENCODING_COUNT - 1);
+  EXPECT_EQ(gtext_css_determine_encoding("a", 1, &o, &d), GTEXT_CSS_OK) << "the last encoding is one";
+  EXPECT_EQ(d.source, GTEXT_CSS_ENCODING_SOURCE_ENVIRONMENT);
+  // Every encoding below the count has a decoder, so none of them is refused later.
+  for (int e = 1; e < GTEXT_ENCODING_COUNT; e++) {
+    GTEXT_CSS_Bytes_Options eo = gtext_css_bytes_options_default();
+    eo.environment_encoding = static_cast<GTEXT_Encoding>(e);
+    const Outcome out = whole_bytes("a{b:c}", &eo);
+    EXPECT_EQ(out.status, GTEXT_CSS_OK) << gtext_encoding_name(static_cast<GTEXT_Encoding>(e));
+  }
+  // The one-call function fills its result for the argument it refuses, and so does a stream when it decides.
+  o.environment_encoding = static_cast<GTEXT_Encoding>(9999);
   GTEXT_CSS_Tree * t = nullptr;
   GTEXT_CSS_Result r{};
+  EXPECT_EQ(gtext_css_parse_stylesheet_bytes("a{}", 3, &o, nullptr, &t, &r), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(t, nullptr);
+  EXPECT_EQ(r.status, GTEXT_CSS_E_INVALID) << "the result is filled whatever happens";
+  EXPECT_STREQ(r.message, gtext_css_status_string(GTEXT_CSS_E_INVALID));
+  EXPECT_EQ(r.input_bytes, 3u);
+  gtext_css_result_free(&r);
+  for (const size_t step : {size_t{1}, size_t{3}}) {
+    const Cut cut{{step}, true, false, "steps"};
+    const Outcome via = through_stream(GTEXT_CSS_TREE_STYLESHEET, true, &o, nullptr, "a{}", cut);
+    EXPECT_EQ(via.status, GTEXT_CSS_E_INVALID);
+    EXPECT_EQ(via.failure.offset, 0u);
+  }
+  r = GTEXT_CSS_Result{};
   EXPECT_EQ(gtext_css_parse_stylesheet_bytes("a", 1, nullptr, nullptr, nullptr, &r), GTEXT_CSS_E_INVALID);
   EXPECT_EQ(r.status, GTEXT_CSS_E_INVALID);
   EXPECT_EQ(gtext_css_parse_stylesheet_bytes(nullptr, 2, nullptr, nullptr, &t, &r), GTEXT_CSS_E_INVALID);
@@ -434,6 +463,214 @@ TEST(CssBytes, ALimitReachedInAnotherEncodingIsAtTheBytesTheLimitIsAt) {
   EXPECT_EQ(as_bytes.input_bytes, utf16.size());
 }
 
+TEST(CssBytes, AFailureIsAPlaceInTheBytesWithTheLineAndColumnOfTheText) {
+  // The line and the column count the decoded text's characters (as a parse error's do), the offset is in the bytes, the end
+  // is the offset (a failure is a place, not a range), and a failure with no place (memory) is zero.
+  const std::string text = "a{}\n\xc3\xa9\xc3\xa9 d{}\xc3\xa9 e{} f{}";
+  std::string utf16 = CSS_BYTES("\xff\xfe");
+  for (size_t i = 0; i < text.size();) {
+    const unsigned char c = static_cast<unsigned char>(text[i]);
+    unsigned cp = c;
+    size_t n = 1;
+    if (c >= 0xC0) {
+      cp = ((c & 0x1Fu) << 6) | (static_cast<unsigned char>(text[i + 1]) & 0x3Fu);
+      n = 2;
+    }
+    utf16 += static_cast<char>(cp & 0xff);
+    utf16 += static_cast<char>(cp >> 8);
+    i += n;
+  }
+  GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+  o.max_rules = 2;
+  const Outcome as_text = whole_text(text, gtext_css_parse_stylesheet, &o);
+  const Outcome as_bytes = whole_bytes(utf16, nullptr, &o);
+  ASSERT_EQ(as_text.status, GTEXT_CSS_E_LIMIT_RULES);
+  ASSERT_EQ(as_bytes.status, GTEXT_CSS_E_LIMIT_RULES);
+  EXPECT_EQ(as_text.failure.line, 2u) << "the third rule is on the second line (lines count from 1)";
+  EXPECT_EQ(as_bytes.failure.line, as_text.failure.line);
+  EXPECT_EQ(as_bytes.failure.column, as_text.failure.column) << "in characters, not bytes of either";
+  // "a{}\n" is 4 characters, "\xc3\xa9\xc3\xa9 d{}\xc3\xa9 e{}" starts the third rule 12 characters in.
+  size_t chars_before = 0;
+  for (size_t i = 0; i < as_text.failure.offset; i++) {
+    chars_before += (static_cast<unsigned char>(text[i]) & 0xC0) != 0x80;
+  }
+  EXPECT_EQ(as_bytes.failure.offset, 2 + 2 * chars_before);
+  EXPECT_EQ(as_bytes.failure.end, as_bytes.failure.offset) << "a failure is a place";
+  // Memory has no place: not the byte order mark's length, not the end of the bytes.
+  const std::string marked = "\xef\xbb\xbf" + text;
+  FaultAllocator fa;
+  GTEXT_CSS_Parse_Options fo = gtext_css_parse_options_default();
+  fo.allocator = &fa.alloc;
+  size_t refused = 0;
+  for (size_t n = 1; n < 400; n++) {
+    fa.arm(n);
+    GTEXT_CSS_Tree * t = nullptr;
+    GTEXT_CSS_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_parse_stylesheet_bytes(marked.data(), marked.size(), nullptr, &fo, &t, &r);
+    fa.disarm();
+    if (st == GTEXT_CSS_E_OOM) {
+      refused++;
+      EXPECT_EQ(r.failure.offset, 0u) << n;
+      EXPECT_EQ(r.failure.end, 0u) << n;
+      EXPECT_EQ(r.failure.line, 0u) << n;
+      EXPECT_EQ(r.failure.column, 0u) << n;
+      EXPECT_EQ(r.encoding, GTEXT_ENCODING_UTF_8) << "the encoding was decided before memory ran out";
+      EXPECT_EQ(r.bom_length, 3u);
+    }
+    gtext_css_tree_free(t);
+    gtext_css_result_free(&r);
+    if (!fa.failed) {
+      break;
+    }
+  }
+  EXPECT_GT(refused, 3u);
+}
+
+// ---- the limits of the decoded text and its map ------------------------------------------------------------------------
+
+struct Adversary {
+  const char * name;
+  const char * label;
+  std::string unit; // two or three code points whose lengths differ in the text or in the source
+};
+
+std::vector<Adversary> adversaries() {
+  return {
+      {"windows-1252", "windows-1252", "a\x80"},          // 1 byte -> 1 byte, 1 byte -> 3 bytes
+      {"windows-1251", "windows-1251", "a\xef"},          // 1 -> 1, 1 -> 2
+      {"utf-16le", "utf-16le", CSS_BYTES("a\x00\xe9\x00")}, // 2 -> 1, 2 -> 2
+      {"utf-16be", "utf-16be", CSS_BYTES("\x00" "a\x00\xe9")},
+      {"shift_jis", "shift_jis", "a\x93\xfa"},            // 1 -> 1, 2 -> 3
+      {"euc-jp", "euc-jp", "a\xc6\xfc"},
+      {"euc-kr", "euc-kr", "a\xc7\xd1"},
+      {"gbk", "gbk", "a\xd6\xd0"},
+      {"gb18030", "gb18030", CSS_BYTES("a\x81\x30\x81\x30\xd6\xd0")}, // 1 -> 1, 4 -> 2, 2 -> 3
+      {"big5", "big5", "a\xa4\xa4"},
+      {"iso-2022-jp", "iso-2022-jp", "a\x1b$BF|\x1b(B"},  // a shift in, a character, a shift out
+  };
+}
+
+TEST(CssDecodeLimits, TheTextOfAStylesheetIsBoundedAtThreeBytesForEachByteAndOnePastItIsItsOwnFailure) {
+  // 0x80 is U+20AC in windows-1252: 3 bytes of text for 1 byte of source, the most a code point can be.
+  const std::string src(10, '\x80');
+  GTEXT_CSS_Bytes_Options b = gtext_css_bytes_options_default();
+  b.protocol_label = "windows-1252";
+  GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+  o.max_input_bytes = src.size();
+  const Outcome at_input_bound = whole_bytes(src, &b, &o);
+  EXPECT_EQ(at_input_bound.status, GTEXT_CSS_OK) << "the default is three times the input limit, which the text just reaches";
+  for (const size_t limit : {size_t{30}, size_t{31}}) {
+    o.max_decoded_bytes = limit;
+    EXPECT_EQ(whole_bytes(src, &b, &o).status, GTEXT_CSS_OK) << limit << ": at the bound";
+  }
+  o.max_decoded_bytes = 29;
+  const Outcome one_past = whole_bytes(src, &b, &o);
+  EXPECT_EQ(one_past.status, GTEXT_CSS_E_LIMIT_DECODED);
+  EXPECT_EQ(one_past.failure.offset, 9u) << "at the byte of the code point that went past";
+  EXPECT_EQ(one_past.failure.end, 9u);
+  EXPECT_EQ(one_past.failure.line, 0u);
+  EXPECT_EQ(one_past.failure.column, 0u);
+  EXPECT_EQ(one_past.encoding, GTEXT_ENCODING_WINDOWS_1252) << "the encoding was decided";
+  EXPECT_EQ(one_past.source, GTEXT_CSS_ENCODING_SOURCE_PROTOCOL);
+  EXPECT_EQ(one_past.input_bytes, src.size());
+  EXPECT_TRUE(one_past.tree.empty());
+  for (const size_t step : {size_t{1}, size_t{3}, size_t{100}}) {
+    const Cut cut{{step}, true, false, "steps"};
+    expect_same_outcome(one_past, through_stream(GTEXT_CSS_TREE_STYLESHEET, true, &b, &o, src, cut), "stream, step " + std::to_string(step));
+  }
+  // The status has a name that is its own.
+  EXPECT_STRNE(gtext_css_status_string(GTEXT_CSS_E_LIMIT_DECODED), gtext_css_status_string(GTEXT_CSS_E_LIMIT_OUTPUT));
+}
+
+TEST(CssDecodeLimits, TheMapOfAnyEncodingIsBoundedAndOnePastItIsItsOwnFailure) {
+  for (const Adversary & a : adversaries()) {
+    SCOPED_TRACE(a.name);
+    std::string src;
+    for (int i = 0; i < 40; i++) {
+      src += a.unit;
+    }
+    ASSERT_LT(src.size(), 1000u) << "(a stream decides at the end, with the whole input in hand)";
+    GTEXT_CSS_Bytes_Options b = gtext_css_bytes_options_default();
+    b.protocol_label = a.label;
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    // Never more runs than bytes: the default limit, the input limit, is not passed by input at its own length.
+    o.max_input_bytes = src.size();
+    EXPECT_EQ(whole_bytes(src, &b, &o).status, GTEXT_CSS_OK) << "at the default bound";
+    // The fewest runs the input needs: a limit of it passes, and a limit of one fewer is the failure.
+    size_t need = 0;
+    for (size_t runs = 1; runs <= src.size() + 1; runs++) {
+      GTEXT_CSS_Parse_Options lo = gtext_css_parse_options_default();
+      lo.max_map_runs = runs;
+      if (whole_bytes(src, &b, &lo).status == GTEXT_CSS_OK) {
+        need = runs;
+        break;
+      }
+    }
+    ASSERT_NE(need, 0u);
+    EXPECT_GE(need, 40u) << "an alternating input needs a run for about every character";
+    EXPECT_LE(need, src.size());
+    GTEXT_CSS_Parse_Options at = gtext_css_parse_options_default();
+    at.max_map_runs = need;
+    const Outcome ok = whole_bytes(src, &b, &at);
+    EXPECT_EQ(ok.status, GTEXT_CSS_OK);
+    GTEXT_CSS_Parse_Options past = gtext_css_parse_options_default();
+    past.max_map_runs = need - 1;
+    const Outcome refused = whole_bytes(src, &b, &past);
+    ASSERT_EQ(refused.status, GTEXT_CSS_E_LIMIT_DECODED);
+    EXPECT_GT(refused.failure.offset, 0u);
+    EXPECT_LT(refused.failure.offset, src.size());
+    EXPECT_EQ(refused.failure.end, refused.failure.offset);
+    EXPECT_EQ(refused.failure.line, 0u);
+    EXPECT_EQ(refused.failure.column, 0u);
+    EXPECT_NE(refused.encoding, GTEXT_ENCODING_NONE);
+    EXPECT_EQ(refused.source, GTEXT_CSS_ENCODING_SOURCE_PROTOCOL);
+    EXPECT_TRUE(refused.tree.empty());
+    // A stream, cut anywhere, meets the same bound at the same place, and says the same.
+    for (const Cut & cut : split_cuts(src.size())) {
+      expect_same_outcome(ok, through_stream(GTEXT_CSS_TREE_STYLESHEET, true, &b, &at, src, cut), std::string("at / ") + cut.name);
+      expect_same_outcome(refused, through_stream(GTEXT_CSS_TREE_STYLESHEET, true, &b, &past, src, cut),
+          std::string("past / ") + cut.name);
+    }
+  }
+}
+
+// ---- the bytes of an @charset label ------------------------------------------------------------------------------------
+
+TEST(CssDecode, AnyByteButTheQuoteMayBeInALabelAndOnlyWhatTheLabelParserTrimsIsTrimmed) {
+  // The served draft: each XX byte "is a value between 0 and 21 inclusive or a value between 23 and 7F inclusive" (hexadecimal).
+  // So the scan takes every byte but the quote and the bytes from 0x80; the label it finds is then "get an encoding"'s, which
+  // trims ASCII white space (tab, line feed, form feed, carriage return, space) and matches nothing with another byte in it.
+  // (NUL at the bottom of the range changes no answer: a label with a NUL in it names no encoding, so it is taken or not
+  // taken with the same result; the byte is here to show that nothing is read past or before it.)
+  for (int x = 0; x < 256; x++) {
+    const char c = static_cast<char>(x);
+    const bool trimmed = x == 0x09 || x == 0x0A || x == 0x0C || x == 0x0D || x == 0x20;
+    for (const int where : {0, 1}) {
+      std::string css = "@charset \"";
+      css += where == 0 ? std::string(1, c) + "iso-8859-2" : "iso-8859-2" + std::string(1, c);
+      css += "\"; a{b:c}";
+      GTEXT_CSS_Encoding_Decision d;
+      ASSERT_EQ(gtext_css_determine_encoding(css.data(), css.size(), nullptr, &d), GTEXT_CSS_OK);
+      if (trimmed) {
+        EXPECT_EQ(d.source, GTEXT_CSS_ENCODING_SOURCE_CHARSET_RULE) << "byte " << x << " at " << where;
+        EXPECT_EQ(d.encoding, GTEXT_ENCODING_ISO_8859_2) << x;
+      }
+      else {
+        EXPECT_EQ(d.source, GTEXT_CSS_ENCODING_SOURCE_DEFAULT) << "byte " << x << " at " << where << " makes a label that names nothing";
+      }
+    }
+  }
+  // The ends of the range are the label's, and a byte past it is not: 0x7F is read as part of a label (that names nothing), 0x80 ends
+  // the scan before the quote, so a later quote and semicolon do not make a declaration of it.
+  const std::string p80 = CSS_BYTES("@charset \"iso-8859-2\x80\"; a{b:c}");
+  GTEXT_CSS_Encoding_Decision d;
+  ASSERT_EQ(gtext_css_determine_encoding(p80.data(), p80.size(), nullptr, &d), GTEXT_CSS_OK);
+  EXPECT_EQ(d.source, GTEXT_CSS_ENCODING_SOURCE_DEFAULT);
+  const std::string nul = CSS_BYTES("@charset \"\"; @charset \"x\0y\"; a{b:c}");
+  ASSERT_EQ(gtext_css_determine_encoding(nul.data(), nul.size(), nullptr, &d), GTEXT_CSS_OK);
+  EXPECT_EQ(d.source, GTEXT_CSS_ENCODING_SOURCE_DEFAULT) << "an empty label names nothing";
+}
+
 // ---- the validity seam, and @charset ---------------------------------------------------------------------------
 
 bool refuse_charset(void *, const GTEXT_CSS_Parent *, const GTEXT_CSS_Rule * r) {
@@ -544,6 +781,177 @@ TEST(CssBytes, AnIso2022JpEscapeThatIsNotOneGivesAZeroWidthReplacementAndStillPa
       expect_same_outcome(whole, through_stream(GTEXT_CSS_TREE_STYLESHEET, true, &o, nullptr, in, cut), "iso-2022-jp escape, step " + std::to_string(step));
     }
   }
+}
+
+// ---- every entry point through a byte stream -------------------------------------------------------------------
+
+// A document in an encoding, and where the code points of its text are in its bytes, from the encoding's own layout (a
+// table that does not go through the library's map): a UTF-8 text after a 3-byte mark has the text's offset plus 3, a
+// single-byte encoding one byte for a character, UTF-16 two bytes after a 2-byte mark.
+struct KindDoc {
+  const char * name;
+  std::string bytes;
+  const char * label;
+  GTEXT_Encoding encoding;
+  size_t (*start)(const std::string & text, size_t dec);
+};
+
+size_t start_utf8_bom(const std::string &, size_t dec) {
+  return dec + 3;
+}
+size_t start_single(const std::string & text, size_t dec) {
+  return code_points_before(text, dec);
+}
+size_t start_utf16(const std::string & text, size_t dec) {
+  return 2 + 2 * code_points_before(text, dec);
+}
+
+std::string utf16le_with_mark(const std::u16string & u) {
+  std::string out = "\xff\xfe";
+  for (const char16_t c : u) {
+    out += static_cast<char>(c & 0xff);
+    out += static_cast<char>(c >> 8);
+  }
+  return out;
+}
+
+std::vector<KindDoc> kind_documents() {
+  const std::string s8 = "@media x{.\xc3\xa9{b:\"\xc3\xbc\"}} a{c:d e}\n/*\xc3\xa6*/ f,g{h:i!important} u{v:\"w\xc3\xa5\"; x:y}";
+  const std::string d8 = "b:\"\xc3\xbc\" !important; c:d; e{f:g} h:i; j:\"\xc3\xa6\"";
+  const std::string s51 = "@media x{.\xef{b:\"\xfc\"}} a{c:d e}\n/*\xe6*/ f,g{h:i!important} u{v:\"w\xe5\"; x:y}";
+  const std::string d51 = "b:\"\xfc\" !important; c:d; e{f:g} h:i; j:\"\xe6\"";
+  const std::u16string s16 = u"@media x{.\u00e9{b:\"\u00fc\"}} a{c:d e}\n/*\u00e6*/ f,g{h:i!important} u{v:\"w\u00e5\"; x:y}";
+  const std::u16string d16 = u"b:\"\u00fc\" !important; c:d; e{f:g} h:i; j:\"\u00e6\"";
+  return {
+      {"utf-8 with a mark, stylesheet", "\xef\xbb\xbf" + s8, "", GTEXT_ENCODING_UTF_8, start_utf8_bom},
+      {"utf-8 with a mark, declarations", "\xef\xbb\xbf" + d8, "", GTEXT_ENCODING_UTF_8, start_utf8_bom},
+      {"windows-1251, stylesheet", s51, "windows-1251", GTEXT_ENCODING_WINDOWS_1251, start_single},
+      {"windows-1251, declarations", d51, "windows-1251", GTEXT_ENCODING_WINDOWS_1251, start_single},
+      {"utf-16le, stylesheet", utf16le_with_mark(s16), "", GTEXT_ENCODING_UTF_16LE, start_utf16},
+      {"utf-16le, declarations", utf16le_with_mark(d16), "", GTEXT_ENCODING_UTF_16LE, start_utf16},
+  };
+}
+
+TEST(CssStreamBytes, EveryEntryPointIsCutIndependentAndInTheBytes) {
+  struct E {
+    GTEXT_CSS_Tree_Kind kind;
+    ParseFn fn;
+  };
+  const E entries[] = {
+      {GTEXT_CSS_TREE_STYLESHEET, gtext_css_parse_stylesheet},
+      {GTEXT_CSS_TREE_STYLESHEET_CONTENTS, gtext_css_parse_stylesheet_contents},
+      {GTEXT_CSS_TREE_DECLARATION_LIST, gtext_css_parse_declaration_list},
+      {GTEXT_CSS_TREE_BLOCK_CONTENTS, gtext_css_parse_block_contents},
+      {GTEXT_CSS_TREE_RULE, gtext_css_parse_rule},
+      {GTEXT_CSS_TREE_DECLARATION, gtext_css_parse_declaration},
+      {GTEXT_CSS_TREE_COMPONENT_VALUE, gtext_css_parse_component_value},
+      {GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, gtext_css_parse_component_values},
+      {GTEXT_CSS_TREE_COMMA_LIST, gtext_css_parse_comma_list},
+  };
+  bool saw_rules = false, saw_declarations = false, saw_items = false, saw_values = false, saw_lists = false;
+  size_t spans_checked = 0;
+  for (const KindDoc & doc : kind_documents()) {
+    GTEXT_CSS_Bytes_Options bo = gtext_css_bytes_options_default();
+    bo.protocol_label = *doc.label ? doc.label : nullptr;
+    // The text the bytes decode to (the Encoding module's own decoder; what is tested here is the positions).
+    char * text_buf = nullptr;
+    size_t text_len = 0;
+    GTEXT_Decoder_Options dopts = gtext_decoder_options_default();
+    dopts.bom_sniffing = true;
+    ASSERT_EQ(gtext_encoding_decode_buffer(doc.encoding, &dopts, doc.bytes.data(), doc.bytes.size(), &text_buf, &text_len, nullptr),
+        GTEXT_ENCODING_OK);
+    const std::string text(text_buf, text_len);
+    gtext_encoding_buffer_free(text_buf);
+    auto start_of = [&](size_t d) { return d >= text.size() ? doc.bytes.size() : doc.start(text, d); };
+    auto end_of = start_of; // (these encodings have no bytes between characters, so a span ends where the next character starts)
+    for (const E & e : entries) {
+      SCOPED_TRACE(std::string(doc.name) + " / kind " + std::to_string(e.kind));
+      Parsed want;
+      parse_into(want, e.fn, text);
+      ASSERT_EQ(want.status, GTEXT_CSS_OK);
+      // The stream of bytes, fed whole: the tree's spans are the text's moved through the independent table.
+      GTEXT_CSS_Stream * st = nullptr;
+      ASSERT_EQ(gtext_css_stream_new_bytes(e.kind, &bo, nullptr, &st), GTEXT_CSS_OK);
+      ASSERT_EQ(gtext_css_stream_feed(st, doc.bytes.data(), doc.bytes.size()), GTEXT_CSS_OK);
+      Parsed got;
+      got.status = gtext_css_stream_finish(st, &got.tree, &got.result);
+      gtext_css_stream_free(st);
+      ASSERT_EQ(got.status, GTEXT_CSS_OK);
+      EXPECT_EQ(got.result.encoding, doc.encoding);
+      EXPECT_EQ(canon(want.tree), canon(got.tree)) << "the same tree as the text's";
+      const std::vector<size_t> w = collect_spans(want.tree);
+      const std::vector<size_t> g = collect_spans(got.tree);
+      ASSERT_EQ(w.size(), g.size());
+      for (size_t i = 0; i < w.size(); i += 2) {
+        const size_t a = start_of(w[i]);
+        size_t b = w[i + 1] == w[i] ? a : end_of(w[i + 1]);
+        if (b < a) {
+          b = a;
+        }
+        EXPECT_EQ(g[i], a) << "span " << i / 2 << " starts at text offset " << w[i];
+        EXPECT_EQ(g[i + 1], b) << "span " << i / 2 << " ends at text offset " << w[i + 1];
+        spans_checked++;
+      }
+      saw_rules = saw_rules || want.tree->rule_count > 0;
+      saw_declarations = saw_declarations || want.tree->declaration_count > 0;
+      saw_items = saw_items || want.tree->item_count > 0;
+      saw_values = saw_values || want.tree->value_count > 0;
+      saw_lists = saw_lists || want.tree->list_count > 0;
+      const auto we = want.errors();
+      const auto ge = got.errors();
+      ASSERT_EQ(we.size(), ge.size());
+      for (size_t i = 0; i < we.size(); i++) {
+        EXPECT_EQ(ge[i].code, we[i].code);
+        EXPECT_EQ(ge[i].byte_offset, start_of(we[i].byte_offset));
+      }
+      // Cut anywhere (every point of the short documents), the answer is the same as the whole's.
+      const Cut whole_cut{{doc.bytes.size()}, false, false, "whole"};
+      const Outcome ref = through_stream(e.kind, true, &bo, nullptr, doc.bytes, whole_cut);
+      EXPECT_FALSE(ref.tree.empty());
+      for (const Cut & cut : split_cuts(doc.bytes.size())) {
+        expect_same_outcome(ref, through_stream(e.kind, true, &bo, nullptr, doc.bytes, cut), cut.name);
+      }
+    }
+  }
+  EXPECT_TRUE(saw_rules && saw_declarations && saw_items && saw_values && saw_lists)
+      << "the documents reach every root array of a tree, so a root that is not moved into the bytes would be seen";
+  EXPECT_GT(spans_checked, 500u);
+}
+
+TEST(CssStreamBytes, ANonStylesheetKindsAtCharsetAndMarkAreWhatTheyAreForTheStylesheet) {
+  // The encoding is decided from the bytes whatever the entry point, and the @charset is parsed as that entry point parses it.
+  const std::string css = CSS_BYTES("@charset \"windows-1251\"; a{b:\"\xef\"}");
+  for (const GTEXT_CSS_Tree_Kind kind : {GTEXT_CSS_TREE_STYLESHEET, GTEXT_CSS_TREE_STYLESHEET_CONTENTS,
+           GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, GTEXT_CSS_TREE_COMMA_LIST}) {
+    const Outcome o = through_stream(kind, true, nullptr, nullptr, css, Cut{});
+    EXPECT_EQ(o.status, GTEXT_CSS_OK);
+    EXPECT_EQ(o.encoding, GTEXT_ENCODING_WINDOWS_1251) << kind;
+    EXPECT_EQ(o.source, GTEXT_CSS_ENCODING_SOURCE_CHARSET_RULE) << kind;
+  }
+  const Outcome marked = through_stream(GTEXT_CSS_TREE_DECLARATION_LIST, true, nullptr, nullptr, "\xef\xbb\xbf" "a:b", Cut{});
+  EXPECT_EQ(marked.source, GTEXT_CSS_ENCODING_SOURCE_BOM);
+  EXPECT_EQ(marked.bom_length, 3u);
+}
+
+extern "C" GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind entry, const char * input, size_t length,
+    const GTEXT_CSS_Parse_Options * options, size_t * work);
+extern "C" GTEXT_CSS_Status gtext_css_parse_bytes_work(GTEXT_CSS_Tree_Kind kind, const void * bytes, size_t length,
+    const GTEXT_CSS_Bytes_Options * bytes_options, const GTEXT_CSS_Parse_Options * options, size_t * work);
+
+TEST(CssStreamBytes, AValueThatIsNotAKindIsRefusedEverywhereAndNotParsedAsACommaList) {
+  const GTEXT_CSS_Tree_Kind bad = static_cast<GTEXT_CSS_Tree_Kind>(99);
+  size_t work = 0;
+  EXPECT_EQ(gtext_css_parse_work(bad, "a", 1, nullptr, &work), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_parse_bytes_work(bad, "a", 1, nullptr, nullptr, &work), GTEXT_CSS_E_INVALID);
+  const std::string sj = CSS_BYTES("a\x81 {b:c}");
+  GTEXT_CSS_Bytes_Options o = gtext_css_bytes_options_default();
+  o.protocol_label = "shift_jis";
+  EXPECT_EQ(gtext_css_parse_bytes_work(bad, sj.data(), sj.size(), &o, nullptr, &work), GTEXT_CSS_E_INVALID)
+      << "also where the bytes have to be decoded first";
+  EXPECT_EQ(gtext_css_parse_bytes_work(GTEXT_CSS_TREE_COMMA_LIST, sj.data(), sj.size(), &o, nullptr, &work), GTEXT_CSS_OK);
+  GTEXT_CSS_Stream * s = nullptr;
+  EXPECT_EQ(gtext_css_stream_new_bytes(bad, nullptr, nullptr, &s), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(s, nullptr);
 }
 
 } // namespace

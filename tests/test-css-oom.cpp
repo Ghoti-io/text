@@ -343,6 +343,18 @@ TEST(CssOomBytes, EveryAllocationOfTheByteEntryPointsAndTheStreamCanFailAndNothi
         }
         if (got.status == GTEXT_CSS_E_OOM) {
           refused++;
+          // A failed allocation has no place, in any mode: not the input limit's byte, not a byte order mark's length.
+          EXPECT_EQ(got.failure.offset, 0u) << n;
+          EXPECT_EQ(got.failure.end, 0u) << n;
+          EXPECT_EQ(got.failure.line, 0u) << n;
+          EXPECT_EQ(got.failure.column, 0u) << n;
+          // Once the encoding is decided (the first allocations of a run are the stream's own struct, copies and first
+          // buffer, before it) the result says how the bytes were read, whatever the mode, as the one-call function's does.
+          if (n > 5) {
+            EXPECT_EQ(got.encoding, want.encoding) << "allocation " << n;
+            EXPECT_EQ(got.source, want.source) << "allocation " << n;
+            EXPECT_EQ(got.bom_length, want.bom_length) << "allocation " << n;
+          }
           continue;
         }
         // The allocation that failed was one the run could do without: the answer is the whole's.
@@ -351,6 +363,58 @@ TEST(CssOomBytes, EveryAllocationOfTheByteEntryPointsAndTheStreamCanFailAndNothi
       EXPECT_TRUE(reached_the_end) << "the sweep did not reach the last allocation";
       EXPECT_GT(refused, 5u);
     }
+  }
+}
+
+TEST(CssOomBytes, ATextStreamPastItsLimitSaysMemoryRatherThanAPositionFromLessText) {
+  // After the limit a text stream keeps three more bytes to place the failure as the one-call parse does. If keeping them runs out
+  // of memory the failure is the memory, not a line and column read from a shorter text.
+  const std::string text = "a{b:\n\xc3\xa9\xc3\xa9\xc3\xa9 c} d{e:f}\n";
+  for (const size_t max : {size_t{1}, size_t{4}, size_t{9}}) {
+    GTEXT_CSS_Parse_Options base = gtext_css_parse_options_default();
+    base.max_input_bytes = max;
+    const css_test::Outcome want = css_test::whole_text(text, gtext_css_parse_stylesheet, &base);
+    ASSERT_EQ(want.status, GTEXT_CSS_E_LIMIT_INPUT);
+    size_t memory = 0, placed = 0;
+    for (const size_t step : {size_t{1}, size_t{2}, text.size()}) {
+      for (size_t n = 1; n < 60; n++) {
+        FaultAllocator fa;
+        GTEXT_CSS_Parse_Options o = base;
+        o.allocator = &fa.alloc;
+        fa.arm(n);
+        GTEXT_CSS_Stream * s = nullptr;
+        GTEXT_CSS_Status st = gtext_css_stream_new(GTEXT_CSS_TREE_STYLESHEET, &o, &s);
+        if (st == GTEXT_CSS_OK) {
+          for (size_t at = 0; at < text.size(); at += step) {
+            (void)gtext_css_stream_feed(s, text.data() + at, std::min(step, text.size() - at));
+          }
+          GTEXT_CSS_Tree * t = nullptr;
+          GTEXT_CSS_Result r{};
+          st = gtext_css_stream_finish(s, &t, &r);
+          EXPECT_EQ(t, nullptr);
+          if (st == GTEXT_CSS_E_LIMIT_INPUT) {
+            placed++;
+            EXPECT_EQ(r.failure.offset, want.failure.offset) << "max " << max << " allocation " << n;
+            EXPECT_EQ(r.failure.line, want.failure.line) << "max " << max << " allocation " << n << ": a position from the whole text";
+            EXPECT_EQ(r.failure.column, want.failure.column) << "max " << max << " allocation " << n;
+          }
+          else {
+            EXPECT_EQ(st, GTEXT_CSS_E_OOM) << "max " << max << " allocation " << n;
+            memory++;
+            EXPECT_EQ(r.failure.line, 0u);
+          }
+          gtext_css_result_free(&r);
+          gtext_css_stream_free(s);
+        }
+        fa.disarm();
+        EXPECT_TRUE(fa.live.empty()) << n;
+        if (!fa.failed) {
+          break;
+        }
+      }
+    }
+    EXPECT_GT(memory, 0u);
+    EXPECT_GT(placed, 0u);
   }
 }
 

@@ -614,6 +614,32 @@ TEST(CssNumbers, CssomWritesTheShortestDigitsInFixedNotationRoundedToSixDecimals
   }
 }
 
+TEST(CssNumbers, CssomWritesTheLargestAndSmallestDoublesWithinItsBuffer) {
+  // The longest spelling there is: DBL_MAX is the 17 digits 17976931348623157 and 292 zeros (309 digits), and a sign makes 310 of the
+  // 330 bytes the writer has. Nothing is cut short.
+  const std::string max_digits = "17976931348623157" + std::string(292, '0');
+  ASSERT_EQ(max_digits.size(), 309u);
+  EXPECT_EQ(cssom_written("1.7976931348623157e308"), max_digits);
+  EXPECT_EQ(cssom_written("-1.7976931348623157e308"), "-" + max_digits);
+  EXPECT_EQ(cssom_written("1.7976931348623157e308px"), max_digits + "px");
+  EXPECT_EQ(cssom_written("1e400"), max_digits) << "an infinity is the largest double";
+  EXPECT_EQ(cssom_written("-1e400"), "-" + max_digits);
+  // The smallest ones round to nothing at six decimals.
+  EXPECT_EQ(cssom_written("4.9406564584124654e-324"), "0") << "DBL_TRUE_MIN";
+  EXPECT_EQ(cssom_written("-4.9406564584124654e-324"), "0");
+  EXPECT_EQ(cssom_written("2.2250738585072014e-308"), "0") << "DBL_MIN";
+  EXPECT_EQ(cssom_written("1e-300"), "0");
+  EXPECT_EQ(cssom_written("1e-7"), "0");
+  EXPECT_EQ(cssom_written("5e-7"), "0.000001") << "half away from zero";
+  EXPECT_EQ(cssom_written("-5e-7"), "-0.000001");
+  // The longest fractions: seventeen digits and a point, or "0." with its zeros and the digits.
+  EXPECT_EQ(cssom_written("12345678901.234567"), "12345678901.234568") << "the shortest digits that round back to the double";
+  EXPECT_EQ(cssom_written("0.000123456789"), "0.000123");
+  EXPECT_EQ(cssom_written("99999999999999.9999999"), "100000000000000");
+  EXPECT_EQ(cssom_written("1e22"), "1" + std::string(22, '0'));
+  EXPECT_EQ(cssom_written("123456789012345678"), "123456789012345680") << "the shortest digits that round back, then zeros";
+}
+
 TEST(CssNumbers, CssomPercentagesAndDimensionsAndTheSpellingsItHasToChoose) {
   EXPECT_EQ(cssom_written("12.50%"), "12.5%");
   EXPECT_EQ(cssom_written("1e1px"), "10px");

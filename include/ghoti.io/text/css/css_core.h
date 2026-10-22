@@ -105,6 +105,9 @@ typedef enum {
   GTEXT_CSS_E_WRITE,              ///< Serializer: the sink refused output.
   GTEXT_CSS_E_LIMIT_OUTPUT,       ///< Serializer: more than
                                   ///< `max_output_bytes` of output.
+  GTEXT_CSS_E_LIMIT_DECODED,      ///< A byte parse: the decoded text is longer
+                                  ///< than `max_decoded_bytes`, or its map of
+                                  ///< offsets has more runs than `max_map_runs`.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 
@@ -578,6 +581,30 @@ typedef struct {
   /** "Valid in the current context". All NULL (the default) accepts
    *  everything. */
   GTEXT_CSS_Validity validity;
+
+  /** A byte parse of an encoding other than UTF-8: the most bytes of decoded
+   *  text. The text of a code point is at most 3 bytes for each byte of the
+   *  source it was read from (a lone byte that is replaced is the worst), so
+   *  the default, 0, is **three times `max_input_bytes`**, which the bytes can
+   *  just reach and never pass; a lower value bounds the memory, and a
+   *  stylesheet whose text would pass it fails with
+   *  GTEXT_CSS_E_LIMIT_DECODED, its `failure` at the byte of the code point
+   *  that went past (line and column 0). Text input and UTF-8 read in place
+   *  are not decoded and ignore it. */
+  size_t max_decoded_bytes;
+
+  /** A byte parse of an encoding other than UTF-8: the most runs in the map
+   *  from the decoded text back to the bytes (24 bytes each). A run is as
+   *  long as the code points keep the same length in the text and in the
+   *  source, so ASCII in any ASCII-compatible encoding is one run and text that
+   *  alternates between a one-byte and a two-byte character is one run for
+   *  every character. The default, 0, is `max_input_bytes`: a run holds a code point
+   *  and the decoders read a code point from at least one byte, so the default
+   *  is reached and not passed, and the map costs at most 24 bytes for each
+   *  byte of source (the tests drive every multi-byte encoding to the bound). A
+   *  lower value bounds the memory, and a stylesheet that would pass it fails
+   *  with GTEXT_CSS_E_LIMIT_DECODED, its `failure` as above. */
+  size_t max_map_runs;
 } GTEXT_CSS_Parse_Options;
 
 /**
@@ -585,7 +612,9 @@ typedef struct {
  *
  * @return By value: allocator NULL, 64 MiB of input, 4,194,304 tokens, depth
  *   512, 1,048,576 rules, 4,194,304 declarations, 1,048,576 parse errors in
- *   all and 1024 of them kept, WTF-8 off, no location, no validity checks.
+ *   all and 1024 of them kept, WTF-8 off, no location, no validity checks, and
+ *   the limits of a decoded stylesheet (`max_decoded_bytes`, `max_map_runs`)
+ *   left at 0, which derives them from `max_input_bytes`.
  */
 GTEXT_API GTEXT_CSS_Parse_Options gtext_css_parse_options_default(void);
 
