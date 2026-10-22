@@ -27,9 +27,12 @@ objects, so a plant costs one compilation, not a build. The fuzz build itself (`
 made first, in this tree's build directory.
 
 A plant with a seed that shows its defect is found by replaying that seed (-runs=0), which is the same
-every time; the rest are searched for from the corpus for the time budget (FUZZ_TIME, 60 seconds by
-default) with a fixed libFuzzer seed. Either way the fuzzer must stop with a report of its own (a
-property of the harness, a sanitizer, libFuzzer), and the **control**, the unedited file, must not.
+every time; one with no seed is searched for from the corpus for the time budget (--time, 60 seconds by
+default) with a fixed libFuzzer seed, and so is a plant whose seed does not show its defect any more (the
+code the seed reached has moved), which is reported as such ("SEARCHED, seed ... is stale"): finding it
+that way passes, and is a sign to record a new seed. Either way the fuzzer must stop with a report of
+its own (a property of the harness, a sanitizer, libFuzzer), and the **control**, the unedited file, must
+not.
 
   ids-skip-one              ids are given with a gap: the harness's id walk.
   span-before-start         a token's span ends before it starts.
@@ -40,8 +43,10 @@ property of the harness, a sanitizer, libFuzzer), and the **control**, the unedi
   token-limit-off-by-one    the token limit lets one more through: the limits at what was counted.
   depth-limit-off-by-one    the same for depth: the depth of the tree.
   oom-ignored               an allocation that fails while values are taken is not a failure: the
-                            answer changes (searched for: which allocation is the one is the fuzzer's
-                            to find).
+                            answer changes. Which allocation is the one depends on the input, so the
+                            seed is a recorded find (reproducer-oom-while-taking-values.seed: the
+                            19th allocation of a wide declaration block, the harness's third byte);
+                            the search from the corpus is the second path, not the first.
   arena-leak                the tree's last block of memory is not freed: the allocator.
   speculation-disagrees     the declaration attempt calls a value with a block after a token a
                             declaration: building it then disagrees, which is an internal error.
@@ -74,7 +79,7 @@ PLANTS = {
     "depth-limit-off-by-one": ("css_tokenizer.c", "if (open.len >= ctx->max_depth) {", "if (open.len > ctx->max_depth) {", "own-nesting.seed"),
     "oom-ignored": ("css_parser.c", "  GTEXT_CSS_Component_Value * a = css_arena_alloc(&p->ctx->arena, count * sizeof *a);\n  if (!a) {\n    css_fail(p->ctx, GTEXT_CSS_E_OOM);\n    return false;",
                     "  GTEXT_CSS_Component_Value * a = css_arena_alloc(&p->ctx->arena, count * sizeof *a);\n  if (!a) {\n    p->values.len = base;\n    return true;",
-                    None),
+                    "reproducer-oom-while-taking-values.seed"),
     "arena-leak": ("css_core.c", "    gtext_allocator_free(&arena->alloc, c);\n", "    if (next) {\n      gtext_allocator_free(&arena->alloc, c);\n    }\n",
                    "own-wide.seed"),
     "speculation-disagrees": ("css_parser.c", "    else if (block) {\n      return false;\n    }\n", "", "own-decl-block.seed"),
@@ -165,17 +170,28 @@ def main(argv):
                 raise SystemExit("plant %s did not link:\n%s" % (name, done.stderr[-2000:]))
             corpus = os.path.join(work, "corpus")
             shutil.copytree(CORPUS, corpus, ignore=lambda d, ns: [n for n in ns if not n.endswith(".seed")])
+            search = [app, corpus, "-max_total_time=%d" % seconds, "-seed=1", "-max_len=2048", "-rss_limit_mb=2048"]
+
+            def run_fuzzer(cmd):
+                try:
+                    run = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=seconds * 3 + 300, cwd=work)
+                    return run.returncode, run.stdout + run.stderr
+                except subprocess.TimeoutExpired:
+                    return -1, "timed out"
+
+            how = "replayed %s" % seed if seed else "searched"
             if seed:
-                cmd = [app, "-runs=0", os.path.join(corpus, seed)]
+                if not os.path.exists(os.path.join(corpus, seed)):
+                    raise SystemExit("plant %s: its seed %s is not in %s" % (name, seed, CORPUS))
+                status, out = run_fuzzer([app, "-runs=0", os.path.join(corpus, seed)])
+                if status in (0, -1) or not any(REPORT.match(l) for l in out.splitlines()):
+                    sys.stderr.write("plant %s: its seed %s no longer shows the defect; searching\n" % (name, seed))
+                    status, out = run_fuzzer(search)
+                    how = "SEARCHED, seed %s is stale" % seed
             elif name == "control":
-                cmd = [app, "-runs=0", corpus]
+                status, out = run_fuzzer([app, "-runs=0", corpus])
             else:
-                cmd = [app, corpus, "-max_total_time=%d" % seconds, "-seed=1", "-max_len=2048", "-rss_limit_mb=2048"]
-            try:
-                run = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=seconds * 3 + 300, cwd=work)
-                status, out = run.returncode, run.stdout + run.stderr
-            except subprocess.TimeoutExpired:
-                status, out = -1, "timed out"
+                status, out = run_fuzzer(search)
             if name == "control":
                 ok = status == 0
                 print("control (no edit): %s" % ("silent over the whole corpus, as it must be" if ok else "FAILED (exit %d)" % status))
@@ -184,8 +200,7 @@ def main(argv):
             else:
                 line = next((l for l in out.splitlines() if REPORT.match(l)), "")
                 ok = status not in (0, -1) and bool(line)
-                print("%-26s %s %s" % (name, ("found" + (" (replayed %s)" % seed if seed else " (searched)")) if ok
-                                       else "NOT FOUND", line[:120]))
+                print("%-26s %s %s" % (name, ("found (%s)" % how) if ok else "NOT FOUND", line[:120]))
                 if not ok:
                     sys.stderr.write("exit %s; the end of the output:\n%s\n" % (status, out[-1500:]))
             if not ok:

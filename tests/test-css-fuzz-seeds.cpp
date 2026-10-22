@@ -122,7 +122,8 @@ TEST_F(CssSyntaxFuzzSeeds, EverySeedHoldsEveryProperty) {
   // The floor: tools/css/make-fuzz-seeds.py writes 584 from the pinned suite and its own list.
   constexpr size_t kMinSeeds = 500;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/css/make-fuzz-seeds.py writes it";
-  for (const char * name : {"own-nesting.seed", "own-speculation-oom-3.seed", "own-custom-rule-validity.seed"}) {
+  for (const char * name : {"own-nesting.seed", "own-speculation-oom-3.seed", "own-custom-rule-validity.seed",
+           "reproducer-oom-while-taking-values.seed"}) { // the last is what check-css-fuzz-plants replays
     const std::string path = dir + "/" + name;
     ASSERT_TRUE(std::find(files.begin(), files.end(), path) != files.end()) << path << " is not there";
   }

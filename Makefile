@@ -2059,7 +2059,8 @@ check-html-fuzz-plants:
 check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax fuzzer finds it
 # The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp: tools/css/plant-fuzz.py copies this
 # tree to a scratch directory, edits one line of src/css/ there, and runs the harness for FUZZ_TIME seconds (or
-# replays the seed that shows the defect); it must stop with a report, and an unedited copy must not. Needs clang,
+# replays the recorded seed that shows the defect, searching only if the seed has gone stale); it must stop with a
+# report, and an unedited copy must not. Needs clang,
 # the dependencies on PREFIX, and up to a minute a plant. Outside TEST_GATES: it builds and runs a fuzzer.
 check-css-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
