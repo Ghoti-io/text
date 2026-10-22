@@ -50,6 +50,8 @@ not.
   arena-leak                the tree's last block of memory is not freed: the allocator.
   speculation-disagrees     the declaration attempt calls a value with a block after a token a
                             declaration: building it then disagrees, which is an internal error.
+  cdc-after-dashes          the serializer does not separate the ident "--" from a ">": CDC on reading back (a find
+                            of the fuzzer, kept as reproducer-cdc-after-dashes-ident.seed).
   anb-plus-sign             9.1 writes "-" where it means "+": An+B read back.
 """
 
@@ -83,6 +85,7 @@ PLANTS = {
     "arena-leak": ("css_core.c", "    gtext_allocator_free(&arena->alloc, c);\n", "    if (next) {\n      gtext_allocator_free(&arena->alloc, c);\n    }\n",
                    "own-wide.seed"),
     "speculation-disagrees": ("css_parser.c", "    else if (block) {\n      return false;\n    }\n", "", "own-decl-block.seed"),
+    "cdc-after-dashes": ("css_serialize.c", "    case '>': return C_GT;\n", "", "reproducer-cdc-after-dashes-ident.seed"),
     "anb-plus-sign": ("css_anb.c", "      out[n++] = '+';\n", "      out[n++] = '-';\n", "AnplusB-002.seed"),
 }
 

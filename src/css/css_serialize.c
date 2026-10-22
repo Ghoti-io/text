@@ -53,6 +53,7 @@ enum {
   R_NONE = 0,
   R_IDENT,
   R_IDENT_U,     ///< an ident "u" or "U" (one of the extra pairs)
+  R_IDENT_DASHES, ///< the ident "--": with a ">" after it, a CDC token
   R_AT_KEYWORD,
   R_HASH,
   R_DIMENSION,
@@ -86,7 +87,8 @@ enum {
   C_BANG = 1u << 12,     ///< extra
   C_PLUS = 1u << 13,     ///< extra
   C_QUESTION = 1u << 14, ///< extra
-  C_URANGE = 1u << 15    ///< extra: a unicode-range token (the token after "U" and "+")
+  C_URANGE = 1u << 15,   ///< extra: a unicode-range token (the token after "U" and "+")
+  C_GT = 1u << 16        ///< extra: a ">" delim
 };
 
 /// The columns of the names and urls.
@@ -98,6 +100,9 @@ static unsigned needs_comment_before(int row) {
   switch (row) {
   case R_IDENT:
     return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_LPAREN | C_URANGE;
+  case R_IDENT_DASHES:
+    /* "--" then ">" is the CDC token "-->": the ident is two hyphens only when it is one token. */
+    return C_IDENTISH | C_MINUS | C_NUMERIC | C_CDC | C_LPAREN | C_URANGE | C_GT;
   case R_IDENT_U:
     /* "u" then "+": in a unicode-range value, read again, the two would be
        the start of a unicode-range token. */
@@ -152,6 +157,7 @@ static unsigned column_of(const GTEXT_CSS_Component_Value * v) {
     case '!': return C_BANG;
     case '+': return C_PLUS;
     case '?': return C_QUESTION;
+    case '>': return C_GT;
     default: return 0;
     }
   default:
@@ -165,6 +171,9 @@ static int row_of(const GTEXT_CSS_Component_Value * v) {
   }
   switch (v->type) {
   case GTEXT_CSS_TOKEN_IDENT:
+    if (v->value.length == 2 && v->value.data[0] == '-' && v->value.data[1] == '-') {
+      return R_IDENT_DASHES;
+    }
     return (v->value.length == 1 && (v->value.data[0] == 'u' || v->value.data[0] == 'U')) ? R_IDENT_U : R_IDENT;
   case GTEXT_CSS_TOKEN_AT_KEYWORD: return R_AT_KEYWORD;
   case GTEXT_CSS_TOKEN_HASH: return R_HASH;
