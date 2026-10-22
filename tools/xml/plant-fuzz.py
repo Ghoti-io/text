@@ -68,8 +68,8 @@ WORKSPACE = os.path.dirname(os.path.dirname(ROOT))
 
 PLANTS = {
     "event-column": ("xml", "src/xml/xml_stream.c",
-                     "    p->pos = pos;\n    p->line = line;\n    p->column = column;\n    p->cursor_previous = cursor_previous;\n    memset(&p->err, 0, sizeof(p->err));",
-                     "    p->pos = pos;\n    p->line = line;\n    p->cursor_previous = cursor_previous;\n    memset(&p->err, 0, sizeof(p->err));"),
+                     "    p->pos = pos;\n    p->line = line;\n    p->column = column;\n    p->cursor_previous = cursor_previous;\n    p->references = references;",
+                     "    p->pos = pos;\n    p->line = line;\n    p->cursor_previous = cursor_previous;\n    p->references = references;"),
     "limit-after-run": ("xml", "src/xml/xml_parser.c",
                         "      if (p->attr_pool.length - start + (i - p->pos) > p->max_attribute_bytes) {\n        break;\n      }\n",
                         ""),
