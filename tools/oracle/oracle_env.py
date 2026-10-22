@@ -157,6 +157,10 @@ PROBE = {
     # both, so there is one probe; the line names both package versions, the Debian
     # interpreter packages and the SHA-256 of the two driver files.
     "html": (["html-driver", "--version"], "html5lib ", None),
+    # CSS has **three** references in one image, tinycss2, cssparser and csstree. One digest pins all
+    # three, so there is one probe; the line names the three versions, the Debian interpreter packages and
+    # the SHA-256 of the driver sources.
+    "css": (["css-driver", "--version"], "tinycss2 ", None),
     # The current stable Chrome for Testing, pinned by browser version and
     # container digest in IMAGES.
     "chromium": (["/opt/chrome/chrome", "--version"], "Google Chrome", None),
@@ -244,12 +248,13 @@ def _have_image(image):
 
 def ensure(name):
     """Make the reference runnable, or raise saying what is missing."""
-    if MODE == "host" and name.split("-", 1)[0] in ("html", "encoding"):
+    if MODE == "host" and name.split("-", 1)[0] in ("html", "encoding", "css"):
         # The HTML references are two packages at pinned versions that no host has installed together, and
         # a differential against whatever a host has would score a different question under the same name. The Encoding
-        # references are a Node with a particular ICU and a Python, in that same image.
+        # references are a Node with a particular ICU and a Python, in that same image. The CSS references are three
+        # parsers at pinned versions, one of them compiled.
         raise OracleUnavailable(
-            "the html and encoding references have no host mode: they exist only in the pinned image "
+            "the html, encoding and css references have no host mode: they exist only in the pinned image "
             "(make oracle-images builds it)")
     if MODE == "host" and name.split("-", 1)[0] == "chromium":
         raise OracleUnavailable(

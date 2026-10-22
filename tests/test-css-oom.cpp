@@ -47,6 +47,7 @@
 
 #include <ghoti.io/text/css.h>
 
+#include "css_bytes_test_support.h"
 #include "css_test_support.h"
 #include "markup_test_support.h"
 
@@ -195,9 +196,11 @@ TEST(CssOom, TheGrammarEntryPointsToo) {
   EXPECT_TRUE(done);
 }
 
-// A number is converted by a function that respells it in a locale whose decimal separator is not
-// ".", through the parse's allocator, when it is long. That allocation failing must fail the parse: the
-// token must not come out as the number 0 with the status OK.
+// A number is converted by the math library, which allocates nothing and reads no locale. This was a test of the
+// conversion this library had before, which respelled a long number in a locale whose decimal separator is not "."
+// through the parse's allocator: its allocation failing had to fail the parse and not make the number 0. It stays,
+// because the property it holds is still the one that matters (a parse that succeeds under any failed allocation
+// has the right number), now in a locale that would have changed the old conversion's answer.
 bool use_a_comma_locale() {
   const char * names[] = {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8"};
   auto comma = [&]() {
@@ -222,10 +225,10 @@ bool use_a_comma_locale() {
   return system(cmd.c_str()) == 0 && comma();
 }
 
-TEST(CssOom, TheAllocationOfANumbersConversionFailsTheParseNotTheNumber) {
+TEST(CssOom, ANumbersConversionNeedsNoMemoryAndNoLocale) {
   const std::string saved = setlocale(LC_NUMERIC, nullptr) ? setlocale(LC_NUMERIC, nullptr) : "C";
   ASSERT_TRUE(use_a_comma_locale()) << "no comma-decimal locale could be made; a pass here would measure nothing";
-  // 150 digits after the point: past the conversion's own stack buffer, so it asks for memory.
+  // 150 digits after the point: the old conversion respelled a number this long in the heap.
   const std::string css = "a{width:0." + std::string(150, '9') + "px}";
   size_t refused = 0;
   bool done = false;
@@ -254,8 +257,117 @@ TEST(CssOom, TheAllocationOfANumbersConversionFailsTheParseNotTheNumber) {
     done = !fa.failed;
   }
   EXPECT_TRUE(done);
-  EXPECT_GT(refused, 10u);
+  EXPECT_GT(refused, 5u);
   setlocale(LC_NUMERIC, saved.c_str());
+}
+
+// ---- the byte entry point and the stream -----------------------------------------------------------------------
+
+struct ByteCase {
+  const char * name;
+  std::string bytes;
+  const char * label;
+};
+
+std::vector<ByteCase> byte_cases() {
+  std::string longer = rich();
+  return {
+      {"utf-8", longer, nullptr},
+      {"utf-8 with a mark", "\xef\xbb\xbf" + longer, nullptr},
+      {"windows-1251", CSS_BYTES("@charset \"windows-1251\"; .\xef\xf0{b:\"\xe8\"} x{y:\"z\n} p{q:url(bad url)}") + longer, nullptr},
+      {"utf-16le", CSS_BYTES("\xff\xfe" "a\x00{\x00" "b\x00:\x00\xe9\x00}\x00 \x00x\x00{\x00y\x00:\x00\x22\x00z\x00\x0a\x00}\x00"), nullptr},
+      {"iso-2022-jp", CSS_BYTES("a{b:c}/*\x1b$BF|K\x5c" "8l\x1b(B*/.\x1b$BF|K\x5c\x1b(B{d:e}\x0a") + longer, "iso-2022-jp"},
+      {"gb18030", CSS_BYTES(".\xd6\xd0\xce\xc4{b:c} /*\x95" "2\x82" "6*/ x{y:\x22\x95" "2\x82" "6z\n}") + longer, "gb18030"},
+  };
+}
+
+// How a run is made: the one-call function, a stream fed whole, a stream fed a byte at a time, or a stream of text.
+enum Mode { WHOLE, STREAM_WHOLE, STREAM_BYTES, STREAM_TEXT };
+
+css_test::Outcome run_bytes(Mode mode, const ByteCase & c, const GTEXT_CSS_Parse_Options * o) {
+  GTEXT_CSS_Bytes_Options b = gtext_css_bytes_options_default();
+  b.protocol_label = c.label;
+  GTEXT_CSS_Tree * t = nullptr;
+  GTEXT_CSS_Result r{};
+  GTEXT_CSS_Status st;
+  if (mode == WHOLE) {
+    st = gtext_css_parse_stylesheet_bytes(c.bytes.data(), c.bytes.size(), &b, o, &t, &r);
+  }
+  else {
+    GTEXT_CSS_Stream * s = nullptr;
+    st = mode == STREAM_TEXT ? gtext_css_stream_new(GTEXT_CSS_TREE_STYLESHEET, o, &s)
+                             : gtext_css_stream_new_bytes(GTEXT_CSS_TREE_STYLESHEET, &b, o, &s);
+    if (st == GTEXT_CSS_OK) {
+      const size_t step = mode == STREAM_BYTES ? 1 : c.bytes.size();
+      for (size_t at = 0; at < c.bytes.size() && st == GTEXT_CSS_OK; at += step) {
+        st = gtext_css_stream_feed(s, c.bytes.data() + at, std::min(step, c.bytes.size() - at));
+      }
+      const GTEXT_CSS_Status fin = gtext_css_stream_finish(s, &t, &r);
+      if (st == GTEXT_CSS_OK) {
+        st = fin;
+      }
+      gtext_css_stream_free(s);
+    }
+  }
+  css_test::Outcome out = harvest(st, st == GTEXT_CSS_OK ? t : nullptr, r);
+  out.status = st;
+  EXPECT_TRUE(st == GTEXT_CSS_OK || t == nullptr) << "a failure leaves no tree";
+  gtext_css_tree_free(t);
+  gtext_css_result_free(&r);
+  return out;
+}
+
+TEST(CssOomBytes, EveryAllocationOfTheByteEntryPointsAndTheStreamCanFailAndNothingLeaks) {
+  for (const ByteCase & c : byte_cases()) {
+    for (const Mode mode : {WHOLE, STREAM_WHOLE, STREAM_BYTES, STREAM_TEXT}) {
+      SCOPED_TRACE(std::string(c.name) + " / mode " + std::to_string(mode));
+      GTEXT_CSS_Parse_Options base = gtext_css_parse_options_default();
+      base.location = "a-location";
+      const css_test::Outcome want = run_bytes(mode, c, &base);
+      ASSERT_EQ(want.status, GTEXT_CSS_OK);
+      bool reached_the_end = false;
+      size_t refused = 0;
+      for (size_t n = 1; n <= 40000 && !reached_the_end; n++) {
+        FaultAllocator fa;
+        GTEXT_CSS_Parse_Options o = base;
+        o.allocator = &fa.alloc;
+        fa.arm(n);
+        const css_test::Outcome got = run_bytes(mode, c, &o);
+        fa.disarm();
+        ASSERT_TRUE(fa.live.empty()) << n << ": a block is left";
+        ASSERT_EQ(fa.bad_frees, 0u) << n;
+        if (!fa.failed) {
+          reached_the_end = true;
+          expect_same_outcome(want, got, "no failure");
+          continue;
+        }
+        if (got.status == GTEXT_CSS_E_OOM) {
+          refused++;
+          continue;
+        }
+        // The allocation that failed was one the run could do without: the answer is the whole's.
+        expect_same_outcome(want, got, "allocation " + std::to_string(n) + " failed and the run went on");
+      }
+      EXPECT_TRUE(reached_the_end) << "the sweep did not reach the last allocation";
+      EXPECT_GT(refused, 5u);
+    }
+  }
+}
+
+TEST(CssOomBytes, ARefusedByteParseSaysItAndHoldsNothing) {
+  // The first allocation of every path failed: OOM, no tree, a result that says so, and nothing left.
+  for (const ByteCase & c : byte_cases()) {
+    for (const Mode mode : {WHOLE, STREAM_BYTES}) {
+      FaultAllocator fa;
+      GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+      o.allocator = &fa.alloc;
+      fa.arm(1);
+      const css_test::Outcome got = run_bytes(mode, c, &o);
+      fa.disarm();
+      EXPECT_EQ(got.status, GTEXT_CSS_E_OOM) << c.name;
+      EXPECT_TRUE(fa.live.empty()) << c.name;
+    }
+  }
 }
 
 } // namespace

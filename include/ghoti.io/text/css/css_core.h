@@ -66,6 +66,7 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_CORE_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/encoding/encoding_core.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -218,6 +219,18 @@ typedef enum {
  *  input closed (a parse error for the tokens; the standard's ordinary case
  *  for a block or a function). */
 #define GTEXT_CSS_FLAG_UNCLOSED 0x10u
+/** A number, dimension or percentage token whose value is not exactly the
+ *  decimal it was written as: the nearest `double` was taken (ties to even). */
+#define GTEXT_CSS_FLAG_NUMBER_INEXACT 0x20u
+/** A numeric token whose magnitude is too large for a `double`: `number` is
+ *  infinity (with the token's sign). CSS Syntax gives a number token an
+ *  unbounded value; what a property does with one out of range is for the
+ *  layers above, which this flag lets them see. */
+#define GTEXT_CSS_FLAG_NUMBER_OVERFLOW 0x40u
+/** A numeric token whose magnitude is nonzero and below the smallest normal
+ *  `double` (2^-1022), and not exactly representable: `number` is subnormal or
+ *  zero. */
+#define GTEXT_CSS_FLAG_NUMBER_UNDERFLOW 0x80u
 /** @} */
 
 /**
@@ -239,7 +252,10 @@ typedef enum {
  * | `[`, `(`, `{` (a block) | | `children` |
  *
  * `repr` is the numeric part as it was written (`+.5`, `12e2`): the value is
- * `number`, and the spelling is kept so that a number can be written back the
+ * `number`, the nearest `double` to that decimal as the math library rounds it
+ * (correctly, ties to even, whatever the length of the spelling and whatever the
+ * host's rounding mode or locale; GTEXT_CSS_FLAG_NUMBER_* say when it is not
+ * exact), and the spelling is kept so that a number can be written back the
  * way it came and so that the type and the sign survive a round trip.
  */
 /** @brief A component value (the struct below). */
@@ -574,6 +590,29 @@ typedef struct {
 GTEXT_API GTEXT_CSS_Parse_Options gtext_css_parse_options_default(void);
 
 /**
+ * @enum GTEXT_CSS_Encoding_Source
+ * @brief Why a byte parse decoded the bytes as it did (CSS Syntax 3.2).
+ */
+typedef enum {
+  GTEXT_CSS_ENCODING_SOURCE_NONE = 0,  ///< Nothing was decoded: the input was text.
+  GTEXT_CSS_ENCODING_SOURCE_BOM,       ///< A byte order mark ("decode" gives it precedence over everything).
+  GTEXT_CSS_ENCODING_SOURCE_PROTOCOL,  ///< The encoding label the protocol gave (an HTTP `charset`).
+  GTEXT_CSS_ENCODING_SOURCE_CHARSET_RULE, ///< A leading `@charset "...";` in the first 1024 bytes.
+  GTEXT_CSS_ENCODING_SOURCE_ENVIRONMENT,  ///< The environment encoding the caller passed.
+  GTEXT_CSS_ENCODING_SOURCE_DEFAULT,   ///< Nothing else applied: UTF-8.
+  GTEXT_CSS_ENCODING_SOURCE_COUNT      ///< The number of sources; not a source.
+} GTEXT_CSS_Encoding_Source;
+
+/**
+ * @brief The name of an encoding source ("bom", "protocol", "charset-rule",
+ *   "environment", "default", "none").
+ *
+ * @param source Any value; one that is not a source returns "unknown".
+ * @return A static string, different for every source.
+ */
+GTEXT_API const char * gtext_css_encoding_source_name(GTEXT_CSS_Encoding_Source source);
+
+/**
  * @struct GTEXT_CSS_Result
  * @brief What a parse reports besides the tree.
  *
@@ -596,6 +635,12 @@ typedef struct {
   size_t rule_count;         ///< Rules made (see `max_rules`).
   size_t declaration_count;  ///< Declarations made (see `max_declarations`).
   struct GTEXT_CSS_Result_Internal * internal; ///< Private: the error list.
+  GTEXT_Encoding encoding;   ///< A byte parse: the encoding the bytes were decoded as
+                             ///< (GTEXT_ENCODING_UTF_8 also for the UTF-8 that a byte
+                             ///< order mark chose). GTEXT_ENCODING_NONE for text input.
+  GTEXT_CSS_Encoding_Source encoding_source; ///< A byte parse: why that one.
+  size_t bom_length;         ///< A byte parse: bytes of byte order mark at the start,
+                             ///< which no token covers but every offset counts.
 } GTEXT_CSS_Result;
 
 /**

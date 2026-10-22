@@ -66,10 +66,14 @@ SCORED = {
     'An+B.json': 'anb',
 }
 
+# Files of bytes: each case is {"css_bytes", optional "protocol_encoding" and
+# "environment_encoding"} and then [the rules, the name of the encoding], scored
+# through the byte entry point (CSS Syntax 3.2).
+BYTES_FILES = {'stylesheet_bytes.json': 'stylesheet_bytes'}
+
 # Files the gate does not score, and why. A file in the pin that is in neither
 # table fails the gate, so a raised pin cannot add a file silently.
 NOT_SCORED = {
-    'stylesheet_bytes.json': 'decoding bytes (the stylesheet decode algorithm, CSS Syntax 3.2) is the next phase, with the incremental parser',
     'color_*.json': 'color values are CSS Color, scored with the value layer',
 }
 
@@ -109,11 +113,14 @@ def encode(s, wtf8):
 
 
 def run(runner, requests):
-    """requests: list of (entry, wtf8, text). Returns (answers, crashed)."""
+    """requests: list of (entry, wtf8, text) or (entry, options, bytes): text is a
+    str (encoded as UTF-8) or the bytes themselves, and options a list of strings
+    in place of the WTF-8 flag. Returns (answers, crashed)."""
     lines = []
     for entry, wtf8, text in requests:
-        data = encode(text, wtf8).hex() or '-'
-        lines.append(f'{entry} {"wtf8" if wtf8 else "-"} {data}\n')
+        data = (text if isinstance(text, bytes) else encode(text, wtf8)).hex() or '-'
+        opts = ','.join(wtf8) if isinstance(wtf8, list) else ('wtf8' if wtf8 else '')
+        lines.append(f'{entry} {opts or "-"} {data}\n')
     proc = subprocess.run([runner], input=''.join(lines).encode(), capture_output=True)
     answers = []
     cur = {}
@@ -149,10 +156,10 @@ def main():
     # The files of the pin.
     present = sorted(f for f in os.listdir(suite) if f.endswith('.json'))
     for f in present:
-        if f in SCORED or any(fnmatch.fnmatch(f, pat) for pat in NOT_SCORED):
+        if f in SCORED or f in BYTES_FILES or any(fnmatch.fnmatch(f, pat) for pat in NOT_SCORED):
             continue
         problems.append(f'{f}: a file of the suite that is neither scored nor named as out of scope')
-    for f in SCORED:
+    for f in list(SCORED) + list(BYTES_FILES):
         if f not in present:
             problems.append(f'{f}: scored, but not in the suite')
 
@@ -167,6 +174,20 @@ def main():
         for k in range(0, len(data) - 1, 2):
             cases.append((f'{f}#{k // 2}', entry, False, data[k],
                           {'kind': 'suite', 'expect': normalize(data[k + 1], entry)}))
+    for f in sorted(BYTES_FILES):
+        if f not in present:
+            continue
+        with open(os.path.join(suite, f), encoding='utf-8') as fh:
+            data = json.load(fh)
+        for k in range(0, len(data) - 1, 2):
+            case = data[k]
+            options = []
+            for key, short in (('protocol_encoding', 'proto'), ('environment_encoding', 'env')):
+                if case.get(key) is not None:
+                    options.append(f'{short}={case[key].encode("ascii").hex()}')
+            expect = data[k + 1]
+            cases.append((f'{f}#{k // 2}', BYTES_FILES[f], options, case['css_bytes'].encode('latin-1'),
+                          {'kind': 'bytes', 'expect': normalize(expect[0], 'stylesheet'), 'encoding': expect[1]}))
     not_scored = {}
     for f in present:
         for pat, why in NOT_SCORED.items():
@@ -215,6 +236,7 @@ def main():
     second = dict(zip(fixed, again))
 
     failures = []   # (id, why)
+    hard = []       # failures no exception excuses
     passed = 0
     roundtrip_failures = []
     per_source = {}
@@ -231,9 +253,20 @@ def main():
                 roundtrip_failures.append((ident, inp, a.get('ROUNDTRIP')))
             result = json.loads(a['RESULT'])
             kind = check['kind']
+            if kind == 'bytes':
+                # What decides the bytes' reading is not excusable by an exception (it is the whole of this
+                # file's point); the rules are, as for any other case.
+                got_encoding = a.get('ENCODING', '').split(' ')[0]
+                if got_encoding != check['encoding'].lower():
+                    hard.append((ident, f'decoded as {got_encoding!r}, the suite expects {check["encoding"].lower()!r}'))
+                if a.get('STREAM') != 'ok':
+                    hard.append((ident, f'fed a byte at a time, a stream gave a different answer: {a.get("STREAM")}'))
             serial = text_of(a.get('SERIAL'))
             cssom = text_of(a.get('CSSOM'))
             if kind == 'suite':
+                if not same(result, check['expect']):
+                    why = f'expected {json.dumps(check["expect"], ensure_ascii=False)}\n      got      {json.dumps(result, ensure_ascii=False)}'
+            elif kind == 'bytes':
                 if not same(result, check['expect']):
                     why = f'expected {json.dumps(check["expect"], ensure_ascii=False)}\n      got      {json.dumps(result, ensure_ascii=False)}'
             elif kind == 'anb':
@@ -286,11 +319,13 @@ def main():
             if a.get('end') == 'DONE' and same(json.loads(a['RESULT']), exceptions[ident][0]):
                 stats[2] += 1
             else:
-                failures.append((ident, 'FAIL', f'input {json.dumps(inp, ensure_ascii=False)}\n      '
+                failures.append((ident, 'FAIL', f'input {json.dumps(inp.decode('latin-1') if isinstance(inp, bytes) else inp, ensure_ascii=False)}\n      '
                                  f'listed with the draft\'s answer {json.dumps(exceptions[ident][0], ensure_ascii=False)}\n'
                                  f'      got      {a.get("RESULT", a.get("end"))}'))
         else:
-            failures.append((ident, 'FAIL', f'input {json.dumps(inp, ensure_ascii=False)}\n      {why}'))
+            failures.append((ident, 'FAIL', f'input {json.dumps(inp.decode('latin-1') if isinstance(inp, bytes) else inp, ensure_ascii=False)}\n      {why}'))
+    for ident, why in hard:
+        failures.append((ident, 'FAIL', why))
     known = {c[0] for c in cases}
     for ident in exceptions:
         if ident not in known:
@@ -324,7 +359,7 @@ def main():
         bad = True
         print('ROUND TRIP FAILURES', file=sys.stderr)
         for ident, inp, why in roundtrip_failures:
-            print(f'  {ident}: input {json.dumps(inp, ensure_ascii=False)}: {why}', file=sys.stderr)
+            print(f'  {ident}: input {json.dumps(inp.decode('latin-1') if isinstance(inp, bytes) else inp, ensure_ascii=False)}: {why}', file=sys.stderr)
     if problems:
         bad = True
         print('SUITE PROBLEMS', file=sys.stderr)

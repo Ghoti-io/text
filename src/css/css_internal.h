@@ -131,6 +131,72 @@ typedef struct {
   size_t cap;    ///< Allocated.
 } css_sizevec;
 
+/* ---- where decoded text came from ------------------------------------ */
+
+/// A run of code points of the decoded text that came from consecutive
+/// stretches of the bytes: `count` code points, each `dlen` bytes of the
+/// decoded text and `width` bytes of the source, the first at decoded offset
+/// `dec` and source offset `src`.
+typedef struct {
+  size_t dec;     ///< Decoded offset of the first code point.
+  size_t src;     ///< Source offset of the first code point.
+  uint32_t count; ///< Code points in the run.
+  uint8_t dlen;   ///< Bytes of each in the decoded text, 1 to 4.
+  uint8_t width;  ///< Bytes of each in the source, 1 to 15.
+} css_srcrun;
+
+/**
+ * The map from offsets in decoded text (what the tokenizer reads) back to
+ * offsets in the bytes the caller gave, which is where every span and error
+ * of a byte parse is reported.
+ *
+ * Text that came through a decoder has `runs`: a run is as long as the code
+ * points stay in step (decoded and source lengths both uniform and the source
+ * contiguous), so all-ASCII input in any ASCII-compatible encoding is one run,
+ * and the map holds one entry for each change of the pattern. UTF-8 read in
+ * place has no runs: its text is the bytes after a byte order mark, and an
+ * offset is moved by `shift`.
+ */
+typedef struct css_srcmap {
+  css_srcrun * runs;     ///< Sorted by `dec`; NULL for a shift.
+  size_t nruns;          ///< In use.
+  size_t cap;            ///< Allocated.
+  size_t dec_total;      ///< Bytes of decoded text.
+  size_t src_total;      ///< Bytes of source.
+  size_t shift;          ///< Source offset of decoded offset 0, for a map with no runs.
+  size_t * blocks;       ///< For each 4096 bytes of decoded text, the last run that starts at or
+                         ///< before its first byte: a lookup bisects only the runs between this
+                         ///< block's entry and the next one's, so it costs a constant however
+                         ///< long the text is. NULL until the decoding has ended.
+  size_t nblocks;        ///< Entries of `blocks`.
+} css_srcmap;
+
+/// Bytes of decoded text per entry of css_srcmap::blocks.
+#define CSS_SRCMAP_BLOCK 4096u
+
+/// The source offset where the code point that starts at decoded offset
+/// `dec` was read. At or past the end: the length of the source.
+size_t css_srcmap_start(const css_srcmap * map, size_t dec, size_t * work);
+
+/// The source offset just after the code point that ends at decoded offset
+/// `dec` (so after its last byte, and before any shift sequence that follows).
+/// At the end of the text: the length of the source.
+size_t css_srcmap_end(const css_srcmap * map, size_t dec, size_t * work);
+
+/// Where the encoding of a byte parse came from, for the result.
+typedef struct {
+  GTEXT_Encoding encoding;                   ///< Used.
+  GTEXT_CSS_Encoding_Source source;          ///< Why.
+  size_t bom_length;                         ///< Bytes of byte order mark skipped.
+} css_enc_info;
+
+/// What a parse of decoded text is told about the bytes it came from.
+typedef struct {
+  const css_srcmap * map; ///< Decoded offsets to source offsets; not NULL.
+  size_t source_length;   ///< The bytes' length (the input limit has been applied to it).
+  css_enc_info encoding;  ///< For the result.
+} css_srcinfo;
+
 /// Everything a parse holds while it runs.
 typedef struct {
   GTEXT_Allocator alloc;         ///< The caller's, or the default.
@@ -177,6 +243,7 @@ typedef struct {
   css_buf nbuf;                  ///< Scratch for a number's spelling.
 
   bool comma_seen;               ///< A comma-separated list consumed a comma.
+  const css_srcmap * map;        ///< NULL, or where the text came from (a byte parse).
 
   size_t rule_count;             ///< Rules made.
   size_t declaration_count;      ///< Declarations made.
@@ -244,16 +311,19 @@ bool css_filtered_text(css_ctx * ctx, size_t begin, size_t end,
     GTEXT_CSS_String * out);
 
 /**
- * The number a numeric token's spelling stands for (one function, so that
- * moving it onto the math library is one change).
+ * The number a numeric token's spelling stands for: the math library's
+ * correctly rounded decimal-to-double, which reads the spelling's `len` bytes
+ * (no terminator is needed, and a spelling of any length is rounded exactly).
  *
- * `repr` is the spelling and `repr[len]` must be a NUL (the conversion reads
- * to it; `len` is checked against that, not used to bound the read). The
- * conversion can allocate, so it can fail: the context is then failed with
- * GTEXT_CSS_E_OOM (GTEXT_CSS_E_INTERNAL for a violated contract) and false is
- * returned, with *out untouched.
+ * `*flags` receives the conversion's GMATH_DECIMAL_* bits (inexact, overflow
+ * to infinity, underflow below the smallest normal), which the tokenizer puts
+ * on the token as GTEXT_CSS_FLAG_NUMBER_*.
+ *
+ * It cannot run out of memory. A spelling the math library does not read whole
+ * is not a token's: the context is then failed with GTEXT_CSS_E_INTERNAL and
+ * false is returned, with *out untouched.
  */
-bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out);
+bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out, unsigned * flags);
 
 /// ASCII case-insensitive equality of a string with a lower-case literal.
 bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
@@ -272,9 +342,55 @@ struct GTEXT_CSS_Tree_Internal {
 };
 
 /// Fill a result from a finished context (status, counts, errors). Returns
-/// the status (GTEXT_CSS_E_OOM if the error list could not be allocated).
+/// the status (GTEXT_CSS_E_OOM if the error list could not be allocated). With
+/// `ctx->map` the positions of the errors and of a failure are moved into the
+/// source bytes.
 GTEXT_CSS_Status css_finish_result(css_ctx * ctx, GTEXT_CSS_Result * result,
     size_t input_bytes);
+
+/**
+ * Parse text that was decoded from bytes. `text` is UTF-8 of `length` bytes,
+ * `kind` names the entry point, and `info` says where the text came from: the
+ * tree's spans and the result's positions are moved into the bytes, and the
+ * result reports the encoding. The input limit is the caller's to apply to the
+ * source (`info->source_length`); it is not applied to `length`. `work` (if
+ * not NULL) receives the units of work (css_ctx::work).
+ */
+GTEXT_CSS_Status css_parse_decoded(GTEXT_CSS_Tree_Kind kind, const char * text,
+    size_t length, const GTEXT_CSS_Parse_Options * options, const css_srcinfo * info,
+    GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result, size_t * work);
+
+/// A result for a byte parse that was refused before any text existed (the
+/// input is longer than the limit, memory ran out while reading): the status
+/// and the byte offset of the failure, with the encoding if one was chosen.
+void css_refused_result(const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Status status,
+    size_t at, size_t line, size_t column, size_t input_bytes,
+    const css_enc_info * encoding, GTEXT_CSS_Result * result);
+
+/// The decoder of byte parses: UTF-8 text and the map of where it came from,
+/// built as bytes arrive in pieces of any size.
+typedef struct {
+  GTEXT_Allocator alloc;  ///< Everything is allocated through this.
+  struct GTEXT_Decoder * decoder; ///< The Encoding module's.
+  char * text;            ///< The decoded text.
+  size_t len;             ///< Its length.
+  size_t cap;             ///< Allocated.
+  css_srcmap map;         ///< Where each part came from.
+  GTEXT_CSS_Status status; ///< OK, or OOM / INTERNAL once something failed.
+  size_t work;            ///< Units of work: bytes taken, decoder steps, bytes of text and map made.
+  size_t src_fed;         ///< Bytes of source given so far.
+} css_decode;
+
+/// Begin decoding `encoding` (with byte order mark sniffing, as the Encoding
+/// Standard's "decode" has it). False (and `status`) on failure.
+bool css_decode_begin(css_decode * d, const GTEXT_Allocator * alloc, GTEXT_Encoding encoding);
+
+/// Decode `n` more bytes (and the end of the input if `final`).
+bool css_decode_feed(css_decode * d, const unsigned char * bytes, size_t n, bool final);
+
+/// Free what the decoder holds.
+void css_decode_free(css_decode * d);
+
 
 /// Set up a context from options.
 void css_ctx_init(css_ctx * ctx, const GTEXT_CSS_Parse_Options * options,
@@ -291,6 +407,26 @@ void css_ctx_free(css_ctx * ctx, bool keep_arena);
 GTEXT_INTERNAL_API GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind entry,
     const char * input, size_t length, const GTEXT_CSS_Parse_Options * options,
     size_t * work);
+
+/// The same for a parse of a stylesheet's bytes (gtext_css_parse_stylesheet_bytes() for
+/// `kind` the stylesheet's): decoding and mapping included.
+GTEXT_INTERNAL_API GTEXT_CSS_Status gtext_css_parse_bytes_work(GTEXT_CSS_Tree_Kind kind,
+    const void * bytes, size_t length, const GTEXT_CSS_Bytes_Options * bytes_options,
+    const GTEXT_CSS_Parse_Options * options, size_t * work);
+
+/// The same for a stream: the stylesheet in `chunk`-byte pieces (the last one
+/// shorter), the work of feeding and decoding included. `bytes_options` NULL
+/// reads `data` as text. `chunk` 0 is one piece.
+GTEXT_INTERNAL_API GTEXT_CSS_Status gtext_css_stream_work(GTEXT_CSS_Tree_Kind kind,
+    const void * data, size_t length, size_t chunk, const GTEXT_CSS_Bytes_Options * bytes_options,
+    const GTEXT_CSS_Parse_Options * options, size_t * work);
+
+/// The tests' view of a stream's memory: the bytes it holds for the input (the
+/// kept bytes, or the decoded text) and the bytes allocated for them.
+GTEXT_INTERNAL_API size_t gtext_css_stream_kept_bytes(const GTEXT_CSS_Stream * stream, size_t * allocated);
+
+/// The input limit of a parse with these options (the default if unset).
+size_t css_max_input(const GTEXT_CSS_Parse_Options * options);
 
 /// The same for the serializer: the units of work (bytes written, nodes
 /// visited) of writing `tree` to `sink`.

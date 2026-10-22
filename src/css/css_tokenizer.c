@@ -43,6 +43,7 @@
  * parser can rely on the matching.
  */
 
+#include <ghoti.io/math/decimal.h>
 #include <ghoti.io/text/macros.h>
 
 #include <string.h>
@@ -376,9 +377,18 @@ static bool consume_number(tz * t, css_tok * tok) {
   if (integer) {
     tok->flags |= GTEXT_CSS_FLAG_INTEGER;
   }
-  /* nb is NUL-terminated by css_buf_put. */
-  if (!css_number_value(t->ctx, nb->data, nb->len, &tok->number)) {
+  unsigned conv = 0;
+  if (!css_number_value(t->ctx, nb->data, nb->len, &tok->number, &conv)) {
     return false;
+  }
+  if (conv & GMATH_DECIMAL_INEXACT) {
+    tok->flags |= GTEXT_CSS_FLAG_NUMBER_INEXACT;
+  }
+  if (conv & GMATH_DECIMAL_OVERFLOW) {
+    tok->flags |= GTEXT_CSS_FLAG_NUMBER_OVERFLOW;
+  }
+  if (conv & GMATH_DECIMAL_UNDERFLOW) {
+    tok->flags |= GTEXT_CSS_FLAG_NUMBER_UNDERFLOW;
   }
   char * repr = css_arena_strdup(&t->ctx->arena, nb->data, nb->len);
   if (!repr) {

@@ -29,9 +29,19 @@
  * block_contents, rule, declaration, component_value, component_values,
  * comma_list, anb, declaration_value (a stylesheet: the first rule's first
  * declaration's value), outline (a stylesheet: its structure, for the WPT
- * tables that assert on rules and declarations). <options> is "-" or a
- * comma-separated list of: wtf8 (read
- * the input as WTF-8). The input may be empty ("-" for none).
+ * tables that assert on rules and declarations), toplevel (a stylesheet: the extent of each top-level rule, and the
+ * names and importance of the declarations of its block, for tools/oracle/css_diff.py), stylesheet_bytes (a
+ * stylesheet from bytes, CSS Syntax 3.2: the input is the bytes, and two more
+ * lines are printed, ENCODING <the encoding's name, lower case> and STREAM,
+ * which is "ok" when the same bytes fed one at a time to a stream give the
+ * same text, errors and encoding). <options> is "-" or a comma-separated list
+ * of: wtf8 (read the input as WTF-8), and for stylesheet_bytes proto=<hex of
+ * the protocol's label> and env=<hex of the environment encoding's label>.
+ * The input may be empty ("-" for none).
+ *
+ * (A stylesheet_bytes request writes a rule's block from the bytes it was
+ * read from, so a block in an encoding other than UTF-8 is written wrongly:
+ * the vectors have none.)
  *
  * For each request it prints:
  *
@@ -511,6 +521,7 @@ static parse_fn entry_fn(const char * entry) {
       {"anb", gtext_css_parse_component_values},
       {"declaration_value", gtext_css_parse_stylesheet},
       {"outline", gtext_css_parse_stylesheet},
+      {"toplevel", gtext_css_parse_stylesheet},
   };
   for (size_t i = 0; i < sizeof table / sizeof table[0]; i++) {
     if (strcmp(table[i].name, entry) == 0) {
@@ -525,16 +536,44 @@ static void request(char * line) {
   char * opts = entry ? strtok(NULL, " \t\r\n") : NULL;
   char * hex = opts ? strtok(NULL, " \t\r\n") : NULL;
   char * extra = hex ? strtok(NULL, " \t\r\n") : NULL;
-  parse_fn fn = entry ? entry_fn(entry) : NULL;
+  const bool bytes_entry = entry && strcmp(entry, "stylesheet_bytes") == 0;
+  parse_fn fn = entry ? (bytes_entry ? gtext_css_parse_stylesheet : entry_fn(entry)) : NULL;
   if (!fn || !opts || !hex || extra) {
     printf("END E_REQUEST\n");
     return;
   }
   g_opts = gtext_css_parse_options_default();
+  static char proto[256], env[256];
+  GTEXT_CSS_Bytes_Options bopts = gtext_css_bytes_options_default();
   if (strcmp(opts, "-") != 0) {
     for (char * o = strtok(opts, ","); o; o = strtok(NULL, ",")) {
       if (strcmp(o, "wtf8") == 0) {
         g_opts.input_wtf8 = true;
+      }
+      else if (bytes_entry && (strncmp(o, "proto=", 6) == 0 || strncmp(o, "env=", 4) == 0)) {
+        const bool is_proto = o[0] == 'p';
+        const char * h = o + (is_proto ? 6 : 4);
+        char * dst = is_proto ? proto : env;
+        const size_t hl = strlen(h);
+        if (hl % 2 || hl / 2 >= 255) {
+          printf("END E_REQUEST\n");
+          return;
+        }
+        for (size_t i = 0; i < hl; i += 2) {
+          const int a = hexval(h[i]), b = hexval(h[i + 1]);
+          if (a < 0 || b < 0) {
+            printf("END E_REQUEST\n");
+            return;
+          }
+          dst[i / 2] = (char)(a * 16 + b);
+        }
+        dst[hl / 2] = '\0';
+        if (is_proto) {
+          bopts.protocol_label = proto;
+        }
+        else {
+          bopts.environment_encoding = gtext_encoding_for_label(env, strlen(env));
+        }
       }
       else {
         printf("END E_REQUEST\n");
@@ -564,7 +603,13 @@ static void request(char * line) {
   GTEXT_CSS_Tree * t = NULL;
   GTEXT_CSS_Result r;
   memset(&r, 0, sizeof r);
-  const GTEXT_CSS_Status st = fn(buf, n, &g_opts, &t, &r);
+  GTEXT_CSS_Status st;
+  if (bytes_entry) {
+    st = gtext_css_parse_stylesheet_bytes(buf, n, &bopts, &g_opts, &t, &r);
+  }
+  else {
+    st = fn(buf, n, &g_opts, &t, &r);
+  }
   if (st != GTEXT_CSS_OK) {
     printf("END %s\n", gtext_css_status_string(st));
     gtext_css_result_free(&r);
@@ -592,6 +637,42 @@ static void request(char * line) {
         putchar(',');
       }
       outline_rule(&t->rules[i]);
+    }
+    printf("]\nSERIAL -\nCSSOM -\n");
+  }
+  else if (strcmp(entry, "toplevel") == 0) {
+    /* The top-level rules and at-rules, each with its extent in the bytes of the input and, for a rule, the
+       declarations of its block (the ones before a nested rule and those of the nested declarations rules
+       after it): what a parser that predates CSS Nesting can be asked (tools/oracle/css_diff.py). */
+    putchar('[');
+    for (size_t i = 0; i < t->rule_count; i++) {
+      const GTEXT_CSS_Rule * r = &t->rules[i];
+      if (i) {
+        putchar(',');
+      }
+      if (r->kind == GTEXT_CSS_RULE_AT) {
+        printf("[\"at\",");
+        json_str(r->name.data, r->name.length);
+        printf(",%zu,%zu,%s]", r->span.offset, r->span.end, r->has_block ? "true" : "false");
+        continue;
+      }
+      printf("[\"rule\",%zu,%zu,[", r->span.offset, r->span.end);
+      int first = 1;
+      for (size_t k = 0; k <= r->rule_count; k++) {
+        const GTEXT_CSS_Declaration * d = k == 0 ? r->declarations : NULL;
+        size_t n = k == 0 ? r->declaration_count : 0;
+        if (k > 0 && r->rules[k - 1].kind == GTEXT_CSS_RULE_NESTED_DECLARATIONS) {
+          d = r->rules[k - 1].declarations;
+          n = r->rules[k - 1].declaration_count;
+        }
+        for (size_t j = 0; j < n; j++) {
+          sep(&first);
+          printf("[");
+          json_str(d[j].name.data, d[j].name.length);
+          printf(",%s]", d[j].important ? "true" : "false");
+        }
+      }
+      printf("]]");
     }
     printf("]\nSERIAL -\nCSSOM -\n");
   }
@@ -637,6 +718,46 @@ static void request(char * line) {
   }
   free(detail);
   printf("ERRORS %zu\n", gtext_css_result_error_count(&r) + gtext_css_result_errors_dropped(&r));
+  if (bytes_entry) {
+    printf("ENCODING ");
+    const char * en = gtext_encoding_name(r.encoding);
+    for (const char * c = en ? en : "none"; *c; c++) {
+      putchar(*c >= 'A' && *c <= 'Z' ? *c + 0x20 : *c);
+    }
+    printf(" %s\n", gtext_css_encoding_source_name(r.encoding_source));
+    /* The same bytes a byte at a time through a stream must give the same text, errors and encoding. */
+    const char * same = "ok";
+    GTEXT_CSS_Stream * stream = NULL;
+    GTEXT_CSS_Tree * st_tree = NULL;
+    GTEXT_CSS_Result st_res;
+    memset(&st_res, 0, sizeof st_res);
+    if (gtext_css_stream_new_bytes(GTEXT_CSS_TREE_STYLESHEET, &bopts, &g_opts, &stream) != GTEXT_CSS_OK) {
+      same = "no stream";
+    }
+    else {
+      for (size_t i = 0; i < n; i++) {
+        (void)gtext_css_stream_feed(stream, buf + i, 1);
+      }
+      if (gtext_css_stream_finish(stream, &st_tree, &st_res) != GTEXT_CSS_OK) {
+        same = "the stream failed";
+      }
+      else {
+        char * a = css_tree_canon(t);
+        char * b = css_tree_canon(st_tree);
+        if (strcmp(a, b) != 0 || st_res.encoding != r.encoding || st_res.encoding_source != r.encoding_source
+            || gtext_css_result_error_count(&st_res) != gtext_css_result_error_count(&r)
+            || gtext_css_result_errors_dropped(&st_res) != gtext_css_result_errors_dropped(&r)) {
+          same = "the stream differs";
+        }
+        free(a);
+        free(b);
+      }
+      gtext_css_stream_free(stream);
+    }
+    printf("STREAM %s\n", same);
+    gtext_css_tree_free(st_tree);
+    gtext_css_result_free(&st_res);
+  }
   printf("END DONE\n");
   gtext_css_result_free(&r);
   gtext_css_tree_free(t);

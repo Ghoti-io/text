@@ -52,6 +52,8 @@ namespace snippets {
 #include "doc-snippets/css/anb.c"
 #include "doc-snippets/css/limits.c"
 #include "doc-snippets/css/serialize.c"
+#include "doc-snippets/css/bytes.c"
+#include "doc-snippets/css/stream.c"
 } // namespace snippets
 
 namespace {
@@ -74,6 +76,10 @@ const Snippet kSnippets[] = {
     {"limits.c", snippets::limits, "blocks and functions nested deeper than max_depth at 2:4, tree not made\nsuccess with depth 4\n"},
     {"serialize.c", snippets::serialize,
         "#\\31 23 > .a\\ b {width:calc( 1px/**/+2PX );content:\"'q'\";}\ncalc( 1px/**/2PX )\n"},
+    {"bytes.c", snippets::bytes,
+        "read as windows-1251 (charset-rule)\n\xd0\xbf\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82 is 12 bytes of text and 6 of the stylesheet\nthe rule is bytes 25 to 47 of 47\n"},
+    {"stream.c", snippets::stream,
+        "2 rules from 32 bytes; the second is bytes 17 to 32\nsuccess\ninput longer than max_input_bytes\n"},
 };
 
 std::string slurp(const std::string & path) {

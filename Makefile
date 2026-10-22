@@ -385,6 +385,24 @@ endif
 INCLUDE += $(SECURITY_CFLAGS)
 LDFLAGS += $(SECURITY_LIBS)
 
+# ghoti.io-math, for CSS numbers.  A CSS number is converted by math's correctly
+# rounded decimal-to-double and written by its shortest round-tripping inverse,
+# which are integer arithmetic and read nothing from the host (no locale, no
+# rounding mode), so a stylesheet means the same number on every target; the
+# conversion this library had before, gtext_number_strtod, goes through the C
+# library's strtod and does not.  math depends only on cutil, and the order in
+# suite/libraries.txt puts it ahead of this library.
+MATH_PC ?= ghoti.io-math$(BRANCH)
+MATH_CFLAGS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --cflags $(MATH_PC) 2>/dev/null)
+MATH_LIBS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(MATH_PC) 2>/dev/null)
+ifeq ($(strip $(MATH_CFLAGS)),)
+ifndef SKIP_DEP_CHECK
+$(error ghoti.io-math was not found by pkg-config. Run suite/install.sh from a checkout of the suite to build and install it into a local prefix, then pass the same PREFIX here - or point PKG_CONFIG_PATH at the directory holding its .pc file. There is deliberately no sibling-checkout fallback: a second resolution path that only in-tree builds exercise is one that silently rots.)
+endif
+endif
+INCLUDE += $(MATH_CFLAGS)
+LDFLAGS += $(MATH_LIBS)
+
 # The four above, in one place, because every consumer of this list used to
 # carry its own copy and they drifted.  When chron arrived, tools/conformance's
 # scripts still asked pkg-config for cutil alone, so `make conformance` stopped
@@ -393,9 +411,9 @@ LDFLAGS += $(SECURITY_LIBS)
 # fuzzers all failed to link, in fourteen hand-written dependency lists.  So the
 # Makefile hands the list to the scripts the way it hands them PREFIX, and a
 # script with no list refuses rather than falling back to a stale one.
-DEP_PCS := $(CUTIL_PC) $(CHRON_PC) $(UNICODE_PC) $(REGEX_PC) $(SECURITY_PC)
-DEP_CFLAGS := $(CUTIL_CFLAGS) $(CHRON_CFLAGS) $(UNICODE_CFLAGS) $(REGEX_CFLAGS) $(SECURITY_CFLAGS)
-DEP_LIBS := $(CUTIL_LIBS) $(CHRON_LIBS) $(UNICODE_LIBS) $(REGEX_LIBS) $(SECURITY_LIBS)
+DEP_PCS := $(CUTIL_PC) $(CHRON_PC) $(UNICODE_PC) $(REGEX_PC) $(SECURITY_PC) $(MATH_PC)
+DEP_CFLAGS := $(CUTIL_CFLAGS) $(CHRON_CFLAGS) $(UNICODE_CFLAGS) $(REGEX_CFLAGS) $(SECURITY_CFLAGS) $(MATH_CFLAGS)
+DEP_LIBS := $(CUTIL_LIBS) $(CHRON_LIBS) $(UNICODE_LIBS) $(REGEX_LIBS) $(SECURITY_LIBS) $(MATH_LIBS)
 
 # Automatically collect all .c source files under the src directory.
 SOURCES := $(shell find src -type f -name '*.c')
@@ -579,7 +597,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
-	check-html-quadratic check-fuzz-plant-anchors
+	check-html-quadratic check-fuzz-plant-anchors check-css-numbers
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -968,7 +986,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-numbers check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2017,6 +2035,7 @@ $(eval $(call fuzz-rule,fuzz_html_serialize,html-serialize))
 $(eval $(call fuzz-rule,fuzz_html_sanitize,html-sanitize))
 $(eval $(call fuzz-rule,fuzz_encoding,encoding))
 $(eval $(call fuzz-rule,fuzz_css_syntax,css-syntax))
+$(eval $(call fuzz-rule,fuzz_css_bytes,css-bytes))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2030,7 +2049,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit
@@ -2064,8 +2083,16 @@ check-html-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/html/plant-fuzz.py --time $(FUZZ_TIME)
 
-check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax fuzzer finds it
-# The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp: tools/css/plant-fuzz.py copies this
+check-css-numbers: ## Fail if a CSS source reaches the host for a number again, and show the gate refuses a planted use
+# CSS numbers are converted by the math library and written from its shortest digits, which read no locale, no rounding
+# mode and no C library. tools/css/check-no-stand-in.sh reads src/css with comments removed and fails on any use of the
+# conversion this library had before (gtext_number_*) or of strtod, printf and their kin; it then plants a use in a copy
+# and requires the refusal, and plants one in a comment and requires none. In TEST_GATES: it needs only a C compiler.
+check-css-numbers:
+	@tools/css/check-no-stand-in.sh
+
+check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax and CSS bytes fuzzers find it
+# The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp and fuzz_css_bytes.cpp: tools/css/plant-fuzz.py copies this
 # tree to a scratch directory, edits one line of src/css/ there, and runs the harness for FUZZ_TIME seconds (or
 # replays the recorded seed that shows the defect, searching only if the seed has gone stale); it must stop with a
 # report, and an unedited copy must not. Needs clang,
@@ -2732,6 +2759,22 @@ check-xml-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-xml-oracle.sh && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-xml-oracle.sh --controls
+
+check-css-oracle: ## Compare CSS Syntax against tinycss2, cssparser and csstree, and show the gate fails when it should
+# tools/oracle/run-css-oracle.sh (its header says what is compared; documentation/formats/css.md, "Tested scope", has the
+# numbers): the default population of tools/oracle/css_gen.py, 20,000 generated items besides the css-parsing-tests and
+# WPT inputs, put to the three references in the pinned image (containers/css) and to this library; every divergence is
+# of a class of tools/oracle/css_divergences.txt (an experiment, css_classes.py) or fails the run. The controls then
+# corrupt what the library says, tamper with the list and plant a defect in the decoder, stream, tokenizer, parser,
+# serializer and number conversion, and require the gate to fail for each. Outside TEST_GATES, like every gate that
+# consults an oracle: it needs a container engine and the image (make oracle-images). A hunt: CSS_ORACLE_COUNT and
+# CSS_ORACLE_SEED, in chunks on the build host.
+check-css-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/css-parsing-tests,tools/css/fetch.sh); \
+	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-syntax,tools/css/fetch.sh); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-css-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-css-oracle.sh --controls
 
 check-html-oracle: ## Prove the HTML references on the standard's vectors, then check the XHTML write mode against them
 # Two references in one pinned image (containers/html): html5lib 1.1 and parse5 8.0.1, which

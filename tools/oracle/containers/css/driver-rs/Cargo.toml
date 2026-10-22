@@ -1,0 +1,16 @@
+[package]
+name = "ghoti_css_oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "cssparser-driver"
+path = "src/main.rs"
+
+[dependencies]
+cssparser = "=0.38.0"
+
+[profile.release]
+debug = false
+opt-level = 2

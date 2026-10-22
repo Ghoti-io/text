@@ -26,12 +26,12 @@
  * share.
  */
 
+#include <ghoti.io/math/decimal.h>
 #include <ghoti.io/text/macros.h>
 
 #include <stdint.h>
 #include <string.h>
 
-#include "../text_number_internal.h"
 #include "css_internal.h"
 
 /* ---- names ------------------------------------------------------------ */
@@ -154,6 +154,11 @@ GTEXT_CSS_Parse_Options gtext_css_parse_options_default(void) {
 
 static size_t or_default(size_t value, size_t fallback) {
   return value ? value : fallback;
+}
+
+/** The input limit of a parse (css_internal.h). */
+size_t css_max_input(const GTEXT_CSS_Parse_Options * options) {
+  return or_default(options ? options->max_input_bytes : 0, DEFAULT_MAX_INPUT);
 }
 
 /** Set up a context from options (css_internal.h). */
@@ -451,22 +456,24 @@ void css_arena_free(css_arena * arena) {
 /* ---- small helpers ---------------------------------------------------- */
 
 /** The value of a numeric token's spelling (css_internal.h). */
-bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out) {
-  /* The conversion reads to the NUL: the contract is that repr[len] is one. */
-  if (!repr || len == 0 || repr[len] != '\0') {
+bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out, unsigned * flags) {
+  /* The spelling is a numeric token's, which the tokenizer has already shaped
+     as a signed decimal with an optional fraction and exponent, and which the
+     math library's grammar reads whole. Anything else is a defect here. */
+  if (!repr || len == 0) {
     css_fail(ctx, GTEXT_CSS_E_INTERNAL);
     return false;
   }
-  /* The conversion can allocate (it respells the number in a locale whose
-     decimal separator is not "."), and answers 0 with nothing consumed when
-     it cannot; a numeric token's spelling always consumes something. */
-  char * end = NULL;
-  const double v = gtext_number_strtod(&ctx->alloc, repr, &end);
-  if (end == repr) {
-    css_fail(ctx, GTEXT_CSS_E_OOM);
+  double v = 0;
+  size_t consumed = 0;
+  unsigned f = 0;
+  if (gmath_decimal_parse(repr, len, &v, &consumed, &f) != GMATH_OK || consumed != len) {
+    css_fail(ctx, GTEXT_CSS_E_INTERNAL);
     return false;
   }
+  ctx->work += len / 64 + 1; /* a long spelling costs the conversion more than a short one */
   *out = v;
+  *flags = f;
   return true;
 }
 
@@ -528,6 +535,81 @@ static void sort_errors(css_err * a, css_err * tmp, size_t n) {
   }
 }
 
+/* ---- where decoded text came from ------------------------------------ */
+
+/* The run holding decoded offset `dec` (the last whose `dec` is not past it),
+   found by bisection; NULL when the map has no run before it. */
+static const css_srcrun * find_run(const css_srcmap * map, size_t dec, size_t * work) {
+  size_t lo = 0, hi = map->nruns;
+  if (map->blocks) {
+    /* The run is between this block's entry and the next one's, however many runs the rest of the text has. */
+    const size_t b = dec / CSS_SRCMAP_BLOCK;
+    if (b < map->nblocks) {
+      lo = map->blocks[b];
+      hi = b + 1 < map->nblocks ? map->blocks[b + 1] + 1 : map->nruns;
+    }
+  }
+  while (lo < hi) {
+    const size_t mid = lo + (hi - lo) / 2;
+    if (work) {
+      (*work)++;
+    }
+    if (map->runs[mid].dec <= dec) {
+      lo = mid + 1;
+    }
+    else {
+      hi = mid;
+    }
+  }
+  return lo == 0 ? NULL : &map->runs[lo - 1]; /* (a window never starts after the answer: see css_decode.c, map_index) */
+}
+
+/** The source offset of a decoded offset's code point (css_internal.h). */
+size_t css_srcmap_start(const css_srcmap * map, size_t dec, size_t * work) {
+  if (dec >= map->dec_total) {
+    return map->src_total;
+  }
+  if (!map->runs) {
+    return dec + map->shift;
+  }
+  const css_srcrun * r = find_run(map, dec, work);
+  if (!r) {
+    return map->src_total;
+  }
+  return r->src + ((dec - r->dec) / r->dlen) * r->width;
+}
+
+/** The source offset just after the code point ending at a decoded offset (css_internal.h). */
+size_t css_srcmap_end(const css_srcmap * map, size_t dec, size_t * work) {
+  if (dec >= map->dec_total) {
+    return map->src_total;
+  }
+  if (dec == 0) {
+    return css_srcmap_start(map, 0, work);
+  }
+  if (!map->runs) {
+    return dec + map->shift;
+  }
+  const css_srcrun * r = find_run(map, dec - 1, work);
+  if (!r) {
+    return map->src_total;
+  }
+  return r->src + ((dec - 1 - r->dec) / r->dlen) * r->width + r->width;
+}
+
+const char * gtext_css_encoding_source_name(GTEXT_CSS_Encoding_Source source) {
+  switch (source) {
+  case GTEXT_CSS_ENCODING_SOURCE_NONE: return "none";
+  case GTEXT_CSS_ENCODING_SOURCE_BOM: return "bom";
+  case GTEXT_CSS_ENCODING_SOURCE_PROTOCOL: return "protocol";
+  case GTEXT_CSS_ENCODING_SOURCE_CHARSET_RULE: return "charset-rule";
+  case GTEXT_CSS_ENCODING_SOURCE_ENVIRONMENT: return "environment";
+  case GTEXT_CSS_ENCODING_SOURCE_DEFAULT: return "default";
+  case GTEXT_CSS_ENCODING_SOURCE_COUNT: break;
+  }
+  return "unknown";
+}
+
 /** Fill a result from a finished context (css_internal.h). */
 GTEXT_CSS_Status css_finish_result(css_ctx * ctx, GTEXT_CSS_Result * result,
     size_t input_bytes) {
@@ -542,6 +624,10 @@ GTEXT_CSS_Status css_finish_result(css_ctx * ctx, GTEXT_CSS_Result * result,
   result->declaration_count = ctx->declaration_count;
   if (status != GTEXT_CSS_OK) {
     result->failure = ctx->failure;
+    if (ctx->map) {
+      result->failure.offset = css_srcmap_start(ctx->map, ctx->failure.offset, &ctx->work);
+      result->failure.end = result->failure.offset;
+    }
   }
   size_t keep = ctx->nerr < ctx->max_errors ? ctx->nerr : ctx->max_errors;
   if (status != GTEXT_CSS_E_OOM) {
@@ -576,7 +662,8 @@ GTEXT_CSS_Status css_finish_result(css_ctx * ctx, GTEXT_CSS_Result * result,
         in->errors[i].name = gtext_css_error_name(ctx->errs[i].code);
         in->errors[i].line = ctx->errs[i].line;
         in->errors[i].column = ctx->errs[i].column;
-        in->errors[i].byte_offset = ctx->errs[i].offset;
+        in->errors[i].byte_offset = ctx->map ? css_srcmap_start(ctx->map, ctx->errs[i].offset, &ctx->work)
+                                             : ctx->errs[i].offset;
       }
       result->internal = in;
     }

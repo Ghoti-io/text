@@ -86,6 +86,10 @@ extern "C" GTEXT_HTML_Status gtext_html_serialize_work(const GTEXT_Markup_Node *
 // (src/css/css_internal.h has a flexible array member too: the two work counters of the CSS module.)
 extern "C" GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind entry, const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, size_t * work);
+extern "C" GTEXT_CSS_Status gtext_css_stream_work(GTEXT_CSS_Tree_Kind kind, const void * data, size_t length, size_t chunk,
+    const GTEXT_CSS_Bytes_Options * bytes_options, const GTEXT_CSS_Parse_Options * options, size_t * work);
+extern "C" GTEXT_CSS_Status gtext_css_parse_bytes_work(GTEXT_CSS_Tree_Kind kind, const void * bytes, size_t length,
+    const GTEXT_CSS_Bytes_Options * bytes_options, const GTEXT_CSS_Parse_Options * options, size_t * work);
 extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Serialize_Options * options,
     const GTEXT_Markup_Sink * sink, size_t * work);
 // (src/xml/xml_internal.h is C: the counted parse it declares for this suite is declared here.)
@@ -551,6 +555,34 @@ std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std:
     o.max_input_bytes = (size_t)1 << 30;
     o.count_errors_only = true;
     const GTEXT_CSS_Status st = gtext_css_parse_work(kind, in.data(), in.size(), &o, &m.work);
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the parse failed: ") + gtext_css_status_string(st);
+    }
+    return m;
+  };
+}
+
+// A CSS stylesheet's bytes, parsed in one call or fed to a stream in pieces of `chunk` bytes (0: one piece), counted by
+// gtext_css_parse_bytes_work() and gtext_css_stream_work(): the decoding, the map from the text to the bytes, the buffers and
+// the parse. `label` is the protocol's label (NULL for none: UTF-8).
+std::function<Measured(size_t)> css_bytes(const char * label, size_t chunk, bool stream, std::function<std::string(size_t)> make) {
+  return [label, chunk, stream, make](size_t k) {
+    Measured m;
+    const std::string in = make(k);
+    m.bytes = in.size();
+    GTEXT_CSS_Parse_Options o = gtext_css_parse_options_default();
+    o.max_depth = (size_t)1 << 30;
+    o.max_tokens = (size_t)1 << 30;
+    o.max_rules = (size_t)1 << 30;
+    o.max_declarations = (size_t)1 << 30;
+    o.max_total_errors = (size_t)1 << 30;
+    o.max_input_bytes = (size_t)1 << 30;
+    o.count_errors_only = true;
+    GTEXT_CSS_Bytes_Options b = gtext_css_bytes_options_default();
+    b.protocol_label = label;
+    const GTEXT_CSS_Status st = stream ? gtext_css_stream_work(GTEXT_CSS_TREE_STYLESHEET, in.data(), in.size(), chunk, &b, &o, &m.work)
+                                       : gtext_css_parse_bytes_work(GTEXT_CSS_TREE_STYLESHEET, in.data(), in.size(), &b, &o, &m.work);
     if (st != GTEXT_CSS_OK) {
       m.ok = false;
       m.why = std::string("the parse failed: ") + gtext_css_status_string(st);
@@ -1100,6 +1132,39 @@ std::vector<Shape> build_shapes() {
   add("css", "CSS numbers and dimensions", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("+1.5e-3px ", k); }));
   add("css", "CSS a comma-separated list", 8000, css(GTEXT_CSS_TREE_COMMA_LIST, [](size_t k) { return repeat("a b,", k); }));
   add("css", "CSS ill-formed UTF-8", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("a\xe2\x82\xed\xa0\x80", k); }));
+  // ---- from bytes and from a stream: the decoder, the map back to the bytes, the buffers, the cuts ----
+  const std::string sheet_unit = "a.b > c { d: e; f: \"g\" } /* h */\n";
+  add("css", "CSS stream, text a byte at a time", 4000, css_bytes(nullptr, 1, true, [sheet_unit](size_t k) { return repeat(sheet_unit, k); }));
+  add("css", "CSS stream, UTF-8 bytes a byte at a time", 4000,
+      css_bytes(nullptr, 1, true, [sheet_unit](size_t k) { return "\xef\xbb\xbf" + repeat(sheet_unit, k); }));
+  add("css", "CSS stream, UTF-8 bytes in pieces of 7", 4000,
+      css_bytes(nullptr, 7, true, [sheet_unit](size_t k) { return repeat(sheet_unit, k); }));
+  add("css", "CSS stream, one piece", 4000, css_bytes(nullptr, 0, true, [sheet_unit](size_t k) { return repeat(sheet_unit, k); }));
+  add("css", "CSS stream, windows-1251 a byte at a time (decoded, mapped)", 4000,
+      css_bytes("windows-1251", 1, true, [](size_t k) { return repeat(".\xef\xf0 > c { \xf6: \"\xe9\" } /* \xe2 */\n", k); }));
+  add("css", "CSS bytes, windows-1251 in one call (every other code point two bytes of text)", 4000,
+      css_bytes("windows-1251", 0, false, [](size_t k) { return repeat("a\xef b{c:\xf0 d}\n", k); }));
+  add("css", "CSS stream, UTF-16LE a byte at a time", 4000,
+      css_bytes("utf-16le", 1, true, [](size_t k) {
+        std::string out;
+        for (size_t i = 0; i < k; i++) {
+          out += std::string("a\0.\0b\0{\0c\0:\0\xe9\0}\0 \0", 16);
+        }
+        return out;
+      }));
+  add("css", "CSS bytes, ISO-2022-JP in one call (a new run at every shift, the worst case of the map)", 3000,
+      css_bytes("iso-2022-jp", 0, false, [](size_t k) { return repeat("a{b:\x1b$BF|\x1b(B}", k); }));
+  add("css", "CSS stream, ISO-2022-JP in pieces of 3", 3000,
+      css_bytes("iso-2022-jp", 3, true, [](size_t k) { return repeat("a{b:\x1b$BF|\x1b(B}", k); }));
+  add("css", "CSS bytes, gb18030 four-byte characters in one call", 3000,
+      css_bytes("gb18030", 0, false, [](size_t k) { return repeat("a{b:\"\x95" "2\x82" "6\"}", k); }));
+  add("css", "CSS bytes, a long invalid sequence run (every byte replaced)", 8000,
+      css_bytes("shift_jis", 0, false, [](size_t k) { return "a{b:\"" + repeat("\x81\xff", k) + "\"}"; }));
+  add("css", "CSS stream, a charset declaration then text, a byte at a time", 4000,
+      css_bytes(nullptr, 1, true, [sheet_unit](size_t k) { return "@charset \"windows-1251\"; " + repeat(sheet_unit, k); }));
+  add("css", "CSS a number of 8000 digits", 1, css_bytes(nullptr, 0, false, [](size_t k) { return "a{b:" + std::string(8000 * k, '9') + "}"; }));
+  add("css", "CSS many long numbers", 100, css_bytes(nullptr, 0, false, [](size_t k) { return repeat("a{b:" + std::string(300, '7') + "." + std::string(300, '1') + "e-9}", k); }));
+
   add("css", "CSS serialize nested rules", 1500, css_serialize([](size_t k) { return repeat("a{", k) + repeat("}", k); }));
   add("css", "CSS serialize tokens that need a comment between them", 8000,
       css_serialize([](size_t k) { return "x{y:" + repeat("a/**/b/**/1/**/2", k) + "}"; }));

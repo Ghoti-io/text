@@ -16,15 +16,16 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""Plant a defect in a copy of a CSS source file and show the CSS Syntax fuzzer finds it.
+"""Plant a defect in a copy of a CSS source file and show the CSS Syntax and CSS bytes fuzzers find it.
 
     PREFIX=... tools/css/plant-fuzz.py [--time SECONDS] [name ...]
 
 A fuzzer that has never failed has not been shown to be able to. Each plant is one edit to one file of
 src/css/, made in a scratch copy of that file (the working tree is never touched). The copy is compiled
-with the fuzz build's flags and linked into tests/fuzz/fuzz_css_syntax.cpp ahead of the fuzz build's other
-objects, so a plant costs one compilation, not a build. The fuzz build itself (`make fuzz-css-syntax`) is
-made first, in this tree's build directory.
+with the fuzz build's flags and linked into the harness the plant is for (tests/fuzz/fuzz_css_syntax.cpp, or
+fuzz_css_bytes.cpp for the plants of BYTES_PLANTS) ahead of the fuzz build's other objects, so a plant costs one
+compilation, not a build. The fuzz builds themselves (`make fuzz-css-syntax fuzz-css-bytes`) are made first, in
+this tree's build directory.
 
 A plant with a seed that shows its defect is found by replaying that seed (-runs=0), which is the same
 every time; one with no seed is searched for from the corpus for the time budget (--time, 60 seconds by
@@ -53,6 +54,19 @@ not.
   cdc-after-dashes          the serializer does not separate the ident "--" from a ">": CDC on reading back (a find
                             of the fuzzer, kept as reproducer-cdc-after-dashes-ident.seed).
   anb-plus-sign             9.1 writes "-" where it means "+": An+B read back.
+
+The plants of fuzz_css_bytes.cpp (BYTES_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-bytes):
+
+  map-end-past-code-point   a span's end is mapped to the byte after the one that ends the code point: the
+                            positions are in the bytes.
+  shift-forgotten           UTF-8 with a byte order mark is read in place without moving its offsets past
+                            the mark.
+  window-short              a stream decides the encoding one byte early: the answer depends on the cut.
+  run-ignores-gap           the map joins code points that the source has bytes between (a redundant shift
+                            sequence between two characters of the same width).
+  limit-off-by-one          the stream refuses the byte that reaches the input limit.
+  flush-forgotten           a stream never ends its decoder: a sequence cut off at the end is not replaced.
+  block-index-off           the map's block index sends every lookup past the first 4 KiB to the first runs.
 """
 
 import os
@@ -65,6 +79,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-syntax")
+BYTES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-bytes")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -90,6 +105,20 @@ PLANTS = {
 }
 
 
+# The same shape, for tests/fuzz/fuzz_css_bytes.cpp; the seeds are in tests/fuzz/corpus/css-bytes.
+BYTES_PLANTS = {
+    "map-end-past-code-point": ("css_core.c", "  return r->src + ((dec - 1 - r->dec) / r->dlen) * r->width + r->width;\n",
+                                "  return r->src + ((dec - 1 - r->dec) / r->dlen) * r->width + r->width + 1;\n", "own-cp1251-charset.seed"),
+    "shift-forgotten": ("css_decode.c", "    shift.shift = dec.bom_length;\n", "    shift.shift = 0;\n", "own-utf8-bom.seed"),
+    "window-short": ("css_stream.c", "s->raw_len >= GTEXT_CSS_ENCODING_WINDOW)", "s->raw_len >= GTEXT_CSS_ENCODING_WINDOW - 1)",
+                     "own-charset-ends-1024.seed"),
+    "run-ignores-gap": ("css_decode.c", "        && last->src + (size_t)last->count * width == src) {", "        ) {", "own-iso2022jp-redundant-shifts.seed"),
+    "limit-off-by-one": ("css_stream.c", "  if (length > s->max_input - s->fed) {", "  if (length >= s->max_input - s->fed) {", "own-utf8.seed"),
+    "flush-forgotten": ("css_stream.c", "    if (!css_decode_feed(&s->d, NULL, 0, true)) {", "    if (0) {", "own-sjis-truncated.seed"),
+    "block-index-off": ("css_decode.c", "    m->blocks[b] = r;\n", "    m->blocks[b] = b ? 0 : r;\n", "own-cp1251-huge.seed"),
+}
+
+
 def make_variables(prefix, names):
     """The Makefile's own values for `names`, so that nothing here is a second copy of them."""
     rules = "print-%: ; @echo $($*)\n"
@@ -103,7 +132,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_syntax: .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -117,15 +146,15 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    names = names or ["control"] + list(PLANTS)
+    names = names or ["control", "control-bytes"] + list(PLANTS) + list(BYTES_PLANTS)
     for n in names:
-        if n != "control" and n not in PLANTS:
-            raise SystemExit("unknown plant %r (one of control, %s)" % (n, ", ".join(PLANTS)))
+        if n not in ("control", "control-bytes") and n not in PLANTS and n not in BYTES_PLANTS:
+            raise SystemExit("unknown plant %r (one of control, control-bytes, %s)" % (n, ", ".join(list(PLANTS) + list(BYTES_PLANTS))))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -142,8 +171,11 @@ def main(argv):
             os.makedirs(work)
             objs = list(objects)
             seed = None
-            if name != "control":
-                rel, old, new, seed = PLANTS[name]
+            bytes_harness = name == "control-bytes" or name in BYTES_PLANTS
+            harness = "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = BYTES_CORPUS if bytes_harness else CORPUS
+            if name not in ("control", "control-bytes"):
+                rel, old, new, seed = BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 if text.count(old) != 1:
@@ -165,14 +197,14 @@ def main(argv):
                 objs = [obj if os.path.abspath(o) == os.path.abspath(original) else o for o in objs]
                 if obj not in objs:
                     raise SystemExit("plant %s: %s is not among the fuzz objects" % (name, original))
-            app = os.path.join(work, "fuzz_css_syntax")
+            app = os.path.join(work, harness)
             done = subprocess.run([v["FUZZ_CXX"]] + v["FUZZ_BIN_FLAGS"].split() + ["-std=c++20", "-w"] + include
-                                  + ["-o", app, os.path.join(ROOT, "tests", "fuzz", "fuzz_css_syntax.cpp")] + objs
+                                  + ["-o", app, os.path.join(ROOT, "tests", "fuzz", harness + ".cpp")] + objs
                                   + v["DEP_LIBS"].split() + v["FUZZ_RPATH"].split(), env=env, capture_output=True, text=True)
             if done.returncode != 0:
                 raise SystemExit("plant %s did not link:\n%s" % (name, done.stderr[-2000:]))
             corpus = os.path.join(work, "corpus")
-            shutil.copytree(CORPUS, corpus, ignore=lambda d, ns: [n for n in ns if not n.endswith(".seed")])
+            shutil.copytree(corpus_source, corpus, ignore=lambda d, ns: [n for n in ns if not n.endswith(".seed")])
             search = [app, corpus, "-max_total_time=%d" % seconds, "-seed=1", "-max_len=2048", "-rss_limit_mb=2048"]
 
             def run_fuzzer(cmd):
@@ -185,19 +217,19 @@ def main(argv):
             how = "replayed %s" % seed if seed else "searched"
             if seed:
                 if not os.path.exists(os.path.join(corpus, seed)):
-                    raise SystemExit("plant %s: its seed %s is not in %s" % (name, seed, CORPUS))
+                    raise SystemExit("plant %s: its seed %s is not in %s" % (name, seed, corpus_source))
                 status, out = run_fuzzer([app, "-runs=0", os.path.join(corpus, seed)])
                 if status in (0, -1) or not any(REPORT.match(l) for l in out.splitlines()):
                     sys.stderr.write("plant %s: its seed %s no longer shows the defect; searching\n" % (name, seed))
                     status, out = run_fuzzer(search)
                     how = "SEARCHED, seed %s is stale" % seed
-            elif name == "control":
+            elif name in ("control", "control-bytes"):
                 status, out = run_fuzzer([app, "-runs=0", corpus])
             else:
                 status, out = run_fuzzer(search)
-            if name == "control":
+            if name in ("control", "control-bytes"):
                 ok = status == 0
-                print("control (no edit): %s" % ("silent over the whole corpus, as it must be" if ok else "FAILED (exit %d)" % status))
+                print("%s (no edit): %s" % (name, "silent over the whole corpus, as it must be" if ok else "FAILED (exit %d)" % status))
                 if not ok:
                     sys.stderr.write(out[-3000:])
             else:

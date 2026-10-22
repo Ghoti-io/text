@@ -120,6 +120,18 @@ json.dump(data, open(sys.argv[2], "w", encoding="utf-8"))
 PY
 expect wpt-expectation "UNEXPLAINED FAILURES" python3 "$suite_py" "$suite" "$scratch/wpt.json" "$runner" "$exceptions"
 
+# The bytes' expected encoding is wrong in one case of stylesheet_bytes.json (and nothing else is).
+cp "$suite"/*.json "$scratch/suite/"
+python3 - "$scratch/suite/stylesheet_bytes.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+data[1][1] = "ibm866"
+json.dump(data, open(path, "w", encoding="utf-8"))
+PY
+expect bytes-encoding "UNEXPLAINED FAILURES" python3 "$suite_py" "$scratch/suite" "$vectors" "$runner" "$exceptions"
+cp "$suite"/*.json "$scratch/suite/"
+
 # A file of the pin that is neither scored nor out of scope.
 cp "$suite"/*.json "$scratch/suite/" && printf '["a", []]\n' > "$scratch/suite/new_entry_point.json"
 expect unknown-file "SUITE PROBLEMS" python3 "$suite_py" "$scratch/suite" "$vectors" "$runner" "$exceptions"
@@ -189,5 +201,13 @@ plant anb-dagger "$fails" css_anb.c 'if (i == count || !is_token(\&values\[i\], 
 plant no-comment-between-tokens "$trips" css_serialize.c 'puts_(w, "/\*\*/");' '(void)0;'
 plant identifier-digit "$trips" css_serialize.c 'else if (mode != ID_UNRESTRICTED \&\& index == 0 \&\& c >= .0. \&\& c <= .9.) {' 'else if (0) {'
 plant bad-string-newline "$trips" css_serialize.c 'put(w, "\\"\\n", 2);' 'put(w, "\\"", 1);'
+# CSS Syntax 3.2, the bytes: a byte order mark over every label, the protocol's label over the declaration, the
+# declaration's UTF-16 read as UTF-8, the environment encoding, and a stream that reports another encoding.
+plant bom-over-label "$fails" css_decode.c 'if (length >= 3 \&\& b\[0\] == 0xEF \&\& b\[1\] == 0xBB \&\& b\[2\] == 0xBF) {' 'if (0) {'
+plant protocol-label "$fails" css_decode.c 'if (options \&\& options->protocol_label) {' 'if (0) {'
+plant charset-utf16 "$fails" css_decode.c 'if (e == GTEXT_ENCODING_UTF_16BE || e == GTEXT_ENCODING_UTF_16LE) {' 'if (0) {'
+plant charset-rule "$fails" css_decode.c 'if (charset_label(b, window, \&lb, \&le)) {' 'if (0) {'
+plant environment-encoding "$fails" css_decode.c 'if (options \&\& options->environment_encoding != GTEXT_ENCODING_NONE' 'if (0 \&\& options->environment_encoding != GTEXT_ENCODING_NONE'
+plant stream-encoding "$fails" css_stream.c 'info.encoding.encoding = s->dec.encoding;' 'info.encoding.encoding = GTEXT_ENCODING_UTF_8;'
 # A crash is a failure, not a missing answer.
 plant crash "RUNNER CRASHES" css_tokenizer.c 'static bool is_non_printable(int32_t c) {' 'static bool is_non_printable(int32_t c) { if (c == 0x7F) { *(volatile int *)0 = 0; }'

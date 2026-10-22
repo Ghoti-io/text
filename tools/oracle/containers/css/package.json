@@ -1,0 +1,10 @@
+{
+  "name": "ghoti-text-oracle-css",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pinned csstree for the CSS oracle; see Dockerfile.",
+  "dependencies": {
+    "css-tree": "3.2.1"
+  }
+}

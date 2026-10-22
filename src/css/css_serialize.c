@@ -37,12 +37,12 @@
  * `max_depth` allowed is written without recursion.
  */
 
+#include <ghoti.io/math/decimal.h>
 #include <ghoti.io/text/macros.h>
 
 #include <stdint.h>
 #include <string.h>
 
-#include "../text_number_internal.h"
 #include "css_internal.h"
 
 /// The default of max_output_bytes.
@@ -459,37 +459,115 @@ static void put_url(writer * w, const char * text, size_t len) {
   put(w, ")", 1);
 }
 
-/* CSSOM's <number> and <integer>: base ten, no exponent, at most six decimals. */
+/* CSSOM's <number> and <integer> (6.7.2): "a base-ten number using digits 0-9 in the
+   shortest form possible, using "." to separate decimals (if any), rounding the value if
+   necessary to not produce more than 6 decimals, preceded by "-" if it is negative", with
+   "scientific notation is not used". The digits are the math library's shortest decimal
+   that rounds back to the value, laid out here; where there are more than six decimals the
+   spelling is rounded to six, half away from zero, on those digits. That is a rule of this
+   library's and not of CSSOM's, which says nothing about a tie, and it is the same on every
+   host because it reads no host: no printf, no locale, no rounding mode.
+
+   The two spellings CSSOM does not give: a NaN (no token has one) is "0", and an infinity
+   (a token whose magnitude overflowed a double) is the largest finite double, so that a
+   number is always digits. */
+enum { CSSOM_MAX_DIGITS = 17, CSSOM_MAX_TEXT = 330 };
+
 static void put_cssom_number(writer * w, double v, bool integer) {
-  char b[400];
-  int n;
   if (v != v) {
     puts_(w, "0");
     return;
   }
   if (v == 1.0 / 0.0 || v == -1.0 / 0.0) {
-    /* No finite spelling; the largest finite double's is the closest. */
     v = v > 0 ? 1.7976931348623157e308 : -1.7976931348623157e308;
   }
-  n = gtext_number_format_double(b, sizeof b, v, GTEXT_NUMBER_FIXED, integer ? 0 : 6);
-  if (n < 0 || (size_t)n >= sizeof b) {
+  GMATH_Decimal d;
+  if (gmath_decimal_shortest(v, &d) != GMATH_OK) {
     puts_(w, "0");
     return;
   }
-  size_t len = (size_t)n;
-  if (!integer && memchr(b, '.', len)) {
-    while (len > 0 && b[len - 1] == '0') {
-      len--;
+  char digits[CSSOM_MAX_DIGITS + 2];
+  size_t n = d.length;
+  memcpy(digits, d.digits, n);
+  int64_t exp10 = d.exponent; /* the value is the digits times ten to this */
+  const int64_t keep = integer ? 0 : 6; /* decimals allowed */
+  if (-exp10 > keep) {
+    const int64_t drop = -exp10 - keep; /* digits to remove from the right */
+    if (drop > (int64_t)n) { /* below half of the last place kept */
+      digits[0] = '0';
+      n = 1;
+      exp10 = 0;
     }
-    if (len > 0 && b[len - 1] == '.') {
-      len--;
+    else {
+      const bool up = digits[n - (size_t)drop] >= '5'; /* the first digit removed */
+      n -= (size_t)drop;
+      exp10 += drop;
+      if (up) {
+        size_t k = n;
+        while (k > 0 && digits[k - 1] == '9') {
+          digits[--k] = '0';
+        }
+        if (k == 0) { /* 99.9 -> 100, or nothing left: a new leading digit */
+          memmove(digits + 1, digits, n);
+          digits[0] = '1';
+          n++;
+        }
+        else {
+          digits[k - 1]++;
+        }
+      }
+      if (n == 0) { /* every digit was removed and the rounding did not go up */
+        digits[0] = '0';
+        n = 1;
+        exp10 = 0;
+      }
     }
   }
-  if ((len == 2 && b[0] == '-' && b[1] == '0')) {
+  /* Strip zeros made by the rounding (or the shortest form's own) off the right of the fraction. */
+  while (n > 1 && digits[n - 1] == '0' && exp10 < 0) {
+    n--;
+    exp10++;
+  }
+  bool zero = true;
+  for (size_t i = 0; i < n; i++) {
+    if (digits[i] != '0') {
+      zero = false;
+    }
+  }
+  char out[CSSOM_MAX_TEXT];
+  size_t len = 0;
+  if (zero) {
     put(w, "0", 1);
     return;
   }
-  put(w, b, len);
+  if (d.negative) {
+    out[len++] = '-';
+  }
+  if (exp10 >= 0) { /* an integer: the digits and their zeros */
+    memcpy(out + len, digits, n);
+    len += n;
+    for (int64_t i = 0; i < exp10 && len < CSSOM_MAX_TEXT; i++) {
+      out[len++] = '0';
+    }
+  }
+  else if ((int64_t)n + exp10 > 0) { /* digits before and after the point */
+    const size_t before = (size_t)((int64_t)n + exp10);
+    memcpy(out + len, digits, before);
+    len += before;
+    out[len++] = '.';
+    memcpy(out + len, digits + before, n - before);
+    len += n - before;
+  }
+  else { /* 0.000ddd */
+    out[len++] = '0';
+    out[len++] = '.';
+    for (int64_t i = 0; i < -((int64_t)n + exp10); i++) {
+      out[len++] = '0';
+    }
+    memcpy(out + len, digits, n);
+    len += n;
+  }
+  put(w, out, len);
 }
 
 static void put_number(writer * w, const GTEXT_CSS_Component_Value * v) {

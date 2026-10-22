@@ -359,3 +359,13 @@ chromium	localhost/ghoti-text-oracle-chromium:155.0.8059.84@sha256:429c89fb8299e
 # tools/oracle/encoding_divergences.txt.
 
 encoding	localhost/ghoti-text-oracle-html:1.1-8.0.1	node 20.19.2, icu 76.1, python 3.13.5	The Encoding Standard: what a label names and what each decoder does, from Node's TextDecoder and CPython's codecs
+
+# The CSS references: tinycss2, the Servo cssparser crate and csstree, in one image with one driver
+# protocol (containers/css/Dockerfile says what is pinned and how). Three implementations that
+# share no code, in Python, Rust and JavaScript: tinycss2 is the parser css-parsing-tests was
+# written with, cssparser is the tokenizer and parser of Servo and Firefox, csstree is a parser of
+# its own with its own tokenizer. They follow CSS Syntax drafts older than the one this library
+# follows (csstree predates CSS Nesting), which is why the comparison has a classified list of
+# divergences (css_divergences.txt) and not a demand for agreement. The tag carries the three
+# versions in the order of the version field.
+css	localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.1	tinycss2 1.5.1, cssparser 0.38.0, csstree 3.2.1	CSS Syntax: the tokens, rules and declarations a stylesheet becomes, from three parsers that share no code

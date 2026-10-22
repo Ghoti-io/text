@@ -26,9 +26,10 @@
  * defines it: the tokenizer, every parser entry point with CSS Nesting's
  * block contents, the An+B microsyntax, and a serializer whose output reads
  * back as the same tree. The statuses, options, result and tree are in
- * css_core.h, the entry points and parse errors in css_parse.h, and the
- * serializer in css_serialize.h. The format page is
- * documentation/formats/css.md.
+ * css_core.h, the entry points and parse errors in css_parse.h, the
+ * serializer in css_serialize.h, a stylesheet's bytes and their encoding in
+ * css_decode.h, and the incremental parser in css_stream.h. The format page
+ * is documentation/formats/css.md.
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_H
@@ -37,7 +38,9 @@
 #include <ghoti.io/text/macros.h>
 
 #include <ghoti.io/text/css/css_core.h>
+#include <ghoti.io/text/css/css_decode.h>
 #include <ghoti.io/text/css/css_parse.h>
 #include <ghoti.io/text/css/css_serialize.h>
+#include <ghoti.io/text/css/css_stream.h>
 
 #endif // GHOTI_IO_GTEXT_CSS_H

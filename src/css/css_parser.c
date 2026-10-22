@@ -1190,6 +1190,26 @@ static void run_rules(parser * p, tstream * s, int base_kind) {
 
 /* ---- identities ------------------------------------------------------- */
 
+/* Move a span from offsets in the decoded text to offsets in the bytes it was
+   decoded from. The end never comes before the start (a zero-length span at a
+   place where the source has bytes that no code point owns, such as a shift
+   sequence, is empty at its start). */
+static void remap_span(const css_srcmap * map, size_t * work, GTEXT_CSS_Span * span) {
+  const size_t start = css_srcmap_start(map, span->offset, work);
+  size_t end = span->end == span->offset ? start : css_srcmap_end(map, span->end, work);
+  if (end < start) {
+    end = start;
+  }
+  span->offset = start;
+  span->end = end;
+}
+
+static void remap_rule(const css_srcmap * map, size_t * work, GTEXT_CSS_Rule * r) {
+  remap_span(map, work, &r->span);
+  remap_span(map, work, &r->prelude_span);
+  remap_span(map, work, &r->block_span);
+}
+
 enum { W_RULES, W_DECLS, W_ITEMS, W_VALUES, W_LISTS };
 
 /// A step of the identity walk: an array and how far into it.
@@ -1217,6 +1237,9 @@ static bool walk_push(parser * p, vec * st, int kind, const void * ptr, size_t n
 
 static bool walk_rule(parser * p, vec * st, GTEXT_CSS_Rule * r, GTEXT_CSS_Id * next) {
   r->id = (*next)++;
+  if (p->ctx->map) {
+    remap_rule(p->ctx->map, &p->ctx->work, r);
+  }
   /* pushed in reverse of the order they are visited in */
   if (r->kind == GTEXT_CSS_RULE_AT) {
     if (!walk_push(p, st, W_ITEMS, r->contents, r->content_count)) {
@@ -1232,8 +1255,11 @@ static bool walk_rule(parser * p, vec * st, GTEXT_CSS_Rule * r, GTEXT_CSS_Id * n
   return walk_push(p, st, W_VALUES, r->prelude, r->prelude_count);
 }
 
-/* Give every node an id, from 1, in document order, without recursion. */
+/* Give every node an id, from 1, in document order, without recursion. With a
+   map (a byte parse) every span is moved into the bytes in the same walk, so
+   that each node is visited, and each span moved, once. */
 static size_t assign_ids(parser * p, GTEXT_CSS_Tree * tree) {
+  const css_srcmap * map = p->ctx->map;
   vec st;
   vec_init(&st, sizeof(walk));
   GTEXT_CSS_Id next = 1;
@@ -1263,6 +1289,11 @@ static size_t assign_ids(parser * p, GTEXT_CSS_Tree * tree) {
     case W_DECLS: {
       GTEXT_CSS_Declaration * d = &((GTEXT_CSS_Declaration *)ptr)[i];
       d->id = next++;
+      if (map) {
+        remap_span(map, &p->ctx->work, &d->span);
+        remap_span(map, &p->ctx->work, &d->name_span);
+        remap_span(map, &p->ctx->work, &d->value_span);
+      }
       (void)walk_push(p, &st, W_VALUES, d->value, d->value_count);
       break;
     }
@@ -1279,11 +1310,17 @@ static size_t assign_ids(parser * p, GTEXT_CSS_Tree * tree) {
     case W_VALUES: {
       GTEXT_CSS_Component_Value * v = &((GTEXT_CSS_Component_Value *)ptr)[i];
       v->id = next++;
+      if (map) {
+        remap_span(map, &p->ctx->work, &v->span);
+      }
       (void)walk_push(p, &st, W_VALUES, v->children, v->child_count);
       break;
     }
     default: {
       GTEXT_CSS_Value_List * l = &((GTEXT_CSS_Value_List *)ptr)[i];
+      if (map) {
+        remap_span(map, &p->ctx->work, &l->span);
+      }
       (void)walk_push(p, &st, W_VALUES, l->values, l->count);
       break;
     }
@@ -1539,7 +1576,7 @@ static void parse_entry(parser * p, entry e, GTEXT_CSS_Tree * tree) {
 static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out,
     GTEXT_CSS_Result * result, const GTEXT_CSS_Grammar * grammar, bool * matched,
-    size_t * matched_count, size_t * work) {
+    size_t * matched_count, size_t * work, const css_srcinfo * src) {
   if (result) {
     memset(result, 0, sizeof *result);
   }
@@ -1554,6 +1591,7 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
   css_ctx_init(&ctx, options, result != NULL);
   ctx.in = (const unsigned char *)(input ? input : "");
   ctx.in_len = length;
+  ctx.map = src ? src->map : NULL;
   parser p;
   memset(&p, 0, sizeof p);
   p.ctx = &ctx;
@@ -1564,7 +1602,7 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
   vec_init(&p.rframes, sizeof(rframe));
 
   GTEXT_CSS_Tree * tree = NULL;
-  if (length > ctx.max_input) {
+  if (!src && length > ctx.max_input) {
     size_t line, column;
     css_position_of(&ctx, ctx.max_input, &line, &column);
     css_fail_at(&ctx, GTEXT_CSS_E_LIMIT_INPUT, ctx.max_input, line, column);
@@ -1640,7 +1678,12 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
       *matched_count = m;
     }
   }
-  status = css_finish_result(&ctx, result, length);
+  status = css_finish_result(&ctx, result, src ? src->source_length : length);
+  if (result && src) {
+    result->encoding = src->encoding.encoding;
+    result->encoding_source = src->encoding.source;
+    result->bom_length = src->encoding.bom_length;
+  }
   if (work) {
     *work = ctx.work;
   }
@@ -1657,47 +1700,47 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
 
 GTEXT_CSS_Status gtext_css_parse_stylesheet(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_STYLESHEET, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_STYLESHEET, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_stylesheet_contents(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_STYLESHEET_CONTENTS, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_STYLESHEET_CONTENTS, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_declaration_list(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_DECLARATION_LIST, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_DECLARATION_LIST, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_block_contents(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_BLOCK_CONTENTS, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_BLOCK_CONTENTS, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_rule(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_RULE, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_RULE, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_declaration(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_DECLARATION, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_DECLARATION, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_component_value(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_COMPONENT_VALUE, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_COMPONENT_VALUE, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_component_values(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_COMPONENT_VALUES, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_COMPONENT_VALUES, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_comma_list(const char * input, size_t length,
     const GTEXT_CSS_Parse_Options * options, GTEXT_CSS_Tree ** out, GTEXT_CSS_Result * result) {
-  return parse(E_COMMA_LIST, input, length, options, out, result, NULL, NULL, NULL, NULL);
+  return parse(E_COMMA_LIST, input, length, options, out, result, NULL, NULL, NULL, NULL, NULL);
 }
 
 static bool grammar_unusable(const GTEXT_CSS_Grammar * g, GTEXT_CSS_Result * result) {
@@ -1723,7 +1766,7 @@ GTEXT_CSS_Status gtext_css_parse_grammar(const char * input, size_t length,
     }
     return GTEXT_CSS_E_INVALID;
   }
-  return parse(E_COMPONENT_VALUES, input, length, options, out, result, grammar, matched, NULL, NULL);
+  return parse(E_COMPONENT_VALUES, input, length, options, out, result, grammar, matched, NULL, NULL, NULL);
 }
 
 GTEXT_CSS_Status gtext_css_parse_grammar_list(const char * input, size_t length,
@@ -1737,7 +1780,7 @@ GTEXT_CSS_Status gtext_css_parse_grammar_list(const char * input, size_t length,
     }
     return GTEXT_CSS_E_INVALID;
   }
-  return parse(E_COMMA_LIST, input, length, options, out, result, grammar, NULL, matched_count, NULL);
+  return parse(E_COMMA_LIST, input, length, options, out, result, grammar, NULL, matched_count, NULL, NULL);
 }
 
 bool gtext_css_match_grammar(const GTEXT_CSS_Component_Value * values, size_t count,
@@ -1800,10 +1843,29 @@ GTEXT_CSS_Status gtext_css_parse_work(GTEXT_CSS_Tree_Kind kind, const char * inp
   }
   GTEXT_CSS_Tree * tree = NULL;
   size_t w = 0;
-  const GTEXT_CSS_Status st = parse(e, input, length, options, &tree, NULL, NULL, NULL, NULL, &w);
+  const GTEXT_CSS_Status st = parse(e, input, length, options, &tree, NULL, NULL, NULL, NULL, &w, NULL);
   gtext_css_tree_free(st == GTEXT_CSS_OK ? tree : NULL);
   if (work) {
     *work = w;
   }
   return st;
+}
+
+/** Parse text decoded from bytes (css_internal.h). */
+GTEXT_CSS_Status css_parse_decoded(GTEXT_CSS_Tree_Kind kind, const char * text, size_t length,
+    const GTEXT_CSS_Parse_Options * options, const css_srcinfo * info, GTEXT_CSS_Tree ** out,
+    GTEXT_CSS_Result * result, size_t * work) {
+  entry e;
+  switch (kind) {
+  case GTEXT_CSS_TREE_STYLESHEET: e = E_STYLESHEET; break;
+  case GTEXT_CSS_TREE_STYLESHEET_CONTENTS: e = E_STYLESHEET_CONTENTS; break;
+  case GTEXT_CSS_TREE_DECLARATION_LIST: e = E_DECLARATION_LIST; break;
+  case GTEXT_CSS_TREE_BLOCK_CONTENTS: e = E_BLOCK_CONTENTS; break;
+  case GTEXT_CSS_TREE_RULE: e = E_RULE; break;
+  case GTEXT_CSS_TREE_DECLARATION: e = E_DECLARATION; break;
+  case GTEXT_CSS_TREE_COMPONENT_VALUE: e = E_COMPONENT_VALUE; break;
+  case GTEXT_CSS_TREE_COMPONENT_VALUE_LIST: e = E_COMPONENT_VALUES; break;
+  default: e = E_COMMA_LIST; break;
+  }
+  return parse(e, text, length, options, out, result, NULL, NULL, NULL, work, info);
 }

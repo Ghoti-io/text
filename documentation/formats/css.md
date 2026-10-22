@@ -3,8 +3,8 @@
 # CSS
 
 `gtext_css_parse_stylesheet()` and the eight other entry points read **CSS as
-CSS Syntax Module Level 3 says a browser does**, from text that is already
-decoded, into an immutable tree; `gtext_css_serialize_tree()` writes a tree back
+CSS Syntax Module Level 3 says a browser does**, from decoded text, and
+`gtext_css_parse_stylesheet_bytes()` and the incremental parser from the bytes of a stylesheet, into an immutable tree; `gtext_css_serialize_tree()` writes a tree back
 as text that reads back as the same tree. CSS has no malformed input: **every
 input has a tree**, the mistakes in it are parse errors with positions, and what
 the standard drops is dropped and reported. A parse fails only for an argument,
@@ -339,6 +339,128 @@ prints
 '+ 2n' is not An+B
 ```
 
+## Stylesheets as bytes
+
+A stylesheet arrives as bytes, and CSS Syntax 3.2 says how they become the code points the tokenizer reads.
+gtext_css_parse_stylesheet_bytes() decodes and parses, and **every position it reports is in the caller's bytes**
+whatever the encoding: the spans of the tree, the byte offsets of the parse errors and the place of a limit. The
+encoding is, in order, the first that applies:
+
+1. a **byte order mark** (UTF-8, UTF-16BE or UTF-16LE), over everything below ("decode");
+2. the **protocol's label** (`GTEXT_CSS_Bytes_Options::protocol_label`), if it names an encoding; one that does not
+   is ignored;
+3. a leading **`@charset "...";`** in the first 1024 bytes, byte for byte: `@charset "`, bytes from 0x01 to 0x7F
+   except the quote, then `";`. No second space, no single quotes, no comment, no `@Charset`. UTF-16 named there
+   is UTF-8, because the declaration is ASCII; a label that names nothing is ignored;
+4. the **environment encoding** (`environment_encoding`), if the caller has one;
+5. UTF-8.
+
+The result says which and why (`encoding`, `encoding_source`, `bom_length`), and gtext_css_determine_encoding()
+makes the decision alone. UTF-8 is parsed in place, a byte order mark skipped but counted in every offset. Another
+encoding is decoded through the Encoding module into a copy (up to three times the size of the bytes, so
+`max_input_bytes` limits the bytes and not the text) and a map back to the bytes: a run per stretch of code points
+that stay in step, an index per 4 KiB of text so a lookup costs a constant. An ill-formed sequence is U+FFFD with no
+parse error of its own; in UTF-8 read in place it is `invalid-utf-8`. Lines and columns count the decoded text's
+characters.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A stylesheet's bytes: the encoding is found as CSS Syntax 3.2 says, and every position is in the bytes. */
+static void bytes(void) {
+  /* "@charset "windows-1251"; .привет { color: red }", in windows-1251 */
+  const char css[] = "@charset \"windows-1251\"; .\xef\xf0\xe8\xe2\xe5\xf2 { color: red }";
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Result result;
+
+  if (gtext_css_parse_stylesheet_bytes(css, sizeof css - 1, NULL, NULL, &tree, &result) != GTEXT_CSS_OK) {
+    gtext_css_result_free(&result);
+    return;
+  }
+  const GTEXT_CSS_Rule * rule = &tree->rules[1];
+  const GTEXT_CSS_Component_Value * name = &rule->prelude[1];
+  printf("read as %s (%s)\n", gtext_encoding_name(result.encoding), gtext_css_encoding_source_name(result.encoding_source));
+  printf("%s is %zu bytes of text and %zu of the stylesheet\n", name->value.data, name->value.length,
+      name->span.end - name->span.offset);
+  printf("the rule is bytes %zu to %zu of %zu\n", rule->span.offset, rule->span.end, result.input_bytes);
+  gtext_css_tree_free(tree);
+  gtext_css_result_free(&result);
+}
+```
+
+prints
+
+```
+read as windows-1251 (charset-rule)
+привет is 12 bytes of text and 6 of the stylesheet
+the rule is bytes 25 to 47 of 47
+```
+
+The `@charset` is not a rule, and the tree has it anyway: the syntax layer reads the generic at-rule named
+`charset`, and CSS Syntax 8.3's "dropped as invalid when the stylesheet is grammar-checked" is the validity
+callback's to do (`testCssBytes` does it). A validity callback sees positions in the decoded text; the tree and
+the result are in the bytes.
+
+## Streams
+
+A stylesheet that arrives in pieces goes to a stream. **The tree, the parse errors and the verdict do not depend on
+where it was cut**: the tests cut every input at every byte, a byte at a time, in random pieces with empty feeds
+between them, and in six legacy encodings, and compare every field (spans, identities, flags, serialization,
+errors, encoding) with the one-call parse. CSS cannot be parsed before its end (the tokenizer matches brackets over
+the whole input and a rule is not known until its block closes), so a stream **buffers**: the bytes, or for another
+encoding than UTF-8 the decoded text and its map, bounded by `max_input_bytes`, which the feed that goes past it
+meets with `GTEXT_CSS_E_LIMIT_INPUT` before keeping the piece. The buffers double, so the work is in proportion to
+the bytes and never to the number of calls. The encoding is decided when the first kilobyte has arrived (or the
+input ends), and a stream of text (gtext_css_stream_new()) has none to decide.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A stylesheet that arrives in pieces: the answer does not depend on where they were cut. */
+static void stream(void) {
+  const char * pieces[] = {"a { col", "or: re", "d } b", " { margin: 0 }"};
+  GTEXT_CSS_Stream * s = NULL;
+  size_t total = 0;
+
+  if (gtext_css_stream_new(GTEXT_CSS_TREE_STYLESHEET, NULL, &s) != GTEXT_CSS_OK) {
+    return;
+  }
+  for (size_t i = 0; i < sizeof pieces / sizeof pieces[0]; i++) {
+    total += strlen(pieces[i]);
+    gtext_css_stream_feed(s, pieces[i], strlen(pieces[i]));
+  }
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Result result;
+  if (gtext_css_stream_finish(s, &tree, &result) == GTEXT_CSS_OK) {
+    printf("%zu rules from %zu bytes; the second is bytes %zu to %zu\n", tree->rule_count, total,
+        tree->rules[1].span.offset, tree->rules[1].span.end);
+    gtext_css_tree_free(tree);
+  }
+  gtext_css_result_free(&result);
+  gtext_css_stream_free(s);
+
+  /* The input limit is met as the input arrives. */
+  GTEXT_CSS_Parse_Options opts = gtext_css_parse_options_default();
+  opts.max_input_bytes = 10;
+  gtext_css_stream_new(GTEXT_CSS_TREE_STYLESHEET, &opts, &s);
+  printf("%s\n", gtext_css_status_string(gtext_css_stream_feed(s, pieces[0], strlen(pieces[0]))));
+  printf("%s\n", gtext_css_status_string(gtext_css_stream_feed(s, pieces[1], strlen(pieces[1]))));
+  gtext_css_stream_free(s);
+}
+```
+
+prints
+
+```
+2 rules from 32 bytes; the second is bytes 17 to 32
+success
+input longer than max_input_bytes
+```
+
 ## Limits
 
 Every limit has a default; 0 selects it, and 0 never means "unlimited". A parse
@@ -482,7 +604,9 @@ writes white space that was not a token, but for the space before
 
 | Area | Supported | Rejected / limitation |
 |------|-----------|-----------------------|
-| Preprocessing (3.3) | CR, CR LF, FF, U+0000, surrogates (WTF-8 on request) | the input is UTF-8 text; bytes in other encodings and `@charset` are the next phase |
+| Preprocessing (3.3) | CR, CR LF, FF, U+0000, surrogates (WTF-8 on request) | none |
+| Bytes (3.2) | the byte order mark, the protocol's label, `@charset` in the first 1024 bytes, the environment encoding, UTF-8; positions in the bytes | `@charset` is read from the bytes and is the generic at-rule in the tree (8.3: dropped at the grammar check, which is the validity callback's) |
+| Incremental parsing | the same tree, errors and verdict at every cut, bounded buffering, work in proportion to the bytes | a stream buffers the stylesheet and parses at the end: CSS cannot be parsed before it |
 | Tokens (4) | all 25 types; escapes; numbers with value, type, sign and spelling | none |
 | Unicode-range tokens (4.3.14) | in a `unicode-range` declaration's value | elsewhere `u+1` is ident, number: the draft's |
 | Entry points (5.4) | all nine of the draft and the CRD's "parse a block's contents"; the grammar hooks over text and over values | the "unspecified structure" of a match is the grammar's to keep |
@@ -501,8 +625,11 @@ trip the draft requires. Each has a test.
 
 | Case | This parser | Why, and the test |
 |---|---|---|
-| The value of a number | the correctly rounded double of the decimal as written (`0.30000000000000004` is exactly the double nearest it) | 4.3.13 computes it as "number part" times ten to the "exponent part"; done in floating point that is two roundings. Read as exact arithmetic. `CssTokenizer.ANumberIsTheCorrectlyRoundedValueOfWhatIsWritten` |
-| `1e999` | infinity, `1e-999` zero | the draft gives no range; the value layer clamps. `AnExponentPastTheRangeOfADoubleIsInfiniteOrZero` |
+| The value of a number | the correctly rounded double of the decimal as written, by the `math` library's `gmath_decimal_parse` (ties to even, any number of digits, no locale, no rounding mode of the host), with `GTEXT_CSS_FLAG_NUMBER_{INEXACT,OVERFLOW,UNDERFLOW}` on the token | 4.3.13 computes it as "number part" times ten to the "exponent part"; done in floating point that is two roundings. Read as exact arithmetic. `testCssNumbers` holds 427 rows (the halfway points between doubles among them) against CPython's `float()` under every rounding mode |
+| `1e999` | infinity (flag OVERFLOW), `1e-999` zero (flag UNDERFLOW) | the draft gives no range; the value layer clamps. `AnExponentPastTheRangeOfADoubleIsInfiniteOrZero`, `testCssNumbers` |
+| A number written for CSSOM (`GTEXT_CSS_NUMBERS_CSSOM`) | the shortest digits that round back (`gmath_decimal_shortest`), in fixed notation, rounded half away from zero to six decimals on those digits; a NaN is `0` and an infinity the largest double | CSSOM 6.7.2 gives the layout ("shortest form possible", "more than 6 decimals" rounded, "scientific notation is not used") and says nothing of a tie, a NaN or an infinity. `CssNumbers.CssomWritesTheShortestDigits...` |
+| A validity callback in a byte parse | sees positions in the decoded text | the callbacks run during the parse; the tree and the result are in the bytes (equal for UTF-8 with no byte order mark) |
+| `E_LIMIT_INPUT` in a byte parse | `failure` has the byte offset and a line and column of 0 | nothing was decoded to count them in |
 | The value of `unicode-range: U+0 !important` | `U+0`, white space, `!`, `important`, and the important flag | 5.5.6 reads the value again from "the segment of the original source text string corresponding to the tokens returned by the consume a list of component values call", which is the list before `!important` and white space are taken off. A descriptor takes no `!important`, so only an invalid declaration is affected. `AUnicodeRangeValueIsItsSourceReadAgainAsTheDraftWritesIt` |
 | A url token | written unquoted, its stops escaped | CSSOM's "serialize a URL" writes `url("...")`, which reads back as a function with a string in it. `AUrlIsWrittenUnquotedAndABadUrlStaysBad` |
 | A function's name | written as it came (`RGB(1)`) | CSSOM's "serialize a function" lowercases it; a token sequence keeps it. `AFunctionKeepsTheCaseOfItsName` |
@@ -527,7 +654,7 @@ value, CSS 2.1's match tokens, and unicode-range tokens everywhere.
 - **css-parsing-tests**, pinned by commit (`tools/css/CSS_PARSING_TESTS_COMMIT`,
   fetched by `tools/css/fetch.sh`; CC0): its nine files for syntax and An+B,
   through the entry point each names. Its color files are the value layer's,
-  and `stylesheet_bytes.json` is the byte decode's (the next phase); the gate prints
+  and `stylesheet_bytes.json` is scored through the byte decode (`gtext_css_parse_stylesheet_bytes()`, the encoding it names in the result); the gate prints
   how many cases each leaves unscored and fails on a file of the pin it does not
   name. The suite's representation is the 2021 model's: a rule's block is
   compared as the component values of its text, and its `["error",
@@ -574,19 +701,47 @@ value, CSS 2.1's match tokens, and unicode-range tokens everywhere.
   replayed by `make test`; `make check-css-fuzz-plants` plants eleven defects and
   shows it find each.
 
-There is no differential against another implementation yet: tinycss2 and
-cssparser come with the next phase. What the gate above measures is this parser against
-two suites written by others, and the round trip; a round trip alone proves the
-parser and the serializer consistent with each other, not correct.
+- **Byte decode and incremental parser** (`testCssBytes`, `testCssStream`,
+  `testCssNumbers`, `testCssBytesFuzzSeeds`): every position is checked against
+  the caller's bytes through the BOM, the `@charset` sequence, the transport and
+  environment encodings and the legacy encodings; the incremental parser is held
+  to the one-shot parse at every cut of every input, and its work to be linear
+  in the number of feeds. `fuzz_css_bytes` (`make fuzz-run-css-bytes`) adds the
+  bytes and the cut points to the fuzzer's inputs; `make check-css-fuzz-plants`
+  plants seven defects of the offset map, the stream and the limits besides the
+  eleven of the syntax fuzzer, and shows it find each.
+- **Numbers** (`make check-css-numbers`): the tokenizer reads a number with
+  `gmath_decimal_parse` (correctly rounded, so `1e-400`, `5e-324` and a
+  two-hundred-digit literal have one answer), the serializer writes the shortest
+  decimal that reads back as the same double, and the CSSOM form
+  (`GTEXT_CSS_NUMBERS_CSSOM`) rounds half away from zero to six decimals. The
+  gate fails if the source refers to a number routine of the standard library or
+  to a private stand-in, and is shown to fail by planting each.
+- **Differentials** (`make check-css-oracle`; `tools/oracle/run-css-oracle.sh`,
+  in containers pinned by digest): tinycss2, cssparser and csstree each parse
+  generated inputs, the css-parsing-tests and WPT inputs, and this library
+  parses the same, for the tokenizer, the stylesheet, declarations, blocks, the
+  top-level rule list and, for tinycss2, the bytes. The answers are normalized
+  to one shape and compared. Every divergence must fall in a *class*, and a class
+  is an experiment: an input transformation that takes one cause out (the
+  references' CSS 2.1 match tokens, their reading of every non-ASCII code point as
+  an ident code point, unicode-range tokens everywhere, and so on), after which the two
+  must agree. `tools/oracle/css_divergences.txt` lists one line per (mode,
+  reference, class) with a count, the shortest witness, and the reason with the
+  sentence of the draft that decides it; a divergence in no class, a class with no
+  divergence, a count that moved and a reason that is not the class's each fail.
+  A class found only by a hunt with another seed is listed with a count of 0 and
+  held to 0 in the default run. `--controls` shows the gate fail on purpose:
+  library defects planted across the decode, the stream, the parser and the
+  serializer, each seen caught: a divergence that the unplanted library does not have is never excused by a class (an experiment that drops the non-ASCII text drops a byte order mark with it, and would otherwise explain away a defect in the BOM rule). The
+  references agree with each other on less than they agree with the draft; where
+  all three differ from this library the draft decides, and the reason says so.
+  A differential proves agreement with other implementations of the same
+  specification, which is evidence and not proof; the parsers it compares are
+  older drafts, and the classes record exactly where.
 
 ## Not implemented
 
-- **Bytes** (3.2, "decode a stylesheet's stream of bytes": the BOM, the
-  `@charset` byte sequence, the transport and environment encodings, through the
-  Encoding module) and an **incremental parser** with the same answer at every
-  cut: the next phase.
-- **Differentials** against tinycss2 and cssparser in pinned containers: the
-  same phase.
 - **Values, properties, the cascade, selectors, at-rule semantics, CSSOM**:
   the layers after it. The validity callback and the grammar hooks are where they
   attach; the tree's identities and spans are what CSSOM and invalidation will

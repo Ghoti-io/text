@@ -327,6 +327,47 @@ def html_pin_problems(table):
     return problems
 
 
+def css_pin_problems(table):
+    """The CSS pin must name all three references, and its tag must carry their versions.
+
+    The same shape as the html pin: the image holds three parsers that share no code, and a pin edited
+    down to fewer (or a tag that no longer matches the versions) would keep every other check green. The
+    tag is `<driver protocol version>-<the three versions>`.
+    """
+    if "css" not in table:
+        return ["css: no pin at all, and the CSS differential needs one"]
+    image, version, _ = table["css"]
+    problems = []
+    for lib in ("tinycss2 ", "cssparser ", "csstree "):
+        if lib not in version:
+            problems.append("css: the version field %r does not name %s" % (version, lib.strip()))
+    tag = image.rsplit(":", 1)[-1]
+    versions = [w.strip(",") for w in version.split() if w[:1].isdigit()]
+    if not versions or tag.split("-")[1:] != versions:
+        problems.append("css: the image tag %r does not carry the versions in %r" % (tag, version))
+    return problems
+
+
+def check_css_pin(table):
+    for problem in css_pin_problems(table):
+        fail(problem)
+
+
+def check_css_pin_fires():
+    """The control: a good pin, one missing a reference, a stale tag, and a missing pin."""
+    good = {"css": ("localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.1", "tinycss2 1.5.1, cssparser 0.38.0, csstree 3.2.1", "")}
+    if css_pin_problems(good):
+        fail("control: a good css pin was reported: %r" % css_pin_problems(good))
+    two = {"css": ("localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0", "tinycss2 1.5.1, cssparser 0.38.0", "")}
+    if not any("csstree" in p for p in css_pin_problems(two)):
+        fail("control: a css pin without csstree was not caught")
+    stale = {"css": ("localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.0", "tinycss2 1.5.1, cssparser 0.38.0, csstree 3.2.1", "")}
+    if not any("tag" in p for p in css_pin_problems(stale)):
+        fail("control: a css pin with a stale tag was not caught")
+    if not css_pin_problems({}):
+        fail("control: a missing css pin was not caught")
+
+
 def check_html_pin(table):
     for problem in html_pin_problems(table):
         fail(problem)
@@ -405,6 +446,8 @@ def main():
     check_xml_pin_fires()
     check_html_pin(table)
     check_html_pin_fires()
+    check_css_pin(table)
+    check_css_pin_fires()
     check_encoding_pin(table)
     check_encoding_pin_fires()
     if FAILURES:
@@ -415,7 +458,7 @@ def main():
         return 1
     print("oracle pins: %d references, all askable; IMAGES parses; the stderr "
           "filter fires both ways; idna and python-next name UCD %s; the xml pin names "
-          "libxml2 and expat; the html pin names html5lib and parse5; the encoding pin names node, icu and python, in the html image." % (len(table), pinned_ucd()))
+          "libxml2 and expat; the html pin names html5lib and parse5; the css pin names tinycss2, cssparser and csstree; the encoding pin names node, icu and python, in the html image." % (len(table), pinned_ucd()))
     return 0
 
 
