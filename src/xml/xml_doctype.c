@@ -177,9 +177,17 @@ static size_t dtd_skip_space(xml_ctx * p) {
       if (xml_source_pop(p) != GTEXT_XML_OK) return total;
       continue;
     }
-    if (p->pos >= p->length || p->in[p->pos] != '%'
-        || p->pos + 1 >= p->length
-        || xml_space_bytes(p, p->pos + 1) != 0) return total;
+    if (p->pos >= p->length || p->in[p->pos] != '%') return total;
+    if (p->pos + 1 >= p->length) {
+      /* A '%' that is the last byte there is yet: a reference when a name follows, the marker of a parameter entity declaration
+         (`<!ENTITY % name`) when white space does. Which it is has not arrived, and the whole input would say which; what the
+         declaration lacks cannot be said before then, or the same bytes would be refused for two reasons depending on the cut. */
+      if (p->partial && p->source_count <= 1) {
+        xml_fail(p, GTEXT_XML_E_UNEXPECTED_EOF, "unexpected end of input");
+      }
+      return total;
+    }
+    if (xml_space_bytes(p, p->pos + 1) != 0) return total;
     GTEXT_XML_Status status = dtd_expand_inline_reference(p);
     if (status != GTEXT_XML_OK) {
       if (status == GTEXT_XML_E_INCOMPLETE && p->dtd_incomplete_declaration)

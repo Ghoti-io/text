@@ -163,7 +163,9 @@ TEST_F(XmlFuzzSeeds, EveryReaderSeedHoldsEveryProperty) {
   // The recorded finds are not generated, so nothing else notices one going missing.
   for (const char * name : {"reproducer-attribute-limit-before-a-bad-byte.seed",
            "reproducer-declaration-limit-counted-once-per-attempt.seed",
-           "reproducer-declaration-limit-counted-once-per-attempt-2.seed"}) {
+           "reproducer-declaration-limit-counted-once-per-attempt-2.seed",
+           "reproducer-percent-after-a-declaration-keyword.seed",
+           "reproducer-percent-after-a-declaration-keyword-2.seed"}) {
     const std::string repro = dir + "/" + name;
     ASSERT_TRUE(std::find(files.begin(), files.end(), repro) != files.end()) << repro << " is not there";
   }

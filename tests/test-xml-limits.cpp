@@ -1500,4 +1500,75 @@ TEST(XmlLimits, ReferencesAndExpansionAreCountedOnceHoweverTheInputIsCut) {
   }
 }
 
+// A '%' that is the last byte there is yet is a reference when a name follows and the marker of a parameter entity declaration when white
+// space does, and which it is has not arrived: the answer for the same bytes may not depend on where the cut falls. Found by the fuzzer:
+// `<!ENTITY%a` was refused for a PE reference in the DOM parse and for want of white space by an eager event parser that had `%` and not
+// yet `a`.
+TEST(XmlLimits, APercentAfterADeclarationKeywordIsOneAnswerInEveryCut) {
+  for (const GTEXT_XML_DTD_Mode mode : {GTEXT_XML_DTD_OFF, GTEXT_XML_DTD_PROCESS, GTEXT_XML_DTD_VALIDATE}) {
+    GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+    o.dtd_mode = mode;
+    for (const char * keyword : {"ELEMENT", "ATTLIST", "ENTITY", "NOTATION"}) {
+      const std::string head = std::string("<!DOCTYPE n[<!") + keyword;
+      // The reference is refused in the internal subset: with a name and no semicolon, with one, and as the whole of a name.
+      for (const char * tail : {"%a", "%a;", "%ab cd", "%a>"}) {
+        expect_one_verdict((std::string(keyword) + tail).c_str(), head + tail, o, GTEXT_XML_E_DOCTYPE);
+      }
+      // A '%' and then nothing, which is the input ending (the DOM parse has no more to wait for and refuses the missing space).
+      expect_one_verdict((std::string(keyword) + " percent, then the end").c_str(), head + "%", o, GTEXT_XML_E_DOCTYPE);
+    }
+    // The marker of a parameter entity declaration is white space and a '%' and white space, and is not a reference.
+    expect_one_verdict("a parameter entity declaration", "<!DOCTYPE n[<!ENTITY % a \"x\">]><n/>", o, GTEXT_XML_OK);
+    // (Cut here, the whole-input parse says the declaration is malformed - what it lacks - and not that the input ended; every cut says
+    // the same, which is the property.)
+    expect_one_verdict("a parameter entity declaration, cut at the marker", "<!DOCTYPE n[<!ENTITY %", o, GTEXT_XML_E_DOCTYPE);
+    expect_one_verdict("a parameter entity declaration, cut after it", "<!DOCTYPE n[<!ENTITY % ", o,
+        mode == GTEXT_XML_DTD_OFF ? GTEXT_XML_E_UNEXPECTED_EOF : GTEXT_XML_E_DOCTYPE);
+  }
+}
+
+// The same in an external subset, where a reference between the keyword and the next token is allowed (its replacement is padded with
+// white space) and where a '%' is not an input that may still grow: the subset is read whole.
+struct SubsetBytes {
+  std::string bytes;
+  size_t at = 0;
+};
+
+TEST(XmlLimits, APercentAfterADeclarationKeywordInAnExternalSubsetIsOneAnswerInEveryCut) {
+  for (const char * keyword : {"ELEMENT", "ATTLIST", "ENTITY", "NOTATION"}) {
+    for (const char * tail : {"%a", "%a;", "%", "% "}) {
+      const std::string subset = std::string("<!") + keyword + tail;
+      GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+      o.dtd_mode = GTEXT_XML_DTD_PROCESS;
+      o.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+      o.resolver_user_data = const_cast<std::string *>(&subset);
+      o.resolver = [](const GTEXT_XML_Resolve_Request * request, void * user, GTEXT_XML_External_Source * out) {
+        if (request->kind != GTEXT_XML_RESOURCE_EXTERNAL_SUBSET) return GTEXT_XML_RESOLVER_DECLINED;
+        auto * source = new SubsetBytes{*static_cast<const std::string *>(user), 0};
+        static const int identity = 0;
+        *out = {source, &identity, "memory:x.dtd",
+            [](void * handle, unsigned char * buffer, size_t capacity, size_t * count) {
+              auto * s = static_cast<SubsetBytes *>(handle);
+              const size_t n = std::min(capacity, s->bytes.size() - s->at);
+              std::memcpy(buffer, s->bytes.data() + s->at, n);
+              s->at += n;
+              *count = n;
+              return n ? GTEXT_XML_SOURCE_DATA : GTEXT_XML_SOURCE_EOF;
+            },
+            [](void * handle) { delete static_cast<SubsetBytes *>(handle); }};
+        return GTEXT_XML_RESOLVER_OPENED;
+      };
+      const std::string document = "<!DOCTYPE n SYSTEM \"x.dtd\"><n/>";
+      const Verdict dom = dom_verdict(document, o);
+      EXPECT_NE(dom.status, GTEXT_XML_OK) << keyword << tail;
+      for (const size_t chunk : {(size_t)0, (size_t)1, (size_t)3}) {
+        for (const bool eager : {false, true}) {
+          EXPECT_EQ(stream_verdict(document, o, chunk, eager), dom) << keyword << tail << ": stream, " << chunk << (eager ? " eager" : "");
+        }
+        EXPECT_EQ(reader_verdict(document, o, chunk), dom) << keyword << tail << ": reader, " << chunk;
+      }
+    }
+  }
+}
+
 }  // namespace
