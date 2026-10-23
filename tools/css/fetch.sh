@@ -23,7 +23,8 @@
 #                       behavior that tinycss2 and rust-cssparser are scored
 #                       against, pinned by commit in
 #                       tools/css/CSS_PARSING_TESTS_COMMIT.
-#   wpt/                web-platform-tests, sparse: only css/css-syntax,
+#   wpt/                web-platform-tests, sparse: only css/css-syntax, css/css-values and css/css-color (the value
+#                       tests of the math, color and function types: tools/css/extract-wpt-values.js reads them, with node),
 #                       pinned by commit in tools/css/WPT_COMMIT (the same
 #                       commit as the HTML pin, tools/html/WPT_COMMIT, so
 #                       that the library is scored against one revision of
@@ -73,15 +74,19 @@ fi
 # ---- web-platform-tests, css/css-syntax only ------------------------------
 wpt="$dest/wpt"
 if [ -d "$wpt/.git" ] && [ "$(git -C "$wpt" rev-parse HEAD 2>/dev/null)" = "$want_wpt" ]; then
+	# (a checkout made before the value tests were scored has only css/css-syntax: add what it lacks, at the same commit)
+	if [ ! -d "$wpt/css/css-values" ] || [ ! -d "$wpt/css/css-color/parsing" ]; then
+		git -C "$wpt" sparse-checkout set css/css-syntax css/css-values css/css-color
+	fi
 	printf 'have    wpt @ %s\n' "$want_wpt"
 else
-	printf 'fetch   wpt (css/css-syntax) @ %s\n' "$want_wpt"
+	printf 'fetch   wpt (css/css-syntax, css-values, css-color) @ %s\n' "$want_wpt"
 	rm -rf "$wpt.partial"
 	mkdir -p "$wpt.partial"
 	git -C "$wpt.partial" init --quiet
 	git -C "$wpt.partial" remote add origin https://github.com/web-platform-tests/wpt.git
 	git -C "$wpt.partial" sparse-checkout init --cone
-	git -C "$wpt.partial" sparse-checkout set css/css-syntax
+	git -C "$wpt.partial" sparse-checkout set css/css-syntax css/css-values css/css-color
 	git -C "$wpt.partial" fetch --quiet --depth 1 --filter=blob:none origin "$want_wpt"
 	git -C "$wpt.partial" checkout --quiet --detach FETCH_HEAD
 	got=$(git -C "$wpt.partial" rev-parse HEAD)

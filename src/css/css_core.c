@@ -59,6 +59,10 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_DEFINITION_NODES] = "more definition nodes than max_definition_nodes",
   [GTEXT_CSS_E_LIMIT_GROUP] = "a && or || group with more than 64 members",
   [GTEXT_CSS_E_LIMIT_ATOMS] = "an atom table is full: too many keywords, or too many bytes of them",
+  [GTEXT_CSS_E_LIMIT_MATH_NODES] = "a math function made more nodes than the limit allows",
+  [GTEXT_CSS_E_LIMIT_COLOR_NESTING] = "colors are nested deeper than the limit allows",
+  [GTEXT_CSS_E_LIMIT_STOPS] = "a gradient has more color stops than the limit allows",
+  [GTEXT_CSS_E_LIMIT_FUNCTION_NODES] = "a value holds more function nodes than the limit allows",
   [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 

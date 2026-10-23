@@ -86,6 +86,12 @@
 extern "C" {
 #endif
 
+/** @brief A parsed math function (css_math.h). */
+typedef struct GTEXT_CSS_Math GTEXT_CSS_Math;
+
+/** @brief A parsed color (css_color.h). */
+typedef struct GTEXT_CSS_Color GTEXT_CSS_Color;
+
 /* ---- atoms ------------------------------------------------------------ */
 
 /** @brief An interned keyword: 0 is none, and two keywords that differ only in
@@ -298,6 +304,7 @@ typedef enum {
   GTEXT_CSS_VAL_TOKEN,        ///< A preserved token (`<delim-token>`, a literal `/`, ...): `text` is its serialization.
   GTEXT_CSS_VAL_BLOCK,        ///< A `{}`, `[]` or `()` block of a grammar: `children`; `text` is the
                               ///< opening character.
+  GTEXT_CSS_VAL_COLOR,        ///< A `<color>`: `color`, and `text` its serialization (the declared form).
   GTEXT_CSS_VAL_KIND_COUNT    ///< The number of kinds; not a kind.
 } GTEXT_CSS_Val_Kind;
 
@@ -339,6 +346,11 @@ typedef enum {
 #define GTEXT_CSS_VFLAG_WRITTEN_INTEGER 0x10u
 /** The number's source spelling was inexact (GTEXT_CSS_FLAG_NUMBER_INEXACT). */
 #define GTEXT_CSS_VFLAG_INEXACT 0x20u
+/** A math function that contains a percentage (it is a `<percentage>`, or its percent hint names a base type): a
+ *  `<length>` slot refused it, a `<length-percentage>` slot took it. */
+#define GTEXT_CSS_VFLAG_MATH_PERCENT 0x40u
+/** A `<url>` written `src()` (Values 4, 5.1.1), which serializes as `src(`. */
+#define GTEXT_CSS_VFLAG_SRC 0x80u
 /** @} */
 
 /** @brief A typed value (the struct below). */
@@ -372,6 +384,8 @@ struct GTEXT_CSS_Value {
   uint32_t range_end;               ///< Its last.
   double range_lo;                  ///< For a math function: the slot's range, lower bound (canonical unit).
   double range_hi;                  ///< Its upper bound.
+  const GTEXT_CSS_Math * math;      ///< A math function: its calculation (css_math.h); `text` is its specified-value serialization.
+  const GTEXT_CSS_Color * color;    ///< A `<color>` (GTEXT_CSS_VAL_COLOR): the color (css_color.h); `text` is its serialization.
 };
 
 /** @brief A set of typed values and the memory they live in (the struct is private). */

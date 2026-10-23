@@ -593,18 +593,26 @@ TEST(CssGrammarTypes, AMathFunctionMatchesANumericTypeByNameAndRecordsTheRange) 
   EXPECT_NE(v->flags & GTEXT_CSS_VFLAG_MATH, 0u);
   EXPECT_EQ(v->range_lo, 0.0);
   EXPECT_EQ(v->range_hi, 10.0);
-  EXPECT_EQ(m.text(), "calc(100px - 3px)");
-  for (const char * fn : {"min(1px, 2px)", "max(1px)", "clamp(1px, 2px, 3px)", "round(1px, 1px)", "mod(1px, 1px)",
-           "rem(1px, 1px)", "sin(1)", "cos(1)", "tan(1)", "asin(1)", "acos(1)", "atan(1)", "atan2(1, 1)", "pow(1, 2)",
-           "sqrt(1)", "hypot(1)", "log(1)", "exp(1)", "abs(1)", "sign(1)"}) {
+  EXPECT_EQ(m.text(), "calc(97px)");
+  EXPECT_NE(v->math, nullptr);
+  // every math function is checked against the type it is asked to stand for (the math layer's type system, Values 4, 10.9)
+  for (const char * fn : {"min(1, 2)", "max(1)", "clamp(1, 2, 3)", "round(1.4)", "mod(1, 1)", "rem(1, 1)", "sin(1)", "cos(1)",
+           "tan(1)", "sin(1deg)", "pow(1, 2)", "sqrt(1)", "hypot(1)", "log(1)", "exp(1)", "abs(1)", "sign(1px)"}) {
     EXPECT_NE(run("<number>", fn), "no match") << fn;
   }
+  for (const char * fn : {"asin(1)", "acos(1)", "atan(1)", "atan2(1px, 1px)", "min(1deg, 2deg)"}) {
+    EXPECT_NE(run("<angle>", fn), "no match") << fn;
+    EXPECT_EQ(run("<number>", fn), "no match") << fn;
+  }
+  EXPECT_EQ(run("<length>", "calc(1px + 2s)"), "no match");
+  EXPECT_EQ(run("<number>", "sin(1px)"), "no match");
   EXPECT_EQ(run("<number>", "foo(1)"), "no match");
   EXPECT_EQ(run("<string>", "calc(1)"), "no match");
   EXPECT_EQ(run("<ident>", "calc(1)"), "no match");
   EXPECT_NE(run("<integer>", "calc(1 + 1)"), "no match");
   EXPECT_NE(run("<percentage>", "calc(1% + 1%)"), "no match");
   EXPECT_NE(run("<angle>", "calc(1deg)"), "no match");
+  EXPECT_EQ(run("<angle>", "calc(1px)"), "no match");
   EXPECT_EQ(run("<dimension>", "calc(1px)"), "no match");
 }
 
@@ -681,7 +689,7 @@ TEST(CssGrammarTypes, EachValueNamesTheGrammarSlotThatMatchedIt) {
   EXPECT_EQ(std::string(t, len), "auto");
   t = gtext_css_compiled_slot_text(g.c, l->children[0].slot, &len);
   ASSERT_NE(t, nullptr);
-  EXPECT_EQ(std::string(t, len), "<percentage>");
+  EXPECT_EQ(std::string(t, len), "<length-percentage [0,∞]>"); // a native type since C1b
   t = gtext_css_compiled_slot_text(g.c, l->slot, &len);
   ASSERT_NE(t, nullptr);
   EXPECT_EQ(std::string(t, len), "[ <length-percentage [0,∞]> | auto ]{1,2}");

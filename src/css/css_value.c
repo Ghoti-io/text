@@ -271,6 +271,7 @@ static const char * const kind_names[GTEXT_CSS_VAL_KIND_COUNT] = {
   [GTEXT_CSS_VAL_UNPARSED] = "unparsed",
   [GTEXT_CSS_VAL_TOKEN] = "token",
   [GTEXT_CSS_VAL_BLOCK] = "block",
+  [GTEXT_CSS_VAL_COLOR] = "color",
 };
 
 const char * gtext_css_val_kind_name(GTEXT_CSS_Val_Kind kind) {

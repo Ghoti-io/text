@@ -68,6 +68,14 @@ The plants of fuzz_css_bytes.cpp (BYTES_PLANTS; each is found by replaying its s
   flush-forgotten           a stream never ends its decoder: a sequence cut off at the end is not replaced.
   block-index-off           the map's block index sends every lookup past the first 4 KiB to the first runs.
 
+The plants of fuzz_css_values.cpp (VALUES_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-values):
+
+  math-node-bound-off-by-one the node bound refuses one node early: the bound is exact.
+  math-leaks-its-arena       a calculation's memory is not freed: the allocator.
+  color-leaks-its-arena      the same for a color.
+  alpha-dropped              the serializer drops a small alpha: the color read back is another color.
+  linear-points-unsorted     linear() does not raise an input below an earlier one: the points are in order.
+
 The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
 
   work-bound-off-by-one     a match stops one unit of work early: the bounds are exact.
@@ -90,6 +98,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-syntax")
 BYTES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-bytes")
 GRAMMAR_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-grammar")
+VALUES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-values")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -142,6 +151,20 @@ GRAMMAR_PLANTS = {
 }
 
 
+# The same shape, for tests/fuzz/fuzz_css_values.cpp; the seeds are in tests/fuzz/corpus/css-values.
+VALUES_PLANTS = {
+    "math-node-bound-off-by-one": ("css_math_simplify.c", "  if (mb->nodes >= mb->max_nodes) {", "  if (mb->nodes > mb->max_nodes) {", "own-nodes-exact.seed"),
+    "math-leaks-its-arena": ("css_math.c", "  GTEXT_Allocator alloc = ow->alloc;\n  css_arena_free(&ow->arena);\n  gtext_allocator_free(&alloc, ow);\n}\n\n",
+                             "  GTEXT_Allocator alloc = ow->alloc;\n  gtext_allocator_free(&alloc, ow);\n}\n\n", "own-math-no-fault.seed"),
+    "color-leaks-its-arena": ("css_color.c", "  css_arena_free(&ow->arena);\n  gtext_allocator_free(&alloc, ow);\n}", "  gtext_allocator_free(&alloc, ow);\n}",
+                              "own-color-no-fault.seed"),
+    "alpha-dropped": ("css_color_serialize.c", "return v == 1.0 || (puts_(b, \" / \") && put_num(b, v));", "return v >= 0.2 || (puts_(b, \" / \") && put_num(b, v));",
+                      "own-alpha.seed"),
+    "linear-points-unsorted": ("css_easing.c", "if (!first && pts[i].input < run_max) {", "if (!first && pts[i].input < run_max && 0) {",
+                               "own-linear-unsorted.seed"),
+}
+
+
 def make_variables(prefix, names):
     """The Makefile's own values for `names`, so that nothing here is a second copy of them."""
     rules = "print-%: ; @echo $($*)\n"
@@ -155,7 +178,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -169,16 +192,17 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    names = names or ["control", "control-bytes", "control-grammar"] + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS)
+    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values")
+    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS)
     for n in names:
-        if n not in ("control", "control-bytes", "control-grammar") and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS:
-            raise SystemExit("unknown plant %r (one of control, control-bytes, control-grammar, %s)"
-                             % (n, ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS))))
+        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS:
+            raise SystemExit("unknown plant %r (one of %s, %s)"
+                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS))))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -197,10 +221,11 @@ def main(argv):
             seed = None
             bytes_harness = name == "control-bytes" or name in BYTES_PLANTS
             grammar_harness = name == "control-grammar" or name in GRAMMAR_PLANTS
-            harness = "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
-            corpus_source = GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
-            if name not in ("control", "control-bytes", "control-grammar"):
-                rel, old, new, seed = GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
+            values_harness = name == "control-values" or name in VALUES_PLANTS
+            harness = "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
+            if name not in CONTROLS:
+                rel, old, new, seed = VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 if text.count(old) != 1:
@@ -248,11 +273,11 @@ def main(argv):
                     sys.stderr.write("plant %s: its seed %s no longer shows the defect; searching\n" % (name, seed))
                     status, out = run_fuzzer(search)
                     how = "SEARCHED, seed %s is stale" % seed
-            elif name in ("control", "control-bytes", "control-grammar"):
+            elif name in CONTROLS:
                 status, out = run_fuzzer([app, "-runs=0", corpus])
             else:
                 status, out = run_fuzzer(search)
-            if name in ("control", "control-bytes", "control-grammar"):
+            if name in CONTROLS:
                 ok = status == 0
                 print("%s (no edit): %s" % (name, "silent over the whole corpus, as it must be" if ok else "FAILED (exit %d)" % status))
                 if not ok:

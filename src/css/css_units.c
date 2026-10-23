@@ -32,7 +32,6 @@
 
 #include <ghoti.io/text/macros.h>
 
-#include <math.h>
 #include <string.h>
 
 #include "css_grammar_internal.h"

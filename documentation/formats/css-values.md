@@ -359,6 +359,242 @@ by default: success, matched yes, 1001 positions
 work for 1000 tokens: 44035 units
 ```
 
+## Math functions
+
+`calc()`, `min()`, `max()`, `clamp()`, `round()`, `mod()`, `rem()`, the trigonometric,
+exponential and sign functions, and the constants `e`, `pi`, `infinity`, `-infinity`
+and `NaN` are read by `gtext_css_math_parse()` into an immutable tree typed by the
+draft's type system: integer exponents over length, angle, time, frequency,
+resolution and flex, plus a percent and its hint. A node of an impossible type
+(`1px * 1px` as a length, `10 / 3px`, `min(1px, 1deg)`) makes the whole function
+invalid, not an error: the status is OK and `*valid` is false, so a property can try
+its next alternative. The tree is simplified as it is built, as Values 4, 10.10
+says: numeric leaves of one unit combine, absolute units become the canonical unit,
+the terms of a sum are sorted (a number, a percentage, then dimensions by unit name),
+and a function whose arguments are all known is replaced by its result. An infinite
+or NaN result is kept, as `calc(infinity * 1px)`, and clamped only by
+`gtext_css_math_clamp()`, which a property uses at computed time with its own range.
+`mod()` and `rem()` are exact (no rounding in the remainder), and every
+transcendental function goes through the `math` library, never libm
+(`make check-css-libm` fails if a source includes `<math.h>`).
+
+A calculation, read and written:
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Math functions: read as a typed tree, simplified as the draft says, and written as a specified value is. */
+static void values_math(void) {
+  const char * inputs[] = {"calc(1px + 2px)", "calc(20px + 2em)", "calc(10% - 5px)", "min(20px, 10%, 3em)",
+      "calc(2 * 3deg)", "calc(1px * 2px)", "calc(infinity * 1px)", "mod(-7px, 3px)", "round(up, 7px, 2px)"};
+  for (size_t i = 0; i < sizeof inputs / sizeof inputs[0]; i++) {
+    GTEXT_CSS_Tree * tree = NULL;
+    if (gtext_css_parse_component_values(inputs[i], strlen(inputs[i]), NULL, &tree, NULL) != GTEXT_CSS_OK) {
+      continue;
+    }
+    GTEXT_CSS_Math * math = NULL;
+    bool valid = false;
+    if (gtext_css_math_parse(&tree->values[0], NULL, NULL, &valid, &math, NULL) == GTEXT_CSS_OK && valid) {
+      char * text = NULL;
+      size_t length = 0;
+      if (gtext_css_math_serialize_buffer(math, NULL, &text, &length) == GTEXT_CSS_OK) {
+        printf("%s -> %s\n", inputs[i], text);
+        gtext_css_serialize_buffer_free(NULL, text);
+      }
+    }
+    else {
+      printf("%s -> not a valid calculation\n", inputs[i]);
+    }
+    gtext_css_math_free(math);
+    gtext_css_tree_free(tree);
+  }
+}
+```
+
+prints
+
+```
+calc(1px + 2px) -> calc(3px)
+calc(20px + 2em) -> calc(2em + 20px)
+calc(10% - 5px) -> calc(10% - 5px)
+min(20px, 10%, 3em) -> min(20px, 10%, 3em)
+calc(2 * 3deg) -> calc(6deg)
+calc(1px * 2px) -> not a valid calculation
+calc(infinity * 1px) -> calc(infinity * 1px)
+mod(-7px, 3px) -> calc(2px)
+round(up, 7px, 2px) -> calc(8px)
+```
+
+`gtext_css_math_numeric()` says whether the whole calculation came to one number and
+which, and `gtext_css_math_resolve()` resolves a calculation against an environment
+(`GTEXT_CSS_Math_Env`: the size of a font unit, a percentage basis). Nesting is a
+limit (`max_depth`, default 256: `GTEXT_CSS_E_LIMIT_DEPTH`, with the place in the
+result), as is the number of nodes (`max_nodes`, default 65,536:
+`GTEXT_CSS_E_LIMIT_MATH_NODES`); nothing recurses, so a deep input costs time and
+memory, not stack.
+
+In a grammar, `<length>`, `<length-percentage>`, `<angle>`, `<time>`, `<frequency>`,
+`<resolution>`, `<flex>`, `<number>`, `<integer>`, `<percentage>` and the ranges
+attached to them accept a math function by its category, and the value holds the tree
+(`GTEXT_CSS_VFLAG_MATH`); a percentage written inside it sets
+`GTEXT_CSS_VFLAG_MATH_PERCENT`, so a slot that does not take a percentage refuses it.
+
+## Colors
+
+`gtext_css_color_parse()` reads one component value as a `<color>`: the named colors
+and the system colors, `transparent`, `currentcolor`, the hexadecimal forms, `rgb()`,
+`rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`,
+`color()` with the predefined spaces and a custom one, `device-cmyk()`, `color-mix()`,
+`light-dark()` and `contrast-color()`, and the relative color syntax
+(`rgb(from red r g b / 0.5)`). The channels are kept as written (a number, a
+percentage, an angle, `none`, a symbol of a relative color, or a math function), and
+the serialization is the **declared value** of Color 4 and 5: the legacy `rgb()` and
+`rgba()` form for an sRGB color without `none` (the alpha as the shortest value that
+reads back as the same 8-bit alpha), `color(srgb ...)` when a channel is `none`,
+the reference ranges and clamps of each function, hue normalization, the percentages
+of `color-mix()` made to add up, and a relative color as it was written. Nothing is
+converted to another space or resolved against a context here: `gtext_css_color_srgb()`
+answers only for the colors that are one sRGB value.
+
+The declared value of some colors:
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Colors: the declared value, as CSS Color 4 and 5 serialize it. */
+static void values_color(void) {
+  const char * inputs[] = {"RED", "#ff000080", "rgb(255 0 0 / 50%)", "hsl(120deg 100% 50%)", "rgb(none 0 0)",
+      "oklch(0.5 0.1 120deg)", "color-mix(in srgb, red 30%, blue)", "rgb(from red r g b / 0.5)", "rgb(1 2)"};
+  for (size_t i = 0; i < sizeof inputs / sizeof inputs[0]; i++) {
+    GTEXT_CSS_Tree * tree = NULL;
+    if (gtext_css_parse_component_values(inputs[i], strlen(inputs[i]), NULL, &tree, NULL) != GTEXT_CSS_OK) {
+      continue;
+    }
+    GTEXT_CSS_Color * color = NULL;
+    bool valid = false;
+    if (gtext_css_color_parse(&tree->values[0], NULL, &valid, &color, NULL) == GTEXT_CSS_OK && valid) {
+      char * text = NULL;
+      size_t length = 0;
+      if (gtext_css_color_serialize_buffer(color, NULL, &text, &length) == GTEXT_CSS_OK) {
+        printf("%s -> %s\n", inputs[i], text);
+        gtext_css_serialize_buffer_free(NULL, text);
+      }
+    }
+    else {
+      printf("%s -> not a color\n", inputs[i]);
+    }
+    gtext_css_color_free(color);
+    gtext_css_tree_free(tree);
+  }
+}
+```
+
+prints
+
+```
+RED -> red
+#ff000080 -> rgba(255, 0, 0, 0.5)
+rgb(255 0 0 / 50%) -> rgba(255, 0, 0, 0.5)
+hsl(120deg 100% 50%) -> rgb(0, 255, 0)
+rgb(none 0 0) -> color(srgb none 0 0)
+oklch(0.5 0.1 120deg) -> oklch(0.5 0.1 120)
+color-mix(in srgb, red 30%, blue) -> color-mix(in srgb, red 30%, blue 70%)
+rgb(from red r g b / 0.5) -> rgb(from red r g b / 0.5)
+rgb(1 2) -> not a color
+```
+
+Colors nest in colors (`color-mix()`, `light-dark()`, the origin of a relative
+color): `max_nesting`, default 32 and at most 4096, is a limit
+(`GTEXT_CSS_E_LIMIT_COLOR_NESTING`), and the math functions inside a channel have the
+limits of the previous section.
+
+## Function types
+
+`gtext_css_function_types_new()` makes the definitions of `<image>`, `<gradient>`,
+`<transform-list>` and its functions, `<easing-function>`, `<basic-shape>`, `<color>`
+and the substitution functions (`var()`, `env()`, `attr()`, `if()`, `random()`,
+`sibling-index()` ...), registered into the grammar engine through
+`gtext_css_function_types_resolve()` as the resolver passed to `gtext_css_compile()`.
+A caller may supply a fallback resolver for its own types. The matched value is a
+tree of typed values; typed views read it: `gtext_css_easing_from_value()` (with the
+draft's fixups: `linear()` inputs are made not to decrease, `steps()` needs a count of
+at least 1, or 2 with `jump-none`, and an invalid one is `*valid` false),
+`gtext_css_gradient_from_value()`, `gtext_css_image_kind()`,
+`gtext_css_image_set_options()`, `gtext_css_transform_function_from_value()` and
+`gtext_css_shape_from_value()`. A `url()` is kept as written and not resolved; a value
+with `var()`, `env()` or `attr()` in it matches and stays pending.
+
+An easing function, matched and read:
+
+```c
+#include <ghoti.io/text/css.h>
+#include <ghoti.io/text/css/css_function.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The function types: a grammar names them (<image>, <easing-function> ...), and a view reads the matched value. */
+static void values_functions(void) {
+  GTEXT_CSS_Function_Types * types = NULL;
+  if (gtext_css_function_types_new(NULL, &types) != GTEXT_CSS_OK) {
+    return;
+  }
+  GTEXT_CSS_Compiled * easing = NULL;
+  if (gtext_css_compile("<easing-function>", 17, gtext_css_function_types_resolve, types, NULL, &easing, NULL) == GTEXT_CSS_OK) {
+    const char * inputs[] = {"ease-in-out", "steps(4, jump-start)", "linear(0, 1 50%, 0 25%, 1)", "cubic-bezier(0.1, 0.7, 1, 0.1)", "steps(0)"};
+    for (size_t i = 0; i < sizeof inputs / sizeof inputs[0]; i++) {
+      GTEXT_CSS_Tree * tree = NULL;
+      if (gtext_css_parse_component_values(inputs[i], strlen(inputs[i]), NULL, &tree, NULL) != GTEXT_CSS_OK) {
+        continue;
+      }
+      bool matched = false;
+      GTEXT_CSS_Value_Set * set = NULL;
+      if (gtext_css_match(easing, tree->values, tree->value_count, NULL, &matched, &set, NULL) == GTEXT_CSS_OK && matched) {
+        GTEXT_CSS_Easing * e = NULL;
+        bool valid = false;
+        if (gtext_css_easing_from_value(gtext_css_value_set_root(set), NULL, &valid, &e) == GTEXT_CSS_OK && valid) {
+          char * text = NULL;
+          size_t length = 0;
+          if (gtext_css_easing_serialize_buffer(e, NULL, &text, &length) == GTEXT_CSS_OK) {
+            printf("%s -> %s\n", inputs[i], text);
+            gtext_css_serialize_buffer_free(NULL, text);
+          }
+        }
+        else {
+          printf("%s -> matches, but is not a valid easing function\n", inputs[i]);
+        }
+        gtext_css_easing_free(e);
+      }
+      else {
+        printf("%s -> does not match\n", inputs[i]);
+      }
+      gtext_css_value_set_free(set);
+      gtext_css_tree_free(tree);
+    }
+  }
+  gtext_css_compiled_free(easing);
+  gtext_css_function_types_free(types);
+}
+```
+
+prints
+
+```
+ease-in-out -> ease-in-out
+steps(4, jump-start) -> steps(4, jump-start)
+linear(0, 1 50%, 0 25%, 1) -> linear(0, 1 50%, 0 50%, 1)
+cubic-bezier(0.1, 0.7, 1, 0.1) -> cubic-bezier(0.1, 0.7, 1, 0.1)
+steps(0) -> matches, but is not a valid easing function
+```
+
+The gradient has at most `max_stops` stops and hints (default 65,536:
+`GTEXT_CSS_E_LIMIT_STOPS`); the functions packed into the value of one match are
+bounded by `max_function_nodes` (default 1,048,576, 0 selects it; one more is
+`GTEXT_CSS_E_LIMIT_FUNCTION_NODES`, and the match then has no value).
+
 ## Cost
 
 Matching is a search with memoization on the grammar node, the position and, for
@@ -366,6 +602,11 @@ Matching is a search with memoization on the grammar node, the position and, for
 and every step of reading the typed value off it is a unit of `max_match_work`, so
 the bound bounds the CPU.
 
+- **Linear** in the size of a math function or a color, in the quadratic-nesting suite
+  at 4.00 for 4 times the input: a sum or a product of many terms, parentheses and
+  `min()` nested to the depth, a sum nested to the left, `color-mix()`, a relative
+  color and `light-dark()` nested to the limit, and a gradient, a transform list,
+  `linear()`, `polygon()` and an image list of many items.
 - **Linear** in the number of component values: a repetition of a repetition
   (`[ [ a? b? ]* ]+`), several repetitions in a row (`a* a* a* b`), an alternation
   whose alternatives overlap (`[ a | a a ]+ b`), a comma list, recursion through
@@ -405,12 +646,22 @@ grammar-corpus gate (`tools/css/grammar-corpus.txt`, a seed list in the shape of
 the specifications' grammars, with a census of every construct and
 `make check-css-grammar-plants`, which plants a defect for each construct and shows
 the gate fail), the fuzzer `fuzz_css_grammar` with its seeds and six planted
-defects, and the quadratic-suite shapes. The pinned property data and the
+defects, and the quadratic-suite shapes. The value layer adds the math tests (the
+type algebra, simplification, serialization, exact `mod()` and `rem()`, the numeric
+functions against a family of published values compared in ulps, `tests/data/css-math-values.txt`),
+the color tests, the function-type tests, the WPT value gate
+(`make conformance-css-values`: the WPT css-values and css-color serialization
+vectors, scored, with the failures that remain listed with the draft sentence that
+explains each in `tools/conformance/CSS_VALUES_EXCEPTIONS`, and controls that plant
+a defect and must fail), the fuzzer `fuzz_css_values` with about 1,700 seeds and five
+planted defects (`make check-css-fuzz-plants`), and the no-libm gate. The pinned property data and the
 per-property WPT vectors are the registry's.
 
 ## Not implemented
 
-Math functions as expressions, colors, images, transforms, easing functions and
-shapes (the next phase types them; until then they are grammars the caller
-supplies); the property registry and property-level parsing; per-property
-vectors; computed values and the resolution of any relative unit.
+The property registry and property-level parsing; per-property vectors; computed
+values and the resolution of any relative unit, and of any color to another space
+(color conversion, gamut mapping, interpolation and the computed value of
+`color-mix()`, `light-dark()` and a relative color); the computation of
+`contrast-color()`; the resolution of `url()`; `sibling-index()`, `random()` and the
+like are parsed and kept, never evaluated here.

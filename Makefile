@@ -597,7 +597,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
-	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-grammar-plants
+	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -986,7 +986,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-values check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1130,13 +1130,25 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/encoding/encoding_decode.c \
 	src/encoding/encoding_encode.c \
 	src/css/css_anb.c \
+	src/css/css_color.c \
+	src/css/css_color_names.c \
+	src/css/css_color_serialize.c \
 	src/css/css_core.c \
+	src/css/css_easing.c \
+	src/css/css_function.c \
 	src/css/css_grammar_link.c \
 	src/css/css_grammar_match.c \
 	src/css/css_grammar_parse.c \
+	src/css/css_image.c \
+	src/css/css_math.c \
+	src/css/css_math_serialize.c \
+	src/css/css_math_simplify.c \
 	src/css/css_parser.c \
 	src/css/css_serialize.c \
+	src/css/css_shape.c \
+	src/css/css_substitution.c \
 	src/css/css_tokenizer.c \
+	src/css/css_transform.c \
 	src/css/css_units.c \
 	src/css/css_value.c \
 	src/css/css_value_serialize.c \
@@ -2043,6 +2055,7 @@ $(eval $(call fuzz-rule,fuzz_encoding,encoding))
 $(eval $(call fuzz-rule,fuzz_css_syntax,css-syntax))
 $(eval $(call fuzz-rule,fuzz_css_bytes,css-bytes))
 $(eval $(call fuzz-rule,fuzz_css_grammar,css-grammar))
+$(eval $(call fuzz-rule,fuzz_css_values,css-values))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2056,7 +2069,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit
@@ -2097,6 +2110,13 @@ check-css-numbers: ## Fail if a CSS source reaches the host for a number again, 
 # and requires the refusal, and plants one in a comment and requires none. In TEST_GATES: it needs only a C compiler.
 check-css-numbers:
 	@tools/css/check-no-stand-in.sh
+
+check-css-libm: ## Fail if a CSS source names the C library's <math.h> again, and show the gate refuses a planted use
+# Math, color and unit arithmetic is IEEE double through the math library only (gmath_sin, gmath_atan2 ...), so a result is the same on every
+# host; tools/css/check-no-libm.sh reads src/css with comments removed and fails on an include of <math.h>, on any function or constant of it,
+# and on the classification macros, then shows it refuses a planted sin(), include and INFINITY and does not refuse a comment.
+check-css-libm:
+	@tools/css/check-no-libm.sh
 
 check-css-grammar-plants: ## Plant a defect in the Value Definition Syntax engine and show the grammar-corpus gate and the engine's tests fail
 # tools/css/plant-grammar.py: each edit is compiled alone and linked ahead of the library into tests/test-css-grammar-corpus.cpp,
@@ -2273,6 +2293,17 @@ conformance-html-serializer-asan: $(CONFORMANCE_LIB)
 CSS_DATA_DIR := third_party/css
 CSS_SYNTAX_FLOOR := CSS_SYNTAX_MIN_SCORED=480
 
+conformance-css-values: ## Score the CSS value layer (math, colors, functions) against the pinned WPT css-values and css-color tests, and show the gate fails
+# tools/conformance/run-css-values.sh: the value tests of web-platform-tests' css/css-values and css/css-color/parsing, read by
+# tools/css/extract-wpt-values.js (needs node) from the checkout pinned in tools/css/WPT_COMMIT; every failure is listed in
+# tools/conformance/CSS_VALUES_EXCEPTIONS with the sentence of the served draft that decides it, stale entries fail, and the
+# controls plant defects in a copy of the library.
+conformance-css-values: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-values,tools/css/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-color/parsing,tools/css/fetch.sh)
+	@$(CONFORMANCE_ENV) tools/conformance/run-css-values.sh && \
+	$(CONFORMANCE_ENV) tools/conformance/run-css-values.sh --controls
+
 conformance-css-syntax: ## Score CSS Syntax against the pinned css-parsing-tests and WPT css-syntax vectors, and show the gate fails
 conformance-css-syntax: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/css-parsing-tests,tools/css/fetch.sh)
@@ -2292,6 +2323,8 @@ check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/css-parsing-tests,tools/css/fetch.sh)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-syntax,tools/css/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-values,tools/css/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-color/parsing,tools/css/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/tokenizer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/serializer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/encoding,tools/html/fetch.sh)
@@ -2302,6 +2335,7 @@ check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-encoding.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-serializer.sh
 	@$(CONFORMANCE_ENV) $(CSS_SYNTAX_FLOOR) tools/conformance/run-css-syntax.sh
+	@$(CONFORMANCE_ENV) tools/conformance/run-css-values.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)

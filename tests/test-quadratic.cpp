@@ -73,6 +73,7 @@
 #include <gtest/gtest.h>
 
 #include <ghoti.io/text/css.h>
+#include <ghoti.io/text/css/css_function.h>
 #include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/html.h>
 #include <ghoti.io/text/xml.h>
@@ -578,16 +579,25 @@ std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std:
 
 // A grammar matched against `make(k)` with the default limits out of the way, counted by the match's own work counter
 // (GTEXT_CSS_Match_Result::work): the positions looked at, sets joined, frames run and values made, extraction included.
-std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::function<std::string(size_t)> make, bool expect_match = true) {
-  return [grammar, make, expect_match](size_t k) {
+std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::function<std::string(size_t)> make, bool expect_match = true,
+    bool function_types = false) {
+  return [grammar, make, expect_match, function_types](size_t k) {
     Measured m;
+    GTEXT_CSS_Function_Types * types = nullptr;
+    if (function_types && gtext_css_function_types_new(nullptr, &types) != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = "the function types could not be made";
+      return m;
+    }
     const std::string in = make(k);
     m.bytes = in.size();
     GTEXT_CSS_Compiled * c = nullptr;
-    GTEXT_CSS_Status st = gtext_css_compile(grammar.data(), grammar.size(), nullptr, nullptr, nullptr, &c, nullptr);
+    GTEXT_CSS_Status st = gtext_css_compile(grammar.data(), grammar.size(), function_types ? gtext_css_function_types_resolve : nullptr, types,
+        nullptr, &c, nullptr);
     if (st != GTEXT_CSS_OK) {
       m.ok = false;
       m.why = std::string("the grammar did not compile: ") + gtext_css_status_string(st);
+      gtext_css_function_types_free(types);
       return m;
     }
     GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
@@ -600,11 +610,16 @@ std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::fu
       m.ok = false;
       m.why = std::string("the parse failed: ") + gtext_css_status_string(st);
       gtext_css_compiled_free(c);
+      gtext_css_function_types_free(types);
       return m;
     }
     GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
     mo.max_match_work = (size_t)1 << 40;
     mo.max_memo_entries = (size_t)1 << 30;
+    mo.max_math_depth = 65536;
+    mo.max_math_nodes = (size_t)1 << 24;
+    mo.max_color_nesting = 4096;
+    mo.max_function_nodes = (size_t)1 << 30;
     bool matched = false;
     GTEXT_CSS_Value_Set * set = nullptr;
     GTEXT_CSS_Match_Result r;
@@ -621,6 +636,56 @@ std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::fu
     gtext_css_value_set_free(set);
     gtext_css_tree_free(tree);
     gtext_css_compiled_free(c);
+    gtext_css_function_types_free(types);
+    return m;
+  };
+}
+
+// A math function or a color read on its own: the work its result reports (component values looked at, nodes made and examined; colors made).
+std::function<Measured(size_t)> css_value_read(bool color, std::function<std::string(size_t)> make) {
+  return [color, make](size_t k) {
+    Measured m;
+    const std::string in = make(k);
+    m.bytes = in.size();
+    GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+    po.max_depth = (size_t)1 << 30;
+    po.max_tokens = (size_t)1 << 30;
+    po.max_input_bytes = (size_t)1 << 30;
+    GTEXT_CSS_Tree * tree = nullptr;
+    GTEXT_CSS_Status st = gtext_css_parse_component_values(in.data(), in.size(), &po, &tree, nullptr);
+    if (st != GTEXT_CSS_OK || tree->value_count != 1) {
+      m.ok = false;
+      m.why = std::string("the parse failed: ") + gtext_css_status_string(st);
+      gtext_css_tree_free(tree);
+      return m;
+    }
+    bool valid = false;
+    if (color) {
+      GTEXT_CSS_Color_Options o = gtext_css_color_options_default();
+      o.max_nesting = 4096;
+      o.max_math_depth = 65536;
+      o.max_math_nodes = (size_t)1 << 24;
+      GTEXT_CSS_Color * c = nullptr;
+      GTEXT_CSS_Color_Result r{};
+      st = gtext_css_color_parse(&tree->values[0], &o, &valid, &c, &r);
+      m.work = r.work;
+      gtext_css_color_free(c);
+    }
+    else {
+      GTEXT_CSS_Math_Options o = gtext_css_math_options_default();
+      o.max_depth = 65536;
+      o.max_nodes = (size_t)1 << 24;
+      GTEXT_CSS_Math * c = nullptr;
+      GTEXT_CSS_Math_Result r{};
+      st = gtext_css_math_parse(&tree->values[0], nullptr, &o, &valid, &c, &r);
+      m.work = r.work;
+      gtext_css_math_free(c);
+    }
+    if (st != GTEXT_CSS_OK || !valid) {
+      m.ok = false;
+      m.why = st != GTEXT_CSS_OK ? std::string("the read failed: ") + gtext_css_status_string(st) : "the value is not valid";
+    }
+    gtext_css_tree_free(tree);
     return m;
   };
 }
@@ -1271,6 +1336,49 @@ std::vector<Shape> build_shapes() {
   add("css", "CSS grammar: nested functions that the grammar names once each", 1500,
       css_grammar("[ f( [ g( a* ) ]* ) ]+", [](size_t k) { return repeat("f(g(a a) g(a)) ", k); }));
   add("css", "CSS grammar: linking a chain of types that can match nothing", 500, css_link_chain()).per_byte = 0;
+  // ---- the value layer: math functions, colors, and the function types (C1b) ----
+  add("css", "CSS math: a sum of many terms of one unit", 8000,
+      css_value_read(false, [](size_t k) { return "calc(1px" + repeat(" + 1px", k) + ")"; }));
+  add("css", "CSS math: a sum of many terms of unlike units (nothing simplifies away)", 4000,
+      css_value_read(false, [](size_t k) {
+        std::string out = "calc(1px";
+        for (size_t i = 0; i < k; i++) {
+          out += i % 2 ? " + 1em" : " + 1%";
+        }
+        return out + ")";
+      }));
+  add("css", "CSS math: a product of many factors", 8000,
+      css_value_read(false, [](size_t k) { return "calc(1px" + repeat(" * 1", k) + ")"; }));
+  add("css", "CSS math: parentheses nested to the depth", 4000,
+      css_value_read(false, [](size_t k) { return "calc(" + repeat("(", k) + "1px" + repeat(")", k) + ")"; }));
+  add("css", "CSS math: min() nested to the depth", 2000,
+      css_value_read(false, [](size_t k) { return repeat("min(1em, ", k) + "1px" + repeat(")", k); }));
+  add("css", "CSS math: min() of many arguments", 8000,
+      css_value_read(false, [](size_t k) { return "min(1em" + repeat(", 1%", k) + ")"; }));
+  add("css", "CSS math: a left-nested sum, ((1px + 1em) + 1%) + ...", 2000,
+      css_value_read(false, [](size_t k) {
+        std::string out = "1px";
+        for (size_t i = 0; i < k; i++) {
+          out = "(" + out + (i % 2 ? " + 1em)" : " + 1%)");
+        }
+        return "calc(" + out + ")";
+      }));
+  add("css", "CSS color: color-mix() nested to the limit", 200,
+      css_value_read(true, [](size_t k) { return repeat("color-mix(in srgb, red, ", k) + "blue" + repeat(")", k); }));
+  add("css", "CSS color: a relative color nested to the limit", 200,
+      css_value_read(true, [](size_t k) { return repeat("rgb(from ", k) + "red" + repeat(" r g b)", k); }));
+  add("css", "CSS color: light-dark() nested to the limit", 200,
+      css_value_read(true, [](size_t k) { return repeat("light-dark(red, ", k) + "blue" + repeat(")", k); }));
+  add("css", "CSS functions: a gradient of many stops", 4000,
+      css_grammar("<gradient>", [](size_t k) { return "linear-gradient(red" + repeat(", blue 10%", k) + ")"; }, true, true));
+  add("css", "CSS functions: a transform list of many functions", 4000,
+      css_grammar("<transform-list>", [](size_t k) { return repeat("translate(1px, 2%) ", k); }, true, true));
+  add("css", "CSS functions: linear() with many points", 4000,
+      css_grammar("<easing-function>", [](size_t k) { return "linear(0" + repeat(", 0.5", k) + ", 1)"; }, true, true));
+  add("css", "CSS functions: polygon() with many vertices", 4000,
+      css_grammar("<basic-shape>", [](size_t k) { return "polygon(0 0" + repeat(", 1px 1px", k) + ")"; }, true, true));
+  add("css", "CSS functions: a list of images", 4000,
+      css_grammar("<image>#", [](size_t k) { return repeat("linear-gradient(red, blue), ", k) + "url(a)"; }, true, true));
   {
     Shape & quad = add("css", "CSS grammar: two wide any-values joined by && (bounded-quadratic by design)", 300,
         css_grammar("<any-value> && <any-value>", [](size_t k) { return repeat("a ", k); }));

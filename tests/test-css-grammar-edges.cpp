@@ -318,10 +318,11 @@ TEST(CssGrammarEdges, AnyValueDoesNotContainABadTokenAtAnyDepth) {
 
 TEST(CssGrammarEdges, ARatioTakesMathFunctionsForItsNumbersAndIsWrittenWithBoth) {
   check_rows({
-      {"<ratio>", "calc(16)/calc(9)", "ratio(fn:calc(unparsed:16) fn:calc(unparsed:9))"},
-      {"<ratio>", "calc(16) / 9", "ratio(fn:calc(unparsed:16) num:9)"},
-      {"<ratio>", "16 / calc(9)", "ratio(num:16 fn:calc(unparsed:9))"},
-      {"<ratio>", "calc(16)", "ratio(fn:calc(unparsed:16) num:1)"},
+      {"<ratio>", "calc(16)/calc(9)", "ratio(math:calc(16) math:calc(9))"},
+      {"<ratio>", "calc(16) / 9", "ratio(math:calc(16) num:9)"},
+      {"<ratio>", "16 / calc(9)", "ratio(num:16 math:calc(9))"},
+      {"<ratio>", "calc(16)", "ratio(math:calc(16) num:1)"},
+      {"<ratio>", "calc(1px) / 9", "no match"},
       {"<ratio>", "16 / 9", "ratio:16/9"},
       {"<ratio>", "1.5", "ratio:1.5/1"},
       {"<ratio>", "foo(1) / 9", "no match"},
@@ -341,14 +342,20 @@ TEST(CssGrammarEdges, ARatioTakesMathFunctionsForItsNumbersAndIsWrittenWithBoth)
   ASSERT_TRUE(m.matched);
   EXPECT_NE(m.root()->flags & GTEXT_CSS_VFLAG_MATH, 0u);
   EXPECT_EQ(m.root()->child_count, 2u);
-  EXPECT_EQ(css_test::str(m.root()->children[0].text), "calc");
+  EXPECT_EQ(css_test::str(m.root()->children[0].text), "calc(16)");
+  EXPECT_NE(m.root()->children[0].math, nullptr);
   EXPECT_EQ(m.root()->interp, GTEXT_CSS_INTERP_NUMBER);
 }
 
 TEST(CssGrammarEdges, AMathFunctionStandsForEveryNumericTypeOfTheDraftAndNoOther) {
-  for (const char * type : {"<length>", "<frequency>", "<angle>", "<time>", "<flex>", "<resolution>", "<percentage>", "<number>", "<integer>"}) {
-    EXPECT_EQ(run(type, "calc(1)").substr(0, 3), "fn:") << type;
-    EXPECT_EQ(run(type, "min(1, 2)").substr(0, 3), "fn:") << type;
+  // (Values 4, 10) each type takes the math functions whose type is its own (10.9), and no other
+  struct Case { const char * type; const char * ok; const char * bad; };
+  for (const Case & c : std::vector<Case>{{"<length>", "calc(1px)", "calc(1s)"}, {"<frequency>", "calc(1hz)", "calc(1px)"},
+           {"<angle>", "calc(1deg)", "calc(1)"}, {"<time>", "calc(1s)", "calc(1px)"}, {"<flex>", "calc(1fr)", "calc(1px)"},
+           {"<resolution>", "calc(1dppx)", "calc(1px)"}, {"<percentage>", "calc(1%)", "calc(1px)"},
+           {"<number>", "calc(1)", "calc(1px)"}, {"<integer>", "min(1, 2)", "calc(1%)"}}) {
+    EXPECT_EQ(run(c.type, c.ok).substr(0, 5), "math:") << c.type;
+    EXPECT_EQ(run(c.type, c.bad), "no match") << c.type;
   }
   for (const char * type : {"<dimension>", "<zero>", "<string>", "<ident>", "<url>", "<custom-ident>", "<urange>"}) {
     EXPECT_EQ(run(type, "calc(1)"), "no match") << type;
@@ -627,6 +634,16 @@ TEST(CssGrammarEdges, ARangeBroughtByACompositeDoesNotNarrowARangeAlreadyOnATerm
   check_rows({
       {"<t [0%,50%]>", "99px", "dim:99px"},
       {"<t [0%,50%]>", "-1px", "no match"},
+      {"<t [0%,50%]>", "40%", "pct:40"},
+      {"<t [0%,50%]>", "60%", "no match"},
+  }, &d);
+}
+
+TEST(CssGrammarEdges, ARangeBroughtByACompositeIsDroppedWhereItDoesNotApplyToATerminalWithNoRangeOfItsOwn) {
+  Defs d;
+  d.types["t"] = "<length> | <percentage>";
+  check_rows({
+      {"<t [0%,50%]>", "99px", "dim:99px"},
       {"<t [0%,50%]>", "40%", "pct:40"},
       {"<t [0%,50%]>", "60%", "no match"},
   }, &d);

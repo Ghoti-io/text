@@ -331,6 +331,17 @@ typedef struct {
    *  value): the output limit of the serializer that makes it. Default 256 MiB. One more is
    *  GTEXT_CSS_E_LIMIT_OUTPUT. Appended after the fields above. */
   size_t max_text_bytes;
+  /** Deepest nesting of one math function's functions and parentheses. Default 256. One more is
+   *  GTEXT_CSS_E_LIMIT_DEPTH. Appended after the fields above. */
+  size_t max_math_depth;
+  /** Most nodes one math function makes. Default 65,536. One more is GTEXT_CSS_E_LIMIT_MATH_NODES. */
+  size_t max_math_nodes;
+  /** Deepest nesting of colors (`color-mix()`, `light-dark()`, a relative color's origin). Default 32. One more is
+   *  GTEXT_CSS_E_LIMIT_COLOR_NESTING. */
+  size_t max_color_nesting;
+  /** Most function nodes in the value of one match (image, transform, easing and shape functions and the
+   *  functions inside them). Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_FUNCTION_NODES. */
+  size_t max_function_nodes;
 } GTEXT_CSS_Match_Options;
 
 /** @brief The defaults, spelled out. */
@@ -362,7 +373,9 @@ typedef struct {
  * @param result NULL, or filled.
  * @return GTEXT_CSS_OK (matched or not); GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM;
  *   GTEXT_CSS_E_LIMIT_WORK (the answer is not known); GTEXT_CSS_E_LIMIT_OUTPUT (the text of an opaque
- *   value is longer than `max_text_bytes`). No other status: an internal failure is
+ *   value is longer than `max_text_bytes`); GTEXT_CSS_E_LIMIT_DEPTH, GTEXT_CSS_E_LIMIT_MATH_NODES,
+ *   GTEXT_CSS_E_LIMIT_COLOR_NESTING and GTEXT_CSS_E_LIMIT_FUNCTION_NODES (the limits of a value's math functions,
+ *   colors and function nodes; the answer is not known). No other status: an internal failure is
  *   GTEXT_CSS_E_INTERNAL and is a defect.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled,

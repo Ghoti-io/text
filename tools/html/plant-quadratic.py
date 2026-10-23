@@ -107,6 +107,16 @@ PLANTS = [
      "  while (st->len > 0 && w->status == GTEXT_CSS_OK) {\n    w->work++;",
      "  while (st->len > 0 && w->status == GTEXT_CSS_OK) {\n    w->work += st->len; /* each task looks at every task below it */",
      ["CSS serialize nested rules"]),
+    # The math functions and colors of the value layer: a node that looks at every node made before it, and a color that
+    # looks at every frame still open.
+    ("css-math-node-looks-at-every-earlier-node", "css/css_math_simplify.c",
+     "  memset(n, 0, sizeof *n);\n  n->op = op;\n  mb->nodes++;\n  mb->work++;\n  return n;",
+     "  memset(n, 0, sizeof *n);\n  n->op = op;\n  mb->nodes++;\n  mb->work += mb->nodes; /* each node looks at every one made before it */\n  return n;",
+     ["CSS math: a sum of many terms", "CSS math: a product of many factors"]),
+    ("css-color-frame-looks-at-every-open-frame", "css/css_color.c",
+     "    cb.work++;\n    gtext_allocator_free(&cb.alloc, F->kids.v);",
+     "    cb.work += nf; /* each finished frame looks at every frame still open */\n    gtext_allocator_free(&cb.alloc, F->kids.v);",
+     ["CSS color: color-mix() nested", "CSS color: light-dark() nested"]),
     ("sniffer-reads-past-the-window", "html/html_sniff.c",
      "  if (n > GTEXT_HTML_PRESCAN_BYTES) {\n    n = GTEXT_HTML_PRESCAN_BYTES; /* \"the end condition\" */\n  }\n  /* \"Prescan for UTF-16",
      "  /* \"Prescan for UTF-16",

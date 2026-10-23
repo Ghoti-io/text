@@ -71,6 +71,8 @@
 #include <string.h>
 
 #include "css_grammar_internal.h"
+#include "css_math_internal.h"
+#include "css_color_internal.h"
 #include "css_value_internal.h"
 
 /* ---- limits and counters ---------------------------------------------- */
@@ -79,6 +81,7 @@
 #define FRAME_COST 4u
 
 #define DEFAULT_MAX_MATCH_WORK ((size_t)67108864)
+#define DEFAULT_MAX_FUNCTION_NODES ((size_t)1048576)
 #define DEFAULT_MAX_MEMO_ENTRIES ((size_t)4194304)
 
 #define NO_ITEM UINT32_MAX
@@ -151,6 +154,16 @@ typedef struct {
   size_t nsh;
 } frame;
 
+/// What is known of the function or color at an item: read once, whatever number of grammar nodes ask.
+typedef struct {
+  uint8_t state;                      ///< As a math function: 0 not looked at; X_MATH a valid one; X_NOT_MATH.
+  uint8_t cstate;                     ///< As a color: 0 not looked at; X_COLOR a valid one; X_NOT_COLOR.
+  uint8_t has_percent;                ///< A math function that contains a percentage.
+  uint8_t category;                   ///< A math function: GTEXT_CSS_Math_Category.
+} xinfo;
+
+enum { X_NONE = 0, X_MATH, X_NOT_MATH, X_COLOR, X_NOT_COLOR };
+
 enum { GET_OK = 0, GET_BLOCK = 1, GET_ERR = 2 };
 enum { ST_DONE = 0, ST_BLOCK = 1, ST_ERR = 2 };
 
@@ -162,6 +175,12 @@ typedef struct {
   GTEXT_CSS_Status status;
   bool unitless;
   size_t max_text;                  ///< Most bytes of the text of an opaque value (css_serialize.h's output limit).
+  size_t max_math_depth, max_math_nodes; ///< The limits of one math function (0: the math layer's defaults).
+  size_t max_color_nesting, max_function_nodes;
+  size_t function_nodes; ///< Functions packed into the value so far (see max_function_nodes).
+  css_arena scratch;                ///< What was read of functions and colors while recognizing (freed with the match).
+  bool scratch_init;
+  xinfo * x;                        ///< Per item, once a function was asked about.
 
   mitem * items;
   size_t nitems, icap;
@@ -684,17 +703,6 @@ static bool fold_equal(const char * a, size_t an, const char * b, size_t bn) {
   return true;
 }
 
-static bool is_math_function(const GTEXT_CSS_String * name) {
-  static const char * const names[] = {"calc", "min", "max", "clamp", "round", "mod", "rem", "sin", "cos",
-    "tan", "asin", "acos", "atan", "atan2", "pow", "sqrt", "hypot", "log", "exp", "abs", "sign"};
-  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
-    if (fold_equal(name->data, name->length, names[i], strlen(names[i]))) {
-      return true;
-    }
-  }
-  return false;
-}
-
 static bool is_css_wide(const GTEXT_CSS_String * s) {
   static const char * const names[] = {"initial", "inherit", "unset", "revert", "revert-layer", "default"};
   for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
@@ -738,49 +746,222 @@ static bool unit_in_range(const gnode * g, GTEXT_CSS_Unit u, double n) {
   return g->lo <= 0 && 0 <= g->hi;
 }
 
-static GTEXT_CSS_Unit_Type native_unit_type(gn_native t) {
-  switch (t) {
-  case NT_LENGTH: return GTEXT_CSS_UNIT_TYPE_LENGTH;
-  case NT_ANGLE: return GTEXT_CSS_UNIT_TYPE_ANGLE;
-  case NT_TIME: return GTEXT_CSS_UNIT_TYPE_TIME;
-  case NT_FREQUENCY: return GTEXT_CSS_UNIT_TYPE_FREQUENCY;
-  case NT_RESOLUTION: return GTEXT_CSS_UNIT_TYPE_RESOLUTION;
-  case NT_FLEX: return GTEXT_CSS_UNIT_TYPE_FLEX;
-  default: return GTEXT_CSS_UNIT_TYPE_NONE;
+/// A range on a percentage-mixed type restricts the part its bounds were written in (plain numbers restrict both).
+static bool range_for_percentage(const gnode * g) {
+  return (g->flags & GNF_RANGE) && (g->rclass == RC_NONE || g->rclass == RC_PERCENT);
+}
+
+static bool range_for_dimension(const gnode * g, gn_native t) {
+  if (!(g->flags & GNF_RANGE)) {
+    return false;
   }
+  if (t == NT_LENGTH || t == NT_ANGLE || t == NT_TIME || t == NT_FREQUENCY || t == NT_RESOLUTION || t == NT_FLEX) {
+    return true;
+  }
+  return g->rclass == RC_NONE || g->rclass >= RC_UNIT_BASE;
 }
 
 static GTEXT_CSS_Unit unit_of(const GTEXT_CSS_Component_Value * v) {
   return gtext_css_unit_lookup(v->unit.data, v->unit.length);
 }
 
-/// A component of a <ratio>: <ratio> is "<number [0,infinity]> [ / <number [0,infinity]> ]?" (Values 4), so a number that is
-/// not negative, or a math function, which stands wherever a <number> does.
-static bool ratio_number(const GTEXT_CSS_Component_Value * v) {
-  return (tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0) || (v->kind == GTEXT_CSS_VALUE_FUNCTION && is_math_function(&v->value));
+/// What is known of item `pos` as a math function: runs the math layer on it once. False when that failed (the status is set).
+static bool math_item(M * m, uint32_t pos, const xinfo ** out) {
+  if (!m->x) {
+    m->x = gtext_allocator_calloc(&m->alloc, m->nitems ? m->nitems : 1, sizeof *m->x);
+    if (!m->x) {
+      fail_oom(m);
+      return false;
+    }
+  }
+  xinfo * xi = &m->x[pos];
+  if (xi->state == X_NONE) {
+    const GTEXT_CSS_Component_Value * v = m->items[pos].cv;
+    if (!v || v->kind != GTEXT_CSS_VALUE_FUNCTION || !css_math_accepts_function(v->value.data, v->value.length)) {
+      xi->state = X_NOT_MATH;
+    }
+    else {
+      if (!m->scratch_init) {
+        css_arena_init(&m->scratch, &m->alloc);
+        m->scratch_init = true;
+      }
+      GTEXT_CSS_Math * mp = NULL;
+      bool valid = false;
+      GTEXT_CSS_Math_Result res;
+      const GTEXT_CSS_Status st = css_math_build(&m->scratch, &m->alloc, v, NULL, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
+      if (st != GTEXT_CSS_OK) {
+        if (m->status == GTEXT_CSS_OK) {
+          m->status = st;
+        }
+        return false;
+      }
+      if (!charge(m, 1 + res.work)) {
+        return false;
+      }
+      if (valid) {
+        xi->state = X_MATH;
+        xi->category = (uint8_t)mp->category;
+        xi->has_percent = mp->has_percent;
+      }
+      else {
+        xi->state = X_NOT_MATH;
+      }
+    }
+  }
+  *out = xi;
+  return true;
 }
 
-/// A ratio's second part: `/` and a component, at items pos+1 and pos+2 (white space is not in the items).
-static bool ratio_tail(const M * m, uint32_t pos) {
-  const mitem * a = &m->items[pos + 1];
-  if (!a->cv || !m->items[pos + 2].cv) {
+/// The same for a color: runs the color layer on the item once.
+static bool color_item(M * m, uint32_t pos, const xinfo ** out) {
+  if (!m->x) {
+    m->x = gtext_allocator_calloc(&m->alloc, m->nitems ? m->nitems : 1, sizeof *m->x);
+    if (!m->x) {
+      fail_oom(m);
+      return false;
+    }
+  }
+  xinfo * xi = &m->x[pos];
+  if (xi->cstate == X_NONE) {
+    const GTEXT_CSS_Component_Value * v = m->items[pos].cv;
+    if (!v || !css_color_is_candidate(v)) {
+      xi->cstate = X_NOT_COLOR;
+    }
+    else {
+      if (!m->scratch_init) {
+        css_arena_init(&m->scratch, &m->alloc);
+        m->scratch_init = true;
+      }
+      GTEXT_CSS_Color * cp = NULL;
+      bool valid = false;
+      size_t cwork = 0;
+      const GTEXT_CSS_Status st = css_color_build(&m->scratch, &m->alloc, v, m->max_color_nesting, m->max_math_depth,
+          m->max_math_nodes, &cp, &valid, &cwork, NULL);
+      if (st != GTEXT_CSS_OK) {
+        if (m->status == GTEXT_CSS_OK) {
+          m->status = st;
+        }
+        return false;
+      }
+      if (!charge(m, 1 + cwork)) {
+        return false;
+      }
+      xi->cstate = valid ? X_COLOR : X_NOT_COLOR;
+    }
+  }
+  *out = xi;
+  return true;
+}
+
+/// Whether a math function of category `cat` (with a percentage, or not) can stand for native type `t`.
+static bool math_stands_for(gn_native t, const xinfo * xi) {
+  const GTEXT_CSS_Math_Category c = (GTEXT_CSS_Math_Category)xi->category;
+  switch (t) {
+  case NT_NUMBER: case NT_INTEGER: case NT_RATIO:
+    return c == GTEXT_CSS_MATH_CAT_NUMBER && !xi->has_percent;
+  case NT_PERCENTAGE:
+    return c == GTEXT_CSS_MATH_CAT_PERCENTAGE;
+  case NT_LENGTH:
+    return c == GTEXT_CSS_MATH_CAT_LENGTH && !xi->has_percent;
+  case NT_ANGLE:
+    return c == GTEXT_CSS_MATH_CAT_ANGLE && !xi->has_percent;
+  case NT_TIME:
+    return c == GTEXT_CSS_MATH_CAT_TIME && !xi->has_percent;
+  case NT_FREQUENCY:
+    return c == GTEXT_CSS_MATH_CAT_FREQUENCY && !xi->has_percent;
+  case NT_RESOLUTION:
+    return c == GTEXT_CSS_MATH_CAT_RESOLUTION && !xi->has_percent;
+  case NT_FLEX:
+    return c == GTEXT_CSS_MATH_CAT_FLEX && !xi->has_percent;
+  case NT_LENGTH_PERCENTAGE:
+    return c == GTEXT_CSS_MATH_CAT_LENGTH || c == GTEXT_CSS_MATH_CAT_PERCENTAGE;
+  case NT_ANGLE_PERCENTAGE:
+    return c == GTEXT_CSS_MATH_CAT_ANGLE || c == GTEXT_CSS_MATH_CAT_PERCENTAGE;
+  case NT_TIME_PERCENTAGE:
+    return c == GTEXT_CSS_MATH_CAT_TIME || c == GTEXT_CSS_MATH_CAT_PERCENTAGE;
+  case NT_FREQUENCY_PERCENTAGE:
+    return c == GTEXT_CSS_MATH_CAT_FREQUENCY || c == GTEXT_CSS_MATH_CAT_PERCENTAGE;
+  default:
     return false;
   }
-  const mitem * b = &m->items[pos + 2];
-  return a->cv->kind == GTEXT_CSS_VALUE_TOKEN && a->cv->type == GTEXT_CSS_TOKEN_DELIM && a->cv->delim == '/'
-      && ratio_number(b->cv);
 }
 
-/// Whether native type `t` accepts the single component value at `pos` (not a ratio, an an+b or a run).
-static bool native_one(const M * m, const gnode * g, uint32_t pos) {
+/// Whether a math function can stand for native type `t` at all (the types of Values 4, 10).
+static bool math_target(gn_native t) {
+  return css_grammar_native_numeric(t) && t != NT_DIMENSION;
+}
+
+/// A component of a <ratio>: <ratio> is "<number [0,infinity]> [ / <number [0,infinity]> ]?" (Values 4), so a number that is
+/// not negative, or a math function that is a number. -1 when the question could not be answered.
+static int ratio_number(M * m, uint32_t item) {
+  const GTEXT_CSS_Component_Value * v = m->items[item].cv;
+  if (!v) {
+    return 0;
+  }
+  if (tok(v, GTEXT_CSS_TOKEN_NUMBER)) {
+    return v->number >= 0;
+  }
+  if (v->kind == GTEXT_CSS_VALUE_FUNCTION) {
+    const xinfo * xi;
+    if (!math_item(m, item, &xi)) {
+      return -1;
+    }
+    return xi->state == X_MATH && xi->category == GTEXT_CSS_MATH_CAT_NUMBER;
+  }
+  return 0;
+}
+
+/// A ratio's second part: `/` and a component, at items pos+1 and pos+2 (white space is not in the items). -1 on failure.
+static int ratio_tail(M * m, uint32_t pos) {
+  const mitem * a = &m->items[pos + 1];
+  if (!a->cv || !m->items[pos + 2].cv) {
+    return 0;
+  }
+  if (!(a->cv->kind == GTEXT_CSS_VALUE_TOKEN && a->cv->type == GTEXT_CSS_TOKEN_DELIM && a->cv->delim == '/')) {
+    return 0;
+  }
+  return ratio_number(m, pos + 2);
+}
+
+/// The unit type a native type's dimensions have (a percentage-mixed type has its base's).
+static GTEXT_CSS_Unit_Type native_base_unit_type(gn_native t) {
+  switch (t) {
+  case NT_LENGTH: case NT_LENGTH_PERCENTAGE: return GTEXT_CSS_UNIT_TYPE_LENGTH;
+  case NT_ANGLE: case NT_ANGLE_PERCENTAGE: return GTEXT_CSS_UNIT_TYPE_ANGLE;
+  case NT_TIME: case NT_TIME_PERCENTAGE: return GTEXT_CSS_UNIT_TYPE_TIME;
+  case NT_FREQUENCY: case NT_FREQUENCY_PERCENTAGE: return GTEXT_CSS_UNIT_TYPE_FREQUENCY;
+  case NT_RESOLUTION: return GTEXT_CSS_UNIT_TYPE_RESOLUTION;
+  case NT_FLEX: return GTEXT_CSS_UNIT_TYPE_FLEX;
+  default: return GTEXT_CSS_UNIT_TYPE_NONE;
+  }
+}
+
+static bool native_is_percentage_mixed(gn_native t) {
+  return t == NT_LENGTH_PERCENTAGE || t == NT_ANGLE_PERCENTAGE || t == NT_TIME_PERCENTAGE || t == NT_FREQUENCY_PERCENTAGE;
+}
+
+/// Whether native type `t` accepts the single component value at `pos` (not a ratio, an an+b or a run): 1, 0, or -1 when
+/// the question could not be answered (the status is set).
+static int native_one(M * m, const gnode * g, uint32_t pos) {
   const mitem * it = &m->items[pos];
   const GTEXT_CSS_Component_Value * v = it->cv;
   const gn_native t = (gn_native)g->native;
   if (!v) {
-    return false;
+    return 0;
   }
-  if (v->kind == GTEXT_CSS_VALUE_FUNCTION && css_grammar_native_numeric(t) && t != NT_DIMENSION) {
-    return is_math_function(&v->value);
+  if (t == NT_COLOR) {
+    const xinfo * xi;
+    if (!color_item(m, pos, &xi)) {
+      return -1;
+    }
+    return xi->cstate == X_COLOR;
+  }
+  if (v->kind == GTEXT_CSS_VALUE_FUNCTION && math_target(t)) {
+    const xinfo * xi;
+    if (!math_item(m, pos, &xi)) {
+      return -1;
+    }
+    return xi->state == X_MATH && math_stands_for(t, xi);
   }
   switch (t) {
   case NT_INTEGER:
@@ -791,20 +972,27 @@ static bool native_one(const M * m, const gnode * g, uint32_t pos) {
     return tok(v, GTEXT_CSS_TOKEN_PERCENTAGE) && in_range(g, v->number);
   case NT_DIMENSION:
     return tok(v, GTEXT_CSS_TOKEN_DIMENSION) && unit_in_range(g, unit_of(v), v->number);
-  case NT_LENGTH:
+  case NT_LENGTH: case NT_LENGTH_PERCENTAGE:
     if (tok(v, GTEXT_CSS_TOKEN_NUMBER)) {
       if (v->number == 0) {
-        return in_range(g, 0.0);
+        return range_for_dimension(g, t) ? in_range(g, 0.0) : 1;
       }
-      return m->unitless && in_range(g, v->number);
+      return m->unitless && (range_for_dimension(g, t) ? in_range(g, v->number) : 1);
     }
     /* fall through */
-  case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX: {
+  case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE: {
+    if (native_is_percentage_mixed(t) && tok(v, GTEXT_CSS_TOKEN_PERCENTAGE)) {
+      return range_for_percentage(g) ? in_range(g, v->number) : 1;
+    }
     if (!tok(v, GTEXT_CSS_TOKEN_DIMENSION)) {
-      return false;
+      return 0;
     }
     const GTEXT_CSS_Unit u = unit_of(v);
-    return u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == native_unit_type(t) && unit_in_range(g, u, v->number);
+    if (u == GTEXT_CSS_UNIT_NONE || gtext_css_unit_type(u) != native_base_unit_type(t)) {
+      return 0;
+    }
+    return range_for_dimension(g, t) ? unit_in_range(g, u, v->number) : 1;
   }
   case NT_ZERO:
     return tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number == 0;
@@ -814,7 +1002,7 @@ static bool native_one(const M * m, const gnode * g, uint32_t pos) {
     if (tok(v, GTEXT_CSS_TOKEN_URL)) {
       return true;
     }
-    if (v->kind != GTEXT_CSS_VALUE_FUNCTION || !css_ascii_ieq(&v->value, "url")) {
+    if (v->kind != GTEXT_CSS_VALUE_FUNCTION || !(css_ascii_ieq(&v->value, "url") || css_ascii_ieq(&v->value, "src"))) {
       return false;
     }
     size_t seen = 0;
@@ -909,15 +1097,27 @@ static bool terminal_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
   case GN_NATIVE: {
     const gn_native t = (gn_native)g->native;
     switch (t) {
-    case NT_RATIO:
-      if (v && ratio_number(v)) {
+    case NT_RATIO: {
+      if (!v) {
+        return true;
+      }
+      const int rn = ratio_number(m, pos);
+      if (rn < 0) {
+        return false;
+      }
+      if (rn) {
         one_end(e, pos + 1);
-        if (ratio_tail(m, pos)) {
+        const int rt = ratio_tail(m, pos);
+        if (rt < 0) {
+          return false;
+        }
+        if (rt) {
           e->buf[1].lo = e->buf[1].hi = pos + 3;
           e->n = 2;
         }
       }
       return true;
+    }
     case NT_ANY_VALUE: case NT_DECL_VALUE: {
       if (!v) {
         return true;
@@ -954,11 +1154,16 @@ static bool terminal_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
       }
       return true;
     }
-    default:
-      if (native_one(m, g, pos)) {
+    default: {
+      const int hit = native_one(m, g, pos);
+      if (hit < 0) {
+        return false;
+      }
+      if (hit) {
         one_end(e, pos + 1);
       }
       return true;
+    }
     }
   }
   default:
@@ -1599,9 +1804,9 @@ static GTEXT_CSS_Interp interp_of_native(gn_native t) {
   switch (t) {
   case NT_INTEGER: case NT_NUMBER: case NT_RATIO: case NT_ZERO: return GTEXT_CSS_INTERP_NUMBER;
   case NT_PERCENTAGE: return GTEXT_CSS_INTERP_PERCENTAGE;
-  case NT_LENGTH: return GTEXT_CSS_INTERP_LENGTH;
-  case NT_ANGLE: return GTEXT_CSS_INTERP_ANGLE;
-  case NT_TIME: return GTEXT_CSS_INTERP_TIME;
+  case NT_LENGTH: case NT_LENGTH_PERCENTAGE: return GTEXT_CSS_INTERP_LENGTH;
+  case NT_ANGLE: case NT_ANGLE_PERCENTAGE: return GTEXT_CSS_INTERP_ANGLE;
+  case NT_TIME: case NT_TIME_PERCENTAGE: return GTEXT_CSS_INTERP_TIME;
   default: return GTEXT_CSS_INTERP_DISCRETE;
   }
 }
@@ -1618,17 +1823,95 @@ static bool span_cover(GTEXT_CSS_Value * v, const GTEXT_CSS_Component_Value * a,
   return true;
 }
 
-/// The name of a function component value in lower case (CSSOM writes a math function's name so), in the set's arena.
-static bool lower_name(builder * B, const GTEXT_CSS_Component_Value * cv, GTEXT_CSS_String * out) {
-  if (!arena_text(B, cv->value.data, cv->value.length, out)) {
+/// The value of the math function `cv` that matched native type `t` at grammar node `node`: the calculation is read again, into the
+/// value set (what was read while recognizing is gone with the match), and written as a specified value is.
+static bool math_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Value * cv, gn_native t, const gnode * g,
+    GTEXT_CSS_Value * out) {
+  M * m = B->m;
+  value_init(out, GTEXT_CSS_VAL_FUNCTION, node, cv);
+  GTEXT_CSS_Math * mp = NULL;
+  bool valid = false;
+  GTEXT_CSS_Math_Result res;
+  const GTEXT_CSS_Status st = css_math_build(&B->set->arena, &m->alloc, cv, NULL, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
+  if (st != GTEXT_CSS_OK) {
+    if (m->status == GTEXT_CSS_OK) {
+      m->status = st;
+    }
     return false;
   }
-  for (size_t i = 0; i < out->length; i++) {
-    char * ch = (char *)out->data + i;
-    if (*ch >= 'A' && *ch <= 'Z') {
-      *ch = (char)(*ch + 32);
-    }
+  if (!valid) {
+    m->status = GTEXT_CSS_E_INTERNAL;
+    return false;
   }
+  out->math = mp;
+  out->flags = GTEXT_CSS_VFLAG_MATH | (mp->has_percent ? GTEXT_CSS_VFLAG_MATH_PERCENT : 0u);
+  switch (mp->category) {
+  case GTEXT_CSS_MATH_CAT_LENGTH: out->interp = GTEXT_CSS_INTERP_LENGTH; break;
+  case GTEXT_CSS_MATH_CAT_ANGLE: out->interp = GTEXT_CSS_INTERP_ANGLE; break;
+  case GTEXT_CSS_MATH_CAT_TIME: out->interp = GTEXT_CSS_INTERP_TIME; break;
+  case GTEXT_CSS_MATH_CAT_PERCENTAGE: out->interp = GTEXT_CSS_INTERP_PERCENTAGE; break;
+  case GTEXT_CSS_MATH_CAT_NUMBER: out->interp = GTEXT_CSS_INTERP_NUMBER; break;
+  default: out->interp = GTEXT_CSS_INTERP_DISCRETE; break;
+  }
+  (void)t;
+  /* the range of the slot, in the canonical unit; the math layer clamps to it when a value is computed */
+  out->range_lo = (g->flags & GNF_RANGE) ? g->lo : -1.0 / 0.0;
+  out->range_hi = (g->flags & GNF_RANGE) ? g->hi : 1.0 / 0.0;
+  char * buf = NULL;
+  size_t len = 0;
+  const GTEXT_CSS_Status ss = css_math_serialize_to(mp, &m->alloc, m->max_text, &buf, &len);
+  if (ss != GTEXT_CSS_OK) {
+    if (m->status == GTEXT_CSS_OK) {
+      m->status = ss;
+    }
+    return false;
+  }
+  char * dup = css_arena_strdup(&B->set->arena, buf, len);
+  gtext_allocator_free(&m->alloc, buf);
+  if (!dup) {
+    return B_oom(B);
+  }
+  out->text.data = dup;
+  out->text.length = len;
+  return true;
+}
+
+/// The value of the color at component value `cv`: read again into the value set and written as its declared value is.
+static bool color_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Value * cv, GTEXT_CSS_Value * out) {
+  M * m = B->m;
+  value_init(out, GTEXT_CSS_VAL_COLOR, node, cv);
+  out->interp = GTEXT_CSS_INTERP_COLOR;
+  GTEXT_CSS_Color * c = NULL;
+  bool valid = false;
+  size_t work = 0;
+  const GTEXT_CSS_Status st = css_color_build(&B->set->arena, &m->alloc, cv, m->max_color_nesting, m->max_math_depth, m->max_math_nodes, &c, &valid, &work, NULL);
+  if (st != GTEXT_CSS_OK) {
+    if (m->status == GTEXT_CSS_OK) {
+      m->status = st;
+    }
+    return false;
+  }
+  if (!valid) {
+    m->status = GTEXT_CSS_E_INTERNAL;
+    return false;
+  }
+  out->color = c;
+  char * buf = NULL;
+  size_t len = 0;
+  const GTEXT_CSS_Status ss = css_color_serialize_to(c, &m->alloc, m->max_text, &buf, &len);
+  if (ss != GTEXT_CSS_OK) {
+    if (m->status == GTEXT_CSS_OK) {
+      m->status = ss;
+    }
+    return false;
+  }
+  char * dup = css_arena_strdup(&B->set->arena, buf, len);
+  gtext_allocator_free(&m->alloc, buf);
+  if (!dup) {
+    return B_oom(B);
+  }
+  out->text.data = dup;
+  out->text.length = len;
   return true;
 }
 
@@ -1654,28 +1937,11 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     value_init(out, GTEXT_CSS_VAL_TOKEN, node, NULL);
     return arena_text(B, " ", 1, &out->text) != NULL;
   }
-  if (v && v->kind == GTEXT_CSS_VALUE_FUNCTION && css_grammar_native_numeric(t) && t != NT_DIMENSION) {
-    /* a math function matched by type; its arguments are the math layer's */
-    value_init(out, GTEXT_CSS_VAL_FUNCTION, node, v);
-    out->flags = GTEXT_CSS_VFLAG_MATH;
-    out->interp = interp_of_native(t);
-    out->range_lo = (g->flags & GNF_RANGE) ? g->lo : -1.0 / 0.0;
-    out->range_hi = (g->flags & GNF_RANGE) ? g->hi : 1.0 / 0.0;
-    if (!lower_name(B, v, &out->text)) {
-      return false;
-    }
-    GTEXT_CSS_Value * arg = css_arena_alloc(&B->set->arena, sizeof *arg);
-    if (!arg) {
-      return B_oom(B);
-    }
-    value_init(arg, GTEXT_CSS_VAL_UNPARSED, node, v);
-    if (!arena_serialize(B, v->children, v->child_count, &arg->text)) {
-      return false;
-    }
-    out->children = arg;
-    out->child_count = 1;
-    B->set->count++;
-    return true;
+  if (v && v->kind == GTEXT_CSS_VALUE_FUNCTION && math_target(t)) {
+    return math_value(B, node, v, t, g, out);
+  }
+  if (v && t == NT_COLOR) {
+    return color_value(B, node, v, out);
   }
   switch (t) {
   case NT_INTEGER:
@@ -1708,6 +1974,14 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     return arena_text(B, v->unit.data, v->unit.length, &out->text) != NULL;
   }
   case NT_LENGTH: case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_LENGTH_PERCENTAGE: case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE:
+    if (tok(v, GTEXT_CSS_TOKEN_PERCENTAGE)) {
+      value_init(out, GTEXT_CSS_VAL_PERCENTAGE, node, v);
+      out->number = v->number;
+      out->interp = GTEXT_CSS_INTERP_PERCENTAGE;
+      number_flags(out, v);
+      return true;
+    }
     value_init(out, GTEXT_CSS_VAL_DIMENSION, node, v);
     out->number = v->number;
     if (tok(v, GTEXT_CSS_TOKEN_NUMBER)) {
@@ -1746,25 +2020,11 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
           kids[k].interp = GTEXT_CSS_INTERP_NUMBER;
         }
         else if (comp->kind == GTEXT_CSS_VALUE_FUNCTION) {
-          value_init(&kids[k], GTEXT_CSS_VAL_FUNCTION, node, comp);
-          kids[k].flags = GTEXT_CSS_VFLAG_MATH;
-          kids[k].interp = GTEXT_CSS_INTERP_NUMBER;
+          if (!math_value(B, node, comp, NT_NUMBER, g, &kids[k])) {
+            return false;
+          }
           kids[k].range_lo = 0.0;
           kids[k].range_hi = 1.0 / 0.0;
-          if (!lower_name(B, comp, &kids[k].text)) {
-            return false;
-          }
-          GTEXT_CSS_Value * arg = css_arena_alloc(&B->set->arena, sizeof *arg);
-          if (!arg) {
-            return B_oom(B);
-          }
-          value_init(arg, GTEXT_CSS_VAL_UNPARSED, node, comp);
-          if (!arena_serialize(B, comp->children, comp->child_count, &arg->text)) {
-            return false;
-          }
-          kids[k].children = arg;
-          kids[k].child_count = 1;
-          B->set->count++;
         }
         else {
           value_init(&kids[k], GTEXT_CSS_VAL_NUMBER, node, comp);
@@ -1789,6 +2049,9 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   case NT_URL: {
     value_init(out, GTEXT_CSS_VAL_URL, node, v);
     if (v->kind == GTEXT_CSS_VALUE_FUNCTION) {
+      if (css_ascii_ieq(&v->value, "src")) {
+        out->flags |= GTEXT_CSS_VFLAG_SRC;
+      }
       size_t seen = 0, mods = 0;
       for (size_t i = 0; i < v->child_count; i++) {
         const GTEXT_CSS_Component_Value * c = &v->children[i];
@@ -2248,6 +2511,13 @@ static bool pack_func(builder * B, uint32_t node, uint32_t pos, size_t base) {
   GTEXT_CSS_Value f;
   value_init(&f, g->kind == GN_FUNC ? GTEXT_CSS_VAL_FUNCTION : GTEXT_CSS_VAL_BLOCK, node, cv);
   if (g->kind == GN_FUNC) {
+    if (m->function_nodes >= (m->max_function_nodes ? m->max_function_nodes : DEFAULT_MAX_FUNCTION_NODES)) {
+      if (m->status == GTEXT_CSS_OK) {
+        m->status = GTEXT_CSS_E_LIMIT_FUNCTION_NODES;
+      }
+      return false;
+    }
+    m->function_nodes++;
     if (!arena_text(B, m->c->text + g->str_off, g->str_len, &f.text)) {
       return false;
     }
@@ -2375,6 +2645,10 @@ static bool build_task(builder * B, const struct task * t) {
 /* ---- the entry points ------------------------------------------------------ */
 
 static void m_free(M * m) {
+  gtext_allocator_free(&m->alloc, m->x);
+  if (m->scratch_init) {
+    css_arena_free(&m->scratch);
+  }
   gtext_allocator_free(&m->alloc, m->items);
   gtext_allocator_free(&m->alloc, m->htab);
   gtext_allocator_free(&m->alloc, m->ents);
@@ -2465,6 +2739,10 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
   }
   m.max_text = (options && options->max_text_bytes) ? options->max_text_bytes : ((size_t)256 << 20);
   m.unitless = options && options->unitless_length;
+  m.max_math_depth = options ? options->max_math_depth : 0;
+  m.max_math_nodes = options ? options->max_math_nodes : 0;
+  m.max_color_nesting = options ? options->max_color_nesting : 0;
+  m.max_function_nodes = options ? options->max_function_nodes : 0;
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
   GTEXT_CSS_Value_Set * set = NULL;
   bool did_match = false;

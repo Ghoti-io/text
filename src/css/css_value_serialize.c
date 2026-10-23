@@ -149,7 +149,7 @@ static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
     put_string(w, &v->text);
     return false;
   case GTEXT_CSS_VAL_URL:
-    puts_(w, "url(");
+    puts_(w, (v->flags & GTEXT_CSS_VFLAG_SRC) ? "src(" : "url(");
     put_string(w, &v->text);
     return true;
   case GTEXT_CSS_VAL_NUMBER:
@@ -197,9 +197,17 @@ static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
     put(w, v->text.data, v->text.length);
     return false;
   case GTEXT_CSS_VAL_FUNCTION:
+    if (v->math) {
+      /* a math function is written as its specified value is (the simplified calculation): that text is kept */
+      put(w, v->text.data, v->text.length);
+      return false;
+    }
     put_ident(w, &v->text);
     puts_(w, "(");
     return true;
+  case GTEXT_CSS_VAL_COLOR:
+    put(w, v->text.data, v->text.length);
+    return false;
   case GTEXT_CSS_VAL_BLOCK:
     put(w, v->text.data, v->text.length);
     return true;
@@ -213,7 +221,13 @@ static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
 
 static void close_value(vwriter * w, const GTEXT_CSS_Value * v) {
   switch (v->kind) {
-  case GTEXT_CSS_VAL_URL: case GTEXT_CSS_VAL_FUNCTION:
+  case GTEXT_CSS_VAL_FUNCTION:
+    if (v->math) {
+      break;
+    }
+    puts_(w, ")");
+    break;
+  case GTEXT_CSS_VAL_URL:
     puts_(w, ")");
     break;
   case GTEXT_CSS_VAL_BLOCK:

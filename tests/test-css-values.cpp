@@ -582,7 +582,8 @@ TEST(CssValueSerialize, FunctionsBlocksAndOpaqueValuesAreWrittenAsTheyWere) {
   d.types["rgb()"] = "rgb( <number>#{3} )";
   check_serialization({
       {"<rgb()>", "RGB(1,2 ,3)", "rgb(1, 2, 3)"}, {"foo( bar( a ) )", "foo(bar(a))", "foo(bar(a))"}, {"foo()", "foo( )", "foo()"},
-      {"<length>", "calc(1px+2px)", "calc(1px/**/+2px)"}, {"<length>", "CALC( 1px  +  2px )", "calc( 1px + 2px )"},
+      {"<length>", "calc(1px /**/ + /**/ 2px)", "calc(3px)"}, {"<length>", "CALC( 1px  +  2px )", "calc(3px)"},
+      {"<length>", "calc(20px + 2em)", "calc(2em + 20px)"}, {"<length>", "min(20px, 10px)", "calc(10px)"},
       {"<any-value>", "a  b   c", "a b c"}, {"( <number> )", "(3)", "(3)"}, {"{ <declaration-list> }", "{a:b}", "{a:b}"},
       {"<an+b>", "even", "2n"}, {"<length>", "var(--a, 1px)", "var(--a, 1px)"}, {"<ident-token>", "foo", "foo"},
   }, &d);

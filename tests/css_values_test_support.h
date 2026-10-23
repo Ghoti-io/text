@@ -199,7 +199,12 @@ inline std::string dump(const GTEXT_CSS_Value * v) {
     const char * sep = v->separator == GTEXT_CSS_SEP_COMMA ? "comma" : v->separator == GTEXT_CSS_SEP_SLASH ? "slash" : "space";
     return std::string("list/") + sep + "(" + kids() + ")";
   }
-  case GTEXT_CSS_VAL_FUNCTION: return "fn:" + text + "(" + kids() + ")";
+  case GTEXT_CSS_VAL_FUNCTION:
+    if (v->math) {
+      return "math:" + text; // a math function: its text is the specified-value serialization of the calculation
+    }
+    return "fn:" + text + "(" + kids() + ")";
+  case GTEXT_CSS_VAL_COLOR: return "color:" + text;
   case GTEXT_CSS_VAL_UNICODE_RANGE: {
     char b[40];
     std::snprintf(b, sizeof b, "ur:%X-%X", (unsigned)v->range_start, (unsigned)v->range_end);

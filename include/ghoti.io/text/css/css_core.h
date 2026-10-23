@@ -131,6 +131,13 @@ typedef enum {
                                   ///< "no match": the answer is not known.
   GTEXT_CSS_E_LIMIT_ATOMS,        ///< Values: an atom table holds as many atoms, or bytes
                                   ///< of spelling, as its limit allows.
+  GTEXT_CSS_E_LIMIT_MATH_NODES,   ///< Values: a math function made more nodes than
+                                  ///< `max_nodes` of its options.
+  GTEXT_CSS_E_LIMIT_COLOR_NESTING, ///< Values: colors nested (`color-mix()`, `light-dark()`, a
+                                  ///< relative color's origin) deeper than `max_color_nesting`.
+  GTEXT_CSS_E_LIMIT_STOPS,        ///< Values: a gradient with more color stops than `max_gradient_stops`.
+  GTEXT_CSS_E_LIMIT_FUNCTION_NODES, ///< Values: a value holds more function nodes than
+                                  ///< `max_function_nodes`.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

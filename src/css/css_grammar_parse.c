@@ -69,6 +69,9 @@ static const struct {
   {"[-token", NT_TOK_OPEN_SQUARE}, {"]-token", NT_TOK_CLOSE_SQUARE},
   {"(-token", NT_TOK_OPEN_PAREN}, {")-token", NT_TOK_CLOSE_PAREN},
   {"{-token", NT_TOK_OPEN_CURLY}, {"}-token", NT_TOK_CLOSE_CURLY},
+  {"length-percentage", NT_LENGTH_PERCENTAGE}, {"angle-percentage", NT_ANGLE_PERCENTAGE},
+  {"time-percentage", NT_TIME_PERCENTAGE}, {"frequency-percentage", NT_FREQUENCY_PERCENTAGE},
+  {"color", NT_COLOR},
 };
 
 gn_native css_grammar_native_lookup(const char * name, size_t length) {
@@ -84,6 +87,7 @@ bool css_grammar_native_numeric(gn_native type) {
   switch (type) {
   case NT_INTEGER: case NT_NUMBER: case NT_PERCENTAGE: case NT_DIMENSION: case NT_LENGTH:
   case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_LENGTH_PERCENTAGE: case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE:
     return true;
   default:
     return false;
@@ -503,6 +507,14 @@ bool css_grammar_range_fits(gn_native type, uint8_t rclass) {
     return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_RESOLUTION;
   case NT_FLEX:
     return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FLEX;
+  case NT_LENGTH_PERCENTAGE:
+    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
+  case NT_ANGLE_PERCENTAGE:
+    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_ANGLE;
+  case NT_TIME_PERCENTAGE:
+    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_TIME;
+  case NT_FREQUENCY_PERCENTAGE:
+    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FREQUENCY;
   default:
     return false;
   }

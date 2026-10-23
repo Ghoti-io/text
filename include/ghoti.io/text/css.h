@@ -30,7 +30,7 @@
  * serializer in css_serialize.h, a stylesheet's bytes and their encoding in
  * css_decode.h, the incremental parser in css_stream.h, the typed values and
  * their serialization in css_value.h, and the Value Definition Syntax engine
- * that decides which component values a grammar accepts in css_grammar.h. The format page
+ * that decides which component values a grammar accepts in css_grammar.h, the math functions in css_math.h and the colors in css_color.h. The format page
  * is documentation/formats/css.md.
  */
 
@@ -39,9 +39,12 @@
 
 #include <ghoti.io/text/macros.h>
 
+#include <ghoti.io/text/css/css_color.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_decode.h>
+#include <ghoti.io/text/css/css_function.h>
 #include <ghoti.io/text/css/css_grammar.h>
+#include <ghoti.io/text/css/css_math.h>
 #include <ghoti.io/text/css/css_parse.h>
 #include <ghoti.io/text/css/css_serialize.h>
 #include <ghoti.io/text/css/css_stream.h>
