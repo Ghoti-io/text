@@ -108,6 +108,27 @@ typedef enum {
   GTEXT_CSS_E_LIMIT_DECODED,      ///< A byte parse: the decoded text is longer
                                   ///< than `max_decoded_bytes`, or its map of
                                   ///< offsets has more runs than `max_map_runs`.
+  GTEXT_CSS_E_GRAMMAR,            ///< Values: the text is not a Value Definition
+                                  ///< Syntax definition (the result says where).
+  GTEXT_CSS_E_REFERENCE,          ///< Values: a `<type>` or `<'property'>` that
+                                  ///< the native types and the resolver do not
+                                  ///< have (the result names it).
+  GTEXT_CSS_E_LEFT_RECURSION,     ///< Values: a linked definition can match a
+                                  ///< type through itself without consuming a
+                                  ///< component value (the result names it).
+  GTEXT_CSS_E_LIMIT_DEFINITION,   ///< Values: the definition text is longer
+                                  ///< than `max_definition_bytes`.
+  GTEXT_CSS_E_LIMIT_DEFINITION_DEPTH, ///< Values: definition groups nested
+                                  ///< deeper than `max_definition_depth`.
+  GTEXT_CSS_E_LIMIT_DEFINITION_NODES, ///< Values: a definition (or the linked
+                                  ///< whole) has more nodes than
+                                  ///< `max_definition_nodes`.
+  GTEXT_CSS_E_LIMIT_GROUP,        ///< Values: a `&&` or `||` group has more than
+                                  ///< 64 members.
+  GTEXT_CSS_E_LIMIT_WORK,         ///< Values: a match did more than
+                                  ///< `max_match_work` units of work, or kept more
+                                  ///< than `max_memo_entries` memo entries. Never
+                                  ///< "no match": the answer is not known.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

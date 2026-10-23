@@ -457,6 +457,11 @@ GTEXT_INTERNAL_API GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tre
 /// the buffer could not be made.
 GTEXT_INTERNAL_API size_t gtext_css_encode_cp(uint32_t cp, char * out);
 
+/// CSSOM's spelling of a <number> (or an <integer>) into `out`, which must hold 330 bytes: the shortest digits
+/// that round back, base ten, no exponent, at most six decimals; a NaN is "0" and an infinity the largest
+/// double. Not NUL-terminated; returns the length.
+size_t css_cssom_number(double v, bool integer, char * out);
+
 /// Whether `cp` is a non-ASCII ident code point (CSS Syntax 4.2).
 bool css_is_non_ascii_ident(uint32_t cp);
 

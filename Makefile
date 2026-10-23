@@ -986,7 +986,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-numbers check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1131,9 +1131,15 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/encoding/encoding_encode.c \
 	src/css/css_anb.c \
 	src/css/css_core.c \
+	src/css/css_grammar_link.c \
+	src/css/css_grammar_match.c \
+	src/css/css_grammar_parse.c \
 	src/css/css_parser.c \
 	src/css/css_serialize.c \
 	src/css/css_tokenizer.c \
+	src/css/css_units.c \
+	src/css/css_value.c \
+	src/css/css_value_serialize.c \
 	src/html/html_api.c \
 	src/html/html_charref.c \
 	src/html/html_core.c \
@@ -2036,6 +2042,7 @@ $(eval $(call fuzz-rule,fuzz_html_sanitize,html-sanitize))
 $(eval $(call fuzz-rule,fuzz_encoding,encoding))
 $(eval $(call fuzz-rule,fuzz_css_syntax,css-syntax))
 $(eval $(call fuzz-rule,fuzz_css_bytes,css-bytes))
+$(eval $(call fuzz-rule,fuzz_css_grammar,css-grammar))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2049,7 +2056,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit
@@ -2090,6 +2097,13 @@ check-css-numbers: ## Fail if a CSS source reaches the host for a number again, 
 # and requires the refusal, and plants one in a comment and requires none. In TEST_GATES: it needs only a C compiler.
 check-css-numbers:
 	@tools/css/check-no-stand-in.sh
+
+check-css-grammar-plants: ## Plant a defect in the Value Definition Syntax engine and show the grammar-corpus gate and the engine's tests fail
+# tools/css/plant-grammar.py: each edit is compiled alone and linked ahead of the library into tests/test-css-grammar-corpus.cpp,
+# test-css-grammar.cpp and test-css-values.cpp, which must fail as the plant says; the unedited control must pass. Outside TEST_GATES.
+check-css-grammar-plants: $(APP_DIR)/$(STATIC_TARGET)
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-grammar.py
 
 check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax and CSS bytes fuzzers find it
 # The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp and fuzz_css_bytes.cpp: tools/css/plant-fuzz.py copies this

@@ -28,7 +28,9 @@
  * back as the same tree. The statuses, options, result and tree are in
  * css_core.h, the entry points and parse errors in css_parse.h, the
  * serializer in css_serialize.h, a stylesheet's bytes and their encoding in
- * css_decode.h, and the incremental parser in css_stream.h. The format page
+ * css_decode.h, the incremental parser in css_stream.h, the typed values and
+ * their serialization in css_value.h, and the Value Definition Syntax engine
+ * that decides which component values a grammar accepts in css_grammar.h. The format page
  * is documentation/formats/css.md.
  */
 
@@ -39,8 +41,10 @@
 
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_decode.h>
+#include <ghoti.io/text/css/css_grammar.h>
 #include <ghoti.io/text/css/css_parse.h>
 #include <ghoti.io/text/css/css_serialize.h>
 #include <ghoti.io/text/css/css_stream.h>
+#include <ghoti.io/text/css/css_value.h>
 
 #endif // GHOTI_IO_GTEXT_CSS_H

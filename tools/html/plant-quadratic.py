@@ -89,6 +89,16 @@ PLANTS = [
      "  while (st.len > 0 && ok(p)) {\n    p->ctx->work++;\n    walk * w",
      "  while (st.len > 0 && ok(p)) {\n    p->ctx->work += st.len; /* each node's id found by walking up to it */\n    walk * w",
      ["CSS nested style rules"]),
+    # The Value Definition Syntax engine: a repetition that expands every position again, and a juxtaposed repetition that is
+    # applied to one position at a time instead of to the whole set.
+    ("css-grammar-expansion-rescans-the-set", "css/css_grammar_match.c",
+     "      OKR(charge(m, 1));\n      cursor_next(f);\n    }\n    iset_swap(&f->a, &f->b);",
+     "      OKR(charge(m, 1 + (f->a.v[f->a.n - 1].hi - f->cp))); /* each position looks at every one after it in the set */\n      cursor_next(f);\n    }\n    iset_swap(&f->a, &f->b);",
+     ["CSS grammar: four stars"]),
+    ("css-grammar-no-closure-sharing", "css/css_grammar_match.c",
+     "  return g->kind == GN_MULT && !(g->flags & GNF_COMMA) && g->max == GN_INF && g->min <= 1;",
+     "  return g->kind == GN_MULT && !(g->flags & GNF_COMMA) && g->max == GN_INF && g->min <= 1 && 0;",
+     ["CSS grammar: four stars"]),
     ("css-serializer-walks-the-stack", "css/css_serialize.c",
      "  while (st->len > 0 && w->status == GTEXT_CSS_OK) {\n    w->work++;",
      "  while (st->len > 0 && w->status == GTEXT_CSS_OK) {\n    w->work += st->len; /* each task looks at every task below it */",

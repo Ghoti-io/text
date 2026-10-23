@@ -9,7 +9,7 @@ as text that reads back as the same tree. CSS has no malformed input: **every
 input has a tree**, the mistakes in it are parse errors with positions, and what
 the standard drops is dropped and reported. A parse fails only for an argument,
 memory or a limit, and each limit is its own status. This is the syntax layer:
-values, properties, the cascade and selectors are built on it and are not here
+values (\ref format_css_values "css-values.md"), properties, the cascade and selectors are built on it; the typed values and the grammar engine are there, the rest is not here
 yet (see "Not implemented"). Back to \ref text_format_references "Formats".
 
 Include `<ghoti.io/text/css.h>`.

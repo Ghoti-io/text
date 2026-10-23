@@ -1,0 +1,282 @@
+# The seed list of the Value Definition Syntax gate (tests/test-css-grammar-corpus.cpp).
+#
+# Grammars in the shape of the ones the CSS specifications give: every construct of the notation, the
+# longest property grammars, recursive types. The real pinned data joins in a later phase (the registry);
+# until then this list is what "every grammar compiles, every witness matches and no counter-witness does"
+# is held to.
+#
+#   type NAME = GRAMMAR        a type the resolver knows (<NAME>)
+#   prop NAME = GRAMMAR        a property's grammar (<'NAME'>)
+#   grammar GRAMMAR            a grammar to compile; the lines after it apply to it
+#   + INPUT [=> TEXT]          a witness: it matches, and (with =>) is written as TEXT; the written text
+#                              must match again and be written the same (the fixed point)
+#   - INPUT                    a counter-witness: it does not match
+#   An INPUT beginning "@decl " is the whole declaration (unicode-range values are tokenized only there).
+
+type length-percentage = <length> | <percentage>
+type position = [ left | center | right | top | bottom | <length-percentage> ] | [ left | center | right | <length-percentage> ] [ top | center | bottom | <length-percentage> ] | [ center | [ left | right ] <length-percentage>? ] && [ center | [ top | bottom ] <length-percentage>? ]
+type color = red | green | blue | transparent | currentColor | <hash-token> | <rgb()> | <hsl()>
+type rgb() = rgb( [ <number> | <percentage> ]#{3} [ , [ <number> | <percentage> ] ]? )
+type hsl() = hsl( <angle> , <percentage> , <percentage> )
+type shadow = inset? && <length>{2,4} && <color>?
+type family-name = <string> | <custom-ident>+
+type generic-family = serif | sans-serif | monospace | cursive | fantasy
+type easing-function = linear | ease | ease-in | ease-out | ease-in-out | cubic-bezier( <number [0,1]> , <number> , <number [0,1]> , <number> ) | steps( <integer> [ , jump-start | jump-end | jump-none | jump-both | start | end ]? )
+type single-transition = [ none | <custom-ident> ] || <time [0s,∞]> || <easing-function> || <time>
+type track-size = <length-percentage [0,∞]> | <flex [0,∞]> | min-content | max-content | auto | minmax( [ <length-percentage [0,∞]> | min-content | max-content | auto ] , [ <length-percentage [0,∞]> | <flex> | min-content | max-content | auto ] ) | fit-content( <length-percentage [0,∞]> )
+type line-names = <[-token>
+type track-repeat = repeat( <integer [1,∞]> , [ <line-names>? <track-size> ]+ <line-names>? )
+type track-list = [ <line-names>? [ <track-size> | <track-repeat> ] ]+ <line-names>?
+type transform-function = translate( <length-percentage> [ , <length-percentage> ]? ) | translateX( <length-percentage> ) | rotate( <angle> | <zero> ) | scale( <number> [ , <number> ]? ) | skew( <angle> [ , <angle> ]? ) | matrix( <number>#{6} ) | perspective( <length [0,∞]> | none )
+type bg-size = [ <length-percentage [0,∞]> | auto ]{1,2} | cover | contain
+type bg-layer = <url> || <position> [ / <bg-size> ]? || [ repeat-x | repeat-y | [ repeat | space | round | no-repeat ]{1,2} ] || scroll | fixed | local || border-box | padding-box | content-box
+type final-bg-layer = <color> || <bg-layer>
+type expr = <number> [ '+' <expr> ]? | ( <expr> )
+type nest = f( <nest> ) | a
+type chain = a <chain>?
+type counter-style = decimal | disc | upper-roman | lower-alpha
+
+prop font-style = normal | italic | oblique <angle [-90deg,90deg]>?
+prop font-weight = normal | bold | bolder | lighter | <number [1,1000]>
+prop font-size = xx-small | x-small | small | medium | large | x-large | xx-large | larger | smaller | <length-percentage [0,∞]>
+prop line-height = normal | <number [0,∞]> | <length-percentage [0,∞]>
+prop font-family = [ <family-name> | <generic-family> ]#
+prop margin = [ <length-percentage> | auto ]{1,4}
+
+# --- the notation, construct by construct ---------------------------------------------------------------
+
+grammar a b c
++ a b c => a b c
+- a b
+- a c b
+
+grammar a | b | c
++ b => b
+- a b
+
+grammar a && b && c
++ c a b => a b c
+- a b
+
+grammar a || b || c
++ b => b
++ c a => a c
+- a a
+-
+
+grammar [ a | b ]
++ a => a
+
+grammar a? b* c+
++ c => c
++ a b b c c => a b b c c
+- a b
+
+grammar <number>#
++ 1, 2, 3 => 1, 2, 3
+- 1 2
+
+grammar a{3} b{1,2} c{2,}
++ a a a b c c => a a a b c c
++ a a a b b c c c => a a a b b c c c
+- a a b c c
+
+grammar <integer>#{2,3}
++ 1,2 => 1, 2
++ 1,2,3 => 1, 2, 3
+- 1
+- 1,2,3,4
+
+grammar <length>+#
++ 1px 2px, 3px => 1px 2px, 3px
+
+grammar [ a? b? ]!
++ b => b
+- 
+
+grammar <length [0,∞]> <number [-1,1]> <integer [1,∞]> <percentage [0%,100%]> <angle [-90deg,90deg]> <time [0s,1s]> <length [0in,1in]>
++ 0 0 1 100% 0.25turn 500ms 96px => 0px 0 1 100% 0.25turn 500ms 96px
+- -1px 0 1 0% 0deg 0s 0px
+- 1px 2 1 0% 0deg 0s 0px
+- 0 0 1 100% 0.25turn 500ms 97px
+- 0 0 1 100% 0.25turn 1001ms 96px
+
+grammar <length-percentage [0,∞]>#
++ 1px, 2% => 1px, 2%
+- -1px
+
+grammar foo( a | b ) bar()
++ foo(b) bar() => foo(b) bar()
+- foo(c) bar()
+
+grammar { <declaration-list> }
++ @decl x: { color: red; margin: 0 } => {color: red; margin: 0}
+- @decl x: ( color: red )
+
+grammar ( <number> | <length> )
++ (1) => (1)
++ (1px) => (1px)
+
+grammar <length> , <number> / <integer>
++ 1px , 2 / 3 => 1px, 2 / 3
+- 1px 2 / 3
+- 1px , 2 3
+- 1px ; 2 / 3
+- 1px , 2 ; 3
+
+grammar a ':' b ';' c '=' d
++ a : b ; c = d
+
+grammar <'margin'> | inherit
++ 1px 2px => 1px 2px
++ inherit => inherit
+
+grammar <integer> <dashed-ident> <ratio>
++ 1 --a 1/2 => 1 --a 1 / 2
+- 1.5 --a 1/2
+- 1 -a 1/2
+- 1 --a -1/2
+- 1 --a 1/-2
+
+# --- every native type ----------------------------------------------------------------------------------
+
+grammar <integer> <number> <percentage> <dimension> <length> <angle> <time> <frequency> <resolution> <flex>
++ 1 2.5 50% 3foo 4px 5deg 6ms 7khz 8dpi 9fr => 1 2.5 50% 3foo 4px 5deg 6ms 7kHz 8dpi 9fr
+- 1 2.5 50% 3foo 4px 5deg 6ms 7khz 8dpi 9
+
+grammar <ratio> <zero> <string> <url> <ident> <custom-ident> <dashed-ident>
++ 16/9 0 'a' url(b) c d --e => 16 / 9 0 "a" url("b") c d --e
+- 16/9 1 'a' url(b) c d --e
+- 16/9 0 'a' url(b) c inherit --e
+
+grammar <any-value>
++ a (b ; c) [d] => a (b ; c) [d]
+-
+
+grammar <declaration-value>?
++ a b => a b
++
+- a ; b
+
+grammar <urange>#
++ @decl unicode-range: U+26, U+0-7F, U+4?? => U+26, U+0-7F, U+400-4FF
+- @decl unicode-range: U+26, foo
+
+grammar <an+b> [ of <any-value> ]?
++ 2n+1 => 2n+1
++ odd of a b => 2n+1 of a b
+- foo
+
+grammar <ident-token> <function-token> <at-keyword-token> <hash-token> <string-token> <url-token> <delim-token> <number-token> <percentage-token> <dimension-token>
++ a b(1) @c #d 'e' url(f) + 1 2% 3px
+- a b(1) @c #d 'e' url(f) + 1 2% 3
+
+grammar <colon-token> <semicolon-token> <comma-token> <(-token> <[-token> <{-token> <)-token> <]-token> <}-token> <CDO-token> <CDC-token>
++ : ; , (a) [b] {c} ) ] } <!-- -->
+-
+
+grammar <bad-string-token>
+- 'x
+- a
+
+grammar <whitespace-token>? a
++ a
+
+# --- grammars in the shape of the specifications' ---------------------------------------------------------
+
+grammar <'margin'>
++ 1px => 1px
++ 1px 2% auto 4em => 1px 2% auto 4em
++ var(--a) => var(--a)
+- 1px 2px 3px 4px 5px
+- 1
+
+grammar <length-percentage [0,∞]>{1,4} [ / <length-percentage [0,∞]>{1,4} ]?
++ 1px => 1px
++ 1px 2px / 3% 4% 5% => 1px 2px / 3% 4% 5%
+- -1px
+- 1px /
+
+grammar none | <shadow>#
++ none => none
++ 1px 2px red, inset 0 0 5px 1px blue => 1px 2px red, inset 0px 0px 5px 1px blue
++ red 1px 1px => 1px 1px red
+- 1px
+- inset
+
+grammar <'font-family'>
++ 'Helvetica Neue', Arial, sans-serif => "Helvetica Neue", Arial, sans-serif
++ Times New Roman, serif => Times New Roman, serif
+- 
+
+grammar [ [ <'font-style'> || <'font-weight'> ]? <'font-size'> [ / <'line-height'> ]? <'font-family'> ] | caption | icon | menu
++ italic bold 12px/1.5 Arial, serif => italic bold 12px / 1.5 Arial, serif
++ 12px serif => 12px serif
++ caption => caption
+- italic bold serif
+- 12px / serif
+
+grammar <single-transition>#
++ opacity 1s ease-in 100ms, transform 2s cubic-bezier(0.1, 0.7, 1, 0.1) => opacity 1s ease-in 100ms, transform 2s cubic-bezier(0.1, 0.7, 1, 0.1)
++ none => none
+- opacity 1s 2s 3s
+- 1s 2s 3s 4s
+
+grammar none | <track-list>
++ [a] 1fr [b c] minmax(100px, auto) repeat(2, [x] 10px 1fr) => [a] 1fr [b c] minmax(100px, auto) repeat(2, [x] 10px 1fr)
++ 10px auto fit-content(20%) => 10px auto fit-content(20%)
++ none => none
+- 10px repeat(0, 1fr)
+- [a] [b]
+
+grammar none | <transform-function>+
++ translate(10px, 5%) rotate(45deg) scale(2) matrix(1,0,0,1,0,0) => translate(10px, 5%) rotate(45deg) scale(2) matrix(1, 0, 0, 1, 0, 0)
++ rotate(0) perspective(none)
+- matrix(1,2,3)
+- rotate(1)
+
+grammar auto || <ratio>
++ auto 16/9 => auto 16 / 9
++ 2 auto => auto 2
+- auto auto
+
+grammar normal | none | [ <string> | <url> | counter( <ident> , <counter-style>? ) ]+ [ / <string>+ ]?
++ 'a' url(b) counter(c, decimal) / 'alt' => "a" url("b") counter(c, decimal) / "alt"
+- 'a' /
+
+grammar [ <url> [ format( <string># ) ]? | local( <family-name> ) ]#
++ url(a.woff2) format('woff2'), local(Arial) => url("a.woff2") format("woff2"), local(Arial)
+- format('woff2')
+
+grammar <bg-layer>#? , <final-bg-layer>
++ url(a.png) top left / cover no-repeat, blue url(b.png) => url("a.png") left top / cover no-repeat, blue url("b.png")
+- 
+
+grammar [ <custom-ident> <integer>? ]+ | none
++ a 2 b => a 2 b
+- 1
+
+grammar auto | <hash-token> | <dashed-ident>#
++ --a, --b => --a, --b
+- --a --b
+
+# --- recursive types ------------------------------------------------------------------------------------
+
+grammar <expr>
++ 1 + 2 + ( 3 ) => 1 + 2 + (3)
+- 1 +
+- ( )
+
+grammar <nest>
++ f(f(f(a))) => f(f(f(a)))
+- f(f(f()))
+
+grammar <chain>
++ a a a a
+- a b
+
+# --- the escape hatches -----------------------------------------------------------------------------------
+
+grammar <declaration-value>
++ var(--a) b => var(--a) b
+- 

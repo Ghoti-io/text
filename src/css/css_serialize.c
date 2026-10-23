@@ -482,18 +482,18 @@ enum { CSSOM_MAX_DIGITS = 17, CSSOM_MAX_TEXT = 330 };
 _Static_assert(CSSOM_MAX_TEXT >= 1 + 309, "an integer below 1.8e308 and its sign fit the CSSOM buffer");
 _Static_assert(CSSOM_MAX_TEXT >= 1 + CSSOM_MAX_DIGITS + 1 + 8, "a fraction fits the CSSOM buffer");
 
-static void put_cssom_number(writer * w, double v, bool integer) {
+size_t css_cssom_number(double v, bool integer, char * out) {
   if (v != v) {
-    puts_(w, "0");
-    return;
+    out[0] = '0';
+    return 1;
   }
   if (v == 1.0 / 0.0 || v == -1.0 / 0.0) {
     v = v > 0 ? 1.7976931348623157e308 : -1.7976931348623157e308;
   }
   GMATH_Decimal d;
   if (gmath_decimal_shortest(v, &d) != GMATH_OK) {
-    puts_(w, "0");
-    return;
+    out[0] = '0';
+    return 1;
   }
   char digits[CSSOM_MAX_DIGITS + 2];
   size_t n = d.length;
@@ -543,11 +543,10 @@ static void put_cssom_number(writer * w, double v, bool integer) {
       zero = false;
     }
   }
-  char out[CSSOM_MAX_TEXT];
   size_t len = 0;
   if (zero) {
-    put(w, "0", 1);
-    return;
+    out[0] = '0';
+    return 1;
   }
   if (d.negative) {
     out[len++] = '-';
@@ -576,7 +575,12 @@ static void put_cssom_number(writer * w, double v, bool integer) {
     memcpy(out + len, digits, n);
     len += n;
   }
-  put(w, out, len);
+  return len;
+}
+
+static void put_cssom_number(writer * w, double v, bool integer) {
+  char out[CSSOM_MAX_TEXT];
+  put(w, out, css_cssom_number(v, integer, out));
 }
 
 static void put_number(writer * w, const GTEXT_CSS_Component_Value * v) {

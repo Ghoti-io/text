@@ -574,6 +574,57 @@ std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std:
   };
 }
 
+// ---- CSS Value Definition Syntax --------------------------------------------------------------------------
+
+// A grammar matched against `make(k)` with the default limits out of the way, counted by the match's own work counter
+// (GTEXT_CSS_Match_Result::work): the positions looked at, sets joined, frames run and values made, extraction included.
+std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::function<std::string(size_t)> make, bool expect_match = true) {
+  return [grammar, make, expect_match](size_t k) {
+    Measured m;
+    const std::string in = make(k);
+    m.bytes = in.size();
+    GTEXT_CSS_Compiled * c = nullptr;
+    GTEXT_CSS_Status st = gtext_css_compile(grammar.data(), grammar.size(), nullptr, nullptr, nullptr, &c, nullptr);
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the grammar did not compile: ") + gtext_css_status_string(st);
+      return m;
+    }
+    GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+    po.max_depth = (size_t)1 << 30;
+    po.max_tokens = (size_t)1 << 30;
+    po.max_input_bytes = (size_t)1 << 30;
+    GTEXT_CSS_Tree * tree = nullptr;
+    st = gtext_css_parse_component_values(in.data(), in.size(), &po, &tree, nullptr);
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the parse failed: ") + gtext_css_status_string(st);
+      gtext_css_compiled_free(c);
+      return m;
+    }
+    GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
+    mo.max_match_work = (size_t)1 << 40;
+    mo.max_memo_entries = (size_t)1 << 30;
+    bool matched = false;
+    GTEXT_CSS_Value_Set * set = nullptr;
+    GTEXT_CSS_Match_Result r;
+    st = gtext_css_match(c, tree->values, tree->value_count, &mo, &matched, &set, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the match failed: ") + gtext_css_status_string(st);
+    }
+    else if (matched != expect_match) {
+      m.ok = false;
+      m.why = "the match ended as it should not";
+    }
+    gtext_css_value_set_free(set);
+    gtext_css_tree_free(tree);
+    gtext_css_compiled_free(c);
+    return m;
+  };
+}
+
 // A CSS stylesheet's bytes, parsed in one call or fed to a stream in pieces of `chunk` bytes (0: one piece), counted by
 // gtext_css_parse_bytes_work() and gtext_css_stream_work(): the decoding, the map from the text to the bytes, the buffers and
 // the parse. `label` is the protocol's label (NULL for none: UTF-8).
@@ -1149,6 +1200,32 @@ std::vector<Shape> build_shapes() {
   add("css", "CSS numbers and dimensions", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("+1.5e-3px ", k); }));
   add("css", "CSS a comma-separated list", 8000, css(GTEXT_CSS_TREE_COMMA_LIST, [](size_t k) { return repeat("a b,", k); }));
   add("css", "CSS ill-formed UTF-8", 8000, css(GTEXT_CSS_TREE_COMPONENT_VALUE_LIST, [](size_t k) { return repeat("a\xe2\x82\xed\xa0\x80", k); }));
+  // ---- CSS Value Definition Syntax: the shapes that make a backtracking matcher exponential or quadratic ----
+  add("css", "CSS grammar: a repetition of a repetition that can be empty, [ [ a? b? ]* ]+", 600,
+      css_grammar("[ [ a? b? ]* ]+", [](size_t k) { return repeat("a ", k); }));
+  add("css", "CSS grammar: a repetition of a repetition that cannot match", 600,
+      css_grammar("[ [ a? b? ]* ]+", [](size_t k) { return repeat("a ", k) + "c"; }, false));
+  add("css", "CSS grammar: four stars then a letter that is not there", 600,
+      css_grammar("a* a* a* a* b", [](size_t k) { return repeat("a ", k); }, false));
+  add("css", "CSS grammar: four stars then the letter", 600,
+      css_grammar("a* a* a* a* b", [](size_t k) { return repeat("a ", k) + "b"; }));
+  add("css", "CSS grammar: an ambiguous alternation, [ a | a a ]+ b", 5000,
+      css_grammar("[ a | a a ]+ b", [](size_t k) { return repeat("a ", k); }, false));
+  add("css", "CSS grammar: nested optionals, [ a? [ a? a? ]? ]* b", 5000,
+      css_grammar("[ a? [ a? a? ]? ]* b", [](size_t k) { return repeat("a ", k); }, false));
+  add("css", "CSS grammar: a comma list of repetitions, [ a+ ]#", 5000,
+      css_grammar("[ a+ ]#", [](size_t k) { return repeat("a a, ", k) + "a"; }));
+  add("css", "CSS grammar: one long any-value", 8000, css_grammar("<any-value>", [](size_t k) { return repeat("a (b) ", k); }));
+  // (An any-value that is followed by a keyword it can swallow, once for each of many repetitions, is quadratic and is
+  // not a shape here: every position the any-value could end at is a candidate for the keyword.)
+  add("css", "CSS grammar: an any-value then a keyword", 8000,
+      css_grammar("x <any-value> y", [](size_t k) { return "x " + repeat("a b ", k) + "y"; }));
+  add("css", "CSS grammar: a long list of lengths", 8000,
+      css_grammar("[ <length> | <percentage> ]#", [](size_t k) { return repeat("1px, 2%, ", k) + "2px"; }));
+  add("css", "CSS grammar: right recursion through a function, many levels", 2000,
+      css_grammar("f( a | b )+", [](size_t k) { return repeat("f(a) ", k); }));
+  add("css", "CSS grammar: nested functions that the grammar names once each", 1500,
+      css_grammar("[ f( [ g( a* ) ]* ) ]+", [](size_t k) { return repeat("f(g(a a) g(a)) ", k); }));
   // ---- from bytes and from a stream: the decoder, the map back to the bytes, the buffers, the cuts ----
   const std::string sheet_unit = "a.b > c { d: e; f: \"g\" } /* h */\n";
   add("css", "CSS stream, text a byte at a time", 4000, css_bytes(nullptr, 1, true, [sheet_unit](size_t k) { return repeat(sheet_unit, k); }));

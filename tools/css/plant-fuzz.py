@@ -67,6 +67,15 @@ The plants of fuzz_css_bytes.cpp (BYTES_PLANTS; each is found by replaying its s
   limit-off-by-one          the stream refuses the byte that reaches the input limit.
   flush-forgotten           a stream never ends its decoder: a sequence cut off at the end is not replaced.
   block-index-off           the map's block index sends every lookup past the first 4 KiB to the first runs.
+
+The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
+
+  work-bound-off-by-one     a match stops one unit of work early: the bounds are exact.
+  memo-bound-off-by-one     the same for the memo entries.
+  value-count-wrong         a value set does not count one of its values.
+  matcher-forgets-the-set   the grammar hook answers and keeps nothing: it disagrees with the direct call.
+  match-leaks-its-pool      the match does not free its memo's intervals: the allocator.
+  limit-status-is-internal  the work bound reports an internal error instead of its own status.
 """
 
 import os
@@ -80,6 +89,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-syntax")
 BYTES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-bytes")
+GRAMMAR_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-grammar")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -119,6 +129,19 @@ BYTES_PLANTS = {
 }
 
 
+# The same shape, for tests/fuzz/fuzz_css_grammar.cpp; the seeds are in tests/fuzz/corpus/css-grammar.
+GRAMMAR_PLANTS = {
+    "work-bound-off-by-one": ("css_grammar_match.c", "  if (m->work > m->max_work) {", "  if (m->work >= m->max_work) {", "own-bounds.seed"),
+    "memo-bound-off-by-one": ("css_grammar_match.c", "  if (n > m->max_memo - m->memo) {", "  if (n >= m->max_memo - m->memo) {", "own-bounds.seed"),
+    "value-count-wrong": ("css_grammar_match.c", "  B->vals[B->nvals++] = *v;\n  B->set->count++;", "  B->vals[B->nvals++] = *v;", "own-bounds.seed"),
+    "matcher-forgets-the-set": ("css_grammar_match.c", "  gtext_css_value_set_free(mt->sets[index]);\n  mt->sets[index] = set;",
+                                "  gtext_css_value_set_free(mt->sets[index]);\n  gtext_css_value_set_free(set);\n  mt->sets[index] = NULL;", "own-hook.seed"),
+    "match-leaks-its-pool": ("css_grammar_match.c", "  gtext_allocator_free(&m->alloc, m->pool);\n", "", "own-completes-under-the-fault-allocator.seed"),
+    "limit-status-is-internal": ("css_grammar_match.c", "    if (m->status == GTEXT_CSS_OK) {\n      m->status = GTEXT_CSS_E_LIMIT_WORK;\n    }\n    return false;\n  }\n  return true;\n}\n\nstatic void fail_oom",
+                                 "    if (m->status == GTEXT_CSS_OK) {\n      m->status = GTEXT_CSS_E_INTERNAL;\n    }\n    return false;\n  }\n  return true;\n}\n\nstatic void fail_oom", "own-bounds.seed"),
+}
+
+
 def make_variables(prefix, names):
     """The Makefile's own values for `names`, so that nothing here is a second copy of them."""
     rules = "print-%: ; @echo $($*)\n"
@@ -132,7 +155,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_(syntax|bytes): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -146,15 +169,16 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    names = names or ["control", "control-bytes"] + list(PLANTS) + list(BYTES_PLANTS)
+    names = names or ["control", "control-bytes", "control-grammar"] + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS)
     for n in names:
-        if n not in ("control", "control-bytes") and n not in PLANTS and n not in BYTES_PLANTS:
-            raise SystemExit("unknown plant %r (one of control, control-bytes, %s)" % (n, ", ".join(list(PLANTS) + list(BYTES_PLANTS))))
+        if n not in ("control", "control-bytes", "control-grammar") and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS:
+            raise SystemExit("unknown plant %r (one of control, control-bytes, control-grammar, %s)"
+                             % (n, ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS))))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -172,10 +196,11 @@ def main(argv):
             objs = list(objects)
             seed = None
             bytes_harness = name == "control-bytes" or name in BYTES_PLANTS
-            harness = "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
-            corpus_source = BYTES_CORPUS if bytes_harness else CORPUS
-            if name not in ("control", "control-bytes"):
-                rel, old, new, seed = BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
+            grammar_harness = name == "control-grammar" or name in GRAMMAR_PLANTS
+            harness = "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
+            if name not in ("control", "control-bytes", "control-grammar"):
+                rel, old, new, seed = GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 if text.count(old) != 1:
@@ -223,11 +248,11 @@ def main(argv):
                     sys.stderr.write("plant %s: its seed %s no longer shows the defect; searching\n" % (name, seed))
                     status, out = run_fuzzer(search)
                     how = "SEARCHED, seed %s is stale" % seed
-            elif name in ("control", "control-bytes"):
+            elif name in ("control", "control-bytes", "control-grammar"):
                 status, out = run_fuzzer([app, "-runs=0", corpus])
             else:
                 status, out = run_fuzzer(search)
-            if name in ("control", "control-bytes"):
+            if name in ("control", "control-bytes", "control-grammar"):
                 ok = status == 0
                 print("%s (no edit): %s" % (name, "silent over the whole corpus, as it must be" if ok else "FAILED (exit %d)" % status))
                 if not ok:

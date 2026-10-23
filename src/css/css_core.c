@@ -51,6 +51,14 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_WRITE] = "the sink refused output",
   [GTEXT_CSS_E_LIMIT_OUTPUT] = "output longer than max_output_bytes",
   [GTEXT_CSS_E_LIMIT_DECODED] = "decoded text longer than max_decoded_bytes, or more map runs than max_map_runs",
+  [GTEXT_CSS_E_GRAMMAR] = "not a Value Definition Syntax definition",
+  [GTEXT_CSS_E_REFERENCE] = "a type or property the definition names is not known",
+  [GTEXT_CSS_E_LEFT_RECURSION] = "a definition recurses through itself without consuming input",
+  [GTEXT_CSS_E_LIMIT_DEFINITION] = "definition text longer than max_definition_bytes",
+  [GTEXT_CSS_E_LIMIT_DEFINITION_DEPTH] = "definition groups nested deeper than max_definition_depth",
+  [GTEXT_CSS_E_LIMIT_DEFINITION_NODES] = "more definition nodes than max_definition_nodes",
+  [GTEXT_CSS_E_LIMIT_GROUP] = "a && or || group with more than 64 members",
+  [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 
 const char * gtext_css_status_string(GTEXT_CSS_Status status) {
