@@ -121,6 +121,11 @@ TEST_F(CssGrammarFuzzSeeds, EverySeedHoldsEveryProperty) {
   // The floor: tools/css/make-fuzz-grammar-seeds.py writes more than 300 from the corpus of grammars and its own list.
   constexpr size_t kMinSeeds = 300;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/css/make-fuzz-grammar-seeds.py writes it";
+  // reproducers the fuzzer found, replayed here with the sanitizers of test-asan (a null pool offset by zero in the memo)
+  for (const char * name : {"reproducer-ubsan-null-pool.seed", "reproducer-null-pool-mutated.seed", "reproducer-req-leak-at-work-bound.seed"}) {
+    const std::string path = dir + "/" + name;
+    ASSERT_TRUE(std::find(files.begin(), files.end(), path) != files.end()) << path << " is not there";
+  }
   const auto start = std::chrono::steady_clock::now();
   for (const std::string & path : files) {
     std::snprintf(g_current, sizeof g_current, "%s", path.c_str());

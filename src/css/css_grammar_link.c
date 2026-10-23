@@ -249,8 +249,9 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
     g.str_off += text_base;
     g.src_off += text_base;
     if (has_range && g.kind == GN_REF) {
-      /* the range of the type around it reaches every reference in the definition that it can restrict */
-      const gn_native nt = g.native == GTEXT_CSS_REF_TYPE ? css_grammar_native_lookup(def->text + g.str_off, g.str_len) : NT_COUNT;
+      /* the range of the type around it reaches every reference in the definition that it can restrict (the name is in the
+         compiled text: g.str_off has been moved there with the rest of the node) */
+      const gn_native nt = g.native == GTEXT_CSS_REF_TYPE ? css_grammar_native_lookup(c->text + g.str_off, g.str_len) : NT_COUNT;
       const bool applies = g.native == GTEXT_CSS_REF_PROPERTY ? true : nt == NT_COUNT ? true
           : css_grammar_native_numeric(nt) && css_grammar_range_fits(nt, rclass);
       if (applies) {

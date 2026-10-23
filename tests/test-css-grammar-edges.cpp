@@ -598,4 +598,81 @@ TEST(CssGrammarEdges, MemoryOfTheMatchIsBoundedByAMultipleOfTheMemoEntries) {
   }
 }
 
+extern "C" const void * css_ptr_at(const void * base, size_t index, size_t elem);
+
+TEST(CssGrammarEdges, APoolThatDoesNotExistIsNotOffsetFromAndAMatchOfEmptyAnswersReadsNone) {
+  // The memo of a match whose answers all have no intervals has no pool, and "pool + 0" of a null pointer is undefined (the
+  // fuzzer's UBSan finding); the one place that offsets a pool does not offset a null one.
+  EXPECT_EQ(css_ptr_at(nullptr, 0, 8), nullptr);
+  EXPECT_EQ(css_ptr_at(nullptr, 5, 8), nullptr);
+  const unsigned char bytes[64] = {};
+  EXPECT_EQ(css_ptr_at(bytes, 0, 8), static_cast<const void *>(bytes));
+  EXPECT_EQ(css_ptr_at(bytes, 3, 8), static_cast<const void *>(bytes + 24));
+  // and such matches work: every answer of the memo has no interval, in a grammar with groups, repetitions and an &&
+  for (const char * g : {"a? b?", "[ a? b? ]*", "[ a? && b? ]#?", "[ [ a? ]* ]+", "x? y? z?"}) {
+    for (const char * in : {"", "a", "a b", "x"}) {
+      Grammar gr;
+      compile_into(gr, g);
+      ASSERT_TRUE(gr.ok()) << g;
+      Matched m;
+      match_into(m, gr, in);
+      EXPECT_EQ(m.status, GTEXT_CSS_OK) << g << " | " << in;
+    }
+  }
+}
+
+TEST(CssGrammarEdges, ARangeBroughtByACompositeDoesNotNarrowARangeAlreadyOnATerminalItDoesNotFit) {
+  Defs d;
+  d.types["t"] = "<length [0px,∞]> | <percentage>";
+  check_rows({
+      {"<t [0%,50%]>", "99px", "dim:99px"},
+      {"<t [0%,50%]>", "-1px", "no match"},
+      {"<t [0%,50%]>", "40%", "pct:40"},
+      {"<t [0%,50%]>", "60%", "no match"},
+  }, &d);
+}
+
+TEST(CssGrammarEdges, AMatchThatReachesItsWorkBoundAtAnyPointLeavesNothingBehind) {
+  struct Case {
+    const char * grammar;
+    const char * input;
+  };
+  for (const Case & c : std::vector<Case>{{"[ a? b? ]!", ""}, {"[ a? b? ]!", "a b"}, {"[ a || b ]# c?", "a b, b a c"}, {"[ a* b? ]+ c", "a a b a c"},
+           {"<any-value> && <any-value>", "x y z"}, {"foo( [ a | b ]+ ) bar( c? )", "foo(a b) bar()"}, {"a '/' b , [ c ]!", "a / b , c"}}) {
+    Grammar g;
+    compile_into(g, c.grammar);
+    ASSERT_TRUE(g.ok()) << c.grammar;
+    css_test::Parsed p;
+    css_test::parse_into(p, gtext_css_parse_component_values, c.input);
+    Matched probe;
+    match_values(probe, g, p.tree->values, p.tree->value_count);
+    ASSERT_EQ(probe.status, GTEXT_CSS_OK);
+    for (size_t bound = 1; bound <= probe.result.work + 1; bound++) {
+      FaultAllocator fa;
+      GTEXT_CSS_Match_Options o = gtext_css_match_options_default();
+      o.allocator = &fa.alloc;
+      o.max_match_work = bound;
+      bool matched = false;
+      GTEXT_CSS_Value_Set * set = nullptr;
+      const GTEXT_CSS_Status st = gtext_css_match(g.c, p.tree->values, p.tree->value_count, &o, &matched, &set, nullptr);
+      EXPECT_TRUE(st == GTEXT_CSS_OK || st == GTEXT_CSS_E_LIMIT_WORK) << c.grammar << " " << bound;
+      gtext_css_value_set_free(set);
+      EXPECT_TRUE(fa.live.empty()) << c.grammar << " | " << c.input << ": a block is left at a work bound of " << bound;
+      EXPECT_EQ(fa.bad_frees, 0u);
+    }
+    for (size_t memo = 1; memo <= probe.result.memo_entries + 1; memo++) {
+      FaultAllocator fa;
+      GTEXT_CSS_Match_Options o = gtext_css_match_options_default();
+      o.allocator = &fa.alloc;
+      o.max_memo_entries = memo;
+      bool matched = false;
+      GTEXT_CSS_Value_Set * set = nullptr;
+      const GTEXT_CSS_Status st = gtext_css_match(g.c, p.tree->values, p.tree->value_count, &o, &matched, &set, nullptr);
+      EXPECT_TRUE(st == GTEXT_CSS_OK || st == GTEXT_CSS_E_LIMIT_WORK) << c.grammar << " " << memo;
+      gtext_css_value_set_free(set);
+      EXPECT_TRUE(fa.live.empty()) << c.grammar << ": a block is left at a memo bound of " << memo;
+    }
+  }
+}
+
 } // namespace

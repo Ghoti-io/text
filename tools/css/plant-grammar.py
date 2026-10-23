@@ -57,7 +57,7 @@ PLANTS = [
      "    if (kk + 1 >= g->min) {\n      OKR(iset_union_v(m, &f->r, f->b.v, f->b.n));", ["corpus", "grammar"]),
     ("count-bound-off-by-one", "css_grammar_match.c", "if ((g->max != GN_INF && kk > g->max) || f->a.n == 0) {", "if ((g->max != GN_INF && kk > g->max + 1) || f->a.n == 0) {", ["corpus", "grammar"]),
     ("hash-separates-with-a-slash", "css_grammar_match.c", "        if (!literal_at(m, q, ',')) {\n          cursor_next(f);", "        if (!literal_at(m, q, '/')) {\n          cursor_next(f);", ["corpus", "grammar"]),
-    ("bang-allows-nothing", "css_grammar_match.c", "  const bool good = iset_subtract(m, &f->r, &only);", "  const bool good = true;", ["corpus", "grammar"]),
+    ("bang-allows-nothing", "css_grammar_match.c", "  const bool good = added && iset_subtract(m, &f->r, &only);", "  const bool good = added;", ["corpus", "grammar"]),
     ("range-lower-bound-exclusive", "css_grammar_match.c", "  return v >= g->lo && v <= g->hi;", "  return v > g->lo && v <= g->hi;", ["corpus", "grammar"]),
     ("range-ignores-the-upper-bound", "css_grammar_match.c", "    return c >= g->lo && c <= g->hi;", "    return c >= g->lo;", ["corpus", "grammar"]),
     ("keywords-are-case-sensitive", "css_grammar_match.c", "    if (fold1(a[i]) != fold1(b[i])) {", "    if (a[i] != b[i]) {", ["grammar", "values"]),
@@ -124,6 +124,11 @@ PLANTS = [
     ("open-ended-count-has-an-end", "css_grammar_parse.c", "*max = digits ? (uint32_t)b : GN_INF;", "*max = (uint32_t)b;", ["corpus", "grammar"]),
     ("relative-units-are-always-in-range", "css_grammar_match.c", "  if (n > 0) {\n    return g->hi > 0;", "  if (n > 0) {\n    return true;", ["grammar", "corpus"]),
     ("math-functions-are-not-recognized", "css_grammar_match.c", "static bool is_math_function(const GTEXT_CSS_String * name) {", "static bool is_math_function(const GTEXT_CSS_String * name) {\n  if (1) {\n    return false;\n  }", ["grammar", "edges"]),
+    ("a-null-pool-is-offset", "css_grammar_match.c", "  return base ? (const void *)((const char *)base + index * elem) : NULL;",
+     "  return (const void *)((const char *)base + index * elem);", ["edges"]),
+    ("req-leaks-at-the-work-bound", "css_grammar_match.c", "  const bool added = iset_add(m, &only, f->pos); /* (it may allocate and then fail at the work bound: freed either way) */\n  const bool good = added && iset_subtract(m, &f->r, &only);\n  iset_free(m, &only);\n  OKR(good);",
+     "  OKR(iset_add(m, &only, f->pos));\n  const bool good = iset_subtract(m, &f->r, &only);\n  iset_free(m, &only);\n  OKR(good);", ["edges"]),
+    ("a-brought-range-meets-the-wrong-name", "css_grammar_link.c", "css_grammar_native_lookup(c->text + g.str_off, g.str_len)", "css_grammar_native_lookup(c->text, g.str_len)", ["edges"]),
     ("a-comma-keeps-its-space", "css_value_serialize.c", "    if (begins_with_comma(child)) {\n      return;\n    }", "", ["corpus"]),
 ]
 

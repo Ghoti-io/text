@@ -472,6 +472,13 @@ static const mentry * memo_find(const M * m, uint32_t node, uint32_t pos) {
   return NULL;
 }
 
+/// `index` elements of `elem` bytes past `base`, where `base` may be NULL: then the answer is NULL. (`NULL + 0` is undefined
+/// in C, and a memo whose entries all have no intervals, which is every memo of a grammar that matches nothing wide, has no
+/// pool to be offset from.)
+const void * css_ptr_at(const void * base, size_t index, size_t elem) {
+  return base ? (const void *)((const char *)base + index * elem) : NULL;
+}
+
 static bool memo_put(M * m, uint32_t node, uint32_t pos, const iset * s) {
   if (!memo_charge(m, 1 + s->n)) {
     return false;
@@ -486,7 +493,8 @@ static bool memo_put(M * m, uint32_t node, uint32_t pos, const iset * s) {
   }
   m->ents = ents;
   void * pool = m->pool;
-  if (!css_grammar_grow(&m->alloc, &pool, &m->pcap, m->npool + s->n, sizeof(ival))) {
+  /* (one more than the intervals: the pool is never NULL once there is an entry, whatever the entry holds) */
+  if (!css_grammar_grow(&m->alloc, &pool, &m->pcap, m->npool + s->n + 1, sizeof(ival))) {
     fail_oom(m);
     return false;
   }
@@ -972,7 +980,7 @@ static int get_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
   }
   const mentry * ent = memo_find(m, node, pos);
   if (ent) {
-    e->v = m->pool + ent->off;
+    e->v = (const ival *)css_ptr_at(m->pool, ent->off, sizeof(ival));
     e->n = ent->len;
     return GET_OK;
   }
@@ -1097,8 +1105,8 @@ static int step_req(M * m, frame * f) {
   ASK(kid_of(m, g, 0), f->pos, &e);
   OKR(iset_union_v(m, &f->r, e.v, e.n));
   iset only = {NULL, 0, 0};
-  OKR(iset_add(m, &only, f->pos));
-  const bool good = iset_subtract(m, &f->r, &only);
+  const bool added = iset_add(m, &only, f->pos); /* (it may allocate and then fail at the work bound: freed either way) */
+  const bool good = added && iset_subtract(m, &f->r, &only);
   iset_free(m, &only);
   OKR(good);
   return finish(m, f);
@@ -1233,8 +1241,8 @@ static int step_mult(M * m, frame * f) {
         /* a position this multiplier has already been worked from: everything reachable from it is known */
         const mentry * done = memo_find(m, f->node, q);
         if (done) {
-          OKR(iset_union_v(m, &f->r, m->pool + done->off, done->len));
-          OKR(iset_union_v(m, &f->s, m->pool + done->off, done->len));
+          OKR(iset_union_v(m, &f->r, (const ival *)css_ptr_at(m->pool, done->off, sizeof(ival)), done->len));
+          OKR(iset_union_v(m, &f->s, (const ival *)css_ptr_at(m->pool, done->off, sizeof(ival)), done->len));
           OKR(charge(m, 1));
           cursor_next(f);
           continue;

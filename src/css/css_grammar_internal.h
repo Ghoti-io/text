@@ -162,6 +162,9 @@ struct GTEXT_CSS_Compiled {
   GTEXT_CSS_Atom_Table * atoms; ///< The keywords.
 };
 
+/// `index` elements of `elem` bytes past `base`; NULL for a NULL base (whatever the index: it is 0 where it is used).
+GTEXT_INTERNAL_API const void * css_ptr_at(const void * base, size_t index, size_t elem);
+
 /// Whether the bounds of a range written in `rclass` fit native type `type`.
 bool css_grammar_range_fits(gn_native type, uint8_t rclass);
 

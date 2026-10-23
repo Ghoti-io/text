@@ -38,7 +38,6 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
-#include <regex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -87,15 +86,6 @@ std::string find_file(const std::string & relative) {
     }
   }
   return "";
-}
-
-const std::regex & cached_regex(const char * pattern) {
-  static std::map<const char *, std::regex> cache;
-  auto it = cache.find(pattern);
-  if (it == cache.end()) {
-    it = cache.emplace(pattern, std::regex(pattern)).first;
-  }
-  return it->second;
 }
 
 std::string trim(const std::string & s) {
@@ -155,38 +145,139 @@ Corpus parse_corpus(const std::string & text, std::vector<std::string> * problem
   return c;
 }
 
-/// Every construct of the notation that a text uses; the census of the list.
+bool is_lower(char c) {
+  return c >= 'a' && c <= 'z';
+}
+
+bool is_digit_c(char c) {
+  return c >= '0' && c <= '9';
+}
+
+/// A character after which a multiplier may stand: the end of a keyword, a reference, a group or a function.
+bool ends_term(char c) {
+  return is_lower(c) || c == '>' || c == ']' || c == ')';
+}
+
+/// Whether the text has `ch` straight after a character that ends a term, and (if `not_lower_after`) before something that
+/// is not a lower-case letter (so that `a+b` the type and `a+ b` the multiplier are told apart as the census was written).
+bool has_multiplier(const std::string & t, char ch, bool not_lower_after = false) {
+  for (size_t i = 1; i < t.size(); i++) {
+    if (t[i] == ch && ends_term(t[i - 1]) && (!not_lower_after || (i + 1 < t.size() && !is_lower(t[i + 1])))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// `{` digits [`,` [digits]] `}` at `i`: the shape 0 {A}, 1 {A,B}, 2 {A,}, or -1.
+int brace_shape(const std::string & t, size_t i) {
+  if (i >= t.size() || t[i] != '{') {
+    return -1;
+  }
+  size_t k = i + 1;
+  size_t d = 0;
+  while (k < t.size() && is_digit_c(t[k])) {
+    k++;
+    d++;
+  }
+  if (d == 0 || k >= t.size()) {
+    return -1;
+  }
+  if (t[k] == '}') {
+    return 0;
+  }
+  if (t[k] != ',') {
+    return -1;
+  }
+  k++;
+  size_t e = 0;
+  while (k < t.size() && is_digit_c(t[k])) {
+    k++;
+    e++;
+  }
+  if (k >= t.size() || t[k] != '}') {
+    return -1;
+  }
+  return e ? 1 : 2;
+}
+
+/// A name of lower-case letters and dashes from `i`; its length (0 if none).
+size_t name_at(const std::string & t, size_t i) {
+  size_t k = i;
+  while (k < t.size() && (is_lower(t[k]) || t[k] == '-')) {
+    k++;
+  }
+  return k - i;
+}
+
+/// The constructs of the notation that a text uses; the census of the list.
 std::set<std::string> constructs_of(const std::string & t) {
   std::set<std::string> s;
   auto has = [&](const char * x) { return t.find(x) != std::string::npos; };
   if (t.find(' ') != std::string::npos) s.insert("juxtaposition");
   if (has("&&")) s.insert("&&");
   if (has("||")) s.insert("||");
-  if (std::regex_search(t, cached_regex("[^|]\\|[^|]"))) s.insert("|");
+  for (size_t i = 0; i < t.size(); i++) {
+    if (t[i] == '|' && (i == 0 || t[i - 1] != '|') && (i + 1 >= t.size() || t[i + 1] != '|') && i > 0 && i + 1 < t.size()) {
+      s.insert("|");
+    }
+  }
   if (has("[ ")) s.insert("group");
-  if (std::regex_search(t, cached_regex("[a-z>\\]\\)]\\?"))) s.insert("?");
-  if (std::regex_search(t, cached_regex("[a-z>\\]\\)]\\*"))) s.insert("*");
-  if (std::regex_search(t, cached_regex("[a-z>\\]\\)]\\+[^a-z]"))) s.insert("+");
-  if (std::regex_search(t, cached_regex("[a-z>\\]\\)]#"))) s.insert("#");
-  if (std::regex_search(t, cached_regex("\\{[0-9]+\\}"))) s.insert("{A}");
-  if (std::regex_search(t, cached_regex("\\{[0-9]+,[0-9]+\\}"))) s.insert("{A,B}");
-  if (std::regex_search(t, cached_regex("\\{[0-9]+,\\}"))) s.insert("{A,}");
-  if (std::regex_search(t, cached_regex("#\\{[0-9]+(,[0-9]+)?\\}"))) s.insert("#{A,B}");
+  if (has_multiplier(t, '?')) s.insert("?");
+  if (has_multiplier(t, '*')) s.insert("*");
+  if (has_multiplier(t, '+', true)) s.insert("+");
+  if (has_multiplier(t, '#')) s.insert("#");
+  for (size_t i = 0; i < t.size(); i++) {
+    const int shape = brace_shape(t, i);
+    if (shape == 0) s.insert("{A}");
+    if (shape == 1) s.insert("{A,B}");
+    if (shape == 2) s.insert("{A,}");
+    if (t[i] == '#' && brace_shape(t, i + 1) >= 0 && brace_shape(t, i + 1) <= 1) s.insert("#{A,B}");
+  }
   if (has("]!")) s.insert("!");
   if (has("\xE2\x88\x9E")) s.insert("range with infinity");
-  if (std::regex_search(t, cached_regex("\\[[-0-9.]+[a-z%]+,"))) s.insert("range with units");
-  if (std::regex_search(t, cached_regex("<[a-z-]+ \\["))) s.insert("range");
-  if (std::regex_search(t, cached_regex("<[a-z-]+>"))) s.insert("<type>");
-  if (std::regex_search(t, cached_regex("<'[a-z-]+'>"))) s.insert("<'property'>");
-  if (std::regex_search(t, cached_regex("<[a-z-]+\\(\\)>"))) s.insert("<function()>");
-  if (std::regex_search(t, cached_regex("[a-zA-Z]\\( "))) s.insert("function notation");
-  if (std::regex_search(t, cached_regex("[a-zA-Z]\\(\\)"))) s.insert("empty function notation");
+  for (size_t i = 0; i < t.size(); i++) {
+    // `[` bound-with-a-unit `,`: digits, a unit or %, then a comma
+    if (t[i] == '[' && i + 1 < t.size() && (t[i + 1] == '-' || is_digit_c(t[i + 1]) || t[i + 1] == '.')) {
+      size_t k = i + 1;
+      while (k < t.size() && (t[k] == '-' || t[k] == '.' || is_digit_c(t[k]))) {
+        k++;
+      }
+      const size_t unit = k;
+      while (k < t.size() && (is_lower(t[k]) || t[k] == '%')) {
+        k++;
+      }
+      if (k > unit && k < t.size() && t[k] == ',') s.insert("range with units");
+    }
+    if (t[i] == '<') {
+      const size_t n = name_at(t, i + 1);
+      if (n && i + 1 + n < t.size()) {
+        const char after = t[i + 1 + n];
+        if (after == ' ' && i + 2 + n < t.size() && t[i + 2 + n] == '[') s.insert("range");
+        if (after == '>') s.insert("<type>");
+        if (after == '(' && i + 3 + n < t.size() && t[i + 2 + n] == ')' && t[i + 3 + n] == '>') s.insert("<function()>");
+      }
+      if (i + 1 < t.size() && t[i + 1] == '\'') {
+        const size_t m = name_at(t, i + 2);
+        if (m && i + 3 + m < t.size() && t[i + 2 + m] == '\'' && t[i + 3 + m] == '>') s.insert("<'property'>");
+      }
+    }
+    if (i > 0 && t[i] == '(' && (is_lower(t[i - 1]) || (t[i - 1] >= 'A' && t[i - 1] <= 'Z'))) {
+      if (i + 1 < t.size() && t[i + 1] == ' ') s.insert("function notation");
+      if (i + 1 < t.size() && t[i + 1] == ')') s.insert("empty function notation");
+    }
+  }
   if (has("{ <")) s.insert("{ } block");
   if (has("( <")) s.insert("( ) block");
   if (has(" , ")) s.insert("literal ,");
   if (has(" / ")) s.insert("literal /");
   if (has("':'") || has("'='")) s.insert("quoted literal");
-  if (std::regex_search(t, cached_regex("(^| )[a-z][a-z-]*( |$)"))) s.insert("keyword");
+  for (size_t i = 0; i < t.size(); i++) {  // a keyword: a lower-case word between spaces (or an end)
+    if ((i == 0 || t[i - 1] == ' ') && is_lower(t[i])) {
+      const size_t n = name_at(t, i);
+      if (i + n == t.size() || t[i + n] == ' ') s.insert("keyword");
+    }
+  }
   for (const char * native : {"integer", "number", "percentage", "dimension", "length", "angle", "time", "frequency", "resolution", "flex", "ratio",
            "zero", "string", "url", "ident", "custom-ident", "dashed-ident", "any-value", "declaration-value", "urange", "an+b",
            "declaration-list", "ident-token", "function-token", "at-keyword-token", "hash-token", "string-token", "bad-string-token",
