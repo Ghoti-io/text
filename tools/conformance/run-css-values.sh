@@ -21,7 +21,7 @@
 #   tools/conformance/run-css-values.sh [--controls]
 #
 # The pages are third_party/css/wpt, put there by tools/css/fetch.sh at the commit pinned in tools/css/WPT_COMMIT; the vectors are
-# made from them by tools/css/extract-wpt-values.js (node) on every run. With the data absent this fails and says how to get it;
+# made from them by tools/css/extract-wpt-values.py (python3, no JavaScript engine) on every run. With the data absent this fails and says how to get it;
 # it never skips. --controls makes the gate fail on purpose, each way it should, and requires it to say why: a vector that lies,
 # exceptions that are missing, stale, with a different answer or without a quoted sentence, a floor that is not met, and the
 # library with one rule undone.
@@ -36,7 +36,7 @@ if [ ! -f "$wpt/css/css-values/calc-serialization.html" ] || [ ! -f "$wpt/css/cs
 	echo "Fetch them:  tools/css/fetch.sh" >&2
 	exit 1
 fi
-command -v node >/dev/null 2>&1 || { echo "node is needed to read the pages' scripts (tools/css/extract-wpt-values.js)" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "python3 is needed to read the pages' scripts (tools/css/extract-wpt-values.py); install it, or run make with TEST_GATES set to leave this gate out" >&2; exit 1; }
 
 [ -n "$PREFIX" ] || { echo "PREFIX must be set, as for any build here" >&2; exit 1; }
 [ -n "$DEP_PCS" ] || { echo "DEP_PCS must be set; the Makefile passes it (see DEP_PCS there)" >&2; exit 1; }
@@ -50,7 +50,7 @@ cc -O1 -g -D_GNU_SOURCE -o "$runner" "$root/tools/conformance/css_values_suite.c
 	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
 
 vectors=$root/build/css-values-wpt-vectors.json
-node "$root/tools/css/extract-wpt-values.js" "$wpt" "$vectors" >/dev/null
+python3 "$root/tools/css/extract-wpt-values.py" "$wpt" "$vectors" >/dev/null
 
 suite_py=$root/tools/conformance/css_values_suite.py
 exceptions=$root/tools/conformance/CSS_VALUES_EXCEPTIONS

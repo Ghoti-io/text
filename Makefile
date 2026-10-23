@@ -2111,27 +2111,31 @@ check-css-numbers: ## Fail if a CSS source reaches the host for a number again, 
 check-css-numbers:
 	@tools/css/check-no-stand-in.sh
 
-check-css-libm: ## Fail if a CSS source names the C library's <math.h> again, and show the gate refuses a planted use
+check-css-libm: ## Fail if a CSS source or object refers to the C library's libm, and show the gate refuses a planted use
 # Math, color and unit arithmetic is IEEE double through the math library only (gmath_sin, gmath_atan2 ...), so a result is the same on every
 # host; tools/css/check-no-libm.sh reads src/css with comments removed and fails on an include of <math.h>, on any function or constant of it,
-# and on the classification macros, then shows it refuses a planted sin(), include and INFINITY and does not refuse a comment.
-check-css-libm:
-	@tools/css/check-no-libm.sh
+# and on the classification macros, and reads the undefined symbols of the compiled objects against the symbols libm exports (which sees a
+# function whose address is taken and a name no list holds); it then shows both refuse a planted call, address, include and INFINITY and do
+# not refuse a comment or arithmetic. It needs the library's objects, which `make test` has built; it is in TEST_GATES.
+check-css-libm: $(LIBOBJECTS)
+	@tools/css/check-no-libm.sh src/css $(OBJ_DIR)/css
 
 check-css-grammar-plants: ## Plant a defect in the Value Definition Syntax engine and show the grammar-corpus gate and the engine's tests fail
 # tools/css/plant-grammar.py: each edit is compiled alone and linked ahead of the library into tests/test-css-grammar-corpus.cpp,
 # test-css-grammar.cpp, test-css-values.cpp and test-css-grammar-edges.cpp, which must fail as the plant says; the unedited control must
-# pass. No container engine is needed, so it is one of the gates of `make test`.
+# pass. The plants of the grammar and values fuzzers (tools/css/plant-fuzz.py) are run here too, as "fuzz-<name>", against the replay of
+# those fuzzers' seed corpora, so the fuzzers' defect checks run without clang. No container engine is needed, so it is one of the gates of `make test`.
 check-css-grammar-plants: $(APP_DIR)/$(STATIC_TARGET)
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-grammar.py
 
-check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax and CSS bytes fuzzers find it
-# The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp and fuzz_css_bytes.cpp: tools/css/plant-fuzz.py copies this
-# tree to a scratch directory, edits one line of src/css/ there, and runs the harness for FUZZ_TIME seconds (or
-# replays the recorded seed that shows the defect, searching only if the seed has gone stale); it must stop with a
-# report, and an unedited copy must not. Needs clang,
-# the dependencies on PREFIX, and up to a minute a plant. Outside TEST_GATES: it builds and runs a fuzzer.
+check-css-fuzz-plants: ## Plant a defect in a copy of the library and show the CSS Syntax, CSS bytes, grammar and values fuzzers find it
+# The same check as check-html-fuzz-plants, for tests/fuzz/fuzz_css_syntax.cpp, fuzz_css_bytes.cpp, fuzz_css_grammar.cpp and
+# fuzz_css_values.cpp: tools/css/plant-fuzz.py copies this tree to a scratch directory, edits one line of src/css/ there, and runs the
+# harness for FUZZ_TIME seconds (or replays the recorded seed that shows the defect, searching only if the seed has gone stale); it must
+# stop with a report, and an unedited copy must not. Needs clang, the dependencies on PREFIX, and up to a minute a plant. Outside
+# TEST_GATES: it builds and runs a fuzzer. The plants of the grammar and values fuzzers are also replayed through their seed tests
+# (test-css-grammar-fuzz-seeds.cpp, test-css-values-fuzz-seeds.cpp), without clang, by check-css-grammar-plants, which is in TEST_GATES.
 check-css-fuzz-plants:
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" python3 tools/css/plant-fuzz.py --time $(FUZZ_TIME)
@@ -2295,7 +2299,7 @@ CSS_SYNTAX_FLOOR := CSS_SYNTAX_MIN_SCORED=480
 
 conformance-css-values: ## Score the CSS value layer (math, colors, functions) against the pinned WPT css-values and css-color tests, and show the gate fails
 # tools/conformance/run-css-values.sh: the value tests of web-platform-tests' css/css-values and css/css-color/parsing, read by
-# tools/css/extract-wpt-values.js (needs node) from the checkout pinned in tools/css/WPT_COMMIT; every failure is listed in
+# tools/css/extract-wpt-values.py (needs python3) from the checkout pinned in tools/css/WPT_COMMIT; every failure is listed in
 # tools/conformance/CSS_VALUES_EXCEPTIONS with the sentence of the served draft that decides it, stale entries fail, and the
 # controls plant defects in a copy of the library.
 conformance-css-values: $(CONFORMANCE_LIB)

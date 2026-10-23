@@ -24,7 +24,7 @@
 #                       against, pinned by commit in
 #                       tools/css/CSS_PARSING_TESTS_COMMIT.
 #   wpt/                web-platform-tests, sparse: only css/css-syntax, css/css-values and css/css-color (the value
-#                       tests of the math, color and function types: tools/css/extract-wpt-values.js reads them, with node),
+#                       tests of the math, color and function types: tools/css/extract-wpt-values.py reads them),
 #                       pinned by commit in tools/css/WPT_COMMIT (the same
 #                       commit as the HTML pin, tools/html/WPT_COMMIT, so
 #                       that the library is scored against one revision of

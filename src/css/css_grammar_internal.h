@@ -90,7 +90,6 @@ typedef enum {
 /// Node flags.
 #define GNF_COMMA 0x01u   ///< A MULT: the repetitions are separated by commas (`#`).
 #define GNF_RANGE 0x02u   ///< A NATIVE or REF: `lo` and `hi` are a range.
-#define GNF_INHERITED 0x04u ///< The range was not written on this node but on a type that contains it (it may be dropped where it does not apply).
 #define GNF_GROUP 0x08u   ///< Written as a `[ ]` group.
 
 /// What the bounds of a range were written in (gnode::rclass): nothing but plain numbers, percent, or a unit type + 2.

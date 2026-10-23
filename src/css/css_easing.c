@@ -72,7 +72,7 @@ const css_fn_type * css_easing_types(size_t * count) {
 #include "css_internal.h"
 
 static bool number_of(const GTEXT_CSS_Value * v, double * out) {
-  return css_fn_leaf_number(v, out) == 0;
+  return css_fn_leaf_number(v, out, NULL) == 0;
 }
 
 static GTEXT_CSS_Easing * easing_new(const GTEXT_Allocator * a) {
@@ -99,6 +99,7 @@ GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, cons
   }
   const GTEXT_Allocator * a = allocator ? allocator : gtext_allocator_default();
   *valid = false;
+  *out = NULL;
   GTEXT_CSS_Easing * e = NULL;
   if (value->kind == GTEXT_CSS_VAL_KEYWORD) {
     static const struct { const char * n; GTEXT_CSS_Easing_Kind k; GTEXT_CSS_Easing_Keyword kw; double c[4]; int64_t steps; GTEXT_CSS_Step_Position pos; } KW[] = {
@@ -124,15 +125,17 @@ GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, cons
         e->y2 = KW[i].c[3];
         e->steps = KW[i].steps;
         e->position = KW[i].pos;
+        /* "step-start and step-end ... serialize as steps(1, start) and steps(1)" (Easing 2, 2.3.1) */
+        e->position_short = KW[i].kw == GTEXT_CSS_EASING_KW_STEP_START;
         *out = e;
         *valid = true;
         return GTEXT_CSS_OK;
       }
     }
-    return GTEXT_CSS_E_INVALID;
+    return GTEXT_CSS_OK; /* a keyword that is not an easing function: not valid, not an error */
   }
   if (value->kind != GTEXT_CSS_VAL_FUNCTION || value->math) {
-    return GTEXT_CSS_E_INVALID;
+    return GTEXT_CSS_OK;
   }
   css_leafvec lv;
   if (!css_fn_leaves(a, value, &lv)) {
@@ -170,7 +173,7 @@ GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, cons
   }
   else if (css_fn_name_is(&value->text, "steps")) {
     double n = 0;
-    bool good = lv.n >= 1 && lv.v[0] && css_fn_leaf_number(lv.v[0], &n) == 0;
+    bool good = lv.n >= 1 && lv.v[0] && css_fn_leaf_number(lv.v[0], &n, NULL) == 0;
     GTEXT_CSS_Step_Position pos = GTEXT_CSS_STEP_JUMP_END;
     bool written = false, is_short = false;
     for (size_t i = 1; good && i < lv.n; i++) {
@@ -204,7 +207,9 @@ GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, cons
       }
     }
     /* "the first parameter ... must be a positive integer, and at least 2 with jump-none" */
-    if (good && n == (double)(int64_t)n && n >= (pos == GTEXT_CSS_STEP_JUMP_NONE ? 2.0 : 1.0) && n <= 9007199254740992.0) {
+    /* The range is tested before the conversion: a double outside int64_t (steps(1e300), infinity) or NaN is not converted at all.
+       Inside [1, 2^53] a double is an integer exactly when it converts back to itself. */
+    if (good && n >= (pos == GTEXT_CSS_STEP_JUMP_NONE ? 2.0 : 1.0) && n <= 9007199254740992.0 && n == (double)(int64_t)n) {
       e = easing_new(a);
       if (!e) {
         st = GTEXT_CSS_E_OOM;
@@ -260,7 +265,9 @@ GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, cons
           continue;
         }
         double x;
-        const int kind = css_fn_leaf_number(lv.v[i], &x);
+        const int kind = css_fn_leaf_number(lv.v[i], &x, NULL);
+        /* `<number> && <percentage>{0,2}`: the value of a && is in the grammar's order, so the number comes first whatever order it was
+           written in; exactly one number, and up to two percentages */
         if (kind == 0 && !have) {
           out_v = x;
           have = true;
@@ -326,9 +333,7 @@ GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, cons
       gtext_allocator_free(a, pts);
     }
   }
-  else {
-    st = GTEXT_CSS_E_INVALID;
-  }
+  /* (any other function is not an easing function: *valid stays false) */
   css_fn_leaves_free(a, &lv);
   if (st != GTEXT_CSS_OK) {
     gtext_css_easing_free(e);

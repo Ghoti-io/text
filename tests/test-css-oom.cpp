@@ -202,7 +202,12 @@ TEST(CssOom, TheGrammarEntryPointsToo) {
 // because the property it holds is still the one that matters (a parse that succeeds under any failed allocation
 // has the right number), now in a locale that would have changed the old conversion's answer.
 bool use_a_comma_locale() {
-  const char * names[] = {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8"};
+  // (the POSIX names, and on Windows the CRT's, which has no UTF-8 locales: tests/test-locale-numbers.cpp)
+  const char * names[] = {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8"
+#ifdef _WIN32
+      , "German_Germany", "French_France"
+#endif
+  };
   auto comma = [&]() {
     for (const char * n : names) {
       if (setlocale(LC_NUMERIC, n) && strcmp(localeconv()->decimal_point, ",") == 0) {
@@ -214,6 +219,12 @@ bool use_a_comma_locale() {
   if (comma()) {
     return true;
   }
+#ifdef _WIN32
+  // nothing to generate with: no localedef, no LOCPATH, no mkdtemp
+  return false;
+#else
+  // A host that has no such locale makes one (LOCPATH may already name a directory with it: suite/tools/xarch/text.sh makes one natively
+  // for an emulated target, which cannot run localedef itself).
   char tmpl[] = "/tmp/gtext-css-locale-XXXXXX";
   const char * dir = mkdtemp(tmpl);
   if (!dir) {
@@ -223,6 +234,7 @@ bool use_a_comma_locale() {
   const std::string cmd = std::string("env -u LD_PRELOAD -u LD_LIBRARY_PATH localedef -i de_DE -f UTF-8 ") + dir
       + "/de_DE.UTF-8 >/dev/null 2>&1";
   return system(cmd.c_str()) == 0 && comma();
+#endif
 }
 
 TEST(CssOom, ANumbersConversionNeedsNoMemoryAndNoLocale) {

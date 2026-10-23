@@ -30,6 +30,7 @@
 #define GHOTI_IO_GTEXT_TESTS_CSS_TEST_SUPPORT_H
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -39,6 +40,18 @@
 #include "../tools/conformance/css_tree_canon.h"
 
 namespace css_test {
+
+/// The factor by which this host is slower than a native one for a known reason that is not the library: GTEXT_TEST_SLOWDOWN (an emulator;
+/// suite/tools/xarch/text.sh sets it). 1 when it is not set or is not a factor from 1 to 1000. The bound on a seed replay is multiplied by it.
+inline double slowdown() {
+  if (const char * slow = std::getenv("GTEXT_TEST_SLOWDOWN")) {
+    const double factor = std::atof(slow);
+    if (factor >= 1.0 && factor <= 1000.0) {
+      return factor;
+    }
+  }
+  return 1.0;
+}
 
 using ParseFn = GTEXT_CSS_Status (*)(const char *, size_t, const GTEXT_CSS_Parse_Options *, GTEXT_CSS_Tree **,
     GTEXT_CSS_Result *);

@@ -374,7 +374,11 @@ the terms of a sum are sorted (a number, a percentage, then dimensions by unit n
 and a function whose arguments are all known is replaced by its result. An infinite
 or NaN result is kept, as `calc(infinity * 1px)`, and clamped only by
 `gtext_css_math_clamp()`, which a property uses at computed time with its own range.
-`mod()` and `rem()` are exact (no rounding in the remainder), and every
+`mod()` and `rem()` are exact (the remainder of `rem()` is never rounded, and `mod()`
+is below the modulus in magnitude even when adding it rounds to it), and `progress()` is
+`progress(no-clamp? <calc-sum>, <calc-sum>, <calc-sum>)` as Values 5 writes it. The
+tree-counting functions `sibling-index()` and `sibling-count()` take no arguments and stay
+unresolved. Every
 transcendental function goes through the `math` library, never libm
 (`make check-css-libm` fails if a source includes `<math.h>`).
 
@@ -451,8 +455,8 @@ and the system colors, `transparent`, `currentcolor`, the hexadecimal forms, `rg
 (`rgb(from red r g b / 0.5)`). The channels are kept as written (a number, a
 percentage, an angle, `none`, a symbol of a relative color, or a math function), and
 the serialization is the **declared value** of Color 4 and 5: the legacy `rgb()` and
-`rgba()` form for an sRGB color without `none` (the alpha as the shortest value that
-reads back as the same 8-bit alpha), `color(srgb ...)` when a channel is `none`,
+`rgba()` form for an sRGB color without `none` (an 8-bit alpha as Color 4, 16.1.1 writes it: the
+integer percentage whose 2.55 multiple rounds to it, divided by 100, otherwise the alpha over 0.255 rounded and divided by 1000), `color(srgb ...)` when a channel is `none`,
 the reference ranges and clamps of each function, hue normalization, the percentages
 of `color-mix()` made to add up, and a relative color as it was written. Nothing is
 converted to another space or resolved against a context here: `gtext_css_color_srgb()`
@@ -527,6 +531,30 @@ at least 1, or 2 with `jump-none`, and an invalid one is `*valid` false),
 `gtext_css_image_set_options()`, `gtext_css_transform_function_from_value()` and
 `gtext_css_shape_from_value()`. A `url()` is kept as written and not resolved; a value
 with `var()`, `env()` or `attr()` in it matches and stays pending.
+
+**One rule for every view.** A view returns `GTEXT_CSS_E_INVALID` only for a call with a
+NULL argument and `GTEXT_CSS_E_OOM` when memory runs out. A value that is not what the
+view reads (another function, a keyword, a `steps(0)`, a gradient with a stop that has
+neither color nor position) is `GTEXT_CSS_OK` with `*valid` false, and the result
+(`*out`, the option array and its count, the struct) is NULL, 0 or zeroed whenever the
+view did not make one, so a caller may test either. Every view takes the allocator of
+its result; a failure leaves nothing allocated. A transform argument that is a length is
+in the unit it was written in, or in the unit of the one value a calculation came to
+(`translateX(calc(1em + 2em))` is 3 `em`); one that needs an environment is
+`GTEXT_CSS_TARG_MATH` with its `source`. The shape view gives the kind, the fill rule,
+`round` and the string of `path()`; the lengths and positions are in the matched value
+itself, typed by the grammar. A gradient borrows the matched value (`g->value`), which
+must outlive it.
+
+`gtext_css_function_types_resolve()` makes each definition the first time it is asked
+for. If that fails for lack of memory the resolver returns NULL, `gtext_css_function_types_status()`
+says `GTEXT_CSS_E_OOM`, and nothing is remembered as bad: asking again tries again.
+`gtext_css_function_types_prepare()` makes them all, after which the object does not
+change and any number of links may use it at once.
+
+`gtext_css_function_family()` is a closed list: the functions this layer defines types for,
+plus the math and color functions. The functions of other modules (the filter functions,
+`anchor()`, `ray()`, `minmax()`, the prefixed gradients) are NONE.
 
 An easing function, matched and read:
 

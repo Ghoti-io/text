@@ -90,9 +90,15 @@ calc(1px + attr(x px))
 calc(sibling-index() * 1px)
 calc(random(1, 2) * 1px)
 random(--x, 1px, 5px, 1px)
+progress(5px, 0px, 10px)
+progress(50%, 0%, 100%)
+calc(progress(no-clamp 5, 0, 10) * 1px)
 progress(5px from 0px to 10px)
-progress(50% from 0% to 100%)
-calc(progress(5 from 0 to 10 no-clamp) * 1px)
+calc(sibling-index() * 1px)
+calc(sibling-index(1) * 1px)
+calc(media-progress() * 1px)
+mod(-1e-20, 1)
+rem(-7px, 3px)
 red
 RED
 transparent

@@ -21,7 +21,7 @@ tests of web-platform-tests' css/css-values and css/css-color/parsing.
 
     css_values_suite.py <wpt vectors json> <runner> <exceptions>
 
-The vectors are made by tools/css/extract-wpt-values.js from the pinned checkout (the pages' own scripts, run
+The vectors are made by tools/css/extract-wpt-values.py from the pinned checkout (the pages' own scripts, run
 with recording helpers). A vector is a value a page puts into a property and what it expects (kind "valid": the
 specified serialization; "invalid": no match; "equiv": the two values are written alike, test_math_specified).
 tools/css/ has no registry of properties yet (C1c), so PROP_GRAMMAR gives each property a hand-written grammar; a

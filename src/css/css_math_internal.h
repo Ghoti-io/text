@@ -100,9 +100,17 @@ const mnode * mk_sum(mbuilder * mb, const mnode * const * terms, size_t n);
 const mnode * mk_product(mbuilder * mb, const mnode * const * factors, size_t n);
 const mnode * mk_negate(mbuilder * mb, const mnode * x);
 const mnode * mk_invert(mbuilder * mb, const mnode * x);
-/// A function: `args` are its operands in order (a `none` of clamp() is NULL); `round` for ROUND (with `written`).
-const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * args, size_t n,
-    GTEXT_CSS_Math_Round round, bool written);
+/// What a function carries besides its operands: round()'s strategy and whether it was written, progress()'s `no-clamp`, random()'s key.
+typedef struct {
+  GTEXT_CSS_Math_Round round;  ///< ROUND: the strategy (NEAREST when not written).
+  bool strategy_written;       ///< ROUND: the strategy was written.
+  bool no_clamp;               ///< PROGRESS: `no-clamp`.
+  const char * key;            ///< RANDOM: the key as written (in the arena), or NULL.
+  size_t key_len;
+} mfn_opts;
+
+/// A function: `args` are its operands in order (a `none` of clamp() is NULL); `opts` may be NULL for the defaults.
+const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * args, size_t n, const mfn_opts * opts);
 
 /// Whether a node is a numeric leaf.
 bool css_math_is_numeric(const mnode * n);
@@ -113,6 +121,8 @@ bool css_math_is_numeric(const mnode * n);
 GTEXT_INTERNAL_API double css_math_fmod_exact(double x, double y);
 /// The value of the unary/binary/n-ary function `op` over canonical doubles; false for an op it does not compute.
 GTEXT_INTERNAL_API bool css_math_apply(GTEXT_CSS_Math_Op op, GTEXT_CSS_Math_Round round, const double * a, size_t n, double * out);
+/// css_math_apply() with progress()'s `no-clamp` (ignored by the other functions).
+GTEXT_INTERNAL_API bool css_math_apply_ex(GTEXT_CSS_Math_Op op, GTEXT_CSS_Math_Round round, bool no_clamp, const double * a, size_t n, double * out);
 
 /* ---- reading the component values --------------------------------------- */
 

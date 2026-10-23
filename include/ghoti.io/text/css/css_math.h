@@ -150,7 +150,7 @@ typedef enum {
   GTEXT_CSS_MATH_EXP,        ///< `exp(A)`
   GTEXT_CSS_MATH_ABS,        ///< `abs(A)`
   GTEXT_CSS_MATH_SIGN,       ///< `sign(A)`
-  GTEXT_CSS_MATH_PROGRESS,   ///< `progress(value, start, end)` (Values 5): `strategy_written` is `no-clamp`.
+  GTEXT_CSS_MATH_PROGRESS,   ///< `progress(value, start, end)` (Values 5): `no_clamp` is `no-clamp`.
   GTEXT_CSS_MATH_RANDOM,     ///< `random(key?, min, max, step?)` (Values 5): not computed here; `text` is the key as written.
   GTEXT_CSS_MATH_SYMBOL,     ///< A keyword the context defined (a color channel): `text`, no value yet.
   GTEXT_CSS_MATH_UNRESOLVED, ///< A numeric function that is not a math function (`sibling-index()`): `text` is its serialization.
@@ -177,13 +177,14 @@ typedef struct GTEXT_CSS_Math_Node GTEXT_CSS_Math_Node;
 struct GTEXT_CSS_Math_Node {
   GTEXT_CSS_Math_Op op;                      ///< What it is.
   GTEXT_CSS_Math_Round round;                ///< ROUND: the strategy (written or the default).
-  bool strategy_written;                     ///< ROUND: the strategy was written (it is serialized only then); PROGRESS: `no-clamp`.
+  bool strategy_written;                     ///< ROUND: the strategy was written (it is serialized only then).
+  bool no_clamp;                             ///< PROGRESS: `no-clamp` was written.
   GTEXT_CSS_Unit unit;                       ///< DIMENSION: the unit.
   double value;                              ///< The leaves' number.
   GTEXT_CSS_Math_Type type;                  ///< This node's type.
   const GTEXT_CSS_Math_Node * const * kids;  ///< The operands.
   size_t kid_count;                          ///< Their number.
-  GTEXT_CSS_String text;                     ///< SYMBOL and UNRESOLVED.
+  GTEXT_CSS_String text;                     ///< SYMBOL and UNRESOLVED; RANDOM: the key as written (empty when there is none).
   GTEXT_CSS_Span span;                       ///< The source of a leaf or a function (the zero span for a made node).
 };
 

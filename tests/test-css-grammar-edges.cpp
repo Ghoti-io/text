@@ -176,25 +176,30 @@ TEST(CssGrammarEdges, TheLimitsOfAGrammarAreHeldBelowWhatAn32BitOffsetCanHold) {
   EXPECT_EQ(b, (size_t)1 << 30);
   EXPECT_EQ(de, (size_t)1 << 20);
   EXPECT_EQ(n, (size_t)1 << 28);
-  o.max_definition_bytes = ((size_t)1 << 32) + 5;
-  css_grammar_limits_for_test(&o, &b, &de, &n);
-  EXPECT_EQ(b, (size_t)1 << 30);  // not 5
-  o.max_definition_nodes = ((size_t)1 << 32) + 3;
-  css_grammar_limits_for_test(&o, &b, &de, &n);
-  EXPECT_EQ(n, (size_t)1 << 28);  // not 3
+  if (sizeof(size_t) > 4) {
+    // (a size_t of 32 bits cannot hold a value past 2^32: nothing to truncate there)
+    const size_t past = static_cast<size_t>(uint64_t{1} << 32);
+    o.max_definition_bytes = past + 5;
+    css_grammar_limits_for_test(&o, &b, &de, &n);
+    EXPECT_EQ(b, (size_t)1 << 30);  // not 5
+    o.max_definition_nodes = past + 3;
+    css_grammar_limits_for_test(&o, &b, &de, &n);
+    EXPECT_EQ(n, (size_t)1 << 28);  // not 3
+  }
   o.max_definition_bytes = 100;
   css_grammar_limits_for_test(&o, &b, &de, &n);
   EXPECT_EQ(b, 100u);
   // and a grammar is read and linked and matched under such options
   GTEXT_CSS_Grammar_Options big{};
-  big.max_definition_bytes = ((size_t)1 << 32) + 5;
+  // (a byte count past 2^32 on a host that can hold one; on a 32-bit size_t, the largest there is)
+  big.max_definition_bytes = sizeof(size_t) > 4 ? static_cast<size_t>((uint64_t{1} << 32) + 5) : SIZE_MAX;
   big.max_definition_nodes = SIZE_MAX;
   big.max_definition_depth = SIZE_MAX;
   Grammar g;
   compile_into(g, "[ a | b ]+", nullptr, &big);
   ASSERT_TRUE(g.ok());
   GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
-  mo.max_memo_entries = ((size_t)1 << 40);
+  mo.max_memo_entries = sizeof(size_t) > 4 ? static_cast<size_t>(uint64_t{1} << 40) : SIZE_MAX;
   mo.max_match_work = SIZE_MAX;
   Matched m;
   match_into(m, g, "a b a", &mo);

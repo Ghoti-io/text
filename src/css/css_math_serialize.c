@@ -266,7 +266,7 @@ static bool start(obuf * b, sstack * st, const mnode * n, bool paren) {
         return false;
       }
     }
-    if (n->op == GTEXT_CSS_MATH_PROGRESS && n->strategy_written && !puts_(b, "no-clamp ")) {
+    if (n->op == GTEXT_CSS_MATH_PROGRESS && n->no_clamp && !puts_(b, "no-clamp ")) {
       return false;
     }
     if (n->op == GTEXT_CSS_MATH_RANDOM && n->text.length && (!put(b, n->text.data, n->text.length) || !puts_(b, ", "))) {

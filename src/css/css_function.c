@@ -45,7 +45,8 @@ struct GTEXT_CSS_Function_Types {
   GTEXT_CSS_Grammar_Options grammar;
   size_t total;
   GTEXT_CSS_Definition ** defs;  ///< One for each type, made when asked.
-  unsigned char * state;         ///< 0 not made, 1 made, 2 failed.
+  unsigned char * state;         ///< 0 not made, 1 made, 2 the grammar of the type is wrong (a defect, cached).
+  GTEXT_CSS_Status status;       ///< The last failure that was not a grammar error (out of memory), or OK.
 };
 
 typedef const css_fn_type * (*family_fn)(size_t *);
@@ -136,6 +137,7 @@ const GTEXT_CSS_Definition * gtext_css_function_types_resolve(void * user, GTEXT
   if (!t || !name) {
     return NULL;
   }
+  t->status = GTEXT_CSS_OK;
   if (t->fallback) {
     const GTEXT_CSS_Definition * d = t->fallback(t->fallback_user, kind, name, length);
     if (d) {
@@ -152,9 +154,14 @@ const GTEXT_CSS_Definition * gtext_css_function_types_resolve(void * user, GTEXT
           GTEXT_CSS_Grammar_Options go = t->grammar;
           go.allocator = &t->alloc;
           GTEXT_CSS_Definition * d = NULL;
-          if (gtext_css_definition_parse(tab[i].grammar, strlen(tab[i].grammar), &go, &d, NULL) == GTEXT_CSS_OK) {
+          const GTEXT_CSS_Status st = gtext_css_definition_parse(tab[i].grammar, strlen(tab[i].grammar), &go, &d, NULL);
+          if (st == GTEXT_CSS_OK) {
             t->defs[index] = d;
             t->state[index] = 1;
+          }
+          else if (st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_LIMIT_DEFINITION || st == GTEXT_CSS_E_LIMIT_DEFINITION_NODES ||
+                   st == GTEXT_CSS_E_LIMIT_DEFINITION_DEPTH) {
+            t->status = st; /* not a defect of the grammar: nothing is cached, and the next ask tries again */
           }
           else {
             t->state[index] = 2;
@@ -165,6 +172,28 @@ const GTEXT_CSS_Definition * gtext_css_function_types_resolve(void * user, GTEXT
     }
   }
   return NULL;
+}
+
+GTEXT_CSS_Status gtext_css_function_types_status(const GTEXT_CSS_Function_Types * t) {
+  return t ? t->status : GTEXT_CSS_E_INVALID;
+}
+
+GTEXT_CSS_Status gtext_css_function_types_prepare(GTEXT_CSS_Function_Types * t) {
+  if (!t) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  t->status = GTEXT_CSS_OK;
+  for (size_t f = 0; f < NFAMILIES; f++) {
+    size_t n;
+    const css_fn_type * tab = FAMILIES[f](&n);
+    for (size_t i = 0; i < n; i++) {
+      (void)gtext_css_function_types_resolve(t, tab[i].kind, tab[i].name, strlen(tab[i].name));
+      if (t->status != GTEXT_CSS_OK) {
+        return t->status;
+      }
+    }
+  }
+  return GTEXT_CSS_OK;
 }
 
 /* ---- families ------------------------------------------------------------------ */
@@ -208,7 +237,7 @@ GTEXT_CSS_Function_Family gtext_css_function_family(const char * name, size_t le
   static const char * const easing[] = {"linear", "cubic-bezier", "steps"};
   static const char * const shape[] = {"inset", "xywh", "rect", "circle", "ellipse", "polygon", "path", "shape"};
   static const char * const subst[] = {"var", "env", "attr", "if", "first-valid", "random", "random-item", "sibling-index", "sibling-count",
-    "progress", "inherit", "ident", "string", "counter", "counters", "calc-size"};
+    "progress", "inherit", "ident", "string", "counter", "counters", "symbols", "calc-size"};
   static const char * const color[] = {"rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix", "light-dark",
     "contrast-color", "alpha", "device-cmyk"};
   if (gtext_css_math_is_function(name, length)) {
@@ -321,7 +350,10 @@ bool css_fn_leaves(const GTEXT_Allocator * alloc, const GTEXT_CSS_Value * fn, cs
   return ok;
 }
 
-int css_fn_leaf_number(const GTEXT_CSS_Value * v, double * value) {
+int css_fn_leaf_number(const GTEXT_CSS_Value * v, double * value, GTEXT_CSS_Unit * unit) {
+  if (unit) {
+    *unit = GTEXT_CSS_UNIT_NONE;
+  }
   if (!v) {
     return -1;
   }
@@ -340,6 +372,9 @@ int css_fn_leaf_number(const GTEXT_CSS_Value * v, double * value) {
     switch (gtext_css_unit_type(v->unit)) {
     case GTEXT_CSS_UNIT_TYPE_LENGTH:
       *value = v->number;
+      if (unit) {
+        *unit = v->unit;
+      }
       return 2;
     case GTEXT_CSS_UNIT_TYPE_ANGLE:
       (void)gtext_css_unit_to_canonical(v->unit, v->number, &c);
@@ -371,7 +406,11 @@ int css_fn_leaf_number(const GTEXT_CSS_Value * v, double * value) {
       }
       switch (v->math->category) {
       case GTEXT_CSS_MATH_CAT_NUMBER: return 0;
-      case GTEXT_CSS_MATH_CAT_LENGTH: return 2;
+      case GTEXT_CSS_MATH_CAT_LENGTH:
+        if (unit) {
+          *unit = u;
+        }
+        return 2;
       case GTEXT_CSS_MATH_CAT_ANGLE: return 3;
       case GTEXT_CSS_MATH_CAT_TIME: return 4;
       case GTEXT_CSS_MATH_CAT_RESOLUTION: return 5;

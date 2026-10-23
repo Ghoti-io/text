@@ -44,6 +44,37 @@ using namespace gv;
 
 namespace {
 
+// The typed views answer OK with `valid` false for a value that is not what they read (css_function.h); these keep the shape of the
+// older assertions: OK for a valid value, E_INVALID for one that is not.
+GTEXT_CSS_Status grad_from(const GTEXT_CSS_Value * v, size_t max_stops, GTEXT_CSS_Gradient ** g, const GTEXT_Allocator * a = nullptr) {
+  bool valid = false;
+  const GTEXT_CSS_Status st = gtext_css_gradient_from_value(v, max_stops, a, &valid, g);
+  return st == GTEXT_CSS_OK && !valid ? GTEXT_CSS_E_INVALID : st;
+}
+
+GTEXT_CSS_Status set_from(const GTEXT_CSS_Value * v, GTEXT_CSS_Image_Set_Option ** o, size_t * n, const GTEXT_Allocator * a = nullptr) {
+  bool valid = false;
+  const GTEXT_CSS_Status st = gtext_css_image_set_options(v, a, &valid, o, n);
+  return st == GTEXT_CSS_OK && !valid ? GTEXT_CSS_E_INVALID : st;
+}
+
+bool tf_from(const GTEXT_CSS_Value * v, GTEXT_CSS_Transform_Function * f) {
+  bool valid = false;
+  EXPECT_EQ(gtext_css_transform_function_from_value(v, nullptr, &valid, f), v ? GTEXT_CSS_OK : GTEXT_CSS_E_INVALID);
+  return valid;
+}
+
+bool shape_from(const GTEXT_CSS_Value * v, GTEXT_CSS_Shape * sh) {
+  bool valid = false;
+  EXPECT_EQ(gtext_css_shape_from_value(v, nullptr, &valid, sh), v ? GTEXT_CSS_OK : GTEXT_CSS_E_INVALID);
+  return valid;
+}
+
+} // namespace
+
+
+namespace {
+
 /// The function types, made once.
 struct Types {
   GTEXT_CSS_Function_Types * t = nullptr;
@@ -227,7 +258,7 @@ TEST(CssFunctionImage, TheKindOfAnImageValueAndTheOptionsOfAnImageSet) {
   if (!set.m.matched) {
     GTEST_FAIL() << "no match: " << set.text();
   }
-  ASSERT_EQ(gtext_css_image_set_options(set.m.root(), nullptr, &o, &n), GTEXT_CSS_OK);
+  ASSERT_EQ(set_from(set.m.root(), &o, &n), GTEXT_CSS_OK);
   ASSERT_EQ(n, 3u);
   EXPECT_EQ(o[0].image->kind, GTEXT_CSS_VAL_STRING);
   EXPECT_FALSE(o[0].resolution_written);
@@ -240,7 +271,7 @@ TEST(CssFunctionImage, TheKindOfAnImageValueAndTheOptionsOfAnImageSet) {
   EXPECT_EQ(gtext_css_image_kind(o[2].image), GTEXT_CSS_IMAGE_CROSS_FADE);
   EXPECT_EQ(o[2].resolution, 1.5);
   gtext_allocator_free(gtext_allocator_default(), o);
-  EXPECT_EQ(gtext_css_image_set_options(url.m.root(), nullptr, &o, &n), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(set_from(url.m.root(), &o, &n), GTEXT_CSS_E_INVALID);
 }
 
 TEST(CssFunctionImage, ResolutionsOfAnImageSetAreConvertedToDppx) {
@@ -249,7 +280,7 @@ TEST(CssFunctionImage, ResolutionsOfAnImageSetAreConvertedToDppx) {
   ASSERT_TRUE(set.m.matched);
   GTEXT_CSS_Image_Set_Option * o = nullptr;
   size_t n = 0;
-  ASSERT_EQ(gtext_css_image_set_options(set.m.root(), nullptr, &o, &n), GTEXT_CSS_OK);
+  ASSERT_EQ(set_from(set.m.root(), &o, &n), GTEXT_CSS_OK);
   ASSERT_EQ(n, 4u);
   EXPECT_DOUBLE_EQ(o[0].resolution, 1.0);
   EXPECT_DOUBLE_EQ(o[1].resolution, 2.0);
@@ -263,7 +294,7 @@ TEST(CssFunctionGradient, StopsAndHintsInOrderWithTheirPositions) {
   run_into(o, "<gradient>", "repeating-linear-gradient(to right, red 10%, 20%, blue 30px 40px, green)");
   ASSERT_TRUE(o.m.matched);
   GTEXT_CSS_Gradient * g = nullptr;
-  ASSERT_EQ(gtext_css_gradient_from_value(o.m.root(), 0, nullptr, &g), GTEXT_CSS_OK);
+  ASSERT_EQ(grad_from(o.m.root(), 0, &g), GTEXT_CSS_OK);
   EXPECT_EQ(g->kind, GTEXT_CSS_GRADIENT_LINEAR);
   EXPECT_TRUE(g->repeating);
   ASSERT_EQ(g->stop_count, 4u);
@@ -279,17 +310,17 @@ TEST(CssFunctionGradient, StopsAndHintsInOrderWithTheirPositions) {
   One c, r;
   run_into(c, "<gradient>", "conic-gradient(from 0deg, red, blue)");
   run_into(r, "<gradient>", "radial-gradient(circle, red, blue)");
-  ASSERT_EQ(gtext_css_gradient_from_value(c.m.root(), 0, nullptr, &g), GTEXT_CSS_OK);
+  ASSERT_EQ(grad_from(c.m.root(), 0, &g), GTEXT_CSS_OK);
   EXPECT_EQ(g->kind, GTEXT_CSS_GRADIENT_CONIC);
   EXPECT_FALSE(g->repeating);
   EXPECT_EQ(g->stop_count, 2u);
   gtext_css_gradient_free(g);
-  ASSERT_EQ(gtext_css_gradient_from_value(r.m.root(), 0, nullptr, &g), GTEXT_CSS_OK);
+  ASSERT_EQ(grad_from(r.m.root(), 0, &g), GTEXT_CSS_OK);
   EXPECT_EQ(g->kind, GTEXT_CSS_GRADIENT_RADIAL);
   gtext_css_gradient_free(g);
   One notg;
   run_into(notg, "<image>", "url(x)");
-  EXPECT_EQ(gtext_css_gradient_from_value(notg.m.root(), 0, nullptr, &g), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(grad_from(notg.m.root(), 0, &g), GTEXT_CSS_E_INVALID);
 }
 
 TEST(CssFunctionGradient, TheNumberOfStopsIsBounded) {
@@ -302,11 +333,11 @@ TEST(CssFunctionGradient, TheNumberOfStopsIsBounded) {
   run_into(o, "<gradient>", in);
   ASSERT_TRUE(o.m.matched);
   GTEXT_CSS_Gradient * g = nullptr;
-  ASSERT_EQ(gtext_css_gradient_from_value(o.m.root(), 21, nullptr, &g), GTEXT_CSS_OK);
+  ASSERT_EQ(grad_from(o.m.root(), 21, &g), GTEXT_CSS_OK);
   EXPECT_EQ(g->stop_count, 21u);
   gtext_css_gradient_free(g);
   g = nullptr;
-  EXPECT_EQ(gtext_css_gradient_from_value(o.m.root(), 20, nullptr, &g), GTEXT_CSS_E_LIMIT_STOPS);
+  EXPECT_EQ(grad_from(o.m.root(), 20, &g), GTEXT_CSS_E_LIMIT_STOPS);
   EXPECT_EQ(g, nullptr);
 }
 
@@ -326,7 +357,7 @@ TEST(CssFunctionGradient, TheSerializationOmitsWhatIsTheDefault) {
     run_into(o, "<gradient>", s.in);
     ASSERT_TRUE(o.m.matched) << s.in;
     GTEXT_CSS_Gradient * g = nullptr;
-    ASSERT_EQ(gtext_css_gradient_from_value(o.m.root(), 0, nullptr, &g), GTEXT_CSS_OK);
+    ASSERT_EQ(grad_from(o.m.root(), 0, &g), GTEXT_CSS_OK);
     char * buf = nullptr;
     size_t len = 0;
     ASSERT_EQ(gtext_css_gradient_serialize_buffer(g, nullptr, &buf, &len), GTEXT_CSS_OK);
@@ -373,45 +404,45 @@ TEST(CssFunctionTransform, ArgumentsAreReadByName) {
   ASSERT_EQ(l->kind, GTEXT_CSS_VAL_LIST);
   ASSERT_EQ(l->child_count, 8u);
   GTEXT_CSS_Transform_Function f;
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[0], &f));
+  ASSERT_TRUE(tf_from(&l->children[0], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_TRANSLATE);
   ASSERT_EQ(f.arg_count, 2u);
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_LENGTH);
   EXPECT_EQ(f.args[0].unit, GTEXT_CSS_UNIT_PX);
   EXPECT_EQ(f.args[0].value, 10.0);
   EXPECT_EQ(f.args[1].kind, GTEXT_CSS_TARG_PERCENT);
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[1], &f));
+  ASSERT_TRUE(tf_from(&l->children[1], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_ROTATE);
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_ANGLE);
   EXPECT_DOUBLE_EQ(f.args[0].value, 180.0);  // degrees
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[2], &f));
+  ASSERT_TRUE(tf_from(&l->children[2], &f));
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_ANGLE);  // the unitless zero of an angle slot
   EXPECT_EQ(f.args[0].value, 0.0);
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[3], &f));
+  ASSERT_TRUE(tf_from(&l->children[3], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_SCALE);
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_PERCENT);
   EXPECT_EQ(f.args[1].kind, GTEXT_CSS_TARG_NUMBER);
   EXPECT_EQ(f.args[1].value, 2.0);
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[4], &f));
+  ASSERT_TRUE(tf_from(&l->children[4], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_PERSPECTIVE);
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_NONE);
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[5], &f));
+  ASSERT_TRUE(tf_from(&l->children[5], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_TRANSLATE_Z);
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_MATH);
   EXPECT_NE(f.args[0].source->math, nullptr);
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[6], &f));
+  ASSERT_TRUE(tf_from(&l->children[6], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_ROTATE_3D);
   ASSERT_EQ(f.arg_count, 4u);
   EXPECT_EQ(f.args[0].kind, GTEXT_CSS_TARG_NUMBER);
   EXPECT_EQ(f.args[3].kind, GTEXT_CSS_TARG_ANGLE);
-  ASSERT_TRUE(gtext_css_transform_function_from_value(&l->children[7], &f));
+  ASSERT_TRUE(tf_from(&l->children[7], &f));
   EXPECT_EQ(f.op, GTEXT_CSS_TRANSFORM_SKEW_X);
   EXPECT_NEAR(f.args[0].value, 57.29577951308232, 1e-12);
   EXPECT_STREQ(gtext_css_transform_op_name(GTEXT_CSS_TRANSFORM_TRANSLATE_3D), "translate3d");
   EXPECT_STREQ(gtext_css_transform_op_name(GTEXT_CSS_TRANSFORM_SCALE_X), "scaleX");
   EXPECT_EQ(gtext_css_transform_op_name(GTEXT_CSS_TRANSFORM_COUNT), nullptr);
-  EXPECT_FALSE(gtext_css_transform_function_from_value(l, &f));
-  EXPECT_FALSE(gtext_css_transform_function_from_value(nullptr, &f));
+  EXPECT_FALSE(tf_from(l, &f));
+  EXPECT_FALSE(tf_from(nullptr, &f));
 }
 
 // ---- easing ----------------------------------------------------------------------------------------------------------------------
@@ -473,7 +504,7 @@ TEST(CssFunctionEasing, StepsAreSerializedWithoutAJumpEndAndAreCheckedForTheirRa
     const char * in;
     const char * out;
   };
-  for (const S & s : std::vector<S>{{"step-start", "steps(1, jump-start)"}, {"step-end", "steps(1)"}, {"steps(4)", "steps(4)"}, {"steps(4, end)", "steps(4)"},
+  for (const S & s : std::vector<S>{{"step-start", "steps(1, start)"}, {"step-end", "steps(1)"}, {"steps(4)", "steps(4)"}, {"steps(4, end)", "steps(4)"},
            {"steps(4, jump-end)", "steps(4)"}, {"steps(4, start)", "steps(4, start)"}, {"steps(4, jump-start)", "steps(4, jump-start)"},
            {"steps(2, jump-none)", "steps(2, jump-none)"}, {"steps(1, jump-both)", "steps(1, jump-both)"}, {"steps(calc(2 + 2), jump-both)", "steps(4, jump-both)"}}) {
     Easing e(s.in);
@@ -554,16 +585,35 @@ TEST(CssFunctionEasing, LinearControlPointsAreCanonicalized) {
   }
 }
 
-TEST(CssFunctionEasing, AnInvalidValueIsRefused) {
+TEST(CssFunctionEasing, OnlyABadCallIsAnErrorAndAValueThatIsNoEasingFunctionIsOkAndNotValid) {
+  // the one rule of every typed view: E_INVALID for a NULL argument; any value that is not valid is OK with `valid` false and `*out` NULL
   One o;
   run_into(o, "<string>", "\"x\"");
+  GTEXT_CSS_Easing * e = reinterpret_cast<GTEXT_CSS_Easing *>(&o);  // junk: it must be overwritten
   bool valid = true;
-  GTEXT_CSS_Easing * e = nullptr;
-  EXPECT_EQ(gtext_css_easing_from_value(o.m.root(), nullptr, &valid, &e), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_easing_from_value(o.m.root(), nullptr, &valid, &e), GTEXT_CSS_OK);
+  EXPECT_FALSE(valid);
+  EXPECT_EQ(e, nullptr);
   EXPECT_EQ(gtext_css_easing_from_value(nullptr, nullptr, &valid, &e), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_easing_from_value(o.m.root(), nullptr, nullptr, &e), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_easing_from_value(o.m.root(), nullptr, &valid, nullptr), GTEXT_CSS_E_INVALID);
   One u;
   run_into(u, "<ident>", "wobble");
-  EXPECT_EQ(gtext_css_easing_from_value(u.m.root(), nullptr, &valid, &e), GTEXT_CSS_E_INVALID);
+  e = reinterpret_cast<GTEXT_CSS_Easing *>(&o);
+  valid = true;
+  EXPECT_EQ(gtext_css_easing_from_value(u.m.root(), nullptr, &valid, &e), GTEXT_CSS_OK);
+  EXPECT_FALSE(valid);
+  EXPECT_EQ(e, nullptr);
+  // a known function with a bad argument and an unknown function are the same answer
+  for (const char * text : {"steps(0)", "steps(1, jump-none)", "cubic-bezier(calc(2), 0, 1, 1)"}) {
+    One f;
+    run_into(f, "<easing-function>", text);
+    ASSERT_TRUE(f.m.matched) << text;
+    e = reinterpret_cast<GTEXT_CSS_Easing *>(&o);
+    valid = true;
+    EXPECT_EQ(gtext_css_easing_from_value(f.m.root(), nullptr, &valid, &e), GTEXT_CSS_OK) << text;
+    EXPECT_EQ(e, nullptr) << text;
+  }
   char * buf = nullptr;
   size_t len = 0;
   EXPECT_EQ(gtext_css_easing_serialize_buffer(nullptr, nullptr, &buf, &len), GTEXT_CSS_E_INVALID);
@@ -612,7 +662,7 @@ TEST(CssFunctionShape, TheKindOfAShapeAndItsFillRule) {
     run_into(o, "<basic-shape>", s.in);
     ASSERT_TRUE(o.m.matched) << s.in;
     GTEXT_CSS_Shape sh;
-    ASSERT_TRUE(gtext_css_shape_from_value(o.m.root(), &sh)) << s.in;
+    ASSERT_TRUE(shape_from(o.m.root(), &sh)) << s.in;
     EXPECT_EQ(sh.kind, s.kind) << s.in;
     EXPECT_EQ(sh.even_odd, s.even_odd) << s.in;
     EXPECT_EQ(sh.fill_rule_written, s.written) << s.in;
@@ -621,13 +671,13 @@ TEST(CssFunctionShape, TheKindOfAShapeAndItsFillRule) {
   One p;
   run_into(p, "<basic-shape>", "path(\"M0 0 L1 1\")");
   GTEXT_CSS_Shape sh;
-  ASSERT_TRUE(gtext_css_shape_from_value(p.m.root(), &sh));
+  ASSERT_TRUE(shape_from(p.m.root(), &sh));
   ASSERT_NE(sh.path, nullptr);
   EXPECT_EQ(css_test::str(sh.path->text), "M0 0 L1 1");
   One u;
   run_into(u, "<ident>", "x");
-  EXPECT_FALSE(gtext_css_shape_from_value(u.m.root(), &sh));
-  EXPECT_FALSE(gtext_css_shape_from_value(nullptr, &sh));
+  EXPECT_FALSE(shape_from(u.m.root(), &sh));
+  EXPECT_FALSE(shape_from(nullptr, &sh));
 }
 
 // ---- substitution and generated content --------------------------------------------------------------------------------------
@@ -653,10 +703,10 @@ TEST(CssFunctionSubstitution, EachNeedsSomethingBeforeItHasAValue) {
   };
   for (const N & n : std::vector<N>{{"var", GTEXT_CSS_SUBST_VAR, GTEXT_CSS_NEEDS_VARIABLES}, {"ENV", GTEXT_CSS_SUBST_ENV, GTEXT_CSS_NEEDS_ENVIRONMENT},
            {"attr", GTEXT_CSS_SUBST_ATTR, GTEXT_CSS_NEEDS_ELEMENT}, {"if", GTEXT_CSS_SUBST_IF, GTEXT_CSS_NEEDS_ELEMENT},
-           {"first-valid", GTEXT_CSS_SUBST_FIRST_VALID, GTEXT_CSS_NEEDS_ELEMENT}, {"random", GTEXT_CSS_SUBST_RANDOM, GTEXT_CSS_NEEDS_ELEMENT},
+           {"first-valid", GTEXT_CSS_SUBST_FIRST_VALID, GTEXT_CSS_NEEDS_PROPERTY}, {"random", GTEXT_CSS_SUBST_RANDOM, GTEXT_CSS_NEEDS_ELEMENT},
            {"random-item", GTEXT_CSS_SUBST_RANDOM_ITEM, GTEXT_CSS_NEEDS_ELEMENT}, {"sibling-index", GTEXT_CSS_SUBST_SIBLING_INDEX, GTEXT_CSS_NEEDS_ELEMENT},
-           {"sibling-count", GTEXT_CSS_SUBST_SIBLING_COUNT, GTEXT_CSS_NEEDS_ELEMENT}, {"progress", GTEXT_CSS_SUBST_PROGRESS, GTEXT_CSS_NEEDS_ELEMENT},
-           {"inherit", GTEXT_CSS_SUBST_INHERIT, GTEXT_CSS_NEEDS_ELEMENT}, {"ident", GTEXT_CSS_SUBST_IDENT, GTEXT_CSS_NEEDS_ELEMENT},
+           {"sibling-count", GTEXT_CSS_SUBST_SIBLING_COUNT, GTEXT_CSS_NEEDS_ELEMENT}, {"progress", GTEXT_CSS_SUBST_PROGRESS, GTEXT_CSS_NEEDS_NOTHING},
+           {"inherit", GTEXT_CSS_SUBST_INHERIT, GTEXT_CSS_NEEDS_ELEMENT}, {"ident", GTEXT_CSS_SUBST_IDENT, GTEXT_CSS_NEEDS_NOTHING},
            {"string", GTEXT_CSS_SUBST_STRING, GTEXT_CSS_NEEDS_ELEMENT}, {"counter", GTEXT_CSS_SUBST_COUNTER, GTEXT_CSS_NEEDS_ELEMENT},
            {"counters", GTEXT_CSS_SUBST_COUNTERS, GTEXT_CSS_NEEDS_ELEMENT}, {"calc-size", GTEXT_CSS_SUBST_CALC_SIZE, GTEXT_CSS_NEEDS_LAYOUT}}) {
     EXPECT_EQ(gtext_css_substitution_kind(n.name, std::strlen(n.name)), n.kind) << n.name;

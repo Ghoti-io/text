@@ -69,7 +69,11 @@ extern "C" {
 
 /* ---- the grammars -------------------------------------------------------- */
 
-/** @brief The definitions of the function types (the struct is private). Immutable once made; its resolver is thread-safe only for one link at a time. */
+/**
+ * @brief The definitions of the function types (the struct is private). Each definition is parsed the first time a link asks for it, so until
+ *   every one has been asked for (gtext_css_function_types_prepare() asks for all of them) the object changes under a link and is not safe to
+ *   share between threads; after prepare it is immutable and its resolver may be used by any number of links at once.
+ */
 typedef struct GTEXT_CSS_Function_Types GTEXT_CSS_Function_Types;
 
 /** @brief The allocator and chaining of a @ref GTEXT_CSS_Function_Types. A zeroed struct is the default. */
@@ -94,6 +98,21 @@ GTEXT_API GTEXT_CSS_Status gtext_css_function_types_new(const GTEXT_CSS_Function
 
 /** @brief Free the types and every definition they made; NULL is ignored. Definitions handed to a link stay valid until this call. */
 GTEXT_API void gtext_css_function_types_free(GTEXT_CSS_Function_Types * types);
+
+/**
+ * @brief Parse every definition now (in the order of the tables), so that the object does not change afterward.
+ *
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (NULL); the failure of the first definition that could not be made (out of memory, or a limit of
+ *   the grammar options), after which the call may be repeated.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_function_types_prepare(GTEXT_CSS_Function_Types * types);
+
+/**
+ * @brief The failure behind the last NULL of gtext_css_function_types_resolve(): GTEXT_CSS_E_OOM (or a limit) when a definition could not be made
+ *   for lack of memory, GTEXT_CSS_OK when the name is simply not one of the types (the link then reports the missing reference). A failed
+ *   definition is not remembered as bad: asking again tries again. Cleared by gtext_css_function_types_prepare().
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_function_types_status(const GTEXT_CSS_Function_Types * types);
 
 /** @brief A GTEXT_CSS_Resolver: pass this function and the types as the `user` pointer to gtext_css_definition_link(). */
 GTEXT_API const GTEXT_CSS_Definition * gtext_css_function_types_resolve(void * user, GTEXT_CSS_Ref_Kind kind,
@@ -124,7 +143,15 @@ typedef enum {
   GTEXT_CSS_FN_FAMILY_SUBSTITUTION  ///< `var()`, `env()`, `attr()`, `if()` ... and the generated-content functions.
 } GTEXT_CSS_Function_Family;
 
-/** @brief The family of a function name (ASCII case-insensitive); NONE for a name no draft here defines. */
+/**
+ * @brief The family of a function name (ASCII case-insensitive).
+ *
+ * The families are a **closed list**: exactly the functions whose types this layer defines (gtext_css_function_type_at() lists them) plus the
+ * math and color functions. A function of another module is NONE: the filter functions (`blur()` ...), `anchor()` and `anchor-size()`
+ * (Anchor Positioning), `ray()` (Motion Path), `fit-content()`, `repeat()` and `minmax()` (Grid), and the prefixed gradients
+ * (`-webkit-linear-gradient()`). `url()` and `src()` are the same family as `image()`: an image, with the kind told apart by
+ * gtext_css_image_kind(). A caller must not read NONE as "not a function".
+ */
 GTEXT_API GTEXT_CSS_Function_Family gtext_css_function_family(const char * name, size_t length);
 
 /* ---- easing -------------------------------------------------------------- */
@@ -187,7 +214,9 @@ struct GTEXT_CSS_Easing {
  * @param allocator NULL for the default.
  * @param valid Receives whether the function is valid (a `steps(0)` is not). Written on success. Not NULL.
  * @param out Receives the easing function when valid; release it with gtext_css_easing_free(). Written only on success. Not NULL.
- * @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID (not an easing value) or GTEXT_CSS_E_OOM.
+ * @return GTEXT_CSS_OK (with `*valid` false and `*out` NULL for a value that is not a valid easing function: another
+ *   function or keyword, a `steps(0)`, a `cubic-bezier()` with an x outside [0,1]); GTEXT_CSS_E_INVALID only for a call
+ *   with a NULL argument; GTEXT_CSS_E_OOM. `*out` is NULL whenever the result is not OK or not valid.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_easing_from_value(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator,
     bool * valid, GTEXT_CSS_Easing ** out);
@@ -239,11 +268,18 @@ typedef struct {
 /**
  * @brief Read a transform function from a value matched by `<transform-function>`.
  *
+ * A length argument is in the unit it was written in, or the unit of the one value a calculation came to
+ * (`translateX(calc(1em + 2em))` is 3 `em`); a calculation that needs an environment is @ref GTEXT_CSS_TARG_MATH
+ * with its `source`, and its `value` 0.
+ *
  * @param value The function value. Not NULL.
- * @param out Receives it. Not NULL.
- * @return true; false when the value is not a transform function.
+ * @param allocator NULL for the default (used for scratch only; nothing is returned that needs freeing).
+ * @param valid Receives whether the value is a transform function. Written on success. Not NULL.
+ * @param out Receives it (zeroed when it is not valid). Not NULL.
+ * @return GTEXT_CSS_OK (valid or not); GTEXT_CSS_E_INVALID for a NULL argument; GTEXT_CSS_E_OOM.
  */
-GTEXT_API bool gtext_css_transform_function_from_value(const GTEXT_CSS_Value * value, GTEXT_CSS_Transform_Function * out);
+GTEXT_API GTEXT_CSS_Status gtext_css_transform_function_from_value(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator,
+    bool * valid, GTEXT_CSS_Transform_Function * out);
 
 /** @brief The name of a transform function as it is written (`translateX`, `matrix3d`). Static; NULL for a value that is not one. */
 GTEXT_API const char * gtext_css_transform_op_name(GTEXT_CSS_Transform_Op op);
@@ -270,7 +306,7 @@ typedef struct {
   bool repeating;                       ///< A `repeating-` form.
   GTEXT_CSS_Gradient_Stop * stops;      ///< The stops and hints in order.
   size_t stop_count;                    ///< Their number (hints included).
-  const GTEXT_CSS_Value * value;        ///< The function value.
+  const GTEXT_CSS_Value * value;        ///< The function value: borrowed, it must outlive the gradient (the value set that holds it is not freed first).
   GTEXT_Allocator allocator_;           ///< Private.
 } GTEXT_CSS_Gradient;
 
@@ -280,11 +316,13 @@ typedef struct {
  * @param value The function value. Not NULL.
  * @param max_stops The most stops and hints; 0 for 65,536. One more is GTEXT_CSS_E_LIMIT_STOPS.
  * @param allocator NULL for the default.
- * @param out Receives the gradient; release with gtext_css_gradient_free(). Written only on success. Not NULL.
- * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (not a gradient); GTEXT_CSS_E_OOM; GTEXT_CSS_E_LIMIT_STOPS.
+ * @param valid Receives whether it is a gradient with well-formed stops (a segment after the first that has neither a color
+ *   nor one position, or a keyword among its stops, is not). Written on success. Not NULL.
+ * @param out Receives the gradient (NULL when not valid); release with gtext_css_gradient_free(). Not NULL.
+ * @return GTEXT_CSS_OK (valid or not); GTEXT_CSS_E_INVALID for a NULL argument; GTEXT_CSS_E_OOM; GTEXT_CSS_E_LIMIT_STOPS.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_gradient_from_value(const GTEXT_CSS_Value * value, size_t max_stops,
-    const GTEXT_Allocator * allocator, GTEXT_CSS_Gradient ** out);
+    const GTEXT_Allocator * allocator, bool * valid, GTEXT_CSS_Gradient ** out);
 
 /** @brief Free a gradient; NULL is ignored. */
 GTEXT_API void gtext_css_gradient_free(GTEXT_CSS_Gradient * gradient);
@@ -329,9 +367,11 @@ typedef struct {
 /**
  * @brief The options of an `image-set()` value, in order (an array of `*count`; release with gtext_allocator_free()).
  *
- * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (not an image-set); GTEXT_CSS_E_OOM.
+ * @param valid Receives whether the value is an `image-set()` with at least one option. Written on success. Not NULL.
+ * @return GTEXT_CSS_OK (valid or not; `*options` NULL and `*count` 0 when not valid); GTEXT_CSS_E_INVALID for a NULL
+ *   argument; GTEXT_CSS_E_OOM.
  */
-GTEXT_API GTEXT_CSS_Status gtext_css_image_set_options(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator,
+GTEXT_API GTEXT_CSS_Status gtext_css_image_set_options(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator, bool * valid,
     GTEXT_CSS_Image_Set_Option ** options, size_t * count);
 
 /* ---- shapes -------------------------------------------------------------- */
@@ -343,7 +383,12 @@ typedef enum {
   GTEXT_CSS_SHAPE_POLYGON, GTEXT_CSS_SHAPE_PATH, GTEXT_CSS_SHAPE_SHAPE
 } GTEXT_CSS_Shape_Kind;
 
-/** @brief A basic shape function, read from a matched value. */
+/**
+ * @brief A basic shape function, read from a matched value: its kind, its fill rule, whether `round` was written and the
+ *   string of `path()`. The other arguments (the lengths of `inset()`, the radius and position of `circle()`, the vertices of
+ *   `polygon()`, the commands of `shape()`) are in the matched value itself, typed by the grammar (the function value's `children`); this view
+ *   does not repeat them.
+ */
 typedef struct {
   GTEXT_CSS_Shape_Kind kind;
   bool even_odd;                       ///< `fill-rule: evenodd` was written (`polygon()`, `path()`, `shape()`).
@@ -352,8 +397,16 @@ typedef struct {
   const GTEXT_CSS_Value * path;        ///< `path()`: the string.
 } GTEXT_CSS_Shape;
 
-/** @brief Read a shape from a value matched by `<basic-shape>`; false when it is not one. */
-GTEXT_API bool gtext_css_shape_from_value(const GTEXT_CSS_Value * value, GTEXT_CSS_Shape * out);
+/**
+ * @brief Read a shape from a value matched by `<basic-shape>`.
+ *
+ * @param allocator NULL for the default (scratch only).
+ * @param valid Receives whether the value is a basic-shape function. Written on success. Not NULL.
+ * @param out Receives it (zeroed when not valid). Not NULL.
+ * @return GTEXT_CSS_OK (valid or not); GTEXT_CSS_E_INVALID for a NULL argument; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_shape_from_value(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator, bool * valid,
+    GTEXT_CSS_Shape * out);
 
 /* ---- substitution and generated content ----------------------------------- */
 
@@ -372,13 +425,15 @@ typedef enum {
   GTEXT_CSS_NEEDS_VARIABLES,   ///< The custom properties of the element.
   GTEXT_CSS_NEEDS_ENVIRONMENT, ///< The user agent's environment variables.
   GTEXT_CSS_NEEDS_ELEMENT,     ///< The element: its attributes, its place among its siblings, its counters, its style.
-  GTEXT_CSS_NEEDS_LAYOUT       ///< Layout (the intrinsic size `calc-size()` computes with).
+  GTEXT_CSS_NEEDS_LAYOUT,      ///< Layout (the intrinsic size `calc-size()` computes with).
+  GTEXT_CSS_NEEDS_PROPERTY     ///< The grammar of the property the value is in (`first-valid()`).
 } GTEXT_CSS_Needs;
 
 /** @brief The substitution function of a name, or NONE. */
 GTEXT_API GTEXT_CSS_Substitution_Kind gtext_css_substitution_kind(const char * name, size_t length);
 
-/** @brief What the function needs before it can be resolved (C2's business; stays unresolved until then). */
+/** @brief What the function needs before it can be resolved (C2's business; stays unresolved until then). `progress()` and `ident()` need
+ *  nothing themselves: their arguments are scanned for the functions that do. */
 GTEXT_API GTEXT_CSS_Needs gtext_css_substitution_needs(GTEXT_CSS_Substitution_Kind kind);
 
 #ifdef __cplusplus

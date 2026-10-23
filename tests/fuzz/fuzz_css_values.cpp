@@ -84,8 +84,8 @@ bool is_hard_limit(GTEXT_CSS_Status s) {
   return s == GTEXT_CSS_E_LIMIT_DEPTH || s == GTEXT_CSS_E_LIMIT_MATH_NODES || s == GTEXT_CSS_E_LIMIT_COLOR_NESTING || s == GTEXT_CSS_E_LIMIT_OUTPUT;
 }
 
-/// Equal, or equal as a number is written (at most six decimals: CSSOM's rule, which loses the rest).
-bool near(double a, double b) {
+/// Equal, or equal as a number is written (at most six decimals: CSSOM's rule, which loses the rest). (Not `near`: a macro of <windows.h>.)
+bool same_as_written(double a, double b) {
   if (a == b || (a != a && b != b)) {
     return true;
   }
@@ -173,7 +173,7 @@ void check_math(const GTEXT_CSS_Component_Value & v, const GTEXT_CSS_Math_Option
     GTEXT_CSS_Unit u1 = GTEXT_CSS_UNIT_NONE, u3 = GTEXT_CSS_UNIT_NONE;
     bool p1 = false, p3 = false;
     const bool n1 = gtext_css_math_numeric(m, &v1, &u1, &p1), n3 = gtext_css_math_numeric(m3, &v3, &u3, &p3);
-    if (n1 != n3 || (n1 && (u1 != u3 || p1 != p3 || !near(v1, v3)))) {
+    if (n1 != n3 || (n1 && (u1 != u3 || p1 != p3 || !same_as_written(v1, v3)))) {
       fail("a written calculation reads back as another number", text, input);
     }
     if (written(m3, input) != text || m3->category != m->category) {
@@ -248,7 +248,7 @@ void check_color(const GTEXT_CSS_Component_Value & v, const GTEXT_CSS_Color_Opti
     }
     double s1[4], s2[4];
     const bool k1 = gtext_css_color_srgb(c, s1), k2 = gtext_css_color_srgb(c2, s2);
-    if (k1 != k2 || (k1 && (!near(s1[0], s2[0]) || !near(s1[1], s2[1]) || !near(s1[2], s2[2]) || !(s1[3] - s2[3] < 0.002 && s2[3] - s1[3] < 0.002)))) {
+    if (k1 != k2 || (k1 && (!same_as_written(s1[0], s2[0]) || !same_as_written(s1[1], s2[1]) || !same_as_written(s1[2], s2[2]) || !(s1[3] - s2[3] < 0.002 && s2[3] - s1[3] < 0.002)))) {
       fail("a written color reads back as another color", text, input);
     }
     if (written(c2, input) != text) {
@@ -291,10 +291,15 @@ void check_match(const GTEXT_CSS_Compiled * c, GTEXT_CSS_Tree * tree, const GTEX
     }
     const std::string text(buf, len);
     gtext_css_serialize_buffer_free(nullptr, buf);
-    // the typed views
+    // the typed views: each answers OK (valid or not) or E_OOM, never anything else; a failed allocation leaves nothing behind
+    // (the sweep below runs them under the fault allocator)
     bool valid = false;
     GTEXT_CSS_Easing * e = nullptr;
-    if (gtext_css_easing_from_value(root, nullptr, &valid, &e) == GTEXT_CSS_OK && valid) {
+    GTEXT_CSS_Status vs = gtext_css_easing_from_value(root, nullptr, &valid, &e);
+    if (vs != GTEXT_CSS_OK || (valid != (e != nullptr))) {
+      fail("an easing view answered with a status or a result it must not", gtext_css_status_string(vs), input);
+    }
+    if (valid) {
       char * eb = nullptr;
       size_t el = 0;
       if (gtext_css_easing_serialize_buffer(e, nullptr, &eb, &el) != GTEXT_CSS_OK) {
@@ -311,27 +316,42 @@ void check_match(const GTEXT_CSS_Compiled * c, GTEXT_CSS_Tree * tree, const GTEX
     }
     gtext_css_easing_free(e);
     GTEXT_CSS_Gradient * g = nullptr;
-    if (gtext_css_gradient_from_value(root, 0, nullptr, &g) == GTEXT_CSS_OK) {
+    vs = gtext_css_gradient_from_value(root, 0, nullptr, &valid, &g);
+    if (vs != GTEXT_CSS_OK || (valid != (g != nullptr))) {
+      fail("a gradient view answered with a status or a result it must not", gtext_css_status_string(vs), input);
+    }
+    if (valid) {
       char * gb = nullptr;
       size_t gl = 0;
       if (gtext_css_gradient_serialize_buffer(g, nullptr, &gb, &gl) != GTEXT_CSS_OK) {
         fail("a gradient could not be written", text, input);
       }
       gtext_css_serialize_buffer_free(nullptr, gb);
-      gtext_css_gradient_free(g);
     }
+    gtext_css_gradient_free(g);
     GTEXT_CSS_Image_Set_Option * opts = nullptr;
     size_t no = 0;
-    if (gtext_css_image_set_options(root, nullptr, &opts, &no) == GTEXT_CSS_OK) {
-      gtext_allocator_free(gtext_allocator_default(), opts);
+    vs = gtext_css_image_set_options(root, nullptr, &valid, &opts, &no);
+    if (vs != GTEXT_CSS_OK || (valid != (opts != nullptr))) {
+      fail("an image-set view answered with a status or a result it must not", gtext_css_status_string(vs), input);
     }
+    gtext_allocator_free(gtext_allocator_default(), opts);
     GTEXT_CSS_Shape shape;
-    (void)gtext_css_shape_from_value(root, &shape);
+    vs = gtext_css_shape_from_value(root, nullptr, &valid, &shape);
+    if (vs != GTEXT_CSS_OK) {
+      fail("a shape view answered with a status it must not", gtext_css_status_string(vs), input);
+    }
     GTEXT_CSS_Transform_Function tf;
-    (void)gtext_css_transform_function_from_value(root, &tf);
+    vs = gtext_css_transform_function_from_value(root, nullptr, &valid, &tf);
+    if (vs != GTEXT_CSS_OK) {
+      fail("a transform view answered with a status it must not", gtext_css_status_string(vs), input);
+    }
     if (root->kind == GTEXT_CSS_VAL_LIST) {
       for (size_t i = 0; i < root->child_count; i++) {
-        (void)gtext_css_transform_function_from_value(&root->children[i], &tf);
+        vs = gtext_css_transform_function_from_value(&root->children[i], nullptr, &valid, &tf);
+        if (vs != GTEXT_CSS_OK) {
+          fail("a transform view answered with a status it must not", gtext_css_status_string(vs), input);
+        }
       }
     }
     const bool pending = text.find("var(") != std::string::npos || text.find("env(") != std::string::npos || text.find("attr(") != std::string::npos
@@ -493,6 +513,39 @@ int entry(const uint8_t * data, size_t size) {
       }
       if (st != GTEXT_CSS_OK && set) {
         fail("a failed match returned a set", "", input);
+      }
+      if (st == GTEXT_CSS_OK && set && gtext_css_value_set_root(set)) {
+        const GTEXT_CSS_Value * root = gtext_css_value_set_root(set);
+        bool valid = false;
+        GTEXT_CSS_Easing * e = nullptr;
+        GTEXT_CSS_Status vs = gtext_css_easing_from_value(root, &fa.alloc, &valid, &e);
+        if ((vs != GTEXT_CSS_OK && vs != GTEXT_CSS_E_OOM) || (vs != GTEXT_CSS_OK && (e || valid)) || (valid != (e != nullptr))) {
+          fail("an easing view under a failing allocation answered with what it must not", gtext_css_status_string(vs), input);
+        }
+        gtext_css_easing_free(e);
+        GTEXT_CSS_Gradient * g = nullptr;
+        vs = gtext_css_gradient_from_value(root, 0, &fa.alloc, &valid, &g);
+        if ((vs != GTEXT_CSS_OK && vs != GTEXT_CSS_E_OOM) || (vs != GTEXT_CSS_OK && (g || valid)) || (valid != (g != nullptr))) {
+          fail("a gradient view under a failing allocation answered with what it must not", gtext_css_status_string(vs), input);
+        }
+        gtext_css_gradient_free(g);
+        GTEXT_CSS_Image_Set_Option * opts = nullptr;
+        size_t no = 0;
+        vs = gtext_css_image_set_options(root, &fa.alloc, &valid, &opts, &no);
+        if ((vs != GTEXT_CSS_OK && vs != GTEXT_CSS_E_OOM) || (vs != GTEXT_CSS_OK && (opts || valid || no))) {
+          fail("an image-set view under a failing allocation answered with what it must not", gtext_css_status_string(vs), input);
+        }
+        gtext_allocator_free(&fa.alloc, opts);
+        GTEXT_CSS_Shape shape;
+        vs = gtext_css_shape_from_value(root, &fa.alloc, &valid, &shape);
+        if (vs != GTEXT_CSS_OK && (vs != GTEXT_CSS_E_OOM || valid)) {
+          fail("a shape view under a failing allocation answered with what it must not", gtext_css_status_string(vs), input);
+        }
+        GTEXT_CSS_Transform_Function tf;
+        vs = gtext_css_transform_function_from_value(root, &fa.alloc, &valid, &tf);
+        if (vs != GTEXT_CSS_OK && (vs != GTEXT_CSS_E_OOM || valid)) {
+          fail("a transform view under a failing allocation answered with what it must not", gtext_css_status_string(vs), input);
+        }
       }
       gtext_css_value_set_free(set);
     }

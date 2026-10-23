@@ -51,6 +51,7 @@
 #include <gtest/gtest.h>
 
 #include "../tools/conformance/css_tree_canon.h"
+#include "css_test_support.h"
 #include "markup_test_support.h"
 
 #define LLVMFuzzerTestOneInput css_syntax_entry
@@ -136,7 +137,7 @@ TEST_F(CssSyntaxFuzzSeeds, EverySeedHoldsEveryProperty) {
   }
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
   RecordProperty("replay_seconds", std::to_string(seconds));
-  EXPECT_LT(seconds, 60.0) << files.size() << " seeds took " << seconds << " s";
+  EXPECT_LT(seconds, 60.0 * css_test::slowdown()) << files.size() << " seeds took " << seconds << " s";
 }
 
 } // namespace

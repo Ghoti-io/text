@@ -264,7 +264,7 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
           }
         }
         else {
-          g.flags |= GNF_RANGE | GNF_INHERITED;
+          g.flags |= GNF_RANGE;
           g.lo = lo;
           g.hi = hi;
           g.rclass = rclass;
@@ -313,19 +313,14 @@ static bool resolve_instance(linker * L, size_t index) {
       return false;
     }
     if (nt != NT_COUNT) {
-      uint8_t flags = (uint8_t)(r->flags & (GNF_RANGE | GNF_INHERITED));
-      if (flags & GNF_RANGE) {
-        const bool own = !(flags & GNF_INHERITED);
-        if (!css_grammar_native_numeric(nt) || !css_grammar_range_fits(nt, r->rclass)) {
-          if (own) {
-            set_name(L, r, c->text);
-            lfail(L, GTEXT_CSS_E_GRAMMAR);
-            return false;
-          }
-          flags = 0; /* a range the type around it brought, where it does not apply */
-          r->rclass = RC_NONE;
-        }
+      /* A range on a native type that cannot take one (`<string [0,1]>`) is a grammar error. A range that bounds a numeric type is
+         one it fits: the parser refuses the other, and a range brought by an enclosing type is brought only where it fits. */
+      if ((r->flags & GNF_RANGE) && (!css_grammar_native_numeric(nt) || !css_grammar_range_fits(nt, r->rclass))) {
+        set_name(L, r, c->text);
+        lfail(L, GTEXT_CSS_E_GRAMMAR);
+        return false;
       }
+      const uint8_t flags = (uint8_t)(r->flags & GNF_RANGE);
       r->kind = GN_NATIVE;
       r->native = (uint8_t)nt;
       r->flags = flags;

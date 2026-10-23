@@ -49,13 +49,13 @@ extern "C" {
 bool css_color_is_candidate(const GTEXT_CSS_Component_Value * v);
 
 /**
- * Read the color at `value` into `arena`. OK with *valid false when it is not a color. `work` receives the units of work (NULL if not wanted), `where`
+ * Read the color at `value` into `arena`. OK with *valid false when it is not a color. `work` receives the units of work and `nodes` the colors made (each NULL if not wanted), `where`
  * the component value where a limit was reached (NULL if not wanted).
  * `max_nesting`, `max_math_depth` and `max_math_nodes` of 0 select the defaults.
  */
 GTEXT_CSS_Status css_color_build(css_arena * arena, const GTEXT_Allocator * scratch, const GTEXT_CSS_Component_Value * value,
     size_t max_nesting, size_t max_math_depth, size_t max_math_nodes, GTEXT_CSS_Color ** out, bool * valid, size_t * work,
-    GTEXT_CSS_Span * where);
+    size_t * nodes, GTEXT_CSS_Span * where);
 
 /// Serialize a color into a new buffer (NUL-terminated, from `alloc`).
 GTEXT_CSS_Status css_color_serialize_to(const GTEXT_CSS_Color * color, const GTEXT_Allocator * alloc, size_t max_bytes,

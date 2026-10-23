@@ -28,6 +28,12 @@ of the library's archive into the test programs, which are then run:
   testCssValues          the typed values and their serialization
   testCssGrammarEdges    the edges a review found: names, ranges, literals, brackets, opaque values, math and
                          substitution functions, the matcher, separators, spans, the work that is charged
+  testCssValuesReview    what a review of the value layer found, one test for each (the "review-" plants restore the defects)
+  testCssGrammarFuzzSeeds, testCssValuesFuzzSeeds
+                         the seed corpora of the two fuzzers, replayed through their harnesses' properties with no fuzzer built.
+                         The plants of the fuzzers (tools/css/plant-fuzz.py: GRAMMAR_PLANTS, VALUES_PLANTS) are run here too, as
+                         "fuzz-<name>", so that the fuzzers' own defect checks are part of `make test` on a host with no clang;
+                         `make check-css-fuzz-plants` runs the same plants through libFuzzer.
 
 The **control** is the same procedure with no edit, and all three programs must pass. Each plant says what it breaks.
 """
@@ -42,7 +48,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-grammar.cpp", "values": "test-css-values.cpp",
-            "edges": "test-css-grammar-edges.cpp"}
+            "edges": "test-css-grammar-edges.cpp", "grammar-seeds": "test-css-grammar-fuzz-seeds.cpp",
+            "values-seeds": "test-css-values-fuzz-seeds.cpp", "review": "test-css-values-review.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -101,7 +108,7 @@ PLANTS = [
     ("literals-are-not-checked-as-utf-8", "css_grammar_parse.c", "if (cp < min || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {", "if (0) {", ["edges"]),
     ("quoted-brackets-are-literals", "css_grammar_parse.c", "    if (quoted_open) {", "    if (0 && quoted_open) {", ["edges"]),
     ("any-value-does-not-look-inside", "css_grammar_match.c", "const bool inside = (item->cv->kind != GTEXT_CSS_VALUE_TOKEN) && nested[item->cview];", "const bool inside = false;", ["edges"]),
-    ("ratio-takes-no-math-function", "css_grammar_match.c", "    return xi->state == X_MATH && xi->category == GTEXT_CSS_MATH_CAT_NUMBER;",
+    ("ratio-takes-no-math-function", "css_grammar_match.c", "    return xi->state == X_MATH && xi->category == GTEXT_CSS_MATH_CAT_NUMBER && !xi->has_percent;",
      "    return 0;", ["edges"]),
     ("ratio-is-written-with-one-component", "css_value_serialize.c", "    puts_(w, \" / \");\n    put_number(w, v->number2, false);\n    return false;",
      "    if (v->flags & GTEXT_CSS_VFLAG_RATIO_DENOMINATOR) {\n      puts_(w, \" / \");\n      put_number(w, v->number2, false);\n    }\n    return false;", ["edges", "corpus", "values"]),
@@ -129,7 +136,62 @@ PLANTS = [
      "  OKR(iset_add(m, &only, f->pos));\n  const bool good = iset_subtract(m, &f->r, &only);\n  iset_free(m, &only);\n  OKR(good);", ["edges"]),
     ("a-brought-range-meets-the-wrong-name", "css_grammar_link.c", "css_grammar_native_lookup(c->text + g.str_off, g.str_len)", "css_grammar_native_lookup(c->text, g.str_len)", ["edges"]),
     ("a-comma-keeps-its-space", "css_value_serialize.c", "    if (begins_with_comma(child)) {\n      return;\n    }", "", ["corpus"]),
+
+    # What a review of the value layer found: each plant restores the defect, and tests/test-css-values-review.cpp must fail.
+    ("review-easing-unknown-keyword-is-an-error", "css_easing.c", "    return GTEXT_CSS_OK; /* a keyword that is not an easing function: not valid, not an error */",
+     "    return GTEXT_CSS_E_INVALID;", ["review"]),
+    ("review-step-start-is-jump-start", "css_easing.c", "e->position_short = KW[i].kw == GTEXT_CSS_EASING_KW_STEP_START;", "e->position_short = false;", ["review"]),
+    ("review-math-parse-keeps-its-results", "css_math.c", "  *valid = false;\n  *out = NULL;\n  GTEXT_Allocator alloc = *((options && options->allocator)",
+     "  GTEXT_Allocator alloc = *((options && options->allocator)", ["review"]),
+    ("review-color-parse-keeps-its-results", "css_color.c", "  *valid = false;\n  *out = NULL;\n  GTEXT_Allocator alloc = *((options && options->allocator)",
+     "  GTEXT_Allocator alloc = *((options && options->allocator)", ["review"]),
+    ("review-color-nodes-are-one", "css_color.c", "    result->nodes = nodes;", "    result->nodes = ok ? 1 : 0;", ["review"]),
+    ("review-cmyk-scans-a-from", "css_color.c", "else if (f != F_CMYK && a.n >= 2 && is_ident(a.v[0], \"from\")) {", "else if (a.n >= 2 && is_ident(a.v[0], \"from\")) {", ["review"]),
+    ("review-gradient-kind-by-search", "css_image.c", ["  if (css_fn_name_is(&s, \"linear-gradient\")) {", "  else if (css_fn_name_is(&s, \"radial-gradient\")) {",
+                                                      "  else if (css_fn_name_is(&s, \"conic-gradient\")) {"],
+     ["  if (0) {", "  else if (strstr(name->data, \"radial\")) {", "  else if (strstr(name->data, \"conic\")) {"], ["review"]),
+    ("review-gradient-stray-keyword-is-a-stop", "css_image.c", "      if (ncolor > 1 || other > 0 || (color ? false : np != 1)) {", "      if (0) {", ["review"]),
+    ("review-transform-length-unit-is-lost", "css_function.c", "      case GTEXT_CSS_MATH_CAT_LENGTH:\n        if (unit) {\n          *unit = u;\n        }\n        return 2;",
+     "      case GTEXT_CSS_MATH_CAT_LENGTH: return 2;", ["review"]),
+    ("review-transform-ignores-the-allocator", "css_transform.c", "const GTEXT_Allocator * a = allocator ? allocator : gtext_allocator_default();",
+     "const GTEXT_Allocator * a = gtext_allocator_default();", ["review"]),
+    ("review-progress-needs-an-element", "css_substitution.c", "  case GTEXT_CSS_SUBST_PROGRESS: case GTEXT_CSS_SUBST_IDENT: return GTEXT_CSS_NEEDS_NOTHING;",
+     "  case GTEXT_CSS_SUBST_PROGRESS: case GTEXT_CSS_SUBST_IDENT: return GTEXT_CSS_NEEDS_ELEMENT;", ["review"]),
+    ("review-progress-no-clamp-is-not-kept", "css_math.c", "        F->no_clamp = true;\n        return true;", "        return true;", ["review"]),
+    ("review-random-key-is-dropped", "css_math.c", "F->op == GTEXT_CSS_MATH_RANDOM ? F->key : NULL", "NULL", ["review"]),
+    ("review-media-progress-is-known", "css_math.c", "  \"sibling-index\", \"sibling-count\",\n};", "  \"sibling-index\", \"sibling-count\", \"media-progress\", \"container-progress\",\n};", ["review"]),
+    ("review-sibling-index-takes-arguments", "css_math.c", "if (is_unresolved_number_function(&cv->value) && no_arguments(cv)) {", "if (is_unresolved_number_function(&cv->value)) {", ["review"]),
+    ("review-out-of-memory-is-cached-as-a-bad-grammar", "css_function.c", "            t->status = st; /* not a defect of the grammar: nothing is cached, and the next ask tries again */",
+     "            t->status = st;\n            t->state[index] = 2;", ["review"]),
+    ("review-prepare-makes-nothing", "css_function.c", "      (void)gtext_css_function_types_resolve(t, tab[i].kind, tab[i].name, strlen(tab[i].name));\n", "", ["review"]),
+    ("review-symbols-is-not-a-substitution-function", "css_function.c", "\"counters\", \"symbols\", \"calc-size\"};", "\"counters\", \"calc-size\"};", ["review"]),
+    ("review-ratio-takes-a-percentage-calc", "css_grammar_match.c", "xi->category == GTEXT_CSS_MATH_CAT_NUMBER && !xi->has_percent;\n  }\n  return 0;",
+     "xi->category == GTEXT_CSS_MATH_CAT_NUMBER;\n  }\n  return 0;", ["review"]),
+    ("review-color-serialize-keeps-every-text", "css_color_serialize.c", "      gtext_allocator_free(&a, kid->text);\n      kid->text = NULL;\n", "", ["review"]),
+    ("review-resolve-refuses-a-long-symbol", "css_math.c", "      if (!env || !env->symbol) {\n        ok = false;\n        break;\n      }\n      /* the name is NUL-terminated",
+     "      if (!env || !env->symbol || n->text.length >= 64) {\n        ok = false;\n        break;\n      }\n      /* the name is NUL-terminated", ["review"]),
+    ("review-mod-reaches-the-modulus", "css_math_simplify.c", "    return gmath_fabs(s) >= gmath_fabs(B) ? toward_zero(B) : s;", "    return s;", ["review"]),
+    ("review-custom-space-is-written-raw", "css_color_serialize.c", "(c->space == GTEXT_CSS_SPACE_CUSTOM ? put_ident(b, c->name.data, c->name.length) :",
+     "(c->space == GTEXT_CSS_SPACE_CUSTOM ? put(b, c->name.data, c->name.length) :", ["review", "values-seeds"]),
+    ("review-legacy-alpha-is-at-full-precision", "css_color_serialize.c", "    return put_num(b, gmath_floor(quotient + 0.5) / 1000.0);", "    return put_num(b, ai / 255.0);", ["review"]),
 ]
+
+
+def fuzz_plants():
+    """The plants of the grammar and values fuzzers, as plants of the seed-replay programs."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("plant_fuzz", os.path.join(HERE, "plant-fuzz.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    out = []
+    for name, (rel, old, new, _seed) in module.GRAMMAR_PLANTS.items():
+        out.append(("fuzz-" + name, rel, old, new, ["grammar-seeds"]))
+    for name, (rel, old, new, _seed) in module.VALUES_PLANTS.items():
+        out.append(("fuzz-" + name, rel, old, new, ["values-seeds"]))
+    return out
+
+
+PLANTS += fuzz_plants()
 
 
 def sh(cmd, **kw):

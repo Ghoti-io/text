@@ -171,10 +171,16 @@ GTEXT_CSS_Image_Kind gtext_css_image_kind(const GTEXT_CSS_Value * v) {
   return GTEXT_CSS_IMAGE_NONE;
 }
 
-GTEXT_CSS_Status gtext_css_image_set_options(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator,
+GTEXT_CSS_Status gtext_css_image_set_options(const GTEXT_CSS_Value * value, const GTEXT_Allocator * allocator, bool * valid,
     GTEXT_CSS_Image_Set_Option ** options, size_t * count) {
-  if (!value || !options || !count || gtext_css_image_kind(value) != GTEXT_CSS_IMAGE_IMAGE_SET) {
+  if (!value || !valid || !options || !count) {
     return GTEXT_CSS_E_INVALID;
+  }
+  *valid = false;
+  *options = NULL;
+  *count = 0;
+  if (gtext_css_image_kind(value) != GTEXT_CSS_IMAGE_IMAGE_SET) {
+    return GTEXT_CSS_OK;
   }
   const GTEXT_Allocator * a = allocator ? allocator : gtext_allocator_default();
   css_leafvec lv;
@@ -214,35 +220,64 @@ GTEXT_CSS_Status gtext_css_image_set_options(const GTEXT_CSS_Value * value, cons
     if (v->kind == GTEXT_CSS_VAL_FUNCTION && !v->math && css_fn_name_is(&v->text, "type")) {
       cur->type = v;
     }
-    else if (css_fn_leaf_number(v, &x) == 5) {
+    else if (css_fn_leaf_number(v, &x, NULL) == 5) {
       cur->resolution = x;
       cur->resolution_written = true;
     }
   }
   css_fn_leaves_free(a, &lv);
+  if (n == 0) {
+    gtext_allocator_free(a, o);
+    return GTEXT_CSS_OK; /* an image-set() with no option: not valid */
+  }
   *options = o;
   *count = n;
+  *valid = true;
   return GTEXT_CSS_OK;
 }
 
 /* ---- gradients -------------------------------------------------------------------------------- */
 
+/// The kind of a gradient from its function name, compared by length: `repeating-` and then `linear-`, `radial-` or `conic-` and `gradient`.
+static bool gradient_kind(const GTEXT_CSS_String * name, GTEXT_CSS_Gradient_Kind * kind, bool * repeating) {
+  static const char REP[] = "repeating-";
+  GTEXT_CSS_String s = *name;
+  *repeating = false;
+  if (s.length > sizeof REP - 1 && css_fn_name_is(&(GTEXT_CSS_String){s.data, sizeof REP - 1}, REP)) {
+    *repeating = true;
+    s.data += sizeof REP - 1;
+    s.length -= sizeof REP - 1;
+  }
+  if (css_fn_name_is(&s, "linear-gradient")) {
+    *kind = GTEXT_CSS_GRADIENT_LINEAR;
+  }
+  else if (css_fn_name_is(&s, "radial-gradient")) {
+    *kind = GTEXT_CSS_GRADIENT_RADIAL;
+  }
+  else if (css_fn_name_is(&s, "conic-gradient")) {
+    *kind = GTEXT_CSS_GRADIENT_CONIC;
+  }
+  else {
+    return false;
+  }
+  return true;
+}
+
 GTEXT_CSS_Status gtext_css_gradient_from_value(const GTEXT_CSS_Value * value, size_t max_stops, const GTEXT_Allocator * allocator,
-    GTEXT_CSS_Gradient ** out) {
-  if (!value || !out || gtext_css_image_kind(value) != GTEXT_CSS_IMAGE_GRADIENT) {
+    bool * valid, GTEXT_CSS_Gradient ** out) {
+  if (!value || !valid || !out) {
     return GTEXT_CSS_E_INVALID;
+  }
+  *valid = false;
+  *out = NULL;
+  GTEXT_CSS_Gradient_Kind kind = GTEXT_CSS_GRADIENT_LINEAR;
+  bool repeating = false;
+  if (value->kind != GTEXT_CSS_VAL_FUNCTION || value->math || !gradient_kind(&value->text, &kind, &repeating)) {
+    return GTEXT_CSS_OK; /* not a gradient */
   }
   const GTEXT_Allocator * a = allocator ? allocator : gtext_allocator_default();
   if (max_stops == 0) {
     max_stops = 65536;
-  }
-  GTEXT_CSS_Gradient_Kind kind = GTEXT_CSS_GRADIENT_LINEAR;
-  bool repeating = value->text.length > 9 && css_fn_name_is(&(GTEXT_CSS_String){value->text.data, 9}, "repeating");
-  if (strstr(value->text.data, "radial")) {
-    kind = GTEXT_CSS_GRADIENT_RADIAL;
-  }
-  else if (strstr(value->text.data, "conic")) {
-    kind = GTEXT_CSS_GRADIENT_CONIC;
   }
   css_leafvec lv;
   if (!css_fn_leaves(a, value, &lv)) {
@@ -271,27 +306,37 @@ GTEXT_CSS_Status gtext_css_gradient_from_value(const GTEXT_CSS_Value * value, si
   size_t n = 0, seg_index = 0;
   size_t begin = 0;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
-  for (size_t i = 0; i <= lv.n; i++) {
+  bool good = true;
+  for (size_t i = 0; i <= lv.n && good; i++) {
     if (i < lv.n && lv.v[i]) {
       continue;
     }
     /* the segment is leaves begin..i-1 */
     const GTEXT_CSS_Value * color = NULL;
     const GTEXT_CSS_Value * pos[2] = {NULL, NULL};
-    size_t np = 0;
+    size_t np = 0, ncolor = 0, other = 0;
     for (size_t k = begin; k < i; k++) {
       if (lv.v[k]->kind == GTEXT_CSS_VAL_COLOR) {
         color = lv.v[k];
+        ncolor++;
       }
-      else if (np < 2) {
+      else {
         double x;
-        if (css_fn_leaf_number(lv.v[k], &x) >= 0) {
+        if ((css_fn_leaf_number(lv.v[k], &x, NULL) >= 0 || (lv.v[k]->kind == GTEXT_CSS_VAL_FUNCTION && lv.v[k]->math)) && np < 2) {
           pos[np++] = lv.v[k];
+        }
+        else {
+          other++;
         }
       }
     }
     const bool config = seg_index == 0 && !color;
-    if (!config && i > begin) {
+    if (!config) {
+      /* a stop is a color and up to two positions; a hint is one position; anything else in the segment is no stop */
+      if (ncolor > 1 || other > 0 || (color ? false : np != 1)) {
+        good = false;
+        break;
+      }
       if (n >= max_stops) {
         st = GTEXT_CSS_E_LIMIT_STOPS;
         break;
@@ -305,12 +350,13 @@ GTEXT_CSS_Status gtext_css_gradient_from_value(const GTEXT_CSS_Value * value, si
     begin = i + 1;
   }
   css_fn_leaves_free(a, &lv);
-  if (st != GTEXT_CSS_OK) {
+  if (st != GTEXT_CSS_OK || !good) {
     gtext_css_gradient_free(g);
     return st;
   }
   g->stop_count = n;
   *out = g;
+  *valid = true;
   return GTEXT_CSS_OK;
 }
 

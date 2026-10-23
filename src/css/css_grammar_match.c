@@ -836,7 +836,7 @@ static bool color_item(M * m, uint32_t pos, const xinfo ** out) {
       bool valid = false;
       size_t cwork = 0;
       const GTEXT_CSS_Status st = css_color_build(&m->scratch, &m->alloc, v, m->max_color_nesting, m->max_math_depth,
-          m->max_math_nodes, &cp, &valid, &cwork, NULL);
+          m->max_math_nodes, &cp, &valid, &cwork, NULL, NULL);
       if (st != GTEXT_CSS_OK) {
         if (m->status == GTEXT_CSS_OK) {
           m->status = st;
@@ -906,7 +906,8 @@ static int ratio_number(M * m, uint32_t item) {
     if (!math_item(m, item, &xi)) {
       return -1;
     }
-    return xi->state == X_MATH && xi->category == GTEXT_CSS_MATH_CAT_NUMBER;
+    /* (as <number> takes a math function: not one with a percentage written in it, math_stands_for()) */
+    return xi->state == X_MATH && xi->category == GTEXT_CSS_MATH_CAT_NUMBER && !xi->has_percent;
   }
   return 0;
 }
@@ -1884,7 +1885,7 @@ static bool color_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Va
   GTEXT_CSS_Color * c = NULL;
   bool valid = false;
   size_t work = 0;
-  const GTEXT_CSS_Status st = css_color_build(&B->set->arena, &m->alloc, cv, m->max_color_nesting, m->max_math_depth, m->max_math_nodes, &c, &valid, &work, NULL);
+  const GTEXT_CSS_Status st = css_color_build(&B->set->arena, &m->alloc, cv, m->max_color_nesting, m->max_math_depth, m->max_math_nodes, &c, &valid, &work, NULL, NULL);
   if (st != GTEXT_CSS_OK) {
     if (m->status == GTEXT_CSS_OK) {
       m->status = st;

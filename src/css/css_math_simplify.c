@@ -37,6 +37,7 @@
 #include <ghoti.io/math/elementary.h>
 
 #include <float.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "css_math_internal.h"
@@ -379,6 +380,22 @@ static double round_value(GTEXT_CSS_Math_Round strategy, double A, double B) {
   }
 }
 
+/// Round to a double: on a target that evaluates in a wider format (x87) an intermediate of an expression would otherwise keep the extra
+/// bits and the result would differ from the one of a host that rounds each operation. The way css_units.c does it.
+static inline double rnd(double x) {
+  volatile double v = x;
+  return v;
+}
+
+/// The double next to |x| toward zero, with the sign of x (x finite and not zero).
+static double toward_zero(double x) {
+  uint64_t bits;
+  memcpy(&bits, &x, sizeof bits);
+  bits--;
+  memcpy(&x, &bits, sizeof x);
+  return x;
+}
+
 static double mod_value(double A, double B) {
   if (is_nan(A) || is_nan(B) || B == 0.0 || is_inf(A)) {
     return make_nan();
@@ -391,7 +408,9 @@ static double mod_value(double A, double B) {
     return gmath_copysign(0.0, B);
   }
   if ((r < 0.0) != (B < 0.0)) {
-    return r + B;
+    /* r + B rounds to B itself when r is far below B's last bit (mod(-1e-20, 1)): the result is below |B|, so it is the double next to B */
+    const double s = rnd(r + B);
+    return gmath_fabs(s) >= gmath_fabs(B) ? toward_zero(B) : s;
   }
   return r;
 }
@@ -444,10 +463,10 @@ static double hypot_value(const double * a, size_t n) {
   }
   double sum = 0.0;
   for (size_t i = 0; i < n; i++) {
-    const double r = a[i] / m;
-    sum += r * r;
+    const double r = rnd(a[i] / m);
+    sum = rnd(sum + rnd(r * r));
   }
-  return m * gmath_sqrt(sum);
+  return rnd(m * rnd(gmath_sqrt(sum)));
 }
 
 static double log_value(double A, bool has_base, double B) {
@@ -469,10 +488,15 @@ static double log_value(double A, bool has_base, double B) {
   if (!has_base) {
     return gmath_log(A);
   }
-  return gmath_log(A) / gmath_log(B);
+  const double la = rnd(gmath_log(A)), lb = rnd(gmath_log(B));
+  return rnd(la / lb);
 }
 
 bool css_math_apply(GTEXT_CSS_Math_Op op, GTEXT_CSS_Math_Round round, const double * a, size_t n, double * out) {
+  return css_math_apply_ex(op, round, false, a, n, out);
+}
+
+bool css_math_apply_ex(GTEXT_CSS_Math_Op op, GTEXT_CSS_Math_Round round, bool no_clamp, const double * a, size_t n, double * out) {
   switch (op) {
   case GTEXT_CSS_MATH_MIN: case GTEXT_CSS_MATH_MAX: {
     if (n == 0) {
@@ -540,7 +564,7 @@ bool css_math_apply(GTEXT_CSS_Math_Op op, GTEXT_CSS_Math_Round round, const doub
       *out = x;
       return true;
     }
-    const double s = gmath_sqrt((1.0 - x) * (1.0 + x));
+    const double s = rnd(gmath_sqrt(rnd(rnd(1.0 - x) * rnd(1.0 + x))));
     *out = op == GTEXT_CSS_MATH_ASIN ? gmath_atan2(x, s) : gmath_atan2(s, x);
     return true;
   }
@@ -602,8 +626,6 @@ bool css_math_apply(GTEXT_CSS_Math_Op op, GTEXT_CSS_Math_Round round, const doub
     if (n != 3) {
       return false;
     }
-    /* (the strategy argument carries the flag: UP stands for no-clamp) */
-    const bool no_clamp = round == GTEXT_CSS_MATH_ROUND_UP;
     const double v = a[0], from = a[1], to = a[2];
     if (is_nan(v) || is_nan(from) || is_nan(to)) {
       *out = make_nan();
@@ -1095,7 +1117,7 @@ done:
 /* ---- functions ------------------------------------------------------------ */
 
 static const mnode * fn_node(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * args, size_t n,
-    const GTEXT_CSS_Math_Type * type, GTEXT_CSS_Math_Round round, bool written) {
+    const GTEXT_CSS_Math_Type * type, const mfn_opts * opts) {
   mnode * f = mb_node(mb, op);
   const mnode ** kids = f ? mb_kids(mb, n) : NULL;
   if (!f || (n && !kids)) {
@@ -1107,8 +1129,13 @@ static const mnode * fn_node(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * 
   f->kids = kids;
   f->kid_count = n;
   f->type = *type;
-  f->round = round;
-  f->strategy_written = written;
+  f->round = opts->round;
+  f->strategy_written = opts->strategy_written;
+  f->no_clamp = opts->no_clamp;
+  if (opts->key) {
+    f->text.data = opts->key;
+    f->text.length = opts->key_len;
+  }
   return f;
 }
 
@@ -1126,11 +1153,11 @@ static bool consistent(const mnode * const * args, size_t n, GTEXT_CSS_Math_Type
 
 /// Radians or degrees to the other.
 static double to_radians(double deg) {
-  return deg * PI_VALUE / 180.0;
+  return rnd(rnd(deg * PI_VALUE) / 180.0);
 }
 
 static double to_degrees(double rad) {
-  return rad * 180.0 / PI_VALUE;
+  return rnd(rnd(rad * 180.0) / PI_VALUE);
 }
 
 /// min() or max() with the numeric leaves of one unit (not percentages) combined.
@@ -1178,7 +1205,7 @@ static const mnode * min_max_partial(mbuilder * mb, GTEXT_CSS_Math_Op op, const 
     result = out[0];
     goto done;
   }
-  result = fn_node(mb, op, out, m, type, GTEXT_CSS_MATH_ROUND_NEAREST, false);
+  result = fn_node(mb, op, out, m, type, &(const mfn_opts){GTEXT_CSS_MATH_ROUND_NEAREST, false, false, NULL, 0});
 done:
   gtext_allocator_free(a, out);
   gtext_allocator_free(a, vals);
@@ -1187,8 +1214,12 @@ done:
   return result;
 }
 
-const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * args, size_t n,
-    GTEXT_CSS_Math_Round round, bool written) {
+const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * args, size_t n, const mfn_opts * opts) {
+  static const mfn_opts none = {GTEXT_CSS_MATH_ROUND_NEAREST, false, false, NULL, 0};
+  if (!opts) {
+    opts = &none;
+  }
+  GTEXT_CSS_Math_Round round = opts->round;
   GTEXT_CSS_Math_Type type;
   memset(&type, 0, sizeof type);
   mb->work++;
@@ -1203,11 +1234,11 @@ const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * a
     }
     if (!args[0]) {
       const mnode * two[2] = {args[1], args[2]};
-      return mk_fn(mb, GTEXT_CSS_MATH_MIN, two, 2, round, false);
+      return mk_fn(mb, GTEXT_CSS_MATH_MIN, two, 2, NULL);
     }
     if (!args[2]) {
       const mnode * two[2] = {args[0], args[1]};
-      return mk_fn(mb, GTEXT_CSS_MATH_MAX, two, 2, round, false);
+      return mk_fn(mb, GTEXT_CSS_MATH_MAX, two, 2, NULL);
     }
   }
   for (size_t i = 0; i < n; i++) {
@@ -1316,14 +1347,13 @@ const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * a
       mb_invalid(mb);
       return NULL;
     }
-    return fn_node(mb, op, args, n, &type, GTEXT_CSS_MATH_ROUND_NEAREST, false);
+    return fn_node(mb, op, args, n, &type, opts);
   case GTEXT_CSS_MATH_PROGRESS: {
     GTEXT_CSS_Math_Type t;
     if (n != 3 || !consistent(args, 3, &t) || css_math_type_category(&t) == GTEXT_CSS_MATH_CAT_NONE) {
       mb_invalid(mb);
       return NULL;
     }
-    round = written ? GTEXT_CSS_MATH_ROUND_UP : GTEXT_CSS_MATH_ROUND_NEAREST; /* (the flag of the fold below is no-clamp) */
     break;
   }
   case GTEXT_CSS_MATH_SIGN:
@@ -1363,7 +1393,7 @@ const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * a
       vp[0] = to_radians(vp[0]);
     }
     double r;
-    const bool ok = css_math_apply(op, round, vp, n, &r);
+    const bool ok = css_math_apply_ex(op, round, opts->no_clamp, vp, n, &r);
     gtext_allocator_free(&mb->alloc, heap);
     if (ok) {
       if (op == GTEXT_CSS_MATH_ASIN || op == GTEXT_CSS_MATH_ACOS || op == GTEXT_CSS_MATH_ATAN || op == GTEXT_CSS_MATH_ATAN2) {
@@ -1379,5 +1409,9 @@ const mnode * mk_fn(mbuilder * mb, GTEXT_CSS_Math_Op op, const mnode * const * a
   if (op == GTEXT_CSS_MATH_MIN || op == GTEXT_CSS_MATH_MAX) {
     return min_max_partial(mb, op, args, n, &type);
   }
-  return fn_node(mb, op, args, n, &type, round, written);
+  {
+    mfn_opts used = *opts;
+    used.round = round;
+    return fn_node(mb, op, args, n, &type, &used);
+  }
 }

@@ -173,14 +173,17 @@ TEST(CssColorKeywords, TransparentCurrentcolorAndTheSystemColors) {
 
 TEST(CssColorHex, ThreeFourSixAndEightDigits) {
   check({{"#f00", "rgb(255, 0, 0)"}, {"#F00", "rgb(255, 0, 0)"}, {"#ff0000", "rgb(255, 0, 0)"}, {"#123", "rgb(17, 34, 51)"}, {"#abcdef", "rgb(171, 205, 239)"},
-      {"#f008", "rgba(255, 0, 0, 0.533333)"}, {"#ff000080", "rgba(255, 0, 0, 0.5)"}, {"#ff0000ff", "rgb(255, 0, 0)"}, {"#00000000", "rgba(0, 0, 0, 0)"},
+      {"#f008", "rgba(255, 0, 0, 0.533)"}, {"#ff000080", "rgba(255, 0, 0, 0.5)"}, {"#ff0000ff", "rgb(255, 0, 0)"}, {"#00000000", "rgba(0, 0, 0, 0)"},
       {"#12", "invalid"}, {"#12345", "invalid"}, {"#1234567", "invalid"}, {"#123456789", "invalid"}, {"#ggg", "invalid"}, {"#", "invalid"}});
 }
 
 TEST(CssColorHex, AnEightBitAlphaIsWrittenByTheDraftsAlgorithm) {
-  // 16.1.1: "if the alpha is stored as the 8-bit unsigned integer 237, the integer 93 satisfies the criterion ... so the alpha is serialized as "0.93".
-  // However, if the alpha is stored as the 8-bit unsigned integer 236, there is no such integer ... "0.92549""
-  check({{"#ff0000ed", "rgba(255, 0, 0, 0.93)"}, {"#ff0000ec", "rgba(255, 0, 0, 0.92549)"}, {"#ff000000", "rgba(255, 0, 0, 0)"}, {"#ff00007f", "rgba(255, 0, 0, 0.498039)"}});
+  // 16.1.1: "If there exists an integer between 0 and 100 inclusive that, when multiplied with 2.55 and rounded to the closest integer
+  // (rounding up if two values are equally close), equals alpha, let rounded be that integer divided by 100. Otherwise, let rounded be alpha
+  // divided by 0.255 and rounded to the closest integer (rounding up if two values are equally close), divided by 1000."
+  // 237: 93 * 2.55 rounds to 237, so "0.93". 236: no integer, 236 / 0.255 = 925.49..., rounded 925, so "0.925" (the draft's example text says
+  // "0.92549", which is not what its algorithm gives; the algorithm is followed). 127: 127 / 0.255 = 498.04 -> "0.498".
+  check({{"#ff0000ed", "rgba(255, 0, 0, 0.93)"}, {"#ff0000ec", "rgba(255, 0, 0, 0.925)"}, {"#ff000000", "rgba(255, 0, 0, 0)"}, {"#ff00007f", "rgba(255, 0, 0, 0.498)"}});
   // the draft's other example: a magenta with alpha 0xed
   EXPECT_EQ(color("#ff00ffed"), "rgba(255, 0, 255, 0.93)");
 }

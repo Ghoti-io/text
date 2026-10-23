@@ -51,6 +51,7 @@
 #include <gtest/gtest.h>
 
 #include "../tools/conformance/css_tree_canon.h"
+#include "css_test_support.h"
 #include "markup_test_support.h"
 
 #define LLVMFuzzerTestOneInput css_bytes_entry
@@ -147,7 +148,7 @@ TEST_F(CssBytesFuzzSeeds, EverySeedHoldsEveryProperty) {
   RecordProperty("replay_seconds", std::to_string(seconds));
   // (The bound is for a hang or a quadratic step. A sanitizer or valgrind makes the same work tens of times slower: 95 s under
   // ASan and 176 s under TSan on a 32-thread host, where the release build takes a few seconds.)
-  EXPECT_LT(seconds, slow_tooling() ? 3600.0 : 60.0) << files.size() << " seeds took " << seconds << " s";
+  EXPECT_LT(seconds, (slow_tooling() ? 3600.0 : 60.0) * css_test::slowdown()) << files.size() << " seeds took " << seconds << " s";
 }
 
 } // namespace

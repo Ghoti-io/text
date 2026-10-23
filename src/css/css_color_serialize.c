@@ -47,6 +47,12 @@ typedef struct {
   GTEXT_CSS_Status status;
 } obuf;
 
+/// Round to a double (see css_units.c): the same bits where intermediates are kept wider (x87).
+static inline double rnd(double x) {
+  volatile double v = x;
+  return v;
+}
+
 static bool put(obuf * b, const char * s, size_t n) {
   if (b->status != GTEXT_CSS_OK) {
     return false;
@@ -72,6 +78,30 @@ static bool put(obuf * b, const char * s, size_t n) {
   b->len += n;
   b->data[b->len] = '\0';
   return true;
+}
+
+/// The sink the identifier serializer writes through: into the buffer.
+static GTEXT_Markup_Status obuf_sink_write(void * user, const char * bytes, size_t len) {
+  return put((obuf *)user, bytes, len) ? GTEXT_MARKUP_OK : GTEXT_MARKUP_E_WRITE;
+}
+
+/// Write a name as CSSOM "serialize an identifier" does (a custom color space `--a\ b`, a channel keyword): written raw, an escaped character
+/// is lost and the text no longer reads back as the same name.
+static bool put_ident(obuf * b, const char * s, size_t n) {
+  if (b->status != GTEXT_CSS_OK) {
+    return false;
+  }
+  if (n == 0) {
+    return true;
+  }
+  GTEXT_Markup_Sink sink;
+  sink.write = obuf_sink_write;
+  sink.user = b;
+  const GTEXT_CSS_Status st = gtext_css_serialize_identifier(s, n, &sink);
+  if (st != GTEXT_CSS_OK && b->status == GTEXT_CSS_OK) {
+    b->status = st;
+  }
+  return st == GTEXT_CSS_OK;
 }
 
 static bool puts_(obuf * b, const char * s) {
@@ -113,7 +143,7 @@ static bool put_channel(obuf * b, const comp_t * c, double ref) {
   case GTEXT_CSS_COMP_MATH:
     return put_math(b, c);
   case GTEXT_CSS_COMP_SYMBOL:
-    return put(b, c->text.data, c->text.length);
+    return put_ident(b, c->text.data, c->text.length);
   case GTEXT_CSS_COMP_PERCENT:
     return put_num(b, c->value * ref / 100.0);
   default:
@@ -132,7 +162,7 @@ static bool put_alpha(obuf * b, const color_t * c, bool percent_as_written) {
   case GTEXT_CSS_COMP_MATH:
     /* a calculation is kept as it simplified, a percentage included (`calc(-50% * 3)` is `calc(-150%)`) */
     return puts_(b, " / ") && put_math(b, a);
-  case GTEXT_CSS_COMP_SYMBOL: return puts_(b, " / ") && put(b, a->text.data, a->text.length);
+  case GTEXT_CSS_COMP_SYMBOL: return puts_(b, " / ") && put_ident(b, a->text.data, a->text.length);
   case GTEXT_CSS_COMP_PERCENT: {
     const double v = a->value < 0.0 ? 0.0 : a->value > 100.0 ? 100.0 : a->value;
     if (v == 100.0) {
@@ -198,7 +228,7 @@ static bool srgb_values(const color_t * c, double rgb[3]) {
       v[i] = k->value;
     }
     else if (k->kind == GTEXT_CSS_COMP_PERCENT) {
-      v[i] = c->function == GTEXT_CSS_COLOR_FN_RGB ? k->value * 255.0 / 100.0 : k->value;
+      v[i] = c->function == GTEXT_CSS_COLOR_FN_RGB ? rnd(k->value * 255.0) / 100.0 : k->value;
     }
     else {
       return false;
@@ -240,15 +270,23 @@ bool gtext_css_color_srgb(const GTEXT_CSS_Color * color, double rgba[4]) {
 
 /// The alpha of a legacy sRGB color: an 8 bit value is written by the draft's algorithm (16.1.1), any other as a number.
 static bool put_legacy_alpha(obuf * b, double a) {
-  const double x = a * 255.0;
+  volatile double scaled = a * 255.0;
+  const double x = scaled;
   const double ai = gmath_floor(x + 0.5);
   if (gmath_fabs(x - ai) < 1e-7) {
+    /* "If there exists an integer between 0 and 100 inclusive that, when multiplied with 2.55 and rounded to the closest integer (rounding
+       up if two values are equally close), equals alpha, let rounded be that integer divided by 100." */
     for (int p = 0; p <= 100; p++) {
-      if (gmath_floor(p * 2.55 + 0.5 + 1e-9) == ai) {
+      volatile double product = p * 2.55;
+      if (gmath_floor(product + 0.5 + 1e-9) == ai) {
         return put_num(b, p / 100.0);
       }
     }
-    return put_num(b, ai / 255.0);
+    /* "Otherwise, let rounded be alpha divided by 0.255 and rounded to the closest integer (rounding up if two values are equally close),
+       divided by 1000." (The draft's example for 236 says "0.92549"; its algorithm, which Chromium follows, gives 0.925, and an algorithm
+       is what an implementation can be tested against.) */
+    volatile double quotient = ai / 0.255;
+    return put_num(b, gmath_floor(quotient + 0.5) / 1000.0);
   }
   return put_num(b, a);
 }
@@ -416,7 +454,7 @@ static bool ser_srgb(obuf * b, const color_t * c) {
 
 static bool ser_modern(obuf * b, const color_t * c) {
   if (c->function == GTEXT_CSS_COLOR_FN_COLOR) {
-    if (!puts_(b, "color(") || !(c->space == GTEXT_CSS_SPACE_CUSTOM ? put(b, c->name.data, c->name.length) : puts_(b, gtext_css_color_space_name(c->space)))) {
+    if (!puts_(b, "color(") || !(c->space == GTEXT_CSS_SPACE_CUSTOM ? put_ident(b, c->name.data, c->name.length) : puts_(b, gtext_css_color_space_name(c->space)))) {
       return false;
     }
   }
@@ -463,7 +501,7 @@ static bool ser_mix(obuf * b, const color_t * c, const char * const * kid_text) 
     return false;
   }
   if (c->mix_space != GTEXT_CSS_SPACE_OKLAB) {
-    if (!puts_(b, "in ") || !(c->mix_space == GTEXT_CSS_SPACE_CUSTOM ? put(b, c->mix_custom.data, c->mix_custom.length)
+    if (!puts_(b, "in ") || !(c->mix_space == GTEXT_CSS_SPACE_CUSTOM ? put_ident(b, c->mix_custom.data, c->mix_custom.length)
                                                                       : puts_(b, gtext_css_color_space_name(c->mix_space))) ||
         !puts_(b, hue_text(c->hue_method)) || !puts_(b, ", ")) {
       return false;
@@ -536,7 +574,7 @@ static bool ser_one(obuf * b, const color_t * c, const char * const * kid_text) 
   case GTEXT_CSS_COLOR_KEYWORD:
     if (c->keyword == GTEXT_CSS_COLOR_KW_NAMED || c->keyword == GTEXT_CSS_COLOR_KW_TRANSPARENT || c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR ||
         c->keyword == GTEXT_CSS_COLOR_KW_SYSTEM || c->keyword == GTEXT_CSS_COLOR_KW_DEPRECATED) {
-      return put(b, c->name.data, c->name.length);
+      return put_ident(b, c->name.data, c->name.length);
     }
     return false;
   case GTEXT_CSS_COLOR_HEX:
@@ -685,6 +723,13 @@ GTEXT_CSS_Status css_color_serialize_to(const GTEXT_CSS_Color * color, const GTE
       b.data[0] = '\0';
     }
     nodes[i].text = b.data;
+    /* the children's texts have been copied into this node's: each color has exactly one parent, so they are not needed again (without
+       this a chain of colors nested to depth d holds d texts of up to d pieces each) */
+    for (size_t k = 0; k < nkids; k++) {
+      snode * kid = &nodes[kidx[nodes[i].kids + k]];
+      gtext_allocator_free(&a, kid->text);
+      kid->text = NULL;
+    }
     if (i + 1 == nn) {
       *out_len = b.len;
     }

@@ -32,8 +32,9 @@
  * the node that holds it. What is kept is what was written; see css_color.h.
  *
  * The parsed-value-time rules are the draft's: an `rgb()` channel is clamped to 0 up to 255, a negative
- * `hsl()` saturation and a negative chroma to 0, a lightness to its range, an alpha to 0 up to 1, and a
- * hue to 0 up to 360; "when calc() is simplified down to a single value" in an sRGB color it is clamped
+ * `hsl()` saturation and a negative chroma to 0 (the whiteness and blackness of `hwb()` are not clamped), the lightness of `lab()`, `lch()`, `oklab()`
+ * and `oklch()` to 0 up to its reference maximum (the lightness of `hsl()` and the channels of `color()` are not clamped), an alpha to
+ * 0 up to 1, and a hue is normalized to 0 up to 360; "when calc() is simplified down to a single value" in an sRGB color it is clamped
  * (infinity to the upper bound, minus infinity and NaN to the lower), while a math function in
  * `lab()`, `lch()`, `oklab()`, `oklch()` and `color()` is kept as written.
  */
@@ -355,13 +356,14 @@ static bool scan_children(cb_t * cb, const cv_t * fn, cvvec * out) {
       else if (len == 2 && f == F_MIX) {
         color = looks_like_percentage(a.v[starts[g]]) ? a.v[starts[g] + 1] : a.v[starts[g]];
       }
-      if (color && css_color_is_candidate(color) && !(color->kind == GTEXT_CSS_VALUE_FUNCTION && !fid_of(&color->value))) {
+      if (color && css_color_is_candidate(color)) {
         ok = cvvec_push(cb, out, color);
       }
     }
     gtext_allocator_free(&cb->alloc, starts);
   }
-  else if (a.n >= 2 && is_ident(a.v[0], "from")) {
+  else if (f != F_CMYK && a.n >= 2 && is_ident(a.v[0], "from")) {
+    /* (device-cmyk() has no relative form: its `from` is no origin, and the builder takes no color from it) */
     if (css_color_is_candidate(a.v[1])) {
       ok = cvvec_push(cb, out, a.v[1]);
     }
@@ -500,9 +502,6 @@ static void resolve_math(comp_t * c, bool hue, double lo_inf, double hi_inf) {
   }
   else if (v < -DBL_MAX) {
     v = hue ? 0.0 : lo_inf;
-  }
-  if (pct) {
-    /* the bounds are in numbers; a percentage is in percent points of the same range, so the caller passes percent bounds for it */
   }
   c->kind = cat == GTEXT_CSS_MATH_CAT_PERCENTAGE ? GTEXT_CSS_COMP_PERCENT : cat == GTEXT_CSS_MATH_CAT_ANGLE ? GTEXT_CSS_COMP_ANGLE : GTEXT_CSS_COMP_NUMBER;
   c->value = v;
@@ -728,11 +727,13 @@ static int read_legacy(cb_t * cb, const fdesc * fd, const args_t * a, color_t * 
 typedef struct {
   color_t * const * kids;
   size_t n, next;
+  const cv_t * const * cvs;  ///< The component value each kid was built from (the scan's list, in the same order).
 } kidlist;
 
+/// The next kid, if it is the color of `expect`: the builder and the scan must agree on which component value is a color, so a kid
+/// made from another one (or none) is no color here.
 static color_t * take_kid(kidlist * k, const cv_t * expect) {
-  (void)expect;
-  if (k->next >= k->n) {
+  if (k->next >= k->n || k->cvs[k->next] != expect) {
     return NULL;
   }
   return k->kids[k->next++];
@@ -853,6 +854,9 @@ static color_t * build_function(cb_t * cb, const cv_t * v, fid f, kidlist * kids
     ok = true;
   }
   else if (f == F_CMYK) {
+    /* Color 5, device-cmyk(): `<legacy-device-cmyk-syntax> = device-cmyk( <number>#{4} )` (numbers only, commas, no alpha) and
+       `<modern-device-cmyk-syntax> = device-cmyk( <cmyk-component>{4} [ / [ <alpha-value> | none ] ]? )` with
+       `<cmyk-component> = <number> | <percentage> | none`; there is no relative form ("There is no relative device-cmyk() syntax"). */
     c = new_color(cb, GTEXT_CSS_COLOR_DEVICE_CMYK, v);
     if (!c) {
       goto done;
@@ -1116,7 +1120,6 @@ static color_t * build_leaf(cb_t * cb, const cv_t * v) {
     }
     c->component_count = 3;
     const bool short_form = n <= 4;
-    const size_t per = short_form ? 1 : 2;
     for (size_t i = 0; i < 3; i++) {
       const unsigned x = short_form ? d[i] * 17 : d[i * 2] * 16 + d[i * 2 + 1];
       c->components[i].kind = GTEXT_CSS_COMP_NUMBER;
@@ -1128,7 +1131,6 @@ static color_t * build_leaf(cb_t * cb, const cv_t * v) {
       c->alpha.value = (double)x / 255.0;
       c->alpha_written = true;
     }
-    (void)per;
     return c;
   }
   if (v->type != GTEXT_CSS_TOKEN_IDENT) {
@@ -1194,7 +1196,7 @@ typedef struct {
 } cframe;
 
 GTEXT_CSS_Status css_color_build(css_arena * arena, const GTEXT_Allocator * scratch, const cv_t * value, size_t max_nesting,
-    size_t max_math_depth, size_t max_math_nodes, GTEXT_CSS_Color ** out, bool * valid, size_t * work, GTEXT_CSS_Span * where) {
+    size_t max_math_depth, size_t max_math_nodes, GTEXT_CSS_Color ** out, bool * valid, size_t * work, size_t * nodes, GTEXT_CSS_Span * where) {
   cb_t cb;
   memset(&cb, 0, sizeof cb);
   cb.arena = arena;
@@ -1259,7 +1261,7 @@ GTEXT_CSS_Status css_color_build(css_arena * arena, const GTEXT_Allocator * scra
     color_t * c;
     if (F->cv->kind == GTEXT_CSS_VALUE_FUNCTION) {
       const fid f = fid_of(&F->cv->value);
-      kidlist kl = {F->results, F->kids.n, 0};
+      kidlist kl = {F->results, F->kids.n, 0, F->kids.v};
       c = f == F_NONE ? NULL : build_function(&cb, F->cv, f, &kl);
     }
     else {
@@ -1291,6 +1293,9 @@ done:
   if (work) {
     *work = cb.work;
   }
+  if (nodes) {
+    *nodes = cb.nodes;
+  }
   if (where) {
     *where = cb.where;
   }
@@ -1316,6 +1321,8 @@ GTEXT_CSS_Status gtext_css_color_parse(const cv_t * value, const GTEXT_CSS_Color
   if (!value || !valid || !out) {
     return GTEXT_CSS_E_INVALID;
   }
+  *valid = false;
+  *out = NULL;
   GTEXT_Allocator alloc = *((options && options->allocator) ? options->allocator : gtext_allocator_default());
   color_owner * ow = gtext_allocator_malloc(&alloc, sizeof *ow);
   if (!ow) {
@@ -1330,17 +1337,17 @@ GTEXT_CSS_Status gtext_css_color_parse(const cv_t * value, const GTEXT_CSS_Color
   css_arena_init(&ow->arena, &ow->alloc);
   GTEXT_CSS_Color * c = NULL;
   bool ok = false;
-  size_t work = 0;
+  size_t work = 0, nodes = 0;
   GTEXT_CSS_Span where;
   memset(&where, 0, sizeof where);
   const GTEXT_CSS_Status st = css_color_build(&ow->arena, &alloc, value, options ? options->max_nesting : 0,
-      options ? options->max_math_depth : 0, options ? options->max_math_nodes : 0, &c, &ok, &work, &where);
+      options ? options->max_math_depth : 0, options ? options->max_math_nodes : 0, &c, &ok, &work, &nodes, &where);
   if (result) {
     memset(result, 0, sizeof *result);
     result->status = st;
     result->message = gtext_css_status_string(st);
     result->work = work;
-    result->nodes = ok ? 1 : 0;
+    result->nodes = nodes;
     result->where = where;
   }
   if (st != GTEXT_CSS_OK || !ok) {
@@ -1378,29 +1385,37 @@ static double max2(double a, double b) {
   return a > b ? a : b;
 }
 
+/// Round to a double (see css_units.c): the conversions below give the same bits where intermediates are kept wider (x87).
+static inline double rnd(double x) {
+  volatile double v = x;
+  return v;
+}
+
 void css_color_hsl_to_srgb(double h, double s, double l, double rgb[3]) {
   h = normalize_hue(h);
-  s /= 100.0;
-  l /= 100.0;
+  s = rnd(s / 100.0);
+  l = rnd(l / 100.0);
   static const double N[3] = {0.0, 8.0, 4.0};
-  const double a = s * min2(l, 1.0 - l);
+  const double a = rnd(s * min2(l, rnd(1.0 - l)));
   for (int i = 0; i < 3; i++) {
-    const double k = css_math_fmod_exact(N[i] + h / 30.0, 12.0);
-    const double t = max2(-1.0, min2(min2(k - 3.0, 9.0 - k), 1.0));
-    rgb[i] = (l - a * t) * 255.0;
+    const double k = css_math_fmod_exact(rnd(N[i] + rnd(h / 30.0)), 12.0);
+    const double t = max2(-1.0, min2(min2(rnd(k - 3.0), rnd(9.0 - k)), 1.0));
+    rgb[i] = rnd(rnd(l - rnd(a * t)) * 255.0);
   }
 }
 
 void css_color_hwb_to_srgb(double h, double w, double b, double rgb[3]) {
-  w /= 100.0;
-  b /= 100.0;
-  if (w + b >= 1.0) {
-    const double gray = w / (w + b) * 255.0;
+  w = rnd(w / 100.0);
+  b = rnd(b / 100.0);
+  const double sum = rnd(w + b);
+  if (sum >= 1.0) {
+    const double gray = rnd(rnd(w / sum) * 255.0);
     rgb[0] = rgb[1] = rgb[2] = gray;
     return;
   }
   css_color_hsl_to_srgb(h, 100.0, 50.0, rgb);
+  const double scale = rnd(rnd(1.0 - w) - b);
   for (int i = 0; i < 3; i++) {
-    rgb[i] = (rgb[i] / 255.0 * (1.0 - w - b) + w) * 255.0;
+    rgb[i] = rnd(rnd(rnd(rnd(rgb[i] / 255.0) * scale) + w) * 255.0);
   }
 }

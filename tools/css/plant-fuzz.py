@@ -73,7 +73,7 @@ The plants of fuzz_css_values.cpp (VALUES_PLANTS; each is found by replaying its
   math-node-bound-off-by-one the node bound refuses one node early: the bound is exact.
   math-leaks-its-arena       a calculation's memory is not freed: the allocator.
   color-leaks-its-arena      the same for a color.
-  alpha-dropped              the serializer drops a small alpha: the color read back is another color.
+  alpha-dropped              the legacy serializer writes a small alpha that is not an 8-bit one as 1: the color read back is another color.
   linear-points-unsorted     linear() does not raise an input below an earlier one: the points are in order.
 
 The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
@@ -158,8 +158,8 @@ VALUES_PLANTS = {
                              "  GTEXT_Allocator alloc = ow->alloc;\n  gtext_allocator_free(&alloc, ow);\n}\n\n", "own-math-no-fault.seed"),
     "color-leaks-its-arena": ("css_color.c", "  css_arena_free(&ow->arena);\n  gtext_allocator_free(&alloc, ow);\n}", "  gtext_allocator_free(&alloc, ow);\n}",
                               "own-color-no-fault.seed"),
-    "alpha-dropped": ("css_color_serialize.c", "return v == 1.0 || (puts_(b, \" / \") && put_num(b, v));", "return v >= 0.2 || (puts_(b, \" / \") && put_num(b, v));",
-                      "own-alpha.seed"),
+    "alpha-dropped": ("css_color_serialize.c", "    return put_num(b, gmath_floor(quotient + 0.5) / 1000.0);\n  }\n  return put_num(b, a);\n}",
+                      "    return put_num(b, gmath_floor(quotient + 0.5) / 1000.0);\n  }\n  return put_num(b, a < 0.5 ? 1.0 : a);\n}", "own-alpha.seed"),
     "linear-points-unsorted": ("css_easing.c", "if (!first && pts[i].input < run_max) {", "if (!first && pts[i].input < run_max && 0) {",
                                "own-linear-unsorted.seed"),
 }

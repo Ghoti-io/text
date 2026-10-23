@@ -30,8 +30,8 @@
  * served draft differs from an older text the served one is followed and the difference is noted
  * beside the entry.
  * **Implicitly omitted commas are written out.** Values 4, 2.2 omits a comma from the match when the terms around it are omitted
- * (`steps(4)` for `steps( <integer> , <step-position>? )`). The engine keeps a literal comma that separates a possibly empty term
- * as a token, so the grammars here say it with a group (`steps( <integer> [ , <step-position> ]? )`), which matches the same inputs.
+ * (`path(\"M 0 0\")` for `path( <'fill-rule'>? , <string> )`). The engine keeps a literal comma that separates a possibly empty
+ * term as a token, so the grammars here say it with a group (`path( [ <'fill-rule'> , ]? <string> )`), which matches the same inputs.
  *
  * They are matched by the Value Definition Syntax engine; nothing here is code.
  */
@@ -115,9 +115,14 @@ const css_fn_type * css_shape_types(size_t * count) {
 
 /* ---- the typed view ------------------------------------------------------------------------------ */
 
-bool gtext_css_shape_from_value(const GTEXT_CSS_Value * v, GTEXT_CSS_Shape * out) {
-  if (!v || !out || v->kind != GTEXT_CSS_VAL_FUNCTION || v->math) {
-    return false;
+GTEXT_CSS_Status gtext_css_shape_from_value(const GTEXT_CSS_Value * v, const GTEXT_Allocator * allocator, bool * valid, GTEXT_CSS_Shape * out) {
+  if (!v || !valid || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *valid = false;
+  memset(out, 0, sizeof *out);
+  if (v->kind != GTEXT_CSS_VAL_FUNCTION || v->math) {
+    return GTEXT_CSS_OK;
   }
   static const struct { const char * n; GTEXT_CSS_Shape_Kind k; } K[] = {
     {"inset", GTEXT_CSS_SHAPE_INSET}, {"xywh", GTEXT_CSS_SHAPE_XYWH}, {"rect", GTEXT_CSS_SHAPE_RECT}, {"circle", GTEXT_CSS_SHAPE_CIRCLE},
@@ -130,14 +135,13 @@ bool gtext_css_shape_from_value(const GTEXT_CSS_Value * v, GTEXT_CSS_Shape * out
     }
   }
   if (kind == GTEXT_CSS_SHAPE_NONE) {
-    return false;
+    return GTEXT_CSS_OK;
   }
-  const GTEXT_Allocator * a = gtext_allocator_default();
+  const GTEXT_Allocator * a = allocator ? allocator : gtext_allocator_default();
   css_leafvec lv;
   if (!css_fn_leaves(a, v, &lv)) {
-    return false;
+    return GTEXT_CSS_E_OOM;
   }
-  memset(out, 0, sizeof *out);
   out->kind = kind;
   for (size_t i = 0; i < lv.n; i++) {
     const GTEXT_CSS_Value * l = lv.v[i];
@@ -159,5 +163,6 @@ bool gtext_css_shape_from_value(const GTEXT_CSS_Value * v, GTEXT_CSS_Shape * out
     }
   }
   css_fn_leaves_free(a, &lv);
-  return true;
+  *valid = true;
+  return GTEXT_CSS_OK;
 }

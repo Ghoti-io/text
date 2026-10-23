@@ -75,11 +75,23 @@ static const fn_name FUNCTIONS[] = {
   {"exp", GTEXT_CSS_MATH_EXP}, {"abs", GTEXT_CSS_MATH_ABS}, {"sign", GTEXT_CSS_MATH_SIGN}, {"progress", GTEXT_CSS_MATH_PROGRESS}, {"random", GTEXT_CSS_MATH_RANDOM},
 };
 
-/// Numeric functions that are not math functions but may stand in a calculation as a number (Values 5):
-/// they cannot be resolved until an element or a container is known.
+/// Numeric functions that are not math functions but may stand in a calculation as a number (Values 5, 6.1): the tree-counting
+/// functions, which take no arguments and cannot be resolved until an element is known. (The served draft dropped media-progress()
+/// and container-progress() "in favor of using relevant units in progress()".)
 static const char * const UNRESOLVED_NUMBER_FUNCTIONS[] = {
-  "sibling-index", "sibling-count", "media-progress", "container-progress",
+  "sibling-index", "sibling-count",
 };
+
+/// Whether a function has no arguments at all (white space aside): `sibling-index()` is the whole grammar of the tree-counting functions.
+static bool no_arguments(const GTEXT_CSS_Component_Value * fn) {
+  for (size_t i = 0; i < fn->child_count; i++) {
+    const GTEXT_CSS_Component_Value * c = &fn->children[i];
+    if (!(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 static char fold1(char c) {
   return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
@@ -175,7 +187,8 @@ typedef struct {
   bool inv_pending;           ///< The factor about to be read follows a `/`.
   bool none_arg;              ///< The argument being read is the keyword none (clamp()).
   bool strategy_pending;      ///< round(): a strategy was read; a comma must follow.
-  bool strategy_written;
+  bool strategy_written;      ///< round(): the strategy was written.
+  bool no_clamp;              ///< progress(): `no-clamp` was written.
   GTEXT_CSS_Math_Round round;
   bool any_value;             ///< A value was read in the argument being read.
   const char * key;           ///< random(): the key, as written (in the arena), or NULL.
@@ -405,6 +418,19 @@ static double make_nan(void) {
 
 /// Serialize one component value (an unresolved function) to text in the arena.
 static const mnode * unresolved_leaf(mbuilder * mb, const GTEXT_CSS_Component_Value * cv) {
+  /* the tree-counting functions take no arguments (no_arguments()): their text is the name in lower case and `()`, whatever white space
+     the source had inside the parentheses */
+  if (cv->kind == GTEXT_CSS_VALUE_FUNCTION && no_arguments(cv) && cv->value.length < 32) {
+    char text[40];
+    for (size_t i = 0; i < cv->value.length; i++) {
+      text[i] = fold1(cv->value.data[i]);
+    }
+    text[cv->value.length] = '(';
+    text[cv->value.length + 1] = ')';
+    GTEXT_CSS_Math_Type zero;
+    memset(&zero, 0, sizeof zero);
+    return mk_unresolved(mb, text, cv->value.length + 2, &zero);
+  }
   GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
   so.allocator = &mb->alloc;
   char * buf = NULL;
@@ -464,8 +490,8 @@ static bool read_value(fstack * fs, mbuilder * mb, const GTEXT_CSS_Math_Context 
           return true;
         }
       }
-      if (F->op == GTEXT_CSS_MATH_PROGRESS && F->nargs == 0 && !F->any_value && !F->strategy_written && name_is(s, "no-clamp")) {
-        F->strategy_written = true; /* (the flag of progress() is no-clamp) */
+      if (F->op == GTEXT_CSS_MATH_PROGRESS && F->nargs == 0 && !F->any_value && !F->no_clamp && name_is(s, "no-clamp")) {
+        F->no_clamp = true;
         return true;
       }
       if (name_is(s, "e")) {
@@ -519,7 +545,7 @@ static bool read_value(fstack * fs, mbuilder * mb, const GTEXT_CSS_Math_Context 
       *opened = true;
       return true;
     }
-    if (is_unresolved_number_function(&cv->value)) {
+    if (is_unresolved_number_function(&cv->value) && no_arguments(cv)) {
       leaf = unresolved_leaf(mb, cv);
       *has_symbols = true;
     }
@@ -586,12 +612,8 @@ static const mnode * close_frame(mbuilder * mb, pframe * F) {
     r = args[0];
   }
   else {
-    r = mk_fn(mb, F->op, args, F->nargs, F->round, F->strategy_written);
-    if (r && F->op == GTEXT_CSS_MATH_RANDOM && F->key) {
-      mnode * rn = (mnode *)(uintptr_t)r; /* (just made by mk_fn, in the arena: the key goes with it) */
-      rn->text.data = F->key;
-      rn->text.length = F->key_len;
-    }
+    const mfn_opts opts = {F->round, F->strategy_written, F->no_clamp, F->op == GTEXT_CSS_MATH_RANDOM ? F->key : NULL, F->key_len};
+    r = mk_fn(mb, F->op, args, F->nargs, &opts);
   }
   mb->nstk = F->base;
   return r;
@@ -602,6 +624,10 @@ static const mnode * read_calculation(mbuilder * mb, const GTEXT_CSS_Component_V
     bool * has_symbols) {
   const fn_name * top = find_function(&fn->value);
   if (fn->kind == GTEXT_CSS_VALUE_FUNCTION && !top && is_unresolved_number_function(&fn->value)) {
+    if (!no_arguments(fn)) {
+      mb_invalid(mb);
+      return NULL;
+    }
     /* sibling-index() and the others stand alone as a number that is not known yet */
     *has_symbols = true;
     return unresolved_leaf(mb, fn);
@@ -776,6 +802,8 @@ GTEXT_CSS_Status gtext_css_math_parse(const GTEXT_CSS_Component_Value * function
   if (!function || !valid || !out) {
     return GTEXT_CSS_E_INVALID;
   }
+  *valid = false;
+  *out = NULL;
   GTEXT_Allocator alloc = *((options && options->allocator) ? options->allocator : gtext_allocator_default());
   size_t depth = options && options->max_depth ? options->max_depth : DEFAULT_MAX_DEPTH;
   size_t nodes = options && options->max_nodes ? options->max_nodes : DEFAULT_MAX_NODES;
@@ -927,14 +955,12 @@ GTEXT_CSS_Status gtext_css_math_resolve(const GTEXT_CSS_Math * math, const GTEXT
       continue;
     case GTEXT_CSS_MATH_SYMBOL: {
       double v;
-      char name[64];
-      if (!env || !env->symbol || n->text.length >= sizeof name) {
+      if (!env || !env->symbol) {
         ok = false;
         break;
       }
-      memcpy(name, n->text.data, n->text.length);
-      name[n->text.length] = '\0';
-      if (!env->symbol(env->user, name, &v)) {
+      /* the name is NUL-terminated in the arena, whatever its length */
+      if (!env->symbol(env->user, n->text.data, &v)) {
         ok = false;
         break;
       }
@@ -994,12 +1020,15 @@ GTEXT_CSS_Status gtext_css_math_resolve(const GTEXT_CSS_Math * math, const GTEXT
       memcpy(ap, a, cnt * sizeof *ap);
       const bool angle_in = cnt > 0 && css_math_type_category(&n->kids[0]->type) == GTEXT_CSS_MATH_CAT_ANGLE;
       if (angle_in && (n->op == GTEXT_CSS_MATH_SIN || n->op == GTEXT_CSS_MATH_COS || n->op == GTEXT_CSS_MATH_TAN)) {
-        ap[0] = ap[0] * PI_VALUE / 180.0;
+        {
+          volatile double scaled = ap[0] * PI_VALUE;
+          ap[0] = scaled / 180.0;
+        }
       }
       if (n->op == GTEXT_CSS_MATH_ROUND && n->round == GTEXT_CSS_MATH_ROUND_LINE_WIDTH) {
         ok = false;
       }
-      else if (!css_math_apply(n->op, n->op == GTEXT_CSS_MATH_PROGRESS ? (n->strategy_written ? GTEXT_CSS_MATH_ROUND_UP : GTEXT_CSS_MATH_ROUND_NEAREST) : n->round, ap, cnt, &r)) {
+      else if (!css_math_apply_ex(n->op, n->round, n->no_clamp, ap, cnt, &r)) {
         ok = false;
       }
       else if (n->op == GTEXT_CSS_MATH_ASIN || n->op == GTEXT_CSS_MATH_ACOS || n->op == GTEXT_CSS_MATH_ATAN ||

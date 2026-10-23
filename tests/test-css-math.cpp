@@ -790,63 +790,91 @@ bool compute(const Family & f, double * out) {
   return false;
 }
 
-/// The most units in the last place the library may be from the correctly rounded value, for each function. asin and acos are atan2 of the
-/// argument and sqrt((1-x)(1+x)) (a few ulps, recorded here); the others are the math library's, which is held to a few units as well.
+/// The most units in the last place the library may be from the correctly rounded value, for each function: what was measured over the
+/// family (CSS_MATH_REPORT=1 prints it), and no more. The functions that are exact are held to exactly that; cos, asin, acos, atan2,
+/// log with a base and hypot of three are one unit off at their worst. A change that makes one of them worse than it is fails here.
 int64_t bound_of(const std::string & fn) {
-  // measured over the family: asin and acos 1, atan2 1, cos 1, hypot of three 1, log with a base 1, everything else exact; the bounds leave a unit of room
-  if (fn == "asin" || fn == "acos") return 4;
-  if (fn == "sqrt" || fn == "fmod") return 0;
-  return 2;
+  if (fn == "cos" || fn == "asin" || fn == "acos" || fn == "atan2" || fn == "log2" || fn == "hypot3") return 1;
+  return 0;
 }
+
+using ComputeFn = bool (*)(const Family &, double *);
+
+struct FamilyOutcome {
+  std::map<std::string, int64_t> worst;
+  std::map<std::string, size_t> count;
+  std::vector<std::string> over;  ///< The values that were farther than their bound, as text.
+};
+
+/// The comparison: every value of the family, computed by `fn`, against its correctly rounded value and the bound of its function.
+FamilyOutcome compare_family(const std::vector<Family> & family, ComputeFn fn) {
+  FamilyOutcome out;
+  for (const Family & f : family) {
+    double got = 0;
+    if (!fn(f, &got)) {
+      out.over.push_back(f.fn + ": not computed");
+      continue;
+    }
+    const int64_t u = ulps(got, f.expect);
+    out.count[f.fn]++;
+    if (u > out.worst[f.fn]) {
+      out.worst[f.fn] = u;
+    }
+    if (u > bound_of(f.fn)) {
+      out.over.push_back(f.fn + "(" + std::to_string(f.args[0]) + (f.args.size() > 1 ? ", " + std::to_string(f.args[1]) : "") + ") = " + std::to_string(got) +
+          ", expected " + std::to_string(f.expect));
+    }
+  }
+  return out;
+}
+
+/// A stand-in for the math library that is worse than any bound: every result is moved bound + 1 units in the last place.
+bool degraded(const Family & f, double * out) {
+  if (!compute(f, out)) {
+    return false;
+  }
+  for (int64_t i = 0; i <= bound_of(f.fn); i++) {
+    *out = std::nextafter(*out, INFINITY);
+  }
+  return true;
+}
+
+const char * const kFamilyFunctions[] = {"sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "log", "log2", "sqrt", "pow", "hypot", "hypot3", "fmod"};
 
 }  // namespace
 
 TEST(CssMathPublishedValues, EveryElementaryFunctionIsWithinItsBoundOfTheCorrectlyRoundedValue) {
   const std::vector<Family> family = load_family();
   ASSERT_GT(family.size(), 1000u) << "tests/data/css-math-values.txt (tools/css/make-math-values.py)";
-  std::map<std::string, int64_t> worst;
-  std::map<std::string, size_t> count;
-  for (const Family & f : family) {
-    double got = 0;
-    ASSERT_TRUE(compute(f, &got)) << f.fn;
-    const int64_t u = ulps(got, f.expect);
-    count[f.fn]++;
-    if (u > worst[f.fn]) {
-      worst[f.fn] = u;
-    }
-    EXPECT_LE(u, bound_of(f.fn)) << f.fn << "(" << f.args[0] << (f.args.size() > 1 ? ", " + std::to_string(f.args[1]) : "") << ") = " << got << ", expected " << f.expect;
+  const FamilyOutcome r = compare_family(family, compute);
+  for (const std::string & line : r.over) {
+    ADD_FAILURE() << line;
   }
-  for (const char * fn : {"sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "log", "log2", "sqrt", "pow", "hypot", "hypot3", "fmod"}) {
-    EXPECT_GE(count[fn], 7u) << fn;
+  for (const char * fn : kFamilyFunctions) {
+    EXPECT_GE(r.count.count(fn) ? r.count.at(fn) : 0u, 7u) << fn;
     if (std::getenv("CSS_MATH_REPORT")) {
-      std::printf("worst %-6s %2lld ulps over %zu values (bound %lld)\n", fn, (long long)worst[fn], count[fn], (long long)bound_of(fn));
+      std::printf("worst %-6s %2lld ulps over %zu values (bound %lld)\n", fn, (long long)r.worst.at(fn), r.count.at(fn), (long long)bound_of(fn));
     }
   }
 }
 
-TEST(CssMathPublishedValues, TheComparisonFailsWhenAResultIsOneUnitPastItsBound) {
-  // the control: the same comparison, given a result moved past the bound, says so
+TEST(CssMathPublishedValues, TheComparisonFailsForAStandInThatIsOneUnitPastEveryBound) {
+  // the control: the whole comparison, run on a degraded stand-in for the library's computation, reports every function
   const std::vector<Family> family = load_family();
-  size_t checked = 0;
-  for (const Family & f : family) {
-    if (f.fn != "sin" && f.fn != "atan2" && f.fn != "asin") {
-      continue;
+  const FamilyOutcome r = compare_family(family, degraded);
+  EXPECT_FALSE(r.over.empty());
+  for (const char * fn : kFamilyFunctions) {
+    bool reported = false;
+    for (const std::string & line : r.over) {
+      reported = reported || line.compare(0, std::strlen(fn) + 1, std::string(fn) + "(") == 0;
     }
-    double got = 0;
-    ASSERT_TRUE(compute(f, &got));
-    double moved = got;
-    for (int64_t i = 0; i <= bound_of(f.fn); i++) {
-      moved = std::nextafter(moved, INFINITY);
-    }
-    if (std::isfinite(moved) && got == got) {
-      EXPECT_GT(ulps(moved, f.expect), bound_of(f.fn)) << f.fn;
-      checked++;
-    }
-    if (checked > 30) {
-      break;
-    }
+    EXPECT_TRUE(reported) << fn << " is not reported by the comparison when its results are past the bound";
   }
-  EXPECT_GT(checked, 20u);
+  // and the bounds are tight: the measured worst of the real computation is the bound for the functions that are not exact
+  const FamilyOutcome real = compare_family(family, compute);
+  for (const char * fn : kFamilyFunctions) {
+    EXPECT_EQ(real.worst.at(fn), bound_of(fn)) << fn << ": the bound is not what was measured (tighten it, or find the regression)";
+  }
 }
 
 TEST(CssMathPublishedValues, ExactValuesAndEdgeCasesOfTheDraft) {

@@ -30,8 +30,9 @@
  * served draft differs from an older text the served one is followed and the difference is noted
  * beside the entry.
  * **Implicitly omitted commas are written out.** Values 4, 2.2 omits a comma from the match when the terms around it are omitted
- * (`steps(4)` for `steps( <integer> , <step-position>? )`). The engine keeps a literal comma that separates a possibly empty term
- * as a token, so the grammars here say it with a group (`steps( <integer> [ , <step-position> ]? )`), which matches the same inputs.
+ * (`var(--a)` for `var( <custom-property-name> , <declaration-value>? )`). The engine keeps a literal comma that separates a possibly
+ * empty term as a token, so the grammars here say it with a group (`var( <custom-property-name> [ , <declaration-value>? ]? )`), which
+ * matches the same inputs.
  *
  * They are matched by the Value Definition Syntax engine; nothing here is code.
  */
@@ -171,7 +172,11 @@ GTEXT_CSS_Needs gtext_css_substitution_needs(GTEXT_CSS_Substitution_Kind kind) {
   case GTEXT_CSS_SUBST_COUNTER: case GTEXT_CSS_SUBST_COUNTERS: case GTEXT_CSS_SUBST_STRING:
     return GTEXT_CSS_NEEDS_ELEMENT;
   case GTEXT_CSS_SUBST_CALC_SIZE: return GTEXT_CSS_NEEDS_LAYOUT;
-  case GTEXT_CSS_SUBST_FIRST_VALID: case GTEXT_CSS_SUBST_PROGRESS: case GTEXT_CSS_SUBST_IDENT: return GTEXT_CSS_NEEDS_ELEMENT;
+  /* first-valid() picks the first argument that is a valid value of the property it is in (Values 5, 8.2); it needs that property's grammar */
+  case GTEXT_CSS_SUBST_FIRST_VALID: return GTEXT_CSS_NEEDS_PROPERTY;
+  /* progress() is a math function: with literal arguments it is a number, and ident() builds an identifier from its arguments, which are
+     scanned for the functions that do need something (Values 5, 10.2 and 8.6) */
+  case GTEXT_CSS_SUBST_PROGRESS: case GTEXT_CSS_SUBST_IDENT: return GTEXT_CSS_NEEDS_NOTHING;
   default: return GTEXT_CSS_NEEDS_NOTHING;
   }
 }

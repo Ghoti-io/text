@@ -72,8 +72,9 @@ bool css_fn_leaves(const GTEXT_Allocator * alloc, const GTEXT_CSS_Value * fn, cs
 void css_fn_leaves_free(const GTEXT_Allocator * alloc, css_leafvec * out);
 
 /// What a leaf is as a number: a number or integer (0), a percentage (1), a length (2), an angle in degrees (3), a time in seconds (4), a resolution in dppx (5),
-/// anything else (-1); a math function that came down to one value is that value. A relative length is not -1 but its own number (kind 2).
-int css_fn_leaf_number(const GTEXT_CSS_Value * v, double * value);
+/// anything else (-1); a math function that came down to one value is that value. A relative length is not -1 but its own number (kind 2). `unit` (NULL if not wanted) receives the unit of a length (the
+/// unit written, or the one a math function's leaf has: px for an absolute length, em for `calc(1em + 2em)`), and NONE for the rest.
+int css_fn_leaf_number(const GTEXT_CSS_Value * v, double * value, GTEXT_CSS_Unit * unit);
 
 /// The keyword a leaf is, lower case, or NULL.
 bool css_fn_leaf_is_keyword(const GTEXT_CSS_Value * v, const char * lower);
