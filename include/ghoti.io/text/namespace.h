@@ -171,6 +171,7 @@
 #define gtext_css_atom_intern GHOTIIO_TEXT(gtext_css_atom_intern)
 #define gtext_css_atom_lookup GHOTIIO_TEXT(gtext_css_atom_lookup)
 #define gtext_css_atom_name GHOTIIO_TEXT(gtext_css_atom_name)
+#define gtext_css_atom_table_limits GHOTIIO_TEXT(gtext_css_atom_table_limits)
 #define gtext_css_atom_table_free GHOTIIO_TEXT(gtext_css_atom_table_free)
 #define gtext_css_atom_table_new GHOTIIO_TEXT(gtext_css_atom_table_new)
 #define gtext_css_bytes_options_default GHOTIIO_TEXT(gtext_css_bytes_options_default)

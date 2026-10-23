@@ -43,9 +43,9 @@
  *   UTF-8, the count of the set the count of the tree, spans inside the input);
  *   **the bounds are exact**: the work the match reported, given as the bound, is accepted, and one less is
  *   E_LIMIT_WORK; the same for the memo entries it held;
- *   **the fixed point**: a value is written, the text parsed and matched again, and if it matches the value is
- *   written as the same text (a text may fail to match again where the grammar is ambiguous about separators
- *   or the value holds a unicode range, which only a declaration tokenizes; that is not a failure);
+ *   **the fixed point**: a value is written, the text parsed and matched again, and it matches and is written
+ *   as the same text (not asked of a value that holds a unicode range, which only a declaration tokenizes, of one
+ *   that is pending substitution, or of one with nothing in it);
  *   a value with var(), env() or attr() in it is pending substitution and matches;
  *   an allocation that fails is E_OOM with nothing returned, or the same answer, and never a leak or a
  *   free of a block the allocator did not make;
@@ -251,7 +251,7 @@ int entry(const uint8_t * data, size_t size) {
   const GTEXT_CSS_Status ls = gtext_css_definition_link(d, Resolver::resolve, &res, &go, &c, &r);
   if (ls != GTEXT_CSS_OK) {
     if (c || (ls != GTEXT_CSS_E_REFERENCE && ls != GTEXT_CSS_E_LEFT_RECURSION && ls != GTEXT_CSS_E_LIMIT_DEFINITION_NODES
-              && ls != GTEXT_CSS_E_GRAMMAR)) {
+              && ls != GTEXT_CSS_E_LIMIT_DEFINITION && ls != GTEXT_CSS_E_GRAMMAR)) {
       fail("linking failed with a status it must not", gtext_css_status_string(ls), input);
     }
     gtext_css_definition_free(d);
@@ -327,7 +327,10 @@ int entry(const uint8_t * data, size_t size) {
       GTEXT_CSS_Tree * back = nullptr;
       if (gtext_css_parse_component_values(first.text.data(), first.text.size(), &po, &back, nullptr) == GTEXT_CSS_OK) {
         const Outcome again = match_once(c, back->values, back->value_count, mo, node_count, input);
-        if (again.status == GTEXT_CSS_OK && again.matched && again.text != first.text) {
+        if (again.status == GTEXT_CSS_OK && !again.matched) {
+          fail("a value that was written does not match again", first.text, input);
+        }
+        if (again.status == GTEXT_CSS_OK && again.text != first.text) {
           fail("a value written and matched again is written differently", first.text + "\n" + again.text, input);
         }
       }

@@ -57,9 +57,20 @@
  * `<CDC-token>`, `<colon-token>`, `<semicolon-token>`, `<comma-token>`,
  * `<[-token>`, `<]-token>`, `<(-token>`, `<)-token>`, `<{-token>`, `<}-token>`.
  *
- * A range on a type that is not native applies to every numeric type in its
- * definition (`<length-percentage [0,∞]>` restricts both), together with any
- * range already there.
+ * A range on a type that is not native applies to the numeric types in its definition
+ * that its bounds fit (`<length-percentage [0,∞]>` restricts both, `[0%,50%]` only the
+ * percentage), together with any range already there; the other terminals are left as
+ * they are. The draft says nothing about a range on a composite type. A bound is `∞` or
+ * `-∞` (written without a unit, Values 4, 5.1), a number, or a number with a unit or `%`:
+ * the unit has to be one of the type the range is on (`<number [0px,10px]>`,
+ * `<length [0deg,∞]>` and `<integer [0%,50%]>` are GTEXT_CSS_E_GRAMMAR), and
+ * a range that others narrow to nothing is GTEXT_CSS_E_GRAMMAR when linked.
+ *
+ * A quoted `'['` and `']'` are the brackets of a square-bracket block of the input
+ * (`<line-names> = '[' <custom-ident>* ']'`, CSS Grid); the unquoted ones group the
+ * grammar. A literal is one code point of well-formed UTF-8 in single quotes; the
+ * draft writes "other delimiters" that way and has no escape, so a quote or a
+ * backslash cannot be written.
  *
  * ## Matching
  *
@@ -69,6 +80,23 @@
  * grammar node, the position, and for `&&` and `||` the set of members used;
  * its work and its memory are counted and bounded, and a bound that is reached
  * is the status GTEXT_CSS_E_LIMIT_WORK and never a "no match".
+ *
+ * **The work.** Every step of the search, every position of a set it joins or
+ * looks at, and every step of reading the typed value off the search is a unit
+ * of `max_match_work`, so the bound is a bound on the CPU of a match. How the work
+ * grows with the number n of component values: it is **linear** for a repetition
+ * of a repetition (`[ [ a? b? ]* ]+`), for several repetitions in a row
+ * (`a* a* a* b`), for an alternation whose alternatives overlap (`[ a | a a ]+ b`),
+ * for a comma list, for recursion through functions, and for one `<any-value>`;
+ * and it is **quadratic** (finite, and cut by the bound) where an item is applied
+ * one position at a time to the long run of positions an enclosing repetition
+ * reaches (`[ a+ b? ]+`), where an `<any-value>` is followed by something it can
+ * swallow once for each of many repetitions (`[ x <any-value> y ]#`), and for two
+ * wide runs joined by `&&` or `||` (`<any-value> && <any-value>`). The quadratic-
+ * nesting suite holds the first group to a ratio of 4 for 4 times the input.
+ * The memory is not a memo entry's: the sets of positions and the arrays of the
+ * typed value are held in addition, and measured at most about 410 bytes for each
+ * memo entry and each component value of the input (and 28 KB with nothing in it).
  *
  * Alternatives are tried in written order and a juxtaposition prefers its
  * earlier items to be longer, so the typed result (css_value.h) is
@@ -83,19 +111,29 @@
  *
  * - `0` matches `<length>` as 0px but not `<angle>`, `<time>`, `<percentage>` ...;
  *   a number that is a literal out of range does not match;
- *   a math function (`calc()`, `min()`, ...) matches any numeric type by name and
- *   is checked and clamped by the math layer.
+ *   a math function (`calc()`, `min()`, ...) matches by name every type it can stand for
+ *   ("a math function represents a numeric value, one of: <length>, <frequency>, <angle>,
+ *   <time>, <flex>, <resolution>, <percentage>, <number>, <integer>... can be used
+ *   anywhere a value of that type is allowed", Values 4, 10), and a component of a `<ratio>`
+ *   (`<number [0,∞]> [ / <number [0,∞]> ]?`), and is checked and clamped by the math layer.
+ *   `<dimension>` and `<zero>` are not numeric types in that list and take none.
  * - `<url>` is a url token or `url(` a string and any modifiers `)`.
  * - `<custom-ident>` is an identifier other than a CSS-wide keyword or `default`.
- * - `<any-value>` and `<declaration-value>` match one or more component values
- *   (white space alone is nothing); `<declaration-value>` refuses a top-level
- *   `;` or `!` and both refuse a bad string, a bad url and an unmatched closing token.
+ * - `<any-value>` and `<declaration-value>` match one or more component values (white space alone is
+ *   nothing), "so long as the sequence does not contain <bad-string-token>, <bad-url-token>,
+ *   unmatched <)-token>, <]-token>, or <}-token>" (Variables 1, 2.1), inside a function or a block
+ *   too; `<declaration-value>` also refuses "top-level <semicolon-token> tokens or <delim-token>
+ *   tokens with a value of "!"", which inside a function or block are fine.
  * - `<urange>` is a unicode-range token, so it matches in a `unicode-range`
  *   declaration's value only (the tokenizer makes the token only there).
  * - `<whitespace-token>` matches no component value: it succeeds where white
  *   space precedes the next component value, consuming nothing.
- * - A value containing `var()`, `env()` or `attr()` anywhere is pending
- *   substitution and matches any grammar.
+ * - A value containing an arbitrary substitution function anywhere (`var()`, `env()`,
+ *   `attr()`, `if()`, `inherit()`, `ident()`, `random-item()`: the ones the served Values 5,
+ *   Variables 1 and Environment drafts call so; a dashed function is not among them) is
+ *   pending substitution and matches any grammar.
+ * - A multiplier on a multiplier is two nodes, as written, and the typed value has the shape the
+ *   grammar spells (`[ a* ]+` is a list of lists).
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_GRAMMAR_H
@@ -155,15 +193,20 @@ typedef struct {
   /** The allocator of everything, or NULL for the default. The struct is
    *  copied; its `ctx` must outlive the definition or compiled grammar. */
   const GTEXT_Allocator * allocator;
-  /** Longest definition text, in bytes. Default 65,536.
-   *  One more is GTEXT_CSS_E_LIMIT_DEFINITION. */
+  /** Longest definition text, in bytes. Default 65,536; a larger value is 2^30 (an offset into a
+   *  definition is 32 bits). The texts of all the definitions a grammar is linked from, each with a NUL
+   *  after it, together are held to the same bound. One more is GTEXT_CSS_E_LIMIT_DEFINITION. */
   size_t max_definition_bytes;
-  /** Deepest nesting of groups, functions and blocks: `[[a]]` is 2 deep. Default 256.
+  /** Deepest nesting of groups, functions and blocks: `[[a]]` is 2 deep. Default 256; at most 2^20.
    *  One more is GTEXT_CSS_E_LIMIT_DEFINITION_DEPTH. */
   size_t max_definition_depth;
   /** Most nodes in a definition, and in a linked grammar (every node of every
    *  definition it holds, counted once for each distinct range a type was
-   *  linked with). Default 65,536. One more is GTEXT_CSS_E_LIMIT_DEFINITION_NODES. */
+   *  linked with). Default 65,536; a larger value is 2^28. One more is
+   *  GTEXT_CSS_E_LIMIT_DEFINITION_NODES.
+   *
+   *  A `&&` or `||` group of more than 64 members is GTEXT_CSS_E_LIMIT_GROUP whatever these are
+   *  set to (a member is a bit of a 64-bit mask); a `|` group has no such bound. */
   size_t max_definition_nodes;
 } GTEXT_CSS_Grammar_Options;
 
@@ -183,6 +226,8 @@ typedef struct {
   char name[96];           ///< GTEXT_CSS_E_REFERENCE and GTEXT_CSS_E_LEFT_RECURSION: the reference as written
                            ///< (`<nosuch>`, `<'width'>`), cut to fit; empty otherwise.
   size_t nodes;            ///< Nodes the definition or the linked grammar has.
+  size_t work;             ///< Linking: units of work done (a node looked at, a dependent revisited), which a long
+                           ///< chain of types that can match nothing keeps proportional to its length.
 } GTEXT_CSS_Grammar_Result;
 
 /**
@@ -221,7 +266,10 @@ GTEXT_API size_t gtext_css_definition_node_count(const GTEXT_CSS_Definition * de
  * @param out Receives the grammar; written only on success. Not NULL.
  * @param result NULL, or filled.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; GTEXT_CSS_E_REFERENCE;
- *   GTEXT_CSS_E_LEFT_RECURSION; GTEXT_CSS_E_LIMIT_DEFINITION_NODES.
+ *   GTEXT_CSS_E_LEFT_RECURSION; GTEXT_CSS_E_GRAMMAR (a range written on a native type that its bounds do
+ *   not fit, or one that the ranges of the types around it narrow to nothing; the result names the
+ *   reference); GTEXT_CSS_E_LIMIT_DEFINITION_NODES; GTEXT_CSS_E_LIMIT_DEFINITION (the texts of the
+ *   definitions together are longer than an offset can hold); GTEXT_CSS_E_LIMIT_ATOMS.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * definition,
     GTEXT_CSS_Resolver resolver, void * user, const GTEXT_CSS_Grammar_Options * options,
@@ -272,13 +320,17 @@ typedef struct {
    *  added to a set, a value made). Default 67,108,864. One more is GTEXT_CSS_E_LIMIT_WORK. */
   size_t max_match_work;
   /** Most memo entries: each remembered (node, position) answer, each interval
-   *  of those answers, and each frame waiting on another. Default 4,194,304.
+   *  of those answers, and each frame waiting on another. Default 4,194,304; a larger value is 2^30.
    *  One more is GTEXT_CSS_E_LIMIT_WORK. */
   size_t max_memo_entries;
   /** HTML quirks: a bare non-zero number matches `<length>` as that many pixels
    *  (GTEXT_CSS_VFLAG_UNITLESS_LENGTH). Which properties enable it is a decision of the
    *  property layer. Default false. */
   bool unitless_length;
+  /** Most bytes of the text of one opaque value (`<any-value>`, a math function's arguments, a pending
+   *  value): the output limit of the serializer that makes it. Default 256 MiB. One more is
+   *  GTEXT_CSS_E_LIMIT_OUTPUT. Appended after the fields above. */
+  size_t max_text_bytes;
 } GTEXT_CSS_Match_Options;
 
 /** @brief The defaults, spelled out. */
@@ -309,7 +361,9 @@ typedef struct {
  *   Written only on success. NULL if the typed result is not wanted.
  * @param result NULL, or filled.
  * @return GTEXT_CSS_OK (matched or not); GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM;
- *   GTEXT_CSS_E_LIMIT_WORK (the answer is not known).
+ *   GTEXT_CSS_E_LIMIT_WORK (the answer is not known); GTEXT_CSS_E_LIMIT_OUTPUT (the text of an opaque
+ *   value is longer than `max_text_bytes`). No other status: an internal failure is
+ *   GTEXT_CSS_E_INTERNAL and is a defect.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled,
     const GTEXT_CSS_Component_Value * values, size_t count,
@@ -326,7 +380,10 @@ GTEXT_API GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled,
  */
 typedef struct {
   const GTEXT_CSS_Compiled * compiled; ///< The grammar; borrowed.
-  GTEXT_CSS_Match_Options options;     ///< Copied by init.
+  GTEXT_CSS_Match_Options options;     ///< Copied by init (its allocator is replaced by the copy below).
+  GTEXT_Allocator allocator;           ///< The allocator, copied by init (the default if none was given): the
+                                       ///< caller's struct need not outlive the matcher. A matcher must not be
+                                       ///< copied once it has run.
   GTEXT_CSS_Status status;             ///< The status of the last match (OK, or why the hook said "no").
   GTEXT_CSS_Value_Set ** sets;         ///< Private: the value set of each group index that matched, or NULL.
   size_t set_count;                    ///< Private: entries of `sets`.

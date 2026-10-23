@@ -94,7 +94,7 @@ static const unit_row kUnits[] = {
 
 /* A row for each unit, by its enumerator, built once (the table above is the order of the rows, not of the enum). */
 static const unit_row * row_of(GTEXT_CSS_Unit unit) {
-  /* The rows are few (63): a scan is as cheap as an index and cannot go out of step with the enum. */
+  /* The rows are few (62): a scan is as cheap as an index and cannot go out of step with the enum. */
   if ((unsigned)unit == 0 || (unsigned)unit >= (unsigned)GTEXT_CSS_UNIT_COUNT) {
     return NULL;
   }
@@ -156,7 +156,11 @@ bool gtext_css_unit_to_canonical(GTEXT_CSS_Unit unit, double value, double * out
     *out = value;
   }
   else {
-    *out = value * r->numerator / r->denominator;
+    /* The product is stored before it is divided: on a target that computes in extended precision (x87) an intermediate
+       kept in a register would round once and not twice, and the answer would differ in the last place from the one
+       a target with double arithmetic gives. */
+    volatile double product = value * r->numerator;
+    *out = product / r->denominator;
   }
   return true;
 }

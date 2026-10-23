@@ -28,13 +28,24 @@
  * left recursion and has its references replaced by what they stand for.
  *
  * Nothing recurses. The definitions to copy are a queue; "can this node match
- * without consuming a component value" is computed by repeated passes until
- * nothing changes; left recursion is a depth-first search with an explicit
- * stack.
+ * without consuming a component value" is a worklist over the nodes that depend
+ * on a node when it turns out to be able to; left recursion is a depth-first
+ * search with an explicit stack; the commas and slashes that can separate the
+ * items of a list are decided after that, when it is known which items can be
+ * empty.
  *
- * Reference: CSS Values and Units Level 4, section 2: a range after a type name
- * restricts the type ("the number is clamped or invalid outside it"), applying
- * to every numeric type of a composite definition.
+ * Ranges. Values 4, 5.1: "within the angle brackets, after the identifying
+ * keyword, indicating a closed range between (and including) min and max";
+ * "Values of -infinity or infinity must be written without units, even if the
+ * value type uses units"; "Values of 0 can be written without units, even if the
+ * value type doesn't allow 'unitless zeroes'". The draft does not say what a
+ * range on a composite type such as <length-percentage [0,infinity]> means. Here
+ * it restricts every numeric terminal of the definition that its bounds can
+ * apply to (the unit of a bound must be that terminal's kind of unit); a
+ * terminal of another kind, and a type that is not numeric, are left as they
+ * are. A range written on a native type that its bounds do not fit
+ * (<number [0px,10px]>) is no range, and so is one that the ranges of the
+ * types around it narrow to nothing.
  */
 
 #include <ghoti.io/text/macros.h>
@@ -50,6 +61,7 @@ typedef struct {
   uint32_t text_base;               ///< Where its text starts in the compiled pool.
   bool has_range;                   ///< Copied with a range applied.
   double lo, hi;                    ///< The range.
+  uint8_t rclass;                   ///< What the range's bounds were written in (RC_*).
   uint32_t key_name;                ///< Offset in the compiled text of the name it was linked as (for the table).
   uint32_t key_len;                 ///< Its length.
   uint8_t key_kind;                 ///< Reference kind.
@@ -61,6 +73,7 @@ typedef struct {
   GTEXT_CSS_Compiled * c;
   size_t ncap, kcap, tcap;
   size_t max_nodes;
+  size_t max_bytes;                 ///< The bound on the texts of all the definitions together.
   GTEXT_CSS_Resolver resolver;
   void * user;
   instance * inst;                  ///< The instances, in the order made (also the work queue).
@@ -73,6 +86,7 @@ typedef struct {
   GTEXT_CSS_Status status;
   char err_name[96];
   size_t err_len;
+  size_t work;                      ///< Units of work (GTEXT_CSS_Grammar_Result::work).
 } linker;
 
 static void lfail(linker * L, GTEXT_CSS_Status st) {
@@ -101,8 +115,8 @@ static void set_name(linker * L, const gnode * ref, const char * text) {
   L->err_len = k;
 }
 
-static uint32_t hash_key(uint8_t kind, const char * name, size_t len, bool has_range, double lo, double hi) {
-  uint32_t h = 2166136261u ^ kind;
+static uint32_t hash_key(uint8_t kind, const char * name, size_t len, bool has_range, double lo, double hi, uint8_t rclass) {
+  uint32_t h = (2166136261u ^ kind) * 16777619u ^ rclass;
   for (size_t i = 0; i < len; i++) {
     h = (h ^ (unsigned char)name[i]) * 16777619u;
   }
@@ -122,13 +136,13 @@ static bool same_double(double a, double b) {
 }
 
 static size_t table_find(const linker * L, uint8_t kind, const char * name, size_t len, bool has_range,
-    double lo, double hi, bool * found) {
+    double lo, double hi, uint8_t rclass, bool * found) {
   const size_t mask = L->nslots - 1;
-  size_t i = hash_key(kind, name, len, has_range, lo, hi) & mask;
+  size_t i = hash_key(kind, name, len, has_range, lo, hi, rclass) & mask;
   while (L->table[i]) {
     const instance * in = &L->inst[L->table[i] - 1];
     if (in->key_kind == kind && in->key_len == len && in->has_range == has_range
-        && (!has_range || (same_double(in->lo, lo) && same_double(in->hi, hi)))
+        && (!has_range || (same_double(in->lo, lo) && same_double(in->hi, hi) && in->rclass == rclass))
         && memcmp(L->c->text + in->key_name, name, len) == 0) {
       *found = true;
       return i;
@@ -153,7 +167,7 @@ static bool table_grow(linker * L) {
     if (in->key_len == 0) {
       continue; /* the root */
     }
-    size_t i = hash_key(in->key_kind, L->c->text + in->key_name, in->key_len, in->has_range, in->lo, in->hi) & (nslots - 1);
+    size_t i = hash_key(in->key_kind, L->c->text + in->key_name, in->key_len, in->has_range, in->lo, in->hi, in->rclass) & (nslots - 1);
     while (t[i]) {
       i = (i + 1) & (nslots - 1);
     }
@@ -163,7 +177,7 @@ static bool table_grow(linker * L) {
 }
 
 /// Copy a definition into the compiled grammar (with a range applied, if any); returns its instance number.
-static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_range, double lo, double hi,
+static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_range, double lo, double hi, uint8_t rclass,
     uint8_t key_kind, uint32_t key_name, uint32_t key_len, size_t * out_index) {
   GTEXT_CSS_Compiled * c = L->c;
   if (def->nnodes > L->max_nodes || c->nnodes > L->max_nodes - def->nnodes) {
@@ -185,8 +199,11 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
     }
     L->texts = tx;
     void * tp = c->text;
-    if (c->text_len + def->text_len + 1 > UINT32_MAX / 2
-        || !css_grammar_grow(&L->alloc, &tp, &L->tcap, c->text_len + def->text_len + 1, 1)) {
+    if (def->text_len + 1 > L->max_bytes || c->text_len > L->max_bytes - def->text_len - 1) { /* (a NUL follows each text) */
+      lfail(L, GTEXT_CSS_E_LIMIT_DEFINITION); /* the texts of the definitions together are more than an offset can hold */
+      return false;
+    }
+    if (!css_grammar_grow(&L->alloc, &tp, &L->tcap, c->text_len + def->text_len + 1, 1)) {
       lfail(L, GTEXT_CSS_E_OOM);
       return false;
     }
@@ -231,19 +248,26 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
     g.kids += kbase;
     g.str_off += text_base;
     g.src_off += text_base;
-    if (has_range && ((g.kind == GN_NATIVE && css_grammar_native_numeric((gn_native)g.native)) || g.kind == GN_REF)) {
-      if (g.flags & GNF_RANGE) {
-        if (lo > g.lo) {
+    if (has_range && g.kind == GN_REF) {
+      /* the range of the type around it reaches every reference in the definition that it can restrict */
+      const gn_native nt = g.native == GTEXT_CSS_REF_TYPE ? css_grammar_native_lookup(def->text + g.str_off, g.str_len) : NT_COUNT;
+      const bool applies = g.native == GTEXT_CSS_REF_PROPERTY ? true : nt == NT_COUNT ? true
+          : css_grammar_native_numeric(nt) && css_grammar_range_fits(nt, rclass);
+      if (applies) {
+        if (g.flags & GNF_RANGE) {
+          if (lo > g.lo) {
+            g.lo = lo;
+          }
+          if (hi < g.hi) {
+            g.hi = hi;
+          }
+        }
+        else {
+          g.flags |= GNF_RANGE | GNF_INHERITED;
           g.lo = lo;
-        }
-        if (hi < g.hi) {
           g.hi = hi;
+          g.rclass = rclass;
         }
-      }
-      else {
-        g.flags |= GNF_RANGE;
-        g.lo = lo;
-        g.hi = hi;
       }
     }
     c->nodes[base + i] = g;
@@ -257,6 +281,7 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
   in->has_range = has_range;
   in->lo = lo;
   in->hi = hi;
+  in->rclass = rclass;
   in->key_kind = key_kind;
   in->key_name = key_name;
   in->key_len = key_len;
@@ -264,7 +289,7 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
   *out_index = L->ninst++;
   if (key_len) {
     bool found;
-    const size_t slot = table_find(L, key_kind, c->text + key_name, key_len, has_range, lo, hi, &found);
+    const size_t slot = table_find(L, key_kind, c->text + key_name, key_len, has_range, lo, hi, rclass, &found);
     L->table[slot] = (uint32_t)L->ninst;
   }
   return true;
@@ -281,25 +306,35 @@ static bool resolve_instance(linker * L, size_t index) {
       continue;
     }
     const gn_native nt = r->native == GTEXT_CSS_REF_TYPE ? css_grammar_native_lookup(c->text + r->str_off, r->str_len) : NT_COUNT;
+    if ((r->flags & GNF_RANGE) && r->lo > r->hi) {
+      set_name(L, r, c->text); /* the ranges around it left nothing */
+      lfail(L, GTEXT_CSS_E_GRAMMAR);
+      return false;
+    }
     if (nt != NT_COUNT) {
-      if ((r->flags & GNF_RANGE) && !css_grammar_native_numeric(nt)) {
-        set_name(L, r, c->text);
-        lfail(L, GTEXT_CSS_E_GRAMMAR);
-        return false;
+      uint8_t flags = (uint8_t)(r->flags & (GNF_RANGE | GNF_INHERITED));
+      if (flags & GNF_RANGE) {
+        const bool own = !(flags & GNF_INHERITED);
+        if (!css_grammar_native_numeric(nt) || !css_grammar_range_fits(nt, r->rclass)) {
+          if (own) {
+            set_name(L, r, c->text);
+            lfail(L, GTEXT_CSS_E_GRAMMAR);
+            return false;
+          }
+          flags = 0; /* a range the type around it brought, where it does not apply */
+          r->rclass = RC_NONE;
+        }
       }
-      const uint8_t keep = (uint8_t)(r->flags & (GNF_RANGE | GNF_NONNULL));
       r->kind = GN_NATIVE;
       r->native = (uint8_t)nt;
-      r->flags = (uint8_t)(keep & ~GNF_NONNULL);
-      if (!css_grammar_native_nullable(nt)) {
-        r->flags |= GNF_NONNULL;
-      }
+      r->flags = flags;
       continue;
     }
     const bool range = (r->flags & GNF_RANGE) != 0;
     const double lo = range ? r->lo : 0.0, hi = range ? r->hi : 0.0;
+    const uint8_t rclass = range ? r->rclass : (uint8_t)RC_NONE;
     bool found;
-    size_t slot = table_find(L, r->native, c->text + r->str_off, r->str_len, range, lo, hi, &found);
+    size_t slot = table_find(L, r->native, c->text + r->str_off, r->str_len, range, lo, hi, rclass, &found);
     if (found) {
       r->target = L->inst[L->table[slot] - 1].root;
       continue;
@@ -318,7 +353,7 @@ static bool resolve_instance(linker * L, size_t index) {
     size_t n;
     const uint8_t kind = r->native;
     const uint32_t name_off = r->str_off, name_len = r->str_len;
-    if (!instantiate(L, def, range, lo, hi, kind, name_off, name_len, &n)) {
+    if (!instantiate(L, def, range, lo, hi, rclass, kind, name_off, name_len, &n)) {
       return false;
     }
     r = &c->nodes[base + k]; /* the array may have moved */
@@ -436,6 +471,7 @@ static bool find_left_recursion(linker * L, const uint8_t * nl) {
     top++;
     color[root] = 1;
     while (top > 0 && ok) {
+      L->work += 1;
       const uint32_t n = st[top - 1].node;
       uint32_t to;
       if (!left_edge(c, nl, n, st[top - 1].edge, &to)) {
@@ -512,24 +548,260 @@ const GTEXT_CSS_Atom_Table * gtext_css_compiled_atoms(const GTEXT_CSS_Compiled *
   return c ? c->atoms : NULL;
 }
 
+/* ---- which nodes can match nothing -------------------------------------- */
+
+/// The nodes whose nullability depends on node `x` (every node that has it as a kid, and every reference to it) are
+/// listed in `list` from `begin[x]` to `begin[x + 1]`. A node is looked at once to start with, and again only when a node
+/// it depends on has turned out to be able to match nothing, which happens at most once for each, so the work is the
+/// number of edges and the nodes (charged to the result's work).
+static bool nullable_worklist(linker * L, uint8_t * nl) {
+  GTEXT_CSS_Compiled * c = L->c;
+  const size_t n = c->nnodes;
+  size_t * begin = gtext_allocator_calloc(&L->alloc, n + 2, sizeof *begin);
+  size_t * cursor = gtext_allocator_malloc(&L->alloc, (n + 1) * sizeof *cursor);
+  uint32_t * stack = gtext_allocator_malloc(&L->alloc, (n + 1) * sizeof *stack);
+  uint8_t * queued = gtext_allocator_calloc(&L->alloc, n + 1, 1);
+  uint32_t * list = NULL;
+  if (!begin || !cursor || !stack || !queued) {
+    lfail(L, GTEXT_CSS_E_OOM);
+  }
+  for (int pass = 0; pass < 2 && L->status == GTEXT_CSS_OK; pass++) {
+    for (size_t i = 0; i < n; i++) {
+      const gnode * g = &c->nodes[i];
+      if (g->kind == GN_REF) {
+        if (g->target != UINT32_MAX) {
+          if (pass == 0) {
+            begin[g->target + 1]++;
+          }
+          else {
+            list[cursor[g->target]++] = (uint32_t)i;
+          }
+        }
+        continue;
+      }
+      if (g->kind != GN_SEQ && g->kind != GN_ALT && g->kind != GN_AND && g->kind != GN_OR && g->kind != GN_MULT) {
+        continue;
+      }
+      for (uint32_t k = 0; k < g->nkids; k++) {
+        const uint32_t kid = c->kids[g->kids + k];
+        if (pass == 0) {
+          begin[kid + 1]++;
+        }
+        else {
+          list[cursor[kid]++] = (uint32_t)i;
+        }
+      }
+    }
+    if (pass == 0) {
+      for (size_t i = 1; i <= n; i++) {
+        begin[i] += begin[i - 1];
+      }
+      list = gtext_allocator_malloc(&L->alloc, (begin[n] + 1) * sizeof *list);
+      if (!list) {
+        lfail(L, GTEXT_CSS_E_OOM);
+        break;
+      }
+      memcpy(cursor, begin, n * sizeof *cursor);
+    }
+  }
+  if (L->status == GTEXT_CSS_OK) {
+    size_t top = 0;
+    for (size_t i = n; i-- > 0;) { /* the kids before the nodes that hold them: most nodes settle in one look */
+      stack[top++] = (uint32_t)i;
+      queued[i] = 1;
+    }
+    while (top > 0) {
+      const uint32_t x = stack[--top];
+      queued[x] = 0;
+      L->work += 1;
+      if (nl[x] || !node_nullable(c, nl, x)) {
+        continue;
+      }
+      nl[x] = 1;
+      for (size_t k = begin[x]; k < begin[x + 1]; k++) {
+        const uint32_t d = list[k];
+        L->work += 1;
+        if (!nl[d] && !queued[d]) {
+          queued[d] = 1;
+          stack[top++] = d;
+        }
+      }
+    }
+  }
+  gtext_allocator_free(&L->alloc, begin);
+  gtext_allocator_free(&L->alloc, cursor);
+  gtext_allocator_free(&L->alloc, stack);
+  gtext_allocator_free(&L->alloc, queued);
+  gtext_allocator_free(&L->alloc, list);
+  return L->status == GTEXT_CSS_OK;
+}
+
+/* ---- commas and slashes between the items of a list ------------------------ */
+
+static bool is_sep_literal(const GTEXT_CSS_Compiled * c, uint32_t node, uint32_t ch) {
+  const gnode * g = &c->nodes[node];
+  return g->kind == GN_LITERAL && g->lit == ch;
+}
+
+static uint32_t add_node(linker * L, const gnode * proto) {
+  GTEXT_CSS_Compiled * c = L->c;
+  if (c->nnodes >= L->max_nodes) {
+    lfail(L, GTEXT_CSS_E_LIMIT_DEFINITION_NODES);
+    return GN_NONE;
+  }
+  void * nodes = c->nodes;
+  if (!css_grammar_grow(&L->alloc, &nodes, &L->ncap, c->nnodes + 1, sizeof(gnode))) {
+    lfail(L, GTEXT_CSS_E_OOM);
+    return GN_NONE;
+  }
+  c->nodes = nodes;
+  c->nodes[c->nnodes] = *proto;
+  return (uint32_t)c->nnodes++;
+}
+
+static bool add_kid_run(linker * L, const uint32_t * items, size_t n, uint32_t * first) {
+  GTEXT_CSS_Compiled * c = L->c;
+  void * kids = c->kids;
+  if (!css_grammar_grow(&L->alloc, &kids, &L->kcap, c->nkids + n, sizeof(uint32_t))) {
+    lfail(L, GTEXT_CSS_E_OOM);
+    return false;
+  }
+  c->kids = kids;
+  *first = (uint32_t)c->nkids;
+  memcpy(c->kids + c->nkids, items, n * sizeof(uint32_t));
+  c->nkids += n;
+  return true;
+}
+
+/// A juxtaposition whose literal `ch` items can only separate non-empty segments is a list of those segments with `ch`
+/// as its separator: the segments are the items between the literals, and each has to consume something (it has an item
+/// that cannot match nothing), or a separator could be missing from the text the value is written as. Otherwise the
+/// literals stay items. `nl` says which nodes can match nothing; new nodes are never empty.
+static bool split_one(linker * L, uint32_t node, uint32_t ch, uint8_t sep, uint8_t * nl) {
+  GTEXT_CSS_Compiled * c = L->c;
+  const gnode g = c->nodes[node];
+  const uint32_t * kids = c->kids + g.kids;
+  size_t segments = 1, run = 0;
+  bool good = false, any = false;
+  for (uint32_t i = 0; i < g.nkids; i++) {
+    if (is_sep_literal(c, kids[i], ch)) {
+      any = true;
+      if (run == 0 || !good) {
+        return true; /* an empty segment, or one that may be: not a list */
+      }
+      segments++;
+      run = 0;
+      good = false;
+    }
+    else {
+      run++;
+      good = good || !nl[kids[i]];
+    }
+  }
+  if (!any || run == 0 || !good) {
+    return true;
+  }
+  uint32_t * seg = gtext_allocator_malloc(&L->alloc, segments * sizeof *seg);
+  if (!seg) {
+    lfail(L, GTEXT_CSS_E_OOM);
+    return false;
+  }
+  size_t k = 0, begin = 0;
+  uint32_t * items = c->kids + g.kids; /* (the kid array may move while nodes are added: indexes are used below) */
+  (void)items;
+  for (uint32_t i = 0; i <= g.nkids && L->status == GTEXT_CSS_OK; i++) {
+    if (i == g.nkids || is_sep_literal(c, c->kids[g.kids + i], ch)) {
+      const size_t count = i - begin;
+      if (count == 1) {
+        seg[k++] = c->kids[g.kids + begin];
+      }
+      else {
+        gnode sn;
+        memset(&sn, 0, sizeof sn);
+        sn.kind = GN_SEQ;
+        sn.min = sn.max = 1;
+        sn.target = UINT32_MAX;
+        sn.nkids = (uint32_t)count;
+        const gnode * f = &c->nodes[c->kids[g.kids + begin]];
+        const gnode * l = &c->nodes[c->kids[g.kids + i - 1]];
+        sn.src_off = f->src_off;
+        sn.src_len = l->src_off + l->src_len - f->src_off;
+        uint32_t first;
+        uint32_t tmp[64];
+        uint32_t * run_items = count <= 64 ? tmp : gtext_allocator_malloc(&L->alloc, count * sizeof *run_items);
+        if (!run_items) {
+          lfail(L, GTEXT_CSS_E_OOM);
+          break;
+        }
+        memcpy(run_items, c->kids + g.kids + begin, count * sizeof *run_items);
+        const bool added = add_kid_run(L, run_items, count, &first);
+        if (run_items != tmp) {
+          gtext_allocator_free(&L->alloc, run_items);
+        }
+        if (!added) {
+          break;
+        }
+        sn.kids = first;
+        const uint32_t made = add_node(L, &sn);
+        if (made == GN_NONE) {
+          break;
+        }
+        nl[made] = 0;
+        seg[k++] = made;
+      }
+      begin = i + 1;
+    }
+  }
+  if (L->status == GTEXT_CSS_OK) {
+    uint32_t first;
+    if (add_kid_run(L, seg, k, &first)) {
+      gnode * w = &c->nodes[node];
+      w->kids = first;
+      w->nkids = (uint32_t)k;
+      w->sep = sep;
+    }
+  }
+  gtext_allocator_free(&L->alloc, seg);
+  return L->status == GTEXT_CSS_OK;
+}
+
+static bool split_sequences(linker * L, uint8_t * nl) {
+  GTEXT_CSS_Compiled * c = L->c;
+  for (size_t i = 0; i < c->nnodes && L->status == GTEXT_CSS_OK; i++) {
+    const gnode g = c->nodes[i];
+    if (g.kind != GN_SEQ || g.sep != 0 || g.nkids < 3) {
+      continue;
+    }
+    L->work += g.nkids;
+    if (!split_one(L, (uint32_t)i, ',', 1, nl)) {
+      return false;
+    }
+    if (c->nodes[i].sep == 0 && !split_one(L, (uint32_t)i, '/', 2, nl)) {
+      return false;
+    }
+  }
+  return L->status == GTEXT_CSS_OK;
+}
+
 GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTEXT_CSS_Resolver resolver,
     void * user, const GTEXT_CSS_Grammar_Options * options, GTEXT_CSS_Compiled ** out,
     GTEXT_CSS_Grammar_Result * result) {
   if (!def || !out) {
-    css_grammar_result(result, GTEXT_CSS_E_INVALID, 0, NULL, 0, 0);
+    css_grammar_result(result, GTEXT_CSS_E_INVALID, 0, NULL, 0, 0, 0);
     return GTEXT_CSS_E_INVALID;
   }
-  size_t max_nodes;
-  css_grammar_limits(options, NULL, NULL, &max_nodes);
+  size_t max_nodes, max_bytes;
+  css_grammar_limits(options, &max_bytes, NULL, &max_nodes);
   linker L;
   memset(&L, 0, sizeof L);
+  L.max_bytes = max_bytes;
   L.alloc = css_grammar_allocator(options);
   L.max_nodes = max_nodes;
   L.resolver = resolver;
   L.user = user;
   GTEXT_CSS_Compiled * c = gtext_allocator_malloc(&L.alloc, sizeof *c);
   if (!c) {
-    css_grammar_result(result, GTEXT_CSS_E_OOM, 0, NULL, 0, 0);
+    css_grammar_result(result, GTEXT_CSS_E_OOM, 0, NULL, 0, 0, 0);
     return GTEXT_CSS_E_OOM;
   }
   memset(c, 0, sizeof *c);
@@ -537,30 +809,23 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
   L.c = c;
   uint8_t * nl = NULL;
   size_t root_index;
-  if (instantiate(&L, def, false, 0.0, 0.0, 0, 0, 0, &root_index)) {
+  if (instantiate(&L, def, false, 0.0, 0.0, RC_NONE, 0, 0, 0, &root_index)) {
     c->root = L.inst[root_index].root;
     while (L.next < L.ninst && resolve_instance(&L, L.next)) {
       L.next++;
     }
   }
   if (L.status == GTEXT_CSS_OK) {
-    nl = gtext_allocator_calloc(&L.alloc, c->nnodes ? c->nnodes : 1, 1);
+    /* room for the nodes that splitting a juxtaposition into segments can add: one for each kid at most */
+    nl = gtext_allocator_calloc(&L.alloc, c->nnodes + c->nkids + 1, 1);
     if (!nl) {
       lfail(&L, GTEXT_CSS_E_OOM);
     }
   }
-  if (L.status == GTEXT_CSS_OK) {
-    bool changed = true;
-    while (changed) {
-      changed = false;
-      for (size_t i = c->nnodes; i-- > 0;) {
-        if (!nl[i] && node_nullable(c, nl, (uint32_t)i)) {
-          nl[i] = 1;
-          changed = true;
-        }
-      }
+  if (L.status == GTEXT_CSS_OK && nullable_worklist(&L, nl)) {
+    if (find_left_recursion(&L, nl)) {
+      split_sequences(&L, nl);
     }
-    find_left_recursion(&L, nl);
   }
   if (L.status == GTEXT_CSS_OK) {
     /* replace every reference by what it stands for */
@@ -585,8 +850,9 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
       gnode * g = &c->nodes[i];
       if (g->kind == GN_KEYWORD) {
         GTEXT_CSS_Atom a;
-        if (gtext_css_atom_intern(c->atoms, c->text + g->str_off, g->str_len, &a) != GTEXT_CSS_OK) {
-          lfail(&L, GTEXT_CSS_E_OOM);
+        const GTEXT_CSS_Status ast = gtext_css_atom_intern(c->atoms, c->text + g->str_off, g->str_len, &a);
+        if (ast != GTEXT_CSS_OK) {
+          lfail(&L, ast);
         }
         g->atom = a;
       }
@@ -599,10 +865,10 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
   if (L.status != GTEXT_CSS_OK) {
     const size_t nodes = c->nnodes;
     compiled_free_parts(c);
-    css_grammar_result(result, L.status, 0, L.err_name, L.err_len, nodes);
+    css_grammar_result(result, L.status, 0, L.err_name, L.err_len, nodes, L.work);
     return L.status;
   }
-  css_grammar_result(result, GTEXT_CSS_OK, 0, NULL, 0, c->nnodes);
+  css_grammar_result(result, GTEXT_CSS_OK, 0, NULL, 0, c->nnodes, L.work);
   *out = c;
   return GTEXT_CSS_OK;
 }

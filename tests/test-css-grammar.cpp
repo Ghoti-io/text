@@ -331,13 +331,29 @@ TEST(CssGrammarNotation, TheSameInputGivesTheSameAnswerEveryTime) {
   }
 }
 
-TEST(CssGrammarNotation, ANestedMultiplierOfTheSameKindIsTheInnerOne) {
-  // "[ x* ]+" and "x*" are one repetition (so the work of a star of a star is that of a star)
-  EXPECT_EQ(run("[ a* ]+", "a a"), run("a*", "a a"));
-  EXPECT_EQ(run("[ a+ ]*", "a a"), run("a*", "a a"));
-  EXPECT_EQ(run("[ a? ]*", ""), "<none>");
-  EXPECT_EQ(run("[ a* ]?", "a a"), run("a*", "a a"));
-  EXPECT_EQ(run("[ a+ ]{2,}", "a a"), run("a{2,}", "a a"));
+TEST(CssGrammarNotation, ANestedMultiplierKeepsTheShapeItIsWrittenIn) {
+  // "[ x* ]+" is a repetition of a repetition: a list of lists, as written (and still linear: the quadratic suite)
+  check_rows({
+      {"[ a* ]+", "a a", "list/space(list/space(kw:a kw:a))"},
+      {"[ a+ ]*", "a a", "list/space(list/space(kw:a kw:a))"},
+      {"[ a? ]*", "a a", "list/space(kw:a kw:a)"},
+      {"[ a? ]*", "", "<none>"},
+      {"[ a* ]?", "a a", "list/space(kw:a kw:a)"},
+      {"[ a+ ]{2,}", "a a", "list/space(list/space(kw:a) list/space(kw:a))"},
+      {"[ a? ]?", "a", "kw:a"},
+      {"[ a+ ]#", "a a, a", "list/comma(list/space(kw:a kw:a) list/space(kw:a))"},
+  });
+  Grammar g;
+  compile_into(g, "[ a* ]+");
+  ASSERT_TRUE(g.ok());
+  EXPECT_EQ(gtext_css_compiled_node_count(g.c), 3u);  // the keyword and the two multipliers
+  Matched m;
+  match_into(m, g, "a a");
+  size_t len = 0;
+  const char * t = gtext_css_compiled_slot_text(g.c, m.root()->slot, &len);
+  EXPECT_EQ(std::string(t, len), "[ a* ]+");
+  t = gtext_css_compiled_slot_text(g.c, m.root()->children[0].slot, &len);
+  EXPECT_EQ(std::string(t, len), "a*");
 }
 
 TEST(CssGrammarTypes, EachNativeTypeMatchesWhatTheDraftSays) {

@@ -66,8 +66,17 @@ typedef enum {
   GN_NATIVE,   ///< A native type: `native` (NT_*), with a range if GNF_RANGE.
   GN_REF,      ///< A reference to a type or a property, until linked: the name in `str_*`, `native` its GTEXT_CSS_Ref_Kind, and a range if GNF_RANGE.
   GN_FUNC,     ///< `name( kid )`: `str_*` the name, no kid for an empty argument list.
-  GN_BLOCK     ///< `{ kid }` or `( kid )`: `native` the opening token type.
+  GN_BLOCK     ///< `{ kid }`, `( kid )` or `'[' kid ']'`: `native` the opening token type.
 } gn_kind;
+
+/// The value a node-making function returns when it failed (node 0 is a node).
+#define GN_NONE UINT32_MAX
+
+/// The most a limit on bytes or nodes can be: an offset or an index into a definition is 32 bits.
+#define GN_MAX_BYTES ((size_t)1 << 30)
+#define GN_MAX_NODES ((size_t)1 << 28)
+/// The most memo entries a limit can be (an entry's place in the pool is 32 bits).
+#define GN_MAX_MEMO ((size_t)1 << 30)
 
 /// The largest count of a multiplier that has none.
 #define GN_INF UINT32_MAX
@@ -81,8 +90,13 @@ typedef enum {
 /// Node flags.
 #define GNF_COMMA 0x01u   ///< A MULT: the repetitions are separated by commas (`#`).
 #define GNF_RANGE 0x02u   ///< A NATIVE or REF: `lo` and `hi` are a range.
-#define GNF_NONNULL 0x04u ///< Known to consume at least one component value (decided from the text; used to decide separators).
+#define GNF_INHERITED 0x04u ///< The range was not written on this node but on a type that contains it (it may be dropped where it does not apply).
 #define GNF_GROUP 0x08u   ///< Written as a `[ ]` group.
+
+/// What the bounds of a range were written in (gnode::rclass): nothing but plain numbers, percent, or a unit type + 2.
+#define RC_NONE 0
+#define RC_PERCENT 1
+#define RC_UNIT_BASE 2
 
 /// The native types.
 typedef enum {
@@ -104,6 +118,7 @@ typedef struct {
   uint8_t native;    ///< See gn_kind.
   uint8_t flags;     ///< GNF_*.
   uint8_t sep;       ///< SEQ: 0 plain, 1 the kids are comma-separated segments, 2 slash-separated segments.
+  uint8_t rclass;    ///< A range's bounds: RC_*.
   uint32_t kids;     ///< Index of the first kid in the kid array.
   uint32_t nkids;    ///< How many.
   uint32_t min;      ///< MULT: fewest repetitions.
@@ -147,6 +162,9 @@ struct GTEXT_CSS_Compiled {
   GTEXT_CSS_Atom_Table * atoms; ///< The keywords.
 };
 
+/// Whether the bounds of a range written in `rclass` fit native type `type`.
+bool css_grammar_range_fits(gn_native type, uint8_t rclass);
+
 /// Where the native type of this name is, or NT_COUNT.
 gn_native css_grammar_native_lookup(const char * name, size_t length);
 
@@ -158,7 +176,7 @@ bool css_grammar_native_nullable(gn_native type);
 
 /// Set a grammar result.
 void css_grammar_result(GTEXT_CSS_Grammar_Result * result, GTEXT_CSS_Status status, size_t offset,
-    const char * name, size_t name_length, size_t nodes);
+    const char * name, size_t name_length, size_t nodes, size_t work);
 
 /// The static message of a grammar status.
 const char * css_grammar_message(GTEXT_CSS_Status status);

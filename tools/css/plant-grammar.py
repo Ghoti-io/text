@@ -26,6 +26,8 @@ of the library's archive into the test programs, which are then run:
   testCssGrammarCorpus   the seed list of tools/css/grammar-corpus.txt (the gate): a plant marked "corpus" must fail it
   testCssGrammar         the construct-by-construct requirements
   testCssValues          the typed values and their serialization
+  testCssGrammarEdges    the edges a review found: names, ranges, literals, brackets, opaque values, math and
+                         substitution functions, the matcher, separators, spans, the work that is charged
 
 The **control** is the same procedure with no edit, and all three programs must pass. Each plant says what it breaks.
 """
@@ -39,9 +41,11 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
-PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-grammar.cpp", "values": "test-css-values.cpp"}
+PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-grammar.cpp", "values": "test-css-values.cpp",
+            "edges": "test-css-grammar-edges.cpp"}
 
-# (name, file under src/css/, old text (exactly once), new text, programs that must fail)
+# (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
+# lists of the same length, for a defect that takes more than one edit
 PLANTS = [
     ("and-needs-only-one", "css_grammar_match.c", "if (g->kind == GN_AND ? mask == full : mask != 0) {", "if (mask != 0) {", ["corpus", "grammar"]),
     ("or-accepts-none", "css_grammar_match.c", "if (g->kind == GN_AND ? mask == full : mask != 0) {", "if (g->kind == GN_AND ? mask == full : 1) {", ["corpus", "grammar"]),
@@ -70,23 +74,62 @@ PLANTS = [
     ("custom-ident-takes-css-wide-keywords", "css_grammar_match.c", "tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value);", "tok(v, GTEXT_CSS_TOKEN_IDENT);", ["corpus", "grammar"]),
     ("dashed-ident-needs-one-dash", "css_grammar_match.c", "v->value.data[0] == '-' && v->value.data[1] == '-';", "v->value.data[0] == '-';", ["corpus", "grammar"]),
     ("any-value-takes-bad-tokens", "css_grammar_match.c", "const uint32_t limit = t == NT_ANY_VALUE ? it->bad : it->badd;", "const uint32_t limit = it->end;", ["corpus", "grammar"]),
-    ("ratio-takes-negatives", "css_grammar_match.c", "      if (v && tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0) {", "      if (v && tok(v, GTEXT_CSS_TOKEN_NUMBER)) {", ["corpus", "grammar"]),
+    ("ratio-takes-negatives", "css_grammar_match.c", "(tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0) || (v->kind", "tok(v, GTEXT_CSS_TOKEN_NUMBER) || (v->kind", ["corpus", "grammar"]),
     ("left-recursion-is-allowed", "css_grammar_link.c", "      if (color[to] == 1) {", "      if (0 && color[to] == 1) {", ["grammar"]),
     ("units-are-case-sensitive", "css_units.c", "lower(n[k]) == lower(name[k])", "n[k] == name[k]", ["grammar", "values"]),
     ("substitution-is-not-pending", "css_grammar_match.c", "  if (status == GTEXT_CSS_OK && pending) {", "  if (status == GTEXT_CSS_OK && pending && 0) {", ["corpus", "grammar"]),
     ("comma-list-is-written-without-a-space", "css_value_serialize.c", "    case GTEXT_CSS_SEP_COMMA: puts_(w, \", \"); return;", "    case GTEXT_CSS_SEP_COMMA: puts_(w, \",\"); return;", ["corpus", "values"]),
     ("percent-is-not-written", "css_value_serialize.c", "    put_number(w, v->number, false);\n    puts_(w, \"%\");", "    put_number(w, v->number, false);", ["corpus", "values"]),
-    ("strings-are-written-unescaped", "css_value_serialize.c", "    (void)gtext_css_serialize_string(s->data ? s->data : \"\", s->length, &w->inner);",
-     "    put(w, \"\\\"\", 1); put(w, s->data ? s->data : \"\", s->length); put(w, \"\\\"\", 1);", ["values"]),
+    ("strings-are-written-unescaped", "css_value_serialize.c", "    take_status(w, gtext_css_serialize_string(s->data, s->length, &w->inner));",
+     "    put(w, \"\\\"\", 1); put(w, s->data, s->length); put(w, \"\\\"\", 1);", ["values"]),
     ("keywords-keep-the-inputs-spelling", "css_grammar_match.c", "    out->atom = g->atom;\n    return arena_text(B, m->c->text + g->str_off, g->str_len, &out->text) != NULL;",
      "    out->atom = g->atom;\n    return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;", ["grammar", "values"]),
     ("grammar-order-is-input-order", "css_grammar_match.c", "      for (int64_t i = found - 1; b.n[i].parent != UINT32_MAX; i = b.n[i].parent) {\n        /* insert sorted",
      "      for (int64_t i = found - 1; 0 && b.n[i].parent != UINT32_MAX; i = b.n[i].parent) {\n        /* insert sorted", ["corpus", "grammar"]),
+
+    # ---- what a review of the first build found (tests/test-css-grammar-edges.cpp, test-css-values.cpp) ----
+    ("atoms-ignore-their-count-limit", "css_value.c", "if (t->count >= t->max_atoms || length >= t->max_bytes", "if (length >= t->max_bytes", ["values"]),
+    ("identifier-failure-is-dropped", "css_value_serialize.c", "    take_status(w, gtext_css_serialize_identifier(s->data, s->length, &w->inner));",
+     "    (void)gtext_css_serialize_identifier(s->data, s->length, &w->inner);", ["values"]),
+    ("string-failure-is-dropped", "css_value_serialize.c", "    take_status(w, gtext_css_serialize_string(s->data, s->length, &w->inner));",
+     "    (void)gtext_css_serialize_string(s->data, s->length, &w->inner);", ["values"]),
+    ("names-end-only-at-a-space", "css_grammar_parse.c", "!is_ws_char(P->t[P->pos]) && P->t[P->pos] != '\\''", "P->t[P->pos] != ' ' && P->t[P->pos] != '\\''", ["edges"]),
+    ("range-units-are-not-checked", "css_grammar_parse.c", "if (nt != NT_COUNT && css_grammar_native_numeric(nt) && !css_grammar_range_fits(nt, joined)) {",
+     "if (0) {", ["edges"]),
+    ("a-brought-range-is-an-error-on-a-name", "css_grammar_link.c", "          if (own) {\n            set_name(L, r, c->text);", "          if (1) {\n            set_name(L, r, c->text);", ["edges"]),
+    ("an-empty-range-is-allowed", "css_grammar_link.c", "if ((r->flags & GNF_RANGE) && r->lo > r->hi) {", "if (0) {", ["edges"]),
+    ("link-text-overflow-is-out-of-memory", "css_grammar_link.c", "      lfail(L, GTEXT_CSS_E_LIMIT_DEFINITION); /* the texts", "      lfail(L, GTEXT_CSS_E_OOM); /* the texts", ["edges"]),
+    ("literals-are-not-checked-as-utf-8", "css_grammar_parse.c", "if (cp < min || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {", "if (0) {", ["edges"]),
+    ("quoted-brackets-are-literals", "css_grammar_parse.c", "    if (quoted_open) {", "    if (0 && quoted_open) {", ["edges"]),
+    ("any-value-does-not-look-inside", "css_grammar_match.c", "const bool inside = (item->cv->kind != GTEXT_CSS_VALUE_TOKEN) && nested[item->cview];", "const bool inside = false;", ["edges"]),
+    ("ratio-takes-no-math-function", "css_grammar_match.c", "  return (tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0) || (v->kind == GTEXT_CSS_VALUE_FUNCTION && is_math_function(&v->value));",
+     "  return tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0;", ["edges"]),
+    ("ratio-is-written-with-one-component", "css_value_serialize.c", "    puts_(w, \" / \");\n    put_number(w, v->number2, false);\n    return false;",
+     "    if (v->flags & GTEXT_CSS_VFLAG_RATIO_DENOMINATOR) {\n      puts_(w, \" / \");\n      put_number(w, v->number2, false);\n    }\n    return false;", ["edges", "corpus", "values"]),
+    ("if-is-not-a-substitution-function", "css_value.c", '{"var", "env", "attr", "if", "inherit", "ident", "random-item"}', '{"var", "env", "attr", "inherit", "ident", "random-item"}', ["edges"]),
+    ("matcher-keeps-the-callers-allocator", "css_grammar_match.c", ["  matcher->options.allocator = NULL;\n", "  o.allocator = &mt->allocator;\n"],
+     ["", "  o.allocator = mt->options.allocator;\n"], ["edges"]),
+    ("opaque-text-failure-is-internal", "css_grammar_match.c", "      B->m->status = st; /* the real one", "      B->m->status = GTEXT_CSS_E_INTERNAL; /* the real one", ["edges"]),
+    ("a-list-span-starts-at-its-first-child", "css_grammar_match.c", "  while (first < n && kids[first].span.line == 0) {", "  while (0 && first < n && kids[first].span.line == 0) {", ["edges"]),
+    ("separators-ignore-what-can-be-empty", "css_grammar_link.c", "      good = good || !nl[kids[i]];", "      good = true;", ["edges"]),
+    ("and-states-are-not-charged", "css_grammar_match.c", "          OKR(charge(m, 1)); /* (a position already a state costs a look too) */\n", "", ["edges"]),
+    ("url-token-is-not-a-url", "css_grammar_match.c", "    if (tok(v, GTEXT_CSS_TOKEN_URL)) {\n      return true;\n    }\n    if (v->kind != GTEXT_CSS_VALUE_FUNCTION || !css_ascii_ieq(&v->value, \"url\")) {",
+     "    if (tok(v, GTEXT_CSS_TOKEN_URL)) {\n      return false;\n    }\n    if (v->kind != GTEXT_CSS_VALUE_FUNCTION || !css_ascii_ieq(&v->value, \"url\")) {", ["corpus", "grammar"]),
+    ("string-is-not-a-string", "css_grammar_match.c", "  case NT_STRING:\n    return tok(v, GTEXT_CSS_TOKEN_STRING);", "  case NT_STRING:\n    return false;", ["corpus", "grammar"]),
+    ("percentage-ignores-its-range", "css_grammar_match.c", "    return tok(v, GTEXT_CSS_TOKEN_PERCENTAGE) && in_range(g, v->number);", "    return tok(v, GTEXT_CSS_TOKEN_PERCENTAGE);", ["corpus", "grammar"]),
+    ("dimension-is-not-a-dimension", "css_grammar_match.c", "    return tok(v, GTEXT_CSS_TOKEN_DIMENSION) && unit_in_range(g, unit_of(v), v->number);", "    return false;", ["corpus", "grammar"]),
+    ("flex-is-not-a-unit-type", "css_grammar_match.c", "  case NT_FLEX: return GTEXT_CSS_UNIT_TYPE_FLEX;", "  case NT_FLEX: return GTEXT_CSS_UNIT_TYPE_NONE;", ["corpus", "grammar"]),
+    ("urange-is-not-a-token", "css_grammar_match.c", "  case NT_URANGE:\n    return tok(v, GTEXT_CSS_TOKEN_UNICODE_RANGE);", "  case NT_URANGE:\n    return false;", ["corpus", "grammar"]),
+    ("anb-is-never-read", "css_grammar_match.c", "if (gtext_css_anb_parse(v, (size_t)(last->orig - it->orig + 1), &a, &b)) {", "if (0) {", ["corpus", "grammar"]),
+    ("open-ended-count-has-an-end", "css_grammar_parse.c", "*max = digits ? (uint32_t)b : GN_INF;", "*max = (uint32_t)b;", ["corpus", "grammar"]),
+    ("relative-units-are-always-in-range", "css_grammar_match.c", "  if (n > 0) {\n    return g->hi > 0;", "  if (n > 0) {\n    return true;", ["grammar", "corpus"]),
+    ("math-functions-are-not-recognized", "css_grammar_match.c", "static bool is_math_function(const GTEXT_CSS_String * name) {", "static bool is_math_function(const GTEXT_CSS_String * name) {\n  if (1) {\n    return false;\n  }", ["grammar", "edges"]),
+    ("a-comma-keeps-its-space", "css_value_serialize.c", "    if (begins_with_comma(child)) {\n      return;\n    }", "", ["corpus"]),
 ]
 
 
 def sh(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+    return subprocess.run(cmd, capture_output=True, text=True, errors="replace", **kw)
 
 
 def main(argv):
@@ -124,13 +167,17 @@ def main(argv):
             objs = []
             if plant:
                 _, rel, old, new, _must = plant
+                olds, news = (old, new) if isinstance(old, list) else ([old], [new])
                 shutil.copytree(os.path.join(ROOT, "src"), os.path.join(work, "src"))
                 path = os.path.join(work, "src", "css", rel)
                 text = open(path, encoding="utf-8").read()
-                if text.count(old) != 1:
-                    sys.stderr.write("plant %s: the text is in %s %d times, not once\n" % (name, rel, text.count(old)))
-                    return 2
-                open(path, "w", encoding="utf-8").write(text.replace(old, new))
+                for o_ in olds:
+                    if text.count(o_) != 1:
+                        sys.stderr.write("plant %s: the text is in %s %d times, not once\n" % (name, rel, text.count(o_)))
+                        return 2
+                for o_, n_ in zip(olds, news):
+                    text = text.replace(o_, n_)
+                open(path, "w", encoding="utf-8").write(text)
                 obj = os.path.join(work, "plant.o")
                 done = sh(["cc", "-std=c17", "-O2", "-fPIC", "-fvisibility=hidden", "-DGTEXT_BUILD", "-w", "-I", os.path.join(ROOT, "include"),
                            "-I", generated, "-I", os.path.join(work, "src", "css")] + cflags + ["-c", path, "-o", obj])
@@ -140,6 +187,8 @@ def main(argv):
                 objs = [obj]
             failed = []
             for key, tobj in objects.items():
+                if plant and key not in plant[4]:
+                    continue
                 exe = os.path.join(work, key)
                 done = sh(["g++", "-o", exe, tobj] + objs + [archive, "-lstdc++", "-lm", "-Wl,-rpath," + os.path.join(prefix, "lib", "ghoti.io")]
                           + libs + gtest + ["-Wl,--allow-multiple-definition"])

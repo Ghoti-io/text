@@ -156,6 +156,7 @@ TEST(CssValuesOom, APendingValueAndWritingAValueSweptOverEveryAllocation) {
   ASSERT_TRUE(g.ok());
   css_test::Parsed p;
   css_test::parse_into(p, gtext_css_parse_component_values, "calc(var(--a) + 1px)");
+  size_t failures = 0, completions = 0;
   for (size_t n = 1; n < 200; n++) {
     FaultAllocator fa;
     GTEXT_CSS_Match_Options o = gtext_css_match_options_default();
@@ -166,7 +167,10 @@ TEST(CssValuesOom, APendingValueAndWritingAValueSweptOverEveryAllocation) {
     const GTEXT_CSS_Status st = gtext_css_match(g.c, p.tree->values, p.tree->value_count, &o, &matched, &set, nullptr);
     fa.disarm();
     if (st == GTEXT_CSS_OK) {
+      completions++;
       EXPECT_TRUE(matched);
+      EXPECT_EQ(dump(gtext_css_value_set_root(set)), "pending:calc(var(--a) + 1px)") << n;
+      EXPECT_EQ(serialize(gtext_css_value_set_root(set)), "calc(var(--a) + 1px)") << n;
       gtext_css_value_set_free(set);
       EXPECT_TRUE(fa.live.empty());
       if (!fa.failed) {
@@ -174,11 +178,14 @@ TEST(CssValuesOom, APendingValueAndWritingAValueSweptOverEveryAllocation) {
       }
     }
     else {
+      failures++;
       EXPECT_EQ(st, GTEXT_CSS_E_OOM);
       EXPECT_EQ(set, nullptr);
       EXPECT_TRUE(fa.live.empty()) << n;
     }
   }
+  EXPECT_GE(failures, 3u) << "the sweep must fail something";
+  EXPECT_GE(completions, 1u);
 }
 
 TEST(CssValuesOom, TheGrammarHookKeepsNothingWhenAMatchFails) {

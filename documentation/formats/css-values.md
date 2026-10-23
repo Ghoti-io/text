@@ -169,18 +169,18 @@ or through a function's arguments) is fine.
 | `#` | one or more, separated by commas |
 | `{A}` `{A,B}` `{A,}` `#{A,B}` | counts (at most 65,535) |
 | `[ ... ]!` | the group must produce at least one value |
-| `<number [0,∞]>` `<length [0px,1in]>` | a range, inclusive; bounds `∞`, `-∞` or a number with a unit |
+| `<number [0,∞]>` `<length [0px,1in]>` | a range, inclusive; bounds `∞`, `-∞` (also with U+2212) or a number with a unit that is the type's own (`<number [0px,10px]>` is an error) |
 | `<foo>` `<'width'>` `<foo()>` | a type, a property's grammar, a function type |
 | `name( ... )` `{ ... }` `( ... )` | function and block notation |
-| `,` `/` `:` `;` `=` `'c'` | a literal token |
+| `,` `/` `:` `;` `=` `'c'` | a literal token (`'c'` is one well-formed code point; the draft has no escape for a quote or a backslash) |
+| `'[' ... ']'` | a square-bracket block of the input (`<line-names> = '[' <custom-ident>* ']'`); the unquoted brackets group the grammar |
 
 Precedence is the draft's: juxtaposition binds tighter than `&&`, then `||`,
 then `|`. White space and comments between components are ignored when matching.
 Keywords match ASCII case-insensitively.
 
-A multiplier on a group whose only content is a multiplier of the same kind is
-the inner one (`[ x* ]+` is `x*`, `[ x? ]*` is `x*`), so that a repetition of a
-repetition is not worked twice; the typed result is the flat list.
+A multiplier on a multiplier is two nodes, as written, and the typed value has the shape the
+grammar spells (`[ x* ]+` is a list of lists); the search still does it in linear work.
 
 The native types are `<integer> <number> <percentage> <dimension> <length>
 <angle> <time> <frequency> <resolution> <flex> <ratio> <zero> <string> <url>
@@ -220,13 +220,25 @@ representation.
   `unitless_length` option (HTML's quirk); which properties enable it is the
   property layer's decision.
 - **A literal out of its range does not match.** A math function (`calc()`,
-  `min()`, ..., `sign()`) matches a numeric type **by name** and is checked and
+  `min()`, ..., `sign()`) matches **by name** every type the draft lets it stand for
+  (`<length> <frequency> <angle> <time> <flex> <resolution> <percentage> <number> <integer>`,
+  and a `<ratio>`'s numbers; not `<dimension>` or `<zero>`) and is checked and
   clamped by the math layer; the value is a function with the flag
   `GTEXT_CSS_VFLAG_MATH` and the slot's range. A relative length (`em`, `vw`)
   has no value yet, so it is in a range when some value of its sign is.
-- **`var()`, `env()` and `attr()`** anywhere in the input make the whole value
-  **pending substitution**, valid at parse time as CSS Variables requires, and
+- **An arbitrary substitution function** anywhere in the input (`var()`, `env()`, `attr()`,
+  `if()`, `inherit()`, `ident()`, `random-item()`, the ones the served Values 5, Variables 1
+  and Environment drafts call so; a function with a dashed name is not among them) makes the
+  whole value **pending substitution**, valid at parse time as CSS Variables requires, and
   `gtext_css_has_arbitrary_substitution()` reports it.
+- **A range on a composite type** restricts the numeric terminals in its definition that
+  its bounds fit and leaves the rest alone; the draft says nothing about it. Two ranges that
+  leave nothing are refused when linked.
+- **`<any-value>` and `<declaration-value>`** do not contain a bad string, a bad url or an
+  unmatched closing token anywhere, inside functions and blocks too (Variables 1, 2.1); only
+  the semicolon and `!` restriction is for the top level.
+- **A `<ratio>`** is `<number [0,∞]> [ / <number [0,∞]> ]?` and "is always serialized with
+  both components"; a component may be a math function.
 - **`<custom-ident>`** is any identifier except the CSS-wide keywords and `default`;
   **`<urange>`** is a unicode-range token, which only a `unicode-range`
   declaration's value has; **`<whitespace-token>`** consumes nothing and succeeds
@@ -295,9 +307,14 @@ A match is bounded in work (`max_match_work`) and in memory (`max_memo_entries`,
 which counts each remembered answer, each interval of one, and each pending
 frame, so the depth of the evaluation is bounded too). **A bound that is reached is
 `GTEXT_CSS_E_LIMIT_WORK`, never "no match"**: the answer is not known. A grammar is
-bounded in text (`max_definition_bytes`), nesting (`max_definition_depth`) and
-nodes (`max_definition_nodes`, which also bounds the linked whole), and a `&&` or
-`||` group in members. Each is its own status, tested at the bound and one past.
+bounded in text (`max_definition_bytes`, which also bounds the texts of all the
+definitions a grammar is linked from), nesting (`max_definition_depth`) and nodes
+(`max_definition_nodes`, which also bounds the linked whole); a limit above what a
+32-bit offset or index can hold (2^30 bytes, 2^28 nodes, 2^20 depth, 2^30 memo
+entries) is that maximum; an `&&` or `||` group has at most 64 members
+(`GTEXT_CSS_E_LIMIT_GROUP`); an atom table has its own limits
+(`gtext_css_atom_table_limits()`, `GTEXT_CSS_E_LIMIT_ATOMS`); the text of one opaque
+value is bounded by `max_text_bytes` (`GTEXT_CSS_E_LIMIT_OUTPUT`). Each is its own status, tested at the bound and one past.
 Nothing in reading, linking, matching or writing recurses.
 
 ```c
@@ -339,20 +356,29 @@ prints
 ```
 with 100 units of work: match work or memo entries beyond max_match_work or max_memo_entries
 by default: success, matched yes, 1001 positions
-work for 1000 tokens: 26026 units
+work for 1000 tokens: 44035 units
 ```
 
 ## Cost
 
 Matching is a search with memoization on the grammar node, the position and, for
-`&&` and `||`, the members used. The work is linear in the number of component
-values for the shapes that make a backtracking matcher exponential (a repetition
-of a repetition, an ambiguous alternation, several repetitions in a row), and the
-quadratic-nesting suite holds each to a ratio of 4 for 4 times the input. What is
-not linear is an item applied one position at a time to the long run an enclosing
-repetition reaches (`[ a+ b? ]+`, or `x <any-value> y` repeated): the work is then
-quadratic in the number of component values. It is finite and bounded by
-`max_match_work`.
+`&&` and `||`, the members used, and every step, every position of a set it looks at
+and every step of reading the typed value off it is a unit of `max_match_work`, so
+the bound bounds the CPU.
+
+- **Linear** in the number of component values: a repetition of a repetition
+  (`[ [ a? b? ]* ]+`), several repetitions in a row (`a* a* a* b`), an alternation
+  whose alternatives overlap (`[ a | a a ]+ b`), a comma list, recursion through
+  functions, one `<any-value>`, and the link of a long chain of types that can match
+  nothing. The quadratic-nesting suite holds these to 4.00 for 4 times the input.
+- **Quadratic**, finite and cut by the bound: an item applied one position at a time to
+  the long run of positions an enclosing repetition reaches (`[ a+ b? ]+`), an
+  `<any-value>` followed by something it can swallow, repeated (`[ x <any-value> y ]#`),
+  and two wide runs joined by `&&` or `||` (`<any-value> && <any-value>`).
+- **Memory**: the sets of positions and the typed value's arrays are held in addition to
+  the memo entries the bound counts. Measured on inputs of 4000 tokens built to make
+  them large, the most was about 410 bytes for each memo entry and each component value
+  of the input, and 28 KB with nothing in it.
 
 ## Using it as the syntax layer's hook
 

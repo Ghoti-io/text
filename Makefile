@@ -597,7 +597,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-idna-tables check-idna-oracle check-nfc-oracle check-ucd-pin \
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
-	check-html-quadratic check-fuzz-plant-anchors check-css-numbers
+	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-grammar-plants
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -2100,7 +2100,8 @@ check-css-numbers:
 
 check-css-grammar-plants: ## Plant a defect in the Value Definition Syntax engine and show the grammar-corpus gate and the engine's tests fail
 # tools/css/plant-grammar.py: each edit is compiled alone and linked ahead of the library into tests/test-css-grammar-corpus.cpp,
-# test-css-grammar.cpp and test-css-values.cpp, which must fail as the plant says; the unedited control must pass. Outside TEST_GATES.
+# test-css-grammar.cpp, test-css-values.cpp and test-css-grammar-edges.cpp, which must fail as the plant says; the unedited control must
+# pass. No container engine is needed, so it is one of the gates of `make test`.
 check-css-grammar-plants: $(APP_DIR)/$(STATIC_TARGET)
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-grammar.py

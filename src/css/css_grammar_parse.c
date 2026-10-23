@@ -99,7 +99,7 @@ const char * css_grammar_message(GTEXT_CSS_Status status) {
 }
 
 void css_grammar_result(GTEXT_CSS_Grammar_Result * result, GTEXT_CSS_Status status, size_t offset,
-    const char * name, size_t name_length, size_t nodes) {
+    const char * name, size_t name_length, size_t nodes, size_t work) {
   if (!result) {
     return;
   }
@@ -108,6 +108,7 @@ void css_grammar_result(GTEXT_CSS_Grammar_Result * result, GTEXT_CSS_Status stat
   result->message = css_grammar_message(status);
   result->offset = offset;
   result->nodes = nodes;
+  result->work = work;
   if (name && name_length) {
     if (name_length > sizeof result->name - 1) {
       name_length = sizeof result->name - 1;
@@ -135,14 +136,18 @@ GTEXT_CSS_Grammar_Options gtext_css_grammar_options_default(void) {
 }
 
 void css_grammar_limits(const GTEXT_CSS_Grammar_Options * options, size_t * bytes, size_t * depth, size_t * nodes) {
+  /* A limit above what a 32-bit offset or index can hold is that maximum (the header says so). */
   if (bytes) {
-    *bytes = (options && options->max_definition_bytes) ? options->max_definition_bytes : DEFAULT_MAX_DEFINITION_BYTES;
+    size_t v = (options && options->max_definition_bytes) ? options->max_definition_bytes : DEFAULT_MAX_DEFINITION_BYTES;
+    *bytes = v > GN_MAX_BYTES ? GN_MAX_BYTES : v;
   }
   if (depth) {
-    *depth = (options && options->max_definition_depth) ? options->max_definition_depth : DEFAULT_MAX_DEFINITION_DEPTH;
+    size_t v = (options && options->max_definition_depth) ? options->max_definition_depth : DEFAULT_MAX_DEFINITION_DEPTH;
+    *depth = v > ((size_t)1 << 20) ? ((size_t)1 << 20) : v;
   }
   if (nodes) {
-    *nodes = (options && options->max_definition_nodes) ? options->max_definition_nodes : DEFAULT_MAX_DEFINITION_NODES;
+    size_t v = (options && options->max_definition_nodes) ? options->max_definition_nodes : DEFAULT_MAX_DEFINITION_NODES;
+    *nodes = v > GN_MAX_NODES ? GN_MAX_NODES : v;
   }
 }
 
@@ -193,7 +198,8 @@ typedef enum {
   F_BRACKET,  ///< `[ ... ]`
   F_FUNC,     ///< `name( ... )`
   F_CURLY,    ///< `{ ... }`
-  F_PAREN     ///< `( ... )`
+  F_PAREN,    ///< `( ... )`
+  F_SQUARE    ///< `'[' ... ']'`: a square-bracket block (the brackets of the grammar itself group)
 } frame_kind;
 
 typedef struct {
@@ -232,16 +238,16 @@ static bool ok(const parser * P) {
 static uint32_t new_node(parser * P, const gnode * proto) {
   GTEXT_CSS_Definition * d = P->d;
   if (!ok(P)) {
-    return 0;
+    return GN_NONE;
   }
   if (d->nnodes >= P->max_nodes) {
     fail(P, GTEXT_CSS_E_LIMIT_DEFINITION_NODES, P->pos);
-    return 0;
+    return GN_NONE;
   }
   void * nodes = d->nodes;
   if (!css_grammar_grow(&d->alloc, &nodes, &d->ncap, d->nnodes + 1, sizeof(gnode))) {
     fail(P, GTEXT_CSS_E_OOM, P->pos);
-    return 0;
+    return GN_NONE;
   }
   d->nodes = nodes;
   d->nodes[d->nnodes] = *proto;
@@ -273,6 +279,9 @@ static void proto_init(gnode * g, gn_kind kind) {
 }
 
 static bool push_acc(parser * P, uint32_t node) {
+  if (node == GN_NONE || !ok(P)) {
+    return false;
+  }
   void * acc = P->acc;
   if (!css_grammar_grow(&P->d->alloc, &acc, &P->acc_cap, P->acc_len + 1, sizeof(uint32_t))) {
     fail(P, GTEXT_CSS_E_OOM, P->pos);
@@ -291,138 +300,25 @@ static void span_of(const parser * P, const uint32_t * items, size_t n, uint32_t
   *len = end >= f->src_off ? end - f->src_off : 0;
 }
 
-static bool is_literal(const parser * P, uint32_t node, uint32_t ch) {
-  const gnode * g = &P->d->nodes[node];
-  return g->kind == GN_LITERAL && g->lit == ch;
-}
-
-static bool any_literal(const parser * P, const uint32_t * items, size_t n, uint32_t ch) {
-  for (size_t i = 0; i < n; i++) {
-    if (is_literal(P, items[i], ch)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static uint8_t nonnull_of_group(const parser * P, gn_kind kind, const uint32_t * items, size_t n) {
-  bool any = false, all = true;
-  for (size_t i = 0; i < n; i++) {
-    const bool nn = (P->d->nodes[items[i]].flags & GNF_NONNULL) != 0;
-    any = any || nn;
-    all = all && nn;
-  }
-  const bool r = (kind == GN_SEQ) ? any : all;
-  return r ? GNF_NONNULL : 0;
-}
-
 /// A node of `kind` over `items` (not 1 of them).
-static uint32_t make_group(parser * P, gn_kind kind, uint8_t sep, const uint32_t * items, size_t n) {
+static uint32_t make_group(parser * P, gn_kind kind, const uint32_t * items, size_t n) {
   gnode g;
   proto_init(&g, kind);
-  g.sep = sep;
-  g.flags = nonnull_of_group(P, kind, items, n);
   span_of(P, items, n, &g.src_off, &g.src_len);
   g.nkids = (uint32_t)n;
   if (!add_kids(P, items, n, &g.kids)) {
-    return 0;
+    return GN_NONE;
   }
   return new_node(P, &g);
 }
 
-/// A juxtaposition of `n` items with no separator handling.
+/// A juxtaposition of `n` items. (Commas and slashes between its items that can separate the items of a list are
+/// decided at link, when it is known which of the items can be empty.)
 static uint32_t plain_seq(parser * P, const uint32_t * items, size_t n) {
   if (n == 1) {
     return items[0];
   }
-  return make_group(P, GN_SEQ, 0, items, n);
-}
-
-/// Split `items` at the literal `ch` into segments that are each non-empty and
-/// known to consume something; false if it cannot be (a literal at an end, two
-/// in a row, a segment that may be empty): the literals then stay literals.
-static bool split_ok(const parser * P, const uint32_t * items, size_t n, uint32_t ch, size_t * segments) {
-  size_t count = 1, run = 0;
-  bool nonnull = false;
-  for (size_t i = 0; i < n; i++) {
-    if (is_literal(P, items[i], ch)) {
-      if (run == 0 || !nonnull) {
-        return false;
-      }
-      count++;
-      run = 0;
-      nonnull = false;
-    }
-    else {
-      run++;
-      nonnull = nonnull || (P->d->nodes[items[i]].flags & GNF_NONNULL) != 0;
-    }
-  }
-  if (run == 0 || !nonnull || count < 2) {
-    return false;
-  }
-  *segments = count;
-  return true;
-}
-
-/// A juxtaposition whose slashes, if they can, separate its segments.
-static uint32_t build_slash(parser * P, const uint32_t * items, size_t n) {
-  size_t segs;
-  if (n < 3 || !any_literal(P, items, n, '/') || !split_ok(P, items, n, '/', &segs)) {
-    return plain_seq(P, items, n);
-  }
-  uint32_t * out = NULL;
-  size_t cap = 0;
-  void * o = NULL;
-  if (!css_grammar_grow(&P->d->alloc, &o, &cap, segs, sizeof(uint32_t))) {
-    fail(P, GTEXT_CSS_E_OOM, P->pos);
-    return 0;
-  }
-  out = o;
-  size_t k = 0, start = 0;
-  for (size_t i = 0; i <= n && ok(P); i++) {
-    if (i == n || is_literal(P, items[i], '/')) {
-      out[k++] = plain_seq(P, items + start, i - start);
-      start = i + 1;
-    }
-  }
-  uint32_t r = 0;
-  if (ok(P)) {
-    r = make_group(P, GN_SEQ, 2, out, k);
-  }
-  gtext_allocator_free(&P->d->alloc, out);
-  return r;
-}
-
-/// A juxtaposition, with commas and slashes that separate segments turned into list separators.
-static uint32_t build_seq(parser * P, const uint32_t * items, size_t n) {
-  if (n == 1) {
-    return items[0];
-  }
-  size_t segs;
-  if (n >= 3 && any_literal(P, items, n, ',') && split_ok(P, items, n, ',', &segs)) {
-    void * o = NULL;
-    size_t cap = 0;
-    if (!css_grammar_grow(&P->d->alloc, &o, &cap, segs, sizeof(uint32_t))) {
-      fail(P, GTEXT_CSS_E_OOM, P->pos);
-      return 0;
-    }
-    uint32_t * out = o;
-    size_t k = 0, start = 0;
-    for (size_t i = 0; i <= n && ok(P); i++) {
-      if (i == n || is_literal(P, items[i], ',')) {
-        out[k++] = build_slash(P, items + start, i - start);
-        start = i + 1;
-      }
-    }
-    uint32_t r = 0;
-    if (ok(P)) {
-      r = make_group(P, GN_SEQ, 1, out, k);
-    }
-    gtext_allocator_free(&P->d->alloc, out);
-    return r;
-  }
-  return build_slash(P, items, n);
+  return make_group(P, GN_SEQ, items, n);
 }
 
 /* Finish the level that ends at the operator or the end of the group. Each takes the members of its
@@ -434,7 +330,7 @@ static void finish_seq(parser * P, pframe * f) {
     fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
     return;
   }
-  const uint32_t node = build_seq(P, P->acc + f->b_seq, n);
+  const uint32_t node = plain_seq(P, P->acc + f->b_seq, n);
   if (!ok(P)) {
     return;
   }
@@ -443,7 +339,7 @@ static void finish_seq(parser * P, pframe * f) {
   f->b_seq = P->acc_len;
 }
 
-static void finish_level(parser * P, pframe * f, gn_kind kind, size_t * base, size_t above) {
+static void finish_level(parser * P, gn_kind kind, size_t * base, size_t above) {
   const size_t n = above - *base;
   uint32_t node;
   if (n == 1) {
@@ -454,7 +350,7 @@ static void finish_level(parser * P, pframe * f, gn_kind kind, size_t * base, si
       fail(P, GTEXT_CSS_E_LIMIT_GROUP, P->pos);
       return;
     }
-    node = make_group(P, kind, 0, P->acc + *base, n);
+    node = make_group(P, kind, P->acc + *base, n);
   }
   if (!ok(P)) {
     return;
@@ -462,7 +358,6 @@ static void finish_level(parser * P, pframe * f, gn_kind kind, size_t * base, si
   P->acc_len = *base;
   push_acc(P, node);
   *base = P->acc_len;
-  (void)f;
 }
 
 static void finish_and(parser * P, pframe * f) {
@@ -470,7 +365,7 @@ static void finish_and(parser * P, pframe * f) {
   if (!ok(P)) {
     return;
   }
-  finish_level(P, f, GN_AND, &f->b_and, f->b_seq);
+  finish_level(P, GN_AND, &f->b_and, f->b_seq);
   f->b_seq = P->acc_len;
 }
 
@@ -479,7 +374,7 @@ static void finish_or(parser * P, pframe * f) {
   if (!ok(P)) {
     return;
   }
-  finish_level(P, f, GN_OR, &f->b_or, f->b_and);
+  finish_level(P, GN_OR, &f->b_or, f->b_and);
   f->b_and = f->b_seq = P->acc_len;
 }
 
@@ -488,7 +383,7 @@ static void finish_alt(parser * P, pframe * f) {
   if (!ok(P)) {
     return;
   }
-  finish_level(P, f, GN_ALT, &f->b_alt, f->b_or);
+  finish_level(P, GN_ALT, &f->b_alt, f->b_or);
   f->b_or = f->b_and = f->b_seq = P->acc_len;
 }
 
@@ -506,15 +401,21 @@ static bool is_digit(char c) {
   return c >= '0' && c <= '9';
 }
 
+static bool is_ws_char(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+}
+
 static void skip_ws(parser * P) {
-  while (P->pos < P->n && (P->t[P->pos] == ' ' || P->t[P->pos] == '\t' || P->t[P->pos] == '\n'
-         || P->t[P->pos] == '\r' || P->t[P->pos] == '\f')) {
+  while (P->pos < P->n && is_ws_char(P->t[P->pos])) {
     P->pos++;
   }
 }
 
-/// A bound of a range: `∞`, `-∞`, `infinity`, or a number with an optional unit or `%`.
-static bool read_bound(parser * P, double * out) {
+/// A bound of a range: `∞`, `-∞` (or with U+2212, the minus sign the draft writes it with), or a number with an
+/// optional unit or `%`. "Values of −∞ or ∞ must be written without units, even if the value type uses units";
+/// "Values of 0 can be written without units, even if the value type doesn't allow 'unitless zeroes'" (Values 4, 5.1).
+/// `*rclass` receives what it was written in (RC_*).
+static bool read_bound(parser * P, double * out, uint8_t * rclass) {
   skip_ws(P);
   bool neg = false;
   size_t p = P->pos;
@@ -522,6 +423,11 @@ static bool read_bound(parser * P, double * out) {
     neg = P->t[p] == '-';
     p++;
   }
+  else if (P->n - p >= 3 && memcmp(P->t + p, "\xE2\x88\x92", 3) == 0) { /* U+2212 */
+    neg = true;
+    p += 3;
+  }
+  *rclass = RC_NONE;
   if (P->n - p >= 3 && memcmp(P->t + p, "\xE2\x88\x9E", 3) == 0) { /* U+221E */
     *out = neg ? -1.0 / 0.0 : 1.0 / 0.0;
     P->pos = p + 3;
@@ -544,6 +450,7 @@ static bool read_bound(parser * P, double * out) {
   }
   if (p < P->n && P->t[p] == '%') {
     p++;
+    *rclass = RC_PERCENT;
   }
   else {
     const size_t us = p;
@@ -555,11 +462,50 @@ static bool read_bound(parser * P, double * out) {
       if (u == GTEXT_CSS_UNIT_NONE || !gtext_css_unit_to_canonical(u, v, &v)) {
         return false;
       }
+      *rclass = (uint8_t)(RC_UNIT_BASE + (unsigned)gtext_css_unit_type(u));
     }
   }
   *out = v;
   P->pos = p;
   return true;
+}
+
+/// The bounds of a range as a whole were written in the unit class of one of them (a plain number, 0 included, and an
+/// infinity fit any); two different classes are no range.
+static bool join_classes(uint8_t a, uint8_t b, uint8_t * out) {
+  if (a != RC_NONE && b != RC_NONE && a != b) {
+    return false;
+  }
+  *out = a != RC_NONE ? a : b;
+  return true;
+}
+
+bool css_grammar_range_fits(gn_native type, uint8_t rclass) {
+  if (rclass == RC_NONE) {
+    return true;
+  }
+  switch (type) {
+  case NT_INTEGER: case NT_NUMBER:
+    return false;
+  case NT_PERCENTAGE:
+    return rclass == RC_PERCENT;
+  case NT_DIMENSION:
+    return rclass >= RC_UNIT_BASE;
+  case NT_LENGTH:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
+  case NT_ANGLE:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_ANGLE;
+  case NT_TIME:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_TIME;
+  case NT_FREQUENCY:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FREQUENCY;
+  case NT_RESOLUTION:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_RESOLUTION;
+  case NT_FLEX:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FLEX;
+  default:
+    return false;
+  }
 }
 
 /// A reference: `<name>`, `<'name'>` or `<name [lo,hi]>`, with P->pos on the `<`.
@@ -578,19 +524,19 @@ static uint32_t read_reference(parser * P) {
     /* <[-token> and its five kin are named by a bracket */
     P->pos++;
   }
-  while (P->pos < P->n && P->t[P->pos] != '>' && P->t[P->pos] != ' ' && P->t[P->pos] != '\'' && P->t[P->pos] != '[') {
+  while (P->pos < P->n && P->t[P->pos] != '>' && !is_ws_char(P->t[P->pos]) && P->t[P->pos] != '\'' && P->t[P->pos] != '[') {
     P->pos++;
   }
   g.str_off = (uint32_t)name;
   g.str_len = (uint32_t)(P->pos - name);
   if (g.str_len == 0) {
     fail(P, GTEXT_CSS_E_GRAMMAR, name);
-    return 0;
+    return GN_NONE;
   }
   if (g.native == GTEXT_CSS_REF_PROPERTY) {
     if (P->pos >= P->n || P->t[P->pos] != '\'') {
       fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-      return 0;
+      return GN_NONE;
     }
     P->pos++;
   }
@@ -598,76 +544,64 @@ static uint32_t read_reference(parser * P) {
   if (P->pos < P->n && P->t[P->pos] == '[') {
     P->pos++;
     double lo, hi;
-    if (!read_bound(P, &lo)) {
+    uint8_t cl, ch, joined;
+    if (!read_bound(P, &lo, &cl)) {
       fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-      return 0;
+      return GN_NONE;
     }
     skip_ws(P);
     if (P->pos >= P->n || P->t[P->pos] != ',') {
       fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-      return 0;
+      return GN_NONE;
     }
     P->pos++;
-    if (!read_bound(P, &hi)) {
+    if (!read_bound(P, &hi, &ch)) {
       fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-      return 0;
+      return GN_NONE;
     }
     skip_ws(P);
-    if (P->pos >= P->n || P->t[P->pos] != ']' || lo > hi) {
+    if (P->pos >= P->n || P->t[P->pos] != ']' || lo > hi || !join_classes(cl, ch, &joined)) {
       fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-      return 0;
+      return GN_NONE;
     }
     P->pos++;
     skip_ws(P);
     g.flags |= GNF_RANGE;
     g.lo = lo;
     g.hi = hi;
+    g.rclass = joined;
+    if (g.native == GTEXT_CSS_REF_TYPE) {
+      /* a native type is known now: bounds in the unit of another kind of value are no range for it */
+      const gn_native nt = css_grammar_native_lookup(P->t + name, g.str_len);
+      if (nt != NT_COUNT && css_grammar_native_numeric(nt) && !css_grammar_range_fits(nt, joined)) {
+        fail(P, GTEXT_CSS_E_GRAMMAR, name);
+        return GN_NONE;
+      }
+    }
   }
   if (P->pos >= P->n || P->t[P->pos] != '>') {
     fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-    return 0;
+    return GN_NONE;
   }
   P->pos++;
-  g.flags |= GNF_NONNULL;
   g.src_off = (uint32_t)start;
   g.src_len = (uint32_t)(P->pos - start);
   return new_node(P, &g);
 }
 
-/// Wrap `child` in a multiplier, merging it with a multiplier of the same kind it already has (so that
-/// `[ x* ]+` is `x*`: the same strings, and a repetition of a closure is not worked twice).
+/// Wrap `child` in a multiplier. (A multiplier on a multiplier is two nodes, as written: the typed value has the shape
+/// the grammar spells, and how the search treats a repetition of a repetition is the matcher's business.)
 static uint32_t wrap_mult(parser * P, uint32_t child, uint32_t min, uint32_t max, bool comma, size_t term_start) {
-  const gnode inner = P->d->nodes[child];
-  if (!comma && inner.kind == GN_MULT && !(inner.flags & GNF_COMMA)) {
-    const uint32_t a = inner.min, b = inner.max;
-    const uint32_t grand = P->d->kids[inner.kids];
-    if (b == GN_INF && max == GN_INF && a <= 1) {
-      min = a * min;
-      child = grand;
-    }
-    else if (a == 0 && b == 1 && max == GN_INF) {
-      min = 0;
-      child = grand;
-    }
-    else if (a <= 1 && b == GN_INF && min == 0 && max == 1) {
-      min = 0;
-      max = GN_INF;
-      child = grand;
-    }
-    else if (a == 0 && b == 1 && min == 0 && max == 1) {
-      return child;
-    }
-  }
   gnode g;
   proto_init(&g, GN_MULT);
   g.min = min;
   g.max = max;
-  g.flags = (uint8_t)((comma ? GNF_COMMA : 0) | ((min > 0 && (P->d->nodes[child].flags & GNF_NONNULL)) ? GNF_NONNULL : 0));
+  g.flags = (uint8_t)(comma ? GNF_COMMA : 0);
   g.src_off = (uint32_t)term_start;
   g.src_len = (uint32_t)(P->pos - term_start);
   g.nkids = 1;
   if (!add_kids(P, &child, 1, &g.kids)) {
-    return 0;
+    return GN_NONE;
   }
   return new_node(P, &g);
 }
@@ -752,29 +686,28 @@ static uint32_t read_multipliers(parser * P, uint32_t term, size_t term_start, b
       P->pos++;
       if (P->pos + 1 < P->n && P->t[P->pos] == '{' && is_digit(P->t[P->pos + 1])) {
         if (!read_braces(P, &min, &max)) {
-          return 0;
+          return GN_NONE;
         }
       }
     }
     else if (c == '{' && P->pos + 1 < P->n && is_digit(P->t[P->pos + 1])) {
       if (!read_braces(P, &min, &max)) {
-        return 0;
+        return GN_NONE;
       }
     }
     else if (c == '!') {
       if (!group) {
         fail(P, GTEXT_CSS_E_GRAMMAR, P->pos);
-        return 0;
+        return GN_NONE;
       }
       P->pos++;
       gnode g;
       proto_init(&g, GN_REQ);
-      g.flags = GNF_NONNULL;
       g.nkids = 1;
       g.src_off = (uint32_t)term_start;
       g.src_len = (uint32_t)(P->pos - term_start);
       if (!add_kids(P, &term, 1, &g.kids)) {
-        return 0;
+        return GN_NONE;
       }
       term = new_node(P, &g);
       group = false;
@@ -809,17 +742,17 @@ static bool open_frame(parser * P, frame_kind kind, size_t open, size_t name_off
   return true;
 }
 
-/// The single node a frame's contents make, or 0 with `*empty` set when it has none.
+/// The single node a frame's contents make, or GN_NONE with `*empty` set when it has none.
 static uint32_t close_contents(parser * P, pframe * f, bool * empty) {
   *empty = false;
   if (P->acc_len == f->b_alt) {
     *empty = true;
-    return 0;
+    return GN_NONE;
   }
   const size_t first = f->b_alt;
   finish_alt(P, f);
   if (!ok(P)) {
-    return 0;
+    return GN_NONE;
   }
   const uint32_t node = P->acc[first];
   P->acc_len = first;
@@ -858,9 +791,20 @@ static bool parse_text(parser * P) {
       finish_seq(P, f);
       continue;
     }
-    uint32_t term = 0;
+    uint32_t term = GN_NONE;
     bool group = false;
     size_t term_start = at;
+    /* '[' and ']' (quoted, as the draft writes any delimiter that is not one of its own) are the brackets of a
+       square-bracket block of the input; the unquoted ones group the grammar */
+    const bool quoted_open = c == '\'' && P->pos + 2 < P->n && P->t[P->pos + 1] == '[' && P->t[P->pos + 2] == '\'';
+    const bool quoted_close = c == '\'' && P->pos + 2 < P->n && P->t[P->pos + 1] == ']' && P->t[P->pos + 2] == '\'';
+    if (quoted_open) {
+      if (!open_frame(P, F_SQUARE, at, 0, 0)) {
+        break;
+      }
+      P->pos += 3;
+      continue;
+    }
     if (c == '[' || c == '(' || c == '{') {
       if (!open_frame(P, c == '[' ? F_BRACKET : c == '(' ? F_PAREN : F_CURLY, at, 0, 0)) {
         break;
@@ -868,8 +812,8 @@ static bool parse_text(parser * P) {
       P->pos++;
       continue;
     }
-    if (c == ']' || c == ')' || c == '}') {
-      const frame_kind want = c == ']' ? F_BRACKET : c == '}' ? F_CURLY : F_PAREN;
+    if (c == ']' || c == ')' || c == '}' || quoted_close) {
+      const frame_kind want = quoted_close ? F_SQUARE : c == ']' ? F_BRACKET : c == '}' ? F_CURLY : F_PAREN;
       if (P->nfr <= 1 || !(f->kind == want || (c == ')' && f->kind == F_FUNC))) {
         fail(P, GTEXT_CSS_E_GRAMMAR, at);
         break;
@@ -883,7 +827,7 @@ static bool parse_text(parser * P) {
         fail(P, GTEXT_CSS_E_GRAMMAR, at);
         break;
       }
-      P->pos++;
+      P->pos += quoted_close ? 3 : 1;
       const pframe done = *f;
       P->nfr--;
       if (done.kind == F_BRACKET) {
@@ -893,13 +837,13 @@ static bool parse_text(parser * P) {
       else {
         gnode g;
         proto_init(&g, done.kind == F_FUNC ? GN_FUNC : GN_BLOCK);
-        g.flags = GNF_NONNULL;
         if (done.kind == F_FUNC) {
           g.str_off = (uint32_t)done.name_off;
           g.str_len = (uint32_t)done.name_len;
         }
         else {
-          g.native = done.kind == F_CURLY ? GTEXT_CSS_TOKEN_OPEN_CURLY : GTEXT_CSS_TOKEN_OPEN_PAREN;
+          g.native = done.kind == F_CURLY ? GTEXT_CSS_TOKEN_OPEN_CURLY
+                                        : done.kind == F_SQUARE ? GTEXT_CSS_TOKEN_OPEN_SQUARE : GTEXT_CSS_TOKEN_OPEN_PAREN;
         }
         g.src_off = (uint32_t)done.open;
         g.src_len = (uint32_t)(P->pos - done.open);
@@ -920,12 +864,13 @@ static bool parse_text(parser * P) {
       term = read_reference(P);
     }
     else if (c == '\'') {
-      /* A quoted literal: one code point. */
-      size_t p = P->pos + 1;
-      size_t len = 0;
-      uint32_t cp = 0;
+      /* A quoted literal: one code point, well-formed UTF-8, between single quotes. The draft has no way to write a
+         quote or a backslash in one (it quotes "other delimiters" with single quotes and says no more). */
+      const size_t p = P->pos + 1;
       const unsigned char b0 = p < P->n ? (unsigned char)P->t[p] : 0;
-      if (b0 == 0 || b0 == '\'' || b0 == '\\') {
+      size_t len = 0;
+      uint32_t cp = 0, min = 0;
+      if (b0 == 0 || b0 == '\'' || b0 == '\\' || (b0 >= 0x80 && b0 < 0xC2) || b0 > 0xF4) {
         fail(P, GTEXT_CSS_E_GRAMMAR, p);
         break;
       }
@@ -937,15 +882,27 @@ static bool parse_text(parser * P) {
       cp = b0;
       if (len > 1) {
         cp = b0 & (len == 2 ? 0x1Fu : len == 3 ? 0x0Fu : 0x07u);
+        min = len == 2 ? 0x80u : len == 3 ? 0x800u : 0x10000u;
         for (size_t k = 1; k < len; k++) {
-          cp = (cp << 6) | ((unsigned char)P->t[p + k] & 0x3Fu);
+          const unsigned char cb = (unsigned char)P->t[p + k];
+          if ((cb & 0xC0u) != 0x80u) {
+            fail(P, GTEXT_CSS_E_GRAMMAR, p + k);
+            break;
+          }
+          cp = (cp << 6) | (cb & 0x3Fu);
+        }
+        if (!ok(P)) {
+          break;
+        }
+        if (cp < min || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {
+          fail(P, GTEXT_CSS_E_GRAMMAR, p); /* overlong, beyond Unicode, or a surrogate */
+          break;
         }
       }
       P->pos = p + len + 1;
       gnode g;
       proto_init(&g, GN_LITERAL);
       g.lit = cp;
-      g.flags = GNF_NONNULL;
       g.src_off = (uint32_t)at;
       g.src_len = (uint32_t)(P->pos - at);
       term = new_node(P, &g);
@@ -955,7 +912,6 @@ static bool parse_text(parser * P) {
       gnode g;
       proto_init(&g, GN_LITERAL);
       g.lit = (uint32_t)(unsigned char)c;
-      g.flags = GNF_NONNULL;
       g.src_off = (uint32_t)at;
       g.src_len = 1;
       term = new_node(P, &g);
@@ -977,7 +933,6 @@ static bool parse_text(parser * P) {
       proto_init(&g, GN_KEYWORD);
       g.str_off = (uint32_t)at;
       g.str_len = (uint32_t)(p - at);
-      g.flags = GNF_NONNULL;
       g.src_off = (uint32_t)at;
       g.src_len = g.str_len;
       term = new_node(P, &g);
@@ -986,7 +941,7 @@ static bool parse_text(parser * P) {
       fail(P, GTEXT_CSS_E_GRAMMAR, at);
       break;
     }
-    if (!ok(P)) {
+    if (!ok(P) || term == GN_NONE) {
       break;
     }
     term = read_multipliers(P, term, term_start, group);
@@ -1018,19 +973,19 @@ GTEXT_CSS_Status gtext_css_definition_parse(const char * text, size_t length,
     const GTEXT_CSS_Grammar_Options * options, GTEXT_CSS_Definition ** out,
     GTEXT_CSS_Grammar_Result * result) {
   if (!out || (!text && length)) {
-    css_grammar_result(result, GTEXT_CSS_E_INVALID, 0, NULL, 0, 0);
+    css_grammar_result(result, GTEXT_CSS_E_INVALID, 0, NULL, 0, 0, 0);
     return GTEXT_CSS_E_INVALID;
   }
   size_t max_bytes, max_depth, max_nodes;
   css_grammar_limits(options, &max_bytes, &max_depth, &max_nodes);
   if (length > max_bytes) {
-    css_grammar_result(result, GTEXT_CSS_E_LIMIT_DEFINITION, max_bytes, NULL, 0, 0);
+    css_grammar_result(result, GTEXT_CSS_E_LIMIT_DEFINITION, max_bytes, NULL, 0, 0, 0);
     return GTEXT_CSS_E_LIMIT_DEFINITION;
   }
   GTEXT_Allocator alloc = css_grammar_allocator(options);
   GTEXT_CSS_Definition * d = gtext_allocator_malloc(&alloc, sizeof *d);
   if (!d) {
-    css_grammar_result(result, GTEXT_CSS_E_OOM, 0, NULL, 0, 0);
+    css_grammar_result(result, GTEXT_CSS_E_OOM, 0, NULL, 0, 0, 0);
     return GTEXT_CSS_E_OOM;
   }
   memset(d, 0, sizeof *d);
@@ -1039,7 +994,7 @@ GTEXT_CSS_Status gtext_css_definition_parse(const char * text, size_t length,
   d->text = gtext_allocator_malloc(&alloc, length + 1);
   if (!d->text) {
     gtext_allocator_free(&alloc, d);
-    css_grammar_result(result, GTEXT_CSS_E_OOM, 0, NULL, 0, 0);
+    css_grammar_result(result, GTEXT_CSS_E_OOM, 0, NULL, 0, 0, 0);
     return GTEXT_CSS_E_OOM;
   }
   if (length) {
@@ -1061,10 +1016,10 @@ GTEXT_CSS_Status gtext_css_definition_parse(const char * text, size_t length,
     const GTEXT_CSS_Status st = P.status == GTEXT_CSS_OK ? GTEXT_CSS_E_INTERNAL : P.status;
     const size_t nodes = d->nnodes;
     gtext_css_definition_free(d);
-    css_grammar_result(result, st, P.err, NULL, 0, nodes);
+    css_grammar_result(result, st, P.err, NULL, 0, nodes, 0);
     return st;
   }
-  css_grammar_result(result, GTEXT_CSS_OK, 0, NULL, 0, d->nnodes);
+  css_grammar_result(result, GTEXT_CSS_OK, 0, NULL, 0, d->nnodes, 0);
   *out = d;
   return GTEXT_CSS_OK;
 }

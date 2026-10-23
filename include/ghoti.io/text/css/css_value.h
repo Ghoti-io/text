@@ -49,7 +49,8 @@
  *   order** whatever order the input had, the absent ones omitted;
  * - a multiplier whose largest count is more than one (`*`, `+`, `{1,4}`, `#`)
  *   is a list of what each repetition produced (comma separated for `#`), and
- *   `?` is the value itself or nothing;
+ *   `?` is the value itself or nothing; a multiplier on a multiplier is both, as written
+ *   (`[ a* ]+` is a list of lists, `[ a? ]*` a list of the `a`s);
  * - `name( ... )` is a function whose children are what the arguments
  *   produced; `{ ... }` and `( ... )` blocks are block values likewise;
  * - `|` and `[ ]` add no node of their own.
@@ -111,6 +112,21 @@ GTEXT_API GTEXT_CSS_Status gtext_css_atom_table_new(const GTEXT_Allocator * allo
 GTEXT_API void gtext_css_atom_table_free(GTEXT_CSS_Atom_Table * table);
 
 /**
+ * @brief Bound a table: the most atoms and the most bytes of spelling (each NUL counted).
+ *
+ * The defaults are 16,777,216 atoms and 1 GiB, which are also the most a limit can be
+ * (an atom is a 32-bit number and so is an offset into the spellings); a larger value is
+ * that maximum and 0 selects the default. A table that holds more than a new limit
+ * keeps what it has and refuses more.
+ *
+ * @param table The table. Not NULL.
+ * @param max_atoms The most atoms, or 0.
+ * @param max_bytes The most bytes of spelling, or 0.
+ * @return GTEXT_CSS_OK or GTEXT_CSS_E_INVALID.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_atom_table_limits(GTEXT_CSS_Atom_Table * table, size_t max_atoms, size_t max_bytes);
+
+/**
  * @brief The atom of a keyword, made if it is new.
  *
  * Keywords are compared by ASCII case folding, and the spelling kept is that of
@@ -121,7 +137,8 @@ GTEXT_API void gtext_css_atom_table_free(GTEXT_CSS_Atom_Table * table);
  * @param text The keyword; need not be terminated.
  * @param length Its length; 0 is refused.
  * @param out Receives the atom; written only on success. Not NULL.
- * @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID or GTEXT_CSS_E_OOM.
+ * @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID, GTEXT_CSS_E_OOM, or GTEXT_CSS_E_LIMIT_ATOMS when
+ *   the table's atom or byte limit is reached (nothing is added).
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_atom_intern(GTEXT_CSS_Atom_Table * table,
     const char * text, size_t length, GTEXT_CSS_Atom * out);
@@ -230,8 +247,9 @@ GTEXT_API GTEXT_CSS_Unit_Type gtext_css_unit_type(GTEXT_CSS_Unit unit);
 GTEXT_API bool gtext_css_unit_is_absolute(GTEXT_CSS_Unit unit);
 
 /** @brief The canonical unit of a unit's type (px, deg, s, Hz, dppx, fr), or
- *  NONE for NONE or a non-unit. A relative length's is px, which it is never
- *  converted to. */
+ *  NONE for NONE or a non-unit. A relative length's is px too (the unit that
+ *  lengths are serialized in once computed): it names the type's unit, and
+ *  gtext_css_unit_to_canonical() does not convert a relative unit to it. */
 GTEXT_API GTEXT_CSS_Unit gtext_css_unit_canonical(GTEXT_CSS_Unit unit);
 
 /**
@@ -265,7 +283,9 @@ typedef enum {
   GTEXT_CSS_VAL_PERCENTAGE,   ///< `<percentage>`: `number` (50 for `50%`).
   GTEXT_CSS_VAL_DIMENSION,    ///< A number and a unit: `number`, `unit`; an unknown unit
                               ///< (`<dimension>`) has unit NONE and its spelling in `text`.
-  GTEXT_CSS_VAL_RATIO,        ///< `<ratio>`: `number` over `number2`.
+  GTEXT_CSS_VAL_RATIO,        ///< `<ratio>`: `number` over `number2`; written with both ("<ratio> is always serialized with
+                              ///< both components"). A component that is a math function makes `children` its two
+                              ///< components (a number or the function) and sets GTEXT_CSS_VFLAG_MATH.
   GTEXT_CSS_VAL_ZERO,         ///< `<zero>`: the number 0.
   GTEXT_CSS_VAL_LIST,         ///< A list: `children`, joined by `separator`.
   GTEXT_CSS_VAL_FUNCTION,     ///< A function: `text` is its name, `children` its arguments' values.
@@ -284,7 +304,7 @@ typedef enum {
 /** @brief How a value interpolates (animation is added in a later layer; the
  *  class is kept so that it can be without changing the representation). */
 typedef enum {
-  GTEXT_CSS_INTERP_DISCRETE = 0, ///< Flips at 50%: keywords, strings, urls, integers' grammar types that say so.
+  GTEXT_CSS_INTERP_DISCRETE = 0, ///< Flips at 50%: keywords, identifiers, strings, urls, and the frequency, resolution and flex dimensions.
   GTEXT_CSS_INTERP_NUMBER,       ///< `<number>`, `<integer>`, `<ratio>`.
   GTEXT_CSS_INTERP_LENGTH,       ///< `<length>`.
   GTEXT_CSS_INTERP_PERCENTAGE,   ///< `<percentage>`.

@@ -129,6 +129,8 @@ typedef enum {
                                   ///< `max_match_work` units of work, or kept more
                                   ///< than `max_memo_entries` memo entries. Never
                                   ///< "no match": the answer is not known.
+  GTEXT_CSS_E_LIMIT_ATOMS,        ///< Values: an atom table holds as many atoms, or bytes
+                                  ///< of spelling, as its limit allows.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

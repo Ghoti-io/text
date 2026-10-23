@@ -67,7 +67,7 @@ const Snippet kSnippets[] = {
     {"values-units.c", snippets::values_units,
         "1in is 96px\n1mm is 3.77953px\n1Q is 0.944882px\n1turn is 360deg\n1kHz is 1000Hz\n1em is relative: the environment decides\n1vmax is relative: the environment decides\nparsec: not a unit\n"},
     {"values-limits.c", snippets::values_limits,
-        "with 100 units of work: match work or memo entries beyond max_match_work or max_memo_entries\nby default: success, matched yes, 1001 positions\nwork for 1000 tokens: 26026 units\n"},
+        "with 100 units of work: match work or memo entries beyond max_match_work or max_memo_entries\nby default: success, matched yes, 1001 positions\nwork for 1000 tokens: 44035 units\n"},
 };
 
 std::string slurp(const std::string & path) {

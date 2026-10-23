@@ -138,6 +138,17 @@ grammar <integer> <dashed-ident> <ratio>
 - 1 --a -1/2
 - 1 --a 1/-2
 
+grammar <percentage [0%,100%]> <length [0px,∞]>
++ 100% 1em => 100% 1em
+- 101% 1em
+- -1% 1em
+- 50% -1em
+
+grammar <length [-10px,-1px]>
++ -1em => -1em
+- 1em
+- 0em
+
 # --- every native type ----------------------------------------------------------------------------------
 
 grammar <integer> <number> <percentage> <dimension> <length> <angle> <time> <frequency> <resolution> <flex>
@@ -237,7 +248,7 @@ grammar none | <transform-function>+
 
 grammar auto || <ratio>
 + auto 16/9 => auto 16 / 9
-+ 2 auto => auto 2
++ 2 auto => auto 2 / 1
 - auto auto
 
 grammar normal | none | [ <string> | <url> | counter( <ident> , <counter-style>? ) ]+ [ / <string>+ ]?

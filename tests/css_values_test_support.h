@@ -42,7 +42,61 @@
 
 #include "css_test_support.h"
 
+extern "C" void css_grammar_limits(const GTEXT_CSS_Grammar_Options * options, size_t * bytes, size_t * depth, size_t * nodes);
+
 namespace gv {
+
+/// The limits a grammar's options come to (the internal function, linked statically into the tests).
+inline void css_grammar_limits_for_test(const GTEXT_CSS_Grammar_Options * o, size_t * bytes, size_t * depth, size_t * nodes) {
+  css_grammar_limits(o, bytes, depth, nodes);
+}
+
+/// An allocator that counts the bytes it has out and the most it has had.
+struct CountingAllocator {
+  GTEXT_Allocator alloc;
+  std::map<void *, size_t> live;
+  size_t current = 0, peak = 0;
+  CountingAllocator() {
+    alloc.ctx = this;
+    alloc.malloc_fn = [](void * c, size_t n) { return static_cast<CountingAllocator *>(c)->take(nullptr, n); };
+    alloc.calloc_fn = [](void * c, size_t k, size_t n) {
+      void * p = static_cast<CountingAllocator *>(c)->take(nullptr, k * n);
+      if (p) {
+        std::memset(p, 0, k * n);
+      }
+      return p;
+    };
+    alloc.realloc_fn = [](void * c, void * p, size_t n) { return static_cast<CountingAllocator *>(c)->take(p, n); };
+    alloc.free_fn = [](void * c, void * p) { static_cast<CountingAllocator *>(c)->give(p); };
+  }
+  void reset() {
+    peak = current;
+  }
+  void * take(void * old, size_t n) {
+    void * p = std::realloc(old, n ? n : 1);
+    if (!p) {
+      return nullptr;
+    }
+    if (old) {
+      current -= live[old];
+      live.erase(old);
+    }
+    live[p] = n;
+    current += n;
+    if (current > peak) {
+      peak = current;
+    }
+    return p;
+  }
+  void give(void * p) {
+    if (!p) {
+      return;
+    }
+    current -= live[p];
+    live.erase(p);
+    std::free(p);
+  }
+};
 
 /// The grammars a resolver hands out: type name to definition text; property name to definition text.
 struct Defs {
@@ -135,7 +189,11 @@ inline std::string dump(const GTEXT_CSS_Value * v) {
     const char * u = gtext_css_unit_name(v->unit);
     return "dim:" + num(v->number) + (u ? u : text.c_str());
   }
-  case GTEXT_CSS_VAL_RATIO: return "ratio:" + num(v->number) + "/" + num(v->number2);
+  case GTEXT_CSS_VAL_RATIO:
+    if (v->child_count) {
+      return "ratio(" + kids() + ")";
+    }
+    return "ratio:" + num(v->number) + "/" + num(v->number2);
   case GTEXT_CSS_VAL_ZERO: return "zero";
   case GTEXT_CSS_VAL_LIST: {
     const char * sep = v->separator == GTEXT_CSS_SEP_COMMA ? "comma" : v->separator == GTEXT_CSS_SEP_SLASH ? "slash" : "space";

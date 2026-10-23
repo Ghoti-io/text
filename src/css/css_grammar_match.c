@@ -99,6 +99,7 @@ typedef struct {
   uint32_t child;   ///< A function or block: the first item of the view of its contents.
   uint32_t end;     ///< The end item (sentinel) of the view this item is in.
   uint32_t orig;    ///< Index in the array of component values it came from.
+  uint32_t cview;   ///< A function or block: the number of the view of its contents.
   uint32_t bad;     ///< First item at or after this one, in the view, that `<any-value>` refuses.
   uint32_t badd;    ///< The same for `<declaration-value>`, which also refuses a top-level `;` and `!`.
   bool ws_before;   ///< White space preceded it.
@@ -160,6 +161,7 @@ typedef struct {
   size_t work, memo, memo_peak;
   GTEXT_CSS_Status status;
   bool unitless;
+  size_t max_text;                  ///< Most bytes of the text of an opaque value (css_serialize.h's output limit).
 
   mitem * items;
   size_t nitems, icap;
@@ -514,6 +516,8 @@ typedef struct {
   const GTEXT_CSS_Component_Value * values;
   size_t count;
   uint32_t parent; ///< The item whose child view this is, or NO_ITEM.
+  uint32_t start;  ///< Its first item, once built.
+  uint32_t end;    ///< Its end item.
 } pending_view;
 
 static bool is_ws(const GTEXT_CSS_Component_Value * v) {
@@ -550,7 +554,7 @@ static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t 
     return false;
   }
   q = qv;
-  q[qn++] = (pending_view){values, count, NO_ITEM};
+  q[qn++] = (pending_view){values, count, NO_ITEM, 0, 0};
   bool ok = true;
   while (ok && qi < qn) {
     const pending_view pv = q[qi++];
@@ -595,7 +599,8 @@ static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t 
           }
           q = qq;
         }
-        q[qn++] = (pending_view){v->children, v->child_count, index};
+        m->items[index].cview = (uint32_t)qn;
+        q[qn++] = (pending_view){v->children, v->child_count, index, 0, 0};
       }
     }
     if (!ok) {
@@ -607,15 +612,37 @@ static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t 
     s->child = NO_ITEM;
     s->orig = (uint32_t)pv.count;
     s->ws_before = ws;
-    uint32_t nb = sentinel, nd = sentinel;
     s->end = sentinel;
     s->bad = sentinel;
     s->badd = sentinel;
     for (uint32_t i = sentinel; i-- > start;) {
+      m->items[i].end = sentinel;
+    }
+    q[qi - 1].start = start;
+    q[qi - 1].end = sentinel;
+    ok = ok && charge(m, pv.count + 1);
+  }
+  /* <any-value> and <declaration-value> match a sequence "that does not contain" a bad string, a bad url or an
+     unmatched closing token (Variables 1, 2.1), and a function or a block contains what is inside it; the top-level
+     restriction on a semicolon and on "!" is for the top level of the value only. So each item knows the first item at
+     or after it in its view that its run may not reach, counting what is nested inside an item. The views are
+     visited last to first, so that a view is done before the item that holds it. */
+  uint8_t * nested = ok ? gtext_allocator_calloc(&m->alloc, qn, 1) : NULL;
+  if (ok && !nested) {
+    fail_oom(m);
+    ok = false;
+  }
+  for (size_t v = qn; ok && v-- > 0;) {
+    uint32_t nb = q[v].end, nd = q[v].end;
+    bool any = false;
+    for (uint32_t i = q[v].end; i-- > q[v].start;) {
       mitem * item = &m->items[i];
-      item->end = sentinel;
-      if (is_bad_for_any(item->cv)) {
+      const bool inside = (item->cv->kind != GTEXT_CSS_VALUE_TOKEN) && nested[item->cview];
+      const bool own = is_bad_for_any(item->cv) || inside;
+      any = any || own;
+      if (own) {
         nb = i;
+        nd = i;
       }
       if (is_bad_for_decl(item->cv)) {
         nd = i;
@@ -623,8 +650,10 @@ static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t 
       item->bad = nb;
       item->badd = nd;
     }
-    ok = ok && charge(m, pv.count + 1);
+    nested[v] = any;
+    ok = ok && charge(m, (size_t)(q[v].end - q[v].start) + 1);
   }
+  gtext_allocator_free(&m->alloc, nested);
   gtext_allocator_free(&m->alloc, q);
   return ok;
 }
@@ -717,7 +746,13 @@ static GTEXT_CSS_Unit unit_of(const GTEXT_CSS_Component_Value * v) {
   return gtext_css_unit_lookup(v->unit.data, v->unit.length);
 }
 
-/// A ratio's second part: `/` and a number, at items pos+1 and pos+2 (white space is not in the items).
+/// A component of a <ratio>: <ratio> is "<number [0,infinity]> [ / <number [0,infinity]> ]?" (Values 4), so a number that is
+/// not negative, or a math function, which stands wherever a <number> does.
+static bool ratio_number(const GTEXT_CSS_Component_Value * v) {
+  return (tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0) || (v->kind == GTEXT_CSS_VALUE_FUNCTION && is_math_function(&v->value));
+}
+
+/// A ratio's second part: `/` and a component, at items pos+1 and pos+2 (white space is not in the items).
 static bool ratio_tail(const M * m, uint32_t pos) {
   const mitem * a = &m->items[pos + 1];
   if (!a->cv || !m->items[pos + 2].cv) {
@@ -725,7 +760,7 @@ static bool ratio_tail(const M * m, uint32_t pos) {
   }
   const mitem * b = &m->items[pos + 2];
   return a->cv->kind == GTEXT_CSS_VALUE_TOKEN && a->cv->type == GTEXT_CSS_TOKEN_DELIM && a->cv->delim == '/'
-      && tok(b->cv, GTEXT_CSS_TOKEN_NUMBER) && b->cv->number >= 0;
+      && ratio_number(b->cv);
 }
 
 /// Whether native type `t` accepts the single component value at `pos` (not a ratio, an an+b or a run).
@@ -867,7 +902,7 @@ static bool terminal_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
     const gn_native t = (gn_native)g->native;
     switch (t) {
     case NT_RATIO:
-      if (v && tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number >= 0) {
+      if (v && ratio_number(v)) {
         one_end(e, pos + 1);
         if (ratio_tail(m, pos)) {
           e->buf[1].lo = e->buf[1].hi = pos + 3;
@@ -1320,6 +1355,7 @@ static int step_andor(M * m, frame * f) {
       ASK(kid_of(m, g, f->j), spos, &e);
       for (size_t k = 0; k < e.n; k++) {
         for (uint64_t p = e.v[k].lo; p <= e.v[k].hi; p++) {
+          OKR(charge(m, 1)); /* (a position already a state costs a look too) */
           OKR(add_state(m, f, g, (uint32_t)p, smask | ((uint64_t)1 << f->j), full));
         }
       }
@@ -1516,12 +1552,13 @@ static const char * arena_text(builder * B, const char * s, size_t n, GTEXT_CSS_
 static bool arena_serialize(builder * B, const GTEXT_CSS_Component_Value * values, size_t count, GTEXT_CSS_String * out) {
   GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
   so.allocator = &B->m->alloc;
+  so.max_output_bytes = B->m->max_text;
   char * buf = NULL;
   size_t len = 0;
   const GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(values, count, &so, &buf, &len);
   if (st != GTEXT_CSS_OK) {
     if (B->m->status == GTEXT_CSS_OK) {
-      B->m->status = st == GTEXT_CSS_E_OOM ? GTEXT_CSS_E_OOM : GTEXT_CSS_E_INTERNAL;
+      B->m->status = st; /* the real one: out of memory, or the limit on the text of a value */
     }
     return false;
   }
@@ -1573,6 +1610,20 @@ static bool span_cover(GTEXT_CSS_Value * v, const GTEXT_CSS_Component_Value * a,
   return true;
 }
 
+/// The name of a function component value in lower case (CSSOM writes a math function's name so), in the set's arena.
+static bool lower_name(builder * B, const GTEXT_CSS_Component_Value * cv, GTEXT_CSS_String * out) {
+  if (!arena_text(B, cv->value.data, cv->value.length, out)) {
+    return false;
+  }
+  for (size_t i = 0; i < out->length; i++) {
+    char * ch = (char *)out->data + i;
+    if (*ch >= 'A' && *ch <= 'Z') {
+      *ch = (char)(*ch + 32);
+    }
+  }
+  return true;
+}
+
 /// The value of the terminal `node` that matched items `pos` up to (not including) `end`.
 static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t end, GTEXT_CSS_Value * out) {
   M * m = B->m;
@@ -1602,15 +1653,8 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     out->interp = interp_of_native(t);
     out->range_lo = (g->flags & GNF_RANGE) ? g->lo : -1.0 / 0.0;
     out->range_hi = (g->flags & GNF_RANGE) ? g->hi : 1.0 / 0.0;
-    /* CSSOM writes a math function's name in lower case */
-    if (!arena_text(B, v->value.data, v->value.length, &out->text)) {
+    if (!lower_name(B, v, &out->text)) {
       return false;
-    }
-    for (size_t i = 0; i < out->text.length; i++) {
-      char * c = (char *)out->text.data + i;
-      if (*c >= 'A' && *c <= 'Z') {
-        *c = (char)(*c + 32);
-      }
     }
     GTEXT_CSS_Value * arg = css_arena_alloc(&B->set->arena, sizeof *arg);
     if (!arg) {
@@ -1668,17 +1712,64 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     out->interp = interp_of_native(t);
     number_flags(out, v);
     return true;
-  case NT_RATIO:
+  case NT_RATIO: {
     value_init(out, GTEXT_CSS_VAL_RATIO, node, v);
     out->number = v->number;
     out->number2 = 1.0;
     out->interp = GTEXT_CSS_INTERP_NUMBER;
-    if (end == pos + 3) {
-      out->number2 = m->items[pos + 2].cv->number;
+    const GTEXT_CSS_Component_Value * den = end == pos + 3 ? m->items[pos + 2].cv : NULL;
+    if (den) {
+      out->number2 = den->number;
       out->flags |= GTEXT_CSS_VFLAG_RATIO_DENOMINATOR;
-      span_cover(out, v, m->items[pos + 2].cv);
+      span_cover(out, v, den);
+    }
+    if (v->kind == GTEXT_CSS_VALUE_FUNCTION || (den && den->kind == GTEXT_CSS_VALUE_FUNCTION)) {
+      /* a component that is a math function: the two components are the children, a number or the function */
+      out->flags |= GTEXT_CSS_VFLAG_MATH;
+      GTEXT_CSS_Value * kids = css_arena_alloc(&B->set->arena, 2 * sizeof *kids);
+      if (!kids) {
+        return B_oom(B);
+      }
+      for (int k = 0; k < 2; k++) {
+        const GTEXT_CSS_Component_Value * comp = k == 0 ? v : den;
+        if (!comp) { /* the denominator that was not written is 1 */
+          value_init(&kids[k], GTEXT_CSS_VAL_NUMBER, node, NULL);
+          kids[k].number = 1.0;
+          kids[k].interp = GTEXT_CSS_INTERP_NUMBER;
+        }
+        else if (comp->kind == GTEXT_CSS_VALUE_FUNCTION) {
+          value_init(&kids[k], GTEXT_CSS_VAL_FUNCTION, node, comp);
+          kids[k].flags = GTEXT_CSS_VFLAG_MATH;
+          kids[k].interp = GTEXT_CSS_INTERP_NUMBER;
+          kids[k].range_lo = 0.0;
+          kids[k].range_hi = 1.0 / 0.0;
+          if (!lower_name(B, comp, &kids[k].text)) {
+            return false;
+          }
+          GTEXT_CSS_Value * arg = css_arena_alloc(&B->set->arena, sizeof *arg);
+          if (!arg) {
+            return B_oom(B);
+          }
+          value_init(arg, GTEXT_CSS_VAL_UNPARSED, node, comp);
+          if (!arena_serialize(B, comp->children, comp->child_count, &arg->text)) {
+            return false;
+          }
+          kids[k].children = arg;
+          kids[k].child_count = 1;
+          B->set->count++;
+        }
+        else {
+          value_init(&kids[k], GTEXT_CSS_VAL_NUMBER, node, comp);
+          kids[k].number = comp->number;
+          kids[k].interp = GTEXT_CSS_INTERP_NUMBER;
+        }
+      }
+      out->children = kids;
+      out->child_count = 2;
+      B->set->count += 2;
     }
     return true;
+  }
   case NT_ZERO:
     value_init(out, GTEXT_CSS_VAL_ZERO, node, v);
     out->number = 0;
@@ -1860,6 +1951,10 @@ static bool mult_path(builder * B, uint32_t node, uint32_t pos, uint32_t end, ui
   for (size_t qi = 0; good && !found && qi < b.len; qi++) {
     const uint32_t kk = (uint32_t)b.n[qi].key;
     const uint32_t spos = b.n[qi].pos;
+    if (!charge(m, 1)) {
+      good = false;
+      break;
+    }
     if (g->max != GN_INF && kk + 1 > g->max) {
       continue;
     }
@@ -1881,6 +1976,10 @@ static bool mult_path(builder * B, uint32_t node, uint32_t pos, uint32_t end, ui
     }
     for (size_t k = e.n; k-- > 0 && !found && good;) {
       for (uint64_t p = e.v[k].hi + 1; p-- > e.v[k].lo;) {
+        if (!charge(m, 1)) {
+          good = false;
+          break;
+        }
         const int64_t r = bfs_add(m, &b, (uint32_t)p, kk2, (uint32_t)qi, 0, start);
         if (r < 0) {
           good = false;
@@ -1935,6 +2034,10 @@ static bool andor_path(builder * B, uint32_t node, uint32_t pos, uint32_t end, u
   for (size_t qi = 0; good && !found && qi < b.len; qi++) {
     const uint32_t spos = b.n[qi].pos;
     const uint64_t smask = b.n[qi].key;
+    if (!charge(m, 1)) {
+      good = false;
+      break;
+    }
     for (uint32_t j = 0; j < g->nkids && good && !found; j++) {
       if (smask & ((uint64_t)1 << j)) {
         continue;
@@ -1946,6 +2049,10 @@ static bool andor_path(builder * B, uint32_t node, uint32_t pos, uint32_t end, u
       }
       for (size_t k = e.n; k-- > 0 && !found && good;) {
         for (uint64_t p = e.v[k].hi + 1; p-- > e.v[k].lo;) {
+          if (!charge(m, 1)) {
+            good = false;
+            break;
+          }
           const uint64_t mask = smask | ((uint64_t)1 << j);
           const int64_t r = bfs_add(m, &b, (uint32_t)p, mask, (uint32_t)qi, j, spos);
           if (r < 0) {
@@ -2030,7 +2137,8 @@ static bool seq_path(builder * B, uint32_t node, uint32_t pos, uint32_t end, uin
     for (size_t k = 0; good && k < S[i].n; k++) {
       for (uint64_t p = S[i].v[k].lo; good && p <= S[i].v[k].hi; p++) {
         if (is_sep) {
-          if (literal_at(m, (uint32_t)p, sep_char(g))) {
+          good = charge(m, 1);
+          if (good && literal_at(m, (uint32_t)p, sep_char(g))) {
             good = iset_add(m, &S[i + 1], (uint32_t)p + 1);
           }
         }
@@ -2107,9 +2215,19 @@ static bool pack_list(builder * B, uint32_t node, size_t base, GTEXT_CSS_List_Se
   list.interp = GTEXT_CSS_INTERP_LIST;
   list.children = kids;
   list.child_count = n;
-  list.span = kids[0].span;
-  if (kids[n - 1].span.end > list.span.end) {
-    list.span.end = kids[n - 1].span.end;
+  /* from the first child that has a span to the last that has one (a <whitespace-token>, or an empty run, has none) */
+  size_t first = 0, last = n;
+  while (first < n && kids[first].span.line == 0) {
+    first++;
+  }
+  while (last > first && kids[last - 1].span.line == 0) {
+    last--;
+  }
+  if (first < last) {
+    list.span = kids[first].span;
+    if (kids[last - 1].span.end > list.span.end) {
+      list.span.end = kids[last - 1].span.end;
+    }
   }
   return push_val(B, &list);
 }
@@ -2334,6 +2452,10 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
   m.alloc = *((options && options->allocator) ? options->allocator : gtext_allocator_default());
   m.max_work = (options && options->max_match_work) ? options->max_match_work : DEFAULT_MAX_MATCH_WORK;
   m.max_memo = (options && options->max_memo_entries) ? options->max_memo_entries : DEFAULT_MAX_MEMO_ENTRIES;
+  if (m.max_memo > GN_MAX_MEMO) {
+    m.max_memo = GN_MAX_MEMO; /* an entry's place in the pool is 32 bits */
+  }
+  m.max_text = (options && options->max_text_bytes) ? options->max_text_bytes : ((size_t)256 << 20);
   m.unitless = options && options->unitless_length;
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
   GTEXT_CSS_Value_Set * set = NULL;
@@ -2429,6 +2551,9 @@ GTEXT_CSS_Status gtext_css_matcher_init(GTEXT_CSS_Matcher * matcher, const GTEXT
   memset(matcher, 0, sizeof *matcher);
   matcher->compiled = compiled;
   matcher->options = options ? *options : gtext_css_match_options_default();
+  /* the allocator is copied: a NULL means the default, and the caller's struct need not outlive the matcher */
+  matcher->allocator = *(matcher->options.allocator ? matcher->options.allocator : gtext_allocator_default());
+  matcher->options.allocator = NULL;
   matcher->status = GTEXT_CSS_OK;
   return GTEXT_CSS_OK;
 }
@@ -2440,7 +2565,7 @@ void gtext_css_matcher_free(GTEXT_CSS_Matcher * matcher) {
   for (size_t i = 0; i < matcher->set_count; i++) {
     gtext_css_value_set_free(matcher->sets[i]);
   }
-  gtext_allocator_free(matcher->options.allocator, matcher->sets);
+  gtext_allocator_free(&matcher->allocator, matcher->sets);
   matcher->sets = NULL;
   matcher->set_count = 0;
 }
@@ -2452,7 +2577,9 @@ static bool matcher_match(void * user, size_t index, const GTEXT_CSS_Component_V
   }
   bool matched = false;
   GTEXT_CSS_Value_Set * set = NULL;
-  mt->status = gtext_css_match(mt->compiled, values, count, &mt->options, &matched, &set, NULL);
+  GTEXT_CSS_Match_Options o = mt->options;
+  o.allocator = &mt->allocator;
+  mt->status = gtext_css_match(mt->compiled, values, count, &o, &matched, &set, NULL);
   if (mt->status != GTEXT_CSS_OK || !matched) {
     gtext_css_value_set_free(set);
     return false;
@@ -2460,7 +2587,7 @@ static bool matcher_match(void * user, size_t index, const GTEXT_CSS_Component_V
   if (index >= mt->set_count) {
     void * sets = mt->sets;
     size_t cap = mt->set_count;
-    if (!css_grammar_grow(mt->options.allocator, &sets, &cap, index + 1, sizeof mt->sets[0])) {
+    if (!css_grammar_grow(&mt->allocator, &sets, &cap, index + 1, sizeof mt->sets[0])) {
       gtext_css_value_set_free(set);
       mt->status = GTEXT_CSS_E_OOM;
       return false;

@@ -36,6 +36,7 @@
  */
 
 #include <cmath>
+#include <cstring>
 #include <set>
 #include <string>
 
@@ -541,7 +542,7 @@ TEST(CssValueSerialize, NumbersAreCssomsShortestSixDecimalForm) {
       {"<number>", "123456.789012345", "123456.789012"}, {"<integer>", "+7", "7"}, {"<integer>", "-0", "0"},
       {"<percentage>", "50.0%", "50%"}, {"<percentage>", "+1e1%", "10%"},
       {"<length>", "1.0px", "1px"}, {"<length>", "-.5em", "-0.5em"}, {"<number>", "0.30000000000000004", "0.3"},
-      {"<ratio>", "16 / 9", "16 / 9"}, {"<ratio>", "2", "2"}, {"<ratio>", "1.5/2", "1.5 / 2"},
+      {"<ratio>", "16 / 9", "16 / 9"}, {"<ratio>", "2", "2 / 1"}, {"<ratio>", "1.5/2", "1.5 / 2"},
       {"<zero>", "0.0", "0"},
   });
 }
@@ -715,6 +716,215 @@ TEST(CssValueSerialize, ADeepValueIsWrittenWithoutRecursion) {
   ASSERT_EQ(m.status, GTEXT_CSS_OK);
   ASSERT_TRUE(m.matched);
   EXPECT_EQ(m.text(), in);
+}
+
+
+TEST(CssAtoms, ATableWithALimitRefusesWhatPassesItWithALimitStatusAndKeepsWhatItHas) {
+  GTEXT_CSS_Atom_Table * t = nullptr;
+  ASSERT_EQ(gtext_css_atom_table_new(nullptr, &t), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_atom_table_limits(t, 3, 0), GTEXT_CSS_OK);
+  GTEXT_CSS_Atom a, b, c, d = 77;
+  EXPECT_EQ(gtext_css_atom_intern(t, "a", 1, &a), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_atom_intern(t, "b", 1, &b), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_atom_intern(t, "c", 1, &c), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_atom_intern(t, "d", 1, &d), GTEXT_CSS_E_LIMIT_ATOMS);
+  EXPECT_EQ(d, 77u);
+  GTEXT_CSS_Atom again;
+  EXPECT_EQ(gtext_css_atom_intern(t, "B", 1, &again), GTEXT_CSS_OK) << "a keyword the table has is not new";
+  EXPECT_EQ(again, b);
+  EXPECT_EQ(gtext_css_atom_count(t), 3u);
+  // bytes: each spelling and its NUL
+  ASSERT_EQ(gtext_css_atom_table_limits(t, 0, 0), GTEXT_CSS_OK);
+  gtext_css_atom_table_free(t);
+  ASSERT_EQ(gtext_css_atom_table_new(nullptr, &t), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_atom_table_limits(t, 0, 10), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_atom_intern(t, "abcd", 4, &a), GTEXT_CSS_OK);   // 5 bytes
+  EXPECT_EQ(gtext_css_atom_intern(t, "efgh", 4, &b), GTEXT_CSS_OK);   // 10 bytes
+  EXPECT_EQ(gtext_css_atom_intern(t, "i", 1, &c), GTEXT_CSS_E_LIMIT_ATOMS);
+  EXPECT_EQ(gtext_css_atom_intern(t, "abcdefghijklmnop", 16, &c), GTEXT_CSS_E_LIMIT_ATOMS);
+  EXPECT_EQ(gtext_css_atom_count(t), 2u);
+  EXPECT_STREQ(gtext_css_atom_name(t, b, nullptr), "efgh");
+  // a limit beyond what a 32-bit atom and offset hold is that maximum, and 0 is the default
+  EXPECT_EQ(gtext_css_atom_table_limits(t, SIZE_MAX, SIZE_MAX), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_atom_intern(t, "i", 1, &c), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_atom_table_limits(nullptr, 1, 1), GTEXT_CSS_E_INVALID);
+  gtext_css_atom_table_free(t);
+  EXPECT_NE(std::string(gtext_css_status_string(GTEXT_CSS_E_LIMIT_ATOMS)), "unknown status");
+}
+
+TEST(CssAtoms, EveryKeywordOfAGrammarIsInItsAtomTable) {
+  std::string many = "k0";
+  for (int i = 1; i < 300; i++) {
+    many += " | k" + std::to_string(i);
+  }
+  Grammar g;
+  compile_into(g, many);
+  ASSERT_TRUE(g.ok());
+  EXPECT_EQ(gtext_css_atom_count(gtext_css_compiled_atoms(g.c)), 300u);
+}
+
+void zero_value(GTEXT_CSS_Value * v, GTEXT_CSS_Val_Kind kind) {
+  std::memset(v, 0, sizeof *v);
+  v->kind = kind;
+}
+
+TEST(CssValueSerialize, AFailureOfTheIdentifierAndStringWritersIsTheStatusNotATruncatedOk) {
+  Capture c;
+  GTEXT_Markup_Sink sink = {capture_write, &c};
+  // a text that is NULL with a length is no text: the serializers refuse it, and so does the value's
+  for (GTEXT_CSS_Val_Kind k : {GTEXT_CSS_VAL_KEYWORD, GTEXT_CSS_VAL_CUSTOM_IDENT, GTEXT_CSS_VAL_DASHED_IDENT, GTEXT_CSS_VAL_STRING,
+           GTEXT_CSS_VAL_URL, GTEXT_CSS_VAL_UNPARSED, GTEXT_CSS_VAL_PENDING, GTEXT_CSS_VAL_TOKEN, GTEXT_CSS_VAL_FUNCTION}) {
+    GTEXT_CSS_Value v;
+    zero_value(&v, k);
+    v.text.data = nullptr;
+    v.text.length = 5;
+    c.text.clear();
+    EXPECT_EQ(gtext_css_serialize_value(&v, nullptr, &sink), GTEXT_CSS_E_INVALID) << gtext_css_val_kind_name(k);
+    char * buf = nullptr;
+    size_t len = 0;
+    EXPECT_EQ(gtext_css_serialize_value_buffer(&v, nullptr, &buf, &len), GTEXT_CSS_E_INVALID) << gtext_css_val_kind_name(k);
+    EXPECT_EQ(buf, nullptr);
+  }
+  // and the same inside a list: what was written before it is a valid prefix, the status is the failure
+  GTEXT_CSS_Value kids[2], list;
+  zero_value(&kids[0], GTEXT_CSS_VAL_NUMBER);
+  kids[0].number = 3;
+  zero_value(&kids[1], GTEXT_CSS_VAL_STRING);
+  kids[1].text.length = 2;
+  zero_value(&list, GTEXT_CSS_VAL_LIST);
+  list.children = kids;
+  list.child_count = 2;
+  c.text.clear();
+  EXPECT_EQ(gtext_css_serialize_value(&list, nullptr, &sink), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(c.text.substr(0, 2), "3 ");
+  // a sink that refuses in the middle of an identifier or a string is a write error
+  GTEXT_CSS_Value ident, str;
+  zero_value(&ident, GTEXT_CSS_VAL_KEYWORD);
+  ident.text.data = "abcdef";
+  ident.text.length = 6;
+  zero_value(&str, GTEXT_CSS_VAL_STRING);
+  str.text.data = "abcdef";
+  str.text.length = 6;
+  for (const GTEXT_CSS_Value * v : {&ident, &str}) {
+    Capture failing;
+    failing.fail_after = 3;
+    GTEXT_Markup_Sink fs = {capture_write, &failing};
+    EXPECT_EQ(gtext_css_serialize_value(v, nullptr, &fs), GTEXT_CSS_E_WRITE);
+  }
+}
+
+TEST(CssValueSerialize, TheFixedPointHoldsWhereTheStandardWritesTheValueBackAsItWas) {
+  // CSSOM: a <number> is written "rounding the value if necessary to not produce more than 6 decimals" and "scientific
+  // notation is not used". A value that rounds to something else is not written as itself: 1e-7 is written 0, which is
+  // not in [1e-7, infinity], and that is the standard's answer, not a defect of the writer.
+  EXPECT_EQ(run_text("<number [1e-7,∞]>", "1e-7"), "0");
+  EXPECT_EQ(run_text("<number [1e-7,∞]>", run_text("<number [1e-7,∞]>", "1e-7")), "no match");
+  EXPECT_EQ(run("<number>", "1e-7"), "num:1e-07");
+  // magnitudes the writer keeps are fixed points, at both ends
+  for (const char * n : {"0.000001", "0.999999", "1", "123456.789012", "1e21", "1e100", "1.7976931348623157e308", "4.5e15", "9007199254740993",
+           "0.5", "100", "-0.000001", "-1e300"}) {
+    const std::string first = run_text("<number>", n);
+    EXPECT_NE(first, "no match") << n;
+    EXPECT_EQ(run_text("<number>", first), first) << n;
+  }
+  EXPECT_EQ(run_text("<number>", "1e300"), "1" + std::string(300, '0'));
+  EXPECT_EQ(run_text("<number>", "1e-300"), "0");
+  // an infinity is the largest double, and that is a fixed point
+  const std::string inf = run_text("<number>", "1e999");
+  EXPECT_EQ(inf.size(), 309u);
+  EXPECT_EQ(run_text("<number>", inf), inf);
+}
+
+TEST(CssValues, AnInexactNumberCarriesTheFlagAndAnExactOneDoesNot) {
+  Defs d;
+  struct Case {
+    const char * grammar;
+    const char * inexact;
+    const char * exact;
+  };
+  for (const Case & c : std::vector<Case>{{"<number>", "0.1", "0.5"}, {"<length>", "0.1px", "0.5px"}, {"<percentage>", "0.1%", "0.5%"},
+           {"<integer>", "9007199254740993", "9007199254740992"}, {"<angle>", "0.1deg", "0.5deg"}, {"<dimension>", "0.1foo", "0.5foo"}}) {
+    Grammar g;
+    compile_into(g, c.grammar, &d);
+    ASSERT_TRUE(g.ok());
+    Matched a, b;
+    match_into(a, g, c.inexact);
+    match_into(b, g, c.exact);
+    ASSERT_TRUE(a.matched && b.matched) << c.grammar;
+    EXPECT_NE(a.root()->flags & GTEXT_CSS_VFLAG_INEXACT, 0u) << c.grammar << " " << c.inexact;
+    EXPECT_EQ(b.root()->flags & GTEXT_CSS_VFLAG_INEXACT, 0u) << c.grammar << " " << c.exact;
+  }
+}
+
+TEST(CssValues, EachKindHasItsInterpolationClass) {
+  struct Case {
+    const char * grammar;
+    const char * input;
+    GTEXT_CSS_Interp interp;
+  };
+  for (const Case & c : std::vector<Case>{
+           {"<ratio>", "16/9", GTEXT_CSS_INTERP_NUMBER}, {"<zero>", "0", GTEXT_CSS_INTERP_NUMBER}, {"<number>", "1", GTEXT_CSS_INTERP_NUMBER},
+           {"<integer>", "1", GTEXT_CSS_INTERP_NUMBER}, {"<percentage>", "1%", GTEXT_CSS_INTERP_PERCENTAGE},
+           {"<dimension>", "3px", GTEXT_CSS_INTERP_LENGTH}, {"<dimension>", "3deg", GTEXT_CSS_INTERP_ANGLE},
+           {"<dimension>", "3s", GTEXT_CSS_INTERP_TIME}, {"<dimension>", "3foo", GTEXT_CSS_INTERP_DISCRETE},
+           {"<dimension>", "3hz", GTEXT_CSS_INTERP_DISCRETE}, {"<length>", "calc(1px)", GTEXT_CSS_INTERP_LENGTH},
+           {"<number>", "calc(1)", GTEXT_CSS_INTERP_NUMBER}, {"<angle>", "calc(1deg)", GTEXT_CSS_INTERP_ANGLE},
+           {"<time>", "calc(1s)", GTEXT_CSS_INTERP_TIME}, {"<percentage>", "calc(1%)", GTEXT_CSS_INTERP_PERCENTAGE},
+           {"<string>", "'s'", GTEXT_CSS_INTERP_DISCRETE}, {"<url>", "url(a)", GTEXT_CSS_INTERP_DISCRETE},
+           {"<ident>", "a", GTEXT_CSS_INTERP_DISCRETE}, {"<custom-ident>", "a", GTEXT_CSS_INTERP_DISCRETE},
+           {"<length>#", "1px, 2px", GTEXT_CSS_INTERP_LIST}, {"<length>", "0", GTEXT_CSS_INTERP_LENGTH}}) {
+    Grammar g;
+    compile_into(g, c.grammar);
+    ASSERT_TRUE(g.ok()) << c.grammar;
+    Matched m;
+    match_into(m, g, c.input);
+    ASSERT_TRUE(m.matched) << c.grammar << " " << c.input;
+    EXPECT_EQ(m.root()->interp, c.interp) << c.grammar << " | " << c.input;
+  }
+}
+
+TEST(CssValues, AnIdentIsGivenTheAtomOfTheKeywordTheGrammarNamesAndNoneOtherwise) {
+  Grammar g;
+  compile_into(g, "<ident> | auto");
+  ASSERT_TRUE(g.ok());
+  const GTEXT_CSS_Atom autoatom = gtext_css_atom_lookup(gtext_css_compiled_atoms(g.c), "auto", 4);
+  ASSERT_NE(autoatom, GTEXT_CSS_ATOM_NONE);
+  Matched named, other;
+  match_into(named, g, "AUTO");
+  match_into(other, g, "other");
+  ASSERT_TRUE(named.matched && other.matched);
+  EXPECT_EQ(named.root()->kind, GTEXT_CSS_VAL_KEYWORD);
+  EXPECT_EQ(named.root()->atom, autoatom);
+  EXPECT_EQ(css_test::str(named.root()->text), "AUTO") << "(an <ident> keeps the input's spelling)";
+  EXPECT_EQ(other.root()->kind, GTEXT_CSS_VAL_KEYWORD);
+  EXPECT_EQ(other.root()->atom, GTEXT_CSS_ATOM_NONE);
+  Grammar h;
+  compile_into(h, "auto | <ident>");
+  Matched k;
+  match_into(k, h, "AUTO");
+  EXPECT_EQ(css_test::str(k.root()->text), "auto") << "(a keyword the grammar names is in the grammar's spelling)";
+}
+
+TEST(CssUnits, ConversionRoundsTheProductBeforeTheDivisionOnEveryTarget) {
+  // The expression is value * numerator / denominator with the product stored: on a target with excess precision
+  // (FLT_EVAL_METHOD != 0, x87) a product kept in a register would round once instead of twice. Where the evaluation is
+  // plain double, as on x86-64, the two are the same by construction; the i686 run is what shows the difference.
+  const struct {
+    GTEXT_CSS_Unit unit;
+    double num, den;
+  } rows[] = {{GTEXT_CSS_UNIT_CM, 9600.0, 254.0}, {GTEXT_CSS_UNIT_MM, 960.0, 254.0}, {GTEXT_CSS_UNIT_Q, 960.0, 1016.0},
+      {GTEXT_CSS_UNIT_PT, 4.0, 3.0}, {GTEXT_CSS_UNIT_GRAD, 360.0, 400.0}, {GTEXT_CSS_UNIT_MS, 1.0, 1000.0},
+      {GTEXT_CSS_UNIT_DPI, 1.0, 96.0}, {GTEXT_CSS_UNIT_DPCM, 254.0, 9600.0}, {GTEXT_CSS_UNIT_RAD, 180.0, 3.14159265358979323846}};
+  for (const auto & r : rows) {
+    for (int i = 1; i <= 2000; i++) {
+      const double v = i * 0.37 - 111.1;
+      volatile double product = v * r.num;
+      const double want = product / r.den;
+      double got = 0;
+      ASSERT_TRUE(gtext_css_unit_to_canonical(r.unit, v, &got));
+      ASSERT_EQ(got, want) << gtext_css_unit_name(r.unit) << " " << v;
+    }
+  }
 }
 
 } // namespace

@@ -69,6 +69,12 @@ static GTEXT_Markup_Status counting_write(void * user, const char * bytes, size_
 }
 
 static void put(vwriter * w, const char * s, size_t n) {
+  if (n && !s) {
+    if (w->status == GTEXT_CSS_OK) {
+      w->status = GTEXT_CSS_E_INVALID;
+    }
+    return;
+  }
   (void)counting_write(w, s, n);
 }
 
@@ -76,15 +82,23 @@ static void puts_(vwriter * w, const char * s) {
   put(w, s, strlen(s));
 }
 
+/* The identifier and string serializers fail for their own reasons as well as the sink's (a text that is NULL with a
+   length): what they say is the status, unless the sink already said why. */
+static void take_status(vwriter * w, GTEXT_CSS_Status st) {
+  if (st != GTEXT_CSS_OK && w->status == GTEXT_CSS_OK) {
+    w->status = st;
+  }
+}
+
 static void put_ident(vwriter * w, const GTEXT_CSS_String * s) {
   if (w->status == GTEXT_CSS_OK && s->length) {
-    (void)gtext_css_serialize_identifier(s->data, s->length, &w->inner);
+    take_status(w, gtext_css_serialize_identifier(s->data, s->length, &w->inner));
   }
 }
 
 static void put_string(vwriter * w, const GTEXT_CSS_String * s) {
   if (w->status == GTEXT_CSS_OK) {
-    (void)gtext_css_serialize_string(s->data ? s->data : "", s->length, &w->inner);
+    take_status(w, gtext_css_serialize_string(s->data, s->length, &w->inner));
   }
 }
 
@@ -160,11 +174,13 @@ static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
     return false;
   }
   case GTEXT_CSS_VAL_RATIO:
-    put_number(w, v->number, false);
-    if (v->flags & GTEXT_CSS_VFLAG_RATIO_DENOMINATOR) {
-      puts_(w, " / ");
-      put_number(w, v->number2, false);
+    /* "<ratio> is always serialized with both components" (Values 4); a component that is a math function is a child */
+    if (v->child_count == 2) {
+      return true; /* the walk writes the two, with " / " between (see put_separator) */
     }
+    put_number(w, v->number, false);
+    puts_(w, " / ");
+    put_number(w, v->number2, false);
     return false;
   case GTEXT_CSS_VAL_ZERO:
     puts_(w, "0");
@@ -209,6 +225,10 @@ static void close_value(vwriter * w, const GTEXT_CSS_Value * v) {
 }
 
 static void put_separator(vwriter * w, const GTEXT_CSS_Value * parent, const GTEXT_CSS_Value * child) {
+  if (parent->kind == GTEXT_CSS_VAL_RATIO) {
+    puts_(w, " / ");
+    return;
+  }
   if (parent->kind == GTEXT_CSS_VAL_LIST) {
     switch (parent->separator) {
     case GTEXT_CSS_SEP_COMMA: puts_(w, ", "); return;
@@ -258,7 +278,7 @@ GTEXT_CSS_Status gtext_css_serialize_value(const GTEXT_CSS_Value * value, const 
       continue;
     }
     const GTEXT_CSS_Value * c = &f->v->children[f->i];
-    if (f->i > 0 || f->v->kind == GTEXT_CSS_VAL_URL) {
+    if (f->i > 0 || f->v->kind == GTEXT_CSS_VAL_URL) { /* (a ratio's first child has none) */
       put_separator(&w, f->v, c);
     }
     f->i++;

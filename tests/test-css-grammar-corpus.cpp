@@ -288,15 +288,16 @@ TEST_F(Corpus_, EveryGrammarCompilesAndLinksEveryWitnessMatchesAndNoCounterWitne
       if (k.has_text) {
         EXPECT_EQ(text, k.text) << "line " << e.line << ": " << e.grammar << " | " << k.input;
       }
-      // the fixed point
+      // the fixed point: the written text is matched again (as the declaration it was, for an "@decl" witness) and written the same
       bool decl;
-      with_decl(k.input, &decl);
-      Matched again;
-      match_case(again, g, decl ? "@decl " + std::string(k.input.compare(6, 4, "unic") == 0 ? "unicode-range: " : "x: ") + text.substr(0) : text);
-      if (decl && k.input.compare(6, 4, "unic") != 0) {
-        continue;  // a block value is written without its declaration around it
+      const std::string body = with_decl(k.input, &decl);
+      std::string again_input = text;
+      if (decl) {
+        again_input = "@decl " + body.substr(0, body.find(':') + 1) + " " + text;
       }
-      ASSERT_TRUE(again.matched) << "line " << e.line << ": the written text does not match again: " << text;
+      Matched again;
+      match_case(again, g, again_input);
+      ASSERT_TRUE(again.matched) << "line " << e.line << ": the written text does not match again: " << again_input;
       EXPECT_EQ(again.text(), text) << "line " << e.line << ": the fixed point";
     }
   }

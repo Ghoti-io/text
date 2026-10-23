@@ -117,6 +117,27 @@ def main():
         for name in getattr(module, "REPRODUCERS", {}):
             if name not in module.PLANTS:
                 problems.append("%s: a reproducer for %s, which is not a plant" % (tool, name))
+    # the plants of the Value Definition Syntax engine (tools/css/plant-grammar.py): the same check, for edits that may be several
+    grammar = importlib.util.module_from_spec(importlib.util.spec_from_file_location("plant_grammar", os.path.join(HERE, "css", "plant-grammar.py")))
+    grammar.__spec__.loader.exec_module(grammar)
+    for name, rel, old, new, must in grammar.PLANTS:
+        count += 1
+        label = "css grammar plant %s" % name
+        full = os.path.join(ROOT, "src", "css", rel)
+        olds, news = (old, new) if isinstance(old, list) else ([old], [new])
+        if not os.path.isfile(full):
+            problems.append("%s: src/css/%s does not exist" % (label, rel))
+            continue
+        with open(full, encoding="utf-8") as fh:
+            text = fh.read()
+        for o_, n_ in zip(olds, news):
+            if text.count(o_) != 1:
+                problems.append("%s: its text matches %d times in src/css/%s, not once" % (label, text.count(o_), rel))
+            if o_ == n_:
+                problems.append("%s: its edit changes nothing" % label)
+        for key in must:
+            if key not in grammar.PROGRAMS or not os.path.isfile(os.path.join(ROOT, "tests", grammar.PROGRAMS[key])):
+                problems.append("%s: the program %s it must fail does not exist" % (label, key))
     for problem in problems:
         sys.stderr.write(problem + "\n")
     if problems:

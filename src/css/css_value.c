@@ -56,7 +56,13 @@ struct GTEXT_CSS_Atom_Table {
   size_t cap;             ///< Allocated.
   uint32_t * slots;       ///< Open-addressed hash of atom numbers (0 empty).
   size_t nslots;          ///< A power of two.
+  size_t max_atoms;       ///< Most atoms (GTEXT_CSS_E_LIMIT_ATOMS beyond).
+  size_t max_bytes;       ///< Most bytes of spelling, NULs included.
 };
+
+/// The defaults of an atom table's limits.
+#define ATOMS_DEFAULT_MAX ((size_t)1 << 24)
+#define ATOMS_DEFAULT_BYTES ((size_t)1 << 30)
 
 static char fold(char c) {
   return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
@@ -91,7 +97,19 @@ GTEXT_CSS_Status gtext_css_atom_table_new(const GTEXT_Allocator * allocator, GTE
   }
   memset(t, 0, sizeof *t);
   t->alloc = a;
+  t->max_atoms = ATOMS_DEFAULT_MAX;
+  t->max_bytes = ATOMS_DEFAULT_BYTES;
   *out = t;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_atom_table_limits(GTEXT_CSS_Atom_Table * t, size_t max_atoms, size_t max_bytes) {
+  if (!t) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  /* an atom is a uint32_t and an offset into the pool is one too: the limits stay inside both */
+  t->max_atoms = max_atoms ? (max_atoms < ATOMS_DEFAULT_MAX ? max_atoms : ATOMS_DEFAULT_MAX) : ATOMS_DEFAULT_MAX;
+  t->max_bytes = max_bytes ? (max_bytes < ATOMS_DEFAULT_BYTES ? max_bytes : ATOMS_DEFAULT_BYTES) : ATOMS_DEFAULT_BYTES;
   return GTEXT_CSS_OK;
 }
 
@@ -141,7 +159,7 @@ static bool rehash(GTEXT_CSS_Atom_Table * t, size_t nslots) {
 
 GTEXT_CSS_Status gtext_css_atom_intern(GTEXT_CSS_Atom_Table * t, const char * text, size_t length,
     GTEXT_CSS_Atom * out) {
-  if (!t || !out || !text || length == 0 || length > UINT32_MAX / 2) {
+  if (!t || !out || !text || length == 0) {
     return GTEXT_CSS_E_INVALID;
   }
   if (t->nslots) {
@@ -151,8 +169,8 @@ GTEXT_CSS_Status gtext_css_atom_intern(GTEXT_CSS_Atom_Table * t, const char * te
       return GTEXT_CSS_OK;
     }
   }
-  if (t->count + 1 > UINT32_MAX / 2) {
-    return GTEXT_CSS_E_OOM;
+  if (t->count >= t->max_atoms || length >= t->max_bytes || t->pool_len > t->max_bytes - length - 1) {
+    return GTEXT_CSS_E_LIMIT_ATOMS;
   }
   if ((t->count + 1) * 2 > t->nslots && !rehash(t, t->nslots ? t->nslots * 2 : 16)) {
     return GTEXT_CSS_E_OOM;
@@ -160,6 +178,9 @@ GTEXT_CSS_Status gtext_css_atom_intern(GTEXT_CSS_Atom_Table * t, const char * te
   if (t->pool_len + length + 1 > t->pool_cap) {
     size_t cap = t->pool_cap ? t->pool_cap : 256;
     while (cap < t->pool_len + length + 1) {
+      if (cap > SIZE_MAX / 2) {
+        return GTEXT_CSS_E_OOM;
+      }
       cap *= 2;
     }
     char * grown = gtext_allocator_realloc(&t->alloc, t->pool, cap);
@@ -261,8 +282,19 @@ const char * gtext_css_val_kind_name(GTEXT_CSS_Val_Kind kind) {
 
 /* ---- arbitrary substitution ------------------------------------------- */
 
+/* The arbitrary substitution functions, as the served drafts name them (Values 5: "The if() function is an arbitrary
+   substitution function", "inherit() is an arbitrary substitution function", "attr() is an arbitrary substitution
+   function, similar to var()", "The random-item() function is an arbitrary substitution function, like var()", and
+   ident(); Variables 1: "The var() function is an arbitrary substitution function"; Environment Variables: env()).
+   The draft's list is not in one place; a function with a dashed name (a custom function) is not in it either. */
 bool css_is_substitution_name(const GTEXT_CSS_String * name) {
-  return css_ascii_ieq(name, "var") || css_ascii_ieq(name, "env") || css_ascii_ieq(name, "attr");
+  static const char * const names[] = {"var", "env", "attr", "if", "inherit", "ident", "random-item"};
+  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+    if (css_ascii_ieq(name, names[i])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 typedef struct {

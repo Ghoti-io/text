@@ -625,6 +625,50 @@ std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::fu
   };
 }
 
+// Linking a chain of n types, each of which can match nothing and refers to the next: the work of the link (the result's
+// work), which a nullable fixed point that settles one level of the chain per pass makes quadratic.
+std::function<Measured(size_t)> css_link_chain() {
+  return [](size_t n) {
+    Measured m;
+    std::map<std::string, GTEXT_CSS_Definition *> defs;
+    for (size_t i = 0; i < n; i++) {
+      const std::string text = i + 1 < n ? "<t" + std::to_string(i + 1) + ">? a?" : "a?";
+      GTEXT_CSS_Definition * d = nullptr;
+      GTEXT_CSS_Grammar_Options o = gtext_css_grammar_options_default();
+      o.max_definition_nodes = (size_t)1 << 24;
+      if (gtext_css_definition_parse(text.data(), text.size(), &o, &d, nullptr) != GTEXT_CSS_OK) {
+        m.ok = false;
+        m.why = "a definition did not parse";
+        return m;
+      }
+      defs["t" + std::to_string(i)] = d;
+    }
+    auto resolve = [](void * user, GTEXT_CSS_Ref_Kind, const char * name, size_t length) -> const GTEXT_CSS_Definition * {
+      auto * table = static_cast<std::map<std::string, GTEXT_CSS_Definition *> *>(user);
+      auto it = table->find(std::string(name, length));
+      return it == table->end() ? nullptr : it->second;
+    };
+    const std::string root = "<t0>";
+    GTEXT_CSS_Grammar_Options o = gtext_css_grammar_options_default();
+    o.max_definition_nodes = (size_t)1 << 24;
+    o.max_definition_bytes = (size_t)1 << 28;
+    GTEXT_CSS_Compiled * c = nullptr;
+    GTEXT_CSS_Grammar_Result r;
+    const GTEXT_CSS_Status st = gtext_css_compile(root.data(), root.size(), resolve, &defs, &o, &c, &r);
+    m.work = r.work;
+    m.bytes = n;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the link failed: ") + gtext_css_status_string(st);
+    }
+    gtext_css_compiled_free(c);
+    for (auto & kv : defs) {
+      gtext_css_definition_free(kv.second);
+    }
+    return m;
+  };
+}
+
 // A CSS stylesheet's bytes, parsed in one call or fed to a stream in pieces of `chunk` bytes (0: one piece), counted by
 // gtext_css_parse_bytes_work() and gtext_css_stream_work(): the decoding, the map from the text to the bytes, the buffers and
 // the parse. `label` is the protocol's label (NULL for none: UTF-8).
@@ -1226,6 +1270,14 @@ std::vector<Shape> build_shapes() {
       css_grammar("f( a | b )+", [](size_t k) { return repeat("f(a) ", k); }));
   add("css", "CSS grammar: nested functions that the grammar names once each", 1500,
       css_grammar("[ f( [ g( a* ) ]* ) ]+", [](size_t k) { return repeat("f(g(a a) g(a)) ", k); }));
+  add("css", "CSS grammar: linking a chain of types that can match nothing", 500, css_link_chain()).per_byte = 0;
+  {
+    Shape & quad = add("css", "CSS grammar: two wide any-values joined by && (bounded-quadratic by design)", 300,
+        css_grammar("<any-value> && <any-value>", [](size_t k) { return repeat("a ", k); }));
+    quad.bound = 17.0;
+    quad.per_byte = 0;
+    quad.note = "every state of the first member looks at every position after it";
+  }
   // ---- from bytes and from a stream: the decoder, the map back to the bytes, the buffers, the cuts ----
   const std::string sheet_unit = "a.b > c { d: e; f: \"g\" } /* h */\n";
   add("css", "CSS stream, text a byte at a time", 4000, css_bytes(nullptr, 1, true, [sheet_unit](size_t k) { return repeat(sheet_unit, k); }));
