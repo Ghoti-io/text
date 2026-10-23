@@ -541,8 +541,16 @@ Measured sniff_run(const std::string & in) {
 
 // A CSS parse at the entry point `kind`, with every limit out of the way (the shapes measure the parser, not
 // a limit), counted by gtext_css_parse_work(): code points read and looked at, tokens visited, values copied.
-std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std::string(size_t)> make) {
-  return [kind, make](size_t k) {
+bool css_accept_rule(void *, const GTEXT_CSS_Parent *, const GTEXT_CSS_Rule *) {
+  return true;
+}
+bool css_refuse_rule(void *, const GTEXT_CSS_Parent *, const GTEXT_CSS_Rule *) {
+  return false;
+}
+// `validity`: 0 for no callbacks, 1 for a rule callback that accepts everything, 2 for one that refuses every rule (the
+// parent it is given is made for each rule, and a walk over the parser's frames to make it was once quadratic in the depth).
+std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std::string(size_t)> make, int validity = 0) {
+  return [kind, make, validity](size_t k) {
     Measured m;
     const std::string in = make(k);
     m.bytes = in.size();
@@ -554,6 +562,9 @@ std::function<Measured(size_t)> css(GTEXT_CSS_Tree_Kind kind, std::function<std:
     o.max_total_errors = (size_t)1 << 30;
     o.max_input_bytes = (size_t)1 << 30;
     o.count_errors_only = true;
+    if (validity) {
+      o.validity.rule = validity == 1 ? css_accept_rule : css_refuse_rule;
+    }
     const GTEXT_CSS_Status st = gtext_css_parse_work(kind, in.data(), in.size(), &o, &m.work);
     if (st != GTEXT_CSS_OK) {
       m.ok = false;
@@ -1109,6 +1120,12 @@ std::vector<Shape> build_shapes() {
       css(sheet, [](size_t k) { return "x{--a:" + repeat("{b ", k) + repeat("}", k) + "}"; }));
   add("css", "CSS rules that look like custom properties, nested", 1500,
       css(sheet, [](size_t k) { return "x{" + repeat("--a:b{", k) + repeat("}", k) + "}"; }));
+  add("css", "CSS nested rules, never closed, a validity callback that accepts", 1500,
+      css(sheet, [](size_t k) { return repeat("x{", k); }, 1));
+  add("css", "CSS nested rules, never closed, a validity callback that refuses", 1500,
+      css(sheet, [](size_t k) { return repeat("x{", k); }, 2));
+  add("css", "CSS nested rules a{a{a{...}}}, a validity callback that refuses", 1500,
+      css(sheet, [](size_t k) { return repeat("{", k) + repeat("}", k); }, 2));
   add("css", "CSS nested at-rules", 1500, css(sheet, [](size_t k) { return repeat("@m{", k) + repeat("}", k); }));
   add("css", "CSS many rules", 4000, css(sheet, [](size_t k) { return repeat("a b>c{d:e;f:g}", k); }));
   add("css", "CSS many declarations in one block", 4000, css(sheet, [](size_t k) { return "a{" + repeat("b:c d;", k) + "}"; }));

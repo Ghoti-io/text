@@ -680,14 +680,11 @@ static GTEXT_CSS_Parent parent_of(parser * p, bool nested) {
   GTEXT_CSS_Parent parent;
   memset(&parent, 0, sizeof parent);
   parent.nested = nested;
-  size_t depth = 0;
-  p->ctx->work += p->rframes.len;
-  for (size_t i = 0; i < p->rframes.len; i++) {
-    if (((rframe *)vec_at(&p->rframes, i))->kind == RF_BLOCK) {
-      depth++;
-    }
-  }
-  parent.depth = depth;
+  /* The depth is the number of rule blocks being read. The frames are one base frame (run_rules pushes it first and
+     it is never popped before the end) and one RF_BLOCK for each block, so it is a count and not a walk: a walk over
+     the frames at every rule was quadratic in the nesting depth, which a validity callback made a cost of the
+     parse (a fuzzer found it: a thousand bytes of `x{x{x{...` with a callback, 70,000 units of work). */
+  parent.depth = p->rframes.len - 1;
   rframe * f = top_frame(p);
   if (f->kind == RF_BLOCK) {
     parent.top_level = false;

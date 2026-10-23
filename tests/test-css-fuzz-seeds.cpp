@@ -124,7 +124,7 @@ TEST_F(CssSyntaxFuzzSeeds, EverySeedHoldsEveryProperty) {
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/css/make-fuzz-seeds.py writes it";
   for (const char * name : {"own-nesting.seed", "own-speculation-oom-3.seed", "own-custom-rule-validity.seed",
            "reproducer-oom-while-taking-values.seed", "reproducer-cdc-after-dashes-ident.seed",
-           "reproducer-cdc-after-dashes-ident-long.seed"}) { // the last is what check-css-fuzz-plants replays
+           "reproducer-cdc-after-dashes-ident-long.seed", "reproducer-work-not-linear-nested-braces-validity.seed"}) { // (check-css-fuzz-plants replays the long CDC one)
     const std::string path = dir + "/" + name;
     ASSERT_TRUE(std::find(files.begin(), files.end(), path) != files.end()) << path << " is not there";
   }
