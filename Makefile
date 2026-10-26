@@ -598,7 +598,8 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-metaschema check-html-tables check-xhtml-test-data check-foreign-tables \
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
-	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects
+	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
+	check-size-shifts
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -987,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-values conformance-css-property check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-values conformance-css-property check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects check-size-shifts check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2156,6 +2157,12 @@ check-css-registry-controls: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh grammars-controls && \
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh depth-controls && \
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh package-controls
+
+check-size-shifts: ## Fail if a source shifts a 32-bit integer by 32 or more places (breaks the 32-bit build), and show the gate refuses a planted shift
+# `(size_t)1 << 40` is undefined where size_t has 32 bits and the 64-bit build accepts it, so only the i686 gate saw it. The check reads src, include
+# and tests with comments removed. In TEST_GATES: it needs only a C compiler. Planted and unplanted shifts are the gate's own controls.
+check-size-shifts:
+	@tools/check-size-shifts.sh
 
 check-css-numbers: ## Fail if a CSS source reaches the host for a number again, and show the gate refuses a planted use
 # CSS numbers are converted by the math library and written from its shortest digits, which read no locale, no rounding

@@ -617,7 +617,7 @@ std::function<Measured(size_t)> css_grammar(const std::string & grammar, std::fu
       return m;
     }
     GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
-    mo.max_match_work = (size_t)1 << 40;
+    mo.max_match_work = SIZE_MAX / 2;  // effectively unbounded; a shift of a 32-bit size_t by 40 is undefined (and breaks the i686 build)
     mo.max_memo_entries = (size_t)1 << 30;
     mo.max_math_depth = 65536;
     mo.max_math_nodes = (size_t)1 << 24;
@@ -843,7 +843,7 @@ std::function<Measured(size_t)> css_property_value(const char * property, std::f
     const std::string in = make(n);
     m.bytes = in.size();
     GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
-    mo.max_match_work = (size_t)1 << 32;
+    mo.max_match_work = SIZE_MAX / 2;  // as above: not a shift past the width of size_t
     mo.max_memo_entries = (size_t)1 << 28;
     GTEXT_CSS_Property_Options po;
     std::memset(&po, 0, sizeof po);
