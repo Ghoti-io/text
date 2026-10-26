@@ -4,7 +4,7 @@
 # The test programs of the XML, HTML, Encoding and markup work under a checker, full strength, as one job
 # on a build host.
 #
-# The job directory is $JOB and holds src/<library> for cutil, unicode, chron, regex and text; PREFIX names an empty
+# The job directory is $JOB and holds src/<library> for cutil, security, chron, unicode, regex, math and text; PREFIX names an empty
 # prefix and RESULTS (default $JOB/results) the directory the results go to:
 #
 #   JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/sanitizers-job.sh asan|tsan|valgrind|plain [REGEX]
@@ -23,8 +23,14 @@ FILTER=${2:-^test(Html|Xml|Xhtml|Encoding|Markup|Quadratic)}
 R=${RESULTS:-$JOB/results}
 mkdir -p "$R/$MODE" "$R/logs"
 cd "$JOB/src" || exit 1
-for l in cutil unicode chron regex; do
-	make -C "$l" -j${JOBS_MAKE:-8} install PREFIX="$PREFIX" > "$R/logs/dep-$l.log" 2>&1 || { echo "dependency $l failed"; tail -30 "$R/logs/dep-$l.log"; exit 1; }
+# tsan: cutil is built with the checker too. Its atomics and mutexes are the synchronization that other code publishes
+# through, and a checker that cannot see inside them reports every such publication as a race.
+tsan_dep=""
+[ "$MODE" = tsan ] && tsan_dep=1
+for l in cutil security chron unicode regex math; do
+	extra_dep=""
+	[ "$l" = cutil ] && [ -n "$tsan_dep" ] && extra_dep="EXTRA_CFLAGS=-fsanitize=thread EXTRA_LDFLAGS=-fsanitize=thread"
+	make -C "$l" -j${JOBS_MAKE:-8} install PREFIX="$PREFIX" $extra_dep > "$R/logs/dep-$l.log" 2>&1 || { echo "dependency $l failed"; tail -30 "$R/logs/dep-$l.log"; exit 1; }
 done
 cd text || exit 1
 for f in tools/*/fetch.sh; do

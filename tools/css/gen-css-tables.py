@@ -110,7 +110,7 @@ def read_normalize():
 
 def read_consolidate():
     path = os.path.join(HERE, "consolidate.tsv")
-    rules = {"ignore-grammar": {}, "enum-from-values": {}}
+    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}}
     if not os.path.exists(path):
         return rules
     with open(path, encoding="utf-8") as handle:
@@ -465,8 +465,25 @@ def build(model):
                 decl = True
             descrows.append({"at": atindex[a], "name": dn, "grammar": wm.merged_grammar(db, des),
                              "initial": db.raw.get("initial"), "kind": kind})
+        for (scope, alias), reason in sorted(consolidate["descriptor-alias"].items()):
+            if scope != n:
+                continue
+            target = reason.split(":", 1)[0].strip()
+            row = next((d for d in descrows[first:] if d["name"] == target), None)
+            if row is None or any(d["name"] == alias for d in descrows[first:]):
+                die("consolidate.tsv: descriptor-alias %s %s -> %s: the target is missing or the alias exists" % (scope, alias, target))
+            descrows.append(dict(row, name=alias))
+            mine = mine + [(n, alias)]
+            consolidate["descriptor-alias"][(scope, alias)] = "used"
+            decl = True
+        if True:
+            tail = sorted(descrows[first:], key=lambda d: d["name"].encode())
+            descrows[first:] = tail
         atrows.append({"name": n, "grammar": grammar, "first": first, "count": len(mine), "decl": decl,
                        "source": (base or sorted(entries, key=wm.Entry.key)[-1]).stem})
+    for k, v in consolidate["descriptor-alias"].items():
+        if v != "used":
+            die("consolidate.tsv: descriptor-alias %s %s names no at-rule (stale)" % k)
     for k in model["descs"]:
         if k[0] not in atindex:
             die("descriptor %s of an at-rule the pin does not define" % (k,))

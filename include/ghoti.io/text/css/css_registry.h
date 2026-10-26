@@ -217,6 +217,7 @@ typedef struct {
   const char * grammar;        ///< The at-rule's own syntax (its prelude or block), or NULL.
   size_t descriptor_count;     ///< Its descriptors, features and nested at-rules.
   bool declarations;           ///< Its block is declarations of descriptors (a `@font-face`; not a `@media`, whose descriptors are features).
+  bool properties;             ///< Its block also takes declarations of properties (`@page`: its margin and page properties; `@function`: custom properties).
 } GTEXT_CSS_At_Rule_Info;
 
 /** @brief What the pin says of a descriptor. */
@@ -279,6 +280,10 @@ typedef struct {
   size_t max_initial_bytes;
   /** Most longhands of one shorthand. Default 1024; at most 65,536. One more is GTEXT_CSS_E_LIMIT_REGISTRY. */
   size_t max_longhands;
+  /** Most nodes the compiled grammars of all the registrations may have together. A compiled grammar carries the grammars it names, so
+   *  properties that each name the one before hold the square of the chain's length; this bounds the memory of that (about 80 bytes a
+   *  node). Default 2,097,152; at most 2^28. A registration past it is GTEXT_CSS_E_LIMIT_REGISTRY, with a `detail` that says so. */
+  size_t max_grammar_nodes;
 } GTEXT_CSS_Registry_Options;
 
 /** @brief The defaults, spelled out. */
@@ -293,6 +298,7 @@ typedef struct {
   const char * message;      ///< A static description; never NULL after a call.
   char name[96];             ///< The name concerned (a property, a longhand, a reference), cut to fit; empty if none.
   GTEXT_CSS_Property_Id id;  ///< A successful registration: the property made. A GTEXT_CSS_E_EXISTS: the property that is already there.
+  const char * detail;       ///< A static sentence saying which rule a GTEXT_CSS_E_INVALID broke (the name, the initial value ...), or NULL.
   GTEXT_CSS_Grammar_Result grammar; ///< A grammar that failed to parse or link: where and what (name of the missing type, ...).
 } GTEXT_CSS_Registry_Result;
 
@@ -403,9 +409,11 @@ GTEXT_API GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Regis
 /**
  * @brief Freeze a builder into a registry.
  *
- * Every registered grammar is compiled now (so that a redefinition made after a grammar that names it cannot leave that
- * grammar unable to link unnoticed). On success the builder is consumed and must not be used or freed; on failure it is
- * untouched.
+ * Every registered grammar is compiled now, and so is every property of the pin when anything has been overridden (so that a
+ * redefinition made after a grammar that names it, or an override of a property that the pin's own grammars name, cannot leave a
+ * grammar unable to link unnoticed). On success the builder is consumed and must not be used or freed. On failure the builder
+ * is still a builder: it keeps every registration, nothing the attempt compiled is remembered (a later registration is taken into
+ * account by the next freeze), and the result names the property to blame, with `detail` saying which kind of failure it was.
  *
  * @param builder The builder. Not NULL.
  * @param out Receives the registry; written only on success. Not NULL.
@@ -486,8 +494,8 @@ GTEXT_API const char * gtext_css_registry_style_name(const GTEXT_CSS_Registry * 
 /** @brief How many members the logical property group of this name has; 0 for a name that is not one. */
 GTEXT_API size_t gtext_css_registry_logical_group_size(const char * group, size_t length);
 
-/** @brief The `index`th member (the pin's, in the sorted order of their names) of a logical group; 0 for an index it does not have. */
-GTEXT_API GTEXT_CSS_Property_Id gtext_css_registry_logical_group_member(const char * group, size_t length, size_t index);
+/** @brief The `index`th member (the pin's, in the sorted order of their names, or the caller's override of one) of a logical group; 0 for an index it does not have. */
+GTEXT_API GTEXT_CSS_Property_Id gtext_css_registry_logical_group_member(const GTEXT_CSS_Registry * registry, const char * group, size_t length, size_t index);
 
 /** @brief The shorthand hook and user pointer of a shorthand registered with one; false for any other property. */
 GTEXT_API bool gtext_css_registry_shorthand_hook(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id id,

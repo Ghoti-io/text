@@ -5,7 +5,7 @@
 # tracks, so a fresh clone's state): the dependencies are built and installed into $PREFIX, every tools/*/fetch.sh
 # runs (network), the pins are checked (tools/consumer/check-pins.sh), and `make test` runs, gates included.
 #
-# The job directory is $JOB and holds src/<library> for cutil, unicode, chron, regex and text; PREFIX names an empty
+# The job directory is $JOB and holds src/<library> for cutil, security, chron, unicode, regex, math and text; PREFIX names an empty
 # prefix and RESULTS (default $JOB/results) the directory the results go to:
 #
 #   JOB=DIR PREFIX=DIR/prefix sh DIR/src/text/tools/soak/fresh-test-job.sh
@@ -13,7 +13,7 @@ set -u
 R=${RESULTS:-$JOB/results}
 mkdir -p "$R"
 cd "$JOB/src" || exit 1
-for l in cutil unicode chron regex; do
+for l in cutil security chron unicode regex math; do
 	make -C "$l" -j8 install PREFIX="$PREFIX" > "$R/dep-$l.log" 2>&1 || { echo "dependency $l failed"; tail -20 "$R/dep-$l.log"; exit 1; }
 done
 cd text || exit 1

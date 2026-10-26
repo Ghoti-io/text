@@ -29,6 +29,8 @@
  *
  *   P name state missing parses serializes witness initial-state initial-text
  *   D at-rule name state missing parses serializes witness initial-state initial-text
+ *   W property NAME | descriptor AT NAME  witnesses matched round-trip-equal   (how many distinct witnesses were derived, how many of them
+ *     parse, and how many of those parse to the same typed values when written and read again)
  *   T index name scope state missing
  *
  * The witness is derived from the compiled grammar (the engine's own node graph): a value is written for the first
@@ -390,9 +392,36 @@ typedef struct {
   unsigned witnesses, matched, roundtrip_ok;
 } wstats;
 
+/** Whether two typed values are the same value: the same kind, keyword, number, unit, text and parts. Where they came from (spans,
+ * component ids, the grammar node that matched) is not part of the value. A math function or a color is compared by its serialization. */
+static int values_equal(const GTEXT_CSS_Value * a, const GTEXT_CSS_Value * b) {
+  if (!a || !b) {
+    return a == b;
+  }
+  if (a->kind != b->kind || a->atom != b->atom || a->unit != b->unit || a->separator != b->separator || a->flags != b->flags ||
+      a->child_count != b->child_count || a->range_start != b->range_start || a->range_end != b->range_end) {
+    return 0;
+  }
+  if (!(a->number == b->number || (a->number != a->number && b->number != b->number)) || !(a->number2 == b->number2 || (a->number2 != a->number2 && b->number2 != b->number2))) {
+    return 0;
+  }
+  if (a->text.length != b->text.length || (a->text.length && memcmp(a->text.data, b->text.data, a->text.length) != 0)) {
+    return 0;
+  }
+  if ((a->math != NULL) != (b->math != NULL) || (a->color != NULL) != (b->color != NULL)) {
+    return 0;
+  }
+  for (size_t i = 0; i < a->child_count; i++) {
+    if (!values_equal(&a->children[i], &b->children[i])) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 /** Parse "name: value" as a declaration and the value as a property (or a descriptor of at_rule). */
 static GTEXT_CSS_Status try_value(const GTEXT_CSS_Registry * reg, const char * name, const char * at_rule, const char * value,
-    GTEXT_CSS_Property_Outcome * outcome, char ** ser, size_t * nvalues) {
+    GTEXT_CSS_Property_Outcome * outcome, char ** ser, size_t * nvalues, GTEXT_CSS_Value_Set ** keep) {
   size_t nl = strlen(name), vl = strlen(value);
   char * decl = malloc(nl + vl + 8);
   if (!decl) {
@@ -420,11 +449,25 @@ static GTEXT_CSS_Status try_value(const GTEXT_CSS_Registry * reg, const char * n
   }
   st = gtext_css_parse_property_declaration(reg, &tree->declarations[0], &po, &pv);
   if (st == GTEXT_CSS_OK) {
+    /* the text entry point must agree with the declaration route (unicode-range reads its own tokens) */
+    GTEXT_CSS_Property_Value tv;
+    const GTEXT_CSS_Status ts = gtext_css_parse_property_text(reg, name, nl, value, vl, &po, &tv);
+    if (ts != GTEXT_CSS_OK || tv.outcome != pv.outcome) {
+      if (pv.outcome == GTEXT_CSS_PROP_RESULT_VALID || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING || pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
+        fprintf(stderr, "text route: %s: '%s' declaration route %d, text route %d (status %d)\n", name, value, (int)pv.outcome, (int)tv.outcome, (int)ts);
+        pv.outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+      }
+    }
+    gtext_css_property_value_free(&tv);
     *outcome = pv.outcome;
     if (pv.outcome == GTEXT_CSS_PROP_RESULT_VALID || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING || pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
       size_t n = 0;
       st = gtext_css_property_value_serialize_buffer(&pv, NULL, ser, &n);
       *nvalues = pv.set ? gtext_css_value_set_count(pv.set) : 0;
+      if (keep) {
+        *keep = pv.set; /* the caller compares the typed values */
+        pv.set = NULL;
+      }
     }
   }
   gtext_css_property_value_free(&pv);
@@ -433,8 +476,9 @@ static GTEXT_CSS_Status try_value(const GTEXT_CSS_Registry * reg, const char * n
 }
 
 static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Compiled * c, const char * name, const char * at_rule,
-    int * parses, int * serializes, char * first, size_t first_cap) {
+    int * parses, int * serializes, char * first, size_t first_cap, wstats * stats) {
   *parses = 0;
+  memset(stats, 0, sizeof *stats);
   *serializes = 0;
   first[0] = '\0';
   witness w;
@@ -474,20 +518,29 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
     GTEXT_CSS_Property_Outcome oc;
     char * s1 = NULL;
     size_t nv1 = 0;
-    GTEXT_CSS_Status st = try_value(reg, name, at_rule, w.out.data, &oc, &s1, &nv1);
+    GTEXT_CSS_Value_Set * set1 = NULL;
+    stats->witnesses++;
+    GTEXT_CSS_Status st = try_value(reg, name, at_rule, w.out.data, &oc, &s1, &nv1, &set1);
     if (st != GTEXT_CSS_OK || (oc != GTEXT_CSS_PROP_RESULT_VALID && oc != GTEXT_CSS_PROP_RESULT_PENDING && oc != GTEXT_CSS_PROP_RESULT_WIDE)) {
+      fprintf(stderr, "witness not matched: %s%s%s: '%s'\n", at_rule ? at_rule : "", at_rule ? " " : "", name, w.out.data);
       free(s1);
+      gtext_css_value_set_free(set1);
       continue;
     }
     matched++;
+    stats->matched++;
     if (!first[0]) {
       snprintf(first, first_cap, "%s", w.out.data);
     }
     char * s2 = NULL;
     size_t nv2 = 0;
-    st = try_value(reg, name, at_rule, s1, &oc, &s2, &nv2);
-    if (st == GTEXT_CSS_OK && (oc == GTEXT_CSS_PROP_RESULT_VALID || oc == GTEXT_CSS_PROP_RESULT_WIDE || oc == GTEXT_CSS_PROP_RESULT_PENDING) && s2 && strcmp(s1, s2) == 0 && nv1 == nv2) {
+    GTEXT_CSS_Value_Set * set2 = NULL;
+    st = try_value(reg, name, at_rule, s1, &oc, &s2, &nv2, &set2);
+    /* the typed values are equal (the acceptance criterion), not only their text */
+    if (st == GTEXT_CSS_OK && (oc == GTEXT_CSS_PROP_RESULT_VALID || oc == GTEXT_CSS_PROP_RESULT_WIDE || oc == GTEXT_CSS_PROP_RESULT_PENDING) && s2 && strcmp(s1, s2) == 0 && nv1 == nv2 &&
+        values_equal(set1 ? gtext_css_value_set_root(set1) : NULL, set2 ? gtext_css_value_set_root(set2) : NULL)) {
       good++;
+      stats->roundtrip_ok++;
     }
     else {
       fprintf(stderr, "round trip: %s: '%s' -> '%s' (%zu values) -> '%s' (%zu values, status %d outcome %d)\n", name, w.out.data, s1,
@@ -495,6 +548,8 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
     }
     free(s1);
     free(s2);
+    gtext_css_value_set_free(set1);
+    gtext_css_value_set_free(set2);
   }
   for (size_t k = 0; k < nseen; k++) {
     free(seen[k]);
@@ -525,7 +580,7 @@ static const char * initial_state(const GTEXT_CSS_Registry * reg, const char * n
   GTEXT_CSS_Property_Outcome oc;
   char * s = NULL;
   size_t nv = 0;
-  const GTEXT_CSS_Status st = try_value(reg, name, at_rule, text, &oc, &s, &nv);
+  const GTEXT_CSS_Status st = try_value(reg, name, at_rule, text, &oc, &s, &nv, NULL);
   free(s);
   if (st == GTEXT_CSS_E_UNSUPPORTED) {
     return "unsupported";
@@ -690,12 +745,14 @@ int main(int argc, char ** argv) {
       return 2;
     }
     int parses = 0, serializes = 0;
+    wstats ws;
+    memset(&ws, 0, sizeof ws);
     char witness_text[512] = "";
     if (witnesses && state == GTEXT_CSS_GRAMMAR_OK && !(info.flags & GTEXT_CSS_PROP_CUSTOM)) {
-      measure_witnesses(reg, compiled, info.name, NULL, &parses, &serializes, witness_text, sizeof witness_text);
+      measure_witnesses(reg, compiled, info.name, NULL, &parses, &serializes, witness_text, sizeof witness_text, &ws);
     }
     else if (witnesses && state == GTEXT_CSS_GRAMMAR_OK) {
-      measure_witnesses(reg, compiled, "--zz-custom", NULL, &parses, &serializes, witness_text, sizeof witness_text);
+      measure_witnesses(reg, compiled, "--zz-custom", NULL, &parses, &serializes, witness_text, sizeof witness_text, &ws);
     }
     const char * init = (info.flags & GTEXT_CSS_PROP_ALIAS) ? "alias" : initial_state(reg, info.name, NULL, tinfo.initial);
     if (state != GTEXT_CSS_GRAMMAR_OK) {
@@ -713,6 +770,9 @@ int main(int argc, char ** argv) {
     printf("\t%s\t", init);
     tabs_out((info.flags & GTEXT_CSS_PROP_ALIAS) ? "" : tinfo.initial);
     printf("\t%u\n", (unsigned)info.flags);
+    if (ws.witnesses) {
+      printf("W\tproperty %s\t%u\t%u\t%u\n", info.name, ws.witnesses, ws.matched, ws.roundtrip_ok);
+    }
     if (state == GTEXT_CSS_GRAMMAR_NONE || (state == GTEXT_CSS_GRAMMAR_FAILED && gr.name[0] == '\0')) {
       printf("G\tproperty %s\t", info.name);
       tabs_out(tinfo.grammar);
@@ -731,12 +791,14 @@ int main(int argc, char ** argv) {
       return 2;
     }
     int parses = 0, serializes = 0;
+    wstats ws;
+    memset(&ws, 0, sizeof ws);
     char witness_text[512] = "";
     if (witnesses && state == GTEXT_CSS_GRAMMAR_OK && info.kind != GTEXT_CSS_DESC_AT_RULE) {
       const GTEXT_CSS_Compiled * compiled;
       GTEXT_CSS_Grammar_State s2;
       css_registry_descriptor_compiled(reg, d, &s2, &compiled, NULL);
-      measure_witnesses(reg, compiled, info.name, ai.name, &parses, &serializes, witness_text, sizeof witness_text);
+      measure_witnesses(reg, compiled, info.name, ai.name, &parses, &serializes, witness_text, sizeof witness_text, &ws);
     }
     const char * init = "none";
     if (info.kind == GTEXT_CSS_DESC_AT_RULE) {
@@ -755,6 +817,9 @@ int main(int argc, char ** argv) {
     printf("\t%s\t", init);
     tabs_out(info.initial);
     printf("\t%u\n", (unsigned)info.kind);
+    if (ws.witnesses) {
+      printf("W\tdescriptor %s %s\t%u\t%u\t%u\n", ai.name, info.name, ws.witnesses, ws.matched, ws.roundtrip_ok);
+    }
     if (state == GTEXT_CSS_GRAMMAR_FAILED && gr.name[0] == '\0') {
       printf("G\tdescriptor %s %s\t", ai.name, info.name);
       tabs_out(info.grammar);

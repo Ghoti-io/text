@@ -19,6 +19,7 @@ descriptor has no computed value (``-``).
                                                       1 that the ledger still has as 0 (an out-of-date ledger)
 """
 
+import os
 import sys
 
 HEADER = """\
@@ -80,6 +81,10 @@ def main():
     if "--baseline" in sys.argv:
         baseline_path = sys.argv[sys.argv.index("--baseline") + 1]
         args = [a for a in args if a != baseline_path]
+    floor_path = None
+    if "--floor" in sys.argv:
+        floor_path = sys.argv[sys.argv.index("--floor") + 1]
+        args = [a for a in args if a != floor_path]
     report, ledger_path = args[0], args[1]
     measured = load_report(report)
     # aliases: copy the target's measurement (the report's property lines for an alias carry no result)
@@ -142,7 +147,43 @@ def main():
                     bad.append("REGRESSION: %s %s: %s was 1 in the baseline and is %s" % (key[0], key[1], col, now[i]))
     n = len(ledger)
     cols = [sum(1 for r in ledger.values() if r[i] == "1") for i in range(4)]
+    if floor_path:
+        # The floor is a tracked count that only goes up. It holds where the baseline cannot: a ledger edited down and committed
+        # passes a comparison with the commit before it only once, and the floor is what the next commit is held to.
+        try:
+            with open(floor_path, encoding="utf-8") as handle:
+                floor = [int(x) for x in handle.read().split("#")[0].split()]
+        except (FileNotFoundError, ValueError):
+            floor = [0, 0, 0, 0] if "--write-floor" in flags and not os.path.exists(floor_path) else None
+        if floor is None or len(floor) != 4:
+            bad.append("FLOOR: %s is missing or is not four counts (parses serializes computes wpt)" % floor_path)
+        else:
+            for name, have, want in zip(("parses", "serializes", "computes", "wpt"), cols, floor):
+                if have < want:
+                    bad.append("BELOW THE FLOOR: %d rows have %s and %s says %d" % (have, name, floor_path, want))
+                elif have > want and "--write-floor" not in flags:
+                    bad.append("FLOOR IS LOW: %d rows have %s and %s says %d (run gen-depth.py --write-floor)" % (have, name, floor_path, want))
+            if "--write-floor" in flags:
+                with open(floor_path, "w", encoding="utf-8", newline="\n") as handle:
+                    handle.write("%d %d %d %d  # parses serializes computes wpt: rows of depth.tsv that have each; only goes up\n" % tuple(cols))
+                bad = [b for b in bad if not b.startswith("FLOOR IS LOW")]
     print("depth: %d rows; parses %d, serializes %d, computes %d, wpt %d" % ((n,) + tuple(cols)))
+    # `parses` is that some witness matched; how many did is reported here, and a witness that matched must read back as the same typed
+    # values (the acceptance criterion), which `serializes` already holds.
+    tot = [0, 0, 0]
+    partial = 0
+    with open(report, encoding="utf-8") as handle:
+        for line in handle:
+            c = line.rstrip("\n").split("\t")
+            if c[0] == "W" and len(c) >= 5:
+                w, mt, rt = int(c[2]), int(c[3]), int(c[4])
+                tot[0] += w
+                tot[1] += mt
+                tot[2] += rt
+                partial += 1 if mt < w else 0
+    if tot[0]:
+        print("depth: witnesses %d, parsed %d (%.1f%%), the same typed values after a round trip %d; %d rows have a witness that does not parse"
+              % (tot[0], tot[1], 100.0 * tot[1] / tot[0], tot[2], partial))
     for b in bad[:80]:
         print("  " + b)
     return 1 if bad else 0

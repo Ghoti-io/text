@@ -545,6 +545,66 @@ TEST(CssGrammarEdges, ACommaNextToAnOptionalTermIsOmittedWhenTheTermIs) {
   }, &d);
 }
 
+TEST(CssGrammarEdges, TheNullabilityOfAJuxtapositionWithOmissibleCommasIsDecidedBeforeTheRewrite) {
+  // A group of terms that can all be omitted may itself be omitted; a type that is such a group is nullable, and a comma next to it is
+  // omissible in its turn.
+  Defs d;
+  d.types["g"] = "a? , b?";
+  d.types["h"] = "[ a? , b? ]";
+  d.types["s"] = "x";
+  check_rows({
+      {"<g> , y", "y", "kw:y"},
+      {"<g> , y", "a, y", "list/space(list/space(kw:a) tok:, kw:y)"},
+      {"<g> , y", "a, b, y", "list/space(list/space(kw:a list/space(tok:, kw:b)) tok:, kw:y)"},
+      {"<g> , y", ", y", "no match"},
+      {"<g> , y", "b, y", "list/space(kw:b tok:, kw:y)"},
+      {"y , <g>", "y", "list/space(kw:y)"},
+      {"y , <g>", "y, a", "list/space(kw:y list/space(tok:, list/space(kw:a)))"},
+      {"<h> , y", "y", "kw:y"},
+      {"<s> , y", "x, y", "list/comma(kw:x kw:y)"},
+      {"<s> , y", "y", "no match"},
+      // under the repetitions
+      {"[ a? , b? ]* c", "c", "list/space(kw:c)"},
+      {"[ a? , b? ]+ c", "c", "list/space(kw:c)"},
+      {"[ a? , b? ]# c", "c", "list/space(kw:c)"},
+      {"[ a? , b? ]{2} c", "c", "list/space(kw:c)"},
+      {"[ a? , b? ]{2} c", "a c", "list/space(list/space(list/space(kw:a)) kw:c)"},
+      {"[ a? , b? ]? , c", "c", "kw:c"},
+      {"[ a? , b? ]? , c", "a, c", "list/space(list/space(kw:a) tok:, kw:c)"},
+  }, &d);
+}
+
+TEST(CssGrammarEdges, CommasThatAreNextToEachOtherOrAtAnEndStayItemsAsWritten) {
+  check_rows({
+      {"x , , y", "x, , y", "list/space(kw:x tok:, tok:, kw:y)"},
+      {"x , , y", "x, y", "no match"},
+      {"x , , y", "x y", "no match"},
+      {", x y", ", x y", "list/space(tok:, kw:x kw:y)"},
+      {"x y ,", "x y,", "list/space(kw:x kw:y tok:,)"},
+  });
+}
+
+TEST(CssGrammarEdges, ALeftRecursionThatOnlyTheRewrittenFormShowsIsFound) {
+  // `y = a? , [ <y> ]?`: with `a` omitted the comma is omitted and `y` begins with `y`
+  Defs d;
+  d.types["y"] = "a? , [ <y> ]?";
+  Grammar g;
+  compile_into(g, "<y>", &d);
+  EXPECT_EQ(g.status, GTEXT_CSS_E_LEFT_RECURSION);
+  EXPECT_NE(std::string(g.result.name).find("y"), std::string::npos);
+  Defs ok;
+  ok.types["y"] = "a? , [ b <y> ]?";
+  Grammar h;
+  compile_into(h, "<y>", &ok);
+  EXPECT_TRUE(h.ok()) << gtext_css_status_string(h.status);
+  Defs two;
+  two.types["p"] = "a? , <q>?";
+  two.types["q"] = "<p>";
+  Grammar k;
+  compile_into(k, "<p>", &two);
+  EXPECT_EQ(k.status, GTEXT_CSS_E_LEFT_RECURSION);
+}
+
 TEST(CssGrammarEdges, OmissibleCommasKeepTheLimitsAndTheLinkLinear) {
   // sixteen segments are worked out; seventeen are left as literals (the nodes made grow with the square of the segments)
   std::string g16 = "a0?";

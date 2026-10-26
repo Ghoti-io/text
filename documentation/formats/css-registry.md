@@ -151,12 +151,24 @@ and returns it).
 `GTEXT_CSS_E_EXISTS` unless the definition says `override`, and then
 `gtext_css_registry_override_at()` reports it.** The grammar of an override may name its own
 property (`<'width'> | foo`); that is the definition it replaces, so that an override can extend
-one. Registration is validated: the name, the grammar (parsed and linked against everything the
-registry knows, native types and the pin's and the library's function types), and the initial
-value (it must match the grammar, and be a concrete value: not a CSS-wide keyword, not a
-`var()`). A failure leaves the builder as it was. Freezing compiles every registered grammar
-again, so that an override made after a grammar that names it cannot leave that grammar
-unable to link unnoticed, and a cycle through an override is refused there and named.
+one, and a second override of the same name extends the first. (The own name is replaced by the
+definition it stands for when the override is registered; a generated property that names the
+name, as `margin` names `margin-top` and `flex-basis` names `width`, gets the override.) A
+registered shorthand may have shorthands among its longhands, and expands to what they expand to.
+Registration is validated: the name (not a CSS-wide keyword, not a `--` name; the result's
+`detail` says which), the grammar (parsed and linked against everything the registry knows,
+native types and the pin's and the library's function types), and the initial value (it must
+match the grammar, and be a concrete value: not a CSS-wide keyword, not a `var()`; `detail` says
+which). An alias may not name a custom property, and a shorthand may not name a custom property,
+the property it replaces, or one longhand twice. A failure leaves the builder as it was.
+
+Freezing compiles every registered grammar, and, once anything has been overridden, every
+property of the pin, so that an override cannot leave a grammar that names it unable to link
+unnoticed. A cycle through an override, or any property that no longer links, is refused there
+and named: the result names the registered property or the override to blame and `detail` says
+which kind of failure it was. **A failed freeze leaves a builder** that keeps every registration;
+what the attempt compiled is forgotten (a later registration is taken into account by the next
+freeze), and a freeze that failed for memory succeeds when asked again.
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -228,6 +240,18 @@ initial value (65,536) and the longhands of a shorthand (1,024), each its own st
 grammar engine's limits. A name is looked up in a hash table, so many registrations cost no more
 each than few (the quadratic-nesting suite holds the counter of the registry to a ratio).
 
+The cost that is not linear: a registered property whose grammar names the property registered
+before it, in a chain, compiles each link with the whole chain below it, because a compiled grammar
+carries what it names. That is quadratic in the depth of the chain, in time and in memory, by
+construction, and `max_grammar_nodes` (default 2,097,152 nodes in all, about 80 bytes each) bounds it
+with its own refusal (`GTEXT_CSS_E_LIMIT_REGISTRY`, `detail` naming the option). Measured on a
+32-thread x86-64 build host: a chain of 400 costs 40 ms and 26 MB, 1,000 costs 0.3 s and 132 MB, and
+the budget stops a chain at about 1,150 links at under 200 MB. (Without a budget the chain went on to
+about 3,900 links, 10 s and 1.9 GB.) The link work is charged to the registry's work counter, so the
+quadratic-nesting suite sees it grow with the square of the chain and not faster. A chain of
+overrides of one name, which is what a caller who adjusts a property repeatedly writes, is linear
+(1,600 overrides: about 40 ms).
+
 ## Parsing a declaration
 
 `gtext_css_parse_property()` (component values), `gtext_css_parse_property_text()` (text) and
@@ -239,9 +263,14 @@ rules, in this order:
 2. **CSS-wide keywords** `initial inherit unset revert revert-layer revert-rule` (the six the
    pin defines) are valid *alone* for every property, shorthands and custom properties
    included: outcome `WIDE`, with the keyword.
-3. `all` accepts nothing else (decided: not even a substitution).
+3. `all` accepts nothing else (CSS Cascade 4: "It only accepts the CSS-wide keywords", so not even
+   a substitution).
 4. A value with `var()`, `env()`, `attr()` or another arbitrary substitution function anywhere in
-   it is **pending**: valid now, whatever the property's grammar, meaningful after substitution.
+   it is **pending**: valid now, whatever the property's grammar, meaningful after substitution,
+   provided each of those functions is itself valid: CSS Values 5 says a value is assumed valid
+   at parse time when "all of those functions are themselves syntactically valid according to
+   their argument grammars", and `var()`, `env()` and `attr()` take a first argument, so
+   `width: var()` and `--x: var()` are `INVALID`.
 5. Otherwise the value must match the property's grammar; the result is the typed value in the
    grammar's slots (`VALID`) or `INVALID`. A shorthand's typed value follows the shorthand's
    grammar; expansion into longhands is the cascade's.
@@ -253,21 +282,39 @@ decided either way and returns `GTEXT_CSS_E_UNSUPPORTED` with the property named
 `gtext_css_registry_property_state()` says why. A limit of the match (`GTEXT_CSS_E_LIMIT_WORK`) is
 its own status: the answer is not known.
 
+How long a hostile value takes before that limit is measured, not guessed. On a 32-thread x86-64 build
+host a comma list of a million `1px,` items is read in 0.45 s, and a `font-family` of 100,000 names is
+matched in 1.6 s (6.3 million units of work); a `font-family` of 300,000 or a million names runs into the
+default `max_match_work` and returns `GTEXT_CSS_E_LIMIT_WORK` after about 11.5 s. The work is charged for
+every item the match visits, so a caller that takes untrusted CSS and wants an answer sooner sets
+`GTEXT_CSS_Property_Options::match` with a lower `max_match_work` (the time to the limit is proportional to it); a
+limit reached is never an answer.
+
 **Quirks.** With the option, a unitless number is a `px` length in the 33 properties of CSS
 Values 4, Appendix C (`GTEXT_CSS_PROP_QUIRK_UNITLESS`, listed with the sentence in
 `tools/css/QUIRKS_UNITLESS.txt`), and not in the properties that include or reference them (the
-`background` shorthand) nor inside `calc()`.
+`background` shorthand) nor inside `calc()` or any other function (`fit-content(10)` is not a length;
+`clip: rect(...)`, which the engine cannot decide, is the one function that Appendix C names).
 
 **Descriptors.** With `GTEXT_CSS_Property_Options::at_rule` (`@font-face`) the name is a
 descriptor of that at-rule. A descriptor takes no CSS-wide keyword and no substitution (it is not
 a property of an element); a media or container feature is a descriptor of `@media` or
-`@container`. A nested at-rule (`@swash`) is syntax, not a declaration.
+`@container`. A nested at-rule (`@swash`) is syntax, not a declaration. An at-rule that takes
+properties as well (`@page`, `@function`: `GTEXT_CSS_At_Rule_Info::properties`) tries the
+descriptors first and then the properties, so `@page { size: a4; margin: 1in }` has both. The
+legacy name of a descriptor is the descriptor (`font-stretch` of `@font-face` is `font-width`,
+Fonts 4: "a font-stretch descriptor exists which is a legacy name alias and functions in the
+identical way to the font-width descriptor"). `parse_property_text` reads the `unicode-range`
+descriptor through the declaration route, because only there does the tokenizer make its tokens;
+a range whose start is after its end, or past U+10FFFF, is invalid.
 
 ## Validity callbacks
 
 `gtext_css_property_validity()` fills the `GTEXT_CSS_Validity` of the syntax layer so that a parse
 drops the declarations CSS says it must, and reads them again as a rule where CSS Nesting says to.
-Inside an at-rule that has declaration descriptors (`@font-face`) the names are its descriptors.
+Inside an at-rule that has declaration descriptors (`@font-face`) the names are its descriptors; in
+one that also takes properties (`@page`, `@function`) a name that is no descriptor is judged as a
+property. An at-rule nested in a style rule (`a { @media screen { ... } }`) holds properties.
 A declaration of a property the library cannot decide is kept and counted
 (`undecided`), a limit that kept a declaration from being judged is in `status`.
 
@@ -328,12 +375,23 @@ the pin that could not be made (memory, or its text) is never answered by a late
 compiled grammar, and the initial value, is accepted), **serializes** (it writes, and the text parses and
 writes the same again), **computes** (filled by the computed-value layer) and **wpt** (filled by the value
 vector scoring); `make check-css-depth` refuses a column that went from 1 to 0 against the measurement,
-against the committed ledger, and a property missing from the ledger. At this commit 888 of the 932 rows
-parse and serialize; the rest are the gaps below.
+against the commit before it (or `CSS_DEPTH_BASE`, a git ref) and a tracked floor (`tools/css/DEPTH_FLOOR`,
+which only goes up), and a property missing from the ledger. At this commit 889 of the 933 rows parse
+and serialize; the rest are the gaps below. `parses` means some witness matched; the gate also reports how
+many did and checks that each reads back as the same typed values, not only the same text: 3,745 of 3,756
+witnesses parse and all 3,745 do. The 11 that do not (in `background`, `font-palette`, `initial-letter-align`,
+`list-style-type` and `offset`) are witnesses the generator wrote with an empty required part, which are
+not valid values.
 
 `make check-css-grammars` compiles every grammar of the pin and fails on one that neither compiles
 nor is listed, with its reason, in `tools/css/UNRESOLVED_REFERENCES` (stale entries fail too, and a
-floor holds). `make check-css-registry-controls` shows all three gates fail, and `make
+floor holds). `make check-css-package` compares the names and syntax of the tables with a second reading
+of the same data, the `@webref/css` package at a pinned version and integrity (`tools/css/WEBREF_PACKAGE`,
+fetched by `tools/css/fetch.sh`), and fails on a difference that is not classified in
+`tools/css/WEBREF_PACKAGE_DIVERGENCES`; it fails, and does not skip, when the package is not there. The 42
+classified differences are five texts that differ and 37 types nested inside another type's or a descriptor's
+entry of the pin (`inset()` in `<basic-shape>`, `<alpha-value>` in `<color>`), which the generator does not
+read yet. `make check-css-registry-controls` shows the gates fail, and `make
 check-css-grammar-plants` plants a defect in the library for each requirement.
 
 ## What the pin does not say

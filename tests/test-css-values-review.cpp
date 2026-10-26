@@ -589,8 +589,10 @@ TEST(CssGradientView, ASegmentWithNeitherAColorNorAPositionIsNoStopAndAStrayKeyw
 
 namespace {
 
-GTEXT_CSS_Transform_Function transform_of(const std::string & text, bool * valid_out = nullptr) {
-  One o;
+// `keep`, when given, holds the match the function was read from, so that the sources its arguments point at outlive the call
+GTEXT_CSS_Transform_Function transform_of(const std::string & text, bool * valid_out = nullptr, One * keep = nullptr) {
+  One local;
+  One & o = keep ? *keep : local;
   GTEXT_CSS_Transform_Function f;
   std::memset(&f, 0x5a, sizeof f);
   const GTEXT_CSS_Value * v = first_fn(value_of(o, "<transform-list>", text));
@@ -627,7 +629,8 @@ TEST(CssTransformView, ALengthKeepsTheUnitOfTheValueItCameTo) {
 
 TEST(CssTransformView, ACalculationThatNeedsAnEnvironmentIsMathWithItsSourceAndNoGarbageValue) {
   bool valid = false;
-  GTEXT_CSS_Transform_Function f = transform_of("translate(calc(1em + 1px), calc(10% + 1px))", &valid);
+  One keep;  // the arguments' `source` points into it
+  GTEXT_CSS_Transform_Function f = transform_of("translate(calc(1em + 1px), calc(10% + 1px))", &valid, &keep);
   ASSERT_TRUE(valid);
   ASSERT_EQ(f.arg_count, 2u);
   for (size_t i = 0; i < 2; i++) {

@@ -31,6 +31,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
+#include <map>
 #include <set>
 #include <string>
 #include <thread>
@@ -203,13 +205,13 @@ TEST(CssRegistryTables, LogicalGroups) {
   EXPECT_GE(n, 8u) << "margin-top/-right/-bottom/-left and the four logical ones";
   std::set<GTEXT_CSS_Property_Id> members;
   for (size_t k = 0; k < n; k++) {
-    members.insert(gtext_css_registry_logical_group_member("margin", 6, k));
+    members.insert(gtext_css_registry_logical_group_member(r, "margin", 6, k));
   }
   EXPECT_EQ(members.size(), n);
   EXPECT_TRUE(members.count(find(r, "margin-top")));
   EXPECT_TRUE(members.count(find(r, "margin-block-start")));
   EXPECT_FALSE(members.count(find(r, "padding-top")));
-  EXPECT_EQ(gtext_css_registry_logical_group_member("margin", 6, n), 0u);
+  EXPECT_EQ(gtext_css_registry_logical_group_member(r, "margin", 6, n), 0u);
   EXPECT_EQ(gtext_css_registry_logical_group_size("nosuch", 6), 0u);
   EXPECT_EQ(gtext_css_registry_logical_group_size(nullptr, 6), 0u);
 }
@@ -236,6 +238,15 @@ TEST(CssRegistryConsolidation, NewValuesExtendTheBaseInSeriesOrder) {
   EXPECT_NE(display.find("<display-box> | <display-legacy> | grid-lanes | inline-grid-lanes | <display-outside> || [ <display-inside> | math ]"),
       std::string::npos) << display;
   EXPECT_NE(str(info(r, "justify-self").grammar).find(" | anchor-center"), std::string::npos);
+  // the order is the series order and is not reversed: the base, then css-grid-3's, then mathml-core's, each after the one before
+  const size_t lanes = display.find(" | grid-lanes | inline-grid-lanes");
+  const size_t math = display.find(" | <display-outside> || [ <display-inside> | math ]");
+  ASSERT_NE(lanes, std::string::npos) << display;
+  ASSERT_NE(math, std::string::npos) << display;
+  EXPECT_LT(lanes, math) << display;
+  const std::string tail = " | <display-outside> || [ <display-inside> | math ]";
+  ASSERT_GE(display.size(), tail.size());
+  EXPECT_EQ(display.compare(display.size() - tail.size(), tail.size(), tail), 0) << "mathml-core's alternative is the last: " << display;
 }
 
 TEST(CssRegistryConsolidation, AFieldTheBaseLacksIsAbsentAndNotTakenFromAnotherLevel) {
@@ -284,6 +295,10 @@ TEST(CssRegistryConsolidation, AShorthandWhoseInheritanceThePinLeavesToItsLongha
   EXPECT_EQ(info(r, "text-emphasis").inherited, GTEXT_CSS_INHERIT_YES);
   EXPECT_EQ(info(r, "margin").inherited, GTEXT_CSS_INHERIT_NO);
   EXPECT_EQ(info(r, "font").inherited, GTEXT_CSS_INHERIT_YES);
+  // longhands that differ: the shorthand is MIXED (line-clamp sets max-lines, which is not inherited, and block-ellipsis, which is)
+  EXPECT_EQ(info(r, "line-clamp").inherited, GTEXT_CSS_INHERIT_MIXED);
+  EXPECT_EQ(info(r, "max-lines").inherited, GTEXT_CSS_INHERIT_NO);
+  EXPECT_EQ(info(r, "block-ellipsis").inherited, GTEXT_CSS_INHERIT_YES);
   EXPECT_EQ(info(r, "border-color").animation, GTEXT_CSS_ANIM_SEE_LONGHANDS);
   EXPECT_EQ(info(r, "animation").animation, GTEXT_CSS_ANIM_NOT_ANIMATABLE);
   // an alias reports its target's inheritance and none of the other data
@@ -710,6 +725,260 @@ TEST(CssRegistryCaller, ARegistrationAfterAnOverrideCanBeRedefinedAgainWithAnOve
   EXPECT_GT(was, gtext_css_registry_generated_property_count()) << "it replaced an earlier registration";
 }
 
+TEST(CssRegistryCaller, AnOverrideThatNamesItselfLeavesTheGeneratedPropertiesThatNameItWorking) {
+  // `margin-top` is named by `margin`, `margin-block`, `margin-inline` ... ; `width` by `flex`, `size` and others. An override that
+  // extends the definition it replaces (`<'margin-top'> | zz`) names itself, and a generated property that names the name gets the
+  // new definition, which must still link.
+  Builder b;
+  GTEXT_CSS_Property_Def mt = def("margin-top", "<'margin-top'> | zzm", "0");
+  mt.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &mt, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSS_Property_Def w = def("width", "<'width'> | zzw", "auto");
+  w.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK);
+  w.grammar = "<'width'> | zzv";
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK) << "a second override of the same name, naming the first";
+  Owned o;
+  GTEXT_CSS_Registry_Result res;
+  ASSERT_EQ(b.freeze(o, &res), GTEXT_CSS_OK) << res.name << " " << (res.detail ? res.detail : "");
+  EXPECT_EQ(parse(o.r, "margin-top", "zzm"), "valid:zzm");
+  EXPECT_EQ(parse(o.r, "margin-top", "3px"), "valid:3px");
+  EXPECT_EQ(parse(o.r, "margin", "zzm 1px"), "valid:zzm 1px") << "margin names margin-top";
+  EXPECT_EQ(parse(o.r, "margin-block", "zzm 1px"), "valid:zzm 1px");
+  EXPECT_EQ(parse(o.r, "width", "zzv"), "valid:zzv");
+  EXPECT_EQ(parse(o.r, "width", "zzw"), "valid:zzw") << "the first override is what the second extends";
+  EXPECT_EQ(parse(o.r, "width", "5px"), "valid:5px");
+  EXPECT_EQ(parse(o.r, "flex", "1 1 zzv"), "valid:1 1 zzv") << "flex-basis names width";
+  EXPECT_EQ(parse(shared(), "margin", "zzm 1px"), "invalid");
+  EXPECT_EQ(gtext_css_registry_override_count(o.r), 3u);
+}
+
+TEST(CssRegistryCaller, AnOverrideIsSeenByTheRelationsAndAliasesOfTheProperty) {
+  // After `overflow-wrap` is overridden, `word-wrap` (its alias in the pin) means the override, and `margin`'s longhand list and the
+  // logical groups name the override and not the property it replaced.
+  Builder b;
+  GTEXT_CSS_Property_Def ow = def("overflow-wrap", "normal | anywhere | break-word | zzwrap", "normal");
+  ow.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &ow, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSS_Property_Def mt = def("margin-top", "<length> | zzm", "0");
+  mt.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &mt, nullptr), GTEXT_CSS_OK);
+  Owned o;
+  ASSERT_EQ(b.freeze(o), GTEXT_CSS_OK);
+  const GTEXT_CSS_Property_Id wrap = find(o.r, "overflow-wrap");
+  EXPECT_NE(wrap, find(shared(), "overflow-wrap"));
+  EXPECT_EQ(gtext_css_registry_resolve_alias(o.r, find(o.r, "word-wrap")), wrap);
+  EXPECT_EQ(parse(o.r, "word-wrap", "zzwrap"), "valid:zzwrap");
+  const GTEXT_CSS_Property_Id margin = find(o.r, "margin");
+  const GTEXT_CSS_Property_Info mi = info(o.r, "margin");
+  ASSERT_GE(mi.longhand_count, 4u);
+  bool has_override = false, has_original = false;
+  for (size_t k = 0; k < mi.longhand_count; k++) {
+    const GTEXT_CSS_Property_Id l = gtext_css_registry_longhand(o.r, margin, k);
+    has_override = has_override || l == find(o.r, "margin-top");
+    has_original = has_original || l == find(shared(), "margin-top");
+  }
+  EXPECT_TRUE(has_override) << "the shorthand's longhands are the properties of this registry";
+  EXPECT_FALSE(has_original);
+}
+
+TEST(CssRegistryCaller, AnOverrideThatBreaksAGeneratedPropertyIsRefusedAtTheFreezeNamingTheOverride) {
+  // `flex-basis` is `content | <'width'>` and `flex` names `flex-basis`: an override of `width` that names `flex` closes a cycle
+  // through generated properties that no registration saw.
+  Builder b;
+  GTEXT_CSS_Property_Def w = def("width", "<'flex'> | zzy", "auto");
+  w.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK);
+  Owned o;
+  GTEXT_CSS_Registry_Result res;
+  const GTEXT_CSS_Status st = b.freeze(o, &res);
+  EXPECT_EQ(st, GTEXT_CSS_E_LEFT_RECURSION);
+  EXPECT_EQ(o.r, nullptr);
+  EXPECT_EQ(std::string(res.name), "width") << "the failure is blamed on the override";
+  ASSERT_NE(res.detail, nullptr);
+  EXPECT_NE(std::string(res.detail).find("override"), std::string::npos) << res.detail;
+  // the builder is still a builder, and what the failed attempt compiled is not remembered: with `flex` overridden by a definition that
+  // does not name `width`, the cycle is gone and the same builder freezes
+  GTEXT_CSS_Property_Def f = def("flex", "none | zzflex", "none");
+  f.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &f, nullptr), GTEXT_CSS_OK);
+  ASSERT_EQ(b.freeze(o, &res), GTEXT_CSS_OK) << res.name << " " << (res.detail ? res.detail : "");
+  EXPECT_EQ(parse(o.r, "width", "zzflex"), "valid:zzflex");
+  EXPECT_EQ(parse(o.r, "width", "zzy"), "valid:zzy");
+}
+
+TEST(CssRegistryCaller, ARegistrationOfTheNameOfACssWideKeywordOrABadShapeIsRefusedWithItsReason) {
+  Builder b;
+  GTEXT_CSS_Registry_Result res;
+  for (const char * name : {"inherit", "INITIAL", "unset", "revert", "revert-layer", "revert-rule"}) {
+    GTEXT_CSS_Property_Def d = def(name, "a", "a");
+    EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_E_INVALID) << name;
+    ASSERT_NE(res.detail, nullptr);
+    EXPECT_NE(std::string(res.detail).find("CSS-wide"), std::string::npos) << res.detail;
+    EXPECT_EQ(gtext_css_registry_register_alias(b.b, name, "width", false, &res), GTEXT_CSS_E_INVALID) << name;
+  }
+  GTEXT_CSS_Property_Def d = def("9bad", "a", "a");
+  EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_E_INVALID);
+  ASSERT_NE(res.detail, nullptr);
+  EXPECT_NE(std::string(res.detail).find("name"), std::string::npos) << res.detail;
+  d = def("vector-x", "a | b", "c");
+  EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_E_INVALID);
+  ASSERT_NE(res.detail, nullptr);
+  EXPECT_NE(std::string(res.detail).find("initial value"), std::string::npos) << res.detail;
+  d = def("vector-x", "a | b | inherit", "inherit");
+  EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_E_INVALID);
+  ASSERT_NE(res.detail, nullptr);
+  EXPECT_NE(std::string(res.detail).find("CSS-wide"), std::string::npos) << res.detail;
+  // an alias of a custom property, and shorthands whose longhands cannot be expanded to
+  EXPECT_EQ(gtext_css_registry_register_alias(b.b, "vector-alias", "--custom", false, &res), GTEXT_CSS_E_INVALID);
+  const char * dup[] = {"width", "height", "WIDTH"};
+  GTEXT_CSS_Shorthand_Def sh;
+  std::memset(&sh, 0, sizeof sh);
+  sh.name = "vector-dup";
+  sh.grammar = "<'width'>";
+  sh.longhands = dup;
+  sh.longhand_count = 3;
+  EXPECT_EQ(gtext_css_registry_register_shorthand(b.b, &sh, &res), GTEXT_CSS_E_INVALID) << "a longhand named twice";
+  const char * custom[] = {"width", "--foo"};
+  sh.name = "vector-custom";
+  sh.longhands = custom;
+  sh.longhand_count = 2;
+  EXPECT_EQ(gtext_css_registry_register_shorthand(b.b, &sh, &res), GTEXT_CSS_E_INVALID) << "a custom property is no longhand";
+  // a shorthand of a shorthand is allowed: it expands to what the inner expands to (the pin's `border` names `border-width`)
+  const char * nested[] = {"margin", "padding"};
+  sh.name = "vector-box";
+  sh.grammar = "<'margin'> <'padding'>";
+  sh.longhands = nested;
+  sh.longhand_count = 2;
+  EXPECT_EQ(gtext_css_registry_register_shorthand(b.b, &sh, &res), GTEXT_CSS_OK);
+}
+
+TEST(CssRegistryCaller, AShorthandMayNameItselfAsAGrammarTypeOnlyThroughTheProperty) {
+  // A shorthand cannot name itself as a longhand, and a registered shorthand's grammar is linked against what is there already.
+  Builder b;
+  GTEXT_CSS_Registry_Result res;
+  const char * self[] = {"width", "vector-self"};
+  GTEXT_CSS_Shorthand_Def sh;
+  std::memset(&sh, 0, sizeof sh);
+  sh.name = "vector-self";
+  sh.grammar = "<'width'>";
+  sh.longhands = self;
+  sh.longhand_count = 2;
+  EXPECT_EQ(gtext_css_registry_register_shorthand(b.b, &sh, &res), GTEXT_CSS_E_REFERENCE) << "it does not exist yet";
+  const char * w[] = {"width"};
+  sh.name = "width";
+  sh.longhands = w;
+  sh.longhand_count = 1;
+  sh.override = true;
+  EXPECT_EQ(gtext_css_registry_register_shorthand(b.b, &sh, &res), GTEXT_CSS_E_INVALID) << "a shorthand cannot be its own longhand";
+  ASSERT_NE(res.detail, nullptr);
+}
+
+TEST(CssRegistryCaller, ATypeTheDifferentPropertiesDefineDifferentlyIsNotGuessedAt) {
+  // The pin defines some types inside one property and names them from others. With no global type of the name, a definition nested in
+  // other properties is used when every one says the same, and a name they define differently resolves to nothing: a grammar that
+  // names it is a reference error, not a guess.
+  std::map<std::string, std::vector<std::string>> nested;
+  std::set<std::string> global;
+  const size_t n = gtext_css_registry_type_count();
+  for (size_t i = 0; i < n; i++) {
+    GTEXT_CSS_Type_Info t;
+    ASSERT_TRUE(gtext_css_registry_type_at(i, &t));
+    if (t.flags & (GTEXT_CSS_TYPE_FUNCTION | GTEXT_CSS_TYPE_NATIVE)) {
+      global.insert(std::string(t.name, t.name_length));
+      continue;
+    }
+    if (t.scope == 0) {
+      global.insert(std::string(t.name, t.name_length));
+    }
+    else if (t.grammar) {
+      nested[std::string(t.name, t.name_length)].push_back(t.grammar);
+    }
+  }
+  std::vector<std::string> same;
+  std::string differ;
+  for (const auto & kv : nested) {
+    if (global.count(kv.first)) {
+      continue;
+    }
+    bool all_same = true;
+    for (const auto & g : kv.second) {
+      all_same = all_same && g == kv.second[0];
+    }
+    if (all_same) {
+      same.push_back(kv.first);
+    }
+    else if (differ.empty()) {
+      differ = kv.first;
+    }
+  }
+  ASSERT_FALSE(same.empty()) << "the pin nests a type that no global type has";
+  Builder b;
+  GTEXT_CSS_Registry_Result res;
+  size_t resolved = 0;
+  for (const std::string & name : same) {
+    const std::string g = "<" + name + ">";
+    GTEXT_CSS_Property_Def d = def("vector-same", g.c_str(), "zz");
+    const GTEXT_CSS_Status st = gtext_css_registry_register_property(b.b, &d, &res);
+    resolved += st == GTEXT_CSS_OK || st == GTEXT_CSS_E_INVALID;  // INVALID: found, and the initial value `zz` is not one of it
+  }
+  EXPECT_GT(resolved, 0u) << "at least one is a usable definition";
+  if (differ.empty()) {
+    // The pinned data has no such name, so the refusal below has nothing to refuse today; it is exercised by the first pin that has
+    // one (this test then holds it to the rule), and the branch that decides it is read, not run, until then.
+    return;
+  }
+  GTEXT_CSS_Property_Def d = def("vector-differ", ("<" + differ + "> | zzdiffer").c_str(), "zzdiffer");
+  EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_E_REFERENCE) << differ;
+  EXPECT_EQ(std::string(res.name), "<" + differ + ">");
+}
+
+TEST(CssRegistryCaller, ARegisteredAllIsNotTheGeneratedAll) {
+  // The rule that `all` takes only the CSS-wide keywords is the pin's `all`; a caller who overrides it defines their own.
+  Builder b;
+  GTEXT_CSS_Property_Def a = def("all", "zzall | <length>", "zzall");
+  a.override = true;
+  ASSERT_EQ(gtext_css_registry_register_property(b.b, &a, nullptr), GTEXT_CSS_OK);
+  Owned o;
+  ASSERT_EQ(b.freeze(o), GTEXT_CSS_OK);
+  EXPECT_EQ(parse(o.r, "all", "zzall"), "valid:zzall");
+  EXPECT_EQ(parse(o.r, "all", "5px"), "valid:5px");
+  EXPECT_EQ(parse(o.r, "all", "revert"), "wide:revert");
+  EXPECT_EQ(parse(shared(), "all", "5px"), "invalid");
+}
+
+TEST(CssRegistryCaller, ManyRegistrationsAndAnOverrideAmongThemAreAllFound) {
+  // Past the first growths of the name table, a name registered twice (the second an override) finds the second, and every
+  // other name is still found.
+  Builder b;
+  std::vector<std::string> names;
+  for (int i = 0; i < 300; i++) {
+    names.push_back("vector-n" + std::to_string(i));
+    GTEXT_CSS_Property_Def d = def(names.back().c_str(), "a | b", "a");
+    ASSERT_EQ(gtext_css_registry_register_property(b.b, &d, nullptr), GTEXT_CSS_OK) << i;
+    if (i == 17 || i == 150) {
+      GTEXT_CSS_Property_Def e = def(names.back().c_str(), "a | b | c", "a");
+      e.override = true;
+      ASSERT_EQ(gtext_css_registry_register_property(b.b, &e, nullptr), GTEXT_CSS_OK) << i;
+    }
+    if (i == 40) {
+      GTEXT_CSS_Property_Def w = def("width", "<'width'> | zzw", "auto");
+      w.override = true;
+      ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK);
+    }
+  }
+  Owned o;
+  ASSERT_EQ(b.freeze(o), GTEXT_CSS_OK);
+  for (int i = 0; i < 300; i++) {
+    const GTEXT_CSS_Property_Id id = find(o.r, names[i]);
+    ASSERT_NE(id, 0u) << names[i];
+    EXPECT_EQ(parse(o.r, names[i], "c"), (i == 17 || i == 150) ? "valid:c" : "invalid") << names[i] << ": the override, and only it, takes c";
+  }
+  EXPECT_EQ(parse(o.r, "width", "zzw"), "valid:zzw");
+  EXPECT_NE(find(o.r, "width"), find(shared(), "width"));
+  EXPECT_EQ(gtext_css_registry_override_count(o.r), 3u);
+}
+
 TEST(CssRegistryCaller, ARegistrationIsValidated) {
   Builder b;
   GTEXT_CSS_Registry_Result res;
@@ -815,6 +1084,58 @@ TEST(CssRegistryCaller, TheLimitsAreTheirOwnStatusAtTheBoundAndOnePast) {
   Owned o;
   ASSERT_EQ(b.freeze(o), GTEXT_CSS_OK);
   EXPECT_EQ(gtext_css_registry_property_count(o.r), gtext_css_registry_generated_property_count() + 3);
+}
+
+TEST(CssRegistryCaller, TheCompiledGrammarsOfAllTheRegistrationsAreHeldToANodeBudget) {
+  // A chain of properties that each name the one before holds the square of its length in nodes (a compiled grammar carries what it
+  // names); the budget is what bounds the memory of that, at the bound and one past, and a refused registration charges nothing.
+  // the nodes of one such grammar: the least budget that takes it
+  size_t per = 0;
+  for (size_t budget = 1; budget < 100 && per == 0; budget++) {
+    GTEXT_CSS_Registry_Options probe_options = gtext_css_registry_options_default();
+    probe_options.max_grammar_nodes = budget;
+    Builder probe(&probe_options);
+    GTEXT_CSS_Property_Def d = def("budget-a", "a | b | c", "a");
+    if (gtext_css_registry_register_property(probe.b, &d, nullptr) == GTEXT_CSS_OK) {
+      per = budget;
+    }
+  }
+  ASSERT_GT(per, 0u);
+  GTEXT_CSS_Registry_Result res;
+  GTEXT_CSS_Registry_Options ro = gtext_css_registry_options_default();
+  ro.max_grammar_nodes = per * 3;
+  Builder b(&ro);
+  for (const char * name : {"budget-a", "budget-b", "budget-c"}) {
+    GTEXT_CSS_Property_Def d = def(name, "a | b | c", "a");
+    EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_OK) << name;
+  }
+  GTEXT_CSS_Property_Def d = def("budget-d", "a | b | c", "a");
+  EXPECT_EQ(gtext_css_registry_register_property(b.b, &d, &res), GTEXT_CSS_E_LIMIT_REGISTRY) << "one past";
+  ASSERT_NE(res.detail, nullptr);
+  EXPECT_NE(std::string(res.detail).find("max_grammar_nodes"), std::string::npos) << res.detail;
+  Owned o;
+  ASSERT_EQ(b.freeze(o), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_registry_property_count(o.r), gtext_css_registry_generated_property_count() + 3);
+  EXPECT_EQ(find(o.r, "budget-d"), 0u);
+  // a chain runs into it, and the registrations before the refused one stand
+  GTEXT_CSS_Registry_Options chain = gtext_css_registry_options_default();
+  chain.max_grammar_nodes = 5000;
+  Builder c(&chain);
+  size_t made = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  for (size_t i = 0; i < 200 && st == GTEXT_CSS_OK; i++) {
+    const std::string name = "chain-" + std::to_string(i);
+    const std::string g = i ? "<'chain-" + std::to_string(i - 1) + "'> | a" : "a";
+    GTEXT_CSS_Property_Def e = def(name.c_str(), g.c_str(), "a");
+    st = gtext_css_registry_register_property(c.b, &e, &res);
+    made += st == GTEXT_CSS_OK;
+  }
+  EXPECT_EQ(st, GTEXT_CSS_E_LIMIT_REGISTRY);
+  EXPECT_GT(made, 10u);
+  EXPECT_LT(made, 200u);
+  Owned co;
+  ASSERT_EQ(c.freeze(co), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_registry_property_count(co.r), gtext_css_registry_generated_property_count() + made);
 }
 
 TEST(CssRegistryCaller, TheLonghandLimitIsItsOwn) {
@@ -1069,7 +1390,92 @@ TEST(CssRegistryGrammars, PrepareCompilesEveryGrammarAndTheRegistryIsThenReadOnl
   gtext_css_registry_free(r);
 }
 
+// A thread-safe counting allocator: every block made and freed, so that a grammar compiled twice (one copy overwritten) shows as a block
+// never freed.
+struct AtomicAllocator {
+  GTEXT_Allocator alloc;
+  std::atomic<long> made{0}, freed{0};
+  AtomicAllocator() {
+    alloc.ctx = this;
+    alloc.malloc_fn = [](void * c, size_t n) { static_cast<AtomicAllocator *>(c)->made++; return std::malloc(n ? n : 1); };
+    alloc.calloc_fn = [](void * c, size_t k, size_t n) { static_cast<AtomicAllocator *>(c)->made++; return std::calloc(k ? k : 1, n ? n : 1); };
+    alloc.realloc_fn = [](void * c, void * p, size_t n) {
+      if (!p) {
+        static_cast<AtomicAllocator *>(c)->made++;
+      }
+      return std::realloc(p, n ? n : 1);
+    };
+    alloc.free_fn = [](void * c, void * p) {
+      if (p) {
+        static_cast<AtomicAllocator *>(c)->freed++;
+      }
+      std::free(p);
+    };
+  }
+};
+
+extern "C" GTEXT_CSS_Status css_registry_property_compiled(const GTEXT_CSS_Registry *, GTEXT_CSS_Property_Id, GTEXT_CSS_Grammar_State *,
+    const GTEXT_CSS_Compiled **, GTEXT_CSS_Grammar_Result *);
+
 TEST(CssRegistryGrammars, ManyThreadsAskingAtOnceGetOneCompiledGrammarEach) {
+  // Fresh registries, all threads released together by a barrier, the same few grammars asked for by every thread: each is compiled
+  // once (every thread sees the same object, and nothing is left unfreed), however the threads interleave. Repeated, because a race
+  // that is missing a lock shows in some interleavings only.
+  const char * names[] = {"margin", "background", "font", "transform", "grid-template-columns", "border", "color", "width"};
+  const int nthreads = 8;
+  long bad = 0;
+  for (int round = 0; round < 60; round++) {
+    AtomicAllocator counting;
+    GTEXT_CSS_Registry_Options ro = gtext_css_registry_options_default();
+    ro.allocator = &counting.alloc;
+    GTEXT_CSS_Registry * r = nullptr;
+    ASSERT_EQ(gtext_css_registry_new(&ro, &r), GTEXT_CSS_OK);
+    std::vector<GTEXT_CSS_Property_Id> ids;
+    for (const char * n : names) {
+      ids.push_back(find(r, n));
+    }
+    std::atomic<int> ready{0};
+    std::atomic<bool> go{false};
+    std::vector<std::vector<const GTEXT_CSS_Compiled *>> seen(nthreads, std::vector<const GTEXT_CSS_Compiled *>(ids.size(), nullptr));
+    std::vector<std::thread> threads;
+    for (int t = 0; t < nthreads; t++) {
+      threads.emplace_back([&, t] {
+        ready++;
+        while (!go.load()) {
+        }
+        for (size_t k = 0; k < ids.size(); k++) {
+          GTEXT_CSS_Grammar_State s;
+          const size_t at = (k + (size_t)t) % ids.size();
+          const GTEXT_CSS_Compiled * c = nullptr;
+          if (css_registry_property_compiled(r, ids[at], &s, &c, nullptr) != GTEXT_CSS_OK || s != GTEXT_CSS_GRAMMAR_OK) {
+            bad++;
+          }
+          seen[t][at] = c;
+        }
+      });
+    }
+    while (ready.load() < nthreads) {
+    }
+    go = true;
+    for (auto & th : threads) {
+      th.join();
+    }
+    for (size_t k = 0; k < ids.size(); k++) {
+      for (int t = 1; t < nthreads; t++) {
+        if (seen[t][k] != seen[0][k] || !seen[0][k]) {
+          bad++;
+        }
+      }
+    }
+    gtext_css_registry_free(r);
+    if (counting.made.load() != counting.freed.load()) {
+      bad++;
+    }
+  }
+  EXPECT_EQ(bad, 0) << "a grammar was compiled twice, or a thread saw an incomplete one";
+}
+
+TEST(CssRegistryGrammars, ManyThreadsParsingAtOnce) {
   GTEXT_CSS_Registry * r = nullptr;
   ASSERT_EQ(gtext_css_registry_new(nullptr, &r), GTEXT_CSS_OK);
   const std::vector<std::pair<const char *, const char *>> cases = {
@@ -1082,8 +1488,7 @@ TEST(CssRegistryGrammars, ManyThreadsAskingAtOnceGetOneCompiledGrammarEach) {
       for (int round = 0; round < 3; round++) {
         for (size_t k = 0; k < cases.size(); k++) {
           const auto & c = cases[(k + t) % cases.size()];
-          const std::string got = parse(r, c.first, c.second);
-          if (got.rfind("valid:", 0) != 0) {
+          if (parse(r, c.first, c.second).rfind("valid:", 0) != 0) {
             bad++;
           }
         }

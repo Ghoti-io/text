@@ -207,8 +207,10 @@ void check_property(const std::string & name, const std::string & value, const G
 
 void check_registration(const std::string & css, uint8_t o1, uint8_t o2, size_t fault, const std::string & input) {
   const size_t nl = css.find('\n');
-  const std::string grammar = nl == std::string::npos ? css : css.substr(0, nl);
-  const std::string initial = nl == std::string::npos ? std::string() : css.substr(nl + 1);
+  // The registration takes C strings, so what it sees of a text ends at a NUL; the check has to read the same text (a NUL inside the
+  // initial value once made it parse more than was registered).
+  const std::string grammar = std::string((nl == std::string::npos ? css : css.substr(0, nl)).c_str());
+  const std::string initial = nl == std::string::npos ? std::string() : std::string(css.substr(nl + 1).c_str());
   FaultAllocator fa;
   GTEXT_CSS_Registry_Options ro = gtext_css_registry_options_default();
   ro.allocator = &fa.alloc;

@@ -174,6 +174,8 @@ typedef struct {
   size_t work, memo, memo_peak;
   GTEXT_CSS_Status status;
   bool unitless;
+  bool unitless_nested;             ///< ... also below the top level of the value.
+  uint32_t top_end;                 ///< The end item of the top-level view.
   size_t max_text;                  ///< Most bytes of the text of an opaque value (css_serialize.h's output limit).
   size_t max_math_depth, max_math_nodes; ///< The limits of one math function (0: the math layer's defaults).
   size_t max_color_nesting, max_function_nodes;
@@ -978,7 +980,7 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
       if (v->number == 0) {
         return range_for_dimension(g, t) ? in_range(g, 0.0) : 1;
       }
-      return m->unitless && (range_for_dimension(g, t) ? in_range(g, v->number) : 1);
+      return m->unitless && (m->unitless_nested || it->end == m->top_end) && (range_for_dimension(g, t) ? in_range(g, v->number) : 1);
     }
     /* fall through */
   case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
@@ -1027,7 +1029,9 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
   case NT_DASHED_IDENT:
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && v->value.length >= 2 && v->value.data[0] == '-' && v->value.data[1] == '-';
   case NT_URANGE:
-    return tok(v, GTEXT_CSS_TOKEN_UNICODE_RANGE);
+    /* CSS Syntax 3, the <urange> production: a range whose start is after its end, or whose end is above the last code point
+     * (U+10FFFF), does not represent anything and is invalid. */
+    return tok(v, GTEXT_CSS_TOKEN_UNICODE_RANGE) && v->range_start <= v->range_end && v->range_end <= 0x10FFFFu;
   case NT_TOK_IDENT: return tok(v, GTEXT_CSS_TOKEN_IDENT);
   case NT_TOK_FUNCTION: return v->kind == GTEXT_CSS_VALUE_FUNCTION;
   case NT_TOK_AT_KEYWORD: return tok(v, GTEXT_CSS_TOKEN_AT_KEYWORD);
@@ -2740,6 +2744,7 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
   }
   m.max_text = (options && options->max_text_bytes) ? options->max_text_bytes : ((size_t)256 << 20);
   m.unitless = options && options->unitless_length;
+  m.unitless_nested = options && options->unitless_length_nested;
   m.max_math_depth = options ? options->max_math_depth : 0;
   m.max_math_nodes = options ? options->max_math_nodes : 0;
   m.max_color_nesting = options ? options->max_color_nesting : 0;
@@ -2763,6 +2768,7 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
     }
     else {
       ends_t e;
+      m.top_end = m.items[0].end;
       if (!ends_sync(&m, compiled->root, 0, &e)) {
         status = m.status == GTEXT_CSS_OK ? GTEXT_CSS_E_INTERNAL : m.status;
       }

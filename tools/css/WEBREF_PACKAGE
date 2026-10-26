@@ -1,0 +1,9 @@
+# The second reading of the pinned CSS data that tools/css/check-webref-package.py compares the generated tables against: the
+# @webref/css package, a consolidated rendering of w3c/webref published to npm. Fetched by tools/css/fetch.sh from the registry URL
+# below and accepted only if the tarball hashes to the integrity (Subresource Integrity form, sha512, base64) the registry published.
+# The package is used for names and syntax only; where it differs from the tables the difference is classified in
+# tools/css/WEBREF_PACKAGE_DIVERGENCES. Raising it is a deliberate edit, in a commit that says what the divergences became.
+package	@webref/css
+version	8.7.8
+tarball	https://registry.npmjs.org/@webref/css/-/css-8.7.8.tgz
+integrity	sha512-g7+P+hhhQRjCeNWRexVnX5GnAfOLxUG0gZrZgcnZ5S3q6GynMxgMuCTPy28UZ6bE85zebXs3ETEhf9bytIS8aw==

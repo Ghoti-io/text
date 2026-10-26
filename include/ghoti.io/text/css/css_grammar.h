@@ -327,6 +327,11 @@ typedef struct {
    *  (GTEXT_CSS_VFLAG_UNITLESS_LENGTH). Which properties enable it is a decision of the
    *  property layer. Default false. */
   bool unitless_length;
+  /** With `unitless_length`: also in the arguments of functions and in blocks. Values 4, Appendix C: a quirky length "is not valid ... inside
+   *  functional notations such as calc(), except that they must be allowed in rect() in the clip property", so a value is quirky at its top
+   *  level only (`fit-content(10)` is not a length), and the property layer sets this for `clip` alone. Appended after the fields above.
+   *  Default false. */
+  bool unitless_length_nested;
   /** Most bytes of the text of one opaque value (`<any-value>`, a math function's arguments, a pending
    *  value): the output limit of the serializer that makes it. Default 256 MiB. One more is
    *  GTEXT_CSS_E_LIMIT_OUTPUT. Appended after the fields above. */

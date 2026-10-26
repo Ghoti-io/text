@@ -112,11 +112,12 @@ static bool is_all(const GTEXT_CSS_Property_Info * info) {
 
 /** Match against a compiled grammar and fold the answer into the result. */
 static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Compiled * compiled,
-    const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options, bool unitless,
+    const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options, bool unitless, bool name_is_clip,
     GTEXT_CSS_Property_Value * out) {
   GTEXT_CSS_Match_Options mo = options && options->match ? *options->match : *css_registry_match_options(registry);
   mo.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
   mo.unitless_length = unitless;
+  mo.unitless_length_nested = unitless && name_is_clip;
   bool matched = false;
   GTEXT_CSS_Value_Set * set = NULL;
   const GTEXT_CSS_Status st = gtext_css_match(compiled, values, count, &mo, &matched, &set, &out->match);
@@ -134,6 +135,82 @@ static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTE
   return GTEXT_CSS_OK;
 }
 
+static bool name_is(const GTEXT_CSS_Component_Value * v, const char * lower) {
+  const size_t n = strlen(lower);
+  if (v->value.length != n) {
+    return false;
+  }
+  for (size_t i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)v->value.data[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = (unsigned char)(c + ('a' - 'A'));
+    }
+    if (c != (unsigned char)lower[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether every `var()`, `env()` and `attr()` in the values is syntactically valid. Values 5, on the arbitrary substitution functions:
+ * "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves syntactically
+ * valid according to their argument grammars, the entire value's grammar must be assumed to be valid at parse time". The argument
+ * grammar of the three is `var( <declaration-value> , <declaration-value>? )` (Variables 1, 3; `<env-args>` and `<attr-args>` the
+ * same): the first argument, up to the first top-level comma, has to hold something, so `var()` and `var(, x)` are not valid.
+ * What the first argument names (a `--` name, an environment variable) is checked when the value is substituted, not now.
+ * Walks with its own stack, so nesting costs memory and not stack.
+ */
+static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_Allocator * a, bool * valid) {
+  *valid = true;
+  struct frame {
+    const GTEXT_CSS_Component_Value * v;
+    size_t n;
+  };
+  size_t cap = 16, top = 0;
+  struct frame * st = gtext_allocator_malloc(a, cap * sizeof *st);
+  if (!st) {
+    return GTEXT_CSS_E_OOM;
+  }
+  st[top++] = (struct frame){values, count};
+  while (top > 0 && *valid) {
+    struct frame f = st[--top];
+    for (size_t i = 0; i < f.n && *valid; i++) {
+      const GTEXT_CSS_Component_Value * v = &f.v[i];
+      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && (name_is(v, "var") || name_is(v, "env") || name_is(v, "attr"))) {
+        bool first = false;
+        for (size_t k = 0; k < v->child_count; k++) {
+          const GTEXT_CSS_Component_Value * c = &v->children[k];
+          if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA) {
+            break;
+          }
+          if (!(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
+            first = true;
+            break;
+          }
+        }
+        if (!first) {
+          *valid = false;
+        }
+      }
+      if (v->child_count > 0) {
+        if (top == cap) {
+          cap *= 2;
+          struct frame * g = gtext_allocator_realloc(a, st, cap * sizeof *st);
+          if (!g) {
+            gtext_allocator_free(a, st);
+            return GTEXT_CSS_E_OOM;
+          }
+          st = g;
+        }
+        st[top++] = (struct frame){v->children, v->child_count};
+      }
+    }
+  }
+  gtext_allocator_free(a, st);
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status parse_pending(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Component_Value * values, size_t count,
     const GTEXT_CSS_Property_Options * options, GTEXT_CSS_Property_Value * out) {
   const GTEXT_CSS_Compiled * pending = NULL;
@@ -141,16 +218,18 @@ static GTEXT_CSS_Status parse_pending(const GTEXT_CSS_Registry * registry, const
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = run_match(registry, pending, values, count, options, false, out);
+  st = run_match(registry, pending, values, count, options, false, false, out);
   if (st == GTEXT_CSS_OK && out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
     out->outcome = GTEXT_CSS_PROP_RESULT_PENDING;
   }
   return st;
 }
 
+/** Sets `*fall_through` when the name is no descriptor of an at-rule that also takes properties: the caller then parses it as a property. */
 static GTEXT_CSS_Status parse_descriptor(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options,
-    GTEXT_CSS_Property_Value * out) {
+    GTEXT_CSS_Property_Value * out, bool * fall_through) {
+  *fall_through = false;
   const char * at = options->at_rule;
   size_t at_length = strlen(at);
   char at_buf[PROP_NAME_STACK];
@@ -168,6 +247,8 @@ static GTEXT_CSS_Status parse_descriptor(const GTEXT_CSS_Registry * registry, co
   const GTEXT_CSS_Descriptor_Id desc = rule ? gtext_css_registry_find_descriptor(rule, name, name_length) : 0;
   GTEXT_CSS_Descriptor_Info info;
   if (!desc || !gtext_css_registry_descriptor_info(desc, &info) || info.kind == GTEXT_CSS_DESC_AT_RULE) {
+    GTEXT_CSS_At_Rule_Info ai;
+    *fall_through = rule && gtext_css_registry_at_rule_info(rule, &ai) && ai.properties && !(desc && info.kind == GTEXT_CSS_DESC_AT_RULE);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return GTEXT_CSS_OK;
   }
@@ -192,7 +273,7 @@ static GTEXT_CSS_Status parse_descriptor(const GTEXT_CSS_Registry * registry, co
   if (state != GTEXT_CSS_GRAMMAR_OK) {
     return GTEXT_CSS_E_UNSUPPORTED;
   }
-  return run_match(registry, compiled, values, count, options, false, out);
+  return run_match(registry, compiled, values, count, options, false, false, out);
 }
 
 GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
@@ -213,12 +294,15 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   }
   GTEXT_CSS_Status st;
   if (options->at_rule) {
-    st = parse_descriptor(registry, name, name_length, values, count, options, out);
+    bool fall_through = false;
+    st = parse_descriptor(registry, name, name_length, values, count, options, out, &fall_through);
     if (st != GTEXT_CSS_OK) {
       gtext_css_property_value_free(out);
       out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     }
-    return st;
+    if (st != GTEXT_CSS_OK || !fall_through) {
+      return st;
+    }
   }
 
   const GTEXT_CSS_Property_Id named = gtext_css_registry_find_property(registry, name, name_length);
@@ -253,6 +337,16 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     return st;
   }
   if (sub) {
+    bool syntax = true;
+    st = substitution_syntax(values, count, options->allocator ? options->allocator : css_registry_allocator(registry), &syntax);
+    if (st != GTEXT_CSS_OK) {
+      out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+      return st;
+    }
+    if (!syntax) {
+      out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+      return GTEXT_CSS_OK;
+    }
     st = parse_pending(registry, values, count, options, out);
     if (st != GTEXT_CSS_OK) {
       gtext_css_property_value_free(out);
@@ -271,7 +365,7 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return GTEXT_CSS_E_UNSUPPORTED;
   }
-  st = run_match(registry, compiled, values, count, options, options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, out);
+  st = run_match(registry, compiled, values, count, options, options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length == 4 && memcmp(info.name, "clip", 4) == 0, out);
   if (st != GTEXT_CSS_OK) {
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
@@ -292,6 +386,43 @@ GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * regist
   GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
   po.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
   GTEXT_CSS_Tree * tree = NULL;
+  if (name_length == 13) {
+    static const char kUr[] = "unicode-range";
+    size_t k = 0;
+    for (; k < 13; k++) {
+      if ((name[k] | 0x20) != kUr[k]) {
+        break;
+      }
+    }
+    if (k == 13) {
+      /* The tokenizer makes unicode-range tokens only in the value of a `unicode-range` declaration (CSS Syntax 3: "consume the value of a
+       * unicode-range descriptor"), so the text is read as that declaration's value. */
+      const size_t total = 14 + text_length;
+      char * decl = gtext_allocator_malloc(po.allocator, total + 1);
+      if (!decl) {
+        return GTEXT_CSS_E_OOM;
+      }
+      memcpy(decl, "unicode-range:", 14);
+      if (text_length) {
+        memcpy(decl + 14, text, text_length);
+      }
+      decl[total] = '\0';
+      GTEXT_CSS_Status ds = gtext_css_parse_declaration_list(decl, total, &po, &tree, NULL);
+      gtext_allocator_free(po.allocator, decl);
+      if (ds != GTEXT_CSS_OK) {
+        return ds;
+      }
+      if (tree->declaration_count != 1 || tree->rule_count != 0) {
+        gtext_css_tree_free(tree);
+        out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+        return GTEXT_CSS_OK;  /* more than one declaration: the text was not one value */
+      }
+      const GTEXT_CSS_Declaration * d = &tree->declarations[0];
+      ds = gtext_css_parse_property(registry, name, name_length, d->value, d->value_count, options, out);
+      gtext_css_tree_free(tree);
+      return ds;
+    }
+  }
   GTEXT_CSS_Status st = gtext_css_parse_component_values(text ? text : "", text_length, &po, &tree, NULL);
   if (st != GTEXT_CSS_OK) {
     return st;
@@ -308,6 +439,7 @@ GTEXT_CSS_Status gtext_css_parse_property_declaration(const GTEXT_CSS_Registry *
   }
   if (!declaration) {
     memset(out, 0, sizeof *out);
+    out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return GTEXT_CSS_E_INVALID;
   }
   return gtext_css_parse_property(registry, declaration->name.data, declaration->name.length, declaration->value,

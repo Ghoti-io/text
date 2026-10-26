@@ -39,8 +39,10 @@
 #include <ghoti.io/cutil/mutex.h>
 #include <ghoti.io/text/css/css_function.h>
 #include <ghoti.io/text/css/css_parse.h>
+#include <ghoti.io/text/css/css_property.h>
 #include <ghoti.io/text/macros.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "css_registry_internal.h"
@@ -54,6 +56,8 @@
 #define REG_MAX_INITIAL (1u << 24)
 #define REG_DEFAULT_LONGHANDS 1024u
 #define REG_MAX_LONGHANDS 65536u
+#define REG_DEFAULT_NODES (1u << 21)
+#define REG_MAX_NODES (1u << 28)
 
 /* ---- the state ---------------------------------------------------------------------------- */
 
@@ -74,6 +78,8 @@ typedef struct {
   size_t name_length;
   char * grammar;              ///< NULL for an alias.
   size_t grammar_length;
+  char * ctext;                ///< An override's grammar with its reference to its own name replaced by the definition it replaces, or NULL (then `grammar`).
+  size_t ctext_length;
   char * initial;              ///< NULL for a shorthand and an alias.
   uint32_t flags;              ///< GTEXT_CSS_PROP_* (without GENERATED).
   GTEXT_CSS_Inherit inherited;
@@ -97,8 +103,9 @@ struct GTEXT_CSS_Registry {
   GTEXT_Allocator alloc;
   GTEXT_CSS_Grammar_Options gopt;
   GTEXT_CSS_Match_Options mopt;
-  size_t max_registrations, max_name, max_initial, max_longhands;
-  bool frozen;
+  size_t max_registrations, max_name, max_initial, max_longhands, max_nodes;
+  size_t grammar_nodes;        ///< The nodes of the compiled grammars of the registrations so far (the budget `max_nodes` holds).
+  size_t last_nodes;           ///< The nodes of the grammar the registration in hand compiled; charged when it succeeds.
   GCU_MUTEX_T lock;
   bool lock_made;
 
@@ -169,6 +176,7 @@ static void fill_result(GTEXT_CSS_Registry_Result * r, GTEXT_CSS_Status status, 
   memset(r, 0, sizeof *r);
   r->status = status;
   r->message = gtext_css_status_string(status);
+  r->detail = NULL;
   if (name) {
     const size_t n = name_length < sizeof r->name - 1 ? name_length : sizeof r->name - 1;
     memcpy(r->name, name, n);
@@ -189,6 +197,7 @@ GTEXT_CSS_Registry_Options gtext_css_registry_options_default(void) {
   o.max_name_bytes = REG_DEFAULT_NAME;
   o.max_initial_bytes = REG_DEFAULT_INITIAL;
   o.max_longhands = REG_DEFAULT_LONGHANDS;
+  o.max_grammar_nodes = REG_DEFAULT_NODES;
   return o;
 }
 
@@ -336,6 +345,27 @@ GTEXT_CSS_Property_Id gtext_css_registry_find_property(const GTEXT_CSS_Registry 
   return find_lower(registry, buf, length);
 }
 
+/** The property that now has the name of `id`: an override registered after `id` was made hides it, and a relation made by id (a shorthand's
+ *  longhands, an alias's target, a logical group) must lead to what a lookup of the name finds. */
+static GTEXT_CSS_Property_Id current_id(const GTEXT_CSS_Registry * r, GTEXT_CSS_Property_Id id) {
+  if (!r->noverrides || !id) {
+    return id;
+  }
+  const char * name;
+  size_t length;
+  if ((size_t)id <= gtext_css_tbl_property_count) {
+    name = css_tstr_c(gtext_css_tbl_properties[id - 1].name);
+    length = gtext_css_tbl_properties[id - 1].name.len;
+  }
+  else {
+    name = r->cprops[id - gtext_css_tbl_property_count - 1].name;
+    length = r->cprops[id - gtext_css_tbl_property_count - 1].name_length;
+  }
+  const size_t c = caller_find(r, name, length, NULL);
+  const GTEXT_CSS_Property_Id newest = c == (size_t)-1 ? id : (GTEXT_CSS_Property_Id)(gtext_css_tbl_property_count + 1 + c);
+  return newest > id ? newest : id;
+}
+
 static bool id_valid(const GTEXT_CSS_Registry * r, GTEXT_CSS_Property_Id id) {
   return id >= 1 && (size_t)id <= gtext_css_tbl_property_count + r->ncprops;
 }
@@ -347,10 +377,10 @@ GTEXT_CSS_Property_Id gtext_css_registry_resolve_alias(const GTEXT_CSS_Registry 
   for (size_t hops = 0; hops < 64; hops++) {
     GTEXT_CSS_Property_Id next;
     if ((size_t)id <= gtext_css_tbl_property_count) {
-      next = (GTEXT_CSS_Property_Id)gtext_css_tbl_properties[id - 1].alias_of;
+      next = current_id(registry, (GTEXT_CSS_Property_Id)gtext_css_tbl_properties[id - 1].alias_of);
     }
     else {
-      next = registry->cprops[id - gtext_css_tbl_property_count - 1].alias_of;
+      next = current_id(registry, registry->cprops[id - gtext_css_tbl_property_count - 1].alias_of);
     }
     if (!next) {
       return id;
@@ -385,7 +415,7 @@ bool gtext_css_registry_property_info(const GTEXT_CSS_Registry * r, GTEXT_CSS_Pr
     info->canonical_order = css_tstr_c(p->canonical_order);
     info->logical_group = p->group ? css_tstr_c(gtext_css_tbl_groups[p->group - 1].name) : NULL;
     info->source = css_tstr_c(p->source);
-    info->alias_of = (GTEXT_CSS_Property_Id)p->alias_of;
+    info->alias_of = current_id(r, (GTEXT_CSS_Property_Id)p->alias_of);
     info->longhand_count = p->longhand_count;
     info->reset_longhand_count = p->reset_count;
     info->style_name_count = p->style_count;
@@ -401,7 +431,7 @@ bool gtext_css_registry_property_info(const GTEXT_CSS_Registry * r, GTEXT_CSS_Pr
   info->inherited = c->inherited;
   info->animation = c->animation;
   info->computed = c->computed;
-  info->alias_of = c->alias_of;
+  info->alias_of = current_id(r, c->alias_of);
   info->longhand_count = c->longhand_count;
   info->flags = c->flags | (c->overridden ? GTEXT_CSS_PROP_OVERRIDE : 0u);
   return true;
@@ -413,10 +443,10 @@ GTEXT_CSS_Property_Id gtext_css_registry_longhand(const GTEXT_CSS_Registry * r, 
   }
   if ((size_t)id <= gtext_css_tbl_property_count) {
     const css_tbl_property * p = &gtext_css_tbl_properties[id - 1];
-    return index < p->longhand_count ? (GTEXT_CSS_Property_Id)gtext_css_tbl_property_refs[p->longhand_first + index] : 0;
+    return index < p->longhand_count ? current_id(r, (GTEXT_CSS_Property_Id)gtext_css_tbl_property_refs[p->longhand_first + index]) : 0;
   }
   const cprop * c = &r->cprops[id - gtext_css_tbl_property_count - 1];
-  return index < c->longhand_count ? c->longhands[index] : 0;
+  return index < c->longhand_count ? current_id(r, c->longhands[index]) : 0;
 }
 
 GTEXT_CSS_Property_Id gtext_css_registry_reset_longhand(const GTEXT_CSS_Registry * r, GTEXT_CSS_Property_Id id, size_t index) {
@@ -424,7 +454,7 @@ GTEXT_CSS_Property_Id gtext_css_registry_reset_longhand(const GTEXT_CSS_Registry
     return GTEXT_CSS_PROPERTY_NONE;
   }
   const css_tbl_property * p = &gtext_css_tbl_properties[id - 1];
-  return index < p->reset_count ? (GTEXT_CSS_Property_Id)gtext_css_tbl_property_refs[p->reset_first + index] : 0;
+  return index < p->reset_count ? current_id(r, (GTEXT_CSS_Property_Id)gtext_css_tbl_property_refs[p->reset_first + index]) : 0;
 }
 
 const char * gtext_css_registry_style_name(const GTEXT_CSS_Registry * r, GTEXT_CSS_Property_Id id, size_t index) {
@@ -461,9 +491,9 @@ size_t gtext_css_registry_logical_group_size(const char * group, size_t length) 
   return g ? g->count : 0;
 }
 
-GTEXT_CSS_Property_Id gtext_css_registry_logical_group_member(const char * group, size_t length, size_t index) {
+GTEXT_CSS_Property_Id gtext_css_registry_logical_group_member(const GTEXT_CSS_Registry * r, const char * group, size_t length, size_t index) {
   const css_tbl_group * g = group_find(group, length);
-  return g && index < g->count ? (GTEXT_CSS_Property_Id)gtext_css_tbl_group_members[g->first + index] : 0;
+  return r && g && index < g->count ? current_id(r, (GTEXT_CSS_Property_Id)gtext_css_tbl_group_members[g->first + index]) : 0;
 }
 
 bool gtext_css_registry_shorthand_hook(const GTEXT_CSS_Registry * r, GTEXT_CSS_Property_Id id,
@@ -520,6 +550,14 @@ static void lazy_free(lazy_grammar * lz) {
   lz->def = NULL;
 }
 
+/** Forgets a compiled grammar and the report of its compile, keeping the parsed text of the definition. */
+static void lazy_forget_compiled(lazy_grammar * lz) {
+  gtext_css_compiled_free(lz->compiled);
+  lz->compiled = NULL;
+  memset(&lz->res, 0, sizeof lz->res);
+  gcu_atomic_int_store(&lz->state, GTEXT_CSS_GRAMMAR_NOT_COMPILED);
+}
+
 /** Parse a definition once (under the lock). OK with `*out` NULL means the text is not a definition (`r->rf` says why). */
 static GTEXT_CSS_Status lazy_def(GTEXT_CSS_Registry * r, lazy_grammar * lz, const char * text, size_t length,
     const GTEXT_CSS_Definition ** out) {
@@ -563,8 +601,8 @@ static const char * prop_text(const GTEXT_CSS_Registry * r, GTEXT_CSS_Property_I
     return css_tstr_c(p->grammar);
   }
   const cprop * c = &r->cprops[id - gtext_css_tbl_property_count - 1];
-  *length = c->grammar_length;
-  return c->grammar;
+  *length = c->ctext ? c->ctext_length : c->grammar_length;
+  return c->ctext ? c->ctext : c->grammar;
 }
 
 static lazy_grammar * prop_lazy(GTEXT_CSS_Registry * r, GTEXT_CSS_Property_Id id) {
@@ -655,16 +693,7 @@ static const GTEXT_CSS_Definition * pin_resolve(GTEXT_CSS_Registry * r, GTEXT_CS
     }
     char buf[REG_NAME_STACK];
     lower_copy(buf, name, length);
-    GTEXT_CSS_Property_Id id = find_lower(r, buf, length);
-    /* the grammar of a property that overrides another may name itself: `<'width'>` there is the property it replaces, so that an
-     * override can extend the definition it overrides (and a grammar that names itself otherwise would be left recursion) */
-    for (size_t hops = 0; id && id == r->scope && hops < 64; hops++) {
-      const GTEXT_CSS_Property_Id was = (size_t)id > gtext_css_tbl_property_count ? r->cprops[id - gtext_css_tbl_property_count - 1].overridden : 0;
-      if (!was) {
-        break;
-      }
-      id = was;
-    }
+    const GTEXT_CSS_Property_Id id = find_lower(r, buf, length);
     return id ? prop_def(r, id, name, length) : NULL;
   }
   const size_t first = type_first(name, length);
@@ -928,6 +957,7 @@ static void reg_destroy(GTEXT_CSS_Registry * r) {
     lazy_free(&c->lazy);
     gtext_allocator_free(&a, c->name);
     gtext_allocator_free(&a, c->grammar);
+    gtext_allocator_free(&a, c->ctext);
     gtext_allocator_free(&a, c->initial);
     gtext_allocator_free(&a, c->longhands);
   }
@@ -967,6 +997,7 @@ GTEXT_CSS_Status gtext_css_registry_builder_new(const GTEXT_CSS_Registry_Options
   r->max_name = clamp_limit(options ? options->max_name_bytes : 0, d.max_name_bytes, REG_NAME_STACK);
   r->max_initial = clamp_limit(options ? options->max_initial_bytes : 0, d.max_initial_bytes, REG_MAX_INITIAL);
   r->max_longhands = clamp_limit(options ? options->max_longhands : 0, d.max_longhands, REG_MAX_LONGHANDS);
+  r->max_nodes = clamp_limit(options ? options->max_grammar_nodes : 0, d.max_grammar_nodes, REG_MAX_NODES);
   if (GCU_MUTEX_CREATE(r->lock) != 0) {
     gtext_allocator_free(&a, b);
     gtext_allocator_free(&a, r);
@@ -1038,6 +1069,11 @@ GTEXT_CSS_Status gtext_css_registry_new(const GTEXT_CSS_Registry_Options * optio
 
 /* ---- registration ------------------------------------------------------------------------- */
 
+static int id_compare(const void * a, const void * b) {
+  const GTEXT_CSS_Property_Id x = *(const GTEXT_CSS_Property_Id *)a, y = *(const GTEXT_CSS_Property_Id *)b;
+  return x < y ? -1 : x > y;
+}
+
 static bool name_ok(const char * name, size_t n) {
   if (n == 0) {
     return false;
@@ -1063,6 +1099,9 @@ static bool name_ok(const char * name, size_t n) {
 }
 
 /** Parse and link a grammar against the registry as it stands, keeping nothing (the validation of a registration). */
+/** What a registration refused for the registry-wide node budget says (the status is GTEXT_CSS_E_LIMIT_REGISTRY, as for the other limits). */
+static const char kNodesDetail[] = "the compiled grammars of the registered properties together are past max_grammar_nodes";
+
 static GTEXT_CSS_Status validate_grammar(GTEXT_CSS_Registry * r, const char * text, size_t length, GTEXT_CSS_Registry_Result * out,
     GTEXT_CSS_Compiled ** compiled) {
   GTEXT_CSS_Grammar_Options go = r->gopt;
@@ -1076,6 +1115,21 @@ static GTEXT_CSS_Status validate_grammar(GTEXT_CSS_Registry * r, const char * te
     r->rf.status = GTEXT_CSS_OK;
     r->rf.name[0] = '\0';
     st = gtext_css_definition_link(d, reg_resolve_top, r, &go, compiled, &gr);
+    r->work += gr.work + gr.nodes + length; /* the link's own work: what it walked, the nodes it made, the text it read */
+    if (st == GTEXT_CSS_OK) {
+      /* A compiled grammar carries the grammars it names, so a chain of properties that each name the one before holds the square of its
+       * length in nodes. The registry holds them all after the freeze, and this is what bounds that. */
+      if (gr.nodes > r->max_nodes - (r->grammar_nodes < r->max_nodes ? r->grammar_nodes : r->max_nodes)) {
+        gtext_css_compiled_free(*compiled);
+        *compiled = NULL;
+        st = GTEXT_CSS_E_LIMIT_REGISTRY;
+        gr.status = st;
+        gr.message = gtext_css_status_string(st);
+      }
+      else {
+        r->last_nodes = gr.nodes;
+      }
+    }
     if (st == GTEXT_CSS_E_REFERENCE) {
       const GTEXT_CSS_Status fs = gtext_css_function_types_status(r->ftypes);
       const GTEXT_CSS_Status why = r->rf.status != GTEXT_CSS_OK ? r->rf.status : fs;
@@ -1097,7 +1151,9 @@ static GTEXT_CSS_Status validate_grammar(GTEXT_CSS_Registry * r, const char * te
 }
 
 /** Match the initial value text against a compiled grammar: OK only if it is a concrete value of it. */
-static GTEXT_CSS_Status validate_initial(GTEXT_CSS_Registry * r, const GTEXT_CSS_Compiled * compiled, const char * text, size_t length) {
+static GTEXT_CSS_Status validate_initial(GTEXT_CSS_Registry * r, const GTEXT_CSS_Compiled * compiled, const char * text, size_t length,
+    const char ** detail) {
+  *detail = "the initial value is not a list of component values";
   GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
   po.allocator = &r->alloc;
   GTEXT_CSS_Tree * tree = NULL;
@@ -1113,6 +1169,7 @@ static GTEXT_CSS_Status validate_initial(GTEXT_CSS_Registry * r, const GTEXT_CSS
   }
   else if (sub || tree->value_count == 0) {
     result = GTEXT_CSS_E_INVALID;
+    *detail = sub ? "the initial value has a substitution function: it must be a concrete value" : "the initial value is empty";
   }
   else {
     /* a CSS-wide keyword is not a value of a property */
@@ -1133,6 +1190,7 @@ static GTEXT_CSS_Status validate_initial(GTEXT_CSS_Registry * r, const GTEXT_CSS
           lower_copy(lc, only->value.data, wl);
           if (memcmp(lc, wide[k], wl) == 0) {
             result = GTEXT_CSS_E_INVALID;
+            *detail = "the initial value is a CSS-wide keyword";
           }
         }
       }
@@ -1143,26 +1201,116 @@ static GTEXT_CSS_Status validate_initial(GTEXT_CSS_Registry * r, const GTEXT_CSS
       bool matched = false;
       st = gtext_css_match(compiled, tree->values, tree->value_count, &mo, &matched, NULL, NULL);
       result = st != GTEXT_CSS_OK ? st : (matched ? GTEXT_CSS_OK : GTEXT_CSS_E_INVALID);
+      *detail = "the initial value does not match the grammar";
     }
   }
   gtext_css_tree_free(tree);
   return result;
 }
 
+/**
+ * An override's grammar with its references to its own name (`<'width'>`) replaced by `[ the definition it replaces ]`, so that an
+ * override can extend what it overrides and the grammar of any property that names the overridden one by name (`margin` names
+ * `margin-top`) links the same way. Written once, at registration, from the definition as it stands: the one replaced, whether the
+ * pin's or an earlier registration's (which has been expanded itself). `*out` is NULL when nothing was replaced.
+ */
+static GTEXT_CSS_Status expand_self(GTEXT_CSS_Registry * r, const char * lname, size_t nlen, const char * grammar, size_t glen,
+    GTEXT_CSS_Property_Id old, char ** out, size_t * out_length) {
+  *out = NULL;
+  *out_length = 0;
+  old = gtext_css_registry_resolve_alias(r, old);
+  size_t olen = 0;
+  const char * otext = old ? prop_text(r, old, &olen) : NULL;
+  if (!otext) {
+    return GTEXT_CSS_OK;
+  }
+  size_t cap = glen + 64, len = 0;
+  char * buf = gtext_allocator_malloc(&r->alloc, cap);
+  if (!buf) {
+    return GTEXT_CSS_E_OOM;
+  }
+  size_t replaced = 0;
+  for (size_t i = 0; i < glen;) {
+    size_t take = 1;
+    const char * piece = grammar + i;
+    size_t piece_len = 1;
+    size_t extra = 0;
+    if (grammar[i] == '<' && i + 1 < glen && grammar[i + 1] == '\'') {
+      size_t j = i + 2;
+      while (j < glen && grammar[j] != '\'') {
+        j++;
+      }
+      size_t k = j + 1;
+      while (k < glen && (grammar[k] == ' ' || grammar[k] == '\t' || grammar[k] == '\n')) {
+        k++;
+      }
+      if (j < glen && k < glen && grammar[k] == '>' && j - (i + 2) == nlen) {
+        char tmp[REG_NAME_STACK];
+        if (nlen <= sizeof tmp) {
+          lower_copy(tmp, grammar + i + 2, nlen);
+          if (memcmp(tmp, lname, nlen) == 0) {
+            take = k + 1 - i;
+            piece = otext;
+            piece_len = olen;
+            extra = 4; /* "[ " and " ]" */
+            replaced++;
+          }
+        }
+      }
+    }
+    if (len + piece_len + extra + 1 > cap) {
+      cap = (len + piece_len + extra + 1) * 2;
+      char * g = gtext_allocator_realloc(&r->alloc, buf, cap);
+      if (!g) {
+        gtext_allocator_free(&r->alloc, buf);
+        return GTEXT_CSS_E_OOM;
+      }
+      buf = g;
+    }
+    if (extra) {
+      memcpy(buf + len, "[ ", 2);
+      len += 2;
+    }
+    memcpy(buf + len, piece, piece_len);
+    len += piece_len;
+    if (extra) {
+      memcpy(buf + len, " ]", 2);
+      len += 2;
+    }
+    r->work += piece_len;
+    i += take;
+  }
+  if (!replaced) {
+    gtext_allocator_free(&r->alloc, buf);
+    return GTEXT_CSS_OK;
+  }
+  buf[len] = '\0';
+  *out = buf;
+  *out_length = len;
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status reg_prepare_slot(GTEXT_CSS_Registry * r, const char * name, size_t name_length, bool override,
     GTEXT_CSS_Registry_Result * result, char ** lname_out, GTEXT_CSS_Property_Id * existing) {
   *lname_out = NULL;
   *existing = GTEXT_CSS_PROPERTY_NONE;
-  if (r->frozen) {
-    fill_result(result, GTEXT_CSS_E_INVALID, name, name_length);
-    return GTEXT_CSS_E_INVALID;
-  }
+  r->last_nodes = 0;
   if (name_length > r->max_name) {
     fill_result(result, GTEXT_CSS_E_LIMIT_REGISTRY, name, name_length);
     return GTEXT_CSS_E_LIMIT_REGISTRY;
   }
   if (!name_ok(name, name_length)) {
     fill_result(result, GTEXT_CSS_E_INVALID, name, name_length);
+    if (result) {
+      result->detail = "the name is not a property name: letters, digits, `-` and `_`, not beginning with a digit or `--`";
+    }
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (gtext_css_wide_keyword_lookup(name, name_length) != GTEXT_CSS_WIDE_NONE) {
+    fill_result(result, GTEXT_CSS_E_INVALID, name, name_length);
+    if (result) {
+      result->detail = "the name is a CSS-wide keyword, which no property can be called";
+    }
     return GTEXT_CSS_E_INVALID;
   }
   if (r->ncprops >= r->max_registrations) {
@@ -1212,6 +1360,8 @@ static GTEXT_CSS_Status reg_add(GTEXT_CSS_Registry * r, cprop * entry, GTEXT_CSS
   }
   r->cprops[r->ncprops] = *entry;
   r->cprops[r->ncprops].overridden = existing;
+  r->grammar_nodes += r->last_nodes;
+  r->last_nodes = 0;
   r->work += entry->name_length + entry->grammar_length + 1;
   gcu_atomic_int_init(&r->cprops[r->ncprops].lazy.state, GTEXT_CSS_GRAMMAR_NOT_COMPILED);
   if (!hash_put(r, r->ncprops)) {
@@ -1233,6 +1383,7 @@ oom:
   fill_result(result, GTEXT_CSS_E_OOM, entry->name, entry->name_length);
   gtext_allocator_free(&r->alloc, entry->name);
   gtext_allocator_free(&r->alloc, entry->grammar);
+  gtext_allocator_free(&r->alloc, entry->ctext);
   gtext_allocator_free(&r->alloc, entry->initial);
   gtext_allocator_free(&r->alloc, entry->longhands);
   return GTEXT_CSS_E_OOM;
@@ -1258,12 +1409,25 @@ GTEXT_CSS_Status gtext_css_registry_register_property(GTEXT_CSS_Registry_Builder
     goto fail;
   }
   GTEXT_CSS_Compiled * compiled = NULL;
-  st = validate_grammar(r, def->grammar, gl, result, &compiled);
+  char * ctext = NULL;
+  size_t clen = 0;
+  if (existing) {
+    st = expand_self(r, lname, nl, def->grammar, gl, existing, &ctext, &clen);
+    if (st != GTEXT_CSS_OK) {
+      fill_result(result, st, def->name, nl);
+      goto fail;
+    }
+  }
+  st = validate_grammar(r, ctext ? ctext : def->grammar, ctext ? clen : gl, result, &compiled);
   if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&r->alloc, ctext);
     if (result) {
       const GTEXT_CSS_Grammar_Result g = result->grammar;
       fill_result(result, st, def->name, nl);
       result->grammar = g;
+      if (st == GTEXT_CSS_E_LIMIT_REGISTRY) {
+        result->detail = kNodesDetail;
+      }
       if (g.name[0]) {
         const size_t n = strlen(g.name);
         memset(result->name, 0, sizeof result->name);
@@ -1272,10 +1436,15 @@ GTEXT_CSS_Status gtext_css_registry_register_property(GTEXT_CSS_Registry_Builder
     }
     goto fail;
   }
-  st = validate_initial(r, compiled, def->initial, il);
+  const char * detail = NULL;
+  st = validate_initial(r, compiled, def->initial, il, &detail);
   gtext_css_compiled_free(compiled);
   if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&r->alloc, ctext);
     fill_result(result, st, def->name, nl);
+    if (result && st == GTEXT_CSS_E_INVALID) {
+      result->detail = detail;
+    }
     goto fail;
   }
   cprop e;
@@ -1284,6 +1453,8 @@ GTEXT_CSS_Status gtext_css_registry_register_property(GTEXT_CSS_Registry_Builder
   e.name_length = nl;
   e.grammar = dup_n(&r->alloc, def->grammar, gl);
   e.grammar_length = gl;
+  e.ctext = ctext;
+  e.ctext_length = clen;
   e.initial = dup_n(&r->alloc, def->initial, il);
   e.flags = def->quirk_unitless_length ? GTEXT_CSS_PROP_QUIRK_UNITLESS : 0;
   e.inherited = def->inherited ? GTEXT_CSS_INHERIT_YES : GTEXT_CSS_INHERIT_NO;
@@ -1291,6 +1462,7 @@ GTEXT_CSS_Status gtext_css_registry_register_property(GTEXT_CSS_Registry_Builder
   e.computed = def->computed;
   if (!e.grammar || !e.initial) {
     gtext_allocator_free(&r->alloc, e.grammar);
+    gtext_allocator_free(&r->alloc, e.ctext);
     gtext_allocator_free(&r->alloc, e.initial);
     gtext_allocator_free(&r->alloc, lname);
     fill_result(result, GTEXT_CSS_E_OOM, def->name, nl);
@@ -1317,10 +1489,16 @@ GTEXT_CSS_Status gtext_css_registry_register_alias(GTEXT_CSS_Registry_Builder * 
     return st;
   }
   const GTEXT_CSS_Property_Id t = gtext_css_registry_resolve_alias(r, gtext_css_registry_find_property(r, target, tl));
-  if (!t || (existing && t == existing)) {
+  GTEXT_CSS_Property_Info ti;
+  const bool custom = t && gtext_css_registry_property_info(r, t, &ti) && (ti.flags & GTEXT_CSS_PROP_CUSTOM);
+  if (!t || (existing && t == existing) || custom) {
     gtext_allocator_free(&r->alloc, lname);
     st = t ? GTEXT_CSS_E_INVALID : GTEXT_CSS_E_REFERENCE;
     fill_result(result, st, target, tl);
+    if (result && st == GTEXT_CSS_E_INVALID) {
+      result->detail = custom ? "an alias cannot name a custom property: custom properties are looked up by their own names"
+                              : "a name cannot be made an alias of the property it replaces";
+    }
     return st;
   }
   cprop e;
@@ -1372,23 +1550,76 @@ GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Registry_Builde
       gtext_allocator_free(&r->alloc, lh);
       gtext_allocator_free(&r->alloc, lname);
       fill_result(result, GTEXT_CSS_E_INVALID, ln, ll);
+      if (result) {
+        result->detail = "a shorthand cannot name the property it replaces as a longhand";
+      }
       return GTEXT_CSS_E_INVALID;
     }
     lh[i] = id;
     GTEXT_CSS_Property_Info info;
     (void)gtext_css_registry_property_info(r, id, &info);
+    if (info.flags & GTEXT_CSS_PROP_CUSTOM) {
+      gtext_allocator_free(&r->alloc, lh);
+      gtext_allocator_free(&r->alloc, lname);
+      fill_result(result, GTEXT_CSS_E_INVALID, ln, ll);
+      if (result) {
+        result->detail = "a custom property cannot be a longhand: shorthands expand into the properties of the registry";
+      }
+      return GTEXT_CSS_E_INVALID;
+    }
     yes += info.inherited == GTEXT_CSS_INHERIT_YES;
     no += info.inherited == GTEXT_CSS_INHERIT_NO;
   }
+  /* the same longhand twice is a mistake the expansion could not repair: found on a sorted copy, so that a long list costs n log n */
+  {
+    GTEXT_CSS_Property_Id * sorted = gtext_allocator_malloc(&r->alloc, def->longhand_count * sizeof *sorted);
+    if (!sorted) {
+      gtext_allocator_free(&r->alloc, lh);
+      gtext_allocator_free(&r->alloc, lname);
+      fill_result(result, GTEXT_CSS_E_OOM, def->name, nl);
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(sorted, lh, def->longhand_count * sizeof *sorted);
+    qsort(sorted, def->longhand_count, sizeof *sorted, id_compare);
+    GTEXT_CSS_Property_Id twice = 0;
+    for (size_t i = 1; i < def->longhand_count && !twice; i++) {
+      if (sorted[i] == sorted[i - 1]) {
+        twice = sorted[i];
+      }
+    }
+    gtext_allocator_free(&r->alloc, sorted);
+    if (twice) {
+      GTEXT_CSS_Property_Info ti;
+      (void)gtext_css_registry_property_info(r, twice, &ti);
+      gtext_allocator_free(&r->alloc, lh);
+      gtext_allocator_free(&r->alloc, lname);
+      fill_result(result, GTEXT_CSS_E_INVALID, ti.name, ti.name_length);
+      if (result) {
+        result->detail = "a longhand is named twice";
+      }
+      return GTEXT_CSS_E_INVALID;
+    }
+  }
   GTEXT_CSS_Compiled * compiled = NULL;
-  st = validate_grammar(r, def->grammar, gl, result, &compiled);
+  char * ctext = NULL;
+  size_t clen = 0;
+  if (existing) {
+    st = expand_self(r, lname, nl, def->grammar, gl, existing, &ctext, &clen);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = validate_grammar(r, ctext ? ctext : def->grammar, ctext ? clen : gl, result, &compiled);
+  }
   gtext_css_compiled_free(compiled);
   if (st != GTEXT_CSS_OK) {
     const GTEXT_CSS_Grammar_Result g = result ? result->grammar : (GTEXT_CSS_Grammar_Result){0};
     fill_result(result, st, def->name, nl);
     if (result) {
       result->grammar = g;
+      if (st == GTEXT_CSS_E_LIMIT_REGISTRY) {
+        result->detail = kNodesDetail;
+      }
     }
+    gtext_allocator_free(&r->alloc, ctext);
     gtext_allocator_free(&r->alloc, lh);
     gtext_allocator_free(&r->alloc, lname);
     return st;
@@ -1399,6 +1630,8 @@ GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Registry_Builde
   e.name_length = nl;
   e.grammar = dup_n(&r->alloc, def->grammar, gl);
   e.grammar_length = gl;
+  e.ctext = ctext;
+  e.ctext_length = clen;
   e.flags = GTEXT_CSS_PROP_SHORTHAND;
   e.inherited = yes == def->longhand_count ? GTEXT_CSS_INHERIT_YES : no == def->longhand_count ? GTEXT_CSS_INHERIT_NO : GTEXT_CSS_INHERIT_MIXED;
   e.animation = GTEXT_CSS_ANIM_SEE_LONGHANDS;
@@ -1407,6 +1640,7 @@ GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Registry_Builde
   e.hook = def->hook;
   e.hook_user = def->hook_user;
   if (!e.grammar) {
+    gtext_allocator_free(&r->alloc, ctext);
     gtext_allocator_free(&r->alloc, lh);
     gtext_allocator_free(&r->alloc, lname);
     fill_result(result, GTEXT_CSS_E_OOM, def->name, nl);
@@ -1417,17 +1651,44 @@ GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Registry_Builde
 
 /* ---- freeze and prepare ------------------------------------------------------------------- */
 
+/** A freeze that fails leaves the builder as a builder: what it compiled was compiled against the registrations so far, and a later
+ * registration (an override of a name that a compiled grammar names) would make it stale, so every compiled grammar is forgotten,
+ * and the work the attempt was charged is given back. The parsed definitions of the pin are not changed by any registration and stay. */
+static void freeze_undo(GTEXT_CSS_Registry * r, size_t work_before) {
+  for (size_t i = 0; i < gtext_css_tbl_property_count; i++) {
+    lazy_forget_compiled(&r->gprops[i]);
+  }
+  for (size_t i = 0; i < gtext_css_tbl_type_count; i++) {
+    lazy_forget_compiled(&r->gtypes[i]);
+  }
+  for (size_t i = 0; i < gtext_css_tbl_descriptor_count; i++) {
+    lazy_forget_compiled(&r->gdescs[i]);
+  }
+  lazy_forget_compiled(&r->pending);
+  for (size_t i = 0; i < r->ncprops; i++) {
+    lazy_forget_compiled(&r->cprops[i].lazy);
+  }
+  r->work = work_before;
+}
+
+static GTEXT_CSS_Status freeze_run(GTEXT_CSS_Registry_Builder * builder, GTEXT_CSS_Registry ** out, GTEXT_CSS_Registry_Result * result);
+
 GTEXT_CSS_Status gtext_css_registry_freeze(GTEXT_CSS_Registry_Builder * builder, GTEXT_CSS_Registry ** out,
     GTEXT_CSS_Registry_Result * result) {
   if (!builder || !out) {
     fill_result(result, GTEXT_CSS_E_INVALID, NULL, 0);
     return GTEXT_CSS_E_INVALID;
   }
-  GTEXT_CSS_Registry * r = builder->reg;
-  if (r->frozen) {
-    fill_result(result, GTEXT_CSS_E_INVALID, NULL, 0);
-    return GTEXT_CSS_E_INVALID;
+  const size_t work_before = builder->reg->work;
+  const GTEXT_CSS_Status st = freeze_run(builder, out, result);
+  if (st != GTEXT_CSS_OK) {
+    freeze_undo(builder->reg, work_before);
   }
+  return st;
+}
+
+static GTEXT_CSS_Status freeze_run(GTEXT_CSS_Registry_Builder * builder, GTEXT_CSS_Registry ** out, GTEXT_CSS_Registry_Result * result) {
+  GTEXT_CSS_Registry * r = builder->reg;
   /* every registered grammar is compiled now: a redefinition made after a grammar that names it must not leave that grammar
    * unable to link unnoticed */
   for (size_t i = 0; i < r->ncprops; i++) {
@@ -1438,7 +1699,8 @@ GTEXT_CSS_Status gtext_css_registry_freeze(GTEXT_CSS_Registry_Builder * builder,
     GTEXT_CSS_Grammar_State s;
     const GTEXT_CSS_Compiled * comp;
     GTEXT_CSS_Grammar_Result gr;
-    const GTEXT_CSS_Status st = compile_lazy(r, &c->lazy, c->grammar, c->grammar_length, (GTEXT_CSS_Property_Id)(gtext_css_tbl_property_count + 1 + i), &s, &comp, &gr);
+    const GTEXT_CSS_Status st = compile_lazy(r, &c->lazy, c->ctext ? c->ctext : c->grammar, c->ctext ? c->ctext_length : c->grammar_length, (GTEXT_CSS_Property_Id)(gtext_css_tbl_property_count + 1 + i), &s, &comp, &gr);
+    r->work += gr.work + gr.nodes + c->grammar_length;
     if (st != GTEXT_CSS_OK) {
       fill_result(result, st, c->name, c->name_length);
       return st;
@@ -1447,13 +1709,53 @@ GTEXT_CSS_Status gtext_css_registry_freeze(GTEXT_CSS_Registry_Builder * builder,
       const GTEXT_CSS_Status fs = s == GTEXT_CSS_GRAMMAR_UNRESOLVED ? GTEXT_CSS_E_REFERENCE : (gr.status != GTEXT_CSS_OK ? gr.status : GTEXT_CSS_E_GRAMMAR);
       fill_result(result, fs, c->name, c->name_length);
       if (result) {
+        result->detail = c->overridden ? "the override no longer links with the properties of the registry that name it"
+                                       : "a registered grammar no longer links with the properties registered after it";
         result->grammar = gr;
         result->id = (GTEXT_CSS_Property_Id)(gtext_css_tbl_property_count + 1 + i);
       }
       return fs;
     }
   }
-  r->frozen = true;
+  if (r->noverrides) {
+    /* an override can change what a property of the pin links to (a grammar that names the overridden one): every such property is
+     * compiled now, and one that no longer links is reported by name, with the override that is to blame. A gap of the pin itself
+     * (a missing type, a text that is no definition) is not this. */
+    for (size_t i = 1; i <= gtext_css_tbl_property_count; i++) {
+      GTEXT_CSS_Grammar_State s;
+      const GTEXT_CSS_Compiled * comp;
+      GTEXT_CSS_Grammar_Result gr;
+      const GTEXT_CSS_Status st = css_registry_property_compiled(r, (GTEXT_CSS_Property_Id)i, &s, &comp, &gr);
+      if (st != GTEXT_CSS_OK) {
+        fill_result(result, st, NULL, 0);
+        return st;
+      }
+      if (s == GTEXT_CSS_GRAMMAR_FAILED && gr.status != GTEXT_CSS_E_GRAMMAR && gr.status != GTEXT_CSS_OK) {
+        const css_tbl_property * p = &gtext_css_tbl_properties[i - 1];
+        fill_result(result, gr.status, css_tstr_c(p->name), p->name.len);
+        if (result) {
+          result->grammar = gr;
+          result->detail = "a property of the registry no longer links because of an override";
+          result->id = r->overrides[0].id;
+          for (size_t k = 0; k < r->noverrides; k++) {
+            const cprop * oc = &r->cprops[r->overrides[k].id - gtext_css_tbl_property_count - 1];
+            char needle[REG_NAME_STACK + 8];
+            if (oc->name_length <= REG_NAME_STACK && p->grammar.len) {
+              needle[0] = '<';
+              needle[1] = '\'';
+              memcpy(needle + 2, oc->name, oc->name_length);
+              memcpy(needle + 2 + oc->name_length, "'>", 3);
+              if (strstr(css_tstr_c(p->grammar), needle)) {
+                result->id = r->overrides[k].id;
+                break;
+              }
+            }
+          }
+        }
+        return gr.status;
+      }
+    }
+  }
   *out = r;
   gtext_allocator_free(&r->alloc, builder);
   fill_result(result, GTEXT_CSS_OK, NULL, 0);
@@ -1537,6 +1839,10 @@ bool gtext_css_registry_at_rule_info(GTEXT_CSS_At_Rule_Id id, GTEXT_CSS_At_Rule_
   info->grammar = css_tstr_c(a->grammar);
   info->descriptor_count = a->count;
   info->declarations = a->declarations != 0;
+  /* CSS Page 3: an @page rule holds declarations of page descriptors and of properties; CSS Mixins: the body of an @function holds
+   * custom properties (its local variables) next to its `result` descriptor. No other at-rule of the pin is both. */
+  info->properties = info->name_length == 5 && memcmp(info->name, "@page", 5) == 0;
+  info->properties = info->properties || (info->name_length == 9 && memcmp(info->name, "@function", 9) == 0);
   return true;
 }
 

@@ -34,6 +34,7 @@ descriptor	@font-face font-feature-settings	1	1	-	0
 descriptor	@font-face font-language-override	1	1	-	0	
 descriptor	@font-face font-named-instance	1	1	-	0	
 descriptor	@font-face font-size	1	1	-	0	
+descriptor	@font-face font-stretch	1	1	-	0	
 descriptor	@font-face font-style	1	1	-	0	
 descriptor	@font-face font-variation-settings	1	1	-	0	
 descriptor	@font-face font-weight	1	1	-	0	

@@ -442,12 +442,14 @@ TEST(CssProperty, SerializingAResultThatHasNoValueIsRefused) {
   gtext_css_property_value_free(&pv);
   ASSERT_EQ(gtext_css_parse_property_text(r, "nosuch", 6, "1", 1, nullptr, &pv), GTEXT_CSS_OK);
   EXPECT_EQ(gtext_css_property_value_serialize_buffer(&pv, nullptr, &buf, &n), GTEXT_CSS_E_INVALID);
+  gtext_css_property_value_free(&pv);
   // an empty custom property serializes to nothing, and is a buffer all the same
   ASSERT_EQ(gtext_css_parse_property_text(r, "--e", 3, "", 0, nullptr, &pv), GTEXT_CSS_OK);
   ASSERT_EQ(gtext_css_property_value_serialize_buffer(&pv, nullptr, &buf, &n), GTEXT_CSS_OK);
   EXPECT_EQ(n, 0u);
   EXPECT_EQ(buf[0], '\0');
   gtext_css_serialize_buffer_free(nullptr, buf);
+  gtext_css_property_value_free(&pv);
 }
 
 // ---- the validity callbacks ----------------------------------------------------------------------------------
@@ -511,6 +513,16 @@ TEST(CssPropertyValidity, ADeclarationInAStyleRuleIsAPropertyAndOneThatIsNotVali
   EXPECT_EQ(kept, "a {height:5px;&:hover {color:red;}}");
 }
 
+TEST(CssPropertyValidity, ANestedAtRuleInAStyleRuleHoldsPropertiesNotItsOwnDescriptors) {
+  // `@media` has descriptors (the media features), but a declaration inside a rule nested in a style rule is a property of the
+  // element: `height` is no media feature, and is kept because it is a property.
+  GTEXT_CSS_Property_Validity v;
+  const std::string kept = declarations_kept(R(),
+      "a { @media screen { height: 5px; color: red; nosuch: 1; width: -1px } }", &v, true);
+  EXPECT_EQ(kept, "a {@media screen {height:5px;color:red;}}") << kept;
+}
+
+
 TEST(CssPropertyValidity, ALimitInTheMatchIsRecordedAndTheDeclarationIsNotKept) {
   GTEXT_CSS_Match_Options m = gtext_css_match_options_default();
   m.max_match_work = 10;
@@ -529,6 +541,128 @@ TEST(CssPropertyValidity, ALimitInTheMatchIsRecordedAndTheDeclarationIsNotKept) 
   gtext_css_tree_free(tree);
   EXPECT_EQ(gtext_css_property_validity_init(nullptr, R(), nullptr), GTEXT_CSS_E_INVALID);
   EXPECT_EQ(gtext_css_property_validity_init(&v, nullptr, nullptr), GTEXT_CSS_E_INVALID);
+}
+
+
+// ---- the fix pass of the review ----------------------------------------------------------------------------
+
+TEST(CssPropertyValidity, AnAtRuleThatTakesPropertiesAndDescriptorsKeepsBoth) {
+  // CSS Page 3: "@page rules ... contain declarations: the page-margin boxes' properties and the page descriptors"; a declaration of a
+  // property that is not a descriptor of the rule is still a property of it, and is judged as one.
+  GTEXT_CSS_Property_Validity v;
+  const std::string kept = declarations_kept(R(),
+      "@page { margin: 1px 2px; marks: crop; bleed: 3mm; width: -1px; nosuch: 1; color: red }\n"
+      "@page :first { margin-top: 5px; size: auto }\n"
+      "@function --f() { result: 1px; width: 2px; width: bogus }",
+      &v, true);
+  EXPECT_NE(kept.find("margin:1px 2px;"), std::string::npos) << kept;
+  EXPECT_NE(kept.find("marks:crop;"), std::string::npos) << kept;
+  EXPECT_NE(kept.find("bleed:3mm;"), std::string::npos) << kept;
+  EXPECT_NE(kept.find("color:red;"), std::string::npos) << kept;
+  EXPECT_EQ(kept.find("width:-1px"), std::string::npos) << kept;
+  EXPECT_EQ(kept.find("nosuch"), std::string::npos) << kept;
+  EXPECT_NE(kept.find("margin-top:5px;"), std::string::npos) << kept;
+  EXPECT_NE(kept.find("width:2px;"), std::string::npos) << kept;
+  EXPECT_EQ(kept.find("bogus"), std::string::npos) << kept;
+  GTEXT_CSS_At_Rule_Info a, b;
+  ASSERT_TRUE(gtext_css_registry_at_rule_info(gtext_css_registry_find_at_rule("@page", 5), &a));
+  ASSERT_TRUE(gtext_css_registry_at_rule_info(gtext_css_registry_find_at_rule("@font-face", 10), &b));
+  const GTEXT_CSS_At_Rule_Info * page = &a;
+  const GTEXT_CSS_At_Rule_Info * font = &b;
+  EXPECT_TRUE(page->properties);
+  EXPECT_FALSE(font->properties) << "a rule that takes only descriptors does not fall through";
+}
+
+TEST(CssProperty, FontStretchIsTheLegacyNameOfTheFontWidthDescriptor) {
+  // Fonts 4, @font-face: "font-stretch ... the legacy alias of font-width: ... `font-width` ... and the legacy name `font-stretch`
+  // are both accepted as descriptors, with the same meaning"
+  const GTEXT_CSS_Registry * r = R();
+  const GTEXT_CSS_Property_Options face = descriptor_of("@font-face");
+  EXPECT_EQ(parse(r, "font-stretch", "50% 150%", &face), "valid:50% 150%");
+  EXPECT_EQ(parse(r, "font-width", "50% 150%", &face), "valid:50% 150%");
+  EXPECT_EQ(parse(r, "font-stretch", "condensed", &face), "valid:condensed");
+  EXPECT_EQ(parse(r, "font-stretch", "-5%", &face), "invalid");
+  GTEXT_CSS_Property_Validity v;
+  EXPECT_NE(declarations_kept(r, "@font-face { font-stretch: 75%; font-width: 80% }", &v, true).find("font-stretch:75%;"), std::string::npos);
+}
+
+TEST(CssProperty, TheTextPathMatchesTheUnicodeRangeDescriptor) {
+  const GTEXT_CSS_Registry * r = R();
+  const GTEXT_CSS_Property_Options face = descriptor_of("@font-face");
+  EXPECT_EQ(parse(r, "unicode-range", "U+0-7F, U+4??", &face), "valid:U+0-7F, U+400-4FF");
+  EXPECT_EQ(parse(r, "UNICODE-RANGE", "u+26", &face), "valid:U+26");
+  EXPECT_EQ(parse(r, "unicode-range", "U+110000", &face), "invalid");
+  EXPECT_EQ(parse(r, "unicode-range", "U+30-20", &face), "invalid") << "the start is after the end";
+  EXPECT_EQ(parse(r, "unicode-range", "U+10FFFF", &face), "valid:U+10FFFF");
+  EXPECT_EQ(parse(r, "unicode-range", "red", &face), "invalid");
+}
+
+TEST(CssProperty, EveryEntryPointLeavesUnknownOnAFailedCall) {
+  const GTEXT_CSS_Registry * r = R();
+  GTEXT_CSS_Property_Value pv;
+  std::memset(&pv, 0, sizeof pv);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+  EXPECT_EQ(gtext_css_parse_property_declaration(r, nullptr, nullptr, &pv), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_PENDING;
+  EXPECT_EQ(gtext_css_parse_property_declaration(nullptr, nullptr, nullptr, &pv), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_WIDE;
+  EXPECT_EQ(gtext_css_parse_property_text(nullptr, "width", 5, "1px", 3, nullptr, &pv), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_WIDE;
+  EXPECT_EQ(gtext_css_parse_property_text(r, nullptr, 5, "1px", 3, nullptr, &pv), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_WIDE;
+  EXPECT_EQ(gtext_css_parse_property_text(r, "width", 5, nullptr, 3, nullptr, &pv), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_WIDE;
+  GTEXT_CSS_Property_Options face = descriptor_of("@font-face");
+  face.match = nullptr;
+  EXPECT_EQ(gtext_css_parse_property_text(r, "unicode-range", 13, nullptr, 3, &face, &pv), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN);
+  EXPECT_EQ(gtext_css_parse_property_declaration(r, nullptr, nullptr, nullptr), GTEXT_CSS_E_INVALID);
+}
+
+TEST(CssProperty, ASubstitutionFunctionThatIsNotSyntacticallyValidMakesTheValueInvalid) {
+  // Values 5: "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves
+  // syntactically valid according to their argument grammars, the entire value's grammar must be assumed to be valid at parse time."
+  // `var()` has no first argument, which `var( <declaration-value> , <declaration-value>? )` requires.
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "width", "var()"), "invalid");
+  EXPECT_EQ(parse(r, "width", "var( )"), "invalid");
+  EXPECT_EQ(parse(r, "width", "var(, 1px)"), "invalid");
+  EXPECT_EQ(parse(r, "width", "env()"), "invalid");
+  EXPECT_EQ(parse(r, "width", "attr()"), "invalid");
+  EXPECT_EQ(parse(r, "width", "calc(1px + var())"), "invalid");
+  EXPECT_EQ(parse(r, "margin", "1px var(--a) var()"), "invalid");
+  EXPECT_EQ(parse(r, "width", "var(--a)"), "pending:var(--a)");
+  EXPECT_EQ(parse(r, "width", "var(--a, 1px)"), "pending:var(--a, 1px)");
+  EXPECT_EQ(parse(r, "width", "var(--a,)"), "pending:var(--a,)");
+  EXPECT_EQ(parse(r, "width", "env(safe-area-inset-top)"), "pending:env(safe-area-inset-top)");
+  // Cascade 4, on `all`: "It only accepts the CSS-wide keywords." So `all: var(--x)` is not valid, as the engine has it, though
+  // every other shorthand takes a substitution.
+  EXPECT_EQ(parse(r, "all", "var(--x)"), "invalid");
+  EXPECT_EQ(parse(r, "all", "revert"), "wide:revert");
+  // a custom property's value is held to the same rule: a var() that is not valid is not a <declaration-value> that can be
+  // substituted, so the declaration is invalid
+  EXPECT_EQ(parse(r, "--x", "var()"), "invalid");
+  EXPECT_EQ(parse(r, "--x", "var(--y)"), "pending:var(--y)");
+}
+
+TEST(CssProperty, AUnitlessNumberIsALengthOnlyWhereTheQuirkAppliesAndNotInsideAnotherFunction) {
+  // Values 4, Appendix C: "the unitless length quirk ... applies ... only to the value of the properties listed, in the numeric
+  // position of the property's own value, and not inside functions": a number inside fit-content() is a number.
+  const GTEXT_CSS_Registry * r = R();
+  GTEXT_CSS_Property_Options q;
+  std::memset(&q, 0, sizeof q);
+  q.quirks = true;
+  EXPECT_EQ(parse(r, "width", "fit-content(10)", &q), "invalid");
+  EXPECT_EQ(parse(r, "width", "fit-content(10px)", &q), "valid:fit-content(10px)");
+  EXPECT_EQ(parse(r, "width", "calc(10)", &q), "invalid");
+  EXPECT_EQ(parse(r, "width", "10", &q), "valid:10px");
+  EXPECT_EQ(parse(r, "margin", "10 fit-content(5)", &q), "invalid");
+  EXPECT_EQ(parse(r, "clip", "rect(1px, 2px, 3px, 4px)", &q).substr(0, 5), "not s") << "clip is undecidable here, as it is without the quirk";
 }
 
 }  // namespace

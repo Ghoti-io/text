@@ -25,6 +25,9 @@
 #   tools/css/run-registry-gates.sh grammars-controls  ...and the gate is seen to fail (list tampered, library defects planted)
 #   tools/css/run-registry-gates.sh depth              the depth ledger (tools/css/depth.tsv) has no regression
 #   tools/css/run-registry-gates.sh depth-controls     ...and the gate is seen to fail
+#   tools/css/run-registry-gates.sh package            the tables agree with the @webref/css package, or the difference is classified
+#   tools/css/run-registry-gates.sh package-controls   ...and the gate is seen to fail (an unlisted and a stale difference, an edited
+#                                                      package, a package that is not there)
 #
 # The Makefile passes PREFIX, DEP_PCS and ARCHIVE (CONFORMANCE_ENV), as for the other gates built on the archive.
 
@@ -114,9 +117,11 @@ build_report() {
 }
 
 report() {
-	mkdir -p "$root/build"
-	build_report "$root/build/css-registry-report"
-	"$root/build/css-registry-report" > "$root/build/css-registry-report.tsv" 2>"$root/build/css-registry-report.err"
+	# in this run's own scratch directory: the grammar gate and the depth gate run side by side under `make -j`, and one report file
+	# written by both is a report neither of them can trust
+	build_report "$scratch/css-registry-report"
+	"$scratch/css-registry-report" > "$scratch/report.tsv" 2>"$scratch/report.err"
+	rep=$scratch/report.tsv
 }
 
 FLOORS=${CSS_GRAMMAR_FLOORS:-700,100,440}
@@ -124,7 +129,7 @@ FLOORS=${CSS_GRAMMAR_FLOORS:-700,100,440}
 grammars() {
 	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/check-grammars.py)" >&2; exit 1; }
 	report
-	python3 tools/css/check-grammars.py build/css-registry-report.tsv tools/css/UNRESOLVED_REFERENCES --floors "$FLOORS"
+	python3 tools/css/check-grammars.py "$rep" tools/css/UNRESOLVED_REFERENCES --floors "$FLOORS"
 }
 
 plant() {
@@ -147,7 +152,6 @@ plant() {
 
 grammars_controls() {
 	report
-	rep=build/css-registry-report.tsv
 	check="python3 tools/css/check-grammars.py"
 	list=tools/css/UNRESOLVED_REFERENCES
 	$check "$rep" "$list" --floors "$FLOORS" >"$scratch/log" 2>&1 || { echo "the grammar gate does not pass unedited" >&2; cat "$scratch/log" >&2; exit 1; }
@@ -171,7 +175,7 @@ grammars_controls() {
 	expect function-types-not-chained "UNLISTED" $check "$scratch/report-function-types-are-not-chained.tsv" "$list" --floors "$FLOORS"
 	plant global-types-are-not-found css_registry.c 'if (global != (size_t)-1) {' 'if (0) {'
 	expect global-types "UNLISTED" $check "$scratch/report-global-types-are-not-found.tsv" "$list" --floors "$FLOORS"
-	plant aliases-are-not-resolved css_registry.c 'next = (GTEXT_CSS_Property_Id)gtext_css_tbl_properties\[id - 1\].alias_of;' 'next = 0;'
+	plant aliases-are-not-resolved css_registry.c 'next = current_id(registry, (GTEXT_CSS_Property_Id)gtext_css_tbl_properties\[id - 1\].alias_of);' 'next = 0;'
 	expect aliases-not-resolved "UNLISTED" $check "$scratch/report-aliases-are-not-resolved.tsv" "$list" --floors "$FLOORS"
 	echo "grammar controls: done"
 }
@@ -181,21 +185,42 @@ grammars_controls() {
 depth() {
 	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/gen-depth.py)" >&2; exit 1; }
 	report
+	depth_baseline
+	python3 tools/css/gen-depth.py "$rep" tools/css/depth.tsv --check $base --floor tools/css/DEPTH_FLOOR
+}
+
+# The ledger is held to an earlier version of itself, and to a tracked floor. The earlier version is $CSS_DEPTH_BASE (a git ref), or
+# else the committed file when the working tree has changed it, or else the commit before HEAD: so an edit-down that is committed
+# fails at the commit that makes it, and not only before it.
+depth_baseline() {
 	base=
-	if git -C "$root" ls-files --error-unmatch tools/css/depth.tsv >/dev/null 2>&1 && git -C "$root" show HEAD:libs/text/tools/css/depth.tsv >"$scratch/baseline" 2>/dev/null; then
-		base="--baseline $scratch/baseline"
-	elif git -C "$root" show HEAD:tools/css/depth.tsv >"$scratch/baseline" 2>/dev/null; then
+	rel=$(git -C "$root" rev-parse --show-prefix 2>/dev/null || true)
+	ref=${CSS_DEPTH_BASE:-}
+	if [ -z "$ref" ]; then
+		if git -C "$root" diff --quiet HEAD -- tools/css/depth.tsv 2>/dev/null; then
+			ref=HEAD~1
+		else
+			ref=HEAD
+		fi
+	fi
+	if git -C "$root" show "$ref:${rel}tools/css/depth.tsv" >"$scratch/baseline" 2>/dev/null; then
 		base="--baseline $scratch/baseline"
 	fi
-	python3 tools/css/gen-depth.py build/css-registry-report.tsv tools/css/depth.tsv --check $base
 }
 
 depth_controls() {
 	report
-	rep=build/css-registry-report.tsv
 	led=tools/css/depth.tsv
 	gen="python3 tools/css/gen-depth.py"
-	$gen "$rep" "$led" --check >"$scratch/log" 2>&1 || { echo "the depth gate does not pass unedited" >&2; cat "$scratch/log" >&2; exit 1; }
+	$gen "$rep" "$led" --check --floor tools/css/DEPTH_FLOOR >"$scratch/log" 2>&1 || { echo "the depth gate does not pass unedited" >&2; cat "$scratch/log" >&2; exit 1; }
+	# a ledger edited down and committed is held by the floor, and by the commit before it
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $1 == "property" && $3 == 1 { $3 = 0; done = 1 } { print }' "$led" > "$scratch/edited-down"
+	expect ledger-edited-down-below-the-floor "BELOW THE FLOOR" $gen "$rep" "$scratch/edited-down" --check --floor tools/css/DEPTH_FLOOR
+	expect ledger-edited-down-against-its-parent "REGRESSION" $gen "$rep" "$scratch/edited-down" --check --baseline "$led"
+	printf '%s\n' '1 1 0 0  # too low' > "$scratch/low-floor"
+	expect floor-left-low "FLOOR IS LOW" $gen "$rep" "$led" --check --floor "$scratch/low-floor"
+	printf '%s\n' 'x' > "$scratch/bad-floor"
+	expect floor-unreadable "FLOOR" $gen "$rep" "$led" --check --floor "$scratch/bad-floor"
 	# a property that is 0 in the measurement but 1 in the ledger is a regression
 	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $1 == "property" && $3 == 0 && $7 != "" && $7 !~ /^alias/ { $3 = 1; done = 1 } { print }' "$led" > "$scratch/regress"
 	cmp -s "$led" "$scratch/regress" && { echo "control regression: no property that fails to parse to claim" >&2; exit 1; }
@@ -215,6 +240,50 @@ depth_controls() {
 	echo "depth controls: done"
 }
 
+# ---- the second reading of the data ------------------------------------------------------------------
+
+package() {
+	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/check-webref-package.py)" >&2; exit 1; }
+	python3 tools/css/check-webref-package.py
+}
+
+package_controls() {
+	package >/dev/null
+	div=tools/css/WEBREF_PACKAGE_DIVERGENCES
+	check="python3 tools/css/check-webref-package.py"
+	# a difference that is not listed
+	awk -F'\t' '/^#/ || NF < 3 { print; next } !done && $1 == "type" { done = 1; next } { print }' "$div" > "$scratch/unlisted"
+	expect unlisted-difference "UNLISTED" $check --divergences "$scratch/unlisted"
+	# a row for a difference that is gone
+	{ cat "$div"; printf 'type\tcolor\tplanted: a row for a type on which the two readings agree, so the row is stale\n'; } > "$scratch/stale"
+	expect stale-row "STALE" $check --divergences "$scratch/stale"
+	printf 'type\tx\tshort\n' > "$scratch/short"
+	expect short-reason "too short" $check --divergences "$scratch/short"
+	# a package that says something else: a property renamed, a syntax edited
+	mkdir -p "$scratch/pkg"
+	python3 - "$scratch/pkg" <<'PY'
+import json, sys
+d = json.load(open("third_party/css/webref-css/package/css.json"))
+d["properties"][10]["name"] = d["properties"][10]["name"] + "-planted"
+for p in d["properties"]:
+    if p["name"] == "width":
+        p["syntax"] += " | planted"
+json.dump(d, open(sys.argv[1] + "/css.json", "w"))
+PY
+	expect edited-package "UNLISTED: property" $check --package "$scratch/pkg" --divergences "$div"
+	expect edited-syntax "UNLISTED: property-syntax width" $check --package "$scratch/pkg" --divergences "$div"
+	# no package: a failure that says how to fetch it, and "not run" (which is not a pass) only when asked for
+	expect package-missing "tools/css/fetch.sh" $check --package "$scratch/none"
+	status=0
+	CSS_ORACLE_OFFLINE=1 $check --package "$scratch/none" >"$scratch/log" 2>&1 || status=$?
+	if [ "$status" != 3 ] || ! grep -q "NOT RUN" "$scratch/log"; then
+		echo "control offline: expected exit 3 and NOT RUN, got $status" >&2
+		exit 1
+	fi
+	echo "control offline: not run, and not a pass"
+	echo "package controls: done"
+}
+
 case "$mode" in
 tables) tables ;;
 tables-controls) tables_controls ;;
@@ -222,5 +291,7 @@ grammars) grammars ;;
 grammars-controls) grammars_controls ;;
 depth) depth ;;
 depth-controls) depth_controls ;;
-*) echo "usage: $0 tables|tables-controls|grammars|grammars-controls|depth|depth-controls" >&2; exit 2 ;;
+package) package ;;
+package-controls) package_controls ;;
+*) echo "usage: $0 tables|tables-controls|grammars|grammars-controls|depth|depth-controls|package|package-controls" >&2; exit 2 ;;
 esac

@@ -136,3 +136,30 @@ else
 	rm -rf "$webref"
 	mv "$webref.partial" "$webref"
 fi
+
+# ---- the @webref/css package, the second reading of the same data -------------------------------------------------
+# A cross-check of names and syntax (tools/css/check-webref-package.py), pinned by version and by the integrity the registry
+# publishes for the tarball (tools/css/WEBREF_PACKAGE). A tarball that does not hash to it is not kept.
+pkgpin="$root/tools/css/WEBREF_PACKAGE"
+pkg_version=$(awk -F'\t' '$1 == "version" { print $2 }' "$pkgpin")
+pkg_url=$(awk -F'\t' '$1 == "tarball" { print $2 }' "$pkgpin")
+pkg_integrity=$(awk -F'\t' '$1 == "integrity" { print $2 }' "$pkgpin")
+pkgdir="$dest/webref-css"
+if [ -f "$pkgdir/package/css.json" ] && [ "$(cat "$pkgdir/INTEGRITY" 2>/dev/null)" = "$pkg_integrity" ]; then
+	printf 'have    @webref/css %s\n' "$pkg_version"
+else
+	printf 'fetch   @webref/css %s\n' "$pkg_version"
+	rm -rf "$pkgdir.partial"
+	mkdir -p "$pkgdir.partial"
+	curl --fail --silent --show-error --location -o "$pkgdir.partial/package.tgz" "$pkg_url"
+	got="sha512-$(openssl dgst -sha512 -binary "$pkgdir.partial/package.tgz" | base64 -w0)"
+	if [ "$got" != "$pkg_integrity" ]; then
+		rm -rf "$pkgdir.partial"
+		printf '@webref/css %s: the tarball hashes to %s, pinned %s. Nothing was kept.\n' "$pkg_version" "$got" "$pkg_integrity" >&2
+		exit 1
+	fi
+	tar -xzf "$pkgdir.partial/package.tgz" -C "$pkgdir.partial"
+	printf '%s\n' "$pkg_integrity" > "$pkgdir.partial/INTEGRITY"
+	rm -rf "$pkgdir"
+	mv "$pkgdir.partial" "$pkgdir"
+fi

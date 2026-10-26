@@ -367,7 +367,23 @@ static bool node_nullable(const GTEXT_CSS_Compiled * c, const uint8_t * nl, uint
     if (g->sep) {
       return false;
     }
+    /* A juxtaposition with commas between segments that can all be empty may be empty: the commas are omitted with the segments
+     * (Values 4, 2; see omit_commas()). Decided on the literals as written, so that the answer is the same before and after the
+     * rewrite. A comma at an end or two together are literal items, as they are matched. */
+    bool commas = false, whole = !(g->flags & GNF_OMITTED) && g->nkids >= 3;
+    for (uint32_t i = 0; whole && i < g->nkids; i++) {
+      const bool lit = c->nodes[c->kids[g->kids + i]].kind == GN_LITERAL && c->nodes[c->kids[g->kids + i]].lit == ',';
+      const bool prev = i > 0 && c->nodes[c->kids[g->kids + i - 1]].kind == GN_LITERAL && c->nodes[c->kids[g->kids + i - 1]].lit == ',';
+      if (lit) {
+        commas = true;
+        whole = i > 0 && i + 1 < g->nkids && !prev;
+      }
+    }
     for (uint32_t i = 0; i < g->nkids; i++) {
+      const gnode * k = &c->nodes[c->kids[g->kids + i]];
+      if (commas && whole && k->kind == GN_LITERAL && k->lit == ',') {
+        continue;
+      }
       if (!nl[c->kids[g->kids + i]]) {
         return false;
       }
@@ -728,17 +744,19 @@ static bool omit_commas(linker * L, uint32_t node, size_t m, const size_t * begi
       lit = orig[i];
     }
   }
-  bool ok = lit != GN_NONE;
+  if (lit == GN_NONE) {
+    gtext_allocator_free(&L->alloc, orig);
+    return true; /* no comma to work out */
+  }
+  bool ok = true;
   for (size_t i = 0; i < m && ok; i++) {
     if (count[i] == 1) {
       seg[i] = orig[begin[i]];
     }
     else {
-      bool all_null = true;
-      for (size_t k = 0; k < count[i]; k++) {
-        all_null = all_null && nl[orig[begin[i] + k]];
-      }
-      seg[i] = make_inner(L, GN_SEQ, orig + begin[i], count[i], 1, 1, orig[begin[i]], orig[begin[i] + count[i] - 1], nl, all_null);
+      /* Not nullable as far as `nl` is concerned: a segment is used only as the first item of an alternative (through `req`, which is
+       * never nullable) or after a comma, so nothing reads this flag; a segment that can be empty is made optional by `good`. */
+      seg[i] = make_inner(L, GN_SEQ, orig + begin[i], count[i], 1, 1, orig[begin[i]], orig[begin[i] + count[i] - 1], nl, 0);
       ok = seg[i] != GN_NONE;
     }
     if (!ok) {
@@ -798,7 +816,7 @@ static bool omit_commas(linker * L, uint32_t node, size_t m, const size_t * begi
       body = alt[0];  /* the first segment cannot be empty: the segments in order */
     }
     else {
-      body = make_inner(L, GN_ALT, alt, nalt, 1, 1, seg[0], seg[m - 1], nl, nullable_all);
+      body = make_inner(L, GN_ALT, alt, nalt, 1, 1, seg[0], seg[m - 1], nl, 0); /* read by nothing: the node the parents hold carries the flag */
       ok = body != GN_NONE;
     }
     if (ok && nullable_all) {
@@ -811,7 +829,6 @@ static bool omit_commas(linker * L, uint32_t node, size_t m, const size_t * begi
         w->kids = first;
         w->nkids = 1;
         w->sep = 0;
-        nl[node] = 1;
       }
       else {
         ok = false;
@@ -1011,8 +1028,10 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
     }
   }
   if (L.status == GTEXT_CSS_OK && nullable_worklist(&L, nl)) {
-    if (find_left_recursion(&L, nl)) {
-      split_sequences(&L, nl);
+    /* the juxtapositions are split (and their omissible commas worked out) first: a left recursion that only the rewritten
+     * form shows (`y = a? , [<y>]?`) is found in it. The nullability the rewrite relies on is the one decided above. */
+    if (split_sequences(&L, nl)) {
+      find_left_recursion(&L, nl);
     }
   }
   if (L.status == GTEXT_CSS_OK) {

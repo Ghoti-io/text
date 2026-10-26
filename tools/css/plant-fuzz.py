@@ -187,7 +187,7 @@ REGISTRY_PLANTS = {
                               "      result = st != GTEXT_CSS_OK ? st : GTEXT_CSS_OK;", "own-register-bad-initial.seed"),
     "registry-leaks-initial": ("css_registry.c", "    gtext_allocator_free(&a, c->initial);\n    gtext_allocator_free(&a, c->longhands);\n  }\n  gtext_css_function_types_free(r->ftypes);",
                                "    gtext_allocator_free(&a, c->longhands);\n  }\n  gtext_css_function_types_free(r->ftypes);", "own-register-valid.seed"),
-    "override-cannot-name-itself": ("css_registry.c", "    for (size_t hops = 0; id && id == r->scope && hops < 64; hops++) {", "    for (size_t hops = 0; 0 && id && id == r->scope && hops < 64; hops++) {",
+    "override-cannot-name-itself": ("css_registry.c", "          if (memcmp(tmp, lname, nlen) == 0) {", "          if (0 && memcmp(tmp, lname, nlen) == 0) {",
                                     "own-register-override-self.seed"),
     "failed-definition-answered-by-another-source": ("css_registry.c", "  if (r->rf.status != GTEXT_CSS_OK || gtext_css_function_types_status(r->ftypes) != GTEXT_CSS_OK) {\n    /* a definition of the pin could not be made",
                                                       "  if (0) {\n    /* a definition of the pin could not be made", None),

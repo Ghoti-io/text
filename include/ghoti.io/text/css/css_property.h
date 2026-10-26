@@ -78,11 +78,11 @@ extern "C" {
 
 /** @brief What parsing a declaration's value came to. */
 typedef enum {
-  GTEXT_CSS_PROP_RESULT_VALID = 0, ///< A typed value (`set`).
+  GTEXT_CSS_PROP_RESULT_UNKNOWN = 0, ///< No such property (or, in an at-rule context, descriptor). Also what a zeroed or freed result is, and what every failed call leaves.
+  GTEXT_CSS_PROP_RESULT_VALID,     ///< A typed value (`set`).
   GTEXT_CSS_PROP_RESULT_WIDE,      ///< A CSS-wide keyword alone (`wide`).
   GTEXT_CSS_PROP_RESULT_PENDING,   ///< Valid, with an arbitrary substitution in it (`set` holds the pending value).
-  GTEXT_CSS_PROP_RESULT_INVALID,   ///< The property is known and the value is not one of it.
-  GTEXT_CSS_PROP_RESULT_UNKNOWN    ///< No such property (or, in an at-rule context, descriptor).
+  GTEXT_CSS_PROP_RESULT_INVALID    ///< The property is known and the value is not one of it.
 } GTEXT_CSS_Property_Outcome;
 
 /** @brief The CSS-wide keywords. */

@@ -740,7 +740,8 @@ std::function<Measured(size_t)> css_link_chain() {
 // The CSS registry: n registrations (or lookups) of one shape, counted by css_registry_work() (hash probes, search steps, bytes of names
 // folded, hashed and copied). `kind`: 0 distinct short names; 1 names that share a 100-byte prefix; 2 a chain of n overrides of one name;
 // 3 n aliases of one property; 4 n shorthands of six longhands each; 5 n lookups of names the registry lacks, in a registry of n; 6 n
-// lookups of names it has.
+// lookups of names it has; 7 a chain of n overrides each of which names the one it replaces (its grammar contains the one before: bounded
+// quadratic by design); 8 a chain of n properties each naming the one before (the link of each copies the ones it names: the same).
 std::function<Measured(size_t)> css_registry_shape(int kind) {
   return [kind](size_t n) {
     Measured m;
@@ -761,7 +762,7 @@ std::function<Measured(size_t)> css_registry_shape(int kind) {
     for (size_t i = 0; i < n; i++) {
       GTEXT_CSS_Registry_Result res;
       GTEXT_CSS_Status st = GTEXT_CSS_OK;
-      const std::string name = kind == 2 ? "vo" : name_of(i);
+      const std::string name = kind == 2 ? "vo" : kind == 7 ? "width" : name_of(i);
       if (kind == 3) {
         st = gtext_css_registry_register_alias(b, name.c_str(), "width", false, &res);
       }
@@ -777,10 +778,21 @@ std::function<Measured(size_t)> css_registry_shape(int kind) {
       else {
         GTEXT_CSS_Property_Def d;
         std::memset(&d, 0, sizeof d);
+        std::string chain_name, chain_grammar;
         d.name = name.c_str();
         d.grammar = "a | b";
         d.initial = "a";
-        d.override = kind == 2;
+        if (kind == 7) {
+          d.name = "width";
+          chain_grammar = "<'width'> | zz" + std::to_string(i);
+          d.grammar = chain_grammar.c_str();
+          d.initial = "auto";
+        }
+        else if (kind == 8) {
+          chain_grammar = i == 0 ? std::string("a | b") : "<'" + name_of(i - 1) + "'> | zz" + std::to_string(i);
+          d.grammar = chain_grammar.c_str();
+        }
+        d.override = kind == 2 || kind == 7;
         st = gtext_css_registry_register_property(b, &d, &res);
       }
       if (st != GTEXT_CSS_OK) {
@@ -1505,9 +1517,19 @@ std::vector<Shape> build_shapes() {
   add("css", "CSS registry: n registrations of names that share a 100-byte prefix", 500, css_registry_shape(1));
   add("css", "CSS registry: a chain of n overrides of one name", 500, css_registry_shape(2));
   add("css", "CSS registry: n aliases of one property", 500, css_registry_shape(3));
-  add("css", "CSS registry: n shorthands of six longhands", 500, css_registry_shape(4));
+  add("css", "CSS registry: n shorthands of six longhands", 500, css_registry_shape(4)).per_byte = 0;
   add("css", "CSS registry: n lookups of names it lacks", 500, css_registry_shape(5));
   add("css", "CSS registry: n lookups of names it has", 500, css_registry_shape(6));
+  {
+    Shape & over = add("css", "CSS registry: a chain of n overrides that each name the one they replace (bounded-quadratic by design)", 12, css_registry_shape(7));
+    over.bound = 17.0;
+    over.per_byte = 0;
+    over.note = "each grammar contains the one it replaces, so the text and the link of the n-th are n times those of the first; max_definition_depth (256 nested groups) and max_definition_bytes bound it: the 255th is refused";
+    Shape & chain = add("css", "CSS registry: a chain of n properties that each name the one before (bounded-quadratic by design)", 60, css_registry_shape(8));
+    chain.bound = 17.0;
+    chain.per_byte = 0;
+    chain.note = "the link of each property copies the definitions it names, so the n-th links n definitions; max_definition_nodes bounds it";
+  }
   add("css", "CSS property: a comma list of n transitions", 1000,
       css_property_value("transition", [](size_t k) { return repeat("opacity 1s ease-in 2s, ", k) + "color 1s"; }));
   add("css", "CSS property: n grid tracks", 1000, css_property_value("grid-template-columns", [](size_t k) { return repeat("1fr minmax(10px, 2fr) ", k); }));

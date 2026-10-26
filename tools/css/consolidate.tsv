@@ -10,3 +10,4 @@ ignore-grammar	grid-template-columns	minmax()	the pin's value is the prototype `
 ignore-grammar	grid-template-rows	minmax()	the same entry, nested in grid-template-rows
 enum-from-values		animation-action	the pin lists no grammar, and its eight keyword values (none, play, play-once, play-forwards, play-backwards, pause, reset, replay) are the type
 enum-from-values		timeline-range-center-subject	the pin lists no grammar, and its two keyword values (source, target) are the type
+descriptor-alias	@font-face	font-stretch	font-width: Fonts 4, 4.4.1: "For historical reasons, a font-stretch descriptor exists which is a legacy name alias and functions in the identical way to the font-width descriptor."

@@ -31,6 +31,7 @@
  */
 
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -165,6 +166,67 @@ TEST(CssRegistryOom, RegisteringAnAliasAndAShorthandAndOverridingSweptOverEveryA
   }
 }
 
+TEST(CssRegistryOom, TheAllocationsOfRegistrationAreBalancedWithNoFailureAtAll) {
+  // The name table grows as registrations arrive (the old table is freed), a refused registration (a name that exists) gives back
+  // what it made, an override is kept in a list that grows, and the registry gives back everything it took. Whatever the allocator
+  // does not see freed is a leak; whatever it is asked to free that it did not make is a bad free.
+  FaultAllocator fa;
+  {
+    GTEXT_CSS_Registry_Options o = options_with(fa);
+    GTEXT_CSS_Registry_Builder * b = nullptr;
+    ASSERT_EQ(gtext_css_registry_builder_new(&o, &b), GTEXT_CSS_OK);
+    GTEXT_CSS_Registry_Result res;
+    std::vector<std::string> names;
+    for (int i = 0; i < 400; i++) {
+      names.push_back("vector-n" + std::to_string(i));
+      GTEXT_CSS_Property_Def d = def(names.back().c_str(), "a | b", "a");
+      ASSERT_EQ(gtext_css_registry_register_property(b, &d, &res), GTEXT_CSS_OK) << i;
+      EXPECT_EQ(gtext_css_registry_register_property(b, &d, &res), GTEXT_CSS_E_EXISTS) << i;
+      if (i % 25 == 0) {
+        d.override = true;
+        d.grammar = "a | b | c";
+        ASSERT_EQ(gtext_css_registry_register_property(b, &d, &res), GTEXT_CSS_OK) << i;
+      }
+    }
+    GTEXT_CSS_Property_Def w = def("width", "x", "x");
+    EXPECT_EQ(gtext_css_registry_register_property(b, &w, &res), GTEXT_CSS_E_EXISTS);
+    EXPECT_EQ(gtext_css_registry_register_alias(b, "vector-n3", "width", false, &res), GTEXT_CSS_E_EXISTS);
+    const char * lh[] = {"width"};
+    GTEXT_CSS_Shorthand_Def sh;
+    std::memset(&sh, 0, sizeof sh);
+    sh.name = "vector-n4";
+    sh.grammar = "<'width'>";
+    sh.longhands = lh;
+    sh.longhand_count = 1;
+    EXPECT_EQ(gtext_css_registry_register_shorthand(b, &sh, &res), GTEXT_CSS_E_EXISTS);
+    GTEXT_CSS_Registry * r = nullptr;
+    ASSERT_EQ(gtext_css_registry_freeze(b, &r, &res), GTEXT_CSS_OK);
+    EXPECT_EQ(gtext_css_registry_override_count(r), 16u);
+    gtext_css_registry_free(r);
+  }
+  EXPECT_TRUE(fa.live.empty()) << fa.live.size() << " blocks are left";
+  EXPECT_EQ(fa.bad_frees, 0u);
+}
+
+TEST(CssRegistryOom, AFailedFreezeAndABuilderFreedUnfrozenGiveEverythingBack) {
+  FaultAllocator fa;
+  {
+    GTEXT_CSS_Registry_Options o = options_with(fa);
+    GTEXT_CSS_Registry_Builder * b = nullptr;
+    ASSERT_EQ(gtext_css_registry_builder_new(&o, &b), GTEXT_CSS_OK);
+    GTEXT_CSS_Property_Def w = def("width", "<'flex'> | zzy", "auto");
+    w.override = true;
+    ASSERT_EQ(gtext_css_registry_register_property(b, &w, nullptr), GTEXT_CSS_OK);
+    GTEXT_CSS_Registry * r = nullptr;
+    GTEXT_CSS_Registry_Result res;
+    EXPECT_EQ(gtext_css_registry_freeze(b, &r, &res), GTEXT_CSS_E_LEFT_RECURSION);
+    EXPECT_EQ(gtext_css_registry_freeze(b, &r, &res), GTEXT_CSS_E_LEFT_RECURSION) << "and again, the same";
+    gtext_css_registry_builder_free(b);
+  }
+  EXPECT_TRUE(fa.live.empty()) << fa.live.size() << " blocks are left";
+  EXPECT_EQ(fa.bad_frees, 0u);
+}
+
 TEST(CssRegistryOom, FreezingSweptOverEveryAllocation) {
   size_t failures = 0;
   for (size_t n = 1; n < 20000; n++) {
@@ -188,7 +250,7 @@ TEST(CssRegistryOom, FreezingSweptOverEveryAllocation) {
     failures++;
     EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n << " " << gtext_css_status_string(st);
     EXPECT_EQ(r, nullptr);
-    // the builder is untouched by a failed freeze, and freezes with memory
+    // the builder is still a builder after a failed freeze, and freezes with memory
     ASSERT_EQ(gtext_css_registry_freeze(b, &r, nullptr), GTEXT_CSS_OK) << n;
     EXPECT_EQ(parse(r, "vector-gap", "5px"), "valid:5px") << n;
     gtext_css_registry_free(r);
