@@ -56,7 +56,7 @@ static const struct {
   {"frequency", NT_FREQUENCY}, {"resolution", NT_RESOLUTION}, {"flex", NT_FLEX},
   {"ratio", NT_RATIO}, {"zero", NT_ZERO}, {"string", NT_STRING}, {"url", NT_URL},
   {"ident", NT_IDENT}, {"custom-ident", NT_CUSTOM_IDENT}, {"dashed-ident", NT_DASHED_IDENT},
-  {"any-value", NT_ANY_VALUE}, {"declaration-value", NT_DECL_VALUE}, {"urange", NT_URANGE},
+  {"any-value", NT_ANY_VALUE}, {"declaration-value", NT_DECL_VALUE}, {"urange", NT_URANGE}, {"unicode-range-token", NT_URANGE},
   {"an+b", NT_ANB}, {"declaration-list", NT_DECL_LIST}, {"rule-list", NT_RULE_LIST},
   {"ident-token", NT_TOK_IDENT}, {"function-token", NT_TOK_FUNCTION},
   {"at-keyword-token", NT_TOK_AT_KEYWORD}, {"hash-token", NT_TOK_HASH},

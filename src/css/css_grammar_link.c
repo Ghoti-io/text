@@ -669,6 +669,171 @@ static bool add_kid_run(linker * L, const uint32_t * items, size_t n, uint32_t *
   return true;
 }
 
+/* ---- omissible commas ---------------------------------------------------------- */
+
+/// Most segments of a juxtaposition that the omission of commas is worked out for (the number of nodes it makes is quadratic in it).
+#define OMIT_MAX_SEGMENTS 16
+
+static uint32_t make_inner(linker * L, uint8_t kind, const uint32_t * kids, size_t n, uint32_t min, uint32_t max, uint32_t src_from,
+    uint32_t src_to, uint8_t * nl, uint8_t nullable) {
+  GTEXT_CSS_Compiled * c = L->c;
+  uint32_t first = 0;
+  if (!add_kid_run(L, kids, n, &first)) {
+    return GN_NONE;
+  }
+  gnode g;
+  memset(&g, 0, sizeof g);
+  g.kind = kind;
+  g.min = min;
+  g.max = max;
+  g.target = UINT32_MAX;
+  g.kids = first;
+  g.nkids = (uint32_t)n;
+  g.flags = GNF_OMITTED;
+  const gnode * f = &c->nodes[src_from];
+  const gnode * l = &c->nodes[src_to];
+  g.src_off = f->src_off;
+  g.src_len = l->src_off + l->src_len >= f->src_off ? l->src_off + l->src_len - f->src_off : 0;
+  const uint32_t made = add_node(L, &g);
+  if (made != GN_NONE) {
+    nl[made] = nullable;
+  }
+  return made;
+}
+
+/// Values 4, 2: "Commas specified in the grammar are implicitly omissible in some circumstances, when used to separate optional
+/// terms in the grammar. Within a top-level list in a property or other CSS value, or a function's argument list, a comma specified
+/// in the grammar must be omitted if: all items preceding the comma have been omitted; all items following the comma have been
+/// omitted; multiple commas would be adjacent (ignoring white space/comments), due to the items between the commas being omitted."
+/// A juxtaposition `S0 , S1 , S2 ...` in which some segment can be empty is therefore a sequence of the segments that are present,
+/// with a comma between each two of them and none otherwise; a segment is present when it matches something. It is written out as
+/// nodes: the first present segment (an alternative for each segment that can be the first), then for each later segment either `, S`
+/// or, when it can be empty, `[ , !S ]?`.
+static bool omit_commas(linker * L, uint32_t node, size_t m, const size_t * begin, const size_t * count, const bool * good, uint8_t * nl) {
+  GTEXT_CSS_Compiled * c = L->c;
+  const gnode g = c->nodes[node];
+  uint32_t * orig = gtext_allocator_malloc(&L->alloc, g.nkids * sizeof *orig);
+  if (!orig) {
+    lfail(L, GTEXT_CSS_E_OOM);
+    return false;
+  }
+  memcpy(orig, c->kids + g.kids, g.nkids * sizeof *orig);
+  uint32_t seg[OMIT_MAX_SEGMENTS], req[OMIT_MAX_SEGMENTS], alt[OMIT_MAX_SEGMENTS];
+  /* what follows a segment that is present: `, S` (two items, flat) when S cannot be empty, else the one item `[ , !S ]?` */
+  uint32_t tail[OMIT_MAX_SEGMENTS][2];
+  size_t tail_n[OMIT_MAX_SEGMENTS];
+  uint32_t lit = GN_NONE;
+  for (uint32_t i = 0; i < g.nkids && lit == GN_NONE; i++) {
+    if (is_sep_literal(c, orig[i], ',')) {
+      lit = orig[i];
+    }
+  }
+  bool ok = lit != GN_NONE;
+  for (size_t i = 0; i < m && ok; i++) {
+    if (count[i] == 1) {
+      seg[i] = orig[begin[i]];
+    }
+    else {
+      bool all_null = true;
+      for (size_t k = 0; k < count[i]; k++) {
+        all_null = all_null && nl[orig[begin[i] + k]];
+      }
+      seg[i] = make_inner(L, GN_SEQ, orig + begin[i], count[i], 1, 1, orig[begin[i]], orig[begin[i] + count[i] - 1], nl, all_null);
+      ok = seg[i] != GN_NONE;
+    }
+    if (!ok) {
+      break;
+    }
+    if (good[i]) {
+      req[i] = seg[i];
+    }
+    else {
+      req[i] = make_inner(L, GN_REQ, &seg[i], 1, 1, 1, seg[i], seg[i], nl, 0);
+      ok = req[i] != GN_NONE;
+    }
+  }
+  for (size_t j = 1; j < m && ok; j++) {
+    if (good[j]) {
+      tail[j][0] = lit;
+      tail[j][1] = seg[j];
+      tail_n[j] = 2;
+    }
+    else {
+      const uint32_t two[2] = {lit, req[j]};
+      uint32_t p = make_inner(L, GN_SEQ, two, 2, 1, 1, lit, seg[j], nl, 0);
+      ok = p != GN_NONE;
+      if (ok) {
+        p = make_inner(L, GN_MULT, &p, 1, 0, 1, lit, seg[j], nl, 1);
+        ok = p != GN_NONE;
+      }
+      tail[j][0] = p;
+      tail_n[j] = 1;
+    }
+  }
+  /* the first present segment: the first segment if it cannot be empty, else an alternative for each segment that can be first */
+  size_t last_first = 0;
+  while (ok && last_first + 1 < m && !good[last_first]) {
+    last_first++;
+  }
+  uint32_t items[2 * OMIT_MAX_SEGMENTS + 2];
+  size_t nalt = 0;
+  for (size_t k = 0; k <= last_first && ok; k++) {
+    size_t n = 0;
+    items[n++] = req[k];
+    for (size_t j = k + 1; j < m; j++) {
+      for (size_t t = 0; t < tail_n[j]; t++) {
+        items[n++] = tail[j][t];
+      }
+    }
+    alt[nalt] = n == 1 ? items[0] : make_inner(L, GN_SEQ, items, n, 1, 1, seg[k], seg[m - 1], nl, 0);
+    ok = alt[nalt] != GN_NONE;
+    nalt++;
+  }
+  if (ok) {
+    /* the juxtaposition becomes the node it is now equal to; its index is what its parents hold */
+    const bool nullable_all = last_first + 1 == m && !good[last_first];
+    uint32_t first;
+    uint32_t body = GN_NONE;
+    if (nalt == 1) {
+      body = alt[0];  /* the first segment cannot be empty: the segments in order */
+    }
+    else {
+      body = make_inner(L, GN_ALT, alt, nalt, 1, 1, seg[0], seg[m - 1], nl, nullable_all);
+      ok = body != GN_NONE;
+    }
+    if (ok && nullable_all) {
+      /* every segment can be empty: the whole may be empty */
+      if (add_kid_run(L, &body, 1, &first)) {
+        gnode * w = &c->nodes[node];
+        w->kind = GN_MULT;
+        w->min = 0;
+        w->max = 1;
+        w->kids = first;
+        w->nkids = 1;
+        w->sep = 0;
+        nl[node] = 1;
+      }
+      else {
+        ok = false;
+      }
+    }
+    else if (ok) {
+      /* copy the body node's own shape into the node the parents hold */
+      const gnode b = c->nodes[body];
+      gnode * w = &c->nodes[node];
+      w->kind = b.kind;
+      w->kids = b.kids;
+      w->nkids = b.nkids;
+      w->min = b.min;
+      w->max = b.max;
+      w->sep = 0;
+      w->flags |= GNF_OMITTED;
+    }
+  }
+  gtext_allocator_free(&L->alloc, orig);
+  return ok && L->status == GTEXT_CSS_OK;
+}
+
 /// A juxtaposition whose literal `ch` items can only separate non-empty segments is a list of those segments with `ch`
 /// as its separator: the segments are the items between the literals, and each has to consume something (it has an item
 /// that cannot match nothing), or a separator could be missing from the text the value is written as. Otherwise the
@@ -678,24 +843,51 @@ static bool split_one(linker * L, uint32_t node, uint32_t ch, uint8_t sep, uint8
   const gnode g = c->nodes[node];
   const uint32_t * kids = c->kids + g.kids;
   size_t segments = 1, run = 0;
-  bool good = false, any = false;
+  bool good = false, any = false, all_good = true;
+  size_t sbegin[OMIT_MAX_SEGMENTS], scount[OMIT_MAX_SEGMENTS];
+  bool sgood[OMIT_MAX_SEGMENTS];
+  bool room = true; /* the segments fit the arrays above */
+  size_t begin_run = 0;
   for (uint32_t i = 0; i < g.nkids; i++) {
     if (is_sep_literal(c, kids[i], ch)) {
       any = true;
-      if (run == 0 || !good) {
-        return true; /* an empty segment, or one that may be: not a list */
+      if (run == 0) {
+        return true; /* an empty segment: not a list */
       }
+      if (segments <= OMIT_MAX_SEGMENTS) {
+        sbegin[segments - 1] = begin_run;
+        scount[segments - 1] = run;
+        sgood[segments - 1] = good;
+      }
+      else {
+        room = false;
+      }
+      all_good = all_good && good;
       segments++;
       run = 0;
       good = false;
+      begin_run = i + 1;
     }
     else {
       run++;
       good = good || !nl[kids[i]];
     }
   }
-  if (!any || run == 0 || !good) {
+  if (!any || run == 0) {
     return true;
+  }
+  if (segments <= OMIT_MAX_SEGMENTS) {
+    sbegin[segments - 1] = begin_run;
+    scount[segments - 1] = run;
+    sgood[segments - 1] = good;
+  }
+  else {
+    room = false;
+  }
+  all_good = all_good && good;
+  if (!all_good) {
+    /* a segment can be empty: the commas around it are omissible, and are not separators of a list */
+    return ch == ',' && room ? omit_commas(L, node, segments, sbegin, scount, sgood, nl) : true;
   }
   uint32_t * seg = gtext_allocator_malloc(&L->alloc, segments * sizeof *seg);
   if (!seg) {
@@ -765,14 +957,14 @@ static bool split_sequences(linker * L, uint8_t * nl) {
   GTEXT_CSS_Compiled * c = L->c;
   for (size_t i = 0; i < c->nnodes && L->status == GTEXT_CSS_OK; i++) {
     const gnode g = c->nodes[i];
-    if (g.kind != GN_SEQ || g.sep != 0 || g.nkids < 3) {
+    if (g.kind != GN_SEQ || g.sep != 0 || g.nkids < 3 || (g.flags & GNF_OMITTED)) {
       continue;
     }
     L->work += g.nkids;
     if (!split_one(L, (uint32_t)i, ',', 1, nl)) {
       return false;
     }
-    if (c->nodes[i].sep == 0 && !split_one(L, (uint32_t)i, '/', 2, nl)) {
+    if (c->nodes[i].sep == 0 && !(c->nodes[i].flags & GNF_OMITTED) && !split_one(L, (uint32_t)i, '/', 2, nl)) {
       return false;
     }
   }
@@ -812,8 +1004,8 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
     }
   }
   if (L.status == GTEXT_CSS_OK) {
-    /* room for the nodes that splitting a juxtaposition into segments can add: one for each kid at most */
-    nl = gtext_allocator_calloc(&L.alloc, c->nnodes + c->nkids + 1, 1);
+    /* room for the nodes that splitting a juxtaposition into segments, or working out its omissible commas, can add: at most six for each kid */
+    nl = gtext_allocator_calloc(&L.alloc, c->nnodes + 6 * c->nkids + 8, 1);
     if (!nl) {
       lfail(&L, GTEXT_CSS_E_OOM);
     }

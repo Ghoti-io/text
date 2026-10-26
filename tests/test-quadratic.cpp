@@ -93,6 +93,9 @@ extern "C" GTEXT_CSS_Status gtext_css_parse_bytes_work(GTEXT_CSS_Tree_Kind kind,
     const GTEXT_CSS_Bytes_Options * bytes_options, const GTEXT_CSS_Parse_Options * options, size_t * work);
 extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Serialize_Options * options,
     const GTEXT_Markup_Sink * sink, size_t * work);
+// (src/css/css_registry_internal.h: the registry's work counter, and a lookup that adds its work to one.)
+extern "C" size_t css_registry_work(const GTEXT_CSS_Registry * registry);
+extern "C" GTEXT_CSS_Property_Id css_registry_find_counted(const GTEXT_CSS_Registry * registry, const char * name, size_t length, size_t * work);
 // (src/xml/xml_internal.h is C: the counted parse it declares for this suite is declared here.)
 extern "C" GTEXT_XML_Status xml_parse_counted(const void * data, size_t len, const GTEXT_XML_Parse_Options * opts,
     GTEXT_Markup_Document ** out, GTEXT_XML_Error * err, size_t * work);
@@ -730,6 +733,117 @@ std::function<Measured(size_t)> css_link_chain() {
     for (auto & kv : defs) {
       gtext_css_definition_free(kv.second);
     }
+    return m;
+  };
+}
+
+// The CSS registry: n registrations (or lookups) of one shape, counted by css_registry_work() (hash probes, search steps, bytes of names
+// folded, hashed and copied). `kind`: 0 distinct short names; 1 names that share a 100-byte prefix; 2 a chain of n overrides of one name;
+// 3 n aliases of one property; 4 n shorthands of six longhands each; 5 n lookups of names the registry lacks, in a registry of n; 6 n
+// lookups of names it has.
+std::function<Measured(size_t)> css_registry_shape(int kind) {
+  return [kind](size_t n) {
+    Measured m;
+    GTEXT_CSS_Registry_Builder * b = nullptr;
+    GTEXT_CSS_Registry_Options ro = gtext_css_registry_options_default();
+    ro.max_registrations = (size_t)1 << 20;
+    if (gtext_css_registry_builder_new(&ro, &b) != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = "no builder";
+      return m;
+    }
+    const std::string prefix(100, 'p');
+    std::vector<std::string> names;
+    auto name_of = [&](size_t i) {
+      return (kind == 1 ? "vp" + prefix : std::string("vp")) + std::to_string(i);
+    };
+    const char * six[] = {"width", "height", "color", "top", "left", "right"};
+    for (size_t i = 0; i < n; i++) {
+      GTEXT_CSS_Registry_Result res;
+      GTEXT_CSS_Status st = GTEXT_CSS_OK;
+      const std::string name = kind == 2 ? "vo" : name_of(i);
+      if (kind == 3) {
+        st = gtext_css_registry_register_alias(b, name.c_str(), "width", false, &res);
+      }
+      else if (kind == 4) {
+        GTEXT_CSS_Shorthand_Def sh;
+        std::memset(&sh, 0, sizeof sh);
+        sh.name = name.c_str();
+        sh.grammar = "<'width'>{1,6}";
+        sh.longhands = six;
+        sh.longhand_count = 6;
+        st = gtext_css_registry_register_shorthand(b, &sh, &res);
+      }
+      else {
+        GTEXT_CSS_Property_Def d;
+        std::memset(&d, 0, sizeof d);
+        d.name = name.c_str();
+        d.grammar = "a | b";
+        d.initial = "a";
+        d.override = kind == 2;
+        st = gtext_css_registry_register_property(b, &d, &res);
+      }
+      if (st != GTEXT_CSS_OK) {
+        m.ok = false;
+        m.why = std::string("a registration failed: ") + gtext_css_status_string(st);
+        gtext_css_registry_builder_free(b);
+        return m;
+      }
+      m.bytes += name.size();
+      names.push_back(name);
+    }
+    GTEXT_CSS_Registry * r = nullptr;
+    GTEXT_CSS_Status st = gtext_css_registry_freeze(b, &r, nullptr);
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the freeze failed: ") + gtext_css_status_string(st);
+      gtext_css_registry_builder_free(b);
+      return m;
+    }
+    m.work = css_registry_work(r);
+    if (kind == 5 || kind == 6) {
+      m.work = 0;
+      for (size_t i = 0; i < n; i++) {
+        const std::string q = kind == 5 ? name_of(i) + "x" : names[i];
+        const GTEXT_CSS_Property_Id id = css_registry_find_counted(r, q.data(), q.size(), &m.work);
+        if ((id != 0) != (kind == 6)) {
+          m.ok = false;
+          m.why = "a lookup answered wrongly";
+        }
+        m.bytes += q.size();
+      }
+    }
+    gtext_css_registry_free(r);
+    return m;
+  };
+}
+
+// Parsing a value for a property of the pin, counted by the match's work: n items of a comma list, n tracks, n tokens of a custom property.
+std::function<Measured(size_t)> css_property_value(const char * property, std::function<std::string(size_t)> make,
+    GTEXT_CSS_Property_Outcome expected = GTEXT_CSS_PROP_RESULT_VALID) {
+  return [property, make, expected](size_t n) {
+    Measured m;
+    static GTEXT_CSS_Registry * r = [] {
+      GTEXT_CSS_Registry * made = nullptr;
+      gtext_css_registry_new(nullptr, &made);
+      return made;
+    }();
+    const std::string in = make(n);
+    m.bytes = in.size();
+    GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
+    mo.max_match_work = (size_t)1 << 32;
+    mo.max_memo_entries = (size_t)1 << 28;
+    GTEXT_CSS_Property_Options po;
+    std::memset(&po, 0, sizeof po);
+    po.match = &mo;
+    GTEXT_CSS_Property_Value pv;
+    const GTEXT_CSS_Status st = gtext_css_parse_property_text(r, property, std::strlen(property), in.data(), in.size(), &po, &pv);
+    m.work = pv.match.work;
+    if (st != GTEXT_CSS_OK || pv.outcome != expected) {
+      m.ok = false;
+      m.why = std::string("the value was not as expected: ") + gtext_css_status_string(st);
+    }
+    gtext_css_property_value_free(&pv);
     return m;
   };
 }
@@ -1386,6 +1500,18 @@ std::vector<Shape> build_shapes() {
     quad.per_byte = 0;
     quad.note = "every state of the first member looks at every position after it";
   }
+  // ---- the registry: registrations, overrides, aliases, shorthands and lookups; property values ----
+  add("css", "CSS registry: n registrations of distinct names", 500, css_registry_shape(0));
+  add("css", "CSS registry: n registrations of names that share a 100-byte prefix", 500, css_registry_shape(1));
+  add("css", "CSS registry: a chain of n overrides of one name", 500, css_registry_shape(2));
+  add("css", "CSS registry: n aliases of one property", 500, css_registry_shape(3));
+  add("css", "CSS registry: n shorthands of six longhands", 500, css_registry_shape(4));
+  add("css", "CSS registry: n lookups of names it lacks", 500, css_registry_shape(5));
+  add("css", "CSS registry: n lookups of names it has", 500, css_registry_shape(6));
+  add("css", "CSS property: a comma list of n transitions", 1000,
+      css_property_value("transition", [](size_t k) { return repeat("opacity 1s ease-in 2s, ", k) + "color 1s"; }));
+  add("css", "CSS property: n grid tracks", 1000, css_property_value("grid-template-columns", [](size_t k) { return repeat("1fr minmax(10px, 2fr) ", k); }));
+  add("css", "CSS property: a custom property of n tokens", 2000, css_property_value("--x", [](size_t k) { return repeat("a (b) c, ", k); }));
   // ---- from bytes and from a stream: the decoder, the map back to the bytes, the buffers, the cuts ----
   const std::string sheet_unit = "a.b > c { d: e; f: \"g\" } /* h */\n";
   add("css", "CSS stream, text a byte at a time", 4000, css_bytes(nullptr, 1, true, [sheet_unit](size_t k) { return repeat(sheet_unit, k); }));

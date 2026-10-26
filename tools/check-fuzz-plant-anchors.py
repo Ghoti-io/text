@@ -91,6 +91,8 @@ def plants_of(tool, module):
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-grammar/" + seed if seed else None, "file"))
         for name, (rel, old, new, seed) in module.VALUES_PLANTS.items():
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-values/" + seed if seed else None, "file"))
+        for name, (rel, old, new, seed) in module.REGISTRY_PLANTS.items():
+            out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-registry/" + seed if seed else None, "file"))
     return out
 
 

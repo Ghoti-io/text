@@ -1,0 +1,50 @@
+# tools/css/gen-css-tables.py: the webref prose fields `inherited` and `animationType`, each distinct string mapped to a
+# closed enum (GTEXT_CSS_Inherit, GTEXT_CSS_Animation in css_registry.h; DERIVE is not an enumerator: the shorthand's
+# value is derived from its longhands). Columns: field, the string exactly as the pin has it, the enumerator, a note.
+# An unmapped string fails generation and so does a line no property uses (stale). A property that has no such field at
+# all is UNKNOWN / UNSPECIFIED. The raw string is kept in the table beside the enum for diagnostics.
+inherited	no	NO	
+inherited	yes	YES	
+inherited	see individual properties	DERIVE	a shorthand: derived from its longhands (all alike: that value; else MIXED)
+inherited	no (but see prose, above)	NO	the exception is prose of the specification (text-decoration-line); computed by the exception table of the computed-value layer
+inherited	no (but see prose)	NO	same (page)
+inherited	n/a	UNKNOWN	glyph-orientation-vertical: the pin gives no answer
+inherited	yes?	YES	fill-break: the pin's own question mark; the value is kept, the string stays beside it
+inherited	?	UNKNOWN	stroke-break: the pin does not know
+animation	discrete	DISCRETE	
+animation	by computed value type	BY_COMPUTED_VALUE	
+animation	by computed value	BY_COMPUTED_VALUE	
+animation	not animatable	NOT_ANIMATABLE	
+animation	none	NOT_ANIMATABLE	scroll-initial-target
+animation	repeatable list	REPEATABLE_LIST	
+animation	repeatable list, see § 4.7 Interpolation of list values.	REPEATABLE_LIST	
+animation	see individual properties	SEE_LONGHANDS	
+animation	See individual properties	SEE_LONGHANDS	
+animation	n/a	UNSPECIFIED	glyph-orientation-vertical: the pin gives no answer
+animation	number	NUMBER	
+animation	as integer	INTEGER	
+animation	as length	LENGTH	
+animation	if the list lengths match, by computed value type per item in the computed track list (see § 7.2.5 Computed Value of a Track Listing and § 7.2.3.3 Interpolation/Combination of repeat()); discrete otherwise	LIST_PER_ITEM	grid-template-columns and -rows
+animation	if the list lengths match, by computed value type per item; discrete otherwise	LIST_PER_ITEM	
+animation	as <basic-shape> if possible, otherwise discrete	SHAPE	object-view-box
+animation	as defined for <basic-shape>, otherwise discrete	SHAPE	shape-inside, shape-outside
+animation	per computed value if the <visual-box> values match; otherwise discrete	PROSE	overflow-clip-margin-*: by value when the boxes agree, discrete otherwise
+animation	as shadow list	SHADOW_LIST	
+animation	transform list, see interpolation rules	TRANSFORM	
+animation	as SLERP, but see below for none	TRANSFORM	rotate
+animation	by computed value, treating none as 0 0 when interpolated with non-none values.	PROSE	box-shadow-offset
+animation	by computed value, but see below for none	TRANSFORM	translate and scale
+animation	by computed value type, recursing into fit-content()	FIT_CONTENT	
+animation	by computed value, recursing into fit-content()	FIT_CONTENT	
+animation	see prose in Filter Effects 1 § 14. Animation of Filters.	FILTER	
+animation	See prose in Animation of Filters.	FILTER	
+animation	See prose	PROSE	
+animation	see prose	PROSE	
+animation	see superellipse interpolation	PROSE	corner-shape: Borders 4 defines its own interpolation
+animation	by dynamic-range-limit-mix()	PROSE	
+animation	see § 4.1 Animating and Interpolating content-visibility	PROSE	
+animation	see § 2.9 Animating and Interpolating display	PROSE	
+animation	discrete if the keywords differ, otherwise by computed value type	PROSE	
+animation	by computed value type; normal animates as oblique 0deg	PROSE	font-style
+animation	as for background-position	PROSE	object-position: another property's rule
+animation	by computed value if <length>, otherwise discrete	PROSE	

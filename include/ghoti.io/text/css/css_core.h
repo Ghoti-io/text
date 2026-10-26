@@ -138,6 +138,10 @@ typedef enum {
   GTEXT_CSS_E_LIMIT_STOPS,        ///< Values: a gradient with more color stops than `max_gradient_stops`.
   GTEXT_CSS_E_LIMIT_FUNCTION_NODES, ///< Values: a value holds more function nodes than
                                   ///< `max_function_nodes`.
+  GTEXT_CSS_E_EXISTS,             ///< Registry: a property of that name is already registered, and the
+                                  ///< registration did not say it overrides it.
+  GTEXT_CSS_E_LIMIT_REGISTRY,     ///< Registry: more registrations, a longer name or initial value, or more
+                                  ///< longhands than the registry's limits allow.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

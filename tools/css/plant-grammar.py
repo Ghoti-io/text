@@ -29,7 +29,10 @@ of the library's archive into the test programs, which are then run:
   testCssGrammarEdges    the edges a review found: names, ranges, literals, brackets, opaque values, math and
                          substitution functions, the matcher, separators, spans, the work that is charged
   testCssValuesReview    what a review of the value layer found, one test for each (the "review-" plants restore the defects)
-  testCssGrammarFuzzSeeds, testCssValuesFuzzSeeds
+  testCssRegistry, testCssProperty, testCssRegistryOom
+                         the registry (the tables' relations, consolidation, registration, override, limits, grammars), property-level
+                         parsing, and the allocation sweeps of both
+  testCssGrammarFuzzSeeds, testCssValuesFuzzSeeds, testCssRegistryFuzzSeeds
                          the seed corpora of the two fuzzers, replayed through their harnesses' properties with no fuzzer built.
                          The plants of the fuzzers (tools/css/plant-fuzz.py: GRAMMAR_PLANTS, VALUES_PLANTS) are run here too, as
                          "fuzz-<name>", so that the fuzzers' own defect checks are part of `make test` on a host with no clang;
@@ -49,7 +52,9 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-grammar.cpp", "values": "test-css-values.cpp",
             "edges": "test-css-grammar-edges.cpp", "grammar-seeds": "test-css-grammar-fuzz-seeds.cpp",
-            "values-seeds": "test-css-values-fuzz-seeds.cpp", "review": "test-css-values-review.cpp"}
+            "values-seeds": "test-css-values-fuzz-seeds.cpp", "review": "test-css-values-review.cpp",
+            "registry-seeds": "test-css-registry-fuzz-seeds.cpp", "registry": "test-css-registry.cpp", "property": "test-css-property.cpp",
+            "registry-oom": "test-css-registry-oom.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -177,6 +182,33 @@ PLANTS = [
 ]
 
 
+PLANTS += [
+    ("registry-exists-is-not-refused", "css_registry.c", "  if (found && !override) {", "  if (found && 0 && !override) {", ["registry"]),
+    ("registry-override-is-not-reported", "css_registry.c", "    r->overrides[r->noverrides].id = id;", "    r->overrides[r->noverrides].id = 0 * id;", ["registry"]),
+    ("registry-caller-names-are-not-folded", "css_registry.c", "  lower_copy(lname, name, name_length);\n  r->work += name_length;", "  r->work += name_length;", ["registry"]),
+    ("registry-types-of-other-properties-are-not-found", "css_registry.c", "  return others && other != (size_t)-1 && !other_ambiguous", "  return 0 && others && other != (size_t)-1 && !other_ambiguous", ["registry", "property"]),
+    ("registry-own-name-in-an-override-is-the-override", "css_registry.c", "    for (size_t hops = 0; id && id == r->scope && hops < 64; hops++) {", "    for (size_t hops = 0; 0 && id && id == r->scope && hops < 64; hops++) {", ["registry"]),
+    ("registry-freeze-compiles-without-the-scope", "css_registry.c", "(GTEXT_CSS_Property_Id)(gtext_css_tbl_property_count + 1 + i), &s, &comp, &gr);", "0, &s, &comp, &gr);", ["registry"]),
+    ("registry-failed-definition-is-answered-by-another-source", "css_registry.c", "  if (r->rf.status != GTEXT_CSS_OK || gtext_css_function_types_status(r->ftypes) != GTEXT_CSS_OK) {\n    /* a definition of the pin could not be made",
+     "  if (0) {\n    /* a definition of the pin could not be made", ["registry-oom"]),
+    ("registry-out-of-memory-is-remembered-as-a-bad-grammar", "css_registry.c", "  if (st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_INVALID) {\n    return st;\n  }\n  lz->def_state = 2;",
+     "  if (st == GTEXT_CSS_E_INVALID) {\n    return st;\n  }\n  lz->def_state = 2;", ["registry-oom"]),
+    ("registry-prepared-state-is-not-published", "css_registry.c", "  gcu_atomic_int_store(&lz->state, (int32_t)final_state);", "  gcu_atomic_int_store(&lz->state, (int32_t)GTEXT_CSS_GRAMMAR_NOT_COMPILED);", ["registry"]),
+    ("registry-an-alias-is-not-followed", "css_registry.c", "      next = (GTEXT_CSS_Property_Id)gtext_css_tbl_properties[id - 1].alias_of;", "      next = 0;", ["registry", "property"]),
+    ("property-wide-keywords-are-not-recognized", "css_property.c", "  if (wide != GTEXT_CSS_WIDE_NONE) {", "  if (0) {", ["property"]),
+    ("property-all-takes-anything", "css_property.c", "  if (is_all(&info)) {", "  if (0 && is_all(&info)) {", ["property"]),
+    ("property-quirks-are-always-on", "css_property.c", "options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, out);", "(info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, out);", ["property"]),
+    ("property-quirks-are-for-every-property", "css_property.c", "options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, out);", "options->quirks, out);", ["property"]),
+    ("property-an-alias-is-parsed-as-itself", "css_property.c", "  const GTEXT_CSS_Property_Id target = gtext_css_registry_resolve_alias(registry, named);", "  const GTEXT_CSS_Property_Id target = named;", ["property"]),
+    ("property-descriptors-take-substitutions", "css_property.c", "  if (sub) {\n    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;\n    return GTEXT_CSS_OK;\n  }\n  GTEXT_CSS_Grammar_State state;",
+     "  if (0) {\n    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;\n    return GTEXT_CSS_OK;\n  }\n  GTEXT_CSS_Grammar_State state;", ["property"]),
+    ("property-an-undecidable-property-is-dropped", "css_property.c", "    v->undecided++;\n    valid = true;", "    v->undecided++;\n    valid = false;", ["property"]),
+    ("property-a-limit-is-not-recorded", "css_property.c", "  else if (v->status == GTEXT_CSS_OK) {\n    v->status = st;\n  }", "  else {\n  }", ["property", "registry-oom"]),
+    ("property-the-pending-grammar-is-compiled-per-call", "css_registry.c", "  const GTEXT_CSS_Status st = compile_lazy(r, &((GTEXT_CSS_Registry *)r)->pending, text, sizeof text - 1, 0, &s, compiled, NULL);",
+     "  const GTEXT_CSS_Status st = compile_lazy(r, &((GTEXT_CSS_Registry *)r)->pending, \"<nosuch-type>\", 13, 0, &s, compiled, NULL);", ["property"]),
+]
+
+
 def fuzz_plants():
     """The plants of the grammar and values fuzzers, as plants of the seed-replay programs."""
     import importlib.util
@@ -188,6 +220,8 @@ def fuzz_plants():
         out.append(("fuzz-" + name, rel, old, new, ["grammar-seeds"]))
     for name, (rel, old, new, _seed) in module.VALUES_PLANTS.items():
         out.append(("fuzz-" + name, rel, old, new, ["values-seeds"]))
+    for name, (rel, old, new, _seed) in module.REGISTRY_PLANTS.items():
+        out.append(("fuzz-" + name, rel, old, new, ["registry-seeds"]))
     return out
 
 

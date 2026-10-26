@@ -63,6 +63,8 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_COLOR_NESTING] = "colors are nested deeper than the limit allows",
   [GTEXT_CSS_E_LIMIT_STOPS] = "a gradient has more color stops than the limit allows",
   [GTEXT_CSS_E_LIMIT_FUNCTION_NODES] = "a value holds more function nodes than the limit allows",
+  [GTEXT_CSS_E_EXISTS] = "a property of that name is already registered and the registration does not override it",
+  [GTEXT_CSS_E_LIMIT_REGISTRY] = "a registry limit (registrations, name length, initial value length, longhands) is exceeded",
   [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 

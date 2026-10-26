@@ -1,0 +1,12 @@
+# tools/css/gen-css-tables.py: the places where the pin's own text is not taken as it stands. Columns: directive, scope
+# (the property a type is nested in, or empty for a global type), name (a type's name without the angle brackets), reason.
+# A line that names nothing the pin has fails generation (stale). Nothing else in the pin is edited: this file is the whole
+# list of departures, and tests/test-css-registry.cpp reads the effect of each from the generated tables.
+#
+# ignore-grammar   the entry's `value` is not a definition (it is a prototype of the function in prose), and is dropped.
+# enum-from-values the pin defines the type only through the keyword values nested in its entry; the grammar is those
+#                  keywords, in the pin's order, separated by `|`.
+ignore-grammar	grid-template-columns	minmax()	the pin's value is the prototype `minmax(min, max)`, not a grammar; the track-size grammars write minmax() out
+ignore-grammar	grid-template-rows	minmax()	the same entry, nested in grid-template-rows
+enum-from-values		animation-action	the pin lists no grammar, and its eight keyword values (none, play, play-once, play-forwards, play-backwards, pause, reset, replay) are the type
+enum-from-values		timeline-range-center-subject	the pin lists no grammar, and its two keyword values (source, target) are the type

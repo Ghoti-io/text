@@ -31,10 +31,19 @@
 #                       the suite). tools/css/extract-wpt.py turns its tables
 #                       into vectors.
 #
-# Neither is committed: both are reproducible from a pin and a URL. Each
+#   webref/             The W3C's machine-readable extracts of the CSS specifications (w3c/webref, branch `curated`),
+#                       sparse: ed/css (one file per specification series) and the three css-values definition files
+#                       of ed/dfns, pinned by commit in tools/css/WEBREF_COMMIT and, file by file, by SHA-256 in
+#                       tools/css/WEBREF_SHA256 (the manifest tools/css/gen-css-tables.py also checks). The tables of
+#                       src/css/tables/ are generated from it.
+#
+# None is committed: all are reproducible from a pin and a URL. Each
 # checkout is verified to be exactly its commit, and a mismatch leaves
 # nothing behind. Raising a pin is a deliberate edit to its file, in a commit
 # that says what the new data changed.
+#
+# The webref checkout is verified three ways: HEAD is the pinned commit, every manifest file hashes as pinned, and
+# the checkout holds no file the manifest does not list. Any failure removes the partial checkout and names the file.
 #
 # Everything lands in third_party/css/, which .gitignore excludes.
 #
@@ -46,6 +55,8 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 dest="$root/third_party/css"
 want_cpt=$(cat "$root/tools/css/CSS_PARSING_TESTS_COMMIT")
 want_wpt=$(cat "$root/tools/css/WPT_COMMIT")
+want_webref=$(cat "$root/tools/css/WEBREF_COMMIT")
+manifest="$root/tools/css/WEBREF_SHA256"
 
 mkdir -p "$dest"
 
@@ -97,4 +108,31 @@ else
 	fi
 	rm -rf "$wpt"
 	mv "$wpt.partial" "$wpt"
+fi
+
+# ---- w3c/webref, ed/css and the css-values definitions ----------------------
+# The files the manifest covers: every file of ed/css and the three definition files of ed/dfns.
+webref="$dest/webref"
+webref_verify() {
+	"$root/tools/css/webref-verify.sh" "$1" "$manifest" "$want_webref"
+}
+if [ -d "$webref/.git" ] && webref_verify "$webref"; then
+	printf 'have    webref @ %s\n' "$want_webref"
+else
+	printf 'fetch   webref (ed/css, ed/dfns/css-values-{3,4,5}) @ %s\n' "$want_webref"
+	rm -rf "$webref.partial"
+	mkdir -p "$webref.partial"
+	git -C "$webref.partial" init --quiet
+	git -C "$webref.partial" remote add origin https://github.com/w3c/webref.git
+	git -C "$webref.partial" sparse-checkout init --no-cone
+	git -C "$webref.partial" sparse-checkout set /ed/css/ /ed/dfns/css-values-3.json /ed/dfns/css-values-4.json /ed/dfns/css-values-5.json
+	git -C "$webref.partial" fetch --quiet --depth 1 --filter=blob:none origin "$want_webref"
+	git -C "$webref.partial" checkout --quiet --detach FETCH_HEAD
+	if ! webref_verify "$webref.partial"; then
+		rm -rf "$webref.partial"
+		printf 'webref: nothing was kept. Raising the pin is a deliberate edit of tools/css/WEBREF_COMMIT and WEBREF_SHA256.\n' >&2
+		exit 1
+	fi
+	rm -rf "$webref"
+	mv "$webref.partial" "$webref"
 fi

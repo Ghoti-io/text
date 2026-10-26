@@ -1,0 +1,9 @@
+# tools/css/gen-css-tables.py: properties the library needs that the pinned data does not list. Columns, tab separated: name,
+# grammar, initial, inherited, animation type, computed value, applies to, percentages, canonical order, source. The strings are
+# the pin's kind of free text and go through tools/css/normalize.tsv like the pin's own. A line for a name the pin has fails
+# generation (the supplement is stale then, and the pin wins).
+#
+# `--*`: the custom property pattern. CSS Variables 1 defines it with a property table, and the curated data has no entry for it
+# (css-variables.json lists no property). The row is that table, as served by the Editor's Draft on 2026-10-25
+# (drafts.csswg.org/css-variables-1/#defining-variables), word for word.
+--*	<declaration-value>?	the guaranteed-invalid value	yes	discrete	specified value with variables substituted, or the guaranteed-invalid value	all elements and all pseudo-elements (including those with restricted property lists)	n/a	per grammar	css-variables-1 (supplement)

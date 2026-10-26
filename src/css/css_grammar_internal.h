@@ -91,6 +91,7 @@ typedef enum {
 #define GNF_COMMA 0x01u   ///< A MULT: the repetitions are separated by commas (`#`).
 #define GNF_RANGE 0x02u   ///< A NATIVE or REF: `lo` and `hi` are a range.
 #define GNF_GROUP 0x08u   ///< Written as a `[ ]` group.
+#define GNF_OMITTED 0x10u ///< A SEQ the linker made (or rewrote) when it worked out which commas are omissible: its literals are items, not separators.
 
 /// What the bounds of a range were written in (gnode::rclass): nothing but plain numbers, percent, or a unit type + 2.
 #define RC_NONE 0

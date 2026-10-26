@@ -8,9 +8,9 @@ whether component values match it and what they mean, as one immutable **typed
 value** that every later layer shares: keywords as interned atoms, numbers with
 units, lists with their separators, functions, and the grammar slot that matched
 each of them. Values are written back as CSSOM writes a specified value, and the
-text reads back as the same value. This is the engine; the registry of
-properties, math functions, colors and computed values are built on it and are
-not here yet (see "Not implemented"). It sits on the syntax layer of \ref
+text reads back as the same value. This is the engine; the property registry and property-level parsing are built on it
+(\ref format_css_registry "css-registry.md"), and computed values are not here yet (see
+"Not implemented"). It sits on the syntax layer of \ref
 format_css "css.md". Back to \ref text_format_references "Formats".
 
 Include `<ghoti.io/text/css.h>`.
@@ -687,7 +687,7 @@ per-property WPT vectors are the registry's.
 
 ## Not implemented
 
-The property registry and property-level parsing; per-property vectors; computed
+Per-property vectors (the registry, \ref format_css_registry "css-registry.md", has the properties); computed
 values and the resolution of any relative unit, and of any color to another space
 (color conversion, gamut mapping, interpolation and the computed value of
 `color-mix()`, `light-dark()` and a relative color); the computation of

@@ -1,0 +1,47 @@
+# The properties that accept a unitless length in quirks mode.
+#
+# Source: CSS Values and Units Level 4, Appendix C "Quirky Lengths" (www.w3.org/TR/css-values-4/#deprecated-quirky-length,
+# fetched 2026-10-25; the Editor's Draft served the same day no longer carries the appendix, and the Quirks Mode Standard,
+# 3.2, refers to it: "See CSS Values 4 § C Quirky Lengths."). The text, quoted:
+#
+#   "When CSS is being parsed in quirks mode, <quirky-length> is a type of <length> that is only valid in certain properties:"
+#   (the 33 names below, one to a line)
+#   "It is not valid in properties that include or reference these properties, such as the background shorthand, or inside
+#   functional notations such as calc(), except that they must be allowed in rect() in the clip property."
+#   "A <quirky-length> is syntactically identical to a <number-token>, and is interpreted as a px length with the same value."
+#
+# tools/css/gen-css-tables.py reads this file, checks that every name is a property of the pin, and writes the
+# QUIRK_UNITLESS flag of those properties. One property to a line; '#' starts a comment.
+background-position
+border-spacing
+border-top-width
+border-right-width
+border-bottom-width
+border-left-width
+border-width
+bottom
+clip
+font-size
+height
+left
+letter-spacing
+margin-right
+margin-left
+margin-top
+margin-bottom
+margin
+max-height
+max-width
+min-height
+min-width
+padding-top
+padding-right
+padding-bottom
+padding-left
+padding
+right
+text-indent
+top
+vertical-align
+width
+word-spacing

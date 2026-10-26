@@ -76,6 +76,16 @@ The plants of fuzz_css_values.cpp (VALUES_PLANTS; each is found by replaying its
   alpha-dropped              the legacy serializer writes a small alpha that is not an 8-bit one as 1: the color read back is another color.
   linear-points-unsorted     linear() does not raise an input below an earlier one: the points are in order.
 
+The plants of fuzz_css_registry.cpp (REGISTRY_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-registry):
+
+  property-value-leaks       gtext_css_property_value_free() does not free the typed value: the allocator.
+  all-takes-substitution     `all` accepts a value with var() in it: it takes the CSS-wide keywords only.
+  descriptor-takes-substitution a descriptor accepts var(): a descriptor is not a property of an element.
+  initial-not-validated      a registration does not match the initial value against the grammar: it must parse as a valid value.
+  registry-leaks-initial     freeing a registry leaves the initial values of the registrations: the allocator.
+  override-cannot-name-itself the grammar of an override naming its own property is left recursion: it extends the one it replaces.
+  failed-definition-answered-by-another-source an allocation that fails while a definition is made lets a later source answer: the status.
+
 The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
 
   work-bound-off-by-one     a match stops one unit of work early: the bounds are exact.
@@ -99,6 +109,7 @@ CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-syntax")
 BYTES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-bytes")
 GRAMMAR_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-grammar")
 VALUES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-values")
+REGISTRY_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-registry")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -165,6 +176,24 @@ VALUES_PLANTS = {
 }
 
 
+# The same shape, for tests/fuzz/fuzz_css_registry.cpp; the seeds are in tests/fuzz/corpus/css-registry (tools/css/make-fuzz-registry-seeds.py).
+REGISTRY_PLANTS = {
+    "property-value-leaks": ("css_property.c", "  gtext_css_value_set_free(value->set);\n  memset(value, 0, sizeof *value);",
+                             "  memset(value, 0, sizeof *value);", "own-valid-margin.seed"),
+    "all-takes-substitution": ("css_property.c", "  if (is_all(&info)) {", "  if (0 && is_all(&info)) {", "own-all-var.seed"),
+    "descriptor-takes-substitution": ("css_property.c", "  if (sub) {\n    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;\n    return GTEXT_CSS_OK;\n  }\n  GTEXT_CSS_Grammar_State state;",
+                                      "  if (0) {\n    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;\n    return GTEXT_CSS_OK;\n  }\n  GTEXT_CSS_Grammar_State state;", "own-descriptor-var.seed"),
+    "initial-not-validated": ("css_registry.c", "      result = st != GTEXT_CSS_OK ? st : (matched ? GTEXT_CSS_OK : GTEXT_CSS_E_INVALID);",
+                              "      result = st != GTEXT_CSS_OK ? st : GTEXT_CSS_OK;", "own-register-bad-initial.seed"),
+    "registry-leaks-initial": ("css_registry.c", "    gtext_allocator_free(&a, c->initial);\n    gtext_allocator_free(&a, c->longhands);\n  }\n  gtext_css_function_types_free(r->ftypes);",
+                               "    gtext_allocator_free(&a, c->longhands);\n  }\n  gtext_css_function_types_free(r->ftypes);", "own-register-valid.seed"),
+    "override-cannot-name-itself": ("css_registry.c", "    for (size_t hops = 0; id && id == r->scope && hops < 64; hops++) {", "    for (size_t hops = 0; 0 && id && id == r->scope && hops < 64; hops++) {",
+                                    "own-register-override-self.seed"),
+    "failed-definition-answered-by-another-source": ("css_registry.c", "  if (r->rf.status != GTEXT_CSS_OK || gtext_css_function_types_status(r->ftypes) != GTEXT_CSS_OK) {\n    /* a definition of the pin could not be made",
+                                                      "  if (0) {\n    /* a definition of the pin could not be made", None),
+}
+
+
 def make_variables(prefix, names):
     """The Makefile's own values for `names`, so that nothing here is a second copy of them."""
     rules = "print-%: ; @echo $($*)\n"
@@ -178,7 +207,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -192,17 +221,17 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values")
-    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS)
+    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry")
+    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS)
     for n in names:
-        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS:
+        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS:
             raise SystemExit("unknown plant %r (one of %s, %s)"
-                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS))))
+                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS))))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -222,10 +251,11 @@ def main(argv):
             bytes_harness = name == "control-bytes" or name in BYTES_PLANTS
             grammar_harness = name == "control-grammar" or name in GRAMMAR_PLANTS
             values_harness = name == "control-values" or name in VALUES_PLANTS
-            harness = "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
-            corpus_source = VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
+            registry_harness = name == "control-registry" or name in REGISTRY_PLANTS
+            harness = "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
             if name not in CONTROLS:
-                rel, old, new, seed = VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
+                rel, old, new, seed = REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 if text.count(old) != 1:

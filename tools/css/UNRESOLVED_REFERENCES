@@ -1,0 +1,87 @@
+# tools/css/check-grammars.py: what the pinned data leaves undefined, each with the reason. Every grammar of the pin is compiled
+# and linked against the generated resolver (make check-css-grammars); what does not compile, and every initial value that does
+# not parse, is listed here. An unlisted failure fails the gate, and so does an entry that is no longer true (the gap closed, the
+# text changed, the pin raised): a listed entry is a statement about the pin and is removed with the gap.
+#
+# Columns (tab separated):
+#   reference  <name>     the first referrer ("kind name")  the referrer's grammar  reason   a `<type>` or `<'property'>` that nothing resolves
+#   grammar    kind name  -                                 the grammar's text      reason   a property, descriptor or type whose text is not a
+#                                                                                           Value Definition Syntax definition, or that has none
+#   initial    kind name  -                                 the initial value text  reason   an initial value that is prose, absent, or does not
+#                                                                                           match the grammar of its own property
+#
+# A shorthand whose initial value is "see individual properties" is not listed: its initial value is its longhands'. A type the
+# pin names and nothing refers to is not listed either; the references are what the gate follows.
+reference	<timeline-range-name>	property animation-range-end	[ normal | <length-percentage> | <timeline-range-name> <length-percentage>? ]#	the pin's entry (scroll-animations) describes the type in prose and gives no grammar
+reference	<decibel>	property cue-after	<url> <decibel>? | none	the pin's entry for it nested in voice-volume (css-speech) describes the type in prose and gives no grammar
+reference	<id>	property nav-down	auto | <id> [ current | root | <target-name> ]?	the pin's entry (css-ui) describes the type in prose and gives no grammar
+reference	<target-name>	property nav-down	auto | <id> [ current | root | <target-name> ]?	the pin's entry (css-ui) describes the type in prose and gives no grammar
+reference	<voice-family-name>	property voice-family	[ <voice-family-name> | <generic-voice> ]# | preserve	the pin's entry for it nested in voice-family (css-speech) describes the type in prose and gives no grammar
+reference	<semitones>	property voice-pitch	<frequency [0Hz,∞]> && absolute | [ [ x-low | low | medium | high | x-high ] || [ <frequency [0Hz,∞]> | <semitones> | <percentage> ] ]	the pin's entry for it nested in voice-pitch (css-speech) describes the type in prose and gives no grammar
+reference	<font-src-list>	descriptor @font-face src	<font-src-list>	the pin's entry (css-fonts) describes the type in prose and gives no grammar
+reference	<page-size>	descriptor @page size	<length [0,∞]>{1,2} | auto | [ <page-size> || [ portrait | landscape ] ]	the pin has no entry for this type, so nothing defines it (the grammar that names it is the descriptor @page size)
+reference	<alpha-value>	type alpha()	alpha([from <color>] [ / [<alpha-value> | none] ]? )	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type alpha())
+reference	<anchored-feature>	type anchored-in-parens	( <anchored-query> ) | ( <anchored-feature> ) | <general-enclosed>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type anchored-in-parens)
+reference	<boolean-expr-group>	type boolean-expr	not <boolean-expr-group> | <boolean-expr-group> [ [ and <boolean-expr-group> ]* | [ or <boolean-expr-group> ]* ]	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type boolean-expr)
+reference	<input-position>	type calc-interpolate()	calc-interpolate( [ <progress-source> && [ by <easing-function> ]? && <easing-function>? ] , <input-position>{1,2} : <calc-sum> , [ <easing-function>? , <input-position>{1,2} : <calc-sum> ]#? )	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type calc-interpolate())
+reference	<hex-color>	type color-base	<hex-color> | <color-function> | <named-color> | <color-mix()> | transparent	the pin's entry (css-color) describes the type in prose and gives no grammar
+reference	<symbolic-counter-style>	type content-list	[ <string> | <image> | <attr()> | contents | <quote> | <leader()> | <target> | <string()> | <content()> | <counter> | <symbolic-counter-style> ]+	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type content-list)
+reference	<type()>	type css-type	<syntax-component> | <type()>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type css-type)
+reference	<url-set>	type cursor-image	[ <url> | <url-set> ] <number>{2}?	the pin's entry for it nested in cursor (css-ui) describes the type in prose and gives no grammar
+reference	<extension-name>	type custom-selector	<custom-arg>? : <extension-name> [ ( <custom-arg>+#? ) ]?	the pin's entry (css-extensions) describes the type in prose and gives no grammar
+reference	<whole-value>	type cycle()	cycle( <whole-value># )	the pin's entry (css-values-5) describes the type in prose and gives no grammar
+reference	<click()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'click()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<dblclick()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'dblclick()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<pointerenter()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'pointerenter()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<pointerleave()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'pointerleave()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<pointerup()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'pointerup()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<pointerdown()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'pointerdown()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<keypress()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type event-function)
+reference	<focusin()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'focusin()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<focusout()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'focusout()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<input()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'input()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<change()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'change()', which is the function's own name: its arguments are described in prose and there is no grammar
+reference	<age>	type generic-voice	<age>? <gender> <integer [1,∞]>?	the pin's entry for it nested in voice-family (css-speech) describes the type in prose and gives no grammar
+reference	<gender>	type generic-voice	<age>? <gender> <integer [1,∞]>?	the pin's entry for it nested in voice-family (css-speech) describes the type in prose and gives no grammar
+reference	<declaration>	type import-conditions	[ supports( [ <supports-condition> | <declaration> ] ) ]? <media-query-list>?	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
+reference	<media-query-list>	type import-conditions	[ supports( [ <supports-condition> | <declaration> ] ) ]? <media-query-list>?	the pin's entry (mediaqueries) describes the type in prose and gives no grammar
+reference	<size-feature>	type query-in-parens	( <container-query> ) | ( <size-feature> ) | style( <style-query> ) | scroll-state( <scroll-state-query> ) | <general-enclosed>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
+reference	<top>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
+reference	<right>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
+reference	<bottom>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
+reference	<left>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
+reference	<cross-origin-modifier>	type request-url-modifier	<cross-origin-modifier> | <integrity-modifier> | <referrer-policy-modifier>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type request-url-modifier)
+reference	<integrity-modifier>	type request-url-modifier	<cross-origin-modifier> | <integrity-modifier> | <referrer-policy-modifier>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type request-url-modifier)
+reference	<referrer-policy-modifier>	type request-url-modifier	<cross-origin-modifier> | <integrity-modifier> | <referrer-policy-modifier>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type request-url-modifier)
+reference	<scroll-state-feature>	type scroll-state-in-parens	( <scroll-state-query> ) | ( <scroll-state-feature> ) | <general-enclosed>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
+reference	<url-modifier>	type src()	src( <string> <url-modifier>* )	the pin's entry (css-values) describes the type in prose and gives no grammar
+reference	<style-feature-name>	type style-feature-boolean	<style-feature-name>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
+reference	<style-feature-value>	type style-feature-plain	<style-feature-name> : <style-feature-value>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
+reference	<supports-condition-name>	type supports-decl	( [ <declaration> | <supports-condition-name> ] )	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
+grammar	property -webkit-box-align	-		the compatibility specification names the legacy property in the pin and gives it no grammar
+grammar	property -webkit-box-flex	-		the compatibility specification names the legacy property in the pin and gives it no grammar
+grammar	property -webkit-box-ordinal-group	-		the compatibility specification names the legacy property in the pin and gives it no grammar
+grammar	property -webkit-box-orient	-		the compatibility specification names the legacy property in the pin and gives it no grammar
+grammar	property -webkit-box-pack	-		the compatibility specification names the legacy property in the pin and gives it no grammar
+grammar	property glyph-orientation-vertical	-	auto | 0deg | 90deg | 0 | 90	the pin writes number and dimension literals (`0deg`, `90`) as keywords, which the Value Definition Syntax does not have
+grammar	type general-enclosed	-	[ <function-token> <any-value>? ) ] | [ ( <any-value>? ) ]	the pin's text uses an unquoted `)` as a literal, which the Value Definition Syntax does not allow
+grammar	type if-condition	-	<boolean-expr[ <if-test> ]> | else	the pin writes `<boolean-expr[ <if-test> ]>`, a parameterized type, which the Value Definition Syntax does not have
+grammar	type location-rule	-	@location <dashed-ident> { <declaration-list> }	the pin gives the at-rule's own syntax (`@location <dashed-ident> { <declaration-list> }`), not a value definition
+grammar	type pseudo-class-selector	-	: <ident-token> | : <function-token> <any-value> )	the pin's text uses an unquoted `)` as a literal and leaves a bracket unbalanced, which the Value Definition Syntax does not allow
+initial	property -webkit-user-select	-		the pin's entry has no initial value
+initial	property background-tbd	-	see individual properties	the pin's initial value is the prose "see individual properties", but the entry lists no longhands to take it from
+initial	property column-width	-		the pin's entry has no initial value
+initial	property fill	-	black	the pin's grammar `<paint>` (Fill and Stroke 3, whose editor's note says the SVG 2 paint is still to be inserted) has no `<color>`, so the property's own initial value does not match it; SVG 2's grammar for `fill` has one, and a consumer of SVG registers that with `override`
+initial	property marker	-	not defined for shorthand properties	the pin's initial value for this shorthand is the prose "not defined for shorthand properties"
+initial	property stop-color	-		the pin's entry has no initial value
+initial	property stop-opacity	-		the pin's entry has no initial value
+initial	descriptor @color-profile components	-	n/a	the pin's initial value for this descriptor is `n/a`: it has none
+initial	descriptor @color-profile src	-	n/a	the pin's initial value for this descriptor is `n/a`: it has none
+initial	descriptor @counter-style additive-symbols	-	n/a	the pin's initial value for this descriptor is `n/a`: it has none
+initial	descriptor @counter-style symbols	-	n/a	the pin's initial value for this descriptor is `n/a`: it has none
+initial	descriptor @font-face font-family	-	N/A	the pin's initial value for this descriptor is `N/A`: it has none
+initial	descriptor @font-palette-values base-palette	-	N/A	the pin's initial value for this descriptor is `N/A`: it has none
+initial	descriptor @font-palette-values font-family	-	N/A	the pin's initial value for this descriptor is `N/A`: it has none
+initial	descriptor @font-palette-values override-colors	-	N/A	the pin's initial value for this descriptor is `N/A`: it has none
+initial	descriptor @page page-margin-safety	-	auto	the pin's initial value `auto` is not among the alternatives of the descriptor's own grammar (`none | clamp | add`): a defect of the pin
+initial	property --*	-	the guaranteed-invalid value	the initial value of a custom property is the guaranteed-invalid value of CSS Variables 1, which is not a token sequence that its grammar matches: it is the absence of a value

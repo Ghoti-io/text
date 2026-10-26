@@ -1,0 +1,349 @@
+/*
+ * SPDX-License-Identifier: LGPL-3.0-only
+ *
+ * Copyright (C) 2026 Corey Pennycuff
+ *
+ * This file is part of Ghoti.io Text.
+ *
+ * Ghoti.io Text is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * Ghoti.io Text is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * @file
+ *
+ * Allocation failure in the registry and the property layer: making a registry, registering (a property, an alias, a shorthand),
+ * freezing, compiling a grammar lazily, parsing a property, and writing the result, each with the n-th allocation failed for
+ * every n up to the last one the call makes.
+ *
+ * A failed call is GTEXT_CSS_E_OOM and leaves nothing behind: the allocator holds no block that the call should have freed, and
+ * was never asked to free one it did not make. A grammar whose compile ran out of memory is not remembered as a bad one: the
+ * same call with memory succeeds.
+ */
+
+#include <string>
+
+#include <gtest/gtest.h>
+
+#include "css_registry_test_support.h"
+#include "markup_test_support.h"
+
+using namespace reg;
+
+namespace {
+
+GTEXT_CSS_Property_Def def(const char * name, const char * grammar, const char * initial) {
+  GTEXT_CSS_Property_Def d;
+  std::memset(&d, 0, sizeof d);
+  d.name = name;
+  d.grammar = grammar;
+  d.initial = initial;
+  return d;
+}
+
+GTEXT_CSS_Registry_Options options_with(FaultAllocator & fa) {
+  GTEXT_CSS_Registry_Options o = gtext_css_registry_options_default();
+  o.allocator = &fa.alloc;
+  return o;
+}
+
+TEST(CssRegistryOom, MakingARegistrySweptOverEveryAllocation) {
+  size_t failures = 0;
+  for (size_t n = 1; n < 400; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Registry_Options o = options_with(fa);
+    GTEXT_CSS_Registry * r = nullptr;
+    fa.arm(n);
+    const GTEXT_CSS_Status st = gtext_css_registry_new(&o, &r);
+    fa.disarm();
+    if (!fa.failed) {
+      EXPECT_EQ(st, GTEXT_CSS_OK);
+      gtext_css_registry_free(r);
+      EXPECT_TRUE(fa.live.empty());
+      EXPECT_EQ(fa.bad_frees, 0u);
+      break;
+    }
+    failures++;
+    EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+    EXPECT_EQ(r, nullptr) << n;
+    EXPECT_TRUE(fa.live.empty()) << n << ": a block is left";
+    EXPECT_EQ(fa.bad_frees, 0u) << n;
+  }
+  EXPECT_GE(failures, 8u);
+}
+
+TEST(CssRegistryOom, RegisteringAPropertySweptOverEveryAllocation) {
+  size_t failures = 0;
+  for (size_t n = 1; n < 6000; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Registry_Options o = options_with(fa);
+    GTEXT_CSS_Registry_Builder * b = nullptr;
+    ASSERT_EQ(gtext_css_registry_builder_new(&o, &b), GTEXT_CSS_OK);
+    GTEXT_CSS_Property_Def d = def("vector-gap", "<'margin-top'> | [ <length-percentage [0,∞]> | auto ]{2} | calc-size( <number> )", "5px");
+    d.override = false;
+    GTEXT_CSS_Registry_Result res;
+    fa.arm(n);
+    const GTEXT_CSS_Status st = gtext_css_registry_register_property(b, &d, &res);
+    fa.disarm();
+    if (!fa.failed) {
+      EXPECT_EQ(st, GTEXT_CSS_OK);
+      GTEXT_CSS_Registry * r = nullptr;
+      EXPECT_EQ(gtext_css_registry_freeze(b, &r, nullptr), GTEXT_CSS_OK);
+      gtext_css_registry_free(r);
+      EXPECT_TRUE(fa.live.empty());
+      break;
+    }
+    failures++;
+    EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n << " " << gtext_css_status_string(st);
+    EXPECT_EQ(res.status, GTEXT_CSS_E_OOM) << n;
+    // nothing was registered, and the same registration with memory succeeds
+    GTEXT_CSS_Registry * r = nullptr;
+    ASSERT_EQ(gtext_css_registry_register_property(b, &d, &res), GTEXT_CSS_OK) << n;
+    ASSERT_EQ(gtext_css_registry_freeze(b, &r, nullptr), GTEXT_CSS_OK) << n;
+    EXPECT_EQ(gtext_css_registry_property_count(r), gtext_css_registry_generated_property_count() + 1) << n;
+    gtext_css_registry_free(r);
+    EXPECT_TRUE(fa.live.empty()) << n << ": a block is left";
+    EXPECT_EQ(fa.bad_frees, 0u) << n;
+  }
+  EXPECT_GT(failures, 20u);
+}
+
+TEST(CssRegistryOom, RegisteringAnAliasAndAShorthandAndOverridingSweptOverEveryAllocation) {
+  const char * lh[] = {"width", "height"};
+  for (int kind = 0; kind < 3; kind++) {
+    size_t failures = 0;
+    for (size_t n = 1; n < 3000; n++) {
+      FaultAllocator fa;
+      GTEXT_CSS_Registry_Options o = options_with(fa);
+      GTEXT_CSS_Registry_Builder * b = nullptr;
+      ASSERT_EQ(gtext_css_registry_builder_new(&o, &b), GTEXT_CSS_OK);
+      GTEXT_CSS_Registry_Result res;
+      GTEXT_CSS_Shorthand_Def sh;
+      std::memset(&sh, 0, sizeof sh);
+      sh.name = "vector-size";
+      sh.grammar = "<'width'> <'height'>?";
+      sh.longhands = lh;
+      sh.longhand_count = 2;
+      GTEXT_CSS_Property_Def ov = def("color", "red | blue", "red");
+      ov.override = true;
+      const auto call = [&]() {
+        return kind == 0 ? gtext_css_registry_register_alias(b, "vector-w", "width", false, &res)
+             : kind == 1 ? gtext_css_registry_register_shorthand(b, &sh, &res)
+                         : gtext_css_registry_register_property(b, &ov, &res);
+      };
+      fa.arm(n);
+      const GTEXT_CSS_Status st = call();
+      fa.disarm();
+      if (!fa.failed) {
+        EXPECT_EQ(st, GTEXT_CSS_OK);
+        GTEXT_CSS_Registry * r = nullptr;
+        EXPECT_EQ(gtext_css_registry_freeze(b, &r, nullptr), GTEXT_CSS_OK);
+        gtext_css_registry_free(r);
+        EXPECT_TRUE(fa.live.empty());
+        break;
+      }
+      failures++;
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << "kind " << kind << " n " << n << " " << gtext_css_status_string(st);
+      ASSERT_EQ(call(), GTEXT_CSS_OK) << kind << " " << n;
+      GTEXT_CSS_Registry * r = nullptr;
+      ASSERT_EQ(gtext_css_registry_freeze(b, &r, nullptr), GTEXT_CSS_OK);
+      EXPECT_EQ(gtext_css_registry_override_count(r), kind == 2 ? 1u : 0u) << "an out-of-memory registration left no override behind";
+      gtext_css_registry_free(r);
+      EXPECT_TRUE(fa.live.empty()) << kind << " " << n << ": a block is left";
+      EXPECT_EQ(fa.bad_frees, 0u);
+    }
+    EXPECT_GT(failures, kind == 0 ? 1u : 5u) << kind;
+  }
+}
+
+TEST(CssRegistryOom, FreezingSweptOverEveryAllocation) {
+  size_t failures = 0;
+  for (size_t n = 1; n < 20000; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Registry_Options o = options_with(fa);
+    GTEXT_CSS_Registry_Builder * b = nullptr;
+    ASSERT_EQ(gtext_css_registry_builder_new(&o, &b), GTEXT_CSS_OK);
+    GTEXT_CSS_Property_Def d = def("vector-gap", "<'margin-top'> | [ <length-percentage [0,∞]> | auto ]{2}", "5px");
+    ASSERT_EQ(gtext_css_registry_register_property(b, &d, nullptr), GTEXT_CSS_OK);
+    GTEXT_CSS_Registry * r = nullptr;
+    GTEXT_CSS_Registry_Result res;
+    fa.arm(n);
+    const GTEXT_CSS_Status st = gtext_css_registry_freeze(b, &r, &res);
+    fa.disarm();
+    if (!fa.failed) {
+      EXPECT_EQ(st, GTEXT_CSS_OK);
+      gtext_css_registry_free(r);
+      EXPECT_TRUE(fa.live.empty());
+      break;
+    }
+    failures++;
+    EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n << " " << gtext_css_status_string(st);
+    EXPECT_EQ(r, nullptr);
+    // the builder is untouched by a failed freeze, and freezes with memory
+    ASSERT_EQ(gtext_css_registry_freeze(b, &r, nullptr), GTEXT_CSS_OK) << n;
+    EXPECT_EQ(parse(r, "vector-gap", "5px"), "valid:5px") << n;
+    gtext_css_registry_free(r);
+    EXPECT_TRUE(fa.live.empty()) << n << ": a block is left";
+    EXPECT_EQ(fa.bad_frees, 0u);
+  }
+  EXPECT_GT(failures, 10u);
+}
+
+TEST(CssRegistryOom, CompilingAGrammarLazilySweptOverEveryAllocationAndNotRememberedAsBad) {
+  for (const char * property : {"margin", "color", "font"}) {
+    size_t failures = 0;
+    for (size_t n = 1; n < 40000; n++) {
+      FaultAllocator fa;
+      GTEXT_CSS_Registry_Options o = options_with(fa);
+      GTEXT_CSS_Registry * r = nullptr;
+      ASSERT_EQ(gtext_css_registry_new(&o, &r), GTEXT_CSS_OK);
+      GTEXT_CSS_Grammar_State s = GTEXT_CSS_GRAMMAR_NOT_COMPILED;
+      fa.arm(n);
+      const GTEXT_CSS_Status st = gtext_css_registry_property_state(r, find(r, property), &s, nullptr);
+      fa.disarm();
+      if (!fa.failed) {
+        EXPECT_EQ(st, GTEXT_CSS_OK);
+        EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
+        gtext_css_registry_free(r);
+        EXPECT_TRUE(fa.live.empty());
+        break;
+      }
+      failures++;
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << property << " " << n << " " << gtext_css_status_string(st);
+      // asking again, with memory, compiles it: the failure was not cached as the grammar being bad
+      ASSERT_EQ(gtext_css_registry_property_state(r, find(r, property), &s, nullptr), GTEXT_CSS_OK) << property << " " << n;
+      EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK) << property << " " << n;
+      gtext_css_registry_free(r);
+      EXPECT_TRUE(fa.live.empty()) << property << " " << n << ": a block is left";
+      EXPECT_EQ(fa.bad_frees, 0u);
+    }
+    EXPECT_GT(failures, 10u) << property;
+  }
+}
+
+TEST(CssRegistryOom, ParsingAPropertySweptOverEveryAllocation) {
+  const std::vector<std::pair<const char *, const char *>> cases = {
+      {"margin", "1px 2px"}, {"color", "rgb(1 2 3 / 50%)"}, {"transform", "translate(1px) rotate(2deg)"}, {"margin", "var(--m)"}, {"all", "inherit"}};
+  for (const auto & c : cases) {
+    // (the registry is made with the real allocator and prepared, so that the sweep is of the parse alone)
+    GTEXT_CSS_Registry * r = nullptr;
+    ASSERT_EQ(gtext_css_registry_new(nullptr, &r), GTEXT_CSS_OK);
+    ASSERT_EQ(gtext_css_registry_prepare(r), GTEXT_CSS_OK);
+    GTEXT_CSS_Property_Value want;
+    ASSERT_EQ(gtext_css_parse_property_text(r, c.first, strlen(c.first), c.second, strlen(c.second), nullptr, &want), GTEXT_CSS_OK);
+    char * wb = nullptr;
+    size_t wn = 0;
+    ASSERT_EQ(gtext_css_property_value_serialize_buffer(&want, nullptr, &wb, &wn), GTEXT_CSS_OK);
+    const std::string expected(wb, wn);
+    gtext_css_serialize_buffer_free(nullptr, wb);
+    gtext_css_property_value_free(&want);
+    size_t failures = 0;
+    for (size_t n = 1; n < 20000; n++) {
+      FaultAllocator fa;
+      GTEXT_CSS_Property_Options po;
+      std::memset(&po, 0, sizeof po);
+      po.allocator = &fa.alloc;
+      GTEXT_CSS_Property_Value pv;
+      fa.arm(n);
+      const GTEXT_CSS_Status st = gtext_css_parse_property_text(r, c.first, strlen(c.first), c.second, strlen(c.second), &po, &pv);
+      fa.disarm();
+      if (!fa.failed) {
+        EXPECT_EQ(st, GTEXT_CSS_OK);
+        GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+        so.allocator = &fa.alloc;
+        char * buf = nullptr;
+        size_t bn = 0;
+        EXPECT_EQ(gtext_css_property_value_serialize_buffer(&pv, &so, &buf, &bn), GTEXT_CSS_OK);
+        EXPECT_EQ(std::string(buf, bn), expected);
+        gtext_css_serialize_buffer_free(&so, buf);
+        gtext_css_property_value_free(&pv);
+        EXPECT_TRUE(fa.live.empty());
+        break;
+      }
+      failures++;
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << c.first << " " << n << " " << gtext_css_status_string(st);
+      EXPECT_EQ(pv.set, nullptr) << n;
+      EXPECT_TRUE(fa.live.empty()) << c.first << " " << n << ": a block is left";
+      EXPECT_EQ(fa.bad_frees, 0u);
+    }
+    EXPECT_GT(failures, 3u) << c.first;
+    gtext_css_registry_free(r);
+  }
+}
+
+TEST(CssRegistryOom, WritingAResultSweptOverEveryAllocation) {
+  const GTEXT_CSS_Registry * r = shared();
+  for (const char * value : {"1px 2px", "inherit"}) {
+    GTEXT_CSS_Property_Value pv;
+    ASSERT_EQ(gtext_css_parse_property_text(r, "margin", 6, value, strlen(value), nullptr, &pv), GTEXT_CSS_OK);
+    size_t failures = 0;
+    for (size_t n = 1; n < 200; n++) {
+      FaultAllocator fa;
+      GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+      so.allocator = &fa.alloc;
+      char * buf = nullptr;
+      size_t bn = 0;
+      fa.arm(n);
+      const GTEXT_CSS_Status st = gtext_css_property_value_serialize_buffer(&pv, &so, &buf, &bn);
+      fa.disarm();
+      if (!fa.failed) {
+        EXPECT_EQ(st, GTEXT_CSS_OK);
+        gtext_css_serialize_buffer_free(&so, buf);
+        EXPECT_TRUE(fa.live.empty());
+        break;
+      }
+      failures++;
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      EXPECT_TRUE(fa.live.empty()) << n;
+    }
+    EXPECT_GE(failures, 1u);
+    gtext_css_property_value_free(&pv);
+  }
+}
+
+TEST(CssRegistryOom, AValidityCheckThatRunsOutOfMemoryRecordsItAndKeepsNothing) {
+  GTEXT_CSS_Registry * r = nullptr;
+  ASSERT_EQ(gtext_css_registry_new(nullptr, &r), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_registry_prepare(r), GTEXT_CSS_OK);
+  size_t failures = 0;
+  for (size_t n = 1; n < 20000; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Property_Options po;
+    std::memset(&po, 0, sizeof po);
+    po.allocator = &fa.alloc;
+    GTEXT_CSS_Property_Validity v;
+    ASSERT_EQ(gtext_css_property_validity_init(&v, r, &po), GTEXT_CSS_OK);
+    GTEXT_CSS_Parse_Options pa = gtext_css_parse_options_default();
+    pa.validity = gtext_css_property_validity(&v);
+    GTEXT_CSS_Tree * tree = nullptr;
+    const std::string css = "margin: 1px 2px; color: var(--c); width: 5px";
+    // only the validity checks allocate through the fault allocator (the parse itself uses the default)
+    fa.arm(n);
+    const GTEXT_CSS_Status st = gtext_css_parse_declaration_list(css.data(), css.size(), &pa, &tree, nullptr);
+    fa.disarm();
+    EXPECT_EQ(st, GTEXT_CSS_OK);
+    if (!fa.failed) {
+      gtext_css_tree_free(tree);
+      EXPECT_TRUE(fa.live.empty());
+      break;
+    }
+    failures++;
+    EXPECT_EQ(v.status, GTEXT_CSS_E_OOM) << n;
+    EXPECT_GE(v.rejected, 1u);
+    gtext_css_tree_free(tree);
+    EXPECT_TRUE(fa.live.empty()) << n << ": a block is left";
+  }
+  EXPECT_GT(failures, 3u);
+  gtext_css_registry_free(r);
+}
+
+}  // namespace

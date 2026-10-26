@@ -463,12 +463,9 @@ TEST(CssGrammarEdges, ACommaOrSlashSeparatesSegmentsOnlyWhenEverySegmentConsumes
   d.types["maybe-via"] = "<maybe>";
   d.types["sure"] = "a";
   check_rows({
-      // <maybe> can be empty, so a comma next to it stays an item: a value must write the comma back
-      {"<maybe> , x", ", x", "list/space(tok:, kw:x)"},
-      {"<maybe> , x", "a, x", "list/space(kw:a tok:, kw:x)"},
-      {"<maybe-via> , x", ", x", "list/space(tok:, kw:x)"},
-      {"x , <maybe>", "x ,", "list/space(kw:x tok:,)"},
+      // <maybe> can be empty, so a slash next to it stays an item: a value must write the slash back
       {"x / <maybe>", "x /", "list/space(kw:x tok:/)"},
+      {"<maybe> / x", "/ x", "list/space(tok:/ kw:x)"},
       // <sure> cannot: the same shapes are lists with a separator
       {"<sure> , x", "a, x", "list/comma(kw:a kw:x)"},
       {"x , <sure>", "x, a", "list/comma(kw:x kw:a)"},
@@ -476,19 +473,96 @@ TEST(CssGrammarEdges, ACommaOrSlashSeparatesSegmentsOnlyWhenEverySegmentConsumes
       // a group needs only one member that consumes something to be a segment, and || needs all of them not to
       {"[ b && c? ] , x", "b, x", "list/comma(list/space(kw:b) kw:x)"},
       {"[ b && c? ] , x", "c b, x", "list/comma(list/space(kw:b kw:c) kw:x)"},
-      {"[ b? && c? ] , x", ", x", "list/space(tok:, kw:x)"},
-      {"[ b? || c? ] , x", ", x", "list/space(tok:, kw:x)"},
-      {"[ b || c? ] , x", "b, x", "list/space(list/space(kw:b) tok:, kw:x)"},  // (c? alone is a match of nothing)
       {"[ b || c ] , x", "b, x", "list/comma(list/space(kw:b) kw:x)"},
       {"<maybe> / x , y", "/ x, y", "list/comma(list/space(tok:/ kw:x) kw:y)"},
   }, &d);
   // and what is written reads back as the same text
-  for (const char * in : {", x", "a, x", "x ,"}) {
-    const std::string first = run_text("<maybe> , x | x ,", in, &d);
+  for (const char * in : {"a, x", "x", "x /"}) {
+    const std::string first = run_text("<maybe> / x | x /", in, &d);
     if (first != "no match") {
-      EXPECT_EQ(run_text("<maybe> , x | x ,", first, &d), first) << in;
+      EXPECT_EQ(run_text("<maybe> / x | x /", first, &d), first) << in;
     }
   }
+}
+
+TEST(CssGrammarEdges, ACommaNextToAnOptionalTermIsOmittedWhenTheTermIs) {
+  // Values 4, 2: "a comma specified in the grammar must be omitted if: all items preceding the comma have been omitted; all items
+  // following the comma have been omitted; multiple commas would be adjacent ..., due to the items between the commas being omitted"
+  Defs d;
+  d.types["maybe"] = "a?";
+  d.types["maybe-via"] = "<maybe>";
+  check_rows({
+      // all items preceding the comma omitted
+      {"<maybe> , x", "x", "kw:x"},
+      {"<maybe> , x", ", x", "no match"},
+      {"<maybe> , x", "a, x", "list/space(kw:a tok:, kw:x)"},
+      {"<maybe> , x", "a x", "no match"},
+      {"<maybe-via> , x", "x", "kw:x"},
+      {"<maybe-via> , x", ", x", "no match"},
+      {"[ b? c? ] , x", "x", "kw:x"},
+      {"[ b? c? ] , x", "c, x", "list/space(list/space(kw:c) tok:, kw:x)"},
+      {"[ b? c? ] , x", ", x", "no match"},
+      // all items following the comma omitted
+      {"x , <maybe>", "x", "list/space(kw:x)"},
+      {"x , <maybe>", "x ,", "no match"},
+      {"x , <maybe>", "x, a", "list/space(kw:x list/space(tok:, kw:a))"},
+      {"x , a?", "x", "list/space(kw:x)"},
+      {"x , a? b?", "x", "list/space(kw:x)"},
+      {"x , a? b?", "x, b", "list/space(kw:x list/space(tok:, list/space(kw:b)))"},
+      // the commas between three terms: only those between present terms
+      {"x , a? , y", "x, y", "list/space(kw:x tok:, kw:y)"},
+      {"x , a? , y", "x, a, y", "list/space(kw:x list/space(tok:, kw:a) tok:, kw:y)"},
+      {"x , a? , y", "x, , y", "no match"},
+      {"x , a? , y", "x y", "no match"},
+      {"a? , b? , y", "y", "kw:y"},
+      {"a? , b? , y", "a, y", "list/space(kw:a tok:, kw:y)"},
+      {"a? , b? , y", "b, y", "list/space(kw:b tok:, kw:y)"},
+      {"a? , b? , y", "a, b, y", "list/space(kw:a list/space(tok:, kw:b) tok:, kw:y)"},
+      {"a? , b? , y", ", y", "no match"},
+      {"a? , b? , y", "a,, y", "no match"},
+      // every term optional: the whole may be empty, and a lone term has no comma
+      {"a? , b?", "", "<none>"},
+      {"a? , b?", "a", "list/space(kw:a)"},
+      {"a? , b?", "b", "kw:b"},
+      {"a? , b?", "a, b", "list/space(kw:a list/space(tok:, kw:b))"},
+      {"a? , b?", ",", "no match"},
+      {"a? , b?", "a,", "no match"},
+      {"a? , b?", ", b", "no match"},
+      // a function's argument list
+      {"translate( <length> , <length>? )", "translate(1px)", "fn:translate(list/space(dim:1px))"},
+      {"translate( <length> , <length>? )", "translate(1px, 2px)", "fn:translate(list/space(dim:1px list/space(tok:, dim:2px)))"},
+      {"translate( <length> , <length>? )", "translate(1px,)", "no match"},
+      {"translate( <length> , <length>? )", "translate(1px 2px)", "no match"},
+      {"skew( <length> , <length>? )", "skew(3px)", "fn:skew(list/space(dim:3px))"},
+      // slashes are not omissible
+      {"a? / b", "b", "no match"},
+      {"a / b?", "a", "no match"},
+  }, &d);
+  // a group whose members are all optional is one term; the commas around it follow it
+  check_rows({
+      {"x , [ a || b ]? , y", "x, y", "list/space(kw:x tok:, kw:y)"},
+      {"x , [ a || b ]? , y", "x, b a, y", "list/space(kw:x list/space(tok:, list/space(kw:a kw:b)) tok:, kw:y)"},
+  }, &d);
+}
+
+TEST(CssGrammarEdges, OmissibleCommasKeepTheLimitsAndTheLinkLinear) {
+  // sixteen segments are worked out; seventeen are left as literals (the nodes made grow with the square of the segments)
+  std::string g16 = "a0?";
+  std::string g17 = "a0?";
+  for (int i = 1; i < 16; i++) {
+    g16 += " , a" + std::to_string(i) + "?";
+  }
+  g17 = g16 + " , a16?";
+  Grammar a, b;
+  compile_into(a, g16);
+  compile_into(b, g17);
+  ASSERT_TRUE(a.ok());
+  ASSERT_TRUE(b.ok());
+  EXPECT_EQ(run(g16, "a3, a9", nullptr), "list/space(kw:a3 list/space(tok:, kw:a9))");
+  EXPECT_EQ(run(g16, "a9", nullptr), "list/space(kw:a9)");
+  EXPECT_EQ(run(g17, "a9", nullptr), "no match") << "past the bound the commas stay items, as before";
+  // a wide set of optional terms: the nodes made stay within the node limit and the match within the work limit
+  EXPECT_LT(a.result.nodes, 2000u);
 }
 
 TEST(CssGrammarEdges, AListSpanStartsAtTheFirstChildThatHasOne) {
