@@ -212,7 +212,7 @@ TEST(CssProperty, ATypeThePinDefinesInsideOnePropertyIsFoundFromTheOthersThatNam
   const GTEXT_CSS_Registry * r = R();
   // `fill-opacity` names <opacity-value>, which the pin defines inside `opacity`; `backdrop-filter` names the functions of `filter`
   EXPECT_EQ(parse(r, "fill-opacity", "0.5"), "valid:0.5");
-  EXPECT_EQ(parse(r, "fill-opacity", "50%"), "valid:50%");
+  EXPECT_EQ(parse(r, "fill-opacity", "50%"), "valid:0.5") << "a percentage opacity is written as the number, the canonical form";
   EXPECT_EQ(parse(r, "fill-opacity", "bogus"), "invalid");
   EXPECT_EQ(parse(r, "backdrop-filter", "blur(2px) brightness(50%)"), "valid:blur(2px) brightness(50%)");
   EXPECT_EQ(parse(r, "grid-row", "1 / 3"), "valid:1 / 3") << "<grid-line> is defined in the four grid-row/column start/end properties";

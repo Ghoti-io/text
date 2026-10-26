@@ -30,6 +30,7 @@
 
 #include <string.h>
 
+#include "css_property_canon.h"
 #include "css_registry_internal.h"
 
 #define PROP_NAME_STACK 4096u
@@ -370,6 +371,9 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
   }
+  else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+    out->canonical = css_canon_rules_of(info.name, info.name_length);
+  }
   return st;
 }
 
@@ -448,6 +452,21 @@ GTEXT_CSS_Status gtext_css_parse_property_declaration(const GTEXT_CSS_Registry *
 
 /* ---- serialization ------------------------------------------------------------------------ */
 
+/** The value written in its canonical form (css_property_canon.c): the typed value is serialized as it was matched and the text is rewritten. */
+static GTEXT_CSS_Status serialize_canonical(const GTEXT_CSS_Property_Value * value, const GTEXT_CSS_Serialize_Options * options,
+    const GTEXT_CSS_Value * root, char ** out, size_t * out_length) {
+  char * raw = NULL;
+  size_t raw_length = 0;
+  GTEXT_CSS_Status st = gtext_css_serialize_value_buffer(root, options, &raw, &raw_length);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_Allocator a = *((options && options->allocator) ? options->allocator : gtext_allocator_default());
+  st = css_canon_apply(value->canonical, &a, raw, raw_length, out, out_length);
+  gtext_css_serialize_buffer_free(options, raw);
+  return st;
+}
+
 GTEXT_CSS_Status gtext_css_property_value_serialize(const GTEXT_CSS_Property_Value * value, const GTEXT_CSS_Serialize_Options * options,
     const GTEXT_Markup_Sink * sink) {
   if (!value || !sink || !sink->write) {
@@ -466,6 +485,17 @@ GTEXT_CSS_Status gtext_css_property_value_serialize(const GTEXT_CSS_Property_Val
     const GTEXT_CSS_Value * root = gtext_css_value_set_root(value->set);
     if (!root) {
       return GTEXT_CSS_OK; /* a value of nothing (an empty custom property) */
+    }
+    if (value->canonical && value->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+      char * text = NULL;
+      size_t length = 0;
+      const GTEXT_CSS_Status st = serialize_canonical(value, options, root, &text, &length);
+      if (st != GTEXT_CSS_OK) {
+        return st;
+      }
+      const GTEXT_CSS_Status ws = length == 0 || sink->write(sink->user, text, length) == GTEXT_MARKUP_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_WRITE;
+      gtext_css_serialize_buffer_free(options, text);
+      return ws;
     }
     return gtext_css_serialize_value(root, options, sink);
   }
@@ -498,6 +528,9 @@ GTEXT_CSS_Status gtext_css_property_value_serialize_buffer(const GTEXT_CSS_Prope
   if (value->outcome == GTEXT_CSS_PROP_RESULT_VALID || value->outcome == GTEXT_CSS_PROP_RESULT_PENDING) {
     const GTEXT_CSS_Value * root = gtext_css_value_set_root(value->set);
     if (root) {
+      if (value->canonical && value->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+        return serialize_canonical(value, options, root, out, out_length);
+      }
       return gtext_css_serialize_value_buffer(root, options, out, out_length);
     }
     GTEXT_Allocator a = *((options && options->allocator) ? options->allocator : gtext_allocator_default());

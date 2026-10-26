@@ -136,6 +136,7 @@ typedef struct {
   GTEXT_CSS_Descriptor_Id descriptor;  ///< In an at-rule context: the descriptor, or 0.
   GTEXT_CSS_Value_Set * set;           ///< VALID and PENDING: the typed value (css_value.h); else NULL. Owned.
   GTEXT_CSS_Match_Result match;        ///< What the match measured (zeroed when there was none).
+  uint8_t canonical;                   ///< Private: the rule set that writes the value in its canonical form (0: none). Do not set.
 } GTEXT_CSS_Property_Value;
 
 /** @brief Free what a result holds and zero it; a zeroed or NULL result is ignored. */

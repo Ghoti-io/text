@@ -372,6 +372,57 @@ TEST(CssRegistryOom, WritingAResultSweptOverEveryAllocation) {
   }
 }
 
+TEST(CssRegistryOom, WritingTheCanonicalFormOfAResultSweptOverEveryAllocation) {
+  // the canonical-form rules (src/css/css_property_canon.c) rewrite the text through buffers of their own: every one of them runs out of memory
+  // cleanly, in the buffer form and the sink form, whichever allocation it is
+  const GTEXT_CSS_Registry * r = shared();
+  struct Case {
+    const char * property;
+    const char * value;
+  };
+  for (const Case & c : {Case{"display", "block flow"}, Case{"filter", "grayscale(300%) hue-rotate(0)"}, Case{"clip-path", "path(nonzero, \"M20,20h60z\")"},
+           Case{"animation-name", "\"multi word\", b"}, Case{"counter-reset", "a b 3"}, Case{"rotate", "0 1 0 400grad"}, Case{"scale", "100% 200% 1"},
+           Case{"mask-position", "top, left"}, Case{"grid-template-columns", "[] 1fr []"}, Case{"cursor", "image-set(\"a\" 1x), grab"}}) {
+    GTEXT_CSS_Property_Value pv;
+    ASSERT_EQ(gtext_css_parse_property_text(r, c.property, strlen(c.property), c.value, strlen(c.value), nullptr, &pv), GTEXT_CSS_OK) << c.property;
+    ASSERT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_VALID) << c.property;
+    ASSERT_NE(pv.canonical, 0) << c.property << ": the property has a rule set";
+    size_t failures = 0;
+    for (int sink_form = 0; sink_form < 2; sink_form++) {
+      for (size_t n = 1; n < 300; n++) {
+        FaultAllocator fa;
+        GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+        so.allocator = &fa.alloc;
+        char * buf = nullptr;
+        size_t bn = 0;
+        std::string via_sink;
+        GTEXT_Markup_Sink sink;
+        sink.user = &via_sink;
+        sink.write = [](void * user, const char * bytes, size_t len) {
+          static_cast<std::string *>(user)->append(bytes, len);
+          return GTEXT_MARKUP_OK;
+        };
+        fa.arm(n);
+        const GTEXT_CSS_Status st = sink_form ? gtext_css_property_value_serialize(&pv, &so, &sink)
+                                              : gtext_css_property_value_serialize_buffer(&pv, &so, &buf, &bn);
+        fa.disarm();
+        if (!fa.failed) {
+          EXPECT_EQ(st, GTEXT_CSS_OK);
+          gtext_css_serialize_buffer_free(&so, buf);
+          EXPECT_TRUE(fa.live.empty()) << c.property;
+          break;
+        }
+        failures++;
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << c.property << ": " << n;
+        EXPECT_TRUE(fa.live.empty()) << c.property << ": " << n << ": a block is left";
+        EXPECT_EQ(fa.bad_frees, 0u) << c.property << ": " << n;
+      }
+    }
+    EXPECT_GE(failures, 2u) << c.property;
+    gtext_css_property_value_free(&pv);
+  }
+}
+
 TEST(CssRegistryOom, AValidityCheckThatRunsOutOfMemoryRecordsItAndKeepsNothing) {
   GTEXT_CSS_Registry * r = nullptr;
   ASSERT_EQ(gtext_css_registry_new(nullptr, &r), GTEXT_CSS_OK);

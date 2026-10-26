@@ -230,7 +230,7 @@ property	background-repeat-block	1	1	0	0
 property	background-repeat-inline	1	1	0	0	
 property	background-repeat-x	1	1	0	0	
 property	background-repeat-y	1	1	0	0	
-property	background-size	1	1	0	0	
+property	background-size	1	1	0	1	
 property	background-tbd	1	1	0	0	
 property	baseline-shift	1	1	0	1	
 property	baseline-source	1	1	0	1	
@@ -278,7 +278,7 @@ property	border-end-end-radius	1	1	0	0
 property	border-end-start-radius	1	1	0	0	
 property	border-image	1	1	0	1	
 property	border-image-outset	1	1	0	1	
-property	border-image-repeat	1	1	0	0	
+property	border-image-repeat	1	1	0	1	
 property	border-image-slice	1	1	0	1	
 property	border-image-source	1	1	0	1	
 property	border-image-width	1	1	0	1	
@@ -352,7 +352,7 @@ property	clip-rule	1	1	0	1
 property	color	1	1	0	0	
 property	color-adjust	1	1	0	1	
 property	color-interpolation	1	1	0	0	
-property	color-interpolation-filters	1	1	0	0	
+property	color-interpolation-filters	1	1	0	1	
 property	color-scheme	1	1	0	0	
 property	column-count	1	1	0	1	
 property	column-fill	1	1	0	1	
@@ -462,7 +462,7 @@ property	flex-flow	1	1	0	1
 property	flex-grow	1	1	0	1	
 property	flex-line-count	1	1	0	1	
 property	flex-shrink	1	1	0	1	
-property	flex-wrap	1	1	0	0	
+property	flex-wrap	1	1	0	1	
 property	float	1	1	0	1	
 property	float-defer	1	1	0	0	
 property	float-offset	1	1	0	0	
@@ -479,9 +479,9 @@ property	font-language-override	1	1	0	0
 property	font-optical-sizing	1	1	0	1	
 property	font-palette	1	1	0	0	
 property	font-size	1	1	0	0	
-property	font-size-adjust	1	1	0	0	
+property	font-size-adjust	1	1	0	1	
 property	font-stretch	1	1	0	0	alias of font-width
-property	font-style	1	1	0	0	
+property	font-style	1	1	0	1	
 property	font-synthesis	1	1	0	0	
 property	font-synthesis-position	1	1	0	1	
 property	font-synthesis-small-caps	1	1	0	1	
@@ -507,7 +507,7 @@ property	glyph-orientation-vertical	0	0	0	0	failed not a Value Definition Syntax
 property	grid	1	1	0	1	
 property	grid-area	1	1	0	1	
 property	grid-auto-columns	1	1	0	1	
-property	grid-auto-flow	1	1	0	0	
+property	grid-auto-flow	1	1	0	1	
 property	grid-auto-rows	1	1	0	1	
 property	grid-column	1	1	0	0	
 property	grid-column-end	1	1	0	0	
@@ -584,7 +584,7 @@ property	margin-inline-start	1	1	0	1
 property	margin-left	1	1	0	1	
 property	margin-right	1	1	0	1	
 property	margin-top	1	1	0	1	
-property	margin-trim	1	1	0	0	
+property	margin-trim	1	1	0	1	
 property	marker	1	1	0	0	
 property	marker-end	1	1	0	0	
 property	marker-mid	1	1	0	0	
@@ -603,9 +603,9 @@ property	mask-composite	1	1	0	1
 property	mask-image	1	1	0	1	
 property	mask-mode	1	1	0	0	
 property	mask-origin	1	1	0	0	
-property	mask-position	1	1	0	0	
-property	mask-repeat	1	1	0	0	
-property	mask-size	1	1	0	0	
+property	mask-position	1	1	0	1	
+property	mask-repeat	1	1	0	1	
+property	mask-size	1	1	0	1	
 property	mask-type	1	1	0	1	
 property	math-depth	1	1	0	1	
 property	math-shift	1	1	0	0	
@@ -627,8 +627,8 @@ property	nav-down	0	0	0	0	unresolved <id>
 property	nav-left	0	0	0	0	unresolved <id>
 property	nav-right	0	0	0	0	unresolved <id>
 property	nav-up	0	0	0	0	unresolved <id>
-property	object-fit	1	1	0	0	
-property	object-position	1	1	0	0	
+property	object-fit	1	1	0	1	
+property	object-position	1	1	0	1	
 property	object-view-box	1	1	0	1	
 property	offset	1	1	0	1	
 property	offset-anchor	1	1	0	1	
@@ -689,7 +689,7 @@ property	pause	1	1	0	0
 property	pause-after	1	1	0	0	
 property	pause-before	1	1	0	0	
 property	perspective	1	1	0	1	
-property	perspective-origin	1	1	0	0	
+property	perspective-origin	1	1	0	1	
 property	place-content	1	1	0	0	
 property	place-items	1	1	0	0	
 property	place-self	1	1	0	0	
@@ -699,7 +699,7 @@ property	pointer-timeline-axis	1	1	0	0
 property	pointer-timeline-name	1	1	0	0	
 property	position	1	1	0	1	
 property	position-anchor	1	1	0	1	
-property	position-area	1	1	0	0	
+property	position-area	1	1	0	1	
 property	position-try	1	1	0	1	
 property	position-try-fallbacks	1	1	0	0	
 property	position-try-order	1	1	0	1	
@@ -750,7 +750,7 @@ property	rule-visibility-items	1	1	0	0
 property	rule-width	1	1	0	0	
 property	rx	1	1	0	0	
 property	ry	1	1	0	0	
-property	scale	1	1	0	0	
+property	scale	1	1	0	1	
 property	scroll-axis-lock	1	1	0	1	
 property	scroll-behavior	1	1	0	1	
 property	scroll-initial-target	1	1	0	1	
@@ -777,9 +777,9 @@ property	scroll-padding-inline-start	1	1	0	1
 property	scroll-padding-left	1	1	0	1	
 property	scroll-padding-right	1	1	0	1	
 property	scroll-padding-top	1	1	0	1	
-property	scroll-snap-align	1	1	0	0	
+property	scroll-snap-align	1	1	0	1	
 property	scroll-snap-stop	1	1	0	0	
-property	scroll-snap-type	1	1	0	0	
+property	scroll-snap-type	1	1	0	1	
 property	scroll-target-group	1	1	0	1	
 property	scroll-timeline	1	1	0	0	
 property	scroll-timeline-axis	1	1	0	0	
@@ -787,7 +787,7 @@ property	scroll-timeline-name	1	1	0	0
 property	scrollbar-color	1	1	0	1	
 property	scrollbar-gutter	1	1	0	1	
 property	scrollbar-width	1	1	0	1	
-property	shape-image-threshold	1	1	0	0	
+property	shape-image-threshold	1	1	0	1	
 property	shape-inside	1	1	0	0	
 property	shape-margin	1	1	0	1	
 property	shape-outside	1	1	0	0	
@@ -891,7 +891,7 @@ property	transition-delay	1	1	0	0
 property	transition-duration	1	1	0	1	
 property	transition-property	1	1	0	0	
 property	transition-timing-function	1	1	0	0	
-property	translate	1	1	0	0	
+property	translate	1	1	0	1	
 property	trigger-scope	1	1	0	0	
 property	unicode-bidi	1	1	0	1	
 property	user-select	1	1	0	1	

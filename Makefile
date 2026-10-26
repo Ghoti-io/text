@@ -2370,7 +2370,7 @@ conformance-css-values: $(CONFORMANCE_LIB)
 # tools/css/UNEXTRACTED, the properties the pin does not have are CSS_PROPERTY_ABSENT, and the depth ledger's wpt column is regenerated
 # from the scored set. The scoring half is in check-conformance-vectors; this target adds the controls (the gate made to fail on
 # purpose, and the library built with a rule undone: tools/conformance/CSS_PROPERTY_PLANTS).
-CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9290 CSS_PROPERTY_MAX_DEFECTS=758
+CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9290 CSS_PROPERTY_MAX_DEFECTS=477
 
 conformance-css-property: ## Score the CSS property layer against the pinned WPT property parsing tests, and show the gate fails
 conformance-css-property: $(CONFORMANCE_LIB)
@@ -2960,7 +2960,7 @@ check-css-property-oracle: ## Compare the CSS property layer against Chromium an
 # **It is then made to fail** (`--controls`): this library's answers and an engine's changed, a control misclassified, the list and the witnesses
 # tampered with, and the library built with one rule undone (tools/oracle/CSS_PROPERTY_ORACLE_PLANTS). Outside TEST_GATES: it needs the
 # image and a container engine, which `make test` does not.
-CSS_PROP_ORACLE_CEILING := CSS_PROP_ORACLE_MAX_OURS=21
+CSS_PROP_ORACLE_CEILING := CSS_PROP_ORACLE_MAX_OURS=12
 
 check-css-property-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \

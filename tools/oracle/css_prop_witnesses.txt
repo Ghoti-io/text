@@ -17,17 +17,8 @@ ser:A=B|C:-webkit-text-stroke:D	-webkit-text-stroke	0px	OK=0px	OK=0px currentcol
 ser:A=B|C:column-rule:D	column-rule	0px	OK=0px	OK=0px none currentcolor
 ser:A=B|C:text-emphasis:none	text-emphasis	none	OK=none	OK=none currentcolor
 ser:A=C|B:animation:auto	animation	auto	OK=auto	OK=auto ease 0s 1 normal none running none
-ser:A|B=C:background-position:left	background-position	left	OK=left	OK=left center
-ser:A|B=C:background-size:D	background-size	0px	OK=0px	OK=0px auto
-ser:A|B=C:counter-increment:foo	counter-increment	foo 	OK=foo	OK=foo 1
-ser:A|B=C:counter-reset:foo	counter-reset	foo 	OK=foo	OK=foo 0
-ser:A|B=C:counter-set:foo	counter-set	foo 	OK=foo	OK=foo 0
 ser:A|B=C:flex:none	flex	none	OK=none	OK=0 0 auto
 ser:A|B=C:font-family:S	font-family	"a"	OK="a"	OK=a
-ser:A|B=C:mask-position:left	mask-position	left	OK=left	OK=left center
-ser:A|B=C:mask-size:D	mask-size	0px	OK=0px	OK=0px auto
-ser:A|B=C:object-position:left	object-position	left	OK=left	OK=left center
-ser:A|B=C:perspective-origin:left	perspective-origin	left	OK=left	OK=left center
 ser:A|B|C:transform-origin:left	transform-origin	left	OK=left	OK=left center
 support:chromium+firefox:animation-delay-end	animation-delay-end	initial	OK=initial	NO
 support:chromium+firefox:animation-delay-start	animation-delay-start	initial	OK=initial	NO

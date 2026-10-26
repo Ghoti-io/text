@@ -421,7 +421,7 @@ static int values_equal(const GTEXT_CSS_Value * a, const GTEXT_CSS_Value * b) {
 
 /** Parse "name: value" as a declaration and the value as a property (or a descriptor of at_rule). */
 static GTEXT_CSS_Status try_value(const GTEXT_CSS_Registry * reg, const char * name, const char * at_rule, const char * value,
-    GTEXT_CSS_Property_Outcome * outcome, char ** ser, size_t * nvalues, GTEXT_CSS_Value_Set ** keep) {
+    GTEXT_CSS_Property_Outcome * outcome, char ** ser, size_t * nvalues, GTEXT_CSS_Value_Set ** keep, char ** raw) {
   size_t nl = strlen(name), vl = strlen(value);
   char * decl = malloc(nl + vl + 8);
   if (!decl) {
@@ -463,6 +463,15 @@ static GTEXT_CSS_Status try_value(const GTEXT_CSS_Registry * reg, const char * n
     if (pv.outcome == GTEXT_CSS_PROP_RESULT_VALID || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING || pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
       size_t n = 0;
       st = gtext_css_property_value_serialize_buffer(&pv, NULL, ser, &n);
+      if (raw) {
+        /* the same typed value written without the canonical form (css_property_canon.c), to tell whether a rule changed the text */
+        size_t rn = 0;
+        const GTEXT_CSS_Value * root = pv.set ? gtext_css_value_set_root(pv.set) : NULL;
+        *raw = NULL;
+        if (root && gtext_css_serialize_value_buffer(root, NULL, raw, &rn) != GTEXT_CSS_OK) {
+          *raw = NULL;
+        }
+      }
       *nvalues = pv.set ? gtext_css_value_set_count(pv.set) : 0;
       if (keep) {
         *keep = pv.set; /* the caller compares the typed values */
@@ -517,10 +526,11 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
     seen[nseen++] = w.out.data;
     GTEXT_CSS_Property_Outcome oc;
     char * s1 = NULL;
+    char * raw1 = NULL;
     size_t nv1 = 0;
     GTEXT_CSS_Value_Set * set1 = NULL;
     stats->witnesses++;
-    GTEXT_CSS_Status st = try_value(reg, name, at_rule, w.out.data, &oc, &s1, &nv1, &set1);
+    GTEXT_CSS_Status st = try_value(reg, name, at_rule, w.out.data, &oc, &s1, &nv1, &set1, &raw1);
     if (st != GTEXT_CSS_OK || (oc != GTEXT_CSS_PROP_RESULT_VALID && oc != GTEXT_CSS_PROP_RESULT_PENDING && oc != GTEXT_CSS_PROP_RESULT_WIDE)) {
       fprintf(stderr, "witness not matched: %s%s%s: '%s'\n", at_rule ? at_rule : "", at_rule ? " " : "", name, w.out.data);
       free(s1);
@@ -535,10 +545,13 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
     char * s2 = NULL;
     size_t nv2 = 0;
     GTEXT_CSS_Value_Set * set2 = NULL;
-    st = try_value(reg, name, at_rule, s1, &oc, &s2, &nv2, &set2);
-    /* the typed values are equal (the acceptance criterion), not only their text */
-    if (st == GTEXT_CSS_OK && (oc == GTEXT_CSS_PROP_RESULT_VALID || oc == GTEXT_CSS_PROP_RESULT_WIDE || oc == GTEXT_CSS_PROP_RESULT_PENDING) && s2 && strcmp(s1, s2) == 0 && nv1 == nv2 &&
-        values_equal(set1 ? gtext_css_value_set_root(set1) : NULL, set2 ? gtext_css_value_set_root(set2) : NULL)) {
+    st = try_value(reg, name, at_rule, s1, &oc, &s2, &nv2, &set2, NULL);
+    /* the typed values are equal (the acceptance criterion), not only their text. Except where a canonical-form rule wrote the value shorter
+     * (`block flow` as `block`): the text is then another spelling of the same value, a different tree, and the text must be a fixed point. */
+    const int canonical = raw1 && strcmp(raw1, s1) != 0;
+    if (st == GTEXT_CSS_OK && (oc == GTEXT_CSS_PROP_RESULT_VALID || oc == GTEXT_CSS_PROP_RESULT_WIDE || oc == GTEXT_CSS_PROP_RESULT_PENDING) && s2 && strcmp(s1, s2) == 0 &&
+        (canonical || (nv1 == nv2 &&
+        values_equal(set1 ? gtext_css_value_set_root(set1) : NULL, set2 ? gtext_css_value_set_root(set2) : NULL)))) {
       good++;
       stats->roundtrip_ok++;
     }
@@ -547,6 +560,7 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
           nv1, s2 ? s2 : "-", nv2, (int)st, (int)oc);
     }
     free(s1);
+    free(raw1);
     free(s2);
     gtext_css_value_set_free(set1);
     gtext_css_value_set_free(set2);
@@ -580,7 +594,7 @@ static const char * initial_state(const GTEXT_CSS_Registry * reg, const char * n
   GTEXT_CSS_Property_Outcome oc;
   char * s = NULL;
   size_t nv = 0;
-  const GTEXT_CSS_Status st = try_value(reg, name, at_rule, text, &oc, &s, &nv, NULL);
+  const GTEXT_CSS_Status st = try_value(reg, name, at_rule, text, &oc, &s, &nv, NULL, NULL);
   free(s);
   if (st == GTEXT_CSS_E_UNSUPPORTED) {
     return "unsupported";
