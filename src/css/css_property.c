@@ -277,6 +277,51 @@ static GTEXT_CSS_Status parse_descriptor(const GTEXT_CSS_Registry * registry, co
   return run_match(registry, compiled, values, count, options, false, false, out);
 }
 
+/// Whether a property writes a bare `0` as a number although its grammar offers a length first: the outsets of a border image and of a mask border
+/// (`[ <length [0,∞]> | <number [0,∞]> ]{1,4}`), where the number multiplies the border width and `0` is what authors and browsers write.
+static bool zero_is_number_for(const GTEXT_CSS_Property_Info * info) {
+  return (info->name_length == 19 && memcmp(info->name, "border-image-outset", 19) == 0) ||
+      (info->name_length == 18 && memcmp(info->name, "mask-border-outset", 18) == 0);
+}
+
+/// A bare `0` where such a property takes a number as well as a length is the number, so it is written `0`, not `0px`. The tree is the one just matched
+/// and belongs to the caller; nothing else shares it.
+static void zero_lengths_to_numbers(GTEXT_CSS_Property_Value * out, const GTEXT_CSS_Property_Info * info) {
+  if (!out->set || !zero_is_number_for(info)) {
+    return;
+  }
+  GTEXT_CSS_Value * root = (GTEXT_CSS_Value *)gtext_css_value_set_root(out->set);
+  struct { GTEXT_CSS_Value * node; size_t i; } stack[64];
+  size_t sp = 0;
+  if (!root) {
+    return;
+  }
+  stack[sp].node = root;
+  stack[sp].i = 0;
+  sp++;
+  while (sp) {
+    GTEXT_CSS_Value * node = stack[sp - 1].node;
+    if (stack[sp - 1].i == 0) {
+      if (node->kind == GTEXT_CSS_VAL_DIMENSION && (node->flags & GTEXT_CSS_VFLAG_ZERO_LENGTH) && !(node->flags & GTEXT_CSS_VFLAG_MATH)) {
+        node->kind = GTEXT_CSS_VAL_NUMBER;
+        node->unit = GTEXT_CSS_UNIT_NONE;
+        node->interp = GTEXT_CSS_INTERP_NUMBER;
+        node->flags &= ~(unsigned)GTEXT_CSS_VFLAG_ZERO_LENGTH;
+      }
+    }
+    if (node->kind != GTEXT_CSS_VAL_LIST || stack[sp - 1].i >= node->child_count) {
+      sp--;
+      continue;
+    }
+    GTEXT_CSS_Value * kid = (GTEXT_CSS_Value *)&node->children[stack[sp - 1].i++];
+    if (sp < 64) {
+      stack[sp].node = kid;
+      stack[sp].i = 0;
+      sp++;
+    }
+  }
+}
+
 GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options,
     GTEXT_CSS_Property_Value * out) {
@@ -373,6 +418,7 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   }
   else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
     out->canonical = css_canon_rules_of(info.name, info.name_length);
+    zero_lengths_to_numbers(out, &info);
   }
   return st;
 }

@@ -599,7 +599,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
 	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
-	check-size-shifts
+	check-size-shifts check-css-compute
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -988,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-values conformance-css-property check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects check-size-shifts check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-values conformance-css-property check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1132,16 +1132,25 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/encoding/encoding_decode.c \
 	src/encoding/encoding_encode.c \
 	src/css/css_anb.c \
+	src/css/css_block.c \
 	src/css/css_color.c \
 	src/css/css_color_names.c \
 	src/css/css_color_serialize.c \
+	src/css/css_compute.c \
+	src/css/css_compute_algo.c \
+	src/css/css_compute_units.c \
+	src/css/css_compute_value.c \
 	src/css/css_core.c \
+	src/css/css_custom.c \
 	src/css/css_easing.c \
+	src/css/css_element.c \
 	src/css/css_function.c \
 	src/css/css_grammar_link.c \
 	src/css/css_grammar_match.c \
 	src/css/css_grammar_parse.c \
+	src/css/css_grid_text.c \
 	src/css/css_image.c \
+	src/css/css_logical.c \
 	src/css/css_math.c \
 	src/css/css_math_serialize.c \
 	src/css/css_math_simplify.c \
@@ -1150,13 +1159,17 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_registry.c \
 	src/css/css_serialize.c \
 	src/css/css_shape.c \
+	src/css/css_shorthand.c \
+	src/css/css_shorthand_serialize.c \
 	src/css/css_substitution.c \
 	src/css/css_tokenizer.c \
 	src/css/css_transform.c \
 	src/css/css_units.c \
 	src/css/css_value.c \
 	src/css/css_value_serialize.c \
+	src/css/css_vbuild.c \
 	src/css/tables/css_tables_atrules.c \
+	src/css/tables/css_tables_compute.c \
 	src/css/tables/css_tables_misc.c \
 	src/css/tables/css_tables_pool.c \
 	src/css/tables/css_tables_props.c \
@@ -2066,6 +2079,7 @@ $(eval $(call fuzz-rule,fuzz_css_bytes,css-bytes))
 $(eval $(call fuzz-rule,fuzz_css_grammar,css-grammar))
 $(eval $(call fuzz-rule,fuzz_css_values,css-values))
 $(eval $(call fuzz-rule,fuzz_css_registry,css-registry))
+$(eval $(call fuzz-rule,fuzz_css_compute,css-compute))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2079,7 +2093,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit
@@ -2131,6 +2145,12 @@ check-css-package:
 	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref-css/package,tools/css/fetch.sh); \
 	tools/css/run-registry-gates.sh package
 
+check-css-compute: ## Fail if a property of the pin is not classified for computed values, or the generated table or the ledger's computes column is stale
+check-css-compute:
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref/ed/css,tools/css/fetch.sh); \
+	tools/css/run-registry-gates.sh compute
+
 check-css-grammars: ## Fail if a grammar of the pinned data neither compiles nor is listed in tools/css/UNRESOLVED_REFERENCES
 # (the archive is named in full: CONFORMANCE_LIB is defined further down, and a prerequisite list expands where it is read)
 check-css-grammars: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
@@ -2156,6 +2176,7 @@ check-css-registry-controls: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh tables-controls && \
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh grammars-controls && \
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh depth-controls && \
+	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh compute-controls && \
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh package-controls
 
 check-size-shifts: ## Fail if a source shifts a 32-bit integer by 32 or more places (breaks the 32-bit build), and show the gate refuses a planted shift
@@ -2218,7 +2239,7 @@ check-html-quadratic: $(APP_DIR)/$(TARGET) $(APP_DIR)/testQuadratic$(EXE_EXTENSI
 	printf "\033[0;32mThe quadratic-nesting suite holds (%s).\033[0m\n" "$$(grep -E '^[0-9]+ shapes, [0-9]+ failures$$' $(APP_DIR)/quadratic.out)"
 
 check-html-quadratic-plants: ## Plant a quadratic in each layer and show the quadratic-nesting suite fails on the shapes it should
-# tools/html/plant-quadratic.py: ten edits (the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
+# tools/html/plant-quadratic.py: twelve edits (two of them the computed-value layer: a custom-property table copied at every level, a layer list read again for each layer; the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
 # re-derives it all, the attribute table has one bucket, the serializer finds its ancestors by walking them, the decoder looks back
 # over the stream, the sniffer reads past its window; the XML parser's declaration walks the earlier bindings, its start tag walks
 # every declaration, its reference walks every entity), each compiled alone and linked ahead of the library into tests/test-quadratic.cpp,
@@ -2377,7 +2398,7 @@ conformance-css-values: $(CONFORMANCE_LIB)
 # tools/css/UNEXTRACTED, the properties the pin does not have are CSS_PROPERTY_ABSENT, and the depth ledger's wpt column is regenerated
 # from the scored set. The scoring half is in check-conformance-vectors; this target adds the controls (the gate made to fail on
 # purpose, and the library built with a rule undone: tools/conformance/CSS_PROPERTY_PLANTS).
-CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=468
+CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=486
 
 conformance-css-property: ## Score the CSS property layer against the pinned WPT property parsing tests, and show the gate fails
 conformance-css-property: $(CONFORMANCE_LIB)
@@ -2967,7 +2988,7 @@ check-css-property-oracle: ## Compare the CSS property layer against Chromium an
 # **It is then made to fail** (`--controls`): this library's answers and an engine's changed, a control misclassified, the list and the witnesses
 # tampered with, and the library built with one rule undone (tools/oracle/CSS_PROPERTY_ORACLE_PLANTS). Outside TEST_GATES: it needs the
 # image and a container engine, which `make test` does not.
-CSS_PROP_ORACLE_CEILING := CSS_PROP_ORACLE_MAX_OURS=5
+CSS_PROP_ORACLE_CEILING := CSS_PROP_ORACLE_MAX_OURS=0
 
 check-css-property-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \

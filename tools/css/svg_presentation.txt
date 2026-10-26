@@ -1,0 +1,82 @@
+# The SVG 2 presentation attributes, as properties (one a line). Source: SVG 2, 6.6 "Presentation attributes" (https://www.w3.org/TR/SVG2/styling.html,
+# served 2026-10-26), the table "Properties with a presentation attribute":
+#   "cx, cy" on circle and ellipse; "height, width, x, y" on foreignObject, image, rect, svg, symbol and use; "r" on circle; "rx, ry" on ellipse and
+#   rect; "d" on path; "fill"; "transform" (also patternTransform and gradientTransform); and, on any element in the SVG namespace:
+#   "alignment-baseline, baseline-shift, clip-path, clip-rule, color, color-interpolation, color-interpolation-filters, cursor, direction, display,
+#   dominant-baseline, fill-opacity, fill-rule, filter, flood-color, flood-opacity, font-family, font-size, font-size-adjust, font-stretch,
+#   font-style, font-variant, font-weight, glyph-orientation-vertical, image-rendering, letter-spacing, lighting-color, marker-end, marker-mid,
+#   marker-start, mask, mask-type, opacity, overflow, paint-order, pointer-events, shape-rendering, stop-color, stop-opacity, stroke,
+#   stroke-dasharray, stroke-dashoffset, stroke-linecap, stroke-linejoin, stroke-miterlimit, stroke-opacity, stroke-width, text-anchor,
+#   text-decoration, text-overflow, text-rendering, transform-origin, unicode-bidi, vector-effect, visibility, white-space, word-spacing,
+#   writing-mode."
+# An alias is its target and a shorthand its longhands: computing every name here is required, and none may be listed unimplemented.
+cx
+cy
+height
+width
+x
+y
+r
+rx
+ry
+d
+fill
+transform
+alignment-baseline
+baseline-shift
+clip-path
+clip-rule
+color
+color-interpolation
+color-interpolation-filters
+cursor
+direction
+display
+dominant-baseline
+fill-opacity
+fill-rule
+filter
+flood-color
+flood-opacity
+font-family
+font-size
+font-size-adjust
+font-stretch
+font-style
+font-variant
+font-weight
+glyph-orientation-vertical
+image-rendering
+letter-spacing
+lighting-color
+marker-end
+marker-mid
+marker-start
+mask
+mask-type
+opacity
+overflow
+paint-order
+pointer-events
+shape-rendering
+stop-color
+stop-opacity
+stroke
+stroke-dasharray
+stroke-dashoffset
+stroke-linecap
+stroke-linejoin
+stroke-miterlimit
+stroke-opacity
+stroke-width
+text-anchor
+text-decoration
+text-overflow
+text-rendering
+transform-origin
+unicode-bidi
+vector-effect
+visibility
+white-space
+word-spacing
+writing-mode

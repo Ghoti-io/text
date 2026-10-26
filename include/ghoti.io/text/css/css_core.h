@@ -142,6 +142,8 @@ typedef enum {
                                   ///< registration did not say it overrides it.
   GTEXT_CSS_E_LIMIT_REGISTRY,     ///< Registry: more registrations, a longer name or initial value, or more
                                   ///< longhands than the registry's limits allow.
+  GTEXT_CSS_E_LIMIT_ELEMENTS,     ///< Computed values: the chain of inheritance parents is deeper than `max_element_depth`.
+  GTEXT_CSS_E_LIMIT_LIST,         ///< Computed values: a list has more items than `max_list_items`.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

@@ -11,9 +11,8 @@ acc:110:animation-duration:auto	animation-duration	auto	OK=auto	NO
 ser:A=B|C:-webkit-text-stroke:D	-webkit-text-stroke	0px	OK=0px	OK=0px currentcolor
 ser:A=B|C:column-rule:D	column-rule	0px	OK=0px	OK=0px none currentcolor
 ser:A=B|C:text-emphasis:none	text-emphasis	none	OK=none	OK=none currentcolor
-ser:A=C|B:animation:auto	animation	auto	OK=auto	OK=auto ease 0s 1 normal none running none
+ser:A|B|C:animation:auto	animation	auto	OK=none	OK=auto ease 0s 1 normal none running none
 ser:A=C|B:transform-origin:left	transform-origin	left	OK=left center 0px	OK=left center
-ser:A|B=C:flex:none	flex	none	OK=none	OK=0 0 auto
 support:chromium+firefox:animation-delay-end	animation-delay-end	initial	OK=initial	NO
 support:chromium+firefox:animation-delay-start	animation-delay-start	initial	OK=initial	NO
 support:chromium+firefox:animation-range-center	animation-range-center	initial	OK=initial	NO

@@ -12,12 +12,13 @@ The vectors are made by tools/css/extract-wpt-props.py from the pinned checkout:
   cannot judge the property), `serialize` (it was written differently), `roundtrip` (its writing was refused or written differently
   again).
 * **invalid** (`test_invalid_value`): the value must be refused. A failure is `invalid-accepted`.
-* **shorthand** (`test_shorthand_value`): the value must parse as the value of the shorthand (`parse`); what the page expects of
-  the longhands is the cascade's (C2a) and is counted, not scored.
+* **shorthand** (`test_shorthand_value`): the value must parse as the value of the shorthand (`parse`), and a declaration block
+  made of it must have the longhand values the page lists (`expand`: CSSOM's getPropertyValue of each longhand, C2a).
 
 Not scored in this slice, and printed with their counts: computed-value vectors (C2d), selector vectors (C3), rule vectors (C4),
-the serialization of a shorthand (C2a: a valid vector whose property is a shorthand is held to `parse` and `roundtrip` only), and
-the expected string of a vector the page compares with its own function (held to `parse` and `roundtrip` only).
+and the expected string of a vector the page compares with its own function (held to `parse` and `roundtrip` only). The
+serialization of a shorthand is scored at `serialize`: a block holding the shorthand's value must write it (getPropertyValue of the
+shorthand) as the page expects.
 
 Every failure has to be listed, one line per case, in one of two files. CSS_PROPERTY_EXCEPTIONS holds the cases where the page's
 expectation does not apply: the vector, the property, the value, the stage, the answer the library gives, a class (draft-newer,
@@ -44,7 +45,7 @@ import subprocess
 import sys
 
 CLASSES = ('draft-newer', 'wpt-tentative', 'needs-environment', 'wpt-wrong')
-STAGES = ('parse', 'serialize', 'roundtrip', 'invalid-accepted')
+STAGES = ('parse', 'serialize', 'roundtrip', 'invalid-accepted', 'expand')
 
 
 def escape(s):
@@ -67,9 +68,9 @@ def css_name(js):
     return out
 
 
-def run_runner(runner, requests, nature=False):
+def run_runner(runner, requests, nature=False, mode=None):
     data = ''.join('%s\t%s\t%s\n' % (f, escape(p), escape(v)) for f, p, v in requests)
-    cmd = [runner] + (['-n'] if nature else [])
+    cmd = [runner] + (['-n'] if nature else []) + ([mode] if mode else [])
     proc = subprocess.run(cmd, input=data.encode('utf-8', 'surrogateescape'), stdout=subprocess.PIPE, check=False)
     if proc.returncode != 0:
         print('SUITE PROBLEMS: the runner exited %d' % proc.returncode)
@@ -194,6 +195,22 @@ def main():
             requests.append((flag, prop, v['expected']))
     lines = run_runner(runner, requests)
 
+    # the shorthands: what a declaration block makes of the value (C2a)
+    sh_ser, sh_exp = {}, {}
+    sh_reqs, sh_ids = [], []
+    lh_reqs, lh_ids = [], []
+    for ident, kind, v, prop in scored:
+        if kind == 'valid' and nat[prop] == 'SHORTHAND' and not v.get('custom') and v['call'] != 'test_specified_serialization':
+            sh_reqs.append(('q' if v.get('quirks') else '', prop, v['value']))
+            sh_ids.append(ident)
+        if kind == 'shorthand' and v.get('longhands'):
+            lh_reqs.append((','.join(css_name(k) for k in v['longhands']), prop, v['value']))
+            lh_ids.append(ident)
+    if sh_reqs:
+        sh_ser = dict(zip(sh_ids, run_runner(runner, sh_reqs, mode='-s')))
+    if lh_reqs:
+        sh_exp = dict(zip(lh_ids, run_runner(runner, lh_reqs, mode='-l')))
+
     failures = {}
     clean = {}   # property -> True while every scored vector of it passed
     k = 0
@@ -221,6 +238,14 @@ def main():
                     want = [v['expected']] + list(v.get('alts') or [])
                     if not is_short and not is_custom and text not in want:
                         stage, answer = 'serialize', text
+                    elif is_short and ident in sh_ser:
+                        got = sh_ser[ident]
+                        if got.startswith('SH\t'):
+                            got = unescape(got[3:])
+                            if got not in want:
+                                stage, answer = 'serialize', got
+                        else:
+                            stage, answer = 'serialize', got.replace('\t', ' ')
                     elif again != text:
                         stage, answer = 'roundtrip', again.replace('!INVALID', 'INVALID') if again == '!INVALID' else again
                     elif extra is not None:
@@ -232,6 +257,16 @@ def main():
                             stage, answer = 'roundtrip', 'INVALID'
                 else:
                     longhand_expect += len(v.get('longhands') or {})
+                    if ident in sh_exp:
+                        got = sh_exp[ident]
+                        if got.startswith('LH'):
+                            vals = [unescape(x) for x in got.split('\t')[1:]]
+                            names = list(v['longhands'].items())
+                            bad = ['%s=%s' % (css_name(k), vals[i]) for i, (k, want_v) in enumerate(names) if i >= len(vals) or vals[i] != want_v]
+                            if bad:
+                                stage, answer = 'expand', '; '.join(bad)
+                        else:
+                            stage, answer = 'expand', got.replace('\t', ' ')
             elif line in ('INVALID', 'UNDECIDED'):
                 stage, answer = 'parse', line
             else:
@@ -305,7 +340,12 @@ def main():
     if unexplained:
         print('UNEXPLAINED FAILURES: %d' % len(unexplained))
         for ident, (stage, answer, v, prop) in list(unexplained.items())[:(10**9 if os.environ.get('CSS_PROPERTY_LIST_ALL') else 40)]:
-            print('  %s  %s: %s %s -> %s' % (ident, stage, v['prop'], json.dumps(v['value'], ensure_ascii=False), answer))
+            want_text = ''
+            if v.get('kind') == 'valid':
+                want_text = '  [want %s]' % json.dumps([v['expected']] + list(v.get('alts') or []), ensure_ascii=False)
+            elif v.get('kind') == 'shorthand':
+                want_text = '  [want %s]' % json.dumps(v.get('longhands'), ensure_ascii=False)
+            print('  %s  %s: %s %s -> %s%s' % (ident, stage, v['prop'], json.dumps(v['value'], ensure_ascii=False), answer, want_text if os.environ.get('CSS_PROPERTY_LIST_ALL') else ''))
         bad = True
     if unext_bad:
         print('UNEXTRACTED CALLS: %d files differ from tools/css/UNEXTRACTED' % len(unext_bad))
@@ -391,7 +431,7 @@ def main():
               sum(1 for s in scored if s[1] == 'shorthand'), npass, sum(1 for i in failures if i in exceptions),
               sum(1 for i in failures if i in defects), sum(absent_seen.values()), len(absent_seen)))
     print('css property: not scored here: computed %d (C2d), selector %d (C3), rule %d (C4); of the scored, shorthand serialization %d '
-          '(C2a), custom-compared %d (parse and roundtrip only), shorthand longhand expectations %d (C2a)' % (
+          '(C2a, scored at serialize), custom-compared %d (parse and roundtrip only), shorthand longhand expectations %d (C2a, scored at expand)' % (
               counts_unscored['computed'], counts_unscored['selector'], counts_unscored['rule'], shorthand_ser, custom, longhand_expect))
     by_stage = {}
     for f in failures.values():

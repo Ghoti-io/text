@@ -934,7 +934,7 @@ static bool rule_grid_auto_flow(cb * out, const sp * t, size_t n) {
   return false;
 }
 
-/* Grid 2, <grid-line>: `span` comes first, in lower case. */
+/* Grid 2, <grid-line>: `span` comes first, in lower case; the integer of `span <integer> <ident>` is 1 by default and is not written. */
 static bool rule_grid_line(cb * out, const sp * t, size_t n) {
   size_t span = n;
   for (size_t i = 0; i < n; i++) {
@@ -942,12 +942,23 @@ static bool rule_grid_line(cb * out, const sp * t, size_t n) {
       span = i;
     }
   }
-  if (span == n || (span == 0 && eq(t[0], "span"))) {
+  if (span == n) {
+    return false;
+  }
+  size_t one = n;
+  if (n == 3) {
+    for (size_t i = 0; i < n; i++) {
+      if (i != span && eq(t[i], "1")) {
+        one = i;
+      }
+    }
+  }
+  if (one == n && span == 0 && eq(t[0], "span")) {
     return false;
   }
   cb_puts(out, "span");
   for (size_t i = 0; i < n; i++) {
-    if (i != span) {
+    if (i != span && i != one) {
       cb_putc(out, ' ');
       put_sp(out, t[i]);
     }
@@ -1874,6 +1885,135 @@ static bool rule_shape(cb * out, const sp * t, size_t n) {
   return changed;
 }
 
+/* Scroll-driven Animations 1, <timeline-range-name> <length-percentage>?: the start of a range name is `0%` and its end `100%` by default, and
+ * what is the default is not written. */
+static bool is_range_name(sp t) {
+  return ieq(t, "entry") || ieq(t, "exit") || ieq(t, "cover") || ieq(t, "contain") || ieq(t, "entry-crossing") || ieq(t, "exit-crossing");
+}
+
+static bool rule_range_start(cb * out, const sp * t, size_t n) {
+  if (n == 2 && is_range_name(t[0]) && eq(t[1], "0%")) {
+    put_sp(out, t[0]);
+    return true;
+  }
+  return false;
+}
+
+static bool rule_range_end(cb * out, const sp * t, size_t n) {
+  if (n == 2 && is_range_name(t[0]) && eq(t[1], "100%")) {
+    put_sp(out, t[0]);
+    return true;
+  }
+  return false;
+}
+
+/* Overflow 4, `overflow-clip-margin: <visual-box> || <length>`: the box is `padding-box` and the length `0px` by default, and what is the default is not
+ * written, except that nothing is `0px`. */
+static bool is_visual_box(sp t) {
+  return ieq(t, "content-box") || ieq(t, "padding-box") || ieq(t, "border-box");
+}
+
+static bool rule_clip_margin(cb * out, const sp * t, size_t n) {
+  if (n < 1 || n > 2) {
+    return false;
+  }
+  size_t box = n, len = n;
+  for (size_t i = 0; i < n; i++) {
+    if (is_visual_box(t[i])) {
+      box = i;
+    }
+    else {
+      len = i;
+    }
+  }
+  if ((n == 2 && (box == n || len == n)) || (n == 1 && box == n && len == n)) {
+    return false;
+  }
+  const bool keep_box = box != n && !ieq(t[box], "padding-box");
+  const bool keep_len = len != n && !(t[len].n == 3 && memcmp(t[len].p, "0px", 3) == 0);
+  if (!keep_box && !keep_len) {
+    cb_puts(out, "0px");
+    return true;
+  }
+  if (keep_box) {
+    put_sp(out, t[box]);
+  }
+  if (keep_len) {
+    if (keep_box) {
+      cb_putc(out, ' ');
+    }
+    put_sp(out, t[len]);
+  }
+  return true;
+}
+
+/* Motion Path 1, `offset-rotate: [ auto | reverse ] || <angle>`: an angle of zero adds nothing to a keyword, and the angle follows it. */
+static bool rule_offset_rotate(cb * out, const sp * t, size_t n) {
+  if (n != 2) {
+    return false;
+  }
+  const size_t kw = (eq(t[0], "auto") || eq(t[0], "reverse")) ? 0 : (eq(t[1], "auto") || eq(t[1], "reverse")) ? 1 : n;
+  if (kw == n) {
+    return false;
+  }
+  const size_t ang = 1 - kw;
+  if (is_zero_dim(t[ang])) {
+    put_sp(out, t[kw]);
+    return true;
+  }
+  if (kw == 0) {
+    return false;
+  }
+  put_sp(out, t[kw]);
+  cb_putc(out, ' ');
+  put_sp(out, t[ang]);
+  return true;
+}
+
+/* Borders 4, `border-image-width`, `-outset` and `-slice` (and the mask-border ones) are `<x>{1,4}`: a side that repeats the one it would copy is
+ * not written, the way `margin` is. `fill` of a slice stays at the end. */
+static bool rule_box_sides(cb * out, const sp * t, size_t n) {
+  size_t m = n;
+  bool fill = false;
+  sp v[4];
+  size_t k = 0;
+  for (size_t i = 0; i < n; i++) {
+    if (eq(t[i], "fill")) {
+      fill = true;
+      m--;
+    }
+    else if (k < 4) {
+      v[k++] = t[i];
+    }
+  }
+  if (k != m || k < 2) {
+    return false;
+  }
+  size_t keep = k;
+  if (keep == 4 && sp_eq(v[3], v[1])) {
+    keep = 3;
+  }
+  if (keep == 3 && sp_eq(v[2], v[0])) {
+    keep = 2;
+  }
+  if (keep == 2 && sp_eq(v[1], v[0])) {
+    keep = 1;
+  }
+  if (keep == k && !(fill && t[0].n == 4 && eq(t[0], "fill"))) {
+    return false;
+  }
+  for (size_t i = 0; i < keep; i++) {
+    if (i) {
+      cb_putc(out, ' ');
+    }
+    put_sp(out, v[i]);
+  }
+  if (fill) {
+    cb_puts(out, " fill");
+  }
+  return true;
+}
+
 /* ---- the table ------------------------------------------------------------------------------------------------------------- */
 
 typedef enum { MODE_ITEMS = 1, MODE_WHOLE, MODE_TEXT } canon_mode;
@@ -1896,12 +2036,17 @@ static const canon_row kRows[] = {
   R("align-items", rule_first_baseline, MODE_ITEMS),
   R("align-self", rule_first_baseline, MODE_ITEMS),
   R("animation-name", rule_animation_name, MODE_ITEMS),
+  R("animation-range-end", rule_range_end, MODE_ITEMS),
+  R("animation-range-start", rule_range_start, MODE_ITEMS),
   R("animation-timing-function", rule_steps, MODE_ITEMS),
   R("backdrop-filter", rule_filter, MODE_WHOLE),
   R("background-position", rule_position, MODE_ITEMS),
   R("background-repeat", rule_repeat_style, MODE_ITEMS),
   R("background-size", rule_bg_size, MODE_ITEMS),
+  R("border-image-outset", rule_box_sides, MODE_WHOLE),
   R("border-image-repeat", rule_pair, MODE_WHOLE),
+  R("border-image-slice", rule_box_sides, MODE_WHOLE),
+  R("border-image-width", rule_box_sides, MODE_WHOLE),
   R("border-shape", rule_shape, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
   R("clip-path", rule_shape, MODE_WHOLE),
@@ -1936,8 +2081,15 @@ static const canon_row kRows[] = {
   R("mask-size", rule_bg_size, MODE_ITEMS),
   R("object-fit", rule_object_fit, MODE_WHOLE),
   R("object-position", rule_position, MODE_ITEMS),
+  R("offset-anchor", rule_position, MODE_ITEMS),
   R("offset-path", rule_shape, MODE_WHOLE),
+  R("offset-position", rule_position, MODE_ITEMS),
+  R("offset-rotate", rule_offset_rotate, MODE_WHOLE),
   R("opacity", rule_alpha_percent, MODE_WHOLE),
+  R("overflow-clip-margin-bottom", rule_clip_margin, MODE_WHOLE),
+  R("overflow-clip-margin-left", rule_clip_margin, MODE_WHOLE),
+  R("overflow-clip-margin-right", rule_clip_margin, MODE_WHOLE),
+  R("overflow-clip-margin-top", rule_clip_margin, MODE_WHOLE),
   R("perspective-origin", rule_position, MODE_ITEMS),
   R("position-area", rule_pair, MODE_WHOLE),
   R("rotate", rule_rotate, MODE_WHOLE),

@@ -1,0 +1,98 @@
+# tools/css/gen-compute-tables.py: the properties whose computed value is not decided by the machine-classified phrase of the pin
+# (tools/css/computed_phrases.tsv), or that the pin decides wrongly or not at all. Columns, tab separated:
+#   property   class (algorithm | identity | by-type | custom | unimplemented)   algorithm (the enumerator of GTEXT_CSS_Compute_Algorithm without its
+#   prefix, or -)   fidelity (exact, or "partial: what is not done")   initial (the initial value as CSS text where the pin's is prose or
+#   missing, or -)   sentence (the pin's computed-value sentence for the property, which must be quoted as the pin has it; or "draft:URL: " and a
+#   sentence of the specification where the pin differs; for unimplemented, the reason)
+# A property of the pin that is in neither this file nor a classified phrase fails the gate, as does a line that names nothing, a required
+# property (inherited, or an SVG 2 presentation attribute) marked unimplemented, and a sentence that the pin does not have.
+--*	custom	CUSTOM	exact	-	draft:https://drafts.csswg.org/css-variables-1/: the computed value of a custom property is its specified value with variables substituted
+-webkit-box-align	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+-webkit-box-flex	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+-webkit-box-ordinal-group	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+-webkit-box-orient	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+-webkit-box-pack	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+-webkit-text-stroke-width	algorithm	LINE_WIDTH	exact	-	absolute length
+-webkit-user-select	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+background-position-block	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
+background-position-inline	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
+background-position-x	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
+background-position-y	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
+background-repeat	algorithm	REPEAT	exact	-	list, each item a pair of keywords, one per dimension
+background-size	algorithm	BG_SIZE	exact	-	list, each item a pair of sizes (one per axis) each represented as either a keyword or a computed <length-percentage> value
+border-block-end-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-block-start-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-bottom-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-image-outset	algorithm	BOX4	exact	-	four values, each a number or absolute length
+border-image-repeat	algorithm	REPEAT	exact	-	two keywords, one per axis
+border-image-slice	algorithm	BOX4	exact	-	four values, each either a number or percentage; plus a fill keyword if specified
+border-image-width	algorithm	BOX4	exact	-	four values, each either a number, the keyword auto, or a computed <length-percentage> value
+border-inline-end-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-inline-start-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-left-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-right-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-spacing	algorithm	PAIR_DUP	exact	-	two absolute lengths
+border-top-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+color	algorithm	COLOR	exact	-	computed color, see resolving color values
+column-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
+column-width	by-type	-	exact	auto	as specified, with <length-percentage> values computed
+corner-bottom-left-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-bottom-right-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-end-end-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-end-start-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-start-end-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-start-start-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-top-left-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-top-right-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+display	algorithm	DISPLAY	exact	-	a pair of keywords representing the inner and outer display types plus optional list-item flag, or a <display-internal> or <display-box> keyword; see prose in a variety of specs for computation rules
+fill-opacity	algorithm	OPACITY	exact	-	the specified value converted to a <number>, clamped to the range [0,1]
+fill-position	algorithm	POSITION	exact	-	A list, each item consisting of: a pair of offsets (horizontal and vertical) from the top left origin each given as a combination of an absolute length and a percentage
+fill-repeat	algorithm	REPEAT	exact	-	A list, each item consisting of: two keywords, one per dimension
+fill-size	algorithm	BG_SIZE	exact	-	as specified, but with lengths made absolute and omitted auto keywords filled in
+flood-color	by-type	-	exact	-	draft:https://drafts.fxtf.org/filter-effects/: flood-color computed value: computed color
+flood-opacity	algorithm	OPACITY	exact	-	the specified value converted to a number, clamped to the range [0,1]
+font-family	identity	-	partial: a family name written as identifiers is kept as identifiers, not converted to a string	serif	list, each item a string and/or <generic-font-family> keywords
+font-size	algorithm	FONT_SIZE	exact	-	an absolute length
+font-size-adjust	algorithm	FONT_SIZE_ADJUST	exact	-	the keyword none, or a pair of a metric keyword and a <number>
+font-style	algorithm	FONT_STYLE	exact	-	the keyword specified, plus angle in degrees if specified
+font-weight	algorithm	FONT_WEIGHT	exact	-	a number, see below
+font-width	algorithm	FONT_WIDTH	exact	-	a percentage, see below
+glyph-orientation-vertical	identity	-	partial: kept as written; the aliasing to text-orientation (auto, 0 and 90) is not applied	-	draft:https://www.w3.org/TR/SVG2/text.html: The following SVG 1.1 values must still be supported by aliasing the property as a shorthand to text-orientation
+hyphenate-limit-chars	algorithm	HYPHENATE_CHARS	exact	-	three values, each either the auto keyword or an integer
+image-orientation	algorithm	IMAGE_ORIENTATION	exact	-	the specified keyword, or an <angle>, rounded and normalized (see text), plus optionally a flip keyword
+lighting-color	by-type	-	exact	-	draft:https://drafts.fxtf.org/filter-effects/: lighting-color computed value: computed color
+line-height	algorithm	LINE_HEIGHT	exact	-	the specified keyword, a number, or a computed <length> value
+mask-position	algorithm	POSITION	exact	-	list, each item consists of two keywords representing the origin and two offsets from that origin, each given as an absolute length (if given a <length>), otherwise as a percentage.
+mask-repeat	algorithm	REPEAT	exact	-	list, each item a pair of keywords, one per dimension
+math-depth	algorithm	MATH_DEPTH	exact	-	an integer, see below
+object-position	algorithm	POSITION	exact	-	as for background-position
+offset-anchor	algorithm	POSITION	exact	-	the auto keyword or a computed <position>
+offset-position	algorithm	POSITION	exact	-	The normal or auto keywords, or a computed <position>
+opacity	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
+outline-color	by-type	-	partial: the keyword invert and auto are kept as written	-	see below
+outline-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+perspective-origin	algorithm	POSITION	exact	-	see background-position
+position-area	unimplemented	-	-	-	the computed value of position-area is the section 3.1.3 serialization of Anchor Positioning, not implemented (C2a-2)
+rotate	algorithm	ROTATE	exact	-	the keyword none, or an <angle> with an axis consisting of a list of three <number>s
+row-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
+scale	algorithm	SCALE	exact	-	the keyword none, or a list of 3 <number>s
+shape-image-threshold	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
+stop-color	by-type	-	exact	black	draft:https://www.w3.org/TR/SVG2/pservers.html: stop-color computed value: computed color
+stop-opacity	algorithm	OPACITY	exact	1	draft:https://www.w3.org/TR/SVG2/pservers.html: stop-opacity has the computed value of an opacity, a number clamped to 0 to 1
+stroke-dasharray	algorithm	NUMBER_LENGTH	exact	-	draft:https://www.w3.org/TR/SVG2/painting.html: as comma separated list of absolute lengths or percentages, numbers converted to absolute lengths first, or keyword specified
+stroke-dashoffset	algorithm	NUMBER_LENGTH	exact	-	draft:https://www.w3.org/TR/SVG2/painting.html: an absolute length or percentage, numbers converted to absolute lengths first
+stroke-opacity	algorithm	OPACITY	exact	-	the specified value converted to a <number>, clamped to the range [0,1]
+stroke-position	algorithm	POSITION	exact	-	A list, each item consisting of: a pair of offsets (horizontal and vertical) from the top left origin each given as a combination of an absolute length and a percentage
+stroke-repeat	algorithm	REPEAT	exact	-	A list, each item consisting of: two keywords, one per dimension
+stroke-size	algorithm	BG_SIZE	exact	-	as specified, but with lengths made absolute and omitted auto keywords filled in
+stroke-width	algorithm	LINE_WIDTH	exact	-	the absolute length, or percentage
+text-align-all	algorithm	TEXT_ALIGN	exact	-	keyword as specified, except for match-parent which computes as defined above
+text-align-last	algorithm	TEXT_ALIGN	exact	-	keyword as specified, except for match-parent which computes as defined above
+text-shadow	algorithm	SHADOW	exact	-	either the keyword none or a list, each item consisting of four absolute lengths plus a computed color and optionally also an inset keyword
+transform-origin	algorithm	POSITION	exact	-	see background-position
+translate	algorithm	TRANSLATE	exact	-	the keyword none or a pair of computed <length-percentage> values and an absolute length
+voice-balance	algorithm	VOICE_BALANCE	exact	-	the specified value resolved to a <number> between -100 and 100 (inclusive)
+voice-pitch	algorithm	VOICE_PITCH	partial: a keyword with an offset needs the voice's frequency table (GTEXT_CSS_E_UNSUPPORTED naming the property)	-	one of the predefined pitch keywords if only the keyword is specified by itself, otherwise an absolute frequency calculated by converting the keyword value (if any) to a fixed frequency based on the current voice-family and by applying the specified relative offset (if any)
+voice-range	algorithm	VOICE_PITCH	partial: a keyword with an offset needs the voice's frequency table (GTEXT_CSS_E_UNSUPPORTED naming the property)	-	one of the predefined pitch keywords if only the keyword is specified by itself, otherwise an absolute frequency calculated by converting the keyword value (if any) to a fixed frequency based on the current voice-family and by applying the specified relative offset (if any)
+wrap-flow	algorithm	WRAP_FLOW	exact	-	as specified except for element’s whose float computed value is not none, in which case the computed value is auto.
+zoom	algorithm	ZOOM	exact	-	as specified, but with <percentage> converted to the equivalent <number>

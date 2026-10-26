@@ -32,6 +32,10 @@
 //
 // With `-n` as the only argument the line instead names the property's nature: `SHORTHAND` or `LONGHAND` (an alias is what its target
 // is) for a name the registry has, or `UNKNOWN`, so the scorer can tell a shorthand's vectors, whose serialization belongs to C2a.
+// With `-s` the request is a shorthand's value and the answer is what a declaration block makes of it (gtext_css_block_add_text, then CSSOM's
+// getPropertyValue of the shorthand): `SH TAB <text>`, or `INVALID`, `UNKNOWN`, `UNDECIDED` (the property or a longhand cannot be decided or the
+// shorthand has no rule), `ERR TAB <status>`. With `-l` the flags field is a comma separated list of longhand names and the answer is `LH` followed
+// by a TAB and the getPropertyValue of each longhand, in order (an empty string for one the block does not have).
 // It reads no vector and no expectation: what is compared is the scorer's business.
 #include <ghoti.io/text/css.h>
 
@@ -103,8 +107,19 @@ static GTEXT_CSS_Status one(const GTEXT_CSS_Registry * reg, const char * name, s
   return st;
 }
 
+static char * block_value(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Declaration_Block * block, const char * name, size_t nlen, size_t * out_len,
+    GTEXT_CSS_Status * status) {
+  const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(reg, name, nlen);
+  char * text = NULL;
+  *out_len = 0;
+  *status = id ? gtext_css_block_get_property_value(block, id, &text, out_len, NULL) : GTEXT_CSS_E_INVALID;
+  return text;
+}
+
 int main(int argc, char ** argv) {
   const bool nature = argc > 1 && strcmp(argv[1], "-n") == 0;
+  const bool shorthand_mode = argc > 1 && strcmp(argv[1], "-s") == 0;
+  const bool longhand_mode = argc > 1 && strcmp(argv[1], "-l") == 0;
   GTEXT_CSS_Registry * reg = NULL;
   if (gtext_css_registry_new(NULL, &reg) != GTEXT_CSS_OK) {
     return 2;
@@ -123,7 +138,7 @@ int main(int argc, char ** argv) {
       fflush(stdout);
       continue;
     }
-    bool quirks = memchr(line, 'q', (size_t)(t1 - line)) != NULL;
+    bool quirks = !longhand_mode && memchr(line, 'q', (size_t)(t1 - line)) != NULL;
     size_t nlen, vlen;
     char * name = unescape(t1 + 1, (size_t)(t2 - t1 - 1), &nlen);
     char * value = unescape(t2 + 1, (size_t)len - (size_t)(t2 + 1 - line), &vlen);
@@ -145,6 +160,78 @@ int main(int argc, char ** argv) {
       else {
         puts("LONGHAND");
       }
+      free(name);
+      free(value);
+      fflush(stdout);
+      continue;
+    }
+    if (shorthand_mode || longhand_mode) {
+      GTEXT_CSS_Declaration_Block * block = NULL;
+      GTEXT_CSS_Property_Outcome o = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+      GTEXT_CSS_Shorthand_Result sr;
+      GTEXT_CSS_Property_Options po;
+      memset(&po, 0, sizeof po);
+      po.quirks = quirks;
+      GTEXT_CSS_Status st = gtext_css_block_new(reg, NULL, &block);
+      if (st == GTEXT_CSS_OK) {
+        st = gtext_css_block_add_text(block, name, nlen, value, vlen, false, &po, &o, &sr);
+      }
+      if (st == GTEXT_CSS_E_UNSUPPORTED) {
+        puts("UNDECIDED");
+      }
+      else if (st != GTEXT_CSS_OK) {
+        printf("ERR\t%s\n", gtext_css_status_string(st));
+      }
+      else if (o == GTEXT_CSS_PROP_RESULT_UNKNOWN) {
+        puts("UNKNOWN");
+      }
+      else if (o == GTEXT_CSS_PROP_RESULT_INVALID) {
+        puts("INVALID");
+      }
+      else if (shorthand_mode) {
+        GTEXT_CSS_Status vs;
+        size_t n;
+        char * text = block_value(reg, block, name, nlen, &n, &vs);
+        if (vs == GTEXT_CSS_E_UNSUPPORTED) {
+          puts("UNDECIDED");
+        }
+        else if (vs != GTEXT_CSS_OK) {
+          printf("ERR\t%s\n", gtext_css_status_string(vs));
+        }
+        else {
+          fputs("SH\t", stdout);
+          escape_out(text, n);
+          fputc('\n', stdout);
+        }
+        gtext_css_serialize_buffer_free(NULL, text);
+      }
+      else {
+        fputs("LH", stdout);
+        const char * names = line;
+        const size_t names_len = (size_t)(t1 - line);
+        size_t k = 0;
+        while (k <= names_len) {
+          size_t e = k;
+          while (e < names_len && names[e] != ',') {
+            e++;
+          }
+          GTEXT_CSS_Status vs;
+          size_t n;
+          char * text = block_value(reg, block, names + k, e - k, &n, &vs);
+          fputc('\t', stdout);
+          if (vs == GTEXT_CSS_OK) {
+            escape_out(text, n);
+          }
+          else {
+            fputs("!", stdout);
+            fputs(gtext_css_status_string(vs), stdout);
+          }
+          gtext_css_serialize_buffer_free(NULL, text);
+          k = e + 1;
+        }
+        fputc('\n', stdout);
+      }
+      gtext_css_block_free(block);
       free(name);
       free(value);
       fflush(stdout);

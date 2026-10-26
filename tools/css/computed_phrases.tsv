@@ -1,0 +1,174 @@
+# tools/css/gen-compute-tables.py: the closed set of computed-value sentences of the pin that the machine classifies. Columns, tab separated:
+#   class (identity: the computed value is the specified value | by-type: the value types compute as Values 4 says (lengths to px, angles to deg,
+#   times to s, frequencies to Hz, resolutions to dppx, math functions simplified, light-dark() resolved, urls absolute, percentages kept) |
+#   shorthand: no value of its own, computed by its longhands | rule: the property carries its own row in computed_rules.tsv)
+#   phrase (exactly as the pin has it)
+# A phrase that no property of the pin has is stale and fails the gate; so is a property whose phrase is not here and that has no row in computed_rules.tsv.
+rule	A list, each item consisting of: a pair of offsets (horizontal and vertical) from the top left origin each given as a combination of an absolute length and a percentage
+rule	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
+rule	A list, each item consisting of: two keywords, one per dimension
+by-type	Same as corresponding margin-* properties
+by-type	Same as corresponding padding-* properties
+identity	Same as specified value
+shorthand	See individual properties
+by-type	See prose below
+by-type	The computed value for auto is auto. For <color> values, see CSS Color 4 § 15. Resolving <color> Values.
+rule	The normal or auto keywords, or a computed <position>
+by-type	a computed <length-percentage> value
+identity	a keyword value, and optionally also a percentage relative to the keyword (if not 100%)
+by-type	a list consisting of two-value pairs representing the start and end insets each as either the keyword auto or a computed <length-percentage> value
+identity	a list of the keywords specified
+rule	a list, each item a pair of offsets (horizontal and vertical) from the top left origin, each offset given as a computed <length-percentage> value
+identity	a number
+rule	a number, see below
+rule	a pair of keywords representing the inner and outer display types plus optional list-item flag, or a <display-internal> or <display-box> keyword; see prose in a variety of specs for computation rules
+rule	a percentage, see below
+identity	a set of zero to two keywords indicating which sides to trim
+by-type	absolute length
+by-type	absolute length or keyword specified
+rule	absolute length, snapped as a border width
+by-type	all <length>s made absolute, otherwise as specified
+by-type	an RGBA color
+rule	an absolute length
+by-type	an absolute length and/or a percentage
+by-type	an absolute length or percentage
+rule	an integer, see below
+by-type	as defined for <basic-shape> (with <shape-box> following, if supplied); else the computed <image>; else the keyword as specified
+rule	as for background-position
+identity	as specified
+rule	as specified except for element’s whose float computed value is not none, in which case the computed value is auto.
+by-type	as specified, but with <color> values computed and <url> values made absolute
+rule	as specified, but with <percentage> converted to the equivalent <number>
+by-type	as specified, but with <url> values (that are part of a <marker-ref>) made absolute
+by-type	as specified, but with <url> values made absolute
+by-type	as specified, but with lengths made absolute
+rule	as specified, but with lengths made absolute and omitted auto keywords filled in
+by-type	as specified, except with any relative URLs converted to absolute
+by-type	as specified, with <length-percentage> values computed
+by-type	as specified, with <length> values computed
+by-type	as specified, with any <image> computed
+by-type	as specified, with lengths made absolute
+by-type	computed <angle> value, optionally preceded by auto
+by-type	computed <length-percentage> value
+by-type	computed <length-percentage> value, plus any specified keywords
+by-type	computed color
+rule	computed color, see resolving color values
+by-type	computed lengths for <basic-shape>, the absolute URL for <url>, otherwise as specified
+rule	either the keyword none or a list, each item consisting of four absolute lengths plus a computed color and optionally also an inset keyword
+rule	four values, each a number or absolute length
+rule	four values, each either a number or percentage; plus a fill keyword if specified
+rule	four values, each either a number, the keyword auto, or a computed <length-percentage> value
+rule	keyword as specified, except for match-parent which computes as defined above
+identity	keyword, but see prose
+rule	list of absolute lengths, snapped as a border width
+by-type	list, each item a <length>
+by-type	list, each item a computed <easing-function>
+by-type	list, each item a computed color
+by-type	list, each item a duration
+identity	list, each item a keyword as specified
+rule	list, each item a pair of keywords, one per dimension
+rule	list, each item a pair of sizes (one per axis) each represented as either a keyword or a computed <length-percentage> value
+identity	list, each item a string and/or <generic-font-family> keywords
+by-type	list, each item as specified, but with lengths made absolute
+rule	list, each item consists of two keywords representing the origin and two offsets from that origin, each given as an absolute length (if given a <length>), otherwise as a percentage.
+identity	list, each item either a CSS identifier or the keyword none
+identity	list, each item either a case-sensitive css identifier or the keyword none
+by-type	list, each item either a number or the keyword infinite
+by-type	list, each item either a time or the keyword auto
+by-type	list, each item either an <image> or the keyword none
+by-type	list, each item either none or a pair of offsets (horizontal and vertical) from the element‘s box
+by-type	list, each item either the keyword none, the keyword auto, a case-sensitive css identifier, a computed scroll() function, or a computed view() function
+by-type	list, each item either the keyword normal or a timeline range and progress percentage
+by-type	list, each item either the keyword normal or a timeline range center subject and a length-percentage value
+identity	list, each item one of the keywords
+identity	list, each item the keyword as specified
+by-type	list, each item the keyword none, a computed <image>, or a computed <url>
+by-type	n/a
+by-type	none, or a list consisting of absolute lengths, or percentages as specified
+rule	one of the predefined pitch keywords if only the keyword is specified by itself, otherwise an absolute frequency calculated by converting the keyword value (if any) to a fixed frequency based on the current voice-family and by applying the specified relative offset (if any)
+by-type	pair of computed <length-percentage> values
+by-type	per side, an absolute length
+by-type	per side, either the keyword auto or a computed <length-percentage> value
+by-type	see Computed Value for dynamic-range-limit
+by-type	see Track Sizing
+rule	see background-position
+rule	see below
+shorthand	see individual properties
+identity	silent, or a keyword value and optionally also a decibel offset (if not zero)
+identity	specified integer
+identity	specified keyword
+identity	specified keyword (except for the distribute legacy value)
+by-type	specified keyword or a computed <length-percentage> value
+identity	specified keyword or a pair of numbers
+by-type	specified keyword or absolute length
+by-type	specified keyword or computed <length-percentage> value
+identity	specified keyword or integer
+identity	specified keyword or percentage
+by-type	specified keyword or two computed colors
+identity	specified keyword(s)
+by-type	specified keyword(s) and/or <resolution> (possibly adjusted for snap, see below)
+identity	specified keyword(s) except for skip-all, see below
+identity	specified keyword(s), except for legacy (see prose)
+by-type	specified keyword, else a computed <length-percentage> value
+identity	specified keyword, identifier or <palette-mix()> function. <palette-mix()> must be simplified to a single keyword or identifier if resulting palette is equivalent.
+identity	specified keyword, identifier, and/or integer
+by-type	specified keyword, or computed <basic-shape> function
+identity	specified keyword, plus integer if digits
+identity	specified keywords or computed <percentage> value
+identity	specified number
+identity	specified number, clamped to the range [0,1]
+identity	specified string or the keyword none
+identity	specified value
+by-type	specified value, with lengths made absolute
+rule	the absolute length, or percentage
+rule	the auto keyword or a computed <position>
+by-type	the computed <length> and a <visual-box> keyword
+by-type	the computed color
+by-type	the computed color and/or a one-dimensional image function
+rule	the corresponding superellipse() value
+by-type	the keyword auto or a computed <length-percentage> value
+by-type	the keyword auto or a computed color
+by-type	the keyword auto or an absolute length
+identity	the keyword auto, or an integer, or both
+identity	the keyword none else a list of identifiers
+by-type	the keyword none or a computed track list
+identity	the keyword none or a list of CSS identifiers
+identity	the keyword none or a list of string values
+identity	the keyword none or a list, each item an identifier or a reversed() function paired with an integer
+identity	the keyword none or a list, each item an identifier paired with a list of string values
+identity	the keyword none or a list, each item an identifier paired with an integer
+rule	the keyword none or a pair of computed <length-percentage> values and an absolute length
+rule	the keyword none or a pair of keywords, see § 3.1.3 Computed Value and Serialization of <position-area>
+by-type	the keyword none or an absolute length
+identity	the keyword none or one or more of size, layout, style, paint
+by-type	the keyword none or the computed <image>
+identity	the keyword none or the specified integer
+identity	the keyword none, a pair of keywords representing the shape and fill, or a string
+rule	the keyword none, or a list of 3 <number>s
+rule	the keyword none, or a pair of a metric keyword and a <number>
+rule	the keyword none, or an <angle> with an axis consisting of a list of three <number>s
+by-type	the keyword none, or an absolute length
+identity	the keyword none, or an ordered list of identifiers
+identity	the keyword none, the keyword all, or a list of CSS identifiers
+identity	the keyword none, the keyword auto, a content language, or a list, each item a pair of string values
+by-type	the keyword noneor the computed <image>
+by-type	the keyword normal or a computed time
+identity	the keyword normal or a list, each item a string paired with a number
+identity	the keyword normal or a number paired with an integer
+identity	the keyword normal, or a color scheme support
+rule	the keyword specified, plus angle in degrees if specified
+identity	the specified integer, computed
+identity	the specified keyword
+by-type	the specified keyword or a computed <length-percentage> value
+rule	the specified keyword, a number, or a computed <length> value
+rule	the specified keyword, or an <angle>, rounded and normalized (see text), plus optionally a flip keyword
+by-type	the specified number or absolute length
+rule	the specified value converted to a <number>, clamped to the range [0,1]
+rule	the specified value converted to a number, clamped to the range [0,1]
+rule	the specified value resolved to a <number> between -100 and 100 (inclusive)
+by-type	they keyword none or the computed <image>
+rule	three values, each either the auto keyword or an integer
+rule	two absolute lengths
+identity	two keywords
+identity	two keywords, one per axis
+identity	usually specified value, but see text

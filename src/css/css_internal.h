@@ -462,6 +462,18 @@ GTEXT_INTERNAL_API size_t gtext_css_encode_cp(uint32_t cp, char * out);
 /// double. Not NUL-terminated; returns the length.
 GTEXT_INTERNAL_API size_t css_cssom_number(double v, bool integer, char * out);
 
+/// Copy a NUL-terminated name into a fixed buffer, cut to fit and always terminated (no printf: src/css does not format through the host).
+static inline void css_copy_name(char * dst, size_t cap, const char * src) {
+  size_t i = 0;
+  if (cap == 0) {
+    return;
+  }
+  for (; src && src[i] && i + 1 < cap; i++) {
+    dst[i] = src[i];
+  }
+  dst[i] = '\0';
+}
+
 /// Whether `cp` is a non-ASCII ident code point (CSS Syntax 4.2).
 bool css_is_non_ascii_ident(uint32_t cp);
 

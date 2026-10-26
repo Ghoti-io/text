@@ -81,6 +81,10 @@ def main():
     if "--baseline" in sys.argv:
         baseline_path = sys.argv[sys.argv.index("--baseline") + 1]
         args = [a for a in args if a != baseline_path]
+    allow_path = None
+    if "--allow" in sys.argv:
+        allow_path = sys.argv[sys.argv.index("--allow") + 1]
+        args = [a for a in args if a != allow_path]
     floor_path = None
     if "--floor" in sys.argv:
         floor_path = sys.argv[sys.argv.index("--floor") + 1]
@@ -138,12 +142,29 @@ def main():
             base, _ = load_ledger(baseline_path)
         except FileNotFoundError:
             base = {}
+        # A regression is allowed only where tools/css/DEPTH_REGRESSIONS says so, with its reason: a column that went down because the measurement
+        # became stricter (a kind of vector scored for the first time), not because the library did. An entry for a row that is 1 again is stale.
+        allowed = {}
+        if allow_path:
+            with open(allow_path, encoding="utf-8") as handle:
+                for line in handle:
+                    f = line.rstrip("\n").split("\t")
+                    if line.startswith("#") or len(f) < 4:
+                        continue
+                    if len(f[3]) < 20:
+                        bad.append("ALLOWED REGRESSION: %s %s %s needs a reason (twenty characters at least)" % (f[0], f[1], f[2]))
+                    allowed[(f[0], f[1], f[2])] = f[3]
+        columns = ("parses", "serializes", "computes", "wpt")
+        for (kind, name, col) in allowed:
+            row = ledger.get((kind, name))
+            if row is None or col not in columns or row[columns.index(col)] == "1":
+                bad.append("STALE ALLOWED REGRESSION: %s %s %s is 1 (or not a row): remove it from %s" % (kind, name, col, allow_path))
         for key, row in base.items():
             now = ledger.get(key)
             if not now:
                 continue
-            for i, col in enumerate(("parses", "serializes", "computes", "wpt")):
-                if row[i] == "1" and now[i] != "1":
+            for i, col in enumerate(columns):
+                if row[i] == "1" and now[i] != "1" and (key[0], key[1], col) not in allowed:
                     bad.append("REGRESSION: %s %s: %s was 1 in the baseline and is %s" % (key[0], key[1], col, now[i]))
     n = len(ledger)
     cols = [sum(1 for r in ledger.values() if r[i] == "1") for i in range(4)]

@@ -86,6 +86,13 @@ The plants of fuzz_css_registry.cpp (REGISTRY_PLANTS; each is found by replaying
   override-cannot-name-itself the grammar of an override naming its own property is left recursion: it extends the one it replaces.
   failed-definition-answered-by-another-source an allocation that fails while a definition is made lets a later source answer: the status.
 
+The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-compute):
+
+  keyword-shorthand-wrong-form  `white-space: pre` is written as `pre-wrap`: the cssText is read back as other longhands.
+  grid-template-names-dropped   the areas form of grid-template is written without its line names: the same.
+  pending-longhand-written-empty a longhand declared with var() or attr() is written with no value: the cssText cannot be read back.
+  context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
+
 The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
 
   work-bound-off-by-one     a match stops one unit of work early: the bounds are exact.
@@ -110,6 +117,7 @@ BYTES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-bytes")
 GRAMMAR_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-grammar")
 VALUES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-values")
 REGISTRY_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-registry")
+COMPUTE_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-compute")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -194,6 +202,18 @@ REGISTRY_PLANTS = {
 }
 
 
+# The same shape, for tests/fuzz/fuzz_css_compute.cpp; the seeds are in tests/fuzz/corpus/css-compute (tools/css/make-fuzz-compute-seeds.py).
+COMPUTE_PLANTS = {
+    "keyword-shorthand-wrong-form": ("css_shorthand_serialize.c", '    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre"},',
+                                     '    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre-wrap"},', "own-white-space-pre.seed"),
+    "grid-template-names-dropped": ("css_grid_text.c", "      if (any) {\n        if (!first) {\n          tb_put(&b, \" \", 1);\n        }\n        tb_put(&b, \"[\", 1);",
+                                    "      if (0) {\n        if (!first) {\n          tb_put(&b, \" \", 1);\n        }\n        tb_put(&b, \"[\", 1);", "own-grid-template-names.seed"),
+    "pending-longhand-written-empty": ("css_shorthand_serialize.c", "    if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING && it->shorthand) {",
+                                       "    if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING) {", "own-pending-longhand.seed"),
+    "context-leaks-its-groups": ("css_compute.c", "  gtext_allocator_free(&a, cc->groups);\n", "", "own-context-fails-early.seed"),
+}
+
+
 def make_variables(prefix, names):
     """The Makefile's own values for `names`, so that nothing here is a second copy of them."""
     rules = "print-%: ; @echo $($*)\n"
@@ -207,7 +227,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry|compute): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -221,17 +241,17 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry")
-    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS)
+    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry", "control-compute")
+    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS)
     for n in names:
-        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS:
+        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS and n not in COMPUTE_PLANTS:
             raise SystemExit("unknown plant %r (one of %s, %s)"
-                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS))))
+                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS))))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "fuzz-css-compute", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -252,10 +272,11 @@ def main(argv):
             grammar_harness = name == "control-grammar" or name in GRAMMAR_PLANTS
             values_harness = name == "control-values" or name in VALUES_PLANTS
             registry_harness = name == "control-registry" or name in REGISTRY_PLANTS
-            harness = "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
-            corpus_source = REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
+            compute_harness = name == "control-compute" or name in COMPUTE_PLANTS
+            harness = "fuzz_css_compute" if compute_harness else "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = COMPUTE_CORPUS if compute_harness else REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
             if name not in CONTROLS:
-                rel, old, new, seed = REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
+                rel, old, new, seed = COMPUTE_PLANTS[name] if compute_harness else REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 if text.count(old) != 1:

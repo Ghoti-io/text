@@ -243,13 +243,82 @@ size_t gtext_css_value_set_count(const GTEXT_CSS_Value_Set * set) {
   return set ? set->count : 0;
 }
 
+GTEXT_CSS_Value_Set * css_vset_new(const GTEXT_Allocator * alloc) {
+  GTEXT_CSS_Value_Set * set = gtext_allocator_malloc(alloc, sizeof *set);
+  if (!set) {
+    return NULL;
+  }
+  memset(set, 0, sizeof *set);
+  set->alloc = *alloc;
+  css_arena_init(&set->arena, &set->alloc);
+  gcu_atomic_int_init(&set->refs, 1);
+  return set;
+}
+
+bool css_vset_depend(GTEXT_CSS_Value_Set * set, const GTEXT_CSS_Value_Set * other) {
+  if (!set || !other || set == other) {
+    return true;
+  }
+  for (size_t i = set->ndeps; i-- > 0;) {
+    if (set->deps[i] == other) {
+      return true;
+    }
+  }
+  if (set->ndeps == set->depcap) {
+    const size_t ncap = set->depcap ? set->depcap * 2 : 4;
+    if (ncap > SIZE_MAX / sizeof *set->deps) {
+      return false;
+    }
+    GTEXT_CSS_Value_Set ** grown = gtext_allocator_realloc(&set->alloc, set->deps, ncap * sizeof *grown);
+    if (!grown) {
+      return false;
+    }
+    set->deps = grown;
+    set->depcap = ncap;
+  }
+  set->deps[set->ndeps++] = gtext_css_value_set_retain(other);
+  return true;
+}
+
+GTEXT_CSS_Value_Set * gtext_css_value_set_retain(const GTEXT_CSS_Value_Set * set) {
+  if (!set) {
+    return NULL;
+  }
+  /* the count is the only thing that changes in a set after it is made, and it changes atomically */
+  GTEXT_CSS_Value_Set * mutable_set = (GTEXT_CSS_Value_Set *)(uintptr_t)set;
+  (void)gcu_atomic_int_fetch_add(&mutable_set->refs, 1);
+  return mutable_set;
+}
+
 void gtext_css_value_set_free(GTEXT_CSS_Value_Set * set) {
+  /* Iterative: a set may keep a chain of sets alive (each computed value that points into the one before), and a deep chain must not
+     recurse on release. */
+  GTEXT_CSS_Value_Set * pending = NULL;  /* a list of sets to release, linked through `root` (a set being released has no use for it) */
   if (!set) {
     return;
   }
-  GTEXT_Allocator a = set->alloc;
-  css_arena_free(&set->arena);
-  gtext_allocator_free(&a, set);
+  if (gcu_atomic_int_fetch_sub(&set->refs, 1) != 1) {
+    return;
+  }
+  pending = set;
+  set->root = NULL;
+  while (pending) {
+    GTEXT_CSS_Value_Set * cur = pending;
+    pending = (GTEXT_CSS_Value_Set *)(uintptr_t)cur->root;
+    for (size_t i = 0; i < cur->ndeps; i++) {
+      GTEXT_CSS_Value_Set * d = cur->deps[i];
+      if (gcu_atomic_int_fetch_sub(&d->refs, 1) == 1) {
+        d->root = (const GTEXT_CSS_Value *)(uintptr_t)pending;
+        pending = d;
+      }
+    }
+    GTEXT_Allocator a = cur->alloc;
+    if (cur->deps) {
+      gtext_allocator_free(&a, cur->deps);
+    }
+    css_arena_free(&cur->arena);
+    gtext_allocator_free(&a, cur);
+  }
 }
 
 static const char * const kind_names[GTEXT_CSS_VAL_KIND_COUNT] = {

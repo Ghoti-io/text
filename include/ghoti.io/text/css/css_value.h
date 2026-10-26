@@ -351,6 +351,12 @@ typedef enum {
 #define GTEXT_CSS_VFLAG_MATH_PERCENT 0x40u
 /** A `<url>` written `src()` (Values 4, 5.1.1), which serializes as `src(`. */
 #define GTEXT_CSS_VFLAG_SRC 0x80u
+/** A computed `<color>` that needs a conversion the computed-value layer does not make (`color-mix()`, a relative color, a system color,
+ *  with no color callback in the environment): it is the color as it was written, and its `text` is its declared serialization. */
+#define GTEXT_CSS_VFLAG_COLOR_UNRESOLVED 0x100u
+/** A value a shorthand made for a component the author left out (its initial value, for that layer), in a block's longhands: only the writing of `box-shadow` back
+ *  reads it, to tell a blur or a spread of `0px` that was written from one that was not. Set by shorthand expansion on the layer's item; never by parsing. */
+#define GTEXT_CSS_VFLAG_DEFAULTED 0x200u
 /** @} */
 
 /** @brief A typed value (the struct below). */
@@ -404,10 +410,24 @@ GTEXT_API const GTEXT_CSS_Value * gtext_css_value_set_root(const GTEXT_CSS_Value
 GTEXT_API size_t gtext_css_value_set_count(const GTEXT_CSS_Value_Set * set);
 
 /**
- * @brief Free a set and every value in it.
+ * @brief Take another owner of a set.
  *
- * The pointer is dead after the call, as is every pointer into the set. NULL
- * is ignored.
+ * A set is reference counted: a match returns one with a single owner, and every
+ * gtext_css_value_set_free() gives one owner up. A computed value (css_computed.h) is such a set, shared
+ * by every style that has it, so a value outlives the call that made it for as long as anyone holds it. The
+ * count changes atomically; the values never change, so a set may be read by any number of threads.
+ *
+ * @param set The set. NULL is ignored.
+ * @return `set`, now with one more owner (NULL for NULL).
+ */
+GTEXT_API GTEXT_CSS_Value_Set * gtext_css_value_set_retain(const GTEXT_CSS_Value_Set * set);
+
+/**
+ * @brief Give up one owner of a set; the last one frees the set and every value in it.
+ *
+ * The pointer is dead after the call unless the caller holds another owner, as is every pointer into the
+ * set. A set that was made to point into other sets (a computed value shares what it did not change) lets
+ * those go with it. NULL is ignored. Releasing is iterative: a long chain of sets is not a stack depth.
  */
 GTEXT_API void gtext_css_value_set_free(GTEXT_CSS_Value_Set * set);
 

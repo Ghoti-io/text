@@ -417,23 +417,27 @@ vectors in the markup, SVG and XML pages; the 1,150 source calls whose arguments
 file in `tools/css/UNEXTRACTED`, and a count that differs fails. The same list names the 917 colour calls that
 `conformance-css-values` scores through its own interpreter and the support scripts that wrap the harness, so no file that
 mentions a call is silent. `make conformance-css-property` scores the
-5,079 valid, 3,995 invalid and 227 shorthand vectors (a shorthand is held to parse and read back; its
-serialization is the cascade layer's, and so are the 4,928 computed-value, 619 selector and 101 rule vectors,
-which are extracted and counted but not scored here; an invalid vector passes only when the library says INVALID) and tags each failure by stage: `parse`, `serialize`,
-`roundtrip` or `invalid-accepted`.
+5,079 valid, 3,995 invalid and 227 shorthand vectors (a shorthand is held to parse and read back, to write a
+block of its longhands back as the same text, and to expand into the longhand values the page lists: the layer
+of \ref format_css_computed "css-computed.md"; the 4,928 computed-value, 619 selector and 101 rule vectors
+are extracted and counted but not scored here; an invalid vector passes only when the library says INVALID) and tags each failure by stage: `parse`, `serialize`,
+`roundtrip`, `invalid-accepted` or `expand`.
 
 Every failure is a line of one of two files. `tools/conformance/CSS_PROPERTY_EXCEPTIONS` holds the cases where the
 page's expectation does not bind (a tentative page, or a draft newer than the pinned data), with the class and the
 sentence of the served draft that decides it. `tools/conformance/CSS_PROPERTY_DEFECTS` holds the cases where
 the page is right and the library is not, each with an owner and what the library lacks; its number has a
-ceiling that only goes down. At this commit 8,706 of the 9,301 pass, 127 are exceptions and 468 are defects:
-102 are the shortest or normalized form in which a specified value is written (the library now writes the
+ceiling that only goes down. At this commit 8,688 of the 9,301 pass, 127 are exceptions and 486 are defects:
+92 are the shortest or normalized form in which a specified value is written (the library now writes the
 most of them: see `gtext_css_property_value_serialize()`, whose result is rewritten by the rules of
 `src/css/css_property_canon.c`, so `display: block flow` is `block`, a position has both components, a
-basic shape has no default); the rest are grammars of a type the library implements in
+basic shape has no default); 31 are the pin's (its `line-clamp`, `font-synthesis` and `text-box` are not
+what the pages write); 8 are shorthands (the corner shorthands' order and `background`'s expansion, in
+which one page contradicts another); the rest are grammars of a type the library implements in
 code (`calc-size()`, the basic shapes) and of properties. Vectors for the eleven properties the pin lacks
-are listed and never dropped. The `wpt` column of the depth ledger is regenerated from the scored set: 362
-properties pass every vector they have.
+are listed and never dropped. The `wpt` column of the depth ledger is regenerated from the scored set: 363
+properties pass every vector they have (`background` stopped when its shorthand vectors were first scored:
+`tools/css/DEPTH_REGRESSIONS` says why).
 
 **Chromium and Firefox.** `make check-css-property-oracle` asks this library, Chromium 156 and Firefox 158
 (Gecko, whose style engine is Stylo; the two share no code) the same questions through one WebDriver BiDi driver
@@ -447,7 +451,7 @@ extracted vector of the suite. A divergence is keyed by its pattern, its propert
 that has it; `tools/oracle/css_prop_divergences.txt` gives each key a class (`standard-newer`,
 `reference-old`, `reference-wrong`, `legacy-compat`, or `ours`, a defect of this library, which is never
 allowed in a finished list and has a ceiling that only goes down) and a reason, and
-`css_prop_witnesses.txt` gives each a small item that is asked again on every run. The core has 310 keys, 5 of them this library's (the serialization of shorthands, which the cascade layer owns); each key also pins a
+`css_prop_witnesses.txt` gives each a small item that is asked again on every run. The core has 309 keys, none of them this library's (a shorthand is asked of a declaration block, as a browser's `getPropertyValue` is); each key also pins a
 digest of every one of its items (the property, the value and the three answers), so a key whose items are the same in number and not in what
 is said of them fails the run. A hunt of 42,000
 items finds 2,772 keys; the 2,462 beyond the core are the findings still to be classified or fixed. The answers carry the versions the driver

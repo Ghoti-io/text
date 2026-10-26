@@ -287,6 +287,10 @@ static bool instantiate(linker * L, const GTEXT_CSS_Definition * def, bool has_r
   in->key_name = key_name;
   in->key_len = key_len;
   in->root = base + def->root;
+  if (key_len == 10 && key_kind == GTEXT_CSS_REF_TYPE && memcmp(c->text + key_name, "try-tactic", 10) == 0 && c->nodes[in->root].kind == GN_OR) {
+    /* Anchor Positioning 1: the tactics of a try fallback are applied in the order they are written, so the value keeps that order */
+    c->nodes[in->root].flags |= GNF_SOURCE_ORDER;
+  }
   *out_index = L->ninst++;
   if (key_len) {
     bool found;

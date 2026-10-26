@@ -25,6 +25,10 @@
 #   tools/css/run-registry-gates.sh grammars-controls  ...and the gate is seen to fail (list tampered, library defects planted)
 #   tools/css/run-registry-gates.sh depth              the depth ledger (tools/css/depth.tsv) has no regression
 #   tools/css/run-registry-gates.sh depth-controls     ...and the gate is seen to fail
+#   tools/css/run-registry-gates.sh depth-write-floor  raise tools/css/DEPTH_FLOOR to the ledger's counts (a floor only goes up)
+#   tools/css/run-registry-gates.sh compute            every property of the pin is classified for computation, the generated table is the
+#                                                      generator's, and the ledger's computes column is what the classes say
+#   tools/css/run-registry-gates.sh compute-controls   ...and the gate is seen to fail (thirteen mistakes made in a copy of its inputs)
 #   tools/css/run-registry-gates.sh package            the tables agree with the @webref/css package, or the difference is classified
 #   tools/css/run-registry-gates.sh package-controls   ...and the gate is seen to fail (an unlisted and a stale difference, an edited
 #                                                      package, a package that is not there)
@@ -66,7 +70,8 @@ tables() {
 		diff -r "$scratch/a" "$scratch/b" | head -20 >&2
 		exit 1
 	fi
-	if ! diff -ru "${TABLES_DIR:-src/css/tables}" "$scratch/a" >"$scratch/diff" 2>&1; then
+	# css_tables_compute.c is the computed-value layer's (tools/css/gen-compute-tables.py, held by the compute gate), beside these for the object gate
+	if ! diff -ru -x css_tables_compute.c "${TABLES_DIR:-src/css/tables}" "$scratch/a" >"$scratch/diff" 2>&1; then
 		printf '\n### The committed CSS registry tables are stale ###\n' >&2
 		head -40 "$scratch/diff" >&2
 		printf '\nRegenerate with:\n  tools/css/gen-css-tables.py\n' >&2
@@ -204,7 +209,7 @@ depth() {
 	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/gen-depth.py)" >&2; exit 1; }
 	report
 	depth_baseline
-	python3 tools/css/gen-depth.py "$rep" tools/css/depth.tsv --check $base --floor tools/css/DEPTH_FLOOR
+	python3 tools/css/gen-depth.py "$rep" tools/css/depth.tsv --check $base --floor tools/css/DEPTH_FLOOR --allow tools/css/DEPTH_REGRESSIONS
 }
 
 # The ledger is held to an earlier version of itself, and to a tracked floor. The earlier version is $CSS_DEPTH_BASE (a git ref), or
@@ -224,6 +229,11 @@ depth_baseline() {
 	if git -C "$root" show "$ref:${rel}tools/css/depth.tsv" >"$scratch/baseline" 2>/dev/null; then
 		base="--baseline $scratch/baseline"
 	fi
+}
+
+depth_write_floor() {
+	report
+	python3 tools/css/gen-depth.py "$rep" tools/css/depth.tsv --check --floor tools/css/DEPTH_FLOOR --write-floor --allow tools/css/DEPTH_REGRESSIONS
 }
 
 depth_controls() {
@@ -250,8 +260,20 @@ depth_controls() {
 	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $1 == "property" && $3 == 1 { $3 = 0; done = 1 } { print }' "$led" > "$scratch/lag"
 	expect ledger-out-of-date "OUT OF DATE" $gen "$rep" "$scratch/lag" --check
 	# the columns the layers above fill in cannot go from 1 to 0
-	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $1 == "property" { $5 = 1; done = 1 } { print }' "$led" > "$scratch/baseline"
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $1 == "property" && $5 == 0 { $5 = 1; done = 1 } { print }' "$led" > "$scratch/baseline"
 	expect computes-regression "REGRESSION" $gen "$rep" "$led" --check --baseline "$scratch/baseline"
+	# a regression is excused only by tools/css/DEPTH_REGRESSIONS, and an excuse for a row that is 1 is stale
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $1 == "property" && $6 == 1 { $6 = 0; done = 1; print "# " $2 > "/dev/stderr" } { print }' "$led" > "$scratch/wpt-down" 2> "$scratch/wpt-name"
+	wpt_name=$(sed 's/^# //' "$scratch/wpt-name" | head -1)
+	printf 'property\t%s\twpt\ta reason that is long enough to be one\n' "$wpt_name" > "$scratch/allow-ok"
+	expect regression-not-allowed "REGRESSION" $gen "$rep" "$scratch/wpt-down" --check --baseline "$led"
+	$gen "$rep" "$scratch/wpt-down" --check --baseline "$led" --allow "$scratch/allow-ok" >"$scratch/log" 2>&1 || { echo "control allowed-regression: an allowed regression was refused" >&2; cat "$scratch/log" >&2; exit 1; }
+	echo "control allowed-regression: accepted"
+	printf 'property\t%s\twpt\ta reason that is long enough to be one\n' "$wpt_name" > "$scratch/allow-stale"
+	cp "$led" "$scratch/same-ledger"
+	expect stale-allowance "STALE ALLOWED REGRESSION" $gen "$rep" "$led" --check --baseline "$scratch/same-ledger" --allow "$scratch/allow-stale"
+	printf 'property\t%s\twpt\tshort\n' "$wpt_name" > "$scratch/allow-short"
+	expect allowance-without-reason "needs a reason" $gen "$rep" "$scratch/wpt-down" --check --baseline "$led" --allow "$scratch/allow-short"
 	# a library defect that makes the witnesses stop parsing: the CSS-wide keywords are not recognized
 	plant wide-keywords-are-not-recognized css_property.c 'if (wide != GTEXT_CSS_WIDE_NONE) {' 'if (0) {'
 	expect wide-keywords "REGRESSION" $gen "$scratch/report-wide-keywords-are-not-recognized.tsv" "$led" --check
@@ -302,14 +324,33 @@ PY
 	echo "package controls: done"
 }
 
+# ---- the computed-value classification ----------------------------------------------------------
+
+compute() {
+	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/gen-compute-tables.py)" >&2; exit 1; }
+	[ -d third_party/css/webref/ed/css ] || { echo "the pinned webref data is not in third_party/css/webref. Fetch it:  tools/css/fetch.sh" >&2; exit 1; }
+	python3 tools/css/gen-compute-tables.py --check --depth tools/css/depth.tsv
+}
+
+compute_controls() {
+	compute >/dev/null
+	python3 tools/css/gen-compute-tables.py --controls >"$scratch/log" 2>&1 || { cat "$scratch/log" >&2; exit 1; }
+	caught=$(grep -c ": caught" "$scratch/log" || true)
+	[ "$caught" -ge 13 ] || { echo "the compute controls caught $caught mistakes, fewer than the thirteen it makes" >&2; cat "$scratch/log" >&2; exit 1; }
+	echo "compute controls: done ($caught caught)"
+}
+
 case "$mode" in
+compute) compute ;;
+compute-controls) compute_controls ;;
 tables) tables ;;
 tables-controls) tables_controls ;;
 grammars) grammars ;;
 grammars-controls) grammars_controls ;;
 depth) depth ;;
 depth-controls) depth_controls ;;
+depth-write-floor) depth_write_floor ;;
 package) package ;;
 package-controls) package_controls ;;
-*) echo "usage: $0 tables|tables-controls|grammars|grammars-controls|depth|depth-controls|package|package-controls" >&2; exit 2 ;;
+*) echo "usage: $0 tables|tables-controls|grammars|grammars-controls|depth|depth-controls|depth-write-floor|compute|compute-controls|package|package-controls" >&2; exit 2 ;;
 esac

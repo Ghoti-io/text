@@ -860,6 +860,142 @@ std::function<Measured(size_t)> css_property_value(const char * property, std::f
   };
 }
 
+// ---- computed values and shorthands (src/css/css_compute*.c, css_shorthand*.c) ----
+//
+// The work of a style is the result's `work`: properties computed, value nodes visited and made. A context is made once (it computes the
+// initial value of every property, and is not what the shapes measure).
+
+GTEXT_CSS_Compute_Context * quad_compute_context() {
+  static GTEXT_CSS_Registry * r = [] {
+    GTEXT_CSS_Registry * made = nullptr;
+    gtext_css_registry_new(nullptr, &made);
+    return made;
+  }();
+  static GTEXT_CSS_Compute_Context * c = [] {
+    GTEXT_CSS_Compute_Context * made = nullptr;
+    GTEXT_CSS_Compute_Options o = gtext_css_compute_options_default();
+    o.max_list_items = (size_t)1 << 24;
+    o.max_value_nodes = (size_t)1 << 28;
+    gtext_css_compute_context_new(r, nullptr, &o, &made, nullptr);
+    return made;
+  }();
+  return c;
+}
+
+const GTEXT_CSS_Registry * quad_registry() {
+  return gtext_css_compute_context_registry(quad_compute_context());
+}
+
+GTEXT_CSS_Declaration_Block * quad_block(const std::string & name, const std::string & value) {
+  GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  gtext_css_block_new(quad_registry(), &o, &b);
+  GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  gtext_css_block_add_text(b, name.data(), name.size(), value.data(), value.size(), false, nullptr, &outcome, nullptr);
+  return b;
+}
+
+// A chain of k elements, each computed from the one above it: the work is linear in k when a style costs what it makes, and not when it copies
+// what it inherits (the custom properties, one more at every level, are the case that would).
+std::function<Measured(size_t)> css_compute_chain(std::function<std::string(size_t)> declarations) {
+  return [declarations](size_t k) {
+    Measured m;
+    GTEXT_CSS_Compute_Context * ctx = quad_compute_context();
+    if (!ctx) {
+      m.ok = false;
+      m.why = "the context could not be made";
+      return m;
+    }
+    GTEXT_CSS_Computed_Style * parent = nullptr;
+    for (size_t i = 0; i < k && m.ok; i++) {
+      const std::string text = declarations(i);
+      m.bytes += text.size();
+      GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+      GTEXT_CSS_Declaration_Block * b = nullptr;
+      gtext_css_block_new(quad_registry(), &o, &b);
+      const size_t colon = text.find(':');
+      GTEXT_CSS_Property_Outcome outcome;
+      gtext_css_block_add_text(b, text.data(), colon, text.data() + colon + 2, text.size() - colon - 2, false, nullptr, &outcome, nullptr);
+      GTEXT_CSS_Computed_Style * style = nullptr;
+      GTEXT_CSS_Compute_Result r{};
+      const GTEXT_CSS_Status st = gtext_css_compute_style(ctx, b, parent, nullptr, &style, &r);
+      gtext_css_block_free(b);
+      m.work += r.work;
+      if (st != GTEXT_CSS_OK) {
+        m.ok = false;
+        m.why = std::string("a style could not be computed: ") + gtext_css_status_string(st) + " " + r.name;
+      }
+      gtext_css_computed_free(parent);
+      parent = style;
+    }
+    gtext_css_computed_free(parent);
+    return m;
+  };
+}
+
+// One element with a declaration that holds k things: a list of k images, k transitions, a calculation of k terms.
+std::function<Measured(size_t)> css_compute_value(const char * property, std::function<std::string(size_t)> make) {
+  return [property, make](size_t k) {
+    Measured m;
+    GTEXT_CSS_Compute_Context * ctx = quad_compute_context();
+    const std::string value = make(k);
+    m.bytes = value.size();
+    GTEXT_CSS_Declaration_Block * b = quad_block(property, value);
+    if (gtext_css_block_count(b) == 0) {
+      m.ok = false;
+      m.why = "the declaration was not accepted";
+      gtext_css_block_free(b);
+      return m;
+    }
+    GTEXT_CSS_Computed_Style * style = nullptr;
+    GTEXT_CSS_Compute_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_compute_style(ctx, b, nullptr, nullptr, &style, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the style could not be computed: ") + gtext_css_status_string(st) + " " + r.name;
+    }
+    gtext_css_computed_free(style);
+    gtext_css_block_free(b);
+    return m;
+  };
+}
+
+// A shorthand of k layers (or components), expanded into its longhands: GTEXT_CSS_Shorthand_Result::work.
+std::function<Measured(size_t)> css_shorthand_expand(const char * property, std::function<std::string(size_t)> make) {
+  return [property, make](size_t k) {
+    Measured m;
+    const GTEXT_CSS_Registry * reg = quad_registry();
+    const std::string value = make(k);
+    m.bytes = value.size();
+    GTEXT_CSS_Property_Options po;
+    std::memset(&po, 0, sizeof po);
+    GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
+    mo.max_match_work = SIZE_MAX / 2;
+    mo.max_memo_entries = (size_t)1 << 28;
+    po.match = &mo;
+    GTEXT_CSS_Property_Value pv;
+    GTEXT_CSS_Status st = gtext_css_parse_property_text(reg, property, std::strlen(property), value.data(), value.size(), &po, &pv);
+    if (st != GTEXT_CSS_OK || pv.outcome != GTEXT_CSS_PROP_RESULT_VALID) {
+      m.ok = false;
+      m.why = "the value was not accepted";
+      gtext_css_property_value_free(&pv);
+      return m;
+    }
+    GTEXT_CSS_Longhand_List * list = nullptr;
+    GTEXT_CSS_Shorthand_Result r{};
+    st = gtext_css_shorthand_expand(reg, &pv, nullptr, &list, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the expansion failed: ") + gtext_css_status_string(st) + " " + r.name;
+    }
+    gtext_css_longhand_list_free(list);
+    gtext_css_property_value_free(&pv);
+    return m;
+  };
+}
+
 // A CSS stylesheet's bytes, parsed in one call or fed to a stream in pieces of `chunk` bytes (0: one piece), counted by
 // gtext_css_parse_bytes_work() and gtext_css_stream_work(): the decoding, the map from the text to the bytes, the buffers and
 // the parse. `label` is the protocol's label (NULL for none: UTF-8).
@@ -1515,6 +1651,31 @@ std::vector<Shape> build_shapes() {
     quad.per_byte = 0;
     quad.note = "every state of the first member looks at every position after it";
   }
+  // ---- computed values and shorthands ----
+  add("css", "CSS compute: an inheritance chain of n elements", 150,
+      css_compute_chain([](size_t i) { return std::string("font-size: ") + (i % 2 ? "1.01em" : "0.99em"); })).per_byte = 0;
+  add("css", "CSS compute: a chain of n elements, each with one more custom property", 150,
+      css_compute_chain([](size_t i) { return "--p" + std::to_string(i) + ": " + std::to_string(i); })).per_byte = 0;
+  add("css", "CSS compute: a chain of n elements, each with a relative width and a logical margin", 150,
+      css_compute_chain([](size_t i) { return std::string(i % 2 ? "width: 2em" : "margin-inline-start: 1.5em"); })).per_byte = 0;
+  add("css", "CSS compute: a list of n images", 1500,
+      css_compute_value("background-image", [](size_t k) { return repeat("url(a), ", k) + "url(b)"; })).per_byte = 0;
+  add("css", "CSS compute: a list of n transition durations", 1500,
+      css_compute_value("transition-duration", [](size_t k) { return repeat("1500ms, ", k) + "2s"; })).per_byte = 0;
+  add("css", "CSS compute: a calculation of n terms", 1500,
+      css_compute_value("width", [](size_t k) { return "calc(1px" + repeat(" + 1em", k) + ")"; })).per_byte = 0;
+  add("css", "CSS shorthand: a background of n layers", 150,
+      css_shorthand_expand("background", [](size_t k) { return repeat("url(a) 1px 2px / 3px 4px no-repeat, ", k) + "red"; })).per_byte = 0;
+  add("css", "CSS shorthand: an animation of n layers", 40,
+      css_shorthand_expand("animation", [](size_t k) { return repeat("a 1s ease-in 2s 3 alternate both paused, ", k) + "b"; })).per_byte = 0;
+  add("css", "CSS shorthand: an animation-range of n layers", 150,
+      css_shorthand_expand("animation-range", [](size_t k) { return repeat("entry 10% exit, ", k) + "cover"; })).per_byte = 0;
+  add("css", "CSS shorthand: a grid-template of n rows", 600,
+      css_shorthand_expand("grid-template", [](size_t k) { return repeat("[a] \"x y\" 1fr [b] ", k) + "/ auto 1fr"; })).per_byte = 0;
+  add("css", "CSS shorthand: a mask of n layers", 40,
+      css_shorthand_expand("mask", [](size_t k) { return repeat("url(a) luminance add border-box content-box, ", k) + "none"; })).per_byte = 0;
+  add("css", "CSS shorthand: a position-try of n fallbacks", 1000,
+      css_shorthand_expand("position-try", [](size_t k) { return "most-width " + repeat("flip-x flip-y, ", k) + "--a"; })).per_byte = 0;
   // ---- the registry: registrations, overrides, aliases, shorthands and lookups; property values ----
   add("css", "CSS registry: n registrations of distinct names", 500, css_registry_shape(0));
   add("css", "CSS registry: n registrations of names that share a 100-byte prefix", 500, css_registry_shape(1));

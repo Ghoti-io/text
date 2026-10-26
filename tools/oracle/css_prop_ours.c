@@ -152,7 +152,33 @@ static void answer(const GTEXT_CSS_Registry * reg, const char * name, size_t nle
   else {
     char * text = NULL;
     size_t tlen = 0;
-    if (gtext_css_property_value_serialize_buffer(&pv, NULL, &text, &tlen) != GTEXT_CSS_OK) {
+    GTEXT_CSS_Status ss = GTEXT_CSS_E_INVALID;
+    if (pv.outcome == GTEXT_CSS_PROP_RESULT_VALID && gtext_css_shorthand_kind(reg, pv.property) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED &&
+        gtext_css_shorthand_kind(reg, gtext_css_registry_resolve_alias(reg, pv.property)) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
+      /* a shorthand is read as a browser reads it: set on a declaration block and asked for (CSSOM `getPropertyValue`), which is the shortest form
+         of the longhands it made; where the block has no form for it the grammar's own text stands */
+      GTEXT_CSS_Declaration_Block * block = NULL;
+      if (gtext_css_block_new(reg, NULL, &block) == GTEXT_CSS_OK) {
+        GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+        if (gtext_css_block_add_text(block, name, nlen, value, vlen, false, NULL, &outcome, NULL) == GTEXT_CSS_OK && outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+          char * got = NULL;
+          size_t glen = 0;
+          if (gtext_css_block_get_property_value(block, gtext_css_registry_resolve_alias(reg, pv.property), &got, &glen, NULL) == GTEXT_CSS_OK && glen > 0) {
+            text = got;
+            tlen = glen;
+            ss = GTEXT_CSS_OK;
+          }
+          else {
+            gtext_css_serialize_buffer_free(NULL, got);
+          }
+        }
+        gtext_css_block_free(block);
+      }
+    }
+    if (ss != GTEXT_CSS_OK) {
+      ss = gtext_css_property_value_serialize_buffer(&pv, NULL, &text, &tlen);
+    }
+    if (ss != GTEXT_CSS_OK) {
       puts("ERR\tserialize");
     }
     else {

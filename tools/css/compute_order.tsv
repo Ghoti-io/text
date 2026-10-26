@@ -1,0 +1,28 @@
+# tools/css/gen-compute-tables.py: the properties that are computed first, in this order, before all others (which follow in the order of the registry).
+# Columns, tab separated: property, the properties it reads of the same element (comma separated, or -; each must be above it), why it is early.
+# A property below another that it does not read may be moved up; a property that reads one of the same element that is not above it, or a cycle,
+# fails the gate. tests/test-css-compute.cpp computes every property with a trap on reading a property that is not yet computed.
+writing-mode	-	the mapping of every logical property and the vertical flag of the font queries
+direction	-	the mapping of every logical property
+text-orientation	writing-mode	the used direction (upright forces ltr in vertical modes)
+font-family	-	a font query (ex, ch, cap, ic) names it
+font-style	-	a font query
+font-weight	-	a font query
+font-width	-	a font query
+font-size	-	em, ex, ch, cap, ic and every font-relative length of every property after it
+font-size-adjust	font-size	a font query
+line-height	font-size	lh
+border-top-style	-	border-top-width becomes 0 under none and hidden
+border-right-style	-	border-right-width
+border-bottom-style	-	border-bottom-width
+border-left-style	-	border-left-width
+border-block-start-style	-	border-block-start-width
+border-block-end-style	-	border-block-end-width
+border-inline-start-style	-	border-inline-start-width
+border-inline-end-style	-	border-inline-end-width
+outline-style	-	outline-width
+column-rule-style	-	column-rule-width
+row-rule-style	-	row-rule-width
+float	-	display (blockification), wrap-flow
+position	-	display (blockification)
+display	float,position	every property that reads the display of the parent (a flex or grid item)

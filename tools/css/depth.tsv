@@ -112,826 +112,826 @@ descriptor	@property initial-value	1	1	-	0
 descriptor	@property syntax	1	1	-	0	
 descriptor	@view-transition navigation	1	1	-	0	
 descriptor	@view-transition types	1	1	-	0	
-property	--*	1	1	0	0	
-property	-webkit-align-content	1	1	0	0	alias of align-content
-property	-webkit-align-items	1	1	0	0	alias of align-items
-property	-webkit-align-self	1	1	0	0	alias of align-self
-property	-webkit-animation	1	1	0	0	alias of animation
-property	-webkit-animation-delay	1	1	0	0	alias of animation-delay
-property	-webkit-animation-direction	1	1	0	0	alias of animation-direction
-property	-webkit-animation-duration	1	1	0	0	alias of animation-duration
-property	-webkit-animation-fill-mode	1	1	0	0	alias of animation-fill-mode
-property	-webkit-animation-iteration-count	1	1	0	0	alias of animation-iteration-count
-property	-webkit-animation-name	1	1	0	0	alias of animation-name
-property	-webkit-animation-play-state	1	1	0	0	alias of animation-play-state
-property	-webkit-animation-timing-function	1	1	0	0	alias of animation-timing-function
-property	-webkit-appearance	1	1	0	0	alias of appearance
-property	-webkit-backface-visibility	1	1	0	0	alias of backface-visibility
-property	-webkit-background-clip	1	1	0	0	alias of background-clip
-property	-webkit-background-origin	1	1	0	0	alias of background-origin
-property	-webkit-background-size	1	1	0	0	alias of background-size
-property	-webkit-border-bottom-left-radius	1	1	0	1	alias of border-bottom-left-radius
-property	-webkit-border-bottom-right-radius	1	1	0	1	alias of border-bottom-right-radius
-property	-webkit-border-radius	1	1	0	1	alias of border-radius
-property	-webkit-border-top-left-radius	1	1	0	1	alias of border-top-left-radius
-property	-webkit-border-top-right-radius	1	1	0	1	alias of border-top-right-radius
+property	--*	1	1	1	0	
+property	-webkit-align-content	1	1	1	0	alias of align-content
+property	-webkit-align-items	1	1	1	0	alias of align-items
+property	-webkit-align-self	1	1	1	0	alias of align-self
+property	-webkit-animation	1	1	1	0	alias of animation
+property	-webkit-animation-delay	1	1	1	0	alias of animation-delay
+property	-webkit-animation-direction	1	1	1	0	alias of animation-direction
+property	-webkit-animation-duration	1	1	1	0	alias of animation-duration
+property	-webkit-animation-fill-mode	1	1	1	0	alias of animation-fill-mode
+property	-webkit-animation-iteration-count	1	1	1	0	alias of animation-iteration-count
+property	-webkit-animation-name	1	1	1	0	alias of animation-name
+property	-webkit-animation-play-state	1	1	1	0	alias of animation-play-state
+property	-webkit-animation-timing-function	1	1	1	0	alias of animation-timing-function
+property	-webkit-appearance	1	1	1	0	alias of appearance
+property	-webkit-backface-visibility	1	1	1	0	alias of backface-visibility
+property	-webkit-background-clip	1	1	1	0	alias of background-clip
+property	-webkit-background-origin	1	1	1	0	alias of background-origin
+property	-webkit-background-size	1	1	1	0	alias of background-size
+property	-webkit-border-bottom-left-radius	1	1	1	1	alias of border-bottom-left-radius
+property	-webkit-border-bottom-right-radius	1	1	1	1	alias of border-bottom-right-radius
+property	-webkit-border-radius	1	1	1	1	alias of border-radius
+property	-webkit-border-top-left-radius	1	1	1	1	alias of border-top-left-radius
+property	-webkit-border-top-right-radius	1	1	1	1	alias of border-top-right-radius
 property	-webkit-box-align	0	0	0	0	none
 property	-webkit-box-flex	0	0	0	0	none
 property	-webkit-box-ordinal-group	0	0	0	0	none
 property	-webkit-box-orient	0	0	0	0	none
 property	-webkit-box-pack	0	0	0	0	none
-property	-webkit-box-shadow	1	1	0	0	alias of box-shadow
-property	-webkit-box-sizing	1	1	0	0	alias of box-sizing
-property	-webkit-filter	1	1	0	0	alias of filter
-property	-webkit-flex	1	1	0	0	alias of flex
-property	-webkit-flex-basis	1	1	0	0	alias of flex-basis
-property	-webkit-flex-direction	1	1	0	0	alias of flex-direction
-property	-webkit-flex-flow	1	1	0	0	alias of flex-flow
-property	-webkit-flex-grow	1	1	0	0	alias of flex-grow
-property	-webkit-flex-shrink	1	1	0	0	alias of flex-shrink
-property	-webkit-flex-wrap	1	1	0	0	alias of flex-wrap
-property	-webkit-justify-content	1	1	0	0	alias of justify-content
-property	-webkit-line-clamp	1	1	0	1	
-property	-webkit-mask	1	1	0	0	alias of mask
-property	-webkit-mask-box-image	1	1	0	0	alias of mask-border
-property	-webkit-mask-box-image-outset	1	1	0	0	alias of mask-border-outset
-property	-webkit-mask-box-image-repeat	1	1	0	0	alias of mask-border-repeat
-property	-webkit-mask-box-image-slice	1	1	0	0	alias of mask-border-slice
-property	-webkit-mask-box-image-source	1	1	0	0	alias of mask-border-source
-property	-webkit-mask-box-image-width	1	1	0	0	alias of mask-border-width
-property	-webkit-mask-clip	1	1	0	0	alias of mask-clip
-property	-webkit-mask-composite	1	1	0	0	alias of mask-composite
-property	-webkit-mask-image	1	1	0	0	alias of mask-image
-property	-webkit-mask-origin	1	1	0	0	alias of mask-origin
-property	-webkit-mask-position	1	1	0	0	alias of mask-position
-property	-webkit-mask-repeat	1	1	0	0	alias of mask-repeat
-property	-webkit-mask-size	1	1	0	0	alias of mask-size
-property	-webkit-order	1	1	0	0	alias of order
-property	-webkit-perspective	1	1	0	0	alias of perspective
-property	-webkit-perspective-origin	1	1	0	0	alias of perspective-origin
-property	-webkit-text-fill-color	1	1	0	0	
-property	-webkit-text-size-adjust	1	1	0	0	alias of text-size-adjust
-property	-webkit-text-stroke	1	1	0	0	
-property	-webkit-text-stroke-color	1	1	0	0	
-property	-webkit-text-stroke-width	1	1	0	0	
-property	-webkit-transform	1	1	0	0	alias of transform
-property	-webkit-transform-origin	1	1	0	0	alias of transform-origin
-property	-webkit-transform-style	1	1	0	0	alias of transform-style
-property	-webkit-transition	1	1	0	0	alias of transition
-property	-webkit-transition-delay	1	1	0	0	alias of transition-delay
-property	-webkit-transition-duration	1	1	0	0	alias of transition-duration
-property	-webkit-transition-property	1	1	0	0	alias of transition-property
-property	-webkit-transition-timing-function	1	1	0	0	alias of transition-timing-function
+property	-webkit-box-shadow	1	1	1	0	alias of box-shadow
+property	-webkit-box-sizing	1	1	1	0	alias of box-sizing
+property	-webkit-filter	1	1	1	0	alias of filter
+property	-webkit-flex	1	1	1	0	alias of flex
+property	-webkit-flex-basis	1	1	1	0	alias of flex-basis
+property	-webkit-flex-direction	1	1	1	0	alias of flex-direction
+property	-webkit-flex-flow	1	1	1	0	alias of flex-flow
+property	-webkit-flex-grow	1	1	1	0	alias of flex-grow
+property	-webkit-flex-shrink	1	1	1	0	alias of flex-shrink
+property	-webkit-flex-wrap	1	1	1	0	alias of flex-wrap
+property	-webkit-justify-content	1	1	1	0	alias of justify-content
+property	-webkit-line-clamp	1	1	1	1	
+property	-webkit-mask	1	1	1	0	alias of mask
+property	-webkit-mask-box-image	1	1	1	0	alias of mask-border
+property	-webkit-mask-box-image-outset	1	1	1	0	alias of mask-border-outset
+property	-webkit-mask-box-image-repeat	1	1	1	0	alias of mask-border-repeat
+property	-webkit-mask-box-image-slice	1	1	1	0	alias of mask-border-slice
+property	-webkit-mask-box-image-source	1	1	1	0	alias of mask-border-source
+property	-webkit-mask-box-image-width	1	1	1	0	alias of mask-border-width
+property	-webkit-mask-clip	1	1	1	0	alias of mask-clip
+property	-webkit-mask-composite	1	1	1	0	alias of mask-composite
+property	-webkit-mask-image	1	1	1	0	alias of mask-image
+property	-webkit-mask-origin	1	1	1	0	alias of mask-origin
+property	-webkit-mask-position	1	1	1	0	alias of mask-position
+property	-webkit-mask-repeat	1	1	1	0	alias of mask-repeat
+property	-webkit-mask-size	1	1	1	0	alias of mask-size
+property	-webkit-order	1	1	1	0	alias of order
+property	-webkit-perspective	1	1	1	0	alias of perspective
+property	-webkit-perspective-origin	1	1	1	0	alias of perspective-origin
+property	-webkit-text-fill-color	1	1	1	0	
+property	-webkit-text-size-adjust	1	1	1	0	alias of text-size-adjust
+property	-webkit-text-stroke	1	1	1	0	
+property	-webkit-text-stroke-color	1	1	1	0	
+property	-webkit-text-stroke-width	1	1	1	0	
+property	-webkit-transform	1	1	1	0	alias of transform
+property	-webkit-transform-origin	1	1	1	0	alias of transform-origin
+property	-webkit-transform-style	1	1	1	0	alias of transform-style
+property	-webkit-transition	1	1	1	0	alias of transition
+property	-webkit-transition-delay	1	1	1	0	alias of transition-delay
+property	-webkit-transition-duration	1	1	1	0	alias of transition-duration
+property	-webkit-transition-property	1	1	1	0	alias of transition-property
+property	-webkit-transition-timing-function	1	1	1	0	alias of transition-timing-function
 property	-webkit-user-select	1	1	0	0	
-property	accent-color	1	1	0	1	
-property	align-content	1	1	0	0	
-property	align-items	1	1	0	0	
-property	align-self	1	1	0	0	
-property	alignment-baseline	1	1	0	1	
-property	all	1	1	0	1	
-property	anchor-name	1	1	0	1	
-property	anchor-scope	1	1	0	1	
-property	animation	1	1	0	1	
-property	animation-composition	1	1	0	1	
-property	animation-delay	1	1	0	1	
-property	animation-delay-end	1	1	0	0	
-property	animation-delay-start	1	1	0	0	
-property	animation-direction	1	1	0	1	
-property	animation-duration	1	1	0	1	
-property	animation-fill-mode	1	1	0	1	
-property	animation-iteration-count	1	1	0	1	
-property	animation-name	1	1	0	0	
-property	animation-play-state	1	1	0	1	
-property	animation-range	1	1	0	1	
-property	animation-range-center	1	1	0	0	
-property	animation-range-end	1	1	0	0	
-property	animation-range-start	1	1	0	0	
-property	animation-timeline	1	1	0	0	
-property	animation-timing-function	1	1	0	0	
-property	animation-trigger	1	1	0	0	
-property	appearance	1	1	0	0	
-property	aspect-ratio	1	1	0	1	
-property	backdrop-filter	1	1	0	0	
-property	backface-visibility	1	1	0	1	
-property	background	1	1	0	1	
-property	background-attachment	1	1	0	1	
-property	background-blend-mode	1	1	0	1	
-property	background-clip	1	1	0	1	
-property	background-color	1	1	0	1	
-property	background-image	1	1	0	0	
-property	background-origin	1	1	0	1	
-property	background-position	1	1	0	1	
-property	background-position-block	1	1	0	0	
-property	background-position-inline	1	1	0	0	
-property	background-position-x	1	1	0	1	
-property	background-position-y	1	1	0	1	
-property	background-repeat	1	1	0	1	
-property	background-repeat-block	1	1	0	0	
-property	background-repeat-inline	1	1	0	0	
-property	background-repeat-x	1	1	0	0	
-property	background-repeat-y	1	1	0	0	
-property	background-size	1	1	0	1	
-property	background-tbd	1	1	0	0	
-property	baseline-shift	1	1	0	1	
-property	baseline-source	1	1	0	1	
-property	block-ellipsis	1	1	0	1	
-property	block-size	1	1	0	0	
-property	block-step	1	1	0	1	
-property	block-step-align	1	1	0	1	
-property	block-step-insert	1	1	0	1	
-property	block-step-round	1	1	0	1	
-property	block-step-size	1	1	0	1	
-property	bookmark-label	1	1	0	0	
-property	bookmark-level	1	1	0	0	
-property	bookmark-state	1	1	0	0	
-property	border	1	1	0	1	
-property	border-block	1	1	0	1	
-property	border-block-clip	1	1	0	0	
-property	border-block-color	1	1	0	1	
-property	border-block-end	1	1	0	1	
-property	border-block-end-clip	1	1	0	0	
-property	border-block-end-color	1	1	0	1	
-property	border-block-end-radius	1	1	0	1	
-property	border-block-end-style	1	1	0	1	
-property	border-block-end-width	1	1	0	1	
-property	border-block-start	1	1	0	1	
-property	border-block-start-clip	1	1	0	0	
-property	border-block-start-color	1	1	0	1	
-property	border-block-start-radius	1	1	0	1	
-property	border-block-start-style	1	1	0	1	
-property	border-block-start-width	1	1	0	1	
-property	border-block-style	1	1	0	1	
-property	border-block-width	1	1	0	1	
-property	border-bottom	1	1	0	1	
-property	border-bottom-clip	1	1	0	0	
-property	border-bottom-color	1	1	0	1	
-property	border-bottom-left-radius	1	1	0	1	
-property	border-bottom-radius	1	1	0	1	
-property	border-bottom-right-radius	1	1	0	1	
-property	border-bottom-style	1	1	0	1	
-property	border-bottom-width	1	1	0	1	
-property	border-boundary	1	1	0	0	
-property	border-clip	1	1	0	0	
-property	border-collapse	1	1	0	1	
-property	border-color	1	1	0	1	
-property	border-end-end-radius	1	1	0	0	
-property	border-end-start-radius	1	1	0	0	
-property	border-image	1	1	0	1	
-property	border-image-outset	1	1	0	1	
-property	border-image-repeat	1	1	0	1	
-property	border-image-slice	1	1	0	1	
-property	border-image-source	1	1	0	1	
-property	border-image-width	1	1	0	1	
-property	border-inline	1	1	0	1	
-property	border-inline-clip	1	1	0	0	
-property	border-inline-color	1	1	0	1	
-property	border-inline-end	1	1	0	1	
-property	border-inline-end-clip	1	1	0	0	
-property	border-inline-end-color	1	1	0	1	
-property	border-inline-end-radius	1	1	0	1	
-property	border-inline-end-style	1	1	0	1	
-property	border-inline-end-width	1	1	0	1	
-property	border-inline-start	1	1	0	1	
-property	border-inline-start-clip	1	1	0	0	
-property	border-inline-start-color	1	1	0	1	
-property	border-inline-start-radius	1	1	0	1	
-property	border-inline-start-style	1	1	0	1	
-property	border-inline-start-width	1	1	0	1	
-property	border-inline-style	1	1	0	1	
-property	border-inline-width	1	1	0	1	
-property	border-left	1	1	0	1	
-property	border-left-clip	1	1	0	0	
-property	border-left-color	1	1	0	1	
-property	border-left-radius	1	1	0	1	
-property	border-left-style	1	1	0	1	
-property	border-left-width	1	1	0	1	
-property	border-limit	1	1	0	0	
-property	border-radius	1	1	0	1	
-property	border-right	1	1	0	1	
-property	border-right-clip	1	1	0	0	
-property	border-right-color	1	1	0	1	
-property	border-right-radius	1	1	0	1	
-property	border-right-style	1	1	0	1	
-property	border-right-width	1	1	0	1	
-property	border-shape	1	1	0	0	
-property	border-spacing	1	1	0	1	
-property	border-start-end-radius	1	1	0	0	
-property	border-start-start-radius	1	1	0	0	
-property	border-style	1	1	0	1	
-property	border-top	1	1	0	1	
-property	border-top-clip	1	1	0	0	
-property	border-top-color	1	1	0	1	
-property	border-top-left-radius	1	1	0	1	
-property	border-top-radius	1	1	0	1	
-property	border-top-right-radius	1	1	0	1	
-property	border-top-style	1	1	0	1	
-property	border-top-width	1	1	0	1	
-property	border-width	1	1	0	1	
-property	bottom	1	1	0	1	
-property	box-decoration-break	1	1	0	1	
-property	box-shadow	1	1	0	1	
-property	box-shadow-blur	1	1	0	0	
-property	box-shadow-color	1	1	0	0	
-property	box-shadow-offset	1	1	0	0	
-property	box-shadow-position	1	1	0	1	
-property	box-shadow-spread	1	1	0	0	
-property	box-sizing	1	1	0	1	
-property	box-snap	1	1	0	0	
-property	break-after	1	1	0	1	
-property	break-before	1	1	0	1	
-property	break-inside	1	1	0	1	
-property	caption-side	1	1	0	1	
-property	caret	1	1	0	0	
-property	caret-animation	1	1	0	1	
-property	caret-color	1	1	0	0	
-property	caret-shape	1	1	0	1	
-property	clear	1	1	0	1	
-property	clip	1	1	0	1	
-property	clip-path	1	1	0	0	
-property	clip-rule	1	1	0	1	
-property	color	1	1	0	0	
-property	color-adjust	1	1	0	1	
-property	color-interpolation	1	1	0	0	
-property	color-interpolation-filters	1	1	0	1	
-property	color-scheme	1	1	0	0	
-property	column-count	1	1	0	1	
-property	column-fill	1	1	0	1	
-property	column-gap	1	1	0	1	
-property	column-height	1	1	0	0	
-property	column-rule	1	1	0	1	
-property	column-rule-break	1	1	0	0	
-property	column-rule-color	1	1	0	1	
-property	column-rule-inset	1	1	0	0	
-property	column-rule-inset-cap	1	1	0	0	
-property	column-rule-inset-cap-end	1	1	0	0	
-property	column-rule-inset-cap-start	1	1	0	0	
-property	column-rule-inset-end	1	1	0	0	
-property	column-rule-inset-junction	1	1	0	0	
-property	column-rule-inset-junction-end	1	1	0	0	
-property	column-rule-inset-junction-start	1	1	0	0	
-property	column-rule-inset-start	1	1	0	0	
-property	column-rule-style	1	1	0	1	
-property	column-rule-visibility-items	1	1	0	0	
-property	column-rule-width	1	1	0	1	
-property	column-span	1	1	0	0	
-property	column-width	1	1	0	0	
-property	column-wrap	1	1	0	0	
-property	columns	1	1	0	1	
-property	contain	1	1	0	1	
-property	contain-intrinsic-block-size	1	1	0	1	
-property	contain-intrinsic-height	1	1	0	1	
-property	contain-intrinsic-inline-size	1	1	0	1	
-property	contain-intrinsic-size	1	1	0	1	
-property	contain-intrinsic-width	1	1	0	1	
-property	container	1	1	0	0	
-property	container-name	1	1	0	0	
-property	container-type	1	1	0	0	
-property	content	1	1	0	0	
-property	content-visibility	1	1	0	1	
-property	continue	1	1	0	1	
-property	copy-into	1	1	0	0	
-property	corner	1	1	0	0	
-property	corner-block-end	1	1	0	0	
-property	corner-block-end-shape	1	1	0	0	
-property	corner-block-start	1	1	0	0	
-property	corner-block-start-shape	1	1	0	0	
-property	corner-bottom	1	1	0	0	
-property	corner-bottom-left	1	1	0	0	
+property	accent-color	1	1	1	1	
+property	align-content	1	1	1	0	
+property	align-items	1	1	1	0	
+property	align-self	1	1	1	0	
+property	alignment-baseline	1	1	1	1	
+property	all	1	1	1	1	
+property	anchor-name	1	1	1	1	
+property	anchor-scope	1	1	1	1	
+property	animation	1	1	1	1	
+property	animation-composition	1	1	1	1	
+property	animation-delay	1	1	1	1	
+property	animation-delay-end	1	1	1	0	
+property	animation-delay-start	1	1	1	0	
+property	animation-direction	1	1	1	1	
+property	animation-duration	1	1	1	1	
+property	animation-fill-mode	1	1	1	1	
+property	animation-iteration-count	1	1	1	1	
+property	animation-name	1	1	1	0	
+property	animation-play-state	1	1	1	1	
+property	animation-range	1	1	1	1	
+property	animation-range-center	1	1	1	0	
+property	animation-range-end	1	1	1	1	
+property	animation-range-start	1	1	1	1	
+property	animation-timeline	1	1	1	0	
+property	animation-timing-function	1	1	1	0	
+property	animation-trigger	1	1	1	0	
+property	appearance	1	1	1	0	
+property	aspect-ratio	1	1	1	1	
+property	backdrop-filter	1	1	1	0	
+property	backface-visibility	1	1	1	1	
+property	background	1	1	1	0	
+property	background-attachment	1	1	1	1	
+property	background-blend-mode	1	1	1	1	
+property	background-clip	1	1	1	1	
+property	background-color	1	1	1	1	
+property	background-image	1	1	1	0	
+property	background-origin	1	1	1	1	
+property	background-position	1	1	1	1	
+property	background-position-block	1	1	1	0	
+property	background-position-inline	1	1	1	0	
+property	background-position-x	1	1	1	1	
+property	background-position-y	1	1	1	1	
+property	background-repeat	1	1	1	1	
+property	background-repeat-block	1	1	1	0	
+property	background-repeat-inline	1	1	1	0	
+property	background-repeat-x	1	1	1	0	
+property	background-repeat-y	1	1	1	0	
+property	background-size	1	1	1	1	
+property	background-tbd	1	1	1	0	
+property	baseline-shift	1	1	1	1	
+property	baseline-source	1	1	1	1	
+property	block-ellipsis	1	1	1	1	
+property	block-size	1	1	1	0	
+property	block-step	1	1	1	1	
+property	block-step-align	1	1	1	1	
+property	block-step-insert	1	1	1	1	
+property	block-step-round	1	1	1	1	
+property	block-step-size	1	1	1	1	
+property	bookmark-label	1	1	1	0	
+property	bookmark-level	1	1	1	0	
+property	bookmark-state	1	1	1	0	
+property	border	1	1	1	1	
+property	border-block	1	1	1	1	
+property	border-block-clip	1	1	1	0	
+property	border-block-color	1	1	1	1	
+property	border-block-end	1	1	1	1	
+property	border-block-end-clip	1	1	1	0	
+property	border-block-end-color	1	1	1	1	
+property	border-block-end-radius	1	1	1	1	
+property	border-block-end-style	1	1	1	1	
+property	border-block-end-width	1	1	1	1	
+property	border-block-start	1	1	1	1	
+property	border-block-start-clip	1	1	1	0	
+property	border-block-start-color	1	1	1	1	
+property	border-block-start-radius	1	1	1	1	
+property	border-block-start-style	1	1	1	1	
+property	border-block-start-width	1	1	1	1	
+property	border-block-style	1	1	1	1	
+property	border-block-width	1	1	1	1	
+property	border-bottom	1	1	1	1	
+property	border-bottom-clip	1	1	1	0	
+property	border-bottom-color	1	1	1	1	
+property	border-bottom-left-radius	1	1	1	1	
+property	border-bottom-radius	1	1	1	1	
+property	border-bottom-right-radius	1	1	1	1	
+property	border-bottom-style	1	1	1	1	
+property	border-bottom-width	1	1	1	1	
+property	border-boundary	1	1	1	0	
+property	border-clip	1	1	1	0	
+property	border-collapse	1	1	1	1	
+property	border-color	1	1	1	1	
+property	border-end-end-radius	1	1	1	0	
+property	border-end-start-radius	1	1	1	0	
+property	border-image	1	1	1	1	
+property	border-image-outset	1	1	1	1	
+property	border-image-repeat	1	1	1	1	
+property	border-image-slice	1	1	1	1	
+property	border-image-source	1	1	1	1	
+property	border-image-width	1	1	1	1	
+property	border-inline	1	1	1	1	
+property	border-inline-clip	1	1	1	0	
+property	border-inline-color	1	1	1	1	
+property	border-inline-end	1	1	1	1	
+property	border-inline-end-clip	1	1	1	0	
+property	border-inline-end-color	1	1	1	1	
+property	border-inline-end-radius	1	1	1	1	
+property	border-inline-end-style	1	1	1	1	
+property	border-inline-end-width	1	1	1	1	
+property	border-inline-start	1	1	1	1	
+property	border-inline-start-clip	1	1	1	0	
+property	border-inline-start-color	1	1	1	1	
+property	border-inline-start-radius	1	1	1	1	
+property	border-inline-start-style	1	1	1	1	
+property	border-inline-start-width	1	1	1	1	
+property	border-inline-style	1	1	1	1	
+property	border-inline-width	1	1	1	1	
+property	border-left	1	1	1	1	
+property	border-left-clip	1	1	1	0	
+property	border-left-color	1	1	1	1	
+property	border-left-radius	1	1	1	1	
+property	border-left-style	1	1	1	1	
+property	border-left-width	1	1	1	1	
+property	border-limit	1	1	1	0	
+property	border-radius	1	1	1	1	
+property	border-right	1	1	1	1	
+property	border-right-clip	1	1	1	0	
+property	border-right-color	1	1	1	1	
+property	border-right-radius	1	1	1	1	
+property	border-right-style	1	1	1	1	
+property	border-right-width	1	1	1	1	
+property	border-shape	1	1	1	0	
+property	border-spacing	1	1	1	1	
+property	border-start-end-radius	1	1	1	0	
+property	border-start-start-radius	1	1	1	0	
+property	border-style	1	1	1	1	
+property	border-top	1	1	1	1	
+property	border-top-clip	1	1	1	0	
+property	border-top-color	1	1	1	1	
+property	border-top-left-radius	1	1	1	1	
+property	border-top-radius	1	1	1	1	
+property	border-top-right-radius	1	1	1	1	
+property	border-top-style	1	1	1	1	
+property	border-top-width	1	1	1	1	
+property	border-width	1	1	1	1	
+property	bottom	1	1	1	1	
+property	box-decoration-break	1	1	1	1	
+property	box-shadow	1	1	1	1	
+property	box-shadow-blur	1	1	1	0	
+property	box-shadow-color	1	1	1	0	
+property	box-shadow-offset	1	1	1	0	
+property	box-shadow-position	1	1	1	1	
+property	box-shadow-spread	1	1	1	0	
+property	box-sizing	1	1	1	1	
+property	box-snap	1	1	1	0	
+property	break-after	1	1	1	1	
+property	break-before	1	1	1	1	
+property	break-inside	1	1	1	1	
+property	caption-side	1	1	1	1	
+property	caret	1	1	1	0	
+property	caret-animation	1	1	1	1	
+property	caret-color	1	1	1	0	
+property	caret-shape	1	1	1	1	
+property	clear	1	1	1	1	
+property	clip	1	1	1	1	
+property	clip-path	1	1	1	0	
+property	clip-rule	1	1	1	1	
+property	color	1	1	1	0	
+property	color-adjust	1	1	1	1	
+property	color-interpolation	1	1	1	0	
+property	color-interpolation-filters	1	1	1	1	
+property	color-scheme	1	1	1	0	
+property	column-count	1	1	1	1	
+property	column-fill	1	1	1	1	
+property	column-gap	1	1	1	1	
+property	column-height	1	1	1	0	
+property	column-rule	1	1	1	1	
+property	column-rule-break	1	1	1	0	
+property	column-rule-color	1	1	1	1	
+property	column-rule-inset	1	1	1	0	
+property	column-rule-inset-cap	1	1	1	0	
+property	column-rule-inset-cap-end	1	1	1	0	
+property	column-rule-inset-cap-start	1	1	1	0	
+property	column-rule-inset-end	1	1	1	0	
+property	column-rule-inset-junction	1	1	1	0	
+property	column-rule-inset-junction-end	1	1	1	0	
+property	column-rule-inset-junction-start	1	1	1	0	
+property	column-rule-inset-start	1	1	1	0	
+property	column-rule-style	1	1	1	1	
+property	column-rule-visibility-items	1	1	1	0	
+property	column-rule-width	1	1	1	1	
+property	column-span	1	1	1	0	
+property	column-width	1	1	1	0	
+property	column-wrap	1	1	1	0	
+property	columns	1	1	1	1	
+property	contain	1	1	1	1	
+property	contain-intrinsic-block-size	1	1	1	1	
+property	contain-intrinsic-height	1	1	1	1	
+property	contain-intrinsic-inline-size	1	1	1	1	
+property	contain-intrinsic-size	1	1	1	1	
+property	contain-intrinsic-width	1	1	1	1	
+property	container	1	1	1	0	
+property	container-name	1	1	1	0	
+property	container-type	1	1	1	0	
+property	content	1	1	1	0	
+property	content-visibility	1	1	1	1	
+property	continue	1	1	1	1	
+property	copy-into	1	1	1	0	
+property	corner	1	1	1	0	
+property	corner-block-end	1	1	1	0	
+property	corner-block-end-shape	1	1	1	0	
+property	corner-block-start	1	1	1	0	
+property	corner-block-start-shape	1	1	1	0	
+property	corner-bottom	1	1	1	0	
+property	corner-bottom-left	1	1	1	0	
 property	corner-bottom-left-shape	1	1	0	0	
-property	corner-bottom-right	1	1	0	0	
+property	corner-bottom-right	1	1	1	0	
 property	corner-bottom-right-shape	1	1	0	0	
-property	corner-bottom-shape	1	1	0	0	
-property	corner-end-end	1	1	0	0	
+property	corner-bottom-shape	1	1	1	0	
+property	corner-end-end	1	1	1	0	
 property	corner-end-end-shape	1	1	0	0	
-property	corner-end-start	1	1	0	0	
+property	corner-end-start	1	1	1	0	
 property	corner-end-start-shape	1	1	0	0	
-property	corner-inline-end	1	1	0	0	
-property	corner-inline-end-shape	1	1	0	0	
-property	corner-inline-start	1	1	0	0	
-property	corner-inline-start-shape	1	1	0	0	
-property	corner-left	1	1	0	0	
-property	corner-left-shape	1	1	0	0	
-property	corner-right	1	1	0	0	
-property	corner-right-shape	1	1	0	0	
-property	corner-shape	1	1	0	1	
-property	corner-start-end	1	1	0	0	
+property	corner-inline-end	1	1	1	0	
+property	corner-inline-end-shape	1	1	1	0	
+property	corner-inline-start	1	1	1	0	
+property	corner-inline-start-shape	1	1	1	0	
+property	corner-left	1	1	1	0	
+property	corner-left-shape	1	1	1	0	
+property	corner-right	1	1	1	0	
+property	corner-right-shape	1	1	1	0	
+property	corner-shape	1	1	1	1	
+property	corner-start-end	1	1	1	0	
 property	corner-start-end-shape	1	1	0	0	
-property	corner-start-start	1	1	0	0	
+property	corner-start-start	1	1	1	0	
 property	corner-start-start-shape	1	1	0	0	
-property	corner-top	1	1	0	0	
-property	corner-top-left	1	1	0	0	
+property	corner-top	1	1	1	0	
+property	corner-top-left	1	1	1	0	
 property	corner-top-left-shape	1	1	0	0	
-property	corner-top-right	1	1	0	0	
+property	corner-top-right	1	1	1	0	
 property	corner-top-right-shape	1	1	0	0	
-property	corner-top-shape	1	1	0	0	
-property	counter-increment	1	1	0	0	
-property	counter-reset	1	1	0	0	
-property	counter-set	1	1	0	0	
-property	cue	0	0	0	0	unresolved <decibel>
-property	cue-after	0	0	0	0	unresolved <decibel>
-property	cue-before	0	0	0	0	unresolved <decibel>
-property	cursor	1	1	0	0	
-property	cx	1	1	0	0	
-property	cy	1	1	0	0	
-property	d	1	1	0	0	
-property	direction	1	1	0	1	
-property	display	1	1	0	0	
-property	dominant-baseline	1	1	0	1	
-property	dynamic-range-limit	1	1	0	0	
-property	empty-cells	1	1	0	1	
-property	event-trigger	0	0	0	0	unresolved <click()>
-property	event-trigger-name	1	1	0	0	
-property	event-trigger-source	0	0	0	0	unresolved <click()>
-property	field-sizing	1	1	0	1	
-property	fill	1	1	0	0	
-property	fill-break	1	1	0	0	
-property	fill-color	1	1	0	0	
-property	fill-image	1	1	0	0	
-property	fill-opacity	1	1	0	0	
-property	fill-origin	1	1	0	0	
-property	fill-position	1	1	0	0	
-property	fill-repeat	1	1	0	0	
-property	fill-rule	1	1	0	0	
-property	fill-size	1	1	0	0	
-property	filter	1	1	0	0	
-property	fit-tolerance	1	1	0	0	
-property	flex	1	1	0	1	
-property	flex-basis	1	1	0	0	
-property	flex-direction	1	1	0	1	
-property	flex-flow	1	1	0	1	
-property	flex-grow	1	1	0	1	
-property	flex-line-count	1	1	0	1	
-property	flex-shrink	1	1	0	1	
-property	flex-wrap	1	1	0	1	
-property	float	1	1	0	1	
-property	float-defer	1	1	0	0	
-property	float-offset	1	1	0	0	
-property	float-reference	1	1	0	0	
-property	flood-color	1	1	0	1	
-property	flood-opacity	1	1	0	1	
-property	flow-from	1	1	0	0	
-property	flow-into	1	1	0	0	
-property	font	1	1	0	1	
-property	font-family	1	1	0	0	
-property	font-feature-settings	1	1	0	0	
-property	font-kerning	1	1	0	1	
-property	font-language-override	1	1	0	0	
-property	font-optical-sizing	1	1	0	1	
-property	font-palette	1	1	0	0	
-property	font-size	1	1	0	0	
-property	font-size-adjust	1	1	0	1	
-property	font-stretch	1	1	0	0	alias of font-width
-property	font-style	1	1	0	1	
-property	font-synthesis	1	1	0	0	
-property	font-synthesis-position	1	1	0	1	
-property	font-synthesis-small-caps	1	1	0	1	
-property	font-synthesis-style	1	1	0	1	
-property	font-synthesis-weight	1	1	0	1	
-property	font-variant	1	1	0	1	
-property	font-variant-alternates	1	1	0	1	
-property	font-variant-caps	1	1	0	1	
-property	font-variant-east-asian	1	1	0	1	
-property	font-variant-emoji	1	1	0	1	
-property	font-variant-ligatures	1	1	0	1	
-property	font-variant-numeric	1	1	0	1	
-property	font-variant-position	1	1	0	1	
-property	font-variation-settings	1	1	0	0	
-property	font-weight	1	1	0	1	
-property	font-width	1	1	0	0	
-property	footnote-display	1	1	0	0	
-property	footnote-policy	1	1	0	0	
-property	forced-color-adjust	1	1	0	1	
-property	frame-sizing	1	1	0	1	
-property	gap	1	1	0	1	
-property	glyph-orientation-vertical	0	0	0	0	failed not a Value Definition Syntax definition@7
-property	grid	1	1	0	1	
-property	grid-area	1	1	0	1	
-property	grid-auto-columns	1	1	0	1	
-property	grid-auto-flow	1	1	0	1	
-property	grid-auto-rows	1	1	0	1	
-property	grid-column	1	1	0	0	
-property	grid-column-end	1	1	0	0	
-property	grid-column-gap	1	1	0	1	alias of column-gap
-property	grid-column-start	1	1	0	0	
-property	grid-gap	1	1	0	1	alias of gap
-property	grid-row	1	1	0	0	
-property	grid-row-end	1	1	0	0	
-property	grid-row-gap	1	1	0	1	alias of row-gap
-property	grid-row-start	1	1	0	0	
-property	grid-template	1	1	0	1	
-property	grid-template-areas	1	1	0	0	
-property	grid-template-columns	1	1	0	0	
-property	grid-template-rows	1	1	0	0	
-property	hanging-punctuation	1	1	0	0	
-property	height	1	1	0	0	
-property	hyphenate-character	1	1	0	1	
-property	hyphenate-limit-chars	1	1	0	0	
-property	hyphenate-limit-last	1	1	0	0	
-property	hyphenate-limit-lines	1	1	0	1	
-property	hyphenate-limit-zone	1	1	0	0	
-property	hyphens	1	1	0	1	
-property	image-animation	1	1	0	0	
-property	image-orientation	1	1	0	0	
-property	image-rendering	1	1	0	1	
-property	image-resolution	1	1	0	0	
-property	initial-letter	1	1	0	1	
-property	initial-letter-align	1	1	0	0	
-property	initial-letter-wrap	1	1	0	0	
-property	inline-size	1	1	0	0	
-property	inline-sizing	1	1	0	0	
-property	input-security	1	1	0	0	
-property	inset	1	1	0	1	
-property	inset-block	1	1	0	1	
-property	inset-block-end	1	1	0	1	
-property	inset-block-start	1	1	0	1	
-property	inset-inline	1	1	0	1	
-property	inset-inline-end	1	1	0	1	
-property	inset-inline-start	1	1	0	1	
-property	interactivity	1	1	0	1	
-property	interest-delay	1	1	0	0	
-property	interest-delay-end	1	1	0	0	
-property	interest-delay-start	1	1	0	0	
-property	interpolate-size	1	1	0	1	
-property	isolation	1	1	0	1	
-property	justify-content	1	1	0	0	
-property	justify-items	1	1	0	0	
-property	justify-self	1	1	0	0	
-property	left	1	1	0	0	
-property	letter-spacing	1	1	0	1	
-property	lighting-color	1	1	0	1	
-property	line-break	1	1	0	1	
-property	line-clamp	1	1	0	0	
-property	line-fit-edge	1	1	0	0	
-property	line-grid	1	1	0	0	
-property	line-height	1	1	0	1	
-property	line-height-step	1	1	0	0	
-property	line-padding	1	1	0	0	
-property	line-snap	1	1	0	0	
-property	link-parameters	1	1	0	0	
-property	list-style	1	1	0	0	
-property	list-style-image	1	1	0	1	
-property	list-style-position	1	1	0	1	
-property	list-style-type	1	1	0	0	
-property	margin	1	1	0	1	
-property	margin-block	1	1	0	1	
-property	margin-block-end	1	1	0	1	
-property	margin-block-start	1	1	0	1	
-property	margin-bottom	1	1	0	1	
-property	margin-break	1	1	0	0	
-property	margin-inline	1	1	0	1	
-property	margin-inline-end	1	1	0	1	
-property	margin-inline-start	1	1	0	1	
-property	margin-left	1	1	0	1	
-property	margin-right	1	1	0	1	
-property	margin-top	1	1	0	1	
-property	margin-trim	1	1	0	1	
-property	marker	1	1	0	0	
-property	marker-end	1	1	0	0	
-property	marker-mid	1	1	0	0	
-property	marker-side	1	1	0	0	
-property	marker-start	1	1	0	0	
-property	mask	1	1	0	0	
-property	mask-border	1	1	0	0	
-property	mask-border-mode	1	1	0	0	
-property	mask-border-outset	1	1	0	0	
-property	mask-border-repeat	1	1	0	0	
-property	mask-border-slice	1	1	0	0	
-property	mask-border-source	1	1	0	0	
-property	mask-border-width	1	1	0	0	
-property	mask-clip	1	1	0	0	
-property	mask-composite	1	1	0	1	
-property	mask-image	1	1	0	1	
-property	mask-mode	1	1	0	0	
-property	mask-origin	1	1	0	0	
-property	mask-position	1	1	0	1	
-property	mask-repeat	1	1	0	1	
-property	mask-size	1	1	0	1	
-property	mask-type	1	1	0	1	
-property	math-depth	1	1	0	1	
-property	math-shift	1	1	0	0	
-property	math-style	1	1	0	0	
-property	max-block-size	1	1	0	0	
-property	max-height	1	1	0	0	
-property	max-inline-size	1	1	0	0	
-property	max-lines	1	1	0	0	
-property	max-size	1	1	0	0	
-property	max-width	1	1	0	0	
-property	min-block-size	1	1	0	0	
-property	min-height	1	1	0	0	
-property	min-inline-size	1	1	0	0	
-property	min-intrinsic-sizing	1	1	0	0	
-property	min-size	1	1	0	0	
-property	min-width	1	1	0	0	
-property	mix-blend-mode	1	1	0	1	
-property	nav-down	0	0	0	0	unresolved <id>
-property	nav-left	0	0	0	0	unresolved <id>
-property	nav-right	0	0	0	0	unresolved <id>
-property	nav-up	0	0	0	0	unresolved <id>
-property	object-fit	1	1	0	1	
-property	object-position	1	1	0	1	
-property	object-view-box	1	1	0	1	
-property	offset	1	1	0	1	
-property	offset-anchor	1	1	0	1	
-property	offset-distance	1	1	0	1	
-property	offset-path	1	1	0	0	
-property	offset-position	1	1	0	1	
-property	offset-rotate	1	1	0	1	
-property	opacity	1	1	0	0	
-property	order	1	1	0	1	
-property	orphans	1	1	0	1	
-property	outline	1	1	0	1	
-property	outline-color	1	1	0	1	
-property	outline-offset	1	1	0	0	
-property	outline-style	1	1	0	1	
-property	outline-width	1	1	0	1	
-property	overflow	1	1	0	1	
-property	overflow-anchor	1	1	0	1	
-property	overflow-block	1	1	0	1	
-property	overflow-clip-margin	1	1	0	1	
-property	overflow-clip-margin-block	1	1	0	0	
-property	overflow-clip-margin-block-end	1	1	0	0	
-property	overflow-clip-margin-block-start	1	1	0	0	
-property	overflow-clip-margin-bottom	1	1	0	0	
-property	overflow-clip-margin-inline	1	1	0	0	
-property	overflow-clip-margin-inline-end	1	1	0	0	
-property	overflow-clip-margin-inline-start	1	1	0	0	
-property	overflow-clip-margin-left	1	1	0	0	
-property	overflow-clip-margin-right	1	1	0	0	
-property	overflow-clip-margin-top	1	1	0	0	
-property	overflow-inline	1	1	0	1	
-property	overflow-wrap	1	1	0	1	
-property	overflow-x	1	1	0	1	
-property	overflow-y	1	1	0	1	
-property	overlay	1	1	0	1	
-property	overscroll-behavior	1	1	0	1	
-property	overscroll-behavior-block	1	1	0	0	
-property	overscroll-behavior-inline	1	1	0	0	
-property	overscroll-behavior-x	1	1	0	0	
-property	overscroll-behavior-y	1	1	0	0	
-property	padding	1	1	0	1	
-property	padding-block	1	1	0	1	
-property	padding-block-end	1	1	0	1	
-property	padding-block-start	1	1	0	1	
-property	padding-bottom	1	1	0	1	
-property	padding-inline	1	1	0	1	
-property	padding-inline-end	1	1	0	1	
-property	padding-inline-start	1	1	0	1	
-property	padding-left	1	1	0	1	
-property	padding-right	1	1	0	1	
-property	padding-top	1	1	0	1	
-property	page	1	1	0	1	
-property	page-break-after	1	1	0	0	
-property	page-break-before	1	1	0	0	
-property	page-break-inside	1	1	0	0	
-property	paint-order	1	1	0	0	
-property	path-length	1	1	0	0	
-property	pause	1	1	0	0	
-property	pause-after	1	1	0	0	
-property	pause-before	1	1	0	0	
-property	perspective	1	1	0	1	
-property	perspective-origin	1	1	0	1	
-property	place-content	1	1	0	0	
-property	place-items	1	1	0	0	
-property	place-self	1	1	0	0	
-property	pointer-events	1	1	0	0	
-property	pointer-timeline	1	1	0	0	
-property	pointer-timeline-axis	1	1	0	0	
-property	pointer-timeline-name	1	1	0	0	
-property	position	1	1	0	1	
-property	position-anchor	1	1	0	1	
+property	corner-top-shape	1	1	1	0	
+property	counter-increment	1	1	1	0	
+property	counter-reset	1	1	1	0	
+property	counter-set	1	1	1	0	
+property	cue	0	0	1	0	unresolved <decibel>
+property	cue-after	0	0	1	0	unresolved <decibel>
+property	cue-before	0	0	1	0	unresolved <decibel>
+property	cursor	1	1	1	0	
+property	cx	1	1	1	0	
+property	cy	1	1	1	0	
+property	d	1	1	1	0	
+property	direction	1	1	1	1	
+property	display	1	1	1	0	
+property	dominant-baseline	1	1	1	1	
+property	dynamic-range-limit	1	1	1	0	
+property	empty-cells	1	1	1	1	
+property	event-trigger	0	0	1	0	unresolved <click()>
+property	event-trigger-name	1	1	1	0	
+property	event-trigger-source	0	0	1	0	unresolved <click()>
+property	field-sizing	1	1	1	1	
+property	fill	1	1	1	0	
+property	fill-break	1	1	1	0	
+property	fill-color	1	1	1	0	
+property	fill-image	1	1	1	0	
+property	fill-opacity	1	1	1	0	
+property	fill-origin	1	1	1	0	
+property	fill-position	1	1	1	0	
+property	fill-repeat	1	1	1	0	
+property	fill-rule	1	1	1	0	
+property	fill-size	1	1	1	0	
+property	filter	1	1	1	0	
+property	fit-tolerance	1	1	1	0	
+property	flex	1	1	1	1	
+property	flex-basis	1	1	1	0	
+property	flex-direction	1	1	1	1	
+property	flex-flow	1	1	1	1	
+property	flex-grow	1	1	1	1	
+property	flex-line-count	1	1	1	1	
+property	flex-shrink	1	1	1	1	
+property	flex-wrap	1	1	1	1	
+property	float	1	1	1	1	
+property	float-defer	1	1	1	0	
+property	float-offset	1	1	1	0	
+property	float-reference	1	1	1	0	
+property	flood-color	1	1	1	1	
+property	flood-opacity	1	1	1	1	
+property	flow-from	1	1	1	0	
+property	flow-into	1	1	1	0	
+property	font	1	1	1	1	
+property	font-family	1	1	1	0	
+property	font-feature-settings	1	1	1	0	
+property	font-kerning	1	1	1	1	
+property	font-language-override	1	1	1	0	
+property	font-optical-sizing	1	1	1	1	
+property	font-palette	1	1	1	0	
+property	font-size	1	1	1	0	
+property	font-size-adjust	1	1	1	1	
+property	font-stretch	1	1	1	0	alias of font-width
+property	font-style	1	1	1	1	
+property	font-synthesis	1	1	1	0	
+property	font-synthesis-position	1	1	1	1	
+property	font-synthesis-small-caps	1	1	1	1	
+property	font-synthesis-style	1	1	1	1	
+property	font-synthesis-weight	1	1	1	1	
+property	font-variant	1	1	1	1	
+property	font-variant-alternates	1	1	1	1	
+property	font-variant-caps	1	1	1	1	
+property	font-variant-east-asian	1	1	1	1	
+property	font-variant-emoji	1	1	1	1	
+property	font-variant-ligatures	1	1	1	1	
+property	font-variant-numeric	1	1	1	1	
+property	font-variant-position	1	1	1	1	
+property	font-variation-settings	1	1	1	0	
+property	font-weight	1	1	1	1	
+property	font-width	1	1	1	0	
+property	footnote-display	1	1	1	0	
+property	footnote-policy	1	1	1	0	
+property	forced-color-adjust	1	1	1	1	
+property	frame-sizing	1	1	1	1	
+property	gap	1	1	1	1	
+property	glyph-orientation-vertical	0	0	1	0	failed not a Value Definition Syntax definition@7
+property	grid	1	1	1	1	
+property	grid-area	1	1	1	1	
+property	grid-auto-columns	1	1	1	1	
+property	grid-auto-flow	1	1	1	1	
+property	grid-auto-rows	1	1	1	1	
+property	grid-column	1	1	1	0	
+property	grid-column-end	1	1	1	0	
+property	grid-column-gap	1	1	1	1	alias of column-gap
+property	grid-column-start	1	1	1	0	
+property	grid-gap	1	1	1	1	alias of gap
+property	grid-row	1	1	1	0	
+property	grid-row-end	1	1	1	0	
+property	grid-row-gap	1	1	1	1	alias of row-gap
+property	grid-row-start	1	1	1	0	
+property	grid-template	1	1	1	1	
+property	grid-template-areas	1	1	1	0	
+property	grid-template-columns	1	1	1	0	
+property	grid-template-rows	1	1	1	0	
+property	hanging-punctuation	1	1	1	0	
+property	height	1	1	1	0	
+property	hyphenate-character	1	1	1	1	
+property	hyphenate-limit-chars	1	1	1	0	
+property	hyphenate-limit-last	1	1	1	0	
+property	hyphenate-limit-lines	1	1	1	1	
+property	hyphenate-limit-zone	1	1	1	0	
+property	hyphens	1	1	1	1	
+property	image-animation	1	1	1	0	
+property	image-orientation	1	1	1	0	
+property	image-rendering	1	1	1	1	
+property	image-resolution	1	1	1	0	
+property	initial-letter	1	1	1	1	
+property	initial-letter-align	1	1	1	0	
+property	initial-letter-wrap	1	1	1	0	
+property	inline-size	1	1	1	0	
+property	inline-sizing	1	1	1	0	
+property	input-security	1	1	1	0	
+property	inset	1	1	1	1	
+property	inset-block	1	1	1	1	
+property	inset-block-end	1	1	1	1	
+property	inset-block-start	1	1	1	1	
+property	inset-inline	1	1	1	1	
+property	inset-inline-end	1	1	1	1	
+property	inset-inline-start	1	1	1	1	
+property	interactivity	1	1	1	1	
+property	interest-delay	1	1	1	0	
+property	interest-delay-end	1	1	1	0	
+property	interest-delay-start	1	1	1	0	
+property	interpolate-size	1	1	1	1	
+property	isolation	1	1	1	1	
+property	justify-content	1	1	1	0	
+property	justify-items	1	1	1	0	
+property	justify-self	1	1	1	0	
+property	left	1	1	1	0	
+property	letter-spacing	1	1	1	1	
+property	lighting-color	1	1	1	1	
+property	line-break	1	1	1	1	
+property	line-clamp	1	1	1	0	
+property	line-fit-edge	1	1	1	0	
+property	line-grid	1	1	1	0	
+property	line-height	1	1	1	1	
+property	line-height-step	1	1	1	0	
+property	line-padding	1	1	1	0	
+property	line-snap	1	1	1	0	
+property	link-parameters	1	1	1	0	
+property	list-style	1	1	1	0	
+property	list-style-image	1	1	1	1	
+property	list-style-position	1	1	1	1	
+property	list-style-type	1	1	1	0	
+property	margin	1	1	1	1	
+property	margin-block	1	1	1	1	
+property	margin-block-end	1	1	1	1	
+property	margin-block-start	1	1	1	1	
+property	margin-bottom	1	1	1	1	
+property	margin-break	1	1	1	0	
+property	margin-inline	1	1	1	1	
+property	margin-inline-end	1	1	1	1	
+property	margin-inline-start	1	1	1	1	
+property	margin-left	1	1	1	1	
+property	margin-right	1	1	1	1	
+property	margin-top	1	1	1	1	
+property	margin-trim	1	1	1	1	
+property	marker	1	1	1	0	
+property	marker-end	1	1	1	0	
+property	marker-mid	1	1	1	0	
+property	marker-side	1	1	1	0	
+property	marker-start	1	1	1	0	
+property	mask	1	1	1	0	
+property	mask-border	1	1	1	0	
+property	mask-border-mode	1	1	1	0	
+property	mask-border-outset	1	1	1	0	
+property	mask-border-repeat	1	1	1	0	
+property	mask-border-slice	1	1	1	0	
+property	mask-border-source	1	1	1	0	
+property	mask-border-width	1	1	1	0	
+property	mask-clip	1	1	1	0	
+property	mask-composite	1	1	1	1	
+property	mask-image	1	1	1	1	
+property	mask-mode	1	1	1	0	
+property	mask-origin	1	1	1	0	
+property	mask-position	1	1	1	1	
+property	mask-repeat	1	1	1	1	
+property	mask-size	1	1	1	1	
+property	mask-type	1	1	1	1	
+property	math-depth	1	1	1	1	
+property	math-shift	1	1	1	0	
+property	math-style	1	1	1	0	
+property	max-block-size	1	1	1	0	
+property	max-height	1	1	1	0	
+property	max-inline-size	1	1	1	0	
+property	max-lines	1	1	1	0	
+property	max-size	1	1	1	0	
+property	max-width	1	1	1	0	
+property	min-block-size	1	1	1	0	
+property	min-height	1	1	1	0	
+property	min-inline-size	1	1	1	0	
+property	min-intrinsic-sizing	1	1	1	0	
+property	min-size	1	1	1	0	
+property	min-width	1	1	1	0	
+property	mix-blend-mode	1	1	1	1	
+property	nav-down	0	0	1	0	unresolved <id>
+property	nav-left	0	0	1	0	unresolved <id>
+property	nav-right	0	0	1	0	unresolved <id>
+property	nav-up	0	0	1	0	unresolved <id>
+property	object-fit	1	1	1	1	
+property	object-position	1	1	1	1	
+property	object-view-box	1	1	1	1	
+property	offset	1	1	1	1	
+property	offset-anchor	1	1	1	1	
+property	offset-distance	1	1	1	1	
+property	offset-path	1	1	1	0	
+property	offset-position	1	1	1	1	
+property	offset-rotate	1	1	1	1	
+property	opacity	1	1	1	0	
+property	order	1	1	1	1	
+property	orphans	1	1	1	1	
+property	outline	1	1	1	1	
+property	outline-color	1	1	1	1	
+property	outline-offset	1	1	1	0	
+property	outline-style	1	1	1	1	
+property	outline-width	1	1	1	1	
+property	overflow	1	1	1	1	
+property	overflow-anchor	1	1	1	1	
+property	overflow-block	1	1	1	1	
+property	overflow-clip-margin	1	1	1	1	
+property	overflow-clip-margin-block	1	1	1	0	
+property	overflow-clip-margin-block-end	1	1	1	0	
+property	overflow-clip-margin-block-start	1	1	1	0	
+property	overflow-clip-margin-bottom	1	1	1	0	
+property	overflow-clip-margin-inline	1	1	1	0	
+property	overflow-clip-margin-inline-end	1	1	1	0	
+property	overflow-clip-margin-inline-start	1	1	1	0	
+property	overflow-clip-margin-left	1	1	1	0	
+property	overflow-clip-margin-right	1	1	1	0	
+property	overflow-clip-margin-top	1	1	1	0	
+property	overflow-inline	1	1	1	1	
+property	overflow-wrap	1	1	1	1	
+property	overflow-x	1	1	1	1	
+property	overflow-y	1	1	1	1	
+property	overlay	1	1	1	1	
+property	overscroll-behavior	1	1	1	1	
+property	overscroll-behavior-block	1	1	1	0	
+property	overscroll-behavior-inline	1	1	1	0	
+property	overscroll-behavior-x	1	1	1	0	
+property	overscroll-behavior-y	1	1	1	0	
+property	padding	1	1	1	1	
+property	padding-block	1	1	1	1	
+property	padding-block-end	1	1	1	1	
+property	padding-block-start	1	1	1	1	
+property	padding-bottom	1	1	1	1	
+property	padding-inline	1	1	1	1	
+property	padding-inline-end	1	1	1	1	
+property	padding-inline-start	1	1	1	1	
+property	padding-left	1	1	1	1	
+property	padding-right	1	1	1	1	
+property	padding-top	1	1	1	1	
+property	page	1	1	1	1	
+property	page-break-after	1	1	1	0	
+property	page-break-before	1	1	1	0	
+property	page-break-inside	1	1	1	0	
+property	paint-order	1	1	1	0	
+property	path-length	1	1	1	0	
+property	pause	1	1	1	0	
+property	pause-after	1	1	1	0	
+property	pause-before	1	1	1	0	
+property	perspective	1	1	1	1	
+property	perspective-origin	1	1	1	1	
+property	place-content	1	1	1	0	
+property	place-items	1	1	1	0	
+property	place-self	1	1	1	0	
+property	pointer-events	1	1	1	0	
+property	pointer-timeline	1	1	1	0	
+property	pointer-timeline-axis	1	1	1	0	
+property	pointer-timeline-name	1	1	1	0	
+property	position	1	1	1	1	
+property	position-anchor	1	1	1	1	
 property	position-area	1	1	0	1	
-property	position-try	1	1	0	1	
-property	position-try-fallbacks	1	1	0	0	
-property	position-try-order	1	1	0	1	
-property	position-visibility	1	1	0	1	
-property	print-color-adjust	1	1	0	1	
-property	quotes	1	1	0	0	
-property	r	1	1	0	0	
-property	reading-flow	1	1	0	1	
-property	reading-order	1	1	0	1	
-property	region-fragment	1	1	0	0	
-property	resize	1	1	0	1	
-property	rest	1	1	0	0	
-property	rest-after	1	1	0	0	
-property	rest-before	1	1	0	0	
-property	right	1	1	0	1	
-property	rotate	1	1	0	0	
-property	row-gap	1	1	0	1	
-property	row-rule	1	1	0	0	
-property	row-rule-break	1	1	0	0	
-property	row-rule-color	1	1	0	0	
-property	row-rule-inset	1	1	0	0	
-property	row-rule-inset-cap	1	1	0	0	
-property	row-rule-inset-cap-end	1	1	0	0	
-property	row-rule-inset-cap-start	1	1	0	0	
-property	row-rule-inset-end	1	1	0	0	
-property	row-rule-inset-junction	1	1	0	0	
-property	row-rule-inset-junction-end	1	1	0	0	
-property	row-rule-inset-junction-start	1	1	0	0	
-property	row-rule-inset-start	1	1	0	0	
-property	row-rule-style	1	1	0	0	
-property	row-rule-visibility-items	1	1	0	0	
-property	row-rule-width	1	1	0	0	
-property	ruby-align	1	1	0	1	
-property	ruby-merge	1	1	0	1	
-property	ruby-overhang	1	1	0	0	
-property	ruby-position	1	1	0	1	
-property	rule	1	1	0	0	
-property	rule-break	1	1	0	0	
-property	rule-color	1	1	0	0	
-property	rule-inset	1	1	0	0	
-property	rule-inset-cap	1	1	0	0	
-property	rule-inset-end	1	1	0	0	
-property	rule-inset-junction	1	1	0	0	
-property	rule-inset-start	1	1	0	0	
-property	rule-overlap	1	1	0	1	
-property	rule-style	1	1	0	0	
-property	rule-visibility-items	1	1	0	0	
-property	rule-width	1	1	0	0	
-property	rx	1	1	0	0	
-property	ry	1	1	0	0	
-property	scale	1	1	0	1	
-property	scroll-axis-lock	1	1	0	1	
-property	scroll-behavior	1	1	0	1	
-property	scroll-initial-target	1	1	0	1	
-property	scroll-margin	1	1	0	1	
-property	scroll-margin-block	1	1	0	1	
-property	scroll-margin-block-end	1	1	0	1	
-property	scroll-margin-block-start	1	1	0	1	
-property	scroll-margin-bottom	1	1	0	1	
-property	scroll-margin-inline	1	1	0	1	
-property	scroll-margin-inline-end	1	1	0	1	
-property	scroll-margin-inline-start	1	1	0	1	
-property	scroll-margin-left	1	1	0	1	
-property	scroll-margin-right	1	1	0	1	
-property	scroll-margin-top	1	1	0	1	
-property	scroll-marker-group	1	1	0	0	
-property	scroll-padding	1	1	0	1	
-property	scroll-padding-block	1	1	0	1	
-property	scroll-padding-block-end	1	1	0	1	
-property	scroll-padding-block-start	1	1	0	1	
-property	scroll-padding-bottom	1	1	0	1	
-property	scroll-padding-inline	1	1	0	1	
-property	scroll-padding-inline-end	1	1	0	1	
-property	scroll-padding-inline-start	1	1	0	1	
-property	scroll-padding-left	1	1	0	1	
-property	scroll-padding-right	1	1	0	1	
-property	scroll-padding-top	1	1	0	1	
-property	scroll-snap-align	1	1	0	1	
-property	scroll-snap-stop	1	1	0	0	
-property	scroll-snap-type	1	1	0	1	
-property	scroll-target-group	1	1	0	1	
-property	scroll-timeline	1	1	0	0	
-property	scroll-timeline-axis	1	1	0	0	
-property	scroll-timeline-name	1	1	0	0	
-property	scrollbar-color	1	1	0	1	
-property	scrollbar-gutter	1	1	0	1	
-property	scrollbar-width	1	1	0	1	
-property	shape-image-threshold	1	1	0	1	
-property	shape-inside	1	1	0	0	
-property	shape-margin	1	1	0	1	
-property	shape-outside	1	1	0	0	
-property	shape-padding	1	1	0	0	
-property	shape-rendering	1	1	0	0	
-property	size	1	1	0	1	
-property	slider-orientation	1	1	0	0	
-property	spatial-navigation-action	1	1	0	0	
-property	spatial-navigation-contain	1	1	0	0	
-property	spatial-navigation-function	1	1	0	0	
-property	speak	1	1	0	0	
-property	speak-as	1	1	0	0	
-property	stop-color	1	1	0	0	
-property	stop-opacity	1	1	0	0	
-property	string-set	1	1	0	0	
-property	stroke	1	1	0	0	
-property	stroke-align	1	1	0	0	
-property	stroke-alignment	1	1	0	0	
-property	stroke-break	1	1	0	0	
-property	stroke-color	1	1	0	0	
-property	stroke-dash-corner	1	1	0	0	
-property	stroke-dash-justify	1	1	0	0	
-property	stroke-dashadjust	1	1	0	0	
-property	stroke-dasharray	1	1	0	0	
-property	stroke-dashcorner	1	1	0	0	
-property	stroke-dashoffset	1	1	0	0	
-property	stroke-image	1	1	0	0	
-property	stroke-linecap	1	1	0	0	
-property	stroke-linejoin	1	1	0	0	
-property	stroke-miterlimit	1	1	0	0	
-property	stroke-opacity	1	1	0	0	
-property	stroke-origin	1	1	0	0	
-property	stroke-position	1	1	0	0	
-property	stroke-repeat	1	1	0	0	
-property	stroke-size	1	1	0	0	
-property	stroke-width	1	1	0	0	
-property	tab-size	1	1	0	1	
-property	table-layout	1	1	0	1	
-property	text-align	1	1	0	1	
-property	text-align-all	1	1	0	1	
-property	text-align-last	1	1	0	1	
-property	text-anchor	1	1	0	0	
-property	text-autospace	1	1	0	1	
-property	text-box	1	1	0	0	
-property	text-box-edge	1	1	0	1	
-property	text-box-trim	1	1	0	1	
-property	text-combine-upright	1	1	0	1	
-property	text-decoration	1	1	0	1	
-property	text-decoration-color	1	1	0	1	
-property	text-decoration-inset	1	1	0	0	
-property	text-decoration-line	1	1	0	1	
-property	text-decoration-skip	1	1	0	0	
-property	text-decoration-skip-box	1	1	0	0	
-property	text-decoration-skip-ink	1	1	0	1	
-property	text-decoration-skip-self	1	1	0	0	
-property	text-decoration-skip-spaces	1	1	0	1	
-property	text-decoration-style	1	1	0	1	
-property	text-decoration-thickness	1	1	0	1	
-property	text-emphasis	1	1	0	0	
-property	text-emphasis-color	1	1	0	0	
-property	text-emphasis-position	1	1	0	0	
-property	text-emphasis-skip	1	1	0	0	
-property	text-emphasis-style	1	1	0	0	
-property	text-fit	1	1	0	1	
-property	text-group-align	1	1	0	1	
-property	text-indent	1	1	0	1	
-property	text-justify	1	1	0	1	
-property	text-orientation	1	1	0	1	
-property	text-overflow	1	1	0	1	
-property	text-rendering	1	1	0	0	
-property	text-shadow	1	1	0	0	
-property	text-size-adjust	1	1	0	1	
-property	text-spacing	1	1	0	0	
-property	text-spacing-trim	1	1	0	1	
-property	text-transform	1	1	0	1	
-property	text-underline-offset	1	1	0	1	
-property	text-underline-position	1	1	0	1	
-property	text-wrap	1	1	0	1	
-property	text-wrap-mode	1	1	0	1	
-property	text-wrap-style	1	1	0	1	
-property	timeline-scope	1	1	0	0	
-property	timeline-trigger	1	1	0	0	
-property	timeline-trigger-activation-range	1	1	0	0	
-property	timeline-trigger-activation-range-end	1	1	0	0	
-property	timeline-trigger-activation-range-start	1	1	0	0	
-property	timeline-trigger-active-range	1	1	0	0	
-property	timeline-trigger-active-range-end	1	1	0	0	
-property	timeline-trigger-active-range-start	1	1	0	0	
-property	timeline-trigger-name	1	1	0	0	
-property	timeline-trigger-range	1	1	0	0	
-property	timeline-trigger-source	1	1	0	0	
-property	top	1	1	0	0	
-property	touch-action	1	1	0	0	
-property	transform	1	1	0	0	
-property	transform-box	1	1	0	1	
-property	transform-origin	1	1	0	1	
-property	transform-style	1	1	0	0	
-property	transition	1	1	0	0	
-property	transition-behavior	1	1	0	1	
-property	transition-delay	1	1	0	0	
-property	transition-duration	1	1	0	1	
-property	transition-property	1	1	0	0	
-property	transition-timing-function	1	1	0	0	
-property	translate	1	1	0	1	
-property	trigger-scope	1	1	0	0	
-property	unicode-bidi	1	1	0	1	
-property	user-select	1	1	0	1	
-property	vector-effect	1	1	0	0	
-property	vertical-align	1	1	0	1	
-property	view-timeline	1	1	0	0	
-property	view-timeline-axis	1	1	0	0	
-property	view-timeline-inset	1	1	0	0	
-property	view-timeline-name	1	1	0	0	
-property	view-transition-class	1	1	0	0	
-property	view-transition-group	1	1	0	1	
-property	view-transition-name	1	1	0	1	
-property	view-transition-scope	1	1	0	0	
-property	visibility	1	1	0	1	
-property	voice-balance	1	1	0	0	
-property	voice-duration	1	1	0	0	
-property	voice-family	0	0	0	0	unresolved <voice-family-name>
-property	voice-pitch	0	0	0	0	unresolved <semitones>
-property	voice-range	0	0	0	0	unresolved <semitones>
-property	voice-rate	1	1	0	0	
-property	voice-stress	1	1	0	0	
-property	voice-volume	0	0	0	0	unresolved <decibel>
-property	white-space	1	1	0	1	
-property	white-space-collapse	1	1	0	1	
-property	white-space-trim	1	1	0	0	
-property	widows	1	1	0	1	
-property	width	1	1	0	0	
-property	will-change	1	1	0	0	
-property	window-drag	1	1	0	0	
-property	word-break	1	1	0	1	
-property	word-space-transform	1	1	0	0	
-property	word-spacing	1	1	0	1	
-property	word-wrap	1	1	0	1	alias of overflow-wrap
-property	wrap-after	1	1	0	0	
-property	wrap-before	1	1	0	0	
-property	wrap-flow	1	1	0	0	
-property	wrap-inside	1	1	0	0	
-property	wrap-through	1	1	0	0	
-property	writing-mode	1	1	0	1	
-property	x	1	1	0	0	
-property	y	1	1	0	0	
-property	z-index	1	1	0	1	
-property	zoom	1	1	0	0	
+property	position-try	1	1	1	1	
+property	position-try-fallbacks	1	1	1	0	
+property	position-try-order	1	1	1	1	
+property	position-visibility	1	1	1	1	
+property	print-color-adjust	1	1	1	1	
+property	quotes	1	1	1	0	
+property	r	1	1	1	0	
+property	reading-flow	1	1	1	1	
+property	reading-order	1	1	1	1	
+property	region-fragment	1	1	1	0	
+property	resize	1	1	1	1	
+property	rest	1	1	1	0	
+property	rest-after	1	1	1	0	
+property	rest-before	1	1	1	0	
+property	right	1	1	1	1	
+property	rotate	1	1	1	0	
+property	row-gap	1	1	1	1	
+property	row-rule	1	1	1	0	
+property	row-rule-break	1	1	1	0	
+property	row-rule-color	1	1	1	0	
+property	row-rule-inset	1	1	1	0	
+property	row-rule-inset-cap	1	1	1	0	
+property	row-rule-inset-cap-end	1	1	1	0	
+property	row-rule-inset-cap-start	1	1	1	0	
+property	row-rule-inset-end	1	1	1	0	
+property	row-rule-inset-junction	1	1	1	0	
+property	row-rule-inset-junction-end	1	1	1	0	
+property	row-rule-inset-junction-start	1	1	1	0	
+property	row-rule-inset-start	1	1	1	0	
+property	row-rule-style	1	1	1	0	
+property	row-rule-visibility-items	1	1	1	0	
+property	row-rule-width	1	1	1	0	
+property	ruby-align	1	1	1	1	
+property	ruby-merge	1	1	1	1	
+property	ruby-overhang	1	1	1	0	
+property	ruby-position	1	1	1	1	
+property	rule	1	1	1	0	
+property	rule-break	1	1	1	0	
+property	rule-color	1	1	1	0	
+property	rule-inset	1	1	1	0	
+property	rule-inset-cap	1	1	1	0	
+property	rule-inset-end	1	1	1	0	
+property	rule-inset-junction	1	1	1	0	
+property	rule-inset-start	1	1	1	0	
+property	rule-overlap	1	1	1	1	
+property	rule-style	1	1	1	0	
+property	rule-visibility-items	1	1	1	0	
+property	rule-width	1	1	1	0	
+property	rx	1	1	1	0	
+property	ry	1	1	1	0	
+property	scale	1	1	1	1	
+property	scroll-axis-lock	1	1	1	1	
+property	scroll-behavior	1	1	1	1	
+property	scroll-initial-target	1	1	1	1	
+property	scroll-margin	1	1	1	1	
+property	scroll-margin-block	1	1	1	1	
+property	scroll-margin-block-end	1	1	1	1	
+property	scroll-margin-block-start	1	1	1	1	
+property	scroll-margin-bottom	1	1	1	1	
+property	scroll-margin-inline	1	1	1	1	
+property	scroll-margin-inline-end	1	1	1	1	
+property	scroll-margin-inline-start	1	1	1	1	
+property	scroll-margin-left	1	1	1	1	
+property	scroll-margin-right	1	1	1	1	
+property	scroll-margin-top	1	1	1	1	
+property	scroll-marker-group	1	1	1	0	
+property	scroll-padding	1	1	1	1	
+property	scroll-padding-block	1	1	1	1	
+property	scroll-padding-block-end	1	1	1	1	
+property	scroll-padding-block-start	1	1	1	1	
+property	scroll-padding-bottom	1	1	1	1	
+property	scroll-padding-inline	1	1	1	1	
+property	scroll-padding-inline-end	1	1	1	1	
+property	scroll-padding-inline-start	1	1	1	1	
+property	scroll-padding-left	1	1	1	1	
+property	scroll-padding-right	1	1	1	1	
+property	scroll-padding-top	1	1	1	1	
+property	scroll-snap-align	1	1	1	1	
+property	scroll-snap-stop	1	1	1	0	
+property	scroll-snap-type	1	1	1	1	
+property	scroll-target-group	1	1	1	1	
+property	scroll-timeline	1	1	1	0	
+property	scroll-timeline-axis	1	1	1	0	
+property	scroll-timeline-name	1	1	1	0	
+property	scrollbar-color	1	1	1	1	
+property	scrollbar-gutter	1	1	1	1	
+property	scrollbar-width	1	1	1	1	
+property	shape-image-threshold	1	1	1	1	
+property	shape-inside	1	1	1	0	
+property	shape-margin	1	1	1	1	
+property	shape-outside	1	1	1	0	
+property	shape-padding	1	1	1	0	
+property	shape-rendering	1	1	1	0	
+property	size	1	1	1	1	
+property	slider-orientation	1	1	1	0	
+property	spatial-navigation-action	1	1	1	0	
+property	spatial-navigation-contain	1	1	1	0	
+property	spatial-navigation-function	1	1	1	0	
+property	speak	1	1	1	0	
+property	speak-as	1	1	1	0	
+property	stop-color	1	1	1	0	
+property	stop-opacity	1	1	1	0	
+property	string-set	1	1	1	0	
+property	stroke	1	1	1	0	
+property	stroke-align	1	1	1	0	
+property	stroke-alignment	1	1	1	0	
+property	stroke-break	1	1	1	0	
+property	stroke-color	1	1	1	0	
+property	stroke-dash-corner	1	1	1	0	
+property	stroke-dash-justify	1	1	1	0	
+property	stroke-dashadjust	1	1	1	0	
+property	stroke-dasharray	1	1	1	0	
+property	stroke-dashcorner	1	1	1	0	
+property	stroke-dashoffset	1	1	1	0	
+property	stroke-image	1	1	1	0	
+property	stroke-linecap	1	1	1	0	
+property	stroke-linejoin	1	1	1	0	
+property	stroke-miterlimit	1	1	1	0	
+property	stroke-opacity	1	1	1	0	
+property	stroke-origin	1	1	1	0	
+property	stroke-position	1	1	1	0	
+property	stroke-repeat	1	1	1	0	
+property	stroke-size	1	1	1	0	
+property	stroke-width	1	1	1	0	
+property	tab-size	1	1	1	1	
+property	table-layout	1	1	1	1	
+property	text-align	1	1	1	1	
+property	text-align-all	1	1	1	1	
+property	text-align-last	1	1	1	1	
+property	text-anchor	1	1	1	0	
+property	text-autospace	1	1	1	1	
+property	text-box	1	1	1	0	
+property	text-box-edge	1	1	1	1	
+property	text-box-trim	1	1	1	1	
+property	text-combine-upright	1	1	1	1	
+property	text-decoration	1	1	1	1	
+property	text-decoration-color	1	1	1	1	
+property	text-decoration-inset	1	1	1	0	
+property	text-decoration-line	1	1	1	1	
+property	text-decoration-skip	1	1	1	0	
+property	text-decoration-skip-box	1	1	1	0	
+property	text-decoration-skip-ink	1	1	1	1	
+property	text-decoration-skip-self	1	1	1	0	
+property	text-decoration-skip-spaces	1	1	1	1	
+property	text-decoration-style	1	1	1	1	
+property	text-decoration-thickness	1	1	1	1	
+property	text-emphasis	1	1	1	0	
+property	text-emphasis-color	1	1	1	0	
+property	text-emphasis-position	1	1	1	0	
+property	text-emphasis-skip	1	1	1	0	
+property	text-emphasis-style	1	1	1	0	
+property	text-fit	1	1	1	1	
+property	text-group-align	1	1	1	1	
+property	text-indent	1	1	1	1	
+property	text-justify	1	1	1	1	
+property	text-orientation	1	1	1	1	
+property	text-overflow	1	1	1	1	
+property	text-rendering	1	1	1	0	
+property	text-shadow	1	1	1	0	
+property	text-size-adjust	1	1	1	1	
+property	text-spacing	1	1	1	0	
+property	text-spacing-trim	1	1	1	1	
+property	text-transform	1	1	1	1	
+property	text-underline-offset	1	1	1	1	
+property	text-underline-position	1	1	1	1	
+property	text-wrap	1	1	1	1	
+property	text-wrap-mode	1	1	1	1	
+property	text-wrap-style	1	1	1	1	
+property	timeline-scope	1	1	1	0	
+property	timeline-trigger	1	1	1	0	
+property	timeline-trigger-activation-range	1	1	1	0	
+property	timeline-trigger-activation-range-end	1	1	1	0	
+property	timeline-trigger-activation-range-start	1	1	1	0	
+property	timeline-trigger-active-range	1	1	1	0	
+property	timeline-trigger-active-range-end	1	1	1	0	
+property	timeline-trigger-active-range-start	1	1	1	0	
+property	timeline-trigger-name	1	1	1	0	
+property	timeline-trigger-range	1	1	1	0	
+property	timeline-trigger-source	1	1	1	0	
+property	top	1	1	1	0	
+property	touch-action	1	1	1	0	
+property	transform	1	1	1	0	
+property	transform-box	1	1	1	1	
+property	transform-origin	1	1	1	1	
+property	transform-style	1	1	1	0	
+property	transition	1	1	1	0	
+property	transition-behavior	1	1	1	1	
+property	transition-delay	1	1	1	0	
+property	transition-duration	1	1	1	1	
+property	transition-property	1	1	1	0	
+property	transition-timing-function	1	1	1	0	
+property	translate	1	1	1	1	
+property	trigger-scope	1	1	1	0	
+property	unicode-bidi	1	1	1	1	
+property	user-select	1	1	1	1	
+property	vector-effect	1	1	1	0	
+property	vertical-align	1	1	1	1	
+property	view-timeline	1	1	1	0	
+property	view-timeline-axis	1	1	1	0	
+property	view-timeline-inset	1	1	1	0	
+property	view-timeline-name	1	1	1	0	
+property	view-transition-class	1	1	1	0	
+property	view-transition-group	1	1	1	1	
+property	view-transition-name	1	1	1	1	
+property	view-transition-scope	1	1	1	0	
+property	visibility	1	1	1	1	
+property	voice-balance	1	1	1	0	
+property	voice-duration	1	1	1	0	
+property	voice-family	0	0	1	0	unresolved <voice-family-name>
+property	voice-pitch	0	0	1	0	unresolved <semitones>
+property	voice-range	0	0	1	0	unresolved <semitones>
+property	voice-rate	1	1	1	0	
+property	voice-stress	1	1	1	0	
+property	voice-volume	0	0	1	0	unresolved <decibel>
+property	white-space	1	1	1	1	
+property	white-space-collapse	1	1	1	1	
+property	white-space-trim	1	1	1	0	
+property	widows	1	1	1	1	
+property	width	1	1	1	0	
+property	will-change	1	1	1	0	
+property	window-drag	1	1	1	0	
+property	word-break	1	1	1	1	
+property	word-space-transform	1	1	1	0	
+property	word-spacing	1	1	1	1	
+property	word-wrap	1	1	1	1	alias of overflow-wrap
+property	wrap-after	1	1	1	0	
+property	wrap-before	1	1	1	0	
+property	wrap-flow	1	1	1	0	
+property	wrap-inside	1	1	1	0	
+property	wrap-through	1	1	1	0	
+property	writing-mode	1	1	1	1	
+property	x	1	1	1	0	
+property	y	1	1	1	0	
+property	z-index	1	1	1	1	
+property	zoom	1	1	1	0	

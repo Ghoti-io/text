@@ -2380,7 +2380,7 @@ static bool andor_path(builder * B, uint32_t node, uint32_t pos, uint32_t end, u
         /* insert sorted (descending member, since the chain runs backwards, then reverse by position) */
         size_t at = 0;
         const size_t n_so_far = (size_t)(*count);
-        while (at < n_so_far && out[3 * at] < b.n[i].j) {
+        while (!(g->flags & GNF_SOURCE_ORDER) && at < n_so_far && out[3 * at] < b.n[i].j) {
           at++;
         }
         memmove(&out[3 * (at + 1)], &out[3 * at], (n_so_far - at) * 3 * sizeof *out);
@@ -2695,14 +2695,7 @@ static void match_result(GTEXT_CSS_Match_Result * result, const M * m, GTEXT_CSS
 }
 
 static GTEXT_CSS_Value_Set * new_set(const GTEXT_Allocator * alloc) {
-  GTEXT_CSS_Value_Set * set = gtext_allocator_malloc(alloc, sizeof *set);
-  if (!set) {
-    return NULL;
-  }
-  memset(set, 0, sizeof *set);
-  set->alloc = *alloc;
-  css_arena_init(&set->arena, &set->alloc);
-  return set;
+  return css_vset_new(alloc);
 }
 
 /// The value of a pending-substitution match.
