@@ -1,0 +1,14 @@
+# tools/css/gen-css-tables.py: value types the pinned data names and does not define, with the definition the served draft gives. Columns, tab
+# separated: scope (the property the pin nests the type in, or empty for a global type), name (without the angle brackets), grammar, source (the draft, and the sentence that gives the definition, quoted). A line for a
+# name whose pin entry has a grammar fails generation (the supplement is stale then, and the pin wins). The sentences are from the Editor's
+# Drafts as served on 2026-10-26 (drafts.csswg.org); the pin is the data of tools/css/WEBREF_COMMIT.
+	timeline-range-name	cover | contain | entry | exit | entry-crossing | exit-crossing	Scroll-driven Animations 1, 3.3, view progress timeline ranges: "cover", "contain", "entry", "exit", "entry-crossing" and "exit-crossing" are the named ranges ("Represents the range during which the principal box crosses the end border edge" is entry-crossing); and 3.2: "Named timeline ranges are represented by the <timeline-range-name> value type, which indicates a CSS identifier representing one of the predefined named timeline ranges"
+cursor	url-set	image-set( [ [ <url> | <string> ] [ <resolution> || type( <string> ) ]? ]# )	UI 4, 5.1.1: "<url-set> is a limited version of image-set(), where the <image> sub-production is restricted to <url> only"; Images 4, image-set(): "image-set() = image-set( <image-set-option># )" and "<image-set-option> = [ <image> | <string> ] [ <resolution> || type(<string>) ]?"
+clip	top	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+	top	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+clip	right	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+	right	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+clip	bottom	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+	bottom	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+clip	left	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+	left	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."

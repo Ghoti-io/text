@@ -9,7 +9,7 @@ static void registry_quick_start(void) {
 
   const char * declarations[][2] = {
       {"margin-top", "10px"}, {"margin", "1px 2px"}, {"WIDTH", "revert-layer"}, {"margin", "var(--m)"},
-      {"width", "-1px"}, {"-moz-nosuch", "1"}, {"-webkit-transform", "rotate(3deg)"}, {"clip", "auto"},
+      {"width", "-1px"}, {"-moz-nosuch", "1"}, {"-webkit-transform", "rotate(3deg)"}, {"nav-up", "auto"},
   };
   for (size_t i = 0; i < sizeof declarations / sizeof declarations[0]; i++) {
     const char * name = declarations[i][0];

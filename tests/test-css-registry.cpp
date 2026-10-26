@@ -1419,10 +1419,12 @@ TEST(CssRegistryGrammars, AGrammarIsCompiledWhenAskedForAndItsStateIsReported) {
   GTEXT_CSS_Grammar_Result gr;
   ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "margin"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
-  // the pin's `clip` names <top> and nothing defines it
-  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "clip"), &s, &gr), GTEXT_CSS_OK);
+  // the pin's `nav-up` names <id> and nothing defines it (`clip`'s <top> is supplied: tools/css/supplement-types.tsv)
+  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "nav-up"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_UNRESOLVED);
-  EXPECT_EQ(std::string(gr.name), "<top>");
+  EXPECT_EQ(std::string(gr.name), "<id>");
+  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "clip"), &s, &gr), GTEXT_CSS_OK);
+  EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
   // a property the pin names and gives no grammar
   ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "-webkit-box-align"), &s, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_NONE);
@@ -1437,9 +1439,9 @@ TEST(CssRegistryGrammars, AGrammarIsCompiledWhenAskedForAndItsStateIsReported) {
   EXPECT_EQ(gtext_css_registry_property_state(r, 1u << 20, &s, nullptr), GTEXT_CSS_E_INVALID);
   EXPECT_EQ(gtext_css_registry_property_state(nullptr, 1, &s, nullptr), GTEXT_CSS_E_INVALID);
   // the answer is the same the second time
-  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "clip"), &s, &gr), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "nav-up"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_UNRESOLVED);
-  EXPECT_EQ(std::string(gr.name), "<top>");
+  EXPECT_EQ(std::string(gr.name), "<id>");
   gtext_css_registry_free(r);
 }
 

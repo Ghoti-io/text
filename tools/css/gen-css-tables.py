@@ -110,7 +110,7 @@ def read_normalize():
 
 def read_consolidate():
     path = os.path.join(HERE, "consolidate.tsv")
-    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}}
+    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}}
     if not os.path.exists(path):
         return rules
     with open(path, encoding="utf-8") as handle:
@@ -121,7 +121,16 @@ def read_consolidate():
             cols = line.split("\t")
             if cols[0] not in rules or len(cols) < 4:
                 die("consolidate.tsv:%d: expected directive, scope, name, reason" % n)
-            rules[cols[0]][(cols[1], cols[2])] = cols[3]
+            if cols[0] == "append-grammar":
+                if len(cols) != 5:
+                    die("consolidate.tsv:%d: append-grammar wants directive, scope, name, reason, text" % n)
+                rules[cols[0]][(cols[1], cols[2])] = (cols[3], cols[4])
+            elif cols[0] == "replace-grammar":
+                if len(cols) != 6:
+                    die("consolidate.tsv:%d: replace-grammar wants directive, scope, name, reason, old text, new text" % n)
+                rules[cols[0]][(cols[1], cols[2])] = (cols[3], cols[4], cols[5])
+            else:
+                rules[cols[0]][(cols[1], cols[2])] = cols[3]
     return rules
 
 
@@ -138,6 +147,25 @@ def read_supplement():
             cols = line.split("\t")
             if len(cols) != 10:
                 die("supplement.tsv:%d: expected 10 columns" % n)
+            rows.append(cols)
+    return rows
+
+
+def read_supplement_types():
+    """tools/css/supplement-types.tsv: scope (a property the pin nests the type in, or empty), name, grammar, source (the draft and the
+    sentence that gives the definition)."""
+    rows = []
+    path = os.path.join(HERE, "supplement-types.tsv")
+    if not os.path.exists(path):
+        return rows
+    with open(path, encoding="utf-8") as handle:
+        for n, line in enumerate(handle, 1):
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split("\t")
+            if len(cols) != 4 or '"' not in cols[3]:
+                die("supplement-types.tsv:%d: expected scope, name, grammar and a source that quotes the draft" % n)
             rows.append(cols)
     return rows
 
@@ -431,6 +459,18 @@ def build(model):
                 die("consolidate.tsv: %s %s lists no keyword values" % (scope, key))
             grammar = " | ".join(words)
             consolidate["enum-from-values"][(scope, key)] = ("used", "")
+        if (scope, key) in consolidate["replace-grammar"]:
+            reason, was, now = consolidate["replace-grammar"][(scope, key)]
+            if grammar is None or re.sub(r"\s+", " ", grammar).strip() != re.sub(r"\s+", " ", was).strip():
+                die("consolidate.tsv: replace-grammar %s %s: the pin's grammar is %r, not the one the line replaces (stale)" % (scope, key, grammar))
+            grammar = now
+            consolidate["replace-grammar"][(scope, key)] = ("used", reason, was, now)
+        if (scope, key) in consolidate["append-grammar"]:
+            reason, extra = consolidate["append-grammar"][(scope, key)]
+            if grammar is None or extra in grammar:
+                die("consolidate.tsv: append-grammar %s %s: the pin has no grammar to append to, or already has the text (stale)" % (scope, key))
+            grammar = grammar + " | " + extra
+            consolidate["append-grammar"][(scope, key)] = ("used", reason, extra)
         flags = TYPE_FUNCTION if key.endswith(")") else 0
         if scope:
             flags |= TYPE_SCOPED
@@ -440,7 +480,27 @@ def build(model):
             flags |= TYPE_NO_GRAMMAR
         src = (base or sorted(entries, key=wm.Entry.key)[-1]).stem
         types.append({"name": key, "scope": index[scope] if scope else 0, "grammar": grammar, "source": src, "flags": flags})
-    for rule in ("ignore-grammar", "enum-from-values"):
+    # the definitions the pin lacks: a type the pin names without a grammar, or does not have, is given the draft's (supplement-types.tsv)
+    held = {(t["name"], t["scope"]): t for t in types}
+    for scope, name, grammar, source in read_supplement_types():
+        if scope and scope not in props:
+            die("supplement-types.tsv: %s is scoped to %s, which the pin does not define" % (name, scope))
+        where = index[scope] if scope else 0
+        t = held.get((name, where))
+        if t is not None and t["grammar"] is not None:
+            die("supplement-types.tsv: %s%s has a grammar in the pin; the supplement is stale and the pin wins" % (scope + " " if scope else "", name))
+        flags = (TYPE_FUNCTION if name.endswith(")") else 0) | (TYPE_SCOPED if scope else 0)
+        if t is None:
+            t = {"name": name, "scope": where, "grammar": grammar, "source": "(supplement)", "flags": flags}
+            types.append(t)
+            held[(name, where)] = t
+        else:
+            if t["flags"] & TYPE_NATIVE:
+                die("supplement-types.tsv: %s is implemented in code; there is nothing to supplement" % name)
+            t["grammar"] = grammar
+            t["source"] = "(supplement)"
+            t["flags"] = flags
+    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar"):
         for k, v in consolidate[rule].items():
             if not (isinstance(v, tuple) and v[0] == "used"):
                 die("consolidate.tsv: %s %s %s names no type (stale)" % ((rule,) + k))

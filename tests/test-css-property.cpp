@@ -258,16 +258,16 @@ TEST(CssProperty, APropertyWithNoUsableGrammarIsNotGuessedAt) {
   // no grammar in the pin
   EXPECT_EQ(parse(r, "-webkit-box-align", "center"), "not supported");
   // a grammar that names a type nothing defines
-  EXPECT_EQ(parse(r, "clip", "rect(1px, 2px, 3px, 4px)"), "not supported");
+  EXPECT_EQ(parse(r, "nav-up", "auto"), "not supported") << "<id> is prose in the pin and nothing supplies it";
   // a text that is not a definition
   EXPECT_EQ(parse(r, "glyph-orientation-vertical", "90deg"), "not supported");
   GTEXT_CSS_Property_Value pv;
-  EXPECT_EQ(gtext_css_parse_property_text(r, "clip", 4, "auto", 4, nullptr, &pv), GTEXT_CSS_E_UNSUPPORTED);
-  EXPECT_EQ(pv.property, find(r, "clip")) << "the property is named, so the consumer can say which";
+  EXPECT_EQ(gtext_css_parse_property_text(r, "nav-up", 6, "auto", 4, nullptr, &pv), GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(pv.property, find(r, "nav-up")) << "the property is named, so the consumer can say which";
   EXPECT_EQ(pv.set, nullptr);
   // the CSS-wide keywords and substitutions are still valid for them
-  EXPECT_EQ(parse(r, "clip", "inherit"), "wide:inherit");
-  EXPECT_EQ(parse(r, "clip", "var(--c)"), "pending:var(--c)");
+  EXPECT_EQ(parse(r, "nav-up", "inherit"), "wide:inherit");
+  EXPECT_EQ(parse(r, "nav-up", "var(--c)"), "pending:var(--c)");
 }
 
 // ---- quirks -----------------------------------------------------------------------------------------------
@@ -493,8 +493,8 @@ TEST(CssPropertyValidity, WideKeywordsPendingValuesAndCustomPropertiesAreValid) 
 
 TEST(CssPropertyValidity, AnUndecidablePropertyIsAcceptedAndCounted) {
   GTEXT_CSS_Property_Validity v;
-  const std::string kept = declarations_kept(R(), "-webkit-box-align: center; clip: rect(1px, 2px, 3px, 4px); color: nope", &v);
-  EXPECT_EQ(kept, "-webkit-box-align:center;clip:rect(1px, 2px, 3px, 4px);");
+  const std::string kept = declarations_kept(R(), "-webkit-box-align: center; nav-up: auto; color: nope", &v);
+  EXPECT_EQ(kept, "-webkit-box-align:center;nav-up:auto;");
   EXPECT_EQ(v.undecided, 2u);
   EXPECT_EQ(v.rejected, 1u);
   EXPECT_EQ(v.status, GTEXT_CSS_OK);
@@ -666,7 +666,57 @@ TEST(CssProperty, AUnitlessNumberIsALengthOnlyWhereTheQuirkAppliesAndNotInsideAn
   EXPECT_EQ(parse(r, "width", "calc(10)", &q), "invalid");
   EXPECT_EQ(parse(r, "width", "10", &q), "valid:10px");
   EXPECT_EQ(parse(r, "margin", "10 fit-content(5)", &q), "invalid");
-  EXPECT_EQ(parse(r, "clip", "rect(1px, 2px, 3px, 4px)", &q).substr(0, 5), "not s") << "clip is undecidable here, as it is without the quirk";
+  EXPECT_EQ(parse(r, "clip", "rect(1px, 2px, 3px, 4px)", &q).substr(0, 6), "valid:") << "clip is decided, and its lengths carry units";
+}
+
+// ---- the definitions the pin lacks (tools/css/supplement-types.tsv, consolidate.tsv) -------------------------------------
+
+TEST(CssPropertySupplements, TheNamedTimelineRangesOfScrollDrivenAnimationsAreDecided) {
+  const GTEXT_CSS_Registry * r = R();
+  // <timeline-range-name> is prose in the pin; the draft lists the six names. Fourteen properties name it.
+  EXPECT_EQ(parse(r, "animation-range-start", "entry 42%"), "valid:entry 42%");
+  EXPECT_EQ(parse(r, "animation-range-start", "exit-crossing"), "valid:exit-crossing");
+  EXPECT_EQ(parse(r, "animation-range-start", "normal"), "valid:normal");
+  EXPECT_EQ(parse(r, "animation-range-start", "peek 50%"), "invalid") << "not a named range";
+  EXPECT_EQ(parse(r, "animation-range-start", "50% cover"), "invalid") << "the name comes first";
+  EXPECT_EQ(parse(r, "animation-range-start", "cover contain"), "invalid");
+  EXPECT_EQ(parse(r, "timeline-trigger-range", "entry 10%").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "animation-range", "entry 0% exit 100%").substr(0, 6), "valid:");
+}
+
+TEST(CssPropertySupplements, ACursorIsAnImageSetOfUrlsWithAHotspotAndAKeyword) {
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "cursor", "pointer"), "valid:pointer");
+  EXPECT_EQ(parse(r, "cursor", "url(a.png) 1 2, pointer").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "cursor", "image-set(\"a.png\" 1x, \"b.png\" 2x) 5 6, grab").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "cursor", "url(a.png)"), "invalid") << "the list ends in a keyword";
+  EXPECT_EQ(parse(r, "cursor", "linear-gradient(red), pointer"), "invalid") << "<url-set> is image-set() restricted to <url>, not <image>";
+  EXPECT_EQ(parse(r, "cursor", "en-resize"), "invalid");
+}
+
+TEST(CssPropertySupplements, TheCssTwoClipRectangleTakesLengthsAndAuto) {
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "clip", "auto"), "valid:auto");
+  EXPECT_EQ(parse(r, "clip", "rect(10px, 20px, -30px, 40px)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "clip", "rect(10px, -20px, auto, auto)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "clip", "rect(10px, 20px, 30px)"), "invalid");
+  EXPECT_EQ(parse(r, "clip", "rect(10px 20px, 30px 40px)"), "invalid") << "commas or spaces, not a mixture";
+}
+
+TEST(CssPropertySupplements, ContentTakesTheSymbolicGlyphsOfTheDraft) {
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "content", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "content", "disclosure-open"), "valid:disclosure-open");
+  EXPECT_EQ(parse(r, "content", "\"a\" counter(c)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "content", "decimal"), "invalid") << "only the predefined symbolic styles are glyphs";
+}
+
+TEST(CssPropertySupplements, LightDarkOfTwoImagesIsAnImage) {
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "background-image", "light-dark(url(a.png), none)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "list-style-image", "light-dark(linear-gradient(red), url(b.png))").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "background-image", "light-dark(url(a.png), red)"), "invalid") << "one image and one color";
+  EXPECT_EQ(parse(r, "color", "light-dark(red, blue)").substr(0, 6), "valid:") << "the color form is as it was";
 }
 
 }  // namespace

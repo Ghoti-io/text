@@ -61,7 +61,7 @@ struct Snippet {
 
 const Snippet kSnippets[] = {
     {"registry-quick-start.c", snippets::registry_quick_start,
-        "margin-top: 10px -> valid 10px\nmargin: 1px 2px -> valid 1px 2px\nWIDTH: revert-layer -> wide keyword revert-layer\nmargin: var(--m) -> pending var(--m)\nwidth: -1px -> invalid\n-moz-nosuch: 1 -> unknown property\n-webkit-transform: rotate(3deg) -> valid rotate(3deg)\nclip: auto -> not supported\n"},
+        "margin-top: 10px -> valid 10px\nmargin: 1px 2px -> valid 1px 2px\nWIDTH: revert-layer -> wide keyword revert-layer\nmargin: var(--m) -> pending var(--m)\nwidth: -1px -> invalid\n-moz-nosuch: 1 -> unknown property\n-webkit-transform: rotate(3deg) -> valid rotate(3deg)\nnav-up: auto -> not supported\n"},
     {"registry-caller.c", snippets::registry_caller,
         "vector-weight: success\nfill-rule: a property of that name is already registered and the registration does not override it\nfill-rule, overriding: success\na bad initial value: invalid argument\nvector-weight: 2.5 -> valid\nvector-weight: -1 -> invalid\nfill-rule: auto -> valid\noverride of fill-rule\n"},
     {"registry-validity.c", snippets::registry_validity, "@font-face {font-display:swap;}a {color:red;}\njudged 6, dropped 4\n"},

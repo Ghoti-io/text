@@ -12,7 +12,6 @@
 #
 # A shorthand whose initial value is "see individual properties" is not listed: its initial value is its longhands'. A type the
 # pin names and nothing refers to is not listed either; the references are what the gate follows.
-reference	<timeline-range-name>	property animation-range-end	[ normal | <length-percentage> | <timeline-range-name> <length-percentage>? ]#	the pin's entry (scroll-animations) describes the type in prose and gives no grammar
 reference	<decibel>	property cue-after	<url> <decibel>? | none	the pin's entry for it nested in voice-volume (css-speech) describes the type in prose and gives no grammar
 reference	<id>	property nav-down	auto | <id> [ current | root | <target-name> ]?	the pin's entry (css-ui) describes the type in prose and gives no grammar
 reference	<target-name>	property nav-down	auto | <id> [ current | root | <target-name> ]?	the pin's entry (css-ui) describes the type in prose and gives no grammar
@@ -22,8 +21,6 @@ reference	<font-src-list>	descriptor @font-face src	<font-src-list>	the pin's en
 reference	<anchored-feature>	type anchored-in-parens	( <anchored-query> ) | ( <anchored-feature> ) | <general-enclosed>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type anchored-in-parens)
 reference	<boolean-expr-group>	type boolean-expr	not <boolean-expr-group> | <boolean-expr-group> [ [ and <boolean-expr-group> ]* | [ or <boolean-expr-group> ]* ]	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type boolean-expr)
 reference	<hex-color>	type color-base	<hex-color> | <color-function> | <named-color> | <color-mix()> | transparent	the pin's entry (css-color) describes the type in prose and gives no grammar
-reference	<symbolic-counter-style>	type content-list	[ <string> | <image> | <attr()> | contents | <quote> | <leader()> | <target> | <string()> | <content()> | <counter> | <symbolic-counter-style> ]+	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type content-list)
-reference	<url-set>	type cursor-image	[ <url> | <url-set> ] <number>{2}?	the pin's entry for it nested in cursor (css-ui) describes the type in prose and gives no grammar
 reference	<extension-name>	type custom-selector	<custom-arg>? : <extension-name> [ ( <custom-arg>+#? ) ]?	the pin's entry (css-extensions) describes the type in prose and gives no grammar
 reference	<whole-value>	type cycle()	cycle( <whole-value># )	the pin's entry (css-values-5) describes the type in prose and gives no grammar
 reference	<click()>	type event-function	<click()> | <dblclick()> | <pointerenter()> | <pointerleave()> | <pointerup()> | <pointerdown()> | <keypress()> | <focusin()> | <focusout()> | <input()> | <change()>	the pin's entry (animation-triggers) has the value 'click()', which is the function's own name: its arguments are described in prose and there is no grammar
@@ -41,10 +38,6 @@ reference	<gender>	type generic-voice	<age>? <gender> <integer [1,∞]>?	the pin
 reference	<declaration>	type import-conditions	[ supports( [ <supports-condition> | <declaration> ] ) ]? <media-query-list>?	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
 reference	<media-query-list>	type import-conditions	[ supports( [ <supports-condition> | <declaration> ] ) ]? <media-query-list>?	the pin's entry (mediaqueries) describes the type in prose and gives no grammar
 reference	<size-feature>	type query-in-parens	( <container-query> ) | ( <size-feature> ) | style( <style-query> ) | scroll-state( <scroll-state-query> ) | <general-enclosed>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
-reference	<top>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
-reference	<right>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
-reference	<bottom>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
-reference	<left>	type rect()	rect( <top>, <right>, <bottom>, <left> )	the pin's entry (CSS) describes the type in prose and gives no grammar
 reference	<scroll-state-feature>	type scroll-state-in-parens	( <scroll-state-query> ) | ( <scroll-state-feature> ) | <general-enclosed>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar
 reference	<url-modifier>	type src()	src( <string> <url-modifier>* )	the pin's entry (css-values) describes the type in prose and gives no grammar
 reference	<style-feature-name>	type style-feature-boolean	<style-feature-name>	the pin's entry (css-conditional-5) describes the type in prose and gives no grammar

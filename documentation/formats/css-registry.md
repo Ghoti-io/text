@@ -29,7 +29,7 @@ static void registry_quick_start(void) {
 
   const char * declarations[][2] = {
       {"margin-top", "10px"}, {"margin", "1px 2px"}, {"WIDTH", "revert-layer"}, {"margin", "var(--m)"},
-      {"width", "-1px"}, {"-moz-nosuch", "1"}, {"-webkit-transform", "rotate(3deg)"}, {"clip", "auto"},
+      {"width", "-1px"}, {"-moz-nosuch", "1"}, {"-webkit-transform", "rotate(3deg)"}, {"nav-up", "auto"},
   };
   for (size_t i = 0; i < sizeof declarations / sizeof declarations[0]; i++) {
     const char * name = declarations[i][0];
@@ -71,11 +71,11 @@ margin: var(--m) -> pending var(--m)
 width: -1px -> invalid
 -moz-nosuch: 1 -> unknown property
 -webkit-transform: rotate(3deg) -> valid rotate(3deg)
-clip: auto -> not supported
+nav-up: auto -> not supported
 ```
 
-`clip` is the last line because the pin gives its grammar in terms of a type the pin does
-not define (`<top>`); the library says so and never guesses (see "What the pin does not
+`nav-up` is the last line because the pin gives its grammar in terms of a type the pin does
+not define (`<id>`); the library says so and never guesses (see "What the pin does not
 say"). A registry is made once and shared; it is immutable and any number of threads may
 read it.
 
@@ -305,7 +305,7 @@ limit reached is never an answer.
 Values 4, Appendix C (`GTEXT_CSS_PROP_QUIRK_UNITLESS`, listed with the sentence in
 `tools/css/QUIRKS_UNITLESS.txt`), and not in the properties that include or reference them (the
 `background` shorthand) nor inside `calc()` or any other function (`fit-content(10)` is not a length;
-`clip: rect(...)`, which the engine cannot decide, is the one function that Appendix C names).
+`clip: rect(...)` is the one function that Appendix C names).
 
 **Descriptors.** With `GTEXT_CSS_Property_Options::at_rule` (`@font-face`) the name is a
 descriptor of that at-rule. A descriptor takes no CSS-wide keyword and no substitution (it is not
@@ -387,7 +387,7 @@ compiled grammar, and the initial value, is accepted), **serializes** (it writes
 writes the same again), **computes** (filled by the computed-value layer) and **wpt** (filled by the value
 vector scoring); `make check-css-depth` refuses a column that went from 1 to 0 against the measurement,
 against the commit before it (or `CSS_DEPTH_BASE`, a git ref) and a tracked floor (`tools/css/DEPTH_FLOOR`,
-which only goes up), and a property missing from the ledger. At this commit 891 of the 933 rows parse
+which only goes up), and a property missing from the ledger. At this commit 906 of the 933 rows parse
 and serialize; the rest are the gaps below. `parses` means some witness matched; the gate also reports how
 many did and checks that each reads back as the same typed values, not only the same text: 3,745 of 3,756
 witnesses parse and all 3,745 do. The 11 that do not (in `background`, `font-palette`, `initial-letter-align`,
@@ -408,12 +408,23 @@ check-css-grammar-plants` plants a defect in the library for each requirement.
 ## What the pin does not say
 
 The pin's own gaps are listed in `tools/css/UNRESOLVED_REFERENCES`, one line each with the grammar that
-names it and a reason: 38 types the pin names and does not define (prose only, or no entry:
-`<symbolic-counter-style>` of `content`, `<url-set>` of `cursor`, `<top>` of `clip`, `<font-src-list>` of
-`@font-face src`), the grammars whose text is not a Value Definition Syntax definition, the
-initial values that are prose. 28 properties cannot be decided because of them. Supplying a missing
-definition is a line in `tools/css/supplement.tsv` with the specification sentence it quotes; none is
-supplied but the custom property pattern.
+names it and a reason: types the pin names and does not define (prose only, or no entry: `<decibel>` and
+`<semitones>` of Speech, `<id>` of `nav-up`, `<click()>` of `event-trigger`, `<font-src-list>` of
+`@font-face src`), the grammars whose text is not a Value Definition Syntax definition, the initial values that
+are prose. Nineteen properties cannot be decided because of them (the five legacy `-webkit-box-*` ones, which have
+no grammar; `glyph-orientation-vertical`, whose text is not a definition; and thirteen of Speech, Spatial
+Navigation and Animation Triggers).
+
+**What the pin lacks and the served drafts give is supplied, one line and one sentence at a time.**
+`tools/css/supplement-types.tsv` gives a type the pin names without a grammar the definition the draft writes
+(`<timeline-range-name>` of Scroll-driven Animations, `<url-set>` of `cursor`, the `<top>`, `<right>`, `<bottom>` and
+`<left>` of `clip`'s `rect()`), each with the sentence it rests on, and fails generation when the pin has a grammar
+for the name by then. `tools/css/consolidate.tsv` appends `<light-dark-image>` to `<image>` (Color 5 gives the
+function an image form that the pin's `<image>` does not list) and replaces the `<symbolic-counter-style>` of
+`<content-list>` by the `<symbolic-glyph>` Content 3 writes; both fail when the pin's text is not the one the
+line expects. `tools/css/supplement.tsv` is still only the custom property pattern. These were found by scoring the
+property tests of web-platform-tests (`make conformance-css-property`): the properties they made decidable
+(`animation-range`, `cursor`, `clip`, `content` ...) were the largest block of its failures.
 
 Two things the pin gets different from the specifications in use are worth knowing. Fill and Stroke 3's
 `<paint>` has no `<color>` (`fill: red` is invalid by the pin; its own initial value `black` does not parse,

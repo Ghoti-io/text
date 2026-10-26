@@ -96,6 +96,24 @@ tables_controls() {
 	# fetch.sh's verifier names the file too
 	printf ' ' >> "$scratch/data/ed/css/css-box.json"
 	expect verifier-names-file "css-box.json" tools/css/webref-verify.sh "$scratch/data" tools/css/WEBREF_SHA256 -
+	# the departures from the pin are checked for staleness: a supplement for a type the pin defines, a replacement whose old text is not the
+	# pin's, an append of text that is there already. A copy of tools/css with one line added, over the real source and data.
+	mkdir -p "$scratch/root/tools"
+	ln -s "$root/src" "$scratch/root/src"
+	ln -s "$root/include" "$scratch/root/include"
+	ln -s "$root/third_party" "$scratch/root/third_party"
+	cp -r tools/css "$scratch/root/tools/css"
+	printf '\tquote\topen-quote | close-quote\tplanted: the pin defines <quote> and has a grammar for it, so "this" supplement is stale\n' >> "$scratch/root/tools/css/supplement-types.tsv"
+	expect stale-supplement "supplement is stale" python3 "$scratch/root/tools/css/gen-css-tables.py" --out "$scratch/c"
+	cp tools/css/supplement-types.tsv "$scratch/root/tools/css/supplement-types.tsv"
+	printf 'replace-grammar\t\tquote\tplanted\tnot the pin text\tnew text\n' >> "$scratch/root/tools/css/consolidate.tsv"
+	expect stale-replacement "replace-grammar" python3 "$scratch/root/tools/css/gen-css-tables.py" --out "$scratch/c"
+	cp tools/css/consolidate.tsv "$scratch/root/tools/css/consolidate.tsv"
+	printf 'append-grammar\t\tquote\tplanted\topen-quote\n' >> "$scratch/root/tools/css/consolidate.tsv"
+	expect stale-append "append-grammar" python3 "$scratch/root/tools/css/gen-css-tables.py" --out "$scratch/c"
+	cp tools/css/consolidate.tsv "$scratch/root/tools/css/consolidate.tsv"
+	printf 'nested-ignore\tnothing()\ttype()\tplanted: names no nested type\n' >> "$scratch/root/tools/css/consolidate.tsv"
+	expect stale-nested-ignore "nested-ignore" python3 "$scratch/root/tools/css/gen-css-tables.py" --out "$scratch/c"
 	echo "control tables: done"
 }
 
@@ -124,7 +142,7 @@ report() {
 	rep=$scratch/report.tsv
 }
 
-FLOORS=${CSS_GRAMMAR_FLOORS:-720,102,500}
+FLOORS=${CSS_GRAMMAR_FLOORS:-735,102,515}
 
 grammars() {
 	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/check-grammars.py)" >&2; exit 1; }
