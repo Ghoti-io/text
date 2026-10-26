@@ -1,0 +1,10 @@
+{
+  "name": "ghoti-text-oracle-cssprop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pinned WebSocket client of the browser driver for the CSS property oracle; see Dockerfile.",
+  "dependencies": {
+    "ws": "8.22.0"
+  }
+}

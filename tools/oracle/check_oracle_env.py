@@ -23,6 +23,7 @@ Copyright 2026 by Corey Pennycuff
 """
 
 import os
+import re
 import sys
 import tempfile
 
@@ -368,6 +369,87 @@ def check_css_pin_fires():
         fail("control: a missing css pin was not caught")
 
 
+def dockerfile_args(path):
+    """The ARG NAME=value lines of a Dockerfile."""
+    out = {}
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("ARG ") and "=" in line:
+                name, value = line[4:].strip().split("=", 1)
+                out[name] = value
+    return out
+
+
+CONTAINERS = os.path.join(HERE, "containers")
+BROWSER_PARTS = ("chrome ", "chromedriver ", "firefox ", "geckodriver ", "ws ")
+
+
+def cssprop_pin_problems(table, chromium_args=None, cssprop_args=None):
+    """The CSS property pin must name the two browsers and their drivers, its tag must carry the two browser versions, the Dockerfile must
+    fetch exactly what the pin says, and the Chrome of the sanitizer image must be the same build (one reference of Blink, not two)."""
+    if "cssprop" not in table:
+        return ["cssprop: no pin at all, and the CSS property differential needs one"]
+    image, version, _ = table["cssprop"]
+    problems = []
+    for part in BROWSER_PARTS:
+        if part not in version:
+            problems.append("cssprop: the version field %r does not name %s" % (version, part.strip()))
+    if "@sha256:" not in image:
+        problems.append("cssprop: the image %r is not pinned by digest" % image)
+    tag = image.rsplit("@", 1)[0].rsplit(":", 1)[-1]
+    named = dict(w.split(" ", 1) for w in (p.strip() for p in version.split(",")) if " " in w)
+    if tag != "%s-%s" % (named.get("chrome", "?"), named.get("firefox", "?")):
+        problems.append("cssprop: the image tag %r is not <chrome version>-<firefox version> of %r" % (tag, version))
+    if cssprop_args is not None:
+        for arg, key in (("CHROME_VERSION", "chrome"), ("CHROME_VERSION", "chromedriver"), ("FIREFOX_VERSION", "firefox"),
+                         ("GECKODRIVER_VERSION", "geckodriver")):
+            if cssprop_args.get(arg) != named.get(key):
+                problems.append("cssprop: the Dockerfile fetches %s %s and the pin says %s" % (arg, cssprop_args.get(arg), named.get(key)))
+        for arg in ("CHROME_SHA256", "CHROMEDRIVER_SHA256", "FIREFOX_SHA256", "GECKODRIVER_SHA256"):
+            if not re.fullmatch(r"[0-9a-f]{64}", cssprop_args.get(arg, "")):
+                problems.append("cssprop: the Dockerfile has no SHA-256 for %s" % arg)
+    if chromium_args is not None and cssprop_args is not None:
+        for arg in ("CHROME_VERSION", "CHROME_SHA256"):
+            if chromium_args.get(arg) != cssprop_args.get(arg):
+                problems.append("chromium and cssprop fetch different builds of Chrome: %s %s against %s" % (arg, chromium_args.get(arg), cssprop_args.get(arg)))
+        if "chromium" in table and chromium_args.get("CHROME_VERSION", "?") not in table["chromium"][1]:
+            problems.append("chromium: the pin %r does not name the Dockerfile's Chrome %s" % (table["chromium"][1], chromium_args.get("CHROME_VERSION")))
+    return problems
+
+
+def check_cssprop_pin(table):
+    chromium = dockerfile_args(os.path.join(CONTAINERS, "chromium", "Dockerfile"))
+    cssprop = dockerfile_args(os.path.join(CONTAINERS, "cssprop", "Dockerfile"))
+    for problem in cssprop_pin_problems(table, chromium, cssprop):
+        fail(problem)
+
+
+def check_cssprop_pin_fires():
+    """The control: a good pin, a pin missing a driver, a stale tag, an undigested image, a Dockerfile of another version, two builds of Chrome."""
+    good_version = "chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0"
+    image = "localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:" + "0" * 64
+    args = {"CHROME_VERSION": "156.0.8078.47", "CHROME_SHA256": "1" * 64, "CHROMEDRIVER_SHA256": "2" * 64, "FIREFOX_VERSION": "158.0.1",
+            "FIREFOX_SHA256": "3" * 64, "GECKODRIVER_VERSION": "0.37.1", "GECKODRIVER_SHA256": "4" * 64}
+    chromium = {"CHROME_VERSION": "156.0.8078.47", "CHROME_SHA256": "1" * 64}
+    table = {"cssprop": (image, good_version, ""), "chromium": ("x", "Google Chrome for Testing 156.0.8078.47", "")}
+    if cssprop_pin_problems(table, chromium, args):
+        fail("control: a good cssprop pin was reported: %r" % cssprop_pin_problems(table, chromium, args))
+    cases = [
+        ("a pin without a driver", {"cssprop": (image, good_version.replace("geckodriver 0.37.1, ", ""), "")}, chromium, args, "geckodriver"),
+        ("a stale tag", {"cssprop": (image.replace("158.0.1", "158.0.0"), good_version, "")}, chromium, args, "tag"),
+        ("an image with no digest", {"cssprop": (image.split("@")[0], good_version, "")}, chromium, args, "digest"),
+        ("a Dockerfile of another Firefox", table, chromium, dict(args, FIREFOX_VERSION="157.0"), "FIREFOX_VERSION"),
+        ("a Dockerfile with no hash", table, chromium, dict(args, CHROMEDRIVER_SHA256="x"), "SHA-256"),
+        ("two builds of Chrome", table, dict(chromium, CHROME_SHA256="9" * 64), args, "different builds"),
+        ("a chromium pin that names another Chrome", dict(table, chromium=("x", "Google Chrome for Testing 155.0.8059.84", "")), chromium, args, "chromium: the pin"),
+    ]
+    for what, tbl, chr_args, css_args, expect in cases:
+        if not any(expect in p for p in cssprop_pin_problems(tbl, chr_args, css_args)):
+            fail("control: %s was not caught" % what)
+    if not cssprop_pin_problems({}):
+        fail("control: a missing cssprop pin was not caught")
+
+
 def check_html_pin(table):
     for problem in html_pin_problems(table):
         fail(problem)
@@ -448,6 +530,8 @@ def main():
     check_html_pin_fires()
     check_css_pin(table)
     check_css_pin_fires()
+    check_cssprop_pin(table)
+    check_cssprop_pin_fires()
     check_encoding_pin(table)
     check_encoding_pin_fires()
     if FAILURES:
@@ -458,7 +542,7 @@ def main():
         return 1
     print("oracle pins: %d references, all askable; IMAGES parses; the stderr "
           "filter fires both ways; idna and python-next name UCD %s; the xml pin names "
-          "libxml2 and expat; the html pin names html5lib and parse5; the css pin names tinycss2, cssparser and csstree; the encoding pin names node, icu and python, in the html image." % (len(table), pinned_ucd()))
+          "libxml2 and expat; the html pin names html5lib and parse5; the css pin names tinycss2, cssparser and csstree; the cssprop pin names Chrome, chromedriver, Firefox and geckodriver at the versions its Dockerfile fetches, and shares its Chrome with the chromium pin; the encoding pin names node, icu and python, in the html image." % (len(table), pinned_ucd()))
     return 0
 
 

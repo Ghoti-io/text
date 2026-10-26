@@ -161,6 +161,9 @@ PROBE = {
     # three, so there is one probe; the line names the three versions, the Debian interpreter packages and
     # the SHA-256 of the driver sources.
     "css": (["css-driver", "--version"], "tinycss2 ", None),
+    # The CSS property oracle: Chrome for Testing, Firefox and the two vendor drivers in one image, with one driver of ours. The line names the
+    # five versions (the pin) and the SHA-256 of the driver's files, which the gate compares with the repository's.
+    "cssprop": (["cssprop-driver", "--version"], "chrome ", None),
     # The current stable Chrome for Testing, pinned by browser version and
     # container digest in IMAGES.
     "chromium": (["/opt/chrome/chrome", "--version"], "Google Chrome", None),
@@ -256,9 +259,9 @@ def ensure(name):
         raise OracleUnavailable(
             "the html, encoding and css references have no host mode: they exist only in the pinned image "
             "(make oracle-images builds it)")
-    if MODE == "host" and name.split("-", 1)[0] == "chromium":
+    if MODE == "host" and name.split("-", 1)[0] in ("chromium", "cssprop"):
         raise OracleUnavailable(
-            "the Chromium sanitizer reference has no host mode: it exists only in its pinned image "
+            "the Chromium sanitizer and CSS property references have no host mode: they exist only in their pinned images "
             "(make oracle-images builds it)")
     if MODE == "inside":
         if name.split("-", 1)[0] == "chromium" and os.path.exists("/opt/chrome/chrome"):

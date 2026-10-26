@@ -346,7 +346,7 @@ xml	localhost/ghoti-text-oracle-xml:2.9.14-2.8.3	libxml2 2.9.14, expat 2.8.3	XML
 # containers/html/Dockerfile, tools/oracle/html_vectors.py and html_diff.py.
 
 html	localhost/ghoti-text-oracle-html:1.1-8.0.1	html5lib 1.1, parse5 8.0.1	HTML5 parsing: the tree a document or fragment becomes, from two parsers that share no code
-chromium	localhost/ghoti-text-oracle-chromium:155.0.8059.84@sha256:429c89fb8299e6b9e235690d75b5b8f1eca1a03ff73bd3b4a037b6d3496ca5e9	Google Chrome for Testing 155.0.8059.84	Current Stable Chromium interpreting sanitized HTML flow fragments; page scripts and outbound networking are disabled
+chromium	localhost/ghoti-text-oracle-chromium:156.0.8078.47@sha256:d7a630dec0114c6a0419b67e1683d895a401fe34cb66a05a7d9930ccaeeea57e	Google Chrome for Testing 156.0.8078.47	Current Stable Chromium interpreting sanitized HTML flow fragments; page scripts and outbound networking are disabled
 
 # Encoding: Node's `TextDecoder`/`TextEncoder` and CPython's codecs, in **the html image** (the one pinned above), asked a different
 # question: what the WHATWG Encoding Standard's labels, decoders and encoders do. They are two readings and neither is the standard.
@@ -369,3 +369,22 @@ encoding	localhost/ghoti-text-oracle-html:1.1-8.0.1	node 20.19.2, icu 76.1, pyth
 # divergences (css_divergences.txt) and not a demand for agreement. The tag carries the three
 # versions in the order of the version field.
 css	localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.1	tinycss2 1.5.1, cssparser 0.38.0, csstree 3.2.1	CSS Syntax: the tokens, rules and declarations a stylesheet becomes, from three parsers that share no code
+
+# The CSS property oracle: **Chromium and Firefox, two engines that share no code**, in one built-here image driven through WebDriver BiDi
+# by one small driver (containers/cssprop/driver.mjs). Blink's style engine is the one; the other is Gecko's, whose style engine is
+# Stylo, the code that Servo's `stylo` (0.22.0), `cssparser` (0.38.0) and `selectors` (0.41.0) crates publish, so Servo adds no engine to
+# Gecko and none is driven; Playwright's patched Firefox and WebKit builds are not oracles. What the differential
+# (tools/oracle/css_prop_diff.py) asks of each is `style.setProperty` then `getPropertyValue`, and `CSS.supports`, for every item of a
+# generated population, in a standards-mode document, with the network off.
+#
+# **What pins it.** The tag names the two browsers; the version field below is the line `cssprop-driver --version` prints and is checked
+# against it. Everything the image fetches is checked against a SHA-256 in its Dockerfile: Chrome for Testing 156.0.8078.47 (revision
+# 1706539) and its chromedriver, stock Firefox 158.0.1 (the hash Mozilla publishes in the release's SHA256SUMS) and geckodriver 0.37.1
+# (the hash GitHub records for the release asset); the WebSocket client by the integrity hash of its lock file; the driver by a SHA-256
+# of its files, printed in the version line and recomputed from the repository by the gate, so an image holding an older copy answers
+# under a name that no longer describes it. The Debian nodejs and the libraries the browsers link are recorded in the printed line and
+# not enforced. The digest after the tag is the image's, taken on the build host after the build; a rebuilt image is a new answer.
+#
+# The same Chrome build is in the `chromium` line above (the sanitizer oracle), so that one build of Blink is the reference of both;
+# check-oracle-env holds the two Dockerfiles to the same version and hash.
+cssprop	localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:c472bac3fd9cebf29b13e2fa2805d3dfbd821b4a94f72b3c66276c3630d19c6a	chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0	CSS properties: whether a value is accepted and how it is written, from Chromium (Blink) and Firefox (Gecko with Stylo), which share no code

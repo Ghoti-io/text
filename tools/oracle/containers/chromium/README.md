@@ -1,10 +1,12 @@
 # Chromium sanitizer oracle
 
-The image contains the Chrome for Testing Stable build `155.0.8059.84`, the
-latest stable release available when this oracle was pinned on 2026-10-16.
+The image contains the Chrome for Testing Stable build `156.0.8078.47` (revision
+1706539), the Stable of 2026-10-19, raised from `155.0.8059.84` on 2026-10-26 when the CSS
+property oracle (`../cssprop`) took the same build.
 The upstream archive is fetched by exact version from Google's Chrome for
 Testing public storage and checked against SHA-256
-`cf0f049892dea22e6a6db26d47ed0d7776b7158edcbec4634086633df8bafcbc`.
+`e6c94490f0b6b337225aeb2d2a5034858516b7017356980ba94f5176d8774a50`
+(the bucket's own MD5 of that archive, `cvpoYXzFXs9OK75pfi91hA==` as `x-goog-hash` gives it, matched the download the hash was taken from).
 The complete built image digest is recorded in `../IMAGES`.
 
 The runtime gate invokes Chromium with `--disable-javascript`, background

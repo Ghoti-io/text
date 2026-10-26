@@ -1,0 +1,4 @@
+# tools/oracle/css_prop_diff.py: items on which Chromium 156 and Firefox 158 disagree about acceptance, a control that the differential can tell two engines apart. Columns: property, value, Chromium accepts (1/0), Firefox accepts (1/0). The run asks them again and fails when either engine says anything else (a raised pin makes it a decision to re-read, not a silent change).
+vertical-align	first	0	1
+ruby-position	alternate	0	1
+animation-duration	auto	1	0

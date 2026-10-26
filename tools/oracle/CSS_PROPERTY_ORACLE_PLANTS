@@ -1,0 +1,12 @@
+# Defects planted in a copy of one source of src/css by tools/oracle/run-css-property-oracle.sh --controls, one per line:
+#
+#   <name> TAB <file in src/css> TAB <old text> TAB <new text>
+#
+# The old text is literal (a `\n` in it is a line feed) and must be in the file exactly once. This library is built with the edit and
+# asked the whole population again; the browsers' answers are those of the unedited run (they did not change), so the differential
+# must fail (exit 3: an unlisted divergence, a count that is not the listed one, a witness or a control that does not hold). Each is a
+# rule the engines implement too, undone, so that undoing it makes this library disagree with them in a way the list does not describe.
+accept-a-negative-length	css_grammar_match.c	    return c >= g->lo && c <= g->hi;	    return true;
+ignore-a-range	css_grammar_match.c	  return v >= g->lo && v <= g->hi;	  return true;
+skip-lowercasing	css_grammar_match.c	  return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;	  return c;
+drop-alpha	css_color_serialize.c	    const double v = clamp01(a->value);\n    return v == 1.0 || (puts_(b, " / ") && put_num(b, v));	    return true;
