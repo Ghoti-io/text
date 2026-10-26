@@ -41,6 +41,7 @@
  */
 
 #include "css_property_canon.h"
+#include "css_internal.h"
 
 #include <ghoti.io/text/css/css_serialize.h>
 
@@ -125,6 +126,10 @@ static void spv_push(spv * s, sp x) {
   s->v[s->n++] = x;
 }
 
+static bool is_hex(char c) {
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
 static bool is_ws(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 }
@@ -134,6 +139,7 @@ static void top_split(spv * out, const char * t, size_t n, char sep) {
   int depth = 0;
   char quote = 0;
   size_t start = 0;
+  size_t escaped = (size_t)-1; /* the index of the last character an escape took in this piece: `foo\ ` ends in white space that is part of the name */
   bool open = false;
   for (size_t i = 0; i <= n; i++) {
     const char c = i < n ? t[i] : '\0';
@@ -147,6 +153,28 @@ static void top_split(spv * out, const char * t, size_t n, char sep) {
       }
       else if (c == quote) {
         quote = 0;
+      }
+    }
+    else if (c == '\\' && i + 1 < n && t[i + 1] != '\n' && t[i + 1] != '\r' && t[i + 1] != '\f') {
+      /* an escape: the next character is part of the token, whatever it is (a space, a comma, a parenthesis). A hex escape is one to six hex digits
+       * and one white space that ends it (`\1 ` is U+0001): that space is part of the escape and is never trimmed or split at */
+      i++;
+      escaped = i;
+      open = true;
+      if (is_hex(t[i])) {
+        size_t digits = 1;
+        while (digits < 6 && i + 1 < n && is_hex(t[i + 1])) {
+          i++;
+          digits++;
+        }
+        if (i + 1 < n && is_ws(t[i + 1])) {
+          i++;
+          escaped = i;
+          if (t[i] == '\r' && i + 1 < n && t[i + 1] == '\n') {
+            i++;
+            escaped = i;
+          }
+        }
       }
     }
     else if (c == '"' || c == '\'') {
@@ -172,7 +200,7 @@ static void top_split(spv * out, const char * t, size_t n, char sep) {
       while (a < b && is_ws(t[a])) {
         a++;
       }
-      while (b > a && is_ws(t[b - 1])) {
+      while (b > a && is_ws(t[b - 1]) && b - 1 != escaped) {
         b--;
       }
       if (open && b > a) {
@@ -180,6 +208,7 @@ static void top_split(spv * out, const char * t, size_t n, char sep) {
       }
       start = i + 1;
       open = false;
+      escaped = (size_t)-1;
     }
   }
 }
@@ -305,14 +334,15 @@ static bool dec_exceeds(const dec * d, unsigned limit) {
   return false;
 }
 
-/** A number in the CSSOM spelling: no plus, no trailing zeros, a leading 0 before a point kept (`0.5`), `-0` as `0`. `shift` moves the point left. */
-static void dec_put(cb * b, const dec * d, int shift) {
+/** A number in the CSSOM spelling: no plus, no trailing zeros, a leading 0 before a point kept (`0.5`), `-0` as `0`. `shift` moves the point left;
+ * `max_dec` (when above 0) rounds, half away from zero, to that many decimals, the way the serializer writes a number, so that the text is
+ * what the serializer writes back. False, with nothing written, when the digits are more than the fixed buffer holds: the caller then
+ * leaves the value as it is rather than lose a sign or a fraction. */
+static bool dec_put(cb * b, const dec * d, int shift, int max_dec) {
   char digits[512];
   size_t nd = 0, point;
-  if (d->ip.n + d->fp.n + (size_t)shift + 2 > sizeof digits) {
-    b->fail = b->fail || false;
-    cb_put(b, d->ip.p, d->ip.n);
-    return;
+  if (d->ip.n + d->fp.n + (size_t)shift + 4 > sizeof digits) {
+    return false;
   }
   for (int i = 0; i < shift; i++) {
     digits[nd++] = '0';
@@ -323,6 +353,25 @@ static void dec_put(cb * b, const dec * d, int shift) {
   point = nd - (size_t)shift;
   memcpy(digits + nd, d->fp.p, d->fp.n);
   nd += d->fp.n;
+  if (max_dec > 0 && nd - point > (size_t)max_dec) {
+    const bool up = digits[point + (size_t)max_dec] >= '5';
+    nd = point + (size_t)max_dec;
+    if (up) {
+      size_t i = nd;
+      while (i > 0 && digits[i - 1] == '9') {
+        digits[--i] = '0';
+      }
+      if (i > 0) {
+        digits[i - 1]++;
+      }
+      else {
+        memmove(digits + 1, digits, nd);
+        digits[0] = '1';
+        nd++;
+        point++;
+      }
+    }
+  }
   /* the point sits after `point` digits; strip leading zeros of the integer part and trailing zeros of the fraction */
   size_t lead = 0;
   while (lead + 1 < point && digits[lead] == '0') {
@@ -340,7 +389,7 @@ static void dec_put(cb * b, const dec * d, int shift) {
   }
   if (all_zero) {
     cb_putc(b, '0');
-    return;
+    return true;
   }
   if (d->neg) {
     cb_putc(b, '-');
@@ -353,17 +402,19 @@ static void dec_put(cb * b, const dec * d, int shift) {
     cb_putc(b, '.');
     cb_put(b, digits + point, end - point);
   }
+  return true;
 }
 
-/** The canonical text of a plain number (for comparisons); false when `t` is not one. */
-static bool num_norm(sp t, char * out, size_t cap) {
+/** The canonical text of a plain number (for comparisons), written into `out` (`cap` bytes); false when `t` is not one or does not fit. The
+ * scratch text is allocated with the allocator of `owner`, whose `fail` is set when that allocation fails, so the sweep reaches it. */
+static bool num_norm(cb * owner, sp t, char * out, size_t cap) {
   dec d;
   if (!dec_parse(t, &d)) {
     return false;
   }
-  cb tmp = {gtext_allocator_default(), NULL, 0, 0, false, NULL};
-  dec_put(&tmp, &d, 0);
-  const bool ok = !tmp.fail && tmp.n < cap;
+  cb tmp = {owner->a, NULL, 0, 0, false, &owner->fail};
+  const bool wrote = dec_put(&tmp, &d, 0, 6);
+  const bool ok = wrote && !tmp.fail && tmp.n < cap;
   if (ok) {
     memcpy(out, tmp.d, tmp.n + 1);
   }
@@ -371,9 +422,9 @@ static bool num_norm(sp t, char * out, size_t cap) {
   return ok;
 }
 
-static bool num_is(sp t, const char * canonical) {
+static bool num_is(cb * owner, sp t, const char * canonical) {
   char buf[64];
-  return num_norm(t, buf, sizeof buf) && strcmp(buf, canonical) == 0;
+  return num_norm(owner, t, buf, sizeof buf) && strcmp(buf, canonical) == 0;
 }
 
 /** A zero length or number: `0`, `0px`, `0.0em` (a percentage is not). */
@@ -406,8 +457,7 @@ static bool percent_to_number(cb * b, sp t) {
   if (!dec_parse((sp){t.p, t.n - 1}, &d)) {
     return false;
   }
-  dec_put(b, &d, 2);
-  return true;
+  return dec_put(b, &d, 2, 6);
 }
 
 /* ---- walking the items of a list ----------------------------------------------------------------------------------------- */
@@ -674,12 +724,121 @@ static bool rule_filter(cb * out, const sp * t, size_t n) {
   return changed;
 }
 
-/* Fonts 4: the generic family names are keywords and are written in lower case. */
+/** An identifier word as an unquoted family name spells it: a letter, `_` or a non-ASCII byte to start (or `-` and one of those), then those, digits
+ * and `-`. */
+static bool family_word(sp w) {
+  size_t i = 0;
+  if (i < w.n && w.p[i] == '-') {
+    i++;
+  }
+  if (i >= w.n) {
+    return false;
+  }
+  const unsigned char c0 = (unsigned char)w.p[i];
+  if (!((c0 >= 'a' && c0 <= 'z') || (c0 >= 'A' && c0 <= 'Z') || c0 == '_' || c0 >= 0x80)) {
+    return false;
+  }
+  for (; i < w.n; i++) {
+    const unsigned char c = (unsigned char)w.p[i];
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c >= 0x80)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Whether the bytes are well-formed UTF-8 (no overlong form, no surrogate, nothing above U+10FFFF) and every non-ASCII code point is one the tokenizer
+ * reads inside an identifier (U+F104 is not: the tokenizer follows the list of CSS Syntax 3 and not "anything above U+0080"). A string holding other
+ * bytes keeps its quotes: as an identifier those would not be read back as the same name. */
+static bool utf8_well_formed(const char * s, size_t n) {
+  size_t i = 0;
+  while (i < n) {
+    const unsigned char c = (unsigned char)s[i];
+    size_t len;
+    uint32_t cp;
+    if (c < 0x80) {
+      i++;
+      continue;
+    }
+    else if (c >= 0xC2 && c <= 0xDF) {
+      len = 2;
+      cp = c & 0x1F;
+    }
+    else if (c >= 0xE0 && c <= 0xEF) {
+      len = 3;
+      cp = c & 0x0F;
+    }
+    else if (c >= 0xF0 && c <= 0xF4) {
+      len = 4;
+      cp = c & 0x07;
+    }
+    else {
+      return false;
+    }
+    if (i + len > n) {
+      return false;
+    }
+    for (size_t k = 1; k < len; k++) {
+      const unsigned char cc = (unsigned char)s[i + k];
+      if ((cc & 0xC0) != 0x80) {
+        return false;
+      }
+      cp = (cp << 6) | (cc & 0x3F);
+    }
+    if ((len == 3 && cp < 0x800) || (len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) || (cp >= 0xD800 && cp <= 0xDFFF) || !css_is_non_ascii_ident(cp)) {
+      return false;
+    }
+    i += len;
+  }
+  return true;
+}
+
+static bool family_reserved(sp w) {
+  static const char * const reserved[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif", "ui-sans-serif",
+      "ui-monospace", "ui-rounded", "emoji", "math", "fangsong", "inherit", "initial", "unset", "revert", "revert-layer", "revert-rule", "default"};
+  for (size_t i = 0; i < sizeof reserved / sizeof reserved[0]; i++) {
+    if (ieq(w, reserved[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* Fonts 4: the generic family names are keywords and are written in lower case; a family name written as a string is written without the quotes
+ * when it is a sequence of identifiers (`"New Century Schoolbook"` is `New Century Schoolbook`), except a single word that would then be a keyword
+ * (`"serif"`, `"inherit"` stay strings). */
 static bool rule_font_family(cb * out, const sp * t, size_t n) {
   static const char * const generic[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif",
       "ui-sans-serif", "ui-monospace", "ui-rounded", "emoji", "math", "fangsong"};
   if (n != 1) {
     return false;
+  }
+  if (t[0].n >= 2 && (t[0].p[0] == '"' || t[0].p[0] == '\'') && t[0].p[t[0].n - 1] == t[0].p[0]) {
+    const char * s = t[0].p + 1;
+    const size_t len = t[0].n - 2;
+    if (len == 0 || memchr(s, '\\', len) || memchr(s, '"', len) || memchr(s, '\'', len) || !utf8_well_formed(s, len)) {
+      return false;
+    }
+    size_t words = 0, i = 0;
+    while (i < len) {
+      size_t j = i;
+      while (j < len && s[j] != ' ') {
+        j++;
+      }
+      if (j == i || !family_word((sp){s + i, j - i})) {
+        return false;
+      }
+      words++;
+      i = j + 1;
+      if (j == len - 1) {
+        return false; /* a trailing space */
+      }
+    }
+    if (words == 1 && family_reserved((sp){s, len})) {
+      return false;
+    }
+    cb_put(out, s, len);
+    return true;
   }
   for (size_t i = 0; i < sizeof generic / sizeof generic[0]; i++) {
     if (ieq(t[0], generic[i]) && !eq(t[0], generic[i])) {
@@ -690,13 +849,36 @@ static bool rule_font_family(cb * out, const sp * t, size_t n) {
   return false;
 }
 
+/* Transforms 1, transform-origin: "If only one value is specified, the second value is assumed to be center", and the omitted z is 0px; the page
+ * (and Firefox) write all three components: `left` is `left center 0px`, `top` is `center top 0px`. A lone `top` or `bottom` is the vertical one. */
+static bool rule_transform_origin(cb * out, const sp * t, size_t n) {
+  if (n == 1) {
+    if (eq(t[0], "top") || eq(t[0], "bottom")) {
+      cb_puts(out, "center ");
+      put_sp(out, t[0]);
+    }
+    else {
+      put_sp(out, t[0]);
+      cb_puts(out, " center");
+    }
+    cb_puts(out, " 0px");
+    return true;
+  }
+  if (n == 2) {
+    put_join(out, t, 2);
+    cb_puts(out, " 0px");
+    return true;
+  }
+  return false;
+}
+
 /* Fonts 4, font-feature-settings: "<feature-tag-value> = <opentype-tag> [ <integer [0,∞]> | on | off ]?"; a value of 1 (or `on`) is not written
  * and `off` is 0. */
 static bool rule_font_feature(cb * out, const sp * t, size_t n) {
   if (n != 2 || t[0].n < 2 || t[0].p[0] != '"') {
     return false;
   }
-  if (eq(t[1], "on") || num_is(t[1], "1")) {
+  if (eq(t[1], "on") || num_is(out, t[1], "1")) {
     put_sp(out, t[0]);
     return true;
   }
@@ -815,14 +997,49 @@ static bool rule_translate(cb * out, const sp * t, size_t n) {
 
 /* Transforms 2, rotate: `[ none | <angle> | [ x | y | z | <number>{3} ] && <angle> ]`; an axis along x or y is the keyword, an axis along z (or
  * none) is only the angle, and an axis that points the other way is the keyword with the angle negated. */
-static void put_negated(cb * out, sp angle) {
-  if (angle.n && angle.p[0] == '-') {
-    cb_put(out, angle.p + 1, angle.n - 1);
+static bool negatable_angle(sp angle) {
+  size_t i = 0;
+  while (i < angle.n && ((angle.p[i] >= '0' && angle.p[i] <= '9') || angle.p[i] == '.' || angle.p[i] == '+' || angle.p[i] == '-')) {
+    i++;
+  }
+  dec d;
+  if (i == 0 || !dec_parse((sp){angle.p, i}, &d) || i == angle.n) {
+    return false;
+  }
+  for (size_t k = i; k < angle.n; k++) {
+    if (!((angle.p[k] >= 'a' && angle.p[k] <= 'z') || (angle.p[k] >= 'A' && angle.p[k] <= 'Z'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** The angle with its sign turned, when it is a plain number and unit (a calc() or a var() is not negated by writing a sign in front of it); a
+ * zero stays `0deg`, never `-0deg`. Nothing is written, and false returned, for any other angle. */
+static bool put_negated(cb * out, sp angle) {
+  if (!negatable_angle(angle)) {
+    return false;
+  }
+  size_t i = 0;
+  while (angle.p[i] == '+' || angle.p[i] == '-' || angle.p[i] == '.' || (angle.p[i] >= '0' && angle.p[i] <= '9')) {
+    i++;
+  }
+  dec d;
+  if (!dec_parse((sp){angle.p, i}, &d)) {
+    return false;
+  }
+  if (dec_zero(&d)) {
+    cb_putc(out, '0');
   }
   else {
-    cb_putc(out, '-');
-    put_sp(out, angle);
+    const size_t skip = (angle.p[0] == '-' || angle.p[0] == '+') ? 1 : 0;
+    if (!d.neg) {
+      cb_putc(out, '-');
+    }
+    cb_put(out, angle.p + skip, i - skip);
   }
+  cb_put(out, angle.p + i, angle.n - i);
+  return true;
 }
 
 static int axis_sign(sp t) {
@@ -855,6 +1072,9 @@ static bool rule_rotate(cb * out, const sp * t, size_t n) {
       return false;
     }
     const int sign = sx ? sx : (sy ? sy : sz);
+    if (sign < 0 && !negatable_angle(t[3])) {
+      return false;
+    }
     if (sz) {
       if (sign > 0) {
         put_sp(out, t[3]);
@@ -889,7 +1109,7 @@ static bool rule_scale(cb * out, const sp * t, size_t n) {
     if (percent_to_number(&tmp, t[i])) {
       changed = true;
     }
-    else if (num_norm(t[i], comp[i], sizeof comp[i])) {
+    else if (num_norm(out, t[i], comp[i], sizeof comp[i])) {
       cb_puts(&tmp, comp[i]);
       if (tmp.n != t[i].n || memcmp(tmp.d, t[i].p, tmp.n) != 0) {
         changed = true;
@@ -1153,14 +1373,12 @@ static bool rule_text_box(cb * out, const sp * t, size_t n) {
   return true;
 }
 
-/* Box 4, margin-trim: `block-start block-end` is `block`, `inline-start inline-end` is `inline`. */
+/* Box 4, margin-trim: `none | block | [ block-start || block-end ]` in the pinned data: `block-start block-end` is `block`. The draft Box 4
+ * later adds `inline`, `inline-start` and `inline-end`; a value with them does not match the pinned grammar, so there is no rule for them yet. */
 static bool rule_margin_trim(cb * out, const sp * t, size_t n) {
-  if (n == 2 && ((eq(t[0], "block-start") && eq(t[1], "block-end")) || (eq(t[0], "block-end") && eq(t[1], "block-start")))) {
+  /* a `||` is written in the grammar's order before the rules see it, so `block-end block-start` arrives as `block-start block-end` */
+  if (n == 2 && eq(t[0], "block-start") && eq(t[1], "block-end")) {
     cb_puts(out, "block");
-    return true;
-  }
-  if (n == 2 && ((eq(t[0], "inline-start") && eq(t[1], "inline-end")) || (eq(t[0], "inline-end") && eq(t[1], "inline-start")))) {
-    cb_puts(out, "inline");
     return true;
   }
   return false;
@@ -1362,6 +1580,8 @@ static bool normalize_path_data(cb * out, sp str) {
   const char * p = str.p + 1;
   const char * end = str.p + str.n - 1;
   bool first = true;
+  char cmd = 0;
+  unsigned argi = 0;
   cb_putc(&tmp, '"');
   while (p < end) {
     const char c = *p;
@@ -1379,9 +1599,24 @@ static bool normalize_path_data(cb * out, sp str) {
       }
       cb_putc(&tmp, c == 'z' ? 'Z' : c);
       first = false;
+      cmd = c;
+      argi = 0;
       p++;
       continue;
     }
+    if ((cmd == 'a' || cmd == 'A') && (argi % 7 == 3 || argi % 7 == 4)) {
+      /* an arc's two flags are one digit each, `0` or `1`, and need no separator after them: `a1 1 0 00.5.5` is the flags 0 and 0, then .5 and .5 */
+      if (c != '0' && c != '1') {
+        gtext_allocator_free(out->a, tmp.d);
+        return false;
+      }
+      cb_putc(&tmp, ' ');
+      cb_putc(&tmp, c);
+      argi++;
+      p++;
+      continue;
+    }
+    argi++;
     const char * q = p;
     if (*q == '+' || *q == '-') {
       q++;
@@ -1406,7 +1641,10 @@ static bool normalize_path_data(cb * out, sp str) {
       return false;
     }
     cb_putc(&tmp, ' ');
-    dec_put(&tmp, &d, 0);
+    if (!dec_put(&tmp, &d, 0, 0)) {
+      gtext_allocator_free(out->a, tmp.d);
+      return false;
+    }
     p = q;
   }
   cb_putc(&tmp, '"');
@@ -1445,8 +1683,10 @@ static bool shape_function(cb * out, sp f) {
       }
       size_t nrad = at;
       const bool circle = ieq(name, "circle");
-      /* closest-side is the default radius */
-      if ((circle && nrad == 1 && eq(tk.v[0], "closest-side")) || (!circle && nrad == 2 && eq(tk.v[0], "closest-side") && eq(tk.v[1], "closest-side"))) {
+      /* closest-side is the default radius of a circle (`<radial-size> = <radial-extent> | <length-percentage>{2}` for an ellipse: two extents are not
+       * a radial-size, so `ellipse(closest-side closest-side)` is invalid and has no rule; `ellipse(closest-side)` is left as written, since no test
+       * or browser answer of this slice shortens it) */
+      if (circle && nrad == 1 && eq(tk.v[0], "closest-side")) {
         nrad = 0;
       }
       size_t npos = at < tk.n ? tk.n - at - 1 : 0;
@@ -1710,6 +1950,7 @@ static const canon_row kRows[] = {
   R("stroke-opacity", rule_alpha_percent, MODE_WHOLE),
   R("text-box", rule_text_box, MODE_WHOLE),
   R("transform", rule_transform, MODE_WHOLE),
+  R("transform-origin", rule_transform_origin, MODE_WHOLE),
   R("transition-timing-function", rule_steps, MODE_ITEMS),
   R("translate", rule_translate, MODE_WHOLE),
 };

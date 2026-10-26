@@ -35,8 +35,13 @@ css/css-color/parsing/color-invalid-relative-color.html	39	test_invalid_value: t
 css/css-color/parsing/color-invalid-rgb.html	1	test_invalid_value: id 'test'
 css/css-color/parsing/color-valid-color-function.html	34	test_valid_value: template with a substitution
 css/css-color/parsing/color-valid-color-layers-function.html	1	test_valid_value: id 'parsed'
+css/css-color/parsing/color-valid-color-mix-function.html#colour	398	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
+css/css-color/parsing/color-valid-hsl.html#colour	1	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
+css/css-color/parsing/color-valid-hwb.html#colour	1	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
 css/css-color/parsing/color-valid-lab.html	1	test_valid_value: id 'test'
 css/css-color/parsing/color-valid-relative-color-opaque-alpha.html	1	test_valid_value: id 'value'
+css/css-color/parsing/color-valid-relative-color.html#colour	516	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
+css/css-color/parsing/color-valid-rgb.html#colour	1	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
 css/css-conditional/container-queries/container-ident-function.html	4	test_computed_value: id 'actual_ident'; test_computed_value: template with a substitution
 css/css-content/parsing/content-computed.html	2	test_computed_value: id 'property'
 css/css-content/parsing/content-invalid.html	6	test_invalid_value: id 'property'
@@ -179,3 +184,7 @@ css/css-view-transitions/parsing/pseudo-elements-valid.html	4	test_valid_selecto
 css/css-viewport/zoom/svg-computed-style.html	4	test_computed_value: id 'property'
 css/css-will-change/parsing/will-change-invalid.html	3	test_invalid_value: template with a substitution
 css/selectors/parsing/parse-is-where.html	2	test_valid_forgiving_selector: id 'selector'; test_valid_selector: id 'selector'
+css/css-grid/support/grid-child-utils.js	1	not a test page the walk reads (.js): it makes or defines calls of the harness
+css/support/color-testcommon.js	8	not a test page the walk reads (.js): it makes or defines calls of the harness
+css/support/parsing-testcommon.js	1	not a test page the walk reads (.js): it makes or defines calls of the harness
+css/support/serialize-testcommon.js	3	not a test page the walk reads (.js): it makes or defines calls of the harness

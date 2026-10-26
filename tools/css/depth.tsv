@@ -468,7 +468,7 @@ property	float-defer	1	1	0	0
 property	float-offset	1	1	0	0	
 property	float-reference	1	1	0	0	
 property	flood-color	1	1	0	1	
-property	flood-opacity	1	1	0	0	
+property	flood-opacity	1	1	0	1	
 property	flow-from	1	1	0	0	
 property	flow-into	1	1	0	0	
 property	font	1	1	0	1	
@@ -883,7 +883,7 @@ property	top	1	1	0	0
 property	touch-action	1	1	0	0	
 property	transform	1	1	0	0	
 property	transform-box	1	1	0	1	
-property	transform-origin	1	1	0	0	
+property	transform-origin	1	1	0	1	
 property	transform-style	1	1	0	0	
 property	transition	1	1	0	0	
 property	transition-behavior	1	1	0	1	

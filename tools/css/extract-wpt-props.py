@@ -563,7 +563,7 @@ def extract_file(path, rel, harness_names):
     text = open(path, encoding="utf-8", errors="surrogateescape").read()
     links = clean_links(text)
     # A page without a doctype is in quirks mode (an XML page never is): the parsing of a unitless length depends on it.
-    quirks = not rel.endswith((".xht", ".xhtml")) and not re.search(r"<!doctype", text[:4096], re.I)
+    quirks = not rel.endswith((".xht", ".xhtml", ".svg", ".xml")) and not re.search(r"<!doctype", text[:4096], re.I)
     scripts, includes = scripts_of(text)
     uses_harness = any(h in includes for h in HARNESS_FILES) or any(i in harness_names for i in includes)
     vectors, bad = [], []
@@ -606,9 +606,23 @@ def walk(root):
     for d, dirs, names in os.walk(root):
         dirs.sort()
         for n in sorted(names):
-            if n.endswith((".html", ".xht", ".xhtml", ".htm")):
+            if n.endswith(PAGE_SUFFIXES):
                 out.append(os.path.join(d, n))
     return out
+
+
+# the files that are test pages: the markup ones, and the SVG and XML ones (flood-opacity-valid.svg), whose scripts are in CDATA sections
+PAGE_SUFFIXES = (".html", ".xht", ".xhtml", ".htm", ".svg", ".xml")
+
+# A call the page scores through another gate: the colour pages of css-color/parsing call fuzzy_test_valid_color, which tools/css/extract-wpt-values.py
+# runs with a recording helper and tools/conformance/run-css-values.sh scores (the colour grammar is the one of its own).
+ELSEWHERE = re.compile(r"(?<![\w.])fuzzy_test_valid_color\s*\(")
+ANY_CALL = re.compile(r"(?<![\w.])(" + "|".join(sorted(re.escape(c) for c in CALLS)) + r")\s*\(")
+
+
+def calls_in(raw):
+    """The calls of the harness in a text, not counting a definition (`function test_valid_value(`)."""
+    return [m for m in ANY_CALL.finditer(raw) if not re.search(r"function\s*$", raw[max(0, m.start() - 12):m.start()])]
 
 
 def main(argv):
@@ -633,6 +647,9 @@ def main(argv):
             raw = open(path, encoding="utf-8", errors="surrogateescape").read()
         except OSError:
             continue
+        fz = len(ELSEWHERE.findall(raw))
+        if fz:
+            unextracted.append((rel + "#colour", fz, "scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)"))
         if not any(c in raw for c in CALLS):
             continue
         vs, bad, uses = extract_file(path, rel, harness_names)
@@ -647,6 +664,23 @@ def main(argv):
         if bad:
             reasons = sorted({"%s: %s" % (c, r) for _, c, r in bad})
             unextracted.append((rel, len(bad), "; ".join(reasons)[:200]))
+    # every other file of css/ that makes a call the extractor knows, or the one the colour gate scores, is named: a file the walk does not read must not
+    # hide calls (a support script that wraps the harness, a page of a kind that is not a test page)
+    walked = set(walk(css))
+    for d, dirs, names in os.walk(css):
+        dirs.sort()
+        for n in sorted(names):
+            path = os.path.join(d, n)
+            if path in walked:
+                continue
+            try:
+                raw = open(path, encoding="utf-8", errors="surrogateescape").read()
+            except OSError:
+                continue
+            found = calls_in(raw) + [m for m in ELSEWHERE.finditer(raw)]
+            found = [m for m in found if not re.search(r"function\s*$", raw[max(0, m.start() - 12):m.start()])]
+            if found:
+                unextracted.append((os.path.relpath(path, wpt).replace(os.sep, "/"), len(found), "not a test page the walk reads (%s): it makes or defines calls of the harness" % os.path.splitext(n)[1]))
     for k in KIND_FILES:
         with open(os.path.join(out_dir, k + ".json"), "w", encoding="utf-8") as f:
             json.dump(vectors[k], f, ensure_ascii=False, indent=0, separators=(",", ":"))
@@ -664,9 +698,13 @@ def main(argv):
             for rel in empty_harness:
                 f.write("%s\t0\tthe page includes the harness and calls none of its functions with a name this reader knows\n" % rel)
     total = sum(len(v) for v in vectors.values())
-    print("extract-wpt-props: %d vectors (%s), %d calls not read in %d files, %d harness pages with no call" % (
-        total, ", ".join("%s %d" % (k, len(vectors[k])) for k in KIND_FILES), sum(n for _, n, _ in unextracted), len(unextracted),
-        len(empty_harness)))
+    elsewhere = [u for u in unextracted if u[0].endswith("#colour")]
+    support = [u for u in unextracted if u[2].startswith("not a test page")]
+    unread = [u for u in unextracted if u not in elsewhere and u not in support]
+    print("extract-wpt-props: %d vectors (%s), %d source calls not read in %d files (a call in a loop or a wrapper counts once, whatever its "
+          "iterations), %d scored by the colour gate in %d pages, %d in %d support scripts, %d harness pages with no call" % (
+        total, ", ".join("%s %d" % (k, len(vectors[k])) for k in KIND_FILES), sum(n for _, n, _ in unread), len(unread),
+        sum(n for _, n, _ in elsewhere), len(elsewhere), sum(n for _, n, _ in support), len(support), len(empty_harness)))
     return 0
 
 

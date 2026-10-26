@@ -1438,6 +1438,9 @@ std::vector<Shape> build_shapes() {
   // ---- CSS Value Definition Syntax: the shapes that make a backtracking matcher exponential or quadratic ----
   add("css", "CSS grammar: a repetition of a repetition that can be empty, [ [ a? b? ]* ]+", 600,
       css_grammar("[ [ a? b? ]* ]+", [](size_t k) { return repeat("a ", k); }));
+  // the positions a repetition has seen are subtracted from each level's ends, and the walk over them was linear: a long track list was quadratic
+  add("css", "CSS grammar: a long repetition of an optional bracketed name and a track, [ '[' a ']'? b ]+ (grid-template-columns)", 2000,
+      css_grammar("[ '[' a ']'? b ]+", [](size_t k) { return repeat("[a] b ", k); }));
   add("css", "CSS grammar: a repetition of a repetition that cannot match", 600,
       css_grammar("[ [ a? b? ]* ]+", [](size_t k) { return repeat("a ", k) + "c"; }, false));
   add("css", "CSS grammar: four stars then a letter that is not there", 600,

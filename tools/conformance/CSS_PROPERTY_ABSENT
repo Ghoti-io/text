@@ -10,3 +10,5 @@ grid-lanes-pack	7	no property of that name in the pinned webref data (grep of ed
 margin-bottom-left	1	a name that is no property in any specification: the page asks that setting it does nothing (css-box margin-invalid)
 padding-bottom-left	1	a name that is no property in any specification: the page asks that setting it does nothing (css-box padding-invalid)
 page-orientation	4	the pinned css-page.json has no property page-orientation (it is a value of the size descriptor); the page is a "tentative" test
+text-decoration-fill	12	no property of that name in the pinned webref data (grep of ed/css: none); the pages (css/fill-stroke) are a draft of css-fill-stroke and the computed one is "tentative"
+text-decoration-stroke	12	no property of that name in the pinned webref data (grep of ed/css: none); the pages (css/fill-stroke) are a draft of css-fill-stroke and the computed one is "tentative"

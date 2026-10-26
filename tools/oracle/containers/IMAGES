@@ -377,8 +377,9 @@ css	localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.1	tinycss2 1.5.1, csspa
 # (tools/oracle/css_prop_diff.py) asks of each is `style.setProperty` then `getPropertyValue`, and `CSS.supports`, for every item of a
 # generated population, in a standards-mode document, with the network off.
 #
-# **What pins it.** The tag names the two browsers; the version field below is the line `cssprop-driver --version` prints and is checked
-# against it. Everything the image fetches is checked against a SHA-256 in its Dockerfile: Chrome for Testing 156.0.8078.47 (revision
+# **What pins it.** The tag names the two browsers; the version field below is the line `cssprop-driver --version` prints (the versions are
+# measured by running each vendor binary, and the four archive hashes below are the ones the Dockerfile checked) and is checked against it,
+# and against the header every set of answers carries, which a replay is held to as a live run is. Everything the image fetches is checked against a SHA-256 in its Dockerfile: Chrome for Testing 156.0.8078.47 (revision
 # 1706539) and its chromedriver, stock Firefox 158.0.1 (the hash Mozilla publishes in the release's SHA256SUMS) and geckodriver 0.37.1
 # (the hash GitHub records for the release asset); the WebSocket client by the integrity hash of its lock file; the driver by a SHA-256
 # of its files, printed in the version line and recomputed from the repository by the gate, so an image holding an older copy answers
@@ -387,4 +388,4 @@ css	localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.1	tinycss2 1.5.1, csspa
 #
 # The same Chrome build is in the `chromium` line above (the sanitizer oracle), so that one build of Blink is the reference of both;
 # check-oracle-env holds the two Dockerfiles to the same version and hash.
-cssprop	localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:c472bac3fd9cebf29b13e2fa2805d3dfbd821b4a94f72b3c66276c3630d19c6a	chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0	CSS properties: whether a value is accepted and how it is written, from Chromium (Blink) and Firefox (Gecko with Stylo), which share no code
+cssprop	localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:5b89e65fdccd7ddb7b7d0da89f1df275122c2c538032f739424b57a738abb4e0	chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0, sha256 chrome=e6c94490f0b6b337225aeb2d2a5034858516b7017356980ba94f5176d8774a50 chromedriver=2a5024610c53f340a1aaa5d9a3e2a4fa448be7d71cca5238bd8c3c7f16181df4 firefox=dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a geckodriver=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde21e09f7e	CSS properties: whether a value is accepted and how it is written, from Chromium (Blink) and Firefox (Gecko with Stylo), which share no code

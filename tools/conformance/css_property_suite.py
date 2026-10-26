@@ -83,6 +83,11 @@ def run_runner(runner, requests, nature=False):
     return lines
 
 
+def quotes_a_sentence(reason):
+    """Whether a reason holds a quotation that is a sentence and not a word: four words and twenty characters, between double quotes."""
+    return any(len(q) >= 20 and len(q.split()) >= 4 for q in re.findall(r'"([^"]*)"', reason))
+
+
 def load_table(path, columns, what):
     entries, problems = {}, []
     for n, line in enumerate(open(path, encoding='utf-8'), 1):
@@ -144,8 +149,12 @@ def main():
             problems.append('%s: stage %r is not one of %s' % (ident, f[3], ', '.join(STAGES)))
         if f[5] not in CLASSES:
             problems.append('%s: class %r is not one of %s' % (ident, f[5], ', '.join(CLASSES)))
-        if '"' not in f[6]:
-            problems.append('%s: the reason quotes no sentence of the draft' % ident)
+        if f[5] == 'wpt-tentative':
+            # a fact the file name decides: the suite marks such a page by the word, in its path
+            if 'tentative' not in ident:
+                problems.append('%s: the class is wpt-tentative and the page is not named tentative' % ident)
+        elif not quotes_a_sentence(f[6]):
+            problems.append('%s: the reason quotes no sentence of the draft (a quotation of four words and twenty characters at least)' % ident)
     defects, p = load_table(defects_path, 7, 'not <id> TAB <property> TAB <value> TAB <stage> TAB <answer> TAB <owner> TAB <what the library lacks>')
     problems += p
     for ident, f in defects.items():
@@ -223,13 +232,20 @@ def main():
                             stage, answer = 'roundtrip', 'INVALID'
                 else:
                     longhand_expect += len(v.get('longhands') or {})
+            elif line in ('INVALID', 'UNDECIDED'):
+                stage, answer = 'parse', line
             else:
-                stage, answer = 'parse', line   # INVALID or UNDECIDED
+                problems.append('%s: the runner answered %r, which is not one of OK, INVALID or UNDECIDED' % (ident, line))
+                continue
         else:
             if line.startswith('OK\t'):
                 stage, answer = 'invalid-accepted', unescape(line.split('\t')[2])
             elif line == 'UNDECIDED':
                 stage, answer = 'invalid-accepted', 'UNDECIDED'
+            elif line != 'INVALID':
+                # only a refusal passes an invalid vector: an UNKNOWN property, an empty line or anything else is not "refused"
+                problems.append('%s: the runner answered %r to an invalid vector, which is not INVALID' % (ident, line))
+                continue
         if stage:
             failures[ident] = (stage, answer, v, prop)
             clean[prop] = False

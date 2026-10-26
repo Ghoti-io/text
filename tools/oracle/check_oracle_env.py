@@ -381,7 +381,7 @@ def dockerfile_args(path):
 
 
 CONTAINERS = os.path.join(HERE, "containers")
-BROWSER_PARTS = ("chrome ", "chromedriver ", "firefox ", "geckodriver ", "ws ")
+BROWSER_PARTS = ("chrome ", "chromedriver ", "firefox ", "geckodriver ", "ws ", "sha256 ")
 
 
 def cssprop_pin_problems(table, chromium_args=None, cssprop_args=None):
@@ -405,9 +405,14 @@ def cssprop_pin_problems(table, chromium_args=None, cssprop_args=None):
                          ("GECKODRIVER_VERSION", "geckodriver")):
             if cssprop_args.get(arg) != named.get(key):
                 problems.append("cssprop: the Dockerfile fetches %s %s and the pin says %s" % (arg, cssprop_args.get(arg), named.get(key)))
-        for arg in ("CHROME_SHA256", "CHROMEDRIVER_SHA256", "FIREFOX_SHA256", "GECKODRIVER_SHA256"):
+        hashes = dict(re.findall(r"\b(chrome|chromedriver|firefox|geckodriver)=([0-9a-f]{64})\b", version))
+        for arg, key in (("CHROME_SHA256", "chrome"), ("CHROMEDRIVER_SHA256", "chromedriver"), ("FIREFOX_SHA256", "firefox"),
+                         ("GECKODRIVER_SHA256", "geckodriver")):
             if not re.fullmatch(r"[0-9a-f]{64}", cssprop_args.get(arg, "")):
                 problems.append("cssprop: the Dockerfile has no SHA-256 for %s" % arg)
+            elif hashes.get(key) != cssprop_args[arg]:
+                problems.append("cssprop: the Dockerfile fetches %s with the SHA-256 %s... and the pin says %s (the four archive hashes of the pin are the Dockerfile's)"
+                                % (key, cssprop_args[arg][:12], (hashes.get(key) or "none")[:12]))
     if chromium_args is not None and cssprop_args is not None:
         for arg in ("CHROME_VERSION", "CHROME_SHA256"):
             if chromium_args.get(arg) != cssprop_args.get(arg):
@@ -426,7 +431,8 @@ def check_cssprop_pin(table):
 
 def check_cssprop_pin_fires():
     """The control: a good pin, a pin missing a driver, a stale tag, an undigested image, a Dockerfile of another version, two builds of Chrome."""
-    good_version = "chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0"
+    good_version = ("chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0, sha256 chrome=" + "1" * 64
+                    + " chromedriver=" + "2" * 64 + " firefox=" + "3" * 64 + " geckodriver=" + "4" * 64)
     image = "localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:" + "0" * 64
     args = {"CHROME_VERSION": "156.0.8078.47", "CHROME_SHA256": "1" * 64, "CHROMEDRIVER_SHA256": "2" * 64, "FIREFOX_VERSION": "158.0.1",
             "FIREFOX_SHA256": "3" * 64, "GECKODRIVER_VERSION": "0.37.1", "GECKODRIVER_SHA256": "4" * 64}
@@ -440,6 +446,10 @@ def check_cssprop_pin_fires():
         ("an image with no digest", {"cssprop": (image.split("@")[0], good_version, "")}, chromium, args, "digest"),
         ("a Dockerfile of another Firefox", table, chromium, dict(args, FIREFOX_VERSION="157.0"), "FIREFOX_VERSION"),
         ("a Dockerfile with no hash", table, chromium, dict(args, CHROMEDRIVER_SHA256="x"), "SHA-256"),
+        ("a Dockerfile with another Firefox hash", table, chromium, dict(args, FIREFOX_SHA256="5" * 64), "firefox with the SHA-256"),
+        ("a Dockerfile with another geckodriver hash", table, chromium, dict(args, GECKODRIVER_SHA256="6" * 64), "geckodriver with the SHA-256"),
+        ("a Dockerfile with another chromedriver hash", table, chromium, dict(args, CHROMEDRIVER_SHA256="7" * 64), "chromedriver with the SHA-256"),
+        ("a pin that dropped the hashes", {"cssprop": (image, good_version.split(", sha256")[0], ""), "chromium": table["chromium"]}, chromium, args, "sha256"),
         ("two builds of Chrome", table, dict(chromium, CHROME_SHA256="9" * 64), args, "different builds"),
         ("a chromium pin that names another Chrome", dict(table, chromium=("x", "Google Chrome for Testing 155.0.8059.84", "")), chromium, args, "chromium: the pin"),
     ]

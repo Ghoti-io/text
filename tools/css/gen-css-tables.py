@@ -110,7 +110,7 @@ def read_normalize():
 
 def read_consolidate():
     path = os.path.join(HERE, "consolidate.tsv")
-    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}}
+    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}, "replace-property-grammar": {}}
     if not os.path.exists(path):
         return rules
     with open(path, encoding="utf-8") as handle:
@@ -121,11 +121,13 @@ def read_consolidate():
             cols = line.split("\t")
             if cols[0] not in rules or len(cols) < 4:
                 die("consolidate.tsv:%d: expected directive, scope, name, reason" % n)
+            if cols[0] in ("append-grammar", "replace-grammar", "replace-property-grammar") and not quotes_a_sentence(cols[3]):
+                die("consolidate.tsv:%d: %s wants a reason that quotes a sentence of the draft (four words and twenty characters at least)" % (n, cols[0]))
             if cols[0] == "append-grammar":
                 if len(cols) != 5:
                     die("consolidate.tsv:%d: append-grammar wants directive, scope, name, reason, text" % n)
                 rules[cols[0]][(cols[1], cols[2])] = (cols[3], cols[4])
-            elif cols[0] == "replace-grammar":
+            elif cols[0] in ("replace-grammar", "replace-property-grammar"):
                 if len(cols) != 6:
                     die("consolidate.tsv:%d: replace-grammar wants directive, scope, name, reason, old text, new text" % n)
                 rules[cols[0]][(cols[1], cols[2])] = (cols[3], cols[4], cols[5])
@@ -151,6 +153,11 @@ def read_supplement():
     return rows
 
 
+def quotes_a_sentence(text):
+    """A quotation that is a sentence and not a word: four words and twenty characters at least, between double quotes."""
+    return any(len(q) >= 20 and len(q.split()) >= 4 for q in re.findall(r'"([^"]*)"', text))
+
+
 def read_supplement_types():
     """tools/css/supplement-types.tsv: scope (a property the pin nests the type in, or empty), name, grammar, source (the draft and the
     sentence that gives the definition)."""
@@ -164,8 +171,8 @@ def read_supplement_types():
             if not line or line.startswith("#"):
                 continue
             cols = line.split("\t")
-            if len(cols) != 4 or '"' not in cols[3]:
-                die("supplement-types.tsv:%d: expected scope, name, grammar and a source that quotes the draft" % n)
+            if len(cols) != 4 or not quotes_a_sentence(cols[3]):
+                die("supplement-types.tsv:%d: expected scope, name, grammar and a source that quotes a sentence of the draft (four words and twenty characters at least)" % n)
             rows.append(cols)
     return rows
 
@@ -336,6 +343,14 @@ def build(model):
                        "applies_to": applies, "percentages": percentages, "computed_value": computed, "canonical_order": canonical,
                        "group": None, "inherited_raw": inherited, "animation_raw": animation, "longhands": [], "resets": []}
 
+    for (scope, name), (reason, was, now) in sorted(consolidate["replace-property-grammar"].items()):
+        # the pin's grammar of a property is not the served draft's (a range the draft gives the type): the line replaces it, and is stale when the
+        # pin's grammar is not the old text (white space folded)
+        if scope or name not in props or " ".join((props[name]["grammar"] or "").split()) != " ".join(was.split()):
+            die("consolidate.tsv: replace-property-grammar %s: the pin's grammar is %r, not the one the line replaces (stale)" % (name, props.get(name, {}).get("grammar")))
+        props[name]["grammar"] = now
+        consolidate["replace-property-grammar"][(scope, name)] = ("used", reason, was, now)
+
     names = sorted(props)
     index = {n: i + 1 for i, n in enumerate(names)}
 
@@ -500,7 +515,7 @@ def build(model):
             t["grammar"] = grammar
             t["source"] = "(supplement)"
             t["flags"] = flags
-    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar"):
+    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar", "replace-property-grammar"):
         for k, v in consolidate[rule].items():
             if not (isinstance(v, tuple) and v[0] == "used"):
                 die("consolidate.tsv: %s %s %s names no type (stale)" % ((rule,) + k))

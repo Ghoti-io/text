@@ -169,6 +169,20 @@ for kind in exception defect; do
 done
 awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF < 7 { print; next } { gsub(/"/, "", $7) } { print }' "$exceptions" > "$scratch/unquoted"
 expect reason-without-quote "SUITE PROBLEMS" gate "$vectors" "$scratch/unquoted" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
+sed -E 's/"[^"]*"/"x"/g' "$exceptions" > "$scratch/word-quote"
+expect reason-quotes-only-a-word "SUITE PROBLEMS" gate "$vectors" "$scratch/word-quote" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } $6 == "draft-newer" { $6 = "wpt-tentative"; done = 1 } { print }' "$exceptions" > "$scratch/tentative"
+expect tentative-class-on-a-page-that-is-not "SUITE PROBLEMS" gate "$vectors" "$scratch/tentative" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
+printf '#!/bin/sh\nexec "%s" "$@" | sed -u "s/^INVALID$/UNKNOWN/"\n' "$runner" > "$scratch/runner-unknown"
+chmod +x "$scratch/runner-unknown"
+status=0
+python3 -I "$suite_py" "$vectors" "$scratch/runner-unknown" "$exceptions" "$defects" "$absent" >"$log" 2>&1 || status=$?
+if [ "$status" = 0 ] || ! grep -q "not INVALID\|which is not one of" "$log"; then
+	echo "control invalid-vector-answered-unknown: the gate exited $status and did not refuse an answer that is not a refusal" >&2
+	tail -10 "$log" >&2
+	exit 1
+fi
+echo "control invalid-vector-answered-unknown: caught"
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = "browser-behavior"; done = 1 } { print }' "$exceptions" > "$scratch/class"
 expect class-not-one-of-the-four "SUITE PROBLEMS" gate "$vectors" "$scratch/class" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = ""; done = 1 } { print }' "$defects" > "$scratch/owner"

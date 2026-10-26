@@ -357,8 +357,25 @@ static bool iset_subtract(M * m, iset * dst, const iset * sub) {
   for (size_t i = 0; i < dst->n; i++) {
     uint64_t lo = dst->v[i].lo;
     const uint64_t hi = dst->v[i].hi;
-    while (j < sub->n && sub->v[j].hi < lo) {
-      j++;
+    /* the first interval of `sub` that ends at or after `lo`, by bisection: a repetition subtracts the positions it has seen from each level's
+     * ends, so `sub` grows with the levels and a linear walk over it made a long `[ <line-names>? <track-size> ]+` quadratic */
+    {
+      size_t a = j, b = sub->n, steps = 0;
+      while (a < b) {
+        const size_t mid = a + (b - a) / 2;
+        steps++;
+        if (sub->v[mid].hi < lo) {
+          a = mid + 1;
+        }
+        else {
+          b = mid;
+        }
+      }
+      j = a;
+      if (!charge(m, steps)) {
+        iset_free(m, &out);
+        return false;
+      }
     }
     size_t k = j;
     bool alive = true;

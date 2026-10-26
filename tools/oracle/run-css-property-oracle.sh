@@ -126,21 +126,26 @@ for p in ours-accepts-a-refused-item ours-refuses-an-accepted-item ours-writes-d
 	expect "plant-$p" "UNLISTED" classify --plant "$p"
 done
 expect plant-control-is-misclassified "CONTROL" classify --plant control-is-misclassified
+for p in header-names-another-browser header-names-another-hash header-is-from-another-driver header-is-missing; do
+	expect "plant-$p" "HEADER" classify --plant "$p"
+done
 
 list=$root/tools/oracle/css_prop_divergences.txt
-first=$(awk -F'\t' '!/^#/ && NF == 4 { print $1; exit }' "$list")
+first=$(awk -F'\t' '!/^#/ && NF == 5 { print $1; exit }' "$list")
 if [ -n "$first" ]; then
-	awk -F'\t' -v k="$first" '/^#/ || NF != 4 || $1 != k { print }' "$list" > "$scratch/no-key"
+	awk -F'\t' -v k="$first" '/^#/ || NF != 5 || $1 != k { print }' "$list" > "$scratch/no-key"
 	expect list-key-missing "UNLISTED" classify --list "$scratch/no-key"
-	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 4 { print; next } !d { $2 = $2 + 1; d = 1 } { print }' "$list" > "$scratch/count"
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $2 = $2 + 1; d = 1 } { print }' "$list" > "$scratch/count"
 	expect list-count-changed "COUNT" classify --list "$scratch/count"
-	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 4 { print; next } $3 != "ours" { $3 = "ours" } { print }' "$list" > "$scratch/ours"
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $4 = "0000000000000000"; d = 1 } { print }' "$list" > "$scratch/digest"
+	expect list-digest-changed "DIGEST" classify --list "$scratch/digest"
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } $3 != "ours" { $3 = "ours" } { print }' "$list" > "$scratch/ours"
 	expect list-class-ours "OURS" classify --list "$scratch/ours"
-	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 4 { print; next } !d { $3 = "whatever"; d = 1 } { print }' "$list" > "$scratch/class"
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $3 = "whatever"; d = 1 } { print }' "$list" > "$scratch/class"
 	expect list-class-unknown "LIST" classify --list "$scratch/class"
-	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 4 { print; next } !d { $4 = "browser behavior"; d = 1 } { print }' "$list" > "$scratch/blanket"
+	awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $5 = "browser behavior"; d = 1 } { print }' "$list" > "$scratch/blanket"
 	expect list-blanket-reason "LIST" classify --list "$scratch/blanket"
-	{ cat "$list"; printf 'acc:100:planted-property:x\t1\treference-old\tplanted: a key that never occurs in any population, so it is stale\n'; } > "$scratch/gone"
+	{ cat "$list"; printf 'acc:100:planted-property:x\t1\treference-old\t0000000000000000\tplanted: a key that never occurs in any population, so it is stale\n'; } > "$scratch/gone"
 	expect list-key-gone "GONE" classify --list "$scratch/gone"
 	grep -v "^$first	" "$root/tools/oracle/css_prop_witnesses.txt" > "$scratch/no-witness" || true
 	expect witness-missing "WITNESS" classify --witnesses "$scratch/no-witness"

@@ -215,6 +215,48 @@ const Row kRows[] = {
     {"clip-path", "path(\"m 10.0 170.0 h 90.00\")", "path(\"m 10 170 h 90\")"},
     {"shape-outside", "circle(20px at center)", "circle(20px at center center)"},
     {"offset-path", "circle(closest-side)", "circle()"},
+    // an arc's flags are one digit each and need no separator (SVG path data grammar): they are read as flags, not as numbers
+    {"clip-path", "path(\"M0 0a1 1 0 00.5.5\")", "path(\"M 0 0 a 1 1 0 0 0 0.5 0.5\")"},
+    {"clip-path", "path(\"M0 0a1 1 0 0110 5\")", "path(\"M 0 0 a 1 1 0 0 1 10 5\")"},
+    {"clip-path", "path(\"M0 0A1 1 0 11 5 5\")", "path(\"M 0 0 A 1 1 0 1 1 5 5\")"},
+    {"clip-path", "path(\"M0 0a1 1 0 21 5 5\")", "path(\"M0 0a1 1 0 21 5 5\")"},
+    {"clip-path", "path(\"M0 0a1 1 0 0 0 1 1 2 2 0 1 1 3 3z\")", "path(\"M 0 0 a 1 1 0 0 0 1 1 2 2 0 1 1 3 3 Z\")"},
+    // an escape takes the next character, a space and a comma included, and the white space it takes is never trimmed
+    {"animation-name", "foo\\ ", "foo\\ "},
+    {"animation-name", "\"foo \"", "foo\\ "},
+    {"animation-name", "foo\\ , bar", "foo\\ , bar"},
+    {"font-family", "a\\,b", "a\\,b"},
+    // the white space that ends a hex escape belongs to it
+    {"animation-name", "x\\1 ", "x\\1 "},
+    {"animation-name", "a\\1 , b", "a\\1 , b"},
+    // only a plain number and unit is negated by writing a sign; a zero is never -0
+    {"rotate", "0 0 -1 calc(10deg + 5deg)", "0 0 -1 calc(15deg)"},
+    {"rotate", "0 0 -1 10deg", "-10deg"},
+    {"rotate", "-1 0 0 -0deg", "x 0deg"},
+    {"rotate", "0 -1 0 30deg", "y -30deg"},
+    // a percentage is written as the number the serializer writes, to six decimals, so that the text is its own fixed point
+    {"opacity", "12.345678%", "0.123457"},
+    {"opacity", "99.99999999%", "1"},
+    {"opacity", "12.5%", "0.125"},
+    {"scale", "123.4567891% 50%", "1.234568 0.5"},
+    {"margin-trim", "block-end block-start", "block"},
+    // Fonts 4: a family written as a string is the identifiers it spells, unless that is one keyword
+    {"font-family", "\"New Century Schoolbook\", serif", "New Century Schoolbook, serif"},
+    {"font-family", "\"a\"", "a"},
+    {"font-family", "\"serif\"", "\"serif\""},
+    {"font-family", "\"inherit\", \"serif\"", "\"inherit\", \"serif\""},
+    {"font-family", "\"21st Century\", fantasy", "\"21st Century\", fantasy"},
+    {"font-family", "\"a  b\"", "\"a  b\""},
+    // only what the tokenizer reads inside an identifier is unquoted: U+F104 (private use) is not one, U+00E9 and U+FFFD are
+    {"font-family", "\"c\xef\x84\x84\"", "\"c\xef\x84\x84\""},
+    {"font-family", "\"caf\xc3\xa9\"", "caf\xc3\xa9"},
+    {"font-family", "\"c\xef\xbf\xbd\"", "c\xef\xbf\xbd"},
+    // Transforms 1: the second component is center and the z is 0px when omitted
+    {"transform-origin", "left", "left center 0px"},
+    {"transform-origin", "top", "center top 0px"},
+    {"transform-origin", "-1px", "-1px center 0px"},
+    {"transform-origin", "center left 6px", "left center 6px"},
+    {"transform-origin", "right -4%", "right -4% 0px"},
 };
 
 TEST(CssPropertyCanon, EveryRowIsWrittenInItsCanonicalForm) {
@@ -228,6 +270,27 @@ TEST(CssPropertyCanon, ACanonicalFormIsReadAndWrittenTheSameAgain) {
   const GTEXT_CSS_Registry * r = shared();
   for (const Row & row : kRows) {
     EXPECT_EQ(parse(r, row.property, row.canonical), std::string("valid:") + row.canonical) << row.property << ": " << row.canonical;
+  }
+}
+
+TEST(CssPropertyCanon, EveryRowMeansTheSameValueInItsRawAndItsCanonicalSpelling) {
+  // a canonical form is another spelling of the same value, so: the tree of the value as written, spelled without the rules, is accepted as the same
+  // kind of value and is written as the same canonical text; and so is the tree of the canonical text
+  const GTEXT_CSS_Registry * r = shared();
+  for (const Row & row : kRows) {
+    for (const char * text : {row.input, row.canonical}) {
+      GTEXT_CSS_Property_Value pv;
+      ASSERT_EQ(gtext_css_parse_property_text(r, row.property, strlen(row.property), text, strlen(text), nullptr, &pv), GTEXT_CSS_OK);
+      ASSERT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_VALID) << row.property << ": " << text;
+      const GTEXT_CSS_Value * root = gtext_css_value_set_root(pv.set);
+      char * raw = nullptr;
+      size_t rn = 0;
+      ASSERT_EQ(gtext_css_serialize_value_buffer(root, nullptr, &raw, &rn), GTEXT_CSS_OK);
+      EXPECT_EQ(parse(r, row.property, std::string(raw, rn)), std::string("valid:") + row.canonical)
+          << row.property << ": " << text << " as its tree spells it (" << raw << ")";
+      gtext_css_serialize_buffer_free(nullptr, raw);
+      gtext_css_property_value_free(&pv);
+    }
   }
 }
 
@@ -274,6 +337,20 @@ TEST(CssPropertyCanon, TheSinkAndTheBufferWriteTheSameBytes) {
     gtext_css_serialize_buffer_free(nullptr, buf);
     gtext_css_property_value_free(&pv);
   }
+}
+
+TEST(CssPropertyCanon, ANumberTooLongForTheRewriteIsLeftAsItIs) {
+  const GTEXT_CSS_Registry * r = shared();
+  const std::string digits(600, '7');
+  // 600 digits is more than a number of the rewrite holds: the value is written as the serializer wrote it, with its sign and its fraction
+  const std::string pct = "0." + digits + "%";
+  const std::string a = parse(r, "opacity", pct);
+  EXPECT_EQ(a.rfind("valid:", 0), 0u) << a.substr(0, 40);
+  EXPECT_EQ(a.find('-'), std::string::npos);
+  const std::string neg = "-" + digits + ".5";
+  const std::string b = parse(r, "scale", neg + " " + neg);
+  EXPECT_EQ(b.rfind("valid:", 0), 0u);
+  EXPECT_NE(b.find('-'), std::string::npos) << "the sign is not lost: " << b.substr(0, 40);
 }
 
 }  // namespace

@@ -221,6 +221,29 @@ TEST(CssProperty, ATypeThePinDefinesInsideOnePropertyIsFoundFromTheOthersThatNam
   EXPECT_EQ(parse(r, "clip-path", "rect(1px 2px 3px 4px)"), "valid:rect(1px 2px 3px 4px)");
 }
 
+TEST(CssProperty, ARangeTheServedDraftGivesAPropertyIsHeldWhereThePinLacksIt) {
+  // tools/css/consolidate.tsv replace-property-grammar: "A negative value for r is invalid", "Negative values are invalid", "Values less than 1 are invalid"
+  const GTEXT_CSS_Registry * r = R();
+  for (const char * property : {"r", "rx", "ry", "stroke-width"}) {
+    EXPECT_EQ(parse(r, property, "-1px"), "invalid") << property;
+    EXPECT_EQ(parse(r, property, "0"), std::string("valid:0px")) << property;
+  }
+  EXPECT_EQ(parse(r, "rx", "auto"), "valid:auto");
+  EXPECT_EQ(parse(r, "stroke-width", "-1"), "invalid");
+  EXPECT_EQ(parse(r, "stroke-width", "2px, 3"), "valid:2px, 3");
+  EXPECT_EQ(parse(r, "stroke-miterlimit", "0.5"), "invalid");
+  EXPECT_EQ(parse(r, "stroke-miterlimit", "-1"), "invalid");
+  EXPECT_EQ(parse(r, "stroke-miterlimit", "1"), "valid:1");
+}
+
+TEST(CssProperty, ANumberBelowSixDecimalsIsWrittenAsZeroAndReadAgainAsALength) {
+  // CSSOM writes at most six decimals, so a tiny <number> is `0`; and `0` is a <length> where the grammar offers one first. One step, then settled.
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "stroke-width", "0.0000001"), "valid:0");
+  EXPECT_EQ(parse(r, "stroke-width", "0"), "valid:0px");
+  EXPECT_EQ(parse(r, "stroke-width", "0px"), "valid:0px");
+}
+
 TEST(CssProperty, AShorthandsTypedValueFollowsItsGrammar) {
   const GTEXT_CSS_Registry * r = R();
   EXPECT_EQ(parse(r, "border", "1px solid red"), "valid:1px solid red");

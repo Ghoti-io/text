@@ -125,6 +125,37 @@ def check_driver(version_line):
             % (m.group(1), driver_sha()))
 
 
+ENGINE_PART = {"chromium": "chrome", "firefox": "firefox"}
+
+
+def header_problems(headers):
+    """The answers say what produced them (the driver writes it into the header of every run, from the binaries it ran), and it has to be the pin
+    of containers/IMAGES: the versions and the four archive hashes, the driver of this repository, and the browser each session reported. A
+    replay is held to it as a live run is, so answers from another browser build or another image are not classified as if they were these."""
+    problems = []
+    table = oracle_env.pins()
+    if "cssprop" not in table:
+        return ["HEADER: containers/IMAGES has no cssprop pin to hold the answers to"]
+    want = table["cssprop"][1]
+    named = dict(w.split(" ", 1) for w in (p.strip() for p in want.split(",")) if " " in w)
+    for e in ENGINES:
+        h = headers.get(e) or {}
+        image = h.get("image", "")
+        if not image:
+            problems.append("HEADER: the %s answers carry no description of the image that made them (an older driver); ask the browsers again" % e)
+            continue
+        if want not in image:
+            problems.append("HEADER: the %s answers were made by %r, and containers/IMAGES pins %r" % (e, image, want))
+        m = re.search(r"driver ([0-9a-f]{64})", image)
+        if not m or m.group(1) != driver_sha():
+            problems.append("HEADER: the %s answers were made by another copy of the driver (%s, the repository has %s)"
+                            % (e, m.group(1)[:12] if m else "none", driver_sha()[:12]))
+        wanted = named.get(ENGINE_PART[e])
+        if wanted and h.get("browser") != wanted:
+            problems.append("HEADER: the %s session reported the browser %r and the pin is %s %s" % (e, h.get("browser"), ENGINE_PART[e], wanted))
+    return problems
+
+
 def run_engine(engine, items, batch_timeout=None):
     """The answers of one browser: a list of [accepted, value, cssText, supports, error], and its header."""
     data = "".join(json.dumps([p, v], ensure_ascii=False) + "\n" for p, v, _ in items).encode("utf-8", "surrogatepass")
@@ -214,6 +245,16 @@ def patterns_of(ours, chromium, firefox, support):
     return out
 
 
+def digest_of(items, ours, answers, members):
+    """The signature of every item of a key, not only how many there are: the property, the value and the three answers of each, hashed. A key whose
+    items are the same in number but not in what the library (or an engine) says of them changes it, and the list has to be looked at again."""
+    h = hashlib.sha256()
+    for line in sorted("%s\t%s\t%r\t%r\t%r" % (items[i][0], items[i][1], tuple(ours[i]), engine_view(answers["chromium"][i]), engine_view(answers["firefox"][i]))
+                       for i in members):
+        h.update(line.encode("utf-8", "surrogatepass") + b"\n")
+    return h.hexdigest()[:16]
+
+
 def classify(items, ours, answers):
     """key -> {count, rep, pattern, prop}. Smallest-first, as the module docstring says."""
     by_group = collections.defaultdict(list)
@@ -225,7 +266,8 @@ def classify(items, ours, answers):
         lacking = [n for n, has in (("chromium", b), ("firefox", c)) if not has]
         probe_index = next(i for i, it in enumerate(items) if it[0] == prop and it[2] == "probe")
         if lacking and ours[probe_index][0] == "OK":
-            features["support:%s:%s" % ("+".join(lacking), prop)] = {"count": 1, "rep": probe_index, "pattern": "support:" + "+".join(lacking), "prop": prop}
+            features["support:%s:%s" % ("+".join(lacking), prop)] = {"count": 1, "rep": probe_index, "pattern": "support:" + "+".join(lacking), "prop": prop,
+                                                                       "digest": digest_of(items, ours, answers, [probe_index])}
     for i, (item, o) in enumerate(zip(items, ours)):
         if item[2] == "probe":
             continue
@@ -246,12 +288,14 @@ def classify(items, ours, answers):
             for f in feats:
                 if all(bag[t] >= c for t, c in f["bag"].items()):
                     f["count"] += 1
+                    f["members"].append(i)
                     break
             else:
-                feats.append({"rep": i, "bag": bag, "count": 1, "toks": abstract_tokens(value)})
+                feats.append({"rep": i, "bag": bag, "count": 1, "toks": abstract_tokens(value), "members": [i]})
         for f in feats:
             key = "%s:%s:%s" % (pattern, prop, " ".join(f["toks"]) if f["toks"] else "(empty)")
-            features[key] = {"count": f["count"], "rep": f["rep"], "pattern": pattern, "prop": prop}
+            features[key] = {"count": f["count"], "rep": f["rep"], "pattern": pattern, "prop": prop,
+                             "digest": digest_of(items, ours, answers, f["members"])}
     return features, undecided, unanswered
 
 
@@ -264,10 +308,10 @@ def read_list(path):
         if not line or line.startswith("#"):
             continue
         f = line.split("\t")
-        if len(f) != 4:
-            problems.append("%s:%d: not key, count, class, reason" % (path, n))
+        if len(f) != 5:
+            problems.append("%s:%d: not key, count, class, digest, reason" % (path, n))
             continue
-        key, count, cls, reason = f
+        key, count, cls, digest, reason = f
         if key in rows:
             problems.append("%s:%d: %s twice" % (path, n, key))
         if cls not in CLASSES:
@@ -276,7 +320,7 @@ def read_list(path):
             problems.append("%s:%d: the reason is missing, or is the blanket \"browser behavior\"" % (path, n))
         if "*" in key:
             problems.append("%s:%d: a key with a wildcard is a blanket" % (path, n))
-        rows[key] = (count, cls, reason)
+        rows[key] = (count, cls, reason, digest)
     return rows, problems
 
 
@@ -310,7 +354,7 @@ def read_controls(path):
 
 def gate(items, ours, answers, headers, list_path, args):
     witnesses_path, controls_path = args.witnesses, args.controls
-    bad = []
+    bad = header_problems(headers)
     index = {(p, v): i for i, (p, v, _) in enumerate(items)}
 
     # the controls: known in advance. All three accept and write the value alike, or all three refuse it.
@@ -345,6 +389,10 @@ def gate(items, ours, answers, headers, list_path, args):
     for key in sorted(set(listed) & set(features)):
         if int(listed[key][0]) != features[key]["count"]:
             bad.append("COUNT: %s occurs %d times and the list says %s" % (key, features[key]["count"], listed[key][0]))
+    for key in sorted(set(listed) & set(features)):
+        if listed[key][3] != features[key]["digest"]:
+            bad.append("DIGEST: %s: the %d items of the key are not the ones the list pinned (it says %s, they hash to %s): an answer of this library or "
+                       "of an engine changed for one of them; look at each and write the list again" % (key, features[key]["count"], listed[key][3], features[key]["digest"]))
     ours_keys = [k for k in listed if listed[k][1] == "ours" and k in features]
     if len(ours_keys) > args.max_ours:
         bad.append("OURS: %d keys are class ours (defects of this library) and the ceiling is %d; class ours is never allowed in a finished list, "
@@ -452,7 +500,7 @@ def main(argv):
             if len(answers[e]) != len(items):
                 raise SystemExit("css_prop_diff: %s has %d rows for %d items (a replay needs the same population)" % (e, len(answers[e]), len(items)))
         if args.plant:
-            apply_plant(args.plant, items, ours, answers)
+            apply_plant(args.plant, items, ours, answers, headers)
         list_path = args.list
         bad, features, listed, undecided, unanswered = gate(items, ours, answers, headers, list_path, args)
         summarize(items, ours, answers, headers, features, listed, undecided, unanswered)
@@ -503,12 +551,12 @@ def write_list(path, items, ours, answers, features, listed, headers, binary, wi
     with open(path, "w", encoding="utf-8") as f:
         for key in sorted(features):
             if key in listed:
-                cls, reason = listed[key][1:]
+                cls, reason = listed[key][1:3]
             elif key.startswith("support:"):
                 cls, reason = support_class(key, headers, info.get(features[key]["prop"]))
             else:
                 cls, reason = "unclassified", "TODO"
-            f.write("%s\t%d\t%s\t%s\n" % (key, features[key]["count"], cls, reason))
+            f.write("%s\t%d\t%s\t%s\t%s\n" % (key, features[key]["count"], cls, features[key]["digest"], reason))
             rep = features[key]["rep"]
             p, v, _ = items[rep]
             o = ("OK=" + ours[rep][1]) if ours[rep][0] == "OK" else ours[rep][0]
@@ -526,7 +574,7 @@ def write_list(path, items, ours, answers, features, listed, headers, binary, wi
             f.write("\n".join(wit) + "\n")
 
 
-def apply_plant(name, items, ours, answers):
+def apply_plant(name, items, ours, answers, headers):
     """Corrupt the data so that a gate that works fails."""
     if name == "ours-accepts-a-refused-item":
         for i, o in enumerate(ours):
@@ -548,6 +596,18 @@ def apply_plant(name, items, ours, answers):
             if o[0] == "OK" and answers["chromium"][i][0] and answers["firefox"][i][0]:
                 answers["chromium"][i] = [0, "", "", 0, ""]
                 return
+    elif name == "header-names-another-browser":
+        headers["firefox"]["browser"] = "157.0"
+        return
+    elif name == "header-names-another-hash":
+        headers["chromium"]["image"] = headers["chromium"]["image"].replace("geckodriver=", "geckodriver=0", 1)
+        return
+    elif name == "header-is-from-another-driver":
+        headers["firefox"]["image"] = re.sub(r"driver [0-9a-f]{64}", "driver " + "0" * 64, headers["firefox"]["image"])
+        return
+    elif name == "header-is-missing":
+        del headers["chromium"]["image"]
+        return
     elif name == "control-is-misclassified":
         i = next(i for i, it in enumerate(items) if it[2] == "control")
         answers["firefox"][i] = [0, "", "", 0, ""]

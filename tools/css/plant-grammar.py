@@ -54,7 +54,7 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "edges": "test-css-grammar-edges.cpp", "grammar-seeds": "test-css-grammar-fuzz-seeds.cpp",
             "values-seeds": "test-css-values-fuzz-seeds.cpp", "review": "test-css-values-review.cpp",
             "registry-seeds": "test-css-registry-fuzz-seeds.cpp", "registry": "test-css-registry.cpp", "property": "test-css-property.cpp",
-            "registry-oom": "test-css-registry-oom.cpp"}
+            "registry-oom": "test-css-registry-oom.cpp", "canon": "test-css-property-canon.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -193,6 +193,38 @@ PLANTS += [
     ("omit-the-rewritten-form-is-split-again", "css_grammar_link.c", "g.nkids < 3 || (g.flags & GNF_OMITTED)) {", "g.nkids < 3) {", ["edges"]),
     ("omit-left-recursion-is-looked-for-before-the-rewrite", "css_grammar_link.c", "    if (split_sequences(&L, nl)) {\n      find_left_recursion(&L, nl);\n    }", "    if (find_left_recursion(&L, nl)) {\n      split_sequences(&L, nl);\n    }", ["edges"]),
     ("omit-a-segment-with-all-items-optional-is-good", "css_grammar_link.c", "      good = good || !nl[kids[i]];", "      good = good || !nl[kids[i]] || nl[kids[i]];", ["edges", "grammar"]),
+]
+
+# The canonical-form rules (src/css/css_property_canon.c): each is undone once, and tests/test-css-property-canon.cpp must fail.
+PLANTS += [
+    ('canon-pair-keeps-both', "css_property_canon.c", 'static bool rule_pair(cb * out, const sp * t, size_t n) {\n  if (n == 2 && sp_eq(t[0], t[1])) {',
+     'static bool rule_pair(cb * out, const sp * t, size_t n) {\n  if (n == 2 && !sp_eq(t[0], t[1])) {', ["canon"]),
+    ('canon-alpha-percent-is-not-divided', "css_property_canon.c", '  return dec_put(b, &d, 2, 6);',
+     '  return dec_put(b, &d, 0, 6);', ["canon"]),
+    ('canon-percent-is-not-rounded-to-the-serializer', "css_property_canon.c", '  return dec_put(b, &d, 2, 6);',
+     '  return dec_put(b, &d, 2, 0);', ["canon"]),
+    ('canon-arc-flags-are-numbers', "css_property_canon.c", "    if ((cmd == 'a' || cmd == 'A') && (argi % 7 == 3 || argi % 7 == 4)) {",
+     "    if (0 && (cmd == 'a' || cmd == 'A') && (argi % 7 == 3 || argi % 7 == 4)) {", ["canon"]),
+    ('canon-a-hex-escape-loses-its-terminating-space', "css_property_canon.c", '        if (i + 1 < n && is_ws(t[i + 1])) {\n          i++;\n          escaped = i;',
+     '        if (0 && i + 1 < n && is_ws(t[i + 1])) {\n          i++;\n          escaped = i;', ["canon"]),
+    ('canon-an-escaped-space-is-trimmed', "css_property_canon.c", 'while (b > a && is_ws(t[b - 1]) && b - 1 != escaped) {',
+     'while (b > a && is_ws(t[b - 1])) {', ["canon"]),
+    ('canon-an-escape-does-not-take-the-next-character', "css_property_canon.c", "    else if (c == '\\\\' && i + 1 < n && t[i + 1] != '\\n'",
+     "    else if (0 && c == '\\\\' && i + 1 < n && t[i + 1] != '\\n'", ["canon"]),
+    ('canon-a-calc-angle-is-negated-by-a-sign', "css_property_canon.c", '    if (sign < 0 && !negatable_angle(t[3])) {\n      return false;\n    }',
+     '    if (sign < 0 && 0) {\n      return false;\n    }', ["canon"]),
+    ('canon-a-negated-zero-is-minus-zero', "css_property_canon.c", "  if (dec_zero(&d)) {\n    cb_putc(out, '0');\n  }\n  else {\n    const size_t skip",
+     "  if (0) {\n    cb_putc(out, '0');\n  }\n  else {\n    const size_t skip", ["canon"]),
+    ('canon-jump-end-steps-keeps-its-keyword', "css_property_canon.c", '(eq(args.v[1], "end") || eq(args.v[1], "jump-end"))',
+     '(eq(args.v[1], "end"))', ["canon"]),
+    ('canon-a-counter-default-is-one', "css_property_canon.c", '  return counter_defaults(out, t, n, "0");',
+     '  return counter_defaults(out, t, n, "1");', ["canon"]),
+    ('canon-margin-trim-block-is-not-written', "css_property_canon.c", '  if (n == 2 && eq(t[0], "block-start") && eq(t[1], "block-end")) {',
+     '  if (0 && n == 2 && eq(t[0], "block-start") && eq(t[1], "block-end")) {', ["canon"]),
+    ('canon-translate-keeps-a-zero-z', "css_property_canon.c", '  if (keep == 3 && is_zero_dim(t[2])) {\n    keep = 2;\n  }\n  if (keep == 2 && is_zero_dim(t[1])) {\n    keep = 1;\n  }\n  if (keep == n) {',
+     '  if (keep == 2 && is_zero_dim(t[1])) {\n    keep = 1;\n  }\n  if (keep == n) {', ["canon"]),
+    ('canon-block-flow-is-not-block', "css_property_canon.c", '  if (n < 2 && !(n == 1 && eq(t[0], "flow"))) {',
+     '  if (n < 2) {', ["canon"]),
 ]
 
 PLANTS += [

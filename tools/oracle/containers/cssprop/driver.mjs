@@ -40,7 +40,7 @@
 // needs) and runs one browser at a time. A batch that does not answer in time restarts the browser and is split until the item that
 // hangs it is alone; that item is answered with the error "hang" and the browser is restarted again.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { WebSocket } from 'ws';
@@ -261,12 +261,35 @@ class Session {
   }
 }
 
+// What is installed, measured now: each vendor binary is run with --version and `ws` is read from the package that is installed. The four archive
+// hashes are the build's record (the Dockerfile checked them before it unpacked anything); they are not re-derived here. A change to this line
+// or to the pin of containers/IMAGES that does not change the other is seen by the gate (css_prop_diff.py) before it classifies.
+function measured() {
+  const run = (binary, re) => {
+    const text = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const m = re.exec(text);
+    if (!m) {
+      fail(`${binary} --version said ${JSON.stringify(text.slice(0, 80))}`);
+    }
+    return m[1];
+  };
+  const wsVersion = JSON.parse(readFileSync('/opt/cssprop/node_modules/ws/package.json', 'utf8')).version;
+  const pins = readFileSync('/opt/cssprop/PINS', 'utf8').trim();
+  return [
+    `chrome ${run('/opt/chrome/chrome', /^Google Chrome for Testing (\d+(?:\.\d+)+)/)}`,
+    `chromedriver ${run('/opt/chromedriver/chromedriver', /^ChromeDriver (\d+(?:\.\d+)+)/)}`,
+    `firefox ${run('/opt/firefox/firefox', /^Mozilla Firefox (\d+(?:\.\d+)*)/)}`,
+    `geckodriver ${run('/opt/geckodriver/geckodriver', /^geckodriver (\d+(?:\.\d+)+)/)}`,
+    `ws ${wsVersion}`,
+    `sha256 ${pins}`,
+  ].join(', ');
+}
+
 function version() {
-  // What the image was built from, written by the Dockerfile; the gate (css_prop_ref.py) recomputes the driver's hash from the
-  // repository's files and compares it with the one printed here, so an image holding an older copy of this file is seen.
-  const lines = readFileSync('/opt/cssprop/VERSIONS', 'utf8').trim();
+  const lines = measured();
+  const recorded = readFileSync('/opt/cssprop/VERSIONS', 'utf8').trim();
   const pinned = readFileSync('/opt/cssprop/DRIVER_SHA', 'utf8').trim();
-  return `${lines}; driver ${pinned}`;
+  return `${lines}, ${recorded}; driver ${pinned}`;
 }
 
 async function main() {
@@ -288,7 +311,7 @@ async function main() {
 
   let session = new Session(arg);
   await session.start();
-  process.stdout.write('#' + JSON.stringify({ engine: arg, browser: session.browserVersion, compat: session.info.compat, ua: session.info.ua }) + '\n');
+  process.stdout.write('#' + JSON.stringify({ engine: arg, browser: session.browserVersion, compat: session.info.compat, ua: session.info.ua, image: version() }) + '\n');
 
   // Answer a run of items; on a failure restart the browser and split, down to the item that hangs it.
   async function answer(run) {

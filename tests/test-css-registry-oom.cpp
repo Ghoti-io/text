@@ -382,7 +382,9 @@ TEST(CssRegistryOom, WritingTheCanonicalFormOfAResultSweptOverEveryAllocation) {
   };
   for (const Case & c : {Case{"display", "block flow"}, Case{"filter", "grayscale(300%) hue-rotate(0)"}, Case{"clip-path", "path(nonzero, \"M20,20h60z\")"},
            Case{"animation-name", "\"multi word\", b"}, Case{"counter-reset", "a b 3"}, Case{"rotate", "0 1 0 400grad"}, Case{"scale", "100% 200% 1"},
-           Case{"mask-position", "top, left"}, Case{"grid-template-columns", "[] 1fr []"}, Case{"cursor", "image-set(\"a\" 1x), grab"}}) {
+           Case{"mask-position", "top, left"}, Case{"grid-template-columns", "[] 1fr []"}, Case{"cursor", "image-set(\"a\" 1x), grab"},
+           Case{"scale", "2 3"}, Case{"rotate", "0 0 -1 10deg"}, Case{"clip-path", "path(\"M0 0a1 1 0 00.5.5z\")"}, Case{"opacity", "12.5%"},
+           Case{"animation-name", "foo\\ , bar"}}) {
     GTEXT_CSS_Property_Value pv;
     ASSERT_EQ(gtext_css_parse_property_text(r, c.property, strlen(c.property), c.value, strlen(c.value), nullptr, &pv), GTEXT_CSS_OK) << c.property;
     ASSERT_EQ(pv.outcome, GTEXT_CSS_PROP_RESULT_VALID) << c.property;

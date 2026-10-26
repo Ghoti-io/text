@@ -19,12 +19,17 @@
 #   pinned     geckodriver 0.37.1, by the SHA-256 GitHub records for the release asset geckodriver-v0.37.1-linux64.tar.gz;
 #   pinned     the WebSocket client (`ws` 8.22.0), by the integrity hash in package-lock.json (installed with `npm ci`);
 #   pinned     the driver, by the SHA-256 of driver.mjs, package.json and package-lock.json together, written to DRIVER_SHA and
-#              printed by `cssprop-driver --version`: the gate recomputes it from the repository's files (css_prop_ref.py);
+#              printed by `cssprop-driver --version`: the gate recomputes it from the repository's files (css_prop_diff.py);
+#   measured   the versions: `cssprop-driver --version` and the header of every answer run each vendor binary with `--version` and read the
+#              installed `ws` package, so the printed line is what is installed and not a file the build wrote;
+#   recorded   the four archive hashes above, written to /opt/cssprop/PINS from the build arguments after `sha256sum -c` passed on them;
+#              they are printed by `--version` and in the header of every answer, and containers/IMAGES names the same four;
 #   recorded   the Debian nodejs package and the libraries the browsers link, installed with apt-get from the repositories of the
 #              day: the driver prints node's version, IMAGES does not enforce it, and a point release changes the printed line
 #              and is seen, not refused.
 #
-# The gate checks the printed line against containers/IMAGES (the five versions) and the driver hash. There is no host mode:
+# The gate checks the printed line against containers/IMAGES (the five versions and the four hashes) and the driver hash, and refuses to
+# classify answers (a replay too) whose header names other versions or hashes. There is no host mode:
 # oracle_env.py refuses one. No network at run time: everything is fetched here, once, and the container runs with --network none
 # (the loopback sockets between the driver and the vendor's driver are all it needs).
 
@@ -72,7 +77,8 @@ COPY package.json package-lock.json driver.mjs /opt/cssprop/
 RUN npm ci --ignore-scripts --no-audit --no-fund \
  && sha=$(cat driver.mjs package.json package-lock.json | sha256sum | cut -d' ' -f1) \
  && echo "$sha" > /opt/cssprop/DRIVER_SHA \
- && echo "chrome ${CHROME_VERSION}, chromedriver ${CHROME_VERSION}, firefox ${FIREFOX_VERSION}, geckodriver ${GECKODRIVER_VERSION}, ws $(node -p "require('/opt/cssprop/node_modules/ws/package.json').version"), debian nodejs $(dpkg-query -W -f='${Version}' nodejs)" > /opt/cssprop/VERSIONS \
+ && echo "chrome=${CHROME_SHA256} chromedriver=${CHROMEDRIVER_SHA256} firefox=${FIREFOX_SHA256} geckodriver=${GECKODRIVER_SHA256}" > /opt/cssprop/PINS \
+ && echo "debian nodejs $(dpkg-query -W -f='${Version}' nodejs)" > /opt/cssprop/VERSIONS \
  && printf '#!/bin/sh\ncd /opt/cssprop\nexec node /opt/cssprop/driver.mjs "$@"\n' > /usr/local/bin/cssprop-driver \
  && chmod +x /usr/local/bin/cssprop-driver \
  && cssprop-driver --version

@@ -543,14 +543,29 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
       snprintf(first, first_cap, "%s", w.out.data);
     }
     char * s2 = NULL;
+    char * raw2 = NULL;
     size_t nv2 = 0;
     GTEXT_CSS_Value_Set * set2 = NULL;
-    st = try_value(reg, name, at_rule, s1, &oc, &s2, &nv2, &set2, NULL);
+    const GTEXT_CSS_Property_Outcome oc1 = oc;
+    st = try_value(reg, name, at_rule, s1, &oc, &s2, &nv2, &set2, &raw2);
     /* the typed values are equal (the acceptance criterion), not only their text. Except where a canonical-form rule wrote the value shorter
      * (`block flow` as `block`): the text is then another spelling of the same value, a different tree, and the text must be a fixed point. */
-    const int canonical = raw1 && strcmp(raw1, s1) != 0;
-    if (st == GTEXT_CSS_OK && (oc == GTEXT_CSS_PROP_RESULT_VALID || oc == GTEXT_CSS_PROP_RESULT_WIDE || oc == GTEXT_CSS_PROP_RESULT_PENDING) && s2 && strcmp(s1, s2) == 0 &&
-        (canonical || (nv1 == nv2 &&
+    int canonical = raw1 && strcmp(raw1, s1) != 0;
+    if (canonical) {
+      /* A waiver of tree equality is not a waiver of every check: the canonical text must be accepted as the same kind of value as the
+       * witness was, and the spelling of the tree it parses to (raw2) must read and be written as the same canonical text again. */
+      char * s3 = NULL;
+      size_t nv3 = 0;
+      GTEXT_CSS_Property_Outcome oc3;
+      const GTEXT_CSS_Status st3 = raw2 ? try_value(reg, name, at_rule, raw2, &oc3, &s3, &nv3, NULL, NULL) : GTEXT_CSS_E_INVALID;
+      canonical = oc == oc1 && st3 == GTEXT_CSS_OK && oc3 == oc1 && s3 && strcmp(s3, s1) == 0;
+      free(s3);
+      if (!canonical) {
+        fprintf(stderr, "canonical form: %s: '%s' -> '%s' is not stable under its own tree ('%s')\n", name, w.out.data, s1, raw2 ? raw2 : "-");
+      }
+    }
+    if (st == GTEXT_CSS_OK && oc == oc1 && s2 && strcmp(s1, s2) == 0 &&
+        (canonical || (((!raw1 || strcmp(raw1, s1) == 0) && nv1 == nv2) &&
         values_equal(set1 ? gtext_css_value_set_root(set1) : NULL, set2 ? gtext_css_value_set_root(set2) : NULL)))) {
       good++;
       stats->roundtrip_ok++;
@@ -561,6 +576,7 @@ static void measure_witnesses(const GTEXT_CSS_Registry * reg, const GTEXT_CSS_Co
     }
     free(s1);
     free(raw1);
+    free(raw2);
     free(s2);
     gtext_css_value_set_free(set1);
     gtext_css_value_set_free(set2);

@@ -356,7 +356,7 @@ prints
 ```
 with 100 units of work: match work or memo entries beyond max_match_work or max_memo_entries
 by default: success, matched yes, 1001 positions
-work for 1000 tokens: 44035 units
+work for 1000 tokens: 46036 units
 ```
 
 ## Math functions
