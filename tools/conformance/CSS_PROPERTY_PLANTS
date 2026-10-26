@@ -1,0 +1,13 @@
+# Defects planted in a copy of one source of src/css by tools/conformance/run-css-property.sh --controls, one per line:
+#
+#   <name> TAB <file in src/css> TAB <old text> TAB <new text>
+#
+# The old text is literal (a `\n` in it is a line feed) and must be in the file exactly once. The scorer is run with the library built
+# with the edit and must fail ("UNEXPLAINED FAILURES", or "STALE EXCEPTIONS" when the edit changes the answer of a case that is
+# listed): each is a rule of the standard that the property vectors hold, undone.
+range-is-ignored	css_grammar_match.c	  return v >= g->lo && v <= g->hi;	  return true;
+unit-range-is-ignored	css_grammar_match.c	    return c >= g->lo && c <= g->hi;	    return true;
+keywords-are-case-sensitive	css_grammar_match.c	  return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;	  return c;
+alpha-is-dropped	css_color_serialize.c	    const double v = clamp01(a->value);\n    return v == 1.0 || (puts_(b, " / ") && put_num(b, v));	    return true;
+css-wide-keywords-are-not-recognized	css_property.c	  if (wide != GTEXT_CSS_WIDE_NONE) {	  if (0) {
+substitution-syntax-is-not-checked	css_property.c	    if (!syntax) {	    if (0) {

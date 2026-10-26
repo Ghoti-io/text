@@ -1,0 +1,12 @@
+# tools/conformance/css_property_suite.py: the properties the property vectors name and the pinned webref data (tools/css/WEBREF_COMMIT)
+# does not have, with the number of vectors each has (they are listed and never dropped). Columns: property, vectors, reason. A line
+# for a property the pin has, or with another count, fails.
+border-radius-inline-end	10	no property of that name in the pinned webref data (grep of ed/css: none); the page is a "tentative" test of css-borders
+corners	23	no property of that name in the pinned webref data (css-borders names corner-shape and the corner-*-shape properties, not corners); the page asks that nothing sets it
+flow-tolerance	20	no property of that name in the pinned webref data (grep of ed/css: none); the page is a "tentative" test of css-grid grid lanes
+grid-lanes	30	the pinned css-grid-3.json has no property grid-lanes (it lists the display values grid-lanes and inline-grid-lanes); the page is a "tentative" test
+grid-lanes-direction	24	no property of that name in the pinned webref data (grep of ed/css: none); the page is a "tentative" test of grid lanes
+grid-lanes-pack	7	no property of that name in the pinned webref data (grep of ed/css: none); the page is a "tentative" test of grid lanes
+margin-bottom-left	1	a name that is no property in any specification: the page asks that setting it does nothing (css-box margin-invalid)
+padding-bottom-left	1	a name that is no property in any specification: the page asks that setting it does nothing (css-box padding-invalid)
+page-orientation	4	the pinned css-page.json has no property page-orientation (it is a value of the size descriptor); the page is a "tentative" test

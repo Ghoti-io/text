@@ -1,0 +1,181 @@
+# tools/css/extract-wpt-props.py: the calls of the property test harness it cannot read as data, per file of the pinned
+# web-platform-tests (a loop variable, a template with a substitution, a value computed by the page), and the pages that
+# include the harness and call none of its functions with a name it knows. Columns: file, number of calls, what stopped it.
+# make conformance-css-property fails on a file that is not here, on a count that differs and on a line for a file that is
+# read in full now; the first column and the count are compared, the third is the extractor's own wording.
+# Rewrite it with: tools/css/extract-wpt-props.py third_party/css/wpt build/css-property-vectors --unextracted tools/css/UNEXTRACTED
+css/CSS2/syntax/colors-007.html	2	test_invalid_value: id 'prop'; test_valid_value: id 'prop'
+css/css-anchor-position/anchor-ident-function.html	7	test_computed_value: id 'actual_ident'; test_computed_value: template with a substitution
+css/css-anchor-position/anchor-parse-valid.html	2	test_valid_value: id 'property'
+css/css-anchor-position/anchor-size-parse-valid.html	7	test_valid_value: id 'prop'; test_valid_value: id 'property'
+css/css-anchor-position/position-area-computed.html	27	test_computed_value: id 'keyword'; test_computed_value: template with a substitution
+css/css-anchor-position/position-area-parsing.html	14	test_invalid_value: id 'keyword'; test_invalid_value: id 'keyword1'; test_invalid_value: id 'keyword2'; test_valid_value: concatenation with a non-literal; test_valid_value: id 'keyword'; test_valid_v
+css/css-anchor-position/position-try-ident-function.html	4	test_computed_value: id 'actual_ident'; test_computed_value: template with a substitution
+css/css-anchor-position/try-tactic-alignment.html	6	test_computed_value: id 'property'
+css/css-backgrounds/parsing/border-color-computed.html	8	test_computed_value: id 'blue'; test_computed_value: id 'currentColor'; test_computed_value: id 'green'; test_computed_value: id 'red'; test_computed_value: id 'yellow'
+css/css-backgrounds/parsing/border-width-computed.html	1	test_computed_value: concatenation with a non-literal
+css/css-backgrounds/parsing/box-shadow-computed.html	2	test_computed_value: id 'currentColor'
+css/css-borders/corner-shape/corner-shape-invalid.html	7	test_invalid_value: id 'prop'
+css/css-borders/corner-shape/corner-shape-valid.html	21	test_shorthand_value: id 'shorthand'; test_valid_value: id 'prop'
+css/css-color/system-color-consistency.html	9	test_computed_value: id 'style'
+css/css-color/parsing/color-computed-color-function.html	55	test_computed_value: template with a substitution
+css/css-color/parsing/color-computed-hex-color.html	1	test_computed_value: id 'test'
+css/css-color/parsing/color-computed-hwb.html	1	test_computed_value: id 'test'
+css/css-color/parsing/color-computed-lab.html	1	test_computed_value: id 'test'
+css/css-color/parsing/color-computed-named-color.html	1	test_computed_value: id 'test'
+css/css-color/parsing/color-invalid-color-function.html	27	test_invalid_value: template with a substitution
+css/css-color/parsing/color-invalid-color-layers-function.html	8	test_invalid_value: template with a substitution
+css/css-color/parsing/color-invalid-color-mix-function.html	26	test_invalid_value: template with a substitution
+css/css-color/parsing/color-invalid-hex-color.html	1	test_invalid_value: id 'test'
+css/css-color/parsing/color-invalid-hsl.html	1	test_invalid_value: id 'test'
+css/css-color/parsing/color-invalid-hwb.html	1	test_invalid_value: id 'test'
+css/css-color/parsing/color-invalid-lab.html	9	test_invalid_value: template with a substitution
+css/css-color/parsing/color-invalid-named-color.html	1	test_invalid_value: id 'test'
+css/css-color/parsing/color-invalid-relative-color.html	39	test_invalid_value: template with a substitution
+css/css-color/parsing/color-invalid-rgb.html	1	test_invalid_value: id 'test'
+css/css-color/parsing/color-valid-color-function.html	34	test_valid_value: template with a substitution
+css/css-color/parsing/color-valid-color-layers-function.html	1	test_valid_value: id 'parsed'
+css/css-color/parsing/color-valid-lab.html	1	test_valid_value: id 'test'
+css/css-color/parsing/color-valid-relative-color-opaque-alpha.html	1	test_valid_value: id 'value'
+css/css-conditional/container-queries/container-ident-function.html	4	test_computed_value: id 'actual_ident'; test_computed_value: template with a substitution
+css/css-content/parsing/content-computed.html	2	test_computed_value: id 'property'
+css/css-content/parsing/content-invalid.html	6	test_invalid_value: id 'property'
+css/css-content/parsing/content-valid.html	2	test_valid_value: id 'property'
+css/css-fonts/parsing/font-computed.html	1	test_computed_value: id 'parts'
+css/css-fonts/parsing/font-size-adjust-computed.html	2	test_computed_value: id 'compareFontSizeAdjustFromFont'
+css/css-fonts/parsing/font-valid.html	1	test_valid_value: id 'parts'
+css/css-fonts/parsing/font-width-computed.html	15	test_computed_value: id 'property'
+css/css-fonts/parsing/font-width-invalid.html	4	test_invalid_value: id 'property'
+css/css-fonts/parsing/font-width-valid.html	15	test_valid_value: id 'property'
+css/css-fonts/parsing/palette-mix-computed.html	4	test_computed_value: template with a substitution
+css/css-fonts/parsing/palette-mix-valid.html	4	test_valid_value: template with a substitution
+css/css-gaps/parsing/gap-decorations-color-computed.html	11	test_computed_value: id 'property'
+css/css-gaps/parsing/gap-decorations-color-invalid.html	6	test_invalid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-color-valid.html	15	test_valid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-rule-shorthand-computed.html	13	test_computed_value: id 'property'
+css/css-gaps/parsing/gap-decorations-rule-shorthand-invalid.html	9	test_invalid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-rule-shorthand-valid.html	25	test_valid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-rule-shorthand.html	2	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/gap-decorations-style-computed.html	21	test_computed_value: id 'property'
+css/css-gaps/parsing/gap-decorations-style-invalid.html	6	test_invalid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-style-valid.html	15	test_valid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-width-computed.html	8	test_computed_value: id 'property'
+css/css-gaps/parsing/gap-decorations-width-invalid.html	9	test_invalid_value: id 'property'
+css/css-gaps/parsing/gap-decorations-width-valid.html	15	test_valid_value: id 'property'
+css/css-gaps/parsing/rule-break-computed.html	3	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-break-invalid.html	4	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-break-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-break-valid.html	3	test_valid_value: id 'property'
+css/css-gaps/parsing/rule-inset-bidirectional-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-cap-bidirectional-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-cap-junction-computed.html	8	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-inset-cap-junction-invalid.html	10	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-inset-cap-junction-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-cap-junction-valid.html	8	test_valid_value: id 'property'
+css/css-gaps/parsing/rule-inset-cap-start-end-computed.html	8	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-inset-cap-start-end-invalid.html	6	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-inset-computed.html	15	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-inset-invalid.html	10	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-inset-junction-bidirectional-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-junction-start-end-computed.html	8	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-inset-junction-start-end-invalid.html	6	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-inset-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-start-end-bidirectional-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-start-end-computed.html	6	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-inset-start-end-invalid.html	8	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-inset-start-end-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-inset-start-end-valid.html	6	test_valid_value: id 'property'
+css/css-gaps/parsing/rule-inset-valid.html	17	test_valid_value: id 'property'
+css/css-gaps/parsing/rule-visibility-items-computed.html	4	test_computed_value: id 'property'
+css/css-gaps/parsing/rule-visibility-items-invalid.html	5	test_invalid_value: id 'property'
+css/css-gaps/parsing/rule-visibility-items-shorthand.html	1	test_shorthand_value: id 'rule_property'
+css/css-gaps/parsing/rule-visibility-items-valid.html	4	test_valid_value: id 'property'
+css/css-highlight-api/highlight-pseudo-parsing.html	10	test_invalid_selector: template with a substitution; test_valid_selector: id 'pseudo'; test_valid_selector: template with a substitution
+css/css-images/image-set/image-set-computed.sub.html	2	test_computed_value: id 'property'
+css/css-images/image-set/image-set-parsing.html	4	test_invalid_value: id 'property'; test_valid_value: id 'property'
+css/css-images/parsing/gradient-interpolation-method-computed.html	4	test_computed_value: template with a substitution
+css/css-images/parsing/gradient-interpolation-method-invalid.html	10	test_invalid_value: template with a substitution
+css/css-images/parsing/gradient-interpolation-method-valid.html	4	test_valid_value: template with a substitution
+css/css-inline/text-box-trim/parsing/text-box-edge-computed.html	2	test_computed_value: id 'value'; test_computed_value: spread
+css/css-inline/text-box-trim/parsing/text-box-edge-valid.html	2	test_valid_value: id 'value'; test_valid_value: spread
+css/css-logical/parsing/border-block-width-computed.html	3	test_computed_value: id 'mediumWidth'; test_computed_value: id 'thickWidth'; test_computed_value: id 'thinWidth'
+css/css-logical/parsing/border-inline-width-computed.html	3	test_computed_value: id 'mediumWidth'; test_computed_value: id 'thickWidth'; test_computed_value: id 'thinWidth'
+css/css-multicol/parsing/column-rule-computed.html	4	test_computed_value: concatenation with a non-literal; test_computed_value: id 'mediumWidth'
+css/css-navigation/tentative/parsing/link-to-valid.html	6	test_valid_rule: id 'canonical'
+css/css-navigation/tentative/parsing/location-valid.html	9	test_valid_rule: id 'canonical'
+css/css-navigation/tentative/parsing/navigation-rule-location-valid.html	12	test_valid_rule: id 'canonical'
+css/css-navigation/tentative/parsing/url-pattern-valid.html	2	test_valid_rule: id 'canonical'
+css/css-navigation/tentative/parsing/url-valid.html	3	test_valid_rule: id 'canonical'
+css/css-overscroll-behavior/parsing/overscroll-behavior-computed.html	4	test_computed_value: id 'property'
+css/css-overscroll-behavior/parsing/overscroll-behavior-invalid.html	3	test_invalid_value: id 'property'
+css/css-overscroll-behavior/parsing/overscroll-behavior-valid.html	4	test_valid_value: id 'property'
+css/css-page/parsing/margin-rules-001.html	2	test_invalid_rule: id 'ruleTypes'; test_valid_rule: concatenation with a non-literal
+css/css-position/parsing/inset-computed.html	2	test_computed_value: id 'longhand_property'
+css/css-position/parsing/inset-invalid.html	3	test_invalid_value: id 'longhand_property'; test_invalid_value: id 'shorthand_property'
+css/css-position/parsing/inset-valid.html	6	test_valid_value: id 'longhand_property'; test_valid_value: id 'shorthand_property'
+css/css-properties-values-api/registered-property-computation.html	5	test_computed_value: id 'length_ref'
+css/css-pseudo/parsing/highlight-pseudos-search-text.tentative.html	13	test_invalid_selector: template with a substitution; test_valid_selector: template with a substitution
+css/css-pseudo/parsing/highlight-pseudos.html	10	test_invalid_selector: template with a substitution; test_valid_selector: template with a substitution
+css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-computed.html	7	test_computed_value: concatenation with a non-literal; test_computed_value: id 'length_ref'
+css/css-text/parsing/text-spacing-invalid.html	3	test_invalid_value: template with a substitution
+css/css-text/parsing/white-space-shorthand.html	2	test_computed_value: id 'property'; test_valid_value: id 'property'
+css/css-text-decor/parsing/text-emphasis-computed.html	5	test_computed_value: template with a substitution
+css/css-text-decor/text-shadow/parsing/text-shadow-computed.html	6	test_computed_value: id 'currentColor'; test_computed_value: id 'lime'; test_computed_value: id 'red'
+css/css-transforms/parsing/transform-computed.html	3	test_computed_value: id 'prop'
+css/css-transitions/parsing/transition-property-invalid.html	3	test_invalid_value: template with a substitution
+css/css-ui/parsing/caret-color-computed.html	7	test_computed_value: id 'currentColor'
+css/css-ui/parsing/outline-color-computed.html	1	test_computed_value: id 'currentColor'
+css/css-ui/parsing/outline-width-computed.html	3	test_computed_value: id 'getComputedStyle'
+css/css-values/acos-asin-atan-atan2-invalid.html	1	test_invalid_value: template with a substitution
+css/css-values/acos-asin-atan-atan2-serialize.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-catch-divide-by-0.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-complex-unresolved-serialize.html	2	test_computed_serialization: id 'value'; test_specified_serialization: id 'value'
+css/css-values/calc-infinity-nan-computed.html	35	testComputedValueGreaterOrLowerThan: id 'REALLY_LARGE'; testComputedValueGreaterOrLowerThan: id 'REALLY_LARGE_NEGATIVE'
+css/css-values/calc-infinity-nan-serialize-angle.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-infinity-nan-serialize-length.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-infinity-nan-serialize-number.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-infinity-nan-serialize-resolution.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-infinity-nan-serialize-time.html	1	test_specified_serialization: id 'prop'
+css/css-values/calc-mix-invalid.tentative.html	3	test_invalid_value: id 'value'
+css/css-values/calc-mix-serialize.tentative.html	6	test_computed_serialization: id 't'; test_specified_serialization: id 't'
+css/css-values/clamp-length-computed.html	1	test_computed_value: id 'property'
+css/css-values/clamp-length-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/clamp-length-serialize.html	2	test_valid_value: id 'value'; test_valid_value: template with a substitution
+css/css-values/clamp-partial-serialize.tentative.html	2	test_valid_value: id 'value'; test_valid_value: template with a substitution
+css/css-values/exp-log-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/exp-log-serialize.html	7	test_computed_serialization: id 't'; test_computed_serialization: template with a substitution; test_specified_serialization: id 't'; test_specified_serialization: template with a substitution
+css/css-values/hypot-pow-sqrt-invalid.html	2	test_invalid_value: id 'value'
+css/css-values/hypot-pow-sqrt-serialize.html	4	test_computed_serialization: id 't'; test_computed_serialization: template with a substitution; test_specified_serialization: id 't'; test_specified_serialization: template with a substitution
+css/css-values/ident-function-computed.html	14	test_computed_value: id 'actual_ident'; test_computed_value: id 'prop'
+css/css-values/ident-function-parsing.html	19	test_invalid_value: id 'prop'; test_valid_value: id 'ident'; test_valid_value: id 'prop'
+css/css-values/minmax-angle-invalid.html	1	test_invalid_value: template with a substitution
+css/css-values/minmax-angle-serialize.html	3	test_computed_serialization: id 'prop'; test_specified_serialization: id 'prop'; test_used_serialization: id 'prop'
+css/css-values/minmax-length-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/minmax-length-percent-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/minmax-length-percent-serialize.html	3	test_computed_serialization: id 'prop'; test_specified_serialization: id 'prop'; test_used_serialization: id 'prop'
+css/css-values/minmax-length-serialize.html	3	test_computed_serialization: id 'prop'; test_specified_serialization: id 'prop'; test_used_serialization: id 'prop'
+css/css-values/minmax-number-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/minmax-number-serialize.html	4	test_computed_serialization: id 't'; test_computed_serialization: template with a substitution; test_specified_serialization: id 't'; test_specified_serialization: template with a substitution
+css/css-values/minmax-percentage-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/minmax-percentage-serialize.html	3	test_computed_serialization: id 'prop'; test_specified_serialization: id 'prop'; test_used_serialization: id 'prop'
+css/css-values/minmax-time-invalid.html	1	test_invalid_value: id 'value'
+css/css-values/minmax-time-serialize.html	3	test_computed_serialization: id 'prop'; test_specified_serialization: id 'prop'; test_used_serialization: id 'prop'
+css/css-values/progress-invalid.html	2	test_invalid_value: id 'value'
+css/css-values/progress-serialize.html	4	test_computed_serialization: id 't'; test_computed_serialization: template with a substitution; test_specified_serialization: id 't'; test_specified_serialization: template with a substitution
+css/css-values/round-mod-rem-invalid.html	3	test_invalid_value: id 'value'; test_invalid_value: template with a substitution
+css/css-values/round-mod-rem-serialize.html	4	test_computed_serialization: id 't'; test_computed_serialization: template with a substitution; test_specified_serialization: id 't'; test_specified_serialization: template with a substitution
+css/css-values/signs-abs-invalid.html	3	test_invalid_value: id 'value'
+css/css-values/signs-abs-serialize.html	1	test_specified_serialization: template with a substitution
+css/css-values/sin-cos-tan-invalid.html	1	test_invalid_value: template with a substitution
+css/css-values/typed_arithmetic.html	5	testComputedValueGreaterOrLowerThan: id 'REALLY_LARGE'; testComputedValueGreaterOrLowerThan: id 'REALLY_LARGE_NEGATIVE'
+css/css-values/viewport-units-parsing.html	1	test_valid_value: concatenation with a non-literal
+css/css-values/position/position-computed.tentative.html	28	test_computed_value: id 'property'
+css/css-values/position/position-invalid.tentative.html	21	test_invalid_value: id 'property'
+css/css-values/position/position-valid.tentative.html	34	test_valid_value: id 'property'
+css/css-view-transitions/parsing/pseudo-elements-invalid-with-classes.html	10	test_invalid_selector: template with a substitution
+css/css-view-transitions/parsing/pseudo-elements-invalid.html	22	test_invalid_selector: id 'fn'; test_invalid_selector: template with a substitution
+css/css-view-transitions/parsing/pseudo-elements-valid-with-classes.html	4	test_valid_selector: id 'pseudo'; test_valid_selector: template with a substitution
+css/css-view-transitions/parsing/pseudo-elements-valid.html	4	test_valid_selector: id 'pseudo'; test_valid_selector: template with a substitution
+css/css-viewport/zoom/svg-computed-style.html	4	test_computed_value: id 'property'
+css/css-will-change/parsing/will-change-invalid.html	3	test_invalid_value: template with a substitution
+css/selectors/parsing/parse-is-where.html	2	test_valid_forgiving_selector: id 'selector'; test_valid_selector: id 'selector'
