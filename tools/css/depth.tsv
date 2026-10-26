@@ -106,7 +106,7 @@ descriptor	@page bleed	1	1	-	0
 descriptor	@page marks	1	1	-	0	
 descriptor	@page page-margin-safety	1	1	-	0	
 descriptor	@page page-orientation	1	1	-	0	
-descriptor	@page size	0	0	-	0	unresolved <page-size>
+descriptor	@page size	1	1	-	0	
 descriptor	@property inherits	1	1	-	0	
 descriptor	@property initial-value	1	1	-	0	
 descriptor	@property syntax	1	1	-	0	
@@ -567,7 +567,7 @@ property	line-height	1	1	0	0
 property	line-height-step	1	1	0	0	
 property	line-padding	1	1	0	0	
 property	line-snap	1	1	0	0	
-property	link-parameters	0	0	0	0	unresolved <type()>
+property	link-parameters	1	1	0	0	
 property	list-style	1	1	0	0	
 property	list-style-image	1	1	0	0	
 property	list-style-position	1	1	0	0	

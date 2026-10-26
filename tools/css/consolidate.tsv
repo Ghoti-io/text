@@ -4,6 +4,9 @@
 # list of departures, and tests/test-css-registry.cpp reads the effect of each from the generated tables.
 #
 # ignore-grammar   the entry's `value` is not a definition (it is a prototype of the function in prose), and is dropped.
+# nested-ignore    a type or function the pin nests inside a type, at-rule, descriptor or selector (scope: that container's name, as
+#                  the pin spells it) is not taken as a global definition of the name, because the pin nests the name in
+#                  several containers and they do not say the same thing.
 # enum-from-values the pin defines the type only through the keyword values nested in its entry; the grammar is those
 #                  keywords, in the pin's order, separated by `|`.
 ignore-grammar	grid-template-columns	minmax()	the pin's value is the prototype `minmax(min, max)`, not a grammar; the track-size grammars write minmax() out
@@ -11,3 +14,4 @@ ignore-grammar	grid-template-rows	minmax()	the same entry, nested in grid-templa
 enum-from-values		animation-action	the pin lists no grammar, and its eight keyword values (none, play, play-once, play-forwards, play-backwards, pause, reset, replay) are the type
 enum-from-values		timeline-range-center-subject	the pin lists no grammar, and its two keyword values (source, target) are the type
 descriptor-alias	@font-face	font-stretch	font-width: Fonts 4, 4.4.1: "For historical reasons, a font-stretch descriptor exists which is a legacy name alias and functions in the identical way to the font-width descriptor."
+nested-ignore	image-set()	type()	image-set() nests `type( <string> )`, the form that names a MIME type; @function and attr() nest `type( <syntax> )`, the one <css-type> names and the only one that is a global definition of the name (css-images-4 and css-mixins/css-values-5 are different series, and neither is the other's base)

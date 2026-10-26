@@ -124,7 +124,7 @@ report() {
 	rep=$scratch/report.tsv
 }
 
-FLOORS=${CSS_GRAMMAR_FLOORS:-700,100,440}
+FLOORS=${CSS_GRAMMAR_FLOORS:-720,102,500}
 
 grammars() {
 	command -v python3 >/dev/null 2>&1 || { echo "python3 is needed (tools/css/check-grammars.py)" >&2; exit 1; }

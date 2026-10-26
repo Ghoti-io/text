@@ -114,8 +114,19 @@ through their keyword values are given those keywords as the grammar) and
 `tools/css/supplement.tsv` (the custom property pattern `--*`, which CSS Variables
 defines and the curated data does not list). Nothing else of the pin is edited.
 
-What is generated: 823 properties (64 of them legacy aliases), 48 at-rules with 109
-descriptors (declarations, media and container features, nested at-rules), 670 value
+**Types nested in something that is not a property** are read as global definitions. The pin
+nests `inset()` and `shape()` inside `<basic-shape>`, `<alpha-value>` inside `<color>`, `<page-size>`
+inside `size` of `@page`, `type()` inside `@function` and `attr()`, and the command types of `shape()`
+one level further. Each is the pin's definition of that name wherever a grammar names it. A definition
+the pin repeats (`repeat()` is nested in nine entries) is one entry when the copies agree, and
+`tools/css/consolidate.tsv` drops the copy that does not (`image-set()`'s `type( <string> )`, a different
+function from `type( <syntax> )`). The library's own function types still answer first for the names
+they define in code (the basic shapes, the transforms), so adding these definitions did not change what
+any of those parses to; what changed is that `<alpha-value>`, `<page-size>`, `<type()>` and
+`<keypress()>` now resolve, and `link-parameters` and `@page size` can be judged.
+
+What is generated: 823 properties (64 of them legacy aliases), 48 at-rules with 110
+descriptors (declarations, media and container features, nested at-rules), 709 value
 types and functions, 159 selectors (name and syntax text, for the selector layer), and an
 atom table of the 1,100 keywords of every grammar (`gtext_css_registry_keyword_lookup()`).
 The units and functions the css-values definitions list are checked against the library
@@ -376,7 +387,7 @@ compiled grammar, and the initial value, is accepted), **serializes** (it writes
 writes the same again), **computes** (filled by the computed-value layer) and **wpt** (filled by the value
 vector scoring); `make check-css-depth` refuses a column that went from 1 to 0 against the measurement,
 against the commit before it (or `CSS_DEPTH_BASE`, a git ref) and a tracked floor (`tools/css/DEPTH_FLOOR`,
-which only goes up), and a property missing from the ledger. At this commit 889 of the 933 rows parse
+which only goes up), and a property missing from the ledger. At this commit 891 of the 933 rows parse
 and serialize; the rest are the gaps below. `parses` means some witness matched; the gate also reports how
 many did and checks that each reads back as the same typed values, not only the same text: 3,745 of 3,756
 witnesses parse and all 3,745 do. The 11 that do not (in `background`, `font-palette`, `initial-letter-align`,
@@ -388,19 +399,19 @@ nor is listed, with its reason, in `tools/css/UNRESOLVED_REFERENCES` (stale entr
 floor holds). `make check-css-package` compares the names and syntax of the tables with a second reading
 of the same data, the `@webref/css` package at a pinned version and integrity (`tools/css/WEBREF_PACKAGE`,
 fetched by `tools/css/fetch.sh`), and fails on a difference that is not classified in
-`tools/css/WEBREF_PACKAGE_DIVERGENCES`; it fails, and does not skip, when the package is not there. The 42
-classified differences are five texts that differ and 37 types nested inside another type's or a descriptor's
-entry of the pin (`inset()` in `<basic-shape>`, `<alpha-value>` in `<color>`), which the generator does not
-read yet. `make check-css-registry-controls` shows the gates fail, and `make
+`tools/css/WEBREF_PACKAGE_DIVERGENCES`; it fails, and does not skip, when the package is not there. The 6
+classified differences are five texts that differ and one type the pin nests with no grammar that the
+package does not list (`<output-value>`); the 37 types nested inside another type's or a descriptor's entry
+that the generator did not read are read now, and the package and the tables agree on all of them. `make check-css-registry-controls` shows the gates fail, and `make
 check-css-grammar-plants` plants a defect in the library for each requirement.
 
 ## What the pin does not say
 
 The pin's own gaps are listed in `tools/css/UNRESOLVED_REFERENCES`, one line each with the grammar that
-names it and a reason: 46 types the pin names and does not define (prose only, or no entry:
+names it and a reason: 38 types the pin names and does not define (prose only, or no entry:
 `<symbolic-counter-style>` of `content`, `<url-set>` of `cursor`, `<top>` of `clip`, `<font-src-list>` of
-`@font-face src`, `<alpha-value>`), the grammars whose text is not a Value Definition Syntax definition, the
-initial values that are prose. 29 properties cannot be decided because of them. Supplying a missing
+`@font-face src`), the grammars whose text is not a Value Definition Syntax definition, the
+initial values that are prose. 28 properties cannot be decided because of them. Supplying a missing
 definition is a line in `tools/css/supplement.tsv` with the specification sentence it quotes; none is
 supplied but the custom property pattern.
 

@@ -419,12 +419,13 @@ TEST(CssRegistryTypes, GlobalAndScopedAndNative) {
   EXPECT_TRUE(gtext_css_registry_find_type("CDO-token", 9, 0, &t));
   // the type the pin nests inside a property is found for that property
   const GTEXT_CSS_Registry * r = shared();
-  EXPECT_FALSE(gtext_css_registry_find_type("rect()", 6, 0, &t)) << "no global rect(): the pin's is the one nested in `clip`";
+  ASSERT_TRUE(gtext_css_registry_find_type("rect()", 6, 0, &t)) << "the global rect() is the basic shape's, which the pin nests in <basic-shape>";
+  EXPECT_NE(str(t.grammar).find("round"), std::string::npos);
   ASSERT_TRUE(gtext_css_registry_find_type("rect()", 6, find(r, "clip"), &t));
   EXPECT_EQ(t.scope, find(r, "clip"));
   EXPECT_NE(t.flags & GTEXT_CSS_TYPE_SCOPED, 0u);
   EXPECT_EQ(str(t.grammar), "rect( <top>, <right>, <bottom>, <left> )");
-  EXPECT_FALSE(gtext_css_registry_find_type("rect()", 6, find(r, "width"), &t));
+  EXPECT_FALSE(gtext_css_registry_find_type("rect()", 6, find(r, "width"), &t) && t.scope != 0) << "no definition of the name is scoped to width";
   // the order the lookup relies on
   std::string prev;
   GTEXT_CSS_Property_Id prev_scope = 0;
@@ -458,6 +459,107 @@ TEST(CssRegistryTypes, ThePinsDepartureListIsApplied) {
   // a function whose value is its own name is prose
   ASSERT_TRUE(gtext_css_registry_find_type("click()", 7, 0, &t));
   EXPECT_EQ(t.grammar, nullptr);
+}
+
+// ---- the types the pin nests inside something that is not a property -------------------------------------------
+
+/** The registry's grammar state of the global type of that name. */
+GTEXT_CSS_Grammar_State type_state_of(const GTEXT_CSS_Registry * r, const char * name) {
+  for (size_t i = 0; i < gtext_css_registry_type_count(); i++) {
+    GTEXT_CSS_Type_Info t;
+    gtext_css_registry_type_at(i, &t);
+    if (t.scope == 0 && std::string(t.name, t.name_length) == name) {
+      GTEXT_CSS_Grammar_State s = GTEXT_CSS_GRAMMAR_NONE;
+      EXPECT_EQ(gtext_css_registry_type_state(r, i, &s, nullptr), GTEXT_CSS_OK);
+      return s;
+    }
+  }
+  ADD_FAILURE() << "no global type " << name;
+  return GTEXT_CSS_GRAMMAR_NONE;
+}
+
+TEST(CssRegistryNestedTypes, ATypeNestedInAnotherTypeIsAGlobalDefinition) {
+  GTEXT_CSS_Type_Info t;
+  // <alpha-value> is nested in the entry of <color>; alpha() names it
+  ASSERT_TRUE(gtext_css_registry_find_type("alpha-value", 11, 0, &t));
+  EXPECT_EQ(str(t.grammar), "<number> | <percentage>");
+  EXPECT_EQ(t.scope, 0u);
+  EXPECT_EQ(t.flags & GTEXT_CSS_TYPE_SCOPED, 0u);
+  EXPECT_EQ(type_state_of(shared(), "alpha-value"), GTEXT_CSS_GRAMMAR_OK);
+  // <keypress()> is nested in <event-function>; the functions beside it have no grammar in the pin
+  ASSERT_TRUE(gtext_css_registry_find_type("keypress()", 10, 0, &t));
+  EXPECT_EQ(str(t.grammar), "keypress( <string>? )");
+  EXPECT_NE(t.flags & GTEXT_CSS_TYPE_FUNCTION, 0u);
+  ASSERT_TRUE(gtext_css_registry_find_type("click()", 7, 0, &t));
+  EXPECT_EQ(t.grammar, nullptr);
+  // a type nested two deep: the command types of shape(), which is nested in <basic-shape>
+  ASSERT_TRUE(gtext_css_registry_find_type("shape()", 7, 0, &t));
+  EXPECT_NE(str(t.grammar).find("<shape-command>"), std::string::npos);
+  ASSERT_TRUE(gtext_css_registry_find_type("arc-command", 11, 0, &t));
+  EXPECT_NE(str(t.grammar).find("arc <command-end-point>"), std::string::npos);
+  ASSERT_TRUE(gtext_css_registry_find_type("relative-control-point", 22, 0, &t));
+  EXPECT_EQ(str(t.grammar), "<coordinate-pair> [ from [ start | end | origin ] ]?");
+  // the basic shapes the library defines in code keep their own definition: the pin's text is a global entry, and the library's function
+  // types are asked first
+  ASSERT_TRUE(gtext_css_registry_find_type("inset()", 7, 0, &t));
+  EXPECT_NE(str(t.grammar).find("round"), std::string::npos);
+}
+
+TEST(CssRegistryNestedTypes, ATypeNestedInADescriptorOrAnAtRuleIsFoundToo) {
+  GTEXT_CSS_Type_Info t;
+  // <page-size> is nested in `size` of @page
+  ASSERT_TRUE(gtext_css_registry_find_type("page-size", 9, 0, &t));
+  EXPECT_NE(str(t.grammar).find("A4"), std::string::npos);
+  EXPECT_EQ(type_state_of(shared(), "page-size"), GTEXT_CSS_GRAMMAR_OK);
+  // the descriptor that names it now compiles
+  const GTEXT_CSS_Registry * r = shared();
+  GTEXT_CSS_Grammar_State s;
+  const GTEXT_CSS_At_Rule_Id page = gtext_css_registry_find_at_rule("@page", 5);
+  ASSERT_EQ(gtext_css_registry_descriptor_state(r, gtext_css_registry_find_descriptor(page, "size", 4), &s, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
+  // <font-feature-value-type> is nested in @font-feature-values, which has no grammar for it
+  ASSERT_TRUE(gtext_css_registry_find_type("font-feature-value-type", 23, 0, &t));
+  EXPECT_EQ(t.grammar, nullptr);
+  EXPECT_NE(t.flags & GTEXT_CSS_TYPE_NO_GRAMMAR, 0u);
+}
+
+TEST(CssRegistryNestedTypes, AFunctionTheTreeNestsInSeveralEntriesIsOneEntryWhenTheyAgreeAndTheDisagreeingCopyIsListed) {
+  GTEXT_CSS_Type_Info t;
+  // type() is nested in @function and attr() as `type( <syntax> )` and in image-set() as `type( <string> )` (a different thing):
+  // consolidate.tsv drops the image-set() copy (nested-ignore) and the global entry is the one <css-type> names
+  ASSERT_TRUE(gtext_css_registry_find_type("type()", 6, 0, &t));
+  EXPECT_EQ(str(t.grammar), "type( <syntax> )");
+  EXPECT_EQ(type_state_of(shared(), "css-type"), GTEXT_CSS_GRAMMAR_OK) << "<css-type> names <type()>";
+  // repeat() is nested in nine entries that say the same thing (nothing: prose), and is one entry
+  size_t seen = 0;
+  for (size_t i = 0; i < gtext_css_registry_type_count(); i++) {
+    ASSERT_TRUE(gtext_css_registry_type_at(i, &t));
+    if (std::string(t.name, t.name_length) == "repeat()" && t.scope == 0) {
+      seen++;
+    }
+  }
+  EXPECT_EQ(seen, 1u);
+  // leader() is a type of its own and also nested in <content-list>, the same text: one entry
+  seen = 0;
+  for (size_t i = 0; i < gtext_css_registry_type_count(); i++) {
+    ASSERT_TRUE(gtext_css_registry_type_at(i, &t));
+    seen += std::string(t.name, t.name_length) == "leader()";
+  }
+  EXPECT_EQ(seen, 1u);
+}
+
+TEST(CssRegistryNestedTypes, ThePropertiesThatNameANestedTypeAreDecided) {
+  // link-parameters names <css-type> through param(), and <css-type> names <type()>, which the pin nests in @function, attr() and
+  // image-set(): until the nested types were read the property could not be judged at all
+  const GTEXT_CSS_Registry * r = shared();
+  GTEXT_CSS_Grammar_State s;
+  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "link-parameters"), &s, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
+  EXPECT_EQ(parse(r, "link-parameters", "none"), "valid:none");
+  // (what the value is written as is the serialization layer's: these only hold that the pin's text is now judged)
+  EXPECT_EQ(parse(r, "link-parameters", "param(--a type(<color>), orange)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "link-parameters", "param(--a type(<color> | <length>), orange), param(--b, blue)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "link-parameters", "param(a, orange)"), "invalid") << "the name is a <dashed-ident>";
 }
 
 TEST(CssRegistrySelectorsAndKeywords, TheyAreSortedAndFound) {

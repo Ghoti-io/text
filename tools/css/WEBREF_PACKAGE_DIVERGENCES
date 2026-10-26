@@ -4,51 +4,12 @@
 #
 # Two kinds of difference are here.
 #
-# * type: the package lists a type or function that is *nested inside another type's entry or a descriptor's entry* of the pinned files
-#   (their `values` array: `<basic-shape>` holds `inset()` and `xywh()`; `<color>` holds `<alpha-value>`; `size` of @page holds
-#   `<page-size>`; `shape()` holds its command types). tools/css/webref_model.py reads the nested definitions of a *property* only, so the
-#   tables have none of these. This is a gap in the generator that this check found, not a choice: where the library does not define the
-#   name itself (as it does for the basic-shape functions and repeat()), a grammar that names it does not link and is listed in
-#   tools/css/UNRESOLVED_REFERENCES. Reading them needs a scope that is a type, not only a property (repeat() is defined three times, in three types), and is its own piece of work.
+# * type: a name one reading has and the other does not. (The tables read the types and functions the pin nests inside a type, an at-rule,
+#   a descriptor or a selector, and the check compares them with the package's: 37 of them were not read until the check found it, see
+#   tools/css/webref_model.py `nested_definitions`.)
 # * type-syntax: both have the name and the texts differ; the reason gives both and says which side is the older reading.
 #
-type	alpha-value	the package lists it as nested in <color>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	arc-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	arc-size	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	arc-sweep	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	circle()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	command-end-point	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	control-point	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	coordinate-pair	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	cross-origin()	the package lists it as nested in <request-url-modifier>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	cross-origin-modifier	the package lists it as nested in <request-url-modifier>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	curve-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	ellipse()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	font-feature-value-type	the package lists it as nested in @font-feature-values; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	form-control-identifier	the package lists it as nested in ::picker(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	horizontal-line-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	input-position	the package lists it as nested in calc-interpolate(), color-interpolate(), interpolate(), transform-interpolate(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	inset()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	integrity()	the package lists it as nested in <request-url-modifier>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	integrity-modifier	the package lists it as nested in <request-url-modifier>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	keypress()	the package lists it as nested in <event-function>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	line-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	move-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	page-size	the package lists it as nested in size; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	path()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	polygon()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	referrer-policy()	the package lists it as nested in <request-url-modifier>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	referrer-policy-modifier	the package lists it as nested in <request-url-modifier>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	relative-control-point	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	repeat()	the package lists it as nested in <auto-repeat-line-color>, <auto-repeat-line-style>, <auto-repeat-line-width>, <auto-repeat>, <fixed-repeat>, <repeat-line-color>, <repeat-line-style>, <repeat-line-width>, <track-repeat>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	segment-options	the package lists it as nested in calc-interpolate(), color-interpolate(), interpolate(), transform-interpolate(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	shape()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	size-keyword	the package lists it as nested in calc-size(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	smooth-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	type()	the package lists it as nested in @function, attr(), image-set(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	vertical-line-command	the package lists it as nested in shape(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	wcag2()	the package lists it as nested in contrast-color(); the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
-type	xywh()	the package lists it as nested in <basic-shape>; the pinned files carry it in that entry's `values`, which webref_model.py does not read, so the tables have no entry for it
+type	output-value	the pin nests <output-value> in calc-interpolate(), color-interpolate(), interpolate() and transform-interpolate() with no grammar of its own (the entries carry only keyword values, so it is prose); the package lists no such type
 type-syntax	self-position	the package's text adds `flow-start | flow-end`; the pinned css-align text has neither (grep of ed/css/css-align*.json: no flow-start). The package postdates the pin by two days, and the tables follow the pin
 type-syntax	content-position	the package's text adds `flow-start | flow-end`, as for self-position; the pinned css-align text has neither, and the tables follow the pin
 type-syntax	alpha()	the package reads css-color-5 as `alpha(from <color> / [<alpha-value> | none])` (from required); the pinned css-color-5.json has `alpha([from <color>] [ / [<alpha-value> | none] ]? )`. The tables follow the pin, which accepts the shorter forms

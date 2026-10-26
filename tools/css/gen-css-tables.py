@@ -110,7 +110,7 @@ def read_normalize():
 
 def read_consolidate():
     path = os.path.join(HERE, "consolidate.tsv")
-    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}}
+    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}}
     if not os.path.exists(path):
         return rules
     with open(path, encoding="utf-8") as handle:
@@ -399,7 +399,13 @@ def build(model):
 
     # --- types and functions ---
     types = []
-    for (scope, key), entries in model["types"].items():
+    # the types and functions the pin nests in something that is not a property are global definitions (webref_model.py); the
+    # directive nested-ignore drops one container's copy of a name whose copies say different things (`type()`)
+    merged_types = wm.merged_types(model, consolidate["nested-ignore"])
+    for k, v in consolidate["nested-ignore"].items():
+        if not (isinstance(v, tuple) and v[0] == "used"):
+            die("consolidate.tsv: nested-ignore %s %s names no nested type (stale)" % k)
+    for (scope, key), entries in merged_types.items():
         base = wm.base_of(entries, "type %s" % key)
         grammar = wm.merged_grammar(base, entries) if base else None
         # a "grammar" that is the name again is prose, not a definition (`fit-content()` of column-width)

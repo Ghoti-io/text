@@ -324,7 +324,11 @@ TEST(CssProperty, ADescriptorIsParsedInTheContextOfItsAtRule) {
   const GTEXT_CSS_Property_Options page = descriptor_of("@page");
   EXPECT_EQ(parse(r, "marks", "crop cross", &page), "valid:crop cross");
   EXPECT_EQ(parse(r, "bleed", "3mm", &page), "valid:3mm");
-  EXPECT_EQ(parse(r, "size", "auto", &page), "not supported") << "<page-size> is not in the pin";
+  // `size` names <page-size>, which the pin nests inside the descriptor's own entry (read since the nested types are)
+  EXPECT_EQ(parse(r, "size", "auto", &page), "valid:auto");
+  EXPECT_EQ(parse(r, "size", "A4 landscape", &page), "valid:A4 landscape");
+  EXPECT_EQ(parse(r, "size", "10cm 5cm", &page), "valid:10cm 5cm");
+  EXPECT_EQ(parse(r, "size", "A4 A5", &page), "invalid");
   const GTEXT_CSS_Property_Options counter = descriptor_of("@counter-style");
   EXPECT_EQ(parse(r, "system", "cyclic", &counter), "valid:cyclic");
   EXPECT_EQ(parse(r, "negative", "'-' '+'", &counter), "valid:\"-\" \"+\"");

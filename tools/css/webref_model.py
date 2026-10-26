@@ -129,6 +129,34 @@ def type_key(name):
     return name
 
 
+def nested_definitions(node):
+    """The types and functions nested at any depth in the `values` of a type, at-rule, descriptor or selector entry."""
+    out = []
+    for v in node.get("values", []):
+        if v.get("type") in ("function", "type"):
+            out.append(v)
+        out.extend(nested_definitions(v))
+    return out
+
+
+def merged_types(model, ignore=None):
+    """The types and functions of the pin by (scope, key): the ones the pin lists at the top and in a property, and the global ones nested
+    in something else (see load). ``ignore`` maps (container, key) to a reason and is edited: a pair it names that was met is replaced
+    by ("used", reason), so that the caller can find the pairs that named nothing."""
+    merged = {k: list(v) for k, v in model["types"].items()}
+    for key, owned in sorted(model["nested_types"].items()):
+        for owner, entry in owned:
+            if ignore is not None and (owner, key) in ignore:
+                ignore[(owner, key)] = ("used", ignore[(owner, key)])
+                continue
+            held = merged.setdefault(("", key), [])
+            text = entry.raw.get("value")
+            if text is not None and any(e.raw.get("value") == text for e in held):
+                continue  # the same definition again (leader() is a type of its own and is nested in <content-list>): one entry
+            held.append(entry)
+    return merged
+
+
 def load(data_dir=DATA, manifest_path=None):
     if manifest_path is None:
         manifest_path = os.path.join(ROOT, "tools", "css", "WEBREF_SHA256")
@@ -139,6 +167,7 @@ def load(data_dir=DATA, manifest_path=None):
     descs = {}      # (atrule, name) -> [Entry]
     types = {}      # (scope, key) -> [Entry]; scope is '' or a property name
     selectors = {}  # name -> [Entry]
+    nested_types = {}  # key -> [(owner, Entry)]: types and functions nested in a type, at-rule, descriptor or selector
     stems = []
 
     for path in sorted(glob.glob(os.path.join(data_dir, "ed", "css", "*.json"))):
@@ -159,6 +188,19 @@ def load(data_dir=DATA, manifest_path=None):
             types.setdefault(("", type_key(v["name"])), []).append(Entry(stem, v))
         for s in doc["selectors"]:
             selectors.setdefault(s["name"], []).append(Entry(stem, s))
+        # The types and functions the pin nests inside something that is not a property: another type or function
+        # (`inset()` inside `<basic-shape>`, `<alpha-value>` inside `<color>`, and, one level further, the command types of
+        # `shape()`), an at-rule (`type()` inside `@function`), a descriptor (`<page-size>` inside `size` of `@page`) or a
+        # selector. They are the pin's definitions of those names and are global ones: a grammar elsewhere names them without
+        # saying where they were defined. The reading is recursive, and a definition that the pin repeats (`repeat()`
+        # is nested in nine entries) is one entry of the name, consolidated as any other.
+        containers = [(v["name"], v) for v in doc["values"]]
+        containers += [(a["name"], a) for a in doc["atrules"]]
+        containers += [("%s %s" % (a["name"], d["name"]), d) for a in doc["atrules"] for d in a["descriptors"]]
+        containers += [(s["name"], s) for s in doc["selectors"]]
+        for owner, node in containers:
+            for nested in nested_definitions(node):
+                nested_types.setdefault(type_key(nested["name"]), []).append((owner, Entry(stem, nested)))
 
     dfns = {}
     for n in (3, 4, 5):
@@ -167,6 +209,7 @@ def load(data_dir=DATA, manifest_path=None):
             dfns[n] = json.load(handle)["dfns"]
 
     return {
+        "nested_types": nested_types,
         "props": props,
         "atrules": atrules,
         "descs": descs,

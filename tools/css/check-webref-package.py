@@ -108,12 +108,15 @@ def divergences_of(model, pkg):
     ptypes = {}
     for t in list(pkg["types"]) + list(pkg["functions"]):
         ptypes.setdefault(wm.type_key(t["name"]), []).append(t)
-    pin_names = {k[1] for k in model["types"]}
+    # (the pin's definitions nested in something that is not a property are global ones, webref_model.merged_types)
+    ignore = read_nested_ignore()
+    pin_types = wm.merged_types(model, ignore)
+    pin_names = {k[1] for k in pin_types}
     for name in sorted(pin_names - set(ptypes)):
         note("type", name, "in the pin, not in the package")
     for name in sorted(set(ptypes) - pin_names):
         note("type", name, "in the package, not in the pin")
-    for (scope, name), entries in sorted(model["types"].items()):
+    for (scope, name), entries in sorted(pin_types.items()):
         if scope != "" or name not in ptypes:
             continue
         base = wm.base_of(entries, name)
@@ -129,6 +132,17 @@ def divergences_of(model, pkg):
     for name in sorted(ps - set(model["selectors"])):
         note("selector", name, "in the package, not in the pin")
     return out
+
+
+def read_nested_ignore():
+    """The nested-ignore lines of consolidate.tsv, as the generator reads them."""
+    rows = {}
+    with open(os.path.join(HERE, "consolidate.tsv"), encoding="utf-8") as handle:
+        for line in handle:
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) >= 4 and cols[0] == "nested-ignore":
+                rows[(cols[1], cols[2])] = cols[3]
+    return rows
 
 
 def read_divergences(path):
@@ -181,7 +195,7 @@ def main(argv):
     for key in sorted(set(listed) - set(found)):
         bad.append("STALE: %s %s is listed and the two readings agree now" % key)
     counts = {"property": len(model["props"]), "at-rule": len(model["atrules"]), "descriptor": len(model["descs"]),
-              "type": len({k[1] for k in model["types"]}), "selector": len(model["selectors"])}
+              "type": len({k[1] for k in wm.merged_types(model, read_nested_ignore())}), "selector": len(model["selectors"])}
     print("webref package: compared %d properties, %d at-rules, %d descriptors, %d types and functions, %d selectors; %d classified differences"
           % (counts["property"], counts["at-rule"], counts["descriptor"], counts["type"], counts["selector"], len(found)))
     for line in bad[:60]:
