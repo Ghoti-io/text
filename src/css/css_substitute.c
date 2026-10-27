@@ -1045,7 +1045,8 @@ static int fn_prelude(css_sub * sub, size_t fi) {
 static int eval_arg(css_sub * sub, size_t fi, int slot, size_t arg) {
   frame_t * f = &sub->frames[fi];
   const range_t r = f->args[arg];
-  return seq_start(sub, fi, slot, f->csrc, f->vals + r.from, r.count, false);
+  /* an empty argument of a function with no values at all: NULL plus 0 is not allowed to be formed */
+  return seq_start(sub, fi, slot, f->csrc, f->vals ? f->vals + r.from : NULL, r.count, false);
 }
 
 /// The result of a function is checked against the budget, and left in the frame.
@@ -1948,7 +1949,7 @@ static int step_random_item(css_sub * sub, size_t fi) {
     }
     range_t r = f->args[1 + pick];
     src_t * src = f->csrc;
-    const GTEXT_CSS_Component_Value * vals = f->vals + r.from;
+    const GTEXT_CSS_Component_Value * vals = f->vals ? f->vals + r.from : NULL;
     size_t n = r.count;
     if (n == 1 && vals[0].kind == GTEXT_CSS_VALUE_BLOCK && vals[0].type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
       /* a {} wrapper is the author's way of saying "the commas inside are mine": the contents are the option */
