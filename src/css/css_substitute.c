@@ -1793,7 +1793,9 @@ static double random_base_core(const GTEXT_CSS_Compute_Context * cc, GTEXT_CSS_E
     memcpy(ua, pre, 3);
     ua_len = 3;
     const size_t pl = prop_len < 200 ? prop_len : 200;
-    memcpy(ua + ua_len, prop, pl);
+    if (pl) { /* a custom property being computed names no property: prop is NULL */
+      memcpy(ua + ua_len, prop, pl);
+    }
     ua_len += pl;
     if (k->property_index_scoped) {
       ua[ua_len++] = '-';
