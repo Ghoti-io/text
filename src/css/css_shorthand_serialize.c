@@ -442,6 +442,7 @@ static const slash_rule slash_rules[] = {
   {"background", "background-position", "background-size", NULL},
   {"mask", "mask-position", "mask-size", NULL},
   {"container", "container-name", "container-type", NULL},
+  {"timeline-trigger-range", "timeline-trigger-activation-range", "timeline-trigger-active-range", NULL},
 };
 
 /// What the draft says of how some shorthands are written, beyond "leave out the components that are initial": the order of the components (the
@@ -638,6 +639,7 @@ static bool any_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, cons
   size_t perm[MAX_DIRECT * 2];
   const int all_initial_at = serial_order(c, sh, d, d->nlong, perm);
   const bool soft_after = nm(c, sh, "columns");
+  const bool is_line_clamp = nm(c, sh, "line-clamp");
   tbuf buf;
   tb_init(&buf, &c->alloc);
   bool any = false, all_initial = true;
@@ -670,6 +672,15 @@ static bool any_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, cons
     const bool need_s2 = follows && idx_s2 >= 0 && !v[idx_s2].initial;
     if (v[i].initial && !(follows && (need_s1 || need_s2)) && !force_text(c, sh, d, v, i)) {
       continue;
+    }
+    /* line-clamp: `-webkit-legacy` is a suffix of at least one of the two components before it, so the first is written for it */
+    if (!any && is_line_clamp && nm(c, d->ids[i], "continue")) {
+      for (size_t m = 0; m < d->nlong; m++) {
+        if (nm(c, d->ids[m], "max-lines")) {
+          tb_puts(&buf, v[m].text);
+          any = true;
+        }
+      }
     }
     /* columns: the slash follows the width or the count, whichever was written; the count alone is written only when the width was not */
     const bool skip_text = soft_after && follows && v[i].initial && any;
@@ -977,6 +988,18 @@ static bool layers_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
         /* a blur or a spread the author wrote is written back, whatever it is (`0px` too); one that was left out is not */
         is_init = dfl[h][final_only_h ? 0 : li];
       }
+      if (is_bs && nm(c, d->ids[h], "box-shadow-blur")) {
+        /* the blur comes before the spread: a spread that is written needs its blur written, or it reads as the blur */
+        for (size_t sp = 0; sp < nh; sp++) {
+          if (nm(c, d->ids[sp], "box-shadow-spread")) {
+            const char * sinit = initial_serialized(c, d->ids[sp]);
+            const bool spread_left_out = dfl[sp] ? dfl[sp][li] : (sinit && texteq(per[sp][li], sinit));
+            if (!spread_left_out) {
+              is_init = false;
+            }
+          }
+        }
+      }
       if (is_sh(c, d->ids[h])) {
         /* background-position's layer: initial when it is the initial of the sub-shorthand (0% 0%) */
         directs sd;
@@ -1031,6 +1054,28 @@ static bool layers_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
       if (follows && idx_s1 >= 0) {
         const char * ii = initial_serialized(c, d->ids[idx_s1]);
         need_s1 = !(ii && texteq(per[idx_s1][li], ii));
+        if (is_sh(c, d->ids[idx_s1])) {
+          /* a nested shorthand after the slash: initial when it is the initial values of its longhands one after the other */
+          directs sd;
+          tbuf tmp;
+          tb_init(&tmp, &c->alloc);
+          if (get_directs(c, d->ids[idx_s1], &sd)) {
+            for (size_t k = 0; k < sd.nlong; k++) {
+              const char * ik = initial_serialized(c, sd.ids[k]);
+              tb_puts(&tmp, k ? " " : "");
+              tb_puts(&tmp, ik ? ik : "");
+            }
+            bool same_initials = sd.nlong > 0;
+            const char * i0 = sd.nlong ? initial_serialized(c, sd.ids[0]) : NULL;
+            for (size_t k = 1; k < sd.nlong; k++) {
+              const char * ik = initial_serialized(c, sd.ids[k]);
+              same_initials = same_initials && i0 && ik && texteq(i0, ik);
+            }
+            /* a pair of equal values is written once */
+            need_s1 = !((tmp.data && texteq(tmp.data, per[idx_s1][li])) || (same_initials && i0 && texteq(i0, per[idx_s1][li])));
+          }
+          tb_free(&tmp);
+        }
       }
       if (is_init && !(follows && need_s1)) {
         continue;
@@ -1559,6 +1604,59 @@ static void compute_stext(sctx * c, GTEXT_CSS_Property_Id sh, stext * t) {
 
 /* ---- the entry points ----------------------------------------------------------------------------------------------------- */
 
+/// Whether the text, read as the shorthand's declaration, gives each of its longhands the value the block has. A shorthand's grammar cannot say every
+/// combination of its longhands (`box-shadow-offset: none` beside a color, a name that is also the keyword of another component, a suffix whose
+/// optional part before it is left out): the text that would be written is read back by the same parser that reads a stylesheet, and the shorthand is
+/// written only when that gives the longhands the block holds. Otherwise they are written one by one.
+static bool text_says_the_longhands(sctx * c, GTEXT_CSS_Property_Id sh, const char * text, const GTEXT_CSS_Property_Id * leaves, size_t nleaf) {
+  GTEXT_CSS_Property_Info si;
+  if (!gtext_css_registry_property_info(c->reg, sh, &si)) {
+    return false;
+  }
+  GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+  o.allocator = &c->alloc;
+  GTEXT_CSS_Declaration_Block * tmp = NULL;
+  if (gtext_css_block_new(c->reg, &o, &tmp) != GTEXT_CSS_OK) {
+    c->status = GTEXT_CSS_E_OOM;
+    return false;
+  }
+  GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  const GTEXT_CSS_Status added = gtext_css_block_add_text(tmp, si.name, si.name_length, text, strlen(text), false, NULL, &outcome, NULL);
+  bool same = added == GTEXT_CSS_OK && outcome == GTEXT_CSS_PROP_RESULT_VALID;
+  if (added == GTEXT_CSS_E_OOM) {
+    c->status = GTEXT_CSS_E_OOM;
+  }
+  for (size_t i = 0; same && i < nleaf; i++) {
+    const blk_item * mine = NULL;
+    char * want = leaf_text(c, leaves[i], &mine);
+    const blk_item * theirs = NULL;
+    for (size_t k = tmp->count; k > 0 && !theirs; k--) {
+      if (tmp->items[k - 1].property == leaves[i] && !tmp->items[k - 1].custom_name) {
+        theirs = &tmp->items[k - 1];
+      }
+    }
+    char * got = NULL;
+    size_t gl = 0;
+    if (!want || !theirs || theirs->outcome != GTEXT_CSS_PROP_RESULT_VALID ||
+        css_item_text(c->reg, &c->alloc, leaves[i], theirs->outcome, theirs->wide, theirs->set, &got, &gl) != GTEXT_CSS_OK) {
+      same = false;
+    }
+    else {
+      same = strcmp(want, got) == 0;
+      /* `normal` is the whole range, which the end `100%` and the start `0%` say as well: the shorthand's one value for a start with no range name
+         is both (web-platform-tests: `animation-range: 0% 100%` is `0%`) */
+      if (!same && ((nm(c, leaves[i], "animation-range-end") && strcmp(want, "100%") == 0 && strcmp(got, "normal") == 0) ||
+                    (nm(c, leaves[i], "animation-range-start") && strcmp(want, "0%") == 0 && strcmp(got, "normal") == 0))) {
+        same = true;
+      }
+    }
+    gtext_allocator_free(&c->alloc, want);
+    gtext_allocator_free(&c->alloc, got);
+  }
+  gtext_css_block_free(tmp);
+  return same && c->status == GTEXT_CSS_OK;
+}
+
 /// The text of a shorthand from a block: CSS-wide keyword, pending, or its kind's. `out` is a new string (the default allocator's, for the buffer
 /// release of css_serialize.h), empty when there is none.
 static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bool * all_wide, GTEXT_CSS_Wide_Keyword * wide, char ** out,
@@ -1582,7 +1680,7 @@ static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bo
   }
   /* every leaf present, with one importance, and of one sort */
   const blk_item * first = NULL;
-  bool same_wide = true, same_pending = true, any_valid = false;
+  bool same_wide = true, same_pending = true, all_valid = true;
   for (size_t i = 0; i < nleaf; i++) {
     const uint32_t at = leaves[i] <= c->nprops ? c->last[leaves[i]] : 0;
     if (!at) {
@@ -1600,7 +1698,7 @@ static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bo
     same_wide = same_wide && it->outcome == GTEXT_CSS_PROP_RESULT_WIDE && it->wide == first->wide && first->outcome == GTEXT_CSS_PROP_RESULT_WIDE;
     same_pending = same_pending && it->outcome == GTEXT_CSS_PROP_RESULT_PENDING && first->outcome == GTEXT_CSS_PROP_RESULT_PENDING &&
         it->shorthand == first->shorthand && it->declaration == first->declaration && it->shorthand != 0;
-    any_valid = any_valid || it->outcome == GTEXT_CSS_PROP_RESULT_VALID;
+    all_valid = all_valid && it->outcome == GTEXT_CSS_PROP_RESULT_VALID;
   }
   if (important) {
     *important = first->important;
@@ -1632,7 +1730,9 @@ static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bo
     *out_len = strlen(txt);
     return GTEXT_CSS_OK;
   }
-  if (!any_valid || gtext_css_shorthand_kind(c->reg, sh) == GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
+  /* CSSOM: a shorthand is written only when its longhands are all valid values, or all the same CSS-wide keyword, or all pending from one declaration;
+     a mix (`margin: 1px; margin-top: inherit`) has no text, and its longhands are written one by one */
+  if (!all_valid || gtext_css_shorthand_kind(c->reg, sh) == GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
     *out = empty;
     return GTEXT_CSS_OK;
   }
@@ -1668,6 +1768,14 @@ static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bo
     }
   }
   if (!last_t || !last_t->text) {
+    *out = empty;
+    return GTEXT_CSS_OK;
+  }
+  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {
+    if (c->status != GTEXT_CSS_OK) {
+      gtext_allocator_free(&dflt, empty);   /* the caller frees `*out` only when it is given one */
+      return c->status;
+    }
     *out = empty;
     return GTEXT_CSS_OK;
   }
@@ -1726,12 +1834,47 @@ static void put_declaration(tbuf * out, const char * name, size_t name_len, cons
   }
   tb_put(out, name, name_len);
   tb_puts(out, ": ");
+  /* a value starts at its first token: the white space before it (a pending value keeps the text as it was declared) is not part of it */
+  while (value_len && (*value == ' ' || *value == '\t' || *value == '\n' || *value == '\r' || *value == '\f')) {
+    value++;
+    value_len--;
+  }
   tb_put(out, value, value_len);
   if (important) {
     tb_puts(out, " !important");
   }
   tb_puts(out, ";");
 }
+
+/// A custom property's declarations sorted by name, then by place: all but the last of a name are shadowed.
+typedef struct {
+  const char * name;
+  size_t length;
+  size_t index;
+} cust_ref;
+
+static int cust_cmp(const void * a, const void * b) {
+  const cust_ref * x = a;
+  const cust_ref * y = b;
+  const size_t m = x->length < y->length ? x->length : y->length;
+  const int c = m ? memcmp(x->name, y->name, m) : 0;
+  if (c) {
+    return c;
+  }
+  if (x->length != y->length) {
+    return x->length < y->length ? -1 : 1;
+  }
+  return x->index < y->index ? -1 : x->index > y->index ? 1 : 0;
+}
+
+/// One shorthand the block writes: its text, and the place of the first declaration among its longhands (where it is written).
+typedef struct {
+  GTEXT_CSS_Property_Id sh;
+  char * text;
+  size_t length;
+  bool important;
+  size_t first;
+} plan;
 
 GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf * out) {
   sctx c;
@@ -1740,44 +1883,102 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
     return GTEXT_CSS_E_OOM;
   }
   const size_t n = block->count;
-  unsigned char * done = gtext_allocator_calloc(&c.alloc, n ? n : 1, 1);
-  if (!done) {
-    sctx_free(&c);
-    return GTEXT_CSS_E_OOM;
-  }
-  /* the shorthands each property is under: built once, for the properties the block has */
   const size_t np = c.nprops;
-  size_t nshort = 0;
-  GTEXT_CSS_Property_Id * shorts = gtext_allocator_calloc(&c.alloc, np ? np : 1, sizeof *shorts);
-  if (!shorts) {
-    gtext_allocator_free(&c.alloc, done);
-    sctx_free(&c);
-    return GTEXT_CSS_E_OOM;
+  /* the shorthands: each with its number of longhands, largest first (CSSOM tries the shorthand that covers most), ties by id */
+  cand * cands = gtext_allocator_calloc(&c.alloc, np ? np : 1, sizeof *cands);
+  uint32_t * claim = gtext_allocator_calloc(&c.alloc, n ? n : 1, sizeof *claim);     /* item -> plan + 1 */
+  unsigned char * shadow = gtext_allocator_calloc(&c.alloc, n ? n : 1, 1);          /* an earlier declaration of a custom property declared again */
+  cust_ref * customs = gtext_allocator_calloc(&c.alloc, n ? n : 1, sizeof *customs);
+  plan * plans = gtext_allocator_calloc(&c.alloc, np ? np : 1, sizeof *plans);
+  size_t nplans = 0, ncand = 0, ncust = 0;
+  GTEXT_CSS_Status status = GTEXT_CSS_OK;
+  if (!cands || !claim || !shadow || !customs || !plans) {
+    status = GTEXT_CSS_E_OOM;
   }
-  for (size_t id = 1; id <= np; id++) {
+  for (size_t id = 1; status == GTEXT_CSS_OK && id <= np; id++) {
     GTEXT_CSS_Property_Info info;
     gtext_css_registry_property_info(c.reg, (GTEXT_CSS_Property_Id)id, &info);
     if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) && !(info.name_length == 3 && memcmp(info.name, "all", 3) == 0) &&
         gtext_css_shorthand_kind(c.reg, (GTEXT_CSS_Property_Id)id) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
-      shorts[nshort++] = (GTEXT_CSS_Property_Id)id;
+      GTEXT_CSS_Property_Id lv[256];
+      size_t nl = 0;
+      bool present = leaves_under(&c, (GTEXT_CSS_Property_Id)id, lv, 256, &nl) && nl > 0;
+      for (size_t m = 0; present && m < nl; m++) {
+        present = lv[m] <= np && c.last[lv[m]] != 0;
+      }
+      if (present) {
+        cands[ncand].sh = (GTEXT_CSS_Property_Id)id;
+        cands[ncand].leaves = nl;
+        ncand++;
+      }
     }
   }
-  GTEXT_CSS_Status status = GTEXT_CSS_OK;
-  bool first = true;
-  cand cands[128];
-  for (size_t i = 0; i < n && status == GTEXT_CSS_OK; i++) {
-    if (done[i]) {
+  if (status == GTEXT_CSS_OK) {
+    qsort(cands, ncand, sizeof *cands, cand_cmp);
+  }
+  /* the plan: in that order, each shorthand that can be written and does not hold a longhand another has already taken. The choice does not depend on
+     the order of the declarations, so the text written and read again is the same text. */
+  for (size_t k = 0; status == GTEXT_CSS_OK && k < ncand; k++) {
+    GTEXT_CSS_Property_Id lv[256];
+    size_t nl = 0;
+    leaves_under(&c, cands[k].sh, lv, 256, &nl);
+    bool taken = false;
+    for (size_t m = 0; m < nl && !taken; m++) {
+      taken = claim[c.last[lv[m]] - 1] != 0;
+    }
+    if (taken) {
       continue;
     }
+    bool all_wide = false;
+    GTEXT_CSS_Wide_Keyword wide = GTEXT_CSS_WIDE_NONE;
+    char * text = NULL;
+    size_t tl = 0;
+    bool imp = false;
+    status = shorthand_text_in(&c, cands[k].sh, &all_wide, &wide, &text, &tl, &imp, NULL);
+    if (status != GTEXT_CSS_OK) {
+      break;
+    }
+    if (tl == 0) {
+      gtext_allocator_free(gtext_allocator_default(), text);
+      continue;
+    }
+    plan * pl = &plans[nplans];
+    pl->sh = cands[k].sh;
+    pl->text = text;
+    pl->length = tl;
+    pl->important = imp;
+    pl->first = (size_t)-1;
+    for (size_t m = 0; m < nl; m++) {
+      const size_t item = c.last[lv[m]] - 1;
+      claim[item] = (uint32_t)nplans + 1;
+      if (item < pl->first) {
+        pl->first = item;
+      }
+    }
+    nplans++;
+  }
+  /* custom properties: the last declaration of a name counts */
+  for (size_t i = 0; status == GTEXT_CSS_OK && i < n; i++) {
+    if (block->items[i].custom_name) {
+      customs[ncust].name = block->items[i].custom_name;
+      customs[ncust].length = block->items[i].custom_length;
+      customs[ncust].index = i;
+      ncust++;
+    }
+  }
+  if (ncust > 1) {   /* qsort is given a pointer: there is none when the table could not be allocated */
+    qsort(customs, ncust, sizeof *customs, cust_cmp);
+  }
+  for (size_t i = 0; i + 1 < ncust; i++) {
+    if (customs[i].length == customs[i + 1].length && memcmp(customs[i].name, customs[i + 1].name, customs[i].length) == 0) {
+      shadow[customs[i].index] = 1;
+    }
+  }
+  bool first = true;
+  for (size_t i = 0; i < n && status == GTEXT_CSS_OK; i++) {
     const blk_item * it = &block->items[i];
     if (it->custom_name) {
-      /* the last declaration of a custom property of this name counts */
-      bool shadowed = false;
-      for (size_t k = i + 1; k < n && !shadowed; k++) {
-        shadowed = block->items[k].custom_name && block->items[k].custom_length == it->custom_length &&
-            memcmp(block->items[k].custom_name, it->custom_name, it->custom_length) == 0;
-      }
-      if (shadowed) {
+      if (shadow[i]) {
         continue;
       }
       char * t = NULL;
@@ -1805,71 +2006,14 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
     if (it->property > np || c.last[it->property] != (uint32_t)(i + 1)) {
       continue;   /* an earlier declaration of a property that is declared again */
     }
-    /* shorthands that include this property, fewest leaves last */
-    size_t ncand = 0;
-    for (size_t k = 0; k < nshort && ncand < 128; k++) {
-      GTEXT_CSS_Property_Id lv[256];
-      size_t nl = 0;
-      if (!leaves_under(&c, shorts[k], lv, 256, &nl)) {
-        continue;
-      }
-      bool has = false;
-      for (size_t m = 0; m < nl && !has; m++) {
-        has = lv[m] == it->property;
-      }
-      if (has) {
-        cands[ncand].sh = shorts[k];
-        cands[ncand].leaves = nl;
-        ncand++;
-      }
-    }
-    qsort(cands, ncand, sizeof *cands, cand_cmp);
-    bool written = false;
-    for (size_t k = 0; k < ncand && !written && status == GTEXT_CSS_OK; k++) {
-      /* a shorthand that holds a longhand already written would write it twice */
-      {
-        GTEXT_CSS_Property_Id lv0[256];
-        size_t nl0 = 0;
-        bool overlaps = false;
-        if (leaves_under(&c, cands[k].sh, lv0, 256, &nl0)) {
-          for (size_t m = 0; m < nl0 && !overlaps; m++) {
-            const uint32_t at = lv0[m] <= np ? c.last[lv0[m]] : 0;
-            overlaps = at && done[at - 1];
-          }
-        }
-        if (overlaps) {
-          continue;
-        }
-      }
-      bool all_wide = false;
-      GTEXT_CSS_Wide_Keyword wide = GTEXT_CSS_WIDE_NONE;
-      char * text = NULL;
-      size_t tl = 0;
-      bool imp = false;
-      status = shorthand_text_in(&c, cands[k].sh, &all_wide, &wide, &text, &tl, &imp, NULL);
-      if (status != GTEXT_CSS_OK) {
-        break;
-      }
-      if (tl > 0) {
+    if (claim[i]) {
+      const plan * pl = &plans[claim[i] - 1];
+      if (pl->first == i) {
         GTEXT_CSS_Property_Info si;
-        gtext_css_registry_property_info(c.reg, cands[k].sh, &si);
-        put_declaration(out, si.name, si.name_length, text, tl, imp, first);
+        gtext_css_registry_property_info(c.reg, pl->sh, &si);
+        put_declaration(out, si.name, si.name_length, pl->text, pl->length, pl->important, first);
         first = false;
-        written = true;
-        GTEXT_CSS_Property_Id lv[256];
-        size_t nl = 0;
-        leaves_under(&c, cands[k].sh, lv, 256, &nl);
-        for (size_t m = 0; m < nl; m++) {
-          for (size_t q = 0; q < n; q++) {
-            if (block->items[q].property == lv[m] && !block->items[q].custom_name) {
-              done[q] = 1;
-            }
-          }
-        }
       }
-      gtext_allocator_free(gtext_allocator_default(), text);
-    }
-    if (written || status != GTEXT_CSS_OK) {
       continue;
     }
     GTEXT_CSS_Property_Info info;
@@ -1877,13 +2021,11 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
     char * t = NULL;
     size_t tl = 0;
     if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING && it->shorthand) {
-      /* a longhand left pending by a shorthand that holds `var()` (and not written as that shorthand, one of its longhands having been replaced):
-         its own text is not a value of it, so CSSOM writes it empty */
-      t = dupn(&c, "", 0);
+      /* a longhand left pending by a shorthand that holds `var()`, when that shorthand could not be written (one of its longhands was replaced):
+         the text it holds is the shorthand's, not a value of this longhand, and an empty value is no declaration, so it is left out */
+      continue;
     }
-    else {
-      status = css_item_text(c.reg, &c.alloc, it->property, it->outcome, it->wide, it->set, &t, &tl);
-    }
+    status = css_item_text(c.reg, &c.alloc, it->property, it->outcome, it->wide, it->set, &t, &tl);
     if (status == GTEXT_CSS_OK && t) {
       if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING && !it->shorthand) {
         tl = strlen(t);
@@ -1896,8 +2038,14 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   if ((out->oom || c.status != GTEXT_CSS_OK) && status == GTEXT_CSS_OK) {
     status = GTEXT_CSS_E_OOM;   /* an allocation failed somewhere that had no way to say so: the text is not the block's */
   }
-  gtext_allocator_free(&c.alloc, shorts);
-  gtext_allocator_free(&c.alloc, done);
+  for (size_t k = 0; plans && k < nplans; k++) {
+    gtext_allocator_free(gtext_allocator_default(), plans[k].text);
+  }
+  gtext_allocator_free(&c.alloc, plans);
+  gtext_allocator_free(&c.alloc, customs);
+  gtext_allocator_free(&c.alloc, shadow);
+  gtext_allocator_free(&c.alloc, claim);
+  gtext_allocator_free(&c.alloc, cands);
   sctx_free(&c);
   return status;
 }

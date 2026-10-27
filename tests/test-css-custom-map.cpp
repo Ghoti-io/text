@@ -68,7 +68,7 @@ struct Map {
 css_cmap * set(css_cmap * base, const std::string & name, const std::string & text, const GTEXT_Allocator * alloc = nullptr) {
   GTEXT_CSS_Value_Set * v = text.empty() ? nullptr : value_of(text);
   css_cmap * out = nullptr;
-  EXPECT_EQ(css_cmap_set(alloc ? alloc : gtext_allocator_default(), base, name.data(), name.size(), v, &out), GTEXT_CSS_OK);
+  EXPECT_EQ(css_cmap_set(alloc ? alloc : gtext_allocator_default(), base, name.data(), name.size(), v, 12345, &out, nullptr), GTEXT_CSS_OK);
   gtext_css_value_set_free(v);
   return out;
 }
@@ -182,6 +182,48 @@ TEST(CssCustomMap, ManyNamesStayOrderedAndFindableAndTheTreeStaysShallow) {
   }
 }
 
+TEST(CssCustomMap, TheShapeOfTheTreeDependsOnTheNamesAndNotOnTheOrderTheyWereSetIn) {
+  // a treap is the one tree its names and priorities make: a rotation to the left that is wrong, or one that is missed, makes another tree for one order
+  // of insertion, which the names found and their order do not show
+  std::vector<std::string> all;
+  for (int i = 0; i < 700; i++) {
+    all.push_back("--k" + std::to_string((i * 7919) % 700));
+  }
+  std::vector<std::vector<std::string>> orders(4, all);
+  std::sort(orders[0].begin(), orders[0].end());
+  orders[1] = orders[0];
+  std::reverse(orders[1].begin(), orders[1].end());
+  uint32_t seed = 99;
+  for (size_t i = orders[2].size(); i > 1; i--) {
+    seed = seed * 1664525u + 1013904223u;
+    std::swap(orders[2][i - 1], orders[2][seed % i]);
+  }
+  for (size_t i = 0; i < orders[3].size(); i++) {   // the middle outward
+    orders[3][i] = orders[0][i % 2 ? orders[0].size() / 2 + i / 2 : orders[0].size() / 2 - i / 2 - 1];
+  }
+  uint64_t shape = 0;
+  size_t height = 0;
+  for (size_t o = 0; o < orders.size(); o++) {
+    Map m;
+    for (const std::string & name : orders[o]) {
+      css_cmap * next = set(m.m, name, "1");
+      css_cmap_release(m.m);
+      m.m = next;
+    }
+    size_t h = 0;
+    const uint64_t sh = css_cmap_shape(m.m, &h);
+    EXPECT_EQ(css_cmap_count(m.m), 700u) << "order " << o;
+    if (o == 0) {
+      shape = sh;
+      height = h;
+    }
+    EXPECT_EQ(sh, shape) << "order " << o;
+    EXPECT_EQ(h, height) << "order " << o;
+    EXPECT_LT(h, 40u) << "700 names, 2 log2 n is 20: order " << o;
+    EXPECT_EQ(names(m.m).size(), 700u);
+  }
+}
+
 TEST(CssCustomMap, ALongChainSharesWhatItInherits) {
   // 4000 maps, each made from the one before with one more name: a copy at every level would hold 8 million nodes; sharing holds about
   // 4000 times the nodes of one path
@@ -222,7 +264,7 @@ TEST(CssCustomMap, AnAllocationThatFailsLeavesTheMapAsItWasAndLeaksNothing) {
     css_cmap * out = nullptr;
     GTEXT_CSS_Value_Set * v = value_of("v");
     fa.arm(n);
-    const GTEXT_CSS_Status st = css_cmap_set(&fa.alloc, more.m, "--z", 3, v, &out);
+    const GTEXT_CSS_Status st = css_cmap_set(&fa.alloc, more.m, "--z", 3, v, 12345, &out, nullptr);
     fa.disarm();
     gtext_css_value_set_free(v);
     if (!fa.failed) {

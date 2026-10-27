@@ -26,7 +26,7 @@
  *
  * A style inherits the custom properties of its parent and adds its own, and a chain of n elements that each declare one has n of them at its end.
  * Copying the parent's table at every level would be quadratic in the depth; this is a persistent treap (immutable nodes, path copying, the priority a
- * hash of the name), so setting a name costs O(log n) new nodes and shares the rest with the parent's map, and a style that declares nothing holds the
+ * hash of the name, keyed by the context so that no names make it deep), so setting a name costs O(log n) new nodes and shares the rest with the parent's map, and a style that declares nothing holds the
  * parent's root itself. A node is reference counted, atomically: styles are freed on any thread. Nothing here recurses; the treap's height is
  * logarithmic because the priorities are a hash of the names, and a path that is deeper than the stack (which no set of names makes) is
  * GTEXT_CSS_E_LIMIT_DEPTH.
@@ -44,6 +44,7 @@
 #include <ghoti.io/text/macros.h>
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -61,6 +62,10 @@ void css_cmap_release(css_cmap * map);
 /// How many names have a value.
 size_t css_cmap_count(const css_cmap * map);
 
+/// A hash of the shape of the tree (every node's name, depth and priority, and whether it has a value) and, in `*height` (may be NULL), its height; 0 and
+/// (size_t)-1 for a tree deeper than the stack. For tests: a treap's shape is a function of its names and priorities alone, whatever order they were set in.
+uint64_t css_cmap_shape(const css_cmap * map, size_t * height);
+
 /// The value of a name, or NULL where there is none (the name is absent or hidden).
 const GTEXT_CSS_Value_Set * css_cmap_find(const css_cmap * map, const char * name, size_t length);
 
@@ -68,8 +73,10 @@ const GTEXT_CSS_Value_Set * css_cmap_find(const css_cmap * map, const char * nam
 bool css_cmap_at(const css_cmap * map, size_t index, const char ** name, size_t * length, const GTEXT_CSS_Value_Set ** value);
 
 /// A map that is `map` with `name` set to `value` (retained; NULL hides the name). `*out` is a new owner; `map` is not touched, and stays as it was
-/// whatever happens. GTEXT_CSS_OK, GTEXT_CSS_E_OOM or GTEXT_CSS_E_LIMIT_DEPTH.
-GTEXT_CSS_Status css_cmap_set(const GTEXT_Allocator * alloc, css_cmap * map, const char * name, size_t length, GTEXT_CSS_Value_Set * value, css_cmap ** out);
+/// whatever happens. `seed` keys the priority of a new name: one seed for every map of a family (a context). GTEXT_CSS_OK, GTEXT_CSS_E_OOM or GTEXT_CSS_E_LIMIT_DEPTH.
+/// `work` (may be NULL) is increased by the nodes read and the nodes made.
+GTEXT_CSS_Status css_cmap_set(const GTEXT_Allocator * alloc, css_cmap * map, const char * name, size_t length, GTEXT_CSS_Value_Set * value, uint64_t seed,
+    css_cmap ** out, size_t * work);
 
 #ifdef __cplusplus
 }

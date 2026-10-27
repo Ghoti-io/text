@@ -63,7 +63,10 @@
  * Serializing a block follows CSSOM: for each declaration in order, if its longhand belongs to a shorthand whose longhands are all in the block
  * with equal importance and none pending, the declaration is written once as the shortest form of the shorthand
  * (gtext_css_block_shorthand_value()) and its longhands are not written again; otherwise as `name: value`. A shorthand is tried in the order
- * of fewest longhands first, as the browsers do. WPT's shorthand serialization vectors are scored against it (make conformance-css-property).
+ * of most longhands first (the one that covers the most of the block wins a longhand that two of them contain; ties go to the registry's order).
+ * WPT's shorthand serialization vectors are scored against it (make conformance-css-property). A shorthand is written only if the text, read back as that
+ * shorthand, gives every longhand the value the block holds (`box-shadow-offset: none` beside a color has no text in `box-shadow`, and the longhands are
+ * written one by one).
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_SHORTHAND_H

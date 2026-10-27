@@ -74,6 +74,7 @@ static const char * const algo_names[GTEXT_CSS_ALGO_COUNT] = {
   [GTEXT_CSS_ALGO_RULE_WIDTH] = "RULE_WIDTH",
   [GTEXT_CSS_ALGO_LINE_WIDTH] = "LINE_WIDTH",
   [GTEXT_CSS_ALGO_DISPLAY] = "DISPLAY",
+  [GTEXT_CSS_ALGO_FLOAT] = "FLOAT",
   [GTEXT_CSS_ALGO_COLOR] = "COLOR",
   [GTEXT_CSS_ALGO_OPACITY] = "OPACITY",
   [GTEXT_CSS_ALGO_ZOOM] = "ZOOM",
@@ -447,7 +448,7 @@ static const struct { int slot; const char * name; } well_known[] = {
   {CSS_P_FONT_WIDTH, "font-width"}, {CSS_P_FONT_SIZE, "font-size"}, {CSS_P_FONT_SIZE_ADJUST, "font-size-adjust"},
   {CSS_P_LINE_HEIGHT, "line-height"}, {CSS_P_FLOAT, "float"}, {CSS_P_POSITION, "position"}, {CSS_P_DISPLAY, "display"},
   {CSS_P_COLOR, "color"}, {CSS_P_MATH_DEPTH, "math-depth"}, {CSS_P_MATH_STYLE, "math-style"}, {CSS_P_TEXT_ALIGN_ALL, "text-align-all"},
-  {CSS_P_ALL, "all"}, {CSS_P_UNICODE_BIDI, "unicode-bidi"}, {CSS_P_CUSTOM, "--*"},
+  {CSS_P_ALL, "all"}, {CSS_P_UNICODE_BIDI, "unicode-bidi"}, {CSS_P_COLOR_SCHEME, "color-scheme"}, {CSS_P_CUSTOM, "--*"},
 };
 
 /// The property of a name, 0 if there is none.
@@ -624,6 +625,13 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
   cc->registry = registry;
   cc->alloc = alloc;
   cc->options = o;
+  if (cc->options.custom_hash_seed == 0) {
+    /* no clock and no process state are read: the addresses of this allocation, the stack and the registry (randomized by the system) are the seed */
+    uint64_t seed = (uint64_t)(uintptr_t)cc * 0x9E3779B97F4A7C15ULL;
+    seed ^= ((uint64_t)(uintptr_t)&o + (uint64_t)(uintptr_t)registry) * 0xC2B2AE3D27D4EB4FULL;
+    seed ^= seed >> 29;
+    cc->options.custom_hash_seed = seed ? seed : 0x5851F42D4C957F2DULL;
+  }
   cc->env = e;
   cc->nprops = gtext_css_registry_property_count(registry);
   cc->meta = gtext_allocator_calloc(&alloc, cc->nprops ? cc->nprops : 1, sizeof *cc->meta);
@@ -775,7 +783,7 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
   }
   gtext_allocator_free(&alloc, seen);
 
-  /* the initial values: parsed, then computed in a probe style of a root, then in three more that change what an initial value could depend on */
+  /* the initial values: parsed, then computed in a probe style of a root, then in two more: one in the other color scheme and one below it */
   for (size_t i = 0; i < cc->nprops; i++) {
     css_pmeta * m = &cc->meta[i];
     if (m->shorthand || m->alias_of || m->klass == GTEXT_CSS_COMPUTE_CUSTOM) {
@@ -810,14 +818,9 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
   GTEXT_CSS_Computed_Style *base = NULL, *other = NULL, *child = NULL;
   GTEXT_CSS_Status st = probe_style(cc, &cc->env, NULL, &base);
   GTEXT_CSS_Environment perturbed = cc->env;
-  perturbed.default_font_size = cc->env.default_font_size * 1.25 + 0.5;
-  perturbed.small_viewport.width = cc->env.small_viewport.width * 1.1 + 1;
-  perturbed.small_viewport.height = cc->env.small_viewport.height * 1.1 + 1;
-  perturbed.large_viewport.width = cc->env.large_viewport.width * 1.1 + 1;
-  perturbed.large_viewport.height = cc->env.large_viewport.height * 1.1 + 1;
-  perturbed.dynamic_viewport.width = cc->env.dynamic_viewport.width * 1.1 + 1;
-  perturbed.dynamic_viewport.height = cc->env.dynamic_viewport.height * 1.1 + 1;
-  perturbed.device_pixel_ratio = cc->env.device_pixel_ratio * 2.0;
+  /* the one thing an initial value can depend on that a probe of a root does not show: the color scheme (the system colors are the element's), which a
+     context's environment cannot make constant per element; the viewport, the pixel ratio and the default font size are the context's own and the same
+     for every style, so an initial value that depends on them is computed once */
   perturbed.color_scheme = cc->env.color_scheme == GTEXT_CSS_SCHEME_LIGHT ? GTEXT_CSS_SCHEME_DARK : GTEXT_CSS_SCHEME_LIGHT;
   if (st == GTEXT_CSS_OK) {
     st = probe_style(cc, &perturbed, NULL, &other);
@@ -956,6 +959,54 @@ static GTEXT_CSS_Status from_wide(css_state * st, GTEXT_CSS_Property_Id id, GTEX
   }
 }
 
+/// Whether the text of a pending value (the tokens as declared) holds a call of `function` (its name and `(`), in any case and outside a string.
+static bool pending_calls(const GTEXT_CSS_Value_Set * set, const char * function) {
+  const GTEXT_CSS_Value * root = set ? gtext_css_value_set_root(set) : NULL;
+  if (!root || !root->text.data) {
+    return false;
+  }
+  const size_t fl = strlen(function);
+  char quote = 0;
+  for (size_t i = 0; i < root->text.length; i++) {
+    const char ch = root->text.data[i];
+    if (quote) {
+      if (ch == '\\') {
+        i++;
+      }
+      else if (ch == quote) {
+        quote = 0;
+      }
+      continue;
+    }
+    if (ch == '"' || ch == '\'') {
+      quote = ch;
+      continue;
+    }
+    if (i + fl <= root->text.length) {
+      size_t k = 0;
+      while (k < fl && (root->text.data[i + k] >= 'A' && root->text.data[i + k] <= 'Z' ? root->text.data[i + k] + 32 : root->text.data[i + k]) == function[k]) {
+        k++;
+      }
+      if (k == fl) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// The failure of a value that was not substituted: `sibling-index()` and `sibling-count()` are the element tree's, so they name the callback that
+/// answers them (GTEXT_CSS_E_UNSUPPORTED); anything else is the caller's to substitute (GTEXT_CSS_E_INVALID).
+static GTEXT_CSS_Status unsubstituted(css_state * st, const char * name, const GTEXT_CSS_Value_Set * set) {
+  if (pending_calls(set, "sibling-index(")) {
+    return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "sibling_index", "sibling-index() is resolved against the element tree before a style is computed; this layer does not substitute it");
+  }
+  if (pending_calls(set, "sibling-count(")) {
+    return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "sibling_count", "sibling-count() is resolved against the element tree before a style is computed; this layer does not substitute it");
+  }
+  return css_st_fail(st, GTEXT_CSS_E_INVALID, name, "a value with var() in it must be substituted before it is computed");
+}
+
 /// Compute the value of `id` from the declaration `src` (or from nothing), into `*out`.
 static GTEXT_CSS_Status compute_from_source(css_state * st, GTEXT_CSS_Property_Id id, css_source src, GTEXT_CSS_Value_Set ** out) {
   const css_pmeta * m = &st->cc->meta[id - 1];
@@ -973,7 +1024,7 @@ static GTEXT_CSS_Status compute_from_source(css_state * st, GTEXT_CSS_Property_I
   case GTEXT_CSS_PROP_RESULT_VALID:
     return compute_value(st, id, it.set, true, out);
   default:
-    return css_st_fail(st, GTEXT_CSS_E_INVALID, m->name, "a value with var() in it must be substituted before it is computed");
+    return unsubstituted(st, m->name, it.set);
   }
 }
 
@@ -1196,6 +1247,7 @@ static GTEXT_CSS_Status compute_custom(css_state * st) {
   }
   /* the parent's map is this style's, with each name this element declares set: O(log n) nodes a name, the rest shared; with none declared the
      parent's map itself (a chain of n elements costs O(n) when none declares a thing, and O(n log n) when each declares one) */
+  st->current = 0;   /* an error in a custom property names none of the properties computed before it */
   css_cmap * parent_map = st->parent ? st->parent->custom : NULL;
   style->custom = css_cmap_retain(parent_map);
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
@@ -1225,11 +1277,11 @@ static GTEXT_CSS_Status compute_custom(css_state * st) {
       }
     }
     else {
-      status = css_st_fail(st, GTEXT_CSS_E_INVALID, "--*", "a value with var() in it must be substituted before it is computed");
+      status = unsubstituted(st, "--*", it.set);
       break;
     }
     css_cmap * next = NULL;
-    const GTEXT_CSS_Status set = css_cmap_set(&a, style->custom, name.data, name.length, value, &next);
+    const GTEXT_CSS_Status set = css_cmap_set(&a, style->custom, name.data, name.length, value, cc->options.custom_hash_seed, &next, &st->work);
     if (set != GTEXT_CSS_OK) {
       status = css_st_fail(st, set, NULL, NULL);
       break;

@@ -874,6 +874,7 @@ GTEXT_CSS_Compute_Context * quad_compute_context() {
   static GTEXT_CSS_Compute_Context * c = [] {
     GTEXT_CSS_Compute_Context * made = nullptr;
     GTEXT_CSS_Compute_Options o = gtext_css_compute_options_default();
+    o.custom_hash_seed = 12345;   // a fixed seed: the treap's shape, and so this gate's numbers, are the same on every run
     o.max_list_items = (size_t)1 << 24;
     o.max_value_nodes = (size_t)1 << 28;
     gtext_css_compute_context_new(r, nullptr, &o, &made, nullptr);
@@ -946,6 +947,38 @@ std::function<Measured(size_t)> css_compute_value(const char * property, std::fu
       m.why = "the declaration was not accepted";
       gtext_css_block_free(b);
       return m;
+    }
+    GTEXT_CSS_Computed_Style * style = nullptr;
+    GTEXT_CSS_Compute_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_compute_style(ctx, b, nullptr, nullptr, &style, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the style could not be computed: ") + gtext_css_status_string(st) + " " + r.name;
+    }
+    gtext_css_computed_free(style);
+    gtext_css_block_free(b);
+    return m;
+  };
+}
+
+// One element whose block declares k custom properties (each is one set into the persistent map: GTEXT_CSS_Compute_Result::work counts the nodes read and made).
+std::function<Measured(size_t)> css_compute_customs(std::function<std::string(size_t)> name) {
+  return [name](size_t k) {
+    Measured m;
+    GTEXT_CSS_Compute_Context * ctx = quad_compute_context();
+    GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+    GTEXT_CSS_Declaration_Block * b = nullptr;
+    gtext_css_block_new(quad_registry(), &o, &b);
+    for (size_t i = 0; i < k; i++) {
+      const std::string n = name(i);
+      m.bytes += n.size() + 3;
+      GTEXT_CSS_Property_Outcome outcome;
+      gtext_css_block_add_text(b, n.data(), n.size(), "1", 1, false, nullptr, &outcome, nullptr);
+    }
+    if (gtext_css_block_count(b) != k) {
+      m.ok = false;
+      m.why = "a declaration was not accepted";
     }
     GTEXT_CSS_Computed_Style * style = nullptr;
     GTEXT_CSS_Compute_Result r{};
@@ -1654,16 +1687,49 @@ std::vector<Shape> build_shapes() {
   // ---- computed values and shorthands ----
   add("css", "CSS compute: an inheritance chain of n elements", 150,
       css_compute_chain([](size_t i) { return std::string("font-size: ") + (i % 2 ? "1.01em" : "0.99em"); })).per_byte = 0;
-  add("css", "CSS compute: a chain of n elements, each with one more custom property", 150,
-      css_compute_chain([](size_t i) { return "--p" + std::to_string(i) + ": " + std::to_string(i); })).per_byte = 0;
+  {
+    Shape & s1 = add("css", "CSS compute: a chain of n elements, each with one more custom property", 150,
+        css_compute_chain([](size_t i) { return "--p" + std::to_string(i) + ": " + std::to_string(i); }));
+    s1.per_byte = 0;
+    s1.bound = 6.5;
+    s1.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
   add("css", "CSS compute: a chain of n elements, each with a relative width and a logical margin", 150,
       css_compute_chain([](size_t i) { return std::string(i % 2 ? "width: 2em" : "margin-inline-start: 1.5em"); })).per_byte = 0;
   add("css", "CSS compute: a list of n images", 1500,
       css_compute_value("background-image", [](size_t k) { return repeat("url(a), ", k) + "url(b)"; })).per_byte = 0;
   add("css", "CSS compute: a list of n transition durations", 1500,
       css_compute_value("transition-duration", [](size_t k) { return repeat("1500ms, ", k) + "2s"; })).per_byte = 0;
-  add("css", "CSS compute: a calculation of n terms", 1500,
-      css_compute_value("width", [](size_t k) { return "calc(1px" + repeat(" + 1em", k) + ")"; })).per_byte = 0;
+  {
+    Shape & like = add("css", "CSS compute: a sum of n like terms (combined as it is parsed)", 1500,
+        css_compute_value("width", [](size_t k) { return "calc(1px" + repeat(" + 1em", k) + ")"; }));
+    like.per_byte = 0;
+    like.flat = true;
+    like.note = "the terms are one node by the time a style is computed: what is measured is that a style does not look at the source again";
+  }
+  // A sum of like terms is combined into one node when it is parsed (the work of the first shape is the same at every size: a flat line), which a
+  // walk that costs by the node cannot show. A calculation nested n deep has a node for every level (the nesting is limited to 256 deep, so
+  // the shapes stop at 160), and a product of factors that are not alike keeps a node for each.
+  add("css", "CSS compute: a calculation nested n deep to the right", 10,
+      css_compute_value("width", [](size_t k) { return repeat("max(1px, 1em + ", k) + "2px" + repeat(")", k); })).per_byte = 0;
+  add("css", "CSS compute: a calculation nested n deep to the left", 10,
+      css_compute_value("width", [](size_t k) { return repeat("max(", k) + "1em" + repeat(", 1px + 2em)", k); })).per_byte = 0;
+  add("css", "CSS compute: a product of n factors with a unit in each", 600,
+      css_compute_value("width", [](size_t k) { return "calc(1px" + repeat(" * 2 * (1em / 1px)", k) + ")"; })).per_byte = 0;
+  {
+    Shape & sc = add("css", "CSS compute: one element with n custom properties", 600,
+        css_compute_customs([](size_t i) { return "--c" + std::to_string(i); }));
+    sc.per_byte = 0;
+    sc.bound = 6.5;
+    sc.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
+  {
+    Shape & sc = add("css", "CSS compute: one element with n custom properties, the names in order", 600,
+        css_compute_customs([](size_t i) { char b[24]; std::snprintf(b, sizeof b, "--n%08zu", i); return std::string(b); }));
+    sc.per_byte = 0;
+    sc.bound = 6.5;
+    sc.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
   add("css", "CSS shorthand: a background of n layers", 150,
       css_shorthand_expand("background", [](size_t k) { return repeat("url(a) 1px 2px / 3px 4px no-repeat, ", k) + "red"; })).per_byte = 0;
   add("css", "CSS shorthand: an animation of n layers", 40,

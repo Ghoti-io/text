@@ -90,6 +90,11 @@ void css_st_font_query(css_state * st, bool root, GTEXT_CSS_Font_Query * q) {
   q->element = st->element;
 }
 
+/// A length an environment callback gave: finite and not negative (a NaN, an infinity or a negative size would flow into every length that is made from it).
+static bool callback_length_ok(double v) {
+  return v - v == 0.0 && v >= 0.0;
+}
+
 /// The line height of a style in px; false (and the failure set) when it is `normal` and the environment cannot say.
 static bool line_height_px(css_state * st, const GTEXT_CSS_Computed_Style * style, const GTEXT_CSS_Value * lh, double font_px, bool root,
     const char * unit_name, double * px) {
@@ -118,6 +123,10 @@ static bool line_height_px(css_state * st, const GTEXT_CSS_Computed_Style * styl
     css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, unit_name, "the environment gave no normal line height for the font");
     return false;
   }
+  if (!callback_length_ok(*px)) {
+    css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "normal_line_height", "the normal_line_height callback gave a line height that is not a finite, non-negative length");
+    return false;
+  }
   return true;
 }
 
@@ -139,6 +148,10 @@ static bool metric_px(css_state * st, GTEXT_CSS_Unit unit, bool root, double * p
   double value = 0.0;
   if (!st->env->font_metric(st->env->user, &q, metric, &value)) {
     css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, name, "the environment has no such metric for the font");
+    return false;
+  }
+  if (!callback_length_ok(value)) {
+    css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "font_metric", "the font_metric callback gave a metric that is not a finite, non-negative length");
     return false;
   }
   /* the callback gives the metric at the query's size; the unit is that metric (a length, in px) */
@@ -249,6 +262,10 @@ bool css_st_unit_px(css_state * st, GTEXT_CSS_Unit unit, double * px) {
       const bool vertical_axis = axes[i] == GTEXT_CSS_CONTAINER_HEIGHT ||
           (axes[i] == GTEXT_CSS_CONTAINER_INLINE && root_vertical) || (axes[i] == GTEXT_CSS_CONTAINER_BLOCK && !root_vertical);
       size = vertical_axis ? env->small_viewport.height : env->small_viewport.width;
+    }
+    else if (!callback_length_ok(size)) {
+      css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "container_size", "the container_size callback gave a size that is not a finite, non-negative length");
+      return false;
     }
     v[i] = size / 100.0;
   }
@@ -462,4 +479,78 @@ int css_resolve_url(const GTEXT_Allocator * alloc, const char * base, size_t bas
   *out = b.data;
   *out_len = b.len;
   return 1;
+}
+
+/* ---- the color scheme ------------------------------------------------------------------------------- */
+
+static bool word_is(const GTEXT_CSS_Value * v, const char * word) {
+  if ((v->kind != GTEXT_CSS_VAL_KEYWORD && v->kind != GTEXT_CSS_VAL_CUSTOM_IDENT) || !v->text.data || v->text.length != strlen(word)) {
+    return false;
+  }
+  for (size_t i = 0; i < v->text.length; i++) {
+    const char c = v->text.data[i];
+    if ((c >= 'A' && c <= 'Z' ? (char)(c + 32) : c) != word[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st) {
+  /* "If support is null, or none of the color schemes in support are supported by the UA, return the UA default color scheme" (light); "If preference
+     is no preference, return the first supported color scheme in support"; "If preference's color scheme is in support and supported by the UA, return that
+     color scheme"; "If support is flagged as sole support, return the first supported color scheme in support"; the environment has no overriding
+     preference, so: "Otherwise, return the first supported color scheme in support." `normal` is no support of the element's own: the page's scheme, the
+     preference. */
+  const GTEXT_CSS_Compute_Context * cc = st->cc;
+  const GTEXT_CSS_Color_Scheme preference = st->env->color_scheme;
+  const GTEXT_CSS_Property_Id id = cc->pid[CSS_P_COLOR_SCHEME];
+  if (!id) {
+    return preference;
+  }
+  const GTEXT_CSS_Value_Set * set = css_st_get(st, id);
+  const GTEXT_CSS_Value * root = set ? gtext_css_value_set_root(set) : NULL;
+  if (!root || word_is(root, "normal")) {
+    return preference;
+  }
+  const GTEXT_CSS_Value * leaves[64];
+  size_t n = 0;
+  if (root->kind == GTEXT_CSS_VAL_LIST) {
+    for (size_t i = 0; i < root->child_count && n < 64; i++) {
+      const GTEXT_CSS_Value * kid = &root->children[i];
+      if (kid->kind == GTEXT_CSS_VAL_LIST) {
+        for (size_t k = 0; k < kid->child_count && n < 64; k++) {
+          leaves[n++] = &kid->children[k];
+        }
+      }
+      else {
+        leaves[n++] = kid;
+      }
+    }
+  }
+  else {
+    leaves[n++] = root;
+  }
+  bool has_light = false, has_dark = false;
+  GTEXT_CSS_Color_Scheme first = GTEXT_CSS_SCHEME_LIGHT;
+  bool have_first = false;
+  for (size_t i = 0; i < n; i++) {
+    const bool light = word_is(leaves[i], "light"), dark = word_is(leaves[i], "dark");
+    if (!light && !dark) {
+      continue;
+    }
+    if (!have_first) {
+      first = light ? GTEXT_CSS_SCHEME_LIGHT : GTEXT_CSS_SCHEME_DARK;
+      have_first = true;
+    }
+    has_light = has_light || light;
+    has_dark = has_dark || dark;
+  }
+  if (!have_first) {
+    return GTEXT_CSS_SCHEME_LIGHT;
+  }
+  if ((preference == GTEXT_CSS_SCHEME_LIGHT && has_light) || (preference == GTEXT_CSS_SCHEME_DARK && has_dark)) {
+    return preference;
+  }
+  return first;
 }

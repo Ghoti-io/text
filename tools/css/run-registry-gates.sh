@@ -108,7 +108,7 @@ tables_controls() {
 	ln -s "$root/include" "$scratch/root/include"
 	ln -s "$root/third_party" "$scratch/root/third_party"
 	cp -r tools/css "$scratch/root/tools/css"
-	printf '\tquote\topen-quote | close-quote\tplanted: the pin defines <quote> and has a grammar for it, so "this" supplement is stale\n' >> "$scratch/root/tools/css/supplement-types.tsv"
+	printf '\tquote\topen-quote | close-quote\tplanted, Values 4: "the pin defines quote and has a grammar for it, so this supplement is stale"\n' >> "$scratch/root/tools/css/supplement-types.tsv"
 	expect stale-supplement "supplement is stale" python3 "$scratch/root/tools/css/gen-css-tables.py" --out "$scratch/c"
 	cp tools/css/supplement-types.tsv "$scratch/root/tools/css/supplement-types.tsv"
 	printf 'replace-grammar\t\tquote\tplanted\tnot the pin text\tnew text\n' >> "$scratch/root/tools/css/consolidate.tsv"

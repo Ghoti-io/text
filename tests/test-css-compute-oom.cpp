@@ -31,6 +31,7 @@
  * afterwards and was never asked to free one it did not make.
  */
 
+#include <cstdlib>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -99,6 +100,9 @@ const char * const kShorthands[] = {
     "grid-template: [a] \"x y\" 1fr [b] \"z z\" / auto 1fr; offset: 5px none 10px reverse / left top; animation: a 1s, b 2s ease-in",
     "grid: auto-flow dense 1fr / 100px; white-space: pre; text-spacing: none; position-try: flip-x flip-y, --a; mask: no-clip",
     "margin: var(--x); all: inherit; place-content: baseline",
+    "margin: 1px; margin-top: inherit; border: 1px solid red; border-top-color: var(--y)",
+    "mask: content-box; grid-row: 2 / first; grid-column: a; grid-area: 1 / 2",
+    "--a: 1; --b: 2; --a: 3; box-shadow: 1px 2px 0 red, inset 0 0 1px blue; text-shadow: 1px 1px",
 };
 
 TEST(CssComputeOom, ABlockOfShorthandsBuiltAndWrittenSweptOverEveryAllocation) {
@@ -131,6 +135,61 @@ TEST(CssComputeOom, ABlockOfShorthandsBuiltAndWrittenSweptOverEveryAllocation) {
     }
     EXPECT_GT(failures, 20u) << decls;
   }
+}
+
+/// Every shorthand of the pin with a few values (the first that each takes of a list that reaches the generic split, the layers, the boxes, the algorithms of
+/// its own), built and written with the n-th allocation failed for every n: a status other than OOM, a text other than the whole one, a leak or a free of
+/// what the allocator did not make is a failure. (Two of these were once a segmentation fault and a wrong text returned as OK.)
+TEST(CssComputeOom, EveryShorthandWithSomeValuesSweptOverEveryAllocation) {
+  const char * const values[] = {"1px", "1px 2px", "red", "none", "auto", "normal", "10px solid red", "50%", "url(a) repeat-x, red", "left top", "span 2 / 3",
+      "\"a b\" 1fr \"c d\" / auto 1fr", "auto-flow dense 1fr / 100px", "italic bold 12px/1.5 serif", "2 1 10px", "pre", "inside none", "0 0 red",
+      "entry, exit", "100px none auto 90deg", "row wrap", "center end", "no-clip", "content-box", "border-box content-box", "a 1s ease-in 2s, b 2s",
+      "10px / 100px", "most-width flip-y, --a", "3", "2 ellipsis", "first baseline", "1px 2px / 3px", "url(a) fill-box"};
+  const size_t count = gtext_css_registry_property_count(R());
+  size_t decls = 0, runs = 0;
+  // four values a shorthand, the sweep being every allocation of each; one under a checker that says how slow it is (GTEXT_TEST_SLOWDOWN)
+  const size_t per = std::getenv("GTEXT_TEST_SLOWDOWN") ? 1 : 4;
+  for (size_t id = 1; id <= count; id++) {
+    GTEXT_CSS_Property_Info info;
+    if (!gtext_css_registry_property_info(R(), static_cast<GTEXT_CSS_Property_Id>(id), &info) || !(info.flags & GTEXT_CSS_PROP_SHORTHAND) ||
+        (info.flags & GTEXT_CSS_PROP_ALIAS)) {
+      continue;
+    }
+    const std::string name(info.name, info.name_length);
+    size_t taken = 0;
+    for (const char * value : values) {
+      std::string want;
+      {
+        FaultAllocator fa;
+        if (build_and_write(name + ": " + value, fa, &want) != GTEXT_CSS_OK) {
+          continue;
+        }
+        EXPECT_TRUE(fa.live.empty()) << name << ": " << value;
+      }
+      if (++taken > per) {
+        break;
+      }
+      decls++;
+      for (size_t n = 1; n < 200000; n++) {
+        FaultAllocator fa;
+        std::string got;
+        fa.arm(n);
+        const GTEXT_CSS_Status st = build_and_write(name + ": " + value, fa, &got);
+        fa.disarm();
+        runs++;
+        if (!fa.failed) {
+          EXPECT_EQ(st, GTEXT_CSS_OK) << name << ": " << value;
+          EXPECT_EQ(got, want) << name << ": " << value;
+          break;
+        }
+        ASSERT_EQ(st, GTEXT_CSS_E_OOM) << name << ": " << value << " allocation " << n << " " << gtext_css_status_string(st);
+        ASSERT_TRUE(fa.live.empty()) << name << ": " << value << " allocation " << n << ": a block is left";
+        ASSERT_EQ(fa.bad_frees, 0u) << name << ": " << value;
+      }
+    }
+  }
+  EXPECT_GT(decls, 100u * per);
+  EXPECT_GT(runs, 7000u * per);
 }
 
 TEST(CssComputeOom, ExpandingAShorthandKeepsNothingWhenAnAllocationFails) {

@@ -195,7 +195,21 @@ has a color callback to resolve it.
 
 Every property of the pin has a **class** (`gtext_css_compute_class()`), taken from the sentence the pin gives for its computed value and held by a
 gate (`make check-css-compute`): every property is classified, has an algorithm of its own, or is listed as unimplemented with a reason. The
-properties that are inherited, and those of SVG 2's presentation attributes, may not be unimplemented.
+properties that are inherited, and those of SVG 2's presentation attributes, may not be unimplemented. Fifteen are (`-webkit-box-align`, `-webkit-box-flex`,
+`-webkit-box-ordinal-group`, `-webkit-box-orient`, `-webkit-box-pack`, `-webkit-user-select`, the eight `corner-*-shape` and `position-area`); none of them is
+inherited or an SVG attribute. The required properties whose grammars the pin leaves unresolved (`fill` and `stroke` with `<paint>`, `voice-family`,
+`voice-pitch`, `voice-range` and `voice-volume`, `glyph-orientation-vertical` with a value the pin writes as prose) cannot be declared in the generated
+registry, and compute under the grammar of a caller that registers one (`vector` does for `fill` and `stroke`): a `voice-pitch` that is a keyword by itself, or
+a frequency with `absolute`, computes, and a keyword with an offset, or an offset by itself, needs the voice's frequency table and is
+`GTEXT_CSS_E_UNSUPPORTED` naming the property.
+
+Some of the specifications' rules are easy to misread, and this layer follows the served drafts: an absolutely positioned or fixed box has `float: none`
+("A position value of absolute or fixed blockifies the box, causes float to compute to none" - CSS Positioned Layout 3); blockification sets the outer
+display type to `block` and keeps the inner one, except that "an inline block box (inline flow-root) is blockified, it becomes a block box (losing its flow-root
+nature)" and "a layout-internal box is blockified, its inner display type converts to flow" (CSS Display 3, 2.7), so a floated `display: inline-block` is `block`
+and a floated `display: table-cell` is `block`, `inline math` is `block math`; and `inherit` is the parent's computed value as it is ("the property's specified and
+computed values are the inherited value" - CSS Cascade 5), so `border-top-style: none; border-top-width: inherit` has the parent's width, where a width of its own
+would be 0.
 
 | Class | What it does |
 |---|---|
@@ -206,10 +220,13 @@ properties that are inherited, and those of SVG 2's presentation attributes, may
 
 `initial`, `inherit` and `unset` are applied here, and `all` is a declaration at its place in the block (a later declaration of a property beats
 it, an earlier one does not; it spares `direction`, `unicode-bidi` and the custom properties). `revert` and `revert-layer` are results of the
-cascade and are refused as inputs, and so is a value still holding an unsubstituted `var()`: `GTEXT_CSS_E_INVALID` with a `detail` that says which.
+cascade and are refused as inputs, and so is a value still holding an unsubstituted `var()`: `GTEXT_CSS_E_INVALID` with a `detail` that says which and a
+result that names the property (a shorthand that held `var()` names the longhand reached first, `margin-bottom` for `margin: var(--x)`).
+`sibling-index()` and `sibling-count()` are answered by the element tree and are `GTEXT_CSS_E_UNSUPPORTED` naming the callback. `!important` is the cascade's: the
+block is in ascending priority and the importance of a declaration is not looked at, so the last declaration of a property wins whatever it says.
 
 Properties are computed in a fixed order (`writing-mode`, `direction`, `text-orientation`, the font properties, `font-size`, `line-height`, the border
-styles, `float`, `position`, `display`, then the rest), and a property reads only what is above it or the parent's style. A computed value is an
+styles, `position`, `float`, `display`, then the rest), and a property reads only what is above it or the parent's style. A computed value is an
 immutable, reference-counted `GTEXT_CSS_Value_Set`: a style holds one pointer for every property of the registry, what it inherits is the very set
 of the parent, so a long chain of inheritance shares what it inherits and a value outlives the style that made it while anyone retains it.
 

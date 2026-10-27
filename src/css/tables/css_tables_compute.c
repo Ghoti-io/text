@@ -39,7 +39,7 @@ const size_t gtext_css_tbl_compute_count = 823;
 /* one row for each property of the pin in the order of its ids: class, algorithm, shorthand kind, flags, position in the order of computation (0: none),
    and the initial value override (length, offset into the pool) */
 const css_tbl_compute gtext_css_tbl_compute[823] = {
-  {6, 32, 0, 1, 0, 0, 0}, /* --* */
+  {6, 33, 0, 1, 0, 0, 0}, /* --* */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-content */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-items */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-self */
@@ -148,16 +148,16 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* background-image */
   {1, 0, 0, 0, 0, 0, 0}, /* background-origin */
   {4, 0, 4, 0, 0, 0, 0}, /* background-position */
-  {3, 24, 0, 0, 0, 0, 0}, /* background-position-block */
-  {3, 24, 0, 0, 0, 0, 0}, /* background-position-inline */
-  {3, 24, 0, 0, 0, 0, 0}, /* background-position-x */
-  {3, 24, 0, 0, 0, 0, 0}, /* background-position-y */
-  {3, 22, 0, 0, 0, 0, 0}, /* background-repeat */
+  {3, 25, 0, 0, 0, 0, 0}, /* background-position-block */
+  {3, 25, 0, 0, 0, 0, 0}, /* background-position-inline */
+  {3, 25, 0, 0, 0, 0, 0}, /* background-position-x */
+  {3, 25, 0, 0, 0, 0, 0}, /* background-position-y */
+  {3, 23, 0, 0, 0, 0, 0}, /* background-repeat */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-block */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-inline */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-x */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-y */
-  {3, 25, 0, 0, 0, 0, 0}, /* background-size */
+  {3, 26, 0, 0, 0, 0, 0}, /* background-size */
   {4, 0, 0, 0, 0, 0, 0}, /* background-tbd */
   {2, 0, 0, 1, 0, 0, 0}, /* baseline-shift */
   {1, 0, 0, 0, 0, 0, 0}, /* baseline-source */
@@ -179,13 +179,13 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-block-end-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* border-block-end-color */
   {4, 0, 7, 0, 0, 0, 0}, /* border-block-end-radius */
-  {1, 0, 0, 0, 16, 0, 0}, /* border-block-end-style */
+  {1, 0, 0, 0, 17, 0, 0}, /* border-block-end-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-block-end-width */
   {4, 0, 3, 0, 0, 0, 0}, /* border-block-start */
   {2, 0, 0, 0, 0, 0, 0}, /* border-block-start-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* border-block-start-color */
   {4, 0, 7, 0, 0, 0, 0}, /* border-block-start-radius */
-  {1, 0, 0, 0, 15, 0, 0}, /* border-block-start-style */
+  {1, 0, 0, 0, 16, 0, 0}, /* border-block-start-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-block-start-width */
   {4, 0, 2, 0, 0, 0, 0}, /* border-block-style */
   {4, 0, 2, 0, 0, 0, 0}, /* border-block-width */
@@ -195,7 +195,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-bottom-left-radius */
   {4, 0, 7, 0, 0, 0, 0}, /* border-bottom-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-bottom-right-radius */
-  {1, 0, 0, 0, 13, 0, 0}, /* border-bottom-style */
+  {1, 0, 0, 0, 14, 0, 0}, /* border-bottom-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-bottom-width */
   {1, 0, 0, 1, 0, 0, 0}, /* border-boundary */
   {4, 0, 5, 0, 0, 0, 0}, /* border-clip */
@@ -204,11 +204,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-end-end-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-end-start-radius */
   {4, 0, 3, 0, 0, 0, 0}, /* border-image */
-  {3, 21, 0, 0, 0, 0, 0}, /* border-image-outset */
-  {3, 22, 0, 0, 0, 0, 0}, /* border-image-repeat */
-  {3, 21, 0, 0, 0, 0, 0}, /* border-image-slice */
+  {3, 22, 0, 0, 0, 0, 0}, /* border-image-outset */
+  {3, 23, 0, 0, 0, 0, 0}, /* border-image-repeat */
+  {3, 22, 0, 0, 0, 0, 0}, /* border-image-slice */
   {2, 0, 0, 0, 0, 0, 0}, /* border-image-source */
-  {3, 21, 0, 0, 0, 0, 0}, /* border-image-width */
+  {3, 22, 0, 0, 0, 0, 0}, /* border-image-width */
   {4, 0, 5, 0, 0, 0, 0}, /* border-inline */
   {4, 0, 5, 0, 0, 0, 0}, /* border-inline-clip */
   {4, 0, 2, 0, 0, 0, 0}, /* border-inline-color */
@@ -216,13 +216,13 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-inline-end-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* border-inline-end-color */
   {4, 0, 7, 0, 0, 0, 0}, /* border-inline-end-radius */
-  {1, 0, 0, 0, 18, 0, 0}, /* border-inline-end-style */
+  {1, 0, 0, 0, 19, 0, 0}, /* border-inline-end-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-inline-end-width */
   {4, 0, 3, 0, 0, 0, 0}, /* border-inline-start */
   {2, 0, 0, 0, 0, 0, 0}, /* border-inline-start-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* border-inline-start-color */
   {4, 0, 7, 0, 0, 0, 0}, /* border-inline-start-radius */
-  {1, 0, 0, 0, 17, 0, 0}, /* border-inline-start-style */
+  {1, 0, 0, 0, 18, 0, 0}, /* border-inline-start-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-inline-start-width */
   {4, 0, 2, 0, 0, 0, 0}, /* border-inline-style */
   {4, 0, 2, 0, 0, 0, 0}, /* border-inline-width */
@@ -230,7 +230,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-left-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* border-left-color */
   {4, 0, 7, 0, 0, 0, 0}, /* border-left-radius */
-  {1, 0, 0, 0, 14, 0, 0}, /* border-left-style */
+  {1, 0, 0, 0, 15, 0, 0}, /* border-left-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-left-width */
   {1, 0, 0, 0, 0, 0, 0}, /* border-limit */
   {4, 0, 7, 0, 0, 0, 0}, /* border-radius */
@@ -238,10 +238,10 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-right-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* border-right-color */
   {4, 0, 7, 0, 0, 0, 0}, /* border-right-radius */
-  {1, 0, 0, 0, 12, 0, 0}, /* border-right-style */
+  {1, 0, 0, 0, 13, 0, 0}, /* border-right-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-right-width */
   {2, 0, 0, 0, 0, 0, 0}, /* border-shape */
-  {3, 20, 0, 1, 0, 0, 0}, /* border-spacing */
+  {3, 21, 0, 1, 0, 0, 0}, /* border-spacing */
   {2, 0, 0, 0, 0, 0, 0}, /* border-start-end-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-start-start-radius */
   {4, 0, 1, 0, 0, 0, 0}, /* border-style */
@@ -251,7 +251,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-top-left-radius */
   {4, 0, 7, 0, 0, 0, 0}, /* border-top-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-top-right-radius */
-  {1, 0, 0, 0, 11, 0, 0}, /* border-top-style */
+  {1, 0, 0, 0, 12, 0, 0}, /* border-top-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-top-width */
   {4, 0, 1, 0, 0, 0, 0}, /* border-width */
   {2, 0, 0, 0, 0, 0, 0}, /* bottom */
@@ -276,11 +276,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* clip */
   {2, 0, 0, 1, 0, 0, 0}, /* clip-path */
   {1, 0, 0, 1, 0, 0, 0}, /* clip-rule */
-  {3, 11, 0, 1, 0, 0, 0}, /* color */
+  {3, 12, 0, 1, 0, 0, 0}, /* color */
   {4, 0, 5, 0, 0, 0, 0}, /* color-adjust */
   {1, 0, 0, 1, 0, 0, 0}, /* color-interpolation */
   {1, 0, 0, 1, 0, 0, 0}, /* color-interpolation-filters */
-  {1, 0, 0, 1, 0, 0, 0}, /* color-scheme */
+  {1, 0, 0, 1, 4, 0, 0}, /* color-scheme */
   {1, 0, 0, 0, 0, 0, 0}, /* column-count */
   {1, 0, 0, 0, 0, 0, 0}, /* column-fill */
   {2, 0, 0, 0, 0, 0, 0}, /* column-gap */
@@ -297,7 +297,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* column-rule-inset-junction-end */
   {1, 0, 0, 0, 0, 0, 0}, /* column-rule-inset-junction-start */
   {4, 0, 5, 0, 0, 0, 0}, /* column-rule-inset-start */
-  {1, 0, 0, 0, 20, 0, 0}, /* column-rule-style */
+  {1, 0, 0, 0, 21, 0, 0}, /* column-rule-style */
   {1, 0, 0, 0, 0, 0, 0}, /* column-rule-visibility-items */
   {3, 8, 0, 2, 0, 0, 0}, /* column-rule-width */
   {1, 0, 0, 0, 0, 0, 0}, /* column-span */
@@ -362,7 +362,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* cy */
   {1, 0, 0, 1, 0, 0, 0}, /* d */
   {1, 0, 0, 1, 2, 0, 0}, /* direction */
-  {3, 10, 0, 1, 24, 0, 0}, /* display */
+  {3, 10, 0, 1, 25, 0, 0}, /* display */
   {1, 0, 0, 1, 0, 0, 0}, /* dominant-baseline */
   {2, 0, 0, 1, 0, 0, 0}, /* dynamic-range-limit */
   {1, 0, 0, 1, 0, 0, 0}, /* empty-cells */
@@ -374,12 +374,12 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* fill-break */
   {2, 0, 0, 1, 0, 0, 0}, /* fill-color */
   {2, 0, 0, 1, 0, 0, 0}, /* fill-image */
-  {3, 12, 0, 1, 0, 0, 0}, /* fill-opacity */
+  {3, 13, 0, 1, 0, 0, 0}, /* fill-opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* fill-origin */
-  {3, 23, 0, 1, 0, 0, 0}, /* fill-position */
-  {3, 22, 0, 1, 0, 0, 0}, /* fill-repeat */
+  {3, 24, 0, 1, 0, 0, 0}, /* fill-position */
+  {3, 23, 0, 1, 0, 0, 0}, /* fill-repeat */
   {1, 0, 0, 1, 0, 0, 0}, /* fill-rule */
-  {3, 25, 0, 1, 0, 0, 0}, /* fill-size */
+  {3, 26, 0, 1, 0, 0, 0}, /* fill-size */
   {1, 0, 0, 1, 0, 0, 0}, /* filter */
   {2, 0, 0, 0, 0, 0, 0}, /* fit-tolerance */
   {4, 0, 9, 0, 0, 0, 0}, /* flex */
@@ -390,25 +390,25 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* flex-line-count */
   {1, 0, 0, 0, 0, 0, 0}, /* flex-shrink */
   {1, 0, 0, 0, 0, 0, 0}, /* flex-wrap */
-  {1, 0, 0, 0, 22, 0, 0}, /* float */
+  {3, 11, 0, 0, 24, 0, 0}, /* float */
   {1, 0, 0, 0, 0, 0, 0}, /* float-defer */
   {2, 0, 0, 0, 0, 0, 0}, /* float-offset */
   {1, 0, 0, 0, 0, 0, 0}, /* float-reference */
   {2, 0, 0, 1, 0, 0, 0}, /* flood-color */
-  {3, 12, 0, 1, 0, 0, 0}, /* flood-opacity */
+  {3, 13, 0, 1, 0, 0, 0}, /* flood-opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* flow-from */
   {1, 0, 0, 0, 0, 0, 0}, /* flow-into */
   {4, 0, 8, 0, 0, 0, 0}, /* font */
-  {1, 0, 0, 3, 4, 5, 6}, /* font-family */
+  {1, 0, 0, 3, 5, 5, 6}, /* font-family */
   {1, 0, 0, 1, 0, 0, 0}, /* font-feature-settings */
   {1, 0, 0, 1, 0, 0, 0}, /* font-kerning */
   {1, 0, 0, 1, 0, 0, 0}, /* font-language-override */
   {1, 0, 0, 1, 0, 0, 0}, /* font-optical-sizing */
   {1, 0, 0, 1, 0, 0, 0}, /* font-palette */
-  {3, 1, 0, 1, 8, 0, 0}, /* font-size */
-  {3, 6, 0, 1, 9, 0, 0}, /* font-size-adjust */
+  {3, 1, 0, 1, 9, 0, 0}, /* font-size */
+  {3, 6, 0, 1, 10, 0, 0}, /* font-size-adjust */
   {5, 0, 0, 1, 0, 0, 0}, /* font-stretch */
-  {3, 4, 0, 1, 5, 0, 0}, /* font-style */
+  {3, 4, 0, 1, 6, 0, 0}, /* font-style */
   {4, 0, 12, 0, 0, 0, 0}, /* font-synthesis */
   {1, 0, 0, 1, 0, 0, 0}, /* font-synthesis-position */
   {1, 0, 0, 1, 0, 0, 0}, /* font-synthesis-small-caps */
@@ -423,8 +423,8 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-numeric */
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-position */
   {1, 0, 0, 1, 0, 0, 0}, /* font-variation-settings */
-  {3, 2, 0, 1, 6, 0, 0}, /* font-weight */
-  {3, 3, 0, 1, 7, 0, 0}, /* font-width */
+  {3, 2, 0, 1, 7, 0, 0}, /* font-weight */
+  {3, 3, 0, 1, 8, 0, 0}, /* font-width */
   {1, 0, 0, 0, 0, 0, 0}, /* footnote-display */
   {1, 0, 0, 0, 0, 0, 0}, /* footnote-policy */
   {1, 0, 0, 1, 0, 0, 0}, /* forced-color-adjust */
@@ -452,13 +452,13 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* hanging-punctuation */
   {2, 0, 0, 1, 0, 0, 0}, /* height */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphenate-character */
-  {3, 18, 0, 1, 0, 0, 0}, /* hyphenate-limit-chars */
+  {3, 19, 0, 1, 0, 0, 0}, /* hyphenate-limit-chars */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphenate-limit-last */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphenate-limit-lines */
   {2, 0, 0, 1, 0, 0, 0}, /* hyphenate-limit-zone */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphens */
   {1, 0, 0, 1, 0, 0, 0}, /* image-animation */
-  {3, 19, 0, 1, 0, 0, 0}, /* image-orientation */
+  {3, 20, 0, 1, 0, 0, 0}, /* image-orientation */
   {1, 0, 0, 1, 0, 0, 0}, /* image-rendering */
   {2, 0, 0, 1, 0, 0, 0}, /* image-resolution */
   {1, 0, 0, 0, 0, 0, 0}, /* initial-letter */
@@ -490,7 +490,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 3, 0, 0, 0, 0}, /* line-clamp */
   {1, 0, 0, 1, 0, 0, 0}, /* line-fit-edge */
   {1, 0, 0, 0, 0, 0, 0}, /* line-grid */
-  {3, 5, 0, 1, 10, 0, 0}, /* line-height */
+  {3, 5, 0, 1, 11, 0, 0}, /* line-height */
   {2, 0, 0, 1, 0, 0, 0}, /* line-height-step */
   {2, 0, 0, 1, 0, 0, 0}, /* line-padding */
   {1, 0, 0, 1, 0, 0, 0}, /* line-snap */
@@ -530,11 +530,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* mask-image */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-mode */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-origin */
-  {3, 23, 0, 1, 0, 0, 0}, /* mask-position */
-  {3, 22, 0, 1, 0, 0, 0}, /* mask-repeat */
+  {3, 24, 0, 1, 0, 0, 0}, /* mask-position */
+  {3, 23, 0, 1, 0, 0, 0}, /* mask-repeat */
   {2, 0, 0, 1, 0, 0, 0}, /* mask-size */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-type */
-  {3, 14, 0, 1, 0, 0, 0}, /* math-depth */
+  {3, 15, 0, 1, 0, 0, 0}, /* math-depth */
   {1, 0, 0, 1, 0, 0, 0}, /* math-shift */
   {1, 0, 0, 1, 0, 0, 0}, /* math-style */
   {2, 0, 0, 0, 0, 0, 0}, /* max-block-size */
@@ -555,21 +555,21 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* nav-right */
   {1, 0, 0, 0, 0, 0, 0}, /* nav-up */
   {1, 0, 0, 0, 0, 0, 0}, /* object-fit */
-  {3, 23, 0, 0, 0, 0, 0}, /* object-position */
+  {3, 24, 0, 0, 0, 0, 0}, /* object-position */
   {2, 0, 0, 0, 0, 0, 0}, /* object-view-box */
   {4, 0, 15, 0, 0, 0, 0}, /* offset */
-  {3, 23, 0, 0, 0, 0, 0}, /* offset-anchor */
+  {3, 24, 0, 0, 0, 0, 0}, /* offset-anchor */
   {2, 0, 0, 0, 0, 0, 0}, /* offset-distance */
   {1, 0, 0, 0, 0, 0, 0}, /* offset-path */
-  {3, 23, 0, 0, 0, 0, 0}, /* offset-position */
+  {3, 24, 0, 0, 0, 0, 0}, /* offset-position */
   {2, 0, 0, 0, 0, 0, 0}, /* offset-rotate */
-  {3, 12, 0, 1, 0, 0, 0}, /* opacity */
+  {3, 13, 0, 1, 0, 0, 0}, /* opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* order */
   {1, 0, 0, 1, 0, 0, 0}, /* orphans */
   {4, 0, 3, 0, 0, 0, 0}, /* outline */
   {2, 0, 0, 2, 0, 0, 0}, /* outline-color */
   {2, 0, 0, 0, 0, 0, 0}, /* outline-offset */
-  {1, 0, 0, 0, 19, 0, 0}, /* outline-style */
+  {1, 0, 0, 0, 20, 0, 0}, /* outline-style */
   {3, 7, 0, 0, 0, 0, 0}, /* outline-width */
   {4, 0, 2, 1, 0, 0, 0}, /* overflow */
   {1, 0, 0, 0, 0, 0, 0}, /* overflow-anchor */
@@ -616,7 +616,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* pause-after */
   {1, 0, 0, 0, 0, 0, 0}, /* pause-before */
   {2, 0, 0, 0, 0, 0, 0}, /* perspective */
-  {3, 23, 0, 0, 0, 0, 0}, /* perspective-origin */
+  {3, 24, 0, 0, 0, 0, 0}, /* perspective-origin */
   {4, 0, 2, 0, 0, 0, 0}, /* place-content */
   {4, 0, 2, 0, 0, 0, 0}, /* place-items */
   {4, 0, 2, 0, 0, 0, 0}, /* place-self */
@@ -642,7 +642,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* rest-after */
   {1, 0, 0, 0, 0, 0, 0}, /* rest-before */
   {2, 0, 0, 0, 0, 0, 0}, /* right */
-  {3, 28, 0, 0, 0, 0, 0}, /* rotate */
+  {3, 29, 0, 0, 0, 0, 0}, /* rotate */
   {2, 0, 0, 0, 0, 0, 0}, /* row-gap */
   {4, 0, 3, 0, 0, 0, 0}, /* row-rule */
   {1, 0, 0, 0, 0, 0, 0}, /* row-rule-break */
@@ -656,7 +656,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* row-rule-inset-junction-end */
   {1, 0, 0, 0, 0, 0, 0}, /* row-rule-inset-junction-start */
   {4, 0, 5, 0, 0, 0, 0}, /* row-rule-inset-start */
-  {1, 0, 0, 0, 21, 0, 0}, /* row-rule-style */
+  {1, 0, 0, 0, 22, 0, 0}, /* row-rule-style */
   {1, 0, 0, 0, 0, 0, 0}, /* row-rule-visibility-items */
   {3, 8, 0, 2, 0, 0, 0}, /* row-rule-width */
   {1, 0, 0, 1, 0, 0, 0}, /* ruby-align */
@@ -677,7 +677,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 5, 0, 0, 0, 0}, /* rule-width */
   {2, 0, 0, 1, 0, 0, 0}, /* rx */
   {2, 0, 0, 1, 0, 0, 0}, /* ry */
-  {3, 27, 0, 0, 0, 0, 0}, /* scale */
+  {3, 28, 0, 0, 0, 0, 0}, /* scale */
   {1, 0, 0, 0, 0, 0, 0}, /* scroll-axis-lock */
   {1, 0, 0, 0, 0, 0, 0}, /* scroll-behavior */
   {1, 0, 0, 0, 0, 0, 0}, /* scroll-initial-target */
@@ -714,7 +714,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* scrollbar-color */
   {1, 0, 0, 0, 0, 0, 0}, /* scrollbar-gutter */
   {1, 0, 0, 0, 0, 0, 0}, /* scrollbar-width */
-  {3, 12, 0, 0, 0, 0, 0}, /* shape-image-threshold */
+  {3, 13, 0, 0, 0, 0, 0}, /* shape-image-threshold */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-inside */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-margin */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-outside */
@@ -728,7 +728,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* speak */
   {1, 0, 0, 1, 0, 0, 0}, /* speak-as */
   {2, 0, 0, 1, 0, 5, 12}, /* stop-color */
-  {3, 12, 0, 1, 0, 1, 18}, /* stop-opacity */
+  {3, 13, 0, 1, 0, 1, 18}, /* stop-opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* string-set */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-align */
@@ -738,24 +738,24 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dash-corner */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dash-justify */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-dashadjust */
-  {3, 31, 0, 1, 0, 0, 0}, /* stroke-dasharray */
+  {3, 32, 0, 1, 0, 0, 0}, /* stroke-dasharray */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dashcorner */
-  {3, 31, 0, 1, 0, 0, 0}, /* stroke-dashoffset */
+  {3, 32, 0, 1, 0, 0, 0}, /* stroke-dashoffset */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-image */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-linecap */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-linejoin */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-miterlimit */
-  {3, 12, 0, 1, 0, 0, 0}, /* stroke-opacity */
+  {3, 13, 0, 1, 0, 0, 0}, /* stroke-opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* stroke-origin */
-  {3, 23, 0, 1, 0, 0, 0}, /* stroke-position */
-  {3, 22, 0, 1, 0, 0, 0}, /* stroke-repeat */
-  {3, 25, 0, 1, 0, 0, 0}, /* stroke-size */
+  {3, 24, 0, 1, 0, 0, 0}, /* stroke-position */
+  {3, 23, 0, 1, 0, 0, 0}, /* stroke-repeat */
+  {3, 26, 0, 1, 0, 0, 0}, /* stroke-size */
   {3, 9, 0, 1, 0, 0, 0}, /* stroke-width */
   {2, 0, 0, 1, 0, 0, 0}, /* tab-size */
   {1, 0, 0, 0, 0, 0, 0}, /* table-layout */
   {4, 0, 11, 0, 0, 0, 0}, /* text-align */
-  {3, 15, 0, 1, 0, 0, 0}, /* text-align-all */
-  {3, 15, 0, 1, 0, 0, 0}, /* text-align-last */
+  {3, 16, 0, 1, 0, 0, 0}, /* text-align-all */
+  {3, 16, 0, 1, 0, 0, 0}, /* text-align-last */
   {1, 0, 0, 1, 0, 0, 0}, /* text-anchor */
   {1, 0, 0, 1, 0, 0, 0}, /* text-autospace */
   {1, 0, 0, 0, 0, 0, 0}, /* text-box */
@@ -785,7 +785,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 3, 0, 0}, /* text-orientation */
   {2, 0, 0, 1, 0, 0, 0}, /* text-overflow */
   {1, 0, 0, 1, 0, 0, 0}, /* text-rendering */
-  {3, 29, 0, 1, 0, 0, 0}, /* text-shadow */
+  {3, 30, 0, 1, 0, 0, 0}, /* text-shadow */
   {1, 0, 0, 1, 0, 0, 0}, /* text-size-adjust */
   {4, 0, 3, 0, 0, 0, 0}, /* text-spacing */
   {1, 0, 0, 1, 0, 0, 0}, /* text-spacing-trim */
@@ -810,7 +810,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* touch-action */
   {2, 0, 0, 1, 0, 0, 0}, /* transform */
   {1, 0, 0, 0, 0, 0, 0}, /* transform-box */
-  {3, 23, 0, 1, 0, 0, 0}, /* transform-origin */
+  {3, 24, 0, 1, 0, 0, 0}, /* transform-origin */
   {1, 0, 0, 0, 0, 0, 0}, /* transform-style */
   {4, 0, 4, 0, 0, 0, 0}, /* transition */
   {1, 0, 0, 0, 0, 0, 0}, /* transition-behavior */
@@ -818,7 +818,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* transition-duration */
   {1, 0, 0, 0, 0, 0, 0}, /* transition-property */
   {1, 0, 0, 0, 0, 0, 0}, /* transition-timing-function */
-  {3, 26, 0, 0, 0, 0, 0}, /* translate */
+  {3, 27, 0, 0, 0, 0, 0}, /* translate */
   {1, 0, 0, 0, 0, 0, 0}, /* trigger-scope */
   {1, 0, 0, 1, 0, 0, 0}, /* unicode-bidi */
   {1, 0, 0, 0, 0, 0, 0}, /* user-select */
@@ -833,11 +833,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* view-transition-name */
   {1, 0, 0, 0, 0, 0, 0}, /* view-transition-scope */
   {1, 0, 0, 1, 0, 0, 0}, /* visibility */
-  {3, 17, 0, 1, 0, 0, 0}, /* voice-balance */
+  {3, 18, 0, 1, 0, 0, 0}, /* voice-balance */
   {1, 0, 0, 0, 0, 0, 0}, /* voice-duration */
   {1, 0, 0, 1, 0, 0, 0}, /* voice-family */
-  {3, 16, 0, 3, 0, 0, 0}, /* voice-pitch */
-  {3, 16, 0, 3, 0, 0, 0}, /* voice-range */
+  {3, 17, 0, 3, 0, 0, 0}, /* voice-pitch */
+  {3, 17, 0, 3, 0, 0, 0}, /* voice-range */
   {1, 0, 0, 1, 0, 0, 0}, /* voice-rate */
   {1, 0, 0, 1, 0, 0, 0}, /* voice-stress */
   {1, 0, 0, 1, 0, 0, 0}, /* voice-volume */
@@ -854,14 +854,14 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {5, 0, 0, 0, 0, 0, 0}, /* word-wrap */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-after */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-before */
-  {3, 30, 0, 0, 0, 0, 0}, /* wrap-flow */
+  {3, 31, 0, 0, 0, 0, 0}, /* wrap-flow */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-inside */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-through */
   {1, 0, 0, 1, 1, 0, 0}, /* writing-mode */
   {2, 0, 0, 1, 0, 0, 0}, /* x */
   {2, 0, 0, 1, 0, 0, 0}, /* y */
   {1, 0, 0, 0, 0, 0, 0}, /* z-index */
-  {3, 13, 0, 0, 0, 0, 0}, /* zoom */
+  {3, 14, 0, 0, 0, 0, 0}, /* zoom */
 };
 
 /* initial value overrides */
@@ -872,5 +872,5 @@ const char gtext_css_tbl_compute_pool[20] = {
 const size_t gtext_css_tbl_compute_pool_size = 20;
 
 /* the properties computed first, by property index + 1, in order */
-const size_t gtext_css_tbl_compute_order_count = 24;
-const uint32_t gtext_css_tbl_compute_order[24] = {819, 323, 744, 361, 370, 385, 386, 367, 368, 452, 213, 200, 157, 192, 147, 141, 184, 178, 531, 259, 618, 352, 586, 324};
+const size_t gtext_css_tbl_compute_order_count = 25;
+const uint32_t gtext_css_tbl_compute_order[25] = {819, 323, 744, 242, 361, 370, 385, 386, 367, 368, 452, 213, 200, 157, 192, 147, 141, 184, 178, 531, 259, 618, 586, 352, 324};

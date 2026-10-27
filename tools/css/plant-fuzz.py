@@ -91,6 +91,7 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
   keyword-shorthand-wrong-form  `white-space: pre` is written as `pre-wrap`: the cssText is read back as other longhands.
   grid-template-names-dropped   the areas form of grid-template is written without its line names: the same.
   pending-longhand-written-empty a longhand declared with var() or attr() is written with no value: the cssText cannot be read back.
+  mixed-longhands-written-as-a-shorthand  a shorthand is written over longhands some of which are a CSS-wide keyword: the text is another value.
   context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
 
 The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
@@ -202,14 +203,26 @@ REGISTRY_PLANTS = {
 }
 
 
+# Edits to other files that a plant needs as well (name: [(file, old, new)]): the check that the written text reads back (css_shorthand_serialize.c) is off.
+COMPUTE_EXTRA = {
+    "grid-template-names-dropped": [("css_shorthand_serialize.c", "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {", "  if (0) {")],
+}
+
 # The same shape, for tests/fuzz/fuzz_css_compute.cpp; the seeds are in tests/fuzz/corpus/css-compute (tools/css/make-fuzz-compute-seeds.py).
 COMPUTE_PLANTS = {
-    "keyword-shorthand-wrong-form": ("css_shorthand_serialize.c", '    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre"},',
-                                     '    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre-wrap"},', "own-white-space-pre.seed"),
+    # the text that is written is read back before it is used (text_says_the_longhands), so a wrong text is caught by that check: the second edit turns it off
+    "keyword-shorthand-wrong-form": ("css_shorthand_serialize.c", ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre"},', "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {"],
+                                     ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre-wrap"},', "  if (0) {"], "own-white-space-pre.seed"),
     "grid-template-names-dropped": ("css_grid_text.c", "      if (any) {\n        if (!first) {\n          tb_put(&b, \" \", 1);\n        }\n        tb_put(&b, \"[\", 1);",
                                     "      if (0) {\n        if (!first) {\n          tb_put(&b, \" \", 1);\n        }\n        tb_put(&b, \"[\", 1);", "own-grid-template-names.seed"),
     "pending-longhand-written-empty": ("css_shorthand_serialize.c", "    if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING && it->shorthand) {",
                                        "    if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING) {", "own-pending-longhand.seed"),
+    # two edits: the rule (all valid, or all the same keyword) and the check that the text read back gives the longhands (either alone is caught by the other)
+    "mixed-longhands-written-as-a-shorthand": ("css_shorthand_serialize.c",
+                                               ["  if (!all_valid || gtext_css_shorthand_kind(c->reg, sh) == GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {",
+                                                "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {"],
+                                               ["  if (0 || gtext_css_shorthand_kind(c->reg, sh) == GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {",
+                                                "  if (0) {"], "own-mixed-wide.seed"),
     "context-leaks-its-groups": ("css_compute.c", "  gtext_allocator_free(&a, cc->groups);\n", "", "own-context-fails-early.seed"),
 }
 
@@ -279,8 +292,10 @@ def main(argv):
                 rel, old, new, seed = COMPUTE_PLANTS[name] if compute_harness else REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
-                if text.count(old) != 1:
-                    raise SystemExit("plant %s: its anchor matches %d times in %s" % (name, text.count(old), rel))
+                olds, news = (old, new) if isinstance(old, list) else ([old], [new])
+                for o_ in olds:
+                    if text.count(o_) != 1:
+                        raise SystemExit("plant %s: its anchor matches %d times in %s" % (name, text.count(o_), rel))
                 # The copy sits beside the original's includes: a directory of the same shape.
                 os.makedirs(os.path.join(work, "src", "css"))
                 for f in os.listdir(os.path.join(ROOT, "src", "css")):
@@ -288,7 +303,9 @@ def main(argv):
                         shutil.copy(os.path.join(ROOT, "src", "css", f), os.path.join(work, "src", "css", f))
                 shutil.copy(os.path.join(ROOT, "src", "text_number_internal.h"), os.path.join(work, "src"))
                 planted = os.path.join(work, "src", "css", rel)
-                open(planted, "w", encoding="utf-8").write(text.replace(old, new))
+                for o_, n_ in zip(olds, news):
+                    text = text.replace(o_, n_)
+                open(planted, "w", encoding="utf-8").write(text)
                 obj = os.path.join(work, rel[:-2] + ".o")
                 done = subprocess.run([v["FUZZ_CC"]] + v["FUZZ_LIB_FLAGS"].split() + ["-std=c17", "-w"] + include + ["-c", planted, "-o", obj],
                                       env=env, capture_output=True, text=True)
@@ -298,6 +315,19 @@ def main(argv):
                 objs = [obj if os.path.abspath(o) == os.path.abspath(original) else o for o in objs]
                 if obj not in objs:
                     raise SystemExit("plant %s: %s is not among the fuzz objects" % (name, original))
+                for erel, eold, enew in (COMPUTE_EXTRA.get(name, []) if compute_harness else []):
+                    etext = open(os.path.join(ROOT, "src", "css", erel), encoding="utf-8").read()
+                    if etext.count(eold) != 1:
+                        raise SystemExit("plant %s: its extra anchor matches %d times in %s" % (name, etext.count(eold), erel))
+                    eplanted = os.path.join(work, "src", "css", erel)
+                    open(eplanted, "w", encoding="utf-8").write(etext.replace(eold, enew))
+                    eobj = os.path.join(work, erel[:-2] + ".o")
+                    done = subprocess.run([v["FUZZ_CC"]] + v["FUZZ_LIB_FLAGS"].split() + ["-std=c17", "-w"] + include + ["-c", eplanted, "-o", eobj],
+                                          env=env, capture_output=True, text=True)
+                    if done.returncode != 0:
+                        raise SystemExit("plant %s did not compile (%s):\n%s" % (name, erel, done.stderr[-2000:]))
+                    eoriginal = os.path.join(ROOT, v["FUZZ_OBJ_DIR"], "css", erel[:-2] + ".o")
+                    objs = [eobj if os.path.abspath(o) == os.path.abspath(eoriginal) else o for o in objs]
             app = os.path.join(work, harness)
             done = subprocess.run([v["FUZZ_CXX"]] + v["FUZZ_BIN_FLAGS"].split() + ["-std=c++20", "-w"] + include
                                   + ["-o", app, os.path.join(ROOT, "tests", "fuzz", harness + ".cpp")] + objs

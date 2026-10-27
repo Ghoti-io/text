@@ -449,7 +449,7 @@ grammar. A hunt (`CSS_PROP_ORACLE_SCOPE=full CSS_PROP_ORACLE_COUNT=100000`, in c
 sentences, the edges of every numeric range and the lexical variants and mutations of all of them, and every
 extracted vector of the suite. A divergence is keyed by its pattern, its property and the smallest item
 that has it; `tools/oracle/css_prop_divergences.txt` gives each key a class (`standard-newer`,
-`reference-old`, `reference-wrong`, `legacy-compat`, or `ours`, a defect of this library, which is never
+`reference-old`, `reference-wrong`, `legacy-compat`, `unspecified` (the draft leaves the answer to the implementation, as the form of a shorthand's text, so the shortest form this library writes is a choice and no sentence is quoted; every other class quotes the sentence that decides it, which the gate checks), or `ours`, a defect of this library, which is never
 allowed in a finished list and has a ceiling that only goes down) and a reason, and
 `css_prop_witnesses.txt` gives each a small item that is asked again on every run. The core has 309 keys, none of them this library's (a shorthand is asked of a declaration block, as a browser's `getPropertyValue` is); each key also pins a
 digest of every one of its items (the property, the value and the three answers), so a key whose items are the same in number and not in what

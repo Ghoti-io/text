@@ -32,6 +32,8 @@
 
 #include <string.h>
 
+#include <ghoti.io/math/math.h>
+
 #include "css_compute_internal.h"
 
 /* ---- building -------------------------------------------------------------------------------------------- */
@@ -415,7 +417,7 @@ static double snap_border(css_state * st, double px) {
     dev = 1.0;
   }
   else {
-    dev = (double)(long long)dev; /* down to a whole device pixel */
+    dev = gmath_floor(dev); /* down to a whole device pixel (a width of 2^63 px or more is a whole number already: no cast to an integer) */
   }
   return dev / dpr;
 }
@@ -608,15 +610,36 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
     *out = gtext_css_value_set_retain(src);
     return GTEXT_CSS_OK;
   }
+  /* blockification (Display 3, 2.7): a floated, absolutely positioned or root box, and a flex or grid item */
+  bool blockify = st->parent == NULL;
+  if (!blockify && cc->pid[CSS_P_FLOAT]) {
+    const GTEXT_CSS_Value * f = css_st_root(st, cc->pid[CSS_P_FLOAT]);
+    blockify = f && f->kind == GTEXT_CSS_VAL_KEYWORD && !kw(f, "none");
+  }
+  if (!blockify && cc->pid[CSS_P_POSITION]) {
+    const GTEXT_CSS_Value * p = css_st_root(st, cc->pid[CSS_P_POSITION]);
+    blockify = kw(p, "absolute") || kw(p, "fixed");
+  }
+  if (!blockify && st->parent && cc->pid[CSS_P_DISPLAY]) {
+    const char * pw[3] = {NULL, NULL, NULL};
+    size_t pn = 0;
+    if (display_words(gtext_css_value_set_root(st->parent->vals[cc->pid[CSS_P_DISPLAY] - 1]), pw, &pn)) {
+      for (size_t i = 0; i < pn; i++) {
+        blockify = blockify || strcmp(pw[i], "flex") == 0 || strcmp(pw[i], "inline-flex") == 0 || strcmp(pw[i], "grid") == 0 ||
+            strcmp(pw[i], "inline-grid") == 0;
+      }
+    }
+  }
   /* the model: outer (0 inline, 1 block, 2 run-in), inner, list-item */
   enum { OUT_NONE = -1, OUT_INLINE = 0, OUT_BLOCK = 1, OUT_RUNIN = 2 };
-  static const char * const inner_words[] = {"flow", "flow-root", "table", "flex", "grid", "ruby"};
+  static const char * const inner_words[] = {"flow", "flow-root", "table", "flex", "grid", "ruby", "math"};
   int outer = OUT_NONE, inner = -1;
   bool li = false, other = false;
   static const struct { const char * w; int outer; int inner; bool li; } legacy[] = {
     {"inline", OUT_INLINE, 0, false}, {"block", OUT_BLOCK, 0, false}, {"inline-block", OUT_INLINE, 1, false}, {"flow-root", OUT_BLOCK, 1, false},
     {"flex", OUT_BLOCK, 3, false}, {"inline-flex", OUT_INLINE, 3, false}, {"grid", OUT_BLOCK, 4, false}, {"inline-grid", OUT_INLINE, 4, false},
     {"table", OUT_BLOCK, 2, false}, {"inline-table", OUT_INLINE, 2, false}, {"list-item", OUT_BLOCK, 0, true}, {"ruby", OUT_INLINE, 5, false},
+    {"math", OUT_BLOCK, 6, false},
     {"run-in", OUT_RUNIN, 0, false},
   };
   for (size_t i = 0; i < nw && !other; i++) {
@@ -662,6 +685,16 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
     }
   }
   if (other) {
+    /* Display 3, 2.7: "If a layout-internal box is blockified, its inner display type converts to flow so that it becomes a block container." */
+    static const char * const layout_internal[] = {"table-row-group", "table-header-group", "table-footer-group", "table-row", "table-cell",
+        "table-column-group", "table-column", "table-caption", "ruby-base", "ruby-text", "ruby-base-container", "ruby-text-container"};
+    if (blockify && nw == 1) {
+      for (size_t k = 0; k < sizeof layout_internal / sizeof *layout_internal; k++) {
+        if (strcmp(words[0], layout_internal[k]) == 0) {
+          return emit_keyword(st, "block", out);
+        }
+      }
+    }
     *out = gtext_css_value_set_retain(src);
     return GTEXT_CSS_OK;
   }
@@ -671,27 +704,12 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
   if (outer == OUT_NONE) {
     outer = inner == 5 ? OUT_INLINE : OUT_BLOCK;
   }
-  /* blockification (Display 3, 2.7): a floated, absolutely positioned or root box, and a flex or grid item */
-  bool blockify = st->parent == NULL;
-  if (!blockify && cc->pid[CSS_P_FLOAT]) {
-    const GTEXT_CSS_Value * f = css_st_root(st, cc->pid[CSS_P_FLOAT]);
-    blockify = f && f->kind == GTEXT_CSS_VAL_KEYWORD && !kw(f, "none");
-  }
-  if (!blockify && cc->pid[CSS_P_POSITION]) {
-    const GTEXT_CSS_Value * p = css_st_root(st, cc->pid[CSS_P_POSITION]);
-    blockify = kw(p, "absolute") || kw(p, "fixed");
-  }
-  if (!blockify && st->parent && cc->pid[CSS_P_DISPLAY]) {
-    const char * pw[3] = {NULL, NULL, NULL};
-    size_t pn = 0;
-    if (display_words(gtext_css_value_set_root(st->parent->vals[cc->pid[CSS_P_DISPLAY] - 1]), pw, &pn)) {
-      for (size_t i = 0; i < pn; i++) {
-        blockify = blockify || strcmp(pw[i], "flex") == 0 || strcmp(pw[i], "inline-flex") == 0 || strcmp(pw[i], "grid") == 0 ||
-            strcmp(pw[i], "inline-grid") == 0;
-      }
-    }
-  }
   if (blockify && outer != OUT_BLOCK) {
+    /* Display 3, 2.7: "For legacy reasons, if an inline block box (inline flow-root) is blockified, it becomes a block box (losing its flow-root
+       nature)", and "a run-in flow-root box also blockifies to a block box" */
+    if (inner == 1) {
+      inner = 0;
+    }
     outer = OUT_BLOCK;
   }
   /* the shortest spelling */
@@ -728,6 +746,22 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
     css_v_list(root, kids, n, GTEXT_CSS_SEP_SPACE);
   }
   return ab_close(&a, root, NULL, NULL, out);
+}
+
+/* CSS Positioned Layout 3: "A position value of absolute or fixed blockifies the box, causes float to compute to none, and forces the box to establish an
+   independent formatting context." */
+static GTEXT_CSS_Status algo_float(css_state * st, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
+  const GTEXT_CSS_Value * p = st->cc->pid[CSS_P_POSITION] ? css_st_root(st, st->cc->pid[CSS_P_POSITION]) : NULL;
+  if (p && (kw(p, "absolute") || kw(p, "fixed"))) {
+    const GTEXT_CSS_Value * f = gtext_css_value_set_root(src);
+    if (f && f->kind == GTEXT_CSS_VAL_KEYWORD && kw(f, "none")) {
+      *out = gtext_css_value_set_retain(src);
+      return GTEXT_CSS_OK;
+    }
+    return emit_keyword(st, "none", out);
+  }
+  *out = gtext_css_value_set_retain(src);
+  return GTEXT_CSS_OK;
 }
 
 static GTEXT_CSS_Status algo_color(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
@@ -821,6 +855,15 @@ static GTEXT_CSS_Status algo_text_align(css_state * st, GTEXT_CSS_Property_Id id
   return GTEXT_CSS_OK;
 }
 
+static bool voice_keyword_is(const GTEXT_CSS_Value * v, const char * word) {
+  return v->kind == GTEXT_CSS_VAL_KEYWORD && strlen(word) == v->text.length && memcmp(v->text.data, word, v->text.length) == 0;
+}
+
+/* CSS Speech 1, voice-pitch and voice-range: "one of the predefined pitch keywords if only the keyword is specified by itself, otherwise an absolute
+   frequency calculated by converting the keyword value (if any) to a fixed frequency based on the current voice-family and by applying the specified
+   relative offset (if any)". The value is a sequence of its components (the grammar is `||` and `&&` of them, so even one keyword is a sequence of
+   one). A keyword by itself is its own computed value; a frequency with `absolute` is already an absolute frequency (in hertz, as every frequency
+   computes); a keyword or an offset with the other needs the frequency table of the voice, which the environment does not have. */
 static GTEXT_CSS_Status algo_voice_pitch(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
   const GTEXT_CSS_Value * v = gtext_css_value_set_root(src);
   if (v && v->kind == GTEXT_CSS_VAL_KEYWORD) {
@@ -830,8 +873,19 @@ static GTEXT_CSS_Status algo_voice_pitch(css_state * st, GTEXT_CSS_Property_Id i
   if (v && v->kind == GTEXT_CSS_VAL_DIMENSION) {
     return bytype(st, id, src, out);
   }
+  if (v && v->child_count == 1 && v->children[0].kind == GTEXT_CSS_VAL_KEYWORD) {
+    *out = gtext_css_value_set_retain(src);   /* the keyword by itself */
+    return GTEXT_CSS_OK;
+  }
+  if (v && v->child_count == 2) {
+    const GTEXT_CSS_Value * a = &v->children[0];
+    const GTEXT_CSS_Value * b = &v->children[1];
+    if ((a->kind == GTEXT_CSS_VAL_DIMENSION && voice_keyword_is(b, "absolute")) || (b->kind == GTEXT_CSS_VAL_DIMENSION && voice_keyword_is(a, "absolute"))) {
+      return bytype(st, id, src, out);   /* an absolute frequency */
+    }
+  }
   return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, st->cc->meta[id - 1].name,
-      "a pitch keyword with an offset, or a frequency with absolute, needs the frequency table of the voice");
+      "a pitch keyword with an offset, or an offset by itself, needs the frequency table of the voice");
 }
 
 static GTEXT_CSS_Status algo_voice_balance(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
@@ -1569,11 +1623,13 @@ static GTEXT_CSS_Status build_image_orientation(css_state * st, ab * a, const GT
   }
   /* rounded to the nearest quarter turn and normalized to 0 up to 360 (Images 3, 5.2) */
   double q = deg / 90.0 + 0.5;
-  double fl = (double)(long long)q;
-  if (fl > q) {
-    fl -= 1.0;
+  const double fl = gmath_floor(q);
+  /* the quarter turns, modulo four, in doubles: an angle of 10^30 degrees is no integer to cast */
+  double rem = fl - 4.0 * gmath_floor(fl / 4.0);
+  if (!(rem >= 0.0 && rem < 4.0)) {
+    rem = 0.0;
   }
-  long long quarters = ((long long)fl % 4 + 4) % 4;
+  const long long quarters = (long long)rem;
   GTEXT_CSS_Value ang;
   memset(&ang, 0, sizeof ang);
   css_v_dimension(&ang, (double)quarters * 90.0, GTEXT_CSS_UNIT_DEG);
@@ -1774,10 +1830,15 @@ static GTEXT_CSS_Status shadow_item(css_state * st, ab * a, const css_pmeta * m,
     GTEXT_CSS_Property_Value pv;
     memset(&pv, 0, sizeof pv);
     const GTEXT_CSS_Property_Id cid = st->cc->pid[CSS_P_COLOR];
-    if (!cid || gtext_css_parse_property_text(st->cc->registry, st->cc->meta[cid - 1].name, st->cc->meta[cid - 1].name_length, "currentcolor", 12, &po,
-        &pv) != GTEXT_CSS_OK || !gtext_css_value_set_root(pv.set)) {
+    GTEXT_CSS_Status ps = GTEXT_CSS_E_UNSUPPORTED;
+    if (cid) {
+      ps = gtext_css_parse_property_text(st->cc->registry, st->cc->meta[cid - 1].name, st->cc->meta[cid - 1].name_length, "currentcolor", 12, &po, &pv);
+    }
+    if (ps != GTEXT_CSS_OK || !gtext_css_value_set_root(pv.set)) {
       gtext_css_property_value_free(&pv);
-      return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "currentcolor", "the registry cannot make a color");
+      /* a failed allocation is a failed allocation, not a registry without a color */
+      return ps == GTEXT_CSS_E_OOM ? css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL)
+                                   : css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "currentcolor", "the registry cannot make a color");
     }
     kids[0] = *gtext_css_value_set_root(pv.set);
     const bool ok = css_vb_dep(&a->vb, pv.set);
@@ -1826,6 +1887,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_RULE_WIDTH: return algo_width_list(st, id, src, true, false, out);
   case GTEXT_CSS_ALGO_LINE_WIDTH: return algo_width_list(st, id, src, false, true, out);
   case GTEXT_CSS_ALGO_DISPLAY: return algo_display(st, src, out);
+  case GTEXT_CSS_ALGO_FLOAT: return algo_float(st, src, out);
   case GTEXT_CSS_ALGO_COLOR: return algo_color(st, id, src, out);
   case GTEXT_CSS_ALGO_OPACITY: return algo_opacity(st, id, src, out);
   case GTEXT_CSS_ALGO_ZOOM: return algo_zoom(st, id, src, out);

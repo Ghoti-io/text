@@ -95,6 +95,9 @@ def plants_of(tool, module):
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-registry/" + seed if seed else None, "file"))
         for name, (rel, old, new, seed) in module.COMPUTE_PLANTS.items():
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-compute/" + seed if seed else None, "file"))
+        for name, edits in getattr(module, "COMPUTE_EXTRA", {}).items():
+            for rel, old, new in edits:
+                out.append((name + " (extra)", "src/css/" + rel, old, new, None, "file"))
     return out
 
 
@@ -111,11 +114,14 @@ def main():
                 problems.append("%s: %s does not exist" % (label, path))
                 continue
             with open(full, encoding="utf-8") as fh:
-                matches = fh.read().count(old)
-            if matches != 1:
-                problems.append("%s: its text matches %d times in %s, not once" % (label, matches, path))
-            if old == new:
-                problems.append("%s: its edit changes nothing" % label)
+                source = fh.read()
+            olds, news = (old, new) if isinstance(old, list) else ([old], [new])
+            for o_, n_ in zip(olds, news):
+                matches = source.count(o_)
+                if matches != 1:
+                    problems.append("%s: its text matches %d times in %s, not once" % (label, matches, path))
+                if o_ == n_:
+                    problems.append("%s: its edit changes nothing" % label)
             if repro and kind == "file" and not os.path.isfile(os.path.join(ROOT, repro)):
                 problems.append("%s: its reproducer %s does not exist" % (label, repro))
             if repro and kind == "test" and not test_exists(repro):

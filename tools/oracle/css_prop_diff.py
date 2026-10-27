@@ -57,7 +57,7 @@ sys.path.insert(0, HERE)
 import css_prop_gen  # noqa: E402
 import oracle_env  # noqa: E402
 
-CLASSES = ("standard-newer", "reference-old", "reference-wrong", "legacy-compat", "ours")
+CLASSES = ("standard-newer", "reference-old", "reference-wrong", "legacy-compat", "unspecified", "ours")
 ENGINES = ("chromium", "firefox")
 LIST = os.path.join(HERE, "css_prop_divergences.txt")
 WITNESSES = os.path.join(HERE, "css_prop_witnesses.txt")
@@ -299,6 +299,11 @@ def classify(items, ours, answers):
     return features, undecided, unanswered
 
 
+def quotes_a_sentence(reason):
+    """Whether the reason has a passage of at least 25 characters in double quotes."""
+    return any(len(x) >= 25 for m in re.findall(r'"([^"]+)"|\u201c([^\u201d]+)\u201d', reason) for x in m)
+
+
 def read_list(path):
     rows, problems = {}, []
     if not os.path.exists(path):
@@ -318,6 +323,11 @@ def read_list(path):
             problems.append("%s:%d: class %r is not one of %s" % (path, n, cls, ", ".join(CLASSES)))
         if len(reason) < 30 or "browser behavior" in reason.lower() and len(reason) < 60:
             problems.append("%s:%d: the reason is missing, or is the blanket \"browser behavior\"" % (path, n))
+        # a class that says a specification decides the answer must quote the sentence that decides it (a probe-classified `support:` key is its own
+        # witness); where the specification leaves the answer to the implementation, the class is `unspecified`, which quotes nothing
+        if cls in ("standard-newer", "reference-old", "reference-wrong", "legacy-compat") and not key.startswith("support:") and not quotes_a_sentence(reason):
+            problems.append("%s:%d: class %s says a specification decides, and the reason quotes no sentence of it (25 characters or more in double quotes); "
+                            "class unspecified is for what the specification leaves to the implementation" % (path, n, cls))
         if "*" in key:
             problems.append("%s:%d: a key with a wildcard is a blanket" % (path, n))
         rows[key] = (count, cls, reason, digest)

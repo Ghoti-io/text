@@ -1014,6 +1014,9 @@ static GTEXT_CSS_Status split_grid_line(xctx * x, GTEXT_CSS_Property_Id sh, cons
       }
       seg[nseg++] = x_take(x, &b);
       from = i + 1;
+      if (!seg[nseg - 1]) {
+        status = GTEXT_CSS_E_OOM;
+      }
     }
   }
   if (status == GTEXT_CSS_OK && (nseg < 1 || nseg > nl)) {
@@ -1967,6 +1970,9 @@ static GTEXT_CSS_Status split_any_layers(xctx * x, GTEXT_CSS_Property_Id sh, con
       }
       if (status == GTEXT_CSS_OK && layered && nh == 2 && name_is(x->registry, sh, "background-position")) {
         fix_position_layer(&a, ids, assigned);
+      }
+      if (status == GTEXT_CSS_OK && x->status != GTEXT_CSS_OK) {
+        status = x->status;   /* a check of the helpers above (a longhand's grammar asked about a run) ran out of memory */
       }
     }
     for (size_t h = 0; h < nh && status == GTEXT_CSS_OK; h++) {

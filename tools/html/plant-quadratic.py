@@ -129,8 +129,23 @@ PLANTS = [
     # The computed-value layer: a table of custom properties copied at every level, a layer list that is rescanned for every layer.
     ("css-compute-copies-the-parents-custom-properties", "css/css_compute.c",
      "  style->custom = css_cmap_retain(parent_map);\n",
-     "  style->custom = css_cmap_retain(parent_map);\n  st->work += css_cmap_count(parent_map); /* a copy of the parent's table */\n",
+     "  style->custom = NULL;\n  for (size_t pi = 0; ; pi++) { /* the parent's table, set again name by name */\n"
+     "    const char * pn; size_t pl; const GTEXT_CSS_Value_Set * pv;\n"
+     "    if (!css_cmap_at(parent_map, pi, &pn, &pl, &pv)) { break; }\n"
+     "    css_cmap * grown = NULL;\n"
+     "    if (css_cmap_set(&a, style->custom, pn, pl, (GTEXT_CSS_Value_Set *)pv, cc->options.custom_hash_seed, &grown, &st->work) != GTEXT_CSS_OK) { break; }\n"
+     "    css_cmap_release(style->custom);\n    style->custom = grown;\n  }\n",
      ["CSS compute: a chain of n elements, each with one more custom property"]),
+    ("css-compute-set-walks-the-whole-map", "css/css_custom.c",
+     "  css_cmap * current;\n  if (found) {",
+     "  for (size_t wi = 0; wi < css_cmap_count(map); wi++) { /* a set that reads every name of the map */\n"
+     "    const char * wn; size_t wl; const GTEXT_CSS_Value_Set * wv;\n"
+     "    if (css_cmap_at(map, wi, &wn, &wl, &wv)) { steps++; }\n  }\n  css_cmap * current;\n  if (found) {",
+     ["CSS compute: one element with n custom properties"]),
+    ("css-compute-math-walk-reads-the-stack-for-every-node", "css/css_compute_value.c",
+     "    r.nframes--;\n    r.nres = base;\n",
+     "    for (size_t sj = 0; sj < base; sj++) { st->work += r.res[sj] != made; } /* each node reads the results below it */\n    r.nframes--;\n    r.nres = base;\n",
+     ["CSS compute: a calculation nested n deep"]),
     ("css-shorthand-rereads-the-layers-for-each-layer", "css/css_shorthand.c",
      "    bool got;\n    if (layered) {\n",
      "    x->steps += fl.n; /* every layer reads the whole list again */\n    bool got;\n    if (layered) {\n",

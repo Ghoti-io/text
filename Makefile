@@ -2179,11 +2179,14 @@ check-css-registry-controls: $(APP_DIR)/$(STATIC_TARGET) | $(APP_DIR)/$(TARGET)
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh compute-controls && \
 	$(CONFORMANCE_ENV) tools/css/run-registry-gates.sh package-controls
 
-check-size-shifts: ## Fail if a source shifts a 32-bit integer by 32 or more places (breaks the 32-bit build), and show the gate refuses a planted shift
-# `(size_t)1 << 40` is undefined where size_t has 32 bits and the 64-bit build accepts it, so only the i686 gate saw it. The check reads src, include
-# and tests with comments removed. In TEST_GATES: it needs only a C compiler. Planted and unplanted shifts are the gate's own controls.
+check-size-shifts: ## Fail if a source shifts an integer that may have 32 bits by 32 or more places (breaks the 32-bit build), and show the gate refuses each planted form
+# `(size_t)1 << 40` is undefined where size_t has 32 bits and the 64-bit build accepts it, so only the i686 gate saw it. tools/check-size-shifts.py reads src,
+# include and tests as tokens (comments and strings removed, a statement over lines, a count that is a #define, an enum or a const, a cast, a suffix, a hex
+# literal, a variable's declared type) and refuses a constant shift of 32 or more of an operand that is narrow. Before it reads the tree it is made to refuse
+# every form it once missed and to accept the fine ones (its own controls). In TEST_GATES: it needs only python3.
 check-size-shifts:
-	@tools/check-size-shifts.sh
+	@$(REQUIRE_PYTHON3); \
+	python3 -I tools/check-size-shifts.py
 
 check-css-numbers: ## Fail if a CSS source reaches the host for a number again, and show the gate refuses a planted use
 # CSS numbers are converted by the math library and written from its shortest digits, which read no locale, no rounding
@@ -2239,7 +2242,7 @@ check-html-quadratic: $(APP_DIR)/$(TARGET) $(APP_DIR)/testQuadratic$(EXE_EXTENSI
 	printf "\033[0;32mThe quadratic-nesting suite holds (%s).\033[0m\n" "$$(grep -E '^[0-9]+ shapes, [0-9]+ failures$$' $(APP_DIR)/quadratic.out)"
 
 check-html-quadratic-plants: ## Plant a quadratic in each layer and show the quadratic-nesting suite fails on the shapes it should
-# tools/html/plant-quadratic.py: twelve edits (two of them the computed-value layer: a custom-property table copied at every level, a layer list read again for each layer; the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
+# tools/html/plant-quadratic.py: many edits (four of them the computed-value layer, each a real change to the code: a custom-property table rebuilt name by name at every level, a set that reads every name of the map, a calculation's walk that reads the results below it for every node, a layer list read again for each layer; the reset of the insertion mode walks the stack, a scope check walks it, a stack removal
 # re-derives it all, the attribute table has one bucket, the serializer finds its ancestors by walking them, the decoder looks back
 # over the stream, the sniffer reads past its window; the XML parser's declaration walks the earlier bindings, its start tag walks
 # every declaration, its reference walks every entity), each compiled alone and linked ahead of the library into tests/test-quadratic.cpp,
@@ -2398,7 +2401,7 @@ conformance-css-values: $(CONFORMANCE_LIB)
 # tools/css/UNEXTRACTED, the properties the pin does not have are CSS_PROPERTY_ABSENT, and the depth ledger's wpt column is regenerated
 # from the scored set. The scoring half is in check-conformance-vectors; this target adds the controls (the gate made to fail on
 # purpose, and the library built with a rule undone: tools/conformance/CSS_PROPERTY_PLANTS).
-CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=486
+CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=485
 
 conformance-css-property: ## Score the CSS property layer against the pinned WPT property parsing tests, and show the gate fails
 conformance-css-property: $(CONFORMANCE_LIB)

@@ -39,9 +39,12 @@
  *    value when it is not. `initial`, `inherit` and `unset` (inherit if inherited, else initial) are applied here; `all` (every property except `direction`,
  *    `unicode-bidi` and the custom properties) is a declaration at its place in the block's order, so that a later declaration of a property
  *    beats it and an earlier one does not. `revert` and `revert-layer` are cascade results (C2b) and are refused as inputs, and so is a pending
- *    value (a `var()` that was not substituted): GTEXT_CSS_E_INVALID with a `detail`.
+ *    value (a `var()` that was not substituted): GTEXT_CSS_E_INVALID with a `detail`, naming the property that holds it (for a shorthand that held `var()`
+ *    the longhand reached first: `margin: var(--x)` names `margin-bottom`, not `margin`). `sibling-index()` and `sibling-count()` are the element tree's:
+ *    GTEXT_CSS_E_UNSUPPORTED naming the callback (`sibling_index`, `sibling_count`). The importance of a declaration (`!important`) is the cascade's and is
+ *    not looked at: the block is in ascending priority, and the last declaration of a property is the one that counts.
  * 2. The order of computation is fixed (`tools/css/compute_order.tsv`): `writing-mode`, `direction`, `text-orientation`, the font properties,
- *    `font-size`, `line-height`, the border styles, `float`, `position`, `display`, and then every other property. A property reads only what is
+ *    `font-size`, `line-height`, the border styles, `position`, `float` (none under an absolutely positioned box), `display`, and then every other property. A property reads only what is
  *    above it, or the parent's style.
  * 3. A logical property is mapped to its physical slot by the element's own computed flow (css_logical.h): of the declarations of a group that
  *    map to one slot, the last in the block wins ("cascaded together as one"), and every member of the group that maps to the slot has its value.
@@ -126,13 +129,14 @@ typedef enum {
   GTEXT_CSS_ALGO_BORDER_WIDTH,     ///< Border and outline widths: keywords to px, 0 under `none` and `hidden`, snapped to device pixels.
   GTEXT_CSS_ALGO_RULE_WIDTH,       ///< `column-rule-width`, `row-rule-width`: a list of the above.
   GTEXT_CSS_ALGO_LINE_WIDTH,       ///< `<line-width>` keywords and numbers to px (`stroke-width`, `-webkit-text-stroke-width`).
-  GTEXT_CSS_ALGO_DISPLAY,          ///< `display`: blockification under `float`, `position`, the root and a flex or grid parent.
+  GTEXT_CSS_ALGO_DISPLAY,          ///< `display`: blockification under `float`, `position`, the root and a flex or grid parent (an `inline flow-root` and a layout-internal box become `block`).
+  GTEXT_CSS_ALGO_FLOAT,            ///< `float`: `none` under `position: absolute` and `fixed`.
   GTEXT_CSS_ALGO_COLOR,            ///< `color`: `currentcolor` is `inherit`.
   GTEXT_CSS_ALGO_OPACITY,          ///< Opacities: a number or percentage clamped to 0 to 1, as a number.
   GTEXT_CSS_ALGO_ZOOM,             ///< `zoom`: a percentage as a number.
   GTEXT_CSS_ALGO_MATH_DEPTH,       ///< `math-depth`: `auto-add`, `add()`.
   GTEXT_CSS_ALGO_TEXT_ALIGN,       ///< `text-align-all`, `text-align-last`: `match-parent`.
-  GTEXT_CSS_ALGO_VOICE_PITCH,      ///< `voice-pitch`, `voice-range`: a lone keyword is itself, an offset needs a table the environment lacks.
+  GTEXT_CSS_ALGO_VOICE_PITCH,      ///< `voice-pitch`, `voice-range`: a lone keyword is itself and a frequency with `absolute` is that frequency; an offset needs a table the environment lacks.
   GTEXT_CSS_ALGO_VOICE_BALANCE,    ///< `voice-balance`: a number between -100 and 100.
   GTEXT_CSS_ALGO_HYPHENATE_CHARS,  ///< `hyphenate-limit-chars`: always three values.
   GTEXT_CSS_ALGO_IMAGE_ORIENTATION, ///< `image-orientation`: the angle rounded to a quarter turn and normalized.
@@ -194,6 +198,8 @@ typedef struct {
   size_t max_element_depth;          ///< Deepest chain of inheritance parents that gtext_css_compute_element() follows. Default 100,000; at most 2^24. One more is GTEXT_CSS_E_LIMIT_ELEMENTS.
   size_t max_list_items;             ///< Most items of any list a computation reads or makes. Default 65,536; at most 2^24. One more is GTEXT_CSS_E_LIMIT_LIST.
   size_t max_value_nodes;            ///< Most values one computed value may have. Default 1,048,576; at most 2^28. One more is GTEXT_CSS_E_LIMIT_DECLARATIONS.
+  uint64_t custom_hash_seed;         ///< Keys the balance of the custom properties' map, which no choice of names an author makes may defeat. 0 (the default): a seed drawn from
+                                     ///< the addresses of the context (unpredictable under address randomization). A fixed seed makes a run reproducible, not safer.
 } GTEXT_CSS_Compute_Options;
 
 /** @brief The defaults, spelled out. */

@@ -41,6 +41,8 @@
 
 #include <string.h>
 
+#include <ghoti.io/math/math.h>
+
 #include "css_color_internal.h"
 #include "css_compute_internal.h"
 
@@ -201,8 +203,10 @@ static GTEXT_CSS_Status leaf_color(cv_walk * w, const GTEXT_CSS_Value * src, GTE
   }
   bool resolved_light_dark = false;
   size_t guard = 0;
+  /* light-dark() takes the element's color scheme (Color Adjust 1, 2.4: "The element color scheme affects ... the value of the light-dark() function") */
+  const GTEXT_CSS_Color_Scheme scheme = css_st_used_scheme(st);
   while (c->kind == GTEXT_CSS_COLOR_LIGHT_DARK && c->item_count == 2 && c->items[0] && c->items[1]) {
-    c = c->items[st->env->color_scheme == GTEXT_CSS_SCHEME_DARK ? 1 : 0];
+    c = c->items[scheme == GTEXT_CSS_SCHEME_DARK ? 1 : 0];
     resolved_light_dark = true;
     if (++guard > 100000) {
       break;
@@ -213,7 +217,16 @@ static GTEXT_CSS_Status leaf_color(cv_walk * w, const GTEXT_CSS_Value * src, GTE
       (c->kind == GTEXT_CSS_COLOR_FUNCTION && (c->has_unresolved || c->origin != NULL));
   if (needs && st->env->resolve_color) {
     double rgba[4];
-    if (st->env->resolve_color(st->env->user, c, st->env->color_scheme, rgba)) {
+    if (st->env->resolve_color(st->env->user, c, scheme, rgba)) {
+      for (int k = 0; k < 4; k++) {
+        if (!(rgba[k] - rgba[k] == 0.0)) {
+          return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "resolve_color", "the resolve_color callback gave a component that is not a finite number");
+        }
+      }
+      for (int k = 0; k < 3; k++) {
+        rgba[k] = rgba[k] < 0.0 ? 0.0 : rgba[k] > 255.0 ? 255.0 : rgba[k];   /* the documented range: 0 to 255 */
+      }
+      rgba[3] = rgba[3] < 0.0 ? 0.0 : rgba[3] > 1.0 ? 1.0 : rgba[3];
       char num[4][336];
       size_t nl[4];
       for (int k = 0; k < 4; k++) {
@@ -370,8 +383,20 @@ static const GTEXT_CSS_Math_Node * mr_node(cv_walk * w, mrebuild * r, const GTEX
     }
     return mk_dimension(mb, v, unit);
   }
+  case GTEXT_CSS_MATH_UNRESOLVED: {
+    /* sibling-index() and sibling-count() are numbers the element tree answers (the callbacks of that name), which a style computed from a block has
+       no way to ask: the failure names the callback, and never keeps a value that is not a number */
+    const bool index = n->text.length >= 13 && memcmp(n->text.data, "sibling-index", 13) == 0;
+    const bool count = n->text.length >= 13 && memcmp(n->text.data, "sibling-count", 13) == 0;
+    if (index || count) {
+      css_st_fail(w->st, GTEXT_CSS_E_UNSUPPORTED, index ? "sibling_index" : "sibling_count",
+          "a calculation holds sibling-index() or sibling-count(), which the element tree answers and a style computed from a block cannot ask");
+      return NULL;
+    }
+    r->has_symbols = true;
+    return n; /* shared: it lives in the source set */
+  }
   case GTEXT_CSS_MATH_SYMBOL:
-  case GTEXT_CSS_MATH_UNRESOLVED:
     r->has_symbols = true;
     return n; /* shared: it lives in the source set */
   case GTEXT_CSS_MATH_SUM:
@@ -421,7 +446,7 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
     }
     const GTEXT_CSS_Math_Node * n = f->n;
     const size_t base = f->base;
-    const GTEXT_CSS_Math_Node * made = mr_node(w, &r, n, (const GTEXT_CSS_Math_Node * const *)(r.res + base));
+    const GTEXT_CSS_Math_Node * made = mr_node(w, &r, n, (const GTEXT_CSS_Math_Node * const *)(r.res ? r.res + base : NULL));
     if (!made) {
       status = st->status != GTEXT_CSS_OK ? st->status : (r.mb.status != GTEXT_CSS_OK ? r.mb.status : GTEXT_CSS_E_INTERNAL);
       break;
@@ -433,6 +458,7 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
     }
     st->work++;
   }
+  st->work += r.mb.work; /* the nodes the builder made and looked at: the walk's own steps are counted above */
   const GTEXT_CSS_Math_Node * root = status == GTEXT_CSS_OK && r.nres == 1 ? r.res[0] : NULL;
   gtext_allocator_free(&alloc, (void *)r.res);
   gtext_allocator_free(&alloc, r.frames);
@@ -460,13 +486,7 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
         css_v_integer(out, (double)0);
         /* round half toward +infinity (Values 4, 10.2: "rounded to the nearest integer") */
         double t = v + 0.5;
-        double f = (double)(long long)t;
-        if (f > t) {
-          f -= 1.0;
-        }
-        if (t > 9.0e15 || t < -9.0e15) {
-          f = t;
-        }
+        const double f = gmath_floor(t);
         out->number = clamp_range(f, src->range_lo, src->range_hi);
       }
       else {
