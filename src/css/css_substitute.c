@@ -2183,6 +2183,9 @@ static int step_random(css_sub * sub, size_t fi) {
         built = built && gs == GTEXT_CSS_OK && dbuf_put(&text, ")) - (", 6);
         gs = built ? group_text(sub, t->values + g[first].from, g[first].count, &text) : GTEXT_CSS_E_OOM;
         built = built && gs == GTEXT_CSS_OK && dbuf_put(&text, ")))", 3);
+        if (gs != GTEXT_CSS_OK) {
+          text.failed = true; /* the serialization of an argument could not be made: that is memory, and says so below */
+        }
       }
       if (text.failed) {
         dbuf_free(&text);

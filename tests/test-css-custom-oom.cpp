@@ -57,6 +57,7 @@ const Scenario kScenarios[] = {
     {"inherit", "color: red; --p: 5px", "--a: var(--p); color: var(--zz)"},
     {"cycleFn", "margin-top: 1px", "margin-top: cycle(1px, 2px, 3px); margin: cycle(1px 2px, 4px)"},
     {"randomKey", "", "opacity: random(--r, 0.2, 0.6); width: random(--r2 element-scoped, 1px, 3px)"},
+    {"randomCalc", "", "width: random(1px, 2em); height: random(--q, 3px, 20%); margin-top: random(1em, 2em)"},
     {"random", "", "width: random(100px, 200px); --r: random-item(--k, 1px, 2px, 3px); height: var(--r)"},
     {"spread", "", "--l: 1px, 2px; --s: random-item(--k2, var(--l)...); width: var(--s)"},
     {"doubling", "", "--n0: w; --n1: var(--n0) var(--n0); --n2: var(--n1) var(--n1); --n3: var(--n2) var(--n2); content: var(--n3)"},
