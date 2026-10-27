@@ -140,7 +140,7 @@ TEST(CssProperty, AllAcceptsTheCssWideKeywordsAndNothingElse) {
   EXPECT_EQ(parse(r, "all", "revert-rule"), "wide:revert-rule");
   EXPECT_EQ(parse(r, "all", "1px"), "invalid");
   EXPECT_EQ(parse(r, "all", "auto"), "invalid");
-  EXPECT_EQ(parse(r, "all", "var(--x)"), "invalid") << "decided: `all` takes the CSS-wide keywords only, so no substitution either";
+  EXPECT_EQ(parse(r, "all", "var(--x)"), "pending:var(--x)") << "`all` takes a CSS-wide keyword, which a function may yield: it is pending, invalid at computed-value time otherwise";
   EXPECT_EQ(parse(r, "all", ""), "invalid");
 }
 
@@ -668,9 +668,9 @@ TEST(CssProperty, ASubstitutionFunctionThatIsNotSyntacticallyValidMakesTheValueI
   EXPECT_EQ(parse(r, "width", "var(--a, 1px)"), "pending:var(--a, 1px)");
   EXPECT_EQ(parse(r, "width", "var(--a,)"), "pending:var(--a,)");
   EXPECT_EQ(parse(r, "width", "env(safe-area-inset-top)"), "pending:env(safe-area-inset-top)");
-  // Cascade 4, on `all`: "It only accepts the CSS-wide keywords." So `all: var(--x)` is not valid, as the engine has it, though
-  // every other shorthand takes a substitution.
-  EXPECT_EQ(parse(r, "all", "var(--x)"), "invalid");
+  // Cascade 4, on `all`: "It only accepts the CSS-wide keywords." A substitution may yield one, so `all: var(--x)` is pending (a browser takes it) and is
+  // invalid at computed-value time unless it does.
+  EXPECT_EQ(parse(r, "all", "var(--x)"), "pending:var(--x)");
   EXPECT_EQ(parse(r, "all", "revert"), "wide:revert");
   // a custom property's value is held to the same rule: a var() that is not valid is not a <declaration-value> that can be
   // substituted, so the declaration is invalid

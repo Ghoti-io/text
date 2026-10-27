@@ -302,19 +302,26 @@ struct Sheets {
   }
 };
 
-TEST(CssPropertyRule, AValidRuleRegisters) {
-  // "@property --width, --height, --depth { syntax: "<length>"; inherits: false; initial-value: 0px; } The following rule registers three properties with the same
-  // syntax, inheritance behavior, and initial value"
-  Sheets s({"@property --width, --height, --depth { syntax: \"<length>\"; inherits: false; initial-value: 0px }"});
-  EXPECT_EQ(gtext_css_at_property_count(s.set()), 3u);
+TEST(CssPropertyRule, AValidRuleRegistersOneName) {
+  // "@property <custom-property-name> { <declaration-list> }": the prelude is one custom property name
+  Sheets s({"@property --width { syntax: \"<length>\"; inherits: false; initial-value: 0px }"});
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 1u);
   GTEXT_CSS_Custom_Info info;
-  for (const char * n : {"--width", "--height", "--depth"}) {
-    ASSERT_TRUE(s.has(n, &info)) << n;
-    EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>");
-    EXPECT_FALSE(info.inherits);
-    EXPECT_EQ(std::string(info.initial_value, info.initial_length), "0px");
-  }
+  ASSERT_TRUE(s.has("--width", &info));
+  EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>");
+  EXPECT_FALSE(info.inherits);
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "0px");
   EXPECT_TRUE(s.reasons().empty());
+}
+
+TEST(CssPropertyRule, AListOfNamesIsNotAPreludeOfTheRule) {
+  // the rule has one name: `@property --a, --b { ... }` is not an @property rule (a browser ignores it), and the syntax of the rule says so
+  Sheets s({"@property --width, --height { syntax: \"<length>\"; inherits: false; initial-value: 0px }"});
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 0u);
+  EXPECT_FALSE(s.has("--width", nullptr));
+  EXPECT_FALSE(s.has("--height", nullptr));
+  ASSERT_EQ(s.reasons().size(), 1u);
+  EXPECT_EQ(s.reasons()[0].substr(0, 8), "bad-name");
 }
 
 TEST(CssPropertyRule, ARuleWithoutSyntaxOrInheritsIsIgnoredAndSaysWhere) {
@@ -501,7 +508,12 @@ TEST(CssPropertyRule, ARegisteredLengthIsComputedToPx) {
 }
 
 TEST(CssPropertyRule, ARegisteredColorIsAColor) {
-  EXPECT_EQ(typed("<color>", "black", "--x: red", false), "red");
+  EXPECT_EQ(typed("<color>", "black", "--x: red", false), "rgb(255, 0, 0)") << "a computed color is an sRGB color written as rgb()";
+  EXPECT_EQ(typed("<color>", "black", "--x: #badbee33", false), "rgba(186, 219, 238, 0.2)");
+  EXPECT_EQ(typed("<color>", "black", "--x: tomato", false), "rgb(255, 99, 71)");
+  EXPECT_EQ(typed("<color>", "black", "--x: red, blue", false), "rgb(0, 0, 0)") << "not a value of the syntax: the initial value";
+  EXPECT_EQ(typed("<color>+", "black", "--x: red  tomato", false), "rgb(255, 0, 0) rgb(255, 99, 71)");
+  EXPECT_EQ(typed("<color>#", "black", "--x: red ,tomato", false), "rgb(255, 0, 0), rgb(255, 99, 71)");
   EXPECT_EQ(typed("<color>", "black", "--x: #f00", false), "rgb(255, 0, 0)");
 }
 
@@ -510,14 +522,15 @@ TEST(CssPropertyRule, AValueThatIsNotOfTheSyntaxIsInvalidAtComputedValueTime) {
   // thus resets to the registered initial value)."
   EXPECT_EQ(typed("<length>", "7px", "--x: red"), "7px");
   EXPECT_EQ(typed("<length>", "7px", "--x: 10px 20px"), "7px");
-  EXPECT_EQ(typed("<color>", "black", "--x: url(not-a-color)"), "black");
+  EXPECT_EQ(typed("<color>", "black", "--x: url(not-a-color)"), "rgb(0, 0, 0)");
   // the cascade did not change: the last declaration is the one that counts, valid or not
-  EXPECT_EQ(typed("<color>", "black", "--x: green; --x: url(\"not-a-color\")"), "black");
+  EXPECT_EQ(typed("<color>", "black", "--x: green; --x: url(\"not-a-color\")"), "rgb(0, 0, 0)");
 }
 
 TEST(CssPropertyRule, TheUniversalSyntaxIsLikeAnUnregisteredProperty) {
   // "If the registration's syntax is the universal syntax definition, the computed value is the same as for unregistered custom properties"
-  EXPECT_EQ(typed("*", nullptr, "--x: /* c */ 1.0  x"), "/* c */ 1.0  x");
+  EXPECT_EQ(typed("*", nullptr, "--x: /* c */ 1.0  x /* d */"), "1.0  x") << "the white space and comments at the ends are not part of the value, those between are";
+  EXPECT_EQ(typed("*", nullptr, "--x: 1.0 /* c */ x"), "1.0 /* c */ x");
   EXPECT_EQ(typed("*", nullptr, "--x: var(--nosuch)"), "<gi>") << "\"registered custom property with universal syntax: the computed value is the guaranteed-invalid value\"";
   EXPECT_EQ(typed("*", "", ""), "") << "an initial value that is empty is the empty value";
 }
@@ -539,7 +552,7 @@ TEST(CssPropertyRule, TheInitialValueIsSubstituted) {
   ASSERT_EQ(w.build({{"--c", "<color>", "green", true, true}, {"--l", "<length>", "10vw", true, true}}), GTEXT_CSS_OK);
   Computed c;
   compute(w, c, "color: var(--c); width: var(--l)");
-  EXPECT_EQ(c.value(w.registry.r, "color"), "green");
+  EXPECT_EQ(c.value(w.registry.r, "color"), "rgb(0, 128, 0)");
   EXPECT_EQ(c.value(w.registry.r, "width"), "128px") << "10vw of a 1280px viewport";
 }
 
@@ -590,8 +603,8 @@ TEST(CssPropertyRule, ListsAndAlternativesAreComputedPerComponent) {
   EXPECT_EQ(typed("<length> | auto", "auto", "--x: 1in", false), "96px");
   // "the syntax components are matched in the order specified": "red | <color>" gives the identifier red as an identifier and blue as a color
   EXPECT_EQ(typed("red | <color>", "red", "--x: red", false), "red");
-  EXPECT_EQ(typed("red | <color>", "red", "--x: blue", false), "blue");
-  EXPECT_EQ(typed("Red | <color>", "Red", "--x: RED", false), "red") << "an identifier is compared codepoint by codepoint: RED is a color";
+  EXPECT_EQ(typed("red | <color>", "red", "--x: blue", false), "rgb(0, 0, 255)");
+  EXPECT_EQ(typed("Red | <color>", "Red", "--x: RED", false), "rgb(255, 0, 0)") << "an identifier is compared codepoint by codepoint: RED is a color";
 }
 
 TEST(CssPropertyRule, AUrlIsResolvedAgainstTheBase) {

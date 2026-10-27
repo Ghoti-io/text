@@ -64,7 +64,9 @@
 #define LIMIT_MAX_ELEMENT_TOKENS ((uint64_t)1 << 44)
 #define DEFAULT_MAX_CUSTOM ((size_t)65536)
 #define LIMIT_MAX_CUSTOM ((size_t)1 << 24)
-#define DEFAULT_MAX_BYTES ((size_t)16 << 20)
+#define DEFAULT_MAX_BYTES ((size_t)1 << 20)
+#define DEFAULT_MAX_ELEMENT_BYTES ((uint64_t)8 << 20)
+#define LIMIT_MAX_ELEMENT_BYTES ((uint64_t)1 << 40)
 #define LIMIT_MAX_BYTES ((size_t)1 << 30)
 #define DEFAULT_MAX_DEPTH ((size_t)100000)
 #define LIMIT_MAX_DEPTH ((size_t)1 << 24)
@@ -77,6 +79,7 @@ GTEXT_CSS_Substitute_Options gtext_css_substitute_options_default(void) {
   o.max_custom_properties = DEFAULT_MAX_CUSTOM;
   o.max_value_bytes = DEFAULT_MAX_BYTES;
   o.max_substitution_depth = DEFAULT_MAX_DEPTH;
+  o.max_element_substituted_bytes = DEFAULT_MAX_ELEMENT_BYTES;
   return o;
 }
 
@@ -392,8 +395,9 @@ struct css_sub {
   frame_t * frames;
   size_t nframes, capframes;
   size_t max_depth;
-  uint64_t max_tokens, max_element_tokens;
+  uint64_t max_tokens, max_element_tokens, max_element_bytes;
   size_t max_bytes;
+  uint64_t element_bytes;                   ///< Bytes charged to this element.
   uint64_t element_tokens;                  ///< Tokens charged to this element.
   uint64_t peak;                            ///< The largest expansion any value was found to have.
   size_t limited;
@@ -464,6 +468,15 @@ static bool charge(css_sub * sub, css_rope * r) {
     return false;
   }
   sub->element_tokens = total;
+  /* bytes too: a value of a few long words is few tokens, and reading it costs what it holds (a sixteenth of a step a byte: it is flattened and parsed once a use) */
+  const uint64_t b = css_rope_bytes(r);
+  const uint64_t btotal = css_sat_add(sub->element_bytes, b);
+  sub->element_bytes = btotal;
+  if (btotal > sub->max_element_bytes) {
+    sub->limited++; /* refused without a step: what the element has used is what it paid for, and a value that is not kept is not read */
+    return false;
+  }
+  sub->work += (size_t)(b >> 4);
   return true;
 }
 
@@ -1185,6 +1198,9 @@ static int read_name(css_sub * sub, size_t fi, const css_rope * r) {
     return -1;
   }
   if (st != GTEXT_CSS_OK || !t) {
+    if (st != GTEXT_CSS_OK) {
+      sub->limited++; /* a limit of the parser */
+    }
     return 0; /* too long to be a name, or a limit of the parser */
   }
   const GTEXT_CSS_Component_Value * v = single(t);
@@ -1254,7 +1270,7 @@ static entry_t * find_entry(css_sub * sub, const char * name, size_t len) {
 static const GTEXT_CSS_Custom_Value * parent_value(css_sub * sub, const char * name, size_t len, long reg) {
   const GTEXT_CSS_Computed_Style * parent = sub->st->parent;
   if (reg >= 0) {
-    return parent && parent->regvals ? parent->regvals[reg] : sub->cc->regs[reg].initial;
+    return parent && parent->regvals ? css_style_regval(parent, (size_t)reg) : sub->cc->regs[reg].initial;
   }
   return parent ? css_cmap_find(parent->custom, name, len) : NULL;
 }
@@ -1300,8 +1316,18 @@ static int lookup_custom(css_sub * sub, size_t fi, int slot, const char * name, 
   }
   const size_t ei = (size_t)(e - sub->entries);
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
-  frame_t * p = frame_push(sub, FR_PROP, &st);
+  /* the stack keeps room for what one more property may nest inside it (a value nests at most as deep as the parser reads, 512 blocks), so that the property
+     that is one too many is the guaranteed-invalid value and not a failure of everything */
+  const size_t room = sub->max_depth / 4 < 2048 ? sub->max_depth / 4 : 2048;
+  frame_t * p = sub->nframes + room >= sub->max_depth ? NULL : frame_push(sub, FR_PROP, &st);
   if (!p) {
+    if (st == GTEXT_CSS_E_LIMIT_DEPTH || st == GTEXT_CSS_OK) {
+      /* a chain of custom properties longer than the stack allows: the property that would be one too many is the guaranteed-invalid value, as a value too long is,
+         and so is everything made of it; the rest of the element is as it was */
+      sub->limited++;
+      slot_gi(&sub->frames[fi], slot);
+      return 0;
+    }
     SUB_FAIL(sub, st);
     return -1;
   }
@@ -2495,7 +2521,7 @@ static int step_attr(css_sub * sub, size_t fi) {
       st = gtext_css_serialize_string(value.data, value.length, &sink);
       if (st != GTEXT_CSS_OK || b.failed) {
         dbuf_free(&b);
-        SUB_FAIL(sub, st == GTEXT_CSS_OK ? GTEXT_CSS_E_OOM : st);
+        SUB_FAIL(sub, b.failed ? GTEXT_CSS_E_OOM : st); /* a sink that could not take the bytes says E_WRITE: memory, here */
         return STEP_ERROR;
       }
       const int r = attr_result(sub, fi, b.data, b.len);
@@ -2585,6 +2611,7 @@ static int step_attr(css_sub * sub, size_t fi) {
         SUB_FAIL(sub, st);
         return STEP_ERROR;
       }
+      sub->limited++;
       return attr_failure(sub, fi); /* a limit of the parser: the attribute does not parse */
     }
     f = &sub->frames[fi];
@@ -3039,6 +3066,109 @@ static GTEXT_CSS_Status ensure_fonts(css_sub * sub, unsigned need, bool * cycle)
 
 /// A text read against the syntax of a registered custom property and computed as its type says. `*out` is the rope of the computed value as tokens, or NULL when
 /// the text is not a value of the syntax (or depends on itself: `*cycle`).
+/// A color as a computed value writes it when it is an sRGB color the library can read (a name, hex, `rgb()`, `hsl()`, `hwb()`): `rgb(r, g, b)` or `rgba(r, g, b, a)`.
+/// False for any other (a `color-mix()`, a system color ...), which keeps its form: mixing needs the environment's `resolve_color`.
+static bool color_rgb_text(css_sub * sub, const GTEXT_CSS_Value * v, dbuf * out) {
+  const GTEXT_CSS_Color * c = v->color;
+  if (v->kind != GTEXT_CSS_VAL_COLOR || !c) {
+    return false;
+  }
+  if (c->kind == GTEXT_CSS_COLOR_KEYWORD && c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {
+    /* "the computed value of currentcolor is the element's color" */
+    bool cycle = false;
+    const GTEXT_CSS_Property_Id id = sub->cc->pid[CSS_P_COLOR];
+    if (!id || !sub->st->style || css_st_ensure(sub->st, id, &cycle) != GTEXT_CSS_OK || cycle) {
+      return false;
+    }
+    const GTEXT_CSS_Value * own = gtext_css_computed_root(sub->st->style, id);
+    if (!own || own == v || own->kind != GTEXT_CSS_VAL_COLOR || !own->color || (own->color->kind == GTEXT_CSS_COLOR_KEYWORD && own->color->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR)) {
+      return false;
+    }
+    c = own->color;
+  }
+  double rgba[4];
+  if (!gtext_css_color_srgb(c, rgba)) {
+    return false;
+  }
+  char nb[336];
+  bool ok = dbuf_put(out, rgba[3] == 1.0 ? "rgb(" : "rgba(", rgba[3] == 1.0 ? 4 : 5);
+  for (int k = 0; k < 3; k++) {
+    const double ch = gmath_floor(rgba[k] + 0.5);
+    const size_t n = css_cssom_number(ch < 0 ? 0 : ch > 255 ? 255 : ch, false, nb);
+    ok = ok && dbuf_put(out, nb, n) && dbuf_put(out, ", ", 2);
+  }
+  if (!ok) {
+    return false; /* an allocation failed (the buffer says so): the caller reports it, and nothing is taken back from a buffer that was not made */
+  }
+  if (rgba[3] == 1.0) {
+    out->len -= 2; /* no trailing comma */
+    out->data[out->len] = '\0';
+  }
+  else {
+    const size_t n = css_cssom_number(rgba[3], false, nb);
+    ok = ok && dbuf_put(out, nb, n);
+  }
+  return ok && dbuf_put(out, ")", 1);
+}
+
+/// The text of a registered value: its serialization, with the colors that are sRGB written as a computed color is (see color_rgb_text()).
+static GTEXT_CSS_Status registered_text(css_sub * sub, const GTEXT_CSS_Value * root, dbuf * out) {
+  const bool list = root->kind == GTEXT_CSS_VAL_LIST && root->child_count > 0;
+  bool colors = root->kind == GTEXT_CSS_VAL_COLOR || (list && root->separator != GTEXT_CSS_SEP_SLASH);
+  for (size_t i = 0; list && colors && i < root->child_count; i++) {
+    colors = root->children[i].kind == GTEXT_CSS_VAL_COLOR;
+  }
+  if (colors) {
+    const size_t n = list ? root->child_count : 1;
+    for (size_t i = 0; i < n; i++) {
+      const GTEXT_CSS_Value * one = list ? &root->children[i] : root;
+      if (i) {
+        dbuf_put(out, root->separator == GTEXT_CSS_SEP_COMMA ? ", " : " ", root->separator == GTEXT_CSS_SEP_COMMA ? 2 : 1);
+      }
+      if (!color_rgb_text(sub, one, out)) {
+        GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+        so.allocator = &sub->alloc;
+        char * buf = NULL;
+        size_t bl = 0;
+        const GTEXT_CSS_Status st = gtext_css_serialize_value_buffer(one, &so, &buf, &bl);
+        if (st != GTEXT_CSS_OK) {
+          return st;
+        }
+        dbuf_put(out, buf, bl);
+        gtext_css_serialize_buffer_free(&so, buf);
+      }
+    }
+    return out->failed ? GTEXT_CSS_E_OOM : GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &sub->alloc;
+  char * buf = NULL;
+  size_t bl = 0;
+  const GTEXT_CSS_Status st = gtext_css_serialize_value_buffer(root, &so, &buf, &bl);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  dbuf_put(out, buf, bl);
+  gtext_css_serialize_buffer_free(&so, buf);
+  return out->failed ? GTEXT_CSS_E_OOM : GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_registered_rope(css_state * st, const GTEXT_Allocator * alloc, const GTEXT_CSS_Value * root, bool tainted, css_rope ** out) {
+  css_sub tmp;
+  memset(&tmp, 0, sizeof tmp);
+  tmp.st = st;
+  tmp.cc = st->cc;
+  tmp.alloc = *alloc;
+  dbuf rt;
+  dbuf_init(&rt, &tmp.alloc);
+  GTEXT_CSS_Status status = registered_text(&tmp, root, &rt);
+  if (status == GTEXT_CSS_OK) {
+    status = css_rope_from_text(alloc, rt.data ? rt.data : "", rt.len, tainted, out);
+  }
+  dbuf_free(&rt);
+  return status;
+}
+
 static GTEXT_CSS_Status compute_typed(css_sub * sub, const css_creg * creg, const char * text, size_t len, bool tainted, css_rope ** out, bool * cycle) {
   *out = NULL;
   *cycle = false;
@@ -3048,6 +3178,9 @@ static GTEXT_CSS_Status compute_typed(css_sub * sub, const css_creg * creg, cons
   GTEXT_CSS_Tree * tree = NULL;
   GTEXT_CSS_Status st = gtext_css_parse_component_values(text, len, &po, &tree, NULL);
   if (st != GTEXT_CSS_OK) {
+    if (st != GTEXT_CSS_E_OOM) {
+      sub->limited++;
+    }
     return st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_OK;  /* a limit of the parser: not a value of the syntax */
   }
   GTEXT_CSS_Match_Options mo = gtext_css_match_options_default();
@@ -3077,31 +3210,22 @@ static GTEXT_CSS_Status compute_typed(css_sub * sub, const css_creg * creg, cons
     }
     GTEXT_CSS_Value_Set * computed = NULL;
     if (st == GTEXT_CSS_OK && !*cycle && m.set) {
-      st = css_cv_by_type(sub->st, m.set, 0, &computed);
+      st = css_cv_by_type_with(sub->st, m.set, creg->compiled ? creg->compiled[m.component] : NULL, 0, &computed);
     }
     if (st == GTEXT_CSS_OK && !*cycle) {
       const GTEXT_CSS_Value * root = computed ? gtext_css_value_set_root(computed) : NULL;
       if (root) {
-        GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
-        so.allocator = &sub->alloc;
-        char * buf = NULL;
-        size_t bl = 0;
-        st = gtext_css_serialize_value_buffer(root, &so, &buf, &bl);
+        dbuf rt;
+        dbuf_init(&rt, &sub->alloc);
+        st = registered_text(sub, root, &rt);
         if (st == GTEXT_CSS_OK) {
-          st = css_rope_from_text(&sub->alloc, buf, bl, tainted, out);
-          gtext_css_serialize_buffer_free(&so, buf);
+          st = css_rope_from_text(&sub->alloc, rt.data ? rt.data : "", rt.len, tainted, out);
         }
+        dbuf_free(&rt);
       }
       else {
-        /* an identifier of the syntax: as specified */
-        size_t b = 0, e = len;
-        while (b < e && (text[b] == ' ' || text[b] == '\t' || text[b] == '\n' || text[b] == '\r' || text[b] == '\f')) {
-          b++;
-        }
-        while (e > b && (text[e - 1] == ' ' || text[e - 1] == '\t' || text[e - 1] == '\n' || text[e - 1] == '\r' || text[e - 1] == '\f')) {
-          e--;
-        }
-        st = css_rope_from_text(&sub->alloc, text + b, e - b, tainted, out);
+        /* identifiers of the syntax (one, a list of them, alternatives): their canonical form, spaced as a computed value is */
+        st = css_rope_from_list(&sub->alloc, tree->values, tree->value_count, tainted, out);
       }
     }
     gtext_css_value_set_free(computed);
@@ -3537,8 +3661,10 @@ static void prop_settle(css_sub * sub, size_t fi, GTEXT_CSS_Custom_Value * v /* 
   gtext_css_custom_value_free(e->value);
   e->value = v;
   e->state = ENT_DONE;
-  f->out = v ? css_rope_retain(css_cval_rope(v)) : NULL;
-  f->out_gi = v == NULL;
+  /* what a reader outside the cycle sees is the entry (a registered property that a cycle invalidated is its initial value there); a reader inside it, which is
+     what this frame is delivered to when it is part of the cycle, sees the guaranteed-invalid value ("font-size -> --a -> --b -> font-size" invalidates all three) */
+  f->out = v && !f->cyclic ? css_rope_retain(css_cval_rope(v)) : NULL;
+  f->out_gi = v == NULL || f->cyclic;
 }
 
 /// Whether a substituted value is only a CSS-wide keyword (white space and comments around it are nothing): GTEXT_CSS_WIDE_* in `*wide`, or 0. The rolling
@@ -3886,6 +4012,7 @@ GTEXT_CSS_Status css_sub_new(css_state * st, css_sub ** out) {
   sub->max_tokens = clamp_limit64(cc->sub.max_substituted_tokens, DEFAULT_MAX_TOKENS, LIMIT_MAX_TOKENS);
   sub->max_element_tokens = clamp_limit64(cc->sub.max_element_substituted_tokens, DEFAULT_MAX_ELEMENT_TOKENS, LIMIT_MAX_ELEMENT_TOKENS);
   sub->max_bytes = clamp_limit(cc->sub.max_value_bytes, DEFAULT_MAX_BYTES, LIMIT_MAX_BYTES);
+  sub->max_element_bytes = clamp_limit64(cc->sub.max_element_substituted_bytes, DEFAULT_MAX_ELEMENT_BYTES, LIMIT_MAX_ELEMENT_BYTES);
   sub->empty = css_rope_leaf(&a, "", 0, CSS_TC_NONE, CSS_TC_NONE, 0, false);
   sub->comment = css_rope_leaf(&a, "/**/", 4, CSS_TC_SAFE, CSS_TC_SAFE, 0, false);
   if (!sub->empty || !sub->comment) {
@@ -3963,8 +4090,10 @@ GTEXT_CSS_Status css_sub_customs(css_sub * sub) {
   for (size_t i = 0; i < sub->nentries; i++) {
     entry_t * e = &sub->entries[i];
     if (e->reg >= 0) {
-      gtext_css_custom_value_free(style->regvals[e->reg]);
-      style->regvals[e->reg] = gtext_css_custom_value_retain(e->value);
+      const GTEXT_CSS_Status set = css_style_set_regval(style, (size_t)e->reg, e->value);
+      if (set != GTEXT_CSS_OK) {
+        return css_st_fail(st, set, NULL, NULL);
+      }
       continue;
     }
     const bool hides = css_cmap_find(style->custom, e->name.data, e->name.length) != NULL;
@@ -4002,7 +4131,8 @@ GTEXT_CSS_Status css_sub_substitute_text(css_sub * sub, const char * prop, size_
     if (status == GTEXT_CSS_E_OOM) {
       return status;
     }
-    return GTEXT_CSS_OK; /* a limit of the parser: not a value */
+    sub->limited++;
+    return GTEXT_CSS_OK; /* a limit of the parser (blocks nested past what it reads): not a value, and counted with the values the budget stops */
   }
   css_rope * result = NULL;
   if (src->tree->value_count == 0) {

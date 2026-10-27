@@ -171,12 +171,14 @@ struct GTEXT_CSS_Compute_Context {
   char * language;                          ///< A copy of the environment's language, or NULL.
   GTEXT_CSS_Element_Interface iface;        ///< The caller's tree (options.elements), copied; zeroed when there is none.
   bool has_iface;
+  struct css_regvals * initial_regvals;     ///< The registered values of a style with no parent and no declaration (shared: a style holds a reference).
   struct css_ereg * regs;                   ///< The registered custom properties in effect, sorted by name (bytes); the caller's win over a stylesheet's.
   size_t nregs;
   GTEXT_CSS_Substitute_Options sub;         ///< The limits of substitution, with the defaults applied.
   const GTEXT_CSS_At_Property_Set * rules;  ///< The `@property` rules' registrations the context was made with (borrowed), or NULL.
   GCU_MUTEX_T syntax_lock;                  ///< Guards the cache below.
   bool syntax_lock_made;
+  size_t syntax_bytes;                      ///< The bytes of the texts in the cache (it holds at most 1 MiB of them, and none longer than 4 KiB).
   css_compiled_syntax ** syntax_cache;      ///< The syntaxes of `attr()` calls seen so far (compiled once, kept for the life of the context; entries never change).
   size_t nsyntax, capsyntax;
 };
@@ -209,7 +211,7 @@ struct GTEXT_CSS_Computed_Style {
   GTEXT_CSS_Value_Set ** vals;         ///< A set (retained) for every property; NULL where none.
   GTEXT_CSS_Flow flow;
   struct css_cmap * custom;           ///< The unregistered custom properties (css_cmap.h): the parent's map with this element's declarations set, shared with it where nothing is declared.
-  GTEXT_CSS_Custom_Value ** regvals;  ///< The registered ones: a value (retained) for each of the context's `nregs`, NULL for the guaranteed-invalid value. NULL when the context has none.
+  struct css_regvals * regvals;       ///< The registered ones (shared with the parent's style, or the context's, until this one declares one): a value for each of the context's `nregs`, NULL for the guaranteed-invalid value. NULL when the context has none.
   css_root_info root;
   GTEXT_CSS_Element_Handle element;
 };
@@ -237,6 +239,8 @@ typedef struct {
   unsigned char * done;           ///< Per property: its value is in the style.
   uint32_t * own;                 ///< Per property: the index + 1 of the last declaration of it in the block, or 0.
   uint32_t all_pos;               ///< The index + 1 of the last `all` declaration, or 0.
+  int all_state;                  ///< A pending `all`: 0 not yet substituted, 1 invalid at computed-value time, 2 a CSS-wide keyword (all_wide).
+  GTEXT_CSS_Wide_Keyword all_wide;
   unsigned char * busy;           ///< Per property: its value is being computed (a reference to it from a value it depends on is a cycle).
   css_short_result * shorts;      ///< The shorthands with functions in them that were replaced.
   size_t nshort, capshort;
@@ -292,6 +296,9 @@ GTEXT_CSS_Status css_cv_by_type(css_state * st, const GTEXT_CSS_Value_Set * src,
 #define CV_NUMBERS_TO_PX 0x1u  ///< A number is a length in px (SVG 2: "numbers converted to absolute lengths first").
 GTEXT_CSS_Status css_cv_by_type_ex(css_state * st, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Property_Id property, unsigned flags,
     GTEXT_CSS_Value_Set ** out);
+
+/// css_cv_by_type() for a value matched by a grammar that is not a property's (a registered custom property's syntax component): its slots are that grammar's.
+GTEXT_CSS_Status css_cv_by_type_with(css_state * st, const GTEXT_CSS_Value_Set * src, const GTEXT_CSS_Compiled * compiled, unsigned flags, GTEXT_CSS_Value_Set ** out);
 
 /// A canonical absolute number of the unit of a dimension value, for the algorithms: false for a value that is not one.
 bool css_cv_length_px(css_state * st, const GTEXT_CSS_Value * v, double * px);

@@ -507,14 +507,14 @@ GTEXT_CSS_Status gtext_css_candidates_add(GTEXT_CSS_Candidates * set, const GTEX
   }
   const uint32_t group = set->next_group;
   if (value->property == set->all_id) {
-    if (value->outcome != GTEXT_CSS_PROP_RESULT_WIDE) {
-      return fail(result, GTEXT_CSS_E_INVALID, "all", "`all` takes a CSS-wide keyword only");
+    if (value->outcome != GTEXT_CSS_PROP_RESULT_WIDE && value->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
+      return fail(result, GTEXT_CSS_E_INVALID, "all", "`all` takes a CSS-wide keyword only (or a function that may yield one: `all: var(--x)` is pending)");
     }
     st = reserve(set, 1, keys, result);
     if (st != GTEXT_CSS_OK) {
       return st;
     }
-    push(set, &base, CAND_ALL, value->property, 0, value->outcome, value->wide, NULL, 0, 0, group);
+    push(set, &base, CAND_ALL, value->property, 0, value->outcome, value->wide, value->outcome == GTEXT_CSS_PROP_RESULT_PENDING ? value->set : NULL, 0, 0, group);
     set->next_group++;
     return result_done(result, GTEXT_CSS_OK);
   }
@@ -1381,7 +1381,8 @@ GTEXT_CSS_Status gtext_css_cascaded_to_block(const GTEXT_CSS_Cascaded * c, const
     const cand * k = &c->set->items[w->entry];
     const GTEXT_CSS_Property_Id property = w->unit ? (k->kind == CAND_ALL ? w->unit : k->property) : k->property;
     st = css_block_push(block, property, k->kind == CAND_CUSTOM ? cand_name(c->set, k) : NULL, k->kind == CAND_CUSTOM ? k->name_len : 0, k->important,
-        (GTEXT_CSS_Property_Outcome)k->outcome, (GTEXT_CSS_Wide_Keyword)k->wide, k->set, k->shorthand, k->group);
+        (GTEXT_CSS_Property_Outcome)k->outcome, (GTEXT_CSS_Wide_Keyword)k->wide, k->set, k->kind == CAND_ALL && k->outcome == GTEXT_CSS_PROP_RESULT_PENDING ? c->set->all_id : k->shorthand,
+        k->group);
   }
   if (st != GTEXT_CSS_OK) {
     gtext_css_block_free(block);

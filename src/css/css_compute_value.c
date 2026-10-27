@@ -531,6 +531,9 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
         double t = v + 0.5;
         const double f = gmath_floor(t);
         out->number = clamp_range(f, src->range_lo, src->range_hi);
+        if (out->number > 2147483647.0 || out->number < -2147483648.0) {
+          out->number = out->number > 0 ? 2147483647.0 : -2147483648.0;
+        }
       }
       else {
         css_v_number(out, v);
@@ -599,6 +602,16 @@ static GTEXT_CSS_Status leaf_base(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
 
 static GTEXT_CSS_Status leaf(cv_walk * w, const GTEXT_CSS_Value * src, GTEXT_CSS_Value * out, bool * changed) {
   GTEXT_CSS_Status s = leaf_base(w, src, out, changed);
+  if (s == GTEXT_CSS_OK) {
+    /* "Integer values outside the implementation's supported range are clamped": the range of a 32-bit integer, as every browser reads it */
+    const GTEXT_CSS_Value * cur = *changed ? out : src;
+    if (cur->kind == GTEXT_CSS_VAL_INTEGER && !((cur->flags & GTEXT_CSS_VFLAG_MATH) && cur->math) && (cur->number > 2147483647.0 || cur->number < -2147483648.0)) {
+      GTEXT_CSS_Value v = *cur;
+      v.number = cur->number > 0 ? 2147483647.0 : -2147483648.0;
+      *out = v;
+      *changed = true;
+    }
+  }
   if (s != GTEXT_CSS_OK || !w->numbers_px) {
     return s;
   }
@@ -625,8 +638,21 @@ GTEXT_CSS_Status css_cv_by_type(css_state * st, const GTEXT_CSS_Value_Set * srcs
   return css_cv_by_type_ex(st, srcset, property, 0, out);
 }
 
+static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set * srcset, GTEXT_CSS_Property_Id property, const GTEXT_CSS_Compiled * compiled,
+    unsigned flags, GTEXT_CSS_Value_Set ** out);
+
 GTEXT_CSS_Status css_cv_by_type_ex(css_state * st, const GTEXT_CSS_Value_Set * srcset, GTEXT_CSS_Property_Id property, unsigned flags,
     GTEXT_CSS_Value_Set ** out) {
+  return by_type_impl(st, srcset, property, NULL, flags, out);
+}
+
+GTEXT_CSS_Status css_cv_by_type_with(css_state * st, const GTEXT_CSS_Value_Set * srcset, const GTEXT_CSS_Compiled * compiled, unsigned flags,
+    GTEXT_CSS_Value_Set ** out) {
+  return by_type_impl(st, srcset, 0, compiled, flags, out);
+}
+
+static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set * srcset, GTEXT_CSS_Property_Id property, const GTEXT_CSS_Compiled * compiled,
+    unsigned flags, GTEXT_CSS_Value_Set ** out) {
   *out = NULL;
   const GTEXT_CSS_Value * root = gtext_css_value_set_root(srcset);
   if (!root) {
@@ -638,6 +664,10 @@ GTEXT_CSS_Status css_cv_by_type_ex(css_state * st, const GTEXT_CSS_Value_Set * s
   w.st = st;
   w.srcset = srcset;
   w.property = property;
+  if (compiled) {
+    w.compiled = compiled; /* the grammar that matched the value is not a property's: a registered custom property's component */
+    w.compiled_tried = true;
+  }
   w.max_list = st->cc->options.max_list_items;
   w.numbers_px = (flags & CV_NUMBERS_TO_PX) != 0;
   w.math_numbers_only = (flags & CV_MATH_NUMBERS_ONLY) != 0;

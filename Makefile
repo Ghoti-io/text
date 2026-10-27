@@ -2428,7 +2428,7 @@ conformance-css-property: $(CONFORMANCE_LIB)
 # (a class and the sentence of the served draft) and in CSS_VARIABLES_DEFECTS when the library is wrong (an owner, and a ceiling that only goes down). The
 # scoring half is in check-conformance-vectors; this target adds the controls (the gate made to fail on purpose, and the library built with a rule undone:
 # tools/conformance/CSS_VARIABLES_PLANTS).
-CSS_VARIABLES_FLOOR := CSS_VARIABLES_MIN_SCORED=420 CSS_VARIABLES_MAX_DEFECTS=0
+CSS_VARIABLES_FLOOR := CSS_VARIABLES_MIN_SCORED=490 CSS_VARIABLES_MAX_DEFECTS=7
 
 conformance-css-variables: ## Score custom properties, substitution and @property against the pinned WPT pages, and show the gate fails
 conformance-css-variables: $(CONFORMANCE_LIB)

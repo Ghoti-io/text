@@ -391,17 +391,18 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     out->wide = wide;
     return GTEXT_CSS_OK;
   }
-  /* `all` takes nothing else */
-  if (is_all(&info)) {
-    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
-    return GTEXT_CSS_OK;
-  }
   bool sub = false;
   st = gtext_css_has_arbitrary_substitution(values, count,
       options->allocator ? options->allocator : css_registry_allocator(registry), &sub);
   if (st != GTEXT_CSS_OK) {
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return st;
+  }
+  /* `all` takes nothing else but a CSS-wide keyword, which a function may yield: `all: var(--x)` is pending, and is invalid at computed-value time unless the
+     functions are replaced by a keyword (a browser accepts it too) */
+  if (is_all(&info) && !sub) {
+    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+    return GTEXT_CSS_OK;
   }
   if (sub) {
     bool syntax = true;
@@ -445,6 +446,52 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
 }
 
 /// A custom property's value is the text it was written as: the root of its value (a valid or a pending one) takes it over from the serialization of the tokens.
+void css_trim_value_text(const char ** s, size_t * n) {
+  const char * t = *s;
+  const size_t len = *n;
+  size_t first = len, last = 0; /* the first byte of the first token, one past the last byte of the last */
+  size_t i = 0;
+  while (i < len) {
+    const char c = t[i];
+    if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f') {
+      i++;
+    }
+    else if (c == '/' && i + 1 < len && t[i + 1] == '*') {
+      size_t j = i + 2;
+      while (j + 1 < len && !(t[j] == '*' && t[j + 1] == '/')) {
+        j++;
+      }
+      i = j + 1 < len ? j + 2 : len; /* an unterminated comment runs to the end */
+    }
+    else {
+      if (first == len) {
+        first = i;
+      }
+      if (c == '"' || c == '\'') {
+        size_t j = i + 1;
+        while (j < len && t[j] != c) {
+          j += t[j] == '\\' && j + 1 < len ? 2 : 1;
+        }
+        i = j < len ? j + 1 : len;
+      }
+      else if (c == '\\' && i + 1 < len) {
+        i += 2;
+      }
+      else {
+        i++;
+      }
+      last = i;
+    }
+  }
+  if (first == len) {
+    *s = t + len;
+    *n = 0;
+    return;
+  }
+  *s = t + first;
+  *n = last - first;
+}
+
 static GTEXT_CSS_Status use_custom_text(GTEXT_CSS_Property_Value * out, const char * text, size_t length) {
   if (!out->set || (out->outcome != GTEXT_CSS_PROP_RESULT_VALID && out->outcome != GTEXT_CSS_PROP_RESULT_PENDING)) {
     return GTEXT_CSS_OK;
@@ -521,15 +568,10 @@ GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * regist
   gtext_css_tree_free(tree);
   if (st == GTEXT_CSS_OK && name_length >= 2 && name[0] == '-' && name[1] == '-') {
     /* a custom property's value is its text "exactly as specified by the author": comments and the spelling of its numbers are kept (Variables 1, 4.1) */
-    size_t b = 0, e = text_length;
     const char * t = text ? text : "";
-    while (b < e && (t[b] == ' ' || t[b] == '\t' || t[b] == '\n' || t[b] == '\r' || t[b] == '\f')) {
-      b++;
-    }
-    while (e > b && (t[e - 1] == ' ' || t[e - 1] == '\t' || t[e - 1] == '\n' || t[e - 1] == '\r' || t[e - 1] == '\f')) {
-      e--;
-    }
-    st = use_custom_text(out, t + b, e - b);
+    size_t tl = text_length;
+    css_trim_value_text(&t, &tl);
+    st = use_custom_text(out, t, tl);
     if (st != GTEXT_CSS_OK) {
       gtext_css_property_value_free(out);
       out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
@@ -551,7 +593,10 @@ GTEXT_CSS_Status gtext_css_parse_property_declaration(const GTEXT_CSS_Registry *
   GTEXT_CSS_Status st = gtext_css_parse_property(registry, declaration->name.data, declaration->name.length, declaration->value,
       declaration->value_count, options, out);
   if (st == GTEXT_CSS_OK && declaration->original_text.data) {
-    st = use_custom_text(out, declaration->original_text.data, declaration->original_text.length);
+    const char * ot = declaration->original_text.data;
+    size_t ol = declaration->original_text.length;
+    css_trim_value_text(&ot, &ol);
+    st = use_custom_text(out, ot, ol);
     if (st != GTEXT_CSS_OK) {
       gtext_css_property_value_free(out);
       out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;

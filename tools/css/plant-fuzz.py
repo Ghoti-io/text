@@ -79,7 +79,7 @@ The plants of fuzz_css_values.cpp (VALUES_PLANTS; each is found by replaying its
 The plants of fuzz_css_registry.cpp (REGISTRY_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-registry):
 
   property-value-leaks       gtext_css_property_value_free() does not free the typed value: the allocator.
-  all-takes-substitution     `all` accepts a value with var() in it: it takes the CSS-wide keywords only.
+  all-substitution-is-refused `all: var(--x)` is invalid at parse time: it is pending, and invalid at computed-value time unless the function yields a CSS-wide keyword.
   descriptor-takes-substitution a descriptor accepts var(): a descriptor is not a property of an element.
   initial-not-validated      a registration does not match the initial value against the grammar: it must parse as a valid value.
   registry-leaks-initial     freeing a registry leaves the initial values of the registrations: the allocator.
@@ -99,6 +99,7 @@ The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its
   rope-release-leaks-its-leaves  releasing a rope leaves the text leaves: the allocator.
   budget-lets-sixteen-times-through  a joined value may have sixteen times the tokens the budget allows: the counter's bound.
   block-refuses-a-pending-custom-property  the block API refuses `--a: var(--b)` as the cascade did before C2c: the two do not take a declaration alike.
+  attr-taint-scan-stops-at-thirty-two the scan for a URL that attr() made looks at the first thirty-two options of a function: the dump.
   join-ignores-a-failed-allocation  a join that cannot allocate is taken as the guaranteed-invalid value: the status.
   rules-are-found-by-the-wrong-name  a rule found by name is looked up by a prefix of the name: it is not the one at its index.
 
@@ -213,7 +214,7 @@ VALUES_PLANTS = {
 REGISTRY_PLANTS = {
     "property-value-leaks": ("css_property.c", "  gtext_css_value_set_free(value->set);\n  memset(value, 0, sizeof *value);",
                              "  memset(value, 0, sizeof *value);", "own-valid-margin.seed"),
-    "all-takes-substitution": ("css_property.c", "  if (is_all(&info)) {", "  if (0 && is_all(&info)) {", "own-all-var.seed"),
+    "all-substitution-is-refused": ("css_property.c", "  if (is_all(&info) && !sub) {", "  if (is_all(&info)) {", "own-all-var.seed"),
     "descriptor-takes-substitution": ("css_property.c", "  if (sub) {\n    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;\n    return GTEXT_CSS_OK;\n  }\n  GTEXT_CSS_Grammar_State state;",
                                       "  if (0) {\n    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;\n    return GTEXT_CSS_OK;\n  }\n  GTEXT_CSS_Grammar_State state;", "own-descriptor-var.seed"),
     "initial-not-validated": ("css_registry.c", "      result = st != GTEXT_CSS_OK ? st : (matched ? GTEXT_CSS_OK : GTEXT_CSS_E_INVALID);",
@@ -370,6 +371,7 @@ CUSTOM_PLANTS = {
       "    if (t > sub->max_tokens * 16 || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);"], "own-doubling-small.seed"),
     "block-refuses-a-pending-custom-property": ("css_block.c", " && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE && value->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {\n    return GTEXT_CSS_E_INVALID;",
                                                 " && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE) {\n    return GTEXT_CSS_E_INVALID;", "own-block-and-cascade.seed"),
+    "attr-taint-scan-stops-at-thirty-two": ("css_compute.c", "          for (size_t c = 0; c < arg->child_count; c++) {\n            if (nwork == wcap) {", "          for (size_t c = 0; c < arg->child_count && c < 32; c++) {\n            if (nwork == wcap) {", "own-attr-taint-many.seed"),
     "join-ignores-a-failed-allocation": ("css_substitute.c", "  css_rope * r = css_rope_cat(&sub->alloc, a ? a : sub->empty, b ? b : sub->empty, sub->comment);\n  if (!r) {\n    return GTEXT_CSS_E_OOM;\n  }",
                                          "  css_rope * r = css_rope_cat(&sub->alloc, a ? a : sub->empty, b ? b : sub->empty, sub->comment);\n  if (!r) {\n    *gi = true;\n    return GTEXT_CSS_OK;\n  }",
                                          "own-join-oom.seed"),

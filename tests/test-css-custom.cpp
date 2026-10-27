@@ -92,7 +92,7 @@ TEST(CssCustom, TheMatrixOfTheSlice) {
 TEST(CssCustom, TheValueIsTheOriginalText) {
   // "Specified values of custom properties must be serialized exactly as specified by the author" ... "--uuid: 12345678-12e3-8d9b-a456-426614174000"
   EXPECT_EQ(custom_of("", "--uuid: 12345678-12e3-8d9b-a456-426614174000", "--uuid"), "12345678-12e3-8d9b-a456-426614174000");
-  EXPECT_EQ(custom_of("", "--c: /* a */ 1.0   2.50 /* b */ x", "--c"), "/* a */ 1.0   2.50 /* b */ x");
+  EXPECT_EQ(custom_of("", "--c: /* a */ 1.0   2.50 /* b */ x /* c */", "--c"), "1.0   2.50 /* b */ x") << "a comment is no token: the text of the tokens runs from the first to the last";
   EXPECT_EQ(custom_of("", "--c: Red", "--c"), "Red") << "\"The values of custom properties ... are case-sensitive\"";
 }
 
@@ -702,24 +702,40 @@ struct Blowup {
 TEST(CssCustom, TheDoublingShapeStopsAtTheBudgetNotAtTwoToTheN) {
   // "UAs must impose a UA-defined limit on the allowed length of the token stream that an arbitrary substitution function expands into. If an arbitrary
   // substitution function would expand into a longer token stream than this limit, it instead is replaced with the guaranteed-invalid value."
-  for (int levels : {10, 20, 40}) {
-    Blowup b(levels);
-    ASSERT_EQ(b.c.status, GTEXT_CSS_OK) << levels;
-    EXPECT_LE(b.c.result.work, 12000u) << "the work is the text that was written (and, at 10 levels, the 2047 nodes of the value that is written out), not 2^" << levels;
-    EXPECT_LE(b.c.result.substitution_peak, 2u * 1048576u) << "the counter stops at the budget";
-    if (levels == 10) {
-      EXPECT_EQ(b.c.result.substitution_limited, 0u);
-      EXPECT_EQ(b.c.custom("--n10").size(), 1024u * 3 + 1023u) << "1024 words and the spaces between them";
-    }
-    else if (levels == 20) {
-      EXPECT_EQ(b.c.result.substitution_limited, 1u) << "2^21 - 1 tokens: past the budget of 2^20";
-      EXPECT_EQ(b.c.custom("--n20"), "<gi>");
-      EXPECT_NE(b.c.custom("--n19"), "<gi>") << "2^20 - 1 tokens";
-    }
-    else {
-      EXPECT_EQ(b.c.custom("--n40"), "<gi>") << "all dependents are guaranteed-invalid";
-      EXPECT_EQ(b.c.custom("--n21"), "<gi>");
-      EXPECT_EQ(b.c.value(b.w.registry.r, "content"), "normal");
+  // Twice: with the defaults, where the bytes of a value (1 MiB) are past the budget before its tokens (2^20) are; and with the bytes out of the way, where the tokens are.
+  for (const bool tokens_only : {false, true}) {
+    for (int levels : {10, 20, 40}) {
+      Blowup b(levels, [tokens_only](GTEXT_CSS_Compute_Options & o) {
+        if (tokens_only) {
+          o.substitute.max_value_bytes = (size_t)1 << 28;
+          o.substitute.max_element_substituted_bytes = (uint64_t)1 << 40;
+        }
+      });
+      ASSERT_EQ(b.c.status, GTEXT_CSS_OK) << levels;
+      EXPECT_LE(b.c.result.work, 12000u + (tokens_only ? (size_t)(1u << 24) / 16 : (size_t)(8u << 20) / 16))
+          << "the work is the text that was written (and, at 10 levels, the 2047 nodes of the value that is written out) and a sixteenth of a step for each byte a value "
+             "holds, not 2^" << levels;
+      EXPECT_LE(b.c.result.substitution_peak, 2u * 1048576u) << "the counter stops at the budget";
+      if (levels == 10) {
+        EXPECT_EQ(b.c.result.substitution_limited, 0u);
+        EXPECT_EQ(b.c.custom("--n10").size(), 1024u * 3 + 1023u) << "1024 words and the spaces between them";
+      }
+      else if (levels == 20) {
+        EXPECT_EQ(b.c.result.substitution_limited, 1u);
+        EXPECT_EQ(b.c.custom("--n20"), "<gi>");
+        if (tokens_only) {
+          EXPECT_NE(b.c.custom("--n19"), "<gi>") << "2^20 - 1 tokens";
+        }
+        else {
+          EXPECT_NE(b.c.custom("--n18"), "<gi>") << "2^18 words of three bytes and the spaces: 1 MiB less one";
+          EXPECT_EQ(b.c.custom("--n19"), "<gi>") << "past 1 MiB";
+        }
+      }
+      else {
+        EXPECT_EQ(b.c.custom("--n40"), "<gi>") << "all dependents are guaranteed-invalid";
+        EXPECT_EQ(b.c.custom("--n21"), "<gi>");
+        EXPECT_EQ(b.c.value(b.w.registry.r, "content"), "normal");
+      }
     }
   }
 }
@@ -885,23 +901,28 @@ TEST(CssCustom, ASubstitutedValueLongerThanTheLimitIsGuaranteedInvalidNotAnError
   EXPECT_EQ(c.custom("--a"), x);
 }
 
-TEST(CssCustom, ADeepChainIsTheDepthStatusAndNotAStackOverflow) {
+TEST(CssCustom, ADeepChainPastTheStackIsTheGuaranteedInvalidValueAndNotAFailureOfTheElement) {
   World w;
-  w.options.substitute.max_substitution_depth = 50;
+  w.options.substitute.max_substitution_depth = 200;
   ASSERT_EQ(w.build(), GTEXT_CSS_OK);
   auto chain = [](int n) {
     std::string css = "--n0: 1px;";
     for (int i = 1; i <= n; i++) {
       css += "--n" + std::to_string(i) + ": var(--n" + std::to_string(i - 1) + ");";
     }
-    return css + "width: var(--n" + std::to_string(n) + ")";
+    return css + "width: var(--n" + std::to_string(n) + "); height: 7px";
   };
   Computed ok, over;
   compute(w, ok, chain(20));
   ASSERT_EQ(ok.status, GTEXT_CSS_OK);
   EXPECT_EQ(ok.value(w.registry.r, "width"), "1px");
+  EXPECT_EQ(ok.result.substitution_limited, 0u);
   compute(w, over, chain(500));
-  EXPECT_EQ(over.status, GTEXT_CSS_E_LIMIT_DEPTH);
+  ASSERT_EQ(over.status, GTEXT_CSS_OK) << "the element is computed";
+  EXPECT_EQ(over.value(w.registry.r, "width"), "auto") << "the property that reaches past the stack is the guaranteed-invalid value, and so is what is made of it";
+  EXPECT_EQ(over.value(w.registry.r, "height"), "7px");
+  EXPECT_EQ(over.custom("--n500"), "<gi>");
+  EXPECT_GE(over.result.substitution_limited, 1u);
 }
 
 TEST(CssCustom, ADeepChainAtTheDefaultLimitsRunsOnAFlatStack) {

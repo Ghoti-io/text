@@ -38,7 +38,7 @@
  *   reports as unusable), never E_INTERNAL or E_INVALID; **an allocation that fails is E_OOM**, with nothing returned, and nothing
  *   leaked or freed that the allocator did not make; a valid, pending or wide result serializes, and the text parses again to the
  *   same kind of result and serializes to the same text (the fixed point, reached after at most one normalization: see check_property); a descriptor takes no CSS-wide keyword and no
- *   substitution, `all` takes the CSS-wide keywords only, and every property takes the CSS-wide keywords alone;
+ *   substitution, `all` takes a CSS-wide keyword or a substitution that may yield one and nothing else, and every property takes the CSS-wide keywords alone;
  *   a registration is OK or one of the statuses of a refusal, never E_INTERNAL; one that is OK freezes, and the property's initial
  *   value then parses against its grammar as a valid value; a failed registration leaves the builder as it was.
  *
@@ -184,8 +184,11 @@ void check_property(const std::string & name, const std::string & value, const G
     fail("a descriptor took a CSS-wide keyword or a substitution", value, input);
   }
   if (!is_descriptor && name.size() == 3 && (name[0] | 0x20) == 'a' && (name[1] | 0x20) == 'l' && (name[2] | 0x20) == 'l' && first.outcome != GTEXT_CSS_PROP_RESULT_WIDE &&
-      first.outcome != GTEXT_CSS_PROP_RESULT_INVALID) {
+      first.outcome != GTEXT_CSS_PROP_RESULT_INVALID && first.outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
     fail("`all` took something that is not a CSS-wide keyword", value, input);
+  }
+  if (!is_descriptor && name == "all" && value == "var(--x)" && first.outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
+    fail("`all: var(--x)` is not pending", value, input);
   }
   if (!first.has_text) {
     return;

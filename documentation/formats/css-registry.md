@@ -274,8 +274,10 @@ rules, in this order:
 2. **CSS-wide keywords** `initial inherit unset revert revert-layer revert-rule` (the six the
    pin defines) are valid *alone* for every property, shorthands and custom properties
    included: outcome `WIDE`, with the keyword.
-3. `all` accepts nothing else (CSS Cascade 4: "It only accepts the CSS-wide keywords", so not even
-   a substitution).
+3. `all` accepts nothing else than a CSS-wide keyword (CSS Cascade 4: "It only accepts the CSS-wide
+   keywords"), or a value with a substitution function in it, which may yield one: `all: var(--x)`
+   is pending, as in a browser, and is invalid at computed-value time (every property unset) unless
+   the substitution yields a keyword, which is then applied to every property.
 4. A value with `var()`, `env()`, `attr()` or another arbitrary substitution function anywhere in
    it is **pending**: valid now, whatever the property's grammar, meaningful after substitution,
    provided each of those functions is itself valid: CSS Values 5 says a value is assumed valid

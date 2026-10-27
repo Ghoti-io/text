@@ -106,7 +106,7 @@ css/css-properties-values-api/registered-property-computation-color-002.html	1	r
 css/css-properties-values-api/registered-property-computation-color-003.html	1	reftest not read: the reference does not hold the same text elements
 css/css-properties-values-api/registered-property-computation-color-005.html	1	reftest not read: the reference does not hold the same text elements
 css/css-properties-values-api/registered-property-computation-color-006.html	1	reftest not read: the reference does not hold the same text elements
-css/css-properties-values-api/registered-property-computation.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-computation.html	6	test: the other tests of the page ask the live document; test_computed_value: id 'length_ref'
 css/css-properties-values-api/registered-property-crosstalk.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/registered-property-cssom.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/registered-property-dependency-through-fallback.html	1	scripted: asks a live document through the CSSOM

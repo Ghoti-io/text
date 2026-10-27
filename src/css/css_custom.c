@@ -192,6 +192,8 @@ const css_ereg * css_ctx_find_reg(const GTEXT_CSS_Compute_Context * cc, const ch
 }
 
 void css_ctx_free_regs(GTEXT_CSS_Compute_Context * cc) {
+  css_regvals_release(cc->initial_regvals);
+  cc->initial_regvals = NULL;
   for (size_t i = 0; i < cc->nregs; i++) {
     gtext_css_custom_value_free(cc->regs[i].initial);
   }
@@ -199,6 +201,72 @@ void css_ctx_free_regs(GTEXT_CSS_Compute_Context * cc) {
   gtext_allocator_free(&a, cc->regs);
   cc->regs = NULL;
   cc->nregs = 0;
+}
+
+GTEXT_CSS_Status css_rope_from_list(const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * values, size_t count, bool tainted, css_rope ** out) {
+  /* identifiers separated by a space, or by a comma and a space: how a computed list is written (the white space and comments of the source are not kept) */
+  GTEXT_Allocator a = *alloc;
+  size_t cap = 64, len = 0;
+  char * text = gtext_allocator_malloc(&a, cap);
+  if (!text) {
+    return GTEXT_CSS_E_OOM;
+  }
+  bool need_space = false;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = alloc;
+  for (size_t i = 0; i < count && st == GTEXT_CSS_OK; i++) {
+    const GTEXT_CSS_Component_Value * v = &values[i];
+    if (v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+      continue;
+    }
+    char * piece = NULL;
+    size_t pl = 0;
+    const char * lit = NULL;
+    if (v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_COMMA) {
+      lit = ",";
+      pl = 1;
+      need_space = false;
+    }
+    else {
+      st = gtext_css_serialize_values_buffer(v, 1, &so, &piece, &pl);
+      if (st != GTEXT_CSS_OK) {
+        break;
+      }
+      lit = piece;
+    }
+    const size_t need = len + pl + 3;
+    if (need > cap) {
+      while (cap < need) {
+        cap *= 2;
+      }
+      char * g = gtext_allocator_realloc(&a, text, cap);
+      if (!g) {
+        st = GTEXT_CSS_E_OOM;
+        gtext_css_serialize_buffer_free(&so, piece);
+        break;
+      }
+      text = g;
+    }
+    if (need_space) {
+      text[len++] = ' ';
+    }
+    memcpy(text + len, lit, pl);
+    len += pl;
+    need_space = piece != NULL;
+    if (!piece) {
+      text[len++] = ' ';
+    }
+    gtext_css_serialize_buffer_free(&so, piece);
+  }
+  while (len && text[len - 1] == ' ') {
+    len--;
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = css_rope_from_text(alloc, text, len, tainted, out);
+  }
+  gtext_allocator_free(&a, text);
+  return st;
 }
 
 GTEXT_CSS_Status css_ereg_initial(css_state * st, const css_creg * creg, GTEXT_CSS_Custom_Value ** out) {
@@ -231,23 +299,15 @@ GTEXT_CSS_Status css_ereg_initial(css_state * st, const css_creg * creg, GTEXT_C
     if (status == GTEXT_CSS_OK) {
       GTEXT_CSS_Value_Set * computed = NULL;
       if (m.set) {
-        status = css_cv_by_type(st, m.set, 0, &computed);
+        status = css_cv_by_type_with(st, m.set, creg->compiled ? creg->compiled[m.component] : NULL, 0, &computed);
       }
       if (status == GTEXT_CSS_OK) {
-        char * text = NULL;
-        size_t length = 0;
         const GTEXT_CSS_Value * root = computed ? gtext_css_value_set_root(computed) : NULL;
-        GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
-        so.allocator = alloc;
         if (root) {
-          status = gtext_css_serialize_value_buffer(root, &so, &text, &length);
-          if (status == GTEXT_CSS_OK) {
-            status = css_rope_from_text(alloc, text, length, false, &rope);
-            gtext_css_serialize_buffer_free(&so, text);
-          }
+          status = css_registered_rope(st, alloc, root, false, &rope);
         }
         else {
-          status = css_rope_from_text(alloc, creg->initial, creg->initial_len, false, &rope);
+          status = css_rope_from_list(alloc, tree->values, tree->value_count, false, &rope);
         }
       }
       gtext_css_value_set_free(computed);
@@ -262,6 +322,15 @@ GTEXT_CSS_Status css_ereg_initial(css_state * st, const css_creg * creg, GTEXT_C
   css_rope_release(rope);
   return *out ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
 }
+
+struct css_regvals {
+  GCU_Atomic_Int refs;
+  GTEXT_Allocator alloc;
+  size_t n;
+  GTEXT_CSS_Custom_Value ** v;  ///< n values (retained), allocated with the struct
+};
+
+static css_regvals * regvals_new(const GTEXT_Allocator * alloc, size_t n);
 
 GTEXT_CSS_Status css_ctx_make_regs(GTEXT_CSS_Compute_Context * cc, css_state * st) {
   const size_t from_registry = gtext_css_registry_custom_count(cc->registry);
@@ -296,6 +365,75 @@ GTEXT_CSS_Status css_ctx_make_regs(GTEXT_CSS_Compute_Context * cc, css_state * s
       return status;
     }
   }
+  cc->initial_regvals = regvals_new(&cc->alloc, n);
+  if (!cc->initial_regvals) {
+    css_ctx_free_regs(cc);
+    return GTEXT_CSS_E_OOM;
+  }
+  for (size_t i = 0; i < n; i++) {
+    cc->initial_regvals->v[i] = gtext_css_custom_value_retain(regs[i].initial);
+  }
+  return GTEXT_CSS_OK;
+}
+
+static css_regvals * regvals_new(const GTEXT_Allocator * alloc, size_t n) {
+  GTEXT_Allocator a = *alloc;
+  css_regvals * r = gtext_allocator_calloc(&a, 1, sizeof *r + (n ? n : 1) * sizeof *r->v);
+  if (!r) {
+    return NULL;
+  }
+  gcu_atomic_int_init(&r->refs, 1);
+  r->alloc = a;
+  r->n = n;
+  r->v = (GTEXT_CSS_Custom_Value **)(r + 1);
+  return r;
+}
+
+static css_regvals * regvals_retain(css_regvals * r) {
+  if (r) {
+    gcu_atomic_int_fetch_add(&r->refs, 1);
+  }
+  return r;
+}
+
+void css_regvals_release(css_regvals * r) {
+  if (!r || gcu_atomic_int_fetch_sub(&r->refs, 1) != 1) {
+    return;
+  }
+  for (size_t i = 0; i < r->n; i++) {
+    gtext_css_custom_value_free(r->v[i]);
+  }
+  GTEXT_Allocator a = r->alloc;
+  gtext_allocator_free(&a, r);
+}
+
+const GTEXT_CSS_Custom_Value * css_style_regval(const GTEXT_CSS_Computed_Style * style, size_t index) {
+  return style->regvals ? style->regvals->v[index] : NULL;
+}
+
+GTEXT_CSS_Status css_style_set_regval(GTEXT_CSS_Computed_Style * style, size_t index, const GTEXT_CSS_Custom_Value * value) {
+  css_regvals * cur = style->regvals;
+  if (!cur) {
+    return GTEXT_CSS_E_INTERNAL;
+  }
+  if (cur->v[index] == value) {
+    return GTEXT_CSS_OK;
+  }
+  if (gcu_atomic_int_load(&cur->refs) > 1) {
+    /* copy on write: this style is the only one that will change it (a style under computation is not yet shared) */
+    css_regvals * own = regvals_new(&style->alloc, cur->n);
+    if (!own) {
+      return GTEXT_CSS_E_OOM;
+    }
+    for (size_t i = 0; i < cur->n; i++) {
+      own->v[i] = gtext_css_custom_value_retain(cur->v[i]);
+    }
+    css_regvals_release(cur);
+    style->regvals = own;
+    cur = own;
+  }
+  gtext_css_custom_value_free(cur->v[index]);
+  cur->v[index] = gtext_css_custom_value_retain(value);
   return GTEXT_CSS_OK;
 }
 
@@ -304,15 +442,30 @@ GTEXT_CSS_Status css_style_init_regvals(GTEXT_CSS_Computed_Style * style, const 
   if (!cc->nregs) {
     return GTEXT_CSS_OK;
   }
-  GTEXT_Allocator a = style->alloc;
-  style->regvals = gtext_allocator_calloc(&a, cc->nregs, sizeof *style->regvals);
+  if (parent && parent->regvals) {
+    /* the parent's array, where it is what this style would start as: no registered value to change */
+    bool same = true;
+    for (size_t i = 0; i < cc->nregs && same; i++) {
+      const css_ereg * e = &cc->regs[i];
+      same = parent->regvals->v[i] == (e->creg->inherits ? parent->regvals->v[i] : e->initial);
+    }
+    if (same) {
+      style->regvals = regvals_retain(parent->regvals);
+      return GTEXT_CSS_OK;
+    }
+  }
+  else if (cc->initial_regvals) {
+    style->regvals = regvals_retain(cc->initial_regvals);
+    return GTEXT_CSS_OK;
+  }
+  style->regvals = regvals_new(&style->alloc, cc->nregs);
   if (!style->regvals) {
     return GTEXT_CSS_E_OOM;
   }
   for (size_t i = 0; i < cc->nregs; i++) {
     const css_ereg * e = &cc->regs[i];
-    const GTEXT_CSS_Custom_Value * v = (e->creg->inherits && parent && parent->regvals) ? parent->regvals[i] : e->initial;
-    style->regvals[i] = gtext_css_custom_value_retain(v);
+    const GTEXT_CSS_Custom_Value * v = (e->creg->inherits && parent && parent->regvals) ? parent->regvals->v[i] : e->initial;
+    style->regvals->v[i] = gtext_css_custom_value_retain(v);
   }
   return GTEXT_CSS_OK;
 }
@@ -323,7 +476,7 @@ static size_t present_regs(const GTEXT_CSS_Computed_Style * style) {
   size_t n = 0;
   if (style->regvals) {
     for (size_t i = 0; i < style->cc->nregs; i++) {
-      n += style->regvals[i] != NULL;
+      n += style->regvals->v[i] != NULL;
     }
   }
   return n;
@@ -341,7 +494,7 @@ bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t
   size_t k = 0;      /* the registered value being looked at, among those that are present */
   if (style->regvals) {
     for (size_t i = 0; i < style->cc->nregs; i++) {
-      if (!style->regvals[i]) {
+      if (!style->regvals->v[i]) {
         continue;
       }
       const css_creg * c = style->cc->regs[i].creg;
@@ -352,7 +505,7 @@ bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t
           name->length = c->name_len;
         }
         if (value) {
-          *value = style->regvals[i];
+          *value = style->regvals->v[i];
         }
         return true;
       }
@@ -382,7 +535,7 @@ bool gtext_css_computed_custom_find(const GTEXT_CSS_Computed_Style * style, cons
   size_t index = 0;
   const GTEXT_CSS_Custom_Value * v;
   if (style->cc->nregs && css_ctx_find_reg(style->cc, name, length, &index)) {
-    v = style->regvals ? style->regvals[index] : NULL;
+    v = css_style_regval(style, index);
   }
   else {
     v = css_cmap_find(style->custom, name, length);
@@ -427,7 +580,7 @@ GTEXT_CSS_Status css_ctx_syntax(const GTEXT_CSS_Compute_Context * cc, const char
       return GTEXT_CSS_OK;
     }
   }
-  if (c->nsyntax < SYNTAX_CACHE_MAX) {
+  if (c->nsyntax < SYNTAX_CACHE_MAX && length <= 4096 && c->syntax_bytes + length <= ((size_t)1 << 20)) {
     if (c->nsyntax == c->capsyntax) {
       GTEXT_Allocator a = c->alloc;
       const size_t cap = c->capsyntax ? c->capsyntax * 2 : 16;
@@ -439,6 +592,7 @@ GTEXT_CSS_Status css_ctx_syntax(const GTEXT_CSS_Compute_Context * cc, const char
     }
     if (c->nsyntax < c->capsyntax) {
       c->syntax_cache[c->nsyntax++] = made;
+      c->syntax_bytes += length;
       *out = made;
       GCU_MUTEX_UNLOCK(c->syntax_lock);
       return GTEXT_CSS_OK;

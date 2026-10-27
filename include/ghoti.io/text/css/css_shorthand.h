@@ -42,7 +42,7 @@
  * - LAYERS: comma separated layers, each split as ANY; the longhands are comma lists, the last layer alone carrying the property the grammar
  *   gives only to the final layer (`background-color`); a longhand with no component in a layer gets its initial value for that layer;
  * - COPY: every longhand takes the whole value;
- * - ALL: `all` takes the CSS-wide keywords alone;
+ * - ALL: `all` takes the CSS-wide keywords alone, or a substitution that may yield one (pending);
  * - BORDER_RADIUS (the four corners, or the two of one side), FONT, FLEX, GRID_LINE, GRID_TEMPLATE, GRID, OFFSET, TEXT_ALIGN, FONT_SYNTHESIS: the shorthands whose grammar the
  *   generic split would misread have algorithms of their own.
  *

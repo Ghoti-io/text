@@ -71,7 +71,7 @@ extern "C" {
 
 /** @brief Why a rule or a descriptor was not used. */
 typedef enum {
-  GTEXT_CSS_AT_PROP_BAD_NAME = 0,      ///< The prelude is not a comma-separated list of custom property names (dashed identifiers other than `--`): the rule is ignored.
+  GTEXT_CSS_AT_PROP_BAD_NAME = 0,      ///< The prelude is not one custom property name (a dashed identifier other than `--`): the rule is ignored. A list of names is not a prelude of this rule.
   GTEXT_CSS_AT_PROP_NO_SYNTAX,         ///< No valid `syntax` descriptor: the rule is ignored.
   GTEXT_CSS_AT_PROP_BAD_SYNTAX,        ///< The `syntax` descriptor is not a string that is a syntax definition (and so there is none): the rule is ignored.
   GTEXT_CSS_AT_PROP_NO_INHERITS,       ///< No valid `inherits` descriptor (it is `true` or `false`): the rule is ignored.
@@ -98,7 +98,7 @@ typedef struct {
   const GTEXT_Allocator * allocator;  ///< NULL for the registry's.
   void * user;                        ///< Passed to `active`.
   GTEXT_CSS_Layer_Active_Fn active;   ///< Whether a conditional group rule that holds an `@property` applies. NULL: such a rule is GTEXT_CSS_E_UNSUPPORTED, naming `active_rule`.
-  size_t max_properties;              ///< Most registrations the set holds. Default 65,536; at most 2^24. One more is GTEXT_CSS_E_LIMIT_REGISTRY.
+  size_t max_properties;              ///< Most registrations the set holds. Default 4,096; at most 2^24. One more is GTEXT_CSS_E_LIMIT_REGISTRY.
   size_t max_diagnostics;             ///< Most diagnostics kept (the rest are counted). Default 1,024; at most 2^20.
   size_t max_rule_depth;              ///< Deepest nesting of rules read. Default 4,096; at most 1,048,576. One more is GTEXT_CSS_E_LIMIT_DEPTH.
 } GTEXT_CSS_At_Property_Options;

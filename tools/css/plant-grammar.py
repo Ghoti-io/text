@@ -61,7 +61,7 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "cascade": "test-css-cascade.cpp", "layer": "test-css-layer.cpp", "cascade-oom": "test-css-cascade-oom.cpp",
             "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp",
             "custom": "test-css-custom.cpp", "property-rule": "test-css-property-rule.cpp", "custom-oom": "test-css-custom-oom.cpp",
-            "custom-seeds": "test-css-custom-fuzz-seeds.cpp"}
+            "custom-seeds": "test-css-custom-fuzz-seeds.cpp", "custom-review": "test-css-custom-review.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -261,7 +261,7 @@ PLANTS += [
     ("registry-prepared-state-is-not-published", "css_registry.c", "  gcu_atomic_int_store(&lz->state, (int32_t)final_state);", "  gcu_atomic_int_store(&lz->state, (int32_t)GTEXT_CSS_GRAMMAR_NOT_COMPILED);", ["registry"]),
     ("registry-an-alias-is-not-followed", "css_registry.c", "      next = current_id(registry, (GTEXT_CSS_Property_Id)gtext_css_tbl_properties[id - 1].alias_of);", "      next = 0;", ["registry", "property"]),
     ("property-wide-keywords-are-not-recognized", "css_property.c", "  if (wide != GTEXT_CSS_WIDE_NONE) {", "  if (0) {", ["property"]),
-    ("property-all-takes-anything", "css_property.c", "  if (is_all(&info)) {", "  if (0 && is_all(&info)) {", ["property"]),
+    ("property-all-substitution-is-refused", "css_property.c", "  if (is_all(&info) && !sub) {", "  if (is_all(&info)) {", ["property"]),
     ("property-quirks-are-always-on", "css_property.c", "options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length", "(info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length", ["property"]),
     ("property-quirks-are-for-every-property", "css_property.c", "options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length", "options->quirks, info.name_length", ["property"]),
     ("property-an-alias-is-parsed-as-itself", "css_property.c", "  const GTEXT_CSS_Property_Id target = gtext_css_registry_resolve_alias(registry, named);", "  const GTEXT_CSS_Property_Id target = named;", ["property"]),
@@ -298,6 +298,26 @@ PLANTS += [
      "            if (0) {", ["custom"]),
     ("custom-the-registered-length-stays-as-written", "css_substitute.c", "        status = compute_typed(sub, reg->creg, text, len, tainted, &final, &cycle);",
      "        status = css_rope_from_text(&sub->alloc, text, len, tainted, &final);", ["property-rule"]),
+]
+
+
+# What the review of the substitution layer found, each seen to fail (tests/test-css-custom-review.cpp)
+PLANTS += [
+    ("custom-if-and-with-an-unknown-is-true", "css_substitute.c", "(a == T_FALSE || b == T_FALSE) ? T_FALSE : (a == T_UNKNOWN || b == T_UNKNOWN) ? T_UNKNOWN : T_TRUE;",
+     "(a == T_FALSE || b == T_FALSE) ? T_FALSE : T_TRUE;", ["custom-review"]),
+    ("custom-if-or-with-an-unknown-is-false", "css_substitute.c", "(a == T_TRUE || b == T_TRUE) ? T_TRUE : (a == T_UNKNOWN || b == T_UNKNOWN) ? T_UNKNOWN : T_FALSE;",
+     "(a == T_TRUE || b == T_TRUE) ? T_TRUE : T_FALSE;", ["custom-review"]),
+    ("custom-random-base-is-not-held-to-zero-and-one", "css_substitute.c", "env->random_base(env->user, &key, &base) && base >= 0 && base < 1", "env->random_base(env->user, &key, &base)",
+     ["custom-review"]),
+    ("custom-ident-takes-a-fraction", "css_substitute.c", "v->type == GTEXT_CSS_TOKEN_NUMBER && (v->flags & GTEXT_CSS_FLAG_INTEGER)) {\n      char nb[340];", "v->type == GTEXT_CSS_TOKEN_NUMBER) {\n      char nb[340];", ["custom-review"]),
+    ("custom-ident-is-not-written-as-an-identifier", "css_substitute.c", "gtext_css_serialize_identifier(pieces.data, pieces.len, &sink);",
+     "(dbuf_put(&ident, pieces.data, pieces.len) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM);", ["custom-review"]),
+    ("custom-taint-scan-stops-at-thirty-two", "css_compute.c", "          for (size_t c = 0; c < arg->child_count; c++) {\n            if (nwork == wcap) {",
+     "          for (size_t c = 0; c < arg->child_count && c < 32; c++) {\n            if (nwork == wcap) {", ["custom-review"]),
+    ("custom-element-bytes-are-not-budgeted", "css_substitute.c", "  if (btotal > sub->max_element_bytes) {", "  if (0) {", ["custom-review"]),
+    ("custom-a-style-copies-the-registered-values-of-its-parent", "css_custom.c", "    if (same) {\n      style->regvals = regvals_retain(parent->regvals);", "    if (0 && same) {\n      style->regvals = regvals_retain(parent->regvals);",
+     ["custom-review"]),
+    ("custom-no-comment-where-two-tokens-glue", "css_rope.c", "  if (!css_tokclass_needs_comment((css_tokclass)a->last, (css_tokclass)b->first)) {", "  if (1) {", ["custom-review"]),
 ]
 
 

@@ -30,7 +30,8 @@
  *       (the text, the two separated by a line `---`) computed; 2 a style sheet (the text, up to a line `---`) whose `@property` rules are collected and then
  *       used to compute the declarations after the line; 3 the same declarations given to a block and to the cascade, which must compute alike;
  *       bit 2 the limits are small (a few hundred tokens, a few dozen custom properties) so that every limit path is reached; bit 3 the environment has an
- *       `env()` variable, a condition callback and a random-base callback;
+ *       `env()` variable, a condition callback and a random-base callback, and the element has attributes (every name of a length that is not a multiple of four has the
+ *       value `http://taint.invalid/a.png`) and a place among its siblings (the third of five), so that `attr()`, `sibling-index()` and `sibling-count()` answer;
  *   o1, o2 reserved (zero);
  *   o3  the allocation to fail (0 for none), counted over the one computation (the context is made first, on the same allocator, unarmed).
  *
@@ -45,6 +46,9 @@
  *   same style (skipped where the text of a value holds a character the block reader splits on);
  *   the block API and the cascade agree: the same declarations through gtext_css_candidates_add_text() and the cascade, and through gtext_css_block_add_text(),
  *   compute to the same custom properties and the same values of a few ordinary properties;
+ *   **no value of an ordinary property that holds a URL holds one that `attr()` made** ("as or in a <url>" is invalid at computed-value time), however many
+ *   arguments the function holds and however its name is spelled: with the element answering, no line of the dump of a style that has `url(`, `src(`, `image(` or
+ *   `image-set(` has the attribute's URL in it;
  *   the `@property` rules of a style sheet are collected deterministically, every rule found by name is the one at its index, and the diagnostics are no more
  *   than were counted.
  *
@@ -53,6 +57,7 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -176,8 +181,41 @@ bool random_base(void *, const GTEXT_CSS_Random_Key * key, double * base) {
   return true;
 }
 
+// The element of the environment mode: attributes of every name of a length that is not a multiple of four, and the third place of five.
+const char kTaint[] = "http://taint.invalid/a.png";
+
+const GTEXT_CSS_Element_Interface * element_interface() {
+  static const GTEXT_CSS_Element_Interface iface = [] {
+    GTEXT_CSS_Element_Interface t;
+    std::memset(&t, 0, sizeof t);
+    t.size = sizeof t;
+    t.parent = [](void *, GTEXT_CSS_Element_Handle) -> GTEXT_CSS_Element_Handle { return nullptr; };
+    t.attribute = [](void *, GTEXT_CSS_Element_Handle, const GTEXT_CSS_String *, const GTEXT_CSS_String * name, GTEXT_CSS_String * out) -> bool {
+      if (name->length % 4 == 0) {
+        return false;
+      }
+      out->data = kTaint;
+      out->length = sizeof kTaint - 1;
+      return true;
+    };
+    t.sibling_index = [](void *, GTEXT_CSS_Element_Handle) -> size_t { return 3; };
+    t.sibling_count = [](void *, GTEXT_CSS_Element_Handle) -> size_t { return 5; };
+    return t;
+  }();
+  return &iface;
+}
+
+/// The element handed to a computation, or none when the mode has no element.
+const void * element_of(uint8_t o0) {
+  static const int the_element = 0;
+  return (o0 & 8) ? &the_element : nullptr;
+}
+
 GTEXT_CSS_Compute_Options options_of(uint8_t o0, const GTEXT_Allocator * alloc, const GTEXT_CSS_At_Property_Set * rules) {
   GTEXT_CSS_Compute_Options o = gtext_css_compute_options_default();
+  if (o0 & 8) {
+    o.elements = element_interface();
+  }
   o.allocator = alloc;
   o.property_rules = rules;
   if (o0 & 4) {
@@ -347,15 +385,41 @@ void check_counters(const GTEXT_CSS_Compute_Result & r, uint8_t o0, size_t input
   }
 }
 
+/// "Using an attr()-tainted value as or in a <url> makes a declaration invalid at computed-value time": no line of an ordinary property that has a URL function in
+/// it has the URL the element's attributes gave. (A line of a custom property holds text: the taint matters where it is used.)
+void check_no_tainted_url(const std::string & dump, const std::string & input) {
+  size_t pos = 0;
+  while (pos < dump.size()) {
+    size_t end = dump.find('\n', pos);
+    if (end == std::string::npos) {
+      end = dump.size();
+    }
+    std::string line = dump.substr(pos, end - pos);
+    pos = end + 1;
+    for (char & c : line) {
+      c = (char)std::tolower((unsigned char)c);
+    }
+    const size_t first = line.find_first_not_of(" \t");
+    if (first == std::string::npos || line.compare(first, 2, "--") == 0 || line.find("taint.invalid") == std::string::npos) {
+      continue;
+    }
+    for (const char * fn : {"url(", "src(", "image(", "image-set("}) {
+      if (line.find(fn) != std::string::npos) {
+        fail("a URL that attr() made is in a computed value", line, input);
+      }
+    }
+  }
+}
+
 /// Compute the child (and its parent when there is a block for it).
 GTEXT_CSS_Status compute(const GTEXT_CSS_Compute_Context * ctx, const GTEXT_CSS_Declaration_Block * pb, const GTEXT_CSS_Declaration_Block * cb,
-    GTEXT_CSS_Computed_Style ** parent_out, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * r) {
+    GTEXT_CSS_Computed_Style ** parent_out, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * r, const void * element) {
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   if (pb) {
-    st = gtext_css_compute_style(ctx, pb, nullptr, nullptr, parent_out, r);
+    st = gtext_css_compute_style(ctx, pb, nullptr, element, parent_out, r);
   }
   if (st == GTEXT_CSS_OK) {
-    st = gtext_css_compute_style(ctx, cb, *parent_out, nullptr, out, r);
+    st = gtext_css_compute_style(ctx, cb, *parent_out, element, out, r);
   }
   return st;
 }
@@ -382,7 +446,7 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
   }
   GTEXT_CSS_Computed_Style *parent = nullptr, *child = nullptr;
   fa.arm(fault);
-  const GTEXT_CSS_Status st = compute(ctx, pb, cb, &parent, &child, &r);
+  const GTEXT_CSS_Status st = compute(ctx, pb, cb, &parent, &child, &r, element_of(o0));
   fa.disarm();
   if (!allowed_status(st)) {
     fail("a status a computation must not return", gtext_css_status_string(st) + std::string(" ") + r.name, input);
@@ -398,6 +462,9 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
   if (st == GTEXT_CSS_OK) {
     check_counters(r, o0, size, input);
     first = dump_of(child, input);
+    if (o0 & 8) {
+      check_no_tainted_url(first, input);
+    }
     uint64_t h1 = 0, h2 = 0;
     if (gtext_css_computed_hash(child, &h1) != GTEXT_CSS_OK || gtext_css_computed_hash(child, &h2) != GTEXT_CSS_OK || h1 != h2) {
       fail("the hash of a style is not stable", "", input);
@@ -410,7 +477,7 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
     if (splittable && build(declarations(decls), nullptr, &rb, input) == GTEXT_CSS_OK) {
       GTEXT_CSS_Computed_Style * second = nullptr;
       GTEXT_CSS_Compute_Result r2{};
-      const GTEXT_CSS_Status s2 = gtext_css_compute_style(ctx, rb, parent, nullptr, &second, &r2);
+      const GTEXT_CSS_Status s2 = gtext_css_compute_style(ctx, rb, parent, element_of(o0), &second, &r2);
       if (s2 == GTEXT_CSS_OK) {
         again = dump_of(second, input);
         fixed_checked = true;
@@ -423,7 +490,7 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
     gtext_css_block_free(rb);
     GTEXT_CSS_Computed_Style *p2 = nullptr, *c2 = nullptr;
     GTEXT_CSS_Compute_Result r3{};
-    if (compute(ctx, pb, cb, &p2, &c2, &r3) == GTEXT_CSS_OK) {
+    if (compute(ctx, pb, cb, &p2, &c2, &r3, element_of(o0)) == GTEXT_CSS_OK) {
       repeated = dump_of(c2, input);
       repeat_checked = true;
     }
@@ -541,8 +608,8 @@ void check_agreement(const std::vector<Decl> & decls, uint8_t o0, const std::str
     const GTEXT_CSS_Compute_Context * ctx = shared_context(o0);
     GTEXT_CSS_Computed_Style *a = nullptr, *b = nullptr;
     GTEXT_CSS_Compute_Result ra{}, rb{};
-    const GTEXT_CSS_Status sa = gtext_css_compute_style(ctx, via, nullptr, nullptr, &a, &ra);
-    const GTEXT_CSS_Status sb = gtext_css_compute_style(ctx, direct, nullptr, nullptr, &b, &rb);
+    const GTEXT_CSS_Status sa = gtext_css_compute_style(ctx, via, nullptr, element_of(o0), &a, &ra);
+    const GTEXT_CSS_Status sb = gtext_css_compute_style(ctx, direct, nullptr, element_of(o0), &b, &rb);
     if (!allowed_status(sa) || !allowed_status(sb)) {
       fail("a status a computation must not return", std::string(gtext_css_status_string(sa)) + " " + gtext_css_status_string(sb), input);
     }

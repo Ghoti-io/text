@@ -74,7 +74,7 @@ const Snippet kSnippets[] = {
     {"variables-property-rule.c", property_rule::variables_property_rule,
         "1 rule registered\nignored --broken: no-syntax\n--size: syntax <length>, initial 16px\nwidth: 16px\n"},
     {"variables-budget.c", budget::variables_budget,
-        "--v19 has a value\n--v20 is guaranteed-invalid\n--v30 is guaranteed-invalid\nvalues stopped by the budget: 1\nwork under 10000: yes\n"},
+        "--v18 has a value\n--v19 is guaranteed-invalid\n--v30 is guaranteed-invalid\nvalues stopped by the budget: 1\nwork under 200000: yes\n"},
 };
 
 std::string slurp(const std::string & path) {

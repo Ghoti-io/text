@@ -332,6 +332,10 @@ bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out
 /// ASCII case-insensitive equality of a string with a lower-case literal.
 bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
 
+/// Trim the text of a custom property's value: the white space and the comments before its first token and after its last are not part of it ("the original text" is
+/// that of the tokens, and a comment is no token), those between are. Strings are stepped over. `*s` and `*n` are narrowed.
+void css_trim_value_text(const char ** s, size_t * n);
+
 /// The result's private part: the kept parse errors.
 struct GTEXT_CSS_Result_Internal {
   GTEXT_Allocator allocator; ///< The one the block was made with.

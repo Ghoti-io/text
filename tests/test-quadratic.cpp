@@ -2001,10 +2001,10 @@ std::vector<Shape> build_shapes() {
       }, "width")).per_byte = 0;
   {
     Shape & ch = add("css", "CSS substitute: an inheritance chain of n elements that each var() the parent's property", 150,
-        css_compute_chain([](size_t i) { return i == 0 ? std::string("--p0: 1px") : "--p" + std::to_string(i) + ": var(--p" + std::to_string(i - 1) + ") 1px"; }));
+        css_compute_chain([](size_t i) { return i == 0 ? std::string("--p0: 1px") : "--p" + std::to_string(i) + ": var(--p" + std::to_string(i - 1) + ")"; }));
     ch.per_byte = 0;
     ch.bound = 6.5;
-    ch.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+    ch.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path (every value is one token long: a value that grows with the chain is charged a sixteenth of a step a byte, which is quadratic in what it writes)";
   }
   {
     Shape & dbl = add("css", "CSS substitute: a value that would double n times (the budget stops it)", 30,
@@ -2017,7 +2017,25 @@ std::vector<Shape> build_shapes() {
           d.push_back({"content", "var(--n" + std::to_string(k) + ")"});
           return d;
         }, nullptr, 2 * 1048576));
-    dbl.note = "linear in the text written, never in the 2^n tokens it names: the budget makes the value guaranteed-invalid (held to the default work per byte, since the ratio of a flat line shows nothing)";
+    dbl.per_byte = 400.0;
+    dbl.note = "linear in the text written, never in the 2^n tokens it names: the budget makes the value guaranteed-invalid, after the work of reaching the 1 MiB of the byte budget, a sixteenth of a step a byte (held to a bound per byte of text, since the ratio of a flat line shows nothing)";
+  }
+  {
+    Shape & big = add("css", "CSS substitute: n uses of a value of half a megabyte and a hundred tokens", 30,
+        css_compute_pairs([](size_t k) {
+          std::vector<std::pair<std::string, std::string>> d;
+          d.push_back({"--d0", std::string(4096, 'a')});
+          for (size_t i = 1; i <= 7; i++) {
+            d.push_back({"--d" + std::to_string(i), "var(--d" + std::to_string(i - 1) + ") var(--d" + std::to_string(i - 1) + ")"});
+          }
+          for (size_t i = 0; i < k; i++) {
+            d.push_back({"--u" + std::to_string(i), "var(--d7)"});
+          }
+          return d;
+        }, nullptr, 8 * 1048576));
+    big.flat = true;
+    big.per_byte = 0;
+    big.note = "few tokens and many bytes: each use is read and parsed, so the bytes of an element are budgeted (8 MiB), and the work is that of the uses that fit, whatever the number of uses written";
   }
   add("css", "CSS shorthand: a background of n layers", 150,
       css_shorthand_expand("background", [](size_t k) { return repeat("url(a) 1px 2px / 3px 4px no-repeat, ", k) + "red"; })).per_byte = 0;

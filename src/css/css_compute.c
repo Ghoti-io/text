@@ -270,12 +270,7 @@ void gtext_css_computed_free(GTEXT_CSS_Computed_Style * style) {
     gtext_css_value_set_free(style->vals[i]);
   }
   css_cmap_release(style->custom);
-  if (style->regvals) {
-    for (size_t i = 0; i < style->cc->nregs; i++) {
-      gtext_css_custom_value_free(style->regvals[i]);
-    }
-    gtext_allocator_free(&a, style->regvals);
-  }
+  css_regvals_release(style->regvals);
   gtext_css_value_set_free(style->root.family);
   gtext_css_value_set_free(style->root.line_height);
   gtext_allocator_free(&a, style->vals);
@@ -1048,36 +1043,70 @@ static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root
          made of it ("functions that contain an attr()-tainted value are tainted") */
       static const char * const names[] = {"url", "src", "image", "image-set", "-webkit-image-set", "cross-fade", "-webkit-cross-fade", "element", "paint"};
       bool takes_url = false;
+      const GTEXT_CSS_String fname = {v->text.data, v->text.length};
       for (size_t k = 0; k < sizeof names / sizeof names[0]; k++) {
-        const size_t nl = strlen(names[k]);
-        if (v->text.length >= nl && memcmp(v->text.data, names[k], nl) == 0 && (v->text.length == nl || v->text.data[nl] == '(')) {
-          takes_url = true;
+        takes_url = takes_url || css_ascii_ieq(&fname, names[k]);
+      }
+      if (!takes_url) {
+        /* the text of a function value may be written `name(`: compare up to the parenthesis */
+        size_t nl = 0;
+        while (nl < v->text.length && v->text.data[nl] != '(') {
+          nl++;
+        }
+        const GTEXT_CSS_String head = {v->text.data, nl};
+        for (size_t k = 0; k < sizeof names / sizeof names[0]; k++) {
+          takes_url = takes_url || css_ascii_ieq(&head, names[k]);
         }
       }
-      /* the arguments, looking through the lists that group them */
-      const GTEXT_CSS_Value * work[32];
-      size_t nwork = 0;
-      for (size_t c = 0; takes_url && c < v->child_count && nwork < 32; c++) {
+      /* the arguments, looking through the lists that group them: every one of them, however many (a list of options has no bound) */
+      size_t wcap = 32, nwork = 0;
+      const GTEXT_CSS_Value ** work = takes_url ? gtext_allocator_malloc(&a, wcap * sizeof *work) : NULL;
+      if (takes_url && !work) {
+        gtext_allocator_free(&a, stack);
+        return GTEXT_CSS_E_OOM;
+      }
+      for (size_t c = 0; takes_url && c < v->child_count; c++) {
+        if (nwork == wcap) {
+          const GTEXT_CSS_Value ** g = gtext_allocator_realloc(&a, work, wcap * 2 * sizeof *g);
+          if (!g) {
+            gtext_allocator_free(&a, work);
+            gtext_allocator_free(&a, stack);
+            return GTEXT_CSS_E_OOM;
+          }
+          work = g;
+          wcap *= 2;
+        }
         work[nwork++] = &v->children[c];
       }
       while (nwork && !*found) {
-        const GTEXT_CSS_Value * a = work[--nwork];
-        if (a->kind == GTEXT_CSS_VAL_LIST) {
-          for (size_t c = 0; c < a->child_count && nwork < 32; c++) {
-            work[nwork++] = &a->children[c];
+        const GTEXT_CSS_Value * arg = work[--nwork];
+        if (arg->kind == GTEXT_CSS_VAL_LIST) {
+          for (size_t c = 0; c < arg->child_count; c++) {
+            if (nwork == wcap) {
+              const GTEXT_CSS_Value ** g = gtext_allocator_realloc(&a, work, wcap * 2 * sizeof *g);
+              if (!g) {
+                gtext_allocator_free(&a, work);
+                gtext_allocator_free(&a, stack);
+                return GTEXT_CSS_E_OOM;
+              }
+              work = g;
+              wcap *= 2;
+            }
+            work[nwork++] = &arg->children[c];
           }
           continue;
         }
-        if (a->kind != GTEXT_CSS_VAL_STRING && a->kind != GTEXT_CSS_VAL_URL && a->kind != GTEXT_CSS_VAL_FUNCTION && a->kind != GTEXT_CSS_VAL_PENDING &&
-            a->kind != GTEXT_CSS_VAL_UNPARSED && a->kind != GTEXT_CSS_VAL_TOKEN) {
+        if (arg->kind != GTEXT_CSS_VAL_STRING && arg->kind != GTEXT_CSS_VAL_URL && arg->kind != GTEXT_CSS_VAL_FUNCTION && arg->kind != GTEXT_CSS_VAL_PENDING &&
+            arg->kind != GTEXT_CSS_VAL_UNPARSED && arg->kind != GTEXT_CSS_VAL_TOKEN) {
           continue;
         }
         for (size_t k = 0; k < ntaint; k++) {
-          if (a->span.offset < taint[k].end && a->span.end > taint[k].begin) {
+          if (arg->span.offset < taint[k].end && arg->span.end > taint[k].begin) {
             *found = true;
           }
         }
       }
+      gtext_allocator_free(&a, work);
     }
     if (v->child_count && !*found) {
       if (len == cap) {
@@ -1242,6 +1271,21 @@ static GTEXT_CSS_Status compute_pending(css_state * st, GTEXT_CSS_Property_Id id
   const css_pmeta * m = &st->cc->meta[id - 1];
   *out = NULL;
   GTEXT_CSS_Status status;
+  if (it->property == st->cc->pid[CSS_P_ALL] || (it->shorthand && it->shorthand == st->cc->pid[CSS_P_ALL])) {
+    /* `all: var(--x)`: the value takes only a CSS-wide keyword, which is known once the functions are replaced; once for the declaration, however many properties read it */
+    if (!st->all_state) {
+      GTEXT_CSS_Property_Value apv;
+      bool adone = false;
+      status = substitute_and_parse(st, "all", 3, it->set, &apv, &adone);
+      if (status != GTEXT_CSS_OK) {
+        return status;
+      }
+      st->all_state = adone && apv.outcome == GTEXT_CSS_PROP_RESULT_WIDE ? 2 : 1;
+      st->all_wide = apv.wide;
+      gtext_css_property_value_free(&apv);
+    }
+    return st->all_state == 2 ? apply_parsed(st, id, GTEXT_CSS_PROP_RESULT_WIDE, st->all_wide, NULL, out) : invalid_at_computed_time(st, id, out);
+  }
   if (it->shorthand) {
     /* "after substitution, the shorthand must be parsed and the longhands must be given their appropriate values at that point": once for the declaration,
        however many longhands read it */
@@ -1534,8 +1578,18 @@ static GTEXT_CSS_Status compute_property(css_state * st, GTEXT_CSS_Property_Id i
     return GTEXT_CSS_OK;
   }
   st->busy[id - 1] = 1;
-  const GTEXT_CSS_Status status = compute_property_inner(st, id);
+  GTEXT_CSS_Status status = compute_property_inner(st, id);
+  const bool in_cycle = st->busy[id - 1] == 2;
   st->busy[id - 1] = 0;
+  if (status == GTEXT_CSS_OK && in_cycle && st->done[id - 1]) {
+    /* something it read (a registered `<length>` in `em`, through var()) reached it again: the property is in a dependency cycle, "invalid at computed-value time"
+       whatever the value it read became */
+    GTEXT_CSS_Value_Set * inv = NULL;
+    status = invalid_at_computed_time(st, id, &inv);
+    if (status == GTEXT_CSS_OK) {
+      set_entry(st, id, inv);
+    }
+  }
   if (status != GTEXT_CSS_OK) {
     return status;
   }
@@ -1564,6 +1618,7 @@ GTEXT_CSS_Status css_st_ensure(css_state * st, GTEXT_CSS_Property_Id id, bool * 
     return GTEXT_CSS_OK;
   }
   if (st->busy[id - 1]) {
+    st->busy[id - 1] = 2; /* it is part of a cycle: compute_property() finds it when it comes back */
     *cycle = true;
     return GTEXT_CSS_OK;
   }

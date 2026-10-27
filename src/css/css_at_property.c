@@ -36,7 +36,7 @@
 #include "css_registry_internal.h"
 #include "css_syntax_string.h"
 
-#define DEFAULT_MAX_PROPERTIES ((size_t)65536)
+#define DEFAULT_MAX_PROPERTIES ((size_t)4096)
 #define LIMIT_MAX_PROPERTIES ((size_t)1 << 24)
 #define DEFAULT_MAX_DIAGNOSTICS ((size_t)1024)
 #define LIMIT_MAX_DIAGNOSTICS ((size_t)1 << 20)
@@ -284,14 +284,11 @@ static bool read_names(const GTEXT_CSS_Rule * rule, GTEXT_CSS_String * names, si
       expect_name = false;
     }
     else {
-      if (p[i].kind != GTEXT_CSS_VALUE_TOKEN || p[i].type != GTEXT_CSS_TOKEN_COMMA) {
-        return false;
-      }
-      expect_name = true;
+      return false; /* "@property <custom-property-name> { ... }": one name; a list, a comma and anything else are not a prelude of the rule */
     }
   }
   if (expect_name) {
-    return false; /* empty, or a trailing comma */
+    return false; /* empty */
   }
   *count = n;
   return true;
@@ -388,7 +385,7 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
   GTEXT_CSS_Status st;
   if (!rule->has_block || !read_names(rule, names, NAME_CAP, &nnames) || nnames > NAME_CAP) {
     return diagnose(s, GTEXT_CSS_AT_PROP_BAD_NAME, "", 0, rule, &rule->span,
-        "@property <custom-property-name># { <declaration-list> }: the prelude is a comma-separated list of custom property names.");
+        "@property <custom-property-name> { <declaration-list> }: the prelude is one custom property name.");
   }
   descriptors d;
   memset(&d, 0, sizeof d);

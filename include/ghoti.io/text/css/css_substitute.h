@@ -56,7 +56,7 @@
  * function would expand into a longer token stream than this limit, it instead is replaced with the guaranteed-invalid value." Substituted values here are ropes
  * (css_custom.h): memory is linear in the text written, and the length each would have is a saturating counter. A value that would have more tokens than
  * `max_substituted_tokens` is the guaranteed-invalid value, and so is any value once the values substituted for one element have used `max_element_substituted_tokens`
- * between them. The result of a computation reports the counters (GTEXT_CSS_Compute_Result::substituted_tokens and ::substitution_limited), and the quadratic suite asserts on
+ * between them (and likewise bytes: `max_value_bytes` for one value, `max_element_substituted_bytes` for the element). The result of a computation reports the counters (GTEXT_CSS_Compute_Result::substituted_tokens and ::substitution_limited), and the quadratic suite asserts on
  * them and not on the clock. Also bounded, each with a status of its own: the custom properties one element declares, the bytes of one value, and the depth
  * of nested replacement.
  */
@@ -86,12 +86,17 @@ typedef struct {
   uint64_t max_element_substituted_tokens;
   /** Most custom properties one element may declare. Default 65,536; at most 2^24. One more is GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES. */
   size_t max_custom_properties;
-  /** Longest a value may be once its functions are replaced, in bytes (a declared value as well). Default 16 MiB; at most 2^30. A longer substituted value is the
+  /** Longest a value may be once its functions are replaced, in bytes (a declared value as well). Default 1 MiB; at most 2^30. A longer substituted value is the
    *  guaranteed-invalid value, counted like one that passes the token budget; a declared value longer than this is GTEXT_CSS_E_LIMIT_CUSTOM_VALUE. */
   size_t max_value_bytes;
-  /** Deepest nesting of replacement: functions inside functions, and custom properties that refer to custom properties. Default 100,000; at most 2^24. One more is
-   *  GTEXT_CSS_E_LIMIT_DEPTH. */
+  /** Deepest the machine's stack may be, in frames: a function inside a function costs two, and a custom property that refers to another costs three (the property,
+   *  its value, the `var()`), so the default allows chains of about 33,000 links. A custom property that would be one too many is the guaranteed-invalid value (counted
+   *  in GTEXT_CSS_Compute_Result::substitution_limited), as are those made of it; functions nested past it are GTEXT_CSS_E_LIMIT_DEPTH. Default 100,000; at most 2^24. */
   size_t max_substitution_depth;
+  /** Most bytes that all the values substituted for one element may have between them, counted as the tokens are (each complete value once, the length it would have
+   *  as text; the cost of reading and parsing it is in the work counter). Default 8 MiB; at most 2^40. A value past it is the guaranteed-invalid value, and counted
+   *  in GTEXT_CSS_Compute_Result::substitution_limited. Tokens do not bound this: a value of a few long words is few tokens and many bytes. */
+  uint64_t max_element_substituted_bytes;
 } GTEXT_CSS_Substitute_Options;
 
 /** @brief The defaults, spelled out. */

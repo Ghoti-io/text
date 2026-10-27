@@ -1680,15 +1680,6 @@ static GTEXT_CSS_Status freeze_run(GTEXT_CSS_Registry_Builder * builder, GTEXT_C
 
 /* ---- custom property registrations --------------------------------------------------------------------- */
 
-static void trim_ws(const char ** s, size_t * n) {
-  while (*n && (**s == ' ' || **s == '\t' || **s == '\n' || **s == '\r' || **s == '\f')) {
-    (*s)++;
-    (*n)--;
-  }
-  while (*n && ((*s)[*n - 1] == ' ' || (*s)[*n - 1] == '\t' || (*s)[*n - 1] == '\n' || (*s)[*n - 1] == '\r' || (*s)[*n - 1] == '\f')) {
-    (*n)--;
-  }
-}
 
 static GTEXT_CSS_Status creg_fail_why(GTEXT_CSS_Registry_Result * result, GTEXT_CSS_Status st, const char * name, size_t nl, const char * detail, css_creg_why * why,
     css_creg_why w) {
@@ -1858,7 +1849,7 @@ GTEXT_CSS_Status css_registry_make_creg(const GTEXT_CSS_Registry * cr, const cha
       return creg_fail_why(result, st == GTEXT_CSS_OK ? GTEXT_CSS_E_INVALID : st, name, name_length,
           "the initial value has a bad string or a bad url in it, which no <declaration-value> holds", why, CSS_CREG_BAD_INITIAL);
     }
-    trim_ws(&it, &il);
+    css_trim_value_text(&it, &il);
     c->has_initial = true;
     c->initial = dup_n(&r->alloc, it, il);
     c->initial_len = il;

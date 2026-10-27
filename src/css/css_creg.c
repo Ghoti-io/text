@@ -211,7 +211,8 @@ GTEXT_CSS_Status css_creg_independent(const GTEXT_Allocator * alloc, const GTEXT
     bool * independent) {
   GTEXT_Allocator a = *alloc;
   *independent = true;
-  /* the tokens: a unit of the element's font or container, `currentcolor`, `light-dark()` */
+  /* the tokens: a unit of the element's font or container, `currentcolor` (`light-dark()` is not one: the pinned property-registration page registers `light-dark(none, none)`
+     and every browser accepts `light-dark(red, blue)` as an initial value, which is computed in the environment's color scheme) */
   if (count) {
     size_t cap = 16, len = 0;
     cv_frame * st = gtext_allocator_malloc(&a, cap * sizeof *st);
@@ -231,10 +232,6 @@ GTEXT_CSS_Status css_creg_independent(const GTEXT_Allocator * alloc, const GTEXT
           *independent = false;
         }
         continue;
-      }
-      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && css_ascii_ieq(&v->value, "light-dark")) {
-        *independent = false;
-        break;
       }
       if (v->child_count) {
         if (len == cap) {
@@ -270,10 +267,6 @@ GTEXT_CSS_Status css_creg_independent(const GTEXT_Allocator * alloc, const GTEXT
       if (v->kind == GTEXT_CSS_VAL_COLOR && v->color && v->color->kind == GTEXT_CSS_COLOR_KEYWORD &&
           (v->color->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR || v->color->keyword == GTEXT_CSS_COLOR_KW_SYSTEM ||
            v->color->keyword == GTEXT_CSS_COLOR_KW_DEPRECATED)) {
-        *independent = false;
-        break;
-      }
-      if (v->kind == GTEXT_CSS_VAL_COLOR && v->color && v->color->kind == GTEXT_CSS_COLOR_LIGHT_DARK) {
         *independent = false;
         break;
       }

@@ -167,7 +167,7 @@ before them in the cascade stands.
 A **registration** gives a custom property a syntax, whether it inherits, and an initial value. It changes nothing at parse time, and at computed-value time
 its value is checked against the syntax and computed by its type: `2em` as a `<length>` is pixels, a list is computed item by item, `<color>` is a color.
 A value that is not of the syntax is invalid at computed-value time, and the property takes its **initial value**, which is the property's own, not the
-inherited one. The initial value has to be **computationally independent**: `5px` and `1in` are, `3em`, `currentcolor`, `light-dark()` and
+inherited one. The initial value has to be **computationally independent**: `5px`, `1in` and `light-dark(red, blue)` (computed in the environment's color scheme) are, `3em`, `currentcolor` and
 anything with `var()` are not. A caller registers through the registry builder before it is frozen, as `CSS.registerProperty()` does:
 
 ```c
@@ -329,9 +329,10 @@ a default and none of them zero-means-unlimited:
 |---|---|---|
 | `max_substituted_tokens` | 1,048,576 | is the guaranteed-invalid value, counted in `substitution_limited` |
 | `max_element_substituted_tokens` | 16,777,216 | is the guaranteed-invalid value, once the element's values together have used it |
-| `max_value_bytes` | 16 MiB | a substituted value: the guaranteed-invalid value; a declared one: `GTEXT_CSS_E_LIMIT_CUSTOM_VALUE` |
+| `max_value_bytes` | 1 MiB | a substituted value: the guaranteed-invalid value; a declared one: `GTEXT_CSS_E_LIMIT_CUSTOM_VALUE` |
+| `max_element_substituted_bytes` | 8 MiB | is the guaranteed-invalid value, once the element's values together have that many bytes (reading a value costs its bytes, a sixteenth of a step each) |
 | `max_custom_properties` | 65,536 | `GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES` |
-| `max_substitution_depth` | 100,000 | `GTEXT_CSS_E_LIMIT_DEPTH` |
+| `max_substitution_depth` | 100,000 frames | a custom property past it (a link of a chain is three frames, so about 33,000 links) is the guaranteed-invalid value, as are those made of it; functions nested past it, `GTEXT_CSS_E_LIMIT_DEPTH` |
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -340,7 +341,7 @@ a default and none of them zero-means-unlimited:
 
 /* A few bytes of CSS can name a value of any size: each of these thirty custom properties is two copies of the one before. The values are token ropes,
    so building them costs what was written and not what they name, and a value that would have more tokens than the budget allows is the guaranteed-invalid
-   value, as are all that are made of it. The result of the computation counts what happened. */
+   value, as are all that are made of it (the bytes of a value, 1 MiB, are past the budget before its tokens are). The result of the computation counts what happened. */
 static void variables_budget(void) {
   GTEXT_CSS_Registry * registry = NULL;
   gtext_css_registry_new(NULL, &registry);
@@ -360,11 +361,11 @@ static void variables_budget(void) {
   gtext_css_compute_style(context, block, NULL, NULL, &style, &result);
 
   const GTEXT_CSS_Custom_Value * value = NULL;
+  printf("--v18 %s\n", gtext_css_computed_custom_find(style, "--v18", 5, &value) ? "has a value" : "is guaranteed-invalid");
   printf("--v19 %s\n", gtext_css_computed_custom_find(style, "--v19", 5, &value) ? "has a value" : "is guaranteed-invalid");
-  printf("--v20 %s\n", gtext_css_computed_custom_find(style, "--v20", 5, &value) ? "has a value" : "is guaranteed-invalid");
   printf("--v30 %s\n", gtext_css_computed_custom_find(style, "--v30", 5, &value) ? "has a value" : "is guaranteed-invalid");
   printf("values stopped by the budget: %llu\n", (unsigned long long)result.substitution_limited);
-  printf("work under 10000: %s\n", result.work < 10000 ? "yes" : "no");
+  printf("work under 200000: %s\n", result.work < 200000 ? "yes" : "no");
 
   gtext_css_computed_free(style);
   gtext_css_block_free(block);
@@ -376,11 +377,11 @@ static void variables_budget(void) {
 prints
 
 ```
---v19 has a value
---v20 is guaranteed-invalid
+--v18 has a value
+--v19 is guaranteed-invalid
 --v30 is guaranteed-invalid
 values stopped by the budget: 1
-work under 10000: yes
+work under 200000: yes
 ```
 
 `GTEXT_CSS_Compute_Result` reports `substituted_tokens` (what the values would have been, summed), `substitution_peak` (the longest one built) and

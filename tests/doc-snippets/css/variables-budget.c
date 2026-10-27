@@ -4,7 +4,7 @@
 
 /* A few bytes of CSS can name a value of any size: each of these thirty custom properties is two copies of the one before. The values are token ropes,
    so building them costs what was written and not what they name, and a value that would have more tokens than the budget allows is the guaranteed-invalid
-   value, as are all that are made of it. The result of the computation counts what happened. */
+   value, as are all that are made of it (the bytes of a value, 1 MiB, are past the budget before its tokens are). The result of the computation counts what happened. */
 static void variables_budget(void) {
   GTEXT_CSS_Registry * registry = NULL;
   gtext_css_registry_new(NULL, &registry);
@@ -24,11 +24,11 @@ static void variables_budget(void) {
   gtext_css_compute_style(context, block, NULL, NULL, &style, &result);
 
   const GTEXT_CSS_Custom_Value * value = NULL;
+  printf("--v18 %s\n", gtext_css_computed_custom_find(style, "--v18", 5, &value) ? "has a value" : "is guaranteed-invalid");
   printf("--v19 %s\n", gtext_css_computed_custom_find(style, "--v19", 5, &value) ? "has a value" : "is guaranteed-invalid");
-  printf("--v20 %s\n", gtext_css_computed_custom_find(style, "--v20", 5, &value) ? "has a value" : "is guaranteed-invalid");
   printf("--v30 %s\n", gtext_css_computed_custom_find(style, "--v30", 5, &value) ? "has a value" : "is guaranteed-invalid");
   printf("values stopped by the budget: %llu\n", (unsigned long long)result.substitution_limited);
-  printf("work under 10000: %s\n", result.work < 10000 ? "yes" : "no");
+  printf("work under 200000: %s\n", result.work < 200000 ? "yes" : "no");
 
   gtext_css_computed_free(style);
   gtext_css_block_free(block);

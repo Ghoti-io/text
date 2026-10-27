@@ -20,7 +20,7 @@
     tools/css/extract-wpt-variables.py WPT_ROOT OUT_DIR [--unextracted FILE]
 
 The pages are css/css-variables and css/css-properties-values-api. Most of them are not data: they build a document and ask a browser for
-`getComputedStyle()`, animate, transition, register through `CSS.registerProperty()` in a loop. A page this program reads is one of four kinds, and
+`getComputedStyle()`, animate, transition, register through `CSS.registerProperty()` in a loop. A page this program reads is one of five kinds, and
 every other test page is named, with the reason it is not read, in the list that `--unextracted` writes (tools/css/UNEXTRACTED_VARIABLES), which the
 gate compares with a fresh extraction, so that a page that changes cannot change what is scored without a diff to review. **It evaluates nothing and
 runs nothing**: the scripts are read with the literal reader of tools/css/extract-wpt-props.py (a call whose arguments are literals is data; anything
@@ -34,11 +34,15 @@ else is not read), and the style sheets and the markup are split by this program
                  style sheets (their text, in order) and the elements are the vector; the scorer runs the cascade of the library over them.
   cycles         `test_cycles(declarations, expected_invalid, expected_valid, description)` of variable-cycles.html: an element with the declarations as its
                  style attribute, and the custom properties that must be, and must not be, the guaranteed-invalid value.
+  regcomp        `test_computed_value(syntax, value, expected)` of registered-property-computation.html, all three arguments literals: a property of
+                 that syntax (the initial value utils.js's any_initial_value() gives) set to `value` on an element whose font-size is 10px, line-height
+                 20px and color blue computes to `expected`. A call with an argument that is not a literal (`length_ref(...)`, which asks the browser) is
+                 not read, and the other tests of the page ask the live document: the page stays in the list of pages read in part.
   limits         the two pages that must not crash (variable-exponential-blowup.html, long-variable-reference-crash.html). Their scripts build the style by
                  a loop, which is not read; the recipe is written in this file, and the guard below fails the extraction when the page no longer says what the
                  recipe assumes.
 
-Output: registration.json, reftest.json, cycles.json, limits.json in OUT_DIR, a list of vectors each, in the order of file name and then of the
+Output: registration.json, reftest.json, cycles.json, regcomp.json, limits.json in OUT_DIR, a list of vectors each, in the order of file name and then of the
 source: {file, n, line, ...}; the identity of a vector is `file#n`.
 """
 
@@ -55,7 +59,7 @@ props = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(props)
 
 DIRS = ("css/css-variables", "css/css-properties-values-api")
-KIND_FILES = ("registration", "reftest", "cycles", "limits")
+KIND_FILES = ("registration", "reftest", "cycles", "regcomp", "limits")
 SKIP_DIRS = {"resources", "support", "reference", "META.yml"}
 
 
@@ -175,6 +179,57 @@ def cycles_vectors(rel, scripts):
                 i = nxt
                 continue
             i += 1
+    return out, bad
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# registered-property-computation: test_computed_value(syntax, value, expected)
+
+REGCOMP_PAGE = "css/css-properties-values-api/registered-property-computation.html"
+
+
+def any_initial_value(syntax):
+    """utils.js's any_initial_value(): a compatible initial value for the syntax."""
+    first = syntax.split("|")[0].strip()
+    if first.endswith("+") or first.endswith("#"):
+        first = first[:-1]
+    table = {"*": "NULL", "<custom-ident>": "NULL", "<angle>": "0deg", "<color>": "rgb(0, 0, 0)", "<image>": "url(0)", "<url>": "url(0)", "<integer>": "0",
+             "<length-percentage>": "0", "<length>": "0", "<number>": "0", "<percentage>": "0%", "<resolution>": "0dpi", "<time>": "0s",
+             "<transform-function>": "matrix(0, 0, 0, 0, 0, 0)", "<transform-list>": "matrix(0, 0, 0, 0, 0, 0)"}
+    return table.get(first, first)
+
+
+def regcomp_vectors(rel, scripts):
+    out, bad = [], []
+    if rel != REGCOMP_PAGE:
+        return out, bad
+    for body, first_line in scripts:
+        try:
+            toks = props.lex(body)
+        except props.Unreadable:
+            continue
+        i = 0
+        while i < len(toks):
+            tok = toks[i]
+            if tok[0] == "id" and tok[1] == "test_computed_value" and i + 1 < len(toks) and toks[i + 1][:2] == ("p", "(") \
+                    and not (i and toks[i - 1][0] == "id" and toks[i - 1][1] == "function"):
+                line = first_line + tok[2] - 1
+                args, reason, nxt = props.read_call(toks, i)
+                if args is None:
+                    bad.append((line, "test_computed_value", reason))
+                else:
+                    try:
+                        if len(args) != 3 or not all(isinstance(a, str) for a in args):
+                            raise props.Unreadable("an argument that is not a string literal")
+                        syntax, value, expected = (str(a) for a in args)
+                        out.append({"file": rel, "line": line, "syntax": syntax, "initial": any_initial_value(syntax), "value": value, "expected": expected})
+                    except props.Unreadable as e:
+                        bad.append((line, "test_computed_value", str(e)))
+                i = nxt
+                continue
+            i += 1
+    if out:
+        bad.append((0, "test", "the other tests of the page ask the live document"))
     return out, bad
 
 
@@ -480,14 +535,18 @@ def main(argv):
         scripts, _includes = props.scripts_of(raw)
         reg, reg_bad = registration_vectors(rel, raw, scripts)
         cyc, cyc_bad = cycles_vectors(rel, scripts)
-        got = len(reg) + len(cyc)
+        rcm, rcm_bad = regcomp_vectors(rel, scripts)
+        got = len(reg) + len(cyc) + len(rcm)
         for n, v in enumerate(reg):
             v["n"] = n
             vectors["registration"].append(v)
         for n, v in enumerate(cyc):
             v["n"] = n
             vectors["cycles"].append(v)
-        bad = reg_bad + cyc_bad
+        for n, v in enumerate(rcm):
+            v["n"] = n
+            vectors["regcomp"].append(v)
+        bad = reg_bad + cyc_bad + rcm_bad
         if rel in LIMITS:
             v = limits_vector(rel, raw)
             v["n"] = 0

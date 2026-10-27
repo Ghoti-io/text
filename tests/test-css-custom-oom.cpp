@@ -60,8 +60,45 @@ const Scenario kScenarios[] = {
     {"randomCalc", "", "width: random(1px, 2em); height: random(--q, 3px, 20%); margin-top: random(1em, 2em)"},
     {"random", "", "width: random(100px, 200px); --r: random-item(--k, 1px, 2px, 3px); height: var(--r)"},
     {"spread", "", "--l: 1px, 2px; --s: random-item(--k2, var(--l)...); width: var(--s)"},
+    {"attr", "", "--u: attr(data-u); width: attr(data-w px, 2px); --s: attr(data-s type(*)); height: calc(attr(data-n type(<number>)) * 1px); content: var(--s) var(--u)"},
+    {"attrFallback", "", "width: attr(missing px, var(--q, 5px)); --t: attr(data-s raw-string, x); margin-top: var(--none, attr(data-w px))"},
+    {"if", "", "@--a|1px@--c|if(style(--a: 1px): 2px; else: 3px)@width|if(media(all): 4px; else: 5px)@height|if(style(--c: 2px): var(--c); else: 6px)"},
+    {"ident", "", "--i: ident(foo, \"-\", 3); content: var(--i); counter-reset: ident(a, b)"},
+    {"siblings", "", "width: calc(sibling-index() * 1px); height: calc(sibling-count() * 2px); --k: calc(sibling-index() + sibling-count()); margin-top: calc(var(--k) * 1px)"},
+    {"registeredColor", "", "--col: tomato; --len: 2em; color: var(--col); width: var(--len); --any: 1px+2px"},
+    {"registeredColorAlpha", "", "--col: #badbee33; color: var(--col); --len: calc(1px + 2px); height: var(--len)"},
     {"doubling", "", "--n0: w; --n1: var(--n0) var(--n0); --n2: var(--n1) var(--n1); --n3: var(--n2) var(--n2); content: var(--n3)"},
 };
+
+const Node kNode = [] {
+  Node n;
+  n.attrs = {{"data-u", "http://x/y.png"}, {"data-w", "12"}, {"data-s", "a b c"}, {"data-n", "3.5"}};
+  n.index = 2;
+  n.count = 5;
+  return n;
+}();
+
+/// Declarations as text, or, when the text begins with `@`, as `@name|value@name|value` for the values that hold a `;`.
+void compute_scenario(World & w, Computed & c, const char * decls, const Computed * parent) {
+  if (decls[0] != '@') {
+    compute(w, c, decls, parent, &kNode);
+    return;
+  }
+  std::vector<std::pair<std::string, std::string>> pairs;
+  const std::string all(decls + 1);
+  size_t pos = 0;
+  while (pos <= all.size()) {
+    size_t end = all.find('@', pos);
+    if (end == std::string::npos) {
+      end = all.size();
+    }
+    const std::string item = all.substr(pos, end - pos);
+    const size_t bar = item.find('|');
+    pairs.emplace_back(item.substr(0, bar), item.substr(bar + 1));
+    pos = end + 1;
+  }
+  compute_pairs(w, c, pairs, parent, &kNode);
+}
 
 const std::vector<Reg> kRegs = {
     {"--len", "<length>", "0px", true, true, false},
@@ -88,6 +125,7 @@ TEST(CssCustomOom, ComputingAStyleSweptOverEveryAllocation) {
     {
       World w;
       w.options.allocator = &fa.alloc;
+      w.condition = [](GTEXT_CSS_Condition_Kind, const std::string & text) { return text.find("media") != std::string::npos || text.find("1px") != std::string::npos ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE; };
       ASSERT_EQ(w.build(kRegs), GTEXT_CSS_OK);
       Computed p;
       compute(w, p, sc.parent);
@@ -96,7 +134,7 @@ TEST(CssCustomOom, ComputingAStyleSweptOverEveryAllocation) {
       std::string want;
       {
         Computed c;
-        compute(w, c, sc.decls, &p);
+        compute_scenario(w, c, sc.decls, &p);
         ASSERT_EQ(c.status, GTEXT_CSS_OK) << sc.name;
         want = describe(w, c, props);
       }
@@ -108,7 +146,7 @@ TEST(CssCustomOom, ComputingAStyleSweptOverEveryAllocation) {
         {
           fa.arm(n);
           Computed c;
-          compute(w, c, sc.decls, &p);
+          compute_scenario(w, c, sc.decls, &p);
           fa.disarm();
           st = c.status;
           if (st == GTEXT_CSS_OK) {

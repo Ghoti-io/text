@@ -19,7 +19,7 @@
 
     css_variables_suite.py <vectors dir> <runner> <exceptions> <defects> [--unextracted <listed> <fresh>]
 
-The vectors are made by tools/css/extract-wpt-variables.py from the pinned checkout (registration, reftest, cycles, limits); the runner is
+The vectors are made by tools/css/extract-wpt-variables.py from the pinned checkout (registration, reftest, cycles, regcomp, limits); the runner is
 tools/conformance/css_variables_suite.c, which runs the library and answers; this program compares. What a vector asks:
 
   registration  `CSS.registerProperty({name, syntax, initialValue, inherits: false})` returns (valid) or throws SyntaxError (invalid): the library
@@ -29,6 +29,9 @@ tools/conformance/css_variables_suite.c, which runs the library and answers; thi
                 property that differs.
   cycles        the custom properties that must be the guaranteed-invalid value are (they have no computed value) and the others have one, and
                 `--sanity: valid` computes. Stage `cycle`.
+  regcomp       `test_computed_value(syntax, value, expected)` of registered-property-computation.html: a property registered with the syntax (and the
+                initial value utils.js gives) and set to the value on an element whose font-size is 10px, line-height 20px and color blue computes to
+                the expected text. Stage `style`.
   limits        the pages that must not crash: the computation ends with status OK, no substituted value is longer than the budget allows and the
                 value the budget stopped is the guaranteed-invalid value. Stage `limit`.
 
@@ -207,6 +210,26 @@ def score_cycles(runner, v):
     return None
 
 
+REGCOMP_PAGE_CSS = '#divWithFontSizeSet, #parentDiv { font-size: 10px; line-height: 20px; color: blue; }'
+
+
+def score_regcomp(runner, v):
+    def quoted(t):
+        return '"' + t.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    rule = '@property --t { syntax: %s; inherits: false; initial-value: %s }' % (quoted(v['syntax']), v['initial'])
+    r = runner.page([REGCOMP_PAGE_CSS, rule + ' #divWithFontSizeSet { --t: %s }' % v['value']],
+                    [(0, -1, 'html', '', [], ''), (1, 0, 'body', '', [], ''), (2, 1, 'div', 'divWithFontSizeSet', [], '')])
+    if isinstance(r, str):
+        return 'style', r
+    e = r[2]
+    if e['status'] != 'OK':
+        return 'style', e['status']
+    got = e['C'].get('--t')
+    if got != v['expected']:
+        return 'style', '%s != %s' % ('(guaranteed-invalid)' if got is None else got, v['expected'])
+    return None
+
+
 def limits_sheet(v):
     if v['id'] == 'exponential-blowup':
         decl = '--v0: %s;' % v['base'] + ''.join('--v%d: var(--v%d) var(--v%d);' % (i + 1, i, i) for i in range(v['levels']))
@@ -277,12 +300,12 @@ def main():
 
     runner = Runner(runner_path)
     scored, failures = [], {}
-    scorers = (('registration', score_registration), ('reftest', score_reftest), ('cycles', score_cycles), ('limits', score_limits))
+    scorers = (('registration', score_registration), ('reftest', score_reftest), ('cycles', score_cycles), ('regcomp', score_regcomp), ('limits', score_limits))
     seen = set()
     for kind, fn in scorers:
         for v in load(kind):
             ident = '%s#%s' % (v['file'], v['n'] if kind != 'limits' else v['id'])
-            if kind == 'registration' or kind == 'cycles':
+            if kind in ('registration', 'cycles', 'regcomp'):
                 ident = '%s#%d' % (v['file'], v['n'])
             if ident in seen:
                 problems.append('%s: two vectors share the identity' % ident)

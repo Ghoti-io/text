@@ -71,8 +71,25 @@ GTEXT_CSS_Status css_ctx_syntax(const GTEXT_CSS_Compute_Context * cc, const char
 GTEXT_CSS_Status css_ctx_make_regs(GTEXT_CSS_Compute_Context * cc, css_state * st);
 void css_ctx_free_regs(GTEXT_CSS_Compute_Context * cc);
 
-/// A style's registered values start as: the parent's where the property inherits, else the initial value.
+/// A rope of the canonical text of a list of component values (white space collapsed, comments gone), for a value of a syntax that is only identifiers.
+GTEXT_CSS_Status css_rope_from_list(const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * values, size_t count, bool tainted, css_rope ** out);
+
+/// The rope of the text of a registered value that was computed by type (sRGB colors written as a computed color is).
+GTEXT_CSS_Status css_registered_rope(css_state * st, const GTEXT_Allocator * alloc, const GTEXT_CSS_Value * root, bool tainted, css_rope ** out);
+
+/// The registered values of a style: an array shared by every style that has the same ones (a style with a parent that changes none of them holds the
+/// parent's), copied when a style declares one. Memory is a reference for a style that changes nothing, and not an array the length of the registrations.
+typedef struct css_regvals css_regvals;
+void css_regvals_release(css_regvals * r);
+
+/// A style's registered values start as: the parent's where the property inherits, else the initial value (shared where that is what the parent has).
 GTEXT_CSS_Status css_style_init_regvals(GTEXT_CSS_Computed_Style * style, const GTEXT_CSS_Computed_Style * parent);
+
+/// The registered value `index` of a style, or NULL (the guaranteed-invalid value).
+const GTEXT_CSS_Custom_Value * css_style_regval(const GTEXT_CSS_Computed_Style * style, size_t index);
+
+/// Set the registered value `index` of a style (the value is retained), copying the shared array first if another style holds it.
+GTEXT_CSS_Status css_style_set_regval(GTEXT_CSS_Computed_Style * style, size_t index, const GTEXT_CSS_Custom_Value * value);
 
 /* ---- substitution (css_substitute.c) -------------------------------------------------------------------- */
 

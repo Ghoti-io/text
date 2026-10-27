@@ -48,7 +48,8 @@ TEST(CssComputeEdges, AWidthTooLargeForAnIntegerIsNotNegative) {
   EXPECT_EQ(root_computed("border-top-style: solid; border-top-width: 2.5px", "border-top-width"), "2px") << "whole device pixels below";
   EXPECT_EQ(root_computed("border-top-style: solid; border-top-width: 0.2px", "border-top-width"), "1px");
   // an integer slot rounding a number too large for a long long, and an angle in quarter turns
-  EXPECT_EQ(root_computed("z-index: calc(1e30 + 0.5)", "z-index"), "1000000000000000000000000000000");
+  EXPECT_EQ(root_computed("z-index: calc(1e30 + 0.5)", "z-index"), "2147483647") << "an integer past what 32 bits hold is clamped, as every browser reads it (no undefined conversion on the way)";
+  EXPECT_EQ(root_computed("z-index: calc(-1e30)", "z-index"), "-2147483648");
   EXPECT_EQ(root_computed("image-orientation: 1e30deg", "image-orientation"), "0deg");
   EXPECT_EQ(root_computed("image-orientation: 450deg", "image-orientation"), "90deg");
   EXPECT_EQ(root_computed("image-orientation: -90deg", "image-orientation"), "270deg");
