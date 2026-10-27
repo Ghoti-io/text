@@ -439,7 +439,12 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
       /* an initial value that does not hold for the universal syntax is a descriptor to ignore, and the rule stands without it */
       if (why == CSS_CREG_BAD_INITIAL || why == CSS_CREG_SUBSTITUTION) {
         css_syntax * syn = NULL;
-        if (css_syntax_parse(&s->alloc, d.syntax, d.syntax_len, &syn, NULL) == GTEXT_CSS_OK) {
+        const GTEXT_CSS_Status parsed = css_syntax_parse(&s->alloc, d.syntax, d.syntax_len, &syn, NULL);
+        if (parsed == GTEXT_CSS_E_OOM) {
+          st = parsed; /* a failed allocation is the answer, not a reason to ignore the rule */
+          break;
+        }
+        if (parsed == GTEXT_CSS_OK) {
           const bool universal = syn->universal;
           css_syntax_free(syn);
           if (universal) {
@@ -450,6 +455,9 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
             st = css_registry_make_creg(s->registry, nm->data, nm->length, d.syntax, d.syntax_len, d.inherits, NULL, 0, &c, &rr, &why);
             if (st == GTEXT_CSS_OK) {
               goto put;
+            }
+            if (st == GTEXT_CSS_E_OOM) {
+              break;
             }
           }
         }

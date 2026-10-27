@@ -143,8 +143,9 @@ TEST(CssCustomOom, CollectingPropertyRulesSweptOverEveryAllocation) {
       "@property --a { syntax: '<length>'; inherits: true; initial-value: 1px }\n"
       "@layer x { @property --b { syntax: '<color> | auto'; inherits: false; initial-value: red } }\n"
       "@media all { @property --c { syntax: '<number>#'; inherits: false; initial-value: 1, 2 } }\n"
-      "@property --bad { syntax: '<length>'; inherits: true }\n";
-  const size_t want_count = 3;  // --a, --b and --c; --bad has no initial value and is ignored
+      "@property --bad { syntax: '<length>'; inherits: true }\n"
+      "@property --d { syntax: '*'; inherits: false; initial-value: var(--x) }\n";  // the universal syntax keeps the rule, without its initial value
+  const size_t want_count = 4;  // --a, --b, --c and --d; --bad has no initial value and is ignored
   size_t failures = 0;
   for (size_t n = 1; n < 100000; n++) {
     FaultAllocator fa;
