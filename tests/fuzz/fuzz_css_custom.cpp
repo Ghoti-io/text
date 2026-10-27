@@ -104,6 +104,7 @@ bool allowed_status(GTEXT_CSS_Status s) {
   case GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES:
   case GTEXT_CSS_E_LIMIT_CUSTOM_VALUE:
   case GTEXT_CSS_E_LIMIT_RULES:
+  case GTEXT_CSS_E_LIMIT_REGISTRY:  // a name or an initial value past the registry's limits, or too many registrations
     return true;
   default:
     return false;
