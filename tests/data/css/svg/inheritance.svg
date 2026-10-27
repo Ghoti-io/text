@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="root" font-size="10px" color="purple">
+  <g id="outer" font-size="2em" fill="currentColor" stroke="rgb(1 2 3)">
+    <g id="middle" font-size="150%" stroke-width="1em">
+      <rect id="inner" font-size="0.5em" stroke-width="2em" letter-spacing="1rem" fill="inherit"/>
+      <rect id="calc" stroke-width="calc(1em + 2px)" word-spacing="calc(10% + 1em)"/>
+    </g>
+    <g id="recolor" color="teal"><rect id="current" stroke="currentColor"/></g>
+  </g>
+  <g id="keywords" font-size="large">
+    <rect id="larger" font-size="larger"/>
+    <rect id="smaller" font-size="smaller"/>
+    <rect id="medium" font-size="medium"/>
+  </g>
+</svg>

@@ -61,7 +61,8 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "cascade": "test-css-cascade.cpp", "layer": "test-css-layer.cpp", "cascade-oom": "test-css-cascade-oom.cpp",
             "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp",
             "custom": "test-css-custom.cpp", "property-rule": "test-css-property-rule.cpp", "custom-oom": "test-css-custom-oom.cpp",
-            "custom-seeds": "test-css-custom-fuzz-seeds.cpp", "custom-review": "test-css-custom-review.cpp"}
+            "custom-seeds": "test-css-custom-fuzz-seeds.cpp", "custom-review": "test-css-custom-review.cpp",
+            "style": "test-css-style.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -340,6 +341,23 @@ def fuzz_plants():
     # the plants of the substitution fuzzer, as plants of the replay of its seeds
     for name, (rel, old, new, _seed) in module.CUSTOM_PLANTS.items():
         out.append(("fuzz-" + name, rel, old, new, ["custom-seeds"]))
+    # the plants of the computed-style call's fuzzer, as plants of the replay of its seeds
+    for name, (rel, old, new, _seed) in module.STYLE_PLANTS.items():
+        out.append(("fuzz-" + name, rel, old, new, ["style-seeds"]))
+    # one defect for each layer the call stands on (tools/oracle/CSS_STYLE_PLANTS: the lines of one name are the edits of one defect)
+    grouped = {}
+    with open(os.path.join(ROOT, "tools", "oracle", "CSS_STYLE_PLANTS"), encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            name, rel, old, new = line.rstrip("\n").split("\t")
+            grouped.setdefault(name, (rel, [], []))
+            if grouped[name][0] != rel:
+                raise SystemExit("CSS_STYLE_PLANTS: %s edits two files" % name)
+            grouped[name][1].append(old.replace("\\n", "\n"))
+            grouped[name][2].append(new.replace("\\n", "\n"))
+    for name, (rel, olds, news) in grouped.items():
+        out.append(("style-" + name, rel, olds if len(olds) > 1 else olds[0], news if len(news) > 1 else news[0], ["style"]))
     return out
 
 

@@ -475,8 +475,8 @@ void check_compute(const std::string & parent_text, const std::string & child_te
   std::string first;
   if (st == GTEXT_CSS_OK) {
     first = dump_of(child, input);
-    uint64_t h1 = 0, h2 = 0;
-    if (gtext_css_computed_hash(child, &h1) != GTEXT_CSS_OK || gtext_css_computed_hash(child, &h2) != GTEXT_CSS_OK || h1 != h2) {
+    unsigned char h1[32] = {0}, h2[32] = {0};
+    if (gtext_css_computed_hash(child, h1) != GTEXT_CSS_OK || gtext_css_computed_hash(child, h2) != GTEXT_CSS_OK || memcmp(h1, h2, 32) != 0) {
       fail("the hash of a style is not stable", "", input);
     }
   }

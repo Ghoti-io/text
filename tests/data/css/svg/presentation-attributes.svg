@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="root" width="200" height="100" font-size="20">
+  <rect id="plain" x="1" y="2" width="30" height="40" fill="red" stroke="blue" stroke-width="2" opacity="0.5"/>
+  <rect id="style-wins" fill="red" stroke-width="2" style="fill: green; stroke-width: 5"/>
+  <rect id="important" fill="red" style="fill: green !important" stroke="blue" stroke-width="1"/>
+  <rect id="bad-attribute" fill="12px" stroke="no-such-color" stroke-width="wide"/>
+  <g id="group" fill="orange" stroke="black" stroke-width="3">
+    <rect id="inherits"/>
+    <rect id="bad-inherits" fill="12px"/>
+    <rect id="explicit-inherit" fill="inherit" stroke="none"/>
+    <rect id="initial" fill="initial" stroke-width="initial"/>
+  </g>
+  <circle id="geometry" cx="10" cy="20" r="5"/>
+  <circle id="misplaced" rx="3" height="4"/>
+  <text id="text-units" font-size="12" letter-spacing="1" word-spacing="2" font-weight="bold" font-style="italic">t</text>
+</svg>

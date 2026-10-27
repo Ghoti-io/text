@@ -118,7 +118,7 @@ static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTE
     GTEXT_CSS_Property_Value * out) {
   GTEXT_CSS_Match_Options mo = options && options->match ? *options->match : *css_registry_match_options(registry);
   mo.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
-  mo.unitless_length = unitless;
+  mo.unitless_length = unitless || (options && options->unitless_lengths); /* attribute mode: every property that takes a length */
   mo.unitless_length_nested = unitless && name_is_clip;
   bool matched = false;
   GTEXT_CSS_Value_Set * set = NULL;

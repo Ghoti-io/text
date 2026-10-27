@@ -298,8 +298,14 @@ GTEXT_API GTEXT_CSS_Status gtext_css_compute_element(const GTEXT_CSS_Compute_Con
     const GTEXT_CSS_Declaration_Source * source, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Computed_Style ** out,
     GTEXT_CSS_Compute_Result * result);
 
-/** @brief Free a style and release its values (a value retained from it outlives it); NULL is ignored. */
+/**
+ * @brief Let go of a style: the last owner frees it and releases its values (a value retained from it outlives it); NULL is ignored.
+ * A style is reference counted (with atomic counts, so any thread may hold and release it); one a call returns has one owner.
+ */
 GTEXT_API void gtext_css_computed_free(GTEXT_CSS_Computed_Style * style);
+
+/** @brief Another owner of the style, to be released with gtext_css_computed_free(). Thread-safe. NULL is returned as NULL. */
+GTEXT_API GTEXT_CSS_Computed_Style * gtext_css_computed_retain(GTEXT_CSS_Computed_Style * style);
 
 /**
  * @brief The computed value of a property.
@@ -353,16 +359,56 @@ GTEXT_API bool gtext_css_computed_custom_find(const GTEXT_CSS_Computed_Style * s
 GTEXT_API GTEXT_CSS_Status gtext_css_computed_serialize(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property,
     const GTEXT_CSS_Serialize_Options * options, const GTEXT_Markup_Sink * sink);
 
+/** @brief The version of the text gtext_css_computed_dump() writes. It changes with any change of the format, and the golden files of the tests are regenerated in the same commit. */
+#define GTEXT_CSS_COMPUTED_DUMP_VERSION 1
+
 /**
- * @brief Write the whole style in a canonical, versioned text: a first line `computed-style 1`, then one line `name: value` for every property of
- *   the registry in the order of its ids that has a value, then the custom properties in the order of their names. Equal styles give equal text.
- *
- * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; GTEXT_CSS_E_WRITE; GTEXT_CSS_E_LIMIT_OUTPUT.
+ * @brief Write the whole style in a canonical, versioned text.
+ * The first line is `css-computed 1` (GTEXT_CSS_COMPUTED_DUMP_VERSION), the second `registry ` and the commit of the pin the registry's generated
+ * properties come from, then one line `name: value` for every property that has a value, **in the byte order of the names** (the custom properties, whose
+ * names begin with `--`, sort among the others by the same rule), each value written as a computed value is serialized (gtext_css_computed_serialize()).
+ * Which declaration a value came from is not in it: two cascades with equal results give equal text, and the text of a style is the same on every host.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; GTEXT_CSS_E_WRITE.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_computed_dump(const GTEXT_CSS_Computed_Style * style, const GTEXT_Markup_Sink * sink);
 
-/** @brief The 64-bit FNV-1a hash of the text gtext_css_computed_dump() writes. @return OK, E_INVALID or E_OOM. */
-GTEXT_API GTEXT_CSS_Status gtext_css_computed_hash(const GTEXT_CSS_Computed_Style * style, uint64_t * hash);
+/** @brief The length of a hash, GTEXT_CSS_COMPUTED_HASH_LENGTH bytes: SHA-256. */
+#define GTEXT_CSS_COMPUTED_HASH_LENGTH 32u
+
+/**
+ * @brief The SHA-256 of the text gtext_css_computed_dump() writes (through the security library), for a document dump that wants one number for a style.
+ * @param hash Receives GTEXT_CSS_COMPUTED_HASH_LENGTH bytes. Not NULL.
+ * @return OK, E_INVALID or E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_computed_hash(const GTEXT_CSS_Computed_Style * style, unsigned char hash[GTEXT_CSS_COMPUTED_HASH_LENGTH]);
+
+/* ---- reads that name what they could not give ------------------------------------------------------------ */
+
+/**
+ * @brief The computed value of a property, as gtext_css_computed_value() gives it, with the property named when the style cannot give one.
+ * @param style The style. Not NULL.
+ * @param property A property of the context's registry (an alias is followed).
+ * @param set Receives the value, owned by the style; NULL if not wanted.
+ * @param result NULL, or filled: for GTEXT_CSS_E_UNSUPPORTED its `name` is the property the engine cannot compute and `property` its id.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (not a property, or a shorthand); GTEXT_CSS_E_UNSUPPORTED (the engine cannot compute it and it has no initial value).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_computed_get(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property,
+    const GTEXT_CSS_Value_Set ** set, GTEXT_CSS_Compute_Result * result);
+
+/** @brief gtext_css_computed_get() by name (ASCII case-insensitive for a property of the registry; a custom property is not one: GTEXT_CSS_E_INVALID, use gtext_css_computed_custom_find()). */
+GTEXT_API GTEXT_CSS_Status gtext_css_computed_get_by_name(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length,
+    const GTEXT_CSS_Value_Set ** set, GTEXT_CSS_Compute_Result * result);
+
+/**
+ * @brief Walk the properties that have a computed value, in the order of the registry (the sorted order of the pin's names, the caller's after).
+ * @param style The style. Not NULL.
+ * @param cursor Where to continue: set it to 0 to begin; it is advanced.
+ * @param property Receives the property; NULL if not wanted.
+ * @param set Receives the value, owned by the style; NULL if not wanted.
+ * @return true, or false when there are no more.
+ */
+GTEXT_API bool gtext_css_computed_next(const GTEXT_CSS_Computed_Style * style, size_t * cursor, GTEXT_CSS_Property_Id * property,
+    const GTEXT_CSS_Value_Set ** set);
 
 #ifdef __cplusplus
 }

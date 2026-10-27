@@ -1008,6 +1008,137 @@ std::function<Measured(size_t)> css_compute_pairs(std::function<std::vector<std:
   };
 }
 
+// ---- the computed-style call (src/css/css_style.c, css_presentation.c): the result's `work` covers the attributes read, the declarations parsed, the
+// candidates cascaded and the properties computed. Every element is an SVG `rect` whose attributes are in a table of the shape's own.
+struct QStyleElem {
+  std::vector<std::pair<std::string, std::string>> attrs;
+  const QStyleElem * parent = nullptr;
+};
+
+GTEXT_CSS_Compute_Context * quad_style_context() {
+  static GTEXT_CSS_Element_Interface table = [] {
+    GTEXT_CSS_Element_Interface t;
+    std::memset(&t, 0, sizeof t);
+    t.size = sizeof t;
+    t.parent = [](void *, GTEXT_CSS_Element_Handle e) -> GTEXT_CSS_Element_Handle { return static_cast<const QStyleElem *>(e)->parent; };
+    t.local_name = [](void *, GTEXT_CSS_Element_Handle, GTEXT_CSS_String * out) {
+      out->data = "rect";
+      out->length = 4;
+      return true;
+    };
+    t.namespace_uri = [](void *, GTEXT_CSS_Element_Handle, GTEXT_CSS_String * out) {
+      out->data = GTEXT_CSS_SVG_NAMESPACE;
+      out->length = std::strlen(GTEXT_CSS_SVG_NAMESPACE);
+      return true;
+    };
+    t.attribute = [](void *, GTEXT_CSS_Element_Handle e, const GTEXT_CSS_String *, const GTEXT_CSS_String * name, GTEXT_CSS_String * out) {
+      for (const auto & a : static_cast<const QStyleElem *>(e)->attrs) {
+        if (a.first.size() == name->length && std::memcmp(a.first.data(), name->data, name->length) == 0) {
+          out->data = a.second.data();
+          out->length = a.second.size();
+          return true;
+        }
+      }
+      return false;
+    };
+    return t;
+  }();
+  static GTEXT_CSS_Compute_Context * c = [] {
+    GTEXT_CSS_Compute_Context * made = nullptr;
+    GTEXT_CSS_Compute_Options o = gtext_css_compute_options_default();
+    o.custom_hash_seed = 12345;
+    o.max_list_items = (size_t)1 << 24;
+    o.max_value_nodes = (size_t)1 << 28;
+    o.elements = &table;
+    gtext_css_compute_context_new(quad_registry(), nullptr, &o, &made, nullptr);
+    return made;
+  }();
+  return c;
+}
+
+// A chain of k elements, each with the attributes and the style attribute `make(i)` gives, each computed from the one above it.
+std::function<Measured(size_t)> css_style_chain(std::function<std::vector<std::pair<std::string, std::string>>(size_t)> make, bool tree_is_wide = false) {
+  return [make, tree_is_wide](size_t k) {
+    Measured m;
+    GTEXT_CSS_Compute_Context * ctx = quad_style_context();
+    std::vector<QStyleElem> elems(k);
+    GTEXT_CSS_Computed_Style * parent = nullptr;
+    GTEXT_CSS_Computed_Style * root = nullptr;
+    for (size_t i = 0; i < k && m.ok; i++) {
+      elems[i].attrs = make(i);
+      for (const auto & a : elems[i].attrs) {
+        m.bytes += a.first.size() + a.second.size() + 4;
+      }
+      GTEXT_CSS_Computed_Style * style = nullptr;
+      GTEXT_CSS_Compute_Result r{};
+      const GTEXT_CSS_Status st = gtext_css_style_compute(ctx, &elems[i], tree_is_wide ? root : parent, nullptr, 0, nullptr, &style, &r);
+      m.work += r.work;
+      if (st != GTEXT_CSS_OK) {
+        m.ok = false;
+        m.why = std::string("a style could not be computed: ") + gtext_css_status_string(st) + " " + r.name;
+      }
+      if (tree_is_wide) {
+        if (i == 0) {
+          root = style;
+        }
+        else {
+          gtext_css_computed_free(style);
+        }
+      }
+      else {
+        gtext_css_computed_free(parent);
+        parent = style;
+      }
+    }
+    gtext_css_computed_free(tree_is_wide ? root : parent);
+    return m;
+  };
+}
+
+// One element whose style attribute is `make(k)`, and `entries(k)` entries.
+std::function<Measured(size_t)> css_style_one(std::function<std::string(size_t)> style_attribute,
+    std::function<std::vector<std::string>(size_t)> entries = nullptr, uint64_t max_peak = 0) {
+  return [style_attribute, entries, max_peak](size_t k) {
+    Measured m;
+    GTEXT_CSS_Compute_Context * ctx = quad_style_context();
+    QStyleElem e;
+    const std::string text = style_attribute(k);
+    e.attrs.push_back({"style", text});
+    m.bytes = text.size();
+    std::vector<std::string> bodies;
+    std::vector<GTEXT_CSS_Style_Entry> list;
+    if (entries) {
+      bodies = entries(k);
+      for (size_t i = 0; i < bodies.size(); i++) {
+        GTEXT_CSS_Style_Entry en;
+        std::memset(&en, 0, sizeof en);
+        en.keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+        en.keys.rule = (uint32_t)i;
+        en.text = {bodies[i].data(), bodies[i].size()};
+        m.bytes += bodies[i].size();
+        list.push_back(en);
+      }
+    }
+    GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
+    o.candidates.max_candidates = (size_t)1 << 24;
+    o.parse.max_declarations = (size_t)1 << 24;
+    GTEXT_CSS_Computed_Style * style = nullptr;
+    GTEXT_CSS_Compute_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_style_compute(ctx, &e, nullptr, list.data(), list.size(), &o, &style, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the style could not be computed: ") + gtext_css_status_string(st) + " " + r.name + " " + (r.detail ? r.detail : "");
+    }
+    else if (max_peak && r.substitution_peak > max_peak) {
+      m.ok = false;
+      m.why = "a substituted value grew to " + std::to_string(r.substitution_peak) + " tokens: the budget did not stop it";
+    }
+    gtext_css_computed_free(style);
+    return m;
+  };
+}
+
 // One element whose block declares k custom properties (each is one set into the persistent map: GTEXT_CSS_Compute_Result::work counts the nodes read and made).
 std::function<Measured(size_t)> css_compute_customs(std::function<std::string(size_t)> name) {
   return [name](size_t k) {
@@ -1906,6 +2037,45 @@ std::vector<Shape> build_shapes() {
     sc.per_byte = 0;
     sc.bound = 6.5;
     sc.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
+  // ---- the computed-style call ----
+  add("css", "CSS style: a chain of n elements, each with presentation attributes and a style attribute", 150,
+      css_style_chain([](size_t i) {
+        return std::vector<std::pair<std::string, std::string>>{{"font-size", i % 2 ? "11" : "9"}, {"stroke-width", std::to_string(i % 7 + 1)},
+            {"opacity", "0.5"}, {"style", "margin-left: " + std::to_string(i % 5) + "px; letter-spacing: 1px"}};
+      })).per_byte = 0;
+  add("css", "CSS style: n siblings of one parent, each with presentation attributes and a style attribute", 150,
+      css_style_chain([](size_t i) {
+        return std::vector<std::pair<std::string, std::string>>{{"font-size", "10"}, {"stroke-width", std::to_string(i % 7 + 1)},
+            {"style", "margin-left: " + std::to_string(i % 5) + "px"}};
+      }, true)).per_byte = 0;
+  add("css", "CSS style: an element whose style attribute has n declarations of one property", 1500,
+      css_style_one([](size_t k) { return repeat("margin-left: 1px; ", k); })).per_byte = 0;
+  add("css", "CSS style: an element whose style attribute has n declarations of n properties that do not exist", 1500,
+      css_style_one([](size_t k) { std::string t; for (size_t i = 0; i < k; i++) { t += "nope" + std::to_string(i) + ": 1;"; } return t; })).per_byte = 0;
+  add("css", "CSS style: an element with n entries for one property", 1500,
+      css_style_one([](size_t) { return std::string("opacity: 0.5"); },
+          [](size_t k) { std::vector<std::string> v; for (size_t i = 0; i < k; i++) { v.push_back("margin-left: " + std::to_string(i % 9) + "px"); } return v; })).per_byte = 0;
+  {
+    Shape & sc = add("css", "CSS style: an element with n custom properties in its style attribute", 600,
+        css_style_one([](size_t k) { std::string t; for (size_t i = 0; i < k; i++) { t += "--c" + std::to_string(i) + ": 1;"; } return t; }));
+    sc.per_byte = 0;
+    sc.bound = 6.5;
+    sc.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
+  add("css", "CSS style: a style attribute of n bytes of comments around one declaration", 3000,
+      css_style_one([](size_t k) { return repeat("/**/", k) + "opacity: 0.5"; })).per_byte = 0;
+  {
+    Shape & dbl = add("css", "CSS style: a value that would double n times in a style attribute (the budget stops it)", 30,
+        css_style_one([](size_t k) {
+          std::string t = "--n0: lol;";
+          for (size_t i = 1; i <= k; i++) {
+            t += "--n" + std::to_string(i) + ": var(--n" + std::to_string(i - 1) + ") var(--n" + std::to_string(i - 1) + ");";
+          }
+          return t + "content: var(--n" + std::to_string(k) + ")";
+        }, nullptr, 2 * 1048576));
+    dbl.per_byte = 400.0;
+    dbl.note = "linear in the text written, never in the 2^n tokens it names (the budget of the substitution, held to a bound per byte of text)";
   }
   // ---- substitution (src/css/css_substitute.c, css_rope.c): the work is the tokens and nodes visited and the frames run; none of these may depend on the
   // budget (they stay under it) except the two that are meant to reach it.

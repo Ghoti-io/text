@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" fill="black" font-size="10px">
+  <defs>
+    <g id="shape" fill="red" stroke-width="2">
+      <rect id="shape-rect" stroke="blue"/>
+      <rect id="shape-own" fill="inherit" font-size="2em"/>
+    </g>
+  </defs>
+  <g id="plain-wrapper" fill="green" font-size="30px">
+    <use id="u1" href="#shape"/>
+    <use id="u2" xlink:href="#shape" fill="yellow" font-size="40px"/>
+  </g>
+  <use id="u3" href="#shape-rect" stroke="orange" stroke-width="7"/>
+</svg>

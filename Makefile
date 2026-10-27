@@ -599,7 +599,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
 	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
-	check-size-shifts check-css-compute
+	check-size-shifts check-css-compute check-css-presentation
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -988,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-values conformance-css-property conformance-css-variables check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-values conformance-css-property conformance-css-variables check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1145,6 +1145,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_core.c \
 	src/css/css_cmap.c \
 	src/css/css_creg.c \
+	src/css/css_dump.c \
 	src/css/css_custom.c \
 	src/css/css_easing.c \
 	src/css/css_element.c \
@@ -1160,6 +1161,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_math_serialize.c \
 	src/css/css_math_simplify.c \
 	src/css/css_parser.c \
+	src/css/css_presentation.c \
+	src/css/css_presentation_table.c \
 	src/css/css_property.c \
 	src/css/css_registry.c \
 	src/css/css_revert.c \
@@ -1168,6 +1171,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_shape.c \
 	src/css/css_shorthand.c \
 	src/css/css_shorthand_serialize.c \
+	src/css/css_style.c \
 	src/css/css_substitute.c \
 	src/css/css_substitution.c \
 	src/css/css_syntax_string.c \
@@ -2091,6 +2095,7 @@ $(eval $(call fuzz-rule,fuzz_css_registry,css-registry))
 $(eval $(call fuzz-rule,fuzz_css_compute,css-compute))
 $(eval $(call fuzz-rule,fuzz_css_cascade,css-cascade))
 $(eval $(call fuzz-rule,fuzz_css_custom,css-custom))
+$(eval $(call fuzz-rule,fuzz_css_style,css-style))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2104,7 +2109,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade fuzz-run-css-custom
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade fuzz-run-css-custom fuzz-run-css-style
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit
@@ -2155,6 +2160,11 @@ check-css-package:
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref-css/package,tools/css/fetch.sh); \
 	tools/css/run-registry-gates.sh package
+
+check-css-presentation: ## Fail if the table of presentation attributes is not what tools/css/svg_presentation.tsv says, or does not agree with the properties that must be computable
+check-css-presentation:
+	@$(REQUIRE_PYTHON3); \
+	python3 tools/css/gen-presentation-table.py --check --controls
 
 check-css-compute: ## Fail if a property of the pin is not classified for computed values, or the generated table or the ledger's computes column is stale
 check-css-compute:

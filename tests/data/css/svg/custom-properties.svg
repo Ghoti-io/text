@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="root" style="--accent: teal; --w: 3px">
+  <g id="g" style="--w: 8px; fill: var(--accent)">
+    <rect id="uses" style="stroke-width: var(--w); stroke: var(--accent)"/>
+    <rect id="fallback" style="stroke-width: var(--missing, 4px); fill: var(--nope, red)"/>
+    <rect id="beats-attribute" fill="blue" style="fill: var(--accent)"/>
+    <rect id="attribute-var" fill="var(--accent)" stroke-width="var(--w)"/>
+  </g>
+</svg>

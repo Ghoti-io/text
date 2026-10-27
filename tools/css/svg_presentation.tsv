@@ -1,0 +1,100 @@
+# The SVG 2 presentation attributes: which attribute sets which property, on which elements, and how the attribute is spelled.
+#
+# Source: SVG 2, 6.6 "Presentation attributes" (https://www.w3.org/TR/SVG2/styling.html, Candidate Recommendation Draft, served 2026-10-26),
+# the table "Properties with a presentation attribute":
+#   "cx, cy" on circle and ellipse; "height, width, x, y" on foreignObject, image, rect, svg, symbol and use; "r" on circle; "rx, ry" on
+#   ellipse and rect; "d" on path; "fill"; "transform" (also patternTransform and gradientTransform); and, on any element in the SVG
+#   namespace: "alignment-baseline, baseline-shift, clip-path, clip-rule, color, color-interpolation, color-interpolation-filters, cursor,
+#   direction, display, dominant-baseline, fill-opacity, fill-rule, filter, flood-color, flood-opacity, font-family, font-size,
+#   font-size-adjust, font-stretch, font-style, font-variant, font-weight, glyph-orientation-vertical, image-rendering, letter-spacing,
+#   lighting-color, marker-end, marker-mid, marker-start, mask, mask-type, opacity, overflow, paint-order, pointer-events, shape-rendering,
+#   stop-color, stop-opacity, stroke, stroke-dasharray, stroke-dashoffset, stroke-linecap, stroke-linejoin, stroke-miterlimit,
+#   stroke-opacity, stroke-width, text-anchor, text-decoration, text-overflow, text-rendering, transform-origin, unicode-bidi,
+#   vector-effect, visibility, white-space, word-spacing, writing-mode."
+#
+# Columns (TAB separated):
+#   attribute   the attribute's name, case-sensitive (SVG attribute names are: patternTransform).
+#   property    the property it sets (a longhand or an alias of the registry).
+#   namespace   svg: only an element in the SVG namespace; *: an element in any namespace.
+#   elements    *: every element; else the local names (case-sensitive), separated by commas; a list that starts with ! is every element but those.
+#               (SVG 2, served 2026-10-26: fill is "any SVG-namespace element except animation elements, which have their own fill attribute";
+#               transform is any SVG-namespace element except pattern, linearGradient and radialGradient.)
+#   syntax      css: the attribute's value is the property's value; transform: the SVG transform list syntax (or the property's, the
+#               attribute-only spelling is an option); path: path data, which the property `d` holds as path("...").
+#
+# Every property of this list must also be in svg_presentation.txt (the properties that must be computable), and the other way round; the
+# generator (gen-presentation-table.py) holds the two together and writes src/css/tables/css_tables_presentation.c from this file.
+#
+# A caller who needs another list (HTML's presentational hints, an SVG profile) passes a table of its own in the options.
+cx	cx	svg	circle,ellipse	css
+cy	cy	svg	circle,ellipse	css
+height	height	svg	foreignObject,image,rect,svg,symbol,use	css
+width	width	svg	foreignObject,image,rect,svg,symbol,use	css
+x	x	svg	foreignObject,image,rect,svg,symbol,use	css
+y	y	svg	foreignObject,image,rect,svg,symbol,use	css
+r	r	svg	circle	css
+rx	rx	svg	ellipse,rect	css
+ry	ry	svg	ellipse,rect	css
+d	d	svg	path	path
+fill	fill	svg	!animate,animateMotion,animateTransform,set	css
+transform	transform	svg	!pattern,linearGradient,radialGradient	transform
+patternTransform	transform	svg	pattern	transform
+gradientTransform	transform	svg	linearGradient,radialGradient	transform
+alignment-baseline	alignment-baseline	svg	*	css
+baseline-shift	baseline-shift	svg	*	css
+clip-path	clip-path	svg	*	css
+clip-rule	clip-rule	svg	*	css
+color	color	svg	*	css
+color-interpolation	color-interpolation	svg	*	css
+color-interpolation-filters	color-interpolation-filters	svg	*	css
+cursor	cursor	svg	*	css
+direction	direction	svg	*	css
+display	display	svg	*	css
+dominant-baseline	dominant-baseline	svg	*	css
+fill-opacity	fill-opacity	svg	*	css
+fill-rule	fill-rule	svg	*	css
+filter	filter	svg	*	css
+flood-color	flood-color	svg	*	css
+flood-opacity	flood-opacity	svg	*	css
+font-family	font-family	svg	*	css
+font-size	font-size	svg	*	css
+font-size-adjust	font-size-adjust	svg	*	css
+font-stretch	font-stretch	svg	*	css
+font-style	font-style	svg	*	css
+font-variant	font-variant	svg	*	css
+font-weight	font-weight	svg	*	css
+glyph-orientation-vertical	glyph-orientation-vertical	svg	*	css
+image-rendering	image-rendering	svg	*	css
+letter-spacing	letter-spacing	svg	*	css
+lighting-color	lighting-color	svg	*	css
+marker-end	marker-end	svg	*	css
+marker-mid	marker-mid	svg	*	css
+marker-start	marker-start	svg	*	css
+mask	mask	svg	*	css
+mask-type	mask-type	svg	*	css
+opacity	opacity	svg	*	css
+overflow	overflow	svg	*	css
+paint-order	paint-order	svg	*	css
+pointer-events	pointer-events	svg	*	css
+shape-rendering	shape-rendering	svg	*	css
+stop-color	stop-color	svg	*	css
+stop-opacity	stop-opacity	svg	*	css
+stroke	stroke	svg	*	css
+stroke-dasharray	stroke-dasharray	svg	*	css
+stroke-dashoffset	stroke-dashoffset	svg	*	css
+stroke-linecap	stroke-linecap	svg	*	css
+stroke-linejoin	stroke-linejoin	svg	*	css
+stroke-miterlimit	stroke-miterlimit	svg	*	css
+stroke-opacity	stroke-opacity	svg	*	css
+stroke-width	stroke-width	svg	*	css
+text-anchor	text-anchor	svg	*	css
+text-decoration	text-decoration	svg	*	css
+text-overflow	text-overflow	svg	*	css
+text-rendering	text-rendering	svg	*	css
+transform-origin	transform-origin	svg	*	css
+unicode-bidi	unicode-bidi	svg	*	css
+vector-effect	vector-effect	svg	*	css
+visibility	visibility	svg	*	css
+white-space	white-space	svg	*	css
+word-spacing	word-spacing	svg	*	css
+writing-mode	writing-mode	svg	*	css

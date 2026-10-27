@@ -528,37 +528,37 @@ TEST(CssComputeDump, TheDumpIsVersionedCanonicalAndEqualStylesHaveEqualHashes) {
   sb.compute(ctx, &b);
   sc.compute(ctx, &c);
   const std::string da = sa.dump();
-  EXPECT_EQ(da.substr(0, 17), "computed-style 1\n");
+  const std::string head = std::string("css-computed 1\nregistry ") + gtext_css_registry_pin_commit() + "\n";
+  EXPECT_EQ(da.substr(0, head.size()), head) << "the version and the pin the registry comes from";
   EXPECT_EQ(da, sb.dump()) << "the order of the declarations does not change the style";
   EXPECT_NE(da, sc.dump());
   EXPECT_NE(da.find("\ncolor: red\n"), std::string::npos);
   EXPECT_NE(da.find("\nwidth: 32px\n"), std::string::npos);
   EXPECT_NE(da.find("\n--x: y\n"), std::string::npos);
-  uint64_t ha = 0, hb = 0, hc = 0;
-  ASSERT_EQ(gtext_css_computed_hash(sa.s, &ha), GTEXT_CSS_OK);
-  ASSERT_EQ(gtext_css_computed_hash(sb.s, &hb), GTEXT_CSS_OK);
-  ASSERT_EQ(gtext_css_computed_hash(sc.s, &hc), GTEXT_CSS_OK);
-  EXPECT_EQ(ha, hb);
-  EXPECT_NE(ha, hc);
-  EXPECT_EQ(gtext_css_computed_hash(nullptr, &ha), GTEXT_CSS_E_INVALID);
-  // the properties appear in the order of their ids (the sorted names)
-  size_t last = 0;
-  size_t pos = da.find('\n') + 1;
+  unsigned char ha[32], hb[32], hc[32];
+  ASSERT_EQ(gtext_css_computed_hash(sa.s, ha), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_computed_hash(sb.s, hb), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_computed_hash(sc.s, hc), GTEXT_CSS_OK);
+  EXPECT_EQ(memcmp(ha, hb, 32), 0);
+  EXPECT_NE(memcmp(ha, hc, 32), 0);
+  EXPECT_EQ(gtext_css_computed_hash(nullptr, ha), GTEXT_CSS_E_INVALID);
+  // the names appear in the byte order of the names, the custom properties among them
+  size_t pos = head.size();
+  size_t lines = 0;
   std::string prev;
   while (pos < da.size()) {
     const size_t colon = da.find(':', pos);
+    ASSERT_NE(colon, std::string::npos);
     const std::string name = da.substr(pos, colon - pos);
-    if (name.rfind("--", 0) == 0) {
-      break;
-    }
     if (!prev.empty()) {
       EXPECT_LT(prev, name);
     }
     prev = name;
     pos = da.find('\n', pos) + 1;
-    last = pos;
+    lines++;
   }
-  EXPECT_GT(last, 0u);
+  EXPECT_GT(lines, 100u);
+  EXPECT_EQ(da.substr(head.size(), 5), "--x: ") << "`--` sorts before the letters";
 }
 
 TEST(CssComputeAccessors, AnAliasIsItsTargetAShorthandHasNoValueAndTheFlowIsExposed) {

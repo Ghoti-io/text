@@ -252,6 +252,7 @@ static GTEXT_CSS_Computed_Style * style_new(const GTEXT_CSS_Compute_Context * cc
   }
   s->cc = cc;
   s->alloc = a;
+  gcu_atomic_int_init(&s->refs, 1);
   s->n = cc->nprops;
   s->vals = gtext_allocator_calloc(&a, cc->nprops ? cc->nprops : 1, sizeof *s->vals);
   if (!s->vals) {
@@ -261,11 +262,26 @@ static GTEXT_CSS_Computed_Style * style_new(const GTEXT_CSS_Compute_Context * cc
   return s;
 }
 
+GTEXT_CSS_Computed_Style * gtext_css_computed_retain(GTEXT_CSS_Computed_Style * style) {
+  if (style) {
+    (void)gcu_atomic_int_fetch_add(&style->refs, 1);
+  }
+  return style;
+}
+
 void gtext_css_computed_free(GTEXT_CSS_Computed_Style * style) {
   if (!style) {
     return;
   }
+  if (gcu_atomic_int_fetch_sub(&style->refs, 1) != 1) {
+    return;
+  }
   GTEXT_Allocator a = style->alloc;
+  gtext_css_cascaded_free(style->cascaded);
+  for (size_t i = 0; i < style->ndiag; i++) {
+    gtext_allocator_free(&a, style->diag[i].name_copy);
+  }
+  gtext_allocator_free(&a, style->diag);
   for (size_t i = 0; i < style->n; i++) {
     gtext_css_value_set_free(style->vals[i]);
   }
@@ -301,6 +317,64 @@ GTEXT_CSS_Status gtext_css_computed_value(const GTEXT_CSS_Computed_Style * style
     *set = style->vals[i];
   }
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_computed_get(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property, const GTEXT_CSS_Value_Set ** set,
+    GTEXT_CSS_Compute_Result * result) {
+  result_clear(result);
+  const GTEXT_CSS_Status st = gtext_css_computed_value(style, property, set);
+  if (st == GTEXT_CSS_E_UNSUPPORTED && result) {
+    const size_t i = prop_index(style, property);
+    result->property = (GTEXT_CSS_Property_Id)(i + 1);
+    css_copy_name(result->name, sizeof result->name, style->cc->meta[i].name);
+    result->detail = "the engine cannot compute this property";
+  }
+  return result_done(result, st);
+}
+
+GTEXT_CSS_Status gtext_css_computed_get_by_name(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length,
+    const GTEXT_CSS_Value_Set ** set, GTEXT_CSS_Compute_Result * result) {
+  result_clear(result);
+  if (!style || !name) {
+    return result_done(result, GTEXT_CSS_E_INVALID);
+  }
+  const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(style->cc->registry, name, length);
+  if (id == 0 || (length >= 2 && name[0] == '-' && name[1] == '-')) {
+    return result_done(result, GTEXT_CSS_E_INVALID);
+  }
+  return gtext_css_computed_get(style, id, set, result);
+}
+
+bool css_style_visible(const GTEXT_CSS_Computed_Style * style, size_t i) {
+  /* a generated property that a caller overrode is still in the style (relations made by id use it) but the name belongs to the override */
+  if (!style->vals[i]) {
+    return false;
+  }
+  if (gtext_css_registry_override_count(style->cc->registry) == 0) {
+    return true;
+  }
+  const css_pmeta * m = &style->cc->meta[i];
+  return gtext_css_registry_find_property(style->cc->registry, m->name, m->name_length) == (GTEXT_CSS_Property_Id)(i + 1);
+}
+
+bool gtext_css_computed_next(const GTEXT_CSS_Computed_Style * style, size_t * cursor, GTEXT_CSS_Property_Id * property, const GTEXT_CSS_Value_Set ** set) {
+  if (!style || !cursor) {
+    return false;
+  }
+  for (size_t i = *cursor; i < style->n; i++) {
+    if (css_style_visible(style, i)) {
+      *cursor = i + 1;
+      if (property) {
+        *property = (GTEXT_CSS_Property_Id)(i + 1);
+      }
+      if (set) {
+        *set = style->vals[i];
+      }
+      return true;
+    }
+  }
+  *cursor = style->n;
+  return false;
 }
 
 const GTEXT_CSS_Value * gtext_css_computed_root(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property) {
@@ -1964,116 +2038,4 @@ GTEXT_CSS_Status gtext_css_computed_serialize(const GTEXT_CSS_Computed_Style * s
     return sink && sink->write ? GTEXT_CSS_OK : GTEXT_CSS_E_INVALID;
   }
   return gtext_css_serialize_value(root, options, sink);
-}
-
-typedef struct {
-  GTEXT_Allocator alloc;
-  char * data;
-  size_t len, cap;
-  bool failed;
-} dump_buf;
-
-static GTEXT_Markup_Status dump_write(void * user, const char * data, size_t n) {
-  dump_buf * b = user;
-  if (b->failed) {
-    return GTEXT_MARKUP_E_OOM;
-  }
-  if (b->len + n + 1 > b->cap) {
-    size_t cap = b->cap ? b->cap : 256;
-    while (cap < b->len + n + 1) {
-      cap *= 2;
-    }
-    char * grown = gtext_allocator_realloc(&b->alloc, b->data, cap);
-    if (!grown) {
-      b->failed = true;
-      return GTEXT_MARKUP_E_OOM;
-    }
-    b->data = grown;
-    b->cap = cap;
-  }
-  memcpy(b->data + b->len, data, n);
-  b->len += n;
-  b->data[b->len] = '\0';
-  return GTEXT_MARKUP_OK;
-}
-
-static GTEXT_CSS_Status dump_to_buffer(const GTEXT_CSS_Computed_Style * style, dump_buf * b) {
-  memset(b, 0, sizeof *b);
-  b->alloc = style->alloc;
-  GTEXT_Markup_Sink sink;
-  memset(&sink, 0, sizeof sink);
-  sink.user = b;
-  sink.write = dump_write;
-  dump_write(b, "computed-style 1\n", 17);
-  for (size_t i = 0; i < style->n && !b->failed; i++) {
-    const GTEXT_CSS_Value_Set * set = style->vals[i];
-    if (!set) {
-      continue;
-    }
-    const css_pmeta * m = &style->cc->meta[i];
-    dump_write(b, m->name, m->name_length);
-    dump_write(b, ": ", 2);
-    const GTEXT_CSS_Value * root = gtext_css_value_set_root(set);
-    if (root) {
-      const GTEXT_CSS_Status st = gtext_css_serialize_value(root, NULL, &sink);
-      if (st != GTEXT_CSS_OK) {
-        gtext_allocator_free(&b->alloc, b->data);
-        return st;
-      }
-    }
-    dump_write(b, "\n", 1);
-  }
-  for (size_t i = 0; i < gtext_css_computed_custom_count(style) && !b->failed; i++) {
-    GTEXT_CSS_String cname;
-    const GTEXT_CSS_Custom_Value * cvalue = NULL;
-    if (!gtext_css_computed_custom_at(style, i, &cname, &cvalue)) {
-      break;
-    }
-    dump_write(b, cname.data, cname.length);
-    dump_write(b, ": ", 2);
-    const GTEXT_CSS_Status ws = gtext_css_custom_value_write(cvalue, &sink);
-    if (ws != GTEXT_CSS_OK) {
-      gtext_allocator_free(&b->alloc, b->data);
-      return ws;
-    }
-    dump_write(b, "\n", 1);
-  }
-  if (b->failed) {
-    gtext_allocator_free(&b->alloc, b->data);
-    return GTEXT_CSS_E_OOM;
-  }
-  return GTEXT_CSS_OK;
-}
-
-GTEXT_CSS_Status gtext_css_computed_dump(const GTEXT_CSS_Computed_Style * style, const GTEXT_Markup_Sink * sink) {
-  if (!style || !sink || !sink->write) {
-    return GTEXT_CSS_E_INVALID;
-  }
-  dump_buf b;
-  GTEXT_CSS_Status st = dump_to_buffer(style, &b);
-  if (st != GTEXT_CSS_OK) {
-    return st;
-  }
-  const GTEXT_Markup_Status rc = sink->write(sink->user, b.data, b.len);
-  gtext_allocator_free(&b.alloc, b.data);
-  return rc != GTEXT_MARKUP_OK ? GTEXT_CSS_E_WRITE : GTEXT_CSS_OK;
-}
-
-GTEXT_CSS_Status gtext_css_computed_hash(const GTEXT_CSS_Computed_Style * style, uint64_t * hash) {
-  if (!style || !hash) {
-    return GTEXT_CSS_E_INVALID;
-  }
-  dump_buf b;
-  GTEXT_CSS_Status st = dump_to_buffer(style, &b);
-  if (st != GTEXT_CSS_OK) {
-    return st;
-  }
-  uint64_t h = 0xcbf29ce484222325ULL;
-  for (size_t i = 0; i < b.len; i++) {
-    h ^= (unsigned char)b.data[i];
-    h *= 0x100000001b3ULL;
-  }
-  gtext_allocator_free(&b.alloc, b.data);
-  *hash = h;
-  return GTEXT_CSS_OK;
 }

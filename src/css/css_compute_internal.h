@@ -30,11 +30,14 @@
 #ifndef GHOTI_IO_GTEXT_SRC_CSS_COMPUTE_INTERNAL_H
 #define GHOTI_IO_GTEXT_SRC_CSS_COMPUTE_INTERNAL_H
 
+#include <ghoti.io/cutil/atomic.h>
 #include <ghoti.io/cutil/mutex.h>
 #include <ghoti.io/text/css.h>
+#include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_logical.h>
+#include <ghoti.io/text/css/css_presentation.h>
 #include <ghoti.io/text/css/css_shorthand.h>
 #include <ghoti.io/text/macros.h>
 
@@ -58,6 +61,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/// Whether a row of a presentation table applies to an element of this namespace and local name (css_presentation.c).
+bool css_presentation_applies(const GTEXT_CSS_Presentation_Row * row, const char * ns, size_t ns_length, const char * local, size_t local_length);
 
 /* ---- logical properties (css_logical.c) ------------------------------------------------------------------ */
 
@@ -183,6 +189,9 @@ struct GTEXT_CSS_Compute_Context {
   size_t nsyntax, capsyntax;
 };
 
+/// Whether property `i` (an index, the id minus one) of a style has a value under the name it has: an overridden generated property does not.
+bool css_style_visible(const GTEXT_CSS_Computed_Style * style, size_t i);
+
 /// A registered custom property in effect in a context.
 typedef struct css_ereg {
   const css_creg * creg;
@@ -204,9 +213,22 @@ typedef struct {
   GTEXT_CSS_Value_Set * line_height; ///< Its line-height (retained).
 } css_root_info;
 
+/// A diagnostic a style keeps (css_style.h): its name is copied.
+typedef struct {
+  int kind, source;
+  size_t entry;
+  char * name_copy;
+  size_t name_length;
+  size_t offset, length, line, column;
+} css_style_diag;
+
 struct GTEXT_CSS_Computed_Style {
   const GTEXT_CSS_Compute_Context * cc;
   GTEXT_Allocator alloc;
+  GCU_Atomic_Int refs;                 ///< The owners (atomic: a style is shared by any number of threads).
+  GTEXT_CSS_Cascaded * cascaded;       ///< The cascade this style was made from (css_style.h), or NULL for a style made from a block.
+  css_style_diag * diag;               ///< The kept diagnostics.
+  size_t ndiag, diag_total;
   size_t n;                            ///< Properties.
   GTEXT_CSS_Value_Set ** vals;         ///< A set (retained) for every property; NULL where none.
   GTEXT_CSS_Flow flow;
