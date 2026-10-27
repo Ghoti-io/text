@@ -988,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-values conformance-css-property conformance-css-variables check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2424,6 +2424,19 @@ conformance-css-values: $(CONFORMANCE_LIB)
 # purpose, and the library built with a rule undone: tools/conformance/CSS_PROPERTY_PLANTS).
 CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=483
 
+# The computed-value gate: the `test_computed_value` calls of the pinned web-platform-tests pages, asked of this library in the document each page builds (tools/css/extract-wpt-
+# computed-pages.py) with the page's rules that need no selector matching, as the browsers resolve a computed value (tools/oracle/css_resolved.h). Every scored case passes or is
+# listed (tools/conformance/CSS_COMPUTED_EXCEPTIONS with a sentence of the served text, CSS_COMPUTED_DEFECTS with an owner under a ceiling that only goes down), every page that is not
+# scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
+CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4190 CSS_COMPUTED_MAX_DEFECTS=697
+
+conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
+conformance-css-computed: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/support,tools/css/fetch.sh)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-grid/parsing,tools/css/fetch.sh)
+	@$(CONFORMANCE_ENV) $(CSS_COMPUTED_FLOOR) tools/conformance/run-css-computed.sh && \
+	$(CONFORMANCE_ENV) $(CSS_COMPUTED_FLOOR) tools/conformance/run-css-computed.sh --controls
+
 conformance-css-property: ## Score the CSS property layer against the pinned WPT property parsing tests, and show the gate fails
 conformance-css-property: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/support,tools/css/fetch.sh)
@@ -2485,6 +2498,7 @@ check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(CONFORMANCE_ENV) tools/conformance/run-css-values.sh
 	@$(CONFORMANCE_ENV) $(CSS_PROPERTY_FLOOR) tools/conformance/run-css-property.sh
 	@$(CONFORMANCE_ENV) $(CSS_VARIABLES_FLOOR) tools/conformance/run-css-variables.sh
+	@$(CONFORMANCE_ENV) $(CSS_COMPUTED_FLOOR) tools/conformance/run-css-computed.sh
 
 conformance-jsonpath: ## Score JSONPath against the compliance test suite (clones it on first use)
 conformance-jsonpath: $(CONFORMANCE_LIB)

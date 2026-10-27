@@ -1,0 +1,9 @@
+# Defects planted in a copy of one source of src/css by tools/conformance/run-css-computed.sh --controls, one edit a line (the lines of one name are the edits of one defect):
+#
+#   <name> TAB <file in src/css> TAB <old text> TAB <new text>
+#
+# The old text is literal (a `\n` in it is a line feed) and must be in the file exactly once. The gate is run with the edited library and must fail. These are the defects of
+# tools/oracle/CSS_STYLE_PLANTS that the computed value of a property shows: the factor of a unit, the distribution of a number over a sum, and the distribution of a shorthand.
+unit-factor	css_units.c	  LEN_ABS(PT, "pt", 4.0, 3.0), /* 96 / 72 */	  LEN_ABS(PT, "pt", 5.0, 3.0), /* 96 / 72 */
+color-channel	css_color.c	short_form ? d[i] * 17 : d[i * 2] * 16 + d[i * 2 + 1];	short_form ? d[i] * 17 : d[(2 - i) * 2] * 16 + d[(2 - i) * 2 + 1];
+shorthand-distribution	css_shorthand.c	  static const unsigned char pick[4][4] = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 1, 2, 1}, {0, 1, 2, 3}};	  static const unsigned char pick[4][4] = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 1, 2, 2}, {0, 1, 2, 3}};

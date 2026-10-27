@@ -1,0 +1,30 @@
+# How each failing case of the computed-value gate (tools/conformance/css_computed_suite.py) is listed. tools/conformance/classify-computed.py reads this table and the
+# failures the gate reports, and writes CSS_COMPUTED_EXCEPTIONS and CSS_COMPUTED_DEFECTS; a failure no row matches is an error, and so is a row no failure matches.
+#
+#   <property regex> TAB <answer regex> TAB <kind> TAB <class or owner> TAB <reason or what the library lacks>
+#
+# The property regex is matched in full against the property (the page's, dashed); the answer regex is searched in what the library answered (".*" for any). kind is
+# `exception` (the class is one of tools/conformance/css_computed_suite.py's) or `defect` (the owner is the piece of work that closes it). The first row that matches wins.
+#
+# Served text quoted for resolved-value (CSSOM, "Resolved Values", drafts.csswg.org/cssom, served 2026-10-27): "The resolved value is the computed value." for any other
+# property, and for the properties that have a special case: "then the resolved value is the used value." (the size, margin, padding and inset properties, the colors
+# that are `currentcolor`, line-height, the grid track lists, transform-origin and perspective-origin's percentages: a value that depends on layout).
+grid-template-(columns|rows)	.*	exception	resolved-value	the track list of a grid container resolves to the used track sizes, and to `none` where the element is not a grid container: "then the resolved value is the used value."
+(transform|perspective)-origin	.*	exception	resolved-value	a percentage resolves against the box (the 200 by 300 pixel box of the page): "then the resolved value is the used value."
+(padding|margin)(-(top|right|bottom|left|block-start|block-end|inline-start|inline-end|block|inline))?	.*	exception	resolved-value	a percentage or a calculation with one resolves to the used length: "then the resolved value is the used value."
+(min-|max-)?(width|height|block-size|inline-size|min-block-size|min-inline-size)	.*	exception	resolved-value	the size of a box resolves to its used size: "then the resolved value is the used value."
+line-height	.*	exception	resolved-value	a number resolves to the used length: "then the resolved value is the used value."
+(background-color|color|caret-color|accent-color|flood-color|box-shadow-color|column-rule-color|text-decoration-color|border-(block|inline)(-start|-end)?-color|outline-color)	currentcolor	exception	resolved-value	`currentcolor` resolves to the used color of the element: "then the resolved value is the used value."
+(box-shadow-color|column-rule-color|text-decoration-color|accent-color|flood-color|border-(block|inline)(-start|-end)?-color|caret-color|background-color)	.*	exception	resolved-value	the color properties resolve to the used color: "then the resolved value is the used value."
+clip	.*	exception	resolved-value	the offsets of a `clip` rectangle resolve to lengths: "then the resolved value is the used value."
+flex-basis	.*	exception	resolved-value	a percentage of the flex container resolves: "then the resolved value is the used value."
+aspect-ratio	.*	defect	values	the arguments of `sign()` in a ratio are not resolved (a calculation that resolves to a number is a number)
+.*	UNSUPPORTED (corner|position-area|overlay)	defect	C2a	the property is classified unimplemented (the 15 listed in the plan: -webkit-box-*, -webkit-user-select, corner-*-shape, position-area)
+corner(-[a-z-]+)?	.*	defect	C2a	`corner-*` and the `corner-*-shape` longhands are unimplemented
+position-area|overlay	.*	defect	C2a	unimplemented, or the initial value of a newer draft
+.*	UNSUPPORTED (cqw|cqh|cqi|cqb|ch|ex|cap|ic|rch|rex|rcap|ric|lh|rlh)	defect	environment	a calculation of container or font-relative units inside a function argument that the walker does not compute (filter(), contrast-color(), font-feature-settings, counters, ...)
+(background-image|mask-image|border-image-source|list-style-image|content|cursor)	.*	defect	css-values (images)	a gradient is not written in its computed form (default position and shape omitted, positions and sizes made absolute, a color stop in sRGB): the image functions are specified values
+(filter|backdrop-filter)	.*	defect	css-values (functions)	the arguments of a filter function are not computed (blur() is blur(0px), a percentage amount is a number, calc() is simplified)
+(shape-outside|clip-path|offset-path|border-shape)	.*	defect	css-values (shapes)	a basic shape is not written in its computed form (rect() and xywh() as inset(), `center` as 50%, a ray's angle in degrees)
+color	.*	defect	color	color-mix(), relative colors, contrast-color() and alpha() stay as written for every property (the 7 listed defects of the registered-property gate)
+.*	.*	defect	C2a (computed values)	the computed value of this property is written differently from the page's expectation: a newer draft than the pin, a shortest form, a default that is written, or a computation that is not done (the page's expectation is in the list of the case)
