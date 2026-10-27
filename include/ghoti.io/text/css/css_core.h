@@ -144,6 +144,9 @@ typedef enum {
                                   ///< longhands than the registry's limits allow.
   GTEXT_CSS_E_LIMIT_ELEMENTS,     ///< Computed values: the chain of inheritance parents is deeper than `max_element_depth`.
   GTEXT_CSS_E_LIMIT_LIST,         ///< Computed values: a list has more items than `max_list_items`.
+  GTEXT_CSS_E_LIMIT_CANDIDATES,   ///< Cascade: more candidate declarations for one element than `max_candidates`.
+  GTEXT_CSS_E_LIMIT_LAYERS,       ///< Cascade: more cascade layers than `max_layers`.
+  GTEXT_CSS_E_LIMIT_LAYER_DEPTH,  ///< Cascade: layers nested deeper than `max_depth`.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

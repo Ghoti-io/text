@@ -94,6 +94,20 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
   mixed-longhands-written-as-a-shorthand  a shorthand is written over longhands some of which are a CSS-wide keyword: the text is another value.
   context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
 
+The plants of fuzz_css_cascade.cpp (CASCADE_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-cascade, which `make test` also does with no
+fuzzer, against the harness's reference model; CASCADE_PROGRAMS says which unit tests must fail on it as well):
+
+  swap-*-and-*              two neighbouring criteria of the sort order trade places: the winners are not the model's.
+  important-user-agent-is-below-important-user, animation-is-an-author-normal-declaration  an origin in the wrong place.
+  normal-context-is-inner-first, important-context-is-outer-first, important-layers-are-not-reversed  an importance that does not flip a criterion.
+  a-hint-is-an-ordinary-unlayered-rule, a-hint-keeps-its-specificity, a-style-attribute-keeps-its-specificity  keys that should not count.
+  no-scope-is-the-nearest, the-nearest-scope-loses  scope proximity wrong.
+  revert-keeps-its-own-level, a-user-agent-revert-is-not-unset, revert-layer-skips-every-lower-layer, revert-rule-skips-one,
+  important-attached-revert-layer-keeps-the-animation  a rollback that rolls back too little or too much.
+  all-applies-to-direction, the-flow-ignores-the-parents, logical-members-are-not-merged, custom-properties-are-not-in-the-order-of-their-names  the rest of the cascade.
+  the-result-leaks-its-losers, the-set-leaks-its-values  the allocator.
+  (the rest are found by the unit tests alone: the limits, the layers, a sealed set.)
+
 The plants of fuzz_css_grammar.cpp (GRAMMAR_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-grammar):
 
   work-bound-off-by-one     a match stops one unit of work early: the bounds are exact.
@@ -119,6 +133,7 @@ GRAMMAR_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-grammar")
 VALUES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-values")
 REGISTRY_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-registry")
 COMPUTE_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-compute")
+CASCADE_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-cascade")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -203,6 +218,91 @@ REGISTRY_PLANTS = {
 }
 
 
+# The plants of the cascade (fuzz_css_cascade.cpp, and the unit tests): the seeds are in tests/fuzz/corpus/css-cascade (tools/css/make-fuzz-cascade-seeds.py).
+# Each sort criterion is swapped with its neighbour (the key words are assigned to each other's places), every rolling keyword is undone once, and the
+# memory of the result and of the set is let go of. CASCADE_PROGRAMS says which test programs must fail on it when it is planted (tools/css/plant-grammar.py
+# runs them in `make test`): "cascade-seeds" is the replay of the corpus through the harness's reference model, which the plants with a seed are
+# found by in libFuzzer too (`make check-css-fuzz-plants`); a plant whose seed is None is found by the unit tests alone.
+CASCADE_PLANTS = {
+    "swap-tier-and-context": ("css_cascade.c", ["  c->k[CK_TIER] = tier;", "  c->k[CK_CONTEXT] = k->important ?"],
+                              ["  c->k[CK_CONTEXT] = tier;", "  c->k[CK_TIER] = k->important ?"], "own-pair-tier-context.seed"),
+    "swap-context-and-attached": ("css_cascade.c", ["  c->k[CK_CONTEXT] = k->important ?", "  c->k[CK_ATTACHED] = k->element_attached"],
+                                  ["  c->k[CK_ATTACHED] = k->important ?", "  c->k[CK_CONTEXT] = k->element_attached"], "own-pair-context-attached.seed"),
+    "swap-attached-and-layer": ("css_cascade.c", ["  c->k[CK_ATTACHED] = k->element_attached", "  c->k[CK_LAYER] = k->presentational_hint"],
+                                ["  c->k[CK_LAYER] = k->element_attached", "  c->k[CK_ATTACHED] = k->presentational_hint"], "own-pair-attached-layer.seed"),
+    "swap-layer-and-specificity": ("css_cascade.c", ["  c->k[CK_LAYER] = k->presentational_hint", "  c->k[CK_SPEC_A] = spec.a;"],
+                                   ["  c->k[CK_SPEC_A] = k->presentational_hint", "  c->k[CK_LAYER] = spec.a;"], "own-pair-layer-specificity.seed"),
+    "swap-specificity-and-scope": ("css_cascade.c", ["  c->k[CK_SPEC_C] = spec.c;", "  c->k[CK_SCOPE] = scoped"],
+                                   ["  c->k[CK_SCOPE] = spec.c;", "  c->k[CK_SPEC_C] = scoped"], "own-pair-specificity-scope.seed"),
+    "swap-scope-and-order": ("css_cascade.c", ["  c->k[CK_SCOPE] = scoped", "  c->k[CK_SHEET] = k->sheet;"],
+                             ["  c->k[CK_SHEET] = scoped", "  c->k[CK_SCOPE] = k->sheet;"], "own-pair-scope-order.seed"),
+    "swap-sheet-and-rule": ("css_cascade.c", ["  c->k[CK_SHEET] = k->sheet;", "  c->k[CK_RULE] = k->rule;"],
+                            ["  c->k[CK_SHEET] = k->rule;", "  c->k[CK_RULE] = k->sheet;"], "own-pair-sheet-rule.seed"),
+    "swap-rule-and-declaration": ("css_cascade.c", ["  c->k[CK_RULE] = k->rule;", "  c->k[CK_DECLARATION] = k->declaration;"],
+                                  ["  c->k[CK_RULE] = k->declaration;", "  c->k[CK_DECLARATION] = k->rule;"], "own-pair-rule-declaration.seed"),
+    "swap-specificity-a-and-b": ("css_cascade.c", ["  c->k[CK_SPEC_A] = spec.a;", "  c->k[CK_SPEC_B] = spec.b;"],
+                                 ["  c->k[CK_SPEC_A] = spec.b;", "  c->k[CK_SPEC_B] = spec.a;"], "own-pair-spec-a-b.seed"),
+    "swap-specificity-b-and-c": ("css_cascade.c", ["  c->k[CK_SPEC_B] = spec.b;", "  c->k[CK_SPEC_C] = spec.c;"],
+                                 ["  c->k[CK_SPEC_B] = spec.c;", "  c->k[CK_SPEC_C] = spec.b;"], "own-pair-spec-b-c.seed"),
+    "important-user-agent-is-below-important-user": ("css_cascade.c", "  case GTEXT_CSS_ORIGIN_USER_AGENT: tier = k->important ? TIER_IMPORTANT_UA :",
+                                                    "  case GTEXT_CSS_ORIGIN_USER_AGENT: tier = k->important ? TIER_IMPORTANT_USER :", "own-tier-important-ua-over-user.seed"),
+    "animation-is-an-author-normal-declaration": ("css_cascade.c", "  case GTEXT_CSS_ORIGIN_ANIMATION: tier = TIER_ANIMATION; break;",
+                                                  "  case GTEXT_CSS_ORIGIN_ANIMATION: tier = TIER_NORMAL_AUTHOR; break;", "own-tier-animation-over-normal.seed"),
+    "normal-context-is-inner-first": ("css_cascade.c", "  c->k[CK_CONTEXT] = k->important ? k->context : UINT32_MAX - k->context;",
+                                      "  c->k[CK_CONTEXT] = k->context;", "own-context-normal.seed"),
+    "important-context-is-outer-first": ("css_cascade.c", "  c->k[CK_CONTEXT] = k->important ? k->context :", "  c->k[CK_CONTEXT] = k->important ? UINT32_MAX - k->context :",
+                                         "own-context-important.seed"),
+    "important-layers-are-not-reversed": ("css_cascade.c", "(k->important ? (uint32_t)(count - rank) + 1u : (uint32_t)rank + 1u)", "((uint32_t)rank + 1u)",
+                                          "own-layers-important.seed"),
+    "a-hint-is-an-ordinary-unlayered-rule": ("css_cascade.c", "  c->k[CK_LAYER] = k->presentational_hint ? 0u : (k->important", "  c->k[CK_LAYER] = (k->important",
+                                             "own-hint-below-rules.seed"),
+    "a-hint-keeps-its-specificity": ("css_cascade.c", "  const bool ruleless = k->presentational_hint || k->element_attached || timed;",
+                                     "  const bool ruleless = k->element_attached || timed;", "own-hint-has-no-specificity.seed"),
+    "a-style-attribute-keeps-its-specificity": ("css_cascade.c", "  const bool ruleless = k->presentational_hint || k->element_attached || timed;",
+                                                "  const bool ruleless = k->presentational_hint || timed;", "own-attached-has-no-specificity.seed"),
+    "no-scope-is-the-nearest": ("css_cascade.c", "  c->k[CK_SCOPE] = scoped ? UINT32_MAX - distance : 0u;", "  c->k[CK_SCOPE] = scoped ? UINT32_MAX - distance : UINT32_MAX;",
+                                "own-scope-none-loses.seed"),
+    "the-nearest-scope-loses": ("css_cascade.c", "  c->k[CK_SCOPE] = scoped ? UINT32_MAX - distance : 0u;", "  c->k[CK_SCOPE] = scoped ? distance + 1u : 0u;", "own-scope.seed"),
+    "specificity-wraps": ("css_cascade.c", "  return v > UINT32_MAX ? UINT32_MAX : (uint32_t)v;", "  return (uint32_t)v;", None),
+    "revert-keeps-its-own-level": ("css_revert.c", "      max_level = c->level - 1u;", "      max_level = c->level;", "own-revert-author-to-user.seed"),
+    "a-user-agent-revert-is-not-unset": ("css_revert.c", "      if (c->level == 0) {", "      if (c->level == 99) {", "own-revert-ua-is-unset.seed"),
+    "revert-layer-skips-every-lower-layer": ("css_revert.c", "        bound[CK_LAYER] = c->layer_normal;", "        bound[CK_LAYER] = 0;", "own-revert-layer-basic.seed"),
+    "revert-rule-skips-one": ("css_revert.c", "      } while (x != CASCADE_NONE && same_rule(&C[x], c));", "      } while (0);", "own-revert-rule.seed"),
+    "important-attached-revert-layer-keeps-the-animation": ("css_revert.c", "        if (c->important) {\n          skip_animation =", "        if (0) {\n          skip_animation =",
+                                                            "own-revert-layer-attached-important-no-rules.seed"),
+    "all-applies-to-direction": ("css_cascade.c", "  return unit != st->dir && unit != st->bidi;", "  return unit != st->bidi;", "own-all-initial.seed"),
+    "the-flow-ignores-the-parents": ("css_cascade.c", "  int inherited = which == 0 ? (int)parent->writing_mode : which == 1 ? (int)parent->direction : (int)parent->text_orientation;",
+                                     "  int inherited = 0;", "own-flow-keywords-rtl.seed"),
+    "logical-members-are-not-merged": ("css_cascade.c", "    if (gtext_css_logical_map(st->reg, p, &st->flow, &physical) == GTEXT_CSS_OK) {\n      u = physical;",
+                                       "    if (gtext_css_logical_map(st->reg, p, &st->flow, &physical) == GTEXT_CSS_OK) {\n      u = p;", "own-logical-pairs.seed"),
+    "custom-properties-are-not-in-the-order-of-their-names": ("css_cascade.c", "  if (ncw > 1) {", "  if (0) {", "own-custom-names.seed"),
+    "a-dropped-declaration-is-not-counted": ("css_cascade.c", "  s->diag_total++;\n", "", None),
+    "the-candidate-limit-is-off-by-one": ("css_cascade.c", "s->count > s->options.max_candidates - more", "s->count >= s->options.max_candidates - more", None),
+    "a-sealed-set-takes-candidates": ("css_cascade.c", "  if (gcu_atomic_int_load(&s->sealed)) {", "  if (0) {", None),
+    "an-important-animation-is-accepted": ("css_cascade.c", "  if (timed && (k->important ||", "  if (timed && (0 ||", None),
+    "the-result-leaks-its-losers": ("css_cascade.c", "  gtext_allocator_free(&a, c->litems);\n", "", "own-revert-layer-basic-oom-01.seed"),
+    "the-set-leaks-its-values": ("css_cascade.c", "    gtext_css_value_set_free(set->items[i].set);\n", "", "own-tier-chain-oom-01.seed"),
+    "the-unlayered-styles-are-first": ("css_layer.c", "      r->nodes[cur].rank = counter++;", "      r->nodes[cur].rank = cur == root ? 0 : counter++;", "own-layers-normal.seed"),
+    "a-layer-is-found-under-any-parent": ("css_layer.c", "    if (nd->parent == parent && nd->name_len == n &&", "    if (nd->name_len == n &&", None),
+    "the-css-wide-keywords-are-layer-names": ("css_layer.c", "  return gtext_css_wide_keyword_lookup(s, n) != 0;", "  return 0;", None),
+    "the-layer-limit-is-off-by-one": ("css_layer.c", "  if (r->count - FIRST_LAYER >= r->options.max_layers) {", "  if (r->count - FIRST_LAYER > r->options.max_layers) {", None),
+    "an-invalid-layer-rule-is-read": ("css_layer.c", "    if (!s->data || s->length == 0 || is_wide_keyword(s->data, s->length)) {", "    if (!s->data || s->length == 0) {", None),
+    "a-conditional-rule-is-not-asked-about": ("css_layer.c", "      if (!w->opt->active(w->opt->user, rule)) {", "      if (0 && !w->opt->active(w->opt->user, rule)) {", None),
+}
+
+# The test programs (tools/css/plant-grammar.py PROGRAMS) that must fail on a cascade plant.
+CASCADE_PROGRAMS = {name: ["cascade", "cascade-seeds"] for name in CASCADE_PLANTS}
+for _name in ("specificity-wraps", "a-dropped-declaration-is-not-counted", "the-candidate-limit-is-off-by-one", "a-sealed-set-takes-candidates",
+              "an-important-animation-is-accepted"):
+    CASCADE_PROGRAMS[_name] = ["cascade"]
+for _name in ("a-layer-is-found-under-any-parent", "the-css-wide-keywords-are-layer-names", "the-layer-limit-is-off-by-one", "an-invalid-layer-rule-is-read",
+              "a-conditional-rule-is-not-asked-about"):
+    CASCADE_PROGRAMS[_name] = ["layer"]
+CASCADE_PROGRAMS["the-unlayered-styles-are-first"] = ["layer", "cascade-seeds"]
+CASCADE_PROGRAMS["the-result-leaks-its-losers"] = ["cascade-oom", "cascade-seeds"]
+CASCADE_PROGRAMS["the-set-leaks-its-values"] = ["cascade-oom", "cascade-seeds"]
+
+
 # Edits to other files that a plant needs as well (name: [(file, old, new)]): the check that the written text reads back (css_shorthand_serialize.c) is off.
 COMPUTE_EXTRA = {
     "grid-template-names-dropped": [("css_shorthand_serialize.c", "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {", "  if (0) {")],
@@ -240,7 +340,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry|compute): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry|compute|cascade): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -254,17 +354,19 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry", "control-compute")
-    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS)
+    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry", "control-compute", "control-cascade")
+    # the plants of the cascade that the harness's seeds show (the others are found by the unit tests alone: tools/css/plant-grammar.py)
+    cascade_names = [n for n, entry in CASCADE_PLANTS.items() if entry[3] and "cascade-seeds" in CASCADE_PROGRAMS[n]]
+    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS) + cascade_names
     for n in names:
-        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS and n not in COMPUTE_PLANTS:
+        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS and n not in COMPUTE_PLANTS and n not in cascade_names:
             raise SystemExit("unknown plant %r (one of %s, %s)"
-                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS))))
+                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS) + cascade_names)))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "fuzz-css-compute", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "fuzz-css-compute", "fuzz-css-cascade", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -286,10 +388,11 @@ def main(argv):
             values_harness = name == "control-values" or name in VALUES_PLANTS
             registry_harness = name == "control-registry" or name in REGISTRY_PLANTS
             compute_harness = name == "control-compute" or name in COMPUTE_PLANTS
-            harness = "fuzz_css_compute" if compute_harness else "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
-            corpus_source = COMPUTE_CORPUS if compute_harness else REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
+            cascade_harness = name == "control-cascade" or name in cascade_names
+            harness = "fuzz_css_cascade" if cascade_harness else "fuzz_css_compute" if compute_harness else "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = CASCADE_CORPUS if cascade_harness else COMPUTE_CORPUS if compute_harness else REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
             if name not in CONTROLS:
-                rel, old, new, seed = COMPUTE_PLANTS[name] if compute_harness else REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
+                rel, old, new, seed = CASCADE_PLANTS[name] if cascade_harness else COMPUTE_PLANTS[name] if compute_harness else REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 olds, news = (old, new) if isinstance(old, list) else ([old], [new])

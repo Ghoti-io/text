@@ -67,6 +67,9 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_REGISTRY] = "a registry limit (registrations, name length, initial value length, longhands) is exceeded",
   [GTEXT_CSS_E_LIMIT_ELEMENTS] = "the chain of inheritance parents is deeper than max_element_depth",
   [GTEXT_CSS_E_LIMIT_LIST] = "a list has more items than max_list_items",
+  [GTEXT_CSS_E_LIMIT_CANDIDATES] = "an element has more candidate declarations than max_candidates",
+  [GTEXT_CSS_E_LIMIT_LAYERS] = "there are more cascade layers than max_layers",
+  [GTEXT_CSS_E_LIMIT_LAYER_DEPTH] = "cascade layers are nested deeper than max_depth",
   [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 

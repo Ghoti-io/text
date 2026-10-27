@@ -231,6 +231,39 @@ GTEXT_CSS_Status gtext_css_block_add_custom(GTEXT_CSS_Declaration_Block * block,
   return GTEXT_CSS_OK;
 }
 
+GTEXT_CSS_Status css_block_push(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * custom_name, size_t custom_length,
+    bool important, GTEXT_CSS_Property_Outcome outcome, GTEXT_CSS_Wide_Keyword wide, const GTEXT_CSS_Value_Set * set, GTEXT_CSS_Property_Id shorthand,
+    size_t declaration) {
+  GTEXT_CSS_Status st = block_reserve(block, 1);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  char * copy = NULL;
+  if (custom_name) {
+    copy = gtext_allocator_malloc(&block->alloc, custom_length + 1);
+    if (!copy) {
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(copy, custom_name, custom_length);
+    copy[custom_length] = '\0';
+  }
+  blk_item * it = &block->items[block->count++];
+  memset(it, 0, sizeof *it);
+  it->property = property;
+  it->custom_name = copy;
+  it->custom_length = custom_name ? custom_length : 0;
+  it->important = important;
+  it->outcome = outcome;
+  it->wide = wide;
+  it->set = gtext_css_value_set_retain(set);
+  it->shorthand = shorthand;
+  it->declaration = declaration;
+  if (declaration >= block->next_declaration) {
+    block->next_declaration = declaration + 1;
+  }
+  return GTEXT_CSS_OK;
+}
+
 GTEXT_CSS_Status gtext_css_block_add_text(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length, const char * text,
     size_t text_length, bool important, const GTEXT_CSS_Property_Options * options, GTEXT_CSS_Property_Outcome * outcome,
     GTEXT_CSS_Shorthand_Result * result) {

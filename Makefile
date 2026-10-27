@@ -1133,6 +1133,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/encoding/encoding_encode.c \
 	src/css/css_anb.c \
 	src/css/css_block.c \
+	src/css/css_cascade.c \
 	src/css/css_color.c \
 	src/css/css_color_names.c \
 	src/css/css_color_serialize.c \
@@ -1150,6 +1151,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_grammar_parse.c \
 	src/css/css_grid_text.c \
 	src/css/css_image.c \
+	src/css/css_layer.c \
 	src/css/css_logical.c \
 	src/css/css_math.c \
 	src/css/css_math_serialize.c \
@@ -1157,6 +1159,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_parser.c \
 	src/css/css_property.c \
 	src/css/css_registry.c \
+	src/css/css_revert.c \
 	src/css/css_serialize.c \
 	src/css/css_shape.c \
 	src/css/css_shorthand.c \
@@ -2080,6 +2083,7 @@ $(eval $(call fuzz-rule,fuzz_css_grammar,css-grammar))
 $(eval $(call fuzz-rule,fuzz_css_values,css-values))
 $(eval $(call fuzz-rule,fuzz_css_registry,css-registry))
 $(eval $(call fuzz-rule,fuzz_css_compute,css-compute))
+$(eval $(call fuzz-rule,fuzz_css_cascade,css-cascade))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2093,7 +2097,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit

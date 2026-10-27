@@ -32,6 +32,9 @@ of the library's archive into the test programs, which are then run:
   testCssRegistry, testCssProperty, testCssRegistryOom
                          the registry (the tables' relations, consolidation, registration, override, limits, grammars), property-level
                          parsing, and the allocation sweeps of both
+  testCssCascade, testCssLayer, testCssCascadeOom, testCssCascadeFuzzSeeds
+                         the cascade (tools/css/plant-fuzz.py CASCADE_PLANTS: each sort criterion swapped with its neighbour, every rolling keyword undone, ...), its
+                         layers, its allocation sweeps, and the replay of the cascade fuzzer's seeds through its reference model
   testCssGrammarFuzzSeeds, testCssValuesFuzzSeeds, testCssRegistryFuzzSeeds
                          the seed corpora of the two fuzzers, replayed through their harnesses' properties with no fuzzer built.
                          The plants of the fuzzers (tools/css/plant-fuzz.py: GRAMMAR_PLANTS, VALUES_PLANTS) are run here too, as
@@ -54,7 +57,9 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "edges": "test-css-grammar-edges.cpp", "grammar-seeds": "test-css-grammar-fuzz-seeds.cpp",
             "values-seeds": "test-css-values-fuzz-seeds.cpp", "review": "test-css-values-review.cpp",
             "registry-seeds": "test-css-registry-fuzz-seeds.cpp", "registry": "test-css-registry.cpp", "property": "test-css-property.cpp",
-            "registry-oom": "test-css-registry-oom.cpp", "canon": "test-css-property-canon.cpp"}
+            "registry-oom": "test-css-registry-oom.cpp", "canon": "test-css-property-canon.cpp",
+            "cascade": "test-css-cascade.cpp", "layer": "test-css-layer.cpp", "cascade-oom": "test-css-cascade-oom.cpp",
+            "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -280,6 +285,9 @@ def fuzz_plants():
         out.append(("fuzz-" + name, rel, old, new, ["values-seeds"]))
     for name, (rel, old, new, _seed) in module.REGISTRY_PLANTS.items():
         out.append(("fuzz-" + name, rel, old, new, ["registry-seeds"]))
+    # the plants of the cascade: the unit tests and the replay of the cascade fuzzer's seeds through its reference model (CASCADE_PROGRAMS says which)
+    for name, (rel, old, new, _seed) in module.CASCADE_PLANTS.items():
+        out.append(("cascade-" + name, rel, old, new, module.CASCADE_PROGRAMS[name]))
     return out
 
 

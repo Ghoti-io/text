@@ -95,6 +95,8 @@ extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree
     const GTEXT_Markup_Sink * sink, size_t * work);
 // (src/css/css_registry_internal.h: the registry's work counter, and a lookup that adds its work to one.)
 extern "C" size_t css_registry_work(const GTEXT_CSS_Registry * registry);
+// (src/css/css_layer.c: the layer registry's work counter.)
+extern "C" size_t css_layer_work(const GTEXT_CSS_Layer_Registry * registry);
 extern "C" GTEXT_CSS_Property_Id css_registry_find_counted(const GTEXT_CSS_Registry * registry, const char * name, size_t length, size_t * work);
 // (src/xml/xml_internal.h is C: the counted parse it declares for this suite is declared here.)
 extern "C" GTEXT_XML_Status xml_parse_counted(const void * data, size_t len, const GTEXT_XML_Parse_Options * opts,
@@ -1029,6 +1031,137 @@ std::function<Measured(size_t)> css_shorthand_expand(const char * property, std:
   };
 }
 
+// ---- the cascade (src/css/css_cascade.c, css_revert.c, css_layer.c) ----
+//
+// The work of a cascade is the result's `work`: candidates and steps visited, units decided, the comparisons of the sorts (the one superlinear
+// step, taken only by a property whose winner rolls back, by the custom property names, and by the losers). A layer registry's is its probes.
+
+struct CascadeAdder {
+  GTEXT_CSS_Candidates * set = nullptr;
+  bool ok = true;
+  std::string why;
+  size_t bytes = 0;
+  void operator()(const std::string & name, const std::string & value, const GTEXT_CSS_Cascade_Entry & keys) {
+    bytes += name.size() + value.size() + 4;
+    GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    GTEXT_CSS_Cascade_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_candidates_add_text(set, &keys, name.data(), name.size(), value.data(), value.size(), nullptr, &outcome, &r);
+    if (ok && (st != GTEXT_CSS_OK || (outcome != GTEXT_CSS_PROP_RESULT_VALID && outcome != GTEXT_CSS_PROP_RESULT_WIDE && outcome != GTEXT_CSS_PROP_RESULT_PENDING))) {
+      ok = false;
+      why = std::string("a declaration was not added: ") + name + ": " + value + " " + gtext_css_status_string(st);
+    }
+  }
+};
+
+GTEXT_CSS_Cascade_Entry cascade_keys(uint32_t order, GTEXT_CSS_Layer_Id layer = 0, GTEXT_CSS_Origin origin = GTEXT_CSS_ORIGIN_AUTHOR) {
+  GTEXT_CSS_Cascade_Entry e;
+  std::memset(&e, 0, sizeof e);
+  e.origin = origin;
+  e.layer = layer;
+  e.sheet = order;
+  return e;
+}
+
+// One element: `nlayers(k)` layers l0, l1, ... declared in order, then the declarations `fill` adds; cascaded (the losers kept when asked).
+std::function<Measured(size_t)> css_cascade_shape(std::function<size_t(size_t)> nlayers,
+    std::function<void(size_t, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder &)> fill, bool losers = false) {
+  return [nlayers, fill, losers](size_t k) {
+    Measured m;
+    GTEXT_CSS_Layer_Options lo = gtext_css_layer_options_default();
+    lo.max_layers = (size_t)1 << 22;
+    lo.hash_seed = 99;
+    GTEXT_CSS_Layer_Registry * layers = nullptr;
+    gtext_css_layer_registry_new(&lo, &layers);
+    std::vector<GTEXT_CSS_Layer_Id> ids;
+    for (size_t i = 0, n = nlayers(k); i < n; i++) {
+      const std::string name = "l" + std::to_string(i);
+      GTEXT_CSS_Layer_Id id = 0;
+      gtext_css_layer_declare(layers, GTEXT_CSS_ORIGIN_AUTHOR, 0, name.data(), name.size(), &id, nullptr);
+      ids.push_back(id);
+    }
+    gtext_css_layer_freeze(layers);
+    GTEXT_CSS_Candidate_Options co = gtext_css_candidate_options_default();
+    co.max_candidates = (size_t)1 << 26;
+    GTEXT_CSS_Candidates * set = nullptr;
+    gtext_css_candidates_new(quad_registry(), layers, &co, &set);
+    CascadeAdder add;
+    add.set = set;
+    fill(k, ids, add);
+    m.bytes = add.bytes;
+    if (!add.ok) {
+      m.ok = false;
+      m.why = add.why;
+    }
+    GTEXT_CSS_Cascade_Options o{};
+    o.hash_seed = 12345;
+    o.keep_losers = losers;
+    GTEXT_CSS_Cascaded * c = nullptr;
+    GTEXT_CSS_Cascade_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_cascade(set, &o, &c, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the cascade failed: ") + gtext_css_status_string(st);
+    }
+    gtext_css_cascaded_free(c);
+    gtext_css_candidates_free(set);
+    gtext_css_layer_registry_free(layers);
+    return m;
+  };
+}
+
+// k layers declared as siblings (or as a chain, each nested in the one before) and frozen: the layer registry's probes; or the layers of a sheet of k blocks read.
+std::function<Measured(size_t)> css_layer_shape(int kind) {
+  return [kind](size_t k) {
+    Measured m;
+    GTEXT_CSS_Layer_Options lo = gtext_css_layer_options_default();
+    lo.max_layers = (size_t)1 << 22;
+    lo.max_depth = (size_t)1 << 16;
+    lo.hash_seed = 99;
+    GTEXT_CSS_Layer_Registry * layers = nullptr;
+    gtext_css_layer_registry_new(&lo, &layers);
+    GTEXT_CSS_Layer_Result res{};
+    GTEXT_CSS_Status st = GTEXT_CSS_OK;
+    if (kind == 0 || kind == 1) {
+      GTEXT_CSS_Layer_Id parent = 0;
+      for (size_t i = 0; i < k && st == GTEXT_CSS_OK; i++) {
+        const std::string name = "layer-" + std::to_string(i);
+        m.bytes += name.size();
+        GTEXT_CSS_Layer_Id id = 0;
+        st = gtext_css_layer_declare(layers, GTEXT_CSS_ORIGIN_AUTHOR, kind == 1 ? parent : 0, name.data(), name.size(), &id, &res);
+        parent = id;
+      }
+    }
+    else {
+      std::string sheet;
+      for (size_t i = 0; i < k; i++) {
+        sheet += kind == 2 ? "@layer a" + std::to_string(i) + " { x { color: red } }\n" : "@layer { @layer inner { x { color: red } } }\n";
+      }
+      m.bytes = sheet.size();
+      GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+      po.max_rules = (size_t)1 << 24;
+      po.max_tokens = (size_t)1 << 26;
+      GTEXT_CSS_Tree * tree = nullptr;
+      st = gtext_css_parse_stylesheet(sheet.data(), sheet.size(), &po, &tree, nullptr);
+      if (st == GTEXT_CSS_OK) {
+        st = gtext_css_cascade_collect_layers(layers, GTEXT_CSS_ORIGIN_AUTHOR, 0, tree, nullptr, &res);
+      }
+      gtext_css_tree_free(tree);
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_css_layer_freeze(layers);
+    }
+    m.work = css_layer_work(layers) + gtext_css_layer_count(layers, GTEXT_CSS_ORIGIN_AUTHOR);
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the layers could not be made: ") + gtext_css_status_string(st);
+    }
+    gtext_css_layer_registry_free(layers);
+    return m;
+  };
+}
+
+
 // A CSS stylesheet's bytes, parsed in one call or fed to a stream in pieces of `chunk` bytes (0: one piece), counted by
 // gtext_css_parse_bytes_work() and gtext_css_stream_work(): the decoding, the map from the text to the bytes, the buffers and
 // the parse. `label` is the protocol's label (NULL for none: UTF-8).
@@ -1742,7 +1875,108 @@ std::vector<Shape> build_shapes() {
       css_shorthand_expand("mask", [](size_t k) { return repeat("url(a) luminance add border-box content-box, ", k) + "none"; })).per_byte = 0;
   add("css", "CSS shorthand: a position-try of n fallbacks", 1000,
       css_shorthand_expand("position-try", [](size_t k) { return "most-width " + repeat("flip-x flip-y, ", k) + "--a"; })).per_byte = 0;
-  // ---- the registry: registrations, overrides, aliases, shorthands and lookups; property values ----
+    // ---- the cascade ----
+  add("css", "CSS cascade: n candidates for one property", 3000, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          a("color", i % 2 ? "red" : "blue", cascade_keys((uint32_t)i));
+        }
+      })).per_byte = 0;
+  add("css", "CSS cascade: n candidates for n custom properties", 1500, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          a("--c" + std::to_string(i), "1", cascade_keys((uint32_t)i));
+        }
+      })).per_byte = 0;
+  add("css", "CSS cascade: n candidates for n custom properties, in the order of their names", 1500, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          char b[24];
+          std::snprintf(b, sizeof b, "--n%08zu", i);
+          a(b, "1", cascade_keys((uint32_t)i));
+        }
+      })).per_byte = 0;
+  add("css", "CSS cascade: n candidates for one custom property", 3000, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          a("--same", std::to_string(i), cascade_keys((uint32_t)i));
+        }
+      })).per_byte = 0;
+  {
+    Shape & s = add("css", "CSS cascade: a revert-layer chain of n layers in one property", 600,
+        css_cascade_shape([](size_t k) { return k; }, [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> & ids, CascadeAdder & a) {
+          a("width", "7px", cascade_keys(0, ids[0]));
+          for (size_t i = 1; i < k; i++) {
+            a("width", "revert-layer", cascade_keys((uint32_t)i, ids[i]));
+          }
+        }));
+    s.per_byte = 0;
+  }
+  {
+    Shape & s = add("css", "CSS cascade: a revert-layer chain of n declarations in one layer, rolled back rule by rule", 600,
+        css_cascade_shape([](size_t) { return (size_t)1; }, [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> & ids, CascadeAdder & a) {
+          a("width", "7px", cascade_keys(0, 0, GTEXT_CSS_ORIGIN_USER));
+          for (size_t i = 0; i < k; i++) {
+            GTEXT_CSS_Cascade_Entry e = cascade_keys(0, ids[0]);
+            e.rule = (uint32_t)i;
+            a("width", "revert-rule", e);
+          }
+        }));
+    s.per_byte = 0;
+  }
+  {
+    Shape & s = add("css", "CSS cascade: n/9 custom properties, each with a chain of 9 rolling declarations", 900,
+        css_cascade_shape([](size_t) { return (size_t)9; }, [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> & ids, CascadeAdder & a) {
+          for (size_t p = 0; p < k / 9; p++) {
+            const std::string name = "--p" + std::to_string(p);
+            a(name, "1", cascade_keys(0, ids[0]));
+            for (size_t i = 1; i < 9; i++) {
+              a(name, "revert-layer", cascade_keys((uint32_t)i, ids[i]));
+            }
+          }
+        }));
+    s.per_byte = 0;
+  }
+  add("css", "CSS cascade: `all: revert-layer` in each of n layers", 40, css_cascade_shape([](size_t k) { return k; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> & ids, CascadeAdder & a) {
+        a("color", "red", cascade_keys(0, ids[0]));
+        for (size_t i = 1; i < k; i++) {
+          a("all", "revert-layer", cascade_keys((uint32_t)i, ids[i]));
+        }
+      })).per_byte = 0;
+  add("css", "CSS cascade: n declarations of `all`", 400, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          a("all", i % 3 ? "initial" : "inherit", cascade_keys((uint32_t)i));
+        }
+        a("color", "red", cascade_keys(1));
+      })).per_byte = 0;
+  add("css", "CSS cascade: n declarations of a logical pair", 3000, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          a(i % 2 ? "margin-left" : "margin-inline-start", std::to_string(i) + "px", cascade_keys((uint32_t)i));
+        }
+      })).per_byte = 0;
+  add("css", "CSS cascade: n margin shorthands", 1500, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        for (size_t i = 0; i < k; i++) {
+          a("margin", std::to_string(i % 50) + "px 2px", cascade_keys((uint32_t)i));
+        }
+      })).per_byte = 0;
+  {
+    Shape & s = add("css", "CSS cascade: n losers kept for one property", 3000, css_cascade_shape([](size_t) { return (size_t)0; },
+        [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+          for (size_t i = 0; i < k; i++) {
+            a("color", i % 2 ? "red" : "blue", cascade_keys((uint32_t)i));
+          }
+        }, /*losers=*/true));
+    s.per_byte = 0;
+  }
+  add("css", "CSS cascade: n layers declared as siblings", 4000, css_layer_shape(0)).per_byte = 0;
+  add("css", "CSS cascade: n layers nested in a chain", 3000, css_layer_shape(1)).per_byte = 0;
+  add("css", "CSS cascade: the layers of a sheet of n @layer blocks", 1500, css_layer_shape(2));
+  add("css", "CSS cascade: the layers of a sheet of n anonymous blocks with a layer in each", 800, css_layer_shape(3));
+// ---- the registry: registrations, overrides, aliases, shorthands and lookups; property values ----
   add("css", "CSS registry: n registrations of distinct names", 500, css_registry_shape(0));
   add("css", "CSS registry: n registrations of names that share a 100-byte prefix", 500, css_registry_shape(1));
   add("css", "CSS registry: a chain of n overrides of one name", 500, css_registry_shape(2));
