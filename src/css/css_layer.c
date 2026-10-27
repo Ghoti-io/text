@@ -118,7 +118,9 @@ static void result_name(GTEXT_CSS_Layer_Result * r, const char * s, size_t n) {
   if (n > sizeof r->name - 1) {
     n = sizeof r->name - 1;
   }
-  memcpy(r->name, s, n);
+  if (n) {
+    memcpy(r->name, s, n);
+  }
   r->name[n] = '\0';
 }
 
@@ -386,6 +388,50 @@ static GTEXT_CSS_Status segment_in(GTEXT_CSS_Layer_Registry * r, uint32_t parent
   return node_new(r, parent, name, n, out, result);
 }
 
+/* ---- paths ---------------------------------------------------------------------------------------------------- */
+
+/// The end of the segment of a path that begins at `pos`: an unescaped `.`, or the end. A `\.` is a dot of the name and a `\\` a backslash of it.
+static size_t seg_end(const char * path, size_t length, size_t pos) {
+  while (pos < length && path[pos] != '.') {
+    if (path[pos] == '\\' && pos + 1 < length && (path[pos + 1] == '.' || path[pos + 1] == '\\')) {
+      pos++;
+    }
+    pos++;
+  }
+  return pos;
+}
+
+/// The bytes of the segment path[from, to): the text itself when it has no escape, else a decoded copy in `buf` (if it fits) or in `*heap`. NULL when memory ran out.
+static const char * seg_decode(const GTEXT_Allocator * alloc, const char * path, size_t from, size_t to, char * buf, size_t cap, char ** heap, size_t * n) {
+  *heap = NULL;
+  bool escaped = false;
+  for (size_t i = from; i + 1 < to && !escaped; i++) {
+    escaped = path[i] == '\\' && (path[i + 1] == '.' || path[i + 1] == '\\');
+  }
+  if (!escaped) {
+    *n = to - from;
+    return path + from;
+  }
+  char * out = buf;
+  if (to - from > cap) {
+    GTEXT_Allocator a = *alloc;
+    out = gtext_allocator_malloc(&a, to - from);
+    if (!out) {
+      return NULL;
+    }
+    *heap = out;
+  }
+  size_t k = 0;
+  for (size_t i = from; i < to; i++) {
+    if (path[i] == '\\' && i + 1 < to && (path[i + 1] == '.' || path[i + 1] == '\\')) {
+      i++;
+    }
+    out[k++] = path[i];
+  }
+  *n = k;
+  return out;
+}
+
 GTEXT_CSS_Status gtext_css_layer_declare_segment(GTEXT_CSS_Layer_Registry * r, GTEXT_CSS_Origin origin, GTEXT_CSS_Layer_Id parent,
     const char * name, size_t length, GTEXT_CSS_Layer_Id * out, GTEXT_CSS_Layer_Result * result) {
   result_clear(result);
@@ -421,12 +467,19 @@ GTEXT_CSS_Status gtext_css_layer_declare(GTEXT_CSS_Layer_Registry * r, GTEXT_CSS
   }
   size_t pos = 0;
   for (;;) {
-    size_t end = pos;
-    while (end < length && path[end] != '.') {
-      end++;
+    const size_t end = seg_end(path, length, pos);
+    char sbuf[256], * heap = NULL;
+    size_t sn = 0;
+    const char * seg = seg_decode(&r->alloc, path, pos, end, sbuf, sizeof sbuf, &heap, &sn);
+    if (!seg) {
+      return result_done(result, GTEXT_CSS_E_OOM);
     }
     uint32_t id = 0;
-    st = segment_in(r, cur, path + pos, end - pos, &id, result);
+    st = segment_in(r, cur, seg, sn, &id, result);
+    if (heap) {
+      GTEXT_Allocator a = r->alloc;
+      gtext_allocator_free(&a, heap);
+    }
     if (st != GTEXT_CSS_OK) {
       if (result) {
         result->work = r->work;
@@ -480,14 +533,21 @@ GTEXT_CSS_Layer_Id gtext_css_layer_find(const GTEXT_CSS_Layer_Registry * r, GTEX
   }
   size_t pos = 0;
   for (;;) {
-    size_t end = pos;
-    while (end < length && path[end] != '.') {
-      end++;
-    }
+    const size_t end = seg_end(path, length, pos);
     if (end == pos) {
       return GTEXT_CSS_LAYER_NONE;
     }
-    cur = table_find(r, cur, path + pos, end - pos, NULL);
+    char sbuf[256], * heap = NULL;
+    size_t sn = 0;
+    const char * seg = seg_decode(&r->alloc, path, pos, end, sbuf, sizeof sbuf, &heap, &sn);
+    if (!seg) {
+      return GTEXT_CSS_LAYER_NONE;
+    }
+    cur = table_find(r, cur, seg, sn, NULL);
+    if (heap) {
+      GTEXT_Allocator a = r->alloc;
+      gtext_allocator_free(&a, heap);
+    }
     if (!cur) {
       return GTEXT_CSS_LAYER_NONE;
     }
@@ -606,6 +666,15 @@ GTEXT_CSS_Status gtext_css_layer_compare(const GTEXT_CSS_Layer_Registry * r, GTE
   return GTEXT_CSS_OK;
 }
 
+/// The length of a segment as it is written in a path (a dot or a backslash of the name is escaped).
+static size_t seg_written(const char * name, size_t n) {
+  size_t k = n;
+  for (size_t i = 0; i < n; i++) {
+    k += name[i] == '.' || name[i] == '\\';
+  }
+  return k;
+}
+
 size_t gtext_css_layer_path(const GTEXT_CSS_Layer_Registry * r, GTEXT_CSS_Layer_Id layer, char * buffer, size_t capacity) {
   if (!r || layer < FIRST_LAYER || layer >= r->count) {
     if (buffer && capacity) {
@@ -616,19 +685,28 @@ size_t gtext_css_layer_path(const GTEXT_CSS_Layer_Registry * r, GTEXT_CSS_Layer_
   static const char anon[] = "(anonymous)";
   size_t total = 0;
   for (uint32_t id = layer; id >= FIRST_LAYER; id = r->nodes[id].parent) {
-    total += (r->nodes[id].anonymous ? sizeof anon - 1 : r->nodes[id].name_len) + (id == layer ? 0 : 1);
+    total += (r->nodes[id].anonymous ? sizeof anon - 1 : seg_written(r->names + r->nodes[id].name_off, r->nodes[id].name_len)) + (id == layer ? 0 : 1);
   }
   if (buffer && capacity) {
     /* written from the end: each segment, and the dot in front of it when it has a parent layer */
     size_t end = total;
     for (uint32_t id = layer; id >= FIRST_LAYER; id = r->nodes[id].parent) {
       const char * seg = r->nodes[id].anonymous ? anon : r->names + r->nodes[id].name_off;
-      const size_t len = r->nodes[id].anonymous ? sizeof anon - 1 : r->nodes[id].name_len;
+      const size_t raw = r->nodes[id].anonymous ? sizeof anon - 1 : r->nodes[id].name_len;
+      const size_t len = r->nodes[id].anonymous ? raw : seg_written(seg, raw);
       end -= len;
-      for (size_t k = 0; k < len; k++) {
-        if (end + k + 1 < capacity) {
-          buffer[end + k] = seg[k];
+      size_t at = end;
+      for (size_t k = 0; k < raw; k++) {
+        if (!r->nodes[id].anonymous && (seg[k] == '.' || seg[k] == '\\')) {
+          if (at + 1 < capacity) {
+            buffer[at] = '\\';
+          }
+          at++;
         }
+        if (at + 1 < capacity) {
+          buffer[at] = seg[k];
+        }
+        at++;
       }
       if (r->nodes[id].parent >= FIRST_LAYER) {
         end--;
@@ -705,6 +783,7 @@ typedef struct {
   size_t pos;
   uint32_t layer;                          ///< The node new layers nest in.
   bool unresolved;                         ///< Inside a conditional rule the caller cannot evaluate.
+  bool in_style;                           ///< Inside the block of a style rule (a nested group rule): a layer statement is not allowed here.
 } frame;
 
 typedef struct {
@@ -715,6 +794,8 @@ typedef struct {
   frame * stack;
   size_t sp, cap;
   size_t max_depth;
+  bool imports_open;                       ///< No rule that closes the start of the sheet to @import has been seen at the top level.
+  bool seen_import_or_namespace;           ///< An @import or @namespace rule has been seen at the top level.
   const GTEXT_CSS_Component_Value * segs[MAX_SEGS];
 } walker;
 
@@ -813,7 +894,12 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
   const GTEXT_CSS_Component_Value * p = rule->prelude;
   const size_t n = rule->prelude_count;
   if (!rule->has_block) {
-    /* a statement, `@layer a, b.c;`: one invalid name makes the rule invalid and it declares nothing, so the list is checked first */
+    /* a statement, `@layer a, b.c;`: one invalid name makes the rule invalid and it declares nothing, so the list is checked first. A statement has no
+       block, so it is not a nested group rule (CSS Nesting 3.3: "these rules are capable of being nested group rules: all the conditional group rules,
+       @layer, @scope" -- the block form): inside a style rule it is not valid and declares nothing. */
+    if (cur->in_style) {
+      return GTEXT_CSS_OK;
+    }
     for (size_t pass = 0; pass < 2; pass++) {
       size_t i = 0;
       for (;;) {
@@ -841,6 +927,10 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
         return unresolved_layer(w, rule);
       }
     }
+    /* Cascade 5, 6.4.4.2: "Any @layer rule that comes after an @import or @namespace rule will cause any subsequent @import or @namespace rules to be ignored." */
+    if (w->sp == 1 && w->seen_import_or_namespace) {
+      w->imports_open = false;
+    }
     return GTEXT_CSS_OK;
   }
   /* a block, `@layer name? { ... }` */
@@ -858,6 +948,9 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
   }
   if (cur->unresolved) {
     return unresolved_layer(w, rule);
+  }
+  if (w->sp == 1) {
+    w->imports_open = false; /* a valid @layer block is a valid at-rule that no @import may follow */
   }
   if (i == n) {
     const GTEXT_CSS_Status st = anonymous_in(w, rule, cur->layer, &layer);
@@ -880,37 +973,77 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
   f.item_count = rule->content_count;
   f.layer = layer;
   f.unresolved = cur->unresolved;
+  f.in_style = cur->in_style;
   return push(w, &f, rule);
 }
 
-/// `@import <url> layer` / `layer(name)`: the layer the sheet is read into.
+/// `@import <url> layer` / `layer(name)` with conditions: the layer the sheet is read into.
+///
+/// Cascade 5, 6.2: "Any @import rules must precede all other valid at-rules and style rules in a style sheet (ignoring @charset, @supports-condition, and @layer
+/// statement rules) and must not have any other valid at-rules or style rules between it and previous @import rules, or else the @import rule is invalid." An
+/// import is read at the top of the sheet only, and needs a `<url>` or `<string>`. "The layer is added to the layer order even if the import fails to load the
+/// stylesheet, but is subject to any import conditions (just as if declared by an @layer rule wrapped in @media and/or @supports blocks)".
 static GTEXT_CSS_Status handle_import(walker * w, const GTEXT_CSS_Rule * rule, frame * cur) {
+  if (w->sp != 1 || !w->imports_open) {
+    return GTEXT_CSS_OK;
+  }
+  (void)cur;
   const GTEXT_CSS_Component_Value * p = rule->prelude;
-  for (size_t i = 0; i < rule->prelude_count; i++) {
-    uint32_t layer;
-    const bool keyword = p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_IDENT && ci_equal(&p[i].value, "layer");
-    const bool function = p[i].kind == GTEXT_CSS_VALUE_FUNCTION && ci_equal(&p[i].value, "layer");
-    if (!keyword && !function) {
-      continue;
-    }
-    size_t cnt = 0;
+  const size_t n = rule->prelude_count;
+  size_t i = 0;
+  while (i < n && is_ws(&p[i])) {
+    i++;
+  }
+  const bool has_url = i < n && ((p[i].kind == GTEXT_CSS_VALUE_TOKEN && (p[i].type == GTEXT_CSS_TOKEN_URL || p[i].type == GTEXT_CSS_TOKEN_STRING)) ||
+      (p[i].kind == GTEXT_CSS_VALUE_FUNCTION && ci_equal(&p[i].value, "url")));
+  if (!has_url) {
+    return GTEXT_CSS_OK; /* an @import with no <url> or <string> is invalid: ignored, and it closes nothing */
+  }
+  i++;
+  while (i < n && is_ws(&p[i])) {
+    i++;
+  }
+  bool keyword = false, function = false;
+  size_t cnt = 0;
+  if (i < n) {
+    keyword = p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_IDENT && ci_equal(&p[i].value, "layer");
+    function = p[i].kind == GTEXT_CSS_VALUE_FUNCTION && ci_equal(&p[i].value, "layer");
     if (function) {
       cnt = read_name(p[i].children, p[i].child_count, w->segs, MAX_SEGS);
       if (cnt == 0 || !names_valid(w, cnt)) {
-        return GTEXT_CSS_OK; /* an invalid import is skipped */
+        return GTEXT_CSS_OK; /* an invalid layer name makes the import invalid */
       }
     }
-    if (cur->unresolved) {
+    if (keyword || function) {
+      i++;
+    }
+  }
+  bool conditions = false;
+  for (; i < n; i++) {
+    conditions = conditions || !is_ws(&p[i]);
+  }
+  /* a valid import: the rules after it may still be imports */
+  w->seen_import_or_namespace = true;
+  if (!keyword && !function) {
+    return GTEXT_CSS_OK;
+  }
+  if (conditions) {
+    if (w->opt && w->opt->active) {
+      if (!w->opt->active(w->opt->user, rule)) {
+        return GTEXT_CSS_OK;
+      }
+    }
+    else {
       return unresolved_layer(w, rule);
     }
-    const GTEXT_CSS_Status st = keyword ? anonymous_in(w, rule, cur->layer, &layer) : declare_segs(w, rule, cur->layer, cnt, &layer);
-    if (st != GTEXT_CSS_OK) {
-      return st;
-    }
-    if (w->opt && w->opt->on_layer) {
-      w->opt->on_layer(w->opt->user, rule, (GTEXT_CSS_Layer_Id)layer);
-    }
-    return GTEXT_CSS_OK;
+  }
+  uint32_t layer;
+  const GTEXT_CSS_Status st = keyword ? anonymous_in(w, rule, cur->layer, &layer) : declare_segs(w, rule, cur->layer, cnt, &layer);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (w->opt && w->opt->on_layer) {
+    w->opt->on_layer(w->opt->user, rule, (GTEXT_CSS_Layer_Id)layer);
   }
   return GTEXT_CSS_OK;
 }
@@ -918,7 +1051,11 @@ static GTEXT_CSS_Status handle_import(walker * w, const GTEXT_CSS_Rule * rule, f
 static GTEXT_CSS_Status visit(walker * w, const GTEXT_CSS_Rule * rule) {
   frame * cur = &w->stack[w->sp - 1];
   w->reg->work++;
+  const bool top = w->sp == 1;
   if (rule->kind == GTEXT_CSS_RULE_QUALIFIED) {
+    if (top) {
+      w->imports_open = false;
+    }
     if (rule->rule_count) {
       frame f;
       memset(&f, 0, sizeof f);
@@ -926,11 +1063,15 @@ static GTEXT_CSS_Status visit(walker * w, const GTEXT_CSS_Rule * rule) {
       f.rule_count = rule->rule_count;
       f.layer = cur->layer;
       f.unresolved = cur->unresolved;
+      f.in_style = true;
       return push(w, &f, rule);
     }
     return GTEXT_CSS_OK;
   }
   if (rule->kind != GTEXT_CSS_RULE_AT) {
+    if (top) {
+      w->imports_open = false;
+    }
     return GTEXT_CSS_OK;
   }
   if (ci_equal(&rule->name, "layer")) {
@@ -938,6 +1079,13 @@ static GTEXT_CSS_Status visit(walker * w, const GTEXT_CSS_Rule * rule) {
   }
   if (ci_equal(&rule->name, "import")) {
     return handle_import(w, rule, cur);
+  }
+  if (top && !ci_equal(&rule->name, "charset")) {
+    /* any other rule: no @import may follow it (and an @namespace is an @import's last follower) */
+    w->imports_open = false;
+    if (ci_equal(&rule->name, "namespace")) {
+      w->seen_import_or_namespace = true;
+    }
   }
   bool unresolved = cur->unresolved;
   if (conditional_name(&rule->name)) {
@@ -962,6 +1110,7 @@ static GTEXT_CSS_Status visit(walker * w, const GTEXT_CSS_Rule * rule) {
   f.item_count = rule->content_count;
   f.layer = cur->layer;
   f.unresolved = unresolved;
+  f.in_style = cur->in_style;
   return push(w, &f, rule);
 }
 
@@ -987,6 +1136,7 @@ GTEXT_CSS_Status gtext_css_cascade_collect_layers(GTEXT_CSS_Layer_Registry * reg
   w->origin = origin;
   w->opt = options;
   w->result = result;
+  w->imports_open = true;
   w->max_depth = options && options->max_rule_depth ? options->max_rule_depth : DEFAULT_RULE_DEPTH;
   if (w->max_depth > LIMIT_RULE_DEPTH) {
     w->max_depth = LIMIT_RULE_DEPTH;

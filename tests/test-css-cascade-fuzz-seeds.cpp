@@ -118,8 +118,8 @@ class CssCascadeFuzzSeeds : public ::testing::Test {
 TEST_F(CssCascadeFuzzSeeds, EverySeedHoldsEveryProperty) {
   const std::string dir = corpus_dir() + "/css-cascade";
   const auto files = seeds(dir);
-  // The floor: tools/css/make-fuzz-cascade-seeds.py writes about 900: each scenario with the losers kept, the winners computed, another flow, and an allocation failed at eight places.
-  constexpr size_t kMinSeeds = 800;
+  // The floor: tools/css/make-fuzz-cascade-seeds.py writes about 2,000: each scenario with the losers kept, the winners computed, another flow, an allocation failed at eight places and six variations of its records (contexts, importance, layers, origins, scopes, order).
+  constexpr size_t kMinSeeds = 1800;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/css/make-fuzz-cascade-seeds.py writes it";
   const auto start = std::chrono::steady_clock::now();
   for (const std::string & path : files) {

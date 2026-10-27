@@ -1,0 +1,26 @@
+# The answers of tools/oracle/containers/cssprop/cascade_probe.mjs to tools/oracle/cascade_probe_cases.json, 2026-10-27, in the image of containers/IMAGES (cssprop).
+# Run: node cascade_probe.mjs chromium|firefox < cascade_probe_cases.json   (tests/test-css-cascade-fixes.cpp has a test for each case)
+# chromium 156.0.8078.47
+A1 important revert-layer in a; important b; unlayered normal 3px (literal reading: 0px)	0px
+A2 important revert-layer in a; important b only (0px if the normal level is the floor, 2px if importance is kept)	0px
+A3 important revert-layer in a with a normal in a and an unlayered normal 3px (0px literal, 3px if the unlayered is not between)	0px
+B1 inner important revert-layer in :host, outer normal 1px (0px literal, 1px if the outer normal is not between)	0px
+B2 inner normal revert-layer in :host, outer normal 1px (1px: the outer wins)	1px
+D1 img width=200 (hint), ::slotted(img) {width: 100px} from the shadow tree (100px if the hint is an origin of its own)	100px
+D2 img width=200 (hint), light-tree rule img {width: 100px} (100px)	100px
+E1 img width=200 (hint), style=width:revert-layer (200px: revert-layer rolls back to the hint)	200px
+G1 revert-rule !important with a normal declaration in the same rule, an earlier rule 1px (1px)	1px
+G2 normal revert-rule, the same rule's important 5px (5px)	5px
+G3 supports(revert-rule) as a witness that the keyword is parsed	true
+# firefox 158.0.1
+A1 important revert-layer in a; important b; unlayered normal 3px (literal reading: 0px)	0px
+A2 important revert-layer in a; important b only (0px if the normal level is the floor, 2px if importance is kept)	0px
+A3 important revert-layer in a with a normal in a and an unlayered normal 3px (0px literal, 3px if the unlayered is not between)	0px
+B1 inner important revert-layer in :host, outer normal 1px (0px literal, 1px if the outer normal is not between)	0px
+B2 inner normal revert-layer in :host, outer normal 1px (1px: the outer wins)	1px
+D1 img width=200 (hint), ::slotted(img) {width: 100px} from the shadow tree (100px if the hint is an origin of its own)	100px
+D2 img width=200 (hint), light-tree rule img {width: 100px} (100px)	100px
+E1 img width=200 (hint), style=width:revert-layer (200px: revert-layer rolls back to the hint)	200px
+G1 revert-rule !important with a normal declaration in the same rule, an earlier rule 1px (1px)	1px
+G2 normal revert-rule, the same rule's important 5px (5px)	5px
+G3 supports(revert-rule) as a witness that the keyword is parsed	true

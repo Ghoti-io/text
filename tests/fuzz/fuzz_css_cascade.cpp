@@ -133,6 +133,10 @@ struct Rec {
 /// The layers of an origin by index (1 to 7): a, b, b.x, c, c.y.z, d, a.w.
 const char * const kLayerPaths[8] = {"", "a", "b", "b.x", "c", "c.y.z", "d", "a.w"};
 
+/// The order the four contexts declare them in (each has a registry of its own: "Cascade layers are scoped to their origin and context"): the same seven
+/// names, ordered differently.
+const int kLayerOrders[4][7] = {{1, 2, 3, 4, 5, 6, 7}, {6, 4, 5, 2, 3, 1, 7}, {3, 2, 7, 1, 5, 4, 6}, {7, 5, 3, 6, 4, 2, 1}};
+
 std::vector<Rec> parse(const std::string & text) {
   std::vector<Rec> out;
   size_t pos = 0;
@@ -171,7 +175,7 @@ std::vector<Rec> parse(const std::string & text) {
 }
 
 /// The keys of a record, made valid.
-GTEXT_CSS_Cascade_Entry keys_of(const Rec & r, GTEXT_CSS_Layer_Id ids[3][8]) {
+GTEXT_CSS_Cascade_Entry keys_of(const Rec & r, GTEXT_CSS_Layer_Id ids[4][3][8]) {
   GTEXT_CSS_Cascade_Entry e;
   std::memset(&e, 0, sizeof e);
   e.origin = (GTEXT_CSS_Origin)((r.k[0] & 7) % 5);
@@ -186,7 +190,7 @@ GTEXT_CSS_Cascade_Entry keys_of(const Rec & r, GTEXT_CSS_Layer_Id ids[3][8]) {
     e.presentational_hint = false;
   }
   if (!timed && !e.element_attached && !e.presentational_hint) {
-    e.layer = ids[e.origin][r.k[1] & 7];
+    e.layer = ids[(r.k[1] >> 3) & 3][e.origin][r.k[1] & 7];
   }
   e.context = (r.k[1] >> 3) & 3;
   e.scoped = (r.k[1] & 32) != 0;
@@ -205,8 +209,8 @@ GTEXT_CSS_Cascade_Entry keys_of(const Rec & r, GTEXT_CSS_Layer_Id ids[3][8]) {
 
 struct Pipe {
   const GTEXT_Allocator * alloc = nullptr;
-  GTEXT_CSS_Layer_Registry * layers = nullptr;
-  GTEXT_CSS_Layer_Id ids[3][8];
+  GTEXT_CSS_Layer_Registry * layers[4] = {nullptr, nullptr, nullptr, nullptr};
+  GTEXT_CSS_Layer_Id ids[4][3][8];
   GTEXT_CSS_Candidates * set = nullptr;
   GTEXT_CSS_Cascaded * c = nullptr;
   std::vector<GTEXT_CSS_Cascade_Entry> keys;  ///< The keys of each added record, by group.
@@ -220,25 +224,34 @@ struct Pipe {
   ~Pipe() {
     gtext_css_cascaded_free(c);
     gtext_css_candidates_free(set);
-    gtext_css_layer_registry_free(layers);
+    for (GTEXT_CSS_Layer_Registry * l : layers) {
+      gtext_css_layer_registry_free(l);
+    }
   }
 
   GTEXT_CSS_Status build(const std::vector<Rec> & recs, const GTEXT_CSS_Cascade_Options & base, const std::string & input) {
     GTEXT_CSS_Layer_Options lo = gtext_css_layer_options_default();
     lo.allocator = alloc;
-    status = gtext_css_layer_registry_new(&lo, &layers);
-    for (int o = 0; status == GTEXT_CSS_OK && o < 3; o++) {
-      for (int i = 1; status == GTEXT_CSS_OK && i < 8; i++) {
-        status = gtext_css_layer_declare(layers, (GTEXT_CSS_Origin)o, 0, kLayerPaths[i], std::strlen(kLayerPaths[i]), &ids[o][i], nullptr);
+    status = GTEXT_CSS_OK;
+    for (int c = 0; status == GTEXT_CSS_OK && c < 4; c++) {
+      status = gtext_css_layer_registry_new(&lo, &layers[c]);
+      for (int o = 0; status == GTEXT_CSS_OK && o < 3; o++) {
+        for (int k = 0; status == GTEXT_CSS_OK && k < 7; k++) {
+          const int i = kLayerOrders[c][k];
+          status = gtext_css_layer_declare(layers[c], (GTEXT_CSS_Origin)o, 0, kLayerPaths[i], std::strlen(kLayerPaths[i]), &ids[c][o][i], nullptr);
+        }
       }
-    }
-    if (status == GTEXT_CSS_OK) {
-      status = gtext_css_layer_freeze(layers);
+      if (status == GTEXT_CSS_OK) {
+        status = gtext_css_layer_freeze(layers[c]);
+      }
     }
     if (status == GTEXT_CSS_OK) {
       GTEXT_CSS_Candidate_Options co = gtext_css_candidate_options_default();
       co.allocator = alloc;
-      status = gtext_css_candidates_new(registry(), layers, &co, &set);
+      status = gtext_css_candidates_new(registry(), layers[0], &co, &set);
+    }
+    for (int c = 0; status == GTEXT_CSS_OK && c < 4; c++) {
+      status = gtext_css_candidates_use_layers(set, (uint32_t)c, layers[c]);
     }
     for (size_t i = 0; status == GTEXT_CSS_OK && i < recs.size(); i++) {
       GTEXT_CSS_Cascade_Entry k = keys_of(recs[i], ids);
@@ -251,6 +264,9 @@ struct Pipe {
           nullptr);
       if (status == GTEXT_CSS_E_UNSUPPORTED) {
         status = GTEXT_CSS_OK;  // a value the library cannot judge: nothing was added
+      }
+      if (status == GTEXT_CSS_E_INVALID && outcome == GTEXT_CSS_PROP_RESULT_PENDING && recs[i].name.compare(0, 2, "--") == 0) {
+        status = GTEXT_CSS_OK;  // a custom property holding var() cannot be carried until the substitution layer exists (C2c): refused, nothing was added
       }
       if (status == GTEXT_CSS_OK && gtext_css_candidates_count(set) > before) {
         keys.push_back(k);
@@ -298,28 +314,89 @@ struct Cand {
 };
 
 struct Model {
-  const GTEXT_CSS_Layer_Registry * layers;
-  std::map<std::pair<int, GTEXT_CSS_Layer_Id>, int> index_of;  ///< (origin, layer id) -> the layer's index 1 to 7 of the harness's table
+  std::map<std::tuple<int, int, GTEXT_CSS_Layer_Id>, int> index_of;  ///< (context, origin, layer id) -> the layer's index 1 to 7 of the harness's table
+  long rank[4][8];                                                    ///< by context and layer index; [c][0] is the unlayered place
 };
 
-/// The model's place of a declaration's layer: the post-order of the tree of kLayerPaths, 8 for none.
-long model_rank(const Model & m, const GTEXT_CSS_Cascade_Entry & e) {
-  static const long kRank[8] = {8, 1, 3, 2, 6, 4, 7, 0};
-  if (e.layer == GTEXT_CSS_LAYER_NONE || e.origin >= GTEXT_CSS_ORIGIN_ANIMATION) {
-    return 8;
+/// The place of each of the layers 1 to 7 when they are declared in `order`: the order of Cascade 5, 6.4.3, written out here and not asked of the library --
+/// layers are a tree of the segments of their paths in order of first declaration, a layer's own declarations come after those of its sub-layers (a
+/// post-order), and the unlayered declarations are last.
+void model_ranks(const int order[7], long out[8]) {
+  struct Node {
+    std::string name;
+    int parent;
+  };
+  std::vector<Node> nodes;
+  int node_of[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+  for (int k = 0; k < 7; k++) {
+    const int idx = order[k];
+    const std::string path = kLayerPaths[idx];
+    int parent = -1;
+    size_t pos = 0;
+    while (pos <= path.size()) {
+      size_t dot = path.find('.', pos);
+      if (dot == std::string::npos) {
+        dot = path.size();
+      }
+      const std::string name = path.substr(pos, dot - pos);
+      int found = -1;
+      for (size_t n = 0; n < nodes.size(); n++) {
+        if (nodes[n].parent == parent && nodes[n].name == name) {
+          found = (int)n;
+        }
+      }
+      if (found < 0) {
+        nodes.push_back({name, parent});
+        found = (int)nodes.size() - 1;
+      }
+      parent = found;
+      pos = dot + 1;
+    }
+    node_of[idx] = parent;
   }
-  const auto it = m.index_of.find({(int)e.origin, e.layer});
-  return it == m.index_of.end() ? -2 : kRank[it->second];
+  std::vector<long> place(nodes.size(), -1);
+  long next = 0;
+  /* a post-order: the children of a node (in order of creation) are numbered before it */
+  struct Walk {
+    const std::vector<Node> & nodes;
+    std::vector<long> & place;
+    long & next;
+    void go(int node) {
+      for (size_t n = 0; n < nodes.size(); n++) {
+        if (nodes[n].parent == node) {
+          go((int)n);
+        }
+      }
+      if (node >= 0) {
+        place[(size_t)node] = next++;
+      }
+    }
+  } walk{nodes, place, next};
+  walk.go(-1);
+  out[0] = next;
+  for (int i = 1; i < 8; i++) {
+    out[i] = place[(size_t)node_of[i]];
+  }
+}
+
+/// The model's place of a declaration's layer in its context: 8 for none (after every layer).
+long model_rank(const Model & m, const GTEXT_CSS_Cascade_Entry & e) {
+  if (e.layer == GTEXT_CSS_LAYER_NONE || e.origin >= GTEXT_CSS_ORIGIN_ANIMATION) {
+    return m.rank[e.context & 3][0];
+  }
+  const auto it = m.index_of.find({(int)(e.context & 3), (int)e.origin, e.layer});
+  return it == m.index_of.end() ? -2 : m.rank[e.context & 3][it->second];
 }
 
 int tier_rank(const GTEXT_CSS_Cascade_Entry & e) {
-  /* ascending: normal ua, normal user, normal author, animation, important author, important user, important ua, transition */
+  /* ascending: normal user agent, normal user, normal presentational hints ("an independent origin ... between the regular user origin and the author
+     origin", 6.5), normal author, animation, important author, important user, important user agent, transition */
   switch (e.origin) {
-  case GTEXT_CSS_ORIGIN_USER_AGENT: return e.important ? 6 : 0;
-  case GTEXT_CSS_ORIGIN_USER: return e.important ? 5 : 1;
-  case GTEXT_CSS_ORIGIN_AUTHOR: return e.important ? 4 : 2;
-  case GTEXT_CSS_ORIGIN_ANIMATION: return 3;
-  default: return 7;
+  case GTEXT_CSS_ORIGIN_USER_AGENT: return e.important ? 7 : 0;
+  case GTEXT_CSS_ORIGIN_USER: return e.important ? 6 : 1;
+  case GTEXT_CSS_ORIGIN_AUTHOR: return e.important ? 5 : e.presentational_hint ? 2 : 3;
+  case GTEXT_CSS_ORIGIN_ANIMATION: return 4;
+  default: return 8;
   }
 }
 
@@ -342,11 +419,8 @@ int cmp(const Model & m, const Cand & a, const Cand & b) {
     return a.e.element_attached ? 1 : -1;
   }
   {
-    /* layers: a hint is below every layer; the others by the layer order, reversed for important. The order is written out here, not asked of the library:
-       the layers are declared a, b, b.x, c, c.y.z, d, a.w and the order is that of a post-order of the tree they make (a.w, a, b.x, b, c.y.z, c.y, c, d), the
-       unlayered declarations last. */
-    const long ra = a.e.presentational_hint ? -1 : model_rank(m, a.e);
-    const long rb = b.e.presentational_hint ? -1 : model_rank(m, b.e);
+    /* layers: by the layer order of the context, reversed for important; the unlayered declarations are last */
+    const long ra = model_rank(m, a.e), rb = model_rank(m, b.e);
     if (ra != rb) {
       const bool a_later = ra > rb;
       return (a_later != a.e.important) ? 1 : -1;
@@ -453,8 +527,9 @@ long model_winner(const Model & m, const std::vector<Cand> & all, std::vector<si
     else {
       for (const size_t x : cands) {
         const Cand & d = all[x];
-        const bool same = d.e.origin == c.e.origin && d.e.important == c.e.important && d.e.presentational_hint == c.e.presentational_hint &&
-            d.e.element_attached == c.e.element_attached && d.e.context == c.e.context && d.e.sheet == c.e.sheet && d.e.rule == c.e.rule;
+        /* a rule's declarations are of both importances */
+        const bool same = d.e.origin == c.e.origin && d.e.presentational_hint == c.e.presentational_hint && d.e.element_attached == c.e.element_attached &&
+            d.e.context == c.e.context && d.e.sheet == c.e.sheet && d.e.rule == c.e.rule;
         if (!same) {
           kept.push_back(x);
         }
@@ -488,13 +563,15 @@ bool kw(const GTEXT_CSS_Value * v, const char * w) {
 }
 
 /// The model's flow and winners, and the comparison with the library's, for the candidates of `set` (with the keys of the records).
-void check_model(const Pipe & p, const GTEXT_CSS_Flow & parent, bool losers_kept, const std::string & input) {
+void check_model(const Pipe & p, const GTEXT_CSS_Flow & parent, bool losers_kept, const std::string & dump, const std::string & input) {
   const GTEXT_CSS_Registry * reg = registry();
   Model m;
-  m.layers = p.layers;
-  for (int o = 0; o < 3; o++) {
-    for (int i = 1; i < 8; i++) {
-      m.index_of[{o, p.ids[o][i]}] = i;
+  for (int c = 0; c < 4; c++) {
+    model_ranks(kLayerOrders[c], m.rank[c]);
+    for (int o = 0; o < 3; o++) {
+      for (int i = 1; i < 8; i++) {
+        m.index_of[{c, o, p.ids[c][o][i]}] = i;
+      }
     }
   }
   std::vector<Cand> all;
@@ -716,6 +793,48 @@ void check_model(const Pipe & p, const GTEXT_CSS_Flow & parent, bool losers_kept
       }
     }
   }
+  /* the fields of every winner as the record gave them (the keys a hint, a style attribute and a timed declaration cannot use are not kept), and the line of the
+     dump that writes them */
+  std::vector<std::string> lines;
+  for (size_t at = dump.find('\n') + 1; at < dump.size();) {
+    size_t nl = dump.find('\n', at);
+    if (nl == std::string::npos) {
+      nl = dump.size();
+    }
+    lines.push_back(dump.substr(at, nl - at));
+    at = nl + 1;
+  }
+  if (lines.size() != gtext_css_cascaded_count(p.c)) {
+    fail("the dump does not have a line for each winner", "", input);
+  }
+  for (size_t i = 0; i < gtext_css_cascaded_count(p.c); i++) {
+    GTEXT_CSS_Cascade_Entry e;
+    size_t rb = 0;
+    gtext_css_cascaded_at(p.c, i, &e, &rb);
+    const GTEXT_CSS_Cascade_Entry & k = p.keys[e.group];
+    const bool rl = ruleless(k);
+    const bool scoped = k.scoped && !rl;
+    const GTEXT_CSS_Specificity spec = rl ? GTEXT_CSS_Specificity{0, 0, 0} : k.specificity;
+    const bool is_all = all[e.index].e.property == all_id;
+    if (e.origin != k.origin || e.important != k.important || e.presentational_hint != k.presentational_hint || e.element_attached != k.element_attached ||
+        e.context != k.context || e.layer != k.layer || e.scoped != scoped || e.scope_distance != (scoped ? k.scope_distance : 0) ||
+        gtext_css_specificity_compare(e.specificity, spec) != 0 || e.sheet != k.sheet || e.rule != k.rule || e.declaration != k.declaration ||
+        e.from_all != is_all) {
+      fail("a winner's fields are not its record's", "winner " + std::to_string(i), input);
+    }
+    std::string layer = "-";
+    if (k.layer != GTEXT_CSS_LAYER_NONE) {
+      const auto it = m.index_of.find({(int)(k.context & 3), (int)k.origin, k.layer});
+      layer = it == m.index_of.end() ? "?" : kLayerPaths[it->second];
+    }
+    const std::string suffix = std::string(k.important ? " !important" : "") + " [" + gtext_css_origin_name(k.origin) + (k.presentational_hint ? " hint" : "") +
+        (k.element_attached ? " attached" : "") + (is_all ? " all" : "") + " layer=" + layer + " ctx=" + std::to_string(k.context) + " spec=" +
+        std::to_string(spec.a) + "," + std::to_string(spec.b) + "," + std::to_string(spec.c) + " scope=" + (scoped ? std::to_string(k.scope_distance) : "-") +
+        " order=" + std::to_string(k.sheet) + "." + std::to_string(k.rule) + "." + std::to_string(k.declaration) + " rb=" + std::to_string(rb) + "]";
+    if (lines[i].size() < suffix.size() || lines[i].compare(lines[i].size() - suffix.size(), suffix.size(), suffix) != 0) {
+      fail("the dump line of a winner does not write its fields", lines[i] + "\n  wanted ..." + suffix, input);
+    }
+  }
 }
 
 /* ---- the properties -------------------------------------------------------------------------------------------- */
@@ -773,6 +892,14 @@ void shuffle_records(std::vector<Rec> & recs, const std::string & input) {
 }
 
 void check(const std::vector<Rec> & recs, uint8_t o0, size_t fault, const std::string & input) {
+  /* A form feed or a carriage return inside a string, or after a backslash, is a bad-string or bad-url token, which no <declaration-value> may hold; a value with
+     such a token in it is nevertheless taken as valid or pending (a gap of the property parser that the computed-value fuzzer skips too), and the dump of such a
+     value has a line break in it. Those inputs say nothing about the cascade. */
+  for (const Rec & r : recs) {
+    if (r.value.find_first_of("\n\r\f") != std::string::npos && r.value.find_first_of("\"'\\") != std::string::npos) {
+      return;
+    }
+  }
   GTEXT_CSS_Flow parent;
   std::memset(&parent, 0, sizeof parent);
   parent.direction = (o0 & 2) ? GTEXT_CSS_DIRECTION_RTL : GTEXT_CSS_DIRECTION_LTR;
@@ -794,8 +921,8 @@ void check(const std::vector<Rec> & recs, uint8_t o0, size_t fault, const std::s
       }
       fail("a cascade of valid records did not succeed", gtext_css_status_string(st), input);
     }
-    check_model(p, parent, opt.keep_losers, input);
     first = dump_of(p.c, input);
+    check_model(p, parent, opt.keep_losers, first, input);
     if (gtext_css_cascaded_hash(p.c, &first_hash) != GTEXT_CSS_OK) {
       fail("a cascade could not be hashed", "", input);
     }
@@ -819,7 +946,7 @@ void check(const std::vector<Rec> & recs, uint8_t o0, size_t fault, const std::s
   {
     std::set<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> seen;
     bool distinct = true;
-    GTEXT_CSS_Layer_Id ids[3][8];
+    GTEXT_CSS_Layer_Id ids[4][3][8];
     std::memset(ids, 0, sizeof ids);
     for (const Rec & r : recs) {
       const GTEXT_CSS_Cascade_Entry e = keys_of(r, ids);

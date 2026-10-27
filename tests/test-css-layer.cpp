@@ -330,11 +330,11 @@ TEST(CssLayerCollect, ALayeredImportNestsInsideTheLayerItIsImportedInto) {
   Layers l;
   const GTEXT_CSS_Layer_Id lib = l.declare("lib");
   css_test::Parsed p;
-  css_test::parse_into(p, gtext_css_parse_stylesheet, "@layer base { a { color: red } } @import url(x.css) layer(extra);");
+  css_test::parse_into(p, gtext_css_parse_stylesheet, "@import url(x.css) layer(extra); @layer base { a { color: red } }");
   GTEXT_CSS_Layer_Result res;
   ASSERT_EQ(gtext_css_cascade_collect_layers(l.r, GTEXT_CSS_ORIGIN_AUTHOR, lib, p.tree, nullptr, &res), GTEXT_CSS_OK);
   l.frozen();
-  EXPECT_EQ(order_of(l), "lib.base, lib.extra, lib, (unlayered)");
+  EXPECT_EQ(order_of(l), "lib.extra, lib.base, lib, (unlayered)");
 }
 
 TEST(CssLayerCollect, InvalidRulesDeclareNothing) {
@@ -405,7 +405,14 @@ TEST(CssLayerCollect, WithoutAFilterAConditionalRuleThatHoldsALayerIsRefusedAndO
   Collected skipped("@layer a;\n@media print { x { color: red } }\n@supports (display: grid) { y { color: red } }", false);
   EXPECT_EQ(skipped.status, GTEXT_CSS_OK);
   Collected import("@media print { @import url(x.css) layer(z); }", false);
-  EXPECT_EQ(import.status, GTEXT_CSS_E_UNSUPPORTED) << "an import under a condition";
+  EXPECT_EQ(import.status, GTEXT_CSS_OK) << "an @import inside a rule is not valid, so it needs no answer";
+  EXPECT_EQ(gtext_css_layer_count(import.layers.r, GTEXT_CSS_ORIGIN_AUTHOR), 0u);
+  Collected conditional("@import url(x.css) layer(z) screen;", false);
+  EXPECT_EQ(conditional.status, GTEXT_CSS_E_UNSUPPORTED) << "an import with conditions and a layer needs the filter's answer";
+  EXPECT_STREQ(conditional.result.name, "active_rule");
+  Collected plain("@import url(x.css) screen; @import url(y.css) layer(w);", false);
+  EXPECT_EQ(plain.status, GTEXT_CSS_OK) << "conditions on an import without a layer declare nothing to ask about";
+  EXPECT_EQ(gtext_css_layer_count(plain.layers.r, GTEXT_CSS_ORIGIN_AUTHOR), 1u);
   /* @scope and @starting-style are not conditions the caller evaluates: their layers count */
   Collected scoped("@scope (.a) { @layer s { x { color: red } } } @starting-style { @layer t { x { color: red } } }", false);
   ASSERT_EQ(scoped.status, GTEXT_CSS_OK);

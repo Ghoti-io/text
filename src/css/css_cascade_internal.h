@@ -49,7 +49,7 @@ extern "C" {
 /// The words of a sort key, most significant first. A larger word wins: a criterion that favors the smaller (the outer context for a normal declaration) is
 /// stored inverted. The last word is the candidate's position, so that no two keys are equal.
 enum {
-  CK_TIER = 0,    ///< Origin and importance: 1 normal user-agent .. 3 normal author, 4 animation, 5 important author .. 7 important user-agent, 8 transition.
+  CK_TIER = 0,    ///< Origin and importance: 1 normal user-agent, 2 normal user, 3 presentational hints, 4 normal author, 5 animation, 6 important author .. 8 important user-agent, 9 transition.
   CK_CONTEXT,     ///< The context, inverted for a normal declaration.
   CK_ATTACHED,    ///< Element-attached.
   CK_LAYER,       ///< The layer, 0 for a presentational hint, inverted for an important declaration.
@@ -66,12 +66,13 @@ enum {
 
 #define TIER_NORMAL_UA 1u
 #define TIER_NORMAL_USER 2u
-#define TIER_NORMAL_AUTHOR 3u
-#define TIER_ANIMATION 4u
-#define TIER_IMPORTANT_AUTHOR 5u
-#define TIER_IMPORTANT_USER 6u
-#define TIER_IMPORTANT_UA 7u
-#define TIER_TRANSITION 8u
+#define TIER_HINT 3u
+#define TIER_NORMAL_AUTHOR 4u
+#define TIER_ANIMATION 5u
+#define TIER_IMPORTANT_AUTHOR 6u
+#define TIER_IMPORTANT_USER 7u
+#define TIER_IMPORTANT_UA 8u
+#define TIER_TRANSITION 9u
 
 typedef enum { CAND_PROPERTY = 0, CAND_ALL, CAND_CUSTOM } cand_kind;
 
@@ -102,9 +103,18 @@ typedef struct {
   GTEXT_CSS_Span span;
 } cand_diag;
 
+/// What the set knows of one context (css_cascade.h: gtext_css_candidates_use_layers()): the layer registry it was given, and whether it has a candidate.
+typedef struct {
+  uint32_t context;
+  const GTEXT_CSS_Layer_Registry * layers;
+  uint8_t occupied, used;
+} ctx_entry;
+
 struct GTEXT_CSS_Candidates {
   const GTEXT_CSS_Registry * registry;
-  const GTEXT_CSS_Layer_Registry * layers;
+  const GTEXT_CSS_Layer_Registry * layers;   ///< The registry of every context that has none of its own; may be NULL.
+  ctx_entry * contexts;                      ///< An open-addressing table by context (a power of two long).
+  size_t ncontexts, contexts_cap;
   GTEXT_Allocator alloc;
   GTEXT_CSS_Candidate_Options options;
   cand * items;
@@ -114,6 +124,7 @@ struct GTEXT_CSS_Candidates {
   cand_diag * diags;
   size_t ndiags, diag_cap, diag_total;
   uint32_t next_group;
+  size_t work;                               ///< Probes of the table of contexts, for the quadratic suite.
   GTEXT_CSS_Property_Id all_id, custom_id;
   GCU_Atomic_Int refs;
   GCU_Atomic_Int sealed;
@@ -134,6 +145,14 @@ static inline int cand_key_cmp(const uint32_t * a, const uint32_t * b) {
   return 0;
 }
 
+/// The tier of the normal level that a candidate's layer belongs to (a hint's own, else its origin's).
+static inline uint32_t cand_normal_tier(const cand * c) {
+  if (c->hint) {
+    return TIER_HINT;
+  }
+  return c->origin == GTEXT_CSS_ORIGIN_USER_AGENT ? TIER_NORMAL_UA : c->origin == GTEXT_CSS_ORIGIN_USER ? TIER_NORMAL_USER : TIER_NORMAL_AUTHOR;
+}
+
 static inline bool cand_rolls(const cand * c) {
   return c->outcome == GTEXT_CSS_PROP_RESULT_WIDE &&
       (c->wide == GTEXT_CSS_WIDE_REVERT || c->wide == GTEXT_CSS_WIDE_REVERT_LAYER || c->wide == GTEXT_CSS_WIDE_REVERT_RULE);
@@ -152,6 +171,9 @@ typedef struct {
   uint32_t * all_sorted;           ///< ... in descending order of precedence; made on first need.
   uint32_t * buf_a, * buf_b;       ///< Scratch for sorting.
   size_t buf_cap;
+  void * skip;                     ///< The table of what a walk has been told to skip (css_revert.c), reused by every property; NULL until needed.
+  size_t skip_cap, skip_used;
+  uint32_t skip_gen;
 } cascade_run;
 
 /// Decide one unit: its own candidates (indexes, in the order added) and, if `use_all`, those of `all`. `*winner` is the index, or UINT32_MAX for no declared value.

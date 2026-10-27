@@ -97,6 +97,8 @@ extern "C" GTEXT_CSS_Status gtext_css_serialize_work(const GTEXT_CSS_Tree * tree
 extern "C" size_t css_registry_work(const GTEXT_CSS_Registry * registry);
 // (src/css/css_layer.c: the layer registry's work counter.)
 extern "C" size_t css_layer_work(const GTEXT_CSS_Layer_Registry * registry);
+// (src/css/css_cascade.c: a candidate set's work counter, the probes of its table of contexts.)
+extern "C" size_t css_candidates_work(const GTEXT_CSS_Candidates * set);
 extern "C" GTEXT_CSS_Property_Id css_registry_find_counted(const GTEXT_CSS_Registry * registry, const char * name, size_t length, size_t * work);
 // (src/xml/xml_internal.h is C: the counted parse it declares for this suite is declared here.)
 extern "C" GTEXT_XML_Status xml_parse_counted(const void * data, size_t len, const GTEXT_XML_Parse_Options * opts,
@@ -1098,7 +1100,7 @@ std::function<Measured(size_t)> css_cascade_shape(std::function<size_t(size_t)> 
     GTEXT_CSS_Cascaded * c = nullptr;
     GTEXT_CSS_Cascade_Result r{};
     const GTEXT_CSS_Status st = gtext_css_cascade(set, &o, &c, &r);
-    m.work = r.work;
+    m.work = r.work + css_candidates_work(set);
     if (st != GTEXT_CSS_OK) {
       m.ok = false;
       m.why = std::string("the cascade failed: ") + gtext_css_status_string(st);
@@ -1937,6 +1939,31 @@ std::vector<Shape> build_shapes() {
         }));
     s.per_byte = 0;
   }
+  add("css", "CSS cascade: a revert-rule chain of n rules, each of both importances", 600, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        a("width", "7px", cascade_keys(0, 0, GTEXT_CSS_ORIGIN_USER));
+        for (size_t i = 0; i < k; i++) {
+          GTEXT_CSS_Cascade_Entry e = cascade_keys(1);
+          e.rule = (uint32_t)i;
+          a("width", "4px", e);
+          e.declaration = 1;
+          e.important = true;
+          a("width", "revert-rule", e);
+        }
+      })).per_byte = 0;
+  add("css", "CSS cascade: n element-attached important revert-layers, one in each of n contexts", 400, css_cascade_shape([](size_t) { return (size_t)0; },
+      [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> &, CascadeAdder & a) {
+        a("width", "7px", cascade_keys(0, 0, GTEXT_CSS_ORIGIN_USER));
+        for (size_t i = 0; i < k; i++) {
+          GTEXT_CSS_Cascade_Entry e = cascade_keys((uint32_t)i);
+          e.element_attached = true;
+          e.context = (uint32_t)i;
+          a("width", "4px", e);
+          e.important = true;
+          e.declaration = 1;
+          a("width", "revert-layer", e);
+        }
+      })).per_byte = 0;
   add("css", "CSS cascade: `all: revert-layer` in each of n layers", 40, css_cascade_shape([](size_t k) { return k; },
       [](size_t k, const std::vector<GTEXT_CSS_Layer_Id> & ids, CascadeAdder & a) {
         a("color", "red", cascade_keys(0, ids[0]));

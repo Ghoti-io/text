@@ -100,7 +100,7 @@ fuzzer, against the harness's reference model; CASCADE_PROGRAMS says which unit 
   swap-*-and-*              two neighbouring criteria of the sort order trade places: the winners are not the model's.
   important-user-agent-is-below-important-user, animation-is-an-author-normal-declaration  an origin in the wrong place.
   normal-context-is-inner-first, important-context-is-outer-first, important-layers-are-not-reversed  an importance that does not flip a criterion.
-  a-hint-is-an-ordinary-unlayered-rule, a-hint-keeps-its-specificity, a-style-attribute-keeps-its-specificity  keys that should not count.
+  a-hint-keeps-its-specificity, a-style-attribute-keeps-its-specificity  keys that should not count.
   no-scope-is-the-nearest, the-nearest-scope-loses  scope proximity wrong.
   revert-keeps-its-own-level, a-user-agent-revert-is-not-unset, revert-layer-skips-every-lower-layer, revert-rule-skips-one,
   important-attached-revert-layer-keeps-the-animation  a rollback that rolls back too little or too much.
@@ -254,8 +254,6 @@ CASCADE_PLANTS = {
                                          "own-context-important.seed"),
     "important-layers-are-not-reversed": ("css_cascade.c", "(k->important ? (uint32_t)(count - rank) + 1u : (uint32_t)rank + 1u)", "((uint32_t)rank + 1u)",
                                           "own-layers-important.seed"),
-    "a-hint-is-an-ordinary-unlayered-rule": ("css_cascade.c", "  c->k[CK_LAYER] = k->presentational_hint ? 0u : (k->important", "  c->k[CK_LAYER] = (k->important",
-                                             "own-hint-below-rules.seed"),
     "a-hint-keeps-its-specificity": ("css_cascade.c", "  const bool ruleless = k->presentational_hint || k->element_attached || timed;",
                                      "  const bool ruleless = k->element_attached || timed;", "own-hint-has-no-specificity.seed"),
     "a-style-attribute-keeps-its-specificity": ("css_cascade.c", "  const bool ruleless = k->presentational_hint || k->element_attached || timed;",
@@ -267,7 +265,7 @@ CASCADE_PLANTS = {
     "revert-keeps-its-own-level": ("css_revert.c", "      max_level = c->level - 1u;", "      max_level = c->level;", "own-revert-author-to-user.seed"),
     "a-user-agent-revert-is-not-unset": ("css_revert.c", "      if (c->level == 0) {", "      if (c->level == 99) {", "own-revert-ua-is-unset.seed"),
     "revert-layer-skips-every-lower-layer": ("css_revert.c", "        bound[CK_LAYER] = c->layer_normal;", "        bound[CK_LAYER] = 0;", "own-revert-layer-basic.seed"),
-    "revert-rule-skips-one": ("css_revert.c", "      } while (x != CASCADE_NONE && same_rule(&C[x], c));", "      } while (0);", "own-revert-rule.seed"),
+    "revert-rule-skips-one": ("css_revert.c", "      if (!skip_add(run, 0, c, room)) {", "      if (0 && !skip_add(run, 0, c, room)) {", "own-revert-rule.seed"),
     "important-attached-revert-layer-keeps-the-animation": ("css_revert.c", "        if (c->important) {\n          skip_animation =", "        if (0) {\n          skip_animation =",
                                                             "own-revert-layer-attached-important-no-rules.seed"),
     "all-applies-to-direction": ("css_cascade.c", "  return unit != st->dir && unit != st->bidi;", "  return unit != st->bidi;", "own-all-initial.seed"),
@@ -287,7 +285,21 @@ CASCADE_PLANTS = {
     "the-css-wide-keywords-are-layer-names": ("css_layer.c", "  return gtext_css_wide_keyword_lookup(s, n) != 0;", "  return 0;", None),
     "the-layer-limit-is-off-by-one": ("css_layer.c", "  if (r->count - FIRST_LAYER >= r->options.max_layers) {", "  if (r->count - FIRST_LAYER > r->options.max_layers) {", None),
     "an-invalid-layer-rule-is-read": ("css_layer.c", "    if (!s->data || s->length == 0 || is_wide_keyword(s->data, s->length)) {", "    if (!s->data || s->length == 0) {", None),
-    "a-conditional-rule-is-not-asked-about": ("css_layer.c", "      if (!w->opt->active(w->opt->user, rule)) {", "      if (0 && !w->opt->active(w->opt->user, rule)) {", None),
+    "a-conditional-rule-is-not-asked-about": ("css_layer.c", "      if (!w->opt->active(w->opt->user, rule)) {\n        return GTEXT_CSS_OK;\n      }\n    }\n    else {\n      unresolved = true;",
+                                              "      if (0 && !w->opt->active(w->opt->user, rule)) {\n        return GTEXT_CSS_OK;\n      }\n    }\n    else {\n      unresolved = true;", None),
+    "revert-rule-is-per-importance": ("css_revert.c", "    e->attached = c->attached;\n    e->sheet = c->sheet;", "    e->attached = c->attached | (uint8_t)(c->important << 1);\n    e->sheet = c->sheet;",
+                                      "own-revert-rule-both-importances.seed"),
+    "a-chained-attached-roll-forgets-the-earlier-one": ("css_revert.c", "          if (!skip_add(run, 1, c, room)) {", "          run->skip_gen++;\n          run->skip_used = 0;\n          if (!skip_add(run, 1, c, room)) {",
+                                                        "own-revert-layer-attached-important-chain.seed"),
+    "a-hint-is-not-an-origin-of-its-own": ("css_cascade.c", "k->presentational_hint ? TIER_HINT : TIER_NORMAL_AUTHOR; break;", "TIER_NORMAL_AUTHOR; break;", "own-hint-context-vs-author-context.seed"),
+    "every-context-uses-the-default-layer-order": ("css_cascade.c", "  return e && e->layers ? e->layers : s->layers;", "  return s->layers;", "own-layers-per-context.seed"),
+    "a-style-rules-scope-is-kept-on-a-hint": ("css_cascade.c", "  const bool scoped = !ruleless && k->scoped;", "  const bool scoped = k->scoped;", "own-scope-on-ruleless.seed"),
+    "the-largest-scope-distance-is-not-clamped": ("css_cascade.c", "    distance = UINT32_MAX - 1;", "    distance = 0;", None),
+    "an-import-after-a-rule-is-read": ("css_layer.c", "  if (w->sp != 1 || !w->imports_open) {", "  if (w->sp != 1) {", None),
+    "an-import-needs-no-url": ("css_layer.c", "  if (!has_url) {", "  if (0) {", None),
+    "a-statement-in-a-style-rule-declares": ("css_layer.c", "    if (cur->in_style) {\n      return GTEXT_CSS_OK;\n    }\n    for (size_t pass", "    if (0) {\n      return GTEXT_CSS_OK;\n    }\n    for (size_t pass", None),
+    "import-conditions-do-not-gate-the-layer": ("css_layer.c", "  if (conditions) {", "  if (0 && conditions) {", None),
+    "a-dot-of-a-name-is-not-escaped-in-its-path": ("css_layer.c", "        if (!r->nodes[id].anonymous && (seg[k] == '.' || seg[k] == '\\\\')) {", "        if (0 && (seg[k] == '.' || seg[k] == '\\\\')) {", None),
 }
 
 # The test programs (tools/css/plant-grammar.py PROGRAMS) that must fail on a cascade plant.
@@ -296,10 +308,18 @@ for _name in ("specificity-wraps", "a-dropped-declaration-is-not-counted", "the-
               "an-important-animation-is-accepted"):
     CASCADE_PROGRAMS[_name] = ["cascade"]
 for _name in ("a-layer-is-found-under-any-parent", "the-css-wide-keywords-are-layer-names", "the-layer-limit-is-off-by-one", "an-invalid-layer-rule-is-read",
-              "a-conditional-rule-is-not-asked-about"):
-    CASCADE_PROGRAMS[_name] = ["layer"]
+              "a-conditional-rule-is-not-asked-about", "an-import-after-a-rule-is-read", "an-import-needs-no-url", "a-statement-in-a-style-rule-declares",
+              "import-conditions-do-not-gate-the-layer", "a-dot-of-a-name-is-not-escaped-in-its-path"):
+    CASCADE_PROGRAMS[_name] = ["fixes"]
+CASCADE_PROGRAMS["the-largest-scope-distance-is-not-clamped"] = ["fixes"]
+CASCADE_PROGRAMS["every-context-uses-the-default-layer-order"] = ["fixes", "reference", "cascade-seeds"]
+CASCADE_PROGRAMS["a-hint-is-not-an-origin-of-its-own"] = ["fixes", "reference", "cascade-seeds"]
+CASCADE_PROGRAMS["revert-rule-is-per-importance"] = ["fixes", "reference", "cascade-seeds"]
+CASCADE_PROGRAMS["a-style-rules-scope-is-kept-on-a-hint"] = ["fixes", "cascade-seeds"]
 CASCADE_PROGRAMS["the-unlayered-styles-are-first"] = ["layer", "cascade-seeds"]
-CASCADE_PROGRAMS["the-result-leaks-its-losers"] = ["cascade-oom", "cascade-seeds"]
+CASCADE_PROGRAMS["the-result-leaks-its-losers"] = ["cascade-oom"]
+CASCADE_PROGRAMS["the-layer-limit-is-off-by-one"] = ["layer"]
+CASCADE_PROGRAMS["a-chained-attached-roll-forgets-the-earlier-one"] = ["fixes", "cascade-seeds"]
 CASCADE_PROGRAMS["the-set-leaks-its-values"] = ["cascade-oom", "cascade-seeds"]
 
 

@@ -50,13 +50,48 @@ def key(origin=AUTHOR, imp=False, hint=False, att=False, layer=0, ctx=0, scoped=
     return "".join(chr(0x40 + v) for v in (k0, k1, k2, k3, k4, k5))
 
 
+class Rec:
+    """A record: its keys (as arguments of key()), its property and its value."""
+    def __init__(self, name, value, kw):
+        self.name, self.value, self.kw = name, value, kw
+
+    def text(self):
+        return key(**self.kw) + " " + self.name + ": " + self.value
+
+
 def rec(name, value, **kw):
-    return key(**kw) + " " + name + ": " + value
+    return Rec(name, value, kw)
 
 
 def seed(records, keep=False, rtl=False, vert=False, compute=False, fault=0):
     o0 = (1 if keep else 0) | (2 if rtl else 0) | (4 if vert else 0) | (8 if compute else 0)
-    return bytes([o0, 0, 0, fault]) + "\n".join(records).encode("latin-1")
+    return bytes([o0, 0, 0, fault]) + "\n".join(r.text() for r in records).encode("latin-1")
+
+
+def vary(records, how):
+    """The same declarations with other keys, so that the model sees other populations of the same shapes."""
+    out = []
+    for n, r in enumerate(records):
+        kw = dict(r.kw)
+        if how == "ctx":
+            kw["ctx"] = (kw.get("ctx", 0) + 1) % 4
+        elif how == "imp":
+            if n % 2 and kw.get("origin", AUTHOR) <= AUTHOR and not kw.get("hint"):
+                kw["imp"] = not kw.get("imp", False)
+        elif how == "layer":
+            if kw.get("layer", 0):
+                kw["layer"] = kw["layer"] % 7 + 1
+        elif how == "origin":
+            if n % 3 == 1 and kw.get("origin", AUTHOR) == AUTHOR and not kw.get("hint") and not kw.get("att"):
+                kw["origin"] = USER
+                kw["layer"] = 0
+        elif how == "scope":
+            kw["scoped"] = not kw.get("scoped", False)
+            kw["dist"] = (kw.get("dist", 0) + n) % 8
+        out.append(Rec(r.name, r.value, kw))
+    if how == "reversed":
+        out.reverse()
+    return out
 
 
 SCENARIOS = {}
@@ -68,6 +103,8 @@ def scenario(name, records):
 
 # the layers of an origin: 1 a, 2 b, 3 b.x, 4 c, 5 c.y.z, 6 d, 7 a.w  (order: a.w a  b.x b  c.y.z c  d  -> ranks a.w=0 a=1 b.x=2 b=3 c.y.z=4 c=5 d=6)
 # ---- the sort order, one criterion at a time
+# a custom property holding var() is refused (GTEXT_CSS_E_INVALID: the substitution layer, C2c, will carry it); the records around it are not affected
+scenario("custom-pending-is-refused", [rec("--a", "5", sheet=0), rec("--a", "x var(--m)", sheet=1), rec("--b", "1", sheet=2), rec("--b", "var(--a, 2)", sheet=3)])
 scenario("tier-chain", [rec("color", c, origin=o, imp=i, sheet=n) for n, (c, o, i) in enumerate([
     ("red", UA, False), ("orange", USER, False), ("yellow", AUTHOR, False), ("green", ANIM, False), ("blue", AUTHOR, True),
     ("indigo", USER, True), ("violet", UA, True), ("black", TRANS, False)])][::-1])
@@ -156,6 +193,31 @@ scenario("revert-shorthand", [rec("margin", "1px", origin=USER), rec("margin-top
 scenario("revert-custom", [rec("--x", "1", origin=USER), rec("--x", "revert", sheet=1), rec("--y", "revert-layer", layer=2), rec("--y", "2", layer=1, sheet=2)])
 scenario("revert-logical", [rec("margin-left", "1px", origin=USER), rec("margin-left", "2px", sheet=0), rec("margin-inline-start", "revert", sheet=1)])
 scenario("revert-logical-layer", [rec("height", "1px", layer=1), rec("height", "2px", layer=2, sheet=0), rec("block-size", "revert-layer", layer=2, sheet=1)])
+# ---- the fix pass: a rule's declarations of both importances, chained element-attached rolls, a layer registry for each context, hints as an origin
+scenario("revert-rule-both-importances", [rec("width", "1px", sheet=0), rec("width", "5px", sheet=1, rule=0, decl=0),
+                                          rec("width", "revert-rule", imp=True, sheet=1, rule=0, decl=1)])
+scenario("revert-rule-other-rules", [rec("width", "1px", origin=USER, sheet=2), rec("width", "2px", ctx=1, sheet=1), rec("width", "3px", att=True, sheet=1, decl=3),
+                                     rec("width", "4px", hint=True, sheet=1, decl=4), rec("width", "revert-rule", imp=True, sheet=1, decl=1),
+                                     rec("width", "9px", sheet=1, decl=0)])
+scenario("revert-layer-attached-important-chain", [rec("width", "4px", origin=UA), rec("width", "5px", att=True, ctx=2),
+                                                   rec("width", "revert-layer", att=True, imp=True, ctx=2, sheet=1),
+                                                   rec("width", "revert-layer", att=True, imp=True, ctx=1, sheet=2)])
+scenario("revert-layer-attached-important-user", [rec("width", "1px", origin=USER), rec("width", "2px", origin=USER, att=True),
+                                                  rec("width", "3px", origin=ANIM, sheet=1),
+                                                  rec("width", "revert-layer", origin=USER, att=True, imp=True, sheet=2)])
+scenario("layers-per-context", [rec("width", "1px", layer=1, ctx=1), rec("width", "2px", layer=2, ctx=1, sheet=1), rec("height", "1px", layer=3, ctx=2),
+                                rec("height", "2px", layer=5, ctx=2, sheet=1), rec("color", "red", layer=6, ctx=3), rec("color", "blue", layer=7, ctx=3, sheet=1),
+                                rec("margin-top", "1px", layer=4, ctx=0), rec("margin-top", "2px", layer=1, ctx=0, sheet=1)])
+scenario("layers-per-context-important", [rec("width", "1px", layer=1, ctx=1, imp=True), rec("width", "2px", layer=2, ctx=1, imp=True, sheet=1),
+                                          rec("height", "1px", layer=3, ctx=3, imp=True), rec("height", "2px", layer=5, ctx=3, imp=True, sheet=1)])
+scenario("hint-context-vs-author-context", [rec("width", "1px", hint=True, ctx=0), rec("width", "2px", ctx=1, sheet=1), rec("height", "1px", hint=True, ctx=3),
+                                            rec("height", "2px", origin=USER, ctx=0, sheet=1)])
+scenario("hint-and-revert", [rec("width", "1px", origin=USER), rec("width", "2px", hint=True, sheet=1), rec("width", "revert", sheet=2),
+                             rec("height", "1px", origin=USER), rec("height", "2px", hint=True, sheet=1), rec("height", "revert-layer", sheet=2)])
+scenario("scope-on-ruleless", [rec("width", "1px", hint=True, scoped=True, dist=0), rec("width", "2px", hint=True, sheet=1),
+                               rec("height", "1px", att=True, scoped=True, dist=0), rec("height", "2px", att=True, sheet=1),
+                               rec("color", "red", origin=ANIM, scoped=True, dist=0), rec("color", "blue", origin=ANIM, sheet=1)])
+scenario("scope-largest", [rec("width", "1px", scoped=True, dist=7), rec("width", "2px", scoped=True, dist=6, sheet=1), rec("width", "3px", sheet=2)])
 # ---- all
 scenario("all-initial", [rec("color", "red", sheet=0), rec("direction", "rtl", sheet=1), rec("unicode-bidi", "embed", sheet=2), rec("--x", "1", sheet=3),
                          rec("all", "initial", sheet=4)])
@@ -198,6 +260,7 @@ scenario("mixed", [rec("color", "red", sheet=0, layer=2), rec("color", "revert-l
                    rec("width", "calc(1px + 2px)", sheet=7, origin=ANIM), rec("height", "1em", sheet=1, rule=3, imp=True, ctx=2)])
 
 FAULTS = (1, 2, 3, 5, 9, 17, 33, 65)
+VARIATIONS = ("ctx", "imp", "layer", "origin", "scope", "reversed")
 FLAGS = {"": dict(), "-kept": dict(keep=True, compute=True), "-rtl": dict(keep=True, rtl=True, vert=False), "-vertical": dict(vert=True, compute=True)}
 
 
@@ -217,6 +280,10 @@ def main(argv):
         for fault in FAULTS:
             with open(os.path.join(out, "own-%s-oom-%02d.seed" % (name, fault)), "wb") as f:
                 f.write(seed(records, keep=True, compute=(fault % 2 == 1), fault=fault))
+            n += 1
+        for how in VARIATIONS:
+            with open(os.path.join(out, "own-%s-%s.seed" % (name, how)), "wb") as f:
+                f.write(seed(vary(records, how), keep=True, compute=(len(how) % 2 == 0)))
             n += 1
     print("%d seeds in %s" % (n, out))
 

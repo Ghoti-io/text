@@ -141,9 +141,105 @@ static uint32_t merged_next(merged * m, size_t * work) {
   return CASCADE_NONE;
 }
 
-static bool same_rule(const cand * x, const cand * y) {
-  return x->origin == y->origin && x->important == y->important && x->hint == y->hint && x->attached == y->attached && x->context == y->context &&
-      x->sheet == y->sheet && x->rule == y->rule;
+/* ---- what the walk has been told to skip --------------------------------------------------------------------- */
+
+/// An entry of the skip table: a style rule that a `revert-rule` took out (kind 0: its origin, whether it is a hint or element-attached, its context, sheet and rule
+/// -- not its importance: "as if the current style rule had not been present at all", and a rule's declarations are of both importances), or the normal
+/// element-attached styles of an origin and context that an important element-attached `revert-layer` passed (kind 1).
+typedef struct {
+  uint32_t gen;
+  uint32_t context, sheet, rule;
+  uint8_t kind, origin, hint, attached;
+} skip_ent;
+
+static uint64_t skip_hash(const skip_ent * e) {
+  uint64_t h = ((uint64_t)e->context << 32) ^ e->sheet;
+  h ^= ((uint64_t)e->rule << 20) ^ ((uint64_t)e->kind << 4) ^ ((uint64_t)e->origin << 8) ^ ((uint64_t)e->hint << 12) ^ ((uint64_t)e->attached << 13);
+  h ^= h >> 33;
+  h *= 0xFF51AFD7ED558CCDULL;
+  h ^= h >> 33;
+  h *= 0xC4CEB9FE1A85EC53ULL;
+  h ^= h >> 33;
+  return h;
+}
+
+static void skip_key(skip_ent * e, int kind, const cand * c) {
+  memset(e, 0, sizeof *e);
+  e->kind = (uint8_t)kind;
+  e->origin = c->origin;
+  e->context = c->context;
+  if (kind == 0) {
+    e->hint = c->hint;
+    e->attached = c->attached;
+    e->sheet = c->sheet;
+    e->rule = c->rule;
+  }
+}
+
+static bool skip_same(const skip_ent * a, const skip_ent * b) {
+  return a->kind == b->kind && a->origin == b->origin && a->context == b->context && a->hint == b->hint && a->attached == b->attached && a->sheet == b->sheet &&
+      a->rule == b->rule;
+}
+
+static bool skip_has(cascade_run * run, int kind, const cand * c) {
+  if (!run->skip_used) {
+    return false;
+  }
+  skip_ent key;
+  skip_key(&key, kind, c);
+  const skip_ent * t = run->skip;
+  size_t i = (size_t)(skip_hash(&key) & (run->skip_cap - 1));
+  while (t[i].gen == run->skip_gen) {
+    run->work++;
+    if (skip_same(&t[i], &key)) {
+      return true;
+    }
+    i = (i + 1) & (run->skip_cap - 1);
+  }
+  return false;
+}
+
+/// Add to the table; false when memory ran out.
+static bool skip_add(cascade_run * run, int kind, const cand * c, size_t room) {
+  if (!run->skip || (run->skip_used + 1) * 2 > run->skip_cap) {
+    size_t cap = run->skip_cap ? run->skip_cap : 16;
+    while (cap < 2 * (room + run->skip_used + 1)) {
+      cap *= 2;
+    }
+    skip_ent * g = gtext_allocator_calloc(&run->alloc, cap, sizeof *g);
+    if (!g) {
+      return false;
+    }
+    /* what this walk has skipped so far moves over; older generations are dropped */
+    const skip_ent * old = run->skip;
+    for (size_t i = 0; old && i < run->skip_cap; i++) {
+      if (old[i].gen == run->skip_gen) {
+        size_t j = (size_t)(skip_hash(&old[i]) & (cap - 1));
+        while (g[j].gen == run->skip_gen) {
+          j = (j + 1) & (cap - 1);
+        }
+        g[j] = old[i];
+      }
+    }
+    gtext_allocator_free(&run->alloc, run->skip);
+    run->skip = g;
+    run->skip_cap = cap;
+  }
+  skip_ent key;
+  skip_key(&key, kind, c);
+  key.gen = run->skip_gen;
+  skip_ent * t = run->skip;
+  size_t i = (size_t)(skip_hash(&key) & (run->skip_cap - 1));
+  while (t[i].gen == run->skip_gen) {
+    run->work++;
+    if (skip_same(&t[i], &key)) {
+      return true;
+    }
+    i = (i + 1) & (run->skip_cap - 1);
+  }
+  t[i] = key;
+  run->skip_used++;
+  return true;
 }
 
 GTEXT_CSS_Status cascade_resolve(cascade_run * run, const uint32_t * own, size_t nown, bool use_all, uint32_t * winner, uint32_t * rollbacks) {
@@ -192,15 +288,23 @@ GTEXT_CSS_Status cascade_resolve(cascade_run * run, const uint32_t * own, size_t
   m.nb = use_all && run->all_sorted ? run->nall : 0;
   size_t *const work = &run->work;
   unsigned max_level = 2;
-  bool skip_animation = false, skip_attached_normal = false;
-  uint8_t attached_origin = 0;
-  uint32_t attached_context = 0;
+  bool skip_animation = false;
+  /* a new generation: nothing the walks of other properties skipped is skipped here */
+  run->skip_gen++;
+  run->skip_used = 0;
+  if (run->skip_gen == 0) {
+    if (run->skip) {
+      memset(run->skip, 0, run->skip_cap * sizeof(skip_ent));
+    }
+    run->skip_gen = 1;
+  }
+  const size_t room = nown + (use_all ? run->nall : 0);
   uint32_t x = merged_next(&m, work);
   while (x != CASCADE_NONE) {
     const cand * c = &C[x];
     (*work)++;
     if (c->level > max_level || (skip_animation && c->origin == GTEXT_CSS_ORIGIN_ANIMATION) ||
-        (skip_attached_normal && c->attached && !c->important && c->origin == attached_origin && c->context == attached_context)) {
+        (run->skip_used && (skip_has(run, 0, c) || (c->attached && !c->important && skip_has(run, 1, c))))) {
       x = merged_next(&m, work);
       continue;
     }
@@ -239,10 +343,10 @@ GTEXT_CSS_Status cascade_resolve(cascade_run * run, const uint32_t * own, size_t
           x = merged_next(&m, work);
         } while (x != CASCADE_NONE && C[x].attached && C[x].k[CK_TIER] == c->k[CK_TIER] && C[x].context == c->context);
         if (c->important) {
-          skip_animation = c->origin == GTEXT_CSS_ORIGIN_AUTHOR;
-          skip_attached_normal = true;
-          attached_origin = c->origin;
-          attached_context = c->context;
+          skip_animation = skip_animation || c->origin == GTEXT_CSS_ORIGIN_AUTHOR;
+          if (!skip_add(run, 1, c, room)) {
+            return GTEXT_CSS_E_OOM;
+          }
         }
       }
       else {
@@ -250,7 +354,7 @@ GTEXT_CSS_Status cascade_resolve(cascade_run * run, const uint32_t * own, size_t
            the lowest key of the layer's normal level is skipped */
         uint32_t bound[CK_WORDS];
         memset(bound, 0, sizeof bound);
-        bound[CK_TIER] = TIER_NORMAL_UA + c->origin;
+        bound[CK_TIER] = cand_normal_tier(c);
         bound[CK_CONTEXT] = UINT32_MAX - c->context;
         bound[CK_LAYER] = c->layer_normal;
         do {
@@ -259,9 +363,11 @@ GTEXT_CSS_Status cascade_resolve(cascade_run * run, const uint32_t * own, size_t
       }
       break;
     case GTEXT_CSS_WIDE_REVERT_RULE:
-      do {
-        x = merged_next(&m, work);
-      } while (x != CASCADE_NONE && same_rule(&C[x], c));
+      /* "as if the current style rule had not been present at all": every declaration of the rule, of either importance, wherever it sorts */
+      if (!skip_add(run, 0, c, room)) {
+        return GTEXT_CSS_E_OOM;
+      }
+      x = merged_next(&m, work);
       break;
     default:
       return GTEXT_CSS_E_INTERNAL;

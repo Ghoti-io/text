@@ -45,9 +45,9 @@
  * ## One registry, one context
  *
  * A registry holds three trees, one for each of the user-agent, user and author origins (the animation and transition origins have no
- * layers). Layers are scoped to their origin **and context**: make one registry for each shadow tree context, or share one where the contexts
- * are known not to repeat a name. A declaration is never compared with one of another context by layer (the context is compared first), so ranks
- * of different registries are never compared.
+ * layers). Layers are scoped to their origin **and context**: make one registry for each shadow tree context and give it to the candidate set
+ * (gtext_css_candidates_use_layers()), so that contexts which order the same names differently are each in their own order. A declaration is never compared
+ * with one of another context by layer (the context is compared first), so ranks of different registries are never compared.
  *
  * ## Lifecycle
  *
@@ -135,8 +135,9 @@ GTEXT_API void gtext_css_layer_registry_free(GTEXT_CSS_Layer_Registry * registry
  * @brief Declare the layer of a path under a parent, and each layer above it that does not exist: `a.b.c` declares `a`, `a.b` and `a.b.c`.
  *
  * Idempotent: a path that exists is its layer. A path is segments separated by `.`; each segment is a non-empty name and not a CSS-wide
- * keyword (`initial`, `inherit`, `unset`, `revert`, `revert-layer`, `revert-rule`: "reserved for future use"), compared by bytes. An escape is not
- * decoded here: a name that holds a `.` is declared with gtext_css_layer_declare_segment().
+ * keyword (`initial`, `inherit`, `unset`, `revert`, `revert-layer`, `revert-rule`: "reserved for future use"), compared by bytes. A `.` of a name is written `\\.` and a
+ * backslash `\\\\` (no other escape is read), so that the path gtext_css_layer_path() writes is the path that declares and finds the layer: `a\\.b` is the one
+ * layer named `a.b`, `a.b` is the layer `b` in `a`. A name is also declared with gtext_css_layer_declare_segment(), which reads nothing.
  *
  * @param registry The registry. Not NULL.
  * @param origin The user-agent, user or author origin.
@@ -222,7 +223,8 @@ GTEXT_API GTEXT_CSS_Status gtext_css_layer_compare(const GTEXT_CSS_Layer_Registr
     GTEXT_CSS_Layer_Id b, int * order);
 
 /**
- * @brief Write the dotted path of a layer (`framework.theme`); an anonymous segment is written `(anonymous)`; GTEXT_CSS_LAYER_NONE is the empty string.
+ * @brief Write the dotted path of a layer (`framework.theme`); a `.` or `\\` in a segment is escaped with a `\\`; an anonymous segment is written `(anonymous)`;
+ *   GTEXT_CSS_LAYER_NONE is the empty string.
  *
  * @param registry The registry. Not NULL.
  * @param layer The layer.

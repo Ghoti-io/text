@@ -97,7 +97,7 @@ The criteria, in descending order of precedence, are Cascade 5, section 6.1 (wit
 
 | # | Criterion | Normal declarations | Important declarations |
 |---|---|---|---|
-| 1 | origin and importance | transition, important user agent, important user, important author, animation, normal author, normal user, normal user agent | (the same list) |
+| 1 | origin and importance | transition, important user agent, important user, important author, animation, normal author, presentational hint, normal user, normal user agent | (the same list) |
 | 2 | context (`context`: 0 is the outermost shadow tree) | the outer context wins | the inner context wins |
 | 3 | element-attached (`element_attached`, a `style` attribute) | attached over style rules | attached over style rules |
 | 4 | layer (`layer`) | the later layer; unlayered declarations are last | the earlier layer |
@@ -106,8 +106,9 @@ The criteria, in descending order of precedence, are Cascade 5, section 6.1 (wit
 | 7 | order of appearance (`sheet`, `rule`, `declaration`) | later | later |
 
 Two entries that are equal in every key (which no caller has a reason to make) are ordered by the order they were added. A **presentational hint**
-(`presentational_hint`: an HTML presentational attribute, an SVG presentation attribute) is author-level at the start of the author style sheet with
-specificity zero: below every other normal author declaration of its context, layered or not, above the user and user-agent origins.
+(`presentational_hint`: an HTML presentational attribute, an SVG presentation attribute) is an **origin of its own** between the normal user and the normal
+author declarations, with specificity zero: below every normal author declaration of any context, layered or not, above the user and user-agent origins. It is
+author-level for `revert` (which rolls it back with the author declarations) and `revert-layer` rolls back to it.
 
 Specificity components are 32 bits and **saturate**: `gtext_css_specificity_make()` and `gtext_css_specificity_add()` stop at `UINT32_MAX`, they do not wrap,
 so a selector with 2^32 ids is not weaker than one with none. Cascade 6 states proximity in prose as applying "regardless of specificity or order of
@@ -119,10 +120,15 @@ appearance" and lists it after specificity in the sorting order; this follows th
 declaration**, with nested layers grouped inside their parent and the parent's own declarations after them: the example of Cascade 5, 6.4.3 is the order
 `reset.type, reset, framework.theme, framework`, then the unlayered declarations. A layer's place is a number assigned once, at `gtext_css_layer_freeze()`,
 so comparing two layers is comparing two integers. Anonymous layers (`@layer { }`, `@import ... layer`) are a new layer each time. Layers are scoped to their
-origin **and context**: make a registry for each shadow context.
+origin **and context**: make a registry for each shadow context, and give it to the candidate set with `gtext_css_candidates_use_layers()` (the registry given to
+`gtext_css_candidates_new()` is the default for the contexts that have none); that call is refused after a candidate of the context has been added or the set
+sealed. A layer's path writes a `.` or a `\` in a layer's name with a backslash before it, so that the layer `a.b` and the layer `b` inside `a` have different
+paths.
 
 `gtext_css_cascade_collect_layers()` declares the layers of a parsed sheet: `@layer` statements and blocks, nested in each other and in style rules, `@scope`
 and `@starting-style`, and `@import` with `layer` or `layer(name)`. An invalid rule (a CSS-wide keyword as a name, a name with white space in it, a number)
+declares nothing. `@import` is read only where it is valid: at the top level, before any style rule or at-rule other than `@charset`, `@layer` statements
+and other imports, with a `<url>` or a `<string>` first (its conditions go through the filter like those of `@media`); a statement `@layer` inside a style rule
 declares nothing. A layer inside `@media`, `@supports`, `@container` or `@document` counts only when the **filter** the caller gives
 (`GTEXT_CSS_Layer_Collect_Options::active`) says the condition applies; with no filter such a rule that holds a layer is `GTEXT_CSS_E_UNSUPPORTED` naming
 `active_rule`, and one that holds none is skipped. The filter is the at-rule layer's (C4); the structure is final.
@@ -135,7 +141,10 @@ declares nothing. A layer inside `@media`, `@supports`, `@container` or `@docume
   author declaration were specified, from a user declaration as if no author or user declaration were, and from a user-agent declaration it is `unset`.
 - `revert-layer` rolls back "as if no rules were specified in the current cascade layer, or between its normal and important levels in the cascade". For
   important element-attached styles it only reverts the element-attached styles and the intervening animation origin; the animation origin is its own layer.
-- `revert-rule` rolls back as if the style rule the declaration is in were not there.
+- `revert-rule` rolls back as if the style rule the declaration is in were not there: every declaration of that rule, normal and important alike.
+- Importance does not change what a keyword rolls back to: a normal and an `!important` `revert-layer` both roll back to the declarations below the
+  layer's normal level, so the important declarations of later layers, and the normal ones of later layers, other contexts and the unlayered styles, that lie
+  between its two levels are out too (Chromium and Firefox agree; tools/oracle/cascade_probe_answers.txt in the repository).
 
 When nothing is left to roll back to the property has **no declared value**: it is not in the result, and takes the inherited or initial value. A rolled-back
 declaration is counted in the winner's `rollbacks`. A property whose best candidate rolls back is the only one that sorts its candidates, and a chain of
@@ -247,7 +256,8 @@ tested at the bound and one past. Nothing recurses. A cascade is linear in the c
 rolls back, of the names of the custom properties that have a winner, and of the losers when they are kept; the layers of a registry are compared in constant
 time. `all` costs a pass over the properties it applies to. A candidate set is mutable until the first cascade seals it (adding to a sealed set is
 `GTEXT_CSS_E_INVALID`); then it and every result are immutable, a result holds the set it was made from, and any number of threads may read them, each
-cascading with its own state. An allocation that fails is `GTEXT_CSS_E_OOM` with nothing returned and nothing leaked.
+cascading with its own state. Adding candidates and registering layer registries is for one thread, and the first cascade of a set seals it: an `add()`
+concurrent with that first `cascade()` is not supported. An allocation that fails is `GTEXT_CSS_E_OOM` with nothing returned and nothing leaked.
 
 ## Verification
 

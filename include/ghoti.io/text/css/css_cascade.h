@@ -56,8 +56,11 @@
  *
  * Cascade 6 states proximity in prose as applied "regardless of specificity or order of appearance" and lists it after specificity in the sorting order;
  * this follows the list (the sorting criteria are what the section defines, and the prose describes proximity's own effect among rules that tie
- * on specificity). Presentational hints are "author-level style at the start of the author style sheet with specificity zero": the entry flag puts a hint
- * below every other normal author declaration of its context, layered or not, and above the user and user-agent origins.
+ * on specificity). Presentational hints are an origin of their own: Cascade 5, 6.5, has them enter "as rules in either the UA-origin or a special-purpose author
+ * presentational hint origin between the regular user origin and the author origin" and says "this author presentational hint origin is treated as an
+ * independent origin; however for the purpose of the revert keyword (but not for the revert-layer keyword) it is considered part of the author origin". So the
+ * entry flag puts a normal hint above the normal user and user-agent declarations and below every normal author declaration, in any context and layer (the origin is
+ * compared before the context), and its specificity is zero; `revert` takes it out with the author origin and `revert-layer` rolls back to it.
  *
  * ## Rolling back
  *
@@ -66,7 +69,8 @@
  * specified, from a user declaration as if no author or user declaration were, and from a user-agent declaration it is `unset`. `revert-layer` rolls back
  * "as if no rules were specified in the current cascade layer, or between its normal and important levels in the cascade"; "for revert-layer in important
  * element-attached styles it only reverts the element-attached styles and the intervening animation origin"; the animation origin "forms its own cascade
- * layer". `revert-rule` rolls back "as if the current style rule had not been present at all". Where nothing is left, the property has **no declared value**
+ * layer". `revert-rule` rolls back "as if the current style rule had not been present at all": every declaration of the rule (its origin, kind -- style rule, hint or
+ * element-attached --, context, `sheet` and `rule`), of either importance, is out. Where nothing is left, the property has **no declared value**
  * and takes the inherited or initial value (`unset`): the property is simply absent from the result.
  *
  * ## `all`, shorthands, logical groups
@@ -91,7 +95,8 @@
  * (O(k log k) for k of them); `all` is merged, not repeated. The one other sort is of the names of the custom properties that have a winner, so that the
  * output order is canonical. The number of candidates is bounded (GTEXT_CSS_E_LIMIT_CANDIDATES, with the declaration that crossed it), and nothing recurses.
  * A candidate set is mutable until the first cascade seals it; afterwards it and every result are immutable and may be read by any number of threads, and each
- * cascade owns its state.
+ * cascade owns its state. **Adding to a set while another thread cascades it is not supported** (the set is not locked: the cascade reads the candidates as they are
+ * when it starts); add everything, then cascade. The layer registries and the candidate set's registries for the contexts are read only.
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_CASCADE_H
@@ -149,7 +154,7 @@ typedef struct {
   bool important;                      ///< Declared `!important`. Not for the animation and transition origins (GTEXT_CSS_E_INVALID).
   bool presentational_hint;            ///< A non-CSS presentational hint or SVG presentation attribute: author origin, never important, unlayered, not element-attached; its specificity is taken as zero.
   bool element_attached;               ///< Attached to the element (a `style` attribute): unlayered; its specificity and scope are not used.
-  GTEXT_CSS_Layer_Id layer;            ///< The layer of the origin in the layer registry (GTEXT_CSS_LAYER_NONE: unlayered).
+  GTEXT_CSS_Layer_Id layer;            ///< The layer of the origin in the layer registry of the entry's context (GTEXT_CSS_LAYER_NONE: unlayered).
   uint32_t context;                    ///< The shadow-tree context, 0 for the outermost (see the file's description).
   bool scoped;                         ///< The rule is a scoped style rule (in an `@scope`); false: no scoping root, "infinite proximity hops".
   uint32_t scope_distance;             ///< `scoped`: the generational or sibling-element hops from the scoping root to the rule's subject (0 is the root itself).
@@ -203,14 +208,29 @@ GTEXT_API GTEXT_CSS_Candidate_Options gtext_css_candidate_options_default(void);
  * @brief Make an empty candidate set.
  *
  * @param registry The registry. Not NULL; it must outlive the set and every result.
- * @param layers A **frozen** layer registry (css_layer.h) that the entries' layers belong to; NULL if no entry has a layer (a layer is then GTEXT_CSS_E_INVALID).
- *   It must outlive the set.
+ * @param layers A **frozen** layer registry (css_layer.h) that the layers of the entries belong to, for every context that has no registry of its own
+ *   (gtext_css_candidates_use_layers()); NULL if there is none (a layer is then GTEXT_CSS_E_INVALID). It must outlive the set.
  * @param options NULL for the defaults.
  * @param out Receives the set; written only on success. Not NULL.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a NULL argument, or a layer registry that is not frozen); GTEXT_CSS_E_OOM.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_candidates_new(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Layer_Registry * layers,
     const GTEXT_CSS_Candidate_Options * options, GTEXT_CSS_Candidates ** out);
+
+/**
+ * @brief Give a context its own layer registry: "Cascade layers are scoped to their origin and context, so the ordering of layers in the light DOM has no impact on the order
+ *   of identically-named layers in the shadow DOM (and vice versa)" (Cascade 5, 6.4.3).
+ *
+ * The `layer` of an entry is a layer of the registry of the entry's `context`. Two contexts may order the same names differently; they are never compared by layer
+ * (the context is compared first). Call this before the context's first candidate.
+ *
+ * @param set The set. Not NULL; not sealed.
+ * @param context The context.
+ * @param layers A frozen registry. Not NULL; it must outlive the set.
+ * @return GTEXT_CSS_OK (a context given another registry before gets this one); GTEXT_CSS_E_INVALID (a NULL argument, a registry that is not frozen, a sealed set, or a
+ *   context that already has a candidate); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_candidates_use_layers(GTEXT_CSS_Candidates * set, uint32_t context, const GTEXT_CSS_Layer_Registry * layers);
 
 /** @brief Another owner of the set (it is freed when the last lets go). */
 GTEXT_API GTEXT_CSS_Candidates * gtext_css_candidates_retain(GTEXT_CSS_Candidates * set);
@@ -235,7 +255,12 @@ GTEXT_API void gtext_css_candidates_free(GTEXT_CSS_Candidates * set);
 GTEXT_API GTEXT_CSS_Status gtext_css_candidates_add(GTEXT_CSS_Candidates * set, const GTEXT_CSS_Cascade_Entry * keys,
     const GTEXT_CSS_Property_Value * value, GTEXT_CSS_Cascade_Result * result);
 
-/** @brief Add a custom property's declaration (VALID or WIDE; case of the name is kept). @return As gtext_css_candidates_add(). */
+/** @brief Add a custom property's declaration (VALID or WIDE; case of the name is kept).
+ *
+ * A custom property whose value holds `var()` parses as PENDING and is **refused** with GTEXT_CSS_E_INVALID (the result's `detail` says so), by this call and by the
+ * calls that parse (gtext_css_candidates_add_text(), gtext_css_candidates_add_declaration(); their `outcome` is PENDING): the substitution layer (C2c) is what will
+ * carry it, as it carries the pending value of any other property. Nothing is added, and the set is as it was.
+ * @return As gtext_css_candidates_add(). */
 GTEXT_API GTEXT_CSS_Status gtext_css_candidates_add_custom(GTEXT_CSS_Candidates * set, const GTEXT_CSS_Cascade_Entry * keys, const char * name,
     size_t name_length, const GTEXT_CSS_Property_Value * value, GTEXT_CSS_Cascade_Result * result);
 

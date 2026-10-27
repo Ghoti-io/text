@@ -92,7 +92,9 @@ static void result_name(GTEXT_CSS_Cascade_Result * r, const char * s, size_t n) 
   if (n > sizeof r->name - 1) {
     n = sizeof r->name - 1;
   }
-  memcpy(r->name, s, n);
+  if (n) {
+    memcpy(r->name, s, n);
+  }
   r->name[n] = '\0';
 }
 
@@ -169,9 +171,15 @@ void gtext_css_candidates_free(GTEXT_CSS_Candidates * set) {
     gtext_css_value_set_free(set->items[i].set);
   }
   gtext_allocator_free(&a, set->items);
+  gtext_allocator_free(&a, set->contexts);
   gtext_allocator_free(&a, set->names);
   gtext_allocator_free(&a, set->diags);
   gtext_allocator_free(&a, set);
+}
+
+/// The set's work counter (probes of its table of contexts), for the quadratic suite; hidden, like css_registry_work().
+size_t css_candidates_work(const GTEXT_CSS_Candidates * set) {
+  return set ? set->work : 0;
 }
 
 size_t gtext_css_candidates_count(const GTEXT_CSS_Candidates * set) {
@@ -270,6 +278,88 @@ static GTEXT_CSS_Status name_put(GTEXT_CSS_Candidates * s, const char * name, si
   return GTEXT_CSS_OK;
 }
 
+/* ---- the contexts ------------------------------------------------------------------------------------------- */
+
+static size_t ctx_slot(uint32_t context, size_t cap) {
+  uint32_t h = context * 0x9E3779B1u;
+  h ^= h >> 15;
+  h *= 0x85EBCA6Bu;
+  h ^= h >> 13;
+  return (size_t)h & (cap - 1);
+}
+
+/// The entry of a context, or NULL when there is none.
+static const ctx_entry * ctx_find(const GTEXT_CSS_Candidates * s, uint32_t context) {
+  if (!s->contexts) {
+    return NULL;
+  }
+  size_t i = ctx_slot(context, s->contexts_cap);
+  while (s->contexts[i].occupied) {
+    if (s->contexts[i].context == context) {
+      return &s->contexts[i];
+    }
+    i = (i + 1) & (s->contexts_cap - 1);
+  }
+  return NULL;
+}
+
+/// The entry of a context, made if it is new; NULL when memory ran out.
+static ctx_entry * ctx_get(GTEXT_CSS_Candidates * s, uint32_t context) {
+  if ((s->ncontexts + 1) * 2 > s->contexts_cap) {
+    const size_t cap = s->contexts_cap ? s->contexts_cap * 2 : 8;
+    ctx_entry * t = gtext_allocator_calloc(&s->alloc, cap, sizeof *t);
+    if (!t) {
+      return NULL;
+    }
+    for (size_t k = 0; k < s->contexts_cap; k++) {
+      if (s->contexts[k].occupied) {
+        size_t i = ctx_slot(s->contexts[k].context, cap);
+        while (t[i].occupied) {
+          i = (i + 1) & (cap - 1);
+        }
+        t[i] = s->contexts[k];
+      }
+    }
+    gtext_allocator_free(&s->alloc, s->contexts);
+    s->contexts = t;
+    s->contexts_cap = cap;
+  }
+  size_t i = ctx_slot(context, s->contexts_cap);
+  while (s->contexts[i].occupied) {
+    s->work++;
+    if (s->contexts[i].context == context) {
+      return &s->contexts[i];
+    }
+    i = (i + 1) & (s->contexts_cap - 1);
+  }
+  s->contexts[i].occupied = 1;
+  s->contexts[i].context = context;
+  s->ncontexts++;
+  return &s->contexts[i];
+}
+
+/// The layer registry that the layers of a context belong to.
+static const GTEXT_CSS_Layer_Registry * layers_for(const GTEXT_CSS_Candidates * s, uint32_t context) {
+  const ctx_entry * e = ctx_find(s, context);
+  return e && e->layers ? e->layers : s->layers;
+}
+
+GTEXT_CSS_Status gtext_css_candidates_use_layers(GTEXT_CSS_Candidates * set, uint32_t context, const GTEXT_CSS_Layer_Registry * layers) {
+  if (!set || !layers || !gtext_css_layer_is_frozen(layers) || gcu_atomic_int_load(&set->sealed)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const ctx_entry * seen = ctx_find(set, context);
+  if (seen && seen->used) {
+    return GTEXT_CSS_E_INVALID; /* its candidates were keyed by the ranks of another registry */
+  }
+  ctx_entry * e = ctx_get(set, context);
+  if (!e) {
+    return GTEXT_CSS_E_OOM;
+  }
+  e->layers = layers;
+  return GTEXT_CSS_OK;
+}
+
 /// The sort key of an entry's keys, validated; `*c` is filled except for the property and the value.
 static GTEXT_CSS_Status make_base(GTEXT_CSS_Candidates * s, const GTEXT_CSS_Cascade_Entry * k, cand * c, GTEXT_CSS_Cascade_Result * r) {
   memset(c, 0, sizeof *c);
@@ -288,21 +378,25 @@ static GTEXT_CSS_Status make_base(GTEXT_CSS_Candidates * s, const GTEXT_CSS_Casc
   }
   size_t rank = 0, count = 0;
   if (!timed) {
-    if (k->layer != GTEXT_CSS_LAYER_NONE && !s->layers) {
-      return fail(r, GTEXT_CSS_E_INVALID, NULL, "a layer was given and the candidate set has no layer registry");
+    const GTEXT_CSS_Layer_Registry * lr = layers_for(s, k->context);
+    if (k->layer != GTEXT_CSS_LAYER_NONE && !lr) {
+      return fail(r, GTEXT_CSS_E_INVALID, NULL, "a layer was given and the candidate set has no layer registry for its context");
     }
-    if (s->layers) {
-      count = gtext_css_layer_count(s->layers, k->origin);
-      if (gtext_css_layer_rank(s->layers, k->origin, k->layer, &rank) != GTEXT_CSS_OK) {
+    if (lr) {
+      count = gtext_css_layer_count(lr, k->origin);
+      if (gtext_css_layer_rank(lr, k->origin, k->layer, &rank) != GTEXT_CSS_OK) {
         return fail(r, GTEXT_CSS_E_INVALID, NULL, "the layer is not a layer of this origin in the layer registry");
       }
     }
+  }
+  if (!ctx_get(s, k->context)) { /* the entry is made here, where memory can be refused; push() marks it used */
+    return result_done(r, GTEXT_CSS_E_OOM);
   }
   uint32_t tier;
   switch (k->origin) {
   case GTEXT_CSS_ORIGIN_USER_AGENT: tier = k->important ? TIER_IMPORTANT_UA : TIER_NORMAL_UA; break;
   case GTEXT_CSS_ORIGIN_USER: tier = k->important ? TIER_IMPORTANT_USER : TIER_NORMAL_USER; break;
-  case GTEXT_CSS_ORIGIN_AUTHOR: tier = k->important ? TIER_IMPORTANT_AUTHOR : TIER_NORMAL_AUTHOR; break;
+  case GTEXT_CSS_ORIGIN_AUTHOR: tier = k->important ? TIER_IMPORTANT_AUTHOR : k->presentational_hint ? TIER_HINT : TIER_NORMAL_AUTHOR; break;
   case GTEXT_CSS_ORIGIN_ANIMATION: tier = TIER_ANIMATION; break;
   default: tier = TIER_TRANSITION; break;
   }
@@ -352,6 +446,10 @@ static GTEXT_CSS_Status make_base(GTEXT_CSS_Candidates * s, const GTEXT_CSS_Casc
 static void push(GTEXT_CSS_Candidates * s, const cand * base, cand_kind kind, GTEXT_CSS_Property_Id property, GTEXT_CSS_Property_Id shorthand,
     GTEXT_CSS_Property_Outcome outcome, GTEXT_CSS_Wide_Keyword wide, const GTEXT_CSS_Value_Set * set, uint32_t name_off, uint32_t name_len,
     uint32_t group) {
+  ctx_entry * ce = (ctx_entry *)(uintptr_t)ctx_find(s, base->context);  /* made by make_base() */
+  if (ce) {
+    ce->used = 1; /* from here the context has a candidate: its registry is no longer to be changed */
+  }
   cand * c = &s->items[s->count];
   *c = *base;
   c->k[CK_POSITION] = (uint32_t)s->count;
@@ -1251,6 +1349,7 @@ done:
   gtext_allocator_free(&alloc, st.run.all_sorted);
   gtext_allocator_free(&alloc, st.run.buf_a);
   gtext_allocator_free(&alloc, st.run.buf_b);
+  gtext_allocator_free(&alloc, st.run.skip);
   gtext_allocator_free(&alloc, ustart);
   gtext_allocator_free(&alloc, uitems);
   gtext_allocator_free(&alloc, fl);
@@ -1388,9 +1487,9 @@ static GTEXT_CSS_Status dump_to_buffer(const GTEXT_CSS_Cascaded * c, dbuf * b) {
       dputs(b, " all");
     }
     dputs(b, " layer=");
-    if (k->layer && s->layers) {
+    if (k->layer && layers_for(s, k->context)) {
       char path[256];
-      const size_t pn = gtext_css_layer_path(s->layers, k->layer, path, sizeof path);
+      const size_t pn = gtext_css_layer_path(layers_for(s, k->context), k->layer, path, sizeof path);
       dput(b, path, pn < sizeof path ? pn : sizeof path - 1);
     }
     else {

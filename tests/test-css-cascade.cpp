@@ -441,11 +441,21 @@ TEST(CssCascadeSort, PresentationalHintsAreAuthorLevelAtTheStartWithSpecificityZ
   EXPECT_EQ(bad.status, GTEXT_CSS_E_INVALID);
   bad.add("width", "1px", K().hint().attached());
   EXPECT_EQ(bad.status, GTEXT_CSS_E_INVALID);
-  /* in an outer context a hint beats the normal declaration of an inner one, as an outer normal declaration does */
+  /* 6.5: "this author presentational hint origin is treated as an independent origin" "between the regular user origin and the author origin", and the origin
+     is compared before the context: a hint of the outer context is below an author rule of an inner one, and above a user rule of any */
   Set ctx;
   ctx.add("width", "1px", K().hint().ctx(0));
   ctx.add("width", "2px", K().ctx(1));
-  EXPECT_EQ(Out(ctx).value("width"), "1px");
+  EXPECT_EQ(Out(ctx).value("width"), "2px");
+  Set inner;
+  inner.add("width", "1px", K().hint().ctx(2));
+  inner.add("width", "2px", K().user().ctx(0));
+  EXPECT_EQ(Out(inner).value("width"), "1px");
+  /* among hints the contexts compare as they do for any normal declaration */
+  Set hints;
+  hints.add("width", "1px", K().hint().ctx(1));
+  hints.add("width", "2px", K().hint().ctx(0).order(0, 1));
+  EXPECT_EQ(Out(hints).value("width"), "2px");
 }
 
 /* ---- rolling back ------------------------------------------------------------------------------------------------- */

@@ -32,7 +32,7 @@ of the library's archive into the test programs, which are then run:
   testCssRegistry, testCssProperty, testCssRegistryOom
                          the registry (the tables' relations, consolidation, registration, override, limits, grammars), property-level
                          parsing, and the allocation sweeps of both
-  testCssCascade, testCssLayer, testCssCascadeOom, testCssCascadeFuzzSeeds
+  testCssCascade, testCssLayer, testCssCascadeOom, testCssCascadeFuzzSeeds, testCssCascadeFixes, testCssCascadeReference
                          the cascade (tools/css/plant-fuzz.py CASCADE_PLANTS: each sort criterion swapped with its neighbour, every rolling keyword undone, ...), its
                          layers, its allocation sweeps, and the replay of the cascade fuzzer's seeds through its reference model
   testCssGrammarFuzzSeeds, testCssValuesFuzzSeeds, testCssRegistryFuzzSeeds
@@ -59,7 +59,7 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "registry-seeds": "test-css-registry-fuzz-seeds.cpp", "registry": "test-css-registry.cpp", "property": "test-css-property.cpp",
             "registry-oom": "test-css-registry-oom.cpp", "canon": "test-css-property-canon.cpp",
             "cascade": "test-css-cascade.cpp", "layer": "test-css-layer.cpp", "cascade-oom": "test-css-cascade-oom.cpp",
-            "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp"}
+            "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit

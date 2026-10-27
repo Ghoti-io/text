@@ -1268,6 +1268,7 @@
 #define gtext_css_specificity_add GHOTIIO_TEXT(gtext_css_specificity_add)
 #define gtext_css_specificity_compare GHOTIIO_TEXT(gtext_css_specificity_compare)
 #define gtext_css_specificity_make GHOTIIO_TEXT(gtext_css_specificity_make)
+#define gtext_css_candidates_use_layers GHOTIIO_TEXT(gtext_css_candidates_use_layers)
 /// @endcond
 
 #endif // GHOTI_IO_GTEXT_NAMESPACE_H

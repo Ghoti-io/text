@@ -71,7 +71,6 @@ GTEXT_CSS_Status whole(FaultAllocator & fa, const std::string & sheet, std::stri
   }
   /* the declarations of the style rules of the sheet, in order, each rule in the layer of the block it is in: the sheet here is flat, so a rule's layer
      is named by the first word of its selector (`a.b { ... }` is in layer a.b, `x` is unlayered) */
-  uint32_t order = 0;
   for (size_t r = 0; st == GTEXT_CSS_OK && r < parsed.tree->rule_count; r++) {
     const GTEXT_CSS_Rule & rule = parsed.tree->rules[r];
     if (rule.kind != GTEXT_CSS_RULE_QUALIFIED) {
@@ -98,7 +97,6 @@ GTEXT_CSS_Status whole(FaultAllocator & fa, const std::string & sheet, std::stri
       k.e.declaration = (uint32_t)d;
       GTEXT_CSS_Property_Outcome outcome;
       st = gtext_css_candidates_add_declaration(set, &k.e, &rule.declarations[d], nullptr, &outcome, nullptr);
-      order++;
     }
   }
   if (st == GTEXT_CSS_OK) {
