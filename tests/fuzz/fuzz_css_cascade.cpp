@@ -48,7 +48,7 @@
  *   records have the same order of appearance;
  *   a cascade twice gives the same dump and the same hash; the losers (when kept) are the other candidates of the property, in order, each rolled back exactly
  *   when it sorts above the winner; the block of the winners has one item for each and no rolling keyword in it, and computes as an element or is refused
- *   as the computed-value layer says (a pending value, a property it does not compute, a callback it lacks), never E_INTERNAL;
+ *   as the computed-value layer says (a property it does not compute, a callback it lacks, a limit), never E_INTERNAL;
  *   **an allocation that fails is E_OOM**, with nothing returned and nothing leaked or freed that the allocator did not make.
  *
  * Seeds: tests/fuzz/corpus/css-cascade, made by tools/css/make-fuzz-cascade-seeds.py.
@@ -264,9 +264,6 @@ struct Pipe {
           nullptr);
       if (status == GTEXT_CSS_E_UNSUPPORTED) {
         status = GTEXT_CSS_OK;  // a value the library cannot judge: nothing was added
-      }
-      if (status == GTEXT_CSS_E_INVALID && outcome == GTEXT_CSS_PROP_RESULT_PENDING && recs[i].name.compare(0, 2, "--") == 0) {
-        status = GTEXT_CSS_OK;  // a custom property holding var() cannot be carried until the substitution layer exists (C2c): refused, nothing was added
       }
       if (status == GTEXT_CSS_OK && gtext_css_candidates_count(set) > before) {
         keys.push_back(k);
@@ -860,7 +857,6 @@ void check_block(const Pipe & p, const std::string & input) {
   if (gtext_css_block_count(block) != gtext_css_cascaded_count(p.c)) {
     fail("the block does not have one item for each winner", "", input);
   }
-  bool pending = false;
   for (size_t i = 0; i < gtext_css_block_count(block); i++) {
     GTEXT_CSS_Declaration_Item it;
     gtext_css_block_item(block, i, &it);
@@ -868,9 +864,8 @@ void check_block(const Pipe & p, const std::string & input) {
             it.wide == GTEXT_CSS_WIDE_REVERT_RULE)) {
       fail("a rolling keyword is in the block of the winners", "", input);
     }
-    pending = pending || it.outcome == GTEXT_CSS_PROP_RESULT_PENDING;
   }
-  if (!pending) {
+  {
     GTEXT_CSS_Computed_Style * style = nullptr;
     GTEXT_CSS_Compute_Result r{};
     const GTEXT_CSS_Status cs = gtext_css_compute_style(shared_context(), block, nullptr, nullptr, &style, &r);

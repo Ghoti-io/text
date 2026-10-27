@@ -79,7 +79,7 @@ TEST(CssComputeDefaulting, AllIsADeclarationAtItsPlaceInTheOrderAndSparesDirecti
   EXPECT_EQ(gtext_css_computed_custom_count(c.s), 1u);
 }
 
-TEST(CssComputeDefaulting, ARevertAndAPendingValueAreCascadeResultsAndRefusedAsInputs) {
+TEST(CssComputeDefaulting, ARevertIsACascadeResultAndRefusedAsAnInputAndAPendingValueIsSubstituted) {
   Context ctx(R());
   {
     Block b(R(), "color: revert");
@@ -104,11 +104,11 @@ TEST(CssComputeDefaulting, ARevertAndAPendingValueAreCascadeResultsAndRefusedAsI
     EXPECT_EQ(s.status, GTEXT_CSS_E_INVALID);
   }
   {
+    // a pending value is no longer refused: the style substitutes it (and `--w` being nothing, `width` is invalid at computed-value time, which is `unset`)
     Block b(R(), "width: var(--w)");
     Style s;
     s.compute(ctx, &b);
-    EXPECT_EQ(s.status, GTEXT_CSS_E_INVALID);
-    EXPECT_STREQ(s.result.name, "width");
+    EXPECT_EQ(s.status, GTEXT_CSS_OK);
   }
   {
     // a revert that a later declaration overrode never wins, so it is not an input
@@ -441,10 +441,13 @@ TEST(CssComputeCustom, CustomPropertiesAreInheritedOverriddenAndRemovedByInitial
   std::vector<std::string> got;
   for (size_t i = 0; i < gtext_css_computed_custom_count(child.s); i++) {
     GTEXT_CSS_String name;
-    const GTEXT_CSS_Value_Set * v = nullptr;
+    const GTEXT_CSS_Custom_Value * v = nullptr;
     ASSERT_TRUE(gtext_css_computed_custom_at(child.s, i, &name, &v));
-    const GTEXT_CSS_Value * root = gtext_css_value_set_root(v);
-    got.push_back(std::string(name.data, name.length) + "=" + (root && root->text.data ? std::string(root->text.data, root->text.length) : ""));
+    char * text = nullptr;
+    size_t length = 0;
+    ASSERT_EQ(gtext_css_custom_value_text(v, nullptr, &text, &length), GTEXT_CSS_OK);
+    got.push_back(std::string(name.data, name.length) + "=" + std::string(text, length));
+    gtext_css_serialize_buffer_free(nullptr, text);
   }
   EXPECT_EQ(got, (std::vector<std::string>{"--a=two", "--b=20", "--d=4"}));
   EXPECT_FALSE(gtext_css_computed_custom_at(child.s, 3, nullptr, nullptr));

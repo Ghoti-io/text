@@ -355,10 +355,11 @@ const char * gtext_css_val_kind_name(GTEXT_CSS_Val_Kind kind) {
 /* The arbitrary substitution functions, as the served drafts name them (Values 5: "The if() function is an arbitrary
    substitution function", "inherit() is an arbitrary substitution function", "attr() is an arbitrary substitution
    function, similar to var()", "The random-item() function is an arbitrary substitution function, like var()", and
-   ident(); Variables 1: "The var() function is an arbitrary substitution function"; Environment Variables: env()).
+   ident(); Variables 1: "The var() function is an arbitrary substitution function"; Environment Variables: env()). cycle() is a <whole-value> that needs the
+   element's inherited value ("compare the property's inherited value with each Cn"), so it is resolved when a style is computed as the others are.
    The draft's list is not in one place; a function with a dashed name (a custom function) is not in it either. */
 bool css_is_substitution_name(const GTEXT_CSS_String * name) {
-  static const char * const names[] = {"var", "env", "attr", "if", "inherit", "ident", "random-item"};
+  static const char * const names[] = {"var", "env", "attr", "if", "inherit", "ident", "random-item", "cycle"};
   for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
     if (css_ascii_ieq(name, names[i])) {
       return true;

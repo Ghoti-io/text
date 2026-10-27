@@ -32,6 +32,7 @@
 
 #include "css_property_canon.h"
 #include "css_registry_internal.h"
+#include "css_value_internal.h"
 
 #define PROP_NAME_STACK 4096u
 
@@ -164,6 +165,16 @@ static bool name_is(const GTEXT_CSS_Component_Value * v, const char * lower) {
  */
 static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_Allocator * a, bool * valid) {
   *valid = true;
+  /* "<declaration-value> ... does not contain <bad-string-token>, <bad-url-token>, unmatched <)-token>, <]-token>, or <}-token>, or top-level <semicolon-token>
+     tokens or <delim-token> tokens with a value of "!"": the whole value is one, and so is each argument of a function that takes one (the fallback of var(),
+     `var(--a,!)`, is not: the declaration holding it is invalid at parse time, and the one before it in the cascade stands). */
+  for (size_t i = 0; i < count; i++) {
+    const GTEXT_CSS_Component_Value * v = &values[i];
+    if (v->kind == GTEXT_CSS_VALUE_TOKEN && (v->type == GTEXT_CSS_TOKEN_SEMICOLON || (v->type == GTEXT_CSS_TOKEN_DELIM && v->delim == '!'))) {
+      *valid = false;
+      return GTEXT_CSS_OK;
+    }
+  }
   struct frame {
     const GTEXT_CSS_Component_Value * v;
     size_t n;
@@ -178,16 +189,26 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
     struct frame f = st[--top];
     for (size_t i = 0; i < f.n && *valid; i++) {
       const GTEXT_CSS_Component_Value * v = &f.v[i];
-      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && (name_is(v, "var") || name_is(v, "env") || name_is(v, "attr"))) {
-        bool first = false;
+      if (v->kind == GTEXT_CSS_VALUE_TOKEN && (v->type == GTEXT_CSS_TOKEN_BAD_STRING || v->type == GTEXT_CSS_TOKEN_BAD_URL)) {
+        *valid = false;
+        break;
+      }
+      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && (name_is(v, "var") || name_is(v, "env") || name_is(v, "attr") || name_is(v, "inherit"))) {
+        bool first = false, comma = false;
         for (size_t k = 0; k < v->child_count; k++) {
           const GTEXT_CSS_Component_Value * c = &v->children[k];
-          if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA) {
-            break;
+          if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
+            if (c->type == GTEXT_CSS_TOKEN_SEMICOLON || (c->type == GTEXT_CSS_TOKEN_DELIM && c->delim == '!')) {
+              *valid = false; /* a top-level `;` or `!` in an argument */
+              break;
+            }
+            if (c->type == GTEXT_CSS_TOKEN_COMMA && !comma) {
+              comma = true;
+              continue;
+            }
           }
-          if (!(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
+          if (!comma && !(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
             first = true;
-            break;
           }
         }
         if (!first) {
@@ -423,6 +444,25 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   return st;
 }
 
+/// A custom property's value is the text it was written as: the root of its value (a valid or a pending one) takes it over from the serialization of the tokens.
+static GTEXT_CSS_Status use_custom_text(GTEXT_CSS_Property_Value * out, const char * text, size_t length) {
+  if (!out->set || (out->outcome != GTEXT_CSS_PROP_RESULT_VALID && out->outcome != GTEXT_CSS_PROP_RESULT_PENDING)) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value_Set * set = out->set;
+  GTEXT_CSS_Value * root = (GTEXT_CSS_Value *)set->root;
+  if (!root) {
+    return GTEXT_CSS_OK;
+  }
+  char * copy = css_arena_strdup(&set->arena, text, length);
+  if (!copy) {
+    return GTEXT_CSS_E_OOM;
+  }
+  root->text.data = copy;
+  root->text.length = length;
+  return GTEXT_CSS_OK;
+}
+
 GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const char * text, size_t text_length, const GTEXT_CSS_Property_Options * options, GTEXT_CSS_Property_Value * out) {
   if (!out) {
@@ -479,6 +519,22 @@ GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * regist
   }
   st = gtext_css_parse_property(registry, name, name_length, tree->values, tree->value_count, options, out);
   gtext_css_tree_free(tree);
+  if (st == GTEXT_CSS_OK && name_length >= 2 && name[0] == '-' && name[1] == '-') {
+    /* a custom property's value is its text "exactly as specified by the author": comments and the spelling of its numbers are kept (Variables 1, 4.1) */
+    size_t b = 0, e = text_length;
+    const char * t = text ? text : "";
+    while (b < e && (t[b] == ' ' || t[b] == '\t' || t[b] == '\n' || t[b] == '\r' || t[b] == '\f')) {
+      b++;
+    }
+    while (e > b && (t[e - 1] == ' ' || t[e - 1] == '\t' || t[e - 1] == '\n' || t[e - 1] == '\r' || t[e - 1] == '\f')) {
+      e--;
+    }
+    st = use_custom_text(out, t + b, e - b);
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_property_value_free(out);
+      out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    }
+  }
   return st;
 }
 
@@ -492,8 +548,16 @@ GTEXT_CSS_Status gtext_css_parse_property_declaration(const GTEXT_CSS_Registry *
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return GTEXT_CSS_E_INVALID;
   }
-  return gtext_css_parse_property(registry, declaration->name.data, declaration->name.length, declaration->value,
+  GTEXT_CSS_Status st = gtext_css_parse_property(registry, declaration->name.data, declaration->name.length, declaration->value,
       declaration->value_count, options, out);
+  if (st == GTEXT_CSS_OK && declaration->original_text.data) {
+    st = use_custom_text(out, declaration->original_text.data, declaration->original_text.length);
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_property_value_free(out);
+      out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    }
+  }
+  return st;
 }
 
 /* ---- serialization ------------------------------------------------------------------------ */

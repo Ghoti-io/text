@@ -30,6 +30,8 @@
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/css/css_registry.h>
 
+#include "css_creg.h"
+
 /**
  * @brief The compiled grammar of a property (an alias's target's), compiling it first if need be.
  *
@@ -67,5 +69,27 @@ const GTEXT_Allocator * css_registry_allocator(const GTEXT_CSS_Registry * regist
 
 /** @brief The match options the registry validates under (allocator unset). */
 const GTEXT_CSS_Match_Options * css_registry_match_options(const GTEXT_CSS_Registry * registry);
+
+
+/**
+ * @brief Make a custom property registration, validated as CSS.registerProperty() validates (see gtext_css_registry_register_custom()), without adding it to the
+ *   registry. `syntax` NULL is `*`; `initial` NULL is none. The name is checked as a custom property name string; a caller that has a dashed identifier has one.
+ *   The grammars are compiled under the registry's resolver.
+ */
+GTEXT_CSS_Status css_registry_make_creg(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length, const char * syntax, size_t syntax_length,
+    bool inherits, const char * initial, size_t initial_length, css_creg ** out, GTEXT_CSS_Registry_Result * result, css_creg_why * why);
+
+/** @brief The registration of the caller with this name, or NULL. `work` (may be NULL) counts the probes. */
+const css_creg * css_registry_find_creg(const GTEXT_CSS_Registry * registry, const char * name, size_t length, size_t * work);
+
+/** @brief The `index`th registration of the caller (in the order they were made), or NULL. */
+const css_creg * css_registry_creg_at(const GTEXT_CSS_Registry * registry, size_t index);
+
+
+/**
+ * @brief Compile a syntax string for matching (every type component, under the registry's resolver), outside any registration. GTEXT_CSS_E_GRAMMAR when the text
+ *   is not a syntax string; GTEXT_CSS_E_OOM; GTEXT_CSS_E_INTERNAL when a component does not compile.
+ */
+GTEXT_CSS_Status css_registry_compile_syntax(const GTEXT_CSS_Registry * registry, const char * text, size_t length, css_compiled_syntax ** out);
 
 #endif /* GHOTI_IO_GTEXT_CSS_REGISTRY_INTERNAL_H */

@@ -30,6 +30,7 @@
 #ifndef GHOTI_IO_GTEXT_SRC_CSS_COMPUTE_INTERNAL_H
 #define GHOTI_IO_GTEXT_SRC_CSS_COMPUTE_INTERNAL_H
 
+#include <ghoti.io/cutil/mutex.h>
 #include <ghoti.io/text/css.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_element.h>
@@ -37,8 +38,12 @@
 #include <ghoti.io/text/css/css_shorthand.h>
 #include <ghoti.io/text/macros.h>
 
+#include <ghoti.io/text/css/css_custom.h>
+
+#include "css_cmap.h"
 #include "css_compute_tables.h"
-#include "css_custom.h"
+#include "css_creg.h"
+#include "css_rope.h"
 
 #include "css_internal.h"
 #include "css_math_internal.h"
@@ -164,7 +169,23 @@ struct GTEXT_CSS_Compute_Context {
   bool building;                            ///< The initial values are being made (single thread, inside gtext_css_compute_context_new()).
   char * base_url;                          ///< A copy of the environment's base URL, or NULL.
   char * language;                          ///< A copy of the environment's language, or NULL.
+  GTEXT_CSS_Element_Interface iface;        ///< The caller's tree (options.elements), copied; zeroed when there is none.
+  bool has_iface;
+  struct css_ereg * regs;                   ///< The registered custom properties in effect, sorted by name (bytes); the caller's win over a stylesheet's.
+  size_t nregs;
+  GTEXT_CSS_Substitute_Options sub;         ///< The limits of substitution, with the defaults applied.
+  const GTEXT_CSS_At_Property_Set * rules;  ///< The `@property` rules' registrations the context was made with (borrowed), or NULL.
+  GCU_MUTEX_T syntax_lock;                  ///< Guards the cache below.
+  bool syntax_lock_made;
+  css_compiled_syntax ** syntax_cache;      ///< The syntaxes of `attr()` calls seen so far (compiled once, kept for the life of the context; entries never change).
+  size_t nsyntax, capsyntax;
 };
+
+/// A registered custom property in effect in a context.
+typedef struct css_ereg {
+  const css_creg * creg;
+  GTEXT_CSS_Custom_Value * initial;         ///< Its computed initial value (retained); NULL: the guaranteed-invalid value.
+} css_ereg;
 
 /// The class row of a property in the generated table, following an override to the property of the same name in the pin; NULL for a caller's own.
 const css_tbl_compute * css_compute_row(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id id, GTEXT_CSS_Property_Id * generated_id);
@@ -187,12 +208,23 @@ struct GTEXT_CSS_Computed_Style {
   size_t n;                            ///< Properties.
   GTEXT_CSS_Value_Set ** vals;         ///< A set (retained) for every property; NULL where none.
   GTEXT_CSS_Flow flow;
-  struct css_cmap * custom;           ///< The custom properties (css_custom.h): the parent's map with this element's declarations set, shared with it where nothing is declared.
+  struct css_cmap * custom;           ///< The unregistered custom properties (css_cmap.h): the parent's map with this element's declarations set, shared with it where nothing is declared.
+  GTEXT_CSS_Custom_Value ** regvals;  ///< The registered ones: a value (retained) for each of the context's `nregs`, NULL for the guaranteed-invalid value. NULL when the context has none.
   css_root_info root;
   GTEXT_CSS_Element_Handle element;
 };
 
 /* ---- one computation ---------------------------------------------------------------------------- */
+
+/// What the declaration of a shorthand with a function in it came to once its functions were replaced, kept for the longhands that read it.
+typedef struct {
+  size_t declaration;
+  bool invalid;                        ///< The replaced text is not a value of the shorthand (or is guaranteed-invalid).
+  GTEXT_CSS_Wide_Keyword wide;         ///< A CSS-wide keyword alone.
+  GTEXT_CSS_Longhand_List * list;      ///< The longhands, when it was a value.
+  GTEXT_CSS_Longhand_List ** cycle;    ///< `cycle()`: the shorthand expanded for each argument (`ncycle` of them); NULL otherwise.
+  size_t ncycle;
+} css_short_result;
 
 typedef struct {
   const GTEXT_CSS_Compute_Context * cc;
@@ -205,7 +237,13 @@ typedef struct {
   unsigned char * done;           ///< Per property: its value is in the style.
   uint32_t * own;                 ///< Per property: the index + 1 of the last declaration of it in the block, or 0.
   uint32_t all_pos;               ///< The index + 1 of the last `all` declaration, or 0.
+  unsigned char * busy;           ///< Per property: its value is being computed (a reference to it from a value it depends on is a cycle).
+  css_short_result * shorts;      ///< The shorthands with functions in them that were replaced.
+  size_t nshort, capshort;
+  struct css_sub * sub;           ///< The substitution state of this element, made when the block holds a custom property or a pending value; else NULL.
+  const GTEXT_CSS_Element_Interface * iface; ///< The caller's tree for this computation (gtext_css_compute_element()'s, or the context's), or NULL.
   GTEXT_CSS_Property_Id current;  ///< The property being computed.
+  uint32_t random_index;          ///< The random functions of the value being computed so far (the key of `auto` has it).
   bool probing;                   ///< Making the initial values: reads of the style are not traps.
   bool used_context;              ///< Set when a value was computed from something that varies by element (the initial values' dependence).
   GTEXT_CSS_Status status;
@@ -264,6 +302,13 @@ bool css_cv_length_px(css_state * st, const GTEXT_CSS_Value * v, double * px);
 /// `src` retained). The parent's and the element's earlier values are read through css_st_get().
 GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, const css_pmeta * meta, const GTEXT_CSS_Value_Set * src,
     GTEXT_CSS_Value_Set ** out);
+
+/// Compute a property now if it is not computed yet (the substitution of a registered custom property that needs the element's font). GTEXT_CSS_OK; `*cycle` is
+/// set when the property is being computed already, so that the value that asks is part of a dependency cycle (nothing was computed).
+GTEXT_CSS_Status css_st_ensure(css_state * st, GTEXT_CSS_Property_Id id, bool * cycle);
+
+/// Whether a property of this element is computed.
+bool css_st_is_done(const css_state * st, GTEXT_CSS_Property_Id id);
 
 /// The registry a block was made for.
 const GTEXT_CSS_Registry * css_block_registry(const GTEXT_CSS_Declaration_Block * block);

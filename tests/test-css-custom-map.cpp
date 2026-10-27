@@ -22,7 +22,7 @@
 /**
  * @file
  *
- * The persistent map of custom properties (src/css/css_custom.h): lookup, the order of the names, that a map is never changed by a map made from it,
+ * The persistent map of custom properties (src/css/css_cmap.h): lookup, the order of the names, that a map is never changed by a map made from it,
  * that a hidden name is hidden and not removed, the sharing that makes a long chain cost what it holds, and allocation failure.
  */
 
@@ -35,7 +35,7 @@
 
 #include <ghoti.io/text/css.h>
 
-#include "../src/css/css_custom.h"
+#include "../src/css/css_cmap.h"
 #include "css_compute_test_support.h"
 #include "markup_test_support.h"
 
@@ -43,15 +43,13 @@ using namespace cmp;
 
 namespace {
 
-/// A value set for a text, from the property layer (any typed value will do).
-GTEXT_CSS_Value_Set * value_of(const std::string & text) {
-  GTEXT_CSS_Property_Value pv;
-  if (gtext_css_parse_property_text(R(), "--x", 3, text.data(), text.size(), nullptr, &pv) != GTEXT_CSS_OK || pv.outcome != GTEXT_CSS_PROP_RESULT_VALID) {
+/// A custom property value for a text.
+GTEXT_CSS_Custom_Value * value_of(const std::string & text) {
+  GTEXT_CSS_Custom_Value * v = nullptr;
+  if (gtext_css_custom_value_new(nullptr, text.data(), text.size(), &v) != GTEXT_CSS_OK) {
     return nullptr;
   }
-  GTEXT_CSS_Value_Set * set = gtext_css_value_set_retain(pv.set);
-  gtext_css_property_value_free(&pv);
-  return set;
+  return v;
 }
 
 struct Map {
@@ -66,20 +64,20 @@ struct Map {
 };
 
 css_cmap * set(css_cmap * base, const std::string & name, const std::string & text, const GTEXT_Allocator * alloc = nullptr) {
-  GTEXT_CSS_Value_Set * v = text.empty() ? nullptr : value_of(text);
+  GTEXT_CSS_Custom_Value * v = text.empty() ? nullptr : value_of(text);
   css_cmap * out = nullptr;
   EXPECT_EQ(css_cmap_set(alloc ? alloc : gtext_allocator_default(), base, name.data(), name.size(), v, 12345, &out, nullptr), GTEXT_CSS_OK);
-  gtext_css_value_set_free(v);
+  gtext_css_custom_value_free(v);
   return out;
 }
 
-std::string text_of_value(const GTEXT_CSS_Value_Set * v) {
+std::string text_of_value(const GTEXT_CSS_Custom_Value * v) {
   if (!v) {
     return "<none>";
   }
   char * buf = nullptr;
   size_t n = 0;
-  gtext_css_serialize_value_buffer(gtext_css_value_set_root(v), nullptr, &buf, &n);
+  gtext_css_custom_value_text(v, nullptr, &buf, &n);
   std::string s(buf, n);
   gtext_css_serialize_buffer_free(nullptr, buf);
   return s;
@@ -120,7 +118,7 @@ TEST(CssCustomMap, NamesAreFoundAndComeInTheOrderOfTheirBytesThenTheirLength) {
   EXPECT_EQ((names(d.m)), (std::vector<std::string>{"--A", "--a", "--ab", "--b"}));
   const char * n = nullptr;
   size_t l = 0;
-  const GTEXT_CSS_Value_Set * v = nullptr;
+  const GTEXT_CSS_Custom_Value * v = nullptr;
   EXPECT_TRUE(css_cmap_at(d.m, 3, &n, &l, &v));
   EXPECT_EQ(std::string(n, l), "--b");
   EXPECT_EQ(text_of_value(v), "2");
@@ -262,11 +260,11 @@ TEST(CssCustomMap, AnAllocationThatFailsLeavesTheMapAsItWasAndLeaksNothing) {
   for (size_t n = 1; n < 100; n++) {
     FaultAllocator fa;
     css_cmap * out = nullptr;
-    GTEXT_CSS_Value_Set * v = value_of("v");
+    GTEXT_CSS_Custom_Value * v = value_of("v");
     fa.arm(n);
     const GTEXT_CSS_Status st = css_cmap_set(&fa.alloc, more.m, "--z", 3, v, 12345, &out, nullptr);
     fa.disarm();
-    gtext_css_value_set_free(v);
+    gtext_css_custom_value_free(v);
     if (!fa.failed) {
       EXPECT_EQ(st, GTEXT_CSS_OK);
       EXPECT_EQ(find(out, "--z"), "v");

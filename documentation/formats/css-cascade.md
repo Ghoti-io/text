@@ -153,14 +153,15 @@ rollbacks is linear in the candidates: the walk only moves forward.
 ## `all`, shorthands, logical groups
 
 A shorthand is expanded (css_shorthand.h) and each longhand takes the declaration's keys; `margin: revert` rolls back each of its longhands. A shorthand
-holding `var()` stays pending longhands, carried and never read (substitution is C2c's). `all` is one candidate that applies to every property but
+holding `var()` stays pending longhands, carried and not read here (the computed-value layer substitutes them, \ref format_css_variables "css-variables.md"). `all` is one candidate that applies to every property but
 `direction`, `unicode-bidi` and the custom properties; it is merged with each property's own candidates and not copied into them.
 
 The members of a logical group that share a physical slot in the element's flow are cascaded as one: `margin-left` and `margin-inline-start` are one set of
 candidates when the element's `writing-mode` and `direction` make `margin-inline-start` the left, and the winner is whichever sorts first, under whichever
 name it was declared. The flow is cascaded first, from the cascade of `writing-mode`, `direction` and `text-orientation`, with `inherit` and `unset` taken
 from the inheritance parent's flow (`GTEXT_CSS_Cascade_Options::parent_flow`) or the flow is given outright (`flow`). A flow property that is still pending
-is taken as `unset`; a caller that substitutes `var()` cascades again with the flow.
+is taken as `unset` by the cascade (the computed style substitutes it, and maps the logical properties by what it comes to): a caller whose flow comes from a
+`var()` gives `flow` outright.
 
 ## The result
 

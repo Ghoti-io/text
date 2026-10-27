@@ -204,7 +204,7 @@ GTEXT_CSS_Status gtext_css_block_add_custom(GTEXT_CSS_Declaration_Block * block,
   if (!block || !value || !name || name_length < 3 || name[0] != '-' || name[1] != '-') {
     return GTEXT_CSS_E_INVALID;
   }
-  if (value->outcome != GTEXT_CSS_PROP_RESULT_VALID && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE) {
+  if (value->outcome != GTEXT_CSS_PROP_RESULT_VALID && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE && value->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
     return GTEXT_CSS_E_INVALID;
   }
   GTEXT_CSS_Status st = block_reserve(block, 1);

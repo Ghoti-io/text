@@ -70,6 +70,8 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_CANDIDATES] = "an element has more candidate declarations than max_candidates",
   [GTEXT_CSS_E_LIMIT_LAYERS] = "there are more cascade layers than max_layers",
   [GTEXT_CSS_E_LIMIT_LAYER_DEPTH] = "cascade layers are nested deeper than max_depth",
+  [GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES] = "an element declares more custom properties than max_custom_properties",
+  [GTEXT_CSS_E_LIMIT_CUSTOM_VALUE] = "a custom property value is longer than max_value_bytes",
   [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 

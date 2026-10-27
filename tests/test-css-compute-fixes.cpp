@@ -179,10 +179,16 @@ TEST(CssComputeEdges, AnErrorInACustomPropertyNamesNoneOfTheOtherProperties) {
 std::string custom_text(const Style & s, const std::string & name) {
   for (size_t i = 0; i < gtext_css_computed_custom_count(s.s); i++) {
     GTEXT_CSS_String n;
-    const GTEXT_CSS_Value_Set * v = nullptr;
+    const GTEXT_CSS_Custom_Value * v = nullptr;
     if (gtext_css_computed_custom_at(s.s, i, &n, &v) && std::string(n.data, n.length) == name) {
-      const GTEXT_CSS_Value * root = gtext_css_value_set_root(v);
-      return root && root->text.data ? std::string(root->text.data, root->text.length) : std::string();
+      char * text = nullptr;
+      size_t length = 0;
+      if (gtext_css_custom_value_text(v, nullptr, &text, &length) != GTEXT_CSS_OK) {
+        return "<error>";
+      }
+      std::string out(text, length);
+      gtext_css_serialize_buffer_free(nullptr, text);
+      return out;
     }
   }
   return "<none>";
@@ -318,8 +324,8 @@ TEST(CssComputeEdges, ASiblingFunctionNamesTheCallbackThatAnswersItAndAVarNamesN
   };
   for (const Case & c : {Case{"width: calc(sibling-index() * 1px)", GTEXT_CSS_E_UNSUPPORTED, "sibling_index"},
            Case{"width: calc(1px * SIBLING-COUNT())", GTEXT_CSS_E_UNSUPPORTED, "sibling_count"}, Case{"z-index: sibling-index()", GTEXT_CSS_E_UNSUPPORTED, "sibling_index"},
-           Case{"width: var(--w)", GTEXT_CSS_E_INVALID, "width"},
-           Case{"content: \"sibling-index()\" var(--x)", GTEXT_CSS_E_INVALID, "content"}}) {
+           Case{"width: var(--w)", GTEXT_CSS_OK, ""},
+           Case{"content: \"sibling-index()\" var(--x)", GTEXT_CSS_OK, ""}}) {
     Block b(R(), c.decl);
     ASSERT_EQ(gtext_css_block_count(b.b), 1u) << c.decl;
     Style s;
@@ -400,13 +406,12 @@ TEST(CssComputeEdges, InheritIsTheParentsComputedValueEvenWhereTheBorderStyleWou
   EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: 7px", "border-top-width"), "0px");
   EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: unset", "border-top-width"), "0px")
       << "unset on a property that is not inherited is initial, which is medium, which is 0 under none";
-  // a shorthand that holds var() names the longhand it could not compute, the last in the order they are computed (here margin-bottom), not `margin`
+  // a shorthand that holds var() is substituted
   Context ctx(R());
   Block b(R(), "margin: var(--x)");
   Style s;
   s.compute(ctx, &b);
-  EXPECT_EQ(s.status, GTEXT_CSS_E_INVALID);
-  EXPECT_EQ(std::string(s.result.name).substr(0, 7), "margin-");
+  EXPECT_EQ(s.status, GTEXT_CSS_OK) << "a shorthand that holds var() is substituted whole and expanded (it was refused before the substitution layer)";
   // compute_style takes the block in ascending priority and has no use for importance: the last declaration of a property wins, !important or not
   EXPECT_EQ(root_computed("margin-top: 1px !important; margin-top: 2px", "margin-top"), "2px");
   EXPECT_EQ(root_computed("margin-top: 1px; margin-top: 2px !important", "margin-top"), "2px");

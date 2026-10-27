@@ -563,9 +563,8 @@ GTEXT_CSS_Status gtext_css_candidates_add_custom(GTEXT_CSS_Candidates * set, con
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  if (!name || name_length < 3 || name[0] != '-' || name[1] != '-' || !value ||
-      (value->outcome != GTEXT_CSS_PROP_RESULT_VALID && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE)) {
-    return fail(result, GTEXT_CSS_E_INVALID, NULL, "a custom property has a name beginning `--` and a valid or wide value");
+  if (!name || name_length < 3 || name[0] != '-' || name[1] != '-' || !value || !is_wide_outcome(value->outcome)) {
+    return fail(result, GTEXT_CSS_E_INVALID, NULL, "a custom property has a name beginning `--` and a valid, wide or pending value");
   }
   result_name(result, name, name_length);
   cand base;
@@ -1453,7 +1452,7 @@ static GTEXT_CSS_Status dump_to_buffer(const GTEXT_CSS_Cascaded * c, dbuf * b) {
       dput(b, info.name, info.name_length);
     }
     dputs(b, ": ");
-    if (k->kind == CAND_CUSTOM && k->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+    if (k->kind == CAND_CUSTOM && (k->outcome == GTEXT_CSS_PROP_RESULT_VALID || k->outcome == GTEXT_CSS_PROP_RESULT_PENDING)) {
       const GTEXT_CSS_Value * root = gtext_css_value_set_root(k->set);
       if (root && root->text.data) {
         dput(b, root->text.data, root->text.length);

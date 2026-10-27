@@ -45,6 +45,7 @@
 
 #include "css_color_internal.h"
 #include "css_compute_internal.h"
+#include "css_substitute_internal.h"
 
 typedef struct {
   const GTEXT_CSS_Value * src;  ///< The node being walked.
@@ -384,17 +385,59 @@ static const GTEXT_CSS_Math_Node * mr_node(cv_walk * w, mrebuild * r, const GTEX
     return mk_dimension(mb, v, unit);
   }
   case GTEXT_CSS_MATH_UNRESOLVED: {
-    /* sibling-index() and sibling-count() are numbers the element tree answers (the callbacks of that name), which a style computed from a block has
-       no way to ask: the failure names the callback, and never keeps a value that is not a number */
+    /* sibling-index() and sibling-count() are numbers the element tree answers (the callbacks of that name); a computation with no table for the tree fails
+       naming the callback, and a value that is not a number is never kept */
     const bool index = n->text.length >= 13 && memcmp(n->text.data, "sibling-index", 13) == 0;
     const bool count = n->text.length >= 13 && memcmp(n->text.data, "sibling-count", 13) == 0;
     if (index || count) {
-      css_st_fail(w->st, GTEXT_CSS_E_UNSUPPORTED, index ? "sibling_index" : "sibling_count",
-          "a calculation holds sibling-index() or sibling-count(), which the element tree answers and a style computed from a block cannot ask");
-      return NULL;
+      double v = 0;
+      if (css_st_sibling(w->st, index, &v) != GTEXT_CSS_OK) {
+        return NULL;
+      }
+      return mk_number(mb, v);
     }
     r->has_symbols = true;
     return n; /* shared: it lives in the source set */
+  }
+  case GTEXT_CSS_MATH_RANDOM: {
+    /* random(): with literal arguments of one kind it is the number its random base value picks; with anything else (a percentage against a length ...) it is kept
+       for the math layer */
+    const GTEXT_CSS_Math_Node * const * kids = args;
+    if ((n->kid_count == 2 || n->kid_count == 3) && kids) {
+      bool literal = true;
+      const GTEXT_CSS_Math_Node * k0 = kids[0];
+      for (size_t i = 0; i < n->kid_count; i++) {
+        literal = literal && (kids[i]->op == k0->op) && (k0->op == GTEXT_CSS_MATH_NUMBER || k0->op == GTEXT_CSS_MATH_PERCENT || k0->op == GTEXT_CSS_MATH_DIMENSION);
+        literal = literal && (k0->op != GTEXT_CSS_MATH_DIMENSION || gtext_css_unit_type(kids[i]->unit) == gtext_css_unit_type(k0->unit));
+      }
+      double v[3] = {0, 0, 0};
+      for (size_t i = 0; literal && i < n->kid_count; i++) {
+        v[i] = kids[i]->value;
+        if (k0->op == GTEXT_CSS_MATH_DIMENSION && !gtext_css_unit_to_canonical(kids[i]->unit, kids[i]->value, &v[i])) {
+          literal = false;
+        }
+      }
+      if (literal) {
+        double R = 0;
+        if (!css_st_random_base(w->st, n->text.data ? n->text.data : "", n->text.length, &R)) {
+          css_st_fail(w->st, GTEXT_CSS_E_INVALID, "random", "the key of a random() is not a <random-key>");
+          return NULL;
+        }
+        const double result = css_random_pick(v[0], v[1], v[2], n->kid_count == 3, R);
+        if (k0->op == GTEXT_CSS_MATH_NUMBER) {
+          return mk_number(mb, result);
+        }
+        if (k0->op == GTEXT_CSS_MATH_PERCENT) {
+          return mk_percent(mb, result);
+        }
+        return mk_dimension(mb, result, gtext_css_unit_canonical(k0->unit));
+      }
+    }
+    mfn_opts opts;
+    memset(&opts, 0, sizeof opts);
+    opts.key = n->text.data;
+    opts.key_len = n->text.length;
+    return mk_fn(mb, n->op, args, n->kid_count, &opts);
   }
   case GTEXT_CSS_MATH_SYMBOL:
     r->has_symbols = true;

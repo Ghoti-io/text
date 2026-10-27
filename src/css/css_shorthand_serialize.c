@@ -1983,7 +1983,7 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
       }
       char * t = NULL;
       size_t tl = 0;
-      if (it->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+      if (it->outcome == GTEXT_CSS_PROP_RESULT_VALID || it->outcome == GTEXT_CSS_PROP_RESULT_PENDING) {
         const GTEXT_CSS_Value * root = gtext_css_value_set_root(it->set);
         if (root && root->text.data) {
           t = dupn(&c, root->text.data, root->text.length);

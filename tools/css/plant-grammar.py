@@ -59,7 +59,9 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "registry-seeds": "test-css-registry-fuzz-seeds.cpp", "registry": "test-css-registry.cpp", "property": "test-css-property.cpp",
             "registry-oom": "test-css-registry-oom.cpp", "canon": "test-css-property-canon.cpp",
             "cascade": "test-css-cascade.cpp", "layer": "test-css-layer.cpp", "cascade-oom": "test-css-cascade-oom.cpp",
-            "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp"}
+            "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp",
+            "custom": "test-css-custom.cpp", "property-rule": "test-css-property-rule.cpp", "custom-oom": "test-css-custom-oom.cpp",
+            "custom-seeds": "test-css-custom-fuzz-seeds.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -122,7 +124,7 @@ PLANTS = [
      "    return 0;", ["edges"]),
     ("ratio-is-written-with-one-component", "css_value_serialize.c", "    puts_(w, \" / \");\n    put_number(w, v->number2, false);\n    return false;",
      "    if (v->flags & GTEXT_CSS_VFLAG_RATIO_DENOMINATOR) {\n      puts_(w, \" / \");\n      put_number(w, v->number2, false);\n    }\n    return false;", ["edges", "corpus", "values"]),
-    ("if-is-not-a-substitution-function", "css_value.c", '{"var", "env", "attr", "if", "inherit", "ident", "random-item"}', '{"var", "env", "attr", "inherit", "ident", "random-item"}', ["edges"]),
+    ("if-is-not-a-substitution-function", "css_value.c", '{"var", "env", "attr", "if", "inherit", "ident", "random-item", "cycle"}', '{"var", "env", "attr", "inherit", "ident", "random-item", "cycle"}', ["edges"]),
     ("matcher-keeps-the-callers-allocator", "css_grammar_match.c", ["  matcher->options.allocator = NULL;\n", "  o.allocator = &mt->allocator;\n"],
      ["", "  o.allocator = mt->options.allocator;\n"], ["edges"]),
     ("opaque-text-failure-is-internal", "css_grammar_match.c", "      B->m->status = st; /* the real one", "      B->m->status = GTEXT_CSS_E_INTERNAL; /* the real one", ["edges"]),
@@ -269,6 +271,33 @@ PLANTS += [
     ("property-a-limit-is-not-recorded", "css_property.c", "  else if (v->status == GTEXT_CSS_OK) {\n    v->status = st;\n  }", "  else {\n  }", ["property", "registry-oom"]),
     ("property-the-pending-grammar-is-compiled-per-call", "css_registry.c", "  const GTEXT_CSS_Status st = compile_lazy(r, &((GTEXT_CSS_Registry *)r)->pending, text, sizeof text - 1, 0, &s, compiled, NULL);",
      "  const GTEXT_CSS_Status st = compile_lazy(r, &((GTEXT_CSS_Registry *)r)->pending, \"<nosuch-type>\", 13, 0, &s, compiled, NULL);", ["property"]),
+    # custom properties, substitution and @property (tests/test-css-custom.cpp, test-css-property-rule.cpp): each undoes a rule of the served drafts
+    ("custom-var-ignores-its-fallback", "css_substitute.c", "    if (f->res[1].gi && f->has_comma) {\n      /* \"If result contains", "    if (0 && f->res[1].gi && f->has_comma) {\n      /* \"If result contains", ["custom"]),
+    ("custom-tokens-merge", "css_rope.c", "bool css_tokclass_needs_comment(css_tokclass last, css_tokclass first) {\n",
+     "bool css_tokclass_needs_comment(css_tokclass last, css_tokclass first) {\n  if (1) {\n    return false;\n  }\n", ["custom"]),
+    ("custom-a-cycle-keeps-its-value", "css_substitute.c", "static void mark_cyclic(css_sub * sub, size_t from) {\n  const size_t top = sub->nframes - 1;",
+     "static void mark_cyclic(css_sub * sub, size_t from) {\n  const size_t top = sub->nframes - 1;\n  if (1) {\n    return;\n  }", ["custom"]),
+    ("custom-empty-is-guaranteed-invalid", "css_substitute.c", "  bool gi = f->cyclic || f->res[0].gi || !f->res[0].rope;",
+     "  bool gi = f->cyclic || f->res[0].gi || !f->res[0].rope || css_rope_tokens(f->res[0].rope) == 0;", ["custom"]),
+    ("custom-registered-invalid-takes-no-initial-value", "css_substitute.c", "  else if (initial_cv) {", "  else if (0 && initial_cv) {", ["property-rule"]),
+    ("custom-property-rule-needs-no-inherits", "css_at_property.c", "  if (!d->has_inherits) {\n    return GTEXT_CSS_AT_PROP_NO_INHERITS;\n  }",
+     "  if (0) {\n    return GTEXT_CSS_AT_PROP_NO_INHERITS;\n  }", ["property-rule"]),
+    ("custom-a-rule-beats-the-callers-registration", "css_at_property.c", "    if (css_registry_find_creg(s->registry, nm->data, nm->length, &s->work)) {",
+     "    if (0 && css_registry_find_creg(s->registry, nm->data, nm->length, &s->work)) {", ["property-rule"]),
+    ("custom-cycle-does-not-wrap", "css_compute.c", "      pick = k + 1 < n ? k + 1 : 0;", "      pick = k + 1 < n ? k + 1 : k;", ["custom"]),
+    ("custom-element-budget-is-not-held", "css_substitute.c", "  if (total > sub->max_element_tokens) {", "  if (0) {", ["custom"]),
+    ("custom-property-count-is-not-held", "css_substitute.c", "    if (m > max_custom) {", "    if (0 && m > max_custom) {", ["custom"]),
+    ("custom-a-wide-keyword-after-substitution-is-ignored", "css_compute.c",
+     "    if (wide == GTEXT_CSS_WIDE_INITIAL || wide == GTEXT_CSS_WIDE_INHERIT || wide == GTEXT_CSS_WIDE_UNSET) {\n      return from_wide(st, id, wide, out);\n    }\n    return invalid_at_computed_time(st, id, out);",
+     "    return invalid_at_computed_time(st, id, out);", ["custom"]),
+    ("custom-a-custom-property-wide-keyword-after-substitution-is-ignored", "css_substitute.c", "    if (wide) {\n      const GTEXT_CSS_Custom_Value * wv = NULL;",
+     "    if (0) {\n      const GTEXT_CSS_Custom_Value * wv = NULL;", ["custom"]),
+    ("custom-attr-may-make-a-url", "css_compute.c", "static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root, const css_range * taint, size_t ntaint, bool * found) {\n  *found = false;",
+     "static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root, const css_range * taint, size_t ntaint, bool * found) {\n  *found = false;\n  if (1) {\n    return GTEXT_CSS_OK;\n  }", ["custom"]),
+    ("custom-a-bang-in-a-fallback-is-valid", "css_property.c", "            if (c->type == GTEXT_CSS_TOKEN_SEMICOLON || (c->type == GTEXT_CSS_TOKEN_DELIM && c->delim == '!')) {",
+     "            if (0) {", ["custom"]),
+    ("custom-the-registered-length-stays-as-written", "css_substitute.c", "        status = compute_typed(sub, reg->creg, text, len, tainted, &final, &cycle);",
+     "        status = css_rope_from_text(&sub->alloc, text, len, tainted, &final);", ["property-rule"]),
 ]
 
 
@@ -288,6 +317,9 @@ def fuzz_plants():
     # the plants of the cascade: the unit tests and the replay of the cascade fuzzer's seeds through its reference model (CASCADE_PROGRAMS says which)
     for name, (rel, old, new, _seed) in module.CASCADE_PLANTS.items():
         out.append(("cascade-" + name, rel, old, new, module.CASCADE_PROGRAMS[name]))
+    # the plants of the substitution fuzzer, as plants of the replay of its seeds
+    for name, (rel, old, new, _seed) in module.CUSTOM_PLANTS.items():
+        out.append(("fuzz-" + name, rel, old, new, ["custom-seeds"]))
     return out
 
 

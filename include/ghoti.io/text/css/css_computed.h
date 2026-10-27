@@ -38,10 +38,11 @@
  * 1. Each property is the declared value, or if there is none, the parent's computed value when the property is inherited and its initial
  *    value when it is not. `initial`, `inherit` and `unset` (inherit if inherited, else initial) are applied here; `all` (every property except `direction`,
  *    `unicode-bidi` and the custom properties) is a declaration at its place in the block's order, so that a later declaration of a property
- *    beats it and an earlier one does not. `revert` and `revert-layer` are cascade results (C2b) and are refused as inputs, and so is a pending
- *    value (a `var()` that was not substituted): GTEXT_CSS_E_INVALID with a `detail`, naming the property that holds it (for a shorthand that held `var()`
- *    the longhand reached first: `margin: var(--x)` names `margin-bottom`, not `margin`). `sibling-index()` and `sibling-count()` are the element tree's:
- *    GTEXT_CSS_E_UNSUPPORTED naming the callback (`sibling_index`, `sibling_count`). The importance of a declaration (`!important`) is the cascade's and is
+ *    beats it and an earlier one does not. `revert` and `revert-layer` are cascade results (C2b) and are refused as inputs. A **pending** value (one that holds `var()`, `env()`, `attr()`, `if()`,
+ *    `inherit()`, `ident()`, `random-item()`, or is a `cycle()`) is substituted here, the custom properties first (css_substitute.h, css_custom.h): a value that
+ *    comes to the guaranteed-invalid value, or to text that is not a value of the property, is invalid at computed-value time, which is `unset`. `env()`, `attr()`,
+ *    `if()` and the tree counting functions ask the callbacks of the environment and of the element interface (css_element.h): GTEXT_CSS_E_UNSUPPORTED naming the
+ *    callback when a value needs one that is not there. A registered custom property (css_registry.h, css_at_property.h) is computed by the rules of its syntax. The importance of a declaration (`!important`) is the cascade's and is
  *    not looked at: the block is in ascending priority, and the last declaration of a property is the one that counts.
  * 2. The order of computation is fixed (`tools/css/compute_order.tsv`): `writing-mode`, `direction`, `text-orientation`, the font properties,
  *    `font-size`, `line-height`, the border styles, `position`, `float` (none under an absolutely positioned box), `display`, and then every other property. A property reads only what is
@@ -82,12 +83,15 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_COMPUTED_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/css/css_at_property.h>
 #include <ghoti.io/text/css/css_core.h>
+#include <ghoti.io/text/css/css_custom.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_logical.h>
 #include <ghoti.io/text/css/css_property.h>
 #include <ghoti.io/text/css/css_registry.h>
 #include <ghoti.io/text/css/css_shorthand.h>
+#include <ghoti.io/text/css/css_substitute.h>
 #include <ghoti.io/text/css/css_value.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup/markup_escape.h>
@@ -200,6 +204,11 @@ typedef struct {
   size_t max_value_nodes;            ///< Most values one computed value may have. Default 1,048,576; at most 2^28. One more is GTEXT_CSS_E_LIMIT_DECLARATIONS.
   uint64_t custom_hash_seed;         ///< Keys the balance of the custom properties' map, which no choice of names an author makes may defeat. 0 (the default): a seed drawn from
                                      ///< the addresses of the context (unpredictable under address randomization). A fixed seed makes a run reproducible, not safer.
+  GTEXT_CSS_Substitute_Options substitute; ///< The limits of substituting `var()` and the other functions (css_substitute.h). A zeroed struct is the default.
+  const GTEXT_CSS_Element_Interface * elements; ///< The caller's tree, for the functions that read it (`attr()`, `sibling-index()`, `sibling-count()`, `style()`). Copied; its
+                                     ///< `user` must outlive the context. NULL: a computation that needs one is GTEXT_CSS_E_UNSUPPORTED, naming the callback. (gtext_css_compute_element() is
+                                     ///< given a table of its own and uses that.)
+  const GTEXT_CSS_At_Property_Set * property_rules; ///< The registrations that `@property` rules made (css_at_property.h), or NULL. Borrowed: it must outlive the context and not change.
 } GTEXT_CSS_Compute_Options;
 
 /** @brief The defaults, spelled out. */
@@ -214,6 +223,9 @@ typedef struct {
   const char * detail;          ///< A static sentence saying which rule was broken, or NULL.
   size_t depth;                 ///< gtext_css_compute_element(): the depth of the element it was computing.
   size_t work;                  ///< Units of work done (properties computed, value nodes visited and made), for the quadratic suite.
+  uint64_t substituted_tokens;  ///< The tokens that the values substituted for this element would have as text, summed (saturating): the counter the budget is held to. Not the time.
+  size_t substitution_limited;  ///< How many values the budget (or the byte limit) made the guaranteed-invalid value.
+  uint64_t substitution_peak;   ///< The most tokens any one value was found to have, refused ones included (at most twice the budget of a value: it stops there, not at what it would have grown to).
 } GTEXT_CSS_Compute_Result;
 
 /**
@@ -308,20 +320,34 @@ GTEXT_API const GTEXT_CSS_Value * gtext_css_computed_root(const GTEXT_CSS_Comput
 /** @brief The element's flow: its computed `writing-mode`, `direction` and `text-orientation`. */
 GTEXT_API GTEXT_CSS_Flow gtext_css_computed_flow(const GTEXT_CSS_Computed_Style * style);
 
-/** @brief How many custom properties the style holds. NULL is 0. */
+/** @brief How many custom properties the style has a value for. NULL is 0. */
 GTEXT_API size_t gtext_css_computed_custom_count(const GTEXT_CSS_Computed_Style * style);
 
 /**
- * @brief The `index`th custom property, in the order of their names.
+ * @brief The `index`th custom property that has a value, in the order of their names.
+ *
+ * A custom property whose value is the guaranteed-invalid value is not counted and not returned (css_custom.h). A registered custom property
+ * (css_registry.h, css_at_property.h) is, with its initial value when nothing sets it.
  *
  * @param style The style.
  * @param index Which one.
  * @param name Receives the name, owned by the style; NULL if not wanted.
- * @param value Receives its value, owned by the style (its text is the tokens as declared); NULL if not wanted.
+ * @param value Receives its computed value, owned by the style (retain it to keep it); NULL if not wanted.
  * @return true, or false past the end.
  */
 GTEXT_API bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t index, GTEXT_CSS_String * name,
-    const GTEXT_CSS_Value_Set ** value);
+    const GTEXT_CSS_Custom_Value ** value);
+
+/**
+ * @brief The computed value of a custom property, by name (case-sensitive).
+ *
+ * @param style The style. Not NULL.
+ * @param name The name, `--` and the rest.
+ * @param length Its length.
+ * @param value Receives the value, owned by the style; NULL if not wanted.
+ * @return true if the property has a value; false for the guaranteed-invalid value (an unset property, a cycle, a missing variable, a value too long).
+ */
+GTEXT_API bool gtext_css_computed_custom_find(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length, const GTEXT_CSS_Custom_Value ** value);
 
 /** @brief Write the computed value of a property as a value is serialized (css_value.h). @return As gtext_css_serialize_value(); GTEXT_CSS_E_UNSUPPORTED if there is no value. */
 GTEXT_API GTEXT_CSS_Status gtext_css_computed_serialize(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property,

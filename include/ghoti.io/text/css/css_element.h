@@ -291,6 +291,30 @@ typedef enum {
   GTEXT_CSS_CONTAINER_BLOCK      ///< `cqb`
 } GTEXT_CSS_Container_Axis;
 
+/** @brief The kind of test of an `if()` condition that only the caller can answer. */
+typedef enum {
+  GTEXT_CSS_CONDITION_MEDIA = 0, ///< `media( <media-feature> | <media-condition> )`
+  GTEXT_CSS_CONDITION_SUPPORTS   ///< `supports( [ <ident> : <declaration-value> ] | <supports-condition> )`
+} GTEXT_CSS_Condition_Kind;
+
+/** @brief The answer to a condition in three-valued logic (CSS Values 5, Appendix B). */
+typedef enum {
+  GTEXT_CSS_TRI_FALSE = 0,
+  GTEXT_CSS_TRI_TRUE,
+  GTEXT_CSS_TRI_UNKNOWN ///< Not known: the condition is `<general-enclosed>`. Unknown at the top of an `if()` condition is false.
+} GTEXT_CSS_Tristate;
+
+/**
+ * @struct GTEXT_CSS_Random_Key
+ * @brief What names a random base value (CSS Values 5, 9.4, "random cache name"): two random functions with the same key get the same base value.
+ */
+typedef struct {
+  GTEXT_CSS_String name;            ///< The `<dashed-ident>` of the key (`--foo`); absent (`data` NULL) when there is none.
+  GTEXT_CSS_String ident;           ///< The `<random-ua-ident>` the library made (`ua-width-1`, `ua-margin-top-property`); absent when the key has none.
+  bool element_scoped;              ///< The key includes the element (`element-scoped`, and `auto`).
+  GTEXT_CSS_Element_Handle element; ///< The element, when `element_scoped`.
+} GTEXT_CSS_Random_Key;
+
 /**
  * @struct GTEXT_CSS_Environment
  * @brief What a style depends on that no document says. Initialize it with gtext_css_environment_default(), then set what differs.
@@ -326,6 +350,19 @@ typedef struct {
   /** Resolve a relative URL against `base_url` as the caller's URL parser does (the library's own resolution is RFC 3986's). Return a new string
    *  in `out` valid until the next call; false to keep the URL as it was. NULL: the library's own. */
   bool (*resolve_url)(void * user, const char * base, size_t base_length, const char * url, size_t url_length, GTEXT_CSS_String * out);
+  /** The value of an environment variable, as CSS text (CSS Environment Variables 1, `env( <custom-ident> <integer>* , fallback )`): `name` and the `indices`
+   *  of the call. Returns false for a name or index the environment does not have, and the call takes its fallback. The text is valid until the next call.
+   *  NULL: every name is unknown. Appended after the fields above. */
+  bool (*env_variable)(void * user, const GTEXT_CSS_String * name, const uint32_t * indices, size_t index_count, GTEXT_CSS_String * out);
+  /** The test of an `if()` condition that needs a media query or a `@supports` evaluator (CSS Values 5, 8.3): `text` is the argument of `media(` or `supports(`
+   *  with the substitution done. NULL: an `if()` that has one is GTEXT_CSS_E_UNSUPPORTED naming `condition`. */
+  GTEXT_CSS_Tristate (*condition)(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element);
+  /** The seed of the random base values: with no `random_base` callback, a base value is a function of this seed and of the key (and, for an
+   *  element-scoped key, of the element's handle), so a run is reproducible when the handles are. Default 0. */
+  uint64_t random_seed;
+  /** The random base value (0 up to but not including 1) of a key, when the caller wants to decide it (reproducibly across runs, say). Returns false for no
+   *  opinion: the seed decides. */
+  bool (*random_base)(void * user, const GTEXT_CSS_Random_Key * key, double * base);
 } GTEXT_CSS_Environment;
 
 /** The size of GTEXT_CSS_Environment through its `resolve_url` field, which is the one a caller who sets that field has. */

@@ -103,8 +103,8 @@ def scenario(name, records):
 
 # the layers of an origin: 1 a, 2 b, 3 b.x, 4 c, 5 c.y.z, 6 d, 7 a.w  (order: a.w a  b.x b  c.y.z c  d  -> ranks a.w=0 a=1 b.x=2 b=3 c.y.z=4 c=5 d=6)
 # ---- the sort order, one criterion at a time
-# a custom property holding var() is refused (GTEXT_CSS_E_INVALID: the substitution layer, C2c, will carry it); the records around it are not affected
-scenario("custom-pending-is-refused", [rec("--a", "5", sheet=0), rec("--a", "x var(--m)", sheet=1), rec("--b", "1", sheet=2), rec("--b", "var(--a, 2)", sheet=3)])
+# a custom property holding var() is carried as pending (the substitution layer computes it); the records around it are not affected
+scenario("custom-pending-is-carried", [rec("--a", "5", sheet=0), rec("--a", "x var(--m)", sheet=1), rec("--b", "1", sheet=2), rec("--b", "var(--a, 2)", sheet=3)])
 scenario("tier-chain", [rec("color", c, origin=o, imp=i, sheet=n) for n, (c, o, i) in enumerate([
     ("red", UA, False), ("orange", USER, False), ("yellow", AUTHOR, False), ("green", ANIM, False), ("blue", AUTHOR, True),
     ("indigo", USER, True), ("violet", UA, True), ("black", TRANS, False)])][::-1])

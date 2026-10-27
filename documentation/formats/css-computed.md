@@ -6,7 +6,7 @@ The registry (\ref format_css_registry "css-registry.md") says what a property's
 element. It **computes** the value of every property of one element from the declarations that won the cascade, the style of the element it
 inherits from and the environment; it **maps** logical properties to the physical ones they share a value with; and it **expands** a shorthand
 into its longhands and writes a block's longhands back as the shortest shorthands, as CSSOM does. It sits on the property layer; the
-cascade, selector matching and `var()` substitution are not here, they hand this layer their results. Back to \ref text_format_references
+cascade and selector matching are not here, they hand this layer their results; `var()` and the other substitution functions are read here (\ref format_css_variables "css-variables.md"). Back to \ref text_format_references
 "Formats".
 
 Include `<ghoti.io/text/css.h>` (`css/css_computed.h`, `css/css_element.h`, `css/css_logical.h`, `css/css_shorthand.h`).
@@ -220,8 +220,8 @@ would be 0.
 
 `initial`, `inherit` and `unset` are applied here, and `all` is a declaration at its place in the block (a later declaration of a property beats
 it, an earlier one does not; it spares `direction`, `unicode-bidi` and the custom properties). `revert` and `revert-layer` are results of the
-cascade and are refused as inputs, and so is a value still holding an unsubstituted `var()`: `GTEXT_CSS_E_INVALID` with a `detail` that says which and a
-result that names the property (a shorthand that held `var()` names the longhand reached first, `margin-bottom` for `margin: var(--x)`).
+cascade and are refused as inputs. A value that holds `var()`, `env()`, `attr()`, `if()` or another substitution function is **pending**, and is substituted here:
+\ref format_css_variables "css-variables.md" says how.
 `sibling-index()` and `sibling-count()` are answered by the element tree and are `GTEXT_CSS_E_UNSUPPORTED` naming the callback. `!important` is the cascade's: the
 block is in ascending priority and the importance of a declaration is not looked at, so the last declaration of a property wins whatever it says.
 
@@ -309,5 +309,4 @@ context is immutable and may be shared by threads that each compute their own st
 
 ## What this layer does not do
 
-It does not match selectors, run the cascade, substitute `var()` or register `@property` (the cascade layer does, and hands this one the winning
-declarations); it does not convert colors, lay anything out or compute used values.
+It does not match selectors or run the cascade (the cascade layer does, and hands this one the winning declarations); it does not convert colors, lay anything out or compute used values.

@@ -533,9 +533,9 @@ TEST(CssCascadeFixes, ALayerIsFoundOnlyUnderItsOwnParentWhateverTheTableHolds) {
   }
 }
 
-TEST(CssCascadeFixes, ACustomPropertyHoldingVarIsRefusedAndNothingAroundItIsAffected) {
-  /* found by the cascade fuzzer: `--a: var(--m)` parses as PENDING, and a custom property carries VALID or WIDE until the substitution layer (C2c) exists. The call
-     says GTEXT_CSS_E_INVALID, names the reason, and adds nothing; the candidates before and after it cascade as they would without it. */
+TEST(CssCascadeFixes, ACustomPropertyHoldingVarIsCarriedAsPending) {
+  /* found by the cascade fuzzer: `--a: var(--m)` parses as PENDING. The cascade carries it as the value of any pending property is carried (C2c substitutes it when
+     the style is computed), and the candidates before and after it cascade around it as they would. */
   Set s;
   s.add("--a", "5", K().order(0, 0, 0));
   ASSERT_EQ(s.status, GTEXT_CSS_OK);
@@ -544,15 +544,14 @@ TEST(CssCascadeFixes, ACustomPropertyHoldingVarIsRefusedAndNothingAroundItIsAffe
   K k = K().order(0, 1, 0);
   const std::string name = "--a", value = "x var(--m)";
   GTEXT_CSS_Cascade_Result res{};
-  EXPECT_EQ(gtext_css_candidates_add_text(s.s, &k.e, name.data(), name.size(), value.data(), value.size(), nullptr, &outcome, &res), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_candidates_add_text(s.s, &k.e, name.data(), name.size(), value.data(), value.size(), nullptr, &outcome, &res), GTEXT_CSS_OK);
   EXPECT_EQ(outcome, GTEXT_CSS_PROP_RESULT_PENDING);
-  ASSERT_NE(res.detail, nullptr);
-  EXPECT_NE(std::string(res.detail).find("custom property"), std::string::npos);
-  EXPECT_EQ(gtext_css_candidates_count(s.s), before);
+  EXPECT_EQ(gtext_css_candidates_count(s.s), before + 1);
   s.add("--b", "1", K().order(0, 2, 0));
   ASSERT_EQ(s.status, GTEXT_CSS_OK);
-  EXPECT_EQ(Out(s).custom("--a"), "5");
-  EXPECT_EQ(Out(s).custom("--b"), "1");
+  Out o(s);
+  EXPECT_EQ(o.custom("--a"), "pending:x var(--m)");
+  EXPECT_EQ(o.custom("--b"), "1");
 }
 
 /* ---- what the browsers do (tools/oracle/cascade_probe_answers.txt: Chromium 156.0.8078.47 and Firefox 158.0.1 agree on every case) ------------------------ */

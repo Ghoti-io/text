@@ -966,6 +966,48 @@ std::function<Measured(size_t)> css_compute_value(const char * property, std::fu
   };
 }
 
+// One element whose block holds the declarations `make(k)` gives (name, value), the values holding substitution functions: the work is the result's counter
+// (the tokens and nodes visited, the frames run), and the budget's own counters are checked not to be what bounds it.
+std::function<Measured(size_t)> css_compute_pairs(std::function<std::vector<std::pair<std::string, std::string>>(size_t)> make, const char * must_be = nullptr,
+    uint64_t max_peak = 0) {
+  return [make, must_be, max_peak](size_t k) {
+    Measured m;
+    GTEXT_CSS_Compute_Context * ctx = quad_compute_context();
+    GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+    o.max_declarations = (size_t)1 << 22;
+    GTEXT_CSS_Declaration_Block * b = nullptr;
+    gtext_css_block_new(quad_registry(), &o, &b);
+    for (const auto & d : make(k)) {
+      m.bytes += d.first.size() + d.second.size() + 2;
+      GTEXT_CSS_Property_Outcome outcome;
+      gtext_css_block_add_text(b, d.first.data(), d.first.size(), d.second.data(), d.second.size(), false, nullptr, &outcome, nullptr);
+    }
+    GTEXT_CSS_Computed_Style * style = nullptr;
+    GTEXT_CSS_Compute_Result r{};
+    const GTEXT_CSS_Status st = gtext_css_compute_style(ctx, b, nullptr, nullptr, &style, &r);
+    m.work = r.work;
+    if (st != GTEXT_CSS_OK) {
+      m.ok = false;
+      m.why = std::string("the style could not be computed: ") + gtext_css_status_string(st) + " " + r.name + " " + (r.detail ? r.detail : "");
+    }
+    else if (max_peak && r.substitution_peak > max_peak) {
+      m.ok = false;
+      m.why = "a substituted value grew to " + std::to_string(r.substitution_peak) + " tokens: the budget did not stop it";
+    }
+    else if (must_be) {
+      const GTEXT_CSS_Value_Set * set = nullptr;
+      const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(quad_registry(), must_be, std::strlen(must_be));
+      if (gtext_css_computed_value(style, id, &set) != GTEXT_CSS_OK || !set) {
+        m.ok = false;
+        m.why = "the property has no value";
+      }
+    }
+    gtext_css_computed_free(style);
+    gtext_css_block_free(b);
+    return m;
+  };
+}
+
 // One element whose block declares k custom properties (each is one set into the persistent map: GTEXT_CSS_Compute_Result::work counts the nodes read and made).
 std::function<Measured(size_t)> css_compute_customs(std::function<std::string(size_t)> name) {
   return [name](size_t k) {
@@ -1864,6 +1906,118 @@ std::vector<Shape> build_shapes() {
     sc.per_byte = 0;
     sc.bound = 6.5;
     sc.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
+  // ---- substitution (src/css/css_substitute.c, css_rope.c): the work is the tokens and nodes visited and the frames run; none of these may depend on the
+  // budget (they stay under it) except the two that are meant to reach it.
+  add("css", "CSS substitute: a chain of n custom properties, each var() of the one before", 3000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"--n0", "1px"});
+        for (size_t i = 1; i <= k; i++) {
+          d.push_back({"--n" + std::to_string(i), "var(--n" + std::to_string(i - 1) + ")"});
+        }
+        d.push_back({"width", "var(--n" + std::to_string(k) + ")"});
+        return d;
+      }, "width")).per_byte = 0;
+  add("css", "CSS substitute: n custom properties that each var() one", 3000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"--base", "1px 2px 3px"});
+        for (size_t i = 0; i < k; i++) {
+          d.push_back({"--u" + std::to_string(i), "var(--base) var(--base)"});
+        }
+        return d;
+      })).per_byte = 0;
+  add("css", "CSS substitute: a value that holds n var() of one property", 3000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"--a", "1px"});
+        d.push_back({"--s", repeat("var(--a) ", k) + "var(--a)"});
+        return d;
+      })).per_byte = 0;
+  add("css", "CSS substitute: a var() fallback nested n deep", 10,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"--s", repeat("var(--none, ", k) + "1px" + repeat(")", k)});
+        d.push_back({"width", "var(--s)"});
+        return d;
+      }, "width")).per_byte = 0;
+  add("css", "CSS substitute: a cycle of n custom properties", 1000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        for (size_t i = 0; i <= k; i++) {
+          d.push_back({"--c" + std::to_string(i), "var(--c" + std::to_string((i + 1) % (k + 1)) + ")"});
+        }
+        d.push_back({"width", "var(--c0, 3px)"});
+        return d;
+      })).per_byte = 0;
+  add("css", "CSS substitute: a chain of n custom properties whose last has n fallback references back into the chain (one cycle, n edges)", 1000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        for (size_t i = 0; i < k; i++) {
+          d.push_back({"--a" + std::to_string(i), "var(--a" + std::to_string(i + 1) + ")"});
+        }
+        std::string last;
+        for (size_t i = 0; i <= k; i++) {
+          last += "var(--a" + std::to_string(i) + ", 1px) ";
+        }
+        d.push_back({"--a" + std::to_string(k), last});
+        d.push_back({"width", "var(--a0, 3px)"});
+        return d;
+      }, "width")).per_byte = 0;
+  add("css", "CSS substitute: n cycles of two", 500,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        for (size_t i = 0; i < k; i++) {
+          d.push_back({"--x" + std::to_string(i), "var(--y" + std::to_string(i) + ")"});
+          d.push_back({"--y" + std::to_string(i), "var(--x" + std::to_string(i) + ") 1px"});
+        }
+        return d;
+      })).per_byte = 0;
+  add("css", "CSS substitute: a spread of n items into a function", 3000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"--l", repeat("1px, ", k) + "2px"});
+        d.push_back({"--s", "random-item(--k, var(--l)...)"});
+        d.push_back({"width", "var(--s)"});
+        return d;
+      }, "width")).per_byte = 0;
+  add("css", "CSS substitute: an if() of n branches", 1500,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"--a", "1"});
+        std::string v = "if(";
+        for (size_t i = 0; i < k; i++) {
+          v += "style(--a: " + std::to_string(i + 2) + "): 1px; ";
+        }
+        d.push_back({"width", v + "else: 2px)"});
+        return d;
+      }, "width")).per_byte = 0;
+  add("css", "CSS substitute: a cycle() of n values", 3000,
+      css_compute_pairs([](size_t k) {
+        std::vector<std::pair<std::string, std::string>> d;
+        d.push_back({"width", "cycle(" + repeat("1px, ", k) + "2px)"});
+        return d;
+      }, "width")).per_byte = 0;
+  {
+    Shape & ch = add("css", "CSS substitute: an inheritance chain of n elements that each var() the parent's property", 150,
+        css_compute_chain([](size_t i) { return i == 0 ? std::string("--p0: 1px") : "--p" + std::to_string(i) + ": var(--p" + std::to_string(i - 1) + ") 1px"; }));
+    ch.per_byte = 0;
+    ch.bound = 6.5;
+    ch.note = "n log n by design: a name set in a persistent treap reads and makes the nodes of a path";
+  }
+  {
+    Shape & dbl = add("css", "CSS substitute: a value that would double n times (the budget stops it)", 30,
+        css_compute_pairs([](size_t k) {
+          std::vector<std::pair<std::string, std::string>> d;
+          d.push_back({"--n0", "lol"});
+          for (size_t i = 1; i <= k; i++) {
+            d.push_back({"--n" + std::to_string(i), "var(--n" + std::to_string(i - 1) + ") var(--n" + std::to_string(i - 1) + ")"});
+          }
+          d.push_back({"content", "var(--n" + std::to_string(k) + ")"});
+          return d;
+        }, nullptr, 2 * 1048576));
+    dbl.note = "linear in the text written, never in the 2^n tokens it names: the budget makes the value guaranteed-invalid (held to the default work per byte, since the ratio of a flat line shows nothing)";
   }
   add("css", "CSS shorthand: a background of n layers", 150,
       css_shorthand_expand("background", [](size_t k) { return repeat("url(a) 1px 2px / 3px 4px no-repeat, ", k) + "red"; })).per_byte = 0;

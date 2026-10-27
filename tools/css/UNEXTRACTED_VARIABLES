@@ -1,0 +1,212 @@
+# tools/css/extract-wpt-variables.py: the test pages of css/css-variables and css/css-properties-values-api of the pinned
+# web-platform-tests that it does not read as data (or reads in part), and why. Columns: file, number of calls it could not
+# read (1 for a page not read at all), the extractor's own wording. make conformance-css-variables fails on a page that is not
+# here, on a count that differs and on a line for a page that is read in full now; the first two columns are compared.
+# Rewrite it with: tools/css/extract-wpt-variables.py third_party/css/wpt build/css-variables-vectors --unextracted tools/css/UNEXTRACTED_VARIABLES
+css/css-properties-values-api/animate-invalid.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-angle-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-angle-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-angle.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-color-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-color-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-color.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-custom-ident.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-image.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-inherited-used-by-standard-property.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-integer-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-integer-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-integer.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-length-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-length-percentage-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-length-percentage-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-length-percentage.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-length-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-length.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-list-type-mismatch.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-non-inherited-used-by-standard-property.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-number-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-number-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-number.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-percentage-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-percentage-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-percentage.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-resolution-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-resolution-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-resolution.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-time-comma-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-time-space-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-time.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-transform-function.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-transform-list-multiple-values.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-transform-list-single-values.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-transform-none.tentative.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-url.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-used-in-shorthand.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-animation-with-zoom.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-angle.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-color.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-custom-ident.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-image.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-inherited-used-by-standard-property.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/animation/custom-property-transition-integer.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-length-percentage.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-length.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-mismatched-inherited-property-numbers.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-mismatched-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-mismatched-property-numbers.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-non-inherited-used-by-standard-property.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/animation/custom-property-transition-number-percentage.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-number.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-percentage.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-property-all.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-resolution.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-time.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-function-box-size.tentative.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-function-matrix.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-function-none.tentative.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-function-to-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-function.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-list-box-size.tentative.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-list-matrix.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-list-none.tentative.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-transform-list.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/custom-property-transition-url.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/registered-neutral-keyframe.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/animation/registered-var-to-registered-animating.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/at-property-animation.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/at-property-cssom.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-non-matching-media-crash.html	1	a page that must not crash, with no data to read
+css/css-properties-values-api/at-property-optional-initial-value.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-shadow.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-stylesheets.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-typedom.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-viewport-units-dynamic.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-viewport-units.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/conditional-rules.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/crashtests/computed-property-universal-syntax.html	1	a page that must not crash, with no data to read
+css/css-properties-values-api/crashtests/consume-color-contrast-crash.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/crashtests/initial-in-audio-crash.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/crashtests/transition-to-none-crash-001.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/crashtests/transition-to-none-crash-002.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/determine-registration.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/font-property-unit-cycles.tentative.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/font-size-animation.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/get-computed-style-enumeration.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/idlharness.html	1	not data: no call of a known shape
+css/css-properties-values-api/invalid-at-computed-value-time.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/non-computed-unit-cycles.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/property-cascade.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/register-property.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-properties-inheritance.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-change-style-001.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-change-style-002.html	1	reftest not read: the page has a script
+css/css-properties-values-api/registered-property-computation-color-001.html	1	reftest not read: the reference does not hold the same text elements
+css/css-properties-values-api/registered-property-computation-color-002.html	1	reftest not read: the reference does not hold the same text elements
+css/css-properties-values-api/registered-property-computation-color-003.html	1	reftest not read: the reference does not hold the same text elements
+css/css-properties-values-api/registered-property-computation-color-005.html	1	reftest not read: the reference does not hold the same text elements
+css/css-properties-values-api/registered-property-computation-color-006.html	1	reftest not read: the reference does not hold the same text elements
+css/css-properties-values-api/registered-property-computation.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-crosstalk.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-cssom.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-dependency-through-fallback.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-ident-function.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-initial.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/registered-property-parse-crash.html	1	a page that must not crash, with no data to read
+css/css-properties-values-api/registered-property-revert.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/resolved-color-value.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/self-utils.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/typedom.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/unit-cycles.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/url-resolution.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/var-reference-registered-properties-002.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/var-reference-registered-properties-cycles.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/var-reference-registered-properties.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/var-reference-unit-cycles.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/css-variable-change-style-001.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/css-variable-change-style-002.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/css-vars-custom-property-case-sensitive-001.html	1	reftest not read: the reference is not a page of markup this reader takes (ref-filled-green-100px-square.xht)
+css/css-variables/css-vars-custom-property-inheritance.html	1	reftest not read: the reference is not a page of markup this reader takes (ref-filled-green-100px-square.xht)
+css/css-variables/custom-properties-inherit.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/missing-closing-nested-fallback-crash.html	1	a page that must not crash, with no data to read
+css/css-variables/missing-closing-nested-fallback.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/revert-in-fallback.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/revert-layer-in-fallback.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/revert-rule-in-fallback.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/revert-rule-to-var.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/test_variable_legal_values.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/transition-with-attribute-taint.html	1	animation or transition: needs the animation model
+css/css-variables/url-syntax-crash.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/url-token-serialization.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/var-ident-function.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/var-parsing.html	1	not data: no call of a known shape
+css/css-variables/variable-animation-from-to.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-guaranteed-invalid.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-over-transition.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-substitute-into-keyframe-shorthand.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-substitute-into-keyframe-transform.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-substitute-into-keyframe.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-substitute-within-keyframe-fallback.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-substitute-within-keyframe-multiple.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-substitute-within-keyframe.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-to-only.html	1	animation or transition: needs the animation model
+css/css-variables/variable-created-document.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-created-element.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-css-wide-keywords-after-substitution.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-css-wide-keywords.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-cssText.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-declaration-14.html	1	reftest not read: the reference does not hold the same text elements
+css/css-variables/variable-declaration-15.html	1	reftest not read: an external style sheet
+css/css-variables/variable-declaration-16.html	1	reftest not read: an external style sheet
+css/css-variables/variable-declaration-17.html	1	reftest not read: an external style sheet
+css/css-variables/variable-declaration-18.html	1	reftest not read: an external style sheet
+css/css-variables/variable-declaration-53.html	1	reftest not read: the reference does not hold the same text elements
+css/css-variables/variable-declaration-54.html	1	reftest not read: the reference does not hold the same text elements
+css/css-variables/variable-declaration-55.html	1	reftest not read: the reference does not hold the same text elements
+css/css-variables/variable-declaration-59.html	1	reftest not read: the page has a stray statement
+css/css-variables/variable-definition-border-shorthand-serialize.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-definition-cascading.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-definition-keywords.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-definition.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-empty-name-reserved.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-external-declaration-01.html	1	reftest not read: an external style sheet
+css/css-variables/variable-external-font-face-01.html	1	reftest not read: an external style sheet
+css/css-variables/variable-external-reference-01.html	1	reftest not read: an external style sheet
+css/css-variables/variable-external-supports-01.html	1	reftest not read: an external style sheet
+css/css-variables/variable-first-letter.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-first-line.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-font-face-01.html	1	reftest not read: the page has an @font-face rule
+css/css-variables/variable-font-face-02.html	1	reftest not read: the page has an @font-face rule
+css/css-variables/variable-generated-content-dynamic-001.html	1	reftest not read: the page has a script
+css/css-variables/variable-invalidation.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-presentation-attribute.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-pseudo-element.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-recalc-with-initial.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-12.html	1	reftest not read: the page has a selector the scorer does not match (#a:before)
+css/css-variables/variable-reference-cssom.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-name-substitution-attr-taint.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-name-substitution.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-perspective-origin.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-refresh.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-shorthands-cssom.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-shorthands.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-variable.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-reference-visited.html	1	reftest not read: the page: an attribute (height) the cascade could depend on
+css/css-variables/variable-reference-without-whitespace.html	1	reftest not read: the page has a selector the scorer does not match (#control_1 span::before)
+css/css-variables/variable-reference.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-resolution-during-prioritary-properties.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-substitution-background-properties.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-substitution-basic.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-substitution-filters.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-substitution-replaced-size.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-substitution-shadow-properties.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-substitution-shorthands.html	1	animation or transition: needs the animation model
+css/css-variables/variable-substitution-variable-declaration.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/variable-transitions-transition-property-all-before-value.html	1	animation or transition: needs the animation model
+css/css-variables/variable-transitions-value-before-transition-property-all.html	1	animation or transition: needs the animation model
+css/css-variables/variables-animation-math-functions.html	1	not data: no call of a known shape
+css/css-variables/variables-substitute-guaranteed-invalid.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/vars-border-shorthand-serialize.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/vars-font-shorthand-001.html	1	reftest not read: an external style sheet
+css/css-variables/whitespace-in-fallback-crash.html	1	a page that must not crash, with no data to read
+css/css-variables/wide-keyword-fallback-001.html	1	reftest not read: the reference does not hold the same text elements

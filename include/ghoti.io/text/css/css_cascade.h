@@ -32,7 +32,7 @@
  * The cascade is a **declaration-source interface**. A caller supplies the candidate declarations of one element with their sort keys: the selector
  * matcher (C3) will supply the declarations of the style rules that match and their specificity, the attribute readers (C2d) the `style` attribute and the
  * presentation attributes, and a test builds entries directly. Nothing here parses or matches a selector, or evaluates a media, supports or container
- * condition (C4 supplies the filter that says which `@layer` rules count: css_layer.h), or substitutes `var()` (C2c): a pending value is carried, not read.
+ * condition (C4 supplies the filter that says which `@layer` rules count: css_layer.h), or substitutes `var()`: a pending value is carried, not read, and gtext_css_compute_style() (css_computed.h) is what reads it.
  *
  * ## The sort order
  *
@@ -81,7 +81,8 @@
  * `margin-left` and `margin-inline-start` are one set when `margin-inline-start` is the left, and the winner is one of them. The flow is the element's computed
  * `writing-mode`, `direction` and `text-orientation`, which are cascaded first: from the cascade of those three properties, with `inherit` and `unset`
  * taken from the inheritance parent's flow (GTEXT_CSS_Cascade_Options::parent_flow), or given outright (GTEXT_CSS_Cascade_Options::flow). A flow property that is
- * still pending is taken as `unset`, which is what an invalid-at-computed-value-time declaration is; a caller that substitutes `var()` cascades again with the flow.
+ * still pending is taken as `unset` by the cascade (the computed style substitutes it, and maps the logical properties by what it comes to): a caller whose flow
+ * comes from a `var()` gives GTEXT_CSS_Cascade_Options::flow.
  *
  * ## What comes out
  *
@@ -255,11 +256,10 @@ GTEXT_API void gtext_css_candidates_free(GTEXT_CSS_Candidates * set);
 GTEXT_API GTEXT_CSS_Status gtext_css_candidates_add(GTEXT_CSS_Candidates * set, const GTEXT_CSS_Cascade_Entry * keys,
     const GTEXT_CSS_Property_Value * value, GTEXT_CSS_Cascade_Result * result);
 
-/** @brief Add a custom property's declaration (VALID or WIDE; case of the name is kept).
+/** @brief Add a custom property's declaration (VALID, WIDE or PENDING; case of the name is kept).
  *
- * A custom property whose value holds `var()` parses as PENDING and is **refused** with GTEXT_CSS_E_INVALID (the result's `detail` says so), by this call and by the
- * calls that parse (gtext_css_candidates_add_text(), gtext_css_candidates_add_declaration(); their `outcome` is PENDING): the substitution layer (C2c) is what will
- * carry it, as it carries the pending value of any other property. Nothing is added, and the set is as it was.
+ * A custom property whose value holds `var()` parses as PENDING and is carried as written: gtext_css_compute_element() substitutes it when the style is computed,
+ * exactly as it does the pending value of any other property.
  * @return As gtext_css_candidates_add(). */
 GTEXT_API GTEXT_CSS_Status gtext_css_candidates_add_custom(GTEXT_CSS_Candidates * set, const GTEXT_CSS_Cascade_Entry * keys, const char * name,
     size_t name_length, const GTEXT_CSS_Property_Value * value, GTEXT_CSS_Cascade_Result * result);

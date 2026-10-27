@@ -147,6 +147,8 @@ typedef enum {
   GTEXT_CSS_E_LIMIT_CANDIDATES,   ///< Cascade: more candidate declarations for one element than `max_candidates`.
   GTEXT_CSS_E_LIMIT_LAYERS,       ///< Cascade: more cascade layers than `max_layers`.
   GTEXT_CSS_E_LIMIT_LAYER_DEPTH,  ///< Cascade: layers nested deeper than `max_depth`.
+  GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES, ///< Custom properties: an element declares more than `max_custom_properties`.
+  GTEXT_CSS_E_LIMIT_CUSTOM_VALUE, ///< Custom properties: a declared value is longer than `max_value_bytes`.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

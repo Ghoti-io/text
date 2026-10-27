@@ -45,6 +45,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_tables.h"
 
@@ -120,6 +121,7 @@ struct GTEXT_CSS_Registry {
   lazy_grammar * gtypes;       ///< One for each generated type: only `def` is used.
   lazy_grammar * gdescs;       ///< One for each generated descriptor.
   lazy_grammar pending;        ///< `<declaration-value>?`.
+  css_creg_store cregs;        ///< The custom properties the caller registered (gtext_css_registry_register_custom()).
 
   size_t work;                 ///< Units of work done by registrations and by the lookups made through css_registry_find_counted(): probes, steps, bytes.
   GTEXT_CSS_Function_Types * ftypes;
@@ -952,6 +954,7 @@ static void reg_destroy(GTEXT_CSS_Registry * r) {
     }
   }
   lazy_free(&r->pending);
+  css_creg_store_free(&r->cregs);
   for (size_t i = 0; i < r->ncprops; i++) {
     cprop * c = &r->cprops[i];
     lazy_free(&c->lazy);
@@ -1022,6 +1025,7 @@ GTEXT_CSS_Status gtext_css_registry_builder_new(const GTEXT_CSS_Registry_Options
     lazy_init(&r->gdescs[i]);
   }
   lazy_init(&r->pending);
+  css_creg_store_init(&r->cregs, &r->alloc);
   GTEXT_CSS_Function_Types_Options fo;
   memset(&fo, 0, sizeof fo);
   fo.allocator = &r->alloc;
@@ -1672,6 +1676,383 @@ static void freeze_undo(GTEXT_CSS_Registry * r, size_t work_before) {
 }
 
 static GTEXT_CSS_Status freeze_run(GTEXT_CSS_Registry_Builder * builder, GTEXT_CSS_Registry ** out, GTEXT_CSS_Registry_Result * result);
+
+
+/* ---- custom property registrations --------------------------------------------------------------------- */
+
+static void trim_ws(const char ** s, size_t * n) {
+  while (*n && (**s == ' ' || **s == '\t' || **s == '\n' || **s == '\r' || **s == '\f')) {
+    (*s)++;
+    (*n)--;
+  }
+  while (*n && ((*s)[*n - 1] == ' ' || (*s)[*n - 1] == '\t' || (*s)[*n - 1] == '\n' || (*s)[*n - 1] == '\r' || (*s)[*n - 1] == '\f')) {
+    (*n)--;
+  }
+}
+
+static GTEXT_CSS_Status creg_fail_why(GTEXT_CSS_Registry_Result * result, GTEXT_CSS_Status st, const char * name, size_t nl, const char * detail, css_creg_why * why,
+    css_creg_why w) {
+  if (why) {
+    *why = st == GTEXT_CSS_E_INVALID ? w : CSS_CREG_OTHER;
+  }
+  fill_result(result, st, name, nl);
+  if (result) {
+    result->detail = detail;
+  }
+  return st;
+}
+
+#define creg_fail(result, st, name, nl, detail) creg_fail_why(result, st, name, nl, detail, why, CSS_CREG_OTHER)
+
+/// Whether a name is one of the CSS-wide keywords (`initial`, `inherit`, `unset`, `revert`, `revert-layer`, `revert-rule`), ASCII case-insensitively.
+static bool is_css_wide_keyword(const GTEXT_CSS_String * s) {
+  static const char * const names[] = {"initial", "inherit", "unset", "revert", "revert-layer", "revert-rule"};
+  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+    if (css_ascii_ieq(s, names[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Whether the text, tokenized as written, holds a bad string or a bad url token anywhere.
+static GTEXT_CSS_Status text_has_bad_token(const GTEXT_Allocator * alloc, const char * text, size_t length, bool * bad) {
+  *bad = false;
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  po.allocator = alloc;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status st = gtext_css_parse_component_values(text, length, &po, &tree, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_OK; /* a limit of the parser is the caller's to meet when it parses the value */
+  }
+  GTEXT_Allocator a = *alloc;
+  size_t cap = 16, top = 0;
+  struct frame {
+    const GTEXT_CSS_Component_Value * v;
+    size_t n;
+  } * stack = gtext_allocator_malloc(&a, cap * sizeof *stack);
+  if (!stack) {
+    gtext_css_tree_free(tree);
+    return GTEXT_CSS_E_OOM;
+  }
+  stack[top++] = (struct frame){tree->values, tree->value_count};
+  while (top > 0 && !*bad) {
+    struct frame f = stack[--top];
+    for (size_t i = 0; i < f.n; i++) {
+      const GTEXT_CSS_Component_Value * v = &f.v[i];
+      if (v->kind == GTEXT_CSS_VALUE_TOKEN && (v->type == GTEXT_CSS_TOKEN_BAD_STRING || v->type == GTEXT_CSS_TOKEN_BAD_URL)) {
+        *bad = true;
+        break;
+      }
+      if (v->child_count) {
+        if (top == cap) {
+          cap *= 2;
+          struct frame * g = gtext_allocator_realloc(&a, stack, cap * sizeof *stack);
+          if (!g) {
+            gtext_allocator_free(&a, stack);
+            gtext_css_tree_free(tree);
+            return GTEXT_CSS_E_OOM;
+          }
+          stack = g;
+        }
+        stack[top++] = (struct frame){v->children, v->child_count};
+      }
+    }
+  }
+  gtext_allocator_free(&a, stack);
+  gtext_css_tree_free(tree);
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_registry_make_creg(const GTEXT_CSS_Registry * cr, const char * name, size_t name_length, const char * syntax, size_t syntax_length,
+    bool inherits, const char * initial, size_t initial_length, css_creg ** out, GTEXT_CSS_Registry_Result * result, css_creg_why * why) {
+  GTEXT_CSS_Registry * r = (GTEXT_CSS_Registry *)cr;
+  *out = NULL;
+  if (why) {
+    *why = CSS_CREG_OK;
+  }
+  if (!css_creg_name_ok(name, name_length)) {
+    return creg_fail_why(result, GTEXT_CSS_E_INVALID, name, name_length, "the name of a custom property begins with two dashes and has something after them", why, CSS_CREG_BAD_NAME);
+  }
+  if (name_length > r->max_name) {
+    return creg_fail(result, GTEXT_CSS_E_LIMIT_REGISTRY, name, name_length, NULL);
+  }
+  if (initial && initial_length > r->max_initial) {
+    return creg_fail(result, GTEXT_CSS_E_LIMIT_REGISTRY, name, name_length, NULL);
+  }
+  if (!syntax) {
+    syntax = "*";
+    syntax_length = 1;
+  }
+  css_creg * c = gtext_allocator_calloc(&r->alloc, 1, sizeof *c);
+  if (!c) {
+    return creg_fail(result, GTEXT_CSS_E_OOM, name, name_length, NULL);
+  }
+  c->alloc = r->alloc;
+  c->inherits = inherits;
+  c->name = dup_n(&r->alloc, name, name_length);
+  c->name_len = name_length;
+  c->syntax_text = dup_n(&r->alloc, syntax, syntax_length);
+  c->syntax_len = syntax_length;
+  if (!c->name || !c->syntax_text) {
+    css_creg_free(c);
+    return creg_fail(result, GTEXT_CSS_E_OOM, name, name_length, NULL);
+  }
+  GTEXT_CSS_Status st = css_syntax_parse(&r->alloc, syntax, syntax_length, &c->syntax, NULL);
+  if (st == GTEXT_CSS_E_GRAMMAR) {
+    css_creg_free(c);
+    return creg_fail_why(result, GTEXT_CSS_E_INVALID, name, name_length, "the syntax is not a syntax string (Properties and Values API 1, 5.4)", why, CSS_CREG_BAD_SYNTAX);
+  }
+  if (st != GTEXT_CSS_OK) {
+    css_creg_free(c);
+    return creg_fail(result, st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_E_INVALID, name, name_length, NULL);
+  }
+  const bool universal = c->syntax->universal;
+  if (!universal) {
+    c->compiled = gtext_allocator_calloc(&r->alloc, c->syntax->ncomps, sizeof *c->compiled);
+    if (!c->compiled) {
+      css_creg_free(c);
+      return creg_fail(result, GTEXT_CSS_E_OOM, name, name_length, NULL);
+    }
+    for (size_t i = 0; i < c->syntax->ncomps; i++) {
+      char * g = NULL;
+      size_t gl = 0;
+      st = css_syntax_component_grammar(c->syntax, i, &g, &gl);
+      if (st != GTEXT_CSS_OK) {
+        css_creg_free(c);
+        return creg_fail(result, st, name, name_length, NULL);
+      }
+      if (!g) {
+        continue;
+      }
+      GTEXT_CSS_Registry_Result vr;
+      memset(&vr, 0, sizeof vr);
+      st = validate_grammar(r, g, gl, &vr, &c->compiled[i]);
+      r->last_nodes = 0;
+      gtext_allocator_free(&r->alloc, g);
+      if (st != GTEXT_CSS_OK) {
+        css_creg_free(c);
+        fill_result(result, st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_LIMIT_REGISTRY ? st : GTEXT_CSS_E_INTERNAL, name, name_length);
+        if (result) {
+          result->grammar = vr.grammar;
+          result->detail = "a component of the syntax could not be compiled";
+        }
+        return result ? result->status : st;
+      }
+    }
+  }
+  if (!initial) {
+    if (!universal) {
+      css_creg_free(c);
+      return creg_fail_why(result, GTEXT_CSS_E_INVALID, name, name_length, "a syntax other than * needs an initial value", why, CSS_CREG_NO_INITIAL);
+    }
+  }
+  else {
+    const char * it = initial;
+    size_t il = initial_length;
+    /* "the initial value is parsed as written": a string that a line feed ends is a bad string, and cutting the white space off first would close it */
+    bool bad_token = false;
+    st = text_has_bad_token(&r->alloc, initial, initial_length, &bad_token);
+    if (st != GTEXT_CSS_OK || bad_token) {
+      css_creg_free(c);
+      return creg_fail_why(result, st == GTEXT_CSS_OK ? GTEXT_CSS_E_INVALID : st, name, name_length,
+          "the initial value has a bad string or a bad url in it, which no <declaration-value> holds", why, CSS_CREG_BAD_INITIAL);
+    }
+    trim_ws(&it, &il);
+    c->has_initial = true;
+    c->initial = dup_n(&r->alloc, it, il);
+    c->initial_len = il;
+    if (!c->initial) {
+      css_creg_free(c);
+      return creg_fail(result, GTEXT_CSS_E_OOM, name, name_length, NULL);
+    }
+    GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+    po.allocator = &r->alloc;
+    GTEXT_CSS_Tree * tree = NULL;
+    st = gtext_css_parse_component_values(it, il, &po, &tree, NULL);
+    if (st != GTEXT_CSS_OK) {
+      css_creg_free(c);
+      return creg_fail_why(result, st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_E_INVALID, name, name_length, "the initial value is not a list of component values", why, CSS_CREG_BAD_INITIAL);
+    }
+    bool sub = false;
+    st = gtext_css_has_arbitrary_substitution(tree->values, tree->value_count, &r->alloc, &sub);
+    const char * detail = NULL;
+    css_creg_why w = CSS_CREG_BAD_INITIAL;
+    bool good = false;
+    GTEXT_CSS_Value_Set * typed = NULL;
+    if (st == GTEXT_CSS_OK && tree->value_count == 1 && tree->values[0].kind == GTEXT_CSS_VALUE_TOKEN && tree->values[0].type == GTEXT_CSS_TOKEN_IDENT &&
+        is_css_wide_keyword(&tree->values[0].value)) {
+      /* a CSS-wide keyword, written as a value, is explicit defaulting and not a value that could be the initial one */
+      detail = "the initial value is a CSS-wide keyword, which is not a value";
+    }
+    else if (st == GTEXT_CSS_OK && sub) {
+      detail = "the initial value has a substitution function: it has to be computationally independent";
+      w = CSS_CREG_SUBSTITUTION;
+    }
+    else if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_Match_Options mo = r->mopt;
+      mo.allocator = &r->alloc;
+      if (universal) {
+        const GTEXT_CSS_Compiled * pending = NULL;
+        st = css_registry_pending_grammar(r, &pending);
+        if (st == GTEXT_CSS_OK) {
+          st = gtext_css_match(pending, tree->values, tree->value_count, &mo, &good, NULL, NULL);
+        }
+        if (st == GTEXT_CSS_OK && !good) {
+          detail = "the initial value is not a valid token stream";
+        }
+      }
+      else {
+        css_syn_match m;
+        st = css_syntax_match(c->syntax, c->compiled, tree->values, tree->value_count, &mo, &good, &m);
+        if (st == GTEXT_CSS_OK && !good) {
+          detail = "the initial value does not match the syntax";
+        }
+        else if (st == GTEXT_CSS_OK) {
+          typed = m.set;
+          bool independent = true;
+          st = css_creg_independent(&r->alloc, tree->values, tree->value_count, typed, &independent);
+          if (st == GTEXT_CSS_OK && !independent) {
+            good = false;
+            detail = "the initial value is not computationally independent: it needs the element (em, currentcolor ...)";
+            w = CSS_CREG_NOT_INDEPENDENT;
+          }
+        }
+      }
+    }
+    gtext_css_value_set_free(typed);
+    gtext_css_tree_free(tree);
+    if (st != GTEXT_CSS_OK || !good) {
+      css_creg_free(c);
+      return creg_fail_why(result, st != GTEXT_CSS_OK ? st : GTEXT_CSS_E_INVALID, name, name_length, detail, why, w);
+    }
+  }
+  *out = c;
+  return GTEXT_CSS_OK;
+}
+
+
+GTEXT_CSS_Status css_registry_compile_syntax(const GTEXT_CSS_Registry * cr, const char * text, size_t length, css_compiled_syntax ** out) {
+  GTEXT_CSS_Registry * r = (GTEXT_CSS_Registry *)cr;
+  *out = NULL;
+  css_compiled_syntax * c = gtext_allocator_calloc(&r->alloc, 1, sizeof *c);
+  if (!c) {
+    return GTEXT_CSS_E_OOM;
+  }
+  c->alloc = r->alloc;
+  c->text = dup_n(&r->alloc, text, length);
+  c->len = length;
+  if (!c->text) {
+    css_compiled_syntax_free(c);
+    return GTEXT_CSS_E_OOM;
+  }
+  GTEXT_CSS_Status st = css_syntax_parse(&r->alloc, text, length, &c->syntax, NULL);
+  if (st != GTEXT_CSS_OK) {
+    css_compiled_syntax_free(c);
+    return st;
+  }
+  if (!c->syntax->universal) {
+    c->compiled = gtext_allocator_calloc(&r->alloc, c->syntax->ncomps, sizeof *c->compiled);
+    if (!c->compiled) {
+      css_compiled_syntax_free(c);
+      return GTEXT_CSS_E_OOM;
+    }
+    for (size_t i = 0; i < c->syntax->ncomps; i++) {
+      char * g = NULL;
+      size_t gl = 0;
+      st = css_syntax_component_grammar(c->syntax, i, &g, &gl);
+      if (st != GTEXT_CSS_OK) {
+        css_compiled_syntax_free(c);
+        return st;
+      }
+      if (!g) {
+        continue;
+      }
+      st = validate_grammar(r, g, gl, NULL, &c->compiled[i]);
+      r->last_nodes = 0;
+      gtext_allocator_free(&r->alloc, g);
+      if (st != GTEXT_CSS_OK) {
+        css_compiled_syntax_free(c);
+        return st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_E_INTERNAL;
+      }
+    }
+  }
+  *out = c;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_registry_register_custom(GTEXT_CSS_Registry_Builder * builder, const GTEXT_CSS_Custom_Def * def, GTEXT_CSS_Registry_Result * result) {
+  css_creg_why * const why = NULL;
+  if (!builder || !def || !def->name) {
+    fill_result(result, GTEXT_CSS_E_INVALID, NULL, 0);
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Registry * r = builder->reg;
+  const size_t nl = strlen(def->name);
+  if (r->cregs.count >= r->max_registrations) {
+    return creg_fail(result, GTEXT_CSS_E_LIMIT_REGISTRY, def->name, nl, NULL);
+  }
+  if (css_creg_store_find(&r->cregs, def->name, nl, &r->work)) {
+    return creg_fail(result, GTEXT_CSS_E_EXISTS, def->name, nl, "a custom property of this name is registered already");
+  }
+  css_creg * c = NULL;
+  GTEXT_CSS_Status st = css_registry_make_creg(r, def->name, nl, def->syntax, def->syntax ? strlen(def->syntax) : 0, def->inherits, def->initial_value,
+      def->initial_value ? strlen(def->initial_value) : 0, &c, result, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  st = css_creg_store_add(&r->cregs, c);
+  if (st != GTEXT_CSS_OK) {
+    css_creg_free(c);
+    return creg_fail(result, st, def->name, nl, NULL);
+  }
+  r->work += nl;
+  fill_result(result, GTEXT_CSS_OK, def->name, nl);
+  return GTEXT_CSS_OK;
+}
+
+const css_creg * css_registry_find_creg(const GTEXT_CSS_Registry * r, const char * name, size_t length, size_t * work) {
+  return r ? css_creg_store_find(&r->cregs, name, length, work) : NULL;
+}
+
+const css_creg * css_registry_creg_at(const GTEXT_CSS_Registry * r, size_t index) {
+  return r && index < r->cregs.count ? r->cregs.items[index] : NULL;
+}
+
+static void creg_info(const css_creg * c, GTEXT_CSS_Custom_Info * info) {
+  info->name = c->name;
+  info->name_length = c->name_len;
+  info->syntax = c->syntax_text;
+  info->syntax_length = c->syntax_len;
+  info->universal = c->syntax->universal;
+  info->inherits = c->inherits;
+  info->has_initial = c->has_initial;
+  info->initial_value = c->has_initial ? c->initial : NULL;
+  info->initial_length = c->has_initial ? c->initial_len : 0;
+  info->component_count = c->syntax->universal ? 0 : c->syntax->ncomps;
+}
+
+size_t gtext_css_registry_custom_count(const GTEXT_CSS_Registry * r) {
+  return r ? r->cregs.count : 0;
+}
+
+bool gtext_css_registry_custom_at(const GTEXT_CSS_Registry * r, size_t index, GTEXT_CSS_Custom_Info * info) {
+  const css_creg * c = css_registry_creg_at(r, index);
+  if (!c || !info) {
+    return false;
+  }
+  creg_info(c, info);
+  return true;
+}
+
+bool gtext_css_registry_find_custom(const GTEXT_CSS_Registry * r, const char * name, size_t length, GTEXT_CSS_Custom_Info * info) {
+  const css_creg * c = name ? css_registry_find_creg(r, name, length, NULL) : NULL;
+  if (!c || !info) {
+    return false;
+  }
+  creg_info(c, info);
+  return true;
+}
 
 GTEXT_CSS_Status gtext_css_registry_freeze(GTEXT_CSS_Registry_Builder * builder, GTEXT_CSS_Registry ** out,
     GTEXT_CSS_Registry_Result * result) {

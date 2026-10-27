@@ -107,7 +107,8 @@ TEST(CssProperty, CssWideKeywordsAreValidAloneForEveryProperty) {
   EXPECT_EQ(parse(r, "margin", "inherit inherit"), "invalid");
   EXPECT_EQ(parse(r, "width", "inherit, inherit"), "invalid");
   EXPECT_EQ(parse(r, "width", "'inherit'"), "invalid") << "a string is not a keyword";
-  EXPECT_EQ(parse(r, "width", "inherit()"), "pending:inherit()") << "a function of that name is a substitution function of Values 5, not the keyword";
+  EXPECT_EQ(parse(r, "width", "inherit(--a)"), "pending:inherit(--a)") << "a function of that name is a substitution function of Values 5, not the keyword";
+  EXPECT_EQ(parse(r, "width", "inherit()"), "invalid") << "and it takes a first argument, as var() does";
   EXPECT_EQ(parse(r, "width", "unknownkw"), "invalid");
   GTEXT_CSS_Property_Value pv;
   ASSERT_EQ(gtext_css_parse_property_text(r, "width", 5, "unset", 5, nullptr, &pv), GTEXT_CSS_OK);

@@ -407,6 +407,54 @@ GTEXT_API GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Regis
     const GTEXT_CSS_Shorthand_Def * def, GTEXT_CSS_Registry_Result * result);
 
 /**
+ * @struct GTEXT_CSS_Custom_Def
+ * @brief A custom property a caller registers, as `CSS.registerProperty()` is given it (CSS Properties and Values API 1, 4.1).
+ *
+ * A custom property (`--name`) is not a property of the registry: the registry has the one pattern `--*`. A registration gives a name the syntax its
+ * value is checked against when the style is computed, whether it inherits, and an initial value. It changes nothing at parse time ("Registering a
+ * custom property must not affect the cascade in any way"); css_computed.h computes with it.
+ */
+typedef struct {
+  const char * name;         ///< `--name`, case kept (custom property names are case-sensitive); at least one character after the dashes. Required.
+  const char * syntax;       ///< A syntax string (`<length> | auto`, `<color>#`, `*`); NULL is `*`.
+  bool inherits;             ///< Whether the property inherits. (`registerProperty()` requires it to be said; there is no default here.)
+  const char * initial_value; ///< The initial value as CSS text; NULL for none (then the syntax has to be `*`, and the initial value is the guaranteed-invalid
+                             ///< value). For a syntax other than `*` it has to be a value of the syntax that can be computed without an element (`5px`, `1in`,
+                             ///< `10vw`; not `3em`, `currentcolor` or `var(--x)`).
+} GTEXT_CSS_Custom_Def;
+
+/** @brief What the registry holds of a registered custom property. The strings are owned by the registry. */
+typedef struct {
+  const char * name;         ///< `--name`.
+  size_t name_length;
+  const char * syntax;       ///< The syntax string as it was given (`*` when none was).
+  size_t syntax_length;
+  bool universal;            ///< The syntax is `*`.
+  bool inherits;
+  bool has_initial;          ///< An initial value was given.
+  const char * initial_value; ///< Its text with the white space at its ends trimmed; NULL when there is none.
+  size_t initial_length;
+  size_t component_count;    ///< The components of the syntax (0 for `*`).
+} GTEXT_CSS_Custom_Info;
+
+/**
+ * @brief Register a custom property.
+ *
+ * Validated as `CSS.registerProperty()` validates (Properties and Values API 1, 4.1, "register a custom property"): the name must be a custom property
+ * name string, the syntax a syntax string, a name that is registered already is an error (`InvalidModificationError` there, GTEXT_CSS_E_EXISTS here), and the
+ * initial value, if given, must be a value of the syntax that is computationally independent; a syntax other than `*` with no initial value is an error. Each
+ * component of the syntax is compiled here. Nothing is registered on a failure.
+ *
+ * @param builder The builder. Not NULL.
+ * @param def The definition; strings are copied. Not NULL.
+ * @param result NULL, or filled (`detail` says which rule a GTEXT_CSS_E_INVALID broke).
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_EXISTS; GTEXT_CSS_E_LIMIT_REGISTRY; GTEXT_CSS_E_OOM; GTEXT_CSS_E_LIMIT_WORK (the initial value could not
+ *   be checked in the match limits).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_registry_register_custom(GTEXT_CSS_Registry_Builder * builder, const GTEXT_CSS_Custom_Def * def,
+    GTEXT_CSS_Registry_Result * result);
+
+/**
  * @brief Freeze a builder into a registry.
  *
  * Every registered grammar is compiled now, and so is every property of the pin when anything has been overridden (so that a
@@ -536,6 +584,15 @@ GTEXT_API size_t gtext_css_registry_override_count(const GTEXT_CSS_Registry * re
  */
 GTEXT_API bool gtext_css_registry_override_at(const GTEXT_CSS_Registry * registry, size_t index,
     GTEXT_CSS_Property_Id * id, GTEXT_CSS_Property_Id * overridden);
+
+/** @brief How many custom properties were registered (gtext_css_registry_register_custom()). NULL is 0. */
+GTEXT_API size_t gtext_css_registry_custom_count(const GTEXT_CSS_Registry * registry);
+
+/** @brief The `index`th registered custom property, in the order they were registered; false for an index it does not have. */
+GTEXT_API bool gtext_css_registry_custom_at(const GTEXT_CSS_Registry * registry, size_t index, GTEXT_CSS_Custom_Info * info);
+
+/** @brief The registered custom property with this name (case-sensitive); false if there is none. */
+GTEXT_API bool gtext_css_registry_find_custom(const GTEXT_CSS_Registry * registry, const char * name, size_t length, GTEXT_CSS_Custom_Info * info);
 
 /* ---- at-rules and descriptors (the generated layer) ----------------------- */
 

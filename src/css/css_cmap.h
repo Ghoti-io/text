@@ -22,7 +22,7 @@
 /**
  * @file
  *
- * The custom properties of a computed style: a persistent map from a name to a value set, in the order of the names. Private.
+ * The custom properties of a computed style: a persistent map from a name to a custom property value, in the order of the names. Private.
  *
  * A style inherits the custom properties of its parent and adds its own, and a chain of n elements that each declare one has n of them at its end.
  * Copying the parent's table at every level would be quadratic in the depth; this is a persistent treap (immutable nodes, path copying, the priority a
@@ -35,12 +35,12 @@
  * removing a node: nothing is ever taken out of a persistent map here.
  */
 
-#ifndef GHOTI_IO_GTEXT_SRC_CSS_CSS_CUSTOM_H
-#define GHOTI_IO_GTEXT_SRC_CSS_CSS_CUSTOM_H
+#ifndef GHOTI_IO_GTEXT_SRC_CSS_CSS_CMAP_H
+#define GHOTI_IO_GTEXT_SRC_CSS_CSS_CMAP_H
 
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/css/css_core.h>
-#include <ghoti.io/text/css/css_value.h>
+#include <ghoti.io/text/css/css_custom.h>
 #include <ghoti.io/text/macros.h>
 
 #include <stdbool.h>
@@ -67,19 +67,22 @@ size_t css_cmap_count(const css_cmap * map);
 uint64_t css_cmap_shape(const css_cmap * map, size_t * height);
 
 /// The value of a name, or NULL where there is none (the name is absent or hidden).
-const GTEXT_CSS_Value_Set * css_cmap_find(const css_cmap * map, const char * name, size_t length);
+const GTEXT_CSS_Custom_Value * css_cmap_find(const css_cmap * map, const char * name, size_t length);
+
+/// How many names that have a value are before `name` in the order of the names (the place `name` would be at).
+size_t css_cmap_rank(const css_cmap * map, const char * name, size_t length);
 
 /// The `index`th name that has a value, in the order of the names (by bytes, then by length); false past the end.
-bool css_cmap_at(const css_cmap * map, size_t index, const char ** name, size_t * length, const GTEXT_CSS_Value_Set ** value);
+bool css_cmap_at(const css_cmap * map, size_t index, const char ** name, size_t * length, const GTEXT_CSS_Custom_Value ** value);
 
 /// A map that is `map` with `name` set to `value` (retained; NULL hides the name). `*out` is a new owner; `map` is not touched, and stays as it was
 /// whatever happens. `seed` keys the priority of a new name: one seed for every map of a family (a context). GTEXT_CSS_OK, GTEXT_CSS_E_OOM or GTEXT_CSS_E_LIMIT_DEPTH.
 /// `work` (may be NULL) is increased by the nodes read and the nodes made.
-GTEXT_CSS_Status css_cmap_set(const GTEXT_Allocator * alloc, css_cmap * map, const char * name, size_t length, GTEXT_CSS_Value_Set * value, uint64_t seed,
+GTEXT_CSS_Status css_cmap_set(const GTEXT_Allocator * alloc, css_cmap * map, const char * name, size_t length, GTEXT_CSS_Custom_Value * value, uint64_t seed,
     css_cmap ** out, size_t * work);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // GHOTI_IO_GTEXT_SRC_CSS_CSS_CUSTOM_H
+#endif // GHOTI_IO_GTEXT_SRC_CSS_CSS_CMAP_H

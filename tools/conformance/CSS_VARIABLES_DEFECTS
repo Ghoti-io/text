@@ -1,0 +1,4 @@
+# tools/conformance/css_variables_suite.py: the vectors of web-platform-tests' css-variables and css-properties-values-api that fail because the
+# library is wrong, one line a case. Columns (tab separated): vector (file#n), what it asks, stage, the answer the library gives, the owner (the piece
+# of work that closes it), and what the library lacks. A defect is never an exception; the number of defects has a ceiling that only goes down
+# (CSS_VARIABLES_MAX_DEFECTS in the Makefile).

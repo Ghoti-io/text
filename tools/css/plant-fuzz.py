@@ -94,6 +94,14 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
   mixed-longhands-written-as-a-shorthand  a shorthand is written over longhands some of which are a CSS-wide keyword: the text is another value.
   context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
 
+The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-custom):
+
+  rope-release-leaks-its-leaves  releasing a rope leaves the text leaves: the allocator.
+  budget-lets-sixteen-times-through  a joined value may have sixteen times the tokens the budget allows: the counter's bound.
+  block-refuses-a-pending-custom-property  the block API refuses `--a: var(--b)` as the cascade did before C2c: the two do not take a declaration alike.
+  join-ignores-a-failed-allocation  a join that cannot allocate is taken as the guaranteed-invalid value: the status.
+  rules-are-found-by-the-wrong-name  a rule found by name is looked up by a prefix of the name: it is not the one at its index.
+
 The plants of fuzz_css_cascade.cpp (CASCADE_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-cascade, which `make test` also does with no
 fuzzer, against the harness's reference model; CASCADE_PROGRAMS says which unit tests must fail on it as well):
 
@@ -134,6 +142,7 @@ VALUES_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-values")
 REGISTRY_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-registry")
 COMPUTE_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-compute")
 CASCADE_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-cascade")
+CUSTOM_CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "css-custom")
 
 # name: (file under src/css/, old text (exactly once), new text, seed to replay or None to search)
 PLANTS = {
@@ -347,6 +356,29 @@ COMPUTE_PLANTS = {
 }
 
 
+# The same shape, for tests/fuzz/fuzz_css_custom.cpp; the seeds are in tests/fuzz/corpus/css-custom.
+CUSTOM_PLANTS = {
+    "rope-release-leaks-its-leaves": ("css_rope.c", "    css_rope * kids[2] = {n->a, n->b};\n    GTEXT_Allocator a = n->alloc;\n    gtext_allocator_free(&a, n);\n",
+                                      "    css_rope * kids[2] = {n->a, n->b};\n    GTEXT_Allocator a = n->alloc;\n    if (n->a) {\n      gtext_allocator_free(&a, n);\n    }\n",
+                                      "own-chain.seed"),
+    # two edits: the budget of a join and the budget of a value that is complete (either alone is held by the other)
+    "budget-lets-sixteen-times-through": ("css_substitute.c", ["  if (tokens > sub->max_tokens || bytes > sub->max_bytes) {\n    sub->limited++;",
+                                                              "  if (t > sub->max_tokens) {\n    sub->limited++;\n    return false;",
+     "    if (t > sub->max_tokens || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);"],
+                                          ["  if (tokens > sub->max_tokens * 16 || bytes > sub->max_bytes) {\n    sub->limited++;",
+                                           "  if (t > sub->max_tokens * 16) {\n    sub->limited++;\n    return false;",
+      "    if (t > sub->max_tokens * 16 || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);"], "own-doubling-small.seed"),
+    "block-refuses-a-pending-custom-property": ("css_block.c", " && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE && value->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {\n    return GTEXT_CSS_E_INVALID;",
+                                                " && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE) {\n    return GTEXT_CSS_E_INVALID;", "own-block-and-cascade.seed"),
+    "join-ignores-a-failed-allocation": ("css_substitute.c", "  css_rope * r = css_rope_cat(&sub->alloc, a ? a : sub->empty, b ? b : sub->empty, sub->comment);\n  if (!r) {\n    return GTEXT_CSS_E_OOM;\n  }",
+                                         "  css_rope * r = css_rope_cat(&sub->alloc, a ? a : sub->empty, b ? b : sub->empty, sub->comment);\n  if (!r) {\n    *gi = true;\n    return GTEXT_CSS_OK;\n  }",
+                                         "own-join-oom.seed"),
+    "rules-are-found-by-the-wrong-name": ("css_at_property.c", "  const css_creg * c = s && name ? css_creg_store_find(&s->store, name, length, NULL) : NULL;\n  if (!c || !info) {",
+                                          "  const css_creg * c = s && name ? css_creg_store_find(&s->store, name, length > 3 ? 3 : length, NULL) : NULL;\n  if (!c || !info) {",
+                                          "own-rules-two.seed"),
+}
+
+
 def make_variables(prefix, names):
     """The Makefile's own values for `names`, so that nothing here is a second copy of them."""
     rules = "print-%: ; @echo $($*)\n"
@@ -360,7 +392,7 @@ def make_variables(prefix, names):
     return out
 
 
-REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry|compute|cascade): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
+REPORT = re.compile(r"^(fuzz_css_(syntax|bytes|grammar|values|registry|compute|cascade|custom): .+|==\d+==ERROR: (AddressSanitizer|LeakSanitizer|libFuzzer).*|"
                     r".*runtime error: .*|SUMMARY: (AddressSanitizer|libFuzzer|UndefinedBehaviorSanitizer|LeakSanitizer).*)$", re.M)
 
 
@@ -374,19 +406,19 @@ def main(argv):
             seconds = int(args.pop(0))
         else:
             names.append(a)
-    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry", "control-compute", "control-cascade")
+    CONTROLS = ("control", "control-bytes", "control-grammar", "control-values", "control-registry", "control-compute", "control-cascade", "control-custom")
     # the plants of the cascade that the harness's seeds show (the others are found by the unit tests alone: tools/css/plant-grammar.py)
     cascade_names = [n for n, entry in CASCADE_PLANTS.items() if entry[3] and "cascade-seeds" in CASCADE_PROGRAMS[n]]
-    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS) + cascade_names
+    names = names or list(CONTROLS) + list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS) + list(CUSTOM_PLANTS) + cascade_names
     for n in names:
-        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS and n not in COMPUTE_PLANTS and n not in cascade_names:
+        if n not in CONTROLS and n not in PLANTS and n not in BYTES_PLANTS and n not in GRAMMAR_PLANTS and n not in VALUES_PLANTS and n not in REGISTRY_PLANTS and n not in COMPUTE_PLANTS and n not in CUSTOM_PLANTS and n not in cascade_names:
             raise SystemExit("unknown plant %r (one of %s, %s)"
-                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS) + cascade_names)))
+                             % (n, ", ".join(CONTROLS), ", ".join(list(PLANTS) + list(BYTES_PLANTS) + list(GRAMMAR_PLANTS) + list(VALUES_PLANTS) + list(REGISTRY_PLANTS) + list(COMPUTE_PLANTS) + list(CUSTOM_PLANTS) + cascade_names)))
     prefix = os.environ.get("PREFIX")
     if not prefix:
         raise SystemExit("PREFIX must be set; the Makefile (check-css-fuzz-plants) passes it")
     env = dict(os.environ, PKG_CONFIG_PATH=os.path.join(prefix, "share", "pkgconfig"))
-    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "fuzz-css-compute", "fuzz-css-cascade", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
+    built = subprocess.run(["make", "-C", ROOT, "-j4", "fuzz-css-syntax", "fuzz-css-bytes", "fuzz-css-grammar", "fuzz-css-values", "fuzz-css-registry", "fuzz-css-compute", "fuzz-css-cascade", "fuzz-css-custom", "PREFIX=" + prefix], env=env, capture_output=True, text=True)
     if built.returncode != 0:
         sys.stderr.write(built.stdout[-2000:] + built.stderr[-2000:])
         raise SystemExit("the fuzz build failed")
@@ -409,10 +441,11 @@ def main(argv):
             registry_harness = name == "control-registry" or name in REGISTRY_PLANTS
             compute_harness = name == "control-compute" or name in COMPUTE_PLANTS
             cascade_harness = name == "control-cascade" or name in cascade_names
-            harness = "fuzz_css_cascade" if cascade_harness else "fuzz_css_compute" if compute_harness else "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
-            corpus_source = CASCADE_CORPUS if cascade_harness else COMPUTE_CORPUS if compute_harness else REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
+            custom_harness = name == "control-custom" or name in CUSTOM_PLANTS
+            harness = "fuzz_css_custom" if custom_harness else "fuzz_css_cascade" if cascade_harness else "fuzz_css_compute" if compute_harness else "fuzz_css_registry" if registry_harness else "fuzz_css_values" if values_harness else "fuzz_css_grammar" if grammar_harness else "fuzz_css_bytes" if bytes_harness else "fuzz_css_syntax"
+            corpus_source = CUSTOM_CORPUS if custom_harness else CASCADE_CORPUS if cascade_harness else COMPUTE_CORPUS if compute_harness else REGISTRY_CORPUS if registry_harness else VALUES_CORPUS if values_harness else GRAMMAR_CORPUS if grammar_harness else BYTES_CORPUS if bytes_harness else CORPUS
             if name not in CONTROLS:
-                rel, old, new, seed = CASCADE_PLANTS[name] if cascade_harness else COMPUTE_PLANTS[name] if compute_harness else REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
+                rel, old, new, seed = CUSTOM_PLANTS[name] if custom_harness else CASCADE_PLANTS[name] if cascade_harness else COMPUTE_PLANTS[name] if compute_harness else REGISTRY_PLANTS[name] if registry_harness else VALUES_PLANTS[name] if values_harness else GRAMMAR_PLANTS[name] if grammar_harness else BYTES_PLANTS[name] if bytes_harness else PLANTS[name]
                 src = os.path.join(ROOT, "src", "css", rel)
                 text = open(src, encoding="utf-8").read()
                 olds, news = (old, new) if isinstance(old, list) else ([old], [new])

@@ -128,20 +128,47 @@ PLANTS = [
      ["CSS registry: n aliases of one property", "CSS registry: n shorthands of six longhands"]),
     # The computed-value layer: a table of custom properties copied at every level, a layer list that is rescanned for every layer.
     ("css-compute-copies-the-parents-custom-properties", "css/css_compute.c",
-     "  style->custom = css_cmap_retain(parent_map);\n",
-     "  style->custom = NULL;\n  for (size_t pi = 0; ; pi++) { /* the parent's table, set again name by name */\n"
-     "    const char * pn; size_t pl; const GTEXT_CSS_Value_Set * pv;\n"
-     "    if (!css_cmap_at(parent_map, pi, &pn, &pl, &pv)) { break; }\n"
+     "  style->custom = css_cmap_retain(st->parent ? st->parent->custom : NULL);\n",
+     "  style->custom = NULL;\n  for (size_t pi = 0; st->parent; pi++) { /* the parent's table, set again name by name */\n"
+     "    const char * pn; size_t pl; const GTEXT_CSS_Custom_Value * pv;\n"
+     "    if (!css_cmap_at(st->parent->custom, pi, &pn, &pl, &pv)) { break; }\n"
      "    css_cmap * grown = NULL;\n"
-     "    if (css_cmap_set(&a, style->custom, pn, pl, (GTEXT_CSS_Value_Set *)pv, cc->options.custom_hash_seed, &grown, &st->work) != GTEXT_CSS_OK) { break; }\n"
+     "    if (css_cmap_set(&cc->alloc, style->custom, pn, pl, (GTEXT_CSS_Custom_Value *)pv, cc->options.custom_hash_seed, &grown, &st->work) != GTEXT_CSS_OK) { break; }\n"
      "    css_cmap_release(style->custom);\n    style->custom = grown;\n  }\n",
      ["CSS compute: a chain of n elements, each with one more custom property"]),
-    ("css-compute-set-walks-the-whole-map", "css/css_custom.c",
+    ("css-compute-set-walks-the-whole-map", "css/css_cmap.c",
      "  css_cmap * current;\n  if (found) {",
      "  for (size_t wi = 0; wi < css_cmap_count(map); wi++) { /* a set that reads every name of the map */\n"
-     "    const char * wn; size_t wl; const GTEXT_CSS_Value_Set * wv;\n"
+     "    const char * wn; size_t wl; const GTEXT_CSS_Custom_Value * wv;\n"
      "    if (css_cmap_at(map, wi, &wn, &wl, &wv)) { steps++; }\n  }\n  css_cmap * current;\n  if (found) {",
      ["CSS compute: one element with n custom properties"]),
+    # The substitution layer: a lookup that scans the entries, a cycle marked again for every reference to it, a value rescanned at every step,
+    # a concatenation that costs the tokens it joins (the rope's whole point).
+    ("css-substitute-lookup-scans-the-entries", "css/css_substitute.c",
+     "  size_t lo = 0, hi = sub->nentries;\n  while (lo < hi) {\n    const size_t mid",
+     "  sub->work += sub->nentries; /* a lookup that reads every declared name */\n  size_t lo = 0, hi = sub->nentries;\n  while (lo < hi) {\n    const size_t mid",
+     ["CSS substitute: a chain of n custom properties, each var()", "CSS substitute: n custom properties that each var() one"]),
+    ("css-substitute-cycle-is-marked-again-for-every-reference", "css/css_substitute.c",
+     ["  if (sub->cyc_valid && from >= sub->cyc_lo && top <= sub->cyc_hi) {\n    return;\n  }",
+      "    if (sub->cyc_valid && i >= sub->cyc_lo && i <= sub->cyc_hi) {\n      i = sub->cyc_hi;\n      continue;\n    }\n"],
+     ["  if (sub->cyc_valid && from >= sub->cyc_lo && top <= sub->cyc_hi) {\n    sub->work += top - from + 1; /* the frames that are marked already, marked again */\n  }",
+      "    sub->work++; /* every frame of the range is visited again */\n"],
+     ["n fallback references back into the chain"]),
+    ("css-substitute-value-is-rescanned-at-every-step", "css/css_substitute.c",
+     "  while (f->pos < f->nvals) {\n    const GTEXT_CSS_Component_Value * c = &f->vals[f->pos];\n    sub->work++;",
+     "  while (f->pos < f->nvals) {\n    const GTEXT_CSS_Component_Value * c = &f->vals[f->pos];\n    sub->work += 1 + f->pos; /* a value read again from its start at each component */",
+     ["CSS substitute: a value that holds n var() of one property"]),
+    ("css-substitute-joining-costs-the-tokens-it-joins", "css/css_substitute.c",
+     "  css_rope * r = css_rope_cat(&sub->alloc, a ? a : sub->empty, b ? b : sub->empty, sub->comment);",
+     "  sub->work += tokens; /* a join that copies what it joins, where the rope shares it */\n  css_rope * r = css_rope_cat(&sub->alloc, a ? a : sub->empty, b ? b : sub->empty, sub->comment);",
+     ["would double n times"]),
+    ("css-substitute-budget-is-sixteen-times-too-big", "css/css_substitute.c",
+     ["  if (tokens > sub->max_tokens || bytes > sub->max_bytes) {\n    sub->limited++;", "  if (t > sub->max_tokens) {\n    sub->limited++;\n    return false;",
+     "    if (t > sub->max_tokens || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);"],
+     ["  if (tokens > sub->max_tokens * 16 || bytes > sub->max_bytes) { /* a budget that lets sixteen times the tokens through */\n    sub->limited++;",
+      "  if (t > sub->max_tokens * 16) {\n    sub->limited++;\n    return false;",
+      "    if (t > sub->max_tokens * 16 || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);"],
+     ["would double n times"]),
     ("css-compute-math-walk-reads-the-stack-for-every-node", "css/css_compute_value.c",
      "    r.nframes--;\n    r.nres = base;\n",
      "    for (size_t sj = 0; sj < base; sj++) { st->work += r.res[sj] != made; } /* each node reads the results below it */\n    r.nframes--;\n    r.nres = base;\n",
@@ -244,10 +271,14 @@ def main(argv):
                 shutil.copytree(os.path.join(ROOT, "src"), os.path.join(work, "src"))
                 path = os.path.join(work, "src", rel)
                 text = open(path).read()
-                if text.count(old) != 1:
-                    sys.stderr.write("plant %s: the text is in %s %d times, not once\n" % (name, rel, text.count(old)))
-                    return 2
-                open(path, "w").write(text.replace(old, new))
+                olds, news = (old, new) if isinstance(old, list) else ([old], [new])
+                for one in olds:
+                    if text.count(one) != 1:
+                        sys.stderr.write("plant %s: the text is in %s %d times, not once\n" % (name, rel, text.count(one)))
+                        return 2
+                for one, two in zip(olds, news):
+                    text = text.replace(one, two)
+                open(path, "w").write(text)
                 obj = os.path.join(work, "plant.o")
                 done = sh(["cc", "-std=c17", "-O2", "-fPIC", "-fvisibility=hidden", "-DGTEXT_BUILD", "-I", os.path.join(ROOT, "include"),
                            "-I", generated] + cflags + ["-c", path, "-o", obj])

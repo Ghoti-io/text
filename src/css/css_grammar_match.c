@@ -1012,6 +1012,9 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     if (u == GTEXT_CSS_UNIT_NONE || gtext_css_unit_type(u) != native_base_unit_type(t)) {
       return 0;
     }
+    if (t == NT_RESOLUTION && v->number < 0) {
+      return 0; /* "The allowed range of <resolution> values always excludes negative values, in addition to any explicit ranges that might be specified." */
+    }
     return range_for_dimension(g, t) ? unit_in_range(g, u, v->number) : 1;
   }
   case NT_ZERO:

@@ -26,7 +26,8 @@
 #   wpt/                web-platform-tests, sparse: the css/ directory (56,344 files, 246 MB on disk when checked out; the
 #                       css-syntax tables that tools/css/extract-wpt.py turns into vectors, the value tests of the math, color
 #                       and function types that tools/css/extract-wpt-values.py reads, and every property parsing, computed
-#                       value and serialization test that tools/css/extract-wpt-props.py reads as data), pinned by commit in
+#                       value and serialization test that tools/css/extract-wpt-props.py reads as data, and the custom property pages of css-variables and
+#                       css-properties-values-api that tools/css/extract-wpt-variables.py reads), pinned by commit in
 #                       tools/css/WPT_COMMIT (the same commit as the HTML pin, tools/html/WPT_COMMIT, so that the library
 #                       is scored against one revision of the suite).
 #

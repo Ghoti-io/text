@@ -95,6 +95,8 @@ def plants_of(tool, module):
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-registry/" + seed if seed else None, "file"))
         for name, (rel, old, new, seed) in module.COMPUTE_PLANTS.items():
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-compute/" + seed if seed else None, "file"))
+        for name, (rel, old, new, seed) in module.CUSTOM_PLANTS.items():
+            out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-custom/" + seed if seed else None, "file"))
         for name, (rel, old, new, seed) in module.CASCADE_PLANTS.items():
             out.append((name, "src/css/" + rel, old, new, "tests/fuzz/corpus/css-cascade/" + seed if seed else None, "file"))
         for name, edits in getattr(module, "COMPUTE_EXTRA", {}).items():

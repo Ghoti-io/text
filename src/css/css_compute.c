@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include "css_compute_internal.h"
+#include "css_substitute_internal.h"
 
 #define DEFAULT_MAX_ELEMENTS 100000u
 #define LIMIT_MAX_ELEMENTS ((size_t)1 << 24)
@@ -269,6 +270,12 @@ void gtext_css_computed_free(GTEXT_CSS_Computed_Style * style) {
     gtext_css_value_set_free(style->vals[i]);
   }
   css_cmap_release(style->custom);
+  if (style->regvals) {
+    for (size_t i = 0; i < style->cc->nregs; i++) {
+      gtext_css_custom_value_free(style->regvals[i]);
+    }
+    gtext_allocator_free(&a, style->regvals);
+  }
   gtext_css_value_set_free(style->root.family);
   gtext_css_value_set_free(style->root.line_height);
   gtext_allocator_free(&a, style->vals);
@@ -316,24 +323,6 @@ GTEXT_CSS_Flow gtext_css_computed_flow(const GTEXT_CSS_Computed_Style * style) {
     f = style->flow;
   }
   return f;
-}
-
-size_t gtext_css_computed_custom_count(const GTEXT_CSS_Computed_Style * style) {
-  return style ? css_cmap_count(style->custom) : 0;
-}
-
-bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t index, GTEXT_CSS_String * name,
-    const GTEXT_CSS_Value_Set ** value) {
-  const char * n = NULL;
-  size_t length = 0;
-  if (!style || !css_cmap_at(style->custom, index, &n, &length, value)) {
-    return false;
-  }
-  if (name) {
-    name->data = n;
-    name->length = length;
-  }
-  return true;
 }
 
 /* ---- reading the style under construction -------------------------------------------------------------- */
@@ -435,6 +424,14 @@ void gtext_css_compute_context_free(GTEXT_CSS_Compute_Context * cc) {
   gtext_allocator_free(&a, cc->order);
   gtext_allocator_free(&a, cc->base_url);
   gtext_allocator_free(&a, cc->language);
+  css_ctx_free_regs(cc);
+  for (size_t i = 0; i < cc->nsyntax; i++) {
+    css_compiled_syntax_free(cc->syntax_cache[i]);
+  }
+  gtext_allocator_free(&a, cc->syntax_cache);
+  if (cc->syntax_lock_made) {
+    GCU_MUTEX_DESTROY(cc->syntax_lock);
+  }
   gtext_allocator_free(&a, cc);
 }
 
@@ -549,15 +546,19 @@ static GTEXT_CSS_Status probe_style(GTEXT_CSS_Compute_Context * cc, const GTEXT_
   }
   st.style = style;
   st.done = gtext_allocator_calloc(&cc->alloc, cc->nprops ? cc->nprops : 1, 1);
+  st.busy = gtext_allocator_calloc(&cc->alloc, cc->nprops ? cc->nprops : 1, 1);
   st.own = gtext_allocator_calloc(&cc->alloc, cc->nprops ? cc->nprops : 1, sizeof *st.own);
-  if (!st.done || !st.own) {
+  if (!st.done || !st.busy || !st.own) {
     gtext_allocator_free(&cc->alloc, st.done);
+    gtext_allocator_free(&cc->alloc, st.busy);
     gtext_allocator_free(&cc->alloc, st.own);
     gtext_css_computed_free(style);
     return GTEXT_CSS_E_OOM;
   }
   GTEXT_CSS_Status status = run_pipeline(&st);
+  css_sub_free(st.sub);
   gtext_allocator_free(&cc->alloc, st.done);
+  gtext_allocator_free(&cc->alloc, st.busy);
   gtext_allocator_free(&cc->alloc, st.own);
   if (status != GTEXT_CSS_OK) {
     gtext_css_computed_free(style);
@@ -633,6 +634,20 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
     cc->options.custom_hash_seed = seed ? seed : 0x5851F42D4C957F2DULL;
   }
   cc->env = e;
+  if (options && options->elements) {
+    memset(&cc->iface, 0, sizeof cc->iface);
+    memcpy(&cc->iface, options->elements, options->elements->size < sizeof cc->iface ? options->elements->size : sizeof cc->iface);
+    cc->iface.size = options->elements->size < sizeof cc->iface ? options->elements->size : sizeof cc->iface;
+    cc->has_iface = true;
+  }
+  cc->options.elements = NULL;
+  cc->sub = cc->options.substitute;
+  cc->rules = cc->options.property_rules;
+  if (GCU_MUTEX_CREATE(cc->syntax_lock) != 0) {
+    gtext_css_compute_context_free(cc);
+    return result_done(result, GTEXT_CSS_E_INVALID);
+  }
+  cc->syntax_lock_made = true;
   cc->nprops = gtext_css_registry_property_count(registry);
   cc->meta = gtext_allocator_calloc(&alloc, cc->nprops ? cc->nprops : 1, sizeof *cc->meta);
   cc->base_url = dup_str(&alloc, e.base_url);
@@ -849,10 +864,39 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
     m->initial_dependent = dependent;
     m->initial = gtext_css_value_set_retain(base->vals[i]);
   }
+  /* the registered custom properties: the initial value of each is computed in the root's probe, being computationally independent */
+  {
+    css_state rst;
+    state_init(&rst, cc, NULL);
+    rst.style = base;
+    rst.probing = true;
+    rst.done = gtext_allocator_malloc(&alloc, cc->nprops ? cc->nprops : 1);
+    rst.busy = gtext_allocator_calloc(&alloc, cc->nprops ? cc->nprops : 1, 1);
+    rst.own = gtext_allocator_calloc(&alloc, cc->nprops ? cc->nprops : 1, sizeof *rst.own);
+    if (rst.done) {
+      memset(rst.done, 1, cc->nprops ? cc->nprops : 1);
+    }
+    if (!rst.done || !rst.busy || !rst.own) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      st = css_ctx_make_regs(cc, &rst);
+    }
+    gtext_allocator_free(&alloc, rst.done);
+    gtext_allocator_free(&alloc, rst.busy);
+    gtext_allocator_free(&alloc, rst.own);
+  }
   gtext_css_computed_free(base);
   gtext_css_computed_free(other);
   gtext_css_computed_free(child);
   cc->building = false;
+  if (st != GTEXT_CSS_OK) {
+    if (result) {
+      result->detail = "the initial value of a registered custom property could not be computed";
+    }
+    gtext_css_compute_context_free(cc);
+    return result_done(result, st == GTEXT_CSS_E_UNSUPPORTED ? GTEXT_CSS_E_INTERNAL : st);
+  }
   *out = cc;
   return result_done(result, GTEXT_CSS_OK);
 }
@@ -959,52 +1003,426 @@ static GTEXT_CSS_Status from_wide(css_state * st, GTEXT_CSS_Property_Id id, GTEX
   }
 }
 
-/// Whether the text of a pending value (the tokens as declared) holds a call of `function` (its name and `(`), in any case and outside a string.
-static bool pending_calls(const GTEXT_CSS_Value_Set * set, const char * function) {
-  const GTEXT_CSS_Value * root = set ? gtext_css_value_set_root(set) : NULL;
-  if (!root || !root->text.data) {
-    return false;
-  }
-  const size_t fl = strlen(function);
-  char quote = 0;
-  for (size_t i = 0; i < root->text.length; i++) {
-    const char ch = root->text.data[i];
-    if (quote) {
-      if (ch == '\\') {
-        i++;
-      }
-      else if (ch == quote) {
-        quote = 0;
-      }
-      continue;
-    }
-    if (ch == '"' || ch == '\'') {
-      quote = ch;
-      continue;
-    }
-    if (i + fl <= root->text.length) {
-      size_t k = 0;
-      while (k < fl && (root->text.data[i + k] >= 'A' && root->text.data[i + k] <= 'Z' ? root->text.data[i + k] + 32 : root->text.data[i + k]) == function[k]) {
-        k++;
-      }
-      if (k == fl) {
-        return true;
-      }
-    }
-  }
-  return false;
+/* ---- values with a substitution function in them ----------------------------------------------------------------- */
+
+/// Invalid at computed-value time: "the property's inherited value or its initial value depending on whether the property is inherited or not, respectively, as
+/// if the property's value had been specified as the unset keyword" (Values 5, Appendix A, "Invalid Substitution").
+static GTEXT_CSS_Status invalid_at_computed_time(css_state * st, GTEXT_CSS_Property_Id id, GTEXT_CSS_Value_Set ** out) {
+  return st->cc->meta[id - 1].inherited ? inherit_value(st, id, out) : initial_value(st, id, out);
 }
 
-/// The failure of a value that was not substituted: `sibling-index()` and `sibling-count()` are the element tree's, so they name the callback that
-/// answers them (GTEXT_CSS_E_UNSUPPORTED); anything else is the caller's to substitute (GTEXT_CSS_E_INVALID).
-static GTEXT_CSS_Status unsubstituted(css_state * st, const char * name, const GTEXT_CSS_Value_Set * set) {
-  if (pending_calls(set, "sibling-index(")) {
-    return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "sibling_index", "sibling-index() is resolved against the element tree before a style is computed; this layer does not substitute it");
+/// Whether a parsed value holds a URL (or a function that takes one) made from an attr() ("Using an attr()-tainted value as or in a <url> makes a declaration
+/// invalid at computed-value time ... as are functions that contain an attr()-tainted value"). `taint` are the tainted ranges of the text the value was read from.
+static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root, const css_range * taint, size_t ntaint, bool * found) {
+  *found = false;
+  if (!root || !ntaint) {
+    return GTEXT_CSS_OK;
   }
-  if (pending_calls(set, "sibling-count(")) {
-    return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, "sibling_count", "sibling-count() is resolved against the element tree before a style is computed; this layer does not substitute it");
+  typedef struct {
+    const GTEXT_CSS_Value * v;
+    size_t n, i;
+  } fr;
+  GTEXT_Allocator a = st->cc->alloc;
+  size_t cap = 16, len = 0;
+  fr * stack = gtext_allocator_malloc(&a, cap * sizeof *stack);
+  if (!stack) {
+    return GTEXT_CSS_E_OOM;
   }
-  return css_st_fail(st, GTEXT_CSS_E_INVALID, name, "a value with var() in it must be substituted before it is computed");
+  stack[len++] = (fr){root, 1, 0};
+  while (len && !*found) {
+    fr * f = &stack[len - 1];
+    if (f->i >= f->n) {
+      len--;
+      continue;
+    }
+    const GTEXT_CSS_Value * v = &f->v[f->i++];
+    bool overlaps_self = false;
+    for (size_t k = 0; k < ntaint; k++) {
+      overlaps_self = overlaps_self || (v->span.offset < taint[k].end && v->span.end > taint[k].begin);
+    }
+    if (v->kind == GTEXT_CSS_VAL_URL && overlaps_self) {
+      *found = true;
+    }
+    if (v->kind == GTEXT_CSS_VAL_FUNCTION && v->text.data && overlaps_self) {
+      /* a function that takes a URL: what is tainted among its arguments, a string or a url or a function that builds one (not a color, a number ...), is the URL
+         made of it ("functions that contain an attr()-tainted value are tainted") */
+      static const char * const names[] = {"url", "src", "image", "image-set", "-webkit-image-set", "cross-fade", "-webkit-cross-fade", "element", "paint"};
+      bool takes_url = false;
+      for (size_t k = 0; k < sizeof names / sizeof names[0]; k++) {
+        const size_t nl = strlen(names[k]);
+        if (v->text.length >= nl && memcmp(v->text.data, names[k], nl) == 0 && (v->text.length == nl || v->text.data[nl] == '(')) {
+          takes_url = true;
+        }
+      }
+      /* the arguments, looking through the lists that group them */
+      const GTEXT_CSS_Value * work[32];
+      size_t nwork = 0;
+      for (size_t c = 0; takes_url && c < v->child_count && nwork < 32; c++) {
+        work[nwork++] = &v->children[c];
+      }
+      while (nwork && !*found) {
+        const GTEXT_CSS_Value * a = work[--nwork];
+        if (a->kind == GTEXT_CSS_VAL_LIST) {
+          for (size_t c = 0; c < a->child_count && nwork < 32; c++) {
+            work[nwork++] = &a->children[c];
+          }
+          continue;
+        }
+        if (a->kind != GTEXT_CSS_VAL_STRING && a->kind != GTEXT_CSS_VAL_URL && a->kind != GTEXT_CSS_VAL_FUNCTION && a->kind != GTEXT_CSS_VAL_PENDING &&
+            a->kind != GTEXT_CSS_VAL_UNPARSED && a->kind != GTEXT_CSS_VAL_TOKEN) {
+          continue;
+        }
+        for (size_t k = 0; k < ntaint; k++) {
+          if (a->span.offset < taint[k].end && a->span.end > taint[k].begin) {
+            *found = true;
+          }
+        }
+      }
+    }
+    if (v->child_count && !*found) {
+      if (len == cap) {
+        fr * g = gtext_allocator_realloc(&a, stack, cap * 2 * sizeof *g);
+        if (!g) {
+          gtext_allocator_free(&a, stack);
+          return GTEXT_CSS_E_OOM;
+        }
+        stack = g;
+        cap *= 2;
+      }
+      stack[len++] = (fr){v->children, v->child_count, 0};
+    }
+  }
+  gtext_allocator_free(&a, stack);
+  return GTEXT_CSS_OK;
+}
+
+/// A parsed value, applied to the property: a typed value is computed as any is; a CSS-wide keyword is "determined as if that keyword were its specified value all
+/// along"; anything else is invalid at computed-value time. (`revert` and its kin cannot be resolved here, the cascade being over: they are taken as `unset`.)
+static GTEXT_CSS_Status apply_parsed(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Property_Outcome outcome, GTEXT_CSS_Wide_Keyword wide,
+    const GTEXT_CSS_Value_Set * set, GTEXT_CSS_Value_Set ** out) {
+  switch (outcome) {
+  case GTEXT_CSS_PROP_RESULT_VALID:
+    return compute_value(st, id, set, true, out);
+  case GTEXT_CSS_PROP_RESULT_WIDE:
+    if (wide == GTEXT_CSS_WIDE_INITIAL || wide == GTEXT_CSS_WIDE_INHERIT || wide == GTEXT_CSS_WIDE_UNSET) {
+      return from_wide(st, id, wide, out);
+    }
+    return invalid_at_computed_time(st, id, out);
+  default:
+    return invalid_at_computed_time(st, id, out);
+  }
+}
+
+/// Replace the functions of a text, and read what is left as the value of `name` (a property, or a shorthand's name). `*done` is false when the value is the
+/// guaranteed-invalid value or does not parse (it is invalid at computed-value time).
+static GTEXT_CSS_Status substitute_and_parse_text(css_state * st, const char * name, size_t name_length, const char * input, size_t input_length,
+    GTEXT_CSS_Property_Value * pv, bool * done) {
+  *done = false;
+  memset(pv, 0, sizeof *pv);
+  css_sub * sub = st->sub;
+  if (!sub) {
+    return css_st_fail(st, GTEXT_CSS_E_INTERNAL, name, "a value with a substitution function in it was reached with no substitution state");
+  }
+  css_rope * rope = NULL;
+  GTEXT_CSS_Status status = css_sub_substitute_text(sub, name, name_length, input, input_length, &rope);
+  if (status != GTEXT_CSS_OK) {
+    return status == GTEXT_CSS_E_OOM || status == GTEXT_CSS_E_UNSUPPORTED || status == GTEXT_CSS_E_LIMIT_DEPTH ? status : css_st_fail(st, status, name, NULL);
+  }
+  if (!rope) {
+    return GTEXT_CSS_OK;
+  }
+  char * text = NULL;
+  size_t length = 0;
+  css_range * taint = NULL;
+  size_t ntaint = 0;
+  status = css_sub_flatten(sub, rope, &text, &length, &taint, &ntaint);
+  css_rope_release(rope);
+  if (status != GTEXT_CSS_OK) {
+    return css_st_fail(st, status, name, NULL);
+  }
+  if (!text) {
+    return GTEXT_CSS_OK; /* too long */
+  }
+  GTEXT_Allocator a = st->cc->alloc;
+  GTEXT_CSS_Property_Options po;
+  memset(&po, 0, sizeof po);
+  po.allocator = &a;
+  status = gtext_css_parse_property_text(st->cc->registry, name, name_length, text, length, &po, pv);
+  if (status == GTEXT_CSS_OK && pv->outcome == GTEXT_CSS_PROP_RESULT_VALID && ntaint) {
+    bool bad = false;
+    status = tainted_url(st, gtext_css_value_set_root(pv->set), taint, ntaint, &bad);
+    if (status == GTEXT_CSS_OK && bad) {
+      gtext_css_property_value_free(pv);
+      pv->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+    }
+  }
+  gtext_allocator_free(&a, text);
+  gtext_allocator_free(&a, taint);
+  if (status != GTEXT_CSS_OK) {
+    gtext_css_property_value_free(pv);
+    return status == GTEXT_CSS_E_OOM ? status : css_st_fail(st, status, name, "a value could not be read once its functions were replaced");
+  }
+  *done = pv->outcome == GTEXT_CSS_PROP_RESULT_VALID || pv->outcome == GTEXT_CSS_PROP_RESULT_WIDE;
+  return GTEXT_CSS_OK;
+}
+
+static GTEXT_CSS_Status substitute_and_parse(css_state * st, const char * name, size_t name_length, const GTEXT_CSS_Value_Set * pending, GTEXT_CSS_Property_Value * pv,
+    bool * done) {
+  const GTEXT_CSS_Value * root = gtext_css_value_set_root(pending);
+  return substitute_and_parse_text(st, name, name_length, root && root->text.data ? root->text.data : "", root && root->text.data ? root->text.length : 0, pv, done);
+}
+
+static css_short_result * shorthand_lookup(css_state * st, size_t declaration) {
+  for (size_t i = 0; i < st->nshort; i++) {
+    if (st->shorts[i].declaration == declaration) {
+      return &st->shorts[i];
+    }
+  }
+  return NULL;
+}
+
+/// "To determine the computed value of cycle(), first evaluate each argument as if it were the sole value of the property ... called Cn. Then, compare the property's
+/// inherited value with each Cn. For the earliest Cn that matches the inherited value, the computed value of cycle() is Cn+1. If the match was the last argument in the
+/// list, or there was no match, the computed value of cycle() is the computed value that the first argument represents." `cands` are the Cn; `*out` is one, retained.
+static GTEXT_CSS_Status cycle_pick(css_state * st, GTEXT_CSS_Property_Id id, GTEXT_CSS_Value_Set * const * cands, size_t n, GTEXT_CSS_Value_Set ** out) {
+  GTEXT_CSS_Value_Set * inherited = NULL;
+  GTEXT_CSS_Status status = inherit_value(st, id, &inherited);
+  if (status != GTEXT_CSS_OK) {
+    return status;
+  }
+  size_t pick = 0;
+  for (size_t k = 0; k < n; k++) {
+    st->work++;
+    if (same_value(cands[k], inherited)) {
+      pick = k + 1 < n ? k + 1 : 0;
+      break;
+    }
+  }
+  gtext_css_value_set_free(inherited);
+  *out = gtext_css_value_set_retain(cands[pick]);
+  return GTEXT_CSS_OK;
+}
+
+/// The value of `cycle()` on a longhand: each argument is the whole value of the property.
+static GTEXT_CSS_Status compute_cycle_longhand(css_state * st, GTEXT_CSS_Property_Id id, const css_cycle_arg * args, size_t n, GTEXT_CSS_Value_Set ** out) {
+  const css_pmeta * m = &st->cc->meta[id - 1];
+  GTEXT_Allocator a = st->cc->alloc;
+  GTEXT_CSS_Value_Set ** cands = gtext_allocator_calloc(&a, n, sizeof *cands);
+  if (!cands) {
+    return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+  }
+  GTEXT_CSS_Status status = GTEXT_CSS_OK;
+  bool all = true;
+  for (size_t k = 0; k < n && status == GTEXT_CSS_OK && all; k++) {
+    GTEXT_CSS_Property_Value pv;
+    bool done = false;
+    status = substitute_and_parse_text(st, m->name, m->name_length, args[k].text, args[k].length, &pv, &done);
+    if (status != GTEXT_CSS_OK) {
+      break;
+    }
+    if (!done || pv.outcome != GTEXT_CSS_PROP_RESULT_VALID) {
+      all = false; /* an argument that is no value of the property makes the declaration invalid */
+    }
+    else {
+      status = compute_value(st, id, pv.set, true, &cands[k]);
+    }
+    gtext_css_property_value_free(&pv);
+  }
+  if (status == GTEXT_CSS_OK) {
+    status = all ? cycle_pick(st, id, cands, n, out) : invalid_at_computed_time(st, id, out);
+  }
+  for (size_t k = 0; k < n; k++) {
+    gtext_css_value_set_free(cands[k]);
+  }
+  gtext_allocator_free(&a, cands);
+  return status;
+}
+
+static GTEXT_CSS_Status compute_pending(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Declaration_Item * it, GTEXT_CSS_Value_Set ** out) {
+  const css_pmeta * m = &st->cc->meta[id - 1];
+  *out = NULL;
+  GTEXT_CSS_Status status;
+  if (it->shorthand) {
+    /* "after substitution, the shorthand must be parsed and the longhands must be given their appropriate values at that point": once for the declaration,
+       however many longhands read it */
+    css_short_result * r = shorthand_lookup(st, it->declaration);
+    if (!r) {
+      if (st->nshort == st->capshort) {
+        const size_t cap = st->capshort ? st->capshort * 2 : 4;
+        GTEXT_Allocator a = st->cc->alloc;
+        css_short_result * g = gtext_allocator_realloc(&a, st->shorts, cap * sizeof *g);
+        if (!g) {
+          return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+        }
+        st->shorts = g;
+        st->capshort = cap;
+      }
+      GTEXT_CSS_Property_Info info;
+      if (!gtext_css_registry_property_info(st->cc->registry, it->shorthand, &info)) {
+        return css_st_fail(st, GTEXT_CSS_E_INTERNAL, m->name, "the shorthand of a pending value is not in the registry");
+      }
+      css_short_result fresh;
+      memset(&fresh, 0, sizeof fresh);
+      fresh.declaration = it->declaration;
+      GTEXT_CSS_Property_Value pv;
+      bool done = false;
+      bool is_cycle = false, cycle_invalid = false;
+      css_cycle_arg * cargs = NULL;
+      size_t ncargs = 0;
+      status = css_sub_cycle(st->sub, it->set, &is_cycle, &cycle_invalid, &cargs, &ncargs);
+      if (status != GTEXT_CSS_OK) {
+        return css_st_fail(st, status, info.name, NULL);
+      }
+      if (is_cycle) {
+        /* "If cycle() is used on a shorthand property, it sets each of its longhands to a cycle() value with arguments corresponding to what the longhand would have
+           received had each of the original cycle() arguments been the sole value of the shorthand": the shorthand is expanded once for each argument */
+        memset(&pv, 0, sizeof pv);
+        GTEXT_Allocator a = st->cc->alloc;
+        fresh.cycle = gtext_allocator_calloc(&a, ncargs ? ncargs : 1, sizeof *fresh.cycle);
+        if (!fresh.cycle) {
+          css_cycle_args_free(st->sub, cargs, ncargs);
+          return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+        }
+        fresh.invalid = cycle_invalid;
+        for (size_t k = 0; k < ncargs && !fresh.invalid && status == GTEXT_CSS_OK; k++) {
+          GTEXT_CSS_Property_Value apv;
+          bool adone = false;
+          status = substitute_and_parse_text(st, info.name, info.name_length, cargs[k].text, cargs[k].length, &apv, &adone);
+          if (status != GTEXT_CSS_OK) {
+            break;
+          }
+          if (!adone || apv.outcome != GTEXT_CSS_PROP_RESULT_VALID) {
+            fresh.invalid = true;
+          }
+          else {
+            GTEXT_CSS_Shorthand_Result sr;
+            status = gtext_css_shorthand_expand(st->cc->registry, &apv, &a, &fresh.cycle[k], &sr);
+            if (status == GTEXT_CSS_E_UNSUPPORTED || status == GTEXT_CSS_E_INVALID) {
+              fresh.invalid = true;
+              status = GTEXT_CSS_OK;
+            }
+            else if (status == GTEXT_CSS_OK) {
+              fresh.ncycle = k + 1;
+            }
+          }
+          gtext_css_property_value_free(&apv);
+        }
+        css_cycle_args_free(st->sub, cargs, ncargs);
+        fresh.ncycle = ncargs;
+        if (status != GTEXT_CSS_OK) {
+          for (size_t k = 0; k < ncargs; k++) {
+            gtext_css_longhand_list_free(fresh.cycle[k]);
+          }
+          gtext_allocator_free(&a, fresh.cycle);
+          return css_st_fail(st, status, info.name, NULL);
+        }
+        st->shorts[st->nshort++] = fresh;
+        r = &st->shorts[st->nshort - 1];
+        goto have_result;
+      }
+      css_cycle_args_free(st->sub, cargs, ncargs);
+      status = substitute_and_parse(st, info.name, info.name_length, it->set, &pv, &done);
+      if (status != GTEXT_CSS_OK) {
+        return status;
+      }
+      if (!done) {
+        fresh.invalid = true;
+      }
+      else if (pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
+        fresh.wide = pv.wide;
+      }
+      else {
+        GTEXT_CSS_Shorthand_Result sr;
+        GTEXT_Allocator a = st->cc->alloc;
+        status = gtext_css_shorthand_expand(st->cc->registry, &pv, &a, &fresh.list, &sr);
+        if (status == GTEXT_CSS_E_UNSUPPORTED || status == GTEXT_CSS_E_INVALID) {
+          fresh.invalid = true;
+          status = GTEXT_CSS_OK;
+        }
+      }
+      gtext_css_property_value_free(&pv);
+      if (status != GTEXT_CSS_OK) {
+        return css_st_fail(st, status, info.name, NULL);
+      }
+      st->shorts[st->nshort++] = fresh;
+      r = &st->shorts[st->nshort - 1];
+    }
+  have_result:
+    if (r->invalid) {
+      return invalid_at_computed_time(st, id, out);
+    }
+    if (r->cycle) {
+      GTEXT_Allocator a = st->cc->alloc;
+      GTEXT_CSS_Value_Set ** cands = gtext_allocator_calloc(&a, r->ncycle ? r->ncycle : 1, sizeof *cands);
+      if (!cands) {
+        return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+      }
+      bool all = true;
+      status = GTEXT_CSS_OK;
+      for (size_t k = 0; k < r->ncycle && status == GTEXT_CSS_OK && all; k++) {
+        bool found = false;
+        GTEXT_CSS_Longhand lh;
+        for (size_t i = 0; gtext_css_longhand_list_at(r->cycle[k], i, &lh); i++) {
+          if (gtext_css_registry_resolve_alias(st->cc->registry, lh.property) == id) {
+            found = true;
+            if (lh.outcome != GTEXT_CSS_PROP_RESULT_VALID) {
+              all = false;
+            }
+            else {
+              status = compute_value(st, id, lh.set, true, &cands[k]);
+            }
+            break;
+          }
+        }
+        all = all && found;
+      }
+      if (status == GTEXT_CSS_OK) {
+        status = all ? cycle_pick(st, id, cands, r->ncycle, out) : invalid_at_computed_time(st, id, out);
+      }
+      for (size_t k = 0; k < r->ncycle; k++) {
+        gtext_css_value_set_free(cands[k]);
+      }
+      gtext_allocator_free(&a, cands);
+      return status;
+    }
+    if (r->wide != GTEXT_CSS_WIDE_NONE) {
+      return apply_parsed(st, id, GTEXT_CSS_PROP_RESULT_WIDE, r->wide, NULL, out);
+    }
+    GTEXT_CSS_Longhand lh;
+    for (size_t i = 0; gtext_css_longhand_list_at(r->list, i, &lh); i++) {
+      if (gtext_css_registry_resolve_alias(st->cc->registry, lh.property) == id) {
+        return apply_parsed(st, id, lh.outcome, lh.wide, lh.set, out);
+      }
+    }
+    return invalid_at_computed_time(st, id, out);
+  }
+  {
+    bool is_cycle = false, cycle_invalid = false;
+    css_cycle_arg * cargs = NULL;
+    size_t ncargs = 0;
+    status = css_sub_cycle(st->sub, it->set, &is_cycle, &cycle_invalid, &cargs, &ncargs);
+    if (status != GTEXT_CSS_OK) {
+      return css_st_fail(st, status, m->name, NULL);
+    }
+    if (is_cycle) {
+      status = cycle_invalid ? invalid_at_computed_time(st, id, out) : compute_cycle_longhand(st, id, cargs, ncargs, out);
+      css_cycle_args_free(st->sub, cargs, ncargs);
+      return status;
+    }
+  }
+  GTEXT_CSS_Property_Value pv;
+  bool done = false;
+  status = substitute_and_parse(st, m->name, m->name_length, it->set, &pv, &done);
+  if (status != GTEXT_CSS_OK) {
+    return status;
+  }
+  if (!done) {
+    gtext_css_property_value_free(&pv);
+    return invalid_at_computed_time(st, id, out);
+  }
+  status = apply_parsed(st, id, pv.outcome, pv.wide, pv.set, out);
+  gtext_css_property_value_free(&pv);
+  return status;
 }
 
 /// Compute the value of `id` from the declaration `src` (or from nothing), into `*out`.
@@ -1024,7 +1442,7 @@ static GTEXT_CSS_Status compute_from_source(css_state * st, GTEXT_CSS_Property_I
   case GTEXT_CSS_PROP_RESULT_VALID:
     return compute_value(st, id, it.set, true, out);
   default:
-    return unsubstituted(st, m->name, it.set);
+    return compute_pending(st, id, &it, out);
   }
 }
 
@@ -1090,12 +1508,10 @@ static GTEXT_CSS_Status compute_group(css_state * st, GTEXT_CSS_Property_Id id) 
   return GTEXT_CSS_OK;
 }
 
-static GTEXT_CSS_Status compute_property(css_state * st, GTEXT_CSS_Property_Id id) {
+static GTEXT_CSS_Status compute_property_inner(css_state * st, GTEXT_CSS_Property_Id id) {
   const css_pmeta * m = &st->cc->meta[id - 1];
-  if (st->done[id - 1]) {
-    return GTEXT_CSS_OK;
-  }
   st->current = id;
+  st->random_index = 0;
   if (m->group >= 0 && st->cc->groups[m->group].kind != GTEXT_CSS_LOGICAL_NONE) {
     return compute_group(st, id);
   }
@@ -1106,6 +1522,59 @@ static GTEXT_CSS_Status compute_property(css_state * st, GTEXT_CSS_Property_Id i
   }
   set_entry(st, id, set);
   return GTEXT_CSS_OK;
+}
+
+static void read_flow(css_state * st);
+static void root_fill(css_state * st, bool after_line_height);
+
+/// Compute a property (once), with what the others need to be able to be computed after it: the root's font when it is the font size or the line height, the flow
+/// when it completes it. A property whose value reaches itself through a custom property (a registered `<length>` in `em` read by `font-size`) is found by `busy`.
+static GTEXT_CSS_Status compute_property(css_state * st, GTEXT_CSS_Property_Id id) {
+  if (st->done[id - 1]) {
+    return GTEXT_CSS_OK;
+  }
+  st->busy[id - 1] = 1;
+  const GTEXT_CSS_Status status = compute_property_inner(st, id);
+  st->busy[id - 1] = 0;
+  if (status != GTEXT_CSS_OK) {
+    return status;
+  }
+  const GTEXT_CSS_Compute_Context * cc = st->cc;
+  if (id == cc->pid[CSS_P_FONT_SIZE]) {
+    root_fill(st, false);
+  }
+  else if (id == cc->pid[CSS_P_LINE_HEIGHT]) {
+    root_fill(st, true);
+  }
+  else if ((id == cc->pid[CSS_P_WRITING_MODE] || id == cc->pid[CSS_P_DIRECTION] || id == cc->pid[CSS_P_TEXT_ORIENTATION]) && cc->pid[CSS_P_WRITING_MODE] &&
+      cc->pid[CSS_P_DIRECTION] && cc->pid[CSS_P_TEXT_ORIENTATION] && st->done[cc->pid[CSS_P_WRITING_MODE] - 1] && st->done[cc->pid[CSS_P_DIRECTION] - 1] &&
+      st->done[cc->pid[CSS_P_TEXT_ORIENTATION] - 1]) {
+    read_flow(st);
+    if (st->status != GTEXT_CSS_OK) {
+      return st->status;
+    }
+  }
+  return st->status;
+}
+
+GTEXT_CSS_Status css_st_ensure(css_state * st, GTEXT_CSS_Property_Id id, bool * cycle) {
+  *cycle = false;
+  id = gtext_css_registry_resolve_alias(st->cc->registry, id);
+  if (id == 0 || id > st->cc->nprops || st->done[id - 1]) {
+    return GTEXT_CSS_OK;
+  }
+  if (st->busy[id - 1]) {
+    *cycle = true;
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Property_Id saved = st->current;
+  const GTEXT_CSS_Status status = compute_property(st, id);
+  st->current = saved;
+  return status;
+}
+
+bool css_st_is_done(const css_state * st, GTEXT_CSS_Property_Id id) {
+  return id && id <= st->cc->nprops && st->done[id - 1];
 }
 
 /* ---- the flow and the root ----------------------------------------------------------------------------- */
@@ -1202,97 +1671,6 @@ static void root_fill(css_state * st, bool after_line_height) {
   }
 }
 
-/* ---- custom properties ------------------------------------------------------------------------------- */
-
-typedef struct {
-  size_t item;
-  GTEXT_CSS_String name;
-} custom_ref;
-
-static int custom_cmp(const void * a, const void * b) {
-  const custom_ref * x = a;
-  const custom_ref * y = b;
-  const size_t n = x->name.length < y->name.length ? x->name.length : y->name.length;
-  int c = memcmp(x->name.data, y->name.data, n);
-  if (c) {
-    return c;
-  }
-  if (x->name.length != y->name.length) {
-    return x->name.length < y->name.length ? -1 : 1;
-  }
-  return x->item < y->item ? -1 : x->item > y->item ? 1 : 0;
-}
-
-static GTEXT_CSS_Status compute_custom(css_state * st) {
-  const GTEXT_CSS_Compute_Context * cc = st->cc;
-  GTEXT_Allocator a = cc->alloc;
-  GTEXT_CSS_Computed_Style * style = st->style;
-  const size_t nitems = st->block ? gtext_css_block_count(st->block) : 0;
-  custom_ref * refs = NULL;
-  size_t nrefs = 0;
-  if (nitems) {
-    refs = gtext_allocator_calloc(&a, nitems, sizeof *refs);
-    if (!refs) {
-      return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
-    }
-    for (size_t i = 0; i < nitems; i++) {
-      GTEXT_CSS_Declaration_Item it;
-      if (gtext_css_block_item(st->block, i, &it) && it.property == cc->pid[CSS_P_CUSTOM] && it.custom_name.data) {
-        refs[nrefs].item = i;
-        refs[nrefs].name = it.custom_name;
-        nrefs++;
-      }
-    }
-    qsort(refs, nrefs, sizeof *refs, custom_cmp);
-  }
-  /* the parent's map is this style's, with each name this element declares set: O(log n) nodes a name, the rest shared; with none declared the
-     parent's map itself (a chain of n elements costs O(n) when none declares a thing, and O(n log n) when each declares one) */
-  st->current = 0;   /* an error in a custom property names none of the properties computed before it */
-  css_cmap * parent_map = st->parent ? st->parent->custom : NULL;
-  style->custom = css_cmap_retain(parent_map);
-  GTEXT_CSS_Status status = GTEXT_CSS_OK;
-  size_t ri = 0;
-  while (ri < nrefs && status == GTEXT_CSS_OK) {
-    /* the last declaration of a name is the one that counts */
-    const GTEXT_CSS_String name = refs[ri].name;
-    size_t last = refs[ri].item;
-    ri++;
-    while (ri < nrefs && refs[ri].name.length == name.length && memcmp(refs[ri].name.data, name.data, name.length) == 0) {
-      last = refs[ri].item;
-      ri++;
-    }
-    GTEXT_CSS_Declaration_Item it;
-    gtext_css_block_item(st->block, last, &it);
-    GTEXT_CSS_Value_Set * value = NULL;
-    if (it.outcome == GTEXT_CSS_PROP_RESULT_VALID) {
-      value = (GTEXT_CSS_Value_Set *)it.set;
-    }
-    else if (it.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
-      if (it.wide == GTEXT_CSS_WIDE_INHERIT || it.wide == GTEXT_CSS_WIDE_UNSET) {
-        value = (GTEXT_CSS_Value_Set *)css_cmap_find(parent_map, name.data, name.length);
-      }
-      else if (it.wide != GTEXT_CSS_WIDE_INITIAL) {
-        status = css_st_fail(st, GTEXT_CSS_E_INVALID, "--*", "revert and revert-layer are the cascade's: they are resolved before a style is computed");
-        break;
-      }
-    }
-    else {
-      status = unsubstituted(st, "--*", it.set);
-      break;
-    }
-    css_cmap * next = NULL;
-    const GTEXT_CSS_Status set = css_cmap_set(&a, style->custom, name.data, name.length, value, cc->options.custom_hash_seed, &next, &st->work);
-    if (set != GTEXT_CSS_OK) {
-      status = css_st_fail(st, set, NULL, NULL);
-      break;
-    }
-    css_cmap_release(style->custom);
-    style->custom = next;
-  }
-  gtext_allocator_free(&a, refs);
-  return status;
-}
-
 /* ---- the pipeline -------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status run_pipeline(css_state * st) {
@@ -1318,6 +1696,19 @@ static GTEXT_CSS_Status run_pipeline(css_state * st) {
     gtext_css_value_set_retain(style->root.line_height);
     /* the parent's own references are the ones retained above; the struct copy shares them */
   }
+  /* the custom properties first: any property may read them. The map starts as the parent's, shared; the registered ones as the parent's or their initial values */
+  style->custom = css_cmap_retain(st->parent ? st->parent->custom : NULL);
+  GTEXT_CSS_Status early = css_style_init_regvals(style, st->parent);
+  if (early == GTEXT_CSS_OK) {
+    early = css_sub_new(st, &st->sub);
+  }
+  if (early == GTEXT_CSS_OK && st->sub) {
+    st->current = 0; /* an error in a custom property names none of the properties computed before it */
+    early = css_sub_customs(st->sub);
+  }
+  if (early != GTEXT_CSS_OK) {
+    return st->status != GTEXT_CSS_OK ? st->status : css_st_fail(st, early, NULL, NULL);
+  }
   /* the flow first: a logical property is mapped by it */
   static const int flow_props[] = {CSS_P_WRITING_MODE, CSS_P_DIRECTION, CSS_P_TEXT_ORIENTATION};
   for (size_t k = 0; k < sizeof flow_props / sizeof *flow_props; k++) {
@@ -1340,20 +1731,24 @@ static GTEXT_CSS_Status run_pipeline(css_state * st) {
     if (status != GTEXT_CSS_OK) {
       return status;
     }
-    if (id == cc->pid[CSS_P_FONT_SIZE]) {
-      root_fill(st, false);
-    }
-    else if (id == cc->pid[CSS_P_LINE_HEIGHT]) {
-      root_fill(st, true);
-    }
   }
-  return compute_custom(st);
+  return GTEXT_CSS_OK;
 }
 
 /* ---- computing ---------------------------------------------------------------------------------------- */
 
+static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
+    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Computed_Style ** out,
+    GTEXT_CSS_Compute_Result * result);
+
 GTEXT_CSS_Status gtext_css_compute_style(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
     const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Computed_Style ** out,
+    GTEXT_CSS_Compute_Result * result) {
+  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, out, result);
+}
+
+static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
+    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Computed_Style ** out,
     GTEXT_CSS_Compute_Result * result) {
   result_clear(result);
   if (!context || !out) {
@@ -1370,6 +1765,7 @@ GTEXT_CSS_Status gtext_css_compute_style(const GTEXT_CSS_Compute_Context * conte
   st.block = block;
   st.parent = parent;
   st.element = element;
+  st.iface = iface;
   GTEXT_CSS_Computed_Style * style = style_new(context);
   GTEXT_Allocator a = context->alloc;
   if (!style) {
@@ -1377,19 +1773,32 @@ GTEXT_CSS_Status gtext_css_compute_style(const GTEXT_CSS_Compute_Context * conte
   }
   st.style = style;
   st.done = gtext_allocator_calloc(&a, context->nprops ? context->nprops : 1, 1);
+  st.busy = gtext_allocator_calloc(&a, context->nprops ? context->nprops : 1, 1);
   st.own = gtext_allocator_calloc(&a, context->nprops ? context->nprops : 1, sizeof *st.own);
-  if (!st.done || !st.own) {
+  if (!st.done || !st.busy || !st.own) {
     gtext_allocator_free(&a, st.done);
+    gtext_allocator_free(&a, st.busy);
     gtext_allocator_free(&a, st.own);
     gtext_css_computed_free(style);
     return result_done(result, GTEXT_CSS_E_OOM);
   }
   GTEXT_CSS_Status status = run_pipeline(&st);
-  gtext_allocator_free(&a, st.done);
-  gtext_allocator_free(&a, st.own);
   if (result) {
     result->work = st.work;
+    css_sub_report(st.sub, result);
   }
+  css_sub_free(st.sub);
+  for (size_t i = 0; i < st.nshort; i++) {
+    gtext_css_longhand_list_free(st.shorts[i].list);
+    for (size_t k = 0; k < st.shorts[i].ncycle; k++) {
+      gtext_css_longhand_list_free(st.shorts[i].cycle[k]);
+    }
+    gtext_allocator_free(&a, st.shorts[i].cycle);
+  }
+  gtext_allocator_free(&a, st.shorts);
+  gtext_allocator_free(&a, st.done);
+  gtext_allocator_free(&a, st.busy);
+  gtext_allocator_free(&a, st.own);
   if (status != GTEXT_CSS_OK) {
     gtext_css_computed_free(style);
     return result_done(result, status);
@@ -1460,7 +1869,7 @@ GTEXT_CSS_Status gtext_css_compute_element(const GTEXT_CSS_Compute_Context * con
     GTEXT_CSS_Computed_Style * cur = NULL;
     GTEXT_CSS_Compute_Result r;
     if (st == GTEXT_CSS_OK) {
-      st = gtext_css_compute_style(context, block, prev, chain[i], &cur, &r);
+      st = compute_style_with(context, block, prev, chain[i], iface, &cur, &r);
       work += r.work;
       if (st != GTEXT_CSS_OK && result) {
         *result = r;
@@ -1559,16 +1968,18 @@ static GTEXT_CSS_Status dump_to_buffer(const GTEXT_CSS_Computed_Style * style, d
     }
     dump_write(b, "\n", 1);
   }
-  for (size_t i = 0; i < css_cmap_count(style->custom) && !b->failed; i++) {
-    const char * cname = NULL;
-    size_t clength = 0;
-    const GTEXT_CSS_Value_Set * cvalue = NULL;
-    css_cmap_at(style->custom, i, &cname, &clength, &cvalue);
-    dump_write(b, cname, clength);
+  for (size_t i = 0; i < gtext_css_computed_custom_count(style) && !b->failed; i++) {
+    GTEXT_CSS_String cname;
+    const GTEXT_CSS_Custom_Value * cvalue = NULL;
+    if (!gtext_css_computed_custom_at(style, i, &cname, &cvalue)) {
+      break;
+    }
+    dump_write(b, cname.data, cname.length);
     dump_write(b, ": ", 2);
-    const GTEXT_CSS_Value * root = gtext_css_value_set_root(cvalue);
-    if (root && root->text.data) {
-      dump_write(b, root->text.data, root->text.length);
+    const GTEXT_CSS_Status ws = gtext_css_custom_value_write(cvalue, &sink);
+    if (ws != GTEXT_CSS_OK) {
+      gtext_allocator_free(&b->alloc, b->data);
+      return ws;
     }
     dump_write(b, "\n", 1);
   }

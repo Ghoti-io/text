@@ -234,9 +234,9 @@ GTEXT_API GTEXT_CSS_Status gtext_css_block_add(GTEXT_CSS_Declaration_Block * blo
  * @param block The block. Not NULL.
  * @param name The name as written, beginning `--`; case is kept.
  * @param name_length Its length.
- * @param value What gtext_css_parse_property() returned for it (VALID or WIDE). Not NULL.
+ * @param value What gtext_css_parse_property() returned for it (VALID, WIDE or PENDING: a value holding `var()` or another substitution function is carried as written and substituted when the style is computed). Not NULL.
  * @param important `!important`.
- * @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID (not a custom property name, or a result that is not VALID or WIDE), GTEXT_CSS_E_LIMIT_DECLARATIONS or GTEXT_CSS_E_OOM.
+ * @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID (not a custom property name, or a result that is INVALID or UNKNOWN), GTEXT_CSS_E_LIMIT_DECLARATIONS or GTEXT_CSS_E_OOM.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_block_add_custom(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length,
     const GTEXT_CSS_Property_Value * value, bool important);
