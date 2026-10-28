@@ -418,7 +418,7 @@ static void path_to_css(const char * value, size_t length, text_buf * out) {
     tb_str(out, "none");
     return;
   }
-  tb_str(out, "path(\"");
+  tb_str(out, "\"");
   for (size_t i = 0; i < length; i++) {
     const char c = value[i];
     if (c == '\\' || c == '"') {
@@ -438,7 +438,7 @@ static void path_to_css(const char * value, size_t length, text_buf * out) {
       tb_put(out, &c, 1);
     }
   }
-  tb_str(out, "\")");
+  tb_str(out, "\"");
 }
 
 /* ---- the value ---------------------------------------------------------------------------------- */

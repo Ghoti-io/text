@@ -161,7 +161,7 @@ An attribute's value is mostly a CSS value, and where SVG gives it a spelling th
 |--------|---------------|
 | `unitless_lengths` | a number is a length in user units, in every property that takes a `<length>`: `stroke-width="2"` is `2px` |
 | `svg_transform` | `transform`, `gradientTransform` and `patternTransform` are SVG's list (`rotate(45 10 10)`, `translate(10,20)`, numbers without units); a value that is not one is read as CSS's |
-| `path_data` | `d` is path data, and the property `d` holds `path("...")` |
+| `path_data` | `d` is path data, and the property `d` holds the string (the pin's grammar of `d` is `none | <string>`; engines that take `path("...")` need a caller that writes it) |
 | `trim_whitespace` | the white space at both ends of a value is not part of it |
 
 The HTML Standard's presentational hints are the same mechanism with a table of the caller's; the library ships SVG's only.
@@ -372,6 +372,23 @@ hash of 32 bytes
 same values, same hash: yes
 other values, same hash: no
 ```
+
+## Against Chromium and Firefox
+
+`make check-css-style-oracle` asks this library, Chromium 156 and Firefox 158 (Gecko, whose style engine is Stylo) for the computed style of the same elements: a
+seeded population of SVG fixtures, presentation attributes on SVG elements, generated values of every property, and generated trees of HTML and SVG elements with
+`style` and presentation attributes, in both color schemes. The browsers answer `getComputedStyle()` through one WebDriver BiDi driver in a pinned image, with the
+documents inside an element with `display: none` so that the resolved value of a property is its computed value. A divergence is keyed by its pattern, its property
+and the smallest declaration that has it, and `tools/oracle/css_style_divergences.txt` gives each key a class and the sentence of the served draft that decides it
+(`reference-wrong`, `reference-old`, `legacy-compat`, `unspecified`, ...); the gate fails on a key that is not listed, a listed key that no longer occurs, a count or
+digest that changed, a witness that does not hold, a control that is not as it was, and on any key of class `ours`. Its controls make the gate fail on purpose,
+among them eight of the twelve defects planted in this library's own sources (the others are below the population and are seen by the unit tests). The default population is 161,476 items; the run compares all of them in both schemes and finds 250
+keys, none of them this library's.
+
+What the oracle found in the first runs and is fixed: the used color scheme of `color-scheme: normal` is the user agent default, not the preference;
+`display: contents` is `none` on an SVG element that is no container of rendered content; `stroke-dasharray` is one comma separated list and its dashes cannot be
+negative; `word-spacing: normal` is `0px`, a zero `letter-spacing` is `normal`, a bare `font-style: oblique` stays `oblique`; the order of `paint-order` is its value
+and its shortest form is written; and `d` as an attribute is the `<string>` of the served draft.
 
 ## Limits and threads
 

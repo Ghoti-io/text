@@ -209,7 +209,11 @@ display type to `block` and keeps the inner one, except that "an inline block bo
 nature)" and "a layout-internal box is blockified, its inner display type converts to flow" (CSS Display 3, 2.7), so a floated `display: inline-block` is `block`
 and a floated `display: table-cell` is `block`, `inline math` is `block math`; and `inherit` is the parent's computed value as it is ("the property's specified and
 computed values are the inherited value" - CSS Cascade 5), so `border-top-style: none; border-top-width: inherit` has the parent's width, where a width of its own
-would be 0.
+would be 0. `display: contents` on an SVG element other than a container that is rendered ("display: contents computes to display: none." - CSS Display 3, Appendix B),
+needs the element, so a computation with no tree keeps it; `color-scheme: normal` is the page's scheme, the user agent default (light) when the page declares none, and not the
+environment's preference (CSS Color Adjust 1, 2.3); `stroke-dasharray` is one comma separated list whichever way the dashes were written (SVG 2); `word-spacing: normal` computes to
+`0px`, and a zero `letter-spacing` to `normal`, as the pinned tests expect; and a bare `font-style: oblique` stays `oblique` ("the keyword specified, plus angle in degrees if
+specified").
 
 | Class | What it does |
 |---|---|

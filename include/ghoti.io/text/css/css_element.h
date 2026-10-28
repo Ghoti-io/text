@@ -329,7 +329,7 @@ typedef struct {
   GTEXT_CSS_Size dynamic_viewport;   ///< `dvw`, `dvh`: the viewport as it is now. Default 1280 by 800.
   double default_font_size;          ///< What `medium` is, in px. Default 16.
   double device_pixel_ratio;         ///< Device pixels per CSS pixel (a border width is snapped to whole ones). Default 1.
-  GTEXT_CSS_Color_Scheme color_scheme; ///< Chooses a side of `light-dark()`. Default light.
+  GTEXT_CSS_Color_Scheme color_scheme; ///< The user's preference: it chooses a side of `light-dark()` where the element's `color-scheme` supports it (`normal`, the page declaring none, is light). Default light.
   const char * language;             ///< The language of the document (BCP 47), or NULL for none.
   const char * base_url;             ///< The URL that a relative `url()` is resolved against, or NULL for none (then a relative URL stays one).
   const char * default_font_family;  ///< The initial value of `font-family`, as CSS text; NULL for `serif`. (The standard leaves it to the user agent.)

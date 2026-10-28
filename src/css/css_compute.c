@@ -97,6 +97,9 @@ static const char * const algo_names[GTEXT_CSS_ALGO_COUNT] = {
   [GTEXT_CSS_ALGO_SHADOW] = "SHADOW",
   [GTEXT_CSS_ALGO_WRAP_FLOW] = "WRAP_FLOW",
   [GTEXT_CSS_ALGO_NUMBER_LENGTH] = "NUMBER_LENGTH",
+  [GTEXT_CSS_ALGO_WORD_SPACING] = "WORD_SPACING",
+  [GTEXT_CSS_ALGO_LETTER_SPACING] = "LETTER_SPACING",
+  [GTEXT_CSS_ALGO_DASHARRAY] = "DASHARRAY",
   [GTEXT_CSS_ALGO_CUSTOM] = "CUSTOM",
 };
 
@@ -603,12 +606,13 @@ static bool same_value(const GTEXT_CSS_Value_Set * a, const GTEXT_CSS_Value_Set 
 
 /// Compute a probe style (no declarations) in `env` under a parent; the context is `building`.
 static GTEXT_CSS_Status probe_style(GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Environment * env, const GTEXT_CSS_Computed_Style * parent,
-    GTEXT_CSS_Computed_Style ** out) {
+    int force_scheme, GTEXT_CSS_Computed_Style ** out) {
   css_state st;
   state_init(&st, cc, NULL);
   st.env = env;
   st.parent = parent;
   st.probing = true;
+  st.force_scheme = force_scheme;
   GTEXT_CSS_Computed_Style * style = style_new(cc);
   if (!style) {
     return GTEXT_CSS_E_OOM;
@@ -899,23 +903,32 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
     m->initial_dependent = true;
   }
   cc->building = true;
-  GTEXT_CSS_Computed_Style *base = NULL, *other = NULL, *child = NULL;
-  GTEXT_CSS_Status st = probe_style(cc, &cc->env, NULL, &base);
+  GTEXT_CSS_Computed_Style *base = NULL, *other = NULL, *child = NULL, *scheme_light = NULL, *scheme_dark = NULL;
+  GTEXT_CSS_Status st = probe_style(cc, &cc->env, NULL, 0, &base);
   GTEXT_CSS_Environment perturbed = cc->env;
   /* the one thing an initial value can depend on that a probe of a root does not show: the color scheme (the system colors are the element's), which a
      context's environment cannot make constant per element; the viewport, the pixel ratio and the default font size are the context's own and the same
      for every style, so an initial value that depends on them is computed once */
   perturbed.color_scheme = cc->env.color_scheme == GTEXT_CSS_SCHEME_LIGHT ? GTEXT_CSS_SCHEME_DARK : GTEXT_CSS_SCHEME_LIGHT;
   if (st == GTEXT_CSS_OK) {
-    st = probe_style(cc, &perturbed, NULL, &other);
+    st = probe_style(cc, &perturbed, NULL, 0, &other);
   }
   if (st == GTEXT_CSS_OK) {
-    st = probe_style(cc, &cc->env, base, &child);
+    st = probe_style(cc, &cc->env, base, 0, &child);
+  }
+  /* an element's own `color-scheme` also chooses the scheme, which the environment's preference does not show once `normal` is the user agent default */
+  if (st == GTEXT_CSS_OK) {
+    st = probe_style(cc, &cc->env, NULL, 1, &scheme_light);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = probe_style(cc, &cc->env, NULL, 2, &scheme_dark);
   }
   if (st != GTEXT_CSS_OK) {
     gtext_css_computed_free(base);
     gtext_css_computed_free(other);
     gtext_css_computed_free(child);
+    gtext_css_computed_free(scheme_light);
+    gtext_css_computed_free(scheme_dark);
     cc->building = false;
     gtext_css_compute_context_free(cc);
     if (result) {
@@ -929,7 +942,8 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
       m->initial_dependent = false;
       continue;
     }
-    const bool dependent = !same_value(base->vals[i], other->vals[i]) || !same_value(base->vals[i], child->vals[i]);
+    const bool dependent = !same_value(base->vals[i], other->vals[i]) || !same_value(base->vals[i], child->vals[i]) ||
+        !same_value(base->vals[i], scheme_light->vals[i]) || !same_value(base->vals[i], scheme_dark->vals[i]);
     m->initial_dependent = dependent;
     m->initial = gtext_css_value_set_retain(base->vals[i]);
   }
@@ -958,6 +972,8 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
   gtext_css_computed_free(base);
   gtext_css_computed_free(other);
   gtext_css_computed_free(child);
+  gtext_css_computed_free(scheme_light);
+  gtext_css_computed_free(scheme_dark);
   cc->building = false;
   if (st != GTEXT_CSS_OK) {
     if (result) {

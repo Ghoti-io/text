@@ -45,7 +45,7 @@
  * - `svg_transform`: the `transform`, `gradientTransform` and `patternTransform` attributes are written in SVG's transform list syntax
  *   (`rotate(45 10 10)`, `translate(10,20)`, numbers without units, commas or white space between the numbers). The attribute is read as that
  *   list first and as the CSS `<transform-list>` after it (SVG 2 says the attribute is a CSS transform, so `translate(10px)` is also one);
- * - `path_data`: the `d` attribute is path data and is the CSS value `path("...")`; without it the value is the property's;
+ * - `path_data`: the `d` attribute is path data and is the CSS `<string>` that SVG 2's `d: none | <string>` takes; without it the value is the property's;
  * - `trim_whitespace`: the white space at both ends of the value (space, tab, line feed, carriage return and form feed) is not part of it.
  *
  * ## Errors
@@ -78,7 +78,7 @@ extern "C" {
 typedef enum {
   GTEXT_CSS_PRESENTATION_CSS = 0,   ///< It is the property's value.
   GTEXT_CSS_PRESENTATION_TRANSFORM, ///< A transform list: SVG's syntax (an option), else the property's.
-  GTEXT_CSS_PRESENTATION_PATH       ///< Path data: `path("...")` (an option), else the property's.
+  GTEXT_CSS_PRESENTATION_PATH       ///< Path data: a string (an option), else the property's.
 } GTEXT_CSS_Presentation_Syntax;
 
 /** @brief One attribute of a table. */
@@ -144,7 +144,7 @@ typedef struct {
 
 /**
  * @brief The CSS that an attribute's value stands for: what the property would be declared as.
- * `translate(10 20) rotate(45 5 5)` is `translate(10px, 20px) translate(5px, 5px) rotate(45deg) translate(-5px, -5px)`; `d="M0 0"` is `path("M0 0")`;
+ * `translate(10 20) rotate(45 5 5)` is `translate(10px, 20px) translate(5px, 5px) rotate(45deg) translate(-5px, -5px)`; `d="M0 0"` is `"M0 0"`;
  * a value in the property's own syntax is itself.
  * @param row The row.
  * @param value The attribute's value; need not be terminated.

@@ -63,7 +63,7 @@ TEST(CssComputeEdges, LightDarkTakesTheColorSchemeOfTheElement) {
   dark.color_scheme = GTEXT_CSS_SCHEME_DARK;
   GTEXT_CSS_Environment light = gtext_css_environment_default();
   EXPECT_EQ(root_computed("color-scheme: normal" + ld, "color", &light), "red");
-  EXPECT_EQ(root_computed("color-scheme: normal" + ld, "color", &dark), "blue");
+  EXPECT_EQ(root_computed("color-scheme: normal" + ld, "color", &dark), "red") << "Color Adjust 1, 2.3: with no support the user agent default, light, not the preference";
   EXPECT_EQ(root_computed("color-scheme: dark" + ld, "color", &light), "blue") << "the element supports dark only";
   EXPECT_EQ(root_computed("color-scheme: light" + ld, "color", &dark), "red");
   EXPECT_EQ(root_computed("color-scheme: light dark" + ld, "color", &dark), "blue") << "both: the preference";
@@ -295,7 +295,7 @@ TEST(CssComputeEdges, TheInitialColorIsTheElementsOwnSchemeAndAnInitialValueThat
     const GTEXT_CSS_Environment * env;
     const char * ink;
   };
-  for (const Case & c : {Case{"", &light, "red"}, Case{"", &dark, "blue"}, Case{"color-scheme: dark", &light, "blue"}, Case{"color-scheme: light", &dark, "red"},
+  for (const Case & c : {Case{"", &light, "red"}, Case{"", &dark, "red"}, Case{"color-scheme: dark", &light, "blue"}, Case{"color-scheme: light", &dark, "red"},
            Case{"color-scheme: light dark", &dark, "blue"}}) {
     Context ctx(o.r, c.env);
     ASSERT_EQ(ctx.status, GTEXT_CSS_OK);

@@ -169,6 +169,7 @@ struct Tree {
       GTEXT_HTML_Result r;
       memset(&r, 0, sizeof r);
       const GTEXT_HTML_Status s = gtext_html_parse(text.data(), text.size(), nullptr, &doc, &r);
+      gtext_html_result_free(&r);
       return s == GTEXT_HTML_OK && doc;
     }
     GTEXT_XML_Error err;

@@ -500,8 +500,13 @@ GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st) {
   /* "If support is null, or none of the color schemes in support are supported by the UA, return the UA default color scheme" (light); "If preference
      is no preference, return the first supported color scheme in support"; "If preference's color scheme is in support and supported by the UA, return that
      color scheme"; "If support is flagged as sole support, return the first supported color scheme in support"; the environment has no overriding
-     preference, so: "Otherwise, return the first supported color scheme in support." `normal` is no support of the element's own: the page's scheme, the
-     preference. */
+     preference, so: "Otherwise, return the first supported color scheme in support." `normal` is no support of the element's own: "The element color scheme
+     is the same as the page color scheme", and a page whose root declares none has a null support, which is the UA default, light, whatever the
+     preference. (An element that says `normal` below a root that declares a scheme is the page's scheme in the specification; the root is not known here,
+     and the inherited value of every other element carries the root's declaration.) */
+  if (st->force_scheme) {
+    return st->force_scheme == 1 ? GTEXT_CSS_SCHEME_LIGHT : GTEXT_CSS_SCHEME_DARK;
+  }
   const GTEXT_CSS_Compute_Context * cc = st->cc;
   const GTEXT_CSS_Color_Scheme preference = st->env->color_scheme;
   const GTEXT_CSS_Property_Id id = cc->pid[CSS_P_COLOR_SCHEME];
@@ -511,7 +516,7 @@ GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st) {
   const GTEXT_CSS_Value_Set * set = css_st_get(st, id);
   const GTEXT_CSS_Value * root = set ? gtext_css_value_set_root(set) : NULL;
   if (!root || word_is(root, "normal")) {
-    return preference;
+    return GTEXT_CSS_SCHEME_LIGHT;
   }
   const GTEXT_CSS_Value * leaves[64];
   size_t n = 0;

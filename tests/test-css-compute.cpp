@@ -270,8 +270,9 @@ TEST(CssCompute, AColorHasLightDarkResolvedFromTheSchemeAndCurrentcolorKept) {
   GTEXT_CSS_Environment dark = gtext_css_environment_default();
   dark.color_scheme = GTEXT_CSS_SCHEME_DARK;
   EXPECT_EQ(computed("", "color: light-dark(red, blue)", "color"), "red");
-  EXPECT_EQ(computed("", "color: light-dark(red, blue)", "color", &dark), "blue");
-  EXPECT_EQ(computed("", "background-color: light-dark(red, light-dark(green, blue))", "background-color", &dark), "blue");
+  EXPECT_EQ(computed("", "color: light-dark(red, blue)", "color", &dark), "red") << "the page declares no scheme: the user agent default, whatever the preference";
+  EXPECT_EQ(computed("color-scheme: light dark", "color: light-dark(red, blue)", "color", &dark), "blue");
+  EXPECT_EQ(computed("color-scheme: light dark", "background-color: light-dark(red, light-dark(green, blue))", "background-color", &dark), "blue");
   EXPECT_EQ(computed("", "background-color: currentcolor", "background-color"), "currentcolor");
   EXPECT_EQ(computed("color: green", "color: currentcolor", "color"), "green") << "color: currentcolor is inherit";
   EXPECT_EQ(computed("", "background-color: rgb(1 2 3)", "background-color"), "rgb(1, 2, 3)");
@@ -498,7 +499,7 @@ TEST(CssCompute, FontWidthKeywordsArePercentagesAndFontStyleObliqueHasItsAngleIn
     {"", "font-width: extra-expanded", "font-width", "150%"},
     {"", "font-width: ultra-expanded", "font-width", "200%"},
     {"", "font-width: 130%", "font-width", "130%"},
-    {"", "font-style: oblique", "font-style", "oblique 14deg"},
+    {"", "font-style: oblique", "font-style", "oblique"},
     {"", "font-style: oblique 20deg", "font-style", "oblique 20deg"},
     {"", "font-style: oblique 0.25turn", "font-style", "oblique 90deg"},
     {"", "font-style: italic", "font-style", "italic"},
@@ -689,7 +690,7 @@ TEST(CssCompute, ListsAndPairsAreFilledToTheirComputedShape) {
     {"", "font-size-adjust: 0.5", "font-size-adjust", "ex-height 0.5"},
     {"", "font-size-adjust: cap-height 0.7", "font-size-adjust", "cap-height 0.7"},
     {"", "font-size-adjust: none", "font-size-adjust", "none"},
-    {"", "stroke-dasharray: 1 2em 3", "stroke-dasharray", "1px 32px 3px"},
+    {"", "stroke-dasharray: 1 2em 3", "stroke-dasharray", "1px, 32px, 3px"},
     {"", "stroke-dashoffset: 4", "stroke-dashoffset", "4px"},
     {"", "stroke-width: 3", "stroke-width", "3px"},
     {"", "stroke-width: thick", "stroke-width", "5px"},

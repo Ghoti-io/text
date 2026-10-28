@@ -1395,6 +1395,65 @@ static bool rule_margin_trim(cb * out, const sp * t, size_t n) {
   return false;
 }
 
+/* SVG 2, paint-order: `normal | [ fill || stroke || markers ]`; "If any of the three keywords are omitted, they are painted last, in the order they would be painted
+ * with paint-order: normal", so `stroke` is `stroke fill markers`, and the shortest form of a list is the shortest prefix that completes to the same order (the
+ * order `fill stroke markers` is `fill`, which is not `normal`: the browsers keep the two apart). The grammar keeps the order the keywords are written in (the order is the value). */
+static bool rule_paint_order(cb * out, const sp * t, size_t n) {
+  static const char * const standard[3] = {"fill", "stroke", "markers"};
+  if (n < 1 || n > 3) {
+    return false;
+  }
+  int given[3];
+  bool seen[3] = {false, false, false};
+  for (size_t i = 0; i < n; i++) {
+    int k = -1;
+    for (int j = 0; j < 3; j++) {
+      if (eq(t[i], standard[j])) {
+        k = j;
+      }
+    }
+    if (k < 0 || seen[k]) {
+      return false;
+    }
+    seen[k] = true;
+    given[i] = k;
+  }
+  int full[3];
+  size_t m = 0;
+  for (size_t i = 0; i < n; i++) {
+    full[m++] = given[i];
+  }
+  for (int j = 0; j < 3; j++) {
+    if (!seen[j]) {
+      full[m++] = j;
+    }
+  }
+  for (size_t len = 1; len <= 3; len++) {
+    bool used[3] = {false, false, false};
+    int completed[3];
+    size_t c = 0;
+    for (size_t i = 0; i < len; i++) {
+      completed[c++] = full[i];
+      used[full[i]] = true;
+    }
+    for (int j = 0; j < 3; j++) {
+      if (!used[j]) {
+        completed[c++] = j;
+      }
+    }
+    if (completed[0] == full[0] && completed[1] == full[1] && completed[2] == full[2]) {
+      for (size_t i = 0; i < len; i++) {
+        if (i) {
+          cb_putc(out, ' ');
+        }
+        cb_puts(out, standard[full[i]]);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 /* Flexbox 2, flex-wrap: `<'flex-wrap'> = nowrap | [ wrap | wrap-reverse ] || balance`: `wrap` is implied by `balance`. */
 static bool rule_flex_wrap(cb * out, const sp * t, size_t n) {
   if (n == 2 && ((eq(t[0], "wrap") && eq(t[1], "balance")) || (eq(t[0], "balance") && eq(t[1], "wrap")))) {
@@ -2090,6 +2149,7 @@ static const canon_row kRows[] = {
   R("overflow-clip-margin-left", rule_clip_margin, MODE_WHOLE),
   R("overflow-clip-margin-right", rule_clip_margin, MODE_WHOLE),
   R("overflow-clip-margin-top", rule_clip_margin, MODE_WHOLE),
+  R("paint-order", rule_paint_order, MODE_WHOLE),
   R("perspective-origin", rule_position, MODE_ITEMS),
   R("position-area", rule_pair, MODE_WHOLE),
   R("rotate", rule_rotate, MODE_WHOLE),

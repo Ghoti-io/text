@@ -39,7 +39,7 @@ const size_t gtext_css_tbl_compute_count = 823;
 /* one row for each property of the pin in the order of its ids: class, algorithm, shorthand kind, flags, position in the order of computation (0: none),
    and the initial value override (length, offset into the pool) */
 const css_tbl_compute gtext_css_tbl_compute[823] = {
-  {6, 33, 0, 1, 0, 0, 0}, /* --* */
+  {6, 36, 0, 1, 0, 0, 0}, /* --* */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-content */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-items */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-self */
@@ -484,7 +484,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* justify-items */
   {1, 0, 0, 0, 0, 0, 0}, /* justify-self */
   {2, 0, 0, 0, 0, 0, 0}, /* left */
-  {2, 0, 0, 1, 0, 0, 0}, /* letter-spacing */
+  {3, 34, 0, 1, 0, 0, 0}, /* letter-spacing */
   {2, 0, 0, 1, 0, 0, 0}, /* lighting-color */
   {1, 0, 0, 1, 0, 0, 0}, /* line-break */
   {4, 0, 3, 0, 0, 0, 0}, /* line-clamp */
@@ -738,7 +738,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dash-corner */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dash-justify */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-dashadjust */
-  {3, 32, 0, 1, 0, 0, 0}, /* stroke-dasharray */
+  {3, 35, 0, 1, 0, 0, 0}, /* stroke-dasharray */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dashcorner */
   {3, 32, 0, 1, 0, 0, 0}, /* stroke-dashoffset */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-image */
@@ -850,7 +850,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* window-drag */
   {1, 0, 0, 1, 0, 0, 0}, /* word-break */
   {1, 0, 0, 1, 0, 0, 0}, /* word-space-transform */
-  {2, 0, 0, 1, 0, 0, 0}, /* word-spacing */
+  {3, 33, 0, 1, 0, 0, 0}, /* word-spacing */
   {5, 0, 0, 0, 0, 0, 0}, /* word-wrap */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-after */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-before */

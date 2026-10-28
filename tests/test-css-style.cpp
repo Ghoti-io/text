@@ -592,10 +592,10 @@ TEST(CssPresentation, AValueThatIsNotSvgSyntaxIsLeftForThePropertyToJudgeAndSays
   EXPECT_EQ(text_of("transform", "translate(10)", &o), "translate(10)") << "without the option the value is the property's own";
 }
 
-TEST(CssPresentation, PathDataIsAPathFunction) {
-  EXPECT_EQ(text_of("d", "M0 0 L10 10"), "path(\"M0 0 L10 10\")");
-  EXPECT_EQ(text_of("d", " M0,0 \"x\\ "), "path(\"M0,0 \\\"x\\\\\")");
-  EXPECT_EQ(text_of("d", "M0 0\nL1 1"), "path(\"M0 0\\a L1 1\")");
+TEST(CssPresentation, PathDataIsAString) {
+  EXPECT_EQ(text_of("d", "M0 0 L10 10"), "\"M0 0 L10 10\"");
+  EXPECT_EQ(text_of("d", " M0,0 \"x\\ "), "\"M0,0 \\\"x\\\\\"");
+  EXPECT_EQ(text_of("d", "M0 0\nL1 1"), "\"M0 0\\a L1 1\"");
   EXPECT_EQ(text_of("d", ""), "none");
   GTEXT_CSS_Presentation_Options o = gtext_css_presentation_options_default();
   o.path_data = false;
@@ -653,7 +653,7 @@ TEST(CssPresentation, UnitlessLengthsAreUserUnitsInAnyLengthProperty) {
   EXPECT_EQ(d.value("r", "font-size"), "12px");
   EXPECT_EQ(d.value("r", "letter-spacing"), "-1px");
   EXPECT_EQ(d.value("r", "stroke-dashoffset"), "3px");
-  EXPECT_EQ(d.value("r", "stroke-dasharray"), "4px, 5px 6px");
+  EXPECT_EQ(d.value("r", "stroke-dasharray"), "4px, 5px, 6px");
   EXPECT_EQ(d.value("r", "x"), "7px");
   EXPECT_EQ(d.value("r", "width"), "8px");
   GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
@@ -834,6 +834,70 @@ TEST(CssStyleLayers, ThePresentationAttributeIsAHintNotARule) {
 
 
 /* ---- the dump and the hash ---------------------------------------------------------------------------------------------- */
+
+TEST(CssStyleLayers, DisplayContentsComputesToNoneOnAnSvgElementThatIsNoContainerOfRenderedContent) {
+  /* Display 3, Appendix B: "display: contents computes to display: none." on the svg element and on the shapes; a, g, switch, use, tspan and textPath are
+     stripped from the box tree instead, and text is not rendered. */
+  Doc d(svg("<g id=\"g\" display=\"contents\"><rect id=\"r\" display=\"contents\"/></g><text id=\"t\" display=\"contents\"><tspan id=\"s\" display=\"contents\">x</tspan></text>"
+            "<use id=\"u\" display=\"contents\" xlink:href=\"#r\"/>", "display=\"contents\""));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("root", "display"), "none");
+  EXPECT_EQ(d.value("g", "display"), "contents");
+  EXPECT_EQ(d.value("r", "display"), "none");
+  EXPECT_EQ(d.value("t", "display"), "none");
+  EXPECT_EQ(d.value("s", "display"), "contents");
+  EXPECT_EQ(d.value("u", "display"), "contents");
+  Doc h("<div id=\"d\" style=\"display: contents\"><span id=\"s\" style=\"display: contents\"></span></div>", true);
+  ASSERT_EQ(h.status, GTEXT_CSS_OK);
+  EXPECT_EQ(h.value("d", "display"), "contents") << "an element of HTML is not an SVG element";
+}
+
+TEST(CssStyleLayers, TheUsedColorSchemeOfNormalIsTheUserAgentDefaultAndNotThePreference) {
+  /* Color Adjust 1: "The element color scheme is the same as the page color scheme" and, with no support, "return the UA default color scheme". */
+  GTEXT_CSS_Environment env = gtext_css_environment_default();
+  env.color_scheme = GTEXT_CSS_SCHEME_DARK;
+  Doc d(svg("<rect id=\"n\" fill=\"light-dark(red, blue)\"/><rect id=\"ld\" fill=\"light-dark(red, blue)\" style=\"color-scheme: light dark\"/>"
+            "<rect id=\"l\" fill=\"light-dark(red, blue)\" style=\"color-scheme: light\"/>"), false, nullptr, &env);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("n", "fill"), "red") << "normal: the page declares no scheme";
+  EXPECT_EQ(d.value("ld", "fill"), "blue") << "the element supports dark and the preference is dark";
+  EXPECT_EQ(d.value("l", "fill"), "red");
+}
+
+TEST(CssStyleLayers, TheDashArrayIsOneCommaSeparatedListAndNegativeDashesAreInvalid) {
+  /* SVG 2: the computed value of stroke-dasharray is "as comma separated list of absolute lengths or percentages"; Fill and Stroke 3: "Negative values are invalid." */
+  Doc d(svg("<rect id=\"a\" style=\"stroke-dasharray: 1 2 3\"/><rect id=\"b\" style=\"stroke-dasharray: 1em, 2 3\"/><rect id=\"c\" style=\"stroke-dasharray: 4\"/>"
+            "<rect id=\"n\" style=\"stroke-dasharray: 5 -1\"/><rect id=\"k\" style=\"stroke-dasharray: none\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("a", "stroke-dasharray"), "1px, 2px, 3px");
+  EXPECT_EQ(d.value("b", "stroke-dasharray"), "16px, 2px, 3px");
+  EXPECT_EQ(d.value("c", "stroke-dasharray"), "4px");
+  EXPECT_EQ(d.value("n", "stroke-dasharray"), "none") << "dropped; the initial value stands";
+  EXPECT_EQ(d.value("k", "stroke-dasharray"), "none");
+}
+
+TEST(CssStyleLayers, PaintOrderKeepsTheOrderItIsWrittenIn) {
+  /* SVG 2: "If any of the three keywords are omitted, they are painted last, in the order they would be painted with paint-order: normal." */
+  Doc d(svg("<rect id=\"a\" style=\"paint-order: markers fill\"/><rect id=\"b\" style=\"paint-order: stroke fill markers\"/><rect id=\"c\" style=\"paint-order: markers stroke\"/>"
+            "<rect id=\"e\" style=\"paint-order: fill stroke markers\"/><rect id=\"f\" paint-order=\"stroke markers\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("a", "paint-order"), "markers fill") << "computed value: as specified";
+  EXPECT_EQ(d.value("b", "paint-order"), "stroke fill markers");
+  EXPECT_EQ(d.value("c", "paint-order"), "markers stroke");
+  EXPECT_EQ(d.value("e", "paint-order"), "fill stroke markers");
+  EXPECT_EQ(d.value("f", "paint-order"), "stroke markers");
+}
+
+TEST(CssStyleLayers, NormalWordSpacingComputesToZeroAndAZeroLetterSpacingToNormal) {
+  /* Text 3 gives word-spacing the computed value "an absolute length", and normal is no additional spacing. */
+  Doc d(svg("<rect id=\"a\"/><rect id=\"b\" style=\"word-spacing: 0\"/><rect id=\"c\" style=\"letter-spacing: normal\"/><rect id=\"z\" style=\"letter-spacing: 0\"/><rect id=\"e\" style=\"letter-spacing: 2px\"/>", "style=\"word-spacing: normal\""));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("root", "word-spacing"), "0px");
+  EXPECT_EQ(d.value("a", "word-spacing"), "0px");
+  EXPECT_EQ(d.value("c", "letter-spacing"), "normal");
+  EXPECT_EQ(d.value("z", "letter-spacing"), "normal");
+  EXPECT_EQ(d.value("e", "letter-spacing"), "2px");
+}
 
 TEST(CssStyleDump, ItIsVersionedSortedByTheBytesOfTheNamesAndOneLineAProperty) {
   Doc d(svg("<rect id=\"r\" style=\"--b: 1; --a: 2; -x-unknown: 1; fill: red\"/>"));

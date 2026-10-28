@@ -185,6 +185,15 @@ PLANTS = [
      ["CSS shorthand: a background of n layers", "CSS shorthand: an animation-range of n layers", "CSS shorthand: a mask of n layers"]),
     # The cascade: a unit that looks at every candidate, a rollback that reads the walk from the top, a sort that is not one, the custom property names in
     # one bucket, and a layer lookup and a freeze that look at every layer.
+    # The computed-style call: a declaration that looks at every candidate added before it, and an entry that does.
+    ("css-style-declaration-counts-the-candidates-so-far", "css/css_style.c",
+     "    GTEXT_CSS_Cascade_Entry k = *base;\n    k.declaration = b->ordinal++;",
+     "    GTEXT_CSS_Cascade_Entry k = *base;\n    b->work += gtext_css_candidates_count(b->set); /* each declaration looks at every candidate so far */\n    k.declaration = b->ordinal++;",
+     ["CSS style: an element whose style attribute has n declarations of one property"]),
+    ("css-style-entry-counts-the-candidates-so-far", "css/css_style.c",
+     "    keys.element_attached = false;\n    st = add_list(",
+     "    keys.element_attached = false;\n    b.work += gtext_css_candidates_count(b.set) * 8; /* each entry looks at every candidate so far */\n    st = add_list(",
+     ["CSS style: an element with n entries for one property"]),
     ("css-cascade-unit-looks-at-every-candidate", "css/css_revert.c",
      "  const cand * C = run->c;\n  *rollbacks = 0;",
      "  const cand * C = run->c;\n  *rollbacks = 0;\n  run->work += run->n; /* each unit looks at every candidate of the element */",

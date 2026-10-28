@@ -992,6 +992,14 @@ static bool split_sequences(linker * L, uint8_t * nl) {
   return L->status == GTEXT_CSS_OK;
 }
 
+void css_compiled_keep_source_order(GTEXT_CSS_Compiled * c) {
+  for (size_t i = 0; i < c->nnodes; i++) {
+    if (c->nodes[i].kind == GN_OR) {
+      c->nodes[i].flags |= GNF_SOURCE_ORDER;
+    }
+  }
+}
+
 GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTEXT_CSS_Resolver resolver,
     void * user, const GTEXT_CSS_Grammar_Options * options, GTEXT_CSS_Compiled ** out,
     GTEXT_CSS_Grammar_Result * result) {

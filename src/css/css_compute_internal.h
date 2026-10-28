@@ -270,6 +270,7 @@ typedef struct {
   const GTEXT_CSS_Element_Interface * iface; ///< The caller's tree for this computation (gtext_css_compute_element()'s, or the context's), or NULL.
   GTEXT_CSS_Property_Id current;  ///< The property being computed.
   uint32_t random_index;          ///< The random functions of the value being computed so far (the key of `auto` has it).
+  int force_scheme;               ///< While the initial values are probed: 1 makes the used color scheme light, 2 dark, whatever the element and the environment say; else 0.
   bool probing;                   ///< Making the initial values: reads of the style are not traps.
   bool used_context;              ///< Set when a value was computed from something that varies by element (the initial values' dependence).
   GTEXT_CSS_Status status;

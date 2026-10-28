@@ -45,6 +45,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_grammar_internal.h"
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_tables.h"
@@ -792,6 +793,13 @@ static GTEXT_CSS_Status compile_locked(GTEXT_CSS_Registry * r, lazy_grammar * lz
       st = gtext_css_definition_link(d, reg_resolve_top, r, &go, &compiled, &res);
       if (st == GTEXT_CSS_OK) {
         final_state = GTEXT_CSS_GRAMMAR_OK;
+        if (scope && scope <= gtext_css_tbl_property_count && lz == prop_lazy(r, scope)) {
+          /* SVG 2: the order of fill, stroke and markers in `paint-order` is the order they are painted in, so the value keeps it */
+          GTEXT_CSS_Property_Info info;
+          if (gtext_css_registry_property_info(r, scope, &info) && info.name_length == 11 && memcmp(info.name, "paint-order", 11) == 0) {
+            css_compiled_keep_source_order(compiled);
+          }
+        }
       }
       else if (st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_INVALID) {
         return GTEXT_CSS_E_OOM;

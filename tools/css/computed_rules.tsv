@@ -61,6 +61,7 @@ font-width	algorithm	FONT_WIDTH	exact	-	a percentage, see below
 glyph-orientation-vertical	identity	-	partial: kept as written; the aliasing to text-orientation (auto, 0 and 90) is not applied	-	draft:https://www.w3.org/TR/SVG2/text.html: The following SVG 1.1 values must still be supported by aliasing the property as a shorthand to text-orientation
 hyphenate-limit-chars	algorithm	HYPHENATE_CHARS	exact	-	three values, each either the auto keyword or an integer
 image-orientation	algorithm	IMAGE_ORIENTATION	exact	-	the specified keyword, or an <angle>, rounded and normalized (see text), plus optionally a flip keyword
+letter-spacing	algorithm	LETTER_SPACING	exact	-	draft:https://drafts.csswg.org/css-text-4/: an absolute length and/or a percentage (a zero length is written normal, as the pinned tests of letter-spacing expect)
 lighting-color	by-type	-	exact	-	draft:https://drafts.fxtf.org/filter-effects/: lighting-color computed value: computed color
 line-height	algorithm	LINE_HEIGHT	exact	-	the specified keyword, a number, or a computed <length> value
 mask-position	algorithm	POSITION	exact	-	list, each item consists of two keywords representing the origin and two offsets from that origin, each given as an absolute length (if given a <length>), otherwise as a percentage.
@@ -80,7 +81,7 @@ scale	algorithm	SCALE	exact	-	the keyword none, or a list of 3 <number>s
 shape-image-threshold	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
 stop-color	by-type	-	exact	black	draft:https://www.w3.org/TR/SVG2/pservers.html: stop-color computed value: computed color
 stop-opacity	algorithm	OPACITY	exact	1	draft:https://www.w3.org/TR/SVG2/pservers.html: stop-opacity has the computed value of an opacity, a number clamped to 0 to 1
-stroke-dasharray	algorithm	NUMBER_LENGTH	exact	-	draft:https://www.w3.org/TR/SVG2/painting.html: as comma separated list of absolute lengths or percentages, numbers converted to absolute lengths first, or keyword specified
+stroke-dasharray	algorithm	DASHARRAY	exact	-	draft:https://www.w3.org/TR/SVG2/painting.html: as comma separated list of absolute lengths or percentages, numbers converted to absolute lengths first, or keyword specified
 stroke-dashoffset	algorithm	NUMBER_LENGTH	exact	-	draft:https://www.w3.org/TR/SVG2/painting.html: an absolute length or percentage, numbers converted to absolute lengths first
 stroke-opacity	algorithm	OPACITY	exact	-	the specified value converted to a <number>, clamped to the range [0,1]
 stroke-position	algorithm	POSITION	exact	-	A list, each item consisting of: a pair of offsets (horizontal and vertical) from the top left origin each given as a combination of an absolute length and a percentage
@@ -95,5 +96,6 @@ translate	algorithm	TRANSLATE	exact	-	the keyword none or a pair of computed <le
 voice-balance	algorithm	VOICE_BALANCE	exact	-	the specified value resolved to a <number> between -100 and 100 (inclusive)
 voice-pitch	algorithm	VOICE_PITCH	partial: a keyword with an offset, or an offset by itself, needs the voice's frequency table (GTEXT_CSS_E_UNSUPPORTED naming the property); a keyword by itself and a frequency with `absolute` are computed	-	one of the predefined pitch keywords if only the keyword is specified by itself, otherwise an absolute frequency calculated by converting the keyword value (if any) to a fixed frequency based on the current voice-family and by applying the specified relative offset (if any)
 voice-range	algorithm	VOICE_PITCH	partial: a keyword with an offset, or an offset by itself, needs the voice's frequency table (GTEXT_CSS_E_UNSUPPORTED naming the property); a keyword by itself and a frequency with `absolute` are computed	-	one of the predefined pitch keywords if only the keyword is specified by itself, otherwise an absolute frequency calculated by converting the keyword value (if any) to a fixed frequency based on the current voice-family and by applying the specified relative offset (if any)
+word-spacing	algorithm	WORD_SPACING	exact	-	draft:https://www.w3.org/TR/css-text-3/: an absolute length (the Property Index gives that as the computed value of word-spacing, and normal is no additional spacing)
 wrap-flow	algorithm	WRAP_FLOW	exact	-	as specified except for element’s whose float computed value is not none, in which case the computed value is auto.
 zoom	algorithm	ZOOM	exact	-	as specified, but with <percentage> converted to the equivalent <number>

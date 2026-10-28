@@ -68,12 +68,47 @@ inline std::string rgb_text(const double rgba[4]) {
   return buf;
 }
 
+/// The scheme the system colors below are resolved for (the program sets it).
+inline bool & dark_scheme() {
+  static bool dark = false;
+  return dark;
+}
+
+/// The system colors whose used value both browsers agree on: CSS Color 4 leaves a system color to the user agent, and the CSSOM resolved value of a color is its used value.
+inline bool system_color(const std::string & word, double rgba[4]) {
+  std::string w;
+  for (char c : word) {
+    w += (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+  }
+  const bool dark = dark_scheme();
+  if (w == "canvastext" || w == "fieldtext" || w == "buttontext") {
+    rgba[0] = rgba[1] = rgba[2] = dark ? 255 : 0;
+    rgba[3] = 1;
+    return true;
+  }
+  if (w == "canvas" || w == "field" || w == "buttonface") {
+    rgba[0] = rgba[1] = rgba[2] = dark ? 18 : 255;
+    rgba[3] = 1;
+    return true;
+  }
+  return false;
+}
+
 /// Replace the colors in the component values by their sRGB form, where the component value is a color that is one (`gtext_css_color_srgb`).
 inline void replace_colors(const GTEXT_CSS_Component_Value * values, size_t count, const std::string & text, std::string * out, size_t * from, size_t base) {
   for (size_t i = 0; i < count; i++) {
     const GTEXT_CSS_Component_Value & v = values[i];
     const bool maybe = (v.kind == GTEXT_CSS_VALUE_TOKEN && (v.type == GTEXT_CSS_TOKEN_IDENT || v.type == GTEXT_CSS_TOKEN_HASH)) ||
         (v.kind == GTEXT_CSS_VALUE_FUNCTION && v.value.length >= 3);
+    if (v.kind == GTEXT_CSS_VALUE_TOKEN && v.type == GTEXT_CSS_TOKEN_IDENT) {
+      double sys[4] = {0, 0, 0, 1};
+      if (system_color(std::string(v.value.data, v.value.length), sys) && v.span.offset >= *from && v.span.end <= text.size()) {
+        *out += text.substr(*from, v.span.offset - *from);
+        *out += rgb_text(sys);
+        *from = v.span.end;
+        continue;
+      }
+    }
     if (maybe) {
       GTEXT_CSS_Color_Options co = gtext_css_color_options_default();
       bool valid = false;

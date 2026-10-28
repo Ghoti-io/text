@@ -4,12 +4,12 @@
 #
 # The old text is literal (a `\n` in it is a line feed) and must be in the file exactly once. One defect for each layer the computed-style call stands on:
 # the units of the values engine, the simplification of a calculation, the channels of a color, an inherited flag, the distribution of a shorthand, the
-# order of the sort criteria of the cascade, the budget of substitution, the specificity a presentation attribute is given, and the sort order of the dump.
+# order of the sort criteria of the cascade, the used color scheme of `normal`, `display: contents` on an SVG element, the separator of a dash array, the budget of substitution, the specificity a presentation attribute is given, and the sort order of the dump.
 #
 # Two gates see them, each with the unedited library as its control:
 #   * `make check-css-grammar-plants` (tools/css/plant-grammar.py, part of `make test`) builds the library with the edit and runs tests/test-css-style.cpp:
 #     it must fail (the plants appear there as `style-<name>`);
-#   * `tools/oracle/run-css-style-oracle.sh --controls` asks the browsers' recorded answers of the population again of the edited library: the differential
+#   * `tools/oracle/run-css-style-oracle.sh --controls` (all but the sort criterion, the budget, the specificity of a presentation attribute and the dump order, which the population is below) asks the browsers' recorded answers of the population again of the edited library: the differential
 #     must fail (exit 3: an unlisted divergence, a count that is not the listed one, a witness or a control that does not hold).
 unit-factor	css_units.c	  LEN_ABS(PT, "pt", 4.0, 3.0), /* 96 / 72 */	  LEN_ABS(PT, "pt", 5.0, 3.0), /* 96 / 72 */
 calc-distribution	css_math_simplify.c	          kids[i] = leaf_like(mb, sum->kids[i], num->value * sum->kids[i]->value);	          kids[i] = leaf_like(mb, sum->kids[i], num->value + sum->kids[i]->value);
@@ -22,3 +22,6 @@ substitution-budget	css_substitute.c	  if (t > sub->max_tokens) {\n    sub->limi
 substitution-budget	css_substitute.c	    if (t > sub->max_tokens || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);	    if (css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);
 presentation-specificity	css_presentation.c	  k.presentational_hint = true;\n  k.context = keys->context;\n  k.sheet = keys->sheet;	  k.presentational_hint = false;\n  k.context = keys->context;\n  k.sheet = keys->sheet + 1000;
 dump-order	css_dump.c	  const int c = n ? memcmp(a->name, b->name, n) : 0;	  const int c = n ? -memcmp(a->name, b->name, n) : 0;
+scheme-normal	css_compute_units.c	  if (!root || word_is(root, "normal")) {\n    return GTEXT_CSS_SCHEME_LIGHT;	  if (!root || word_is(root, "normal")) {\n    return preference;
+svg-contents	css_compute_algo.c	{"a", "g", "switch", "use", "tspan", "textPath"};	{"a", "g", "switch", "use", "tspan", "textPath", "rect"};
+dasharray-separator	css_compute_algo.c	  css_v_list(list, kids, k, GTEXT_CSS_SEP_COMMA);	  css_v_list(list, kids, k, GTEXT_CSS_SEP_SPACE);

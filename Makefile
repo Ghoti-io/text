@@ -988,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1427,7 +1427,7 @@ check-fuzz-harnesses: ## Fail if a fuzz harness no longer compiles
 		printf "check-fuzz-harnesses: skipped (no $(FUZZ_CXX); the harnesses are not parsed)\n"; \
 		exit 0; \
 	fi; \
-	bad=""; \
+	bad=""; mkdir -p $(BUILD_DIR); \
 	for h in tests/fuzz/*.cpp; do \
 		$(FUZZ_CXX) -fsyntax-only -std=c++20 -w $(INCLUDE) "$$h" 2> $(BUILD_DIR)/.fuzz-syntax.log \
 			|| { bad="$$bad $$h"; cat $(BUILD_DIR)/.fuzz-syntax.log >&2; }; \
@@ -2428,7 +2428,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=483
 # computed-pages.py) with the page's rules that need no selector matching, as the browsers resolve a computed value (tools/oracle/css_resolved.h). Every scored case passes or is
 # listed (tools/conformance/CSS_COMPUTED_EXCEPTIONS with a sentence of the served text, CSS_COMPUTED_DEFECTS with an owner under a ceiling that only goes down), every page that is not
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
-CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4190 CSS_COMPUTED_MAX_DEFECTS=697
+CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4190 CSS_COMPUTED_MAX_DEFECTS=694
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)
@@ -3031,6 +3031,24 @@ check-html-oracle: $(CONFORMANCE_LIB)
 	$(call REQUIRE_DATA,third_party/xml/xmlconf,tools/xml/fetch.sh); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-oracle.sh && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-html-oracle.sh --controls
+
+# tools/oracle/run-css-style-oracle.sh (its header says what is compared; tools/oracle/css_style_diff.py says what a divergence is). The computed style of the
+# elements of a population of documents (the SVG fixtures of tests/data/css/svg, the values of the web-platform-tests' vectors, presentation attributes on SVG
+# elements, and generated trees of HTML and SVG elements with `style` and presentation attributes, inside an element with `display: none`), asked of this library
+# (gtext_css_style_compute()) and of Chromium and Firefox (`getComputedStyle()`), in both color schemes and a 1280 by 800 viewport, with the font metrics measured in
+# Chromium. Every divergence is a line of tools/oracle/css_style_divergences.txt with a class and a reason, and a witness asked again on every run; the run fails on
+# an unlisted divergence, one that is gone, one whose count has changed, a witness or a control that does not hold, and more entries of class `ours` than the ceiling
+# (CSS_STYLE_ORACLE_MAX_OURS, which ends at 0). **It is then made to fail** (`--controls`): an answer of this library and of an engine changed, the list and the
+# witnesses tampered with, and the library built with one rule undone in each layer (tools/oracle/CSS_STYLE_PLANTS). Outside TEST_GATES: it needs the image and a
+# container engine, which `make test` does not.
+CSS_STYLE_ORACLE_CEILING := CSS_STYLE_ORACLE_MAX_OURS=0
+
+check-css-style-oracle: ## Compare the computed style of an element against Chromium and Firefox, and show the gate fails when it should
+check-css-style-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/support,tools/css/fetch.sh); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) $(CSS_STYLE_ORACLE_CEILING) tools/oracle/run-css-style-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) $(CSS_STYLE_ORACLE_CEILING) tools/oracle/run-css-style-oracle.sh --controls
 
 check-css-property-oracle: ## Compare the CSS property layer against Chromium and Firefox, and show the gate fails when it should
 # tools/oracle/run-css-property-oracle.sh (its header says what is compared; tools/oracle/css_prop_diff.py says what a divergence is and

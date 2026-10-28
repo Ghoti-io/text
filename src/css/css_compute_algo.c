@@ -311,7 +311,12 @@ static GTEXT_CSS_Status algo_font_style(css_state * st, GTEXT_CSS_Property_Id id
     *out = gtext_css_value_set_retain(src);
     return GTEXT_CSS_OK;
   }
-  /* oblique with its angle in degrees: the default angle is 14deg */
+  /* Fonts 4: "the keyword specified, plus angle in degrees if specified": a bare `oblique` stays the keyword (the angle it stands for, 14deg, is the
+     consumer's) */
+  if (v->child_count < 2) {
+    *out = gtext_css_value_set_retain(src);
+    return GTEXT_CSS_OK;
+  }
   double deg = 14.0;
   if (v->child_count >= 2) {
     GTEXT_CSS_Value_Set * bt = NULL;
@@ -601,6 +606,32 @@ static bool display_words(const GTEXT_CSS_Value * v, const char * words[3], size
   return false;
 }
 
+/* Display 3, Appendix B: on an SVG element other than a container that is rendered, a text content child or `use`, "display: contents computes to
+   display: none." (on the `svg` element with CSS box layout too); "display: contents on text prevents the entire text element from being
+   rendered", which is what `none` is, and so the `text` element is one of those too. The element is not known to a computation without a tree. */
+static bool svg_contents_is_none(css_state * st) {
+  if (!st->iface || !st->element) {
+    return false;
+  }
+  GTEXT_CSS_String ns, name;
+  bool found_ns = false, found_name = false;
+  GTEXT_CSS_Element_Result er;
+  if (gtext_css_element_get_namespace_uri(st->iface, st->element, &ns, &found_ns, &er) != GTEXT_CSS_OK || !found_ns ||
+      ns.length != 26 || memcmp(ns.data, "http://www.w3.org/2000/svg", 26) != 0) {
+    return false;
+  }
+  if (gtext_css_element_get_local_name(st->iface, st->element, &name, &found_name, &er) != GTEXT_CSS_OK || !found_name) {
+    return false;
+  }
+  static const char * const keeps[] = {"a", "g", "switch", "use", "tspan", "textPath"};
+  for (size_t i = 0; i < sizeof keeps / sizeof *keeps; i++) {
+    if (name.length == strlen(keeps[i]) && memcmp(name.data, keeps[i], name.length) == 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
   const GTEXT_CSS_Compute_Context * cc = st->cc;
   const GTEXT_CSS_Value * v = gtext_css_value_set_root(src);
@@ -609,6 +640,9 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
   if (!display_words(v, words, &nw)) {
     *out = gtext_css_value_set_retain(src);
     return GTEXT_CSS_OK;
+  }
+  if (nw == 1 && strcmp(words[0], "contents") == 0 && svg_contents_is_none(st)) {
+    return emit_keyword(st, "none", out);
   }
   /* blockification (Display 3, 2.7): a floated, absolutely positioned or root box, and a flex or grid item */
   bool blockify = st->parent == NULL;
@@ -795,6 +829,37 @@ static GTEXT_CSS_Status algo_opacity(css_state * st, GTEXT_CSS_Property_Id id, c
   gtext_css_value_set_free(bt);
   n = gtext_css_math_clamp(n, 0.0, 1.0);
   return emit_number(st, n, false, out);
+}
+
+/* Text 3: the computed value of `word-spacing` is "an absolute length", and `normal` is no additional spacing, which is zero. */
+static GTEXT_CSS_Status algo_word_spacing(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
+  GTEXT_CSS_Value_Set * bt = NULL;
+  GTEXT_CSS_Status s = bytype(st, id, src, &bt);
+  if (s != GTEXT_CSS_OK) {
+    return s;
+  }
+  if (kw(gtext_css_value_set_root(bt), "normal")) {
+    gtext_css_value_set_free(bt);
+    return emit_dimension(st, 0.0, GTEXT_CSS_UNIT_PX, out);
+  }
+  *out = bt;
+  return GTEXT_CSS_OK;
+}
+
+/* Text 4: the value `normal` of `letter-spacing` is "no additional spacing" and the browsers and the tests of the pin write a zero length as `normal`. */
+static GTEXT_CSS_Status algo_letter_spacing(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
+  GTEXT_CSS_Value_Set * bt = NULL;
+  GTEXT_CSS_Status s = bytype(st, id, src, &bt);
+  if (s != GTEXT_CSS_OK) {
+    return s;
+  }
+  const GTEXT_CSS_Value * b = gtext_css_value_set_root(bt);
+  if (b && b->kind == GTEXT_CSS_VAL_DIMENSION && b->number == 0.0 && !(b->flags & GTEXT_CSS_VFLAG_MATH)) {
+    gtext_css_value_set_free(bt);
+    return emit_keyword(st, "normal", out);
+  }
+  *out = bt;
+  return GTEXT_CSS_OK;
 }
 
 static GTEXT_CSS_Status algo_zoom(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
@@ -1563,6 +1628,49 @@ static GTEXT_CSS_Status build_pair_dup(css_state * st, ab * a, const GTEXT_CSS_V
   return GTEXT_CSS_OK;
 }
 
+static size_t dash_count(const GTEXT_CSS_Value * v) {
+  if (v->kind != GTEXT_CSS_VAL_LIST) {
+    return 1;
+  }
+  size_t n = 0;
+  for (size_t i = 0; i < v->child_count; i++) {
+    n += dash_count(&v->children[i]);
+  }
+  return n;
+}
+
+static void dash_fill(const GTEXT_CSS_Value * v, GTEXT_CSS_Value * dst, size_t * n) {
+  if (v->kind != GTEXT_CSS_VAL_LIST) {
+    dst[(*n)++] = *v;
+    return;
+  }
+  for (size_t i = 0; i < v->child_count; i++) {
+    dash_fill(&v->children[i], dst, n);
+  }
+}
+
+/* SVG 2: the computed value of `stroke-dasharray` is "as comma separated list of absolute lengths or percentages", whichever way the dashes were separated. */
+static GTEXT_CSS_Status build_dasharray(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,
+    GTEXT_CSS_Value ** out_root) {
+  (void)st;
+  (void)bt;
+  (void)m;
+  if (!root || root->kind != GTEXT_CSS_VAL_LIST) {
+    return GTEXT_CSS_OK;
+  }
+  const size_t n = dash_count(root);
+  GTEXT_CSS_Value * kids = css_vb_values(&a->vb, n);
+  GTEXT_CSS_Value * list = css_vb_value(&a->vb);
+  if (!kids || !list) {
+    return a->vb.status;
+  }
+  size_t k = 0;
+  dash_fill(root, kids, &k);
+  css_v_list(list, kids, k, GTEXT_CSS_SEP_COMMA);
+  *out_root = list;
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status build_hyphenate(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,
     GTEXT_CSS_Value ** out_root) {
   (void)st;
@@ -1908,6 +2016,9 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_SCALE: return run_build(st, id, src, 0, build_scale, m, out);
   case GTEXT_CSS_ALGO_ROTATE: return run_build(st, id, src, 0, build_rotate, m, out);
   case GTEXT_CSS_ALGO_SHADOW: return run_build(st, id, src, 0, build_shadow, m, out);
+  case GTEXT_CSS_ALGO_WORD_SPACING: return algo_word_spacing(st, id, src, out);
+  case GTEXT_CSS_ALGO_LETTER_SPACING: return algo_letter_spacing(st, id, src, out);
+  case GTEXT_CSS_ALGO_DASHARRAY: return run_build(st, id, src, CV_NUMBERS_TO_PX, build_dasharray, m, out);
   case GTEXT_CSS_ALGO_NUMBER_LENGTH: return css_cv_by_type_ex(st, src, id, CV_NUMBERS_TO_PX, out);
   default:
     return css_st_fail(st, GTEXT_CSS_E_INTERNAL, m->name, "a property has an algorithm that is not implemented");

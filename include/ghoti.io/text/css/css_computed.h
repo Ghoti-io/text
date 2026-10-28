@@ -156,6 +156,9 @@ typedef enum {
   GTEXT_CSS_ALGO_SHADOW,           ///< `text-shadow`: each shadow with its four lengths and its color.
   GTEXT_CSS_ALGO_WRAP_FLOW,        ///< `wrap-flow`: `auto` on a float.
   GTEXT_CSS_ALGO_NUMBER_LENGTH,    ///< `stroke-dasharray`, `stroke-dashoffset`: numbers are lengths in px.
+  GTEXT_CSS_ALGO_WORD_SPACING,     ///< `word-spacing`: `normal` computes to zero.
+  GTEXT_CSS_ALGO_LETTER_SPACING,   ///< `letter-spacing`: a length of zero is `normal`.
+  GTEXT_CSS_ALGO_DASHARRAY,        ///< `stroke-dasharray`: numbers are lengths in px, and the values are one comma separated list.
   GTEXT_CSS_ALGO_CUSTOM,           ///< `--*`.
   GTEXT_CSS_ALGO_COUNT             ///< The number of algorithms; not one.
 } GTEXT_CSS_Compute_Algorithm;

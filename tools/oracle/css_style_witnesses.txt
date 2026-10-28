@@ -1,0 +1,253 @@
+# tools/oracle/css_style_diff.py: one witness for every key of css_style_divergences.txt: the smallest item of the key, what this library says of it
+# (OK=<value>, NO) and what an engine says that differs from that. Columns: key, document, element, property, scheme, ours, reference.
+# The run asks every witness again and fails when either answer is not the one written here.
+ser:A=C|B:alignment-baseline:attr : alignment-baseline =	attribute-5	a21	alignment-baseline	light	OK=baseline	OK=auto
+ser:A=C|B:display:(empty)	tree-1	e24	display	light	OK=inline	OK=block
+ser:A=C|B:font-family:(empty)	tree-0	e1	font-family	light	OK=serif	OK="Times New Roman"
+ser:A=C|B:height:attr : height = N	attribute-1	a15	height	light	OK=auto	OK=0px
+ser:A=C|B:height:attr : height = inherit	attribute-1	a17	height	light	OK=auto	OK=0px
+ser:A=C|B:height:attr : height = initial	attribute-1	a18	height	light	OK=auto	OK=0px
+ser:A=C|B:height:attr : height = unset	attribute-1	a19	height	light	OK=auto	OK=0px
+ser:A=C|B:letter-spacing:style : letter-spacing : N	tree-96	e13	letter-spacing	light	OK=normal	OK=1px
+ser:A=C|B:r:attr : r = N	attribute-3	a1	r	light	OK=0px	OK=-3.5px
+ser:A=C|B:rx:attr : rx = N	attribute-3	a21	rx	light	OK=auto	OK=-3.5px
+ser:A=C|B:rx:attr : rx = inherit	attribute-3	a37	rx	light	OK=auto	OK=0px
+ser:A=C|B:rx:attr : rx = initial	attribute-3	a38	rx	light	OK=auto	OK=0px
+ser:A=C|B:rx:attr : rx = unset	attribute-3	a39	rx	light	OK=auto	OK=0px
+ser:A=C|B:ry:attr : ry = N	attribute-4	a1	ry	light	OK=auto	OK=-3.5px
+ser:A=C|B:ry:attr : ry = inherit	attribute-4	a17	ry	light	OK=auto	OK=0px
+ser:A=C|B:ry:attr : ry = initial	attribute-4	a18	ry	light	OK=auto	OK=0px
+ser:A=C|B:ry:attr : ry = unset	attribute-4	a19	ry	light	OK=auto	OK=0px
+ser:A=C|B:transform:attr : transform = matrix( N N N N N N )	attribute-5	a5	transform	light	OK=matrix(1, 0, 0, 1, 5, 6)	OK=none
+ser:A=C|B:width:attr : width = N	attribute-1	a35	width	light	OK=auto	OK=0px
+ser:A=C|B:width:attr : width = inherit	attribute-1	a37	width	light	OK=auto	OK=0px
+ser:A=C|B:width:attr : width = initial	attribute-1	a38	width	light	OK=auto	OK=0px
+ser:A=C|B:width:attr : width = unset	attribute-1	a39	width	light	OK=auto	OK=0px
+ser:A=C|B:word-spacing:style : word-spacing : N	tree-72	e20	word-spacing	light	OK=0px	OK=1px
+ser:A|B=C:color-interpolation:attr : color-interpolation =	attribute-6	a14	color-interpolation	light	OK=sRGB	OK=srgb
+ser:A|B=C:d:attr : d = bogus	attribute-4	a25	d	light	OK="bogus"	OK=none
+ser:A|B=C:d:attr : d = m0 N l10 N	attribute-4	a20	d	light	OK="M0 0 L10 10"	OK=path("M 0 0 L 10 10")
+ser:A|B=C:d:attr : d = none	attribute-4	a23	d	light	OK="none"	OK=none
+ser:A|B=C:d:attr : d = path( S )	attribute-4	a24	d	light	OK="path('M0 0')"	OK=none
+ser:A|B=C:font-size:(empty)	fixture-inheritance	keywords	font-size	light	OK=19.2px	OK=18px
+ser:A|B=C:line-height:style : line-height : D	tree-85	e6	line-height	light	OK=38.4px	OK=36px
+ser:A|B=C:line-height:style : line-height : N	tree-19	e12	line-height	light	OK=1.5	OK=24px
+ser:A|B=C:line-height:style : line-height : inherit	tree-76	e7	line-height	light	OK=1.5	OK=24px
+ser:A|B=C:shape-rendering:attr : shape-rendering = crispedges	tree-39	e14	shape-rendering	light	OK=crispEdges	OK=crispedges
+ser:A|B=C:shape-rendering:style : shape-rendering : crispedges	tree-1	e5	shape-rendering	light	OK=crispEdges	OK=crispedges
+ser:A|B=C:stroke-dashoffset:style : stroke-dashoffset : calc( D + D )	tree-1	e6	stroke-dashoffset	light	OK=20.2px	OK=19px
+ser:A|B=C:stroke-miterlimit:attr : stroke-miterlimit = N	attribute-14	a12	stroke-miterlimit	light	OK=4	OK=0.5
+ser:A|B=C:stroke-width:style : stroke-width : calc( D + D )	tree-107	e1	stroke-width	light	OK=14.333333px	OK=14.3333px
+ser:A|B=C:transform-origin:attr : transform-origin =	attribute-15	a39	transform-origin	light	OK=50% 50% 0px	OK=0px 0px
+ser:A|B=C:transform:attr : transform = translate( D , D ) rotate( D )	attribute-5	a6	transform	light	OK=translate(10px, 20px) rotate(30deg)	OK=none
+ser:A|B|C:d:attr : d = m N , N h N v N z	attribute-4	a21	d	light	OK="M 0,0 h 5 v 5 z"	OK=path("M 0 0 H 5 V 5 Z")
+ser:A|B|C:font-size:style : font-size : large	tree-5	e6	font-size	light	OK=19.2px	OK=16px
+ser:A|B|C:transform:attr : gradienttransform = rotate( N )	attribute-5	a16	transform	light	OK=rotate(30deg)	OK=none
+ser:A|B|C:transform:attr : gradienttransform = scale( N )	attribute-5	a15	transform	light	OK=scale(2)	OK=none
+ser:A|B|C:transform:attr : patterntransform = rotate( N )	attribute-5	a14	transform	light	OK=rotate(30deg)	OK=none
+ser:A|B|C:transform:attr : patterntransform = scale( N )	attribute-5	a13	transform	light	OK=scale(2)	OK=none
+ser:A|B|C:transform:attr : transform = rotate( N )	attribute-5	a0	transform	light	OK=rotate(45deg)	OK=none
+ser:A|B|C:transform:attr : transform = scale( N )	attribute-5	a2	transform	light	OK=scale(2)	OK=none
+ser:A|B|C:transform:attr : transform = skewx( N )	attribute-5	a4	transform	light	OK=skewX(30deg)	OK=none
+ser:A|B|C:transform:attr : transform = translate( N )	attribute-4	a39	transform	light	OK=translate(10px)	OK=none
+support:chromium+firefox:animation-delay-end	probe	probe	animation-delay-end	light	OK=0s	NO
+support:chromium+firefox:animation-delay-start	probe	probe	animation-delay-start	light	OK=0s	NO
+support:chromium+firefox:animation-range-center	probe	probe	animation-range-center	light	OK=normal	NO
+support:chromium+firefox:background-position-block	probe	probe	background-position-block	light	OK=start 0%	NO
+support:chromium+firefox:background-position-inline	probe	probe	background-position-inline	light	OK=start 0%	NO
+support:chromium+firefox:background-repeat-block	probe	probe	background-repeat-block	light	OK=repeat	NO
+support:chromium+firefox:background-repeat-inline	probe	probe	background-repeat-inline	light	OK=repeat	NO
+support:chromium+firefox:background-repeat-x	probe	probe	background-repeat-x	light	OK=repeat	NO
+support:chromium+firefox:background-repeat-y	probe	probe	background-repeat-y	light	OK=repeat	NO
+support:chromium+firefox:block-ellipsis	probe	probe	block-ellipsis	light	OK=no-ellipsis	NO
+support:chromium+firefox:block-step-align	probe	probe	block-step-align	light	OK=auto	NO
+support:chromium+firefox:block-step-insert	probe	probe	block-step-insert	light	OK=margin-box	NO
+support:chromium+firefox:block-step-round	probe	probe	block-step-round	light	OK=up	NO
+support:chromium+firefox:block-step-size	probe	probe	block-step-size	light	OK=none	NO
+support:chromium+firefox:bookmark-label	probe	probe	bookmark-label	light	OK=content(text)	NO
+support:chromium+firefox:bookmark-level	probe	probe	bookmark-level	light	OK=none	NO
+support:chromium+firefox:bookmark-state	probe	probe	bookmark-state	light	OK=open	NO
+support:chromium+firefox:border-block-end-clip	probe	probe	border-block-end-clip	light	OK=none	NO
+support:chromium+firefox:border-block-start-clip	probe	probe	border-block-start-clip	light	OK=none	NO
+support:chromium+firefox:border-bottom-clip	probe	probe	border-bottom-clip	light	OK=none	NO
+support:chromium+firefox:border-boundary	probe	probe	border-boundary	light	OK=none	NO
+support:chromium+firefox:border-inline-end-clip	probe	probe	border-inline-end-clip	light	OK=none	NO
+support:chromium+firefox:border-inline-start-clip	probe	probe	border-inline-start-clip	light	OK=none	NO
+support:chromium+firefox:border-left-clip	probe	probe	border-left-clip	light	OK=none	NO
+support:chromium+firefox:border-limit	probe	probe	border-limit	light	OK=all	NO
+support:chromium+firefox:border-right-clip	probe	probe	border-right-clip	light	OK=none	NO
+support:chromium+firefox:border-top-clip	probe	probe	border-top-clip	light	OK=none	NO
+support:chromium+firefox:box-shadow-blur	probe	probe	box-shadow-blur	light	OK=0px	NO
+support:chromium+firefox:box-shadow-color	probe	probe	box-shadow-color	light	OK=rgb(0, 0, 0)	NO
+support:chromium+firefox:box-shadow-offset	probe	probe	box-shadow-offset	light	OK=none	NO
+support:chromium+firefox:box-shadow-position	probe	probe	box-shadow-position	light	OK=outset	NO
+support:chromium+firefox:box-shadow-spread	probe	probe	box-shadow-spread	light	OK=0px	NO
+support:chromium+firefox:box-snap	probe	probe	box-snap	light	OK=none	NO
+support:chromium+firefox:continue	probe	probe	continue	light	OK=normal	NO
+support:chromium+firefox:copy-into	probe	probe	copy-into	light	OK=none	NO
+support:chromium+firefox:event-trigger-name	probe	probe	event-trigger-name	light	OK=none	NO
+support:chromium+firefox:fill-break	probe	probe	fill-break	light	OK=bounding-box	NO
+support:chromium+firefox:fill-color	probe	probe	fill-color	light	OK=rgb(0, 0, 0)	NO
+support:chromium+firefox:fill-image	probe	probe	fill-image	light	OK=none	NO
+support:chromium+firefox:fill-origin	probe	probe	fill-origin	light	OK=match-parent	NO
+support:chromium+firefox:fill-position	probe	probe	fill-position	light	OK=0% 0%	NO
+support:chromium+firefox:fill-repeat	probe	probe	fill-repeat	light	OK=repeat repeat	NO
+support:chromium+firefox:fill-size	probe	probe	fill-size	light	OK=auto auto	NO
+support:chromium+firefox:fit-tolerance	probe	probe	fit-tolerance	light	OK=normal	NO
+support:chromium+firefox:float-defer	probe	probe	float-defer	light	OK=none	NO
+support:chromium+firefox:float-offset	probe	probe	float-offset	light	OK=0px	NO
+support:chromium+firefox:float-reference	probe	probe	float-reference	light	OK=inline	NO
+support:chromium+firefox:flow-from	probe	probe	flow-from	light	OK=none	NO
+support:chromium+firefox:flow-into	probe	probe	flow-into	light	OK=none	NO
+support:chromium+firefox:footnote-display	probe	probe	footnote-display	light	OK=block	NO
+support:chromium+firefox:footnote-policy	probe	probe	footnote-policy	light	OK=auto	NO
+support:chromium+firefox:glyph-orientation-vertical	probe	probe	glyph-orientation-vertical	light	OK=auto	NO
+support:chromium+firefox:hanging-punctuation	probe	probe	hanging-punctuation	light	OK=none	NO
+support:chromium+firefox:hyphenate-limit-last	probe	probe	hyphenate-limit-last	light	OK=none	NO
+support:chromium+firefox:hyphenate-limit-lines	probe	probe	hyphenate-limit-lines	light	OK=no-limit	NO
+support:chromium+firefox:hyphenate-limit-zone	probe	probe	hyphenate-limit-zone	light	OK=0px	NO
+support:chromium+firefox:image-animation	probe	probe	image-animation	light	OK=normal	NO
+support:chromium+firefox:image-resolution	probe	probe	image-resolution	light	OK=1dppx	NO
+support:chromium+firefox:initial-letter-align	probe	probe	initial-letter-align	light	OK=alphabetic	NO
+support:chromium+firefox:initial-letter-wrap	probe	probe	initial-letter-wrap	light	OK=none	NO
+support:chromium+firefox:inline-sizing	probe	probe	inline-sizing	light	OK=normal	NO
+support:chromium+firefox:input-security	probe	probe	input-security	light	OK=auto	NO
+support:chromium+firefox:line-fit-edge	probe	probe	line-fit-edge	light	OK=leading	NO
+support:chromium+firefox:line-grid	probe	probe	line-grid	light	OK=match-parent	NO
+support:chromium+firefox:line-height-step	probe	probe	line-height-step	light	OK=0px	NO
+support:chromium+firefox:line-padding	probe	probe	line-padding	light	OK=0px	NO
+support:chromium+firefox:line-snap	probe	probe	line-snap	light	OK=none	NO
+support:chromium+firefox:link-parameters	probe	probe	link-parameters	light	OK=none	NO
+support:chromium+firefox:margin-break	probe	probe	margin-break	light	OK=auto	NO
+support:chromium+firefox:marker-side	probe	probe	marker-side	light	OK=match-self	NO
+support:chromium+firefox:mask-border-mode	probe	probe	mask-border-mode	light	OK=alpha	NO
+support:chromium+firefox:mask-border-outset	probe	probe	mask-border-outset	light	OK=0	NO
+support:chromium+firefox:mask-border-repeat	probe	probe	mask-border-repeat	light	OK=stretch	NO
+support:chromium+firefox:mask-border-slice	probe	probe	mask-border-slice	light	OK=0	NO
+support:chromium+firefox:mask-border-source	probe	probe	mask-border-source	light	OK=none	NO
+support:chromium+firefox:mask-border-width	probe	probe	mask-border-width	light	OK=auto	NO
+support:chromium+firefox:max-lines	probe	probe	max-lines	light	OK=auto	NO
+support:chromium+firefox:min-intrinsic-sizing	probe	probe	min-intrinsic-sizing	light	OK=legacy	NO
+support:chromium+firefox:overflow-clip-margin-block-end	probe	probe	overflow-clip-margin-block-end	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-block-start	probe	probe	overflow-clip-margin-block-start	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-bottom	probe	probe	overflow-clip-margin-bottom	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-inline-end	probe	probe	overflow-clip-margin-inline-end	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-inline-start	probe	probe	overflow-clip-margin-inline-start	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-left	probe	probe	overflow-clip-margin-left	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-right	probe	probe	overflow-clip-margin-right	light	OK=0px	NO
+support:chromium+firefox:overflow-clip-margin-top	probe	probe	overflow-clip-margin-top	light	OK=0px	NO
+support:chromium+firefox:path-length	probe	probe	path-length	light	OK=none	NO
+support:chromium+firefox:pause-after	probe	probe	pause-after	light	OK=none	NO
+support:chromium+firefox:pause-before	probe	probe	pause-before	light	OK=none	NO
+support:chromium+firefox:pointer-timeline-axis	probe	probe	pointer-timeline-axis	light	OK=block	NO
+support:chromium+firefox:pointer-timeline-name	probe	probe	pointer-timeline-name	light	OK=none	NO
+support:chromium+firefox:region-fragment	probe	probe	region-fragment	light	OK=auto	NO
+support:chromium+firefox:rest-after	probe	probe	rest-after	light	OK=none	NO
+support:chromium+firefox:rest-before	probe	probe	rest-before	light	OK=none	NO
+support:chromium+firefox:ruby-merge	probe	probe	ruby-merge	light	OK=separate	NO
+support:chromium+firefox:shape-inside	probe	probe	shape-inside	light	OK=auto	NO
+support:chromium+firefox:shape-padding	probe	probe	shape-padding	light	OK=0px	NO
+support:chromium+firefox:slider-orientation	probe	probe	slider-orientation	light	OK=auto	NO
+support:chromium+firefox:spatial-navigation-action	probe	probe	spatial-navigation-action	light	OK=auto	NO
+support:chromium+firefox:spatial-navigation-contain	probe	probe	spatial-navigation-contain	light	OK=auto	NO
+support:chromium+firefox:spatial-navigation-function	probe	probe	spatial-navigation-function	light	OK=normal	NO
+support:chromium+firefox:speak-as	probe	probe	speak-as	light	OK=normal	NO
+support:chromium+firefox:string-set	probe	probe	string-set	light	OK=none	NO
+support:chromium+firefox:stroke-align	probe	probe	stroke-align	light	OK=center	NO
+support:chromium+firefox:stroke-alignment	probe	probe	stroke-alignment	light	OK=center	NO
+support:chromium+firefox:stroke-break	probe	probe	stroke-break	light	OK=bounding-box	NO
+support:chromium+firefox:stroke-color	probe	probe	stroke-color	light	OK=rgba(0, 0, 0, 0)	NO
+support:chromium+firefox:stroke-dash-corner	probe	probe	stroke-dash-corner	light	OK=none	NO
+support:chromium+firefox:stroke-dash-justify	probe	probe	stroke-dash-justify	light	OK=none	NO
+support:chromium+firefox:stroke-dashadjust	probe	probe	stroke-dashadjust	light	OK=none	NO
+support:chromium+firefox:stroke-dashcorner	probe	probe	stroke-dashcorner	light	OK=none	NO
+support:chromium+firefox:stroke-image	probe	probe	stroke-image	light	OK=none	NO
+support:chromium+firefox:stroke-origin	probe	probe	stroke-origin	light	OK=match-parent	NO
+support:chromium+firefox:stroke-position	probe	probe	stroke-position	light	OK=0% 0%	NO
+support:chromium+firefox:stroke-repeat	probe	probe	stroke-repeat	light	OK=repeat repeat	NO
+support:chromium+firefox:stroke-size	probe	probe	stroke-size	light	OK=auto auto	NO
+support:chromium+firefox:text-align-all	probe	probe	text-align-all	light	OK=start	NO
+support:chromium+firefox:text-decoration-skip-box	probe	probe	text-decoration-skip-box	light	OK=none	NO
+support:chromium+firefox:text-decoration-skip-self	probe	probe	text-decoration-skip-self	light	OK=auto	NO
+support:chromium+firefox:text-decoration-skip-spaces	probe	probe	text-decoration-skip-spaces	light	OK=start end	NO
+support:chromium+firefox:text-emphasis-skip	probe	probe	text-emphasis-skip	light	OK=spaces punctuation	NO
+support:chromium+firefox:text-group-align	probe	probe	text-group-align	light	OK=none	NO
+support:chromium+firefox:voice-balance	probe	probe	voice-balance	light	OK=0	NO
+support:chromium+firefox:voice-duration	probe	probe	voice-duration	light	OK=auto	NO
+support:chromium+firefox:voice-rate	probe	probe	voice-rate	light	OK=normal	NO
+support:chromium+firefox:voice-stress	probe	probe	voice-stress	light	OK=normal	NO
+support:chromium+firefox:white-space-trim	probe	probe	white-space-trim	light	OK=none	NO
+support:chromium+firefox:word-space-transform	probe	probe	word-space-transform	light	OK=none	NO
+support:chromium+firefox:wrap-after	probe	probe	wrap-after	light	OK=auto	NO
+support:chromium+firefox:wrap-before	probe	probe	wrap-before	light	OK=auto	NO
+support:chromium+firefox:wrap-flow	probe	probe	wrap-flow	light	OK=auto	NO
+support:chromium+firefox:wrap-inside	probe	probe	wrap-inside	light	OK=auto	NO
+support:chromium+firefox:wrap-through	probe	probe	wrap-through	light	OK=wrap	NO
+support:chromium:font-synthesis-position	probe	probe	font-synthesis-position	light	OK=auto	NO
+support:chromium:font-width	probe	probe	font-width	light	OK=100%	NO
+support:chromium:text-decoration-inset	probe	probe	text-decoration-inset	light	OK=0px	NO
+support:firefox:animation-range-end	probe	probe	animation-range-end	light	OK=normal	NO
+support:firefox:animation-range-start	probe	probe	animation-range-start	light	OK=normal	NO
+support:firefox:animation-timeline	probe	probe	animation-timeline	light	OK=auto	NO
+support:firefox:animation-trigger	probe	probe	animation-trigger	light	OK=none	NO
+support:firefox:border-shape	probe	probe	border-shape	light	OK=none	NO
+support:firefox:caret-animation	probe	probe	caret-animation	light	OK=auto	NO
+support:firefox:caret-shape	probe	probe	caret-shape	light	OK=auto	NO
+support:firefox:column-height	probe	probe	column-height	light	OK=auto	NO
+support:firefox:column-rule-break	probe	probe	column-rule-break	light	OK=normal	NO
+support:firefox:column-rule-inset-cap-end	probe	probe	column-rule-inset-cap-end	light	OK=0px	NO
+support:firefox:column-rule-inset-cap-start	probe	probe	column-rule-inset-cap-start	light	OK=0px	NO
+support:firefox:column-rule-inset-junction-end	probe	probe	column-rule-inset-junction-end	light	OK=0px	NO
+support:firefox:column-rule-inset-junction-start	probe	probe	column-rule-inset-junction-start	light	OK=0px	NO
+support:firefox:column-rule-visibility-items	probe	probe	column-rule-visibility-items	light	OK=normal	NO
+support:firefox:column-wrap	probe	probe	column-wrap	light	OK=auto	NO
+support:firefox:dynamic-range-limit	probe	probe	dynamic-range-limit	light	OK=no-limit	NO
+support:firefox:flex-line-count	probe	probe	flex-line-count	light	OK=1	NO
+support:firefox:frame-sizing	probe	probe	frame-sizing	light	OK=auto	NO
+support:firefox:initial-letter	probe	probe	initial-letter	light	OK=normal	NO
+support:firefox:interactivity	probe	probe	interactivity	light	OK=auto	NO
+support:firefox:interest-delay-end	probe	probe	interest-delay-end	light	OK=normal	NO
+support:firefox:interest-delay-start	probe	probe	interest-delay-start	light	OK=normal	NO
+support:firefox:interpolate-size	probe	probe	interpolate-size	light	OK=numeric-only	NO
+support:firefox:margin-trim	probe	probe	margin-trim	light	OK=none	NO
+support:firefox:object-view-box	probe	probe	object-view-box	light	OK=none	NO
+support:firefox:orphans	probe	probe	orphans	light	OK=2	NO
+support:firefox:overlay	probe	probe	overlay	light	OK=none	NO
+support:firefox:reading-flow	probe	probe	reading-flow	light	OK=normal	NO
+support:firefox:reading-order	probe	probe	reading-order	light	OK=0	NO
+support:firefox:row-rule-break	probe	probe	row-rule-break	light	OK=normal	NO
+support:firefox:row-rule-color	probe	probe	row-rule-color	light	OK=rgb(0, 0, 0)	NO
+support:firefox:row-rule-inset-cap-end	probe	probe	row-rule-inset-cap-end	light	OK=0px	NO
+support:firefox:row-rule-inset-cap-start	probe	probe	row-rule-inset-cap-start	light	OK=0px	NO
+support:firefox:row-rule-inset-junction-end	probe	probe	row-rule-inset-junction-end	light	OK=0px	NO
+support:firefox:row-rule-inset-junction-start	probe	probe	row-rule-inset-junction-start	light	OK=0px	NO
+support:firefox:row-rule-style	probe	probe	row-rule-style	light	OK=none	NO
+support:firefox:row-rule-visibility-items	probe	probe	row-rule-visibility-items	light	OK=normal	NO
+support:firefox:row-rule-width	probe	probe	row-rule-width	light	OK=3px	NO
+support:firefox:ruby-overhang	probe	probe	ruby-overhang	light	OK=auto	NO
+support:firefox:rule-overlap	probe	probe	rule-overlap	light	OK=row-over-column	NO
+support:firefox:scroll-axis-lock	probe	probe	scroll-axis-lock	light	OK=auto	NO
+support:firefox:scroll-initial-target	probe	probe	scroll-initial-target	light	OK=none	NO
+support:firefox:scroll-marker-group	probe	probe	scroll-marker-group	light	OK=none	NO
+support:firefox:scroll-target-group	probe	probe	scroll-target-group	light	OK=none	NO
+support:firefox:scroll-timeline-axis	probe	probe	scroll-timeline-axis	light	OK=block	NO
+support:firefox:scroll-timeline-name	probe	probe	scroll-timeline-name	light	OK=none	NO
+support:firefox:speak	probe	probe	speak	light	OK=auto	OK=normal
+support:firefox:text-fit	probe	probe	text-fit	light	OK=none	NO
+support:firefox:text-size-adjust	probe	probe	text-size-adjust	light	OK=auto	NO
+support:firefox:text-spacing-trim	probe	probe	text-spacing-trim	light	OK=normal	NO
+support:firefox:timeline-scope	probe	probe	timeline-scope	light	OK=none	NO
+support:firefox:timeline-trigger-activation-range-end	probe	probe	timeline-trigger-activation-range-end	light	OK=normal	NO
+support:firefox:timeline-trigger-activation-range-start	probe	probe	timeline-trigger-activation-range-start	light	OK=normal	NO
+support:firefox:timeline-trigger-active-range-end	probe	probe	timeline-trigger-active-range-end	light	OK=auto	NO
+support:firefox:timeline-trigger-active-range-start	probe	probe	timeline-trigger-active-range-start	light	OK=auto	NO
+support:firefox:timeline-trigger-name	probe	probe	timeline-trigger-name	light	OK=none	NO
+support:firefox:timeline-trigger-source	probe	probe	timeline-trigger-source	light	OK=auto	NO
+support:firefox:trigger-scope	probe	probe	trigger-scope	light	OK=none	NO
+support:firefox:view-timeline-axis	probe	probe	view-timeline-axis	light	OK=block	NO
+support:firefox:view-timeline-inset	probe	probe	view-timeline-inset	light	OK=auto	NO
+support:firefox:view-timeline-name	probe	probe	view-timeline-name	light	OK=none	NO
+support:firefox:view-transition-group	probe	probe	view-transition-group	light	OK=normal	NO
+support:firefox:view-transition-scope	probe	probe	view-transition-scope	light	OK=none	NO
+support:firefox:widows	probe	probe	widows	light	OK=2	NO
+support:firefox:window-drag	probe	probe	window-drag	light	OK=none	NO
