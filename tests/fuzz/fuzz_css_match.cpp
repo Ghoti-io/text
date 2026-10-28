@@ -128,7 +128,13 @@ struct Ref {
   }
 
   bool attr(const GTEXT_CSS_Simple & s, int e) const {
-    auto it = t.e[e].attrs.find(std::string(s.name.data, s.name.length));
+    std::string an(s.name.data, s.name.length);
+    if (html) {
+      for (char & c : an) {
+        c = static_cast<char>(low(static_cast<unsigned char>(c)));
+      }
+    }
+    auto it = t.e[e].attrs.find(an);
     if (it == t.e[e].attrs.end()) {
       return false;
     }
@@ -301,7 +307,7 @@ struct Ref {
       if (s.ns_kind == GTEXT_CSS_NS_NONE && !el.ns.empty()) {
         return false;
       }
-      return s.kind == GTEXT_CSS_SIMPLE_UNIVERSAL || same(el.name, std::string(s.name.data, s.name.length), false);
+      return s.kind == GTEXT_CSS_SIMPLE_UNIVERSAL || same(el.name, std::string(s.name.data, s.name.length), html); // an element with no namespace is HTML in an HTML document
     }
     case GTEXT_CSS_SIMPLE_ID: return !el.id.empty() && el.id == std::string(s.name.data, s.name.length);
     case GTEXT_CSS_SIMPLE_CLASS: return std::find(el.classes.begin(), el.classes.end(), std::string(s.name.data, s.name.length)) != el.classes.end();
