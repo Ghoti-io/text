@@ -64,7 +64,16 @@
 namespace css_cfuzz {
 
 [[noreturn]] void fail(const char * what, const std::string & detail, const std::string & input) {
-  std::fprintf(stderr, "fuzz_css_compute: %s\n%s\ninput (%zu bytes): ", what, detail.c_str(), input.size());
+  std::fprintf(stderr, "%s: %s\n", "fuzz_css_compute", what);
+  for (unsigned char c : detail) {
+    if ((c >= 0x20 && c < 0x7f) || c == '\n') {
+      std::fputc(c, stderr);
+    }
+    else {
+      std::fprintf(stderr, "\\x%02x", c);
+    }
+  }
+  std::fprintf(stderr, "\ninput (%zu bytes): ", input.size());
   for (unsigned char c : input) {
     if (c >= 0x20 && c < 0x7f && c != '\\') {
       std::fputc(c, stderr);

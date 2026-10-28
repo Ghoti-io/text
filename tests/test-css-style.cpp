@@ -951,6 +951,40 @@ TEST(CssStyleDump, TheHashIsTheSha256OfTheDump) {
   EXPECT_EQ(gtext_css_computed_dump(d.at("r")->style, &sink), GTEXT_CSS_E_WRITE);
 }
 
+TEST(CssStyleDump, AWhiteSpaceTokenWithALineBreakInACustomValueIsOneSpaceInTheDump) {
+  /* found by the fuzzer: a custom property keeps the white space it was written with, and the dump is one line a property */
+  Doc d(svg("<rect id=\"r\" style=\"--s: 'q' \n  b\n; fill: red\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  const std::string text = dump_of(d.at("r")->style);
+  size_t cursor = 0, props = 0, lines = 0;
+  while (gtext_css_computed_next(d.at("r")->style, &cursor, nullptr, nullptr)) {
+    props++;
+  }
+  for (char c : text) {
+    lines += c == '\n';
+  }
+  EXPECT_EQ(lines, props + 1 + 2) << "one line for each property and the custom one, and the two of the header";
+  EXPECT_NE(text.find("--s: 'q'    b\n"), std::string::npos) << text.substr(0, 120);
+}
+
+TEST(CssBlockCustomNames, OnlyTheNameOfAnIdentifierIsAProperty) {
+  /* found by the fuzzer: a name with a byte that no identifier has cannot be written in a cssText and read back, so it is no property of a block */
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  ASSERT_EQ(gtext_css_block_new(R(), nullptr, &b), GTEXT_CSS_OK);
+  struct Case {
+    const char * name;
+    bool ok;
+  };
+  for (const Case & c : {Case{"--a", true}, Case{"--a-b_c9", true}, Case{"--\xc3\xa9", true}, Case{"--a\\+b", true}, Case{"--a\\3 b", true}, Case{"--a\\41", true},
+           Case{"--a+b", false}, Case{"--a b", false}, Case{"--a\\", false}, Case{"--a\\\n", false}, Case{"--a\x03", false}, Case{"--", false}}) {
+    const size_t before = gtext_css_block_count(b);
+    GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    ASSERT_EQ(gtext_css_block_add_text(b, c.name, strlen(c.name), "1", 1, false, nullptr, &outcome, nullptr), GTEXT_CSS_OK) << c.name;
+    EXPECT_EQ(gtext_css_block_count(b) - before, c.ok ? 1u : 0u) << c.name;
+  }
+  gtext_css_block_free(b);
+}
+
 TEST(CssStyleDump, ADumpHasNoLineBreakInsideAValue) {
   Doc d(svg("<rect id=\"r\" style=\"--a: 'x\\a y'; --b: a /* c\n d */ b; font-family: 'q\\a r'; content: 'z\\d w'\"/>"));
   ASSERT_EQ(d.status, GTEXT_CSS_OK);

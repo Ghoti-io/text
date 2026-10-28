@@ -57,6 +57,30 @@ static GTEXT_CSS_Status put(const GTEXT_Markup_Sink * sink, const char * data, s
   return sink->write(sink->user, data, n) == GTEXT_MARKUP_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_WRITE;
 }
 
+/* The dump is one line for each property, and a custom property keeps the white space it was written with, which can hold a line break (a white space token
+   is any run of them). A line break in a value is the white space it is, so the value is written with a space for each: the same tokens. */
+typedef struct {
+  const GTEXT_Markup_Sink * out;
+} flat_sink;
+
+static GTEXT_Markup_Status flat_write(void * user, const char * data, size_t n) {
+  const flat_sink * f = user;
+  char buf[256];
+  while (n) {
+    const size_t m = n < sizeof buf ? n : sizeof buf;
+    for (size_t i = 0; i < m; i++) {
+      buf[i] = data[i] == '\n' || data[i] == '\r' || data[i] == '\f' ? ' ' : data[i];
+    }
+    const GTEXT_Markup_Status st = f->out->write(f->out->user, buf, m);
+    if (st != GTEXT_MARKUP_OK) {
+      return st;
+    }
+    data += m;
+    n -= m;
+  }
+  return GTEXT_MARKUP_OK;
+}
+
 static GTEXT_CSS_Status dump_to(const GTEXT_CSS_Computed_Style * style, const GTEXT_Markup_Sink * sink) {
   GTEXT_Allocator a = style->alloc;
   size_t count = 0;
@@ -118,7 +142,11 @@ static GTEXT_CSS_Status dump_to(const GTEXT_CSS_Computed_Style * style, const GT
         st = put(sink, ": ", 2);
       }
       if (st == GTEXT_CSS_OK) {
-        st = gtext_css_custom_value_write(cvalue, sink);
+        flat_sink f = {sink};
+        GTEXT_Markup_Sink flat = *sink;
+        flat.user = &f;
+        flat.write = flat_write;
+        st = gtext_css_custom_value_write(cvalue, &flat);
       }
     }
     else {

@@ -90,6 +90,7 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
 
   keyword-shorthand-wrong-form  `white-space: pre` is written as `pre-wrap`: the cssText is read back as other longhands.
   grid-template-names-dropped   the areas form of grid-template is written without its line names: the same.
+  block-takes-any-custom-name  a block takes a custom property whose name no identifier has: the cssText cannot be read back as it was written.
   pending-longhand-written-empty a longhand declared with var() or attr() is written with no value: the cssText cannot be read back.
   mixed-longhands-written-as-a-shorthand  a shorthand is written over longhands some of which are a CSS-wide keyword: the text is another value.
   context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
@@ -110,6 +111,7 @@ The plants of fuzz_css_style.cpp (STYLE_PLANTS; each is found by replaying its s
   dump-loses-a-property        the dump stops before its last property: the dump is a line a property.
   hash-ignores-the-last-byte   the hash is of all but the last byte of the dump: it is the SHA-256 of the dump.
   diagnostic-names-leak        a style does not free the names of its diagnostics: the allocator.
+  dump-keeps-line-breaks       a line break in the white space of a custom value is written as it is: the dump is a line a property.
 
 The plants of fuzz_css_cascade.cpp (CASCADE_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-cascade, which `make test` also does with no
 fuzzer, against the harness's reference model; CASCADE_PROGRAMS says which unit tests must fail on it as well):
@@ -349,6 +351,8 @@ COMPUTE_EXTRA = {
 
 # The same shape, for tests/fuzz/fuzz_css_compute.cpp; the seeds are in tests/fuzz/corpus/css-compute (tools/css/make-fuzz-compute-seeds.py).
 COMPUTE_PLANTS = {
+    "block-takes-any-custom-name": ("css_block.c", "    if (!custom_name_ok(name, name_length)) {\n      /* as a declaration", "    if (0) {\n      /* as a declaration",
+                                    "reproducer-custom-name-not-an-identifier-8005b995.seed"),
     # the text that is written is read back before it is used (text_says_the_longhands), so a wrong text is caught by that check: the second edit turns it off
     "keyword-shorthand-wrong-form": ("css_shorthand_serialize.c", ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre"},', "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {"],
                                      ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre-wrap"},', "  if (0) {"], "own-white-space-pre.seed"),
@@ -400,6 +404,8 @@ STYLE_PLANTS = {
     "hash-ignores-the-last-byte": ("css_dump.c", "  if (gsec_sha256_update(&h->ctx, data, n) != GSEC_OK) {", "  if (gsec_sha256_update(&h->ctx, data, n > 1 ? n - 1 : n) != GSEC_OK) {",
                                    "own-attribute-red.seed"),
     "diagnostic-names-leak": ("css_compute.c", "    gtext_allocator_free(&a, style->diag[i].name_copy);\n", "    (void)a;\n", "own-diagnostic-leak.seed"),
+    "dump-keeps-line-breaks": ("css_dump.c", "        st = gtext_css_custom_value_write(cvalue, &flat);", "        st = gtext_css_custom_value_write(cvalue, sink);",
+                               "reproducer-dump-line-break-b63a41f3.seed"),
 }
 
 
