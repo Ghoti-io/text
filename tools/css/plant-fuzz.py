@@ -351,8 +351,8 @@ COMPUTE_EXTRA = {
 
 # The same shape, for tests/fuzz/fuzz_css_compute.cpp; the seeds are in tests/fuzz/corpus/css-compute (tools/css/make-fuzz-compute-seeds.py).
 COMPUTE_PLANTS = {
-    "block-takes-any-custom-name": ("css_block.c", "    if (!custom_name_ok(name, name_length)) {\n      /* as a declaration", "    if (0) {\n      /* as a declaration",
-                                    "reproducer-custom-name-not-an-identifier-8005b995.seed"),
+    "block-takes-any-custom-name": ("css_block.c", ["    if (!custom_name_ok(name, name_length)) {\n      /* as a declaration", "!name || !custom_name_ok(name, name_length)) {"],
+                                    ["    if (0) {\n      /* as a declaration", "!name || name_length < 3) {"], "reproducer-custom-name-not-an-identifier-8005b995.seed"),
     # the text that is written is read back before it is used (text_says_the_longhands), so a wrong text is caught by that check: the second edit turns it off
     "keyword-shorthand-wrong-form": ("css_shorthand_serialize.c", ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre"},', "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {"],
                                      ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre-wrap"},', "  if (0) {"], "own-white-space-pre.seed"),
