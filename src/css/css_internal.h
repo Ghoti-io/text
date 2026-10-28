@@ -339,6 +339,11 @@ void css_trim_value_text(const char ** s, size_t * n);
 /// Whether a name is one the parser could have read as a custom property: `--` and then the code points of an identifier or escapes, as it was written (css_registry.c).
 bool css_custom_name_ok(const char * name, size_t length);
 
+/// Keep the members of every `||` of a compiled grammar in the order they were written: the grammar of a property whose order is its value (css_grammar_link.c;
+/// it is declared here and not in css_grammar_internal.h, whose RC_NONE a Windows header defines too).
+struct GTEXT_CSS_Compiled;
+void css_compiled_keep_source_order(struct GTEXT_CSS_Compiled * c);
+
 /// The result's private part: the kept parse errors.
 struct GTEXT_CSS_Result_Internal {
   GTEXT_Allocator allocator; ///< The one the block was made with.

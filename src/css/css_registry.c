@@ -45,7 +45,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "css_grammar_internal.h"
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_tables.h"

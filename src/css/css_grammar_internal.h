@@ -173,8 +173,7 @@ bool css_grammar_range_fits(gn_native type, uint8_t rclass);
 /// Where the native type of this name is, or NT_COUNT.
 gn_native css_grammar_native_lookup(const char * name, size_t length);
 
-/// Keep the members of every `||` of a compiled grammar in the order they were written (GNF_SOURCE_ORDER): the grammar of a property whose order is its value.
-void css_compiled_keep_source_order(GTEXT_CSS_Compiled * c);
+
 
 /// Whether a native type is numeric (a range makes sense on it).
 bool css_grammar_native_numeric(gn_native type);
