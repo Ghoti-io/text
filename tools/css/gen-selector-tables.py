@@ -40,6 +40,7 @@ WEBREF_DEFAULT = os.path.join(ROOT, "third_party", "css", "webref", "ed", "css")
 SUPPLEMENT_DEFAULT = os.path.join(HERE, "selectors-supplement.tsv")
 TSV_DEFAULT = os.path.join(HERE, "selectors.tsv")
 HEADER_DEFAULT = os.path.join(ROOT, "src", "css", "css_selector_tables.h")
+CI_DEFAULT = os.path.join(HERE, "html_ci_attributes.txt")
 TESTS_DEFAULT = os.path.join(ROOT, "tests", "css_selector_rows.h")
 
 LICENSE = """/*
@@ -303,7 +304,12 @@ def dep_expr(items):
     return " | ".join("GTEXT_CSS_DEP_" + i.upper().replace("-", "_") for i in items)
 
 
-def emit_header(rows, pin_hash):
+def read_ci(path):
+    with open(path, encoding="utf-8") as f:
+        return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+
+
+def emit_header(rows, pin_hash, ci):
     out = [LICENSE]
     out.append("""
 /**
@@ -386,6 +392,10 @@ typedef struct {
             c_expr(r["state"], "GTEXT_CSS_STATE_"), r["follow_mask"], c_expr(r["cb"], "GTEXT_CSS_ELEMENT_CB_"), dep_expr(r["dep"]),
             [x for x in rows if x["index"] == r["alias_row"]][0]["ident"], ", ".join(extra), KINDS[r["kind"]], ARGS[r["arg"].split(":")[0]],
             SPECS[r["spec"]], STATUSES[r["status"]], r["pclass_kind"], flags, r["colons"], 1 if r["functional"] else 0, r.get("pe_index", 0)))
+    out.append("};\n\n")
+    out.append("/// The attributes whose values are compared ignoring case in an HTML document (tools/css/html_ci_attributes.txt).\nstatic const char * const html_ci_attributes[] = {\n")
+    for a in ci:
+        out.append('  "%s",\n' % a)
     out.append("};\n\n#endif // GHOTI_IO_GTEXT_SRC_CSS_CSS_SELECTOR_TABLES_H\n")
     return "".join(out)
 
@@ -408,7 +418,7 @@ def emit_tests(rows):
     return "".join(r["name"] + "\n" for r in rows if r["status"] != "unsupported")
 
 
-def generate(webref, supplement):
+def generate(webref, supplement, ci_path):
     pin = read_pin(webref)
     srows = read_supplement(supplement)
     rows, problems = build(pin, srows)
@@ -416,7 +426,7 @@ def generate(webref, supplement):
         return None, None, None, problems
     rows = finish(rows, pin)
     digest = "%d selectors in %d files; supplement %d rows" % (len(pin), len({p["file"] for p in pin.values()}), len(rows))
-    return emit_header(rows, digest), emit_tsv(rows, pin), rows, []
+    return emit_header(rows, digest, read_ci(ci_path)), emit_tsv(rows, pin), rows, []
 
 
 def covered_names(tests_path):
@@ -429,7 +439,7 @@ def covered_names(tests_path):
 
 
 def run(args):
-    header, tsv, rows, problems = generate(args.webref, args.supplement)
+    header, tsv, rows, problems = generate(args.webref, args.supplement, args.ci)
     if problems:
         for p in problems:
             print("gen-selector-tables: " + p, file=sys.stderr)
@@ -488,7 +498,7 @@ def controls(args):
 
         def attempt(name, sup_lines, want, check=True, tests_path=None, mutate_committed=None):
             make(sup, sup_lines)
-            ns = argparse.Namespace(webref=args.webref, supplement=sup, tsv=tsv, header=hdr, tests=tests_path or args.tests, check=check)
+            ns = argparse.Namespace(webref=args.webref, supplement=sup, tsv=tsv, header=hdr, tests=tests_path or args.tests, check=check, ci=args.ci)
             if mutate_committed:
                 shutil.copy(args.header, hdr)
                 shutil.copy(args.tsv, tsv)
@@ -549,6 +559,7 @@ def main():
     ap.add_argument("--tsv", default=TSV_DEFAULT)
     ap.add_argument("--header", default=HEADER_DEFAULT)
     ap.add_argument("--tests", default=TESTS_DEFAULT)
+    ap.add_argument("--ci", default=CI_DEFAULT)
     args = ap.parse_args()
     if args.controls:
         sys.exit(controls(args))

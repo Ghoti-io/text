@@ -56,6 +56,8 @@ const char * gtext_markup_status_string(GTEXT_Markup_Status status) {
       return "the DTD edit work limit was exceeded";
     case GTEXT_MARKUP_E_WRITE:
       return "a sink refused output";
+    case GTEXT_MARKUP_E_SELECTOR:
+      return "the selector is not valid";
   }
   /* After the switch and not a `default:` arm: -Wswitch reports an enumerator
      added to the enum and missing here only where there is no default. */

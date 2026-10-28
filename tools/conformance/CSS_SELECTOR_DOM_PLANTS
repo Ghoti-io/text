@@ -1,0 +1,5 @@
+# tools/conformance/run-css-selector-queries.sh --controls: planted defects of the matcher that the DOM selector tables must see. Columns (tab separated): name, file under src/css/, text (exactly once), replacement (\n is a line feed).
+plus-is-tilde	css_match.c	    case GTEXT_CSS_COMBINATOR_NEXT_SIBLING: {\n      El q = ctx->iface.previous_sibling(ctx->iface.user, element);\n      ok = q && css_match_chain(ctx, list, cx, index - 1, q);\n      break;\n    }	    case GTEXT_CSS_COMBINATOR_NEXT_SIBLING: ok = exists_above(ctx, list, cx, index - 1, element, true, aux); break;
+descendant-does-not-backtrack	css_match.c	    case GTEXT_CSS_COMBINATOR_DESCENDANT: ok = exists_above(ctx, list, cx, index - 1, element, false, aux); break;	    case GTEXT_CSS_COMBINATOR_DESCENDANT: {\n      El p0 = e_parent(ctx, element);\n      ok = p0 && css_match_chain(ctx, list, cx, index - 1, p0);\n      break;\n    }
+nth-last-counts-from-the-start	css_match_nth.c	  const bool from_end = strstr(r->base, "last") != NULL;	  const bool from_end = false;
+empty-ignores-text	css_match.c	(GTEXT_CSS_CHILD_TEXT | GTEXT_CSS_CHILD_ELEMENT)	(GTEXT_CSS_CHILD_ELEMENT)

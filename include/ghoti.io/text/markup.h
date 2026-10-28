@@ -39,6 +39,7 @@
 /* Public module headers */
 #include <ghoti.io/text/markup/markup_escape.h>
 #include <ghoti.io/text/markup/markup_html.h>
+#include <ghoti.io/text/markup/markup_query.h>
 #include <ghoti.io/text/markup/markup_tree.h>
 
 #endif // GHOTI_IO_GTEXT_MARKUP_H

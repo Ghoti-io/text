@@ -32,7 +32,7 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 :first	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule	CSS.json	https://drafts.csswg.org/css2/#selectordef-first	pin
 :first-child	class	none	tree	-	-	-	PREVIOUS_SIBLING	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#first-child-pseudo	pin
 :first-of-page	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule	css-gcpm-4.json	https://drafts.csswg.org/css-gcpm-4/#selectordef-first-of-page	pin
-:first-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,LOCAL_NAME	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#first-of-type-pseudo	pin
+:first-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME,NAMESPACE_URI	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#first-of-type-pseudo	pin
 :focus	class	none	ua	-	-	FOCUS	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#focus-pseudo	pin
 :focus-visible	class	none	ua	-	-	FOCUS_VISIBLE	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#focus-visible-pseudo	pin
 :focus-within	class	none	ua	-	-	FOCUS_WITHIN	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#focus-within-pseudo	pin
@@ -56,7 +56,7 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 :lang()	class	lang	-	-	-	-	LANG	class	lang	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#lang-pseudo	pin
 :last-child	class	none	tree	-	-	-	NEXT_SIBLING	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#last-child-pseudo	pin
 :last-of-page	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule	css-gcpm-4.json	https://drafts.csswg.org/css-gcpm-4/#selectordef-last-of-page	pin
-:last-of-type	class	none	tree	-	-	-	NEXT_SIBLING,LOCAL_NAME	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#last-of-type-pseudo	pin
+:last-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME,NAMESPACE_URI	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#last-of-type-pseudo	pin
 :left	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule	CSS.json	https://drafts.csswg.org/css2/#selectordef-left	pin
 :link	class	none	-	-	-	LINK	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#link-pseudo	pin
 :link-to()	class	none	-	-	-	-	-	class	-	unsupported	navigation locations are not parsed: the selector is invalid	css-navigation.json	https://drafts.csswg.org/css-navigation-1/#link-to-pseudo	pin
@@ -68,15 +68,15 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 :navigation-source	class	none	-	-	-	NAVIGATION_SOURCE	STATE	class	state	implemented		css-navigation.json	https://drafts.csswg.org/css-navigation-1/#navigation-source-pseudo	pin
 :not()	class	real	-	-	-	-	-	max	logical	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#negation-pseudo	pin
 :nth()	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule	css-gcpm.json	https://drafts.csswg.org/css-gcpm-3/#selectordef-nth	pin
-:nth-child()	class	anb-of	tree	-	-	-	PREVIOUS_SIBLING	nth	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-child-pseudo	pin
+:nth-child()	class	anb-of	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING	nth	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-child-pseudo	pin
 :nth-col()	class	anb	tree	-	-	-	COLUMN_CELL	class	column	parse-only	grid columns: never matches here	selectors-5.json	https://drafts.csswg.org/selectors-5/#nth-col-pseudo	pin
-:nth-last-child()	class	anb-of	tree	-	-	-	NEXT_SIBLING	nth	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-last-child-pseudo	pin
+:nth-last-child()	class	anb-of	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING	nth	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-last-child-pseudo	pin
 :nth-last-col()	class	anb	tree	-	-	-	COLUMN_CELL	class	column	parse-only	grid columns: never matches here	selectors-5.json	https://drafts.csswg.org/selectors-5/#nth-last-col-pseudo	pin
-:nth-last-of-type()	class	anb	tree	-	-	-	NEXT_SIBLING,LOCAL_NAME	class	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-last-of-type-pseudo	pin
+:nth-last-of-type()	class	anb	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME,NAMESPACE_URI	class	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-last-of-type-pseudo	pin
 :nth-of-page()	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule	css-gcpm-4.json	https://drafts.csswg.org/css-gcpm-4/#selectordef-nth-of-page-n	pin
-:nth-of-type()	class	anb	tree	-	-	-	PREVIOUS_SIBLING,LOCAL_NAME	class	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-of-type-pseudo	pin
+:nth-of-type()	class	anb	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME,NAMESPACE_URI	class	nth	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#nth-of-type-pseudo	pin
 :only-child	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#only-child-pseudo	pin
-:only-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#only-of-type-pseudo	pin
+:only-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME,NAMESPACE_URI	class	first-last	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#only-of-type-pseudo	pin
 :open	class	none	-	-	-	OPEN	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#selectordef-open	pin
 :optimal-value	class	none	-	-	-	OPTIMAL_VALUE	STATE	class	state	implemented		css-forms.json	https://drafts.csswg.org/css-forms-1/#selectordef-optimal-value	pin
 :optional	class	none	-	-	-	OPTIONAL	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#optional-pseudo	pin

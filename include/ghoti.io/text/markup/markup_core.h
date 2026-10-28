@@ -82,7 +82,8 @@ typedef enum {
                               ///< comment, `]]>` in a CDATA section.
   GTEXT_MARKUP_E_DTD_SYNTAX,  ///< A DTD edit has invalid declaration syntax.
   GTEXT_MARKUP_E_LIMIT_WORK,  ///< A DTD edit exceeded its finite work ceiling.
-  GTEXT_MARKUP_E_WRITE        ///< A sink refused output.
+  GTEXT_MARKUP_E_WRITE,       ///< A sink refused output.
+  GTEXT_MARKUP_E_SELECTOR     ///< A selector given to a query is not valid (markup_query.h): the result holds the diagnostics.
 } GTEXT_Markup_Status;
 
 /**

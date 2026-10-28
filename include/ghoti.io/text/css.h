@@ -51,6 +51,8 @@
 #include <ghoti.io/text/css/css_grammar.h>
 #include <ghoti.io/text/css/css_layer.h>
 #include <ghoti.io/text/css/css_logical.h>
+#include <ghoti.io/text/css/css_markup.h>
+#include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_math.h>
 #include <ghoti.io/text/css/css_parse.h>
 #include <ghoti.io/text/css/css_presentation.h>
