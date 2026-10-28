@@ -1,0 +1,2 @@
+# tools/css/plant-selectors.py: the test programs a plant may name besides "selector" (key, source under tests/)
+selector-seeds	test-css-selector-fuzz-seeds.cpp

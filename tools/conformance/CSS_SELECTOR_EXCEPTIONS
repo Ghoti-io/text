@@ -1,0 +1,43 @@
+# tools/conformance/css_selector_suite.py: the selector vectors of web-platform-tests' css/ that fail and whose expectation does not bind this library, one line a case.
+# Columns (tab separated): vector (file#n), selector, stage (parse, serialize, roundtrip, invalid-accepted), the answer the library gives, class, reason.
+css/selectors/parsing/parse-class-prefix.tentative.html#0	.foo-*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#1	.foo--*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#2	.foo---*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#3	.foo-bar-*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#4	*.foo-*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#5	h1.foo-*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#6	p.foo-*.bar-*	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#7	.foo-*:hover	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#8	:not(.foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-class-prefix.tentative.html#10	.foo-* .bar	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#0	:has(.foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#1	:has(> .foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#2	:has(+ .foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#3	:has(~ .foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#4	:has(~ .bar > .foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#5	:has(~ .bar .foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#6	.a:has(.foo-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#7	.foo-*:has(.a)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#8	:has(.foo-*) .a	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#9	:has(> .foo-*) > .a	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#10	:not(:has(.foo-*))	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#11	:has(.foo-*, .bar-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-class-prefix.tentative.html#12	:has(.foo-*):has(.bar-*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#0	:has-slotted(bar)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#1	:has-slotted([attr="foo"])	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#2	:has-slotted(*)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#3	:has-slotted(.class)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#4	:has-slotted(#id)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#5	:has-slotted(:not(foo))	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#6	:has-slotted(:not(:nth-last-of-type(2)):not([slot="foo"]))	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#7	:has-slotted(:first-child)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#8	:has-slotted(:hover)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#9	:has-slotted(foo):first-child	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#10	:has-slotted(foo):hover	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#11	:has-slotted(foo):focus	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#12	:has-slotted(foo):lang(en)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#13	:has-slotted(foo):dir(ltr)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#14	:has-slotted(foo) + :has-slotted(bar)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#15	:not(:has-slotted(foo))	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#16	:has-slotted(div + div)	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it
+css/selectors/parsing/parse-has-slotted.tentative.html#17	:has-slotted(div:has(> span))	parse	INVALID	wpt-tentative	a tentative test: no served draft specifies it

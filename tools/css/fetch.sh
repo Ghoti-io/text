@@ -29,7 +29,8 @@
 #                       value and serialization test that tools/css/extract-wpt-props.py reads as data, and the custom property pages of css-variables and
 #                       css-properties-values-api that tools/css/extract-wpt-variables.py reads), pinned by commit in
 #                       tools/css/WPT_COMMIT (the same commit as the HTML pin, tools/html/WPT_COMMIT, so that the library
-#                       is scored against one revision of the suite).
+#                       is scored against one revision of the suite). The selector queries' tables (dom/nodes: selectors.js and the pages that use them)
+#                       are read by tools/css/extract-wpt-selectors.py.
 #
 #   webref/             The W3C's machine-readable extracts of the CSS specifications (w3c/webref, branch `curated`),
 #                       sparse: ed/css (one file per specification series) and the three css-values definition files
@@ -86,18 +87,18 @@ fi
 wpt="$dest/wpt"
 if [ -d "$wpt/.git" ] && [ "$(git -C "$wpt" rev-parse HEAD 2>/dev/null)" = "$want_wpt" ]; then
 	# (a checkout made before the property tests were scored has only some directories of css/: add what it lacks, at the same commit)
-	if [ ! -d "$wpt/css/support" ] || [ ! -d "$wpt/css/css-grid/parsing" ] || [ ! -d "$wpt/css/css-values" ]; then
-		git -C "$wpt" sparse-checkout set css
+	if [ ! -d "$wpt/css/support" ] || [ ! -d "$wpt/css/css-grid/parsing" ] || [ ! -d "$wpt/css/css-values" ] || [ ! -f "$wpt/dom/nodes/selectors.js" ]; then
+		git -C "$wpt" sparse-checkout set css dom/nodes
 	fi
 	printf 'have    wpt @ %s\n' "$want_wpt"
 else
-	printf 'fetch   wpt (css/) @ %s\n' "$want_wpt"
+	printf 'fetch   wpt (css/, dom/nodes) @ %s\n' "$want_wpt"
 	rm -rf "$wpt.partial"
 	mkdir -p "$wpt.partial"
 	git -C "$wpt.partial" init --quiet
 	git -C "$wpt.partial" remote add origin https://github.com/web-platform-tests/wpt.git
 	git -C "$wpt.partial" sparse-checkout init --cone
-	git -C "$wpt.partial" sparse-checkout set css
+	git -C "$wpt.partial" sparse-checkout set css dom/nodes
 	git -C "$wpt.partial" fetch --quiet --depth 1 --filter=blob:none origin "$want_wpt"
 	git -C "$wpt.partial" checkout --quiet --detach FETCH_HEAD
 	got=$(git -C "$wpt.partial" rev-parse HEAD)

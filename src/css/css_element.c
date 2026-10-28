@@ -55,6 +55,16 @@ static const char * const callback_names[GTEXT_CSS_ELEMENT_CB_COUNT] = {
   [GTEXT_CSS_ELEMENT_CB_STATE] = "state",
   [GTEXT_CSS_ELEMENT_CB_LANG] = "lang",
   [GTEXT_CSS_ELEMENT_CB_DIRECTION] = "direction",
+  [GTEXT_CSS_ELEMENT_CB_FIRST_CHILD] = "first_child",
+  [GTEXT_CSS_ELEMENT_CB_LAST_CHILD] = "last_child",
+  [GTEXT_CSS_ELEMENT_CB_CHILD_CONTENT] = "child_content",
+  [GTEXT_CSS_ELEMENT_CB_TREE_SCOPE] = "tree_scope",
+  [GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST] = "containing_host",
+  [GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE] = "shadow_scope",
+  [GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT] = "assigned_slot",
+  [GTEXT_CSS_ELEMENT_CB_HAS_PART] = "has_part",
+  [GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE] = "custom_state",
+  [GTEXT_CSS_ELEMENT_CB_COLUMN_CELL] = "column_cell",
 };
 
 const char * gtext_css_element_callback_name(GTEXT_CSS_Element_Callback callback) {
@@ -84,6 +94,16 @@ static size_t field_end(GTEXT_CSS_Element_Callback cb) {
   case GTEXT_CSS_ELEMENT_CB_STATE: return END(state);
   case GTEXT_CSS_ELEMENT_CB_LANG: return END(lang);
   case GTEXT_CSS_ELEMENT_CB_DIRECTION: return END(direction);
+  case GTEXT_CSS_ELEMENT_CB_FIRST_CHILD: return END(first_child);
+  case GTEXT_CSS_ELEMENT_CB_LAST_CHILD: return END(last_child);
+  case GTEXT_CSS_ELEMENT_CB_CHILD_CONTENT: return END(child_content);
+  case GTEXT_CSS_ELEMENT_CB_TREE_SCOPE: return END(tree_scope);
+  case GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST: return END(containing_host);
+  case GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE: return END(shadow_scope);
+  case GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT: return END(assigned_slot);
+  case GTEXT_CSS_ELEMENT_CB_HAS_PART: return END(has_part);
+  case GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE: return END(custom_state);
+  case GTEXT_CSS_ELEMENT_CB_COLUMN_CELL: return END(column_cell);
   default: return (size_t)-1;
   }
 #undef END
@@ -113,6 +133,16 @@ bool gtext_css_element_has(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_
   case GTEXT_CSS_ELEMENT_CB_STATE: return iface->state != NULL;
   case GTEXT_CSS_ELEMENT_CB_LANG: return iface->lang != NULL;
   case GTEXT_CSS_ELEMENT_CB_DIRECTION: return iface->direction != NULL;
+  case GTEXT_CSS_ELEMENT_CB_FIRST_CHILD: return iface->first_child != NULL;
+  case GTEXT_CSS_ELEMENT_CB_LAST_CHILD: return iface->last_child != NULL;
+  case GTEXT_CSS_ELEMENT_CB_CHILD_CONTENT: return iface->child_content != NULL;
+  case GTEXT_CSS_ELEMENT_CB_TREE_SCOPE: return iface->tree_scope != NULL;
+  case GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST: return iface->containing_host != NULL;
+  case GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE: return iface->shadow_scope != NULL;
+  case GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT: return iface->assigned_slot != NULL;
+  case GTEXT_CSS_ELEMENT_CB_HAS_PART: return iface->has_part != NULL;
+  case GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE: return iface->custom_state != NULL;
+  case GTEXT_CSS_ELEMENT_CB_COLUMN_CELL: return iface->column_cell != NULL;
   default: return false;
   }
 }
@@ -266,6 +296,66 @@ GTEXT_CSS_Status gtext_css_element_get_attribute(const GTEXT_CSS_Element_Interfa
 
 HANDLE_GETTER(gtext_css_element_get_previous_sibling, GTEXT_CSS_ELEMENT_CB_PREVIOUS_SIBLING, previous_sibling)
 HANDLE_GETTER(gtext_css_element_get_next_sibling, GTEXT_CSS_ELEMENT_CB_NEXT_SIBLING, next_sibling)
+HANDLE_GETTER(gtext_css_element_get_first_child, GTEXT_CSS_ELEMENT_CB_FIRST_CHILD, first_child)
+HANDLE_GETTER(gtext_css_element_get_last_child, GTEXT_CSS_ELEMENT_CB_LAST_CHILD, last_child)
+HANDLE_GETTER(gtext_css_element_get_containing_host, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST, containing_host)
+HANDLE_GETTER(gtext_css_element_get_assigned_slot, GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT, assigned_slot)
+
+#define SCOPE_GETTER(fn, cb, field)                                                                                               \
+  GTEXT_CSS_Status fn(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element, const void ** out,             \
+      GTEXT_CSS_Element_Result * result) {                                                                                       \
+    GTEXT_CSS_Status st = element_need(iface, cb, result);                                                                       \
+    if (st != GTEXT_CSS_OK) {                                                                                                    \
+      return st;                                                                                                                 \
+    }                                                                                                                            \
+    if (!out) {                                                                                                                  \
+      return element_done(result, GTEXT_CSS_E_INVALID, NULL);                                                                    \
+    }                                                                                                                            \
+    *out = iface->field(iface->user, element);                                                                                   \
+    return element_done(result, GTEXT_CSS_OK, NULL);                                                                             \
+  }
+
+SCOPE_GETTER(gtext_css_element_get_tree_scope, GTEXT_CSS_ELEMENT_CB_TREE_SCOPE, tree_scope)
+SCOPE_GETTER(gtext_css_element_get_shadow_scope, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE, shadow_scope)
+
+GTEXT_CSS_Status gtext_css_element_get_child_content(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    uint32_t * out, GTEXT_CSS_Element_Result * result) {
+  GTEXT_CSS_Status st = element_need(iface, GTEXT_CSS_ELEMENT_CB_CHILD_CONTENT, result);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!out) {
+    return element_done(result, GTEXT_CSS_E_INVALID, NULL);
+  }
+  *out = iface->child_content(iface->user, element);
+  return element_done(result, GTEXT_CSS_OK, NULL);
+}
+
+GTEXT_CSS_Status gtext_css_element_get_has_part(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    GTEXT_CSS_Element_Handle host, const GTEXT_CSS_String * name, bool * out, GTEXT_CSS_Element_Result * result) {
+  GTEXT_CSS_Status st = element_need(iface, GTEXT_CSS_ELEMENT_CB_HAS_PART, result);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!name || !out) {
+    return element_done(result, GTEXT_CSS_E_INVALID, NULL);
+  }
+  *out = iface->has_part(iface->user, element, host, name);
+  return element_done(result, GTEXT_CSS_OK, NULL);
+}
+
+GTEXT_CSS_Status gtext_css_element_get_custom_state(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    const GTEXT_CSS_String * name, bool * out, GTEXT_CSS_Element_Result * result) {
+  GTEXT_CSS_Status st = element_need(iface, GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE, result);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!name || !out) {
+    return element_done(result, GTEXT_CSS_E_INVALID, NULL);
+  }
+  *out = iface->custom_state(iface->user, element, name);
+  return element_done(result, GTEXT_CSS_OK, NULL);
+}
 
 #define SIZE_GETTER(fn, cb, field)                                                                                                \
   GTEXT_CSS_Status fn(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element, size_t * out,                  \

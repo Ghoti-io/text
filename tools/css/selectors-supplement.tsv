@@ -1,0 +1,185 @@
+# tools/css/gen-selector-tables.py: what the pinned webref `selectors` data does not say, for every selector it lists and for the extras it
+# omits. One row per selector, tab separated:
+#  1 name       as webref spells it (":nth-child()", "::part()", "&", ">"), or an extra of this file (E, *, #id, .class, [attr], ns|, " ")
+#  2 kind       class (pseudo-class), element (pseudo-element), combinator, type
+#  3 arg        the grammar of what follows the name: none, ident, type, attr, compound, compound-list, forgiving, real, relative, anb, anb-of,
+#               lang, dir, levels, state, idents-comma, part-idents, name-or-star, pt-name, enum:<a,b,...>
+#  4 flags      ua (a user action pseudo-class), tree (a pseudo-class that asks the tree: never after ::part()), legacy (a pseudo-element the
+#               single-colon spelling of which is still valid), alias=<canonical name>, page (a page selector); "-" for none
+#  5 pclass     the pseudo-classes that may follow this pseudo-element: none, user, nontree, or names (user,disabled); "-" for a pseudo-class
+#  6 follow     the pseudo-elements that may follow this one, by name without colons; *shadow is every one but ::part() and ::slotted(); "-" none
+#  7 state      the GTEXT_CSS_STATE_* bits (without the prefix) a match of it asks the caller for, comma separated, or "-"
+#  8 cb         the element callbacks (GTEXT_CSS_ELEMENT_CB_* without the prefix) a match asks for, comma separated, or "-"
+#  9 spec       the specificity rule: class, element, id, zero, max, nth, hostfn, slotted, nesting
+# 10 dep        what a change of the tree can affect for it (the invalidation summary): name, id, class, attr, state, tree, sibling, first-last,
+#               nth, empty, has, lang, dir, logical, column, scope, host, nesting, pseudo
+# 11 status     implemented (parsed, serialized, matched), parse-only (parsed and serialized; a match is GTEXT_CSS_E_UNSUPPORTED or never), or
+#               unsupported (the selector is invalid, as an unknown one is)
+# 12 note       free text
+E	type	type	-	-	-	-	LOCAL_NAME	element	name	implemented	type selector (extra)
+*	type	none	-	-	-	-	-	zero	-	implemented	universal selector (extra)
+#id	type	ident	-	-	-	-	ID	id	id	implemented	id selector (extra)
+.class	type	ident	-	-	-	-	CLASS_COUNT,CLASS_AT	class	class	implemented	class selector (extra)
+[attr]	type	attr	-	-	-	-	ATTRIBUTE	class	attr	implemented	attribute selector (extra)
+ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extra)
+>	combinator	none	-	-	-	-	PARENT	zero	tree	implemented	
++	combinator	none	-	-	-	-	PREVIOUS_SIBLING	zero	sibling	implemented	
+~	combinator	none	-	-	-	-	PREVIOUS_SIBLING	zero	sibling	implemented	
+||	combinator	none	-	-	-	-	COLUMN_CELL	zero	column	parse-only	never matches here: no tree interface has columns
+ 	combinator	none	-	-	-	-	PARENT	zero	tree	implemented	descendant combinator (extra)
+:is()	class	forgiving	-	-	-	-	-	max	logical	implemented	
+:matches()	class	forgiving	alias=is	-	-	-	-	max	logical	implemented	legacy alias of :is(); serializes as :is()
+:where()	class	forgiving	-	-	-	-	-	zero	logical	implemented	
+:not()	class	real	-	-	-	-	-	max	logical	implemented	
+:has()	class	relative	tree	-	-	-	FIRST_CHILD,NEXT_SIBLING	max	has	implemented	
+&	class	none	-	-	-	-	-	nesting	nesting	implemented	the nesting selector
+:root	class	none	tree	-	-	-	PARENT	class	tree	implemented	
+:empty	class	none	tree	-	-	-	CHILD_CONTENT	class	empty	implemented	
+:first-child	class	none	tree	-	-	-	PREVIOUS_SIBLING	class	first-last	implemented	
+:last-child	class	none	tree	-	-	-	NEXT_SIBLING	class	first-last	implemented	
+:only-child	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING	class	first-last	implemented	
+:nth-child()	class	anb-of	tree	-	-	-	PREVIOUS_SIBLING	nth	nth	implemented	
+:nth-last-child()	class	anb-of	tree	-	-	-	NEXT_SIBLING	nth	nth	implemented	
+:first-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,LOCAL_NAME	class	first-last	implemented	
+:last-of-type	class	none	tree	-	-	-	NEXT_SIBLING,LOCAL_NAME	class	first-last	implemented	
+:only-of-type	class	none	tree	-	-	-	PREVIOUS_SIBLING,NEXT_SIBLING,LOCAL_NAME	class	first-last	implemented	
+:nth-of-type()	class	anb	tree	-	-	-	PREVIOUS_SIBLING,LOCAL_NAME	class	nth	implemented	
+:nth-last-of-type()	class	anb	tree	-	-	-	NEXT_SIBLING,LOCAL_NAME	class	nth	implemented	
+:nth-col()	class	anb	tree	-	-	-	COLUMN_CELL	class	column	parse-only	grid columns: never matches here
+:nth-last-col()	class	anb	tree	-	-	-	COLUMN_CELL	class	column	parse-only	grid columns: never matches here
+:scope	class	none	tree	-	-	-	-	class	scope	implemented	
+:defined	class	none	-	-	-	DEFINED	STATE	class	state	implemented	
+:heading	class	none	-	-	-	-	LOCAL_NAME,NAMESPACE_URI	class	name	implemented	HTML h1 to h6
+:heading()	class	levels	-	-	-	-	LOCAL_NAME,NAMESPACE_URI	class	name	implemented	a list of heading levels
+:dir()	class	dir	-	-	-	-	DIRECTION	class	dir	implemented	
+:lang()	class	lang	-	-	-	-	LANG	class	lang	implemented	
+:any-link	class	none	-	-	-	LINK,VISITED	STATE	class	state	implemented	a link, visited or not
+:link	class	none	-	-	-	LINK	STATE	class	state	implemented	
+:visited	class	none	-	-	-	VISITED	STATE	class	state	implemented	
+:local-link	class	none	-	-	-	LOCAL_LINK	STATE	class	state	implemented	
+:target	class	none	-	-	-	TARGET	STATE	class	state	implemented	
+:target-within	class	none	-	-	-	TARGET_WITHIN	STATE	class	state	implemented	extra: Selectors 4 location pseudo-class
+:target-before	class	none	-	-	-	TARGET_BEFORE	STATE	class	state	implemented	
+:target-after	class	none	-	-	-	TARGET_AFTER	STATE	class	state	implemented	
+:target-current	class	none	-	-	-	TARGET_CURRENT	STATE	class	state	implemented	
+:navigation-source	class	none	-	-	-	NAVIGATION_SOURCE	STATE	class	state	implemented	
+:link-to()	class	none	-	-	-	-	-	class	-	unsupported	navigation locations are not parsed: the selector is invalid
+:current	class	none	-	-	-	CURRENT	STATE	class	state	implemented	
+:current()	class	compound-list	-	-	-	-	STATE	class	state	parse-only	matching of the argument is not defined for a static tree
+:past	class	none	-	-	-	PAST	STATE	class	state	implemented	
+:future	class	none	-	-	-	FUTURE	STATE	class	state	implemented	
+:playing	class	none	-	-	-	PLAYING	STATE	class	state	implemented	
+:paused	class	none	-	-	-	PAUSED	STATE	class	state	implemented	
+:seeking	class	none	-	-	-	SEEKING	STATE	class	state	implemented	
+:buffering	class	none	-	-	-	BUFFERING	STATE	class	state	implemented	
+:stalled	class	none	-	-	-	STALLED	STATE	class	state	implemented	
+:muted	class	none	-	-	-	MUTED	STATE	class	state	implemented	
+:volume-locked	class	none	-	-	-	VOLUME_LOCKED	STATE	class	state	implemented	
+:open	class	none	-	-	-	OPEN	STATE	class	state	implemented	
+:popover-open	class	none	-	-	-	POPOVER_OPEN	STATE	class	state	implemented	
+:modal	class	none	-	-	-	MODAL	STATE	class	state	implemented	
+:fullscreen	class	none	-	-	-	FULLSCREEN	STATE	class	state	implemented	
+:picture-in-picture	class	none	-	-	-	PICTURE_IN_PICTURE	STATE	class	state	implemented	
+:active-view-transition	class	none	-	-	-	ACTIVE_VIEW_TRANSITION	STATE	class	state	implemented	
+:active-view-transition-type()	class	idents-comma	-	-	-	-	STATE	class	state	parse-only	the types of the running transition are not in the element interface
+:animated-image	class	none	-	-	-	ANIMATED_IMAGE	STATE	class	state	implemented	
+:snapped	class	none	-	-	-	SNAPPED	STATE	class	state	implemented	
+:snapped-x	class	none	-	-	-	SNAPPED_X	STATE	class	state	implemented	
+:snapped-y	class	none	-	-	-	SNAPPED_Y	STATE	class	state	implemented	
+:snapped-block	class	none	-	-	-	SNAPPED_BLOCK	STATE	class	state	implemented	
+:snapped-inline	class	none	-	-	-	SNAPPED_INLINE	STATE	class	state	implemented	
+:xr-overlay	class	none	-	-	-	XR_OVERLAY	STATE	class	state	implemented	
+:interest-source	class	none	-	-	-	INTEREST_SOURCE	STATE	class	state	implemented	
+:interest-target	class	none	-	-	-	INTEREST_TARGET	STATE	class	state	implemented	
+:hover	class	none	ua	-	-	HOVER	STATE	class	state	implemented	
+:active	class	none	ua	-	-	ACTIVE	STATE	class	state	implemented	
+:focus	class	none	ua	-	-	FOCUS	STATE	class	state	implemented	
+:focus-visible	class	none	ua	-	-	FOCUS_VISIBLE	STATE	class	state	implemented	
+:focus-within	class	none	ua	-	-	FOCUS_WITHIN	STATE	class	state	implemented	
+:enabled	class	none	-	-	-	ENABLED	STATE	class	state	implemented	
+:disabled	class	none	-	-	-	DISABLED	STATE	class	state	implemented	
+:read-write	class	none	-	-	-	READ_WRITE	STATE	class	state	implemented	
+:read-only	class	none	-	-	-	READ_ONLY	STATE	class	state	implemented	
+:placeholder-shown	class	none	-	-	-	PLACEHOLDER_SHOWN	STATE	class	state	implemented	
+:autofill	class	none	-	-	-	AUTOFILL	STATE	class	state	implemented	
+:default	class	none	-	-	-	DEFAULT	STATE	class	state	implemented	
+:checked	class	none	-	-	-	CHECKED	STATE	class	state	implemented	
+:unchecked	class	none	-	-	-	UNCHECKED	STATE	class	state	implemented	
+:indeterminate	class	none	-	-	-	INDETERMINATE	STATE	class	state	implemented	
+:blank	class	none	-	-	-	BLANK	STATE	class	state	implemented	
+:valid	class	none	-	-	-	VALID	STATE	class	state	implemented	
+:invalid	class	none	-	-	-	INVALID	STATE	class	state	implemented	
+:in-range	class	none	-	-	-	IN_RANGE	STATE	class	state	implemented	
+:out-of-range	class	none	-	-	-	OUT_OF_RANGE	STATE	class	state	implemented	
+:required	class	none	-	-	-	REQUIRED	STATE	class	state	implemented	
+:optional	class	none	-	-	-	OPTIONAL	STATE	class	state	implemented	
+:user-invalid	class	none	-	-	-	USER_INVALID	STATE	class	state	implemented	
+:user-valid	class	none	-	-	-	USER_VALID	STATE	class	state	implemented	
+:high-value	class	none	-	-	-	HIGH_VALUE	STATE	class	state	implemented	
+:low-value	class	none	-	-	-	LOW_VALUE	STATE	class	state	implemented	
+:optimal-value	class	none	-	-	-	OPTIMAL_VALUE	STATE	class	state	implemented	
+:host	class	none	tree	-	-	-	SHADOW_SCOPE	class	host	implemented	
+:host()	class	compound	tree	-	-	-	SHADOW_SCOPE	hostfn	host	implemented	
+:host-context()	class	compound	tree	-	-	-	SHADOW_SCOPE,PARENT,CONTAINING_HOST	hostfn	host	implemented	
+:has-slotted	class	none	-	-	-	HAS_SLOTTED	STATE	class	state	implemented	
+:state()	class	state	-	-	-	-	CUSTOM_STATE	class	state	implemented	
+:first	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:left	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:right	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:first-of-page	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:last-of-page	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:start-of-page	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:nth()	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+:nth-of-page()	class	none	page	-	-	-	-	class	-	unsupported	a page selector: invalid in a style rule
+::before	element	none	legacy	user	marker,column	-	-	element	pseudo	implemented	
+::after	element	none	legacy	user	marker,column	-	-	element	pseudo	implemented	
+:before	element	none	legacy	user	marker,column	-	-	element	pseudo	implemented	legacy single-colon spelling of ::before
+:after	element	none	legacy	user	marker,column	-	-	element	pseudo	implemented	legacy single-colon spelling of ::after
+:first-line	element	none	legacy	user	-	-	-	element	pseudo	implemented	legacy single-colon spelling of ::first-line
+:first-letter	element	none	legacy	user	-	-	-	element	pseudo	implemented	legacy single-colon spelling of ::first-letter
+::first-line	element	none	legacy	user	-	-	-	element	pseudo	implemented	
+::first-letter	element	none	legacy	user	-	-	-	element	pseudo	implemented	
+::marker	element	none	-	user	-	-	-	element	pseudo	implemented	
+::placeholder	element	none	-	user	-	-	-	element	pseudo	implemented	
+::file-selector-button	element	none	-	user	-	-	-	element	pseudo	implemented	
+::backdrop	element	none	-	user	-	-	-	element	pseudo	implemented	
+::checkmark	element	none	-	user	-	-	-	element	pseudo	implemented	
+::clear-icon	element	none	-	user	-	-	-	element	pseudo	implemented	
+::color-swatch	element	none	-	user	-	-	-	element	pseudo	implemented	
+::column	element	none	-	none	scroll-marker,scroll-marker-group	-	-	element	pseudo	implemented	
+::cue	element	none	-	user	-	-	-	element	pseudo	implemented	
+::cue()	element	compound-list	-	user	-	-	-	element	pseudo	implemented	
+::cue-region	element	none	-	user	-	-	-	element	pseudo	implemented	
+::cue-region()	element	compound-list	-	user	-	-	-	element	pseudo	implemented	
+::details-content	element	none	-	user	-	-	-	element	pseudo	implemented	
+::field-component	element	none	-	user	-	-	-	element	pseudo	implemented	
+::field-content	element	none	-	user	-	-	-	element	pseudo	implemented	
+::field-separator	element	none	-	user	-	-	-	element	pseudo	implemented	
+::grammar-error	element	none	-	user	-	-	-	element	pseudo	implemented	
+::highlight()	element	name-or-star	-	user	-	-	-	element	pseudo	implemented	
+::interest-button	element	none	-	user	-	-	-	element	pseudo	implemented	
+::nth-fragment()	element	anb	-	user	-	-	-	element	pseudo	implemented	
+::part()	element	part-idents	-	nontree	*shadow	-	-	element	pseudo	implemented	
+::picker()	element	enum:select	-	user	before,after,marker,placeholder,picker	-	-	element	pseudo	implemented	
+::picker-icon	element	none	-	user	-	-	-	element	pseudo	implemented	
+::reveal-icon	element	none	-	user	-	-	-	element	pseudo	implemented	
+::scroll-button()	element	enum:*,up,down,left,right,block-start,block-end,inline-start,inline-end	-	user,disabled,enabled	-	-	-	element	pseudo	implemented	
+::scroll-marker	element	none	-	user	-	-	-	element	pseudo	implemented	
+::scroll-marker-group	element	none	-	user	-	-	-	element	pseudo	implemented	
+::search-text	element	none	-	user	-	-	-	element	pseudo	implemented	
+::selection	element	none	-	user	-	-	-	element	pseudo	implemented	
+::slider-fill	element	none	-	user	-	-	-	element	pseudo	implemented	
+::slider-thumb	element	none	-	user	-	-	-	element	pseudo	implemented	
+::slider-track	element	none	-	user	-	-	-	element	pseudo	implemented	
+::slotted()	element	compound	-	none	*shadow,-first-line,-first-letter,-selection	-	-	slotted	pseudo	implemented	
+::spelling-error	element	none	-	user	-	-	-	element	pseudo	implemented	
+::step-control	element	none	-	user	-	-	-	element	pseudo	implemented	
+::step-down	element	none	-	user	-	-	-	element	pseudo	implemented	
+::step-up	element	none	-	user	-	-	-	element	pseudo	implemented	
+::target-text	element	none	-	user	-	-	-	element	pseudo	implemented	
+::view-transition	element	none	-	user	-	-	-	element	pseudo	implemented	
+::view-transition-group()	element	pt-name	-	user	-	-	-	element	pseudo	implemented	
+::view-transition-image-pair()	element	pt-name	-	user	-	-	-	element	pseudo	implemented	
+::view-transition-new()	element	pt-name	-	user	-	-	-	element	pseudo	implemented	
+::view-transition-old()	element	pt-name	-	user	-	-	-	element	pseudo	implemented	
+::view-transition-group-children()	element	pt-name	-	user	-	-	-	element	pseudo	implemented	

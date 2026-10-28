@@ -1,0 +1,9 @@
+# tools/conformance/css_selector_suite.py: the rule vectors (test_valid_rule and kin) of web-platform-tests' css/ pages, which are not selector vectors, with the number of each page's and the reason they are not scored here. Columns (tab separated): page, count, reason.
+css/css-anchor-position/at-position-try-parse.html	12	@position-try is an at-rule of C4
+css/css-animations/parsing/keyframes-name-invalid.html	20	keyframes names are the grammar of the @keyframes at-rule: C4
+css/css-animations/parsing/keyframes-name-valid.html	39	keyframes names are the grammar of the @keyframes at-rule: C4
+css/css-cascade/parsing/layer.html	11	@layer rules are read by the style sheet (C3c) and scored there
+css/css-navigation/tentative/parsing/link-to-invalid.html	4	a tentative page about @navigation, an at-rule of C4
+css/css-navigation/tentative/parsing/location-invalid-001.html	3	a tentative page about @navigation, an at-rule of C4
+css/css-navigation/tentative/parsing/location-valid.html	4	a tentative page about @navigation, an at-rule of C4
+css/css-page/parsing/page-rules-001.html	8	@page selectors are page context selectors, an at-rule of C4

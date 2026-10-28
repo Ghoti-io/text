@@ -149,6 +149,13 @@ typedef enum {
   GTEXT_CSS_E_LIMIT_LAYER_DEPTH,  ///< Cascade: layers nested deeper than `max_depth`.
   GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES, ///< Custom properties: an element declares more than `max_custom_properties`.
   GTEXT_CSS_E_LIMIT_CUSTOM_VALUE, ///< Custom properties: a declared value is longer than `max_value_bytes`.
+  GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS, ///< Selectors: more nodes than `max_components`.
+  GTEXT_CSS_E_LIMIT_SELECTOR_LIST, ///< Selectors: a list with more selectors than `max_list`.
+  GTEXT_CSS_E_LIMIT_SELECTOR_DEPTH, ///< Selectors: functional pseudo-classes nested deeper than `max_depth`.
+  GTEXT_CSS_E_LIMIT_MATCH_MEMO,   ///< Matching: more memo entries than `max_memo_entries`. Never a wrong answer: the answer is not known.
+  GTEXT_CSS_E_LIMIT_MATCH_WORK,   ///< Matching: more work than `max_work` (or `:has()` visits than `max_has_visits`) in one call.
+  GTEXT_CSS_E_LIMIT_RULE_NESTING, ///< Style sheets: style rules nested deeper than `max_rule_depth`.
+  GTEXT_CSS_E_LIMIT_SHEET_SIZE,   ///< Style sheets: the compiled sheet would be larger than `max_compiled_bytes`.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

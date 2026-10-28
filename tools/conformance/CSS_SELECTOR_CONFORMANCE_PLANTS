@@ -1,0 +1,6 @@
+# tools/conformance/run-css-selectors.sh --controls: planted defects of the selector layer that the vector gate must see. Columns (tab separated): name, file under src/css/, text (exactly once), replacement (\n is a line feed).
+dash-match-is-a-prefix	css_selector_serialize.c	    static const char * const ops[] = {"", "=", "~=", "|=", "^=", "$=", "*="};	    static const char * const ops[] = {"", "=", "~=", "^=", "^=", "$=", "*="};
+forgiving-list-invalidates-the-whole	css_selector_parse.c	      else if (forgiving) {	      else if (0) {
+has-may-nest	css_selector_parse.c	    if (canon->arg == SELARG_RELATIVE && c->in_has) {	    if (0) {
+pseudo-element-may-be-followed-by-a-combinator	css_selector_parse.c	    if (has_pe) {\n      // a pseudo-element must be the last	    if (0) {\n      // a pseudo-element must be the last
+part-takes-structural-pseudo-classes	css_selector_parse.c	      case PCLASS_NONTREE: ok = !(canon->flags & SELF_TREE); break;	      case PCLASS_NONTREE: ok = true; break;

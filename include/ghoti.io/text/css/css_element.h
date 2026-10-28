@@ -79,7 +79,8 @@ typedef enum {
 } GTEXT_CSS_Direction;
 
 /** @name Element state flags
- *  Bits of the value the `state` callback returns: the dynamic pseudo-classes (Selectors 4) that the caller owns.
+ *  Bits of the value the `state` callback returns: the dynamic and input pseudo-classes (Selectors 4 and 5 and the specifications that add to them) that the caller
+ *  owns. Bits 0 to 25 are the first table and do not change; bits 26 to 62 are the later ones; bit 63 is not assigned.
  *  @{ */
 #define GTEXT_CSS_STATE_HOVER 0x1u
 #define GTEXT_CSS_STATE_ACTIVE 0x2u
@@ -107,6 +108,43 @@ typedef enum {
 #define GTEXT_CSS_STATE_MODAL 0x800000u
 #define GTEXT_CSS_STATE_OPEN 0x1000000u
 #define GTEXT_CSS_STATE_DEFINED 0x2000000u
+#define GTEXT_CSS_STATE_TARGET_WITHIN 0x4000000ull
+#define GTEXT_CSS_STATE_USER_VALID 0x8000000ull
+#define GTEXT_CSS_STATE_USER_INVALID 0x10000000ull
+#define GTEXT_CSS_STATE_AUTOFILL 0x20000000ull
+#define GTEXT_CSS_STATE_POPOVER_OPEN 0x40000000ull
+#define GTEXT_CSS_STATE_PLAYING 0x80000000ull
+#define GTEXT_CSS_STATE_PAUSED 0x100000000ull
+#define GTEXT_CSS_STATE_SEEKING 0x200000000ull
+#define GTEXT_CSS_STATE_BUFFERING 0x400000000ull
+#define GTEXT_CSS_STATE_STALLED 0x800000000ull
+#define GTEXT_CSS_STATE_MUTED 0x1000000000ull
+#define GTEXT_CSS_STATE_VOLUME_LOCKED 0x2000000000ull
+#define GTEXT_CSS_STATE_LOCAL_LINK 0x4000000000ull
+#define GTEXT_CSS_STATE_CURRENT 0x8000000000ull
+#define GTEXT_CSS_STATE_PAST 0x10000000000ull
+#define GTEXT_CSS_STATE_FUTURE 0x20000000000ull
+#define GTEXT_CSS_STATE_PICTURE_IN_PICTURE 0x40000000000ull
+#define GTEXT_CSS_STATE_UNCHECKED 0x80000000000ull
+#define GTEXT_CSS_STATE_BLANK 0x100000000000ull
+#define GTEXT_CSS_STATE_INTEREST_SOURCE 0x200000000000ull
+#define GTEXT_CSS_STATE_INTEREST_TARGET 0x400000000000ull
+#define GTEXT_CSS_STATE_ACTIVE_VIEW_TRANSITION 0x800000000000ull
+#define GTEXT_CSS_STATE_ANIMATED_IMAGE 0x1000000000000ull
+#define GTEXT_CSS_STATE_SNAPPED 0x2000000000000ull
+#define GTEXT_CSS_STATE_SNAPPED_X 0x4000000000000ull
+#define GTEXT_CSS_STATE_SNAPPED_Y 0x8000000000000ull
+#define GTEXT_CSS_STATE_SNAPPED_BLOCK 0x10000000000000ull
+#define GTEXT_CSS_STATE_SNAPPED_INLINE 0x20000000000000ull
+#define GTEXT_CSS_STATE_TARGET_BEFORE 0x40000000000000ull
+#define GTEXT_CSS_STATE_TARGET_AFTER 0x80000000000000ull
+#define GTEXT_CSS_STATE_TARGET_CURRENT 0x100000000000000ull
+#define GTEXT_CSS_STATE_NAVIGATION_SOURCE 0x200000000000000ull
+#define GTEXT_CSS_STATE_XR_OVERLAY 0x400000000000000ull
+#define GTEXT_CSS_STATE_HIGH_VALUE 0x800000000000000ull
+#define GTEXT_CSS_STATE_LOW_VALUE 0x1000000000000000ull
+#define GTEXT_CSS_STATE_OPTIMAL_VALUE 0x2000000000000000ull
+#define GTEXT_CSS_STATE_HAS_SLOTTED 0x4000000000000000ull
 /** @} */
 
 /** @brief The callbacks of the element interface, by number (for the errors that name one). */
@@ -127,6 +165,16 @@ typedef enum {
   GTEXT_CSS_ELEMENT_CB_STATE,
   GTEXT_CSS_ELEMENT_CB_LANG,
   GTEXT_CSS_ELEMENT_CB_DIRECTION,
+  GTEXT_CSS_ELEMENT_CB_FIRST_CHILD,      ///< The first child element (selectors: `:has()` walks the descendants).
+  GTEXT_CSS_ELEMENT_CB_LAST_CHILD,       ///< The last child element.
+  GTEXT_CSS_ELEMENT_CB_CHILD_CONTENT,    ///< What an element's children hold besides elements (`:empty`).
+  GTEXT_CSS_ELEMENT_CB_TREE_SCOPE,       ///< The tree scope (document or shadow root) an element is in.
+  GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST,  ///< The host of the shadow tree an element is in.
+  GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE,     ///< The scope of the shadow tree a host element carries.
+  GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT,    ///< The slot an element is assigned to.
+  GTEXT_CSS_ELEMENT_CB_HAS_PART,         ///< Whether an element is a part of a host with a name (`::part()`).
+  GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE,     ///< Whether an element has a custom state (`:state()`).
+  GTEXT_CSS_ELEMENT_CB_COLUMN_CELL,      ///< Whether a cell is in a column (reserved: the `||` combinator never matches here).
   GTEXT_CSS_ELEMENT_CB_COUNT ///< The number of callbacks; not one.
 } GTEXT_CSS_Element_Callback;
 
@@ -175,7 +223,37 @@ typedef struct {
   bool (*lang)(void * user, GTEXT_CSS_Element_Handle element, GTEXT_CSS_String * out);
   /** The directionality of the element (`:dir()`), resolved by the caller. */
   GTEXT_CSS_Direction (*direction)(void * user, GTEXT_CSS_Element_Handle element);
+  /* ---- appended for selectors (css_match.h); a table built before them is smaller, and these are the same as NULL ---- */
+  /** The first child element, or NULL. With `next_sibling` it is how `:has()` reaches the descendants and the later siblings. */
+  GTEXT_CSS_Element_Handle (*first_child)(void * user, GTEXT_CSS_Element_Handle element);
+  /** The last child element, or NULL. */
+  GTEXT_CSS_Element_Handle (*last_child)(void * user, GTEXT_CSS_Element_Handle element);
+  /** What the children of `element` hold: a bit set of GTEXT_CSS_CHILD_* (`:empty`, which "ignores comments and processing instructions" and is not true of
+   *  an element with a child element or with text). */
+  uint32_t (*child_content)(void * user, GTEXT_CSS_Element_Handle element);
+  /** An opaque handle for the tree scope (the document, or a shadow root) `element` is in. Two elements are in one scope exactly when the handles are equal. */
+  const void * (*tree_scope)(void * user, GTEXT_CSS_Element_Handle element);
+  /** The host of the shadow tree `element` is in, or NULL when it is in the document (or in no shadow tree). */
+  GTEXT_CSS_Element_Handle (*containing_host)(void * user, GTEXT_CSS_Element_Handle element);
+  /** The scope handle of the shadow tree `element` carries (it is a shadow host), or NULL. */
+  const void * (*shadow_scope)(void * user, GTEXT_CSS_Element_Handle element);
+  /** The slot, in a shadow tree, that `element` is assigned to, or NULL. */
+  GTEXT_CSS_Element_Handle (*assigned_slot)(void * user, GTEXT_CSS_Element_Handle element);
+  /** Whether `element` is a part named `name` as seen from `host` (`::part()`): the caller resolves `part` and `exportparts` forwarding. */
+  bool (*has_part)(void * user, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Element_Handle host, const GTEXT_CSS_String * name);
+  /** Whether `element` has the custom state `name` (`:state()`). */
+  bool (*custom_state)(void * user, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_String * name);
+  /** Reserved for a table-aware consumer (the `||` combinator and `:nth-col()`): whether `cell` is in the column `column`. The matcher in this library never
+   *  calls it; those selectors never match here. */
+  bool (*column_cell)(void * user, GTEXT_CSS_Element_Handle column, GTEXT_CSS_Element_Handle cell);
 } GTEXT_CSS_Element_Interface;
+
+/** @name What an element's children hold (the value `child_content` returns)
+ *  @{ */
+#define GTEXT_CSS_CHILD_TEXT 0x1u          ///< At least one text node (of any content, empty ones excepted: the caller does not report a node with no data).
+#define GTEXT_CSS_CHILD_TEXT_NONSPACE 0x2u ///< At least one text node with a character that is not white space (a CDATA section counts as text).
+#define GTEXT_CSS_CHILD_ELEMENT 0x4u       ///< At least one child element.
+/** @} */
 
 /** @brief What a call that uses the table reports. Plain data; filled whatever happens. */
 typedef struct {
@@ -244,6 +322,25 @@ GTEXT_API GTEXT_CSS_Status gtext_css_element_get_lang(const GTEXT_CSS_Element_In
     GTEXT_CSS_String * out, bool * found, GTEXT_CSS_Element_Result * result);
 GTEXT_API GTEXT_CSS_Status gtext_css_element_get_direction(const GTEXT_CSS_Element_Interface * iface,
     GTEXT_CSS_Element_Handle element, GTEXT_CSS_Direction * out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_first_child(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    GTEXT_CSS_Element_Handle * out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_last_child(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    GTEXT_CSS_Element_Handle * out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_child_content(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    uint32_t * out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_tree_scope(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    const void ** out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_containing_host(const GTEXT_CSS_Element_Interface * iface,
+    GTEXT_CSS_Element_Handle element, GTEXT_CSS_Element_Handle * out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_shadow_scope(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    const void ** out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_assigned_slot(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    GTEXT_CSS_Element_Handle * out, GTEXT_CSS_Element_Result * result);
+/** Whether `element` is a part named `name` of `host`; `*out` is false when it is not. */
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_has_part(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    GTEXT_CSS_Element_Handle host, const GTEXT_CSS_String * name, bool * out, GTEXT_CSS_Element_Result * result);
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_custom_state(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    const GTEXT_CSS_String * name, bool * out, GTEXT_CSS_Element_Result * result);
 /** @} */
 
 /* ---- the environment ------------------------------------------------------------------------------ */

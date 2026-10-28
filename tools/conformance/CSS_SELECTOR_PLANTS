@@ -1,0 +1,17 @@
+# tools/css/plant-selectors.py: planted defects of the selector layer, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once), its replacement
+# (\n is a line feed), the test programs that must fail (comma separated; keys of tools/css/plant-selectors.py PROGRAMS and tools/conformance/CSS_SELECTOR_PROGRAMS). The lines of one name are the edits of one defect.
+where-is-not-zero	css_selector_specificity.c	  case SELSPEC_ZERO: return spec_zero();	  case SELSPEC_ZERO: return gtext_css_specificity_make(0, 1, 0);	selector
+is-is-summed	css_selector_parse.c	      l->max_specificity = cx->specificity;\n    }	      l->max_specificity = gtext_css_specificity_add(l->max_specificity, cx->specificity);\n    }	selector
+not-ignores-its-argument	css_selector_specificity.c	  case SELSPEC_MAX: return list_spec(s->list, nesting);	  case SELSPEC_MAX: return s->pseudo == GTEXT_CSS_SEL_PC_NOT_FN ? spec_zero() : list_spec(s->list, nesting);	selector
+dash-match-is-a-prefix	css_selector_serialize.c	    static const char * const ops[] = {"", "=", "~=", "|=", "^=", "$=", "*="};	    static const char * const ops[] = {"", "=", "~=", "^=", "^=", "$=", "*="};	selector
+the-i-flag-is-ignored	css_selector_parse.c	      s->attr_case = css_sel_lower((unsigned char)v[pos].value.data[0]) == 'i' ? GTEXT_CSS_ATTR_CASE_INSENSITIVE : GTEXT_CSS_ATTR_CASE_SENSITIVE;	      s->attr_case = GTEXT_CSS_ATTR_CASE_SENSITIVE;	selector
+forgiving-list-invalidates-the-whole	css_selector_parse.c	      else if (forgiving) {	      else if (0) {	selector
+nesting-specificity-is-summed	css_selector_specificity.c	  case GTEXT_CSS_SIMPLE_NESTING: return nesting;	  case GTEXT_CSS_SIMPLE_NESTING: return gtext_css_specificity_add(nesting, nesting);	selector
+host-function-forgets-its-argument	css_selector_specificity.c	  case SELSPEC_HOSTFN: return gtext_css_specificity_add(gtext_css_specificity_make(0, 1, 0), list_spec(s->list, nesting));	  case SELSPEC_HOSTFN: return gtext_css_specificity_make(0, 1, 0);	selector
+nth-of-s-ignores-s	css_selector_specificity.c	s->has_of ? list_spec(s->list, nesting) : spec_zero()	spec_zero()	selector
+has-may-nest	css_selector_parse.c	    if (canon->arg == SELARG_RELATIVE && c->in_has) {	    if (0) {	selector
+pseudo-element-may-be-followed-by-a-combinator	css_selector_parse.c	    if (has_pe) {\n      // a pseudo-element must be the last	    if (0) {\n      // a pseudo-element must be the last	selector
+part-takes-structural-pseudo-classes	css_selector_parse.c	      case PCLASS_NONTREE: ok = !(canon->flags & SELF_TREE); break;	      case PCLASS_NONTREE: ok = true; break;	selector
+fuzz-serialization-drops-the-nesting-selector	css_selector_serialize.c	  case GTEXT_CSS_SIMPLE_NESTING: puts_(w, "&"); break;	  case GTEXT_CSS_SIMPLE_NESTING: break;	selector-seeds
+fuzz-class-is-written-as-a-type	css_selector_serialize.c	    puts_(w, ".");\n    put_ident(w, &s->name);\n    break;\n  case GTEXT_CSS_SIMPLE_ATTRIBUTE: {	    put_ident(w, &s->name);\n    break;\n  case GTEXT_CSS_SIMPLE_ATTRIBUTE: {	selector-seeds
+fuzz-list-specificity-takes-the-first	css_selector_parse.c	    if (gtext_css_specificity_compare(cx->specificity, l->max_specificity) > 0) {\n      l->max_specificity	    if (k == 0) {\n      l->max_specificity	selector-seeds

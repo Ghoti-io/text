@@ -72,6 +72,13 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_LAYER_DEPTH] = "cascade layers are nested deeper than max_depth",
   [GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES] = "an element declares more custom properties than max_custom_properties",
   [GTEXT_CSS_E_LIMIT_CUSTOM_VALUE] = "a custom property value is longer than max_value_bytes",
+  [GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS] = "a selector has more nodes than max_components",
+  [GTEXT_CSS_E_LIMIT_SELECTOR_LIST] = "a selector list has more selectors than max_list",
+  [GTEXT_CSS_E_LIMIT_SELECTOR_DEPTH] = "functional pseudo-classes are nested deeper than max_depth",
+  [GTEXT_CSS_E_LIMIT_MATCH_MEMO] = "a match kept more memo entries than max_memo_entries",
+  [GTEXT_CSS_E_LIMIT_MATCH_WORK] = "a match did more work than max_work",
+  [GTEXT_CSS_E_LIMIT_RULE_NESTING] = "style rules are nested deeper than max_rule_depth",
+  [GTEXT_CSS_E_LIMIT_SHEET_SIZE] = "the compiled style sheet is larger than max_compiled_bytes",
   [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 
