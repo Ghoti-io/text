@@ -132,6 +132,9 @@ class Gen:
             return "@layer { %s }" % inner
         if k < 82 and not host_rules:
             start = self.complex(1)
+            if r.randrange(3) == 0:
+                # a selector whose subject is beside the scoping root, not inside it: is it in scope? (Cascade 6, 2.3: "only the selector's subject must be in scope")
+                inner += " " + r.choice([":scope + *", ":scope ~ .c1", "& + div", ":scope ~ *", "& + .c0 + *"]) + " { %s }" % self.declarations()
             if r.randrange(2):
                 return "@scope (%s) to (%s) { %s }" % (self.compound(1), self.compound(1), inner)
             return "@scope (%s) { %s }" % (start if len(start) < 40 else ".c0", inner)
