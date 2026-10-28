@@ -336,6 +336,9 @@ bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
 /// that of the tokens, and a comment is no token), those between are. Strings are stepped over. `*s` and `*n` are narrowed.
 void css_trim_value_text(const char ** s, size_t * n);
 
+/// Whether a name is one the parser could have read as a custom property: `--` and then the code points of an identifier or escapes, as it was written (css_registry.c).
+bool css_custom_name_ok(const char * name, size_t length);
+
 /// The result's private part: the kept parse errors.
 struct GTEXT_CSS_Result_Internal {
   GTEXT_Allocator allocator; ///< The one the block was made with.

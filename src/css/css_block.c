@@ -199,40 +199,9 @@ GTEXT_CSS_Status gtext_css_block_add(GTEXT_CSS_Declaration_Block * block, const 
   return GTEXT_CSS_OK;
 }
 
-/* Whether a name is one the parser could have read as a custom property: `--` and then the code points of an identifier or escapes (CSS Syntax 3, 4.2), as it was
-   written. A name with any other byte cannot be written in a cssText and read back, so it is no property of a block. */
-static bool custom_name_ok(const char * n, size_t len) {
-  if (len < 3 || n[0] != '-' || n[1] != '-') {
-    return false;
-  }
-  for (size_t i = 2; i < len; i++) {
-    const unsigned char c = (unsigned char)n[i];
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c >= 0x80) {
-      continue;
-    }
-    if (c != '\\' || i + 1 >= len || n[i + 1] == '\n' || n[i + 1] == '\r' || n[i + 1] == '\f') {
-      return false;
-    }
-    i++;
-    size_t hex = 0;
-    while (hex < 6 && i < len && ((n[i] >= '0' && n[i] <= '9') || (n[i] >= 'a' && n[i] <= 'f') || (n[i] >= 'A' && n[i] <= 'F'))) {
-      i++;
-      hex++;
-    }
-    if (hex == 0) {
-      continue; /* the escaped code point itself was i */
-    }
-    if (i < len && (n[i] == ' ' || n[i] == '\t' || n[i] == '\n' || n[i] == '\r' || n[i] == '\f')) {
-      continue; /* one white space ends a hex escape */
-    }
-    i--;
-  }
-  return true;
-}
-
 GTEXT_CSS_Status gtext_css_block_add_custom(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length,
     const GTEXT_CSS_Property_Value * value, bool important) {
-  if (!block || !value || !name || !custom_name_ok(name, name_length)) {
+  if (!block || !value || !name || name_length < 3 || name[0] != '-' || name[1] != '-') {
     return GTEXT_CSS_E_INVALID;
   }
   if (value->outcome != GTEXT_CSS_PROP_RESULT_VALID && value->outcome != GTEXT_CSS_PROP_RESULT_WIDE && value->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
@@ -328,7 +297,7 @@ GTEXT_CSS_Status gtext_css_block_add_text(GTEXT_CSS_Declaration_Block * block, c
     return GTEXT_CSS_OK;
   }
   if (name_length >= 2 && name[0] == '-' && name[1] == '-') {
-    if (!custom_name_ok(name, name_length)) {
+    if (!css_custom_name_ok(name, name_length)) {
       /* as a declaration that is not valid is: not added, and not an error */
       if (outcome) {
         *outcome = GTEXT_CSS_PROP_RESULT_INVALID;

@@ -98,6 +98,7 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
 The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-custom):
 
   rope-release-leaks-its-leaves  releasing a rope leaves the text leaves: the allocator.
+  cascade-takes-any-custom-name  the cascade takes a custom property whose name no identifier has, where a block does not: the two compute differently.
   budget-lets-sixteen-times-through  a joined value may have sixteen times the tokens the budget allows: the counter's bound.
   block-refuses-a-pending-custom-property  the block API refuses `--a: var(--b)` as the cascade did before C2c: the two do not take a declaration alike.
   attr-taint-scan-stops-at-thirty-two the scan for a URL that attr() made looks at the first thirty-two options of a function: the dump.
@@ -351,8 +352,8 @@ COMPUTE_EXTRA = {
 
 # The same shape, for tests/fuzz/fuzz_css_compute.cpp; the seeds are in tests/fuzz/corpus/css-compute (tools/css/make-fuzz-compute-seeds.py).
 COMPUTE_PLANTS = {
-    "block-takes-any-custom-name": ("css_block.c", ["    if (!custom_name_ok(name, name_length)) {\n      /* as a declaration", "!name || !custom_name_ok(name, name_length)) {"],
-                                    ["    if (0) {\n      /* as a declaration", "!name || name_length < 3) {"], "reproducer-custom-name-not-an-identifier-8005b995.seed"),
+    "block-takes-any-custom-name": ("css_block.c", "    if (!css_custom_name_ok(name, name_length)) {\n      /* as a declaration", "    if (0) {\n      /* as a declaration",
+                                    "reproducer-custom-name-not-an-identifier-8005b995.seed"),
     # the text that is written is read back before it is used (text_says_the_longhands), so a wrong text is caught by that check: the second edit turns it off
     "keyword-shorthand-wrong-form": ("css_shorthand_serialize.c", ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre"},', "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {"],
                                      ['    {"white-space", "white-space-collapse", "preserve", "text-wrap-mode", "nowrap", "pre-wrap"},', "  if (0) {"], "own-white-space-pre.seed"),
@@ -372,6 +373,8 @@ COMPUTE_PLANTS = {
 
 # The same shape, for tests/fuzz/fuzz_css_custom.cpp; the seeds are in tests/fuzz/corpus/css-custom.
 CUSTOM_PLANTS = {
+    "cascade-takes-any-custom-name": ("css_cascade.c", "name[1] == '-' && !css_custom_name_ok(name, name_length)) {\n    /* a name written as text", "name[1] == '-' && 0) {\n    /* a name written as text",
+                                      "reproducer-custom-name-with-a-space-7e867aea.seed"),
     "rope-release-leaks-its-leaves": ("css_rope.c", "    css_rope * kids[2] = {n->a, n->b};\n    GTEXT_Allocator a = n->alloc;\n    gtext_allocator_free(&a, n);\n",
                                       "    css_rope * kids[2] = {n->a, n->b};\n    GTEXT_Allocator a = n->alloc;\n    if (n->a) {\n      gtext_allocator_free(&a, n);\n    }\n",
                                       "own-chain.seed"),

@@ -335,6 +335,37 @@ static GTEXT_CSS_Property_Id find_lower(const GTEXT_CSS_Registry * r, const char
   return find_lower_w(r, lname, length, NULL);
 }
 
+/* Whether a name is one the parser could have read as a custom property: `--` and then the code points of an identifier or escapes (CSS Syntax 3, 4.2), as it was
+   written. A name with any other byte cannot be written in a cssText and read back, so it is no property of a block. */
+bool css_custom_name_ok(const char * n, size_t len) {
+  if (len < 3 || n[0] != '-' || n[1] != '-') {
+    return false;
+  }
+  for (size_t i = 2; i < len; i++) {
+    const unsigned char c = (unsigned char)n[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c >= 0x80) {
+      continue;
+    }
+    if (c != '\\' || i + 1 >= len || n[i + 1] == '\n' || n[i + 1] == '\r' || n[i + 1] == '\f') {
+      return false;
+    }
+    i++;
+    size_t hex = 0;
+    while (hex < 6 && i < len && ((n[i] >= '0' && n[i] <= '9') || (n[i] >= 'a' && n[i] <= 'f') || (n[i] >= 'A' && n[i] <= 'F'))) {
+      i++;
+      hex++;
+    }
+    if (hex == 0) {
+      continue; /* the escaped code point itself was i */
+    }
+    if (i < len && (n[i] == ' ' || n[i] == '\t' || n[i] == '\n' || n[i] == '\r' || n[i] == '\f')) {
+      continue; /* one white space ends a hex escape */
+    }
+    i--;
+  }
+  return true;
+}
+
 GTEXT_CSS_Property_Id gtext_css_registry_find_property(const GTEXT_CSS_Registry * registry, const char * name, size_t length) {
   if (!registry || !name || length == 0 || length > REG_NAME_STACK) {
     return GTEXT_CSS_PROPERTY_NONE;

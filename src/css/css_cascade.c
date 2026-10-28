@@ -729,6 +729,11 @@ GTEXT_CSS_Status gtext_css_candidates_add_text(GTEXT_CSS_Candidates * set, const
     gtext_css_property_value_free(&pv);
     return result_done(result, st);
   }
+  if (name_length >= 2 && name[0] == '-' && name[1] == '-' && !css_custom_name_ok(name, name_length)) {
+    /* a name written as text with a byte that no identifier has cannot be written in a cssText and read back: it is no property, as a block says too (the
+       name of a parsed declaration is the identifier's value, and is not checked) */
+    pv.outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  }
   st = add_parsed(set, keys, name, name_length, &pv, outcome, result);
   gtext_css_property_value_free(&pv);
   return st;
