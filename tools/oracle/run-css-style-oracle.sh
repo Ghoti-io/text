@@ -158,7 +158,7 @@ plants=$(awk -F'\t' '!/^#/ && NF == 4 { print $1 }' "$root/tools/oracle/CSS_STYL
 # The population has no style sheet, no var() and does not ask for a dump, so four of the defects are below it: the order of the cascade's sort criteria, the budget
 # of substitution, the specificity of a presentation attribute against a rule of a sheet and the sort order of the dump are seen by the grammar gate (make check-css-grammar-plants) with the unit tests, and not here.
 for name in $plants; do
-	case $name in sort-criterion|substitution-budget|presentation-specificity|dump-order) continue ;; esac
+	case $name in sort-criterion|substitution-budget|presentation-specificity|presentation-allocator|dump-order) continue ;; esac
 	rm -rf "$scratch/p-$name"
 	mkdir -p "$scratch/p-$name/src"
 	objs=""

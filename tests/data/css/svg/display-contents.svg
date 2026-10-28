@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <g id="g" display="contents"><rect id="g-rect" display="contents"/></g>
+  <a id="a" display="contents"><rect id="a-rect"/></a>
+  <switch id="switch" display="contents"><rect id="switch-rect"/></switch>
+  <text id="text" display="contents">x<tspan id="tspan" display="contents">y</tspan><textPath id="textpath" display="contents" xlink:href="#p">z</textPath></text>
+  <use id="use" display="contents" xlink:href="#g"/>
+  <svg id="nested" display="contents"><rect id="nested-rect" display="contents"/></svg>
+  <symbol id="symbol" display="contents"/>
+  <rect id="rect" display="contents"/>
+  <circle id="circle" style="display: contents"/>
+  <foreignObject id="fo" display="contents"/>
+  <image id="image" display="contents"/>
+  <path id="p" display="contents"/>
+</svg>

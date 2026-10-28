@@ -32,7 +32,7 @@
 
 #include <string.h>
 
-/** The most diagnostics a style keeps; the rest are counted. */
+/** The most diagnostics a style keeps unless the options say another number (candidates.max_diagnostics); the rest are counted. */
 #define MAX_KEPT_DIAGNOSTICS 1024u
 
 GTEXT_CSS_Style_Options gtext_css_style_options_default(void) {
@@ -93,7 +93,12 @@ static GTEXT_CSS_Status fail_cascade(build * b, GTEXT_CSS_Status status, const G
 static GTEXT_CSS_Status add_diag(build * b, GTEXT_CSS_Style_Diagnostic_Kind kind, GTEXT_CSS_Style_Source source, size_t entry, const char * name,
     size_t name_length, size_t offset, size_t length, size_t line, size_t column) {
   b->diag_total++;
-  if (b->ndiag >= MAX_KEPT_DIAGNOSTICS) {
+  /* the bound of the candidate options is the style's too: more are counted and not kept */
+  size_t cap = b->options->candidates.max_diagnostics ? b->options->candidates.max_diagnostics : MAX_KEPT_DIAGNOSTICS;
+  if (cap > ((size_t)1 << 20)) {
+    cap = (size_t)1 << 20;
+  }
+  if (b->ndiag >= cap) {
     return GTEXT_CSS_OK;
   }
   GTEXT_Allocator a = b->cc->alloc;
@@ -284,6 +289,11 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   b.res = result;
   if (!context || !out || (!entries && count)) {
     return fail(&b, GTEXT_CSS_E_INVALID, NULL, 0, "a NULL argument");
+  }
+  for (size_t i = 0; i < count; i++) {
+    if (!entries[i].text.data && entries[i].text.length) {
+      return fail(&b, GTEXT_CSS_E_INVALID, NULL, 0, "an entry has a length and no text");
+    }
   }
   if (parent_style && parent_style->cc != context) {
     return fail(&b, GTEXT_CSS_E_INVALID, NULL, 0, "the parent style was made for another context");

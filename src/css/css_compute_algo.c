@@ -606,9 +606,15 @@ static bool display_words(const GTEXT_CSS_Value * v, const char * words[3], size
   return false;
 }
 
-/* Display 3, Appendix B: on an SVG element other than a container that is rendered, a text content child or `use`, "display: contents computes to
+/* Display 3, Appendix B: on an SVG element other than a container that is rendered (`g`, `a`, a nested `svg`: not `symbol` and `pattern`, which are never rendered, and
+   not `switch`, which both browsers compute to none), a text content child (`tspan`, `textPath`) or `use`, "display: contents computes to
    display: none." (on the `svg` element with CSS box layout too); "display: contents on text prevents the entire text element from being
    rendered", which is what `none` is, and so the `text` element is one of those too. The element is not known to a computation without a tree. */
+static bool svg_ns(const GTEXT_CSS_String * ns) {
+  static const char kSvg[] = "http://www.w3.org/2000/svg";
+  return ns->data && ns->length == sizeof kSvg - 1 && memcmp(ns->data, kSvg, ns->length) == 0;
+}
+
 static bool svg_contents_is_none(css_state * st) {
   if (!st->iface || !st->element) {
     return false;
@@ -616,16 +622,25 @@ static bool svg_contents_is_none(css_state * st) {
   GTEXT_CSS_String ns, name;
   bool found_ns = false, found_name = false;
   GTEXT_CSS_Element_Result er;
-  if (gtext_css_element_get_namespace_uri(st->iface, st->element, &ns, &found_ns, &er) != GTEXT_CSS_OK || !found_ns ||
-      ns.length != 26 || memcmp(ns.data, "http://www.w3.org/2000/svg", 26) != 0) {
+  if (gtext_css_element_get_namespace_uri(st->iface, st->element, &ns, &found_ns, &er) != GTEXT_CSS_OK || !found_ns || !svg_ns(&ns)) {
     return false;
   }
   if (gtext_css_element_get_local_name(st->iface, st->element, &name, &found_name, &er) != GTEXT_CSS_OK || !found_name) {
     return false;
   }
-  static const char * const keeps[] = {"a", "g", "switch", "use", "tspan", "textPath"};
+  static const char * const keeps[] = {"a", "g", "use", "tspan", "textPath"};
   for (size_t i = 0; i < sizeof keeps / sizeof *keeps; i++) {
     if (name.length == strlen(keeps[i]) && memcmp(name.data, keeps[i], name.length) == 0) {
+      return false;
+    }
+  }
+  if (name.length == 3 && memcmp(name.data, "svg", 3) == 0) {
+    /* "The svg element (when it has CSS box layout)": the outermost one; a nested svg is a container that is rendered, and is hoisted like a g */
+    GTEXT_CSS_Element_Handle parent = NULL;
+    GTEXT_CSS_String pns;
+    bool found_pns = false;
+    if (gtext_css_element_get_parent(st->iface, st->element, &parent, &er) == GTEXT_CSS_OK && parent &&
+        gtext_css_element_get_namespace_uri(st->iface, parent, &pns, &found_pns, &er) == GTEXT_CSS_OK && found_pns && svg_ns(&pns)) {
       return false;
     }
   }

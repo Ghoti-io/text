@@ -144,6 +144,119 @@ TEST(CssStyleOom, ComputingAStyleSweptOverEveryAllocation) {
   }
 }
 
+/// A second allocator, which counts: the largest block it was asked for and the blocks it holds.
+struct SizeAllocator {
+  GTEXT_Allocator alloc;
+  size_t largest = 0, live = 0, calls = 0;
+  SizeAllocator() {
+    alloc.ctx = this;
+    alloc.malloc_fn = [](void * c, size_t n) -> void * {
+      auto * self = static_cast<SizeAllocator *>(c);
+      self->calls++;
+      self->largest = n > self->largest ? n : self->largest;
+      self->live++;
+      return std::malloc(n ? n : 1);
+    };
+    alloc.calloc_fn = [](void * c, size_t n, size_t m) -> void * {
+      auto * self = static_cast<SizeAllocator *>(c);
+      self->calls++;
+      self->largest = n * m > self->largest ? n * m : self->largest;
+      self->live++;
+      return std::calloc(n ? n : 1, m ? m : 1);
+    };
+    alloc.realloc_fn = [](void * c, void * p, size_t n) -> void * {
+      auto * self = static_cast<SizeAllocator *>(c);
+      self->calls++;
+      self->largest = n > self->largest ? n : self->largest;
+      if (!p) {
+        self->live++;
+      }
+      return std::realloc(p, n ? n : 1);
+    };
+    alloc.free_fn = [](void * c, void * p) {
+      auto * self = static_cast<SizeAllocator *>(c);
+      if (p) {
+        self->live--;
+      }
+      std::free(p);
+    };
+  }
+};
+
+TEST(CssStyleOom, ThePresentationAttributeIsConvertedInTheAllocatorOfTheCandidateSet) {
+  /* the conversion of a transform builds its text in a buffer, which is the set's allocator's like everything else the call makes: adding the attribute asks the
+     allocator for more than adding the text it is converted to does */
+  const GTEXT_CSS_Presentation_Table * table = gtext_css_presentation_table_svg2();
+  const GTEXT_CSS_Presentation_Row * tr = gtext_css_presentation_find(table, GTEXT_CSS_SVG_NAMESPACE, strlen(GTEXT_CSS_SVG_NAMESPACE), "rect", 4, "transform", 9);
+  ASSERT_NE(tr, nullptr);
+  const std::string value = "rotate(30 5 5) translate(1,2)";
+  GTEXT_CSS_Presentation_Options po = gtext_css_presentation_options_default();
+  char * converted = nullptr;
+  size_t converted_length = 0;
+  ASSERT_EQ(gtext_css_presentation_value_text(tr, value.data(), value.size(), &po, nullptr, &converted, &converted_length, nullptr), GTEXT_CSS_OK);
+  const std::string text(converted, converted_length);
+  gtext_allocator_free(nullptr, converted);
+  size_t calls[2] = {0, 0};
+  for (int which = 0; which < 2; which++) {
+    SizeAllocator sa;
+    GTEXT_CSS_Candidate_Options co = gtext_css_candidate_options_default();
+    co.allocator = &sa.alloc;
+    GTEXT_CSS_Candidates * set = nullptr;
+    ASSERT_EQ(gtext_css_candidates_new(svgreg::shared(), nullptr, &co, &set), GTEXT_CSS_OK);
+    const size_t before = sa.calls;
+    GTEXT_CSS_Cascade_Entry keys;
+    memset(&keys, 0, sizeof keys);
+    keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+    if (which == 0) {
+      ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, tr, value.data(), value.size(), &po, nullptr, nullptr), GTEXT_CSS_OK);
+    }
+    else {
+      GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+      keys.presentational_hint = true;
+      ASSERT_EQ(gtext_css_candidates_add_text(set, &keys, "transform", 9, text.data(), text.size(), nullptr, &outcome, nullptr), GTEXT_CSS_OK);
+      ASSERT_EQ(outcome, GTEXT_CSS_PROP_RESULT_VALID);
+    }
+    calls[which] = sa.calls - before;
+    gtext_css_candidates_free(set);
+    EXPECT_EQ(sa.live, 0u) << which << ": nothing is left";
+  }
+  EXPECT_GT(calls[0], calls[1]) << "the conversion buffer is a block of the set's allocator";
+}
+
+TEST(CssStyleOom, AnAttributeAddedToACandidateSetSweptOverEveryAllocation) {
+  const GTEXT_CSS_Presentation_Table * table = gtext_css_presentation_table_svg2();
+  const GTEXT_CSS_Presentation_Row * tr = gtext_css_presentation_find(table, GTEXT_CSS_SVG_NAMESPACE, strlen(GTEXT_CSS_SVG_NAMESPACE), "rect", 4, "transform", 9);
+  ASSERT_NE(tr, nullptr);
+  FaultAllocator fa;
+  size_t failures = 0;
+  for (size_t n = 1; n < 10000; n++) {
+    fa.arm(n);
+    GTEXT_CSS_Candidate_Options co = gtext_css_candidate_options_default();
+    co.allocator = &fa.alloc;
+    GTEXT_CSS_Candidates * set = nullptr;
+    GTEXT_CSS_Status st = gtext_css_candidates_new(svgreg::shared(), nullptr, &co, &set);
+    if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_Cascade_Entry keys;
+      memset(&keys, 0, sizeof keys);
+      keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+      GTEXT_CSS_Presentation_Options po = gtext_css_presentation_options_default();
+      const char * v = "rotate(30 5 5) translate(1,2)";
+      st = gtext_css_candidates_add_presentation(set, &keys, tr, v, strlen(v), &po, nullptr, nullptr);
+    }
+    gtext_css_candidates_free(set);
+    fa.disarm();
+    EXPECT_EQ(fa.bad_frees, 0u) << n;
+    EXPECT_TRUE(fa.live.empty()) << n << ": a block is left";
+    if (!fa.failed) {
+      EXPECT_EQ(st, GTEXT_CSS_OK) << n;
+      break;
+    }
+    failures++;
+    EXPECT_TRUE(st == GTEXT_CSS_OK || st == GTEXT_CSS_E_OOM) << n << " " << gtext_css_status_string(st);
+  }
+  EXPECT_GT(failures, 3u);
+}
+
 TEST(CssStyleOom, TheDumpAndTheHashSweptOverEveryAllocation) {
   FaultAllocator fa;
   {

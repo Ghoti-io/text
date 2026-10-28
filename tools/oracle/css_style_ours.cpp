@@ -177,15 +177,15 @@ struct Question {
 };
 
 /// The color scheme the system colors of an element are resolved for: the used color scheme of CSS Color Adjust 1 (§ 2.3) of its computed `color-scheme`,
-/// with the environment preferring dark: `normal` is the UA default (light), a list that holds `dark` is dark, any other list its first scheme.
-static bool element_is_dark(const GTEXT_CSS_Computed_Style * style) {
+/// for an environment that prefers dark or light: `normal` is the UA default (light), a list that holds the preferred scheme is that, any other list its first.
+static bool element_is_dark(const GTEXT_CSS_Computed_Style * style, bool env_dark) {
   const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(svgreg::shared(), "color-scheme", 12);
   std::string text;
   GTEXT_CSS_Compute_Result gr;
   if (id == 0 || resolved_value::read(svgreg::shared(), style, id, &text, &gr) != GTEXT_CSS_OK) {
     return false;
   }
-  bool first_dark = false, have = false, has_dark = false;
+  bool first_dark = false, have = false, has_dark = false, has_light = false;
   size_t i = 0;
   while (i < text.size()) {
     while (i < text.size() && text[i] == ' ') {
@@ -202,10 +202,14 @@ static bool element_is_dark(const GTEXT_CSS_Computed_Style * style) {
         have = true;
       }
       has_dark = has_dark || w == "dark";
+      has_light = has_light || w == "light";
     }
     i = j;
   }
-  return have && (has_dark || first_dark);
+  if (!have) {
+    return false;
+  }
+  return env_dark ? (has_dark || first_dark) : (has_light ? false : first_dark);
 }
 
 static std::string lower(std::string s) {
@@ -244,6 +248,85 @@ static std::string current_color_resolved(const GTEXT_CSS_Computed_Style * style
   return out;
 }
 
+/// A style sheet rule of the population: only `<style>` rules whose selectors are `#id`, `*` or the name of an element (selectors are C3), which is all the cascade
+/// documents of tools/oracle/css_style_gen.py write.
+struct SheetRule {
+  std::vector<std::string> selectors;
+  std::string declarations;
+};
+
+static std::vector<SheetRule> sheet_rules_of(const std::string & document) {
+  std::vector<SheetRule> rules;
+  size_t at = 0;
+  while ((at = document.find("<style", at)) != std::string::npos) {
+    const size_t open = document.find('>', at);
+    const size_t close = document.find("</style>", at);
+    if (open == std::string::npos || close == std::string::npos || open > close) {
+      break;
+    }
+    size_t i = open + 1;
+    while (i < close) {
+      const size_t brace = document.find('{', i);
+      const size_t end = document.find('}', i);
+      if (brace == std::string::npos || end == std::string::npos || brace > close || end > close) {
+        break;
+      }
+      SheetRule r;
+      std::string list = document.substr(i, brace - i);
+      size_t k = 0;
+      while (k <= list.size()) {
+        size_t comma = list.find(',', k);
+        if (comma == std::string::npos) {
+          comma = list.size();
+        }
+        std::string sel = list.substr(k, comma - k);
+        while (!sel.empty() && std::isspace((unsigned char)sel.front())) {
+          sel.erase(sel.begin());
+        }
+        while (!sel.empty() && std::isspace((unsigned char)sel.back())) {
+          sel.pop_back();
+        }
+        if (!sel.empty()) {
+          r.selectors.push_back(sel);
+        }
+        k = comma + 1;
+      }
+      r.declarations = document.substr(brace + 1, end - brace - 1);
+      rules.push_back(r);
+      i = end + 1;
+    }
+    at = close + 8;
+  }
+  return rules;
+}
+
+/// The specificity of the best selector of the rule that matches the element, or false.
+static bool rule_matches(const SheetRule & r, const std::string & id, const char * local, GTEXT_CSS_Specificity * out) {
+  bool any = false;
+  GTEXT_CSS_Specificity best = {0, 0, 0};
+  for (const std::string & sel : r.selectors) {
+    GTEXT_CSS_Specificity sp = {0, 0, 0};
+    bool ok = false;
+    if (sel == "*") {
+      ok = true;
+    }
+    else if (sel[0] == '#') {
+      ok = sel.compare(1, std::string::npos, id) == 0;
+      sp.a = 1;
+    }
+    else if (local) {
+      ok = sel == local;
+      sp.c = 1;
+    }
+    if (ok && (!any || gtext_css_specificity_compare(sp, best) > 0)) {
+      best = sp;
+      any = true;
+    }
+  }
+  *out = best;
+  return any;
+}
+
 void answer(const std::string & mode, const std::string & text, const std::vector<Question> & questions, bool dark, const std::string & only_dump) {
   cmt::Tree tree;
   if (!tree.parse(text, mode == "h")) {
@@ -271,6 +354,7 @@ void answer(const std::string & mode, const std::string & text, const std::vecto
     std::exit(2);
   }
   GTEXT_CSS_Style_Options so = gtext_css_style_options_default();
+  const std::vector<SheetRule> sheet = mode == "h" ? sheet_rules_of(text) : std::vector<SheetRule>();
   std::map<const cmt::Inst *, Result> results;
   for (cmt::Inst * i : tree.order) {
     Result & r = results[i];
@@ -288,11 +372,24 @@ void answer(const std::string & mode, const std::string & text, const std::vecto
     const bool html = ns && !std::strcmp(ns, "http://www.w3.org/1999/xhtml");
     const char * ua = html && local && (!std::strcmp(local, "html") || !std::strcmp(local, "body") || !std::strcmp(local, "div") || !std::strcmp(local, "p") ||
                                         !std::strcmp(local, "section")) ? "display: block" : "";
-    GTEXT_CSS_Style_Entry entry;
-    std::memset(&entry, 0, sizeof entry);
-    entry.keys.origin = GTEXT_CSS_ORIGIN_USER_AGENT;
-    entry.text = {ua, std::strlen(ua)};
-    const GTEXT_CSS_Status st = gtext_css_style_compute(ctx, i, i->inherit ? i->inherit->style : nullptr, &entry, 1, &so, &s, &res);
+    std::vector<GTEXT_CSS_Style_Entry> entries(1);
+    std::memset(&entries[0], 0, sizeof entries[0]);
+    entries[0].keys.origin = GTEXT_CSS_ORIGIN_USER_AGENT;
+    entries[0].text = {ua, std::strlen(ua)};
+    for (size_t k = 0; k < sheet.size(); k++) {
+      GTEXT_CSS_Specificity sp;
+      if (rule_matches(sheet[k], i->id, local, &sp)) {
+        GTEXT_CSS_Style_Entry e;
+        std::memset(&e, 0, sizeof e);
+        e.keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+        e.keys.specificity = sp;
+        e.keys.sheet = 1;
+        e.keys.rule = (uint32_t)k;
+        e.text = {sheet[k].declarations.data(), sheet[k].declarations.size()};
+        entries.push_back(e);
+      }
+    }
+    const GTEXT_CSS_Status st = gtext_css_style_compute(ctx, i, i->inherit ? i->inherit->style : nullptr, entries.data(), entries.size(), &so, &s, &res);
     r.status = st;
     if (st != GTEXT_CSS_OK) {
       r.name = res.name;
@@ -351,7 +448,7 @@ void answer(const std::string & mode, const std::string & text, const std::vecto
       }
       std::string text;
       GTEXT_CSS_Compute_Result gr;
-      resolved_value::dark_scheme() = dark && element_is_dark(inst->style);
+      resolved_value::dark_scheme() = element_is_dark(inst->style, dark);
       const GTEXT_CSS_Status st = resolved_value::read(svgreg::shared(), inst->style, id, &text, &gr);
       if (st == GTEXT_CSS_E_UNSUPPORTED) {
         std::printf("%s\t%s\tUNSUPPORTED\t%s\n", esc(q.id).c_str(), esc(p).c_str(), esc(gr.name).c_str());

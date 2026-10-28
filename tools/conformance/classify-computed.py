@@ -62,7 +62,7 @@ def main(argv):
         for rx_p, rx_a, kind, cls, reason, n in rows:
             if rx_p.fullmatch(prop) and rx_a.search(answer):
                 used.add(n)
-                line = '\t'.join([ident, prop, escape(value), stage, escape(answer), cls, reason])
+                line = '\t'.join([ident, prop, escape(value), stage, escape(answer), cls, reason + '; the page expects ' + escape(str(_expected)) + ' of `' + prop + ': ' + escape(value) + '`'])
                 (exc if kind == 'exception' else dfc).append(line)
                 break
         else:

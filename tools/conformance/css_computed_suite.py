@@ -76,26 +76,40 @@ def sep_join(items):
     return '\\r'.join(items)
 
 
-def element_lines(model):
+def element_lines(model, setup=()):
+    """The `E` lines of a page; `setup` is [((element id, property), value)], the statements of the page's script that came before a vector, as inline declarations (a
+    rule of a specificity above any id's, of an order after the page's rules)."""
+    extra = {}
+    for k, ((eid, prop), value) in enumerate(setup):
+        extra.setdefault(eid, []).append([100, 0, 0, 100000 + k, '%s: %s' % (css_name(prop), value)])
     out = []
     for i, e in enumerate(model['elements']):
         attrs = sep_join(escape('%s=%s' % (k, v)) for k, v in e['attrs'].items())
-        rules = sep_join(escape('%d,%d,%d,%d,%s' % (r[0], r[1], r[2], r[3], r[4])) for r in e['rules'])
+        rules = sep_join(escape('%d,%d,%d,%d,%s' % (r[0], r[1], r[2], r[3], r[4])) for r in list(e['rules']) + extra.get(e['id'], []))
         out.append('E\t%d\t%d\t%s\t%s\t%s\t%s\n' % (i, e['parent'], 's' if e['ns'] == 's' else 'h', escape(e['local']), attrs, rules))
     return out
 
 
+def setups_before(model, line):
+    """The style setups of the page's script that run before the line, the last of each element and property."""
+    eff = {}
+    for st in sorted(model.get('setups') or [], key=lambda x: x['line']):
+        if st['line'] < line:
+            eff[(st['id'], st['property'])] = st['value']
+    return tuple(sorted(eff.items()))
+
+
 def ask(runner, pages, items):
-    """items: [(file, n, prop, value)] grouped by file; returns {(file, n): fields}."""
+    """items: [(file, n, prop, value, setup)] ; returns {(file, n): fields}."""
     by_file = {}
-    for f, n, p, v in items:
-        by_file.setdefault(f, []).append((n, p, v))
+    for f, n, p, v, su in items:
+        by_file.setdefault((f, su), []).append((n, p, v))
     data = []
     order = []
-    for f, tests in by_file.items():
+    for (f, su), tests in by_file.items():
         model = pages[f]
         data.append('P\t%s\t%d\n' % (escape(f), model['target']))
-        data.extend(element_lines(model))
+        data.extend(element_lines(model, su))
         for n, p, v in tests:
             data.append('T\t%d\t%s\t%s\n' % (n, escape(p), escape(v)))
             order.append((f, n))
@@ -194,7 +208,7 @@ def main():
     # the properties the pin does not have
     requests = []
     for ident, v in scored:
-        requests.append((v['file'], v['n'], css_name(v['prop']), v['value']))
+        requests.append((v['file'], v['n'], css_name(v['prop']), v['value'], setups_before(pages[v['file']], v.get('line', 1 << 30))))
     answers = ask(runner, pages, requests)
     kept = []
     for ident, v in scored:

@@ -31,10 +31,13 @@ selector matching yet (C3):
   name of an element in the page, and every declaration list is read as it is: the rules are matched here (their specificity is the selector's, their order the
   page's) and handed to the library as entries of the author origin;
 * the page's scripts must not change the document before the vectors are asked: a script that makes an element, or that sets an attribute or a style outside of a
-  `test()` or a function (which runs only when the page calls it, in a test of its own), makes the page one this cannot model;
+  `test()` or a function (which runs only when the page calls it, in a test of its own), makes the page one this cannot model; except that a statement that sets one
+  style property of an element of the page to a string (`target.style.margin = "0"`, `document.getElementById("container").style.width = "1000px"`,
+  `...style['background-image'] = "none, none"`) is a setup: it is kept with its line, and a vector is asked with the setups that come before its line (the last
+  for each element and property) as the element's inline declarations;
 * a page that has any other rule (an at-rule, a nested rule, a selector this does not match) or an element this does not model is not scored, and says why.
 
-Output: {file: {"scorable": bool, "reason": text, "elements": [...], "target": index}} where an element is
+Output: {file: {"scorable": bool, "reason": text, "elements": [...], "target": index, "setups": [{"line", "id", "property", "value"}]}} where an element is
 {"ns": "h"|"s", "local", "id", "parent": index or -1, "attrs": {name: value}, "rules": [[a, b, c, order, declarations], ...]} in document order, parents first.
 
 The reader never evaluates a script and never reads another implementation's code.
@@ -52,6 +55,10 @@ SVG_NS = "http://www.w3.org/2000/svg"
 MUTATION = re.compile(r"createElement|appendChild|innerHTML|outerHTML|insertAdjacent|setAttribute|removeAttribute|removeChild|\.append\(|\.prepend\(|cloneNode|\.remove\(|"
                       r"\.style\.\w+\s*=[^=]|\.style\[[^\]]+\]\s*=[^=]|style\.setProperty|style\.cssText|\.style\s*=[^=]|\.className|\.classList|\.id\s*=[^=]|"
                       r"CSS\.registerProperty|insertRule|adoptedStyleSheets|\.sheet\b|\.textContent\s*=|\.innerText\s*=|document\.write|attachShadow|requestAnimationFrame|setTimeout|addEventListener")
+
+
+# one statement that sets one style property of an element of the page to a string: `target.style.margin = "0"`, `document.getElementById("c").style.width = "1px"`, `...style['x-y'] = "z"`
+SETUP = re.compile(r"""(?m)^[ \t]*(?:document\.getElementById\(["'](\w+)["']\)|(\w+))\.style(?:\.(\w+)|\[["']([\w-]+)["']\])\s*=\s*(["'])(.*?)\5[ \t]*;?[ \t]*$""")
 
 
 class Node:
@@ -215,36 +222,51 @@ def matches(sel, el):
 def model(root, file, text):
     """(elements, target, reason)"""
     is_xml = file.endswith((".svg", ".xml", ".xhtml"))
-    scripts = "\n".join(re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", text, re.S))
+    scripts = ""
+    for sm in re.finditer(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", text, re.S):
+        # the lines are kept: a script is padded with the line feeds that put its first line where the page has it
+        scripts += "\n" * max(1, text.count("\n", 0, sm.start(1)) - scripts.count("\n")) + sm.group(1)
     if is_xml:
         try:
             elements, styles = read_xml(text)
         except ET.ParseError as e:
-            return None, None, "an XML page that does not parse here (%s)" % e
+            return None, None, "an XML page that does not parse here (%s)" % e, []
     else:
         r = Reader()
         r.feed(text)
         r.close()
         if r.problems:
-            return None, None, "a page with " + sorted(r.problems)[0]
+            return None, None, "a page with " + sorted(r.problems)[0], []
         elements, styles = flatten_html(r.root), r.styles
-    scripts = re.sub(r"(?m)^\s*//.*$", "", scripts)
+    scripts = re.sub(r"(?m)^[ \t]*//.*$", "", scripts)
     scripts = remove_calls(scripts)
+    id_set = {e["id"] for e in elements if e["id"]}
+    setups = []
+
+    def take_setup(sm):
+        target_id = sm.group(1) or sm.group(2)
+        if target_id not in id_set:
+            return sm.group(0)
+        line = scripts.count("\n", 0, sm.start()) + 1 
+        setups.append({"line": line, "id": target_id, "property": sm.group(3) or sm.group(4), "value": sm.group(6)})
+        return "\n" * sm.group(0).count("\n")
+
+    scripts = SETUP.sub(take_setup, scripts)
     m = MUTATION.search(scripts)
     if m:
-        return None, None, "a script that changes the document before the vectors (%s)" % m.group(0).strip()
+        return None, None, "a script that changes the document before the vectors (%s)" % m.group(0).strip(), []
     ids = [i for i, e in enumerate(elements) if e["id"] == "target"]
     if len(ids) != 1:
-        return None, None, "a page with %d elements with the id target" % len(ids)
+        return None, None, "a page with %d elements with the id target" % len(ids), []
     order = 0
     for sheet in styles:
         rules, why = parse_rules(sheet)
         if rules is None:
-            return None, None, why
+            return None, None, why, []
         for selectors, decls in rules:
             for sel in [s.strip() for s in selectors.split(",")]:
                 if not (sel in ("*", "body", "html", ":root") or (sel.startswith("#") and re.fullmatch(r"#[A-Za-z_][\w-]*", sel)) or re.fullmatch(r"[a-z][a-z0-9]*", sel)):
-                    return None, None, "a selector this cannot match (%s: selectors are C3)" % sel
+                    return None, None, "a selector this cannot match (%s: selectors are C3)" % sel, []
                 if sel.startswith("#") and not any(e["id"] == sel[1:] for e in elements):
                     continue
                 if re.fullmatch(r"[a-z][a-z0-9]*", sel) and sel not in ("body", "html") and not any(e["local"] == sel for e in elements):
@@ -254,7 +276,7 @@ def model(root, file, text):
                         spec = specificity(sel)
                         el["rules"].append([spec[0], spec[1], spec[2], order, decls])
             order += 1
-    return elements, ids[0], ""
+    return elements, ids[0], "", setups
 
 
 def remove_calls(src):
@@ -322,11 +344,11 @@ def main(argv):
     for f in files:
         path = os.path.join(wpt, f)
         text = open(path, encoding="utf-8", errors="replace").read()
-        elements, target, reason = model(wpt, f, text)
+        elements, target, reason, setups = model(wpt, f, text)
         if elements is None:
             result[f] = {"scorable": False, "reason": reason}
         else:
-            result[f] = {"scorable": True, "reason": "", "elements": elements, "target": target}
+            result[f] = {"scorable": True, "reason": "", "elements": elements, "target": target, "setups": setups}
     with open(out, "w", encoding="utf-8") as h:
         json.dump(result, h, ensure_ascii=False, sort_keys=True)
     scorable = sum(1 for r in result.values() if r["scorable"])

@@ -6,27 +6,13 @@ css/css-anchor-position/try-tactic-alignment.html	6	the pin has no property flip
 css/css-anchor-position/try-tactic-alignment.html	8	the pin has no property flip-inline
 css/css-anchor-position/try-tactic-alignment.html	8	the pin has no property flip-x
 css/css-anchor-position/try-tactic-alignment.html	6	the pin has no property flip-y
-css/css-backgrounds/parsing/background-attachment-computed.html	5	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-clip-computed.html	11	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-origin-computed.html	7	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-position-computed.html	32	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-position-x-computed.html	19	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-position-y-computed.html	19	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-repeat-computed.html	13	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-backgrounds/parsing/background-size-computed.html	16	the page cannot be modeled: a script that changes the document before the vectors (.style['background-image'] =)
-css/css-box/parsing/margin-computed.html	8	the page cannot be modeled: a script that changes the document before the vectors (.style.margin =)
 css/css-color/color-mix-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: selectors are C3)
-css/css-color/parsing/color-computed-color-function.html	179	the page cannot be modeled: a script that changes the document before the vectors (.style.width =)
-css/css-color/parsing/color-computed-hwb.html	2	the page cannot be modeled: a script that changes the document before the vectors (.style.width =)
-css/css-color/parsing/color-computed-lab.html	8	the page cannot be modeled: a script that changes the document before the vectors (.style.width =)
-css/css-color/parsing/color-computed-rgb.html	1	the page cannot be modeled: a script that changes the document before the vectors (.style.width =)
 css/css-color/relative-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: selectors are C3)
 css/css-fonts/parsing/font-size-adjust-computed.html	17	the page cannot be modeled: an at-rule in a style sheet
 css/css-grid/grid-lanes/tentative/parsing/flow-tolerance-computed.html	7	the pin has no property flow-tolerance
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-direction-computed.html	11	the pin has no property grid-lanes-direction
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-pack-computed.html	2	the pin has no property grid-lanes-pack
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-shorthand-computed.html	14	the pin has no property grid-lanes
-css/css-masking/parsing/mask-size-computed.html	16	the page cannot be modeled: a script that changes the document before the vectors (.style['mask-image'] =)
 css/css-properties-values-api/registered-property-computation.html	66	the page cannot be modeled: a page with 0 elements with the id target
 css/css-pseudo/parsing/marker-supported-properties.html	68	a pseudo-element (selectors, C3)
 css/css-shapes/shape-functions/shape-function-computed.html	35	the page cannot be modeled: a script that changes the document before the vectors (.remove()

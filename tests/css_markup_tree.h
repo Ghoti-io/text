@@ -74,13 +74,18 @@ inline bool has_attr(const GTEXT_Markup_Node * n, const char * name) {
   return gtext_markup_element_get_attribute(n, nullptr, name, nullptr);
 }
 
+/// The strings the element interface hands out point into: one set for each thread, so that several threads can ask the same tree at once.
+inline std::string * scratch_buffers() {
+  static thread_local std::string buffers[4];
+  return buffers;
+}
+
 struct Tree {
   GTEXT_Markup_Document * doc = nullptr;
   std::vector<std::unique_ptr<Inst>> all;
   std::vector<Inst *> order;
   std::map<std::string, const GTEXT_Markup_Node *> ids;
   GTEXT_CSS_Element_Interface table;
-  std::string scratch[4];
 
   Tree() {
     memset(&table, 0, sizeof table);
@@ -106,14 +111,13 @@ struct Tree {
       out->length = strlen(n);
       return true;
     };
-    table.id = [](void * u, GTEXT_CSS_Element_Handle e, GTEXT_CSS_String * out) {
-      Tree * t = static_cast<Tree *>(u);
-      t->scratch[0] = attr(static_cast<const Inst *>(e)->node, "id");
-      if (t->scratch[0].empty()) {
+    table.id = [](void *, GTEXT_CSS_Element_Handle e, GTEXT_CSS_String * out) {
+      scratch_buffers()[0] = attr(static_cast<const Inst *>(e)->node, "id");
+      if (scratch_buffers()[0].empty()) {
         return false;
       }
-      out->data = t->scratch[0].c_str();
-      out->length = t->scratch[0].size();
+      out->data = scratch_buffers()[0].c_str();
+      out->length = scratch_buffers()[0].size();
       return true;
     };
     table.class_count = [](void *, GTEXT_CSS_Element_Handle e) -> size_t { return static_cast<const Inst *>(e)->classes.size(); };
@@ -126,8 +130,7 @@ struct Tree {
       out->length = x->classes[i].size();
       return true;
     };
-    table.attribute = [](void * u, GTEXT_CSS_Element_Handle e, const GTEXT_CSS_String * ns, const GTEXT_CSS_String * name, GTEXT_CSS_String * out) {
-      Tree * t = static_cast<Tree *>(u);
+    table.attribute = [](void *, GTEXT_CSS_Element_Handle e, const GTEXT_CSS_String * ns, const GTEXT_CSS_String * name, GTEXT_CSS_String * out) {
       GTEXT_Markup_Attribute a;
       const std::string n(name->data, name->length);
       std::string nss;
@@ -137,9 +140,9 @@ struct Tree {
       if (!gtext_markup_element_get_attribute(static_cast<const Inst *>(e)->node, ns && ns->data ? nss.c_str() : nullptr, n.c_str(), &a)) {
         return false;
       }
-      t->scratch[1].assign(a.value, a.value_length);
-      out->data = t->scratch[1].c_str();
-      out->length = t->scratch[1].size();
+      scratch_buffers()[1].assign(a.value, a.value_length);
+      out->data = scratch_buffers()[1].c_str();
+      out->length = scratch_buffers()[1].size();
       return true;
     };
     table.previous_sibling = [](void *, GTEXT_CSS_Element_Handle e) -> GTEXT_CSS_Element_Handle { return static_cast<const Inst *>(e)->prev; };

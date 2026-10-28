@@ -129,7 +129,8 @@ def fixtures():
         props = open(os.path.join(FIXTURES, base + ".props"), encoding="utf-8").read().split()
         ids = re.findall(r'\bid="([^"]+)"', text)
         queries = [[i, props] for i in ids]
-        items = [[i, p, "", "fixture"] for i in ids for p in props]
+        # the display-contents fixture names its elements in the key: which element a browser hoists is the divergence
+        items = [[i, p, ("attr: display=" + i) if base == "display-contents" else "", "fixture"] for i in ids for p in props]
         out.append(doc("fixture-" + base, "x", text, queries, items))
     return out
 
@@ -140,16 +141,20 @@ def controls():
     """Known answers: a plain declaration, an inherited one, an attribute and the style attribute over it."""
     body = ("<div id=\"c1\" style=\"font-size: 20px; color: red\"><div id=\"c2\" style=\"width: 2em; margin-left: 10px\"></div></div>"
             "<div id=\"c6\" style=\"margin: 1px 2px 3px; padding: 4px 5px 6px 7px\"></div>"
+            "<div id=\"c7\" style=\"color-scheme: dark; color: light-dark(red, blue)\"></div><div id=\"c8\" style=\"color-scheme: light; color: light-dark(red, blue)\"></div>"
+            "<div id=\"c9\" style=\"color: light-dark(red, blue)\"></div>"
             "<svg id=\"c3\" xmlns=\"%s\"><g id=\"c4\" fill=\"red\" stroke-width=\"2\"><rect id=\"c5\" style=\"stroke-width: 5\"/></g></svg>" % SVG_NS)
     queries = [["c1", ["font-size", "color"]], ["c2", ["width", "margin-left", "font-size", "color"]], ["c4", ["fill", "stroke-width"]], ["c5", ["fill", "stroke-width"]],
-               ["c6", ["margin-left", "margin-right", "margin-bottom", "padding-left", "padding-bottom", "margin-top"]]]
+               ["c6", ["margin-left", "margin-right", "margin-bottom", "padding-left", "padding-bottom", "margin-top"]],
+               ["c7", ["color"]], ["c8", ["color"]], ["c9", ["color"]]]
     items = [["c1", "font-size", "style: font-size: 20px", "control"], ["c1", "color", "style: color: red", "control"],
              ["c2", "width", "style: width: 2em", "control"], ["c2", "margin-left", "style: margin-left: 10px", "control"],
              ["c2", "font-size", "", "control"], ["c2", "color", "", "control"], ["c4", "fill", "attr: fill=red", "control"],
              ["c4", "stroke-width", "attr: stroke-width=2", "control"], ["c5", "fill", "", "control"], ["c5", "stroke-width", "style: stroke-width: 5", "control"],
              ["c6", "margin-left", "style: margin: 1px 2px 3px", "control"], ["c6", "margin-right", "style: margin: 1px 2px 3px", "control"],
              ["c6", "margin-bottom", "style: margin: 1px 2px 3px", "control"], ["c6", "padding-left", "style: padding: 4px 5px 6px 7px", "control"],
-             ["c6", "padding-bottom", "style: padding: 4px 5px 6px 7px", "control"], ["c6", "margin-top", "style: margin: 1px 2px 3px", "control"]]
+             ["c6", "padding-bottom", "style: padding: 4px 5px 6px 7px", "control"], ["c6", "margin-top", "style: margin: 1px 2px 3px", "control"],
+             ["c7", "color", "style: color-scheme: dark", "control"], ["c8", "color", "style: color-scheme: light", "control"], ["c9", "color", "", "control"]]
     return [doc("control", "h", wrap_html(body), queries, items)]
 
 
@@ -160,6 +165,8 @@ CONTROL_ANSWERS = [
     ("control", "c4", "stroke-width", "2px"), ("control", "c5", "stroke-width", "5px"), ("control", "c5", "fill", "rgb(255, 0, 0)"),
     ("control", "c6", "margin-left", "2px"), ("control", "c6", "margin-right", "2px"), ("control", "c6", "margin-bottom", "3px"), ("control", "c6", "margin-top", "1px"),
     ("control", "c6", "padding-left", "7px"), ("control", "c6", "padding-bottom", "6px"),
+    # the used color scheme: an element that says dark is dark in either environment, one that says light is light in either, and one that says nothing is light
+    ("control", "c7", "color", "rgb(0, 0, 255)"), ("control", "c8", "color", "rgb(255, 0, 0)"), ("control", "c9", "color", "rgb(255, 0, 0)"),
 ]
 
 
@@ -332,6 +339,33 @@ def probes(props):
     return [doc("probe", "h", wrap_html(body), queries, items)]
 
 
+# ---- the cascade: a style sheet, a presentation attribute and the style attribute ------------------------------------------------
+
+CASCADE_CASES = [
+    # (name, the sheet, the element's attributes, the property, the expected winner in words)
+    ("hint-alone", "", "fill=\"red\"", "fill", "the attribute"),
+    ("rule-over-hint", "#e{fill:blue}", "fill=\"red\"", "fill", "the rule"),
+    ("universal-over-hint", "*{fill:blue}", "fill=\"red\"", "fill", "the rule of specificity zero over the attribute"),
+    ("element-over-hint", "rect{fill:blue}", "fill=\"red\"", "fill", "the rule"),
+    ("style-over-rule", "#e{fill:blue}", "fill=\"red\" style=\"fill: green\"", "fill", "the style attribute"),
+    ("important-rule-over-style", "#e{fill:blue !important}", "style=\"fill: green\"", "fill", "the important rule"),
+    ("important-style-over-important-rule", "#e{fill:blue !important}", "style=\"fill: green !important\"", "fill", "the important style attribute"),
+    ("id-over-element", "rect{fill:blue} #e{fill:orange}", "", "fill", "the id rule"),
+    ("later-rule-of-equal-specificity", "#e{fill:blue} #e{fill:orange}", "", "fill", "the later rule"),
+    ("important-attribute-is-no-important", "#e{fill:blue}", "style=\"stroke: red\" fill=\"green\"", "fill", "the rule"),
+    ("shorthand-in-rule-over-hint", "#e{margin:1px 2px}", "", "margin-left", "the rule"),
+    ("hint-keeps-what-a-rule-leaves", "#e{stroke:blue}", "fill=\"red\" stroke=\"green\"", "fill", "the attribute"),
+]
+
+
+def cascade_docs():
+    out = []
+    for name, sheet, attrs, prop, _why in CASCADE_CASES:
+        body = "<svg xmlns=\"%s\"><style>%s</style><rect id=\"e\" %s/></svg>" % (SVG_NS, sheet, attrs)
+        out.append(doc("cascade-" + name, "h", wrap_html(body), [["e", [prop]]], [["e", prop, "cascade: " + name, "cascade"]]))
+    return out
+
+
 def population(seed, count, ours, wpt_dir, scope="core"):
     rng = random.Random(seed)
     props = ours_properties(ours)
@@ -340,6 +374,7 @@ def population(seed, count, ours, wpt_dir, scope="core"):
     docs += controls()
     docs += probes(props)
     docs += fixtures()
+    docs += cascade_docs()
     docs += attribute_docs(rng, table)
     if scope == "full":
         docs += value_docs(rng, wpt_dir, props, 12)

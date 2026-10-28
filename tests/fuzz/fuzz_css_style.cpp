@@ -253,7 +253,7 @@ std::vector<std::string> sections(const std::string & text) {
     }
     pos = end + 1;
   }
-  out.resize(std::max<size_t>(out.size(), 5));
+  out.resize(std::max<size_t>(out.size(), 7));
   return out;
 }
 
@@ -274,6 +274,35 @@ std::vector<std::pair<std::string, std::string>> attribute_lines(const std::stri
     out.emplace_back(line.substr(0, eq), line.substr(eq + 1));
   }
   return out;
+}
+
+/// The layers the entries may be in: author layers `a`, `b` and `a.c`, frozen (the order of the cascade's layers is part of what is checked, with the reversed order of the entries).
+const GTEXT_CSS_Layer_Registry * layer_registry() {
+  static GTEXT_CSS_Layer_Registry * registry = [] {
+    GTEXT_CSS_Layer_Registry * r = nullptr;
+    GTEXT_CSS_Layer_Options lo = gtext_css_layer_options_default();
+    if (gtext_css_layer_registry_new(&lo, &r) != GTEXT_CSS_OK) {
+      fail("a layer registry could not be made", "", "");
+    }
+    GTEXT_CSS_Layer_Id id;
+    if (gtext_css_layer_declare(r, GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, "a", 1, &id, nullptr) != GTEXT_CSS_OK ||
+        gtext_css_layer_declare(r, GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, "b", 1, &id, nullptr) != GTEXT_CSS_OK ||
+        gtext_css_layer_declare(r, GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, "a.c", 3, &id, nullptr) != GTEXT_CSS_OK ||
+        gtext_css_layer_freeze(r) != GTEXT_CSS_OK) {
+      fail("layers could not be declared", "", "");
+    }
+    return r;
+  }();
+  return registry;
+}
+
+GTEXT_CSS_Layer_Id layer_of(unsigned selector) {
+  switch (selector % 4) {
+  case 1: return gtext_css_layer_find(layer_registry(), GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, "a", 1);
+  case 2: return gtext_css_layer_find(layer_registry(), GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, "b", 1);
+  case 3: return gtext_css_layer_find(layer_registry(), GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, "a.c", 3);
+  default: return GTEXT_CSS_LAYER_NONE;
+  }
 }
 
 struct Entries {
@@ -298,6 +327,12 @@ struct Entries {
       e.keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
       e.keys.rule = (uint32_t)(texts.size() - 1);
       e.keys.specificity.b = (uint32_t)(line.empty() ? 0 : (unsigned char)line[0] % 3);
+      /* the second byte of the line: the layer, an @scope-like proximity (a scoped rule, its distance from the scoping root) and a shadow-tree context */
+      const unsigned sel = bar >= 2 ? (unsigned char)line[1] : 0;
+      e.keys.layer = layer_of(sel);
+      e.keys.scoped = (sel & 4) != 0;
+      e.keys.scope_distance = e.keys.scoped ? (sel >> 3) % 4 : 0;
+      e.keys.context = (sel & 128) ? 1u : 0u;
       list.push_back(e);
     }
     for (size_t i = 0; i < list.size(); i++) {
@@ -313,6 +348,7 @@ GTEXT_CSS_Style_Options style_options_of(uint8_t o1) {
   o.presentation.svg_transform = o1 & 2;
   o.presentation.path_data = o1 & 4;
   o.presentation.trim_whitespace = o1 & 8;
+  o.layers = layer_registry();
   return o;
 }
 
@@ -447,6 +483,26 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   if (st == GTEXT_CSS_OK) {
     const std::string first = dump_of(child, input);
     check_dump(child, first, input);
+    /* a third element below the second, with attributes of its own and a different local name: inheritance reaches it, and its dump is as well formed */
+    Elem gc_e;
+    gc_e.attrs = attribute_lines(sec[6]);
+    if (!sec[5].empty()) {
+      gc_e.attrs.push_back({"style", sec[5]});
+    }
+    gc_e.local = (o0 & 1) ? "g" : "text";
+    GTEXT_CSS_Computed_Style * gc = nullptr;
+    GTEXT_CSS_Compute_Result gr{};
+    const GTEXT_CSS_Status gs = gtext_css_style_compute(ctx, &gc_e, child, nullptr, 0, &co, &gc, &gr);
+    if (!allowed_status(gs)) {
+      fail("a status a computation must not return (the third element)", std::string(gtext_css_status_string(gs)) + " " + gr.name, input);
+    }
+    if (gs == GTEXT_CSS_OK) {
+      check_dump(gc, dump_of(gc, input), input);
+    }
+    else if (gc) {
+      fail("a computation that did not succeed returned a style (the third element)", gtext_css_status_string(gs), input);
+    }
+    gtext_css_computed_free(gc);
     GTEXT_CSS_Computed_Style * again = nullptr;
     if (!o3) {
       GTEXT_CSS_Computed_Style * p2 = nullptr;

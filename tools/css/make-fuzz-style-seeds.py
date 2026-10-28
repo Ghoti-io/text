@@ -42,12 +42,14 @@ SMALL, HTML, CIRCLE, ENV = 4, 8, 16, 32
 ALL = 0x3F          # every spelling, both sources
 ENTRIES_ONLY = 0
 
-# (name, shape, parent style, parent attributes, child style, child attributes, entries)
+# (name, shape, parent style, parent attributes, child style, child attributes, entries, third element's style, its attributes)
+# An entry line is `<specificity byte><selector byte>|declarations`: the selector byte is the layer (0 none, 1 `a`, 2 `b`, 3 `a.c`, by its low two bits), a scoped
+# rule (bit 2) with a distance from the scoping root (bits 3 and 4) and a shadow-tree context (bit 7); a line `<byte>|declarations` is an unlayered, unscoped rule.
 S = []
 
 
-def scenario(name, shape=0, ps="", pa="", cs="", ca="", en=""):
-    S.append((name, shape, ps, pa, cs, ca, en))
+def scenario(name, shape=0, ps="", pa="", cs="", ca="", en="", gs="", ga=""):
+    S.append((name, shape, ps, pa, cs, ca, en, gs, ga))
 
 
 scenario("attribute", ca="stroke-width=2")
@@ -106,6 +108,16 @@ scenario("display-overflow", ca="display=none\noverflow=hidden\nvisibility=hidde
 scenario("transform-origin", ca="transform-origin=10 20\nbaseline-shift=sub\nalignment-baseline=middle\ndominant-baseline=hanging")
 scenario("lighting", ca="flood-color=red\nflood-opacity=0.5\nlighting-color=blue\nstop-color=green\nstop-opacity=0.2\ncolor-interpolation=linearRGB")
 
+# the layers, the proximity of an @scope and a context, and a third element below the second
+scenario("entries-layers", en="0\x01|fill: red\n0\x02|fill: blue\n0\x03|fill: green\n1\x00|fill: teal")
+scenario("entries-layers-important", en="0\x01|fill: red !important\n0\x02|fill: blue !important\n0\x00|fill: green !important")
+scenario("entries-scope-proximity", en="0\x04|fill: red\n0\x0c|fill: blue\n0\x14|fill: green\n0\x1c|fill: teal\n0\x00|fill: pink")
+scenario("entries-scope-and-layers", en="0\x05|fill: red\n0\x0e|fill: blue\n1\x04|fill: green\n0\x03|fill: teal")
+scenario("entries-context", en="0\u00c2|fill: red\n0\x01|fill: blue\n1\u00c1|fill: green")
+scenario("third-element", cs="font-size: 10px; fill: red", gs="fill: inherit; font-size: 2em; stroke-width: 1em", ga="opacity=0.5\nstroke=blue")
+scenario("third-element-inherits", 1, ps="--a: 4px; stroke-width: var(--a)", cs="--b: 2px", gs="stroke-width: calc(var(--a) + var(--b))", ga="fill=currentColor")
+scenario("third-element-entries", cs="fill: red", ga="fill=blue", en="0\x01|stroke: red\n0\x02|stroke: green")
+
 FAULTS = (1, 2, 3, 5, 9, 17, 33, 65)
 
 
@@ -128,8 +140,8 @@ def main():
             fh.write(data)
         n += 1
 
-    for name, shape, ps, pa, cs, ca, en in S:
-        parts = [ps, pa, cs, ca, en]
+    for name, shape, ps, pa, cs, ca, en, gs, ga in S:
+        parts = [ps, pa, cs, ca, en, gs, ga]
         put(name, seed(shape, ALL, 0, parts))
         put(name + "-small", seed(shape | SMALL, ALL, 0, parts))
         put(name + "-html", seed(shape | HTML, ALL, 0, parts))

@@ -185,7 +185,7 @@ typedef struct {
   size_t column;                        ///< Its column in UTF-16 code units, 1-based; 0 for a presentation attribute.
 } GTEXT_CSS_Style_Diagnostic;
 
-/** @brief How many declarations and attributes were dropped (all of them, though the style keeps only the first 1,024). NULL is 0. */
+/** @brief How many declarations and attributes were dropped (all of them, though the style keeps only the first 1,024, or the first `candidates.max_diagnostics` of the options). NULL is 0. */
 GTEXT_API size_t gtext_css_computed_diagnostic_total(const GTEXT_CSS_Computed_Style * style);
 
 /** @brief The `index`th kept diagnostic, in the order of the drops (presentation attributes, the `style` attribute, then the entries); false past the end. */

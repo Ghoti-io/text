@@ -14,10 +14,11 @@ grid-template-(columns|rows)	.*	exception	resolved-value	the track list of a gri
 (padding|margin)(-(top|right|bottom|left|block-start|block-end|inline-start|inline-end|block|inline))?	.*	exception	resolved-value	a percentage or a calculation with one resolves to the used length: "then the resolved value is the used value."
 (min-|max-)?(width|height|block-size|inline-size|min-block-size|min-inline-size)	.*	exception	resolved-value	the size of a box resolves to its used size: "then the resolved value is the used value."
 line-height	.*	exception	resolved-value	a number resolves to the used length: "then the resolved value is the used value."
+background-color	contrast-color|color-mix|rgb\(from|alpha\(	defect	color	contrast-color(), color-mix(), relative colors and alpha() stay as written for every property (the 7 listed defects of the registered-property gate): a function of colors is not computed to its sRGB form or its simplified arguments
+caret-color	rgb\(0, 255, 0\) auto	defect	values	the second value of `caret-color` when it is `auto` is dropped from the computed value (Basic UI 4: the block caret takes the first), and this library keeps it
+clip	rect\(.*(em|calc\()	defect	values	the lengths of a `clip` rectangle are not made absolute when they are relative or a calculation (`calc(-1em + 10px)` is -30px at a font size of 40px)
+flex-basis	calc\(	defect	values	a calculation of a percentage and a zero length is not simplified to the percentage (`calc(10% + 0px)` is `10%`)
 (background-color|color|caret-color|accent-color|flood-color|box-shadow-color|column-rule-color|text-decoration-color|border-(block|inline)(-start|-end)?-color|outline-color)	currentcolor	exception	resolved-value	`currentcolor` resolves to the used color of the element: "then the resolved value is the used value."
-(box-shadow-color|column-rule-color|text-decoration-color|accent-color|flood-color|border-(block|inline)(-start|-end)?-color|caret-color|background-color)	.*	exception	resolved-value	the color properties resolve to the used color: "then the resolved value is the used value."
-clip	.*	exception	resolved-value	the offsets of a `clip` rectangle resolve to lengths: "then the resolved value is the used value."
-flex-basis	.*	exception	resolved-value	a percentage of the flex container resolves: "then the resolved value is the used value."
 aspect-ratio	.*	defect	values	the arguments of `sign()` in a ratio are not resolved (a calculation that resolves to a number is a number)
 .*	UNSUPPORTED (corner|position-area|overlay)	defect	C2a	the property is classified unimplemented (the 15 listed in the plan: -webkit-box-*, -webkit-user-select, corner-*-shape, position-area)
 corner(-[a-z-]+)?	.*	defect	C2a	`corner-*` and the `corner-*-shape` longhands are unimplemented

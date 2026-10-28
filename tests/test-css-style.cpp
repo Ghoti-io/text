@@ -304,6 +304,17 @@ TEST(CssStyleCall, ArgumentsAreChecked) {
   EXPECT_EQ(gtext_css_style_compute(d.ctx, r, nullptr, nullptr, 3, nullptr, &s, &res), GTEXT_CSS_E_INVALID) << "entries are counted and absent";
   EXPECT_EQ(gtext_css_style_compute(d.ctx, nullptr, nullptr, nullptr, 0, nullptr, &s, &res), GTEXT_CSS_E_INVALID) << "attributes are read, and there is no element";
   EXPECT_EQ(s, nullptr);
+  /* an entry with a length and no text is not read past nothing */
+  GTEXT_CSS_Style_Entry bad;
+  memset(&bad, 0, sizeof bad);
+  bad.text.data = nullptr;
+  bad.text.length = 12;
+  EXPECT_EQ(gtext_css_style_compute(d.ctx, r, nullptr, &bad, 1, nullptr, &s, &res), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(s, nullptr);
+  bad.text.length = 0;
+  EXPECT_EQ(gtext_css_style_compute(d.ctx, r, nullptr, &bad, 1, nullptr, &s, &res), GTEXT_CSS_OK) << "no text and no length is an empty list";
+  gtext_css_computed_free(s);
+  s = nullptr;
   /* a parent of another context */
   GTEXT_CSS_Compute_Context * other = nullptr;
   ASSERT_EQ(gtext_css_compute_context_new(R(), nullptr, nullptr, &other, nullptr), GTEXT_CSS_OK);
@@ -839,7 +850,7 @@ TEST(CssStyleLayers, DisplayContentsComputesToNoneOnAnSvgElementThatIsNoContaine
   /* Display 3, Appendix B: "display: contents computes to display: none." on the svg element and on the shapes; a, g, switch, use, tspan and textPath are
      stripped from the box tree instead, and text is not rendered. */
   Doc d(svg("<g id=\"g\" display=\"contents\"><rect id=\"r\" display=\"contents\"/></g><text id=\"t\" display=\"contents\"><tspan id=\"s\" display=\"contents\">x</tspan></text>"
-            "<use id=\"u\" display=\"contents\" xlink:href=\"#r\"/>", "display=\"contents\""));
+            "<use id=\"u\" display=\"contents\" xlink:href=\"#r\"/><svg id=\"n\" display=\"contents\"><rect id=\"nr\" display=\"contents\"/></svg><switch id=\"sw\" display=\"contents\"><rect id=\"swr\"/></switch><a id=\"an\" display=\"contents\"><rect/></a><symbol id=\"sy\" display=\"contents\"/>", "display=\"contents\""));
   ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
   EXPECT_EQ(d.value("root", "display"), "none");
   EXPECT_EQ(d.value("g", "display"), "contents");
@@ -847,6 +858,11 @@ TEST(CssStyleLayers, DisplayContentsComputesToNoneOnAnSvgElementThatIsNoContaine
   EXPECT_EQ(d.value("t", "display"), "none");
   EXPECT_EQ(d.value("s", "display"), "contents");
   EXPECT_EQ(d.value("u", "display"), "contents");
+  EXPECT_EQ(d.value("n", "display"), "contents") << "a nested svg has no CSS box layout of its own: it is a container that is rendered";
+  EXPECT_EQ(d.value("nr", "display"), "none");
+  EXPECT_EQ(d.value("sw", "display"), "none") << "both browsers compute a switch to none, and the specification does not name it among the elements it hoists";
+  EXPECT_EQ(d.value("an", "display"), "contents") << "a is a container that is rendered (Firefox; Chromium computes it to none)";
+  EXPECT_EQ(d.value("sy", "display"), "none") << "a symbol is never rendered: it cannot be unboxed";
   Doc h("<div id=\"d\" style=\"display: contents\"><span id=\"s\" style=\"display: contents\"></span></div>", true);
   ASSERT_EQ(h.status, GTEXT_CSS_OK);
   EXPECT_EQ(h.value("d", "display"), "contents") << "an element of HTML is not an SVG element";
@@ -897,6 +913,199 @@ TEST(CssStyleLayers, NormalWordSpacingComputesToZeroAndAZeroLetterSpacingToNorma
   EXPECT_EQ(d.value("c", "letter-spacing"), "normal");
   EXPECT_EQ(d.value("z", "letter-spacing"), "normal");
   EXPECT_EQ(d.value("e", "letter-spacing"), "2px");
+}
+
+/* ---- what the review found alive under mutation ---------------------------------------------------------------------------- */
+
+std::string repeat_declarations(size_t n) {
+  std::string s;
+  for (size_t i = 0; i < n; i++) {
+    s += "nonsense" + std::to_string(i) + ": 1; ";
+  }
+  return s;
+}
+
+TEST(CssStyleDiagnostics, TheStyleKeepsTheFirst1024AndCountsTheRest) {
+  Doc d(svg("<rect id=\"r\" style=\"" + repeat_declarations(1100) + "\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  const GTEXT_CSS_Computed_Style * s = d.at("r")->style;
+  EXPECT_EQ(gtext_css_computed_diagnostic_total(s), 1100u);
+  GTEXT_CSS_Style_Diagnostic g;
+  EXPECT_TRUE(gtext_css_computed_diagnostic(s, 1023, &g)) << "the last kept";
+  EXPECT_EQ(std::string(g.name.data, g.name.length), "nonsense1023");
+  EXPECT_FALSE(gtext_css_computed_diagnostic(s, 1024, &g)) << "the first not kept";
+  /* a bound of the caller's */
+  GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
+  o.candidates.max_diagnostics = 3;
+  Doc e(svg("<rect id=\"r\" style=\"" + repeat_declarations(5) + "\"/>"), false, &o);
+  ASSERT_EQ(e.status, GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_computed_diagnostic_total(e.at("r")->style), 5u);
+  EXPECT_TRUE(gtext_css_computed_diagnostic(e.at("r")->style, 2, &g));
+  EXPECT_FALSE(gtext_css_computed_diagnostic(e.at("r")->style, 3, &g));
+  o.candidates.max_diagnostics = 5;
+  Doc f(svg("<rect id=\"r\" style=\"" + repeat_declarations(5) + "\"/>"), false, &o);
+  EXPECT_TRUE(gtext_css_computed_diagnostic(f.at("r")->style, 4, &g)) << "a bound that is met keeps them all";
+  EXPECT_FALSE(gtext_css_computed_diagnostic(f.at("r")->style, 5, &g));
+}
+
+TEST(CssStyleDiagnostics, ADiagnosticSaysHowManyBytesItCoversAndWhyItWasDropped) {
+  Doc d(svg("<rect id=\"r\" style=\"nonsense: 1; stroke-width: banana; voice-family: x\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  const GTEXT_CSS_Computed_Style * s = d.at("r")->style;
+  GTEXT_CSS_Style_Diagnostic g;
+  ASSERT_TRUE(gtext_css_computed_diagnostic(s, 0, &g));
+  EXPECT_EQ(g.kind, GTEXT_CSS_STYLE_DIAG_UNKNOWN_PROPERTY);
+  EXPECT_EQ(g.length, std::string("nonsense: 1").size());
+  ASSERT_TRUE(gtext_css_computed_diagnostic(s, 1, &g));
+  EXPECT_EQ(g.kind, GTEXT_CSS_STYLE_DIAG_INVALID_VALUE);
+  EXPECT_EQ(g.length, std::string("stroke-width: banana").size());
+  EXPECT_EQ(g.offset, std::string("nonsense: 1; ").size());
+  ASSERT_TRUE(gtext_css_computed_diagnostic(s, 2, &g));
+  EXPECT_EQ(g.kind, GTEXT_CSS_STYLE_DIAG_UNJUDGEABLE) << "a property whose value this library cannot judge";
+  EXPECT_EQ(std::string(g.name.data, g.name.length), "voice-family");
+  /* the kinds of a presentation attribute, through a table of the caller's */
+  static const GTEXT_CSS_Presentation_Row rows[] = {
+      {"fill", "fill", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+      {"zz", "no-such-property", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+      {"vf", "voice-family", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+  };
+  GTEXT_CSS_Presentation_Table table = {rows, 3};
+  GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
+  o.presentation.table = &table;
+  Doc e(svg("<rect id=\"r\" fill=\"12px\" zz=\"1\" vf=\"x\"/>"), false, &o);
+  ASSERT_EQ(e.status, GTEXT_CSS_OK);
+  const GTEXT_CSS_Computed_Style * es = e.at("r")->style;
+  ASSERT_EQ(gtext_css_computed_diagnostic_total(es), 3u);
+  GTEXT_CSS_Style_Diagnostic kinds[3];
+  for (size_t i = 0; i < 3; i++) {
+    ASSERT_TRUE(gtext_css_computed_diagnostic(es, i, &kinds[i]));
+    EXPECT_EQ(kinds[i].source, GTEXT_CSS_STYLE_SOURCE_PRESENTATION);
+    EXPECT_EQ(kinds[i].length, 0u) << "a place, not a span";
+  }
+  EXPECT_EQ(kinds[0].kind, GTEXT_CSS_STYLE_DIAG_INVALID_VALUE);
+  EXPECT_EQ(kinds[1].kind, GTEXT_CSS_STYLE_DIAG_UNKNOWN_PROPERTY);
+  EXPECT_EQ(kinds[2].kind, GTEXT_CSS_STYLE_DIAG_UNJUDGEABLE);
+}
+
+TEST(CssStyleEntries, TheCallsOwnKeysAreNotTheCallersToSet) {
+  /* "`presentational_hint` and `element_attached` are the call's own and are ignored here" */
+  Doc d(svg("<rect id=\"r\" fill=\"green\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  Entries e;
+  e.add("fill: red", 0, 1);
+  e.add("fill: blue", 1, 0);
+  e.fix();
+  e.list[1].keys.element_attached = true; /* an attached declaration would beat a rule of any specificity */
+  GTEXT_CSS_Computed_Style * s = nullptr;
+  ASSERT_EQ(gtext_css_style_compute(d.ctx, d.at("r"), nullptr, e.list.data(), e.list.size(), nullptr, &s, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSS_Cascade_Entry w;
+  ASSERT_TRUE(gtext_css_computed_specified(s, find(R(), "fill"), &w));
+  EXPECT_FALSE(w.element_attached);
+  EXPECT_EQ(w.specificity.b, 1u) << "the rule of the higher specificity wins: the flag of the entry is ignored";
+  gtext_css_computed_free(s);
+  Entries f;
+  f.add("fill: red", 0, 0);
+  f.add("fill: blue", 1, 0);
+  f.fix();
+  f.list[1].keys.presentational_hint = true; /* a hint would lose to every rule */
+  ASSERT_EQ(gtext_css_style_compute(d.ctx, d.at("r"), nullptr, f.list.data(), f.list.size(), nullptr, &s, nullptr), GTEXT_CSS_OK);
+  ASSERT_TRUE(gtext_css_computed_specified(s, find(R(), "fill"), &w));
+  EXPECT_FALSE(w.presentational_hint);
+  EXPECT_EQ(w.rule, 1u) << "the later of two equal rules wins: the entry is no hint";
+  gtext_css_computed_free(s);
+}
+
+TEST(CssPresentation, TheEscapesOfAPathAreTheLineBreaksOfCss) {
+  EXPECT_EQ(text_of("d", "M0 0\rL1 1"), "\"M0 0\\d L1 1\"");
+  EXPECT_EQ(text_of("d", "M0 0\fL1 1"), "\"M0 0\\c L1 1\"");
+  EXPECT_EQ(text_of("d", "M0 0\r\nL1 1"), "\"M0 0\\d \\a L1 1\"");
+  EXPECT_EQ(text_of("d", "M0 0 \\ L"), "\"M0 0 \\\\ L\"");
+}
+
+TEST(CssPresentation, TheNumbersOfAnSvgTransformKeepTheirExponentsAndGetTheirZeros) {
+  EXPECT_EQ(text_of("transform", "translate(1.e2)"), "translate(1.0e2px)") << "CSS reads no `1.e2`";
+  EXPECT_EQ(text_of("transform", "translate(5.)"), "translate(5.0px)");
+  EXPECT_EQ(text_of("transform", "translate(-5.)"), "translate(-5.0px)");
+  EXPECT_EQ(text_of("transform", "translate(1E+2, 3e-1)"), "translate(1E+2px, 3e-1px)");
+  size_t err = 0;
+  EXPECT_EQ(text_of("transform", "translate(1e)", nullptr, &err), "translate(1e)") << "an exponent with no digits is not part of the number: the `e` is what fails";
+  EXPECT_EQ(err, 11u);
+  EXPECT_EQ(text_of("transform", "translate(1e+)", nullptr, &err), "translate(1e+)");
+  EXPECT_EQ(err, 11u);
+  EXPECT_EQ(text_of("transform", "rotate(10 0 0)"), "translate(0px, 0px) rotate(10deg) translate(0px, 0px)") << "a zero has no sign when it is negated";
+  EXPECT_EQ(text_of("transform", "rotate(10 -0 0.0)"), "translate(-0px, 0.0px) rotate(10deg) translate(0px, 0.0px)") << "...but the written one keeps its sign";
+}
+
+TEST(CssPresentation, ACommaNeedsANumberAfterItAndSaysWhere) {
+  size_t err = 99;
+  EXPECT_EQ(text_of("transform", "translate(1,)", nullptr, &err), "translate(1,)");
+  EXPECT_EQ(err, 12u) << "at the parenthesis after the comma";
+  err = 99;
+  EXPECT_EQ(text_of("transform", "translate(1) ,", nullptr, &err), "translate(1) ,");
+  EXPECT_EQ(err, 14u) << "at the end, where the transform the comma needs is not";
+  err = 99;
+  EXPECT_EQ(text_of("transform", "translate(1),scale(2)", nullptr, &err), "translate(1px) scale(2)") << "a comma between transforms is allowed";
+  EXPECT_EQ(err, (size_t)-1);
+}
+
+TEST(CssPresentation, OnlyTheNamespaceOfSvgIsSvg) {
+  const char * foreign = "http://www.w3.org/2000/svx"; /* as long as SVG's, and not it */
+  ASSERT_EQ(strlen(foreign), strlen(kSvg));
+  EXPECT_EQ(gtext_css_presentation_find(nullptr, foreign, strlen(foreign), "rect", 4, "fill", 4), nullptr);
+  EXPECT_NE(gtext_css_presentation_find(nullptr, kSvg, strlen(kSvg), "rect", 4, "fill", 4), nullptr);
+  /* display: contents is none on an element of SVG that is no container; on a foreign element of the same length of namespace it is what it says */
+  Doc d(svg("<f:thing xmlns:f=\"http://www.w3.org/2000/svx\" id=\"f\" style=\"display: contents\"/><thing id=\"s\" style=\"display: contents\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.value("f", "display"), "contents");
+  EXPECT_EQ(d.value("s", "display"), "none");
+}
+
+TEST(CssStyleDump, ALineBreakOfAnyKindInACustomValueIsASpaceInTheDump) {
+  Doc d("<div id=\"x\" style=\"--s: a&#12;b&#13;c&#10;d\"></div>", true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  const std::string text = dump_of(d.at("x")->style);
+  EXPECT_NE(text.find("\n--s: a b c d\n"), std::string::npos) << text.substr(0, 160);
+}
+
+TEST(CssBlockCustomNames, TheSpellingOfAnIdentifierIsTheLimit) {
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  ASSERT_EQ(gtext_css_block_new(R(), nullptr, &b), GTEXT_CSS_OK);
+  struct Case {
+    const char * name;
+    bool ok;
+  };
+  for (const Case & c : {Case{"--a", true}, Case{"--\\123456 b", true}, Case{"--\\1234567 b", false}, Case{"--\\1234567b", true}, Case{"--\\12345 b", true},
+           Case{"--\\41 ", true}, Case{"--a\\\t", true}, Case{"--", false}, Case{"---", true}, Case{"-a", false}, Case{"--a\\\f", false}, Case{"--a\\\r", false}}) {
+    const size_t before = gtext_css_block_count(b);
+    GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    ASSERT_EQ(gtext_css_block_add_text(b, c.name, strlen(c.name), "1", 1, false, nullptr, &outcome, nullptr), GTEXT_CSS_OK) << c.name;
+    EXPECT_EQ(gtext_css_block_count(b) - before, c.ok ? 1u : 0u) << c.name;
+  }
+  gtext_css_block_free(b);
+  /* the candidate set says the same of a name written as text */
+  GTEXT_CSS_Candidates * set = nullptr;
+  ASSERT_EQ(gtext_css_candidates_new(R(), nullptr, nullptr, &set), GTEXT_CSS_OK);
+  GTEXT_CSS_Cascade_Entry keys;
+  memset(&keys, 0, sizeof keys);
+  keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+  GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_VALID;
+  ASSERT_EQ(gtext_css_candidates_add_text(set, &keys, "--a b", 5, "1", 1, nullptr, &outcome, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(outcome, GTEXT_CSS_PROP_RESULT_UNKNOWN) << "a name with a space is no property";
+  outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  ASSERT_EQ(gtext_css_candidates_add_text(set, &keys, "--a\\+b", 6, "1", 1, nullptr, &outcome, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(outcome, GTEXT_CSS_PROP_RESULT_VALID);
+  gtext_css_candidates_free(set);
+}
+
+/* A known defect, kept as a test that is disabled and says what is right (gtest lists it as disabled in every run): the grid line is `<integer [-inf,-1]> | <integer
+   [1,inf]>` in the pin (an integer that is not zero), a calculation matches the first alternative whatever its value, and its value is clamped to that alternative's range
+   when it is computed, so `calc(3)` is `-1`. Both browsers compute it to 3. Closing it needs the matcher to choose the alternative by the value of a calculation that
+   is a constant, which the specification of the grammar does not say; it is listed in the manual (documentation/formats/css-values.md). */
+TEST(CssStyleKnownDefects, DISABLED_ACalculationInAGridLineIsNotClampedToTheFirstOfTwoRanges) {
+  Doc d("<div id=\"a\" style=\"grid-row-start: calc(3) foo\"></div><div id=\"b\" style=\"grid-row-start: calc(3)\"></div>", true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.value("a", "grid-row-start"), "3 foo");
+  EXPECT_EQ(d.value("b", "grid-row-start"), "3");
 }
 
 TEST(CssStyleDump, ItIsVersionedSortedByTheBytesOfTheNamesAndOneLineAProperty) {
@@ -1060,7 +1269,7 @@ TEST_P(CssStyleFixtures, ComputeToTheirExpectedDumpsByteForByte) {
   EXPECT_EQ(got, want) << name;
 }
 
-INSTANTIATE_TEST_SUITE_P(Svg, CssStyleFixtures, testing::Values("presentation-attributes", "inheritance", "use", "custom-properties"));
+INSTANTIATE_TEST_SUITE_P(Svg, CssStyleFixtures, testing::Values("presentation-attributes", "inheritance", "use", "custom-properties", "display-contents"));
 
 TEST(CssStyleFixturesSpot, TheValuesThatTheStandardGivesForTheFixtures) {
   Doc d(slurp(find_file("data/css/svg/presentation-attributes.svg")));

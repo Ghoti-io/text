@@ -27,6 +27,8 @@
 
 #include <ghoti.io/text/css/css_presentation.h>
 
+#include "css_cascade_internal.h"
+
 #include <stdint.h>
 #include <string.h>
 
@@ -552,7 +554,7 @@ GTEXT_CSS_Status gtext_css_candidates_add_presentation(GTEXT_CSS_Candidates * se
   if (!options) {
     options = &def;
   }
-  const GTEXT_Allocator * alloc = NULL;
+  const GTEXT_Allocator * alloc = &set->alloc; /* the conversion buffers are the candidate set's, as the manual says */
   converted c;
   GTEXT_CSS_Status st = convert(row, value, length, options, alloc, &c);
   if (st != GTEXT_CSS_OK) {

@@ -357,7 +357,7 @@ def fuzz_plants():
             grouped[name][1].append(old.replace("\\n", "\n"))
             grouped[name][2].append(new.replace("\\n", "\n"))
     for name, (rel, olds, news) in grouped.items():
-        out.append(("style-" + name, rel, olds if len(olds) > 1 else olds[0], news if len(news) > 1 else news[0], ["style"]))
+        out.append(("style-" + name, rel, olds if len(olds) > 1 else olds[0], news if len(news) > 1 else news[0], ["style-oom"] if name == "presentation-allocator" else ["style"]))
     return out
 
 

@@ -376,19 +376,24 @@ other values, same hash: no
 ## Against Chromium and Firefox
 
 `make check-css-style-oracle` asks this library, Chromium 156 and Firefox 158 (Gecko, whose style engine is Stylo) for the computed style of the same elements: a
-seeded population of SVG fixtures, presentation attributes on SVG elements, generated values of every property, and generated trees of HTML and SVG elements with
-`style` and presentation attributes, in both color schemes. The browsers answer `getComputedStyle()` through one WebDriver BiDi driver in a pinned image, with the
-documents inside an element with `display: none` so that the resolved value of a property is its computed value. A divergence is keyed by its pattern, its property
-and the smallest declaration that has it, and `tools/oracle/css_style_divergences.txt` gives each key a class and the sentence of the served draft that decides it
-(`reference-wrong`, `reference-old`, `legacy-compat`, `unspecified`, ...); the gate fails on a key that is not listed, a listed key that no longer occurs, a count or
-digest that changed, a witness that does not hold, a control that is not as it was, and on any key of class `ours`. Its controls make the gate fail on purpose,
-among them eight of the twelve defects planted in this library's own sources (the others are below the population and are seen by the unit tests). The default population is 161,476 items; the run compares all of them in both schemes and finds 250
-keys, none of them this library's.
+seeded population of SVG fixtures, presentation attributes on SVG elements, generated values of every property, generated trees of HTML and SVG elements with
+`style` and presentation attributes, and twelve small documents with a style sheet, in both color schemes. The browsers answer `getComputedStyle()` through one
+WebDriver BiDi driver in a pinned image, with the documents inside an element with `display: none` so that the resolved value of a property is its computed value.
+A divergence is keyed by its pattern, its property and the smallest declaration that has it, and `tools/oracle/css_style_divergences.txt` gives each key a class and
+the sentence of the served draft that decides it (`reference-wrong`, `reference-old`, `legacy-compat`, `unspecified`, ...); the gate fails on a key that is not listed,
+a listed key that no longer occurs, a count or digest that changed, a witness that does not hold, a control that is not as it was, and on any key of class `ours`. Its
+controls make the gate fail on purpose, among them eight of the thirteen defects planted in this library's own sources (the others are below the population and are
+seen by the unit tests).
+
+**The cascade.** The twelve style-sheet documents (`cascade-*` in `tools/oracle/css_style_gen.py`) put a presentation attribute, a rule of a `<style>` element
+(selectors `#id`, `*` and an element's name; selector matching is C3) and the `style` attribute on one element, with `!important`, with equal and unequal specificity and
+with a shorthand, and the three agree on all of them. What the population still does not reach is the rest of the cascade: layers, `@scope`, shadow contexts and
+selectors other than those three, which the unit tests and the cascade's own fuzzer cover and a browser cannot be asked about until selectors exist here.
 
 What the oracle found in the first runs and is fixed: the used color scheme of `color-scheme: normal` is the user agent default, not the preference;
-`display: contents` is `none` on an SVG element that is no container of rendered content; `stroke-dasharray` is one comma separated list and its dashes cannot be
-negative; `word-spacing: normal` is `0px`, a zero `letter-spacing` is `normal`, a bare `font-style: oblique` stays `oblique`; the order of `paint-order` is its value
-and its shortest form is written; and `d` as an attribute is the `<string>` of the served draft.
+`display: contents` is `none` on an SVG element that is no container of rendered content (and on a `switch`, as both browsers compute it); `stroke-dasharray` is one
+comma separated list and its dashes cannot be negative; `word-spacing: normal` is `0px`, a zero `letter-spacing` is `normal`, a bare `font-style: oblique` stays
+`oblique`; the order of `paint-order` is its value and its shortest form is written; and `d` as an attribute is the `<string>` of the served draft.
 
 ## Limits and threads
 
@@ -396,7 +401,9 @@ The candidates of one element (`GTEXT_CSS_Style_Options::candidates`), the decla
 list and the budget of substitution are limits with a status of their own, and a limit is asserted by its bound. A context is immutable after it is made and
 may be shared by any number of threads, each computing its own styles; a style is immutable and reference counted with atomic counts
 (`gtext_css_computed_retain()`, `gtext_css_computed_free()`), so any thread may hold and release it. The call allocates through the context's allocator and
-leaves nothing behind when an allocation fails.
+leaves nothing behind when an allocation fails, including the buffers a presentation attribute is converted in, which are the candidate set's allocator's like everything else.
+`tests/test-css-style-threads.cpp` computes, retains and frees from eight threads on one shared context and parent and compares every dump and hash with a single thread's
+(it runs in the ThreadSanitizer build with the other tests).
 
 ## What is not here
 
