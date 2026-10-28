@@ -186,7 +186,11 @@ struct Ref {
 
   static bool anb(int64_t a, int64_t b, int64_t pos) {
     for (int64_t n = 0; n <= 64; n++) {
-      if (a * n + b == pos) {
+      int64_t m = 0, v = 0; // the argument's numbers saturate at the 64-bit limits: a sum past them is no position
+      if (__builtin_mul_overflow(a, n, &m) || __builtin_add_overflow(m, b, &v)) {
+        continue;
+      }
+      if (v == pos) {
         return true;
       }
     }
