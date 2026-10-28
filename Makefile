@@ -1172,6 +1172,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_presentation_table.c \
 	src/css/css_property.c \
 	src/css/css_registry.c \
+	src/css/css_rule_index.c \
+	src/css/css_sheet.c \
 	src/css/css_revert.c \
 	src/css/css_selector_parse.c \
 	src/css/css_selector_serialize.c \
@@ -2109,6 +2111,7 @@ $(eval $(call fuzz-rule,fuzz_css_custom,css-custom))
 $(eval $(call fuzz-rule,fuzz_css_style,css-style))
 $(eval $(call fuzz-rule,fuzz_css_selector,css-selector))
 $(eval $(call fuzz-rule,fuzz_css_match,css-match))
+$(eval $(call fuzz-rule,fuzz_css_sheet,css-sheet))
 
 # Every format with a writer now has a harness for it. YAML and TOML had one
 # and JSON, CSV and INI did not, which is the asymmetry that let an object of
@@ -2122,7 +2125,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade fuzz-run-css-custom fuzz-run-css-style fuzz-run-css-selector fuzz-run-css-match
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade fuzz-run-css-custom fuzz-run-css-style fuzz-run-css-selector fuzz-run-css-match fuzz-run-css-sheet
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit

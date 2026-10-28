@@ -215,5 +215,6 @@ in `src/markup/markup_html.c`), and the XHTML writer uses it.
   namespace, `xmlns` declarations in scope). The XML parser enforces them as it
   reads; a tree built by hand is not held to them.
 - No `normalize()` (merging adjacent text nodes), no ID lookup, no
-  `getElementsBy*`. XPath and selectors are later.
+  `getElementsBy*`. XPath is later. Selectors are `querySelector()`, `querySelectorAll()`, `matches()` and
+  `closest()` (\ref format_css_selectors "css-selectors.md").
 - Attribute order is preserved and not significant to equality, as in the DOM.

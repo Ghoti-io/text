@@ -1302,12 +1302,22 @@ static bool parse_list(P * p, const V * v, size_t lo, size_t hi, GTEXT_CSS_Selec
     else {
       const size_t dsave = p->ndiag;
       const size_t tsave = p->total_diag;
+      const size_t ssave = p->simples.len, csave = p->compounds.len, strsave = p->strings.len, fsave = p->flags.len, lsave = p->levels.len, asave = p->attrs.len;
       GTEXT_CSS_Complex cx;
       memset(&cx, 0, sizeof cx);
       const bool ok = parse_complex(p, v, ta, tb, relative, c, &cx);
       if (p->status != GTEXT_CSS_OK) {
         p->complexes.len = xbase;
         return false;
+      }
+      if (!ok) {
+        // an entry that is not a selector leaves nothing of what it had read: a forgiving list goes on with the vectors as they were (a simple left behind would be the next compound's)
+        p->simples.len = ssave;
+        p->compounds.len = csave;
+        p->strings.len = strsave;
+        p->flags.len = fsave;
+        p->levels.len = lsave;
+        p->attrs.len = asave;
       }
       if (ok) {
         if (p->complexes.len - xbase >= p->max_list) {

@@ -184,7 +184,10 @@ bool css_match_is_html(struct GTEXT_CSS_Selector_Match_Context * ctx, El element
     return true;
   }
   GTEXT_CSS_String ns;
-  return e_ns(ctx, element, &ns) && ns.length == sizeof XHTML_NS - 1 && memcmp(ns.data, XHTML_NS, ns.length) == 0;
+  if (!e_ns(ctx, element, &ns)) {
+    return true; // "An element whose namespace the interface does not give is taken as HTML" (GTEXT_CSS_Selector_Match_Options::html_document)
+  }
+  return ns.length == sizeof XHTML_NS - 1 && memcmp(ns.data, XHTML_NS, ns.length) == 0;
 }
 
 static bool s_eq(const char * a, size_t an, const char * b, size_t bn, bool ci) {

@@ -31,34 +31,35 @@
 
 #define MEMO_MIN_CAP ((size_t)64)
 
-static size_t memo_hash(size_t uid, uint16_t kind, uint32_t step, const void * elem, const void * aux) {
+static size_t memo_hash(size_t uid, uint16_t kind, uint32_t step, const void * elem, const void * aux, const void * ts) {
   uint64_t h = 0x9e3779b97f4a7c15ull;
   h ^= (uint64_t)uid + 0x7f4a7c15u + (h << 6) + (h >> 2);
   h ^= (uint64_t)(uintptr_t)elem * 0xff51afd7ed558ccdull;
   h = (h << 31) | (h >> 33);
   h ^= (uint64_t)(uintptr_t)aux * 0xc4ceb9fe1a85ec53ull;
   h ^= ((uint64_t)step << 16 | kind) * 0x9e3779b97f4a7c15ull;
+  h ^= (h << 13) + (uint64_t)(uintptr_t)ts * 0xd6e8feb86659fd93ull;
   h ^= h >> 29;
   h *= 0xbf58476d1ce4e5b9ull;
   h ^= h >> 32;
   return (size_t)h;
 }
 
-static bool same(const css_memo_ent * e, size_t uid, uint16_t kind, uint32_t step, const void * elem, const void * aux) {
-  return e->uid == uid && e->kind == kind && e->step == step && e->elem == elem && e->aux == aux;
+static bool same(const css_memo_ent * e, size_t uid, uint16_t kind, uint32_t step, const void * elem, const void * aux, const void * ts) {
+  return e->uid == uid && e->kind == kind && e->step == step && e->elem == elem && e->aux == aux && e->ts == ts;
 }
 
 bool css_memo_get(struct GTEXT_CSS_Selector_Match_Context * ctx, size_t uid, uint16_t kind, uint32_t step, const void * elem, const void * aux, css_memo_ent * out) {
   if (ctx->opt.disable_memo || !ctx->cap) {
     return false;
   }
-  size_t i = memo_hash(uid, kind, step, elem, aux) & (ctx->cap - 1);
+  size_t i = memo_hash(uid, kind, step, elem, aux, ctx->tree_scope) & (ctx->cap - 1);
   for (;;) {
     const css_memo_ent * e = &ctx->tab[i];
     if (e->val == 0) {
       return false;
     }
-    if (same(e, uid, kind, step, elem, aux)) {
+    if (same(e, uid, kind, step, elem, aux, ctx->tree_scope)) {
       *out = *e;
       ctx->ctr.memo_hits++;
       return true;
@@ -81,7 +82,7 @@ static bool grow(struct GTEXT_CSS_Selector_Match_Context * ctx) {
     if (e->val == 0) {
       continue;
     }
-    size_t i = memo_hash(e->uid, e->kind, e->step, e->elem, e->aux) & (ncap - 1);
+    size_t i = memo_hash(e->uid, e->kind, e->step, e->elem, e->aux, e->ts) & (ncap - 1);
     while (tab[i].val != 0) {
       i = (i + 1) & (ncap - 1);
     }
@@ -106,7 +107,7 @@ bool css_memo_put(struct GTEXT_CSS_Selector_Match_Context * ctx, size_t uid, uin
       return false;
     }
   }
-  size_t i = memo_hash(uid, kind, step, elem, aux) & (ctx->cap - 1);
+  size_t i = memo_hash(uid, kind, step, elem, aux, ctx->tree_scope) & (ctx->cap - 1);
   for (;;) {
     css_memo_ent * e = &ctx->tab[i];
     if (e->val == 0) {
@@ -118,6 +119,7 @@ bool css_memo_put(struct GTEXT_CSS_Selector_Match_Context * ctx, size_t uid, uin
       e->step = step;
       e->elem = elem;
       e->aux = aux;
+      e->ts = ctx->tree_scope;
       e->val = val;
       e->a = a;
       e->b = b;
@@ -125,7 +127,7 @@ bool css_memo_put(struct GTEXT_CSS_Selector_Match_Context * ctx, size_t uid, uin
       ctx->ctr.memo_entries = ctx->used;
       return true;
     }
-    if (same(e, uid, kind, step, elem, aux)) {
+    if (same(e, uid, kind, step, elem, aux, ctx->tree_scope)) {
       e->val = val;
       e->a = a;
       e->b = b;

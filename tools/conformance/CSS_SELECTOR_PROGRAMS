@@ -3,3 +3,6 @@ selector-seeds	test-css-selector-fuzz-seeds.cpp
 match	test-css-match.cpp
 match-cost	test-css-match-cost.cpp
 match-seeds	test-css-match-fuzz-seeds.cpp
+sheet	test-css-sheet.cpp
+sheet-cost	test-css-sheet-cost.cpp
+sheet-seeds	test-css-sheet-fuzz-seeds.cpp

@@ -266,6 +266,10 @@ TEST(CssSelectorModes, AForgivingListKeepsWhatIsInvalidAsWrittenAndNeverMatchesI
   EXPECT_EQ(written(":is(123)"), ":is(123)");
   EXPECT_EQ(written(":is(.a, 123)"), ":is(.a, 123)");
   EXPECT_EQ(written("a:is(:unknown)"), "a:is(:unknown)");
+  // an entry that fails after it has read some of its simple selectors leaves none of them in the compound that holds the list (found by the fuzzer: `:where(\xe2:a)`)
+  EXPECT_EQ(written(":where(b:nonesuch)"), ":where(b:nonesuch)");
+  EXPECT_EQ(written("x:is(b.c[d]:nonesuch, e)"), "x:is(b.c[d]:nonesuch, e)");
+  EXPECT_EQ(written(":is(a b, c > :nonesuch d) .z"), ":is(a b, c > :nonesuch d) .z");
   Parsed bad;
   parse(bad, ":is(.a", GTEXT_CSS_SELECTOR_COMPLEX_LIST);
   EXPECT_TRUE(bad.valid()) << "end of input closes the function";

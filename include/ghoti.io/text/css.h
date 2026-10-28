@@ -59,6 +59,7 @@
 #include <ghoti.io/text/css/css_property.h>
 #include <ghoti.io/text/css/css_registry.h>
 #include <ghoti.io/text/css/css_selector.h>
+#include <ghoti.io/text/css/css_sheet.h>
 #include <ghoti.io/text/css/css_serialize.h>
 #include <ghoti.io/text/css/css_shorthand.h>
 #include <ghoti.io/text/css/css_stream.h>

@@ -61,6 +61,7 @@ typedef struct {
   size_t uid;       ///< The parse (list) the node belongs to; 0 with val 0: an empty slot.
   const void * elem;
   const void * aux; ///< The scope element the answer depends on (a selector that mentions the scope), else NULL.
+  const void * ts;  ///< The tree scope the answer was made in (a sheet shared by two shadow trees is matched in each).
   uint32_t step;    ///< The node's id (or the node's id and the step of a chain).
   uint16_t kind;
   uint16_t val;     ///< 0 empty, 1 false, 2 true, 3 positions known.
@@ -100,6 +101,9 @@ struct GTEXT_CSS_Selector_Match_Context {
   uint8_t * pathv;
   size_t path_cap;
 };
+
+/// Whether the element interface of the context has a callback.
+#define CSS_HAVE(ctx, cb) (((ctx)->avail >> (cb)) & 1u)
 
 /* ---- the memo --------------------------------------------------------------------------------------------- */
 

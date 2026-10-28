@@ -70,8 +70,10 @@
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_layer.h>
+#include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_presentation.h>
 #include <ghoti.io/text/css/css_property.h>
+#include <ghoti.io/text/css/css_sheet.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -118,6 +120,14 @@ typedef struct {
   GTEXT_CSS_Candidate_Options candidates;
   /** The limits of parsing a declaration list (css_core.h); zeroed fields are the defaults. */
   GTEXT_CSS_Parse_Options parse;
+  /** The style rules that apply (css_sheet.h): a frozen index, and the match context to test them with (the caller's snapshot of the tree; not shared between threads). The call
+   *  collects the declarations of the rules that match the element, with the keys the cascade defines, before it adds anything else, so the layers of the index's contexts
+   *  are the layers of the entries it makes (`layers` serves the entries of `entries` that belong to a context the index has none of). NULL: no style rules. */
+  const GTEXT_CSS_Rule_Index * rules;
+  /** The match context for `rules`. Required with `rules`; must be made for the element interface of the compute context. */
+  GTEXT_CSS_Selector_Match_Context * match;
+  /** The pseudo-element the style is of (gtext_css_rules_collect()), or NULL for the element. */
+  const GTEXT_CSS_Selector_List * pseudo;
 } GTEXT_CSS_Style_Options;
 
 /** @brief The defaults, spelled out: both attribute sources, every attribute-only spelling, no quirks. */

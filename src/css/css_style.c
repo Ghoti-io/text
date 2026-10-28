@@ -313,6 +313,19 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   if (st != GTEXT_CSS_OK) {
     return fail(&b, st, NULL, 0, NULL);
   }
+  if (options->rules) {
+    GTEXT_CSS_Rule_Index_Result rr;
+    if (!options->match || !element) {
+      gtext_css_candidates_free(b.set);
+      return fail(&b, GTEXT_CSS_E_INVALID, NULL, 0, "style rules are given with no match context or no element");
+    }
+    st = gtext_css_rules_collect(options->rules, options->match, element, options->pseudo, b.set, &rr);
+    b.work += rr.work;
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_candidates_free(b.set);
+      return fail(&b, st, rr.name, strlen(rr.name), rr.detail);
+    }
+  }
   if (options->sources & GTEXT_CSS_STYLE_PRESENTATION_ATTRIBUTES) {
     st = add_presentation_attributes(&b, iface, element);
   }

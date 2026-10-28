@@ -3,7 +3,7 @@
 # Selectors
 
 Selectors Level 4 as a compiled form: a parser for every selector the specifications list, a serializer that is CSSOM's, the specificity, and what a selector asks of
-the caller's tree. This page is the syntax and the compiled form; matching, the style sheet and the index come after it.
+the caller's tree. This page is the syntax and the compiled form, matching, and the queries of a Markup document; the style sheet and the index are \ref format_css_sheets "css-sheets.md".
 Back to \ref text_format_references "Formats".
 
 Include `<ghoti.io/text/css.h>` (`css/css_selector.h`).
@@ -65,10 +65,121 @@ The element interface (`css_element.h`) grew for selectors, additively: `first_c
 `assigned_slot`, `has_part`, `custom_state` and `column_cell`, and state bits 26 to 62 for the dynamic and input pseudo-classes the first 26 lack. A caller built before has a
 smaller table and sees `GTEXT_CSS_E_UNSUPPORTED` naming the callback a selector needs.
 
+## Matching
+
+`gtext_css_selector_match(list, context, element, pseudo, result)` says whether a list matches an element, over the caller's tree (`css_element.h`): it needs no more of
+the tree than the callbacks the selector uses (`gtext_css_selector_requires()` names them), and a selector that needs one the table lacks is `GTEXT_CSS_E_UNSUPPORTED` with
+the callback in the result, never worked around. A `GTEXT_CSS_Selector_Match_Context` binds an interface and options to a **snapshot** of the tree, owns its caches, is reentrant
+and is **not shared between threads** (compiled selectors, sheets and indexes are). `gtext_css_selector_match_reset()` drops the caches when the tree changes.
+
+The options say what the document language does: `html_document` (type selectors and attribute names compare ignoring ASCII case for HTML elements; an element whose
+namespace the interface does not give is taken as HTML; the values of the attributes the HTML Standard lists compare ignoring case), `quirks` (class and id compare ignoring
+case; a compound of `:hover` or `:active` alone matches only a link), `visited` (`:visited` never matches, and `:link` matches any link), `scope` (what `:scope` is; by default the root),
+`root` (the document element, for a tree that has fragments) and `tree_scope` (what `:host` is the host of). `:lang()` is RFC 4647 extended filtering; `:dir()` and
+the states are the caller's through the interface; `:target`, `:hover` and the other states are the bits `state` returns.
+
+## The cost model
+
+Matching goes right to left and every step is memoized on (selector node, element) in the context, so a run of any number of selectors over all n elements of a snapshot costs
+at most (selector nodes) x n memo entries, never their product: `* * * * * .x` over a chain, `a ~ b ~ c` over n siblings, `li:nth-child(odd of .x)` over n siblings (the positions of a
+parent's children are computed once) and `:has()` of every combinator (the chain below a point depends on the point and the step, and not on the anchor, so each is visited once).
+The one exception is a `:has()` that mentions its anchor (`:scope` or `&`), which is not memoized across anchors and spends from a budget (`max_has_visits`); reaching a limit
+(`max_memo_entries`, `max_work`) is `GTEXT_CSS_E_LIMIT_MATCH_MEMO` or `_WORK`, never "no match". An **ancestor Bloom filter**, kept by `gtext_css_selector_match_walk()`, rejects a
+descendant-combinator selector without matching it; it never changes an answer, which the tests assert by matching with and without it and with and without the memo. No evaluation
+recurses in the C stack beyond the nesting of the functional pseudo-classes the parser bounded. `gtext_css_selector_match_counters()` reports what a context did, and
+`tests/test-css-match-cost.cpp` asserts bounds on it.
+
+## Queries on a Markup document
+
+`querySelector()`, `querySelectorAll()`, `matches()` and `closest()` of the DOM are `gtext_markup_query_selector()`, `_all()`, `gtext_markup_matches()` and `gtext_markup_closest()`
+(`markup/markup_query.h`), each with a `_compiled` form that takes a list parsed once. `css/css_markup.h` is the adapter behind them, and a caller who wants the match context
+itself makes an adapter over the document and gives its interface and `gtext_css_markup_match_options()` to `gtext_css_selector_match_context_new()`. The adapter derives the static
+states from the document (`:link`, `:checked`, `:disabled`, `:required`, `:placeholder-shown`, ...) the way the HTML Standard defines them, and `:root` is the document element.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <ghoti.io/text/html.h>
+#include <ghoti.io/text/markup.h>
+#include <ghoti.io/text/markup/markup_query.h>
+#include <stdio.h>
+#include <string.h>
+
+static void sq_print(const char * label, GTEXT_Markup_Node * const * nodes, size_t count) {
+  printf("%s:", label);
+  for (size_t i = 0; i < count; i++) {
+    GTEXT_Markup_Attribute id;
+    if (gtext_markup_element_get_attribute(nodes[i], NULL, "id", &id)) {
+      printf(" %.*s", (int)id.value_length, id.value);
+    }
+  }
+  printf("\n");
+}
+
+/* The queries of the DOM on a Markup document: all the elements a selector matches in document order, whether one element matches, and the nearest inclusive ancestor that does.
+   A selector that is not valid is GTEXT_MARKUP_E_SELECTOR and the result says where. */
+static void selectors_query(void) {
+  static const char html[] =
+      "<!DOCTYPE html><ul id=list><li id=one class=x>1</li><li id=two>2</li><li id=three class=x><b id=bold>3</b></li></ul>";
+  GTEXT_Markup_Document * document = NULL;
+  GTEXT_HTML_Result parsed;
+  memset(&parsed, 0, sizeof parsed);
+  gtext_html_parse(html, strlen(html), NULL, &document, &parsed);
+  gtext_html_result_free(&parsed);
+  const GTEXT_Markup_Node * root = gtext_markup_document_root(document);
+
+  GTEXT_Markup_Node ** found = NULL;
+  size_t count = 0;
+  gtext_markup_query_selector_all(root, "li.x", 4, NULL, &found, &count, NULL);
+  sq_print("li.x", found, count);
+  gtext_markup_query_free(NULL, found);
+
+  gtext_markup_query_selector_all(root, "ul:has(> li:nth-child(odd of .x)) > li:not(.x) + li", 51, NULL, &found, &count, NULL);
+  sq_print("odd .x", found, count);
+  gtext_markup_query_free(NULL, found);
+
+  GTEXT_Markup_Node * bold = NULL;
+  gtext_markup_query_selector(root, "b", 1, NULL, &bold, NULL);
+  GTEXT_Markup_Node * nearest = NULL;
+  gtext_markup_closest(bold, "li", 2, NULL, &nearest, NULL);
+  GTEXT_Markup_Node * list[1] = {nearest};
+  sq_print("closest li", list, 1);
+  bool is_x = false;
+  gtext_markup_matches(nearest, ".x", 2, NULL, &is_x, NULL);
+  printf("matches .x: %s\n", is_x ? "yes" : "no");
+
+  GTEXT_Markup_Query_Result result;
+  memset(&result, 0, sizeof result);
+  const GTEXT_Markup_Status status = gtext_markup_query_selector(root, "li:", 3, NULL, &bold, &result);
+  printf("li: -> %s\n", status == GTEXT_MARKUP_E_SELECTOR ? "a syntax error" : "something else");
+  gtext_markup_query_result_free(&result);
+  gtext_markup_document_free(document);
+}
+```
+
+prints
+
+```
+li.x: one three
+odd .x: three
+closest li: three
+matches .x: yes
+li: -> a syntax error
+```
+
+A syntax error is `GTEXT_MARKUP_E_SELECTOR` with the diagnostic in the result; a limit is `GTEXT_MARKUP_E_LIMIT`; a selector that needs a callback the interface lacks is `GTEXT_CSS_E_UNSUPPORTED` (the Markup adapter has them all). `closest()` includes the element itself, and a pseudo-element never matches in a query.
+
+## Shadow trees
+
+The selectors that cross a boundary use the callbacks `tree_scope`, `containing_host`, `shadow_scope`, `assigned_slot` and `has_part`, and nothing else crosses one: a complex selector
+stops at a tree scope's top (the `parent` callback returns NULL there). `:host`, `:host()` and `:host-context()` match the host of the sheet's scope (`:host-context(S)` also when S matches an
+inclusive flat-tree ancestor of the host, as the served draft defines it); `::slotted(S)` matches the elements assigned to a slot (and, through a chain of slots that are themselves
+assigned, in every shadow tree on the chain); `::part(a b)` matches the element in a host's shadow tree for which `has_part` is true for every name. Which context number a rule gets is
+in \ref format_css_sheets "css-sheets.md".
+
 ## Tested scope
 
 `make conformance-css-selectors` scores the 619 selector vectors of web-platform-tests (the `test_valid_selector`, `test_valid_forgiving_selector` and
 `test_invalid_selector` calls, each selector read as `insertRule(selector + "{}")` reads it): 578 pass and 41 are exceptions, all of tentative pages that no served draft
 specifies (the class-prefix selector `.foo-*` and the functional `:has-slotted()`); the 101 rule vectors are listed as not scored, with the page that scores each.
-`make check-css-selector-plants` shows the unit tests fail on planted defects, and `tests/fuzz/fuzz_css_selector.cpp` is the libFuzzer harness (its seeds are replayed by
-`make test`).
+`make conformance-css-selector-queries` scores the DOM query vectors of web-platform-tests through the Markup adapter. `make check-css-selector-plants` shows the unit tests fail on planted
+defects, and `tests/fuzz/fuzz_css_selector.cpp` and `fuzz_css_match.cpp` are the libFuzzer harnesses (their seeds are replayed by `make test`; the matcher's has a naive reference matcher).

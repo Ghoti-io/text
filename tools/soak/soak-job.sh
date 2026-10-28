@@ -17,7 +17,7 @@
 set -u
 T=${1:-1860}
 shift
-ALL="xml:fuzz_xml xml-writer:fuzz_xml_writer html-tokenizer:fuzz_html_tokenizer html-tree:fuzz_html_tree html:fuzz_html html-serialize:fuzz_html_serialize encoding:fuzz_encoding markup-tree:fuzz_markup_tree css-style:fuzz_css_style css-compute:fuzz_css_compute css-custom:fuzz_css_custom css-selector:fuzz_css_selector css-match:fuzz_css_match"
+ALL="xml:fuzz_xml xml-writer:fuzz_xml_writer html-tokenizer:fuzz_html_tokenizer html-tree:fuzz_html_tree html:fuzz_html html-serialize:fuzz_html_serialize encoding:fuzz_encoding markup-tree:fuzz_markup_tree css-style:fuzz_css_style css-compute:fuzz_css_compute css-custom:fuzz_css_custom css-selector:fuzz_css_selector css-match:fuzz_css_match css-sheet:fuzz_css_sheet"
 if [ $# -gt 0 ]; then
 	SEL=""
 	for w in "$@"; do for p in $ALL; do [ "${p%%:*}" = "$w" ] && SEL="$SEL $p"; done; done

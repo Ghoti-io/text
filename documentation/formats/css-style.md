@@ -133,10 +133,12 @@ dropped bogus at byte 23
 
 1. It reads the element's **presentation attributes** through the table of `css_presentation.h` (SVG 2's, unless the options name another) and its `style`
    attribute through the element interface, and adds the declarations of the entries the caller gives.
-2. It **cascades** them (\ref format_css_cascade "css-cascade.md"). A presentation attribute is an author-level declaration of specificity zero that comes
+2. When `GTEXT_CSS_Style_Options::rules` and `::match` are set, it first adds the declarations of the style rules that match the element
+   (\ref format_css_sheets "css-sheets.md"), with the keys the cascade defines; `::pseudo` asks for a pseudo-element's rules instead.
+3. It **cascades** them (\ref format_css_cascade "css-cascade.md"). A presentation attribute is an author-level declaration of specificity zero that comes
    before every style sheet of the author: any rule beats it, whatever its specificity, and the `style` attribute beats it too. The `style` attribute is over
    every rule that is not `!important`.
-3. It **computes** the style from the winners, the parent's style and the environment (\ref format_css_computed "css-computed.md"), substituting `var()` and
+4. It **computes** the style from the winners, the parent's style and the environment (\ref format_css_computed "css-computed.md"), substituting `var()` and
    the other functions (\ref format_css_variables "css-variables.md").
 
 The **parent** is the style of the element that this one *inherits from*, which is the tree parent for most elements and the `<use>` element for the clone that
@@ -407,6 +409,6 @@ leaves nothing behind when an allocation fails, including the buffers a presenta
 
 ## What is not here
 
-Selector matching (the declarations of the rules that match come from the caller until it exists), conditional rules, used values and layout, animations and
+Conditional rules (the filter that says which `@media`, `@supports` and `@container` apply is the environment's, and not here), used values and layout, animations and
 transitions. A caller that is an SVG consumer registers the grammars of `fill` and `stroke`, which the registry's pin leaves unresolved, as `vector` does
 (\ref format_css_registry "css-registry.md").
