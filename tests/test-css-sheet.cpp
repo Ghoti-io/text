@@ -966,3 +966,59 @@ TEST(CssSheetStyle, APseudoElementsEntriesComeFromTheSameCall) {
   gtext_css_selector_list_free(before);
   gtext_css_compute_context_free(cc);
 }
+
+TEST(CssSheetShadow, TheHostIsTheParentOfTheTopOfItsShadowTreeForTheCompoundsThatNameIt) {
+  /* Scoping 1: `:host > *` and `:host p` select inside the shadow tree; a compound that does not name :host never matches the host from inside. */
+  Compiled inner(":host > span { color: red } :host p { background-color: blue } x-host > span { margin-top: 3px } :host(.k) > span { margin-left: 4px } div :host { padding-left: 5px } "
+                 ":host :host-context(div) { margin-top: 9px }");
+  ASSERT_EQ(inner.st, GTEXT_CSS_OK);
+  Page pg;
+  const int h = pg.t.add(0, "x-host", "", {"k"});
+  const int sc = pg.t.attach_shadow(h);
+  const int span = pg.t.add_in_shadow(sc, "span");
+  const int p = pg.t.add(span, "p");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, sc, 1), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, span, "color"), "red");
+  EXPECT_EQ(win(pg, ix, p, "background-color"), "blue");
+  EXPECT_EQ(win(pg, ix, span, "margin-top"), "-") << "`x-host` is not :host";
+  EXPECT_EQ(win(pg, ix, span, "margin-left"), "4px");
+  EXPECT_EQ(win(pg, ix, h, "padding-left"), "-");
+}
+
+TEST(CssSheetNesting, ANestedRuleUnderAPseudoElementRepresentsNothing) {
+  /* CSS Nesting 1: "a parent selector containing a pseudo-element represents nothing" under `&`: the nested rule does not apply to the element. */
+  Compiled c("p::before { & { color: red } &.k { margin-top: 3px } } p { & i { margin-left: 2px } }");
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  Page pg;
+  const int p = pg.t.add(0, "p", "", {"k"});
+  const int i = pg.t.add(p, "i");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, p, "color"), "-");
+  EXPECT_EQ(win(pg, ix, p, "margin-top"), "-");
+  EXPECT_EQ(win(pg, ix, p, "color", "::before"), "-") << "and not to the pseudo-element either";
+  EXPECT_EQ(win(pg, ix, i, "margin-left"), "2px");
+}
+
+TEST(CssSheetScope, ANestedScopeHasItsRootsInsideTheOuterRoot) {
+  /* The roots of an @scope inside another are inside the outer root: its prelude is read as a nested selector, with the implied `&`. */
+  Compiled c("@scope (.a) { @scope (.a) { p { color: red } } }");
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  Page pg;
+  const int a1 = pg.t.add(0, "div", "", {"a"});
+  const int p1 = pg.t.add(a1, "p");
+  const int a2 = pg.t.add(0, "div", "", {"a"});
+  const int a3 = pg.t.add(a2, "div", "", {"a"});
+  const int p2 = pg.t.add(a3, "p");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, p1, "color"), "-") << "one .a: it is the outer root, and the inner one must be inside it";
+  EXPECT_EQ(win(pg, ix, p2, "color"), "red");
+}

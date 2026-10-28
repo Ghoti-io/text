@@ -52,3 +52,7 @@ fuzz-sheet-compile-leaks-the-namespaces	css_sheet.c	  gtext_allocator_free(&a, s
 fuzz-sheet-index-skips-the-id-bucket	css_rule_index.c	  if (g->ids.nb) {	  if (0) {	sheet-seeds
 fuzz-sheet-index-drops-the-rules-with-no-key	css_rule_index.c	  return test_list(w, &g->other, NULL, NULL, g->scope);	  return true;	sheet-seeds
 fuzz-forgiving-entry-leaves-its-simple-selectors-behind	css_selector_parse.c	        p->simples.len = ssave;\n		selector,selector-seeds
+sheet-the-host-is-not-the-parent-of-its-shadow-tree	css_match.c	  return ctx->iface.containing_host(ctx->iface.user, e);\n}	  return NULL;\n}	sheet
+sheet-a-pseudo-element-parent-is-everything	css_match.c	    if (cx->never || cx->raw.data || cx->has_pseudo_element) {	    if (cx->never || cx->raw.data) {	sheet
+sheet-a-nested-scope-is-not-inside-the-outer-root	css_sheet.c	st = parse_selector(b, sv, sn, cur->relative, cur->decl_ctx == 2, rule->span, &start);	st = parse_selector(b, sv, sn, false, false, rule->span, &start);	sheet
+fuzz-selector-compound-list-reads-past-the-tokens	css_selector_parse.c	v[b > a ? b - 1 : a - 1].span	v[b - (b > a ? 1 : 0)].span	selector-seeds

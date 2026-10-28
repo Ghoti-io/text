@@ -234,7 +234,8 @@ int run(const uint8_t * data, size_t size) {
     GTEXT_CSS_Selector_Diagnostic d;
     for (size_t i = 0; gtext_css_selector_result_diagnostic(&r, i, &d); i++) {
       if (d.span.end < d.span.offset || d.span.end > text.size() || !d.reference) {
-        fail("a diagnostic outside the input", text, input);
+        fail("a diagnostic outside the input", text + "\nspan " + std::to_string(d.span.offset) + "-" + std::to_string(d.span.end) + " of " + std::to_string(text.size()) +
+            (d.reference ? "" : " with no reference"), input);
       }
     }
     gtext_css_selector_result_free(&r);

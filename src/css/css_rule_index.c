@@ -664,32 +664,46 @@ static El parent_of(struct GTEXT_CSS_Selector_Match_Context * ctx, El e) {
   return ctx->iface.parent(ctx->iface.user, e);
 }
 
-/// Whether `r` is a scoping root of `sc` (for the element `x`, whose ancestor-or-self it is): matches the start, and nothing on the way from `x` to `r` is a scoping limit.
-static bool nearest_root(walk * w, const placed * pl, const sheet_scope * sc, El x, El * out, size_t * hops);
-
+/// Whether `r` is a scoping root of `sc` for the element `x` (`r` is an inclusive ancestor of `x`): it matches the start, and nothing on the way from `x` up to `r` is a scoping
+/// limit. The start of an `@scope` inside another is read with `:scope` (and so `&`) an outer root that `r` is inside, any that makes it match (an iteration up the ancestors, and
+/// a recursion only as deep as the nesting of the scopes, which is bounded).
 static bool valid_root(walk * w, const placed * pl, const sheet_scope * sc, El r, El x) {
   struct GTEXT_CSS_Selector_Match_Context * ctx = w->ctx;
+  bool started = false;
   if (!sc->start) {
-    return pl->implicit_root && r == pl->implicit_root;
+    started = pl->implicit_root && r == pl->implicit_root;
   }
-  El outer = w->orig_scope;
-  if (sc->parent) {
-    El o = NULL;
-    size_t h = 0;
-    if (!nearest_root(w, pl, sc->parent, r, &o, &h)) {
-      return false;
+  else if (!sc->parent) {
+    ctx->scope = w->orig_scope;
+    ctx->nest = sc->outer_nest;
+    started = css_match_any(ctx, sc->start, r) && ctx->status == GTEXT_CSS_OK;
+  }
+  else {
+    for (El outer = r; outer && !started; outer = ctx->iface.parent(ctx->iface.user, outer)) {
+      if (!css_match_work(ctx)) {
+        return false;
+      }
+      if (!valid_root(w, pl, sc->parent, outer, r)) {
+        if (ctx->status != GTEXT_CSS_OK) {
+          return false;
+        }
+        continue;
+      }
+      ctx->scope = outer;
+      ctx->nest = sc->outer_nest;
+      started = css_match_any(ctx, sc->start, r);
+      if (ctx->status != GTEXT_CSS_OK) {
+        return false;
+      }
     }
-    outer = o;
   }
-  ctx->scope = outer;
-  ctx->nest = sc->outer_nest;
-  if (!css_match_any(ctx, sc->start, r) || ctx->status != GTEXT_CSS_OK) {
+  if (!started) {
     return false;
   }
   if (sc->end) {
     ctx->scope = r;
     ctx->nest = NULL;
-    for (El y = x; y && y != r; y = parent_of(ctx, y)) {
+    for (El y = x; y && y != r; y = ctx->iface.parent(ctx->iface.user, y)) {
       if (!css_match_work(ctx)) {
         return false;
       }
@@ -702,25 +716,6 @@ static bool valid_root(walk * w, const placed * pl, const sheet_scope * sc, El r
     }
   }
   return true;
-}
-
-static bool nearest_root(walk * w, const placed * pl, const sheet_scope * sc, El x, El * out, size_t * hops) {
-  struct GTEXT_CSS_Selector_Match_Context * ctx = w->ctx;
-  size_t h = 0;
-  for (El r = x; r; r = parent_of(ctx, r), h++) {
-    if (!css_match_work(ctx)) {
-      return false;
-    }
-    if (valid_root(w, pl, sc, r, x)) {
-      *out = r;
-      *hops = h;
-      return true;
-    }
-    if (ctx->status != GTEXT_CSS_OK) {
-      return false;
-    }
-  }
-  return false;
 }
 
 /// Match a record against the element, in or out of an `@scope`. `slot` and `host` are for `::slotted()` and `::part()`.

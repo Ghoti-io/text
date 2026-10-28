@@ -907,7 +907,7 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
         while (j < n && !(p[j].kind == GTEXT_CSS_VALUE_TOKEN && p[j].type == GTEXT_CSS_TOKEN_COMMA)) {
           j++;
         }
-        const size_t cnt = read_name(p + i, j - i, w->segs, MAX_SEGS);
+        const size_t cnt = read_name(j > i ? p + i : p, j - i, w->segs, MAX_SEGS); // p is NULL for a prelude of nothing
         if (cnt == 0 || !names_valid(w, cnt)) {
           return GTEXT_CSS_OK;
         }

@@ -136,6 +136,9 @@ bool css_bloom_may_match(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
       break;
     }
     const GTEXT_CSS_Compound * anc = &cx->compounds[i - 1];
+    if (css_compound_names_host(anc)) {
+      break; // matched against the host of a shadow tree, which is no ancestor of the element in the filter
+    }
     for (size_t k = 0; k < anc->simple_count; k++) {
       const GTEXT_CSS_Simple * s = &anc->simples[k];
       if (s->never) {

@@ -154,6 +154,9 @@ bool css_lang_range_matches(const char * range, size_t rlen, const char * tag, s
 /// `:lang()`.
 bool css_match_lang(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Simple * s, El element);
 
+/// Whether a compound has `:host`, `:host()` or `:host-context()` among its simple selectors.
+bool css_compound_names_host(const GTEXT_CSS_Compound * cmp);
+
 /// Element name comparison under the document's case rules.
 bool css_match_is_html(struct GTEXT_CSS_Selector_Match_Context * ctx, El element);
 

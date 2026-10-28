@@ -565,8 +565,8 @@ bool css_match_any(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CS
   }
   for (size_t i = 0; i < list->count; i++) {
     const GTEXT_CSS_Complex * cx = &list->complex[i];
-    if (cx->never || cx->raw.data) {
-      continue;
+    if (cx->never || cx->raw.data || cx->has_pseudo_element) {
+      continue; // a pseudo-element in the list a `&` stands for represents nothing (CSS Nesting 1); no other list that is matched this way holds one
     }
     if (css_match_chain(ctx, list, cx, cx->compound_count - 1, element)) {
       return true;
@@ -576,6 +576,32 @@ bool css_match_any(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CS
     }
   }
   return false;
+}
+
+/// Whether a compound has `:host`, `:host()` or `:host-context()` among its simple selectors, or `&`, which may stand for a selector that has (the matching of `&` decides).
+bool css_compound_names_host(const GTEXT_CSS_Compound * cmp) {
+  for (size_t i = 0; i < cmp->simple_count; i++) {
+    const GTEXT_CSS_Simple * s = &cmp->simples[i];
+    if (s->kind == GTEXT_CSS_SIMPLE_NESTING) {
+      return true;
+    }
+    if (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS &&
+        (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The parent of an element for the combinators of a selector read in a shadow tree: the tree parent, and above the top of the shadow tree the host, which only a compound that
+/// names `:host` may be matched against ("the shadow host is the parent of the top-level elements of its shadow tree" for `:host > *` and `:host p`, and no other compound of an
+/// outer tree is reachable from inside one).
+static El parent_for(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, const GTEXT_CSS_Compound * target) {
+  El p = e_parent(ctx, e);
+  if (p || !ctx->tree_scope || !HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST) || !css_compound_names_host(target)) {
+    return p;
+  }
+  return ctx->iface.containing_host(ctx->iface.user, e);
 }
 
 static const void * memo_aux_for(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Complex * cx) {
@@ -600,7 +626,7 @@ bool css_match_chain(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_
   if (ok && index > 0) {
     switch (cmp->combinator) {
     case GTEXT_CSS_COMBINATOR_CHILD: {
-      El p = e_parent(ctx, element);
+      El p = parent_for(ctx, element, &cx->compounds[index - 1]);
       ok = p && css_match_chain(ctx, list, cx, index - 1, p);
       break;
     }
@@ -621,8 +647,8 @@ bool css_match_chain(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_
   return ok && ctx->status == GTEXT_CSS_OK;
 }
 
-static El step_up(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, bool siblings) {
-  return siblings ? ctx->iface.previous_sibling(ctx->iface.user, e) : e_parent(ctx, e);
+static El step_up(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, bool siblings, const GTEXT_CSS_Compound * target) {
+  return siblings ? ctx->iface.previous_sibling(ctx->iface.user, e) : parent_for(ctx, e, target);
 }
 
 /// Some proper ancestor (or, with `siblings`, earlier sibling) of `el` matches the compound `j` and the chain to its left. Iterative, and the answer is kept for every element climbed
@@ -638,7 +664,7 @@ static bool exists_above(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
   bool result = false;
   El stop = NULL; // the element whose own answer is not known: the first climbed past that matched
   for (El x = el;;) {
-    El p = step_up(ctx, x, siblings);
+    El p = step_up(ctx, x, siblings, &cx->compounds[j]);
     if (!p) {
       result = false;
       break;
@@ -666,7 +692,7 @@ static bool exists_above(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
     if (!css_memo_put(ctx, list->uid, kind, step, x, aux, result ? 2 : 1, 0, 0)) {
       return false;
     }
-    x = step_up(ctx, x, siblings);
+    x = step_up(ctx, x, siblings, &cx->compounds[j]);
   }
   return result;
 }

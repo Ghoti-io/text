@@ -1288,7 +1288,7 @@ static bool parse_list(P * p, const V * v, size_t lo, size_t hi, GTEXT_CSS_Selec
     trim(v, &ta, &tb);
     pieces++;
     if (mode == GTEXT_CSS_SELECTOR_COMPOUND && pieces > 1 && !c->compound_list) {
-      diag(p, GTEXT_CSS_SELDIAG_SYNTAX, v[b - (b > a ? 1 : 0)].span, REF_ARG);
+      diag(p, GTEXT_CSS_SELDIAG_SYNTAX, v[b > a ? b - 1 : a - 1].span, REF_ARG); // the last token of the second selector, or the comma that begins an empty one (v[b] may be past the end)
       p->complexes.len = xbase;
       return false;
     }

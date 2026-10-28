@@ -730,7 +730,7 @@ static GTEXT_CSS_Status scope_rule(build * b, const GTEXT_CSS_Rule * rule, const
   GTEXT_CSS_Selector_List *start = NULL, *end = NULL;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   if (!bad && has_start) {
-    st = parse_selector(b, sv, sn, false, false, rule->span, &start);
+    st = parse_selector(b, sv, sn, cur->relative, cur->decl_ctx == 2, rule->span, &start); // inside a rule or another @scope the roots are inside what that is (the implied `&`)
     if (st != GTEXT_CSS_OK) {
       return st;
     }

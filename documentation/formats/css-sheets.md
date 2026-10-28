@@ -176,8 +176,9 @@ The layer registry is per context, so two trees order identically named layers e
 **Scope proximity (Cascade 6, 3.1).** A rule in `@scope (<start>)? to (<end>)?` applies to an element E when some scoping root R, an element matching `start`, is an inclusive
 ancestor of E, no element from E up to but excluding R matches `end` (with `:scope` R), and the selector, with the implied `& ` in front of it unless it contains `&` or `:scope`, matches with
 `:scope` R. The entry is `scoped`, and `scope_distance` is the least number of generational hops from R to E over the roots that qualify. `start` is read as written (a selector list; a `:scope` or `&` in it is the enclosing context's), and `end` is read as the
-rules inside are, relative to R. With no prelude the root is the registration's `implicit_root`, and a rule in a scope
-of nested scopes is read with the nearest root of the enclosing scope as `:scope` (nesting is limited to 8). The declarations that are directly in an `@scope` apply to the root
+rules inside are, relative to R. With no prelude the root is the registration's `implicit_root`. An `@scope` inside another (or inside a style rule) reads its `start` as a nested selector, with the implied `&`: its
+roots are inside a root of the enclosing scope, which is `:scope` and `&` there (the browsers agree: an `@scope (.a)` inside an `@scope (.a)` styles nothing for a single `.a`). Nesting
+of scopes is limited to 8. The declarations that are directly in an `@scope` apply to the root
 with no specificity. The search for the roots is a walk up the ancestors, bounded by `max_work` of the match context.
 
 **The conditional `@import` (Cascade 5, 6.4.3).** The filter is called for an `@import` that has `supports()` or a media list **before** its layer is declared, so a layer

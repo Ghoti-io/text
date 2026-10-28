@@ -93,6 +93,7 @@ struct Ref {
   int scope;
   bool html;
   bool unsupported = false;
+  std::vector<int> anchors; ///< the anchors of the `:has()` being evaluated: inside it `:scope` and `&` are the anchor (Selectors 4, relative selectors)
 
   Ref(synth::Tree & tree, int sc, bool h) : t(tree), scope(sc), html(h) {}
 
@@ -254,6 +255,9 @@ struct Ref {
       return t.e[e].parent == 0 && t.e[e].host == 0;
     }
     if (p == SCOPE) {
+      if (!anchors.empty()) {
+        return e == anchors.back();
+      }
       return scope ? e == scope : (t.e[e].parent == 0 && t.e[e].host == 0);
     }
     if (p == EMPTY) {
@@ -317,7 +321,11 @@ struct Ref {
         return false;
       }
       return attr(s, e);
-    case GTEXT_CSS_SIMPLE_NESTING: return scope ? e == scope : (t.e[e].parent == 0 && t.e[e].host == 0);
+    case GTEXT_CSS_SIMPLE_NESTING:
+      if (!anchors.empty()) {
+        return e == anchors.back();
+      }
+      return scope ? e == scope : (t.e[e].parent == 0 && t.e[e].host == 0);
     case GTEXT_CSS_SIMPLE_PSEUDO_CLASS: return pseudo_class(s, e);
     case GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT: unsupported = true; return false;
     }
@@ -379,6 +387,13 @@ struct Ref {
   }
 
   bool has(const GTEXT_CSS_Selector_List * l, int anchor) {
+    anchors.push_back(anchor);
+    const bool r = has_inner(l, anchor);
+    anchors.pop_back();
+    return r;
+  }
+
+  bool has_inner(const GTEXT_CSS_Selector_List * l, int anchor) {
     for (size_t i = 0; l && i < l->count; i++) {
       const GTEXT_CSS_Complex & rc = l->complex[i];
       if (rc.never || rc.raw.data) {
