@@ -56,3 +56,4 @@ sheet-the-host-is-not-the-parent-of-its-shadow-tree	css_match.c	  return ctx->if
 sheet-a-pseudo-element-parent-is-everything	css_match.c	    if (cx->never || cx->raw.data || cx->has_pseudo_element) {	    if (cx->never || cx->raw.data) {	sheet
 sheet-a-nested-scope-is-not-inside-the-outer-root	css_sheet.c	st = parse_selector(b, sv, sn, cur->relative, cur->decl_ctx == 2, rule->span, &start);	st = parse_selector(b, sv, sn, false, false, rule->span, &start);	sheet
 fuzz-selector-compound-list-reads-past-the-tokens	css_selector_parse.c	v[b > a ? b - 1 : a - 1].span	v[b - (b > a ? 1 : 0)].span	selector-seeds
+sheet-the-host-is-not-featureless	css_match.c	  return ctx->tree_scope && !ctx->host_arg && HAVE(ctx, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE) && ctx->iface.shadow_scope(ctx->iface.user, element) == ctx->tree_scope;	  return false;	sheet

@@ -1,0 +1,12 @@
+# the planted defects of the library that the population of css_sheet_gen.py can see: names in tools/conformance/CSS_SELECTOR_PLANTS (a defect of the matcher or of the sheets, edited in a copy and measured against browsers that did not change)
+sheet-importance-is-dropped
+sheet-layer-is-dropped
+sheet-nested-selector-is-not-relative
+sheet-shadow-rules-reach-the-document
+sheet-scope-limit-is-ignored
+sheet-the-host-is-not-the-parent-of-its-shadow-tree
+sheet-a-pseudo-element-parent-is-everything
+sheet-a-nested-scope-is-not-inside-the-outer-root
+sheet-least-specific-complex-is-kept
+sheet-the-host-is-not-featureless
+# the proximity of @scope (sheet-scope-distance-is-zero) is below this population: it needs two scoped rules of one specificity, which the unit tests build (tests/test-css-sheet.cpp)

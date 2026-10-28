@@ -1022,3 +1022,25 @@ TEST(CssSheetScope, ANestedScopeHasItsRootsInsideTheOuterRoot) {
   EXPECT_EQ(win(pg, ix, p1, "color"), "-") << "one .a: it is the outer root, and the inner one must be inside it";
   EXPECT_EQ(win(pg, ix, p2, "color"), "red");
 }
+
+TEST(CssSheetShadow, TheHostSeenFromInsideItsShadowTreeIsFeatureless) {
+  /* CSS Shadow 1: from inside its shadow tree the host is matched by :host, :host() and :host-context() only: `:host.k`, `:host:hover` and `div :host` match nothing, `:host(.k)` matches, and
+   * the argument of :host() is matched against the host as the tree it is in sees it. */
+  Compiled inner(":host.k { color: red } :host(.k) { background-color: blue } :host:not(.z) { margin-top: 3px } div :host { margin-left: 4px } :host(.k):hover { padding-left: 1px } "
+                 ":host(div.k) { margin-top: 9px }");
+  ASSERT_EQ(inner.st, GTEXT_CSS_OK);
+  Page pg;
+  const int d = pg.t.add(0, "div");
+  const int h = pg.t.add(d, "x-host", "", {"k"});
+  const int sc = pg.t.attach_shadow(h);
+  (void)pg.t.add_in_shadow(sc, "span");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, sc, 1), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, h, "color"), "-") << "a class beside :host matches the featureless host never";
+  EXPECT_EQ(win(pg, ix, h, "background-color"), "blue");
+  EXPECT_EQ(win(pg, ix, h, "margin-top"), "-") << ":not() is not :host, and `div.k` is not the host (x-host)";
+  EXPECT_EQ(win(pg, ix, h, "margin-left"), "-") << "the host's own ancestors are not reachable from its shadow tree";
+  EXPECT_EQ(win(pg, ix, h, "padding-left"), "-");
+}

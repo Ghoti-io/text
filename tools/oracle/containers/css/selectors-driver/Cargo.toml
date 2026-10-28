@@ -1,0 +1,9 @@
+[package]
+name = "selectors-driver"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+selectors = "=0.41.0"
+cssparser = "=0.38.0"
+precomputed-hash = "=0.1.1"

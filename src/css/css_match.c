@@ -480,21 +480,31 @@ static bool eval_pseudo_class(struct GTEXT_CSS_Selector_Match_Context * ctx, con
     return false;
   }
   case GTEXT_CSS_SEL_PC_HOST: return ctx->tree_scope && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope;
-  case GTEXT_CSS_SEL_PC_HOST_FN:
-    return ctx->tree_scope && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope && css_match_any(ctx, s->list, e);
+  case GTEXT_CSS_SEL_PC_HOST_FN: {
+    if (!ctx->tree_scope || ctx->iface.shadow_scope(ctx->iface.user, e) != ctx->tree_scope) {
+      return false;
+    }
+    const bool saved = ctx->host_arg;
+    ctx->host_arg = true;
+    const bool r = css_match_any(ctx, s->list, e);
+    ctx->host_arg = saved;
+    return r;
+  }
   case GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN: {
     if (!ctx->tree_scope || ctx->iface.shadow_scope(ctx->iface.user, e) != ctx->tree_scope) {
       return false;
     }
-    for (El x = e; x; x = css_flat_parent(ctx, x)) {
-      if (css_match_any(ctx, s->list, x)) {
-        return true;
-      }
-      if (ctx->status != GTEXT_CSS_OK || !css_match_work(ctx)) {
-        return false;
+    const bool saved = ctx->host_arg;
+    ctx->host_arg = true;
+    bool found = false;
+    for (El x = e; x && !found; x = css_flat_parent(ctx, x)) {
+      found = css_match_any(ctx, s->list, x);
+      if (!found && (ctx->status != GTEXT_CSS_OK || !css_match_work(ctx))) {
+        break;
       }
     }
-    return false;
+    ctx->host_arg = saved;
+    return found;
   }
   case GTEXT_CSS_SEL_PC_STATE_FN: return ctx->iface.custom_state(ctx->iface.user, e, &s->strings[0]);
   default: break;
@@ -535,6 +545,18 @@ static bool hover_active_quirk_applies(const GTEXT_CSS_Compound * cmp, size_t li
   return any;
 }
 
+/// Whether the element is the host of the shadow tree the selectors are being matched in, seen from inside it: "featureless", matched by `:host`, `:host()` and `:host-context()` alone
+/// (CSS Shadow 1): not by a type, a class, an id, an attribute or another pseudo-class, so `:host.c` and `:host:hover` match nothing. The argument of `:host()` and of
+/// `:host-context()` is matched against the host as the tree it is in sees it, which `host_arg` marks.
+static bool is_featureless_host(struct GTEXT_CSS_Selector_Match_Context * ctx, El element) {
+  return ctx->tree_scope && !ctx->host_arg && HAVE(ctx, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE) && ctx->iface.shadow_scope(ctx->iface.user, element) == ctx->tree_scope;
+}
+
+static bool host_allows(const GTEXT_CSS_Simple * s) {
+  return s->kind == GTEXT_CSS_SIMPLE_NESTING ||
+      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS && (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN));
+}
+
 bool css_match_compound(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Compound * cmp, El element, size_t limit) {
   ctx->ctr.compounds_tested++;
   if (!css_match_work(ctx)) {
@@ -545,9 +567,13 @@ bool css_match_compound(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTE
       return false;
     }
   }
+  const bool featureless = is_featureless_host(ctx, element);
   for (size_t i = 0; i < limit; i++) {
     const GTEXT_CSS_Simple * s = &cmp->simples[i];
     if (s->never) {
+      return false;
+    }
+    if (featureless && !host_allows(s)) {
       return false;
     }
     if (!eval_simple(ctx, s, element)) {
@@ -598,6 +624,9 @@ bool css_compound_names_host(const GTEXT_CSS_Compound * cmp) {
 /// outer tree is reachable from inside one).
 static El parent_for(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, const GTEXT_CSS_Compound * target) {
   El p = e_parent(ctx, e);
+  if (p && is_featureless_host(ctx, e)) {
+    return NULL; // the host is the top of the tree its shadow selectors see: `div :host` does not reach the host's own ancestors
+  }
   if (p || !ctx->tree_scope || !HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST) || !css_compound_names_host(target)) {
     return p;
   }

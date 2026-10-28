@@ -84,6 +84,7 @@ struct GTEXT_CSS_Selector_Match_Context {
   size_t max_work;
   El scope;                          ///< The `:scope` element now (NULL: the root).
   const void * tree_scope;
+  bool host_arg;                     ///< The argument of `:host()` or `:host-context()` is being matched: the host is seen as the tree it is in sees it.
   const css_nest * nest;
   const void * memo_aux;             ///< The aux key now: the scope element while a scope-dependent selector is read, else NULL.
   /* :has() */
