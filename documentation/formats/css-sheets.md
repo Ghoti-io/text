@@ -194,6 +194,14 @@ A sheet and a frozen index are shared between threads; a match context, a candid
 
 ## Tested scope
 
-`tests/test-css-sheet.cpp` holds each rule above as a test named for it; `test-css-sheet-cost.cpp` the counter bounds; `tests/fuzz/fuzz_css_sheet.cpp` compares the index with the brute
-force (every rule's selector list matched against every element) and checks that the memo and the ancestor filter change nothing; `make check-css-selector-plants` shows each fail on a
-planted defect.
+`tests/test-css-sheet.cpp` holds each rule above as a test named for it; `test-css-sheet-cost.cpp` the counter bounds, `test-css-sheet-oom.cpp` an allocation failed at every place,
+`test-css-sheet-threads.cpp` eight threads on one sheet and one index; `tests/fuzz/fuzz_css_sheet.cpp` compares the index with the brute force (every rule's selector list
+matched against every element) and checks that the memo and the ancestor filter change nothing; `make check-css-selector-plants` shows each fail on a planted defect.
+
+`make check-css-sheet-oracle` is the differential against the browsers: 200 generated documents (15,788 questions: the computed `color`, `background-color`, `margin-top`,
+`margin-left` and `padding-left` of every element, a shadow tree's included, and what `querySelectorAll()` selects) with style sheets of nested rules, layers, `@scope`, conditional
+groups and shadow trees, asked of this library, of Chromium 156 and of Firefox 158. Nothing diverges that is this library's. What remains is Chromium throwing on a quoted
+`:lang("*-CH")`, which Selectors 4 allows and Firefox accepts (listed in `tools/oracle/css_sheet_divergences.txt` with the sentence). A hunt of 2,000 documents of another seed
+(204,595 questions, the selectors also asked of the Servo `selectors` crate through `tools/oracle/containers/css/selectors-driver`) found the defects this page's decisions record (the
+host is featureless and the top of its shadow tree, a `&` that stands for a pseudo-element represents nothing, the roots of a nested `@scope` are inside the outer root) and ends with
+none. The gate shows itself failing: the list tampered with six ways and ten planted defects of the library are each caught.

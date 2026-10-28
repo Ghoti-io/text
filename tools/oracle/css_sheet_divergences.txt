@@ -3,5 +3,5 @@
 # listed: the browsers agree and this library does not, and that is a defect.
 #
 # classes: browsers (the two browsers disagree and this library is with one of them)
-z:lang-quoted-string	browsers	77	Selectors 4, 9.1 (the linguistic pseudo-class), the grammar ":lang( [ <ident> | <string> ]# )" takes a quoted language range ("*-CH" is the wildcard range of RFC 4647 extended filtering), and Firefox 158 accepts it; Chromium 156 throws a SyntaxError for the selector. The library follows the draft.
-v:lang-quoted-string	browsers	7	The same selector in a style rule: Chromium 156 drops the whole rule (an invalid selector makes its rule invalid, Selectors 4 3.6), so the declarations of the rule do not apply there; Firefox 158 applies them, as does the library.
+z:lang-quoted-string	browsers	71	Selectors 4, 9.1 (the linguistic pseudo-class), the grammar ":lang( [ <ident> | <string> ]# )" takes a quoted language range ("*-CH" is the wildcard range of RFC 4647 extended filtering), and Firefox 158 accepts it; Chromium 156 throws a SyntaxError for the selector. The library follows the draft.
+v:lang-quoted-string	browsers	6	The same selector in a style rule: Chromium 156 drops the whole rule (an invalid selector makes its rule invalid, Selectors 4 3.6), so the declarations of the rule do not apply there; Firefox 158 applies them, as does the library.

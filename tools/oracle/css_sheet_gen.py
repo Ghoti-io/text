@@ -105,7 +105,8 @@ class Gen:
     def rule(self, depth, host_rules=False, nested=False):
         r = self.r
         if host_rules:
-            sel = r.choice([":host", ":host(.c0)", ":host(.c1)", "::slotted(span)", "::slotted(.c1)", "::slotted(*)", ".in", "span", ".in + .in", ":host > *", "slot"])
+            sel = r.choice([":host", ":host(.c0)", ":host(.c1)", "::slotted(span)", "::slotted(.c1)", "::slotted(*)", ".in", "span", ".in + .in", ":host > *", "slot",
+                            ":host.c0", ":host:not(.c1)", "div :host", ":host(.c0).c1", ":host :host-context(div)", ":host .in", ":host > span", "x-host"])
         elif nested:
             sel = r.choice(["& .c1", "& > span", ".c2 &", "&.c0", "> i", "+ div", "~ .c3", ".c1", "span", ":is(.c0, .c2) &", "& & ", "&:not(.c1)", "div &"])
         else:
