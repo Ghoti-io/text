@@ -335,3 +335,13 @@ TEST(CssAtrule, ChosenNamesAreEscapedOnOutput) {
   ASSERT_NE(q.a, nullptr) << once;
   EXPECT_EQ(q.css(), once);
 }
+
+// A counter style name that holds an escaped space is one identifier on output.
+TEST(CssAtrule, NameWithAnEscapedSpaceStaysOneIdentifier) {
+  Parsed p("@counter-style a\\ b { system: cyclic; symbols: x }");
+  ASSERT_NE(p.a, nullptr);
+  const std::string once = p.css();
+  Parsed q(once);
+  ASSERT_NE(q.a, nullptr) << once;
+  EXPECT_EQ(q.css(), once);
+}

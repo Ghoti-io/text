@@ -1653,7 +1653,8 @@ static void put_names_prelude(outp * o, const GTEXT_CSS_Atrule * a) {
     if (a->quoted[i]) {
       put_string(o, a->names[i].data, a->names[i].length);
     }
-    else if (a->names[i].length > 2 && a->names[i].data[0] == '-' && a->names[i].data[1] == '-') {
+    else if (a->kind != GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES || (a->names[i].length > 2 && a->names[i].data[0] == '-' && a->names[i].data[1] == '-')) {
+      /* one identifier (only a font family is several, joined by spaces) */
       put_ident(o, a->names[i].data, a->names[i].length);
     }
     else {
