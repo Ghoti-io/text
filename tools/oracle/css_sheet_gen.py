@@ -166,7 +166,7 @@ class Gen:
             if r.randrange(2):
                 return "@scope (%s) to (%s) { %s }" % (self.compound(1), self.compound(1), inner)
             return "@scope (%s) { %s }" % (start if len(start) < 40 else ".c0", inner)
-        if k < 83 and not host_rules:
+        if k < 90 and k >= 82 and not host_rules:
             name = r.choice(CONTAINER_NAMES)
             if r.randrange(5) == 0:
                 cond = r.choice(CONTAINER_FIXED)
@@ -174,7 +174,7 @@ class Gen:
                 cond = r.choice(CONTAINER_CONDITIONS)
                 cond = cond.replace("%d", str(r.choice(CONTAINER_THRESHOLDS)))
             return "@container %s%s { %s }" % (name + " " if name else "", cond, inner)
-        if k < 90:
+        if k < 95:
             return "@media %s { %s }" % (r.choice(MEDIA), inner)
         return "@supports %s { %s }" % (r.choice(SUPPORTS), inner)
 
