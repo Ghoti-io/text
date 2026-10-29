@@ -277,3 +277,11 @@ TEST(CssAtruleSet, DeepNesting) {
   ASSERT_EQ(s.add_status, GTEXT_CSS_OK);
   EXPECT_NE(gtext_css_atrule_set_keyframes(s.set, "k", 1), nullptr);
 }
+
+// A layer name may hold an escaped dot, and a CSS-wide keyword is no layer: neither is an error of the set.
+TEST(CssAtruleSet, LayerNamesWithEscapesAndKeywords) {
+  Conds cd;
+  Sheets s({"@layer \\.b { @layer a.b { @keyframes k { from { color: red } } } } @layer initial { @keyframes j { from { color: red } } } @layer a, revert;"}, cd.c);
+  EXPECT_EQ(s.add_status, GTEXT_CSS_OK);
+  EXPECT_NE(gtext_css_atrule_set_keyframes(s.set, "k", 1), nullptr);
+}

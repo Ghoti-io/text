@@ -271,7 +271,6 @@ static GTEXT_CSS_Status layer_names(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Ru
   }
   size_t names = 0;
   while (i < end) {
-    size_t total = 0;
     size_t j = i;
     while (j < end && !(v[j].kind == GTEXT_CSS_VALUE_TOKEN && v[j].type == GTEXT_CSS_TOKEN_COMMA)) {
       j++;
@@ -292,7 +291,6 @@ static GTEXT_CSS_Status layer_names(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Ru
         return GTEXT_CSS_OK;
       }
       want_ident = !want_ident;
-      total += v[k].value.length;
     }
     if (a == b || want_ident) {
       *valid = false;
@@ -300,23 +298,23 @@ static GTEXT_CSS_Status layer_names(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Ru
     }
     names++;
     if (declare) {
-      char * buf = gtext_allocator_malloc(&s->alloc, total + 1);
-      if (!buf) {
-        return GTEXT_CSS_E_OOM;
-      }
-      size_t len = 0;
+      /* each identifier is one segment (an escaped `.` is part of its name), declared under the one before it */
+      GTEXT_CSS_Layer_Id cur = parent;
       for (size_t k = a; k < b; k++) {
-        memcpy(buf + len, v[k].value.data, v[k].value.length);
-        len += v[k].value.length;
-      }
-      GTEXT_CSS_Layer_Id id = GTEXT_CSS_LAYER_NONE;
-      const GTEXT_CSS_Status st = gtext_css_layer_declare(s->layers, s->opt.origin, parent, buf, len, &id, NULL);
-      gtext_allocator_free(&s->alloc, buf);
-      if (st != GTEXT_CSS_OK) {
-        return st;
+        if (v[k].type != GTEXT_CSS_TOKEN_IDENT) {
+          continue;
+        }
+        const GTEXT_CSS_Status st = gtext_css_layer_declare_segment(s->layers, s->opt.origin, cur, v[k].value.data, v[k].value.length, &cur, NULL);
+        if (st == GTEXT_CSS_E_INVALID) {
+          *valid = false; /* a CSS-wide keyword or an empty segment: the rule declares nothing more */
+          return GTEXT_CSS_OK;
+        }
+        if (st != GTEXT_CSS_OK) {
+          return st;
+        }
       }
       if (block) {
-        *inner = id;
+        *inner = cur;
       }
     }
     i = j + 1;
