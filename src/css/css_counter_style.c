@@ -94,7 +94,7 @@ void gtext_css_counter_style_free(GTEXT_CSS_Counter_Style * style) {
 
 static bool read_int(const GTEXT_CSS_Component_Value * v, int64_t * out) {
   if (v && v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_NUMBER) {
-    *out = (int64_t)v->number;
+    *out = clamp_i64(v->number);
     return true;
   }
   return false;

@@ -263,3 +263,15 @@ TEST(CssKeyframes, Normalized) {
   EXPECT_EQ(S(k->frames[1].properties[1].text), "2px");
   gtext_css_keyframes_free(k);
 }
+
+// A huge number in a palette index or a counter value is clamped, not converted by an undefined cast.
+TEST(CssFontRules, HugeIntegersAreClamped) {
+  Rule r("@font-palette-values --x { font-family: A; base-palette: 1e300; override-colors: 1e300 red }");
+  GTEXT_CSS_Palette_Values * v = nullptr;
+  ASSERT_EQ(gtext_css_palette_values_from_atrule(r.a, &v), GTEXT_CSS_OK);
+  gtext_css_palette_values_free(v);
+  Rule c("@counter-style x { system: fixed 1e300; symbols: a; pad: 1e300 \"0\" }");
+  GTEXT_CSS_Counter_Style * s = nullptr;
+  ASSERT_EQ(gtext_css_counter_style_from_atrule(c.a, &s), GTEXT_CSS_OK);
+  gtext_css_counter_style_free(s);
+}

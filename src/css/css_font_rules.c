@@ -799,7 +799,7 @@ GTEXT_CSS_Status gtext_css_palette_values_from_atrule(const GTEXT_CSS_Atrule * r
     }
     else if (a && a->type == GTEXT_CSS_TOKEN_NUMBER) {
       v->base_kind = GTEXT_CSS_BASE_PALETTE_INDEX;
-      v->base_index = (uint32_t)a->number;
+      v->base_index = clamp_u32(a->number);
     }
   }
   gtext_css_tree_free(t);
@@ -834,7 +834,7 @@ GTEXT_CSS_Status gtext_css_palette_values_from_atrule(const GTEXT_CSS_Atrule * r
         while (s0 < bl && buf[s0] == ' ') {
           s0++;
         }
-        arr[n].index = (uint32_t)idx->number;
+        arr[n].index = clamp_u32(idx->number);
         arr[n].color.data = css_arena_strdup(&h->arena, buf + s0, bl - s0);
         arr[n].color.length = bl - s0;
         gtext_css_serialize_buffer_free(&so, buf);

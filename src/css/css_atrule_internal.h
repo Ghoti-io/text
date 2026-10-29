@@ -127,6 +127,15 @@ static inline void holder_free(holder * h) {
   }
 }
 
+/// A number token as an integer, clamped to the range of the type (a cast of a huge double is undefined).
+static inline uint32_t clamp_u32(double v) {
+  return v >= 4294967295.0 ? 0xFFFFFFFFu : (v > 0 ? (uint32_t)v : 0u);
+}
+
+static inline int64_t clamp_i64(double v) {
+  return v >= 9223372036854775807.0 ? INT64_MAX : (v <= -9223372036854775808.0 ? INT64_MIN : (int64_t)v);
+}
+
 /// Token readers the typed views share.
 static inline const GTEXT_CSS_Component_Value * next_sig(const GTEXT_CSS_Component_Value * v, size_t n, size_t * i) {
   while (*i < n && v[*i].kind == GTEXT_CSS_VALUE_TOKEN && v[*i].type == GTEXT_CSS_TOKEN_WHITESPACE) {
