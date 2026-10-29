@@ -275,3 +275,10 @@ TEST(CssAtrule, KeyframeSelectorsOfTimelines) {
   Parsed bad("@keyframes k { entry { color: red } 101% { color: red } cover 1% 2% { color: red } }");
   EXPECT_EQ(gtext_css_atrule_child_count(bad.a), 0u);
 }
+
+// An empty source list has no value to take components from (a NULL plus zero once reached the sanitizer).
+TEST(CssAtrule, EmptySrcIsDropped) {
+  Parsed p("@font-face { font-family: A; src: }");
+  ASSERT_NE(p.a, nullptr);
+  EXPECT_EQ(p.desc("src"), "-");
+}

@@ -689,7 +689,7 @@ static bool read_descriptor(ctx * c, const char * at_name, const GTEXT_CSS_Decla
         j++;
       }
       GTEXT_CSS_Declaration g = *d;
-      g.value = d->value + i;
+      g.value = d->value ? d->value + i : NULL;
       g.value_count = j - i;
       GTEXT_CSS_Property_Value one;
       memset(&one, 0, sizeof one);
