@@ -107,8 +107,18 @@ typedef struct {
   uint8_t result;
 } cq_result_entry;
 
+/// The answer of a supports declaration for the evaluation in progress, by its text: a declaration that a condition repeats is parsed once.
+typedef struct {
+  uint64_t hash;
+  char * key;       ///< name, a NUL, value (the call's own copy); NULL: the slot is empty.
+  size_t key_len;
+  uint8_t result;   ///< 1 supported, 0 not.
+} cq_decl_entry;
+
 struct GTEXT_CSS_Condition_Call_Internal {
   GTEXT_Allocator alloc;
+  cq_decl_entry * decls;
+  size_t decls_cap, decls_used;
   const void * owner; ///< The defs the memo is for.
   uint8_t * memo;     ///< Per winning definition: 0 not yet, 1 true, 2 false.
   size_t memo_n;
@@ -135,6 +145,10 @@ GTEXT_CSS_Tristate css_tri_and(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b);
 GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b);
 
 /// One supports leaf (a declaration, selector(), font-tech() ...) against the conditions.
+bool css_decl_memo_get(const struct GTEXT_CSS_Condition_Call_Internal * ci, const char * name, size_t nl, const char * value, size_t vl, bool * result);
+GTEXT_CSS_Status css_decl_memo_put(struct GTEXT_CSS_Condition_Call_Internal * ci, const char * name, size_t nl, const char * value, size_t vl, bool result);
+void css_decl_memo_clear(struct GTEXT_CSS_Condition_Call_Internal * ci);
+void css_decl_memo_free(struct GTEXT_CSS_Condition_Call_Internal * ci);
 GTEXT_CSS_Tristate css_supports_eval_leaf(const GTEXT_CSS_Conditions * c, const mq_node * n, GTEXT_CSS_Status * status, const char ** detail);
 
 /// One media feature node against an environment. A failure is in *status (and *detail), the answer is then meaningless.

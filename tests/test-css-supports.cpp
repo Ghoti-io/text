@@ -395,3 +395,27 @@ TEST(CssSupports, DeepAndWideConditionsDoNotUseTheCStack) {
   EXPECT_EQ(t, GTEXT_CSS_TRI_TRUE) << "an even number of nots";
   gtext_css_media_list_free(p);
 }
+
+TEST(CssSupports, ADeclarationThatAConditionRepeatsIsParsedOnce) {
+  /* The cost shape: n declarations with repeats cost the parses of the distinct ones, not of n (the call counts the parses and the answers taken from the memo of the
+   * evaluation). The memo belongs to one evaluation: the next one parses again, since a conditions object may be another's. */
+  Cond c;
+  std::string cond;
+  for (int i = 0; i < 400; i++) {
+    cond += std::string(i ? " and " : "") + "(display: grid)" + " and (color: red) and (width: " + std::to_string(i % 3) + "px)";
+  }
+  GTEXT_CSS_Supports_Condition * s = nullptr;
+  ASSERT_EQ(gtext_css_supports_parse(cond.data(), cond.size(), false, nullptr, &s, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSS_Condition_Call call;
+  gtext_css_condition_call_init(&call);
+  GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
+  ASSERT_EQ(gtext_css_conditions_evaluate_supports(c.c, s, &call, &t), GTEXT_CSS_OK);
+  EXPECT_EQ(t, GTEXT_CSS_TRI_TRUE);
+  EXPECT_EQ(call.declarations_parsed, 5u) << "display, color and three widths";
+  EXPECT_EQ(call.declaration_hits, 400u * 3 - 5u);
+  const size_t parsed = call.declarations_parsed;
+  ASSERT_EQ(gtext_css_conditions_evaluate_supports(c.c, s, &call, &t), GTEXT_CSS_OK);
+  EXPECT_EQ(call.declarations_parsed, 2 * parsed) << "a second evaluation parses again";
+  gtext_css_condition_call_free(&call);
+  gtext_css_media_list_free(s);
+}

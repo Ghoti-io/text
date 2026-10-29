@@ -200,3 +200,93 @@ GTEXT_CSS_Status gtext_css_conditions_supports(const GTEXT_CSS_Conditions * c, c
   *result = ok;
   return GTEXT_CSS_OK;
 }
+
+/* ---- the memo of the declarations of one evaluation ----------------------------------------------------------------------------------------------------- */
+
+static uint64_t decl_hash(const char * name, size_t nl, const char * value, size_t vl) {
+  uint64_t h = 1469598103934665603ull;
+  for (size_t i = 0; i < nl; i++) {
+    h = (h ^ (unsigned char)name[i]) * 1099511628211ull;
+  }
+  h = (h ^ 0xffu) * 1099511628211ull;
+  for (size_t i = 0; i < vl; i++) {
+    h = (h ^ (unsigned char)value[i]) * 1099511628211ull;
+  }
+  return h | 1u;
+}
+
+static bool decl_equal(const cq_decl_entry * e, const char * name, size_t nl, const char * value, size_t vl) {
+  return e->key_len == nl + 1 + vl && memcmp(e->key, name, nl) == 0 && memcmp(e->key + nl + 1, value, vl) == 0;
+}
+
+bool css_decl_memo_get(const struct GTEXT_CSS_Condition_Call_Internal * ci, const char * name, size_t nl, const char * value, size_t vl, bool * result) {
+  if (!ci->decls_cap) {
+    return false;
+  }
+  const uint64_t h = decl_hash(name, nl, value, vl);
+  for (size_t j = h & (ci->decls_cap - 1);; j = (j + 1) & (ci->decls_cap - 1)) {
+    const cq_decl_entry * e = &ci->decls[j];
+    if (!e->key) {
+      return false;
+    }
+    if (e->hash == h && decl_equal(e, name, nl, value, vl)) {
+      *result = e->result != 0;
+      return true;
+    }
+  }
+}
+
+GTEXT_CSS_Status css_decl_memo_put(struct GTEXT_CSS_Condition_Call_Internal * ci, const char * name, size_t nl, const char * value, size_t vl, bool result) {
+  if ((ci->decls_used + 1) * 2 > ci->decls_cap) {
+    const size_t ncap = ci->decls_cap ? ci->decls_cap * 2 : 64;
+    cq_decl_entry * n = gtext_allocator_calloc(&ci->alloc, ncap, sizeof *n);
+    if (!n) {
+      return GTEXT_CSS_E_OOM;
+    }
+    for (size_t i = 0; i < ci->decls_cap; i++) {
+      if (ci->decls[i].key) {
+        size_t j = ci->decls[i].hash & (ncap - 1);
+        while (n[j].key) {
+          j = (j + 1) & (ncap - 1);
+        }
+        n[j] = ci->decls[i];
+      }
+    }
+    gtext_allocator_free(&ci->alloc, ci->decls);
+    ci->decls = n;
+    ci->decls_cap = ncap;
+  }
+  char * key = gtext_allocator_malloc(&ci->alloc, nl + 1 + vl + 1);
+  if (!key) {
+    return GTEXT_CSS_E_OOM;
+  }
+  memcpy(key, name, nl);
+  key[nl] = '\0';
+  if (vl) {
+    memcpy(key + nl + 1, value, vl);
+  }
+  key[nl + 1 + vl] = '\0';
+  const uint64_t h = decl_hash(name, nl, value, vl);
+  size_t j = h & (ci->decls_cap - 1);
+  while (ci->decls[j].key) {
+    j = (j + 1) & (ci->decls_cap - 1);
+  }
+  ci->decls[j] = (cq_decl_entry){h, key, nl + 1 + vl, result ? 1u : 0u};
+  ci->decls_used++;
+  return GTEXT_CSS_OK;
+}
+
+void css_decl_memo_clear(struct GTEXT_CSS_Condition_Call_Internal * ci) {
+  for (size_t i = 0; i < ci->decls_cap; i++) {
+    gtext_allocator_free(&ci->alloc, ci->decls[i].key);
+    ci->decls[i].key = NULL;
+  }
+  ci->decls_used = 0;
+}
+
+void css_decl_memo_free(struct GTEXT_CSS_Condition_Call_Internal * ci) {
+  css_decl_memo_clear(ci);
+  gtext_allocator_free(&ci->alloc, ci->decls);
+  ci->decls = NULL;
+  ci->decls_cap = 0;
+}

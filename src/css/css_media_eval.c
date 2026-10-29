@@ -766,6 +766,7 @@ void gtext_css_condition_call_free(GTEXT_CSS_Condition_Call * call) {
   if (call->internal) {
     GTEXT_Allocator a = call->internal->alloc;
     css_cq_call_free(call->internal);
+    css_decl_memo_free(call->internal);
     gtext_allocator_free(&a, call->internal->memo);
     gtext_allocator_free(&a, call->internal->stack);
     gtext_allocator_free(&a, call->internal);
@@ -947,7 +948,32 @@ GTEXT_CSS_Status css_conditions_eval_query_cq(const GTEXT_CSS_Conditions * c, GT
       sp--;
       break;
     }
-    case MQN_DECL:
+    case MQN_DECL: {
+      /* a declaration that the condition repeats is parsed once */
+      bool memo = false;
+      const char * dv = n->value ? n->value : "";
+      if (css_decl_memo_get(ci, n->text, n->text_length, dv, n->value_length, &memo)) {
+        call->declaration_hits++;
+        ret = memo ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE;
+        sp--;
+        break;
+      }
+      const char * detail = NULL;
+      ret = css_supports_eval_leaf(c, n, &status, &detail);
+      if (status != GTEXT_CSS_OK) {
+        call->detail = detail;
+        call->where = n->span;
+        goto done;
+      }
+      call->declarations_parsed++;
+      if (css_decl_memo_put(ci, n->text, n->text_length, dv, n->value_length, ret == GTEXT_CSS_TRI_TRUE) != GTEXT_CSS_OK) {
+        status = GTEXT_CSS_E_OOM;
+        call->where = n->span;
+        goto done;
+      }
+      sp--;
+      break;
+    }
     case MQN_SELECTOR:
     case MQN_FONT_TECH:
     case MQN_FONT_FORMAT:

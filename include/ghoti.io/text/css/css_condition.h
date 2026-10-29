@@ -200,6 +200,8 @@ typedef struct {
   size_t container_hits;     ///< Resolutions answered from the container cache.
   size_t container_requests; ///< Distinct (name, kinds) requests the call has resolved.
   size_t container_evaluations; ///< Container conditions evaluated against a container (not answered from the memo).
+  size_t declarations_parsed; ///< Supports declarations parsed with the property parser, over all evaluations of the call.
+  size_t declaration_hits;   ///< Supports declarations answered from the memo of the evaluation (a declaration that a condition repeats is parsed once).
   const char * detail;       ///< After GTEXT_CSS_E_UNSUPPORTED: a static sentence naming what is missing (the unit, the callback).
   GTEXT_CSS_Span where;      ///< After a failure: the span of the node it was reached at.
   struct GTEXT_CSS_Condition_Call_Internal * internal; ///< Private.

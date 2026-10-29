@@ -1,6 +1,7 @@
 # tools/css/gen-condition-tables.py: what the pinned webref omits about the conditional and descriptor at-rules. Tab separated, the section first:
 #  media-type      NAME  CLASS  NOTE     CLASS is live (matches by the environment's medium: all print screen) or deprecated (valid, matches nothing)
 #  media-reserved  NAME  -      NOTE     a word the grammar of <media-type> excludes
+#  container-feature  NAME  ROW  NOTE     a feature of a container condition: the media feature it reads, or `logical:ROW` for inline-size and block-size, which the writing mode maps
 media-type	all	live	Media Queries 4, 2.3: matches all devices
 media-type	print	live	Media Queries 4, 2.3: matches printers and a print preview
 media-type	screen	live	Media Queries 4, 2.3: matches all devices that are not matched by print
@@ -17,3 +18,9 @@ media-reserved	not	-	as only
 media-reserved	and	-	as only
 media-reserved	or	-	as only
 media-reserved	layer	-	as only: it would be ambiguous in the layer(...) of @import
+container-feature	width	width	Conditional 5, 5.2: "width", the width of the container's content box
+container-feature	height	height	Conditional 5, 5.2: "height"
+container-feature	inline-size	logical:width	Conditional 5, 5.2: "inline-size", the width of the content box in a horizontal writing mode and its height in a vertical one
+container-feature	block-size	logical:height	Conditional 5, 5.2: "block-size", the other axis
+container-feature	aspect-ratio	aspect-ratio	Conditional 5, 5.2: "aspect-ratio" of the content box
+container-feature	orientation	orientation	Conditional 5, 5.2: "orientation" of the content box

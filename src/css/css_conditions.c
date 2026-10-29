@@ -593,6 +593,7 @@ GTEXT_CSS_Status css_conditions_prepare_call(const GTEXT_CSS_Conditions * c, GTE
     ci->memo_n = need;
     ci->owner = c->defs;
   }
+  css_decl_memo_clear(ci); /* the declarations of one evaluation: the policy and the registry they were answered with belong to the conditions object */
   call->work = 0;
   call->detail = NULL;
   return GTEXT_CSS_OK;

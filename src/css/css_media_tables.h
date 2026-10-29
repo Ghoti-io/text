@@ -233,6 +233,21 @@ typedef struct {
   { "aural", MQT_DEPRECATED },\
   { "speech", MQT_DEPRECATED }
 
+/* The features a container condition has (Conditional 5, 5.2): a name, the media feature row it reads, and whether the name is the logical one (`inline-size`, `block-size`). */
+typedef struct {
+  const char * name;
+  int16_t row;     /* css_mq_feature_id */
+  uint8_t logical; /* the width or height row mapped by the container's writing mode */
+} css_cq_feature_row;
+
+#define CSS_CQ_FEATURE_ROWS \
+  { "width", CSS_MQF_WIDTH, 0 },\
+  { "height", CSS_MQF_HEIGHT, 0 },\
+  { "inline-size", CSS_MQF_WIDTH, 1 },\
+  { "block-size", CSS_MQF_HEIGHT, 1 },\
+  { "aspect-ratio", CSS_MQF_ASPECT_RATIO, 0 },\
+  { "orientation", CSS_MQF_ORIENTATION, 0 }
+
 #define CSS_MQ_RESERVED_WORDS \
   "only",\
   "not",\

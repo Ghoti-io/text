@@ -973,18 +973,20 @@ static bool feature_name(parser * P, const GTEXT_CSS_Component_Value * t, int * 
     base = s + 4;
     bl = l - 4;
   }
-  if (ieq(base, bl, "inline-size") || ieq(base, bl, "block-size")) {
-    *row = ieq(base, bl, "inline-size") ? CSS_MQF_WIDTH : CSS_MQF_HEIGHT;
-    *prefix = px;
-    *via = px != MQP_NONE;
-    P->nm_logical = true;
-    return true;
+  /* the features a container condition has are the rows of the generated table (tools/css/atrules-supplement.tsv, `container-feature`); any other name is unknown there */
+  static const css_cq_feature_row cq_features[] = {CSS_CQ_FEATURE_ROWS};
+  for (size_t i = 0; i < sizeof cq_features / sizeof cq_features[0]; i++) {
+    if (ieq(base, bl, cq_features[i].name)) {
+      *row = cq_features[i].row;
+      *prefix = px;
+      *via = px != MQP_NONE;
+      P->nm_logical = cq_features[i].logical != 0;
+      return true;
+    }
   }
-  if (*row >= 0 && *row != CSS_MQF_WIDTH && *row != CSS_MQF_HEIGHT && *row != CSS_MQF_ASPECT_RATIO && *row != CSS_MQF_ORIENTATION) {
-    *row = -1;
-    *prefix = MQP_NONE;
-    *via = false;
-  }
+  *row = -1;
+  *prefix = MQP_NONE;
+  *via = false;
   return true;
 }
 

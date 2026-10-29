@@ -52,3 +52,4 @@ the-layer-of-a-container-group-is-not-declared	css_rule_index.c	    if (ev->cond
 an-else-follows-a-true-when	css_rule_index.c	own = own && !earlier;	own = own;	sheetcond
 starting-style-records-are-always-included	css_rule_index.c	if ((tv & TV_STARTING) && !w->starting_style) {	if (0) {	container
 or-is-not-commutative	css_media_eval.c	GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b) {\n  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {	GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b) {\n  if (a == GTEXT_CSS_TRI_UNKNOWN) {\n    return GTEXT_CSS_TRI_UNKNOWN;\n  }\n  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {	fuzz
+the-declaration-memo-is-dropped	css_media_eval.c	      if (css_decl_memo_get(ci, n->text, n->text_length, dv, n->value_length, &memo)) {	      if (0 && css_decl_memo_get(ci, n->text, n->text_length, dv, n->value_length, &memo)) {	supports
