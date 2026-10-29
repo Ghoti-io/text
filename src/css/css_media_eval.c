@@ -720,6 +720,7 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
   PUSH(list, qnode, -1);
   while (sp) {
     eframe * f = &ci->stack[sp - 1];
+    const struct GTEXT_CSS_Media_List_Internal * cur_in = f->in; /* PUSH may move the stack: nothing after it reads f */
     if (++work > c->max_work) {
       status = GTEXT_CSS_E_LIMIT_WORK;
       goto done;
@@ -761,7 +762,7 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
           break;
         }
         f->idx = 1;
-        PUSH(f->in, f->in->kids[n->kid_first], -1);
+        PUSH(cur_in, cur_in->kids[n->kid_first], -1);
         break;
       }
       /* ret is the condition; the type was true. */
@@ -774,7 +775,7 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
     case MQN_NOT:
       if (f->idx == 0) {
         f->idx = 1;
-        PUSH(f->in, f->in->kids[n->kid_first], -1);
+        PUSH(cur_in, cur_in->kids[n->kid_first], -1);
         break;
       }
       ret = css_tri_not(ret);
@@ -783,7 +784,7 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
     case MQN_PAREN:
       if (f->idx == 0) {
         f->idx = 1;
-        PUSH(f->in, f->in->kids[n->kid_first], -1);
+        PUSH(cur_in, cur_in->kids[n->kid_first], -1);
         break;
       }
       sp--;
@@ -805,9 +806,9 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
         sp--;
         break;
       }
-      uint32_t k = f->in->kids[n->kid_first + f->idx];
+      uint32_t k = cur_in->kids[n->kid_first + f->idx];
       f->idx++;
-      PUSH(f->in, k, -1);
+      PUSH(cur_in, k, -1);
       break;
     }
     case MQN_FEATURE: {

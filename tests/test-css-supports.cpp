@@ -162,6 +162,16 @@ TEST(CssSupports, Serialization) {
   }
 }
 
+TEST(CssSupports, EmptyFunctionsAndBlocksAreGeneralEnclosedOrFalse) {
+  /* Found by the fuzzer: an empty block or function has no children array. */
+  Cond c;
+  EXPECT_FALSE(c.yes("selector()"));
+  EXPECT_FALSE(c.yes("font-tech()"));
+  EXPECT_FALSE(c.yes("env()"));
+  EXPECT_FALSE(c.yes("(  )"));
+  EXPECT_FALSE(c.yes("foo()"));
+}
+
 TEST(CssSupports, SelectorFunction) {
   /* The matrix: `selector(:is(a, b))` true; `selector(a >)` false; `not selector(:no-such-pseudo)` true. */
   Cond c;

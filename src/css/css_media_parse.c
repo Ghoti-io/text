@@ -979,7 +979,8 @@ static int lookup_name(const char * const * names, size_t count, const GTEXT_CSS
 
 /// A function of a supports condition. FEAT_SOFT: <general-enclosed>.
 static feat_result parse_supports_function(parser * P, const GTEXT_CSS_Component_Value * fn, uint32_t * out) {
-  const GTEXT_CSS_Component_Value * k = fn->children;
+  static const GTEXT_CSS_Component_Value no_values[1];
+  const GTEXT_CSS_Component_Value * k = fn->children ? fn->children : no_values;
   size_t kn = fn->child_count;
   size_t s = skip_ws(k, kn, 0);
   size_t e = trim_end(k, s, kn);
@@ -1546,7 +1547,8 @@ static GTEXT_CSS_Status finish(parser * P) {
     }
     const GTEXT_CSS_Component_Value * src = nd->src;
     nd->src = NULL;
-    const GTEXT_CSS_Component_Value * kids = src->children;
+    static const GTEXT_CSS_Component_Value no_values[1];
+    const GTEXT_CSS_Component_Value * kids = src->children ? src->children : no_values; /* never NULL plus an offset */
     size_t kn = src->child_count;
     size_t ks = skip_ws(kids, kn, 0);
     size_t ke = trim_end(kids, ks, kn);
