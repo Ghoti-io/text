@@ -156,6 +156,8 @@ typedef enum {
   GTEXT_CSS_E_LIMIT_MATCH_WORK,   ///< Matching: more work than `max_work` in one call.
   GTEXT_CSS_E_LIMIT_RULE_NESTING, ///< Style sheets: style rules nested deeper than `max_rule_depth`.
   GTEXT_CSS_E_LIMIT_SHEET_SIZE,   ///< Style sheets: the compiled sheet would be larger than `max_compiled_bytes`.
+  GTEXT_CSS_E_LIMIT_CONDITION_DEPTH, ///< Conditions: `not (not (...))` or parentheses nested deeper than `max_depth`.
+  GTEXT_CSS_E_LIMIT_CONDITIONS,   ///< Conditions: more queries or condition nodes than the limit.
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 

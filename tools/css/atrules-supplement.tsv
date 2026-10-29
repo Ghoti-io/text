@@ -1,0 +1,19 @@
+# tools/css/gen-condition-tables.py: what the pinned webref omits about the conditional and descriptor at-rules. Tab separated, the section first:
+#  media-type      NAME  CLASS  NOTE     CLASS is live (matches by the environment's medium: all print screen) or deprecated (valid, matches nothing)
+#  media-reserved  NAME  -      NOTE     a word the grammar of <media-type> excludes
+media-type	all	live	Media Queries 4, 2.3: matches all devices
+media-type	print	live	Media Queries 4, 2.3: matches printers and a print preview
+media-type	screen	live	Media Queries 4, 2.3: matches all devices that are not matched by print
+media-type	tty	deprecated	Media Queries 4, 2.3: "User agents must recognize the following media types as valid, but must make them match nothing."
+media-type	tv	deprecated	Media Queries 4, 2.3: as tty
+media-type	projection	deprecated	Media Queries 4, 2.3: as tty
+media-type	handheld	deprecated	Media Queries 4, 2.3: as tty
+media-type	braille	deprecated	Media Queries 4, 2.3: as tty
+media-type	embossed	deprecated	Media Queries 4, 2.3: as tty
+media-type	aural	deprecated	Media Queries 4, 2.3: as tty
+media-type	speech	deprecated	Media Queries 4, 2.3 (the served text lists speech among the deprecated types; Media Queries 5 changes: "Deprecate the speech media type"): as tty
+media-reserved	only	-	Media Queries 4, 3: "The <media-type> production does not include the keywords only, not, and, or, and layer."
+media-reserved	not	-	as only
+media-reserved	and	-	as only
+media-reserved	or	-	as only
+media-reserved	layer	-	as only: it would be ambiguous in the layer(...) of @import

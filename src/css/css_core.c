@@ -79,6 +79,8 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_MATCH_WORK] = "a match did more work than max_work",
   [GTEXT_CSS_E_LIMIT_RULE_NESTING] = "style rules are nested deeper than max_rule_depth",
   [GTEXT_CSS_E_LIMIT_SHEET_SIZE] = "the compiled style sheet is larger than max_compiled_bytes",
+  [GTEXT_CSS_E_LIMIT_CONDITION_DEPTH] = "a condition is nested deeper than max_depth",
+  [GTEXT_CSS_E_LIMIT_CONDITIONS] = "a condition has more queries or nodes than its limit",
   [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
 };
 

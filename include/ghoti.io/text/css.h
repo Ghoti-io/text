@@ -30,7 +30,7 @@
  * serializer in css_serialize.h, a stylesheet's bytes and their encoding in
  * css_decode.h, the incremental parser in css_stream.h, the typed values and
  * their serialization in css_value.h, and the Value Definition Syntax engine
- * that decides which component values a grammar accepts in css_grammar.h, the math functions in css_math.h and the colors in css_color.h, and the registry of every property, descriptor and type of the specifications with property-level parsing in css_registry.h and css_property.h, the caller's tree and environment in css_element.h, shorthands and declaration blocks in css_shorthand.h, logical properties in css_logical.h, computed values in css_computed.h, cascade layers in css_layer.h, the cascade in css_cascade.h, custom property values in css_custom.h, `@property` rules in css_at_property.h the limits of `var()` substitution in css_substitute.h, the presentation attributes in css_presentation.h and the call from an element to its computed style in css_style.h, and the selectors (parse, serialize, specificity) in css_selector.h. The format page
+ * that decides which component values a grammar accepts in css_grammar.h, the math functions in css_math.h and the colors in css_color.h, and the registry of every property, descriptor and type of the specifications with property-level parsing in css_registry.h and css_property.h, the caller's tree and environment in css_element.h, shorthands and declaration blocks in css_shorthand.h, logical properties in css_logical.h, computed values in css_computed.h, cascade layers in css_layer.h, the cascade in css_cascade.h, custom property values in css_custom.h, `@property` rules in css_at_property.h the limits of `var()` substitution in css_substitute.h, the presentation attributes in css_presentation.h and the call from an element to its computed style in css_style.h, and the selectors (parse, serialize, specificity) in css_selector.h, and the media query lists, the media environment and the conditions object in css_media.h and css_condition.h. The format page
  * is documentation/formats/css.md.
  */
 
@@ -43,6 +43,7 @@
 #include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_color.h>
 #include <ghoti.io/text/css/css_computed.h>
+#include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_custom.h>
 #include <ghoti.io/text/css/css_decode.h>
@@ -54,6 +55,7 @@
 #include <ghoti.io/text/css/css_markup.h>
 #include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_math.h>
+#include <ghoti.io/text/css/css_media.h>
 #include <ghoti.io/text/css/css_parse.h>
 #include <ghoti.io/text/css/css_presentation.h>
 #include <ghoti.io/text/css/css_property.h>

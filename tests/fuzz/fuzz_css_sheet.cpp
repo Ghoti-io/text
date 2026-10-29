@@ -125,6 +125,8 @@ bool tolerated(GTEXT_CSS_Status st) {
   case GTEXT_CSS_E_LIMIT_LAYERS:
   case GTEXT_CSS_E_LIMIT_LAYER_DEPTH:
   case GTEXT_CSS_E_LIMIT_WORK:
+  case GTEXT_CSS_E_LIMIT_CONDITION_DEPTH:
+  case GTEXT_CSS_E_LIMIT_CONDITIONS:
   case GTEXT_CSS_E_LIMIT_LIST: return true;
   default: return false;
   }
