@@ -282,3 +282,13 @@ TEST(CssAtrule, EmptySrcIsDropped) {
   ASSERT_NE(p.a, nullptr);
   EXPECT_EQ(p.desc("src"), "-");
 }
+
+// An at-rule name that is not a plain identifier (an escape that decodes to a line feed) is written escaped, so the text reads back as the same rule.
+TEST(CssAtrule, UnknownNameIsSerializedEscaped) {
+  Parsed p("@p\\\\\\a ge :bogus { }");
+  ASSERT_NE(p.a, nullptr);
+  const std::string once = p.css();
+  Parsed q(once);
+  ASSERT_NE(q.a, nullptr) << once;
+  EXPECT_EQ(q.css(), once);
+}

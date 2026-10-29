@@ -1651,7 +1651,7 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
     break;
   }
   putz(o, "@");
-  put(o, a->name, a->name_len);
+  put_ident(o, a->name, a->name_len);
   if (a->prelude_len || a->nnames || a->nsels) {
     putz(o, " ");
     if (a->kind == GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES || a->kind == GTEXT_CSS_ATRULE_FONT_PALETTE_VALUES || a->kind == GTEXT_CSS_ATRULE_COLOR_PROFILE ||
