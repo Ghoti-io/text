@@ -2042,6 +2042,15 @@ static uint32_t parse_container_root(parser * P, const GTEXT_CSS_Component_Value
       const mq_node * nd = &in->nodes[i];
       if (nd->kind == MQN_FEATURE) {
         bits |= MQC_SIZE;
+        if (nd->feature == CSS_MQF_ASPECT_RATIO || nd->feature == CSS_MQF_ORIENTATION) {
+          bits |= MQC_AX_BOTH;
+        }
+        else if (nd->flags & MQF_LOGICAL) {
+          bits |= nd->feature == CSS_MQF_WIDTH ? MQC_AX_I : MQC_AX_B;
+        }
+        else {
+          bits |= nd->feature == CSS_MQF_WIDTH ? MQC_AX_W : MQC_AX_H;
+        }
       }
       else if (nd->kind == MQN_CQ_FN) {
         bits |= nd->type_id == MQ_SUB_STYLE ? MQC_STYLE : (nd->type_id == MQ_SUB_SCROLL ? MQC_SCROLL : MQC_ANCHORED);

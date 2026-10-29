@@ -195,6 +195,34 @@ TEST(CssContainerResolve, AFeatureOfAnAxisTheContainerDoesNotContainIsUnknown) {
   EXPECT_NE(d.get(leaf, "padding-top"), "6px");
 }
 
+TEST(CssContainerResolve, AContainerIsSelectedForTheWholeConditionSoAnInlineSizeOneIsPassedOverByABlockAxisFeature) {
+  /* Both browsers select the query container among those that support every axis the condition asks about: `(width < 301px) or (height > 301px)` skips an inline-size
+   * container (it has no block axis), finds none, and is unknown, though the width alone would have been true. An outer size container is chosen instead. */
+  Doc d;
+  const int outer = d.add(0, "div", "outer");
+  const int inner = d.add(outer, "section", "inner");
+  const int leaf = d.add(inner, "p", "leaf");
+  const int alone = d.add(0, "div", "alone");
+  const int alone_container = d.add(alone, "section", "ac");
+  const int alone_leaf = d.add(alone_container, "p", "alone-leaf");
+  d.own[outer] = "container-type: size";
+  d.boxes[outer] = {900, 200};
+  d.own[inner] = "container-type: inline-size";
+  d.boxes[inner] = {250, 300};
+  d.own[alone_container] = "container-type: inline-size";
+  d.boxes[alone_container] = {250, 300};
+  d.sheets = {"@container (width < 301px) or (height > 301px) { p { margin-left: 3px } } @container (width < 301px) { p { margin-top: 4px } } "
+              "@container (aspect-ratio > 1) { p { margin-right: 5px } }"};
+  d.build();
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_NE(d.get(alone_leaf, "margin-left"), "3px") << "no container supports both axes: unknown, whatever the width says";
+  EXPECT_EQ(d.get(alone_leaf, "margin-top"), "4px") << "the width alone is the inline axis";
+  EXPECT_NE(d.get(alone_leaf, "margin-right"), "5px");
+  EXPECT_NE(d.get(leaf, "margin-left"), "3px") << "the outer container is 900 wide and 200 tall: neither side holds";
+  EXPECT_EQ(d.get(leaf, "margin-top"), "4px") << "the inner container answers the width alone";
+  EXPECT_EQ(d.get(leaf, "margin-right"), "5px") << "the ratio needs both axes: the outer container answers, 900 by 200";
+}
+
 TEST(CssContainerResolve, LogicalFeaturesFollowTheWritingModeOfTheContainer) {
   /* inline-size is the size in the container's inline axis: the height of a vertical writing mode. */
   Doc d;

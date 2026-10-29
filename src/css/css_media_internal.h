@@ -94,6 +94,13 @@ typedef enum {
 #define MQC_SCROLL 0x4u
 #define MQC_ANCHORED 0x8u
 #define MQC_UNKNOWN 0x10u ///< An unknown or unsupported container feature: no container is selected, the condition is false.
+/// The axes the size features of a container condition ask about. A container is selected for the condition as a whole, so an `inline-size` container is passed over by a
+/// condition that asks about its block axis (or about both), as the browsers do, and is not asked.
+#define MQC_AX_W 0x20u    ///< The physical width.
+#define MQC_AX_H 0x40u    ///< The physical height.
+#define MQC_AX_I 0x80u    ///< The inline axis of the container (`inline-size`).
+#define MQC_AX_B 0x100u   ///< The block axis of the container (`block-size`).
+#define MQC_AX_BOTH 0x200u ///< Both axes (`aspect-ratio`, `orientation`).
 
 typedef enum { MQT_ID_ALL = 0, MQT_ID_SCREEN, MQT_ID_PRINT, MQT_ID_DEPRECATED, MQT_ID_UNKNOWN } mq_type_id;
 typedef enum { MQFORM_PLAIN = 0, MQFORM_BOOLEAN, MQFORM_RANGE } mq_form;

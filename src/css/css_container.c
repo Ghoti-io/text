@@ -377,6 +377,14 @@ static GTEXT_CSS_Status qualifies(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Elem
   if ((r->mask & MQC_SIZE) && !(info.types & (GTEXT_CSS_CONTAINER_TYPE_SIZE | GTEXT_CSS_CONTAINER_TYPE_INLINE_SIZE))) {
     return GTEXT_CSS_OK;
   }
+  if ((r->mask & MQC_SIZE) && !(info.types & GTEXT_CSS_CONTAINER_TYPE_SIZE)) {
+    /* an inline-size container supports the inline axis only, and the container is selected for the whole condition */
+    const GTEXT_CSS_Flow flow = gtext_css_computed_flow(style);
+    const bool inline_horizontal = gtext_css_flow_axis(&flow, true) == GTEXT_CSS_AXIS_HORIZONTAL;
+    if ((r->mask & (MQC_AX_B | MQC_AX_BOTH)) || ((r->mask & MQC_AX_W) && !inline_horizontal) || ((r->mask & MQC_AX_H) && inline_horizontal)) {
+      return GTEXT_CSS_OK;
+    }
+  }
   if ((r->mask & MQC_SCROLL) && !(info.types & GTEXT_CSS_CONTAINER_TYPE_SCROLL_STATE)) {
     return GTEXT_CSS_OK;
   }
