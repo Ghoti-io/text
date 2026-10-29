@@ -315,3 +315,13 @@ TEST(CssAtrule, BadStringInPreludeIsInvalid) {
   Parsed c("@unknown-thing (a \"b\") { }");
   EXPECT_TRUE(c.res.valid);
 }
+
+// A family name that is one identifier holding an escaped space reads back as the same name.
+TEST(CssAtrule, EscapedSpaceInAFamilyName) {
+  Parsed p("@font-feature-values \\  { @styleset { a: 2 } }");
+  ASSERT_NE(p.a, nullptr);
+  const std::string once = p.css();
+  Parsed q(once);
+  ASSERT_NE(q.a, nullptr) << once;
+  EXPECT_EQ(q.css(), once);
+}

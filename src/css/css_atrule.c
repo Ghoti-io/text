@@ -514,7 +514,11 @@ static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n,
       *valid = false;
       return true;
     }
-    if (nt == 1 && toks[0]->kind == GTEXT_CSS_VALUE_TOKEN && toks[0]->type == GTEXT_CSS_TOKEN_STRING) {
+    bool spaced = false; /* one identifier that holds a space (an escaped one): written as a string, since the idents of a longer name are joined by spaces */
+    if (nt == 1 && toks[0]->kind == GTEXT_CSS_VALUE_TOKEN && toks[0]->type == GTEXT_CSS_TOKEN_IDENT && !wide_keyword_name(&toks[0]->value)) {
+      spaced = memchr(toks[0]->value.data, ' ', toks[0]->value.length) != NULL;
+    }
+    if (nt == 1 && toks[0]->kind == GTEXT_CSS_VALUE_TOKEN && (toks[0]->type == GTEXT_CSS_TOKEN_STRING || spaced)) {
       if (!add_name(c, &toks[0]->value, true)) {
         return false;
       }
