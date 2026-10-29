@@ -325,3 +325,13 @@ TEST(CssAtrule, EscapedSpaceInAFamilyName) {
   ASSERT_NE(q.a, nullptr) << once;
   EXPECT_EQ(q.css(), once);
 }
+
+// A feature value name or a custom name that needs an escape is written escaped.
+TEST(CssAtrule, ChosenNamesAreEscapedOnOutput) {
+  Parsed p("@font-feature-values A { @styleset { n\\1 e: 2 } }");
+  ASSERT_NE(p.a, nullptr);
+  const std::string once = p.css();
+  Parsed q(once);
+  ASSERT_NE(q.a, nullptr) << once;
+  EXPECT_EQ(q.css(), once);
+}

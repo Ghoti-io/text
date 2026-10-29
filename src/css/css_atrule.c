@@ -1631,7 +1631,12 @@ static void put_declarations(outp * o, const GTEXT_CSS_Atrule * a) {
     if (i) {
       putz(o, " ");
     }
-    put(o, a->ds[i].name, a->ds[i].name_len);
+    if (a->kind == GTEXT_CSS_ATRULE_FEATURE_BLOCK || (a->ds[i].name_len > 2 && a->ds[i].name[0] == '-' && a->ds[i].name[1] == '-')) {
+      put_ident(o, a->ds[i].name, a->ds[i].name_len); /* a name the author chose may need escapes */
+    }
+    else {
+      put(o, a->ds[i].name, a->ds[i].name_len);
+    }
     putz(o, ": ");
     put(o, a->ds[i].text, a->ds[i].text_len);
     putz(o, a->ds[i].important ? " !important;" : ";");
