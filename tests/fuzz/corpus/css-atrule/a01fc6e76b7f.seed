@@ -1,1 +1,0 @@
-ê∞@media all { @layer a { @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); @view-transition { navigation: auto; types: a b } @top-left { content: "x" } } }

@@ -1,1 +1,0 @@
-`@supports (display: grid) { @font-face { font-family: S; src: url(s) } } a { color: red; @font-face { font-family: N; src: url(n) } } @counter-style bad { system: alphabetic; symbols: a }

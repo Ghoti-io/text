@@ -1,0 +1,1 @@
+Sg@media all { @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @unknown-rule foo { bar } }

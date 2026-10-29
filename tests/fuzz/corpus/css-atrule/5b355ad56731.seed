@@ -1,1 +1,0 @@
-l@layer a.b { @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @media (min-width: 100px) { @keyframes m { from { color: red } } } }

@@ -1,1 +1,0 @@
-ɾ@layer a { a { color: red; @font-face { font-family: N; src: url(n) } } @counter-style p { system: extends q } @counter-style q { system: extends p } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } }

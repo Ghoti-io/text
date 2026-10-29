@@ -1,0 +1,1 @@
+ûﬂ@media all { @media (min-width: 100px) { @keyframes m { from { color: red } } } @layer { @font-face { font-family: L; src: url(l) } } }

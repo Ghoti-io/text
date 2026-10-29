@@ -1,0 +1,1 @@
+«@media all { @layer a { @color-profile device-cmyk { src: url(b.icc) } @unknown-rule foo { bar } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } } }

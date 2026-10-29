@@ -1,0 +1,1 @@
+‰ø@font-feature-values A, "B c" { font-display: swap; @styleset { nice: 12 3 } @swash { s: 1 } @styleset { nice: 9 } } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } }

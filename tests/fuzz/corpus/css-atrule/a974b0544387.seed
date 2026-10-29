@@ -1,0 +1,1 @@
+ñ-@layer  { @font-face { font-family: C; ascent-override: 90% 80%; size-adjust: 110%; font-width: 75% 100%; font-size: 10 20; src: url(c) } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); }

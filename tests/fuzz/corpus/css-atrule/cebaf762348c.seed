@@ -1,0 +1,1 @@
+ži@media all { @layer b { @page :bogus { margin: 1px } @view-transition { navigation: auto; types: a b } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } } }

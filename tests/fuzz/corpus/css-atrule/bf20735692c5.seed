@@ -1,0 +1,1 @@
+Åa@keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { width: 1px } 50% { color: green } }

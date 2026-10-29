@@ -1,0 +1,2 @@
+½
+@layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } }

@@ -1,1 +1,0 @@
-*t@media all { @layer a.b { @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @position-try --a { top: anchor(bottom); color: red; left: 1px } a { color: red; @font-face { font-family: N; src: url(n) } } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } } }

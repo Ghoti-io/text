@@ -1,0 +1,1 @@
+=@media all { @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } @font-face { font-family: D } @layer { @font-face { font-family: L; src: url(l) } } @counter-style f

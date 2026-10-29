@@ -1,1 +1,0 @@
-Ви@supports (display: grid) { @font-face { font-family: S; src: url(s) } } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @-webkit-keyframes

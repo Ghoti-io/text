@@ -1,0 +1,1 @@
+š@media all { @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @unknown-rule foo { bar } }

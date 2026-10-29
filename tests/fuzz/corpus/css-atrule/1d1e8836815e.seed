@@ -1,0 +1,1 @@
+h@layer a { @top-left { content: "x" } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } }

@@ -1,1 +1,0 @@
-Å@layer a.b { @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @counter-style bad { system: alphabetic; symbols: a } }

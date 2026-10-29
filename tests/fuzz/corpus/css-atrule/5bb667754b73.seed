@@ -1,0 +1,1 @@
+«è@media all { @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @font-palette-values --y { base-palette: dark } }

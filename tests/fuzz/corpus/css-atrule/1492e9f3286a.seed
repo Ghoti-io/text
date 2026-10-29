@@ -1,1 +1,0 @@
-k@layer b { @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @keyframes none { from { color: red } } @color-profile device-cmyk { src: url(b.icc) } @font-palette-values --y { base-palette: dark } }

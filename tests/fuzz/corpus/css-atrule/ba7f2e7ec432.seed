@@ -1,0 +1,1 @@
++@counter-style bad { system: alphabetic; symbols: a } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @color-profile device-cmyk { src: url(b.icc) } @top-left { content: "x" }

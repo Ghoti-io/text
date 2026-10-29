@@ -1,1 +1,0 @@
-x‹@page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); @layer { @font-face { font-family: L; src: url(l) } }

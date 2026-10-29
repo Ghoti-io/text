@@ -1,0 +1,1 @@
+[ß@media all { @layer  { @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } } }

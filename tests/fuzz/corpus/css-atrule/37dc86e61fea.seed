@@ -1,0 +1,1 @@
+çï@media all { @layer a { @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } } }

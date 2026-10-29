@@ -599,7 +599,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
 	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
-	check-size-shifts check-css-compute check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrules
+	check-size-shifts check-css-compute check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -988,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -2292,6 +2292,11 @@ check-css-selector-plants: $(APP_DIR)/$(STATIC_TARGET)
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-selectors.py
 
+check-css-atrule-plants: ## Plant a defect in the at-rule layer and show the tests that must see it fail
+check-css-atrule-plants: $(APP_DIR)/$(STATIC_TARGET)
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-atrules.py
+
 check-css-condition-plants: ## Plant a defect in the media query layer and show the tests that must see it fail
 # tools/css/plant-conditions.py and tools/conformance/CSS_CONDITIONS_PLANTS: each edit is compiled alone and linked ahead of the library's archive into the test programs it names, which
 # must fail; the unedited control must pass. No container engine is needed, so it is one of the gates of `make test`.
@@ -2521,6 +2526,11 @@ conformance-css-selectors: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/selectors,tools/css/fetch.sh)
 	@$(CONFORMANCE_ENV) tools/conformance/run-css-selectors.sh && \
 	$(CONFORMANCE_ENV) tools/conformance/run-css-selectors.sh --controls
+
+conformance-css-atrules: ## Score the at-rule layer against the pinned WPT at-rule parsing vectors
+conformance-css-atrules: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-animations,tools/css/fetch.sh)
+	@$(CONFORMANCE_ENV) tools/conformance/run-css-atrules.sh
 
 conformance-css-conditions: ## Score media queries against the pinned WPT media query tests, and show the gate fails
 # tools/conformance/run-css-conditions.sh: the serialization vectors and the reference tests of web-platform-tests' css/mediaqueries (read as data by tools/css/extract-wpt-conditions.py),

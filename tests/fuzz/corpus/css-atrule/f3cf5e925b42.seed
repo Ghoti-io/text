@@ -1,0 +1,1 @@
+y8@media all { @keyframes none { from { color: red } } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } }

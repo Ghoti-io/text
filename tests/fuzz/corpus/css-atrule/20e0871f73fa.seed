@@ -1,0 +1,1 @@
+оп@media all { @layer a { @view-transition { navigation: auto; types: a b } @page named:left:first { margin: 2px } @page :blank { margin: 3px } @p

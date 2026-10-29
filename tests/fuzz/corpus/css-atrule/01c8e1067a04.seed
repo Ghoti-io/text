@@ -1,1 +1,0 @@
-7H@layer a { @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); @counter-style bad { system: alphabetic; symbols: a } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } }

@@ -1,0 +1,1 @@
+ùÖ@media all { @layer  { @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { wid

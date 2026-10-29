@@ -1,1 +1,0 @@
-f5@page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @counter-style bad { system: alphabetic; symbols: a } @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a }

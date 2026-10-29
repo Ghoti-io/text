@@ -1,0 +1,1 @@
+~Ã@layer  { @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @unknown-rule foo { bar } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } }

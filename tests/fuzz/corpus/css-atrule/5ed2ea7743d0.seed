@@ -1,0 +1,1 @@
+™@media all { @color-profile device-cmyk { src: url(b.icc) } @view-transition { navigation: auto; types: a b } @font-face { src: url(x) } @page :bogus { margin: 1px } }

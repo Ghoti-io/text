@@ -1,0 +1,1 @@
+–@position-try --a { top: anchor(bottom); color: red; left: 1px } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @page :bogus { margin: 1px }

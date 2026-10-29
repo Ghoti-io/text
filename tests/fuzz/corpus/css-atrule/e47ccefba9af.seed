@@ -1,0 +1,1 @@
+$‹@layer b { @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @top-left { content: "x" } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } }

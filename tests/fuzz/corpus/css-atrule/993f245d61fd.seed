@@ -1,1 +1,0 @@
-Õv@media all { @font-face { font-family: D } @counter-style z { system: extends x; suffix: ")" } @page :bogus { margin: 1px } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } }

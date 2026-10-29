@@ -1,1 +1,0 @@
->£@media all { @layer b { @top-left { content: "x" } @position-try --a { top: anchor(bottom); color: red; left: 1px } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @font-palette-values --y { base-palette: dark } } }

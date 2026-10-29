@@ -1,0 +1,1 @@
+Ν@view-transition { navigation: auto; types: a b } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x);

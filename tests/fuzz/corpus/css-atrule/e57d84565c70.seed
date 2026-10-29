@@ -1,0 +1,1 @@
+Þ[@layer  { @font-feature-values A, "B c" { font-display: swap; @styleset { nice: 12 3 } @swash { s: 1 } @styleset { nice: 9 } } a { color: red; @font-face { font-family: N; src: url(n) } } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

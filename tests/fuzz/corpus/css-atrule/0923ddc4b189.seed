@@ -1,0 +1,1 @@
+X@color-profile device-cmyk { src: url(b.icc) } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @keyframes none { from { color: red } } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) }

@@ -1,0 +1,1 @@
+–@media all { @layer a.b { @counter-style z { system: extends x; suffix: ")" } @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } } }

@@ -1,1 +1,0 @@
-Œ©@counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @view-transition { navigation: auto; types: a b } @keyframes none { from { color: red } }

@@ -1,0 +1,2 @@
+
+(@layer  { @layer { @font-face { font-family: L; src: url(l) } } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } }

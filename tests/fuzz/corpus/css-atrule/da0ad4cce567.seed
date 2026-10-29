@@ -1,1 +1,0 @@
-ð@page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @font-palette-values --y { base-palette: dark }

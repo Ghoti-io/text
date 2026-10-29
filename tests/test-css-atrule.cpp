@@ -232,3 +232,46 @@ TEST(CssAtrule, ValiditySeam) {
   EXPECT_EQ(dropped.tree->rule_count, 2u);  // `a {...}` and @keyframes ok
   EXPECT_EQ(w.refused, 3u);
 }
+
+// Fonts 4, 4.3.1: a parse error in one component of the source list does not invalidate the descriptor; it is invalid only when every component is.
+TEST(CssAtrule, SrcListIsForgiving) {
+  struct { const char * src; bool valid; const char * canon; } rows[] = {
+    {"local(inherit), url(foo.ttf)", true, "url(\"foo.ttf\")"},
+    {"local(\"myfont\"), local(unset)", true, "local(\"myfont\")"},
+    {"local(), url(foo.ttf)", true, "url(\"foo.ttf\")"},
+    {"url(foo.ttf) format(bad), url(foo.ttf)", true, "url(\"foo.ttf\")"},
+    {"/* an empty component */, url(foo.ttf)", true, "url(\"foo.ttf\")"},
+    {"local(\"\"), url(foo.ttf), unparseable-garbage, local(\"another font name\")", true, "local(\"\"), url(\"foo.ttf\"), local(\"another font name\")"},
+    {"local(), local(initial)", false, ""},
+    {"local(\"textfont\") format(opentype), local(\"emoji\") tech(color-COLRv0)", false, ""},
+    {"url(foo.ttf) tech(color-COLRv0) otherfunc(othervalue), junk", false, ""},
+  };
+  for (const auto & r : rows) {
+    Parsed p(std::string("@font-face { src: ") + r.src + " }");
+    ASSERT_NE(p.a, nullptr) << r.src;
+    const std::string got = p.desc("src");
+    if (r.valid) {
+      EXPECT_EQ(got, r.canon) << r.src;
+    }
+    else {
+      EXPECT_EQ(got, "-") << r.src;
+    }
+  }
+}
+
+// Animations 2: a keyframe selector may be a timeline range with a percentage or a calc(); it is kept as written and has no offset in the normalized list.
+TEST(CssAtrule, KeyframeSelectorsOfTimelines) {
+  Parsed p("@keyframes k { entry 10% { color: red } calc(10%) { color: blue } 50% { color: green } exit calc(60%) { width: 1px } }");
+  ASSERT_NE(p.a, nullptr);
+  EXPECT_EQ(gtext_css_atrule_child_count(p.a), 4u);
+  EXPECT_EQ(p.css(), "@keyframes k {\n  entry 10% { color: red; }\n  calc(10%) { color: blue; }\n  50% { color: green; }\n  exit calc(60%) { width: 1px; }\n}");
+  GTEXT_CSS_Keyframes * k = nullptr;
+  ASSERT_EQ(gtext_css_keyframes_from_atrule(p.a, &k), GTEXT_CSS_OK);
+  EXPECT_EQ(k->block_count, 4u);
+  EXPECT_EQ(k->frame_count, 1u);
+  gtext_css_keyframes_free(k);
+  Parsed e("@keyframes \"\" { }");
+  EXPECT_FALSE(e.res.valid);
+  Parsed bad("@keyframes k { entry { color: red } 101% { color: red } cover 1% 2% { color: red } }");
+  EXPECT_EQ(gtext_css_atrule_child_count(bad.a), 0u);
+}

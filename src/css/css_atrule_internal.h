@@ -77,6 +77,7 @@ struct GTEXT_CSS_Atrule {
   bool defines_nothing;
   double * offsets;                  ///< A keyframe block: its offsets (0 to 1), in order, duplicates kept.
   size_t noffsets;
+  char ** seltext;                   ///< Per offset: the selector as written when its offset needs a timeline or `sibling-index()` (the offset is then -1), else NULL.
   GTEXT_CSS_Page_Selector * sels;    ///< A page: its selectors.
   size_t nsels;
   size_t max_children;

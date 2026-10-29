@@ -1,0 +1,1 @@
+k@layer b { @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @keyframes none { from { color: red } } @color-profile device-cmyk { src: url(b.icc) } @font-palette-values --y { base-palette: dark } }

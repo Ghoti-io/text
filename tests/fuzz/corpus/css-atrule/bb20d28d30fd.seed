@@ -1,0 +1,1 @@
+ða { color: red; @font-face { font-family: N; src: url(n) } } @keyframes none { from { color: red } } @page :bogus { margin: 1px } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 }

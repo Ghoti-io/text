@@ -1,0 +1,1 @@
+¤ø@counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } @font-face { font-family: D } @counter-style z { system: extends x; suffix: ")" } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 }

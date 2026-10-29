@@ -1,1 +1,0 @@
-สี@color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @top-left { content: "x" }

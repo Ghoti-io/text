@@ -1,1 +1,0 @@
-Î,@media all { @layer a.b { @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @layer { @font-face { font-family: L; src: url(l) } } } }

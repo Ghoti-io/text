@@ -1,0 +1,1 @@
+î@property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } }

@@ -93,6 +93,9 @@ GTEXT_CSS_Status gtext_css_keyframes_from_atrule(const GTEXT_CSS_Atrule * rule, 
   for (size_t i = 0; i < rule->nkids; i++) {
     const GTEXT_CSS_Atrule * b = rule->kids[i];
     for (size_t j = 0; j < b->noffsets; j++) {
+      if (b->offsets[j] < 0) {
+        continue; /* a selector that needs a timeline or sibling-index() has no offset to sort by */
+      }
       slots[n].offset = b->offsets[j];
       slots[n].order = n;
       slots[n].block = b;

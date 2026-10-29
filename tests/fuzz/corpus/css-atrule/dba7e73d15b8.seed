@@ -1,0 +1,1 @@
+S·@media all { @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format

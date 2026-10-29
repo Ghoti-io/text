@@ -1,0 +1,1 @@
+T´@layer  { @view-transition { navigation: auto; types: a b } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } }

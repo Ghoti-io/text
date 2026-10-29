@@ -1,1 +1,0 @@
-£²@counter-style p { system: extends q } @counter-style q { system: extends p } @font-palette-values --y { base-palette: dark } @position-try --a { top: anchor(bottom); color: red; left: 1px } @unknown-rule foo { bar }

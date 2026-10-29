@@ -1,0 +1,1 @@
+@font-face { font-family: C; ascent-override: 90% 80%; size-adjust: 110%; font-width: 75% 100%; font-size: 10 20; src: url(c) } @unknown-rule foo { bar } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @layer { @font-face { font-family: L; src: url(l) } }

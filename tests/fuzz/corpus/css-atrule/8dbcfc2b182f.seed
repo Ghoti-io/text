@@ -1,0 +1,1 @@
+-õ@keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @counter-style bad { system: alphabetic; symbols: a } a { color: red; @font-face { font-family: N; src: url(n) } }

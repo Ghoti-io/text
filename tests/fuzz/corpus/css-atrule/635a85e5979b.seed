@@ -1,0 +1,1 @@
+–x@counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } @view-transition { navigation: auto; types: a b } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) }

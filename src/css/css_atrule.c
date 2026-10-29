@@ -169,6 +169,7 @@ static void atrule_destroy(GTEXT_CSS_Atrule * a) {
   gtext_allocator_free(&al, a->names);
   gtext_allocator_free(&al, a->quoted);
   gtext_allocator_free(&al, a->offsets);
+  gtext_allocator_free(&al, a->seltext);
   gtext_allocator_free(&al, a->sels);
   css_arena_free(&a->arena);
   gtext_allocator_free(&al, a);
@@ -670,7 +671,50 @@ static bool read_descriptor(ctx * c, const char * at_name, const GTEXT_CSS_Decla
   const bool custom = d->name.length > 2 && d->name.data[0] == '-' && d->name.data[1] == '-';
   GTEXT_CSS_Descriptor_Id did = aid && !custom ? gtext_css_registry_find_descriptor(aid, d->name.data, d->name.length) : 0;
   po.at_rule = did ? at : NULL;
-  const GTEXT_CSS_Status st = gtext_css_parse_property_declaration(c->registry, d, &po, &pv);
+  GTEXT_CSS_Status st = gtext_css_parse_property_declaration(c->registry, d, &po, &pv);
+  if (st == GTEXT_CSS_OK && did && pv.outcome == GTEXT_CSS_PROP_RESULT_INVALID && css_ascii_ieq(&d->name, "src") && strcmp(at_name, "font-face") == 0) {
+    /* Fonts 4, 4.3.1 (font-face-src-parsing): "A parse error in one component of the source list does not invalidate the entire descriptor": each comma separated
+       component is judged alone, the valid ones are kept, and the descriptor is invalid only if none is. */
+    GTEXT_CSS_Declaration d2 = *d;
+    GTEXT_CSS_Component_Value * kept = gtext_allocator_malloc(&c->a->alloc, (d->value_count ? d->value_count : 1) * sizeof *kept);
+    if (!kept) {
+      gtext_css_property_value_free(&pv);
+      fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+    size_t nk = 0, i = 0;
+    while (i <= d->value_count) {
+      size_t j = i;
+      while (j < d->value_count && !is_comma(&d->value[j])) {
+        j++;
+      }
+      GTEXT_CSS_Declaration g = *d;
+      g.value = d->value + i;
+      g.value_count = j - i;
+      GTEXT_CSS_Property_Value one;
+      memset(&one, 0, sizeof one);
+      const GTEXT_CSS_Status sg = gtext_css_parse_property_declaration(c->registry, &g, &po, &one);
+      const bool good = sg == GTEXT_CSS_OK && one.outcome == GTEXT_CSS_PROP_RESULT_VALID;
+      gtext_css_property_value_free(&one);
+      if (good) {
+        if (nk) {
+          kept[nk++] = d->value[i - 1]; /* the comma before this component */
+        }
+        for (size_t k = i; k < j; k++) {
+          kept[nk++] = d->value[k];
+        }
+      }
+      i = j + 1;
+    }
+    if (nk) {
+      gtext_css_property_value_free(&pv);
+      memset(&pv, 0, sizeof pv);
+      d2.value = kept;
+      d2.value_count = nk;
+      st = gtext_css_parse_property_declaration(c->registry, &d2, &po, &pv);
+    }
+    gtext_allocator_free(&c->a->alloc, kept);
+  }
   if (st == GTEXT_CSS_E_UNSUPPORTED) {
     gtext_css_property_value_free(&pv);
     return diag(c, GTEXT_CSS_ATRULE_DIAG_INVALID_VALUE, d->span, "the library cannot judge this declaration: it is dropped");
@@ -1006,6 +1050,29 @@ static bool check_required(ctx * c) {
 /* ---- keyframe selectors -------------------------------------------------------------------------------------------------------- */
 
 /// `<keyframe-selector># = [ from | to | <percentage [0,100]> ]#`.
+static bool range_name(const GTEXT_CSS_Component_Value * v) {
+  static const char * const names[] = {"entry", "exit", "entry-crossing", "exit-crossing", "contain", "cover"};
+  if (v->kind != GTEXT_CSS_VALUE_TOKEN || v->type != GTEXT_CSS_TOKEN_IDENT) {
+    return false;
+  }
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (lower_eq(&v->value, names[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool is_calc(const GTEXT_CSS_Component_Value * v) {
+  return v->kind == GTEXT_CSS_VALUE_FUNCTION && lower_eq(&v->value, "calc");
+}
+
+static bool plain_percentage(const GTEXT_CSS_Component_Value * v) {
+  return v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_PERCENTAGE && v->number >= 0 && v->number <= 100;
+}
+
+/// <keyframe-selector> = from | to | <percentage [0,100]> | <timeline-range-name> <percentage [0,100]> (Animations 2); a `calc()` stands for a percentage. A selector whose
+/// offset depends on a timeline or on `sibling-index()` is valid and kept as written (offset -1): it is not in the normalized list.
 static bool keyframe_selectors(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n, bool * valid) {
   GTEXT_CSS_Atrule * a = c->a;
   size_t start = 0;
@@ -1015,30 +1082,34 @@ static bool keyframe_selectors(ctx * c, const GTEXT_CSS_Component_Value * p, siz
     while (end < n && !is_comma(&p[end])) {
       end++;
     }
-    const GTEXT_CSS_Component_Value * only = NULL;
+    const GTEXT_CSS_Component_Value * sig[3];
+    size_t ns = 0;
     for (size_t i = start; i < end; i++) {
       if (is_ws(&p[i])) {
         continue;
       }
-      if (only) {
+      if (ns == 3) {
         *valid = false;
         return true;
       }
-      only = &p[i];
+      sig[ns++] = &p[i];
     }
-    double off;
-    if (!only || only->kind != GTEXT_CSS_VALUE_TOKEN) {
-      *valid = false;
-      return true;
-    }
-    if (only->type == GTEXT_CSS_TOKEN_IDENT && lower_eq(&only->value, "from")) {
+    double off = -1;
+    bool deferred = false;
+    if (ns == 1 && sig[0]->kind == GTEXT_CSS_VALUE_TOKEN && sig[0]->type == GTEXT_CSS_TOKEN_IDENT && lower_eq(&sig[0]->value, "from")) {
       off = 0;
     }
-    else if (only->type == GTEXT_CSS_TOKEN_IDENT && lower_eq(&only->value, "to")) {
+    else if (ns == 1 && sig[0]->kind == GTEXT_CSS_VALUE_TOKEN && sig[0]->type == GTEXT_CSS_TOKEN_IDENT && lower_eq(&sig[0]->value, "to")) {
       off = 1;
     }
-    else if (only->type == GTEXT_CSS_TOKEN_PERCENTAGE && only->number >= 0 && only->number <= 100) {
-      off = only->number / 100.0;
+    else if (ns == 1 && plain_percentage(sig[0])) {
+      off = sig[0]->number / 100.0;
+    }
+    else if (ns == 1 && is_calc(sig[0])) {
+      deferred = true;
+    }
+    else if (ns == 2 && range_name(sig[0]) && (plain_percentage(sig[1]) || is_calc(sig[1]))) {
+      deferred = true;
     }
     else {
       *valid = false;
@@ -1052,6 +1123,36 @@ static bool keyframe_selectors(ctx * c, const GTEXT_CSS_Component_Value * p, siz
     if (!grow(&a->alloc, (void **)&a->offsets, &cap, a->noffsets + 1, sizeof *a->offsets)) {
       fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
       return false;
+    }
+    size_t cap2 = a->noffsets;
+    if (!grow(&a->alloc, (void **)&a->seltext, &cap2, a->noffsets + 1, sizeof *a->seltext)) {
+      fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+    a->seltext[a->noffsets] = NULL;
+    if (deferred) {
+      GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+      so.allocator = &a->alloc;
+      char * buf = NULL;
+      size_t bl = 0;
+      const GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(p + start, end - start, &so, &buf, &bl);
+      if (st != GTEXT_CSS_OK) {
+        fail(c, st, &a->span, NULL);
+        return false;
+      }
+      size_t s0 = 0;
+      while (s0 < bl && buf[s0] == ' ') {
+        s0++;
+      }
+      while (bl > s0 && buf[bl - 1] == ' ') {
+        bl--;
+      }
+      a->seltext[a->noffsets] = css_arena_strdup(&a->arena, buf + s0, bl - s0);
+      gtext_css_serialize_buffer_free(&so, buf);
+      if (!a->seltext[a->noffsets]) {
+        fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+        return false;
+      }
     }
     a->offsets[a->noffsets++] = off;
     if (end >= n) {
@@ -1224,7 +1325,7 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       }
     }
     prelude_ok = sig == 1 && only->kind == GTEXT_CSS_VALUE_TOKEN &&
-        ((only->type == GTEXT_CSS_TOKEN_IDENT && !lower_eq(&only->value, "none") && !wide_keyword_name(&only->value)) || only->type == GTEXT_CSS_TOKEN_STRING);
+        ((only->type == GTEXT_CSS_TOKEN_IDENT && !lower_eq(&only->value, "none") && !wide_keyword_name(&only->value)) || (only->type == GTEXT_CSS_TOKEN_STRING && only->value.length > 0)); /* the empty string names nothing: web-platform-tests keyframes-name-invalid */
     if (prelude_ok && !add_name(&cx, &only->value, only->type == GTEXT_CSS_TOKEN_STRING)) {
       prelude_ok = false;
     }
@@ -1522,6 +1623,10 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
     for (size_t i = 0; i < a->noffsets; i++) {
       if (i) {
         putz(o, ", ");
+      }
+      if (a->seltext && a->seltext[i]) {
+        putz(o, a->seltext[i]);
+        continue;
       }
       char buf[40];
       /* offsets are percentages; from and to are written 0% and 100%, as keyText is */

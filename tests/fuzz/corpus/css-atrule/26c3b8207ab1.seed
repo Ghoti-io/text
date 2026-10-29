@@ -1,1 +1,0 @@
-¿=@media all { @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @font-face { font-family: D } @media (min-width: 100px) { @keyframes m { from { color: red } } } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallba

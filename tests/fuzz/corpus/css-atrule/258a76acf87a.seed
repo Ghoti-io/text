@@ -1,0 +1,1 @@
+»x@media (min-width: 100px) { @keyframes m { from { color: red } } } @media (min-width: 100px) { @keyframes m { from { color: red } } } @counter-style z { system: extends x; suffix: ")" } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } }

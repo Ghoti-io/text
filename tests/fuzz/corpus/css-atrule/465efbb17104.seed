@@ -1,1 +1,0 @@
-·é@counter-style bad { system: alphabetic; symbols: a } @font-face { font-family: C; ascent-override: 90% 80%; size-adjust: 110%; font-width: 75% 100%; font-size: 10 20; src: url(c) } @media (min-width: 100px) { @keyframes m { from { color: red } } }

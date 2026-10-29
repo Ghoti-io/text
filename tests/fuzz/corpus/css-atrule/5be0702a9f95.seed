@@ -1,0 +1,1 @@
+m£@media all { @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a

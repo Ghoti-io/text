@@ -1,0 +1,1 @@
+5î@keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } @counter-style p { system: extends q } @counter-style q { system: extends p } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) }

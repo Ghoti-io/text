@@ -1,0 +1,1 @@
+ޥ@keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { width: 1px } 50% { color: green } } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @font-face { src: url(x) }

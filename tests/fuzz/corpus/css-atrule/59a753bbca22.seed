@@ -1,1 +1,0 @@
-¥@media all { @layer a { @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @page :bogus { margin: 1px } } }

@@ -1,0 +1,1 @@
+N@layer a.b { @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @media (min-width: 100px) { @keyframes m { from { color: red } } } }

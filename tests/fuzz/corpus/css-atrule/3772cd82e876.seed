@@ -1,0 +1,1 @@
+Õv@media all { @font-face { font-family: D } @counter-style z { system: extends x; suffix: ")" } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

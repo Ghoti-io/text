@@ -1,0 +1,1 @@
+b¢@media all { @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } }

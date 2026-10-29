@@ -1,0 +1,1 @@
+6Ê@font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { width: 1px } 50% { color: green } } @font-face { font-family: D }

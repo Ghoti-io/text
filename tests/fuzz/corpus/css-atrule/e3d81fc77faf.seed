@@ -1,1 +1,0 @@
-Æ@view-transition { navigation: auto; types: a b } @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f }

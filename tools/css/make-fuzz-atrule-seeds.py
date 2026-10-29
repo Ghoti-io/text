@@ -54,6 +54,8 @@ FRAGMENTS = [
     '@keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } }',
     '@keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } }',
     '@keyframes none { from { color: red } }',
+    '@keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { width: 1px } 50% { color: green } }',
+    '@font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) }',
     '@-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } }',
     '@page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } }',
     '@page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px }',

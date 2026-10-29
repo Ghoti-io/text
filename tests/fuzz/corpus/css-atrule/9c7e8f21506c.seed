@@ -1,0 +1,1 @@
+Q¶@color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } }

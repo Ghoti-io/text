@@ -1,0 +1,1 @@
+þ¶@media all { @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @font-face { font-family: D } @layer { @font-face { font-family: L; src: url(l) } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } }

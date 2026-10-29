@@ -1,1 +1,0 @@
-p”@property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @font-face { font-family: D } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @unknown-rule foo { bar }

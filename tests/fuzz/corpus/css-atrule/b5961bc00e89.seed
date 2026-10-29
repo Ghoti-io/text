@@ -1,1 +1,0 @@
-^Ñ@layer a { a { color: red; @font-face { font-family: N; src: url(n) } } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } }

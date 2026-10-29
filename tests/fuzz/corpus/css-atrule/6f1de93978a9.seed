@@ -1,1 +1,0 @@
-™@media all { @color-profile device-cmyk { src: url(b.icc) } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @font-face { src: url(x) } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

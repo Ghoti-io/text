@@ -1,0 +1,1 @@
+Ми@media all { @layer b { @view-transition { navigation: auto; types: a b } @counter-style z { system: extends x; suffix: ")" } } }

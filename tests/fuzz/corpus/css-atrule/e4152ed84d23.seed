@@ -1,0 +1,1 @@
+µa { color: red; @font-face { font-family: N; src: url(n) } } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } }

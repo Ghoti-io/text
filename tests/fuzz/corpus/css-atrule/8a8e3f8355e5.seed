@@ -1,0 +1,1 @@
+U½@supports (display: grid) { @font-face { font-family: S; src: url(s) } } @font-face { src: url(x) } @su

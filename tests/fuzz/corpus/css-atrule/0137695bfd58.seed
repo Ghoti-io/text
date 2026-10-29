@@ -1,1 +1,0 @@
-²à@color-profile device-cmyk { src: url(b.icc) } @view-transition { navigation: auto; types: a b } @media (min-width: 100px) { @keyframes m { from { color: red } } } @page :bogus { margin: 1px }

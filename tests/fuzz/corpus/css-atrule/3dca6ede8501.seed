@@ -1,0 +1,1 @@
+ý@media all { @layer  { @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @font-palette-values --y { base-palette: dark } @keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { width: 1px } 50% { color: green } } } }

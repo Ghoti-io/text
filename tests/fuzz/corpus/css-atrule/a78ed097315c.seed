@@ -1,1 +1,0 @@
-vU@media all { @view-transition { navigation: auto; types: a b } @position-try --a { top: anchor(bottom); color: red; l

@@ -1,1 +1,0 @@
-‹@color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @keyframes none { from { color: red } } @media (min-width: 100px) { @keyframes m { from { color: red } } }

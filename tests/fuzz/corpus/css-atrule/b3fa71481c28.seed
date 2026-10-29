@@ -1,0 +1,1 @@
+z@font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) }

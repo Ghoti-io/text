@@ -1,1 +1,0 @@
-#…@layer a.b { @color-profile device-cmyk { src: url(b.icc) } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } }

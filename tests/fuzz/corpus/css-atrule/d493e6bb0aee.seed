@@ -1,0 +1,1 @@
+N¬@layer a { @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @font-feature-values A, "B c" { font-display: swap; @styleset { nice: 12 3 } @swash { s: 1 } @styleset { nice: 9 } } }

@@ -1,0 +1,1 @@
+*õ@media all { @layer a { @page :bogus { margin: 1px } @page :bogus { margin: 1px } } }

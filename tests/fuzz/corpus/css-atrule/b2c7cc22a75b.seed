@@ -1,1 +1,0 @@
-çï@media all { @layer a { @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @view-transition { navigation: auto; types: a b } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } } }

@@ -1,1 +1,0 @@
-ÛQ@media all { @layer  { @color-profile device-cmyk { src: url(b.icc) } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @font-face { font-family: C; ascent-override: 90% 80%; size-adjust: 110%; font-width: 75% 100%; font-size: 10 20; src: url(c) } } }

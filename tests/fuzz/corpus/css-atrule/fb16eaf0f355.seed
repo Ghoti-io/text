@@ -1,0 +1,1 @@
+X^@media all { @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @keyframes none { from { color: red } } @font-face { font-family: "B c"; src: local(B); font-style: oblique 10deg 20deg; font-feature-settings: "liga" 1, "kern"; font-variation-settings: "wght" 300 } @view-transition { navigation: auto; types: a b } }

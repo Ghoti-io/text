@@ -1,0 +1,1 @@
+#…@layer a.b { @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @color-profile device-cmyk { src: url(b.icc) } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } }

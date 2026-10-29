@@ -1,0 +1,1 @@
+Y®@media all { @layer b { @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @color-profile device-cmyk { src: url(b.icc) } @font-face { src: url(x) } } }

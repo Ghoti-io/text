@@ -1,1 +1,0 @@
-æ@font-face { src: url(x) } @layer { @font-face { font-family: L; src: url(l) } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" }

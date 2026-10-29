@@ -1,0 +1,1 @@
+สี@color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @supports (display: grid) { @font-face { font-family: S; src: url(s) } }

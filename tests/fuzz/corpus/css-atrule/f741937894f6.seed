@@ -1,1 +1,0 @@
-àu@counter-style z { system: extends x; suffix: ")" } @page :bogus { margin: 1px } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } }
