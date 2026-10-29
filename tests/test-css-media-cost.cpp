@@ -25,6 +25,7 @@
  * cycle, many queries, a long `and` - and never with its square.
  */
 
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -33,6 +34,13 @@
 #include <ghoti.io/text/css.h>
 
 namespace {
+
+/// GTEXT_COST_SCALE multiplies the sizes of the shapes (default 1): tools/css/cost-instructions.py runs the program under callgrind at two scales and compares the instructions.
+size_t cost_scale() {
+  const char * s = std::getenv("GTEXT_COST_SCALE");
+  const long v = s ? std::atol(s) : 1;
+  return v > 0 ? static_cast<size_t>(v) : 1;
+}
 
 struct Cost {
   size_t visits = 0, defs = 0, nodes = 0;
@@ -72,6 +80,7 @@ Cost run(const std::string & q, const std::string * defs_text = nullptr, size_t 
 }
 
 template <typename F> void linear(F shape, size_t n) {
+  n *= cost_scale();
   Cost a = run(shape(n)), b = run(shape(4 * n)), c = run(shape(16 * n));
   EXPECT_LE(b.visits, 5 * a.visits + 16) << "n to 4n";
   EXPECT_LE(c.visits, 5 * b.visits + 16) << "4n to 16n";

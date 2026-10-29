@@ -26,6 +26,7 @@
  */
 
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <string>
 
@@ -40,6 +41,13 @@ using cas::R;
 
 namespace {
 
+/// GTEXT_COST_SCALE multiplies the sizes of the shapes (default 1): tools/css/cost-instructions.py runs the program under callgrind at two scales and compares the instructions.
+size_t cost_scale() {
+  const char * s = std::getenv("GTEXT_COST_SCALE");
+  const long v = s ? std::atol(s) : 1;
+  return v > 0 ? static_cast<size_t>(v) : 1;
+}
+
 double seconds(const std::function<void()> & fn) {
   double best = 1e9;
   for (int i = 0; i < 3; i++) {
@@ -52,6 +60,7 @@ double seconds(const std::function<void()> & fn) {
 
 // Time `make(n)` at n and 4n; linear work grows by about 4, quadratic by 16.
 void expect_linear(const char * what, size_t n, const std::function<std::function<void()>(size_t)> & make) {
+  n *= cost_scale();
   const double small = seconds(make(n));
   const double big = seconds(make(4 * n));
   EXPECT_LT(big, std::max(small, 0.002) * 10.0) << what << ": " << small << " s at " << n << ", " << big << " s at " << 4 * n;
