@@ -199,7 +199,8 @@ void pipeline(const std::string & input, FaultAllocator & fa) {
     if (res.valid && a) {
       typed(a, input);
       const std::string once = text_of(a, &fa.alloc);
-      if (once != "<oom>" && !custom_block(a)) {
+      if (once != "<oom>" && !custom_block(a) && !r->unclosed) {
+        /* a rule the end of the input closed holds parse errors (an open string or url read to the end): its text is the repair, and the fixed point is asked of closed rules */
         css_test::Parsed again;
         again.status = gtext_css_parse_stylesheet(once.data(), once.size(), &po, &again.tree, &again.result);
         if (again.status == GTEXT_CSS_OK && again.tree && again.tree->rule_count >= 1) {
