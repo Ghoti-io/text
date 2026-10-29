@@ -32,8 +32,20 @@ COLORS = ["red", "blue", "green", "orange", "purple"]
 BACKGROUNDS = ["pink", "teal", "gold", "navy"]
 PX = ["1px", "2px", "3px", "5px", "8px"]
 PROPS = ["color", "background-color", "margin-top", "margin-left", "padding-left"]
-MEDIA = ["all", "screen", "print", "(min-width: 1px)", "(max-width: 10px)"]
-SUPPORTS = ["(display: block)", "(foo: bar)", "(color: red)"]
+MEDIA = ["all", "screen", "print", "(min-width: 1px)", "(max-width: 10px)", "(min-width: 1280px)", "(width > 1280px)", "(width >= 1280px)", "(orientation: landscape)",
+         "(min-aspect-ratio: 16/10)", "not print", "screen and (min-width: 1000px)", "(min-width: 1281px) or (max-height: 800px)", "(min-resolution: 1dppx)", "(foo: bar)",
+         "(min-width: foo)", "not (min-width: foo)", "(400px < width < 2000px)"]
+SUPPORTS = ["(display: block)", "(foo: bar)", "(color: red)", "(display: grid) and (color: red)", "not (foo: bar)", "(display: flex) or (foo: bar)", "selector(:has(a))",
+            "selector(:foo)", "(--x: 1)", "not ((foo: bar) or (color: nonesuch))", "(container-type: size)", "at-rule(@media)"]
+# @container: the containers of a document are block elements with an explicit size, so that the browsers lay out the box the library is told about (css_sheet_ours.cpp reads
+# data-cw and data-ch)
+CONTAINER_WIDTHS = [100, 250, 300, 500, 800]
+CONTAINER_HEIGHTS = [50, 100, 300]
+CONTAINER_NAMES = ["", "n0", "n1"]
+CONTAINER_CONDITIONS = ["(min-width: %dpx)", "(width > %dpx)", "(max-width: %dpx)", "(width <= %dpx)", "(min-height: %dpx)", "(inline-size > %dpx)", "(block-size < %dpx)",
+                        "(width < %dpx) or (height > %dpx)", "not (min-width: %dpx)", "((min-width: %dpx) and (max-height: 400px))", "(%dpx < width < 900px)"]
+CONTAINER_THRESHOLDS = [50, 100, 200, 299, 300, 301, 499, 500, 600]
+CONTAINER_FIXED = ["(orientation: landscape)", "(orientation: portrait)", "(aspect-ratio > 1)", "(aspect-ratio = 1 / 1)", "(foo)", "(min-width: foo)", "style(--k: 1)", "not (width)"]
 
 
 class Gen:
@@ -154,6 +166,14 @@ class Gen:
             if r.randrange(2):
                 return "@scope (%s) to (%s) { %s }" % (self.compound(1), self.compound(1), inner)
             return "@scope (%s) { %s }" % (start if len(start) < 40 else ".c0", inner)
+        if k < 83 and not host_rules:
+            name = r.choice(CONTAINER_NAMES)
+            if r.randrange(5) == 0:
+                cond = r.choice(CONTAINER_FIXED)
+            else:
+                cond = r.choice(CONTAINER_CONDITIONS)
+                cond = cond.replace("%d", str(r.choice(CONTAINER_THRESHOLDS)))
+            return "@container %s%s { %s }" % (name + " " if name else "", cond, inner)
         if k < 90:
             return "@media %s { %s }" % (r.choice(MEDIA), inner)
         return "@supports %s { %s }" % (r.choice(SUPPORTS), inner)
@@ -203,6 +223,13 @@ class Gen:
             e = {"id": self.new_id(), "tag": r.choice(TAGS), "classes": r.sample(CLASSES, r.randrange(0, 3))}
             self.elements.append(e)
             attrs = self.element_attrs(e["tag"], e)
+            if e["tag"] in ("div", "section", "article") and not slots and r.randrange(4) == 0:
+                # a query container with an explicit content box: its type, one or two names, and the size the browsers lay out and this library is told
+                w, h = r.choice(CONTAINER_WIDTHS), r.choice(CONTAINER_HEIGHTS)
+                kind = r.choice(["size", "inline-size", "size", "inline-size", "normal"])
+                names = " ".join(r.sample(["n0", "n1"], r.choice([0, 1, 1, 2])))
+                css = "container-type: %s; %swidth: %dpx; height: %dpx; --k: %d" % (kind, "container-name: %s; " % names if names else "", w, h, r.randrange(2))
+                attrs += ' style="%s" data-cw="%d" data-ch="%d"' % (css, w, h)
             body = ""
             if depth < 3 and r.randrange(10) < 5:
                 body = self.make_children(parent_ids + [e["id"]], depth + 1)

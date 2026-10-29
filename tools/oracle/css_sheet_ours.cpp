@@ -350,6 +350,28 @@ struct Answer {
   GTEXT_CSS_Computed_Style * style = nullptr;
 };
 
+/// The query containers: an element is a container by its computed style, which is read from the map of the styles computed so far (an ancestor is computed before the elements
+/// below it), and its content box is the size the generator wrote in `data-cw` and `data-ch` beside the `width` and `height` the browsers lay out.
+std::map<Node *, Answer> * g_computed = nullptr;
+
+const GTEXT_CSS_Computed_Style * cb_container_style(void *, GTEXT_CSS_Element_Handle h) {
+  if (!g_computed) {
+    return nullptr;
+  }
+  auto it = g_computed->find(as_node(h));
+  return it != g_computed->end() && it->second.status == GTEXT_CSS_OK ? it->second.style : nullptr;
+}
+
+bool cb_container_box(void *, GTEXT_CSS_Element_Handle h, GTEXT_CSS_Container_Metrics * out) {
+  Node * n = as_node(h);
+  if (!has_attr(n, "data-cw") || !has_attr(n, "data-ch")) {
+    return false;
+  }
+  out->width = std::atof(attr_of(n, "data-cw").c_str());
+  out->height = std::atof(attr_of(n, "data-ch").c_str());
+  return true;
+}
+
 struct Sheets {
   std::vector<GTEXT_CSS_Sheet *> sheets;
   GTEXT_CSS_Rule_Index * index = nullptr;
@@ -539,6 +561,18 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   GTEXT_CSS_Rule_Index_Options io = gtext_css_rule_index_options_default();
   io.html_document = true;
   io.quirks = gtext_markup_document_mode(w.doc) == GTEXT_MARKUP_MODE_QUIRKS;
+  GTEXT_CSS_Environment env = gtext_css_environment_default();
+  GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
+  co.elements = &w.iface;
+  co.max_element_depth = 100000;
+  GTEXT_CSS_Compute_Context * cctx = nullptr;
+  GTEXT_CSS_Compute_Result cr;
+  if (gtext_css_compute_context_new(reg, &env, &co, &cctx, &cr) != GTEXT_CSS_OK) {
+    std::fprintf(stderr, "css-sheet-ours: no context: %s\n", cr.name);
+    std::exit(2);
+  }
+  std::map<Node *, Answer> computed;
+  g_computed = &computed;
   GTEXT_CSS_Conditions_Options cndo = gtext_css_conditions_options_default();
   cndo.element_interface = &w.iface;
   if (gtext_css_conditions_new(reg, &cndo, &g_conditions) != GTEXT_CSS_OK) {
@@ -609,17 +643,6 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   }
 
   // the styles
-  GTEXT_CSS_Environment env = gtext_css_environment_default();
-  GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
-  co.elements = &w.iface;
-  co.max_element_depth = 100000;
-  GTEXT_CSS_Compute_Context * cctx = nullptr;
-  GTEXT_CSS_Compute_Result cr;
-  if (gtext_css_compute_context_new(reg, &env, &co, &cctx, &cr) != GTEXT_CSS_OK) {
-    std::fprintf(stderr, "css-sheet-ours: no context: %s\n", cr.name);
-    std::exit(2);
-  }
-  std::map<Node *, Answer> computed;
   std::vector<Node *> chain;
   auto compute = [&](Node * e) -> Answer & {
     auto it = computed.find(e);
@@ -684,6 +707,7 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   for (auto & kv : computed) {
     gtext_css_computed_free(kv.second.style);
   }
+  g_computed = nullptr;
   gtext_css_compute_context_free(cctx);
   gtext_css_selector_match_context_free(mctx);
   gtext_css_markup_adapter_free(w.adapter);
