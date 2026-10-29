@@ -54,9 +54,11 @@ def main():
     for v in vectors:
         if v['kind'] == 'serialize':
             asks.append(('serialize', v['query']))
+        elif v['kind'] == 'supports':
+            asks.append(('supports', v['query']))
         else:
             for b in v['blocks']:
-                asks.append(('match', b[0]))
+                asks.append(('supportscond' if v.get('at') == 'supports' else 'match', b[0]))
     data = ''.join(escape(k) + '\t' + escape(q) + '\n' for k, q in asks)
     proc = subprocess.run([runner], input=data.encode('utf-8', 'surrogateescape'), stdout=subprocess.PIPE, check=False)
     if proc.returncode != 0:
@@ -74,6 +76,10 @@ def main():
             got = unescape(a.split(':', 1)[1]) if ':' in a else a
             if not (a.startswith('ser:') and got == v['expected']):
                 failures['%s#%d' % (v['file'], v['line']) + '\t' + v['query']] = (v, a)
+        elif v['kind'] == 'supports':
+            a = next(it)
+            if a != ('match:1' if v['expected'] == 'true' else 'match:0'):
+                failures['%s#%d' % (v['file'], v['line']) + '\t' + v['query'].replace('\x01', ' / ')] = (v, a)
         else:
             final = v['base']
             errs = []

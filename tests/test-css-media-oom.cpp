@@ -156,3 +156,44 @@ TEST(CssMediaOom, DefinitionsTheConditionsObjectAndAnEvaluationFailCleanly) {
   }
   EXPECT_TRUE(answered);
 }
+
+TEST(CssMediaOom, SupportsParsingAndEvaluationFailCleanly) {
+  const char * q = "(display: grid) and ((foo: bar) or selector(:is(a, b)) or font-tech(variations)) and at-rule(@media) and env(x)";
+  bool answered = false;
+  for (size_t n = 1; n < 5000 && !answered; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Registry * reg = nullptr;
+    GTEXT_CSS_Conditions * c = nullptr;
+    GTEXT_CSS_Supports_Condition * s = nullptr;
+    GTEXT_CSS_Status st = gtext_css_registry_new(nullptr, &reg);
+    ASSERT_EQ(st, GTEXT_CSS_OK);
+    GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+    co.allocator = &fa.alloc;
+    ASSERT_EQ(gtext_css_conditions_new(reg, &co, &c), GTEXT_CSS_OK);
+    GTEXT_CSS_Media_Options o = gtext_css_media_options_default();
+    o.allocator = &fa.alloc;
+    GTEXT_CSS_Media_Result r;
+    fa.arm(n);
+    st = gtext_css_supports_parse(q, std::strlen(q), false, &o, &s, &r);
+    GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_css_conditions_evaluate_supports(c, s, nullptr, &t);
+    }
+    const bool failed = fa.failed;
+    fa.disarm();
+    if (st == GTEXT_CSS_OK) {
+      EXPECT_FALSE(failed) << "at " << n;
+      answered = true;
+    } else {
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << "at " << n;
+    }
+    gtext_css_media_list_free(s);
+    gtext_css_media_result_free(&r);
+    gtext_css_conditions_free(c);
+    gtext_css_registry_free(reg);
+    /* the registry has its own allocator: only what this allocator made must be gone */
+    EXPECT_TRUE(fa.live.empty()) << "at " << n << ": " << fa.live.size() << " blocks leaked";
+    EXPECT_EQ(fa.bad_frees, 0u);
+  }
+  EXPECT_TRUE(answered);
+}

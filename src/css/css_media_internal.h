@@ -37,6 +37,7 @@
 #include <ghoti.io/cutil/atomic.h>
 #include <ghoti.io/text/css/css_math.h>
 #include <ghoti.io/text/css/css_media.h>
+#include <ghoti.io/text/css/css_selector.h>
 #include <ghoti.io/text/macros.h>
 
 #include "css_internal.h"
@@ -56,7 +57,14 @@ typedef enum {
   MQN_PAREN,     ///< `( <media-condition> )`: kid 0.
   MQN_FEATURE,   ///< `( <media-feature> )`.
   MQN_ENCLOSED,  ///< `<general-enclosed>`: unknown.
-  MQN_CUSTOM     ///< `(--name)`: a reference to a `@custom-media`.
+  MQN_CUSTOM,    ///< `(--name)`: a reference to a `@custom-media`.
+  MQN_DECL,      ///< @supports `(property: value)`: `text` the property, `value` the value text, flag MQF_IMPORTANT.
+  MQN_SELECTOR,  ///< `selector(...)`: `sel` the selector (NULL when it is not one: false).
+  MQN_FONT_TECH, ///< `font-tech(x)`: `bits`.
+  MQN_FONT_FORMAT, ///< `font-format(x)`: `bits` (0: a format nobody knows, which is false).
+  MQN_AT_RULE,   ///< `at-rule(@x)`: `text` the name.
+  MQN_NAMED,     ///< `named-feature(x)`: `text`.
+  MQN_ENV        ///< `env(x)`: `text`.
 } mq_node_kind;
 
 /// Flags of a query node.
@@ -64,6 +72,9 @@ typedef enum {
 #define MQF_ONLY 0x2u     ///< `only` before the type.
 #define MQF_HAS_TYPE 0x4u ///< A media type was written.
 #define MQF_REPLACED 0x8u ///< Invalid: replaced by `not all` (written as a negated `all`).
+#define MQF_IMPORTANT 0x10u ///< A supports declaration written with `!important`.
+#define MQF_FALSE 0x40u ///< An ENCLOSED of a supports condition: false and not unknown (Conditional 3: "Removed the 'unknown' value ... defining unrecognized syntaxes as 'false'").
+#define MQF_SPEC_TEXT 0x20u ///< A supports leaf whose `text` is the whole serialization (a function).
 
 typedef enum { MQT_ID_ALL = 0, MQT_ID_SCREEN, MQT_ID_PRINT, MQT_ID_DEPRECATED, MQT_ID_UNKNOWN } mq_type_id;
 typedef enum { MQFORM_PLAIN = 0, MQFORM_BOOLEAN, MQFORM_RANGE } mq_form;
@@ -108,6 +119,8 @@ typedef struct {
   const char * value;     ///< ... and its value as CSS text (NULL for the boolean form).
   size_t value_length;
   GTEXT_CSS_Span span;
+  GTEXT_CSS_Selector_List * sel; ///< SELECTOR: owned by the list.
+  uint32_t bits;          ///< FONT_TECH, FONT_FORMAT.
   const GTEXT_CSS_Component_Value * src; ///< ENCLOSED while parsing: the block or function it stands for (not valid after the parse).
 } mq_node;
 

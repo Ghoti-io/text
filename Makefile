@@ -1178,6 +1178,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_registry.c \
 	src/css/css_rule_index.c \
 	src/css/css_sheet.c \
+	src/css/css_supports.c \
 	src/css/css_revert.c \
 	src/css/css_selector_parse.c \
 	src/css/css_selector_serialize.c \
@@ -2482,7 +2483,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9300 CSS_PROPERTY_MAX_DEFECTS=483
 # listed (tools/conformance/CSS_COMPUTED_EXCEPTIONS with a sentence of the served text, CSS_COMPUTED_DEFECTS with an owner under a ceiling that only goes down), every page that is not
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4530 CSS_COMPUTED_MAX_DEFECTS=797
-CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=100
+CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)

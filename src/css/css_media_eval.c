@@ -822,11 +822,28 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
       break;
     }
     case MQN_ENCLOSED: {
-      ret = GTEXT_CSS_TRI_UNKNOWN;
-      if (n->name && env->extension_feature) {
+      ret = (n->flags & MQF_FALSE) ? GTEXT_CSS_TRI_FALSE : GTEXT_CSS_TRI_UNKNOWN;
+      if (!(n->flags & MQF_FALSE) && n->name && env->extension_feature) {
         GTEXT_CSS_String nm = {n->name, n->name_length};
         GTEXT_CSS_String vl = {n->value, n->value_length};
         ret = env->extension_feature(env->user, &nm, n->value ? &vl : NULL);
+      }
+      sp--;
+      break;
+    }
+    case MQN_DECL:
+    case MQN_SELECTOR:
+    case MQN_FONT_TECH:
+    case MQN_FONT_FORMAT:
+    case MQN_AT_RULE:
+    case MQN_NAMED:
+    case MQN_ENV: {
+      const char * detail = NULL;
+      ret = css_supports_eval_leaf(c, n, &status, &detail);
+      if (status != GTEXT_CSS_OK) {
+        call->detail = detail;
+        call->where = n->span;
+        goto done;
       }
       sp--;
       break;

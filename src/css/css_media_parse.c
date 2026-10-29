@@ -201,6 +201,8 @@ typedef struct {
   size_t nops, opcap;
   size_t replaced;
   size_t max_depth_seen;
+  bool supports;   ///< Parsing a <supports-condition> and not a media query.
+  bool bare_ok;    ///< ... and a declaration without parentheses is accepted.
 } parser;
 
 static void set_status(parser * P, GTEXT_CSS_Status st, GTEXT_CSS_Span span) {
@@ -322,9 +324,20 @@ static bool set_kids(parser * P, uint32_t n, const uint32_t * kids, size_t count
   return true;
 }
 
+/// Drop the nodes from `from` on, letting go of what they own.
+static void drop_nodes(struct GTEXT_CSS_Media_List_Internal * in, size_t from) {
+  for (size_t i = from; i < in->node_count; i++) {
+    if (in->nodes[i].kind == MQN_SELECTOR) {
+      gtext_css_selector_list_free(in->nodes[i].sel);
+      in->nodes[i].sel = NULL;
+    }
+  }
+  in->node_count = from;
+}
+
 static void rollback(parser * P, const frame * f) {
   struct GTEXT_CSS_Media_List_Internal * in = P->in;
-  in->node_count = f->nmark;
+  drop_nodes(in, f->nmark);
   in->kid_count = f->kmark;
   in->value_count = f->vmark;
   while (in->math_count > f->mmark) {
@@ -605,6 +618,7 @@ static uint32_t make_enclosed(parser * P, const GTEXT_CSS_Component_Value * src)
   uint32_t n = new_node(P, MQN_ENCLOSED, src->span);
   if (n != MQ_NONE) {
     P->in->nodes[n].src = src;
+    P->in->nodes[n].flags = P->supports ? MQF_FALSE : 0;
   }
   return n;
 }
@@ -656,6 +670,9 @@ static bool name_of(const GTEXT_CSS_Component_Value * t, int * row, mq_prefix * 
 
 /// Parse the contents [v, v+n) of a parenthesized block as `<media-feature>`; on FEAT_OK `*out` is the FEATURE or CUSTOM node.
 static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * block, uint32_t * out) {
+  if (P->supports) {
+    return FEAT_SOFT; /* a supports condition has no media features: a declaration is read before this */
+  }
   const GTEXT_CSS_Component_Value * v = block->children;
   size_t n = block->child_count;
   size_t s = skip_ws(v, n, 0);
@@ -865,6 +882,239 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
   return FEAT_OK;
 }
 
+/* ---- @supports leaves ----------------------------------------------------- */
+
+static bool is_colon(const GTEXT_CSS_Component_Value * v) {
+  return v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_COLON;
+}
+
+/// Whether tokens [v, v+n) read `ident :`.
+static bool declaration_shaped(const GTEXT_CSS_Component_Value * v, size_t n) {
+  size_t s = skip_ws(v, n, 0);
+  if (s >= n || !is_ident(&v[s]) || is_ident_lit(&v[s], "not")) {
+    return false;
+  }
+  size_t c = skip_ws(v, n, s + 1);
+  return c < n && is_colon(&v[c]);
+}
+
+/// A copy of `len` bytes in the list's arena, or NULL.
+static char * arena_copy(parser * P, const char * s, size_t len) {
+  char * c = css_arena_strdup(&P->in->arena, s, len);
+  if (!c) {
+    set_status(P, GTEXT_CSS_E_OOM, (GTEXT_CSS_Span){0});
+  }
+  return c;
+}
+
+/// Serialize [v, v+n) (trimmed of white space) into the arena; *len receives the length.
+static char * serialize_trimmed(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, size_t * len) {
+  size_t s = skip_ws(v, n, 0);
+  size_t e = trim_end(v, s, n);
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &P->alloc;
+  char * buf = NULL;
+  size_t bl = 0;
+  GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(v + s, e - s, &so, &buf, &bl);
+  if (st != GTEXT_CSS_OK) {
+    set_status(P, st, (GTEXT_CSS_Span){0});
+    return NULL;
+  }
+  char * c = arena_copy(P, buf, bl);
+  gtext_css_serialize_buffer_free(&so, buf);
+  *len = bl;
+  return c;
+}
+
+/// `(property: value [!important])`.
+static uint32_t make_decl(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span span) {
+  size_t s = skip_ws(v, n, 0);
+  size_t e = trim_end(v, s, n);
+  size_t c = skip_ws(v, e, s + 1);
+  size_t vs = skip_ws(v, e, c + 1);
+  bool important = false;
+  /* A trailing `! important` is accepted and ignored (Conditional 3: the declaration is parsed as the cascade parses it). */
+  size_t ve = e;
+  if (ve > vs && is_ident_lit(&v[ve - 1], "important")) {
+    size_t b = ve - 1;
+    while (b > vs && is_ws(&v[b - 1])) {
+      b--;
+    }
+    if (b > vs && is_delim(&v[b - 1], '!')) {
+      important = true;
+      ve = trim_end(v, vs, b - 1);
+    }
+  }
+  uint32_t nd = new_node(P, MQN_DECL, span);
+  if (nd == MQ_NONE) {
+    return MQ_NONE;
+  }
+  char * name = arena_copy(P, v[s].value.data, v[s].value.length);
+  size_t vl = 0;
+  char * val = serialize_trimmed(P, v + vs, ve > vs ? ve - vs : 0, &vl);
+  if (!name || !val) {
+    return MQ_NONE;
+  }
+  mq_node * node = &P->in->nodes[nd];
+  node->text = name;
+  node->text_length = v[s].value.length;
+  node->value = val;
+  node->value_length = vl;
+  node->flags = important ? MQF_IMPORTANT : 0;
+  return nd;
+}
+
+static const char * const tech_names[] = {"features-opentype", "features-aat", "features-graphite", "color-colrv0", "color-colrv1", "color-svg", "color-sbix", "color-cbdt",
+    "variations", "palettes", "incremental"};
+static const char * const format_names[] = {"collection", "embedded-opentype", "opentype", "svg", "truetype", "woff", "woff2"};
+
+static int lookup_name(const char * const * names, size_t count, const GTEXT_CSS_String * w) {
+  for (size_t i = 0; i < count; i++) {
+    if (ieq(w->data, w->length, names[i])) {
+      return (int)i;
+    }
+  }
+  return -1;
+}
+
+/// A function of a supports condition. FEAT_SOFT: <general-enclosed>.
+static feat_result parse_supports_function(parser * P, const GTEXT_CSS_Component_Value * fn, uint32_t * out) {
+  const GTEXT_CSS_Component_Value * k = fn->children;
+  size_t kn = fn->child_count;
+  size_t s = skip_ws(k, kn, 0);
+  size_t e = trim_end(k, s, kn);
+  const char * nm = fn->value.data;
+  size_t nl = fn->value.length;
+  mq_node_kind kind;
+  uint32_t bits = 0;
+  GTEXT_CSS_Selector_List * sel = NULL;
+  const char * text = NULL;
+  size_t text_len = 0;
+  if (ieq(nm, nl, "selector")) {
+    kind = MQN_SELECTOR;
+    GTEXT_CSS_Selector_Options so = gtext_css_selector_options_default();
+    so.allocator = &P->alloc;
+    GTEXT_CSS_Selector_Result sr;
+    GTEXT_CSS_Status st = gtext_css_selector_parse_values(k + s, e - s, &so, &sel, &sr);
+    gtext_css_selector_result_free(&sr);
+    if (st != GTEXT_CSS_OK) {
+      set_status(P, st, fn->span);
+      return FEAT_INVALID;
+    }
+    if (sel && (sel->count != 1 || sel->complex[0].relative)) {
+      gtext_css_selector_list_free(sel);
+      sel = NULL;
+    }
+  } else if (ieq(nm, nl, "font-tech") || ieq(nm, nl, "font-format")) {
+    bool tech = ieq(nm, nl, "font-tech");
+    kind = tech ? MQN_FONT_TECH : MQN_FONT_FORMAT;
+    if (e - s != 1) {
+      return FEAT_SOFT;
+    }
+    const GTEXT_CSS_Component_Value * a = &k[s];
+    if (a->kind != GTEXT_CSS_VALUE_TOKEN) {
+      return FEAT_SOFT;
+    }
+    if (a->type == GTEXT_CSS_TOKEN_IDENT) {
+      int i = tech ? lookup_name(tech_names, 11, &a->value) : lookup_name(format_names, 7, &a->value);
+      if (i < 0) {
+        return FEAT_SOFT; /* font-tech(bogus): <general-enclosed> */
+      }
+      bits = (uint32_t)1 << i;
+    } else if (!tech && a->type == GTEXT_CSS_TOKEN_STRING) {
+      /* A string is a format by its MIME type; this library knows none, so it is a valid feature that is false (web-platform-tests: font-format('opentype') is false). */
+      bits = 0;
+    } else {
+      return FEAT_SOFT;
+    }
+  } else if (ieq(nm, nl, "at-rule")) {
+    kind = MQN_AT_RULE;
+    if (e - s != 1 || k[s].kind != GTEXT_CSS_VALUE_TOKEN || k[s].type != GTEXT_CSS_TOKEN_AT_KEYWORD) {
+      return FEAT_SOFT;
+    }
+    char * c = arena_copy(P, k[s].value.data, k[s].value.length);
+    if (!c) {
+      return FEAT_INVALID;
+    }
+    for (size_t i = 0; i < k[s].value.length; i++) {
+      c[i] = (char)css_mq_lower((unsigned char)c[i]);
+    }
+    text = c;
+    text_len = k[s].value.length;
+  } else if (ieq(nm, nl, "named-feature") || ieq(nm, nl, "env")) {
+    kind = ieq(nm, nl, "env") ? MQN_ENV : MQN_NAMED;
+    if (e - s != 1 || !is_ident(&k[s])) {
+      return FEAT_SOFT;
+    }
+    text = arena_copy(P, k[s].value.data, k[s].value.length);
+    if (!text) {
+      return FEAT_INVALID;
+    }
+    text_len = k[s].value.length;
+  } else {
+    return FEAT_SOFT;
+  }
+  uint32_t nd = new_node(P, kind, fn->span);
+  if (nd == MQ_NONE) {
+    gtext_css_selector_list_free(sel);
+    return FEAT_INVALID;
+  }
+  mq_node * node = &P->in->nodes[nd];
+  node->sel = sel;
+  node->bits = bits;
+  node->text = text;
+  node->text_length = text_len;
+  /* The serialization of a function leaf: name(arguments). */
+  size_t al = 0;
+  char * args = NULL;
+  if (kind == MQN_SELECTOR && sel) {
+    char * sb = NULL;
+    size_t sl = 0;
+    GTEXT_CSS_Status st = gtext_css_selector_serialize_buffer(sel, &P->alloc, &sb, &sl);
+    if (st != GTEXT_CSS_OK) {
+      set_status(P, st, fn->span);
+      return FEAT_INVALID;
+    }
+    args = arena_copy(P, sb, sl);
+    gtext_css_selector_buffer_free(&P->alloc, sb);
+    al = sl;
+  } else if (kind == MQN_AT_RULE) {
+    args = arena_copy(P, "@", 1);
+    char * full = args ? css_arena_alloc(&P->in->arena, text_len + 2) : NULL;
+    if (!full) {
+      set_status(P, GTEXT_CSS_E_OOM, fn->span);
+      return FEAT_INVALID;
+    }
+    full[0] = '@';
+    memcpy(full + 1, text, text_len);
+    full[text_len + 1] = 0;
+    args = full;
+    al = text_len + 1;
+  } else {
+    args = serialize_trimmed(P, k + s, e - s, &al);
+  }
+  if (!args) {
+    return FEAT_INVALID;
+  }
+  char * full = css_arena_alloc(&P->in->arena, nl + al + 3);
+  if (!full) {
+    set_status(P, GTEXT_CSS_E_OOM, fn->span);
+    return FEAT_INVALID;
+  }
+  for (size_t i = 0; i < nl; i++) {
+    full[i] = (char)css_mq_lower((unsigned char)nm[i]);
+  }
+  full[nl] = '(';
+  memcpy(full + nl + 1, args, al);
+  full[nl + 1 + al] = ')';
+  full[nl + al + 2] = 0;
+  node->value = full; /* the serialization */
+  node->value_length = nl + al + 2;
+  node->flags = MQF_SPEC_TEXT;
+  *out = nd;
+  return FEAT_OK;
+}
+
 /* ---- the condition ------------------------------------------------------- */
 
 static bool push_frame(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, const GTEXT_CSS_Component_Value * owner, bool allow_or) {
@@ -941,6 +1191,14 @@ static bool parse_condition(parser * P, const GTEXT_CSS_Component_Value * v, siz
           continue;
         } else if (is_paren_block(t)) {
           f->pos++;
+          if (P->supports && declaration_shaped(t->children, t->child_count)) {
+            uint32_t dn = make_decl(P, t->children, t->child_count, t->span);
+            if (dn == MQ_NONE || !push_op(P, dn)) {
+              break;
+            }
+            f->want_operand = false;
+            continue;
+          }
           /* Decide the branch by the first token of the contents. */
           size_t cs = skip_ws(t->children, t->child_count, 0);
           bool cond_first = cs < t->child_count && (is_ident_lit(&t->children[cs], "not") || t->children[cs].kind != GTEXT_CSS_VALUE_TOKEN);
@@ -972,7 +1230,14 @@ static bool parse_condition(parser * P, const GTEXT_CSS_Component_Value * v, siz
           continue;
         } else if (t->kind == GTEXT_CSS_VALUE_FUNCTION) {
           f->pos++;
-          uint32_t fn = make_enclosed(P, t);
+          uint32_t fn = MQ_NONE;
+          feat_result fr = P->supports ? parse_supports_function(P, t, &fn) : FEAT_SOFT;
+          if (fr == FEAT_INVALID) {
+            break;
+          }
+          if (fr == FEAT_SOFT) {
+            fn = make_enclosed(P, t);
+          }
           if (fn == MQ_NONE || !push_op(P, fn)) {
             break;
           }
@@ -1187,7 +1452,7 @@ static uint32_t parse_query(parser * P, const GTEXT_CSS_Component_Value * v, siz
   }
   if (P->invalid) {
     /* Replaced by `not all`: drop whatever was built for it. */
-    in->node_count = nmark + 1;
+    drop_nodes(in, nmark + 1);
     in->kid_count = kmark;
     in->value_count = vmark;
     while (in->math_count > mmark) {
@@ -1210,6 +1475,49 @@ static uint32_t parse_query(parser * P, const GTEXT_CSS_Component_Value * v, siz
   qn->type_id = (uint8_t)tid;
   qn->text = type_text;
   qn->text_length = type_len;
+  if (cond != MQ_NONE && !set_kids(P, q, &cond, 1)) {
+    return MQ_NONE;
+  }
+  return q;
+}
+
+/// One <supports-condition> (or a bare declaration): a QUERY node with no type whose kid is the condition.
+static uint32_t parse_supports_root(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span where) {
+  struct GTEXT_CSS_Media_List_Internal * in = P->in;
+  size_t nmark = in->node_count, kmark = in->kid_count, vmark = in->value_count, mmark = in->math_count;
+  P->invalid = false;
+  uint32_t q = new_node(P, MQN_QUERY, where);
+  if (q == MQ_NONE) {
+    return MQ_NONE;
+  }
+  size_t s = skip_ws(v, n, 0);
+  size_t e = trim_end(v, s, n);
+  uint32_t cond = MQ_NONE;
+  if (s >= e) {
+    invalid_query(P, GTEXT_CSS_MQDIAG_EMPTY, where, REF_SYNTAX);
+  } else if (P->bare_ok && declaration_shaped(v + s, e - s)) {
+    cond = make_decl(P, v + s, e - s, v[s].span);
+  } else if (!parse_condition(P, v + s, e - s, true, &cond) && !P->invalid && P->status == GTEXT_CSS_OK) {
+    invalid_query(P, GTEXT_CSS_MQDIAG_SYNTAX, v[s].span, REF_SYNTAX);
+  }
+  if (P->status != GTEXT_CSS_OK) {
+    return MQ_NONE;
+  }
+  if (P->invalid) {
+    drop_nodes(in, nmark + 1);
+    in->kid_count = kmark;
+    in->value_count = vmark;
+    while (in->math_count > mmark) {
+      gtext_css_math_free(in->maths[--in->math_count]);
+    }
+    P->nops = 0;
+    diag(P, P->inv_kind, P->inv_span, P->inv_ref);
+    in->nodes[q].flags = MQF_REPLACED | MQF_NEGATED | MQF_HAS_TYPE;
+    in->nodes[q].text = "all";
+    in->nodes[q].text_length = 3;
+    P->replaced++;
+    return P->status == GTEXT_CSS_OK ? q : MQ_NONE;
+  }
   if (cond != MQ_NONE && !set_kids(P, q, &cond, 1)) {
     return MQ_NONE;
   }
@@ -1331,6 +1639,11 @@ static void release(struct GTEXT_CSS_Media_List_Internal * in) {
   for (size_t i = 0; i < in->math_count; i++) {
     gtext_css_math_free(in->maths[i]);
   }
+  for (size_t i = 0; i < in->node_count; i++) {
+    if (in->nodes[i].kind == MQN_SELECTOR) {
+      gtext_css_selector_list_free(in->nodes[i].sel);
+    }
+  }
   gtext_allocator_free(&a, in->maths);
   gtext_allocator_free(&a, in->nodes);
   gtext_allocator_free(&a, in->kids);
@@ -1377,7 +1690,7 @@ size_t gtext_css_media_list_node_count(const GTEXT_CSS_Media_List * list) {
 /* ---- entry points -------------------------------------------------------- */
 
 static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options, bool single,
-    GTEXT_CSS_Media_List ** out, GTEXT_CSS_Media_Result * result) {
+    GTEXT_CSS_Media_List ** out, GTEXT_CSS_Media_Result * result, bool supports, bool bare_ok) {
   GTEXT_CSS_Media_Options o = options ? *options : gtext_css_media_options_default();
   if (!o.max_queries) {
     o.max_queries = 65536;
@@ -1412,6 +1725,8 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
   P.in = in;
   P.res = result;
   P.alloc = *al;
+  P.supports = supports;
+  P.bare_ok = bare_ok;
   GTEXT_CSS_Span span0;
   memset(&span0, 0, sizeof span0);
   size_t start = 0;
@@ -1421,7 +1736,10 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
     while (end < count && !(values[end].kind == GTEXT_CSS_VALUE_TOKEN && values[end].type == GTEXT_CSS_TOKEN_COMMA)) {
       end++;
     }
-    if (!single && skip_ws(values, count, 0) >= count) {
+    if (supports) {
+      end = count;
+    }
+    if (!single && !supports && skip_ws(values, count, 0) >= count) {
       break; /* the empty list: no tokens, or only white space */
     }
     if (in->root_count >= o.max_queries) {
@@ -1430,7 +1748,10 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
     }
     GTEXT_CSS_Span where = start < count ? values[start].span : (count ? values[count - 1].span : span0);
     uint32_t q;
-    if (single && end < count) {
+    if (supports) {
+      q = parse_supports_root(&P, values, count, where);
+      done = true;
+    } else if (single && end < count) {
       q = parse_query(&P, NULL, 0, where);
       if (q != MQ_NONE) {
         done = true;
@@ -1481,7 +1802,7 @@ GTEXT_CSS_Status gtext_css_media_list_parse_values(const GTEXT_CSS_Component_Val
   if (!out || (count && !values)) {
     return GTEXT_CSS_E_INVALID;
   }
-  return parse_impl(values, count, options, false, out, result);
+  return parse_impl(values, count, options, false, out, result, false, false);
 }
 
 GTEXT_CSS_Status gtext_css_media_query_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options,
@@ -1493,7 +1814,7 @@ GTEXT_CSS_Status gtext_css_media_query_parse_values(const GTEXT_CSS_Component_Va
   if (!out || (count && !values)) {
     return GTEXT_CSS_E_INVALID;
   }
-  return parse_impl(values, count, options, true, out, result);
+  return parse_impl(values, count, options, true, out, result, false, false);
 }
 
 GTEXT_CSS_Status gtext_css_media_list_parse(const char * text, size_t length, const GTEXT_CSS_Media_Options * options, GTEXT_CSS_Media_List ** out,
@@ -1524,7 +1845,52 @@ GTEXT_CSS_Status gtext_css_media_list_parse(const char * text, size_t length, co
     return st;
   }
   gtext_css_result_free(&pr);
-  st = parse_impl(tree->values, tree->value_count, &o, false, out, result);
+  st = parse_impl(tree->values, tree->value_count, &o, false, out, result, false, false);
+  gtext_css_tree_free(tree);
+  return st;
+}
+
+GTEXT_CSS_Status gtext_css_supports_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, bool bare_declaration, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Supports_Condition ** out, GTEXT_CSS_Media_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!out || (count && !values)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  return parse_impl(values, count, options, true, out, result, true, bare_declaration);
+}
+
+GTEXT_CSS_Status gtext_css_supports_parse(const char * text, size_t length, bool bare_declaration, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Supports_Condition ** out, GTEXT_CSS_Media_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!out || (length && !text)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Media_Options o = options ? *options : gtext_css_media_options_default();
+  GTEXT_CSS_Parse_Options po = o.parse;
+  if (!po.allocator) {
+    po.allocator = o.allocator;
+  }
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Result pr;
+  memset(&pr, 0, sizeof pr);
+  GTEXT_CSS_Status st = gtext_css_parse_component_values(text ? text : "", length, &po, &tree, &pr);
+  if (st != GTEXT_CSS_OK) {
+    if (result) {
+      result->status = st;
+      result->message = gtext_css_status_string(st);
+      result->failure = pr.failure;
+    }
+    gtext_css_result_free(&pr);
+    return st;
+  }
+  gtext_css_result_free(&pr);
+  st = parse_impl(tree->values, tree->value_count, &o, true, out, result, true, bare_declaration);
   gtext_css_tree_free(tree);
   return st;
 }

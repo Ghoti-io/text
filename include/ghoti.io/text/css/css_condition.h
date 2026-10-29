@@ -47,7 +47,9 @@
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_media.h>
+#include <ghoti.io/text/css/css_property.h>
 #include <ghoti.io/text/css/css_registry.h>
+#include <ghoti.io/text/css/css_selector.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -91,6 +93,50 @@ GTEXT_API GTEXT_CSS_Status gtext_css_condition_defs_add_custom_media(GTEXT_CSS_C
 GTEXT_API GTEXT_CSS_Status gtext_css_condition_defs_add_custom_media_text(GTEXT_CSS_Condition_Defs * defs, const char * text, size_t length,
     const GTEXT_CSS_Media_Options * options, bool * added);
 
+/* ---- @supports ------------------------------------------------------------ */
+
+/** @name Font technologies and formats
+ *  Bits of GTEXT_CSS_Support_Policy::font_tech (the idents of `<font-tech>`) and ::font_format (the idents of `<font-format>`).
+ *  @{ */
+#define GTEXT_CSS_FONT_TECH_FEATURES_OPENTYPE 0x1u
+#define GTEXT_CSS_FONT_TECH_FEATURES_AAT 0x2u
+#define GTEXT_CSS_FONT_TECH_FEATURES_GRAPHITE 0x4u
+#define GTEXT_CSS_FONT_TECH_COLOR_COLRV0 0x8u
+#define GTEXT_CSS_FONT_TECH_COLOR_COLRV1 0x10u
+#define GTEXT_CSS_FONT_TECH_COLOR_SVG 0x20u
+#define GTEXT_CSS_FONT_TECH_COLOR_SBIX 0x40u
+#define GTEXT_CSS_FONT_TECH_COLOR_CBDT 0x80u
+#define GTEXT_CSS_FONT_TECH_VARIATIONS 0x100u
+#define GTEXT_CSS_FONT_TECH_PALETTES 0x200u
+#define GTEXT_CSS_FONT_TECH_INCREMENTAL 0x400u
+#define GTEXT_CSS_FONT_FORMAT_COLLECTION 0x1u
+#define GTEXT_CSS_FONT_FORMAT_EMBEDDED_OPENTYPE 0x2u
+#define GTEXT_CSS_FONT_FORMAT_OPENTYPE 0x4u
+#define GTEXT_CSS_FONT_FORMAT_SVG 0x8u
+#define GTEXT_CSS_FONT_FORMAT_TRUETYPE 0x10u
+#define GTEXT_CSS_FONT_FORMAT_WOFF 0x20u
+#define GTEXT_CSS_FONT_FORMAT_WOFF2 0x40u
+/** @} */
+
+/**
+ * @struct GTEXT_CSS_Support_Policy
+ * @brief What a consumer supports that the library cannot know: the answers of `@supports`. A zeroed struct is the default: every property of the registry,
+ *   no font technology, no font format, no named feature, no environment variable, every at-rule this library implements.
+ */
+typedef struct {
+  void * user;                                                          ///< Passed to the callbacks.
+  /** Narrow the properties: a renderer that does not implement `backdrop-filter` says so. NULL: every property of the registry is supported. */
+  bool (*property_supported)(void * user, GTEXT_CSS_Property_Id property);
+  uint32_t font_tech;                                                   ///< GTEXT_CSS_FONT_TECH_* the consumer can render: `font-tech()`.
+  uint32_t font_format;                                                 ///< GTEXT_CSS_FONT_FORMAT_* it can load: `font-format()`.
+  /** `named-feature(ident)`. NULL: none is supported. */
+  bool (*named_feature)(void * user, const GTEXT_CSS_String * name);
+  /** `env(ident)`. NULL: none is supported. */
+  bool (*env_variable)(void * user, const GTEXT_CSS_String * name);
+  /** Narrow `at-rule(@name)` (`name` without the `@`, lower case). NULL: every at-rule this library implements. */
+  bool (*at_rule_supported)(void * user, const GTEXT_CSS_String * name);
+} GTEXT_CSS_Support_Policy;
+
 /* ---- the conditions object ---------------------------------------------- */
 
 /** @brief The evaluator: see the file's description. */
@@ -102,6 +148,8 @@ typedef struct {
   const GTEXT_CSS_Media_Environment * media;    ///< The media environment (copied); NULL: gtext_css_media_environment_default(NULL).
   GTEXT_CSS_Condition_Defs * defs;              ///< The `@custom-media` definitions; NULL for none. It is sealed by the call and retained.
   bool custom_media;                            ///< `(--name)` uses the definitions (the served draft). Default true; false is the browsers' behavior.
+  const GTEXT_CSS_Support_Policy * policy;      ///< What `@supports` is answered from (copied); NULL: the default policy.
+  const GTEXT_CSS_Element_Interface * element_interface; ///< The element interface `selector()` is checked against (borrowed: it must outlive the object); NULL: a selector() is checked for syntax only.
   size_t max_work;                              ///< Most units of work of one evaluation. Default 2^24; one more is GTEXT_CSS_E_LIMIT_WORK.
 } GTEXT_CSS_Conditions_Options;
 
@@ -184,6 +232,36 @@ GTEXT_API GTEXT_CSS_Status gtext_css_conditions_evaluate_query(const GTEXT_CSS_C
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_conditions_matches_media(const GTEXT_CSS_Conditions * conditions, const char * text, size_t length,
     GTEXT_CSS_Condition_Call * call, bool * matches);
+
+/** @brief A parsed `<supports-condition>`: the same immutable AST and evaluator as a media query list (one condition). Free it with gtext_css_media_list_free(). */
+typedef GTEXT_CSS_Media_List GTEXT_CSS_Supports_Condition;
+
+/**
+ * @brief Parse a `<supports-condition>`: `not`, `and`, `or`, parentheses, `(<declaration>)`, `selector()`, `font-tech()`, `font-format()`, `at-rule()`, `named-feature()`,
+ *   `env()` and `<general-enclosed>` (unknown, false).
+ *
+ * @param bare_declaration Also accept a declaration without parentheses (`display: grid`), which is what `CSS.supports(text)` and the `supports()` of `@import` allow.
+ * @return As gtext_css_media_list_parse_values(): an invalid condition is OK, replaced (the rule never applies), with a diagnostic.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_supports_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, bool bare_declaration, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Supports_Condition ** out, GTEXT_CSS_Media_Result * result);
+
+/** @brief gtext_css_supports_parse_values() from text. */
+GTEXT_API GTEXT_CSS_Status gtext_css_supports_parse(const char * text, size_t length, bool bare_declaration, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Supports_Condition ** out, GTEXT_CSS_Media_Result * result);
+
+/** @brief The three-valued answer of a parsed supports condition. @return As gtext_css_conditions_matches_list(); GTEXT_CSS_E_UNSUPPORTED naming `registry` when a declaration is asked and there is none. */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_evaluate_supports(const GTEXT_CSS_Conditions * conditions, const GTEXT_CSS_Supports_Condition * condition,
+    GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Tristate * result);
+
+/**
+ * @brief `CSS.supports(property, value)`: whether the registry knows the property and the value is valid for it (by the parser the cascade uses, quirks off), and the policy
+ *   does not narrow the property out. A custom property is supported with any value.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_supports(const GTEXT_CSS_Conditions * conditions, const char * property, const char * value, bool * result);
+
+/** @brief `CSS.supports(conditionText)`: a bare declaration or a supports condition. Unknown is false. */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_supports_text(const GTEXT_CSS_Conditions * conditions, const char * text, size_t length, bool * result);
 
 /** @brief What a condition depends on, as data (the invalidation summary; C6 consumes it). */
 typedef struct {

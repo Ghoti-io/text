@@ -515,6 +515,10 @@ GTEXT_CSS_Status gtext_css_conditions_new(const GTEXT_CSS_Registry * registry, c
   c->env = env;
   c->custom_media = o.custom_media;
   c->max_work = o.max_work;
+  if (o.policy) {
+    c->policy = *o.policy;
+  }
+  c->iface = o.element_interface;
   c->defs = defs;
   *out = c;
   return GTEXT_CSS_OK;
@@ -672,15 +676,41 @@ void gtext_css_media_list_dependencies(const GTEXT_CSS_Media_List * list, GTEXT_
 }
 
 GTEXT_CSS_Tristate gtext_css_conditions_condition(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text) {
-  if (!c || !text || kind != GTEXT_CSS_CONDITION_MEDIA) {
+  if (!c || !text || (kind != GTEXT_CSS_CONDITION_MEDIA && kind != GTEXT_CSS_CONDITION_SUPPORTS)) {
     return GTEXT_CSS_TRI_UNKNOWN;
   }
   bool m = false;
-  GTEXT_CSS_Status st = gtext_css_conditions_matches_media(c, text->data, text->length, NULL, &m);
+  GTEXT_CSS_Status st = kind == GTEXT_CSS_CONDITION_MEDIA ? gtext_css_conditions_matches_media(c, text->data, text->length, NULL, &m)
+                                                          : gtext_css_conditions_supports_text(c, text->data, text->length, &m);
   if (st != GTEXT_CSS_OK) {
     return GTEXT_CSS_TRI_UNKNOWN;
   }
   return m ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE;
+}
+
+GTEXT_CSS_Status gtext_css_conditions_evaluate_supports(const GTEXT_CSS_Conditions * c, const GTEXT_CSS_Supports_Condition * cond, GTEXT_CSS_Condition_Call * call,
+    GTEXT_CSS_Tristate * result) {
+  return gtext_css_conditions_evaluate_query(c, cond, 0, call, result);
+}
+
+GTEXT_CSS_Status gtext_css_conditions_supports_text(const GTEXT_CSS_Conditions * c, const char * text, size_t length, bool * result) {
+  if (!c || !result || (length && !text)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Media_Options o = gtext_css_media_options_default();
+  o.allocator = &c->alloc;
+  GTEXT_CSS_Supports_Condition * cond = NULL;
+  GTEXT_CSS_Status st = gtext_css_supports_parse(text, length, true, &o, &cond, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
+  st = gtext_css_conditions_evaluate_supports(c, cond, NULL, &t);
+  gtext_css_media_list_free(cond);
+  if (st == GTEXT_CSS_OK) {
+    *result = t == GTEXT_CSS_TRI_TRUE;
+  }
+  return st;
 }
 
 static GTEXT_CSS_Tristate hook(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element) {

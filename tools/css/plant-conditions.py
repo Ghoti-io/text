@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 PROGRAMS = {
-    "media": "test-css-media.cpp", "fuzz": "test-css-condition-fuzz-seeds.cpp",
+    "media": "test-css-media.cpp", "fuzz": "test-css-condition-fuzz-seeds.cpp", "supports": "test-css-supports.cpp",
 }
 EXTRA_PROGRAMS = os.path.join(ROOT, "tools", "conformance", "CSS_CONDITIONS_PROGRAMS")
 

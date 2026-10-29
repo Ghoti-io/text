@@ -16,3 +16,10 @@ gamut-does-not-imply-the-lower	css_media_eval.c	    return lvl >= k + 1;	    ret
 orientation-is-strict	css_media_eval.c	e->viewport.height >= e->viewport.width ? 0 : 1	e->viewport.height > e->viewport.width ? 0 : 1	media
 custom-media-memo-dropped	css_media_eval.c	      if (ci->memo[w]) {	      if (0) {	media
 deprecated-type-matches	css_media_eval.c	  default: return GTEXT_CSS_TRI_FALSE;\n  }\n}\n\n/// Evaluate query	  default: return GTEXT_CSS_TRI_TRUE;\n  }\n}\n\n/// Evaluate query	media
+selector-skips-the-interface	css_supports.c	    GTEXT_CSS_Status st = gtext_css_selector_check_interface(c->iface, n->sel, NULL);\n    return tri_of(st == GTEXT_CSS_OK);	    return GTEXT_CSS_TRI_TRUE;	supports
+font-tech-bogus-negated	css_media_parse.c	        return FEAT_SOFT; /* font-tech(bogus): <general-enclosed> */	        i = 8;	supports
+important-rejected	css_media_parse.c	      important = true;\n      ve = trim_end(v, vs, b - 1);	      important = true;\n      ve = e;	supports
+quirks-apply	css_supports.c	  po.quirks = false; /* quirks never apply to @supports */	  po.quirks = true;	supports
+custom-property-needs-a-value	css_supports.c	    return true; /* a custom property is supported with any value, the empty one included */	    return vl > 0;	supports
+unknown-at-rule-supported	css_supports.c	    if (strlen(implemented_at_rules[i]) == length && memcmp(implemented_at_rules[i], name, length) == 0) {	    if (1) {	supports
+supports-mixed-and-or	css_media_parse.c	      } else if (f->op && f->op != op) {	      } else if (0) {	supports

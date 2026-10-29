@@ -246,6 +246,29 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
       puts_(o, ")");
       sp--;
       break;
+    case MQN_DECL:
+      puts_(o, "(");
+      put(o, n->text, n->text_length);
+      puts_(o, ":");
+      if (n->value_length) {
+        puts_(o, " ");
+        put(o, n->value, n->value_length);
+      }
+      if (n->flags & MQF_IMPORTANT) {
+        puts_(o, " !important");
+      }
+      puts_(o, ")");
+      sp--;
+      break;
+    case MQN_SELECTOR:
+    case MQN_FONT_TECH:
+    case MQN_FONT_FORMAT:
+    case MQN_AT_RULE:
+    case MQN_NAMED:
+    case MQN_ENV:
+      put(o, n->value, n->value_length);
+      sp--;
+      break;
     case MQN_QUERY:
       sp--;
       break;

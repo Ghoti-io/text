@@ -67,10 +67,20 @@ int main(void) {
   env.viewport.height = 600;
   env.device.width = 800;
   env.device.height = 600;
+  GTEXT_CSS_Registry * registry = NULL;
+  if (gtext_css_registry_new(NULL, &registry) != GTEXT_CSS_OK) {
+    return 2;
+  }
   GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
   co.media = &env;
+  GTEXT_CSS_Support_Policy policy;
+  memset(&policy, 0, sizeof policy);
+  /* The browsers' fonts: every technology and format the grammar names. */
+  policy.font_tech = 0x7ffu;
+  policy.font_format = 0x7fu;
+  co.policy = &policy;
   GTEXT_CSS_Conditions * conds = NULL;
-  if (gtext_css_conditions_new(NULL, &co, &conds) != GTEXT_CSS_OK) {
+  if (gtext_css_conditions_new(registry, &co, &conds) != GTEXT_CSS_OK) {
     return 2;
   }
   char * line = NULL;
@@ -99,6 +109,28 @@ int main(void) {
       }
       gtext_css_media_buffer_free(NULL, out);
       gtext_css_media_list_free(l);
+    } else if (strcmp(line, "supports") == 0 || strcmp(line, "supportscond") == 0) {
+      bool m = false;
+      GTEXT_CSS_Status st;
+      char * sep = strchr(query, 1);
+      if (sep) {
+        *sep = 0;
+        st = gtext_css_conditions_supports(conds, query, sep + 1, &m);
+      } else if (strcmp(line, "supports") == 0) {
+        st = gtext_css_conditions_supports_text(conds, query, strlen(query), &m);
+      } else {
+        GTEXT_CSS_Supports_Condition * sc = NULL;
+        GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
+        st = gtext_css_supports_parse(query, strlen(query), false, NULL, &sc, NULL);
+        if (st == GTEXT_CSS_OK) st = gtext_css_conditions_evaluate_supports(conds, sc, NULL, &t);
+        m = t == GTEXT_CSS_TRI_TRUE;
+        gtext_css_media_list_free(sc);
+      }
+      if (st != GTEXT_CSS_OK) {
+        emit("error:", gtext_css_status_string(st), strlen(gtext_css_status_string(st)));
+      } else {
+        emit(m ? "match:1" : "match:0", "", 0);
+      }
     } else {
       bool m = false;
       GTEXT_CSS_Status st = gtext_css_conditions_matches_media(conds, query, strlen(query), NULL, &m);
@@ -111,5 +143,6 @@ int main(void) {
   }
   free(line);
   gtext_css_conditions_free(conds);
+  gtext_css_registry_free(registry);
   return 0;
 }

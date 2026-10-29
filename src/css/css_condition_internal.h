@@ -70,6 +70,8 @@ struct GTEXT_CSS_Conditions {
   GTEXT_CSS_Media_Environment env;
   bool custom_media;
   size_t max_work;
+  GTEXT_CSS_Support_Policy policy;
+  const GTEXT_CSS_Element_Interface * iface;
   struct GTEXT_CSS_Condition_Defs * defs; ///< Sealed; never NULL (an empty one stands for none).
 };
 
@@ -99,6 +101,9 @@ const struct GTEXT_CSS_Media_List_Internal * css_defs_list(const struct GTEXT_CS
 GTEXT_CSS_Tristate css_tri_not(GTEXT_CSS_Tristate a);
 GTEXT_CSS_Tristate css_tri_and(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b);
 GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b);
+
+/// One supports leaf (a declaration, selector(), font-tech() ...) against the conditions.
+GTEXT_CSS_Tristate css_supports_eval_leaf(const GTEXT_CSS_Conditions * c, const mq_node * n, GTEXT_CSS_Status * status, const char ** detail);
 
 /// One media feature node against an environment. A failure is in *status (and *detail), the answer is then meaningless.
 GTEXT_CSS_Tristate css_mq_eval_feature(const GTEXT_CSS_Media_Environment * e, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n, GTEXT_CSS_Status * status,
