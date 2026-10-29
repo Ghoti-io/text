@@ -764,7 +764,11 @@ GTEXT_CSS_Status gtext_css_atrule_set_freeze(GTEXT_CSS_Atrule_Set * s) {
     s->sorted[i] = i;
   }
   g_ents = s->ents;
-  qsort(s->sorted, s->n, sizeof *s->sorted, cascade_cmp);
+  if (s->n) {
+    if (s->n) {
+    qsort(s->sorted, s->n, sizeof *s->sorted, cascade_cmp);
+  }
+  }
   for (size_t p = 0; p < s->n; p++) {
     s->ents[s->sorted[p]].pos = p;
   }
@@ -901,13 +905,27 @@ GTEXT_CSS_Status gtext_css_atrule_set_freeze(GTEXT_CSS_Atrule_Set * s) {
   if (bad) {
     return st;
   }
-  qsort(s->faces, s->nfaces, sizeof *s->faces, ref_cmp);
-  qsort(s->features, s->nfeatures, sizeof *s->features, ref_cmp);
-  qsort(s->palettes, s->npalettes, sizeof *s->palettes, ref_cmp);
-  qsort(s->profiles, s->nprofiles, sizeof *s->profiles, ref_cmp);
-  qsort(s->counters, s->ncounters, sizeof *s->counters, ref_cmp);
-  qsort(s->frames, s->nframes, sizeof *s->frames, ref_cmp);
-  qsort(s->tries, s->ntries, sizeof *s->tries, ref_cmp);
+  if (s->nfaces) {
+    qsort(s->faces, s->nfaces, sizeof *s->faces, ref_cmp);
+  }
+  if (s->nfeatures) {
+    qsort(s->features, s->nfeatures, sizeof *s->features, ref_cmp);
+  }
+  if (s->npalettes) {
+    qsort(s->palettes, s->npalettes, sizeof *s->palettes, ref_cmp);
+  }
+  if (s->nprofiles) {
+    qsort(s->profiles, s->nprofiles, sizeof *s->profiles, ref_cmp);
+  }
+  if (s->ncounters) {
+    qsort(s->counters, s->ncounters, sizeof *s->counters, ref_cmp);
+  }
+  if (s->nframes) {
+    qsort(s->frames, s->nframes, sizeof *s->frames, ref_cmp);
+  }
+  if (s->ntries) {
+    qsort(s->tries, s->ntries, sizeof *s->tries, ref_cmp);
+  }
   st = resolve_counters(s);
   for (size_t i = 0; st == GTEXT_CSS_OK && i < s->nfeatures;) {
     size_t j = i;

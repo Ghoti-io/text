@@ -2070,6 +2070,9 @@ $(FUZZ_OBJ_DIR)/%.o: src/%.c $(FUZZ_FLAGS_STAMP) | $(LIBVER_GEN)
 	@$(FUZZ_CC) $(FUZZ_LIB_FLAGS) -std=c17 -w $(INCLUDE) -c $< -MMD -MP -MF $(@:.o=.d) -o $@
 
 # $1 = harness basename (fuzz_json), $2 = target suffix (json)
+# The harnesses that share a test support header with the gtest programs link gtest too (its EXPECT_* are in the header).
+FUZZ_EXTRA_LIBS_fuzz_css_container = `PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs gtest`
+
 define fuzz-rule
 fuzz-$2: ## Build the $2 fuzz harness (requires clang)
 fuzz-$2: $$(FUZZ_APP_DIR)/$1
@@ -2082,7 +2085,7 @@ $$(FUZZ_APP_DIR)/$1: tests/fuzz/$1.cpp $$(FUZZ_OBJECTS)
 	@mkdir -p $$(@D) $$(FUZZ_CORPUS)
 	@printf "\n### Building $1 ###\n"
 	$$(FUZZ_CXX) $$(FUZZ_BIN_FLAGS) -std=c++20 -w $$(INCLUDE) \
-		-o $$@ $$< $$(FUZZ_OBJECTS) $$(DEP_LIBS) $$(FUZZ_RPATH)
+		-o $$@ $$< $$(FUZZ_OBJECTS) $$(DEP_LIBS) $$(FUZZ_RPATH) $$(FUZZ_EXTRA_LIBS_$1)
 
 fuzz-run-$2: ## Run the $2 fuzzer for $$(FUZZ_TIME) seconds
 fuzz-run-$2: $$(FUZZ_APP_DIR)/$1

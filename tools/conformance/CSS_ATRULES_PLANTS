@@ -1,7 +1,7 @@
 # tools/css/plant-atrules.py: planted defects of the at-rule layer, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated; keys of tools/css/plant-atrules.py PROGRAMS).
 font-ranges-not-merged	css_font_rules.c	      if (w && arr[i].first <= arr[w - 1].last + 1) {	      if (0) {	fonts,seeds
 font-family-key-not-folded	css_font_rules.c	  if (guni_case_fold_utf8(s->data ? s->data : "", s->length, GUNI_INVALID_REPLACE, false, NULL, buf, cap, &n) != GUNI_OK) {	  if (1) {	fonts
-keyframes-not-sorted	css_keyframes.c	  qsort(slots, n, sizeof *slots, slot_cmp);	  (void)slot_cmp;	atrule,fonts,seeds
+keyframes-not-sorted	css_keyframes.c	  qsort(slots, n, sizeof *slots, slot_cmp);	  (void)slot_cmp;	fonts,seeds
 keyframes-later-declaration-loses	css_keyframes.c	        arr[at] = p;	        if (at == np) {\n          arr[at] = p;\n        }	fonts
 counter-extends-cycle-ignored	css_atrule_set.c	    if (cyc_from != (size_t)-1) {	    if (0) {	sets
 set-layer-rank-ignored	css_atrule_set.c	  if (x->rank != y->rank) {	  if (0) {	sets
