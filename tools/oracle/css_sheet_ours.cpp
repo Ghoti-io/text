@@ -575,6 +575,13 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   g_computed = &computed;
   GTEXT_CSS_Conditions_Options cndo = gtext_css_conditions_options_default();
   cndo.element_interface = &w.iface;
+  GTEXT_CSS_Container_Interface ci;
+  std::memset(&ci, 0, sizeof ci);
+  ci.size = sizeof ci;
+  ci.computed_style = cb_container_style;
+  ci.compute_context = cctx;
+  ci.content_box = cb_container_box;
+  cndo.container = &ci;
   if (gtext_css_conditions_new(reg, &cndo, &g_conditions) != GTEXT_CSS_OK) {
     std::fprintf(stderr, "css-sheet-ours: the conditions object could not be made\n");
     std::exit(2);
@@ -664,7 +671,7 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
         continue;
       }
       GTEXT_CSS_Style_Options sty = gtext_css_style_options_default();
-      sty.sources = 0;
+      sty.sources = GTEXT_CSS_STYLE_STYLE_ATTRIBUTE; /* the containers of the population are made by their style attributes */
       sty.rules = sheets.index;
       sty.match = mctx;
       GTEXT_CSS_Compute_Result res;
