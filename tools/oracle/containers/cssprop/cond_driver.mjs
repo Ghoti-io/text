@@ -94,6 +94,16 @@ const PROBE = `(featuresJson) => {
   e['any-hover'] = ['none', 'hover'].filter((k) => matchMedia('(any-hover:' + k + ')').matches);
   e.color = []; for (let i = 0; i <= 16; i++) { if (matchMedia('(color:' + i + ')').matches) { e.color.push(i); } }
   e['transform-3d'] = matchMedia('(-webkit-transform-3d)').matches ? 1 : 0;
+  const first = (f, lo, hi) => { for (let i = lo; i <= hi; i++) { if (matchMedia('(' + f + ':' + i + ')').matches) { return i; } } return -1; };
+  e.scan = ['interlace', 'progressive'].filter((v) => matchMedia('(scan:' + v + ')').matches);
+  e.monochrome = first('monochrome', 0, 16);
+  e['color-index'] = first('color-index', 0, 16);
+  e.grid = first('grid', 0, 1);
+  e['horizontal-viewport-segments'] = first('horizontal-viewport-segments', 1, 8);
+  e['vertical-viewport-segments'] = first('vertical-viewport-segments', 1, 8);
+  e['font-tech'] = ['features-opentype', 'features-aat', 'features-graphite', 'color-colrv0', 'color-colrv1', 'color-svg', 'color-sbix', 'color-cbdt', 'variations', 'palettes', 'incremental']
+    .filter((t) => CSS.supports('font-tech(' + t + ')'));
+  e['font-format'] = ['collection', 'embedded-opentype', 'opentype', 'svg', 'truetype', 'woff', 'woff2'].filter((t) => CSS.supports('font-format(' + t + ')'));
   // a feature the browser has is true or false in a boolean context, and so is its negation; one it lacks is unknown, which both are not
   e.unsupported = JSON.parse(featuresJson).filter((f) => !(matchMedia('(' + f + ')').matches || matchMedia('not (' + f + ')').matches));
   return JSON.stringify(e);

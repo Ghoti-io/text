@@ -168,9 +168,27 @@ def leaf_families(query):
     return ["?"]
 
 
+ABBREVIATION = {"kept": "K", "dropped": "D", "ok": "O", "reject": "R", None: "-"}
+
+
+def rule_feature(query, values):
+    """A divergence of a rule: its kind of rule, the part (accepted or not, the prelude, a descriptor or nested rule by name) and who keeps it: ours/Chromium/Firefox as K (kept), D
+    (dropped), O (accepted), R (rejected) or, for a prelude, whether each browser wrote what this library wrote (= or !)."""
+    m = re.match(r"\s*@([A-Za-z-]+)", query[1])
+    at = m.group(1).lower() if m else "?"
+    part, o, c, f = values["part"], values["ours"][0], values["chromium"], values["firefox"]
+    if part == "h":
+        pat = "ch%sff%s" % ("=" if c == o else "!", "=" if f == o else "!")
+    else:
+        pat = "%s%s%s" % (ABBREVIATION.get(o, "?"), ABBREVIATION.get(c, "?"), ABBREVIATION.get(f, "?"))
+    return "A:%s:%s:%s" % (at, part, pat)
+
+
 def feature_of(rules, query, values, stats=None):
     """The feature a divergence is listed under: a hand-named family (a rule of COND or RULE whose pattern is found in the question), else the leaf of the question that is in the
     most divergent questions and in (almost) no agreeing one, else the question itself."""
+    if query[0] == "A":
+        return rule_feature(query, values)
     kind = query[0] + values.get("part", "")
     text = "\t".join(query[1:])
     for name, pattern, kinds in rules:

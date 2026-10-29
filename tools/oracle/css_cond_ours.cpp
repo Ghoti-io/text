@@ -138,6 +138,18 @@ void set_keyword(GTEXT_CSS_Media_Environment * e, const std::string & k, const s
     e->overflow_block = is("none") ? GTEXT_CSS_MQ_OVERFLOW_BLOCK_NONE : (is("scroll") ? GTEXT_CSS_MQ_OVERFLOW_BLOCK_SCROLL : GTEXT_CSS_MQ_OVERFLOW_BLOCK_PAGED);
   } else if (k == "overflow-inline") {
     e->overflow_inline = is("none") ? GTEXT_CSS_MQ_OVERFLOW_INLINE_NONE : GTEXT_CSS_MQ_OVERFLOW_INLINE_SCROLL;
+  } else if (k == "scan") {
+    e->scan = is("interlace") ? GTEXT_CSS_MQ_SCAN_INTERLACE : (is("progressive") ? GTEXT_CSS_MQ_SCAN_PROGRESSIVE : GTEXT_CSS_MQ_SCAN_NONE);
+  } else if (k == "monochrome") {
+    e->monochrome_bits = static_cast<uint32_t>(std::atoi(v.c_str()));
+  } else if (k == "color-index") {
+    e->color_index = static_cast<uint32_t>(std::atoi(v.c_str()));
+  } else if (k == "grid") {
+    e->grid = std::atoi(v.c_str()) != 0;
+  } else if (k == "horizontal-viewport-segments") {
+    e->horizontal_viewport_segments = static_cast<uint32_t>(std::atoi(v.c_str()));
+  } else if (k == "vertical-viewport-segments") {
+    e->vertical_viewport_segments = static_cast<uint32_t>(std::atoi(v.c_str()));
   } else if (k == "device-width") {
     e->device.width = std::atof(v.c_str());
   } else if (k == "device-height") {
@@ -158,6 +170,25 @@ void set_keyword(GTEXT_CSS_Media_Environment * e, const std::string & k, const s
   }
 }
 
+uint32_t bits_of(const std::string & list, const char * const * names, const uint32_t * bits, size_t n) {
+  uint32_t out = 0;
+  size_t a = 0;
+  while (a <= list.size()) {
+    size_t b = list.find(',', a);
+    const std::string name = list.substr(a, b == std::string::npos ? std::string::npos : b - a);
+    for (size_t i = 0; i < n; i++) {
+      if (name == names[i]) {
+        out |= bits[i];
+      }
+    }
+    if (b == std::string::npos) {
+      break;
+    }
+    a = b + 1;
+  }
+  return out;
+}
+
 std::string serialize_rule(const GTEXT_CSS_Atrule * a) {
   std::string out;
   GTEXT_Markup_Sink sk{collect, &out};
@@ -174,13 +205,28 @@ int main() {
     return 2;
   }
   std::vector<std::pair<std::string, std::string>> envs;
+  static const char * const tech_names[] = {"features-opentype", "features-aat", "features-graphite", "color-colrv0", "color-colrv1", "color-svg", "color-sbix", "color-cbdt", "variations", "palettes", "incremental"};
+  static const uint32_t tech_bits[] = {GTEXT_CSS_FONT_TECH_FEATURES_OPENTYPE, GTEXT_CSS_FONT_TECH_FEATURES_AAT, GTEXT_CSS_FONT_TECH_FEATURES_GRAPHITE, GTEXT_CSS_FONT_TECH_COLOR_COLRV0,
+      GTEXT_CSS_FONT_TECH_COLOR_COLRV1, GTEXT_CSS_FONT_TECH_COLOR_SVG, GTEXT_CSS_FONT_TECH_COLOR_SBIX, GTEXT_CSS_FONT_TECH_COLOR_CBDT, GTEXT_CSS_FONT_TECH_VARIATIONS,
+      GTEXT_CSS_FONT_TECH_PALETTES, GTEXT_CSS_FONT_TECH_INCREMENTAL};
+  static const char * const format_names[] = {"collection", "embedded-opentype", "opentype", "svg", "truetype", "woff", "woff2"};
+  static const uint32_t format_bits[] = {GTEXT_CSS_FONT_FORMAT_COLLECTION, GTEXT_CSS_FONT_FORMAT_EMBEDDED_OPENTYPE, GTEXT_CSS_FONT_FORMAT_OPENTYPE, GTEXT_CSS_FONT_FORMAT_SVG,
+      GTEXT_CSS_FONT_FORMAT_TRUETYPE, GTEXT_CSS_FONT_FORMAT_WOFF, GTEXT_CSS_FONT_FORMAT_WOFF2};
+  GTEXT_CSS_Support_Policy policy;
+  std::memset(&policy, 0, sizeof policy);
   GTEXT_CSS_Conditions * conds = nullptr;
   std::string line;
   while (std::getline(std::cin, line)) {
     const std::vector<std::string> f = split(line);
     const std::string & kind = f[0];
     if (kind == "E" && f.size() >= 3) {
-      envs.emplace_back(f[1], f[2]);
+      if (f[1] == "font-tech") {
+        policy.font_tech = bits_of(f[2], tech_names, tech_bits, sizeof tech_names / sizeof *tech_names);
+      } else if (f[1] == "font-format") {
+        policy.font_format = bits_of(f[2], format_names, format_bits, sizeof format_names / sizeof *format_names);
+      } else {
+        envs.emplace_back(f[1], f[2]);
+      }
     } else if (kind == "D" && f.size() >= 4) {
       gtext_css_conditions_free(conds);
       conds = nullptr;
@@ -194,6 +240,7 @@ int main() {
       GTEXT_CSS_Conditions_Options o = gtext_css_conditions_options_default();
       o.media = &env;
       o.custom_media = false; /* no browser ships @custom-media */
+      o.policy = &policy;
       if (gtext_css_conditions_new(reg, &o, &conds) != GTEXT_CSS_OK) {
         std::fprintf(stderr, "conditions\n");
         return 2;

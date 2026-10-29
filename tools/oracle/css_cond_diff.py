@@ -144,6 +144,12 @@ def env_lines(env):
     if env.get("color"):
         out.append(("E", "color", str(env["color"][0])))
     out.append(("E", "transform-3d", str(env.get("transform-3d", 0))))
+    for k in ("scan",):
+        out.append(("E", k, env[k][0] if env.get(k) else "none"))
+    for k in ("monochrome", "color-index", "grid", "horizontal-viewport-segments", "vertical-viewport-segments"):
+        out.append(("E", k, str(max(env.get(k, 0), 0))))
+    out.append(("E", "font-tech", ",".join(env.get("font-tech", [])) or "-"))
+    out.append(("E", "font-format", ",".join(env.get("font-format", [])) or "-"))
     out.append(("E", "device-width", str(env["device-width"])))
     out.append(("E", "device-height", str(env["device-height"])))
     # a feature the page's browser lacks (it answers neither the feature nor its negation) is not evaluated here either: unknown, as it is there
@@ -244,10 +250,33 @@ def norm_media(s):
         t = m.group(0)
         f = float(t)
         unitless = m.end() >= len(s) or not (s[m.end()].isalpha() or s[m.end()] == "%")
-        if unitless and abs(f) > 2147483647 and "." not in t and "e" not in t.lower():
+        if unitless and abs(f) >= 2147483647 and "." not in t and "e" not in t.lower():
             return "2147483647" if f > 0 else "-2147483648"
         return "%.6g" % f
     return re.sub(r"\s+", "", NUMBER.sub(number, s.lower()))
+
+
+def parts_of_rule(css):
+    """A rule as the questions it asks: ('h', its prelude), and ('d:name', 'kept') for each descriptor and nested rule it kept."""
+    sig = signature(css)
+    m = re.match(r"(.*?) \{(.*)\}$", sig, re.S)
+    head, body = (m.group(1), m.group(2)) if m else (sig, "")
+    names = []
+    depth, cur = 0, []
+    for c in body:
+        if c in "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        if c == "," and depth == 0:
+            names.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+    if cur:
+        names.append("".join(cur))
+    head = re.sub(r"\s+", " ", head)
+    return head, sorted({n.split(" {")[0] if n.startswith("@") else n for n in names if n})
 
 
 def comparable(q, ans):
@@ -262,7 +291,10 @@ def comparable(q, ans):
     if k == "R":
         return [("", "reject" if ans[0] == "reject" else "ok " + norm_media(ans[1] if len(ans) > 1 else ""))]
     if k == "A":
-        return [("", "reject" if ans[0] == "reject" else "ok " + signature(ans[1] if len(ans) > 1 else ""))]
+        if ans[0] == "reject":
+            return [("a", "reject")]
+        head, names = parts_of_rule(ans[1] if len(ans) > 1 else "")
+        return [("a", "ok"), ("h", head)] + [("d:" + n, "kept") for n in names]
     return [("", "?")]
 
 
@@ -277,7 +309,10 @@ def ours_value(q, ans):
     if k == "R":
         return [("", "reject" if ans[1] == "reject" else "ok " + norm_media(conditionText(unesc(ans[2]))))]
     if k == "A":
-        return [("", "reject" if ans[1] == "reject" else "ok " + signature(unesc(ans[2])))]
+        if ans[1] == "reject":
+            return [("a", "reject")]
+        head, names = parts_of_rule(unesc(ans[2]))
+        return [("a", "ok"), ("h", head)] + [("d:" + n, "kept") for n in names]
     return [("", "?")]
 
 
@@ -300,7 +335,13 @@ def compare(docs, ours, browsers):
             fvs = comparable(q, browsers["firefox"][i][j])
             ocs = ours_value(q, ours["chromium"][i][j])
             ofs = ours_value(q, ours["firefox"][i][j])
-            for (part, cv), (_, fv), (_, oc), (_, of) in zip(cvs, fvs, ocs, ofs):
+            parts = list(dict.fromkeys([p for p, _ in cvs + fvs + ocs + ofs]))
+            cm, fm, om, ofm = dict(cvs), dict(fvs), dict(ocs), dict(ofs)
+            for part in parts:
+                miss = "dropped" if part.startswith("d:") else None
+                cv, fv, oc, of = cm.get(part, miss), fm.get(part, miss), om.get(part, miss), ofm.get(part, miss)
+                if part in ("h",) and "reject" in (cm.get("a"), fm.get("a"), om.get("a"), ofm.get("a")):
+                    continue  # a rejected rule has no prelude to compare
                 total += 1
                 a, b = oc == cv, of == fv
                 if a and b:
@@ -391,7 +432,7 @@ def main():
         for i, d in enumerate(docs):
             for j, q in enumerate(d["q"]):
                 parts = ("m", "s") if q[0] == "M" else ("",)
-                for part in parts:
+                for part in (parts if q[0] != "A" else ()):
                     kind = q[0] + part
                     isdiv = key_of(i, j, q) + part in divergent
                     for fam in set(css_cond_features.leaf_families(q)):
