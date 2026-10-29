@@ -304,6 +304,15 @@ static GTEXT_CSS_Status read_descriptors(GTEXT_CSS_At_Property_Set * s, const GT
     for (size_t k = 0; k < item->declaration_count; k++) {
       const GTEXT_CSS_Declaration * decl = &item->declarations[k];
       s->work++;
+      if (decl->important && (ieq(&decl->name, "syntax") || ieq(&decl->name, "inherits") || ieq(&decl->name, "initial-value"))) {
+        /* a descriptor takes no !important: the declaration is invalid and ignored, the earlier one of its name stands (both browsers) */
+        const GTEXT_CSS_Status st = diagnose(s, GTEXT_CSS_AT_PROP_UNKNOWN_DESCRIPTOR, decl->name.data, decl->name.length, rule, &decl->span,
+            "A descriptor takes no !important: the declaration is invalid and ignored, and does not invalidate the @property rule.");
+        if (st != GTEXT_CSS_OK) {
+          return st;
+        }
+        continue;
+      }
       if (ieq(&decl->name, "syntax")) {
         const GTEXT_CSS_Component_Value * v = only_value(decl->value, decl->value_count);
         css_syntax * syn = NULL;

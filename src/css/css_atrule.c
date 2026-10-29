@@ -1706,6 +1706,37 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       return cx.st != GTEXT_CSS_OK ? cx.st : fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
     }
   }
+  if (pn && !bad_prelude && (kind == GTEXT_CSS_ATRULE_MEDIA || kind == GTEXT_CSS_ATRULE_SUPPORTS || kind == GTEXT_CSS_ATRULE_CONTAINER)) {
+    /* the prelude of a conditional group rule is written as CSSOM writes its condition (`mediaText`, `conditionText`): an invalid media query list is `not all`, a ratio has both
+       of its numbers, an unknown feature is kept as it was */
+    GTEXT_CSS_Media_List * list = NULL;
+    GTEXT_CSS_Media_Result mr;
+    memset(&mr, 0, sizeof mr);
+    GTEXT_CSS_Status ms;
+    if (kind == GTEXT_CSS_ATRULE_MEDIA) {
+      ms = gtext_css_media_list_parse_values(p, pn, NULL, &list, &mr);
+    }
+    else if (kind == GTEXT_CSS_ATRULE_SUPPORTS) {
+      ms = gtext_css_supports_parse_values(p, pn, false, NULL, &list, &mr);
+    }
+    else {
+      ms = gtext_css_container_parse_values(p, pn, NULL, &list, &mr);
+    }
+    gtext_css_media_result_free(&mr);
+    if (ms == GTEXT_CSS_OK && list) {
+      char * buf = NULL;
+      size_t bl = 0;
+      if (gtext_css_media_list_serialize_buffer(list, NULL, &buf, &bl) == GTEXT_CSS_OK && buf) {
+        char * copy = css_arena_strdup(&a->arena, buf, bl);
+        if (copy) {
+          a->prelude = copy;
+          a->prelude_len = bl;
+        }
+        gtext_css_media_buffer_free(NULL, buf);
+      }
+    }
+    gtext_css_media_list_free(list);
+  }
   if (bad_prelude) {
     prelude_ok = false;
   }

@@ -240,12 +240,16 @@ def signature(css):
     return head + " {" + ",".join(sorted(parts)) + "}"
 
 
-NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z%])|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 
 
 def norm_media(s):
-    """`.media` up to what the standards leave to the engine: white space, the case of an identifier or a unit, and the spelling of a number (the browsers write six significant
-    digits, an exponent for a large one, a sign only when it is minus, and clamp a unitless integer to 32 bits)."""
+    """`.media` up to what the standards leave to the engine: white space, the case of an identifier or a unit, the spelling of a number (the browsers write six significant
+    digits, an exponent for a large one, a sign only when it is minus, and clamp a unitless integer to 32 bits), a zero with or without a unit (Firefox writes the zero of a
+    length as `0px`, Chromium and this library as it was written) and the closing parentheses at the very end (both browsers write a block the end of the input closed as it
+    was written, without its closer; this library writes the block it read)."""
+    s = s.lower()
+
     def number(m):
         t = m.group(0)
         f = float(t)
@@ -253,30 +257,63 @@ def norm_media(s):
         if unitless and abs(f) >= 2147483647 and "." not in t and "e" not in t.lower():
             return "2147483647" if f > 0 else "-2147483648"
         return "%.6g" % f
-    return re.sub(r"\s+", "", NUMBER.sub(number, s.lower()))
+    out = re.sub(r"\s+", "", NUMBER.sub(number, s))
+    out = re.sub(r"(?<![\w.+%-])0(?![\w.%])", "0px", out)
+    return out.rstrip(")")
+
+
+def block_head(head):
+    """A nested rule's head as the part that names it: an at-rule by its name, a keyframe selector by its kind (so that `entry 0%` and `entry 5%` are one part)."""
+    head = head.strip()
+    if head.startswith("@"):
+        return head.split()[0].lower()
+    if re.match(r"^(from|to)$", head, re.I):
+        return "keyframe"
+    if re.match(r"^[+-]?[\d.]+%$", head):
+        return "keyframe"
+    m = re.match(r"^(entry-crossing|exit-crossing|entry|exit|cover|contain)\b", head, re.I)
+    if m:
+        return "keyframe:" + m.group(1).lower()
+    if head.lower().startswith("calc("):
+        return "keyframe"  # both browsers resolve a calc() selector to a percentage
+    return "block:" + re.sub(r"[\d.]+", "0", head)[:20]
 
 
 def parts_of_rule(css):
-    """A rule as the questions it asks: ('h', its prelude), and ('d:name', 'kept') for each descriptor and nested rule it kept."""
+    """A rule as the questions it asks: its prelude, and the name of each descriptor and nested rule it kept (a nested rule's declarations are names too, flattened)."""
     sig = signature(css)
     m = re.match(r"(.*?) \{(.*)\}$", sig, re.S)
     head, body = (m.group(1), m.group(2)) if m else (sig, "")
-    names = []
+    names = set()
     depth, cur = 0, []
+    entries = []
     for c in body:
-        if c in "{":
+        if c == "{":
             depth += 1
         elif c == "}":
             depth -= 1
         if c == "," and depth == 0:
-            names.append("".join(cur))
+            entries.append("".join(cur))
             cur = []
         else:
             cur.append(c)
     if cur:
-        names.append("".join(cur))
+        entries.append("".join(cur))
+    for e in entries:
+        if not e:
+            continue
+        if " {" in e:
+            h, _, inner = e.partition(" {")
+            names.add(block_head(h))
+            for x in inner.rstrip("}").split(","):
+                if x:
+                    names.add(x.strip())
+        else:
+            names.add(e)
     head = re.sub(r"\s+", " ", head)
-    return head, sorted({n.split(" {")[0] if n.startswith("@") else n for n in names if n})
+    # the same descriptor under another name: Firefox writes `font-stretch` as `font-width` (Fonts 4 renamed it), and a page block expands `margin` into its sides when a side is important
+    names = {"font-stretch" if n == "font-width" else ("margin" if n.startswith("margin-") else n) for n in names}
+    return head, sorted(names)
 
 
 def comparable(q, ans):
@@ -301,8 +338,6 @@ def comparable(q, ans):
 def ours_value(q, ans):
     k = q[0]
     if k == "M":
-        if ans[1] == "E":
-            return [("m", "E"), ("s", "E")]
         return [("m", ans[1]), ("s", norm_media(unesc(ans[2])))]
     if k in ("S", "P"):
         return [("", ans[1])]
@@ -340,8 +375,8 @@ def compare(docs, ours, browsers):
             for part in parts:
                 miss = "dropped" if part.startswith("d:") else None
                 cv, fv, oc, of = cm.get(part, miss), fm.get(part, miss), om.get(part, miss), ofm.get(part, miss)
-                if part in ("h",) and "reject" in (cm.get("a"), fm.get("a"), om.get("a"), ofm.get("a")):
-                    continue  # a rejected rule has no prelude to compare
+                if part != "a" and q[0] == "A" and "reject" in (cm.get("a"), fm.get("a"), om.get("a"), ofm.get("a")):
+                    continue  # a rule one reader rejected has no prelude or descriptors in that reader to compare: the acceptance is the question
                 total += 1
                 a, b = oc == cv, of == fv
                 if a and b:

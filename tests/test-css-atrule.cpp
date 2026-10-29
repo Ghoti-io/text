@@ -456,6 +456,7 @@ TEST(CssAtrule, AnInvalidPropertyRuleIsNotValid) {
     EXPECT_EQ(p.a, nullptr) << css;
   }
   const char * valid[] = {
+    "@property --a { syntax: \"*\"; syntax: \"<length>\" !important; inherits: false }", /* a later descriptor with !important is ignored, the earlier one stands */
     "@property --a { syntax: \"*\"; inherits: false }",
     "@property --a { syntax: \"*\"; inherits: true; initial-value: whatever }",
     "@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1px }",
@@ -508,4 +509,16 @@ TEST(CssAtrule, ANameListHoldsNoUnquotedGenericFamily) {
   EXPECT_TRUE(Parsed("@font-feature-values \"serif\", Foo Bar { @styleset { a: 1 } }").res.valid);
   EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a, serif }").desc("font-family"), "-");
   EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a, \"serif\" }").desc("font-family"), "a, \"serif\"");
+}
+
+TEST(CssAtrule, TheConditionOfAGroupRuleIsWrittenAsCssomWritesIt) {
+  /* `mediaText`, `conditionText` and a container rule's condition are serializations of the parsed condition: an invalid media query is `not all`, a ratio has both numbers
+   * (Values 4: "<ratio> is always serialized with both components"), names and features are in lower case, an unknown feature stays as it was. */
+  EXPECT_EQ(Parsed("@media screen and { }").css(), "@media not all { }");
+  EXPECT_EQ(Parsed("@media , { }").css(), "@media not all, not all { }");
+  EXPECT_EQ(Parsed("@media { }").css(), "@media { }");
+  EXPECT_EQ(Parsed("@media (MIN-WIDTH: 10PX) AND (aspect-ratio > 1) { }").css(), "@media (min-width: 10px) and (aspect-ratio > 1 / 1) { }");
+  EXPECT_EQ(Parsed("@container (aspect-ratio > 1) { }").css(), "@container (aspect-ratio > 1 / 1) { }");
+  EXPECT_EQ(Parsed("@container Card (width>1px) { }").css(), "@container Card (width > 1px) { }");
+  EXPECT_EQ(Parsed("@supports (display:grid) and (foo: bar) { }").css(), "@supports (display: grid) and (foo: bar) { }");
 }
