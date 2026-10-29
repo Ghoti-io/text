@@ -60,3 +60,87 @@ Names are scoped to the set's `context` (one set for the document and one for ea
 ## Limits
 
 `max_descriptors` and `max_children` bound a rule, `max_list` the lists it unfolds; the set has `max_rules` and `max_rule_depth`. A limit is a status with no partial result.
+
+An example: a `@counter-style` rule whose descriptors the draft refuses (a backwards `range`, `fallback: none`) is kept without them.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* An at-rule is typed data: what the grammar and the rules of the draft refuse is dropped with a diagnostic, and the rest is kept. */
+static void atrule_counter_style(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  if (gtext_css_registry_new(NULL, &registry) != GTEXT_CSS_OK) {
+    return;
+  }
+  const char * css = "@counter-style roman { system: additive; additive-symbols: 10 X, 5 V, 1 I; range: 10 1; fallback: none; suffix: \". \" }";
+  GTEXT_CSS_Tree * tree = NULL;
+  if (gtext_css_parse_stylesheet(css, strlen(css), NULL, &tree, NULL) == GTEXT_CSS_OK) {
+    GTEXT_CSS_Atrule_Options options = gtext_css_atrule_options_default();
+    GTEXT_CSS_Atrule * rule = NULL;
+    GTEXT_CSS_Atrule_Result result;
+    if (gtext_css_atrule_parse(registry, &tree->rules[0], &options, &rule, &result) == GTEXT_CSS_OK && result.valid) {
+      printf("%zu descriptors kept, %zu diagnostics\n", gtext_css_atrule_descriptor_count(rule), result.diagnostic_total);
+      char * text = NULL;
+      size_t length = 0;
+      if (gtext_css_atrule_serialize_buffer(rule, NULL, &text, &length) == GTEXT_CSS_OK) {
+        printf("%s\n", text);
+        gtext_css_atrule_buffer_free(NULL, text);
+      }
+    }
+    gtext_css_atrule_free(rule);
+    gtext_css_tree_free(tree);
+  }
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+3 descriptors kept, 2 diagnostics
+@counter-style roman { system: additive; additive-symbols: 10 X, 5 V, 1 I; suffix: ". "; }
+```
+
+The validity of an `@property` rule is the answer of the code that registers it.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The validity of an @property rule is the answer of the code that registers it. */
+static void atrule_property(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  if (gtext_css_registry_new(NULL, &registry) != GTEXT_CSS_OK) {
+    return;
+  }
+  const char * rules[] = {"@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4px }", "@property --gap { syntax: \"<length>\"; inherits: false }",
+                          "@property --any { syntax: \"*\"; inherits: true }", "@property gap { syntax: \"*\"; inherits: true }"};
+  for (size_t i = 0; i < sizeof rules / sizeof *rules; i++) {
+    GTEXT_CSS_Tree * tree = NULL;
+    if (gtext_css_parse_stylesheet(rules[i], strlen(rules[i]), NULL, &tree, NULL) != GTEXT_CSS_OK) {
+      continue;
+    }
+    GTEXT_CSS_Atrule_Options options = gtext_css_atrule_options_default();
+    GTEXT_CSS_Atrule * rule = NULL;
+    GTEXT_CSS_Atrule_Result result;
+    if (gtext_css_atrule_parse(registry, &tree->rules[0], &options, &rule, &result) == GTEXT_CSS_OK) {
+      printf("rule %zu: %s\n", i + 1, result.valid ? "valid" : "invalid");
+    }
+    gtext_css_atrule_free(rule);
+    gtext_css_tree_free(tree);
+  }
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+rule 1: valid
+rule 2: invalid
+rule 3: valid
+rule 4: invalid
+```
