@@ -80,6 +80,24 @@ struct Run {
   FaultAllocator & fa;
 };
 
+/// Whether a custom property of the rule (or of a rule nested in it) has a value with a `{}` block: `--x: a { b };` is a declaration in one reading and the start of a nested rule in
+/// another (Syntax 5.4.4), so its text does not read back as the same rule. That is the syntax layer's ambiguity and not the model's; such a rule is left out of the fixed point.
+bool custom_block(const GTEXT_CSS_Atrule * a) {
+  for (size_t i = 0; i < gtext_css_atrule_descriptor_count(a); i++) {
+    GTEXT_CSS_Atrule_Descriptor d;
+    gtext_css_atrule_descriptor_at(a, i, &d);
+    if (d.name_length > 2 && d.name[0] == '-' && d.name[1] == '-' && std::memchr(d.text.data, '{', d.text.length)) {
+      return true;
+    }
+  }
+  for (size_t i = 0; i < gtext_css_atrule_child_count(a); i++) {
+    if (custom_block(gtext_css_atrule_child_at(a, i))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void typed(const GTEXT_CSS_Atrule * a, const std::string & input) {
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   switch (gtext_css_atrule_kind(a)) {
@@ -180,7 +198,7 @@ void pipeline(const std::string & input, FaultAllocator & fa) {
     if (res.valid && a) {
       typed(a, input);
       const std::string once = text_of(a, &fa.alloc);
-      if (once != "<oom>") {
+      if (once != "<oom>" && !custom_block(a)) {
         css_test::Parsed again;
         again.status = gtext_css_parse_stylesheet(once.data(), once.size(), &po, &again.tree, &again.result);
         if (again.status == GTEXT_CSS_OK && again.tree && again.tree->rule_count >= 1) {
