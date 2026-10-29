@@ -355,3 +355,14 @@ TEST(CssAtrule, MultiIdentFamilyWithAnEscapedSpace) {
   ASSERT_NE(q.a, nullptr) << once;
   EXPECT_EQ(q.css(), once);
 }
+
+// A custom property whose value holds a bad url or a bad string is invalid and is dropped.
+TEST(CssAtrule, CustomPropertyWithABadTokenIsDropped) {
+  Parsed p("@keyframes k { to { --x: url(a b); --y: \"q\n; top: 0 } }");
+  ASSERT_NE(p.a, nullptr);
+  EXPECT_EQ(p.css().find("--x"), std::string::npos);
+  EXPECT_EQ(p.css().find("--y"), std::string::npos);
+  EXPECT_NE(p.css().find("top"), std::string::npos);
+  Parsed q("@keyframes k { to { --x: url(a); top: 0 } }");
+  EXPECT_NE(q.css().find("--x"), std::string::npos);
+}

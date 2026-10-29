@@ -662,7 +662,21 @@ static bool property_taken(const char * atrule, const char * name, size_t len) {
 }
 
 /// A descriptor of the at-rule, parsed by the registry's grammar. The declaration is dropped with a diagnostic when it is unknown or invalid.
+static bool holds_bad_token(const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * v, size_t n, bool * oom);
+
 static bool read_descriptor(ctx * c, const char * at_name, const GTEXT_CSS_Declaration * d, bool also_property) {
+  if (d->name.length > 2 && d->name.data[0] == '-' && d->name.data[1] == '-') {
+    /* Variables 1: a custom property's value is a <declaration-value>, which holds no bad-string and no bad-url; one that does is invalid (and could not be written back) */
+    bool oom_scan = false;
+    const bool bad = holds_bad_token(&c->a->alloc, d->value, d->value_count, &oom_scan);
+    if (oom_scan) {
+      fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+    if (bad) {
+      return diag(c, GTEXT_CSS_ATRULE_DIAG_INVALID_VALUE, d->span, "Variables 1: a custom property's value holds no bad-string or bad-url token");
+    }
+  }
   GTEXT_CSS_Property_Options po;
   memset(&po, 0, sizeof po);
   po.allocator = &c->a->alloc;
