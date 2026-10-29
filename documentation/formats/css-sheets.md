@@ -69,7 +69,7 @@ static void sheet_quick_start(void) {
   for (size_t e = 0; e < count; e++) {
     GTEXT_CSS_Candidates * set = NULL;
     gtext_css_candidates_new(registry, NULL, NULL, &set);
-    gtext_css_rules_collect(index, match, gtext_css_markup_handle(paragraphs[e]), NULL, set, NULL);
+    gtext_css_rules_collect(index, match, gtext_css_markup_handle(paragraphs[e]), NULL, set, NULL, NULL);
     GTEXT_CSS_Cascaded * cascaded = NULL;
     gtext_css_cascade(set, NULL, &cascaded, NULL);
     GTEXT_Markup_Attribute id;
@@ -129,7 +129,7 @@ them).
 | `@namespace` | fills the prefix map of the rules after it; a prefix it does not declare makes a selector invalid |
 | `@layer` | statements, blocks, nested and anonymous layers, kept in the sheet's own layer tree (a sheet does not depend on a document's registry) |
 | `@import` | read where the standard allows one; the sheet asks the caller for the imported sheet through `GTEXT_CSS_Import_Fn` and **never fetches** |
-| `@media`, `@supports`, `@container`, `@starting-style`, `@document` | gated by the one filter (below) |
+| `@media`, `@supports`, `@container`, `@starting-style`, `@when`, `@else` | **condition nodes** the sheet keeps as data (below); `@document` is a node that never applies |
 | `@scope` | a scope the rules inside it are in (below) |
 
 **Nesting.** `.a, #b { & .c {} .d {} > .e {} }` has three records for the nested rules, each a selector of its own list: a compound with no `&` is `& ` and the selector, a
@@ -137,14 +137,20 @@ leading combinator relates to `&`, and `&` has the specificity of the most speci
 each, is five records and compiles in time linear in the text, not 5^40. Style rules may be nested `max_rule_depth` deep (default 64); one more is
 `GTEXT_CSS_E_LIMIT_RULE_NESTING`.
 
-**The filter for conditional rules.** `GTEXT_CSS_Sheet_Options::active` is the filter of the cascade layers (`GTEXT_CSS_Active_Rule_Fn`, css_layer.h), asked once for each rule, and
-the evaluator of the conditions is C4's. A rule it answers false for contributes nothing, **including the layers it holds**, so a layer introduced under a false `@media` or
-by a false `@import ... supports()` is not declared. **With no filter, a conditional rule that holds a style rule or a layer is `GTEXT_CSS_E_UNSUPPORTED` naming `active_rule`** (a
-conditional `@import` too): the library does not guess. A sheet is the sheet for the filter it was compiled with; compile again when the environment changes.
+**Conditions are data.** Compiling a sheet evaluates nothing. Every conditional group rule becomes a **condition node** of the sheet (the parsed condition, immutable, with a link to
+the node it is inside), and every record, every layer occurrence and every import carries the node it is under (`GTEXT_CSS_Sheet_Record::condition`, `gtext_css_sheet_condition()`).
+So one compiled sheet serves any number of environments and documents: a resize is a new `GTEXT_CSS_Conditions` (\ref format_css_conditions "css-conditions.md") and a new index, and
+the sheet is untouched. A condition that cannot be read is a node that never applies, with a diagnostic (an `@media` list replaces an invalid query by `not all`, as Media Queries 4
+says). `@else` joins the rule before it, if that is an `@when` or `@else` with nothing but white space and comments between: it applies only if no earlier rule of its chain does
+(Conditional 5, 4), and an `@else` outside a chain is invalid. A conditional rule that holds only data (`@media print { @font-face {} }`) is no node. Nodes are limited by
+`max_conditions` (default 1,048,576, `GTEXT_CSS_E_LIMIT_CONDITIONS`).
 
-**Imports.** `GTEXT_CSS_Sheet_Options::import` gets the rule's `url`, `layer`, `supports()` and media list and returns an already compiled sheet, **one owner given to the
-importer** (return `gtext_css_sheet_retain()` of a cached one), or NULL for a fetch that failed or was refused, which contributes nothing and is a diagnostic. An `@import` after
-a style rule is ignored. A sheet that imports deeper than `max_import_depth` (default 16) is `GTEXT_CSS_E_LIMIT_RULE_NESTING`.
+**Imports.** `GTEXT_CSS_Sheet_Options::import` is asked for **every** import. It gets the rule's `url`, `layer`, `scope()`, `supports()` and media list, as text and **parsed**
+(`media_list`, `supports_condition`: evaluate them with the conditions object to decide whether to fetch at all), and returns an already compiled sheet, **one owner given to the
+importer** (return `gtext_css_sheet_retain()` of a cached one, which is how a sheet is kept for a later resize), or NULL for a fetch that failed or was refused, which contributes
+nothing and is a diagnostic. The grammar is `[ layer | layer(name) ] || [ scope | scope(...) ] || supports(...)` in any order, then the media list. `scope(<selector>)`,
+`scope((<start>) to (<end>))` and `scope()` (the implicit root) wrap the imported sheet's rules in an implicit `@scope`; a selector that names `&` or `:scope` keeps its meaning, and the
+others have the implied `:where(:scope)` in front of them. An `@import` after a style rule is ignored. A sheet that imports deeper than `max_import_depth` (default 16) is `GTEXT_CSS_E_LIMIT_RULE_NESTING`.
 
 `gtext_css_sheet_record()` and `gtext_css_sheet_record_declarations()` read what was compiled, `gtext_css_sheet_diagnostic()` what was dropped and why (with a reference to the
 sentence of the draft that decides it), and `gtext_css_sheet_dump()` writes a canonical, versioned text of the sheet that is the same on every platform.
@@ -158,11 +164,19 @@ read only and may be used by any number of threads, each with a match context of
 (the rest in one list), so the work to style an element is the records of the keys it has and not the number of rules (`make test` asserts the same count of rules considered
 for 100 rules as for 8,000).
 
-`gtext_css_rules_collect(index, match, element, pseudo, set)` adds to a candidate set one entry for each declaration of each rule that matches the element (or the
+**Conditions.** `GTEXT_CSS_Rule_Index_Options::conditions` is the evaluator the index is built for, and is **required once a sheet holds a condition node** (`GTEXT_CSS_E_UNSUPPORTED`
+naming `conditions` when it is not: never a guess). Each node is evaluated **once** as the sheet is added (a node is met after the node it is inside, so n nested rules cost O(n)); the
+records and imports whose chain is false are not in the index, and `gtext_css_rule_index_record_count()` counts the others. **A layer is declared at an occurrence whose chain holds**:
+`@media (width > 9999px) { @layer x {} } @layer y; @media screen { @layer x {} }` declares y, then x, and a layer under a false `@media` or a false `@import ... supports()` is not
+declared at all (Cascade 5, 6.4.3); under an `@container` it is, because the condition can differ for each element. A chain with a container node keeps its record, flagged element
+dependent, and `gtext_css_rules_collect()` asks the container interface about it for each element (\ref format_css_conditions "css-conditions.md"). Two conditions objects over the same
+sheets give two indexes whose records are the sheets' own where the conditions agree.
+
+`gtext_css_rules_collect(index, match, element, pseudo, set, options, result)` adds to a candidate set one entry for each declaration of each rule that matches the element (or the
 pseudo-element `pseudo` asks for: a list of one complex selector made of pseudo-elements, as `gtext_css_selector_match()` takes). The entry has every key the cascade defines:
 `origin`, `important` (the declaration's), `layer` (in the registry of the entry's context, which the call gives the set), `context`, `scoped` and `scope_distance`, `specificity` (the
 highest of the complex selectors of the rule that match), and `sheet` and `rule` (the order of appearance). A set takes one call; make a new set for each element.
-`GTEXT_CSS_Style_Options::rules` and `::match` do the whole chain in `gtext_css_style_compute()` (\ref format_css_style "css-style.md"), and `::pseudo` gives the style of a
+`options` (NULL for the defaults) says whether the records under `@starting-style` take part (`starting_style`: compute the style once without and once with, as Transitions 2 defines the starting style) and gives the call context of the container queries. `GTEXT_CSS_Style_Options::rules` and `::match` do the whole chain in `gtext_css_style_compute()` (\ref format_css_style "css-style.md"), and `::pseudo` gives the style of a
 pseudo-element's entries.
 
 ## What the specifications leave open, and what the library decides

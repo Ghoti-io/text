@@ -57,10 +57,6 @@ std::string dump(const GTEXT_CSS_Sheet * s) {
   return out;
 }
 
-bool yes(void *, const GTEXT_CSS_Rule *) {
-  return true;
-}
-
 }  // namespace
 
 TEST(CssSheetOom, CompilingFailsCleanlyAtEveryAllocationAndThenAnswersAsIfNeverFailed) {
@@ -68,7 +64,6 @@ TEST(CssSheetOom, CompilingFailsCleanlyAtEveryAllocationAndThenAnswersAsIfNeverF
   css_test::parse_into(p, gtext_css_parse_stylesheet, kSheet);
   ASSERT_NE(p.tree, nullptr);
   GTEXT_CSS_Sheet_Options base = gtext_css_sheet_options_default();
-  base.active = yes;
   GTEXT_CSS_Sheet * clean = nullptr;
   ASSERT_EQ(gtext_css_sheet_compile(p.tree, R(), &base, &clean, nullptr), GTEXT_CSS_OK);
   const std::string want = dump(clean);
@@ -104,7 +99,6 @@ TEST(CssSheetOom, TheIndexAndTheCollectionFailCleanlyToo) {
   css_test::Parsed p;
   css_test::parse_into(p, gtext_css_parse_stylesheet, "@layer a, b; @layer b { p { color: red } } p, .x { color: blue; & i { margin-top: 1px } } @scope (.x) { p { margin-left: 2px } }");
   GTEXT_CSS_Sheet_Options base = gtext_css_sheet_options_default();
-  base.active = yes;
   GTEXT_CSS_Sheet * sheet = nullptr;
   ASSERT_EQ(gtext_css_sheet_compile(p.tree, R(), &base, &sheet, nullptr), GTEXT_CSS_OK);
   synth::Tree t;
@@ -146,7 +140,7 @@ TEST(CssSheetOom, TheIndexAndTheCollectionFailCleanlyToo) {
           if (st != GTEXT_CSS_OK) {
             break;
           }
-          st = gtext_css_rules_collect(ix, ctx, synth::Tree::H(e), nullptr, set, nullptr);
+          st = gtext_css_rules_collect(ix, ctx, synth::Tree::H(e), nullptr, set, nullptr, nullptr);
           for (size_t i = 0; st == GTEXT_CSS_OK && i < gtext_css_candidates_count(set); i++) {
             GTEXT_CSS_Cascade_Entry en;
             gtext_css_candidates_entry(set, i, &en);

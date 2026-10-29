@@ -55,7 +55,7 @@ static void sheet_quick_start(void) {
   for (size_t e = 0; e < count; e++) {
     GTEXT_CSS_Candidates * set = NULL;
     gtext_css_candidates_new(registry, NULL, NULL, &set);
-    gtext_css_rules_collect(index, match, gtext_css_markup_handle(paragraphs[e]), NULL, set, NULL);
+    gtext_css_rules_collect(index, match, gtext_css_markup_handle(paragraphs[e]), NULL, set, NULL, NULL);
     GTEXT_CSS_Cascaded * cascaded = NULL;
     gtext_css_cascade(set, NULL, &cascaded, NULL);
     GTEXT_Markup_Attribute id;

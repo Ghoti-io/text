@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_container_internal.h"
 #include "css_registry_internal.h"
 #include "css_sheet_internal.h"
 
@@ -75,11 +76,26 @@ typedef struct {
   size_t lmap_n;
   GTEXT_CSS_Element_Handle implicit_root;
   bool owned;                 ///< The index holds an owner of the sheet (the sheets it imports are owned by it).
+  uint8_t * tv;               ///< By condition node (id): the truth of the node's chain for the index's conditions, TV_* bits. NULL: the sheet has no node.
+  const sheet_scope * scope0; ///< The `@scope` an `@import ... scope()` wraps the sheet in (NULL: none): a record with no scope of its own is in it.
+  size_t live;                ///< Records of the sheet whose chain is not false.
 } placed;
+
+/// Bits of a placement's per-node truth.
+#define TV_OK 0x1u        ///< The node and every node it is inside hold (a container node holds here: the element decides later).
+#define TV_ELEM 0x2u      ///< The chain has a container node.
+#define TV_TAKEN 0x4u     ///< `@when` / `@else`: this rule or an earlier rule of its chain is true (what the next `@else` asks).
+#define TV_STARTING 0x8u  ///< The chain has `@starting-style`.
 
 typedef struct {
   uint32_t pl, rec;
 } entry;
+
+struct req_slot {
+  const char * name;
+  size_t len;
+  uint32_t mask;
+};
 
 struct GTEXT_CSS_Rule_Index {
   const GTEXT_CSS_Registry * registry;
@@ -95,6 +111,12 @@ struct GTEXT_CSS_Rule_Index {
   size_t nall;
   size_t total;
   uint64_t seed;
+  const GTEXT_CSS_Conditions * cond;  ///< The evaluator (retained); NULL: none.
+  GTEXT_CSS_Condition_Call call;      ///< The memo of the evaluations as sheets are added (the custom media are evaluated once).
+  sheet_scope ** scopes;              ///< Scopes made for imports that are themselves in a scope (owned).
+  size_t nscopes, capscopes;
+  struct req_slot * reqs;             ///< The distinct container requests of the index, for the limit.
+  size_t nreqs, capreqs;
   bool frozen, failed, has_shadow;
   bool has_part; ///< some sheet, a document's too, has a rule ending in `::part()`: it reaches into shadow trees whether or not one has a sheet of its own
 };
@@ -260,6 +282,8 @@ GTEXT_CSS_Status gtext_css_rule_index_new(const GTEXT_CSS_Registry * registry, c
   x->alloc = alloc;
   x->opt = o;
   x->opt.allocator = NULL;
+  x->cond = o.conditions ? gtext_css_conditions_retain(o.conditions) : NULL;
+  x->opt.conditions = x->cond;
   if (!x->opt.max_records) {
     x->opt.max_records = DEF_MAX_RECORDS;
   }
@@ -282,11 +306,19 @@ void gtext_css_rule_index_free(GTEXT_CSS_Rule_Index * x) {
       gtext_css_sheet_free(p->sheet);
     }
     gtext_allocator_free(&a, p->lmap);
+    gtext_allocator_free(&a, p->tv);
     gtext_allocator_free(&a, p);
   }
   for (size_t i = 0; i < x->ng; i++) {
     group_free(&a, x->groups[i]);
   }
+  for (size_t i = 0; i < x->nscopes; i++) {
+    gtext_allocator_free(&a, x->scopes[i]);
+  }
+  gtext_allocator_free(&a, x->scopes);
+  gtext_allocator_free(&a, x->reqs);
+  gtext_css_condition_call_free(&x->call);
+  gtext_css_conditions_free(x->cond);
   gtext_allocator_free(&a, x->pls);
   gtext_allocator_free(&a, x->groups);
   gtext_allocator_free(&a, x->gslots);
@@ -335,13 +367,200 @@ static group * find_group_scope(const GTEXT_CSS_Rule_Index * x, const void * sco
   return NULL;
 }
 
+/// The result of a failed evaluation: the status with the callback or unit that was needed.
+static GTEXT_CSS_Status eval_failure(GTEXT_CSS_Rule_Index_Result * res, GTEXT_CSS_Status st, const GTEXT_CSS_Condition_Call * call) {
+  return ires(res, st, call->detail ? call->detail : "condition", st == GTEXT_CSS_E_UNSUPPORTED ? "a condition needs something the conditions object lacks" : NULL);
+}
+
+static uint64_t req_hash(const char * name, size_t len, uint32_t mask) {
+  uint64_t h = 0xcbf29ce484222325ull ^ mask;
+  for (size_t i = 0; i < len; i++) {
+    h ^= (unsigned char)name[i];
+    h *= 0x100000001b3ull;
+  }
+  return mix(h);
+}
+
+/// Count a container request, once for each distinct (name, kinds); more than the conditions object allows is GTEXT_CSS_E_LIMIT_CONTAINER.
+static GTEXT_CSS_Status note_request(GTEXT_CSS_Rule_Index * x, const char * name, size_t len, uint32_t mask, GTEXT_CSS_Rule_Index_Result * res) {
+  if (!x->cond) {
+    return GTEXT_CSS_OK;
+  }
+  const size_t limit = x->cond->max_requests;
+  if (x->capreqs == 0) {
+    x->capreqs = 64;
+    x->reqs = gtext_allocator_calloc(&x->alloc, x->capreqs, sizeof *x->reqs);
+    if (!x->reqs) {
+      x->capreqs = 0;
+      return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+  }
+  size_t i = (size_t)(req_hash(name, len, mask) & (x->capreqs - 1));
+  while (x->reqs[i].len || x->reqs[i].mask || x->reqs[i].name) {
+    if (x->reqs[i].mask == mask && x->reqs[i].len == len && (len == 0 || memcmp(x->reqs[i].name, name, len) == 0)) {
+      return GTEXT_CSS_OK;
+    }
+    i = (i + 1) & (x->capreqs - 1);
+  }
+  if (x->nreqs >= limit) {
+    return ires(res, GTEXT_CSS_E_LIMIT_CONTAINER, "max_container_requests", "the index has more distinct container requests than the conditions object allows");
+  }
+  if ((x->nreqs + 1) * 2 > x->capreqs) {
+    const size_t nc = x->capreqs * 2;
+    struct req_slot * n = gtext_allocator_calloc(&x->alloc, nc, sizeof *n);
+    if (!n) {
+      return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+    for (size_t k = 0; k < x->capreqs; k++) {
+      const struct req_slot * e = &x->reqs[k];
+      if (e->len || e->mask || e->name) {
+        size_t m = (size_t)(req_hash(e->name, e->len, e->mask) & (nc - 1));
+        while (n[m].len || n[m].mask || n[m].name) {
+          m = (m + 1) & (nc - 1);
+        }
+        n[m] = *e;
+      }
+    }
+    gtext_allocator_free(&x->alloc, x->reqs);
+    x->reqs = n;
+    x->capreqs = nc;
+    i = (size_t)(req_hash(name, len, mask) & (nc - 1));
+    while (x->reqs[i].len || x->reqs[i].mask || x->reqs[i].name) {
+      i = (i + 1) & (nc - 1);
+    }
+  }
+  x->reqs[i] = (struct req_slot){name ? name : "", len, mask ? mask : 0x80u};
+  x->nreqs++;
+  return GTEXT_CSS_OK;
+}
+
+/// Evaluate every condition node of a sheet, once and in order (a node is met after the node it is inside and after the rule before it in its chain), into the placement's `tv`.
+static GTEXT_CSS_Status evaluate_nodes(GTEXT_CSS_Rule_Index * x, placed * p, GTEXT_CSS_Rule_Index_Result * res) {
+  const GTEXT_CSS_Sheet * sheet = p->sheet;
+  if (sheet->nconds == 0) {
+    return GTEXT_CSS_OK;
+  }
+  if (!x->cond) {
+    return ires(res, GTEXT_CSS_E_UNSUPPORTED, "conditions", "a sheet holds conditional rules and the index was made without a conditions object to evaluate them");
+  }
+  p->tv = gtext_allocator_calloc(&x->alloc, sheet->nconds + 1, 1);
+  if (!p->tv) {
+    return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+  }
+  if (css_conditions_prepare_call(x->cond, &x->call) != GTEXT_CSS_OK) {
+    return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+  }
+  for (uint32_t id = 1; id <= sheet->nconds; id++) {
+    const sheet_cond * c = &sheet->conds[id - 1];
+    const uint8_t pt = c->parent ? p->tv[c->parent] : (uint8_t)TV_OK;
+    bool own = false;
+    GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
+    GTEXT_CSS_Status st = GTEXT_CSS_OK;
+    bool needs = pt & TV_OK; /* a node inside a false node is false whatever it says: it is not evaluated (and cannot fail) */
+    switch ((sheet_cond_kind)c->kind) {
+    case SCK_MEDIA:
+      if (needs) {
+        st = gtext_css_conditions_matches_list(x->cond, c->list, &x->call, &own);
+      }
+      break;
+    case SCK_SUPPORTS:
+      if (needs) {
+        st = gtext_css_conditions_evaluate_supports(x->cond, c->list, &x->call, &t);
+        own = t == GTEXT_CSS_TRI_TRUE;
+      }
+      break;
+    case SCK_WHEN:
+      if (!c->list) {
+        own = true; /* a bare @else */
+      }
+      else if (needs) {
+        st = gtext_css_conditions_evaluate_boolean(x->cond, c->list, &x->call, &t);
+        own = t == GTEXT_CSS_TRI_TRUE;
+      }
+      break;
+    case SCK_IMPORT:
+      if (needs) {
+        own = true;
+        if (c->list2) {
+          st = gtext_css_conditions_evaluate_supports(x->cond, c->list2, &x->call, &t);
+          own = t == GTEXT_CSS_TRI_TRUE;
+        }
+        if (st == GTEXT_CSS_OK && own && c->list) {
+          st = gtext_css_conditions_matches_list(x->cond, c->list, &x->call, &own);
+        }
+      }
+      break;
+    case SCK_CONTAINER:
+      own = true;
+      for (size_t k = 0; c->list && k < c->list->in.root_count; k++) {
+        const mq_node * q = &c->list->in.nodes[c->list->in.roots[k]];
+        if (!(q->flags & MQF_REPLACED) && !(q->bits & MQC_UNKNOWN)) {
+          st = note_request(x, q->text, q->text_length, q->bits, res);
+          if (st != GTEXT_CSS_OK) {
+            return st;
+          }
+        }
+      }
+      break;
+    case SCK_STARTING_STYLE:
+      own = true;
+      break;
+    case SCK_NEVER:
+      own = false;
+      break;
+    }
+    if (st != GTEXT_CSS_OK) {
+      return eval_failure(res, st, &x->call);
+    }
+    uint8_t v = 0;
+    bool taken = own;
+    if (c->kind == SCK_WHEN && c->prev) {
+      const bool earlier = (p->tv[c->prev] & TV_TAKEN) != 0;
+      taken = own || earlier;
+      own = own && !earlier; /* "If one of them is true, the conditions of all following conditional group rules in the chain evaluate to false" */
+    }
+    if (own && (pt & TV_OK)) {
+      v |= TV_OK;
+    }
+    if (taken) {
+      v |= TV_TAKEN;
+    }
+    if (c->flags & SCF_ELEMENT) {
+      v |= TV_ELEM;
+    }
+    if (c->flags & SCF_STARTING) {
+      v |= TV_STARTING;
+    }
+    p->tv[id] = v;
+  }
+  return GTEXT_CSS_OK;
+}
+
+/// The scope of an import that is itself placed in a scope: the import's own `@scope`, with the placement's as its parent.
+static GTEXT_CSS_Status chain_scope(GTEXT_CSS_Rule_Index * x, const sheet_scope * outer, const sheet_scope * inner, const sheet_scope ** out, GTEXT_CSS_Rule_Index_Result * res) {
+  if (!inner || !outer) {
+    *out = inner ? inner : outer;
+    return GTEXT_CSS_OK;
+  }
+  if (!vgrow(&x->alloc, (void **)&x->scopes, &x->capscopes, x->nscopes + 1, sizeof *x->scopes)) {
+    return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+  }
+  sheet_scope * c = gtext_allocator_malloc(&x->alloc, sizeof *c);
+  if (!c) {
+    return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+  }
+  *c = *inner;
+  c->parent = outer;
+  c->depth = outer->depth + 1;
+  x->scopes[x->nscopes++] = c;
+  *out = c;
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status place(GTEXT_CSS_Rule_Index * x, GTEXT_CSS_Sheet * sheet, group * g, GTEXT_CSS_Origin origin, uint32_t base, GTEXT_CSS_Element_Handle implicit_root,
-    size_t depth, GTEXT_CSS_Rule_Index_Result * res) {
+    const sheet_scope * scope0, size_t depth, GTEXT_CSS_Rule_Index_Result * res) {
   if (depth > MAX_PLACE_DEPTH) {
     return ires(res, GTEXT_CSS_E_LIMIT_RULE_NESTING, "imports", "imports are nested deeper than the index reads");
-  }
-  if (sheet->nrecs > x->opt.max_records || x->total > x->opt.max_records - sheet->nrecs) {
-    return ires(res, GTEXT_CSS_E_LIMIT_SHEET_SIZE, "max_records", "the index would hold more records than max_records");
   }
   placed * p = gtext_allocator_calloc(&x->alloc, 1, sizeof *p);
   if (!p) {
@@ -351,50 +570,104 @@ static GTEXT_CSS_Status place(GTEXT_CSS_Rule_Index * x, GTEXT_CSS_Sheet * sheet,
   p->origin = origin;
   p->g = g;
   p->implicit_root = implicit_root;
-  p->lmap_n = gtext_css_sheet_layer_count(sheet) + 1;
-  p->lmap = gtext_allocator_calloc(&x->alloc, p->lmap_n, sizeof *p->lmap);
-  if (!p->lmap) {
+  p->scope0 = scope0;
+  GTEXT_CSS_Status st = evaluate_nodes(x, p, res);
+  if (st == GTEXT_CSS_OK) {
+    for (size_t k = 0; k < sheet->nrecs; k++) {
+      p->live += !sheet->recs[k].cond || (p->tv[sheet->recs[k].cond] & TV_OK);
+    }
+    if (p->live > x->opt.max_records || x->total > x->opt.max_records - p->live) {
+      st = ires(res, GTEXT_CSS_E_LIMIT_SHEET_SIZE, "max_records", "the index would hold more records than max_records");
+    }
+  }
+  if (st == GTEXT_CSS_OK) {
+    p->lmap_n = gtext_css_sheet_layer_count(sheet) + 1;
+    p->lmap = gtext_allocator_calloc(&x->alloc, p->lmap_n, sizeof *p->lmap);
+    if (!p->lmap) {
+      st = ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+  }
+  if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&x->alloc, p->tv);
+    gtext_allocator_free(&x->alloc, p->lmap);
     gtext_allocator_free(&x->alloc, p);
-    return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
+    return st;
   }
   p->lmap[0] = base;
-  x->total += sheet->nrecs;
-  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  x->total += p->live;
   for (size_t i = 0; i < sheet->nevents && st == GTEXT_CSS_OK; i++) {
     const sheet_event * ev = &sheet->events[i];
+    if (ev->cond && !(p->tv[ev->cond] & TV_OK)) {
+      continue; /* "Layers that are defined inside of a conditional group rule do not contribute to the layer order unless the condition is true or unless the conditional group
+                   rule can evaluate differently for different elements": a container node counts as true here, a false media or import condition does not */
+    }
     if (ev->kind == 0) {
-      GTEXT_CSS_Layer_Info info;
-      if (!gtext_css_layer_info(sheet->layers, sheet_layer_id(sheet, ev->node), &info) || sheet_layer_no(sheet, info.parent) >= p->lmap_n) {
-        st = GTEXT_CSS_E_INTERNAL;
-        break;
+      /* declare the layer with the layers it is in, outermost first (the declaration of one already declared finds it) */
+      size_t nc = 0;
+      for (uint32_t no = ev->node; no && st == GTEXT_CSS_OK; nc++) {
+        GTEXT_CSS_Layer_Info info;
+        if (!gtext_css_layer_info(sheet->layers, sheet_layer_id(sheet, no), &info)) {
+          st = GTEXT_CSS_E_INTERNAL;
+          break;
+        }
+        no = sheet_layer_no(sheet, info.parent);
       }
-      GTEXT_CSS_Layer_Id id = 0;
-      GTEXT_CSS_Layer_Result lr;
-      memset(&lr, 0, sizeof lr);
-      const GTEXT_CSS_Layer_Id parent = p->lmap[sheet_layer_no(sheet, info.parent)];
-      st = info.anonymous ? gtext_css_layer_declare_anonymous(g->layers, origin, parent, &id, &lr) :
-                            gtext_css_layer_declare_segment(g->layers, origin, parent, info.segment, info.segment_length, &id, &lr);
-      if (st != GTEXT_CSS_OK) {
-        ires(res, st, lr.name, lr.detail);
-        break;
+      uint32_t * chain = st == GTEXT_CSS_OK && nc ? gtext_allocator_malloc(&x->alloc, nc * sizeof *chain) : NULL;
+      if (st == GTEXT_CSS_OK && nc && !chain) {
+        st = ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
       }
-      p->lmap[ev->node] = id;
+      size_t at = 0;
+      for (uint32_t no = ev->node; chain && no && at < nc; at++) {
+        GTEXT_CSS_Layer_Info info;
+        (void)gtext_css_layer_info(sheet->layers, sheet_layer_id(sheet, no), &info);
+        chain[at] = no;
+        no = sheet_layer_no(sheet, info.parent);
+      }
+      for (size_t k = at; chain && k > 0 && st == GTEXT_CSS_OK; k--) {
+        const uint32_t no = chain[k - 1];
+        GTEXT_CSS_Layer_Info info;
+        if (!gtext_css_layer_info(sheet->layers, sheet_layer_id(sheet, no), &info) || sheet_layer_no(sheet, info.parent) >= p->lmap_n) {
+          st = GTEXT_CSS_E_INTERNAL;
+          break;
+        }
+        if (info.anonymous && (no != ev->node || p->lmap[no])) {
+          continue; /* an anonymous layer is made where its own block is, once, and never on the way to another layer */
+        }
+        GTEXT_CSS_Layer_Id id = 0;
+        GTEXT_CSS_Layer_Result lr;
+        memset(&lr, 0, sizeof lr);
+        const GTEXT_CSS_Layer_Id parent = p->lmap[sheet_layer_no(sheet, info.parent)];
+        st = info.anonymous ? gtext_css_layer_declare_anonymous(g->layers, origin, parent, &id, &lr) :
+                              gtext_css_layer_declare_segment(g->layers, origin, parent, info.segment, info.segment_length, &id, &lr);
+        if (st != GTEXT_CSS_OK) {
+          ires(res, st, lr.name, lr.detail);
+          break;
+        }
+        p->lmap[no] = id;
+      }
+      gtext_allocator_free(&x->alloc, chain);
     }
     else {
       GTEXT_CSS_Sheet * child = sheet->imports[ev->import];
       const uint32_t cbase = ev->node ? p->lmap[ev->node] : p->lmap[0];
-      st = place(x, child, g, origin, cbase, implicit_root, depth + 1, res);
+      const sheet_scope * cs = NULL;
+      st = chain_scope(x, p->scope0, sheet->import_scope[ev->import], &cs, res);
+      if (st == GTEXT_CSS_OK) {
+        st = place(x, child, g, origin, cbase, implicit_root, cs, depth + 1, res);
+      }
     }
   }
   if (st != GTEXT_CSS_OK) {
     if (res && res->status == GTEXT_CSS_OK) {
       ires(res, st, NULL, NULL);
     }
+    gtext_allocator_free(&x->alloc, p->tv);
     gtext_allocator_free(&x->alloc, p->lmap);
     gtext_allocator_free(&x->alloc, p);
     return st;
   }
   if (!vgrow(&x->alloc, (void **)&x->pls, &x->cappl, x->npl + 1, sizeof *x->pls)) {
+    gtext_allocator_free(&x->alloc, p->tv);
     gtext_allocator_free(&x->alloc, p->lmap);
     gtext_allocator_free(&x->alloc, p);
     return ires(res, GTEXT_CSS_E_OOM, NULL, NULL);
@@ -463,7 +736,7 @@ GTEXT_CSS_Status gtext_css_rule_index_add_sheet(GTEXT_CSS_Rule_Index * x, GTEXT_
   if (gtext_css_layer_is_frozen(g->layers)) {
     return ires(res, GTEXT_CSS_E_INVALID, "layers", "the layer registry of the context is frozen");
   }
-  GTEXT_CSS_Status st = place(x, sheet, g, reg->origin, 0, reg->implicit_root, 0, res);
+  GTEXT_CSS_Status st = place(x, sheet, g, reg->origin, 0, reg->implicit_root, NULL, 0, res);
   if (st != GTEXT_CSS_OK) {
     x->failed = true;
     return st;
@@ -604,6 +877,10 @@ GTEXT_CSS_Status gtext_css_rule_index_freeze(GTEXT_CSS_Rule_Index * x, GTEXT_CSS
   for (size_t pi = 0; pi < x->npl; pi++) {
     const placed * p = x->pls[pi];
     for (size_t ri = 0; ri < p->sheet->nrecs; ri++) {
+      const uint32_t rc = p->sheet->recs[ri].cond;
+      if (rc && !(p->tv[rc] & TV_OK)) {
+        continue; /* the record's chain is false for the conditions the index was built for: it is not in the index */
+      }
       const uint32_t ei = (uint32_t)x->nall;
       x->all[x->nall++] = (entry){(uint32_t)pi, (uint32_t)ri};
       const GTEXT_CSS_Status st = bucket_record(x, p->g, ei, &p->sheet->recs[ri]);
@@ -674,6 +951,10 @@ typedef struct {
   const void * orig_ts;
   const css_nest * orig_nest;
   GTEXT_CSS_Status status;
+  bool starting_style;                  ///< Records under `@starting-style` take part.
+  bool from_element;                    ///< The query container search begins with the element (a pseudo-element of it), not its parent.
+  GTEXT_CSS_Condition_Call * call;      ///< The container cache.
+  GTEXT_CSS_Rule_Index_Result * res;
 } walk;
 
 static El parent_of(struct GTEXT_CSS_Selector_Match_Context * ctx, El e) {
@@ -750,10 +1031,11 @@ static bool valid_root(walk * w, const placed * pl, const sheet_scope * sc, El r
 static bool valid_root_compute(walk * w, const placed * pl, const sheet_scope * sc, El r, El x) {
   struct GTEXT_CSS_Selector_Match_Context * ctx = w->ctx;
   bool started = false;
+  const sheet_scope * outer_sc = sc->parent ? sc->parent : (sc != pl->scope0 ? pl->scope0 : NULL); /* the outermost @scope of an imported sheet is inside the import's scope */
   if (!sc->start) {
     started = pl->implicit_root && r == pl->implicit_root;
   }
-  else if (!sc->parent) {
+  else if (!outer_sc) {
     ctx->scope = w->orig_scope;
     ctx->nest = sc->outer_nest;
     started = css_match_any(ctx, sc->start, r) && ctx->status == GTEXT_CSS_OK;
@@ -763,7 +1045,7 @@ static bool valid_root_compute(walk * w, const placed * pl, const sheet_scope * 
       if (!css_match_work(ctx)) {
         return false;
       }
-      if (!valid_root(w, pl, sc->parent, outer, x)) { // the subject is what the outer limit is about, not the inner root
+      if (!valid_root(w, pl, outer_sc, outer, x)) { // the subject is what the outer limit is about, not the inner root
         if (ctx->status != GTEXT_CSS_OK) {
           return false;
         }
@@ -812,11 +1094,15 @@ static bool record_matches(walk * w, const placed * pl, const sheet_record * r, 
       }
     }
   }
-  if (!r->scope) {
+  const sheet_scope * sc = r->scope ? r->scope : pl->scope0;
+  if (!sc) {
     ctx->scope = w->orig_scope;
     ctx->nest = r->nest;
     return css_match_complex_full(ctx, r->list, cx, w->element, w->request, slot, host);
   }
+  /* A rule of a sheet imported with `scope()` that has no scope of its own is in the import's: its selector has the implied `:where(:scope) ` in front of it unless it names
+     the scope (`&`, `:scope`), so the root is a strict ancestor of the element and every compound is below it. */
+  const bool implied = !r->scope && !cx->anchor_dependent;
   *scoped = true;
   if (!CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_PARENT)) {
     css_match_missing(ctx, GTEXT_CSS_ELEMENT_CB_PARENT);
@@ -827,7 +1113,10 @@ static bool record_matches(walk * w, const placed * pl, const sheet_record * r, 
     if (!css_match_work(ctx)) {
       return false;
     }
-    if (!valid_root(w, pl, r->scope, root, w->element)) {
+    if (implied && root == w->element) {
+      continue;
+    }
+    if (!valid_root(w, pl, sc, root, w->element)) {
       if (ctx->status != GTEXT_CSS_OK) {
         return false;
       }
@@ -835,7 +1124,10 @@ static bool record_matches(walk * w, const placed * pl, const sheet_record * r, 
     }
     ctx->scope = root;
     ctx->nest = r->nest;
-    if (css_match_complex_full(ctx, r->list, cx, w->element, w->request, slot, host)) {
+    ctx->implied_cx = implied ? cx : NULL;
+    const bool m = css_match_complex_full(ctx, r->list, cx, w->element, w->request, slot, host);
+    ctx->implied_cx = NULL;
+    if (m) {
       *dist = (uint32_t)h;
       return true;
     }
@@ -863,6 +1155,32 @@ static bool add_hit(walk * w, const placed * pl, uint32_t ei, const sheet_record
   return true;
 }
 
+/// Whether the container nodes of a record's chain hold for the element: every one of them, each true if some condition of its list is true for the container it selects.
+static bool chain_containers_hold(walk * w, const placed * pl, uint32_t node) {
+  const sheet_cond * conds = pl->sheet->conds;
+  for (; node; node = conds[node - 1].parent) {
+    const sheet_cond * c = &conds[node - 1];
+    if (c->kind != SCK_CONTAINER) {
+      continue;
+    }
+    bool any = false;
+    for (size_t k = 0; k < c->list->in.root_count && !any; k++) {
+      GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_FALSE;
+      const GTEXT_CSS_Status st = css_cq_eval_root(w->x->cond, w->call, &w->ctx->iface, &c->list->in, c->list->in.roots[k], w->element, w->from_element, &t);
+      if (st != GTEXT_CSS_OK) {
+        w->status = st;
+        ires(w->res, st, w->call->detail ? w->call->detail : "condition", st == GTEXT_CSS_E_UNSUPPORTED ? "a container query needs something the container interface lacks" : NULL);
+        return false;
+      }
+      any = t == GTEXT_CSS_TRI_TRUE;
+    }
+    if (!any) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// Test the records of a list (indexes into `all`), those that apply to what is asked (the element, or the pseudo-element).
 static bool test_list(walk * w, const u32vec * v, El slot, El host, const void * tree_scope) {
   struct GTEXT_CSS_Selector_Match_Context * ctx = w->ctx;
@@ -874,13 +1192,23 @@ static bool test_list(walk * w, const u32vec * v, El slot, El host, const void *
     if (((r->flags & REC_PSEUDO) != 0) != (w->request != NULL)) {
       continue;
     }
+    const uint8_t tv = r->cond ? pl->tv[r->cond] : 0;
+    if ((tv & TV_STARTING) && !w->starting_style) {
+      continue; /* the starting style's rules take part only when asked for */
+    }
     ctx->ctr.rules_considered++;
     uint32_t dist;
     bool scoped;
-    const bool m = record_matches(w, pl, r, slot, host, &dist, &scoped);
+    bool m = record_matches(w, pl, r, slot, host, &dist, &scoped);
     if (ctx->status != GTEXT_CSS_OK) {
       w->status = ctx->status;
       return false;
+    }
+    if (m && (tv & TV_ELEM)) {
+      m = chain_containers_hold(w, pl, r->cond); /* after the selector: the cheap test first, then the memoized conditions */
+      if (w->status != GTEXT_CSS_OK) {
+        return false;
+      }
     }
     if (m && !add_hit(w, pl, v->v[i], r, dist, scoped)) {
       return false;
@@ -991,7 +1319,7 @@ static int hit_cmp(const void * pa, const void * pb) {
 }
 
 GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_CSS_Selector_Match_Context * ctx, GTEXT_CSS_Element_Handle element,
-    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Candidates * set, GTEXT_CSS_Rule_Index_Result * res) {
+    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Candidates * set, const GTEXT_CSS_Rules_Collect_Options * options, GTEXT_CSS_Rule_Index_Result * res) {
   ires_init(res);
   if (!x || !ctx || !element || !set) {
     return ires(res, GTEXT_CSS_E_INVALID, NULL, "a NULL argument");
@@ -1017,6 +1345,21 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
       return ires(res, GTEXT_CSS_E_INVALID, NULL, "the pseudo-element asked for is not a list of one complex selector made of pseudo-elements");
     }
     w.request = &pseudo->complex[0];
+    /* the originating element of a pseudo-element is a candidate query container, except for ::slotted() and ::part(), which stand for elements of their own */
+    const GTEXT_CSS_Simple * first = &pseudo->complex[0].compounds[0].simples[0];
+    w.from_element = !(first->pseudo == GTEXT_CSS_SEL_PE_SLOTTED_FN || first->pseudo == GTEXT_CSS_SEL_PE_PART_FN);
+  }
+  w.starting_style = options && options->starting_style;
+  w.res = res;
+  GTEXT_CSS_Condition_Call local_call;
+  gtext_css_condition_call_init(&local_call);
+  w.call = options && options->call ? options->call : &local_call;
+  if (x->cond) {
+    const GTEXT_CSS_Status ps = css_conditions_prepare_call(x->cond, w.call);
+    if (ps != GTEXT_CSS_OK) {
+      gtext_css_condition_call_free(&local_call);
+      return ires(res, ps, NULL, NULL);
+    }
   }
   w.orig_scope = ctx->scope;
   w.orig_ts = ctx->tree_scope;
@@ -1086,6 +1429,10 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   if (st != GTEXT_CSS_OK) {
     gtext_allocator_free(&ctx->alloc, w.hits);
     gtext_allocator_free(&ctx->alloc, w.rm);
+    gtext_css_condition_call_free(&local_call);
+    if (res && res->status != GTEXT_CSS_OK) {
+      return st; /* a container query already said what it needed */
+    }
     return ires(res, st, ctx->missing ? ctx->missing : (ctx->unsupported ? ctx->unsupported : NULL),
         st == GTEXT_CSS_E_UNSUPPORTED ? "a callback the sheets need is absent from the element interface" : NULL);
   }
@@ -1138,6 +1485,7 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   }
   gtext_allocator_free(&ctx->alloc, w.hits);
   gtext_allocator_free(&ctx->alloc, w.rm);
+  gtext_css_condition_call_free(&local_call);
   (void)added;
   if (st != GTEXT_CSS_OK && res && res->status == GTEXT_CSS_OK) {
     ires(res, st, NULL, NULL);

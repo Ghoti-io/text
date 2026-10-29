@@ -96,11 +96,21 @@ const GTEXT_CSS_Registry * registry() {
 const char * const kNames[] = {"a", "b", "c", "li", "p", "DIV"};
 const char * const kIds[] = {"", "i1", "i2", "i3"};
 
-bool all_true(void *, const GTEXT_CSS_Rule *) {
-  return true;
-}
-bool all_false(void *, const GTEXT_CSS_Rule *) {
-  return false;
+/// The conditions the index is built for: a screen, or a print medium (so that an `@media print` is true or false), made once.
+const GTEXT_CSS_Conditions * conditions_for(bool print) {
+  static const GTEXT_CSS_Conditions * made[2] = {nullptr, nullptr};
+  if (!made[print]) {
+    GTEXT_CSS_Media_Environment env = gtext_css_media_environment_default(nullptr);
+    env.medium = print ? GTEXT_CSS_MEDIUM_PRINT : GTEXT_CSS_MEDIUM_SCREEN;
+    GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+    co.media = &env;
+    GTEXT_CSS_Conditions * c = nullptr;
+    if (gtext_css_conditions_new(registry(), &co, &c) != GTEXT_CSS_OK) {
+      std::abort();
+    }
+    made[print] = c;
+  }
+  return made[print];
 }
 
 bool tolerated(GTEXT_CSS_Status st) {
@@ -181,7 +191,7 @@ Rules collect_for(synth::Tree & t, GTEXT_CSS_Rule_Index * ix, GTEXT_CSS_Selector
     out.status = GTEXT_CSS_E_OOM;
     return out;
   }
-  out.status = gtext_css_rules_collect(ix, ctx, synth::Tree::H(el), pseudo, set, nullptr);
+  out.status = gtext_css_rules_collect(ix, ctx, synth::Tree::H(el), pseudo, set, nullptr, nullptr);
   if (out.status == GTEXT_CSS_OK) {
     for (size_t i = 0; i < gtext_css_candidates_count(set); i++) {
       GTEXT_CSS_Cascade_Entry e;
@@ -236,7 +246,6 @@ int run(const uint8_t * data, size_t size) {
   FaultAllocator fa;
   GTEXT_CSS_Sheet_Options so = gtext_css_sheet_options_default();
   so.allocator = &fa.alloc;
-  so.active = (((o0 >> 2) & 3) == 1) ? all_false : all_true;
   so.max_compiled_bytes = 1u << 22;
   GTEXT_CSS_Sheet *a = nullptr, *b = nullptr, *again = nullptr;
   const GTEXT_CSS_Status sa = compile(text_a, so, &a);
@@ -261,6 +270,7 @@ int run(const uint8_t * data, size_t size) {
     io.allocator = &fa.alloc;
     io.html_document = o0 & 1u;
     io.quirks = (o0 >> 1) & 1u;
+    io.conditions = conditions_for((((o0 >> 2) & 3) == 1));
     GTEXT_CSS_Rule_Index * ix = nullptr;
     if (gtext_css_rule_index_new(registry(), &io, &ix) != GTEXT_CSS_OK) {
       fail("the index could not be made", "", input);
@@ -303,7 +313,7 @@ int run(const uint8_t * data, size_t size) {
       for (size_t i = 0; i < gtext_css_sheet_record_count(a); i++) {
         GTEXT_CSS_Sheet_Record r;
         gtext_css_sheet_record(a, i, &r);
-        const bool f = !r.nested && r.scope_depth == 0 && !(r.dependencies & (GTEXT_CSS_DEP_HOST | GTEXT_CSS_DEP_NESTING | GTEXT_CSS_DEP_SCOPE));
+        const bool f = r.condition == 0 && !r.nested && r.scope_depth == 0 && !(r.dependencies & (GTEXT_CSS_DEP_HOST | GTEXT_CSS_DEP_NESTING | GTEXT_CSS_DEP_SCOPE));
         flat[r.rule] = flat.count(r.rule) ? (flat[r.rule] && f) : f;
         list_of[r.rule] = r.selector;
       }

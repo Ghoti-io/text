@@ -253,6 +253,10 @@ typedef struct {
   void * user;                          ///< Passed to both callbacks.
   GTEXT_CSS_Layer_Active_Fn active;     ///< NULL: a conditional rule that holds a layer is GTEXT_CSS_E_UNSUPPORTED (naming `active_rule`), never a guess; one that holds none is skipped.
   GTEXT_CSS_Layer_Rule_Fn on_layer;     ///< NULL: none.
+  /** Called once for every layer a rule declares or finds again, in the order the rules are read: each name of a statement, a block's layer, an import's: the **occurrences**
+   *  of layers, where `on_layer` is called for blocks and imports only and a layer already declared is not new. A sheet that keeps its conditions as data needs every one of them, because
+   *  a layer first named in a rule that does not apply is declared by the next rule that names it and does. NULL: none. */
+  GTEXT_CSS_Layer_Rule_Fn on_declare;
   size_t max_rule_depth;                ///< Deepest nesting of rules read. Default 4,096; at most 1,048,576. One more is GTEXT_CSS_E_LIMIT_DEPTH.
 } GTEXT_CSS_Layer_Collect_Options;
 

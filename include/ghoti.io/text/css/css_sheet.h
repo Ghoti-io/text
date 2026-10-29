@@ -35,12 +35,25 @@
  * `&`) gets the implied `&` and its descendant combinator, with the specificity of an explicit one; a run of declarations after a nested rule (a nested declarations rule)
  * has its own place among the rules, so that a declaration after a nested rule beats the nested rule's declaration of equal specificity. `@namespace` fills the prefix map of
  * the selectors after it; a selector with a prefix it does not declare is invalid. `@layer` statements and blocks, anonymous and nested ones, are recorded. `@import` is read where
- * it may be, and the sheet asks the caller for the imported sheet: the library never fetches. The conditional rules (`@media`, `@supports`, `@container`, `@starting-style`, and
- * an `@import` with `supports()` or a media list) are gated by the one filter of the caller (GTEXT_CSS_Active_Rule_Fn, the one cascade layers use), called for an `@import`
- * **before** its layer is declared, so that a layer introduced by an import that is not used is not declared; with no filter a conditional rule that holds a style rule or a layer is
- * GTEXT_CSS_E_UNSUPPORTED naming `active_rule`, never a guess. A sheet is the sheet for the filter it was compiled with: compile again when the environment changes.
+ * it may be, and the sheet asks the caller for the imported sheet: the library never fetches.
+ *
+ * **A sheet keeps its conditions as data.** Compiling evaluates nothing: every conditional group rule (`@media`, `@supports`, `@container`, `@starting-style`, `@when` and `@else`,
+ * and the conditions of an `@import`) becomes a **condition node** of the sheet (the parsed condition, immutable, with a link to the node it is inside), and every record, layer occurrence and
+ * import carries the node it is under. So the same compiled sheet serves any number of environments: a resize is a new @ref GTEXT_CSS_Conditions and a new index, and the sheet is untouched.
+ * A condition that cannot be read makes a node that never applies (a media query list replaces an invalid query by `not all`, as Media Queries 4 says), with a diagnostic. Rules nested in a style rule
+ * (`.a { @media (...) { color: red; & b { } } }`) are condition nodes over the nested records, a declaration directly in one being the implied `& { }`. `@else` joins the rule before it (the draft's
+ * chain): it applies only if no rule earlier in its chain did. `@import ... scope()` wraps the imported sheet's rules in an implicit `@scope`, shared through a prefix link (O(1) a record).
+ * The caller's import callback is asked for **every** import, with the conditions parsed in the request, so that a caller can decline to fetch what is false for its environment; the index drops
+ * the imports and the records whose conditions are false.
  *
  * ## The index
+ *
+ * An index is built for one @ref GTEXT_CSS_Conditions (GTEXT_CSS_Rule_Index_Options::conditions, required when a sheet holds a condition node). It evaluates every node
+ * **once**, as the sheet is added (a node under a node is evaluated after its parent, so n nested rules cost O(n)), drops the records and imports whose chain is false, and declares
+ * the layers of the occurrences whose chain is true **before** the next occurrence, so a layer introduced by a false `@media` or a false `@import ... supports()` is never declared
+ * (Cascade 5, 6.4.3), while one introduced inside an `@container` is, because the condition can differ for elements. A chain with a container node keeps its record flagged
+ * element-dependent, and gtext_css_rules_collect() asks the container interface of the conditions about it for the element, after the selector has matched. Records under
+ * `@starting-style` are skipped by default and take part in the cascade with GTEXT_CSS_Rules_Collect_Options::starting_style.
  *
  * A @ref GTEXT_CSS_Rule_Index holds the sheets of a document, flattened: gtext_css_rule_index_add_sheet() merges a sheet's layers into the layer registry of its context, in the
  * order the sheets are added (an imported sheet goes in before the sheet that imports it, at the place of the import), and gives every sheet and rule one order of appearance.
@@ -65,6 +78,7 @@
 
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/css/css_cascade.h>
+#include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_layer.h>
@@ -87,16 +101,7 @@ typedef struct GTEXT_CSS_Sheet GTEXT_CSS_Sheet;
 /** @brief The rules of a document's sheets, flattened and indexed (the struct is private). Frozen before it is used; then read-only and shareable. */
 typedef struct GTEXT_CSS_Rule_Index GTEXT_CSS_Rule_Index;
 
-/**
- * @brief Whether a conditional rule applies: `@media`, `@supports`, `@container`, `@starting-style`, `@document`, or an `@import` with `supports()` or a media list. Return true to
- *   read what is inside it (or to import).
- *
- * The one filter of the cascade (css_layer.h names it GTEXT_CSS_Layer_Active_Fn) and of the sheet: C4 supplies the evaluator. A rule whose condition depends on the element
- * (`@container`) must be answered true.
- */
-typedef GTEXT_CSS_Layer_Active_Fn GTEXT_CSS_Active_Rule_Fn;
-
-/** @brief What an `@import` asks of the caller. The strings are valid for the call. */
+/** @brief What an `@import` asks of the caller. The strings and the parsed conditions are valid for the call. */
 typedef struct {
   GTEXT_CSS_String url;       ///< The URL as written (a `url()` token's value or a string).
   bool layered;               ///< The import has `layer` or `layer(name)`.
@@ -106,6 +111,10 @@ typedef struct {
   GTEXT_CSS_String supports;  ///< Its argument as CSS text.
   bool has_media;             ///< The import has a media query list.
   GTEXT_CSS_String media;     ///< It as CSS text.
+  bool has_scope;             ///< The import has `scope` or `scope(...)`.
+  GTEXT_CSS_String scope;     ///< Its argument as CSS text (`(.card) to (.limit)`); empty for `scope` and `scope()`, the implicit scoping root.
+  const GTEXT_CSS_Media_List * media_list;       ///< The media query list, parsed (NULL if the import has none): evaluate it with gtext_css_conditions_matches_list() to decide whether to fetch.
+  const GTEXT_CSS_Supports_Condition * supports_condition; ///< The `supports()` condition, parsed (NULL if the import has none): gtext_css_conditions_evaluate_supports().
   const GTEXT_CSS_Rule * rule; ///< The `@import` rule (its span, for a diagnostic).
 } GTEXT_CSS_Import_Request;
 
@@ -121,8 +130,6 @@ typedef GTEXT_CSS_Sheet * (*GTEXT_CSS_Import_Fn)(void * user, const GTEXT_CSS_Im
 typedef struct {
   const GTEXT_Allocator * allocator;  ///< NULL for the registry's.
   bool quirks;                        ///< The sheet is read in quirks mode (a unitless length in a declaration, css_property.h).
-  GTEXT_CSS_Active_Rule_Fn active;    ///< The filter for the conditional rules; NULL: a conditional rule that holds a style rule or a layer is GTEXT_CSS_E_UNSUPPORTED.
-  void * active_user;                 ///< Passed to `active`.
   GTEXT_CSS_Import_Fn import;         ///< The source of imported sheets; NULL: an import contributes nothing.
   void * import_user;                 ///< Passed to `import`.
   GTEXT_CSS_Selector_Options selector; ///< The limits of reading a selector (`mode` and `namespaces` are the sheet's own); NULL fields are the defaults.
@@ -130,6 +137,8 @@ typedef struct {
   size_t max_compiled_bytes;          ///< Most memory of the compiled form. Default 256 MiB. One more is GTEXT_CSS_E_LIMIT_SHEET_SIZE.
   size_t max_diagnostics;             ///< Most diagnostics kept (the rest are counted). Default 1,024.
   size_t max_import_depth;            ///< Deepest chain of imports (an imported sheet's own imports); default 16.
+  size_t max_conditions;              ///< Most condition nodes in a sheet. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CONDITIONS.
+  GTEXT_CSS_Media_Options condition;  ///< The limits of reading a condition (css_media.h): queries, nodes, depth, diagnostics. Zeroed fields are the defaults.
 } GTEXT_CSS_Sheet_Options;
 
 /** @brief The defaults, spelled out. */
@@ -158,7 +167,7 @@ typedef struct {
   GTEXT_CSS_Status status;   ///< What the call returned.
   const char * message;      ///< A static description; never NULL after a call.
   GTEXT_CSS_Span span;       ///< A limit, or the rule that made the call unsupported: where.
-  char name[96];             ///< What is concerned (`active_rule`, a property), cut to fit.
+  char name[96];             ///< What is concerned (`conditions`, a property), cut to fit.
   const char * detail;       ///< A static sentence saying which rule was broken, or NULL.
 } GTEXT_CSS_Sheet_Result;
 
@@ -170,8 +179,8 @@ typedef struct {
  * @param options NULL for the defaults.
  * @param out Receives the sheet (one owner). Not NULL; written only on success.
  * @param result NULL, or filled.
- * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED (a conditional rule and no filter: `name` is `active_rule`); GTEXT_CSS_E_OOM;
- *   GTEXT_CSS_E_LIMIT_RULE_NESTING, _LIMIT_SHEET_SIZE, and the limits of selectors and layers.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; GTEXT_CSS_E_LIMIT_RULE_NESTING, _LIMIT_SHEET_SIZE, _LIMIT_CONDITIONS (`max_conditions`), and the limits of selectors,
+ *   layers and conditions.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
     GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result);
@@ -193,6 +202,7 @@ typedef struct {
   bool nested;                              ///< The rule is nested in a style rule (or is its nested declarations).
   size_t scope_depth;                       ///< How many `@scope` rules enclose it.
   uint32_t dependencies;                    ///< GTEXT_CSS_DEP_* of the selector.
+  uint32_t condition;                       ///< The innermost condition node the rule is under (0: none); gtext_css_sheet_condition() reads it.
   GTEXT_CSS_Span span;                      ///< The rule.
 } GTEXT_CSS_Sheet_Record;
 
@@ -222,6 +232,40 @@ GTEXT_API const GTEXT_CSS_Sheet * gtext_css_sheet_import(const GTEXT_CSS_Sheet *
 GTEXT_API size_t gtext_css_sheet_diagnostic_total(const GTEXT_CSS_Sheet * sheet);
 GTEXT_API bool gtext_css_sheet_diagnostic(const GTEXT_CSS_Sheet * sheet, size_t index, GTEXT_CSS_Sheet_Diagnostic * out);
 
+/** @brief What a condition node is. */
+typedef enum {
+  GTEXT_CSS_SHEET_COND_MEDIA = 1,    ///< `@media`.
+  GTEXT_CSS_SHEET_COND_SUPPORTS,     ///< `@supports`.
+  GTEXT_CSS_SHEET_COND_CONTAINER,    ///< `@container`: element-dependent.
+  GTEXT_CSS_SHEET_COND_STARTING_STYLE, ///< `@starting-style`.
+  GTEXT_CSS_SHEET_COND_WHEN,         ///< `@when`, `@else` (`else_rule`).
+  GTEXT_CSS_SHEET_COND_NEVER,        ///< A rule whose condition is not valid (the diagnostic says so), or `@document`: it never applies.
+  GTEXT_CSS_SHEET_COND_IMPORT        ///< The conditions of an `@import`.
+} GTEXT_CSS_Sheet_Condition_Kind;
+
+/** @brief A condition node of a sheet. The lists are owned by the sheet and valid for its life. */
+typedef struct {
+  GTEXT_CSS_Sheet_Condition_Kind kind;
+  uint32_t parent;                   ///< The enclosing node (0: none).
+  uint32_t previous;                 ///< `@when`/`@else`: the previous rule of the chain (0: it begins one).
+  bool else_rule;                    ///< `@else`.
+  bool always;                       ///< A bare `@else`: no condition, true unless an earlier rule of the chain applies.
+  bool element_dependent;            ///< The node or one it is inside is a container query.
+  bool starting_style;               ///< The node or one it is inside is `@starting-style`.
+  const GTEXT_CSS_Media_List * list; ///< `@media`, `@when`, `@else`, `@container`: the parsed condition; `@supports`: the condition; an `@import`: its media query list. NULL where there is none.
+  const GTEXT_CSS_Supports_Condition * supports; ///< An `@import`: its `supports()` condition (NULL: none).
+  GTEXT_CSS_Span span;               ///< The rule.
+} GTEXT_CSS_Sheet_Condition;
+
+/** @brief How many condition nodes the sheet has (their ids are 1 to this number). */
+GTEXT_API size_t gtext_css_sheet_condition_count(const GTEXT_CSS_Sheet * sheet);
+
+/** @brief The node `id` (from 1); false for an id that is not one. */
+GTEXT_API bool gtext_css_sheet_condition(const GTEXT_CSS_Sheet * sheet, uint32_t id, GTEXT_CSS_Sheet_Condition * out);
+
+/** @brief The condition node of import `index` (0: none, the import is unconditional). */
+GTEXT_API uint32_t gtext_css_sheet_import_condition(const GTEXT_CSS_Sheet * sheet, size_t index);
+
 /** @brief The sheet in a canonical, versioned text (`sheet 1`, then its layers, namespaces, imports and records), the same on every platform. */
 GTEXT_API GTEXT_CSS_Status gtext_css_sheet_dump(const GTEXT_CSS_Sheet * sheet, const GTEXT_Markup_Sink * sink);
 
@@ -233,6 +277,7 @@ typedef struct {
   bool html_document;                 ///< The keys of the buckets for type selectors are lower case (an HTML document): as the match context's option.
   bool quirks;                        ///< The keys of the id and class buckets are lower case: as the match context's option.
   size_t max_records;                 ///< Most records in all. Default 16,777,216.
+  const GTEXT_CSS_Conditions * conditions; ///< The evaluator the index is built for (retained): required when a sheet holds a condition node, else GTEXT_CSS_E_UNSUPPORTED naming `conditions`.
 } GTEXT_CSS_Rule_Index_Options;
 
 /** @brief The defaults, spelled out. */
@@ -296,6 +341,15 @@ GTEXT_API const GTEXT_CSS_Layer_Registry * gtext_css_rule_index_layers(const GTE
 GTEXT_API size_t gtext_css_rule_index_record_count(const GTEXT_CSS_Rule_Index * index);
 GTEXT_API size_t gtext_css_rule_index_sheet_count(const GTEXT_CSS_Rule_Index * index);
 
+/** @brief What collecting may be told. A zeroed struct is the default. */
+typedef struct {
+  /** Records under `@starting-style`: false (the default) skips them; true lets them take part in the cascade as ordinary records, with their layer, specificity and order, which is
+   *  how Transitions 2 defines the starting style. A consumer computes the style twice, once of each; interpolation is not here. */
+  bool starting_style;
+  /** The context of the container queries of this call: the memo that makes a walk over a tree linear (css_container.h). NULL: one private to the call. */
+  GTEXT_CSS_Condition_Call * call;
+} GTEXT_CSS_Rules_Collect_Options;
+
 /**
  * @brief Add to a candidate set one entry for each declaration of each rule that matches the element (or the pseudo-element of it).
  *
@@ -309,12 +363,13 @@ GTEXT_API size_t gtext_css_rule_index_sheet_count(const GTEXT_CSS_Rule_Index * i
  * @param element The element. Not NULL.
  * @param pseudo NULL for the element, or the pseudo-element asked for (a list of one complex selector made only of pseudo-elements, as gtext_css_selector_match() takes).
  * @param set The candidate set. Not NULL, not sealed; made on the registry the index has. It is given the layer registry of every context the index has.
+ * @param options NULL for the defaults.
  * @param result NULL, or filled.
- * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (an index that is not frozen, a set that is sealed, a match context whose `html_document` or `quirks` is not the index's); GTEXT_CSS_E_UNSUPPORTED (a callback is absent: `name` says which);
- *   GTEXT_CSS_E_LIMIT_MATCH_WORK, _LIMIT_MATCH_MEMO, _LIMIT_CANDIDATES; GTEXT_CSS_E_OOM.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (an index that is not frozen, a set that is sealed, a match context whose `html_document` or `quirks` is not the index's); GTEXT_CSS_E_UNSUPPORTED (a callback is absent: `name` says which, `container.size` for a size query and a container interface without `content_box`);
+ *   GTEXT_CSS_E_LIMIT_CONTAINER, _LIMIT_WORK, GTEXT_CSS_E_LIMIT_MATCH_WORK, _LIMIT_MATCH_MEMO, _LIMIT_CANDIDATES; GTEXT_CSS_E_OOM.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * index, GTEXT_CSS_Selector_Match_Context * match, GTEXT_CSS_Element_Handle element,
-    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Candidates * set, GTEXT_CSS_Rule_Index_Result * result);
+    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Candidates * set, const GTEXT_CSS_Rules_Collect_Options * options, GTEXT_CSS_Rule_Index_Result * result);
 
 #ifdef __cplusplus
 }

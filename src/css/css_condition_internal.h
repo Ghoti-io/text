@@ -73,6 +73,8 @@ struct GTEXT_CSS_Conditions {
   GTEXT_CSS_Support_Policy policy;
   const GTEXT_CSS_Element_Interface * iface;
   struct GTEXT_CSS_Condition_Defs * defs; ///< Sealed; never NULL (an empty one stands for none).
+  GTEXT_CSS_Container_Interface container; ///< A copy of the caller's; `size` 0 when the caller gave none.
+  size_t max_requests;
 };
 
 typedef struct {
@@ -83,6 +85,27 @@ typedef struct {
   uint8_t acc;
 } eframe;
 
+/// A request for a query container: a name (NULL: any) and the kinds of feature asked (MQC_*).
+typedef struct {
+  const char * name;
+  size_t name_len;
+  uint32_t mask;
+} cq_request;
+
+/// The query container of an element for a request (NULL: none), the memo of a walk up the ancestors.
+typedef struct {
+  const void * element;
+  uint32_t request;     ///< Index into the request table, plus one (0: the slot is empty).
+  const void * container;
+} cq_cache_entry;
+
+/// The answer of a container condition for a container: (container, root node) to a three-valued result.
+typedef struct {
+  const void * container;
+  const void * node;    ///< The root QUERY node (NULL: the slot is empty).
+  uint8_t result;
+} cq_result_entry;
+
 struct GTEXT_CSS_Condition_Call_Internal {
   GTEXT_Allocator alloc;
   const void * owner; ///< The defs the memo is for.
@@ -90,6 +113,14 @@ struct GTEXT_CSS_Condition_Call_Internal {
   size_t memo_n;
   eframe * stack;
   size_t cap;
+  cq_request * reqs;  ///< The distinct requests of the call.
+  size_t nreq, capreq;
+  cq_cache_entry * cache;  ///< Open addressing by (element, request).
+  size_t cache_used, cache_cap;
+  cq_result_entry * results;
+  size_t results_used, results_cap;
+  const void ** path;  ///< Scratch of a walk up the ancestors.
+  size_t path_cap;
 };
 
 /// The winner index of a name, or -1.
@@ -112,6 +143,19 @@ GTEXT_CSS_Tristate css_mq_eval_feature(const GTEXT_CSS_Media_Environment * e, co
 /// Evaluate the query node `qnode` of `list`; the call's memo must have been prepared with css_conditions_prepare_call().
 GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Call * call, const struct GTEXT_CSS_Media_List_Internal * list, uint32_t qnode,
     GTEXT_CSS_Tristate * out);
+
+struct css_cq_ctx;
+
+/// Evaluate the query node `qnode` of `list` with a query container (`cq` NULL: a media query or a supports condition).
+GTEXT_CSS_Status css_conditions_eval_query_cq(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Call * call, const struct GTEXT_CSS_Media_List_Internal * list,
+    uint32_t qnode, struct css_cq_ctx * cq, GTEXT_CSS_Tristate * out);
+
+/// A size feature node against a query container; a style, scroll-state or anchored feature node. Failures are in *status and *detail.
+GTEXT_CSS_Tristate css_cq_eval_size(struct css_cq_ctx * cq, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n, GTEXT_CSS_Status * status, const char ** detail);
+GTEXT_CSS_Tristate css_cq_eval_sub(struct css_cq_ctx * cq, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n, GTEXT_CSS_Status * status, const char ** detail);
+
+/// Release what a call holds for containers (css_container.c).
+void css_cq_call_free(struct GTEXT_CSS_Condition_Call_Internal * ci);
 
 /// Make the call ready for `c` (allocate its internal block, size the memo to the definitions).
 GTEXT_CSS_Status css_conditions_prepare_call(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Call * call);

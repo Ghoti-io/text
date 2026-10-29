@@ -28,6 +28,7 @@
 #define GHOTI_IO_GTEXT_SRC_CSS_CSS_SHEET_INTERNAL_H
 
 #include <ghoti.io/cutil/atomic.h>
+#include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_sheet.h>
 #include <ghoti.io/text/macros.h>
 
@@ -67,6 +68,32 @@ typedef struct sheet_scope {
   size_t depth;                          ///< 1 for the outermost.
 } sheet_scope;
 
+/// The kind of a condition node of a sheet.
+typedef enum {
+  SCK_MEDIA = 1,     ///< `@media`: `list` is the media query list.
+  SCK_SUPPORTS,      ///< `@supports`: `list` is the condition.
+  SCK_CONTAINER,     ///< `@container`: `list` is the container query list. Element-dependent.
+  SCK_STARTING_STYLE, ///< `@starting-style`: always true; the records under it are the starting style's.
+  SCK_WHEN,          ///< `@when` or `@else`: `list` is the boolean condition (none: a bare `@else`, always true), `prev` the rule before it in its chain.
+  SCK_NEVER,         ///< A rule whose condition is not valid, or `@document`: it never applies.
+  SCK_IMPORT         ///< An `@import` with conditions: `list2` is its `supports()` condition, `list` its media query list (each may be NULL).
+} sheet_cond_kind;
+
+#define SCF_ELSE 0x1u      ///< `@else`: it applies only if no earlier rule of its chain does.
+#define SCF_STARTING 0x2u  ///< The node is `@starting-style` or inside one.
+#define SCF_ELEMENT 0x4u   ///< The node is a container query or inside one.
+
+/// A condition node: immutable once the sheet is compiled, shared by every record under it. The ids are from 1, in the order the rules are met (a parent before its children).
+typedef struct {
+  uint8_t kind;
+  uint8_t flags;
+  uint32_t parent;                 ///< The enclosing node (0: none).
+  uint32_t prev;                   ///< SCK_WHEN: the previous node of the chain (0: it begins one).
+  GTEXT_CSS_Media_List * list;
+  GTEXT_CSS_Media_List * list2;
+  GTEXT_CSS_Span span;
+} sheet_cond;
+
 /// Record flags.
 enum {
   REC_NESTED = 1u,   ///< Nested in a style rule.
@@ -86,6 +113,7 @@ typedef struct {
   const css_nest * nest;
   const sheet_scope * scope;
   uint32_t flags;
+  uint32_t cond;   ///< The innermost condition node the rule is under (0: none).
 } sheet_record;
 
 /// What the index does with a sheet, in order.
@@ -93,6 +121,7 @@ typedef struct {
   uint8_t kind;     ///< 0: declare a layer of the sheet's own tree; 1: place an imported sheet.
   uint32_t node;    ///< 0: the layer node to declare; 1: the layer the import is in (0: none).
   uint32_t import;  ///< 1: which import.
+  uint32_t cond;    ///< The condition node the occurrence is under (0: none): the layer is declared, the sheet placed, only where its chain holds.
 } sheet_event;
 
 struct GTEXT_CSS_Sheet {
@@ -111,7 +140,11 @@ struct GTEXT_CSS_Sheet {
   sheet_event * events;
   size_t nevents, capevents;
   GTEXT_CSS_Sheet ** imports;
-  size_t nimports, capimports;
+  size_t nimports, capimports, capimport_aux;
+  uint32_t * import_cond;               ///< By import: its `SCK_IMPORT` node (0: none).
+  const sheet_scope ** import_scope;    ///< By import: the `@scope` its `scope()` wraps its records in (NULL: none).
+  sheet_cond * conds;                   ///< The condition nodes, id - 1.
+  size_t nconds, capconds;
   size_t import_depth;
   GTEXT_CSS_Namespace * ns;
   size_t nns;

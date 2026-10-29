@@ -128,6 +128,10 @@ typedef struct {
   GTEXT_CSS_Selector_Match_Context * match;
   /** The pseudo-element the style is of (gtext_css_rules_collect()), or NULL for the element. */
   const GTEXT_CSS_Selector_List * pseudo;
+  /** Rules under `@starting-style` take part in the cascade (css_sheet.h, GTEXT_CSS_Rules_Collect_Options): compute the style once without and once with, as Transitions 2 defines the starting style. */
+  bool starting_style;
+  /** The context of the container queries of the call: the cache that keeps a pass over the elements of a tree linear (css_container.h); make a new one when the tree changes. NULL: one for this call. */
+  GTEXT_CSS_Condition_Call * container_call;
 } GTEXT_CSS_Style_Options;
 
 /** @brief The defaults, spelled out: both attribute sources, every attribute-only spelling, no quirks. */

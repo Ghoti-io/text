@@ -44,6 +44,7 @@
 #include <ghoti.io/text/css/css_color.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_condition.h>
+#include <ghoti.io/text/css/css_container.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_custom.h>
 #include <ghoti.io/text/css/css_decode.h>

@@ -235,12 +235,52 @@ typedef struct {
   const GTEXT_CSS_Media_Environment * env;
   const char * detail;
   GTEXT_CSS_Status status;
+  const mq_container_view * view;
 } unit_ctx;
+
+/// A container query length unit in a feature value of a container query: relative to the container's own query container, else the small viewport (Values 4, 7).
+static bool cq_unit_px(const unit_ctx * u, GTEXT_CSS_Unit unit, double * px) {
+  const mq_container_view * v = u->view;
+  if (!v || !v->cq_size) {
+    return false;
+  }
+  double w = 0, h = 0, i = 0, b = 0;
+  switch (unit) {
+  case GTEXT_CSS_UNIT_CQW:
+    if (!v->cq_size(v->cq_user, GTEXT_CSS_CONTAINER_WIDTH, &w)) return false;
+    *px = w / 100.0;
+    return true;
+  case GTEXT_CSS_UNIT_CQH:
+    if (!v->cq_size(v->cq_user, GTEXT_CSS_CONTAINER_HEIGHT, &h)) return false;
+    *px = h / 100.0;
+    return true;
+  case GTEXT_CSS_UNIT_CQI:
+    if (!v->cq_size(v->cq_user, GTEXT_CSS_CONTAINER_INLINE, &i)) return false;
+    *px = i / 100.0;
+    return true;
+  case GTEXT_CSS_UNIT_CQB:
+    if (!v->cq_size(v->cq_user, GTEXT_CSS_CONTAINER_BLOCK, &b)) return false;
+    *px = b / 100.0;
+    return true;
+  case GTEXT_CSS_UNIT_CQMIN:
+  case GTEXT_CSS_UNIT_CQMAX:
+    if (!v->cq_size(v->cq_user, GTEXT_CSS_CONTAINER_INLINE, &i) || !v->cq_size(v->cq_user, GTEXT_CSS_CONTAINER_BLOCK, &b)) return false;
+    *px = ((unit == GTEXT_CSS_UNIT_CQMIN) == (i < b) ? i : b) / 100.0;
+    return true;
+  default:
+    return false;
+  }
+}
 
 static bool unit_px(unit_ctx * u, GTEXT_CSS_Unit unit, double * px) {
   const GTEXT_CSS_Media_Environment * e = u->env;
   if (gtext_css_unit_is_absolute(unit)) {
     return gtext_css_unit_to_canonical(unit, 1.0, px);
+  }
+  if ((unit == GTEXT_CSS_UNIT_CQW || unit == GTEXT_CSS_UNIT_CQH || unit == GTEXT_CSS_UNIT_CQI || unit == GTEXT_CSS_UNIT_CQB || unit == GTEXT_CSS_UNIT_CQMIN ||
+          unit == GTEXT_CSS_UNIT_CQMAX) &&
+      cq_unit_px(u, unit, px)) {
+    return true;
   }
   switch (unit) {
   case GTEXT_CSS_UNIT_EM:
@@ -450,9 +490,9 @@ static unsigned flip(unsigned op) {
 /* ---- the features ---------------------------------------------------------- */
 
 /// The current value of a keyword feature as an index into its keywords, or -1 for "matches no keyword".
-static int kw_index(const GTEXT_CSS_Media_Environment * e, int row) {
+static int kw_index(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, int row) {
   switch ((css_mq_feature_id)row) {
-  case CSS_MQF_ORIENTATION: return e->viewport.height >= e->viewport.width ? 0 : 1;
+  case CSS_MQF_ORIENTATION: return view ? (view->height >= view->width ? 0 : 1) : (e->viewport.height >= e->viewport.width ? 0 : 1);
   case CSS_MQF_SCAN: return (int)e->scan - 1;
   case CSS_MQF_UPDATE: return e->update;
   case CSS_MQF_OVERFLOW_BLOCK: return e->overflow_block;
@@ -500,7 +540,7 @@ static bool kw_mask(const GTEXT_CSS_Media_Environment * e, int row, uint32_t * m
 }
 
 /// Whether the (discrete) feature matches keyword `k` of its list.
-static bool kw_matches(const GTEXT_CSS_Media_Environment * e, int row, int k) {
+static bool kw_matches(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, int row, int k) {
   int lvl = kw_level(e, row);
   if (lvl >= 0) {
     return lvl >= k + 1;
@@ -509,15 +549,15 @@ static bool kw_matches(const GTEXT_CSS_Media_Environment * e, int row, int k) {
   if (kw_mask(e, row, &mask)) {
     return (mask >> k) & 1u;
   }
-  return kw_index(e, row) == k;
+  return kw_index(e, view, row) == k;
 }
 
 /// The boolean context of a keyword feature: true for any value but `none`.
-static bool kw_boolean(const GTEXT_CSS_Media_Environment * e, int row) {
+static bool kw_boolean(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, int row) {
   int none = css_mq_find_keyword(row, "none", 4);
   const css_mq_feature_row * r = &css_mq_feature_rows[row];
   for (size_t k = 0; k < r->kw_count; k++) {
-    if ((int)k != none && kw_matches(e, row, (int)k)) {
+    if ((int)k != none && kw_matches(e, view, row, (int)k)) {
       return true;
     }
   }
@@ -530,8 +570,20 @@ typedef struct {
 } measure;
 
 /// The feature's value in the environment, for the numeric features.
-static void feature_measure(const GTEXT_CSS_Media_Environment * e, int row, measure * m) {
+static void feature_measure(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, const mq_node * n, int row, measure * m) {
   m->b = 1;
+  if (view) {
+    /* a container: its content box. `inline-size` and `block-size` are the width and the height row with MQF_LOGICAL, mapped by the container's writing mode. */
+    const bool logical = (n->flags & MQF_LOGICAL) != 0;
+    const bool horizontal = logical ? ((row == CSS_MQF_WIDTH) == view->inline_horizontal) : (row == CSS_MQF_WIDTH);
+    switch ((css_mq_feature_id)row) {
+    case CSS_MQF_WIDTH:
+    case CSS_MQF_HEIGHT: m->a = horizontal ? view->width : view->height; break;
+    case CSS_MQF_ASPECT_RATIO: m->a = view->width; m->b = view->height; break;
+    default: m->a = 0; break;
+    }
+    return;
+  }
   switch ((css_mq_feature_id)row) {
   case CSS_MQF_WIDTH: m->a = e->viewport.width; break;
   case CSS_MQF_HEIGHT: m->a = e->viewport.height; break;
@@ -562,24 +614,24 @@ static GTEXT_CSS_Tristate tri_of(bool b) {
   return b ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE;
 }
 
-GTEXT_CSS_Tristate css_mq_eval_feature(const GTEXT_CSS_Media_Environment * e, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n, GTEXT_CSS_Status * status,
-    const char ** detail) {
+static GTEXT_CSS_Tristate eval_feature(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, const struct GTEXT_CSS_Media_List_Internal * in,
+    const mq_node * n, GTEXT_CSS_Status * status, const char ** detail) {
   int row = n->feature;
   const css_mq_feature_row * fr = &css_mq_feature_rows[row];
-  if (!get_bit(e, row) || fr->status != MQS_IMPLEMENTED) {
+  if ((!view && !get_bit(e, row)) || fr->status != MQS_IMPLEMENTED) {
     return GTEXT_CSS_TRI_UNKNOWN;
   }
-  unit_ctx u = {e, NULL, GTEXT_CSS_OK};
+  unit_ctx u = {e, NULL, GTEXT_CSS_OK, view};
   /* A keyword feature, or an mq-boolean. */
   if (fr->unit == MQU_KEYWORD) {
     if (n->form == MQFORM_BOOLEAN) {
-      return tri_of(kw_boolean(e, row));
+      return tri_of(kw_boolean(e, view, row));
     }
     const mq_value * v = &in->values[n->v1];
-    return tri_of(kw_matches(e, row, v->keyword));
+    return tri_of(kw_matches(e, view, row, v->keyword));
   }
   measure m;
-  feature_measure(e, row, &m);
+  feature_measure(e, view, n, row, &m);
   if (fr->unit == MQU_BOOLEAN) {
     if (n->form == MQFORM_BOOLEAN) {
       return tri_of(m.a != 0);
@@ -656,6 +708,18 @@ GTEXT_CSS_Tristate css_mq_eval_feature(const GTEXT_CSS_Media_Environment * e, co
 #undef CMPV
 }
 
+GTEXT_CSS_Tristate css_mq_eval_feature(const GTEXT_CSS_Media_Environment * e, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n, GTEXT_CSS_Status * status,
+    const char ** detail) {
+  return eval_feature(e, NULL, in, n, status, detail);
+}
+
+GTEXT_CSS_Tristate css_mq_eval_feature_view(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n,
+    GTEXT_CSS_Status * status, const char ** detail) {
+  GTEXT_CSS_Media_Environment local = *e;
+  local.default_font_size = view->font_size; /* "Relative length units ... in container query conditions are evaluated based on the computed values of the query container" */
+  return eval_feature(&local, view, in, n, status, detail);
+}
+
 /* ---- the machine ------------------------------------------------------------ */
 
 void gtext_css_condition_call_init(GTEXT_CSS_Condition_Call * call) {
@@ -670,6 +734,7 @@ void gtext_css_condition_call_free(GTEXT_CSS_Condition_Call * call) {
   }
   if (call->internal) {
     GTEXT_Allocator a = call->internal->alloc;
+    css_cq_call_free(call->internal);
     gtext_allocator_free(&a, call->internal->memo);
     gtext_allocator_free(&a, call->internal->stack);
     gtext_allocator_free(&a, call->internal);
@@ -692,6 +757,11 @@ static GTEXT_CSS_Tristate type_match(const GTEXT_CSS_Media_Environment * e, cons
 /// Evaluate query `qi` of `list` (the root). Returns the three-valued answer in *out.
 GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Call * call, const struct GTEXT_CSS_Media_List_Internal * list, uint32_t qnode,
     GTEXT_CSS_Tristate * out) {
+  return css_conditions_eval_query_cq(c, call, list, qnode, NULL, out);
+}
+
+GTEXT_CSS_Status css_conditions_eval_query_cq(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Call * call, const struct GTEXT_CSS_Media_List_Internal * list,
+    uint32_t qnode, struct css_cq_ctx * cq, GTEXT_CSS_Tristate * out) {
   struct GTEXT_CSS_Condition_Call_Internal * ci = call->internal;
   const GTEXT_CSS_Media_Environment * env = &c->env;
   size_t sp = 0;
@@ -782,6 +852,9 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
       sp--;
       break;
     case MQN_PAREN:
+    case MQN_TEST_MEDIA:
+    case MQN_TEST_SUPPORTS:
+    case MQN_CQ_FN:
       if (f->idx == 0) {
         f->idx = 1;
         PUSH(cur_in, cur_in->kids[n->kid_first], -1);
@@ -813,7 +886,18 @@ GTEXT_CSS_Status css_conditions_eval_query(const GTEXT_CSS_Conditions * c, GTEXT
     }
     case MQN_FEATURE: {
       const char * detail = NULL;
-      ret = css_mq_eval_feature(env, f->in, n, &status, &detail);
+      ret = cq ? css_cq_eval_size(cq, f->in, n, &status, &detail) : css_mq_eval_feature(env, f->in, n, &status, &detail);
+      if (status != GTEXT_CSS_OK) {
+        call->detail = detail;
+        call->where = n->span;
+        goto done;
+      }
+      sp--;
+      break;
+    }
+    case MQN_SUBFEATURE: {
+      const char * detail = NULL;
+      ret = cq ? css_cq_eval_sub(cq, f->in, n, &status, &detail) : GTEXT_CSS_TRI_UNKNOWN;
       if (status != GTEXT_CSS_OK) {
         call->detail = detail;
         call->where = n->span;

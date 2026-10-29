@@ -328,46 +328,9 @@ void build_interface(World & w) {
 
 // ---- the sheets ------------------------------------------------------------------------------------------------------------
 
-/// The conditions the population writes. A condition this table does not know stops the program: a population that writes a new one extends the table with what the
-/// specification says, so that the library is not asked to decide it.
-bool condition_holds(const std::string & rule, const std::string & prelude) {
-  if (rule == "media") {
-    if (prelude == "all" || prelude == "screen" || prelude == "(min-width: 1px)" || prelude == "screen and (min-width: 1px)") {
-      return true;
-    }
-    if (prelude == "print" || prelude == "(max-width: 10px)" || prelude == "not all") {
-      return false;
-    }
-  }
-  if (rule == "supports") {
-    if (prelude == "(display: block)" || prelude == "(color: red)") {
-      return true;
-    }
-    if (prelude == "(foo: bar)" || prelude == "(display: nonesuch)" || prelude == "not (display: block)") {
-      return false;
-    }
-  }
-  std::fprintf(stderr, "css-sheet-ours: the condition @%s %s is not in the table\n", rule.c_str(), prelude.c_str());
-  std::exit(2);
-}
-
-bool active_rule(void *, const GTEXT_CSS_Rule * rule) {
-  char * text = nullptr;
-  size_t n = 0;
-  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
-  if (gtext_css_serialize_values_buffer(rule->prelude, rule->prelude_count, &so, &text, &n) != GTEXT_CSS_OK) {
-    std::exit(2);
-  }
-  std::string prelude(text, n);
-  gtext_css_serialize_buffer_free(nullptr, text);
-  while (!prelude.empty() && prelude.front() == ' ') {
-    prelude.erase(prelude.begin());
-  }
-  while (!prelude.empty() && prelude.back() == ' ') {
-    prelude.pop_back();
-  }
-  return condition_holds(std::string(rule->name.data, rule->name.length), prelude);
-}
+/// The conditions of the population are evaluated by the library, against the environment the browsers run the documents in (a 1280 by 800 screen at 1 dppx, the default of
+/// the media environment): `@media`, `@supports` and the rest are data of the sheets, and the index is built for this one conditions object.
+GTEXT_CSS_Conditions * g_conditions = nullptr;
 
 std::string text_of(const Node * style) {
   std::string out;
@@ -413,7 +376,6 @@ bool compile_scope(Sheets & out, GTEXT_CSS_Rule_Index * ix, Node * root, const G
       return false;
     }
     GTEXT_CSS_Sheet_Options so = gtext_css_sheet_options_default();
-    so.active = active_rule;
     GTEXT_CSS_Sheet * sheet = nullptr;
     GTEXT_CSS_Sheet_Result sr;
     const GTEXT_CSS_Status st = gtext_css_sheet_compile(tree, reg, &so, &sheet, &sr);
@@ -577,7 +539,15 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   GTEXT_CSS_Rule_Index_Options io = gtext_css_rule_index_options_default();
   io.html_document = true;
   io.quirks = gtext_markup_document_mode(w.doc) == GTEXT_MARKUP_MODE_QUIRKS;
+  GTEXT_CSS_Conditions_Options cndo = gtext_css_conditions_options_default();
+  cndo.element_interface = &w.iface;
+  if (gtext_css_conditions_new(reg, &cndo, &g_conditions) != GTEXT_CSS_OK) {
+    std::fprintf(stderr, "css-sheet-ours: the conditions object could not be made\n");
+    std::exit(2);
+  }
+  io.conditions = g_conditions;
   gtext_css_rule_index_new(reg, &io, &sheets.index);
+  gtext_css_conditions_free(g_conditions); /* the index holds its own owner */
   bool ok = compile_scope(sheets, sheets.index, gtext_markup_document_root(w.doc), reg, 0, nullptr, nullptr);
   for (size_t i = 0; i < w.shadows.size() && ok; i++) {
     ok = compile_scope(sheets, sheets.index, w.shadows[i].body, reg, w.shadows[i].number, w.token(static_cast<int>(i)), nullptr);

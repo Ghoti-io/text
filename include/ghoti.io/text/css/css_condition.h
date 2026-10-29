@@ -44,6 +44,7 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_CONDITION_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/css/css_container.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_media.h>
@@ -151,6 +152,8 @@ typedef struct {
   const GTEXT_CSS_Support_Policy * policy;      ///< What `@supports` is answered from (copied); NULL: the default policy.
   const GTEXT_CSS_Element_Interface * element_interface; ///< The element interface `selector()` is checked against (borrowed: it must outlive the object); NULL: a selector() is checked for syntax only.
   size_t max_work;                              ///< Most units of work of one evaluation. Default 2^24; one more is GTEXT_CSS_E_LIMIT_WORK.
+  const GTEXT_CSS_Container_Interface * container; ///< What the caller knows about its containers (copied; css_container.h); NULL: no container is a size or scroll-state container, and a style query asks nothing of one.
+  size_t max_container_requests;                ///< Most distinct (name, kinds) requests a call context resolves, and an index accepts. Default 4,096; one more is GTEXT_CSS_E_LIMIT_CONTAINER.
 } GTEXT_CSS_Conditions_Options;
 
 /** @brief The defaults, spelled out. */
@@ -193,6 +196,10 @@ typedef struct {
   size_t node_visits;        ///< Condition nodes visited, over all evaluations of the call.
   size_t defs_evaluated;     ///< Custom media definitions evaluated, over all evaluations of the call.
   size_t memo_hits;          ///< Uses of a custom media answered from the memo.
+  size_t container_steps;    ///< Ancestors visited looking for a query container, over all resolutions of the call.
+  size_t container_hits;     ///< Resolutions answered from the container cache.
+  size_t container_requests; ///< Distinct (name, kinds) requests the call has resolved.
+  size_t container_evaluations; ///< Container conditions evaluated against a container (not answered from the memo).
   const char * detail;       ///< After GTEXT_CSS_E_UNSUPPORTED: a static sentence naming what is missing (the unit, the callback).
   GTEXT_CSS_Span where;      ///< After a failure: the span of the node it was reached at.
   struct GTEXT_CSS_Condition_Call_Internal * internal; ///< Private.
@@ -203,6 +210,9 @@ GTEXT_API void gtext_css_condition_call_init(GTEXT_CSS_Condition_Call * call);
 
 /** @brief Release a call's memo and reset it. Safe on NULL and on a zeroed call. */
 GTEXT_API void gtext_css_condition_call_free(GTEXT_CSS_Condition_Call * call);
+
+/** @brief Forget the container cache and the memo of the call, keeping its buffers and the counters: do this when the tree, a computed style or a size has changed. Safe on NULL. */
+GTEXT_API void gtext_css_condition_call_reset(GTEXT_CSS_Condition_Call * call);
 
 /**
  * @brief Whether a media query list is true: some query of it is true; unknown is false (Media Queries 4, 3.1). The empty list is true.
@@ -253,6 +263,61 @@ GTEXT_API GTEXT_CSS_Status gtext_css_supports_parse(const char * text, size_t le
 /** @brief The three-valued answer of a parsed supports condition. @return As gtext_css_conditions_matches_list(); GTEXT_CSS_E_UNSUPPORTED naming `registry` when a declaration is asked and there is none. */
 GTEXT_API GTEXT_CSS_Status gtext_css_conditions_evaluate_supports(const GTEXT_CSS_Conditions * conditions, const GTEXT_CSS_Supports_Condition * condition,
     GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Tristate * result);
+
+/**
+ * @brief A parsed `<boolean-condition>` of `@when` and `@else` (Conditional 5, 3 and 4): a boolean algebra with `media( <media-feature> )` and `supports( ... )` as leaves
+ *   (and the supports functions `font-tech()`, `selector()` ... directly, as the draft's own examples write them). The same immutable AST as a media query list (one condition).
+ *   Free it with gtext_css_media_list_free().
+ */
+typedef GTEXT_CSS_Media_List GTEXT_CSS_Boolean_Condition;
+
+/**
+ * @brief Parse a `<boolean-condition>`. An invalid condition is OK, replaced (the rule never applies), with a diagnostic; `<general-enclosed>` is unknown. A `media()` whose
+ *   feature is known and written wrongly is false; one whose feature is unknown is unknown.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_when_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Boolean_Condition ** out, GTEXT_CSS_Media_Result * result);
+
+/** @brief gtext_css_when_parse_values() from text. */
+GTEXT_API GTEXT_CSS_Status gtext_css_when_parse(const char * text, size_t length, const GTEXT_CSS_Media_Options * options, GTEXT_CSS_Boolean_Condition ** out,
+    GTEXT_CSS_Media_Result * result);
+
+/**
+ * @brief The three-valued answer of a parsed boolean condition. @return As gtext_css_conditions_matches_list().
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_evaluate_boolean(const GTEXT_CSS_Conditions * conditions, const GTEXT_CSS_Boolean_Condition * condition,
+    GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Tristate * result);
+
+/**
+ * @brief Whether a container query list is true for an element: some condition of it is true for the container it selects. Unknown, and no container, are false.
+ *
+ * @param conditions The evaluator, made with an element interface (its `inheritance_parent`) and a container interface (css_container.h). Not NULL.
+ * @param query The list. Not NULL.
+ * @param element The element the rule's style applies to. Not NULL.
+ * @param from_element Begin with the element itself, not its inheritance parent: the style is a pseudo-element's (`::before`), whose originating element is a candidate container.
+ * @param call NULL, or the caller's context; the cache that makes a walk over a whole tree linear.
+ * @param matches Receives the answer; written only on success. Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_UNSUPPORTED (a callback the query needs is absent: `call->detail` names it, `container.size`); GTEXT_CSS_E_LIMIT_WORK; GTEXT_CSS_E_LIMIT_CONTAINER; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_evaluate_container(const GTEXT_CSS_Conditions * conditions, const GTEXT_CSS_Container_Query * query,
+    GTEXT_CSS_Element_Handle element, bool from_element, GTEXT_CSS_Condition_Call * call, bool * matches);
+
+/**
+ * @brief The size of the query container of an element on an axis, for a `cqw`, `cqh`, `cqi` or `cqb` unit: the shape of GTEXT_CSS_Environment::container_size, with the
+ *   conditions and the call context as `user`. A caller's `container_size` callback calls it, so that a `cqw` in a declaration and a `width` in a `@container` query are one fact.
+ *
+ * "The query container for each axis is the nearest ancestor container that accepts container size queries on that axis." Returns false if there is none (the unit then falls back
+ * to the small viewport), or the container has no principal box.
+ */
+GTEXT_API bool gtext_css_container_environment_size(const GTEXT_CSS_Conditions * conditions, GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Element_Handle element,
+    GTEXT_CSS_Container_Axis axis, double * px);
+
+/**
+ * @brief A filter for the tree walkers that stay filters (gtext_css_cascade_collect_layers(), gtext_css_at_property_collect()): `@media`, `@supports`, `@when` and `@else` are
+ *   evaluated; `@container` and `@starting-style` are true, because the condition depends on the element (Cascade 5, 6.4.3). Pass the conditions object as the filter's `user`. An
+ *   evaluation that fails is false.
+ */
+GTEXT_API bool gtext_css_conditions_active_rule(void * conditions, const GTEXT_CSS_Rule * rule);
 
 /**
  * @brief `CSS.supports(property, value)`: whether the registry knows the property and the value is valid for it (by the parser the cascade uses, quirks off), and the policy

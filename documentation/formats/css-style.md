@@ -133,7 +133,7 @@ dropped bogus at byte 23
 
 1. It reads the element's **presentation attributes** through the table of `css_presentation.h` (SVG 2's, unless the options name another) and its `style`
    attribute through the element interface, and adds the declarations of the entries the caller gives.
-2. When `GTEXT_CSS_Style_Options::rules` and `::match` are set, it first adds the declarations of the style rules that match the element
+2. When `GTEXT_CSS_Style_Options::rules` and `::match` are set (`::starting_style` lets the rules under `@starting-style` take part, `::container_call` is the cache of the container queries), it first adds the declarations of the style rules that match the element
    (\ref format_css_sheets "css-sheets.md"), with the keys the cascade defines; `::pseudo` asks for a pseudo-element's rules instead.
 3. It **cascades** them (\ref format_css_cascade "css-cascade.md"). A presentation attribute is an author-level declaration of specificity zero that comes
    before every style sheet of the author: any rule beats it, whatever its specificity, and the `style` attribute beats it too. The `style` attribute is over

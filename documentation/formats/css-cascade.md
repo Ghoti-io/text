@@ -131,7 +131,10 @@ declares nothing. `@import` is read only where it is valid: at the top level, be
 and other imports, with a `<url>` or a `<string>` first (its conditions go through the filter like those of `@media`); a statement `@layer` inside a style rule
 declares nothing. A layer inside `@media`, `@supports`, `@container` or `@document` counts only when the **filter** the caller gives
 (`GTEXT_CSS_Layer_Collect_Options::active`) says the condition applies; with no filter such a rule that holds a layer is `GTEXT_CSS_E_UNSUPPORTED` naming
-`active_rule`, and one that holds none is skipped. The filter is the at-rule layer's (C4); the structure is final.
+`active_rule`, and one that holds none is skipped. `gtext_css_conditions_active_rule()` (css_condition.h, with the conditions object as the filter's `user`) is that filter:
+`@media`, `@supports`, `@when` and `@else` are evaluated, `@container` and `@starting-style` are true because they depend on the element, and `@document` is false. The import
+grammar is `[ layer | layer(name) ] || [ scope | scope(...) ] || supports(...)` in any order. `GTEXT_CSS_Layer_Collect_Options::on_declare` is called for every layer a rule declares
+or finds again, statements included: the occurrences a style sheet that keeps its conditions as data records (css_sheet.h).
 
 ## Rolling back
 

@@ -40,13 +40,6 @@ using namespace cas;
 
 namespace {
 
-bool yes(void *, const GTEXT_CSS_Rule *) {
-  return true;
-}
-bool no(void *, const GTEXT_CSS_Rule *) {
-  return false;
-}
-
 struct Compiled {
   GTEXT_CSS_Sheet * s = nullptr;
   GTEXT_CSS_Sheet_Result res{};
@@ -74,20 +67,33 @@ struct Compiled {
   }
 };
 
-GTEXT_CSS_Sheet_Options with_filter(bool (*f)(void *, const GTEXT_CSS_Rule *)) {
-  GTEXT_CSS_Sheet_Options o = gtext_css_sheet_options_default();
-  o.active = f;
-  return o;
-}
+/// A conditions object for a screen of the given width (the defaults otherwise), freed with the test.
+struct Conds {
+  GTEXT_CSS_Conditions * c = nullptr;
+  explicit Conds(double width = 1280, bool print = false) {
+    GTEXT_CSS_Media_Environment env = gtext_css_media_environment_default(nullptr);
+    env.viewport.width = width;
+    env.medium = print ? GTEXT_CSS_MEDIUM_PRINT : GTEXT_CSS_MEDIUM_SCREEN;
+    GTEXT_CSS_Conditions_Options o = gtext_css_conditions_options_default();
+    o.media = &env;
+    EXPECT_EQ(gtext_css_conditions_new(R(), &o, &c), GTEXT_CSS_OK);
+  }
+  Conds(const Conds &) = delete;
+  Conds & operator=(const Conds &) = delete;
+  ~Conds() {
+    gtext_css_conditions_free(c);
+  }
+};
 
 struct Index {
   GTEXT_CSS_Rule_Index * x = nullptr;
   GTEXT_CSS_Rule_Index_Result res{};
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
-  explicit Index(bool quirks = false) {
+  explicit Index(bool quirks = false, const GTEXT_CSS_Conditions * conditions = nullptr) {
     GTEXT_CSS_Rule_Index_Options o = gtext_css_rule_index_options_default();
     o.html_document = true;
     o.quirks = quirks;
+    o.conditions = conditions;
     EXPECT_EQ(gtext_css_rule_index_new(R(), &o, &x), GTEXT_CSS_OK);
   }
   Index(const Index &) = delete;
@@ -136,7 +142,7 @@ std::string win(Page & pg, Index & ix, int el, const std::string & prop, const c
     EXPECT_EQ(gtext_css_selector_parse(pseudo, std::strlen(pseudo), nullptr, &pl, nullptr), GTEXT_CSS_OK);
   }
   GTEXT_CSS_Rule_Index_Result r;
-  const GTEXT_CSS_Status s = gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(el), pl, set.s, &r);
+  const GTEXT_CSS_Status s = gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(el), pl, set.s, nullptr, &r);
   gtext_css_selector_list_free(pl);
   if (st) {
     *st = s;
@@ -336,24 +342,46 @@ TEST(CssSheetLayers, AnonymousLayersAreUniqueAndNestedOnesAreGrouped) {
   EXPECT_EQ(win(pg, ix, i, "color"), "orange") << "x.y comes before x's own rules";
 }
 
-TEST(CssSheetLayers, AConditionalRuleNeedsTheFilterAndALayerInsideADisabledOneIsNotDeclared) {
+TEST(CssSheetLayers, AConditionalRuleNeedsTheConditionsAndALayerInsideAFalseOneIsNotDeclared) {
+  /* Cascade 5, 6.4.3: "Layers that are defined inside of a conditional group rule do not contribute to the layer order unless the condition is true or unless the conditional group rule can
+     evaluate differently for different elements in the document." The sheet keeps the condition; the index, built for one environment, decides. */
   const std::string css = "@layer a, b; @media print { @layer c { p { color: red } } } @layer b { p { color: blue } }";
-  Compiled none(css);
-  EXPECT_EQ(none.st, GTEXT_CSS_E_UNSUPPORTED) << "no filter: never a guess";
-  EXPECT_STREQ(none.res.name, "active_rule");
-  GTEXT_CSS_Sheet_Options off = with_filter(no);
-  Compiled c_off(css, &off);
-  ASSERT_EQ(c_off.st, GTEXT_CSS_OK);
-  EXPECT_EQ(gtext_css_sheet_layer_count(c_off.s), 2u) << "the layer of the rule that does not apply is not declared";
-  GTEXT_CSS_Sheet_Options on = with_filter(yes);
-  Compiled c_on(css, &on);
-  ASSERT_EQ(c_on.st, GTEXT_CSS_OK);
-  EXPECT_EQ(gtext_css_sheet_layer_count(c_on.s), 3u);
+  Compiled c(css);
+  ASSERT_EQ(c.st, GTEXT_CSS_OK) << "compiling evaluates nothing, so it needs nothing";
+  EXPECT_EQ(gtext_css_sheet_condition_count(c.s), 1u);
+  Index none;
+  EXPECT_EQ(none.add(c), GTEXT_CSS_E_UNSUPPORTED) << "no conditions object: never a guess";
+  EXPECT_STREQ(none.res.name, "conditions");
+  {
+    Conds screen(1280, false);
+    Index ix(false, screen.c);
+    ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+    ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+    const GTEXT_CSS_Layer_Registry * lr = gtext_css_rule_index_layers(ix.x, 0);
+    ASSERT_NE(lr, nullptr);
+    EXPECT_EQ(gtext_css_layer_count(lr, GTEXT_CSS_ORIGIN_AUTHOR), 2u) << "the layer of the rule that does not apply is not declared";
+    EXPECT_EQ(gtext_css_layer_find(lr, GTEXT_CSS_ORIGIN_AUTHOR, 0, "c", 1), 0u);
+    EXPECT_EQ(gtext_css_rule_index_record_count(ix.x), 1u) << "the record of the false @media is not in the index";
+  }
+  {
+    Conds print(1280, true);
+    Index ix(false, print.c);
+    ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+    ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+    EXPECT_EQ(gtext_css_layer_count(gtext_css_rule_index_layers(ix.x, 0), GTEXT_CSS_ORIGIN_AUTHOR), 3u);
+    EXPECT_EQ(gtext_css_rule_index_record_count(ix.x), 2u);
+    EXPECT_EQ(gtext_css_sheet_condition_count(c.s), 1u) << "the same sheet served both: it is untouched";
+  }
   Compiled styles("@media print { p { color: red } }");
-  EXPECT_EQ(styles.st, GTEXT_CSS_E_UNSUPPORTED) << "a conditional rule that holds a style rule and no filter";
-  EXPECT_STREQ(styles.res.name, "active_rule");
+  EXPECT_EQ(styles.st, GTEXT_CSS_OK);
+  Index n2;
+  EXPECT_EQ(n2.add(styles), GTEXT_CSS_E_UNSUPPORTED) << "a conditional rule that holds a style rule and no conditions";
+  EXPECT_STREQ(n2.res.name, "conditions");
   Compiled plain("@media print { @font-face { font-family: x } } p { color: red }");
-  EXPECT_EQ(plain.st, GTEXT_CSS_OK) << "a conditional rule that holds no styles needs no filter";
+  EXPECT_EQ(plain.st, GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_sheet_condition_count(plain.s), 0u) << "a conditional rule that holds no styles is no node";
+  Index n3;
+  EXPECT_EQ(n3.add(plain), GTEXT_CSS_OK) << "and needs no conditions";
 }
 
 namespace {
@@ -418,18 +446,25 @@ TEST(CssSheetImport, ALateImportAndAFailedImportContributeNothing) {
   EXPECT_EQ(d.kind, GTEXT_CSS_SHEET_DIAG_IMPORT_FAILED);
 }
 
-TEST(CssSheetImport, ADisabledConditionalImportDoesNotDeclareItsLayer) {
+TEST(CssSheetImport, AnImportWhoseConditionIsFalseDoesNotDeclareItsLayer) {
   Importer im;
-  GTEXT_CSS_Sheet_Options o = with_filter(no);
+  GTEXT_CSS_Sheet_Options o = gtext_css_sheet_options_default();
   o.import = give;
   o.import_user = &im;
-  Compiled c("@import 'a.css' layer(x) supports(display: grid); @layer y; p { color: red }", &o);
+  Compiled lib("i { color: red }");
+  im.next = &lib;
+  Compiled c("@import 'a.css' layer(x) supports(display: nonesuch); @layer y; p { color: red }", &o);
   ASSERT_EQ(c.st, GTEXT_CSS_OK);
-  EXPECT_TRUE(im.urls.empty());
-  EXPECT_EQ(gtext_css_sheet_layer_count(c.s), 1u) << "only y";
-  GTEXT_CSS_Sheet_Options none = gtext_css_sheet_options_default();
-  Compiled c2("@import 'a.css' supports(display: grid);", &none);
-  EXPECT_EQ(c2.st, GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(im.urls.size(), 1u) << "the callback is asked for every import: a caller that prefers not to fetch what is false decides from the request";
+  EXPECT_EQ(gtext_css_sheet_layer_count(c.s), 2u) << "the sheet keeps both layers";
+  Conds screen;
+  Index ix(false, screen.c);
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_layer_count(gtext_css_rule_index_layers(ix.x, 0), GTEXT_CSS_ORIGIN_AUTHOR), 1u) << "only y: the import's condition is false, so neither its layer nor its sheet is";
+  EXPECT_EQ(gtext_css_rule_index_sheet_count(ix.x), 1u);
+  Index none;
+  EXPECT_EQ(none.add(c), GTEXT_CSS_E_UNSUPPORTED);
 }
 
 TEST(CssSheetScope, TheNearerRootWinsBeforeTheOrderOfAppearance) {
@@ -641,7 +676,7 @@ TEST(CssSheetIndex, TheRegistrationAndTheLifecycleAreChecked) {
     EXPECT_EQ(ix.add(d, GTEXT_CSS_ORIGIN_AUTHOR, sc, 1), GTEXT_CSS_OK);
     GTEXT_CSS_Rule_Index_Result r;
     Set set(nullptr);
-    EXPECT_EQ(gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(h), nullptr, set.s, &r), GTEXT_CSS_E_INVALID) << "not frozen";
+    EXPECT_EQ(gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(h), nullptr, set.s, nullptr, &r), GTEXT_CSS_E_INVALID) << "not frozen";
     ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
     EXPECT_EQ(ix.add(d), GTEXT_CSS_E_INVALID) << "frozen";
     EXPECT_EQ(gtext_css_rule_index_record_count(ix.x), 2u);
@@ -787,7 +822,7 @@ TEST(CssSheetIndex, CustomPropertiesAreCollectedWithTheirNames) {
   ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
   ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
   Set set(nullptr);
-  ASSERT_EQ(gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(p), nullptr, set.s, nullptr), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(p), nullptr, set.s, nullptr, nullptr), GTEXT_CSS_OK);
   Out o(set);
   EXPECT_EQ(o.custom("--k"), "red");
   EXPECT_EQ(o.custom("--Other"), "1px") << "the case of a custom property's name is kept";
@@ -800,7 +835,7 @@ std::vector<GTEXT_CSS_Cascade_Entry> entries_of(Page & pg, Index & ix, int el, G
   std::vector<GTEXT_CSS_Cascade_Entry> out;
   Set set(nullptr);
   GTEXT_CSS_Rule_Index_Result r;
-  const GTEXT_CSS_Status s = gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(el), nullptr, set.s, &r);
+  const GTEXT_CSS_Status s = gtext_css_rules_collect(ix.x, pg.ctx, synth::Tree::H(el), nullptr, set.s, nullptr, &r);
   if (st) {
     *st = s;
   }

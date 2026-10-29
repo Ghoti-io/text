@@ -75,7 +75,7 @@ size_t considered(synth::Tree & t, GTEXT_CSS_Rule_Index * x, int el, GTEXT_CSS_S
   EXPECT_EQ(gtext_css_selector_match_context_new(&t.table, &mo, &ctx), GTEXT_CSS_OK);
   Set set(nullptr);
   GTEXT_CSS_Rule_Index_Result r;
-  EXPECT_EQ(gtext_css_rules_collect(x, ctx, synth::Tree::H(el), nullptr, set.s, &r), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_rules_collect(x, ctx, synth::Tree::H(el), nullptr, set.s, nullptr, &r), GTEXT_CSS_OK);
   if (out) {
     *out = gtext_css_selector_match_counters(ctx);
   }
@@ -128,7 +128,7 @@ TEST(CssSheetCost, StylingEveryElementOfATreeIsLinearInTheElements) {
     ASSERT_EQ(gtext_css_selector_match_context_new(&t.table, &mo, &ctx), GTEXT_CSS_OK);
     for (int e = 1; e <= n; e++) {
       Set set(nullptr);
-      ASSERT_EQ(gtext_css_rules_collect(b.x, ctx, synth::Tree::H(e), nullptr, set.s, nullptr), GTEXT_CSS_OK);
+      ASSERT_EQ(gtext_css_rules_collect(b.x, ctx, synth::Tree::H(e), nullptr, set.s, nullptr, nullptr), GTEXT_CSS_OK);
     }
     totals[k++] = gtext_css_selector_match_counters(ctx).compounds_tested;
     gtext_css_selector_match_context_free(ctx);
@@ -192,7 +192,7 @@ TEST(CssSheetCost, AScopeWithALimitIsBoundedByTheWorkLimitAndNeverHangs) {
   GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
   ASSERT_EQ(gtext_css_selector_match_context_new(&t.table, &mo, &ctx), GTEXT_CSS_OK);
   Set set(nullptr);
-  const GTEXT_CSS_Status st = gtext_css_rules_collect(b.x, ctx, synth::Tree::H(pe), nullptr, set.s, nullptr);
+  const GTEXT_CSS_Status st = gtext_css_rules_collect(b.x, ctx, synth::Tree::H(pe), nullptr, set.s, nullptr, nullptr);
   EXPECT_TRUE(st == GTEXT_CSS_OK || st == GTEXT_CSS_E_LIMIT_MATCH_WORK) << gtext_css_status_string(st);
   gtext_css_selector_match_context_free(ctx);
 }

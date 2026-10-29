@@ -64,8 +64,18 @@ typedef enum {
   MQN_FONT_FORMAT, ///< `font-format(x)`: `bits` (0: a format nobody knows, which is false).
   MQN_AT_RULE,   ///< `at-rule(@x)`: `text` the name.
   MQN_NAMED,     ///< `named-feature(x)`: `text`.
-  MQN_ENV        ///< `env(x)`: `text`.
+  MQN_ENV,       ///< `env(x)`: `text`.
+  MQN_TEST_MEDIA,    ///< @when `media( <media-feature> )`: kid 0 is the FEATURE (or an ENCLOSED, when the feature is not one).
+  MQN_TEST_SUPPORTS, ///< @when `supports( ... )`: kid 0 is the condition; flag MQF_BARE when it is a declaration written without parentheses.
+  MQN_CQ_FN,         ///< @container `style()`, `scroll-state()` or `anchored()` (`type_id` says which, MQ_SUB_*): kid 0 is the condition or, with MQF_BARE, a SUBFEATURE.
+  MQN_SUBFEATURE     ///< A feature of those functions: `type_id` the function, `form` plain, boolean or range, `text` the name (a range: its first operand), `value` its value (a range: its last), `name` a range's middle operand.
 } mq_node_kind;
+
+/// The functions of a container condition whose arguments are not size features.
+#define MQ_SUB_NONE 0
+#define MQ_SUB_STYLE 1
+#define MQ_SUB_SCROLL 2
+#define MQ_SUB_ANCHORED 3
 
 /// Flags of a query node.
 #define MQF_NEGATED 0x1u  ///< `not` before the type.
@@ -74,7 +84,16 @@ typedef enum {
 #define MQF_REPLACED 0x8u ///< Invalid: replaced by `not all` (written as a negated `all`).
 #define MQF_IMPORTANT 0x10u ///< A supports declaration written with `!important`.
 #define MQF_FALSE 0x40u ///< An ENCLOSED of a supports condition: false and not unknown (Conditional 3: "Removed the 'unknown' value ... defining unrecognized syntaxes as 'false'").
+#define MQF_BARE 0x80u ///< A function whose argument is a bare feature or declaration, not a parenthesized condition.
+#define MQF_LOGICAL 0x100u ///< A container size feature in a logical axis: `inline-size` (feature WIDTH) or `block-size` (feature HEIGHT).
 #define MQF_SPEC_TEXT 0x20u ///< A supports leaf whose `text` is the whole serialization (a function).
+
+/// What a container condition asks of its container (the bits of a container QUERY node's `bits`).
+#define MQC_SIZE 0x1u
+#define MQC_STYLE 0x2u
+#define MQC_SCROLL 0x4u
+#define MQC_ANCHORED 0x8u
+#define MQC_UNKNOWN 0x10u ///< An unknown or unsupported container feature: no container is selected, the condition is false.
 
 typedef enum { MQT_ID_ALL = 0, MQT_ID_SCREEN, MQT_ID_PRINT, MQT_ID_DEPRECATED, MQT_ID_UNKNOWN } mq_type_id;
 typedef enum { MQFORM_PLAIN = 0, MQFORM_BOOLEAN, MQFORM_RANGE } mq_form;
@@ -100,7 +119,7 @@ typedef struct {
 
 typedef struct {
   uint8_t kind;           ///< mq_node_kind.
-  uint8_t flags;          ///< QUERY: MQF_*.
+  uint16_t flags;         ///< MQF_*.
   uint8_t type_id;        ///< QUERY: mq_type_id.
   uint8_t form;           ///< FEATURE: mq_form.
   uint8_t prefix;         ///< FEATURE: mq_prefix.
@@ -120,7 +139,8 @@ typedef struct {
   size_t value_length;
   GTEXT_CSS_Span span;
   GTEXT_CSS_Selector_List * sel; ///< SELECTOR: owned by the list.
-  uint32_t bits;          ///< FONT_TECH, FONT_FORMAT.
+  uint32_t bits;          ///< FONT_TECH, FONT_FORMAT; a container QUERY: MQC_* bits of the kinds of feature it uses.
+  uint32_t sub_kw;        ///< A scroll-state SUBFEATURE: the keyword's index.
   const GTEXT_CSS_Component_Value * src; ///< ENCLOSED while parsing: the block or function it stands for (not valid after the parse).
 } mq_node;
 
@@ -147,6 +167,12 @@ struct GTEXT_CSS_Media_List {
   struct GTEXT_CSS_Media_List_Internal in;
 };
 
+/// The scroll-state features of a container condition (`stuck`, `snapped`, `scrollable`, `scrolled`) and the keywords of each.
+#define CSS_CQ_SCROLL_FEATURES 4
+extern const char * const css_cq_scroll_names[CSS_CQ_SCROLL_FEATURES];
+extern const char * const * const css_cq_scroll_keywords[CSS_CQ_SCROLL_FEATURES];
+extern const size_t css_cq_scroll_keyword_count[CSS_CQ_SCROLL_FEATURES];
+
 /// The row of the generated table.
 extern const css_mq_feature_row css_mq_feature_rows[CSS_MQF_COUNT];
 extern const char * const css_mq_keywords[CSS_MQ_KEYWORD_COUNT];
@@ -162,6 +188,20 @@ bool css_mq_is_reserved(const char * word, size_t length);
 
 /// A growable array through the allocator of a list under construction.
 bool css_mq_grow(const GTEXT_Allocator * a, void ** array, size_t * cap, size_t count, size_t need, size_t elem);
+
+/// A container's box and font, for evaluating a size feature against it in place of the viewport.
+typedef struct {
+  double width, height;      ///< The content box in px.
+  double font_size;          ///< The container's computed font size in px (what `em` is in a feature value).
+  bool inline_horizontal;    ///< The container's inline axis is the horizontal one (a horizontal writing mode).
+  /** The size of the query container of the container itself on an axis (a `cqw` in a feature value is relative to the container's own query container); false: none, the small viewport. */
+  bool (*cq_size)(void * user, GTEXT_CSS_Container_Axis axis, double * px);
+  void * cq_user;
+} mq_container_view;
+
+/// css_mq_eval_feature() with the numbers of a container in place of the viewport's. Ignores the `supported` set (a container feature is always answered).
+GTEXT_CSS_Tristate css_mq_eval_feature_view(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n,
+    GTEXT_CSS_Status * status, const char ** detail);
 
 /// Serialize one node tree (a query, or any node) to the sink, without recursion.
 GTEXT_CSS_Status css_mq_serialize_node(const struct GTEXT_CSS_Media_List_Internal * in, uint32_t node, const GTEXT_Markup_Sink * sink);

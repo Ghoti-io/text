@@ -466,6 +466,7 @@ GTEXT_CSS_Conditions_Options gtext_css_conditions_options_default(void) {
   memset(&o, 0, sizeof o);
   o.custom_media = true;
   o.max_work = (size_t)1 << 24;
+  o.max_container_requests = 4096;
   return o;
 }
 
@@ -476,6 +477,9 @@ GTEXT_CSS_Status gtext_css_conditions_new(const GTEXT_CSS_Registry * registry, c
   GTEXT_CSS_Conditions_Options o = options ? *options : gtext_css_conditions_options_default();
   if (!o.max_work) {
     o.max_work = (size_t)1 << 24;
+  }
+  if (!o.max_container_requests) {
+    o.max_container_requests = 4096;
   }
   GTEXT_CSS_Media_Environment env;
   if (o.media) {
@@ -520,6 +524,13 @@ GTEXT_CSS_Status gtext_css_conditions_new(const GTEXT_CSS_Registry * registry, c
   }
   c->iface = o.element_interface;
   c->defs = defs;
+  c->max_requests = o.max_container_requests;
+  if (o.container && o.container->size >= sizeof(size_t) + sizeof(void *)) {
+    /* a caller built before a field was added: its struct is shorter, the rest is zero (absent) */
+    const size_t n = o.container->size < sizeof c->container ? o.container->size : sizeof c->container;
+    memcpy(&c->container, o.container, n);
+    c->container.size = sizeof c->container;
+  }
   *out = c;
   return GTEXT_CSS_OK;
 }
@@ -688,6 +699,11 @@ GTEXT_CSS_Tristate gtext_css_conditions_condition(const GTEXT_CSS_Conditions * c
   return m ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE;
 }
 
+GTEXT_CSS_Status gtext_css_conditions_evaluate_boolean(const GTEXT_CSS_Conditions * c, const GTEXT_CSS_Boolean_Condition * cond, GTEXT_CSS_Condition_Call * call,
+    GTEXT_CSS_Tristate * result) {
+  return gtext_css_conditions_evaluate_query(c, cond, 0, call, result);
+}
+
 GTEXT_CSS_Status gtext_css_conditions_evaluate_supports(const GTEXT_CSS_Conditions * c, const GTEXT_CSS_Supports_Condition * cond, GTEXT_CSS_Condition_Call * call,
     GTEXT_CSS_Tristate * result) {
   return gtext_css_conditions_evaluate_query(c, cond, 0, call, result);
@@ -724,4 +740,48 @@ void gtext_css_conditions_environment_hook(const GTEXT_CSS_Conditions * conditio
   }
   env->condition = hook;
   env->user = (void *)conditions;
+}
+
+bool gtext_css_conditions_active_rule(void * user, const GTEXT_CSS_Rule * rule) {
+  const GTEXT_CSS_Conditions * c = user;
+  if (!c || !rule || rule->kind != GTEXT_CSS_RULE_AT) {
+    return false;
+  }
+  const GTEXT_CSS_String * nm = &rule->name;
+  GTEXT_CSS_Media_Options o = gtext_css_media_options_default();
+  o.allocator = &c->alloc;
+  bool result = false;
+  if (ident_is(nm, "media")) {
+    GTEXT_CSS_Media_List * list = NULL;
+    if (gtext_css_media_list_parse_values(rule->prelude, rule->prelude_count, &o, &list, NULL) != GTEXT_CSS_OK) {
+      return false;
+    }
+    if (gtext_css_conditions_matches_list(c, list, NULL, &result) != GTEXT_CSS_OK) {
+      result = false;
+    }
+    gtext_css_media_list_free(list);
+    return result;
+  }
+  if (ident_is(nm, "supports") || ident_is(nm, "when") || ident_is(nm, "else")) {
+    const bool is_supports = ident_is(nm, "supports");
+    if (ident_is(nm, "else") && rule->prelude_count == 0) {
+      return true;
+    }
+    GTEXT_CSS_Media_List * cond = NULL;
+    const GTEXT_CSS_Status st = is_supports ? gtext_css_supports_parse_values(rule->prelude, rule->prelude_count, false, &o, &cond, NULL)
+                                             : gtext_css_when_parse_values(rule->prelude, rule->prelude_count, &o, &cond, NULL);
+    if (st != GTEXT_CSS_OK) {
+      return false;
+    }
+    GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
+    if (gtext_css_conditions_evaluate_query(c, cond, 0, NULL, &t) == GTEXT_CSS_OK) {
+      result = t == GTEXT_CSS_TRI_TRUE;
+    }
+    gtext_css_media_list_free(cond);
+    return result;
+  }
+  if (ident_is(nm, "document") || ident_is(nm, "-moz-document")) {
+    return false;
+  }
+  return true; /* @container and @starting-style depend on the element; the rest is not a condition */
 }

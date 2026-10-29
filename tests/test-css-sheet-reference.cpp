@@ -138,7 +138,7 @@ Result collect_all(const std::string & css, synth::Tree & t, GTEXT_CSS_Selector_
   EXPECT_EQ(gtext_css_rule_index_freeze(ix, nullptr), GTEXT_CSS_OK);
   for (int el = 1; el < static_cast<int>(t.e.size()); el++) {
     Set set(nullptr);
-    EXPECT_EQ(gtext_css_rules_collect(ix, ctx, synth::Tree::H(el), nullptr, set.s, nullptr), GTEXT_CSS_OK) << css;
+    EXPECT_EQ(gtext_css_rules_collect(ix, ctx, synth::Tree::H(el), nullptr, set.s, nullptr, nullptr), GTEXT_CSS_OK) << css;
     if (gtext_css_candidates_count(set.s)) {
       GTEXT_CSS_Cascade_Entry e;
       gtext_css_candidates_entry(set.s, 0, &e);

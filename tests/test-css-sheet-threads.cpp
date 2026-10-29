@@ -56,7 +56,7 @@ std::string answers(const GTEXT_Markup_Document * doc, const GTEXT_CSS_Rule_Inde
   std::string out;
   for (size_t i = 0; i < n; i++) {
     Set set(nullptr);
-    EXPECT_EQ(gtext_css_rules_collect(index, ctx, gtext_css_markup_handle(all[i]), nullptr, set.s, nullptr), GTEXT_CSS_OK);
+    EXPECT_EQ(gtext_css_rules_collect(index, ctx, gtext_css_markup_handle(all[i]), nullptr, set.s, nullptr, nullptr), GTEXT_CSS_OK);
     Out o(set);
     out += o.value("color") + "/" + o.value("margin-top") + "/" + o.value("background-color") + ";";
   }
@@ -84,7 +84,6 @@ TEST(CssSheetThreads, OneSheetAndOneIndexServeEightThreadsAndEveryAnswerIsTheSin
       "p { color: red } .card > section > .lead { color: green } section:nth-child(odd) p { margin-top: 3px } @layer a, b { } @layer b { span { background-color: blue } } "
       "@scope (.s1) { p { margin-top: 9px } } .s2 { & p { color: orange; &:first-child { margin-top: 1px } } } span:not(#i3) { margin-top: 5px }");
   GTEXT_CSS_Sheet_Options so = gtext_css_sheet_options_default();
-  so.active = [](void *, const GTEXT_CSS_Rule *) { return true; };
   GTEXT_CSS_Sheet * sheet = nullptr;
   ASSERT_EQ(gtext_css_sheet_compile(p.tree, R(), &so, &sheet, nullptr), GTEXT_CSS_OK);
   GTEXT_CSS_Rule_Index_Options io = gtext_css_rule_index_options_default();

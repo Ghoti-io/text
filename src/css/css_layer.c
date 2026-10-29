@@ -854,7 +854,7 @@ static GTEXT_CSS_Status declare_segs(walker * w, const GTEXT_CSS_Rule * rule, ui
 
 static bool conditional_name(const GTEXT_CSS_String * name) {
   return ci_equal(name, "media") || ci_equal(name, "supports") || ci_equal(name, "container") || ci_equal(name, "document") ||
-      ci_equal(name, "-moz-document");
+      ci_equal(name, "-moz-document") || ci_equal(name, "when") || ci_equal(name, "else");
 }
 
 static bool grouping_name(const GTEXT_CSS_String * name) {
@@ -917,6 +917,9 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
           if (st != GTEXT_CSS_OK) {
             return st;
           }
+          if (w->opt && w->opt->on_declare) {
+            w->opt->on_declare(w->opt->user, rule, (GTEXT_CSS_Layer_Id)id);
+          }
         }
         if (j >= n) {
           break;
@@ -967,6 +970,9 @@ static GTEXT_CSS_Status handle_layer(walker * w, const GTEXT_CSS_Rule * rule, fr
   if (w->opt && w->opt->on_layer) {
     w->opt->on_layer(w->opt->user, rule, (GTEXT_CSS_Layer_Id)layer);
   }
+  if (w->opt && w->opt->on_declare) {
+    w->opt->on_declare(w->opt->user, rule, (GTEXT_CSS_Layer_Id)layer);
+  }
   frame f;
   memset(&f, 0, sizeof f);
   f.items = rule->contents;
@@ -1003,22 +1009,36 @@ static GTEXT_CSS_Status handle_import(walker * w, const GTEXT_CSS_Rule * rule, f
   while (i < n && is_ws(&p[i])) {
     i++;
   }
-  bool keyword = false, function = false;
+  /* Cascade 5 and 6: `[ layer | layer(<name>) ] || [ scope | scope(...) ] || supports(...)`, in any order, then the media query list. */
+  bool keyword = false, function = false, seen_scope = false, seen_supports = false;
   size_t cnt = 0;
-  if (i < n) {
-    keyword = p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_IDENT && ci_equal(&p[i].value, "layer");
-    function = p[i].kind == GTEXT_CSS_VALUE_FUNCTION && ci_equal(&p[i].value, "layer");
-    if (function) {
+  for (; i < n; i++) {
+    if (is_ws(&p[i])) {
+      continue;
+    }
+    const bool is_kw = p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_IDENT;
+    const bool is_fn = p[i].kind == GTEXT_CSS_VALUE_FUNCTION;
+    if (is_kw && !keyword && !function && ci_equal(&p[i].value, "layer")) {
+      keyword = true;
+    }
+    else if (is_fn && !keyword && !function && ci_equal(&p[i].value, "layer")) {
+      function = true;
       cnt = read_name(p[i].children, p[i].child_count, w->segs, MAX_SEGS);
       if (cnt == 0 || !names_valid(w, cnt)) {
         return GTEXT_CSS_OK; /* an invalid layer name makes the import invalid */
       }
     }
-    if (keyword || function) {
-      i++;
+    else if (!seen_scope && ((is_kw && ci_equal(&p[i].value, "scope")) || (is_fn && ci_equal(&p[i].value, "scope")))) {
+      seen_scope = true;
+    }
+    else if (!seen_supports && is_fn && ci_equal(&p[i].value, "supports")) {
+      seen_supports = true;
+    }
+    else {
+      break;
     }
   }
-  bool conditions = false;
+  bool conditions = seen_supports;
   for (; i < n; i++) {
     conditions = conditions || !is_ws(&p[i]);
   }
@@ -1044,6 +1064,9 @@ static GTEXT_CSS_Status handle_import(walker * w, const GTEXT_CSS_Rule * rule, f
   }
   if (w->opt && w->opt->on_layer) {
     w->opt->on_layer(w->opt->user, rule, (GTEXT_CSS_Layer_Id)layer);
+  }
+  if (w->opt && w->opt->on_declare) {
+    w->opt->on_declare(w->opt->user, rule, (GTEXT_CSS_Layer_Id)layer);
   }
   return GTEXT_CSS_OK;
 }

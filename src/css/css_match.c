@@ -685,7 +685,7 @@ static El parent_for(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, const 
 }
 
 static const void * memo_aux_for(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Complex * cx) {
-  if (!cx->anchor_dependent) {
+  if (!cx->anchor_dependent && ctx->implied_cx != cx) {
     return NULL;
   }
   return ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope;
@@ -712,6 +712,9 @@ bool css_match_chain(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_
     switch (cmp->combinator) {
     case GTEXT_CSS_COMBINATOR_CHILD: {
       El p = parent_for(ctx, element, &cx->compounds[index - 1]);
+      if (p && ctx->implied_cx == cx && p == ctx->scope) {
+        p = NULL; /* the implied `:where(:scope) ` puts every compound of the selector below the scoping root */
+      }
       ok = p && css_match_chain(ctx, list, cx, index - 1, p);
       break;
     }
@@ -750,7 +753,7 @@ static bool exists_above(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
   El stop = NULL; // the element whose own answer is not known: the first climbed past that matched
   for (El x = el;;) {
     El p = step_up(ctx, x, siblings, &cx->compounds[j]);
-    if (!p) {
+    if (!p || (!siblings && ctx->implied_cx == cx && p == ctx->scope)) {
       result = false;
       break;
     }

@@ -30,6 +30,8 @@
  * that fails is rolled back (its nodes, kids, values and calculations are dropped), and no block is parsed twice, so the cost is linear.
  */
 
+#include <ghoti.io/text/css/css_condition.h>
+#include <ghoti.io/text/css/css_container.h>
 #include <ghoti.io/text/css/css_math.h>
 #include <ghoti.io/text/css/css_media.h>
 #include <ghoti.io/text/css/css_serialize.h>
@@ -203,6 +205,10 @@ typedef struct {
   size_t max_depth_seen;
   bool supports;   ///< Parsing a <supports-condition> and not a media query.
   bool bare_ok;    ///< ... and a declaration without parentheses is accepted.
+  bool when;       ///< Parsing the <boolean-condition> of @when or @else: `media()` and `supports()` are the leaves.
+  bool container;  ///< Parsing a <container-condition>: size features, `style()`, `scroll-state()` and `anchored()` are the leaves.
+  uint8_t sub;     ///< Inside `style()`, `scroll-state()` or `anchored()`: MQ_SUB_*, so a parenthesized group is a feature of that function.
+  bool nm_logical; ///< The last container feature name was `inline-size` or `block-size`.
 } parser;
 
 static void set_status(parser * P, GTEXT_CSS_Status st, GTEXT_CSS_Span span) {
@@ -668,8 +674,10 @@ static bool name_of(const GTEXT_CSS_Component_Value * t, int * row, mq_prefix * 
   return true;
 }
 
+static bool feature_name(parser * P, const GTEXT_CSS_Component_Value * t, int * row, mq_prefix * prefix, bool * via);
+
 /// Parse the contents [v, v+n) of a parenthesized block as `<media-feature>`; on FEAT_OK `*out` is the FEATURE or CUSTOM node.
-static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * block, uint32_t * out) {
+static feat_result parse_feature_core(parser * P, const GTEXT_CSS_Component_Value * block, uint32_t * out) {
   if (P->supports) {
     return FEAT_SOFT; /* a supports condition has no media features: a declaration is read before this */
   }
@@ -729,7 +737,7 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
     int row;
     mq_prefix prefix;
     bool via;
-    name_of(&v[i], &row, &prefix, &via);
+    feature_name(P, &v[i], &row, &prefix, &via);
     size_t after = skip_ws(v, e, i + 1);
     bool boolean = after >= e;
     if (!boolean && v[after].type != GTEXT_CSS_TOKEN_COLON) {
@@ -740,7 +748,7 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
     }
     if (row < 0) {
       /* An unknown name. `(--name)` is a reference to a @custom-media. */
-      if (boolean && v[i].value.length > 2 && v[i].value.data[0] == '-' && v[i].value.data[1] == '-') {
+      if (boolean && !P->container && v[i].value.length > 2 && v[i].value.data[0] == '-' && v[i].value.data[1] == '-') {
         uint32_t nd = new_node(P, MQN_CUSTOM, block->span);
         if (nd == MQ_NONE) {
           return FEAT_INVALID;
@@ -773,6 +781,7 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
     mq_node * node = &P->in->nodes[nd];
     node->feature = (int16_t)row;
     node->prefix = (uint8_t)prefix;
+    node->flags = P->nm_logical ? MQF_LOGICAL : 0;
     if (boolean) {
       node->form = MQFORM_BOOLEAN;
       *out = nd;
@@ -808,7 +817,7 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
         int r;
         mq_prefix px;
         bool via;
-        name_of(&v[q.start], &r, &px, &via);
+        feature_name(P, &v[q.start], &r, &px, &via);
         if (r >= 0) {
           name_g = g;
           row = r;
@@ -826,7 +835,7 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
       return FEAT_SOFT;
     }
     bool via;
-    name_of(&v[q.start], &row, &prefix, &via);
+    feature_name(P, &v[q.start], &row, &prefix, &via);
     if (row < 0) {
       return FEAT_SOFT;
     }
@@ -851,6 +860,7 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
     return FEAT_INVALID;
   }
   P->in->nodes[nd].feature = (int16_t)row;
+  P->in->nodes[nd].flags = P->nm_logical ? MQF_LOGICAL : 0;
   P->in->nodes[nd].form = MQFORM_RANGE;
   P->in->nodes[nd].op1 = (uint8_t)ops[0];
   P->in->nodes[nd].op2 = ng == 3 ? (uint8_t)ops[1] : (uint8_t)MQOP_NONE;
@@ -880,6 +890,76 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
   P->in->nodes[nd].v2 = vals[1];
   *out = nd;
   return FEAT_OK;
+}
+
+/// The name of a feature token in the current mode. A container condition has the size features (`width`, `height`, `aspect-ratio`, `orientation`, and the logical
+/// `inline-size` and `block-size`, which are the width and height rows with MQF_LOGICAL) and no others: any other name is unknown there.
+static bool feature_name(parser * P, const GTEXT_CSS_Component_Value * t, int * row, mq_prefix * prefix, bool * via) {
+  P->nm_logical = false;
+  const bool ident = name_of(t, row, prefix, via);
+  if (!P->container || !ident) {
+    return ident;
+  }
+  const char * s = t->value.data;
+  const size_t l = t->value.length;
+  const char * base = s;
+  size_t bl = l;
+  mq_prefix px = MQP_NONE;
+  if (l > 4 && s[3] == '-' && ((css_mq_lower((unsigned char)s[0]) == 'm' && css_mq_lower((unsigned char)s[1]) == 'i' && css_mq_lower((unsigned char)s[2]) == 'n') ||
+                               (css_mq_lower((unsigned char)s[0]) == 'm' && css_mq_lower((unsigned char)s[1]) == 'a' && css_mq_lower((unsigned char)s[2]) == 'x'))) {
+    px = css_mq_lower((unsigned char)s[1]) == 'i' ? MQP_MIN : MQP_MAX;
+    base = s + 4;
+    bl = l - 4;
+  }
+  if (ieq(base, bl, "inline-size") || ieq(base, bl, "block-size")) {
+    *row = ieq(base, bl, "inline-size") ? CSS_MQF_WIDTH : CSS_MQF_HEIGHT;
+    *prefix = px;
+    *via = px != MQP_NONE;
+    P->nm_logical = true;
+    return true;
+  }
+  if (*row >= 0 && *row != CSS_MQF_WIDTH && *row != CSS_MQF_HEIGHT && *row != CSS_MQF_ASPECT_RATIO && *row != CSS_MQF_ORIENTATION) {
+    *row = -1;
+    *prefix = MQP_NONE;
+    *via = false;
+  }
+  return true;
+}
+
+static feat_result parse_sub_feature(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span span, uint32_t * out);
+
+/// Forget the nodes, kids, values and calculations made since the marks.
+static void truncate_to(parser * P, size_t nmark, size_t kmark, size_t vmark, size_t mmark) {
+  struct GTEXT_CSS_Media_List_Internal * in = P->in;
+  drop_nodes(in, nmark);
+  in->kid_count = kmark;
+  in->value_count = vmark;
+  while (in->math_count > mmark) {
+    gtext_css_math_free(in->maths[--in->math_count]);
+  }
+}
+
+/// Parse the contents of a parenthesized block as a feature of the current mode. FEAT_INVALID only for a failure of the parse itself: an invalid
+/// container feature is unknown (general-enclosed), a media feature that is invalid replaces its query.
+static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * block, uint32_t * out) {
+  if (P->sub) {
+    return parse_sub_feature(P, block->children, block->child_count, block->span, out);
+  }
+  if (P->when) {
+    return FEAT_SOFT;
+  }
+  if (!P->container) {
+    return parse_feature_core(P, block, out);
+  }
+  struct GTEXT_CSS_Media_List_Internal * in = P->in;
+  const size_t nmark = in->node_count, kmark = in->kid_count, vmark = in->value_count, mmark = in->math_count;
+  feat_result fr = parse_feature_core(P, block, out);
+  if (fr == FEAT_INVALID && P->status == GTEXT_CSS_OK) {
+    P->invalid = false;
+    truncate_to(P, nmark, kmark, vmark, mmark);
+    return FEAT_SOFT;
+  }
+  return fr;
 }
 
 /* ---- @supports leaves ----------------------------------------------------- */
@@ -1116,6 +1196,349 @@ static feat_result parse_supports_function(parser * P, const GTEXT_CSS_Component
   return FEAT_OK;
 }
 
+
+/* ---- container conditions and @when ---------------------------------------- */
+
+static bool parse_condition(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, bool allow_or, uint32_t * out);
+
+const char * const css_cq_scroll_names[CSS_CQ_SCROLL_FEATURES] = {"stuck", "snapped", "scrollable", "scrolled"};
+static const char * const kw_stuck[] = {"none", "top", "right", "bottom", "left", "block-start", "inline-start", "block-end", "inline-end"};
+static const char * const kw_snapped[] = {"none", "x", "y", "block", "inline", "both"};
+static const char * const kw_scroll[] = {"none", "top", "right", "bottom", "left", "block-start", "inline-start", "block-end", "inline-end", "x", "y", "block", "inline"};
+const char * const * const css_cq_scroll_keywords[CSS_CQ_SCROLL_FEATURES] = {kw_stuck, kw_snapped, kw_scroll, kw_scroll};
+const size_t css_cq_scroll_keyword_count[CSS_CQ_SCROLL_FEATURES] = {9, 6, 13, 13};
+
+static char * lower_copy(parser * P, const char * s, size_t len) {
+  char * c = arena_copy(P, s, len);
+  if (c) {
+    for (size_t i = 0; i < len; i++) {
+      c[i] = (char)css_mq_lower((unsigned char)c[i]);
+    }
+  }
+  return c;
+}
+
+/// Split [s, e) at the comparison operators (`<`, `<=`, `>`, `>=`, `=`): the groups between them and the operators. false: more than two operators.
+static bool split_comparisons(const GTEXT_CSS_Component_Value * v, size_t s, size_t e, grp * groups, mq_op * ops, size_t * ngroups, size_t * nops) {
+  size_t ng = 0, nop = 0, gstart = s;
+  for (size_t i = s; i < e; i++) {
+    const GTEXT_CSS_Component_Value * t = &v[i];
+    if (t->kind == GTEXT_CSS_VALUE_TOKEN && t->type == GTEXT_CSS_TOKEN_DELIM && (t->delim == '<' || t->delim == '>' || t->delim == '=')) {
+      mq_op op;
+      size_t w = i + 1;
+      if (t->delim == '=') {
+        op = MQOP_EQ;
+      } else {
+        const bool le = i + 1 < e && is_delim(&v[i + 1], '=');
+        op = t->delim == '<' ? (le ? MQOP_LE : MQOP_LT) : (le ? MQOP_GE : MQOP_GT);
+        if (le) {
+          w = i + 2;
+        }
+      }
+      if (nop == 2 || ng >= 3) {
+        return false;
+      }
+      const size_t ge = trim_end(v, gstart, i);
+      groups[ng].start = skip_ws(v, ge, gstart);
+      groups[ng].end = ge;
+      ng++;
+      ops[nop++] = op;
+      i = w - 1;
+      gstart = w;
+    }
+  }
+  const size_t ge = trim_end(v, gstart, e);
+  groups[ng].start = skip_ws(v, ge, gstart);
+  groups[ng].end = ge;
+  ng++;
+  *ngroups = ng;
+  *nops = nop;
+  return true;
+}
+
+/// A feature of `style()`, `scroll-state()` or `anchored()`, from the contents [v, v+n) of its parentheses (or of the function, when it is bare).
+/// FEAT_SOFT: not a feature of that function (general-enclosed).
+static feat_result parse_sub_feature(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span span, uint32_t * out) {
+  const size_t s = skip_ws(v, n, 0);
+  const size_t e = trim_end(v, s, n);
+  if (s >= e) {
+    return FEAT_SOFT;
+  }
+  const uint8_t sub = P->sub;
+  grp groups[3];
+  mq_op ops[2];
+  size_t ng = 0, nop = 0;
+  if (!split_comparisons(v, s, e, groups, ops, &ng, &nop)) {
+    return FEAT_SOFT;
+  }
+  for (size_t g = 0; g < ng; g++) {
+    if (groups[g].start >= groups[g].end) {
+      return FEAT_SOFT;
+    }
+  }
+  if (nop == 0) {
+    if (!is_ident(&v[s])) {
+      return FEAT_SOFT;
+    }
+    const size_t after = skip_ws(v, e, s + 1);
+    const bool boolean = after >= e;
+    if (!boolean && !(v[after].kind == GTEXT_CSS_VALUE_TOKEN && v[after].type == GTEXT_CSS_TOKEN_COLON)) {
+      return FEAT_SOFT;
+    }
+    const size_t vs = boolean ? e : skip_ws(v, e, after + 1);
+    const bool custom = v[s].value.length > 2 && v[s].value.data[0] == '-' && v[s].value.data[1] == '-';
+    int feat = -1;
+    uint32_t kw = 0;
+    if (sub == MQ_SUB_SCROLL) {
+      for (int i = 0; i < CSS_CQ_SCROLL_FEATURES; i++) {
+        if (ieq(v[s].value.data, v[s].value.length, css_cq_scroll_names[i])) {
+          feat = i;
+        }
+      }
+      if (feat < 0) {
+        return FEAT_SOFT;
+      }
+      if (!boolean) {
+        if (e - vs != 1 || !is_ident(&v[vs])) {
+          return FEAT_SOFT;
+        }
+        int k = -1;
+        for (size_t i = 0; i < css_cq_scroll_keyword_count[feat]; i++) {
+          if (ieq(v[vs].value.data, v[vs].value.length, css_cq_scroll_keywords[feat][i])) {
+            k = (int)i;
+          }
+        }
+        if (k < 0) {
+          return FEAT_SOFT;
+        }
+        kw = (uint32_t)k;
+      }
+    }
+    else if (sub == MQ_SUB_ANCHORED) {
+      if (!ieq(v[s].value.data, v[s].value.length, "fallback") || (!boolean && vs >= e)) {
+        return FEAT_SOFT;
+      }
+    }
+    else if (!boolean && vs >= e && !custom) {
+      return FEAT_SOFT;
+    }
+    const uint32_t nd = new_node(P, MQN_SUBFEATURE, span);
+    if (nd == MQ_NONE) {
+      return FEAT_INVALID;
+    }
+    char * name = custom ? arena_copy(P, v[s].value.data, v[s].value.length) : lower_copy(P, v[s].value.data, v[s].value.length);
+    char * val = NULL;
+    size_t vl = 0;
+    if (!boolean && vs < e) {
+      val = sub == MQ_SUB_SCROLL ? lower_copy(P, v[vs].value.data, v[vs].value.length) : serialize_trimmed(P, v + vs, e - vs, &vl);
+      if (sub == MQ_SUB_SCROLL) {
+        vl = v[vs].value.length;
+      }
+    }
+    else if (!boolean) {
+      val = arena_copy(P, "", 0); /* `(--x:)`: a custom property with the empty value */
+    }
+    if (!name || (!boolean && !val)) {
+      return FEAT_INVALID;
+    }
+    mq_node * node = &P->in->nodes[nd];
+    node->type_id = sub;
+    node->form = boolean ? MQFORM_BOOLEAN : MQFORM_PLAIN;
+    node->text = name;
+    node->text_length = v[s].value.length;
+    node->value = val;
+    node->value_length = vl;
+    node->feature = (int16_t)feat;
+    node->sub_kw = kw;
+    *out = nd;
+    return FEAT_OK;
+  }
+  /* A range: only the values of a style query can be compared. */
+  if (sub != MQ_SUB_STYLE) {
+    return FEAT_SOFT;
+  }
+  if (ng == 3) {
+    const bool lt = (ops[0] == MQOP_LT || ops[0] == MQOP_LE) && (ops[1] == MQOP_LT || ops[1] == MQOP_LE);
+    const bool gt = (ops[0] == MQOP_GT || ops[0] == MQOP_GE) && (ops[1] == MQOP_GT || ops[1] == MQOP_GE);
+    if (!lt && !gt) {
+      return FEAT_SOFT;
+    }
+  }
+  const uint32_t nd = new_node(P, MQN_SUBFEATURE, span);
+  if (nd == MQ_NONE) {
+    return FEAT_INVALID;
+  }
+  const char * txt[3] = {NULL, NULL, NULL};
+  size_t len[3] = {0, 0, 0};
+  for (size_t g = 0; g < ng; g++) {
+    txt[g] = serialize_trimmed(P, v + groups[g].start, groups[g].end - groups[g].start, &len[g]);
+    if (!txt[g]) {
+      return FEAT_INVALID;
+    }
+  }
+  mq_node * node = &P->in->nodes[nd];
+  node->type_id = sub;
+  node->form = MQFORM_RANGE;
+  node->op1 = (uint8_t)ops[0];
+  node->op2 = ng == 3 ? (uint8_t)ops[1] : (uint8_t)MQOP_NONE;
+  node->text = txt[0];
+  node->text_length = len[0];
+  if (ng == 3) {
+    node->name = txt[1];
+    node->name_length = len[1];
+    node->value = txt[2];
+    node->value_length = len[2];
+  }
+  else {
+    node->value = txt[1];
+    node->value_length = len[1];
+  }
+  node->feature = -1;
+  *out = nd;
+  return FEAT_OK;
+}
+
+/// A wrapper node of one kid.
+static uint32_t make_wrapper(parser * P, mq_node_kind kind, uint32_t kid, GTEXT_CSS_Span span, uint16_t flags, uint8_t type_id) {
+  const uint32_t nd = new_node(P, kind, span);
+  if (nd == MQ_NONE) {
+    return MQ_NONE;
+  }
+  P->in->nodes[nd].flags = flags;
+  P->in->nodes[nd].type_id = type_id;
+  return set_kids(P, nd, &kid, 1) ? nd : MQ_NONE;
+}
+
+/// `style()`, `scroll-state()` and `anchored()` of a container condition. FEAT_SOFT: <general-enclosed>.
+static feat_result parse_container_function(parser * P, const GTEXT_CSS_Component_Value * fn, uint32_t * out) {
+  uint8_t sub;
+  if (ieq(fn->value.data, fn->value.length, "style")) {
+    sub = MQ_SUB_STYLE;
+  }
+  else if (ieq(fn->value.data, fn->value.length, "scroll-state")) {
+    sub = MQ_SUB_SCROLL;
+  }
+  else if (ieq(fn->value.data, fn->value.length, "anchored")) {
+    sub = MQ_SUB_ANCHORED;
+  }
+  else {
+    return FEAT_SOFT;
+  }
+  static const GTEXT_CSS_Component_Value no_values[1];
+  const GTEXT_CSS_Component_Value * k = fn->children ? fn->children : no_values;
+  const size_t s = skip_ws(k, fn->child_count, 0);
+  const size_t e = trim_end(k, s, fn->child_count);
+  if (s >= e) {
+    return FEAT_SOFT;
+  }
+  struct GTEXT_CSS_Media_List_Internal * in = P->in;
+  const size_t nmark = in->node_count, kmark = in->kid_count, vmark = in->value_count, mmark = in->math_count;
+  const size_t nx = skip_ws(k, e, s + 1);
+  const bool cond_first = is_paren_block(&k[s]) || (is_ident_lit(&k[s], "not") && nx < e);
+  uint32_t cond = MQ_NONE;
+  bool ok;
+  P->sub = sub;
+  if (cond_first) {
+    ok = parse_condition(P, k + s, e - s, true, &cond);
+  }
+  else {
+    const feat_result fr = parse_sub_feature(P, k + s, e - s, fn->span, &cond);
+    ok = fr == FEAT_OK;
+  }
+  P->sub = MQ_SUB_NONE;
+  P->invalid = false;
+  if (P->status != GTEXT_CSS_OK) {
+    return FEAT_INVALID;
+  }
+  if (!ok) {
+    truncate_to(P, nmark, kmark, vmark, mmark);
+    return FEAT_SOFT;
+  }
+  const uint32_t nd = make_wrapper(P, MQN_CQ_FN, cond, fn->span, cond_first ? 0 : MQF_BARE, sub);
+  if (nd == MQ_NONE) {
+    return FEAT_INVALID;
+  }
+  *out = nd;
+  return FEAT_OK;
+}
+
+/// `media()` and `supports()` of an `@when` condition, and the supports functions as leaves. FEAT_SOFT: <general-enclosed>.
+static feat_result parse_when_function(parser * P, const GTEXT_CSS_Component_Value * fn, uint32_t * out) {
+  const bool is_media = ieq(fn->value.data, fn->value.length, "media");
+  const bool is_supports = ieq(fn->value.data, fn->value.length, "supports");
+  if (!is_media && !is_supports) {
+    return parse_supports_function(P, fn, out);
+  }
+  static const GTEXT_CSS_Component_Value no_values[1];
+  const GTEXT_CSS_Component_Value * k = fn->children ? fn->children : no_values;
+  const size_t s = skip_ws(k, fn->child_count, 0);
+  const size_t e = trim_end(k, s, fn->child_count);
+  if (s >= e) {
+    return FEAT_SOFT;
+  }
+  struct GTEXT_CSS_Media_List_Internal * in = P->in;
+  const size_t nmark = in->node_count, kmark = in->kid_count, vmark = in->value_count, mmark = in->math_count;
+  uint32_t inner = MQ_NONE;
+  bool bare = false;
+  P->when = false;
+  if (is_media) {
+    const feat_result fr = parse_feature_core(P, fn, &inner);
+    P->when = true;
+    if (P->status != GTEXT_CSS_OK) {
+      return FEAT_INVALID;
+    }
+    if (fr != FEAT_OK) {
+      const bool invalid = fr == FEAT_INVALID;
+      P->invalid = false;
+      truncate_to(P, nmark, kmark, vmark, mmark);
+      if (invalid) {
+        /* a media feature that is known and written wrongly is false, as it is in a media query (where it replaces the query) */
+        const uint32_t en = new_node(P, MQN_ENCLOSED, fn->span);
+        if (en == MQ_NONE) {
+          return FEAT_INVALID;
+        }
+        in->nodes[en].src = fn;
+        in->nodes[en].flags = MQF_FALSE;
+        *out = en;
+        return FEAT_OK;
+      }
+      return FEAT_SOFT;
+    }
+    const uint32_t nd = make_wrapper(P, MQN_TEST_MEDIA, inner, fn->span, 0, 0);
+    if (nd == MQ_NONE) {
+      return FEAT_INVALID;
+    }
+    *out = nd;
+    return FEAT_OK;
+  }
+  P->supports = true;
+  bool ok;
+  if (declaration_shaped(k + s, e - s)) {
+    bare = true;
+    inner = make_decl(P, k + s, e - s, k[s].span);
+    ok = inner != MQ_NONE;
+  }
+  else {
+    ok = parse_condition(P, k + s, e - s, true, &inner);
+  }
+  P->supports = false;
+  P->when = true;
+  P->invalid = false;
+  if (P->status != GTEXT_CSS_OK) {
+    return FEAT_INVALID;
+  }
+  if (!ok) {
+    truncate_to(P, nmark, kmark, vmark, mmark);
+    return FEAT_SOFT;
+  }
+  const uint32_t nd = make_wrapper(P, MQN_TEST_SUPPORTS, inner, fn->span, bare ? MQF_BARE : 0, 0);
+  if (nd == MQ_NONE) {
+    return FEAT_INVALID;
+  }
+  *out = nd;
+  return FEAT_OK;
+}
+
 /* ---- the condition ------------------------------------------------------- */
 
 static bool push_frame(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, const GTEXT_CSS_Component_Value * owner, bool allow_or) {
@@ -1232,7 +1655,17 @@ static bool parse_condition(parser * P, const GTEXT_CSS_Component_Value * v, siz
         } else if (t->kind == GTEXT_CSS_VALUE_FUNCTION) {
           f->pos++;
           uint32_t fn = MQ_NONE;
-          feat_result fr = P->supports ? parse_supports_function(P, t, &fn) : FEAT_SOFT;
+          feat_result fr = FEAT_SOFT;
+          if (P->supports) {
+            fr = parse_supports_function(P, t, &fn);
+          }
+          else if (P->when) {
+            fr = parse_when_function(P, t, &fn);
+          }
+          else if (P->container && !P->sub) {
+            fr = parse_container_function(P, t, &fn);
+          }
+          f = &P->frames[P->nframes - 1]; /* a nested parse may have moved the frames */
           if (fr == FEAT_INVALID) {
             break;
           }
@@ -1482,6 +1915,80 @@ static uint32_t parse_query(parser * P, const GTEXT_CSS_Component_Value * v, siz
   return q;
 }
 
+
+/// One `<container-condition>`: `[ <container-name>? <container-query>? ]!`, as a QUERY node whose `text` is the name (NULL: none), whose kid is the query (none: the
+/// name alone), and whose `bits` say which kinds of feature it asks of its container. *valid false: the grammar does not match, and the whole rule is invalid.
+static uint32_t parse_container_root(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span where, bool * valid) {
+  struct GTEXT_CSS_Media_List_Internal * in = P->in;
+  *valid = true;
+  P->invalid = false;
+  const uint32_t q = new_node(P, MQN_QUERY, where);
+  if (q == MQ_NONE) {
+    return MQ_NONE;
+  }
+  const size_t s = skip_ws(v, n, 0);
+  const size_t e = trim_end(v, s, n);
+  uint32_t cond = MQ_NONE;
+  const char * name = NULL;
+  size_t name_len = 0;
+  if (s >= e) {
+    *valid = false;
+  }
+  else {
+    size_t pos = s;
+    const GTEXT_CSS_Component_Value * t = &v[s];
+    if (is_ident(t) && !is_ident_lit(t, "not")) {
+      static const char * const reserved[] = {"and", "or", "none", "initial", "inherit", "unset", "revert", "revert-layer", "default"};
+      for (size_t i = 0; i < sizeof reserved / sizeof *reserved; i++) {
+        if (is_ident_lit(t, reserved[i])) {
+          *valid = false;
+        }
+      }
+      if (*valid) {
+        char * c = arena_copy(P, t->value.data, t->value.length);
+        if (!c) {
+          return MQ_NONE;
+        }
+        name = c;
+        name_len = t->value.length;
+        pos = skip_ws(v, e, s + 1);
+      }
+    }
+    if (*valid && pos < e) {
+      if (!parse_condition(P, v + pos, e - pos, true, &cond)) {
+        *valid = false;
+      }
+    }
+  }
+  if (P->status != GTEXT_CSS_OK) {
+    return MQ_NONE;
+  }
+  P->invalid = false;
+  uint32_t bits = 0;
+  if (*valid) {
+    for (size_t i = (size_t)q + 1; i < in->node_count; i++) {
+      const mq_node * nd = &in->nodes[i];
+      if (nd->kind == MQN_FEATURE) {
+        bits |= MQC_SIZE;
+      }
+      else if (nd->kind == MQN_CQ_FN) {
+        bits |= nd->type_id == MQ_SUB_STYLE ? MQC_STYLE : (nd->type_id == MQ_SUB_SCROLL ? MQC_SCROLL : MQC_ANCHORED);
+      }
+      else if (nd->kind == MQN_ENCLOSED) {
+        bits |= MQC_UNKNOWN;
+      }
+    }
+  }
+  mq_node * qn = &in->nodes[q];
+  qn->text = name;
+  qn->text_length = name_len;
+  qn->bits = bits;
+  if (*valid && cond != MQ_NONE && !set_kids(P, q, &cond, 1)) {
+    return MQ_NONE;
+  }
+  return q;
+}
+
 /// One <supports-condition> (or a bare declaration): a QUERY node with no type whose kid is the condition.
 static uint32_t parse_supports_root(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span where) {
   struct GTEXT_CSS_Media_List_Internal * in = P->in;
@@ -1691,8 +2198,11 @@ size_t gtext_css_media_list_node_count(const GTEXT_CSS_Media_List * list) {
 
 /* ---- entry points -------------------------------------------------------- */
 
+typedef enum { PI_MEDIA = 0, PI_SUPPORTS, PI_WHEN, PI_CONTAINER } parse_mode;
+
 static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options, bool single,
-    GTEXT_CSS_Media_List ** out, GTEXT_CSS_Media_Result * result, bool supports, bool bare_ok) {
+    GTEXT_CSS_Media_List ** out, GTEXT_CSS_Media_Result * result, parse_mode mode, bool bare_ok) {
+  const bool supports = mode == PI_SUPPORTS || mode == PI_WHEN; /* one condition, no comma list: the root of a supports condition and of a boolean condition are read alike */
   GTEXT_CSS_Media_Options o = options ? *options : gtext_css_media_options_default();
   if (!o.max_queries) {
     o.max_queries = 65536;
@@ -1727,8 +2237,11 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
   P.in = in;
   P.res = result;
   P.alloc = *al;
-  P.supports = supports;
+  P.supports = mode == PI_SUPPORTS;
   P.bare_ok = bare_ok;
+  P.when = mode == PI_WHEN;
+  P.container = mode == PI_CONTAINER;
+  bool container_valid = true;
   GTEXT_CSS_Span span0;
   memset(&span0, 0, sizeof span0);
   size_t start = 0;
@@ -1750,7 +2263,12 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
     }
     GTEXT_CSS_Span where = start < count ? values[start].span : (count ? values[count - 1].span : span0);
     uint32_t q;
-    if (supports) {
+    if (mode == PI_CONTAINER) {
+      bool ok = true;
+      q = parse_container_root(&P, values + start, end - start, where, &ok);
+      container_valid = container_valid && ok;
+    }
+    else if (supports) {
       q = parse_supports_root(&P, values, count, where);
       done = true;
     } else if (single && end < count) {
@@ -1773,6 +2291,29 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
       done = true;
     } else {
       start = end + 1;
+    }
+  }
+  if (mode == PI_CONTAINER && P.status == GTEXT_CSS_OK && (!container_valid || in->root_count == 0)) {
+    /* One <container-condition> that does not match the grammar makes the whole rule invalid: a list of one query that is `not all`. */
+    drop_nodes(in, 0);
+    in->kid_count = 0;
+    in->value_count = 0;
+    while (in->math_count > 0) {
+      gtext_css_math_free(in->maths[--in->math_count]);
+    }
+    in->root_count = 0;
+    const uint32_t q = new_node(&P, MQN_QUERY, count ? values[0].span : span0);
+    if (q != MQ_NONE && css_mq_grow(&P.alloc, (void **)&in->roots, &in->root_cap, 0, 1, sizeof(uint32_t))) {
+      in->nodes[q].flags = MQF_NEGATED | MQF_HAS_TYPE | MQF_REPLACED;
+      in->nodes[q].type_id = MQT_ID_ALL;
+      in->nodes[q].text = "all";
+      in->nodes[q].text_length = 3;
+      in->roots[in->root_count++] = q;
+      P.replaced = 1;
+      diag(&P, GTEXT_CSS_MQDIAG_SYNTAX, count ? values[0].span : span0, "Conditional 5, 5.4: a container condition that does not match the grammar makes the rule invalid");
+    }
+    else if (P.status == GTEXT_CSS_OK) {
+      set_status(&P, GTEXT_CSS_E_OOM, span0);
     }
   }
   GTEXT_CSS_Status st = P.status;
@@ -1804,7 +2345,7 @@ GTEXT_CSS_Status gtext_css_media_list_parse_values(const GTEXT_CSS_Component_Val
   if (!out || (count && !values)) {
     return GTEXT_CSS_E_INVALID;
   }
-  return parse_impl(values, count, options, false, out, result, false, false);
+  return parse_impl(values, count, options, false, out, result, PI_MEDIA, false);
 }
 
 GTEXT_CSS_Status gtext_css_media_query_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options,
@@ -1816,7 +2357,7 @@ GTEXT_CSS_Status gtext_css_media_query_parse_values(const GTEXT_CSS_Component_Va
   if (!out || (count && !values)) {
     return GTEXT_CSS_E_INVALID;
   }
-  return parse_impl(values, count, options, true, out, result, false, false);
+  return parse_impl(values, count, options, true, out, result, PI_MEDIA, false);
 }
 
 GTEXT_CSS_Status gtext_css_media_list_parse(const char * text, size_t length, const GTEXT_CSS_Media_Options * options, GTEXT_CSS_Media_List ** out,
@@ -1847,7 +2388,7 @@ GTEXT_CSS_Status gtext_css_media_list_parse(const char * text, size_t length, co
     return st;
   }
   gtext_css_result_free(&pr);
-  st = parse_impl(tree->values, tree->value_count, &o, false, out, result, false, false);
+  st = parse_impl(tree->values, tree->value_count, &o, false, out, result, PI_MEDIA, false);
   gtext_css_tree_free(tree);
   return st;
 }
@@ -1861,7 +2402,7 @@ GTEXT_CSS_Status gtext_css_supports_parse_values(const GTEXT_CSS_Component_Value
   if (!out || (count && !values)) {
     return GTEXT_CSS_E_INVALID;
   }
-  return parse_impl(values, count, options, true, out, result, true, bare_declaration);
+  return parse_impl(values, count, options, true, out, result, PI_SUPPORTS, bare_declaration);
 }
 
 GTEXT_CSS_Status gtext_css_supports_parse(const char * text, size_t length, bool bare_declaration, const GTEXT_CSS_Media_Options * options,
@@ -1892,7 +2433,74 @@ GTEXT_CSS_Status gtext_css_supports_parse(const char * text, size_t length, bool
     return st;
   }
   gtext_css_result_free(&pr);
-  st = parse_impl(tree->values, tree->value_count, &o, true, out, result, true, bare_declaration);
+  st = parse_impl(tree->values, tree->value_count, &o, true, out, result, PI_SUPPORTS, bare_declaration);
   gtext_css_tree_free(tree);
   return st;
+}
+
+GTEXT_CSS_Status gtext_css_when_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Boolean_Condition ** out, GTEXT_CSS_Media_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!out || (count && !values)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  return parse_impl(values, count, options, true, out, result, PI_WHEN, false);
+}
+
+GTEXT_CSS_Status gtext_css_container_parse_values(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Media_Options * options,
+    GTEXT_CSS_Container_Query ** out, GTEXT_CSS_Media_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!out || (count && !values)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  return parse_impl(values, count, options, false, out, result, PI_CONTAINER, false);
+}
+
+static GTEXT_CSS_Status parse_text(const char * text, size_t length, const GTEXT_CSS_Media_Options * options, parse_mode mode, GTEXT_CSS_Media_List ** out,
+    GTEXT_CSS_Media_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!out || (length && !text)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Media_Options o = options ? *options : gtext_css_media_options_default();
+  GTEXT_CSS_Parse_Options po = o.parse;
+  if (!po.allocator) {
+    po.allocator = o.allocator;
+  }
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Result pr;
+  memset(&pr, 0, sizeof pr);
+  GTEXT_CSS_Status st = gtext_css_parse_component_values(text ? text : "", length, &po, &tree, &pr);
+  if (st != GTEXT_CSS_OK) {
+    if (result) {
+      result->status = st;
+      result->message = gtext_css_status_string(st);
+      result->failure = pr.failure;
+    }
+    gtext_css_result_free(&pr);
+    return st;
+  }
+  gtext_css_result_free(&pr);
+  st = parse_impl(tree->values, tree->value_count, &o, mode != PI_CONTAINER, out, result, mode, false);
+  gtext_css_tree_free(tree);
+  return st;
+}
+
+GTEXT_CSS_Status gtext_css_when_parse(const char * text, size_t length, const GTEXT_CSS_Media_Options * options, GTEXT_CSS_Boolean_Condition ** out,
+    GTEXT_CSS_Media_Result * result) {
+  return parse_text(text, length, options, PI_WHEN, out, result);
+}
+
+GTEXT_CSS_Status gtext_css_container_parse(const char * text, size_t length, const GTEXT_CSS_Media_Options * options, GTEXT_CSS_Container_Query ** out,
+    GTEXT_CSS_Media_Result * result) {
+  return parse_text(text, length, options, PI_CONTAINER, out, result);
 }

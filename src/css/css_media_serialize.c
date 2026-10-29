@@ -123,10 +123,13 @@ static void put_name(out_t * o, const char * pre, const char * post) {
   puts_(o, post);
 }
 
-static void put_feature(out_t * o, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n) {
+static void put_feature(out_t * o, const struct GTEXT_CSS_Media_List_Internal * in, const mq_node * n, bool bare) {
   const css_mq_feature_row * r = &css_mq_feature_rows[n->feature];
   const char * pre = "";
   const char * post = r->name;
+  if (n->flags & MQF_LOGICAL) {
+    post = n->feature == CSS_MQF_WIDTH ? "inline-size" : "block-size";
+  }
   if (n->prefix != MQP_NONE) {
     if (r->name[0] == '-') {
       pre = n->prefix == MQP_MIN ? "-webkit-min-device-pixel-ratio" : "-webkit-max-device-pixel-ratio";
@@ -135,7 +138,9 @@ static void put_feature(out_t * o, const struct GTEXT_CSS_Media_List_Internal * 
       pre = n->prefix == MQP_MIN ? "min-" : "max-";
     }
   }
-  puts_(o, "(");
+  if (!bare) {
+    puts_(o, "(");
+  }
   switch ((mq_form)n->form) {
   case MQFORM_BOOLEAN:
     put_name(o, pre, post);
@@ -171,12 +176,48 @@ static void put_feature(out_t * o, const struct GTEXT_CSS_Media_List_Internal * 
     }
     break;
   }
-  puts_(o, ")");
+  if (!bare) {
+    puts_(o, ")");
+  }
+}
+
+/// A feature of `style()`, `scroll-state()` or `anchored()`.
+static void put_subfeature(out_t * o, const mq_node * n, bool bare) {
+  if (!bare) {
+    puts_(o, "(");
+  }
+  switch ((mq_form)n->form) {
+  case MQFORM_BOOLEAN:
+    put(o, n->text, n->text_length);
+    break;
+  case MQFORM_PLAIN:
+    put(o, n->text, n->text_length);
+    puts_(o, ": ");
+    put(o, n->value, n->value_length);
+    break;
+  case MQFORM_RANGE:
+    put(o, n->text, n->text_length);
+    puts_(o, " ");
+    puts_(o, op_text(n->op1));
+    puts_(o, " ");
+    if (n->name) {
+      put(o, n->name, n->name_length);
+      puts_(o, " ");
+      puts_(o, op_text(n->op2));
+      puts_(o, " ");
+    }
+    put(o, n->value, n->value_length);
+    break;
+  }
+  if (!bare) {
+    puts_(o, ")");
+  }
 }
 
 typedef struct {
   uint32_t node;
   uint32_t idx;
+  bool bare;
 } sframe;
 
 /// Write the condition tree rooted at `root`.
@@ -184,6 +225,7 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
   size_t sp = 0;
   stack[sp].node = root;
   stack[sp].idx = 0;
+  stack[sp].bare = false;
   sp++;
   while (sp && o->st == GTEXT_CSS_OK) {
     sframe * f = &stack[sp - 1];
@@ -195,6 +237,7 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
         f->idx = 1;
         stack[sp].node = in->kids[n->kid_first];
         stack[sp].idx = 0;
+        stack[sp].bare = false;
         sp++;
       } else {
         sp--;
@@ -210,6 +253,7 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
         f->idx++;
         stack[sp].node = k;
         stack[sp].idx = 0;
+        stack[sp].bare = false;
         sp++;
       } else {
         sp--;
@@ -221,6 +265,7 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
         f->idx = 1;
         stack[sp].node = in->kids[n->kid_first];
         stack[sp].idx = 0;
+        stack[sp].bare = false;
         sp++;
       } else {
         puts_(o, ")");
@@ -228,26 +273,53 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
       }
       break;
     case MQN_FEATURE:
-      put_feature(o, in, n);
+      put_feature(o, in, n, f->bare);
       sp--;
+      break;
+    case MQN_SUBFEATURE:
+      put_subfeature(o, n, f->bare);
+      sp--;
+      break;
+    case MQN_TEST_MEDIA:
+    case MQN_TEST_SUPPORTS:
+    case MQN_CQ_FN:
+      if (f->idx == 0) {
+        puts_(o, n->kind == MQN_TEST_MEDIA ? "media(" : (n->kind == MQN_TEST_SUPPORTS ? "supports(" :
+            (n->type_id == MQ_SUB_STYLE ? "style(" : (n->type_id == MQ_SUB_SCROLL ? "scroll-state(" : "anchored("))));
+        f->idx = 1;
+        const bool bare = (n->flags & MQF_BARE) != 0 || n->kind == MQN_TEST_MEDIA;
+        stack[sp].node = in->kids[n->kid_first];
+        stack[sp].idx = 0;
+        stack[sp].bare = bare;
+        sp++;
+      } else {
+        puts_(o, ")");
+        sp--;
+      }
       break;
     case MQN_ENCLOSED:
       put(o, n->text, n->text_length);
       sp--;
       break;
     case MQN_CUSTOM:
-      puts_(o, "(");
+      if (!f->bare) {
+        puts_(o, "(");
+      }
       if (o->st == GTEXT_CSS_OK) {
         GTEXT_CSS_Status st = gtext_css_serialize_identifier(n->text, n->text_length, o->sink);
         if (st != GTEXT_CSS_OK) {
           o->st = st;
         }
       }
-      puts_(o, ")");
+      if (!f->bare) {
+        puts_(o, ")");
+      }
       sp--;
       break;
     case MQN_DECL:
-      puts_(o, "(");
+      if (!f->bare) {
+        puts_(o, "(");
+      }
       put(o, n->text, n->text_length);
       puts_(o, ":");
       if (n->value_length) {
@@ -257,7 +329,9 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
       if (n->flags & MQF_IMPORTANT) {
         puts_(o, " !important");
       }
-      puts_(o, ")");
+      if (!f->bare) {
+        puts_(o, ")");
+      }
       sp--;
       break;
     case MQN_SELECTOR:
@@ -285,6 +359,18 @@ static GTEXT_CSS_Status write_query(const struct GTEXT_CSS_Media_List_Internal *
   }
   bool has_cond = q->kid_count > 0;
   if (!(q->flags & MQF_HAS_TYPE)) {
+    if (q->text) {
+      /* a container condition: the name, then the query */
+      if (o->st == GTEXT_CSS_OK) {
+        GTEXT_CSS_Status st = gtext_css_serialize_identifier(q->text, q->text_length, o->sink);
+        if (st != GTEXT_CSS_OK) {
+          o->st = st;
+        }
+      }
+      if (has_cond) {
+        puts_(o, " ");
+      }
+    }
     if (has_cond) {
       return write_condition(in, in->kids[q->kid_first], o, stack);
     }
