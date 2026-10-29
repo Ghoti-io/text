@@ -24,9 +24,9 @@
  * `:has()` (css_match.h). A relative selector `:has(C1 c1 C2 ... Cm)` anchored at E is true if some element Y in the relation of its leading combinator to E satisfies the chain.
  * The chain below a point depends on the point and the step, and **not on E**, so `g(i, X)` ("X matches Ci and the rest of the chain exists from X") is memoized per
  * (relative selector, step, element), and so is the existence over descendants (`H`) or later siblings (`L`). Evaluating every anchor of a snapshot visits each (step,
- * element) once: O(m x n). The exception is a chain that mentions the anchor itself (`:scope` or `&`): the memo is then keyed by the anchor too, which is no sharing across
- * anchors, and the visits are spent from a per-call budget (`max_has_visits`, GTEXT_CSS_E_LIMIT_MATCH_WORK). No evaluation here recurses with the depth of the tree: the walk
- * below a point is an iteration with a stack of its own.
+ * element) once: O(m x n). `:scope` inside `:has()` is the scope of the query or of the rule (Selectors 4: the relative selector's `:scope` is what `:scope` is outside it; the
+ * browsers and web-platform-tests' has-argument-with-explicit-scope.html agree), not the anchor, so a chain that mentions it is memoized by the scope element and still shared
+ * across anchors. No evaluation here recurses with the depth of the tree: the walk below a point is an iteration with a stack of its own.
  */
 
 #include <string.h>
@@ -41,9 +41,6 @@ typedef struct {
 
 static bool visit(struct GTEXT_CSS_Selector_Match_Context * ctx) {
   ctx->ctr.has_visits++;
-  if (ctx->has_dependent && ++ctx->has_count > ctx->opt.max_has_visits) {
-    return css_match_fail(ctx, GTEXT_CSS_E_LIMIT_MATCH_WORK);
-  }
   return css_match_work(ctx);
 }
 
@@ -213,24 +210,9 @@ bool css_match_has(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CS
     if (rc->never || rc->raw.data || !rc->relative) {
       continue;
     }
-    const bool dep = rc->anchor_dependent;
-    El save_scope = ctx->scope;
-    const bool save_dep = ctx->has_dependent;
-    const size_t save_count = ctx->has_count;
-    const void * aux = NULL;
-    if (dep) {
-      // :scope inside :has() is the anchor, and nothing the chain says may be shared with another anchor
-      ctx->scope = anchor;
-      ctx->has_dependent = true;
-      ctx->has_count = 0;
-      aux = anchor;
-    }
+    // a chain that mentions `:scope` or `&` is shared across anchors only for one scope element: the memo is keyed by it
+    const void * aux = rc->anchor_dependent ? (ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope) : NULL;
     const bool r = ex(ctx, list, rc, 0, anchor, aux);
-    if (dep) {
-      ctx->scope = save_scope;
-      ctx->has_dependent = save_dep;
-      ctx->has_count = save_count;
-    }
     if (r) {
       return true;
     }

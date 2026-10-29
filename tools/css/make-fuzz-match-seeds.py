@@ -42,6 +42,7 @@ SELECTORS = [
     "li:is(:first-child, :last-child)", ":hover", ":checked, :disabled", "a:not(:link)", ":any-link", ":is(a, b):not(.x):has(> c)", "a:has(:scope b)", "* *", "* > *", "* + *",
     "* ~ *", "a ~ b ~ c", "a + b + c", "a b + c", "a > b ~ c", ":not(a b)", ":is(a b, c > d)", ":nth-child(1 of :not(.x))", ":is()", ":not(:not(a))", "a:has(:has(b))",
     "a:lang(en)", "::before", "a::before", "|a", "*|a", "a:host", ":has(> .x)", "p:has(+ p)", "li:has(~ li:last-child)",
+    ":nth-child(1 of :not(:scope))", "li:nth-child(odd of :scope > *)", "li:nth-last-child(2n of :not(:scope), .x)", ":scope :nth-of-type(2)", ":has(> :scope) > *",
 ]
 
 

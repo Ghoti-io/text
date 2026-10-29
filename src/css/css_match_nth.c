@@ -103,7 +103,7 @@ static bool type_of(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, char **
 
 /// Count the positions of every sibling of `e` in one walk and keep them. `mode`: 0 child, 1 of S, 2 of type.
 static bool walk_siblings(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, int mode, const GTEXT_CSS_Selector_List * s, uint16_t kind, size_t uid, uint32_t step,
-    positions * want) {
+    const void * aux, positions * want) {
   ctx->ctr.nth_walks++;
   // the siblings, first to last
   El first = e;
@@ -147,13 +147,20 @@ static bool walk_siblings(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, i
   type_rec * types = NULL;
   uint32_t * tid = NULL;
   size_t ntypes = 0;
+  uint32_t * slots = NULL; // open addressing over `types`: index + 1, 0 empty
+  size_t nslots = 0;
   char * nbuf = NULL;
   size_t nlen = 0, ncap = 0;
   bool ok = true;
   if (mode == 2) {
     types = gtext_allocator_calloc(&ctx->alloc, n ? n : 1, sizeof *types);
     tid = gtext_allocator_calloc(&ctx->alloc, n ? n : 1, sizeof *tid);
-    if (!types || !tid) {
+    nslots = 16;
+    while (nslots < 2 * n) {
+      nslots *= 2;
+    }
+    slots = gtext_allocator_calloc(&ctx->alloc, nslots, sizeof *slots);
+    if (!types || !tid || !slots) {
       ok = css_match_fail(ctx, GTEXT_CSS_E_OOM);
     }
   }
@@ -178,22 +185,26 @@ static bool walk_siblings(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, i
         ok = false;
         break;
       }
-      size_t k = 0;
-      for (; k < ntypes; k++) {
-        if (types[k].hash == t.hash && types[k].nslen == t.nslen && types[k].namelen == t.namelen &&
-            memcmp(nbuf + types[k].nsoff, nbuf + t.nsoff, t.nslen) == 0 && memcmp(nbuf + types[k].nameoff, nbuf + t.nameoff, t.namelen) == 0) {
+      size_t k = ntypes;
+      for (size_t h = t.hash & (nslots - 1);; h = (h + 1) & (nslots - 1)) {
+        if (!slots[h]) {
+          slots[h] = (uint32_t)ntypes + 1;
+          types[ntypes++] = t;
           break;
         }
-        if (!css_match_work(ctx)) {
+        const type_rec * u = &types[slots[h] - 1];
+        if (u->hash == t.hash && u->nslen == t.nslen && u->namelen == t.namelen && memcmp(nbuf + u->nsoff, nbuf + t.nsoff, t.nslen) == 0 &&
+            memcmp(nbuf + u->nameoff, nbuf + t.nameoff, t.namelen) == 0) {
+          k = slots[h] - 1;
+          break;
+        }
+        if (!css_match_work(ctx)) { // a probe past a different type is work, so that a hash that puts every type in one place meets the limit
           ok = false;
           break;
         }
       }
       if (!ok) {
         break;
-      }
-      if (k == ntypes) {
-        types[ntypes++] = t;
       }
       types[k].count++;
       tid[i] = (uint32_t)k;
@@ -222,7 +233,7 @@ static bool walk_siblings(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, i
         *want = p;
       }
       if (!ctx->opt.disable_memo) {
-        ok = css_memo_put(ctx, uid, kind, step, sib[i], NULL, p.member ? 3 : 1, (uint32_t)p.first, (uint32_t)p.last);
+        ok = css_memo_put(ctx, uid, kind, step, sib[i], aux, p.member ? 3 : 1, (uint32_t)p.first, (uint32_t)p.last);
       }
     }
   }
@@ -230,6 +241,7 @@ static bool walk_siblings(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, i
   gtext_allocator_free(&ctx->alloc, mem);
   gtext_allocator_free(&ctx->alloc, types);
   gtext_allocator_free(&ctx->alloc, tid);
+  gtext_allocator_free(&ctx->alloc, slots);
   gtext_allocator_free(&ctx->alloc, nbuf);
   return ok && ctx->status == GTEXT_CSS_OK;
 }
@@ -253,14 +265,16 @@ static bool positions_of(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, in
       return true;
     }
   }
+  // the members of `of S` depend on the scope element when S mentions `:scope` or `&`; the positions of the other modes do not
+  const void * aux = mode == 1 ? (ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope) : NULL;
   css_memo_ent m;
-  if (css_memo_get(ctx, uid, kind, step, e, NULL, &m)) {
+  if (css_memo_get(ctx, uid, kind, step, e, aux, &m)) {
     out->member = m.val == 3;
     out->first = m.a;
     out->last = m.b;
     return true;
   }
-  return walk_siblings(ctx, e, mode, s, kind, uid, step, out);
+  return walk_siblings(ctx, e, mode, s, kind, uid, step, aux, out);
 }
 
 /// Whether A n + B = pos has a solution n >= 0, exactly, whatever the sizes (magnitudes in unsigned 64 bits).

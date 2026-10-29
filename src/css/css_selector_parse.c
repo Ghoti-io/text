@@ -32,6 +32,7 @@
 
 #define DEFAULT_MAX_COMPONENTS ((size_t)1 << 20)
 #define DEFAULT_MAX_LIST ((size_t)1 << 16)
+#define DEFAULT_MAX_COMPOUNDS ((size_t)1024)
 #define DEFAULT_MAX_DEPTH ((size_t)64)
 #define MAX_DEPTH_LIMIT ((size_t)256)
 #define DEFAULT_MAX_DIAGNOSTICS ((size_t)1024)
@@ -72,6 +73,7 @@ typedef struct {
   size_t nodes;
   size_t max_components;
   size_t max_list;
+  size_t max_compounds;
   size_t max_depth;
   GTEXT_CSS_Id next_id;
   size_t uid;
@@ -621,7 +623,8 @@ static bool parse_argument(P * p, const V * fn, const sel_row * row, GTEXT_CSS_S
   case SELARG_ANB_OF: {
     size_t split = n;
     for (size_t i = 1; i < n; i++) {
-      if (is_ident(&v[i]) && css_sel_ieq(v[i].value.data, v[i].value.length, "of", 2) && is_ws(&v[i - 1])) {
+      if (is_ident(&v[i]) && css_sel_ieq(v[i].value.data, v[i].value.length, "of", 2)) {
+        // white space before it is not required: `2n+1/**/of .x` has a comment there, and a digit followed by letters would have been one dimension token
         split = i;
         break;
       }
@@ -674,8 +677,8 @@ static bool parse_argument(P * p, const V * fn, const sel_row * row, GTEXT_CSS_S
   }
   case SELARG_DIR: {
     const V * t = sole_token(v, 0, n);
-    if (!t || !is_ident(t) ||
-        !(css_sel_ieq(t->value.data, t->value.length, "ltr", 3) || css_sel_ieq(t->value.data, t->value.length, "rtl", 3))) {
+    // any identifier is valid (Selectors 4 grammar: `:dir( <ident> )`); one that is not a direction matches nothing, as in the browsers
+    if (!t || !is_ident(t)) {
       return arg_fail(p, fn->span);
     }
     GTEXT_CSS_String d = sdup_lower(p, t->value.data, t->value.length);
@@ -1203,6 +1206,10 @@ static bool parse_complex(P * p, const V * v, size_t lo, size_t hi, bool relativ
       }
       never = true;
     }
+    if (p->compounds.len - cbase >= p->max_compounds) {
+      p->compounds.len = cbase;
+      return limit(p, GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS, cmp.span);
+    }
     if (!vec_push(p, &p->compounds, sizeof cmp, &cmp)) {
       return false;
     }
@@ -1548,6 +1555,7 @@ GTEXT_CSS_Selector_Options gtext_css_selector_options_default(void) {
   o.mode = GTEXT_CSS_SELECTOR_COMPLEX_LIST;
   o.max_components = DEFAULT_MAX_COMPONENTS;
   o.max_list = DEFAULT_MAX_LIST;
+  o.max_compounds = DEFAULT_MAX_COMPOUNDS;
   o.max_depth = DEFAULT_MAX_DEPTH;
   o.max_diagnostics = DEFAULT_MAX_DIAGNOSTICS;
   o.parse = gtext_css_parse_options_default();
@@ -1623,6 +1631,9 @@ static GTEXT_CSS_Status parse_impl(const V * values, size_t count, const GTEXT_C
   if (!o.max_list) {
     o.max_list = DEFAULT_MAX_LIST;
   }
+  if (!o.max_compounds) {
+    o.max_compounds = DEFAULT_MAX_COMPOUNDS;
+  }
   if (!o.max_depth) {
     o.max_depth = DEFAULT_MAX_DEPTH;
   }
@@ -1645,6 +1656,7 @@ static GTEXT_CSS_Status parse_impl(const V * values, size_t count, const GTEXT_C
   p.alloc = *ra;
   p.max_components = o.max_components;
   p.max_list = o.max_list;
+  p.max_compounds = o.max_compounds;
   p.max_depth = o.max_depth;
   p.keep_diag = o.max_diagnostics;
   p.ns = o.namespaces;

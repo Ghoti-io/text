@@ -126,7 +126,7 @@ def main(argv):
                 open(path, "w", encoding="utf-8").write(text)
                 obj = os.path.join(work, "plant.o")
                 done = sh(["cc", "-std=c17", "-O2", "-fPIC", "-fvisibility=hidden", "-DGTEXT_BUILD", "-w", "-I", os.path.join(ROOT, "include"),
-                           "-I", generated, "-I", os.path.join(work, "src", "css")] + cflags + ["-c", path, "-o", obj])
+                           "-I", generated, "-I", os.path.join(work, "src", "css"), "-I", os.path.join(work, "src", "markup")] + cflags + ["-c", path, "-o", obj])
                 if done.returncode != 0:
                     sys.stderr.write("plant %s did not compile:\n%s" % (name, done.stderr[-3000:]))
                     return 2

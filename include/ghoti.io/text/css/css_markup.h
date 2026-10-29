@@ -47,6 +47,7 @@
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_match.h>
+#include <ghoti.io/text/css/css_sheet.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup/markup_tree.h>
 #include <stdbool.h>
@@ -61,7 +62,7 @@ typedef struct GTEXT_CSS_Markup_Adapter GTEXT_CSS_Markup_Adapter;
 
 /** @brief Which language the document is. */
 typedef enum {
-  GTEXT_CSS_MARKUP_AUTO = 0, ///< An HTML document if its document element is an HTML element (the HTML parser's documents; an XHTML document read as XML is taken as HTML).
+  GTEXT_CSS_MARKUP_AUTO = 0, ///< An HTML document if its document element is an HTML element and the document was not made by the XML parser (an XHTML document read as XML is an XML document: names are exact).
   GTEXT_CSS_MARKUP_HTML,     ///< An HTML document: type selectors and attribute names are compared ignoring case for HTML elements.
   GTEXT_CSS_MARKUP_XML       ///< An XML document: names are compared exactly.
 } GTEXT_CSS_Markup_Kind;
@@ -78,7 +79,7 @@ typedef struct {
 /**
  * @brief Make an adapter over a document.
  *
- * @param document The document. Not NULL; it must outlive the adapter and not change while a match context made from the adapter is in use.
+ * @param document The document. Not NULL; it must outlive the adapter and not change while the adapter, or a match context made from it, is in use (the adapter keeps the answers of its last class, direction, default-button and radio-group lookups).
  * @param options NULL for the defaults.
  * @param out Receives the adapter. Not NULL.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM.
@@ -95,6 +96,14 @@ GTEXT_API const GTEXT_CSS_Element_Interface * gtext_css_markup_interface(const G
 /** @brief The options of a match context for this document: `html_document` and `quirks` from the document and its mode, and visited states never matching. */
 GTEXT_API GTEXT_CSS_Selector_Match_Options gtext_css_markup_match_options(const GTEXT_CSS_Markup_Adapter * adapter);
 
+
+/**
+ * @brief The options of a rule index (css_sheet.h) for the documents this adapter reads: `html_document` and `quirks` as gtext_css_markup_match_options() sets them.
+ *
+ * gtext_css_rules_collect() refuses a match context whose two options are not the index's, so an index made for an adapter's documents takes these. Everything else is the
+ * default. NULL gives the default options.
+ */
+GTEXT_API GTEXT_CSS_Rule_Index_Options gtext_css_markup_rule_index_options(const GTEXT_CSS_Markup_Adapter * adapter);
 /** @brief A node as the handle of the element interface. */
 GTEXT_API GTEXT_CSS_Element_Handle gtext_css_markup_handle(const GTEXT_Markup_Node * element);
 

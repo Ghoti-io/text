@@ -310,7 +310,7 @@ GTEXT_API size_t gtext_css_rule_index_sheet_count(const GTEXT_CSS_Rule_Index * i
  * @param pseudo NULL for the element, or the pseudo-element asked for (a list of one complex selector made only of pseudo-elements, as gtext_css_selector_match() takes).
  * @param set The candidate set. Not NULL, not sealed; made on the registry the index has. It is given the layer registry of every context the index has.
  * @param result NULL, or filled.
- * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (an index that is not frozen, a set that is sealed); GTEXT_CSS_E_UNSUPPORTED (a callback is absent: `name` says which);
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (an index that is not frozen, a set that is sealed, a match context whose `html_document` or `quirks` is not the index's); GTEXT_CSS_E_UNSUPPORTED (a callback is absent: `name` says which);
  *   GTEXT_CSS_E_LIMIT_MATCH_WORK, _LIMIT_MATCH_MEMO, _LIMIT_CANDIDATES; GTEXT_CSS_E_OOM.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * index, GTEXT_CSS_Selector_Match_Context * match, GTEXT_CSS_Element_Handle element,

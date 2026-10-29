@@ -315,6 +315,8 @@ typedef struct {
   size_t max_components;
   /** Most complex selectors in one list. Default 65,536; GTEXT_CSS_E_LIMIT_SELECTOR_LIST. */
   size_t max_list;
+  /** Most compounds in one complex selector (`a b c ...`). Default 1,024; GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS. The matcher answers a complex selector by recursing once per compound, so this is what keeps its use of the C stack bounded. */
+  size_t max_compounds;
   /** Deepest nesting of functional pseudo-classes (`:is(:is(...))`). Default 64; GTEXT_CSS_E_LIMIT_SELECTOR_DEPTH. The parser does not recurse in the C stack beyond it. */
   size_t max_depth;
   /** Most diagnostics kept (the rest are counted). Default 1,024. */

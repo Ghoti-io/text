@@ -10,3 +10,7 @@ sheet-a-nested-scope-is-not-inside-the-outer-root
 sheet-least-specific-complex-is-kept
 sheet-the-host-is-not-featureless
 # the proximity of @scope (sheet-scope-distance-is-zero) is below this population: it needs two scoped rules of one specificity, which the unit tests build (tests/test-css-sheet.cpp)
+sheet-the-host-climb-crosses-a-shadow-boundary
+sheet-a-slot-in-a-slot-is-slotted
+sheet-host-look-through-is-and-where
+# sheet-part-rules-need-a-shadow-sheet is below this population: every shadow tree it generates has a sheet of its own, which a unit test (tests/test-css-sheet.cpp, PartMatchesAtEveryHostOfTheChain) leaves out

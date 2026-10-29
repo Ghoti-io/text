@@ -84,9 +84,10 @@ struct Index {
   GTEXT_CSS_Rule_Index * x = nullptr;
   GTEXT_CSS_Rule_Index_Result res{};
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
-  Index() {
+  explicit Index(bool quirks = false) {
     GTEXT_CSS_Rule_Index_Options o = gtext_css_rule_index_options_default();
     o.html_document = true;
+    o.quirks = quirks;
     EXPECT_EQ(gtext_css_rule_index_new(R(), &o, &x), GTEXT_CSS_OK);
   }
   Index(const Index &) = delete;
@@ -473,6 +474,31 @@ TEST(CssSheetScope, ALimitCutsADonutAndTheRootIsNotItsOwnDescendant) {
   EXPECT_EQ(win(pg, ix, lim, "background-color"), "-");
 }
 
+TEST(CssSheetScope, ALimitThatIsTheRootLeavesNothingInScopeAndAPseudoElementInThePreludeDropsTheRule) {
+  /* Browsers: `to (:scope)` and `to (&)` name the root itself, which is a limit and so out of scope, and with it everything below. */
+  Page pg;
+  const int a = pg.t.add(0, "div", "", {"a"});
+  const int p1 = pg.t.add(a, "p");
+  pg.open();
+  for (const char * css : {"@scope (.a) to (:scope) { p, :scope { color: red } }", "@scope (.a) to (&) { p, :scope { color: red } }"}) {
+    Compiled c(css);
+    ASSERT_EQ(c.st, GTEXT_CSS_OK) << css;
+    Index ix;
+    ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+    ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+    EXPECT_EQ(win(pg, ix, p1, "color"), "-") << css;
+    EXPECT_EQ(win(pg, ix, a, "color"), "-") << css;
+  }
+  for (const char * css : {"@scope (.a) to (.b::before) { p { color: red } }", "@scope (.a::before) { p { color: red } }"}) {
+    Compiled c(css);
+    ASSERT_EQ(c.st, GTEXT_CSS_OK) << css;
+    Index ix;
+    ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+    ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+    EXPECT_EQ(win(pg, ix, p1, "color"), "-") << "the rule is dropped: " << css;
+  }
+}
+
 TEST(CssSheetScope, AScopeWithNoPreludeIsTheRegistrationsRootAndDeclarationsAreWhereScope) {
   Compiled c("@scope { p { color: red } color: blue }");
   ASSERT_EQ(c.st, GTEXT_CSS_OK);
@@ -846,6 +872,49 @@ TEST(CssSheetShadow, ASlotThatIsAssignedToASlotPassesTheElementOnToTheNextShadow
   EXPECT_EQ(win(pg, ix, light, "background-color"), "blue");
 }
 
+TEST(CssSheetShadow, ASlotThatIsAssignedToASlotIsNotSlottedAndWhatIsAssignedToItIs) {
+  /* Scoping 1: ::slotted() matches the elements assigned to a slot "after flattening", which replaces a slot of a shadow tree that is assigned to another slot by what is assigned to
+   * it. Both browsers: `::slotted(*)` of the outer shadow tree styles the light element and not the slot in between. */
+  Compiled outer_shadow("::slotted(*) { color: red; margin-top: 5px }");
+  Page pg;
+  const int outer_host = pg.t.add(0, "x-outer");
+  const int inner_host = pg.t.add(outer_host, "x-inner");
+  const int light = pg.t.add(inner_host, "i");
+  const int s_outer = pg.t.attach_shadow(outer_host);
+  const int slot_outer = pg.t.add_in_shadow(s_outer, "slot");
+  const int s_inner = pg.t.attach_shadow(inner_host);
+  const int slot_inner = pg.t.add_in_shadow(s_inner, "slot");
+  pg.t.e[light].slot = slot_inner;
+  pg.t.e[slot_inner].slot = slot_outer;
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(outer_shadow, GTEXT_CSS_ORIGIN_AUTHOR, s_outer, 1), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, light, "color"), "red") << "the light element is flattened into the outer slot";
+  EXPECT_EQ(win(pg, ix, slot_inner, "color"), "-") << "the slot in between is replaced by what is assigned to it";
+  EXPECT_EQ(win(pg, ix, slot_inner, "margin-top"), "-");
+}
+
+TEST(CssSheetShadow, TheClimbFromAHostStopsAtTheHostEvenWhenTheHostIsTheTopOfAnotherShadowTree) {
+  /* The host of a shadow tree is the top of what that tree's selectors see, also when it is the top element of the shadow tree it is in: `x-host span` in the inner sheet does not
+   * reach the outer host, which is named x-host too (found by the differential: both browsers leave the span alone). */
+  Compiled inner("x-host { margin-left: 5px; & span { padding-left: 1px } } x-host span { margin-top: 2px } :host span { color: red }");
+  Page pg;
+  const int outer = pg.t.add(0, "x-host");
+  const int s_outer = pg.t.attach_shadow(outer);
+  const int mid = pg.t.add_in_shadow(s_outer, "x-host");
+  const int s_inner = pg.t.attach_shadow(mid);
+  const int span = pg.t.add_in_shadow(s_inner, "span");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, s_inner, 2), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, span, "padding-left"), "-");
+  EXPECT_EQ(win(pg, ix, span, "margin-top"), "-");
+  EXPECT_EQ(win(pg, ix, span, "color"), "red") << "`:host span` is the one that reaches the host";
+  EXPECT_EQ(win(pg, ix, mid, "margin-left"), "-") << "`x-host` is not :host";
+}
+
 TEST(CssSheetScope, ADistanceIsReportedAndTheDonutKeepsOutWhatIsBehindTheLimit) {
   /* Matrix: `@scope (.card) to (.slot) { p {} }`: a p inside .slot does not match, a p beside it matches with distance 1. */
   Compiled c("@scope (.card) to (.slot) { p { color: red } }");
@@ -1043,4 +1112,207 @@ TEST(CssSheetShadow, TheHostSeenFromInsideItsShadowTreeIsFeatureless) {
   EXPECT_EQ(win(pg, ix, h, "margin-top"), "-") << ":not() is not :host, and `div.k` is not the host (x-host)";
   EXPECT_EQ(win(pg, ix, h, "margin-left"), "-") << "the host's own ancestors are not reachable from its shadow tree";
   EXPECT_EQ(win(pg, ix, h, "padding-left"), "-");
+}
+
+TEST(CssSheetShadow, TheHostIsFoundWhereverTheSubjectNamesIt) {
+  /* The browsers apply a :host rule whose subject names :host only through :is(), :where(), a nested `&`, and `:host::part(x)` of the shadow tree's own sheet styles that host's parts. */
+  Compiled inner(":is(:host) { color: red } :where(:host) { background-color: blue } :is(:host, .r) { margin-top: 1px } :is(:host(.k), .zz) { margin-left: 2px } "
+                 ":host { & { padding-left: 3px } } :is(:host) > span { margin-left: 5px } :host::part(a) { margin-top: 7px } :is(.zzz) { color: green }");
+  ASSERT_EQ(inner.st, GTEXT_CSS_OK);
+  Page pg;
+  const int h = pg.t.add(0, "x-host", "", {"k"});
+  const int sc = pg.t.attach_shadow(h);
+  const int span = pg.t.add_in_shadow(sc, "span");
+  pg.t.e[span].parts.insert({h, "a"});
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, sc, 1), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, h, "color"), "red");
+  EXPECT_EQ(win(pg, ix, h, "background-color"), "blue");
+  EXPECT_EQ(win(pg, ix, h, "margin-top"), "1px");
+  EXPECT_EQ(win(pg, ix, h, "margin-left"), "2px");
+  EXPECT_EQ(win(pg, ix, h, "padding-left"), "3px");
+  EXPECT_EQ(win(pg, ix, span, "margin-left"), "5px") << ":is(:host) > span";
+  EXPECT_EQ(win(pg, ix, span, "margin-top"), "7px") << ":host::part(a) in the sheet of the host's own shadow tree";
+}
+
+TEST(CssSheetScope, ThePositionsOfNthOfSDependOnTheScopeElement) {
+  /* `div:nth-child(1 of :not(:scope))`: the members of `of S` change with the scoping root, and the index changes the root between records and between elements of one context. */
+  Compiled c("@scope (div) { div:nth-child(1 of :not(:scope)) { color: red } }");
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  Page pg;
+  const int outer = pg.t.add(0, "div");
+  const int e = pg.t.add(outer, "div");
+  const int e2 = pg.t.add(outer, "div");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, outer, "color"), "-");
+  EXPECT_EQ(win(pg, ix, e, "color"), "red") << "with the outer div as the root, e is the first child that is not the root";
+  EXPECT_EQ(win(pg, ix, e2, "color"), "-");
+  EXPECT_EQ(win(pg, ix, e, "color"), "red") << "asked again, from the memo";
+}
+
+/* ---- tests that kill the mutants a mutation pass left standing ------------------------------------------------------------------------------------------- */
+
+TEST(CssSheetMutants, TheCloserScopeRootWinsInEitherOrderAndAnEqualOneGoesToTheLaterRule) {
+  /* Cascade 6, 6.6.1: scoping proximity before order of appearance; at equal proximity the later rule. */
+  for (const bool outer_first : {true, false}) {
+    Compiled c(outer_first ? "@scope (.a) { p { color: red } } @scope (.b) { p { color: blue } }" : "@scope (.b) { p { color: blue } } @scope (.a) { p { color: red } }");
+    Page pg;
+    const int a = pg.t.add(0, "div", "", {"a"});
+    const int b = pg.t.add(a, "div", "", {"b"});
+    const int p = pg.t.add(b, "p");
+    pg.open();
+    Index ix;
+    ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+    ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+    EXPECT_EQ(win(pg, ix, p, "color"), "blue") << "the root .b is one step away and .a is two" << (outer_first ? " (outer rule first)" : " (inner rule first)");
+  }
+  Compiled c("@scope (.a) { p { color: red } } @scope (.a) { p { color: blue } }");
+  Page pg;
+  const int a = pg.t.add(0, "div", "", {"a"});
+  const int p = pg.t.add(a, "p");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, p, "color"), "blue");
+}
+
+TEST(CssSheetMutants, QuirksModeFoldsClassAndIdInTheBucketsAndNotOtherwise) {
+  Compiled c(".foo { color: red } .FOO { margin-top: 1px } #bar { background-color: blue } #BAR { margin-left: 2px }");
+  Page q;
+  q.quirks = true;
+  const int e = q.t.add(0, "p", "BAR", {"Foo"});
+  q.open();
+  Index xq(true);
+  ASSERT_EQ(xq.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(xq.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(q, xq, e, "color"), "red");
+  EXPECT_EQ(win(q, xq, e, "background-color"), "blue");
+  EXPECT_EQ(win(q, xq, e, "margin-top"), "1px") << "the key of `.FOO` is folded when the rule is indexed";
+  EXPECT_EQ(win(q, xq, e, "margin-left"), "2px") << "and the key of `#BAR`";
+  Page n;
+  const int f = n.t.add(0, "p", "BAR", {"Foo"});
+  n.open();
+  Index xn;
+  ASSERT_EQ(xn.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(xn.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(n, xn, f, "color"), "-");
+  EXPECT_EQ(win(n, xn, f, "background-color"), "-");
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  EXPECT_EQ(win(n, xq, f, "color", nullptr, &st), std::string("!") + gtext_css_status_string(GTEXT_CSS_E_INVALID)) << "a context that folds otherwise than the index does is refused";
+  EXPECT_EQ(st, GTEXT_CSS_E_INVALID);
+}
+
+TEST(CssSheetMutants, HostContextClimbsTheFlatTreeThroughShadowRootsAndSlots) {
+  /* Scoping 1: `:host-context()` looks at the host and its ancestors in the flat tree: across a shadow root to its host, and from a slotted element to its slot. */
+  Compiled inner(":host-context(.ctx) { color: red } :host-context(.dd) { background-color: blue } :host-context(.sl) { margin-top: 5px } :host-context(.nope) { margin-left: 1px }");
+  ASSERT_EQ(inner.st, GTEXT_CSS_OK);
+  Page pg;
+  const int h0 = pg.t.add(0, "x-outer", "", {"ctx"});
+  const int s0 = pg.t.attach_shadow(h0);
+  const int d = pg.t.add_in_shadow(s0, "div", "", {"dd"});
+  const int h1 = pg.t.add(d, "x-inner");
+  const int s1 = pg.t.attach_shadow(h1);
+  const int d2 = pg.t.add(d, "div", "", {"sl"});
+  const int slot = pg.t.add(d2, "slot");
+  const int light = pg.t.add(h0, "x-slotted");
+  pg.t.e[light].slot = slot;
+  const int s2 = pg.t.attach_shadow(light);
+  const int i1 = pg.t.add_in_shadow(s1, "span");
+  const int i2 = pg.t.add_in_shadow(s2, "span");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, s1, 1), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, s2, 2), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  (void)i1;
+  (void)i2;
+  EXPECT_EQ(win(pg, ix, h1, "color"), "red") << "h1 is inside the shadow tree of x-outer, whose host has .ctx";
+  EXPECT_EQ(win(pg, ix, h1, "background-color"), "blue") << "its parent is .dd";
+  EXPECT_EQ(win(pg, ix, h1, "margin-top"), "-") << "h1 is not under .sl";
+  EXPECT_EQ(win(pg, ix, light, "margin-top"), "5px") << "the slotted element's flat parent is the slot, inside .sl";
+  EXPECT_EQ(win(pg, ix, light, "background-color"), "blue") << "and above that .dd";
+  EXPECT_EQ(win(pg, ix, light, "margin-left"), "-");
+}
+
+TEST(CssSheetMutants, PartMatchesAtEveryHostOfTheChain) {
+  /* Shadow Parts 1: an element exported through several shadow trees is a part of each host that names it; the rule of the sheet that owns the outermost reaches it. */
+  Compiled doc("x-outer::part(label) { color: red } x-mid::part(label) { background-color: blue }");
+  ASSERT_EQ(doc.st, GTEXT_CSS_OK);
+  Page pg;
+  const int outer = pg.t.add(0, "x-outer");
+  const int s_outer = pg.t.attach_shadow(outer);
+  const int mid = pg.t.add_in_shadow(s_outer, "x-mid");
+  const int s_mid = pg.t.attach_shadow(mid);
+  const int part = pg.t.add_in_shadow(s_mid, "span");
+  pg.t.e[part].parts.insert({mid, "label"});
+  pg.t.e[part].parts.insert({outer, "label"});
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(doc), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, part, "color"), "red") << "the part of the outer host, two shadow trees up";
+  EXPECT_EQ(win(pg, ix, part, "background-color"), "-") << "x-mid is in the outer shadow tree, which the document's sheet does not reach";
+}
+
+TEST(CssSheetMutants, TheLangTagKeepsSubtagsUpToEightCharacters) {
+  /* RFC 5646: a subtag is one to eight alphanumerics, and a range of a longer one is not well-formed (RFC 4647, 2.2): it matches nothing, not even the tag that spells it. */
+  Compiled c("p:lang(\"en-abcdefgh\") { color: red } p:lang(\"en-abcdefghi\") { background-color: blue }");
+  Page pg;
+  const int e = pg.t.add(0, "p");
+  pg.t.e[e].lang = "en-abcdefgh";
+  pg.t.e[e].has_lang = true;
+  const int e2 = pg.t.add(0, "p");
+  pg.t.e[e2].lang = "en-abcdefghi";
+  pg.t.e[e2].has_lang = true;
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, e, "color"), "red");
+  EXPECT_EQ(win(pg, ix, e, "background-color"), "-");
+  EXPECT_EQ(win(pg, ix, e2, "background-color"), "-");
+}
+
+TEST(CssSheetMutants, TheLimitOfAnOuterScopeAppliesToTheSubjectOfAnInnerOne) {
+  /* Cascade 6, 2.3: the subject is in the outer scope only if no limit of it lies between the outer root and the subject, wherever the inner root is. */
+  Compiled c("@scope (.o) to (.lim) { @scope (.i) { p { color: red } } }");
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  Page pg;
+  const int o = pg.t.add(0, "div", "", {"o"});
+  const int lim = pg.t.add(o, "div", "", {"lim"});
+  const int i = pg.t.add(lim, "div", "", {"i"});
+  const int behind = pg.t.add(i, "p");
+  const int i2 = pg.t.add(o, "div", "", {"i"});
+  const int inside = pg.t.add(i2, "p");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, behind, "color"), "-") << "the outer limit .lim lies between .o and the p";
+  EXPECT_EQ(win(pg, ix, inside, "color"), "red");
+}
+
+TEST(CssSheetMutants, APseudoElementIsAskedForByItsNameAndNoOtherOneAnswers) {
+  Compiled c("p::before { color: red } p::after { margin-top: 1px } p::first-line { margin-left: 2px } p { padding-left: 3px }");
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  Page pg;
+  const int p = pg.t.add(0, "p");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, p, "color", "::before"), "red");
+  EXPECT_EQ(win(pg, ix, p, "margin-top", "::before"), "-");
+  EXPECT_EQ(win(pg, ix, p, "color", "::after"), "-");
+  EXPECT_EQ(win(pg, ix, p, "margin-top", "::after"), "1px");
+  EXPECT_EQ(win(pg, ix, p, "margin-left", "::marker"), "-");
+  EXPECT_EQ(win(pg, ix, p, "color"), "-") << "the element itself has none of the pseudo-elements' rules";
+  EXPECT_EQ(win(pg, ix, p, "padding-left"), "3px");
+  EXPECT_EQ(win(pg, ix, p, "padding-left", "::before"), "-");
 }

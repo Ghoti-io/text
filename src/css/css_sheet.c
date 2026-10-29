@@ -676,6 +676,19 @@ static bool conditional_name(const GTEXT_CSS_String * n) {
       css_ascii_ieq(n, "document");
 }
 
+/// Some selector of the list ends in a pseudo-element. A scope's root and limit are elements, not pseudo-elements, so the prelude is invalid and the rule is dropped (the browsers do the same).
+static bool list_ends_in_pseudo_element(const GTEXT_CSS_Selector_List * l) {
+  for (size_t i = 0; l && i < l->count; i++) {
+    const GTEXT_CSS_Complex * cx = &l->complex[i];
+    for (size_t j = 0; j < cx->compound_count; j++) {
+      if (cx->compounds[j].first_pseudo_element < cx->compounds[j].simple_count) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// `@scope (<start>)? to (<end>)?`.
 static GTEXT_CSS_Status scope_rule(build * b, const GTEXT_CSS_Rule * rule, const frame * cur) {
   const GTEXT_CSS_Component_Value * p = rule->prelude;
@@ -734,7 +747,7 @@ static GTEXT_CSS_Status scope_rule(build * b, const GTEXT_CSS_Rule * rule, const
     if (st != GTEXT_CSS_OK) {
       return st;
     }
-    bad = start == NULL;
+    bad = start == NULL || list_ends_in_pseudo_element(start);
   }
   if (!bad && has_end) {
     st = parse_selector(b, ev, en, true, true, rule->span, &end);
@@ -742,7 +755,7 @@ static GTEXT_CSS_Status scope_rule(build * b, const GTEXT_CSS_Rule * rule, const
       gtext_css_selector_list_free(start);
       return st;
     }
-    bad = end == NULL;
+    bad = end == NULL || list_ends_in_pseudo_element(end);
   }
   if (bad) {
     gtext_css_selector_list_free(start);

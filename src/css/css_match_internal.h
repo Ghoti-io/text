@@ -87,11 +87,6 @@ struct GTEXT_CSS_Selector_Match_Context {
   bool host_arg;                     ///< The argument of `:host()` or `:host-context()` is being matched: the host is seen as the tree it is in sees it.
   const css_nest * nest;
   const void * memo_aux;             ///< The aux key now: the scope element while a scope-dependent selector is read, else NULL.
-  /* :has() */
-  El has_anchor;
-  size_t has_budget;
-  size_t has_count;
-  bool has_dependent;
   /* the ancestor filter */
   uint8_t * bloom;
   bool bloom_live;
@@ -160,6 +155,8 @@ bool css_compound_names_host(const GTEXT_CSS_Compound * cmp);
 
 /// Element name comparison under the document's case rules.
 bool css_match_is_html(struct GTEXT_CSS_Selector_Match_Context * ctx, El element);
+/// A `slot` element of a shadow tree: `::slotted()` does not match it when it is assigned to another slot (Scoping 1: the assigned nodes are flattened), what is assigned to it is.
+bool css_match_is_shadow_slot(struct GTEXT_CSS_Selector_Match_Context * ctx, El element);
 
 /// The ancestor filter (css_match_bloom.c).
 void css_bloom_clear(struct GTEXT_CSS_Selector_Match_Context * ctx);

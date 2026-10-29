@@ -281,14 +281,127 @@ TEST(CssMatchCost, TheMemoIsWhatMakesItLinearAndWithoutItTheWorkLimitIsTheStatus
   EXPECT_LE(m.c.compounds_tested, 9 * n) << "with the memo: (selector compounds) x elements";
 }
 
-TEST(CssMatchCost, AnAnchorDependentHasSpendsFromItsBudgetAndSaysSoWhenItRunsOut) {
+TEST(CssMatchCost, AHasThatMentionsScopeIsSharedAcrossAnchors) {
+  /* `:scope` inside `:has()` is the scope of the query (web-platform-tests' has-argument-with-explicit-scope.html), not the anchor: the chain below a point does not depend on the
+   * anchor, so it is memoized and a chain of 3,000 anchors costs linear work. */
   const size_t n = 3000;
   synth::Tree t;
   const int root = chain(t, n);
-  GTEXT_CSS_Selector_Match_Options small = gtext_css_selector_match_options_default();
-  small.max_has_visits = 500;
-  const Outcome r = runq(t, root, "e:has(:scope .y)", true, small);
-  EXPECT_EQ(r.status, GTEXT_CSS_E_LIMIT_MATCH_WORK) << "\":scope\" ties the chain to the anchor, so nothing is shared across anchors";
-  const Outcome ok = runq(t, root, "e:has(.y)", true, small);
-  EXPECT_EQ(ok.status, GTEXT_CSS_OK) << "a chain that does not mention the anchor is not charged";
+  const Outcome r = runq(t, root, "e:has(:scope .y)", true, gtext_css_selector_match_options_default());
+  EXPECT_EQ(r.status, GTEXT_CSS_OK);
+  EXPECT_EQ(r.matched, 0u) << "the scope is the root, which is no descendant of any anchor";
+  EXPECT_LE(r.c.has_visits, 12 * n) << "linear in the elements, as a :has() that does not mention the scope";
+}
+
+TEST(CssMatchCost, AHasOverASiblingRunThatMentionsScopeIsLinearToo) {
+  const size_t n = 2000;
+  synth::Tree t;
+  int first = 0;
+  for (size_t i = 0; i < n; i++) {
+    const int e = t.add(0, "div");
+    first = first ? first : e;
+  }
+  const Outcome r = runq(t, first, "div:has(~ div:not(:is(:scope ~ *)))", false, gtext_css_selector_match_options_default());
+  EXPECT_EQ(r.status, GTEXT_CSS_OK) << "it hit the work limit when :scope tied the chain to the anchor";
+}
+
+namespace {
+TEST(CssMatchCost, TheLongestAllowedChainOverADeepTreeDoesNotExhaustTheStack) {
+  // the matcher recurses once per compound of a complex selector, and the parser allows 1,024; 1,024 descendant and child compounds over a 20,000 deep tree must just answer
+  synth::Tree t;
+  const int root = chain(t, 20000);
+  std::string sel = "e";
+  for (int i = 1; i < 1023; i++) {
+    sel += i % 3 ? " e" : " > e";
+  }
+  sel += " .y";
+  const Outcome r = runq(t, root, sel.c_str());
+  EXPECT_EQ(r.status, GTEXT_CSS_OK);
+  EXPECT_LE(r.c.compounds_tested, 1100u * 20000u);
+}
+} // namespace
+
+TEST(CssMatchCost, NthOfTypeOverAWideParentOfDistinctTypesIsLinear) {
+  // the types of the siblings were found by a scan of the types seen so far: 20,000 distinct names cost two hundred million steps and reached the work limit
+  synth::Tree t;
+  const int root = t.add(0, "r");
+  int last = 0;
+  for (int i = 0; i < 20000; i++) {
+    last = t.add(root, "t" + std::to_string(i));
+  }
+  const Outcome r = runq(t, root, ":nth-of-type(1)");
+  EXPECT_EQ(r.status, GTEXT_CSS_OK);
+  EXPECT_EQ(r.matched, 20001u);
+  (void)last;
+}
+
+TEST(CssMatchCost, ALongListOfSingleCompoundSelectorsKeepsNoMemoEntries) {
+  // 60,000 class selectors over 150 elements was nine million (selector, element) entries and the memo limit; a selector of one compound is looked up as cheaply as it is found
+  synth::Tree t;
+  const int root = wide(t, 150);
+  std::string sel;
+  for (int i = 0; i < 60000; i++) {
+    sel += ".k" + std::to_string(i) + ",";
+  }
+  sel += ".t";
+  const Outcome r = runq(t, root, sel.c_str());
+  EXPECT_EQ(r.status, GTEXT_CSS_OK);
+  EXPECT_EQ(r.matched, 1u);
+  EXPECT_LE(r.c.memo_entries, 1000u);
+}
+
+TEST(CssMatchCost, TheScopeElementChangedBetweenQueriesOfOneContextIsFollowedByEveryCache) {
+  // a style rule per scoping root, or a query on each of several roots, asks one context with another `:scope` each time: the memo, the position caches and the `:has()` memos are keyed by it
+  synth::Tree t;
+  const int a = t.add(0, "div");
+  const int pa1 = t.add(a, "p");
+  const int pa2 = t.add(a, "p");
+  const int b = t.add(0, "div");
+  const int pb1 = t.add(b, "p");
+  const int pb2 = t.add(b, "p");
+  GTEXT_CSS_Selector_Match_Options opt = gtext_css_selector_match_options_default();
+  GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
+  ASSERT_EQ(gtext_css_selector_match_context_new(&t.table, &opt, &ctx), GTEXT_CSS_OK);
+  const char * sels[] = {":scope > p", "p:nth-child(1 of :scope > *)", "div:has(:scope p) p", ":scope p:not(:scope p + p)", ":has(> :scope)"};
+  const int roots[] = {a, b, a, 0, b, a};
+  for (const char * sel : sels) {
+    GTEXT_CSS_Selector_List * l = nullptr;
+    ASSERT_EQ(gtext_css_selector_parse(sel, std::strlen(sel), nullptr, &l, nullptr), GTEXT_CSS_OK);
+    ASSERT_NE(l, nullptr) << sel;
+    std::vector<std::vector<bool>> first;
+    for (int pass = 0; pass < 2; pass++) {
+      for (size_t k = 0; k < sizeof roots / sizeof roots[0]; k++) {
+        gtext_css_selector_match_set_scope(ctx, synth::Tree::H(roots[k]), nullptr);
+        std::vector<bool> row;
+        for (int e : {a, pa1, pa2, b, pb1, pb2}) {
+          GTEXT_CSS_Selector_Match_Result r;
+          ASSERT_EQ(gtext_css_selector_match(l, ctx, synth::Tree::H(e), nullptr, &r), GTEXT_CSS_OK);
+          row.push_back(r.matched);
+        }
+        if (pass == 0) {
+          first.push_back(row);
+        }
+        else {
+          EXPECT_EQ(row, first[k]) << sel << " scope " << roots[k] << ": the answer on a second visit to the same scope differs";
+        }
+      }
+    }
+    // the same scope asked in a fresh context gives the same answers as the shared one
+    for (size_t k = 0; k < sizeof roots / sizeof roots[0]; k++) {
+      GTEXT_CSS_Selector_Match_Options o2 = opt;
+      o2.scope = synth::Tree::H(roots[k]);
+      GTEXT_CSS_Selector_Match_Context * fresh = nullptr;
+      ASSERT_EQ(gtext_css_selector_match_context_new(&t.table, &o2, &fresh), GTEXT_CSS_OK);
+      std::vector<bool> row;
+      for (int e : {a, pa1, pa2, b, pb1, pb2}) {
+        GTEXT_CSS_Selector_Match_Result r;
+        ASSERT_EQ(gtext_css_selector_match(l, fresh, synth::Tree::H(e), nullptr, &r), GTEXT_CSS_OK);
+        row.push_back(r.matched);
+      }
+      EXPECT_EQ(row, first[k]) << sel << " scope " << roots[k] << ": a context that had other scopes before differs from a fresh one";
+      gtext_css_selector_match_context_free(fresh);
+    }
+    gtext_css_selector_list_free(l);
+  }
+  gtext_css_selector_match_context_free(ctx);
 }

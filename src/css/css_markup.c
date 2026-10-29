@@ -24,6 +24,7 @@
  * The element interface over a Markup tree (css_markup.h).
  */
 
+#include <stdint.h>
 #include <string.h>
 
 #include <ghoti.io/unicode/char.h>
@@ -35,6 +36,8 @@
 #define MAX_CACHED_CLASSES 32
 
 typedef const GTEXT_Markup_Node Node;
+
+#define DIR_CACHE 64
 
 struct GTEXT_CSS_Markup_Adapter {
   GTEXT_Allocator alloc;
@@ -51,6 +54,18 @@ struct GTEXT_CSS_Markup_Adapter {
   size_t clen[MAX_CACHED_CLASSES];
   size_t clen_total;
   const char * cvalue;
+  /* the first submit button of the form asked about last, and the radio group asked about last */
+  Node * dform;
+  Node * dfirst;
+  Node * rscope;
+  const char * rname;
+  size_t rname_len;
+  bool rchecked;
+  /* the auto directionality found for an element */
+  struct dir_ent {
+    Node * node;
+    bool rtl;
+  } dirc[DIR_CACHE];
 };
 
 #define NS_HTML GTEXT_MARKUP_NS_HTML
@@ -439,6 +454,79 @@ static bool valid_custom_name(const char * s) {
   return true;
 }
 
+/// A submit button (the HTML Standard, 4.10.18.2): a `button` whose type is submit or missing or invalid, an `input` of type submit or image.
+static bool is_submit_button(Node * el) {
+  if (!is_el(el) || !in_ns(el, NS_HTML)) {
+    return false;
+  }
+  if (html_is(el, "input")) {
+    const char * t = input_type(el);
+    return strcmp(t, "submit") == 0 || strcmp(t, "image") == 0;
+  }
+  if (html_is(el, "button")) {
+    GTEXT_Markup_Attribute t;
+    return !attr(el, "type", &t) || !(lc_eq(t.value, "reset") || lc_eq(t.value, "button"));
+  }
+  return false;
+}
+
+/// The form an element belongs to as far as the tree says (the nearest `form` ancestor; the `form` attribute is not followed), or NULL.
+static Node * form_of(Node * el) {
+  for (Node * p = gtext_markup_node_parent(el); is_el(p); p = gtext_markup_node_parent(p)) {
+    if (html_is(p, "form")) {
+      return p;
+    }
+  }
+  return NULL;
+}
+
+/// `:default` for a button: it is the first submit button, in tree order, of its form.
+static bool default_button(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
+  Node * form = form_of(el);
+  if (!form || !is_submit_button(el)) {
+    return false;
+  }
+  if (a->dform != form) { // the answer for the last form asked about: the buttons of a form ask in a row
+    a->dform = form;
+    a->dfirst = NULL;
+    for (Node * n = gtext_markup_node_next_in_order(form, form, false); n; n = gtext_markup_node_next_in_order(form, n, false)) {
+      if (is_submit_button(n)) {
+        a->dfirst = n;
+        break;
+      }
+    }
+  }
+  return a->dfirst == el;
+}
+
+/// `:indeterminate` for a radio button: no radio button of its group (same name, same form or none) is checked. A radio with no name is a group of its own.
+static bool radio_group_unchecked(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
+  GTEXT_Markup_Attribute nm;
+  if (has_attr(el, "checked")) {
+    return false;
+  }
+  if (!attr(el, "name", &nm) || nm.value_length == 0) {
+    return true;
+  }
+  Node * form = form_of(el);
+  Node * top = form ? form : gtext_markup_document_root(a->doc);
+  if (a->rscope == top && a->rname_len == nm.value_length && memcmp(a->rname, nm.value, nm.value_length) == 0) {
+    return !a->rchecked;
+  }
+  a->rscope = top;
+  a->rname = nm.value;
+  a->rname_len = nm.value_length;
+  a->rchecked = false;
+  for (Node * n = gtext_markup_node_next_in_order(top, top, false); n && !a->rchecked; n = gtext_markup_node_next_in_order(top, n, false)) {
+    GTEXT_Markup_Attribute o;
+    if (is_el(n) && html_is(n, "input") && strcmp(input_type(n), "radio") == 0 && has_attr(n, "checked") && attr(n, "name", &o) &&
+        o.value_length == nm.value_length && memcmp(o.value, nm.value, nm.value_length) == 0 && form_of(n) == form) {
+      a->rchecked = true;
+    }
+  }
+  return !a->rchecked;
+}
+
 static uint64_t derive_state(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
   uint64_t st = 0;
   const char * local = gtext_markup_element_local_name(el);
@@ -454,6 +542,12 @@ static uint64_t derive_state(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
     const char * type = input ? input_type(el) : "";
     if (input && (strcmp(type, "checkbox") == 0 || strcmp(type, "radio") == 0) && has_attr(el, "checked")) {
       st |= GTEXT_CSS_STATE_CHECKED | GTEXT_CSS_STATE_DEFAULT;
+    }
+    if (is_submit_button(el) && default_button(a, el)) {
+      st |= GTEXT_CSS_STATE_DEFAULT;
+    }
+    if (input && strcmp(type, "radio") == 0 && radio_group_unchecked(a, el)) {
+      st |= GTEXT_CSS_STATE_INDETERMINATE;
     }
     if (strcmp(local, "option") == 0 && has_attr(el, "selected")) {
       st |= GTEXT_CSS_STATE_CHECKED | GTEXT_CSS_STATE_DEFAULT;
@@ -596,24 +690,69 @@ static int strong_below(Node * el) {
   }
 }
 
+/// The auto directionality of `p` (1 rtl, 0 ltr), found once for each element: the scan reads the text below it, so asking it for every child of a `dir=auto` parent would read
+/// the parent's text once for each child. A direct-mapped cache of the answers; it lives as long as the adapter, which is why the document must not change under it.
+static int auto_dir(struct GTEXT_CSS_Markup_Adapter * a, Node * p, bool input_value) {
+  struct dir_ent * ent = &a->dirc[((uintptr_t)p >> 4) % DIR_CACHE];
+  if (ent->node == p) {
+    return ent->rtl;
+  }
+  int strong = -1;
+  if (input_value) {
+    GTEXT_Markup_Attribute v;
+    if (attr(p, "value", &v)) {
+      for (size_t i = 0; strong < 0 && i < v.value_length;) {
+        size_t w;
+        const GUNI_BidiClass c = guni_bidi_class(decode((const unsigned char *)v.value + i, v.value_length - i, &w));
+        i += w;
+        strong = c == GUNI_BIDI_L ? 0 : (c == GUNI_BIDI_R || c == GUNI_BIDI_AL) ? 1 : -1;
+      }
+    }
+  }
+  else {
+    strong = strong_below(p);
+  }
+  ent->node = p;
+  ent->rtl = strong == 1;
+  return ent->rtl;
+}
+
+static bool input_takes_auto(Node * p) {
+  GTEXT_Markup_Attribute t;
+  if (strcmp(gtext_markup_element_local_name(p), "input") != 0) {
+    return false;
+  }
+  if (!attr(p, "type", &t)) {
+    return true;
+  }
+  return lc_eq(t.value, "text") || lc_eq(t.value, "search") || lc_eq(t.value, "tel") || lc_eq(t.value, "url") || lc_eq(t.value, "email");
+}
+
+/// The HTML Standard's directionality of an element: its own `dir` when ltr or rtl; auto when `dir=auto`, or for a `bdi` without a valid `dir`, from the first strong
+/// character of its text (of the value, for a text input); ltr for a telephone input without a valid `dir`; otherwise its parent's, and ltr at the top.
 static GTEXT_CSS_Direction cb_direction(void * user, GTEXT_CSS_Element_Handle h) {
-  (void)user;
+  struct GTEXT_CSS_Markup_Adapter * a = user;
   for (Node * p = h; is_el(p); p = gtext_markup_node_parent(p)) {
     if (!in_ns(p, NS_HTML)) {
       continue;
     }
     GTEXT_Markup_Attribute d;
-    if (!attr(p, "dir", &d)) {
-      continue;
-    }
-    if (lc_eq(d.value, "ltr")) {
+    const bool has = attr(p, "dir", &d);
+    if (has && lc_eq(d.value, "ltr")) {
       return GTEXT_CSS_DIRECTION_LTR;
     }
-    if (lc_eq(d.value, "rtl")) {
+    if (has && lc_eq(d.value, "rtl")) {
       return GTEXT_CSS_DIRECTION_RTL;
     }
-    if (lc_eq(d.value, "auto")) {
-      return strong_below(p) == 1 ? GTEXT_CSS_DIRECTION_RTL : GTEXT_CSS_DIRECTION_LTR;
+    const bool is_auto = has && lc_eq(d.value, "auto");
+    if (is_auto || strcmp(gtext_markup_element_local_name(p), "bdi") == 0) {
+      return auto_dir(a, p, is_auto && input_takes_auto(p)) ? GTEXT_CSS_DIRECTION_RTL : GTEXT_CSS_DIRECTION_LTR;
+    }
+    if (input_takes_auto(p)) {
+      GTEXT_Markup_Attribute t;
+      if (attr(p, "type", &t) && lc_eq(t.value, "tel")) {
+        return GTEXT_CSS_DIRECTION_LTR;
+      }
     }
   }
   return GTEXT_CSS_DIRECTION_LTR;
@@ -644,7 +783,7 @@ GTEXT_CSS_Status gtext_css_markup_adapter_new(const GTEXT_Markup_Document * docu
   switch (o.kind) {
   case GTEXT_CSS_MARKUP_HTML: a->html = true; break;
   case GTEXT_CSS_MARKUP_XML: a->html = false; break;
-  default: a->html = de && in_ns(de, NS_HTML); break;
+  default: a->html = de && in_ns(de, NS_HTML) && !gtext_markup_document_parsed_as_xml(document); break;
   }
   a->quirks = gtext_markup_document_mode(document) == GTEXT_MARKUP_MODE_QUIRKS;
   GTEXT_CSS_Element_Interface *i = &a->iface;
@@ -697,6 +836,15 @@ GTEXT_CSS_Selector_Match_Options gtext_css_markup_match_options(const GTEXT_CSS_
     o.root_given = true;
     o.root = gtext_markup_document_element(a->doc);
     o.allocator = &a->alloc;
+  }
+  return o;
+}
+
+GTEXT_CSS_Rule_Index_Options gtext_css_markup_rule_index_options(const GTEXT_CSS_Markup_Adapter * a) {
+  GTEXT_CSS_Rule_Index_Options o = gtext_css_rule_index_options_default();
+  if (a) {
+    o.html_document = a->html;
+    o.quirks = a->quirks;
   }
   return o;
 }

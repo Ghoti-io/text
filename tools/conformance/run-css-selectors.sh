@@ -62,8 +62,12 @@ score() {
 	python3 -I "$suite_py" "$1" "$2" "$3" "$4"
 }
 
+pages_py=$root/tools/conformance/css_selector_pages.py
+pages=$root/tools/conformance/UNSCORED_SELECTOR_PAGES
+
 if [ "$1" != "--controls" ]; then
-	score "$vectors" "$runner" "$exceptions" "$unscored"
+	score "$vectors" "$runner" "$exceptions" "$unscored" || exit $?
+	python3 -I "$pages_py" "$wpt" "$pages"
 	exit $?
 fi
 
@@ -141,6 +145,14 @@ expect unscored-count "UNSCORED VECTORS" score "$vectors" "$runner" "$exceptions
 printf '#!/bin/sh\nexec "%s" "$@" | sed -u "s/^INVALID$/OK\\tdiv\\tdiv/"\n' "$runner" > "$scratch/runner-accepts"
 chmod +x "$scratch/runner-accepts"
 expect runner-that-accepts-everything "invalid-accepted" score "$vectors" "$scratch/runner-accepts" "$exceptions" "$unscored"
+
+python3 -I "$pages_py" "$wpt" "$pages" >"$log" 2>&1 || { echo "the page list does not pass unedited" >&2; cat "$log" >&2; exit 1; }
+head -n -1 "$pages" > "$scratch/pages-short"
+expect page-unlisted "UNLISTED PAGES" python3 -I "$pages_py" "$wpt" "$scratch/pages-short"
+{ cat "$pages"; printf 'control/planted.html\tscript\tplanted: a page that does not exist so the list is stale\n'; } > "$scratch/pages-extra"
+expect page-stale "STALE PAGES" python3 -I "$pages_py" "$wpt" "$scratch/pages-extra"
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF != 3 || done { print; next } { $3 = "too short"; done = 1 } { print }' "$pages" > "$scratch/pages-reason"
+expect page-reason-too-short "SUITE PROBLEMS" python3 -I "$pages_py" "$wpt" "$scratch/pages-reason"
 
 plant() {
 	name=$1 file=$2 old=$3 new=$4

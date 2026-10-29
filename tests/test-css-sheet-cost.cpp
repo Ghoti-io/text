@@ -65,8 +65,11 @@ void build(Built & b, const std::string & css, bool shared_scope = false) {
   ASSERT_EQ(gtext_css_rule_index_freeze(b.x, nullptr), GTEXT_CSS_OK);
 }
 
-size_t considered(synth::Tree & t, GTEXT_CSS_Rule_Index * x, int el, GTEXT_CSS_Selector_Match_Counters * out = nullptr) {
+size_t considered(synth::Tree & t, GTEXT_CSS_Rule_Index * x, int el, GTEXT_CSS_Selector_Match_Counters * out = nullptr, size_t max_work = 0) {
   GTEXT_CSS_Selector_Match_Options mo = gtext_css_selector_match_options_default();
+  if (max_work) {
+    mo.max_work = max_work;
+  }
   mo.html_document = true;
   GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
   EXPECT_EQ(gtext_css_selector_match_context_new(&t.table, &mo, &ctx), GTEXT_CSS_OK);
@@ -185,10 +188,42 @@ TEST(CssSheetCost, AScopeWithALimitIsBoundedByTheWorkLimitAndNeverHangs) {
   const int pe = t.add(parent, "p");
   GTEXT_CSS_Selector_Match_Options mo = gtext_css_selector_match_options_default();
   mo.max_work = 500;
+  mo.html_document = true;
   GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
   ASSERT_EQ(gtext_css_selector_match_context_new(&t.table, &mo, &ctx), GTEXT_CSS_OK);
   Set set(nullptr);
   const GTEXT_CSS_Status st = gtext_css_rules_collect(b.x, ctx, synth::Tree::H(pe), nullptr, set.s, nullptr);
   EXPECT_TRUE(st == GTEXT_CSS_OK || st == GTEXT_CSS_E_LIMIT_MATCH_WORK) << gtext_css_status_string(st);
   gtext_css_selector_match_context_free(ctx);
+}
+
+TEST(CssSheetCost, NestedScopesCostThePolynomialOfTheDepthAndNotItsPower) {
+  /* Eight nested @scope rules over a deep chain: whether an element is a root of the scope at one level asks the same of the outer levels at every candidate root, and without the
+   * answers kept the work is the depth to the power of the nesting (a sheet of 150 bytes took seconds for one element). */
+  std::string css = "@scope (.z) {";
+  for (int i = 0; i < 6; i++) {
+    css += "@scope (div) {";
+  }
+  css += "p:nth-child(2) { color: red }";
+  for (int i = 0; i < 7; i++) {
+    css += "}";
+  }
+  Built b;
+  build(b, css);
+  size_t last = 0;
+  for (int depth : {40, 80}) {
+    synth::Tree t;
+    int parent = 0;
+    for (int i = 0; i < depth; i++) {
+      parent = t.add(parent, "div");
+    }
+    const int leaf = t.add(parent, "p");
+    GTEXT_CSS_Selector_Match_Counters c;
+    considered(t, b.x, leaf, &c, 4000000); // a defect that makes the work a power of the depth meets this limit at once, and the collection then is not OK
+    EXPECT_LE(c.compounds_tested, static_cast<size_t>(depth) * depth * 40) << "depth " << depth;
+    if (last) {
+      EXPECT_LE(c.compounds_tested, last * 6) << "twice the depth is at most four times the work, and not 2^6 of it";
+    }
+    last = c.compounds_tested;
+  }
 }

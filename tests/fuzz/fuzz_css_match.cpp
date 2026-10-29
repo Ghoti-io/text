@@ -27,7 +27,7 @@
  *
  * The input is three option bytes, six bytes for each element of the tree, then the selector text:
  *
- *   o0  bits 0-1 the limits (0 the defaults, 1 a small work limit, 2 a small memo, 3 a small `:has()` budget); bit 2 the tree is read as an HTML document (names compare
+ *   o0  bits 0-1 the limits (0 the defaults, 1 a small work limit, 2 a small memo, 3 a smaller work limit); bit 2 the tree is read as an HTML document (names compare
  *       ignoring case); bits 3-4 the `:scope` element (0 the root, else the n-th element of the tree); bit 5 quirks;
  *   o1  the number of elements, 1 to 24 (the byte modulo 24, plus one);
  *   o2  reserved (zero);
@@ -93,7 +93,7 @@ struct Ref {
   int scope;
   bool html;
   bool unsupported = false;
-  std::vector<int> anchors; ///< the anchors of the `:has()` being evaluated: inside it `:scope` and `&` are the anchor (Selectors 4, relative selectors)
+  size_t steps = 0; ///< the naive matcher is exponential in the nesting of `:is()`; past this many steps it gives up and the comparison is skipped
 
   Ref(synth::Tree & tree, int sc, bool h) : t(tree), scope(sc), html(h) {}
 
@@ -259,9 +259,6 @@ struct Ref {
       return t.e[e].parent == 0 && t.e[e].host == 0;
     }
     if (p == SCOPE) {
-      if (!anchors.empty()) {
-        return e == anchors.back();
-      }
       return scope ? e == scope : (t.e[e].parent == 0 && t.e[e].host == 0);
     }
     if (p == EMPTY) {
@@ -326,9 +323,6 @@ struct Ref {
       }
       return attr(s, e);
     case GTEXT_CSS_SIMPLE_NESTING:
-      if (!anchors.empty()) {
-        return e == anchors.back();
-      }
       return scope ? e == scope : (t.e[e].parent == 0 && t.e[e].host == 0);
     case GTEXT_CSS_SIMPLE_PSEUDO_CLASS: return pseudo_class(s, e);
     case GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT: unsupported = true; return false;
@@ -378,6 +372,10 @@ struct Ref {
   }
 
   bool ends_at(const GTEXT_CSS_Complex & cx, int subject) {
+    if (++steps > 1000000) {
+      unsupported = true;
+      return false;
+    }
     if (cx.has_pseudo_element) {
       unsupported = true;
       return false;
@@ -391,10 +389,7 @@ struct Ref {
   }
 
   bool has(const GTEXT_CSS_Selector_List * l, int anchor) {
-    anchors.push_back(anchor);
-    const bool r = has_inner(l, anchor);
-    anchors.pop_back();
-    return r;
+    return has_inner(l, anchor);
   }
 
   bool has_inner(const GTEXT_CSS_Selector_List * l, int anchor) {
@@ -548,7 +543,7 @@ int run(const uint8_t * data, size_t size) {
   switch (o0 & 3) {
   case 1: opt.max_work = 60; break;
   case 2: opt.max_memo_entries = 8; break;
-  case 3: opt.max_has_visits = 6; break;
+  case 3: opt.max_work = 200; break;
   default: break;
   }
   opt.html_document = (o0 >> 2) & 1u;
@@ -591,6 +586,36 @@ int run(const uint8_t * data, size_t size) {
     }
     if (!ref.unsupported && expect != base.matched && !(opt.quirks)) {
       fail("the engine is not the reference", text + "\nreference: " + list_of(expect) + "\nengine: " + list_of(base.matched), input);
+    }
+  }
+  if (base.status == GTEXT_CSS_OK && !opt.quirks && text.size() <= 160) { // the naive reference is exponential in nesting: the extra passes are for selectors it can afford (a 500 byte `:is(:first-child ...)` took 20 s under a sanitizer)
+    // one context, the scope element changed between the passes: the answers of the memo and of the position caches must follow it (a browser's `querySelectorAll` on several
+    // roots, or a style rule per scoping root, asks exactly this)
+    GTEXT_CSS_Selector_Match_Options so = opt;
+    so.allocator = &fa.alloc;
+    so.max_work = 0;
+    so.max_memo_entries = 0;
+    GTEXT_CSS_Selector_Match_Context * shared = nullptr;
+    if (gtext_css_selector_match_context_new(&t.table, &so, &shared) == GTEXT_CSS_OK) {
+      const int picks[] = {scope, 1, count, 0, 1 + (count > 1 ? 1 : 0), scope};
+      for (int sc : picks) {
+        gtext_css_selector_match_set_scope(shared, synth::Tree::H(sc), nullptr);
+        Ref r2(t, sc, opt.html_document);
+        for (int e = 1; e < static_cast<int>(t.e.size()); e++) {
+          GTEXT_CSS_Selector_Match_Result mr;
+          const GTEXT_CSS_Status st = gtext_css_selector_match(list, shared, synth::Tree::H(e), nullptr, &mr);
+          if (st != GTEXT_CSS_OK) {
+            break;
+          }
+          if (!r2.unsupported && mr.matched != r2.any(list, e)) {
+            fail("the answer did not follow a change of the scope element", text + "\nscope " + std::to_string(sc) + " element " + std::to_string(e), input);
+          }
+        }
+        if (r2.unsupported) {
+          break;
+        }
+      }
+      gtext_css_selector_match_context_free(shared);
     }
   }
   gtext_css_selector_list_free(list);

@@ -1626,6 +1626,7 @@ static GTEXT_XML_Status parse_counted(const void * data, size_t len,
     goto failed;
   }
   p.doc = doc;
+  doc->parsed_as_xml = 1;
   p.allocator = &doc->allocator;
   markup_buf_init(&p.decoded, p.allocator);
   markup_buf_init(&p.text, p.allocator);

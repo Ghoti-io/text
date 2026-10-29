@@ -14,7 +14,8 @@ Include `<ghoti.io/text/css.h>` (`css/css_selector.h`).
 sheet). Both return a `GTEXT_CSS_Selector_List`: immutable, reference counted with atomic counts, shareable between threads, with an `id` and a span in the bytes it was
 read from on every node. **A selector that is not valid is an answer, not a failure**: the call returns `GTEXT_CSS_OK`, the list is `NULL`, and the result holds a
 diagnostic (`kind`, span, and a reference to the sentence of the draft that decides it). A failure is an argument, memory or one of three limits, each its own status:
-`GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS`, `_LIST` and `_DEPTH` (the depth is capped at 256, and the parser recurses no further than that).
+`GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS`, `_LIST` and `_DEPTH` (the depth is capped at 256, and the parser recurses no further than that). `max_compounds` (default 1,024) is the
+most compounds in one complex selector and is reported as `_COMPONENTS`: the matcher recurses once per compound, and this is what bounds its use of the C stack.
 
 The mode says which list of the grammar is read:
 
@@ -75,18 +76,20 @@ and is **not shared between threads** (compiled selectors, sheets and indexes ar
 The options say what the document language does: `html_document` (type selectors and attribute names compare ignoring ASCII case for HTML elements; an element whose
 namespace the interface does not give is taken as HTML; the values of the attributes the HTML Standard lists compare ignoring case), `quirks` (class and id compare ignoring
 case; a compound of `:hover` or `:active` alone matches only a link), `visited` (`:visited` never matches, and `:link` matches any link), `scope` (what `:scope` is; by default the root),
-`root` (the document element, for a tree that has fragments) and `tree_scope` (what `:host` is the host of). `:lang()` is RFC 4647 extended filtering; `:dir()` and
-the states are the caller's through the interface; `:target`, `:hover` and the other states are the bits `state` returns.
+`root` (the document element, for a tree that has fragments) and `tree_scope` (what `:host` is the host of). `:lang()` is RFC 4647 extended filtering (`:lang("")` matches the elements that are not tagged, as Selectors 4 says); `:dir()` takes any identifier, and one that is not `ltr` or `rtl`
+matches nothing. The Markup adapter finds the direction as the HTML Standard does (`dir`, `bdi`, the value of a text input, `dir=auto` from the first strong character, read once for
+each element) and the states are the caller's through the interface; `:target`, `:hover` and the other states are the bits `state` returns.
 
 ## The cost model
 
 Matching goes right to left and every step is memoized on (selector node, element) in the context, so a run of any number of selectors over all n elements of a snapshot costs
 at most (selector nodes) x n memo entries, never their product: `* * * * * .x` over a chain, `a ~ b ~ c` over n siblings, `li:nth-child(odd of .x)` over n siblings (the positions of a
 parent's children are computed once) and `:has()` of every combinator (the chain below a point depends on the point and the step, and not on the anchor, so each is visited once).
-The one exception is a `:has()` that mentions its anchor (`:scope` or `&`), which is not memoized across anchors and spends from a budget (`max_has_visits`); reaching a limit
+`:scope` inside `:has()` is the scope of the query or the rule, as in the browsers, not the anchor, so a chain that mentions it is shared across anchors too. Reaching a limit
 (`max_memo_entries`, `max_work`) is `GTEXT_CSS_E_LIMIT_MATCH_MEMO` or `_WORK`, never "no match". An **ancestor Bloom filter**, kept by `gtext_css_selector_match_walk()`, rejects a
-descendant-combinator selector without matching it; it never changes an answer, which the tests assert by matching with and without it and with and without the memo. No evaluation
-recurses in the C stack beyond the nesting of the functional pseudo-classes the parser bounded. `gtext_css_selector_match_counters()` reports what a context did, and
+descendant-combinator selector without matching it; it never changes an answer, which the tests assert by matching with and without it and with and without the memo. The evaluation
+recurses in the C stack once per compound of a complex selector and per nesting of the functional pseudo-classes, both of which the parser bounds (`max_compounds`, `max_depth`). A
+selector of one compound keeps no memo entries. `gtext_css_selector_match_counters()` reports what a context did, and
 `tests/test-css-match-cost.cpp` asserts bounds on it.
 
 ## Queries on a Markup document

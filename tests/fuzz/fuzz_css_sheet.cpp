@@ -35,8 +35,7 @@
  * The properties:
  *
  *   a status is OK, UNSUPPORTED, a limit or OOM - never E_INTERNAL; compiling the same text twice gives the same dump;
- *   **the index is the brute force**: for each element and each rule of the document sheet that is flat (not nested, not in an `@scope`, with no pseudo-element and no shadow
- *   selector), the rule is among the collected entries exactly when its selector list matches the element by gtext_css_selector_match(), with the specificity that match reports;
+ *   **the index is the brute force**: for each element and each rule of the document sheet that is flat (not nested, not in an `@scope`, with no shadow selector), for the element and for each of `::before`, `::after`, `::first-line` and `::marker`, the rule is among the collected entries exactly when its selector list matches the element by gtext_css_selector_match(), with the specificity that match reports;
  *   **the memo and the ancestor filter change nothing**: the same entries with each disabled;
  *   **a rule of the document does not reach into a shadow tree**: an element in the shadow tree has no entry of context 0;
  *   nothing leaks.
@@ -165,7 +164,8 @@ struct Rules {
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
 };
 
-Rules collect_for(synth::Tree & t, GTEXT_CSS_Rule_Index * ix, GTEXT_CSS_Selector_Match_Options mo, int el, const GTEXT_Allocator * alloc) {
+Rules collect_for(synth::Tree & t, GTEXT_CSS_Rule_Index * ix, GTEXT_CSS_Selector_Match_Options mo, int el, const GTEXT_Allocator * alloc,
+    const GTEXT_CSS_Selector_List * pseudo = nullptr) {
   Rules out;
   mo.allocator = alloc;
   GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
@@ -179,7 +179,7 @@ Rules collect_for(synth::Tree & t, GTEXT_CSS_Rule_Index * ix, GTEXT_CSS_Selector
     out.status = GTEXT_CSS_E_OOM;
     return out;
   }
-  out.status = gtext_css_rules_collect(ix, ctx, synth::Tree::H(el), nullptr, set, nullptr);
+  out.status = gtext_css_rules_collect(ix, ctx, synth::Tree::H(el), pseudo, set, nullptr);
   if (out.status == GTEXT_CSS_OK) {
     for (size_t i = 0; i < gtext_css_candidates_count(set); i++) {
       GTEXT_CSS_Cascade_Entry e;
@@ -301,7 +301,7 @@ int run(const uint8_t * data, size_t size) {
       for (size_t i = 0; i < gtext_css_sheet_record_count(a); i++) {
         GTEXT_CSS_Sheet_Record r;
         gtext_css_sheet_record(a, i, &r);
-        const bool f = !r.nested && r.scope_depth == 0 && !(r.dependencies & (GTEXT_CSS_DEP_PSEUDO | GTEXT_CSS_DEP_HOST | GTEXT_CSS_DEP_NESTING | GTEXT_CSS_DEP_SCOPE));
+        const bool f = !r.nested && r.scope_depth == 0 && !(r.dependencies & (GTEXT_CSS_DEP_HOST | GTEXT_CSS_DEP_NESTING | GTEXT_CSS_DEP_SCOPE));
         flat[r.rule] = flat.count(r.rule) ? (flat[r.rule] && f) : f;
         list_of[r.rule] = r.selector;
       }
@@ -327,23 +327,35 @@ int run(const uint8_t * data, size_t size) {
         if (in_sh) {
           continue;
         }
-        for (const auto & f : flat) {
-          if (!f.second) {
-            continue;
+        for (const char * pe : {static_cast<const char *>(nullptr), "::before", "::after", "::first-line", "::marker"}) {
+          GTEXT_CSS_Selector_List * pl = nullptr;
+          if (pe && (gtext_css_selector_parse(pe, std::strlen(pe), nullptr, &pl, nullptr) != GTEXT_CSS_OK || !pl)) {
+            fail("a pseudo-element did not parse", pe, input);
           }
-          GTEXT_CSS_Selector_Match_Result mr;
-          const GTEXT_CSS_Status ms = gtext_css_selector_match(list_of[f.first], ref, synth::Tree::H(el), nullptr, &mr);
-          if (ms != GTEXT_CSS_OK) {
-            continue;
+          Rules pgot;
+          const Rules & use = pe ? (pgot = collect_for(t, ix, mo, el, &fa.alloc, pl)) : got;
+          if (pe && !tolerated(use.status)) {
+            fail("a status that is not tolerated while collecting a pseudo-element", gtext_css_status_string(use.status), input);
           }
-          auto it = got.seen.find({0, f.first});
-          if (mr.matched != (it != got.seen.end())) {
-            fail(mr.matched ? "a rule that matches is not collected" : "a rule that does not match is collected",
-                "element " + std::to_string(el) + " rule " + std::to_string(f.first) + "\n" + dump_of(a), input);
+          for (const auto & f : flat) {
+            if (!f.second || use.status != GTEXT_CSS_OK) {
+              continue;
+            }
+            GTEXT_CSS_Selector_Match_Result mr;
+            const GTEXT_CSS_Status ms = gtext_css_selector_match(list_of[f.first], ref, synth::Tree::H(el), pl, &mr);
+            if (ms != GTEXT_CSS_OK) {
+              continue;
+            }
+            auto it = use.seen.find({0, f.first});
+            if (mr.matched != (it != use.seen.end())) {
+              fail(mr.matched ? "a rule that matches is not collected" : "a rule that does not match is collected",
+                  "element " + std::to_string(el) + " pseudo " + (pe ? pe : "-") + " rule " + std::to_string(f.first) + "\n" + dump_of(a), input);
+            }
+            if (mr.matched && gtext_css_specificity_compare(it->second, mr.specificity) != 0) {
+              fail("the specificity of a collected rule is not that of the match", "element " + std::to_string(el) + " rule " + std::to_string(f.first), input);
+            }
           }
-          if (mr.matched && gtext_css_specificity_compare(it->second, mr.specificity) != 0) {
-            fail("the specificity of a collected rule is not that of the match", "element " + std::to_string(el) + " rule " + std::to_string(f.first), input);
-          }
+          gtext_css_selector_list_free(pl);
         }
       }
       gtext_css_selector_match_context_free(ref);

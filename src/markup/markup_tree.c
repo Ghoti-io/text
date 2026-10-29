@@ -481,6 +481,10 @@ GTEXT_Markup_Mode gtext_markup_document_mode(const GTEXT_Markup_Document * doc) 
   return doc ? doc->mode : GTEXT_MARKUP_MODE_NO_QUIRKS;
 }
 
+bool gtext_markup_document_parsed_as_xml(const GTEXT_Markup_Document * doc) {
+  return doc && doc->parsed_as_xml;
+}
+
 void gtext_markup_document_set_mode(
     GTEXT_Markup_Document * doc, GTEXT_Markup_Mode mode) {
   if (doc) {

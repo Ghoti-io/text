@@ -47,16 +47,18 @@ static void sheet_quick_start(void) {
   gtext_css_tree_free(tree);
   gtext_css_result_free(&parsed);
 
+  GTEXT_CSS_Markup_Adapter * adapter = NULL;
+  gtext_css_markup_adapter_new(document, NULL, &adapter);
+
+  GTEXT_CSS_Rule_Index_Options index_options = gtext_css_markup_rule_index_options(adapter);
   GTEXT_CSS_Rule_Index * index = NULL;
-  gtext_css_rule_index_new(registry, NULL, &index);
+  gtext_css_rule_index_new(registry, &index_options, &index);
   GTEXT_CSS_Sheet_Registration registration;
   memset(&registration, 0, sizeof registration);
   registration.origin = GTEXT_CSS_ORIGIN_AUTHOR;
   gtext_css_rule_index_add_sheet(index, sheet, &registration, NULL);
   gtext_css_rule_index_freeze(index, NULL);
 
-  GTEXT_CSS_Markup_Adapter * adapter = NULL;
-  gtext_css_markup_adapter_new(document, NULL, &adapter);
   GTEXT_CSS_Selector_Match_Options options = gtext_css_markup_match_options(adapter);
   GTEXT_CSS_Selector_Match_Context * match = NULL;
   gtext_css_selector_match_context_new(gtext_css_markup_interface(adapter), &options, &match);
@@ -174,12 +176,15 @@ The layer registry is per context, so two trees order identically named layers e
 `::slotted()` follows the chain of slots that are themselves assigned: every shadow tree on the chain contributes its rules.
 
 **Scope proximity (Cascade 6, 3.1).** A rule in `@scope (<start>)? to (<end>)?` applies to an element E when some scoping root R, an element matching `start`, is an inclusive
-ancestor of E, no element from E up to but excluding R matches `end` (with `:scope` R), and the selector, with the implied `& ` in front of it unless it contains `&` or `:scope`, matches with
+ancestor of E, no element from E up to and including R matches `end` (with `:scope` R; so a limit that names the root, `to (:scope)` or `to (&)`, leaves nothing in scope, as in the browsers), and the selector, with the implied `& ` in front of it unless it contains `&` or `:scope`, matches with
 `:scope` R. The entry is `scoped`, and `scope_distance` is the least number of generational hops from R to E over the roots that qualify. `start` is read as written (a selector list; a `:scope` or `&` in it is the enclosing context's), and `end` is read as the
 rules inside are, relative to R. With no prelude the root is the registration's `implicit_root`. An `@scope` inside another (or inside a style rule) reads its `start` as a nested selector, with the implied `&`: its
 roots are inside a root of the enclosing scope, which is `:scope` and `&` there (the browsers agree: an `@scope (.a)` inside an `@scope (.a)` styles nothing for a single `.a`). Nesting
 of scopes is limited to 8. The declarations that are directly in an `@scope` apply to the root
-with no specificity. The search for the roots is a walk up the ancestors, bounded by `max_work` of the match context.
+with no specificity. The search for the roots is a walk up the ancestors, bounded by `max_work` of the match context; whether an ancestor is a root of a scope for the element being collected is
+kept (for that element), so that scopes nested to the limit of 8 cost a polynomial of the depth of the tree and not its power. A pseudo-element in the start or the limit makes the prelude invalid, and
+the rule is dropped. `gtext_css_rules_collect()` refuses (`GTEXT_CSS_E_INVALID`) a match context whose `html_document` or `quirks` is not the index's: the buckets are keyed by the index's folding, and a
+context that folds otherwise would find no rule and say nothing.
 
 **The conditional `@import` (Cascade 5, 6.4.3).** The filter is called for an `@import` that has `supports()` or a media list **before** its layer is declared, so a layer
 introduced by an import that does not apply is not declared.
@@ -195,13 +200,17 @@ A sheet and a frozen index are shared between threads; a match context, a candid
 ## Tested scope
 
 `tests/test-css-sheet.cpp` holds each rule above as a test named for it; `test-css-sheet-cost.cpp` the counter bounds, `test-css-sheet-oom.cpp` an allocation failed at every place,
-`test-css-sheet-threads.cpp` eight threads on one sheet and one index; `tests/fuzz/fuzz_css_sheet.cpp` compares the index with the brute force (every rule's selector list
-matched against every element) and checks that the memo and the ancestor filter change nothing; `make check-css-selector-plants` shows each fail on a planted defect.
+`test-css-sheet-threads.cpp` eight threads on one sheet and one index; `test-css-sheet-reference.cpp` the index against a second route to the answer (a nested rule is the flat selector
+with `:is(parent)` for `&`; an `@scope` rule is the roots, their descendants and the limits worked out one element at a time by the selector engine; the spellings of the shadow selectors
+that must collect the same elements); `tests/fuzz/fuzz_css_sheet.cpp` compares the index with the brute force (every rule's selector list matched against every element, for the element and for each
+pseudo-element asked) and checks that the memo and the ancestor filter change nothing; `make check-css-selector-plants` shows each fail on a planted defect.
 
-`make check-css-sheet-oracle` is the differential against the browsers: 200 generated documents (15,788 questions: the computed `color`, `background-color`, `margin-top`,
-`margin-left` and `padding-left` of every element, a shadow tree's included, and what `querySelectorAll()` selects) with style sheets of nested rules, layers, `@scope`, conditional
-groups and shadow trees, asked of this library, of Chromium 156 and of Firefox 158. Nothing diverges that is this library's. What remains is Chromium throwing on a quoted
-`:lang("*-CH")`, which Selectors 4 allows and Firefox accepts (listed in `tools/oracle/css_sheet_divergences.txt` with the sentence). A hunt of 2,000 documents of another seed
-(204,595 questions, the selectors also asked of the Servo `selectors` crate through `tools/oracle/containers/css/selectors-driver`) found the defects this page's decisions record (the
-host is featureless and the top of its shadow tree, a `&` that stands for a pseudo-element represents nothing, the roots of a nested `@scope` are inside the outer root) and ends with
-none. The gate shows itself failing: the list tampered with six ways and ten planted defects of the library are each caught.
+`make check-css-sheet-oracle` is the differential against the browsers: 200 generated documents (17,191 questions: the computed `color`, `background-color`, `margin-top`,
+`margin-left` and `padding-left` of every element, a shadow tree's included, and what `querySelectorAll()` selects) with style sheets of nested rules, layers, `@scope` (nested, with limits, with
+`:scope` inside the arguments of pseudo-classes), conditional groups, `@namespace` with an inline `<svg>`, `dir` attributes, quirks-mode documents, and shadow trees (inside shadow trees, with slots
+assigned to slots), asked of this library, of Chromium 156 and of Firefox 158. Nothing diverges that is this library's. What remains is Chromium throwing on a quoted `:lang("*-CH")`, which Selectors 4
+allows and Firefox accepts, and Firefox not implementing `:host-context()`, which Chromium does (listed in `tools/oracle/css_sheet_divergences.txt` with the sentence). A hunt of 1,500 documents of
+another seed (129,709 questions of the browsers, 165,887 with the Servo `selectors` crate, which the quirks-mode documents are told of, through `tools/oracle/containers/css/selectors-driver`) has
+nothing that is this library's either; hunts of the earlier population found the defects this page's decisions record (the host is featureless and the top of its shadow tree, a `&` that stands
+for a pseudo-element represents nothing, the roots of a nested `@scope` are inside the outer root, a slot assigned to a slot is replaced by what is assigned to it).
+The gate shows itself failing: the list tampered with six ways and the planted defects of the library (`tools/oracle/CSS_SHEET_ORACLE_PLANTS`) are each caught.

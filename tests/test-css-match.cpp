@@ -25,6 +25,7 @@
  * where it is short. The tree is parsed from HTML or XML text and queried by selector, so every test goes through the adapter and the queries as a caller does.
  */
 
+#include <chrono>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -316,6 +317,117 @@ TEST_F(CssMatch, DirIsTheDirAttributeInheritedAndAutoLooksForTheFirstStrongChara
   EXPECT_EQ(all(d, "p:dir(ltr)"), "p1 p2 p3 pde pun");
 }
 
+TEST_F(CssMatch, DirOfBdiInputsAndTheOthersFollowsTheHtmlStandard) {
+  Doc x;
+  ASSERT_TRUE(x.html("<!DOCTYPE html><div id=\"top\"><bdi id=\"b1\">\xD7\x90</bdi><bdi id=\"b2\">abc</bdi><bdi id=\"b3\"></bdi><span id=\"s\">x</span></div>"
+                     "<div dir=\"rtl\"><bdi id=\"b4\">abc</bdi><span id=\"s2\">x</span><input id=\"tel\" type=\"tel\"><input id=\"ia\" dir=\"auto\" value=\"\xD7\x90\">"
+                     "<input id=\"ib\" dir=\"auto\" type=\"text\" value=\"abc\"><input id=\"ic\" dir=\"auto\" type=\"checkbox\" value=\"\xD7\x90\"></div>"
+                     "<div id=\"a\" dir=\"auto\"><i id=\"a1\">1</i><i id=\"a2\">\xD7\x90</i></div><div dir=\"foo\" id=\"inv\"></div>"));
+  EXPECT_EQ(all(x, "bdi:dir(rtl)"), "b1") << "a bdi without dir is auto";
+  EXPECT_EQ(all(x, "bdi:dir(ltr)"), "b2 b3 b4");
+  EXPECT_EQ(all(x, "#tel:dir(ltr)"), "tel") << "a telephone input is ltr unless dir says otherwise";
+  EXPECT_EQ(all(x, "#s2:dir(rtl)"), "s2");
+  EXPECT_EQ(all(x, "input:dir(rtl)"), "ia") << "the value of a text input; a checkbox with dir=auto has no text, so it is ltr";
+  EXPECT_EQ(all(x, "#ib:dir(ltr)"), "ib");
+  EXPECT_EQ(all(x, "#a1:dir(rtl)"), "a1") << "the digit is neutral, the Hebrew letter after it is the first strong character, and the child inherits the parent's";
+  EXPECT_EQ(all(x, "#a:dir(rtl)"), "a");
+  EXPECT_EQ(all(x, ":dir(foo)"), "") << "valid, and matches nothing";
+  EXPECT_EQ(all(x, "#inv:not(:dir(foo))"), "inv");
+}
+
+TEST_F(CssMatch, DirAutoIsReadOncePerElementAndNotOncePerChild) {
+  // the parent's text was scanned for each child that asked: 8,000 children took two seconds, and the time grew with the square
+  std::string h = "<!DOCTYPE html><div dir=\"auto\">";
+  for (int i = 0; i < 20000; i++) {
+    h += "<i>1</i>";
+  }
+  h += "\xD7\x90</div>";
+  Doc x;
+  ASSERT_TRUE(x.html(h.c_str()));
+  const auto t0 = std::chrono::steady_clock::now();
+  const std::string got = all(x, "i:dir(rtl)");
+  const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+  EXPECT_GT(got.size(), 20000u) << "the answer is every i, and not an error";
+  EXPECT_NE(got[0], '!');
+  EXPECT_LT(sec, 2.0) << "the answer was found once for the parent, not once for each of 20,000 children";
+}
+
+TEST_F(CssMatch, XhtmlReadAsXmlIsCaseSensitiveAndTheSameTextReadAsHtmlIsNot) {
+  const char * text = "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><P id=\"u\"/><p id=\"l\"/></body></html>";
+  Doc x;
+  ASSERT_TRUE(x.xml(text));
+  EXPECT_TRUE(gtext_markup_document_parsed_as_xml(x.doc));
+  EXPECT_EQ(all(x, "p"), "l") << "the XML parser's document: exact names";
+  EXPECT_EQ(all(x, "P"), "u");
+  Doc h;
+  ASSERT_TRUE(h.html("<!DOCTYPE html><html><body><P id=\"u\"><p id=\"l\">"));
+  EXPECT_FALSE(gtext_markup_document_parsed_as_xml(h.doc));
+  EXPECT_EQ(all(h, "P"), "u l") << "an HTML document compares the names of HTML elements ignoring case";
+}
+
+TEST_F(CssMatch, AnAttributeNameOfAnyLengthIsFoldedForAnHtmlElement) {
+  const std::string name(300, 'a');
+  Doc x;
+  ASSERT_TRUE(x.html("<!DOCTYPE html><p id=\"s\" " + name + "=\"1\"><p id=\"n\">"));
+  std::string upper = name;
+  upper[0] = 'A';
+  EXPECT_EQ(all(x, "[" + upper + "]"), "s") << "300 bytes, past the 127 that were folded in a fixed buffer";
+  EXPECT_EQ(all(x, "[" + upper.substr(0, 100) + "]"), "");
+  EXPECT_EQ(all(x, "li:nth-child(2n+1/**/of .x)"), "") << "a comment between the formula and `of` is a valid selector";
+  EXPECT_NE(all(x, "li:nth-child(2n+1/**/of .x)"), "!syntax");
+}
+
+TEST_F(CssMatch, DefaultIncludesTheFirstSubmitButtonAndIndeterminateTheRadioGroupsWithNothingChecked) {
+  Doc x;
+  ASSERT_TRUE(x.html("<!DOCTYPE html><form id=\"f1\"><input id=\"t\" type=\"text\"><button id=\"b1\">go</button><input id=\"b2\" type=\"submit\"><button id=\"rs\" type=\"reset\"></button>"
+                     "<input id=\"r1\" type=\"radio\" name=\"g\"><input id=\"r2\" type=\"radio\" name=\"g\"><input id=\"r3\" type=\"radio\" name=\"h\" checked>"
+                     "<input id=\"r4\" type=\"radio\" name=\"h\"><input id=\"r5\" type=\"radio\"></form>"
+                     "<form id=\"f2\"><input id=\"i1\" type=\"image\"><button id=\"bb\" type=\"button\"></button></form><button id=\"loose\"></button>"
+                     "<input id=\"r6\" type=\"radio\" name=\"g\">"));
+  EXPECT_EQ(all(x, ":default"), "b1 r3 i1") << "the first submit button of each form, and a checked radio";
+  EXPECT_EQ(all(x, "input[type=radio]:indeterminate"), "r1 r2 r5 r6") << "the group g of the first form has nothing checked, h has; a radio without a name is its own group; r6 is outside the form";
+}
+
+TEST_F(CssMatch, TheTwoOfSListsOfOneSelectorDoNotShareTheirPositions) {
+  Doc x;
+  ASSERT_TRUE(x.html("<!DOCTYPE html><ul><li id=\"c1\" class=\"a b\"><li id=\"c2\" class=\"b\"><li id=\"c3\" class=\"a\"></ul>"));
+  EXPECT_EQ(all(x, "li:nth-child(2 of .b)"), "c2");
+  EXPECT_EQ(all(x, "li:nth-child(2 of .a)"), "c3");
+  EXPECT_EQ(all(x, "li:nth-child(2 of .b), li:nth-child(2 of .a)"), "c2 c3");
+  EXPECT_EQ(all(x, "li:nth-child(1 of .a):nth-child(1 of .b)"), "c1");
+  EXPECT_EQ(all(x, "li:nth-child(1 of .a):nth-child(2 of .b)"), "");
+  EXPECT_EQ(all(x, "li:nth-last-child(1 of .b), li:nth-last-child(1 of .a)"), "c2 c3");
+}
+
+TEST_F(CssMatch, VisitedNeverMatchesAndLinkDoes) {
+  Doc x;
+  ASSERT_TRUE(x.html("<!DOCTYPE html><a id=\"a\" href=\"/x\">x</a><a id=\"n\">y</a>"));
+  EXPECT_EQ(all(x, "a:visited"), "");
+  EXPECT_EQ(all(x, "a:link"), "a");
+  EXPECT_EQ(all(x, "a:any-link"), "a");
+  EXPECT_EQ(all(x, "a:not(:visited)"), "a n");
+}
+
+TEST_F(CssMatch, TheIndexOptionsOfAnAdapterAreTheMatchOptionsAndAContextThatFoldsOtherwiseIsRefused) {
+  Doc q, n;
+  ASSERT_TRUE(q.html("<p class=\"Foo\">x</p>"));   // no doctype: quirks mode
+  ASSERT_TRUE(n.html("<!DOCTYPE html><p class=\"Foo\">x</p>"));
+  GTEXT_CSS_Markup_Adapter *aq = nullptr, *an = nullptr;
+  ASSERT_EQ(gtext_css_markup_adapter_new(q.doc, nullptr, &aq), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_markup_adapter_new(n.doc, nullptr, &an), GTEXT_CSS_OK);
+  const GTEXT_CSS_Rule_Index_Options iq = gtext_css_markup_rule_index_options(aq), in = gtext_css_markup_rule_index_options(an);
+  EXPECT_TRUE(iq.quirks);
+  EXPECT_FALSE(in.quirks);
+  EXPECT_TRUE(iq.html_document);
+  EXPECT_TRUE(in.html_document);
+  EXPECT_EQ(gtext_css_markup_rule_index_options(nullptr).quirks, gtext_css_rule_index_options_default().quirks);
+  const GTEXT_CSS_Selector_Match_Options mq = gtext_css_markup_match_options(aq);
+  EXPECT_EQ(mq.quirks, iq.quirks);
+  EXPECT_EQ(mq.html_document, iq.html_document);
+  gtext_css_markup_adapter_free(aq);
+  gtext_css_markup_adapter_free(an);
+}
+
 TEST_F(CssMatch, HasAndItsFourRelations) {
   EXPECT_EQ(all(d, "div:has(> p)"), "root rtl");
   EXPECT_EQ(all(d, "div:has(p)"), "root rtl");
@@ -598,4 +710,39 @@ TEST(CssMatchQueries, TheArrayTheIteratorAndTheFirstAreTheSameMatchesInDocumentO
   gtext_css_selector_list_free(l);
   // the scope may be a fragment or the document, but not a text node
   ASSERT_EQ(gtext_markup_query_selector_all(gtext_markup_node_first_child(d.at("p1")), "x", 1, nullptr, &arr, &n, nullptr), GTEXT_MARKUP_E_INVALID);
+}
+
+TEST(CssMatchHas, ScopeInsideHasIsTheScopeOfTheQueryNotTheAnchor) {
+  /* web-platform-tests' css/selectors/has-argument-with-explicit-scope.html: `.a:has(:scope) .c` called on an element selects the `.c` under the `.a` that contains it. */
+  Doc d;
+  ASSERT_TRUE(d.html("<div class=a id=a1><div id=sc><div class=c id=c1></div></div><div class=c id=c2></div></div><div class=a id=a2><div class=c id=c3></div></div>"));
+  EXPECT_EQ(within(d, "sc", ".a:has(:scope) .c"), "c1") << "the .a that has the scope inside it, and the .c below it that is in the scope";
+  EXPECT_EQ(within(d, "a1", ".a:has(:scope) .c"), "") << "no .a has a1 as a descendant";
+  EXPECT_EQ(all(d.root(), ".a:has(:scope) .c"), "") << "the scope of a query on the document is the root, which no .a contains";
+  EXPECT_EQ(all(d.at("sc"), ":scope .c"), "c1");
+  EXPECT_EQ(all(d.root(), ".c:is(.a:has(:scope) *)"), "");
+}
+
+TEST(CssMatchQueries, AFragmentWithSeveralTopElementsIsQueriedInOrderAndAStoppedWalkStops) {
+  Doc d;
+  ASSERT_TRUE(d.html("<!DOCTYPE html><p id=base></p>"));
+  GTEXT_Markup_Node * frag = nullptr;
+  ASSERT_EQ(gtext_markup_create_fragment(d.doc, &frag), GTEXT_MARKUP_OK);
+  for (const char * id : {"f1", "f2", "f3"}) {
+    GTEXT_Markup_Node * p = nullptr;
+    ASSERT_EQ(gtext_markup_create_element(d.doc, "http://www.w3.org/1999/xhtml", nullptr, "p", &p), GTEXT_MARKUP_OK);
+    ASSERT_EQ(gtext_markup_element_set_attribute(p, nullptr, nullptr, "id", id, std::strlen(id)), GTEXT_MARKUP_OK);
+    ASSERT_EQ(gtext_markup_element_set_attribute(p, nullptr, nullptr, "class", "x", 1), GTEXT_MARKUP_OK);
+    ASSERT_EQ(gtext_markup_append_child(frag, p), GTEXT_MARKUP_OK);
+  }
+  GTEXT_Markup_Node * first = nullptr;
+  ASSERT_EQ(gtext_markup_query_selector(frag, ".x", 2, nullptr, &first, nullptr), GTEXT_MARKUP_OK);
+  EXPECT_EQ(cmatch::id_of(first), "f1") << "the first match in document order, not the last of the roots";
+  size_t calls = 0;
+  ASSERT_EQ(gtext_markup_query_selector_each(frag, ".x", 2, nullptr, [](void * u, const GTEXT_Markup_Node *) {
+    ++*static_cast<size_t *>(u);
+    return false;
+  }, &calls, nullptr), GTEXT_MARKUP_OK);
+  EXPECT_EQ(calls, 1u) << "a callback that returned false is not called again, in the next top element either";
+  EXPECT_EQ(all(frag, ".x"), "f1 f2 f3");
 }

@@ -49,7 +49,11 @@ const READ = `(json) => {
   const q = JSON.parse(json);
   const roots = [];
   for (const [hostId, html] of q.shadows) {
-    const host = document.getElementById(hostId);
+    // a host is in the document or in a shadow tree made before (a shadow tree inside a shadow tree)
+    let host = document.getElementById(hostId);
+    for (const r of roots) {
+      host = host || r.getElementById(hostId);
+    }
     if (host) {
       const root = host.attachShadow({ mode: 'open' });
       root.innerHTML = html;

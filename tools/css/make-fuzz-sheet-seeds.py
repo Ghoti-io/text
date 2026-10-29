@@ -66,6 +66,10 @@ SHEETS = [
     "a { color: red } \x01 :host { color: blue } p { color: green } ::slotted(a) { margin-top: 1px } @layer s { :host(.x) { margin-left: 1px } }",
     "a { color: red !important } \x01 b { color: blue !important } a { color: green }",
     "@layer a, b; @layer a { a { color: red } } \x01 @layer b, a; @layer b { a { color: blue } }",
+    "a::before { color: red } a:not(.x)::after { color: blue } .x, li::marker { color: green } p::first-line { margin-top: 1px } #i1::before { color: orange } * { color: black }",
+    "a { color: red } \x01 :is(:host) { color: blue } :where(:host) > a { margin-top: 1px } :host { & p { color: green } } :host::part(a) { margin-left: 1px } :is(:host, .x) { margin-top: 2px }",
+    "@scope (.x) to (a) { & { color: red } :scope > b { color: blue } :is(:scope) > * { margin-top: 1px } @scope (b) to (c) { * { color: green } } } @scope (.y) to (:scope) { a { color: orange } }",
+    "li:nth-child(2n+1/**/of .x) { color: red } [data-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa] { color: blue } :dir(foo) { color: green } :dir(rtl) { margin-top: 1px }",
 ]
 
 

@@ -47,8 +47,8 @@
  *
  * ## Limits
  *
- * `max_memo_entries` (reaching it is GTEXT_CSS_E_LIMIT_MATCH_MEMO, never a wrong answer), `max_work` per call and `max_has_visits` per `:has()` anchor
- * (GTEXT_CSS_E_LIMIT_MATCH_WORK). No evaluation recurses in the C stack beyond the nesting of functional pseudo-classes the parser bounded; a walk up a chain of ancestors
+ * `max_memo_entries` (reaching it is GTEXT_CSS_E_LIMIT_MATCH_MEMO, never a wrong answer), and `max_work` per call
+ * (GTEXT_CSS_E_LIMIT_MATCH_WORK). The evaluation recurses in the C stack once per compound of a complex selector (the parser bounds that, `max_compounds`) and per nesting of functional pseudo-classes (`max_depth`); a walk up a chain of ancestors
  * or along siblings, and a walk below a point, are iterations.
  */
 
@@ -95,9 +95,8 @@ typedef struct {
   bool root_given;
   /** The tree scope the selectors are matched for (`:host` is the element whose `shadow_scope` is it); NULL: none, and `:host` matches nothing. */
   const void * tree_scope;
-  size_t max_memo_entries; ///< Most memo entries. Default 4,194,304 (2^22).
+  size_t max_memo_entries; ///< Most memo entries (48 bytes each, and the table is grown by doubling). Default 2,097,152 (2^21).
   size_t max_work;         ///< Most work in one call (compound tests and walk steps). Default 67,108,864 (2^26).
-  size_t max_has_visits;   ///< Most visits of one `:has()` that mentions its anchor. Default 1,048,576 (2^20).
   bool disable_memo;       ///< For the tests: no memoization. The answers must not change.
   bool disable_bloom;      ///< For the tests: no ancestor filter. The answers must not change.
 } GTEXT_CSS_Selector_Match_Options;

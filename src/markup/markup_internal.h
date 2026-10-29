@@ -260,6 +260,7 @@ struct GTEXT_Markup_Document {
   char * encoding;
   GTEXT_Markup_Encoding_Source encoding_source;
   char * xml_version;
+  uint8_t parsed_as_xml; ///< made by the XML parser, whose names are case-sensitive whatever the namespace
   GTEXT_Markup_Standalone standalone;
   uint8_t dtd_knowledge_incomplete;
   uint8_t dtd_knowledge_stale;

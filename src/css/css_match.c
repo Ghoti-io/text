@@ -29,9 +29,8 @@
 
 #include "css_match_internal.h"
 
-#define DEFAULT_MAX_MEMO ((size_t)1 << 22)
+#define DEFAULT_MAX_MEMO ((size_t)1 << 21)
 #define DEFAULT_MAX_WORK ((size_t)1 << 26)
-#define DEFAULT_MAX_HAS ((size_t)1 << 20)
 #define XHTML_NS "http://www.w3.org/1999/xhtml"
 
 /* ---- the context -------------------------------------------------------------------------------------------- */
@@ -41,7 +40,6 @@ GTEXT_CSS_Selector_Match_Options gtext_css_selector_match_options_default(void) 
   memset(&o, 0, sizeof o);
   o.max_memo_entries = DEFAULT_MAX_MEMO;
   o.max_work = DEFAULT_MAX_WORK;
-  o.max_has_visits = DEFAULT_MAX_HAS;
   return o;
 }
 
@@ -56,9 +54,6 @@ GTEXT_CSS_Status gtext_css_selector_match_context_new(const GTEXT_CSS_Element_In
   }
   if (!o.max_work) {
     o.max_work = DEFAULT_MAX_WORK;
-  }
-  if (!o.max_has_visits) {
-    o.max_has_visits = DEFAULT_MAX_HAS;
   }
   const GTEXT_Allocator * ap = o.allocator ? o.allocator : gtext_allocator_default();
   GTEXT_Allocator a = *ap;
@@ -190,6 +185,17 @@ bool css_match_is_html(struct GTEXT_CSS_Selector_Match_Context * ctx, El element
   return ns.length == sizeof XHTML_NS - 1 && memcmp(ns.data, XHTML_NS, ns.length) == 0;
 }
 
+bool css_match_is_shadow_slot(struct GTEXT_CSS_Selector_Match_Context * ctx, El element) {
+  if (!HAVE(ctx, GTEXT_CSS_ELEMENT_CB_LOCAL_NAME) || !HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST) || !ctx->iface.containing_host(ctx->iface.user, element)) {
+    return false;
+  }
+  GTEXT_CSS_String ln = {NULL, 0}, ns;
+  if (!ctx->iface.local_name(ctx->iface.user, element, &ln) || ln.length != 4 || memcmp(ln.data, "slot", 4) != 0) {
+    return false;
+  }
+  return !e_ns(ctx, element, &ns) || (ns.length == sizeof XHTML_NS - 1 && memcmp(ns.data, XHTML_NS, ns.length) == 0);
+}
+
 static bool s_eq(const char * a, size_t an, const char * b, size_t bn, bool ci) {
   if (an != bn) {
     return false;
@@ -304,18 +310,9 @@ static bool in_ci_list(const char * name, size_t n) {
   return false;
 }
 
-static bool match_attribute(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Simple * s, El e) {
-  const bool html = css_match_is_html(ctx, e);
-  GTEXT_CSS_String name = s->name;
-  char lower[128];
+/// Matching with `name`, already folded to lower case when the element is an HTML element and the selector has no namespace.
+static bool match_attribute_named(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Simple * s, El e, GTEXT_CSS_String name, bool html) {
   const bool unnamespaced = s->ns_kind != GTEXT_CSS_NS_NAMED; // `*|name` is compared as the name of an attribute without a namespace is
-  if (html && unnamespaced && name.length < sizeof lower) {
-    for (size_t i = 0; i < name.length; i++) {
-      lower[i] = (char)css_sel_lower((unsigned char)name.data[i]);
-    }
-    lower[name.length] = '\0';
-    name.data = lower;
-  }
   GTEXT_CSS_String nsstr;
   const GTEXT_CSS_String * ns = NULL;
   if (s->ns_kind == GTEXT_CSS_NS_ANY) {
@@ -389,6 +386,31 @@ static bool match_attribute(struct GTEXT_CSS_Selector_Match_Context * ctx, const
     return false;
   default: return false;
   }
+}
+
+static bool match_attribute(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Simple * s, El e) {
+  const bool html = css_match_is_html(ctx, e);
+  GTEXT_CSS_String name = s->name;
+  if (!html || s->ns_kind == GTEXT_CSS_NS_NAMED) {
+    return match_attribute_named(ctx, s, e, name, html);
+  }
+  char small[128];
+  char * heap = NULL, * lower = small;
+  if (name.length >= sizeof small) { // a name of any length is folded: the buffer is as long as the name
+    heap = gtext_allocator_malloc(&ctx->alloc, name.length + 1);
+    if (!heap) {
+      return css_match_fail(ctx, GTEXT_CSS_E_OOM);
+    }
+    lower = heap;
+  }
+  for (size_t i = 0; i < name.length; i++) {
+    lower[i] = (char)css_sel_lower((unsigned char)name.data[i]);
+  }
+  lower[name.length] = '\0';
+  name.data = lower;
+  const bool r = match_attribute_named(ctx, s, e, name, html);
+  gtext_allocator_free(&ctx->alloc, heap);
+  return r;
 }
 
 static bool match_nesting(struct GTEXT_CSS_Selector_Match_Context * ctx, El e) {
@@ -465,8 +487,12 @@ static bool eval_pseudo_class(struct GTEXT_CSS_Selector_Match_Context * ctx, con
   case GTEXT_CSS_SEL_PC_NTH_COL_FN:
   case GTEXT_CSS_SEL_PC_NTH_LAST_COL_FN: return false;
   case GTEXT_CSS_SEL_PC_DIR_FN: {
-    const GTEXT_CSS_Direction d = ctx->iface.direction(ctx->iface.user, e);
-    return (d == GTEXT_CSS_DIRECTION_RTL) == (s->strings[0].data[0] == 'r');
+    const GTEXT_CSS_String w = s->strings[0];
+    const bool ltr = w.length == 3 && memcmp(w.data, "ltr", 3) == 0, rtl = w.length == 3 && memcmp(w.data, "rtl", 3) == 0;
+    if (!ltr && !rtl) {
+      return false; // valid, and matches nothing
+    }
+    return (ctx->iface.direction(ctx->iface.user, e) == GTEXT_CSS_DIRECTION_RTL) == rtl;
   }
   case GTEXT_CSS_SEL_PC_LANG_FN: return css_match_lang(ctx, s, e);
   case GTEXT_CSS_SEL_PC_HEADING: return heading_level(ctx, e) != 0;
@@ -554,7 +580,8 @@ static bool is_featureless_host(struct GTEXT_CSS_Selector_Match_Context * ctx, E
 
 static bool host_allows(const GTEXT_CSS_Simple * s) {
   return s->kind == GTEXT_CSS_SIMPLE_NESTING ||
-      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS && (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN));
+      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS && (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN ||
+          s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN));
 }
 
 bool css_match_compound(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Compound * cmp, El element, size_t limit) {
@@ -604,19 +631,43 @@ bool css_match_any(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CS
   return false;
 }
 
-/// Whether a compound has `:host`, `:host()` or `:host-context()` among its simple selectors, or `&`, which may stand for a selector that has (the matching of `&` decides).
-bool css_compound_names_host(const GTEXT_CSS_Compound * cmp) {
+static bool list_names_host(const GTEXT_CSS_Selector_List * l, unsigned depth);
+
+/// Whether a compound has `:host`, `:host()` or `:host-context()` among its simple selectors, or `&`, which may stand for a selector that has (the matching of `&` decides), or a
+/// `:is()` or `:where()` one of whose selectors does (looked through to a fixed depth; deeper is taken as yes, which only offers the host to a compound that then fails).
+static bool compound_names_host_depth(const GTEXT_CSS_Compound * cmp, unsigned depth) {
   for (size_t i = 0; i < cmp->simple_count; i++) {
     const GTEXT_CSS_Simple * s = &cmp->simples[i];
     if (s->kind == GTEXT_CSS_SIMPLE_NESTING) {
       return true;
     }
-    if (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS &&
-        (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN)) {
+    if (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS) {
+      if (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN) {
+        return true;
+      }
+      if ((s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN) && list_names_host(s->list, depth + 1)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+static bool list_names_host(const GTEXT_CSS_Selector_List * l, unsigned depth) {
+  if (depth > 6) {
+    return true;
+  }
+  for (size_t i = 0; l && i < l->count; i++) {
+    const GTEXT_CSS_Complex * cx = &l->complex[i];
+    if (cx->compound_count && compound_names_host_depth(&cx->compounds[cx->compound_count - 1], depth)) {
       return true;
     }
   }
   return false;
+}
+
+bool css_compound_names_host(const GTEXT_CSS_Compound * cmp) {
+  return compound_names_host_depth(cmp, 0);
 }
 
 /// The parent of an element for the combinators of a selector read in a shadow tree: the tree parent, and above the top of the shadow tree the host, which only a compound that
@@ -624,8 +675,8 @@ bool css_compound_names_host(const GTEXT_CSS_Compound * cmp) {
 /// outer tree is reachable from inside one).
 static El parent_for(struct GTEXT_CSS_Selector_Match_Context * ctx, El e, const GTEXT_CSS_Compound * target) {
   El p = e_parent(ctx, e);
-  if (p && is_featureless_host(ctx, e)) {
-    return NULL; // the host is the top of the tree its shadow selectors see: `div :host` does not reach the host's own ancestors
+  if (is_featureless_host(ctx, e)) {
+    return NULL; // the host is the top of the tree its shadow selectors see: `div :host` does not reach the host's own ancestors, whether it has a parent or is itself the top of a shadow tree
   }
   if (p || !ctx->tree_scope || !HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST) || !css_compound_names_host(target)) {
     return p;
@@ -646,6 +697,11 @@ static bool exists_above(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
 bool css_match_chain(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Selector_List * list, const GTEXT_CSS_Complex * cx, size_t index, El element) {
   const GTEXT_CSS_Compound * cmp = &cx->compounds[index];
   const size_t limit = index == cx->compound_count - 1 ? cmp->first_pseudo_element : cmp->simple_count;
+  if (cx->compound_count == 1) {
+    // a selector of one compound has nothing to the left to share: the answer is as cheap to find again as to look up, and keeping it would cost an entry for each
+    // (selector, element) pair, which a list of ten thousand class selectors over a few hundred elements turns into the memo limit
+    return css_match_compound(ctx, cmp, element, limit) && ctx->status == GTEXT_CSS_OK;
+  }
   const void * aux = memo_aux_for(ctx, cx);
   css_memo_ent m;
   if (css_memo_get(ctx, list->uid, MK_M, (uint32_t)cmp->id, element, aux, &m)) {
@@ -761,7 +817,8 @@ bool css_match_complex_full(struct GTEXT_CSS_Selector_Match_Context * ctx, const
     if (!HAVE(ctx, GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT)) {
       return css_match_missing(ctx, GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT);
     }
-    El s = slot ? slot : ctx->iface.assigned_slot(ctx->iface.user, element);
+    // "the elements assigned, after flattening, to a slot": a `slot` of a shadow tree that is assigned to another slot is replaced by what is assigned to it
+    El s = slot ? slot : (css_match_is_shadow_slot(ctx, element) ? NULL : ctx->iface.assigned_slot(ctx->iface.user, element));
     if (!s || !css_match_any(ctx, first->list, element) || ctx->status != GTEXT_CSS_OK) {
       return false;
     }
@@ -842,7 +899,6 @@ static void begin_call(struct GTEXT_CSS_Selector_Match_Context * ctx) {
   ctx->missing = NULL;
   ctx->unsupported = NULL;
   ctx->ctr.work = 0;
-  ctx->has_count = 0;
 }
 
 static GTEXT_CSS_Status finish_call(struct GTEXT_CSS_Selector_Match_Context * ctx, GTEXT_CSS_Selector_Match_Result * result, bool matched, size_t index,

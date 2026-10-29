@@ -96,6 +96,7 @@ struct GTEXT_CSS_Rule_Index {
   size_t total;
   uint64_t seed;
   bool frozen, failed, has_shadow;
+  bool has_part; ///< some sheet, a document's too, has a rule ending in `::part()`: it reaches into shadow trees whether or not one has a sheet of its own
 };
 
 GTEXT_CSS_Rule_Index_Options gtext_css_rule_index_options_default(void) {
@@ -490,10 +491,14 @@ static GTEXT_CSS_Status bucket_record(GTEXT_CSS_Rule_Index * x, group * g, uint3
     return vpush(a, &g->slotted, ei) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
   }
   if (r->flags & REC_PART) {
+    x->has_part = true;
     return vpush(a, &g->part, ei) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
   }
   if (r->flags & REC_HOST) {
     return vpush(a, &g->host, ei) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  if (g->shadow && css_compound_names_host(last) && !vpush(a, &g->host, ei)) { // the host may be the subject without a :host beside the rest (`:is(:host)`, a nested `&`): tried there, and as usual below
+    return GTEXT_CSS_E_OOM;
   }
   const GTEXT_CSS_Simple *id = NULL, *cls = NULL, *type = NULL;
   for (size_t i = 0; i < last->first_pseudo_element; i++) {
@@ -647,9 +652,20 @@ typedef struct {
   bool scoped;
 } hit;
 
+/// Whether an element is a scoping root of a scope for the subject being collected: the answers of valid_root(), kept for the one subject, so that the nested scopes of a sheet cost
+/// the depth of the tree and not its power.
+typedef struct {
+  const placed * pl; ///< the placement (the same sheet placed twice has its own implicit root and tree scope)
+  const sheet_scope * sc;
+  const void * root;
+  uint8_t val; ///< 0 empty, 1 no, 2 yes
+} rootmemo;
+
 typedef struct {
   const GTEXT_CSS_Rule_Index * x;
   struct GTEXT_CSS_Selector_Match_Context * ctx;
+  rootmemo * rm;
+  size_t rm_cap, rm_used;
   El element;
   const GTEXT_CSS_Complex * request;
   hit * hits;
@@ -664,10 +680,74 @@ static El parent_of(struct GTEXT_CSS_Selector_Match_Context * ctx, El e) {
   return ctx->iface.parent(ctx->iface.user, e);
 }
 
+static size_t rm_hash(const placed * pl, const sheet_scope * sc, const void * r) {
+  uint64_t h = (uint64_t)(uintptr_t)sc * 0x9e3779b97f4a7c15ull ^ (uint64_t)(uintptr_t)r * 0xc2b2ae3d27d4eb4full ^ (uint64_t)(uintptr_t)pl * 0xff51afd7ed558ccdull;
+  h ^= h >> 29;
+  return (size_t)h;
+}
+
+static uint8_t rm_get(const walk * w, const placed * pl, const sheet_scope * sc, const void * r) {
+  if (!w->rm_cap) {
+    return 0;
+  }
+  for (size_t i = rm_hash(pl, sc, r) & (w->rm_cap - 1);; i = (i + 1) & (w->rm_cap - 1)) {
+    const rootmemo * e = &w->rm[i];
+    if (!e->val) {
+      return 0;
+    }
+    if (e->pl == pl && e->sc == sc && e->root == r) {
+      return e->val;
+    }
+  }
+}
+
+static void rm_put(walk * w, const placed * pl, const sheet_scope * sc, const void * r, uint8_t val) {
+  if ((w->rm_used + 1) * 2 > w->rm_cap) {
+    const size_t ncap = w->rm_cap ? w->rm_cap * 2 : 64;
+    rootmemo * n = gtext_allocator_calloc(&w->ctx->alloc, ncap, sizeof *n);
+    if (!n) {
+      css_match_fail(w->ctx, GTEXT_CSS_E_OOM);
+      return;
+    }
+    for (size_t k = 0; k < w->rm_cap; k++) {
+      if (w->rm[k].val) {
+        size_t i = rm_hash(w->rm[k].pl, w->rm[k].sc, w->rm[k].root) & (ncap - 1);
+        while (n[i].val) {
+          i = (i + 1) & (ncap - 1);
+        }
+        n[i] = w->rm[k];
+      }
+    }
+    gtext_allocator_free(&w->ctx->alloc, w->rm);
+    w->rm = n;
+    w->rm_cap = ncap;
+  }
+  size_t i = rm_hash(pl, sc, r) & (w->rm_cap - 1);
+  while (w->rm[i].val) {
+    i = (i + 1) & (w->rm_cap - 1);
+  }
+  w->rm[i] = (rootmemo){pl, sc, r, val};
+  w->rm_used++;
+}
+
+static bool valid_root_compute(walk * w, const placed * pl, const sheet_scope * sc, El r, El x);
+
 /// Whether `r` is a scoping root of `sc` for the element `x` (`r` is an inclusive ancestor of `x`): it matches the start, and nothing on the way from `x` up to `r` is a scoping
 /// limit. The start of an `@scope` inside another is read with `:scope` (and so `&`) an outer root that `r` is inside, any that makes it match (an iteration up the ancestors, and
 /// a recursion only as deep as the nesting of the scopes, which is bounded).
 static bool valid_root(walk * w, const placed * pl, const sheet_scope * sc, El r, El x) {
+  const uint8_t known = rm_get(w, pl, sc, r);
+  if (known) {
+    return known == 2;
+  }
+  const bool v = valid_root_compute(w, pl, sc, r, x);
+  if (w->ctx->status == GTEXT_CSS_OK) {
+    rm_put(w, pl, sc, r, v ? 2 : 1);
+  }
+  return v;
+}
+
+static bool valid_root_compute(walk * w, const placed * pl, const sheet_scope * sc, El r, El x) {
   struct GTEXT_CSS_Selector_Match_Context * ctx = w->ctx;
   bool started = false;
   if (!sc->start) {
@@ -683,7 +763,7 @@ static bool valid_root(walk * w, const placed * pl, const sheet_scope * sc, El r
       if (!css_match_work(ctx)) {
         return false;
       }
-      if (!valid_root(w, pl, sc->parent, outer, r)) {
+      if (!valid_root(w, pl, sc->parent, outer, x)) { // the subject is what the outer limit is about, not the inner root
         if (ctx->status != GTEXT_CSS_OK) {
           return false;
         }
@@ -703,7 +783,7 @@ static bool valid_root(walk * w, const placed * pl, const sheet_scope * sc, El r
   if (sc->end) {
     ctx->scope = r;
     ctx->nest = NULL;
-    for (El y = x; y && y != r; y = ctx->iface.parent(ctx->iface.user, y)) {
+    for (El y = x; y; y = y == r ? NULL : ctx->iface.parent(ctx->iface.user, y)) { // up to and including the root: a limit that matches the root (`to (:scope)`) leaves nothing in scope
       if (!css_match_work(ctx)) {
         return false;
       }
@@ -922,6 +1002,10 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   if (gtext_css_candidates_sealed(set)) {
     return ires(res, GTEXT_CSS_E_INVALID, NULL, "the candidate set is sealed");
   }
+  if (ctx->opt.html_document != x->opt.html_document || ctx->opt.quirks != x->opt.quirks) {
+    // the buckets are keyed with the index's folding; a context that folds otherwise would look in the wrong bucket and find no rule, silently
+    return ires(res, GTEXT_CSS_E_INVALID, "options", "html_document and quirks of the match context are not those of the index");
+  }
   walk w;
   memset(&w, 0, sizeof w);
   w.x = x;
@@ -941,7 +1025,6 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   ctx->missing = NULL;
   ctx->unsupported = NULL;
   ctx->ctr.work = 0;
-  ctx->has_count = 0;
   const size_t considered = ctx->ctr.rules_considered;
   bool missing = false;
   group * g0 = group_of(x, ctx, element, &missing);
@@ -951,6 +1034,13 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   }
   if (w.status == GTEXT_CSS_OK && g0) {
     (void)test_group(&w, g0);
+    /* `:host::part(x)` of the shadow tree's own sheet styles the parts of the host the element is in */
+    if (w.status == GTEXT_CSS_OK && g0->shadow && g0->part.n && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {
+      El own = ctx->iface.containing_host(ctx->iface.user, element);
+      if (own) {
+        (void)test_list(&w, &g0->part, NULL, own, g0->scope);
+      }
+    }
   }
   /* the shadow tree the element is the host of: its `:host` rules */
   if (w.status == GTEXT_CSS_OK && x->has_shadow && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE)) {
@@ -962,7 +1052,7 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   }
   /* the slots the element is assigned to, and the slots those are assigned to: the `::slotted()` rules of the shadow tree of each (the flat tree's chain) */
   if (w.status == GTEXT_CSS_OK && x->has_shadow && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT)) {
-    for (El slot = ctx->iface.assigned_slot(ctx->iface.user, element); slot && w.status == GTEXT_CSS_OK; slot = ctx->iface.assigned_slot(ctx->iface.user, slot)) {
+    for (El slot = css_match_is_shadow_slot(ctx, element) ? NULL : ctx->iface.assigned_slot(ctx->iface.user, element); slot && w.status == GTEXT_CSS_OK; slot = ctx->iface.assigned_slot(ctx->iface.user, slot)) {
       bool m2 = false;
       group * gl = group_of(x, ctx, slot, &m2);
       if (gl && gl->shadow) {
@@ -974,7 +1064,7 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
     }
   }
   /* the hosts above the element: the `::part()` rules of the scope each host is in */
-  if (w.status == GTEXT_CSS_OK && x->has_shadow && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {
+  if (w.status == GTEXT_CSS_OK && x->has_part && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {
     for (El h = ctx->iface.containing_host(ctx->iface.user, element); h && w.status == GTEXT_CSS_OK; h = ctx->iface.containing_host(ctx->iface.user, h)) {
       bool m2 = false;
       group * gh = group_of(x, ctx, h, &m2);
@@ -995,6 +1085,7 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
   }
   if (st != GTEXT_CSS_OK) {
     gtext_allocator_free(&ctx->alloc, w.hits);
+    gtext_allocator_free(&ctx->alloc, w.rm);
     return ires(res, st, ctx->missing ? ctx->missing : (ctx->unsupported ? ctx->unsupported : NULL),
         st == GTEXT_CSS_E_UNSUPPORTED ? "a callback the sheets need is absent from the element interface" : NULL);
   }
@@ -1046,6 +1137,7 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
     }
   }
   gtext_allocator_free(&ctx->alloc, w.hits);
+  gtext_allocator_free(&ctx->alloc, w.rm);
   (void)added;
   if (st != GTEXT_CSS_OK && res && res->status == GTEXT_CSS_OK) {
     ires(res, st, NULL, NULL);

@@ -7,14 +7,16 @@ A population is a pure function of the seed and the count: the same arguments ma
 
     {"name", "text", "shadows": [[host id, html], ...], "queries": [[id, [property, ...]], ...], "selectors": [selector, ...]}
 
-`text` is an HTML document in standards mode with a `<style>` element in its head and a tree of ten to twenty elements in a wrapper; `shadows` are the shadow trees of
+`text` is an HTML document (in quirks mode for one in five: no doctype) with a `<style>` element in its head and a tree of ten to twenty elements in a wrapper; `shadows` are the shadow trees of
 some of the elements (a custom element `x-host`, whose shadow tree has slots, parts and its own `<style>`); `queries` are the five properties asked of each element
 (`color`, `background-color`, `margin-top`, `margin-left`, `padding-left`: none has a user agent value on the tags the tree uses, and the first inherits); `selectors` are
 the selectors `document.querySelectorAll()` is asked, valid and not.
 
 What the sheets hold: rules over selectors of every form (types, ids, classes, attribute selectors, the structural, logical and relational pseudo-classes), nested rules
 with and without `&`, `@layer` statements and blocks, `@scope` with and without a limit, conditional groups whose conditions are in the table of css_sheet_ours.cpp,
-`!important`, and in a shadow tree `:host`, `:host()` and `::slotted()`, and in the outer sheet `::part()`.
+`!important`, and in a shadow tree `:host`, `:host()`, `::slotted()`, `:is(:host)`, `:host::part()` and `&` under `:host`, and in the outer sheet `::part()`. Also: class and id
+spellings that differ in case (they match in quirks mode only), `dir` attributes and `:dir()`, an inline `<svg>` with `@namespace` and `svg|a`, `:scope` inside the arguments of
+pseudo-classes in an `@scope`, an `@scope` inside an `@scope` with a limit, shadow trees inside shadow trees, and slots that are assigned to slots.
 """
 
 import argparse
@@ -40,6 +42,8 @@ class Gen:
         self.index = index
         self.elements = []  # (id, tag, classes, ...)
         self.next_id = 0
+        self.has_svg = self.r.randrange(4) == 0
+        self.quirks = self.r.randrange(5) == 0
 
     # ---- selectors ----------------------------------------------------------------------------------------------------
     def simple(self, depth):
@@ -49,9 +53,9 @@ class Gen:
         if k < 24:
             return r.choice(TAGS)
         if k < 50:
-            return "." + r.choice(CLASSES)
+            return "." + (r.choice(CLASSES) if r.randrange(8) else r.choice(["C1", "C2", "c1", "C0"]))
         if k < 54:
-            return "#" + r.choice(ids)
+            return "#" + (r.choice(ids) if r.randrange(8) else r.choice(ids).upper())
         if k < 62:
             return r.choice(["[data-k]", "[data-k=x]", "[data-k~=y]", "[data-k^=x]", "[data-k$=y]", "[data-k|=x]", "[data-k*=-]", "[data-k=X i]"])
         if k < 68:
@@ -60,7 +64,10 @@ class Gen:
             return r.choice([":nth-child(2n+1)", ":nth-child(even)", ":nth-last-child(2)", ":nth-of-type(2)", ":nth-last-of-type(1)", ":first-of-type", ":last-of-type",
                              ":only-of-type", ":nth-child(odd of .c1)", ":nth-child(-n+3)", ":nth-last-child(2n of .c0, .c2)"])
         if k < 77:
-            return r.choice([":lang(en)", ":lang(de)", ":lang(de-CH)", ":lang(\"*-CH\")", ":checked", ":disabled", ":enabled", ":required"])
+            return r.choice([":lang(en)", ":lang(de)", ":lang(de-CH)", ":lang(\"*-CH\")", ":checked", ":disabled", ":enabled", ":required", ":dir(rtl)", ":dir(ltr)", ":dir(ltr)",
+                             ":not(:dir(rtl))", ":dir(foo)"])
+        if depth == 0 and k < 78:
+            return r.choice(["svg|a", "*|a", "svg|*", "|div", "*|div", "a"])
         if depth == 0 and k < 82:
             return ":not(%s)" % self.compound(1)
         if depth == 0 and k < 87:
@@ -106,9 +113,11 @@ class Gen:
         r = self.r
         if host_rules:
             sel = r.choice([":host", ":host(.c0)", ":host(.c1)", "::slotted(span)", "::slotted(.c1)", "::slotted(*)", ".in", "span", ".in + .in", ":host > *", "slot",
-                            ":host.c0", ":host:not(.c1)", "div :host", ":host(.c0).c1", ":host :host-context(div)", ":host .in", ":host > span", "x-host"])
+                            ":host.c0", ":host:not(.c1)", "div :host", ":host(.c0).c1", ":host :host-context(div)", ":host .in", ":host > span", "x-host",
+                            ":is(:host)", ":where(:host) > span", ":is(:host, .zz)", ":is(:host(.c0), .zz)", ":host::part(a)", ":host(.c0)::part(b)", ":host-context(.c0)",
+                            ":is(:host) > *", ":host-context(.c1) .in"])
         elif nested:
-            sel = r.choice(["& .c1", "& > span", ".c2 &", "&.c0", "> i", "+ div", "~ .c3", ".c1", "span", ":is(.c0, .c2) &", "& & ", "&:not(.c1)", "div &"])
+            sel = r.choice(["& .c1", "& > span", "& span", "&::part(a)", "&", "& &", ".c2 &", "&.c0", "> i", "+ div", "~ .c3", ".c1", "span", ":is(.c0, .c2) &", "& & ", "&:not(.c1)", "div &"])
         else:
             sel = self.selector_list(0, 2)
         body = self.declarations()
@@ -135,6 +144,13 @@ class Gen:
             if r.randrange(3) == 0:
                 # a selector whose subject is beside the scoping root, not inside it: is it in scope? (Cascade 6, 2.3: "only the selector's subject must be in scope")
                 inner += " " + r.choice([":scope + *", ":scope ~ .c1", "& + div", ":scope ~ *", "& + .c0 + *"]) + " { %s }" % self.declarations()
+            if r.randrange(3) == 0:
+                inner += " " + r.choice([":is(:scope) > *", ":not(:scope) + *", "*:has(:scope)", ":where(:scope) .c1", ":is(&, .c2) > span", "div:not(:scope)",
+                                         "p:is(:scope *)", ":scope:is(.c0)", "& :is(:scope, .c3)"]) + " { %s }" % self.declarations()
+            if r.randrange(4) == 0:
+                # a scope inside a scope with a limit: the roots of the inner are inside the outer, and the outer limit applies to the subject
+                inner += " @scope (%s) to (%s) { %s { %s } }" % (self.compound(1), self.compound(1), self.r.choice(["*", "span", ".c1", "& > *", ":scope > div"]), self.declarations())
+                return "@scope (%s) to (%s) { %s }" % (self.compound(1), self.compound(1), inner)
             if r.randrange(2):
                 return "@scope (%s) to (%s) { %s }" % (self.compound(1), self.compound(1), inner)
             return "@scope (%s) { %s }" % (start if len(start) < 40 else ".c0", inner)
@@ -147,8 +163,16 @@ class Gen:
         parts = []
         if r.randrange(3) == 0:
             parts.append("@layer %s;" % ", ".join(r.sample(["a", "b", "c"], r.randrange(1, 4))))
+        if not host_rules and self.has_svg and r.randrange(2):
+            parts.append("@namespace svg url(http://www.w3.org/2000/svg);")
         for _ in range(r.randrange(3, 9)):
             parts.append(self.group(0, host_rules))
+        if not host_rules and self.elements and r.randrange(3) == 0:
+            # a rule whose list holds a general and a specific selector that both match one element, and a later rule for the general one: the rule has the specificity of the
+            # most specific selector that matches, so the first wins at that element (Selectors 4, 17)
+            e = r.choice([x for x in self.elements if not x.get("host") and not x.get("shadow") and not x.get("no_query")] or self.elements)
+            parts.append("%s, #%s { %s: %s }" % (e["tag"], e["id"], "color", r.choice(COLORS)))
+            parts.append("%s { %s: %s }" % (e["tag"], "color", r.choice(COLORS)))
         return "\n".join(parts)
 
     # ---- the tree -----------------------------------------------------------------------------------------------------
@@ -160,12 +184,16 @@ class Gen:
         r = self.r
         attrs = ' id="%s"' % e["id"]
         if e["classes"]:
-            attrs += ' class="%s"' % " ".join(e["classes"])
+            # a spelling that differs in case matches `.c1` in quirks mode only
+            attrs += ' class="%s"' % " ".join(c.upper() if r.randrange(6) == 0 else c for c in e["classes"])
         if r.randrange(4) == 0:
             e["data"] = r.choice(DATA)
             attrs += ' data-k="%s"' % e["data"]
         if r.randrange(8) == 0:
             attrs += ' lang="%s"' % r.choice(LANGS)
+        if r.randrange(9) == 0:
+            e["dir"] = r.choice(["rtl", "ltr", "auto", "auto", "bogus"])
+            attrs += ' dir="%s"' % e["dir"]
         return attrs
 
     def make_children(self, parent_ids, depth, slots=None):
@@ -174,15 +202,18 @@ class Gen:
         for _ in range(r.randrange(0, 4 if depth else 5)):
             e = {"id": self.new_id(), "tag": r.choice(TAGS), "classes": r.sample(CLASSES, r.randrange(0, 3))}
             self.elements.append(e)
+            attrs = self.element_attrs(e["tag"], e)
             body = ""
             if depth < 3 and r.randrange(10) < 5:
                 body = self.make_children(parent_ids + [e["id"]], depth + 1)
             elif r.randrange(3) == 0:
                 body = "t"
+            if e.get("dir") == "auto" and r.randrange(2):
+                body = "\u05d0" + body  # a Hebrew letter: the first strong character, so the direction is rtl
             extra = ""
             if slots and r.randrange(3) == 0:
                 extra = ' slot="%s"' % r.choice(slots)
-            out += "<%s%s%s>%s</%s>" % (e["tag"], self.element_attrs(e["tag"], e), extra, body, e["tag"])
+            out += "<%s%s%s>%s</%s>" % (e["tag"], attrs, extra, body, e["tag"])
             if r.randrange(12) == 0:
                 inp = {"id": self.new_id(), "tag": "input", "classes": [], "no_query": True}
                 self.elements.append(inp)
@@ -203,6 +234,7 @@ class Gen:
             self.elements.append({"id": "e0", "tag": "div", "classes": []})
         # hosts: elements appended after the generated tree, each with light children (some slotted) and a shadow tree
         host_html = ""
+        nested_shadows = []
         for _ in range(n_hosts):
             hid = self.new_id()
             e = {"id": hid, "tag": "x-host", "classes": r.sample(CLASSES, r.randrange(0, 3)), "host": True}
@@ -222,13 +254,47 @@ class Gen:
                 el = {"id": sid, "tag": "span", "classes": cls.split() if cls else [], "shadow": True}
                 self.elements.append(el)
                 inner += '<span id="%s"%s%s>%s</span>' % (sid, ' class="%s"' % cls if cls else "", part, r.choice(["t", ""]))
+            # a shadow tree inside the shadow tree: an inner host whose light children are in this tree (some are slots, assigned to the slots of the inner tree)
+            if r.randrange(3) == 0:
+                iid = self.new_id()
+                ie = {"id": iid, "tag": "x-host", "classes": r.sample(CLASSES, r.randrange(0, 2)), "host": True, "shadow": True}
+                self.elements.append(ie)
+                inames = ["n1"] if r.randrange(2) else []
+                ilight = ""
+                for _ in range(r.randrange(0, 3)):
+                    lid = self.new_id()
+                    kind = r.choice(["slot", "slot", "span"])
+                    lel = {"id": lid, "tag": kind, "classes": r.sample(CLASSES, r.randrange(0, 2)), "shadow": True}
+                    self.elements.append(lel)
+                    lcls = ' class="%s"' % " ".join(lel["classes"]) if lel["classes"] else ""
+                    lslot = ' slot="%s"' % r.choice(inames) if inames and r.randrange(2) else ""
+                    lname = ' name="n1"' if kind == "slot" and names and r.randrange(2) else ""
+                    ilight += '<%s id="%s"%s%s%s>%s</%s>' % (kind, lid, lcls, lslot, lname, "t" if kind == "span" else "", kind)
+                inner += '<x-host id="%s"%s>%s</x-host>' % (iid, ' class="%s"' % " ".join(ie["classes"]) if ie["classes"] else "", ilight)
+                iinner = "<slot></slot>" + ('<slot name="n1"></slot>' if inames else "")
+                for _ in range(r.randrange(1, 3)):
+                    sid = self.new_id()
+                    part = r.choice(["", ' part="a"', ' part="b"'])
+                    se = {"id": sid, "tag": "span", "classes": ["in"], "shadow": True}
+                    self.elements.append(se)
+                    iinner += '<span id="%s" class="in"%s>t</span>' % (sid, part)
+                inner_sheet = "<style>%s</style>" % self.sheet(host_rules=True)
+                nested_shadows.append([iid, inner_sheet + iinner])
             style = "<style>%s</style>" % self.sheet(host_rules=True)
             shadows.append([hid, style + inner])
             host_html += '<x-host id="%s"%s>%s</x-host>' % (hid, ' class="%s"' % " ".join(e["classes"]) if e["classes"] else "", light)
+        shadows += nested_shadows
+        svg = ""
+        if self.has_svg:
+            sid, aid = self.new_id(), self.new_id()
+            self.elements.append({"id": sid, "tag": "svg", "classes": ["c1"]})
+            self.elements.append({"id": aid, "tag": "a", "classes": ["c0"]})
+            svg = '<svg id="%s" class="c1"><a id="%s" class="c0"></a></svg>' % (sid, aid)
         sheet = self.sheet()
         if n_hosts and r.randrange(2):
             sheet += "\nx-host::part(%s) { %s }" % (r.choice(["a", "b", "a b"]), self.declarations())
-        text = ("<!doctype html><html><head><title>t</title><style>\n%s\n</style></head><body><div id=\"w\">%s%s</div></body></html>" % (sheet, body, host_html))
+        doctype = "" if self.quirks else "<!doctype html>"
+        text = ("%s<html><head><title>t</title><style>\n%s\n</style></head><body><div id=\"w\">%s%s%s</div></body></html>" % (doctype, sheet, body, host_html, svg))
         queries = []
         for e in self.elements:
             if e.get("no_query"):

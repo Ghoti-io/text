@@ -445,7 +445,9 @@ TEST(CssSelectorSimple, LangDirHeadingAndStateArguments) {
   EXPECT_EQ(written(":lang(1)"), "INVALID");
   EXPECT_EQ(written(":lang(en,)"), "INVALID");
   EXPECT_EQ(written(":dir(LTR)"), ":dir(ltr)");
-  EXPECT_EQ(written(":dir(up)"), "INVALID");
+  EXPECT_EQ(written(":dir(up)"), ":dir(up)") << "an identifier is valid, and matches nothing";
+  EXPECT_EQ(written(":dir(1)"), "INVALID");
+  EXPECT_EQ(written(":dir(ltr, rtl)"), "INVALID");
   EXPECT_EQ(written(":heading(1, 2)"), ":heading(1, 2)");
   EXPECT_EQ(written(":heading(1.5)"), "INVALID");
   EXPECT_EQ(written(":state(--foo)"), ":state(--foo)");
@@ -618,6 +620,28 @@ TEST(CssSelectorLimits, EachLimitIsItsOwnStatusAndNoListComesOfIt) {
   EXPECT_EQ(l, nullptr);
   EXPECT_GT(r.failure.end, 0u) << "the limit has a place";
   gtext_css_selector_result_free(&r);
+  o = gtext_css_selector_options_default();
+  {
+    // a complex selector of 200,000 compounds is a limit and not a stack overflow in the matcher that would recurse once per compound
+    std::string chain = "a";
+    for (int i = 0; i < 200000; i++) {
+      chain += i % 2 ? " > a" : " a";
+    }
+    EXPECT_EQ(gtext_css_selector_parse(chain.data(), chain.size(), &o, &l, &r), GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS);
+    EXPECT_EQ(l, nullptr);
+    gtext_css_selector_result_free(&r);
+    std::string ok = "a";
+    for (size_t i = 1; i < o.max_compounds; i++) {
+      ok += " a";
+    }
+    EXPECT_EQ(gtext_css_selector_parse(ok.data(), ok.size(), &o, &l, &r), GTEXT_CSS_OK) << "exactly max_compounds compounds is allowed";
+    gtext_css_selector_list_free(l);
+    l = nullptr;
+    gtext_css_selector_result_free(&r);
+    ok += " a";
+    EXPECT_EQ(gtext_css_selector_parse(ok.data(), ok.size(), &o, &l, &r), GTEXT_CSS_E_LIMIT_SELECTOR_COMPONENTS);
+    gtext_css_selector_result_free(&r);
+  }
   o = gtext_css_selector_options_default();
   o.max_list = 3;
   EXPECT_EQ(gtext_css_selector_parse("a,b,c,d", 7, &o, &l, &r), GTEXT_CSS_E_LIMIT_SELECTOR_LIST);

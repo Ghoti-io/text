@@ -25,6 +25,7 @@
 //
 // Input, one tab-separated line each (a field escapes backslash, line feed and tab as \\, \n, \t; a list of attributes is `name RS value` pairs joined by US):
 //
+//   Q QUIRKS                                            1 when the document is in quirks mode (class and id compare ignoring ASCII case), else 0
 //   T INDEX PARENT LOCAL ID CLASSES ATTRIBUTES TEXT     an element, in document order: PARENT is -1 for the root; TEXT is 1 when it has a non-empty text child
 //   Z SELECTOR                                          a selector to parse and match against every element
 //   X                                                   answer every Z, then forget the tree
@@ -367,7 +368,7 @@ fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t")
 }
 
-fn answer(nodes: Vec<Node>, selectors: &[String], out: &mut impl Write) {
+fn answer(nodes: Vec<Node>, selectors: &[String], quirks: bool, out: &mut impl Write) {
     let tree = Rc::new(Tree { nodes });
     for sel in selectors {
         let parser = P { nonts: std::cell::Cell::new(false) };
@@ -394,7 +395,7 @@ fn answer(nodes: Vec<Node>, selectors: &[String], out: &mut impl Write) {
                 MatchingMode::Normal,
                 None,
                 &mut caches,
-                QuirksMode::NoQuirks,
+                if quirks { QuirksMode::Quirks } else { QuirksMode::NoQuirks },
                 NeedsSelectorFlags::No,
                 MatchingForInvalidation::No,
             );
@@ -418,6 +419,7 @@ fn main() {
     let mut out = stdout.lock();
     let mut nodes: Vec<Node> = Vec::new();
     let mut selectors: Vec<String> = Vec::new();
+    let mut quirks = false;
     for line in stdin.lock().lines() {
         let line = line.unwrap();
         let f: Vec<&str> = line.split('\t').collect();
@@ -449,10 +451,12 @@ fn main() {
                 }
                 nodes.push(node);
             }
+            "Q" if f.len() == 2 => quirks = f[1] == "1",
             "Z" if f.len() == 2 => selectors.push(unesc(f[1])),
             "X" => {
-                answer(std::mem::take(&mut nodes), &selectors, &mut out);
+                answer(std::mem::take(&mut nodes), &selectors, quirks, &mut out);
                 selectors.clear();
+                quirks = false;
                 out.flush().unwrap();
             }
             _ => {}

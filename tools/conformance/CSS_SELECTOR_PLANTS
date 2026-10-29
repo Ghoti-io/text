@@ -22,7 +22,7 @@ has-memo-not-keyed-by-step	css_match_has.c	  css_memo_put(ctx, list->uid, MK_G, 
 has-memo-not-keyed-by-step	css_match_has.c	  if (css_memo_get(ctx, list->uid, MK_G, (uint32_t)cmp->id, y, aux, &m)) {	  if (css_memo_get(ctx, list->uid, MK_G, 0, y, aux, &m)) {	match
 has-descendant-walk-is-not-kept	css_match_has.c	      if (!css_memo_put(ctx, list->uid, MK_H, step, f->node, aux, val ? 2 : 1, 0, 0)) {	      if (0) {	match-cost
 nth-of-s-ignores-s-in-matching	css_match_nth.c	      m = css_match_any(ctx, s, x) ? 1 : 0;	      m = 1;	match
-nth-positions-are-not-kept	css_match_nth.c	  if (css_memo_get(ctx, uid, kind, step, e, NULL, &m)) {	  if (0) {	match-cost
+nth-positions-are-not-kept	css_match_nth.c	  if (css_memo_get(ctx, uid, kind, step, e, aux, &m)) {	  if (0) {	match-cost
 case-rules-swapped-for-xml	css_match.c	  return s_eq(s->name.data, s->name.length, ln.data, ln.length, css_match_is_html(ctx, e));	  return s_eq(s->name.data, s->name.length, ln.data, ln.length, !css_match_is_html(ctx, e));	match
 dash-match-is-a-prefix-in-matching	css_match.c	    return v.length > wn && v.data[wn] == '-' && s_eq(v.data, wn, w, wn, ci);	    return v.length >= wn && s_eq(v.data, wn, w, wn, ci);	match
 the-i-flag-is-ignored-in-matching	css_match.c	  case GTEXT_CSS_ATTR_CASE_INSENSITIVE: ci = true; break;	  case GTEXT_CSS_ATTR_CASE_INSENSITIVE: ci = false; break;	match
@@ -57,3 +57,41 @@ sheet-a-pseudo-element-parent-is-everything	css_match.c	    if (cx->never || cx-
 sheet-a-nested-scope-is-not-inside-the-outer-root	css_sheet.c	st = parse_selector(b, sv, sn, cur->relative, cur->decl_ctx == 2, rule->span, &start);	st = parse_selector(b, sv, sn, false, false, rule->span, &start);	sheet
 fuzz-selector-compound-list-reads-past-the-tokens	css_selector_parse.c	v[b > a ? b - 1 : a - 1].span	v[b - (b > a ? 1 : 0)].span	selector-seeds
 sheet-the-host-is-not-featureless	css_match.c	  return ctx->tree_scope && !ctx->host_arg && HAVE(ctx, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE) && ctx->iface.shadow_scope(ctx->iface.user, element) == ctx->tree_scope;	  return false;	sheet
+scope-in-has-is-the-anchor	css_match_has.c	    const bool r = ex(ctx, list, rc, 0, anchor, aux);	    const void * planted_scope = ctx->scope;\n    ctx->scope = anchor;\n    const bool r = ex(ctx, list, rc, 0, anchor, aux);\n    ctx->scope = planted_scope;	match
+sheet-host-look-through-is-and-where	css_match.c	if ((s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN) && list_names_host(s->list, depth + 1)) {	if (0 && list_names_host(s->list, depth + 1)) {	sheet
+featureless-host-forbids-is	css_match.c	          s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN));	          0));	sheet
+featureless-host-forbids-nesting	css_match.c	  return s->kind == GTEXT_CSS_SIMPLE_NESTING ||\n      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS	  return\n      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS	sheet
+host-subject-is-not-tried-as-the-host	css_rule_index.c	  if (g->shadow && css_compound_names_host(last) && !vpush(a, &g->host, ei)) {	  if (0 && g->shadow && css_compound_names_host(last) && !vpush(a, &g->host, ei)) {	sheet
+own-host-part-rules-are-not-tried	css_rule_index.c	if (w.status == GTEXT_CSS_OK && g0->shadow && g0->part.n && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {	if (0 && w.status == GTEXT_CSS_OK && g0->shadow && g0->part.n && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {	sheet
+nested-scope-ignores-the-outer-limit-for-the-subject	css_rule_index.c	if (!valid_root(w, pl, sc->parent, outer, x)) {	if (!valid_root(w, pl, sc->parent, outer, outer)) {	sheet
+scope-limit-skips-the-root	css_rule_index.c	for (El y = x; y; y = y == r ? NULL : ctx->iface.parent(ctx->iface.user, y)) {	for (El y = x; y && y != r; y = ctx->iface.parent(ctx->iface.user, y)) {	sheet
+nth-of-s-positions-ignore-the-scope	css_match_nth.c	const void * aux = mode == 1 ? (ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope) : NULL;	const void * aux = NULL;	sheet
+scope-root-memo-is-dropped	css_rule_index.c	  if (w->ctx->status == GTEXT_CSS_OK) {\n    rm_put(w, pl, sc, r, v ? 2 : 1);	  if (0) {\n    rm_put(w, pl, sc, r, v ? 2 : 1);	sheet-cost
+multi-root-query-ignores-a-stop	../markup/markup_query.c	c && st == GTEXT_CSS_OK && e.status == GTEXT_CSS_OK && !e.stopped;	c && st == GTEXT_CSS_OK && e.status == GTEXT_CSS_OK;	match
+compounds-are-unbounded	css_selector_parse.c	if (p->compounds.len - cbase >= p->max_compounds) {	if (0 && p->compounds.len - cbase >= p->max_compounds) {	selector
+nth-of-type-scans-for-the-type	css_match_nth.c	for (size_t h = t.hash & (nslots - 1);; h = (h + 1) & (nslots - 1)) {	for (size_t h = 0;; h = (h + 1) & (nslots - 1)) {	match-cost
+dir-auto-is-read-for-each-child	css_markup.c	  if (ent->node == p) {\n    return ent->rtl;\n  }	  if (0) {\n    return ent->rtl;\n  }	match
+dir-unknown-word-matches-ltr	css_match.c	    if (!ltr && !rtl) {\n      return false; // valid, and matches nothing\n    }		match
+bdi-is-not-auto	css_markup.c	strcmp(gtext_markup_element_local_name(p), "bdi") == 0) {\n      return auto_dir	0) {\n      return auto_dir	match
+xhtml-read-as-xml-is-html	css_markup.c	 && !gtext_markup_document_parsed_as_xml(document)		match
+of-needs-white-space-before-it	css_selector_parse.c	css_sel_ieq(v[i].value.data, v[i].value.length, "of", 2)) {	css_sel_ieq(v[i].value.data, v[i].value.length, "of", 2) && is_ws(&v[i - 1])) {	match
+long-attribute-names-are-not-folded	css_match.c	  if (name.length >= sizeof small) { // a name of any length is folded: the buffer is as long as the name	  if (name.length >= sizeof small) {\n    return match_attribute_named(ctx, s, e, name, html);\n  }\n  if (0) {	match
+single-compound-selectors-are-memoized	css_match.c	  if (cx->compound_count == 1) {\n    // a selector of one compound	  if (0) {\n    // a selector of one compound	match-cost
+collect-accepts-another-folding	css_rule_index.c	  if (ctx->opt.html_document != x->opt.html_document || ctx->opt.quirks != x->opt.quirks) {	  if (0) {	sheet
+submit-button-is-never-default	css_markup.c	  return a->dfirst == el;	  return false;	match
+radio-groups-are-never-indeterminate	css_markup.c	  return !a->rchecked;\n}\n\nstatic uint64_t derive_state	  return false;\n}\n\nstatic uint64_t derive_state	match
+sheet-part-rules-need-a-shadow-sheet	css_rule_index.c	x->has_part && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {\n    for (El h	x->has_shadow && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {\n    for (El h	sheet
+sheet-a-slot-in-a-slot-is-slotted	css_rule_index.c	css_match_is_shadow_slot(ctx, element) ? NULL : ctx->iface.assigned_slot(ctx->iface.user, element); slot	ctx->iface.assigned_slot(ctx->iface.user, element); slot	sheet
+sheet-the-host-climb-crosses-a-shadow-boundary	css_match.c	  if (is_featureless_host(ctx, e)) {\n    return NULL;	  if (p && is_featureless_host(ctx, e)) {\n    return NULL;	sheet
+scope-prelude-pseudo-element-is-kept	css_sheet.c	bad = end == NULL || list_ends_in_pseudo_element(end);	bad = end == NULL;	sheet
+scope-proximity-tie-is-reversed	css_cascade.c	  c->k[CK_SCOPE] = scoped ? UINT32_MAX - distance : 0u;	  c->k[CK_SCOPE] = scoped ? distance : 0u;	sheet
+quirks-do-not-fold-ids	css_rule_index.c	    key = id;\n    fold = x->opt.quirks;	    key = id;\n    fold = false;	sheet
+host-context-climbs-the-tree-parent	css_match.c	for (El x = e; x && !found; x = css_flat_parent(ctx, x)) {	for (El x = e; x && !found; x = e_parent(ctx, x)) {	sheet
+flat-parent-ignores-slots	css_match.c	  if (HAVE(ctx, GTEXT_CSS_ELEMENT_CB_ASSIGNED_SLOT)) {\n    El slot = ctx->iface.assigned_slot(ctx->iface.user, e);	  if (0) {\n    El slot = ctx->iface.assigned_slot(ctx->iface.user, e);	sheet
+part-stops-after-one-host	css_rule_index.c	h = ctx->iface.containing_host(ctx->iface.user, h)) {\n      bool m2 = false;\n      group * gh	h = NULL) {\n      bool m2 = false;\n      group * gh	sheet
+both-of-s-lists-share-a-memo-key	css_match_nth.c	    step = (uint32_t)s->id + 16u;	    step = 16u;	match
+lang-subtag-limit-is-nine	css_match_lang.c	    if (ln > 8) {	    if (ln > 9) {	sheet
+visited-is-link	css_match.c	  if (r->state) {\n    return (state_of(ctx, e) & r->state) != 0;	  if (r->state) {\n    return (state_of(ctx, e) & (r->state == GTEXT_CSS_STATE_VISITED ? GTEXT_CSS_STATE_LINK : r->state)) != 0;	match
+sheet-a-pseudo-element-request-matches-any-pseudo-element	css_match.c	  if (a->pseudo != b->pseudo || a->anb_a != b->anb_a || a->anb_b != b->anb_b || a->string_count != b->string_count) {	  if (0) {	sheet
+match-scope-change-keeps-the-memo	css_match.c	  return ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope;\n}\n\nstatic bool exists_above	  return NULL;\n}\n\nstatic bool exists_above	match-cost,match-seeds
+match-scope-change-keeps-the-memo	css_match.c	  ctx->tree_scope = tree_scope;\n  css_memo_clear(ctx);\n}	  ctx->tree_scope = tree_scope;\n}	match-cost,match-seeds

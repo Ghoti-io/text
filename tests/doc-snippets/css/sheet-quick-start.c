@@ -33,16 +33,18 @@ static void sheet_quick_start(void) {
   gtext_css_tree_free(tree);
   gtext_css_result_free(&parsed);
 
+  GTEXT_CSS_Markup_Adapter * adapter = NULL;
+  gtext_css_markup_adapter_new(document, NULL, &adapter);
+
+  GTEXT_CSS_Rule_Index_Options index_options = gtext_css_markup_rule_index_options(adapter);
   GTEXT_CSS_Rule_Index * index = NULL;
-  gtext_css_rule_index_new(registry, NULL, &index);
+  gtext_css_rule_index_new(registry, &index_options, &index);
   GTEXT_CSS_Sheet_Registration registration;
   memset(&registration, 0, sizeof registration);
   registration.origin = GTEXT_CSS_ORIGIN_AUTHOR;
   gtext_css_rule_index_add_sheet(index, sheet, &registration, NULL);
   gtext_css_rule_index_freeze(index, NULL);
 
-  GTEXT_CSS_Markup_Adapter * adapter = NULL;
-  gtext_css_markup_adapter_new(document, NULL, &adapter);
   GTEXT_CSS_Selector_Match_Options options = gtext_css_markup_match_options(adapter);
   GTEXT_CSS_Selector_Match_Context * match = NULL;
   gtext_css_selector_match_context_new(gtext_css_markup_interface(adapter), &options, &match);

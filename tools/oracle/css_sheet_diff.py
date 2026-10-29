@@ -108,10 +108,10 @@ def run_servo(servo, ours, docs):
         raise SystemExit("css_sheet_diff: %s exited %d: %s" % (ours, run.returncode, run.stderr.decode("utf-8", "replace")[:600]))
     trees, cur = [], None
     for line in run.stdout.decode("utf-8", "surrogateescape").split("\n"):
-        if line.startswith("T\t"):
-            if line.split("\t")[1] == "0":
-                cur = []
-                trees.append(cur)
+        if line.startswith("Q\t"):  # each document starts with its quirks flag
+            cur = [line]
+            trees.append(cur)
+        elif line.startswith("T\t"):
             cur.append(line)
     if len(trees) != len(docs):
         raise SystemExit("css_sheet_diff: %d trees for %d documents" % (len(trees), len(docs)))
@@ -234,6 +234,9 @@ def read_list(path=None):
 
 FEATURES = [
     # (substring of the selector or of the document's style, feature): the list abstracts a divergence to what it is about
+    (':host-context(', 'host-context'),
+    ('&::part(', 'part-nested-under-a-selector-that-is-not-the-host'),
+    (':host::part(', 'part-rule-with-a-nested-ampersand'),
     ('lang("', 'lang-quoted-string'),
 ]
 
@@ -248,6 +251,7 @@ def feature_of(key, docs):
                 return kind + ":" + name
         return key
     style = doc["text"][: doc["text"].find("</style>")] if "</style>" in doc["text"] else doc["text"]
+    style += "\n".join(html for _, html in doc.get("shadows", []))  # the sheets of the shadow trees are style too
     for needle, name in FEATURES:
         if needle in style:
             return "v:" + name
@@ -336,7 +340,7 @@ def main():
                     print("UNLISTED %s %s %s %s" % (cls, feat, key, json.dumps(vals, ensure_ascii=False)))
         problems = []
         for feat, (cls, count, _reason) in listed.items():
-            if a.seed == 1 and a.count == 200:
+            if a.seed == 1 and a.count == 200 and count > 0:  # a count of 0 is a feature that only a hunt has met: the default population does not have it
                 if seen[feat] == 0:
                     problems.append("GONE %s does not occur (the list says %d)" % (feat, count))
                 elif seen[feat] != count:

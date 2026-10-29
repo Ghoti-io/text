@@ -230,6 +230,13 @@ GTEXT_API bool gtext_markup_document_dtd_unread_resource(
     const GTEXT_Markup_Document * doc, size_t index,
     GTEXT_Markup_DTD_Unread_Resource * out);
 
+/**
+ * @brief Whether the document was made by the XML parser (an XHTML document read as XML is one: its names are case-sensitive, which a query must know).
+ *
+ * False for an HTML parse and for a document built by hand.
+ */
+GTEXT_API bool gtext_markup_document_parsed_as_xml(const GTEXT_Markup_Document * doc);
+
 /** @brief The document mode; NO_QUIRKS unless something set it. */
 GTEXT_API GTEXT_Markup_Mode gtext_markup_document_mode(
     const GTEXT_Markup_Document * doc);

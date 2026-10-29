@@ -24,11 +24,11 @@
 //
 // Input, one tab-separated line each (a field escapes backslash, line feed and tab as \\, \n, \t):
 //
-//   D TEXT              a document (HTML, standards mode)
+//   D TEXT              a document (HTML; in quirks mode when it has no doctype)
 //   S HOST TEXT         the shadow tree of the element with the id HOST: the HTML of what `shadowRoot.innerHTML` is set to
 //   Z SELECTOR          the elements of the document (not of its shadow trees) that querySelectorAll() returns, in document order
 //   Q ID p1,p2,...      the computed style properties of the element with that id (a shadow tree's too) to answer
-//   Y                   write the elements of the document as `T` lines (INDEX PARENT LOCAL ID CLASSES ATTRIBUTES TEXT, the input of the Servo selectors driver)
+//   Y                   write `Q` and the elements of the document as `T` lines (INDEX PARENT LOCAL ID CLASSES ATTRIBUTES TEXT, the input of the Servo selectors driver)
 //   X                   answer every Z and Q since the last X
 //
 // Output: for Z `SELECTOR TAB Z TAB OK TAB id id ...` or `... TAB SYNTAX`; for Q `ID TAB property TAB OK TAB value`, `... TAB NOELEMENT`, `... TAB UNSUPPORTED TAB name`,
@@ -202,8 +202,8 @@ GTEXT_CSS_Element_Handle cb_assigned_slot(void * u, GTEXT_CSS_Element_Handle h) 
     return nullptr;
   }
   auto it = w.shadow_of_host.find(p);
-  if (it == w.shadow_of_host.end() || w.scope_of(e) >= 0) {
-    return nullptr;
+  if (it == w.shadow_of_host.end()) {
+    return nullptr; // not a child of a host (a shadow tree's top elements are children of its body)
   }
   return find_slot(w, it->second, attr_of(e, "slot"));
 }
@@ -493,6 +493,7 @@ void dump_tree(World & w) {
   std::map<const Node *, int> index;
   Node * root = gtext_markup_document_root(w.doc);
   int next = 0;
+  std::printf("Q\t%d\n", gtext_markup_document_mode(w.doc) == GTEXT_MARKUP_MODE_QUIRKS ? 1 : 0);
   for (Node * n = root; n; n = gtext_markup_node_next_in_order(root, n, false)) {
     if (gtext_markup_node_kind(n) != GTEXT_MARKUP_KIND_ELEMENT) {
       continue;
@@ -536,7 +537,11 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   gtext_css_markup_adapter_new(w.doc, &mopt, &w.adapter);
   Node * root_el = gtext_markup_document_element(w.doc);
   for (const auto & s : shadows) {
+    // the host is in the document or in a shadow tree made before this one (a shadow tree inside a shadow tree)
     Node * host = find_by_id(gtext_markup_document_root(w.doc), s.first);
+    for (size_t k = 0; !host && k < w.shadows.size(); k++) {
+      host = find_by_id(w.shadows[k].body, s.first);
+    }
     Shadow sh;
     sh.host = host;
     sh.doc = parse_html("<!doctype html><html><head></head><body>" + s.second + "</body></html>");
@@ -571,6 +576,7 @@ void answer(const std::string & text, const std::vector<std::pair<std::string, s
   Sheets sheets;
   GTEXT_CSS_Rule_Index_Options io = gtext_css_rule_index_options_default();
   io.html_document = true;
+  io.quirks = gtext_markup_document_mode(w.doc) == GTEXT_MARKUP_MODE_QUIRKS;
   gtext_css_rule_index_new(reg, &io, &sheets.index);
   bool ok = compile_scope(sheets, sheets.index, gtext_markup_document_root(w.doc), reg, 0, nullptr, nullptr);
   for (size_t i = 0; i < w.shadows.size() && ok; i++) {

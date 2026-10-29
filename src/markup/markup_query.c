@@ -105,7 +105,7 @@ static GTEXT_Markup_Status q_open(Q * q, const GTEXT_Markup_Node * node, const c
       return done(result, GTEXT_MARKUP_E_LIMIT, GTEXT_CSS_E_LIMIT_INPUT, NULL);
     }
     GTEXT_CSS_Selector_Options so = o.selector;
-    if (!so.max_components && !so.max_list && !so.max_depth && !so.max_diagnostics) {
+    if (!so.max_components && !so.max_list && !so.max_compounds && !so.max_depth && !so.max_diagnostics) {
       so = gtext_css_selector_options_default();
     }
     so.mode = GTEXT_CSS_SELECTOR_COMPLEX_LIST;
@@ -186,6 +186,7 @@ typedef struct {
   void * user;
   GTEXT_CSS_Status status;
   GTEXT_CSS_Selector_Match_Result last;
+  bool stopped; ///< the callback asked to stop: no root after the one it stopped in is walked
 } Each;
 
 static bool visit(void * user, GTEXT_CSS_Element_Handle h) {
@@ -200,8 +201,9 @@ static bool visit(void * user, GTEXT_CSS_Element_Handle h) {
     e->last = r;
     return false;
   }
-  if (r.matched) {
-    return e->fn(e->user, h);
+  if (r.matched && !e->fn(e->user, h)) {
+    e->stopped = true;
+    return false;
   }
   return true;
 }
@@ -228,7 +230,7 @@ static GTEXT_Markup_Status each_impl(const GTEXT_Markup_Node * scope, const char
     st = gtext_css_selector_match_walk(q.ctx, scope, visit, &e, &mr);
   }
   else {
-    for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(scope); c && st == GTEXT_CSS_OK && e.status == GTEXT_CSS_OK; c = gtext_markup_node_next_sibling(c)) {
+    for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(scope); c && st == GTEXT_CSS_OK && e.status == GTEXT_CSS_OK && !e.stopped; c = gtext_markup_node_next_sibling(c)) {
       if (gtext_markup_node_kind(c) == GTEXT_MARKUP_KIND_ELEMENT) {
         st = gtext_css_selector_match_walk(q.ctx, c, visit, &e, &mr);
       }
