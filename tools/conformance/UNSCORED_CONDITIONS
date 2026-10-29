@@ -44,7 +44,7 @@ css/mediaqueries/scripting-print-noscript.html	1	no statically readable assertio
 css/mediaqueries/scripting-print-script.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
 css/mediaqueries/scripting.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
 css/mediaqueries/style-media-attribute-change-in-iframe.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
-css/mediaqueries/test_media_queries.html	367	the calls are inside loops and template strings of a script (needs a JavaScript engine; scored by tools/conformance/run-css-conditions-js.sh)
+css/mediaqueries/test_media_queries.html	367	the calls are inside loops and template strings of a script (not scored: the page needs a JavaScript engine with a matchMedia bound to this library, which is not built)
 css/mediaqueries/update-media-feature.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
 css/mediaqueries/viewport-script-dynamic.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
 css/css-conditional/js/001.html	1	no statically readable CSS.supports() assertion (a script that builds its calls, or CSSOM)

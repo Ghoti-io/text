@@ -131,7 +131,7 @@ def main():
                                     'base': ('green' if basec[-1] in ('green', 'lime') else 'red') if basec else None, 'expected': 'green'})
         n_js = len(JSCALL.findall(text))
         if n_js:
-            unextracted.append((rel, n_js, 'the calls are inside loops and template strings of a script (needs a JavaScript engine; scored by tools/conformance/run-css-conditions-js.sh)'))
+            unextracted.append((rel, n_js, 'the calls are inside loops and template strings of a script (not scored: the page needs a JavaScript engine with a matchMedia bound to this library, which is not built)'))
         elif len(vectors) == n0:
             unextracted.append((rel, 1, 'no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)'))
 
