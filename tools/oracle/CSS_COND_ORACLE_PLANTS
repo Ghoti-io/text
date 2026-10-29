@@ -1,0 +1,27 @@
+# the planted defects of the library that the populations of css_cond_gen.py (cond) and css_rule_gen.py (rule) can see: name, kind. The edits are the lines of that name in tools/conformance/CSS_CONDITIONS_PLANTS or CSS_ATRULES_PLANTS, made in a copy and measured against browsers that did not change
+and-is-or	cond
+not-unknown-is-true	cond
+lt-is-le	cond
+reversed-range-accepted	cond
+min-on-a-discrete-feature	cond
+unsupported-feature-evaluated	cond
+no-preference-is-true-in-a-boolean-context	cond
+a-bad-media-value-replaces-the-query	cond
+general-enclosed-takes-any-token	cond
+a-custom-property-takes-any-value	cond
+custom-property-needs-a-value	cond
+a-skipped-empty-forgiving-entry-is-supported	cond
+ratio-by-division	cond
+vendor-prefixed-ratio-takes-a-standard-prefix	cond
+a-negative-resolution-is-a-value	cond
+a-reserved-counter-style-name-is-allowed	rule
+additive-weights-may-ascend	rule
+a-backwards-range-is-kept	rule
+fallback-none-is-kept	rule
+a-generic-family-names-a-face	rule
+a-feature-tag-of-any-length-is-kept	rule
+current-color-overrides-a-palette-color	rule
+an-unknown-at-rule-stays-in-a-page-block	rule
+a-page-descriptor-takes-no-important	rule
+an-unregistrable-property-rule-is-valid	rule
+an-unknown-descriptor-drops-its-rule	rule

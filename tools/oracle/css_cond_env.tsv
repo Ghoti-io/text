@@ -1,0 +1,13 @@
+# tools/oracle/css_cond_gen.py: the environments the condition differential asks in. Tab separated: name, viewport width, viewport height (CSS px), device pixel ratio.
+# The browsers are put in each by WebDriver BiDi `browsingContext.setViewport` (both engines take a size and a ratio); every other feature of the environment (the pointer, the
+# preferences, the color depth, the screen size) is not forced: the driver reads it from the page once, this library is given the same values, and the feature is
+# compared at that one value (the divergence list calls a feature that cannot be put elsewhere `env-fixed`).
+desktop	1280	800	1
+laptop	1024	768	1
+narrow	375	667	2
+tablet	768	1024	1.5
+wide	1920	1080	1
+square	600	600	1
+tall	500	1200	3
+tiny	320	480	1
+fractional	1279	713	1.25

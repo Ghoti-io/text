@@ -28,6 +28,9 @@
 
 #include <string.h>
 
+#include <ghoti.io/text/css/css_condition.h>
+#include <ghoti.io/text/css/css_container.h>
+
 #include "css_atrule_internal.h"
 #include "css_atrule_tables.h"
 #include "css_registry_internal.h"
@@ -1639,7 +1642,31 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   case GTEXT_CSS_ATRULE_SCOPE:
   case GTEXT_CSS_ATRULE_MEDIA:
   case GTEXT_CSS_ATRULE_SUPPORTS:
-  case GTEXT_CSS_ATRULE_CONTAINER:
+  case GTEXT_CSS_ATRULE_CONTAINER: {
+    /* Conditional 3, 3.1 / Conditional 5, 5.4: a prelude that is not a <supports-condition> / <container-condition> makes the rule invalid, and `insertRule()`
+       throws a SyntaxError (both browsers). The conditions parsers answer "invalid" as a replaced query; a failure of theirs is a failure of this parse. */
+    GTEXT_CSS_Media_Result mr;
+    memset(&mr, 0, sizeof mr);
+    GTEXT_CSS_Status ms;
+    if (kind == GTEXT_CSS_ATRULE_SUPPORTS) {
+      GTEXT_CSS_Supports_Condition * sc = NULL;
+      ms = gtext_css_supports_parse_values(p, pn, false, NULL, &sc, &mr);
+      gtext_css_media_list_free(sc);
+    }
+    else {
+      GTEXT_CSS_Container_Query * cq = NULL;
+      ms = gtext_css_container_parse_values(p, pn, NULL, &cq, &mr);
+      gtext_css_media_list_free(cq);
+    }
+    prelude_ok = ms == GTEXT_CSS_OK && mr.replaced == 0 && !only_ws(p, pn);
+    gtext_css_media_result_free(&mr);
+    if (ms != GTEXT_CSS_OK && ms != GTEXT_CSS_E_LIMIT_CONDITIONS && ms != GTEXT_CSS_E_LIMIT_CONDITION_DEPTH && ms != GTEXT_CSS_E_LIMIT_TOKENS && ms != GTEXT_CSS_E_LIMIT_DEPTH) {
+      atrule_destroy(a);
+      return fail(&cx, ms, &rule->prelude_span, NULL);
+    }
+    mode = BLOCK_NONE;
+    break;
+  }
   case GTEXT_CSS_ATRULE_WHEN:
   case GTEXT_CSS_ATRULE_ELSE:
   case GTEXT_CSS_ATRULE_CUSTOM_MEDIA:

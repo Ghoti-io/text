@@ -458,3 +458,20 @@ TEST(CssAtrule, AnInvalidPropertyRuleIsNotValid) {
     EXPECT_NE(p.a, nullptr) << css;
   }
 }
+
+TEST(CssAtrule, ASupportsOrContainerRuleWithAConditionThatIsNotOneIsInvalid) {
+  /* Conditional 3, 3.1 and Conditional 5, 5.4: the prelude is a <supports-condition> or a <container-condition>; one that is not makes the rule invalid, and
+   * insertRule() throws (both browsers: `@supports (foo: red}) {}` and `@container (` are SyntaxErrors). An unknown feature is <general-enclosed>, which is valid. */
+  for (const char * css : {"@supports (foo: red}) { }", "@supports garbage { }", "@supports { }", "@supports (display: grid) and (color: red) or (width: 1px) { }",
+           "@container not not (width) { }", "@container (width > ) and style(--x) or (height) { }"}) {
+    Parsed p(css);
+    EXPECT_FALSE(p.res.valid) << css;
+    EXPECT_EQ(p.a, nullptr) << css;
+  }
+  for (const char * css : {"@supports (display: grid) { }", "@supports not (foo: bar) { }", "@supports (foo) { }", "@supports selector(a > b) { }",
+           "@container (width > 10px) { }", "@container card (min-width: 1px) { }", "@container style(--x: 1) { }", "@container (foo) { }"}) {
+    Parsed p(css);
+    EXPECT_TRUE(p.res.valid) << css;
+    EXPECT_NE(p.a, nullptr) << css;
+  }
+}
