@@ -3,7 +3,6 @@ and-is-or	cond
 not-unknown-is-true	cond
 lt-is-le	cond
 reversed-range-accepted	cond
-min-on-a-discrete-feature	cond
 unsupported-feature-evaluated	cond
 no-preference-is-true-in-a-boolean-context	cond
 a-bad-media-value-replaces-the-query	cond
@@ -11,7 +10,6 @@ general-enclosed-takes-any-token	cond
 a-custom-property-takes-any-value	cond
 custom-property-needs-a-value	cond
 a-skipped-empty-forgiving-entry-is-supported	cond
-ratio-by-division	cond
 vendor-prefixed-ratio-takes-a-standard-prefix	cond
 a-negative-resolution-is-a-value	cond
 a-reserved-counter-style-name-is-allowed	rule

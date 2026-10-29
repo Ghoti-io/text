@@ -801,8 +801,8 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
         }
       }
     }
-    else if (css_ascii_ieq(&d->name, "font-feature-settings")) {
-      /* Fonts 4, 6.9: "the feature tag is a case-sensitive string of four ASCII characters, U+0020 to U+007E; otherwise the declaration is invalid" */
+    else if (css_ascii_ieq(&d->name, "font-feature-settings") || css_ascii_ieq(&d->name, "font-variation-settings")) {
+      /* Fonts 4, 6.9: "the feature tag is a case-sensitive string of four ASCII characters, U+0020 to U+007E; otherwise the declaration is invalid"; an axis tag is the same (Fonts 4, 6.12) */
       for (size_t i = 0; i < n; i++) {
         if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_STRING) {
           bool ok = v[i].value.length == 4;
@@ -1122,7 +1122,8 @@ static bool read_block(ctx * c, const GTEXT_CSS_Rule * rule, block_mode mode, co
           ok = diag(c, GTEXT_CSS_ATRULE_DIAG_NOT_ALLOWED, d->span, mode == BLOCK_KEYFRAME ? "Animations 1, 3.1: the animation properties are ignored in a keyframe" :
                                                                    "Anchor Positioning 1, 6.4: @position-try only accepts the accepted @position-try properties");
         }
-        else if (d->important) {
+        else if (d->important && (mode == BLOCK_KEYFRAME || c->a->kind == GTEXT_CSS_ATRULE_POSITION_TRY)) {
+          /* only a keyframe and @position-try refuse !important; a margin box takes it like a style rule does */
           ok = diag(c, mode == BLOCK_KEYFRAME ? GTEXT_CSS_ATRULE_DIAG_IMPORTANT_IGNORED : GTEXT_CSS_ATRULE_DIAG_NOT_ALLOWED, d->span,
               mode == BLOCK_KEYFRAME ? "Animations 1, 3.1: \"properties qualified with !important are invalid and ignored\" in a keyframe" :
                                        "Anchor Positioning 1, 6.4: \"It is invalid to use !important on the properties in the <declaration-list>\"");
@@ -1556,14 +1557,15 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   }
   case GTEXT_CSS_ATRULE_FONT_PALETTE_VALUES:
   case GTEXT_CSS_ATRULE_POSITION_TRY:
-    prelude_ok = single_ident(p, pn, &one) && one->value.length > 2 && one->value.data[0] == '-' && one->value.data[1] == '-';
+    /* <dashed-ident>: "a <custom-ident> ... that must start with two dashes", so `--` alone is one (both browsers accept `@font-palette-values --`) */
+    prelude_ok = single_ident(p, pn, &one) && one->value.length >= 2 && one->value.data[0] == '-' && one->value.data[1] == '-';
     if (prelude_ok && !add_name(&cx, &one->value, false)) {
       prelude_ok = false;
     }
     mode = kind == GTEXT_CSS_ATRULE_POSITION_TRY ? BLOCK_PROPERTIES : BLOCK_DESCRIPTORS;
     break;
   case GTEXT_CSS_ATRULE_COLOR_PROFILE:
-    prelude_ok = single_ident(p, pn, &one) && ((one->value.length > 2 && one->value.data[0] == '-' && one->value.data[1] == '-') || lower_eq(&one->value, "device-cmyk"));
+    prelude_ok = single_ident(p, pn, &one) && ((one->value.length >= 2 && one->value.data[0] == '-' && one->value.data[1] == '-') || lower_eq(&one->value, "device-cmyk"));
     if (prelude_ok && !add_name(&cx, &one->value, false)) {
       prelude_ok = false;
     }

@@ -311,8 +311,10 @@ def parts_of_rule(css):
         else:
             names.add(e)
     head = re.sub(r"\s+", " ", head)
+    if re.match(r"@(media|supports|container)\b", head, re.I):
+        head = norm_media(head)  # a condition is compared as a media query is (white space, case, number spelling, closing parentheses)
     # the same descriptor under another name: Firefox writes `font-stretch` as `font-width` (Fonts 4 renamed it), and a page block expands `margin` into its sides when a side is important
-    names = {"font-stretch" if n == "font-width" else ("margin" if n.startswith("margin-") else n) for n in names}
+    names = {"font-stretch" if n == "font-width" else ("margin" if n.startswith("margin-") else ("inset" if n in ("top", "right", "bottom", "left") and "@position-try" in head else n)) for n in names}
     return head, sorted(names)
 
 

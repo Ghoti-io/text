@@ -522,3 +522,19 @@ TEST(CssAtrule, TheConditionOfAGroupRuleIsWrittenAsCssomWritesIt) {
   EXPECT_EQ(Parsed("@container Card (width>1px) { }").css(), "@container Card (width > 1px) { }");
   EXPECT_EQ(Parsed("@supports (display:grid) and (foo: bar) { }").css(), "@supports (display: grid) and (foo: bar) { }");
 }
+
+TEST(CssAtrule, DashedNamesTagsAndMarginBoxes) {
+  /* A <dashed-ident> is a custom identifier that starts with two dashes, `--` included. */
+  EXPECT_TRUE(Parsed("@font-palette-values -- { font-family: a }").res.valid);
+  EXPECT_TRUE(Parsed("@position-try -- { top: 0 }").res.valid);
+  EXPECT_FALSE(Parsed("@font-palette-values -x { font-family: a }").res.valid);
+  EXPECT_FALSE(Parsed("@font-palette-values a { font-family: a }").res.valid);
+  /* an axis tag is four ASCII characters, as a feature tag is */
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-variation-settings: \"ab\" 1 }").desc("font-variation-settings"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-variation-settings: \"wght\" 300, \"wdth\" 90 }").desc("font-variation-settings"), "\"wght\" 300, \"wdth\" 90");
+  /* a margin box takes !important like a style rule; @position-try and a keyframe do not */
+  Parsed m("@page { @top-left { content: \"x\" !important; color: red } }");
+  ASSERT_EQ(gtext_css_atrule_child_count(m.a), 1u);
+  EXPECT_EQ(m.css(), "@page {\n  @top-left { content: \"x\" !important; color: red; }\n}");
+  EXPECT_EQ(Parsed("@position-try --a { top: 0 !important; left: 0 }").css(), "@position-try --a { left: 0px; }");
+}

@@ -36,7 +36,10 @@
 /// declaration the decoder reads, not a rule that is parsed (it is not in the CSSOM), and both browsers answer false.
 static const char * const implemented_at_rules[] = {"media", "supports", "container", "when", "else", "starting-style", "custom-media", "import", "namespace", "layer",
     "scope", "property", "font-face", "font-feature-values", "font-palette-values", "color-profile", "counter-style", "page", "keyframes", "-webkit-keyframes",
-    "view-transition", "position-try"};
+    "view-transition", "position-try",
+    /* the margin rules of @page */
+    "top-left-corner", "top-left", "top-center", "top-right", "top-right-corner", "bottom-left-corner", "bottom-left", "bottom-center", "bottom-right", "bottom-right-corner",
+    "left-top", "left-middle", "left-bottom", "right-top", "right-middle", "right-bottom"};
 
 static bool at_rule_implemented(const char * name, size_t length) {
   for (size_t i = 0; i < sizeof implemented_at_rules / sizeof implemented_at_rules[0]; i++) {

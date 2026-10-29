@@ -1,0 +1,54 @@
+# tools/oracle/css_cond_diff.py --kind cond: the divergences of matchMedia() and CSS.supports() between this library and Chromium 156.0.8078.47 / Firefox 158.0.1 that are not defects of the library. Tab separated: feature, class, count in the default population (seed 1, 200 documents), reason. A class is one of standard-newer, reference-old, reference-wrong, reference-narrow, legacy-compat, env-fixed (css_cond_diff.py says what each means). A defect of this library is fixed, never listed.
+S:d:line-clamp	reference-narrow	14	Neither browser has the line-clamp property (Chromium 156 and Firefox 158 have only -webkit-line-clamp), so a declaration of it is not supported there; this library has it from the pinned CSS Overflow 4 data.
+S:at-rule:@custom-media	reference-narrow	8	Media Queries 5, 10 defines @custom-media and no browser ships it; at-rule(@custom-media) is false there and true here, where the rule is implemented.
+S:sel:::-webkit-scrollbar	legacy-compat	4	A vendor pseudo-element that Chromium keeps for the web (Compatibility Standard); this library has no -webkit- scrollbar pseudo-elements.
+Mm:m:horizontal-viewport-segments:plain	reference-wrong	12	Media Queries 5, 4.5 makes the viewport segments features of `<integer>` and range features; Chromium 156 knows them without a min- or max- prefix only, Firefox 158 not at all, and both read a negative number as unknown.
+S:sel:::picker	standard-newer	5	Customizable select (HTML, `::picker(select)`) is newer than the selector data this library is pinned to; Firefox 158 supports it, Chromium 156 and the library not.
+S:sel::-moz-any	legacy-compat	5	The prefixed form of :is() that Firefox keeps for the web; this library has the -webkit- alias and not the -moz- one.
+Mm:m:resolution:plain	reference-narrow	2	Media Queries 4, 5.1: `infinite` is a resolution larger than any other; neither browser implements the keyword (nor `Infinite`, which is the same keyword), so the query is unknown there.
+Mm:m:color-gamut:bool	reference-wrong	3	Media Queries 5: in a boolean context color-gamut is false only for `none`; Firefox 158 answers false for the srgb gamut it reports.
+S:sel::-webkit-autofill	legacy-compat	2	A vendor pseudo-class that both browsers keep for the web (Compatibility Standard); this library has no :-webkit-autofill.
+S:sel:::scroll-button	reference-narrow	8	CSS Overflow 5 defines ::scroll-button(); Firefox 158 does not implement it, Chromium 156 and this library do.
+Mm:m:dynamic-range:bool	reference-wrong	3	Media Queries 5: in a boolean context dynamic-range is true for its keywords; Firefox 158 answers false for standard.
+S:d:margin-trim	reference-narrow	17	CSS Box 4 defines margin-trim; Firefox 158 does not implement it, Chromium 156 and this library do.
+S:at-rule:@color-profile	reference-narrow	5	Color 5, 4.4 defines @color-profile and neither browser implements it; at-rule(@color-profile) is false there and true here.
+S:declaration-value-if	reference-narrow	27	Values 5 defines if(); Chromium 156 supports a declaration with an if() value and Firefox 158 does not implement if(), where this library supports it (a value with if() is pending until the condition is substituted).
+S:at-rule:@when	reference-narrow	10	Conditional 5, 3 defines @when and neither Chromium 156 nor Firefox 158 ships it; at-rule(@when) is false there and true here, where it is implemented.
+S:sel::lang	reference-old	4	Selectors 4 allows a quoted language range in :lang("*-CH"); Chromium 156 rejects it (the sheet differential lists the same), Firefox and this library accept it.
+Mm:m:vertical-viewport-segments:plain	reference-wrong	18	Media Queries 5, 4.5 makes the viewport segments features of `<integer>` and range features; Chromium 156 knows them without a min- or max- prefix only, Firefox 158 not at all.
+S:sel:::checkmark	standard-newer	9	The ::checkmark pseudo-element of customizable select is newer than the selector data this library is pinned to; Firefox 158 supports it, Chromium 156 and the library not.
+P:p:--x	reference-wrong	6	Variables 1, 2: `--x:;` is a valid declaration, an empty value is a value; CSS.supports("--x", "") is false in Chromium 156 and true in Firefox and in this library.
+Mm:m:height:plain	env-fixed	5	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+S:sel::seeking	reference-narrow	6	Selectors 4 defines the media state pseudo-classes :seeking, :playing, :paused, :muted; Chromium 156 does not implement them, Firefox and this library do.
+Ms:m:device-aspect-ratio:plain	reference-old	3	Chromium 156 writes a ratio of 0/0 as 1/0, the reading web-platform-tests aspect-ratio-004 expects; the served Values 4, 5.7 does not say it, and this library writes the 0 / 0 that was written.
+Mm:m:device-height:plain	env-fixed	3	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+S:sel::target-current	reference-narrow	1	CSS Overflow 5 defines :target-current; Firefox 158 does not implement it, Chromium 156 and this library do.
+S:d:interpolate-size	reference-narrow	10	CSS Values 5 defines interpolate-size; Firefox 158 does not implement it, Chromium 156 and this library do.
+Mm:m:width:range	reference-narrow	1	Values 4, 5.7: a number of a <ratio> may be a calculation (web-platform-tests mq-calc-008); Chromium 156 does not read calc() in a ratio, Firefox and this library do.
+S:sel::playing	reference-narrow	3	Selectors 4 defines :playing; Chromium 156 does not implement it, Firefox and this library do.
+Mm:m:device-height:range	env-fixed	5	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+S:at-rule:@view-transition	reference-narrow	7	View Transitions 2 defines @view-transition; Firefox 158 does not implement it, Chromium and this library do.
+S:d:display	reference-narrow	1	A condition with display: grid beside a declaration that one browser does not support (an if() value Firefox lacks, or a pseudo-class Chromium lacks); the decisive leaf is the one named by the other lines of this list.
+S:at-rule:@top-left	reference-narrow	4	Paged Media 3 defines the margin rules; Firefox 158 does not implement margin boxes, so at-rule(@top-left) is false there, true in Chromium and here.
+S:sel::muted	reference-narrow	4	Selectors 4 defines :muted; Chromium 156 does not implement it, Firefox and this library do.
+S:d:-moz-appearance	legacy-compat	14	A vendor property that Firefox keeps for the web; this library has no -moz- properties.
+S:at-rule:@else	reference-narrow	4	Conditional 5, 4 defines @else and neither Chromium 156 nor Firefox 158 ships it; at-rule(@else) is false there and true here, where it is implemented.
+S:sel:type	reference-wrong	8	Selectors 4: an attribute selector takes the flag `i` or `s`; Chromium 156 rejects `[a=b s]` in selector(), Firefox and this library accept it.
+S:sel::paused	reference-narrow	5	Selectors 4 defines :paused; Chromium 156 does not implement it, Firefox and this library do.
+Mm:m:height:range	env-fixed	8	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+S:at-rule:@function	standard-newer	3	CSS Functions and Mixins 1 is newer than the data this library is pinned to: Chromium 156 supports at-rule(@function) and the library keeps @function as a preserved rule that it does not implement.
+Ms:m:aspect-ratio:plain	reference-old	2	Chromium 156 writes a ratio of 0/0 as 1/0 (see Ms:m:device-aspect-ratio:plain); this library writes the 0 / 0 that was written.
+S:d:font-synthesis-position	reference-narrow	3	Fonts 4 defines font-synthesis-position; Chromium 156 does not implement it, Firefox and this library do.
+Mm:m:width:plain	env-fixed	6	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+Mm:m:video-dynamic-range:bool	env-fixed	3	Neither browser exposes video-dynamic-range to a page here (it is unknown there); the environment of this library is told the same, and a query that holds it beside a feature it does not know is compared at that one value.
+Mm:m:device-aspect-ratio:plain	reference-old	1	Both browsers (and web-platform-tests device-aspect-ratio-002) read 0/0 as 1/0; the served Values 4, 5.7 only says "If either number in the <ratio> is 0 or infinite, it represents a degenerate ratio", and this library orders 0/0 with nothing.
+S:d:color	reference-narrow	1	A condition with color beside a declaration that one browser does not support (an if() value Firefox lacks); the decisive leaf is the one named by the other lines of this list.
+S:d:scroll-timeline	reference-narrow	5	Scroll-driven Animations 1 defines scroll-timeline; Firefox 158 does not enable it by default, Chromium 156 and this library support it.
+S:ge	reference-narrow	1	A condition whose decisive leaf is one that one browser lacks (see the lines for selector(), at-rule() and if()); the general-enclosed part beside it is false in all three.
+Mm:m:device-width:plain	env-fixed	2	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+Ms:m:prefers-reduced-motion:plain	reference-old	2	Chromium 156 writes a ratio of 0/0 as 1/0 (see Ms:m:device-aspect-ratio:plain); this library writes the 0 / 0 that was written.
+S:sel::-webkit-any	legacy-compat	3	The prefixed form of :is() that Firefox keeps for the web is :-moz-any; Chromium 156 no longer accepts :-webkit-any() in selector() while Firefox and this library (which keeps the alias) do.
+Mm:m:device-width:range	env-fixed	4	A feature value in ch, ex, cap or ic needs the metrics of a font: this library has no font to ask without a font_metric callback and answers E_UNSUPPORTED, the browsers evaluate it with theirs.
+Mm:m:resolution:range	reference-narrow	1	Media Queries 4, 5.1: `infinite` is a resolution larger than any other and keywords are ASCII case-insensitive; neither browser implements the keyword.
+Ms:m:device-aspect-ratio:range	reference-old	1	Chromium 156 writes a ratio of 0/0 as 1/0, the reading web-platform-tests aspect-ratio-004 expects; the served Values 4, 5.7 does not say it, and this library writes the 0 / 0 that was written.
+S:d:view-transition-name	reference-narrow	1	A declaration of view-transition-name with an if() value, which Firefox 158 does not support (see S:declaration-value-if).

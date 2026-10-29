@@ -25,7 +25,13 @@ Each rule is (feature, pattern, kinds); the order is the order they are tried in
 
 import re
 
-COND = []
+# Families named by hand, tried before the leaf of a question is looked for: (feature, pattern, the kinds of question it names). A pattern is found in the question's text.
+COND = [
+    ("S:declaration-value-if", r"\bif\(", ("S", "P")),
+    ("S:sel::-webkit-autofill", r":-webkit-autofill", ("S",)),
+    ("S:sel::-moz-any", r":-moz-any", ("S",)),
+    ("S:sel::-webkit-any", r":-webkit-any", ("S",)),
+]
 RULE = []
 
 FUNCS_SUPPORTS = ("selector", "font-tech", "font-format", "at-rule", "env", "named-feature")
