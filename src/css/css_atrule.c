@@ -1050,6 +1050,48 @@ static bool check_required(ctx * c) {
 /* ---- keyframe selectors -------------------------------------------------------------------------------------------------------- */
 
 /// `<keyframe-selector># = [ from | to | <percentage [0,100]> ]#`.
+/// Whether component values hold a bad-string or bad-url token at any depth (an explicit stack: nesting is not bounded by the C stack). Such a token is serialized unterminated,
+/// which swallows what follows it, so a prelude that holds one cannot be kept as text and the rule is invalid.
+static bool holds_bad_token(const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * v, size_t n, bool * oom) {
+  typedef struct {
+    const GTEXT_CSS_Component_Value * v;
+    size_t n, i;
+  } fr;
+  size_t cap = 16, sp = 0;
+  fr * st = gtext_allocator_malloc(alloc, cap * sizeof *st);
+  if (!st) {
+    *oom = true;
+    return false;
+  }
+  st[sp++] = (fr){v, n, 0};
+  bool bad = false;
+  while (sp && !bad) {
+    fr * t = &st[sp - 1];
+    if (t->i >= t->n) {
+      sp--;
+      continue;
+    }
+    const GTEXT_CSS_Component_Value * c = &t->v[t->i++];
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
+      bad = c->type == GTEXT_CSS_TOKEN_BAD_STRING || c->type == GTEXT_CSS_TOKEN_BAD_URL;
+    }
+    else if (c->child_count) {
+      if (sp == cap) {
+        fr * g = gtext_allocator_realloc(alloc, st, cap * 2 * sizeof *g);
+        if (!g) {
+          *oom = true;
+          break;
+        }
+        st = g;
+        cap *= 2;
+      }
+      st[sp++] = (fr){c->children, c->child_count, 0};
+    }
+  }
+  gtext_allocator_free(alloc, st);
+  return bad;
+}
+
 static bool range_name(const GTEXT_CSS_Component_Value * v) {
   static const char * const names[] = {"entry", "exit", "entry-crossing", "exit-crossing", "contain", "cover"};
   if (v->kind != GTEXT_CSS_VALUE_TOKEN || v->type != GTEXT_CSS_TOKEN_IDENT) {
@@ -1267,6 +1309,15 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   }
   /* the prelude */
   bool prelude_ok = true;
+  bool bad_prelude = false;
+  {
+    bool oom_scan = false;
+    bad_prelude = holds_bad_token(&a->alloc, p, pn, &oom_scan);
+    if (oom_scan) {
+      atrule_destroy(a);
+      return fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+  }
   block_mode mode = BLOCK_NONE;
   const GTEXT_CSS_Component_Value * one = NULL;
   switch (kind) {
@@ -1400,6 +1451,9 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       atrule_destroy(a);
       return cx.st != GTEXT_CSS_OK ? cx.st : fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
     }
+  }
+  if (bad_prelude) {
+    prelude_ok = false;
   }
   if (!prelude_ok) {
     cx.valid = false;

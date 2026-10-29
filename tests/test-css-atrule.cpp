@@ -305,3 +305,13 @@ TEST(CssAtrule, CharsetIsOneString) {
   Parsed ident("@charset utf-8;");
   EXPECT_FALSE(ident.res.valid);
 }
+
+// A bad string in a prelude cannot be written back as text (it would swallow what follows): the rule is invalid, at any depth.
+TEST(CssAtrule, BadStringInPreludeIsInvalid) {
+  Parsed a("@char]set \"utf-8interese\n { }");
+  EXPECT_FALSE(a.res.valid);
+  Parsed b("@unknown-thing (a \"b\n) { }");
+  EXPECT_FALSE(b.res.valid);
+  Parsed c("@unknown-thing (a \"b\") { }");
+  EXPECT_TRUE(c.res.valid);
+}
