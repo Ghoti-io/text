@@ -1,0 +1,5 @@
+# tools/conformance/css_atrules_suite.c: the at-rule vectors this library fails, one a line: kind, input, reason. A line that no failure matches is stale and fails the gate.
+font-src	local(default A)	web-platform-tests css-fonts/parsing/font-face-src-local.html expects this valid: Fonts 4, 2.1 "font family names ... a sequence of one or more identifiers", so `default A` and `inherit A` are names and only a name that is a single keyword is not. The registry's `<family-name>` is `<string> | <custom-ident>+` and excludes the keyword in every position; this is the library's, the grammar engine has no "single ident" form to say it with, and font-family has the same limit (css-fonts/parsing/font-family-*.html agree because they only test the keyword alone).
+font-src	local(inherit A)	as local(default A)
+font-src	local(revert A)	as local(default A)
+font-src	local(unset A)	as local(default A)

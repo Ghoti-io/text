@@ -39,6 +39,20 @@ cc -O1 -g -D_GNU_SOURCE -o "$runner" "$root/tools/conformance/css_atrules_suite.
 vectors=$root/build/css-atrules-vectors.tsv
 python3 -I "$root/tools/css/extract-wpt-atrules.py" "$wpt" "$vectors"
 n=$(grep -vc '^#' "$vectors" || true)
-floor=${CSS_ATRULES_FLOOR:-90}
+floor=${CSS_ATRULES_FLOOR:-320}
 [ "$n" -ge "$floor" ] || { echo "only $n vectors were read; the floor is $floor" >&2; exit 1; }
+unscored=$root/tools/conformance/UNSCORED_ATRULES
+# the pages that are not read as data are listed, one line a page with its calls and the reason (the extractor writes them as `# unscored` lines)
+grep '^# unscored	' "$vectors" | cut -f2- > "$root/build/css-atrules-unscored.tsv"
+if [ "$1" = "--regenerate" ]; then
+	{ printf '%s\n' "# tools/css/extract-wpt-atrules.py: the pages of the at-rule directories of css/ that are not read as data: page, number of test calls (1 for a reftest), reason."; cat "$root/build/css-atrules-unscored.tsv"; } > "$unscored"
+	echo "wrote $(grep -vc '^#' "$unscored") lines to $unscored"
+	exit 0
+fi
+grep -v '^#' "$unscored" | diff - "$root/build/css-atrules-unscored.tsv" > "$root/build/css-atrules-unscored.diff" || {
+	echo "UNSCORED VECTORS: tools/conformance/UNSCORED_ATRULES is not what the extractor leaves unread (tools/conformance/run-css-atrules.sh --regenerate, then read the change):" >&2
+	head -20 "$root/build/css-atrules-unscored.diff" >&2
+	exit 1
+}
+echo "css-atrules: $(grep -vc '^#' "$unscored") pages unscored (the file says why, a line a page), $(grep -c '^# page' "$vectors") pages read"
 "$runner" "$vectors" "$root/tools/conformance/CSS_ATRULES_EXCEPTIONS"

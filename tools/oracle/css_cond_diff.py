@@ -29,14 +29,16 @@ The three readers answer the same questions (the driver is containers/cssprop/co
 document's viewport and ratio; every other feature of the environment is read from the page, once, and this library is given the same values, so a feature a browser cannot be
 moved off is compared at the one value it has.
 
-**What is a divergence.** A question the three do not answer alike. It is classified by who differs: `ours` (the browsers agree and this library does not: always a defect
-of the library, and the gate's ceiling for it is zero), `browsers` (the browsers disagree with each other; the library is with one of them) and `both` (the library is with
-neither of two browsers that disagree). The list (css_cond_divergences.txt, css_rule_divergences.txt) holds each divergence that is not `ours`, abstracted to a feature
-(css_cond_features.py), with its class, its count in the default population (seed 1, 200 documents) and the reason: the sentence of the served text, or the browser's known
-deviation, classified `standard-newer` (the standard says what this library does and the browsers have not caught up), `reference-old` (the browsers keep what the standard
-changed), `reference-wrong` (neither the standard nor the other browser agrees), `reference-narrow` (the browsers do not implement what the standard defines), `legacy-compat`
-(a behavior kept for the web) or `env-fixed` (a feature the browsers cannot be moved off). The gate fails (exit 3) on a divergence that is not listed, a listed feature that
-does not occur, a count that moved, a reason that is short or blanket, and any `ours`.
+**What is a divergence.** A question the three do not answer alike (`matchMedia()` is two questions: whether it matches, and its `.media`, compared up to white space, the case of
+an identifier or a unit and the spelling of a number; a rule is one: accepted or not, its prelude and the descriptors it kept by name). By who differs it is `ours` (the browsers
+agree and this library does not), `browsers` (they disagree with each other; the library is with one of them) or `both` (the library is with neither of two browsers that
+disagree). **None may stay unexplained.** Each divergence is abstracted to a feature (css_cond_features.py: the leaf of the question, a media feature, a declaration, a supports
+function, a descriptor of a rule, that is in the divergent questions and in no agreeing one), and the list (css_cond_divergences.txt, css_rule_divergences.txt) gives each
+feature its class, its count in the default population (seed 1, 200 documents) and the reason, a sentence of the served text or the browsers' known deviation: `standard-newer`
+(the standard says what this library does and the browsers have not caught up), `reference-old` (the browsers keep what the standard changed), `reference-wrong` (neither the
+standard nor the other browser agrees with one), `reference-narrow` (the browsers do not implement what the standard defines), `legacy-compat` (a behavior kept for the web) or
+`env-fixed` (a feature the browsers cannot be moved off, or a metric they have fonts for). A defect of this library is fixed, never listed. The gate fails (exit 3) on a divergence
+whose feature is not listed, a listed feature that does not occur, a count that moved, and a reason that is short or blanket.
 
 --replay DIR reads the browsers' answers from an earlier run's directory instead of asking the browsers, and this library is asked again, so a library edited in a copy can be
 measured against browsers that did not change.
@@ -144,11 +146,8 @@ def env_lines(env):
     out.append(("E", "transform-3d", str(env.get("transform-3d", 0))))
     out.append(("E", "device-width", str(env["device-width"])))
     out.append(("E", "device-height", str(env["device-height"])))
-    # the features a page cannot read through matchMedia in this browser are not evaluated here either
-    unsupported = [k for k in ("scan", "inverted-colors", "prefers-reduced-transparency", "prefers-reduced-data") if not env.get(k)]
-    unsupported += ["display-state", "resizable", "shape", "nav-controls", "environment-blending", "ua-color-scheme", "horizontal-viewport-segments", "vertical-viewport-segments",
-                    "video-dynamic-range", "video-color-gamut"]
-    out.append(("E", "unsupported", ",".join(sorted(set(unsupported)))))
+    # a feature the page's browser lacks (it answers neither the feature nor its negation) is not evaluated here either: unknown, as it is there
+    out.append(("E", "unsupported", ",".join(sorted(env.get("unsupported", [])))))
     return out
 
 
@@ -223,6 +222,7 @@ def signature(css):
     if brace < 0:
         return ws(css.rstrip(";"))
     head = ws(css[:brace])
+    head = re.sub(r'"([A-Za-z_][A-Za-z0-9_-]*)"', r"\1", head)  # a name written as a string and as the identifier it spells is one name
     end = css.rfind("}")
     body = css[brace + 1:end if end > brace else len(css)]
     parts = []
@@ -234,33 +234,51 @@ def signature(css):
     return head + " {" + ",".join(sorted(parts)) + "}"
 
 
-def comparable(kind, q, ans):
-    """The value a reader's answer to a question is compared as."""
+NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z%])|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+
+
+def norm_media(s):
+    """`.media` up to what the standards leave to the engine: white space, the case of an identifier or a unit, and the spelling of a number (the browsers write six significant
+    digits, an exponent for a large one, a sign only when it is minus, and clamp a unitless integer to 32 bits)."""
+    def number(m):
+        t = m.group(0)
+        f = float(t)
+        unitless = m.end() >= len(s) or not (s[m.end()].isalpha() or s[m.end()] == "%")
+        if unitless and abs(f) > 2147483647 and "." not in t and "e" not in t.lower():
+            return "2147483647" if f > 0 else "-2147483648"
+        return "%.6g" % f
+    return re.sub(r"\s+", "", NUMBER.sub(number, s.lower()))
+
+
+def comparable(q, ans):
+    """The values a reader's answer to a question is compared as: [(part, value)]."""
     k = q[0]
     if ans and isinstance(ans[0], str) and ans[0].startswith("T:"):
-        return "!" + ans[0]
+        return [("", "!" + ans[0])]
     if k == "M":
-        return "M " + ans[0] + " " + ans[1] if ans[0] != "E" else "E"
+        return [("m", ans[0]), ("s", norm_media(ans[1]))]
     if k in ("S", "P"):
-        return ans[0]
+        return [("", ans[0])]
     if k == "R":
-        return "reject" if ans[0] == "reject" else "ok " + ws(ans[1] if len(ans) > 1 else "")
+        return [("", "reject" if ans[0] == "reject" else "ok " + norm_media(ans[1] if len(ans) > 1 else ""))]
     if k == "A":
-        return "reject" if ans[0] == "reject" else "ok " + signature(ans[1] if len(ans) > 1 else "")
-    return "?"
+        return [("", "reject" if ans[0] == "reject" else "ok " + signature(ans[1] if len(ans) > 1 else ""))]
+    return [("", "?")]
 
 
 def ours_value(q, ans):
     k = q[0]
     if k == "M":
-        return "M " + ans[1] + " " + unesc(ans[2]) if ans[1] != "E" else "E"
+        if ans[1] == "E":
+            return [("m", "E"), ("s", "E")]
+        return [("m", ans[1]), ("s", norm_media(unesc(ans[2])))]
     if k in ("S", "P"):
-        return ans[1]
+        return [("", ans[1])]
     if k == "R":
-        return "reject" if ans[1] == "reject" else "ok " + ws(conditionText(unesc(ans[2])))
+        return [("", "reject" if ans[1] == "reject" else "ok " + norm_media(conditionText(unesc(ans[2]))))]
     if k == "A":
-        return "reject" if ans[1] == "reject" else "ok " + signature(unesc(ans[2]))
-    return "?"
+        return [("", "reject" if ans[1] == "reject" else "ok " + signature(unesc(ans[2])))]
+    return [("", "?")]
 
 
 def conditionText(rule_css):
@@ -273,24 +291,25 @@ def key_of(i, j, q):
 
 
 def compare(docs, ours, browsers):
-    """The divergences: [(key, class, {reader: value})], and the number of questions."""
+    """The divergences: [(key, class, {reader: value})], and the number of questions (a `matchMedia()` is two: whether it matches, and its `.media`)."""
     rows = []
     total = 0
     for i, d in enumerate(docs):
         for j, q in enumerate(d["q"]):
-            total += 1
-            cv = comparable(None, q, browsers["chromium"][i][j])
-            fv = comparable(None, q, browsers["firefox"][i][j])
-            oc = ours_value(q, ours["chromium"][i][j])
-            of = ours_value(q, ours["firefox"][i][j])
-            a, b = oc == cv, of == fv
-            if a and b:
-                continue  # this library answers each browser as that browser is (their environments differ, or they agree)
-            if cv == fv:
-                cls = "ours"
-            else:
-                cls = "both" if not a and not b else "browsers"
-            rows.append((key_of(i, j, q), cls, {"query": q, "ours": [oc, of], "chromium": cv, "firefox": fv}))
+            cvs = comparable(q, browsers["chromium"][i][j])
+            fvs = comparable(q, browsers["firefox"][i][j])
+            ocs = ours_value(q, ours["chromium"][i][j])
+            ofs = ours_value(q, ours["firefox"][i][j])
+            for (part, cv), (_, fv), (_, oc), (_, of) in zip(cvs, fvs, ocs, ofs):
+                total += 1
+                a, b = oc == cv, of == fv
+                if a and b:
+                    continue  # this library answers each browser as that browser is (their environments differ, or they agree)
+                if cv == fv:
+                    cls = "ours"
+                else:
+                    cls = "both" if not a and not b else "browsers"
+                rows.append((key_of(i, j, q) + part, cls, {"query": q, "part": part, "ours": [oc, of], "chromium": cv, "firefox": fv}))
     return rows, total
 
 
@@ -325,6 +344,7 @@ def main():
     ap.add_argument("--ours", default=None)
     ap.add_argument("--replay", default=None)
     ap.add_argument("--write-list", default=None)
+    ap.add_argument("--write-skeleton", default=None, help="the features not on the list, as lines to fill in")
     ap.add_argument("--list", default=None, help="another list of the divergences (the controls make one wrong on purpose)")
     a = ap.parse_args()
     cfg = KINDS[a.kind]
@@ -365,23 +385,34 @@ def main():
                 for key, cls, vals in rows:
                     f.write("%s\t%s\t%s\n" % (key, cls, json.dumps(vals, ensure_ascii=False)))
         listed = read_list(a.list or cfg["list"])
+        # the stats a feature is chosen by: for each leaf family, in how many divergent questions it is and in how many questions at all
+        stats = {}
+        divergent = {r[0] for r in rows}
+        for i, d in enumerate(docs):
+            for j, q in enumerate(d["q"]):
+                parts = ("m", "s") if q[0] == "M" else ("",)
+                for part in parts:
+                    kind = q[0] + part
+                    isdiv = key_of(i, j, q) + part in divergent
+                    for fam in set(css_cond_features.leaf_families(q)):
+                        e = stats.setdefault((kind, fam), [0, 0])
+                        e[1] += 1
+                        e[0] += isdiv
         seen = collections.Counter()
-        bad = 0
-        shown = 0
+        unlisted = collections.OrderedDict()
         for key, cls, vals in rows:
-            feat = css_cond_features.feature_of(cfg["features"], vals["query"], vals)
-            if cls == "ours":
-                bad += 1
-                if shown < 60:
-                    shown += 1
-                    print("OURS %s %s" % (feat, json.dumps(vals, ensure_ascii=False)))
-                continue
+            feat = css_cond_features.feature_of(cfg["features"], vals["query"], vals, stats)
             seen[feat] += 1
-            if feat not in listed or listed[feat][0] not in CLASSES:
-                bad += 1
-                if shown < 60:
-                    shown += 1
-                    print("UNLISTED %s %s %s" % (cls, feat, json.dumps(vals, ensure_ascii=False)))
+            if feat not in listed:
+                unlisted.setdefault(feat, []).append((cls, vals))
+        bad = sum(len(v) for v in unlisted.values())
+        for feat, items in list(unlisted.items())[:80]:
+            cls, vals = items[0]
+            print("UNLISTED %s x%d [%s] %s" % (feat, len(items), cls, json.dumps(vals, ensure_ascii=False)[:600]))
+        if a.write_skeleton:
+            with open(a.write_skeleton, "w", encoding="utf-8") as f:
+                for feat, items in unlisted.items():
+                    f.write("%s\tTODO\t%d\t%s\n" % (feat, len(items), json.dumps(items[0][1], ensure_ascii=False)))
         problems = []
         for feat, (cls, count, _reason) in listed.items():
             if a.seed == 1 and a.count == 200 and count > 0:
@@ -389,10 +420,10 @@ def main():
                     problems.append("GONE %s does not occur (the list says %d)" % (feat, count))
                 elif seen[feat] != count:
                     problems.append("COUNT %s occurs %d times, the list says %d" % (feat, seen[feat], count))
-        for p in problems:
+        for p in problems[:40]:
             print(p)
         if bad or problems:
-            print("css %s differential: %d unlisted or ours, %d list problems" % (a.kind, bad, len(problems)))
+            print("css %s differential: %d unlisted, %d list problems" % (a.kind, bad, len(problems)))
             return GATE_EXIT
         print("css %s differential: agrees, or every divergence is listed" % a.kind)
     return 0

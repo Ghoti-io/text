@@ -66,7 +66,11 @@ static void put_value(out_t * o, const mq_value * v, int feature) {
     put_number(o, v->a, false);
     const char * u = gtext_css_unit_name(v->unit);
     if (u) {
-      puts_(o, u);
+      /* Values 4, 5.1: "Units are ASCII case-insensitive and serialize as lowercase, for example 1Q serializes as 1q" */
+      for (; *u; u++) {
+        const char c = (*u >= 'A' && *u <= 'Z') ? (char)(*u + ('a' - 'A')) : *u;
+        put(o, &c, 1);
+      }
     }
     break;
   }

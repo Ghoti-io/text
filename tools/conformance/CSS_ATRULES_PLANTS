@@ -11,8 +11,8 @@ validity-keeps-the-invalid	css_atrule.c	  v->refused++;\n  return false;	  v->re
 a-reserved-counter-style-name-is-allowed	css_atrule.c	static const char * const reserved[] = {"none", "decimal", "disc", "circle", "square", "disclosure-open", "disclosure-closed"};	static const char * const reserved[] = {"none"};	atrule
 additive-weights-may-ascend	css_atrule.c	if (have && !(v[i].number < prev)) {	if (0) {	atrule
 a-backwards-range-is-kept	css_atrule.c	if (plain && k == 2 && bound[0] > bound[1]) {	if (0) {	atrule
-fallback-none-is-kept	css_atrule.c	        if (ident_is(&v[i], "none")) {\n          return "Counter Styles 3, fallback	        if (0) {\n          return "Counter Styles 3, fallback	atrule
-a-generic-family-names-a-face	css_atrule.c	      if (sig == 1) {\n        for (size_t g = 0;	      if (0) {\n        for (size_t g = 0;	atrule
+fallback-none-is-kept	css_atrule.c	        if (ident_is(&v[i], "none")) {\n          return "Counter Styles 3: a <counter-style-name> excludes none	        if (0) {\n          return "Counter Styles 3, fallback	atrule
+a-generic-family-names-a-face	css_atrule.c	v[i].type == GTEXT_CSS_TOKEN_IDENT && unquotable_family_word(&v[i].value)) {\n          return "Fonts 4, 4.1: the font-family descriptor is a <family-name>, whose	v[i].type == GTEXT_CSS_TOKEN_IDENT && 0 && unquotable_family_word(&v[i].value)) {\n          return "Fonts 4, 4.1: the font-family descriptor is a <family-name>, whose	atrule
 a-feature-tag-of-any-length-is-kept	css_atrule.c	          bool ok = v[i].value.length == 4;	          bool ok = true;	atrule
 current-color-overrides-a-palette-color	css_atrule.c	    if (holds_current_color(alloc, v, n, oom)) {	    if (0) {	atrule
 an-unknown-at-rule-stays-in-a-page-block	css_atrule.c	        if (kid && !((a->kind == GTEXT_CSS_ATRULE_PAGE && kid->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN) ||	        if (0 && !((a->kind == GTEXT_CSS_ATRULE_PAGE && kid->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN) ||	atrule

@@ -80,7 +80,7 @@ const READ = `(json) => {
 }`;
 
 // What the page says about itself at the start: the features the driver cannot put elsewhere, read the way a page reads them.
-const PROBE = `() => {
+const PROBE = `(featuresJson) => {
   const e = { w: innerWidth, h: innerHeight, dpr: devicePixelRatio, 'device-width': screen.width, 'device-height': screen.height, ua: navigator.userAgent };
   const disc = { pointer: 'none coarse fine', hover: 'none hover', 'prefers-color-scheme': 'light dark', 'prefers-reduced-motion': 'no-preference reduce',
     'prefers-contrast': 'no-preference less more custom', 'color-gamut': 'srgb p3 rec2020', 'dynamic-range': 'standard high', scan: 'interlace progressive',
@@ -94,6 +94,8 @@ const PROBE = `() => {
   e['any-hover'] = ['none', 'hover'].filter((k) => matchMedia('(any-hover:' + k + ')').matches);
   e.color = []; for (let i = 0; i <= 16; i++) { if (matchMedia('(color:' + i + ')').matches) { e.color.push(i); } }
   e['transform-3d'] = matchMedia('(-webkit-transform-3d)').matches ? 1 : 0;
+  // a feature the browser has is true or false in a boolean context, and so is its negation; one it lacks is unknown, which both are not
+  e.unsupported = JSON.parse(featuresJson).filter((f) => !(matchMedia('(' + f + ')').matches || matchMedia('not (' + f + ')').matches));
   return JSON.stringify(e);
 }`;
 
@@ -138,6 +140,12 @@ const ENGINES = {
     }),
   },
 };
+
+// The media features of tools/css/media-features.tsv, by name (the table of the library under test).
+function featureNames() {
+  const text = readFileSync(new URL('../../../css/media-features.tsv', import.meta.url), 'utf8');
+  return text.split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('\t')[0]);
+}
 
 function fail(message) {
   process.stderr.write(`csscond-driver: ${message}\n`);
@@ -234,7 +242,7 @@ class Session {
     this.context = tree.contexts[0].context;
     await this.send('browsingContext.setViewport', { context: this.context, viewport: { width: 1280, height: 800 }, devicePixelRatio: 1 });
     await this.send('browsingContext.navigate', { context: this.context, url: PAGE, wait: 'complete' });
-    this.info = JSON.parse(await this.call(PROBE, []));
+    this.info = JSON.parse(await this.call(PROBE, [{ type: 'string', value: JSON.stringify(featureNames()) }]));
   }
 
   async viewport(w, h, dpr) {

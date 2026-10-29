@@ -109,8 +109,12 @@ TEST(CssAtrule, Required) {
     EXPECT_EQ(p.a, nullptr);
   }
   {
+    /* Fonts 4, 9.2 says the rule is "invalid and must be ignored entirely"; web-platform-tests font-palette-values-valid.html and both browsers keep a rule with no
+       font-family in the style sheet (CSSFontPaletteValuesRule with an empty fontFamily), so it is valid and, like an @font-face without a src, defines nothing. */
     Parsed p("@font-palette-values --x { base-palette: 1 }");
-    EXPECT_FALSE(p.res.valid);
+    EXPECT_TRUE(p.res.valid);
+    ASSERT_NE(p.a, nullptr);
+    EXPECT_TRUE(gtext_css_atrule_defines_nothing(p.a));
   }
   {
     Parsed p("@font-face { font-family: A }");
@@ -396,13 +400,18 @@ TEST(CssAtrule, CounterStyleDescriptorsBothBrowsersDrop) {
   EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: 1 infinite }").desc("range"), "1 infinite");
   EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; fallback: none }").desc("fallback"), "-");
   EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; fallback: upper-roman }").desc("fallback"), "upper-roman");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; speak-as: none }").desc("speak-as"), "-") << "speak-as takes a <counter-style-name>, which is never none";
+  EXPECT_EQ(Parsed("@counter-style x { system: extends none }").desc("system"), "-");
+  EXPECT_EQ(Parsed("@counter-style x { system: extends upper-roman }").desc("system"), "extends upper-roman");
 }
 
 TEST(CssAtrule, FontFaceDescriptorsBothBrowsersDrop) {
   /* Fonts 4: the font-family descriptor is a <family-name> (no generic family); a feature tag is four ASCII characters; override-colors takes no currentcolor. */
   EXPECT_EQ(Parsed("@font-face { font-family: serif; src: local(a) }").desc("font-family"), "-");
   EXPECT_EQ(Parsed("@font-face { font-family: Sans-Serif; src: local(a) }").desc("font-family"), "-");
-  EXPECT_EQ(Parsed("@font-face { font-family: serif foo; src: local(a) }").desc("font-family"), "serif foo") << "a family named serif foo is a name";
+  EXPECT_EQ(Parsed("@font-face { font-family: serif foo; src: local(a) }").desc("font-family"), "-") << "an unquoted name holds no generic family keyword anywhere";
+  EXPECT_EQ(Parsed("@font-face { font-family: foo Inherit; src: local(a) }").desc("font-family"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: \"serif foo\"; src: local(a) }").desc("font-family"), "\"serif foo\"");
   EXPECT_EQ(Parsed("@font-face { font-family: \"serif\"; src: local(a) }").desc("font-family"), "\"serif\"");
   EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-feature-settings: \"abc\" 1 }").desc("font-feature-settings"), "-");
   EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-feature-settings: \"abcde\" 1 }").desc("font-feature-settings"), "-");
@@ -424,8 +433,8 @@ TEST(CssAtrule, PageKeepsAnImportantDescriptorAndOnlyTheMarginRulesOfItsGrammar)
   Parsed c("@page { @bottom { content: \"x\" } @bottom-center { content: \"y\" } }");
   EXPECT_EQ(gtext_css_atrule_child_count(c.a), 1u);
   EXPECT_EQ(c.css(), "@page {\n  @bottom-center { content: \"y\"; }\n}");
-  Parsed f("@font-feature-values A { @foo { } @styleset { a: 1 } }");
-  EXPECT_EQ(gtext_css_atrule_child_count(f.a), 1u);
+  Parsed f("@font-feature-values A { @foo { } @styleset { a: 1 } @stylistic { } @swash { s: -1 } }");
+  EXPECT_EQ(gtext_css_atrule_child_count(f.a), 1u) << "a feature block with no valid declaration is dropped";
 }
 
 TEST(CssAtrule, AnInvalidPropertyRuleIsNotValid) {
@@ -474,4 +483,29 @@ TEST(CssAtrule, ASupportsOrContainerRuleWithAConditionThatIsNotOneIsInvalid) {
     EXPECT_TRUE(p.res.valid) << css;
     EXPECT_NE(p.a, nullptr) << css;
   }
+}
+
+TEST(CssAtrule, AConditionalGroupRuleNeedsABlockAndAnyPreludeOfAMediaRuleIsValid) {
+  /* `@media screen;` is no rule (a group rule has a block); a media query list is never invalid, whatever it holds (it becomes `not all`). */
+  for (const char * css : {"@media screen;", "@supports (display: grid);", "@container (width > 1px);", "@scope (.a);"}) {
+    Parsed p(css);
+    EXPECT_FALSE(p.res.valid) << css;
+  }
+  for (const char * css : {"@media { }", "@media not all { }", "@media screen and { }", "@media , { }", "@layer { }", "@layer a.b { }", "@layer a, b;", "@scope { }",
+           "@scope (.a) to (.b) { }"}) {
+    Parsed p(css);
+    EXPECT_TRUE(p.res.valid) << css;
+    EXPECT_NE(p.a, nullptr) << css;
+  }
+}
+
+TEST(CssAtrule, ANameListHoldsNoUnquotedGenericFamily) {
+  /* Fonts 2.1: a family name that is a keyword must be quoted. The names of @font-feature-values and the families of a palette are <family-name>s (web-platform-tests
+   * font-palette-values-invalid.html: "multiple families are allowed, but not generics"). */
+  EXPECT_FALSE(Parsed("@font-feature-values serif { @styleset { a: 1 } }").res.valid);
+  EXPECT_FALSE(Parsed("@font-feature-values Foo, sans-serif { @styleset { a: 1 } }").res.valid);
+  EXPECT_FALSE(Parsed("@font-feature-values foo inherit { }").res.valid);
+  EXPECT_TRUE(Parsed("@font-feature-values \"serif\", Foo Bar { @styleset { a: 1 } }").res.valid);
+  EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a, serif }").desc("font-family"), "-");
+  EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a, \"serif\" }").desc("font-family"), "a, \"serif\"");
 }

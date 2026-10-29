@@ -87,6 +87,7 @@ SUPPORTS_CONDS = ["(display: grid)", "not (display: grid)", "(display: grid) and
 CONTAINER_PRELUDES = ["(width > 10px)", "card (min-width: 1px)", "style(--x: 1)", "(foo)", "(", "not not (width)", "scroll-state(stuck: top)", "(width) and (height)", "(width) or (height) and (color)",
                       "card", "none (width)", "initial (width)", "(width: 10px) and style(--x)", "(inline-size > 1px)", "(aspect-ratio > 1)", "(orientation: portrait)", "anchored(fallback: none)", "style(color)"]
 MEDIA_PRELUDES = ["screen", "(min-width: 1px)", "(color: foo)", "not all", "only screen and (color)", "(width > 10px)", "foo", "", ",", "(", "screen and", "not (color)"]
+# @layer and @scope are rules of the style sheet (css_sheet.c), asked by the sheet differential; here they are not generated
 LAYER_RULES = ["@layer a;", "@layer a, b;", "@layer a.b { }", "@layer { }", "@layer a, b { }", "@layer 1;", "@layer a.;", "@layer a..b;", "@layer a b;"]
 SCOPE_PRELUDES = ["(.a)", "(.a) to (.b)", "to (.b)", "", "(.a, .b)", "(&)", "(:is(.a))", "(::before)", "(.a) (.b)"]
 
@@ -127,9 +128,7 @@ def rule():
         return "@container %s { }" % R(CONTAINER_PRELUDES)
     if k < 0.96:
         return "@media %s { }" % R(MEDIA_PRELUDES)
-    if k < 0.98:
-        return R(LAYER_RULES)
-    return "@scope %s { }" % R(SCOPE_PRELUDES)
+    return "@media %s { }" % R(MEDIA_PRELUDES)
 
 
 class Gen:

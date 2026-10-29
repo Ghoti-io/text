@@ -33,9 +33,53 @@
 #include <stdlib.h>
 #include <string.h>
 
+/// The helper of css-counter-styles/counter-style-at-rule/support/counter-style-testcommon.js: the rule it builds around the descriptor under test.
+static void counter_rule(char * text, size_t cap, const char * descriptor, const char * value) {
+  char rest[512] = "";
+  if (strcmp(descriptor, "system") == 0) {
+    if (strcmp(value, "additive") == 0) {
+      snprintf(rest, sizeof rest, "; additive-symbols: 1 \"I\"");
+    }
+    else if (strncmp(value, "extends", 7) != 0) {
+      snprintf(rest, sizeof rest, "; symbols: \"X\" \"Y\"");
+    }
+  }
+  else if (strcmp(descriptor, "symbols") == 0) {
+    snprintf(rest, sizeof rest, "; system: symbolic");
+  }
+  else if (strcmp(descriptor, "additive-symbols") == 0) {
+    snprintf(rest, sizeof rest, "; system: additive");
+  }
+  else {
+    snprintf(rest, sizeof rest, "; system: symbolic; symbols: \"X\" \"Y\"");
+  }
+  snprintf(text, cap, "@counter-style foo { %s: %s%s }", descriptor, value, rest);
+}
+
 static int rule_valid(const GTEXT_CSS_Registry * reg, const char * kind, const char * input) {
   char text[8192];
-  if (strcmp(kind, "keyframes-name") == 0) {
+  char desc[128] = "", value[4096] = "", expected[4096] = "";
+  const int descriptor_kind = strcmp(kind, "counter-descriptor") == 0 || strcmp(kind, "face-descriptor") == 0;
+  if (descriptor_kind) {
+    const char * t1 = strchr(input, '\x1f');
+    const char * t2 = t1 ? strchr(t1 + 1, '\x1f') : NULL;
+    if (!t1 || !t2) {
+      return 0;
+    }
+    snprintf(desc, sizeof desc, "%.*s", (int)(t1 - input), input);
+    snprintf(value, sizeof value, "%.*s", (int)(t2 - t1 - 1), t1 + 1);
+    snprintf(expected, sizeof expected, "%s", t2 + 1);
+    if (kind[0] == 'c') {
+      counter_rule(text, sizeof text, desc, value);
+    }
+    else {
+      snprintf(text, sizeof text, "@font-face { %s: %s }", desc, value);
+    }
+  }
+  else if (strcmp(kind, "counter-name") == 0) {
+    snprintf(text, sizeof text, "@counter-style %s { system: symbolic; symbols: 'X' 'Y'; }", input);
+  }
+  else if (strcmp(kind, "keyframes-name") == 0) {
     snprintf(text, sizeof text, "@keyframes %s { }", input);
   }
   else if (strcmp(kind, "keyframe-selector") == 0) {
@@ -57,8 +101,26 @@ static int rule_valid(const GTEXT_CSS_Registry * reg, const char * kind, const c
   GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
   int ok = 0;
   if (gtext_css_atrule_parse(reg, &tree->rules[0], &o, &a, &ar) == GTEXT_CSS_OK && ar.valid && a) {
-    if (strcmp(kind, "keyframes-name") == 0) {
+    if (strcmp(kind, "keyframes-name") == 0 || strcmp(kind, "counter-name") == 0) {
       ok = 1;
+    }
+    else if (descriptor_kind) {
+      GTEXT_CSS_Atrule_Descriptor d;
+      ok = gtext_css_atrule_descriptor_find(a, desc, strlen(desc), &d);
+      if (ok && expected[0]) {
+        if (kind[0] == 'c') {
+          /* the page asks for `descriptor: expected` somewhere in the rule's cssText */
+          char * buf = NULL;
+          size_t n = 0;
+          char want[8300];
+          snprintf(want, sizeof want, "%s: %s", desc, expected);
+          ok = gtext_css_atrule_serialize_buffer(a, NULL, &buf, &n) == GTEXT_CSS_OK && buf && strstr(buf, want) != NULL;
+          gtext_css_atrule_buffer_free(NULL, buf);
+        }
+        else {
+          ok = strlen(expected) == d.text.length && memcmp(expected, d.text.data, d.text.length) == 0;
+        }
+      }
     }
     else if (strcmp(kind, "keyframe-selector") == 0) {
       ok = gtext_css_atrule_child_count(a) == 1;

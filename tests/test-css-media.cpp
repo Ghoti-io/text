@@ -343,6 +343,15 @@ TEST(CssMedia, RatiosAreComparedExactly) {
   EXPECT_TRUE(matches("(1 / 3 < aspect-ratio < 3 / 1)", e));
 }
 
+TEST(CssMedia, AUnitIsWrittenInLowerCase) {
+  /* Values 4, 5.1: "Units are ASCII case-insensitive and serialize as lowercase, for example 1Q serializes as 1q" (both browsers: `matchMedia("(min-width: 256Q)").media` is
+   * `(min-width: 256q)`). */
+  EXPECT_EQ(ser("(min-width: 256Q)"), "(min-width: 256q)");
+  EXPECT_EQ(ser("(100Q <= width <= 2E2Q)"), "(100q <= width <= 200q)");
+  EXPECT_EQ(ser("(min-resolution: 2DPPX)"), "(min-resolution: 2dppx)");
+  EXPECT_TRUE(matches("(min-width: 1Q)"));
+}
+
 TEST(CssMedia, ParseSerializeParseIsAFixedPoint) {
   static const char * const qs[] = {
     "not screen and (min-width: 5px) and (max-width: 40px)", "(400px <= width <= 700px), print", "((color))", "(foo: bar), (--x), not (--y)",

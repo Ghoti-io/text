@@ -115,7 +115,7 @@ typedef struct {
 #define CSS_ATRULE_REQUIRED_COUNT 9
 static const css_atrule_required css_atrule_required_rows[CSS_ATRULE_REQUIRED_COUNT] = {
   {"font-face", "", {"font-family", "src", NULL}, 1, 0},
-  {"font-palette-values", "", {"font-family", NULL}, 1, 1},
+  {"font-palette-values", "", {"font-family", NULL}, 1, 0},
   {"counter-style", "cyclic", {"symbols", NULL}, 1, 0},
   {"counter-style", "symbolic", {"symbols", NULL}, 1, 0},
   {"counter-style", "fixed", {"symbols", NULL}, 1, 0},

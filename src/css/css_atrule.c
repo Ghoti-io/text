@@ -493,6 +493,19 @@ static bool single_ident(const GTEXT_CSS_Component_Value * p, size_t n, const GT
 }
 
 /// `<font-family-name># = [ <string> | <custom-ident>+ ]#`: each entry's name (the idents joined by one space) in the names.
+/// Whether an identifier is one an unquoted family name may not hold: a generic family keyword or a CSS-wide keyword (Fonts 4, 2.1: "Font family names that happen to be the
+/// same as a keyword value (inherit, serif, sans-serif, monospace, fantasy, and cursive) must be quoted to prevent confusion with the keywords with the same names").
+static bool unquotable_family_word(const GTEXT_CSS_String * w) {
+  static const char * const words[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "emoji",
+      "math", "fangsong", "initial", "inherit", "unset", "revert", "revert-layer", "default"};
+  for (size_t i = 0; i < sizeof words / sizeof *words; i++) {
+    if (css_ascii_ieq(w, words[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n, bool *valid) {
   size_t start = 0;
   *valid = true;
@@ -529,7 +542,7 @@ static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n,
     else {
       size_t total = 0;
       for (size_t i = 0; i < nt; i++) {
-        if (toks[i]->kind != GTEXT_CSS_VALUE_TOKEN || toks[i]->type != GTEXT_CSS_TOKEN_IDENT || wide_keyword_name(&toks[i]->value)) {
+        if (toks[i]->kind != GTEXT_CSS_VALUE_TOKEN || toks[i]->type != GTEXT_CSS_TOKEN_IDENT || unquotable_family_word(&toks[i]->value)) {
           *valid = false;
           return true;
         }
@@ -767,32 +780,24 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
         k++;
       }
     }
-    else if (css_ascii_ieq(&d->name, "fallback")) {
+    else if (css_ascii_ieq(&d->name, "fallback") || css_ascii_ieq(&d->name, "speak-as") || css_ascii_ieq(&d->name, "system")) {
+      /* a <counter-style-name> (fallback, speak-as, `system: extends`) is a <custom-ident> that is never `none` (web-platform-tests counter-style-at-rule: fallback.html,
+         speak-as-syntax.html, system-syntax.html) */
       for (size_t i = 0; i < n; i++) {
         if (ident_is(&v[i], "none")) {
-          return "Counter Styles 3, fallback: <counter-style-name> excludes none";
+          return "Counter Styles 3: a <counter-style-name> excludes none";
         }
       }
     }
   }
   else if (strcmp(at_name, "font-face") == 0) {
     if (css_ascii_ieq(&d->name, "font-family")) {
-      /* Fonts 4, 4.1: font-family in @font-face is a <family-name>: a string or custom identifiers, never a generic family */
-      size_t sig = 0;
-      const GTEXT_CSS_Component_Value * one = NULL;
+      /* Fonts 4, 4.1: font-family in @font-face is a <family-name>: a string, or custom identifiers none of which is a generic family or a CSS-wide keyword ("Font family
+         names that happen to be the same as a keyword value (inherit, serif, sans-serif, monospace, fantasy, and cursive) must be quoted to prevent confusion with the
+         keywords with the same names"; both browsers refuse `serif foo` as well as `serif`) */
       for (size_t i = 0; i < n; i++) {
-        if (!is_ws(&v[i])) {
-          sig++;
-          one = &v[i];
-        }
-      }
-      static const char * const generic[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded",
-          "emoji", "math", "fangsong"};
-      if (sig == 1) {
-        for (size_t g = 0; g < sizeof generic / sizeof *generic; g++) {
-          if (ident_is(one, generic[g])) {
-            return "Fonts 4, 4.1: the font-family descriptor is a <family-name>, which a generic family keyword is not";
-          }
+        if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_IDENT && unquotable_family_word(&v[i].value)) {
+          return "Fonts 4, 4.1: the font-family descriptor is a <family-name>, whose unquoted form holds no generic family keyword and no CSS-wide keyword";
         }
       }
     }
@@ -809,6 +814,14 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
             return "Fonts 4, font-feature-settings: a feature tag is a string of four ASCII characters, otherwise the declaration is invalid";
           }
         }
+      }
+    }
+  }
+  else if (strcmp(at_name, "font-palette-values") == 0 && css_ascii_ieq(&d->name, "font-family")) {
+    /* Fonts 4, 9.2: a list of <family-name>s; web-platform-tests font-palette-values-invalid.html: "multiple families are allowed, but not generics" */
+    for (size_t i = 0; i < n; i++) {
+      if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_IDENT && unquotable_family_word(&v[i].value)) {
+        return "Fonts 4, 9.2: the font-family descriptor of a palette is a list of <family-name>s, which hold no unquoted generic family keyword";
       }
     }
   }
@@ -1149,6 +1162,11 @@ static bool read_block(ctx * c, const GTEXT_CSS_Rule * rule, block_mode mode, co
            of @font-feature-values. Any other at-rule, an unknown one included, is not part of the block and is dropped with its contents (both browsers do). */
         if (kid && !((a->kind == GTEXT_CSS_ATRULE_PAGE && kid->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN) ||
                      (a->kind == GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES && kid->kind == GTEXT_CSS_ATRULE_FEATURE_BLOCK))) {
+          gtext_css_atrule_free(kid);
+          kid = NULL;
+        }
+        if (kid && kid->kind == GTEXT_CSS_ATRULE_FEATURE_BLOCK && kid->nds == 0) {
+          /* a feature block with no valid declaration holds nothing (the browsers expose the feature maps, and an empty one is no map) */
           gtext_css_atrule_free(kid);
           kid = NULL;
         }
@@ -1636,11 +1654,6 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       prelude_ok = registered;
     }
     break;
-  case GTEXT_CSS_ATRULE_NAMESPACE:
-  case GTEXT_CSS_ATRULE_IMPORT:
-  case GTEXT_CSS_ATRULE_LAYER:
-  case GTEXT_CSS_ATRULE_SCOPE:
-  case GTEXT_CSS_ATRULE_MEDIA:
   case GTEXT_CSS_ATRULE_SUPPORTS:
   case GTEXT_CSS_ATRULE_CONTAINER: {
     /* Conditional 3, 3.1 / Conditional 5, 5.4: a prelude that is not a <supports-condition> / <container-condition> makes the rule invalid, and `insertRule()`
@@ -1667,6 +1680,11 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     mode = BLOCK_NONE;
     break;
   }
+  case GTEXT_CSS_ATRULE_NAMESPACE:
+  case GTEXT_CSS_ATRULE_IMPORT:
+  case GTEXT_CSS_ATRULE_LAYER:
+  case GTEXT_CSS_ATRULE_SCOPE:
+  case GTEXT_CSS_ATRULE_MEDIA:
   case GTEXT_CSS_ATRULE_WHEN:
   case GTEXT_CSS_ATRULE_ELSE:
   case GTEXT_CSS_ATRULE_CUSTOM_MEDIA:
@@ -1689,6 +1707,11 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     }
   }
   if (bad_prelude) {
+    prelude_ok = false;
+  }
+  /* a conditional group rule has a block: `@media screen;` is not a rule */
+  if ((kind == GTEXT_CSS_ATRULE_MEDIA || kind == GTEXT_CSS_ATRULE_SUPPORTS || kind == GTEXT_CSS_ATRULE_CONTAINER || kind == GTEXT_CSS_ATRULE_SCOPE || kind == GTEXT_CSS_ATRULE_WHEN ||
+          kind == GTEXT_CSS_ATRULE_ELSE) && !rule->has_block) {
     prelude_ok = false;
   }
   if (!prelude_ok) {

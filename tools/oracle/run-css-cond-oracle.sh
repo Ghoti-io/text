@@ -162,6 +162,6 @@ PY
 	mkdir -p "$scratch/plant-$name"
 	cp "$base/population.jsonl" "$scratch/plant-$name/"
 	python3 "$root/tools/oracle/css_cond_diff.py" --kind "$kind" --ours "$scratch/p-$name/ours" --work "$scratch/plant-$name" --stage ours --replay "$replay" >/dev/null
-	expect "plant-library-$name" "OURS" python3 "$root/tools/oracle/css_cond_diff.py" --kind "$kind" --ours "$scratch/p-$name/ours" --work "$scratch/plant-$name" --stage classify --replay "$replay"
+	expect "plant-library-$name" "UNLISTED\\|COUNT\\|GONE" python3 "$root/tools/oracle/css_cond_diff.py" --kind "$kind" --ours "$scratch/p-$name/ours" --work "$scratch/plant-$name" --stage classify --replay "$replay"
 done
 echo "css $kind oracle: controls done"

@@ -1,0 +1,1206 @@
+# tools/css/extract-wpt-atrules.py: the pages of the at-rule directories of css/ that are not read as data: page, number of test calls (1 for a reftest), reason.
+css-anchor-position/anchor-scroll-position-try-001.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-002.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-003.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-004.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-005.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-006.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-007.html	5	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-008.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-009.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-010.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-011.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-012.html	1	a reftest: the answer is the rendering
+css-anchor-position/anchor-scroll-position-try-013.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-014.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/anchor-scroll-position-try-015.tentative.html	1	a reftest: the answer is the rendering
+css-anchor-position/anchor-scroll-position-try-016.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/at-position-try-allowed-declarations.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/at-position-try-cssom.html	11	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/at-position-try-invalidation-shadow-dom.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/at-position-try-invalidation.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/at-position-try-parse.html	1	no test call: a manual or rendering page
+css-anchor-position/position-area-in-position-try.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-001.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-002.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-003.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-004.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-005.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-backdrop.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-cascade-layer-reorder.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-cascade.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-container-query.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-custom-property.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-display-none-hang-crash.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-dynamic.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-fallbacks-001.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-fallbacks-002.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-fallbacks-003.html	8	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-fallbacks-004.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-fallbacks-crash.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-fallbacks-limit.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-fallbacks-multicol-001.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-fallbacks-multicol-002.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-fallbacks-no-fit-after-fit.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-grid-001.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-ident-function.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-initial-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-invalid-anchor-crash.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-order-basic.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-order-include-base.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-order-inset-modified-containing-block.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-order-logical.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-order-position-area.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-position-anchor.html	1	no test call: a manual or rendering page
+css-anchor-position/position-try-pseudo-element.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-rule-caching-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-rule-caching-002.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-switch-from-fixed-anchor.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-switch-to-fixed-anchor.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-transition-basic.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-transition-flip.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-tree-scoped-pseudo.html	1	a reftest: the answer is the rendering
+css-anchor-position/position-try-tree-scoped.html	12	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/position-try-typed-om.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-anchor-position/remove-position-try-rules-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/animation-composition-keyframes.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/animation-css-variable-in-keyframe-adjusted.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/animation-keyframes-001-manual.html	1	no test call: a manual or rendering page
+css-animations/animation-keyframes-002-manual.html	1	no test call: a manual or rendering page
+css-animations/animation-keyframes-003-manual.html	1	no test call: a manual or rendering page
+css-animations/animation-multiple-from-to-keyframes-with-only-timing-function.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/animation-style-element-replaced-with-keyframes-rule-of-same-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/keyframes-remove-documentElement-crash.html	1	no test call: a manual or rendering page
+css-animations/keyframes-rule-caching.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/keyframes-tree-scoped-property-with-var.html	1	a reftest: the answer is the rendering
+css-animations/keyframes-unrelated-custom-property.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/keyframes-zero-angle-crash.html	1	no test call: a manual or rendering page
+css-animations/missing-values-first-keyframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/missing-values-last-keyframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/missing-values-middle-keyframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/neutral-var-keyframe-cycle-crash.html	1	no test call: a manual or rendering page
+css-animations/neutral-var-keyframe-cycle-registered-additive-crash.html	1	no test call: a manual or rendering page
+css-animations/neutral-var-keyframe-cycle-registered-crash.html	1	no test call: a manual or rendering page
+css-animations/revert-rule-keyframes-dynamic.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/revert-rule-keyframes.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/sample-on-last-keyframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-animations/svg-use-transform-keyframes-custom-property-override.html	1	a reftest: the answer is the rendering
+css-animations/parsing/keyframes-allowed-properties.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-color/at-color-profile-001.html	1	a reftest: the answer is the rendering
+css-counter-styles/counter-name-case-sensitive.html	1	a reftest: the answer is the rendering
+css-counter-styles/counter-suffix.html	1	a reftest: the answer is the rendering
+css-counter-styles/idlharness.html	1	no test call: a manual or rendering page
+css-counter-styles/arabic-indic/css3-counter-styles-101.html	1	a reftest: the answer is the rendering
+css-counter-styles/arabic-indic/css3-counter-styles-102.html	1	a reftest: the answer is the rendering
+css-counter-styles/arabic-indic/css3-counter-styles-103.html	1	a reftest: the answer is the rendering
+css-counter-styles/armenian/css3-counter-styles-006.html	1	a reftest: the answer is the rendering
+css-counter-styles/armenian/css3-counter-styles-007.html	1	a reftest: the answer is the rendering
+css-counter-styles/armenian/css3-counter-styles-008.html	1	a reftest: the answer is the rendering
+css-counter-styles/armenian/css3-counter-styles-009.html	1	a reftest: the answer is the rendering
+css-counter-styles/bengali/css3-counter-styles-116.html	1	a reftest: the answer is the rendering
+css-counter-styles/bengali/css3-counter-styles-117.html	1	a reftest: the answer is the rendering
+css-counter-styles/bengali/css3-counter-styles-118.html	1	a reftest: the answer is the rendering
+css-counter-styles/cambodian/css3-counter-styles-158.html	1	a reftest: the answer is the rendering
+css-counter-styles/cambodian/css3-counter-styles-159.html	1	a reftest: the answer is the rendering
+css-counter-styles/cambodian/css3-counter-styles-160.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-decimal/counter-cjk-decimal.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-decimal/css3-counter-styles-001.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-decimal/css3-counter-styles-004.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-decimal/css3-counter-styles-005.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-earthly-branch/css3-counter-styles-201.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-earthly-branch/css3-counter-styles-202.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-earthly-branch/css3-counter-styles-203.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-heavenly-stem/css3-counter-styles-204.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-heavenly-stem/css3-counter-styles-205.html	1	a reftest: the answer is the rendering
+css-counter-styles/cjk-heavenly-stem/css3-counter-styles-206.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-additive-symbols-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-additive-symbols-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-fallback-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-fallback-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-name-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-name-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-negative-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-negative-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-pad-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-pad-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-prefix-suffix-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-prefix-suffix-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-range-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-range-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-symbols-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-symbols-setter.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-system-setter-1.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-system-setter-2.html	1	a reftest: the answer is the rendering
+css-counter-styles/cssom/cssom-system-setter-invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/devanagari/css3-counter-styles-119.html	1	a reftest: the answer is the rendering
+css-counter-styles/devanagari/css3-counter-styles-120.html	1	a reftest: the answer is the rendering
+css-counter-styles/devanagari/css3-counter-styles-121.html	1	a reftest: the answer is the rendering
+css-counter-styles/ethiopic-numeric/counter-ethiopic-numeric.html	1	a reftest: the answer is the rendering
+css-counter-styles/ethiopic-numeric/css3-counter-styles-068.html	1	no test call: a manual or rendering page
+css-counter-styles/ethiopic-numeric/css3-counter-styles-069.html	1	no test call: a manual or rendering page
+css-counter-styles/ethiopic-numeric/css3-counter-styles-070.html	1	no test call: a manual or rendering page
+css-counter-styles/georgian/css3-counter-styles-010.html	1	a reftest: the answer is the rendering
+css-counter-styles/georgian/css3-counter-styles-011.html	1	a reftest: the answer is the rendering
+css-counter-styles/georgian/css3-counter-styles-012.html	1	a reftest: the answer is the rendering
+css-counter-styles/georgian/css3-counter-styles-014.html	1	a reftest: the answer is the rendering
+css-counter-styles/gujarati/css3-counter-styles-122.html	1	a reftest: the answer is the rendering
+css-counter-styles/gujarati/css3-counter-styles-123.html	1	a reftest: the answer is the rendering
+css-counter-styles/gujarati/css3-counter-styles-124.html	1	a reftest: the answer is the rendering
+css-counter-styles/gurmukhi/css3-counter-styles-125.html	1	a reftest: the answer is the rendering
+css-counter-styles/gurmukhi/css3-counter-styles-126.html	1	a reftest: the answer is the rendering
+css-counter-styles/gurmukhi/css3-counter-styles-127.html	1	a reftest: the answer is the rendering
+css-counter-styles/hebrew/counter-hebrew-nested.html	1	a reftest: the answer is the rendering
+css-counter-styles/hebrew/css3-counter-styles-015.html	1	a reftest: the answer is the rendering
+css-counter-styles/hebrew/css3-counter-styles-016.html	1	a reftest: the answer is the rendering
+css-counter-styles/hebrew/css3-counter-styles-016a.html	1	a reftest: the answer is the rendering
+css-counter-styles/hebrew/css3-counter-styles-017.html	1	a reftest: the answer is the rendering
+css-counter-styles/hiragana/css3-counter-styles-030.html	1	a reftest: the answer is the rendering
+css-counter-styles/hiragana/css3-counter-styles-031.html	1	a reftest: the answer is the rendering
+css-counter-styles/hiragana/css3-counter-styles-032.html	1	a reftest: the answer is the rendering
+css-counter-styles/hiragana-iroha/css3-counter-styles-033.html	1	a reftest: the answer is the rendering
+css-counter-styles/hiragana-iroha/css3-counter-styles-034.html	1	a reftest: the answer is the rendering
+css-counter-styles/hiragana-iroha/css3-counter-styles-035.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/counter-japanese-formal-extended.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/counter-japanese-formal.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/css3-counter-styles-047.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/css3-counter-styles-048.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/css3-counter-styles-049.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/css3-counter-styles-050.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-formal/css3-counter-styles-051.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/counter-japanese-informal-extended.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/counter-japanese-informal.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/css3-counter-styles-042.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/css3-counter-styles-043.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/css3-counter-styles-044.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/css3-counter-styles-045.html	1	a reftest: the answer is the rendering
+css-counter-styles/japanese-informal/css3-counter-styles-046.html	1	a reftest: the answer is the rendering
+css-counter-styles/kannada/css3-counter-styles-128.html	1	a reftest: the answer is the rendering
+css-counter-styles/kannada/css3-counter-styles-129.html	1	a reftest: the answer is the rendering
+css-counter-styles/kannada/css3-counter-styles-130.html	1	a reftest: the answer is the rendering
+css-counter-styles/katakana/css3-counter-styles-036.html	1	a reftest: the answer is the rendering
+css-counter-styles/katakana/css3-counter-styles-037.html	1	a reftest: the answer is the rendering
+css-counter-styles/katakana/css3-counter-styles-038.html	1	a reftest: the answer is the rendering
+css-counter-styles/katakana-iroha/css3-counter-styles-039.html	1	a reftest: the answer is the rendering
+css-counter-styles/katakana-iroha/css3-counter-styles-040.html	1	a reftest: the answer is the rendering
+css-counter-styles/katakana-iroha/css3-counter-styles-041.html	1	a reftest: the answer is the rendering
+css-counter-styles/khmer/css3-counter-styles-161.html	1	a reftest: the answer is the rendering
+css-counter-styles/khmer/css3-counter-styles-162.html	1	a reftest: the answer is the rendering
+css-counter-styles/khmer/css3-counter-styles-163.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/counter-korean-hangul-formal-extended.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/counter-korean-hangul-formal.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/css3-counter-styles-052.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/css3-counter-styles-053.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/css3-counter-styles-054.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/css3-counter-styles-055.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hangul-formal/css3-counter-styles-056.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/counter-korean-hanja-formal-extended.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/counter-korean-hanja-formal.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/css3-counter-styles-062.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/css3-counter-styles-063.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/css3-counter-styles-064.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/css3-counter-styles-065.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-formal/css3-counter-styles-066.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/counter-korean-hanja-informal-extended.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/counter-korean-hanja-informal.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/css3-counter-styles-057.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/css3-counter-styles-058.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/css3-counter-styles-059.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/css3-counter-styles-060.html	1	a reftest: the answer is the rendering
+css-counter-styles/korean-hanja-informal/css3-counter-styles-061.html	1	a reftest: the answer is the rendering
+css-counter-styles/lao/css3-counter-styles-131.html	1	a reftest: the answer is the rendering
+css-counter-styles/lao/css3-counter-styles-132.html	1	a reftest: the answer is the rendering
+css-counter-styles/lao/css3-counter-styles-133.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-armenian/css3-counter-styles-111.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-armenian/css3-counter-styles-112.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-armenian/css3-counter-styles-114.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-armenian/css3-counter-styles-115.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-greek/css3-counter-styles-027.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-greek/css3-counter-styles-028.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-greek/css3-counter-styles-029.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-roman/css3-counter-styles-019.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-roman/css3-counter-styles-020.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-roman/css3-counter-styles-020a.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-roman/css3-counter-styles-020b.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-roman/css3-counter-styles-021.html	1	a reftest: the answer is the rendering
+css-counter-styles/lower-roman/css3-counter-styles-022.html	1	a reftest: the answer is the rendering
+css-counter-styles/malayalam/css3-counter-styles-134.html	1	a reftest: the answer is the rendering
+css-counter-styles/malayalam/css3-counter-styles-135.html	1	a reftest: the answer is the rendering
+css-counter-styles/malayalam/css3-counter-styles-136.html	1	a reftest: the answer is the rendering
+css-counter-styles/mongolian/css3-counter-styles-137.html	1	a reftest: the answer is the rendering
+css-counter-styles/mongolian/css3-counter-styles-138.html	1	a reftest: the answer is the rendering
+css-counter-styles/mongolian/css3-counter-styles-139.html	1	a reftest: the answer is the rendering
+css-counter-styles/myanmar/css3-counter-styles-140.html	1	a reftest: the answer is the rendering
+css-counter-styles/myanmar/css3-counter-styles-141.html	1	a reftest: the answer is the rendering
+css-counter-styles/myanmar/css3-counter-styles-142.html	1	a reftest: the answer is the rendering
+css-counter-styles/oriya/css3-counter-styles-143.html	1	a reftest: the answer is the rendering
+css-counter-styles/oriya/css3-counter-styles-144.html	1	a reftest: the answer is the rendering
+css-counter-styles/oriya/css3-counter-styles-145.html	1	a reftest: the answer is the rendering
+css-counter-styles/persian/css3-counter-styles-104.html	1	a reftest: the answer is the rendering
+css-counter-styles/persian/css3-counter-styles-105.html	1	a reftest: the answer is the rendering
+css-counter-styles/persian/css3-counter-styles-106.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-formal/counter-simp-chinese-formal.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-formal/css3-counter-styles-076.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-formal/css3-counter-styles-077.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-formal/css3-counter-styles-078.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-formal/css3-counter-styles-079.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-formal/css3-counter-styles-080.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-informal/counter-simp-chinese-informal.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-informal/css3-counter-styles-071.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-informal/css3-counter-styles-072.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-informal/css3-counter-styles-073.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-informal/css3-counter-styles-074.html	1	a reftest: the answer is the rendering
+css-counter-styles/simp-chinese-informal/css3-counter-styles-075.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/dynamic.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/invalid.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/system-alphabetic.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/system-cyclic.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/system-default.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/system-fixed.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/system-numeric.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/system-symbolic.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/used-in-counter.html	1	a reftest: the answer is the rendering
+css-counter-styles/symbols-function/used-in-counters.html	1	a reftest: the answer is the rendering
+css-counter-styles/tamil/css3-counter-styles-146.html	1	a reftest: the answer is the rendering
+css-counter-styles/tamil/css3-counter-styles-147.html	1	a reftest: the answer is the rendering
+css-counter-styles/tamil/css3-counter-styles-148.html	1	a reftest: the answer is the rendering
+css-counter-styles/telugu/css3-counter-styles-149.html	1	a reftest: the answer is the rendering
+css-counter-styles/telugu/css3-counter-styles-150.html	1	a reftest: the answer is the rendering
+css-counter-styles/telugu/css3-counter-styles-151.html	1	a reftest: the answer is the rendering
+css-counter-styles/thai/css3-counter-styles-152.html	1	a reftest: the answer is the rendering
+css-counter-styles/thai/css3-counter-styles-153.html	1	a reftest: the answer is the rendering
+css-counter-styles/thai/css3-counter-styles-154.html	1	a reftest: the answer is the rendering
+css-counter-styles/tibetan/css3-counter-styles-155.html	1	a reftest: the answer is the rendering
+css-counter-styles/tibetan/css3-counter-styles-156.html	1	a reftest: the answer is the rendering
+css-counter-styles/tibetan/css3-counter-styles-157.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-formal/counter-trad-chinese-formal.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-formal/css3-counter-styles-086.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-formal/css3-counter-styles-087.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-formal/css3-counter-styles-088.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-formal/css3-counter-styles-089.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-formal/css3-counter-styles-090.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-informal/counter-trad-chinese-informal.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-informal/css3-counter-styles-081.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-informal/css3-counter-styles-082.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-informal/css3-counter-styles-083.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-informal/css3-counter-styles-084.html	1	a reftest: the answer is the rendering
+css-counter-styles/trad-chinese-informal/css3-counter-styles-085.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-armenian/css3-counter-styles-107.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-armenian/css3-counter-styles-108.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-armenian/css3-counter-styles-109.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-armenian/css3-counter-styles-110.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-roman/css3-counter-styles-023.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-roman/css3-counter-styles-024.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-roman/css3-counter-styles-024a.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-roman/css3-counter-styles-025.html	1	a reftest: the answer is the rendering
+css-counter-styles/upper-roman/css3-counter-styles-026.html	1	a reftest: the answer is the rendering
+css-fonts/crash-font-face-invalid-descriptor.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-face-array-buffer-parsing-failure-crash.html	1	no test call: a manual or rendering page
+css-fonts/font-face-local-css-wide-keyword-crash.html	1	no test call: a manual or rendering page
+css-fonts/font-face-local-not-family.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-range-order.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-face-sign-function.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-stretch-auto-static.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-stretch-auto-variable.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-stretch-default-variable.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-style-auto-static.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-style-auto-variable.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-style-default-variable.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-style-normal.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-face-unicode-range-2.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-unicode-range-nbsp.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-unicode-range.html	1	no test call: a manual or rendering page
+css-fonts/font-face-weight-auto-static.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-weight-auto-variable.html	1	a reftest: the answer is the rendering
+css-fonts/font-face-weight-default-variable.html	1	a reftest: the answer is the rendering
+css-fonts/font-feature-values-map-live.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-feature-values-sameobject.tentative.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-palette-10.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-11.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-12.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-13.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-14.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-15.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-16.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-17.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-18.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-19.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-2.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-20.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-21.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-22.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-23.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-23b.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-24.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-25.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-26.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-27.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-28.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-29.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-3.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-30.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-31.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-32.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-33.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-34.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-35.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-36.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-4.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-5.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-6.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-7.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-8.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-9.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-add-2.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-add.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-empty-font-family.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-modify-2.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-modify.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-non-ident-font-family.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-relative-color-crash.html	1	no test call: a manual or rendering page
+css-fonts/font-palette-remove-2.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-remove.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-values-relative-colors.html	1	a reftest: the answer is the rendering
+css-fonts/font-palette-vs-shorthand.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-palette.html	1	a reftest: the answer is the rendering
+css-fonts/palette-values-rule-add-2.html	1	a reftest: the answer is the rendering
+css-fonts/palette-values-rule-add.html	1	a reftest: the answer is the rendering
+css-fonts/palette-values-rule-delete-2.html	1	a reftest: the answer is the rendering
+css-fonts/palette-values-rule-delete.html	1	a reftest: the answer is the rendering
+css-fonts/remove-loaded-font-face-rule.html	1	a reftest: the answer is the rendering
+css-fonts/test_font_feature_values_parsing.html	7	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-display/font-display-change.html	1	a reftest: the answer is the rendering
+css-fonts/font-display/font-display-failure-fallback.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/font-display/font-display-feature-policy-02.tentative.html	1	a reftest: the answer is the rendering
+css-fonts/font-display/font-display-preload.html	1	a reftest: the answer is the rendering
+css-fonts/font-display/font-display.html	1	a reftest: the answer is the rendering
+css-fonts/parsing/font-palette-values-invalid.html	27	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-fonts/parsing/font-palette-values-valid.html	36	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-namespaces/prefix-001.xml	1	a reftest: the answer is the rendering
+css-namespaces/prefix-002.xml	1	a reftest: the answer is the rendering
+css-namespaces/prefix-003.xml	1	a reftest: the answer is the rendering
+css-namespaces/prefix-004.xml	1	a reftest: the answer is the rendering
+css-namespaces/prefix-005.xml	1	a reftest: the answer is the rendering
+css-namespaces/prefix-006.xml	1	a reftest: the answer is the rendering
+css-namespaces/scope-001.xml	1	a reftest: the answer is the rendering
+css-namespaces/scope-002.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-001.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-002.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-003.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-004.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-005.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-006.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-007.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-008.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-009.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-010.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-011.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-012.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-013.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-014.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-015.xml	1	a reftest: the answer is the rendering
+css-namespaces/syntax-016.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-1-block.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-1-generic.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-1.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-2-generic.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-2.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-3.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-5.xml	1	no test call: a manual or rendering page
+css-namespaces/reference/ref-lime-6.xml	1	no test call: a manual or rendering page
+css-page/background-image-only-for-print.html	1	a reftest: the answer is the rendering
+css-page/basic-pagination-001-print.html	1	a reftest: the answer is the rendering
+css-page/basic-pagination-002-print.html	1	a reftest: the answer is the rendering
+css-page/basic-pagination-003-print.html	1	a reftest: the answer is the rendering
+css-page/basic-pagination-004-print.html	1	a reftest: the answer is the rendering
+css-page/basic-pagination-005-print.html	1	a reftest: the answer is the rendering
+css-page/body-background-slr-print.html	1	a reftest: the answer is the rendering
+css-page/body-background-srl-print.html	1	a reftest: the answer is the rendering
+css-page/body-background-vlr-print.html	1	a reftest: the answer is the rendering
+css-page/body-background-vrl-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-001-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-002-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-003-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-004-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-005-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-006-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-007-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-008-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-009-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-010-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-011-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-with-abspos-with-link-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-with-iframe-print.html	1	a reftest: the answer is the rendering
+css-page/fixedpos-with-link-with-inline-child-print.html	1	a reftest: the answer is the rendering
+css-page/forced-page-breaks-002.xht	1	no test call: a manual or rendering page
+css-page/inheritance.html	1	no test call: a manual or rendering page
+css-page/layers-001-print.html	1	a reftest: the answer is the rendering
+css-page/layers-002-print.html	1	a reftest: the answer is the rendering
+css-page/layers-003-print.html	1	a reftest: the answer is the rendering
+css-page/layers-004-print.html	1	a reftest: the answer is the rendering
+css-page/media-queries-001-print.html	1	a reftest: the answer is the rendering
+css-page/media-queries-002-print.html	1	a reftest: the answer is the rendering
+css-page/media-queries-003-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-001-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-002-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-003-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-004-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-005-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-006-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-007-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-008-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-009-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-010-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-011-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-012-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-013-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-014-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-015-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-016-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-017-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-018-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-019-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-020-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-021-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-022-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-023-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-024-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-025-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-026-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-027-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-028-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-029-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-030-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-031-print.html	1	a reftest: the answer is the rendering
+css-page/monolithic-overflow-032-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/page-background-000.xht	1	no test call: a manual or rendering page
+css-page/page-background-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-background-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-background-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-background-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-background-005-print.html	1	a reftest: the answer is the rendering
+css-page/page-background-image-print.html	1	a reftest: the answer is the rendering
+css-page/page-borders-000.xht	1	no test call: a manual or rendering page
+css-page/page-box-000-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-005-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-006-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-007-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-008-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-009-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-010-print.html	1	a reftest: the answer is the rendering
+css-page/page-box-011-print.html	1	a reftest: the answer is the rendering
+css-page/page-counters-000.xht	1	no test call: a manual or rendering page
+css-page/page-left-right-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-left-right-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-003.xht	1	no test call: a manual or rendering page
+css-page/page-margin-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-005-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-006-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-007-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-auto-and-non-zero-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-auto-negative-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/page-margin-auto-print.html	1	a reftest: the answer is the rendering
+css-page/page-margin-negative-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/page-name-000-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-000.xht	1	no test call: a manual or rendering page
+css-page/page-name-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-abspos-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-abspos-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-abspos-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-and-break-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-and-break-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-and-break-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-and-break-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-canvas-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-canvas-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-canvas-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-canvas-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-display-none-child-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-fixed-pos-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-flex-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-flex-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-flex-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-flex-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-float-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-float-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-img-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-img-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-img-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-img-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-inline-block-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-inline-block-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-inline-block-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-margin-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-margin-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-orthogonal-writing-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-orthogonal-writing-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-orthogonal-writing-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-orthogonal-writing-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-005-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-006-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-007-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-008-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-propagated-009-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-siblings-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-siblings-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-siblings-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-siblings-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-siblings-005-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-table-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-unnamed-trailing-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-name-zero-height-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-orientation-on-landscape-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-orientation-on-portrait-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-orientation-on-portrait-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-orientation-on-portrait-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-orientation-on-square-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-orientation.tentative.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/page-properties-000.xht	1	no test call: a manual or rendering page
+css-page/page-rule-declarations-000.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/page-rule-declarations-001.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/page-rule-declarations-002.html	1	no test call: a manual or rendering page
+css-page/page-rule-declarations-003.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/page-rule-declarations-004.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/page-rule-specificity-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-rule-specificity-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-rule-specificity-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-000.xht	1	no test call: a manual or rendering page
+css-page/page-size-001-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-001.xht	1	no test call: a manual or rendering page
+css-page/page-size-002-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-002.xht	1	no test call: a manual or rendering page
+css-page/page-size-003-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-003.xht	1	no test call: a manual or rendering page
+css-page/page-size-004-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-004.xht	1	no test call: a manual or rendering page
+css-page/page-size-005-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-005.xht	1	no test call: a manual or rendering page
+css-page/page-size-006-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-006.xht	1	no test call: a manual or rendering page
+css-page/page-size-007-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-007.xht	1	no test call: a manual or rendering page
+css-page/page-size-008-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-008.xht	1	no test call: a manual or rendering page
+css-page/page-size-009-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-009.xht	1	no test call: a manual or rendering page
+css-page/page-size-010-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-010.xht	1	no test call: a manual or rendering page
+css-page/page-size-011-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-011.xht	1	no test call: a manual or rendering page
+css-page/page-size-012-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-012.xht	1	no test call: a manual or rendering page
+css-page/page-size-013-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-014-print.html	1	a reftest: the answer is the rendering
+css-page/page-size-015-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/page-size-016-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/page-size-017-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/page-visibility-hidden-001-print.html	1	a reftest: the answer is the rendering
+css-page/pseudo-first-margin-001-print.html	1	a reftest: the answer is the rendering
+css-page/pseudo-first-margin-002-print.html	1	a reftest: the answer is the rendering
+css-page/pseudo-first-margin-003-print.html	1	a reftest: the answer is the rendering
+css-page/pseudo-first-margin-004-print.html	1	a reftest: the answer is the rendering
+css-page/remote-origin-iframe-print.html	1	a reftest: the answer is the rendering
+css-page/root-element-display-none-print.html	1	a reftest: the answer is the rendering
+css-page/subpixel-page-size-001-print.html	1	a reftest: the answer is the rendering
+css-page/subpixel-page-size-002-print.html	1	a reftest: the answer is the rendering
+css-page/trailing-declaration-crash.html	1	no test call: a manual or rendering page
+css-page/crashtests/counter-containment-001.html	1	a crash or rendering test
+css-page/crashtests/counter-containment-002.html	1	a crash or rendering test
+css-page/crashtests/match-media-listener-relayout-contained-inline-subtree-print.html	1	a crash or rendering test
+css-page/crashtests/match-media-listener-relayout-contained-subtree-print.html	1	a crash or rendering test
+css-page/crashtests/match-media-listener-relayout-inside-fixed-size-overflow-hidden-print.html	1	a crash or rendering test
+css-page/crashtests/match-media-listener-shrink-content-print.html	1	a crash or rendering test
+css-page/crashtests/negative-margin-print.html	1	a crash or rendering test
+css-page/crashtests/percentage-padding-print.html	1	a crash or rendering test
+css-page/crashtests/root-element-remove-print.html	1	a crash or rendering test
+css-page/crashtests/tall-inline-block-in-float-in-table-cell-print.html	1	a crash or rendering test
+css-page/cssom/dynamic-001-print.html	1	a reftest: the answer is the rendering
+css-page/cssom/margin-001.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/cssom/margin-002.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/cssom/margin-003.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/cssom/page-001.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/cssom/page-002.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/margin-boxes/alignment-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/auto-margins-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/auto-margins-002-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/auto-margins-003-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/background-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-002-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-003-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-004-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-005-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-006-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-007-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-008-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-009-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-010-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-011-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-012-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/content-013-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-002-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-003-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-004-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-005-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-006-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-007-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-008-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-009-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-010-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-011-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-012-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-013-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-014-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/dimensions-015-print.tentative.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/inapplicable-properties-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/overconstrained-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/paint-order-001-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/paint-order-002-print.html	1	a reftest: the answer is the rendering
+css-page/margin-boxes/paint-order-003-print.html	1	a reftest: the answer is the rendering
+css-page/parsing/margin-rules-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/parsing/margin-rules-002.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/parsing/nested-rules-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/parsing/page-computed.html	1	no test call: a manual or rendering page
+css-page/parsing/page-invalid.html	1	no test call: a manual or rendering page
+css-page/parsing/page-orientation-computed.tentative.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/parsing/page-orientation-invalid.tentative.html	1	no test call: a manual or rendering page
+css-page/parsing/page-rules-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/parsing/page-valid.html	1	no test call: a manual or rendering page
+css-page/parsing/size-invalid.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/parsing/size-valid.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-page/tentative/safe-printable-inset-001-print.html	1	a reftest: the answer is the rendering
+css-page/tentative/safe-printable-inset-002-print.html	1	a reftest: the answer is the rendering
+css-page/tentative/safe-printable-inset-003-print.html	1	a reftest: the answer is the rendering
+css-page/tentative/safe-printable-inset-large-crash-print.html	1	a reftest: the answer is the rendering
+css-properties-values-api/at-property-animation.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-cssom.html	7	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-non-matching-media-crash.html	1	no test call: a manual or rendering page
+css-properties-values-api/at-property-optional-initial-value.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-shadow.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-stylesheets.html	5	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-typedom.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-viewport-units-dynamic.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property-viewport-units.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-properties-values-api/at-property.html	1	no test call: a manual or rendering page
+css-view-transitions/3d-transform-incoming.html	1	a reftest: the answer is the rendering
+css-view-transitions/3d-transform-outgoing.html	1	a reftest: the answer is the rendering
+css-view-transitions/active-view-transition-on-non-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/active-view-transition-pseudo-class-match.html	1	a reftest: the answer is the rendering
+css-view-transitions/active-view-transition-type-on-non-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/animating-new-content-subset.html	1	a reftest: the answer is the rendering
+css-view-transitions/animating-new-content.html	1	a reftest: the answer is the rendering
+css-view-transitions/animation-name-ua-prefix.html	1	a reftest: the answer is the rendering
+css-view-transitions/auto-name-from-id-shadow.html	1	a reftest: the answer is the rendering
+css-view-transitions/auto-name-from-id.html	1	a reftest: the answer is the rendering
+css-view-transitions/auto-name-get-animations.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/auto-name.html	1	a reftest: the answer is the rendering
+css-view-transitions/backdrop-filter-animated.html	1	a reftest: the answer is the rendering
+css-view-transitions/backdrop-filter-captured.html	1	a reftest: the answer is the rendering
+css-view-transitions/backdrop-filter-while-promise-pending.html	1	a reftest: the answer is the rendering
+css-view-transitions/block-with-overflowing-text.html	1	a reftest: the answer is the rendering
+css-view-transitions/break-inside-avoid-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/capture-old-state-error-flag-cleanup.html	1	a reftest: the answer is the rendering
+css-view-transitions/capture-with-offscreen-child-translated.html	1	a reftest: the answer is the rendering
+css-view-transitions/capture-with-offscreen-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/capture-with-opacity-zero-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/capture-with-visibility-hidden-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/capture-with-visibility-mixed-descendants.html	1	a reftest: the answer is the rendering
+css-view-transitions/class-specificity.html	1	a reftest: the answer is the rendering
+css-view-transitions/clip-path-larger-than-border-box-on-child-of-named-element.html	1	a reftest: the answer is the rendering
+css-view-transitions/column-span-during-transition-doesnt-skip.html	1	a reftest: the answer is the rendering
+css-view-transitions/composite-accumulate.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/computed-style-no-active-transition.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/content-smaller-than-box-size.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-visibility-auto-ancestor-skipped-after-finish.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/content-visibility-auto-relock-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/content-visibility-auto-shared-element.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-visibility-hidden-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/content-with-child-with-transparent-background.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-with-clip-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-with-clip.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-with-inline-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-with-transform-new-image.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-with-transform-old-image.html	1	a reftest: the answer is the rendering
+css-view-transitions/content-with-transparent-background.html	1	a reftest: the answer is the rendering
+css-view-transitions/css-tags-paint-order-with-entry.html	1	a reftest: the answer is the rendering
+css-view-transitions/css-tags-paint-order.html	1	a reftest: the answer is the rendering
+css-view-transitions/css-tags-shared-element.html	1	a reftest: the answer is the rendering
+css-view-transitions/dialog-in-rtl-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/dialog-in-top-layer-during-transition-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/dialog-in-top-layer-during-transition-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/document-active-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/document-element-detached-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/duplicate-tag-rejects-capture.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/duplicate-tag-rejects-start.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/dynamic-stylesheet-animations-timing-function.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/dynamic-stylesheet-animations.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/element-is-grouping-during-animation.html	1	a reftest: the answer is the rendering
+css-view-transitions/element-stops-grouping-after-animation.html	1	a reftest: the answer is the rendering
+css-view-transitions/element-with-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/elements-at-point.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/empty-render-target-capture.html	1	a reftest: the answer is the rendering
+css-view-transitions/empty-render-target-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/escaped-name.html	1	a reftest: the answer is the rendering
+css-view-transitions/event-pseudo-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/exit-transition-with-anonymous-layout-object.html	1	a reftest: the answer is the rendering
+css-view-transitions/far-away-capture.html	1	a reftest: the answer is the rendering
+css-view-transitions/finished-promise-defers-cleanup.tentative.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/first-line-reparent-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/fractional-box-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-box-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-box-with-overflow-children-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-box-with-overflow-children-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-box-with-shadow-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-box-with-shadow-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-translation-from-position.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-translation-from-transform-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/fractional-translation-from-transform.html	1	a reftest: the answer is the rendering
+css-view-transitions/fragmented-at-start-ignored.html	1	a reftest: the answer is the rendering
+css-view-transitions/fragmented-during-transition-skips.html	1	a reftest: the answer is the rendering
+css-view-transitions/get-computed-style-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/group-animation-for-root-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/group-transform-preserves-subpixel.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/hit-test-pseudo-element-element-from-point.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/hit-test-unpainted-element-from-point.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/hit-test-unpainted-element.html	1	a reftest: the answer is the rendering
+css-view-transitions/hit-test-unrelated-element.html	1	a reftest: the answer is the rendering
+css-view-transitions/html-becomes-fixed.html	1	a reftest: the answer is the rendering
+css-view-transitions/idlharness.html	1	no test call: a manual or rendering page
+css-view-transitions/iframe-and-main-frame-transition-new-main-new-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-and-main-frame-transition-new-main-old-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-and-main-frame-transition-old-main-new-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-and-main-frame-transition-old-main-old-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-and-main-frame-transition-old-main.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-and-main-frame-transition-with-name-on-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-new-has-scrollbar.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-old-has-scrollbar.html	1	a reftest: the answer is the rendering
+css-view-transitions/iframe-transition-destroyed-document-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/iframe-transition.sub.html	1	a reftest: the answer is the rendering
+css-view-transitions/inline-child-with-composited-filter.html	1	a reftest: the answer is the rendering
+css-view-transitions/inline-child-with-filter.html	1	a reftest: the answer is the rendering
+css-view-transitions/inline-child-with-overflow-shadow.html	1	a reftest: the answer is the rendering
+css-view-transitions/inline-element-size.html	1	a reftest: the answer is the rendering
+css-view-transitions/inline-with-offset-from-containing-block.html	1	a reftest: the answer is the rendering
+css-view-transitions/input-pointer-capture-while-render-blocked.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/input-targets-root-while-render-blocked.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/input-touch-while-render-blocked.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/japanese-tag.html	1	a reftest: the answer is the rendering
+css-view-transitions/list-style-position-style-change-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-below-viewport-offscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-below-viewport-offscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-below-viewport-partially-onscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-below-viewport-partially-onscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-left-of-viewport-offscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-left-of-viewport-offscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-left-of-viewport-partially-onscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-left-of-viewport-partially-onscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-on-top-of-viewport-offscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-on-top-of-viewport-offscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-right-of-viewport-offscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-right-of-viewport-offscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-right-of-viewport-partially-onscreen-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/massive-element-right-of-viewport-partially-onscreen-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/match-element-name.html	1	a reftest: the answer is the rendering
+css-view-transitions/mix-blend-mode-only-on-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/modify-style-via-cssom.html	1	a reftest: the answer is the rendering
+css-view-transitions/multiline-span-with-overflowing-text-and-box-decorations.html	1	a reftest: the answer is the rendering
+css-view-transitions/named-element-with-fix-pos-child-new.html	1	a reftest: the answer is the rendering
+css-view-transitions/named-element-with-fix-pos-child-old.html	1	a reftest: the answer is the rendering
+css-view-transitions/names-are-tree-scoped.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested-elements-in-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-and-old-sizes-match.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-ancestor-clipped-2.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-ancestor-clipped.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-captures-clip-path.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-captures-different-size.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-captures-opacity.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-captures-positioned-spans.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-captures-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-captures-spans.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-changes-overflow-left.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-changes-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-container-writing-modes.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-element-writing-modes.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-escapes-clip-with-abspos-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-flat-transform-ancestor.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-from-root-display-none.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-has-scrollbars.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-inline-with-offset-from-containing-block-clipped.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-intrinsic-aspect-ratio.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-is-empty-div.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-is-inline.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-object-fit-fill.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-object-fit-none.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-object-view-box-clip-path-reference.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-object-view-box-clip-path.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-object-view-box-overflow-clipped.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-object-view-box-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-preserve-3d-ancestor.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-root-scrollbar-with-fixed-background.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-scaling.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-subpixel-last-frame.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-transform-change-001.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-transform-position-fixed.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-with-object-view-box.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-with-overflow-zoomed.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-content-with-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-element-on-start.html	1	a reftest: the answer is the rendering
+css-view-transitions/new-root-vertical-writing-mode.html	1	a reftest: the answer is the rendering
+css-view-transitions/no-crash-set-exception.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/no-crash-view-transition-in-massive-iframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/no-css-animation-while-render-blocked.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/no-named-elements.html	1	a reftest: the answer is the rendering
+css-view-transitions/no-painting-while-render-blocked.html	1	a reftest: the answer is the rendering
+css-view-transitions/no-raf-while-render-blocked.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/no-root-capture.html	1	a reftest: the answer is the rendering
+css-view-transitions/no-white-flash-before-activation.html	1	a reftest: the answer is the rendering
+css-view-transitions/nothing-captured.html	1	a reftest: the answer is the rendering
+css-view-transitions/object-view-box-new-image.html	1	a reftest: the answer is the rendering
+css-view-transitions/object-view-box-old-image.html	1	a reftest: the answer is the rendering
+css-view-transitions/offscreen-element-modified-before-coming-onscreen.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-captures-clip-path.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-captures-different-size.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-captures-opacity.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-captures-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-container-writing-modes.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-element-writing-modes.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-escapes-clip-with-abspos-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-has-scrollbars.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-inline-with-offset-from-containing-block-clipped.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-intrinsic-aspect-ratio.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-is-empty-div.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-is-inline.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-object-fit-fill.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-object-fit-none.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-object-view-box-clip-path-reference.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-object-view-box-clip-path.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-object-view-box-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-root-scrollbar-with-fixed-background.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-with-object-view-box.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-with-overflow-zoomed.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-content-with-overflow.html	1	a reftest: the answer is the rendering
+css-view-transitions/old-root-vertical-writing-mode.html	1	a reftest: the answer is the rendering
+css-view-transitions/only-child-group.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/only-child-image-pair.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/only-child-new.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/only-child-no-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/only-child-old.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/only-child-on-root-element-with-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/only-child-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/outer-padding-inner-background.html	1	a reftest: the answer is the rendering
+css-view-transitions/paint-holding-in-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/paused-animation-at-end.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-computed-style-stays-in-sync-with-new-element.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-element-animations-rerun.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-element-animations.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-element-overflow-clip-with-border-radius.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-element-overflow-hidden.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-element-preserve-3d.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-escaped-star-specificity.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-escaped-star-view-transition-group.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-get-computed-style-clean-style.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-get-computed-style-escaped-star.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-get-computed-style.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/pseudo-match-escaped-star.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-mismatch-escaped-star.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-rendering-invalidation.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-entry.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-exit.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-match-ident.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-match-multiple-wildcard.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-match-multiple.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-match-wildcard-no-star.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-match-wildcard.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-mismatch-ident.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-mismatch-partial.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-mismatch-wildcard.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-multiple-vt-classes.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-new-with-class-old-without.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-old-with-class-new-without.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-view-transition-group.html	1	a reftest: the answer is the rendering
+css-view-transitions/pseudo-with-classes-view-transition-image-pair.html	1	a reftest: the answer is the rendering
+css-view-transitions/ready_resolves_after_dom_before_raf.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/remove-document-element-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/remove-root-element-firefox-bug-1982469-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/reset-state-after-scrolled-view-transition.html	1	a reftest: the answer is the rendering
+css-view-transitions/root-captured-as-different-tag.html	1	a reftest: the answer is the rendering
+css-view-transitions/root-element-cv-hidden-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/root-element-display-none-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/root-element-display-none-during-transition-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/root-preserve3d-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/root-reconstruct-frame-tree-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/root-replace-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/root-style-change-during-animation.html	1	a reftest: the answer is the rendering
+css-view-transitions/root-to-shared-animation-end.html	1	a reftest: the answer is the rendering
+css-view-transitions/root-to-shared-animation-incoming.html	1	a reftest: the answer is the rendering
+css-view-transitions/root-to-shared-animation-start.html	1	a reftest: the answer is the rendering
+css-view-transitions/rotated-cat-off-top-edge.html	1	a reftest: the answer is the rendering
+css-view-transitions/rtl-with-scrollbar.html	1	a reftest: the answer is the rendering
+css-view-transitions/scroller-child-abspos.html	1	a reftest: the answer is the rendering
+css-view-transitions/scroller-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/scroller.html	1	a reftest: the answer is the rendering
+css-view-transitions/set-current-time-transform.html	1	a reftest: the answer is the rendering
+css-view-transitions/set-current-time.html	1	a reftest: the answer is the rendering
+css-view-transitions/set-universal-specificity.html	1	a reftest: the answer is the rendering
+css-view-transitions/shadow-part-with-class-inside-shadow-important.html	1	a reftest: the answer is the rendering
+css-view-transitions/shadow-part-with-class-inside-shadow.html	1	a reftest: the answer is the rendering
+css-view-transitions/shadow-part-with-class.html	1	a reftest: the answer is the rendering
+css-view-transitions/shadow-part-with-name-nested.html	1	a reftest: the answer is the rendering
+css-view-transitions/shadow-part-with-name-overridden-by-important.html	1	a reftest: the answer is the rendering
+css-view-transitions/shadow-part-with-name.html	1	a reftest: the answer is the rendering
+css-view-transitions/shared-transition-author-style.manual.html	1	no test call: a manual or rendering page
+css-view-transitions/shared-transition-half.manual.html	1	no test call: a manual or rendering page
+css-view-transitions/shared-transition-shapes.manual.html	1	no test call: a manual or rendering page
+css-view-transitions/sibling-frames-transition.html	1	a reftest: the answer is the rendering
+css-view-transitions/small-scale.html	1	a reftest: the answer is the rendering
+css-view-transitions/snapshot-containing-block-absolute.html	1	a reftest: the answer is the rendering
+css-view-transitions/snapshot-containing-block-includes-scrollbar-gutter.html	1	a reftest: the answer is the rendering
+css-view-transitions/snapshot-containing-block-static-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/snapshot-containing-block-static.html	1	a reftest: the answer is the rendering
+css-view-transitions/span-with-overflowing-text-and-box-decorations.html	1	a reftest: the answer is the rendering
+css-view-transitions/span-with-overflowing-text-hidden.html	1	a reftest: the answer is the rendering
+css-view-transitions/span-with-overflowing-text.html	1	a reftest: the answer is the rendering
+css-view-transitions/start-skip-start.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/start-view-transtion-skips-active.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/style-inheritance.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/synchronous-callback-skipped-before-run.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/table-caption.html	1	a reftest: the answer is the rendering
+css-view-transitions/table-root-transition-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/to-keyframe-values.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/transform-origin-view-transition-group.html	1	a reftest: the answer is the rendering
+css-view-transitions/transformed-element-scroll-transform.html	1	a reftest: the answer is the rendering
+css-view-transitions/transition-in-empty-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/transition-in-hidden-page.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/transition-in-removed-iframe.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/transition-skipped-after-animation-started.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/transition-skipped-callback-from-detached-iframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/transition-skipped-from-invalid-callback.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/unhandled-rejection.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/unset-and-initial-view-transition-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/update-callback-called-once.html	1	a reftest: the answer is the rendering
+css-view-transitions/update-callback-timeout.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/view-transition-class-non-existing-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/view-transition-name-is-backdrop-filter-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-name-is-grouping.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-name-on-document-root.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-name-on-removed-element.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/view-transition-name-removed-mid-transition.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-name-stacking-context-dynamic.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-match-early-mutation.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-match-early.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-match-late-mutation.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-matches-case-sensitive.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-matches.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-mutable-no-document-element-crashtest.html	1	a crash or rendering test
+css-view-transitions/view-transition-types-mutable.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/view-transition-types-removed.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-reserved-mutation.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-reserved.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-types-stay.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-waituntil-animation-manipulation.html	1	a reftest: the answer is the rendering
+css-view-transitions/view-transition-waituntil-finished-promise.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/web-animation-pseudo-incorrect-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/web-animations-api-parse-pseudo-argument.html	1	a reftest: the answer is the rendering
+css-view-transitions/web-animations-api.html	1	a reftest: the answer is the rendering
+css-view-transitions/window-resize-aborts-transition-before-ready.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/window-resize-aborts-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/writing-mode-container-resize.html	1	a reftest: the answer is the rendering
+css-view-transitions/navigation/at-rule-cssom.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-in-layer-cascade-external-stylesheet.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-in-layer-cascade.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-in-layer.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-in-matching-media.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-in-non-matching-media.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-in-shadow-dom.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-multiple-rules.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-opt-in-auto.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-opt-in-change-with-script.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-opt-in-none-in-new.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/at-rule-opt-in-none-in-old.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/chromium-paint-holding-timeout.html	1	a reftest: the answer is the rendering
+css-view-transitions/navigation/hide-before-reveal.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/mismatched-snapshot-containing-block-size-skips.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/navigation-auto-excludes-reload.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/no-view-transition-with-cross-origin-redirect.sub.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/old_vt_promises_bfcache.html	1	no test call: a manual or rendering page
+css-view-transitions/navigation/opt-in-removed-during-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/opt-in-without-frame-crash.html	1	no test call: a manual or rendering page
+css-view-transitions/navigation/pagereveal-ctor.html	5	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-finished-promise.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-microtask-sequence.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-no-view-transition-new-opt-out.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-no-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-ready-promise.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-setup-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-updatecallbackdone-promise.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pagereveal-with-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-ctor.html	6	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-fired-before-old-state-capture.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-long-delay.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-push-from-click.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-push-navigation.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-push-with-redirect.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-replace-navigation.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-skip-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/pageswap-traverse-navigation-no-bfcache.https.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/prerender-coop.https.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/prerender-removed-during-navigation.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/reveal-after-aborted-navigation.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/root-element-transition-iframe-cross-origin.sub.html	1	a reftest: the answer is the rendering
+css-view-transitions/navigation/root-element-transition-iframe-with-startVT-on-main.html	1	a reftest: the answer is the rendering
+css-view-transitions/navigation/root-element-transition-iframe.html	1	a reftest: the answer is the rendering
+css-view-transitions/navigation/root-element-transition-no-opt-in-on-new.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/root-element-transition-opt-in-removed-on-new.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/root-element-transition-opt-in-removed-on-old.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/skip-outbound-vt-before-reveal.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/transition-to-prerender-manual.html	1	a reftest: the answer is the rendering
+css-view-transitions/navigation/transition-to-prerender.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/zero-named-elements.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/two-phase/preview-finished-before-swap.tentative.https.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/two-phase/preview-navigation-query.tentative.https.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/two-phase/swap-continues-when-skipping-preview.tentative.https.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/at-rule-last-rule-wins.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/at-rule-opt-in-auto-with-types-no-cascade.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/at-rule-opt-in-auto-with-types.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/at-rule-with-types-parsing.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/navigation-supersedes-types-same-rule.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/navigation-supersedes-types-when-after.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/navigation/with-types/types-in-pagereveal-and-pageswap.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/nested/adjust-transform-with-scale.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/adjust-transform.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/compute-explicit-name-direct.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/compute-explicit-name-nested-vt-names.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/compute-explicit-name-nested.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/compute-explicit-name-non-ancestor.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/compute-explicit-name-non-existent.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/compute-explicit-name-self.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/contain-direct.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/contain-nested.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/contain-on-self.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/custom-ident-implies-contain.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/group-children-animations.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/nested/group-children-sizing-with-border-props.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/group-children-sizing-with-border.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/group-children-sizing.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nearest-direct.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nearest-ignores-nearest-name.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nearest-implies-contain.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nearest-nested.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-exit.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-group-display-none.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-group-in-pseudo-basic.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-parent-changes-transform-twice.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-parent-changes-transform.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-position-with-border.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/nested-ref-100.html	1	no test call: a manual or rendering page
+css-view-transitions/nested/nested-root-capture-with-clip.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/normal-goes-up.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/render-element.tentative.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/rotated-container.html	1	a reftest: the answer is the rendering
+css-view-transitions/nested/rounded-border-clipper.html	1	a reftest: the answer is the rendering
+css-view-transitions/parsing/pseudo-elements-invalid-with-classes.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/pseudo-elements-invalid.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/pseudo-elements-valid-with-classes.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/pseudo-elements-valid.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-class-computed.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-class-invalid.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-class-valid.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-group-invalid.tentative.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-group-valid.tentative.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-name-computed.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-name-invalid.html	1	no test call: a manual or rendering page
+css-view-transitions/parsing/view-transition-name-valid.html	1	no test call: a manual or rendering page
+css-view-transitions/scoped/active-pseudo.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/ancestor-display-change.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/auto-name-on-descendant.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/auto-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/auto-nesting.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/box-decoration-painting.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/callback-order.tentative.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/capture.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/centered-paint-offset.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/clip-on-target-in-callback-2.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/clip-on-target-in-callback.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/clipper-non-containing-block.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/collision.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/display-change-during-transition.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/display-change.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/display-inline-block.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/display-none-during-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/document-element-start-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/element-active-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/element-moved-to-new-document.html	5	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/element-scoped-containment-invalid-state.html	5	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/fill-forwards.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/fractional-border-shift.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/from-scale-zero.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/hit-test-vt-overlay.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/hit-testing.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/implicit-contain.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/ink-overflow-on-target.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/missing-view-transition-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/negative-playback-rate.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/nested-scope.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/new-content.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/old-content.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/overflow-excludes-pseudo.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/paint-order.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/pause-rendering-resize.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/pause-rendering.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/rotation-on-scoped-element.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/run_in_parallel.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-containment-during-capture.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-containment-keeps-author-remembered-size.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-containment-pseudo-border.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/scope-containment-remembered-size.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-containment-sibling-offset.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-display-none.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-during-transition-1.html	3	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/scope-during-transition-2.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/scrolled-target-position-rtl.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/scrolled-target-position.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/scroller-with-child.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/shadow-dom.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/start-view-transition-on-disconnected-element.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/start-view-transition.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/target-in-scrolled-container.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/to-scale-zero.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/transform-clip.html	1	a reftest: the answer is the rendering
+css-view-transitions/scoped/view-transition-scope-added-during-callback.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/view-transition-scope-display-contents.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/view-transition-scope-name-discovery.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
+css-view-transitions/scoped/crashtests/container-query.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/display-change-after-capture.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/display-change-contents-after-capture.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/display-inline.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/display-none-animation-on-group.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/element-moved-to-new-document.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/element-scoped-multicol-crash.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/first-letter-pseudo.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/implicit-stacking-context.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/mask-image.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/participating-scope.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/replace-html.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/scroll-marker.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/shadow-dom.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/shuffle.html	1	a crash or rendering test
+css-view-transitions/scoped/crashtests/zindex-part.html	1	a crash or rendering test
