@@ -292,3 +292,16 @@ TEST(CssAtrule, UnknownNameIsSerializedEscaped) {
   ASSERT_NE(q.a, nullptr) << once;
   EXPECT_EQ(q.css(), once);
 }
+
+// @charset is exactly one string; a bad string or anything else is not an @charset rule.
+TEST(CssAtrule, CharsetIsOneString) {
+  Parsed ok("@charset \"utf-8\";");
+  EXPECT_TRUE(ok.res.valid);
+  EXPECT_EQ(ok.css(), "@charset \"utf-8\";");
+  Parsed bad("@charset \"utf-8\n;");
+  EXPECT_FALSE(bad.res.valid);
+  Parsed two("@charset \"a\" \"b\";");
+  EXPECT_FALSE(two.res.valid);
+  Parsed ident("@charset utf-8;");
+  EXPECT_FALSE(ident.res.valid);
+}

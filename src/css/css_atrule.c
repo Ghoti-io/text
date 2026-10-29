@@ -1299,6 +1299,20 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     }
     mode = BLOCK_DESCRIPTORS;
     break;
+  case GTEXT_CSS_ATRULE_CHARSET: {
+    /* Syntax 3, 3.2: `@charset "<name>";` -- exactly one string token; anything else is not an @charset and is ignored (a bad string is not a string) */
+    size_t sig = 0;
+    const GTEXT_CSS_Component_Value * str = NULL;
+    for (size_t i = 0; i < pn; i++) {
+      if (!is_ws(&p[i])) {
+        sig++;
+        str = &p[i];
+      }
+    }
+    prelude_ok = sig == 1 && str->kind == GTEXT_CSS_VALUE_TOKEN && str->type == GTEXT_CSS_TOKEN_STRING;
+    mode = BLOCK_NONE;
+    break;
+  }
   case GTEXT_CSS_ATRULE_COUNTER_STYLE:
     prelude_ok = single_ident(p, pn, &one) && counter_style_name_ok(&one->value);
     if (prelude_ok) {
@@ -1369,7 +1383,6 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   case GTEXT_CSS_ATRULE_WHEN:
   case GTEXT_CSS_ATRULE_ELSE:
   case GTEXT_CSS_ATRULE_CUSTOM_MEDIA:
-  case GTEXT_CSS_ATRULE_CHARSET:
   case GTEXT_CSS_ATRULE_PRESERVED:
   case GTEXT_CSS_ATRULE_UNKNOWN:
   default:
