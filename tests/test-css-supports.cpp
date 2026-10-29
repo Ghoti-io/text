@@ -91,6 +91,15 @@ TEST(CssSupports, Declarations) {
   EXPECT_TRUE(c.yes("not (color: nonsense)"));
 }
 
+TEST(CssSupports, ADeclarationNameIsWrittenBackAsAnIdentifier) {
+  /* found by the at-rule fuzzer: a name that holds a newline (written `\\a`) was written with the raw character, which reads back as white space */
+  const std::string once = ser("(a\\a b: x)");
+  EXPECT_EQ(once, "(a\\a b: x)");
+  EXPECT_EQ(ser(once), once);
+  EXPECT_EQ(ser("(\\\\x: y)"), "(\\\\x: y)");
+  EXPECT_EQ(ser("(\\66oo: bar)"), "(foo: bar)");
+}
+
 TEST(CssSupports, TheFormsOfADeclaration) {
   /* The matrix: `(color: red !important)`, `(color: var(--x))`, `(--x:)` true; `(color: nonsense)` false. */
   Cond c;

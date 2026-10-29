@@ -324,7 +324,13 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
       if (!f->bare) {
         puts_(o, "(");
       }
-      put(o, n->text, n->text_length);
+      if (o->st == GTEXT_CSS_OK) {
+        /* the name is the decoded identifier: written back as an identifier, so that a character that needs an escape (a newline, a backslash) reads back as the same name */
+        const GTEXT_CSS_Status ist = gtext_css_serialize_identifier(n->text, n->text_length, o->sink);
+        if (ist != GTEXT_CSS_OK) {
+          o->st = ist;
+        }
+      }
       puts_(o, ":");
       if (n->value_length) {
         puts_(o, " ");

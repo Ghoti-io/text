@@ -305,7 +305,9 @@ class Gen:
                     se = {"id": sid, "tag": "span", "classes": ["in"], "shadow": True}
                     self.elements.append(se)
                     iinner += '<span id="%s" class="in"%s>t</span>' % (sid, part)
-                inner_sheet = "<style>%s</style>" % self.sheet(host_rules=True)
+                # every inner tree also asks the one question the host-climb rule decides: `div :host` does not reach the host's ancestors in the outer tree (a fixed rule, so that
+                # the controls see the defect in 200 documents and the draw of every other document is unchanged)
+                inner_sheet = "<style>%s\ndiv :host { margin-top: 7px }</style>" % self.sheet(host_rules=True)
                 nested_shadows.append([iid, inner_sheet + iinner])
             style = "<style>%s</style>" % self.sheet(host_rules=True)
             shadows.append([hid, style + inner])

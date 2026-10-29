@@ -43,7 +43,7 @@ the-container-cache-ignores-the-request	css_container.c	const cq_cache_entry * h
 the-container-cache-ignores-the-request	css_container.c	st = cache_put(ci, e, req, e);	st = cache_put(ci, e, 1, e);	container
 the-container-cache-ignores-the-request	css_container.c	st = cache_put(ci, ci->path[i], req, result);	st = cache_put(ci, ci->path[i], 1, result);	container
 the-query-container-is-the-element-itself	css_container.c	  if (!from_element) {\n    st = parent_of(iface, start, &e);	  if (0) {\n    st = parent_of(iface, start, &e);	container
-an-inline-size-container-answers-the-block-axis	css_container.c	    contained = horizontal == cq->inline_horizontal; /* only the inline axis is contained */	    contained = true; /* only the inline axis is contained */	container
+an-inline-size-container-answers-the-block-axis	css_container.c	    if ((r->mask & (MQC_AX_B | MQC_AX_BOTH)) || ((r->mask & MQC_AX_W) && !inline_horizontal) || ((r->mask & MQC_AX_H) && inline_horizontal)) {	    if (0) {	container
 style-query-equality-compares-only-lengths	css_container_style.c	    *equal = ba.len == bb.len && (ba.len == 0 || memcmp(ba.data, bb.data, ba.len) == 0);	    *equal = ba.len == bb.len;	container
 the-node-memo-is-keyed-by-the-record	css_rule_index.c	    const uint8_t tv = r->cond ? pl->tv[r->cond] : 0;	    const uint8_t tv = r->cond ? pl->tv[(e->rec % pl->sheet->nconds) + 1] : 0;	container
 the-node-memo-is-dropped	css_rule_index.c	  for (uint32_t id = 1; id <= sheet->nconds; id++) {\n    const sheet_cond * c = &sheet->conds[id - 1];	  for (uint32_t id0 = 0; id0 < sheet->nconds * (sheet->nrecs ? sheet->nrecs : 1); id0++) {\n    const uint32_t id = id0 % sheet->nconds + 1;\n    const sheet_cond * c = &sheet->conds[id - 1];	sheetcond

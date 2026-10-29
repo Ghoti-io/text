@@ -173,6 +173,19 @@ int kinds(const Node & n) {
   return k;
 }
 
+/// Whether a condition asks about the block axis (`height`, horizontal-tb): a container is selected for the whole condition, and an inline-size container does not support that axis.
+bool asks_block(const Node & n) {
+  if (n.kind == Node::SIZE && n.feature == 1) {
+    return true;
+  }
+  for (const Node & c : n.kids) {
+    if (asks_block(c)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool cmp(int a, int op, int b) {
   switch (op) {
   case 0: return a < b;
@@ -198,7 +211,7 @@ Tri eval(const Node & n, const std::vector<Elem> & el, int c) {
   const Elem & e = el[c];
   switch (n.kind) {
   case Node::SIZE: {
-    /* a size container contains both axes; an inline-size container only the inline axis (horizontal-tb: the width) */
+    /* a size container contains both axes; an inline-size container is selected only by a condition that asks the inline axis alone (horizontal-tb: the width), so the block axis never reaches it here */
     const bool horizontal = n.feature == 0 || n.feature == 2;
     if (e.type == 2 && !horizontal) {
       return U;
@@ -237,6 +250,9 @@ bool reference(const Node & q, int name, const std::vector<Elem> & el, int e) {
     const Elem & c = el[a];
     if ((k & 1) && c.type == 0) {
       continue;
+    }
+    if ((k & 1) && c.type == 2 && asks_block(q)) {
+      continue; /* an inline-size container is passed over by a condition that asks about the block axis */
     }
     if (name && c.name != name) {
       continue;
