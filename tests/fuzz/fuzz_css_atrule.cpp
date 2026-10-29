@@ -162,7 +162,6 @@ void pipeline(const std::string & input, FaultAllocator & fa) {
   }
   GTEXT_CSS_Atrule_Options ao = gtext_css_atrule_options_default();
   ao.allocator = &fa.alloc;
-  size_t kept = 0;
   for (size_t i = 0; i < tree->rule_count; i++) {
     const GTEXT_CSS_Rule * r = &tree->rules[i];
     if (r->kind != GTEXT_CSS_RULE_AT) {
@@ -179,7 +178,6 @@ void pipeline(const std::string & input, FaultAllocator & fa) {
       continue;
     }
     if (res.valid && a) {
-      kept++;
       typed(a, input);
       const std::string once = text_of(a, &fa.alloc);
       if (once != "<oom>") {
