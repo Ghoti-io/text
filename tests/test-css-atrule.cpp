@@ -366,3 +366,95 @@ TEST(CssAtrule, CustomPropertyWithABadTokenIsDropped) {
   Parsed q("@keyframes k { to { --x: url(a); top: 0 } }");
   EXPECT_NE(q.css().find("--x"), std::string::npos);
 }
+
+// ---- the review of C4: what the grammars cannot say, and what both browsers drop ---------------------------------------------------------------------
+
+TEST(CssAtrule, CounterStyleNamesThatAnAuthorCannotDefine) {
+  /* Counter Styles 3, 3: `none`, the CSS-wide keywords and the names decimal, disc, circle, square, disclosure-open and disclosure-closed are not names an author
+   * can define; the rule is invalid. web-platform-tests css-counter-styles/cssom/cssom-name-setter-invalid sets `disc` and `decimal` and expects them ignored. */
+  for (const char * name : {"decimal", "DISC", "circle", "square", "disclosure-open", "Disclosure-Closed", "none", "inherit"}) {
+    Parsed p(std::string("@counter-style ") + name + " { system: cyclic; symbols: a }");
+    EXPECT_FALSE(p.res.valid) << name;
+    EXPECT_EQ(p.a, nullptr) << name;
+  }
+  for (const char * name : {"decimal-leading-zero", "disclosure", "mine", "Circles"}) {
+    Parsed p(std::string("@counter-style ") + name + " { system: cyclic; symbols: a }");
+    EXPECT_TRUE(p.res.valid) << name;
+  }
+}
+
+TEST(CssAtrule, CounterStyleDescriptorsBothBrowsersDrop) {
+  /* additive-symbols: strictly descending weights; range: lower bound not above upper; fallback: a <counter-style-name>, which is never `none`. */
+  EXPECT_EQ(Parsed("@counter-style x { system: additive; additive-symbols: 0 a, 1 b }").desc("additive-symbols"), "-");
+  EXPECT_EQ(Parsed("@counter-style x { system: additive; additive-symbols: 1 a, 1 b }").desc("additive-symbols"), "-");
+  EXPECT_EQ(Parsed("@counter-style x { system: additive; additive-symbols: 2 a, 1 b, 0 c }").desc("additive-symbols"), "2 a, 1 b, 0 c");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: 10 1 }").desc("range"), "-");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: 1 10, 20 5 }").desc("range"), "-") << "one bad range drops the descriptor";
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: 1 10, infinite 5, 5 infinite }").desc("range"), "1 10, infinite 5, 5 infinite");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: 5 5 }").desc("range"), "5 5");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: infinite 1 }").desc("range"), "infinite 1");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; range: 1 infinite }").desc("range"), "1 infinite");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; fallback: none }").desc("fallback"), "-");
+  EXPECT_EQ(Parsed("@counter-style x { system: cyclic; symbols: a; fallback: upper-roman }").desc("fallback"), "upper-roman");
+}
+
+TEST(CssAtrule, FontFaceDescriptorsBothBrowsersDrop) {
+  /* Fonts 4: the font-family descriptor is a <family-name> (no generic family); a feature tag is four ASCII characters; override-colors takes no currentcolor. */
+  EXPECT_EQ(Parsed("@font-face { font-family: serif; src: local(a) }").desc("font-family"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: Sans-Serif; src: local(a) }").desc("font-family"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: serif foo; src: local(a) }").desc("font-family"), "serif foo") << "a family named serif foo is a name";
+  EXPECT_EQ(Parsed("@font-face { font-family: \"serif\"; src: local(a) }").desc("font-family"), "\"serif\"");
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-feature-settings: \"abc\" 1 }").desc("font-feature-settings"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-feature-settings: \"abcde\" 1 }").desc("font-feature-settings"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-feature-settings: \"liga\" 1, \"ab\" 0 }").desc("font-feature-settings"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-feature-settings: \"liga\" 1, \"smcp\" }").desc("font-feature-settings"), "\"liga\" 1, \"smcp\"");
+  EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a; override-colors: 0 currentcolor }").desc("override-colors"), "-");
+  EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a; override-colors: 0 red, 1 CurrentColor }").desc("override-colors"), "-");
+  EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a; override-colors: 0 red, 1 #00f }").desc("override-colors"), "0 red, 1 rgb(0, 0, 255)") << "typed colors are written in their canonical form";
+}
+
+TEST(CssAtrule, PageKeepsAnImportantDescriptorAndOnlyTheMarginRulesOfItsGrammar) {
+  /* A page descriptor may be important (both browsers keep `size: A4 !important`); the block takes the margin rules, and an unknown at-rule or a name that is no
+   * margin rule (`@bottom`) is dropped with its contents. */
+  Parsed a("@page { size: A4 !important }");
+  EXPECT_TRUE(a.res.valid);
+  EXPECT_EQ(a.css(), "@page { size: A4 !important; }");
+  Parsed b("@page { @foo { } margin: 1in }");
+  EXPECT_EQ(b.css(), "@page { margin: 1in; }");
+  Parsed c("@page { @bottom { content: \"x\" } @bottom-center { content: \"y\" } }");
+  EXPECT_EQ(gtext_css_atrule_child_count(c.a), 1u);
+  EXPECT_EQ(c.css(), "@page {\n  @bottom-center { content: \"y\"; }\n}");
+  Parsed f("@font-feature-values A { @foo { } @styleset { a: 1 } }");
+  EXPECT_EQ(gtext_css_atrule_child_count(f.a), 1u);
+}
+
+TEST(CssAtrule, AnInvalidPropertyRuleIsNotValid) {
+  /* Properties and Values 1, 2.1: a valid name, `syntax`, `inherits`, and an `initial-value` that parses for the syntax (unless the syntax is `*`); otherwise the
+   * rule is invalid and ignored. `valid` is the answer of the code that registers the rule. */
+  const char * invalid[] = {
+    "@property --a { inherits: true }",                                  /* no syntax */
+    "@property --a { syntax: \"<foo>\"; inherits: true }",               /* a syntax that is not a syntax */
+    "@property --a { syntax: \"*\" }",                                   /* no inherits */
+    "@property --a { syntax: \"*\"; inherits: maybe }",
+    "@property a { syntax: \"*\"; inherits: true }",                     /* not a custom property name */
+    "@property --a { syntax: \"<color>\"; inherits: true; initial-value: 1em }",
+    "@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1em }", /* not computationally independent */
+    "@property --a { syntax: \"<length>\"; inherits: true }",            /* no initial value for a syntax other than * */
+  };
+  for (const char * css : invalid) {
+    Parsed p(css);
+    EXPECT_FALSE(p.res.valid) << css;
+    EXPECT_EQ(p.a, nullptr) << css;
+  }
+  const char * valid[] = {
+    "@property --a { syntax: \"*\"; inherits: false }",
+    "@property --a { syntax: \"*\"; inherits: true; initial-value: whatever }",
+    "@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1px }",
+    "@property --a { syntax: \"<color> | none\"; inherits: false; initial-value: none }",
+  };
+  for (const char * css : valid) {
+    Parsed p(css);
+    EXPECT_TRUE(p.res.valid) << css;
+    EXPECT_NE(p.a, nullptr) << css;
+  }
+}

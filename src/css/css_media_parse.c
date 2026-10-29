@@ -392,6 +392,9 @@ static size_t trim_end(const GTEXT_CSS_Component_Value * v, size_t from, size_t 
 /* ---- values ------------------------------------------------------------ */
 
 static const char * const REF_SYNTAX = "Media Queries 4, 3.2";
+/// The serial numbers of lists (css_media_internal.h, `serial`): a counter of the process, zero at load.
+static GCU_Atomic_Size css_mq_list_serial;
+
 static const char * const REF_VALUE = "Media Queries 4, 3.2 (a value that does not match the feature's syntax)";
 static const char * const REF_PREFIX = "Media Queries 4, 2.4.4";
 static const char * const REF_RANGE = "Media Queries 4, 2.4.3";
@@ -570,7 +573,8 @@ static val_result parse_value(parser * P, int feature, const GTEXT_CSS_Component
     }
     if (t->type == GTEXT_CSS_TOKEN_DIMENSION) {
       GTEXT_CSS_Unit u = gtext_css_unit_lookup(t->unit.data, t->unit.length);
-      if (u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_RESOLUTION) {
+      /* `<resolution [0,inf]>`: a negative resolution is not a value (both browsers refuse `(min-resolution: -1x)`; a length may be negative). */
+      if (u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_RESOLUTION && !(t->number < 0)) {
         val->kind = MQV_DIMENSION;
         val->unit = u;
         val->a = t->number;
@@ -620,7 +624,63 @@ static val_result parse_value(parser * P, int feature, const GTEXT_CSS_Component
 
 /* ---- the enclosed node ------------------------------------------------- */
 
+/// Whether the contents of a block or function are an `<any-value>?` (Syntax 3, 5.4.7): "any sequence of one or more tokens, so long as it does not contain
+/// <bad-string-token>, <bad-url-token>, unmatched <)-token>, <]-token>, or <}-token>". (A `;` or a `!` is allowed; they are not in <declaration-value>.) The
+/// walk uses its own stack: the nesting of the input costs memory, not the C stack. Returns false on a hard failure too, with the status set.
+static bool any_value_ok(parser * P, const GTEXT_CSS_Component_Value * v, size_t n) {
+  typedef struct {
+    const GTEXT_CSS_Component_Value * v;
+    size_t n;
+  } span_t;
+  size_t cap = 16, top = 0;
+  span_t * st = gtext_allocator_malloc(&P->alloc, cap * sizeof *st);
+  if (!st) {
+    set_status(P, GTEXT_CSS_E_OOM, (GTEXT_CSS_Span){0});
+    return false;
+  }
+  st[top++] = (span_t){v, n};
+  bool ok = true;
+  while (top > 0 && ok) {
+    const span_t f = st[--top];
+    for (size_t i = 0; i < f.n && ok; i++) {
+      const GTEXT_CSS_Component_Value * c = &f.v[i];
+      if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
+        switch (c->type) {
+        case GTEXT_CSS_TOKEN_BAD_STRING:
+        case GTEXT_CSS_TOKEN_BAD_URL:
+        case GTEXT_CSS_TOKEN_CLOSE_PAREN:
+        case GTEXT_CSS_TOKEN_CLOSE_SQUARE:
+        case GTEXT_CSS_TOKEN_CLOSE_CURLY: ok = false; break;
+        default: break;
+        }
+      } else if (c->child_count > 0) {
+        if (top == cap) {
+          span_t * g = gtext_allocator_realloc(&P->alloc, st, cap * 2 * sizeof *st);
+          if (!g) {
+            set_status(P, GTEXT_CSS_E_OOM, c->span);
+            gtext_allocator_free(&P->alloc, st);
+            return false;
+          }
+          st = g;
+          cap *= 2;
+        }
+        st[top++] = (span_t){c->children, c->child_count};
+      }
+    }
+  }
+  gtext_allocator_free(&P->alloc, st);
+  return ok;
+}
+
+/// A `<general-enclosed>` leaf. MQ_NONE when its contents are not an <any-value> (the condition is then invalid, as it is in browsers: `not (foo: red})` is not
+/// `not <unknown>`) or on a failure.
 static uint32_t make_enclosed(parser * P, const GTEXT_CSS_Component_Value * src) {
+  if (!any_value_ok(P, src->children, src->child_count)) {
+    if (P->status == GTEXT_CSS_OK) {
+      invalid_query(P, GTEXT_CSS_MQDIAG_SYNTAX, src->span, "Conditional 3, 3 (<general-enclosed> holds an <any-value>, which has no bad string, no bad url and no unmatched closing token)");
+    }
+    return MQ_NONE;
+  }
   uint32_t n = new_node(P, MQN_ENCLOSED, src->span);
   if (n != MQ_NONE) {
     P->in->nodes[n].src = src;
@@ -655,7 +715,9 @@ static bool name_of(const GTEXT_CSS_Component_Value * t, int * row, mq_prefix * 
   if (l > 4 && s[3] == '-' && ((css_mq_lower((unsigned char)s[0]) == 'm' && css_mq_lower((unsigned char)s[1]) == 'i' && css_mq_lower((unsigned char)s[2]) == 'n') ||
                                (css_mq_lower((unsigned char)s[0]) == 'm' && css_mq_lower((unsigned char)s[1]) == 'a' && css_mq_lower((unsigned char)s[2]) == 'x'))) {
     r = css_mq_find_feature(s + 4, l - 4);
-    if (r >= 0) {
+    /* `min-` and `max-` go before a standard feature name: the vendor features have their own spellings (`-webkit-min-device-pixel-ratio`, below), and
+       `min--webkit-device-pixel-ratio` is no feature (Compatibility Standard, 4.3). */
+    if (r >= 0 && css_mq_feature_rows[r].name[0] != '-') {
       *row = r;
       *prefix = css_mq_lower((unsigned char)s[1]) == 'i' ? MQP_MIN : MQP_MAX;
       *known_via_prefix = true;
@@ -948,12 +1010,12 @@ static feat_result parse_feature(parser * P, const GTEXT_CSS_Component_Value * b
   if (P->when) {
     return FEAT_SOFT;
   }
-  if (!P->container) {
-    return parse_feature_core(P, block, out);
-  }
   struct GTEXT_CSS_Media_List_Internal * in = P->in;
   const size_t nmark = in->node_count, kmark = in->kid_count, vmark = in->value_count, mmark = in->math_count;
   feat_result fr = parse_feature_core(P, block, out);
+  /* A known media feature written wrongly (a bad value, a prefix on a discrete feature, a mixed range) is one unknown leaf, as it is in both
+     browsers (Media Queries 4, 3.2 and the three-valued logic of 3.4: `(color: foo) or (color)` is true), and is written back as it was written.
+     Only an error of the query's own grammar still replaces the query by `not all`. */
   if (fr == FEAT_INVALID && P->status == GTEXT_CSS_OK) {
     P->invalid = false;
     truncate_to(P, nmark, kmark, vmark, mmark);
@@ -1008,6 +1070,14 @@ static char * serialize_trimmed(parser * P, const GTEXT_CSS_Component_Value * v,
 
 /// `(property: value [!important])`.
 static uint32_t make_decl(parser * P, const GTEXT_CSS_Component_Value * v, size_t n, GTEXT_CSS_Span span) {
+  /* A declaration that is not even an <any-value> (an unmatched `}`, a bad string or url) is no <supports-decl> and no <general-enclosed> either: the
+     condition is invalid. */
+  if (!any_value_ok(P, v, n)) {
+    if (P->status == GTEXT_CSS_OK) {
+      invalid_query(P, GTEXT_CSS_MQDIAG_SYNTAX, span, "Conditional 3, 3 (a declaration is a <general-enclosed> when it is not valid, and that holds an <any-value>)");
+    }
+    return MQ_NONE;
+  }
   size_t s = skip_ws(v, n, 0);
   size_t e = trim_end(v, s, n);
   size_t c = skip_ws(v, e, s + 1);
@@ -2230,6 +2300,7 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
   }
   in->alloc = *al;
   gcu_atomic_int_init(&in->refs, 1);
+  in->serial = gcu_atomic_size_fetch_add(&css_mq_list_serial, 1) + 1;
   css_arena_init(&in->arena, al);
   parser P;
   memset(&P, 0, sizeof P);

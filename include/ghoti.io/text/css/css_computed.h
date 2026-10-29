@@ -32,13 +32,13 @@
  * ## What is computed from what
  *
  * gtext_css_compute_style() takes the winners of the cascade for one element (a @ref GTEXT_CSS_Declaration_Block in ascending priority:
- * C2b builds it; a style attribute or a presentation attribute is one the caller builds), the computed style of the element it inherits from
+ * the cascade (css_cascade.h) builds it; a style attribute or a presentation attribute is one the caller builds), the computed style of the element it inherits from
  * (the **inheritance parent**: not necessarily the tree parent, see css_element.h), and the environment, and makes the style:
  *
  * 1. Each property is the declared value, or if there is none, the parent's computed value when the property is inherited and its initial
  *    value when it is not. `initial`, `inherit` and `unset` (inherit if inherited, else initial) are applied here; `all` (every property except `direction`,
  *    `unicode-bidi` and the custom properties) is a declaration at its place in the block's order, so that a later declaration of a property
- *    beats it and an earlier one does not. `revert` and `revert-layer` are cascade results (C2b) and are refused as inputs. A **pending** value (one that holds `var()`, `env()`, `attr()`, `if()`,
+ *    beats it and an earlier one does not. `revert` and `revert-layer` are cascade results and are refused as inputs. A **pending** value (one that holds `var()`, `env()`, `attr()`, `if()`,
  *    `inherit()`, `ident()`, `random-item()`, or is a `cycle()`) is substituted here, the custom properties first (css_substitute.h, css_custom.h): a value that
  *    comes to the guaranteed-invalid value, or to text that is not a value of the property, is invalid at computed-value time, which is `unset`. `env()`, `attr()`,
  *    `if()` and the tree counting functions ask the callbacks of the environment and of the element interface (css_element.h): GTEXT_CSS_E_UNSUPPORTED naming the

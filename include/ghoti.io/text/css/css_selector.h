@@ -258,6 +258,7 @@ struct GTEXT_CSS_Selector_List {
   uint64_t state;                   ///< The GTEXT_CSS_STATE_* bits it tests.
   uint64_t callbacks;               ///< A bit for each GTEXT_CSS_Element_Callback it calls.
   bool unmatchable;                 ///< Some selector in it is parse-only (see GTEXT_CSS_Selector_Requires).
+  bool had_empty_entry;             ///< A forgiving list had an empty entry (`:is(a,)`, `:is(,)`), which was skipped and is not an entry of `complex`.
   struct GTEXT_CSS_Selector_List_Internal * internal; ///< Private.
 };
 

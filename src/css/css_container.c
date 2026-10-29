@@ -157,10 +157,18 @@ static size_t phash(const void * a, uint32_t b) {
   return (size_t)h;
 }
 
+static void free_request_names(struct GTEXT_CSS_Condition_Call_Internal * ci) {
+  for (size_t i = 0; i < ci->nreq; i++) {
+    gtext_allocator_free(&ci->alloc, ci->reqs[i].name);
+    ci->reqs[i].name = NULL;
+  }
+}
+
 void css_cq_call_free(struct GTEXT_CSS_Condition_Call_Internal * ci) {
   if (!ci) {
     return;
   }
+  free_request_names(ci);
   gtext_allocator_free(&ci->alloc, ci->reqs);
   gtext_allocator_free(&ci->alloc, ci->cache);
   gtext_allocator_free(&ci->alloc, ci->results);
@@ -186,6 +194,7 @@ void gtext_css_condition_call_reset(GTEXT_CSS_Condition_Call * call) {
     memset(ci->results, 0, ci->results_cap * sizeof *ci->results);
   }
   ci->results_used = 0;
+  free_request_names(ci);
   ci->nreq = 0;
   if (ci->memo) {
     memset(ci->memo, 0, ci->memo_n);
@@ -250,6 +259,10 @@ static GTEXT_CSS_Status cache_put(struct GTEXT_CSS_Condition_Call_Internal * ci,
   return GTEXT_CSS_OK;
 }
 
+static size_t rhash(const void * container, size_t serial, uint32_t root) {
+  return phash(container, (uint32_t)(serial * 0x9e3779b1u) ^ (uint32_t)(serial >> 32) ^ (root * 0x85ebca6bu));
+}
+
 static GTEXT_CSS_Status results_grow(struct GTEXT_CSS_Condition_Call_Internal * ci) {
   const size_t ncap = ci->results_cap ? ci->results_cap * 2 : 256;
   cq_result_entry * n = gtext_allocator_calloc(&ci->alloc, ncap, sizeof *n);
@@ -258,9 +271,9 @@ static GTEXT_CSS_Status results_grow(struct GTEXT_CSS_Condition_Call_Internal * 
   }
   for (size_t i = 0; i < ci->results_cap; i++) {
     const cq_result_entry * e = &ci->results[i];
-    if (e->node) {
-      size_t j = phash(e->container, (uint32_t)((uintptr_t)e->node >> 4)) & (ncap - 1);
-      while (n[j].node) {
+    if (e->serial) {
+      size_t j = rhash(e->container, e->serial, e->root) & (ncap - 1);
+      while (n[j].serial) {
         j = (j + 1) & (ncap - 1);
       }
       n[j] = *e;
@@ -272,34 +285,34 @@ static GTEXT_CSS_Status results_grow(struct GTEXT_CSS_Condition_Call_Internal * 
   return GTEXT_CSS_OK;
 }
 
-static bool results_get(const struct GTEXT_CSS_Condition_Call_Internal * ci, const void * container, const void * node, uint8_t * result) {
+static bool results_get(const struct GTEXT_CSS_Condition_Call_Internal * ci, const void * container, size_t serial, uint32_t root, uint8_t * result) {
   if (!ci->results_cap) {
     return false;
   }
-  for (size_t j = phash(container, (uint32_t)((uintptr_t)node >> 4)) & (ci->results_cap - 1);; j = (j + 1) & (ci->results_cap - 1)) {
+  for (size_t j = rhash(container, serial, root) & (ci->results_cap - 1);; j = (j + 1) & (ci->results_cap - 1)) {
     const cq_result_entry * e = &ci->results[j];
-    if (!e->node) {
+    if (!e->serial) {
       return false;
     }
-    if (e->container == container && e->node == node) {
+    if (e->container == container && e->serial == serial && e->root == root) {
       *result = e->result;
       return true;
     }
   }
 }
 
-static GTEXT_CSS_Status results_put(struct GTEXT_CSS_Condition_Call_Internal * ci, const void * container, const void * node, uint8_t result) {
+static GTEXT_CSS_Status results_put(struct GTEXT_CSS_Condition_Call_Internal * ci, const void * container, size_t serial, uint32_t root, uint8_t result) {
   if ((ci->results_used + 1) * 2 > ci->results_cap) {
     const GTEXT_CSS_Status st = results_grow(ci);
     if (st != GTEXT_CSS_OK) {
       return st;
     }
   }
-  size_t j = phash(container, (uint32_t)((uintptr_t)node >> 4)) & (ci->results_cap - 1);
-  while (ci->results[j].node) {
+  size_t j = rhash(container, serial, root) & (ci->results_cap - 1);
+  while (ci->results[j].serial) {
     j = (j + 1) & (ci->results_cap - 1);
   }
-  ci->results[j] = (cq_result_entry){container, node, result};
+  ci->results[j] = (cq_result_entry){container, serial, root, result};
   ci->results_used++;
   return GTEXT_CSS_OK;
 }
@@ -326,7 +339,15 @@ static GTEXT_CSS_Status request_id(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Con
     ci->reqs = n;
     ci->capreq = nc;
   }
-  ci->reqs[ci->nreq++] = (cq_request){name, name_len, mask};
+  char * own = NULL;
+  if (name_len) {
+    own = gtext_allocator_malloc(&ci->alloc, name_len);
+    if (!own) {
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(own, name, name_len);
+  }
+  ci->reqs[ci->nreq++] = (cq_request){own, name_len, mask};
   call->container_requests = ci->nreq;
   *out = (uint32_t)ci->nreq;
   return GTEXT_CSS_OK;
@@ -693,7 +714,7 @@ GTEXT_CSS_Status css_cq_eval_root(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Cond
   }
   struct GTEXT_CSS_Condition_Call_Internal * ci = call->internal;
   uint8_t memo;
-  if (results_get(ci, container, q, &memo)) {
+  if (results_get(ci, container, list->serial, root, &memo)) {
     *out = (GTEXT_CSS_Tristate)memo;
     return GTEXT_CSS_OK;
   }
@@ -705,7 +726,7 @@ GTEXT_CSS_Status css_cq_eval_root(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Cond
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = results_put(ci, container, q, (uint8_t)t);
+  st = results_put(ci, container, list->serial, root, (uint8_t)t);
   if (st != GTEXT_CSS_OK) {
     return st;
   }

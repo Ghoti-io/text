@@ -158,7 +158,7 @@ typedef enum {
 typedef struct {
   GTEXT_CSS_Sheet_Diag_Kind kind; ///< Why.
   GTEXT_CSS_Span span;            ///< Where, in the bytes of the style sheet.
-  GTEXT_CSS_Id id;                ///< The C0 id of the rule or declaration.
+  GTEXT_CSS_Id id;                ///< The id of the rule or declaration in the syntax tree.
   const char * reference;         ///< A static reference to the sentence of the draft that decides it, never NULL.
 } GTEXT_CSS_Sheet_Diagnostic;
 

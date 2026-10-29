@@ -241,7 +241,7 @@ GTEXT_API size_t gtext_css_layer_path(const GTEXT_CSS_Layer_Registry * registry,
  *
  * Cascade 5, 6.4.3: "Layers that are defined inside of a conditional group rule do not contribute to the layer order unless the condition is
  * true or unless the conditional group rule can evaluate differently for different elements in the document." A rule whose condition depends on
- * the element (`@container`) must be answered true. The gate that evaluates conditions is C4's; the structure is final here.
+ * the element (`@container`) must be answered true. The conditions object (css_condition.h) supplies the answer: gtext_css_conditions_active_fn().
  */
 typedef bool (*GTEXT_CSS_Layer_Active_Fn)(void * user, const GTEXT_CSS_Rule * rule);
 

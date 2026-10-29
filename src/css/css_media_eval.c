@@ -287,6 +287,12 @@ static bool unit_px(unit_ctx * u, GTEXT_CSS_Unit unit, double * px) {
   case GTEXT_CSS_UNIT_REM:
     *px = e->default_font_size;
     return true;
+  case GTEXT_CSS_UNIT_LH:
+  case GTEXT_CSS_UNIT_RLH:
+    /* The initial `line-height` is `normal`, whose used value belongs to the font; a feature value has no font to ask, so a line is 1.2 em, the value the
+       initial fonts of browsers have, and the answer does not depend on a callback (`ex`, `ch`, `cap` and `ic` do, and are unsupported without one). */
+    *px = 1.2 * e->default_font_size;
+    return true;
   case GTEXT_CSS_UNIT_EX: case GTEXT_CSS_UNIT_REX:
   case GTEXT_CSS_UNIT_CH: case GTEXT_CSS_UNIT_RCH:
   case GTEXT_CSS_UNIT_CAP: case GTEXT_CSS_UNIT_RCAP:
@@ -413,6 +419,36 @@ static bool value_double(unit_ctx * u, const mq_value * v, int unit_family, doub
 /* ---- ratios --------------------------------------------------------------- */
 
 /// -1, 0, 1, or 2 (unordered) for n1/d1 against n2/d2 by cross multiplication; a degenerate ratio is read as the extended number it stands for.
+/// A product of two positive finite doubles as a normalized 128-bit integer (top bit set) times 2^e.
+typedef struct {
+  uint64_t hi, lo;
+  long e;
+} wide;
+
+static wide wide_product(double x, double y) {
+  int ex, ey;
+  const double fx = gmath_frexp(x, &ex), fy = gmath_frexp(y, &ey); /* fx, fy in [0.5, 1): 53 significant bits, so f * 2^53 is an integer */
+  const uint64_t mx = (uint64_t)(fx * 9007199254740992.0), my = (uint64_t)(fy * 9007199254740992.0);
+  const uint64_t x0 = mx & 0xffffffffu, x1 = mx >> 32, y0 = my & 0xffffffffu, y1 = my >> 32;
+  const uint64_t p00 = x0 * y0, p01 = x0 * y1, p10 = x1 * y0, p11 = x1 * y1;
+  const uint64_t mid = (p00 >> 32) + (p01 & 0xffffffffu) + (p10 & 0xffffffffu);
+  wide w;
+  w.lo = (p00 & 0xffffffffu) | (mid << 32);
+  w.hi = p11 + (p01 >> 32) + (p10 >> 32) + (mid >> 32);
+  w.e = (long)ex + ey - 106;
+  if (w.hi == 0) { /* cannot happen for mantissas of 2^52 or more, kept so that the normalization below is total */
+    w.hi = w.lo;
+    w.lo = 0;
+    w.e -= 64;
+  }
+  while ((w.hi >> 63) == 0) {
+    w.hi = (w.hi << 1) | (w.lo >> 63);
+    w.lo <<= 1;
+    w.e--;
+  }
+  return w;
+}
+
 static int ratio_cmp(double n1, double d1, double n2, double d2) {
   /* a / b as an extended number: 0 / 0 and inf / inf are NaN (unordered). */
   int k1 = 0, k2 = 0; /* 0 finite positive, 1 +inf, 2 zero, 3 NaN */
@@ -439,22 +475,17 @@ static int ratio_cmp(double n1, double d1, double n2, double d2) {
     int r2 = k2 == 2 ? 0 : (k2 == 0 ? 1 : 2);
     return r1 < r2 ? -1 : (r1 > r2 ? 1 : 0);
   }
-  /* n1 * d2 against n2 * d1, each product kept as mantissa and exponent so that it cannot overflow. */
-  int e1a, e1b, e2a, e2b;
-  double m1a = gmath_frexp(n1, &e1a), m1b = gmath_frexp(d2, &e1b);
-  double m2a = gmath_frexp(n2, &e2a), m2b = gmath_frexp(d1, &e2b);
-  double p1 = m1a * m1b, p2 = m2a * m2b;
-  long ex1 = (long)e1a + e1b, ex2 = (long)e2a + e2b;
-  /* p in [0.25, 1): normalize so that equal products compare equal. */
-  int t;
-  p1 = gmath_frexp(p1, &t);
-  ex1 += t;
-  p2 = gmath_frexp(p2, &t);
-  ex2 += t;
-  if (ex1 != ex2) {
-    return ex1 < ex2 ? -1 : 1;
+  /* n1 * d2 against n2 * d1, exactly: each factor is a 53-bit integer times a power of two, so each product is a 106-bit integer times a power of two,
+     which two 64-bit words hold; comparing two normalized products is comparing their exponents and then their words. No rounding, so two ratios that
+     are equal as fractions compare equal and two that differ by one part in 2^53 compare unequal. */
+  wide w1 = wide_product(n1, d2), w2 = wide_product(n2, d1);
+  if (w1.e != w2.e) {
+    return w1.e < w2.e ? -1 : 1;
   }
-  return p1 < p2 ? -1 : (p1 > p2 ? 1 : 0);
+  if (w1.hi != w2.hi) {
+    return w1.hi < w2.hi ? -1 : 1;
+  }
+  return w1.lo < w2.lo ? -1 : (w1.lo > w2.lo ? 1 : 0);
 }
 
 static bool cmp_apply(int c, unsigned op) {
@@ -552,12 +583,12 @@ static bool kw_matches(const GTEXT_CSS_Media_Environment * e, const mq_container
   return kw_index(e, view, row) == k;
 }
 
-/// The boolean context of a keyword feature: true for any value but `none`.
+/// The boolean context of a keyword feature: true when any keyword but the ones the feature table marks false in a boolean context (`none`, and `no-preference`:
+/// Media Queries 5, "no-preference evaluates to false in the boolean context") matches.
 static bool kw_boolean(const GTEXT_CSS_Media_Environment * e, const mq_container_view * view, int row) {
-  int none = css_mq_find_keyword(row, "none", 4);
   const css_mq_feature_row * r = &css_mq_feature_rows[row];
   for (size_t k = 0; k < r->kw_count; k++) {
-    if ((int)k != none && kw_matches(e, view, row, (int)k)) {
+    if (((r->kw_false >> k) & 1u) == 0 && kw_matches(e, view, row, (int)k)) {
       return true;
     }
   }

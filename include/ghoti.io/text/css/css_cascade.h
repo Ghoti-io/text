@@ -30,9 +30,9 @@
  * ## What is and is not here
  *
  * The cascade is a **declaration-source interface**. A caller supplies the candidate declarations of one element with their sort keys: the selector
- * matcher (C3) will supply the declarations of the style rules that match and their specificity, the attribute readers (C2d) the `style` attribute and the
+ * matcher (css_match.h) supplies the declarations of the style rules that match and their specificity, the attribute readers (css_presentation.h) the `style` attribute and the
  * presentation attributes, and a test builds entries directly. Nothing here parses or matches a selector, or evaluates a media, supports or container
- * condition (C4 supplies the filter that says which `@layer` rules count: css_layer.h), or substitutes `var()`: a pending value is carried, not read, and gtext_css_compute_style() (css_computed.h) is what reads it.
+ * condition (the conditions object supplies the filter that says which `@layer` rules count: css_layer.h), or substitutes `var()`: a pending value is carried, not read, and gtext_css_compute_style() (css_computed.h) is what reads it.
  *
  * ## The sort order
  *
@@ -163,8 +163,8 @@ typedef struct {
   uint32_t sheet;                      ///< Order of appearance: the style sheet, in final style sheet order.
   uint32_t rule;                       ///< ... the rule in it, in document order.
   uint32_t declaration;                ///< ... the declaration in the rule.
-  GTEXT_CSS_Id rule_id;                ///< Provenance: the C0 id of the rule (0 for none).
-  GTEXT_CSS_Id declaration_id;         ///< Provenance: the C0 id of the declaration (0 for none).
+  GTEXT_CSS_Id rule_id;                ///< Provenance: the syntax-tree id of the rule (0 for none).
+  GTEXT_CSS_Id declaration_id;         ///< Provenance: the syntax-tree id of the declaration (0 for none).
   GTEXT_CSS_Span span;                 ///< Provenance: where the declaration is in its source.
   /* ---- what it declares, from the library ---- */
   GTEXT_CSS_Property_Id property;      ///< The property it sets: a longhand; for a declaration of `all` that won a property, that property; the custom property pattern for a custom one.
@@ -185,7 +185,7 @@ typedef struct {
   GTEXT_CSS_Property_Id property; ///< The property concerned, or 0.
   char name[96];                  ///< The name concerned (a property, a custom property, a callback), cut to fit.
   const char * detail;            ///< A static sentence saying which rule was broken, or NULL.
-  GTEXT_CSS_Id declaration;       ///< The C0 id of the declaration concerned (a limit reached at it), or 0.
+  GTEXT_CSS_Id declaration;       ///< The syntax-tree id of the declaration concerned (a limit reached at it), or 0.
   GTEXT_CSS_Span span;            ///< Where that declaration is.
   size_t work;                    ///< Units of work done (candidates and steps visited, comparisons made), for the quadratic suite.
 } GTEXT_CSS_Cascade_Result;
@@ -274,12 +274,12 @@ typedef enum {
 typedef struct {
   GTEXT_CSS_Diagnostic_Kind kind;  ///< Why.
   GTEXT_CSS_String name;           ///< The property's name as written; owned by the set.
-  GTEXT_CSS_Id declaration;        ///< The C0 id of the declaration.
+  GTEXT_CSS_Id declaration;        ///< The syntax-tree id of the declaration.
   GTEXT_CSS_Span span;             ///< Where it is.
 } GTEXT_CSS_Cascade_Diagnostic;
 
 /**
- * @brief Parse a declaration of a C0 tree and add it if it is valid.
+ * @brief Parse a declaration of a syntax tree and add it if it is valid.
  *
  * "An invalid declaration (a failed parse) never enters the cascade, so a lower-priority valid declaration wins, as the draft says; an unknown property is
  * dropped with a diagnostic naming it." The importance, the declaration id and the span are the declaration's own, whatever `keys` holds.

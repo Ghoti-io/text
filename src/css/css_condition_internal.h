@@ -87,7 +87,7 @@ typedef struct {
 
 /// A request for a query container: a name (NULL: any) and the kinds of feature asked (MQC_*).
 typedef struct {
-  const char * name;
+  char * name;      ///< Owned by the call (a copy: the query the name was read from may be freed while the call lives on).
   size_t name_len;
   uint32_t mask;
 } cq_request;
@@ -102,7 +102,8 @@ typedef struct {
 /// The answer of a container condition for a container: (container, root node) to a three-valued result.
 typedef struct {
   const void * container;
-  const void * node;    ///< The root QUERY node (NULL: the slot is empty).
+  size_t serial;        ///< The serial of the list the root is of (0: the slot is empty); never an address, which a freed list leaves for the next one.
+  uint32_t root;        ///< The node of the root query in that list.
   uint8_t result;
 } cq_result_entry;
 

@@ -168,4 +168,9 @@ static inline GTEXT_CSS_String copy_string(holder * h, const GTEXT_CSS_String * 
 }
 #endif
 
+/// Whether an `@property` rule is valid, judged by the code that registers it (css_at_property.c): a valid name, `syntax`, `inherits` and an `initial-value` that holds for
+/// the syntax. *why receives the sentence of the first reason it is not (static), or NULL. A registration of the same name by the caller does not make the rule invalid.
+GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * allocator, const GTEXT_CSS_Rule * rule, bool * valid,
+    const char ** why);
+
 #endif

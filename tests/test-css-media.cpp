@@ -307,6 +307,42 @@ TEST(CssMedia, RangeSyntaxKeepsItsForm) {
   EXPECT_EQ(ser("(-webkit-min-device-pixel-ratio: 2)"), "(-webkit-min-device-pixel-ratio: 2)");
 }
 
+TEST(CssMedia, TheVendorRatioHasOnlyItsOwnPrefixedSpellings) {
+  /* Compatibility Standard, 4.3: -webkit-min-device-pixel-ratio and -webkit-max-device-pixel-ratio exist; `min--webkit-device-pixel-ratio` does not (both browsers
+   * answer false), so it is an unknown feature name and is written back as it was written. */
+  EXPECT_EQ(ser("(min--webkit-device-pixel-ratio: 1)"), "(min--webkit-device-pixel-ratio: 1)");
+  EXPECT_EQ(ser("(max--webkit-device-pixel-ratio: 1)"), "(max--webkit-device-pixel-ratio: 1)");
+  EXPECT_FALSE(matches("(min--webkit-device-pixel-ratio: 1)"));
+  EXPECT_TRUE(matches("(not (min--webkit-device-pixel-ratio: 1)) or (-webkit-min-device-pixel-ratio: 1)")) << "unknown or true";
+  EXPECT_FALSE(matches("(not (min--webkit-device-pixel-ratio: 1)) or (-webkit-min-device-pixel-ratio: 2)")) << "unknown or false is unknown";
+  EXPECT_TRUE(matches("(-webkit-min-device-pixel-ratio: 1)"));
+}
+
+TEST(CssMedia, ANegativeResolutionIsNotAValue) {
+  /* `<resolution [0,inf]>`: `(min-resolution: -1x)` is an unknown leaf, false here and in both browsers, where a negative length is a value. */
+  EXPECT_FALSE(matches("(min-resolution: -1x)"));
+  EXPECT_FALSE(matches("not (min-resolution: -1x)"));
+  EXPECT_EQ(ser("(min-resolution: -1x)"), "(min-resolution: -1x)");
+  EXPECT_TRUE(matches("(min-resolution: -1x) or (color)"));
+  EXPECT_FALSE(matches("(resolution >= -1dppx)"));
+  EXPECT_TRUE(matches("(min-width: -1px)"));
+}
+
+TEST(CssMedia, RatiosAreComparedExactly) {
+  /* A viewport of (2^52+1) by 2^52 against the ratio (2^52+2)/(2^52+1): the cross products are 2^104 + 2^53 + 1 and 2^104 + 2^53, which differ by one and
+   * which a product rounded to a double cannot tell apart. */
+  GTEXT_CSS_Media_Environment e = base_env();
+  e.viewport.width = 4503599627370497.0;
+  e.viewport.height = 4503599627370496.0;
+  EXPECT_TRUE(matches("(aspect-ratio > 4503599627370498 / 4503599627370497)", e));
+  EXPECT_FALSE(matches("(aspect-ratio <= 4503599627370498 / 4503599627370497)", e));
+  EXPECT_FALSE(matches("(aspect-ratio = 4503599627370498 / 4503599627370497)", e));
+  EXPECT_TRUE(matches("(aspect-ratio = 4503599627370497 / 4503599627370496)", e));
+  EXPECT_TRUE(matches("(aspect-ratio = 9007199254740994 / 9007199254740992)", e)) << "equal as fractions";
+  EXPECT_TRUE(matches("(aspect-ratio < 4503599627370497 / 4503599627370495)", e));
+  EXPECT_TRUE(matches("(1 / 3 < aspect-ratio < 3 / 1)", e));
+}
+
 TEST(CssMedia, ParseSerializeParseIsAFixedPoint) {
   static const char * const qs[] = {
     "not screen and (min-width: 5px) and (max-width: 40px)", "(400px <= width <= 700px), print", "((color))", "(foo: bar), (--x), not (--y)",
@@ -353,8 +389,7 @@ TEST(CssMedia, AnAuthoredNotAllIsNotReplaced) {
 }
 
 TEST(CssMedia, InvalidByTheGrammar) {
-  /* Each of these is `not all`: an `only` with no type, a missing `and`, `or` beside `and`, `not` where the grammar forbids it, a reserved word as a type, a number
-   * with no unit where a length is wanted, a value of the wrong kind. */
+  /* Each of these is `not all`: an `only` with no type, a missing `and`, `or` beside `and`, `not` where the grammar forbids it, a reserved word as a type. */
   static const char * const bad[] = {
     "only (color)",                    /* "the only keyword can only be used before a media type" */
     "screen (color)",                  /* a missing `and` */
@@ -367,6 +402,22 @@ TEST(CssMedia, InvalidByTheGrammar) {
     "layer",                           /* "<media-type> does not include the keywords only, not, and, or, and layer" */
     "not layer",
     "and",
+    "42",
+    "\"string\"",
+    "screen and screen",
+  };
+  for (const char * q : bad) {
+    EXPECT_EQ(ser(q), "not all") << q;
+    EXPECT_FALSE(matches(q)) << q;
+  }
+}
+
+
+TEST(CssMedia, AKnownFeatureWrittenWrongIsOneUnknownLeaf) {
+  /* Media Queries 4, 3.2: a media feature that is not valid is unknown; with the three-valued logic of 3.4 an unknown leaf makes `or` true beside a true
+   * leaf and `not` of it unknown, and the text is written back as it was written, as `matchMedia` of both browsers does ("The media query (color:20example)
+   * ... is therefore turned into not all" of the draft is the whole query being that one leaf, which is false either way). */
+  static const char * const unknown[] = {
     "(width: 5)",                      /* a number with no unit where a length is wanted */
     "(width: 5px 6px)",
     "(width:)",
@@ -388,14 +439,44 @@ TEST(CssMedia, InvalidByTheGrammar) {
     "(resolution: 0)",
     "(update: 1)",
     "(pointer: coarse fine)",
-    "42",
-    "\"string\"",
-    "screen and screen",
   };
-  for (const char * q : bad) {
-    EXPECT_EQ(ser(q), "not all") << q;
+  for (const char * q : unknown) {
+    EXPECT_EQ(ser(q), q) << q;
     EXPECT_FALSE(matches(q)) << q;
+    EXPECT_TRUE(matches(std::string("(color) or ") + q)) << q;
+    EXPECT_FALSE(matches(std::string("(color) and ") + q)) << q;
+    EXPECT_FALSE(matches(std::string("not ") + q)) << q;
+    EXPECT_TRUE(matches(std::string("not foo and ") + q)) << q;
   }
+  EXPECT_EQ(ser("(color: foo) or (color)"), "(color: foo) or (color)");
+  EXPECT_TRUE(matches("(min-width: foo) or (min-width: 1px)"));
+  EXPECT_TRUE(matches("(color: foo), (color)"));
+  EXPECT_FALSE(matches("screen and (color: foo)"));
+}
+
+TEST(CssMedia, NoPreferenceIsFalseInABooleanContext) {
+  /* Media Queries 5: "no-preference evaluates to false in the boolean context" (prefers-reduced-motion, -transparency, -data and prefers-contrast; web-platform-tests
+   * prefers-reduced-motion.html: `(prefers-reduced-motion)` matches exactly when `(prefers-reduced-motion: no-preference)` does not). */
+  GTEXT_CSS_Media_Environment e = base_env();
+  e.prefers_reduced_motion = GTEXT_CSS_MQ_REDUCE_NO_PREFERENCE;
+  e.prefers_reduced_transparency = GTEXT_CSS_MQ_REDUCE_NO_PREFERENCE;
+  e.prefers_reduced_data = GTEXT_CSS_MQ_REDUCE_NO_PREFERENCE;
+  e.prefers_contrast = GTEXT_CSS_MQ_CONTRAST_NO_PREFERENCE;
+  for (const char * f : {"prefers-reduced-motion", "prefers-reduced-transparency", "prefers-reduced-data", "prefers-contrast"}) {
+    const std::string q = std::string("(") + f + ")";
+    EXPECT_FALSE(matches(q.c_str(), e)) << q;
+    EXPECT_TRUE(matches(("not " + q).c_str(), e)) << q;
+    EXPECT_TRUE(matches((std::string("(") + f + ": no-preference)").c_str(), e)) << q;
+  }
+  e.prefers_reduced_motion = GTEXT_CSS_MQ_REDUCE_REDUCE;
+  e.prefers_reduced_transparency = GTEXT_CSS_MQ_REDUCE_REDUCE;
+  e.prefers_reduced_data = GTEXT_CSS_MQ_REDUCE_REDUCE;
+  e.prefers_contrast = GTEXT_CSS_MQ_CONTRAST_MORE;
+  for (const char * f : {"prefers-reduced-motion", "prefers-reduced-transparency", "prefers-reduced-data", "prefers-contrast"}) {
+    EXPECT_TRUE(matches((std::string("(") + f + ")").c_str(), e)) << f;
+  }
+  e.prefers_contrast = GTEXT_CSS_MQ_CONTRAST_CUSTOM;
+  EXPECT_TRUE(matches("(prefers-contrast)", e));
 }
 
 TEST(CssMedia, ZeroWithoutAUnitIsALength) {
@@ -693,6 +774,18 @@ TEST(CssMedia, FontMetricUnitsNeedTheMetricCallback) {
   EXPECT_TRUE(matches("(width = 20ch)", e));
 }
 
+TEST(CssMedia, LineHeightUnitsNeedNoCallback) {
+  /* `normal` has no used value without a font: `lh` and `rlh` are 1.2 em of the initial font size, with no font_metric callback, so the answer is a result and
+   * never E_UNSUPPORTED (`ex`, `ch`, `cap` and `ic` still are, above). */
+  GTEXT_CSS_Media_Environment e = sized(192, 100); /* 1.2 * 16 = 19.2; 10lh is 192px */
+  EXPECT_TRUE(matches("(width = 10lh)", e));
+  EXPECT_TRUE(matches("(width = 10rlh)", e));
+  EXPECT_TRUE(matches("(width > 9lh)", e));
+  EXPECT_FALSE(matches("(width > 10lh)", e));
+  e.default_font_size = 20; /* 24px a line: 8lh is 192px */
+  EXPECT_TRUE(matches("(width = 8lh)", e));
+}
+
 /* ---- resolution, ratios, ranges ---------------------------------------------------------------------------------------------------------------------- */
 
 TEST(CssMedia, ResolutionUnitsAndInfinite) {
@@ -717,10 +810,12 @@ TEST(CssMedia, ResolutionUnitsAndInfinite) {
 }
 
 TEST(CssMedia, NegativeRangeIsFalseNotUnknown) {
-  /* "The following examples result in a green background on all visual devices: not (width <= -100px), (height > -100px), not (resolution: -300dpi)". */
+  /* "The following examples result in a green background on all visual devices: not (width <= -100px), (height > -100px), not (resolution: -300dpi)".
+   * The first two hold; the third does not here: `<resolution [0,inf]>` has no negative value, so `(resolution: -300dpi)` is an unknown leaf and its negation
+   * unknown, as it is in both browsers (the draft's example was written before the range was). */
   EXPECT_TRUE(matches("not (width <= -100px)"));
   EXPECT_TRUE(matches("(height > -100px)"));
-  EXPECT_TRUE(matches("not (resolution: -300dpi)"));
+  EXPECT_FALSE(matches("not (resolution: -300dpi)"));
   EXPECT_FALSE(matches("(width = -100px)"));
   EXPECT_FALSE(matches("(width < -100px)"));
   EXPECT_FALSE(matches("(width <= -100px)"));
@@ -757,9 +852,9 @@ TEST(CssMedia, TheRangeFormsAndThePrefixesAgree) {
 }
 
 TEST(CssMedia, RangeWithOneBadSideInAListLeavesTheOtherQueries) {
-  /* The matrix: the list `(color), (400px < width > 700px)`: the second becomes `not all`; the list is true on a color device. */
+  /* The matrix: the list `(color), (400px < width > 700px)`: the second is an unknown leaf (false), kept as written; the list is true on a color device. */
   Parsed p("(color), (400px < width > 700px)");
-  EXPECT_EQ(p.text(), "(color), not all");
+  EXPECT_EQ(p.text(), "(color), (400px < width > 700px)");
   EXPECT_TRUE(matches("(color), (400px < width > 700px)"));
   EXPECT_GE(gtext_css_media_result_diagnostic_count(&p.result), 1u);
 }

@@ -32,8 +32,9 @@
 
 #include "css_condition_internal.h"
 
-/// The at-rules this library implements (the ledger's applies or typed column), lower case.
-static const char * const implemented_at_rules[] = {"media", "supports", "container", "when", "else", "starting-style", "custom-media", "import", "namespace", "charset", "layer",
+/// The at-rules this library implements (the ledger's applies or typed column), lower case. `@charset` is not among them: Syntax 3, 3.2 makes it an encoding
+/// declaration the decoder reads, not a rule that is parsed (it is not in the CSSOM), and both browsers answer false.
+static const char * const implemented_at_rules[] = {"media", "supports", "container", "when", "else", "starting-style", "custom-media", "import", "namespace", "layer",
     "scope", "property", "font-face", "font-feature-values", "font-palette-values", "color-profile", "counter-style", "page", "keyframes", "-webkit-keyframes",
     "view-transition", "position-try"};
 
@@ -46,7 +47,7 @@ static bool at_rule_implemented(const char * name, size_t length) {
   return false;
 }
 
-/// Whether a selector list holds a forgiving list that is empty or kept an entry it could not read: `selector()` is not supported then, whatever the list would do
+/// Whether a selector list holds a forgiving list that is empty, skipped an empty entry (`:is(a,)`) or kept an entry it could not read: `selector()` is not supported then, whatever the list would do
 /// in a style rule (the web-platform-tests: `selector(:is(:foo))` and `selector(:is())` are false).
 static bool has_forgiven(const GTEXT_CSS_Selector_List * root, const GTEXT_Allocator * a, bool * oom) {
   size_t cap = 16, sp = 0;
@@ -59,7 +60,7 @@ static bool has_forgiven(const GTEXT_CSS_Selector_List * root, const GTEXT_Alloc
   stack[sp++] = root;
   while (sp && !found) {
     const GTEXT_CSS_Selector_List * l = stack[--sp];
-    if (l->mode == GTEXT_CSS_SELECTOR_FORGIVING_LIST && l->count == 0) {
+    if (l->mode == GTEXT_CSS_SELECTOR_FORGIVING_LIST && (l->count == 0 || l->had_empty_entry)) {
       found = true;
       break;
     }
@@ -98,10 +99,11 @@ static GTEXT_CSS_Tristate tri_of(bool b) {
   return b ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE;
 }
 
-/// Whether `name: value` is supported. *status is set on a failure.
+/// Whether `name: value` is supported. *status is set on a failure. A custom property is supported with any value that is a `<declaration-value>` (the empty one
+/// included): the registry's pending grammar says so, with no top-level `;` or `!`, no unmatched `)` `]` `}`, no bad string or bad url, and every `var()` valid.
 static bool decl_supported(const GTEXT_CSS_Conditions * c, const char * name, size_t nl, const char * value, size_t vl, GTEXT_CSS_Status * status, const char ** detail) {
-  if (nl >= 2 && name[0] == '-' && name[1] == '-') {
-    return true; /* a custom property is supported with any value, the empty one included */
+  if (nl == 2 && name[0] == '-' && name[1] == '-') {
+    return false; /* Variables 1, 2: "--" alone is reserved, it names no custom property */
   }
   if (!c->registry) {
     *status = GTEXT_CSS_E_UNSUPPORTED;
@@ -124,7 +126,8 @@ static bool decl_supported(const GTEXT_CSS_Conditions * c, const char * name, si
     return false;
   }
   bool ok = pv.outcome == GTEXT_CSS_PROP_RESULT_VALID || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING || pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE;
-  if (ok && c->policy.property_supported) {
+  const bool custom = nl >= 2 && name[0] == '-' && name[1] == '-';
+  if (ok && !custom && c->policy.property_supported) {
     ok = c->policy.property_supported(c->policy.user, pv.property ? pv.property : pv.named);
   }
   gtext_css_property_value_free(&pv);
@@ -149,6 +152,9 @@ GTEXT_CSS_Tristate css_supports_eval_leaf(const GTEXT_CSS_Conditions * c, const 
     }
     if (forgiven) {
       return GTEXT_CSS_TRI_FALSE;
+    }
+    if (n->sel->unmatchable) {
+      return GTEXT_CSS_TRI_FALSE; /* a selector this library parses and can never match (`:nth-col()`) is not one it supports */
     }
     if (!c->iface) {
       return GTEXT_CSS_TRI_TRUE;

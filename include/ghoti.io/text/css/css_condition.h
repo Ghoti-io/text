@@ -128,8 +128,8 @@ typedef struct {
   void * user;                                                          ///< Passed to the callbacks.
   /** Narrow the properties: a renderer that does not implement `backdrop-filter` says so. NULL: every property of the registry is supported. */
   bool (*property_supported)(void * user, GTEXT_CSS_Property_Id property);
-  uint32_t font_tech;                                                   ///< GTEXT_CSS_FONT_TECH_* the consumer can render: `font-tech()`.
-  uint32_t font_format;                                                 ///< GTEXT_CSS_FONT_FORMAT_* it can load: `font-format()`.
+  uint32_t font_tech;                                                   ///< GTEXT_CSS_FONT_TECH_* the consumer can render: `font-tech()`. Zero: none (what a renderer can render is its to say; the library has no fonts to ask).
+  uint32_t font_format;                                                 ///< GTEXT_CSS_FONT_FORMAT_* it can load: `font-format()`. Zero: none, likewise.
   /** `named-feature(ident)`. NULL: none is supported. */
   bool (*named_feature)(void * user, const GTEXT_CSS_String * name);
   /** `env(ident)`. NULL: none is supported. */
@@ -321,14 +321,14 @@ GTEXT_API bool gtext_css_conditions_active_rule(void * conditions, const GTEXT_C
 
 /**
  * @brief `CSS.supports(property, value)`: whether the registry knows the property and the value is valid for it (by the parser the cascade uses, quirks off), and the policy
- *   does not narrow the property out. A custom property is supported with any value.
+ *   does not narrow the property out. A custom property is supported with any value that is a `<declaration-value>` (the empty one included); the name `--` alone is none.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_conditions_supports(const GTEXT_CSS_Conditions * conditions, const char * property, const char * value, bool * result);
 
 /** @brief `CSS.supports(conditionText)`: a bare declaration or a supports condition. Unknown is false. */
 GTEXT_API GTEXT_CSS_Status gtext_css_conditions_supports_text(const GTEXT_CSS_Conditions * conditions, const char * text, size_t length, bool * result);
 
-/** @brief What a condition depends on, as data (the invalidation summary; C6 consumes it). */
+/** @brief What a condition depends on, as data (the invalidation summary: what a style resolver recomputes when the environment changes). */
 typedef struct {
   uint32_t environment;  ///< Bit `1 << k` for each environment aspect: 0 viewport, 1 device, 2 resolution, 3 color, 4 display, 5 input, 6 scheme, 7 preference, 8 environment, 9 extension.
   uint64_t features[2];  ///< Bit i of the pair: media feature row i is mentioned (rows 0 to 127).

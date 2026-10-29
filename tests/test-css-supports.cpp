@@ -105,6 +105,54 @@ TEST(CssSupports, TheFormsOfADeclaration) {
   EXPECT_TRUE(c.yes("(-webkit-box-shadow: none)") || !c.yes("(-webkit-box-shadow: none)")) << "an alias is its property: asked, not decided here";
 }
 
+TEST(CssSupports, ACustomPropertyNeedsADeclarationValue) {
+  /* Variables 1, 2: a custom property's value is a <declaration-value>, which holds no top-level `;` or `!`, no unmatched `)` `]` `}` and no bad string or bad
+   * url; a var() whose first argument is empty is not valid; and the name `--` alone is reserved. Both browsers answer false for each of these. */
+  Cond c;
+  for (const char * ok : {"(--x:)", "(--x: red)", "(--x: {a:b})", "(--x: [a;b])", "(--x: f(a;b))", "(--x: var(--y))", "(--x: var(--y, 1))", "(--x: 1 !important)",
+           "(--a-b_c: \"s\")", "(--x: url(a))", "(--x: url(\"a b\"))", "(--x: (a))", "(--X: A)"}) {
+    EXPECT_TRUE(c.yes(ok)) << ok;
+  }
+  /* not a <declaration-value>, but an <any-value>: <general-enclosed>, false in a supports condition, and so true under `not` */
+  for (const char * bad : {"(--x: a;b)", "(--x: !)", "(--x: a ! b)", "(--x: var())", "(--x: var(, 1))", "(--: 1)", "(--:)"}) {
+    EXPECT_FALSE(c.yes(bad)) << bad;
+    EXPECT_TRUE(c.yes(std::string("not ") + bad)) << bad;
+  }
+  /* not even an <any-value> (an unmatched closer, a bad url): the condition is invalid and false whatever is put in front of it */
+  for (const char * bad : {"(--x: red})", "(--x: a))", "(--x: ])", "(--x: url(a b))"}) {
+    EXPECT_FALSE(c.yes(bad)) << bad;
+    EXPECT_FALSE(c.yes(std::string("not ") + bad)) << bad;
+  }
+  /* CSS.supports(property, value) */
+  bool r = true;
+  ASSERT_EQ(gtext_css_conditions_supports(c.c, "--x", "a;b", &r), GTEXT_CSS_OK);
+  EXPECT_FALSE(r);
+  ASSERT_EQ(gtext_css_conditions_supports(c.c, "--x", "a b", &r), GTEXT_CSS_OK);
+  EXPECT_TRUE(r);
+  ASSERT_EQ(gtext_css_conditions_supports(c.c, "--", "1", &r), GTEXT_CSS_OK);
+  EXPECT_FALSE(r);
+  ASSERT_EQ(gtext_css_conditions_supports(c.c, "--x", "", &r), GTEXT_CSS_OK);
+  EXPECT_TRUE(r) << "the empty value is a value";
+}
+
+TEST(CssSupports, GeneralEnclosedHoldsAnAnyValue) {
+  /* Conditional 3: <general-enclosed> = [ <function-token> <any-value>? ) ] | [ ( <any-value>? ) ]; Syntax 3: an <any-value> has no bad string, no bad url and no
+   * unmatched `)` `]` `}`. A condition with one that does is not a condition: invalid, so false and not negatable to true (`not (foo: red})` is false in both
+   * browsers, where `not (foo: red)` is true). */
+  Cond c;
+  for (const char * bad : {"not (foo: red})", "(foo: red})", "(foo: url(bad url))", "(foo: \"unterminated\n)", "(foo: ])", "(foo: a) or (bar: b})", "foo(a})"}) {
+    EXPECT_FALSE(c.yes(bad)) << bad;
+    EXPECT_FALSE(c.yes(std::string("not ") + bad)) << bad;
+    EXPECT_EQ(ser(bad), "not all") << bad;
+  }
+  EXPECT_TRUE(c.yes("not (foo: red)"));
+  EXPECT_TRUE(c.yes("not (foo: red;)")) << "a semicolon is an <any-value> token";
+  EXPECT_TRUE(c.yes("not (foo: !)"));
+  EXPECT_TRUE(c.yes("not (foo: {a})"));
+  EXPECT_TRUE(c.yes("not foo(a, b)"));
+  EXPECT_EQ(ser("not (foo: red)"), "not (foo: red)");
+}
+
 TEST(CssSupports, QuirksNeverApply) {
   /* Unitless lengths are valid in quirks mode only; `@supports` ignores quirks. */
   Cond c;
@@ -199,6 +247,15 @@ TEST(CssSupports, AForgivingListThatKeptAnInvalidEntryIsNotSupported) {
   EXPECT_FALSE(c.yes("selector(:where(.a, :foo))"));
   EXPECT_FALSE(c.yes("selector(:has(:is(:has(.a))))"));
   EXPECT_TRUE(c.yes("selector(:is(.a, .b))"));
+  /* An empty entry of a forgiving list is skipped when the list is read as a style rule's, and is an unsupported selector for selector() (both browsers say false) */
+  EXPECT_FALSE(c.yes("selector(:is(a,))"));
+  EXPECT_FALSE(c.yes("selector(:where(a,))"));
+  EXPECT_FALSE(c.yes("selector(:is(,a))"));
+  EXPECT_FALSE(c.yes("selector(:not(:is(a,)))"));
+  EXPECT_TRUE(c.yes("selector(:not(:is(a)))"));
+  /* parse-only: read and never matched, so not supported (both browsers say false for :nth-col) */
+  EXPECT_FALSE(c.yes("selector(:nth-col(1))"));
+  EXPECT_TRUE(c.yes("not selector(:nth-col(1))"));
 }
 
 TEST(CssSupports, SelectorNeedsWhatTheInterfaceHas) {
@@ -241,6 +298,8 @@ TEST(CssSupports, AtRule) {
   EXPECT_TRUE(c.yes("at-rule(@font-face)"));
   EXPECT_TRUE(c.yes("at-rule(@MEDIA)"));
   EXPECT_FALSE(c.yes("at-rule(@bogus)"));
+  EXPECT_FALSE(c.yes("at-rule(@charset)")) << "Syntax 3, 3.2: an encoding declaration, not a rule";
+  EXPECT_TRUE(c.yes("at-rule(@when)")) << "a draft both browsers lack, implemented here";
   EXPECT_FALSE(c.yes("at-rule(@function)"));
   EXPECT_EQ(c.tri("at-rule(font-face)"), GTEXT_CSS_TRI_FALSE);
 }

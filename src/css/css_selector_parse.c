@@ -1284,6 +1284,7 @@ static bool parse_list(P * p, const V * v, size_t lo, size_t hi, GTEXT_CSS_Selec
   const size_t xbase = p->complexes.len;
   const bool forgiving = mode == GTEXT_CSS_SELECTOR_FORGIVING_LIST;
   const bool relative = mode == GTEXT_CSS_SELECTOR_RELATIVE_LIST;
+  bool had_empty = false;
   size_t a = lo;
   size_t pieces = 0;
   for (;;) {
@@ -1305,6 +1306,7 @@ static bool parse_list(P * p, const V * v, size_t lo, size_t hi, GTEXT_CSS_Selec
         p->complexes.len = xbase;
         return false;
       }
+      had_empty = true;
     }
     else {
       const size_t dsave = p->ndiag;
@@ -1392,6 +1394,7 @@ static bool parse_list(P * p, const V * v, size_t lo, size_t hi, GTEXT_CSS_Selec
   }
   l->span = ls;
   l->mode = mode;
+  l->had_empty_entry = had_empty;
   l->count = p->complexes.len - xbase;
   l->complex = take(p, &p->complexes, sizeof(GTEXT_CSS_Complex), xbase);
   if (p->status != GTEXT_CSS_OK) {

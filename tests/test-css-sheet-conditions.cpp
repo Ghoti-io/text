@@ -229,7 +229,7 @@ TEST(CssSheetConditions, ASupportsConditionIsEvaluatedByTheConditionsObject) {
 
 TEST(CssSheetConditions, AnInvalidConditionIsANodeThatNeverAppliesWithADiagnostic) {
   Conds c;
-  Compiled bad("p { color: black } @media (min-width: 5) { p { color: red } } @supports garbage { p { color: blue } } @document url(x) { p { color: green } } @starting-style x { p { color: orange } }");
+  Compiled bad("p { color: black } @media only (min-width: 5px) { p { color: red } } @supports garbage { p { color: blue } } @document url(x) { p { color: green } } @starting-style x { p { color: orange } }");
   ASSERT_EQ(bad.st, GTEXT_CSS_OK);
   EXPECT_GE(gtext_css_sheet_diagnostic_total(bad.s), 4u);
   Page pg;

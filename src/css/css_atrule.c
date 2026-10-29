@@ -565,8 +565,16 @@ static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n,
   return true;
 }
 
+/// Counter Styles 3, 3 (the @counter-style name): "none", the CSS-wide keywords and the names `decimal`, `disc`, `circle`, `square`, `disclosure-open` and
+/// `disclosure-closed` cannot be defined by an author: the rule is invalid (web-platform-tests css-counter-styles/cssom/cssom-name-setter-invalid).
 static bool counter_style_name_ok(const GTEXT_CSS_String * s) {
-  return !lower_eq(s, "none") && !wide_keyword_name(s);
+  static const char * const reserved[] = {"none", "decimal", "disc", "circle", "square", "disclosure-open", "disclosure-closed"};
+  for (size_t i = 0; i < sizeof reserved / sizeof *reserved; i++) {
+    if (lower_eq(s, reserved[i])) {
+      return false;
+    }
+  }
+  return !wide_keyword_name(s);
 }
 
 /// The predefined counter style names are lowercased on parse.
@@ -664,6 +672,152 @@ static bool property_taken(const char * atrule, const char * name, size_t len) {
 /// A descriptor of the at-rule, parsed by the registry's grammar. The declaration is dropped with a diagnostic when it is unknown or invalid.
 static bool holds_bad_token(const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * v, size_t n, bool * oom);
 
+/// Whether an identifier token spells `lower` (ASCII case-insensitive).
+static bool ident_is(const GTEXT_CSS_Component_Value * v, const char * lower) {
+  return v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_IDENT && lower_eq(&v->value, lower);
+}
+
+/// Whether the values hold `currentcolor` anywhere (an own stack: the nesting costs memory, not the C stack).
+static bool holds_current_color(const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * v, size_t n, bool * oom) {
+  size_t cap = 16, top = 0;
+  struct sp {
+    const GTEXT_CSS_Component_Value * v;
+    size_t n;
+  } * st = gtext_allocator_malloc(alloc, cap * sizeof *st);
+  if (!st) {
+    *oom = true;
+    return false;
+  }
+  st[top++] = (struct sp){v, n};
+  bool found = false;
+  while (top > 0 && !found) {
+    const struct sp f = st[--top];
+    for (size_t i = 0; i < f.n && !found; i++) {
+      if (ident_is(&f.v[i], "currentcolor")) {
+        found = true;
+      }
+      else if (f.v[i].child_count > 0) {
+        if (top == cap) {
+          struct sp * g = gtext_allocator_realloc(alloc, st, cap * 2 * sizeof *st);
+          if (!g) {
+            *oom = true;
+            gtext_allocator_free(alloc, st);
+            return false;
+          }
+          st = g;
+          cap *= 2;
+        }
+        st[top++] = (struct sp){f.v[i].children, f.v[i].child_count};
+      }
+    }
+  }
+  gtext_allocator_free(alloc, st);
+  return found;
+}
+
+/// The rules about a descriptor's value that its grammar cannot say, from the served drafts (read 2026-10-29). Returns NULL when the value stands, else the sentence
+/// that makes the descriptor invalid (it is dropped, the rule stands, as for any invalid descriptor). *oom is set when a scan could not allocate.
+static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const char * at_name, const GTEXT_CSS_Declaration * d, bool * oom) {
+  const GTEXT_CSS_Component_Value * v = d->value;
+  const size_t n = d->value_count;
+  if (strcmp(at_name, "counter-style") == 0) {
+    if (css_ascii_ieq(&d->name, "additive-symbols")) {
+      /* Counter Styles 3, 3.1.7 (additive-symbols): "the <integer> weights must be in strictly descending order; otherwise the descriptor is invalid" */
+      double prev = 0;
+      bool have = false;
+      for (size_t i = 0; i < n; i++) {
+        if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_NUMBER) {
+          if (have && !(v[i].number < prev)) {
+            return "Counter Styles 3, additive-symbols: the weights must be in strictly descending order, otherwise the descriptor is invalid";
+          }
+          prev = v[i].number;
+          have = true;
+        }
+      }
+    }
+    else if (css_ascii_ieq(&d->name, "range")) {
+      /* Counter Styles 3, range: "If the lower bound of any range is higher than the upper bound, the entire descriptor is invalid" */
+      size_t k = 0;
+      double bound[2] = {0, 0};
+      bool plain = true; /* every token of the pair is an integer or infinite */
+      for (size_t i = 0; i <= n; i++) {
+        if (i == n || is_comma(&v[i])) {
+          if (plain && k == 2 && bound[0] > bound[1]) {
+            return "Counter Styles 3, range: a range whose lower bound is higher than its upper bound makes the descriptor invalid";
+          }
+          k = 0;
+          plain = true;
+          continue;
+        }
+        if (is_ws(&v[i])) {
+          continue;
+        }
+        if (k < 2 && v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_NUMBER) {
+          bound[k] = v[i].number;
+        }
+        else if (k < 2 && ident_is(&v[i], "infinite")) {
+          bound[k] = k == 0 ? -1e300 : 1e300;
+        }
+        else {
+          plain = false; /* `auto`, or something the grammar has already judged */
+        }
+        k++;
+      }
+    }
+    else if (css_ascii_ieq(&d->name, "fallback")) {
+      for (size_t i = 0; i < n; i++) {
+        if (ident_is(&v[i], "none")) {
+          return "Counter Styles 3, fallback: <counter-style-name> excludes none";
+        }
+      }
+    }
+  }
+  else if (strcmp(at_name, "font-face") == 0) {
+    if (css_ascii_ieq(&d->name, "font-family")) {
+      /* Fonts 4, 4.1: font-family in @font-face is a <family-name>: a string or custom identifiers, never a generic family */
+      size_t sig = 0;
+      const GTEXT_CSS_Component_Value * one = NULL;
+      for (size_t i = 0; i < n; i++) {
+        if (!is_ws(&v[i])) {
+          sig++;
+          one = &v[i];
+        }
+      }
+      static const char * const generic[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded",
+          "emoji", "math", "fangsong"};
+      if (sig == 1) {
+        for (size_t g = 0; g < sizeof generic / sizeof *generic; g++) {
+          if (ident_is(one, generic[g])) {
+            return "Fonts 4, 4.1: the font-family descriptor is a <family-name>, which a generic family keyword is not";
+          }
+        }
+      }
+    }
+    else if (css_ascii_ieq(&d->name, "font-feature-settings")) {
+      /* Fonts 4, 6.9: "the feature tag is a case-sensitive string of four ASCII characters, U+0020 to U+007E; otherwise the declaration is invalid" */
+      for (size_t i = 0; i < n; i++) {
+        if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_STRING) {
+          bool ok = v[i].value.length == 4;
+          for (size_t k = 0; ok && k < 4; k++) {
+            const unsigned char ch = (unsigned char)v[i].value.data[k];
+            ok = ch >= 0x20 && ch <= 0x7e;
+          }
+          if (!ok) {
+            return "Fonts 4, font-feature-settings: a feature tag is a string of four ASCII characters, otherwise the declaration is invalid";
+          }
+        }
+      }
+    }
+  }
+  else if (strcmp(at_name, "font-palette-values") == 0 && css_ascii_ieq(&d->name, "override-colors")) {
+    /* Fonts 4, 9.2 (override-colors): "the <color> must not be currentcolor, a system color or depend on the context of the element" */
+    if (holds_current_color(alloc, v, n, oom)) {
+      return "Fonts 4, override-colors: a color that is currentcolor is invalid, since the palette has no element to take it from";
+    }
+  }
+  return NULL;
+}
+
 static bool read_descriptor(ctx * c, const char * at_name, const GTEXT_CSS_Declaration * d, bool also_property) {
   if (d->name.length > 2 && d->name.data[0] == '-' && d->name.data[1] == '-') {
     /* Variables 1: a custom property's value is a <declaration-value>, which holds no bad-string and no bad-url; one that does is invalid (and could not be written back) */
@@ -758,10 +912,23 @@ static bool read_descriptor(ctx * c, const char * at_name, const GTEXT_CSS_Decla
   }
   const bool wide_ok = !did; /* a descriptor takes no CSS-wide keyword and no substitution */
   if (pv.outcome == GTEXT_CSS_PROP_RESULT_INVALID || (!wide_ok && (pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING)) ||
-      (did && d->important)) {
+      (did && d->important && c->a->kind != GTEXT_CSS_ATRULE_PAGE)) {
     gtext_css_property_value_free(&pv);
     return diag(c, did ? GTEXT_CSS_ATRULE_DIAG_INVALID_DESCRIPTOR : GTEXT_CSS_ATRULE_DIAG_INVALID_VALUE, d->span,
         did ? "Fonts 4, 4.3 (and the other descriptor rules): a descriptor whose value is not valid for it is ignored, and a descriptor takes no !important" : "CSS Cascading 4: an invalid declaration is dropped");
+  }
+  if (did) {
+    bool oom_sem = false;
+    const char * why = descriptor_semantics(&c->a->alloc, at_name, d, &oom_sem);
+    if (oom_sem) {
+      gtext_css_property_value_free(&pv);
+      fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+    if (why) {
+      gtext_css_property_value_free(&pv);
+      return diag(c, GTEXT_CSS_ATRULE_DIAG_INVALID_DESCRIPTOR, d->span, why);
+    }
   }
   atrule_desc ad;
   memset(&ad, 0, sizeof ad);
@@ -975,6 +1142,13 @@ static bool read_block(ctx * c, const GTEXT_CSS_Rule * rule, block_mode mode, co
           return false;
         }
         a->diag_total += kid ? kid->diag_total : 0;
+        /* The at-rules a block takes are the ones of its grammar: the margin rules of @page (Paged Media 3, 5: `@page { <margin-rule>* }`) and the feature blocks
+           of @font-feature-values. Any other at-rule, an unknown one included, is not part of the block and is dropped with its contents (both browsers do). */
+        if (kid && !((a->kind == GTEXT_CSS_ATRULE_PAGE && kid->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN) ||
+                     (a->kind == GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES && kid->kind == GTEXT_CSS_ATRULE_FEATURE_BLOCK))) {
+          gtext_css_atrule_free(kid);
+          kid = NULL;
+        }
         if (!kid) {
           if (!diag(c, GTEXT_CSS_ATRULE_DIAG_NESTED_RULE, sub->span, "an at-rule that is not valid here is ignored")) {
             return false;
@@ -1333,6 +1507,7 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   /* the prelude */
   bool prelude_ok = true;
   bool bad_prelude = false;
+  const char * prelude_why = NULL; /* the sentence that made the rule invalid, when a kind has one of its own */
   {
     bool oom_scan = false;
     bad_prelude = holds_bad_token(&a->alloc, p, pn, &oom_scan);
@@ -1446,6 +1621,17 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   case GTEXT_CSS_ATRULE_PROPERTY:
     mode = BLOCK_DESCRIPTORS;
     prelude_ok = !only_ws(p, pn);
+    if (prelude_ok && !bad_prelude) {
+      /* Properties and Values 1, 2.1: "@property rules require a valid name, a syntax descriptor, an inherits descriptor and, unless the syntax is `*`, an
+         initial-value descriptor; otherwise the whole rule is invalid and ignored": the rule is judged by the same code that registers it */
+      bool registered = false;
+      const GTEXT_CSS_Status ps = css_at_property_rule_validity(registry, &a->alloc, rule, &registered, &prelude_why);
+      if (ps != GTEXT_CSS_OK) {
+        atrule_destroy(a);
+        return fail(&cx, ps, &rule->span, NULL);
+      }
+      prelude_ok = registered;
+    }
     break;
   case GTEXT_CSS_ATRULE_NAMESPACE:
   case GTEXT_CSS_ATRULE_IMPORT:
@@ -1480,7 +1666,7 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   }
   if (!prelude_ok) {
     cx.valid = false;
-    diag(&cx, GTEXT_CSS_ATRULE_DIAG_INVALID_RULE, rule->span, "the prelude does not match the at-rule's grammar: the rule is invalid and ignored");
+    diag(&cx, GTEXT_CSS_ATRULE_DIAG_INVALID_RULE, rule->span, prelude_why ? prelude_why : "the prelude does not match the at-rule's grammar: the rule is invalid and ignored");
   }
   if (cx.valid && cx.st == GTEXT_CSS_OK) {
     /* the block */

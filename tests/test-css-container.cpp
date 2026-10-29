@@ -447,3 +447,69 @@ TEST(CssContainerCache, ACallThatIsSharedAnswersAsOneThatIsNot) {
   EXPECT_EQ(shared, "green/" + d.get(c, "background-color"));
   EXPECT_NE(d.get(c, "background-color"), "blue");
 }
+
+namespace {
+
+bool eval_transient(Doc & d, const std::string & q, int element, GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Status * st) {
+  GTEXT_CSS_Container_Query * query = nullptr;
+  EXPECT_EQ(gtext_css_container_parse(q.data(), q.size(), nullptr, &query, nullptr), GTEXT_CSS_OK);
+  bool m = false;
+  *st = gtext_css_conditions_evaluate_container(d.cond, query, synth::Tree::H(element), false, call, &m);
+  gtext_css_media_list_free(query);
+  return m;
+}
+
+}  // namespace
+
+TEST(CssContainerCache, AQueryFreedAndAnotherMadeInItsPlaceIsNotAnsweredFromTheMemo) {
+  /* The memo of a call is keyed by the serial of the list a query is of, not by its address: a parsed query that is freed leaves its address for the next
+   * one (the allocator gives the same block back), and an answer remembered for the first must not be given to the second. 200 transient queries, true and
+   * false alternately, one call, and the container named by a copy of the name the call owns. */
+  Doc d;
+  const int outer = d.add(0, "div", "outer");
+  const int leaf = d.add(outer, "p", "leaf");
+  d.own[outer] = "container-type: inline-size; container-name: card";
+  d.boxes[outer] = {500, 300};
+  d.build();
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  GTEXT_CSS_Condition_Call call;
+  gtext_css_condition_call_init(&call);
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  int wrong = 0;
+  for (int i = 0; i < 200; i++) {
+    const bool want = (i % 2) != 0;
+    /* a name of a different length each time, so that a borrowed name pointer would read freed memory (a sanitizer sees it) */
+    const std::string name = i % 3 == 0 ? "card" : (i % 3 == 1 ? "card" : "");
+    const std::string q = (name.empty() ? "" : name + " ") + (want ? "(width > 100px)" : "(width > 900px)");
+    const bool got = eval_transient(d, q, leaf, &call, &st);
+    ASSERT_EQ(st, GTEXT_CSS_OK);
+    wrong += got != want;
+  }
+  EXPECT_EQ(wrong, 0);
+  EXPECT_EQ(call.container_requests, 2u) << "two requests: any container, and the one named card";
+  gtext_css_condition_call_free(&call);
+}
+
+TEST(CssContainerCache, AQueryThatIsKeptKeepsItsMemo) {
+  /* The other side: the same parsed query asked twice by one call is answered once. */
+  Doc d;
+  const int outer = d.add(0, "div", "outer");
+  const int leaf = d.add(outer, "p", "leaf");
+  d.own[outer] = "container-type: inline-size";
+  d.boxes[outer] = {500, 300};
+  d.build();
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  GTEXT_CSS_Container_Query * query = nullptr;
+  ASSERT_EQ(gtext_css_container_parse("(width > 100px)", 15, nullptr, &query, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSS_Condition_Call call;
+  gtext_css_condition_call_init(&call);
+  bool m = false;
+  ASSERT_EQ(gtext_css_conditions_evaluate_container(d.cond, query, synth::Tree::H(leaf), false, &call, &m), GTEXT_CSS_OK);
+  EXPECT_TRUE(m);
+  const size_t first = call.container_evaluations;
+  ASSERT_EQ(gtext_css_conditions_evaluate_container(d.cond, query, synth::Tree::H(leaf), false, &call, &m), GTEXT_CSS_OK);
+  EXPECT_TRUE(m);
+  EXPECT_EQ(call.container_evaluations, first) << "answered from the memo";
+  gtext_css_condition_call_free(&call);
+  gtext_css_media_list_free(query);
+}

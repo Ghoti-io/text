@@ -147,9 +147,11 @@ struct Gen {
   std::string query(Tri & t) {
     uint8_t c = next();
     if (c % 7 == 0) {
+      /* an invalid query is `not all` (false); a known feature written wrongly is one unknown leaf, which the library keeps as unknown below the top */
       static const char * const bad[] = {"only (color)", "(color) and (hover) or (pointer)", "screen (color)", "(width: 5)", "or and (color)", "(min-grid: 1)"};
-      t = GTEXT_CSS_TRI_FALSE;
-      return bad[next() % 6];
+      const uint8_t k = next() % 6;
+      t = (k == 3 || k == 5) ? GTEXT_CSS_TRI_UNKNOWN : GTEXT_CSS_TRI_FALSE;
+      return bad[k];
     }
     bool typed = c % 3 != 1;
     if (!typed) {

@@ -486,6 +486,32 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
   return st;
 }
 
+GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * allocator, const GTEXT_CSS_Rule * rule, bool * valid,
+    const char ** why) {
+  GTEXT_CSS_At_Property_Options opt = gtext_css_at_property_options_default();
+  opt.allocator = allocator;
+  GTEXT_CSS_At_Property_Set * s = NULL;
+  GTEXT_CSS_Status st = gtext_css_at_property_set_new(registry, &opt, &s);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  st = handle_property(s, rule);
+  if (st == GTEXT_CSS_OK) {
+    /* registered, or refused only because the caller registered the name itself (the rule is valid; that registration wins) */
+    bool wins = false;
+    for (size_t i = 0; i < s->ndiags; i++) {
+      wins = wins || s->diags[i].reason == GTEXT_CSS_AT_PROP_CALLER_WINS;
+    }
+    *valid = s->store.count > 0 || wins;
+    *why = NULL;
+    if (!*valid && s->ndiags > 0) {
+      *why = s->diags[0].message;
+    }
+  }
+  gtext_css_at_property_set_free(s);
+  return st;
+}
+
 /* ---- the walk ------------------------------------------------------------------------------------------- */
 
 typedef struct {

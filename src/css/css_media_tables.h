@@ -91,52 +91,53 @@ typedef struct {
   uint8_t level;     /* 4 or 5: the level of Media Queries that names it first (0: another module) */
   uint16_t kw_first; /* first keyword in css_mq_keywords */
   uint16_t kw_count; /* keywords */
+  uint32_t kw_false; /* bit k set: the k-th keyword of the feature is false in a boolean context */
 } css_mq_feature_row;
 
 #define CSS_MQ_FEATURE_ROWS \
-  { "-webkit-device-pixel-ratio", MQK_RANGE, MQU_NUMBER, MQD_RESOLUTION, MQS_IMPLEMENTED, 0, 0, 0 },\
-  { "-webkit-transform-3d", MQK_DISCRETE, MQU_BOOLEAN, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 0, 0 },\
-  { "any-hover", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 0, 2 },\
-  { "any-pointer", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 2, 3 },\
-  { "aspect-ratio", MQK_RANGE, MQU_RATIO, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 5, 0 },\
-  { "color", MQK_RANGE, MQU_INTEGER, MQD_COLOR, MQS_IMPLEMENTED, 5, 5, 0 },\
-  { "color-gamut", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 5, 3 },\
-  { "color-index", MQK_RANGE, MQU_INTEGER, MQD_COLOR, MQS_IMPLEMENTED, 5, 8, 0 },\
-  { "device-aspect-ratio", MQK_RANGE, MQU_RATIO, MQD_DEVICE, MQS_IMPLEMENTED, 5, 8, 0 },\
-  { "device-height", MQK_RANGE, MQU_LENGTH, MQD_DEVICE, MQS_IMPLEMENTED, 5, 8, 0 },\
-  { "device-width", MQK_RANGE, MQU_LENGTH, MQD_DEVICE, MQS_IMPLEMENTED, 5, 8, 0 },\
-  { "display-mode", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 8, 6 },\
-  { "display-state", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 14, 4 },\
-  { "dynamic-range", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 18, 2 },\
-  { "environment-blending", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 20, 3 },\
-  { "forced-colors", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 23, 2 },\
-  { "grid", MQK_DISCRETE, MQU_BOOLEAN, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 25, 0 },\
-  { "height", MQK_RANGE, MQU_LENGTH, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 25, 0 },\
-  { "horizontal-viewport-segments", MQK_RANGE, MQU_INTEGER, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 25, 0 },\
-  { "hover", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 25, 2 },\
-  { "inverted-colors", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 27, 2 },\
-  { "monochrome", MQK_RANGE, MQU_INTEGER, MQD_COLOR, MQS_IMPLEMENTED, 5, 29, 0 },\
-  { "nav-controls", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 29, 2 },\
-  { "orientation", MQK_DISCRETE, MQU_KEYWORD, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 31, 2 },\
-  { "overflow-block", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 33, 3 },\
-  { "overflow-inline", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 36, 2 },\
-  { "pointer", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 38, 3 },\
-  { "prefers-color-scheme", MQK_DISCRETE, MQU_KEYWORD, MQD_SCHEME, MQS_IMPLEMENTED, 5, 41, 2 },\
-  { "prefers-contrast", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 43, 4 },\
-  { "prefers-reduced-data", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 47, 2 },\
-  { "prefers-reduced-motion", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 49, 2 },\
-  { "prefers-reduced-transparency", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 51, 2 },\
-  { "resizable", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 53, 2 },\
-  { "resolution", MQK_RANGE, MQU_RESOLUTION, MQD_RESOLUTION, MQS_IMPLEMENTED, 5, 55, 0 },\
-  { "scan", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 55, 2 },\
-  { "scripting", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 57, 3 },\
-  { "shape", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 60, 2 },\
-  { "ua-color-scheme", MQK_DISCRETE, MQU_KEYWORD, MQD_SCHEME, MQS_IMPLEMENTED, 5, 62, 2 },\
-  { "update", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 64, 3 },\
-  { "vertical-viewport-segments", MQK_RANGE, MQU_INTEGER, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 67, 0 },\
-  { "video-color-gamut", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 67, 3 },\
-  { "video-dynamic-range", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 70, 2 },\
-  { "width", MQK_RANGE, MQU_LENGTH, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 72, 0 }
+  { "-webkit-device-pixel-ratio", MQK_RANGE, MQU_NUMBER, MQD_RESOLUTION, MQS_IMPLEMENTED, 0, 0, 0, 0u },\
+  { "-webkit-transform-3d", MQK_DISCRETE, MQU_BOOLEAN, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 0, 0, 0u },\
+  { "any-hover", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 0, 2, 1u },\
+  { "any-pointer", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 2, 3, 1u },\
+  { "aspect-ratio", MQK_RANGE, MQU_RATIO, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 5, 0, 0u },\
+  { "color", MQK_RANGE, MQU_INTEGER, MQD_COLOR, MQS_IMPLEMENTED, 5, 5, 0, 0u },\
+  { "color-gamut", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 5, 3, 0u },\
+  { "color-index", MQK_RANGE, MQU_INTEGER, MQD_COLOR, MQS_IMPLEMENTED, 5, 8, 0, 0u },\
+  { "device-aspect-ratio", MQK_RANGE, MQU_RATIO, MQD_DEVICE, MQS_IMPLEMENTED, 5, 8, 0, 0u },\
+  { "device-height", MQK_RANGE, MQU_LENGTH, MQD_DEVICE, MQS_IMPLEMENTED, 5, 8, 0, 0u },\
+  { "device-width", MQK_RANGE, MQU_LENGTH, MQD_DEVICE, MQS_IMPLEMENTED, 5, 8, 0, 0u },\
+  { "display-mode", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 8, 6, 0u },\
+  { "display-state", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 14, 4, 0u },\
+  { "dynamic-range", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 18, 2, 0u },\
+  { "environment-blending", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 20, 3, 0u },\
+  { "forced-colors", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 23, 2, 1u },\
+  { "grid", MQK_DISCRETE, MQU_BOOLEAN, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 25, 0, 0u },\
+  { "height", MQK_RANGE, MQU_LENGTH, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 25, 0, 0u },\
+  { "horizontal-viewport-segments", MQK_RANGE, MQU_INTEGER, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 25, 0, 0u },\
+  { "hover", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 25, 2, 1u },\
+  { "inverted-colors", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 27, 2, 1u },\
+  { "monochrome", MQK_RANGE, MQU_INTEGER, MQD_COLOR, MQS_IMPLEMENTED, 5, 29, 0, 0u },\
+  { "nav-controls", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 29, 2, 1u },\
+  { "orientation", MQK_DISCRETE, MQU_KEYWORD, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 31, 2, 0u },\
+  { "overflow-block", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 33, 3, 1u },\
+  { "overflow-inline", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 36, 2, 1u },\
+  { "pointer", MQK_DISCRETE, MQU_KEYWORD, MQD_INPUT, MQS_IMPLEMENTED, 5, 38, 3, 1u },\
+  { "prefers-color-scheme", MQK_DISCRETE, MQU_KEYWORD, MQD_SCHEME, MQS_IMPLEMENTED, 5, 41, 2, 0u },\
+  { "prefers-contrast", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 43, 4, 1u },\
+  { "prefers-reduced-data", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 47, 2, 1u },\
+  { "prefers-reduced-motion", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 49, 2, 1u },\
+  { "prefers-reduced-transparency", MQK_DISCRETE, MQU_KEYWORD, MQD_PREFERENCE, MQS_IMPLEMENTED, 5, 51, 2, 1u },\
+  { "resizable", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 53, 2, 0u },\
+  { "resolution", MQK_RANGE, MQU_RESOLUTION, MQD_RESOLUTION, MQS_IMPLEMENTED, 5, 55, 0, 0u },\
+  { "scan", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 55, 2, 0u },\
+  { "scripting", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 57, 3, 1u },\
+  { "shape", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 0, 60, 2, 0u },\
+  { "ua-color-scheme", MQK_DISCRETE, MQU_KEYWORD, MQD_SCHEME, MQS_IMPLEMENTED, 5, 62, 2, 0u },\
+  { "update", MQK_DISCRETE, MQU_KEYWORD, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 64, 3, 1u },\
+  { "vertical-viewport-segments", MQK_RANGE, MQU_INTEGER, MQD_DISPLAY, MQS_IMPLEMENTED, 5, 67, 0, 0u },\
+  { "video-color-gamut", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 67, 3, 0u },\
+  { "video-dynamic-range", MQK_DISCRETE, MQU_KEYWORD, MQD_COLOR, MQS_IMPLEMENTED, 5, 70, 2, 0u },\
+  { "width", MQK_RANGE, MQU_LENGTH, MQD_VIEWPORT, MQS_IMPLEMENTED, 5, 72, 0, 0u }
 
 #define CSS_MQ_KEYWORDS \
   "none",\

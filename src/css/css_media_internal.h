@@ -146,6 +146,7 @@ typedef struct {
 
 struct GTEXT_CSS_Media_List_Internal {
   GCU_Atomic_Int refs;
+  size_t serial;         ///< Never 0, never reused by another list of the process (the memo of a call is keyed by it, not by the address a freed list leaves behind).
   GTEXT_Allocator alloc;
   css_arena arena;       ///< Strings.
   mq_node * nodes;

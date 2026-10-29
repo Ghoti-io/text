@@ -43,7 +43,7 @@
  * | Input | Result |
  * |---|---|
  * | an empty query, `only` with no type, a missing `and`, `or` beside `and`, `not` where the grammar forbids it, a reserved word as a type | invalid: `not all` |
- * | a known feature with a value of the wrong kind (`(width: 5)`, `(color: 20example)`), a range with its comparisons in two directions, a prefix on a discrete feature | invalid: `not all` |
+ * | a known feature written wrongly: a value of the wrong kind (`(width: 5)`, `(color: 20example)`), a range with its comparisons in two directions, a prefix on a discrete feature | one unknown leaf, kept as written (as in browsers: `(color: foo) or (color)` is true) |
  * | an unknown media type (`foo`) | valid, false; `not foo` is true |
  * | an unknown feature name (`(foo: bar)`), or a parenthesized thing the grammar does not read | `<general-enclosed>`: kept, evaluates **unknown** |
  *
@@ -174,7 +174,8 @@ typedef struct {
   bool transform_3d;                 ///< `-webkit-transform-3d`.
   void * user;                       ///< Passed to the callbacks.
   /** A metric of the initial font, in px, for `ex`, `ch`, `cap`, `ic` and their `r` forms in a feature value. Returns false if the font has none. NULL: such
-   *  a unit is GTEXT_CSS_E_UNSUPPORTED naming it. The query's size is `default_font_size`. */
+   *  a unit is GTEXT_CSS_E_UNSUPPORTED naming it (a metric of a font nobody supplied is not guessed). The query's size is `default_font_size`.
+   *  `lh` and `rlh` need no callback: the initial `line-height` is `normal`, taken as 1.2 `default_font_size`. */
   bool (*font_metric)(void * user, const GTEXT_CSS_Font_Query * query, GTEXT_CSS_Font_Metric metric, double * px);
   /** The value of a feature the caller defines (a vendor or experimental feature the table does not list: `(-moz-foo)`): `name` is lower case. Returns
    *  GTEXT_CSS_TRI_UNKNOWN for a feature it does not know. `value` is the written value as CSS text, or NULL for the boolean form. NULL: every such feature is

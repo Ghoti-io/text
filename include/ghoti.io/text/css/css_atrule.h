@@ -66,7 +66,7 @@ extern "C" {
 /** @brief What an at-rule is, for the model. */
 typedef enum {
   GTEXT_CSS_ATRULE_UNKNOWN = 0,   ///< Not an at-rule of the pin: its contents never apply.
-  GTEXT_CSS_ATRULE_CHARSET,       ///< `@charset` (C0 has decoded the bytes by it).
+  GTEXT_CSS_ATRULE_CHARSET,       ///< `@charset` (the decoder has read the bytes by it).
   GTEXT_CSS_ATRULE_IMPORT,        ///< `@import`: the typed request.
   GTEXT_CSS_ATRULE_NAMESPACE,     ///< `@namespace`.
   GTEXT_CSS_ATRULE_LAYER,         ///< `@layer` (names or a block): the model keeps the prelude.
@@ -202,7 +202,7 @@ typedef struct {
   bool important;                    ///< Written `!important`.
   const GTEXT_CSS_Value_Set * set;   ///< The typed value (NULL for a custom property).
   GTEXT_CSS_String text;             ///< The value as canonical text (always set).
-  GTEXT_CSS_Id declaration;          ///< The C0 id of the declaration.
+  GTEXT_CSS_Id declaration;          ///< The id of the declaration in the syntax tree.
   GTEXT_CSS_Span span;
 } GTEXT_CSS_Atrule_Descriptor;
 

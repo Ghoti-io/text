@@ -4,47 +4,49 @@
 #  3 field    the member of GTEXT_CSS_Media_Environment (include/ghoti.io/text/css/css_media.h) that it reads; the gate looks the member up in that header
 #  4 dep      what a change of the environment that invalidates it is: viewport, device, resolution, color, display, input, scheme, preference, environment, extension
 #  5 status   implemented (evaluated here) | parse-only (parsed and serialized, always unknown)
-#  6 note     the sentence of the served text that decides what the row does, or the reason for the status
-width	length	viewport	viewport	implemented	Media Queries 4, 4.1: the width of the viewport, including a scroll bar
-height	length	viewport	viewport	implemented	Media Queries 4, 4.2
-aspect-ratio	ratio	viewport	viewport	implemented	Media Queries 4, 4.3: the ratio of width to height
-orientation	keyword	viewport	viewport	implemented	Media Queries 4, 4.4: portrait when height >= width, else landscape
-resolution	resolution	resolution	resolution	implemented	Media Queries 4, 5.1: false in the negative range; infinite is larger than any resolution
-scan	keyword	scan	display	implemented	Media Queries 4, 5.2
-grid	mq-boolean	grid	display	implemented	Media Queries 4, 5.3
-update	keyword	update	display	implemented	Media Queries 4, 5.4
-overflow-block	keyword	overflow_block	display	implemented	Media Queries 4, 5.5
-overflow-inline	keyword	overflow_inline	display	implemented	Media Queries 4, 5.6
-color	integer	color_bits	color	implemented	Media Queries 4, 6.1: bits per color component, 0 for a device with no color
-color-index	integer	color_index	color	implemented	Media Queries 4, 6.2
-monochrome	integer	monochrome_bits	color	implemented	Media Queries 4, 6.3
-color-gamut	keyword	color_gamut	color	implemented	Media Queries 4, 6.4: each gamut implies the smaller
-pointer	keyword	pointer	input	implemented	Media Queries 4, 7.1: the primary pointing device
-hover	keyword	hover	input	implemented	Media Queries 4, 7.2
-any-pointer	keyword	any_pointer	input	implemented	Media Queries 4, 7.3: true when any available device has the value
-any-hover	keyword	any_hover	input	implemented	Media Queries 4, 7.4
-device-width	length	device	device	implemented	Media Queries 4, deprecated: the width of the rendering surface of the device
-device-height	length	device	device	implemented	Media Queries 4, deprecated
-device-aspect-ratio	ratio	device	device	implemented	Media Queries 4, deprecated
-horizontal-viewport-segments	integer	horizontal_viewport_segments	display	implemented	Media Queries 5, 4.5
-vertical-viewport-segments	integer	vertical_viewport_segments	display	implemented	Media Queries 5, 4.5
-display-mode	keyword	display_mode	display	implemented	Media Queries 5, 4.6
-environment-blending	keyword	environment_blending	display	implemented	Media Queries 5, 5.5
-dynamic-range	keyword	dynamic_range	color	implemented	Media Queries 5, 6.5: high implies standard
-video-color-gamut	keyword	video_color_gamut	color	implemented	Media Queries 5, 6.6: each gamut implies the smaller
-video-dynamic-range	keyword	video_dynamic_range	color	implemented	Media Queries 5, 6.7: high implies standard
-inverted-colors	keyword	inverted_colors	preference	implemented	Media Queries 5, 7.5
-nav-controls	keyword	nav_controls	display	implemented	Media Queries 5, 4.7
-scripting	keyword	scripting	display	implemented	Media Queries 5, 8.1
-prefers-reduced-motion	keyword	prefers_reduced_motion	preference	implemented	Media Queries 5, 9.1
-prefers-reduced-transparency	keyword	prefers_reduced_transparency	preference	implemented	Media Queries 5, 9.2
-prefers-contrast	keyword	prefers_contrast	preference	implemented	Media Queries 5, 9.3
-forced-colors	keyword	forced_colors	preference	implemented	Media Queries 5, 9.4
-prefers-color-scheme	keyword	prefers_color_scheme	scheme	implemented	Media Queries 5, 9.5
-ua-color-scheme	keyword	ua_color_scheme	scheme	implemented	Media Queries 5, 9.6
-prefers-reduced-data	keyword	prefers_reduced_data	preference	implemented	Media Queries 5, 9.7
--webkit-device-pixel-ratio	number	resolution	resolution	implemented	Compatibility Standard, 4.3: a number of device pixels per CSS pixel, a range feature; false in the negative range
--webkit-transform-3d	mq-boolean	transform_3d	display	implemented	Compatibility Standard, 4.3: a legacy boolean
-shape	keyword	shape	display	implemented	CSS Round Display 1, 4: rect or round
-display-state	keyword	display_state	display	implemented	Window Management: the state of the window
-resizable	keyword	resizable	display	implemented	Window Management: whether the window can be resized
+#  6 false    the keywords of a keyword feature that are false in a boolean context (`(update)` is not true for `none`; Media Queries 5: `no-preference` "evaluates to
+#             false in the boolean context", web-platform-tests prefers-reduced-motion.html and prefers-reduced-data.html), comma separated, `-` for none
+#  7 note     the sentence of the served text that decides what the row does, or the reason for the status
+width	length	viewport	viewport	implemented	-	Media Queries 4, 4.1: the width of the viewport, including a scroll bar
+height	length	viewport	viewport	implemented	-	Media Queries 4, 4.2
+aspect-ratio	ratio	viewport	viewport	implemented	-	Media Queries 4, 4.3: the ratio of width to height
+orientation	keyword	viewport	viewport	implemented	-	Media Queries 4, 4.4: portrait when height >= width, else landscape
+resolution	resolution	resolution	resolution	implemented	-	Media Queries 4, 5.1: false in the negative range; infinite is larger than any resolution
+scan	keyword	scan	display	implemented	-	Media Queries 4, 5.2
+grid	mq-boolean	grid	display	implemented	-	Media Queries 4, 5.3
+update	keyword	update	display	implemented	none	Media Queries 4, 5.4
+overflow-block	keyword	overflow_block	display	implemented	none	Media Queries 4, 5.5
+overflow-inline	keyword	overflow_inline	display	implemented	none	Media Queries 4, 5.6
+color	integer	color_bits	color	implemented	-	Media Queries 4, 6.1: bits per color component, 0 for a device with no color
+color-index	integer	color_index	color	implemented	-	Media Queries 4, 6.2
+monochrome	integer	monochrome_bits	color	implemented	-	Media Queries 4, 6.3
+color-gamut	keyword	color_gamut	color	implemented	-	Media Queries 4, 6.4: each gamut implies the smaller
+pointer	keyword	pointer	input	implemented	none	Media Queries 4, 7.1: the primary pointing device
+hover	keyword	hover	input	implemented	none	Media Queries 4, 7.2
+any-pointer	keyword	any_pointer	input	implemented	none	Media Queries 4, 7.3: true when any available device has the value
+any-hover	keyword	any_hover	input	implemented	none	Media Queries 4, 7.4
+device-width	length	device	device	implemented	-	Media Queries 4, deprecated: the width of the rendering surface of the device
+device-height	length	device	device	implemented	-	Media Queries 4, deprecated
+device-aspect-ratio	ratio	device	device	implemented	-	Media Queries 4, deprecated
+horizontal-viewport-segments	integer	horizontal_viewport_segments	display	implemented	-	Media Queries 5, 4.5
+vertical-viewport-segments	integer	vertical_viewport_segments	display	implemented	-	Media Queries 5, 4.5
+display-mode	keyword	display_mode	display	implemented	-	Media Queries 5, 4.6
+environment-blending	keyword	environment_blending	display	implemented	-	Media Queries 5, 5.5
+dynamic-range	keyword	dynamic_range	color	implemented	-	Media Queries 5, 6.5: high implies standard
+video-color-gamut	keyword	video_color_gamut	color	implemented	-	Media Queries 5, 6.6: each gamut implies the smaller
+video-dynamic-range	keyword	video_dynamic_range	color	implemented	-	Media Queries 5, 6.7: high implies standard
+inverted-colors	keyword	inverted_colors	preference	implemented	none	Media Queries 5, 7.5
+nav-controls	keyword	nav_controls	display	implemented	none	Media Queries 5, 4.7
+scripting	keyword	scripting	display	implemented	none	Media Queries 5, 8.1
+prefers-reduced-motion	keyword	prefers_reduced_motion	preference	implemented	no-preference	Media Queries 5, 9.1
+prefers-reduced-transparency	keyword	prefers_reduced_transparency	preference	implemented	no-preference	Media Queries 5, 9.2
+prefers-contrast	keyword	prefers_contrast	preference	implemented	no-preference	Media Queries 5, 9.3
+forced-colors	keyword	forced_colors	preference	implemented	none	Media Queries 5, 9.4
+prefers-color-scheme	keyword	prefers_color_scheme	scheme	implemented	-	Media Queries 5, 9.5
+ua-color-scheme	keyword	ua_color_scheme	scheme	implemented	-	Media Queries 5, 9.6
+prefers-reduced-data	keyword	prefers_reduced_data	preference	implemented	no-preference	Media Queries 5, 9.7
+-webkit-device-pixel-ratio	number	resolution	resolution	implemented	-	Compatibility Standard, 4.3: a number of device pixels per CSS pixel, a range feature; false in the negative range
+-webkit-transform-3d	mq-boolean	transform_3d	display	implemented	-	Compatibility Standard, 4.3: a legacy boolean
+shape	keyword	shape	display	implemented	-	CSS Round Display 1, 4: rect or round
+display-state	keyword	display_state	display	implemented	-	Window Management: the state of the window
+resizable	keyword	resizable	display	implemented	-	Window Management: whether the window can be resized
