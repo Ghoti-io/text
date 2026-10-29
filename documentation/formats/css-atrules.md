@@ -21,6 +21,9 @@ descriptor goes through the registry's grammar for it and is kept as a typed val
 
 `gtext_css_atrule_ledger_row()` is the table of which kinds parse, validate, serialize, apply and are typed.
 
+- `@font-face src` is a forgiving list (Fonts 4, 4.3.1): each comma separated component is judged alone, the valid ones are kept, and the descriptor is dropped only when none is valid.
+- A keyframe selector is `from`, `to`, a percentage from 0 to 100, a `<timeline-range-name>` with a percentage, or a `calc()`. The last two are kept as written and have no offset, so they are blocks of the rule (and in its serialization) but not frames of the normalized list. An empty string is not a keyframes name.
+
 ## Typed views
 
 Each `_from_atrule()` reads the canonical text of the descriptors and returns an owned struct of plain C types.
