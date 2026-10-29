@@ -66,6 +66,12 @@ def main():
     for i in range(400):
         n = rnd.randrange(4, 80)
         add(out, 1 | (2 if i % 5 == 0 else 0), 0 if i % 4 else rnd.randrange(1, 40), bytes(rnd.randrange(256) for _ in range(n)))
+    # measurements decided by the exact model of the harness (o0 bit 2 with bit 0), and supports conditions decided by the property parser (bit 2 alone)
+    rnd2 = random.Random(2)
+    for i in range(500):
+        add(out, 1 | 4, 0, bytes(rnd2.randrange(256) for _ in range(rnd2.randrange(24, 160))))
+    for i in range(300):
+        add(out, 4, 0, bytes(rnd2.randrange(256) for _ in range(rnd2.randrange(8, 96))))
     os.makedirs(OUT, exist_ok=True)
     for f in os.listdir(OUT):
         if f.startswith("own-"):

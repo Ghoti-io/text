@@ -3,7 +3,7 @@
 and-is-or	css_media_eval.c	  if (a == GTEXT_CSS_TRI_FALSE || b == GTEXT_CSS_TRI_FALSE) {\n    return GTEXT_CSS_TRI_FALSE;\n  }\n  if (a == GTEXT_CSS_TRI_UNKNOWN || b == GTEXT_CSS_TRI_UNKNOWN) {\n    return GTEXT_CSS_TRI_UNKNOWN;\n  }\n  return GTEXT_CSS_TRI_TRUE;	  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {\n    return GTEXT_CSS_TRI_TRUE;\n  }\n  if (a == GTEXT_CSS_TRI_UNKNOWN || b == GTEXT_CSS_TRI_UNKNOWN) {\n    return GTEXT_CSS_TRI_UNKNOWN;\n  }\n  return GTEXT_CSS_TRI_FALSE;	media,fuzz
 unknown-at-the-top-is-true	css_conditions.c	    if (st == GTEXT_CSS_OK && t == GTEXT_CSS_TRI_TRUE) {	    if (st == GTEXT_CSS_OK && t != GTEXT_CSS_TRI_FALSE) {	media,fuzz
 not-unknown-is-true	css_media_eval.c	a == GTEXT_CSS_TRI_FALSE ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_UNKNOWN);	a == GTEXT_CSS_TRI_FALSE ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_TRUE);	media,fuzz
-lt-is-le	css_media_eval.c	  case MQOP_LT: return c < 0;	  case MQOP_LT: return c <= 0;	media
+lt-is-le	css_media_eval.c	  case MQOP_LT: return c < 0;	  case MQOP_LT: return c <= 0;	media,fuzz
 reversed-range-accepted	css_media_parse.c	    if (!lt && !gt) {\n      invalid_query(P, GTEXT_CSS_MQDIAG_FEATURE, here, REF_RANGE);	    if (0) {\n      invalid_query(P, GTEXT_CSS_MQDIAG_FEATURE, here, REF_RANGE);	media
 min-on-a-discrete-feature	css_media_parse.c	    if (prefix != MQP_NONE && fr->kind != MQK_RANGE) {	    if (0) {	media
 invalid-query-kept	css_media_parse.c	  if (P->invalid) {\n    /* Replaced by	  if (0) {\n    /* Replaced by	media
@@ -51,3 +51,4 @@ the-layer-of-a-false-media-group-is-declared	css_rule_index.c	    if (ev->cond &
 the-layer-of-a-container-group-is-not-declared	css_rule_index.c	    if (ev->cond && !(p->tv[ev->cond] & TV_OK)) {	    if (ev->cond && (!(p->tv[ev->cond] & TV_OK) || (p->tv[ev->cond] & TV_ELEM))) {	sheetcond
 an-else-follows-a-true-when	css_rule_index.c	own = own && !earlier;	own = own;	sheetcond
 starting-style-records-are-always-included	css_rule_index.c	if ((tv & TV_STARTING) && !w->starting_style) {	if (0) {	container
+or-is-not-commutative	css_media_eval.c	GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b) {\n  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {	GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b) {\n  if (a == GTEXT_CSS_TRI_UNKNOWN) {\n    return GTEXT_CSS_TRI_UNKNOWN;\n  }\n  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {	fuzz
