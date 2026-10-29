@@ -8,3 +8,17 @@ set-layer-rank-ignored	css_atrule_set.c	  if (x->rank != y->rank) {	  if (0) {	s
 set-false-group-collected	css_atrule_set.c	          if (!gtext_css_conditions_active_rule((void *)s->opt.conditions, rule)) {	          if (0) {	sets
 page-specificity-ignored	css_atrule_set.c	  const int c = gtext_css_page_specificity_compare(x->specificity, y->specificity);	  const int c = 0;	sets
 validity-keeps-the-invalid	css_atrule.c	  v->refused++;\n  return false;	  v->refused++;\n  return true;	atrule
+a-reserved-counter-style-name-is-allowed	css_atrule.c	static const char * const reserved[] = {"none", "decimal", "disc", "circle", "square", "disclosure-open", "disclosure-closed"};	static const char * const reserved[] = {"none"};	atrule
+additive-weights-may-ascend	css_atrule.c	if (have && !(v[i].number < prev)) {	if (0) {	atrule
+a-backwards-range-is-kept	css_atrule.c	if (plain && k == 2 && bound[0] > bound[1]) {	if (0) {	atrule
+fallback-none-is-kept	css_atrule.c	        if (ident_is(&v[i], "none")) {\n          return "Counter Styles 3, fallback	        if (0) {\n          return "Counter Styles 3, fallback	atrule
+a-generic-family-names-a-face	css_atrule.c	      if (sig == 1) {\n        for (size_t g = 0;	      if (0) {\n        for (size_t g = 0;	atrule
+a-feature-tag-of-any-length-is-kept	css_atrule.c	          bool ok = v[i].value.length == 4;	          bool ok = true;	atrule
+current-color-overrides-a-palette-color	css_atrule.c	    if (holds_current_color(alloc, v, n, oom)) {	    if (0) {	atrule
+an-unknown-at-rule-stays-in-a-page-block	css_atrule.c	        if (kid && !((a->kind == GTEXT_CSS_ATRULE_PAGE && kid->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN) ||	        if (0 && !((a->kind == GTEXT_CSS_ATRULE_PAGE && kid->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN) ||	atrule
+a-page-descriptor-takes-no-important	css_atrule.c	(did && d->important && c->a->kind != GTEXT_CSS_ATRULE_PAGE)) {	(did && d->important)) {	atrule
+an-unregistrable-property-rule-is-valid	css_atrule.c	      prelude_ok = registered;	      prelude_ok = prelude_ok || registered || !registered;	atrule
+important-is-kept-in-a-keyframe	css_atrule.c	        else if (d->important) {\n          ok = diag(c, mode == BLOCK_KEYFRAME	        else if (0) {\n          ok = diag(c, mode == BLOCK_KEYFRAME	fonts
+an-unknown-descriptor-drops-its-rule	css_atrule.c	    return diag(c, GTEXT_CSS_ATRULE_DIAG_UNKNOWN_DESCRIPTOR, d->span, "Fonts 4, 4.3: \"declarations of any descriptors	    c->valid = false;\n    return diag(c, GTEXT_CSS_ATRULE_DIAG_UNKNOWN_DESCRIPTOR, d->span, "Fonts 4, 4.3: \"declarations of any descriptors	atrule
+src-entries-are-reordered	css_font_rules.c	      f->src = arr;\n      f->src_count = n;	      for (size_t a_ = 0; a_ + 1 + a_ < n; a_++) {\n        const GTEXT_CSS_Font_Src t_ = arr[a_];\n        arr[a_] = arr[n - 1 - a_];\n        arr[n - 1 - a_] = t_;\n      }\n      f->src = arr;\n      f->src_count = n;	fonts
+unicode-ranges-with-a-gap-of-one-are-merged	css_font_rules.c	if (w && arr[i].first <= arr[w - 1].last + 1) {	if (w && arr[i].first <= arr[w - 1].last + 2) {	fonts

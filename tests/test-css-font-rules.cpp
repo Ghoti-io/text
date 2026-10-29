@@ -264,6 +264,38 @@ TEST(CssKeyframes, Normalized) {
   gtext_css_keyframes_free(k);
 }
 
+TEST(CssKeyframes, ImportantIsInvalidInAKeyframe) {
+  /* Animations 1, 3.1: "properties qualified with !important are invalid and ignored" in a keyframe: the declaration is dropped and the others of its block stay. */
+  Rule r("@keyframes k { from { color: red !important; width: 1px } to { color: blue } }");
+  GTEXT_CSS_Keyframes * k = nullptr;
+  ASSERT_EQ(gtext_css_keyframes_from_atrule(r.a, &k), GTEXT_CSS_OK);
+  ASSERT_EQ(k->frame_count, 2u);
+  ASSERT_EQ(k->frames[0].property_count, 1u);
+  EXPECT_EQ(S(k->frames[0].properties[0].name), "width");
+  EXPECT_EQ(k->frames[1].property_count, 1u);
+  gtext_css_keyframes_free(k);
+}
+
+TEST(CssFontRules, UnicodeRangesAreMergedWhenTheyTouchAndNotWhenAGapSeparatesThem) {
+  /* Fonts 4, 4.5: the set of code points is the union of the ranges; U+0-10 and U+11-20 touch (one range), U+0-10 and U+12-20 leave U+11 out (two). */
+  struct Case { const char * ranges; size_t count; uint32_t first, last; } cases[] = {
+    {"U+0-10, U+11-20", 1, 0, 0x20},
+    {"U+0-10, U+12-20", 2, 0, 0x10},
+    {"U+12-20, U+0-10", 2, 0, 0x10},
+    {"U+0-10, U+5-8", 1, 0, 0x10},
+    {"U+4??, U+500-5ff, U+61?", 2, 0x400, 0x5ff},
+  };
+  for (const Case & c : cases) {
+    Rule r(std::string("@font-face { font-family: a; src: local(a); unicode-range: ") + c.ranges + " }");
+    GTEXT_CSS_Font_Face * f = nullptr;
+    ASSERT_EQ(gtext_css_font_face_from_atrule(r.a, &f), GTEXT_CSS_OK) << c.ranges;
+    ASSERT_EQ(f->range_count, c.count) << c.ranges;
+    EXPECT_EQ(f->ranges[0].first, c.first) << c.ranges;
+    EXPECT_EQ(f->ranges[0].last, c.last) << c.ranges;
+    gtext_css_font_face_free(f);
+  }
+}
+
 // A huge number in a palette index or a counter value is clamped, not converted by an undefined cast.
 TEST(CssFontRules, HugeIntegersAreClamped) {
   Rule r("@font-palette-values --x { font-family: A; base-palette: 1e300; override-colors: 1e300 red }");

@@ -248,8 +248,9 @@ TEST(CssContainerResolve, TheCostOfAWalkOverATreeIsTheRequestsTimesTheElements) 
       }
     }
     const int leaf = parent;
-    css = "@container n0 (min-width: 1px) { #e0 { color: red } } @container n3 (min-width: 1px) { .none { color: red } } @container n6 (min-width: 1px) { .none { color: red } } "
-          "@container (min-width: 1px) { .none { color: red } }";
+    /* every div asks for its container, for four requests: the answer of an element is its parent's when the parent is not one, which is what the cache keeps */
+    css = "@container n0 (min-width: 1px) { div { color: red } } @container n3 (min-width: 1px) { div { margin-top: 1px } } @container n6 (min-width: 1px) { div { margin-left: 1px } } "
+          "@container (min-width: 1px) { div { margin-right: 1px } }";
     d.sheets = {css};
     d.build();
     ASSERT_EQ(d.status, GTEXT_CSS_OK);
@@ -270,7 +271,7 @@ TEST(CssContainerStyle, AStyleQueryComparesComputedValues) {
               "@container style(--theme) { #leaf { margin-left: 1px } } @container style(--absent) { #leaf { margin-right: 1px } } @container style(color: red) { #leaf { padding-top: 1px } } "
               "@container style(color: blue) { #leaf { padding-bottom: 1px } } @container style(color) { #leaf { padding-left: 1px } } @container style(font-size: 20px) { #leaf { padding-right: 1px } } "
               "@container style(--n > 5) { #leaf { order: 1 } } @container style(--n < 5) { #leaf { flex-grow: 1 } } @container style(3 < --n <= 7) { #leaf { z-index: 1 } } "
-              "@container style(--w: 2em) { #leaf { flex-shrink: 4 } } @container style(--w: 40px) { #leaf { outline-offset: 1px } } "
+              "@container style(font-size: 30px) { #leaf { text-indent: 5px } } @container style(--w: 2em) { #leaf { flex-shrink: 4 } } @container style(--w: 40px) { #leaf { outline-offset: 1px } } "
               "@container not style(--theme: light) { #leaf { top: 1px } } @container style((--theme: dark) and (color: red)) { #leaf { left: 1px } } @container style(--theme: dark) and style(color: blue) { #leaf { right: 1px } }"};
   d.build();
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
@@ -280,6 +281,7 @@ TEST(CssContainerStyle, AStyleQueryComparesComputedValues) {
   EXPECT_NE(d.get(leaf, "margin-right"), "1px");
   EXPECT_EQ(d.get(leaf, "padding-top"), "1px");
   EXPECT_NE(d.get(leaf, "padding-bottom"), "1px");
+  EXPECT_NE(d.get(leaf, "text-indent"), "5px") << "30px is not 20px, though the two are written with as many characters";
   EXPECT_EQ(d.get(leaf, "padding-left"), "1px") << "the color differs from its initial value";
   EXPECT_EQ(d.get(leaf, "padding-right"), "1px");
   EXPECT_EQ(d.get(leaf, "order"), "1") << "style-range: 7 > 5";
@@ -512,4 +514,21 @@ TEST(CssContainerCache, AQueryThatIsKeptKeepsItsMemo) {
   EXPECT_EQ(call.container_evaluations, first) << "answered from the memo";
   gtext_css_condition_call_free(&call);
   gtext_css_media_list_free(query);
+}
+
+TEST(CssContainerResolve, TheElementBitOfANodeIsReadForTheRecordsOwnNode) {
+  /* The index keeps what it learned of each condition node (does it hold, does it depend on the element) by node, and a record reads the node it is inside: a
+     container record that sits after records of other groups is still asked of its container. */
+  Doc d;
+  const int c = d.add(0, "div", "c");
+  const int leaf = d.add(c, "p", "leaf", {"leaf"});
+  d.own[c] = "container-type: inline-size";
+  d.boxes[c] = {500, 100};
+  d.sheets = {".a { color: red } @media (min-width: 1px) { .b { margin-top: 1px } .leaf { margin-left: 2px } } @container (min-width: 99999px) { .leaf { padding-top: 7px } } "
+              "@container (min-width: 1px) { .leaf { padding-left: 8px } } @media (min-width: 2px) { .d { margin-right: 3px } }"};
+  d.build();
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.get(leaf, "margin-left"), "2px");
+  EXPECT_NE(d.get(leaf, "padding-top"), "7px") << "the container is 500px wide";
+  EXPECT_EQ(d.get(leaf, "padding-left"), "8px");
 }

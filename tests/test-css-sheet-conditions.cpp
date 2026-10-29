@@ -199,6 +199,74 @@ TEST(CssSheetConditions, ANodeIsEvaluatedOnceWhateverNumberOfRecordsItHas) {
   EXPECT_EQ(gtext_css_rule_index_record_count(ix.x), 4u);
 }
 
+namespace {
+size_t g_metric_calls = 0;
+bool counting_metric(void *, const GTEXT_CSS_Font_Query *, GTEXT_CSS_Font_Metric, double * px) {
+  g_metric_calls++;
+  *px = 8;
+  return true;
+}
+}  // namespace
+
+TEST(CssSheetConditions, ANodeIsEvaluatedOncePerFreezeNotOncePerRecord) {
+  /* The cost shape: n nested nodes and m records inside them cost n evaluations, not n x m. The evaluations are counted through the font metric callback that a
+     `(min-width: 1ex)` calls once each (a node that is true calls it; nodes inside a false one are not evaluated at all). */
+  for (int records : {5, 50, 500}) {
+    std::string css;
+    const int depth = 10;
+    for (int i = 0; i < depth; i++) {
+      css += "@media (min-width: " + std::to_string(i + 1) + "ex) { ";
+    }
+    for (int r = 0; r < records; r++) {
+      css += ".c" + std::to_string(r) + " { color: red } ";
+    }
+    for (int i = 0; i < depth; i++) {
+      css += "} ";
+    }
+    GTEXT_CSS_Sheet_Options so = gtext_css_sheet_options_default();
+    so.max_rule_depth = 64;
+    Compiled c(css, &so);
+    ASSERT_EQ(c.st, GTEXT_CSS_OK);
+    GTEXT_CSS_Media_Environment env = gtext_css_media_environment_default(nullptr);
+    env.font_metric = counting_metric;
+    GTEXT_CSS_Conditions_Options o = gtext_css_conditions_options_default();
+    o.media = &env;
+    GTEXT_CSS_Conditions * conds = nullptr;
+    ASSERT_EQ(gtext_css_conditions_new(R(), &o, &conds), GTEXT_CSS_OK);
+    g_metric_calls = 0;
+    {
+      Index ix(conds);
+      ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+      ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+      EXPECT_EQ(gtext_css_rule_index_record_count(ix.x), static_cast<size_t>(records));
+    }
+    EXPECT_EQ(g_metric_calls, static_cast<size_t>(depth)) << records << " records: one evaluation for each of the " << depth << " nodes";
+    gtext_css_conditions_free(conds);
+  }
+}
+
+TEST(CssSheetConditions, EachRecordHasItsOwnNodesAnswer) {
+  /* Records of different groups, in an order that is not the order of the nodes: the answer of a record is the answer of the node it is inside. */
+  Conds c(1280);
+  Compiled sheet(".a { color: red } @media (min-width: 1px) { .b { color: green } .c { color: green } } @media (min-width: 99999px) { .d { color: blue } .e { color: blue } } "
+                 "@media (min-width: 2px) { .f { color: green } } .g { color: black } @media (min-width: 77777px) { .h { color: blue } }");
+  ASSERT_EQ(sheet.st, GTEXT_CSS_OK);
+  Page pg;
+  const char * names[] = {"a", "b", "c", "d", "e", "f", "g", "h"};
+  int el[8];
+  for (int i = 0; i < 8; i++) {
+    el[i] = pg.t.add(0, "p", "", {names[i]});
+  }
+  pg.open();
+  Index ix(c.c);
+  ASSERT_EQ(ix.add(sheet), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  const char * want[] = {"red", "green", "green", "-", "-", "green", "black", "-"};
+  for (int i = 0; i < 8; i++) {
+    EXPECT_EQ(win(pg, ix, el[i], "color"), want[i]) << names[i];
+  }
+}
+
 TEST(CssSheetConditions, ConditionalRulesNestInAStyleRuleAndDeclarationsDirectlyInOneAreTheImpliedRule) {
   /* Nesting 1: `.a { @media (...) { color: red; & b { } } }`: a declaration directly in a nested group rule is `& { }`. */
   Compiled c(".a { color: black; @media (min-width: 600px) { color: red; & b { color: blue } } @supports (display: nonesuch) { color: green } }");

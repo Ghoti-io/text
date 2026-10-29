@@ -20,6 +20,34 @@ selector-skips-the-interface	css_supports.c	    GTEXT_CSS_Status st = gtext_css_
 font-tech-bogus-negated	css_media_parse.c	        return FEAT_SOFT; /* font-tech(bogus): <general-enclosed> */	        i = 8;	supports
 important-rejected	css_media_parse.c	      important = true;\n      ve = trim_end(v, vs, b - 1);	      important = true;\n      ve = e;	supports
 quirks-apply	css_supports.c	  po.quirks = false; /* quirks never apply to @supports */	  po.quirks = true;	supports
-custom-property-needs-a-value	css_supports.c	  if (nl == 2 && name[0] == '-' && name[1] == '-') {\n    return false; /* Variables 1, 2: "--" alone is reserved, it names no custom property */\n  }	  if (nl >= 2 && name[0] == '-' && name[1] == '-' && vl == 0) {\n    return false;\n  }	supports
+custom-property-needs-a-value	css_supports.c	  if (!c->registry) {\n    *status = GTEXT_CSS_E_UNSUPPORTED;\n    *detail = "registry";\n    return false;\n  }	  if (!c->registry) {\n    *status = GTEXT_CSS_E_UNSUPPORTED;\n    *detail = "registry";\n    return false;\n  }\n  if (nl >= 2 && name[0] == '-' && name[1] == '-' && vl == 0) {\n    return false;\n  }	supports
 unknown-at-rule-supported	css_supports.c	    if (strlen(implemented_at_rules[i]) == length && memcmp(implemented_at_rules[i], name, length) == 0) {	    if (1) {	supports
 supports-mixed-and-or	css_media_parse.c	      } else if (f->op && f->op != op) {	      } else if (0) {	supports
+ratio-by-division	css_media_eval.c	  wide w1 = wide_product(n1, d2), w2 = wide_product(n2, d1);\n	  { const double q1 = n1 / d1, q2 = n2 / d2; return q1 < q2 ? -1 : (q1 > q2 ? 1 : 0); }\n  wide w1 = wide_product(n1, d2), w2 = wide_product(n2, d1);\n	media
+no-preference-is-true-in-a-boolean-context	css_media_eval.c	if (((r->kw_false >> k) & 1u) == 0 && kw_matches	if ((int)k != css_mq_find_keyword(row, "none", 4) && kw_matches	media
+a-bad-media-value-replaces-the-query	css_media_parse.c	  if (fr == FEAT_INVALID && P->status == GTEXT_CSS_OK) {\n    P->invalid = false;\n    truncate_to	  if (0) {\n    P->invalid = false;\n    truncate_to	media
+vendor-prefixed-ratio-takes-a-standard-prefix	css_media_parse.c	if (r >= 0 && css_mq_feature_rows[r].name[0] != '-') {	if (r >= 0) {	media
+a-negative-resolution-is-a-value	css_media_parse.c	gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_RESOLUTION && !(t->number < 0)) {	gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_RESOLUTION) {	media
+general-enclosed-takes-any-token	css_media_parse.c	  if (!any_value_ok(P, src->children, src->child_count)) {	  if (0) {	supports
+a-declaration-takes-any-token	css_media_parse.c	  if (!any_value_ok(P, v, n)) {\n    if (P->status == GTEXT_CSS_OK) {\n      invalid_query(P, GTEXT_CSS_MQDIAG_SYNTAX, span, "Conditional 3, 3 (a declaration	  if (0) {\n    if (P->status == GTEXT_CSS_OK) {\n      invalid_query(P, GTEXT_CSS_MQDIAG_SYNTAX, span, "Conditional 3, 3 (a declaration	supports
+a-custom-property-takes-any-value	css_supports.c	  if (!c->registry) {\n    *status = GTEXT_CSS_E_UNSUPPORTED;\n    *detail = "registry";\n    return false;\n  }	  if (!c->registry) {\n    *status = GTEXT_CSS_E_UNSUPPORTED;\n    *detail = "registry";\n    return false;\n  }\n  if (nl > 2 && name[0] == '-' && name[1] == '-') {\n    return true;\n  }	supports
+a-skipped-empty-forgiving-entry-is-supported	css_supports.c	(l->count == 0 || l->had_empty_entry)	l->count == 0	supports
+a-selector-that-never-matches-is-supported	css_supports.c	    if (n->sel->unmatchable) {	    if (0) {	supports
+charset-is-an-at-rule-here	css_supports.c	"namespace", "layer",	"namespace", "charset", "layer",	supports
+the-property-policy-narrows-custom-properties	css_supports.c	if (ok && !custom && c->policy.property_supported) {	if (ok && c->policy.property_supported) {	supports
+the-container-memo-is-keyed-by-the-query-address	css_container.c	if (results_get(ci, container, list->serial, root, &memo)) {	if (results_get(ci, container, (size_t)q, 0, &memo)) {	container
+the-container-memo-is-keyed-by-the-query-address	css_container.c	st = results_put(ci, container, list->serial, root, (uint8_t)t);	st = results_put(ci, container, (size_t)q, 0, (uint8_t)t);	container
+the-container-answer-memo-is-dropped	css_container.c	if (results_get(ci, container, list->serial, root, &memo)) {	if (0) {	container
+the-container-cache-is-dropped	css_container.c	const cq_cache_entry * hit = cache_get(ci, e, req);	const cq_cache_entry * hit = NULL;	container
+the-container-cache-ignores-the-request	css_container.c	const cq_cache_entry * hit = cache_get(ci, e, req);	const cq_cache_entry * hit = cache_get(ci, e, 1);	container
+the-container-cache-ignores-the-request	css_container.c	st = cache_put(ci, e, req, e);	st = cache_put(ci, e, 1, e);	container
+the-container-cache-ignores-the-request	css_container.c	st = cache_put(ci, ci->path[i], req, result);	st = cache_put(ci, ci->path[i], 1, result);	container
+the-query-container-is-the-element-itself	css_container.c	  if (!from_element) {\n    st = parent_of(iface, start, &e);	  if (0) {\n    st = parent_of(iface, start, &e);	container
+an-inline-size-container-answers-the-block-axis	css_container.c	    contained = horizontal == cq->inline_horizontal; /* only the inline axis is contained */	    contained = true; /* only the inline axis is contained */	container
+style-query-equality-compares-only-lengths	css_container_style.c	    *equal = ba.len == bb.len && (ba.len == 0 || memcmp(ba.data, bb.data, ba.len) == 0);	    *equal = ba.len == bb.len;	container
+the-node-memo-is-keyed-by-the-record	css_rule_index.c	    const uint8_t tv = r->cond ? pl->tv[r->cond] : 0;	    const uint8_t tv = r->cond ? pl->tv[(e->rec % pl->sheet->nconds) + 1] : 0;	container
+the-node-memo-is-dropped	css_rule_index.c	  for (uint32_t id = 1; id <= sheet->nconds; id++) {\n    const sheet_cond * c = &sheet->conds[id - 1];	  for (uint32_t id0 = 0; id0 < sheet->nconds * (sheet->nrecs ? sheet->nrecs : 1); id0++) {\n    const uint32_t id = id0 % sheet->nconds + 1;\n    const sheet_cond * c = &sheet->conds[id - 1];	sheetcond
+the-layer-of-a-false-media-group-is-declared	css_rule_index.c	    if (ev->cond && !(p->tv[ev->cond] & TV_OK)) {	    if (0) {	sheetcond
+the-layer-of-a-container-group-is-not-declared	css_rule_index.c	    if (ev->cond && !(p->tv[ev->cond] & TV_OK)) {	    if (ev->cond && (!(p->tv[ev->cond] & TV_OK) || (p->tv[ev->cond] & TV_ELEM))) {	sheetcond
+an-else-follows-a-true-when	css_rule_index.c	own = own && !earlier;	own = own;	sheetcond
+starting-style-records-are-always-included	css_rule_index.c	if ((tv & TV_STARTING) && !w->starting_style) {	if (0) {	container

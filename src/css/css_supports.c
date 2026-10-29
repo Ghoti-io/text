@@ -102,9 +102,6 @@ static GTEXT_CSS_Tristate tri_of(bool b) {
 /// Whether `name: value` is supported. *status is set on a failure. A custom property is supported with any value that is a `<declaration-value>` (the empty one
 /// included): the registry's pending grammar says so, with no top-level `;` or `!`, no unmatched `)` `]` `}`, no bad string or bad url, and every `var()` valid.
 static bool decl_supported(const GTEXT_CSS_Conditions * c, const char * name, size_t nl, const char * value, size_t vl, GTEXT_CSS_Status * status, const char ** detail) {
-  if (nl == 2 && name[0] == '-' && name[1] == '-') {
-    return false; /* Variables 1, 2: "--" alone is reserved, it names no custom property */
-  }
   if (!c->registry) {
     *status = GTEXT_CSS_E_UNSUPPORTED;
     *detail = "registry";
