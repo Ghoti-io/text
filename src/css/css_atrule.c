@@ -546,7 +546,12 @@ static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n,
         k += toks[i]->value.length;
       }
       GTEXT_CSS_String js = {joined, k};
-      const bool ok = add_name(c, &js, false);
+      /* the idents of a name are joined by spaces, so one that holds a space itself (an escaped one) would be read back as two: such a name is kept as a string */
+      bool spaced_ident = false;
+      for (size_t i = 0; i < nt; i++) {
+        spaced_ident = spaced_ident || memchr(toks[i]->value.data, ' ', toks[i]->value.length) != NULL;
+      }
+      const bool ok = add_name(c, &js, spaced_ident);
       gtext_allocator_free(&c->a->alloc, joined);
       if (!ok) {
         return false;

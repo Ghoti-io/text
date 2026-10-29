@@ -345,3 +345,13 @@ TEST(CssAtrule, NameWithAnEscapedSpaceStaysOneIdentifier) {
   ASSERT_NE(q.a, nullptr) << once;
   EXPECT_EQ(q.css(), once);
 }
+
+// A family name of several identifiers, one holding an escaped space, reads back as the same name.
+TEST(CssAtrule, MultiIdentFamilyWithAnEscapedSpace) {
+  Parsed p("@font-feature-values \\  -x y { @swash { a: 1 } }");
+  ASSERT_NE(p.a, nullptr);
+  const std::string once = p.css();
+  Parsed q(once);
+  ASSERT_NE(q.a, nullptr) << once;
+  EXPECT_EQ(q.css(), once);
+}
