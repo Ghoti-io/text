@@ -1,0 +1,1 @@
+6¨@media all { @layer a.b { @font-face { src: url(x) } @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @font-face { font-family: D } @counter-style p { system: extends q } @counter-style q { system: extends p } } }

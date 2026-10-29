@@ -1,0 +1,1 @@
+.F@layer  { @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @layer { @font-face { font-family: L; src: url(l) } } }

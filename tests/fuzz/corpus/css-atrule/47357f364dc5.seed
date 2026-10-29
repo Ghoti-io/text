@@ -1,0 +1,1 @@
+55@page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 }

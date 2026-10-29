@@ -1,0 +1,1 @@
+T´@layer  { @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } }

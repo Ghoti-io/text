@@ -1,0 +1,1 @@
+ži@media all { @layer b { @position-try --a { top: anchor(bottom); color: red; left: 1px } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } } }

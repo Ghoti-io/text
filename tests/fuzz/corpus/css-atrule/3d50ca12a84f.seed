@@ -1,0 +1,1 @@
+Ò8@color-profile device-cmyk { src: url(b.icc) } @supports (display: grid) { @font-face { font-family: S; src: url(s) } }

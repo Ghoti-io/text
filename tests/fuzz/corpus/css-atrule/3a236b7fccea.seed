@@ -1,0 +1,1 @@
+ź@media all { @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @color-profile device-cmyk { src: url(b.icc) } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

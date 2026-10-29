@@ -1,0 +1,2 @@
+
+	@layer b { @font-face { font-family: D } @counter-style bad { system: alphabetic; symbols: a } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

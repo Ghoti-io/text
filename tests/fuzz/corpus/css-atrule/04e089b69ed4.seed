@@ -1,0 +1,1 @@
+fk@font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @top-left { content: "x" } @font-face { font-family: "B c"; src: local(B); font-style: oblique 10deg 20deg; font-feature-settings: "liga" 1, "kern"; font-variation-settings: "wght" 300 }

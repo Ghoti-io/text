@@ -1,0 +1,1 @@
+ÏØ@layer a.b { @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @view-transition { navigation: auto; types: a b } }

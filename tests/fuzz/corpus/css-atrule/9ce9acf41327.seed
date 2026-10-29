@@ -1,0 +1,1 @@
+S·@media all { @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @top-left { content: "x" } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } 

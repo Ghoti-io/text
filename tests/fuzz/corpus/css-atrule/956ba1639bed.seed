@@ -1,0 +1,1 @@
+ó¨@media all { @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @top-left { content: "x" } @position-try --a { top: anchor(bottom); color: red; left: 1px } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } }

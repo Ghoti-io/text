@@ -1,0 +1,1 @@
+›d@color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @color-profile device-cmyk { src: url(b.icc) } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a }

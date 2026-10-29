@@ -40,12 +40,17 @@
 #include <ghoti.io/text/macros.h>
 
 #include <ghoti.io/text/css/css_at_property.h>
+#include <ghoti.io/text/css/css_atrule.h>
+#include <ghoti.io/text/css/css_atrule_set.h>
+#include <ghoti.io/text/css/css_counter_style.h>
+#include <ghoti.io/text/css/css_keyframes.h>
 #include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_color.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_container.h>
 #include <ghoti.io/text/css/css_core.h>
+#include <ghoti.io/text/css/css_font_rules.h>
 #include <ghoti.io/text/css/css_custom.h>
 #include <ghoti.io/text/css/css_decode.h>
 #include <ghoti.io/text/css/css_element.h>
@@ -54,6 +59,7 @@
 #include <ghoti.io/text/css/css_layer.h>
 #include <ghoti.io/text/css/css_logical.h>
 #include <ghoti.io/text/css/css_markup.h>
+#include <ghoti.io/text/css/css_page.h>
 #include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_math.h>
 #include <ghoti.io/text/css/css_media.h>

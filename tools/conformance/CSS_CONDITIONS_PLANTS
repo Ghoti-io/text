@@ -4,11 +4,11 @@ and-is-or	css_media_eval.c	  if (a == GTEXT_CSS_TRI_FALSE || b == GTEXT_CSS_TRI_
 unknown-at-the-top-is-true	css_conditions.c	    if (st == GTEXT_CSS_OK && t == GTEXT_CSS_TRI_TRUE) {	    if (st == GTEXT_CSS_OK && t != GTEXT_CSS_TRI_FALSE) {	media,fuzz
 not-unknown-is-true	css_media_eval.c	a == GTEXT_CSS_TRI_FALSE ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_UNKNOWN);	a == GTEXT_CSS_TRI_FALSE ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_TRUE);	media,fuzz
 lt-is-le	css_media_eval.c	  case MQOP_LT: return c < 0;	  case MQOP_LT: return c <= 0;	media
-reversed-range-accepted	css_media_parse.c	    if (!lt && !gt) {	    if (0) {	media
+reversed-range-accepted	css_media_parse.c	    if (!lt && !gt) {\n      invalid_query(P, GTEXT_CSS_MQDIAG_FEATURE, here, REF_RANGE);	    if (0) {\n      invalid_query(P, GTEXT_CSS_MQDIAG_FEATURE, here, REF_RANGE);	media
 min-on-a-discrete-feature	css_media_parse.c	    if (prefix != MQP_NONE && fr->kind != MQK_RANGE) {	    if (0) {	media
 invalid-query-kept	css_media_parse.c	  if (P->invalid) {\n    /* Replaced by	  if (0) {\n    /* Replaced by	media
 em-is-not-the-environments	css_media_eval.c	  case GTEXT_CSS_UNIT_REM:\n    *px = e->default_font_size;	  case GTEXT_CSS_UNIT_REM:\n    *px = 16;	media
-unsupported-feature-evaluated	css_media_eval.c	  if (!get_bit(e, row) || fr->status != MQS_IMPLEMENTED) {	  if (fr->status != MQS_IMPLEMENTED) {	media
+unsupported-feature-evaluated	css_media_eval.c	  if ((!view && !get_bit(e, row)) || fr->status != MQS_IMPLEMENTED) {	  if (fr->status != MQS_IMPLEMENTED) {	media
 only-is-ignored	css_media_serialize.c	    if (q->flags & MQF_ONLY) {\n      puts_(o, "only ");	    if (0) {\n      puts_(o, "only ");	media
 custom-media-cycle-not-detected	css_conditions.c	              if (members > 1) {	              if (0) {	media
 reserved-words-allowed	css_media_parse.c	bool css_mq_is_reserved(const char * word, size_t length) {	bool css_mq_is_reserved(const char * word, size_t length) {\n  return false;	media

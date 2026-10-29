@@ -1470,8 +1470,7 @@ TEST(CssRegistryGrammars, TypesAndDescriptorsReportTheirStateToo) {
   ASSERT_EQ(gtext_css_registry_descriptor_state(r, gtext_css_registry_find_descriptor(face, "font-display", 12), &s, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
   ASSERT_EQ(gtext_css_registry_descriptor_state(r, gtext_css_registry_find_descriptor(face, "src", 3), &s, &gr), GTEXT_CSS_OK);
-  EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_UNRESOLVED);
-  EXPECT_EQ(std::string(gr.name), "<font-src-list>");
+  EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK) << "the supplement gives src the grammar the pin leaves as prose";
   const GTEXT_CSS_At_Rule_Id values = gtext_css_registry_find_at_rule("@font-feature-values", 20);
   ASSERT_EQ(gtext_css_registry_descriptor_state(r, gtext_css_registry_find_descriptor(values, "@swash", 6), &s, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_NONE) << "a nested at-rule is syntax and not a value";

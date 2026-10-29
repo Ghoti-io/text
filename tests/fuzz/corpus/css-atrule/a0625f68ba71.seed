@@ -1,0 +1,1 @@
+го@media all { a { color: red; @font-face { font-family: N; src: url(n) } } @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } }

@@ -1,0 +1,1 @@
+[ß@media all { @layer  { @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } } } }

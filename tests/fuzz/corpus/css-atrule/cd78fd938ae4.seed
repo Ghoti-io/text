@@ -1,0 +1,1 @@
+cL@media all { @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } }

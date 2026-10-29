@@ -1,0 +1,1 @@
+X@color-profile device-cmyk { src: url(b.icc) } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @keyframes none { from { color: red } } @page :first { size: A4 landscape; margin: 1in; @top-left { content: "x" } @bottom-center { content: "y" } }

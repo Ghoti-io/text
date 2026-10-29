@@ -1,0 +1,1 @@
+¤b@layer a { @color-profile device-cmyk { src: url(b.icc) } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } }

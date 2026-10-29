@@ -1,0 +1,1 @@
+Òm@layer  { @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @font-face { font-family: C; ascent-override: 90% 80%; size-adjust: 110%; font-width: 75% 100%; font-size: 10 20; src: url(c) } @font-palette-values --y { base-palette: dark } @font-face { src: url(x) } }

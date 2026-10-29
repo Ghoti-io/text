@@ -1,0 +1,60 @@
+# tools/css/gen-atrule-tables.py: the scope ledger of the at-rules of the pin (CSS Conditional, Fonts, Counter Styles, Paged Media, Animations, View Transitions, Anchor Positioning, Color,
+# Namespaces, Mixins, Navigation). One row per at-rule of the pin (the pin has 48). Tab separated:
+#  name        the at-rule without the `@`
+#  kind        the GTEXT_CSS_ATRULE_* kind
+#  parents     where the rule may be, comma separated: top (a style sheet), group (inside a conditional group rule, @layer or @scope), style (inside a style rule), page (inside @page), mixin
+#  parses      the prelude is read
+#  validates   the block is validated against the registry's grammars
+#  serializes  CSSOM's serialization is written
+#  applies     a condition evaluates or the rule is looked up or cascaded (a typed set, the sheet, the layer registry)
+#  typed       there is a typed accessor (css_font_rules.h, css_counter_style.h, css_page.h, css_keyframes.h, css_atrule.h)
+#  preserved   recognized and inactive: kept as component values, serialized, never applied
+#  note        why
+import	IMPORT	top	1	1	1	1	1	0	@import is read by the style sheet compiler (css_sheet.h); the model keeps the typed request
+media	MEDIA	top,group,style	1	1	1	1	0	0	a conditional group rule: the sheet keeps its condition as a node
+page	PAGE	top,group	1	1	1	1	1	0	selectors, descriptors, page properties and margin rules; matching and collection in css_page.h
+-webkit-keyframes	KEYFRAMES	top,group	1	1	1	1	1	0	the alias of @keyframes in the compatibility data
+container	CONTAINER	top,group,style	1	1	1	1	0	0	a conditional group rule evaluated for an element (css_container.h)
+position-try	POSITION_TRY	top,group	1	1	1	1	1	0	a dashed name and the position declarations the draft allows
+keyframes	KEYFRAMES	top,group	1	1	1	1	1	0	blocks normalized by offset (css_keyframes.h)
+scope	SCOPE	top,group,style	1	1	1	1	0	0	applied by the style sheet compiler
+layer	LAYER	top,group,style	1	1	1	1	0	0	applied by the layer registry
+color-profile	COLOR_PROFILE	top,group	1	1	1	0	1	0	typed data for color; conversion is color's
+when	WHEN	top,group,style	1	1	1	1	0	0	a conditional group rule: a node of the sheet
+else	ELSE	top,group,style	1	1	1	1	0	0	a conditional group rule: a node of the sheet
+supports-condition	PRESERVED	top	1	0	1	0	0	1	the pin gives no body grammar: preserved as component values, inactive
+supports	SUPPORTS	top,group,style	1	1	1	1	0	0	a conditional group rule: a node of the sheet
+counter-style	COUNTER_STYLE	top,group	1	1	1	0	1	0	typed and resolved (css_counter_style.h); counter text generation is not here
+custom-selector	PRESERVED	top	1	0	1	0	0	1	no engine ships it and no consumer asks: preserved, inactive
+font-face	FONT_FACE	top,group	1	1	1	1	1	0	typed (css_font_rules.h)
+font-feature-values	FONT_FEATURE_VALUES	top,group	1	1	1	1	1	0	family names and nested feature blocks
+font-palette-values	FONT_PALETTE_VALUES	top,group	1	1	1	0	1	0	typed (css_font_rules.h)
+function	PRESERVED	top,group	1	0	1	0	0	1	Mixins: preserved, inactive
+mixin	PRESERVED	top,group	1	0	1	0	0	1	Mixins: preserved, inactive
+contents	PRESERVED	mixin	1	0	1	0	0	1	Mixins: preserved, inactive
+apply	PRESERVED	group,style	1	0	1	0	0	1	Mixins: preserved, inactive
+private	PRESERVED	top,group	1	0	1	0	0	1	Mixins: preserved, inactive
+namespace	NAMESPACE	top	1	1	1	1	1	0	applied by the style sheet compiler; a typed view here
+location	PRESERVED	top	1	0	1	0	0	1	Navigation: preserved, inactive
+navigation	PRESERVED	top,group	1	0	1	0	0	1	Navigation: preserved, inactive
+top-left-corner	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+top-left	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+top-center	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+top-right	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+top-right-corner	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+bottom-left-corner	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+bottom-left	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+bottom-center	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+bottom-right	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+bottom-right-corner	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+left-top	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+left-middle	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+left-bottom	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+right-top	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+right-middle	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+right-bottom	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
+property	PROPERTY	top,group	1	1	1	1	1	0	applied by css_at_property.h; a typed view here
+charset	CHARSET	top	1	1	1	1	1	0	decoded by C0
+starting-style	STARTING_STYLE	top,group,style	1	1	1	1	0	0	a conditional group rule: a node of the sheet
+view-transition	VIEW_TRANSITION	top,group	1	1	1	1	1	0	typed; the applicable rule is the last in cascade order
+custom-media	CUSTOM_MEDIA	top,group	1	1	1	1	0	0	collected by the conditions object (css_condition.h)

@@ -1,0 +1,1 @@
+eX@layer a.b { @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @counter-style p { system: extends q } @counter-style q { system: extends p } @color-profile device-cmyk { src: url(b.icc) } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

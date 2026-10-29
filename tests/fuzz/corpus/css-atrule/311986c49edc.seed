@@ -1,0 +1,1 @@
+¦@media all { @layer a.b { @view-transition { navigation: auto; types: a b } @page :bogus { margin: 1px } @font-palette-values --y { base-palette: dark } } }

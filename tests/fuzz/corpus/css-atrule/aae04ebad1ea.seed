@@ -1,0 +1,1 @@
+Ðw@media all { @layer a { @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @top-left { content: "x" } } }

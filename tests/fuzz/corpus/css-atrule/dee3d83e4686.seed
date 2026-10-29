@@ -1,0 +1,2 @@
+½
+@property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @font-feature-values A, "B c" { font-display: swap; @styleset { nice: 12 3 } @swash { s: 1 } @styleset { nice: 9 } } @font-palette-values --y { base-palette: dark } @supports (display: grid) { @font-face { font-family: S; src: url(s) } }

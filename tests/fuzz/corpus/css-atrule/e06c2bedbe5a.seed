@@ -1,0 +1,1 @@
+¯½@media all { @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @keyframes none { from { color: red } } @font-face { src: url(x) } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } }

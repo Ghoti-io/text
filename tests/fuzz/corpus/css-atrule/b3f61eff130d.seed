@@ -1,0 +1,1 @@
+m¨@layer a { @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @top-left { content: "x" } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @supports (display: grid) { @font-face { font-family: S;

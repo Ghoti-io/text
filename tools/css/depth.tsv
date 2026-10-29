@@ -41,7 +41,7 @@ descriptor	@font-face font-weight	1	1	-	0
 descriptor	@font-face font-width	1	1	-	0	
 descriptor	@font-face line-gap-override	1	1	-	0	
 descriptor	@font-face size-adjust	1	1	-	0	
-descriptor	@font-face src	0	0	-	0	unresolved <font-src-list>
+descriptor	@font-face src	1	1	-	0	
 descriptor	@font-face subscript-position-override	1	1	-	0	
 descriptor	@font-face subscript-size-override	1	1	-	0	
 descriptor	@font-face superscript-position-override	1	1	-	0	

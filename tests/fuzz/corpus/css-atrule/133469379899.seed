@@ -1,0 +1,1 @@
+•Å@font-face { src: url(x) } @counter-style bad { system: alphabetic; symbols: a } @unknown-rule foo { bar } @page named:left:first { margin: 2px } @page 

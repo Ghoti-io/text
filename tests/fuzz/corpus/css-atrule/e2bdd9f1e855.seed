@@ -1,0 +1,1 @@
+b·@media all { @layer { @font-face { font-family: L; src: url(l) } } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } }

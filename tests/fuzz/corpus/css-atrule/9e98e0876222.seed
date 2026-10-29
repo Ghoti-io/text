@@ -1,0 +1,1 @@
+o‘@counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !importa

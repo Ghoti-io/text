@@ -1,0 +1,1 @@
+¾Î@keyframes none { from { color: red } } @counter-style bad { system: alphabetic; symbols: a } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" }

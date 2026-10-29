@@ -1,0 +1,1 @@
+Դ@counter-style p { system: extends q } @counter-style q { system: extends p }

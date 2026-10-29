@@ -1,0 +1,1 @@
+4Ú@media all { @layer a { @counter-style bad { system: alphabetic; symbols: a } a { color: red; @font-face { font-family: N; src: url(n) } } } }

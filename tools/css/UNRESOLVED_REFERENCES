@@ -17,7 +17,6 @@ reference	<id>	property nav-down	auto | <id> [ current | root | <target-name> ]?
 reference	<target-name>	property nav-down	auto | <id> [ current | root | <target-name> ]?	the pin's entry (css-ui) describes the type in prose and gives no grammar
 reference	<voice-family-name>	property voice-family	[ <voice-family-name> | <generic-voice> ]# | preserve	the pin's entry for it nested in voice-family (css-speech) describes the type in prose and gives no grammar
 reference	<semitones>	property voice-pitch	<frequency [0Hz,∞]> && absolute | [ [ x-low | low | medium | high | x-high ] || [ <frequency [0Hz,∞]> | <semitones> | <percentage> ] ]	the pin's entry for it nested in voice-pitch (css-speech) describes the type in prose and gives no grammar
-reference	<font-src-list>	descriptor @font-face src	<font-src-list>	the pin's entry (css-fonts) describes the type in prose and gives no grammar
 reference	<anchored-feature>	type anchored-in-parens	( <anchored-query> ) | ( <anchored-feature> ) | <general-enclosed>	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type anchored-in-parens)
 reference	<boolean-expr-group>	type boolean-expr	not <boolean-expr-group> | <boolean-expr-group> [ [ and <boolean-expr-group> ]* | [ or <boolean-expr-group> ]* ]	the pin has no entry for this type, so nothing defines it (the grammar that names it is the type boolean-expr)
 reference	<hex-color>	type color-base	<hex-color> | <color-function> | <named-color> | <color-mix()> | transparent	the pin's entry (css-color) describes the type in prose and gives no grammar
@@ -70,3 +69,4 @@ initial	descriptor @font-palette-values font-family	-	N/A	the pin's initial valu
 initial	descriptor @font-palette-values override-colors	-	N/A	the pin's initial value for this descriptor is `N/A`: it has none
 initial	descriptor @page page-margin-safety	-	auto	the pin's initial value `auto` is not among the alternatives of the descriptor's own grammar (`none | clamp | add`): a defect of the pin
 initial	property --*	-	the guaranteed-invalid value	the initial value of a custom property is the guaranteed-invalid value of CSS Variables 1, which is not a token sequence that its grammar matches: it is the absence of a value
+initial	descriptor @font-face src	-	N/A	the pin gives `N/A` as the initial value of `src` (Fonts 4, 4.3.1: "the descriptor is required"), so there is none to match; the descriptor is required by tools/css/atrule_required.tsv

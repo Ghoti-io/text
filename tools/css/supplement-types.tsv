@@ -12,3 +12,4 @@ clip	bottom	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <lef
 	bottom	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
 clip	left	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
 	left	<length> | auto	Masking 1, clip: "<top>, <right>, <bottom>, and <left> may either have a <length> value or auto. Negative lengths are permitted."
+	font-src-list	<font-src>#	Fonts 4, 4.3.1: "To parse a <font-src-list> production, parse a list of <font-src>s." (the descriptor "is a prioritized, comma-separated list")

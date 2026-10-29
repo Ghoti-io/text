@@ -1,0 +1,1 @@
+~@counter-style z { system: extends x; suffix: ")" } @color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a }

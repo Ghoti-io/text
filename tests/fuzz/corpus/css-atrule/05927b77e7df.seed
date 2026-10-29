@@ -1,0 +1,1 @@
+ua@media all { @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } @counter-style p { system: extends q } @counter-style q { system: extends p } }

@@ -25,6 +25,7 @@
 #   tools/css/run-registry-gates.sh grammars-controls  ...and the gate is seen to fail (list tampered, library defects planted)
 #   tools/css/run-registry-gates.sh depth              the depth ledger (tools/css/depth.tsv) has no regression
 #   tools/css/run-registry-gates.sh depth-controls     ...and the gate is seen to fail
+#   tools/css/run-registry-gates.sh depth-write          rewrite tools/css/depth.tsv from the measurement (then review the diff)
 #   tools/css/run-registry-gates.sh depth-write-floor  raise tools/css/DEPTH_FLOOR to the ledger's counts (a floor only goes up)
 #   tools/css/run-registry-gates.sh compute            every property of the pin is classified for computation, the generated table is the
 #                                                      generator's, and the ledger's computes column is what the classes say
@@ -231,6 +232,11 @@ depth_baseline() {
 	fi
 }
 
+depth_write() {
+	report
+	python3 tools/css/gen-depth.py "$rep" tools/css/depth.tsv --write
+}
+
 depth_write_floor() {
 	report
 	python3 tools/css/gen-depth.py "$rep" tools/css/depth.tsv --check --floor tools/css/DEPTH_FLOOR --write-floor --allow tools/css/DEPTH_REGRESSIONS
@@ -349,8 +355,9 @@ grammars) grammars ;;
 grammars-controls) grammars_controls ;;
 depth) depth ;;
 depth-controls) depth_controls ;;
+depth-write) depth_write ;;
 depth-write-floor) depth_write_floor ;;
 package) package ;;
 package-controls) package_controls ;;
-*) echo "usage: $0 tables|tables-controls|grammars|grammars-controls|depth|depth-controls|depth-write-floor|compute|compute-controls|package|package-controls" >&2; exit 2 ;;
+*) echo "usage: $0 tables|tables-controls|grammars|grammars-controls|depth|depth-controls|depth-write|depth-write-floor|compute|compute-controls|package|package-controls" >&2; exit 2 ;;
 esac

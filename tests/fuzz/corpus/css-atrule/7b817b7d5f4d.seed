@@ -1,0 +1,1 @@
+ð@color-profile device-cmyk { src: url(b.icc) } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative

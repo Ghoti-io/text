@@ -377,10 +377,13 @@ TEST(CssProperty, ADescriptorTakesNoCssWideKeywordAndNoSubstitution) {
   EXPECT_EQ(parse(r, "font-display", "swap", &values), "valid:swap");
 }
 
-TEST(CssProperty, ADescriptorWhoseGrammarIsNotUsableIsNotGuessedAtEither) {
+TEST(CssProperty, TheFontSrcDescriptorHasTheGrammarTheServedTextGives) {
   const GTEXT_CSS_Registry * r = R();
   const GTEXT_CSS_Property_Options face = descriptor_of("@font-face");
-  EXPECT_EQ(parse(r, "src", "url(a.woff2)", &face), "not supported") << "<font-src-list> is prose in the pin";
+  // <font-src-list> is prose in the pin; the supplement transcribes it from the draft (url with format() and tech(), or local())
+  EXPECT_EQ(parse(r, "src", "url(a.woff2)", &face), "valid:url(\"a.woff2\")");
+  EXPECT_EQ(parse(r, "src", "local(A), url(a) format(woff2) tech(variations)", &face), "valid:local(A), url(\"a\") format(woff2) tech(variations)");
+  EXPECT_EQ(parse(r, "src", "format(woff2)", &face), "invalid");
 }
 
 TEST(CssProperty, ADeclarationRoutesTheUnicodeRangeTokens) {

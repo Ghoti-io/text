@@ -1,0 +1,1 @@
+–@layer  { @layer { @font-face { font-family: L; src: url(l) } } @counter-style bad { system: alphabetic; symbols: a } @keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } }

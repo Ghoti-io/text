@@ -46,7 +46,7 @@ sheet-shadow-rules-reach-the-document	css_rule_index.c	  if (!CSS_HAVE(ctx, GTEX
 sheet-custom-property-is-a-regular-one	css_rule_index.c	      st = d->custom ? gtext_css_candidates_add_custom(	      st = 0 ? gtext_css_candidates_add_custom(	sheet
 sheet-nested-declarations-lose-the-parents-specificity	css_sheet.c	    return add_records(b, cur, cur->plist, cur->pspec, cur->pnest, run, true, span);	    return add_records(b, cur, cur->plist, gtext_css_specificity_make(0, 0, 0), cur->pnest, run, true, span);	sheet
 sheet-late-import-is-read	css_sheet.c	    if (!open) {	    if (0) {	sheet
-sheet-conditional-rules-need-no-filter	css_sheet.c	    if (!b->opt->active) {\n      bool oom = false;	    if (0) {\n      bool oom = false;	sheet
+sheet-conditional-rules-need-no-filter	css_rule_index.c	  if (!x->cond) {\n    return ires(res, GTEXT_CSS_E_UNSUPPORTED, "conditions"	  if (0) {\n    return ires(res, GTEXT_CSS_E_UNSUPPORTED, "conditions"	sheet
 sheet-every-rule-is-unkeyed	css_rule_index.c	  if (!m) {\n    return vpush(a, &g->other, ei)	  if (1) {\n    return vpush(a, &g->other, ei)	sheet-cost
 fuzz-sheet-compile-leaks-the-namespaces	css_sheet.c	  gtext_allocator_free(&a, s->ns);\n		sheet-seeds
 fuzz-sheet-index-skips-the-id-bucket	css_rule_index.c	  if (g->ids.nb) {	  if (0) {	sheet-seeds
@@ -54,7 +54,7 @@ fuzz-sheet-index-drops-the-rules-with-no-key	css_rule_index.c	  return test_list
 fuzz-forgiving-entry-leaves-its-simple-selectors-behind	css_selector_parse.c	        p->simples.len = ssave;\n		selector,selector-seeds
 sheet-the-host-is-not-the-parent-of-its-shadow-tree	css_match.c	  return ctx->iface.containing_host(ctx->iface.user, e);\n}	  return NULL;\n}	sheet
 sheet-a-pseudo-element-parent-is-everything	css_match.c	    if (cx->never || cx->raw.data || cx->has_pseudo_element) {	    if (cx->never || cx->raw.data) {	sheet
-sheet-a-nested-scope-is-not-inside-the-outer-root	css_sheet.c	st = parse_selector(b, sv, sn, cur->relative, cur->decl_ctx == 2, rule->span, &start);	st = parse_selector(b, sv, sn, false, false, rule->span, &start);	sheet
+sheet-a-nested-scope-is-not-inside-the-outer-root	css_sheet.c	st = parse_selector(b, sv, sn, relative, in_scope, span, &start);	st = parse_selector(b, sv, sn, false, false, span, &start);	sheet
 fuzz-selector-compound-list-reads-past-the-tokens	css_selector_parse.c	v[b > a ? b - 1 : a - 1].span	v[b - (b > a ? 1 : 0)].span	selector-seeds
 sheet-the-host-is-not-featureless	css_match.c	  return ctx->tree_scope && !ctx->host_arg && HAVE(ctx, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE) && ctx->iface.shadow_scope(ctx->iface.user, element) == ctx->tree_scope;	  return false;	sheet
 scope-in-has-is-the-anchor	css_match_has.c	    const bool r = ex(ctx, list, rc, 0, anchor, aux);	    const void * planted_scope = ctx->scope;\n    ctx->scope = anchor;\n    const bool r = ex(ctx, list, rc, 0, anchor, aux);\n    ctx->scope = planted_scope;	match
@@ -63,7 +63,7 @@ featureless-host-forbids-is	css_match.c	          s->pseudo == GTEXT_CSS_SEL_PC_
 featureless-host-forbids-nesting	css_match.c	  return s->kind == GTEXT_CSS_SIMPLE_NESTING ||\n      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS	  return\n      (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS	sheet
 host-subject-is-not-tried-as-the-host	css_rule_index.c	  if (g->shadow && css_compound_names_host(last) && !vpush(a, &g->host, ei)) {	  if (0 && g->shadow && css_compound_names_host(last) && !vpush(a, &g->host, ei)) {	sheet
 own-host-part-rules-are-not-tried	css_rule_index.c	if (w.status == GTEXT_CSS_OK && g0->shadow && g0->part.n && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {	if (0 && w.status == GTEXT_CSS_OK && g0->shadow && g0->part.n && CSS_HAVE(ctx, GTEXT_CSS_ELEMENT_CB_CONTAINING_HOST)) {	sheet
-nested-scope-ignores-the-outer-limit-for-the-subject	css_rule_index.c	if (!valid_root(w, pl, sc->parent, outer, x)) {	if (!valid_root(w, pl, sc->parent, outer, outer)) {	sheet
+nested-scope-ignores-the-outer-limit-for-the-subject	css_rule_index.c	if (!valid_root(w, pl, outer_sc, outer, x)) {	if (!valid_root(w, pl, outer_sc, outer, outer)) {	sheet
 scope-limit-skips-the-root	css_rule_index.c	for (El y = x; y; y = y == r ? NULL : ctx->iface.parent(ctx->iface.user, y)) {	for (El y = x; y && y != r; y = ctx->iface.parent(ctx->iface.user, y)) {	sheet
 nth-of-s-positions-ignore-the-scope	css_match_nth.c	const void * aux = mode == 1 ? (ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope) : NULL;	const void * aux = NULL;	sheet
 scope-root-memo-is-dropped	css_rule_index.c	  if (w->ctx->status == GTEXT_CSS_OK) {\n    rm_put(w, pl, sc, r, v ? 2 : 1);	  if (0) {\n    rm_put(w, pl, sc, r, v ? 2 : 1);	sheet-cost

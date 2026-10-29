@@ -1,0 +1,1 @@
+yw@font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @counter-style p { system: extends q } @counter-style q { system: extends p } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px }

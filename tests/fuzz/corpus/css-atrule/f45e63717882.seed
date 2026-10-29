@@ -1,0 +1,1 @@
+»x@property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @view-transition { navigation: auto; types: a b }

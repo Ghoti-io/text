@@ -1,0 +1,1 @@
+»—@media all { @layer a.b { @font-face { src: url(x) } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } } }

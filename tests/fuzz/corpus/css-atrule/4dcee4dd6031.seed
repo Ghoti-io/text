@@ -1,0 +1,1 @@
+ÿš@media all { @counter-style bad { system: alphabetic; symbols: a } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } @view-transition { navigation: auto; types: a b } @keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } }

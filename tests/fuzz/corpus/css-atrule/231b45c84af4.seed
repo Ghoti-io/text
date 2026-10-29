@@ -1,0 +1,1 @@
+Yø@media all { @position-try --a { top: anchor(bottom); color: red; left: 1px } @font-face { font-family: C; ascent-override: 90% 80%; size-adjust: 110%; font-width: 75% 100%; font-size: 10 20; src: url(c) } a { color: red; @font-face { font-family: N; src: url(n) } } @counter-style x { system: fixed 5; symbols: a b; range: 1 3, infinite 0; pad: 3 "0"; negative: "-" "!" } }

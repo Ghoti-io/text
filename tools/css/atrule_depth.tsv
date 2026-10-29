@@ -1,0 +1,50 @@
+# tools/css/gen-atrule-tables.py: the scope ledger of the at-rules of the pin. Columns: at-rule, kind, parses, validates, serializes, applies, typed, preserved, wpt, note.
+# Every column but `wpt` is copied from atrule_kinds.tsv; `wpt` (the WPT vectors scored) is kept by the scorer (tools/conformance/run-css-atrules.sh) and may not go from 1 to 0; none may regress.
+@-webkit-keyframes	KEYFRAMES	1	1	1	1	1	0	0	the alias of @keyframes in the compatibility data
+@apply	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@bottom-center	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@bottom-left	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@bottom-left-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@bottom-right	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@bottom-right-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@charset	CHARSET	1	1	1	1	1	0	0	decoded by C0
+@color-profile	COLOR_PROFILE	1	1	1	0	1	0	0	typed data for color; conversion is color's
+@container	CONTAINER	1	1	1	1	0	0	0	a conditional group rule evaluated for an element (css_container.h)
+@contents	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@counter-style	COUNTER_STYLE	1	1	1	0	1	0	0	typed and resolved (css_counter_style.h); counter text generation is not here
+@custom-media	CUSTOM_MEDIA	1	1	1	1	0	0	0	collected by the conditions object (css_condition.h)
+@custom-selector	PRESERVED	1	0	1	0	0	1	0	no engine ships it and no consumer asks: preserved, inactive
+@else	ELSE	1	1	1	1	0	0	0	a conditional group rule: a node of the sheet
+@font-face	FONT_FACE	1	1	1	1	1	0	0	typed (css_font_rules.h)
+@font-feature-values	FONT_FEATURE_VALUES	1	1	1	1	1	0	0	family names and nested feature blocks
+@font-palette-values	FONT_PALETTE_VALUES	1	1	1	0	1	0	0	typed (css_font_rules.h)
+@function	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@import	IMPORT	1	1	1	1	1	0	0	@import is read by the style sheet compiler (css_sheet.h); the model keeps the typed request
+@keyframes	KEYFRAMES	1	1	1	1	1	0	0	blocks normalized by offset (css_keyframes.h)
+@layer	LAYER	1	1	1	1	0	0	0	applied by the layer registry
+@left-bottom	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@left-middle	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@left-top	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@location	PRESERVED	1	0	1	0	0	1	0	Navigation: preserved, inactive
+@media	MEDIA	1	1	1	1	0	0	0	a conditional group rule: the sheet keeps its condition as a node
+@mixin	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@namespace	NAMESPACE	1	1	1	1	1	0	0	applied by the style sheet compiler; a typed view here
+@navigation	PRESERVED	1	0	1	0	0	1	0	Navigation: preserved, inactive
+@page	PAGE	1	1	1	1	1	0	0	selectors, descriptors, page properties and margin rules; matching and collection in css_page.h
+@position-try	POSITION_TRY	1	1	1	1	1	0	0	a dashed name and the position declarations the draft allows
+@private	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@property	PROPERTY	1	1	1	1	1	0	0	applied by css_at_property.h; a typed view here
+@right-bottom	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@right-middle	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@right-top	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@scope	SCOPE	1	1	1	1	0	0	0	applied by the style sheet compiler
+@starting-style	STARTING_STYLE	1	1	1	1	0	0	0	a conditional group rule: a node of the sheet
+@supports	SUPPORTS	1	1	1	1	0	0	0	a conditional group rule: a node of the sheet
+@supports-condition	PRESERVED	1	0	1	0	0	1	0	the pin gives no body grammar: preserved as component values, inactive
+@top-center	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@top-left	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@top-left-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@top-right	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@top-right-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
+@view-transition	VIEW_TRANSITION	1	1	1	1	1	0	0	typed; the applicable rule is the last in cascade order
+@when	WHEN	1	1	1	1	0	0	0	a conditional group rule: a node of the sheet
