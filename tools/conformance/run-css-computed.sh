@@ -166,6 +166,13 @@ awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF < 7 { print; next } { gsub(/"/, "", 
 expect reason-without-quote "SUITE PROBLEMS" gate "$vectors" "$scratch/unquoted" "$defects" "$unscored"
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = "browser-behavior"; done = 1 } { print }' "$exceptions" > "$scratch/class"
 expect class-not-one-of-the-five "SUITE PROBLEMS" gate "$vectors" "$scratch/class" "$defects" "$unscored"
+# A served-text exception names the recorded answers of both browsers: without the name, or with a case the record does not have, the gate refuses it.
+if awk -F'\t' '!/^#/ && $6 == "served-text" { found = 1 } END { exit !found }' "$exceptions"; then
+	awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done || $6 != "served-text" { print; next } { gsub(/\[record: [^]]*\]/, "", $7); done = 1 } { print }' "$exceptions" > "$scratch/norecord"
+	expect served-text-without-record "SUITE PROBLEMS" gate "$vectors" "$scratch/norecord" "$defects" "$unscored"
+	awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done || $6 != "served-text" { print; next } { gsub(/\[record: [^]]*\]/, "[record: no-such-case]", $7); done = 1 } { print }' "$exceptions" > "$scratch/badrecord"
+	expect served-text-unknown-record "SUITE PROBLEMS" gate "$vectors" "$scratch/badrecord" "$defects" "$unscored"
+fi
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = ""; done = 1 } { print }' "$defects" > "$scratch/owner"
 expect defect-without-owner "SUITE PROBLEMS" gate "$vectors" "$exceptions" "$scratch/owner" "$unscored"
 { cat "$exceptions"; awk -F'\t' '!/^#/ && NF >= 7 { print; exit }' "$defects"; } > "$scratch/both"

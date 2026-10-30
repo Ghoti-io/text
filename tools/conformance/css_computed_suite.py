@@ -16,7 +16,8 @@ as the harness asserts.
   vector, the property, the value, the stage, the answer the library gives, a class and the sentence of the served text that says so (a quotation of four words and
   twenty characters at least): `draft-newer` (the standard has changed since the page), `wpt-tentative` (the page is named tentative), `needs-environment` (the answer
   depends on something the library is not given), `wpt-wrong` (the page contradicts its own specification), `resolved-value` (CSSOM's resolved value is not the computed
-  value: used values, layout). CSS_COMPUTED_DEFECTS holds the cases where the page is right and the library is not: an owner and what the library lacks, under a
+  value: used values, layout), `browsers-differ` (the text is silent and the two pinned browsers answer differently: both are named, and the gate checks that they differ), `served-text` (a quoted sentence of the served text entails the library's answer and not the page's, and the recorded answers of both pinned
+  browsers are named: `[record: *]`, tools/conformance/css_browser_answers.jsonl). CSS_COMPUTED_DEFECTS holds the cases where the page is right and the library is not: an owner and what the library lacks, under a
   ceiling that only goes down (CSS_COMPUTED_MAX_DEFECTS). In both lists the library must give exactly the answer listed. A failure in neither is "UNEXPLAINED
   FAILURES"; a listed case that passes, does not exist or answers otherwise is "STALE EXCEPTIONS"; the scored count has a floor (CSS_COMPUTED_MIN_SCORED).
 * The depth ledger is not changed: the `computes` column is what the classification says (check-css-compute); this gate refines nothing in it, and a property whose
@@ -29,7 +30,8 @@ import re
 import subprocess
 import sys
 
-CLASSES = ('draft-newer', 'wpt-tentative', 'needs-environment', 'wpt-wrong', 'resolved-value')
+CLASSES = ('draft-newer', 'wpt-tentative', 'needs-environment', 'wpt-wrong', 'resolved-value', 'served-text', 'browsers-differ')
+BROWSER_RECORD = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_browser_answers.jsonl')
 STAGES = ('compute',)
 
 
@@ -54,6 +56,45 @@ def css_name(js):
 
 def quotes_a_sentence(reason):
     return any(len(q) >= 20 and len(q.split()) >= 4 for q in re.findall(r'"([^"]*)"', reason))
+
+
+def load_record():
+    """The ids of the recorded browser answers (css_browser_answers.jsonl) that have an answer of both engines: id -> set of engines."""
+    have = {}
+    if not os.path.exists(BROWSER_RECORD):
+        return have
+    for line in open(BROWSER_RECORD, encoding='utf-8'):
+        if line.startswith('#') or not line.strip():
+            continue
+        r = json.loads(line)
+        have[r['id']] = {e: a.get('computed', {}) for e, a in r['engines'].items() if a.get('computed') or a.get('declarations')}
+        have['style:' + r['style']] = have[r['id']]
+    return have
+
+
+def record_problems(ident, reason, record, prop=None, differ=False, value=None):
+    """A `served-text` exception quotes the sentence (checked as for the other classes) and names the recorded answers of both browsers: `[record: *]` is this vector's
+    own case in the record (CSS_COMPUTED_DEFECTS:<vector> or CSS_PROPERTY_DEFECTS:<vector>), or ids of hand cases are listed after `record:` separated by semicolons."""
+    m = re.search(r'\[record: ([^\]]+)\]', reason)
+    if not m:
+        return ['%s: a served-text exception names the recorded answers of both browsers as [record: *] or [record: <case id>; ...]' % ident]
+    ids = [x.strip() for x in m.group(1).split(';')]
+    out = []
+    for i in ids:
+        if i == '*':
+            cands = ['CSS_COMPUTED_DEFECTS:' + ident, 'CSS_PROPERTY_DEFECTS:' + ident, 'style:%s: %s' % (prop, value)]
+            ok = [c for c in cands if c in record]
+            if not ok:
+                out.append('%s: the record has no case of this vector' % ident)
+                continue
+            i = ok[0]
+        if i not in record:
+            out.append('%s: the record has no case %r' % (ident, i))
+        elif set(record[i]) != {'chromium', 'firefox'}:
+            out.append('%s: the record case %r lacks an answer of %s' % (ident, i, ', '.join(sorted({'chromium', 'firefox'} - set(record[i])))))
+        elif differ and prop is not None and record[i]['chromium'].get(prop) == record[i]['firefox'].get(prop):
+            out.append('%s: the class is browsers-differ and the record case %r has the same answer in both browsers for %s' % (ident, i, prop))
+    return out
 
 
 def load_table(path, columns, what):
@@ -145,6 +186,7 @@ def main():
     pages = json.load(open(pages_path, encoding='utf-8'))
     problems = []
 
+    record = load_record()
     exceptions, p = load_table(exceptions_path, 7, 'not <id> TAB <property> TAB <value> TAB <stage> TAB <answer> TAB <class> TAB <reason>')
     problems += p
     for ident, f in exceptions.items():
@@ -155,8 +197,12 @@ def main():
         if f[5] == 'wpt-tentative':
             if 'tentative' not in ident:
                 problems.append('%s: the class is wpt-tentative and the page is not named tentative' % ident)
-        elif not quotes_a_sentence(f[6]):
+        elif f[5] != 'browsers-differ' and not quotes_a_sentence(f[6]):
             problems.append('%s: the reason quotes no sentence of the served text (a quotation of four words and twenty characters at least)' % ident)
+        if f[5] == 'served-text':
+            problems += record_problems(ident, f[6], record, f[1], False, f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'))
+        elif f[5] == 'browsers-differ':
+            problems += record_problems(ident, f[6], record, f[1], True, f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'))
     defects, p = load_table(defects_path, 7, 'not <id> TAB <property> TAB <value> TAB <stage> TAB <answer> TAB <owner> TAB <what the library lacks>')
     problems += p
     for ident, f in defects.items():
