@@ -191,6 +191,11 @@ Nothing reads the process, the clock or the network. A computation that needs a 
 stays as written, flagged `GTEXT_CSS_VFLAG_COLOR_UNRESOLVED`, unless the environment has a color callback to resolve it. `color-mix()`, relative colors, `alpha()` and
 `contrast-color()` are computed here (\ref format_css_color_computation "css-color-computation.md").
 
+A `currentcolor` inside a mix or a relative color stays the keyword in the computed value of every property but `color` (Color 5, 10.1 and 10.2: the computed value is the
+function with its arguments computed individually). The *resolved* value that `getComputedStyle()` asks for is the used value (CSSOM, "Resolved Values"), in which
+`currentcolor` is the element's color; a caller that resolves a value puts the element's color in its place in the text and then asks
+`gtext_css_color_compute_text()` for the text the color computes to (`color(srgb 0 0.5 0.5)` for `color-mix(in srgb, rgb(0 255 0), blue)`).
+
 ## How a value is computed
 
 Every property of the pin has a **class** (`gtext_css_compute_class()`), taken from the sentence the pin gives for its computed value and held by a

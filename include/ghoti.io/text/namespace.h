@@ -253,6 +253,7 @@
 #define gtext_css_color_serialize_buffer GHOTIIO_TEXT(gtext_css_color_serialize_buffer)
 #define gtext_css_color_space_name GHOTIIO_TEXT(gtext_css_color_space_name)
 #define gtext_css_color_srgb GHOTIIO_TEXT(gtext_css_color_srgb)
+#define gtext_css_color_compute_text GHOTIIO_TEXT(gtext_css_color_compute_text)
 #define gtext_css_compile GHOTIIO_TEXT(gtext_css_compile)
 #define gtext_css_compiled_atoms GHOTIIO_TEXT(gtext_css_compiled_atoms)
 #define gtext_css_compiled_free GHOTIIO_TEXT(gtext_css_compiled_free)

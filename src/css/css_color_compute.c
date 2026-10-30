@@ -842,3 +842,24 @@ size_t css_color_value_text(const css_cc_value * v, char * out, css_cs * written
   }
   return b.n;
 }
+
+GTEXT_CSS_Status gtext_css_color_compute_text(const GTEXT_CSS_Color * color, bool dark, const GTEXT_Allocator * alloc, char * out, size_t * length) {
+  if (!color || !out || !length) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *length = 0;
+  out[0] = '\0';
+  css_color_ctx cx;
+  memset(&cx, 0, sizeof cx);
+  cx.alloc = alloc ? alloc : gtext_allocator_default();
+  cx.scheme = dark ? GTEXT_CSS_SCHEME_DARK : GTEXT_CSS_SCHEME_LIGHT;
+  css_cc_value v;
+  bool done = false;
+  const GTEXT_CSS_Status s = css_color_compute(&cx, color, &v, &done);
+  if (s != GTEXT_CSS_OK || !done) {
+    return s;
+  }
+  css_cs written;
+  *length = css_color_value_text(&v, out, &written);
+  return GTEXT_CSS_OK;
+}

@@ -257,6 +257,28 @@ GTEXT_API GTEXT_CSS_Status gtext_css_color_serialize_buffer(const GTEXT_CSS_Colo
  */
 GTEXT_API bool gtext_css_color_srgb(const GTEXT_CSS_Color * color, double rgba[4]);
 
+/** The most bytes (without the terminating NUL) gtext_css_color_compute_text() writes. */
+#define GTEXT_CSS_COLOR_COMPUTED_TEXT_MAX 640
+
+/**
+ * @brief The text a color computes to when nothing but the color itself is needed: `color-mix()`, a relative color, `alpha()`,
+ *   `contrast-color()` and a function whose channels are calculations of absolute units (Color 5, 10 and 11; Color 4, 15 and 16).
+ *
+ * This is the used value of such a color, for a caller that resolves a value for the CSSOM (a `currentcolor` inside the color is
+ * the caller's to replace by the element's color in the text first). The result is `color(srgb 0.5 0 0.5)` for a mix in sRGB,
+ * `rgb(0 0 0)` for `contrast-color()`, `lch(...)` for a mix in lch.
+ *
+ * @param color The color. Not NULL.
+ * @param dark Whether `light-dark()` takes its second argument.
+ * @param alloc The allocator, or NULL for gtext_allocator_default().
+ * @param out Receives the text, NUL-terminated; at least GTEXT_CSS_COLOR_COMPUTED_TEXT_MAX + 1 bytes. Not NULL.
+ * @param length Receives the length of the text, 0 when the color cannot be computed from itself (a `currentcolor` or a system color
+ *   inside it, a custom color space, a unit that needs an element); `out` is then empty. Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_color_compute_text(const GTEXT_CSS_Color * color, bool dark,
+    const GTEXT_Allocator * alloc, char * out, size_t * length);
+
 /** @brief The name of a color space as `color()` and `in` write it ("srgb", "display-p3", "xyz-d65" ...). Static. */
 GTEXT_API const char * gtext_css_color_space_name(GTEXT_CSS_Color_Space space);
 
