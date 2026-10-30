@@ -248,4 +248,33 @@ TEST(CssImageCompute, ListsAndOtherImagesAreKept) {
   });
 }
 
+// Filter Effects 1 (served 2026-10-30), 6.2: "Omitted values are included and compute to their defaults."; 6.1: "the default value for omitted values for grayscale(), sepia()
+// and invert() is 1", blur() "Default value when omitted is 0px.", "Values of amount over 100% are allowed but UAs must clamp the values to 1", "Negative values are not allowed."
+TEST(CssFilterCompute, OmittedArgumentsAreTheirDefaults) {
+  expect_all({
+      {"filter", "blur()", "blur(0px)"},
+      {"filter", "hue-rotate()", "hue-rotate(0deg)"},
+      {"filter", "grayscale() invert() sepia() opacity()", "grayscale(1) invert(1) sepia(1) opacity(1)"},
+      {"filter", "brightness() contrast() saturate()", "brightness(1) contrast(1) saturate(1)"},
+      {"backdrop-filter", "contrast()", "contrast(1)"},
+      {"filter", "drop-shadow(1px 2px)", "drop-shadow(currentcolor 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px 3px red)", "drop-shadow(red 1px 2px 3px)"},
+  });
+}
+
+TEST(CssFilterCompute, PercentagesAreNumbersAndAmountsAreClamped) {
+  expect_all({
+      {"filter", "grayscale(50%)", "grayscale(0.5)"},
+      {"filter", "brightness(300%)", "brightness(3)"},
+      {"filter", "saturate(calc(300%))", "saturate(3)"},
+      {"filter", "invert(calc(300%))", "invert(1)"},
+      {"filter", "opacity(2)", "opacity(1)"},
+      {"filter", "contrast(calc(-10))", "contrast(0)"},
+      {"filter", "sepia(calc(-10%))", "sepia(0)"},
+      {"filter", "blur(calc(100px))", "blur(100px)"},
+      {"filter", "hue-rotate(calc(90deg))", "hue-rotate(90deg)"},
+      {"filter", "blur(2px) url(#a) invert(25%)", "blur(2px) url(\"#a\") invert(0.25)"},
+  });
+}
+
 } // namespace

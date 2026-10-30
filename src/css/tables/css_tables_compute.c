@@ -138,7 +138,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* animation-trigger */
   {1, 0, 0, 0, 0, 0, 0}, /* appearance */
   {1, 0, 0, 0, 0, 0, 0}, /* aspect-ratio */
-  {1, 0, 0, 0, 0, 0, 0}, /* backdrop-filter */
+  {3, 38, 0, 0, 0, 0, 0}, /* backdrop-filter */
   {1, 0, 0, 0, 0, 0, 0}, /* backface-visibility */
   {4, 0, 4, 0, 0, 0, 0}, /* background */
   {1, 0, 0, 0, 0, 0, 0}, /* background-attachment */
@@ -380,7 +380,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 23, 0, 1, 0, 0, 0}, /* fill-repeat */
   {1, 0, 0, 1, 0, 0, 0}, /* fill-rule */
   {3, 26, 0, 1, 0, 0, 0}, /* fill-size */
-  {1, 0, 0, 1, 0, 0, 0}, /* filter */
+  {3, 38, 0, 1, 0, 0, 0}, /* filter */
   {2, 0, 0, 0, 0, 0, 0}, /* fit-tolerance */
   {4, 0, 9, 0, 0, 0, 0}, /* flex */
   {2, 0, 0, 0, 0, 0, 0}, /* flex-basis */

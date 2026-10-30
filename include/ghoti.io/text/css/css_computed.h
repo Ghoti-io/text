@@ -161,7 +161,7 @@ typedef enum {
   GTEXT_CSS_ALGO_DASHARRAY,        ///< `stroke-dasharray`: numbers are lengths in px, and the values are one comma separated list.
   GTEXT_CSS_ALGO_CARET_COLOR,      ///< `caret-color`: a second value of `auto` is the same as none, and is left out.
   GTEXT_CSS_ALGO_ALIGN_KEYWORD,    ///< `align-content`, `justify-content`, `align-self`, `justify-self`, `align-items`, `justify-items`: the legacy `flex-start` and `flex-end` are their aliases `flow-start` and `flow-end`.
-  GTEXT_CSS_ALGO_SHAPE,            ///< `clip-path`, `shape-outside`, `offset-path`, `border-shape` and the image properties (`background-image`, `mask-image`, `border-image-source`, `list-style-image`, `content`): gradients drop their defaults, write positions as percentages and expand double-position stops; `rect()` and `xywh()` are the equivalent `inset()`, positions are percentages, a ray's angle is in degrees, path data is absolute, and a default is not written.
+  GTEXT_CSS_ALGO_SHAPE,            ///< `clip-path`, `shape-outside`, `offset-path`, `border-shape`, `filter`, `backdrop-filter` (filter functions: omitted arguments written, percentages as numbers, amounts clamped) and the image properties (`background-image`, `mask-image`, `border-image-source`, `list-style-image`, `content`): gradients drop their defaults, write positions as percentages and expand double-position stops; `rect()` and `xywh()` are the equivalent `inset()`, positions are percentages, a ray's angle is in degrees, path data is absolute, and a default is not written.
   GTEXT_CSS_ALGO_CUSTOM,           ///< `--*`.
   GTEXT_CSS_ALGO_COUNT             ///< The number of algorithms; not one.
 } GTEXT_CSS_Compute_Algorithm;

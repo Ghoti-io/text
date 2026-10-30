@@ -17,6 +17,7 @@
 align-content	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 align-items	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 align-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+backdrop-filter	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/filter-effects-1/: Omitted values are included and compute to their defaults.
 background-image	algorithm	SHAPE	exact	-	list, each item either an <image> or the keyword none
 background-position-block	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
 background-position-inline	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
@@ -54,6 +55,7 @@ corner-start-start-shape	unimplemented	-	-	-	the computed value is the superelli
 corner-top-left-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
 corner-top-right-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
 display	algorithm	DISPLAY	exact	-	a pair of keywords representing the inner and outer display types plus optional list-item flag, or a <display-internal> or <display-box> keyword; see prose in a variety of specs for computation rules
+filter	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/filter-effects-1/: Omitted values are included and compute to their defaults.
 float	algorithm	FLOAT	exact	-	draft:https://drafts.csswg.org/css-position-3/: A position value of absolute or fixed blockifies the box, causes float to compute to none, and forces the box to establish an independent formatting context.
 fill-opacity	algorithm	OPACITY	exact	-	the specified value converted to a <number>, clamped to the range [0,1]
 fill-position	algorithm	POSITION	exact	-	A list, each item consisting of: a pair of offsets (horizontal and vertical) from the top left origin each given as a combination of an absolute length and a percentage

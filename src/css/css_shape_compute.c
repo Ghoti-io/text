@@ -857,13 +857,165 @@ static bool fn_gradient(sb * out, const char * name, span inner, int kind) {
   return done;
 }
 
+static void put_number(sb * b, double v) {
+  char buf[400];
+  const size_t n = css_cssom_number(v, false, buf);
+  sb_put(b, buf, n);
+}
+
+
+/* ---- filter functions (Filter Effects 1) --------------------------------------------------------------------------- */
+
+/// A plain number or percentage token as a value (a percentage is a hundredth of its number); false for anything else. Read here, in IEEE arithmetic and no host function.
+static bool amount_value(span s, double * v) {
+  const char * p = s.p;
+  const char * end = s.p + s.n;
+  bool pct = false;
+  if (end > p && end[-1] == '%') {
+    pct = true;
+    end--;
+  }
+  bool neg = false;
+  if (p < end && (*p == '+' || *p == '-')) {
+    neg = *p == '-';
+    p++;
+  }
+  double m = 0.0;
+  int scale = 0;
+  size_t digits = 0;
+  while (p < end && *p >= '0' && *p <= '9') {
+    if (digits < 17) {
+      m = m * 10.0 + (double)(*p - '0');
+    }
+    else {
+      scale++;
+    }
+    digits++;
+    p++;
+  }
+  if (p < end && *p == '.') {
+    p++;
+    while (p < end && *p >= '0' && *p <= '9') {
+      if (digits < 17) {
+        m = m * 10.0 + (double)(*p - '0');
+        scale--;
+      }
+      digits++;
+      p++;
+    }
+  }
+  if (digits == 0 || p != end || scale > 300 || scale < -300) {
+    return false;
+  }
+  while (scale > 0) {
+    m *= 10.0;
+    scale--;
+  }
+  while (scale < 0) {
+    m /= 10.0;
+    scale++;
+  }
+  if (pct) {
+    m /= 100.0;
+  }
+  *v = neg ? -m : m;
+  return true;
+}
+
+/// Filter Effects 1, 6.2: "Omitted values are included and compute to their defaults." (6.1: the default of grayscale(), sepia() and invert() is 1, of blur()
+/// 0px; "Values of amount over 100% are allowed but UAs must clamp the values to 1" for grayscale(), sepia(), invert() and opacity(); "Negative values are not
+/// allowed"); a percentage is the number it is a hundredth of (6.4), which is how the pinned pages write a computed amount.
+static bool fn_filter(sb * out, const char * name, span inner, int kind) {
+  spv t = {out->a, NULL, 0, 0, false};
+  split_top(&t, inner, ' ');
+  bool done = false;
+  if (!t.fail && t.n <= 1) {
+    if (kind == 0) { /* blur */
+      if (t.n == 0) {
+        sb_puts(out, "blur(0px)");
+        done = true;
+      }
+    }
+    else if (kind == 1) { /* hue-rotate */
+      if (t.n == 0) {
+        sb_puts(out, "hue-rotate(0deg)");
+        done = true;
+      }
+    }
+    else {
+      double v = 1.0;
+      if (t.n == 0 || amount_value(t.v[0], &v)) {
+        if (v < 0.0) {
+          v = 0.0;
+        }
+        if (kind == 3 && v > 1.0) { /* grayscale, invert, opacity, sepia */
+          v = 1.0;
+        }
+        sb_puts(out, name);
+        sb_putc(out, '(');
+        put_number(out, v);
+        sb_putc(out, ')');
+        done = true;
+      }
+    }
+  }
+  out->fail = out->fail || t.fail;
+  gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+  return done;
+}
+
+
+/// drop-shadow( <color>? && <length>{2,3} ): "Omitted values are included and compute to their defaults" - the color is currentcolor (which a computed value keeps, Color 4
+/// 15.5, as the keyword), the blur radius 0px; the color is written first.
+static bool fn_drop_shadow(sb * out, span inner) {
+  spv t = {out->a, NULL, 0, 0, false};
+  split_top(&t, inner, ' ');
+  bool done = false;
+  if (!t.fail && t.n >= 2 && t.n <= 4) {
+    size_t lengths = 0;
+    size_t color = t.n;
+    for (size_t i = 0; i < t.n; i++) {
+      if (is_quantity(t.v[i])) {
+        lengths++;
+      }
+      else {
+        color = color == t.n ? i : t.n + 1;
+      }
+    }
+    if (color <= t.n && lengths >= 2 && lengths <= 3 && lengths + (color < t.n ? 1 : 0) == t.n) {
+      sb_puts(out, "drop-shadow(");
+      if (color < t.n) {
+        put_span(out, t.v[color]);
+      }
+      else {
+        sb_puts(out, "currentcolor");
+      }
+      for (size_t i = 0; i < t.n; i++) {
+        if (i != color) {
+          sb_putc(out, ' ');
+          put_span(out, t.v[i]);
+        }
+      }
+      if (lengths == 2) {
+        sb_puts(out, " 0px");
+      }
+      sb_putc(out, ')');
+      done = true;
+    }
+  }
+  out->fail = out->fail || t.fail;
+  gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+  return done;
+}
+
 /// One shape function rewritten; false (nothing written) when it is not one of the shape functions or does not read.
 static bool shape_function(sb * out, span f) {
   static const struct {
     const char * name;
     int kind;
   } F[] = {{"rect", 1}, {"xywh", 2}, {"circle", 3}, {"ellipse", 4}, {"ray", 5}, {"shape", 7}, {"linear-gradient", 10}, {"repeating-linear-gradient", 10},
-      {"radial-gradient", 11}, {"repeating-radial-gradient", 11}, {"conic-gradient", 12}, {"repeating-conic-gradient", 12}};
+      {"radial-gradient", 11}, {"repeating-radial-gradient", 11}, {"conic-gradient", 12}, {"repeating-conic-gradient", 12},
+      {"blur", 20}, {"hue-rotate", 21}, {"brightness", 22}, {"contrast", 22}, {"saturate", 22}, {"grayscale", 23}, {"invert", 23}, {"opacity", 23}, {"sepia", 23}, {"drop-shadow", 24}};
   for (size_t i = 0; i < sizeof F / sizeof F[0]; i++) {
     if (!starts_fn(f, F[i].name)) {
       continue;
@@ -878,6 +1030,11 @@ static bool shape_function(sb * out, span f) {
     case 10: return fn_gradient(out, F[i].name, inner, 0);
     case 11: return fn_gradient(out, F[i].name, inner, 1);
     case 12: return fn_gradient(out, F[i].name, inner, 2);
+    case 20: return fn_filter(out, F[i].name, inner, 0);
+    case 21: return fn_filter(out, F[i].name, inner, 1);
+    case 22: return fn_filter(out, F[i].name, inner, 2);
+    case 23: return fn_filter(out, F[i].name, inner, 3);
+    case 24: return fn_drop_shadow(out, inner);
     default: return fn_shape(out, inner);
     }
   }
