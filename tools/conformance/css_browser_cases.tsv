@@ -1,0 +1,1455 @@
+# Hand-written cases of the browser-answer record (tools/oracle/css_browser_record.py): id, flags, parent declarations, declarations, properties to read.
+# Tab separated. The flag `dark` also records the dark color scheme. The answers are tools/conformance/css_browser_answers.jsonl.
+text-box.1			text-box: trim-both cap alphabetic	text-box,text-box-trim,text-box-edge
+text-box.2			text-box: normal	text-box,text-box-trim,text-box-edge
+text-box.3			text-box: cap alphabetic	text-box,text-box-trim,text-box-edge
+text-box.4			text-box: trim-start text	text-box,text-box-trim,text-box-edge
+text-box.5			text-box: trim-end ex text	text-box,text-box-trim,text-box-edge
+text-box.6			text-box: trim-both text	text-box,text-box-trim,text-box-edge
+text-box.7			text-box: none	text-box,text-box-trim,text-box-edge
+text-box.8			text-box: trim-both	text-box,text-box-trim,text-box-edge
+text-box.9			text-box: text	text-box,text-box-trim,text-box-edge
+text-box.10			text-box: cap	text-box,text-box-trim,text-box-edge
+text-box.11			text-box: ex alphabetic	text-box,text-box-trim,text-box-edge
+text-box.12			text-box: trim-both ideographic	text-box,text-box-trim,text-box-edge
+text-box.13			text-box: trim-both text text	text-box,text-box-trim,text-box-edge
+text-box.14			text-box: auto	text-box,text-box-trim,text-box-edge
+text-box.15			text-box: trim-start cap alphabetic	text-box,text-box-trim,text-box-edge
+text-box.16			text-box: trim-both ex alphabetic	text-box,text-box-trim,text-box-edge
+text-box-edge.1			text-box-edge: auto	text-box-edge
+text-box-edge.2			text-box-edge: text	text-box-edge
+text-box-edge.3			text-box-edge: cap	text-box-edge
+text-box-edge.4			text-box-edge: ex alphabetic	text-box-edge
+text-box-edge.5			text-box-edge: text text	text-box-edge
+text-box-edge.6			text-box-edge: cap text	text-box-edge
+text-box-edge.7			text-box-edge: cap ideographic-ink	text-box-edge
+hyphenate-limit-chars.1			hyphenate-limit-chars: auto	hyphenate-limit-chars
+hyphenate-limit-chars.2			hyphenate-limit-chars: 5	hyphenate-limit-chars
+hyphenate-limit-chars.3			hyphenate-limit-chars: 5 3	hyphenate-limit-chars
+hyphenate-limit-chars.4			hyphenate-limit-chars: 5 3 2	hyphenate-limit-chars
+hyphenate-limit-chars.5			hyphenate-limit-chars: auto auto auto	hyphenate-limit-chars
+hyphenate-limit-chars.6			hyphenate-limit-chars: auto 3	hyphenate-limit-chars
+hyphenate-limit-chars.7			hyphenate-limit-chars: 5 auto 2	hyphenate-limit-chars
+hyphenate-limit-chars.8			hyphenate-limit-chars: 1 1 1	hyphenate-limit-chars
+hyphenate-limit-chars.9			hyphenate-limit-chars: 5 auto	hyphenate-limit-chars
+hyphenate-limit-chars.10			hyphenate-limit-chars: auto auto	hyphenate-limit-chars
+hyphenate-limit-chars.11			hyphenate-limit-chars: auto 3 2	hyphenate-limit-chars
+hyphenate-limit-chars.12			hyphenate-limit-chars: calc(3) 2	hyphenate-limit-chars
+hyphenate-limit-chars.13			hyphenate-limit-chars: calc(2 + 3) 3 2	hyphenate-limit-chars
+text-emphasis.1			text-emphasis: filled circle red	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.2			text-emphasis: none	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.3			text-emphasis: circle	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.4			text-emphasis: filled	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.5			text-emphasis: open sesame green	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.6			text-emphasis: "x" red	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.7			text-emphasis: red	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.8			text-emphasis: filled dot currentcolor	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.9			text-emphasis: open	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.10			text-emphasis: none red	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis.11			text-emphasis: circle currentcolor	text-emphasis,text-emphasis-style,text-emphasis-color
+text-emphasis-ctx.1		color: rgb(0,128,0)	text-emphasis: filled circle	text-emphasis,text-emphasis-style
+text-emphasis-ctx.2		color: rgb(0,128,0)	text-emphasis: circle	text-emphasis,text-emphasis-style
+webkit-text-stroke.1			-webkit-text-stroke: 1px red	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.2			-webkit-text-stroke: 2px	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.3			-webkit-text-stroke: red	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.4			-webkit-text-stroke: 0px currentcolor	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.5			-webkit-text-stroke: thick	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.6			-webkit-text-stroke: medium blue	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.7			-webkit-text-stroke: 1px	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.8			-webkit-text-stroke: calc(1px + 1px) green	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke.9			-webkit-text-stroke: 0 red	-webkit-text-stroke,-webkit-text-stroke-width,-webkit-text-stroke-color
+webkit-text-stroke-ctx.1		color: rgb(0,128,0)	-webkit-text-stroke: 1px	-webkit-text-stroke,-webkit-text-stroke-color
+webkit-text-stroke-ctx.2		color: rgb(0,128,0)	-webkit-text-stroke: 2px currentcolor	-webkit-text-stroke,-webkit-text-stroke-color
+webkit-text-stroke-ctx.3		color: rgb(0,128,0)	-webkit-text-stroke: 1px red	-webkit-text-stroke,-webkit-text-stroke-color
+bgpos-x.1			background-position-x: left	background-position-x,background-position
+bgpos-x.2			background-position-x: center	background-position-x,background-position
+bgpos-x.3			background-position-x: right	background-position-x,background-position
+bgpos-x.4			background-position-x: right 10px	background-position-x,background-position
+bgpos-x.5			background-position-x: left 20%	background-position-x,background-position
+bgpos-x.6			background-position-x: right 10px, left	background-position-x,background-position
+bgpos-x.7			background-position-x: left, center, right	background-position-x,background-position
+bgpos-x.8			background-position-x: 100%	background-position-x,background-position
+bgpos-x.9			background-position-x: calc(10% + 5px)	background-position-x,background-position
+bgpos-x.10			background-position-x: right 25%	background-position-x,background-position
+bgpos-x.11			background-position-x: x-start	background-position-x,background-position
+bgpos-x.12			background-position-x: x-end 10px	background-position-x,background-position
+bgpos-x.13			background-position-x: center, left, right	background-position-x,background-position
+bgpos-x.14			background-position-x: left 0%	background-position-x,background-position
+bgpos-x.15			background-position-x: right 0px	background-position-x,background-position
+bgpos-x.16			background-position-x: calc(min(50%, 60%))	background-position-x,background-position
+bgpos-y.1			background-position-y: top	background-position-y,background-position
+bgpos-y.2			background-position-y: center	background-position-y,background-position
+bgpos-y.3			background-position-y: bottom	background-position-y,background-position
+bgpos-y.4			background-position-y: bottom 5px	background-position-y,background-position
+bgpos-y.5			background-position-y: top 20%	background-position-y,background-position
+bgpos-y.6			background-position-y: bottom 10px, top	background-position-y,background-position
+bgpos-y.7			background-position-y: top, center, bottom	background-position-y,background-position
+bgpos-y.8			background-position-y: y-start	background-position-y,background-position
+bgpos-y.9			background-position-y: y-end 3px	background-position-y,background-position
+bgpos-y.10			background-position-y: bottom 0px	background-position-y,background-position
+bgpos-y.11			background-position-y: 50%	background-position-y,background-position
+bgpos.1			background-position: left 50% top 6px	background-position,background-position-x,background-position-y
+bgpos.2			background-position: 50% 6px	background-position,background-position-x,background-position-y
+bgpos.3			background-position: right 10px bottom 20px	background-position,background-position-x,background-position-y
+bgpos.4			background-position: left	background-position,background-position-x,background-position-y
+bgpos.5			background-position: top	background-position,background-position-x,background-position-y
+bgpos.6			background-position: center top	background-position,background-position-x,background-position-y
+bgpos.7			background-position: left top	background-position,background-position-x,background-position-y
+bgpos.8			background-position: right bottom	background-position,background-position-x,background-position-y
+bgpos.9			background-position: center	background-position,background-position-x,background-position-y
+bgpos.10			background-position: 50%	background-position,background-position-x,background-position-y
+bgpos.11			background-position: left 20px	background-position,background-position-x,background-position-y
+bgpos.12			background-position: 20px	background-position,background-position-x,background-position-y
+bgpos.13			background-position: 10px 20px	background-position,background-position-x,background-position-y
+bgpos.14			background-position: right 10px	background-position,background-position-x,background-position-y
+bgpos.15			background-position: bottom 5px right 10px	background-position,background-position-x,background-position-y
+bgpos.16			background-position: left 10px top 10px, right 5px bottom 5px	background-position,background-position-x,background-position-y
+bgpos.17			background-position: center, left, right	background-position,background-position-x,background-position-y
+bgpos.18			background-position: left 50% top 6px, 50% 6px	background-position,background-position-x,background-position-y
+bgpos.19			background-position: 0 0	background-position,background-position-x,background-position-y
+bgpos.20			background-position: 0% 0%	background-position,background-position-x,background-position-y
+bgpos.21			background-position: left 0% top 0%	background-position,background-position-x,background-position-y
+bgpos.22			background-position: calc(min(50%, 60%)) 0	background-position,background-position-x,background-position-y
+bgpos.23			background-position: 0 calc(min(50%, 60%))	background-position,background-position-x,background-position-y
+bgpos.24			background-position: x-start y-start	background-position,background-position-x,background-position-y
+bgpos.25			background-position: block-start	background-position,background-position-x,background-position-y
+bgpos.26			background-position: inline-end block-end	background-position,background-position-x,background-position-y
+bgpos.27			background-position: center 20px	background-position,background-position-x,background-position-y
+bgpos-other.1			object-position: left 50% top 6px	object-position
+bgpos-other.2			object-position: right 10px	object-position
+bgpos-other.3			object-position: bottom 5px right 10px	object-position
+bgpos-other.4			object-position: calc(min(50%, 60%)) 0	object-position
+bgpos-mask.1			mask-position: left 50% top 6px	mask-position,mask-position-x,mask-position-y
+bgpos-mask.2			mask-position: right 10px bottom 20px	mask-position,mask-position-x,mask-position-y
+bgpos-mask.3			mask-position: left	mask-position,mask-position-x,mask-position-y
+bgpos-mask.4			mask-position: center top	mask-position,mask-position-x,mask-position-y
+offset-pos.1			offset-position: left top	offset-position
+offset-pos.2			offset-position: right 10px bottom 20px	offset-position
+offset-pos.3			offset-position: center	offset-position
+offset-pos.4			offset-position: calc(min(50%, 60%)) 0	offset-position
+offset-pos.5			offset-position: normal	offset-position
+offset-pos.6			offset-position: auto	offset-position
+scroll-marker-group.1			scroll-marker-group: none	scroll-marker-group
+scroll-marker-group.2			scroll-marker-group: before	scroll-marker-group
+scroll-marker-group.3			scroll-marker-group: after	scroll-marker-group
+scroll-marker-group.4			scroll-marker-group: before links	scroll-marker-group
+scroll-marker-group.5			scroll-marker-group: after tabs	scroll-marker-group
+scroll-marker-group.6			scroll-marker-group: links	scroll-marker-group
+scroll-marker-group.7			scroll-marker-group: tabs	scroll-marker-group
+scroll-marker-group.8			scroll-marker-group: before tabs	scroll-marker-group
+scroll-marker-group.9			scroll-marker-group: after links	scroll-marker-group
+scroll-marker-group.10			scroll-marker-group: none links	scroll-marker-group
+display-grid-lanes.1			display: grid-lanes	display
+display-grid-lanes.2			display: inline-grid-lanes	display
+display-grid-lanes.3			display: block grid-lanes	display
+display-grid-lanes.4			display: inline grid-lanes	display
+display-grid-lanes.5			display: block flow	display
+display-grid-lanes.6			display: inline flex	display
+display-grid-lanes.7			display: grid	display
+display-grid-lanes.8			display: block grid	display
+display-grid-lanes.9			display: grid-lanes flow	display
+display-grid-lanes.10			display: flow-root	display
+display-grid-lanes.11			display: contents	display
+display-grid-lanes.12			display: block ruby	display
+display-grid-lanes.13			display: table-cell	display
+tes-h.1			text-emphasis-style: filled	text-emphasis-style
+tes-h.2			text-emphasis-style: open	text-emphasis-style
+tes-h.3			text-emphasis-style: filled circle	text-emphasis-style
+tes-h.4			text-emphasis-style: circle filled	text-emphasis-style
+tes-h.5			text-emphasis-style: open dot	text-emphasis-style
+tes-h.6			text-emphasis-style: dot	text-emphasis-style
+tes-h.7			text-emphasis-style: sesame	text-emphasis-style
+tes-h.8			text-emphasis-style: "ab"	text-emphasis-style
+tes-h.9			text-emphasis-style: filled sesame	text-emphasis-style
+tes-h.10			text-emphasis-style: open open	text-emphasis-style
+tes-h.11			text-emphasis-style: none	text-emphasis-style
+tes-h.12			text-emphasis-style: circle	text-emphasis-style
+tes-h.13			text-emphasis-style: double-circle	text-emphasis-style
+tes-h.14			text-emphasis-style: triangle	text-emphasis-style
+tes-h.15			text-emphasis-style: open triangle	text-emphasis-style
+tes-h.16			text-emphasis-style: filled triangle	text-emphasis-style
+tes-v.1		writing-mode: vertical-lr	text-emphasis-style: filled	text-emphasis-style
+tes-v.2		writing-mode: vertical-lr	text-emphasis-style: open	text-emphasis-style
+tes-v.3		writing-mode: vertical-lr	text-emphasis-style: filled circle	text-emphasis-style
+tes-v.4		writing-mode: vertical-lr	text-emphasis-style: circle	text-emphasis-style
+tes-v.5		writing-mode: vertical-lr	text-emphasis-style: dot	text-emphasis-style
+tes-v.6		writing-mode: vertical-lr	text-emphasis-style: sesame	text-emphasis-style
+tes-v.7		writing-mode: vertical-lr	text-emphasis-style: none	text-emphasis-style
+tes-vrl.1		writing-mode: vertical-rl	text-emphasis-style: filled	text-emphasis-style
+tes-vrl.2		writing-mode: vertical-rl	text-emphasis-style: open	text-emphasis-style
+tes-vrl.3		writing-mode: vertical-rl	text-emphasis-style: sesame open	text-emphasis-style
+tep.1			text-emphasis-position: over right	text-emphasis-position
+tep.2			text-emphasis-position: over	text-emphasis-position
+tep.3			text-emphasis-position: under left	text-emphasis-position
+tep.4			text-emphasis-position: right over	text-emphasis-position
+tep.5			text-emphasis-position: over left	text-emphasis-position
+tep.6			text-emphasis-position: left	text-emphasis-position
+tep.7			text-emphasis-position: right	text-emphasis-position
+tep.8			text-emphasis-position: under	text-emphasis-position
+tep.9			text-emphasis-position: over left under	text-emphasis-position
+tep.10			text-emphasis-position: auto	text-emphasis-position
+tep.11			text-emphasis-position: auto right	text-emphasis-position
+tep.12			text-emphasis-position: left under	text-emphasis-position
+tep.13			text-emphasis-position: under right	text-emphasis-position
+tep-v.1		writing-mode: vertical-rl	text-emphasis-position: over right	text-emphasis-position
+tep-v.2		writing-mode: vertical-rl	text-emphasis-position: over	text-emphasis-position
+tep-v.3		writing-mode: vertical-rl	text-emphasis-position: under left	text-emphasis-position
+tep-v.4		writing-mode: vertical-rl	text-emphasis-position: right over	text-emphasis-position
+tep-v.5		writing-mode: vertical-rl	text-emphasis-position: over left	text-emphasis-position
+tep-v.6		writing-mode: vertical-rl	text-emphasis-position: left	text-emphasis-position
+tep-v.7		writing-mode: vertical-rl	text-emphasis-position: right	text-emphasis-position
+tep-v.8		writing-mode: vertical-rl	text-emphasis-position: under	text-emphasis-position
+tep-v.9		writing-mode: vertical-rl	text-emphasis-position: left over	text-emphasis-position
+tep-v.10		writing-mode: vertical-rl	text-emphasis-position: auto	text-emphasis-position
+tep-vl.1		writing-mode: vertical-lr	text-emphasis-position: over right	text-emphasis-position
+tep-vl.2		writing-mode: vertical-lr	text-emphasis-position: over	text-emphasis-position
+tep-vl.3		writing-mode: vertical-lr	text-emphasis-position: left under	text-emphasis-position
+tep-vl.4		writing-mode: vertical-lr	text-emphasis-position: right	text-emphasis-position
+linear.1			animation-timing-function: linear(0, 1)	animation-timing-function,transition-timing-function
+linear.2			animation-timing-function: linear(0 0%, 1 100%)	animation-timing-function,transition-timing-function
+linear.3			animation-timing-function: linear(0, 0.5, 1)	animation-timing-function,transition-timing-function
+linear.4			animation-timing-function: linear(0 20%, 0.5 10%, 1)	animation-timing-function,transition-timing-function
+linear.5			animation-timing-function: linear(0 0% 50%, 1)	animation-timing-function,transition-timing-function
+linear.6			animation-timing-function: linear(0 10% 20%, 1 80%)	animation-timing-function,transition-timing-function
+linear.7			animation-timing-function: linear(0 calc(min(50%, 60%)), 1)	animation-timing-function,transition-timing-function
+linear.8			animation-timing-function: linear(0, 1 50%)	animation-timing-function,transition-timing-function
+linear.9			animation-timing-function: linear(1 50%, 0)	animation-timing-function,transition-timing-function
+linear.10			animation-timing-function: linear(0 30% 70%, 1)	animation-timing-function,transition-timing-function
+linear.11			animation-timing-function: linear(0, 0.3 20%, 1)	animation-timing-function,transition-timing-function
+linear.12			animation-timing-function: linear(0, 0.5 20%, 0.7, 1)	animation-timing-function,transition-timing-function
+linear.13			animation-timing-function: linear(0 50%, 1 40%)	animation-timing-function,transition-timing-function
+linear.14			animation-timing-function: linear(0 calc(10% + 0%), 1)	animation-timing-function,transition-timing-function
+linear.15			animation-timing-function: linear(0 10%, 0.5, 1 90%)	animation-timing-function,transition-timing-function
+linear.16			animation-timing-function: linear(0.5, 0.2, 0.9)	animation-timing-function,transition-timing-function
+linear.17			animation-timing-function: linear(1)	animation-timing-function,transition-timing-function
+linear.18			animation-timing-function: linear(0 0%)	animation-timing-function,transition-timing-function
+linear.19			animation-timing-function: linear(0, 1 100%)	animation-timing-function,transition-timing-function
+linear.20			animation-timing-function: linear(0 0%, 1)	animation-timing-function,transition-timing-function
+linear.21			animation-timing-function: linear(0 -10%, 1 110%)	animation-timing-function,transition-timing-function
+linear.22			animation-timing-function: linear(0 calc(50% * 2), 1)	animation-timing-function,transition-timing-function
+linear.23			animation-timing-function: linear(-1, 2)	animation-timing-function,transition-timing-function
+linear.24			animation-timing-function: linear(0, 0.25, 0.5, 0.75, 1)	animation-timing-function,transition-timing-function
+linear-t.1			transition-timing-function: linear(0, 1)	transition-timing-function
+linear-t.2			transition-timing-function: linear(0 0%, 1 100%)	transition-timing-function
+linear-t.3			transition-timing-function: linear(0, 0.5 30%, 1)	transition-timing-function
+steps.1			animation-timing-function: steps(sibling-index(), start)	animation-timing-function
+steps.2			animation-timing-function: steps(4, jump-none)	animation-timing-function
+steps.3			animation-timing-function: steps(1, jump-end)	animation-timing-function
+steps.4			animation-timing-function: steps(1, end)	animation-timing-function
+steps.5			animation-timing-function: step-start	animation-timing-function
+steps.6			animation-timing-function: step-end	animation-timing-function
+steps.7			animation-timing-function: steps(4, jump-start)	animation-timing-function
+steps.8			animation-timing-function: steps(4, start)	animation-timing-function
+steps.9			animation-timing-function: steps(4, end)	animation-timing-function
+steps.10			animation-timing-function: steps(4, jump-both)	animation-timing-function
+steps.11			animation-timing-function: steps(1, jump-none)	animation-timing-function
+steps.12			animation-timing-function: steps(calc(2 + 2))	animation-timing-function
+steps.13			animation-timing-function: steps(4)	animation-timing-function
+steps.14			animation-timing-function: steps(1, jump-start)	animation-timing-function
+steps.15			animation-timing-function: steps(0, jump-start)	animation-timing-function
+steps.16			animation-timing-function: steps(sibling-count(), end)	animation-timing-function
+steps.17			animation-timing-function: cubic-bezier(0,0,1,1)	animation-timing-function
+steps.18			animation-timing-function: cubic-bezier(0.1, 0.7, 1, 0.1)	animation-timing-function
+steps.19			animation-timing-function: ease	animation-timing-function
+steps.20			animation-timing-function: ease-in-out	animation-timing-function
+steps.21			animation-timing-function: linear	animation-timing-function
+palette-mix.1			font-palette: palette-mix(in oklab, light 30%, dark 70%)	font-palette
+palette-mix.2			font-palette: palette-mix(in oklab, light 75%, dark 75%)	font-palette
+palette-mix.3			font-palette: palette-mix(in oklab, light 20%, dark 20%)	font-palette
+palette-mix.4			font-palette: palette-mix(in oklab, light, dark)	font-palette
+palette-mix.5			font-palette: palette-mix(in oklab, light 50%, dark)	font-palette
+palette-mix.6			font-palette: palette-mix(in srgb, light 50%, dark)	font-palette
+palette-mix.7			font-palette: palette-mix(light 30%, dark)	font-palette
+palette-mix.8			font-palette: palette-mix(in oklab, light 30%, dark)	font-palette
+palette-mix.9			font-palette: palette-mix(in oklab, light, dark 30%)	font-palette
+palette-mix.10			font-palette: palette-mix(in srgb, light 25%, dark 25%)	font-palette
+palette-mix.11			font-palette: palette-mix(in oklab, light 100%, dark 100%)	font-palette
+palette-mix.12			font-palette: palette-mix(in oklab, light 0%, dark 0%)	font-palette
+palette-mix.13			font-palette: palette-mix(in oklab, light 60%, dark 60%)	font-palette
+palette-mix.14			font-palette: palette-mix(in lch longer hue, light, dark)	font-palette
+palette-mix.15			font-palette: palette-mix(in oklch, light, dark)	font-palette
+palette-mix.16			font-palette: ident("--test-" calc(1em / 1px))	font-palette
+palette-mix.17			font-palette: palette-mix(in oklab, ident("--a") 20%, dark)	font-palette
+palette-mix.18			font-palette: normal	font-palette
+palette-mix.19			font-palette: light	font-palette
+palette-mix.20			font-palette: dark	font-palette
+palette-mix.21			font-palette: --custom	font-palette
+color-mix-pct.1			color: color-mix(in srgb, red 75%, blue 75%)	color
+color-mix-pct.2			color: color-mix(in srgb, red 20%, blue 20%)	color
+color-mix-pct.3			color: color-mix(in srgb, red 30%, blue 70%)	color
+color-mix-pct.4			color: color-mix(in srgb, red, blue)	color
+color-mix-pct.5			color: color-mix(in srgb, red 100%, blue 100%)	color
+color-mix-pct.6			color: color-mix(in srgb, red 0%, blue 0%)	color
+flex-basis.1			flex-basis: calc(10% + 0px)	flex-basis
+flex-basis.2			flex-basis: calc(10px + 0px)	flex-basis
+flex-basis.3			flex-basis: calc(0px + 10%)	flex-basis
+flex-basis.4			flex-basis: calc(10% + 0em)	flex-basis
+flex-basis.5			flex-basis: calc(10% - 0px)	flex-basis
+flex-basis.6			flex-basis: calc(1px + 2px)	flex-basis
+flex-basis.7			flex-basis: calc(10% * 1)	flex-basis
+flex-basis.8			flex-basis: calc(0px + 0%)	flex-basis
+flex-basis.9			flex-basis: calc(100% - 0px)	flex-basis
+flex-basis.10			flex-basis: calc(10% + 5px)	flex-basis
+flex-basis.11			flex-basis: calc(0px + 10px)	flex-basis
+flex-basis.12			flex-basis: calc(10%)	flex-basis
+flex-basis.13			flex-basis: calc(10px)	flex-basis
+flex-basis.14			flex-basis: calc(1px * 0 + 10%)	flex-basis
+width-zero.1			width: calc(10% + 0px)	width
+width-zero.2			width: calc(0px + 10%)	width
+width-zero.3			width: calc(10% - 0px)	width
+width-zero.4			width: calc(10px + 0px)	width
+margin-zero.1			margin-left: calc(10% + 0px)	margin-left
+margin-zero.2			margin-left: calc(0px + 10%)	margin-left
+clip.1			clip: rect(1px, 2px, 3px, 4px)	clip
+clip.2			clip: rect(1em, 2em, 3em, 4em)	clip
+clip.3			clip: rect(calc(-1em + 10px), 2px, 3px, 4px)	clip
+clip.4			clip: rect(1px 2px 3px 4px)	clip
+clip.5			clip: rect(auto, auto, auto, auto)	clip
+clip.6			clip: rect(calc(1px + 2px), 2px, 3px, 4px)	clip
+clip.7			clip: rect(calc(1em + 1px), 2px, 3px, 4px)	clip
+clip.8			clip: rect(0, 0, 0, 0)	clip
+clip.9			clip: rect(-1px, 2px, 3px, 4px)	clip
+clip.10			clip: auto	clip
+clip.11			clip: rect(calc(10px + 0px), 0px, 0px, 0px)	clip
+font-synth.1			font-synthesis: oblique-only	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.2			font-synthesis: auto	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.3			font-synthesis: none	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.4			font-synthesis: weight position	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.5			font-synthesis: weight style	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.6			font-synthesis: weight style small-caps position	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.7			font-synthesis: position	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.8			font-synthesis: style	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.9			font-synthesis: small-caps	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.10			font-synthesis: weight	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.11			font-synthesis: style weight	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.12			font-synthesis: small-caps position	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.13			font-synthesis: weight style small-caps	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.14			font-synthesis: style small-caps	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.15			font-synthesis: none weight	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth.16			font-synthesis: auto none	font-synthesis,font-synthesis-weight,font-synthesis-style,font-synthesis-small-caps,font-synthesis-position
+font-synth-style.1			font-synthesis-style: oblique-only	font-synthesis-style,font-synthesis
+font-synth-style.2			font-synthesis-style: auto	font-synthesis-style,font-synthesis
+font-synth-style.3			font-synthesis-style: none	font-synthesis-style,font-synthesis
+font-synth-pos.1			font-synthesis-position: auto	font-synthesis-position,font-synthesis
+font-synth-pos.2			font-synthesis-position: none	font-synthesis-position,font-synthesis
+font-short.1			font: 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.2			font: condensed 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.3			font: ultra-condensed 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.4			font: 400 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.5			font: bold 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.6			font: italic small-caps 700 condensed 12px/1.5 serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.7			font: 75% 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.8			font: normal normal 400 normal 12px/normal serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.9			font: semi-condensed 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.10			font: expanded 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.11			font: 110% 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.12			font: oblique 10deg 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.13			font: oblique 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.14			font: 100% 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.15			font: 12px/1.5 serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.16			font: small-caps 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.17			font: 500 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.18			font: normal 12px serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.19			font: caption	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-short.20			font: 12px/normal "Times New Roman", serif	font,font-width,font-stretch,font-weight,font-variant,font-style
+font-longhands.1			font-stretch: 75%; font-size: 12px; font-family: serif	font,font-width
+font-longhands.2			font-stretch: 100%; font-size: 12px; font-family: serif	font,font-width
+font-longhands.3			font-weight: 400; font-size: 12px; font-family: serif	font,font-width
+font-longhands.4			font-width: 62.5%; font-size: 12px; font-family: serif	font,font-width
+font-longhands.5			font-width: 87.5%; font-size: 12px; font-family: serif	font,font-width
+font-longhands.6			font-width: 112.5%; font-size: 12px; font-family: serif	font,font-width
+font-longhands.7			font-weight: 700; font-size: 12px; font-family: serif	font,font-width
+font-longhands.8			font-weight: 300; font-size: 12px; font-family: serif	font,font-width
+font-longhands.9			font-style: oblique 14deg; font-size: 12px; font-family: serif	font,font-width
+font-longhands.10			font-style: oblique 20deg; font-size: 12px; font-family: serif	font,font-width
+font-longhands.11			font-variant-caps: small-caps; font-size: 12px; font-family: serif	font,font-width
+font-longhands.12			font-variant-ligatures: none; font-size: 12px; font-family: serif	font,font-width
+font-longhands.13			font-size: 12px; line-height: 20px; font-family: serif	font,font-width
+font-longhands.14			font-size: 12px; line-height: 1.5; font-family: serif	font,font-width
+path-clip.1			clip-path: path("M10,10h80v80h-80z")	clip-path
+path-clip.2			clip-path: path("m 10 10 h 80 v 80 h -80 z")	clip-path
+path-clip.3			clip-path: path(evenodd, "M0,0L10,10")	clip-path
+path-clip.4			clip-path: path(nonzero, "M0,0L10,10")	clip-path
+path-clip.5			clip-path: path("M 10 10 H 90")	clip-path
+path-clip.6			clip-path: path("M10,10 L20,20")	clip-path
+path-clip.7			clip-path: path("M10 10 l 5 5")	clip-path
+path-clip.8			clip-path: path("M 10 10 h 80")	clip-path
+path-clip.9			clip-path: path("M10,10C20,20 30,30 40,40Z")	clip-path
+path-clip.10			clip-path: path("M1e1 1e1 L2e1 2e1")	clip-path
+path-clip.11			clip-path: path("M0 0 L 0.5 0.25")	clip-path
+path-offset.1			offset-path: path("M10,10h80v80h-80z")	offset-path
+path-offset.2			offset-path: path("m 10 10 h 80 v 80 h -80 z")	offset-path
+path-offset.3			offset-path: path(evenodd, "M0,0L10,10")	offset-path
+path-offset.4			offset-path: path(nonzero, "M0,0L10,10")	offset-path
+path-offset.5			offset-path: path("M 10 10 H 90")	offset-path
+path-offset.6			offset-path: path("M10,10 L20,20")	offset-path
+path-offset.7			offset-path: path("M10 10 l 5 5")	offset-path
+path-offset.8			offset-path: path("M 10 10 h 80")	offset-path
+path-offset.9			offset-path: path("M10,10C20,20 30,30 40,40Z")	offset-path
+path-offset.10			offset-path: path("M1e1 1e1 L2e1 2e1")	offset-path
+path-offset.11			offset-path: path("M0 0 L 0.5 0.25")	offset-path
+path-shape.1			shape-outside: path("M10,10h80v80h-80z")	shape-outside
+path-shape.2			shape-outside: path("m 10 10 h 80 v 80 h -80 z")	shape-outside
+path-shape.3			shape-outside: path(evenodd, "M0,0L10,10")	shape-outside
+path-shape.4			shape-outside: path(nonzero, "M0,0L10,10")	shape-outside
+path-shape.5			shape-outside: path("M 10 10 H 90")	shape-outside
+path-shape.6			shape-outside: path("M10,10 L20,20")	shape-outside
+path-shape.7			shape-outside: path("M10 10 l 5 5")	shape-outside
+path-shape.8			shape-outside: path("M 10 10 h 80")	shape-outside
+path-shape.9			shape-outside: path("M10,10C20,20 30,30 40,40Z")	shape-outside
+path-shape.10			shape-outside: path("M1e1 1e1 L2e1 2e1")	shape-outside
+path-shape.11			shape-outside: path("M0 0 L 0.5 0.25")	shape-outside
+radii.1			clip-path: ellipse(3%)	clip-path
+radii.2			clip-path: ellipse(closest-side)	clip-path
+radii.3			clip-path: ellipse(closest-side farthest-side)	clip-path
+radii.4			clip-path: ellipse(1px closest-side)	clip-path
+radii.5			clip-path: ellipse(10px 20%)	clip-path
+radii.6			clip-path: ellipse(5px)	clip-path
+radii.7			clip-path: circle(closest-side)	clip-path
+radii.8			clip-path: circle(10px)	clip-path
+radii.9			clip-path: circle(farthest-side at top)	clip-path
+radii.10			clip-path: ellipse()	clip-path
+radii.11			clip-path: ellipse(10px 10px)	clip-path
+radii.12			clip-path: ellipse(10px at center)	clip-path
+radii.13			clip-path: circle(10%)	clip-path
+radii.14			clip-path: circle(0)	clip-path
+radii.15			clip-path: ellipse(closest-corner)	clip-path
+radii.16			clip-path: ellipse(closest-corner closest-side)	clip-path
+radii.17			clip-path: circle(at 10px 20px)	clip-path
+radii.18			clip-path: circle(at top 0% right 10%)	clip-path
+radii.19			clip-path: circle(at center)	clip-path
+radii.20			clip-path: circle(at left 10px top 20px)	clip-path
+radii.21			clip-path: ellipse(at 10% 20%)	clip-path
+radii.22			clip-path: ellipse(40% 50% at right)	clip-path
+radii.23			clip-path: inset(10px round 5px / 10px)	clip-path
+radii.24			clip-path: inset(1px round 1px 2px 3px 4px / 5px 6px)	clip-path
+radii.25			clip-path: inset(0 round 10px 10px 10px 10px)	clip-path
+radii.26			clip-path: inset(0 round 1px 2px 1px 2px)	clip-path
+radii.27			clip-path: inset(round 5px / 5px)	clip-path
+radii.28			clip-path: inset(1px round 3px 3px / 3px 3px)	clip-path
+radii.29			clip-path: inset(0 round 1px 2px 3px / 4px 5px 6px 7px)	clip-path
+radii.30			clip-path: inset(10px)	clip-path
+radii.31			clip-path: inset(10px 20px)	clip-path
+radii.32			clip-path: inset(10px 10px 10px 10px)	clip-path
+radii.33			clip-path: inset(10px 20px 10px 20px)	clip-path
+radii.34			clip-path: inset(0 round 5px)	clip-path
+radii.35			clip-path: inset(0 round 5px 5px)	clip-path
+radii.36			clip-path: inset(0 round 0)	clip-path
+radii.37			clip-path: inset(0 round 5px / 5px 5px 5px 5px)	clip-path
+radii.38			clip-path: inset(10px round 10px 20px / 10px 20px)	clip-path
+radii.39			clip-path: inset(calc(10px + 0px))	clip-path
+radii.40			clip-path: inset(1em)	clip-path
+radii.41			clip-path: inset(0 round 1em)	clip-path
+radii.42			clip-path: polygon(round 1em, 0 0, 10px 10px, 0 10px)	clip-path
+radii.43			clip-path: polygon(0 0, 10px 10px, 0 10px)	clip-path
+radii.44			clip-path: polygon(nonzero, 0 0, 10px 10px, 0 10px)	clip-path
+radii.45			clip-path: polygon(evenodd, 0 0, 10px 10px, 0 10px)	clip-path
+radii.46			clip-path: polygon(20px 20px, 30px 30px)	clip-path
+radii-so.1			shape-outside: ellipse(3%)	shape-outside
+radii-so.2			shape-outside: ellipse(closest-side)	shape-outside
+radii-so.3			shape-outside: ellipse(closest-side farthest-side)	shape-outside
+radii-so.4			shape-outside: ellipse(1px closest-side)	shape-outside
+radii-so.5			shape-outside: ellipse(10px 20%)	shape-outside
+radii-so.6			shape-outside: ellipse(5px)	shape-outside
+radii-so.7			shape-outside: circle(closest-side)	shape-outside
+radii-so.8			shape-outside: circle(10px)	shape-outside
+radii-so.9			shape-outside: circle(farthest-side at top)	shape-outside
+radii-so.10			shape-outside: ellipse()	shape-outside
+radii-so.11			shape-outside: ellipse(10px 10px)	shape-outside
+radii-so.12			shape-outside: ellipse(10px at center)	shape-outside
+radii-so.13			shape-outside: circle(10%)	shape-outside
+radii-so.14			shape-outside: circle(0)	shape-outside
+radii-so.15			shape-outside: ellipse(closest-corner)	shape-outside
+radii-so.16			shape-outside: ellipse(closest-corner closest-side)	shape-outside
+radii-so.17			shape-outside: circle(at 10px 20px)	shape-outside
+radii-so.18			shape-outside: circle(at top 0% right 10%)	shape-outside
+radii-so.19			shape-outside: circle(at center)	shape-outside
+radii-so.20			shape-outside: circle(at left 10px top 20px)	shape-outside
+radii-so.21			shape-outside: ellipse(at 10% 20%)	shape-outside
+radii-so.22			shape-outside: ellipse(40% 50% at right)	shape-outside
+radii-so.23			shape-outside: inset(10px round 5px / 10px)	shape-outside
+zero-rect.1			clip-path: rect(0px 100% 100% 0px)	clip-path
+zero-rect.2			clip-path: rect(auto auto auto auto)	clip-path
+zero-rect.3			clip-path: xywh(0 0 50% 50%)	clip-path
+zero-rect.4			clip-path: xywh(10px 20px 30% 40%)	clip-path
+zero-rect.5			clip-path: rect(1px 90% 90% 1px)	clip-path
+zero-rect.6			clip-path: rect(calc(0px + 5%) 10px 10px 10px)	clip-path
+zero-rect.7			clip-path: xywh(0px 0px calc(100% - 0px) 5px)	clip-path
+zero-rect.8			clip-path: rect(0 0 0 0)	clip-path
+zero-rect.9			clip-path: xywh(0 0 0 0)	clip-path
+zero-rect.10			clip-path: rect(10px 20px 30px 40px)	clip-path
+zero-rect.11			clip-path: rect(10px 20px 30px 40px round 5px)	clip-path
+zero-rect.12			clip-path: xywh(10px 20px 30px 40px round 5px)	clip-path
+zero-rect.13			clip-path: rect(0px 50% 50% 0px)	clip-path
+zero-rect.14			clip-path: rect(auto 50% 50% auto)	clip-path
+zero-rect.15			clip-path: rect(5% 5% 5% 5%)	clip-path
+zero-rect.16			clip-path: rect(10px 10px 10px 10px)	clip-path
+zero-rect.17			clip-path: xywh(10% 10% 80% 80%)	clip-path
+zero-rect.18			clip-path: xywh(0px 0px 100% 100%)	clip-path
+zero-rect.19			clip-path: xywh(1px 2px 3px 4px)	clip-path
+zero-rect.20			clip-path: rect(calc(10% + 0px) auto auto auto)	clip-path
+zero-rect.21			clip-path: xywh(calc(10px + 0px) 0 10px 10px)	clip-path
+zero-rect.22			clip-path: rect(calc(1px + 2px) 3px 4px 5px)	clip-path
+border-shape.1			border-shape: none	border-shape
+border-shape.2			border-shape: inset(10px)	border-shape
+border-shape.3			border-shape: circle()	border-shape
+border-shape.4			border-shape: circle() circle()	border-shape
+border-shape.5			border-shape: inset(10px) inset(5px)	border-shape
+border-shape.6			border-shape: inset(10px) inset(10px)	border-shape
+border-shape.7			border-shape: border-box inset(5px)	border-shape
+border-shape.8			border-shape: inset(0) padding-box	border-shape
+border-shape.9			border-shape: circle(closest-corner) ellipse(10px 20px)	border-shape
+border-shape.10			border-shape: ellipse() ellipse()	border-shape
+border-shape.11			border-shape: circle(10px)	border-shape
+border-shape.12			border-shape: polygon(0 0, 10px 10px, 0 10px)	border-shape
+border-shape.13			border-shape: inset(10px) none	border-shape
+border-shape.14			border-shape: inset(10px) padding-box	border-shape
+border-shape.15			border-shape: circle(at top)	border-shape
+border-shape.16			border-shape: path("M0 0 L 10 10")	border-shape
+border-shape.17			border-shape: shape(from 0 0, line to 10px 10px)	border-shape
+border-shape.18			border-shape: inset(5px round 1px)	border-shape
+border-shape.19			border-shape: border-box	border-shape
+border-shape.20			border-shape: margin-box circle()	border-shape
+border-shape.21			border-shape: half-border-box inset(1px)	border-shape
+border-shape.22			border-shape: inset(10px round 10px) inset(5px round 5px)	border-shape
+angle-digits.1			background-image: linear-gradient(0.2rad, red, blue)	background-image
+angle-digits.2			background-image: linear-gradient(1rad, red, blue)	background-image
+angle-digits.3			background-image: linear-gradient(0.1grad, red, blue)	background-image
+angle-digits.4			background-image: linear-gradient(calc(1deg / 3), red, blue)	background-image
+angle-digits.5			background-image: linear-gradient(0.3turn, red, blue)	background-image
+angle-digits.6			background-image: linear-gradient(45deg, red, blue)	background-image
+angle-digits.7			background-image: linear-gradient(1.5rad, red, blue)	background-image
+angle-digits.8			background-image: linear-gradient(0.123456789rad, red, blue)	background-image
+angle-digits.9			background-image: linear-gradient(1deg, red, blue)	background-image
+angle-digits.10			background-image: linear-gradient(0.001deg, red, blue)	background-image
+angle-digits.11			background-image: linear-gradient(12.3456789deg, red, blue)	background-image
+angle-digits.12			background-image: linear-gradient(1e-5deg, red, blue)	background-image
+angle-digits.13			background-image: linear-gradient(100grad, red, blue)	background-image
+angle-digits.14			background-image: linear-gradient(0.25turn, red, blue)	background-image
+angle-digits.15			background-image: linear-gradient(to right, red, blue)	background-image
+angle-digits.16			background-image: linear-gradient(to top right, red, blue)	background-image
+angle-digits.17			background-image: conic-gradient(from 0.3rad, red, blue)	background-image
+angle-digits.18			background-image: conic-gradient(from 1rad at 10% 20%, red, blue)	background-image
+angle-digits.19			background-image: radial-gradient(red, blue)	background-image
+angle-digits.20			background-image: linear-gradient(90deg, red 10%, blue 90%)	background-image
+angle-digits.21			background-image: linear-gradient(red 0.2rad, blue)	background-image
+angle-other.1			rotate: 1rad	rotate,transform,filter,offset-rotate
+angle-other.2			rotate: calc(1deg / 3)	rotate,transform,filter,offset-rotate
+angle-other.3			rotate: 0.3turn	rotate,transform,filter,offset-rotate
+angle-other.4			rotate: 1.23456789deg	rotate,transform,filter,offset-rotate
+angle-other.5			transform: rotate(1rad)	rotate,transform,filter,offset-rotate
+angle-other.6			filter: hue-rotate(1rad)	rotate,transform,filter,offset-rotate
+angle-other.7			filter: hue-rotate(0.123456789rad)	rotate,transform,filter,offset-rotate
+angle-other.8			filter: hue-rotate(0.3turn)	rotate,transform,filter,offset-rotate
+angle-other.9			offset-rotate: 1rad	rotate,transform,filter,offset-rotate
+angle-other.10			offset-rotate: auto 1rad	rotate,transform,filter,offset-rotate
+angle-other.11			offset-rotate: reverse	rotate,transform,filter,offset-rotate
+angle-other.12			offset-rotate: auto	rotate,transform,filter,offset-rotate
+angle-other.13			offset-rotate: auto 180deg	rotate,transform,filter,offset-rotate
+angle-other.14			offset-rotate: 90deg	rotate,transform,filter,offset-rotate
+angle-other.15			offset-rotate: auto 0deg	rotate,transform,filter,offset-rotate
+angle-other.16			offset-rotate: reverse 0deg	rotate,transform,filter,offset-rotate
+angle-other.17			offset-rotate: auto 180deg	rotate,transform,filter,offset-rotate
+angle-other.18			offset-rotate: 0.5turn	rotate,transform,filter,offset-rotate
+angle-other.19			offset-rotate: reverse 10deg	rotate,transform,filter,offset-rotate
+angle-other.20			offset-rotate: -90deg	rotate,transform,filter,offset-rotate
+huge-zindex.1			z-index: 1e400	z-index
+huge-zindex.2			z-index: 1e10	z-index
+huge-zindex.3			z-index: 2147483648	z-index
+huge-zindex.4			z-index: -1e400	z-index
+huge-zindex.5			z-index: 1e9999	z-index
+huge-zindex.6			z-index: 3.4028235e38	z-index
+huge-zindex.7			z-index: 3.4028234663852886e38	z-index
+huge-zindex.8			z-index: 1e39	z-index
+huge-zindex.9			z-index: 1.7976931348623157e308	z-index
+huge-zindex.10			z-index: 1e308	z-index
+huge-zindex.11			z-index: 123456789012345678901234567890	z-index
+huge-zindex.12			z-index: 0.0000001	z-index
+huge-zindex.13			z-index: 1e-400	z-index
+huge-zindex.14			z-index: calc(infinity)	z-index
+huge-zindex.15			z-index: calc(-infinity)	z-index
+huge-zindex.16			z-index: calc(NaN)	z-index
+huge-zindex.17			z-index: calc(1/0)	z-index
+huge-zindex.18			z-index: calc(1e308 * 10)	z-index
+huge-zindex.19			z-index: calc(1e308 * 1e308)	z-index
+huge-zindex.20			z-index: calc(0/0)	z-index
+huge-zindex.21			z-index: 1e38	z-index
+huge-zindex.22			z-index: 3e38	z-index
+huge-zindex.23			z-index: 1e100	z-index
+huge-flexgrow.1			flex-grow: 1e400	flex-grow
+huge-flexgrow.2			flex-grow: 1e10	flex-grow
+huge-flexgrow.3			flex-grow: 2147483648	flex-grow
+huge-flexgrow.4			flex-grow: -1e400	flex-grow
+huge-flexgrow.5			flex-grow: 1e9999	flex-grow
+huge-flexgrow.6			flex-grow: 3.4028235e38	flex-grow
+huge-flexgrow.7			flex-grow: 3.4028234663852886e38	flex-grow
+huge-flexgrow.8			flex-grow: 1e39	flex-grow
+huge-flexgrow.9			flex-grow: 1.7976931348623157e308	flex-grow
+huge-flexgrow.10			flex-grow: 1e308	flex-grow
+huge-flexgrow.11			flex-grow: 123456789012345678901234567890	flex-grow
+huge-flexgrow.12			flex-grow: 0.0000001	flex-grow
+huge-flexgrow.13			flex-grow: 1e-400	flex-grow
+huge-flexgrow.14			flex-grow: calc(infinity)	flex-grow
+huge-flexgrow.15			flex-grow: calc(-infinity)	flex-grow
+huge-flexgrow.16			flex-grow: calc(NaN)	flex-grow
+huge-flexgrow.17			flex-grow: calc(1/0)	flex-grow
+huge-flexgrow.18			flex-grow: calc(1e308 * 10)	flex-grow
+huge-flexgrow.19			flex-grow: calc(1e308 * 1e308)	flex-grow
+huge-flexgrow.20			flex-grow: calc(0/0)	flex-grow
+huge-flexgrow.21			flex-grow: 1e38	flex-grow
+huge-flexgrow.22			flex-grow: 3e38	flex-grow
+huge-flexgrow.23			flex-grow: 1e100	flex-grow
+huge-order.1			order: 1e400	order
+huge-order.2			order: 1e10	order
+huge-order.3			order: 2147483648	order
+huge-order.4			order: -1e400	order
+huge-order.5			order: 1e9999	order
+huge-order.6			order: 3.4028235e38	order
+huge-order.7			order: 3.4028234663852886e38	order
+huge-order.8			order: 1e39	order
+huge-order.9			order: 1.7976931348623157e308	order
+huge-order.10			order: 1e308	order
+huge-order.11			order: 123456789012345678901234567890	order
+huge-order.12			order: 0.0000001	order
+huge-order.13			order: 1e-400	order
+huge-order.14			order: calc(infinity)	order
+huge-order.15			order: calc(-infinity)	order
+huge-order.16			order: calc(NaN)	order
+huge-order.17			order: calc(1/0)	order
+huge-order.18			order: calc(1e308 * 10)	order
+huge-order.19			order: calc(1e308 * 1e308)	order
+huge-order.20			order: calc(0/0)	order
+huge-order.21			order: 1e38	order
+huge-order.22			order: 3e38	order
+huge-order.23			order: 1e100	order
+huge-lh.1			line-height: 1e400	line-height
+huge-lh.2			line-height: 1e10	line-height
+huge-lh.3			line-height: 2147483648	line-height
+huge-lh.4			line-height: -1e400	line-height
+huge-lh.5			line-height: 1e9999	line-height
+huge-lh.6			line-height: 3.4028235e38	line-height
+huge-lh.7			line-height: 3.4028234663852886e38	line-height
+huge-lh.8			line-height: 1e39	line-height
+huge-lh.9			line-height: 1.7976931348623157e308	line-height
+huge-lh.10			line-height: 1e308	line-height
+huge-lh.11			line-height: 123456789012345678901234567890	line-height
+huge-lh.12			line-height: 0.0000001	line-height
+huge-lh.13			line-height: 1e-400	line-height
+huge-lh.14			line-height: calc(infinity)	line-height
+huge-lh.15			line-height: calc(-infinity)	line-height
+huge-lh.16			line-height: calc(NaN)	line-height
+huge-lh.17			line-height: calc(1/0)	line-height
+huge-lh.18			line-height: calc(1e308 * 10)	line-height
+huge-lh.19			line-height: calc(1e308 * 1e308)	line-height
+huge-lh.20			line-height: calc(0/0)	line-height
+huge-lh.21			line-height: 1e38	line-height
+huge-lh.22			line-height: 3e38	line-height
+huge-lh.23			line-height: 1e100	line-height
+huge-opacity.1			opacity: 1e400	opacity
+huge-opacity.2			opacity: 1e10	opacity
+huge-opacity.3			opacity: 2147483648	opacity
+huge-opacity.4			opacity: -1e400	opacity
+huge-opacity.5			opacity: 1e9999	opacity
+huge-opacity.6			opacity: 3.4028235e38	opacity
+huge-opacity.7			opacity: 3.4028234663852886e38	opacity
+huge-opacity.8			opacity: 1e39	opacity
+huge-opacity.9			opacity: 1.7976931348623157e308	opacity
+huge-opacity.10			opacity: 1e308	opacity
+huge-opacity.11			opacity: 123456789012345678901234567890	opacity
+huge-opacity.12			opacity: 0.0000001	opacity
+huge-opacity.13			opacity: 1e-400	opacity
+huge-opacity.14			opacity: calc(infinity)	opacity
+huge-opacity.15			opacity: calc(-infinity)	opacity
+huge-opacity.16			opacity: calc(NaN)	opacity
+huge-opacity.17			opacity: calc(1/0)	opacity
+huge-opacity.18			opacity: calc(1e308 * 10)	opacity
+huge-opacity.19			opacity: calc(1e308 * 1e308)	opacity
+huge-opacity.20			opacity: calc(0/0)	opacity
+huge-opacity.21			opacity: 1e38	opacity
+huge-opacity.22			opacity: 3e38	opacity
+huge-opacity.23			opacity: 1e100	opacity
+huge-aic.1			animation-iteration-count: 1e400	animation-iteration-count
+huge-aic.2			animation-iteration-count: 1e10	animation-iteration-count
+huge-aic.3			animation-iteration-count: 2147483648	animation-iteration-count
+huge-aic.4			animation-iteration-count: -1e400	animation-iteration-count
+huge-aic.5			animation-iteration-count: 1e9999	animation-iteration-count
+huge-aic.6			animation-iteration-count: 3.4028235e38	animation-iteration-count
+huge-aic.7			animation-iteration-count: 3.4028234663852886e38	animation-iteration-count
+huge-aic.8			animation-iteration-count: 1e39	animation-iteration-count
+huge-aic.9			animation-iteration-count: 1.7976931348623157e308	animation-iteration-count
+huge-aic.10			animation-iteration-count: 1e308	animation-iteration-count
+huge-aic.11			animation-iteration-count: 123456789012345678901234567890	animation-iteration-count
+huge-aic.12			animation-iteration-count: 0.0000001	animation-iteration-count
+huge-aic.13			animation-iteration-count: 1e-400	animation-iteration-count
+huge-aic.14			animation-iteration-count: calc(infinity)	animation-iteration-count
+huge-aic.15			animation-iteration-count: calc(-infinity)	animation-iteration-count
+huge-aic.16			animation-iteration-count: calc(NaN)	animation-iteration-count
+huge-aic.17			animation-iteration-count: calc(1/0)	animation-iteration-count
+huge-aic.18			animation-iteration-count: calc(1e308 * 10)	animation-iteration-count
+huge-aic.19			animation-iteration-count: calc(1e308 * 1e308)	animation-iteration-count
+huge-aic.20			animation-iteration-count: calc(0/0)	animation-iteration-count
+huge-aic.21			animation-iteration-count: 1e38	animation-iteration-count
+huge-aic.22			animation-iteration-count: 3e38	animation-iteration-count
+huge-aic.23			animation-iteration-count: 1e100	animation-iteration-count
+huge-aic.24			animation-iteration-count: infinite	animation-iteration-count
+huge-scale.1			scale: 1e400	scale
+huge-scale.2			scale: 1e10	scale
+huge-scale.3			scale: 2147483648	scale
+huge-scale.4			scale: -1e400	scale
+huge-scale.5			scale: 1e9999	scale
+huge-scale.6			scale: 3.4028235e38	scale
+huge-scale.7			scale: 3.4028234663852886e38	scale
+huge-scale.8			scale: 1e39	scale
+huge-scale.9			scale: 1.7976931348623157e308	scale
+huge-scale.10			scale: 1e308	scale
+huge-scale.11			scale: 123456789012345678901234567890	scale
+huge-scale.12			scale: 0.0000001	scale
+huge-scale.13			scale: 1e-400	scale
+huge-scale.14			scale: calc(infinity)	scale
+huge-scale.15			scale: calc(-infinity)	scale
+huge-scale.16			scale: calc(NaN)	scale
+huge-scale.17			scale: calc(1/0)	scale
+huge-scale.18			scale: calc(1e308 * 10)	scale
+huge-scale.19			scale: calc(1e308 * 1e308)	scale
+huge-scale.20			scale: calc(0/0)	scale
+huge-scale.21			scale: 1e38	scale
+huge-scale.22			scale: 3e38	scale
+huge-scale.23			scale: 1e100	scale
+huge-colcount.1			column-count: 1e400	column-count
+huge-colcount.2			column-count: 1e10	column-count
+huge-colcount.3			column-count: 2147483648	column-count
+huge-colcount.4			column-count: -1e400	column-count
+huge-colcount.5			column-count: 1e9999	column-count
+huge-colcount.6			column-count: 3.4028235e38	column-count
+huge-colcount.7			column-count: 3.4028234663852886e38	column-count
+huge-colcount.8			column-count: 1e39	column-count
+huge-colcount.9			column-count: 1.7976931348623157e308	column-count
+huge-colcount.10			column-count: 1e308	column-count
+huge-colcount.11			column-count: 123456789012345678901234567890	column-count
+huge-colcount.12			column-count: 0.0000001	column-count
+huge-colcount.13			column-count: 1e-400	column-count
+huge-colcount.14			column-count: calc(infinity)	column-count
+huge-colcount.15			column-count: calc(-infinity)	column-count
+huge-colcount.16			column-count: calc(NaN)	column-count
+huge-colcount.17			column-count: calc(1/0)	column-count
+huge-colcount.18			column-count: calc(1e308 * 10)	column-count
+huge-colcount.19			column-count: calc(1e308 * 1e308)	column-count
+huge-colcount.20			column-count: calc(0/0)	column-count
+huge-colcount.21			column-count: 1e38	column-count
+huge-colcount.22			column-count: 3e38	column-count
+huge-colcount.23			column-count: 1e100	column-count
+huge-fwt.1			font-weight: 1e400	font-weight
+huge-fwt.2			font-weight: 1e10	font-weight
+huge-fwt.3			font-weight: 2147483648	font-weight
+huge-fwt.4			font-weight: -1e400	font-weight
+huge-fwt.5			font-weight: 1e9999	font-weight
+huge-fwt.6			font-weight: 3.4028235e38	font-weight
+huge-fwt.7			font-weight: 3.4028234663852886e38	font-weight
+huge-fwt.8			font-weight: 1e39	font-weight
+huge-fwt.9			font-weight: 1.7976931348623157e308	font-weight
+huge-fwt.10			font-weight: 1e308	font-weight
+huge-fwt.11			font-weight: 123456789012345678901234567890	font-weight
+huge-fwt.12			font-weight: 0.0000001	font-weight
+huge-fwt.13			font-weight: 1e-400	font-weight
+huge-fwt.14			font-weight: calc(infinity)	font-weight
+huge-fwt.15			font-weight: calc(-infinity)	font-weight
+huge-fwt.16			font-weight: calc(NaN)	font-weight
+huge-fwt.17			font-weight: calc(1/0)	font-weight
+huge-fwt.18			font-weight: calc(1e308 * 10)	font-weight
+huge-fwt.19			font-weight: calc(1e308 * 1e308)	font-weight
+huge-fwt.20			font-weight: calc(0/0)	font-weight
+huge-fwt.21			font-weight: 1e38	font-weight
+huge-fwt.22			font-weight: 3e38	font-weight
+huge-fwt.23			font-weight: 1e100	font-weight
+huge-width.1			width: 1e400px	width
+huge-width.2			width: 1e39px	width
+huge-width.3			width: 3.4028235e38px	width
+huge-width.4			width: 3e38px	width
+huge-width.5			width: 1e30px	width
+huge-width.6			width: 1e40px	width
+huge-width.7			width: 1e9999px	width
+huge-width.8			width: 1e308px	width
+huge-width.9			width: 1e100px	width
+huge-width.10			width: calc(1e308px * 10)	width
+huge-width.11			width: calc(infinity * 1px)	width
+huge-width.12			width: calc(-infinity * 1px)	width
+huge-width.13			width: calc(NaN * 1px)	width
+huge-width.14			width: calc(1px / 0)	width
+huge-width.15			width: 33554428px	width
+huge-width.16			width: 33554432px	width
+huge-width.17			width: 1e10px	width
+huge-width.18			width: 1e20px	width
+huge-width.19			width: 16777216px	width
+huge-width.20			width: 1e6px	width
+huge-width.21			width: calc(1e20px + 1px)	width
+huge-margin.1			margin-left: 1e400px	margin-left
+huge-margin.2			margin-left: 1e39px	margin-left
+huge-margin.3			margin-left: 3.4028235e38px	margin-left
+huge-margin.4			margin-left: 3e38px	margin-left
+huge-margin.5			margin-left: 1e30px	margin-left
+huge-margin.6			margin-left: 1e40px	margin-left
+huge-margin.7			margin-left: 1e9999px	margin-left
+huge-margin.8			margin-left: 1e308px	margin-left
+huge-margin.9			margin-left: 1e100px	margin-left
+huge-margin.10			margin-left: calc(1e308px * 10)	margin-left
+huge-margin.11			margin-left: calc(infinity * 1px)	margin-left
+huge-margin.12			margin-left: calc(-infinity * 1px)	margin-left
+huge-margin.13			margin-left: calc(NaN * 1px)	margin-left
+huge-margin.14			margin-left: calc(1px / 0)	margin-left
+huge-margin.15			margin-left: 33554428px	margin-left
+huge-margin.16			margin-left: 33554432px	margin-left
+huge-margin.17			margin-left: 1e10px	margin-left
+huge-margin.18			margin-left: 1e20px	margin-left
+huge-margin.19			margin-left: 16777216px	margin-left
+huge-margin.20			margin-left: 1e6px	margin-left
+huge-margin.21			margin-left: calc(1e20px + 1px)	margin-left
+huge-fs.1			font-size: 1e400px	font-size
+huge-fs.2			font-size: 1e39px	font-size
+huge-fs.3			font-size: 3.4028235e38px	font-size
+huge-fs.4			font-size: 3e38px	font-size
+huge-fs.5			font-size: 1e30px	font-size
+huge-fs.6			font-size: 1e40px	font-size
+huge-fs.7			font-size: 1e9999px	font-size
+huge-fs.8			font-size: 1e308px	font-size
+huge-fs.9			font-size: 1e100px	font-size
+huge-fs.10			font-size: calc(1e308px * 10)	font-size
+huge-fs.11			font-size: calc(infinity * 1px)	font-size
+huge-fs.12			font-size: calc(-infinity * 1px)	font-size
+huge-fs.13			font-size: calc(NaN * 1px)	font-size
+huge-fs.14			font-size: calc(1px / 0)	font-size
+huge-fs.15			font-size: 33554428px	font-size
+huge-fs.16			font-size: 33554432px	font-size
+huge-fs.17			font-size: 1e10px	font-size
+huge-fs.18			font-size: 1e20px	font-size
+huge-fs.19			font-size: 16777216px	font-size
+huge-fs.20			font-size: 1e6px	font-size
+huge-fs.21			font-size: calc(1e20px + 1px)	font-size
+huge-top.1			top: 1e400px	top
+huge-top.2			top: 1e39px	top
+huge-top.3			top: 3.4028235e38px	top
+huge-top.4			top: 3e38px	top
+huge-top.5			top: 1e30px	top
+huge-top.6			top: 1e40px	top
+huge-top.7			top: 1e9999px	top
+huge-top.8			top: 1e308px	top
+huge-top.9			top: 1e100px	top
+huge-top.10			top: calc(1e308px * 10)	top
+huge-top.11			top: calc(infinity * 1px)	top
+huge-top.12			top: calc(-infinity * 1px)	top
+huge-top.13			top: calc(NaN * 1px)	top
+huge-top.14			top: calc(1px / 0)	top
+huge-top.15			top: 33554428px	top
+huge-top.16			top: 33554432px	top
+huge-top.17			top: 1e10px	top
+huge-top.18			top: 1e20px	top
+huge-top.19			top: 16777216px	top
+huge-top.20			top: 1e6px	top
+huge-top.21			top: calc(1e20px + 1px)	top
+huge-wc.1			width: calc(infinity * 1px)	width
+huge-wc.2			width: calc(-infinity * 1px)	width
+huge-wc.3			width: calc(NaN * 1px)	width
+ds-cc.1	dark	color: rgb(0, 255, 0)	filter: drop-shadow(1px 2px currentcolor)	filter
+ds-cc.2	dark	color: rgb(0, 255, 0)	filter: drop-shadow(1px 2px)	filter
+ds-cc.3	dark	color: rgb(0, 255, 0)	filter: drop-shadow(currentcolor 1px 2px 3px)	filter
+ds-cc.4	dark	color: rgb(0, 255, 0)	filter: drop-shadow(1px 2px 3px red)	filter
+ds-cc.5	dark	color: rgb(0, 255, 0)	filter: drop-shadow(1px 2px 3px)	filter
+ds-cc.6	dark	color: rgb(0, 255, 0)	filter: drop-shadow(1px 2px 0px currentcolor)	filter
+ds-cc.7	dark	color: rgb(0, 255, 0)	filter: drop-shadow(red 1px 2px)	filter
+ds-cc.8	dark	color: rgb(0, 255, 0)	filter: blur(2px) drop-shadow(1px 2px)	filter
+ds-cc.9	dark	color: rgb(0, 255, 0)	filter: grayscale(50%) contrast() drop-shadow(1px 2px)	filter
+ds-cc.10	dark	color: rgb(0, 255, 0)	filter: drop-shadow(1px 2px color-mix(in srgb, currentcolor, blue))	filter
+ds-bd.1		color: rgb(0, 255, 0)	backdrop-filter: drop-shadow(1px 2px currentcolor)	backdrop-filter
+ds-bd.2		color: rgb(0, 255, 0)	backdrop-filter: drop-shadow(1px 2px)	backdrop-filter
+cc-other.1		color: rgb(0, 255, 0)	background-image: linear-gradient(red, currentcolor)	background-image
+cc-other.2		color: rgb(0, 255, 0)	background-image: linear-gradient(-45deg, red, currentcolor)	background-image
+cc-other.3		color: rgb(0, 255, 0)	background-image: radial-gradient(currentcolor, blue)	background-image
+cc-other.4		color: rgb(0, 255, 0)	background-image: conic-gradient(currentcolor, blue)	background-image
+cc-shadow.1		color: rgb(0, 255, 0)	box-shadow: 1px 1px currentcolor	box-shadow
+cc-shadow.2		color: rgb(0, 255, 0)	box-shadow: 1px 1px	box-shadow
+cc-shadow.3		color: rgb(0, 255, 0)	box-shadow: 1px 1px red	box-shadow
+cc-shadow.4		color: rgb(0, 255, 0)	box-shadow: inset 1px 1px currentcolor	box-shadow
+cc-text-shadow.1		color: rgb(0, 255, 0)	text-shadow: 1px 1px currentcolor	text-shadow
+cc-text-shadow.2		color: rgb(0, 255, 0)	text-shadow: 1px 1px	text-shadow
+cc-border.1		color: rgb(0, 255, 0)	border-top-color: currentcolor	border-top-color
+cc-bg.1		color: rgb(0, 255, 0)	background-color: currentcolor	background-color
+cc-bg.2		color: rgb(0, 255, 0)	background-color: color-mix(in srgb, currentcolor, blue)	background-color
+cc-bg.3		color: rgb(0, 255, 0)	background-color: color-mix(in srgb, currentcolor 50%, blue)	background-color
+cc-bg.4		color: rgb(0, 255, 0)	background-color: rgb(from currentcolor r g b)	background-color
+cc-bg.5		color: rgb(0, 255, 0)	background-color: rgb(from currentcolor r g b / 0.5)	background-color
+cc-bg.6		color: rgb(0, 255, 0)	background-color: color-mix(in srgb, red, currentcolor)	background-color
+cc-bg.7		color: rgb(0, 255, 0)	background-color: light-dark(currentcolor, red)	background-color
+cc-bg.8		color: rgb(0, 255, 0)	background-color: contrast-color(currentcolor)	background-color
+cc-color.1		color: rgb(0, 255, 0)	color: currentcolor	color
+cc-color.2		color: rgb(0, 255, 0)	color: color-mix(in srgb, currentcolor, blue)	color
+cc-color.3		color: rgb(0, 255, 0)	color: rgb(from currentcolor r g b)	color
+cc-color.4		color: rgb(0, 255, 0)	color: inherit	color
+cc-color.5		color: rgb(0, 255, 0)	color: contrast-color(currentcolor)	color
+cc-outline.1		color: rgb(0, 255, 0)	outline-color: currentcolor	outline-color
+cc-outline.2		color: rgb(0, 255, 0)	outline-color: color-mix(in srgb, currentcolor, blue)	outline-color
+cc-caret.1		color: rgb(0, 255, 0)	caret-color: currentcolor	caret-color
+cc-caret.2		color: rgb(0, 255, 0)	caret-color: auto	caret-color
+cc-caret.3		color: rgb(0, 255, 0)	caret-color: red auto	caret-color
+cc-caret.4		color: rgb(0, 255, 0)	caret-color: color-mix(in srgb, currentcolor, blue)	caret-color
+relative.1	dark		background-color: rgb(from rgb(20% 40% 60% / 0.8) g b r)	background-color
+relative.2	dark		background-color: rgb(from rgb(20% 40% 60% / 0.8) r g b)	background-color
+relative.3	dark		background-color: rgb(from rgb(20% 40% 60% / 0.8) r g b / alpha)	background-color
+relative.4	dark		background-color: rgb(from rgb(20% 40% 60% / 0.8) r g b / 0.5)	background-color
+relative.5	dark		background-color: hsl(from rgb(20% 40% 60% / 0.8) h s l)	background-color
+relative.6	dark		background-color: hwb(from rgb(20% 40% 60% / 0.8) h w b)	background-color
+relative.7	dark		background-color: lab(from rgb(20% 40% 60% / 0.8) l a b)	background-color
+relative.8	dark		background-color: oklch(from rgb(20% 40% 60% / 0.8) l c h)	background-color
+relative.9	dark		background-color: color(from rgb(20% 40% 60% / 0.8) srgb r g b)	background-color
+relative.10	dark		background-color: rgb(from rgb(20% 40% 60% / 0.8) r g b / none)	background-color
+relative.11	dark		background-color: rgb(from red none g b)	background-color
+relative.12	dark		background-color: rgb(from rgb(none 20 30 / 0.5) r g b)	background-color
+relative.13	dark		background-color: alpha(from red / 0.5)	background-color
+relative.14	dark		background-color: alpha(from rgb(20% 40% 60% / 0.8))	background-color
+relative.15	dark		background-color: rgb(from color-mix(in srgb, red, blue) r g b)	background-color
+relative.16	dark		background-color: rgb(from red calc(r + 10) g b)	background-color
+relative.17	dark		background-color: oklab(from red l a b / 0.5)	background-color
+relative.18	dark		background-color: lch(from lch(50 20 30 / 0.4) l c h)	background-color
+relative.19	dark		background-color: color(srgb 1 0 0 / 0.5)	background-color
+relative.20	dark		background-color: rgb(from hsl(120 100% 50% / 0.3) r g b)	background-color
+contrast.1			color: contrast-color(white)	color
+contrast.2			color: contrast-color(black)	color
+contrast.3			color: contrast-color(#777)	color
+contrast.4			color: contrast-color(gray)	color
+contrast.5			color: contrast-color(#767676)	color
+contrast.6			color: contrast-color(#757575)	color
+contrast.7			color: contrast-color(#595959)	color
+contrast.8			color: contrast-color(yellow)	color
+contrast.9			color: contrast-color(red)	color
+contrast.10			color: contrast-color(rgb(0 0 0 / 0.5))	color
+contrast.11			color: contrast-color(color-mix(in srgb, blue, green))	color
+contrast.12			color: contrast-color(#808080)	color
+contrast.13			color: contrast-color(#757575 )	color
+contrast.14			color: contrast-color(#767676)	color
+contrast.15			color: contrast-color(#777777)	color
+contrast.16			color: contrast-color(blue)	color
+contrast.17			color: contrast-color(lime)	color
+contrast.18			color: contrast-color(cyan)	color
+contrast.19			color: contrast-color(#e0e0e0)	color
+contrast.20			color: contrast-color(#0000ff)	color
+contrast-bg.1	dark		background-color: contrast-color(buttonface)	background-color
+contrast-bg.2	dark		background-color: contrast-color(canvas)	background-color
+contrast-bg.3	dark		background-color: contrast-color(canvastext)	background-color
+calc-nan-alpha.1			background-color: rgb(0 0 0 / calc(NaN))	background-color
+calc-nan-alpha.2			background-color: rgb(0 0 0 / calc(infinity))	background-color
+calc-nan-alpha.3			background-color: rgb(0 0 0 / calc(-infinity))	background-color
+calc-nan-alpha.4			background-color: rgb(calc(NaN) 0 0)	background-color
+calc-nan-alpha.5			background-color: rgb(calc(infinity) 0 0)	background-color
+calc-nan-alpha.6			background-color: hsl(calc(NaN) 50% 50%)	background-color
+calc-nan-alpha.7			background-color: color(srgb calc(NaN) 0 0)	background-color
+calc-nan-alpha.8			background-color: lab(calc(NaN) 0 0)	background-color
+opacity.1			opacity: clamp(50%, 0%, 70%)	opacity
+opacity.2			opacity: min(50%, 60%)	opacity
+opacity.3			opacity: max(30%, 0.4)	opacity
+opacity.4			opacity: calc(50% + 0.1)	opacity
+opacity.5			opacity: calc(min(50%, 60%))	opacity
+opacity.6			opacity: min(0.5, 60%)	opacity
+opacity.7			opacity: clamp(0.1, 50%, 0.9)	opacity
+opacity.8			opacity: max(20%, 10%)	opacity
+opacity.9			opacity: calc(50%)	opacity
+opacity.10			opacity: 50%	opacity
+opacity.11			opacity: clamp(0%, 120%, 70%)	opacity
+opacity.12			opacity: calc(1 - 50%)	opacity
+opacity.13			opacity: calc(50% * 2)	opacity
+opacity.14			opacity: min(50%, 0.6)	opacity
+opacity.15			opacity: calc(10% + 20%)	opacity
+opacity.16			opacity: calc(0.5 + 20%)	opacity
+opacity.17			opacity: min(10%, 20%)	opacity
+opacity2.1			flex-grow: min(50%, 60%)	flex-grow
+opacity2.2			flex-grow: calc(50% + 0.1)	flex-grow
+opacity3.1			stroke-opacity: min(50%, 60%)	stroke-opacity
+opacity3.2			stroke-opacity: clamp(50%, 0%, 70%)	stroke-opacity
+anim-duration.1			animation-duration: auto	animation-duration
+anim-duration.2			animation-duration: 0s	animation-duration
+anim-duration.3			animation-duration: calc(1s)	animation-duration
+anim-duration.4			animation-duration: auto, 1s	animation-duration
+anim-duration.5			animation-duration: 1s	animation-duration
+anim-duration.6			animation-duration: auto auto	animation-duration
+anim-duration.7			animation-duration: 10ms	animation-duration
+anim-duration.8			animation-duration: calc(1s + 1s)	animation-duration
+anim-duration.9			animation-duration: initial	animation-duration
+tsa.1			text-size-adjust: auto	text-size-adjust,-webkit-text-size-adjust
+tsa.2			text-size-adjust: none	text-size-adjust,-webkit-text-size-adjust
+tsa.3			text-size-adjust: 120%	text-size-adjust,-webkit-text-size-adjust
+tsa.4			text-size-adjust: calc(10% + 10%)	text-size-adjust,-webkit-text-size-adjust
+tsa.5			text-size-adjust: 0%	text-size-adjust,-webkit-text-size-adjust
+tsa.6			text-size-adjust: 150%	text-size-adjust,-webkit-text-size-adjust
+contain.1			contain: size style layout paint	contain
+contain.2			contain: size layout paint	contain
+contain.3			contain: strict	contain
+contain.4			contain: content	contain
+contain.5			contain: size layout	contain
+contain.6			contain: layout paint	contain
+contain.7			contain: style layout paint size	contain
+contain.8			contain: inline-size layout style paint	contain
+contain.9			contain: none	contain
+contain.10			contain: size	contain
+contain.11			contain: layout	contain
+contain.12			contain: paint	contain
+contain.13			contain: style	contain
+contain.14			contain: size layout style	contain
+contain.15			contain: size layout paint style	contain
+contain.16			contain: inline-size	contain
+contain.17			contain: layout size	contain
+contain.18			contain: size layout style paint	contain
+contain.19			contain: strict layout	contain
+contain.20			contain: content size	contain
+contain.21			contain: style paint	contain
+contain.22			contain: inline-size layout paint	contain
+contain.23			contain: paint layout size style	contain
+fontfeat.1			font-feature-settings: "kern" 1, "liga" 0	font-feature-settings
+fontfeat.2			font-feature-settings: "liga" 0, "kern"	font-feature-settings
+fontfeat.3			font-feature-settings: "kern", "kern" 0	font-feature-settings
+fontfeat.4			font-feature-settings: "kern" calc(1 + 1)	font-feature-settings
+fontfeat.5			font-feature-settings: "kern" on	font-feature-settings
+fontfeat.6			font-feature-settings: "kern" off	font-feature-settings
+fontfeat.7			font-feature-settings: "kern" 1	font-feature-settings
+fontfeat.8			font-feature-settings: normal	font-feature-settings
+fontfeat.9			font-feature-settings: "liga", "kern"	font-feature-settings
+fontfeat.10			font-feature-settings: "kern" 0, "kern" 1	font-feature-settings
+fontfeat.11			font-feature-settings: "liga" 2, "kern" 3, "aalt"	font-feature-settings
+fontfeat.12			font-feature-settings: "zzzz", "aaaa"	font-feature-settings
+fontfeat.13			font-feature-settings: "kern" calc(2 * 2)	font-feature-settings
+fontfeat.14			font-feature-settings: "smcp", "SMCP" 0	font-feature-settings
+fontvar.1			font-variation-settings: "wght" 400, "wdth" 100	font-variation-settings
+fontvar.2			font-variation-settings: "wdth" 100, "wght" 400	font-variation-settings
+fontvar.3			font-variation-settings: "wght" 400, "wght" 500	font-variation-settings
+fontvar.4			font-variation-settings: "wght" calc(100 + 200)	font-variation-settings
+fontvar.5			font-variation-settings: normal	font-variation-settings
+fontvar.6			font-variation-settings: "wght" 400.5	font-variation-settings
+fontvar.7			font-variation-settings: "zzzz" 1, "aaaa" 2	font-variation-settings
+fontvar.8			font-variation-settings: "wght" calc(1 / 3)	font-variation-settings
+fontvar.9			font-variation-settings: "wght" 1e2	font-variation-settings
+fontvar.10			font-variation-settings: "wght" 400, "wdth" 100, "wght" 300	font-variation-settings
+gta.1			grid-template-areas: "a   b" "c   d"	grid-template-areas
+gta.2			grid-template-areas: "a ... b"	grid-template-areas
+gta.3			grid-template-areas: ". ." ". ."	grid-template-areas
+gta.4			grid-template-areas: "a b"   "c d"	grid-template-areas
+gta.5			grid-template-areas: none	grid-template-areas
+gta.6			grid-template-areas: "a  .  b" "c d e"	grid-template-areas
+gta.7			grid-template-areas: "header header" "main sidebar"	grid-template-areas
+gta.8			grid-template-areas: "a" "b" "c"	grid-template-areas
+gta.9			grid-template-areas: "a . . b"	grid-template-areas
+overflow.1			overflow: hidden visible	overflow,overflow-x,overflow-y
+overflow.2			overflow: visible hidden	overflow,overflow-x,overflow-y
+overflow.3			overflow: visible visible	overflow,overflow-x,overflow-y
+overflow.4			overflow: clip visible	overflow,overflow-x,overflow-y
+overflow.5			overflow: visible clip	overflow,overflow-x,overflow-y
+overflow.6			overflow: scroll visible	overflow,overflow-x,overflow-y
+overflow.7			overflow: auto visible	overflow,overflow-x,overflow-y
+overflow.8			overflow: hidden	overflow,overflow-x,overflow-y
+overflow.9			overflow: clip	overflow,overflow-x,overflow-y
+overflow.10			overflow: clip hidden	overflow,overflow-x,overflow-y
+overflow.11			overflow: visible auto	overflow,overflow-x,overflow-y
+overflow.12			overflow: overlay	overflow,overflow-x,overflow-y
+overflow.13			overflow: overlay hidden	overflow,overflow-x,overflow-y
+overflow-ctx.1			overflow-x: visible	overflow-x,overflow-y
+overflow-pair.1			overflow-x: visible; overflow-y: hidden	overflow-x,overflow-y,overflow
+overflow-pair.2			overflow-x: hidden; overflow-y: visible	overflow-x,overflow-y,overflow
+overflow-pair.3			overflow-x: clip; overflow-y: visible	overflow-x,overflow-y,overflow
+overflow-pair.4			overflow-x: visible; overflow-y: clip	overflow-x,overflow-y,overflow
+overflow-pair.5			overflow-x: clip; overflow-y: hidden	overflow-x,overflow-y,overflow
+overflow-pair.6			overflow-x: visible; overflow-y: scroll	overflow-x,overflow-y,overflow
+box-shadow-offset.1			box-shadow-offset: 10px	box-shadow-offset
+box-shadow-offset.2			box-shadow-offset: 10px 20px	box-shadow-offset
+box-shadow-offset.3			box-shadow-offset: calc(10px + 0px) 10px	box-shadow-offset
+box-shadow-offset.4			box-shadow-offset: 1em	box-shadow-offset
+box-shadow-offset.5			box-shadow-offset: calc(1em + 1px)	box-shadow-offset
+border-spacing.1			border-spacing: 10px	border-spacing
+border-spacing.2			border-spacing: 10px 20px	border-spacing
+border-spacing.3			border-spacing: calc(10px + 0px)	border-spacing
+border-spacing.4			border-spacing: calc(10px + 0px) 5px	border-spacing
+border-spacing.5			border-spacing: 1em	border-spacing
+border-spacing.6			border-spacing: calc(1em + 1px) 2px	border-spacing
+border-spacing.7			border-spacing: 0 0	border-spacing
+border-image-width.1			border-image-width: 10px	border-image-width
+border-image-width.2			border-image-width: 1	border-image-width
+border-image-width.3			border-image-width: auto	border-image-width
+border-image-width.4			border-image-width: calc(10px + 0px)	border-image-width
+border-image-width.5			border-image-width: 10%	border-image-width
+border-image-width.6			border-image-width: calc(10% + 0px)	border-image-width
+border-image-width.7			border-image-width: 1 2 3 4	border-image-width
+border-image-width.8			border-image-width: 5px 10px	border-image-width
+border-image-width.9			border-image-width: calc(1 + 1)	border-image-width
+border-image-width.10			border-image-width: calc(10px + 5%)	border-image-width
+tdi.1			text-decoration-inset: calc(1em / 4) calc(-1ch)	text-decoration-inset
+tdi.2			text-decoration-inset: 1px	text-decoration-inset
+tdi.3			text-decoration-inset: auto	text-decoration-inset
+tdi.4			text-decoration-inset: 1px 2px	text-decoration-inset
+tdi.5			text-decoration-inset: calc(1em / 4)	text-decoration-inset
+tdi.6			text-decoration-inset: calc(10px + 0px)	text-decoration-inset
+tdi.7			text-decoration-inset: 0 0	text-decoration-inset
+tdt.1			text-decoration-thickness: calc(200% - 0px)	text-decoration-thickness
+tdt.2			text-decoration-thickness: 200%	text-decoration-thickness
+tdt.3			text-decoration-thickness: calc(10px + 0px)	text-decoration-thickness
+tdt.4			text-decoration-thickness: from-font	text-decoration-thickness
+tdt.5			text-decoration-thickness: auto	text-decoration-thickness
+tdt.6			text-decoration-thickness: calc(100% + 1px)	text-decoration-thickness
+tdt.7			text-decoration-thickness: calc(50% * 2)	text-decoration-thickness
+tuo.1			text-underline-offset: calc(200% - 0px)	text-underline-offset
+tuo.2			text-underline-offset: 200%	text-underline-offset
+tuo.3			text-underline-offset: calc(10px + 0px)	text-underline-offset
+tuo.4			text-underline-offset: auto	text-underline-offset
+tuo.5			text-underline-offset: calc(100% + 1px)	text-underline-offset
+tuo.6			text-underline-offset: 1em	text-underline-offset
+link-params.1			link-parameters: none	link-parameters
+link-params.2			link-parameters: param("x", "y")	link-parameters
+link-params.3			link-parameters: param(--a) param(--b)	link-parameters
+link-params.4			link-parameters: param(--a, "x")	link-parameters
+link-params.5			link-parameters: param(x)	link-parameters
+link-params.6			link-parameters: param("a" "b")	link-parameters
+link-params.7			link-parameters: none none	link-parameters
+text-fit.1			text-fit: none	text-fit
+text-fit.2			text-fit: grow	text-fit
+text-fit.3			text-fit: shrink	text-fit
+text-fit.4			text-fit: grow per-line	text-fit
+text-fit.5			text-fit: shrink consistent	text-fit
+text-fit.6			text-fit: grow per-line 20%	text-fit
+text-fit.7			text-fit: grow per-line-all	text-fit
+text-fit.8			text-fit: shrink per-line	text-fit
+text-fit.9			text-fit: shrink consistent 50%	text-fit
+text-fit.10			text-fit: grow consistent	text-fit
+text-spacing.1			text-spacing: normal	text-spacing,text-spacing-trim,text-autospace
+text-spacing.2			text-spacing: none	text-spacing,text-spacing-trim,text-autospace
+text-spacing.3			text-spacing: auto	text-spacing,text-spacing-trim,text-autospace
+text-spacing.4			text-spacing: space-first	text-spacing,text-spacing-trim,text-autospace
+text-spacing.5			text-spacing: trim-start space-first	text-spacing,text-spacing-trim,text-autospace
+text-spacing.6			text-spacing: ideograph-alpha ideograph-numeric	text-spacing,text-spacing-trim,text-autospace
+text-spacing.7			text-spacing: trim-both	text-spacing,text-spacing-trim,text-autospace
+text-spacing.8			text-spacing: space-all	text-spacing,text-spacing-trim,text-autospace
+text-spacing.9			text-spacing: trim-start	text-spacing,text-spacing-trim,text-autospace
+text-spacing.10			text-spacing: space-first trim-start	text-spacing,text-spacing-trim,text-autospace
+text-spacing.11			text-spacing: ideograph-alpha	text-spacing,text-spacing-trim,text-autospace
+text-spacing.12			text-spacing: auto trim-start	text-spacing,text-spacing-trim,text-autospace
+text-spacing.13			text-spacing: normal space-first	text-spacing,text-spacing-trim,text-autospace
+text-spacing.14			text-spacing: punctuation-width	text-spacing,text-spacing-trim,text-autospace
+zoom.1			zoom: normal	zoom
+zoom.2			zoom: 0	zoom
+zoom.3			zoom: 1	zoom
+zoom.4			zoom: 2	zoom
+zoom.5			zoom: 200%	zoom
+zoom.6			zoom: calc(1 + 1)	zoom
+zoom.7			zoom: reset	zoom
+zoom.8			zoom: -1	zoom
+zoom.9			zoom: 0%	zoom
+zoom.10			zoom: 50%	zoom
+zoom.11			zoom: calc(50% + 50%)	zoom
+zoom.12			zoom: initial	zoom
+border-clip.1			border-clip: normal	border-clip
+border-clip.2			border-clip: none	border-clip
+border-clip.3			border-clip: top	border-clip
+border-clip.4			border-clip: top left	border-clip
+border-clip.5			border-clip: left right	border-clip
+border-clip.6			border-clip: border-box	border-clip
+border-clip.7			border-clip: bottom 10px	border-clip
+border-clip.8			border-clip: 10px	border-clip
+border-clip.9			border-clip: calc(10px + 0px)	border-clip
+border-clip.10			border-clip: top 5px	border-clip
+outline-offset.1			outline-offset: inset	outline-offset
+outline-offset.2			outline-offset: 10px	outline-offset
+outline-offset.3			outline-offset: -10px	outline-offset
+outline-offset.4			outline-offset: calc(10px + 0px)	outline-offset
+outline-offset.5			outline-offset: auto	outline-offset
+outline-offset.6			outline-offset: normal	outline-offset
+text-align-last.1		direction: rtl	text-align-last: match-parent	text-align-last
+text-align-last.2		direction: rtl	text-align-last: auto	text-align-last
+text-align-last.3		direction: rtl	text-align-last: start	text-align-last
+text-align-last.4		direction: rtl	text-align-last: end	text-align-last
+text-align-last.5		direction: rtl	text-align-last: left	text-align-last
+text-align-last.6		direction: rtl	text-align-last: justify	text-align-last
+text-align-last.7		direction: rtl	text-align-last: justify-all	text-align-last
+position-try.1			position-try-fallbacks: start start	position-try-fallbacks
+position-try.2			position-try-fallbacks: none	position-try-fallbacks
+position-try.3			position-try-fallbacks: --a, --b	position-try-fallbacks
+position-try.4			position-try-fallbacks: flip-block	position-try-fallbacks
+position-try.5			position-try-fallbacks: flip-block flip-inline	position-try-fallbacks
+position-try.6			position-try-fallbacks: top	position-try-fallbacks
+position-try.7			position-try-fallbacks: --a flip-block	position-try-fallbacks
+position-try.8			position-try-fallbacks: span-all	position-try-fallbacks
+position-try.9			position-try-fallbacks: bottom left	position-try-fallbacks
+position-try.10			position-try-fallbacks: most-width bottom	position-try-fallbacks
+position-try.11			position-try-fallbacks: flip-start	position-try-fallbacks
+position-try.12			position-try-fallbacks: inline-start	position-try-fallbacks
+position-try.13			position-try-fallbacks: flip-start --a	position-try-fallbacks
+justify-legacy.1			justify-items: legacy	justify-items
+justify-legacy.2			justify-items: legacy left	justify-items
+justify-legacy.3			justify-items: legacy right	justify-items
+justify-legacy.4			justify-items: legacy center	justify-items
+justify-legacy.5			justify-items: left legacy	justify-items
+justify-legacy.6			justify-items: normal legacy	justify-items
+justify-legacy.7			justify-items: safe center	justify-items
+justify-legacy.8			justify-items: flow-start	justify-items
+justify-legacy.9			justify-items: flow-end	justify-items
+justify-legacy.10			justify-items: flex-start	justify-items
+justify-legacy.11			justify-items: flex-end	justify-items
+justify-legacy.12			justify-items: self-start	justify-items
+justify-legacy.13			justify-items: baseline	justify-items
+justify-legacy.14			justify-items: first baseline	justify-items
+justify-legacy.15			justify-items: last baseline	justify-items
+justify-legacy.16			justify-items: anchor-center	justify-items
+justify-legacy.17			justify-items: stretch	justify-items
+place-legacy.1			place-items: flex-end legacy	place-items,align-items,justify-items
+place-legacy.2			place-items: legacy	place-items,align-items,justify-items
+place-legacy.3			place-items: flex-start legacy	place-items,align-items,justify-items
+place-legacy.4			place-items: center legacy	place-items,align-items,justify-items
+place-legacy.5			place-items: legacy flex-start	place-items,align-items,justify-items
+place-legacy.6			place-items: flow-start	place-items,align-items,justify-items
+place-legacy.7			place-items: flow-end flow-start	place-items,align-items,justify-items
+place-legacy.8			place-items: start legacy	place-items,align-items,justify-items
+cursor.1			cursor: linear-gradient(red, blue), auto	cursor
+cursor.2			cursor: url(a.png) 2 3, auto	cursor
+cursor.3			cursor: auto	cursor
+cursor.4			cursor: image-set(url(a.png) 1x), pointer	cursor
+cursor.5			cursor: url(a.png), url(b.png) 1 1, move	cursor
+cursor.6			cursor: pointer	cursor
+cursor.7			cursor: cross-fade(url(a.png), url(b.png)), auto	cursor
+content.1			content: linear-gradient(red, blue)	content
+content.2			content: url(a.png)	content
+content.3			content: "a" url(b.png)	content
+content.4			content: image-set(url(a.png) 1x)	content
+content.5			content: "a" / "alt"	content
+content.6			content: none	content
+content.7			content: normal	content
+content.8			content: counter(a)	content
+content.9			content: cross-fade(url(a.png) 50%, url(b.png))	content
+content.10			content: -webkit-image-set(url(a.png) 1x)	content
+cross-fade.1			background-image: cross-fade(url(a.png), url(b.png))	background-image
+cross-fade.2			background-image: cross-fade(url(a.png) 50%, url(b.png))	background-image
+cross-fade.3			background-image: cross-fade(url(a.png) 50%, color-mix(in srgb, red, blue))	background-image
+cross-fade.4			background-image: cross-fade(url(a.png) 25%, url(b.png) 25%)	background-image
+cross-fade.5			background-image: cross-fade(url(a.png), red)	background-image
+cross-fade.6			background-image: cross-fade(url(a.png) 100%, url(b.png) 100%)	background-image
+light-dark-none.1	dark		background-image: light-dark(none, none)	background-image
+light-dark-none.2	dark		background-image: light-dark(none, url(a.png))	background-image
+light-dark-none.3	dark		background-image: light-dark(url(a.png), none)	background-image
+light-dark-none.4	dark		background-image: light-dark(red, blue)	background-image
+light-dark-img.1	dark		list-style-image: light-dark(none, none)	list-style-image
+light-dark-img.2	dark		list-style-image: light-dark(url(a.png), none)	list-style-image
+view-transition-name.1			view-transition-name: Foo	view-transition-name
+view-transition-name.2			view-transition-name: foo	view-transition-name
+view-transition-name.3			view-transition-name: FOO	view-transition-name
+view-transition-name.4			view-transition-name: none	view-transition-name
+view-transition-name.5			view-transition-name: auto	view-transition-name
+view-transition-name.6			view-transition-name: match-element	view-transition-name
+view-transition-name.7			view-transition-name: None	view-transition-name
+view-transition-name.8			view-transition-name: Auto	view-transition-name
+view-transition-name.9			view-transition-name: MATCH-ELEMENT	view-transition-name
+view-transition-name.10			view-transition-name: --X	view-transition-name
+view-transition-name.11			view-transition-name: a b	view-transition-name
+container-type.1			container-type: anchored	container-type
+container-type.2			container-type: size	container-type
+container-type.3			container-type: inline-size	container-type
+container-type.4			container-type: normal	container-type
+container-type.5			container-type: anchored size	container-type
+container-type.6			container-type: size anchored	container-type
+container-type.7			container-type: scroll-state	container-type
+container-type.8			container-type: style	container-type
+container-type.9			container-type: anchored inline-size	container-type
+container-type.10			container-type: size scroll-state	container-type
+container-type.11			container-type: inline-size scroll-state	container-type
+container-type.12			container-type: scroll-state anchored	container-type
+text-justify.1			text-justify: distribute	text-justify
+text-justify.2			text-justify: inter-character	text-justify
+text-justify.3			text-justify: inter-word	text-justify
+text-justify.4			text-justify: auto	text-justify
+text-justify.5			text-justify: none	text-justify
+text-justify.6			text-justify: distribute-all-lines	text-justify
+text-justify.7			text-justify: newspaper	text-justify
+text-justify.8			text-justify: kashida	text-justify
+sibling-index.1			width: calc(sibling-index() * 1px)	width
+sibling-index.2			width: calc(sibling-count() * 1px)	width
+sibling-index.3			width: calc(sign(2cqw - 10px) * 5px)	width
+sibling-index.4			width: calc(10px + (sign(2cqw - 10px) * 5px))	width
+sibling-index.5			width: calc(1em / 4)	width
+corner-shape.1			corner-shape: superellipse(5) round	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.2			corner-shape: round	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.3			corner-shape: square	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.4			corner-shape: bevel	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.5			corner-shape: scoop	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.6			corner-shape: notch	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.7			corner-shape: squircle	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.8			corner-shape: superellipse(5)	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.9			corner-shape: superellipse(infinity)	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.10			corner-shape: superellipse(-infinity)	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.11			corner-shape: superellipse(0)	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.12			corner-shape: superellipse(1) superellipse(2)	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.13			corner-shape: round bevel	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.14			corner-shape: superellipse(calc(1 + 1))	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.15			corner-shape: superellipse(2) square scoop notch	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.16			corner-shape: scoop notch	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.17			corner-shape: infinity	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner-shape.18			corner-shape: superellipse(1e400)	corner-shape,corner-top-left-shape,corner-top-right-shape,corner-bottom-right-shape,corner-bottom-left-shape
+corner.1			corner: 2% notch	corner,border-top-left-radius,corner-top-left-shape
+corner.2			corner: 10px round	corner,border-top-left-radius,corner-top-left-shape
+corner.3			corner: 10px 20px / 5px bevel	corner,border-top-left-radius,corner-top-left-shape
+corner.4			corner: 5px 10px 15px 20px scoop	corner,border-top-left-radius,corner-top-left-shape
+corner.5			corner: superellipse(3)	corner,border-top-left-radius,corner-top-left-shape
+corner.6			corner: 10px	corner,border-top-left-radius,corner-top-left-shape
+corner.7			corner: round	corner,border-top-left-radius,corner-top-left-shape
+corner.8			corner: 5% round / 10% square	corner,border-top-left-radius,corner-top-left-shape
+corner.9			corner: 10px superellipse(5)	corner,border-top-left-radius,corner-top-left-shape
+corner.10			corner: notch 10px	corner,border-top-left-radius,corner-top-left-shape
+position-area.1			position-area: none	position-area
+position-area.2			position-area: span-all	position-area
+position-area.3			position-area: center	position-area
+position-area.4			position-area: span-all span-all	position-area
+position-area.5			position-area: span-all center	position-area
+position-area.6			position-area: center span-all	position-area
+position-area.7			position-area: top left	position-area
+position-area.8			position-area: top	position-area
+position-area.9			position-area: left	position-area
+position-area.10			position-area: span-top	position-area
+position-area.11			position-area: start	position-area
+position-area.12			position-area: y-start x-end	position-area
+position-area.13			position-area: block-start inline-end	position-area
+position-area.14			position-area: top span-all	position-area
+position-area.15			position-area: span-bottom center	position-area
+position-area.16			position-area: self-start	position-area
+position-area.17			position-area: self-block-end self-inline-start	position-area
+position-area.18			position-area: left span-left	position-area
+position-area.19			position-area: top center	position-area
+position-area.20			position-area: bottom span-all	position-area
+position-area.21			position-area: x-start	position-area
+position-area.22			position-area: center center	position-area
+overlay.1			overlay: auto	overlay
+overlay.2			overlay: none	overlay
+webkit-box.1			-webkit-box-align: start	-webkit-box-align
+webkit-box.2			-webkit-box-align: center	-webkit-box-align
+webkit-box.3			-webkit-box-align: end	-webkit-box-align
+webkit-box.4			-webkit-box-align: baseline	-webkit-box-align
+webkit-box.5			-webkit-box-align: stretch	-webkit-box-align
+webkit-box2.1			-webkit-box-pack: start	-webkit-box-pack
+webkit-box2.2			-webkit-box-pack: center	-webkit-box-pack
+webkit-box2.3			-webkit-box-pack: end	-webkit-box-pack
+webkit-box2.4			-webkit-box-pack: justify	-webkit-box-pack
+webkit-box3.1			-webkit-box-orient: horizontal	-webkit-box-orient
+webkit-box3.2			-webkit-box-orient: vertical	-webkit-box-orient
+webkit-box3.3			-webkit-box-orient: inline-axis	-webkit-box-orient
+webkit-box3.4			-webkit-box-orient: block-axis	-webkit-box-orient
+webkit-box4.1			-webkit-box-flex: 0	-webkit-box-flex
+webkit-box4.2			-webkit-box-flex: 1	-webkit-box-flex
+webkit-box4.3			-webkit-box-flex: 2.5	-webkit-box-flex
+webkit-box5.1			-webkit-box-ordinal-group: 1	-webkit-box-ordinal-group
+webkit-box5.2			-webkit-box-ordinal-group: 3	-webkit-box-ordinal-group
+webkit-user-select.1			-webkit-user-select: auto	-webkit-user-select,user-select
+webkit-user-select.2			-webkit-user-select: none	-webkit-user-select,user-select
+webkit-user-select.3			-webkit-user-select: text	-webkit-user-select,user-select
+webkit-user-select.4			-webkit-user-select: all	-webkit-user-select,user-select
+webkit-user-select.5			-webkit-user-select: contain	-webkit-user-select,user-select
+voice.1			voice-pitch: 2st	voice-pitch
+voice.2			voice-pitch: 50Hz	voice-pitch
+voice.3			voice-pitch: x-low	voice-pitch
+voice.4			voice-pitch: medium	voice-pitch
+voice.5			voice-pitch: low 2st	voice-pitch
+voice.6			voice-pitch: +2st	voice-pitch
+voice.7			voice-pitch: absolute	voice-pitch
+voice.8			voice-pitch: 50hz 2st	voice-pitch
+voice.9			voice-pitch: -2st	voice-pitch
+cue.1			cue-after: url(a) 3dB	cue-after
+cue.2			cue-after: url(a)	cue-after
+cue.3			cue-after: none	cue-after
+cue.4			cue-after: url(a) -3dB	cue-after
+cue.5			cue-after: url(a) 0dB	cue-after
+nav.1			nav-down: #a current	nav-down
+nav.2			nav-down: auto	nav-down
+nav.3			nav-down: #a	nav-down
+nav.4			nav-down: #a root	nav-down
+nav.5			nav-down: #a "frame"	nav-down
+transform-reg.1			transform: scale(250%)	transform
+transform-reg.2			transform: scale(250%, 50%)	transform
+transform-reg.3			transform: scale3d(1, 2, 50%)	transform
+transform-reg.4			transform: translate(calc(10px + 0px))	transform
+transform-reg.5			transform: scaleX(250%)	transform
+anchor.1			top: anchor(--foo top)	top
+anchor.2			top: calc(anchor(--foo top) + 1px)	top
+anchor.3			top: anchor(top)	top
+anchor.4			top: anchor(--foo bottom, 10px)	top
+anchor.5			top: anchor(--foo 50%)	top
+anchor-size.1			width: anchor-size(--foo width)	width
+anchor-size.2			width: anchor-size(width)	width
+anchor-size.3			width: calc(anchor-size(--foo width) * 2)	width
+anchor-size.4			width: anchor-size(--foo self-inline, 10px)	width
+calc-size.1			width: calc-size(auto, size)	width
+calc-size.2			width: calc-size(auto, size + 10px)	width
+calc-size.3			width: calc-size(50px, size * 2)	width
+calc-size.4			width: calc-size(min-content, size)	width
+calc-size.5			width: calc-size(any, 10px)	width
+env.1			width: env(safe-area-inset-top ())	width
+env.2			width: env(safe-area-inset-top, 10px)	width
+env.3			width: calc(env(safe-area-inset-top) + 1px)	width
+random.1			width: random(10px, 20px)	width
+random.2			width: random-item(--x, 1px, 2px)	width
+random.3			width: calc(random(1px, 2px) * 2)	width
+line-clamp.1			line-clamp: none	line-clamp,max-lines
+line-clamp.2			line-clamp: 3	line-clamp,max-lines
+line-clamp.3			line-clamp: auto	line-clamp,max-lines
+line-clamp.4			line-clamp: 3 "x"	line-clamp,max-lines
+line-clamp.5			line-clamp: none 4	line-clamp,max-lines
+line-clamp.6			line-clamp: -webkit-legacy	line-clamp,max-lines
+line-clamp.7			line-clamp: calc(3)	line-clamp,max-lines
+line-clamp.8			line-clamp: calc(1 + 2)	line-clamp,max-lines
+line-clamp.9			line-clamp: 3 "..."	line-clamp,max-lines
+grid-row.1			grid-row-start: calc(3)	grid-row-start
+grid-row.2			grid-row-start: calc(10)	grid-row-start
+grid-row.3			grid-row-start: calc(-2)	grid-row-start
+grid-row.4			grid-row-start: calc(0)	grid-row-start
+grid-row.5			grid-row-start: span calc(2)	grid-row-start
+grid-row.6			grid-row-start: span calc(-1)	grid-row-start
+grid-row.7			grid-row-start: calc(3) foo	grid-row-start
+grid-row.8			grid-row-start: calc(2 + 1)	grid-row-start
+grid-row.9			grid-row-start: calc(1.5)	grid-row-start
+grid-row.10			grid-row-start: calc(2.5) foo	grid-row-start
+will-change.1			will-change: auto, transform	will-change
+will-change.2			will-change: transform, auto	will-change
+will-change.3			will-change: scroll-position	will-change
+will-change.4			will-change: contents, opacity	will-change
+will-change.5			will-change: transform, scroll-position	will-change
+will-change.6			will-change: auto	will-change
+will-change.7			will-change: will-change	will-change
+image-orientation.1			image-orientation: 0deg flip	image-orientation
+image-orientation.2			image-orientation: flip	image-orientation
+image-orientation.3			image-orientation: from-image	image-orientation
+image-orientation.4			image-orientation: none	image-orientation
+image-orientation.5			image-orientation: 90deg	image-orientation
+image-orientation.6			image-orientation: 90deg flip	image-orientation
+image-orientation.7			image-orientation: from-image flip	image-orientation
+image-orientation.8			image-orientation: flip 90deg	image-orientation
+image-orientation.9			image-orientation: 0deg	image-orientation
+image-orientation.10			image-orientation: 360deg	image-orientation
+image-orientation.11			image-orientation: calc(90deg + 90deg)	image-orientation
+image-orientation.12			image-orientation: calc(1turn)	image-orientation
+image-orientation.13			image-orientation: 0.25turn	image-orientation
+container-name.1			container-name: not	container-name
+container-name.2			container-name: none	container-name
+container-name.3			container-name: a b	container-name
+container-name.4			container-name: a not	container-name
+container-name.5			container-name: not a	container-name
+container-name.6			container-name: foo and bar	container-name
+container-name.7			container-name: a, b	container-name
+color-scheme.1			color-scheme: only normal	color-scheme
+color-scheme.2			color-scheme: normal	color-scheme
+color-scheme.3			color-scheme: dark	color-scheme
+color-scheme.4			color-scheme: light dark	color-scheme
+color-scheme.5			color-scheme: only dark	color-scheme
+color-scheme.6			color-scheme: dark only	color-scheme
+color-scheme.7			color-scheme: only light dark	color-scheme
+color-scheme.8			color-scheme: normal dark	color-scheme
+color-scheme.9			color-scheme: only	color-scheme
+font-family.1			font-family: cursive serif	font-family
+font-family.2			font-family: serif cursive	font-family
+font-family.3			font-family: cursive, serif	font-family
+font-family.4			font-family: sans-serif sans-serif	font-family
+font-family.5			font-family: 'a' b	font-family
+font-family.6			font-family: a b	font-family
+font-family.7			font-family: a 1	font-family
+font-family.8			font-family: "a", b	font-family
+sc.1			scroll-snap-type: x mandatory	scroll-snap-type
+sc.2			scroll-snap-type: none	scroll-snap-type
+sc.3			scroll-snap-type: block proximity	scroll-snap-type
+sc.4			scroll-snap-type: both	scroll-snap-type
+sc.5			scroll-snap-type: inline	scroll-snap-type
+page-scheme.1	dark	color-scheme: dark	color-scheme: normal; color: light-dark(red, blue)	color,color-scheme
+page-scheme.2	dark	color-scheme: dark	color: light-dark(red, blue)	color,color-scheme
