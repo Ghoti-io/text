@@ -1499,6 +1499,42 @@ static GTEXT_CSS_Status build_axis(css_state * st, ab * a, const GTEXT_CSS_Value
   return root ? build_items(st, a, m, root, axis_item, out_root) : GTEXT_CSS_OK;
 }
 
+/// One item of a computed `background-position-x` (an origin keyword and an offset) as the offset from the start edge alone: the form the shorthand's computed value holds.
+static GTEXT_CSS_Status axis_offset_item(css_state * st, ab * a, const css_pmeta * m, const GTEXT_CSS_Value * item, GTEXT_CSS_Value * out, bool * keep) {
+  (void)m;
+  if (item->kind != GTEXT_CSS_VAL_LIST || item->child_count != 2 || item->children[0].kind != GTEXT_CSS_VAL_KEYWORD) {
+    *keep = true;
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Value * edge = &item->children[0];
+  const bool far = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");
+  return axis_value(st, a, far ? 1 : 0, &item->children[1], out);
+}
+
+GTEXT_CSS_Status css_algo_axis_offsets(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
+  css_state st;
+  memset(&st, 0, sizeof st);
+  st.cc = cc;
+  st.env = &cc->env;
+  st.status = GTEXT_CSS_OK;
+  const GTEXT_CSS_Value * root = gtext_css_value_set_root(src);
+  if (!root) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  ab a;
+  GTEXT_CSS_Status s = ab_open(&a, &st);
+  if (s != GTEXT_CSS_OK) {
+    return s;
+  }
+  GTEXT_CSS_Value * nroot = NULL;
+  s = build_items(&st, &a, NULL, root, axis_offset_item, &nroot);
+  if (s != GTEXT_CSS_OK) {
+    css_vb_abort(&a.vb);
+    return s;
+  }
+  return ab_close(&a, nroot, src, NULL, out);
+}
+
 /* ---- sizes, repeats, lists of four -------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status size_item(css_state * st, ab * a, const css_pmeta * m, const GTEXT_CSS_Value * item, GTEXT_CSS_Value * out, bool * keep) {

@@ -340,6 +340,19 @@ static bool texteq(const char * a, const char * b) {
   return a && b && strcmp(a, b) == 0;
 }
 
+/// The keyword of a `font-width` value: itself where it is one, or the keyword that names the percentage (Fonts 4: "normal" 100%, "semi-condensed" 87.5%, ...); NULL for a
+/// percentage that no keyword names. The `font` shorthand takes the keywords only, so a longhand of `font-width: 100%` is written `normal` in it.
+static const char * font_width_keyword(const char * t) {
+  static const char * const pairs[][2] = {{"ultra-condensed", "50%"}, {"extra-condensed", "62.5%"}, {"condensed", "75%"}, {"semi-condensed", "87.5%"},
+      {"normal", "100%"}, {"semi-expanded", "112.5%"}, {"expanded", "125%"}, {"extra-expanded", "150%"}, {"ultra-expanded", "200%"}};
+  for (size_t i = 0; t && i < sizeof pairs / sizeof pairs[0]; i++) {
+    if (strcmp(t, pairs[i][0]) == 0 || strcmp(t, pairs[i][1]) == 0) {
+      return pairs[i][0];
+    }
+  }
+  return NULL;
+}
+
 /// A longhand of a shorthand, as the text of its value: a leaf's, or a nested shorthand's.
 typedef struct {
   GTEXT_CSS_Property_Id id;
@@ -1506,7 +1519,7 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
       ok = false;
     }
   }
-  if (ok && (!size || !family)) {
+  if (ok && (!size || !family || (width && !font_width_keyword(width)))) {
     ok = false;
   }
   tbuf buf;
@@ -1521,14 +1534,14 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
       tb_puts(&buf, any ? " small-caps" : "small-caps");
       any = true;
     }
-    if (weight && !texteq(weight, "normal")) {
+    if (weight && !texteq(weight, "normal") && !texteq(weight, "400")) {
       tb_puts(&buf, any ? " " : "");
       tb_puts(&buf, weight);
       any = true;
     }
-    if (width && !texteq(width, "normal")) {
+    if (width && !texteq(font_width_keyword(width), "normal")) {
       tb_puts(&buf, any ? " " : "");
-      tb_puts(&buf, width);
+      tb_puts(&buf, font_width_keyword(width));
       any = true;
     }
     tb_puts(&buf, any ? " " : "");
@@ -1643,6 +1656,15 @@ static bool text_says_the_longhands(sctx * c, GTEXT_CSS_Property_Id sh, const ch
     }
     else {
       same = strcmp(want, got) == 0;
+      /* `normal` is the weight 400, which a computed value is */
+      if (!same && nm(c, leaves[i], "font-weight")) {
+        same = (texteq(want, "normal") || texteq(want, "400")) && (texteq(got, "normal") || texteq(got, "400"));
+      }
+      /* `font-width` has a keyword for some percentages, and the `font` shorthand can say only the keyword */
+      if (!same && nm(c, leaves[i], "font-width")) {
+        const char * kw = font_width_keyword(want);
+        same = kw && texteq(kw, font_width_keyword(got));
+      }
       /* `normal` is the whole range, which the end `100%` and the start `0%` say as well: the shorthand's one value for a start with no range name
          is both (web-platform-tests: `animation-range: 0% 100%` is `0%`) */
       if (!same && ((nm(c, leaves[i], "animation-range-end") && strcmp(want, "100%") == 0 && strcmp(got, "normal") == 0) ||

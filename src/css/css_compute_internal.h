@@ -291,6 +291,10 @@ const GTEXT_CSS_Value_Set * css_st_get(css_state * st, GTEXT_CSS_Property_Id id)
 GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st);
 /// A computed value that is one keyword (css_compute_algo.c).
 GTEXT_CSS_Status css_algo_emit_keyword(css_state * st, const char * word, GTEXT_CSS_Value_Set ** out);
+
+/// The offsets alone of a computed `background-position-x` or `-y` (each item an origin keyword and an offset), from the start edge: `right 10px` is `calc(100% - 10px)`, `right 11%` is `89%`.
+/// The pairs of offsets are the computed value of the `background-position` shorthand (Backgrounds 4, 2.7). `out` is a new set.
+GTEXT_CSS_Status css_algo_axis_offsets(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out);
 /// The root of that value, or NULL.
 const GTEXT_CSS_Value * css_st_root(css_state * st, GTEXT_CSS_Property_Id id);
 /// The same for the parent's style (or the initial value when there is no parent).

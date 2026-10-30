@@ -19,3 +19,6 @@ image-default-size-kept	css_shape_compute.c	    const bool default_size = nsize 
 image-double-stop-kept	css_shape_compute.c	  if (!t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {	  if (0 && !t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {
 filter-percent-kept	css_shape_compute.c	    m /= 100.0;	    m /= 1.0;
 filter-default-kept	css_shape_compute.c	      if (t.n == 0 || amount_value(t.v[0], &v)) {	      if (t.n != 0 && amount_value(t.v[0], &v)) {
+position-edge-kept	css_compute_algo.c	const bool far = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");	const bool far = false;
+position-x-kept	css_computed_shorthand.c	(li.name_length == 21 && memcmp(li.name, "background-position-x", 21) == 0)	(li.name_length == 21 && memcmp(li.name, "background-position-q", 21) == 0)
+shorthand-resets-skipped	css_computed_shorthand.c	for (size_t i = 0; i < info.longhand_count + info.reset_longhand_count; i++) {	for (size_t i = 0; i < info.longhand_count; i++) {

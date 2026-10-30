@@ -18,7 +18,7 @@
 
 // The computed value of a property as the CSSOM resolves it, for the two programs that compare this library with a browser's `getComputedStyle()`
 // (tools/oracle/css_style_ours.cpp, tools/conformance/css_computed_suite.cpp): a value serialized, a color written as the browsers write a resolved one, and a
-// shorthand written from the computed values of its longhands. Header only.
+// shorthand written from the computed values of its longhands (gtext_css_computed_shorthand_text()). Header only.
 
 #ifndef GHOTI_IO_GTEXT_TOOLS_CSS_RESOLVED_H
 #define GHOTI_IO_GTEXT_TOOLS_CSS_RESOLVED_H
@@ -193,40 +193,15 @@ inline GTEXT_CSS_Status read(const GTEXT_CSS_Registry * registry, const GTEXT_CS
     *out = text;
     return GTEXT_CSS_OK;
   }
-  GTEXT_CSS_Declaration_Block * block = nullptr;
-  GTEXT_CSS_Status st = gtext_css_block_new(registry, nullptr, &block);
-  if (st != GTEXT_CSS_OK) {
-    return st;
-  }
-  for (size_t i = 0;; i++) {
-    const GTEXT_CSS_Property_Id lh = gtext_css_registry_longhand(registry, target, i);
-    if (!lh) {
-      break;
-    }
-    GTEXT_CSS_Property_Info li;
-    gtext_css_registry_property_info(registry, lh, &li);
-    std::string text;
-    st = read(registry, style, lh, &text, result);
-    if (st != GTEXT_CSS_OK) {
-      gtext_css_block_free(block);
-      return st;
-    }
-    GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
-    st = gtext_css_block_add_text(block, li.name, li.name_length, text.data(), text.size(), false, nullptr, &outcome, nullptr);
-    if (st != GTEXT_CSS_OK) {
-      gtext_css_block_free(block);
-      return st;
-    }
-  }
   char * buf = nullptr;
   size_t n = 0;
-  st = gtext_css_block_shorthand_value(block, target, &buf, &n, nullptr);
-  gtext_css_block_free(block);
+  const GTEXT_CSS_Status st = gtext_css_computed_shorthand_text(style, target, &buf, &n, result);
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  out->assign(buf, n);
+  std::string text(buf, n);
   gtext_css_serialize_buffer_free(nullptr, buf);
+  *out = resolved(std::string(t.name, t.name_length), nullptr, text);
   return GTEXT_CSS_OK;
 }
 

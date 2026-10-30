@@ -205,6 +205,27 @@ GTEXT_API size_t gtext_css_computed_diagnostic_total(const GTEXT_CSS_Computed_St
 /** @brief The `index`th kept diagnostic, in the order of the drops (presentation attributes, the `style` attribute, then the entries); false past the end. */
 GTEXT_API bool gtext_css_computed_diagnostic(const GTEXT_CSS_Computed_Style * style, size_t index, GTEXT_CSS_Style_Diagnostic * out);
 
+/**
+ * @brief A shorthand written from the computed values of its longhands: what CSSOM's `getComputedStyle(element).getPropertyValue(shorthand)` answers.
+ *
+ * Every longhand under the shorthand (the properties it resets included, nested shorthands expanded) is read from the style, written as its computed
+ * value, and put in a declaration block, which writes the shorthand by the rules of gtext_css_block_shorthand_value(): the shortest text that reads
+ * back to the same longhands, a value omitted where it is the initial one, and the empty text where the longhands do not form a value of the
+ * shorthand (the layers of a longhand differ in number from the others', or a keyword of one forbids a value of another).
+ * Colors are written as the style holds them; a caller that wants `rgb()` for a resolved color converts the text.
+ *
+ * @param style The style. Not NULL.
+ * @param shorthand A shorthand of the style's registry (an alias is followed).
+ * @param out Receives the text in a new buffer, NUL-terminated; release it with gtext_css_serialize_buffer_free() with NULL options. The empty string where
+ *   no text exists. Written only on success. Not NULL.
+ * @param out_length Receives its length. Not NULL.
+ * @param result NULL, or filled: for GTEXT_CSS_E_UNSUPPORTED its `name` is the longhand the engine cannot compute.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a NULL argument, or a property that is not a shorthand); GTEXT_CSS_E_UNSUPPORTED (a longhand the engine cannot compute, or a
+ *   shorthand with no rule for writing it); GTEXT_CSS_E_OOM; GTEXT_CSS_E_LIMIT_OUTPUT.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_computed_shorthand_text(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id shorthand, char ** out,
+    size_t * out_length, GTEXT_CSS_Compute_Result * result);
+
 #ifdef __cplusplus
 }
 #endif

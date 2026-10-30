@@ -278,6 +278,19 @@ opacity: 0.75
 font-size: 30px
 ```
 
+### A shorthand from the computed values
+
+`getComputedStyle(element).getPropertyValue("mask")` asks a computed style for a **shorthand**. `gtext_css_computed_shorthand_text()` answers it: it reads every
+longhand under the shorthand (the properties it resets included, nested shorthands expanded), puts their computed values in a declaration block, and writes the
+shorthand by the rules of `gtext_css_block_shorthand_value()`: the shortest text that reads back to the same longhands, a value left out where it is the initial
+one, and the **empty text** where the longhands do not form a value of the shorthand (a property that has no way to say a value, or layers that differ in number).
+The text is a fixed point: declared again as the shorthand, it computes to the same longhands. Colors are written as the style holds them.
+
+`background-position` is the one shorthand whose computed value is not the list of its longhands'. Backgrounds 4 gives its longhands an origin keyword
+(`background-position-x: right 10px`) and the shorthand "a list, each item a pair of offsets (horizontal and vertical) from the top left origin", and Values 4
+says that "computed values are always serialized as two offsets (without keywords)". The text of the shorthand therefore has the keyword folded into the
+offset: `right 11% bottom` is `89% 100%` and `top 17px right -18px` is `calc(100% + 18px) 17px`, while `background-position-x` stays `right 11%`.
+
 ## The dump and the hash
 
 `gtext_css_computed_dump()` writes the style as canonical text: a first line `css-computed 2` (`GTEXT_CSS_COMPUTED_DUMP_VERSION`, which changes with any
