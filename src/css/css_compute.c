@@ -520,6 +520,7 @@ static const struct { int slot; const char * name; } well_known[] = {
   {CSS_P_LINE_HEIGHT, "line-height"}, {CSS_P_FLOAT, "float"}, {CSS_P_POSITION, "position"}, {CSS_P_DISPLAY, "display"},
   {CSS_P_COLOR, "color"}, {CSS_P_MATH_DEPTH, "math-depth"}, {CSS_P_MATH_STYLE, "math-style"}, {CSS_P_TEXT_ALIGN_ALL, "text-align-all"},
   {CSS_P_ALL, "all"}, {CSS_P_UNICODE_BIDI, "unicode-bidi"}, {CSS_P_COLOR_SCHEME, "color-scheme"}, {CSS_P_CUSTOM, "--*"},
+  {CSS_P_OVERFLOW_X, "overflow-x"}, {CSS_P_OVERFLOW_Y, "overflow-y"},
 };
 
 /// The property of a name, 0 if there is none.
@@ -1824,6 +1825,47 @@ static void root_fill(css_state * st, bool after_line_height) {
 
 /* ---- the pipeline -------------------------------------------------------------------------------------- */
 
+/* Overflow 3: "a specified value of visible computes to auto" in an axis when the other axis is scrollable (hidden, scroll or auto; clip is not scrollable). Both axes
+   read the specified values, so the answer does not depend on the order they were computed in; a logical member (overflow-block, overflow-inline) that shares the set of the
+   axis it maps to takes the same value. */
+static bool overflow_scrollable(const GTEXT_CSS_Value * v) {
+  return css_val_is_keyword(v, "hidden") || css_val_is_keyword(v, "scroll") || css_val_is_keyword(v, "auto");
+}
+
+static GTEXT_CSS_Status overflow_fixup(css_state * st) {
+  const GTEXT_CSS_Compute_Context * cc = st->cc;
+  const GTEXT_CSS_Property_Id x = cc->pid[CSS_P_OVERFLOW_X], y = cc->pid[CSS_P_OVERFLOW_Y];
+  if (!x || !y || !st->done[x - 1] || !st->done[y - 1]) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value_Set * const ox = st->style->vals[x - 1];
+  GTEXT_CSS_Value_Set * const oy = st->style->vals[y - 1];
+  const GTEXT_CSS_Value * vx = gtext_css_value_set_root(ox);
+  const GTEXT_CSS_Value * vy = gtext_css_value_set_root(oy);
+  const bool fix_x = css_val_is_keyword(vx, "visible") && overflow_scrollable(vy);
+  const bool fix_y = css_val_is_keyword(vy, "visible") && overflow_scrollable(vx);
+  if (!fix_x && !fix_y) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value_Set * auto_set = NULL;
+  GTEXT_CSS_Status status = css_algo_emit_keyword(st, "auto", &auto_set);
+  if (status != GTEXT_CSS_OK) {
+    return status;
+  }
+  const css_pmeta * m = &cc->meta[x - 1];
+  const size_t n = m->group >= 0 ? cc->groups[m->group].nmembers : 2;
+  for (size_t k = 0; k < n; k++) {
+    const GTEXT_CSS_Property_Id id = m->group >= 0 ? cc->groups[m->group].members[k] : (k == 0 ? x : y);
+    GTEXT_CSS_Value_Set * const cur = st->style->vals[id - 1];
+    if ((fix_x && cur == ox) || (fix_y && cur == oy)) {
+      st->style->vals[id - 1] = gtext_css_value_set_retain(auto_set);
+      gtext_css_value_set_free(cur);
+    }
+  }
+  gtext_css_value_set_free(auto_set);
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status run_pipeline(css_state * st) {
   const GTEXT_CSS_Compute_Context * cc = st->cc;
   GTEXT_CSS_Computed_Style * style = st->style;
@@ -1883,7 +1925,7 @@ static GTEXT_CSS_Status run_pipeline(css_state * st) {
       return status;
     }
   }
-  return GTEXT_CSS_OK;
+  return overflow_fixup(st);
 }
 
 /* ---- computing ---------------------------------------------------------------------------------------- */

@@ -128,7 +128,7 @@ void css_v_function(css_vb * vb, GTEXT_CSS_Value * v, const char * name, const G
 enum {
   CSS_P_WRITING_MODE = 0, CSS_P_DIRECTION, CSS_P_TEXT_ORIENTATION, CSS_P_FONT_FAMILY, CSS_P_FONT_STYLE, CSS_P_FONT_WEIGHT,
   CSS_P_FONT_WIDTH, CSS_P_FONT_SIZE, CSS_P_FONT_SIZE_ADJUST, CSS_P_LINE_HEIGHT, CSS_P_FLOAT, CSS_P_POSITION, CSS_P_DISPLAY,
-  CSS_P_COLOR, CSS_P_MATH_DEPTH, CSS_P_MATH_STYLE, CSS_P_TEXT_ALIGN_ALL, CSS_P_ALL, CSS_P_UNICODE_BIDI, CSS_P_COLOR_SCHEME, CSS_P_CUSTOM,
+  CSS_P_COLOR, CSS_P_MATH_DEPTH, CSS_P_MATH_STYLE, CSS_P_TEXT_ALIGN_ALL, CSS_P_ALL, CSS_P_UNICODE_BIDI, CSS_P_COLOR_SCHEME, CSS_P_CUSTOM, CSS_P_OVERFLOW_X, CSS_P_OVERFLOW_Y,
   CSS_P_COUNT
 };
 
@@ -288,6 +288,8 @@ const GTEXT_CSS_Value_Set * css_st_get(css_state * st, GTEXT_CSS_Property_Id id)
 
 /// The color scheme the element uses (CSS Color Adjust 1, 2.3 "To determine the used color scheme"): its computed `color-scheme` and the environment's preference.
 GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st);
+/// A computed value that is one keyword (css_compute_algo.c).
+GTEXT_CSS_Status css_algo_emit_keyword(css_state * st, const char * word, GTEXT_CSS_Value_Set ** out);
 /// The root of that value, or NULL.
 const GTEXT_CSS_Value * css_st_root(css_state * st, GTEXT_CSS_Property_Id id);
 /// The same for the parent's style (or the initial value when there is no parent).

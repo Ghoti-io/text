@@ -36,6 +36,10 @@
 
 #include "css_compute_internal.h"
 
+static GTEXT_CSS_Status emit_keyword(css_state * st, const char * word, GTEXT_CSS_Value_Set ** out) {
+  return css_algo_emit_keyword(st, word, out);
+}
+
 /* ---- building -------------------------------------------------------------------------------------------- */
 
 typedef struct {
@@ -73,7 +77,7 @@ static GTEXT_CSS_Status bytype(css_state * st, GTEXT_CSS_Property_Id id, const G
 }
 
 /// A set holding one keyword.
-static GTEXT_CSS_Status emit_keyword(css_state * st, const char * word, GTEXT_CSS_Value_Set ** out) {
+GTEXT_CSS_Status css_algo_emit_keyword(css_state * st, const char * word, GTEXT_CSS_Value_Set ** out) {
   ab a;
   GTEXT_CSS_Status s = ab_open(&a, st);
   if (s != GTEXT_CSS_OK) {

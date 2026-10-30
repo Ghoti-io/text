@@ -11,3 +11,4 @@ caret-auto-kept	css_compute_algo.c	root->child_count != 2 || !kw(&root->children
 ratio-calculation-kept	css_compute_value.c	return (v->flags & GTEXT_CSS_VFLAG_MATH) && v->child_count == 2;	return false;
 range-union-first-only	css_compute_algo.c	if (!src->range_set || src->range_set_count == 0) {	if (1) {
 alias-kept	css_compute_algo.c	    return "flow-start";	    return "flex-start";
+overflow-visible-kept	css_compute.c	  const bool fix_x = css_val_is_keyword(vx, "visible") && overflow_scrollable(vy);	  const bool fix_x = false && overflow_scrollable(vy);

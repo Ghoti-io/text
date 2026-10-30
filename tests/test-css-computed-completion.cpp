@@ -204,4 +204,29 @@ TEST(CssComputedCompletionAlignment, TheLegacyKeywordsAreTheirFlowAliases) {
   EXPECT_EQ(root_computed("align-content: flow-middle", "align-content"), "normal");
 }
 
+/* Overflow 3: "The visible and clip values are known as the non-scrollable values." and "a specified value of visible computes to auto, enabling scrolling in its axis", when the
+   other axis is scrollable. clip does not make the other axis scrollable and is not changed. */
+TEST(CssComputedCompletionOverflow, VisibleBesideAScrollableAxisIsAuto) {
+  struct Row {
+    const char * x;
+    const char * y;
+    const char * cx;
+    const char * cy;
+  };
+  for (const Row & r : std::vector<Row>{{"hidden", "visible", "hidden", "auto"}, {"scroll", "visible", "scroll", "auto"}, {"visible", "auto", "auto", "auto"},
+           {"visible", "hidden", "auto", "hidden"}, {"visible", "scroll", "auto", "scroll"}, {"auto", "visible", "auto", "auto"}, {"clip", "visible", "clip", "visible"},
+           {"visible", "clip", "visible", "clip"}, {"clip", "auto", "clip", "auto"}, {"visible", "visible", "visible", "visible"}, {"clip", "clip", "clip", "clip"}}) {
+    const std::string d = std::string("overflow-x: ") + r.x + "; overflow-y: " + r.y;
+    EXPECT_EQ(root_computed(d, "overflow-x"), r.cx) << d;
+    EXPECT_EQ(root_computed(d, "overflow-y"), r.cy) << d;
+  }
+  EXPECT_EQ(root_computed("overflow: hidden visible", "overflow-y"), "auto");
+  EXPECT_EQ(root_computed("overflow-x: scroll", "overflow-y"), "auto") << "the initial value of the other axis is visible";
+  // the logical longhands map to the axes
+  EXPECT_EQ(root_computed("overflow-x: hidden; overflow-block: visible", "overflow-block"), "auto");
+  EXPECT_EQ(root_computed("overflow-y: hidden; overflow-inline: visible", "overflow-inline"), "auto");
+  EXPECT_EQ(root_computed("overflow-y: hidden; overflow-inline: visible", "overflow-x"), "auto");
+  EXPECT_EQ(root_computed("overflow-x: hidden; overflow-inline: visible", "overflow-inline"), "visible") << "the later declaration of the slot decides: both axes are visible";
+}
+
 } // namespace
