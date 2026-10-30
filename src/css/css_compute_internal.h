@@ -334,6 +334,9 @@ bool css_cv_length_px(css_state * st, const GTEXT_CSS_Value * v, double * px);
 
 /* ---- the algorithms (css_compute_algo.c) ----------------------------------------------------------------- */
 
+/// The computed value of a basic shape property (css_shape_compute.c).
+GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const css_pmeta * m, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out);
+
 /// Compute a declared value by the property's algorithm. `src` is the specified value's set (VALID), `*out` the computed value (a new set or
 /// `src` retained). The parent's and the element's earlier values are read through css_st_get().
 GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, const css_pmeta * meta, const GTEXT_CSS_Value_Set * src,

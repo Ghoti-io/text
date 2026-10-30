@@ -34,9 +34,11 @@ border-inline-end-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped 
 border-inline-start-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 border-left-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 border-right-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+border-shape	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-shapes-1/: All <basic-shape-rect> functions compute to the equivalent inset() function.
 border-spacing	algorithm	PAIR_DUP	exact	-	two absolute lengths
 border-top-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 caret-color	algorithm	CARET_COLOR	exact	-	draft:https://drafts.csswg.org/css-ui-4/: If the second value is omitted, the behavior is the same as if auto had been specified.
+clip-path	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-shapes-1/: All <basic-shape-rect> functions compute to the equivalent inset() function.
 color	algorithm	COLOR	exact	-	computed color, see resolving color values
 column-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 column-width	by-type	-	exact	auto	as specified, with <length-percentage> values computed
@@ -76,6 +78,7 @@ mask-repeat	algorithm	REPEAT	exact	-	list, each item a pair of keywords, one per
 math-depth	algorithm	MATH_DEPTH	exact	-	an integer, see below
 object-position	algorithm	POSITION	exact	-	as for background-position
 offset-anchor	algorithm	POSITION	exact	-	the auto keyword or a computed <position>
+offset-path	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-shapes-1/: All <basic-shape-rect> functions compute to the equivalent inset() function.
 offset-position	algorithm	POSITION	exact	-	The normal or auto keywords, or a computed <position>
 opacity	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
 outline-color	by-type	-	partial: the keyword invert and auto are kept as written	-	see below
@@ -86,6 +89,7 @@ rotate	algorithm	ROTATE	exact	-	the keyword none, or an <angle> with an axis con
 row-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 scale	algorithm	SCALE	exact	-	the keyword none, or a list of 3 <number>s
 shape-image-threshold	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
+shape-outside	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-shapes-1/: All <basic-shape-rect> functions compute to the equivalent inset() function.
 stop-color	by-type	-	exact	black	draft:https://www.w3.org/TR/SVG2/pservers.html: stop-color computed value: computed color
 stop-opacity	algorithm	OPACITY	exact	1	draft:https://www.w3.org/TR/SVG2/pservers.html: stop-opacity has the computed value of an opacity, a number clamped to 0 to 1
 stroke-dasharray	algorithm	DASHARRAY	exact	-	draft:https://www.w3.org/TR/SVG2/painting.html: as comma separated list of absolute lengths or percentages, numbers converted to absolute lengths first, or keyword specified

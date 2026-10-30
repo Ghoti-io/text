@@ -313,7 +313,7 @@ property	border-right-color	1	1	1	1
 property	border-right-radius	1	1	1	1	
 property	border-right-style	1	1	1	1	
 property	border-right-width	1	1	1	1	
-property	border-shape	1	1	1	0	
+property	border-shape	1	1	1	1	
 property	border-spacing	1	1	1	1	
 property	border-start-end-radius	1	1	1	0	
 property	border-start-start-radius	1	1	1	0	

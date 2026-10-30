@@ -39,7 +39,7 @@ const size_t gtext_css_tbl_compute_count = 823;
 /* one row for each property of the pin in the order of its ids: class, algorithm, shorthand kind, flags, position in the order of computation (0: none),
    and the initial value override (length, offset into the pool) */
 const css_tbl_compute gtext_css_tbl_compute[823] = {
-  {6, 38, 0, 1, 0, 0, 0}, /* --* */
+  {6, 39, 0, 1, 0, 0, 0}, /* --* */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-content */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-items */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-self */
@@ -240,7 +240,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 7, 0, 0, 0, 0}, /* border-right-radius */
   {1, 0, 0, 0, 13, 0, 0}, /* border-right-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-right-width */
-  {2, 0, 0, 0, 0, 0, 0}, /* border-shape */
+  {3, 38, 0, 0, 0, 0, 0}, /* border-shape */
   {3, 21, 0, 1, 0, 0, 0}, /* border-spacing */
   {2, 0, 0, 0, 0, 0, 0}, /* border-start-end-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-start-start-radius */
@@ -274,7 +274,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* caret-shape */
   {1, 0, 0, 0, 0, 0, 0}, /* clear */
   {1, 0, 0, 0, 0, 0, 0}, /* clip */
-  {2, 0, 0, 1, 0, 0, 0}, /* clip-path */
+  {3, 38, 0, 1, 0, 0, 0}, /* clip-path */
   {1, 0, 0, 1, 0, 0, 0}, /* clip-rule */
   {3, 12, 0, 1, 0, 0, 0}, /* color */
   {4, 0, 5, 0, 0, 0, 0}, /* color-adjust */
@@ -560,7 +560,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 15, 0, 0, 0, 0}, /* offset */
   {3, 24, 0, 0, 0, 0, 0}, /* offset-anchor */
   {2, 0, 0, 0, 0, 0, 0}, /* offset-distance */
-  {1, 0, 0, 0, 0, 0, 0}, /* offset-path */
+  {3, 38, 0, 0, 0, 0, 0}, /* offset-path */
   {3, 24, 0, 0, 0, 0, 0}, /* offset-position */
   {2, 0, 0, 0, 0, 0, 0}, /* offset-rotate */
   {3, 13, 0, 1, 0, 0, 0}, /* opacity */
@@ -717,7 +717,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 13, 0, 0, 0, 0, 0}, /* shape-image-threshold */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-inside */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-margin */
-  {2, 0, 0, 0, 0, 0, 0}, /* shape-outside */
+  {3, 38, 0, 0, 0, 0, 0}, /* shape-outside */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-padding */
   {1, 0, 0, 1, 0, 0, 0}, /* shape-rendering */
   {4, 0, 2, 0, 0, 0, 0}, /* size */

@@ -12,3 +12,6 @@ ratio-calculation-kept	css_compute_value.c	return (v->flags & GTEXT_CSS_VFLAG_MA
 range-union-first-only	css_compute_algo.c	if (!src->range_set || src->range_set_count == 0) {	if (1) {
 alias-kept	css_compute_algo.c	    return "flow-start";	    return "flex-start";
 overflow-visible-kept	css_compute.c	  const bool fix_x = css_val_is_keyword(vx, "visible") && overflow_scrollable(vy);	  const bool fix_x = false && overflow_scrollable(vy);
+shape-rect-kept	css_shape_compute.c	    case 1: return fn_rect(out, inner, false);	    case 1: return false;
+shape-position-kept	css_shape_compute.c	  if (position_pair(&h, &v, t, n) && !h.fail && !v.fail) {	  if (0 && position_pair(&h, &v, t, n) && !h.fail && !v.fail) {
+shape-default-box-kept	css_shape_compute.c	        drop = box_is(tk.v[i], "margin-box");	        drop = false;
