@@ -1689,6 +1689,70 @@ static GTEXT_CSS_Status build_caret_color(css_state * st, ab * a, const GTEXT_CS
   return GTEXT_CSS_OK;
 }
 
+/* Box Alignment 3 (served 2026-10-30), 4.1: "flex-start: A legacy value alias for flow-start" and "flex-end: A legacy value alias for flow-end"; the computed value of the alignment
+   properties is "specified keyword(s)", and the keyword of an alias is the keyword it stands for. */
+static const char * align_alias(const GTEXT_CSS_Value * v) {
+  if (kw(v, "flex-start")) {
+    return "flow-start";
+  }
+  if (kw(v, "flex-end")) {
+    return "flow-end";
+  }
+  return NULL;
+}
+
+static GTEXT_CSS_Status build_align_keyword(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,
+    GTEXT_CSS_Value ** out_root) {
+  (void)st;
+  (void)bt;
+  (void)m;
+  if (!root) {
+    return GTEXT_CSS_OK;
+  }
+  if (root->kind == GTEXT_CSS_VAL_KEYWORD) {
+    const char * to = align_alias(root);
+    if (!to) {
+      return GTEXT_CSS_OK;
+    }
+    GTEXT_CSS_Value * one = css_vb_value(&a->vb);
+    if (!one) {
+      return a->vb.status;
+    }
+    *one = *root;
+    one->atom = 0;
+    css_v_keyword(&a->vb, one, to);
+    *out_root = one;
+    return a->vb.status;
+  }
+  if (root->kind != GTEXT_CSS_VAL_LIST) {
+    return GTEXT_CSS_OK;
+  }
+  bool any = false;
+  for (size_t i = 0; i < root->child_count; i++) {
+    any = any || align_alias(&root->children[i]);
+  }
+  if (!any) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value * kids = css_vb_values(&a->vb, root->child_count);
+  GTEXT_CSS_Value * list = css_vb_value(&a->vb);
+  if (!kids || !list) {
+    return a->vb.status;
+  }
+  memcpy(kids, root->children, root->child_count * sizeof *kids);
+  for (size_t i = 0; i < root->child_count; i++) {
+    const char * to = align_alias(&kids[i]);
+    if (to) {
+      kids[i].atom = 0;
+      css_v_keyword(&a->vb, &kids[i], to);
+    }
+  }
+  *list = *root;
+  list->children = kids;
+  *out_root = list;
+  return a->vb.status;
+}
+
 static size_t dash_count(const GTEXT_CSS_Value * v) {
   if (v->kind != GTEXT_CSS_VAL_LIST) {
     return 1;
@@ -2080,6 +2144,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_WORD_SPACING: return algo_word_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_LETTER_SPACING: return algo_letter_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_CARET_COLOR: return run_build(st, id, src, 0, build_caret_color, m, out);
+  case GTEXT_CSS_ALGO_ALIGN_KEYWORD: return run_build(st, id, src, 0, build_align_keyword, m, out);
   case GTEXT_CSS_ALGO_DASHARRAY: return run_build(st, id, src, CV_NUMBERS_TO_PX, build_dasharray, m, out);
   case GTEXT_CSS_ALGO_NUMBER_LENGTH: return css_cv_by_type_ex(st, src, id, CV_NUMBERS_TO_PX, out);
   default:

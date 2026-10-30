@@ -182,4 +182,26 @@ TEST(CssComputedCompletionEnvironment, AChUnitInAnArgumentTakesTheEnvironmentsMe
   EXPECT_EQ(root_computed("font-size: 20px; text-decoration-inset: 1ch", "text-decoration-inset"), "<not supported ch>") << "no callback: not guessed";
 }
 
+/* Box Alignment 3, 4.1: "flex-start: A legacy value alias for flow-start." and "flex-end: A legacy value alias for flow-end."; <self-position> and <content-position> have
+   flow-start and flow-end. The computed value of the alignment properties is the keyword(s) specified, and an alias is the keyword it stands for. */
+TEST(CssComputedCompletionAlignment, TheLegacyKeywordsAreTheirFlowAliases) {
+  for (const char * p : {"align-content", "justify-content", "align-self", "justify-self", "align-items", "justify-items"}) {
+    const std::string n = p;
+    EXPECT_EQ(root_computed(n + ": flex-start", n), "flow-start") << n;
+    EXPECT_EQ(root_computed(n + ": flex-end", n), "flow-end") << n;
+    EXPECT_EQ(root_computed(n + ": flow-start", n), "flow-start") << n;
+    EXPECT_EQ(root_computed(n + ": flow-end", n), "flow-end") << n;
+    EXPECT_EQ(root_computed(n + ": safe flex-start", n), "safe flow-start") << n;
+    EXPECT_EQ(root_computed(n + ": unsafe flow-end", n), "unsafe flow-end") << n;
+    EXPECT_EQ(root_computed(n + ": unsafe flex-end", n), "unsafe flow-end") << n;
+    EXPECT_EQ(root_computed(n + ": center", n), "center") << n;
+  }
+  EXPECT_EQ(root_computed("place-items: flex-end flex-start", "align-items"), "flow-end");
+  EXPECT_EQ(root_computed("place-items: flex-end flex-start", "justify-items"), "flow-start");
+  EXPECT_EQ(root_computed("place-content: flex-start", "justify-content"), "flow-start");
+  EXPECT_EQ(root_computed("place-self: flow-end", "align-self"), "flow-end");
+  // a keyword nobody defines stays invalid
+  EXPECT_EQ(root_computed("align-content: flow-middle", "align-content"), "normal");
+}
+
 } // namespace

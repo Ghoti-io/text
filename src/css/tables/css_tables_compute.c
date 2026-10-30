@@ -39,7 +39,7 @@ const size_t gtext_css_tbl_compute_count = 823;
 /* one row for each property of the pin in the order of its ids: class, algorithm, shorthand kind, flags, position in the order of computation (0: none),
    and the initial value override (length, offset into the pool) */
 const css_tbl_compute gtext_css_tbl_compute[823] = {
-  {6, 37, 0, 1, 0, 0, 0}, /* --* */
+  {6, 38, 0, 1, 0, 0, 0}, /* --* */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-content */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-items */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-self */
@@ -111,9 +111,9 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-transition-timing-function */
   {0, 0, 0, 0, 0, 0, 0}, /* -webkit-user-select */
   {2, 0, 0, 1, 0, 0, 0}, /* accent-color */
-  {1, 0, 0, 0, 0, 0, 0}, /* align-content */
-  {1, 0, 0, 0, 0, 0, 0}, /* align-items */
-  {1, 0, 0, 0, 0, 0, 0}, /* align-self */
+  {3, 37, 0, 0, 0, 0, 0}, /* align-content */
+  {3, 37, 0, 0, 0, 0, 0}, /* align-items */
+  {3, 37, 0, 0, 0, 0, 0}, /* align-self */
   {1, 0, 0, 1, 0, 0, 0}, /* alignment-baseline */
   {4, 0, 6, 0, 0, 0, 0}, /* all */
   {1, 0, 0, 0, 0, 0, 0}, /* anchor-name */
@@ -480,9 +480,9 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* interest-delay-start */
   {1, 0, 0, 1, 0, 0, 0}, /* interpolate-size */
   {1, 0, 0, 0, 0, 0, 0}, /* isolation */
-  {1, 0, 0, 0, 0, 0, 0}, /* justify-content */
-  {1, 0, 0, 0, 0, 0, 0}, /* justify-items */
-  {1, 0, 0, 0, 0, 0, 0}, /* justify-self */
+  {3, 37, 0, 0, 0, 0, 0}, /* justify-content */
+  {3, 37, 0, 0, 0, 0, 0}, /* justify-items */
+  {3, 37, 0, 0, 0, 0, 0}, /* justify-self */
   {2, 0, 0, 0, 0, 0, 0}, /* left */
   {3, 34, 0, 1, 0, 0, 0}, /* letter-spacing */
   {2, 0, 0, 1, 0, 0, 0}, /* lighting-color */

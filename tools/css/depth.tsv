@@ -553,7 +553,7 @@ property	interest-delay-end	1	1	1	0
 property	interest-delay-start	1	1	1	0	
 property	interpolate-size	1	1	1	1	
 property	isolation	1	1	1	1	
-property	justify-content	1	1	1	0	
+property	justify-content	1	1	1	1	
 property	justify-items	1	1	1	0	
 property	justify-self	1	1	1	0	
 property	left	1	1	1	1	
@@ -690,9 +690,9 @@ property	pause-after	1	1	1	0
 property	pause-before	1	1	1	0	
 property	perspective	1	1	1	1	
 property	perspective-origin	1	1	1	1	
-property	place-content	1	1	1	0	
-property	place-items	1	1	1	0	
-property	place-self	1	1	1	0	
+property	place-content	1	1	1	1	
+property	place-items	1	1	1	1	
+property	place-self	1	1	1	1	
 property	pointer-events	1	1	1	0	
 property	pointer-timeline	1	1	1	0	
 property	pointer-timeline-axis	1	1	1	0	

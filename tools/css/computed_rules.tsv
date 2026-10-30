@@ -14,6 +14,9 @@
 -webkit-box-pack	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
 -webkit-text-stroke-width	algorithm	LINE_WIDTH	exact	-	absolute length
 -webkit-user-select	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
+align-content	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+align-items	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+align-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 background-position-block	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
 background-position-inline	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
 background-position-x	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
@@ -62,6 +65,9 @@ font-width	algorithm	FONT_WIDTH	exact	-	a percentage, see below
 glyph-orientation-vertical	identity	-	partial: kept as written; the aliasing to text-orientation (auto, 0 and 90) is not applied	-	draft:https://www.w3.org/TR/SVG2/text.html: The following SVG 1.1 values must still be supported by aliasing the property as a shorthand to text-orientation
 hyphenate-limit-chars	algorithm	HYPHENATE_CHARS	exact	-	three values, each either the auto keyword or an integer
 image-orientation	algorithm	IMAGE_ORIENTATION	exact	-	the specified keyword, or an <angle>, rounded and normalized (see text), plus optionally a flip keyword
+justify-content	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+justify-items	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+justify-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 letter-spacing	algorithm	LETTER_SPACING	exact	-	draft:https://drafts.csswg.org/css-text-4/: an absolute length and/or a percentage (a zero length is written normal, as the pinned tests of letter-spacing expect)
 lighting-color	by-type	-	exact	-	draft:https://drafts.fxtf.org/filter-effects/: lighting-color computed value: computed color
 line-height	algorithm	LINE_HEIGHT	exact	-	the specified keyword, a number, or a computed <length> value
