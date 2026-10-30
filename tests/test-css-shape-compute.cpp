@@ -202,4 +202,50 @@ TEST(CssShapeCompute, ALongPolygonComputes) {
   EXPECT_NE(got.find("1999px 32000px"), std::string::npos);
 }
 
+// Images 4 (served 2026-10-30), 3.2.2: "<radial-size> = <radial-extent>{1,2} | <length-percentage [0,∞]>{1,2}"; the pinned pages write a gradient without its defaults: the
+// default size (farthest-corner), a centered position, `from 0deg`, a shape that the lengths of the size imply; positions as percentages; a stop with two positions as two stops.
+TEST(CssImageCompute, GradientsDropTheirDefaults) {
+  expect_all({
+      {"background-image", "radial-gradient(farthest-corner, red, blue)", "radial-gradient(red, blue)"},
+      {"background-image", "radial-gradient(farthest-corner at center, red, blue)", "radial-gradient(red, blue)"},
+      {"background-image", "radial-gradient(farthest-corner at 10px 10px, red, blue)", "radial-gradient(at 10px 10px, red, blue)"},
+      {"background-image", "radial-gradient(circle at center, red, blue)", "radial-gradient(circle, red, blue)"},
+      {"background-image", "radial-gradient(circle 10px at 20px 30px, red, blue)", "radial-gradient(10px at 20px 30px, red, blue)"},
+      {"background-image", "radial-gradient(ellipse 10px 20px, red, blue)", "radial-gradient(10px 20px, red, blue)"},
+      {"background-image", "radial-gradient(closest-side, red, blue)", "radial-gradient(closest-side, red, blue)"},
+      {"background-image", "conic-gradient(from 0deg at 50% 50%, red, gold)", "conic-gradient(red, gold)"},
+      {"background-image", "conic-gradient(from 45deg at center, red, blue)", "conic-gradient(from 45deg, red, blue)"},
+      {"background-image", "conic-gradient(from 0deg at 10px 10px, red, blue)", "conic-gradient(at 10px 10px, red, blue)"},
+      {"background-image", "repeating-conic-gradient(from 0deg at center, red, gold)", "repeating-conic-gradient(red, gold)"},
+      {"mask-image", "radial-gradient(at center, red, blue)", "radial-gradient(red, blue)"},
+      {"list-style-image", "linear-gradient(to top right, red, blue)", "linear-gradient(to right top, red, blue)"},
+  });
+}
+
+TEST(CssImageCompute, GradientPositionsArePercentages) {
+  expect_all({
+      {"background-image", "radial-gradient(at left, red, blue)", "radial-gradient(at 0% 50%, red, blue)"},
+      {"background-image", "radial-gradient(at 10%, red, blue)", "radial-gradient(at 10% 50%, red, blue)"},
+      {"background-image", "radial-gradient(at bottom 10% right 20%, red, blue)", "radial-gradient(at 80% 90%, red, blue)"},
+      {"background-image", "conic-gradient(at right 10px top 20px, red, blue)", "conic-gradient(at calc(100% - 10px) 20px, red, blue)"},
+      {"background-image", "conic-gradient(at 70px, red, blue)", "conic-gradient(at 70px 50%, red, blue)"},
+      {"background-image", "radial-gradient(at 40px top, red, blue)", "radial-gradient(at 40px 0%, red, blue)"},
+  });
+}
+
+TEST(CssImageCompute, AStopWithTwoPositionsIsTwoStops) {
+  expect_all({
+      {"background-image", "linear-gradient(black 0% 0.5em, white)", "linear-gradient(black 0%, black 8px, white)"},
+      {"background-image", "radial-gradient(black 0% 0.5em, 25%, green 30% 60%, white)",
+          "radial-gradient(black 0%, black 8px, 25%, green 30%, green 60%, white)"},
+  });
+}
+
+TEST(CssImageCompute, ListsAndOtherImagesAreKept) {
+  expect_all({
+      {"background-image", "url(a.png), radial-gradient(at center, red, blue), none", "url(\"a.png\"), radial-gradient(red, blue), none"},
+      {"background-image", "linear-gradient(red, blue)", "linear-gradient(red, blue)"},
+  });
+}
+
 } // namespace

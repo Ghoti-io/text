@@ -702,12 +702,168 @@ static bool fn_shape(sb * out, span inner) {
   return done;
 }
 
+
+/* ---- gradients (Images 4) ---------------------------------------------------------------------------------------- */
+
+/// Whether a token is a length, a percentage, an angle or a calculation (not a color): what can be a color stop's position or a hint.
+static bool is_quantity(span s) {
+  if (!s.n) {
+    return false;
+  }
+  const char c = s.p[0];
+  return (c >= '0' && c <= '9') || c == '.' || c == '+' || c == '-' || starts_fn(s, "calc") || starts_fn(s, "min") || starts_fn(s, "max") || starts_fn(s, "clamp");
+}
+
+/// Whether the first argument of a gradient is its configuration (shape, size, position, direction, interpolation) and not a color stop.
+static bool is_gradient_config(span arg) {
+  size_t i = 0;
+  while (i < arg.n && !is_ws(arg.p[i])) {
+    i++;
+  }
+  const span first = {arg.p, i};
+  if (is_quantity(first)) {
+    return true;
+  }
+  return eq(first, "circle") || eq(first, "ellipse") || eq(first, "at") || eq(first, "from") || eq(first, "in") || eq(first, "to") || is_extent(first);
+}
+
+/// A color stop, or two when it has two positions (Images 4: `<color> <length-percentage>{2}` is two stops).
+static void put_stop(sb * out, span arg) {
+  spv t = {out->a, NULL, 0, 0, false};
+  split_top(&t, arg, ' ');
+  if (!t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {
+    put_span(out, t.v[0]);
+    sb_putc(out, ' ');
+    put_span(out, t.v[1]);
+    sb_puts(out, ", ");
+    put_span(out, t.v[0]);
+    sb_putc(out, ' ');
+    put_span(out, t.v[2]);
+  }
+  else {
+    put_span(out, arg);
+  }
+  out->fail = out->fail || t.fail;
+  gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+}
+
+/// The configuration of a radial or conic gradient: a shape or size that is implied by the other is not written, nor a center position, nor `from 0deg`.
+static void gradient_config(sb * out, span cfg, bool conic) {
+  spv t = {out->a, NULL, 0, 0, false};
+  split_top(&t, cfg, ' ');
+  size_t at = t.n, in = t.n;
+  for (size_t i = 0; i < t.n; i++) {
+    if (at == t.n && eq(t.v[i], "at")) {
+      at = i;
+    }
+    if (in == t.n && eq(t.v[i], "in")) {
+      in = i;
+    }
+  }
+  const size_t head_end = at < in ? at : in;
+  sb parts = {out->a, NULL, 0, 0, false};
+  if (conic) {
+    /* `from <angle>` */
+    if (head_end >= 2 && eq(t.v[0], "from") && !eq(t.v[1], "0deg")) {
+      sb_puts(&parts, "from ");
+      put_span(&parts, t.v[1]);
+    }
+  }
+  else {
+    span shape = {NULL, 0};
+    size_t first_size = 0;
+    if (head_end > 0 && (eq(t.v[0], "circle") || eq(t.v[0], "ellipse"))) {
+      shape = t.v[0];
+      first_size = 1;
+    }
+    const size_t nsize = head_end - first_size;
+    bool lengths = nsize > 0;
+    for (size_t i = first_size; i < head_end; i++) {
+      lengths = lengths && is_quantity(t.v[i]);
+    }
+    const bool default_size = nsize == 1 && eq(t.v[first_size], "farthest-corner");
+    /* a circle of one length and an ellipse of two are what the lengths say */
+    const bool shape_implied = lengths && ((eq(shape, "circle") && nsize == 1) || (eq(shape, "ellipse") && nsize == 2));
+    if (shape.p && !shape_implied) {
+      put_span(&parts, shape);
+    }
+    if (nsize && !default_size) {
+      if (parts.n) {
+        sb_putc(&parts, ' ');
+      }
+      put_tokens(&parts, t.v + first_size, nsize);
+    }
+  }
+  if (at < t.n) {
+    const size_t pend = in > at ? in : t.n;
+    sb pos = {out->a, NULL, 0, 0, false};
+    put_position(&pos, t.v + at + 1, pend - at - 1);
+    if (!(pos.n == 7 && memcmp(pos.d, "50% 50%", 7) == 0)) {
+      if (parts.n) {
+        sb_putc(&parts, ' ');
+      }
+      sb_puts(&parts, "at ");
+      sb_put(&parts, pos.d, pos.n);
+    }
+    parts.fail = parts.fail || pos.fail;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, pos.d);
+  }
+  if (in < t.n) {
+    if (parts.n) {
+      sb_putc(&parts, ' ');
+    }
+    put_tokens(&parts, t.v + in, t.n - in);
+  }
+  sb_put(out, parts.d, parts.n);
+  out->fail = out->fail || t.fail || parts.fail;
+  gtext_allocator_free((GTEXT_Allocator *)out->a, parts.d);
+  gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+}
+
+static bool fn_gradient(sb * out, const char * name, span inner, int kind) {
+  spv args = {out->a, NULL, 0, 0, false};
+  split_top(&args, inner, ',');
+  bool done = false;
+  if (!args.fail && args.n >= 2) {
+    sb body = {out->a, NULL, 0, 0, false};
+    size_t first_stop = 0;
+    if (is_gradient_config(args.v[0])) {
+      first_stop = 1;
+      if (kind == 0) {
+        put_span(&body, args.v[0]);
+      }
+      else {
+        gradient_config(&body, args.v[0], kind == 2);
+      }
+    }
+    sb_puts(out, name);
+    sb_putc(out, '(');
+    bool wrote = body.n > 0;
+    sb_put(out, body.d, body.n);
+    for (size_t i = first_stop; i < args.n; i++) {
+      if (wrote) {
+        sb_puts(out, ", ");
+      }
+      put_stop(out, args.v[i]);
+      wrote = true;
+    }
+    sb_putc(out, ')');
+    out->fail = out->fail || body.fail;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, body.d);
+    done = true;
+  }
+  out->fail = out->fail || args.fail;
+  gtext_allocator_free((GTEXT_Allocator *)out->a, args.v);
+  return done;
+}
+
 /// One shape function rewritten; false (nothing written) when it is not one of the shape functions or does not read.
 static bool shape_function(sb * out, span f) {
   static const struct {
     const char * name;
     int kind;
-  } F[] = {{"rect", 1}, {"xywh", 2}, {"circle", 3}, {"ellipse", 4}, {"ray", 5}, {"shape", 7}};
+  } F[] = {{"rect", 1}, {"xywh", 2}, {"circle", 3}, {"ellipse", 4}, {"ray", 5}, {"shape", 7}, {"linear-gradient", 10}, {"repeating-linear-gradient", 10},
+      {"radial-gradient", 11}, {"repeating-radial-gradient", 11}, {"conic-gradient", 12}, {"repeating-conic-gradient", 12}};
   for (size_t i = 0; i < sizeof F / sizeof F[0]; i++) {
     if (!starts_fn(f, F[i].name)) {
       continue;
@@ -719,6 +875,9 @@ static bool shape_function(sb * out, span f) {
     case 3: return fn_radial(out, inner, "circle");
     case 4: return fn_radial(out, inner, "ellipse");
     case 5: return fn_ray(out, inner);
+    case 10: return fn_gradient(out, F[i].name, inner, 0);
+    case 11: return fn_gradient(out, F[i].name, inner, 1);
+    case 12: return fn_gradient(out, F[i].name, inner, 2);
     default: return fn_shape(out, inner);
     }
   }
@@ -743,9 +902,9 @@ static bool box_is(span s, const char * w) {
   return eq(s, w);
 }
 
-/// The text of a shape property's value rewritten: every shape function by the rules above, and a reference box that is the property's default not written
+/// The text of one comma-free part of a shape property's value rewritten: every shape function by the rules above, and a reference box that is the property's default not written
 /// when a shape is with it. `*changed` says whether the text differs.
-static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) {
+static bool rewrite_item(sb * out, span text, shape_prop prop, bool * changed) {
   spv tk = {out->a, NULL, 0, 0, false};
   split_top(&tk, text, ' ');
   if (tk.fail) {
@@ -764,6 +923,8 @@ static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) 
     bool wrote_piece = false;
     if (is_shape_fn(tk.v[i])) {
       seen++;
+    }
+    if (memchr(tk.v[i].p, '(', tk.v[i].n)) {
       if (shape_function(&piece, tk.v[i]) && !piece.fail) {
         wrote_piece = true;
       }
@@ -806,6 +967,26 @@ static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) 
     gtext_allocator_free((GTEXT_Allocator *)out->a, piece.d);
   }
   gtext_allocator_free((GTEXT_Allocator *)out->a, tk.v);
+  return !out->fail;
+}
+
+
+/// The whole value: each of its comma-separated parts (image lists, `content`) rewritten.
+static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) {
+  spv parts = {out->a, NULL, 0, 0, false};
+  split_top(&parts, text, ',');
+  if (parts.fail) {
+    out->fail = true;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+    return false;
+  }
+  for (size_t i = 0; i < parts.n; i++) {
+    if (i) {
+      sb_puts(out, ", ");
+    }
+    rewrite_item(out, parts.v[i], prop, changed);
+  }
+  gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
   return !out->fail;
 }
 

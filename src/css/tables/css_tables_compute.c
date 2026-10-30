@@ -145,7 +145,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* background-blend-mode */
   {1, 0, 0, 0, 0, 0, 0}, /* background-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* background-color */
-  {2, 0, 0, 0, 0, 0, 0}, /* background-image */
+  {3, 38, 0, 0, 0, 0, 0}, /* background-image */
   {1, 0, 0, 0, 0, 0, 0}, /* background-origin */
   {4, 0, 4, 0, 0, 0, 0}, /* background-position */
   {3, 25, 0, 0, 0, 0, 0}, /* background-position-block */
@@ -207,7 +207,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 22, 0, 0, 0, 0, 0}, /* border-image-outset */
   {3, 23, 0, 0, 0, 0, 0}, /* border-image-repeat */
   {3, 22, 0, 0, 0, 0, 0}, /* border-image-slice */
-  {2, 0, 0, 0, 0, 0, 0}, /* border-image-source */
+  {3, 38, 0, 0, 0, 0, 0}, /* border-image-source */
   {3, 22, 0, 0, 0, 0, 0}, /* border-image-width */
   {4, 0, 5, 0, 0, 0, 0}, /* border-inline */
   {4, 0, 5, 0, 0, 0, 0}, /* border-inline-clip */
@@ -313,7 +313,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 3, 0, 0, 0, 0}, /* container */
   {1, 0, 0, 0, 0, 0, 0}, /* container-name */
   {1, 0, 0, 0, 0, 0, 0}, /* container-type */
-  {2, 0, 0, 0, 0, 0, 0}, /* content */
+  {3, 38, 0, 0, 0, 0, 0}, /* content */
   {1, 0, 0, 0, 0, 0, 0}, /* content-visibility */
   {1, 0, 0, 0, 0, 0, 0}, /* continue */
   {1, 0, 0, 0, 0, 0, 0}, /* copy-into */
@@ -496,7 +496,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* line-snap */
   {1, 0, 0, 0, 0, 0, 0}, /* link-parameters */
   {4, 0, 3, 0, 0, 0, 0}, /* list-style */
-  {2, 0, 0, 1, 0, 0, 0}, /* list-style-image */
+  {3, 38, 0, 1, 0, 0, 0}, /* list-style-image */
   {1, 0, 0, 1, 0, 0, 0}, /* list-style-position */
   {1, 0, 0, 1, 0, 0, 0}, /* list-style-type */
   {4, 0, 1, 0, 0, 0, 0}, /* margin */
@@ -527,7 +527,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* mask-border-width */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-clip */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-composite */
-  {2, 0, 0, 1, 0, 0, 0}, /* mask-image */
+  {3, 38, 0, 1, 0, 0, 0}, /* mask-image */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-mode */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-origin */
   {3, 24, 0, 1, 0, 0, 0}, /* mask-position */

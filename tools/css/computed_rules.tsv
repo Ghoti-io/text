@@ -17,6 +17,7 @@
 align-content	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 align-items	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 align-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+background-image	algorithm	SHAPE	exact	-	list, each item either an <image> or the keyword none
 background-position-block	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
 background-position-inline	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
 background-position-x	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
@@ -29,6 +30,7 @@ border-bottom-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a
 border-image-outset	algorithm	BOX4	exact	-	four values, each a number or absolute length
 border-image-repeat	algorithm	REPEAT	exact	-	two keywords, one per axis
 border-image-slice	algorithm	BOX4	exact	-	four values, each either a number or percentage; plus a fill keyword if specified
+border-image-source	algorithm	SHAPE	exact	-	the keyword none or the computed <image>
 border-image-width	algorithm	BOX4	exact	-	four values, each either a number, the keyword auto, or a computed <length-percentage> value
 border-inline-end-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 border-inline-start-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
@@ -42,6 +44,7 @@ clip-path	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-shapes-1/: 
 color	algorithm	COLOR	exact	-	computed color, see resolving color values
 column-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 column-width	by-type	-	exact	auto	as specified, with <length-percentage> values computed
+content	algorithm	SHAPE	exact	-	See prose below
 corner-bottom-left-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
 corner-bottom-right-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
 corner-end-end-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
@@ -73,6 +76,8 @@ justify-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-
 letter-spacing	algorithm	LETTER_SPACING	exact	-	draft:https://drafts.csswg.org/css-text-4/: an absolute length and/or a percentage (a zero length is written normal, as the pinned tests of letter-spacing expect)
 lighting-color	by-type	-	exact	-	draft:https://drafts.fxtf.org/filter-effects/: lighting-color computed value: computed color
 line-height	algorithm	LINE_HEIGHT	exact	-	the specified keyword, a number, or a computed <length> value
+list-style-image	algorithm	SHAPE	exact	-	the keyword noneor the computed <image>
+mask-image	algorithm	SHAPE	exact	-	list, each item the keyword none, a computed <image>, or a computed <url>
 mask-position	algorithm	POSITION	exact	-	list, each item consists of two keywords representing the origin and two offsets from that origin, each given as an absolute length (if given a <length>), otherwise as a percentage.
 mask-repeat	algorithm	REPEAT	exact	-	list, each item a pair of keywords, one per dimension
 math-depth	algorithm	MATH_DEPTH	exact	-	an integer, see below

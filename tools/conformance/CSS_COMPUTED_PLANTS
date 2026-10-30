@@ -15,3 +15,5 @@ overflow-visible-kept	css_compute.c	  const bool fix_x = css_val_is_keyword(vx, 
 shape-rect-kept	css_shape_compute.c	    case 1: return fn_rect(out, inner, false);	    case 1: return false;
 shape-position-kept	css_shape_compute.c	  if (position_pair(&h, &v, t, n) && !h.fail && !v.fail) {	  if (0 && position_pair(&h, &v, t, n) && !h.fail && !v.fail) {
 shape-default-box-kept	css_shape_compute.c	        drop = box_is(tk.v[i], "margin-box");	        drop = false;
+image-default-size-kept	css_shape_compute.c	    const bool default_size = nsize == 1 && eq(t.v[first_size], "farthest-corner");	    const bool default_size = false;
+image-double-stop-kept	css_shape_compute.c	  if (!t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {	  if (0 && !t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {
