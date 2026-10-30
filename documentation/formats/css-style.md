@@ -280,7 +280,7 @@ font-size: 30px
 
 ## The dump and the hash
 
-`gtext_css_computed_dump()` writes the style as canonical text: a first line `css-computed 1` (`GTEXT_CSS_COMPUTED_DUMP_VERSION`, which changes with any
+`gtext_css_computed_dump()` writes the style as canonical text: a first line `css-computed 2` (`GTEXT_CSS_COMPUTED_DUMP_VERSION`, which changes with any
 change of the format), a second naming the commit of the pin the registry's properties come from, then one line `name: value` for every property that has a
 value, **in the byte order of the names** (the custom properties among them, `--` sorting before the letters), each value as a computed value is serialized.
 Which declaration a value came from is not in it. `gtext_css_computed_hash()` is the SHA-256 of that text (`GTEXT_CSS_COMPUTED_HASH_LENGTH` bytes), computed
@@ -367,8 +367,8 @@ static void style_dump(void) {
 prints
 
 ```
-version 1, begins:
-css-computed 1
+version 2, begins:
+css-computed 2
 a line for each property, after the two of the header: yes
 hash of 32 bytes
 same values, same hash: yes

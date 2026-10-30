@@ -1419,3 +1419,54 @@ void css_color_hwb_to_srgb(double h, double w, double b, double rgb[3]) {
     rgb[i] = rnd(rnd(rnd(rnd(rgb[i] / 255.0) * scale) + w) * 255.0);
   }
 }
+
+bool css_color_fn_info(const GTEXT_CSS_Color * c, css_color_fninfo * info) {
+  static const char * const rgb_names[4] = {"r", "g", "b", "alpha"};
+  static const char * const xyz_names[4] = {"x", "y", "z", "alpha"};
+  if (!c || c->kind != GTEXT_CSS_COLOR_FUNCTION || c->component_count != 3) {
+    return false;
+  }
+  memset(info, 0, sizeof *info);
+  fid f = F_NONE;
+  switch (c->function) {
+  case GTEXT_CSS_COLOR_FN_RGB: f = F_RGB; break;
+  case GTEXT_CSS_COLOR_FN_HSL: f = F_HSL; break;
+  case GTEXT_CSS_COLOR_FN_HWB: f = F_HWB; break;
+  case GTEXT_CSS_COLOR_FN_LAB: f = F_LAB; break;
+  case GTEXT_CSS_COLOR_FN_LCH: f = F_LCH; break;
+  case GTEXT_CSS_COLOR_FN_OKLAB: f = F_OKLAB; break;
+  case GTEXT_CSS_COLOR_FN_OKLCH: f = F_OKLCH; break;
+  default: break;
+  }
+  if (f != F_NONE) {
+    const fdesc * fd = fdesc_of(f);
+    info->space = fd->space;
+    for (int i = 0; i < 3; i++) {
+      info->ref[i] = fd->chan[i].ref;
+      info->lo[i] = fd->chan[i].lo;
+      info->hi[i] = fd->chan[i].hi;
+      info->hue[i] = fd->chan[i].hue;
+      info->scale[i] = f == F_RGB ? 255.0 : 1.0;
+    }
+    for (int i = 0; i < 4; i++) {
+      info->sym[i] = fd->sym[i];
+    }
+    info->srgb_family = fd->srgb_family;
+    return true;
+  }
+  if (c->function != GTEXT_CSS_COLOR_FN_COLOR || c->space == GTEXT_CSS_SPACE_CUSTOM) {
+    return false;
+  }
+  info->space = c->space;
+  for (int i = 0; i < 3; i++) {
+    info->ref[i] = 1.0;
+    info->lo[i] = -INF_;
+    info->hi[i] = INF_;
+    info->scale[i] = 1.0;
+  }
+  const bool xyz = c->space == GTEXT_CSS_SPACE_XYZ_D50 || c->space == GTEXT_CSS_SPACE_XYZ_D65;
+  for (int i = 0; i < 4; i++) {
+    info->sym[i] = xyz ? xyz_names[i] : rgb_names[i];
+  }
+  return true;
+}

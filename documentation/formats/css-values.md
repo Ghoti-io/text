@@ -689,10 +689,8 @@ per-property WPT vectors are the registry's.
 
 Per-property vectors (the registry, \ref format_css_registry "css-registry.md", has the properties); the computed
 value of a property and the resolution of its relative units are \ref format_css_computed "css-computed.md"'s, and so is the resolution of `url()` against a base; the
-conversion of any color to another space
-(color conversion, gamut mapping, interpolation and the computed value of
-`color-mix()`, `light-dark()` and a relative color); the computation of
-`contrast-color()`; the resolution of `url()`; `sibling-index()`, `random()` and the
+conversion of any color to another space, interpolation and the computed value of `color-mix()`, a relative color,
+`alpha()` and `contrast-color()` (\ref format_css_color_computation "css-color-computation.md"); gamut mapping, which is a paint-time step; the resolution of `url()`; `sibling-index()`, `random()` and the
 like are parsed and kept, never evaluated here.
 
 A calculation that stands for an integer of a grammar of more than one range of the same type (the grid line is `<integer [-∞,-1]> | <integer [1,∞]>`, an integer that is not zero) is clamped, when the style is

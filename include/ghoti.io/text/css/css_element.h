@@ -441,7 +441,8 @@ typedef struct {
    *  GTEXT_CSS_E_UNSUPPORTED naming the unit. */
   bool (*normal_line_height)(void * user, const GTEXT_CSS_Font_Query * query, double * px);
   /** Resolve a color that needs conversion, or the system color, to sRGB: red, green and blue 0 to 255, alpha 0 to 1. Called for system colors,
-   *  `color-mix()`, relative colors, `contrast-color()`, `alpha()` and `device-cmyk()`, after `light-dark()` is resolved. Returns false
+   *  `device-cmyk()` and a `color()` in a custom color space, and for such a color inside a `color-mix()`, a relative color or `contrast-color()`, which the library
+   *  then computes with the answer; never for a color the library computes itself. Returns false
    *  if the color cannot be resolved. NULL: such a color stays as written, flagged GTEXT_CSS_VFLAG_COLOR_UNRESOLVED. */
   bool (*resolve_color)(void * user, const GTEXT_CSS_Color * color, GTEXT_CSS_Color_Scheme scheme, double rgba[4]);
   /** Resolve a relative URL against `base_url` as the caller's URL parser does (the library's own resolution is RFC 3986's). Return a new string

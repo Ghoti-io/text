@@ -204,6 +204,19 @@ bool font_metric(void *, const GTEXT_CSS_Font_Query * q, GTEXT_CSS_Font_Metric m
 
 /// The size of the query container of an element (Containment 3): the nearest ancestor whose computed `container-type` is `size` (both axes) or `inline-size`
 /// (the inline one), and its computed `width` and `height` when those are lengths; false where there is none or the size is not known.
+/// A system color is the user's: the callback gives the sRGB value that the resolved-value layer (tools/oracle/css_resolved.h) gives it, in the element's color scheme, so that a
+/// function of colors that holds one (`contrast-color(buttonface)`) can be computed before that layer reads it.
+bool resolve_color(void *, const GTEXT_CSS_Color * color, GTEXT_CSS_Color_Scheme scheme, double rgba[4]) {
+  if (!color || color->kind != GTEXT_CSS_COLOR_KEYWORD || (color->keyword != GTEXT_CSS_COLOR_KW_SYSTEM && color->keyword != GTEXT_CSS_COLOR_KW_DEPRECATED)) {
+    return false;
+  }
+  const bool saved = resolved_value::dark_scheme();
+  resolved_value::dark_scheme() = scheme == GTEXT_CSS_SCHEME_DARK;
+  const bool known = resolved_value::system_color(std::string(color->name.data, color->name.length), rgba);
+  resolved_value::dark_scheme() = saved;
+  return known;
+}
+
 bool container_size(void *, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Container_Axis axis, double * px) {
   const GTEXT_CSS_Registry * reg = svgreg::shared();
   for (int p = as_el(element)->parent; p >= 0; p = (*g_all)[(size_t)p].parent) {
@@ -319,6 +332,7 @@ void run_page(Page & page) {
   GTEXT_CSS_Environment env = gtext_css_environment_default();
   env.container_size = container_size;
   env.font_metric = font_metric;
+  env.resolve_color = resolve_color;
   GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
   co.elements = &table;
   GTEXT_CSS_Compute_Context * ctx = nullptr;

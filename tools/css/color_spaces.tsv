@@ -1,0 +1,11 @@
+# tools/css/gen-color-tables.py: the color spaces of CSS Color 4 that the computed value of a color needs, as the draft defines them. Columns, tab separated:
+# name, kind, white (d50 or d65), r.x, r.y, g.x, g.y, b.x, b.y (primaries of an RGB space, else -), transfer (srgb, gamma, prophoto, rec2020, linear, none), source.
+# The matrices are derived by the generator from the primaries and the white point with exact rational arithmetic (Color 4, "Converting from RGB to XYZ": the
+# matrix is made from the chromaticities of the primaries and of the white point), then rounded once to a double; nothing here is a transcription of digits.
+# The white points are those of Color 4: D50 (0.3457, 0.3585) and D65 (0.3127, 0.3290). Lab, LCH, Oklab and Oklch have no primaries: their constants are in the
+# generator (`LAB`, `OKLAB`) and quoted there.
+srgb	rgb	d65	0.640	0.330	0.300	0.600	0.150	0.060	srgb	Color 4, 10.2 (srgb) and the chromaticities of sRGB
+display-p3	rgb	d65	0.680	0.320	0.265	0.690	0.150	0.060	srgb	Color 4, 10.3 (display-p3): the sRGB transfer function with the P3 primaries
+a98-rgb	rgb	d65	0.640	0.330	0.210	0.710	0.150	0.060	gamma	Color 4, 10.4 (a98-rgb): gamma 563/256
+prophoto-rgb	rgb	d50	0.734699	0.265301	0.159597	0.840403	0.036598	0.000105	prophoto	Color 4, 10.5 (prophoto-rgb): gamma 1.8 with a linear segment below 1/512
+rec2020	rgb	d65	0.708	0.292	0.170	0.797	0.131	0.046	gamma24	Color 4, 10.8 (rec2020): the pure power 2.4 of Rec. ITU-R BT.1886, not the piecewise curve

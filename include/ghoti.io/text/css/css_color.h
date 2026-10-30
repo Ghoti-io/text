@@ -34,8 +34,8 @@
  * A @ref GTEXT_CSS_Color is **what was written**: the function or keyword, the
  * declared color space, the channels as numbers, percentages, angles, math functions or
  * (in a relative color) channel keywords, and the alpha. Nothing is converted
- * to another space and nothing is gamut mapped; mixing and relative colors are not computed.
- * Those belong to the `color` library, which `text` does not depend on (CSS plan, decision 5).
+ * to another space and nothing is gamut mapped here. The computed value of a mix, a relative color, `alpha()` and `contrast-color()` is made when a style is
+ * computed (css_computed.h), in `text`'s own conversions on the `math` library, not by the `color` library, which `text` does not depend on and which has no CSS spaces.
  * The one conversion here is the one the draft's serialization of the legacy syntaxes
  * needs: `hsl()` and `hwb()` to sRGB, in IEEE double through the `math` library
  * (and rounded to 8 bits, which the draft allows: "at least sufficient to round-trip

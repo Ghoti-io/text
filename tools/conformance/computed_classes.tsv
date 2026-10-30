@@ -14,7 +14,6 @@ grid-template-(columns|rows)	.*	exception	resolved-value	the track list of a gri
 (padding|margin)(-(top|right|bottom|left|block-start|block-end|inline-start|inline-end|block|inline))?	.*	exception	resolved-value	a percentage or a calculation with one resolves to the used length: "then the resolved value is the used value."
 (min-|max-)?(width|height|block-size|inline-size|min-block-size|min-inline-size)	.*	exception	resolved-value	the size of a box resolves to its used size: "then the resolved value is the used value."
 line-height	.*	exception	resolved-value	a number resolves to the used length: "then the resolved value is the used value."
-background-color	contrast-color|color-mix|rgb\(from|alpha\(	defect	color	contrast-color(), color-mix(), relative colors and alpha() stay as written for every property (the 7 listed defects of the registered-property gate): a function of colors is not computed to its sRGB form or its simplified arguments
 clip	rect\(.*(em|calc\()	defect	values	the lengths of a `clip` rectangle are not made absolute when they are relative or a calculation (`calc(-1em + 10px)` is -30px at a font size of 40px)
 flex-basis	calc\(	defect	values	a calculation of a percentage and a zero length is not simplified to the percentage (`calc(10% + 0px)` is `10%`)
 text-decoration-inset	-20px -20px	defect	values	a pair of equal lengths is written as one value (the shortest serialization the page expects, Text Decoration 4); the computed value is the pair
@@ -25,5 +24,4 @@ position-area|overlay	.*	defect	C2a	unimplemented, or the initial value of a new
 (background-image|mask-image|border-image-source|list-style-image|content|cursor)	.*	defect	css-values (images)	a gradient is not written in its computed form (default position and shape omitted, positions and sizes made absolute, a color stop in sRGB): the image functions are specified values
 (filter|backdrop-filter)	.*	defect	css-values (functions)	the arguments of a filter function are not computed (blur() is blur(0px), a percentage amount is a number, calc() is simplified)
 (shape-outside|clip-path|offset-path|border-shape)	.*	defect	css-values (shapes)	a basic shape is not written in its computed form (rect() and xywh() as inset(), `center` as 50%, a ray's angle in degrees)
-color	.*	defect	color	color-mix(), relative colors, contrast-color() and alpha() stay as written for every property (the 7 listed defects of the registered-property gate)
 .*	.*	defect	C2a (computed values)	the computed value of this property is written differently from the page's expectation: a newer draft than the pin, a shortest form, a default that is written, or a computation that is not done (the page's expectation is in the list of the case)

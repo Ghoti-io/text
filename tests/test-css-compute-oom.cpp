@@ -268,7 +268,9 @@ TEST(CssComputeOom, MakingAContextSweptOverTheAllocationsWithAStride) {
 TEST(CssComputeOom, ComputingAStyleSweptOverEveryAllocation) {
   Block pb(R(), "font-size: 20px; color: red; writing-mode: vertical-rl; --a: 1");
   Block cb(R(), "width: 2em; margin-inline-start: calc(1em + 3px); height: calc(50% - 10px); border-style: none; border-width: 5px; "
-                "font-weight: bolder; color: light-dark(red, blue); background-color: color-mix(in srgb, red, blue)");
+                "font-weight: bolder; color: light-dark(red, blue); background-color: color-mix(in srgb, red, blue); "
+                "border-top-color: contrast-color(color-mix(in oklch, red 30%, blue)); outline-color: rgb(from hsl(120 50% 50% / 0.5) r g calc(b + 10)); "
+                "text-decoration-color: alpha(from color-mix(in lab, currentcolor 20%, white) / calc(alpha * 0.5)); caret-color: lab(calc(50 + 10) 30 50)");
   std::string want;
   {
     FaultAllocator fa;

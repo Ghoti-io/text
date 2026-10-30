@@ -1,0 +1,15 @@
+# tools/css/plant-color.py: planted defects of the color computation, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated, a key of PROGRAMS in the script).
+mix-premultiply-dropped	css_color_compute.c	    if (premultiply && i != hue) {	    if (0 && i != hue) {	mix,vectors
+mix-shorter-hue-not-fixed	css_color_compute.c	    if (*h2 - *h1 > 180.0) {	    if (0) {	mix,vectors
+mix-none-taken-as-zero	css_color_compute.c	      x.c[i] = y.c[i];	      x.c[i] = 0.0;	mix,vectors
+mix-omitted-percentages-not-shared	css_color_compute.c	      pct[i] = (100.0 - specified) / (double)omitted;	      pct[i] = 100.0 / (double)omitted;	mix
+mix-leftover-is-not-alpha	css_color_compute.c	    acc.alpha = clamp01(acc.alpha * alpha_mult);	    acc.alpha = clamp01(acc.alpha);	mix
+mix-currentcolor-resolved	css_color_compute.c	      if (ctx->has_current && (!inside_mix || ctx->current_anywhere)) {	      if (ctx->has_current) {	mix
+relative-alpha-is-one	css_color_compute.c	  else if (origin) {	  else if (0) {	relative,vectors
+relative-rgb-clamped	css_color_compute.c	(origin && c->function == GTEXT_CSS_COLOR_FN_RGB);	0;	vectors
+contrast-threshold	css_color_compute.c	    const double against_white = 1.05 / (l + 0.05), against_black = (l + 0.05) / 0.05;	    const double against_white = 1.2 / (l + 0.05), against_black = (l + 0.05) / 0.05;	relative
+space-white-point	css_color_space.c	static const double D50_WHITE[3] = {0.3457 / 0.3585, 1.0, (1.0 - 0.3457 - 0.3585) / 0.3585};	static const double D50_WHITE[3] = {0.3127 / 0.3290, 1.0, (1.0 - 0.3127 - 0.3290) / 0.3290};	space,vectors
+space-rec2020-piecewise	css_color_space.c	static double rec2020_decode(double v) {\n  return sgn(v) * gmath_pow(absd(v), 2.4);	static double rec2020_decode(double v) {\n  return sgn(v) * gmath_pow(absd(v), 2.2);	space,vectors
+space-powerless-hue-kept	css_color_space.c	  if (dest_powerless) {	  if (0) {	space,vectors
+space-hwb-hue-turned	css_color_space.c	  out[1] = mn * 100.0;	  out[1] = mn * 100.0;\n  out[0] = out[0] > 180.0 ? out[0] - 180.0 : out[0] + 180.0;	space,vectors
+space-matrix-row-swapped	css_color_tables.c	  {0x1.9ed81a61e643ap+1, -0x1.8991f1a515886p+0, -0x1.fe93d1b3918e5p-2},\n  {-0x1.f040b3af5d706p-1	  {-0x1.8991f1a515886p+0, 0x1.9ed81a61e643ap+1, -0x1.fe93d1b3918e5p-2},\n  {-0x1.f040b3af5d706p-1	space,vectors

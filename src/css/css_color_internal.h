@@ -70,6 +70,19 @@ int css_color_system_lookup(const char * name, size_t length, char * lower, size
 void css_color_hsl_to_srgb(double h, double s, double l, double rgb[3]);
 void css_color_hwb_to_srgb(double h, double w, double b, double rgb[3]);
 
+/// What the computation needs to know of a color function's channels: its space, the channel keywords of its relative form, each channel's reference range (what 100% is), the clamp of a
+/// literal, whether it is a hue, and how many of the channel's units make 1 in the color's own space (255 for `rgb()`: its channels are 0 to 255).
+typedef struct {
+  GTEXT_CSS_Color_Space space;
+  const char * sym[4];
+  double ref[3], lo[3], hi[3], scale[3];
+  bool hue[3];
+  bool srgb_family;
+} css_color_fninfo;
+
+/// Fill `info` for a color of kind FUNCTION with three components (any custom color space is refused); false otherwise.
+bool css_color_fn_info(const GTEXT_CSS_Color * color, css_color_fninfo * info);
+
 #ifdef __cplusplus
 }
 #endif

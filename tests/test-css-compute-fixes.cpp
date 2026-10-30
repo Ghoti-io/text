@@ -383,13 +383,13 @@ TEST(CssComputeEdges, ValuesAnEnvironmentCallbackGivesAreCheckedAndNamedWhenThey
   g.compute(ctx, &good);
   EXPECT_EQ(g.value("width"), "16px");
   // a color that resolves to something outside the documented ranges is clamped, and to a NaN is refused naming the callback
-  Block color(R(), "color: color-mix(in srgb, red, blue)");
+  Block color(R(), "color: Canvas");
   Style cs;
   cs.compute(ctx, &color);
   ASSERT_EQ(cs.status, GTEXT_CSS_OK);
   EXPECT_EQ(cs.value("color"), "rgb(255, 255, 255)");
   e.resolve_color = [](void *, const GTEXT_CSS_Color * c, GTEXT_CSS_Color_Scheme, double rgba[4]) {
-    rgba[0] = c->kind == GTEXT_CSS_COLOR_MIX ? std::nan("") : 0;
+    rgba[0] = c->kind == GTEXT_CSS_COLOR_KEYWORD && c->name.length == 6 ? std::nan("") : 0; /* Canvas, and not CanvasText */
     rgba[1] = rgba[2] = 0;
     rgba[3] = 1;
     return true;

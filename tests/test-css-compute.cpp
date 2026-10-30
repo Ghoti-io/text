@@ -279,6 +279,7 @@ TEST(CssCompute, AColorHasLightDarkResolvedFromTheSchemeAndCurrentcolorKept) {
 }
 
 TEST(CssCompute, AColorTheLibraryCannotComputeWithoutConversionIsFlaggedOrHandedToTheCallback) {
+  // a mix is the library's own (Color 5, 10.1): no callback, no flag
   Context ctx(R());
   Block cb(R(), "background-color: color-mix(in srgb, red, blue)");
   Style s;
@@ -286,27 +287,29 @@ TEST(CssCompute, AColorTheLibraryCannotComputeWithoutConversionIsFlaggedOrHanded
   ASSERT_EQ(s.status, GTEXT_CSS_OK);
   const GTEXT_CSS_Value * v = gtext_css_computed_root(s.s, find(R(), "background-color"));
   ASSERT_NE(v, nullptr);
-  EXPECT_NE(v->flags & GTEXT_CSS_VFLAG_COLOR_UNRESOLVED, 0u) << "without the callback the color is returned as it was written, flagged";
-  EXPECT_EQ(s.value("background-color"), "color-mix(in srgb, red, blue)");
-  // with a callback it is a color
+  EXPECT_EQ(v->flags & GTEXT_CSS_VFLAG_COLOR_UNRESOLVED, 0u);
+  EXPECT_EQ(s.value("background-color"), "color(srgb 0.5 0 0.5)");
+  // a callback is not asked for a color the library computes
   GTEXT_CSS_Environment env = gtext_css_environment_default();
   env.resolve_color = [](void *, const GTEXT_CSS_Color *, GTEXT_CSS_Color_Scheme, double rgba[4]) {
     rgba[0] = 128; rgba[1] = 0; rgba[2] = 127; rgba[3] = 1;
     return true;
   };
-  EXPECT_EQ(computed("", "background-color: color-mix(in srgb, red, blue)", "background-color", &env), "rgb(128, 0, 127)");
-  // a system color is the callback's too, and flagged without
+  EXPECT_EQ(computed("", "background-color: color-mix(in srgb, red, blue)", "background-color", &env), "color(srgb 0.5 0 0.5)");
+  // a system color is the callback's, and flagged without
   Style sys;
   Block sb(R(), "background-color: Canvas");
   sys.compute(ctx, &sb);
   const GTEXT_CSS_Value * sv = gtext_css_computed_root(sys.s, find(R(), "background-color"));
   ASSERT_NE(sv, nullptr);
   EXPECT_NE(sv->flags & GTEXT_CSS_VFLAG_COLOR_UNRESOLVED, 0u);
+  EXPECT_EQ(computed("", "background-color: Canvas", "background-color", &env), "rgb(128, 0, 127)");
   // a color the callback refuses stays as written
   env.resolve_color = [](void *, const GTEXT_CSS_Color *, GTEXT_CSS_Color_Scheme, double[4]) { return false; };
   Context ctx2(R(), &env);
   Style s2;
-  s2.compute(ctx2, &cb);
+  Block sb2(R(), "background-color: Canvas");
+  s2.compute(ctx2, &sb2);
   const GTEXT_CSS_Value * v2 = gtext_css_computed_root(s2.s, find(R(), "background-color"));
   ASSERT_NE(v2, nullptr);
   EXPECT_NE(v2->flags & GTEXT_CSS_VFLAG_COLOR_UNRESOLVED, 0u);

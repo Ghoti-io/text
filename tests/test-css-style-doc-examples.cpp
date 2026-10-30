@@ -69,7 +69,7 @@ const Snippet kSnippets[] = {
         "dropped stroke-linecap at byte 0\ndropped bogus at byte 23\n"},
     {"style-entries.c", entries::style_entries, "stroke-width: 4px\nopacity: 0.75\nfont-size: 30px\n"},
     {"style-dump.c", dump::style_dump,
-        "version 1, begins:\ncss-computed 1\na line for each property, after the two of the header: yes\nhash of 32 bytes\nsame values, same hash: yes\nother values, same hash: no\n"},
+        "version 2, begins:\ncss-computed 2\na line for each property, after the two of the header: yes\nhash of 32 bytes\nsame values, same hash: yes\nother values, same hash: no\n"},
 };
 
 std::string slurp(const std::string & path) {

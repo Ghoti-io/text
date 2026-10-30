@@ -1127,9 +1127,9 @@ TEST(CssStyleDump, ItIsVersionedSortedByTheBytesOfTheNamesAndOneLineAProperty) {
   Doc d(svg("<rect id=\"r\" style=\"--b: 1; --a: 2; -x-unknown: 1; fill: red\"/>"));
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
   const std::string text = dump_of(d.at("r")->style);
-  const std::string head = std::string("css-computed 1\nregistry ") + gtext_css_registry_pin_commit() + "\n";
+  const std::string head = std::string("css-computed 2\nregistry ") + gtext_css_registry_pin_commit() + "\n";
   ASSERT_EQ(text.compare(0, head.size(), head), 0);
-  EXPECT_EQ(GTEXT_CSS_COMPUTED_DUMP_VERSION, 1);
+  EXPECT_EQ(GTEXT_CSS_COMPUTED_DUMP_VERSION, 2);
   std::vector<std::string> names;
   size_t pos = head.size();
   size_t lines = 0;

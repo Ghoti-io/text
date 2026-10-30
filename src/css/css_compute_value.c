@@ -43,6 +43,7 @@
 
 #include <ghoti.io/math/math.h>
 
+#include "css_color_compute.h"
 #include "css_color_internal.h"
 #include "css_compute_internal.h"
 #include "css_substitute_internal.h"
@@ -196,6 +197,123 @@ static GTEXT_CSS_Status color_text(cv_walk * w, const GTEXT_CSS_Color * c, GTEXT
   return w->vb.status;
 }
 
+/// Replace the color by the one a text (a computed color's) reads as: parsed as the `color` property is, so that it is a fixed point of the declared form.
+static GTEXT_CSS_Status color_text(cv_walk * w, const GTEXT_CSS_Color * c, GTEXT_CSS_String * out);
+
+static GTEXT_CSS_Status color_from_text(cv_walk * w, const GTEXT_CSS_Value * src, const char * text, size_t t, const css_cs * exact, GTEXT_CSS_Value * out,
+    bool * changed, bool * made) {
+  css_state * st = w->st;
+  *made = false;
+  GTEXT_CSS_Property_Options po;
+  memset(&po, 0, sizeof po);
+  po.allocator = &st->cc->alloc;
+  GTEXT_CSS_Property_Value pv;
+  memset(&pv, 0, sizeof pv);
+  const GTEXT_CSS_Property_Id color_id = st->cc->pid[CSS_P_COLOR];
+  GTEXT_CSS_Status ps = color_id ? gtext_css_parse_property_text(st->cc->registry, st->cc->meta[color_id - 1].name,
+      st->cc->meta[color_id - 1].name_length, text, t, &po, &pv) : GTEXT_CSS_E_UNSUPPORTED;
+  if (ps == GTEXT_CSS_OK && pv.outcome == GTEXT_CSS_PROP_RESULT_VALID && gtext_css_value_set_root(pv.set)) {
+    const GTEXT_CSS_Value * pr = gtext_css_value_set_root(pv.set);
+    *out = *src;
+    out->color = pr->color;
+    out->text = pr->text;
+    out->flags &= ~(uint32_t)GTEXT_CSS_VFLAG_COLOR_UNRESOLVED;
+    if (exact && pr->color->kind == GTEXT_CSS_COLOR_FUNCTION && pr->color->function != GTEXT_CSS_COLOR_FN_RGB &&
+        pr->color->function != GTEXT_CSS_COLOR_FN_HSL && pr->color->function != GTEXT_CSS_COLOR_FN_HWB && pr->color->component_count == 3) {
+      /* Reading the text clamped what a literal is clamped to (the lightness of lab() to 0 to 100, a hue to 0 up to 360). The color computed here is the converted or mixed one, which Color 4, 13
+         says is "interpolated as-is": its channels are put back into the object, which is the one made a moment ago for this value and is shared with nobody. */
+      GTEXT_CSS_Color * mine = (GTEXT_CSS_Color *)pr->color;
+      for (size_t k = 0; k < 3; k++) {
+        if (mine->components[k].kind == GTEXT_CSS_COMP_NUMBER && !exact->none[k] && exact->c[k] - exact->c[k] == 0.0) {
+          mine->components[k].value = exact->c[k];
+        }
+      }
+      const GTEXT_CSS_Status ts = color_text(w, mine, &out->text);
+      if (ts != GTEXT_CSS_OK) {
+        gtext_css_property_value_free(&pv);
+        return ts;
+      }
+    }
+    if (!css_vb_dep(&w->vb, pv.set)) {
+      gtext_css_property_value_free(&pv);
+      return w->vb.status;
+    }
+    gtext_css_property_value_free(&pv);
+    *changed = true;
+    *made = true;
+    return GTEXT_CSS_OK;
+  }
+  gtext_css_property_value_free(&pv);
+  return ps == GTEXT_CSS_E_OOM ? css_st_fail(st, ps, NULL, NULL) : GTEXT_CSS_OK;
+}
+
+/// Whether a color has to be computed here: `color-mix()`, `contrast-color()`, `alpha()`, a relative color, and a function whose channels are calculations of the environment.
+static bool color_needs_compute(const GTEXT_CSS_Color * c) {
+  return c->kind == GTEXT_CSS_COLOR_MIX || c->kind == GTEXT_CSS_COLOR_CONTRAST || c->kind == GTEXT_CSS_COLOR_ALPHA ||
+      (c->kind == GTEXT_CSS_COLOR_FUNCTION && (c->has_unresolved || c->origin != NULL));
+}
+
+/// A unit of a channel's calculation: a container or font-relative unit the environment cannot give leaves the color as written (it is never guessed).
+static bool color_unit_cb(void * user, GTEXT_CSS_Unit unit, double * canonical) {
+  css_state * st = user;
+  switch (unit) {
+  case GTEXT_CSS_UNIT_CQW: case GTEXT_CSS_UNIT_CQH: case GTEXT_CSS_UNIT_CQI: case GTEXT_CSS_UNIT_CQB: case GTEXT_CSS_UNIT_CQMIN: case GTEXT_CSS_UNIT_CQMAX:
+    if (!st->env->container_size) {
+      return false;
+    }
+    break;
+  case GTEXT_CSS_UNIT_EX: case GTEXT_CSS_UNIT_CH: case GTEXT_CSS_UNIT_CAP: case GTEXT_CSS_UNIT_IC:
+  case GTEXT_CSS_UNIT_REX: case GTEXT_CSS_UNIT_RCH: case GTEXT_CSS_UNIT_RCAP: case GTEXT_CSS_UNIT_RIC:
+    if (!st->env->font_metric) {
+      return false;
+    }
+    break;
+  default:
+    break;
+  }
+  return css_st_unit_px(st, unit, canonical);
+}
+
+/// A color only the caller can resolve (a system color, `device-cmyk()`, a custom color space): its callback's answer.
+static bool color_resolve_cb(void * user, const GTEXT_CSS_Color * c, double rgba[4]) {
+  css_state * st = user;
+  return st->env->resolve_color && st->env->resolve_color(st->env->user, c, css_st_used_scheme(st), rgba);
+}
+
+/// The used value of the element's `color` (the inherited one while `color` itself is computed), for `currentcolor`.
+static GTEXT_CSS_Status current_color(css_state * st, css_color_ctx * base, bool * have) {
+  *have = false;
+  const GTEXT_CSS_Property_Id id = st->cc->pid[CSS_P_COLOR];
+  if (!id) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Value * root = NULL;
+  if (st->current == id) {
+    root = css_st_parent_root(st, id);
+  }
+  else {
+    bool cycle = false;
+    const GTEXT_CSS_Status s = css_st_ensure(st, id, &cycle);
+    if (s != GTEXT_CSS_OK) {
+      return s;
+    }
+    root = cycle || !css_st_is_done(st, id) ? NULL : css_st_root(st, id);
+  }
+  if (!root || root->kind != GTEXT_CSS_VAL_COLOR || !root->color || (root->flags & GTEXT_CSS_VFLAG_COLOR_UNRESOLVED)) {
+    return GTEXT_CSS_OK;
+  }
+  css_color_ctx inner = *base;
+  inner.has_current = false;
+  bool done = false;
+  css_cc_value v;
+  const GTEXT_CSS_Status s = css_color_compute(&inner, root->color, &v, &done);
+  if (s == GTEXT_CSS_OK && done) {
+    base->current = v;
+    *have = true;
+  }
+  return s;
+}
+
 static GTEXT_CSS_Status leaf_color(cv_walk * w, const GTEXT_CSS_Value * src, GTEXT_CSS_Value * out, bool * changed) {
   css_state * st = w->st;
   const GTEXT_CSS_Color * c = src->color;
@@ -213,10 +331,44 @@ static GTEXT_CSS_Status leaf_color(cv_walk * w, const GTEXT_CSS_Value * src, GTE
       break;
     }
   }
+  if (color_needs_compute(c) && !(src->flags & GTEXT_CSS_VFLAG_COLOR_UNRESOLVED && !resolved_light_dark && c == src->color)) {
+    /* Color 5, 10.1 and 10.2: the computed value is the mixed or the relative color, in the space the served text names (css_color_compute.h) */
+    css_color_ctx cx;
+    memset(&cx, 0, sizeof cx);
+    cx.alloc = &st->cc->alloc;
+    cx.scheme = scheme;
+    cx.unit_size = color_unit_cb;
+    cx.resolve = color_resolve_cb;
+    cx.user = st;
+    cx.current_anywhere = st->in_registered || st->current == st->cc->pid[CSS_P_COLOR];   /* Color 4, 15.5: in `color` it is "the resolved inherited value" */
+    GTEXT_CSS_Status cs = current_color(st, &cx, &cx.has_current);
+    if (cs != GTEXT_CSS_OK) {
+      return cs;
+    }
+    css_cc_value v;
+    bool done = false;
+    cs = css_color_compute(&cx, c, &v, &done);
+    if (cs != GTEXT_CSS_OK) {
+      return css_st_fail(st, cs, NULL, NULL);
+    }
+    if (done) {
+      char text[CSS_CC_TEXT_MAX + 1];
+      css_cs written;
+      const size_t n = css_color_value_text(&v, text, &written);
+      bool made = false;
+      cs = color_from_text(w, src, text, n, v.legacy ? NULL : &written, out, changed, &made);
+      if (cs != GTEXT_CSS_OK || made) {
+        return cs;
+      }
+    }
+  }
   const bool needs = c->kind == GTEXT_CSS_COLOR_MIX || c->kind == GTEXT_CSS_COLOR_CONTRAST || c->kind == GTEXT_CSS_COLOR_ALPHA ||
       c->kind == GTEXT_CSS_COLOR_DEVICE_CMYK || (c->kind == GTEXT_CSS_COLOR_KEYWORD && (c->keyword == GTEXT_CSS_COLOR_KW_SYSTEM || c->keyword == GTEXT_CSS_COLOR_KW_DEPRECATED)) ||
       (c->kind == GTEXT_CSS_COLOR_FUNCTION && (c->has_unresolved || c->origin != NULL));
-  if (needs && st->env->resolve_color) {
+  /* what only the caller can resolve is the caller's (system colors, device-cmyk(), a custom space); the rest of what needs computing and could not be stays as written */
+  const bool callers = c->kind == GTEXT_CSS_COLOR_DEVICE_CMYK || (c->kind == GTEXT_CSS_COLOR_KEYWORD && (c->keyword == GTEXT_CSS_COLOR_KW_SYSTEM || c->keyword == GTEXT_CSS_COLOR_KW_DEPRECATED)) ||
+      (c->kind == GTEXT_CSS_COLOR_FUNCTION && c->function == GTEXT_CSS_COLOR_FN_COLOR && c->space == GTEXT_CSS_SPACE_CUSTOM);
+  if (callers && st->env->resolve_color) {
     double rgba[4];
     if (st->env->resolve_color(st->env->user, c, scheme, rgba)) {
       for (int k = 0; k < 4; k++) {
@@ -249,31 +401,10 @@ static GTEXT_CSS_Status leaf_color(cv_walk * w, const GTEXT_CSS_Value * src, GTE
         t += nl[k];
       }
       text[t++] = ')';
-      GTEXT_CSS_Property_Options po;
-      memset(&po, 0, sizeof po);
-      po.allocator = &st->cc->alloc;
-      GTEXT_CSS_Property_Value pv;
-      memset(&pv, 0, sizeof pv);
-      const GTEXT_CSS_Property_Id color_id = st->cc->pid[CSS_P_COLOR];
-      GTEXT_CSS_Status ps = color_id ? gtext_css_parse_property_text(st->cc->registry, st->cc->meta[color_id - 1].name,
-          st->cc->meta[color_id - 1].name_length, text, t, &po, &pv) : GTEXT_CSS_E_UNSUPPORTED;
-      if (ps == GTEXT_CSS_OK && pv.outcome == GTEXT_CSS_PROP_RESULT_VALID && gtext_css_value_set_root(pv.set)) {
-        const GTEXT_CSS_Value * pr = gtext_css_value_set_root(pv.set);
-        *out = *src;
-        out->color = pr->color;
-        out->text = pr->text;
-        out->flags &= ~(uint32_t)GTEXT_CSS_VFLAG_COLOR_UNRESOLVED;
-        if (!css_vb_dep(&w->vb, pv.set)) {
-          gtext_css_property_value_free(&pv);
-          return w->vb.status;
-        }
-        gtext_css_property_value_free(&pv);
-        *changed = true;
-        return GTEXT_CSS_OK;
-      }
-      gtext_css_property_value_free(&pv);
-      if (ps == GTEXT_CSS_E_OOM) {
-        return css_st_fail(st, ps, NULL, NULL);
+      bool made = false;
+      const GTEXT_CSS_Status ps = color_from_text(w, src, text, t, NULL, out, changed, &made);
+      if (ps != GTEXT_CSS_OK || made) {
+        return ps;
       }
     }
   }

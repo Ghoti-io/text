@@ -275,6 +275,7 @@ typedef struct {
   uint32_t random_index;          ///< The random functions of the value being computed so far (the key of `auto` has it).
   int force_scheme;               ///< While the initial values are probed: 1 makes the used color scheme light, 2 dark, whatever the element and the environment say; else 0.
   bool probing;                   ///< Making the initial values: reads of the style are not traps.
+  bool in_registered;             ///< The value of a registered custom property is being computed: `currentcolor` in it is the element's color, in a mix too (Properties and Values 1).
   bool used_context;              ///< Set when a value was computed from something that varies by element (the initial values' dependence).
   GTEXT_CSS_Status status;
   size_t work;

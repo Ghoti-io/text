@@ -3210,7 +3210,10 @@ static GTEXT_CSS_Status compute_typed(css_sub * sub, const css_creg * creg, cons
     }
     GTEXT_CSS_Value_Set * computed = NULL;
     if (st == GTEXT_CSS_OK && !*cycle && m.set) {
+      const bool was_registered = sub->st->in_registered;
+      sub->st->in_registered = true;
       st = css_cv_by_type_with(sub->st, m.set, creg->compiled ? creg->compiled[m.component] : NULL, 0, &computed);
+      sub->st->in_registered = was_registered;
     }
     if (st == GTEXT_CSS_OK && !*cycle) {
       const GTEXT_CSS_Value * root = computed ? gtext_css_value_set_root(computed) : NULL;

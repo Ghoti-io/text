@@ -599,7 +599,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
 	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
-	check-size-shifts check-css-compute check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules
+	check-size-shifts check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -988,7 +988,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1144,6 +1144,8 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_color.c \
 	src/css/css_color_names.c \
 	src/css/css_color_serialize.c \
+	src/css/css_color_space.c \
+	src/css/css_color_compute.c \
 	src/css/css_compute.c \
 	src/css/css_compute_algo.c \
 	src/css/css_compute_units.c \
@@ -1207,6 +1209,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_value_serialize.c \
 	src/css/css_vbuild.c \
 	src/css/tables/css_tables_atrules.c \
+	src/css/css_color_tables.c \
 	src/css/tables/css_tables_compute.c \
 	src/css/tables/css_tables_misc.c \
 	src/css/tables/css_tables_pool.c \
@@ -2201,6 +2204,29 @@ check-css-presentation:
 	@$(REQUIRE_PYTHON3); \
 	python3 tools/css/gen-presentation-table.py --check --controls
 
+check-css-color: ## Fail if the color space tables are not what tools/css/color_spaces.tsv generates, or a space of Color 4 has no row, and show the gate refuse each
+check-css-color:
+	@$(REQUIRE_PYTHON3); \
+	python3 tools/css/gen-color-tables.py --check && python3 tools/css/gen-color-tables.py --controls
+
+check-css-color-cross: ## Compare the matrices, the Bradford adaptation and the transfer functions of the color computation with the color library's (skipped, and said so, where color is not installed)
+# D1: text does not depend on color (the CSS spaces are not in it, and its math is the host's libm, which a stylesheet's meaning must not depend on), and this program,
+# built only here, is the test that the two agree where they overlap. GHOTI_ORACLE_REQUIRED=1 makes an absent color a failure and not a skip.
+check-css-color-cross: $(APP_DIR)/$(STATIC_TARGET)
+	@if ! PKG_CONFIG_PATH="$(PREFIX)/share/pkgconfig" pkg-config --exists ghoti.io-color-0 2>/dev/null; then \
+		if [ -n "$$GHOTI_ORACLE_REQUIRED" ]; then echo "check-css-color-cross: the color library is not installed and the gate is required" >&2; exit 1; fi; \
+		echo "check-css-color-cross: SKIPPED, the color library is not installed (this is not a pass)"; exit 0; \
+	fi; \
+	pc="$(DEP_PCS) ghoti.io-color-0"; \
+	PKG_CONFIG_PATH="$(PREFIX)/share/pkgconfig" g++ -std=c++20 -O1 -I include/ -I $(GEN_DIR) $$(PKG_CONFIG_PATH="$(PREFIX)/share/pkgconfig" pkg-config --cflags $$pc) \
+		tools/conformance/css_color_cross.cpp $(APP_DIR)/$(STATIC_TARGET) $$(PKG_CONFIG_PATH="$(PREFIX)/share/pkgconfig" pkg-config --libs $$pc) -lm \
+		-Wl,-rpath,"$(PREFIX)/lib/ghoti.io" -o build/css-color-cross && build/css-color-cross
+
+check-css-color-plants: ## Plant a defect in the color computation and show the tests that must see it fail
+check-css-color-plants: $(APP_DIR)/$(STATIC_TARGET)
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-color.py
+
 check-css-compute: ## Fail if a property of the pin is not classified for computed values, or the generated table or the ledger's computes column is stale
 check-css-compute:
 	@$(REQUIRE_PYTHON3); \
@@ -2509,7 +2535,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=479
 # computed-pages.py) with the page's rules that need no selector matching, as the browsers resolve a computed value (tools/oracle/css_resolved.h). Every scored case passes or is
 # listed (tools/conformance/CSS_COMPUTED_EXCEPTIONS with a sentence of the served text, CSS_COMPUTED_DEFECTS with an owner under a ceiling that only goes down), every page that is not
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
-CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=727
+CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=660
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
@@ -2567,7 +2593,7 @@ conformance-css-property: $(CONFORMANCE_LIB)
 # (a class and the sentence of the served draft) and in CSS_VARIABLES_DEFECTS when the library is wrong (an owner, and a ceiling that only goes down). The
 # scoring half is in check-conformance-vectors; this target adds the controls (the gate made to fail on purpose, and the library built with a rule undone:
 # tools/conformance/CSS_VARIABLES_PLANTS).
-CSS_VARIABLES_FLOOR := CSS_VARIABLES_MIN_SCORED=490 CSS_VARIABLES_MAX_DEFECTS=7
+CSS_VARIABLES_FLOOR := CSS_VARIABLES_MIN_SCORED=490 CSS_VARIABLES_MAX_DEFECTS=0
 
 conformance-css-variables: ## Score custom properties, substitution and @property against the pinned WPT pages, and show the gate fails
 conformance-css-variables: $(CONFORMANCE_LIB)

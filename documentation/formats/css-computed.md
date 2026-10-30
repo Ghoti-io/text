@@ -187,9 +187,9 @@ What a style depends on that no document says is the `GTEXT_CSS_Environment`: th
 device pixel ratio, the color scheme, the language, the base URL, and optional callbacks for what only a font engine, a layout engine or a color
 engine knows (`ex`, `ch`, `cap`, `ic` and their root forms, the `normal` line height, container query lengths, colors that need conversion).
 Nothing reads the process, the clock or the network. A computation that needs a callback the environment lacks fails with
-`GTEXT_CSS_E_UNSUPPORTED` naming the unit and returns **no** style, never part of one. The one exception is color: `text` does not convert colors, so
-a `color-mix()` or a relative color whose parts are computed stays as written, flagged `GTEXT_CSS_VFLAG_COLOR_UNRESOLVED`, unless the environment
-has a color callback to resolve it.
+`GTEXT_CSS_E_UNSUPPORTED` naming the unit and returns **no** style, never part of one. The one exception is a color only the caller can resolve (a system color, `device-cmyk()`, a color in a custom space): it
+stays as written, flagged `GTEXT_CSS_VFLAG_COLOR_UNRESOLVED`, unless the environment has a color callback to resolve it. `color-mix()`, relative colors, `alpha()` and
+`contrast-color()` are computed here (\ref format_css_color_computation "css-color-computation.md").
 
 ## How a value is computed
 
