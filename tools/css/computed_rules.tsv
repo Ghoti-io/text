@@ -70,9 +70,11 @@ font-palette	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-values-5
 font-size	algorithm	FONT_SIZE	exact	-	an absolute length
 font-size-adjust	algorithm	FONT_SIZE_ADJUST	exact	-	the keyword none, or a pair of a metric keyword and a <number>
 font-style	algorithm	FONT_STYLE	exact	-	the keyword specified, plus angle in degrees if specified
+font-variation-settings	algorithm	SHAPE	exact	-	the keyword normal or a list, each item a string paired with a number
 font-weight	algorithm	FONT_WEIGHT	exact	-	a number, see below
 font-width	algorithm	FONT_WIDTH	exact	-	a percentage, see below
 glyph-orientation-vertical	identity	-	partial: kept as written; the aliasing to text-orientation (auto, 0 and 90) is not applied	-	draft:https://www.w3.org/TR/SVG2/text.html: The following SVG 1.1 values must still be supported by aliasing the property as a shorthand to text-orientation
+grid-template-areas	algorithm	SHAPE	exact	-	the keyword none or a list of string values
 hyphenate-limit-chars	algorithm	HYPHENATE_CHARS	exact	-	three values, each either the auto keyword or an integer
 image-orientation	algorithm	IMAGE_ORIENTATION	exact	-	the specified keyword, or an <angle>, rounded and normalized (see text), plus optionally a flip keyword
 justify-content	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
@@ -90,6 +92,7 @@ object-position	algorithm	POSITION	exact	-	as for background-position
 offset-anchor	algorithm	POSITION	exact	-	the auto keyword or a computed <position>
 offset-path	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-shapes-1/: All <basic-shape-rect> functions compute to the equivalent inset() function.
 offset-position	algorithm	POSITION	exact	-	The normal or auto keywords, or a computed <position>
+offset-rotate	algorithm	SHAPE	exact	-	computed <angle> value, optionally preceded by auto
 opacity	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
 outline-color	by-type	-	partial: the keyword invert and auto are kept as written	-	see below
 outline-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width

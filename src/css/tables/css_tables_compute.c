@@ -422,7 +422,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-ligatures */
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-numeric */
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-position */
-  {1, 0, 0, 1, 0, 0, 0}, /* font-variation-settings */
+  {3, 38, 0, 1, 0, 0, 0}, /* font-variation-settings */
   {3, 2, 0, 1, 7, 0, 0}, /* font-weight */
   {3, 3, 0, 1, 8, 0, 0}, /* font-width */
   {1, 0, 0, 0, 0, 0, 0}, /* footnote-display */
@@ -446,7 +446,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {5, 0, 0, 0, 0, 0, 0}, /* grid-row-gap */
   {1, 0, 0, 0, 0, 0, 0}, /* grid-row-start */
   {4, 0, 13, 0, 0, 0, 0}, /* grid-template */
-  {1, 0, 0, 0, 0, 0, 0}, /* grid-template-areas */
+  {3, 38, 0, 0, 0, 0, 0}, /* grid-template-areas */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-template-columns */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-template-rows */
   {1, 0, 0, 1, 0, 0, 0}, /* hanging-punctuation */
@@ -562,7 +562,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* offset-distance */
   {3, 38, 0, 0, 0, 0, 0}, /* offset-path */
   {3, 24, 0, 0, 0, 0, 0}, /* offset-position */
-  {2, 0, 0, 0, 0, 0, 0}, /* offset-rotate */
+  {3, 38, 0, 0, 0, 0, 0}, /* offset-rotate */
   {3, 13, 0, 1, 0, 0, 0}, /* opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* order */
   {1, 0, 0, 1, 0, 0, 0}, /* orphans */

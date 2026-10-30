@@ -1705,8 +1705,91 @@ static bool normalize_path_data(cb * out, sp str) {
       gtext_allocator_free(out->a, tmp.d);
       return false;
     }
+    /* an exponent is part of the number (`1e1` is 10): both pinned browsers write path("M1e1 1e1 L2e1 2e1") as "M 10 10 L 20 20"
+       (tools/conformance/css_browser_answers.jsonl, cases path-clip.*). The decimal point is moved in the digits, in text, so no host function is used. */
+    char shifted[96];
     dec d;
-    if (!dec_parse((sp){p, (size_t)(q - p)}, &d)) {
+    if (q < end && (*q == 'e' || *q == 'E')) {
+      const char * r = q + 1;
+      bool eneg = false;
+      if (r < end && (*r == '+' || *r == '-')) {
+        eneg = *r == '-';
+        r++;
+      }
+      if (r < end && *r >= '0' && *r <= '9') {
+        long ex = 0;
+        while (r < end && *r >= '0' && *r <= '9') {
+          if (ex < 1000) {
+            ex = ex * 10 + (*r - '0');
+          }
+          r++;
+        }
+        if (eneg) {
+          ex = -ex;
+        }
+        /* the mantissa's digits without the point, and where the point goes */
+        char dg[48];
+        size_t nd = 0;
+        long ip_len = 0;
+        const char * m = digits;
+        bool seen_point = false;
+        for (; m < q; m++) {
+          if (*m == '.') {
+            seen_point = true;
+          }
+          else {
+            if (nd >= sizeof dg) {
+              gtext_allocator_free(out->a, tmp.d);
+              return false;
+            }
+            dg[nd++] = *m;
+            if (!seen_point) {
+              ip_len++;
+            }
+          }
+        }
+        const long point = ip_len + ex;
+        size_t w = 0;
+        if (p < digits && *p == '-') {
+          shifted[w++] = '-';
+        }
+        if (point > 40 || point < -40) {
+          gtext_allocator_free(out->a, tmp.d);
+          return false;
+        }
+        if (point <= 0) {
+          shifted[w++] = '0';
+          shifted[w++] = '.';
+          for (long z = point; z < 0; z++) {
+            shifted[w++] = '0';
+          }
+          for (size_t z = 0; z < nd; z++) {
+            shifted[w++] = dg[z];
+          }
+        }
+        else {
+          for (long z = 0; z < point; z++) {
+            shifted[w++] = (size_t)z < nd ? dg[z] : '0';
+          }
+          if ((size_t)point < nd) {
+            shifted[w++] = '.';
+            for (size_t z = (size_t)point; z < nd; z++) {
+              shifted[w++] = dg[z];
+            }
+          }
+        }
+        q = r;
+        if (!dec_parse((sp){shifted, w}, &d)) {
+          gtext_allocator_free(out->a, tmp.d);
+          return false;
+        }
+      }
+      else if (!dec_parse((sp){p, (size_t)(q - p)}, &d)) {
+        gtext_allocator_free(out->a, tmp.d);
+        return false;
+      }
+    }
+    else if (!dec_parse((sp){p, (size_t)(q - p)}, &d)) {
       gtext_allocator_free(out->a, tmp.d);
       return false;
     }

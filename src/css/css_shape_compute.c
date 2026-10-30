@@ -1056,7 +1056,7 @@ static bool is_shape_fn(span t) {
   return false;
 }
 
-typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING } shape_prop;
+typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING, SHAPE_PROP_SETTINGS, SHAPE_PROP_AREAS, SHAPE_PROP_ROTATE } shape_prop;
 
 /* ---- mixes: dynamic-range-limit-mix() and palette-mix() ------------------------------------------------------------------ */
 
@@ -1547,55 +1547,163 @@ static bool plain_percent(span s, double * v) {
   return s.n > 1 && s.p[s.n - 1] == '%' && amount_value((span){s.p, s.n - 1}, v);
 }
 
+/// One control point of a linear(): its output progress and its input progress, when it has a plain percentage.
+typedef struct {
+  span out;
+  span pos;
+  bool has;   ///< an input progress was written
+  bool plain; ///< and it is a plain percentage
+  double v;
+} lin_point;
+
 /// Easing 2, 2.1.1: "control points originally specified with two input progress values are turned into two separate control points, and the input progress values
-/// are in strictly ascending order" (`linear(0 20%, 0.5 10%, 1)` serializes as `linear(0 20%, 0.5 20%, 1)`); "If the control point originally lacked an input progress
-/// value" it is written without one, so a missing position is not filled in. `run` is the largest plain percentage written so far.
+/// are in strictly ascending order" (`linear(0 20%, 0.5 10%, 1)` serializes as `linear(0 20%, 0.5 20%, 1)`). The text then gives the missing input progress values
+/// ("If the first control point lacks an input progress value, set it to 0", the last to the greater of 100% and the largest so far, and a run in between evenly
+/// between the neighbors that have one) as the steps that evaluate the function; it does not say whether a computed value shows them. Both pinned browsers write
+/// them (`linear(0, 1)` is `linear(0 0%, 1 100%)`: tools/conformance/css_browser_answers.jsonl, cases linear.*), so this does too (the standing rule: where the text
+/// is silent, the recorded answers of both browsers decide). A function with one control point, or with a position that is not a plain percentage (a calculation
+/// that stayed), keeps the positions as written.
 static void rewrite_linear(sb * out, span inner) {
   spv args = {out->a, NULL, 0, 0, false};
   split_top(&args, inner, ',');
-  double run = 0.0;
-  bool have_run = false;
-  bool first = true;
-  for (size_t i = 0; i < args.n && !args.fail; i++) {
+  lin_point * pts = NULL;
+  size_t n = 0;
+  bool plain_all = !args.fail;
+  if (!args.fail) {
+    pts = (lin_point *)gtext_allocator_realloc((GTEXT_Allocator *)out->a, NULL, (args.n * 2 + 1) * sizeof *pts);
+    if (!pts) {
+      out->fail = true;
+      plain_all = false;
+    }
+  }
+  for (size_t i = 0; plain_all && i < args.n; i++) {
     spv t = {out->a, NULL, 0, 0, false};
     split_top(&t, args.v[i], ' ');
     if (t.fail) {
       out->fail = true;
-      gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
-      break;
+      plain_all = false;
     }
-    const size_t points = t.n >= 3 ? 2u : 1u;
-    for (size_t k = 0; k < points && t.n > 0; k++) {
-      if (!first) {
-        sb_puts(out, ", ");
-      }
-      first = false;
-      put_span(out, t.v[0]);
-      if (t.n >= 2) {
-        const span pos = t.v[1 + k];
-        double v;
-        sb_putc(out, ' ');
-        if (plain_percent(pos, &v)) {
-          if (have_run && v < run) {
-            v = run;
-          }
-          run = v;
-          have_run = true;
-          put_percent(out, v);
-        }
-        else {
-          put_span(out, pos);
+    else if (t.n == 0 || t.n > 3) {
+      plain_all = false;
+    }
+    else {
+      const size_t points = t.n >= 3 ? 2u : 1u;
+      for (size_t k = 0; k < points; k++) {
+        lin_point * q = &pts[n++];
+        q->out = t.v[0];
+        q->has = t.n >= 2;
+        q->pos = q->has ? t.v[1 + k] : (span){NULL, 0};
+        q->plain = q->has && plain_percent(q->pos, &q->v);
+        if (q->has && !q->plain) {
+          plain_all = false;
         }
       }
-    }
-    if (t.n == 0) {
-      /* an empty argument: left as it was */
-      if (!first) {
-        sb_puts(out, ", ");
-      }
-      first = false;
     }
     gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+  }
+  if (plain_all && n >= 2) {
+    double run = 0.0;
+    bool have_run = false;
+    for (size_t i = 0; i < n; i++) {
+      if (pts[i].has) {
+        if (have_run && pts[i].v < run) {
+          pts[i].v = run;
+        }
+        run = pts[i].v;
+        have_run = true;
+      }
+    }
+    if (!pts[0].has) {
+      pts[0].has = true;
+      pts[0].v = 0.0;
+    }
+    if (!pts[n - 1].has) {
+      pts[n - 1].has = true;
+      pts[n - 1].v = run > 100.0 ? run : 100.0;
+    }
+    /* the first and the last may have been raised above a neighbor that was written lower: ascending again */
+    double top = pts[0].v;
+    for (size_t i = 1; i < n; i++) {
+      if (pts[i].has && pts[i].v < top) {
+        pts[i].v = top;
+      }
+      if (pts[i].has) {
+        top = pts[i].v;
+      }
+    }
+    for (size_t i = 1; i < n; i++) {
+      if (pts[i].has) {
+        continue;
+      }
+      size_t j = i;
+      while (!pts[j].has) {
+        j++;
+      }
+      const double lo = pts[i - 1].v;
+      const double hi = pts[j].v;
+      for (size_t k = i; k < j; k++) {
+        pts[k].has = true;
+        pts[k].v = lo + (hi - lo) * (double)(k - (i - 1)) / (double)(j - (i - 1));
+      }
+      i = j;
+    }
+    for (size_t i = 0; i < n; i++) {
+      if (i) {
+        sb_puts(out, ", ");
+      }
+      put_span(out, pts[i].out);
+      sb_putc(out, ' ');
+      put_percent(out, pts[i].v);
+    }
+  }
+  else if (!args.fail && !out->fail) {
+    /* positions as written, but ascending where they are plain percentages */
+    double run = 0.0;
+    bool have_run = false;
+    bool first = true;
+    for (size_t i = 0; i < args.n; i++) {
+      spv t = {out->a, NULL, 0, 0, false};
+      split_top(&t, args.v[i], ' ');
+      if (t.fail) {
+        out->fail = true;
+        gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+        break;
+      }
+      const size_t points = t.n >= 3 ? 2u : 1u;
+      for (size_t k = 0; k < points && t.n > 0; k++) {
+        if (!first) {
+          sb_puts(out, ", ");
+        }
+        first = false;
+        put_span(out, t.v[0]);
+        if (t.n >= 2) {
+          const span pos = t.v[1 + k];
+          double v;
+          sb_putc(out, ' ');
+          if (plain_percent(pos, &v)) {
+            if (have_run && v < run) {
+              v = run;
+            }
+            run = v;
+            have_run = true;
+            put_percent(out, v);
+          }
+          else {
+            put_span(out, pos);
+          }
+        }
+      }
+      if (t.n == 0) {
+        if (!first) {
+          sb_puts(out, ", ");
+        }
+        first = false;
+      }
+      gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+    }
+  }
+  if (pts) {
+    gtext_allocator_free((GTEXT_Allocator *)out->a, pts);
   }
   out->fail = out->fail || args.fail;
   gtext_allocator_free((GTEXT_Allocator *)out->a, args.v);
@@ -1736,8 +1844,197 @@ static bool rewrite_item(sb * out, span text, shape_prop prop, bool * changed) {
 }
 
 
+/* ---- lists and keywords the standard leaves to the browsers' common answer ------------------------------------------------ */
+
+static int span_cmp(span x, span y) {
+  const size_t m = x.n < y.n ? x.n : y.n;
+  const int c = memcmp(x.p, y.p, m);
+  if (c) {
+    return c;
+  }
+  return x.n < y.n ? -1 : (x.n > y.n ? 1 : 0);
+}
+
+/// font-variation-settings: Fonts 4 gives the computed value as "the keyword normal or a list, each item a string paired with a number" and is silent on the order of the
+/// items and on a tag written twice. Both pinned browsers write the items in ascending order of their tags and keep the last of a repeated tag
+/// (tools/conformance/css_browser_answers.jsonl, cases fontvar.*), so this does too. `*changed` is set when the text differs.
+static void rewrite_variation_settings(sb * out, span text) {
+  spv parts = {out->a, NULL, 0, 0, false};
+  split_top(&parts, text, ',');
+  if (parts.fail || parts.n < 2) {
+    out->fail = out->fail || parts.fail;
+    put_span(out, text);
+    gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+    return;
+  }
+  /* each item is a quoted tag and a number: the tag is everything up to the closing quote */
+  span * tag = (span *)gtext_allocator_realloc((GTEXT_Allocator *)out->a, NULL, parts.n * sizeof *tag);
+  size_t * order = (size_t *)gtext_allocator_realloc((GTEXT_Allocator *)out->a, NULL, parts.n * sizeof *order);
+  if (!tag || !order) {
+    out->fail = true;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, tag);
+    gtext_allocator_free((GTEXT_Allocator *)out->a, order);
+    gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+    return;
+  }
+  bool ok = true;
+  for (size_t i = 0; i < parts.n && ok; i++) {
+    const span it = parts.v[i];
+    size_t close = 0;
+    if (it.n >= 2 && it.p[0] == '"') {
+      for (close = 1; close < it.n && it.p[close] != '"'; close++) {
+        if (it.p[close] == '\\') {
+          ok = false;
+        }
+      }
+    }
+    if (close == 0 || close >= it.n) {
+      ok = false;
+    }
+    else {
+      tag[i] = (span){it.p, close + 1};
+    }
+    order[i] = i;
+  }
+  if (!ok) {
+    put_span(out, text);
+  }
+  else {
+    /* a stable insertion sort by tag; of equal tags the later item is the one kept */
+    for (size_t i = 1; i < parts.n; i++) {
+      const size_t k = order[i];
+      size_t j = i;
+      while (j > 0 && span_cmp(tag[order[j - 1]], tag[k]) > 0) {
+        order[j] = order[j - 1];
+        j--;
+      }
+      order[j] = k;
+    }
+    bool first = true;
+    for (size_t i = 0; i < parts.n; i++) {
+      if (i + 1 < parts.n && span_cmp(tag[order[i]], tag[order[i + 1]]) == 0) {
+        continue;
+      }
+      if (!first) {
+        sb_puts(out, ", ");
+      }
+      first = false;
+      put_span(out, parts.v[order[i]]);
+    }
+  }
+  gtext_allocator_free((GTEXT_Allocator *)out->a, tag);
+  gtext_allocator_free((GTEXT_Allocator *)out->a, order);
+  gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+}
+
+/// The length of the white space at `k` in a serialized string (a space, a tab or a line feed, or the escape `\9 ` the serializer writes for a tab), or 0.
+static size_t ws_unit(span t, size_t k, size_t end) {
+  if (t.p[k] == ' ' || t.p[k] == '\t' || t.p[k] == '\n') {
+    return 1;
+  }
+  if (t.p[k] == '\\' && k + 2 < end && t.p[k + 1] == '9' && t.p[k + 2] == ' ') {
+    return 3;
+  }
+  return 0;
+}
+
+/// grid-template-areas: Grid 1 gives the computed value as "the keyword none or a list of string values" and is silent on the white space inside a row. Both pinned
+/// browsers write the cell names of a row separated by one space and a run of full stops as one (cases gta.*), so this does too.
+static void rewrite_areas(sb * out, span text) {
+  size_t i = 0;
+  while (i < text.n) {
+    if (text.p[i] != '"') {
+      sb_putc(out, text.p[i++]);
+      continue;
+    }
+    size_t j = i + 1;
+    while (j < text.n && text.p[j] != '"') {
+      j++;
+    }
+    if (j >= text.n) {
+      put_span(out, (span){text.p + i, text.n - i});
+      return;
+    }
+    sb_putc(out, '"');
+    bool first = true;
+    size_t k = i + 1;
+    while (k < j) {
+      size_t u;
+      while (k < j && (u = ws_unit(text, k, j)) > 0) {
+        k += u;
+      }
+      size_t e = k;
+      bool dots = true;
+      while (e < j && ws_unit(text, e, j) == 0) {
+        dots = dots && text.p[e] == '.';
+        e++;
+      }
+      if (e > k) {
+        if (!first) {
+          sb_putc(out, ' ');
+        }
+        first = false;
+        if (dots) {
+          sb_putc(out, '.');
+        }
+        else {
+          put_span(out, (span){text.p + k, e - k});
+        }
+      }
+      k = e;
+    }
+    sb_putc(out, '"');
+    i = j + 1;
+  }
+}
+
+/// offset-rotate: Motion 1 gives the computed value as "computed <angle> value, optionally preceded by auto" and defines `reverse` as `auto 180deg` ("equivalent to
+/// auto 180deg"); both pinned browsers write `auto 180deg` and `auto 190deg` for `reverse 10deg` (cases angle-other.*).
+static void rewrite_rotate(sb * out, span text) {
+  if (eq(text, "reverse")) {
+    sb_puts(out, "auto 180deg");
+    return;
+  }
+  if (text.n > 8 && memcmp(text.p, "reverse ", 8) == 0 && text.n > 11 && memcmp(text.p + text.n - 3, "deg", 3) == 0) {
+    double a;
+    if (amount_value((span){text.p + 8, text.n - 8 - 3}, &a)) {
+      sb_puts(out, "auto ");
+      put_number(out, a + 180.0);
+      sb_puts(out, "deg");
+      return;
+    }
+  }
+  put_span(out, text);
+}
+
 /// The whole value: each of its comma-separated parts (image lists, `content`) rewritten.
 static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) {
+  if (prop == SHAPE_PROP_SETTINGS || prop == SHAPE_PROP_AREAS || prop == SHAPE_PROP_ROTATE) {
+    sb w = {out->a, NULL, 0, 0, false};
+    if (prop == SHAPE_PROP_SETTINGS) {
+      rewrite_variation_settings(&w, text);
+    }
+    else if (prop == SHAPE_PROP_AREAS) {
+      rewrite_areas(&w, text);
+    }
+    else {
+      rewrite_rotate(&w, text);
+    }
+    if (w.fail) {
+      out->fail = true;
+    }
+    else if (w.n != text.n || memcmp(w.d, text.p, w.n) != 0) {
+      *changed = true;
+    }
+    if (w.fail || w.n == 0) {
+      put_span(out, text);
+    }
+    else {
+      sb_put(out, w.d, w.n);
+    }
+    gtext_allocator_free((GTEXT_Allocator *)out->a, w.d);
+    return !out->fail;
+  }
   if (prop == SHAPE_PROP_PALETTE || prop == SHAPE_PROP_RANGE_LIMIT) {
     return rewrite_mix(out, text, prop == SHAPE_PROP_PALETTE, changed);
   }
@@ -1776,7 +2073,85 @@ static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) 
   return !out->fail;
 }
 
-/// inset() with equal offsets written as the shortest form of the 1 to 4 (Shapes 1, 3.3: default components "do not show up in the serialization"; CSSOM: the
+static bool span_same(span x, span y) {
+  return x.n == y.n && memcmp(x.p, y.p, x.n) == 0;
+}
+
+/// The shortest form of four values given in top, right, bottom, left order (or the corners of a radius list): 4 values to 3 when the second and fourth are the same, to 2
+/// when the first and third are too, to 1 when all are. Returns the count.
+static size_t shortest4(const span * v) {
+  size_t keep = 4;
+  if (span_same(v[1], v[3])) {
+    keep = 3;
+    if (span_same(v[0], v[2])) {
+      keep = 2;
+      if (span_same(v[0], v[1])) {
+        keep = 1;
+      }
+    }
+  }
+  return keep;
+}
+
+/// The values of a border-radius-like list (1 to 4 of them) expanded to four: "a" is "a a a a", "a b" is "a b a b", "a b c" is "a b c b".
+static bool expand4(const span * in, size_t n, span * out4) {
+  if (n < 1 || n > 4) {
+    return false;
+  }
+  static const size_t src[4][4] = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 1, 2, 1}, {0, 1, 2, 3}};
+  for (size_t i = 0; i < 4; i++) {
+    out4[i] = in[src[n - 1][i]];
+  }
+  return true;
+}
+
+/// The radii after `round`, written as the shortest form: both lists of a `/` pair expanded to the four corners, each shortened, and the second list left out when it
+/// is the first. Both pinned browsers write `inset(0px round 10px)` for `inset(0 round 10px 10px 10px 10px)` and `round 3px` for `round 3px 3px / 3px 3px`
+/// (tools/conformance/css_browser_answers.jsonl, cases radii.*). Returns false (and writes nothing) when the list is not made of 1 to 4 terms on each side.
+static bool put_round_short(sb * out, const span * t, size_t n, size_t r, bool * changed) {
+  if (r >= n) {
+    return true;
+  }
+  size_t slash = n;
+  for (size_t i = r + 1; i < n; i++) {
+    if (t[i].n == 1 && t[i].p[0] == '/') {
+      slash = i;
+      break;
+    }
+  }
+  span h[4], v[4];
+  const size_t hn = slash - r - 1;
+  if (!expand4(t + r + 1, hn, h)) {
+    return false;
+  }
+  size_t vn = 0;
+  bool same_lists = true;
+  if (slash < n) {
+    vn = n - slash - 1;
+    if (!expand4(t + slash + 1, vn, v)) {
+      return false;
+    }
+    for (size_t i = 0; i < 4; i++) {
+      same_lists = same_lists && span_same(h[i], v[i]);
+    }
+  }
+  const size_t hk = shortest4(h);
+  sb_puts(out, " round ");
+  put_tokens(out, h, hk);
+  size_t vk = 0;
+  if (slash < n && !same_lists) {
+    vk = shortest4(v);
+    sb_puts(out, " / ");
+    put_tokens(out, v, vk);
+  }
+  const size_t written = hk + (vk ? vk + 1 : 0);
+  if (written != n - r - 1) {
+    *changed = true;
+  }
+  return true;
+}
+
+/// inset() with equal offsets and equal radii written as the shortest form (Shapes 1, 3.3: default components "do not show up in the serialization"; CSSOM: the
 /// shortest form that reads back as the same value).
 static void collapse_inset(sb * out, span text, bool * changed) {
   spv tk = {out->a, NULL, 0, 0, false};
@@ -1792,31 +2167,35 @@ static void collapse_inset(sb * out, span text, bool * changed) {
     spv a = {out->a, NULL, 0, 0, false};
     split_top(&a, fn_inner(tk.v[i], 5), ' ');
     const size_t r = a.fail ? 0 : round_at(a.v, a.n);
-    if (a.fail || r != 4) {
+    if (a.fail || r < 1 || r > 4) {
       put_span(out, tk.v[i]);
       out->fail = out->fail || a.fail;
       gtext_allocator_free((GTEXT_Allocator *)out->a, a.v);
       continue;
     }
-    #define SAME(x, y) (a.v[x].n == a.v[y].n && memcmp(a.v[x].p, a.v[y].p, a.v[x].n) == 0)
-    size_t keep = 4;
-    if (SAME(1, 3)) {
-      keep = 3;
-      if (SAME(0, 2)) {
-        keep = 2;
-        if (SAME(0, 1)) {
-          keep = 1;
-        }
-      }
-    }
-    #undef SAME
-    if (keep != 4) {
+    span off[4];
+    expand4(a.v, r, off);
+    const size_t keep = shortest4(off);
+    if (keep != r) {
       *changed = true;
     }
+    sb tail = {out->a, NULL, 0, 0, false};
+    bool tail_changed = false;
+    const bool ok = put_round_short(&tail, a.v, a.n, r, &tail_changed);
+    if (tail.fail) {
+      out->fail = true;
+    }
     sb_puts(out, "inset(");
-    put_tokens(out, a.v, keep);
-    put_round(out, a.v, a.n, r);
+    put_tokens(out, off, keep);
+    if (ok) {
+      sb_put(out, tail.d, tail.n);
+      *changed = *changed || tail_changed;
+    }
+    else {
+      put_round(out, a.v, a.n, r);
+    }
     sb_putc(out, ')');
+    gtext_allocator_free((GTEXT_Allocator *)out->a, tail.d);
     gtext_allocator_free((GTEXT_Allocator *)out->a, a.v);
   }
   out->fail = out->fail || tk.fail;
@@ -1877,8 +2256,17 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
            (m->name_length == 26 && memcmp(m->name, "transition-timing-function", 26) == 0)) {
     prop = SHAPE_PROP_EASING;
   }
+  else if (m->name_length == 23 && memcmp(m->name, "font-variation-settings", 23) == 0) {
+    prop = SHAPE_PROP_SETTINGS;
+  }
+  else if (m->name_length == 19 && memcmp(m->name, "grid-template-areas", 19) == 0) {
+    prop = SHAPE_PROP_AREAS;
+  }
+  else if (m->name_length == 13 && memcmp(m->name, "offset-rotate", 13) == 0) {
+    prop = SHAPE_PROP_ROTATE;
+  }
   /* a keyword is its own computed value, except step-start and step-end, which are written as steps() */
-  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING)) {
+  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING && prop != SHAPE_PROP_ROTATE)) {
     *out = bt;
     return GTEXT_CSS_OK;
   }
@@ -1903,17 +2291,19 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
     gtext_css_value_set_free(bt);
     return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
   }
-  if (!changed) {
-    gtext_allocator_free(&alloc, one.d);
-    *out = bt;
-    return GTEXT_CSS_OK;
-  }
   GTEXT_CSS_Value_Set * p1 = NULL;
-  s = reread(st, id, one.d, one.n, true, &p1);
-  gtext_allocator_free(&alloc, one.d);
-  if (s != GTEXT_CSS_OK || !p1) {
-    gtext_css_value_set_free(bt);
-    return s;
+  if (!changed) {
+    /* nothing to rewrite, but an inset() as written may still have equal offsets (pass two) */
+    gtext_allocator_free(&alloc, one.d);
+    p1 = gtext_css_value_set_retain(bt);
+  }
+  else {
+    s = reread(st, id, one.d, one.n, true, &p1);
+    gtext_allocator_free(&alloc, one.d);
+    if (s != GTEXT_CSS_OK || !p1) {
+      gtext_css_value_set_free(bt);
+      return s;
+    }
   }
   /* pass two: equal offsets of an inset() */
   char * t2 = NULL;

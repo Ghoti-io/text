@@ -309,18 +309,30 @@ TEST(CssComputedCompletionMixes, PaletteMixNormalizesItsPercentages) {
 }
 
 /* Easing 2, 2.1.1: "control points originally specified with two input progress values are turned into two separate control points, and the input progress values are in
-   strictly ascending order"; "If the control point originally lacked an input progress value, return s": a position that was not written is not filled in. */
+   strictly ascending order". The text is silent on whether a computed value shows the positions it supplies when evaluating ("If the control point originally lacked an input
+   progress value, return s"); both pinned browsers write them (tools/conformance/css_browser_answers.jsonl, cases linear.*), so the standing rule fills them in. */
 TEST(CssComputedCompletionEasing, LinearSplitsDoublePositionsAndAscends) {
   struct Row {
     const char * in;
     const char * out;
   };
-  for (const Row & r : std::vector<Row>{{"linear(0 0% 50%, 1 50% 100%)", "linear(0 0%, 0 50%, 1 50%, 1 100%)"}, {"linear(0 20%, 0.5 10%, 1)", "linear(0 20%, 0.5 20%, 1)"},
-           {"linear(0, 0.25 25% 75%, 1)", "linear(0, 0.25 25%, 0.25 75%, 1)"}, {"linear(0, 0.5 25% 75%, 1 100% 100%)", "linear(0, 0.5 25%, 0.5 75%, 1 100%, 1 100%)"},
-           {"linear(0, 1)", "linear(0, 1)"}, {"linear(0 10%, 1 90%)", "linear(0 10%, 1 90%)"}, {"ease-in, linear(0 50% 25%, 1)", "ease-in, linear(0 50%, 0 50%, 1)"}}) {
+  for (const Row & r : std::vector<Row>{{"linear(0 0% 50%, 1 50% 100%)", "linear(0 0%, 0 50%, 1 50%, 1 100%)"}, {"linear(0 20%, 0.5 10%, 1)", "linear(0 20%, 0.5 20%, 1 100%)"},
+           {"linear(0, 0.25 25% 75%, 1)", "linear(0 0%, 0.25 25%, 0.25 75%, 1 100%)"}, {"linear(0, 0.5 25% 75%, 1 100% 100%)", "linear(0 0%, 0.5 25%, 0.5 75%, 1 100%, 1 100%)"},
+           {"linear(0, 1)", "linear(0 0%, 1 100%)"}, {"linear(0 10%, 1 90%)", "linear(0 10%, 1 90%)"}, {"ease-in, linear(0 50% 25%, 1)", "ease-in, linear(0 50%, 0 50%, 1 100%)"},
+           {"linear(0, 0.5 20%, 0.7, 1)", "linear(0 0%, 0.5 20%, 0.7 60%, 1 100%)"}, {"linear(0, 0.25, 0.5, 0.75, 1)", "linear(0 0%, 0.25 25%, 0.5 50%, 0.75 75%, 1 100%)"},
+           {"linear(0 30% 70%, 1)", "linear(0 30%, 0 70%, 1 100%)"}, {"linear(0 10%, 0.5, 1 90%)", "linear(0 10%, 0.5 50%, 1 90%)"}}) {
     EXPECT_EQ(root_computed(std::string("animation-timing-function: ") + r.in, "animation-timing-function"), r.out) << r.in;
     EXPECT_EQ(root_computed(std::string("transition-timing-function: ") + r.in, "transition-timing-function"), r.out) << r.in;
   }
+}
+
+/* Easing 2, 2.3: "If the <step-position> is jump-none, the <integer> must be at least 2, or the function is invalid" and, for the others, "at least 1, or the function
+   is invalid": a literal count below the least is not a steps(), so the declaration is dropped (both pinned browsers refuse it too: cases steps.*). */
+TEST(CssComputedCompletionEasing, StepsBelowTheLeastAreInvalid) {
+  for (const char * bad : {"steps(1, jump-none)", "steps(0, jump-none)", "steps(0)", "steps(0, jump-start)", "steps(-1, end)"}) {
+    EXPECT_EQ(root_computed(std::string("animation-timing-function: ") + bad, "animation-timing-function"), "ease") << bad;
+  }
+  EXPECT_EQ(root_computed("animation-timing-function: steps(2, jump-none)", "animation-timing-function"), "steps(2, jump-none)");
 }
 
 /* Easing 2, 2.3.1: "step-start and step-end do not serialize as themselves. Instead, they serialize as steps(1, start) and steps(1)"; a step position of end or jump-end
@@ -336,6 +348,61 @@ TEST(CssComputedCompletionEasing, StepsSerializeAsTheTextSays) {
     EXPECT_EQ(root_computed(std::string("transition-timing-function: ") + r.in, "transition-timing-function"), r.out) << r.in;
     EXPECT_EQ(root_computed(std::string("animation-timing-function: ") + r.in, "animation-timing-function"), r.out) << r.in;
   }
+}
+
+/* The standing rule: where the served text is silent, the recorded answers of both pinned browsers decide (tools/conformance/css_browser_answers.jsonl; the case ids are
+   in each comment). Each row below is one the two browsers answer alike. */
+TEST(CssComputedCompletionBrowserRecorded, OpacityOfPercentagesInMinMaxClamp) {
+  // cases opacity.*: Color 4's <alpha-value> is "<number> | <percentage>", the computed value "specified number, clamped to the range [0,1]"
+  for (const auto & r : std::vector<std::pair<const char *, const char *>>{{"clamp(50%, 0%, 70%)", "0.5"}, {"clamp(0%, 120%, 70%)", "0.7"}, {"min(10%, 20%)", "0.1"},
+           {"min(50%, 60%)", "0.5"}, {"calc(min(50%, 60%))", "0.5"}, {"max(20%, 10%)", "0.2"}, {"50%", "0.5"}, {"0.25", "0.25"}}) {
+    EXPECT_EQ(root_computed(std::string("opacity: ") + r.first, "opacity"), r.second) << r.first;
+  }
+}
+
+TEST(CssComputedCompletionBrowserRecorded, FontVariationSettingsAreSortedByTagAndTheLastOfARepeatedTagIsKept) {
+  // cases fontvar.*
+  for (const auto & r : std::vector<std::pair<const char *, const char *>>{{"\"wght\" 400, \"wdth\" 100", "\"wdth\" 100, \"wght\" 400"},
+           {"\"wght\" 400, \"wght\" 500", "\"wght\" 500"}, {"\"wght\" 400, \"wdth\" 100, \"wght\" 300", "\"wdth\" 100, \"wght\" 300"},
+           {"\"zzzz\" 1, \"aaaa\" 2", "\"aaaa\" 2, \"zzzz\" 1"}, {"normal", "normal"}}) {
+    EXPECT_EQ(root_computed(std::string("font-variation-settings: ") + r.first, "font-variation-settings"), r.second) << r.first;
+  }
+}
+
+TEST(CssComputedCompletionBrowserRecorded, GridTemplateAreasCollapseWhiteSpaceAndRunsOfFullStops) {
+  // cases gta.*
+  for (const auto & r : std::vector<std::pair<const char *, const char *>>{{"\"a   b\" \"c   d\"", "\"a b\" \"c d\""}, {"\"a ... b\"", "\"a . b\""},
+           {"\"  a  .  b  \" \"c d e\"", "\"a . b\" \"c d e\""}, {"none", "none"}}) {
+    EXPECT_EQ(root_computed(std::string("grid-template-areas: ") + r.first, "grid-template-areas"), r.second) << r.first;
+  }
+}
+
+TEST(CssComputedCompletionBrowserRecorded, OffsetRotateReverseIsAutoHalfTurn) {
+  // cases angle-other.*
+  EXPECT_EQ(root_computed("offset-rotate: reverse", "offset-rotate"), "auto 180deg");
+  EXPECT_EQ(root_computed("offset-rotate: reverse 10deg", "offset-rotate"), "auto 190deg");
+  EXPECT_EQ(root_computed("offset-rotate: auto 30deg", "offset-rotate"), "auto 30deg");
+  EXPECT_EQ(root_computed("offset-rotate: 45deg", "offset-rotate"), "45deg");
+}
+
+TEST(CssComputedCompletionBrowserRecorded, InsetShortensEqualOffsetsAndRadii) {
+  // cases radii.*
+  for (const auto & r : std::vector<std::pair<const char *, const char *>>{{"inset(0 round 10px 10px 10px 10px)", "inset(0px round 10px)"},
+           {"inset(0 round 1px 2px 1px 2px)", "inset(0px round 1px 2px)"}, {"inset(1px round 3px 3px / 3px 3px)", "inset(1px round 3px)"},
+           {"inset(10px 10px 10px 10px)", "inset(10px)"}, {"inset(10px 20px 10px 20px)", "inset(10px 20px)"}, {"inset(0 round 5px / 5px 5px 5px 5px)", "inset(0px round 5px)"},
+           {"inset(10px round 10px 20px / 10px 20px)", "inset(10px round 10px 20px)"}, {"inset(10px round 5px / 10px)", "inset(10px round 5px / 10px)"},
+           {"inset(1px round 1px 2px 3px 4px / 5px 6px)", "inset(1px round 1px 2px 3px 4px / 5px 6px)"}}) {
+    EXPECT_EQ(root_computed(std::string("clip-path: ") + r.first, "clip-path"), r.second) << r.first;
+  }
+}
+
+TEST(CssComputedCompletionBrowserRecorded, StepsCountsBelowTheLeastAreInvalid) {
+  // cases steps.*; Easing 2, 2.3
+  for (const char * bad : {"steps(1, jump-none)", "steps(0, jump-none)", "steps(0)", "steps(0, jump-start)", "steps(-1, end)"}) {
+    EXPECT_EQ(root_computed(std::string("transition-timing-function: ") + bad, "transition-timing-function"), "ease") << bad;
+  }
+  EXPECT_EQ(root_computed("transition-timing-function: steps(2, jump-none)", "transition-timing-function"), "steps(2, jump-none)");
+  EXPECT_EQ(root_computed("transition-timing-function: steps(1, jump-both)", "transition-timing-function"), "steps(1, jump-both)");
 }
 
 } // namespace

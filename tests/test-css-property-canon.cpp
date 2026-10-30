@@ -225,6 +225,9 @@ const Row kRows[] = {
     {"shape-outside", "circle(20px at center)", "circle(20px at center center)"},
     {"offset-path", "circle(closest-side)", "circle()"},
     // an arc's flags are one digit each and need no separator (SVG path data grammar): they are read as flags, not as numbers
+    /* both pinned browsers write an exponent out (tools/conformance/css_browser_answers.jsonl, cases path-clip.*) */
+    {"clip-path", "path(\"M1e1 1e1 L2e1 2e1\")", "path(\"M 10 10 L 20 20\")"},
+    {"clip-path", "path(\"M1.5e-1 0 L25e-1 -5e0\")", "path(\"M 0.15 0 L 2.5 -5\")"},
     {"clip-path", "path(\"M0 0a1 1 0 00.5.5\")", "path(\"M 0 0 a 1 1 0 0 0 0.5 0.5\")"},
     {"clip-path", "path(\"M0 0a1 1 0 0110 5\")", "path(\"M 0 0 a 1 1 0 0 1 10 5\")"},
     {"clip-path", "path(\"M0 0A1 1 0 11 5 5\")", "path(\"M 0 0 A 1 1 0 1 1 5 5\")"},

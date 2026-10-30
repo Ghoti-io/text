@@ -854,6 +854,33 @@ static GTEXT_CSS_Status algo_color(css_state * st, GTEXT_CSS_Property_Id id, con
   return bytype(st, id, src, out);
 }
 
+/// The number a calculation stands for in an <alpha-value> slot: a calculation of percentages (type percentage) counts 100% as 1, one of numbers is the number. False
+/// when it cannot be resolved without an element (a unit) or mixes the two types.
+static bool opacity_math(css_state * st, const GTEXT_CSS_Value * v, double * n) {
+  GTEXT_CSS_Math_Env env;
+  memset(&env, 0, sizeof env);
+  env.has_percent_basis = true;
+  env.percent_basis = 100.0;
+  bool resolved = false;
+  double value = 0.0;
+  GTEXT_Allocator alloc = st->cc->alloc;
+  if (gtext_css_math_resolve(v->math, &env, &alloc, &value, &resolved) != GTEXT_CSS_OK || !resolved) {
+    return false;
+  }
+  const GTEXT_CSS_Math_Type * t = &v->math->type;
+  bool other = false;
+  for (int i = 0; i < GTEXT_CSS_MATH_BASE_COUNT; i++) {
+    if (i != GTEXT_CSS_MATH_BASE_PERCENT && t->exponent[i] != 0) {
+      other = true;
+    }
+  }
+  if (other || t->exponent[GTEXT_CSS_MATH_BASE_PERCENT] > 1 || t->exponent[GTEXT_CSS_MATH_BASE_PERCENT] < 0) {
+    return false;
+  }
+  *n = t->exponent[GTEXT_CSS_MATH_BASE_PERCENT] == 1 ? value / 100.0 : value;
+  return true;
+}
+
 static GTEXT_CSS_Status algo_opacity(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
   GTEXT_CSS_Value_Set * bt = NULL;
   GTEXT_CSS_Status s = bytype(st, id, src, &bt);
@@ -867,6 +894,10 @@ static GTEXT_CSS_Status algo_opacity(css_state * st, GTEXT_CSS_Property_Id id, c
   }
   else if (is_number(b)) {
     n = b->number;
+  }
+  else if (is_math(b) && opacity_math(st, b, &n)) {
+    /* a calculation of percentages (min(50%, 60%), clamp(50%, 0%, 70%)) is a number here: Color 4's <alpha-value> is "<number> | <percentage>", and both
+       pinned browsers write 0.5 (tools/conformance/css_browser_answers.jsonl, cases opacity.*) */
   }
   else {
     *out = bt;
