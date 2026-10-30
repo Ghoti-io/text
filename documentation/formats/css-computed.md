@@ -215,6 +215,15 @@ when the page declares none, and not the environment's preference (CSS Color Adj
 `0px`, and a zero `letter-spacing` to `normal`, as the pinned tests expect; and a bare `font-style: oblique` stays `oblique` ("the keyword specified, plus angle in degrees if
 specified").
 
+The mixes and the easing functions follow their drafts' serialization. `dynamic-range-limit-mix()` is written with `standard`, `constrained` and `no-limit` in that
+order, the percentages normalized to sum to 100% and a limit at 0% left out (a mix that is all of one limit is that limit; CSS Color HDR 1, 3.3). `palette-mix()`
+writes the percentages that were omitted (they share what the written ones leave, CSS Values 5, 6.1), leaves out the interpolation method when it is the default
+`in oklab`, and leaves out the percentages when the shares are equal; percentages that are all written are kept as written. `step-start` and `step-end` are
+`steps(1, start)` and `steps(1)`, a step position of `end` or `jump-end` is not written, and a count below the least the position allows (1, or 2 for `jump-none`)
+is that least (CSS Easing 2, 2.3.1). `linear()` turns a control point with two input progress values into two points and puts the positions in ascending order
+(2.1.1); a position that was not written is not filled in. `text-justify: distribute` is `inter-character`, `container-type` takes `anchored`, and the keywords
+`auto` and `match-element` of `view-transition-name` are written in lower case.
+
 | Class | What it does |
 |---|---|
 | identity | the computed value is the specified value |

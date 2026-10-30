@@ -23,3 +23,6 @@ position-edge-kept	css_compute_algo.c	const bool far = kw(edge, "right") || kw(e
 position-x-kept	css_computed_shorthand.c	(li.name_length == 21 && memcmp(li.name, "background-position-x", 21) == 0)	(li.name_length == 21 && memcmp(li.name, "background-position-q", 21) == 0)
 shorthand-resets-skipped	css_computed_shorthand.c	for (size_t i = 0; i < info.longhand_count + info.reset_longhand_count; i++) {	for (size_t i = 0; i < info.longhand_count; i++) {
 distribute-kept	css_compute_algo.c	    return "inter-character";	    return "distribute";
+step-end-kept	css_shape_compute.c	    sb_puts(out, "steps(1)");	    sb_puts(out, "step-end");
+range-limit-not-normalized	css_shape_compute.c	        n->w[j] += cw[j] * (m->items[i].pct / sum);	        n->w[j] += cw[j] * (m->items[i].pct / 100.0);
+palette-omitted-not-shared	css_shape_compute.c	      m->items[i].pct = (100.0 - specified) / (double)omitted;	      m->items[i].pct = 100.0 / (double)omitted;

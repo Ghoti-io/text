@@ -270,7 +270,9 @@ TEST(CssComputeOom, ComputingAStyleSweptOverEveryAllocation) {
   Block cb(R(), "width: 2em; margin-inline-start: calc(1em + 3px); height: calc(50% - 10px); border-style: none; border-width: 5px; "
                 "font-weight: bolder; color: light-dark(red, blue); background-color: color-mix(in srgb, red, blue); "
                 "border-top-color: contrast-color(color-mix(in oklch, red 30%, blue)); outline-color: rgb(from hsl(120 50% 50% / 0.5) r g calc(b + 10)); "
-                "text-decoration-color: alpha(from color-mix(in lab, currentcolor 20%, white) / calc(alpha * 0.5)); caret-color: lab(calc(50 + 10) 30 50)");
+                "text-decoration-color: alpha(from color-mix(in lab, currentcolor 20%, white) / calc(alpha * 0.5)); caret-color: lab(calc(50 + 10) 30 50); "
+                "font-palette: palette-mix(in srgb, dark 10%, palette-mix(light 30%, normal)); dynamic-range-limit: dynamic-range-limit-mix(no-limit 10%, standard 30%); "
+                "transition-timing-function: step-start, linear(0 0% 50%, 1 50% 100%), steps(calc(-10), start); animation-timing-function: steps(3, end)");
   std::string want;
   {
     FaultAllocator fa;

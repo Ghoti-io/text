@@ -134,7 +134,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* animation-range-end */
   {2, 0, 0, 0, 0, 0, 0}, /* animation-range-start */
   {2, 0, 0, 0, 0, 0, 0}, /* animation-timeline */
-  {2, 0, 0, 0, 0, 0, 0}, /* animation-timing-function */
+  {3, 38, 0, 0, 0, 0, 0}, /* animation-timing-function */
   {1, 0, 0, 0, 0, 0, 0}, /* animation-trigger */
   {1, 0, 0, 0, 0, 0, 0}, /* appearance */
   {1, 0, 0, 0, 0, 0, 0}, /* aspect-ratio */
@@ -364,7 +364,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 2, 0, 0}, /* direction */
   {3, 10, 0, 1, 25, 0, 0}, /* display */
   {1, 0, 0, 1, 0, 0, 0}, /* dominant-baseline */
-  {2, 0, 0, 1, 0, 0, 0}, /* dynamic-range-limit */
+  {3, 38, 0, 1, 0, 0, 0}, /* dynamic-range-limit */
   {1, 0, 0, 1, 0, 0, 0}, /* empty-cells */
   {1, 0, 0, 0, 0, 0, 0}, /* event-trigger */
   {1, 0, 0, 0, 0, 0, 0}, /* event-trigger-name */
@@ -404,7 +404,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* font-kerning */
   {1, 0, 0, 1, 0, 0, 0}, /* font-language-override */
   {1, 0, 0, 1, 0, 0, 0}, /* font-optical-sizing */
-  {1, 0, 0, 1, 0, 0, 0}, /* font-palette */
+  {3, 38, 0, 1, 0, 0, 0}, /* font-palette */
   {3, 1, 0, 1, 9, 0, 0}, /* font-size */
   {3, 6, 0, 1, 10, 0, 0}, /* font-size-adjust */
   {5, 0, 0, 1, 0, 0, 0}, /* font-stretch */
@@ -817,7 +817,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* transition-delay */
   {2, 0, 0, 0, 0, 0, 0}, /* transition-duration */
   {1, 0, 0, 0, 0, 0, 0}, /* transition-property */
-  {1, 0, 0, 0, 0, 0, 0}, /* transition-timing-function */
+  {3, 38, 0, 0, 0, 0, 0}, /* transition-timing-function */
   {3, 27, 0, 0, 0, 0, 0}, /* translate */
   {1, 0, 0, 0, 0, 0, 0}, /* trigger-scope */
   {1, 0, 0, 1, 0, 0, 0}, /* unicode-bidi */

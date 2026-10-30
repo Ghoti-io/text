@@ -260,4 +260,82 @@ TEST(CssComputedCompletionNewerGrammar, ViewTransitionNameKeywordsAreLowerCase) 
   EXPECT_EQ(root_computed("view-transition-name: match-element-2", "view-transition-name"), "match-element-2");
 }
 
+/* Color HDR 1, 3.3: "Let p1, ..., pN be the mixing percentages, normalized to sum to 100%"; the computed value is dynamic-range-limit-mix() "with parameters standard,
+   constrained, and no-limit, in that order ... omitting parameters with a percentage equal to 0%", and a mix that is all of one limit is that limit. */
+TEST(CssComputedCompletionMixes, DynamicRangeLimitMixNormalizesAndOrders) {
+  struct Row {
+    const char * in;
+    const char * out;
+  };
+  for (const Row & r : std::vector<Row>{{"dynamic-range-limit-mix(no-limit 80%, standard 60%, constrained 60%)", "dynamic-range-limit-mix(standard 30%, constrained 30%, no-limit 40%)"},
+           {"dynamic-range-limit-mix(constrained 75%, standard 25%)", "dynamic-range-limit-mix(standard 25%, constrained 75%)"},
+           {"dynamic-range-limit-mix(constrained 25%, no-limit 25%)", "dynamic-range-limit-mix(constrained 50%, no-limit 50%)"},
+           {"dynamic-range-limit-mix(no-limit 10%, standard 30%)", "dynamic-range-limit-mix(standard 75%, no-limit 25%)"},
+           {"dynamic-range-limit-mix(no-limit 100%, standard 0%)", "no-limit"},
+           {"dynamic-range-limit-mix(no-limit 100%, no-limit 0%)", "no-limit"},
+           {"dynamic-range-limit-mix(no-limit 25%, standard 25%, standard 25%, standard 25%)", "dynamic-range-limit-mix(standard 75%, no-limit 25%)"},
+           {"dynamic-range-limit-mix(no-limit 100%, standard 100%)", "dynamic-range-limit-mix(standard 50%, no-limit 50%)"},
+           {"dynamic-range-limit-mix(dynamic-range-limit-mix(standard 10%, no-limit 30%) 20%, standard 80%)", "dynamic-range-limit-mix(standard 85%, no-limit 15%)"},
+           {"dynamic-range-limit-mix(no-limit 10%, dynamic-range-limit-mix(standard 25%, constrained 75%) 20%, dynamic-range-limit-mix(constrained 10%, no-limit 30%) 20%)",
+               "dynamic-range-limit-mix(standard 10%, constrained 40%, no-limit 50%)"},
+           {"standard", "standard"}}) {
+    EXPECT_EQ(root_computed(std::string("dynamic-range-limit: ") + r.in, "dynamic-range-limit"), r.out) << r.in;
+  }
+}
+
+/* Values 5, 6.1 "Normalizing Mix Percentages": the omitted percentages share what the written ones leave. The equal shares of a mix are not written, and the default
+   interpolation method (`in oklab`) is not. Percentages that are all written are kept as written, whatever they sum to (6.2: where the mix is not calculated, "the mix
+   notation itself, with its arguments computed individually"). */
+TEST(CssComputedCompletionMixes, PaletteMixNormalizesItsPercentages) {
+  struct Row {
+    const char * in;
+    const char * out;
+  };
+  for (const Row & r : std::vector<Row>{{"palette-mix(light 30%, dark)", "palette-mix(light 30%, dark 70%)"},
+           {"palette-mix(in oklab, light 30%, dark)", "palette-mix(light 30%, dark 70%)"},
+           {"palette-mix(in srgb, dark 50%, light 50%)", "palette-mix(in srgb, dark, light)"},
+           {"palette-mix(in srgb, dark 50%, light)", "palette-mix(in srgb, dark, light)"},
+           {"palette-mix(in srgb, dark 10%, light)", "palette-mix(in srgb, dark 10%, light 90%)"},
+           {"palette-mix(in srgb, dark, light 90%)", "palette-mix(in srgb, dark 10%, light 90%)"},
+           {"palette-mix(in oklab, 30% --foo, normal)", "palette-mix(--foo 30%, normal 70%)"},
+           {"palette-mix(in oklab, light 10%, dark 40%)", "palette-mix(light 10%, dark 40%)"},
+           {"palette-mix(in srgb, dark 75%, light 75%)", "palette-mix(in srgb, dark 75%, light 75%)"},
+           {"palette-mix(in srgb, dark 30%, light 60%, --foo 90%)", "palette-mix(in srgb, dark 30%, light 60%, --foo 90%)"},
+           {"palette-mix(in srgb, dark 0%, light 0%)", "palette-mix(in srgb, dark 0%, light 0%)"},
+           {"palette-mix(palette-mix(in srgb, light 30%, normal) 20%, dark)", "palette-mix(palette-mix(in srgb, light 30%, normal 70%) 20%, dark 80%)"},
+           {"light", "light"}}) {
+    EXPECT_EQ(root_computed(std::string("font-palette: ") + r.in, "font-palette"), r.out) << r.in;
+  }
+}
+
+/* Easing 2, 2.1.1: "control points originally specified with two input progress values are turned into two separate control points, and the input progress values are in
+   strictly ascending order"; "If the control point originally lacked an input progress value, return s": a position that was not written is not filled in. */
+TEST(CssComputedCompletionEasing, LinearSplitsDoublePositionsAndAscends) {
+  struct Row {
+    const char * in;
+    const char * out;
+  };
+  for (const Row & r : std::vector<Row>{{"linear(0 0% 50%, 1 50% 100%)", "linear(0 0%, 0 50%, 1 50%, 1 100%)"}, {"linear(0 20%, 0.5 10%, 1)", "linear(0 20%, 0.5 20%, 1)"},
+           {"linear(0, 0.25 25% 75%, 1)", "linear(0, 0.25 25%, 0.25 75%, 1)"}, {"linear(0, 0.5 25% 75%, 1 100% 100%)", "linear(0, 0.5 25%, 0.5 75%, 1 100%, 1 100%)"},
+           {"linear(0, 1)", "linear(0, 1)"}, {"linear(0 10%, 1 90%)", "linear(0 10%, 1 90%)"}, {"ease-in, linear(0 50% 25%, 1)", "ease-in, linear(0 50%, 0 50%, 1)"}}) {
+    EXPECT_EQ(root_computed(std::string("animation-timing-function: ") + r.in, "animation-timing-function"), r.out) << r.in;
+    EXPECT_EQ(root_computed(std::string("transition-timing-function: ") + r.in, "transition-timing-function"), r.out) << r.in;
+  }
+}
+
+/* Easing 2, 2.3.1: "step-start and step-end do not serialize as themselves. Instead, they serialize as steps(1, start) and steps(1)"; a step position of end or jump-end
+   is not written. 2.3: jump-none needs at least 2 steps, the others at least 1. */
+TEST(CssComputedCompletionEasing, StepsSerializeAsTheTextSays) {
+  struct Row {
+    const char * in;
+    const char * out;
+  };
+  for (const Row & r : std::vector<Row>{{"step-start", "steps(1, start)"}, {"step-end", "steps(1)"}, {"steps(4, end)", "steps(4)"}, {"steps(4, jump-end)", "steps(4)"},
+           {"steps(4)", "steps(4)"}, {"steps(4, jump-both)", "steps(4, jump-both)"}, {"steps(calc(-10), start)", "steps(1, start)"}, {"steps(calc(1), jump-none)", "steps(2, jump-none)"},
+           {"ease, step-start, steps(3, END)", "ease, steps(1, start), steps(3)"}, {"cubic-bezier(0, 0, 1, 1)", "cubic-bezier(0, 0, 1, 1)"}}) {
+    EXPECT_EQ(root_computed(std::string("transition-timing-function: ") + r.in, "transition-timing-function"), r.out) << r.in;
+    EXPECT_EQ(root_computed(std::string("animation-timing-function: ") + r.in, "animation-timing-function"), r.out) << r.in;
+  }
+}
+
 } // namespace

@@ -34,6 +34,11 @@
  * default size is not written, shape()'s commands drop their defaults, and a reference box that is the
  * default of its property is not written.
  *
+ * The same text rewrite also writes the mixes and the easing functions the way their drafts serialize them: `dynamic-range-limit-mix()` (Color HDR 1, 3.3: the
+ * percentages normalized to sum to 100%, in the order standard, constrained, no-limit, a limit at 0% left out), `palette-mix()` (Values 5, 6.1: omitted percentages share
+ * what the written ones leave; the default method and equal shares are not written; percentages that are all written stay as written), `steps()`/`step-start`/`step-end`
+ * (Easing 2, 2.3.1) and `linear()` (2.1.1: two positions are two points, positions ascending, a missing position not filled in).
+ *
  * **The way it is done.** The value is first computed by its types (lengths absolute, calculations simplified), then written, rewritten as text by the
  * rules above, read back as the property is, and computed by its types again: the second pass is what turns `calc(100% - (1%))` into `99%`. The rewrite
  * reads and writes text and nothing else; it has no recursion (a function nests only through `calc()`, which it never opens), it is linear in the text,
@@ -1051,9 +1056,612 @@ static bool is_shape_fn(span t) {
   return false;
 }
 
+typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING } shape_prop;
+
+/* ---- mixes: dynamic-range-limit-mix() and palette-mix() ------------------------------------------------------------------ */
+
+/// One mix function of the text. The nodes are in the order of the text, so a function comes before the functions inside it.
+typedef struct {
+  bool palette;        ///< palette-mix() (else dynamic-range-limit-mix()).
+  span method;         ///< palette-mix(): the interpolation method as written (`in srgb`), or empty.
+  size_t first, last;  ///< Its arguments, a list through `next`; MIX_NONE when there are none.
+  size_t count;
+  double w[3];         ///< dynamic-range-limit-mix(): the weights of standard, constrained and no-limit (percent), once computed.
+  bool omit_pct;       ///< palette-mix(): the percentages are equal shares of the whole and are not written.
+} mix_node;
+
+/// One argument: a value (a word, or a mix function) and its percentage.
+typedef struct {
+  span word;           ///< The value, when `child` is MIX_NONE.
+  size_t child;        ///< The mix function that is the value, or MIX_NONE.
+  double pct;
+  bool has_pct;
+  bool has_value;
+  size_t next;
+} mix_item;
+
+#define MIX_NONE ((size_t)-1)
+
+typedef struct {
+  const GTEXT_Allocator * a;
+  mix_node * nodes;
+  size_t nn, capn;
+  mix_item * items;
+  size_t ni, capi;
+  bool fail;           ///< Out of memory.
+} mix_state;
+
+static void mix_free(mix_state * m) {
+  gtext_allocator_free((GTEXT_Allocator *)m->a, m->nodes);
+  gtext_allocator_free((GTEXT_Allocator *)m->a, m->items);
+}
+
+static size_t mix_new_node(mix_state * m, bool palette) {
+  if (m->nn == m->capn) {
+    const size_t cap = m->capn ? m->capn * 2 : 8;
+    mix_node * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, m->nodes, cap * sizeof *g);
+    if (!g) {
+      m->fail = true;
+      return MIX_NONE;
+    }
+    m->nodes = g;
+    m->capn = cap;
+  }
+  mix_node * n = &m->nodes[m->nn];
+  memset(n, 0, sizeof *n);
+  n->palette = palette;
+  n->first = n->last = MIX_NONE;
+  return m->nn++;
+}
+
+static void mix_add_item(mix_state * m, size_t node, const mix_item * it) {
+  if (m->ni == m->capi) {
+    const size_t cap = m->capi ? m->capi * 2 : 8;
+    mix_item * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, m->items, cap * sizeof *g);
+    if (!g) {
+      m->fail = true;
+      return;
+    }
+    m->items = g;
+    m->capi = cap;
+  }
+  m->items[m->ni] = *it;
+  m->items[m->ni].next = MIX_NONE;
+  mix_node * n = &m->nodes[node];
+  if (n->last == MIX_NONE) {
+    n->first = m->ni;
+  }
+  else {
+    m->items[n->last].next = m->ni;
+  }
+  n->last = m->ni;
+  n->count++;
+  m->ni++;
+}
+
+static bool is_word_end(char c) {
+  return is_ws(c) || c == ',' || c == '(' || c == ')';
+}
+
+/// The argument being read of each open function: a stack that grows with the nesting, in the one array with the nodes' stack.
+typedef struct {
+  size_t node;
+  mix_item cur;
+} mix_frame;
+
+/// Read the mix function in `text` into nodes and items. False when the text is not exactly one such function (it is then left as it is). No recursion: the open
+/// functions are a stack, and the work is linear in the text.
+static bool mix_read(mix_state * m, span text) {
+  static const struct {
+    const char * name;
+    bool palette;
+  } fns[] = {{"palette-mix", true}, {"dynamic-range-limit-mix", false}};
+  mix_frame * fr = NULL;
+  size_t nf = 0, capf = 0;
+  bool root_seen = false, ok = true;
+  size_t pos = 0;
+  const char * t = text.p;
+  const size_t n = text.n;
+  while (ok) {
+    while (pos < n && is_ws(t[pos])) {
+      pos++;
+    }
+    if (pos >= n) {
+      ok = root_seen && nf == 0;
+      break;
+    }
+    if (nf == 0 && root_seen) {
+      ok = false;
+      break;
+    }
+    const char c = t[pos];
+    if (c == ',' || c == ')') {
+      if (nf == 0) {
+        ok = false;
+        break;
+      }
+      mix_frame * f = &fr[nf - 1];
+      if (f->cur.has_value || f->cur.has_pct) {
+        mix_add_item(m, f->node, &f->cur);
+      }
+      memset(&f->cur, 0, sizeof f->cur);
+      f->cur.child = MIX_NONE;
+      pos++;
+      if (c == ')') {
+        nf--;
+      }
+      ok = !m->fail;
+      continue;
+    }
+    const size_t start = pos;
+    while (pos < n && !is_word_end(t[pos])) {
+      pos++;
+    }
+    span word = {t + start, pos - start};
+    if (word.n == 0) {
+      ok = false;
+      break;
+    }
+    if (pos < n && t[pos] == '(') {
+      int which = -1;
+      for (size_t i = 0; i < 2; i++) {
+        if (eq(word, fns[i].name)) {
+          which = (int)i;
+        }
+      }
+      if (which >= 0 && (nf || !root_seen)) {
+        const size_t node = mix_new_node(m, fns[which].palette);
+        if (node == MIX_NONE) {
+          ok = false;
+          break;
+        }
+        if (nf == capf) {
+          const size_t cap = capf ? capf * 2 : 8;
+          mix_frame * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, fr, cap * sizeof *g);
+          if (!g) {
+            m->fail = true;
+            ok = false;
+            break;
+          }
+          fr = g;
+          capf = cap;
+        }
+        if (nf) {
+          if (fr[nf - 1].cur.has_value) {
+            ok = false;
+            break;
+          }
+          fr[nf - 1].cur.child = node;
+          fr[nf - 1].cur.has_value = true;
+        }
+        else {
+          root_seen = true;
+        }
+        fr[nf].node = node;
+        memset(&fr[nf].cur, 0, sizeof fr[nf].cur);
+        fr[nf].cur.child = MIX_NONE;
+        nf++;
+        pos++;
+        continue;
+      }
+      /* another function (a calculation that stayed): its text, balanced, is the word */
+      size_t depth = 0;
+      while (pos < n) {
+        if (t[pos] == '(') {
+          depth++;
+        }
+        else if (t[pos] == ')' && --depth == 0) {
+          pos++;
+          break;
+        }
+        pos++;
+      }
+      if (depth != 0) {
+        ok = false;
+        break;
+      }
+      word.n = pos - start;
+    }
+    if (nf == 0) {
+      ok = false;
+      break;
+    }
+    mix_frame * f = &fr[nf - 1];
+    mix_node * node = &m->nodes[f->node];
+    if (word.p[word.n - 1] == '%') {
+      double v;
+      /* amount_value reads a number (here without its percent sign) and nothing else */
+      if (!amount_value((span){word.p, word.n - 1}, &v) || f->cur.has_pct) {
+        ok = false;
+        break;
+      }
+      f->cur.pct = v;
+      f->cur.has_pct = true;
+    }
+    else if (node->palette && node->count == 0 && !f->cur.has_value && eq(word, "in")) {
+      while (pos < n && t[pos] != ',') {
+        pos++;
+      }
+      size_t e = pos;
+      while (e > start && is_ws(t[e - 1])) {
+        e--;
+      }
+      node->method = (span){t + start, e - start};
+    }
+    else if (f->cur.has_value) {
+      ok = false;
+      break;
+    }
+    else {
+      f->cur.word = word;
+      f->cur.has_value = true;
+    }
+  }
+  gtext_allocator_free((GTEXT_Allocator *)m->a, fr);
+  return ok && !m->fail && m->nn > 0;
+}
+
+/// Normalizing Mix Percentages (Values 5, 6.1): "For each omitted percentage in items, set it to (100% - specified sum) / (number of omitted percentages)", the specified
+/// sum clamped to 100%. The scaling of a total over 100% is not applied to the written value: Values 5, 6.2 makes the computed value "the mix notation itself, with its
+/// arguments computed individually" where it cannot be calculated, and a palette is not calculated here. A mix whose percentages are all written is left as written.
+static void mix_normalize(mix_state * m, mix_node * n) {
+  double specified = 0.0;
+  size_t omitted = 0;
+  for (size_t i = n->first; i != MIX_NONE; i = m->items[i].next) {
+    if (m->items[i].has_pct) {
+      specified += m->items[i].pct;
+    }
+    else {
+      omitted++;
+    }
+  }
+  if (specified > 100.0) {
+    specified = 100.0;
+  }
+  double total = 0.0;
+  for (size_t i = n->first; i != MIX_NONE; i = m->items[i].next) {
+    if (!m->items[i].has_pct) {
+      m->items[i].pct = (100.0 - specified) / (double)omitted;
+      m->items[i].has_pct = true;
+    }
+    total += m->items[i].pct;
+  }
+  /* equal shares of the whole: the percentages are not written */
+  bool equal = total > 99.999999 && total < 100.000001 && n->count > 0;
+  const double share = n->count ? 100.0 / (double)n->count : 0.0;
+  for (size_t i = n->first; equal && i != MIX_NONE; i = m->items[i].next) {
+    const double d = m->items[i].pct - share;
+    equal = d > -0.000001 && d < 0.000001;
+  }
+  n->omit_pct = equal;
+}
+
+static bool drl_weights(span word, double w[3]) {
+  w[0] = w[1] = w[2] = 0.0;
+  if (eq(word, "standard")) {
+    w[0] = 100.0;
+  }
+  else if (eq(word, "constrained")) {
+    w[1] = 100.0;
+  }
+  else if (eq(word, "no-limit")) {
+    w[2] = 100.0;
+  }
+  else {
+    return false;
+  }
+  return true;
+}
+
+/// Color HDR 1, 3.3: "Let p1, ..., pN be the mixing percentages, normalized to sum to 100%", and the percentage of each limit is the sum of the arguments' own,
+/// weighted by those. A function comes before the ones inside it in `nodes`, so the last node is done first.
+static bool drl_compute(mix_state * m) {
+  for (size_t k = m->nn; k-- > 0;) {
+    mix_node * n = &m->nodes[k];
+    double sum = 0.0;
+    for (size_t i = n->first; i != MIX_NONE; i = m->items[i].next) {
+      if (!m->items[i].has_pct) {
+        return false;
+      }
+      sum += m->items[i].pct;
+    }
+    n->w[0] = n->w[1] = n->w[2] = 0.0;
+    if (sum <= 0.0) {
+      continue;
+    }
+    for (size_t i = n->first; i != MIX_NONE; i = m->items[i].next) {
+      double cw[3];
+      if (m->items[i].child != MIX_NONE) {
+        memcpy(cw, m->nodes[m->items[i].child].w, sizeof cw);
+      }
+      else if (!m->items[i].has_value || !drl_weights(m->items[i].word, cw)) {
+        return false;
+      }
+      for (int j = 0; j < 3; j++) {
+        n->w[j] += cw[j] * (m->items[i].pct / sum);
+      }
+    }
+  }
+  return true;
+}
+
+static void put_percent(sb * b, double v) {
+  put_number(b, v);
+  sb_putc(b, '%');
+}
+
+/// "...the computed value is dynamic-range-limit-mix(), with parameters standard, constrained, and no-limit, in that order, and percentages p_standard,
+/// p_constrained_high, and p_no_limit, omitting parameters with a percentage equal to 0%. If all parameters are thereby omitted, the computed value is the initial value."
+static void drl_write(const mix_node * n, sb * out) {
+  static const char * const names[3] = {"standard", "constrained", "no-limit"};
+  for (int j = 0; j < 3; j++) {
+    if (n->w[j] > 99.9999995) {
+      sb_puts(out, names[j]);
+      return;
+    }
+  }
+  bool any = false;
+  for (int j = 0; j < 3; j++) {
+    any = any || n->w[j] >= 0.0000005;
+  }
+  if (!any) {
+    sb_puts(out, "no-limit");
+    return;
+  }
+  size_t written = 0;
+  sb_puts(out, "dynamic-range-limit-mix(");
+  for (int j = 0; j < 3; j++) {
+    if (n->w[j] >= 0.0000005) {
+      if (written++) {
+        sb_puts(out, ", ");
+      }
+      sb_puts(out, names[j]);
+      sb_putc(out, ' ');
+      put_percent(out, n->w[j]);
+    }
+  }
+  sb_putc(out, ')');
+}
+
+static bool method_is_default(span method) {
+  /* Color 5: oklab is the default interpolation space, and is not written */
+  return method.n == 0 || eq(method, "in oklab");
+}
+
+/// The palette-mix() as the text writes it: the interpolation method unless it is the default, then each argument with its normalized percentage (none when the
+/// shares are equal). Arguments that are mixes are written in place, with an explicit stack.
+static void palette_write(mix_state * m, sb * out) {
+  typedef struct {
+    size_t node;
+    size_t next;     ///< The next argument to write.
+    size_t parent;   ///< The argument of the enclosing function that this function is the value of, or MIX_NONE.
+  } pframe;
+  pframe * st = NULL;
+  size_t sp = 0, cap = 0;
+  for (size_t k = 0; k < m->nn; k++) {
+    mix_normalize(m, &m->nodes[k]);
+  }
+  size_t node = 0;
+  size_t parent = MIX_NONE;
+  for (;;) {
+    /* open `node` */
+    if (sp == cap) {
+      cap = cap ? cap * 2 : 8;
+      pframe * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, st, cap * sizeof *g);
+      if (!g) {
+        out->fail = true;
+        break;
+      }
+      st = g;
+    }
+    st[sp].node = node;
+    st[sp].next = m->nodes[node].first;
+    st[sp].parent = parent;
+    sp++;
+    sb_puts(out, "palette-mix(");
+    if (!method_is_default(m->nodes[node].method)) {
+      put_span(out, m->nodes[node].method);
+      sb_puts(out, ", ");
+    }
+    /* write arguments until one opens a function or the function ends */
+    bool opened = false;
+    while (sp && !opened) {
+      pframe * f = &st[sp - 1];
+      if (f->next == MIX_NONE) {
+        sb_putc(out, ')');
+        const size_t done_parent = f->parent;
+        sp--;
+        if (done_parent != MIX_NONE && sp && !m->nodes[st[sp - 1].node].omit_pct) {
+          sb_putc(out, ' ');
+          put_percent(out, m->items[done_parent].pct);
+        }
+        continue;
+      }
+      const size_t i = f->next;
+      const mix_item * it = &m->items[i];
+      f->next = it->next;
+      if (i != m->nodes[f->node].first) {
+        sb_puts(out, ", ");
+      }
+      if (it->child != MIX_NONE) {
+        node = it->child;
+        parent = i;
+        opened = true;
+        break;
+      }
+      put_span(out, it->word);
+      if (!m->nodes[f->node].omit_pct) {
+        sb_putc(out, ' ');
+        put_percent(out, it->pct);
+      }
+    }
+    if (!opened) {
+      break;
+    }
+  }
+  gtext_allocator_free((GTEXT_Allocator *)m->a, st);
+}
+
+/// A dynamic-range-limit or font-palette whose value is a mix, rewritten; `*changed` says whether the text differs. Anything else is left as it is.
+static bool rewrite_mix(sb * out, span text, bool palette, bool * changed) {
+  mix_state m;
+  memset(&m, 0, sizeof m);
+  m.a = out->a;
+  const bool read = mix_read(&m, text);
+  if (m.fail) {
+    out->fail = true;
+  }
+  if (!read || (m.nodes[0].palette != palette)) {
+    mix_free(&m);
+    put_span(out, text);
+    return !out->fail;
+  }
+  sb w = {out->a, NULL, 0, 0, false};
+  if (palette) {
+    palette_write(&m, &w);
+  }
+  else if (drl_compute(&m)) {
+    drl_write(&m.nodes[0], &w);
+  }
+  mix_free(&m);
+  if (w.fail) {
+    out->fail = true;
+  }
+  if (w.n == 0 || w.fail) {
+    put_span(out, text);
+  }
+  else {
+    if (w.n != text.n || memcmp(w.d, text.p, w.n) != 0) {
+      *changed = true;
+    }
+    sb_put(out, w.d, w.n);
+  }
+  gtext_allocator_free((GTEXT_Allocator *)out->a, w.d);
+  return !out->fail;
+}
+
+/* ---- easing functions (Easing 2) ---------------------------------------------------------------------------------------- */
+
+/// A control point's input progress as a plain percentage (`50%`); false for anything else (a calculation that stayed, a number).
+static bool plain_percent(span s, double * v) {
+  return s.n > 1 && s.p[s.n - 1] == '%' && amount_value((span){s.p, s.n - 1}, v);
+}
+
+/// Easing 2, 2.1.1: "control points originally specified with two input progress values are turned into two separate control points, and the input progress values
+/// are in strictly ascending order" (`linear(0 20%, 0.5 10%, 1)` serializes as `linear(0 20%, 0.5 20%, 1)`); "If the control point originally lacked an input progress
+/// value" it is written without one, so a missing position is not filled in. `run` is the largest plain percentage written so far.
+static void rewrite_linear(sb * out, span inner) {
+  spv args = {out->a, NULL, 0, 0, false};
+  split_top(&args, inner, ',');
+  double run = 0.0;
+  bool have_run = false;
+  bool first = true;
+  for (size_t i = 0; i < args.n && !args.fail; i++) {
+    spv t = {out->a, NULL, 0, 0, false};
+    split_top(&t, args.v[i], ' ');
+    if (t.fail) {
+      out->fail = true;
+      gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+      break;
+    }
+    const size_t points = t.n >= 3 ? 2u : 1u;
+    for (size_t k = 0; k < points && t.n > 0; k++) {
+      if (!first) {
+        sb_puts(out, ", ");
+      }
+      first = false;
+      put_span(out, t.v[0]);
+      if (t.n >= 2) {
+        const span pos = t.v[1 + k];
+        double v;
+        sb_putc(out, ' ');
+        if (plain_percent(pos, &v)) {
+          if (have_run && v < run) {
+            v = run;
+          }
+          run = v;
+          have_run = true;
+          put_percent(out, v);
+        }
+        else {
+          put_span(out, pos);
+        }
+      }
+    }
+    if (t.n == 0) {
+      /* an empty argument: left as it was */
+      if (!first) {
+        sb_puts(out, ", ");
+      }
+      first = false;
+    }
+    gtext_allocator_free((GTEXT_Allocator *)out->a, t.v);
+  }
+  out->fail = out->fail || args.fail;
+  gtext_allocator_free((GTEXT_Allocator *)out->a, args.v);
+}
+
+/// Easing 2, 2.3.1: "step-start and step-end do not serialize as themselves. Instead, they serialize as steps(1, start) and steps(1)", and a steps() with the step position
+/// "end or jump-end" is written without it. 2.3: "If the <step-position> is jump-none, the <integer> must be at least 2 ... Otherwise, the <integer> must be at least 1",
+/// so a calculation that computes to less is the least the function is valid with (Values 4, 10.7: a calculation is clamped to the range of its slot).
+static void rewrite_easing_item(sb * out, span item) {
+  if (eq(item, "step-start")) {
+    sb_puts(out, "steps(1, start)");
+    return;
+  }
+  if (eq(item, "step-end")) {
+    sb_puts(out, "steps(1)");
+    return;
+  }
+  if (starts_fn(item, "steps")) {
+    spv a = {out->a, NULL, 0, 0, false};
+    split_top(&a, fn_inner(item, 5), ',');
+    double n;
+    if (!a.fail && a.n >= 1 && a.n <= 2 && amount_value(a.v[0], &n) && a.v[0].p[a.v[0].n - 1] != '%' && n == (double)(long)n) {
+      const double least = a.n == 2 && eq(a.v[1], "jump-none") ? 2.0 : 1.0;
+      const bool end = a.n == 2 && (eq(a.v[1], "end") || eq(a.v[1], "jump-end"));
+      sb_puts(out, "steps(");
+      put_number(out, n < least ? least : n);
+      if (a.n == 2 && !end) {
+        sb_puts(out, ", ");
+        put_span(out, a.v[1]);
+      }
+      sb_putc(out, ')');
+      gtext_allocator_free((GTEXT_Allocator *)out->a, a.v);
+      return;
+    }
+    out->fail = out->fail || a.fail;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, a.v);
+  }
+  else if (starts_fn(item, "linear")) {
+    sb_puts(out, "linear(");
+    rewrite_linear(out, fn_inner(item, 6));
+    sb_putc(out, ')');
+    return;
+  }
+  put_span(out, item);
+}
+
+static void rewrite_easing(sb * out, span text) {
+  spv parts = {out->a, NULL, 0, 0, false};
+  split_top(&parts, text, ',');
+  if (parts.fail) {
+    out->fail = true;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+    return;
+  }
+  for (size_t i = 0; i < parts.n; i++) {
+    if (i) {
+      sb_puts(out, ", ");
+    }
+    rewrite_easing_item(out, parts.v[i]);
+  }
+  gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+}
+
+
 /* ---- the property's value ---------------------------------------------------------------------------------------- */
 
-typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE } shape_prop;
 
 static bool box_is(span s, const char * w) {
   return eq(s, w);
@@ -1130,6 +1738,27 @@ static bool rewrite_item(sb * out, span text, shape_prop prop, bool * changed) {
 
 /// The whole value: each of its comma-separated parts (image lists, `content`) rewritten.
 static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) {
+  if (prop == SHAPE_PROP_PALETTE || prop == SHAPE_PROP_RANGE_LIMIT) {
+    return rewrite_mix(out, text, prop == SHAPE_PROP_PALETTE, changed);
+  }
+  if (prop == SHAPE_PROP_EASING) {
+    sb w = {out->a, NULL, 0, 0, false};
+    rewrite_easing(&w, text);
+    if (w.fail) {
+      out->fail = true;
+    }
+    else if (w.n != text.n || memcmp(w.d, text.p, w.n) != 0) {
+      *changed = true;
+    }
+    if (w.fail || w.n == 0) {
+      put_span(out, text);
+    }
+    else {
+      sb_put(out, w.d, w.n);
+    }
+    gtext_allocator_free((GTEXT_Allocator *)out->a, w.d);
+    return !out->fail;
+  }
   spv parts = {out->a, NULL, 0, 0, false};
   split_top(&parts, text, ',');
   if (parts.fail) {
@@ -1231,16 +1860,27 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
     return s;
   }
   const GTEXT_CSS_Value * root = gtext_css_value_set_root(bt);
-  if (!root || root->kind == GTEXT_CSS_VAL_KEYWORD) {
-    *out = bt;
-    return GTEXT_CSS_OK;
-  }
   shape_prop prop = SHAPE_PROP_OTHER;
   if (m->name_length == 13 && memcmp(m->name, "shape-outside", 13) == 0) {
     prop = SHAPE_PROP_OUTSIDE;
   }
   else if (m->name_length == 12 && memcmp(m->name, "border-shape", 12) == 0) {
     prop = SHAPE_PROP_BORDER_SHAPE;
+  }
+  else if (m->name_length == 12 && memcmp(m->name, "font-palette", 12) == 0) {
+    prop = SHAPE_PROP_PALETTE;
+  }
+  else if (m->name_length == 19 && memcmp(m->name, "dynamic-range-limit", 19) == 0) {
+    prop = SHAPE_PROP_RANGE_LIMIT;
+  }
+  else if ((m->name_length == 25 && memcmp(m->name, "animation-timing-function", 25) == 0) ||
+           (m->name_length == 26 && memcmp(m->name, "transition-timing-function", 26) == 0)) {
+    prop = SHAPE_PROP_EASING;
+  }
+  /* a keyword is its own computed value, except step-start and step-end, which are written as steps() */
+  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING)) {
+    *out = bt;
+    return GTEXT_CSS_OK;
   }
   GTEXT_Allocator alloc = st->cc->alloc;
   GTEXT_CSS_Serialize_Options so;
