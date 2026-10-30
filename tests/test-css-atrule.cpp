@@ -523,6 +523,15 @@ TEST(CssAtrule, TheConditionOfAGroupRuleIsWrittenAsCssomWritesIt) {
   EXPECT_EQ(Parsed("@supports (display:grid) and (foo: bar) { }").css(), "@supports (display: grid) and (foo: bar) { }");
 }
 
+TEST(CssAtrule, APreludeEndingInAnEscapedSpaceKeepsIt) {
+  /* found by the at-rule fuzzer: the white space cut from the end of a prelude included a space that a backslash escapes, and the text then ended in a backslash that escaped
+   * the `;` after it, so reading it back swallowed the rule. */
+  const std::string once = Parsed("@namespace svg ur\\ ").css();
+  EXPECT_EQ(once, "@namespace svg ur\\ ;");
+  EXPECT_EQ(Parsed(once).css(), once);
+  EXPECT_EQ(Parsed("@namespace svg ur\\\\ ").css(), "@namespace svg ur\\\\;") << "an escaped backslash is not an escape of the space";
+}
+
 TEST(CssAtrule, DashedNamesTagsAndMarginBoxes) {
   /* A <dashed-ident> is a custom identifier that starts with two dashes, `--` included. */
   EXPECT_TRUE(Parsed("@font-palette-values -- { font-family: a }").res.valid);

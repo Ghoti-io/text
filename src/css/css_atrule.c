@@ -438,6 +438,14 @@ static char * text_in_arena(ctx * c, const GTEXT_CSS_Component_Value * v, size_t
   }
   size_t e = bl;
   while (e > s && (buf[e - 1] == ' ' || buf[e - 1] == '\t' || buf[e - 1] == '\n')) {
+    /* a white space character an odd run of backslashes escapes is part of the text (an identifier ending in an escaped space), not the space after it */
+    size_t slashes = 0;
+    while (e - 1 - slashes > s && buf[e - 2 - slashes] == '\\') {
+      slashes++;
+    }
+    if (slashes % 2 == 1) {
+      break;
+    }
     e--;
   }
   char * out = css_arena_strdup(&c->a->arena, buf + s, e - s);
