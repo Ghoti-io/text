@@ -260,7 +260,7 @@ static GTEXT_CSS_Status cache_put(struct GTEXT_CSS_Condition_Call_Internal * ci,
 }
 
 static size_t rhash(const void * container, size_t serial, uint32_t root) {
-  return phash(container, (uint32_t)(serial * 0x9e3779b1u) ^ (uint32_t)(serial >> 32) ^ (root * 0x85ebca6bu));
+  return phash(container, (uint32_t)((uint64_t)serial * 0x9e3779b1u) ^ (uint32_t)((uint64_t)serial >> 32) ^ (root * 0x85ebca6bu));
 }
 
 static GTEXT_CSS_Status results_grow(struct GTEXT_CSS_Condition_Call_Internal * ci) {

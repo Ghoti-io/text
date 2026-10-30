@@ -209,6 +209,8 @@ typedef struct {
   bool container;  ///< Parsing a <container-condition>: size features, `style()`, `scroll-state()` and `anchored()` are the leaves.
   uint8_t sub;     ///< Inside `style()`, `scroll-state()` or `anchored()`: MQ_SUB_*, so a parenthesized group is a feature of that function.
   bool nm_logical; ///< The last container feature name was `inline-size` or `block-size`.
+  const void ** okset; ///< The child arrays already shown to be an <any-value> (open addressing, a power of two long): a nested block is checked once, not once for each block around it.
+  size_t okcap, okused;
 } parser;
 
 static void set_status(parser * P, GTEXT_CSS_Status st, GTEXT_CSS_Span span) {
@@ -624,15 +626,69 @@ static val_result parse_value(parser * P, int feature, const GTEXT_CSS_Component
 
 /* ---- the enclosed node ------------------------------------------------- */
 
+static size_t okset_slot(const void * p, size_t cap) {
+  return (size_t)(((uintptr_t)p >> 4) * 0x9e3779b97f4a7c15ull >> 17) & (cap - 1);
+}
+
+static bool okset_has(const parser * P, const void * p) {
+  if (!P->okcap) {
+    return false;
+  }
+  for (size_t j = okset_slot(p, P->okcap);; j = (j + 1) & (P->okcap - 1)) {
+    if (!P->okset[j]) {
+      return false;
+    }
+    if (P->okset[j] == p) {
+      return true;
+    }
+  }
+}
+
+static bool okset_add(parser * P, const void * p) {
+  if (okset_has(P, p)) {
+    return true;
+  }
+  if ((P->okused + 1) * 2 > P->okcap) {
+    const size_t nc = P->okcap ? P->okcap * 2 : 64;
+    const void ** n = gtext_allocator_calloc(&P->alloc, nc, sizeof *n);
+    if (!n) {
+      return false;
+    }
+    for (size_t i = 0; i < P->okcap; i++) {
+      if (P->okset[i]) {
+        size_t j = okset_slot(P->okset[i], nc);
+        while (n[j]) {
+          j = (j + 1) & (nc - 1);
+        }
+        n[j] = P->okset[i];
+      }
+    }
+    gtext_allocator_free(&P->alloc, (void *)P->okset);
+    P->okset = n;
+    P->okcap = nc;
+  }
+  size_t j = okset_slot(p, P->okcap);
+  while (P->okset[j]) {
+    j = (j + 1) & (P->okcap - 1);
+  }
+  P->okset[j] = p;
+  P->okused++;
+  return true;
+}
+
 /// Whether the contents of a block or function are an `<any-value>?` (Syntax 3, 5.4.7): "any sequence of one or more tokens, so long as it does not contain
 /// <bad-string-token>, <bad-url-token>, unmatched <)-token>, <]-token>, or <}-token>". (A `;` or a `!` is allowed; they are not in <declaration-value>.) The
 /// walk uses its own stack: the nesting of the input costs memory, not the C stack. Returns false on a hard failure too, with the status set.
+/// A block shown to be one is remembered, so that `((((a b) c) c) c)` reads each block once and not once for each block around it.
 static bool any_value_ok(parser * P, const GTEXT_CSS_Component_Value * v, size_t n) {
+  if (okset_has(P, v)) {
+    return true;
+  }
   typedef struct {
     const GTEXT_CSS_Component_Value * v;
     size_t n;
   } span_t;
-  size_t cap = 16, top = 0;
+  size_t cap = 16, top = 0, next = 0;
   span_t * st = gtext_allocator_malloc(&P->alloc, cap * sizeof *st);
   if (!st) {
     set_status(P, GTEXT_CSS_E_OOM, (GTEXT_CSS_Span){0});
@@ -640,8 +696,8 @@ static bool any_value_ok(parser * P, const GTEXT_CSS_Component_Value * v, size_t
   }
   st[top++] = (span_t){v, n};
   bool ok = true;
-  while (top > 0 && ok) {
-    const span_t f = st[--top];
+  while (next < top && ok) {
+    const span_t f = st[next++];
     for (size_t i = 0; i < f.n && ok; i++) {
       const GTEXT_CSS_Component_Value * c = &f.v[i];
       if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
@@ -653,7 +709,7 @@ static bool any_value_ok(parser * P, const GTEXT_CSS_Component_Value * v, size_t
         case GTEXT_CSS_TOKEN_CLOSE_CURLY: ok = false; break;
         default: break;
         }
-      } else if (c->child_count > 0) {
+      } else if (c->child_count > 0 && !okset_has(P, c->children)) {
         if (top == cap) {
           span_t * g = gtext_allocator_realloc(&P->alloc, st, cap * 2 * sizeof *st);
           if (!g) {
@@ -665,6 +721,15 @@ static bool any_value_ok(parser * P, const GTEXT_CSS_Component_Value * v, size_t
           cap *= 2;
         }
         st[top++] = (span_t){c->children, c->child_count};
+      }
+    }
+  }
+  if (ok) {
+    for (size_t i = 0; i < top; i++) {
+      if (!okset_add(P, st[i].v)) {
+        set_status(P, GTEXT_CSS_E_OOM, (GTEXT_CSS_Span){0});
+        ok = false;
+        break;
       }
     }
   }
@@ -2404,6 +2469,7 @@ static GTEXT_CSS_Status parse_impl(const GTEXT_CSS_Component_Value * values, siz
   }
   gtext_allocator_free(&P.alloc, P.frames);
   gtext_allocator_free(&P.alloc, P.ops);
+  gtext_allocator_free(&P.alloc, (void *)P.okset);
   if (result) {
     result->status = st;
     result->message = gtext_css_status_string(st);
