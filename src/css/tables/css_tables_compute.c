@@ -781,7 +781,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* text-fit */
   {1, 0, 0, 0, 0, 0, 0}, /* text-group-align */
   {2, 0, 0, 1, 0, 0, 0}, /* text-indent */
-  {1, 0, 0, 1, 0, 0, 0}, /* text-justify */
+  {3, 37, 0, 1, 0, 0, 0}, /* text-justify */
   {1, 0, 0, 1, 3, 0, 0}, /* text-orientation */
   {2, 0, 0, 1, 0, 0, 0}, /* text-overflow */
   {1, 0, 0, 1, 0, 0, 0}, /* text-rendering */

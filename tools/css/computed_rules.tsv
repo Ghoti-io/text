@@ -14,9 +14,9 @@
 -webkit-box-pack	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
 -webkit-text-stroke-width	algorithm	LINE_WIDTH	exact	-	absolute length
 -webkit-user-select	unimplemented	-	-	-	the pin lists the name for compatibility and gives it no grammar, initial value or computed value
-align-content	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
-align-items	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
-align-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+align-content	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+align-items	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+align-self	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 backdrop-filter	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/filter-effects-1/: Omitted values are included and compute to their defaults.
 background-image	algorithm	SHAPE	exact	-	list, each item either an <image> or the keyword none
 background-position-block	algorithm	POSITION_AXIS	exact	-	A list, each item consisting of: an offset given as a computed <length-percentage> value, plus an origin keyword
@@ -72,9 +72,9 @@ font-width	algorithm	FONT_WIDTH	exact	-	a percentage, see below
 glyph-orientation-vertical	identity	-	partial: kept as written; the aliasing to text-orientation (auto, 0 and 90) is not applied	-	draft:https://www.w3.org/TR/SVG2/text.html: The following SVG 1.1 values must still be supported by aliasing the property as a shorthand to text-orientation
 hyphenate-limit-chars	algorithm	HYPHENATE_CHARS	exact	-	three values, each either the auto keyword or an integer
 image-orientation	algorithm	IMAGE_ORIENTATION	exact	-	the specified keyword, or an <angle>, rounded and normalized (see text), plus optionally a flip keyword
-justify-content	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
-justify-items	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
-justify-self	algorithm	ALIGN_KEYWORD	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+justify-content	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+justify-items	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
+justify-self	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-align/: flex-start: A legacy value alias for flow-start.
 letter-spacing	algorithm	LETTER_SPACING	exact	-	draft:https://drafts.csswg.org/css-text-4/: an absolute length and/or a percentage (a zero length is written normal, as the pinned tests of letter-spacing expect)
 lighting-color	by-type	-	exact	-	draft:https://drafts.fxtf.org/filter-effects/: lighting-color computed value: computed color
 line-height	algorithm	LINE_HEIGHT	exact	-	the specified keyword, a number, or a computed <length> value
@@ -109,6 +109,7 @@ stroke-width	algorithm	LINE_WIDTH	exact	-	the absolute length, or percentage
 text-align-all	algorithm	TEXT_ALIGN	exact	-	keyword as specified, except for match-parent which computes as defined above
 text-align-last	algorithm	TEXT_ALIGN	exact	-	keyword as specified, except for match-parent which computes as defined above
 text-shadow	algorithm	SHADOW	exact	-	either the keyword none or a list, each item consisting of four absolute lengths plus a computed color and optionally also an inset keyword
+text-justify	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-text-4/: For legacy reasons, UAs must also support the alternate keyword distribute which must compute to inter-character
 transform-origin	algorithm	POSITION	exact	-	see background-position
 translate	algorithm	TRANSLATE	exact	-	the keyword none or a pair of computed <length-percentage> values and an absolute length
 voice-balance	algorithm	VOICE_BALANCE	exact	-	the specified value resolved to a <number> between -100 and 100 (inclusive)

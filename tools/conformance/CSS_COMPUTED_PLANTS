@@ -22,3 +22,4 @@ filter-default-kept	css_shape_compute.c	      if (t.n == 0 || amount_value(t.v[0
 position-edge-kept	css_compute_algo.c	const bool far = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");	const bool far = false;
 position-x-kept	css_computed_shorthand.c	(li.name_length == 21 && memcmp(li.name, "background-position-x", 21) == 0)	(li.name_length == 21 && memcmp(li.name, "background-position-q", 21) == 0)
 shorthand-resets-skipped	css_computed_shorthand.c	for (size_t i = 0; i < info.longhand_count + info.reset_longhand_count; i++) {	for (size_t i = 0; i < info.longhand_count; i++) {
+distribute-kept	css_compute_algo.c	    return "inter-character";	    return "distribute";

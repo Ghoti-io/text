@@ -385,7 +385,7 @@ property	contain-intrinsic-size	1	1	1	1
 property	contain-intrinsic-width	1	1	1	1	
 property	container	1	1	1	0	
 property	container-name	1	1	1	0	
-property	container-type	1	1	1	0	
+property	container-type	1	1	1	1	
 property	content	1	1	1	0	
 property	content-visibility	1	1	1	1	
 property	continue	1	1	1	1	

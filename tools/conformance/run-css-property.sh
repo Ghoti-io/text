@@ -171,7 +171,7 @@ awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF < 7 { print; next } { gsub(/"/, "", 
 expect reason-without-quote "SUITE PROBLEMS" gate "$vectors" "$scratch/unquoted" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
 sed -E 's/"[^"]*"/"x"/g' "$exceptions" > "$scratch/word-quote"
 expect reason-quotes-only-a-word "SUITE PROBLEMS" gate "$vectors" "$scratch/word-quote" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
-awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } $6 == "draft-newer" { $6 = "wpt-tentative"; done = 1 } { print }' "$exceptions" > "$scratch/tentative"
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } $6 != "wpt-tentative" && $1 !~ /tentative/ { $6 = "wpt-tentative"; done = 1 } { print }' "$exceptions" > "$scratch/tentative"
 expect tentative-class-on-a-page-that-is-not "SUITE PROBLEMS" gate "$vectors" "$scratch/tentative" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
 printf '#!/bin/sh\nexec "%s" "$@" | sed -u "s/^INVALID$/UNKNOWN/"\n' "$runner" > "$scratch/runner-unknown"
 chmod +x "$scratch/runner-unknown"

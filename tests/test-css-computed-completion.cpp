@@ -229,4 +229,35 @@ TEST(CssComputedCompletionOverflow, VisibleBesideAScrollableAxisIsAuto) {
   EXPECT_EQ(root_computed("overflow-x: hidden; overflow-inline: visible", "overflow-inline"), "visible") << "the later declaration of the slot decides: both axes are visible";
 }
 
+/* Anchor Positioning 2, 2.1: "normal | [ [ size | inline-size ] || scroll-state || anchored ]". The computed value is the specified keywords, in the grammar's order. */
+TEST(CssComputedCompletionNewerGrammar, ContainerTypeTakesAnchored) {
+  EXPECT_EQ(root_computed("container-type: anchored", "container-type"), "anchored");
+  EXPECT_EQ(root_computed("container-type: anchored size", "container-type"), "size anchored");
+  EXPECT_EQ(root_computed("container-type: inline-size anchored", "container-type"), "inline-size anchored");
+  EXPECT_EQ(root_computed("container-type: anchored scroll-state inline-size", "container-type"), "inline-size scroll-state anchored");
+  // a keyword twice, or beside normal, stays invalid
+  EXPECT_EQ(root_computed("container-type: anchored anchored", "container-type"), "normal");
+  EXPECT_EQ(root_computed("container-type: normal anchored", "container-type"), "normal");
+}
+
+/* Text 4, 7.5: "UAs must also support the alternate keyword distribute which must compute to inter-character". */
+TEST(CssComputedCompletionNewerGrammar, TextJustifyDistributeComputesToInterCharacter) {
+  EXPECT_EQ(root_computed("text-justify: distribute", "text-justify"), "inter-character");
+  EXPECT_EQ(root_computed("text-justify: DISTRIBUTE", "text-justify"), "inter-character");
+  EXPECT_EQ(root_computed("text-justify: distribute no-compress", "text-justify"), "inter-character no-compress");
+  EXPECT_EQ(root_computed("text-justify: inter-word", "text-justify"), "inter-word");
+  EXPECT_EQ(root_computed("text-justify: distribute inter-word", "text-justify"), "auto") << "two justification keywords stay invalid";
+}
+
+/* View Transitions 2: "The values none, auto, and match-element are excluded from <custom-ident>" and "also accepts an auto keyword"; a keyword is ASCII case-insensitive and
+   is written in lower case, a custom identifier keeps its case. */
+TEST(CssComputedCompletionNewerGrammar, ViewTransitionNameKeywordsAreLowerCase) {
+  EXPECT_EQ(root_computed("view-transition-name: match-element", "view-transition-name"), "match-element");
+  EXPECT_EQ(root_computed("view-transition-name: maTch-element", "view-transition-name"), "match-element");
+  EXPECT_EQ(root_computed("view-transition-name: AUTO", "view-transition-name"), "auto");
+  EXPECT_EQ(root_computed("view-transition-name: NONE", "view-transition-name"), "none");
+  EXPECT_EQ(root_computed("view-transition-name: Foo", "view-transition-name"), "Foo");
+  EXPECT_EQ(root_computed("view-transition-name: match-element-2", "view-transition-name"), "match-element-2");
+}
+
 } // namespace
