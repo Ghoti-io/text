@@ -468,10 +468,18 @@ static void put_url(writer * w, const char * text, size_t len) {
    library's and not of CSSOM's, which says nothing about a tie, and it is the same on every
    host because it reads no host: no printf, no locale, no rounding mode.
 
-   The two spellings CSSOM does not give: a NaN (no token has one) is "0", and an infinity
-   (a token whose magnitude overflowed a double) is the largest finite double, so that a
-   number is always digits. */
+   The two spellings CSSOM does not give: a NaN (no token has one) is "0", and a magnitude past
+   the implementation's limit is the limit. Values 4, 10.7.2: "A UA may have an implementation-defined
+   limit for values approaching infinity", and 9.1: "extremely large values (including, notably, +-infinity)
+   will clamp to the minimum/maximum value allowed". The limit is the largest single-precision float
+   (3.4028234663852886e38, 39 digits), which is the range both pinned browsers keep a number in; a
+   number is always digits, because CSSOM says "scientific notation is not used", and no number is
+   309 digits long. A calculation that is not finite is not written here: inside calc() it is
+   `infinity`, `-infinity` or `NaN` (Values 4, 10.13), and outside it the value is clamped to the
+   range of its property before it gets here. The writer applies the limit to every number it writes,
+   so that parsing what it wrote and writing it again gives the same text. */
 enum { CSSOM_MAX_DIGITS = 17, CSSOM_MAX_TEXT = 330 };
+#define CSS_NUMBER_LIMIT 3.4028234663852886e38 /* the largest single-precision float, as a double */
 
 /* The bound on the spelling, which the buffer below and the copies into it rest on. The shortest digits of a double are
    at most CSSOM_MAX_DIGITS (17). A value is below 1.8e308, so an integer spelling has at most 309 digits (DBL_MAX is 17
@@ -487,8 +495,11 @@ size_t css_cssom_number(double v, bool integer, char * out) {
     out[0] = '0';
     return 1;
   }
-  if (v == 1.0 / 0.0 || v == -1.0 / 0.0) {
-    v = v > 0 ? 1.7976931348623157e308 : -1.7976931348623157e308;
+  if (v > CSS_NUMBER_LIMIT) {
+    v = CSS_NUMBER_LIMIT;
+  }
+  else if (v < -CSS_NUMBER_LIMIT) {
+    v = -CSS_NUMBER_LIMIT;
   }
   GMATH_Decimal d;
   if (gmath_decimal_shortest(v, &d) != GMATH_OK) {

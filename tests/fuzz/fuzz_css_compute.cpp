@@ -292,12 +292,6 @@ std::string items_of(const GTEXT_CSS_Declaration_Block * b, const std::string & 
 
 /// A block written, read back, and written again: the same longhands and the same cssText.
 void check_block(const std::string & text, size_t fault, const std::string & input) {
-  // A line break inside a string is a bad-string token, which no <declaration-value> may hold; a value with var() in it is nevertheless taken as pending
-  // when its string is cut short by one (a gap of the property parser, recorded where the library's open items are), and the text of such a value is not
-  // one declaration when it is written. Those inputs say nothing about the serializer.
-  if (text.find_first_of("\n\r\f") != std::string::npos && text.find_first_of("\"'") != std::string::npos) {
-    return;
-  }
   FaultAllocator fa;
   GTEXT_CSS_Declaration_Block * b = nullptr;
   fa.arm(fault);

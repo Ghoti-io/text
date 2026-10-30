@@ -35,6 +35,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 #include <map>
 #include <string>
 #include <vector>
@@ -175,6 +176,32 @@ GTEXT_CSS_Element_Interface make_table(std::vector<El> * all) {
   return t;
 }
 
+/// Whether a computed `font-family` names Ahem, the test font of web-platform-tests (ahem.css), a font whose every glyph is a square one em wide.
+bool names_ahem(const GTEXT_CSS_Value * v) {
+  if (!v) {
+    return false;
+  }
+  if (v->text.data && v->text.length == 4 && strncasecmp(v->text.data, "Ahem", 4) == 0) {
+    return true;
+  }
+  for (size_t i = 0; i < v->child_count; i++) {
+    if (names_ahem(&v->children[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The metrics of Ahem that the pages rely on: the advance of every glyph, "0" and U+6C34 among them, is 1em. (Its x-height and cap height are not
+/// asked for: a page that needs one is listed as unsupported until they are given here with the font's own table behind them.) Any other family has no metrics.
+bool font_metric(void *, const GTEXT_CSS_Font_Query * q, GTEXT_CSS_Font_Metric metric, double * px) {
+  if (!names_ahem(q->family) || (metric != GTEXT_CSS_METRIC_CH && metric != GTEXT_CSS_METRIC_IC)) {
+    return false;
+  }
+  *px = q->size_px;
+  return true;
+}
+
 /// The size of the query container of an element (Containment 3): the nearest ancestor whose computed `container-type` is `size` (both axes) or `inline-size`
 /// (the inline one), and its computed `width` and `height` when those are lengths; false where there is none or the size is not known.
 bool container_size(void *, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Container_Axis axis, double * px) {
@@ -291,6 +318,7 @@ void run_page(Page & page) {
   GTEXT_CSS_Element_Interface table = make_table(&els);
   GTEXT_CSS_Environment env = gtext_css_environment_default();
   env.container_size = container_size;
+  env.font_metric = font_metric;
   GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
   co.elements = &table;
   GTEXT_CSS_Compute_Context * ctx = nullptr;

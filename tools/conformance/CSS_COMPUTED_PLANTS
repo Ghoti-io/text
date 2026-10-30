@@ -7,3 +7,6 @@
 unit-factor	css_units.c	  LEN_ABS(PT, "pt", 4.0, 3.0), /* 96 / 72 */	  LEN_ABS(PT, "pt", 5.0, 3.0), /* 96 / 72 */
 color-channel	css_color.c	short_form ? d[i] * 17 : d[i * 2] * 16 + d[i * 2 + 1];	short_form ? d[i] * 17 : d[(2 - i) * 2] * 16 + d[(2 - i) * 2 + 1];
 shorthand-distribution	css_shorthand.c	  static const unsigned char pick[4][4] = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 1, 2, 1}, {0, 1, 2, 3}};	  static const unsigned char pick[4][4] = {{0, 0, 0, 0}, {0, 1, 0, 1}, {0, 1, 2, 2}, {0, 1, 2, 3}};
+caret-auto-kept	css_compute_algo.c	root->child_count != 2 || !kw(&root->children[1], "auto")) {	root->child_count != 2 || 1) {
+ratio-calculation-kept	css_compute_value.c	return (v->flags & GTEXT_CSS_VFLAG_MATH) && v->child_count == 2;	return false;
+range-union-first-only	css_compute_algo.c	if (!src->range_set || src->range_set_count == 0) {	if (1) {

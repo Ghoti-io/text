@@ -822,17 +822,18 @@ TEST(CssValueSerialize, TheFixedPointHoldsWhereTheStandardWritesTheValueBackAsIt
   EXPECT_EQ(run_text("<number [1e-7,∞]>", run_text("<number [1e-7,∞]>", "1e-7")), "no match");
   EXPECT_EQ(run("<number>", "1e-7"), "num:1e-07");
   // magnitudes the writer keeps are fixed points, at both ends
-  for (const char * n : {"0.000001", "0.999999", "1", "123456.789012", "1e21", "1e100", "1.7976931348623157e308", "4.5e15", "9007199254740993",
-           "0.5", "100", "-0.000001", "-1e300"}) {
+  for (const char * n : {"0.000001", "0.999999", "1", "123456.789012", "1e21", "1e30", "4.5e15", "9007199254740993",
+           "0.5", "100", "-0.000001", "-1e30", "1e300", "-1e300"}) {
     const std::string first = run_text("<number>", n);
     EXPECT_NE(first, "no match") << n;
     EXPECT_EQ(run_text("<number>", first), first) << n;
   }
-  EXPECT_EQ(run_text("<number>", "1e300"), "1" + std::string(300, '0'));
+  // the writer's limit is the largest single-precision float (Values 4, 10.7.2: an implementation-defined limit for values approaching infinity)
+  EXPECT_EQ(run_text("<number>", "1e300"), "34028234663852886" + std::string(22, '0'));
   EXPECT_EQ(run_text("<number>", "1e-300"), "0");
-  // an infinity is the largest double, and that is a fixed point
+  // a number that overflowed a double is the limit, 39 digits and not 309, and that is a fixed point
   const std::string inf = run_text("<number>", "1e999");
-  EXPECT_EQ(inf.size(), 309u);
+  EXPECT_EQ(inf.size(), 39u);
   EXPECT_EQ(run_text("<number>", inf), inf);
 }
 

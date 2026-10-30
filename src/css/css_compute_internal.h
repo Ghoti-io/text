@@ -113,6 +113,8 @@ void css_vb_fail(css_vb * vb, GTEXT_CSS_Status status);
 void css_v_keyword(css_vb * vb, GTEXT_CSS_Value * v, const char * text);
 void css_v_number(GTEXT_CSS_Value * v, double number);
 void css_v_integer(GTEXT_CSS_Value * v, double number);
+/** The value `v` of a calculation clamped to the range of its slot (the union of ranges when `src` has a `range_set`: the nearest bound, a tie to the lower). */
+double css_value_clamp(const GTEXT_CSS_Value * src, double v);
 void css_v_percentage(GTEXT_CSS_Value * v, double number);
 void css_v_dimension(GTEXT_CSS_Value * v, double number, GTEXT_CSS_Unit unit);
 /// A list whose children array is `kids` (already in the arena or in a set the builder depends on).
@@ -211,6 +213,7 @@ typedef struct {
   double weight, width_percent, oblique_degrees;
   bool italic, vertical;
   GTEXT_CSS_Value_Set * line_height; ///< Its line-height (retained).
+  GTEXT_CSS_Color_Scheme scheme; ///< The page's used color scheme: the root's own, which an element that says `normal` uses.
 } css_root_info;
 
 /// A diagnostic a style keeps (css_style.h): its name is copied.

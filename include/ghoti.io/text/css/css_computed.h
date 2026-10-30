@@ -159,6 +159,7 @@ typedef enum {
   GTEXT_CSS_ALGO_WORD_SPACING,     ///< `word-spacing`: `normal` computes to zero.
   GTEXT_CSS_ALGO_LETTER_SPACING,   ///< `letter-spacing`: a length of zero is `normal`.
   GTEXT_CSS_ALGO_DASHARRAY,        ///< `stroke-dasharray`: numbers are lengths in px, and the values are one comma separated list.
+  GTEXT_CSS_ALGO_CARET_COLOR,      ///< `caret-color`: a second value of `auto` is the same as none, and is left out.
   GTEXT_CSS_ALGO_CUSTOM,           ///< `--*`.
   GTEXT_CSS_ALGO_COUNT             ///< The number of algorithms; not one.
 } GTEXT_CSS_Compute_Algorithm;
@@ -212,6 +213,9 @@ typedef struct {
                                      ///< `user` must outlive the context. NULL: a computation that needs one is GTEXT_CSS_E_UNSUPPORTED, naming the callback. (gtext_css_compute_element() is
                                      ///< given a table of its own and uses that.)
   const GTEXT_CSS_At_Property_Set * property_rules; ///< The registrations that `@property` rules made (css_at_property.h), or NULL. Borrowed: it must outlive the context and not change.
+  bool has_root_scheme;              ///< Whether `root_scheme` is given. False (the default): the page's color scheme is the used scheme of the topmost style of the chain (the root).
+  GTEXT_CSS_Color_Scheme root_scheme; ///< For a subtree computed without its ancestors: the used color scheme of the page, which an element with `color-scheme: normal` (or none) uses
+                                     ///< (Color Adjust 1: "the element color scheme is the same as the page color scheme"). Read only when `has_root_scheme`. A topmost style that declares a scheme of its own uses its own.
 } GTEXT_CSS_Compute_Options;
 
 /** @brief The defaults, spelled out. */

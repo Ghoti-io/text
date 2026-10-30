@@ -33,6 +33,7 @@ border-left-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a b
 border-right-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 border-spacing	algorithm	PAIR_DUP	exact	-	two absolute lengths
 border-top-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
+caret-color	algorithm	CARET_COLOR	exact	-	draft:https://drafts.csswg.org/css-ui-4/: If the second value is omitted, the behavior is the same as if auto had been specified.
 color	algorithm	COLOR	exact	-	computed color, see resolving color values
 column-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 column-width	by-type	-	exact	auto	as specified, with <length-percentage> values computed

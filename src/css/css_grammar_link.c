@@ -992,6 +992,42 @@ static bool split_sequences(linker * L, uint8_t * nl) {
   return L->status == GTEXT_CSS_OK;
 }
 
+/* A calculation that matches a ranged native type is clamped, when its value is computed, to the union of the ranges that the
+   alternatives of the same type give it (`<integer [-inf,-1]> | <integer [1,inf]>` is every integer but zero: calc(3) is 3, not -1).
+   For each alternation, the ranged natives of one type are linked in a ring through `target` (a native has no other use for it), in
+   one pass over the kids: work is linear in the kids. */
+static void link_range_siblings(GTEXT_CSS_Compiled * c) {
+  for (size_t i = 0; i < c->nnodes; i++) {
+    const gnode * alt = &c->nodes[i];
+    if (alt->kind != GN_ALT) {
+      continue;
+    }
+    uint32_t first[NT_COUNT], last[NT_COUNT];
+    bool seen[NT_COUNT];
+    memset(seen, 0, sizeof seen);
+    for (uint32_t k = 0; k < alt->nkids; k++) {
+      const uint32_t id = c->kids[alt->kids + k];
+      gnode * n = &c->nodes[id];
+      if (n->kind != GN_NATIVE || !(n->flags & GNF_RANGE) || n->native >= NT_COUNT) {
+        continue;
+      }
+      if (seen[n->native]) {
+        c->nodes[last[n->native]].target = id;
+      }
+      else {
+        seen[n->native] = true;
+        first[n->native] = id;
+      }
+      last[n->native] = id;
+    }
+    for (unsigned t = 0; t < NT_COUNT; t++) {
+      if (seen[t] && first[t] != last[t]) {
+        c->nodes[last[t]].target = first[t]; /* the ring */
+      }
+    }
+  }
+}
+
 void css_compiled_keep_source_order(GTEXT_CSS_Compiled * c) {
   for (size_t i = 0; i < c->nnodes; i++) {
     if (c->nodes[i].kind == GN_OR) {
@@ -1065,6 +1101,7 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
     }
   }
   if (L.status == GTEXT_CSS_OK) {
+    link_range_siblings(c);
     for (size_t i = 0; i < c->nnodes && L.status == GTEXT_CSS_OK; i++) {
       gnode * g = &c->nodes[i];
       if (g->kind == GN_KEYWORD) {

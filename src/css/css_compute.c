@@ -100,6 +100,7 @@ static const char * const algo_names[GTEXT_CSS_ALGO_COUNT] = {
   [GTEXT_CSS_ALGO_WORD_SPACING] = "WORD_SPACING",
   [GTEXT_CSS_ALGO_LETTER_SPACING] = "LETTER_SPACING",
   [GTEXT_CSS_ALGO_DASHARRAY] = "DASHARRAY",
+  [GTEXT_CSS_ALGO_CARET_COLOR] = "CARET_COLOR",
   [GTEXT_CSS_ALGO_CUSTOM] = "CUSTOM",
 };
 
@@ -1684,6 +1685,10 @@ static GTEXT_CSS_Status compute_property(css_state * st, GTEXT_CSS_Property_Id i
     return status;
   }
   const GTEXT_CSS_Compute_Context * cc = st->cc;
+  if (id == cc->pid[CSS_P_COLOR_SCHEME] && !st->parent) {
+    /* the page's color scheme is the root's used scheme (Color Adjust 1); every style below it carries it (css_root_info) */
+    st->style->root.scheme = css_st_used_scheme(st);
+  }
   if (id == cc->pid[CSS_P_FONT_SIZE]) {
     root_fill(st, false);
   }

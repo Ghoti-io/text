@@ -185,8 +185,35 @@ static bool resolve_math_px(css_state * st, const GTEXT_CSS_Value * v, double ba
     }
     return false;
   }
-  *px = gtext_css_math_clamp(value, v->range_lo, v->range_hi);
+  *px = css_value_clamp(v, value);
   return true;
+}
+
+double css_value_clamp(const GTEXT_CSS_Value * src, double v) {
+  if (!src->range_set || src->range_set_count == 0) {
+    return gtext_css_math_clamp(v, src->range_lo, src->range_hi);
+  }
+  if (v != v) {
+    v = 0.0;
+  }
+  double best = 0.0, best_d = 0.0;
+  bool have = false;
+  for (size_t i = 0; i < src->range_set_count; i++) {
+    const double lo = src->range_set[2 * i], hi = src->range_set[2 * i + 1];
+    if (v >= lo && v <= hi) {
+      return v == 0.0 ? 0.0 : v; /* inside a range: nothing to clamp */
+    }
+    const double cand[2] = {lo, hi};
+    for (int k = 0; k < 2; k++) {
+      const double d = v > cand[k] ? v - cand[k] : cand[k] - v;
+      if (!have || d < best_d || (d == best_d && cand[k] < best)) {
+        best = cand[k];
+        best_d = d;
+        have = true;
+      }
+    }
+  }
+  return best == 0.0 ? 0.0 : best;
 }
 
 /* ---- the font properties -------------------------------------------------------------------------------------- */
@@ -1643,6 +1670,25 @@ static GTEXT_CSS_Status build_pair_dup(css_state * st, ab * a, const GTEXT_CSS_V
   return GTEXT_CSS_OK;
 }
 
+/* Basic UI 4, caret-color: "auto | <color> [auto | <color>]?" and "If the second value is omitted, the behavior is the same as if auto had been specified." The
+   computed value of a color followed by `auto` is the color alone (the shortest form that says the same, which is how the pinned tests of caret-color write it). */
+static GTEXT_CSS_Status build_caret_color(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,
+    GTEXT_CSS_Value ** out_root) {
+  (void)st;
+  (void)bt;
+  (void)m;
+  if (!root || root->kind != GTEXT_CSS_VAL_LIST || root->child_count != 2 || !kw(&root->children[1], "auto")) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value * one = css_vb_value(&a->vb);
+  if (!one) {
+    return a->vb.status;
+  }
+  *one = root->children[0];
+  *out_root = one;
+  return GTEXT_CSS_OK;
+}
+
 static size_t dash_count(const GTEXT_CSS_Value * v) {
   if (v->kind != GTEXT_CSS_VAL_LIST) {
     return 1;
@@ -2033,6 +2079,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_SHADOW: return run_build(st, id, src, 0, build_shadow, m, out);
   case GTEXT_CSS_ALGO_WORD_SPACING: return algo_word_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_LETTER_SPACING: return algo_letter_spacing(st, id, src, out);
+  case GTEXT_CSS_ALGO_CARET_COLOR: return run_build(st, id, src, 0, build_caret_color, m, out);
   case GTEXT_CSS_ALGO_DASHARRAY: return run_build(st, id, src, CV_NUMBERS_TO_PX, build_dasharray, m, out);
   case GTEXT_CSS_ALGO_NUMBER_LENGTH: return css_cv_by_type_ex(st, src, id, CV_NUMBERS_TO_PX, out);
   default:

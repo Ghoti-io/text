@@ -262,9 +262,10 @@ TEST(CssShorthandRoundTrip, TheCasesTheReviewFoundAreWrittenWithTheValuesTheBloc
   EXPECT_EQ(Block(R(), "max-lines: 3; block-ellipsis: no-ellipsis; continue: -webkit-legacy").css(), "line-clamp: 3 -webkit-legacy;");
   // a longhand holds a name that is also a keyword of another component: the names are written one by one
   EXPECT_EQ(Block(R(), "animation: none; animation-name: auto").css().find("animation:"), std::string::npos);
-  // font-synthesis-position is not among the longhands the pin gives the shorthand: it is written by itself
-  EXPECT_EQ(Block(R(), "font-synthesis: weight style small-caps; font-synthesis-position: none").css(),
-      "font-synthesis: weight style small-caps; font-synthesis-position: none;");
+  // font-synthesis-position is a longhand of the shorthand (consolidate.tsv, append-longhand), so a `none` of it is the omission of `position`
+  EXPECT_EQ(Block(R(), "font-synthesis: weight style small-caps; font-synthesis-position: none").css(), "font-synthesis: weight style small-caps;");
+  EXPECT_EQ(Block(R(), "font-synthesis: weight style small-caps; font-synthesis-position: auto").css(), "font-synthesis: weight style small-caps position;");
+  EXPECT_EQ(Block(R(), "font-synthesis: position").css(), "font-synthesis: position;");
 }
 
 TEST(CssShorthandRoundTrip, AShorthandIsWrittenOnlyWhenItsLonghandsAreAllValidOrAllTheSameKeywordOrAllPending) {

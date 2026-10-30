@@ -1060,6 +1060,17 @@ TEST(CssPresentation, OnlyTheNamespaceOfSvgIsSvg) {
   EXPECT_EQ(d.value("s", "display"), "none");
 }
 
+/* Color Adjust 1: for `normal`, "the element color scheme is the same as the page color scheme": below a root that declares `dark`, `color-scheme: normal` is dark. */
+TEST(CssStyleComputedCompletion, NormalBelowADarkRootIsDark) {
+  Doc d("<html style=\"color-scheme: dark\"><body><p id=\"a\" style=\"color-scheme: normal; color: light-dark(red, blue)\"></p></body></html>", true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.value("a", "color"), "blue");
+  // the page is the root element: a dark element below a light root does not make the page dark
+  Doc e("<html><body><div style=\"color-scheme: dark\"><p id=\"a\" style=\"color-scheme: normal; color: light-dark(red, blue)\"></p></div></body></html>", true);
+  ASSERT_EQ(e.status, GTEXT_CSS_OK);
+  EXPECT_EQ(e.value("a", "color"), "red");
+}
+
 TEST(CssStyleDump, ALineBreakOfAnyKindInACustomValueIsASpaceInTheDump) {
   Doc d("<div id=\"x\" style=\"--s: a&#12;b&#13;c&#10;d\"></div>", true);
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
@@ -1097,15 +1108,19 @@ TEST(CssBlockCustomNames, TheSpellingOfAnIdentifierIsTheLimit) {
   gtext_css_candidates_free(set);
 }
 
-/* A known defect, kept as a test that is disabled and says what is right (gtest lists it as disabled in every run): the grid line is `<integer [-inf,-1]> | <integer
-   [1,inf]>` in the pin (an integer that is not zero), a calculation matches the first alternative whatever its value, and its value is clamped to that alternative's range
-   when it is computed, so `calc(3)` is `-1`. Both browsers compute it to 3. Closing it needs the matcher to choose the alternative by the value of a calculation that
-   is a constant, which the specification of the grammar does not say; it is listed in the manual (documentation/formats/css-values.md). */
-TEST(CssStyleKnownDefects, DISABLED_ACalculationInAGridLineIsNotClampedToTheFirstOfTwoRanges) {
-  Doc d("<div id=\"a\" style=\"grid-row-start: calc(3) foo\"></div><div id=\"b\" style=\"grid-row-start: calc(3)\"></div>", true);
+/* Values 4, "calc()": a calculation is clamped to the range its slot allows when it is computed, and the grid line is `<integer [-inf,-1]> | <integer [1,inf]>` in
+   the pin, an integer that is not zero: the slot is the union of the two ranges, so calc(3) is 3, calc(-2) is -2, and a value in the gap (0) goes to the nearest bound
+   of the union, a tie to the lower one (both browsers compute 3 and 3 foo; the tie is recorded as the lower bound). */
+TEST(CssStyleComputedCompletion, ACalculationInAGridLineIsClampedToTheUnionOfItsRanges) {
+  Doc d("<div id=\"a\" style=\"grid-row-start: calc(3) foo\"></div><div id=\"b\" style=\"grid-row-start: calc(3)\"></div>"
+        "<div id=\"c\" style=\"grid-row-start: calc(-2)\"></div><div id=\"e\" style=\"grid-row-start: calc(0)\"></div>"
+        "<div id=\"g\" style=\"grid-row-start: calc(10) bar\"></div>", true);
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
   EXPECT_EQ(d.value("a", "grid-row-start"), "3 foo");
   EXPECT_EQ(d.value("b", "grid-row-start"), "3");
+  EXPECT_EQ(d.value("c", "grid-row-start"), "-2");
+  EXPECT_EQ(d.value("e", "grid-row-start"), "-1");
+  EXPECT_EQ(d.value("g", "grid-row-start"), "10 bar");
 }
 
 TEST(CssStyleDump, ItIsVersionedSortedByTheBytesOfTheNamesAndOneLineAProperty) {

@@ -39,7 +39,7 @@ const size_t gtext_css_tbl_compute_count = 823;
 /* one row for each property of the pin in the order of its ids: class, algorithm, shorthand kind, flags, position in the order of computation (0: none),
    and the initial value override (length, offset into the pool) */
 const css_tbl_compute gtext_css_tbl_compute[823] = {
-  {6, 36, 0, 1, 0, 0, 0}, /* --* */
+  {6, 37, 0, 1, 0, 0, 0}, /* --* */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-content */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-items */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-self */
@@ -270,7 +270,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* caption-side */
   {4, 0, 3, 0, 0, 0, 0}, /* caret */
   {1, 0, 0, 1, 0, 0, 0}, /* caret-animation */
-  {2, 0, 0, 1, 0, 0, 0}, /* caret-color */
+  {3, 36, 0, 1, 0, 0, 0}, /* caret-color */
   {1, 0, 0, 1, 0, 0, 0}, /* caret-shape */
   {1, 0, 0, 0, 0, 0, 0}, /* clear */
   {1, 0, 0, 0, 0, 0, 0}, /* clip */

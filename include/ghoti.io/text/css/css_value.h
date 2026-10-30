@@ -392,6 +392,10 @@ struct GTEXT_CSS_Value {
   double range_hi;                  ///< Its upper bound.
   const GTEXT_CSS_Math * math;      ///< A math function: its calculation (css_math.h); `text` is its specified-value serialization.
   const GTEXT_CSS_Color * color;    ///< A `<color>` (GTEXT_CSS_VAL_COLOR): the color (css_color.h); `text` is its serialization.
+  const double * range_set;         ///< For a math function whose slot is one of several ranges of the same type (`<integer [-inf,-1]> | <integer
+                                    ///< [1,inf]>`): the ranges, as `range_set_count` pairs of (lower, upper), starting with the one that matched, or NULL. The value is
+                                    ///< clamped to the nearest bound of the union, a tie to the lower one, instead of to `range_lo`/`range_hi`.
+  size_t range_set_count;           ///< The number of pairs in `range_set`.
 };
 
 /** @brief A set of typed values and the memory they live in (the struct is private). */

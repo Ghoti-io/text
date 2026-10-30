@@ -188,6 +188,8 @@ PLANTS = [
     ("review-custom-space-is-written-raw", "css_color_serialize.c", "(c->space == GTEXT_CSS_SPACE_CUSTOM ? put_ident(b, c->name.data, c->name.length) :",
      "(c->space == GTEXT_CSS_SPACE_CUSTOM ? put(b, c->name.data, c->name.length) :", ["review", "values-seeds"]),
     ("review-legacy-alpha-is-at-full-precision", "css_color_serialize.c", "    return put_num(b, gmath_floor(quotient + 0.5) / 1000.0);", "    return put_num(b, ai / 255.0);", ["review"]),
+    ("number-limit-dropped", "css_serialize.c", "if (v > CSS_NUMBER_LIMIT) {", "if (v > 1.7976931348623157e308) {", ["values"]),
+    ("range-union-first-only", "css_compute_algo.c", "if (!src->range_set || src->range_set_count == 0) {", "if (1) {", ["style"]),
 ]
 
 
@@ -434,6 +436,8 @@ def main(argv):
                 run = sh([exe, "--gtest_brief=1"], timeout=900, cwd=ROOT)
                 if run.returncode != 0:
                     failed.append(key)
+                    if not plant:
+                        sys.stderr.write("control %s:\n%s\n" % (key, (run.stdout + run.stderr)[-1500:]))
             if not plant:
                 if failed:
                     print("control: FAILED, the unedited library does not pass %s" % ", ".join(failed))

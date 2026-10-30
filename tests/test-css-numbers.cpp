@@ -398,9 +398,9 @@ const CssomRow kCssomRows[] = {
     {"12.50", "12.5"},
     {"1000000", "1000000"},
     {"1e6", "1000000"},
-    {"1.7976931348623157e308", "179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"},
-    {"1e400", "179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"},
-    {"-1e400", "-179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"},
+    {"1.7976931348623157e308", "340282346638528860000000000000000000000"},
+    {"1e400", "340282346638528860000000000000000000000"},
+    {"-1e400", "-340282346638528860000000000000000000000"},
     {"0.30000000000000004", "0.3"},
     {"3.14159265358979", "3.141593"},
     {"2.718281828", "2.718282"},
@@ -597,6 +597,8 @@ TEST(CssNumbers, ALongSpellingIsRoundedAsExactlyAsAShortOne) {
 
 // ---- CSSOM's spelling -----------------------------------------------------------------------------------------
 
+std::string limit_text() { return "34028234663852886" + std::string(22, '0'); }
+
 std::string cssom_written(const std::string & css) {
   Parsed p;
   parse_into(p, gtext_css_parse_component_values, css);
@@ -614,16 +616,19 @@ TEST(CssNumbers, CssomWritesTheShortestDigitsInFixedNotationRoundedToSixDecimals
   }
 }
 
-TEST(CssNumbers, CssomWritesTheLargestAndSmallestDoublesWithinItsBuffer) {
-  // The longest spelling there is: DBL_MAX is the 17 digits 17976931348623157 and 292 zeros (309 digits), and a sign makes 310 of the
-  // 330 bytes the writer has. Nothing is cut short.
-  const std::string max_digits = "17976931348623157" + std::string(292, '0');
-  ASSERT_EQ(max_digits.size(), 309u);
-  EXPECT_EQ(cssom_written("1.7976931348623157e308"), max_digits);
-  EXPECT_EQ(cssom_written("-1.7976931348623157e308"), "-" + max_digits);
-  EXPECT_EQ(cssom_written("1.7976931348623157e308px"), max_digits + "px");
-  EXPECT_EQ(cssom_written("1e400"), max_digits) << "an infinity is the largest double";
-  EXPECT_EQ(cssom_written("-1e400"), "-" + max_digits);
+TEST(CssNumbers, CssomWritesTheLargestAndSmallestNumbersWithinItsBuffer) {
+  // Values 4, 10.7.2: "A UA may have an implementation-defined limit for values approaching infinity". The limit is the largest single-precision float,
+  // 3.4028234663852886e38, which is the 17 digits 34028234663852886 and 22 zeros (39 digits); CSSOM writes it as digits ("scientific notation is not used"),
+  // and no number is 309 digits long. A number inside the limit is written as itself.
+  const std::string limit = "34028234663852886" + std::string(22, '0');
+  ASSERT_EQ(limit.size(), 39u);
+  EXPECT_EQ(cssom_written("1.7976931348623157e308"), limit);
+  EXPECT_EQ(cssom_written("-1.7976931348623157e308"), "-" + limit);
+  EXPECT_EQ(cssom_written("1.7976931348623157e308px"), limit + "px");
+  EXPECT_EQ(cssom_written("1e400"), limit) << "a number that overflowed a double is clamped like any other";
+  EXPECT_EQ(cssom_written("-1e400"), "-" + limit);
+  EXPECT_EQ(cssom_written("3.4028234663852886e38"), limit) << "the limit itself is written as itself";
+  EXPECT_EQ(cssom_written("1e38"), "1" + std::string(38, '0')) << "a number inside the limit is not changed";
   // The smallest ones round to nothing at six decimals.
   EXPECT_EQ(cssom_written("4.9406564584124654e-324"), "0") << "DBL_TRUE_MIN";
   EXPECT_EQ(cssom_written("-4.9406564584124654e-324"), "0");
@@ -647,11 +652,12 @@ TEST(CssNumbers, CssomPercentagesAndDimensionsAndTheSpellingsItHasToChoose) {
   EXPECT_EQ(cssom_written("-0.0000004em"), "0em") << "never negative zero";
   EXPECT_EQ(cssom_written("-0"), "0");
   EXPECT_EQ(cssom_written("+7"), "7");
-  // No token has a NaN, and an infinity (an overflowed number) is written as the largest double, as digits.
+  // No token has a NaN, and a number past the limit is written as the limit; that text is a fixed point.
   const std::string inf = cssom_written("1e400");
-  EXPECT_EQ(inf.substr(0, 17), "17976931348623157");
-  EXPECT_EQ(inf.size(), 309u);
+  EXPECT_EQ(inf, limit_text());
+  EXPECT_EQ(inf.size(), 39u);
   EXPECT_EQ(cssom_written("-1e400"), "-" + inf);
+  EXPECT_EQ(cssom_written(inf), inf) << "parse and write again";
   // A second serialization of the written text reads back as the same number to six decimals.
   EXPECT_EQ(cssom_written(cssom_written("0.1234565")), cssom_written("0.1234565"));
 }

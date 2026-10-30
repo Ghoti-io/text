@@ -496,14 +496,23 @@ static bool word_is(const GTEXT_CSS_Value * v, const char * word) {
   return true;
 }
 
+/// The color scheme of the page: the root's used scheme, the caller's for a detached subtree, else the user agent default (light).
+static GTEXT_CSS_Color_Scheme page_scheme(css_state * st) {
+  if (st->parent && st->parent->root.valid) {
+    return st->parent->root.scheme;
+  }
+  return st->cc->options.has_root_scheme ? st->cc->options.root_scheme : GTEXT_CSS_SCHEME_LIGHT;
+}
+
 GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st) {
   /* "If support is null, or none of the color schemes in support are supported by the UA, return the UA default color scheme" (light); "If preference
      is no preference, return the first supported color scheme in support"; "If preference's color scheme is in support and supported by the UA, return that
      color scheme"; "If support is flagged as sole support, return the first supported color scheme in support"; the environment has no overriding
      preference, so: "Otherwise, return the first supported color scheme in support." `normal` is no support of the element's own: "The element color scheme
      is the same as the page color scheme", and a page whose root declares none has a null support, which is the UA default, light, whatever the
-     preference. (An element that says `normal` below a root that declares a scheme is the page's scheme in the specification; the root is not known here,
-     and the inherited value of every other element carries the root's declaration.) */
+     preference. An element that says `normal` (or names no scheme it can use) below a root that declares one has the page's scheme: Color Adjust 1, "The element
+     color scheme is the same as the page color scheme" for `normal`; the page's is the root's used scheme, which every style of a chain carries (css_root_info), or the
+     one the caller gives for a subtree computed without its ancestors (GTEXT_CSS_Compute_Options::root_scheme). */
   if (st->force_scheme) {
     return st->force_scheme == 1 ? GTEXT_CSS_SCHEME_LIGHT : GTEXT_CSS_SCHEME_DARK;
   }
@@ -516,7 +525,7 @@ GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st) {
   const GTEXT_CSS_Value_Set * set = css_st_get(st, id);
   const GTEXT_CSS_Value * root = set ? gtext_css_value_set_root(set) : NULL;
   if (!root || word_is(root, "normal")) {
-    return GTEXT_CSS_SCHEME_LIGHT;
+    return page_scheme(st);
   }
   const GTEXT_CSS_Value * leaves[64];
   size_t n = 0;
@@ -552,7 +561,7 @@ GTEXT_CSS_Color_Scheme css_st_used_scheme(css_state * st) {
     has_dark = has_dark || dark;
   }
   if (!have_first) {
-    return GTEXT_CSS_SCHEME_LIGHT;
+    return page_scheme(st);
   }
   if ((preference == GTEXT_CSS_SCHEME_LIGHT && has_light) || (preference == GTEXT_CSS_SCHEME_DARK && has_dark)) {
     return preference;

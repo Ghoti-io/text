@@ -1882,6 +1882,25 @@ static bool math_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Val
   /* the range of the slot, in the canonical unit; the math layer clamps to it when a value is computed */
   out->range_lo = (g->flags & GNF_RANGE) ? g->lo : -1.0 / 0.0;
   out->range_hi = (g->flags & GNF_RANGE) ? g->hi : 1.0 / 0.0;
+  if ((g->flags & GNF_RANGE) && g->kind == GN_NATIVE && g->target != UINT32_MAX) {
+    /* one of several ranges of the same type in an alternation (css_grammar_link.c): the union of them decides when the value is
+       computed (css_value_clamp), so the ring is written out in the order of the grammar from its first member */
+    size_t count = 1;
+    for (uint32_t k = g->target; k != node; k = m->c->nodes[k].target) {
+      count++;
+    }
+    double * set = css_arena_alloc(&B->set->arena, count * 2 * sizeof(double));
+    if (!set) {
+      return B_oom(B);
+    }
+    uint32_t k = node;
+    for (size_t i = 0; i < count; i++, k = m->c->nodes[k].target) {
+      set[2 * i] = m->c->nodes[k].lo;
+      set[2 * i + 1] = m->c->nodes[k].hi;
+    }
+    out->range_set = set;
+    out->range_set_count = count;
+  }
   char * buf = NULL;
   size_t len = 0;
   const GTEXT_CSS_Status ss = css_math_serialize_to(mp, &m->alloc, m->max_text, &buf, &len);

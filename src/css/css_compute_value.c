@@ -523,14 +523,16 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
     out->text.length = 0;
     out->children = NULL;
     out->child_count = 0;
-    double v = clamp_range(root->value, src->range_lo, src->range_hi);
+    out->range_set = NULL;
+    out->range_set_count = 0;
+    double v = src->range_set ? (root->value != root->value ? 0.0 : root->value) : clamp_range(root->value, src->range_lo, src->range_hi);
     if (root->op == GTEXT_CSS_MATH_NUMBER) {
       if (slot_is_integer(w, src)) {
         css_v_integer(out, (double)0);
         /* round half toward +infinity (Values 4, 10.2: "rounded to the nearest integer") */
         double t = v + 0.5;
         const double f = gmath_floor(t);
-        out->number = clamp_range(f, src->range_lo, src->range_hi);
+        out->number = css_value_clamp(src, f);
         if (out->number > 2147483647.0 || out->number < -2147483648.0) {
           out->number = out->number > 0 ? 2147483647.0 : -2147483648.0;
         }
@@ -569,6 +571,15 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
   }
   *out = *src;
   out->math = nm;
+  if (src->range_set) { /* the ranges live in the source's set; the new value keeps its own copy */
+    double * rs = css_arena_alloc(&w->vb.set->arena, src->range_set_count * 2 * sizeof(double));
+    if (!rs) {
+      gtext_allocator_free(&alloc, text);
+      return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+    memcpy(rs, src->range_set, src->range_set_count * 2 * sizeof(double));
+    out->range_set = rs;
+  }
   out->text.data = css_vb_str(&w->vb, text, tl);
   out->text.length = out->text.data ? tl : 0;
   gtext_allocator_free(&alloc, text);
@@ -630,6 +641,10 @@ static GTEXT_CSS_Status leaf(cv_walk * w, const GTEXT_CSS_Value * src, GTEXT_CSS
 static bool has_children(const GTEXT_CSS_Value * v) {
   if ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->math) {
     return false;
+  }
+  /* a <ratio> with a calculation in it holds its two components as children (css_grammar_match.c) */
+  if (v->kind == GTEXT_CSS_VAL_RATIO) {
+    return (v->flags & GTEXT_CSS_VFLAG_MATH) && v->child_count == 2;
   }
   return (v->kind == GTEXT_CSS_VAL_LIST || v->kind == GTEXT_CSS_VAL_FUNCTION || v->kind == GTEXT_CSS_VAL_BLOCK) && v->child_count > 0;
 }
@@ -753,6 +768,14 @@ static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set *
       const bool node_changed = f->changed;
       if (node_changed) {
         done.children = f->kids;
+        if (done.kind == GTEXT_CSS_VAL_RATIO && done.child_count == 2 && done.children[0].kind == GTEXT_CSS_VAL_NUMBER && done.children[1].kind == GTEXT_CSS_VAL_NUMBER) {
+          /* both components of a <ratio> came to numbers: it is the plain ratio (Values 4: "a <ratio> is always serialized with both components") */
+          done.number = done.children[0].number;
+          done.number2 = done.children[1].number;
+          done.flags &= ~(uint32_t)GTEXT_CSS_VFLAG_MATH;
+          done.children = NULL;
+          done.child_count = 0;
+        }
       }
       nframes--;
       if (nframes == 0) {

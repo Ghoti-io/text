@@ -22,7 +22,8 @@ substitution-budget	css_substitute.c	  if (t > sub->max_tokens) {\n    sub->limi
 substitution-budget	css_substitute.c	    if (t > sub->max_tokens || css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);	    if (css_rope_bytes(r) > sub->max_bytes) {\n      sub->limited++;\n      css_rope_release(r);
 presentation-specificity	css_presentation.c	  k.presentational_hint = true;\n  k.context = keys->context;\n  k.sheet = keys->sheet;	  k.presentational_hint = false;\n  k.context = keys->context;\n  k.sheet = keys->sheet + 1000;
 dump-order	css_dump.c	  const int c = n ? memcmp(a->name, b->name, n) : 0;	  const int c = n ? -memcmp(a->name, b->name, n) : 0;
-scheme-normal	css_compute_units.c	  if (!root || word_is(root, "normal")) {\n    return GTEXT_CSS_SCHEME_LIGHT;	  if (!root || word_is(root, "normal")) {\n    return preference;
+scheme-normal	css_compute_units.c	  if (!root || word_is(root, "normal")) {\n    return page_scheme(st);	  if (!root || word_is(root, "normal")) {\n    return preference;
+scheme-page	css_compute_units.c	    return page_scheme(st);\n  }\n  const GTEXT_CSS_Value * leaves[64];	    return GTEXT_CSS_SCHEME_LIGHT;\n  }\n  const GTEXT_CSS_Value * leaves[64];
 svg-contents	css_compute_algo.c	{"a", "g", "use", "tspan", "textPath"};	{"a", "g", "switch", "use", "tspan", "textPath", "rect"};
 dasharray-separator	css_compute_algo.c	  css_v_list(list, kids, k, GTEXT_CSS_SEP_COMMA);	  css_v_list(list, kids, k, GTEXT_CSS_SEP_SPACE);
 presentation-allocator	css_presentation.c	  const GTEXT_Allocator * alloc = &set->alloc;	  const GTEXT_Allocator * alloc = NULL;

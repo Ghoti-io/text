@@ -118,14 +118,10 @@ css/css-fonts/parsing/font-synthesis-valid.html#10	font-synthesis	small-caps obl
 css/css-fonts/parsing/font-synthesis-valid.html#14	font-synthesis	oblique-only weight small-caps	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
 css/css-fonts/parsing/font-synthesis-valid.html#15	font-synthesis	oblique-only small-caps weight 	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
 css/css-fonts/parsing/font-synthesis-valid.html#16	font-synthesis	small-caps oblique-only weight 	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
-css/css-fonts/parsing/font-synthesis-valid.html#17	font-synthesis	position style	serialize	style	pin	the pin's font-synthesis has three longhands (weight, style, small-caps) and not font-synthesis-position, which the grammar of the shorthand names
 css/css-fonts/parsing/font-synthesis-valid.html#18	font-synthesis	position oblique-only	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
-css/css-fonts/parsing/font-synthesis-valid.html#19	font-synthesis	position weight style	serialize	weight style	pin	the pin's font-synthesis has three longhands (weight, style, small-caps) and not font-synthesis-position, which the grammar of the shorthand names
 css/css-fonts/parsing/font-synthesis-valid.html#20	font-synthesis	position weight oblique-only	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
-css/css-fonts/parsing/font-synthesis-valid.html#21	font-synthesis	position weight small-caps style	serialize	weight style small-caps	pin	the pin's font-synthesis has three longhands (weight, style, small-caps) and not font-synthesis-position, which the grammar of the shorthand names
 css/css-fonts/parsing/font-synthesis-valid.html#22	font-synthesis	position weight small-caps oblique-only	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
 css/css-fonts/parsing/font-synthesis-valid.html#3	font-synthesis	oblique-only	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
-css/css-fonts/parsing/font-synthesis-valid.html#5	font-synthesis	position	serialize	none	pin	the pin's font-synthesis has three longhands (weight, style, small-caps) and not font-synthesis-position, which the grammar of the shorthand names
 css/css-fonts/parsing/font-synthesis-valid.html#7	font-synthesis	oblique-only weight	parse	INVALID	grammar	oblique-only is a keyword of font-synthesis (Fonts 5)
 css/css-fonts/parsing/font-variation-settings-invalid.html#10	font-variation-settings	'a' 1234	invalid-accepted	"a" 1234	grammar	an axis tag is four characters of printable ASCII, and the string must be one
 css/css-fonts/parsing/font-variation-settings-invalid.html#11	font-variation-settings	'abcde' 1234	invalid-accepted	"abcde" 1234	grammar	an axis tag is four characters of printable ASCII, and the string must be one

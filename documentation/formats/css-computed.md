@@ -210,8 +210,8 @@ nature)" and "a layout-internal box is blockified, its inner display type conver
 and a floated `display: table-cell` is `block`, `inline math` is `block math`; and `inherit` is the parent's computed value as it is ("the property's specified and
 computed values are the inherited value" - CSS Cascade 5), so `border-top-style: none; border-top-width: inherit` has the parent's width, where a width of its own
 would be 0. `display: contents` on an SVG element other than a container that is rendered ("display: contents computes to display: none." - CSS Display 3, Appendix B),
-needs the element, so a computation with no tree keeps it; `color-scheme: normal` is the page's scheme, the user agent default (light) when the page declares none, and not the
-environment's preference (CSS Color Adjust 1, 2.3); `stroke-dasharray` is one comma separated list whichever way the dashes were written (SVG 2); `word-spacing: normal` computes to
+needs the element, so a computation with no tree keeps it; `color-scheme: normal` is the page's scheme (the used scheme of the root, which every style of a chain carries; for a subtree computed without its ancestors, `GTEXT_CSS_Compute_Options::root_scheme`), the user agent default (light)
+when the page declares none, and not the environment's preference (CSS Color Adjust 1, 2.3), so below a root that declares `dark` an element with `color-scheme: normal` takes the second argument of `light-dark()`; a `caret-color` whose second value is `auto` is the color alone; a `<ratio>` whose components are calculations that are numbers is the plain ratio (`aspect-ratio: sign(1rem - 1px) / 2` is `1 / 2`); `stroke-dasharray` is one comma separated list whichever way the dashes were written (SVG 2); `word-spacing: normal` computes to
 `0px`, and a zero `letter-spacing` to `normal`, as the pinned tests expect; and a bare `font-style: oblique` stays `oblique` ("the keyword specified, plus angle in degrees if
 specified").
 

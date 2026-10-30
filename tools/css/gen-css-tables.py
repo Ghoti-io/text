@@ -110,7 +110,7 @@ def read_normalize():
 
 def read_consolidate():
     path = os.path.join(HERE, "consolidate.tsv")
-    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}, "replace-property-grammar": {}}
+    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}, "replace-property-grammar": {}, "append-longhand": {}}
     if not os.path.exists(path):
         return rules
     with open(path, encoding="utf-8") as handle:
@@ -121,11 +121,11 @@ def read_consolidate():
             cols = line.split("\t")
             if cols[0] not in rules or len(cols) < 4:
                 die("consolidate.tsv:%d: expected directive, scope, name, reason" % n)
-            if cols[0] in ("append-grammar", "replace-grammar", "replace-property-grammar") and not quotes_a_sentence(cols[3]):
+            if cols[0] in ("append-grammar", "replace-grammar", "replace-property-grammar", "append-longhand") and not quotes_a_sentence(cols[3]):
                 die("consolidate.tsv:%d: %s wants a reason that quotes a sentence of the draft (four words and twenty characters at least)" % (n, cols[0]))
-            if cols[0] == "append-grammar":
+            if cols[0] in ("append-grammar", "append-longhand"):
                 if len(cols) != 5:
-                    die("consolidate.tsv:%d: append-grammar wants directive, scope, name, reason, text" % n)
+                    die("consolidate.tsv:%d: %s wants directive, scope, name, reason, text" % (n, cols[0]))
                 rules[cols[0]][(cols[1], cols[2])] = (cols[3], cols[4])
             elif cols[0] in ("replace-grammar", "replace-property-grammar"):
                 if len(cols) != 6:
@@ -351,6 +351,14 @@ def build(model):
         props[name]["grammar"] = now
         consolidate["replace-property-grammar"][(scope, name)] = ("used", reason, was, now)
 
+    for (scope, name), (reason, longhand) in sorted(consolidate["append-longhand"].items()):
+        # the pin's shorthand lacks a longhand that the served draft lists (the shorthand's own grammar names it): the line adds it, and is stale when
+        # the pin lists it already, or the shorthand or the longhand is not in the pin
+        if scope or name not in props or longhand not in props or longhand in props[name]["longhands"] or not props[name]["longhands"]:
+            die("consolidate.tsv: append-longhand %s %s: the pin has no such shorthand or longhand, or lists it already (stale)" % (name, longhand))
+        props[name]["longhands"].append(longhand)
+        consolidate["append-longhand"][(scope, name)] = ("used", reason, longhand)
+
     names = sorted(props)
     index = {n: i + 1 for i, n in enumerate(names)}
 
@@ -515,7 +523,7 @@ def build(model):
             t["grammar"] = grammar
             t["source"] = "(supplement)"
             t["flags"] = flags
-    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar", "replace-property-grammar"):
+    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar", "replace-property-grammar", "append-longhand"):
         for k, v in consolidate[rule].items():
             if not (isinstance(v, tuple) and v[0] == "used"):
                 die("consolidate.tsv: %s %s %s names no type (stale)" % ((rule,) + k))

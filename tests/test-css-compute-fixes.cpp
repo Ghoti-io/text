@@ -42,7 +42,7 @@ namespace {
 
 TEST(CssComputeEdges, AWidthTooLargeForAnIntegerIsNotNegative) {
   // snapping a border width to a device pixel cast to an integer, which is undefined past 2^63
-  EXPECT_EQ(root_computed("border-top-style: solid; border-top-width: 1e300px", "border-top-width").substr(0, 2), "10");
+  EXPECT_EQ(root_computed("border-top-style: solid; border-top-width: 1e300px", "border-top-width").substr(0, 2), "34") << "a width past the writer's limit (the largest single-precision float) is written as the limit";
   EXPECT_EQ(root_computed("border-top-style: solid; border-top-width: 1e19px", "border-top-width"), "10000000000000000000px");
   EXPECT_EQ(root_computed("outline-style: solid; outline-width: 9223372036854775808px", "outline-width"), "9223372036854776000px");
   EXPECT_EQ(root_computed("border-top-style: solid; border-top-width: 2.5px", "border-top-width"), "2px") << "whole device pixels below";
@@ -74,9 +74,10 @@ TEST(CssComputeEdges, LightDarkTakesTheColorSchemeOfTheElement) {
   EXPECT_EQ(root_computed("color-scheme: foo" + ld, "color", &dark), "red") << "no scheme the user agent supports: its default, light";
   EXPECT_EQ(root_computed("color-scheme: foo dark" + ld, "color", &light), "blue");
   EXPECT_EQ(root_computed("color-scheme: DARK" + ld, "color", &light), "blue") << "keywords in any case";
-  // color-scheme is inherited, so a child of a dark element is dark, and `normal` on the child is the page's
+  // color-scheme is inherited, so a child of a dark element is dark, and `normal` on the child is the page's: the root's, which is dark here (Color Adjust 1:
+  // "the element color scheme is the same as the page color scheme")
   EXPECT_EQ(computed("color-scheme: dark", "color: light-dark(red, blue)", "color", &light), "blue");
-  EXPECT_EQ(computed("color-scheme: dark", "color-scheme: normal; color: light-dark(red, blue)", "color", &light), "red");
+  EXPECT_EQ(computed("color-scheme: dark", "color-scheme: normal; color: light-dark(red, blue)", "color", &light), "blue");
   EXPECT_EQ(computed("color-scheme: light", "color-scheme: dark; color: light-dark(red, blue)", "color", &light), "blue");
   // a background and a border take the same scheme
   EXPECT_EQ(root_computed("color-scheme: dark; background-color: light-dark(white, black)", "background-color", &light), "black");

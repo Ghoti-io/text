@@ -13,6 +13,8 @@
 #                  the grammar, and is stale when the pin's grammar is not the old text (white space folded).
 # replace-property-grammar  the pin's grammar of a property lacks a range the served draft gives it: the line (directive, scope (empty), name, reason, old
 #                  text, new text) replaces the grammar, and is stale when the pin's grammar is not the old text (white space folded).
+# append-longhand the pin's shorthand lacks a longhand that the served draft's shorthand names: the line (directive, scope (empty), name (the shorthand), reason, longhand)
+#                  appends the longhand to the shorthand's list. Stale when the pin lists it, or does not have the shorthand or the longhand.
 # enum-from-values the pin defines the type only through the keyword values nested in its entry; the grammar is those
 #                  keywords, in the pin's order, separated by `|`.
 ignore-grammar	grid-template-columns	minmax()	the pin's value is the prototype `minmax(min, max)`, not a grammar; the track-size grammars write minmax() out
@@ -29,3 +31,4 @@ replace-property-grammar		ry	SVG 2 Geometry (served 2026-10-26): "A negative val
 replace-property-grammar		stroke-width	Fill and Stroke 3 (served 2026-10-26): "Negative values are invalid."; the pin gives stroke-width as a list of <length-percentage>, <line-width> and <number> without the range, so negative lengths and numbers were accepted (the draft's own grammar has no <number>; the pin's is kept, with the range)	[ <length-percentage> | <line-width> | <number> ]#	[ <length-percentage [0,∞]> | <line-width> | <number [0,∞]> ]#
 replace-property-grammar		stroke-miterlimit	Fill and Stroke 3 (served 2026-10-26): "Values less than 1 are invalid (and make the declaration invalid)."; the pin gives stroke-miterlimit as <number> without the range, so values below 1 were accepted	<number>	<number [1,∞]>
 replace-property-grammar		stroke-dasharray	Fill and Stroke 3 (served 2026-10-26): "Negative values are invalid."; the pin gives stroke-dasharray as a list of <length-percentage> and <number> without the range, so negative lengths and numbers were accepted (the draft's own grammar has no <number>; the pin's is kept, with the range)	none | [<length-percentage> | <number>]+#	none | [<length-percentage [0,∞]> | <number [0,∞]>]+#
+append-longhand		font-synthesis	Fonts 4 (served 2026-10-30), 2.8.5: "This property is a shorthand for the font-synthesis-weight, font-synthesis-style, font-synthesis-small-caps, and font-synthesis-position properties." and its value "none | [ weight || style || small-caps || position ]"; the pinned css-fonts.json gives the grammar with position and lists three longhands	font-synthesis-position

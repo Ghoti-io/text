@@ -15,15 +15,13 @@ grid-template-(columns|rows)	.*	exception	resolved-value	the track list of a gri
 (min-|max-)?(width|height|block-size|inline-size|min-block-size|min-inline-size)	.*	exception	resolved-value	the size of a box resolves to its used size: "then the resolved value is the used value."
 line-height	.*	exception	resolved-value	a number resolves to the used length: "then the resolved value is the used value."
 background-color	contrast-color|color-mix|rgb\(from|alpha\(	defect	color	contrast-color(), color-mix(), relative colors and alpha() stay as written for every property (the 7 listed defects of the registered-property gate): a function of colors is not computed to its sRGB form or its simplified arguments
-caret-color	rgb\(0, 255, 0\) auto	defect	values	the second value of `caret-color` when it is `auto` is dropped from the computed value (Basic UI 4: the block caret takes the first), and this library keeps it
 clip	rect\(.*(em|calc\()	defect	values	the lengths of a `clip` rectangle are not made absolute when they are relative or a calculation (`calc(-1em + 10px)` is -30px at a font size of 40px)
 flex-basis	calc\(	defect	values	a calculation of a percentage and a zero length is not simplified to the percentage (`calc(10% + 0px)` is `10%`)
+text-decoration-inset	-20px -20px	defect	values	a pair of equal lengths is written as one value (the shortest serialization the page expects, Text Decoration 4); the computed value is the pair
 (background-color|color|caret-color|accent-color|flood-color|box-shadow-color|column-rule-color|text-decoration-color|border-(block|inline)(-start|-end)?-color|outline-color)	currentcolor	exception	resolved-value	`currentcolor` resolves to the used color of the element: "then the resolved value is the used value."
-aspect-ratio	.*	defect	values	the arguments of `sign()` in a ratio are not resolved (a calculation that resolves to a number is a number)
 .*	UNSUPPORTED (corner|position-area|overlay)	defect	C2a	the property is classified unimplemented (the 15 listed in the plan: -webkit-box-*, -webkit-user-select, corner-*-shape, position-area)
 corner(-[a-z-]+)?	.*	defect	C2a	`corner-*` and the `corner-*-shape` longhands are unimplemented
 position-area|overlay	.*	defect	C2a	unimplemented, or the initial value of a newer draft
-.*	UNSUPPORTED (cqw|cqh|cqi|cqb|ch|ex|cap|ic|rch|rex|rcap|ric|lh|rlh)	defect	environment	a calculation of container or font-relative units inside a function argument that the walker does not compute (filter(), contrast-color(), font-feature-settings, counters, ...)
 (background-image|mask-image|border-image-source|list-style-image|content|cursor)	.*	defect	css-values (images)	a gradient is not written in its computed form (default position and shape omitted, positions and sizes made absolute, a color stop in sRGB): the image functions are specified values
 (filter|backdrop-filter)	.*	defect	css-values (functions)	the arguments of a filter function are not computed (blur() is blur(0px), a percentage amount is a number, calc() is simplified)
 (shape-outside|clip-path|offset-path|border-shape)	.*	defect	css-values (shapes)	a basic shape is not written in its computed form (rect() and xywh() as inset(), `center` as 50%, a ray's angle in degrees)

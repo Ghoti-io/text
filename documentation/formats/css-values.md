@@ -695,10 +695,6 @@ conversion of any color to another space
 `contrast-color()`; the resolution of `url()`; `sibling-index()`, `random()` and the
 like are parsed and kept, never evaluated here.
 
-## Known defect
-
-A calculation that stands for an integer of a grammar of two ranges is clamped to the first range whatever its value. The grid line is `<integer [-∞,-1]> | <integer [1,∞]>`
-(an integer that is not zero), a calculation matches the first alternative, and the value of a calculation is clamped to the range of the slot it matched when the
-style is computed, so `grid-row-start: calc(3)` and `calc(3) foo` compute to `-1` and `-1 foo`, where the browsers compute `3` and `3 foo`. Closing it needs the matcher to
-choose the alternative by the value of a calculation that is a constant. The test that says what is right is disabled and stays in the test programs
-(`CssStyleKnownDefects`).
+A calculation that stands for an integer of a grammar of more than one range of the same type (the grid line is `<integer [-∞,-1]> | <integer [1,∞]>`, an integer that is not zero) is clamped, when the style is
+computed, to the union of the ranges: `grid-row-start: calc(3)` computes to `3`, `calc(-2)` to `-2`, and a value in the gap, `calc(0)`, to the nearest bound of the union, a tie to the lower
+one (`-1`). `GTEXT_CSS_Value::range_set` holds the ranges.
