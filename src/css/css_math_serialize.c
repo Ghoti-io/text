@@ -373,7 +373,7 @@ static bool write_tree(obuf * b, const mnode * root, bool paren) {
   return ok && b->status == GTEXT_CSS_OK;
 }
 
-GTEXT_CSS_Status css_math_serialize_to(const GTEXT_CSS_Math * math, const GTEXT_Allocator * alloc, size_t max_bytes,
+static GTEXT_CSS_Status serialize_ex(const GTEXT_CSS_Math * math, const GTEXT_Allocator * alloc, size_t max_bytes, bool bare,
     char ** out, size_t * out_len) {
   obuf b;
   memset(&b, 0, sizeof b);
@@ -393,12 +393,10 @@ GTEXT_CSS_Status css_math_serialize_to(const GTEXT_CSS_Math * math, const GTEXT_
   else if (root->op == GTEXT_CSS_MATH_UNRESOLVED) {
     ok = put(&b, root->text.data, root->text.length);
   }
-  else if (css_math_is_numeric(root) || root->op == GTEXT_CSS_MATH_SYMBOL) {
-    ok = puts_(&b, "calc(") && write_tree(&b, root, false) && puts_(&b, ")");
-  }
-  else if (root->op == GTEXT_CSS_MATH_SUM || root->op == GTEXT_CSS_MATH_PRODUCT || root->op == GTEXT_CSS_MATH_NEGATE ||
-           root->op == GTEXT_CSS_MATH_INVERT) {
-    ok = puts_(&b, "calc(") && write_tree(&b, root, false) && puts_(&b, ")");
+  else if (css_math_is_numeric(root) || root->op == GTEXT_CSS_MATH_SYMBOL || root->op == GTEXT_CSS_MATH_SUM || root->op == GTEXT_CSS_MATH_PRODUCT ||
+           root->op == GTEXT_CSS_MATH_NEGATE || root->op == GTEXT_CSS_MATH_INVERT) {
+    /* (a calc-size() argument is the inside of the calc(): "serialize a calculation tree", with no calc( around it) */
+    ok = bare ? write_tree(&b, root, false) : (puts_(&b, "calc(") && write_tree(&b, root, false) && puts_(&b, ")"));
   }
   else {
     ok = write_tree(&b, root, false);
@@ -417,6 +415,16 @@ GTEXT_CSS_Status css_math_serialize_to(const GTEXT_CSS_Math * math, const GTEXT_
   *out = b.data;
   *out_len = b.len;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_math_serialize_to(const GTEXT_CSS_Math * math, const GTEXT_Allocator * alloc, size_t max_bytes,
+    char ** out, size_t * out_len) {
+  return serialize_ex(math, alloc, max_bytes, false, out, out_len);
+}
+
+GTEXT_CSS_Status css_math_serialize_bare_to(const GTEXT_CSS_Math * math, const GTEXT_Allocator * alloc, size_t max_bytes,
+    char ** out, size_t * out_len) {
+  return serialize_ex(math, alloc, max_bytes, true, out, out_len);
 }
 
 GTEXT_CSS_Status gtext_css_math_serialize_buffer(const GTEXT_CSS_Math * math, const GTEXT_CSS_Serialize_Options * options,

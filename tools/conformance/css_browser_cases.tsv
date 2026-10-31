@@ -1455,3 +1455,5 @@ page-scheme.1	dark	color-scheme: dark	color-scheme: normal; color: light-dark(re
 page-scheme.2	dark	color-scheme: dark	color: light-dark(red, blue)	color,color-scheme
 corner-valid.1			corner-top-left: 10px bevel	corner-top-left,border-top-left-radius,corner-top-left-shape
 corner-valid.2			corner: 4px 2% round	corner,border-top-left-radius,corner-top-left-shape
+bg-longhand.none			background: none	background,@background-color,@background-image
+bg-longhand.boxes			background: border-box content-box	background,@background-color,@background-clip

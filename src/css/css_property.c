@@ -473,6 +473,88 @@ static void zero_lengths_to_numbers(GTEXT_CSS_Property_Value * out, const GTEXT_
   }
 }
 
+/// Whether a steps() in the component values has a step count that is a constant calculation of NaN. Values 4, 10.9.2: "NaN does not escape a top-level calculation; it's
+/// censored into a zero value", and Easing 2, 2.3: "the <integer> must be at least 2 ... or the function is invalid. Otherwise, the <integer> must be at least 1": zero is
+/// neither. (A finite count below the least is clamped when computed, Values 4, 10.12; both pinned browsers refuse the NaN.)
+static bool steps_count_is_nan(const GTEXT_CSS_Component_Value * values, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    const GTEXT_CSS_Component_Value * v = &values[i];
+    if (v->kind != GTEXT_CSS_VALUE_FUNCTION) {
+      continue;
+    }
+    if (v->value.length == 5 && (v->value.data[0] | 32) == 's' && (v->value.data[1] | 32) == 't' && (v->value.data[2] | 32) == 'e' && (v->value.data[3] | 32) == 'p' &&
+        (v->value.data[4] | 32) == 's') {
+      for (size_t k = 0; k < v->child_count; k++) {
+        const GTEXT_CSS_Component_Value * c = &v->children[k];
+        if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+          continue;
+        }
+        if (c->kind == GTEXT_CSS_VALUE_FUNCTION && gtext_css_math_is_function(c->value.data, c->value.length)) {
+          GTEXT_CSS_Math * math = NULL;
+          bool valid = false;
+          if (gtext_css_math_parse(c, NULL, NULL, &valid, &math, NULL) == GTEXT_CSS_OK && valid) {
+            double n = 0.0;
+            const bool nan = gtext_css_math_numeric(math, &n, NULL, NULL) && n != n;
+            gtext_css_math_free(math);
+            if (nan) {
+              return true;
+            }
+          }
+        }
+        break;
+      }
+    }
+    else if (v->child_count && steps_count_is_nan(v->children, v->child_count)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Whether, in some comma-separated item of a `transition` or `animation` value, the first component value that is a <time> is negative: it is the duration then.
+static bool first_time_is_negative(const GTEXT_CSS_Component_Value * values, size_t count) {
+  bool seen = false;
+  for (size_t i = 0; i < count; i++) {
+    const GTEXT_CSS_Component_Value * v = &values[i];
+    if (v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_COMMA) {
+      seen = false;
+      continue;
+    }
+    if (seen) {
+      continue;
+    }
+    if (v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_DIMENSION) {
+      const GTEXT_CSS_Unit u = gtext_css_unit_lookup(v->unit.data, v->unit.length);
+      if (u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_TIME) {
+        if (v->number < 0) {
+          return true;
+        }
+        seen = true;
+      }
+    }
+    else if (v->kind == GTEXT_CSS_VALUE_FUNCTION && gtext_css_math_is_function(v->value.data, v->value.length)) {
+      GTEXT_CSS_Math * math = NULL;
+      bool valid = false;
+      if (gtext_css_math_parse(v, NULL, NULL, &valid, &math, NULL) != GTEXT_CSS_OK || !valid) {
+        continue;
+      }
+      if (math->category == GTEXT_CSS_MATH_CAT_TIME) {
+        double n = 0.0;
+        const bool numeric = gtext_css_math_numeric(math, &n, NULL, NULL);
+        gtext_css_math_free(math);
+        if (numeric && n < 0) {
+          return true;
+        }
+        seen = true;
+      }
+      else {
+        gtext_css_math_free(math);
+      }
+    }
+  }
+  return false;
+}
+
 GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options,
     GTEXT_CSS_Property_Value * out) {
@@ -568,6 +650,17 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   if (st != GTEXT_CSS_OK) {
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  }
+  else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID && info.name_length >= 9 &&
+           (memcmp(info.name, "transition", 10) == 0 || memcmp(info.name, "animation", 9) == 0) &&
+           ((first_time_is_negative(values, count) && (info.name_length == 10 || info.name_length == 9)) || steps_count_is_nan(values, count))) {
+    /* Transitions 1, 2.3 (and Animations 1 of animation): "the first value that can be parsed as a time is assigned to the transition-duration, and the second value that can be
+       parsed as a time is assigned to transition-delay", and a duration is "<time [0,∞]>" ("Negative values for transition-duration are invalid"): `-1s -2s`, and `-2s 1s`, which the
+       grammar's `||` reads with the times swapped, are not a transition */
+    gtext_css_value_set_free(out->set);
+    out->set = NULL;
+    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+    return GTEXT_CSS_OK;
   }
   else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
     /* Color HDR 1, 3.3: the mixing percentages of dynamic-range-limit-mix() are "normalized to sum to 100%", which a sum of 0% cannot be: both pinned browsers refuse it */

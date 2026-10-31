@@ -160,6 +160,8 @@ typedef struct {
   uint8_t cstate;                     ///< As a color: 0 not looked at; X_COLOR a valid one; X_NOT_COLOR.
   uint8_t has_percent;                ///< A math function that contains a percentage.
   uint8_t category;                   ///< A math function: GTEXT_CSS_Math_Category.
+  uint8_t run_sum;                    ///< The run of component values from here to the next comma as calc-size()'s basis calculation: 0 not looked at, 1 valid, 2 not.
+  uint8_t run_calc;                   ///< The same as calc-size()'s calculation (`size` is a length in it).
 } xinfo;
 
 enum { X_NONE = 0, X_MATH, X_NOT_MATH, X_COLOR, X_NOT_COLOR };
@@ -880,12 +882,157 @@ static bool svg_path_data_valid(const char * s, size_t n) {
    "<cross-origin-modifier> = cross-origin(anonymous | use-credentials)", "<integrity-modifier> = integrity(<string>)", "<referrer-policy-modifier> =
    referrer-policy(no-referrer | no-referrer-when-downgrade | same-origin | origin | strict-origin | origin-when-cross-origin | strict-origin-when-cross-origin |
    unsafe-url)". A modifier by one of those names that does not match its argument grammar does not match <url-modifier>; any other function is a modifier. */
+/* ---- <param-spec> and <css-type> (Link Parameters 1, 2.1; Mixins 1, 2.1) ---------------------------------------------------- */
+
+typedef struct {
+  bool has_type;   ///< A <css-type> follows the name.
+  size_t type_at;  ///< Its first component value, and how many there are (white space included) ...
+  size_t type_n;
+  bool is_fn;      ///< ... written `type( <syntax> )`: type_at is the function.
+  bool single;     ///< It is one <syntax-component>: "If the <css-type> consists of a single <syntax-component>, return the corresponding syntax string".
+} param_spec;
+
+static bool cv_ws(const GTEXT_CSS_Component_Value * c) {
+  return c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE;
+}
+
+static bool cv_tok(const GTEXT_CSS_Component_Value * c, GTEXT_CSS_Token_Type t) {
+  return c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == t;
+}
+
+static bool cv_delim(const GTEXT_CSS_Component_Value * c, uint32_t ch) {
+  return cv_tok(c, GTEXT_CSS_TOKEN_DELIM) && c->delim == ch;
+}
+
+/// `<syntax-component> = <syntax-single-component> <syntax-multiplier>? | '<' transform-list '>'`, `<syntax-single-component> = '<' <syntax-type-name> '>' | <ident>`,
+/// `<syntax-type-name> = angle | color | custom-ident | image | integer | length | length-percentage | number | percentage | resolution | string | time | url |
+/// transform-function`, `<syntax-multiplier> = '#' | '+'` (Values 5, 11.1). The component values `a`[0, n) are exactly one, with no white space inside.
+static bool syntax_component(const GTEXT_CSS_Component_Value * a, size_t n) {
+  static const char * const names[] = {"angle", "color", "custom-ident", "image", "integer", "length", "length-percentage", "number", "percentage", "resolution",
+    "string", "time", "url", "transform-function"};
+  if (n >= 1 && cv_tok(&a[0], GTEXT_CSS_TOKEN_IDENT)) {
+    return n == 1 || (n == 2 && (cv_delim(&a[1], '#') || cv_delim(&a[1], '+')));
+  }
+  if (n < 3 || !cv_delim(&a[0], '<') || !cv_tok(&a[1], GTEXT_CSS_TOKEN_IDENT) || !cv_delim(&a[2], '>')) {
+    return false;
+  }
+  if (css_ascii_ieq(&a[1].value, "transform-list")) {
+    return n == 3;
+  }
+  bool known = false;
+  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+    known = known || css_ascii_ieq(&a[1].value, names[i]);
+  }
+  return known && (n == 3 || (n == 4 && (cv_delim(&a[3], '#') || cv_delim(&a[3], '+'))));
+}
+
+/// A <syntax>: `*`, a <string>, or components separated by `|`. *components is how many there are (0 for the first two).
+static bool syntax_scan(const GTEXT_CSS_Component_Value * a, size_t n, size_t * components) {
+  size_t s = 0, e = n;
+  while (s < e && cv_ws(&a[s])) {
+    s++;
+  }
+  while (e > s && cv_ws(&a[e - 1])) {
+    e--;
+  }
+  *components = 0;
+  if (s == e) {
+    return false;
+  }
+  if (e - s == 1 && (cv_delim(&a[s], '*') || cv_tok(&a[s], GTEXT_CSS_TOKEN_STRING))) {
+    return true;
+  }
+  size_t k = s;
+  for (;;) {
+    size_t q = k;
+    while (q < e && !cv_ws(&a[q]) && !cv_delim(&a[q], '|')) {
+      q++;
+    }
+    if (!syntax_component(&a[k], q - k)) {
+      return false;
+    }
+    (*components)++;
+    while (q < e && cv_ws(&a[q])) {
+      q++;
+    }
+    if (q == e) {
+      return true;
+    }
+    if (!cv_delim(&a[q], '|')) {
+      return false;
+    }
+    q++;
+    while (q < e && cv_ws(&a[q])) {
+      q++;
+    }
+    if (q == e) {
+      return false;
+    }
+    k = q;
+  }
+}
+
+/// Whether the component values `a`[0, n) are a <param-spec>: `color | accent-color | [ <dashed-ident> <css-type>? ]`, `<css-type> = <syntax-component> | <type()>`,
+/// `<type()> = type( <syntax> )`.
+static bool param_spec_scan(const GTEXT_CSS_Component_Value * a, size_t n, param_spec * out) {
+  memset(out, 0, sizeof *out);
+  size_t s = 0, e = n;
+  while (s < e && cv_ws(&a[s])) {
+    s++;
+  }
+  while (e > s && cv_ws(&a[e - 1])) {
+    e--;
+  }
+  if (s == e || !cv_tok(&a[s], GTEXT_CSS_TOKEN_IDENT)) {
+    return false;
+  }
+  if (css_ascii_ieq(&a[s].value, "color") || css_ascii_ieq(&a[s].value, "accent-color")) {
+    return e == s + 1;
+  }
+  if (a[s].value.length < 2 || a[s].value.data[0] != '-' || a[s].value.data[1] != '-') {
+    return false;
+  }
+  size_t t = s + 1;
+  if (t == e) {
+    return true;
+  }
+  if (!cv_ws(&a[t])) {
+    return false;
+  }
+  while (t < e && cv_ws(&a[t])) {
+    t++;
+  }
+  out->has_type = true;
+  out->type_at = t;
+  out->type_n = e - t;
+  if (e - t == 1 && a[t].kind == GTEXT_CSS_VALUE_FUNCTION && css_ascii_ieq(&a[t].value, "type")) {
+    size_t components = 0;
+    out->is_fn = true;
+    if (!syntax_scan(a[t].children, a[t].child_count, &components)) {
+      return false;
+    }
+    out->single = components == 1;
+    return true;
+  }
+  out->single = true;
+  return syntax_component(&a[t], e - t);
+}
+
 static bool url_modifier_ok(const GTEXT_CSS_Component_Value * fn) {
   static const char * const policies[] = {"no-referrer", "no-referrer-when-downgrade", "same-origin", "origin", "strict-origin", "origin-when-cross-origin",
     "strict-origin-when-cross-origin", "unsafe-url"};
   const bool cross = css_ascii_ieq(&fn->value, "cross-origin");
   const bool integrity = css_ascii_ieq(&fn->value, "integrity");
   const bool policy = css_ascii_ieq(&fn->value, "referrer-policy");
+  if (css_ascii_ieq(&fn->value, "param")) {
+    /* Link Parameters 1, 2.1: "param() = param( <param-spec> , <declaration-value>? )": the first argument is a <param-spec>, whose type is a <css-type> */
+    size_t spec_n = 0;
+    while (spec_n < fn->child_count && !cv_tok(&fn->children[spec_n], GTEXT_CSS_TOKEN_COMMA)) {
+      spec_n++;
+    }
+    param_spec ps;
+    return param_spec_scan(fn->children, spec_n, &ps);
+  }
   if (!cross && !integrity && !policy) {
     return true;
   }
@@ -1061,6 +1208,178 @@ static bool color_item(M * m, uint32_t pos, const xinfo ** out) {
   return true;
 }
 
+
+/* ---- calc-size() (Sizing 4, 7) ------------------------------------------------------------------------------------ */
+
+static uint32_t kid_of(const M * m, const gnode * g, uint32_t i);
+
+/// The first item at or after `pos`, in its view, that is a top-level comma or the end of the view: a calc-size() argument is the run before it.
+static uint32_t run_end(const M * m, uint32_t pos) {
+  uint32_t q = pos;
+  while (m->items[q].cv && !tok(m->items[q].cv, GTEXT_CSS_TOKEN_COMMA)) {
+    q++;
+  }
+  return q;
+}
+
+/// Whether the component values `first` ... (`count` of them, white space included) are the sum of a calc-size() argument: a `<calc-sum>` of the type
+/// `<length-percentage>` that resolves to a length ("For either argument, if a <calc-sum> is given, its type must match <length-percentage>, and it must
+/// resolve to a <length>"), in which `size` is a length when `allow_size` ("Within the calc-size calculation, the size is a <calc-keyword> which is a
+/// <length>"). The calculation is read as the inside of a calc(). Builds into `arena`; *math receives it (NULL if not wanted). False with the status set on a failure.
+static bool calc_run_read(M * m, css_arena * arena, const GTEXT_CSS_Component_Value * first, size_t count, bool allow_size, bool * valid, GTEXT_CSS_Math ** math) {
+  GTEXT_CSS_Component_Value fn;
+  memset(&fn, 0, sizeof fn);
+  fn.kind = GTEXT_CSS_VALUE_FUNCTION;
+  fn.type = GTEXT_CSS_TOKEN_FUNCTION;
+  fn.value.data = "calc";
+  fn.value.length = 4;
+  fn.children = first;
+  fn.child_count = count;
+  fn.span = first->span;
+  fn.span.end = first[count - 1].span.end;
+  GTEXT_CSS_Math_Keyword kw[1];
+  memset(kw, 0, sizeof kw);
+  kw[0].name = "size";
+  kw[0].type = gtext_css_math_category_type(GTEXT_CSS_MATH_CAT_LENGTH);
+  GTEXT_CSS_Math_Context mctx;
+  memset(&mctx, 0, sizeof mctx);
+  mctx.keywords = allow_size ? kw : NULL;
+  mctx.keyword_count = allow_size ? 1 : 0;
+  GTEXT_CSS_Math * mp = NULL;
+  bool ok = false;
+  GTEXT_CSS_Math_Result res;
+  const GTEXT_CSS_Status st = css_math_build(arena, &m->alloc, &fn, &mctx, m->max_math_depth, m->max_math_nodes, &mp, &ok, &res);
+  if (st != GTEXT_CSS_OK) {
+    if (m->status == GTEXT_CSS_OK) {
+      m->status = st;
+    }
+    return false;
+  }
+  if (!charge(m, 1 + res.work)) {
+    return false;
+  }
+  *valid = ok && (mp->category == GTEXT_CSS_MATH_CAT_LENGTH || mp->category == GTEXT_CSS_MATH_CAT_PERCENTAGE);
+  if (math) {
+    *math = mp;
+  }
+  return true;
+}
+
+/// Whether the run of items at `pos` is a calc-size() argument calculation (cached): 1, 0, or -1 when the question could not be answered.
+static int calc_run_ok(M * m, uint32_t pos, bool allow_size, uint32_t * end) {
+  if (!m->x) {
+    m->x = gtext_allocator_calloc(&m->alloc, m->nitems ? m->nitems : 1, sizeof *m->x);
+    if (!m->x) {
+      fail_oom(m);
+      return -1;
+    }
+  }
+  const uint32_t q = run_end(m, pos);
+  *end = q;
+  if (q == pos) {
+    return 0;
+  }
+  xinfo * xi = &m->x[pos];
+  uint8_t * state = allow_size ? &xi->run_calc : &xi->run_sum;
+  if (*state == 0) {
+    if (!m->scratch_init) {
+      css_arena_init(&m->scratch, &m->alloc);
+      m->scratch_init = true;
+    }
+    bool valid = false;
+    const GTEXT_CSS_Component_Value * first = m->items[pos].cv;
+    const size_t count = (size_t)(m->items[q - 1].orig - m->items[pos].orig) + 1;
+    if (!calc_run_read(m, &m->scratch, first, count, allow_size, &valid, NULL)) {
+      return -1;
+    }
+    *state = valid ? 1 : 2;
+  }
+  return *state == 1;
+}
+
+/// The keywords and sizing functions "allowed in the context where the function is used" (Sizing 4, 7: "Represents any sizing keywords allowed in the context where
+/// the function is used. For example, in width, it matches auto, min-content, stretch, etc. Also allows any related sizing functions, like the fit-content()
+/// function"): those the grammar being matched has as alternatives of its root, through the types it names. `none` is never one ("Note: The none keyword is not
+/// usable within calc-size()."). A grammar whose root is the function itself (calc-size() matched as a type by itself) has no context and takes Values 5's list.
+typedef struct {
+  const M * m;
+  const GTEXT_CSS_Component_Value * v;
+  bool is_function;
+  bool hit;
+  size_t steps;
+} ctx_walk;
+
+static void ctx_visit(ctx_walk * w, uint32_t node, unsigned depth) {
+  if (w->hit || depth > 64 || ++w->steps > 4096) {
+    return;
+  }
+  const gnode * g = &w->m->c->nodes[node];
+  if (g->kind == GN_KEYWORD) {
+    if (!w->is_function && fold_equal(w->v->value.data, w->v->value.length, w->m->c->text + g->str_off, g->str_len)) {
+      w->hit = true;
+    }
+    return;
+  }
+  if (g->kind == GN_FUNC) {
+    /* (calc-size() is the function being read, not a basis for itself: its nesting is the grammar's own alternative) */
+    if (w->is_function && !fold_equal(w->v->value.data, w->v->value.length, "calc-size", 9) &&
+        fold_equal(w->v->value.data, w->v->value.length, w->m->c->text + g->str_off, g->str_len)) {
+      w->hit = true;
+    }
+    return;
+  }
+  if (g->kind == GN_ALT || (g->kind == GN_SEQ && g->nkids == 1)) {
+    for (uint32_t i = 0; i < g->nkids && !w->hit; i++) {
+      ctx_visit(w, kid_of(w->m, g, i), depth + 1);
+    }
+  }
+}
+
+static bool size_keyword_item(M * m, uint32_t pos) {
+  const GTEXT_CSS_Component_Value * v = m->items[pos].cv;
+  if (!v) {
+    return false;
+  }
+  const bool ident = tok(v, GTEXT_CSS_TOKEN_IDENT);
+  if (!ident && v->kind != GTEXT_CSS_VALUE_FUNCTION) {
+    return false;
+  }
+  if (ident && (is_css_wide(&v->value) || fold_equal(v->value.data, v->value.length, "none", 4) || fold_equal(v->value.data, v->value.length, "any", 3))) {
+    return false;
+  }
+  ctx_walk w = {m, v, !ident, false, 0};
+  ctx_visit(&w, m->c->root, 0);
+  if (!w.hit) {
+    if (!ident || m->c->nodes[m->c->root].kind != GN_FUNC) {
+      return false;
+    }
+    static const char * const dflt[] = {"auto", "min-content", "max-content", "fit-content", "stretch", "contain"};
+    for (size_t i = 0; i < sizeof dflt / sizeof dflt[0]; i++) {
+      if (fold_equal(v->value.data, v->value.length, dflt[i], strlen(dflt[i]))) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (!ident) {
+    /* a sizing function: its one argument is a <length-percentage> */
+    const uint32_t cs = m->items[pos].child;
+    const uint32_t q = run_end(m, cs);
+    if (q == cs || m->items[q].cv) {
+      return false;
+    }
+    bool valid = false;
+    css_arena scratch;
+    css_arena_init(&scratch, &m->alloc);
+    const GTEXT_CSS_Component_Value * first = m->items[cs].cv;
+    const size_t count = (size_t)(m->items[q - 1].orig - m->items[cs].orig) + 1;
+    const bool ok = calc_run_read(m, &scratch, first, count, false, &valid, NULL);
+    css_arena_free(&scratch);
+    return ok && valid;
+  }
+  return true;
+}
+
 /// Whether a math function of category `cat` (with a percentage, or not) can stand for native type `t`.
 static bool math_stands_for(gn_native t, const xinfo * xi) {
   const GTEXT_CSS_Math_Category c = (GTEXT_CSS_Math_Category)xi->category;
@@ -1166,6 +1485,9 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
       return -1;
     }
     return xi->cstate == X_COLOR;
+  }
+  if (t == NT_SIZE_KEYWORD) {
+    return size_keyword_item(m, pos);
   }
   if (v->kind == GTEXT_CSS_VALUE_FUNCTION && math_target(t)) {
     const xinfo * xi;
@@ -1422,6 +1744,31 @@ static bool terminal_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
         e->buf[0].lo = pos + 1;
         e->buf[0].hi = limit;
         e->n = 1;
+      }
+      return true;
+    }
+    case NT_PARAM_SPEC: {
+      if (!v) {
+        return true;
+      }
+      const uint32_t q = run_end(m, pos);
+      param_spec ps;
+      if (q > pos && param_spec_scan(v, (size_t)(m->items[q - 1].orig - it->orig) + 1, &ps)) {
+        one_end(e, q);
+      }
+      return true;
+    }
+    case NT_CALC_SIZE_SUM: case NT_CALC_SIZE_CALC: {
+      if (!v) {
+        return true;
+      }
+      uint32_t q;
+      const int ok = calc_run_ok(m, pos, t == NT_CALC_SIZE_CALC, &q);
+      if (ok < 0) {
+        return false;
+      }
+      if (ok) {
+        one_end(e, q);
       }
       return true;
     }
@@ -2230,6 +2577,186 @@ static bool color_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Va
   return true;
 }
 
+/// The value of a calc-size() argument calculation, the component values `first` ... (`count` of them): the calculation read again into the value set and written
+/// as the inside of a calc() (Values 4, 10.13: "If a result of this serialization starts with a "(" ... and ends with a ")" ... remove those characters").
+static bool calc_run_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Value * first, size_t count, bool allow_size, GTEXT_CSS_Value * out) {
+  M * m = B->m;
+  value_init(out, GTEXT_CSS_VAL_FUNCTION, node, first);
+  out->span.end = first[count - 1].span.end;
+  GTEXT_CSS_Math * mp = NULL;
+  bool valid = false;
+  if (!calc_run_read(m, &B->set->arena, first, count, allow_size, &valid, &mp)) {
+    return false;
+  }
+  if (!valid) {
+    m->status = GTEXT_CSS_E_INTERNAL;
+    return false;
+  }
+  out->math = mp;
+  out->flags = GTEXT_CSS_VFLAG_MATH | GTEXT_CSS_VFLAG_MATH_BARE | (mp->has_percent ? GTEXT_CSS_VFLAG_MATH_PERCENT : 0u);
+  out->interp = GTEXT_CSS_INTERP_LENGTH;
+  out->range_lo = -1.0 / 0.0;
+  out->range_hi = 1.0 / 0.0;
+  char * buf = NULL;
+  size_t len = 0;
+  const GTEXT_CSS_Status ss = css_math_serialize_bare_to(mp, &m->alloc, m->max_text, &buf, &len);
+  if (ss != GTEXT_CSS_OK) {
+    if (m->status == GTEXT_CSS_OK) {
+      m->status = ss;
+    }
+    return false;
+  }
+  char * dup = css_arena_strdup(&B->set->arena, buf, len);
+  gtext_allocator_free(&m->alloc, buf);
+  if (!dup) {
+    return B_oom(B);
+  }
+  out->text.data = dup;
+  out->text.length = len;
+  return true;
+}
+
+/// The value of calc-size()'s basis keyword (a keyword of the property) or sizing function (`fit-content(20px)`: the function with its calculation as its child).
+static bool size_keyword_value(builder * B, uint32_t node, uint32_t pos, GTEXT_CSS_Value * out) {
+  M * m = B->m;
+  const GTEXT_CSS_Component_Value * v = m->items[pos].cv;
+  if (tok(v, GTEXT_CSS_TOKEN_IDENT)) {
+    value_init(out, GTEXT_CSS_VAL_KEYWORD, node, v);
+    out->atom = gtext_css_atom_lookup(m->c->atoms, v->value.data, v->value.length);
+    return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
+  }
+  value_init(out, GTEXT_CSS_VAL_FUNCTION, node, v);
+  if (!arena_text(B, v->value.data, v->value.length, &out->text)) {
+    return false;
+  }
+  const uint32_t cs = m->items[pos].child;
+  const uint32_t q = run_end(m, cs);
+  GTEXT_CSS_Value * kid = css_arena_alloc(&B->set->arena, sizeof *kid);
+  if (!kid) {
+    return B_oom(B);
+  }
+  if (!calc_run_value(B, node, m->items[cs].cv, (size_t)(m->items[q - 1].orig - m->items[cs].orig) + 1, false, kid)) {
+    return false;
+  }
+  out->children = kid;
+  out->child_count = 1;
+  B->set->count += 1;
+  return true;
+}
+
+/// The value of a <param-spec>, the component values `first` ... (`count` of them): its text, with the <css-type> serialized as Mixins 1 serializes a CSS type: "If the
+/// <css-type> consists of a single <syntax-component>, return the corresponding syntax string. Otherwise ... The string "type(" ... The corresponding syntax string. The
+/// string ")"".
+static bool param_spec_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Value * first, size_t count, GTEXT_CSS_Value * out) {
+  param_spec ps;
+  value_init(out, GTEXT_CSS_VAL_UNPARSED, node, first);
+  out->span.end = first[count - 1].span.end;
+  if (!param_spec_scan(first, count, &ps)) {
+    B->m->status = GTEXT_CSS_E_INTERNAL;
+    return false;
+  }
+  size_t s = 0, e = count;
+  while (s < e && cv_ws(&first[s])) {
+    s++;
+  }
+  while (e > s && cv_ws(&first[e - 1])) {
+    e--;
+  }
+  if (!ps.has_type) {
+    return arena_serialize(B, &first[s], e - s, &out->text);
+  }
+  GTEXT_CSS_String head, body;
+  if (!arena_serialize(B, &first[s], 1, &head)) {
+    return false;
+  }
+  const GTEXT_CSS_Component_Value * syn = ps.is_fn ? first[ps.type_at].children : &first[ps.type_at];
+  size_t syn_n = ps.is_fn ? first[ps.type_at].child_count : ps.type_n;
+  while (syn_n && cv_ws(&syn[0])) {
+    syn++;
+    syn_n--;
+  }
+  while (syn_n && cv_ws(&syn[syn_n - 1])) {
+    syn_n--;
+  }
+  if (!arena_serialize(B, syn, syn_n, &body)) {
+    return false;
+  }
+  const bool wrap = ps.is_fn && !ps.single;
+  const size_t total = head.length + 1 + (wrap ? 5 : 0) + body.length + (wrap ? 1 : 0);
+  char * buf = css_arena_alloc(&B->set->arena, total + 1);
+  if (!buf) {
+    return B_oom(B);
+  }
+  size_t k = 0;
+  memcpy(buf, head.data, head.length);
+  k += head.length;
+  buf[k++] = ' ';
+  if (wrap) {
+    memcpy(buf + k, "type(", 5);
+    k += 5;
+  }
+  memcpy(buf + k, body.data, body.length);
+  k += body.length;
+  if (wrap) {
+    buf[k++] = ')';
+  }
+  buf[k] = '\0';
+  out->text.data = buf;
+  out->text.length = k;
+  return true;
+}
+
+/// The text of a `param()` url modifier: serialized as written, except that a `type()` of one <syntax-component> is that component (the same serialization of a CSS type).
+static bool param_modifier_text(builder * B, const GTEXT_CSS_Component_Value * c, GTEXT_CSS_String * out) {
+  GTEXT_CSS_String text;
+  if (!arena_serialize(B, c, 1, &text)) {
+    return false;
+  }
+  size_t spec_n = 0;
+  while (spec_n < c->child_count && !cv_tok(&c->children[spec_n], GTEXT_CSS_TOKEN_COMMA)) {
+    spec_n++;
+  }
+  param_spec ps;
+  if (!param_spec_scan(c->children, spec_n, &ps) || !ps.has_type || !ps.is_fn || !ps.single) {
+    *out = text;
+    return true;
+  }
+  /* the first type( in the serialization is the spec's: the name before it is a dashed ident */
+  const char * at = NULL;
+  for (size_t i = 6; i + 5 <= text.length; i++) {
+    if (memcmp(text.data + i, "type(", 5) == 0) {
+      at = text.data + i;
+      break;
+    }
+  }
+  if (!at) {
+    *out = text;
+    return true;
+  }
+  size_t depth = 1, j = (size_t)(at - text.data) + 5;
+  while (j < text.length && depth) {
+    depth += text.data[j] == '(';
+    depth -= text.data[j] == ')';
+    j++;
+  }
+  if (depth) {
+    *out = text;
+    return true;
+  }
+  const size_t before = (size_t)(at - text.data), inner = j - 1 - (before + 5);
+  char * buf = css_arena_alloc(&B->set->arena, text.length + 1);
+  if (!buf) {
+    return B_oom(B);
+  }
+  memcpy(buf, text.data, before);
+  memcpy(buf + before, text.data + before + 5, inner);
+  memcpy(buf + before + inner, text.data + j, text.length - j);
+  out->data = buf;
+  out->length = text.length - 6;
+  buf[out->length] = '\0';
+  return true;
+}
+
 /// The value of the terminal `node` that matched items `pos` up to (not including) `end`.
 static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t end, GTEXT_CSS_Value * out) {
   M * m = B->m;
@@ -2257,6 +2784,15 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   }
   if (v && t == NT_COLOR) {
     return color_value(B, node, v, out);
+  }
+  if (v && t == NT_SIZE_KEYWORD) {
+    return size_keyword_value(B, node, pos, out);
+  }
+  if (v && t == NT_PARAM_SPEC) {
+    return param_spec_value(B, node, v, (size_t)(m->items[end - 1].orig - it->orig) + 1, out);
+  }
+  if (v && (t == NT_CALC_SIZE_SUM || t == NT_CALC_SIZE_CALC)) {
+    return calc_run_value(B, node, v, (size_t)(m->items[end - 1].orig - it->orig) + 1, t == NT_CALC_SIZE_CALC, out);
   }
   switch (t) {
   case NT_INTEGER:
@@ -2404,7 +2940,8 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
             continue;
           }
           value_init(&kids[k], GTEXT_CSS_VAL_TOKEN, node, c);
-          if (!arena_serialize(B, c, 1, &kids[k].text)) {
+          if (c->kind == GTEXT_CSS_VALUE_FUNCTION && css_ascii_ieq(&c->value, "param") ? !param_modifier_text(B, c, &kids[k].text)
+                                                                                         : !arena_serialize(B, c, 1, &kids[k].text)) {
             return false;
           }
           k++;

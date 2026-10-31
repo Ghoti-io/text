@@ -85,14 +85,12 @@ static const css_fn_type TYPES[] = {
       "symbols( <symbols-type>? [ <string> | <image> ]+ )"},
   {"symbols-type", GTEXT_CSS_REF_TYPE,
       "cyclic | numeric | alphabetic | symbolic | fixed"},
-  /* Values 5, 10.1 */
+  /* Sizing 4, 7 (the draft moved calc-size() from Values 5): the basis keyword, the two calculations and `size` in the second are read by the engine (css_grammar_match.c) */
   {"calc-size()", GTEXT_CSS_REF_TYPE,
-      "calc-size( <calc-size-basis> , <calc-sum> )"},
+      "calc-size( [ <size-keyword> | <calc-size-sum> | <calc-size()> ] , <calc-size-calculation> | any , <calc-size-sum> )"},
   {"calc-size-basis", GTEXT_CSS_REF_TYPE,
-      "<size-keyword> | <calc-sum> | <calc-size()> | any"},
-  {"size-keyword", GTEXT_CSS_REF_TYPE,
-      "auto | min-content | max-content | fit-content | stretch | contain"},
-  /* a calculation inside calc-size() is read by the math layer once it is used; as a type it is the text */
+      "[ <size-keyword> | <calc-size-sum> | <calc-size()> | any ]"},
+  /* a calculation in the other Values 5 functions is read by the math layer once it is used; as a type it is the text */
   {"calc-sum", GTEXT_CSS_REF_TYPE,
       "<declaration-value>"},
   /* Values 5, 8.1: an arbitrary substitution function, so a match of any grammar takes it as pending */

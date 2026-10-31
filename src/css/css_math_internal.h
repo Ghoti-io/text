@@ -134,6 +134,10 @@ GTEXT_CSS_Status css_math_build(css_arena * arena, const GTEXT_Allocator * scrat
     const GTEXT_CSS_Math_Context * ctx, size_t max_depth, size_t max_nodes, GTEXT_CSS_Math ** out, bool * valid,
     GTEXT_CSS_Math_Result * result);
 
+/// css_math_serialize_to() for a calculation that is a calc-size() argument: the inside of the calc() (Sizing 4, 7): `30% + 50px`, `2 * size`, `25em`.
+GTEXT_CSS_Status css_math_serialize_bare_to(const GTEXT_CSS_Math * math, const GTEXT_Allocator * alloc, size_t max_bytes,
+    char ** out, size_t * out_len);
+
 /// Serialize a calculation into a growable byte buffer; false on OOM or the limit (status says).
 GTEXT_CSS_Status css_math_serialize_to(const GTEXT_CSS_Math * math, const GTEXT_Allocator * alloc, size_t max_bytes,
     char ** out, size_t * out_len);

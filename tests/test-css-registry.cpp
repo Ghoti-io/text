@@ -837,10 +837,10 @@ TEST(CssRegistryCaller, AnOverrideThatNamesItselfLeavesTheGeneratedPropertiesTha
   GTEXT_CSS_Property_Def mt = def("margin-top", "<'margin-top'> | zzm", "0");
   mt.override = true;
   ASSERT_EQ(gtext_css_registry_register_property(b.b, &mt, nullptr), GTEXT_CSS_OK);
-  GTEXT_CSS_Property_Def w = def("width", "<'width'> | zzw", "auto");
+  GTEXT_CSS_Property_Def w = def("row-gap", "<'row-gap'> | zzw", "normal");
   w.override = true;
   ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK);
-  w.grammar = "<'width'> | zzv";
+  w.grammar = "<'row-gap'> | zzv";
   ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK) << "a second override of the same name, naming the first";
   Owned o;
   GTEXT_CSS_Registry_Result res;
@@ -849,10 +849,10 @@ TEST(CssRegistryCaller, AnOverrideThatNamesItselfLeavesTheGeneratedPropertiesTha
   EXPECT_EQ(parse(o.r, "margin-top", "3px"), "valid:3px");
   EXPECT_EQ(parse(o.r, "margin", "zzm 1px"), "valid:zzm 1px") << "margin names margin-top";
   EXPECT_EQ(parse(o.r, "margin-block", "zzm 1px"), "valid:zzm 1px");
-  EXPECT_EQ(parse(o.r, "width", "zzv"), "valid:zzv");
-  EXPECT_EQ(parse(o.r, "width", "zzw"), "valid:zzw") << "the first override is what the second extends";
-  EXPECT_EQ(parse(o.r, "width", "5px"), "valid:5px");
-  EXPECT_EQ(parse(o.r, "flex", "1 1 zzv"), "valid:1 1 zzv") << "flex-basis names width";
+  EXPECT_EQ(parse(o.r, "row-gap", "zzv"), "valid:zzv");
+  EXPECT_EQ(parse(o.r, "row-gap", "zzw"), "valid:zzw") << "the first override is what the second extends";
+  EXPECT_EQ(parse(o.r, "row-gap", "5px"), "valid:5px");
+  EXPECT_EQ(parse(o.r, "gap", "zzv"), "valid:zzv") << "gap names row-gap";
   EXPECT_EQ(parse(shared(), "margin", "zzm 1px"), "invalid");
   EXPECT_EQ(gtext_css_registry_override_count(o.r), 3u);
 }
@@ -887,10 +887,10 @@ TEST(CssRegistryCaller, AnOverrideIsSeenByTheRelationsAndAliasesOfTheProperty) {
 }
 
 TEST(CssRegistryCaller, AnOverrideThatBreaksAGeneratedPropertyIsRefusedAtTheFreezeNamingTheOverride) {
-  // `flex-basis` is `content | <'width'>` and `flex` names `flex-basis`: an override of `width` that names `flex` closes a cycle
+  // `margin-block-start` is `<'margin-top'>`: an override of `margin-top` that names `margin-block-start` closes a cycle
   // through generated properties that no registration saw.
   Builder b;
-  GTEXT_CSS_Property_Def w = def("width", "<'flex'> | zzy", "auto");
+  GTEXT_CSS_Property_Def w = def("margin-top", "<'margin-block-start'> | zzy", "0");
   w.override = true;
   ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK);
   Owned o;
@@ -898,17 +898,17 @@ TEST(CssRegistryCaller, AnOverrideThatBreaksAGeneratedPropertyIsRefusedAtTheFree
   const GTEXT_CSS_Status st = b.freeze(o, &res);
   EXPECT_EQ(st, GTEXT_CSS_E_LEFT_RECURSION);
   EXPECT_EQ(o.r, nullptr);
-  EXPECT_EQ(std::string(res.name), "width") << "the failure is blamed on the override";
+  EXPECT_EQ(std::string(res.name), "margin-top") << "the failure is blamed on the override";
   ASSERT_NE(res.detail, nullptr);
   EXPECT_NE(std::string(res.detail).find("override"), std::string::npos) << res.detail;
-  // the builder is still a builder, and what the failed attempt compiled is not remembered: with `flex` overridden by a definition that
-  // does not name `width`, the cycle is gone and the same builder freezes
-  GTEXT_CSS_Property_Def f = def("flex", "none | zzflex", "none");
+  // the builder is still a builder, and what the failed attempt compiled is not remembered: with `margin-block-start` overridden by a definition that
+  // does not name `margin-top`, the cycle is gone and the same builder freezes
+  GTEXT_CSS_Property_Def f = def("margin-block-start", "auto | zzflex", "auto");
   f.override = true;
   ASSERT_EQ(gtext_css_registry_register_property(b.b, &f, nullptr), GTEXT_CSS_OK);
   ASSERT_EQ(b.freeze(o, &res), GTEXT_CSS_OK) << res.name << " " << (res.detail ? res.detail : "");
-  EXPECT_EQ(parse(o.r, "width", "zzflex"), "valid:zzflex");
-  EXPECT_EQ(parse(o.r, "width", "zzy"), "valid:zzy");
+  EXPECT_EQ(parse(o.r, "margin-top", "zzflex"), "valid:zzflex");
+  EXPECT_EQ(parse(o.r, "margin-top", "zzy"), "valid:zzy");
 }
 
 TEST(CssRegistryCaller, ARegistrationOfTheNameOfACssWideKeywordOrABadShapeIsRefusedWithItsReason) {

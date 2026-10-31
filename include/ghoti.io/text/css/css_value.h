@@ -362,6 +362,9 @@ typedef enum {
 /** A value a shorthand made for a component the author left out (its initial value, for that layer), in a block's longhands: only the writing of `box-shadow` back
  *  reads it, to tell a blur or a spread of `0px` that was written from one that was not. Set by shorthand expansion on the layer's item; never by parsing. */
 #define GTEXT_CSS_VFLAG_DEFAULTED 0x200u
+/** A calculation that is an argument of `calc-size()` (Sizing 4, 7): it is written as the inside of a `calc()`, without the `calc(` and its parenthesis
+ *  (`calc-size(auto, 30% + 50px)`), and `size` is a length in it. Set with GTEXT_CSS_VFLAG_MATH; kept when the value is computed. */
+#define GTEXT_CSS_VFLAG_MATH_BARE 0x400u
 /** @} */
 
 /** @brief A typed value (the struct below). */

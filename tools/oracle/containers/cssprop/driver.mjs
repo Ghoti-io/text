@@ -21,7 +21,9 @@
 //   driver.mjs chromium|firefox    read items on standard input, write one answer a line
 //   driver.mjs --version           what this image is made of
 //
-// One item is a JSON array [property, value]; one answer is a JSON array [accepted, value, cssText, supports, error], where
+// One item is a JSON array [property, value] or [property, value, longhands] (a list of property names); one answer is a JSON array
+// [accepted, value, cssText, supports, error] with a sixth member, the list of `element.style.getPropertyValue(name)` of each name of `longhands`, when the item had them,
+// where
 //
 //   accepted   1 when `element.style.setProperty(property, value)` left a declaration in a fresh element's style, else 0;
 //   value      `element.style.getPropertyValue(property)` afterwards (empty for a shorthand the browser cannot write back as one);
@@ -54,14 +56,15 @@ const PAGE = 'data:text/html,%3C!doctype%20html%3E%3Ctitle%3Et%3C%2Ftitle%3E%3Cd
 const MEASURE = `(json) => {
   const items = JSON.parse(json);
   const out = [];
-  for (const [property, value] of items) {
+  for (const [property, value, longhands] of items) {
     const e = document.createElement('div');
-    let accepted = 0, got = '', css = '', supports = 0, error = '';
+    let accepted = 0, got = '', css = '', supports = 0, error = '', parts = [];
     try {
       e.style.setProperty(property, value);
       accepted = e.style.length > 0 ? 1 : 0;
       got = e.style.getPropertyValue(property);
       css = e.style.cssText;
+      parts = (longhands || []).map((n) => e.style.getPropertyValue(n));
     } catch (x) {
       error = String(x);
     }
@@ -70,7 +73,7 @@ const MEASURE = `(json) => {
     } catch (x) {
       error += ' supports: ' + String(x);
     }
-    out.push([accepted, got, css, supports, error]);
+    out.push(longhands ? [accepted, got, css, supports, error, parts] : [accepted, got, css, supports, error]);
   }
   return JSON.stringify(out);
 }`;

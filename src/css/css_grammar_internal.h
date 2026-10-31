@@ -112,6 +112,8 @@ typedef enum {
   NT_TOK_SEMICOLON, NT_TOK_COMMA, NT_TOK_OPEN_SQUARE, NT_TOK_CLOSE_SQUARE, NT_TOK_OPEN_PAREN,
   NT_TOK_CLOSE_PAREN, NT_TOK_OPEN_CURLY, NT_TOK_CLOSE_CURLY,
   NT_LENGTH_PERCENTAGE, NT_ANGLE_PERCENTAGE, NT_TIME_PERCENTAGE, NT_FREQUENCY_PERCENTAGE, NT_COLOR,
+  NT_PARAM_SPEC,  ///< Link Parameters 1, 2.1: `<param-spec>`, up to the comma that ends it
+  NT_SIZE_KEYWORD, NT_CALC_SIZE_SUM, NT_CALC_SIZE_CALC,  ///< Sizing 4, 7: calc-size()'s basis keyword, its basis calculation and its calculation (css_grammar_match.c)
   NT_COUNT
 } gn_native;
 

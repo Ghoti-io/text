@@ -146,7 +146,7 @@ def document(batch, cases):
         if c["parent"]:
             inner = '<div style="%s">%s</div>' % (html.escape(c["parent"], quote=True), inner)
         parts.append(inner)
-        queries.append([eid, c["read"]])
+        queries.append([eid, [r for r in c["read"] if not r.startswith("@")]])
     text = '<!doctype html><html><head><title>t</title></head><body><div id="wrapper" style="display: none">' + "".join(parts) + "</div></body></html>"
     return {"mode": "h", "text": text, "queries": queries}
 
@@ -185,9 +185,11 @@ def ask_accept(engine, ids, cases):
     owners = []
     for cid in ids:
         c = cases[cid]
+        # a name in `read` that begins with `@` asks for the specified value of that property after the declaration (the longhands a shorthand sets)
+        specified = [r[1:] for r in c["read"] if r.startswith("@")]
         for d in split_declarations(c["style"]):
             p, v = declaration_parts(d)
-            items.append([p, v])
+            items.append([p, v, specified] if specified else [p, v])
             owners.append((cid, d))
         if c["parent"]:
             pass
@@ -198,6 +200,8 @@ def ask_accept(engine, ids, cases):
     out = {}
     for (cid, d), r in zip(owners, rows):
         out.setdefault(cid, {})[d] = {"accepted": r[0], "specified": r[1], "supports": r[3], "error": r[4]}
+        if len(r) > 5:
+            out[cid][d]["longhands"] = dict(zip([x[1:] for x in cases[cid]["read"] if x.startswith("@")], r[5]))
     return header, out
 
 

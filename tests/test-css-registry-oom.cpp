@@ -214,7 +214,7 @@ TEST(CssRegistryOom, AFailedFreezeAndABuilderFreedUnfrozenGiveEverythingBack) {
     GTEXT_CSS_Registry_Options o = options_with(fa);
     GTEXT_CSS_Registry_Builder * b = nullptr;
     ASSERT_EQ(gtext_css_registry_builder_new(&o, &b), GTEXT_CSS_OK);
-    GTEXT_CSS_Property_Def w = def("width", "<'flex'> | zzy", "auto");
+    GTEXT_CSS_Property_Def w = def("margin-top", "<'margin-block-start'> | zzy", "0");
     w.override = true;
     ASSERT_EQ(gtext_css_registry_register_property(b, &w, nullptr), GTEXT_CSS_OK);
     GTEXT_CSS_Registry * r = nullptr;

@@ -11,3 +11,12 @@ keywords-are-case-sensitive	css_grammar_match.c	  return (c >= 'A' && c <= 'Z') 
 alpha-is-dropped	css_color_serialize.c	    const double v = clamp01(a->value);\n    return v == 1.0 || (puts_(b, " / ") && put_num(b, v));	    return true;
 css-wide-keywords-are-not-recognized	css_property.c	  if (wide != GTEXT_CSS_WIDE_NONE) {	  if (0) {
 substitution-syntax-is-not-checked	css_property.c	    if (!syntax) {	    if (0) {
+calc-size-size-is-not-a-length	css_grammar_match.c	  mctx.keyword_count = allow_size ? 1 : 0;	  mctx.keyword_count = 0;
+calc-size-calculation-may-be-a-number	css_grammar_match.c	  *valid = ok && (mp->category == GTEXT_CSS_MATH_CAT_LENGTH || mp->category == GTEXT_CSS_MATH_CAT_PERCENTAGE);	  *valid = ok;
+calc-size-basis-keyword-is-any-keyword	css_grammar_match.c	  ctx_visit(&w, m->c->root, 0);\n  if (!w.hit) {	  w.hit = true;\n  if (!w.hit) {
+calc-size-bare-form-is-wrapped	css_math_serialize.c	    ok = bare ? write_tree(&b, root, false) :	    ok = false ? write_tree(&b, root, false) :
+transition-first-time-may-be-negative	css_property.c	           first_time_is_negative(values, count)) {	           false) {
+param-type-name-is-not-checked	css_grammar_match.c	  return known && (n == 3 || (n == 4 && (cv_delim(&a[3], '#') || cv_delim(&a[3], '+'))));	  return known || true;
+param-single-type-keeps-type-function	css_grammar_match.c	  const bool wrap = ps.is_fn && !ps.single;	  const bool wrap = ps.is_fn;
+nan-steps-count-is-a-count	css_property.c	 || steps_count_is_nan(values, count))) {	 || false)) {
+

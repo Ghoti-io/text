@@ -648,7 +648,7 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
   /* one number or one quantity: the plain value, clamped to the range of the slot */
   if (!r.has_symbols && (root->op == GTEXT_CSS_MATH_NUMBER || root->op == GTEXT_CSS_MATH_PERCENT || root->op == GTEXT_CSS_MATH_DIMENSION)) {
     *out = *src;
-    out->flags &= ~(uint32_t)(GTEXT_CSS_VFLAG_MATH | GTEXT_CSS_VFLAG_MATH_PERCENT);
+    out->flags &= ~(uint32_t)(GTEXT_CSS_VFLAG_MATH | GTEXT_CSS_VFLAG_MATH_PERCENT | GTEXT_CSS_VFLAG_MATH_BARE);
     out->math = NULL;
     out->text.data = NULL;
     out->text.length = 0;
@@ -696,7 +696,8 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
   nm->node_count = r.mb.nodes;
   char * text = NULL;
   size_t tl = 0;
-  status = css_math_serialize_to(nm, &alloc, (size_t)1 << 24, &text, &tl);
+  status = (src->flags & GTEXT_CSS_VFLAG_MATH_BARE) ? css_math_serialize_bare_to(nm, &alloc, (size_t)1 << 24, &text, &tl)
+                                                      : css_math_serialize_to(nm, &alloc, (size_t)1 << 24, &text, &tl);
   if (status != GTEXT_CSS_OK) {
     return css_st_fail(st, status, NULL, NULL);
   }

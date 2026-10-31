@@ -686,7 +686,7 @@ TEST(CssFunctionSubstitution, TheNamedFunctionsAreTypes) {
   rows({{"<counter()>", "counter(chapter)", "counter(chapter)"}, {"<counter()>", "counter(chapter, upper-roman)", "counter(chapter, upper-roman)"},
       {"<counter()>", "counter(chapter, symbols(cyclic \"*\" \"†\"))", "counter(chapter, symbols(cyclic \"*\" \"†\"))"}, {"<counter()>", "counter()", "no match"},
       {"<counters()>", "counters(c, \".\")", "counters(c, \".\")"}, {"<counters()>", "counters(c, \".\", decimal)", "counters(c, \".\", decimal)"}, {"<counters()>", "counters(c)", "no match"},
-      {"<calc-size()>", "calc-size(auto, size)", "calc-size(auto, size)"}, {"<calc-size()>", "calc-size(min-content, size + 10px)", "calc-size(min-content, size + 10px)"},
+      {"<calc-size()>", "calc-size(auto, size)", "calc-size(auto, size)"}, {"<calc-size()>", "calc-size(min-content, size + 10px)", "calc-size(min-content, 10px + size)"},
       {"<sibling-index()>", "sibling-index()", "sibling-index()"}, {"<sibling-count()>", "sibling-count()", "sibling-count()"}, {"<sibling-index()>", "sibling-index(1)", "no match"},
       {"<first-valid()>", "first-valid(1px, nonsense words, 2px)", "first-valid(1px, nonsense words, 2px)"}, {"<first-valid()>", "first-valid()", "no match"},
       {"<random()>", "random(1px, 2px)", "random(1px, 2px)"}, {"<random()>", "random(--k element-scoped, 1px, 2px, 3px)", "random(--k element-scoped, 1px, 2px, 3px)"},
