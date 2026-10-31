@@ -800,8 +800,9 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
         }
       }
     }
-    else if (css_ascii_ieq(&d->name, "font-feature-settings") || css_ascii_ieq(&d->name, "font-variation-settings")) {
-      /* Fonts 4, 6.9: "the feature tag is a case-sensitive string of four ASCII characters, U+0020 to U+007E; otherwise the declaration is invalid"; an axis tag is the same (Fonts 4, 6.12) */
+    else if (css_ascii_ieq(&d->name, "font-variation-settings")) {
+      /* Fonts 4, 6.12: "axis names contain four ASCII characters. Axis name strings longer or shorter than four characters, or containing characters outside the U+20-7E
+         codepoint range are invalid"; the descriptor's grammar in the pin writes <string> where the property's writes <opentype-tag> (font-feature-settings has the type in both) */
       for (size_t i = 0; i < n; i++) {
         if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_STRING) {
           bool ok = v[i].value.length == 4;
@@ -810,7 +811,7 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
             ok = ch >= 0x20 && ch <= 0x7e;
           }
           if (!ok) {
-            return "Fonts 4, font-feature-settings: a feature tag is a string of four ASCII characters, otherwise the declaration is invalid";
+            return "Fonts 4, font-variation-settings: an axis tag is a string of four ASCII characters, otherwise the declaration is invalid";
           }
         }
       }

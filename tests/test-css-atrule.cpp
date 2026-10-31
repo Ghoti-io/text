@@ -540,6 +540,7 @@ TEST(CssAtrule, DashedNamesTagsAndMarginBoxes) {
   EXPECT_FALSE(Parsed("@font-palette-values a { font-family: a }").res.valid);
   /* an axis tag is four ASCII characters, as a feature tag is */
   EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-variation-settings: \"ab\" 1 }").desc("font-variation-settings"), "-");
+  EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-variation-settings: \"abcde\" 1 }").desc("font-variation-settings"), "-") << "a tag longer than four characters";
   EXPECT_EQ(Parsed("@font-face { font-family: a; src: local(a); font-variation-settings: \"wght\" 300, \"wdth\" 90 }").desc("font-variation-settings"), "\"wght\" 300, \"wdth\" 90");
   /* a margin box takes !important like a style rule; @position-try and a keyframe do not */
   Parsed m("@page { @top-left { content: \"x\" !important; color: red } }");
