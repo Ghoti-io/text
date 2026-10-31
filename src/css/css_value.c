@@ -350,6 +350,19 @@ const char * gtext_css_val_kind_name(GTEXT_CSS_Val_Kind kind) {
   return kind_names[kind];
 }
 
+/// Whether an identifier is one an unquoted family name may not hold: a generic family keyword or a CSS-wide keyword (Fonts 4, 2.1: "Font family names that happen to be the
+/// same as a keyword value (inherit, serif, sans-serif, monospace, fantasy, and cursive) must be quoted to prevent confusion with the keywords with the same names").
+bool css_is_reserved_family_word(const GTEXT_CSS_String * w) {
+  static const char * const words[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "emoji",
+      "math", "fangsong", "initial", "inherit", "unset", "revert", "revert-layer", "revert-rule", "default"};
+  for (size_t i = 0; i < sizeof words / sizeof *words; i++) {
+    if (css_ascii_ieq(w, words[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /* ---- arbitrary substitution ------------------------------------------- */
 
 /* The arbitrary substitution functions, as the served drafts name them (Values 5: "The if() function is an arbitrary

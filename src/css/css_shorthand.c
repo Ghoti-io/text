@@ -440,6 +440,8 @@ static const char * const kind_names[GTEXT_CSS_SHORTHAND_KIND_COUNT] = {
   [GTEXT_CSS_SHORTHAND_GRID_LINE] = "grid-line",
   [GTEXT_CSS_SHORTHAND_TEXT_ALIGN] = "text-align",
   [GTEXT_CSS_SHORTHAND_FONT_SYNTHESIS] = "font-synthesis",
+  [GTEXT_CSS_SHORTHAND_TEXT_BOX] = "text-box",
+  [GTEXT_CSS_SHORTHAND_LINE_CLAMP] = "line-clamp",
   [GTEXT_CSS_SHORTHAND_GRID_TEMPLATE] = "grid-template",
   [GTEXT_CSS_SHORTHAND_GRID] = "grid",
   [GTEXT_CSS_SHORTHAND_OFFSET] = "offset",
@@ -1428,6 +1430,104 @@ static GTEXT_CSS_Status split_font_synthesis(xctx * x, GTEXT_CSS_Property_Id sh,
   return GTEXT_CSS_OK;
 }
 
+/* CSS Inline 3, text-box: "If the single keyword normal is specified, it sets text-box-trim to none and text-box-edge to auto. Otherwise,
+ * omitting the text-box-trim value sets it to trim-both (not the initial value), while omitting the text-box-edge value sets it to auto
+ * (the initial value)."  The longhands are text-box-trim and text-box-edge, in the order of the pin. */
+static GTEXT_CSS_Status split_text_box(xctx * x, GTEXT_CSS_Property_Id sh, const GTEXT_CSS_Value * root, size_t nl, char ** txt) {
+  leaves_t l;
+  if (nl != 2 || !leaves_of(root, &l)) {
+    return x_fail(x, GTEXT_CSS_E_UNSUPPORTED, sh, "a text-box value of this shape");
+  }
+  const char * trim = "trim-both";
+  tbuf edge;
+  tb_init(&edge, &x->alloc);
+  bool edge_any = false;
+  if (l.n == 1 && kw_is(l.v[0], "normal")) {
+    trim = "none";
+  }
+  else {
+    for (size_t i = 0; i < l.n; i++) {
+      const GTEXT_CSS_Value * v = l.v[i];
+      if (!edge_any && (kw_is(v, "none") || kw_is(v, "trim-start") || kw_is(v, "trim-end") || kw_is(v, "trim-both"))) {
+        trim = kw_is(v, "none") ? "none" : kw_is(v, "trim-start") ? "trim-start" : kw_is(v, "trim-end") ? "trim-end" : "trim-both";
+        continue;
+      }
+      char * t = text_of(x, v);
+      if (!t) {
+        tb_free(&edge);
+        return GTEXT_CSS_E_OOM;
+      }
+      if (edge_any) {
+        tb_puts(&edge, " ");
+      }
+      tb_puts(&edge, t);
+      gtext_allocator_free(&x->alloc, t);
+      edge_any = true;
+    }
+  }
+  txt[0] = dup_text(x, trim);
+  if (edge_any) {
+    txt[1] = x_take(x, &edge);
+  }
+  else {
+    tb_free(&edge);
+    txt[1] = dup_text(x, "auto");
+  }
+  return txt[0] && txt[1] ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+}
+
+/* CSS Overflow 4, line-clamp: "none | [<'max-lines'> || <'block-ellipsis'>] -webkit-legacy?". "none: Sets max-lines to auto, continue to normal, and block-ellipsis to
+ * no-ellipsis."  "<max-lines> <block-ellipsis>: Sets continue to collapse if either or both values are specified, unless the -webkit-legacy keyword is also specified.
+ * Sets max-lines and block-ellipsis to the corresponding values, or to max-lines: auto and block-ellipsis: ellipsis respectively if omitted."  "-webkit-legacy: Sets
+ * continue to -webkit-legacy."  The longhands are max-lines, block-ellipsis and continue, in the order of the pin. */
+static GTEXT_CSS_Status split_line_clamp(xctx * x, GTEXT_CSS_Property_Id sh, const GTEXT_CSS_Value * root, size_t nl, char ** txt) {
+  leaves_t l;
+  if (nl != 3 || !leaves_of(root, &l)) {
+    return x_fail(x, GTEXT_CSS_E_UNSUPPORTED, sh, "a line-clamp value of this shape");
+  }
+  if (l.n == 1 && kw_is(l.v[0], "none")) {
+    txt[0] = dup_text(x, "auto");
+    txt[1] = dup_text(x, "no-ellipsis");
+    txt[2] = dup_text(x, "normal");
+    return txt[0] && txt[1] && txt[2] ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  bool legacy = false, lines_auto = false;
+  char * count = NULL;
+  char * ellipsis = NULL;
+  for (size_t i = 0; i < l.n; i++) {
+    const GTEXT_CSS_Value * v = l.v[i];
+    if (kw_is(v, "-webkit-legacy")) {
+      legacy = true;
+    }
+    else if (kw_is(v, "auto")) {
+      lines_auto = true;
+    }
+    else if (kw_is(v, "no-ellipsis") || kw_is(v, "ellipsis") || v->kind == GTEXT_CSS_VAL_STRING) {
+      ellipsis = text_of(x, v);
+    }
+    else {
+      count = text_of(x, v);
+    }
+  }
+  /* max-lines is `auto || <integer [1,∞]>`: in the order of that grammar; omitted it is auto */
+  tbuf b;
+  tb_init(&b, &x->alloc);
+  if (lines_auto || !count) {
+    tb_puts(&b, "auto");
+  }
+  if (count) {
+    tb_puts(&b, lines_auto ? " " : "");
+    tb_puts(&b, count);
+  }
+  txt[0] = x_take(x, &b);
+  txt[1] = ellipsis ? ellipsis : dup_text(x, "ellipsis");
+  txt[2] = dup_text(x, legacy ? "-webkit-legacy" : "collapse");
+  if (count) {
+    gtext_allocator_free(&x->alloc, count);
+  }
+  return txt[0] && txt[1] && txt[2] ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+}
+
 /* ---- font --------------------------------------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status split_font(xctx * x, GTEXT_CSS_Property_Id sh, const GTEXT_CSS_Value * root, size_t nl,
@@ -2175,6 +2275,8 @@ static GTEXT_CSS_Status expand_one(xctx * x, qitem * qi) {
   case GTEXT_CSS_SHORTHAND_GRID: status = split_grid(x, sh, root, nlong, ids, true, txt); break;
   case GTEXT_CSS_SHORTHAND_TEXT_ALIGN: status = split_text_align(x, sh, root, nlong, txt); break;
   case GTEXT_CSS_SHORTHAND_FONT_SYNTHESIS: status = split_font_synthesis(x, sh, root, nlong, ids, txt); break;
+  case GTEXT_CSS_SHORTHAND_TEXT_BOX: status = split_text_box(x, sh, root, nlong, txt); break;
+  case GTEXT_CSS_SHORTHAND_LINE_CLAMP: status = split_line_clamp(x, sh, root, nlong, txt); break;
   case GTEXT_CSS_SHORTHAND_FONT: status = split_font(x, sh, root, nl, ids, txt); break;
   case GTEXT_CSS_SHORTHAND_ANY:
     if (split_keyword_shorthand(x, sh, root, ids, nl, txt, &status)) {

@@ -257,9 +257,11 @@ TEST(CssShorthandRoundTrip, TheCasesTheReviewFoundAreWrittenWithTheValuesTheBloc
   EXPECT_EQ(Block(R(), "box-shadow: none").css(), "box-shadow: none;");
   // a spread that is written needs its blur written, which the author left out
   EXPECT_EQ(Block(R(), "box-shadow: 1px 2px red; box-shadow-spread: 1px").css(), "box-shadow: red 1px 2px 0px 1px;");
-  // `-webkit-legacy` follows at least one of the two components of line-clamp
-  EXPECT_EQ(Block(R(), "max-lines: auto; block-ellipsis: no-ellipsis; continue: -webkit-legacy").css(), "line-clamp: auto -webkit-legacy;");
-  EXPECT_EQ(Block(R(), "max-lines: 3; block-ellipsis: no-ellipsis; continue: -webkit-legacy").css(), "line-clamp: 3 -webkit-legacy;");
+  // `-webkit-legacy` follows at least one of the two components of line-clamp, and CSS Overflow 4 sets "max-lines and block-ellipsis to the corresponding values, or to
+  // max-lines: auto and block-ellipsis: ellipsis respectively if omitted", so a block-ellipsis of no-ellipsis is written and one of ellipsis is not
+  EXPECT_EQ(Block(R(), "max-lines: auto; block-ellipsis: no-ellipsis; continue: -webkit-legacy").css(), "line-clamp: auto no-ellipsis -webkit-legacy;");
+  EXPECT_EQ(Block(R(), "max-lines: 3; block-ellipsis: no-ellipsis; continue: -webkit-legacy").css(), "line-clamp: 3 no-ellipsis -webkit-legacy;");
+  EXPECT_EQ(Block(R(), "max-lines: auto; block-ellipsis: ellipsis; continue: -webkit-legacy").css(), "line-clamp: auto -webkit-legacy;");
   // a longhand holds a name that is also a keyword of another component: the names are written one by one
   EXPECT_EQ(Block(R(), "animation: none; animation-name: auto").css().find("animation:"), std::string::npos);
   // font-synthesis-position is a longhand of the shorthand (consolidate.tsv, append-longhand), so a `none` of it is the omission of `position`

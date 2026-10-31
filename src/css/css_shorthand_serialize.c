@@ -1480,6 +1480,73 @@ static bool font_synthesis_text(sctx * c, const directs * d, const lhv * v, stex
   return out->text != NULL;
 }
 
+/* text-box (CSS Inline 3): `normal` is text-box-trim `none` with text-box-edge `auto`; an omitted text-box-trim is `trim-both` and an omitted
+ * text-box-edge is `auto`. The shortest text that reads back as the two values: `normal`; the trim alone when the edge is `auto`; the edge alone
+ * when the trim is `trim-both`; else both. */
+static bool text_box_text(sctx * c, const directs * d, const lhv * v, stext * out) {
+  if (d->nlong != 2) {
+    return false;
+  }
+  const char * trim = v[0].text;
+  const char * edge = v[1].text;
+  const bool edge_auto = texteq(edge, "auto");
+  const char * res = NULL;
+  tbuf buf;
+  tb_init(&buf, &c->alloc);
+  if (edge_auto && texteq(trim, "none")) {
+    res = "normal";
+  }
+  else if (edge_auto) {
+    res = trim;
+  }
+  else if (texteq(trim, "trim-both")) {
+    res = edge;
+  }
+  if (res) {
+    tb_puts(&buf, res);
+  }
+  else {
+    tb_puts(&buf, trim);
+    tb_puts(&buf, " ");
+    tb_puts(&buf, edge);
+  }
+  out->text = tb_take(&buf, NULL);
+  return out->text != NULL;
+}
+
+/* line-clamp (CSS Overflow 4): `none` is max-lines auto, block-ellipsis no-ellipsis and continue normal; otherwise continue is collapse, or -webkit-legacy (written as
+ * the keyword after the rest), and the shorthand writes max-lines and then block-ellipsis unless that is `ellipsis`, which an omitted component stands for. Other
+ * continue values (discard, normal with other longhands) are not a value of the shorthand. */
+static bool line_clamp_text(sctx * c, const directs * d, const lhv * v, stext * out) {
+  if (d->nlong != 3) {
+    return false;
+  }
+  const char * lines = v[0].text;
+  const char * ellipsis = v[1].text;
+  const char * cont = v[2].text;
+  tbuf buf;
+  tb_init(&buf, &c->alloc);
+  if (texteq(cont, "normal") && texteq(lines, "auto") && texteq(ellipsis, "no-ellipsis")) {
+    tb_puts(&buf, "none");
+  }
+  else if (texteq(cont, "collapse") || texteq(cont, "-webkit-legacy")) {
+    tb_puts(&buf, lines);
+    if (!texteq(ellipsis, "ellipsis")) {
+      tb_puts(&buf, " ");
+      tb_puts(&buf, ellipsis);
+    }
+    if (texteq(cont, "-webkit-legacy")) {
+      tb_puts(&buf, " -webkit-legacy");
+    }
+  }
+  else {
+    tb_free(&buf);
+    return false;
+  }
+  out->text = tb_take(&buf, NULL);
+  return out->text != NULL;
+}
+
 static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, stext * out) {
   /* the longhands by name; font-variant's own longhands must be initial except font-variant-caps: small-caps */
   const char * style = NULL;
@@ -1622,6 +1689,8 @@ static void compute_stext(sctx * c, GTEXT_CSS_Property_Id sh, stext * t) {
     case GTEXT_CSS_SHORTHAND_GRID: grid_text(c, &d, v, true, t); break;
     case GTEXT_CSS_SHORTHAND_TEXT_ALIGN: text_align_text(c, &d, v, t); break;
     case GTEXT_CSS_SHORTHAND_FONT_SYNTHESIS: font_synthesis_text(c, &d, v, t); break;
+    case GTEXT_CSS_SHORTHAND_TEXT_BOX: text_box_text(c, &d, v, t); break;
+    case GTEXT_CSS_SHORTHAND_LINE_CLAMP: line_clamp_text(c, &d, v, t); break;
     default: break;
     }
     /* what the shorthand resets must be its initial value, or the shorthand cannot say what the block says */

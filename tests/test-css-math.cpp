@@ -245,6 +245,17 @@ TEST(CssMathSerialize, SymbolsAndUnresolvedFunctionsKeepTheTreeShape) {
   EXPECT_EQ(calc("sibling-index()"), "sibling-index()");
 }
 
+TEST(CssMathSimplify, ANumberAndADimensionBesideAnUnresolvedFunctionAreOneFactor) {
+  // Values 4 leaves a number beside a dimension in a product with more than numeric values unmerged; both pinned browsers write `sibling-index() * 2rad * pi` as
+  // `calc(360deg * sibling-index())`, so the numbers and the first dimension are one leaf and the type of the product does not change
+  EXPECT_EQ(calc("calc(sibling-index() * 2rad * pi)"), "calc(360deg * sibling-index())");
+  EXPECT_EQ(calc("calc(sibling-count() * 1rad * pi)"), "calc(180deg * sibling-count())");
+  EXPECT_EQ(calc("calc(3 * sibling-index() * 2px)"), "calc(6px * sibling-index())");
+  EXPECT_EQ(calc("calc(sibling-index() * 2px * 4)"), "calc(8px * sibling-index())");
+  EXPECT_EQ(calc("calc(2em * sibling-index() * 3)"), "calc(6em * sibling-index())");
+  EXPECT_EQ(calc("calc(2 * sibling-index() * 3)"), "calc(6 * sibling-index())");
+}
+
 // ---- the grammar ---------------------------------------------------------------------------------------------
 
 TEST(CssMathSyntax, WhiteSpaceIsRequiredOnBothSidesOfPlusAndMinusOnly) {

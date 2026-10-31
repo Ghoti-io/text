@@ -43,7 +43,7 @@
  *   gives only to the final layer (`background-color`); a longhand with no component in a layer gets its initial value for that layer;
  * - COPY: every longhand takes the whole value;
  * - ALL: `all` takes the CSS-wide keywords alone, or a substitution that may yield one (pending);
- * - BORDER_RADIUS (the four corners, or the two of one side), FONT, FLEX, GRID_LINE, GRID_TEMPLATE, GRID, OFFSET, TEXT_ALIGN, FONT_SYNTHESIS: the shorthands whose grammar the
+ * - BORDER_RADIUS (the four corners, or the two of one side), FONT, FLEX, GRID_LINE, GRID_TEMPLATE, GRID, OFFSET, TEXT_ALIGN, FONT_SYNTHESIS, TEXT_BOX, LINE_CLAMP: the shorthands whose grammar the
  *   generic split would misread have algorithms of their own.
  *
  * A CSS-wide keyword sets every longhand to that keyword. A **pending** value (a shorthand holding `var()`) sets every longhand to a pending
@@ -105,6 +105,8 @@ typedef enum {
   GTEXT_CSS_SHORTHAND_GRID_LINE,         ///< `grid-row`, `grid-column`, `grid-area`: `<grid-line>` values separated by `/`, an omitted one copying an identifier or being `auto`.
   GTEXT_CSS_SHORTHAND_TEXT_ALIGN,        ///< `text-align`: `text-align-all`, and `text-align-last` `auto` (or `justify` for `justify-all`).
   GTEXT_CSS_SHORTHAND_FONT_SYNTHESIS,    ///< `font-synthesis`: `none`, or the listed kinds `auto` and the others `none`.
+  GTEXT_CSS_SHORTHAND_TEXT_BOX,          ///< `text-box`: `normal` is `none` and `auto`; otherwise an omitted `text-box-trim` is `trim-both` and an omitted `text-box-edge` is `auto`.
+  GTEXT_CSS_SHORTHAND_LINE_CLAMP,        ///< `line-clamp`: `none`, or `max-lines` and `block-ellipsis` (omitted: `auto` and `ellipsis`), and `continue` `collapse` or, with `-webkit-legacy`, that.
   GTEXT_CSS_SHORTHAND_GRID_TEMPLATE,     ///< `grid-template`: `none`, rows `/` columns, or area strings with their row sizes.
   GTEXT_CSS_SHORTHAND_GRID,              ///< `grid`: a `grid-template`, or the rows with `auto-flow` columns, or `auto-flow` rows with the columns.
   GTEXT_CSS_SHORTHAND_OFFSET,            ///< `offset`: the position, then the path with its distance and rotation, then `/` and the anchor.

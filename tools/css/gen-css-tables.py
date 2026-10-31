@@ -354,9 +354,13 @@ def build(model):
     for (scope, name), (reason, longhand) in sorted(consolidate["append-longhand"].items()):
         # the pin's shorthand lacks a longhand that the served draft lists (the shorthand's own grammar names it): the line adds it, and is stale when
         # the pin lists it already, or the shorthand or the longhand is not in the pin
-        if scope or name not in props or longhand not in props or longhand in props[name]["longhands"] or not props[name]["longhands"]:
+        # the longhand column is one name, or several separated by a space (a shorthand the pin gives no longhands is one the draft defines in terms of
+        # them: `text-box`, `background-tbd`)
+        names_to_add = longhand.split()
+        if scope or name not in props or not names_to_add or len(set(names_to_add)) != len(names_to_add) \
+                or any(l not in props or l in props[name]["longhands"] for l in names_to_add):
             die("consolidate.tsv: append-longhand %s %s: the pin has no such shorthand or longhand, or lists it already (stale)" % (name, longhand))
-        props[name]["longhands"].append(longhand)
+        props[name]["longhands"].extend(names_to_add)
         consolidate["append-longhand"][(scope, name)] = ("used", reason, longhand)
 
     names = sorted(props)

@@ -512,6 +512,16 @@ static bool rule_first_baseline(cb * out, const sp * t, size_t n) {
 
 /* Easing 2: `steps(<n>, jump-end)` and `steps(<n>, end)` are `steps(<n>)`. */
 static bool rule_steps(cb * out, const sp * t, size_t n) {
+  /* Easing 2 (served 2026-10-31), 2.3.1: "Unlike the other easing function keywords, step-start and step-end do not serialize as themselves. Instead, they serialize as
+   * "steps(1, start)" and "steps(1)", respectively." */
+  if (n == 1 && eq(t[0], "step-start")) {
+    cb_puts(out, "steps(1, start)");
+    return true;
+  }
+  if (n == 1 && eq(t[0], "step-end")) {
+    cb_puts(out, "steps(1)");
+    return true;
+  }
   if (n != 1 || t[0].n < 8 || memcmp(t[0].p, "steps(", 6) != 0 || t[0].p[t[0].n - 1] != ')') {
     return false;
   }
@@ -1336,52 +1346,15 @@ static bool rule_display(cb * out, const sp * t, size_t n) {
   return true;
 }
 
-/* Inline 3, text-box: `normal | [ <'text-box-trim'> || <'text-box-edge'> ]`. */
-static bool rule_text_box(cb * out, const sp * t, size_t n) {
-  const char * trim = NULL;
-  sp edge[2];
-  size_t ne = 0;
-  for (size_t i = 0; i < n; i++) {
-    if (eq(t[i], "none") || eq(t[i], "trim-start") || eq(t[i], "trim-end") || eq(t[i], "trim-both")) {
-      if (trim) {
-        return false;
-      }
-      trim = eq(t[i], "none") ? "none" : eq(t[i], "trim-start") ? "trim-start" : eq(t[i], "trim-end") ? "trim-end" : "trim-both";
-    }
-    else if (ne < 2) {
-      edge[ne++] = t[i];
-    }
-    else {
-      return false;
-    }
-  }
-  if (ne == 1 && eq(edge[0], "auto")) {
-    ne = 0;
-    if (!trim) {
-      trim = "trim-both"; /* text-box: auto is trim-both auto */
-    }
-  }
-  else if (ne == 2 && sp_eq(edge[0], edge[1])) {
-    /* Inline 3: "If only one value is specified, both edges are assigned that same keyword if possible": two equal edges are written once
-     * (`cap text` is not shortened: the grammar of <text-edge> has no one-value form for `cap`, which the tests expect and the pin lacks) */
-    ne = 1;
-  }
-  if (ne == 0) {
-    if (!trim || strcmp(trim, "none") == 0) {
-      cb_puts(out, "normal");
-    }
-    else {
-      cb_puts(out, trim);
-    }
+/* Inline 3, <text-edge>: "If only one value is specified, both edges are assigned that same keyword if possible": two equal edges are written once
+ * (`cap text` is not shortened: the grammar of <text-edge> has no one-value form for `cap`). Both pinned browsers write `text text` as `text`. text-box is a
+ * shorthand of text-box-trim and text-box-edge (css_shorthand.c), so the rule belongs to the longhand. */
+static bool rule_text_edge(cb * out, const sp * t, size_t n) {
+  if (n == 2 && sp_eq(t[0], t[1])) {
+    put_join(out, t, 1);
     return true;
   }
-  /* an edge: the trim is written unless it is the default that goes with an edge, trim-both */
-  if (trim && strcmp(trim, "trim-both") != 0) {
-    cb_puts(out, trim);
-    cb_putc(out, ' ');
-  }
-  put_join(out, edge, ne);
-  return true;
+  return false;
 }
 
 /* Box 4, margin-trim: `none | block | [ block-start || block-end ]` in the pinned data: `block-start block-end` is `block`. The draft Box 4
@@ -1836,11 +1809,17 @@ static bool shape_function(cb * out, sp f) {
       }
       size_t nrad = at;
       const bool circle = ieq(name, "circle");
-      /* closest-side is the default radius of a circle (`<radial-size> = <radial-extent> | <length-percentage>{2}` for an ellipse: two extents are not
-       * a radial-size, so `ellipse(closest-side closest-side)` is invalid and has no rule; `ellipse(closest-side)` is left as written, since no test
-       * or browser answer of this slice shortens it) */
-      if (circle && nrad == 1 && eq(tk.v[0], "closest-side")) {
-        nrad = 0;
+      /* closest-side is the default radius: Shapes 1 (served 2026-10-31), ellipse(): the <radial-size> "If omitted it defaults to closest-side", and Images 4 gives
+       * `<radial-size> = <radial-extent>{1,2} | <length-percentage [0,∞]>{1,2}`, so for an ellipse one `closest-side` and two are the default as well, and the
+       * shortest form leaves them out (both pinned browsers write `ellipse(closest-side closest-side at 10% 20%)` as `ellipse(at 10% 20%)`) */
+      if (nrad >= 1 && nrad <= (circle ? 1u : 2u)) {
+        bool all_default = true;
+        for (size_t i = 0; i < nrad; i++) {
+          all_default = all_default && eq(tk.v[i], "closest-side");
+        }
+        if (all_default) {
+          nrad = 0;
+        }
       }
       size_t npos = at < tk.n ? tk.n - at - 1 : 0;
       cb pos = {out->a, NULL, 0, 0, false, &out->fail};
@@ -2025,6 +2004,22 @@ static bool rule_shape(cb * out, const sp * t, size_t n) {
     }
   }
   return changed;
+}
+
+/* Masking 1 (served 2026-10-31): "If no reference box is specified, the border-box will be used as reference box" for a clip-path basic shape, and Motion 1: "If
+ * <coord-box> is omitted, it defaults to border-box" for offset-path; the shortest form leaves the default out beside a function (alone it is the value) and writes
+ * the shape first (both pinned browsers write `border-box circle(7% at 8% 9%)` as `circle(7% at 8% 9%)`). */
+static bool rule_shape_default_box(cb * out, const sp * t, size_t n) {
+  if (n == 2 && (eq(t[0], "border-box") || eq(t[1], "border-box"))) {
+    const sp fn = eq(t[0], "border-box") ? t[1] : t[0];
+    if (memchr(fn.p, '(', fn.n)) {
+      if (!shape_function(out, fn)) {
+        put_sp(out, fn);
+      }
+      return true;
+    }
+  }
+  return rule_shape(out, t, n);
 }
 
 /* Scroll-driven Animations 1, <timeline-range-name> <length-percentage>?: the start of a range name is `0%` and its end `100%` by default, and
@@ -2285,7 +2280,7 @@ static const canon_row kRows[] = {
   R("border-shape", rule_shape, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
   T("clip", rule_clip_rect_commas),
-  R("clip-path", rule_shape, MODE_WHOLE),
+  R("clip-path", rule_shape_default_box, MODE_WHOLE),
   R("color-scheme", rule_color_scheme, MODE_WHOLE),
   R("counter-increment", rule_counter_one, MODE_WHOLE),
   R("counter-reset", rule_counter_zero, MODE_WHOLE),
@@ -2319,7 +2314,7 @@ static const canon_row kRows[] = {
   R("object-fit", rule_object_fit, MODE_WHOLE),
   R("object-position", rule_position, MODE_ITEMS),
   R("offset-anchor", rule_position, MODE_ITEMS),
-  R("offset-path", rule_shape, MODE_WHOLE),
+  R("offset-path", rule_shape_default_box, MODE_WHOLE),
   R("offset-position", rule_position, MODE_ITEMS),
   R("offset-rotate", rule_offset_rotate, MODE_WHOLE),
   R("opacity", rule_alpha_percent, MODE_WHOLE),
@@ -2330,6 +2325,7 @@ static const canon_row kRows[] = {
   R("paint-order", rule_paint_order, MODE_WHOLE),
   R("perspective-origin", rule_position, MODE_ITEMS),
   R("position-area", rule_pair, MODE_WHOLE),
+  R("position-try-fallbacks", rule_pair, MODE_ITEMS),
   R("rotate", rule_rotate, MODE_WHOLE),
   R("scale", rule_scale, MODE_WHOLE),
   R("scroll-snap-align", rule_pair, MODE_WHOLE),
@@ -2338,7 +2334,8 @@ static const canon_row kRows[] = {
   R("shape-outside", rule_shape, MODE_WHOLE),
   R("stop-opacity", rule_alpha_percent, MODE_WHOLE),
   R("stroke-opacity", rule_alpha_percent, MODE_WHOLE),
-  R("text-box", rule_text_box, MODE_WHOLE),
+  R("text-box-edge", rule_text_edge, MODE_WHOLE),
+  R("line-fit-edge", rule_text_edge, MODE_WHOLE),
   R("transform", rule_transform, MODE_WHOLE),
   R("transform-origin", rule_transform_origin, MODE_WHOLE),
   R("transition-timing-function", rule_steps, MODE_ITEMS),

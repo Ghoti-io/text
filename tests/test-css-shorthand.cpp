@@ -134,6 +134,10 @@ TEST(CssShorthandKinds, TheKindsAreWhatTheTableSays) {
       {"offset", GTEXT_CSS_SHORTHAND_OFFSET},
       {"text-align", GTEXT_CSS_SHORTHAND_TEXT_ALIGN},
       {"font-synthesis", GTEXT_CSS_SHORTHAND_FONT_SYNTHESIS},
+      {"text-box", GTEXT_CSS_SHORTHAND_TEXT_BOX},
+      {"background-tbd", GTEXT_CSS_SHORTHAND_LAYERS},
+      {"line-clamp", GTEXT_CSS_SHORTHAND_LINE_CLAMP},
+      {"-webkit-line-clamp", GTEXT_CSS_SHORTHAND_ANY},
   };
   for (const Row & r : rows) {
     EXPECT_EQ(gtext_css_shorthand_kind(R(), find(R(), r.name)), r.kind) << r.name;
@@ -337,6 +341,35 @@ TEST(CssShorthandExpand, TextDecorationSkipNoneSkipsNothingAndAutoIsTheDefault) 
       "text-decoration-skip-self=auto; text-decoration-skip-box=none; text-decoration-skip-spaces=start end; text-decoration-skip-ink=auto");
 }
 
+TEST(CssShorthandExpand, TextBoxOmittedTrimIsTrimBothAndOmittedEdgeIsAuto) {
+  // CSS Inline 3: "If the single keyword normal is specified, it sets text-box-trim to none and text-box-edge to auto. Otherwise, omitting the
+  // text-box-trim value sets it to trim-both (not the initial value), while omitting the text-box-edge value sets it to auto."
+  EXPECT_EQ(items_of(Block(R(), "text-box: normal")), "text-box-trim=none; text-box-edge=auto");
+  EXPECT_EQ(items_of(Block(R(), "text-box: none")), "text-box-trim=none; text-box-edge=auto");
+  EXPECT_EQ(items_of(Block(R(), "text-box: trim-start")), "text-box-trim=trim-start; text-box-edge=auto");
+  EXPECT_EQ(items_of(Block(R(), "text-box: cap alphabetic")), "text-box-trim=trim-both; text-box-edge=cap alphabetic");
+  EXPECT_EQ(items_of(Block(R(), "text-box: ex text trim-end")), "text-box-trim=trim-end; text-box-edge=ex text");
+}
+
+TEST(CssShorthandExpand, BackgroundTbdSetsTheLonghandsOfBackgroundExceptTheColor) {
+  // Backgrounds 4, 2.11: "sets all the same properties as the background shorthand except for background-color"
+  EXPECT_EQ(items_of(Block(R(), "background-tbd: url(a.png) no-repeat")).find("background-color"), std::string::npos);
+  EXPECT_NE(items_of(Block(R(), "background-tbd: url(a.png) no-repeat")).find("background-repeat=no-repeat"), std::string::npos);
+}
+
+TEST(CssShorthandExpand, LineClampSetsMaxLinesBlockEllipsisAndContinue) {
+  // CSS Overflow 4: "none: Sets max-lines to auto, continue to normal, and block-ellipsis to no-ellipsis."; "Sets continue to collapse if either or both values are
+  // specified, unless the -webkit-legacy keyword is also specified"; "Sets max-lines and block-ellipsis to the corresponding values, or to max-lines: auto and
+  // block-ellipsis: ellipsis respectively if omitted."; "-webkit-legacy: Sets continue to -webkit-legacy."
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: none")), "max-lines=auto; block-ellipsis=no-ellipsis; continue=normal");
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: 3")), "max-lines=3; block-ellipsis=ellipsis; continue=collapse");
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: no-ellipsis 10")), "max-lines=10; block-ellipsis=no-ellipsis; continue=collapse");
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: ellipsis")), "max-lines=auto; block-ellipsis=ellipsis; continue=collapse");
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: \"x\" 12")), "max-lines=12; block-ellipsis=\"x\"; continue=collapse");
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: 1 -webkit-legacy")), "max-lines=1; block-ellipsis=ellipsis; continue=-webkit-legacy");
+  EXPECT_EQ(items_of(Block(R(), "line-clamp: 8 auto")), "max-lines=auto 8; block-ellipsis=ellipsis; continue=collapse");
+}
+
 TEST(CssShorthandExpand, ListStyleNoneNamesTheTypeAndTheImageBothUnlessATypeIsGiven) {
   const std::string a = items_of(Block(R(), "list-style: none"));
   EXPECT_NE(a.find("list-style-type=none"), std::string::npos) << a;
@@ -531,6 +564,21 @@ TEST(CssShorthandBlock, TheKeywordShorthandsComeBackAsTheirKeywords) {
   EXPECT_EQ(through("position-try: most-width none"), "position-try: most-width none;");
   EXPECT_EQ(through("position-try: normal none"), "position-try: none;");
   EXPECT_EQ(through("font-synthesis: weight style"), "font-synthesis: weight style;");
+  // `none` and a bare count are also values of the legacy -webkit-line-clamp, which a block writes first (it sorts first)
+  EXPECT_EQ(through("line-clamp: none"), "-webkit-line-clamp: none;");
+  EXPECT_EQ(through("line-clamp: ellipsis"), "line-clamp: auto;");
+  EXPECT_EQ(through("line-clamp: 8 ellipsis"), "line-clamp: 8;");
+  EXPECT_EQ(through("line-clamp: no-ellipsis 10"), "line-clamp: 10 no-ellipsis;");
+  EXPECT_EQ(through("line-clamp: no-ellipsis -webkit-legacy"), "line-clamp: auto no-ellipsis -webkit-legacy;");
+  EXPECT_EQ(through("text-box: normal"), "text-box: normal;");
+  EXPECT_EQ(through("text-box: none"), "text-box: normal;");
+  EXPECT_EQ(through("text-box: none auto"), "text-box: normal;");
+  EXPECT_EQ(through("text-box: auto"), "text-box: trim-both;");
+  EXPECT_EQ(through("text-box: trim-both text"), "text-box: text;");
+  EXPECT_EQ(through("text-box: text text trim-end"), "text-box: trim-end text;");
+  EXPECT_EQ(through("text-box: trim-start auto"), "text-box: trim-start;");
+  EXPECT_EQ(through("text-box: trim-both cap alphabetic"), "text-box: cap alphabetic;");
+  EXPECT_EQ(through("text-box: none cap alphabetic"), "text-box: none cap alphabetic;");
   EXPECT_EQ(through("text-align: justify-all"), "text-align: justify-all;");
   EXPECT_EQ(through("column-rule-inset: 1px 2px / 1px 2px"), "column-rule-inset: 1px 2px;");
   EXPECT_EQ(through("row-rule-inset: 1px 2px / 3px"), "row-rule-inset: 1px 2px / 3px;");

@@ -155,6 +155,47 @@ static bool name_is(const GTEXT_CSS_Component_Value * v, const char * lower) {
 }
 
 /**
+ * The argument grammar of random-item(), which is an arbitrary substitution function (Values 5, 10.3): "random-item( <random-key> , [ <declaration-value>? ]# )", where
+ * "wrapping the values in {} allows their commas to be distinguished from the function's argument-separating commas", and the wrapper is "only allowed for some
+ * function arguments--those defined as free-form productions": a {} block is a whole argument, with nothing but white space beside it. So the key before the first
+ * comma has to hold something, at least one item has to follow, and no item holds a top-level `;` or `!`.
+ */
+static bool random_item_syntax(const GTEXT_CSS_Component_Value * fn) {
+  size_t group = 0;
+  bool has_content = false, has_block = false, has_other = false;
+  for (size_t k = 0; k <= fn->child_count; k++) {
+    const GTEXT_CSS_Component_Value * c = k < fn->child_count ? &fn->children[k] : NULL;
+    if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {
+      if (group == 0 && !has_content) {
+        return false;  /* the key is empty */
+      }
+      if (has_block && has_other) {
+        return false;  /* a {} block is the whole argument */
+      }
+      group++;
+      has_content = has_block = has_other = false;
+      continue;
+    }
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
+      if (c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+        continue;
+      }
+      if (c->type == GTEXT_CSS_TOKEN_SEMICOLON || (c->type == GTEXT_CSS_TOKEN_DELIM && c->delim == '!')) {
+        return false;
+      }
+    }
+    has_content = true;
+    if (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
+      has_block = true;
+    }
+    else {
+      has_other = true;
+    }
+  }
+  return group >= 2;  /* the key and at least one item (an item may be empty) */
+}
+
+/**
  * Whether every `var()`, `env()` and `attr()` in the values is syntactically valid. Values 5, on the arbitrary substitution functions:
  * "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves syntactically
  * valid according to their argument grammars, the entire value's grammar must be assumed to be valid at parse time". The argument
@@ -216,6 +257,10 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
         if (!first) {
           *valid = false;
         }
+      }
+      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && name_is(v, "random-item") && !random_item_syntax(v)) {
+        *valid = false;
+        break;
       }
       if (v->child_count > 0) {
         if (top == cap) {

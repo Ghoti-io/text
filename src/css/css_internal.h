@@ -331,6 +331,9 @@ bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out
 
 /// ASCII case-insensitive equality of a string with a lower-case literal.
 bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
+/** Whether an identifier could be taken for a keyword of the font-family value definition or for a CSS-wide keyword (Fonts 4, 2.1.1), so that an unquoted family name
+ *  cannot hold it. */
+bool css_is_reserved_family_word(const GTEXT_CSS_String * w);
 
 /// Trim the text of a custom property's value: the white space and the comments before its first token and after its last are not part of it ("the original text" is
 /// that of the tokens, and a comment is no token), those between are. Strings are stepped over. `*s` and `*n` are narrowed.

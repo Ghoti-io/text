@@ -734,9 +734,185 @@ static bool ident_in(const GTEXT_CSS_String * s, const char * a, const char * b,
 }
 
 static bool is_css_wide(const GTEXT_CSS_String * s) {
-  static const char * const names[] = {"initial", "inherit", "unset", "revert", "revert-layer", "default"};
+  /* Cascade 5 (served 2026-10-31), 7.1: "initial | inherit | unset | revert | revert-layer | revert-rule" are the CSS-wide keywords; `default` is reserved with them (Values 4, 2.4) */
+  static const char * const names[] = {"initial", "inherit", "unset", "revert", "revert-layer", "revert-rule", "default"};
   for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
     if (fold_equal(s->data, s->length, names[i], strlen(names[i]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* The path data of SVG 1.1 (8.3.9): a moveto first, then commands whose arguments come in whole groups (a command letter is followed by one group, or more, of
+   its arguments; `Z` takes none), numbers as `[+-]? (digits [. digits?]? | . digits) ([eE] [+-]? digits)?` separated by white space and at most one comma, the two
+   flags of an arc each one `0` or `1` with no separator needed after them. An empty path is not a path. */
+static bool path_is_space(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+}
+
+static bool path_number(const char ** pp, const char * end) {
+  const char * p = *pp;
+  if (p < end && (*p == '+' || *p == '-')) {
+    p++;
+  }
+  const char * digits = p;
+  while (p < end && *p >= '0' && *p <= '9') {
+    p++;
+  }
+  size_t whole = (size_t)(p - digits), frac = 0;
+  if (p < end && *p == '.') {
+    p++;
+    const char * f = p;
+    while (p < end && *p >= '0' && *p <= '9') {
+      p++;
+    }
+    frac = (size_t)(p - f);
+  }
+  if (whole == 0 && frac == 0) {
+    return false;
+  }
+  if (p < end && (*p == 'e' || *p == 'E')) {
+    const char * q = p + 1;
+    if (q < end && (*q == '+' || *q == '-')) {
+      q++;
+    }
+    const char * ed = q;
+    while (q < end && *q >= '0' && *q <= '9') {
+      q++;
+    }
+    if (q > ed) {
+      p = q;
+    }
+  }
+  *pp = p;
+  return true;
+}
+
+/* White space, then at most one comma and white space: whether a comma was there. */
+static bool path_separator(const char ** pp, const char * end) {
+  const char * p = *pp;
+  while (p < end && path_is_space(*p)) {
+    p++;
+  }
+  bool comma = false;
+  if (p < end && *p == ',') {
+    comma = true;
+    p++;
+    while (p < end && path_is_space(*p)) {
+      p++;
+    }
+  }
+  *pp = p;
+  return comma;
+}
+
+static bool path_is_letter(char c) {
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
+
+static bool svg_path_data_valid(const char * s, size_t n) {
+  const char * p = s;
+  const char * const end = s + n;
+  bool first = true;
+  while (true) {
+    while (p < end && path_is_space(*p)) {
+      p++;
+    }
+    if (p == end) {
+      return !first;
+    }
+    const char c = *p++;
+    unsigned want;
+    switch (c) {
+    case 'M': case 'm': case 'L': case 'l': case 'T': case 't': want = 2; break;
+    case 'H': case 'h': case 'V': case 'v': want = 1; break;
+    case 'C': case 'c': want = 6; break;
+    case 'S': case 's': case 'Q': case 'q': want = 4; break;
+    case 'A': case 'a': want = 7; break;
+    case 'Z': case 'z': want = 0; break;
+    default: return false;
+    }
+    if (first && c != 'M' && c != 'm') {
+      return false;
+    }
+    first = false;
+    if (want == 0) {
+      continue;
+    }
+    const bool arc = c == 'A' || c == 'a';
+    while (true) {
+      for (unsigned k = 0; k < want; k++) {
+        if (k > 0) {
+          (void)path_separator(&p, end);
+        }
+        else {
+          while (p < end && path_is_space(*p)) {
+            p++;
+          }
+        }
+        if (arc && (k == 3 || k == 4)) {
+          if (p == end || (*p != '0' && *p != '1')) {
+            return false;
+          }
+          p++;
+        }
+        else if (p == end || !path_number(&p, end)) {
+          return false;
+        }
+      }
+      const char * q = p;
+      const bool comma = path_separator(&q, end);
+      if (q == end || path_is_letter(*q)) {
+        if (comma) {
+          return false;
+        }
+        p = q;
+        break;
+      }
+      p = q;
+    }
+  }
+}
+
+/* Values 4, 4.5.3: "A <url-modifier> is either an <ident> or a functional notation"; Values 5, 4.1.1 defines the request modifiers with their arguments:
+   "<cross-origin-modifier> = cross-origin(anonymous | use-credentials)", "<integrity-modifier> = integrity(<string>)", "<referrer-policy-modifier> =
+   referrer-policy(no-referrer | no-referrer-when-downgrade | same-origin | origin | strict-origin | origin-when-cross-origin | strict-origin-when-cross-origin |
+   unsafe-url)". A modifier by one of those names that does not match its argument grammar does not match <url-modifier>; any other function is a modifier. */
+static bool url_modifier_ok(const GTEXT_CSS_Component_Value * fn) {
+  static const char * const policies[] = {"no-referrer", "no-referrer-when-downgrade", "same-origin", "origin", "strict-origin", "origin-when-cross-origin",
+    "strict-origin-when-cross-origin", "unsafe-url"};
+  const bool cross = css_ascii_ieq(&fn->value, "cross-origin");
+  const bool integrity = css_ascii_ieq(&fn->value, "integrity");
+  const bool policy = css_ascii_ieq(&fn->value, "referrer-policy");
+  if (!cross && !integrity && !policy) {
+    return true;
+  }
+  const GTEXT_CSS_Component_Value * arg = NULL;
+  for (size_t i = 0; i < fn->child_count; i++) {
+    const GTEXT_CSS_Component_Value * c = &fn->children[i];
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+      continue;
+    }
+    if (arg) {
+      return false;
+    }
+    arg = c;
+  }
+  if (!arg || arg->kind != GTEXT_CSS_VALUE_TOKEN) {
+    return false;
+  }
+  if (integrity) {
+    return arg->type == GTEXT_CSS_TOKEN_STRING;
+  }
+  if (arg->type != GTEXT_CSS_TOKEN_IDENT) {
+    return false;
+  }
+  if (cross) {
+    return css_ascii_ieq(&arg->value, "anonymous") || css_ascii_ieq(&arg->value, "use-credentials");
+  }
+  for (size_t i = 0; i < sizeof policies / sizeof policies[0]; i++) {
+    if (css_ascii_ieq(&arg->value, policies[i])) {
       return true;
     }
   }
@@ -1097,7 +1273,7 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
         continue;
       }
       if (seen == 0 ? !tok(c, GTEXT_CSS_TOKEN_STRING)
-                    : !(tok(c, GTEXT_CSS_TOKEN_IDENT) || c->kind == GTEXT_CSS_VALUE_FUNCTION)) {
+                    : !(tok(c, GTEXT_CSS_TOKEN_IDENT) || (c->kind == GTEXT_CSS_VALUE_FUNCTION && url_modifier_ok(c)))) {
         return false;
       }
       seen++;
@@ -1120,6 +1296,21 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
   case NT_COLOR_SCHEME_IDENT:
     /* Color Adjust 1 (served 2026-10-31), 2.2: "The normal, light, dark, and only keywords are not valid <custom-ident>s in this property." */
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "normal", "light", "dark", "only", NULL, NULL);
+  case NT_IDENT_NOT_NONE:
+    /* Lists 3 (served 2026-10-31): "A <counter-name> name cannot match the keyword none"; Transitions 1: "The <custom-ident> production in <single-transition-property> also
+       excludes the keyword none"; Animations 1: "The <custom-ident> additionally excludes the none keyword."; View Transitions 2: "none is an invalid <custom-ident> for view-transition-class" */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !fold_equal(v->value.data, v->value.length, "none", 4);
+  case NT_PATH_DATA:
+    /* Shapes 1 (served 2026-10-31), path(): "A path data string that does not conform to the grammar and parsing rules of SVG 1.1, or that does conform but defines an
+       empty path, is invalid and causes the entire path() to be invalid." */
+    return tok(v, GTEXT_CSS_TOKEN_STRING) && svg_path_data_valid(v->value.data, v->value.length);
+  case NT_FAMILY_IDENT:
+    /* Fonts 4 (served 2026-10-31), 2.1.1: "Any identifier which could be misinterpreted as a pre-defined keyword in the font-family value definition, or the CSS-wide
+       keywords, is not allowed." (css_value.c holds the list: the at-rules' family names use it too) */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !css_is_reserved_family_word(&v->value);
+  case NT_STRING_NONEMPTY:
+    /* Animations 1 (served 2026-10-31), <keyframes-name>: "The <string> additionally excludes the empty string (but allows the string "none" and other excluded keywords)." */
+    return tok(v, GTEXT_CSS_TOKEN_STRING) && v->value.length > 0;
   case NT_COUNTER_STYLE_IDENT:
     /* Counter Styles 3 (served 2026-10-30), 2.1: "The keyword none (including any ASCII case-insensitive permutation of it) is not a valid <counter-style-name>." */
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "none", NULL, NULL, NULL, NULL, NULL);
@@ -2165,6 +2356,8 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     out->interp = GTEXT_CSS_INTERP_NUMBER;
     return true;
   case NT_STRING:
+  case NT_STRING_NONEMPTY:
+  case NT_PATH_DATA:
   case NT_OPENTYPE_TAG:
   case NT_LANGUAGE_TAG:
   case NT_AREAS_ROW:
@@ -2230,6 +2423,8 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   case NT_CONTAINER_IDENT:
   case NT_WILLCHANGE_IDENT:
   case NT_COUNTER_STYLE_IDENT:
+  case NT_IDENT_NOT_NONE:
+  case NT_FAMILY_IDENT:
   case NT_COLOR_SCHEME_IDENT:
     value_init(out, GTEXT_CSS_VAL_CUSTOM_IDENT, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;

@@ -158,7 +158,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-x */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-y */
   {3, 28, 0, 0, 0, 0, 0}, /* background-size */
-  {4, 0, 0, 0, 0, 0, 0}, /* background-tbd */
+  {4, 0, 4, 0, 0, 0, 0}, /* background-tbd */
   {2, 0, 0, 1, 0, 0, 0}, /* baseline-shift */
   {1, 0, 0, 0, 0, 0, 0}, /* baseline-source */
   {1, 0, 0, 1, 0, 0, 0}, /* block-ellipsis */
@@ -431,7 +431,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* frame-sizing */
   {4, 0, 2, 0, 0, 0, 0}, /* gap */
   {1, 0, 0, 3, 0, 0, 0}, /* glyph-orientation-vertical */
-  {4, 0, 14, 0, 0, 0, 0}, /* grid */
+  {4, 0, 16, 0, 0, 0, 0}, /* grid */
   {4, 0, 10, 0, 0, 0, 0}, /* grid-area */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-auto-columns */
   {1, 0, 0, 0, 0, 0, 0}, /* grid-auto-flow */
@@ -445,7 +445,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* grid-row-end */
   {5, 0, 0, 0, 0, 0, 0}, /* grid-row-gap */
   {1, 0, 0, 0, 0, 0, 0}, /* grid-row-start */
-  {4, 0, 13, 0, 0, 0, 0}, /* grid-template */
+  {4, 0, 15, 0, 0, 0, 0}, /* grid-template */
   {3, 40, 0, 0, 0, 0, 0}, /* grid-template-areas */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-template-columns */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-template-rows */
@@ -487,7 +487,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 36, 0, 1, 0, 0, 0}, /* letter-spacing */
   {2, 0, 0, 1, 0, 0, 0}, /* lighting-color */
   {1, 0, 0, 1, 0, 0, 0}, /* line-break */
-  {4, 0, 3, 0, 0, 0, 0}, /* line-clamp */
+  {4, 0, 14, 0, 0, 0, 0}, /* line-clamp */
   {1, 0, 0, 1, 0, 0, 0}, /* line-fit-edge */
   {1, 0, 0, 0, 0, 0, 0}, /* line-grid */
   {3, 5, 0, 1, 11, 0, 0}, /* line-height */
@@ -557,7 +557,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* object-fit */
   {3, 26, 0, 0, 0, 0, 0}, /* object-position */
   {2, 0, 0, 0, 0, 0, 0}, /* object-view-box */
-  {4, 0, 15, 0, 0, 0, 0}, /* offset */
+  {4, 0, 17, 0, 0, 0, 0}, /* offset */
   {3, 26, 0, 0, 0, 0, 0}, /* offset-anchor */
   {2, 0, 0, 0, 0, 0, 0}, /* offset-distance */
   {3, 40, 0, 0, 0, 0, 0}, /* offset-path */
@@ -758,7 +758,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 17, 0, 1, 0, 0, 0}, /* text-align-last */
   {1, 0, 0, 1, 0, 0, 0}, /* text-anchor */
   {1, 0, 0, 1, 0, 0, 0}, /* text-autospace */
-  {1, 0, 0, 0, 0, 0, 0}, /* text-box */
+  {4, 0, 13, 0, 0, 0, 0}, /* text-box */
   {1, 0, 0, 1, 0, 0, 0}, /* text-box-edge */
   {1, 0, 0, 0, 0, 0, 0}, /* text-box-trim */
   {1, 0, 0, 1, 0, 0, 0}, /* text-combine-upright */

@@ -1069,6 +1069,40 @@ const mnode * mk_product(mbuilder * mb, const mnode * const * factors, size_t n)
       numeric = false;
       break;
     }
+    /* Values 4 (10.9) merges the numbers of a product, and the whole product when it is only numeric values; a number beside a dimension in a product that holds
+     * more (`sibling-index() * 2rad * pi`) it leaves unmerged, and both pinned browsers write that as `calc(360deg * sibling-index())`: the numbers and the first
+     * dimension of the product are multiplied into one leaf (the type of the product does not change) */
+    if (!numeric) {
+      const mnode * dim = NULL;
+      size_t at = m, merged = 0;
+      double acc = 1.0;
+      for (size_t i = 0; i < m; i++) {
+        const mnode * c = flat[i];
+        if (c->op == GTEXT_CSS_MATH_NUMBER || (c->op == GTEXT_CSS_MATH_DIMENSION && !dim)) {
+          dim = c->op == GTEXT_CSS_MATH_DIMENSION ? c : dim;
+          acc *= c->value;
+          at = at == m ? i : at;
+          merged++;
+        }
+      }
+      if (dim && merged > 1) {
+        const mnode * leaf = leaf_like(mb, dim, acc);
+        if (!leaf) {
+          goto done;
+        }
+        size_t k = 0;
+        for (size_t i = 0; i < m; i++) {
+          const mnode * c = flat[i];
+          if (i == at) {
+            flat[k++] = leaf;
+          }
+          else if (c->op != GTEXT_CSS_MATH_NUMBER && c != dim) {
+            flat[k++] = c;
+          }
+        }
+        m = k;
+      }
+    }
     const GTEXT_CSS_Math_Category cat = css_math_type_category(&t);
     if (numeric && cat != GTEXT_CSS_MATH_CAT_NONE) {
       if (dims == 1 && !any_inverted) {

@@ -12,6 +12,7 @@ animation	LAYERS
 animation-delay	LAYERS	
 animation-range	LAYERS	
 background	LAYERS	
+background-tbd	LAYERS	
 background-position	LAYERS	
 block-step	ANY	
 border	ANY	
@@ -101,7 +102,7 @@ inset	BOX
 inset-block	PAIR	
 inset-inline	PAIR	
 interest-delay	PAIR	
-line-clamp	ANY	
+line-clamp	LINE_CLAMP	
 list-style	ANY	
 margin	BOX	
 margin-block	PAIR	
@@ -154,6 +155,7 @@ scroll-padding-inline	PAIR
 scroll-timeline	LAYERS	
 size	PAIR	
 text-align	TEXT_ALIGN	
+text-box	TEXT_BOX	
 text-decoration	ANY	
 text-decoration-skip	ANY	
 text-emphasis	ANY	

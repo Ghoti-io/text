@@ -860,4 +860,138 @@ TEST(CssPropertySupplements, LightDarkOfTwoImagesIsAnImage) {
   EXPECT_EQ(parse(r, "color", "light-dark(red, blue)").substr(0, 6), "valid:") << "the color form is as it was";
 }
 
+TEST(CssProperty, NoneIsNotACounterNameATransitionPropertyAKeyframesNameOrAViewTransitionClass) {
+  const GTEXT_CSS_Registry * r = R();
+  // Lists 3: "A <counter-name> name cannot match the keyword none;"
+  EXPECT_EQ(parse(r, "counter-reset", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "counter-reset", "chapter 2"), "valid:chapter 2");
+  EXPECT_EQ(parse(r, "counter-reset", "none chapter"), "invalid");
+  EXPECT_EQ(parse(r, "counter-reset", "chapter none"), "invalid");
+  EXPECT_EQ(parse(r, "counter-reset", "reversed(none)"), "invalid");
+  EXPECT_EQ(parse(r, "counter-reset", "reversed(chapter) none"), "invalid");
+  EXPECT_EQ(parse(r, "counter-increment", "none chapter"), "invalid");
+  EXPECT_EQ(parse(r, "counter-set", "none chapter"), "invalid");
+  // Transitions 1: "The <custom-ident> production in <single-transition-property> also excludes the keyword none"
+  EXPECT_EQ(parse(r, "transition-property", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "transition-property", "all, one"), "valid:all, one");
+  EXPECT_EQ(parse(r, "transition-property", "none, one"), "invalid");
+  EXPECT_EQ(parse(r, "transition-property", "one, none"), "invalid");
+  // View Transitions 2: "none is an invalid <custom-ident> for view-transition-class, even when combined with another <custom-ident>."
+  EXPECT_EQ(parse(r, "view-transition-class", "foo bar"), "valid:foo bar");
+  EXPECT_EQ(parse(r, "view-transition-class", "foo none"), "invalid");
+  EXPECT_EQ(parse(r, "view-transition-class", "none foo"), "invalid");
+  // Animations 1: "The <custom-ident> additionally excludes the none keyword. The <string> additionally excludes the empty string (but allows the string "none" ...)."
+  EXPECT_EQ(parse(r, "animation-name", "none, a"), "valid:none, a");
+  EXPECT_EQ(parse(r, "animation-name", "\"none\""), "valid:\"none\"");
+  EXPECT_EQ(parse(r, "animation-name", "\"\""), "invalid");
+}
+
+TEST(CssProperty, SymbolsOfTheAlphabeticAndNumericSystemsNeedTwoSymbols) {
+  const GTEXT_CSS_Registry * r = R();
+  // Counter Styles 3: "If the system is alphabetic or numeric, there must be at least two <string>s or <image>s, or else the function is invalid."
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(numeric \"a\")"), "invalid");
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(alphabetic \"a\")"), "invalid");
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(numeric \"a\" \"b\")"), "valid:symbols(numeric \"a\" \"b\")");
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(alphabetic \"a\" \"b\")"), "valid:symbols(alphabetic \"a\" \"b\")");
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(cyclic \"a\")"), "valid:symbols(cyclic \"a\")");
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(fixed \"a\")"), "valid:symbols(fixed \"a\")");
+  EXPECT_EQ(parse(r, "list-style-type", "symbols(\"a\")"), "valid:symbols(\"a\")") << "the system is symbolic when omitted";
+}
+
+TEST(CssProperty, ASubgridNameListHasOneAutoFillRepeat) {
+  const GTEXT_CSS_Registry * r = R();
+  // Grid 2: "On a subgridded axis, the auto-fill keyword is only valid once per <line-name-list>"
+  EXPECT_EQ(parse(r, "grid-template-rows", "subgrid repeat(auto-fill, [a]) repeat(auto-fill, [b])"), "invalid");
+  EXPECT_EQ(parse(r, "grid-template-columns", "subgrid repeat(auto-fill, [a]) [c] repeat(auto-fill, [b])"), "invalid");
+  EXPECT_EQ(parse(r, "grid-template-rows", "subgrid [x] repeat(auto-fill, [a]) [y] repeat(2, [b])"), "valid:subgrid [x] repeat(auto-fill, [a]) [y] repeat(2, [b])");
+  EXPECT_EQ(parse(r, "grid-template-rows", "subgrid repeat(2, [a]) repeat(3, [b])"), "valid:subgrid repeat(2, [a]) repeat(3, [b])");
+}
+
+TEST(CssProperty, TheMaskShorthandTakesNoMarginBox) {
+  const GTEXT_CSS_Registry * r = R();
+  // Masking 1, changes: "Remove margin-box as possible value from mask-origin and mask-clip."; mask-layer's <geometry-box> sets those two
+  EXPECT_EQ(parse(r, "mask", "margin-box"), "invalid");
+  EXPECT_EQ(parse(r, "mask", "border-box"), "valid:border-box");
+  EXPECT_EQ(parse(r, "mask", "fill-box"), "valid:fill-box");
+  EXPECT_EQ(parse(r, "mask", "url(a.png) padding-box content-box"), "valid:url(\"a.png\") padding-box content-box");
+}
+
+TEST(CssProperty, TheScaleFunctionsTakePercentagesAsTransforms2Says) {
+  const GTEXT_CSS_Registry * r = R();
+  // Transforms 2: "The scale functions defined in [css-transforms-1] now support percentages."; the pin nests the level 1 forms in transform
+  EXPECT_EQ(parse(r, "transform", "scale(250%)"), "valid:scale(2.5)");
+  EXPECT_EQ(parse(r, "transform", "scale(1, 200%)"), "valid:scale(1, 2)");
+  EXPECT_EQ(parse(r, "transform", "scaleX(720%)"), "valid:scaleX(7.2)");
+  EXPECT_EQ(parse(r, "transform", "scaleY(-85%)"), "valid:scaleY(-0.85)");
+  EXPECT_EQ(parse(r, "transform", "scale(1, 2, 3)"), "invalid");
+}
+
+TEST(CssProperty, AUrlModifierByTheNameOfARequestModifierHasItsArguments) {
+  const GTEXT_CSS_Registry * r = R();
+  // Values 5, 4.1.1: "<cross-origin-modifier> = cross-origin(anonymous | use-credentials)", "<integrity-modifier> = integrity(<string>)", "<referrer-policy-modifier> =
+  // referrer-policy(no-referrer | ... | unsafe-url)"; Values 4, 4.5.3: "A <url-modifier> is either an <ident> or a functional notation."
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" cross-origin(anonymous))"), "valid:url(\"a.png\" cross-origin(anonymous))");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" cross-origin(use-credentials) integrity(\"sha384-x\") referrer-policy(origin))"),
+      "valid:url(\"a.png\" cross-origin(use-credentials) integrity(\"sha384-x\") referrer-policy(origin))") << "in the order they were given";
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" integrity(\"\"))"), "valid:url(\"a.png\" integrity(\"\"))");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" cross-origin(anonymous) cross-origin(anonymous))"),
+      "valid:url(\"a.png\" cross-origin(anonymous) cross-origin(anonymous))") << "the grammar is <url-modifier>*";
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" foo(bar) baz)"), "valid:url(\"a.png\" foo(bar) baz)") << "any other modifier is an ident or a function";
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" cross-origin())"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" cross-origin(foo))"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" cross-origin(anonymous foobar))"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" integrity(sha384-foobar))"), "invalid") << "an ident is not a <string>";
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" integrity(\"a\" \"b\"))"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" referrer-policy(no-referrer same-origin))"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "url(\"a.png\" referrer-policy(bogus))"), "invalid");
+}
+
+TEST(CssProperty, APathStringIsSvgPathDataAndNotEmpty) {
+  const GTEXT_CSS_Registry * r = R();
+  // Shapes 1: "A path data string that does not conform to the grammar and parsing rules of SVG 1.1, or that does conform but defines an empty path, is invalid and
+  // causes the entire path() to be invalid."
+  EXPECT_EQ(parse(r, "clip-path", "path(\"M 0 0 L 10 10\")"), "valid:path(\"M 0 0 L 10 10\")");
+  EXPECT_EQ(parse(r, "clip-path", "path(nonzero, \"M0 0h5v5z\")"), "valid:path(\"M 0 0 h 5 v 5 Z\")");
+  EXPECT_EQ(parse(r, "clip-path", "path(\"M 0 0 A 1 1 0 01 5 5\")"), "valid:path(\"M 0 0 A 1 1 0 0 1 5 5\")") << "the arc flags need no separator";
+  EXPECT_EQ(parse(r, "clip-path", "path(\"M 0 0 1 1\")"), "valid:path(\"M 0 0 1 1\")") << "a moveto takes further pairs as linetos";
+  EXPECT_EQ(parse(r, "clip-path", "path(\"\")"), "invalid");
+  EXPECT_EQ(parse(r, "clip-path", "path(\" \")"), "invalid");
+  EXPECT_EQ(parse(r, "clip-path", "path(evenodd, \"\")"), "invalid");
+  EXPECT_EQ(parse(r, "clip-path", "path(evenodd, 'not-a-path')"), "invalid");
+  EXPECT_EQ(parse(r, "shape-outside", "path('')"), "invalid");
+  EXPECT_EQ(parse(r, "offset-path", "path(\"M 20 30 A 60 70 80\")"), "invalid") << "an arc has seven arguments";
+  EXPECT_EQ(parse(r, "clip-path", "path(\"L 1 2\")"), "invalid") << "the first command is a moveto";
+  EXPECT_EQ(parse(r, "clip-path", "path(\"M 1,2,\")"), "invalid") << "a trailing comma";
+  EXPECT_EQ(parse(r, "clip-path", "path(\"M0 0a1 1 0 21 5 5\")"), "invalid") << "an arc flag is 0 or 1";
+}
+
+TEST(CssProperty, AFamilyNameDoesNotHoldAGenericKeywordOrACssWideKeyword) {
+  const GTEXT_CSS_Registry * r = R();
+  // Fonts 4, 2.1.1: "Any identifier which could be misinterpreted as a pre-defined keyword in the font-family value definition, or the CSS-wide keywords, is not
+  // allowed."; Cascade 5 makes revert-rule a CSS-wide keyword
+  EXPECT_EQ(parse(r, "font-family", "cursive serif"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "Times serif"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "FirstName, LastName, revert-rule"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "serif, cursive"), "valid:serif, cursive");
+  EXPECT_EQ(parse(r, "font-family", "\"cursive\", Times New Roman"), "valid:\"cursive\", Times New Roman") << "quoted, a generic name is a family name";
+  EXPECT_EQ(parse(r, "animation-name", "a, revert-rule"), "invalid") << "revert-rule is no <custom-ident>";
+}
+
+TEST(CssProperty, RandomItemHasAKeyAndAtLeastOneItemAndABraceIsAWholeItem) {
+  const GTEXT_CSS_Registry * r = R();
+  // Values 5, 10.3: "random-item( <random-key>, [<declaration-value>?]# )"; "wrapping the values in {} allows their commas to be distinguished"; the braces are
+  // "only allowed for some function arguments--those defined as free-form productions"
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto, serif)").substr(0, 8), "pending:");
+  EXPECT_EQ(parse(r, "font-family", "random-item(--x, {Times, serif}, sans-serif, {monospace})").substr(0, 8), "pending:");
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto, )").substr(0, 8), "pending:") << "an item may be empty";
+  EXPECT_EQ(parse(r, "font-family", "random-item()"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "random-item( )"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto)"), "invalid") << "no item";
+  EXPECT_EQ(parse(r, "font-family", "random-item(, serif, sans-serif)"), "invalid") << "no key";
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto, !)"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto, ;)"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto, {Times, serif} extra)"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "random-item(auto, extra {Times, serif})"), "invalid");
+}
+
 }  // namespace

@@ -200,7 +200,7 @@ property	animation-direction	1	1	1	1
 property	animation-duration	1	1	1	1	
 property	animation-fill-mode	1	1	1	1	
 property	animation-iteration-count	1	1	1	1	
-property	animation-name	1	1	1	0	
+property	animation-name	1	1	1	1	
 property	animation-play-state	1	1	1	1	
 property	animation-range	1	1	1	1	
 property	animation-range-center	1	1	1	0	
@@ -424,9 +424,9 @@ property	corner-top-left-shape	1	1	1	0
 property	corner-top-right	1	1	1	0	
 property	corner-top-right-shape	1	1	1	0	
 property	corner-top-shape	1	1	1	0	
-property	counter-increment	1	1	1	0	
-property	counter-reset	1	1	1	0	
-property	counter-set	1	1	1	0	
+property	counter-increment	1	1	1	1	
+property	counter-reset	1	1	1	1	
+property	counter-set	1	1	1	1	
 property	cue	1	1	1	0	
 property	cue-after	1	1	1	0	
 property	cue-before	1	1	1	0	
@@ -472,7 +472,7 @@ property	flood-opacity	1	1	1	1
 property	flow-from	1	1	1	0	
 property	flow-into	1	1	1	0	
 property	font	1	1	1	1	
-property	font-family	1	1	1	0	
+property	font-family	1	1	1	1	
 property	font-feature-settings	1	1	1	1	
 property	font-kerning	1	1	1	1	
 property	font-language-override	1	1	1	1	
@@ -520,8 +520,8 @@ property	grid-row-gap	1	1	1	1	alias of row-gap
 property	grid-row-start	1	1	1	1	
 property	grid-template	1	1	1	1	
 property	grid-template-areas	1	1	1	1	
-property	grid-template-columns	1	1	1	0	
-property	grid-template-rows	1	1	1	0	
+property	grid-template-columns	1	1	1	1	
+property	grid-template-rows	1	1	1	1	
 property	hanging-punctuation	1	1	1	0	
 property	height	1	1	1	0	
 property	hyphenate-character	1	1	1	1	
@@ -568,7 +568,7 @@ property	line-height-step	1	1	1	0
 property	line-padding	1	1	1	0	
 property	line-snap	1	1	1	0	
 property	link-parameters	1	1	1	0	
-property	list-style	1	1	1	0	
+property	list-style	1	1	1	1	
 property	list-style-image	1	1	1	1	
 property	list-style-position	1	1	1	1	
 property	list-style-type	1	1	1	0	
@@ -590,7 +590,7 @@ property	marker-end	1	1	1	0
 property	marker-mid	1	1	1	0	
 property	marker-side	1	1	1	0	
 property	marker-start	1	1	1	0	
-property	mask	1	1	1	0	
+property	mask	1	1	1	1	
 property	mask-border	1	1	1	0	
 property	mask-border-mode	1	1	1	0	
 property	mask-border-outset	1	1	1	0	
@@ -701,7 +701,7 @@ property	position	1	1	1	1
 property	position-anchor	1	1	1	1	
 property	position-area	1	1	1	1	
 property	position-try	1	1	1	1	
-property	position-try-fallbacks	1	1	1	0	
+property	position-try-fallbacks	1	1	1	1	
 property	position-try-order	1	1	1	1	
 property	position-visibility	1	1	1	1	
 property	print-color-adjust	1	1	1	1	
@@ -889,8 +889,8 @@ property	transition	1	1	1	0
 property	transition-behavior	1	1	1	1	
 property	transition-delay	1	1	1	0	
 property	transition-duration	1	1	1	1	
-property	transition-property	1	1	1	0	
-property	transition-timing-function	1	1	1	0	
+property	transition-property	1	1	1	1	
+property	transition-timing-function	1	1	1	1	
 property	translate	1	1	1	1	
 property	trigger-scope	1	1	1	0	
 property	unicode-bidi	1	1	1	1	
@@ -901,7 +901,7 @@ property	view-timeline	1	1	1	0
 property	view-timeline-axis	1	1	1	0	
 property	view-timeline-inset	1	1	1	0	
 property	view-timeline-name	1	1	1	0	
-property	view-transition-class	1	1	1	0	
+property	view-transition-class	1	1	1	1	
 property	view-transition-group	1	1	1	1	
 property	view-transition-name	1	1	1	1	
 property	view-transition-scope	1	1	1	0	

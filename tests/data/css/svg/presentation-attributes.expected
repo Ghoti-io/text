@@ -1,5 +1,5 @@
 ## root
-hash 4e33d4019a98a505c9e2adb65d221704aa94047d0c1fbed944ab8580f2165d06
+hash 4defa3bca67f95f9859380762385fb54c776963683759f5aadadf6d2cae5863d
 fill: black
 stroke: none
 stroke-width: 1px
@@ -10,7 +10,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## plain
-hash 7d1fd7470ed395b06cea44bdfb39464863af9de246d9203a4f8edab6c964c485
+hash b0790f0ab1c05283256698b46e07504e4ee11515ea97d4feebca4e109af86104
 fill: red
 stroke: blue
 stroke-width: 2px
@@ -21,7 +21,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## style-wins
-hash 704f26726039d52c99a15f720d4494ee4fdf20bdfdf40690f53f464f825519c9
+hash 889a5c28fc1b15a1774746e3c63168dbf2d6e45de0504e12eb686549f7ab1579
 fill: green
 stroke: none
 stroke-width: 5px
@@ -32,7 +32,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## important
-hash 171cbe9f5a179f4e5304507faa6720135a927dbf2fdbeda156905f9bf1bf386e
+hash 9cfa6eaad6a559ed6c67d28149fd1951d8d006d0632c28719f3a21ce24f5d0f4
 fill: green
 stroke: blue
 stroke-width: 1px
@@ -43,7 +43,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## bad-attribute
-hash e8e79aab208a0c6badec73ef338fca50b3ae1b62fb6d06c8b7a93ae3ed7d1acc
+hash 8cf93a358c7a8947728c5881228ee5f4a3dc175133e34180914e3a53d7c33d74
 fill: black
 stroke: none
 stroke-width: 1px
@@ -54,7 +54,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## group
-hash 88855443e15c37b1ba39f1ba0a5cc6fecfe0fa1a3832809354ec960d1fa87873
+hash 737f7ba6aea93d3368ffd356dbca24b6c78fb900ccaf9e5ef1bc6cb289ac1fe0
 fill: orange
 stroke: black
 stroke-width: 3px
@@ -65,7 +65,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## inherits
-hash 88855443e15c37b1ba39f1ba0a5cc6fecfe0fa1a3832809354ec960d1fa87873
+hash 737f7ba6aea93d3368ffd356dbca24b6c78fb900ccaf9e5ef1bc6cb289ac1fe0
 fill: orange
 stroke: black
 stroke-width: 3px
@@ -76,7 +76,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## bad-inherits
-hash 88855443e15c37b1ba39f1ba0a5cc6fecfe0fa1a3832809354ec960d1fa87873
+hash 737f7ba6aea93d3368ffd356dbca24b6c78fb900ccaf9e5ef1bc6cb289ac1fe0
 fill: orange
 stroke: black
 stroke-width: 3px
@@ -87,7 +87,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## explicit-inherit
-hash e1e3be0b74d1482f50300116027ab1a4f3044bd9515a3f2f4596e14e2677fa00
+hash 29611abbc128583cebd5fb8854bed4991beede6e3dd73c79f071bdc4e28ddf36
 fill: orange
 stroke: none
 stroke-width: 3px
@@ -98,7 +98,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## initial
-hash 70ba7acc732ce5cbf3a2de1656582e90c975f71984aa9da2b1eccf2c03e53833
+hash 761b5d5aec4d8b82fd8e5f8da4a9333cbea89887eb79e46251aa6e640d0912e2
 fill: black
 stroke: black
 stroke-width: 1px
@@ -109,7 +109,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## geometry
-hash af09f1221f193cdee5da38e4a0fc92365000397f652fec42a79ff23fb165980d
+hash fe9a9388dcb654818c865eea2eefdedbac55fb0d1e91ceee6c4b300200137b4c
 fill: black
 stroke: none
 stroke-width: 1px
@@ -120,7 +120,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## misplaced
-hash e8e79aab208a0c6badec73ef338fca50b3ae1b62fb6d06c8b7a93ae3ed7d1acc
+hash 8cf93a358c7a8947728c5881228ee5f4a3dc175133e34180914e3a53d7c33d74
 fill: black
 stroke: none
 stroke-width: 1px
@@ -131,7 +131,7 @@ font-style: normal
 letter-spacing: normal
 word-spacing: 0px
 ## text-units
-hash e7ccdf808a816cb07968c8ba91ea36302002de7dfa5b8830ac3276e34c6d638e
+hash 868ff29ff5155c7ed18c97a3a58169b5a2faccbdd1e1c0905f6feeeece6d5e1b
 fill: black
 stroke: none
 stroke-width: 1px

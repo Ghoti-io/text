@@ -501,19 +501,6 @@ static bool single_ident(const GTEXT_CSS_Component_Value * p, size_t n, const GT
 }
 
 /// `<font-family-name># = [ <string> | <custom-ident>+ ]#`: each entry's name (the idents joined by one space) in the names.
-/// Whether an identifier is one an unquoted family name may not hold: a generic family keyword or a CSS-wide keyword (Fonts 4, 2.1: "Font family names that happen to be the
-/// same as a keyword value (inherit, serif, sans-serif, monospace, fantasy, and cursive) must be quoted to prevent confusion with the keywords with the same names").
-static bool unquotable_family_word(const GTEXT_CSS_String * w) {
-  static const char * const words[] = {"serif", "sans-serif", "cursive", "fantasy", "monospace", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "emoji",
-      "math", "fangsong", "initial", "inherit", "unset", "revert", "revert-layer", "default"};
-  for (size_t i = 0; i < sizeof words / sizeof *words; i++) {
-    if (css_ascii_ieq(w, words[i])) {
-      return true;
-    }
-  }
-  return false;
-}
-
 static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n, bool *valid) {
   size_t start = 0;
   *valid = true;
@@ -550,7 +537,7 @@ static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n,
     else {
       size_t total = 0;
       for (size_t i = 0; i < nt; i++) {
-        if (toks[i]->kind != GTEXT_CSS_VALUE_TOKEN || toks[i]->type != GTEXT_CSS_TOKEN_IDENT || unquotable_family_word(&toks[i]->value)) {
+        if (toks[i]->kind != GTEXT_CSS_VALUE_TOKEN || toks[i]->type != GTEXT_CSS_TOKEN_IDENT || css_is_reserved_family_word(&toks[i]->value)) {
           *valid = false;
           return true;
         }
@@ -790,17 +777,7 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
     }
   }
   else if (strcmp(at_name, "font-face") == 0) {
-    if (css_ascii_ieq(&d->name, "font-family")) {
-      /* Fonts 4, 4.1: font-family in @font-face is a <family-name>: a string, or custom identifiers none of which is a generic family or a CSS-wide keyword ("Font family
-         names that happen to be the same as a keyword value (inherit, serif, sans-serif, monospace, fantasy, and cursive) must be quoted to prevent confusion with the
-         keywords with the same names"; both browsers refuse `serif foo` as well as `serif`) */
-      for (size_t i = 0; i < n; i++) {
-        if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_IDENT && unquotable_family_word(&v[i].value)) {
-          return "Fonts 4, 4.1: the font-family descriptor is a <family-name>, whose unquoted form holds no generic family keyword and no CSS-wide keyword";
-        }
-      }
-    }
-    else if (css_ascii_ieq(&d->name, "font-variation-settings")) {
+    if (css_ascii_ieq(&d->name, "font-variation-settings")) {
       /* Fonts 4, 6.12: "axis names contain four ASCII characters. Axis name strings longer or shorter than four characters, or containing characters outside the U+20-7E
          codepoint range are invalid"; the descriptor's grammar in the pin writes <string> where the property's writes <opentype-tag> (font-feature-settings has the type in both) */
       for (size_t i = 0; i < n; i++) {
@@ -814,14 +791,6 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
             return "Fonts 4, font-variation-settings: an axis tag is a string of four ASCII characters, otherwise the declaration is invalid";
           }
         }
-      }
-    }
-  }
-  else if (strcmp(at_name, "font-palette-values") == 0 && css_ascii_ieq(&d->name, "font-family")) {
-    /* Fonts 4, 9.2: a list of <family-name>s; web-platform-tests font-palette-values-invalid.html: "multiple families are allowed, but not generics" */
-    for (size_t i = 0; i < n; i++) {
-      if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_IDENT && unquotable_family_word(&v[i].value)) {
-        return "Fonts 4, 9.2: the font-family descriptor of a palette is a list of <family-name>s, which hold no unquoted generic family keyword";
       }
     }
   }

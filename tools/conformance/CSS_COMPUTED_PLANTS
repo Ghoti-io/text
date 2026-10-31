@@ -19,10 +19,13 @@ image-default-size-kept	css_shape_compute.c	    const bool default_size = nsize 
 image-double-stop-kept	css_shape_compute.c	  if (!t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {	  if (0 && !t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {
 filter-percent-kept	css_shape_compute.c	    m /= 100.0;	    m /= 1.0;
 filter-default-kept	css_shape_compute.c	      if (t.n == 0 || amount_value(t.v[0], &v)) {	      if (t.n != 0 && amount_value(t.v[0], &v)) {
-position-edge-kept	css_compute_algo.c	const bool far = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");	const bool far = false;
+position-edge-kept	css_compute_algo.c	const bool at_far_edge = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");	const bool at_far_edge = false;
 position-x-kept	css_computed_shorthand.c	(li.name_length == 21 && memcmp(li.name, "background-position-x", 21) == 0)	(li.name_length == 21 && memcmp(li.name, "background-position-q", 21) == 0)
 shorthand-resets-skipped	css_computed_shorthand.c	for (size_t i = 0; i < info.longhand_count + info.reset_longhand_count; i++) {	for (size_t i = 0; i < info.longhand_count; i++) {
 distribute-kept	css_compute_algo.c	    return "inter-character";	    return "distribute";
-step-end-kept	css_shape_compute.c	    sb_puts(out, "steps(1)");	    sb_puts(out, "step-end");
 range-limit-not-normalized	css_shape_compute.c	        n->w[j] += cw[j] * (m->items[i].pct / sum);	        n->w[j] += cw[j] * (m->items[i].pct / 100.0);
 palette-omitted-not-shared	css_shape_compute.c	      m->items[i].pct = (100.0 - specified) / (double)omitted;	      m->items[i].pct = 100.0 / (double)omitted;
+# step-end-kept (css_shape_compute.c writing the keyword step-end where the text says steps(1)) is not here any more: the canonical form of the specified value
+# (css_property_canon.c) writes the keyword as steps(1) as well, and the computed pages read a computed value back through it, so this gate cannot see the plant.
+# The compute-time rewrite is held by tests/test-css-computed-completion.cpp (CssComputedCompletionEasing.StepsSerializeAsTheTextSays), which reads the computed value
+# without that step.
