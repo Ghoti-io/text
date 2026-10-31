@@ -134,6 +134,10 @@ bool css_rope_has_taint(const css_rope * r);
 css_tokclass css_rope_first(const css_rope * r);
 css_tokclass css_rope_last(const css_rope * r);
 
+/// Whether the first (`end` false) or last (`end` true) byte of the rope is white space (space, tab, line feed, carriage return, form feed). An empty rope has no
+/// such byte. Visits only the nodes on the path to that byte.
+bool css_rope_edge_is_space(const css_rope * r, bool end);
+
 /// A range of bytes of a written rope.
 typedef struct {
   size_t begin;

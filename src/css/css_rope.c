@@ -364,6 +364,22 @@ static bool emit_sink(writer * w, const char * bytes, size_t n) {
   return w->sink(w->user, bytes, n);
 }
 
+bool css_rope_edge_is_space(const css_rope * r, bool end) {
+  while (r && r->bytes) {
+    if (r->kind == KIND_LEAF) {
+      if (r->length == 0) {
+        return false;
+      }
+      const char c = r->data[end ? r->length - 1 : 0];
+      return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+    }
+    const css_rope * first = end ? r->b : r->a;
+    const css_rope * second = end ? r->a : r->b;
+    r = (first && first->bytes) ? first : second;
+  }
+  return false;
+}
+
 GTEXT_CSS_Status css_rope_flatten(const GTEXT_Allocator * alloc, const css_rope * r, size_t max_bytes, char ** out, size_t * length, css_range ** taint,
     size_t * ntaint, size_t * work) {
   const uint64_t total = css_rope_bytes(r);

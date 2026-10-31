@@ -3943,10 +3943,25 @@ static int step_prop(css_sub * sub, size_t fi) {
       }
     }
     else {
-      final = tainted ? css_rope_taint(&sub->alloc, rope) : css_rope_retain(rope);
-      if (!final) {
-        SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+      /* "leading and trailing white space is removed" from a declaration's value (Syntax 3, consume a declaration); a blank that substitution left at an end of
+         this one (`--e: x var(--empty)`, an if() with no branch taken) is not part of the value its own declaration would have */
+      css_rope * trimmed = NULL;
+      status = css_rope_trim_space(&sub->alloc, rope, sub->max_bytes, &sub->work, &trimmed);
+      if (status == GTEXT_CSS_E_LIMIT_OUTPUT) {
+        sub->limited++;
+        gi = true;
+      }
+      else if (status != GTEXT_CSS_OK) {
+        SUB_FAIL(sub, status);
         return STEP_ERROR;
+      }
+      else {
+        final = tainted ? css_rope_taint(&sub->alloc, trimmed) : css_rope_retain(trimmed);
+        css_rope_release(trimmed);
+        if (!final) {
+          SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+          return STEP_ERROR;
+        }
       }
     }
   }

@@ -984,4 +984,28 @@ TEST(CssCustom, ComputedStylesAreImmutableAndShareableAcrossThreadsOfRead) {
   EXPECT_EQ(child.custom("--a"), "9px");
 }
 
+TEST(CssCustom, TheValueOfACustomPropertyHasNoWhiteSpaceAtEitherEndWhateverWasSubstitutedBesideIt) {
+  /* Syntax 3, "consume a declaration": the value of a declaration is trimmed of white space at both ends, so the text a declaration of the computed value would
+     have is what the computed value is. Substitution can leave a blank where a piece vanished: var() of an empty value, an if() that takes no branch. */
+  World w;
+  w.condition = [](GTEXT_CSS_Condition_Kind, const std::string &) { return GTEXT_CSS_TRI_FALSE; };
+  ASSERT_EQ(w.build(), GTEXT_CSS_OK);
+  Computed c;
+  compute_pairs(w, c,
+      {{"--empty", ""},
+       {"--a", "x var(--empty)"},
+       {"--b", "var(--empty) x"},
+       {"--c", "var(--empty) x var(--empty)"},
+       {"--d", "var(--empty) var(--empty)"},
+       {"--e", "ight: if(media(print): 3px)"},
+       {"--f", "x var(--empty) y"}});
+  ASSERT_EQ(c.status, GTEXT_CSS_OK) << c.result.name << " " << (c.result.detail ? c.result.detail : "");
+  EXPECT_EQ(c.custom("--a"), "x");
+  EXPECT_EQ(c.custom("--b"), "x");
+  EXPECT_EQ(c.custom("--c"), "x");
+  EXPECT_EQ(c.custom("--d"), "");
+  EXPECT_EQ(c.custom("--f"), "x  y") << "white space inside the value is not touched";
+  EXPECT_EQ(c.custom("--e"), "ight:") << "the fuzz harness found this one: the computed value was `ight: `, its own declaration `ight:`";
+}
+
 } // namespace

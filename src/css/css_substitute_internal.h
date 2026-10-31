@@ -56,6 +56,11 @@ css_rope * css_cval_rope(const GTEXT_CSS_Custom_Value * value);
 /// parser). GTEXT_CSS_OK, GTEXT_CSS_E_OOM, or the limit.
 GTEXT_CSS_Status css_rope_from_text(const GTEXT_Allocator * alloc, const char * text, size_t length, bool tainted, css_rope ** out);
 
+/// The rope without the white space at either end ("leading and trailing white space is removed": Syntax 3 trims a declaration value, so the value of a custom
+/// property that substitution has left a blank at an end of is the value its own declaration would have). `*out` is a new reference (the rope itself when nothing is
+/// to be removed); the tainted ranges are kept. GTEXT_CSS_OK, GTEXT_CSS_E_OOM, GTEXT_CSS_E_LIMIT_OUTPUT.
+GTEXT_CSS_Status css_rope_trim_space(const GTEXT_Allocator * alloc, css_rope * r, size_t max_bytes, size_t * work, css_rope ** out);
+
 /// The computed value of a registered custom property's initial value (it is computationally independent, so no element is needed): `*out` is a new value, or
 /// NULL when the registration has no initial value. `st` is a state to compute in (a context being made, with no style).
 GTEXT_CSS_Status css_ereg_initial(css_state * st, const css_creg * creg, GTEXT_CSS_Custom_Value ** out);
