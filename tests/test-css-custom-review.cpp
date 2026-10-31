@@ -204,9 +204,26 @@ TEST(CssCustomReview, AStyleThatChangesNoRegisteredPropertyHoldsAReferenceNotAnA
   compute(w, child, "width: 4px", &parent);
   ASSERT_EQ(child.status, GTEXT_CSS_OK);
   const size_t shared = counting.bytes - before;
-  // a style of its own would hold an array of the registrations (6,000 pointers); this one holds a reference to the parent's, and whatever else a style is made of
-  // (about 12 KB on a 64-bit host, less on a 32-bit one)
-  EXPECT_LT(shared, 6000u * sizeof(void *)) << "the registered values of the parent are shared: " << shared << " bytes";
+  // a style of its own would hold an array of the registrations (6,000 pointers) on top of what any style is made of; this one holds a reference to the parent's.
+  // What a style is made of is measured, not assumed: the same child under the same kind of parent in a world with one registration (its size does not depend on
+  // the width of a pointer the way the array does, and it is about 40 KB on a 32-bit host)
+  size_t base = 0;
+  {
+    CountingAllocator c0;
+    World w0;
+    w0.options.allocator = &c0.a;
+    ASSERT_EQ(w0.build({regs[0]}), GTEXT_CSS_OK);
+    Computed p0;
+    compute(w0, p0, "--r0: 3px");
+    ASSERT_EQ(p0.status, GTEXT_CSS_OK);
+    const size_t b0 = c0.bytes;
+    Computed c1;
+    compute(w0, c1, "width: 4px", &p0);
+    ASSERT_EQ(c1.status, GTEXT_CSS_OK);
+    base = c0.bytes - b0;
+  }
+  EXPECT_LT(shared, base + 3000u * sizeof(void *)) << "the registered values of the parent are shared: " << shared << " bytes, a style with one registration is " << base
+                                                   << " (an array of the registrations would add " << 6000u * sizeof(void *) << ")";
   EXPECT_EQ(child.custom("--r5"), "3px");
   EXPECT_EQ(child.custom("--r6"), "0px");
   // a child that declares one has its own array, and the parent's is as it was
