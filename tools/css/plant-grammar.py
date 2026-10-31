@@ -144,6 +144,10 @@ PLANTS = [
     ("empty-string-is-a-keyframes-name", "css_grammar_match.c", "    return tok(v, GTEXT_CSS_TOKEN_STRING) && v->value.length > 0;", "    return tok(v, GTEXT_CSS_TOKEN_STRING);", ["property"]),
     ("path-data-is-not-checked", "css_grammar_match.c", "svg_path_data_valid(v->value.data, v->value.length);", "1;", ["property"]),
     ("url-modifier-arguments-are-not-checked", "css_grammar_match.c", "c->kind == GTEXT_CSS_VALUE_FUNCTION && url_modifier_ok(c)", "c->kind == GTEXT_CSS_VALUE_FUNCTION", ["property"]),
+    ("a-sizing-property-takes-anchor", "css_property.c", "      return GTEXT_CSS_MATH_ANCHOR_SIZE;\n    }\n  }\n  return 0;", "      return GTEXT_CSS_MATH_ANCHOR | GTEXT_CSS_MATH_ANCHOR_SIZE;\n    }\n  }\n  return 0;", ["property"]),
+    ("a-dashed-function-takes-an-empty-argument", "css_property.c", "        if (c || commas || any_item) {\n          return false;  /* an empty argument */", "        if (0 && (c || commas || any_item)) {\n          return false;  /* an empty argument */", ["property"]),
+    ("random-item-needs-no-item", "css_property.c", "  return group >= 2;  /* the key and at least one item (an item may be empty) */", "  return group >= 1;", ["property"]),
+    ("a-brace-may-sit-beside-other-tokens", "css_property.c", "      if (has_block && has_other) {\n        return false;  /* a {} block is the whole argument */", "      if (0 && has_block && has_other) {\n        return false;  /* a {} block is the whole argument */", ["property"]),
     ("urange-is-any-range", "css_grammar_match.c", " && v->range_start <= v->range_end && v->range_end <= 0x10FFFFu;", ";", ["property"]),
     ("urange-is-not-a-token", "css_grammar_match.c", "    return tok(v, GTEXT_CSS_TOKEN_UNICODE_RANGE) && v->range_start <= v->range_end && v->range_end <= 0x10FFFFu;", "    return false;", ["corpus", "grammar"]),
     ("anb-is-never-read", "css_grammar_match.c", "if (gtext_css_anb_parse(v, (size_t)(last->orig - it->orig + 1), &a, &b)) {", "if (0) {", ["corpus", "grammar"]),
@@ -213,6 +217,16 @@ PLANTS += [
 
 # The canonical-form rules (src/css/css_property_canon.c): each is undone once, and tests/test-css-property-canon.cpp must fail.
 PLANTS += [
+    ('canon-step-start-is-kept', "css_property_canon.c", '  if (n == 1 && eq(t[0], "step-start")) {', '  if (0 && n == 1 && eq(t[0], "step-start")) {', ["canon"]),
+    ('canon-ellipse-keeps-its-default-radius', "css_property_canon.c", "      if (nrad >= 1 && nrad <= (circle ? 1u : 2u)) {", "      if (0 && nrad >= 1 && nrad <= (circle ? 1u : 2u)) {", ["canon"]),
+    ('canon-the-default-box-is-written-beside-a-shape', "css_property_canon.c", '  if (n == 2 && (eq(t[0], "border-box") || eq(t[1], "border-box"))) {', '  if (0 && n == 2 && (eq(t[0], "border-box") || eq(t[1], "border-box"))) {', ["canon"]),
+    ('canon-a-shape-position-is-one-keyword', "css_property_canon.c", "  if (eq(w, \"center\")) { *two = \"center center\"; return true; }", "  if (0 && eq(w, \"center\")) { *two = \"center center\"; return true; }", ["canon"]),
+    ('canon-a-default-control-point-reference-is-written', "css_property_canon.c", '((to && eq(tk.v[i + 1], "origin")) || (by && eq(tk.v[i + 1], "start")))', '(0 && (to && eq(tk.v[i + 1], "origin")) || (by && eq(tk.v[i + 1], "start")))', ["canon"]),
+    ('canon-an-arc-keeps-rotate-zero', "css_property_canon.c", '    if (eq(w, "rotate") && i + 1 < tk.n && eq(tk.v[i + 1], "0deg")) {', '    if (0 && eq(w, "rotate") && i + 1 < tk.n && eq(tk.v[i + 1], "0deg")) {', ["canon"]),
+    ('canon-a-ray-keeps-closest-side', "css_property_canon.c", '        any = any || eq(tk.v[i], "closest-side");', '        any = any || 0;', ["canon"]),
+    ('canon-a-palette-mix-is-not-normalized', "css_property_canon.c", '  T("font-palette", rule_palette_mix),', '', ["canon"]),
+    ('canon-text-box-edge-keeps-equal-edges', "css_property_canon.c", "  if (n == 2 && sp_eq(t[0], t[1])) {\n    put_join(out, t, 1);", "  if (0 && n == 2 && sp_eq(t[0], t[1])) {\n    put_join(out, t, 1);", ["canon"]),
+    ('canon-position-try-keeps-equal-keywords', "css_property_canon.c", '  R("position-try-fallbacks", rule_pair, MODE_ITEMS),\n', '', ["canon"]),
     ('canon-pair-keeps-both', "css_property_canon.c", 'static bool rule_pair(cb * out, const sp * t, size_t n) {\n  if (n == 2 && sp_eq(t[0], t[1])) {',
      'static bool rule_pair(cb * out, const sp * t, size_t n) {\n  if (n == 2 && !sp_eq(t[0], t[1])) {', ["canon"]),
     ('canon-alpha-percent-is-not-divided', "css_property_canon.c", '  return dec_put(b, &d, 2, 6);',

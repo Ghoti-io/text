@@ -113,13 +113,35 @@ static bool is_all(const GTEXT_CSS_Property_Info * info) {
 }
 
 /** Match against a compiled grammar and fold the answer into the result. */
+/* Anchor Positioning 1: "anchor() ... Only valid in the inset properties" and anchor-size() "in the sizing, inset and margin properties", the longhands and the
+ * shorthands that set them; the calculations of any other property take neither. */
+static unsigned anchor_functions_of(const char * name, size_t length) {
+  static const char * const inset[] = {"top", "right", "bottom", "left", "inset-block-start", "inset-block-end", "inset-inline-start", "inset-inline-end",
+    "inset", "inset-block", "inset-inline"};
+  static const char * const other[] = {"width", "height", "min-width", "min-height", "max-width", "max-height", "block-size", "inline-size", "min-block-size",
+    "min-inline-size", "max-block-size", "max-inline-size", "margin", "margin-top", "margin-right", "margin-bottom", "margin-left", "margin-block",
+    "margin-inline", "margin-block-start", "margin-block-end", "margin-inline-start", "margin-inline-end"};
+  for (size_t i = 0; i < sizeof inset / sizeof *inset; i++) {
+    if (strlen(inset[i]) == length && memcmp(inset[i], name, length) == 0) {
+      return GTEXT_CSS_MATH_ANCHOR | GTEXT_CSS_MATH_ANCHOR_SIZE;
+    }
+  }
+  for (size_t i = 0; i < sizeof other / sizeof *other; i++) {
+    if (strlen(other[i]) == length && memcmp(other[i], name, length) == 0) {
+      return GTEXT_CSS_MATH_ANCHOR_SIZE;
+    }
+  }
+  return 0;
+}
+
 static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Compiled * compiled,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options, bool unitless, bool name_is_clip,
-    GTEXT_CSS_Property_Value * out) {
+    unsigned anchors, GTEXT_CSS_Property_Value * out) {
   GTEXT_CSS_Match_Options mo = options && options->match ? *options->match : *css_registry_match_options(registry);
   mo.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
   mo.unitless_length = unitless || (options && options->unitless_lengths); /* attribute mode: every property that takes a length */
   mo.unitless_length_nested = unitless && name_is_clip;
+  mo.anchor_functions = anchors;
   bool matched = false;
   GTEXT_CSS_Value_Set * set = NULL;
   const GTEXT_CSS_Status st = gtext_css_match(compiled, values, count, &mo, &matched, &set, &out->match);
@@ -149,6 +171,63 @@ static bool name_is(const GTEXT_CSS_Component_Value * v, const char * lower) {
     }
     if (c != (unsigned char)lower[i]) {
       return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The argument grammar of a dashed function (Mixins 1, 2.1): "<dashed-function> = --*( <declaration-value>#? )", so no arguments at all, or comma-separated
+ * arguments none of which is empty ("Empty arguments are not allowed by <declaration-value>#"), with the {} wrapper of Values 5 as a whole argument that holds something
+ * (a {} block beside other tokens, or an empty one, is no argument), and no top-level `;` or `!`.
+ */
+static bool dashed_function_syntax(const GTEXT_CSS_Component_Value * fn) {
+  bool any_item = false, has_content = false, has_block = false, has_other = false, block_empty = true;
+  bool commas = false;
+  for (size_t k = 0; k <= fn->child_count; k++) {
+    const GTEXT_CSS_Component_Value * c = k < fn->child_count ? &fn->children[k] : NULL;
+    if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {
+      if (c) {
+        commas = true;
+      }
+      if (!has_content) {
+        if (c || commas || any_item) {
+          return false;  /* an empty argument */
+        }
+      }
+      else {
+        if (has_block && (has_other || block_empty)) {
+          return false;
+        }
+        any_item = true;
+      }
+      has_content = has_block = has_other = false;
+      block_empty = true;
+      continue;
+    }
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
+      if (c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+        continue;
+      }
+      if (c->type == GTEXT_CSS_TOKEN_SEMICOLON || (c->type == GTEXT_CSS_TOKEN_DELIM && c->delim == '!')) {
+        return false;
+      }
+    }
+    has_content = true;
+    if (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
+      has_block = true;
+      for (size_t j = 0; j < c->child_count; j++) {
+        const GTEXT_CSS_Component_Value * b = &c->children[j];
+        if (b->kind == GTEXT_CSS_VALUE_TOKEN && (b->type == GTEXT_CSS_TOKEN_SEMICOLON || (b->type == GTEXT_CSS_TOKEN_DELIM && b->delim == '!'))) {
+          return false;  /* what is inside the {} is a <declaration-value> as well */
+        }
+        if (!(b->kind == GTEXT_CSS_VALUE_TOKEN && b->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
+          block_empty = false;
+        }
+      }
+    }
+    else {
+      has_other = true;
     }
   }
   return true;
@@ -258,6 +337,10 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
           *valid = false;
         }
       }
+      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && v->value.length > 2 && v->value.data[0] == '-' && v->value.data[1] == '-' && !dashed_function_syntax(v)) {
+        *valid = false;
+        break;
+      }
       if (v->kind == GTEXT_CSS_VALUE_FUNCTION && name_is(v, "random-item") && !random_item_syntax(v)) {
         *valid = false;
         break;
@@ -287,7 +370,7 @@ static GTEXT_CSS_Status parse_pending(const GTEXT_CSS_Registry * registry, const
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = run_match(registry, pending, values, count, options, false, false, out);
+  st = run_match(registry, pending, values, count, options, false, false, 0, out);
   if (st == GTEXT_CSS_OK && out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
     out->outcome = GTEXT_CSS_PROP_RESULT_PENDING;
   }
@@ -342,7 +425,7 @@ static GTEXT_CSS_Status parse_descriptor(const GTEXT_CSS_Registry * registry, co
   if (state != GTEXT_CSS_GRAMMAR_OK) {
     return GTEXT_CSS_E_UNSUPPORTED;
   }
-  return run_match(registry, compiled, values, count, options, false, false, out);
+  return run_match(registry, compiled, values, count, options, false, false, 0, out);
 }
 
 /// Whether a property writes a bare `0` as a number although its grammar offers a length first: the outsets of a border image and of a mask border
@@ -480,7 +563,8 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return GTEXT_CSS_E_UNSUPPORTED;
   }
-  st = run_match(registry, compiled, values, count, options, options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length == 4 && memcmp(info.name, "clip", 4) == 0, out);
+  st = run_match(registry, compiled, values, count, options, options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length == 4 && memcmp(info.name, "clip", 4) == 0,
+      anchor_functions_of(info.name, info.name_length), out);
   if (st != GTEXT_CSS_OK) {
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;

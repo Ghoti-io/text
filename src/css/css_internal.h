@@ -335,6 +335,10 @@ bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
  *  cannot hold it. */
 bool css_is_reserved_family_word(const GTEXT_CSS_String * w);
 
+/// The specified value of a font-palette that is a palette-mix(), normalized (css_shape_compute.c). On success `*out` is the new text (the allocator's) when the
+/// value changes, NULL when it stays as it is.
+bool css_palette_mix_canonical(const GTEXT_Allocator * a, const char * text, size_t length, char ** out, size_t * out_length);
+
 /// Trim the text of a custom property's value: the white space and the comments before its first token and after its last are not part of it ("the original text" is
 /// that of the tokens, and a comment is no token), those between are. Strings are stepped over. `*s` and `*n` are narrowed.
 void css_trim_value_text(const char ** s, size_t * n);

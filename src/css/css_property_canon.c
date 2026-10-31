@@ -1789,6 +1789,93 @@ static bool is_coordinate_arg(sp a) {
   return !(a.n >= 7 && memcmp(a.p, "nonzero", 7) == 0) && !(a.n >= 7 && memcmp(a.p, "evenodd", 7) == 0) && !(a.n >= 5 && memcmp(a.p, "round", 5) == 0);
 }
 
+/* Shapes 1 (served 2026-10-31), shape(): the commands' specified value is written as both pinned browsers write it (the served text calls specified value serialization of
+ * the shape functions "relatively trivial" and omits defaults only in the computed value): a position that is one keyword is two (`to center` is `to center center`,
+ * `to left` is `to left center`, `from center` is `from center center`); "If such component is not provided, the <coordinate-pair> is relative to the segment's start",
+ * so `from origin` is not written after the control points of a `to` command and `from start` is not after those of a `by` command (a `to` control point without it is a
+ * <position>, which is relative to the reference box); and "rotate <angle>? ... If omitted, this defaults to 0deg", so `rotate 0deg` is not written, and neither is `small`, the size of an arc that is not said to be large. */
+static bool shape_one_keyword_position(const sp w, const char ** two) {
+  if (eq(w, "center")) { *two = "center center"; return true; }
+  if (eq(w, "left")) { *two = "left center"; return true; }
+  if (eq(w, "right")) { *two = "right center"; return true; }
+  if (eq(w, "top")) { *two = "center top"; return true; }
+  if (eq(w, "bottom")) { *two = "center bottom"; return true; }
+  return false;
+}
+
+static bool shape_stop_word(const sp w) {
+  return eq(w, "with") || eq(w, "of") || eq(w, "cw") || eq(w, "ccw") || eq(w, "large") || eq(w, "small") || eq(w, "rotate") || eq(w, "/");
+}
+
+/* One argument of shape() (`from ...` or a command), written to `out`; whether anything was changed. */
+static bool shape_command(cb * out, sp arg) {
+  spv tk = {out->a, NULL, 0, 0, false, &out->fail};
+  top_split(&tk, arg.p, arg.n, ' ');
+  if (tk.fail || tk.n == 0) {
+    gtext_allocator_free(out->a, tk.v);
+    out->fail = out->fail || tk.fail;
+    return false;
+  }
+  bool by = false, to = false, changed = false, in_controls = false;
+  /* hline and vline take one coordinate, which `left`, `center` and `right` (or `top`, ...) name: it is not a <position> */
+  const bool axis_line = eq(tk.v[0], "hline") || eq(tk.v[0], "vline");
+  cb o = {out->a, NULL, 0, 0, false, &out->fail};
+  for (size_t i = 0; i < tk.n; i++) {
+    const sp w = tk.v[i];
+    if (eq(w, "by")) {
+      by = true;
+    }
+    else if (eq(w, "to")) {
+      to = true;
+    }
+    if (eq(w, "with")) {
+      in_controls = true;
+    }
+    else if (eq(w, "of") || eq(w, "cw") || eq(w, "ccw") || eq(w, "large") || eq(w, "small") || eq(w, "rotate")) {
+      in_controls = false;
+    }
+    /* `from origin` / `from start` after a control point */
+    if (in_controls && eq(w, "from") && i + 1 < tk.n && ((to && eq(tk.v[i + 1], "origin")) || (by && eq(tk.v[i + 1], "start")))) {
+      i++;
+      changed = true;
+      continue;
+    }
+    /* `rotate 0deg`, and `small`, the default size of an arc ("If omitted, this defaults to small") */
+    if (eq(w, "rotate") && i + 1 < tk.n && eq(tk.v[i + 1], "0deg")) {
+      i++;
+      changed = true;
+      continue;
+    }
+    if (eq(tk.v[0], "arc") && eq(w, "small")) {
+      changed = true;
+      continue;
+    }
+    if (o.n) {
+      cb_putc(&o, ' ');
+    }
+    put_sp(&o, w);
+    /* a position that is one keyword after `from` (the first argument) or `to` */
+    if (!axis_line && (eq(w, "from") || eq(w, "to")) && i + 1 < tk.n && !shape_stop_word(tk.v[i + 1]) && (i + 2 >= tk.n || shape_stop_word(tk.v[i + 2]))) {
+      const char * two = NULL;
+      if (shape_one_keyword_position(tk.v[i + 1], &two)) {
+        cb_putc(&o, ' ');
+        cb_puts(&o, two);
+        i++;
+        changed = true;
+      }
+    }
+  }
+  if (changed && !o.fail) {
+    cb_put(out, o.d, o.n);
+  }
+  else {
+    changed = false;
+  }
+  gtext_allocator_free(out->a, o.d);
+  gtext_allocator_free(out->a, tk.v);
+  return changed;
+}
+
 static bool shape_function(cb * out, sp f) {
   const char * open = memchr(f.p, '(', f.n);
   if (!open || f.p[f.n - 1] != ')') {
@@ -1853,6 +1940,38 @@ static bool shape_function(cb * out, sp f) {
     }
     gtext_allocator_free(out->a, tk.v);
     return done;
+  }
+  if (ieq(name, "ray")) {
+    /* Motion 1 (served 2026-10-31), changes: "Made <ray-size> optional, defaulting to "closest-side"."; both pinned browsers write `ray(0rad closest-side)` as `ray(0rad)` */
+    spv tk = {out->a, NULL, 0, 0, false, &out->fail};
+    top_split(&tk, inner.p, inner.n, ' ');
+    bool any = false;
+    if (!tk.fail) {
+      for (size_t i = 0; i < tk.n; i++) {
+        any = any || eq(tk.v[i], "closest-side");
+      }
+      if (any) {
+        put_sp(out, name);
+        cb_putc(out, '(');
+        bool first = true;
+        for (size_t i = 0; i < tk.n; i++) {
+          if (eq(tk.v[i], "closest-side")) {
+            continue;
+          }
+          if (!first) {
+            cb_putc(out, ' ');
+          }
+          put_sp(out, tk.v[i]);
+          first = false;
+        }
+        cb_putc(out, ')');
+      }
+    }
+    else {
+      out->fail = true;
+    }
+    gtext_allocator_free(out->a, tk.v);
+    return any;
   }
   if (ieq(name, "polygon") || ieq(name, "path") || ieq(name, "shape")) {
     spv args = {out->a, NULL, 0, 0, false, &out->fail};
@@ -1927,20 +2046,30 @@ static bool shape_function(cb * out, sp f) {
       gtext_allocator_free(out->a, data.d);
     }
     else if (ieq(name, "shape") && args.n >= 2) {
-      spv head = {out->a, NULL, 0, 0, false, &out->fail};
-      top_split(&head, args.v[0].p, args.v[0].n, ' ');
-      if (head.n && eq(head.v[0], "nonzero")) {
+      cb body = {out->a, NULL, 0, 0, false, &out->fail};
+      for (size_t i = 0; i < args.n; i++) {
+        sp a = args.v[i];
+        if (i == 0 && a.n >= 8 && memcmp(a.p, "nonzero ", 8) == 0) {
+          a = (sp){a.p + 8, a.n - 8};  /* `nonzero` is the default fill rule */
+          changed = true;
+        }
+        if (i) {
+          cb_puts(&body, ", ");
+        }
+        if (shape_command(&body, a)) {
+          changed = true;
+        }
+        else {
+          put_sp(&body, a);
+        }
+      }
+      if (changed && !body.fail) {
         put_sp(&tmp, name);
         cb_putc(&tmp, '(');
-        put_join(&tmp, head.v + 1, head.n - 1);
-        for (size_t i = 1; i < args.n; i++) {
-          cb_puts(&tmp, ", ");
-          put_sp(&tmp, args.v[i]);
-        }
+        cb_put(&tmp, body.d, body.n);
         cb_putc(&tmp, ')');
-        changed = true;
       }
-      gtext_allocator_free(out->a, head.v);
+      gtext_allocator_free(out->a, body.d);
     }
     if (changed && !tmp.fail) {
       cb_put(out, tmp.d, tmp.n);
@@ -2153,6 +2282,27 @@ static bool rule_box_sides(cb * out, const sp * t, size_t n) {
 
 /* Masking 1, Appendix A: "User agents must support separation with commas, but may also support separation without commas"; "Authors should separate offset values with
  * commas." The two pinned browsers write the commas (cases clip.4), and the text gives no serialization of the other form: `rect(1px 2px 3px 4px)` is written with them. */
+/* Fonts 4, font-palette: "Percentages are normalized according to CSS Color 5 3.2 Percentage Normalization" for palette-mix(): the percentages that are equal shares are not
+ * written, the others are written all (an omitted one as the share it takes), and the default interpolation method (oklab) is left out; the computed value's own writer
+ * does this (css_shape_compute.c), so the specified value is the same text. */
+static bool rule_palette_mix(cb * out, const char * text, size_t len) {
+  if (len < 12 || strncmp(text, "palette-mix(", 12) != 0) {
+    return false;
+  }
+  char * w = NULL;
+  size_t wn = 0;
+  if (!css_palette_mix_canonical(out->a, text, len, &w, &wn)) {
+    out->fail = true;
+    return false;
+  }
+  if (!w) {
+    return false;
+  }
+  cb_put(out, w, wn);
+  gtext_allocator_free(out->a, w);
+  return true;
+}
+
 static bool rule_clip_rect_commas(cb * out, const char * text, size_t len) {
   if (len < 6 || strncmp(text, "rect(", 5) != 0 || text[len - 1] != ')' || memchr(text, ',', len)) {
     return false;
@@ -2280,6 +2430,7 @@ static const canon_row kRows[] = {
   R("border-shape", rule_shape, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
   T("clip", rule_clip_rect_commas),
+  T("font-palette", rule_palette_mix),
   R("clip-path", rule_shape_default_box, MODE_WHOLE),
   R("color-scheme", rule_color_scheme, MODE_WHOLE),
   R("counter-increment", rule_counter_one, MODE_WHOLE),

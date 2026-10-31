@@ -347,6 +347,9 @@ typedef struct {
   /** Most function nodes in the value of one match (image, transform, easing and shape functions and the
    *  functions inside them). Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_FUNCTION_NODES. */
   size_t max_function_nodes;
+  /** The anchor functions a calculation of the value may hold (GTEXT_CSS_MATH_ANCHOR, GTEXT_CSS_MATH_ANCHOR_SIZE, ORed; css_math.h). The property layer sets it
+   *  from the property: `anchor()` is valid in the inset properties and `anchor-size()` in the sizing, inset and margin ones. Default 0. */
+  unsigned anchor_functions;
 } GTEXT_CSS_Match_Options;
 
 /** @brief The defaults, spelled out. */

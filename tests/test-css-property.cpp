@@ -994,4 +994,67 @@ TEST(CssProperty, RandomItemHasAKeyAndAtLeastOneItemAndABraceIsAWholeItem) {
   EXPECT_EQ(parse(r, "font-family", "random-item(auto, extra {Times, serif})"), "invalid");
 }
 
+TEST(CssProperty, AnchorFunctionsAreLengthsInACalculationOfThePropertiesThatTakeThem) {
+  const GTEXT_CSS_Registry * r = R();
+  // Anchor Positioning 1: "anchor() = anchor( <anchor-name>? && <anchor-side>, <length-percentage>? )" and "anchor-size() = anchor-size( [ <anchor-name> || <anchor-size> ]?
+  // , <length-percentage>? )", each resolving to a <length>; anchor() is valid in the inset properties and anchor-size() in the sizing, inset and margin ones
+  EXPECT_EQ(parse(r, "top", "calc((anchor(--foo top) + anchor(--bar bottom)) / 2)"), "valid:calc(0.5 * (anchor(--foo top) + anchor(--bar bottom)))");
+  EXPECT_EQ(parse(r, "top", "anchor(--foo top, calc(0.5 * anchor(--bar bottom)))"), "valid:anchor(--foo top, calc(0.5 * anchor(--bar bottom)))");
+  EXPECT_EQ(parse(r, "top", "min(100px, 10%, anchor(--foo top), anchor(--bar bottom))"), "valid:min(100px, 10%, anchor(--foo top), anchor(--bar bottom))");
+  EXPECT_EQ(parse(r, "top", "calc(anchor(--foo left, 1px) + 10%)"), "valid:calc(10% + anchor(--foo left, 1px))");
+  EXPECT_EQ(parse(r, "top", "calc(anchor(--foo left, 0))"), "valid:anchor(--foo left, 0px)");
+  EXPECT_EQ(parse(r, "inset-inline-start", "calc(anchor(self-start) + 1px)"), "valid:calc(1px + anchor(self-start))");
+  EXPECT_EQ(parse(r, "top", "calc(anchor(calc(50%)))"), "valid:anchor(calc(50%))") << "a side may be a calculation of a percentage";
+  EXPECT_EQ(parse(r, "width", "calc(anchor-size(--foo width, 0))"), "valid:anchor-size(--foo width, 0px)");
+  EXPECT_EQ(parse(r, "width", "calc((anchor-size(--foo width) + anchor-size(--bar height)) / 2)"),
+      "valid:calc(0.5 * (anchor-size(--foo width) + anchor-size(--bar height)))");
+  EXPECT_EQ(parse(r, "margin-left", "calc(anchor-size(--a inline) * 2)"), "valid:calc(2 * anchor-size(--a inline))");
+  EXPECT_EQ(parse(r, "width", "min(anchor-size(--foo width), anchor(--baz top))"), "invalid") << "anchor() is for the inset properties";
+  EXPECT_EQ(parse(r, "color", "rgb(calc(anchor-size(--a width)), 0, 0)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "calc(anchor(--foo))"), "invalid") << "a side is required";
+  EXPECT_EQ(parse(r, "top", "calc(anchor(--foo --bar top))"), "invalid");
+  EXPECT_EQ(parse(r, "top", "calc(anchor(--foo bogus))"), "invalid");
+  EXPECT_EQ(parse(r, "top", "calc(anchor(top, 1s))"), "invalid") << "the fallback is a <length-percentage>";
+  EXPECT_EQ(parse(r, "top", "calc(anchor(top,))"), "invalid");
+  EXPECT_EQ(parse(r, "width", "calc(anchor-size(--a bogus))"), "invalid");
+}
+
+TEST(CssProperty, APolygonRoundsWithARadiusThatIsNotNegative) {
+  const GTEXT_CSS_Registry * r = R();
+  // Shapes 1: "An optional <length> after a round keyword defines rounding for each vertex of the polygon. The length is the radius of a circle ..."
+  EXPECT_EQ(parse(r, "clip-path", "polygon(round 1px, 1px 2px, 3px 4px)"), "valid:polygon(round 1px, 1px 2px, 3px 4px)");
+  EXPECT_EQ(parse(r, "clip-path", "polygon(round -1px, 1px 2px)"), "invalid");
+  EXPECT_EQ(parse(r, "offset-path", "polygon(round -1px, 1px 2px)"), "invalid");
+}
+
+TEST(CssProperty, PaintIsAnImageNotationOfThePaintingApi) {
+  const GTEXT_CSS_Registry * r = R();
+  // CSS Painting API 1: "The <paint()> function is an additional notation to be supported by the <image> type." with "paint() = paint( <ident>, <declaration-value>? )"
+  EXPECT_EQ(parse(r, "background-image", "paint(mypaint)"), "valid:paint(mypaint)");
+  EXPECT_EQ(parse(r, "background-image", "paint( mypaint )"), "valid:paint(mypaint)");
+  EXPECT_EQ(parse(r, "background-image", "paint(mypaint, blue)"), "valid:paint(mypaint, blue)");
+  EXPECT_EQ(parse(r, "background-image", "paint(mypaint, {})"), "valid:paint(mypaint, {})");
+  EXPECT_EQ(parse(r, "background-image", "paint(1)"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "paint()"), "invalid");
+  EXPECT_EQ(parse(r, "background-image", "light-dark(url(a.png), paint(x))").substr(0, 6), "valid:") << "the light-dark() form of <image> is still there";
+}
+
+TEST(CssProperty, ADashedFunctionIsAnArbitrarySubstitutionFunctionWithItsOwnArguments) {
+  const GTEXT_CSS_Registry * r = R();
+  // Mixins 1, 2: "<dashed-function>s are arbitrary substitution functions, like var()", "<dashed-function> = --*( <declaration-value>#? )"; Values 5 lets an argument that
+  // holds commas be wrapped in {}
+  EXPECT_EQ(parse(r, "top", "--func()"), "pending:--func()");
+  EXPECT_EQ(parse(r, "top", "--func(auto ,100px ,#fff)"), "pending:--func(auto ,100px ,#fff)");
+  EXPECT_EQ(parse(r, "top", "--func({1, 2, 3},{4})"), "pending:--func({1, 2, 3},{4})");
+  EXPECT_EQ(parse(r, "top", "--func(--bar(), --baz(--fez()))"), "pending:--func(--bar(), --baz(--fez()))");
+  EXPECT_EQ(parse(r, "top", "calc(--f(1px) + 2px)").substr(0, 8), "pending:");
+  EXPECT_EQ(parse(r, "top", "--func(a,)"), "invalid") << "no empty argument";
+  EXPECT_EQ(parse(r, "top", "--func(,)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "--func({})"), "invalid") << "an empty {} holds no value";
+  EXPECT_EQ(parse(r, "top", "--func(123 {})"), "invalid") << "a {} is a whole argument";
+  EXPECT_EQ(parse(r, "top", "--func({red !important})"), "invalid");
+  EXPECT_EQ(parse(r, "top", "--func(;)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "--func(!)"), "invalid");
+}
+
 }  // namespace

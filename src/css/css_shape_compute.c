@@ -1459,8 +1459,12 @@ static void palette_write(mix_state * m, sb * out) {
     st[sp].parent = parent;
     sp++;
     sb_puts(out, "palette-mix(");
-    if (!method_is_default(m->nodes[node].method)) {
-      put_span(out, m->nodes[node].method);
+    span method = m->nodes[node].method;
+    if (method.n > 12 && memcmp(method.p + method.n - 12, " shorter hue", 12) == 0) {
+      method.n -= 12;  /* Color 5: shorter is the default hue interpolation method, and is not written */
+    }
+    if (!method_is_default(method)) {
+      put_span(out, method);
       sb_puts(out, ", ");
     }
     /* write arguments until one opens a function or the function ends */
@@ -1538,6 +1542,29 @@ static bool rewrite_mix(sb * out, span text, bool palette, bool * changed) {
   }
   gtext_allocator_free((GTEXT_Allocator *)out->a, w.d);
   return !out->fail;
+}
+
+/// The specified value of font-palette written as its canonical form needs it (css_property_canon.c): a palette-mix() with its percentages normalized (Fonts 4: "Percentages
+/// are normalized according to CSS Color 5 3.2 Percentage Normalization") and the default interpolation method left out, which the computed value is written with too
+/// (the computed value then also simplifies a mix that is one palette). Whether the text was a palette-mix() is `*is_mix`; the text is in `*out` (the allocator's, NUL
+/// terminated) when it is.
+bool css_palette_mix_canonical(const GTEXT_Allocator * a, const char * text, size_t length, char ** out, size_t * out_length) {
+  sb o = {a, NULL, 0, 0, false};
+  bool changed = false;
+  rewrite_mix(&o, (span){text, length}, true, &changed);
+  if (o.fail) {
+    gtext_allocator_free(a, o.d);
+    return false;
+  }
+  if (!changed) {
+    gtext_allocator_free(a, o.d);
+    *out = NULL;
+    *out_length = 0;
+    return true;
+  }
+  *out = o.d;
+  *out_length = o.n;
+  return true;
 }
 
 /* ---- easing functions (Easing 2) ---------------------------------------------------------------------------------------- */

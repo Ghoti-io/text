@@ -447,6 +447,231 @@ static const mnode * unresolved_leaf(mbuilder * mb, const GTEXT_CSS_Component_Va
   return n;
 }
 
+/* ---- anchor() and anchor-size() in a calculation --------------------------------------------------------------------- */
+
+/// Anchor Positioning 1: "anchor() = anchor( <anchor-name>? && <anchor-side>, <length-percentage>? )" and "anchor-size() = anchor-size( [ <anchor-name> ||
+/// <anchor-size> ]? , <length-percentage>? )"; both "resolve to a <length>" and are valid wherever a <length> is, so in a calculation each is a leaf of the type
+/// length whose value is not known until the anchor is. Its text is written in the canonical form: the name, then the side or size, then the fallback as a
+/// <length-percentage> is serialized (`0` as `0px`, a calculation as one).
+static const char * const ANCHOR_SIDES[] = {"inside", "outside", "top", "left", "right", "bottom", "start", "end", "self-start", "self-end", "center"};
+static const char * const ANCHOR_SIZES[] = {"width", "height", "block", "inline", "self-block", "self-inline"};
+#define ANCHOR_NEST_BUDGET 64
+
+static bool anchor_word(const GTEXT_CSS_String * s, const char * const * list, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    if (name_is(s, list[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+typedef struct {
+  char * d;
+  size_t n, cap;
+} atext;
+
+static bool atext_put(mbuilder * mb, atext * t, const char * s, size_t n) {
+  if (t->n + n + 1 > t->cap) {
+    size_t cap = t->cap ? t->cap : 64;
+    while (cap < t->n + n + 1) {
+      cap *= 2;
+    }
+    char * p = gtext_allocator_realloc(&mb->alloc, t->d, cap);
+    if (!p) {
+      mb_fail(mb, GTEXT_CSS_E_OOM);
+      return false;
+    }
+    t->d = p;
+    t->cap = cap;
+  }
+  memcpy(t->d + t->n, s, n);
+  t->n += n;
+  t->d[t->n] = '\0';
+  return true;
+}
+
+/// A value of the position slot of an anchor function (a <percentage>, or a <length-percentage> for the fallback) written as the specified value is: the token
+/// as it serializes, `0` as `0px`, a calculation (whose nesting is bounded) as the math layer serializes it. Returns whether it was a value of the kind.
+static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * v, bool percentage_only, atext * out) {
+  if (v->kind == GTEXT_CSS_VALUE_TOKEN) {
+    if (v->type == GTEXT_CSS_TOKEN_PERCENTAGE || (!percentage_only && v->type == GTEXT_CSS_TOKEN_DIMENSION) ||
+        (!percentage_only && v->type == GTEXT_CSS_TOKEN_NUMBER && v->number == 0)) {
+      if (v->type == GTEXT_CSS_TOKEN_NUMBER) {
+        return atext_put(mb, out, "0px", 3);
+      }
+      if (v->type == GTEXT_CSS_TOKEN_DIMENSION) {
+        const GTEXT_CSS_Unit u = gtext_css_unit_lookup(v->unit.data, v->unit.length);
+        if (gtext_css_unit_type(u) != GTEXT_CSS_UNIT_TYPE_LENGTH) {
+          mb_invalid(mb);
+          return false;
+        }
+      }
+      GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+      so.allocator = &mb->alloc;
+      char * buf = NULL;
+      size_t len = 0;
+      const GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(v, 1, &so, &buf, &len);
+      if (st != GTEXT_CSS_OK) {
+        mb_fail(mb, st);
+        return false;
+      }
+      const bool ok = atext_put(mb, out, buf, len);
+      gtext_css_serialize_buffer_free(&so, buf);
+      return ok;
+    }
+    mb_invalid(mb);
+    return false;
+  }
+  if (v->kind == GTEXT_CSS_VALUE_FUNCTION && find_function(&v->value)) {
+    GTEXT_CSS_Math_Options mo = gtext_css_math_options_default();
+    mo.allocator = &mb->alloc;
+    /* the nesting of a calculation inside an anchor function inside a calculation is a C call, so it has a budget of its own that each level takes one from */
+    const size_t budget = mb->max_depth > ANCHOR_NEST_BUDGET ? ANCHOR_NEST_BUDGET : mb->max_depth;
+    if (budget <= 2) {
+      mb->status = GTEXT_CSS_E_LIMIT_DEPTH;
+      mb->where = v->span;
+      return false;
+    }
+    mo.max_depth = budget - 1;
+    bool valid = false;
+    GTEXT_CSS_Math * m = NULL;
+    GTEXT_CSS_Math_Result r;
+    const GTEXT_CSS_Status st = gtext_css_math_parse(v, ctx, &mo, &valid, &m, &r);
+    if (st != GTEXT_CSS_OK) {
+      mb->status = st;
+      mb->where = r.where;
+      return false;
+    }
+    if (!valid) {
+      mb_invalid(mb);
+      return false;
+    }
+    const GTEXT_CSS_Math_Category cat = m->category;
+    bool ok = percentage_only ? cat == GTEXT_CSS_MATH_CAT_PERCENTAGE : (cat == GTEXT_CSS_MATH_CAT_LENGTH || cat == GTEXT_CSS_MATH_CAT_PERCENTAGE);
+    if (ok) {
+      char * buf = NULL;
+      size_t len = 0;
+      const GTEXT_CSS_Status ss = gtext_css_math_serialize_buffer(m, NULL, &buf, &len);
+      if (ss != GTEXT_CSS_OK) {
+        mb_fail(mb, ss);
+        ok = false;
+      }
+      else {
+        ok = atext_put(mb, out, buf, len);
+        gtext_css_serialize_buffer_free(NULL, buf);
+      }
+    }
+    else {
+      mb_invalid(mb);
+    }
+    gtext_css_math_free(m);
+    return ok;
+  }
+  mb_invalid(mb);
+  return false;
+}
+
+static const mnode * anchor_leaf(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * fn) {
+  const bool is_size = name_is(&fn->value, "anchor-size");
+  const GTEXT_CSS_Component_Value * name = NULL;
+  const GTEXT_CSS_Component_Value * word = NULL;       /* the side or the size */
+  const GTEXT_CSS_Component_Value * position = NULL;   /* a percentage side, or a calculation of one */
+  const GTEXT_CSS_Component_Value * fallback = NULL;
+  bool comma = false;
+  size_t before = 0;
+  for (size_t i = 0; i < fn->child_count; i++) {
+    const GTEXT_CSS_Component_Value * c = &fn->children[i];
+    mb->work++;
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+      continue;
+    }
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA) {
+      if (comma) {
+        mb_invalid(mb);
+        return NULL;
+      }
+      comma = true;
+      continue;
+    }
+    if (comma) {
+      if (fallback) {
+        mb_invalid(mb);
+        return NULL;
+      }
+      fallback = c;
+      continue;
+    }
+    before++;
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_IDENT && c->value.length > 2 && c->value.data[0] == '-' && c->value.data[1] == '-') {
+      if (name) {
+        mb_invalid(mb);
+        return NULL;
+      }
+      name = c;
+    }
+    else if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_IDENT &&
+             (is_size ? anchor_word(&c->value, ANCHOR_SIZES, sizeof ANCHOR_SIZES / sizeof *ANCHOR_SIZES)
+                      : anchor_word(&c->value, ANCHOR_SIDES, sizeof ANCHOR_SIDES / sizeof *ANCHOR_SIDES))) {
+      if (word || position) {
+        mb_invalid(mb);
+        return NULL;
+      }
+      word = c;
+    }
+    else if (!is_size && ((c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_PERCENTAGE) || (c->kind == GTEXT_CSS_VALUE_FUNCTION && find_function(&c->value)))) {
+      if (word || position) {
+        mb_invalid(mb);
+        return NULL;
+      }
+      position = c;
+    }
+    else if (is_size && !comma && before == 1 && !name && !word) {
+      /* `anchor-size(10px)`: with no comma, a lone <length-percentage> is the fallback (the engine's grammar takes it so) */
+      fallback = c;
+      before = 0;
+    }
+    else {
+      mb_invalid(mb);
+      return NULL;
+    }
+  }
+  if ((!is_size && !word && !position) || (comma && !fallback)) {
+    mb_invalid(mb);
+    return NULL;
+  }
+  atext t = {NULL, 0, 0};
+  const char * fname = is_size ? "anchor-size(" : "anchor(";
+  bool ok = atext_put(mb, &t, fname, strlen(fname));
+  bool first = true;
+  if (ok && name) {
+    ok = atext_put(mb, &t, name->value.data, name->value.length);
+    first = false;
+  }
+  if (ok && word) {
+    ok = (first || atext_put(mb, &t, " ", 1)) && atext_put(mb, &t, word->value.data, word->value.length);
+    for (size_t i = t.n - word->value.length; ok && i < t.n; i++) {
+      t.d[i] = fold1(t.d[i]);
+    }
+    first = false;
+  }
+  if (ok && position) {
+    ok = (first || atext_put(mb, &t, " ", 1)) && anchor_operand(mb, ctx, position, true, &t);
+    first = false;
+  }
+  if (ok && fallback) {
+    ok = (first || atext_put(mb, &t, ", ", 2)) && anchor_operand(mb, ctx, fallback, false, &t);
+  }
+  ok = ok && atext_put(mb, &t, ")", 1);
+  const mnode * leaf = NULL;
+  if (ok) {
+    GTEXT_CSS_Math_Type length = gtext_css_math_category_type(GTEXT_CSS_MATH_CAT_LENGTH);
+    leaf = mk_unresolved(mb, t.d, t.n, &length);
+  }
+  gtext_allocator_free(&mb->alloc, t.d);
+  return leaf;
+}
+
 /// A value in an expression: a leaf, or the start of a nested frame (reported by *opened).
 static bool read_value(fstack * fs, mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * cv,
     bool * opened, bool * has_symbols) {
@@ -548,6 +773,11 @@ static bool read_value(fstack * fs, mbuilder * mb, const GTEXT_CSS_Math_Context 
     }
     if (is_unresolved_number_function(&cv->value) && no_arguments(cv)) {
       leaf = unresolved_leaf(mb, cv);
+      *has_symbols = true;
+    }
+    else if (ctx && ((name_is(&cv->value, "anchor") && (ctx->anchor_functions & GTEXT_CSS_MATH_ANCHOR)) ||
+                     (name_is(&cv->value, "anchor-size") && (ctx->anchor_functions & GTEXT_CSS_MATH_ANCHOR_SIZE)))) {
+      leaf = anchor_leaf(mb, ctx, cv);
       *has_symbols = true;
     }
     else {

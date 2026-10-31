@@ -179,6 +179,7 @@ typedef struct {
   size_t max_text;                  ///< Most bytes of the text of an opaque value (css_serialize.h's output limit).
   size_t max_math_depth, max_math_nodes; ///< The limits of one math function (0: the math layer's defaults).
   size_t max_color_nesting, max_function_nodes;
+  unsigned anchor_functions;        ///< The anchor functions a calculation may hold (GTEXT_CSS_Match_Options::anchor_functions).
   size_t function_nodes; ///< Functions packed into the value so far (see max_function_nodes).
   css_arena scratch;                ///< What was read of functions and colors while recognizing (freed with the match).
   bool scratch_init;
@@ -994,7 +995,8 @@ static bool math_item(M * m, uint32_t pos, const xinfo ** out) {
       GTEXT_CSS_Math * mp = NULL;
       bool valid = false;
       GTEXT_CSS_Math_Result res;
-      const GTEXT_CSS_Status st = css_math_build(&m->scratch, &m->alloc, v, NULL, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
+      const GTEXT_CSS_Math_Context mctx = {NULL, 0, m->anchor_functions};
+      const GTEXT_CSS_Status st = css_math_build(&m->scratch, &m->alloc, v, &mctx, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
       if (st != GTEXT_CSS_OK) {
         if (m->status == GTEXT_CSS_OK) {
           m->status = st;
@@ -2125,7 +2127,8 @@ static bool math_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Val
   GTEXT_CSS_Math * mp = NULL;
   bool valid = false;
   GTEXT_CSS_Math_Result res;
-  const GTEXT_CSS_Status st = css_math_build(&B->set->arena, &m->alloc, cv, NULL, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
+  const GTEXT_CSS_Math_Context mctx = {NULL, 0, m->anchor_functions};
+  const GTEXT_CSS_Status st = css_math_build(&B->set->arena, &m->alloc, cv, &mctx, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
   if (st != GTEXT_CSS_OK) {
     if (m->status == GTEXT_CSS_OK) {
       m->status = st;
@@ -3078,6 +3081,7 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
   m.max_math_nodes = options ? options->max_math_nodes : 0;
   m.max_color_nesting = options ? options->max_color_nesting : 0;
   m.max_function_nodes = options ? options->max_function_nodes : 0;
+  m.anchor_functions = options ? options->anchor_functions : 0;
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
   GTEXT_CSS_Value_Set * set = NULL;
   bool did_match = false;

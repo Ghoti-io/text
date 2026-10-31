@@ -378,12 +378,12 @@ TEST(CssGrammarEdges, AMathFunctionStandsForEveryNumericTypeOfTheDraftAndNoOther
 
 TEST(CssGrammarEdges, EveryArbitrarySubstitutionFunctionOfTheDraftsMakesAValuePending) {
   for (const char * f : {"var(--x)", "VAR(--x, 1px)", "env(safe-area-inset-top)", "attr(data-x px)", "if(media(print): 1px; else: 2px)",
-           "inherit(width)", "ident(a b)", "random-item(--k, 1px, 2px)", "calc(1px + var(--x))", "a(b(c(if(x: y))))"}) {
+           "inherit(width)", "ident(a b)", "random-item(--k, 1px, 2px)", "calc(1px + var(--x))", "a(b(c(if(x: y))))", "--foo(1)", "--a-b(1, {2, 3})"}) {
     EXPECT_EQ(run("<length>", f).substr(0, 8), "pending:") << f;
     EXPECT_EQ(run("<ident> <ident>", std::string("a ") + f).substr(0, 8), "pending:") << f;
   }
-  // a name that is not one of them (a custom function, a function that merely contains the word) is just a function
-  for (const char * f : {"--foo(1)", "ifx(1)", "variable(1)", "random(1)", "xinherit(1)", "calc(1px)"}) {
+  // a name that is not one of them (a function that merely contains the word) is just a function
+  for (const char * f : {"-foo(1)", "ifx(1)", "variable(1)", "random(1)", "xinherit(1)", "calc(1px)"}) {
     EXPECT_NE(run("<length>", f).substr(0, 8), "pending:") << f;
   }
 }

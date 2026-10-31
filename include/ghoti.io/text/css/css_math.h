@@ -212,7 +212,14 @@ typedef struct {
 typedef struct {
   const GTEXT_CSS_Math_Keyword * keywords; ///< The extra keywords, or NULL.
   size_t keyword_count;                    ///< Their number.
+  /** The anchor functions the calculation may hold: @ref GTEXT_CSS_MATH_ANCHOR for `anchor()` and @ref GTEXT_CSS_MATH_ANCHOR_SIZE for `anchor-size()`, ORed. Anchor
+   *  Positioning 1: `anchor()` is valid in the inset properties, `anchor-size()` in the sizing, inset and margin ones; zero (the default) allows neither. */
+  unsigned anchor_functions;
 } GTEXT_CSS_Math_Context;
+
+/** @brief Bits of @ref GTEXT_CSS_Math_Context::anchor_functions. */
+#define GTEXT_CSS_MATH_ANCHOR 1u
+#define GTEXT_CSS_MATH_ANCHOR_SIZE 2u
 
 /** @brief The allocator and limits of reading a calculation. A zeroed struct is the default. */
 typedef struct {

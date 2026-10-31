@@ -372,6 +372,12 @@ bool css_is_reserved_family_word(const GTEXT_CSS_String * w) {
    element's inherited value ("compare the property's inherited value with each Cn"), so it is resolved when a style is computed as the others are.
    The draft's list is not in one place; a function with a dashed name (a custom function) is not in it either. */
 bool css_is_substitution_name(const GTEXT_CSS_String * name) {
+  /* Mixins 1 (served 2026-10-31), 2: "<dashed-function>s are arbitrary substitution functions, like var(). Their presence in a property's value causes it to be
+     assumed valid at parse time, and only evaluated and parsed at computed-value time", and "A <dashed-function> is a functional notation whose function name
+     starts with two dashes". */
+  if (name->length > 2 && name->data[0] == '-' && name->data[1] == '-') {
+    return true;
+  }
   static const char * const names[] = {"var", "env", "attr", "if", "inherit", "ident", "random-item", "cycle"};
   for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
     if (css_ascii_ieq(name, names[i])) {

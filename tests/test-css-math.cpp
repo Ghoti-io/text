@@ -233,7 +233,7 @@ TEST(CssMathSerialize, ParenthesesAndNestedCalcAreTheSame) {
 
 TEST(CssMathSerialize, SymbolsAndUnresolvedFunctionsKeepTheTreeShape) {
   GTEXT_CSS_Math_Keyword kw[] = {{"r", {{0, 0, 0, 0, 0, 0, 0}, 0}}, {"g", {{0, 0, 0, 0, 0, 0, 0}, 0}}};
-  GTEXT_CSS_Math_Context ctx = {kw, 2};
+  GTEXT_CSS_Math_Context ctx = {kw, 2, 0};
   EXPECT_EQ(calc("calc(r)", &ctx), "calc(r)");
   EXPECT_EQ(calc("calc(g * 2)", &ctx), "calc(2 * g)");
   EXPECT_EQ(calc("calc(g * .5 + g * .5)", &ctx), "calc((0.5 * g) + (0.5 * g))");
@@ -627,7 +627,7 @@ TEST(CssMathResolve, FunctionsOfRelativeValuesAreComputedOnceTheyAreKnown) {
   }
   Calc s;
   GTEXT_CSS_Math_Keyword kw[] = {{"r", {{0, 0, 0, 0, 0, 0, 0}, 0}}};
-  GTEXT_CSS_Math_Context ctx = {kw, 1};
+  GTEXT_CSS_Math_Context ctx = {kw, 1, 0};
   read(s, "calc(r * 2)", &ctx);
   ASSERT_TRUE(s.valid);
   EXPECT_TRUE(s.math->has_symbols);

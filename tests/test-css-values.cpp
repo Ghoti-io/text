@@ -459,7 +459,9 @@ TEST(CssSubstitution, ANameThatIsNotAFunctionOrNotThoseThreeIsNot) {
   EXPECT_FALSE(has_substitution(""));
   EXPECT_FALSE(has_substitution("var"));
   EXPECT_FALSE(has_substitution("var (--x)"));
-  EXPECT_FALSE(has_substitution("--var(x)"));
+  EXPECT_TRUE(has_substitution("--var(x)")) << "Mixins 1: a <dashed-function> is an arbitrary substitution function, like var()";
+  EXPECT_FALSE(has_substitution("-var(x)")) << "one dash is no dashed function";
+  EXPECT_FALSE(has_substitution("--"));
   EXPECT_FALSE(has_substitution("variable(--x)"));
   EXPECT_FALSE(has_substitution("a(b) c d"));
   EXPECT_FALSE(has_substitution("'var(--x)'"));
