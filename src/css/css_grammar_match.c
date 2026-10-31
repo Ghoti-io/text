@@ -1048,6 +1048,21 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     }
     return true;
   }
+  case NT_LANGUAGE_TAG: {
+    /* Fonts 4 (served 2026-10-31), font-language-override: a "single four-character case-sensitive OpenType language system tag" ... "If the string is shorter than
+       four characters, it is padded at the end with space (U+0020) characters such that the length is 4"; a tag is of the characters U+20-7E (<opentype-tag>), so a
+       longer string, a character outside the range and (both pinned browsers refuse it, and the text is silent on a string of no character) the empty string are not one */
+    if (!tok(v, GTEXT_CSS_TOKEN_STRING) || v->value.length < 1 || v->value.length > 4) {
+      return false;
+    }
+    for (size_t i = 0; i < v->value.length; i++) {
+      const unsigned char ch = (unsigned char)v->value.data[i];
+      if (ch < 0x20 || ch > 0x7E) {
+        return false;
+      }
+    }
+    return true;
+  }
   case NT_ID_SELECTOR:
     /* UI 4 (served 2026-10-31), 5.3.1: "The <id> value is an ID selector"; Selectors 4: an ID selector is a <hash-token> whose type flag is "id" (`#a`, not `#1`) */
     return tok(v, GTEXT_CSS_TOKEN_HASH) && (v->flags & GTEXT_CSS_FLAG_HASH_ID);
@@ -2137,6 +2152,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     return true;
   case NT_STRING:
   case NT_OPENTYPE_TAG:
+  case NT_LANGUAGE_TAG:
   case NT_TARGET_NAME:
     value_init(out, GTEXT_CSS_VAL_STRING, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;

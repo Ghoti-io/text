@@ -295,6 +295,24 @@ TEST(CssProperty, APropertyWithNoUsableGrammarIsNotGuessedAt) {
   EXPECT_EQ(parse(r, "voice-family", "var(--c)"), "pending:var(--c)");
 }
 
+TEST(CssProperty, AFontLanguageOverrideIsATagOfOneToFourPrintableAsciiCharacters) {
+  const GTEXT_CSS_Registry * r = R();
+  // Fonts 4: a "single four-character case-sensitive OpenType language system tag"; "If the string is shorter than four characters, it is padded at the end with
+  // space (U+0020) characters such that the length is 4, before being matched."
+  EXPECT_EQ(parse(r, "font-language-override", "normal"), "valid:normal");
+  EXPECT_EQ(parse(r, "font-language-override", "\"KSW\""), "valid:\"KSW\"");
+  EXPECT_EQ(parse(r, "font-language-override", "\"APPH\""), "valid:\"APPH\"");
+  EXPECT_EQ(parse(r, "font-language-override", "\"tr\""), "valid:\"tr\"");
+  EXPECT_EQ(parse(r, "font-language-override", "\"ENG \""), "valid:\"ENG\"") << "the padding is not part of the shortest form";
+  EXPECT_EQ(parse(r, "font-language-override", "\" en \""), "valid:\" en\"");
+  EXPECT_EQ(parse(r, "font-language-override", "\"1 %\""), "valid:\"1 %\"");
+  EXPECT_EQ(parse(r, "font-language-override", "\"turkish\""), "invalid") << "longer than four characters";
+  EXPECT_EQ(parse(r, "font-language-override", "\"ENG  \""), "invalid") << "five characters";
+  EXPECT_EQ(parse(r, "font-language-override", "\"x\xc3\xb8x\""), "invalid") << "outside U+20-7E";
+  EXPECT_EQ(parse(r, "font-language-override", "\"\""), "invalid") << "both pinned browsers refuse the empty string";
+  EXPECT_EQ(parse(r, "font-language-override", "normal \"ksw\""), "invalid");
+}
+
 TEST(CssProperty, TheSpeechPropertiesTakeTheDecibelAndSemitoneDimensionsOfSpeech1) {
   const GTEXT_CSS_Registry * r = R();
   // Speech 1, 6.1: "The <decibel> type denotes a dimension with a "dB" (decibel unit) unit identifier."; 11.3: "The syntax of <semitones> allowed values is a dimension

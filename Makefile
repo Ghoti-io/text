@@ -2542,7 +2542,7 @@ conformance-css-values: $(CONFORMANCE_LIB)
 # tools/css/UNEXTRACTED, the properties the pin does not have are CSS_PROPERTY_ABSENT, and the depth ledger's wpt column is regenerated
 # from the scored set. The scoring half is in check-conformance-vectors; this target adds the controls (the gate made to fail on
 # purpose, and the library built with a rule undone: tools/conformance/CSS_PROPERTY_PLANTS).
-CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=301
+CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=289
 
 # The computed-value gate: the `test_computed_value` calls of the pinned web-platform-tests pages, asked of this library in the document each page builds (tools/css/extract-wpt-
 # computed-pages.py) with the page's rules that need no selector matching, as the browsers resolve a computed value (tools/oracle/css_resolved.h). Every scored case passes or is
