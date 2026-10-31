@@ -339,6 +339,9 @@ bool css_is_reserved_family_word(const GTEXT_CSS_String * w);
 /// value changes, NULL when it stays as it is.
 bool css_palette_mix_canonical(const GTEXT_Allocator * a, const char * text, size_t length, char ** out, size_t * out_length);
 
+/// Whether a dynamic-range-limit-mix() of the text, or one inside it, has written percentages that sum to 0% (css_shape_compute.c). False on out of memory.
+bool css_mix_sums_to_zero(const GTEXT_Allocator * a, const char * text, size_t length, bool * zero);
+
 /// Trim the text of a custom property's value: the white space and the comments before its first token and after its last are not part of it ("the original text" is
 /// that of the tokens, and a comment is no token), those between are. Strings are stepped over. `*s` and `*n` are narrowed.
 void css_trim_value_text(const char ** s, size_t * n);

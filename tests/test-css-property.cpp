@@ -1057,4 +1057,15 @@ TEST(CssProperty, ADashedFunctionIsAnArbitrarySubstitutionFunctionWithItsOwnArgu
   EXPECT_EQ(parse(r, "top", "--func(!)"), "invalid");
 }
 
+TEST(CssProperty, AMixOfDynamicRangeLimitsNeedsPercentagesThatCanBeNormalized) {
+  const GTEXT_CSS_Registry * r = R();
+  // Color HDR 1, 3.3: "Let p1, ..., pN be the mixing percentages, normalized to sum to 100%": a sum of 0% cannot be, and both pinned browsers refuse it
+  EXPECT_EQ(parse(r, "dynamic-range-limit", "dynamic-range-limit-mix(no-limit 80%, standard 20%)"), "valid:dynamic-range-limit-mix(no-limit 80%, standard 20%)");
+  EXPECT_EQ(parse(r, "dynamic-range-limit", "dynamic-range-limit-mix(no-limit 1%, standard 0%)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "dynamic-range-limit", "dynamic-range-limit-mix(no-limit 0%, standard 0%)"), "invalid");
+  EXPECT_EQ(parse(r, "dynamic-range-limit", "dynamic-range-limit-mix(dynamic-range-limit-mix(no-limit 1%, standard 2%) 3%, dynamic-range-limit-mix(constrained 0%, no-limit 0%) 6%)"),
+      "invalid") << "the sum of an inner mix counts too";
+  EXPECT_EQ(parse(r, "dynamic-range-limit", "dynamic-range-limit-mix(standard calc(50% * sign(10em - 1px)), constrained 50%)").substr(0, 6), "valid:") << "a calculation is not a written percentage";
+}
+
 }  // namespace

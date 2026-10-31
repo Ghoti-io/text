@@ -1567,6 +1567,36 @@ bool css_palette_mix_canonical(const GTEXT_Allocator * a, const char * text, siz
   return true;
 }
 
+/// Whether a dynamic-range-limit-mix() of the text, or one inside it, has percentages that are all written and sum to 0%. Color HDR 1, 3.3: "Let p1, ..., pN be the mixing
+/// percentages, normalized to sum to 100%": a sum of nothing cannot be normalized, and both pinned browsers refuse the value. `*zero` is false for any other text.
+bool css_mix_sums_to_zero(const GTEXT_Allocator * a, const char * text, size_t length, bool * zero) {
+  mix_state m;
+  memset(&m, 0, sizeof m);
+  m.a = a;
+  *zero = false;
+  const bool read = mix_read(&m, (span){text, length});
+  if (m.fail) {
+    mix_free(&m);
+    return false;
+  }
+  for (size_t k = 0; read && k < m.nn; k++) {
+    if (m.nodes[k].palette || m.nodes[k].count == 0) {
+      continue;
+    }
+    double sum = 0.0;
+    bool all = true;
+    for (size_t i = m.nodes[k].first; i != MIX_NONE; i = m.items[i].next) {
+      all = all && m.items[i].has_pct;
+      sum += m.items[i].has_pct ? m.items[i].pct : 0.0;
+    }
+    if (all && sum == 0.0) {
+      *zero = true;
+    }
+  }
+  mix_free(&m);
+  return true;
+}
+
 /* ---- easing functions (Easing 2) ---------------------------------------------------------------------------------------- */
 
 /// A plain percentage (`50%`) as its number; false for anything else.

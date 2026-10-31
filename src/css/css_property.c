@@ -570,6 +570,31 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
   }
   else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
+    /* Color HDR 1, 3.3: the mixing percentages of dynamic-range-limit-mix() are "normalized to sum to 100%", which a sum of 0% cannot be: both pinned browsers refuse it */
+    if (info.name_length == 19 && memcmp(info.name, "dynamic-range-limit", 19) == 0) {
+      const GTEXT_Allocator * al = options->allocator ? options->allocator : css_registry_allocator(registry);
+      GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+      so.allocator = al;
+      char * text = NULL;
+      size_t text_length = 0;
+      bool zero = false;
+      GTEXT_CSS_Status ss = gtext_css_serialize_values_buffer(values, count, &so, &text, &text_length);
+      if (ss == GTEXT_CSS_OK) {
+        ss = css_mix_sums_to_zero(al, text, text_length, &zero) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+        gtext_css_serialize_buffer_free(&so, text);
+      }
+      if (ss != GTEXT_CSS_OK) {
+        gtext_css_property_value_free(out);
+        out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+        return ss;
+      }
+      if (zero) {
+        gtext_css_value_set_free(out->set);
+        out->set = NULL;
+        out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+        return GTEXT_CSS_OK;
+      }
+    }
     out->canonical = css_canon_rules_of(info.name, info.name_length);
     zero_lengths_to_numbers(out, &info);
   }

@@ -144,6 +144,7 @@ PLANTS = [
     ("empty-string-is-a-keyframes-name", "css_grammar_match.c", "    return tok(v, GTEXT_CSS_TOKEN_STRING) && v->value.length > 0;", "    return tok(v, GTEXT_CSS_TOKEN_STRING);", ["property"]),
     ("path-data-is-not-checked", "css_grammar_match.c", "svg_path_data_valid(v->value.data, v->value.length);", "1;", ["property"]),
     ("url-modifier-arguments-are-not-checked", "css_grammar_match.c", "c->kind == GTEXT_CSS_VALUE_FUNCTION && url_modifier_ok(c)", "c->kind == GTEXT_CSS_VALUE_FUNCTION", ["property"]),
+    ("a-mix-that-sums-to-zero-is-valid", "css_property.c", "      if (zero) {\n        gtext_css_value_set_free(out->set);", "      if (0 && zero) {\n        gtext_css_value_set_free(out->set);", ["property"]),
     ("a-sizing-property-takes-anchor", "css_property.c", "      return GTEXT_CSS_MATH_ANCHOR_SIZE;\n    }\n  }\n  return 0;", "      return GTEXT_CSS_MATH_ANCHOR | GTEXT_CSS_MATH_ANCHOR_SIZE;\n    }\n  }\n  return 0;", ["property"]),
     ("a-dashed-function-takes-an-empty-argument", "css_property.c", "        if (c || commas || any_item) {\n          return false;  /* an empty argument */", "        if (0 && (c || commas || any_item)) {\n          return false;  /* an empty argument */", ["property"]),
     ("random-item-needs-no-item", "css_property.c", "  return group >= 2;  /* the key and at least one item (an item may be empty) */", "  return group >= 1;", ["property"]),
