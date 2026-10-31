@@ -240,8 +240,15 @@ static void srgb_to_hsl(const double in[3], double out[3]) {
   out[2] = light * 100.0;
 }
 
+/* A percentage past the range of a number is a number the writer clamps (3.4028234663852886e38, css_serialize.c), and a color that is written and read again has to be
+   the color it was: the whiteness and the blackness are not clamped to 0 up to 100% (Color 4), so an infinite one is held at the limit before they are divided. */
+#define HWB_LIMIT 3.4028234663852886e38
+static double hwb_limit(double v) {
+  return v > HWB_LIMIT ? HWB_LIMIT : (v < -HWB_LIMIT ? -HWB_LIMIT : v);
+}
+
 static void hwb_to_srgb(const double in[3], double out[3]) {
-  double w = in[1] / 100.0, b = in[2] / 100.0;
+  double w = hwb_limit(in[1]) / 100.0, b = hwb_limit(in[2]) / 100.0;
   if (w + b >= 1.0) {
     const double gray = w / (w + b);
     out[0] = out[1] = out[2] = gray;

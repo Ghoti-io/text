@@ -91,6 +91,18 @@ TEST(CssComputedCompletionRegistration, ATransformListDoesNotTakeNoneAsItsInitia
   EXPECT_TRUE(ok.refused.empty());
 }
 
+/* Color 4: the whiteness and blackness of hwb() are not clamped, and a number past the range both browsers keep a number in is written as that range's limit
+   (CSSOM, serializing a number), so a color that is written and read again must be the color it was: an infinite whiteness over a sum that is infinite was NaN
+   and a black, and its text read back as a white. Found by the fuzz harness of the values (notes seed `hwb(120 30e9920% 30%)`). */
+TEST(CssComputedCompletionColor, AnInfiniteWhitenessOrBlacknessIsTheLimitAndSurvivesBeingWritten) {
+  const std::string white = root_computed("color: hwb(120 30e9920% 30%)", "color");
+  EXPECT_EQ(white, "rgb(255, 255, 255)");
+  EXPECT_EQ(root_computed("color: hwb(120 30% 30e9920%)", "color"), "rgb(0, 0, 0)");
+  EXPECT_EQ(root_computed("color: hwb(120 30e9920% 30e9920%)", "color"), "rgb(128, 128, 128)") << "the limits are equal: half";
+  EXPECT_EQ(root_computed("color: hwb(120 -30e9920% 30%)", "color"), root_computed("color: hwb(120 -3.4028234663852886e38% 30%)", "color"));
+  EXPECT_EQ(root_computed("color: " + white, "color"), white) << "a fixed point";
+}
+
 /* Speech 1, 6.1, voice-volume: "silent, or a keyword value and optionally also a decibel offset (if not zero)"; "This represents a change (positive or negative) relative to
    the given keyword value", "or otherwise to the inherited volume level"; "When the inherited volume level is silent, this voice-volume resolves to silent too, regardless
    of the specified <decibel> value"; and "the decibel values are combined additively". */

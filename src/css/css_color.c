@@ -1405,6 +1405,10 @@ void css_color_hsl_to_srgb(double h, double s, double l, double rgb[3]) {
 }
 
 void css_color_hwb_to_srgb(double h, double w, double b, double rgb[3]) {
+  /* held at the limit the writer keeps a number in, so that a color written and read again is the same color (an infinite whiteness over an infinite sum is NaN) */
+  const double limit = 3.4028234663852886e38;
+  w = w > limit ? limit : (w < -limit ? -limit : w);
+  b = b > limit ? limit : (b < -limit ? -limit : b);
   w = rnd(w / 100.0);
   b = rnd(b / 100.0);
   const double sum = rnd(w + b);
