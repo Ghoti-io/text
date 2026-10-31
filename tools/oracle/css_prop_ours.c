@@ -438,7 +438,7 @@ static const char * native_word(walk * w, const gnode * n) {
     put_double(&w->out, pick_number(w, n, 0));
     return "%";
   }
-  case NT_LENGTH: case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_LENGTH: case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX: case NT_DECIBEL: case NT_SEMITONES:
   case NT_LENGTH_PERCENTAGE: case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE:
   case NT_DIMENSION: {
     const double v = pick_number(w, n, 0);
@@ -447,6 +447,12 @@ static const char * native_word(walk * w, const gnode * n) {
     put_double(&w->out, v);
     if (n->native == NT_FLEX) {
       return "fr";
+    }
+    if (n->native == NT_DECIBEL) {
+      return "dB";
+    }
+    if (n->native == NT_SEMITONES) {
+      return "st";
     }
     if (mixed && w->rng && below(w->rng, 3) == 0) {
       return "%";

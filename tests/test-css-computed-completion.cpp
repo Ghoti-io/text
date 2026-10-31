@@ -91,6 +91,49 @@ TEST(CssComputedCompletionRegistration, ATransformListDoesNotTakeNoneAsItsInitia
   EXPECT_TRUE(ok.refused.empty());
 }
 
+/* Speech 1, 6.1, voice-volume: "silent, or a keyword value and optionally also a decibel offset (if not zero)"; "This represents a change (positive or negative) relative to
+   the given keyword value", "or otherwise to the inherited volume level"; "When the inherited volume level is silent, this voice-volume resolves to silent too, regardless
+   of the specified <decibel> value"; and "the decibel values are combined additively". */
+TEST(CssComputedCompletionSpeech, AVolumeIsSilentOrAKeywordAndANonzeroOffset) {
+  EXPECT_EQ(root_computed("voice-volume: silent", "voice-volume"), "silent");
+  EXPECT_EQ(root_computed("voice-volume: loud", "voice-volume"), "loud");
+  EXPECT_EQ(root_computed("voice-volume: loud 0dB", "voice-volume"), "loud") << "an offset of zero is not written";
+  EXPECT_EQ(root_computed("voice-volume: -3dB soft", "voice-volume"), "soft -3dB");
+  EXPECT_EQ(root_computed("voice-volume: 6dB", "voice-volume"), "medium 6dB") << "an offset by itself is relative to the inherited level, medium at the root";
+  EXPECT_EQ(root_computed("voice-volume: 0dB", "voice-volume"), "medium");
+  EXPECT_EQ(computed("voice-volume: loud", "voice-volume: 2dB", "voice-volume"), "loud 2dB");
+  EXPECT_EQ(computed("voice-volume: loud 3dB", "voice-volume: -1.5dB", "voice-volume"), "loud 1.5dB") << "combined additively";
+  EXPECT_EQ(computed("voice-volume: loud 3dB", "voice-volume: -3dB", "voice-volume"), "loud") << "and a sum of zero is not written";
+  EXPECT_EQ(computed("voice-volume: loud 3dB", "voice-volume: soft 1dB", "voice-volume"), "soft 1dB") << "a keyword is not relative to what is inherited";
+  EXPECT_EQ(computed("voice-volume: silent", "voice-volume: 5dB", "voice-volume"), "silent") << "regardless of the specified <decibel> value";
+  EXPECT_EQ(computed("voice-volume: loud 3dB", "", "voice-volume"), "loud 3dB") << "inherited";
+}
+
+/* Speech 1, voice-pitch: a semitone "doesn't correspond to a fixed numerical value in Hertz": an offset in semitones needs the voice's base frequency, which the
+   environment does not have, so it is named and never guessed; a frequency is computed. */
+TEST(CssComputedCompletionSpeech, ASemitoneOffsetNeedsTheVoiceAndIsNamed) {
+  Context ctx(R());
+  for (const char * decl : {"voice-pitch: 2st", "voice-pitch: high 2st", "voice-range: -1st", "voice-range: 10%"}) {
+    Block b(R(), decl);
+    Style s;
+    s.compute(ctx, &b);
+    EXPECT_EQ(s.status, GTEXT_CSS_E_UNSUPPORTED) << decl;
+    EXPECT_EQ(std::string(s.result.name).substr(0, 6), "voice-") << decl;
+  }
+  EXPECT_EQ(root_computed("voice-pitch: high", "voice-pitch"), "high");
+  EXPECT_EQ(root_computed("voice-pitch: 0.2kHz absolute", "voice-pitch"), "200Hz absolute");
+}
+
+/* UI 4, 5.3.1, nav-*: "Computed value: as specified"; Animation Triggers 1, 4: the event-trigger properties' computed value is "as specified"; Speech 1: cue-before and
+   cue-after "specified value". */
+TEST(CssComputedCompletionSpeech, TheNavigationEventAndCuePropertiesAreAsSpecified) {
+  EXPECT_EQ(root_computed("nav-up: #a  current", "nav-up"), "#a current");
+  EXPECT_EQ(root_computed("nav-left: auto", "nav-left"), "auto");
+  EXPECT_EQ(root_computed("event-trigger-source: click()  keypress(\"x\")", "event-trigger-source"), "click() keypress(\"x\")");
+  EXPECT_EQ(root_computed("event-trigger-name: --a, --b", "event-trigger-name"), "--a, --b");
+  EXPECT_EQ(root_computed("cue-after: url(a.wav) 3dB", "cue-after"), "url(\"a.wav\") 3dB");
+}
+
 /* Color Adjust 1, "the element color scheme is the same as the page color scheme" for `normal`: below a root that declares `dark`, an element with
    `color-scheme: normal` (or one that names no scheme it can use) is dark, and light-dark() takes its second argument. A root that declares none, or `normal`, is the
    user agent default, light, whatever the environment prefers. */

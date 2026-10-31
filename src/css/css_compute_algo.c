@@ -1039,8 +1039,8 @@ static GTEXT_CSS_Status algo_voice_pitch(css_state * st, GTEXT_CSS_Property_Id i
     *out = gtext_css_value_set_retain(src);
     return GTEXT_CSS_OK;
   }
-  if (v && v->kind == GTEXT_CSS_VAL_DIMENSION) {
-    return bytype(st, id, src, out);
+  if (v && v->kind == GTEXT_CSS_VAL_DIMENSION && gtext_css_unit_type(v->unit) == GTEXT_CSS_UNIT_TYPE_FREQUENCY) {
+    return bytype(st, id, src, out);   /* a frequency: "Computed absolute frequencies that are negative are clamped to zero Hertz" is the grammar's [0Hz,inf] */
   }
   if (v && v->child_count == 1 && v->children[0].kind == GTEXT_CSS_VAL_KEYWORD) {
     *out = gtext_css_value_set_retain(src);   /* the keyword by itself */
@@ -1085,6 +1085,96 @@ static GTEXT_CSS_Status algo_voice_balance(css_state * st, GTEXT_CSS_Property_Id
     gtext_css_value_set_free(bt);
   }
   return emit_number(st, gtext_css_math_clamp(n, -100.0, 100.0), false, out);
+}
+
+/* CSS Speech 1, 6.1, voice-volume: "silent, or a keyword value and optionally also a decibel offset (if not zero)". A <decibel> is "a change (positive or
+   negative) relative to the given keyword value, or otherwise to the inherited volume level"; "When the inherited volume level is silent, this voice-volume
+   resolves to silent too, regardless of the specified <decibel> value"; and when the inherited value already has an offset "the decibel values are combined
+   additively". So an offset by itself is the inherited keyword with the sum of the offsets, and a keyword with an offset is that keyword and that offset. */
+static GTEXT_CSS_Status algo_voice_volume(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
+  const GTEXT_CSS_Value * v = gtext_css_value_set_root(src);
+  if (!v) {
+    *out = gtext_css_value_set_retain(src);
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Value * level = NULL;
+  double offset = 0.0;
+  if (v->kind == GTEXT_CSS_VAL_KEYWORD) {
+    level = v;
+  }
+  else if (v->kind == GTEXT_CSS_VAL_DIMENSION) {
+    offset = v->number;
+  }
+  else {
+    for (size_t i = 0; i < v->child_count; i++) {
+      if (v->children[i].kind == GTEXT_CSS_VAL_KEYWORD) {
+        level = &v->children[i];
+      }
+      else if (v->children[i].kind == GTEXT_CSS_VAL_DIMENSION) {
+        offset = v->children[i].number;
+      }
+    }
+  }
+  if (level && kw(level, "silent")) {
+    return emit_keyword(st, "silent", out);
+  }
+  const char * word = NULL;
+  char buf[24];
+  if (!level) {
+    /* an offset by itself: the inherited level (medium, the initial value, at the root) */
+    const GTEXT_CSS_Value * pv = css_st_parent_root(st, id);
+    const GTEXT_CSS_Value * plevel = NULL;
+    double poffset = 0.0;
+    if (pv && pv->kind == GTEXT_CSS_VAL_KEYWORD) {
+      plevel = pv;
+    }
+    else if (pv) {
+      for (size_t i = 0; i < pv->child_count; i++) {
+        if (pv->children[i].kind == GTEXT_CSS_VAL_KEYWORD) {
+          plevel = &pv->children[i];
+        }
+        else if (pv->children[i].kind == GTEXT_CSS_VAL_DIMENSION) {
+          poffset = pv->children[i].number;
+        }
+      }
+    }
+    if (plevel && kw(plevel, "silent")) {
+      return emit_keyword(st, "silent", out);
+    }
+    if (plevel && plevel->text.length < sizeof buf) {
+      memcpy(buf, plevel->text.data, plevel->text.length);
+      buf[plevel->text.length] = '\0';
+      word = buf;
+    }
+    else {
+      word = "medium";
+    }
+    offset += poffset;
+  }
+  else if (level->text.length < sizeof buf) {
+    memcpy(buf, level->text.data, level->text.length);
+    buf[level->text.length] = '\0';
+    word = buf;
+  }
+  else {
+    word = "medium";
+  }
+  if (offset == 0.0) {
+    return emit_keyword(st, word, out);
+  }
+  ab a;
+  GTEXT_CSS_Status s = ab_open(&a, st);
+  if (s != GTEXT_CSS_OK) {
+    return s;
+  }
+  GTEXT_CSS_Value * kids = css_vb_values(&a.vb, 2);
+  GTEXT_CSS_Value * root = css_vb_value(&a.vb);
+  if (kids && root) {
+    css_v_keyword(&a.vb, &kids[0], word);
+    css_v_dimension(&kids[1], offset, GTEXT_CSS_UNIT_DB);
+    css_v_list(root, kids, 2, GTEXT_CSS_SEP_SPACE);
+  }
+  return ab_close(&a, root, NULL, NULL, out);
 }
 
 static GTEXT_CSS_Status algo_wrap_flow(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
@@ -2370,6 +2460,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_TEXT_ALIGN: return algo_text_align(st, id, src, out);
   case GTEXT_CSS_ALGO_VOICE_PITCH: return algo_voice_pitch(st, id, src, out);
   case GTEXT_CSS_ALGO_VOICE_BALANCE: return algo_voice_balance(st, id, src, out);
+  case GTEXT_CSS_ALGO_VOICE_VOLUME: return algo_voice_volume(st, id, src, out);
   case GTEXT_CSS_ALGO_WRAP_FLOW: return algo_wrap_flow(st, id, src, out);
   case GTEXT_CSS_ALGO_HYPHENATE_CHARS: return run_build(st, id, src, 0, build_hyphenate, m, out);
   case GTEXT_CSS_ALGO_IMAGE_ORIENTATION: return run_build(st, id, src, 0, build_image_orientation, m, out);

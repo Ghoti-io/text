@@ -427,9 +427,9 @@ property	corner-top-shape	1	1	1	0
 property	counter-increment	1	1	1	0	
 property	counter-reset	1	1	1	0	
 property	counter-set	1	1	1	0	
-property	cue	0	0	1	0	unresolved <decibel>
-property	cue-after	0	0	1	0	unresolved <decibel>
-property	cue-before	0	0	1	0	unresolved <decibel>
+property	cue	1	1	1	0	
+property	cue-after	1	1	1	0	
+property	cue-before	1	1	1	0	
 property	cursor	1	1	1	0	
 property	cx	1	1	1	0	
 property	cy	1	1	1	0	
@@ -439,9 +439,9 @@ property	display	1	1	1	0
 property	dominant-baseline	1	1	1	1	
 property	dynamic-range-limit	1	1	1	0	
 property	empty-cells	1	1	1	1	
-property	event-trigger	0	0	1	0	unresolved <click()>
+property	event-trigger	1	1	1	0	
 property	event-trigger-name	1	1	1	0	
-property	event-trigger-source	0	0	1	0	unresolved <click()>
+property	event-trigger-source	1	1	1	0	
 property	field-sizing	1	1	1	1	
 property	fill	1	1	1	0	
 property	fill-break	1	1	1	0	
@@ -623,10 +623,10 @@ property	min-intrinsic-sizing	1	1	1	0
 property	min-size	1	1	1	0	
 property	min-width	1	1	1	0	
 property	mix-blend-mode	1	1	1	1	
-property	nav-down	0	0	1	0	unresolved <id>
-property	nav-left	0	0	1	0	unresolved <id>
-property	nav-right	0	0	1	0	unresolved <id>
-property	nav-up	0	0	1	0	unresolved <id>
+property	nav-down	1	1	1	0	
+property	nav-left	1	1	1	0	
+property	nav-right	1	1	1	0	
+property	nav-up	1	1	1	0	
 property	object-fit	1	1	1	1	
 property	object-position	1	1	1	1	
 property	object-view-box	1	1	1	1	
@@ -909,11 +909,11 @@ property	visibility	1	1	1	1
 property	voice-balance	1	1	1	0	
 property	voice-duration	1	1	1	0	
 property	voice-family	0	0	1	0	unresolved <voice-family-name>
-property	voice-pitch	0	0	1	0	unresolved <semitones>
-property	voice-range	0	0	1	0	unresolved <semitones>
+property	voice-pitch	1	1	1	0	
+property	voice-range	1	1	1	0	
 property	voice-rate	1	1	1	0	
 property	voice-stress	1	1	1	0	
-property	voice-volume	0	0	1	0	unresolved <decibel>
+property	voice-volume	1	1	1	0	
 property	white-space	1	1	1	1	
 property	white-space-collapse	1	1	1	1	
 property	white-space-trim	1	1	1	0	

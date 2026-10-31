@@ -89,6 +89,8 @@ const UnitRow kUnitRows[] = {
     {"dpi", GTEXT_CSS_UNIT_DPI, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true}, {"dpcm", GTEXT_CSS_UNIT_DPCM, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true},
     {"dppx", GTEXT_CSS_UNIT_DPPX, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true}, {"x", GTEXT_CSS_UNIT_X, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true},
     {"fr", GTEXT_CSS_UNIT_FR, GTEXT_CSS_UNIT_TYPE_FLEX, true},
+    // the dimensions of Speech 1 (6.1, 11.3), which no calculation takes
+    {"dB", GTEXT_CSS_UNIT_DB, GTEXT_CSS_UNIT_TYPE_DECIBEL, true}, {"st", GTEXT_CSS_UNIT_ST, GTEXT_CSS_UNIT_TYPE_SEMITONES, true},
 };
 
 std::string upper(std::string s) {

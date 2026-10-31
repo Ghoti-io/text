@@ -465,7 +465,8 @@ static bool read_value(fstack * fs, mbuilder * mb, const GTEXT_CSS_Math_Context 
       break;
     case GTEXT_CSS_TOKEN_DIMENSION: {
       const GTEXT_CSS_Unit u = gtext_css_unit_lookup(cv->unit.data, cv->unit.length);
-      if (u == GTEXT_CSS_UNIT_NONE) {
+      /* the units of CSS Speech 1 (dB, st) are not Values units: no sentence of Values makes them part of a calculation */
+      if (u == GTEXT_CSS_UNIT_NONE || gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_DECIBEL || gtext_css_unit_type(u) == GTEXT_CSS_UNIT_TYPE_SEMITONES) {
         mb_invalid(mb);
         return false;
       }

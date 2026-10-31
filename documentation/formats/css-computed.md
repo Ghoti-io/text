@@ -202,11 +202,12 @@ Every property of the pin has a **class** (`gtext_css_compute_class()`), taken f
 gate (`make check-css-compute`): every property is classified, has an algorithm of its own, or is listed as unimplemented with a reason. The
 properties that are inherited, and those of SVG 2's presentation attributes, may not be unimplemented. Fifteen are (`-webkit-box-align`, `-webkit-box-flex`,
 `-webkit-box-ordinal-group`, `-webkit-box-orient`, `-webkit-box-pack`, `-webkit-user-select`, the eight `corner-*-shape` and `position-area`); none of them is
-inherited or an SVG attribute. The required properties whose grammars the pin leaves unresolved (`fill` and `stroke` with `<paint>`, `voice-family`,
-`voice-pitch`, `voice-range` and `voice-volume`, `glyph-orientation-vertical` with a value the pin writes as prose) cannot be declared in the generated
-registry, and compute under the grammar of a caller that registers one (`vector` does for `fill` and `stroke`): a `voice-pitch` that is a keyword by itself, or
-a frequency with `absolute`, computes, and a keyword with an offset, or an offset by itself, needs the voice's frequency table and is
-`GTEXT_CSS_E_UNSUPPORTED` naming the property.
+inherited or an SVG attribute. The required properties whose grammars the pin leaves unresolved (`fill` and `stroke` with `<paint>`, `voice-family` with
+`<voice-family-name>`, `glyph-orientation-vertical` with a value the pin writes as prose) cannot be declared in the generated
+registry, and compute under the grammar of a caller that registers one (`vector` does for `fill` and `stroke`). The speech properties are in the registry:
+`voice-volume` computes to `silent`, or a keyword and a decibel offset that is not zero (an offset by itself is relative to the inherited level, and offsets
+combine additively); a `voice-pitch` or `voice-range` that is a keyword by itself, or a frequency with `absolute`, computes, and a keyword with an offset
+(a percentage, a frequency or semitones), or an offset by itself, needs the voice's frequency table and is `GTEXT_CSS_E_UNSUPPORTED` naming the property.
 
 Some of the specifications' rules are easy to misread, and this layer follows the served drafts: an absolutely positioned or fixed box has `float: none`
 ("A position value of absolute or fixed blockifies the box, causes float to compute to none" - CSS Positioned Layout 3); blockification sets the outer

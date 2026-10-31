@@ -457,8 +457,9 @@ TEST(CssRegistryTypes, ThePinsDepartureListIsApplied) {
   ASSERT_TRUE(gtext_css_registry_find_type("timeline-range-center-subject", 29, 0, &t));
   EXPECT_EQ(str(t.grammar), "source | target");
   // a function whose value is its own name is prose
+  // and the pin gives them no grammar: Animation Triggers 1, 4.2.1 does ("click() = click()"), and tools/css/supplement-types.tsv supplies it
   ASSERT_TRUE(gtext_css_registry_find_type("click()", 7, 0, &t));
-  EXPECT_EQ(t.grammar, nullptr);
+  EXPECT_EQ(str(t.grammar), "click()");
 }
 
 // ---- the types the pin nests inside something that is not a property -------------------------------------------
@@ -490,8 +491,9 @@ TEST(CssRegistryNestedTypes, ATypeNestedInAnotherTypeIsAGlobalDefinition) {
   ASSERT_TRUE(gtext_css_registry_find_type("keypress()", 10, 0, &t));
   EXPECT_EQ(str(t.grammar), "keypress( <string>? )");
   EXPECT_NE(t.flags & GTEXT_CSS_TYPE_FUNCTION, 0u);
+  // ... and the pin gives the functions beside it no grammar: Animation Triggers 1, 4.2.1 does ("click() = click()"), and tools/css/supplement-types.tsv supplies it
   ASSERT_TRUE(gtext_css_registry_find_type("click()", 7, 0, &t));
-  EXPECT_EQ(t.grammar, nullptr);
+  EXPECT_EQ(str(t.grammar), "click()");
   // a type nested two deep: the command types of shape(), which is nested in <basic-shape>
   ASSERT_TRUE(gtext_css_registry_find_type("shape()", 7, 0, &t));
   EXPECT_NE(str(t.grammar).find("<shape-command>"), std::string::npos);
@@ -637,7 +639,7 @@ TEST(CssRegistryPin, EveryUnitTheValuesDefinitionsListIsAUnitOfTheLibrary) {
         : GTEXT_CSS_UNIT_TYPE_FLEX;
     EXPECT_EQ(t, want) << name;
   }
-  // the units of the library that the Values definitions do not list: container query lengths (Containment 3) and the flex unit (Grid)
+  // the units of the library that the Values definitions do not list: container query lengths (Containment 3) and the flex unit (Grid) and the decibel and semitone units of Speech 1
   std::set<std::string> extras;
   for (int u = 1; u < GTEXT_CSS_UNIT_COUNT; u++) {
     const char * n = gtext_css_unit_name((GTEXT_CSS_Unit)u);
@@ -645,7 +647,7 @@ TEST(CssRegistryPin, EveryUnitTheValuesDefinitionsListIsAUnitOfTheLibrary) {
       extras.insert(n);
     }
   }
-  EXPECT_EQ(extras, (std::set<std::string>{"cqb", "cqh", "cqi", "cqmax", "cqmin", "cqw", "fr"}));
+  EXPECT_EQ(extras, (std::set<std::string>{"cqb", "cqh", "cqi", "cqmax", "cqmin", "cqw", "dB", "fr", "st"}));
 }
 
 TEST(CssRegistryPin, TheFunctionsOfTheValuesDefinitionsAndWhatTheLibraryDoesWithThem) {
@@ -1419,10 +1421,10 @@ TEST(CssRegistryGrammars, AGrammarIsCompiledWhenAskedForAndItsStateIsReported) {
   GTEXT_CSS_Grammar_Result gr;
   ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "margin"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
-  // the pin's `nav-up` names <id> and nothing defines it (`clip`'s <top> is supplied: tools/css/supplement-types.tsv)
-  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "nav-up"), &s, &gr), GTEXT_CSS_OK);
+  // the pin's `voice-family` names <voice-family-name> and nothing defines it (Speech 1 gives examples only; `clip`'s <top> is supplied: tools/css/supplement-types.tsv)
+  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "voice-family"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_UNRESOLVED);
-  EXPECT_EQ(std::string(gr.name), "<id>");
+  EXPECT_EQ(std::string(gr.name), "<voice-family-name>");
   ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "clip"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
   // a property the pin names and gives no grammar
@@ -1439,9 +1441,9 @@ TEST(CssRegistryGrammars, AGrammarIsCompiledWhenAskedForAndItsStateIsReported) {
   EXPECT_EQ(gtext_css_registry_property_state(r, 1u << 20, &s, nullptr), GTEXT_CSS_E_INVALID);
   EXPECT_EQ(gtext_css_registry_property_state(nullptr, 1, &s, nullptr), GTEXT_CSS_E_INVALID);
   // the answer is the same the second time
-  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "nav-up"), &s, &gr), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_registry_property_state(r, find(r, "voice-family"), &s, &gr), GTEXT_CSS_OK);
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_UNRESOLVED);
-  EXPECT_EQ(std::string(gr.name), "<id>");
+  EXPECT_EQ(std::string(gr.name), "<voice-family-name>");
   gtext_css_registry_free(r);
 }
 

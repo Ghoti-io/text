@@ -179,7 +179,9 @@ typedef enum {
   GTEXT_CSS_UNIT_TYPE_TIME,       ///< `<time>`
   GTEXT_CSS_UNIT_TYPE_FREQUENCY,  ///< `<frequency>`
   GTEXT_CSS_UNIT_TYPE_RESOLUTION, ///< `<resolution>`
-  GTEXT_CSS_UNIT_TYPE_FLEX        ///< `<flex>`
+  GTEXT_CSS_UNIT_TYPE_FLEX,       ///< `<flex>`
+  GTEXT_CSS_UNIT_TYPE_DECIBEL,    ///< `<decibel>` (CSS Speech 1)
+  GTEXT_CSS_UNIT_TYPE_SEMITONES   ///< `<semitones>` (CSS Speech 1)
 } GTEXT_CSS_Unit_Type;
 
 /**
@@ -220,6 +222,9 @@ typedef enum {
   GTEXT_CSS_UNIT_DPI = 58, GTEXT_CSS_UNIT_DPCM, GTEXT_CSS_UNIT_DPPX, GTEXT_CSS_UNIT_X,
   /* flexible lengths (CSS Grid) */
   GTEXT_CSS_UNIT_FR = 62,
+  /* the dimensions of CSS Speech 1: `<decibel>` is "a dimension with a "dB" (decibel unit) unit identifier", `<semitones>` one with the unit identifier st (6.1, 11.3).
+     They are not Values units: no calculation takes them. */
+  GTEXT_CSS_UNIT_DB = 63, GTEXT_CSS_UNIT_ST,
 
   GTEXT_CSS_UNIT_COUNT ///< The number of units; not a unit.
 } GTEXT_CSS_Unit;

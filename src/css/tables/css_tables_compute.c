@@ -39,7 +39,7 @@ const size_t gtext_css_tbl_compute_count = 823;
 /* one row for each property of the pin in the order of its ids: class, algorithm, shorthand kind, flags, position in the order of computation (0: none),
    and the initial value override (length, offset into the pool) */
 const css_tbl_compute gtext_css_tbl_compute[823] = {
-  {6, 40, 0, 1, 0, 0, 0}, /* --* */
+  {6, 41, 0, 1, 0, 0, 0}, /* --* */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-content */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-items */
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-align-self */
@@ -111,9 +111,9 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {5, 0, 0, 0, 0, 0, 0}, /* -webkit-transition-timing-function */
   {0, 0, 0, 0, 0, 0, 0}, /* -webkit-user-select */
   {2, 0, 0, 1, 0, 0, 0}, /* accent-color */
-  {3, 38, 0, 0, 0, 0, 0}, /* align-content */
-  {3, 38, 0, 0, 0, 0, 0}, /* align-items */
-  {3, 38, 0, 0, 0, 0, 0}, /* align-self */
+  {3, 39, 0, 0, 0, 0, 0}, /* align-content */
+  {3, 39, 0, 0, 0, 0, 0}, /* align-items */
+  {3, 39, 0, 0, 0, 0, 0}, /* align-self */
   {1, 0, 0, 1, 0, 0, 0}, /* alignment-baseline */
   {4, 0, 6, 0, 0, 0, 0}, /* all */
   {1, 0, 0, 0, 0, 0, 0}, /* anchor-name */
@@ -134,30 +134,30 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* animation-range-end */
   {2, 0, 0, 0, 0, 0, 0}, /* animation-range-start */
   {2, 0, 0, 0, 0, 0, 0}, /* animation-timeline */
-  {3, 39, 0, 0, 0, 0, 0}, /* animation-timing-function */
+  {3, 40, 0, 0, 0, 0, 0}, /* animation-timing-function */
   {1, 0, 0, 0, 0, 0, 0}, /* animation-trigger */
   {1, 0, 0, 0, 0, 0, 0}, /* appearance */
   {1, 0, 0, 0, 0, 0, 0}, /* aspect-ratio */
-  {3, 39, 0, 0, 0, 0, 0}, /* backdrop-filter */
+  {3, 40, 0, 0, 0, 0, 0}, /* backdrop-filter */
   {1, 0, 0, 0, 0, 0, 0}, /* backface-visibility */
   {4, 0, 4, 0, 0, 0, 0}, /* background */
   {1, 0, 0, 0, 0, 0, 0}, /* background-attachment */
   {1, 0, 0, 0, 0, 0, 0}, /* background-blend-mode */
   {1, 0, 0, 0, 0, 0, 0}, /* background-clip */
   {2, 0, 0, 0, 0, 0, 0}, /* background-color */
-  {3, 39, 0, 0, 0, 0, 0}, /* background-image */
+  {3, 40, 0, 0, 0, 0, 0}, /* background-image */
   {1, 0, 0, 0, 0, 0, 0}, /* background-origin */
   {4, 0, 4, 0, 0, 0, 0}, /* background-position */
-  {3, 26, 0, 0, 0, 0, 0}, /* background-position-block */
-  {3, 26, 0, 0, 0, 0, 0}, /* background-position-inline */
-  {3, 26, 0, 0, 0, 0, 0}, /* background-position-x */
-  {3, 26, 0, 0, 0, 0, 0}, /* background-position-y */
-  {3, 24, 0, 0, 0, 0, 0}, /* background-repeat */
+  {3, 27, 0, 0, 0, 0, 0}, /* background-position-block */
+  {3, 27, 0, 0, 0, 0, 0}, /* background-position-inline */
+  {3, 27, 0, 0, 0, 0, 0}, /* background-position-x */
+  {3, 27, 0, 0, 0, 0, 0}, /* background-position-y */
+  {3, 25, 0, 0, 0, 0, 0}, /* background-repeat */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-block */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-inline */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-x */
   {1, 0, 0, 0, 0, 0, 0}, /* background-repeat-y */
-  {3, 27, 0, 0, 0, 0, 0}, /* background-size */
+  {3, 28, 0, 0, 0, 0, 0}, /* background-size */
   {4, 0, 0, 0, 0, 0, 0}, /* background-tbd */
   {2, 0, 0, 1, 0, 0, 0}, /* baseline-shift */
   {1, 0, 0, 0, 0, 0, 0}, /* baseline-source */
@@ -204,11 +204,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 0, 0, 0, 0}, /* border-end-end-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-end-start-radius */
   {4, 0, 3, 0, 0, 0, 0}, /* border-image */
-  {3, 23, 0, 0, 0, 0, 0}, /* border-image-outset */
-  {3, 24, 0, 0, 0, 0, 0}, /* border-image-repeat */
-  {3, 23, 0, 0, 0, 0, 0}, /* border-image-slice */
-  {3, 39, 0, 0, 0, 0, 0}, /* border-image-source */
-  {3, 23, 0, 0, 0, 0, 0}, /* border-image-width */
+  {3, 24, 0, 0, 0, 0, 0}, /* border-image-outset */
+  {3, 25, 0, 0, 0, 0, 0}, /* border-image-repeat */
+  {3, 24, 0, 0, 0, 0, 0}, /* border-image-slice */
+  {3, 40, 0, 0, 0, 0, 0}, /* border-image-source */
+  {3, 24, 0, 0, 0, 0, 0}, /* border-image-width */
   {4, 0, 5, 0, 0, 0, 0}, /* border-inline */
   {4, 0, 5, 0, 0, 0, 0}, /* border-inline-clip */
   {4, 0, 2, 0, 0, 0, 0}, /* border-inline-color */
@@ -240,8 +240,8 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 7, 0, 0, 0, 0}, /* border-right-radius */
   {1, 0, 0, 0, 13, 0, 0}, /* border-right-style */
   {3, 7, 0, 0, 0, 0, 0}, /* border-right-width */
-  {3, 39, 0, 0, 0, 0, 0}, /* border-shape */
-  {3, 22, 0, 1, 0, 0, 0}, /* border-spacing */
+  {3, 40, 0, 0, 0, 0, 0}, /* border-shape */
+  {3, 23, 0, 1, 0, 0, 0}, /* border-spacing */
   {2, 0, 0, 0, 0, 0, 0}, /* border-start-end-radius */
   {2, 0, 0, 0, 0, 0, 0}, /* border-start-start-radius */
   {4, 0, 1, 0, 0, 0, 0}, /* border-style */
@@ -270,11 +270,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* caption-side */
   {4, 0, 3, 0, 0, 0, 0}, /* caret */
   {1, 0, 0, 1, 0, 0, 0}, /* caret-animation */
-  {3, 37, 0, 1, 0, 0, 0}, /* caret-color */
+  {3, 38, 0, 1, 0, 0, 0}, /* caret-color */
   {1, 0, 0, 1, 0, 0, 0}, /* caret-shape */
   {1, 0, 0, 0, 0, 0, 0}, /* clear */
   {1, 0, 0, 0, 0, 0, 0}, /* clip */
-  {3, 39, 0, 1, 0, 0, 0}, /* clip-path */
+  {3, 40, 0, 1, 0, 0, 0}, /* clip-path */
   {1, 0, 0, 1, 0, 0, 0}, /* clip-rule */
   {3, 12, 0, 1, 0, 0, 0}, /* color */
   {4, 0, 5, 0, 0, 0, 0}, /* color-adjust */
@@ -313,7 +313,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 3, 0, 0, 0, 0}, /* container */
   {1, 0, 0, 0, 0, 0, 0}, /* container-name */
   {1, 0, 0, 0, 0, 0, 0}, /* container-type */
-  {3, 39, 0, 0, 0, 0, 0}, /* content */
+  {3, 40, 0, 0, 0, 0, 0}, /* content */
   {1, 0, 0, 0, 0, 0, 0}, /* content-visibility */
   {1, 0, 0, 0, 0, 0, 0}, /* continue */
   {1, 0, 0, 0, 0, 0, 0}, /* copy-into */
@@ -324,14 +324,14 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 2, 0, 0, 0, 0}, /* corner-block-start-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-bottom */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-bottom-left */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-bottom-left-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-bottom-left-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-bottom-right */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-bottom-right-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-bottom-right-shape */
   {4, 0, 2, 0, 0, 0, 0}, /* corner-bottom-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-end-end */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-end-end-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-end-end-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-end-start */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-end-start-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-end-start-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-inline-end */
   {4, 0, 2, 0, 0, 0, 0}, /* corner-inline-end-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-inline-start */
@@ -342,14 +342,14 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 2, 0, 0, 0, 0}, /* corner-right-shape */
   {4, 0, 1, 0, 0, 0, 0}, /* corner-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-start-end */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-start-end-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-start-end-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-start-start */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-start-start-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-start-start-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-top */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-top-left */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-top-left-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-top-left-shape */
   {4, 0, 3, 0, 0, 0, 0}, /* corner-top-right */
-  {3, 39, 0, 0, 0, 0, 0}, /* corner-top-right-shape */
+  {3, 40, 0, 0, 0, 0, 0}, /* corner-top-right-shape */
   {4, 0, 2, 0, 0, 0, 0}, /* corner-top-shape */
   {1, 0, 0, 0, 0, 0, 0}, /* counter-increment */
   {1, 0, 0, 0, 0, 0, 0}, /* counter-reset */
@@ -364,7 +364,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 2, 0, 0}, /* direction */
   {3, 10, 0, 1, 25, 0, 0}, /* display */
   {1, 0, 0, 1, 0, 0, 0}, /* dominant-baseline */
-  {3, 39, 0, 1, 0, 0, 0}, /* dynamic-range-limit */
+  {3, 40, 0, 1, 0, 0, 0}, /* dynamic-range-limit */
   {1, 0, 0, 1, 0, 0, 0}, /* empty-cells */
   {1, 0, 0, 0, 0, 0, 0}, /* event-trigger */
   {1, 0, 0, 0, 0, 0, 0}, /* event-trigger-name */
@@ -376,11 +376,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* fill-image */
   {3, 13, 0, 1, 0, 0, 0}, /* fill-opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* fill-origin */
-  {3, 25, 0, 1, 0, 0, 0}, /* fill-position */
-  {3, 24, 0, 1, 0, 0, 0}, /* fill-repeat */
+  {3, 26, 0, 1, 0, 0, 0}, /* fill-position */
+  {3, 25, 0, 1, 0, 0, 0}, /* fill-repeat */
   {1, 0, 0, 1, 0, 0, 0}, /* fill-rule */
-  {3, 27, 0, 1, 0, 0, 0}, /* fill-size */
-  {3, 39, 0, 1, 0, 0, 0}, /* filter */
+  {3, 28, 0, 1, 0, 0, 0}, /* fill-size */
+  {3, 40, 0, 1, 0, 0, 0}, /* filter */
   {2, 0, 0, 0, 0, 0, 0}, /* fit-tolerance */
   {4, 0, 9, 0, 0, 0, 0}, /* flex */
   {2, 0, 0, 0, 0, 0, 0}, /* flex-basis */
@@ -404,7 +404,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* font-kerning */
   {1, 0, 0, 1, 0, 0, 0}, /* font-language-override */
   {1, 0, 0, 1, 0, 0, 0}, /* font-optical-sizing */
-  {3, 39, 0, 1, 0, 0, 0}, /* font-palette */
+  {3, 40, 0, 1, 0, 0, 0}, /* font-palette */
   {3, 1, 0, 1, 9, 0, 0}, /* font-size */
   {3, 6, 0, 1, 10, 0, 0}, /* font-size-adjust */
   {5, 0, 0, 1, 0, 0, 0}, /* font-stretch */
@@ -422,7 +422,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-ligatures */
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-numeric */
   {1, 0, 0, 1, 0, 0, 0}, /* font-variant-position */
-  {3, 39, 0, 1, 0, 0, 0}, /* font-variation-settings */
+  {3, 40, 0, 1, 0, 0, 0}, /* font-variation-settings */
   {3, 2, 0, 1, 7, 0, 0}, /* font-weight */
   {3, 3, 0, 1, 8, 0, 0}, /* font-width */
   {1, 0, 0, 0, 0, 0, 0}, /* footnote-display */
@@ -446,19 +446,19 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {5, 0, 0, 0, 0, 0, 0}, /* grid-row-gap */
   {1, 0, 0, 0, 0, 0, 0}, /* grid-row-start */
   {4, 0, 13, 0, 0, 0, 0}, /* grid-template */
-  {3, 39, 0, 0, 0, 0, 0}, /* grid-template-areas */
+  {3, 40, 0, 0, 0, 0, 0}, /* grid-template-areas */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-template-columns */
   {2, 0, 0, 0, 0, 0, 0}, /* grid-template-rows */
   {1, 0, 0, 1, 0, 0, 0}, /* hanging-punctuation */
   {2, 0, 0, 1, 0, 0, 0}, /* height */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphenate-character */
-  {3, 20, 0, 1, 0, 0, 0}, /* hyphenate-limit-chars */
+  {3, 21, 0, 1, 0, 0, 0}, /* hyphenate-limit-chars */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphenate-limit-last */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphenate-limit-lines */
   {2, 0, 0, 1, 0, 0, 0}, /* hyphenate-limit-zone */
   {1, 0, 0, 1, 0, 0, 0}, /* hyphens */
   {1, 0, 0, 1, 0, 0, 0}, /* image-animation */
-  {3, 21, 0, 1, 0, 0, 0}, /* image-orientation */
+  {3, 22, 0, 1, 0, 0, 0}, /* image-orientation */
   {1, 0, 0, 1, 0, 0, 0}, /* image-rendering */
   {2, 0, 0, 1, 0, 0, 0}, /* image-resolution */
   {1, 0, 0, 0, 0, 0, 0}, /* initial-letter */
@@ -480,11 +480,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* interest-delay-start */
   {1, 0, 0, 1, 0, 0, 0}, /* interpolate-size */
   {1, 0, 0, 0, 0, 0, 0}, /* isolation */
-  {3, 38, 0, 0, 0, 0, 0}, /* justify-content */
-  {3, 38, 0, 0, 0, 0, 0}, /* justify-items */
-  {3, 38, 0, 0, 0, 0, 0}, /* justify-self */
+  {3, 39, 0, 0, 0, 0, 0}, /* justify-content */
+  {3, 39, 0, 0, 0, 0, 0}, /* justify-items */
+  {3, 39, 0, 0, 0, 0, 0}, /* justify-self */
   {2, 0, 0, 0, 0, 0, 0}, /* left */
-  {3, 35, 0, 1, 0, 0, 0}, /* letter-spacing */
+  {3, 36, 0, 1, 0, 0, 0}, /* letter-spacing */
   {2, 0, 0, 1, 0, 0, 0}, /* lighting-color */
   {1, 0, 0, 1, 0, 0, 0}, /* line-break */
   {4, 0, 3, 0, 0, 0, 0}, /* line-clamp */
@@ -496,7 +496,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* line-snap */
   {1, 0, 0, 0, 0, 0, 0}, /* link-parameters */
   {4, 0, 3, 0, 0, 0, 0}, /* list-style */
-  {3, 39, 0, 1, 0, 0, 0}, /* list-style-image */
+  {3, 40, 0, 1, 0, 0, 0}, /* list-style-image */
   {1, 0, 0, 1, 0, 0, 0}, /* list-style-position */
   {1, 0, 0, 1, 0, 0, 0}, /* list-style-type */
   {4, 0, 1, 0, 0, 0, 0}, /* margin */
@@ -527,11 +527,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* mask-border-width */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-clip */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-composite */
-  {3, 39, 0, 1, 0, 0, 0}, /* mask-image */
+  {3, 40, 0, 1, 0, 0, 0}, /* mask-image */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-mode */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-origin */
-  {3, 25, 0, 1, 0, 0, 0}, /* mask-position */
-  {3, 24, 0, 1, 0, 0, 0}, /* mask-repeat */
+  {3, 26, 0, 1, 0, 0, 0}, /* mask-position */
+  {3, 25, 0, 1, 0, 0, 0}, /* mask-repeat */
   {2, 0, 0, 1, 0, 0, 0}, /* mask-size */
   {1, 0, 0, 1, 0, 0, 0}, /* mask-type */
   {3, 16, 0, 1, 0, 0, 0}, /* math-depth */
@@ -555,14 +555,14 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* nav-right */
   {1, 0, 0, 0, 0, 0, 0}, /* nav-up */
   {1, 0, 0, 0, 0, 0, 0}, /* object-fit */
-  {3, 25, 0, 0, 0, 0, 0}, /* object-position */
+  {3, 26, 0, 0, 0, 0, 0}, /* object-position */
   {2, 0, 0, 0, 0, 0, 0}, /* object-view-box */
   {4, 0, 15, 0, 0, 0, 0}, /* offset */
-  {3, 25, 0, 0, 0, 0, 0}, /* offset-anchor */
+  {3, 26, 0, 0, 0, 0, 0}, /* offset-anchor */
   {2, 0, 0, 0, 0, 0, 0}, /* offset-distance */
-  {3, 39, 0, 0, 0, 0, 0}, /* offset-path */
-  {3, 25, 0, 0, 0, 0, 0}, /* offset-position */
-  {3, 39, 0, 0, 0, 0, 0}, /* offset-rotate */
+  {3, 40, 0, 0, 0, 0, 0}, /* offset-path */
+  {3, 26, 0, 0, 0, 0, 0}, /* offset-position */
+  {3, 40, 0, 0, 0, 0, 0}, /* offset-rotate */
   {3, 13, 0, 1, 0, 0, 0}, /* opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* order */
   {1, 0, 0, 1, 0, 0, 0}, /* orphans */
@@ -616,7 +616,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* pause-after */
   {1, 0, 0, 0, 0, 0, 0}, /* pause-before */
   {2, 0, 0, 0, 0, 0, 0}, /* perspective */
-  {3, 25, 0, 0, 0, 0, 0}, /* perspective-origin */
+  {3, 26, 0, 0, 0, 0, 0}, /* perspective-origin */
   {4, 0, 2, 0, 0, 0, 0}, /* place-content */
   {4, 0, 2, 0, 0, 0, 0}, /* place-items */
   {4, 0, 2, 0, 0, 0, 0}, /* place-self */
@@ -626,9 +626,9 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* pointer-timeline-name */
   {1, 0, 0, 0, 23, 0, 0}, /* position */
   {1, 0, 0, 0, 0, 0, 0}, /* position-anchor */
-  {3, 39, 0, 0, 0, 0, 0}, /* position-area */
+  {3, 40, 0, 0, 0, 0, 0}, /* position-area */
   {4, 0, 3, 0, 0, 0, 0}, /* position-try */
-  {3, 39, 0, 0, 0, 0, 0}, /* position-try-fallbacks */
+  {3, 40, 0, 0, 0, 0, 0}, /* position-try-fallbacks */
   {1, 0, 0, 0, 0, 0, 0}, /* position-try-order */
   {1, 0, 0, 0, 0, 0, 0}, /* position-visibility */
   {1, 0, 0, 1, 0, 0, 0}, /* print-color-adjust */
@@ -642,7 +642,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* rest-after */
   {1, 0, 0, 0, 0, 0, 0}, /* rest-before */
   {2, 0, 0, 0, 0, 0, 0}, /* right */
-  {3, 30, 0, 0, 0, 0, 0}, /* rotate */
+  {3, 31, 0, 0, 0, 0, 0}, /* rotate */
   {2, 0, 0, 0, 0, 0, 0}, /* row-gap */
   {4, 0, 3, 0, 0, 0, 0}, /* row-rule */
   {1, 0, 0, 0, 0, 0, 0}, /* row-rule-break */
@@ -677,7 +677,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {4, 0, 5, 0, 0, 0, 0}, /* rule-width */
   {2, 0, 0, 1, 0, 0, 0}, /* rx */
   {2, 0, 0, 1, 0, 0, 0}, /* ry */
-  {3, 29, 0, 0, 0, 0, 0}, /* scale */
+  {3, 30, 0, 0, 0, 0, 0}, /* scale */
   {1, 0, 0, 0, 0, 0, 0}, /* scroll-axis-lock */
   {1, 0, 0, 0, 0, 0, 0}, /* scroll-behavior */
   {1, 0, 0, 0, 0, 0, 0}, /* scroll-initial-target */
@@ -717,7 +717,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 13, 0, 0, 0, 0, 0}, /* shape-image-threshold */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-inside */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-margin */
-  {3, 39, 0, 0, 0, 0, 0}, /* shape-outside */
+  {3, 40, 0, 0, 0, 0, 0}, /* shape-outside */
   {2, 0, 0, 0, 0, 0, 0}, /* shape-padding */
   {1, 0, 0, 1, 0, 0, 0}, /* shape-rendering */
   {4, 0, 2, 0, 0, 0, 0}, /* size */
@@ -738,18 +738,18 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dash-corner */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dash-justify */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-dashadjust */
-  {3, 36, 0, 1, 0, 0, 0}, /* stroke-dasharray */
+  {3, 37, 0, 1, 0, 0, 0}, /* stroke-dasharray */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-dashcorner */
-  {3, 33, 0, 1, 0, 0, 0}, /* stroke-dashoffset */
+  {3, 34, 0, 1, 0, 0, 0}, /* stroke-dashoffset */
   {2, 0, 0, 1, 0, 0, 0}, /* stroke-image */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-linecap */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-linejoin */
   {1, 0, 0, 1, 0, 0, 0}, /* stroke-miterlimit */
   {3, 13, 0, 1, 0, 0, 0}, /* stroke-opacity */
   {1, 0, 0, 0, 0, 0, 0}, /* stroke-origin */
-  {3, 25, 0, 1, 0, 0, 0}, /* stroke-position */
-  {3, 24, 0, 1, 0, 0, 0}, /* stroke-repeat */
-  {3, 27, 0, 1, 0, 0, 0}, /* stroke-size */
+  {3, 26, 0, 1, 0, 0, 0}, /* stroke-position */
+  {3, 25, 0, 1, 0, 0, 0}, /* stroke-repeat */
+  {3, 28, 0, 1, 0, 0, 0}, /* stroke-size */
   {3, 9, 0, 1, 0, 0, 0}, /* stroke-width */
   {2, 0, 0, 1, 0, 0, 0}, /* tab-size */
   {1, 0, 0, 0, 0, 0, 0}, /* table-layout */
@@ -777,15 +777,15 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* text-emphasis-color */
   {1, 0, 0, 1, 0, 0, 0}, /* text-emphasis-position */
   {1, 0, 0, 1, 0, 0, 0}, /* text-emphasis-skip */
-  {3, 39, 0, 1, 0, 0, 0}, /* text-emphasis-style */
+  {3, 40, 0, 1, 0, 0, 0}, /* text-emphasis-style */
   {1, 0, 0, 1, 0, 0, 0}, /* text-fit */
   {1, 0, 0, 0, 0, 0, 0}, /* text-group-align */
   {2, 0, 0, 1, 0, 0, 0}, /* text-indent */
-  {3, 38, 0, 1, 0, 0, 0}, /* text-justify */
+  {3, 39, 0, 1, 0, 0, 0}, /* text-justify */
   {1, 0, 0, 1, 3, 0, 0}, /* text-orientation */
   {2, 0, 0, 1, 0, 0, 0}, /* text-overflow */
   {1, 0, 0, 1, 0, 0, 0}, /* text-rendering */
-  {3, 31, 0, 1, 0, 0, 0}, /* text-shadow */
+  {3, 32, 0, 1, 0, 0, 0}, /* text-shadow */
   {1, 0, 0, 1, 0, 0, 0}, /* text-size-adjust */
   {4, 0, 3, 0, 0, 0, 0}, /* text-spacing */
   {1, 0, 0, 1, 0, 0, 0}, /* text-spacing-trim */
@@ -810,15 +810,15 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* touch-action */
   {2, 0, 0, 1, 0, 0, 0}, /* transform */
   {1, 0, 0, 0, 0, 0, 0}, /* transform-box */
-  {3, 25, 0, 1, 0, 0, 0}, /* transform-origin */
+  {3, 26, 0, 1, 0, 0, 0}, /* transform-origin */
   {1, 0, 0, 0, 0, 0, 0}, /* transform-style */
   {4, 0, 4, 0, 0, 0, 0}, /* transition */
   {1, 0, 0, 0, 0, 0, 0}, /* transition-behavior */
   {2, 0, 0, 0, 0, 0, 0}, /* transition-delay */
   {2, 0, 0, 0, 0, 0, 0}, /* transition-duration */
   {1, 0, 0, 0, 0, 0, 0}, /* transition-property */
-  {3, 39, 0, 0, 0, 0, 0}, /* transition-timing-function */
-  {3, 28, 0, 0, 0, 0, 0}, /* translate */
+  {3, 40, 0, 0, 0, 0, 0}, /* transition-timing-function */
+  {3, 29, 0, 0, 0, 0, 0}, /* translate */
   {1, 0, 0, 0, 0, 0, 0}, /* trigger-scope */
   {1, 0, 0, 1, 0, 0, 0}, /* unicode-bidi */
   {1, 0, 0, 0, 0, 0, 0}, /* user-select */
@@ -840,7 +840,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 18, 0, 3, 0, 0, 0}, /* voice-range */
   {1, 0, 0, 1, 0, 0, 0}, /* voice-rate */
   {1, 0, 0, 1, 0, 0, 0}, /* voice-stress */
-  {1, 0, 0, 1, 0, 0, 0}, /* voice-volume */
+  {3, 20, 0, 1, 0, 0, 0}, /* voice-volume */
   {4, 0, 3, 1, 0, 0, 0}, /* white-space */
   {1, 0, 0, 1, 0, 0, 0}, /* white-space-collapse */
   {1, 0, 0, 0, 0, 0, 0}, /* white-space-trim */
@@ -850,11 +850,11 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 1, 0, 0, 0}, /* window-drag */
   {1, 0, 0, 1, 0, 0, 0}, /* word-break */
   {1, 0, 0, 1, 0, 0, 0}, /* word-space-transform */
-  {3, 34, 0, 1, 0, 0, 0}, /* word-spacing */
+  {3, 35, 0, 1, 0, 0, 0}, /* word-spacing */
   {5, 0, 0, 0, 0, 0, 0}, /* word-wrap */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-after */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-before */
-  {3, 32, 0, 0, 0, 0, 0}, /* wrap-flow */
+  {3, 33, 0, 0, 0, 0, 0}, /* wrap-flow */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-inside */
   {1, 0, 0, 0, 0, 0, 0}, /* wrap-through */
   {1, 0, 0, 1, 1, 0, 0}, /* writing-mode */

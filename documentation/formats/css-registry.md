@@ -29,7 +29,7 @@ static void registry_quick_start(void) {
 
   const char * declarations[][2] = {
       {"margin-top", "10px"}, {"margin", "1px 2px"}, {"WIDTH", "revert-layer"}, {"margin", "var(--m)"},
-      {"width", "-1px"}, {"-moz-nosuch", "1"}, {"-webkit-transform", "rotate(3deg)"}, {"nav-up", "auto"},
+      {"width", "-1px"}, {"-moz-nosuch", "1"}, {"-webkit-transform", "rotate(3deg)"}, {"voice-family", "male"},
   };
   for (size_t i = 0; i < sizeof declarations / sizeof declarations[0]; i++) {
     const char * name = declarations[i][0];
@@ -71,11 +71,11 @@ margin: var(--m) -> pending var(--m)
 width: -1px -> invalid
 -moz-nosuch: 1 -> unknown property
 -webkit-transform: rotate(3deg) -> valid rotate(3deg)
-nav-up: auto -> not supported
+voice-family: male -> not supported
 ```
 
-`nav-up` is the last line because the pin gives its grammar in terms of a type the pin does
-not define (`<id>`); the library says so and never guesses (see "What the pin does not
+`voice-family` is the last line because the pin gives its grammar in terms of a type the pin does
+not define (`<voice-family-name>`, which Speech 1 gives as examples only); the library says so and never guesses (see "What the pin does not
 say"). A registry is made once and shared; it is immutable and any number of threads may
 read it.
 
@@ -465,12 +465,15 @@ or alpha dropped.
 ## What the pin does not say
 
 The pin's own gaps are listed in `tools/css/UNRESOLVED_REFERENCES`, one line each with the grammar that
-names it and a reason: types the pin names and does not define (prose only, or no entry: `<decibel>` and
-`<semitones>` of Speech, `<id>` of `nav-up`, `<click()>` of `event-trigger`, `<font-src-list>` of
-`@font-face src`), the grammars whose text is not a Value Definition Syntax definition, the initial values that
-are prose. Nineteen properties cannot be decided because of them (the five legacy `-webkit-box-*` ones, which have
-no grammar; `glyph-orientation-vertical`, whose text is not a definition; and thirteen of Speech, Spatial
-Navigation and Animation Triggers).
+names it and a reason: types the pin names and does not define (prose only, or no entry: `<voice-family-name>` of
+Speech, `<font-src-list>` of `@font-face src`), the grammars whose text is not a Value Definition Syntax definition,
+the initial values that are prose. Seven properties cannot be decided because of them (the five legacy `-webkit-box-*`
+ones, which have no grammar; `glyph-orientation-vertical`, whose text is not a definition; and `voice-family`). The
+types that the served drafts define and the pin does not are supplied: `<decibel>` and `<semitones>` of Speech 1 are
+dimensions with the units `dB` and `st` (the units of the library that no calculation takes), `<age>` and `<gender>`
+are keyword lists, `<id>` and `<target-name>` of Spatial Navigation are an ID selector and a string that does not
+start with an underscore, and the event functions of Animation Triggers are functions with no arguments (`keypress()`
+with an optional string).
 
 **What the pin lacks and the served drafts give is supplied, one line and one sentence at a time.**
 `tools/css/supplement-types.tsv` gives a type the pin names without a grammar the definition the draft writes

@@ -282,17 +282,95 @@ TEST(CssProperty, APropertyWithNoUsableGrammarIsNotGuessedAt) {
   const GTEXT_CSS_Registry * r = R();
   // no grammar in the pin
   EXPECT_EQ(parse(r, "-webkit-box-align", "center"), "not supported");
-  // a grammar that names a type nothing defines
-  EXPECT_EQ(parse(r, "nav-up", "auto"), "not supported") << "<id> is prose in the pin and nothing supplies it";
+  // a grammar that names a type nothing defines: Speech 1, 11.1 gives <voice-family-name> as examples only
+  EXPECT_EQ(parse(r, "voice-family", "male"), "not supported") << "\"Values are specific voice instances (e.g., Mike, comedian, mary, carlos2, \"valley girl\").\" names no token form";
   // a text that is not a definition
   EXPECT_EQ(parse(r, "glyph-orientation-vertical", "90deg"), "not supported");
   GTEXT_CSS_Property_Value pv;
-  EXPECT_EQ(gtext_css_parse_property_text(r, "nav-up", 6, "auto", 4, nullptr, &pv), GTEXT_CSS_E_UNSUPPORTED);
-  EXPECT_EQ(pv.property, find(r, "nav-up")) << "the property is named, so the consumer can say which";
+  EXPECT_EQ(gtext_css_parse_property_text(r, "voice-family", 12, "male", 4, nullptr, &pv), GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(pv.property, find(r, "voice-family")) << "the property is named, so the consumer can say which";
   EXPECT_EQ(pv.set, nullptr);
   // the CSS-wide keywords and substitutions are still valid for them
-  EXPECT_EQ(parse(r, "nav-up", "inherit"), "wide:inherit");
-  EXPECT_EQ(parse(r, "nav-up", "var(--c)"), "pending:var(--c)");
+  EXPECT_EQ(parse(r, "voice-family", "inherit"), "wide:inherit");
+  EXPECT_EQ(parse(r, "voice-family", "var(--c)"), "pending:var(--c)");
+}
+
+TEST(CssProperty, TheSpeechPropertiesTakeTheDecibelAndSemitoneDimensionsOfSpeech1) {
+  const GTEXT_CSS_Registry * r = R();
+  // Speech 1, 6.1: "The <decibel> type denotes a dimension with a "dB" (decibel unit) unit identifier."; 11.3: "The syntax of <semitones> allowed values is a dimension
+  // with the unit identifier st (semitones)."
+  EXPECT_EQ(parse(r, "voice-volume", "silent"), "valid:silent");
+  EXPECT_EQ(parse(r, "voice-volume", "x-loud"), "valid:x-loud");
+  EXPECT_EQ(parse(r, "voice-volume", "3dB"), "valid:3dB");
+  EXPECT_EQ(parse(r, "voice-volume", "-6DB loud"), "valid:loud -6dB") << "the unit is case-insensitive; `||` is written in the grammar's order";
+  EXPECT_EQ(parse(r, "voice-volume", "soft 3dB"), "valid:soft 3dB");
+  EXPECT_EQ(parse(r, "voice-volume", "3st"), "invalid") << "a semitone is not a decibel";
+  EXPECT_EQ(parse(r, "voice-volume", "3"), "invalid") << "a dimension has a unit";
+  EXPECT_EQ(parse(r, "voice-volume", "0"), "invalid") << "and a zero has none to leave out: only <length> takes a bare zero";
+  EXPECT_EQ(parse(r, "voice-volume", "silent 3dB"), "invalid");
+  EXPECT_EQ(parse(r, "voice-volume", "calc(3dB)"), "invalid") << "no calculation takes the units of Speech 1";
+  // voice-pitch and voice-range: "<frequency [0Hz,∞]> && absolute | [ [ x-low | low | medium | high | x-high ] || [ <frequency [0Hz,∞]> | <semitones> | <percentage> ] ]"
+  for (const char * p : {"voice-pitch", "voice-range"}) {
+    EXPECT_EQ(parse(r, p, "2st"), "valid:2st") << p;
+    EXPECT_EQ(parse(r, p, "-2.5st"), "valid:-2.5st") << p;
+    EXPECT_EQ(parse(r, p, "high 2st"), "valid:high 2st") << p;
+    EXPECT_EQ(parse(r, p, "10% low"), "valid:low 10%") << p;
+    EXPECT_EQ(parse(r, p, "200Hz absolute"), "valid:200Hz absolute") << p;
+    EXPECT_EQ(parse(r, p, "2dB"), "invalid") << p;
+    EXPECT_EQ(parse(r, p, "-10Hz"), "invalid") << p << " [0Hz,∞]";
+  }
+  // cue-before / cue-after: "<url> <decibel>? | none"; cue: "<'cue-before'> <'cue-after'>?"
+  EXPECT_EQ(parse(r, "cue-before", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "cue-before", "url(a.wav)"), "valid:url(\"a.wav\")");
+  EXPECT_EQ(parse(r, "cue-after", "url(a.wav) -3dB"), "valid:url(\"a.wav\") -3dB");
+  EXPECT_EQ(parse(r, "cue-after", "url(a.wav) 3st"), "invalid");
+  EXPECT_EQ(parse(r, "cue-after", "3dB"), "invalid");
+  EXPECT_EQ(parse(r, "cue", "url(a.wav) 3dB url(b.wav)"), "valid:url(\"a.wav\") 3dB url(\"b.wav\")");
+  EXPECT_EQ(parse(r, "cue", "none"), "valid:none");
+  // the units are Speech 1's, not Values': they are not lengths
+  EXPECT_EQ(parse(r, "width", "3dB"), "invalid");
+  EXPECT_EQ(parse(r, "width", "3st"), "invalid");
+}
+
+TEST(CssProperty, TheDirectionalFocusPropertiesTakeAnIdSelectorAndATargetName) {
+  const GTEXT_CSS_Registry * r = R();
+  // UI 4, 5.3.1: "auto | <id> [ current | root | <target-name> ]?"; "The <id> value is an ID selector"; "The <target-name> parameter indicates the target frame for
+  // the focus navigation. It is a <string> and it MUST NOT start with the underscore "_" character."
+  for (const char * p : {"nav-up", "nav-right", "nav-down", "nav-left"}) {
+    EXPECT_EQ(parse(r, p, "auto"), "valid:auto") << p;
+    EXPECT_EQ(parse(r, p, "#a"), "valid:#a") << p;
+    EXPECT_EQ(parse(r, p, "#a current"), "valid:#a current") << p;
+    EXPECT_EQ(parse(r, p, "#a root"), "valid:#a root") << p;
+    EXPECT_EQ(parse(r, p, "#a \"frame\""), "valid:#a \"frame\"") << p;
+    EXPECT_EQ(parse(r, p, "#a \"_blank\""), "invalid") << p << " a target name does not start with an underscore";
+    EXPECT_EQ(parse(r, p, "#1"), "invalid") << p << " #1 is not an ID selector (its hash token is not of type id)";
+    EXPECT_EQ(parse(r, p, "a"), "invalid") << p;
+    EXPECT_EQ(parse(r, p, "current"), "invalid") << p;
+    EXPECT_EQ(parse(r, p, "#a #b"), "invalid") << p;
+  }
+}
+
+TEST(CssProperty, TheEventTriggerPropertiesTakeTheEventFunctionsOfAnimationTriggers1) {
+  const GTEXT_CSS_Registry * r = R();
+  // Animation Triggers 1, 4: "none | <dashed-ident>#"; "[ none | <event-function>+ [ / <event-function>+ ]? ]#"; "none | [ <'event-trigger-name'> <'event-trigger-source'> ]#";
+  // 4.2.1: "click() = click()" (the same of dblclick(), pointerenter(), pointerleave(), pointerup(), pointerdown(), focusin(), focusout(), input(), change()), and
+  // "keypress() = keypress( <string>? )"
+  EXPECT_EQ(parse(r, "event-trigger-name", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "event-trigger-name", "--a, --b"), "valid:--a, --b");
+  EXPECT_EQ(parse(r, "event-trigger-name", "a"), "invalid");
+  EXPECT_EQ(parse(r, "event-trigger-source", "none"), "valid:none");
+  for (const char * f : {"click", "dblclick", "pointerenter", "pointerleave", "pointerup", "pointerdown", "focusin", "focusout", "input", "change", "keypress"}) {
+    EXPECT_EQ(parse(r, "event-trigger-source", std::string(f) + "()"), std::string("valid:") + f + "()") << f;
+  }
+  EXPECT_EQ(parse(r, "event-trigger-source", "click() dblclick() / keypress(\"a\")"), "valid:click() dblclick() / keypress(\"a\")");
+  EXPECT_EQ(parse(r, "event-trigger-source", "click(), input()"), "valid:click(), input()");
+  EXPECT_EQ(parse(r, "event-trigger-source", "keypress(\" \")"), "valid:keypress(\" \")");
+  EXPECT_EQ(parse(r, "event-trigger-source", "click(1)"), "invalid") << "the functions take no arguments";
+  EXPECT_EQ(parse(r, "event-trigger-source", "keypress(a)"), "invalid") << "the argument is a <string>";
+  EXPECT_EQ(parse(r, "event-trigger-source", "hover()"), "invalid");
+  EXPECT_EQ(parse(r, "event-trigger", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "event-trigger", "--a click()"), "valid:--a click()");
+  EXPECT_EQ(parse(r, "event-trigger", "--a click(), --b keypress(\"x\") / input()"), "valid:--a click(), --b keypress(\"x\") / input()");
 }
 
 // ---- quirks -----------------------------------------------------------------------------------------------
@@ -521,8 +599,8 @@ TEST(CssPropertyValidity, WideKeywordsPendingValuesAndCustomPropertiesAreValid) 
 
 TEST(CssPropertyValidity, AnUndecidablePropertyIsAcceptedAndCounted) {
   GTEXT_CSS_Property_Validity v;
-  const std::string kept = declarations_kept(R(), "-webkit-box-align: center; nav-up: auto; color: nope", &v);
-  EXPECT_EQ(kept, "-webkit-box-align:center;nav-up:auto;");
+  const std::string kept = declarations_kept(R(), "-webkit-box-align: center; voice-family: male; color: nope", &v);
+  EXPECT_EQ(kept, "-webkit-box-align:center;voice-family:male;");
   EXPECT_EQ(v.undecided, 2u);
   EXPECT_EQ(v.rejected, 1u);
   EXPECT_EQ(v.status, GTEXT_CSS_OK);

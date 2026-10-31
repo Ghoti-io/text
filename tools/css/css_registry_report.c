@@ -147,6 +147,12 @@ static const char * native_text(const gnode * n, char * buf, size_t cap) {
   case NT_FLEX:
     unit = "fr";
     break;
+  case NT_DECIBEL:
+    unit = "dB";
+    break;
+  case NT_SEMITONES:
+    unit = "st";
+    break;
   default:
     return NULL;
   }

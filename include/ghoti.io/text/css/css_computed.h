@@ -143,6 +143,7 @@ typedef enum {
   GTEXT_CSS_ALGO_TEXT_ALIGN,       ///< `text-align-all`, `text-align-last`: `match-parent`.
   GTEXT_CSS_ALGO_VOICE_PITCH,      ///< `voice-pitch`, `voice-range`: a lone keyword is itself and a frequency with `absolute` is that frequency; an offset needs a table the environment lacks.
   GTEXT_CSS_ALGO_VOICE_BALANCE,    ///< `voice-balance`: a number between -100 and 100.
+  GTEXT_CSS_ALGO_VOICE_VOLUME,     ///< `voice-volume`: `silent`, or a keyword and an offset in decibels that is not zero.
   GTEXT_CSS_ALGO_HYPHENATE_CHARS,  ///< `hyphenate-limit-chars`: always three values.
   GTEXT_CSS_ALGO_IMAGE_ORIENTATION, ///< `image-orientation`: the angle rounded to a quarter turn and normalized.
   GTEXT_CSS_ALGO_PAIR_DUP,         ///< `border-spacing`: one length is two.

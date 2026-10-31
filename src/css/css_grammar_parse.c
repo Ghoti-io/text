@@ -53,10 +53,10 @@ static const struct {
 } kNatives[] = {
   {"integer", NT_INTEGER}, {"number", NT_NUMBER}, {"percentage", NT_PERCENTAGE},
   {"dimension", NT_DIMENSION}, {"length", NT_LENGTH}, {"angle", NT_ANGLE}, {"time", NT_TIME},
-  {"frequency", NT_FREQUENCY}, {"resolution", NT_RESOLUTION}, {"flex", NT_FLEX},
+  {"frequency", NT_FREQUENCY}, {"resolution", NT_RESOLUTION}, {"flex", NT_FLEX}, {"decibel", NT_DECIBEL}, {"semitones", NT_SEMITONES},
   {"ratio", NT_RATIO}, {"zero", NT_ZERO}, {"string", NT_STRING}, {"url", NT_URL},
   {"ident", NT_IDENT}, {"custom-ident", NT_CUSTOM_IDENT}, {"grid-custom-ident", NT_GRID_IDENT}, {"container-custom-ident", NT_CONTAINER_IDENT}, {"will-change-custom-ident", NT_WILLCHANGE_IDENT},
-  {"counter-style-custom-ident", NT_COUNTER_STYLE_IDENT}, {"color-scheme-custom-ident", NT_COLOR_SCHEME_IDENT}, {"opentype-tag-string", NT_OPENTYPE_TAG}, {"dashed-ident", NT_DASHED_IDENT},
+  {"counter-style-custom-ident", NT_COUNTER_STYLE_IDENT}, {"color-scheme-custom-ident", NT_COLOR_SCHEME_IDENT}, {"opentype-tag-string", NT_OPENTYPE_TAG}, {"id", NT_ID_SELECTOR}, {"target-name", NT_TARGET_NAME}, {"dashed-ident", NT_DASHED_IDENT},
   {"any-value", NT_ANY_VALUE}, {"declaration-value", NT_DECL_VALUE}, {"urange", NT_URANGE}, {"unicode-range-token", NT_URANGE},
   {"an+b", NT_ANB}, {"declaration-list", NT_DECL_LIST}, {"rule-list", NT_RULE_LIST},
   {"ident-token", NT_TOK_IDENT}, {"function-token", NT_TOK_FUNCTION},
@@ -87,7 +87,7 @@ gn_native css_grammar_native_lookup(const char * name, size_t length) {
 bool css_grammar_native_numeric(gn_native type) {
   switch (type) {
   case NT_INTEGER: case NT_NUMBER: case NT_PERCENTAGE: case NT_DIMENSION: case NT_LENGTH:
-  case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX: case NT_DECIBEL: case NT_SEMITONES:
   case NT_LENGTH_PERCENTAGE: case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE:
     return true;
   default:
@@ -508,6 +508,10 @@ bool css_grammar_range_fits(gn_native type, uint8_t rclass) {
     return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_RESOLUTION;
   case NT_FLEX:
     return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FLEX;
+  case NT_DECIBEL:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_DECIBEL;
+  case NT_SEMITONES:
+    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_SEMITONES;
   case NT_LENGTH_PERCENTAGE:
     return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
   case NT_ANGLE_PERCENTAGE:

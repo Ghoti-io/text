@@ -785,7 +785,7 @@ static bool range_for_dimension(const gnode * g, gn_native t) {
   if (!(g->flags & GNF_RANGE)) {
     return false;
   }
-  if (t == NT_LENGTH || t == NT_ANGLE || t == NT_TIME || t == NT_FREQUENCY || t == NT_RESOLUTION || t == NT_FLEX) {
+  if (t == NT_LENGTH || t == NT_ANGLE || t == NT_TIME || t == NT_FREQUENCY || t == NT_RESOLUTION || t == NT_FLEX || t == NT_DECIBEL || t == NT_SEMITONES) {
     return true;
   }
   return g->rclass == RC_NONE || g->rclass >= RC_UNIT_BASE;
@@ -963,6 +963,8 @@ static GTEXT_CSS_Unit_Type native_base_unit_type(gn_native t) {
   case NT_FREQUENCY: case NT_FREQUENCY_PERCENTAGE: return GTEXT_CSS_UNIT_TYPE_FREQUENCY;
   case NT_RESOLUTION: return GTEXT_CSS_UNIT_TYPE_RESOLUTION;
   case NT_FLEX: return GTEXT_CSS_UNIT_TYPE_FLEX;
+  case NT_DECIBEL: return GTEXT_CSS_UNIT_TYPE_DECIBEL;
+  case NT_SEMITONES: return GTEXT_CSS_UNIT_TYPE_SEMITONES;
   default: return GTEXT_CSS_UNIT_TYPE_NONE;
   }
 }
@@ -1011,7 +1013,7 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
       return m->unitless && (m->unitless_nested || it->end == m->top_end) && (range_for_dimension(g, t) ? in_range(g, v->number) : 1);
     }
     /* fall through */
-  case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX: case NT_DECIBEL: case NT_SEMITONES:
   case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE: {
     if (native_is_percentage_mixed(t) && tok(v, GTEXT_CSS_TOKEN_PERCENTAGE)) {
       return range_for_percentage(g) ? in_range(g, v->number) : 1;
@@ -1046,6 +1048,12 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     }
     return true;
   }
+  case NT_ID_SELECTOR:
+    /* UI 4 (served 2026-10-31), 5.3.1: "The <id> value is an ID selector"; Selectors 4: an ID selector is a <hash-token> whose type flag is "id" (`#a`, not `#1`) */
+    return tok(v, GTEXT_CSS_TOKEN_HASH) && (v->flags & GTEXT_CSS_FLAG_HASH_ID);
+  case NT_TARGET_NAME:
+    /* UI 4 (served 2026-10-31), 5.3.1: "It is a <string> and it MUST NOT start with the underscore "_" character." */
+    return tok(v, GTEXT_CSS_TOKEN_STRING) && !(v->value.length > 0 && v->value.data[0] == '_');
   case NT_URL: {
     if (tok(v, GTEXT_CSS_TOKEN_URL)) {
       return true;
@@ -2057,7 +2065,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     number_flags(out, v);
     return arena_text(B, v->unit.data, v->unit.length, &out->text) != NULL;
   }
-  case NT_LENGTH: case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX:
+  case NT_LENGTH: case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX: case NT_DECIBEL: case NT_SEMITONES:
   case NT_LENGTH_PERCENTAGE: case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE:
     if (tok(v, GTEXT_CSS_TOKEN_PERCENTAGE)) {
       value_init(out, GTEXT_CSS_VAL_PERCENTAGE, node, v);
@@ -2129,6 +2137,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     return true;
   case NT_STRING:
   case NT_OPENTYPE_TAG:
+  case NT_TARGET_NAME:
     value_init(out, GTEXT_CSS_VAL_STRING, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_URL: {

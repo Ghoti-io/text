@@ -87,6 +87,9 @@ static const unit_row kUnits[] = {
   {GTEXT_CSS_UNIT_DPPX, "dppx", GTEXT_CSS_UNIT_TYPE_RESOLUTION, GTEXT_CSS_UNIT_DPPX, true, 1.0, 1.0},
   {GTEXT_CSS_UNIT_X, "x", GTEXT_CSS_UNIT_TYPE_RESOLUTION, GTEXT_CSS_UNIT_DPPX, true, 1.0, 1.0},
   {GTEXT_CSS_UNIT_FR, "fr", GTEXT_CSS_UNIT_TYPE_FLEX, GTEXT_CSS_UNIT_FR, true, 1.0, 1.0},
+  /* CSS Speech 1: the units of <decibel> (6.1) and <semitones> (11.3); each is its own canonical unit */
+  {GTEXT_CSS_UNIT_DB, "dB", GTEXT_CSS_UNIT_TYPE_DECIBEL, GTEXT_CSS_UNIT_DB, true, 1.0, 1.0},
+  {GTEXT_CSS_UNIT_ST, "st", GTEXT_CSS_UNIT_TYPE_SEMITONES, GTEXT_CSS_UNIT_ST, true, 1.0, 1.0},
 };
 
 #define UNIT_ROWS (sizeof kUnits / sizeof kUnits[0])
