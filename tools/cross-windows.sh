@@ -144,11 +144,17 @@ done
 FLAGS="-pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function"
 FLAGS="$FLAGS -std=c17 -O2 -g -DGTEXT_BUILD"
 
+# **Windows' own macros are part of the question.** <windows.h> (windef.h) defines `near` and `far` as empty macros, and `min`, `max`, `small`, `interface`, `IN`,
+# `OUT`, `OPTIONAL`, `ERROR`, `DELETE`, `CONST`, `VOID`, `BOOL`, `TRUE` and `FALSE` and others besides; a consumer that includes it before this library's headers
+# then meets every identifier of that spelling as something else (`const bool far = ...` is a syntax error). A compile that does not include it cannot see that, so every
+# source is compiled with windows.h (and winsock2.h) included first, as such a consumer would, and so is every public header, as C and, where the toolchain has it, C++.
+PRE="-include winsock2.h -include windows.h"
+
 ok=0
 bad=0
 failed=""
 for f in $(find src -name '*.c' | sort); do
-  if $CC $FLAGS $INC -c "$f" -o /tmp/x.obj 2> /tmp/err.txt; then
+  if $CC $FLAGS $PRE $INC -c "$f" -o /tmp/x.obj 2> /tmp/err.txt; then
     ok=$((ok + 1))
   else
     bad=$((bad + 1))
@@ -158,12 +164,50 @@ for f in $(find src -name '*.c' | sort); do
   fi
 done
 
-printf '\nmingw-w64: %d sources compiled, %d failed\n' "$ok" "$bad"
+hok=0
+for h in $(find include -name '*.h' | sort); do
+  inc=${h#include/}
+  printf '#include <winsock2.h>\n#include <windows.h>\n#include <%s>\n' "$inc" > /tmp/hdr.c
+  if $CC -std=c17 -Wall -Wextra -Werror -fsyntax-only $INC /tmp/hdr.c 2> /tmp/err.txt; then
+    hok=$((hok + 1))
+  else
+    bad=$((bad + 1))
+    failed="$failed $h"
+    printf '\n=== %s (after windows.h, as C) ===\n' "$h"
+    head -20 /tmp/err.txt
+  fi
+  if command -v x86_64-w64-mingw32-g++ > /dev/null 2>&1; then
+    if x86_64-w64-mingw32-g++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only $INC -x c++ /tmp/hdr.c 2> /tmp/err.txt; then
+      hok=$((hok + 1))
+    else
+      bad=$((bad + 1))
+      failed="$failed $h(c++)"
+      printf '\n=== %s (after windows.h, as C++) ===\n' "$h"
+      head -20 /tmp/err.txt
+    fi
+  fi
+done
+
+printf '\nmingw-w64: %d sources compiled, %d header checks passed, %d failed\n' "$ok" "$hok" "$bad"
 if [ -n "$failed" ]; then
   echo "failed:"
   for f in $failed; do echo "  $f"; done
   exit 1
 fi
+
+# **The check is seen to fail.** The identifier `at_far_edge` of src/css/css_compute_algo.c was `far` once, and windef.h's `#define far` broke every consumer that
+# included windows.h first. The same source with that rename undone, compiled the same way, has to be refused, and for that identifier.
+sed 's/at_far_edge/far/g' src/css/css_compute_algo.c > /tmp/plant.c
+if $CC $FLAGS $PRE $INC -iquote src/css -c /tmp/plant.c -o /tmp/plant.obj 2> /tmp/plant.err; then
+  echo "PLANT NOT CAUGHT: a variable named far compiled after windows.h" >&2
+  exit 1
+fi
+if ! grep -q 'far' /tmp/plant.err; then
+  echo "PLANT FAILED FOR ANOTHER REASON:" >&2
+  head -10 /tmp/plant.err >&2
+  exit 1
+fi
+echo "plant (the identifier far) caught"
 
 # **Checked on the artifact, not on the exit status.** A clean compile says the
 # code is acceptable to the compiler; it does not say which arm of

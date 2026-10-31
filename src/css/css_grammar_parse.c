@@ -419,7 +419,7 @@ static void skip_ws(parser * P) {
 /// A bound of a range: `∞`, `-∞` (or with U+2212, the minus sign the draft writes it with), or a number with an
 /// optional unit or `%`. "Values of −∞ or ∞ must be written without units, even if the value type uses units";
 /// "Values of 0 can be written without units, even if the value type doesn't allow 'unitless zeroes'" (Values 4, 5.1).
-/// `*rclass` receives what it was written in (RC_*).
+/// `*rclass` receives what it was written in (RANGE_CLASS_*).
 static bool read_bound(parser * P, double * out, uint8_t * rclass) {
   skip_ws(P);
   bool neg = false;
@@ -432,7 +432,7 @@ static bool read_bound(parser * P, double * out, uint8_t * rclass) {
     neg = true;
     p += 3;
   }
-  *rclass = RC_NONE;
+  *rclass = RANGE_CLASS_NONE;
   if (P->n - p >= 3 && memcmp(P->t + p, "\xE2\x88\x9E", 3) == 0) { /* U+221E */
     *out = neg ? -1.0 / 0.0 : 1.0 / 0.0;
     P->pos = p + 3;
@@ -455,7 +455,7 @@ static bool read_bound(parser * P, double * out, uint8_t * rclass) {
   }
   if (p < P->n && P->t[p] == '%') {
     p++;
-    *rclass = RC_PERCENT;
+    *rclass = RANGE_CLASS_PERCENT;
   }
   else {
     const size_t us = p;
@@ -467,7 +467,7 @@ static bool read_bound(parser * P, double * out, uint8_t * rclass) {
       if (u == GTEXT_CSS_UNIT_NONE || !gtext_css_unit_to_canonical(u, v, &v)) {
         return false;
       }
-      *rclass = (uint8_t)(RC_UNIT_BASE + (unsigned)gtext_css_unit_type(u));
+      *rclass = (uint8_t)(RANGE_CLASS_UNIT_BASE + (unsigned)gtext_css_unit_type(u));
     }
   }
   *out = v;
@@ -478,48 +478,48 @@ static bool read_bound(parser * P, double * out, uint8_t * rclass) {
 /// The bounds of a range as a whole were written in the unit class of one of them (a plain number, 0 included, and an
 /// infinity fit any); two different classes are no range.
 static bool join_classes(uint8_t a, uint8_t b, uint8_t * out) {
-  if (a != RC_NONE && b != RC_NONE && a != b) {
+  if (a != RANGE_CLASS_NONE && b != RANGE_CLASS_NONE && a != b) {
     return false;
   }
-  *out = a != RC_NONE ? a : b;
+  *out = a != RANGE_CLASS_NONE ? a : b;
   return true;
 }
 
 bool css_grammar_range_fits(gn_native type, uint8_t rclass) {
-  if (rclass == RC_NONE) {
+  if (rclass == RANGE_CLASS_NONE) {
     return true;
   }
   switch (type) {
   case NT_INTEGER: case NT_NUMBER:
     return false;
   case NT_PERCENTAGE:
-    return rclass == RC_PERCENT;
+    return rclass == RANGE_CLASS_PERCENT;
   case NT_DIMENSION:
-    return rclass >= RC_UNIT_BASE;
+    return rclass >= RANGE_CLASS_UNIT_BASE;
   case NT_LENGTH:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
   case NT_ANGLE:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_ANGLE;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_ANGLE;
   case NT_TIME:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_TIME;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_TIME;
   case NT_FREQUENCY:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FREQUENCY;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FREQUENCY;
   case NT_RESOLUTION:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_RESOLUTION;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_RESOLUTION;
   case NT_FLEX:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FLEX;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FLEX;
   case NT_DECIBEL:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_DECIBEL;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_DECIBEL;
   case NT_SEMITONES:
-    return rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_SEMITONES;
+    return rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_SEMITONES;
   case NT_LENGTH_PERCENTAGE:
-    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
+    return rclass == RANGE_CLASS_PERCENT || rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_LENGTH;
   case NT_ANGLE_PERCENTAGE:
-    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_ANGLE;
+    return rclass == RANGE_CLASS_PERCENT || rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_ANGLE;
   case NT_TIME_PERCENTAGE:
-    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_TIME;
+    return rclass == RANGE_CLASS_PERCENT || rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_TIME;
   case NT_FREQUENCY_PERCENTAGE:
-    return rclass == RC_PERCENT || rclass == RC_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FREQUENCY;
+    return rclass == RANGE_CLASS_PERCENT || rclass == RANGE_CLASS_UNIT_BASE + GTEXT_CSS_UNIT_TYPE_FREQUENCY;
   default:
     return false;
   }

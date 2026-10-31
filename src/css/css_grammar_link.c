@@ -61,7 +61,7 @@ typedef struct {
   uint32_t text_base;               ///< Where its text starts in the compiled pool.
   bool has_range;                   ///< Copied with a range applied.
   double lo, hi;                    ///< The range.
-  uint8_t rclass;                   ///< What the range's bounds were written in (RC_*).
+  uint8_t rclass;                   ///< What the range's bounds were written in (RANGE_CLASS_*).
   uint32_t key_name;                ///< Offset in the compiled text of the name it was linked as (for the table).
   uint32_t key_len;                 ///< Its length.
   uint8_t key_kind;                 ///< Reference kind.
@@ -332,7 +332,7 @@ static bool resolve_instance(linker * L, size_t index) {
     }
     const bool range = (r->flags & GNF_RANGE) != 0;
     const double lo = range ? r->lo : 0.0, hi = range ? r->hi : 0.0;
-    const uint8_t rclass = range ? r->rclass : (uint8_t)RC_NONE;
+    const uint8_t rclass = range ? r->rclass : (uint8_t)RANGE_CLASS_NONE;
     bool found;
     size_t slot = table_find(L, r->native, c->text + r->str_off, r->str_len, range, lo, hi, rclass, &found);
     if (found) {
@@ -1062,7 +1062,7 @@ GTEXT_CSS_Status gtext_css_definition_link(const GTEXT_CSS_Definition * def, GTE
   L.c = c;
   uint8_t * nl = NULL;
   size_t root_index;
-  if (instantiate(&L, def, false, 0.0, 0.0, RC_NONE, 0, 0, 0, &root_index)) {
+  if (instantiate(&L, def, false, 0.0, 0.0, RANGE_CLASS_NONE, 0, 0, 0, &root_index)) {
     c->root = L.inst[root_index].root;
     while (L.next < L.ninst && resolve_instance(&L, L.next)) {
       L.next++;

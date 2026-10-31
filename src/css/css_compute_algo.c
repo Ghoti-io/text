@@ -1752,8 +1752,8 @@ static GTEXT_CSS_Status axis_offset_item(css_state * st, ab * a, const css_pmeta
     return GTEXT_CSS_OK;
   }
   const GTEXT_CSS_Value * edge = &item->children[0];
-  const bool far = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");
-  return axis_value(st, a, far ? 1 : 0, &item->children[1], out);
+  const bool at_far_edge = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");
+  return axis_value(st, a, at_far_edge ? 1 : 0, &item->children[1], out);
 }
 
 GTEXT_CSS_Status css_algo_axis_offsets(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {

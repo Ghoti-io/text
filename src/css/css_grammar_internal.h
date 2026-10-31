@@ -96,9 +96,9 @@ typedef enum {
 #define GNF_OMITTED 0x10u ///< A SEQ the linker made (or rewrote) when it worked out which commas are omissible: its literals are items, not separators.
 
 /// What the bounds of a range were written in (gnode::rclass): nothing but plain numbers, percent, or a unit type + 2.
-#define RC_NONE 0
-#define RC_PERCENT 1
-#define RC_UNIT_BASE 2
+#define RANGE_CLASS_NONE 0
+#define RANGE_CLASS_PERCENT 1
+#define RANGE_CLASS_UNIT_BASE 2
 
 /// The native types.
 typedef enum {
@@ -121,7 +121,7 @@ typedef struct {
   uint8_t native;    ///< See gn_kind.
   uint8_t flags;     ///< GNF_*.
   uint8_t sep;       ///< SEQ: 0 plain, 1 the kids are comma-separated segments, 2 slash-separated segments.
-  uint8_t rclass;    ///< A range's bounds: RC_*.
+  uint8_t rclass;    ///< A range's bounds: RANGE_CLASS_*.
   uint32_t kids;     ///< Index of the first kid in the kid array.
   uint32_t nkids;    ///< How many.
   uint32_t min;      ///< MULT: fewest repetitions.

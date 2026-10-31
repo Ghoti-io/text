@@ -156,7 +156,7 @@ static const char * native_text(const gnode * n, char * buf, size_t cap) {
   default:
     return NULL;
   }
-  if ((n->flags & GNF_RANGE) && n->rclass == RC_PERCENT && (gn_native)n->native != NT_PERCENTAGE) {
+  if ((n->flags & GNF_RANGE) && n->rclass == RANGE_CLASS_PERCENT && (gn_native)n->native != NT_PERCENTAGE) {
     unit = "%";
   }
   snprintf(buf, cap, "%g%s", v, unit);

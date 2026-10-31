@@ -778,7 +778,7 @@ static bool unit_in_range(const gnode * g, GTEXT_CSS_Unit u, double n) {
 
 /// A range on a percentage-mixed type restricts the part its bounds were written in (plain numbers restrict both).
 static bool range_for_percentage(const gnode * g) {
-  return (g->flags & GNF_RANGE) && (g->rclass == RC_NONE || g->rclass == RC_PERCENT);
+  return (g->flags & GNF_RANGE) && (g->rclass == RANGE_CLASS_NONE || g->rclass == RANGE_CLASS_PERCENT);
 }
 
 static bool range_for_dimension(const gnode * g, gn_native t) {
@@ -788,7 +788,7 @@ static bool range_for_dimension(const gnode * g, gn_native t) {
   if (t == NT_LENGTH || t == NT_ANGLE || t == NT_TIME || t == NT_FREQUENCY || t == NT_RESOLUTION || t == NT_FLEX || t == NT_DECIBEL || t == NT_SEMITONES) {
     return true;
   }
-  return g->rclass == RC_NONE || g->rclass >= RC_UNIT_BASE;
+  return g->rclass == RANGE_CLASS_NONE || g->rclass >= RANGE_CLASS_UNIT_BASE;
 }
 
 static GTEXT_CSS_Unit unit_of(const GTEXT_CSS_Component_Value * v) {

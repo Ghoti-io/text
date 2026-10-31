@@ -340,7 +340,7 @@ void css_trim_value_text(const char ** s, size_t * n);
 bool css_custom_name_ok(const char * name, size_t length);
 
 /// Keep the members of every `||` of a compiled grammar in the order they were written: the grammar of a property whose order is its value (css_grammar_link.c;
-/// it is declared here and not in css_grammar_internal.h, whose RC_NONE a Windows header defines too).
+/// it is declared here and not in css_grammar_internal.h, whose RANGE_CLASS_NONE a Windows header defines too).
 struct GTEXT_CSS_Compiled;
 void css_compiled_keep_source_order(struct GTEXT_CSS_Compiled * c);
 
