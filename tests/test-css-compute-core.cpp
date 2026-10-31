@@ -120,21 +120,19 @@ TEST(CssComputeDefaulting, ARevertIsACascadeResultAndRefusedAsAnInputAndAPending
   }
 }
 
-TEST(CssComputeDefaulting, ADeclaredPropertyWhoseComputedValueIsNotImplementedIsUnsupportedAndNamed) {
+TEST(CssComputeDefaulting, APropertyWhoseComputedValueIsNotImplementedIsUnsupportedAndNamed) {
+  // The pin gives the legacy -webkit-box-* properties no grammar, so no declaration of one is valid and a style is computed without it; reading it names it.
   Context ctx(R());
-  Block b(R(), "position-area: top left");
-  EXPECT_TRUE(b.rejected.empty());
+  Block b(R(), "-webkit-box-align: start");
+  EXPECT_FALSE(b.rejected.empty());
   Style s;
   s.compute(ctx, &b);
-  EXPECT_EQ(s.status, GTEXT_CSS_E_UNSUPPORTED);
-  EXPECT_STREQ(s.result.name, "position-area");
-  EXPECT_EQ(s.s, nullptr);
-  // but a style that does not declare it has its inherited or initial value, or none
-  Block empty(R(), "");
-  Style t;
-  t.compute(ctx, &empty);
-  ASSERT_EQ(t.status, GTEXT_CSS_OK);
-  EXPECT_EQ(t.value("position-area"), "none");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  const GTEXT_CSS_Value_Set * set = nullptr;
+  GTEXT_CSS_Compute_Result res{};
+  EXPECT_EQ(gtext_css_computed_get(s.s, find(R(), "-webkit-box-align"), &set, &res), GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_STREQ(res.name, "-webkit-box-align");
+  EXPECT_EQ(s.value("-webkit-box-align"), "<unsupported>");
 }
 
 /* ---- logical properties cascaded as one ---------------------------------------------------------------------------- */
