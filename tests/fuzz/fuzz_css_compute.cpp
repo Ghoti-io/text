@@ -386,6 +386,22 @@ std::string declarations_of(const GTEXT_CSS_Computed_Style * s) {
   return out;
 }
 
+/// A dump without the lines that the declarations of declarations_of() cannot carry: the custom properties (it writes the properties of the registry) and the hash that covers them.
+std::string without_customs_and_hash(const std::string & dump) {
+  std::string out;
+  size_t at = 0;
+  while (at < dump.size()) {
+    size_t end = dump.find('\n', at);
+    end = end == std::string::npos ? dump.size() : end + 1;
+    const std::string line = dump.substr(at, end - at);
+    if (line.compare(0, 2, "--") != 0 && line.compare(0, 5, "hash ") != 0) {
+      out += line;
+    }
+    at = end;
+  }
+  return out;
+}
+
 std::string dump_of(const GTEXT_CSS_Computed_Style * s, const std::string & input) {
   std::string out;
   GTEXT_Markup_Sink sink;
@@ -483,7 +499,7 @@ void check_compute(const std::string & parent_text, const std::string & child_te
       fail("the hash of a style is not stable", "", input);
     }
   }
-  std::string again;
+  std::string again, first_for_fixed;
   bool fixed_checked = false;
   std::string repeated;
   bool repeat_checked = false;
@@ -496,7 +512,7 @@ void check_compute(const std::string & parent_text, const std::string & child_te
       GTEXT_CSS_Compute_Result r2{};
       const GTEXT_CSS_Status s2 = gtext_css_compute_style(ctx, rb, parent, nullptr, &second, &r2);
       if (s2 == GTEXT_CSS_OK) {
-        again = dump_of(second, input);
+        again = without_customs_and_hash(dump_of(second, input));
         fixed_checked = true;
       }
       else if (!allowed_status(s2)) {
@@ -531,7 +547,11 @@ void check_compute(const std::string & parent_text, const std::string & child_te
   if (repeat_checked && repeated != first) {
     fail("two computations of the same inputs differ", "", input);
   }
-  if (fixed_checked && again != first) {
+  if (fixed_checked) {
+    first_for_fixed = without_customs_and_hash(first);
+  }
+  if (fixed_checked && again != first_for_fixed) {
+    const std::string & first = first_for_fixed;
     size_t i = 0;
     while (i < first.size() && i < again.size() && first[i] == again[i]) {
       i++;
