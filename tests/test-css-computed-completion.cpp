@@ -409,7 +409,7 @@ std::string specified_text(const std::string & decl, const char * property) {
   const std::string value = decl;
   gtext_css_block_add_text(b, property, strlen(property), value.data(), value.size(), false, nullptr, &oc, nullptr);
   std::string out = "<invalid>";
-  if (oc == GTEXT_CSS_PROP_RESULT_VALID) {
+  if (oc == GTEXT_CSS_PROP_RESULT_VALID || oc == GTEXT_CSS_PROP_RESULT_PENDING) {
     char * t = nullptr;
     size_t n = 0;
     if (gtext_css_block_get_property_value(b, find(R(), property), &t, &n, nullptr) == GTEXT_CSS_OK) {
@@ -419,6 +419,16 @@ std::string specified_text(const std::string & decl, const char * property) {
   }
   gtext_css_block_free(b);
   return out;
+}
+
+/* CSS Syntax 3 / Variables 1: "<declaration-value> ... does not contain <bad-string-token>, <bad-url-token>, unmatched <)-token>, <]-token>, or <}-token>": a value that
+   holds a var() is judged as one that does not, so a closing bracket that closes nothing makes it invalid when it is parsed, not only when the value has no function. */
+TEST(CssComputedCompletionVar, AnUnmatchedClosingBracketMakesAPendingValueInvalid) {
+  for (const char * bad : {"var(--b) b) c", "b) var(--b)", "var(--b) ]", "var(--b) }", "calc(1px + var(--b))) "}) {
+    EXPECT_EQ(specified_text(bad, "width"), "<invalid>") << bad;
+  }
+  EXPECT_NE(specified_text("var(--b) [x] (y)", "width"), "<invalid>") << "balanced brackets are a pending value";
+  EXPECT_NE(specified_text("calc(1px + var(--b))", "width"), "<invalid>");
 }
 
 TEST(CssComputedCompletionClip, RectWithoutCommasIsWrittenWithThem) {

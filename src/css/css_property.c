@@ -189,7 +189,9 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
     struct frame f = st[--top];
     for (size_t i = 0; i < f.n && *valid; i++) {
       const GTEXT_CSS_Component_Value * v = &f.v[i];
-      if (v->kind == GTEXT_CSS_VALUE_TOKEN && (v->type == GTEXT_CSS_TOKEN_BAD_STRING || v->type == GTEXT_CSS_TOKEN_BAD_URL)) {
+      if (v->kind == GTEXT_CSS_VALUE_TOKEN && (v->type == GTEXT_CSS_TOKEN_BAD_STRING || v->type == GTEXT_CSS_TOKEN_BAD_URL || v->type == GTEXT_CSS_TOKEN_CLOSE_PAREN ||
+                                              v->type == GTEXT_CSS_TOKEN_CLOSE_SQUARE || v->type == GTEXT_CSS_TOKEN_CLOSE_CURLY)) {
+        /* a closing bracket that is a token of its own closes nothing: it is unmatched */
         *valid = false;
         break;
       }
