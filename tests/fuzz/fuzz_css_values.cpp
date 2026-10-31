@@ -177,7 +177,9 @@ void check_math(const GTEXT_CSS_Component_Value & v, const GTEXT_CSS_Math_Option
     GTEXT_CSS_Unit u1 = GTEXT_CSS_UNIT_NONE, u3 = GTEXT_CSS_UNIT_NONE;
     bool p1 = false, p3 = false;
     const bool n1 = gtext_css_math_numeric(m, &v1, &u1, &p1), n3 = gtext_css_math_numeric(m3, &v3, &u3, &p3);
-    if (n1 != n3 || (n1 && (u1 != u3 || p1 != p3 || !same_as_written(v1, v3)))) {
+    // an infinite length is written in the canonical unit of its type (Values 4, 10.13: `calc(infinity * 1px)`), whatever unit it came from (`1ex / 0`)
+    const bool infinite = v1 != v1 || v1 > 1.7976931348623157e308 || v1 < -1.7976931348623157e308;
+    if (n1 != n3 || (n1 && ((u1 != u3 && !infinite) || p1 != p3 || !same_as_written(v1, v3)))) {
       fail("a written calculation reads back as another number", text, input);
     }
     if (written(m3, input) != text || m3->category != m->category) {
