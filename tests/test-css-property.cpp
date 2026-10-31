@@ -227,7 +227,8 @@ TEST(CssProperty, ARangeTheServedDraftGivesAPropertyIsHeldWhereThePinLacksIt) {
   const GTEXT_CSS_Registry * r = R();
   for (const char * property : {"r", "rx", "ry", "stroke-width"}) {
     EXPECT_EQ(parse(r, property, "-1px"), "invalid") << property;
-    EXPECT_EQ(parse(r, property, "0"), std::string("valid:0px")) << property;
+    // Values 4, 6.1: "if a 0 could be parsed as either a <number> or a <length> in a property (such as line-height), it must parse as a <number>"; the computed value is still 0px
+    EXPECT_EQ(parse(r, property, "0"), std::string(std::string(property) == "stroke-width" ? "valid:0" : "valid:0px")) << property;
   }
   EXPECT_EQ(parse(r, "rx", "auto"), "valid:auto");
   EXPECT_EQ(parse(r, "stroke-width", "-1"), "invalid");
@@ -238,10 +239,10 @@ TEST(CssProperty, ARangeTheServedDraftGivesAPropertyIsHeldWhereThePinLacksIt) {
 }
 
 TEST(CssProperty, ANumberBelowSixDecimalsIsWrittenAsZeroAndReadAgainAsALength) {
-  // CSSOM writes at most six decimals, so a tiny <number> is `0`; and `0` is a <length> where the grammar offers one first. One step, then settled.
+  // CSSOM writes at most six decimals, so a tiny <number> is `0`; and a literal `0` is the <number> where the grammar offers both (Values 4, 6.1), so it is settled at once.
   const GTEXT_CSS_Registry * r = R();
   EXPECT_EQ(parse(r, "stroke-width", "0.0000001"), "valid:0");
-  EXPECT_EQ(parse(r, "stroke-width", "0"), "valid:0px");
+  EXPECT_EQ(parse(r, "stroke-width", "0"), "valid:0");
   EXPECT_EQ(parse(r, "stroke-width", "0px"), "valid:0px");
 }
 
