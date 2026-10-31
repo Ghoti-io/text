@@ -476,6 +476,19 @@ static int serial_order(const sctx * c, GTEXT_CSS_Property_Id sh, const directs 
     perm[i] = i;
   }
   int all_initial = -1;
+  /* Borders 4, 3.9 (served 2026-10-30): the corner shorthands are `<'corner-...-shape'> || <'border-...-radius'>`, "Canonical order: per grammar", and "Initial: 0":
+     the shape comes first, and the radius stands for the shorthand when both are initial */
+  GTEXT_CSS_Property_Info shi;
+  if (gtext_css_registry_property_info(c->reg, sh, &shi) && shi.name_length >= 6 && memcmp(shi.name, "corner", 6) == 0 && n == 2) {
+    for (size_t i = 0; i < 2; i++) {
+      GTEXT_CSS_Property_Info li;
+      const bool shape = gtext_css_registry_property_info(c->reg, d->ids[i], &li) && li.name_length >= 6 && memcmp(li.name + li.name_length - 6, "-shape", 6) == 0;
+      perm[shape ? 0 : 1] = i;
+      if (!shape) {
+        all_initial = (int)i;
+      }
+    }
+  }
   for (size_t r = 0; r < sizeof ser_rules / sizeof *ser_rules; r++) {
     if (!nm(c, sh, ser_rules[r].sh)) {
       continue;
@@ -660,7 +673,7 @@ static bool any_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, cons
   /* the corner shorthands name the radius and the shape shorthands whole (`<'border-top-radius'>`, `<'corner-top-shape'>`), so what those write is a value of them
      whatever it holds; the others (`border`) name a box of sides, which is a value of them only when all its sides are one */
   GTEXT_CSS_Property_Info shi;
-  const bool whole_nested = gtext_css_registry_property_info(c->reg, sh, &shi) && shi.name_length > 6 && memcmp(shi.name, "corner", 6) == 0;
+  const bool whole_nested = gtext_css_registry_property_info(c->reg, sh, &shi) && shi.name_length >= 6 && memcmp(shi.name, "corner", 6) == 0;
   for (size_t i = 0; i < d->nlong; i++) {
     if (!v[i].uniform && !(whole_nested && v[i].sub)) {
       tb_free(&buf);

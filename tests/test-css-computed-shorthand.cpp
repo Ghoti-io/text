@@ -245,4 +245,36 @@ TEST(CssComputedShorthand, ValuesReadBackToTheSameLonghands) {
   }
 }
 
+// Borders 4 (served 2026-10-30), 3.9.3: "Value: <'corner-shape'> || <'border-radius'>", "Canonical order: per grammar". The shape is written first, a radius that is its
+// initial value is left out, and a slash belongs to the radius (`<'border-radius'>` is `<length-percentage>{1,4} [ / <length-percentage>{1,4} ]?`). The
+// shorthand once wrote nothing for a radius of two values and read the slash as the page's separator of groups.
+TEST(CssComputedShorthand, CornerShorthandsAreAShapeAndARadius) {
+  expect_all("corner", {
+      {"4px 5% round", "superellipse(1) 4px 5%"},
+      {"4px 8px notch", "superellipse(-infinity) 4px 8px"},
+      {"4px / 3px", "superellipse(1) 4px / 3px"},
+      {"4px 2% / 3px notch", "superellipse(-infinity) 4px 2% / 3px"},
+      {"1px 2px 3px 4px / 5px notch squircle", "superellipse(-infinity) superellipse(2) 1px 2px 3px 4px / 5px"},
+      {"30px superellipse(0.4)", "superellipse(0.4) 30px"},
+      {"0px round", "superellipse(1)"},
+      {"notch bevel", "superellipse(-infinity) superellipse(0)"},
+  });
+  // 3.9.1 and 3.9.2: `<'corner-top-left-shape'> || <'border-top-left-radius'>` and `<'corner-top-shape'> || <'border-top-radius'>`
+  expect_all("corner-top-left", {{"4px 10% notch", "superellipse(-infinity) 4px 10%"}, {"round", "superellipse(1)"}, {"scoop 3px", "superellipse(-1) 3px"}});
+  expect_all("corner-top", {{"4px / 3px bevel", "superellipse(0) 4px / 3px"}, {"4px 8px notch", "superellipse(-infinity) 4px 8px"}});
+  expect_all("corner-block-start", {{"4px scoop", "superellipse(-1) 4px"}, {"squircle", "superellipse(2)"}});
+}
+
+// The longhands the shorthand sets: a radius of two values with a slash is one border-radius, whichever shape stands beside it.
+TEST(CssComputedShorthand, CornerSetsTheRadiusAndTheShapeLonghands) {
+  Context ctx(R());
+  Block cb(R(), "corner: 4px 2% / 3px notch");
+  Style style;
+  style.compute(ctx, &cb);
+  EXPECT_EQ(style.value("border-top-left-radius"), "4px 3px");
+  EXPECT_EQ(style.value("border-top-right-radius"), "2% 3px");
+  EXPECT_EQ(style.value("corner-top-left-shape"), "superellipse(-infinity)");
+  EXPECT_EQ(style.value("corner-bottom-right-shape"), "superellipse(-infinity)");
+}
+
 }  // namespace

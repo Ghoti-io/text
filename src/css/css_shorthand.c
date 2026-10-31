@@ -1603,9 +1603,13 @@ static GTEXT_CSS_Status assign_layer(anyctx * a, GTEXT_CSS_Property_Id sh, bool 
   size_t i = 0;
   /* container: the part before the slash is the name alone and the part after it the type alone (the keywords of one are idents of the other) */
   const bool container = name_is(x->registry, sh, "container");
+  /* Borders 4, 3.9 (served 2026-10-30): `corner: <'corner-shape'> || <'border-radius'>` (and the same for the corner-* ones): the slash belongs to the radius
+     component (`<'border-radius'>` is `<length-percentage>{1,4} [ / <length-percentage>{1,4} ]?`), it does not part the value into groups of longhands */
+  GTEXT_CSS_Property_Info shi;
+  const bool slash_inside = gtext_css_registry_property_info(x->registry, sh, &shi) && shi.name_length >= 6 && memcmp(shi.name, "corner", 6) == 0;
   while (i <= l->n) {
     size_t seg_end = i;
-    while (seg_end < l->n && !is_slash(l->v[seg_end])) {
+    while (seg_end < l->n && (slash_inside || !is_slash(l->v[seg_end]))) {
       seg_end++;
     }
     /* [seg_start, seg_end) is a segment */

@@ -1453,3 +1453,5 @@ sc.4			scroll-snap-type: both	scroll-snap-type
 sc.5			scroll-snap-type: inline	scroll-snap-type
 page-scheme.1	dark	color-scheme: dark	color-scheme: normal; color: light-dark(red, blue)	color,color-scheme
 page-scheme.2	dark	color-scheme: dark	color: light-dark(red, blue)	color,color-scheme
+corner-valid.1			corner-top-left: 10px bevel	corner-top-left,border-top-left-radius,corner-top-left-shape
+corner-valid.2			corner: 4px 2% round	corner,border-top-left-radius,corner-top-left-shape

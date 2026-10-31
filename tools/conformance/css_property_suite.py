@@ -44,7 +44,18 @@ import re
 import subprocess
 import sys
 
-CLASSES = ('draft-newer', 'wpt-tentative', 'needs-environment', 'wpt-wrong')
+CLASSES = ('draft-newer', 'wpt-tentative', 'needs-environment', 'wpt-wrong', 'served-text', 'browsers-differ')
+
+
+def _record_module():
+    """css_record.py beside this file (the gates run with -I, which leaves the script's directory off the path)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('css_record', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_record.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 STAGES = ('parse', 'serialize', 'roundtrip', 'invalid-accepted', 'expand')
 
 
@@ -143,6 +154,7 @@ def main():
     counts_unscored = {k: len(load(k)) for k in ('computed', 'selector', 'rule')}
 
     problems = []
+    record, record_cache = None, {}
     exceptions, p = load_table(exceptions_path, 7, 'not <id> TAB <property> TAB <value> TAB <stage> TAB <answer> TAB <class> TAB <reason>')
     problems += p
     for ident, f in exceptions.items():
@@ -154,8 +166,15 @@ def main():
             # a fact the file name decides: the suite marks such a page by the word, in its path
             if 'tentative' not in ident:
                 problems.append('%s: the class is wpt-tentative and the page is not named tentative' % ident)
-        elif not quotes_a_sentence(f[6]):
+        elif f[5] != 'browsers-differ' and not quotes_a_sentence(f[6]):
             problems.append('%s: the reason quotes no sentence of the draft (a quotation of four words and twenty characters at least)' % ident)
+        if f[5] in ('served-text', 'browsers-differ'):
+            # a quoted sentence of the served text that entails the library's answer, or a silent text and two browsers that differ, and in both the recorded answers
+            # of both browsers (tools/conformance/css_browser_answers.jsonl), which the gate looks up
+            if record is None:
+                record = _record_module()
+                record_cache = record.load_record()
+            problems += record.record_problems(ident, f[6], record_cache, f[1], f[5] == 'browsers-differ', f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'))
     defects, p = load_table(defects_path, 7, 'not <id> TAB <property> TAB <value> TAB <stage> TAB <answer> TAB <owner> TAB <what the library lacks>')
     problems += p
     for ident, f in defects.items():

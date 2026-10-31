@@ -58,43 +58,18 @@ def quotes_a_sentence(reason):
     return any(len(q) >= 20 and len(q.split()) >= 4 for q in re.findall(r'"([^"]*)"', reason))
 
 
-def load_record():
-    """The ids of the recorded browser answers (css_browser_answers.jsonl) that have an answer of both engines: id -> set of engines."""
-    have = {}
-    if not os.path.exists(BROWSER_RECORD):
-        return have
-    for line in open(BROWSER_RECORD, encoding='utf-8'):
-        if line.startswith('#') or not line.strip():
-            continue
-        r = json.loads(line)
-        have[r['id']] = {e: a.get('computed', {}) for e, a in r['engines'].items() if a.get('computed') or a.get('declarations')}
-        have['style:' + r['style']] = have[r['id']]
-    return have
+def _record_module():
+    """css_record.py beside this file (the gates run with -I, which leaves the script's directory off the path)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('css_record', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_record.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
-def record_problems(ident, reason, record, prop=None, differ=False, value=None):
-    """A `served-text` exception quotes the sentence (checked as for the other classes) and names the recorded answers of both browsers: `[record: *]` is this vector's
-    own case in the record (CSS_COMPUTED_DEFECTS:<vector> or CSS_PROPERTY_DEFECTS:<vector>), or ids of hand cases are listed after `record:` separated by semicolons."""
-    m = re.search(r'\[record: ([^\]]+)\]', reason)
-    if not m:
-        return ['%s: a served-text exception names the recorded answers of both browsers as [record: *] or [record: <case id>; ...]' % ident]
-    ids = [x.strip() for x in m.group(1).split(';')]
-    out = []
-    for i in ids:
-        if i == '*':
-            cands = ['CSS_COMPUTED_DEFECTS:' + ident, 'CSS_PROPERTY_DEFECTS:' + ident, 'style:%s: %s' % (prop, value)]
-            ok = [c for c in cands if c in record]
-            if not ok:
-                out.append('%s: the record has no case of this vector' % ident)
-                continue
-            i = ok[0]
-        if i not in record:
-            out.append('%s: the record has no case %r' % (ident, i))
-        elif set(record[i]) != {'chromium', 'firefox'}:
-            out.append('%s: the record case %r lacks an answer of %s' % (ident, i, ', '.join(sorted({'chromium', 'firefox'} - set(record[i])))))
-        elif differ and prop is not None and record[i]['chromium'].get(prop) == record[i]['firefox'].get(prop):
-            out.append('%s: the class is browsers-differ and the record case %r has the same answer in both browsers for %s' % (ident, i, prop))
-    return out
+_record = _record_module()
+load_record = _record.load_record
+record_problems = _record.record_problems
 
 
 def load_table(path, columns, what):
