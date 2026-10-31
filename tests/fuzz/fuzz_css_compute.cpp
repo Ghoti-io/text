@@ -127,7 +127,9 @@ const GTEXT_CSS_Registry * registry() {
 
 /// A block built from `name: value` declarations separated by `;` or line feeds, with the allocator given. The count of declarations that were
 /// valid is in `*added`. A status other than OK, a rejected declaration or an unsupported shorthand is returned and the block is the declarations before it.
-GTEXT_CSS_Status build(const std::string & text, FaultAllocator * fa, GTEXT_CSS_Declaration_Block ** out, const std::string & input) {
+/// `newline_ends`: a newline ends a declaration as a semicolon does (the generated input is written that way). The cssText of a block is read with semicolons only: it may
+/// hold a newline inside a value (a `\` delimiter is written with one after it, so that it is not read as an escape), and a split there read it back as another block.
+GTEXT_CSS_Status build(const std::string & text, FaultAllocator * fa, GTEXT_CSS_Declaration_Block ** out, const std::string & input, bool newline_ends = true) {
   GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
   o.allocator = fa ? &fa->alloc : nullptr;
   GTEXT_CSS_Status st = gtext_css_block_new(registry(), &o, out);
@@ -139,7 +141,7 @@ GTEXT_CSS_Status build(const std::string & text, FaultAllocator * fa, GTEXT_CSS_
   po.allocator = o.allocator;
   size_t pos = 0;
   while (pos < text.size()) {
-    size_t end = text.find_first_of(";\n", pos);
+    size_t end = text.find_first_of(newline_ends ? ";\n" : ";", pos);
     if (end == std::string::npos) {
       end = text.size();
     }
@@ -321,7 +323,7 @@ void check_block(const std::string & text, size_t fault, const std::string & inp
   }
   // the fixed point: the cssText is read into a block that holds the same longhands and writes the same text
   GTEXT_CSS_Declaration_Block * b2 = nullptr;
-  const GTEXT_CSS_Status st2 = build(css, nullptr, &b2, input);
+  const GTEXT_CSS_Status st2 = build(css, nullptr, &b2, input, false);
   if (st2 != GTEXT_CSS_OK) {
     gtext_css_block_free(b2);
     if (st2 == GTEXT_CSS_E_LIMIT_DECLARATIONS || st2 == GTEXT_CSS_E_LIMIT_WORK) {
