@@ -143,10 +143,19 @@ expect vector-expectation "UNEXPLAINED FAILURES" gate "$scratch/lie" "$exception
 # The lists: missing, stale, about nothing, another answer, no quoted sentence, a bad class, in both lists, no owner.
 : > "$scratch/empty"
 expect no-lists "UNEXPLAINED FAILURES" gate "$vectors" "$scratch/empty" "$scratch/empty" "$unscored"
+# The defect list ends empty (the ceiling is 0), and the controls on its mechanism need a line to work on: a defect line is then made of the first exception's, with an
+# owner, in a copy of the list. The control that changes the answer of a listed defect has nothing to change then and is reported as skipped.
+sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { print; exit }' "$defects")
+defects_empty=no
+if [ -z "$sample_defect" ]; then
+	defects_empty=yes
+	sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { $6 = "C2a"; print; exit }' "$exceptions")
+fi
+[ -n "$sample_defect" ] || { echo "control lists: both lists are empty, so nothing about them can be shown" >&2; exit 1; }
 for kind in exception defect; do
 	if [ "$kind" = exception ]; then list=$exceptions; else list=$defects; fi
 	line=$(awk -F'\t' '!/^#/ && NF >= 7 { print; exit }' "$list")
-	[ -n "$line" ] || { echo "control lists: the $kind list is empty, so nothing about it can be shown" >&2; exit 1; }
+	[ -n "$line" ] || line=$sample_defect
 	id=$(printf '%s' "$line" | cut -f1)
 	prop=$(printf '%s' "$line" | cut -f2)
 	{ cat "$list"; printf 'css/control/planted.html#0\t%s\t10px\tcompute\tplanted\t%s\tplanted: this case passes "quoted" in a page that is not there\n' "$prop" "$( [ "$kind" = exception ] && echo resolved-value || echo C2a )"; } > "$scratch/stale-$kind"
@@ -154,6 +163,10 @@ for kind in exception defect; do
 		expect stale-$kind "STALE EXCEPTIONS" gate "$vectors" "$scratch/stale-$kind" "$defects" "$unscored"
 	else
 		expect stale-$kind "STALE EXCEPTIONS" gate "$vectors" "$exceptions" "$scratch/stale-$kind" "$unscored"
+	fi
+	if [ "$kind" = defect ] && [ "$defects_empty" = yes ]; then
+		echo "control listed-answer-defect: skipped, the defect list is empty"
+		continue
 	fi
 	awk -F'\t' -v id="$id" 'BEGIN { OFS = "\t" } /^#/ || NF < 7 { print; next } $1 == id { $5 = "a planted answer" } { print }' "$list" > "$scratch/answer-$kind"
 	if [ "$kind" = exception ]; then
@@ -173,12 +186,15 @@ if awk -F'\t' '!/^#/ && $6 == "served-text" { found = 1 } END { exit !found }' "
 	awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done || $6 != "served-text" { print; next } { gsub(/\[record: [^]]*\]/, "[record: no-such-case]", $7); done = 1 } { print }' "$exceptions" > "$scratch/badrecord"
 	expect served-text-unknown-record "SUITE PROBLEMS" gate "$vectors" "$scratch/badrecord" "$defects" "$unscored"
 fi
-awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = ""; done = 1 } { print }' "$defects" > "$scratch/owner"
+{ cat "$defects"; [ "$defects_empty" = yes ] && printf '%s\n' "$sample_defect"; } | awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = ""; done = 1 } { print }' > "$scratch/owner"
 expect defect-without-owner "SUITE PROBLEMS" gate "$vectors" "$exceptions" "$scratch/owner" "$unscored"
-{ cat "$exceptions"; awk -F'\t' '!/^#/ && NF >= 7 { print; exit }' "$defects"; } > "$scratch/both"
+{ cat "$exceptions"; printf '%s\n' "$sample_defect"; } > "$scratch/both"
 expect defect-also-an-exception "SUITE PROBLEMS" gate "$vectors" "$scratch/both" "$defects" "$unscored"
 expect floor "below the floor" env CSS_COMPUTED_MIN_SCORED=999999 python3 -I "$suite_py" "$vectors" "$pages" "$runner" "$exceptions" "$defects" "$unscored"
-expect ceiling "above the ceiling" env CSS_COMPUTED_MAX_DEFECTS=0 python3 -I "$suite_py" "$vectors" "$pages" "$runner" "$exceptions" "$defects" "$unscored"
+# a ceiling that the listed defects exceed: 0 while some are listed, and one below the count (-1) when the list is empty and the ceiling is already 0
+ceiling_probe=0
+[ "$defects_empty" = yes ] && ceiling_probe=-1
+expect ceiling "above the ceiling" env CSS_COMPUTED_MAX_DEFECTS=$ceiling_probe python3 -I "$suite_py" "$vectors" "$pages" "$runner" "$exceptions" "$defects" "$unscored"
 
 # The pages that are not scored.
 awk -F'\t' '/^#/ || NF < 3 { print; next } !done { done = 1; next } { print }' "$unscored" > "$scratch/unscored-short"

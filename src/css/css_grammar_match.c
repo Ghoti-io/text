@@ -1032,6 +1032,20 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     return tok(v, GTEXT_CSS_TOKEN_NUMBER) && v->number == 0;
   case NT_STRING:
     return tok(v, GTEXT_CSS_TOKEN_STRING);
+  case NT_OPENTYPE_TAG: {
+    /* Fonts 4 (served 2026-10-30), <opentype-tag>: "feature tags contain four ASCII characters. Tag strings longer or shorter than four characters, or containing
+       characters outside the U+20-7E codepoint range are invalid." (and the same of the axis names of font-variation-settings) */
+    if (!tok(v, GTEXT_CSS_TOKEN_STRING) || v->value.length != 4) {
+      return false;
+    }
+    for (size_t i = 0; i < 4; i++) {
+      const unsigned char ch = (unsigned char)v->value.data[i];
+      if (ch < 0x20 || ch > 0x7E) {
+        return false;
+      }
+    }
+    return true;
+  }
   case NT_URL: {
     if (tok(v, GTEXT_CSS_TOKEN_URL)) {
       return true;
@@ -2111,6 +2125,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     out->interp = GTEXT_CSS_INTERP_NUMBER;
     return true;
   case NT_STRING:
+  case NT_OPENTYPE_TAG:
     value_init(out, GTEXT_CSS_VAL_STRING, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_URL: {

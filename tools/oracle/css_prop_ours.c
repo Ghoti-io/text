@@ -410,6 +410,7 @@ static double pick_number(walk * w, const gnode * n, int integer) {
 static const char * native_word(walk * w, const gnode * n) {
   switch ((gn_native)n->native) {
   case NT_ZERO: return "0";
+  case NT_OPENTYPE_TAG: return "wght";
   case NT_STRING: case NT_TOK_STRING: return pick(w, kStrings, COUNT(kStrings));
   case NT_URL: case NT_TOK_URL: return pick(w, kUrls, COUNT(kUrls));
   case NT_IDENT: case NT_TOK_IDENT: case NT_CUSTOM_IDENT: case NT_GRID_IDENT: case NT_CONTAINER_IDENT: case NT_WILLCHANGE_IDENT: case NT_COUNTER_STYLE_IDENT: return pick(w, kIdents, COUNT(kIdents));

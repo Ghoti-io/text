@@ -128,7 +128,7 @@ const Row kRows[] = {
     {"font-feature-settings", "\"dlig\" 1", "\"dlig\""},
     {"font-feature-settings", "\"smcp\" on", "\"smcp\""},
     {"font-feature-settings", "\"liga\" off", "\"liga\" 0"},
-    {"font-feature-settings", "\"a\" 2, \"b\" 1", "\"a\" 2, \"b\""},
+    {"font-feature-settings", "\"aaaa\" 2, \"bbbb\" 1", "\"aaaa\" 2, \"bbbb\""},
     {"font-language-override", "\"ENG \"", "\"ENG\""},
     {"font-language-override", "\" en \"", "\" en\""},
     {"font-size-adjust", "ex-height 0.5", "0.5"},

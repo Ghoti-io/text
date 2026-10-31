@@ -473,7 +473,7 @@ property	flow-from	1	1	1	0
 property	flow-into	1	1	1	0	
 property	font	1	1	1	1	
 property	font-family	1	1	1	0	
-property	font-feature-settings	1	1	1	0	
+property	font-feature-settings	1	1	1	1	
 property	font-kerning	1	1	1	1	
 property	font-language-override	1	1	1	0	
 property	font-optical-sizing	1	1	1	1	
@@ -495,7 +495,7 @@ property	font-variant-emoji	1	1	1	1
 property	font-variant-ligatures	1	1	1	1	
 property	font-variant-numeric	1	1	1	1	
 property	font-variant-position	1	1	1	1	
-property	font-variation-settings	1	1	1	0	
+property	font-variation-settings	1	1	1	1	
 property	font-weight	1	1	1	1	
 property	font-width	1	1	1	0	
 property	footnote-display	1	1	1	0	

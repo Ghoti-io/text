@@ -454,6 +454,19 @@ TEST(CssComputedCompletionIdentExclusions, TheKeywordsEachTypeExcludes) {
   EXPECT_EQ(root_computed("content: counters(foo, \"\", NoNe)", "content"), "normal");
 }
 
+/* Fonts 4, <opentype-tag>: "feature tags contain four ASCII characters. Tag strings longer or shorter than four characters, or containing characters outside the U+20-7E
+   codepoint range are invalid." (and the same of the axis names of font-variation-settings). */
+TEST(CssComputedCompletionFontTags, AFeatureOrAxisTagIsFourPrintableAsciiCharacters) {
+  EXPECT_EQ(root_computed("font-variation-settings: \"wght\" 700", "font-variation-settings"), "\"wght\" 700");
+  EXPECT_EQ(root_computed("font-variation-settings: \"ab  \" 1", "font-variation-settings"), "\"ab  \" 1");
+  for (const char * bad : {"\"wgt\" 700", "\"abcde\" 1", "'a' 1234", "\"wgh\\e9\" 1"}) {
+    EXPECT_EQ(root_computed(std::string("font-variation-settings: ") + bad, "font-variation-settings"), "normal") << bad;
+  }
+  EXPECT_EQ(root_computed("font-feature-settings: \"liga\" off", "font-feature-settings"), "\"liga\" off");
+  EXPECT_EQ(root_computed("font-feature-settings: \"lig\"", "font-feature-settings"), "normal");
+  EXPECT_EQ(root_computed("font-feature-settings: \"ligat\" 1", "font-feature-settings"), "normal");
+}
+
 /* Grid 2 (served 2026-10-30), 8.3: "In all the above productions, the <custom-ident> additionally excludes the keywords span and auto." and "Negative integers or zero are
    invalid" after span. So `span` is no line name: `span -1` and a lone `span` are invalid, and a calculation after `span` is clamped to [1,inf], not to the union of the ranges of
    the line-number alternative. */

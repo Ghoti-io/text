@@ -171,6 +171,7 @@ static int native_supported(const gnode * n) {
 static const char * native_word(gn_native t, char * buf, size_t cap, const gnode * n) {
   switch (t) {
   case NT_ZERO: return "0";
+  case NT_OPENTYPE_TAG: return "\"wght\"";
   case NT_STRING: case NT_TOK_STRING: return "\"a\"";
   case NT_URL: case NT_TOK_URL: return "url(a)";
   case NT_IDENT: case NT_TOK_IDENT: return "zzident";
