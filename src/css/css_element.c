@@ -65,6 +65,7 @@ static const char * const callback_names[GTEXT_CSS_ELEMENT_CB_COUNT] = {
   [GTEXT_CSS_ELEMENT_CB_HAS_PART] = "has_part",
   [GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE] = "custom_state",
   [GTEXT_CSS_ELEMENT_CB_COLUMN_CELL] = "column_cell",
+  [GTEXT_CSS_ELEMENT_CB_TOP_LAYER] = "top_layer",
 };
 
 const char * gtext_css_element_callback_name(GTEXT_CSS_Element_Callback callback) {
@@ -104,6 +105,7 @@ static size_t field_end(GTEXT_CSS_Element_Callback cb) {
   case GTEXT_CSS_ELEMENT_CB_HAS_PART: return END(has_part);
   case GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE: return END(custom_state);
   case GTEXT_CSS_ELEMENT_CB_COLUMN_CELL: return END(column_cell);
+  case GTEXT_CSS_ELEMENT_CB_TOP_LAYER: return END(top_layer);
   default: return (size_t)-1;
   }
 #undef END
@@ -143,6 +145,7 @@ bool gtext_css_element_has(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_
   case GTEXT_CSS_ELEMENT_CB_HAS_PART: return iface->has_part != NULL;
   case GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE: return iface->custom_state != NULL;
   case GTEXT_CSS_ELEMENT_CB_COLUMN_CELL: return iface->column_cell != NULL;
+  case GTEXT_CSS_ELEMENT_CB_TOP_LAYER: return iface->top_layer != NULL;
   default: return false;
   }
 }
@@ -317,6 +320,19 @@ HANDLE_GETTER(gtext_css_element_get_assigned_slot, GTEXT_CSS_ELEMENT_CB_ASSIGNED
 
 SCOPE_GETTER(gtext_css_element_get_tree_scope, GTEXT_CSS_ELEMENT_CB_TREE_SCOPE, tree_scope)
 SCOPE_GETTER(gtext_css_element_get_shadow_scope, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE, shadow_scope)
+
+GTEXT_CSS_Status gtext_css_element_get_top_layer(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element, bool * out,
+    GTEXT_CSS_Element_Result * result) {
+  GTEXT_CSS_Status st = element_need(iface, GTEXT_CSS_ELEMENT_CB_TOP_LAYER, result);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!out) {
+    return element_done(result, GTEXT_CSS_E_INVALID, NULL);
+  }
+  *out = iface->top_layer(iface->user, element);
+  return element_done(result, GTEXT_CSS_OK, NULL);
+}
 
 GTEXT_CSS_Status gtext_css_element_get_child_content(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
     uint32_t * out, GTEXT_CSS_Element_Result * result) {

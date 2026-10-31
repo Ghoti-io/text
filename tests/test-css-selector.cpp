@@ -833,6 +833,7 @@ TEST(CssSelectorLifetime, ASinkThatRefusesFailsTheWriteNotThePrint) {
 TEST(CssSelectorElementInterface, AGrownTableKeepsTheOldFieldsAndTheNewCallbacksHaveNames) {
   EXPECT_STREQ(gtext_css_element_callback_name(GTEXT_CSS_ELEMENT_CB_FIRST_CHILD), "first_child");
   EXPECT_STREQ(gtext_css_element_callback_name(GTEXT_CSS_ELEMENT_CB_COLUMN_CELL), "column_cell");
+  EXPECT_STREQ(gtext_css_element_callback_name(GTEXT_CSS_ELEMENT_CB_TOP_LAYER), "top_layer");
   EXPECT_STREQ(gtext_css_element_callback_name(GTEXT_CSS_ELEMENT_CB_COUNT), "unknown");
   GTEXT_CSS_Element_Interface table;
   std::memset(&table, 0, sizeof table);

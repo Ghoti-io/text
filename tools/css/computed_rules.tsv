@@ -47,14 +47,14 @@ color	algorithm	COLOR	exact	-	computed color, see resolving color values
 column-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 column-width	by-type	-	exact	auto	as specified, with <length-percentage> values computed
 content	algorithm	SHAPE	exact	-	See prose below
-corner-bottom-left-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-bottom-right-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-end-end-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-end-start-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-start-end-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-start-start-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-top-left-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
-corner-top-right-shape	unimplemented	-	-	-	the computed value is the superellipse() equivalent of the keyword, and the keyword table of Corner Shaping is not implemented (C2a-2)
+corner-bottom-left-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-bottom-right-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-end-end-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-end-start-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-start-end-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-start-start-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-top-left-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
+corner-top-right-shape	algorithm	SHAPE	exact	-	the corresponding superellipse() value
 display	algorithm	DISPLAY	exact	-	a pair of keywords representing the inner and outer display types plus optional list-item flag, or a <display-internal> or <display-box> keyword; see prose in a variety of specs for computation rules
 dynamic-range-limit	algorithm	SHAPE	exact	-	draft:https://drafts.csswg.org/css-color-hdr-1/: the computed value is dynamic-range-limit-mix(), with parameters standard, constrained, and no-limit, in that order, and the percentages normalized to sum to 100%
 fill-opacity	algorithm	OPACITY	exact	-	the specified value converted to a <number>, clamped to the range [0,1]
@@ -97,7 +97,7 @@ opacity	algorithm	OPACITY	exact	-	specified number, clamped to the range [0,1]
 outline-color	by-type	-	partial: the keyword invert and auto are kept as written	-	see below
 outline-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 perspective-origin	algorithm	POSITION	exact	-	see background-position
-position-area	unimplemented	-	-	-	the computed value of position-area is the section 3.1.3 serialization of Anchor Positioning, not implemented (C2a-2)
+position-area	algorithm	SHAPE	exact	-	the keyword none or a pair of keywords, see § 3.1.3 Computed Value and Serialization of <position-area>
 rotate	algorithm	ROTATE	exact	-	the keyword none, or an <angle> with an axis consisting of a list of three <number>s
 row-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 scale	algorithm	SCALE	exact	-	the keyword none, or a list of 3 <number>s
@@ -125,3 +125,4 @@ voice-range	algorithm	VOICE_PITCH	partial: a keyword with an offset, or an offse
 word-spacing	algorithm	WORD_SPACING	exact	-	draft:https://www.w3.org/TR/css-text-3/: an absolute length (the Property Index gives that as the computed value of word-spacing, and normal is no additional spacing)
 wrap-flow	algorithm	WRAP_FLOW	exact	-	as specified except for element’s whose float computed value is not none, in which case the computed value is auto.
 zoom	algorithm	ZOOM	exact	-	as specified, but with <percentage> converted to the equivalent <number>
+overlay	algorithm	OVERLAY	exact	-	as specified

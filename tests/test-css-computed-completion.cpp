@@ -225,6 +225,54 @@ TEST(CssComputedCompletionZoom, ZeroAndNormalAreOne) {
   EXPECT_EQ(root_computed("zoom: 2", "zoom"), "2");
 }
 
+/* Borders 4 (served 2026-10-30), corner-top-left-shape and its seven siblings: the computed value is "the corresponding superellipse() value"; the keywords are round 1,
+   scoop -1, bevel 0, notch -infinity, square infinity and squircle 2. Both pinned browsers write these (recorded cases corner-shape.*). */
+TEST(CssComputedCompletionCorner, EveryKeywordIsItsSuperellipse) {
+  const struct { const char * keyword; const char * computed; } table[] = {
+    {"round", "superellipse(1)"}, {"scoop", "superellipse(-1)"}, {"bevel", "superellipse(0)"},
+    {"notch", "superellipse(-infinity)"}, {"square", "superellipse(infinity)"}, {"squircle", "superellipse(2)"},
+    {"superellipse(5)", "superellipse(5)"}, {"superellipse( -1)", "superellipse(-1)"}, {"superellipse(0.2)", "superellipse(0.2)"},
+    {"superellipse(-infinity)", "superellipse(-infinity)"}, {"superellipse(infinity)", "superellipse(infinity)"},
+  };
+  for (const char * property : {"corner-top-left-shape", "corner-top-right-shape", "corner-bottom-left-shape", "corner-bottom-right-shape",
+                                "corner-start-start-shape", "corner-start-end-shape", "corner-end-start-shape", "corner-end-end-shape"}) {
+    for (const auto & row : table) {
+      EXPECT_EQ(root_computed(std::string(property) + ": " + row.keyword, property), row.computed) << property << ": " << row.keyword;
+    }
+    EXPECT_EQ(root_computed("margin: 0", property), "superellipse(1)") << property << " initial";
+  }
+}
+
+TEST(CssComputedCompletionCorner, TheShapeShorthandDistributesAndComputesEachCorner) {
+  EXPECT_EQ(root_computed("corner-shape: superellipse(5) round", "corner-top-left-shape"), "superellipse(5)");
+  EXPECT_EQ(root_computed("corner-shape: superellipse(5) round", "corner-top-right-shape"), "superellipse(1)");
+  EXPECT_EQ(root_computed("corner-shape: superellipse(5) round", "corner-bottom-right-shape"), "superellipse(5)");
+  EXPECT_EQ(root_computed("corner-shape: bevel superellipse(0.1) round squircle", "corner-bottom-left-shape"), "superellipse(2)");
+  EXPECT_EQ(root_computed("corner-shape: superellipse(-1) superellipse(3) square", "corner-bottom-right-shape"), "superellipse(infinity)");
+}
+
+/* Anchor Positioning 1 (served 2026-10-30), 3.1.3: "It serializes in the order given in the grammar (above), with the logical keywords serialized in their short forms (e.g. start
+   start instead of block-start inline-start)." The collapse of a pair that says one keyword, and of a keyword with span-all for the other axis, is the answer of both pinned
+   browsers (recorded cases position-area.*). */
+TEST(CssComputedCompletionPositionArea, SerializesInTheOrderOfTheGrammarAndShortens) {
+  const struct { const char * specified; const char * computed; } rows[] = {
+    {"none", "none"}, {"span-all", "span-all"}, {"center", "center"}, {"span-all span-all", "span-all"}, {"span-all center", "span-all center"},
+    {"center span-all", "center span-all"}, {"center center", "center"}, {"top left", "left top"}, {"y-start x-end", "x-end y-start"},
+    {"top center", "center top"}, {"span-bottom center", "center span-bottom"}, {"top span-all", "top"}, {"bottom span-all", "bottom"},
+    {"block-start inline-end", "start end"}, {"self-block-end self-inline-start", "self-end self-start"}, {"inline-end block-start", "start end"},
+    {"left", "left"}, {"self-start", "self-start"}, {"start", "start"},
+  };
+  for (const auto & row : rows) {
+    EXPECT_EQ(root_computed(std::string("position-area: ") + row.specified, "position-area"), row.computed) << row.specified;
+  }
+}
+
+/* Positioned Layout 4 (served 2026-10-30), overlay: "none | auto"; an element that is not in the top layer has none whichever was specified (recorded case overlay.1). */
+TEST(CssComputedCompletionOverlay, AutoIsNoneOutsideTheTopLayer) {
+  EXPECT_EQ(root_computed("overlay: auto", "overlay"), "none");
+  EXPECT_EQ(root_computed("overlay: none", "overlay"), "none");
+}
+
 /* Overflow 3: "The visible and clip values are known as the non-scrollable values." and "a specified value of visible computes to auto, enabling scrolling in its axis", when the
    other axis is scrollable. clip does not make the other axis scrollable and is not changed. */
 TEST(CssComputedCompletionOverflow, VisibleBesideAScrollableAxisIsAuto) {

@@ -128,6 +128,29 @@ GTEXT_CSS_Declaration_Source source_for(Doc & d) {
   return s;
 }
 
+// Positioned Layout 4 (served 2026-10-30), overlay: an element in the top layer keeps `auto`; one that is not has `none`. The table's `top_layer` says which (a table without it
+// has no element in the top layer).
+TEST(CssCompute, OverlayAutoIsKeptOnlyInTheTopLayer) {
+  Doc d;
+  d.parent = {0, 0, 1};
+  d.inherit_from = {0, 0, 1};
+  d.blocks = {nullptr, new Block(R(), "overlay: auto"), new Block(R(), "overlay: auto")};
+  Context ctx(R());
+  ASSERT_EQ(ctx.status, GTEXT_CSS_OK);
+  GTEXT_CSS_Declaration_Source src = source_for(d);
+  GTEXT_CSS_Element_Interface t = table_for(d, true);
+  t.top_layer = [](void *, GTEXT_CSS_Element_Handle e) { return E(e) == 2; };
+  for (int element : {1, 2}) {
+    GTEXT_CSS_Computed_Style * s = nullptr;
+    ASSERT_EQ(gtext_css_compute_element(ctx.c, &t, &src, H(element), &s, nullptr), GTEXT_CSS_OK);
+    Style out;
+    out.s = s;
+    EXPECT_EQ(out.value("overlay"), element == 2 ? "auto" : "none") << element;
+    out.s = nullptr;
+    gtext_css_computed_free(s);
+  }
+}
+
 TEST(CssCompute, AnElementInheritsFromItsInheritanceParentNotItsTreeParent) {
   // 1 is the root, 2 a child of it with a font-size of its own, 3 a `<use>` clone: its tree parent is 2 and its inheritance parent is 1
   Doc d;

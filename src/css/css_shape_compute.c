@@ -1056,7 +1056,7 @@ static bool is_shape_fn(span t) {
   return false;
 }
 
-typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING, SHAPE_PROP_SETTINGS, SHAPE_PROP_AREAS, SHAPE_PROP_ROTATE } shape_prop;
+typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING, SHAPE_PROP_SETTINGS, SHAPE_PROP_AREAS, SHAPE_PROP_ROTATE, SHAPE_PROP_CORNER, SHAPE_PROP_POSITION_AREA } shape_prop;
 
 /* ---- mixes: dynamic-range-limit-mix() and palette-mix() ------------------------------------------------------------------ */
 
@@ -2007,15 +2007,162 @@ static void rewrite_rotate(sb * out, span text) {
   put_span(out, text);
 }
 
+/// A corner shape (Borders 4 `corner-*-shape`): "the corresponding superellipse() value", the keyword table of the draft: round 1, scoop -1, bevel 0, notch -infinity,
+/// square infinity, squircle 2; a superellipse() keeps its parameter in the shortest form.
+static void rewrite_corner(sb * out, span text) {
+  static const struct { const char * kw; const char * to; } table[] = {
+    {"round", "superellipse(1)"}, {"scoop", "superellipse(-1)"}, {"bevel", "superellipse(0)"},
+    {"notch", "superellipse(-infinity)"}, {"square", "superellipse(infinity)"}, {"squircle", "superellipse(2)"},
+  };
+  for (size_t i = 0; i < sizeof table / sizeof *table; i++) {
+    if (eq(text, table[i].kw)) {
+      sb_puts(out, table[i].to);
+      return;
+    }
+  }
+  if (text.n > 14 && memcmp(text.p, "superellipse(", 13) == 0 && text.p[text.n - 1] == ')') {
+    span in = {text.p + 13, text.n - 14};
+    while (in.n && in.p[0] == ' ') {
+      in.p++;
+      in.n--;
+    }
+    while (in.n && in.p[in.n - 1] == ' ') {
+      in.n--;
+    }
+    double v;
+    if (!eq(in, "infinity") && !eq(in, "-infinity") && amount_value(in, &v)) {
+      sb_puts(out, "superellipse(");
+      put_number(out, v);
+      sb_puts(out, ")");
+      return;
+    }
+  }
+  put_span(out, text);
+}
+
+/// The axis a `position-area` keyword names: 1 horizontal, 2 vertical, 3 block, 4 inline, 0 one that takes the axis of the other keyword (`center`, `span-all`, `start`).
+static int area_axis(span w) {
+  char t[40];
+  if (w.n == 0 || w.n >= sizeof t) {
+    return -1;
+  }
+  memcpy(t, w.p, w.n);
+  t[w.n] = '\0';
+  if (strstr(t, "block-")) {
+    return 3;
+  }
+  if (strstr(t, "inline-")) {
+    return 4;
+  }
+  if (strcmp(t, "left") == 0 || strcmp(t, "right") == 0 || strcmp(t, "span-left") == 0 || strcmp(t, "span-right") == 0 || strstr(t, "x-")) {
+    return 1;
+  }
+  if (strcmp(t, "top") == 0 || strcmp(t, "bottom") == 0 || strcmp(t, "span-top") == 0 || strcmp(t, "span-bottom") == 0 || strstr(t, "y-")) {
+    return 2;
+  }
+  return 0;
+}
+
+/// A logical keyword in its short form: "with the logical keywords serialized in their short forms (e.g. start start instead of block-start inline-start)".
+static void put_area_short(sb * out, span w) {
+  static const char * const strips[] = {"block-", "inline-"};
+  for (size_t i = 0; i < 2; i++) {
+    const size_t k = strlen(strips[i]);
+    for (size_t at = 0; at + k <= w.n; at++) {
+      if (memcmp(w.p + at, strips[i], k) == 0) {
+        put_span(out, (span){w.p, at});
+        put_span(out, (span){w.p + at + k, w.n - at - k});
+        return;
+      }
+    }
+  }
+  put_span(out, w);
+}
+
+/// `position-area` (Anchor Positioning 1, 3.1.3: "the two keywords indicating the selected tracks in each axis" and "It serializes in the order given in the grammar
+/// (above), with the logical keywords serialized in their short forms"): the horizontal keyword first, the block one first; a pair that says one keyword twice, or a
+/// keyword of one axis with `span-all` for the other, is the one keyword (the recorded answers of both pinned browsers, which the text does not contradict).
+static void rewrite_position_area(sb * out, span text) {
+  const char * sp = memchr(text.p, ' ', text.n);
+  if (!sp || memchr(sp + 1, ' ', text.n - (size_t)(sp - text.p) - 1)) {
+    put_span(out, text);
+    return;
+  }
+  const span a = {text.p, (size_t)(sp - text.p)};
+  const span b = {sp + 1, text.n - a.n - 1};
+  const int ax = area_axis(a);
+  const int bx = area_axis(b);
+  if (ax < 0 || bx < 0 || (ax == bx && ax != 0)) {
+    put_span(out, text);
+    return;
+  }
+  const bool physical = ax == 1 || ax == 2 || bx == 1 || bx == 2;
+  const bool logical = ax == 3 || ax == 4 || bx == 3 || bx == 4;
+  if (physical && !logical) {
+    span x = {NULL, 0}, y = {NULL, 0};
+    const span tok[2] = {a, b};
+    const int axes[2] = {ax, bx};
+    for (int i = 0; i < 2; i++) {
+      if (axes[i] == 1) { x = tok[i]; }
+      else if (axes[i] == 2) { y = tok[i]; }
+    }
+    for (int i = 0; i < 2; i++) {
+      if (axes[i] == 0) {
+        if (!x.p) { x = tok[i]; }
+        else { y = tok[i]; }
+      }
+    }
+    if (!x.p || !y.p) {
+      put_span(out, text);
+      return;
+    }
+    const int xa = area_axis(x), ya = area_axis(y);
+    if (eq(y, "span-all") && xa == 1) {
+      put_span(out, x);
+    }
+    else if (eq(x, "span-all") && ya == 2) {
+      put_span(out, y);
+    }
+    else if (x.n == y.n && memcmp(x.p, y.p, x.n) == 0) {
+      put_span(out, x);
+    }
+    else {
+      put_span(out, x);
+      sb_puts(out, " ");
+      put_span(out, y);
+    }
+    return;
+  }
+  if (logical && !physical && ax != 0 && bx != 0) {
+    const span blk = ax == 3 ? a : b;
+    const span inl = ax == 3 ? b : a;
+    put_area_short(out, blk);
+    sb_puts(out, " ");
+    put_area_short(out, inl);
+    return;
+  }
+  if (ax == 0 && bx == 0 && a.n == b.n && memcmp(a.p, b.p, a.n) == 0) {
+    put_span(out, a);
+    return;
+  }
+  put_span(out, text);
+}
+
 /// The whole value: each of its comma-separated parts (image lists, `content`) rewritten.
 static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) {
-  if (prop == SHAPE_PROP_SETTINGS || prop == SHAPE_PROP_AREAS || prop == SHAPE_PROP_ROTATE) {
+  if (prop == SHAPE_PROP_SETTINGS || prop == SHAPE_PROP_AREAS || prop == SHAPE_PROP_ROTATE || prop == SHAPE_PROP_CORNER || prop == SHAPE_PROP_POSITION_AREA) {
     sb w = {out->a, NULL, 0, 0, false};
     if (prop == SHAPE_PROP_SETTINGS) {
       rewrite_variation_settings(&w, text);
     }
     else if (prop == SHAPE_PROP_AREAS) {
       rewrite_areas(&w, text);
+    }
+    else if (prop == SHAPE_PROP_CORNER) {
+      rewrite_corner(&w, text);
+    }
+    else if (prop == SHAPE_PROP_POSITION_AREA) {
+      rewrite_position_area(&w, text);
     }
     else {
       rewrite_rotate(&w, text);
@@ -2265,8 +2412,14 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
   else if (m->name_length == 13 && memcmp(m->name, "offset-rotate", 13) == 0) {
     prop = SHAPE_PROP_ROTATE;
   }
+  else if (m->name_length == 13 && memcmp(m->name, "position-area", 13) == 0) {
+    prop = SHAPE_PROP_POSITION_AREA;
+  }
+  else if (m->name_length > 13 && memcmp(m->name, "corner-", 7) == 0 && memcmp(m->name + m->name_length - 6, "-shape", 6) == 0) {
+    prop = SHAPE_PROP_CORNER;
+  }
   /* a keyword is its own computed value, except step-start and step-end, which are written as steps() */
-  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING && prop != SHAPE_PROP_ROTATE)) {
+  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING && prop != SHAPE_PROP_ROTATE && prop != SHAPE_PROP_CORNER)) {
     *out = bt;
     return GTEXT_CSS_OK;
   }

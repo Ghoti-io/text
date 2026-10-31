@@ -962,6 +962,26 @@ static GTEXT_CSS_Status algo_zoom(css_state * st, GTEXT_CSS_Property_Id id, cons
   return GTEXT_CSS_OK;
 }
 
+/* Positioned Layout 4 (served 2026-10-30), overlay: "none | auto"; the computed value is "as specified", but `auto` is the state of the top layer: an element that is not in it
+   has `none`. Both pinned browsers write none for an element that is not in the top layer (recorded case overlay.1). */
+static GTEXT_CSS_Status algo_overlay(css_state * st, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
+  const GTEXT_CSS_Value * v = gtext_css_value_set_root(src);
+  if (kw(v, "auto")) {
+    bool in_top_layer = false;
+    if (st->iface && st->element && gtext_css_element_has(st->iface, GTEXT_CSS_ELEMENT_CB_TOP_LAYER)) {
+      const GTEXT_CSS_Status s = gtext_css_element_get_top_layer(st->iface, st->element, &in_top_layer, NULL);
+      if (s != GTEXT_CSS_OK) {
+        return css_st_fail(st, s, "top_layer", NULL);
+      }
+    }
+    if (!in_top_layer) {
+      return emit_keyword(st, "none", out);
+    }
+  }
+  *out = gtext_css_value_set_retain(src);
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status algo_math_depth(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
   const GTEXT_CSS_Value * v = gtext_css_value_set_root(src);
   const GTEXT_CSS_Value * pv = css_st_parent_root(st, id);
@@ -2248,6 +2268,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_COLOR: return algo_color(st, id, src, out);
   case GTEXT_CSS_ALGO_OPACITY: return algo_opacity(st, id, src, out);
   case GTEXT_CSS_ALGO_ZOOM: return algo_zoom(st, id, src, out);
+  case GTEXT_CSS_ALGO_OVERLAY: return algo_overlay(st, src, out);
   case GTEXT_CSS_ALGO_MATH_DEPTH: return algo_math_depth(st, id, src, out);
   case GTEXT_CSS_ALGO_TEXT_ALIGN: return algo_text_align(st, id, src, out);
   case GTEXT_CSS_ALGO_VOICE_PITCH: return algo_voice_pitch(st, id, src, out);

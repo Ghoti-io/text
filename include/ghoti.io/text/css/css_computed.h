@@ -138,6 +138,7 @@ typedef enum {
   GTEXT_CSS_ALGO_COLOR,            ///< `color`: `currentcolor` is `inherit`.
   GTEXT_CSS_ALGO_OPACITY,          ///< Opacities: a number or percentage clamped to 0 to 1, as a number.
   GTEXT_CSS_ALGO_ZOOM,             ///< `zoom`: a percentage as a number.
+  GTEXT_CSS_ALGO_OVERLAY,          ///< `overlay`: `auto` is `none` unless the element is in the top layer.
   GTEXT_CSS_ALGO_MATH_DEPTH,       ///< `math-depth`: `auto-add`, `add()`.
   GTEXT_CSS_ALGO_TEXT_ALIGN,       ///< `text-align-all`, `text-align-last`: `match-parent`.
   GTEXT_CSS_ALGO_VOICE_PITCH,      ///< `voice-pitch`, `voice-range`: a lone keyword is itself and a frequency with `absolute` is that frequency; an offset needs a table the environment lacks.

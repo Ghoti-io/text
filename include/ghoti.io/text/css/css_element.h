@@ -175,6 +175,7 @@ typedef enum {
   GTEXT_CSS_ELEMENT_CB_HAS_PART,         ///< Whether an element is a part of a host with a name (`::part()`).
   GTEXT_CSS_ELEMENT_CB_CUSTOM_STATE,     ///< Whether an element has a custom state (`:state()`).
   GTEXT_CSS_ELEMENT_CB_COLUMN_CELL,      ///< Whether a cell is in a column (reserved: the `||` combinator never matches here).
+  GTEXT_CSS_ELEMENT_CB_TOP_LAYER,        ///< Whether an element is in the top layer (`overlay`).
   GTEXT_CSS_ELEMENT_CB_COUNT ///< The number of callbacks; not one.
 } GTEXT_CSS_Element_Callback;
 
@@ -246,6 +247,9 @@ typedef struct {
   /** Reserved for a table-aware consumer (the `||` combinator and `:nth-col()`): whether `cell` is in the column `column`. The matcher in this library never
    *  calls it; those selectors never match here. */
   bool (*column_cell)(void * user, GTEXT_CSS_Element_Handle column, GTEXT_CSS_Element_Handle cell);
+  /** Whether `element` is in the top layer (a modal dialog, a popover, a fullscreen element), which is what `overlay: auto` computes to: Positioned Layout 4 says
+   *  the computed value of `overlay` is `none` unless the element is in the top layer. When the table has none, no element is. */
+  bool (*top_layer)(void * user, GTEXT_CSS_Element_Handle element);
 } GTEXT_CSS_Element_Interface;
 
 /** @name What an element's children hold (the value `child_content` returns)
@@ -326,6 +330,9 @@ GTEXT_API GTEXT_CSS_Status gtext_css_element_get_first_child(const GTEXT_CSS_Ele
     GTEXT_CSS_Element_Handle * out, GTEXT_CSS_Element_Result * result);
 GTEXT_API GTEXT_CSS_Status gtext_css_element_get_last_child(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
     GTEXT_CSS_Element_Handle * out, GTEXT_CSS_Element_Result * result);
+/** @brief Whether the element is in the top layer; GTEXT_CSS_E_UNSUPPORTED when the table has no `top_layer`. */
+GTEXT_API GTEXT_CSS_Status gtext_css_element_get_top_layer(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
+    bool * out, GTEXT_CSS_Element_Result * result);
 GTEXT_API GTEXT_CSS_Status gtext_css_element_get_child_content(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
     uint32_t * out, GTEXT_CSS_Element_Result * result);
 GTEXT_API GTEXT_CSS_Status gtext_css_element_get_tree_scope(const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Element_Handle element,
