@@ -175,7 +175,7 @@ static const char * native_word(gn_native t, char * buf, size_t cap, const gnode
   case NT_STRING: case NT_TOK_STRING: return "\"a\"";
   case NT_URL: case NT_TOK_URL: return "url(a)";
   case NT_IDENT: case NT_TOK_IDENT: return "zzident";
-  case NT_CUSTOM_IDENT: case NT_GRID_IDENT: case NT_CONTAINER_IDENT: case NT_WILLCHANGE_IDENT: case NT_COUNTER_STYLE_IDENT: return "zzcustom";
+  case NT_CUSTOM_IDENT: case NT_GRID_IDENT: case NT_CONTAINER_IDENT: case NT_WILLCHANGE_IDENT: case NT_COUNTER_STYLE_IDENT: case NT_COLOR_SCHEME_IDENT: return "zzcustom";
   case NT_DASHED_IDENT: return "--zzdashed";
   case NT_ANY_VALUE: case NT_DECL_VALUE: return "x";
   case NT_URANGE: return "U+0-7F";

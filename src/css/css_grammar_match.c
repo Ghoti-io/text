@@ -1080,6 +1080,9 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
   case NT_WILLCHANGE_IDENT:
     /* Will Change 1 (served 2026-10-30), 2: the <custom-ident> "excludes the keywords will-change, none, all, auto, scroll-position, and contents" */
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "will-change", "none", "all", "auto", "scroll-position", "contents");
+  case NT_COLOR_SCHEME_IDENT:
+    /* Color Adjust 1 (served 2026-10-31), 2.2: "The normal, light, dark, and only keywords are not valid <custom-ident>s in this property." */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "normal", "light", "dark", "only", NULL, NULL);
   case NT_COUNTER_STYLE_IDENT:
     /* Counter Styles 3 (served 2026-10-30), 2.1: "The keyword none (including any ASCII case-insensitive permutation of it) is not a valid <counter-style-name>." */
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "none", NULL, NULL, NULL, NULL, NULL);
@@ -2187,6 +2190,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   case NT_CONTAINER_IDENT:
   case NT_WILLCHANGE_IDENT:
   case NT_COUNTER_STYLE_IDENT:
+  case NT_COLOR_SCHEME_IDENT:
     value_init(out, GTEXT_CSS_VAL_CUSTOM_IDENT, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_DASHED_IDENT:

@@ -467,6 +467,16 @@ TEST(CssComputedCompletionFontTags, AFeatureOrAxisTagIsFourPrintableAsciiCharact
   EXPECT_EQ(root_computed("font-feature-settings: \"ligat\" 1", "font-feature-settings"), "normal");
 }
 
+/* Color Adjust 1, 2.2: "normal | [ light | dark | <custom-ident> ]+ && only?" and "The normal, light, dark, and only keywords are not valid <custom-ident>s in this property." */
+TEST(CssComputedCompletionColorScheme, TheKeywordsAreNotSchemeNames) {
+  EXPECT_EQ(root_computed("color-scheme: light dark only", "color-scheme"), "light dark only");
+  EXPECT_EQ(root_computed("color-scheme: only light", "color-scheme"), "light only");
+  EXPECT_EQ(root_computed("color-scheme: foo dark", "color-scheme"), "foo dark");
+  for (const char * bad : {"only normal", "normal dark", "normal purple", "light normal", "only", "only only", "light only dark", "only light only"}) {
+    EXPECT_EQ(root_computed(std::string("color-scheme: ") + bad, "color-scheme"), "normal") << bad;
+  }
+}
+
 /* Grid 2 (served 2026-10-30), 8.3: "In all the above productions, the <custom-ident> additionally excludes the keywords span and auto." and "Negative integers or zero are
    invalid" after span. So `span` is no line name: `span -1` and a lone `span` are invalid, and a calculation after `span` is clamped to [1,inf], not to the union of the ranges of
    the line-number alternative. */
