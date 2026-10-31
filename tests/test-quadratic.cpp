@@ -2024,6 +2024,30 @@ std::vector<Shape> build_shapes() {
       css_compute_value("width", [](size_t k) { return repeat("max(", k) + "1em" + repeat(", 1px + 2em)", k); })).per_byte = 0;
   add("css", "CSS compute: a product of n factors with a unit in each", 600,
       css_compute_value("width", [](size_t k) { return "calc(1px" + repeat(" * 2 * (1em / 1px)", k) + ")"; })).per_byte = 0;
+  // The computed form of the shape, image, filter, position and easing families (css_algo_shape and the writers around it): n stops, vertices, functions, commands, layers
+  // and points (a color nests 32 deep at most, and its work is one unit for the property, so a color has no shape here: its depth is bounded by the limit, which
+  // the color tests hold). The work of a style is its nodes visited and made, so a computation that walks the list again for each item shows as a ratio of 16 for 4 times the size.
+  add("css", "CSS compute: a gradient of n stops", 1500,
+      css_compute_value("background-image", [](size_t k) { return "linear-gradient(red" + repeat(", blue 10%", k) + ")"; })).per_byte = 0;
+  add("css", "CSS compute: a radial gradient of n stops with their hints", 800,
+      css_compute_value("background-image", [](size_t k) { return "radial-gradient(circle at 10px 10px, red" + repeat(", 20%, blue 30%", k) + ")"; })).per_byte = 0;
+  add("css", "CSS compute: a polygon of n vertices", 1500,
+      css_compute_value("clip-path", [](size_t k) { return "polygon(0 0" + repeat(", 1px 1px", k) + ")"; })).per_byte = 0;
+  {
+    Shape & ph = add("css", "CSS compute: a path() of n commands", 1500,
+        css_compute_value("offset-path", [](size_t k) { return "path('M 0 0" + repeat(" l 1 1", k) + "')"; }));
+    ph.per_byte = 0;
+    ph.flat = true;
+    ph.note = "the path data is one string: a style does not read its commands, and what is measured is that it does not look at it again";
+  }
+  add("css", "CSS compute: a shape() of n commands", 800,
+      css_compute_value("clip-path", [](size_t k) { return "shape(from 0 0" + repeat(", line to 1px 1px", k) + ")"; })).per_byte = 0;
+  add("css", "CSS compute: a filter list of n functions", 1500,
+      css_compute_value("filter", [](size_t k) { return repeat("blur(1px) ", k) + "grayscale(50%)"; })).per_byte = 0;
+  add("css", "CSS compute: a list of n background positions", 200,
+      css_compute_value("background-position", [](size_t k) { return repeat("left 10px top 20%, ", k) + "center"; })).per_byte = 0;
+  add("css", "CSS compute: a linear() easing of n points", 1500,
+      css_compute_value("animation-timing-function", [](size_t k) { return "linear(0" + repeat(", 0.5 20%", k) + ", 1)"; })).per_byte = 0;
   {
     Shape & sc = add("css", "CSS compute: one element with n custom properties", 600,
         css_compute_customs([](size_t i) { return "--c" + std::to_string(i); }));
