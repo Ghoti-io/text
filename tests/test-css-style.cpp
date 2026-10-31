@@ -274,21 +274,14 @@ TEST(CssStyleRequirements, TwoCascadesWithEqualResultsHaveTheSameDumpAndHash) {
 
 TEST(CssStyleRequirements, APropertyTheEngineCannotComputeIsUnsupportedAndNamed) {
   /* | Unsupported | a property outside the computed set | none | `E_UNSUPPORTED` naming it | */
-  Doc d(svg("<rect id=\"r\" style=\"corner-top-left-shape: round\"/>"));
-  EXPECT_EQ(d.status, GTEXT_CSS_E_UNSUPPORTED);
-  EXPECT_EQ(std::string(d.result.name), "corner-top-left-shape");
-  Doc e(svg("<rect id=\"r\"/>"));
-  ASSERT_EQ(e.status, GTEXT_CSS_OK);
+  /* the pin gives the legacy -webkit-box-* properties no grammar, initial value or computed value, so no declaration of one is valid and the read names it */
+  Doc d(svg("<rect id=\"r\" style=\"-webkit-box-align: start\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << "an invalid declaration is dropped";
   GTEXT_CSS_Compute_Result res;
   const GTEXT_CSS_Value_Set * set = nullptr;
-  const GTEXT_CSS_Status st = gtext_css_computed_get(e.at("r")->style, find(R(), "corner-top-left-shape"), &set, &res);
-  /* it has an initial value or it has none: when it has none the read names it */
-  if (st == GTEXT_CSS_E_UNSUPPORTED) {
-    EXPECT_EQ(std::string(res.name), "corner-top-left-shape");
-  }
-  else {
-    EXPECT_EQ(st, GTEXT_CSS_OK);
-  }
+  const GTEXT_CSS_Status st = gtext_css_computed_get(d.at("r")->style, find(R(), "-webkit-box-align"), &set, &res);
+  EXPECT_EQ(st, GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(std::string(res.name), "-webkit-box-align");
 }
 
 /* ---- the call ----------------------------------------------------------------------------------------------------------- */
