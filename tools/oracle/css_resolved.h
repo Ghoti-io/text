@@ -123,9 +123,19 @@ inline void substitute_current(const GTEXT_CSS_Component_Value * values, size_t 
 
 /// Replace the colors in the component values by their sRGB form, where the component value is a color that is one (`gtext_css_color_srgb`), and a mix, a
 /// relative color, `alpha()` or `contrast-color()` by the text it computes to (`gtext_css_color_compute_text`).
-inline void replace_colors(const GTEXT_CSS_Component_Value * values, size_t count, const std::string & text, std::string * out, size_t * from, size_t base) {
+inline void replace_colors(const GTEXT_CSS_Component_Value * values, size_t count, const std::string & text, std::string * out, size_t * from, size_t base,
+    bool gradients_only = false) {
   for (size_t i = 0; i < count; i++) {
     const GTEXT_CSS_Component_Value & v = values[i];
+    if (gradients_only) {
+      /* `content` holds names (counters, strings, quotes) and, as an <image>, gradients: only a gradient's arguments hold colors */
+      static const char suffix[] = "gradient";
+      if (v.kind == GTEXT_CSS_VALUE_FUNCTION && v.value.length >= sizeof suffix - 1 && v.child_count &&
+          std::string(v.value.data + v.value.length - (sizeof suffix - 1), sizeof suffix - 1) == suffix) {
+        replace_colors(v.children, v.child_count, text, out, from, base);
+      }
+      continue;
+    }
     const bool maybe = (v.kind == GTEXT_CSS_VALUE_TOKEN && (v.type == GTEXT_CSS_TOKEN_IDENT || v.type == GTEXT_CSS_TOKEN_HASH)) ||
         (v.kind == GTEXT_CSS_VALUE_FUNCTION && v.value.length >= 3);
     if (v.kind == GTEXT_CSS_VALUE_TOKEN && v.type == GTEXT_CSS_TOKEN_IDENT) {
@@ -180,7 +190,8 @@ inline void replace_colors(const GTEXT_CSS_Component_Value * values, size_t coun
 inline std::string resolved(const std::string & property, const GTEXT_CSS_Value * root, const std::string & original, const std::string & current = std::string()) {
   (void)root;
   std::string text = original;
-  if (kNameProperties.count(property) || text.empty() || text.find_first_of("#(abcdefghijklmnopqrstuvwxyz") == std::string::npos) {
+  const bool gradients_only = property == "content";
+  if ((kNameProperties.count(property) && !gradients_only) || text.empty() || text.find_first_of("#(abcdefghijklmnopqrstuvwxyz") == std::string::npos) {
     return text;
   }
   if (!current.empty() && text.size() >= 12) {
@@ -200,7 +211,7 @@ inline std::string resolved(const std::string & property, const GTEXT_CSS_Value 
   }
   std::string out;
   size_t from = 0;
-  replace_colors(tree->values, tree->value_count, text, &out, &from, 0);
+  replace_colors(tree->values, tree->value_count, text, &out, &from, 0, gradients_only);
   out += text.substr(from);
   gtext_css_tree_free(tree);
   return out;

@@ -1056,7 +1056,7 @@ static bool is_shape_fn(span t) {
   return false;
 }
 
-typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING, SHAPE_PROP_SETTINGS, SHAPE_PROP_AREAS, SHAPE_PROP_ROTATE, SHAPE_PROP_CORNER, SHAPE_PROP_POSITION_AREA } shape_prop;
+typedef enum { SHAPE_PROP_OTHER, SHAPE_PROP_OUTSIDE, SHAPE_PROP_BORDER_SHAPE, SHAPE_PROP_PALETTE, SHAPE_PROP_RANGE_LIMIT, SHAPE_PROP_EASING, SHAPE_PROP_SETTINGS, SHAPE_PROP_AREAS, SHAPE_PROP_ROTATE, SHAPE_PROP_CORNER, SHAPE_PROP_POSITION_AREA, SHAPE_PROP_TRY_FALLBACKS, SHAPE_PROP_EMPHASIS } shape_prop;
 
 /* ---- mixes: dynamic-range-limit-mix() and palette-mix() ------------------------------------------------------------------ */
 
@@ -2214,6 +2214,26 @@ static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) 
     if (i) {
       sb_puts(out, ", ");
     }
+    if (prop == SHAPE_PROP_TRY_FALLBACKS) {
+      /* Anchor Positioning 1, position-try-fallbacks: "none | [ [<dashed-ident> || <try-tactic>] | <'position-area'> ]#": an item that is a position-area is
+         computed as one (a pair that says one keyword twice is the keyword; the recorded answers of both pinned browsers, cases position-try-fallbacks-computed #11) */
+      sb w = {out->a, NULL, 0, 0, false};
+      rewrite_position_area(&w, parts.v[i]);
+      if (w.fail) {
+        out->fail = true;
+      }
+      else if (w.n != parts.v[i].n || memcmp(w.d, parts.v[i].p, w.n) != 0) {
+        *changed = true;
+      }
+      if (w.fail || w.n == 0) {
+        put_span(out, parts.v[i]);
+      }
+      else {
+        sb_put(out, w.d, w.n);
+      }
+      gtext_allocator_free((GTEXT_Allocator *)out->a, w.d);
+      continue;
+    }
     rewrite_item(out, parts.v[i], prop, changed);
   }
   gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
@@ -2349,6 +2369,67 @@ static void collapse_inset(sb * out, span text, bool * changed) {
   gtext_allocator_free((GTEXT_Allocator *)out->a, tk.v);
 }
 
+/// Whether a token is one of the shape keywords of `text-emphasis-style`.
+static bool emphasis_shape(span t) {
+  return eq(t, "dot") || eq(t, "circle") || eq(t, "double-circle") || eq(t, "triangle") || eq(t, "sesame");
+}
+
+/// `text-emphasis-style` as the pair the served text names (see css_algo_shape): nothing is written (`w.n == 0`) for `none`, a string and what is not one or two keywords.
+static void emphasis_pair(sb * w, span text, bool vertical) {
+  span tok[2];
+  size_t n = 0;
+  size_t i = 0;
+  while (i < text.n) {
+    while (i < text.n && text.p[i] == ' ') {
+      i++;
+    }
+    const size_t from = i;
+    while (i < text.n && text.p[i] != ' ') {
+      i++;
+    }
+    if (i > from) {
+      if (n == 2) {
+        return;
+      }
+      tok[n++] = (span){text.p + from, i - from};
+    }
+  }
+  span fill = {NULL, 0}, shape = {NULL, 0};
+  for (size_t k = 0; k < n; k++) {
+    if (eq(tok[k], "filled") || eq(tok[k], "open")) {
+      if (fill.p) {
+        return;
+      }
+      fill = tok[k];
+    }
+    else if (emphasis_shape(tok[k])) {
+      if (shape.p) {
+        return;
+      }
+      shape = tok[k];
+    }
+    else {
+      return;   /* none, a string */
+    }
+  }
+  if (!fill.p && !shape.p) {
+    return;
+  }
+  if (fill.p) {
+    put_span(w, fill);
+  }
+  else {
+    sb_puts(w, "filled");
+  }
+  sb_puts(w, " ");
+  if (shape.p) {
+    put_span(w, shape);
+  }
+  else {
+    sb_puts(w, vertical ? "sesame" : "circle");
+  }
+}
+
 /* ---- the algorithm ---------------------------------------------------------------------------------------------- */
 
 /// Read `text` as a value of the property and compute it by its types. `*out` is NULL when the text is not a value of the property.
@@ -2415,11 +2496,17 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
   else if (m->name_length == 13 && memcmp(m->name, "position-area", 13) == 0) {
     prop = SHAPE_PROP_POSITION_AREA;
   }
+  else if (m->name_length == 22 && memcmp(m->name, "position-try-fallbacks", 22) == 0) {
+    prop = SHAPE_PROP_TRY_FALLBACKS;
+  }
+  else if (m->name_length == 19 && memcmp(m->name, "text-emphasis-style", 19) == 0) {
+    prop = SHAPE_PROP_EMPHASIS;
+  }
   else if (m->name_length > 13 && memcmp(m->name, "corner-", 7) == 0 && memcmp(m->name + m->name_length - 6, "-shape", 6) == 0) {
     prop = SHAPE_PROP_CORNER;
   }
   /* a keyword is its own computed value, except step-start and step-end, which are written as steps() */
-  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING && prop != SHAPE_PROP_ROTATE && prop != SHAPE_PROP_CORNER)) {
+  if (!root || (root->kind == GTEXT_CSS_VAL_KEYWORD && prop != SHAPE_PROP_EASING && prop != SHAPE_PROP_ROTATE && prop != SHAPE_PROP_CORNER && prop != SHAPE_PROP_EMPHASIS)) {
     *out = bt;
     return GTEXT_CSS_OK;
   }
@@ -2433,6 +2520,34 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
   if (s != GTEXT_CSS_OK) {
     gtext_css_value_set_free(bt);
     return css_st_fail(st, s, NULL, NULL);
+  }
+  if (prop == SHAPE_PROP_EMPHASIS) {
+    /* Text Decoration 4, 3.3 (served 2026-10-30): the computed value is "a pair of keywords representing the shape and fill"; "If a shape keyword is specified but
+       neither of filled nor open is specified, filled is assumed. If only filled or open is specified, the shape keyword computes to circle in horizontal
+       typographic modes and sesame in vertical typographic modes." (Chromium writes dot for a lone fill, Firefox circle: the text decides.) */
+    sb w = {&alloc, NULL, 0, 0, false};
+    emphasis_pair(&w, (span){text, text_len}, st->style->flow.writing_mode != GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB);
+    gtext_css_serialize_buffer_free(&so, text);
+    if (w.fail) {
+      gtext_allocator_free(&alloc, w.d);
+      gtext_css_value_set_free(bt);
+      return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+    if (w.n == 0) {
+      gtext_allocator_free(&alloc, w.d);
+      *out = bt;
+      return GTEXT_CSS_OK;
+    }
+    GTEXT_CSS_Value_Set * pe = NULL;
+    s = reread(st, id, w.d, w.n, true, &pe);
+    gtext_allocator_free(&alloc, w.d);
+    if (s != GTEXT_CSS_OK || !pe) {
+      gtext_css_value_set_free(bt);
+      return s;
+    }
+    gtext_css_value_set_free(bt);
+    *out = pe;
+    return GTEXT_CSS_OK;
   }
   /* pass one: the functions and the boxes */
   sb one = {&alloc, NULL, 0, 0, false};

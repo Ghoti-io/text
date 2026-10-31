@@ -98,6 +98,7 @@ outline-color	by-type	-	partial: the keyword invert and auto are kept as written
 outline-width	algorithm	BORDER_WIDTH	exact	-	absolute length, snapped as a border width
 perspective-origin	algorithm	POSITION	exact	-	see background-position
 position-area	algorithm	SHAPE	exact	-	the keyword none or a pair of keywords, see § 3.1.3 Computed Value and Serialization of <position-area>
+position-try-fallbacks	algorithm	SHAPE	exact	-	as specified
 rotate	algorithm	ROTATE	exact	-	the keyword none, or an <angle> with an axis consisting of a list of three <number>s
 row-rule-width	algorithm	RULE_WIDTH	partial: the border style that makes a width 0 is not applied to a list of widths	-	list of absolute lengths, snapped as a border width
 scale	algorithm	SCALE	exact	-	the keyword none, or a list of 3 <number>s
@@ -114,6 +115,7 @@ stroke-size	algorithm	BG_SIZE	exact	-	as specified, but with lengths made absolu
 stroke-width	algorithm	LINE_WIDTH	exact	-	the absolute length, or percentage
 text-align-all	algorithm	TEXT_ALIGN	exact	-	keyword as specified, except for match-parent which computes as defined above
 text-align-last	algorithm	TEXT_ALIGN	exact	-	keyword as specified, except for match-parent which computes as defined above
+text-emphasis-style	algorithm	SHAPE	exact	-	the keyword none, a pair of keywords representing the shape and fill, or a string
 text-justify	algorithm	KEYWORD_ALIAS	exact	-	draft:https://drafts.csswg.org/css-text-4/: For legacy reasons, UAs must also support the alternate keyword distribute which must compute to inter-character
 text-shadow	algorithm	SHADOW	exact	-	either the keyword none or a list, each item consisting of four absolute lengths plus a computed color and optionally also an inset keyword
 transform-origin	algorithm	POSITION	exact	-	see background-position

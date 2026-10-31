@@ -628,7 +628,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* position-anchor */
   {3, 39, 0, 0, 0, 0, 0}, /* position-area */
   {4, 0, 3, 0, 0, 0, 0}, /* position-try */
-  {1, 0, 0, 0, 0, 0, 0}, /* position-try-fallbacks */
+  {3, 39, 0, 0, 0, 0, 0}, /* position-try-fallbacks */
   {1, 0, 0, 0, 0, 0, 0}, /* position-try-order */
   {1, 0, 0, 0, 0, 0, 0}, /* position-visibility */
   {1, 0, 0, 1, 0, 0, 0}, /* print-color-adjust */
@@ -777,7 +777,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {2, 0, 0, 1, 0, 0, 0}, /* text-emphasis-color */
   {1, 0, 0, 1, 0, 0, 0}, /* text-emphasis-position */
   {1, 0, 0, 1, 0, 0, 0}, /* text-emphasis-skip */
-  {1, 0, 0, 1, 0, 0, 0}, /* text-emphasis-style */
+  {3, 39, 0, 1, 0, 0, 0}, /* text-emphasis-style */
   {1, 0, 0, 1, 0, 0, 0}, /* text-fit */
   {1, 0, 0, 0, 0, 0, 0}, /* text-group-align */
   {2, 0, 0, 1, 0, 0, 0}, /* text-indent */

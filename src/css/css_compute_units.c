@@ -49,16 +49,27 @@ double css_st_parent_font_px(css_state * st) {
   return font_px_of(st, st->parent);
 }
 
-double css_st_em(css_state * st) {
+/// Whether the property being computed is a font-affecting property. Values 4, 6.1.1 (served 2026-10-30): "Properties that affect the font size or font metrics of an
+/// element are font-affecting properties. When used in the value of any font-affecting property on the element they refer to, the font-relative lengths resolve
+/// against the computed metrics of the parent element". The text lists none; the font-size and the font-* properties (font-weight, font-style, font-width,
+/// font-size-adjust, font-palette, the font-variant-* ones, font-feature-settings, font-variation-settings ...) are the ones that name the font.
+static bool font_affecting(const css_state * st) {
   const GTEXT_CSS_Compute_Context * cc = st->cc;
   if (st->current == cc->pid[CSS_P_FONT_SIZE]) {
+    return true;
+  }
+  const css_pmeta * m = st->current ? &cc->meta[st->current - 1] : NULL;
+  return m && m->name_length > 5 && memcmp(m->name, "font-", 5) == 0;
+}
+
+double css_st_em(css_state * st) {
+  if (font_affecting(st)) {
     return css_st_parent_font_px(st);
   }
   return font_px_of(st, st->style);
 }
 
 void css_st_font_query(css_state * st, bool root, GTEXT_CSS_Font_Query * q) {
-  const GTEXT_CSS_Compute_Context * cc = st->cc;
   if (root) {
     const css_root_info * r = &st->style->root;
     memset(q, 0, sizeof *q);
@@ -81,7 +92,7 @@ void css_st_font_query(css_state * st, bool root, GTEXT_CSS_Font_Query * q) {
     }
     return;
   }
-  if (st->current == cc->pid[CSS_P_FONT_SIZE] && st->parent) {
+  if (font_affecting(st) && st->parent) {
     css_st_font_query_of(st->parent, css_st_parent_font_px(st), q);
     q->element = st->element;
     return;

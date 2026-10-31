@@ -291,6 +291,73 @@ The text is a fixed point: declared again as the shorthand, it computes to the s
 says that "computed values are always serialized as two offsets (without keywords)". The text of the shorthand therefore has the keyword folded into the
 offset: `right 11% bottom` is `89% 100%` and `top 17px right -18px` is `calc(100% + 18px) 17px`, while `background-position-x` stays `right 11%`.
 
+The two shorthands below are asked from one computed style, and a color is asked for its computed text on its own (`gtext_css_color_compute_text()`: the text of a mix,
+a relative color, `alpha()` or `contrast-color()` that needs nothing but itself, in the form the standard names). The corner shorthands are `<'corner-shape'> || <'border-radius'>`
+and are written shape first, a radius that is its initial value left out, and the slash belonging to the radius.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+static void compute(const GTEXT_CSS_Compute_Context * context, const char * declarations, GTEXT_CSS_Computed_Style ** out) {
+  GTEXT_CSS_Style_Entry entry;
+  memset(&entry, 0, sizeof entry);
+  entry.keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+  entry.text.data = declarations;
+  entry.text.length = strlen(declarations);
+  GTEXT_CSS_Style_Options options;
+  memset(&options, 0, sizeof options);
+  gtext_css_style_compute(context, NULL, NULL, &entry, 1, &options, out, NULL);
+}
+
+/* getComputedStyle(element).getPropertyValue("background-position") asks a computed style for a shorthand: the text is written from the computed longhands,
+   and is empty where they form no value of it. A color that needs nothing but itself has a computed text of its own. */
+static void style_shorthand(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSS_Compute_Context * context = NULL;
+  gtext_css_compute_context_new(registry, NULL, NULL, &context, NULL);
+
+  GTEXT_CSS_Computed_Style * style = NULL;
+  compute(context, "background-position: right 11% bottom; corner: 4px 2% / 3px notch", &style);
+  const char * names[2] = {"background-position", "corner"};
+  for (int i = 0; i < 2; i++) {
+    char * text = NULL;
+    size_t length = 0;
+    gtext_css_computed_shorthand_text(style, gtext_css_registry_find_property(registry, names[i], strlen(names[i])), &text, &length, NULL);
+    printf("%s: %s\n", names[i], text);
+    gtext_css_serialize_buffer_free(NULL, text);
+  }
+
+  const char * source = "color-mix(in srgb, red, blue)";
+  GTEXT_CSS_Tree * tree = NULL;
+  gtext_css_parse_component_values(source, strlen(source), NULL, &tree, NULL);
+  GTEXT_CSS_Color_Options options = gtext_css_color_options_default();
+  GTEXT_CSS_Color * color = NULL;
+  bool valid = false;
+  gtext_css_color_parse(&tree->values[0], &options, &valid, &color, NULL);
+  char computed[GTEXT_CSS_COLOR_COMPUTED_TEXT_MAX + 1];
+  size_t computed_length = 0;
+  gtext_css_color_compute_text(color, false, NULL, computed, &computed_length);
+  printf("%s is %s\n", source, computed);
+
+  gtext_css_color_free(color);
+  gtext_css_tree_free(tree);
+  gtext_css_computed_free(style);
+  gtext_css_compute_context_free(context);
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+background-position: 89% 100%
+corner: superellipse(-infinity) 4px 2% / 3px
+color-mix(in srgb, red, blue) is color(srgb 0.5 0 0.5)
+```
+
 ## The dump and the hash
 
 `gtext_css_computed_dump()` writes the style as canonical text: a first line `css-computed 3` (`GTEXT_CSS_COMPUTED_DUMP_VERSION`, which changes with any

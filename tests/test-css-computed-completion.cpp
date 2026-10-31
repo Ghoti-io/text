@@ -329,6 +329,55 @@ TEST(CssComputedCompletionNewerGrammar, ViewTransitionNameKeywordsAreLowerCase) 
   EXPECT_EQ(root_computed("view-transition-name: match-element-2", "view-transition-name"), "match-element-2");
 }
 
+/* Values 4, 6.1 (Lengths): "if a 0 could be parsed as either a <number> or a <length> in a property (such as line-height), it must parse as a <number>". The grammar of
+   border-image-width writes <length-percentage> before <number>; the literal 0 is the number. */
+TEST(CssComputedCompletionNewerGrammar, ALiteralZeroIsTheNumberWhereTheGrammarHasBoth) {
+  EXPECT_EQ(root_computed("border-image-width: 0", "border-image-width"), "0 0 0 0");
+  EXPECT_EQ(root_computed("border-image-width: 0 1px 0", "border-image-width"), "0 1px 0 1px");
+  EXPECT_EQ(root_computed("border-image-width: 0px", "border-image-width"), "0px 0px 0px 0px") << "a zero with a unit is the length";
+  EXPECT_EQ(root_computed("border-image-width: calc(0)", "border-image-width"), "0 0 0 0");
+}
+
+/* Text Decoration 4, 3.3 (served 2026-10-30): the computed value of text-emphasis-style is "a pair of keywords representing the shape and fill"; "If a shape keyword is
+   specified but neither of filled nor open is specified, filled is assumed. If only filled or open is specified, the shape keyword computes to circle in horizontal
+   typographic modes and sesame in vertical typographic modes." */
+TEST(CssComputedCompletionNewerGrammar, TextEmphasisStyleIsAPair) {
+  EXPECT_EQ(root_computed("text-emphasis-style: filled", "text-emphasis-style"), "filled circle");
+  EXPECT_EQ(root_computed("text-emphasis-style: open", "text-emphasis-style"), "open circle");
+  EXPECT_EQ(root_computed("text-emphasis-style: triangle", "text-emphasis-style"), "filled triangle");
+  EXPECT_EQ(root_computed("text-emphasis-style: sesame open", "text-emphasis-style"), "open sesame");
+  EXPECT_EQ(root_computed("text-emphasis-style: filled dot", "text-emphasis-style"), "filled dot");
+  EXPECT_EQ(root_computed("writing-mode: vertical-rl; text-emphasis-style: filled", "text-emphasis-style"), "filled sesame");
+  EXPECT_EQ(root_computed("writing-mode: vertical-lr; text-emphasis-style: open", "text-emphasis-style"), "open sesame");
+  EXPECT_EQ(root_computed("text-emphasis-style: none", "text-emphasis-style"), "none");
+  EXPECT_EQ(root_computed("text-emphasis-style: 'x'", "text-emphasis-style"), "\"x\"");
+}
+
+/* Anchor Positioning 1: position-try-fallbacks is "none | [ [<dashed-ident> || <try-tactic>] | <position-area> ]#", computed "as specified"; an item that is a position-area
+   is computed as position-area is (Anchor Positioning 1, 3.1.3), and the recorded answers of both pinned browsers write `start start` as `start`. */
+TEST(CssComputedCompletionNewerGrammar, PositionTryFallbacksComputeTheirPositionAreas) {
+  EXPECT_EQ(root_computed("position-try-fallbacks: start start", "position-try-fallbacks"), "start");
+  EXPECT_EQ(root_computed("position-try-fallbacks: top span-all, start start", "position-try-fallbacks"), "top, start");
+  EXPECT_EQ(root_computed("position-try-fallbacks: flip-block, --a flip-x, block-start span-all", "position-try-fallbacks"), "flip-block, --a flip-x, block-start span-all");
+  EXPECT_EQ(root_computed("position-try-fallbacks: none", "position-try-fallbacks"), "none");
+}
+
+/* Values 4, 6.1.1: "Properties that affect the font size or font metrics of an element are font-affecting properties. When used in the value of any font-affecting
+   property on the element they refer to, the font-relative lengths resolve against the computed metrics of the parent element". The element's own font-size is 100px
+   here and its parent's 10px; the other properties of the element are not font-affecting and use its own. */
+TEST(CssComputedCompletionNewerGrammar, FontRelativeLengthsInFontPropertiesUseTheParent) {
+  Context ctx(R());
+  Block pb(R(), "font-size: 10px");
+  Block cb(R(), "font-size: 100px; font-weight: calc(1em / 1px); font-width: calc(1em / 1px * 1%); font-size-adjust: calc(1em / 1px); width: 2em");
+  Style parent, child;
+  parent.compute(ctx, &pb);
+  child.compute(ctx, &cb, &parent);
+  EXPECT_EQ(child.value("font-weight"), "10");
+  EXPECT_EQ(child.value("font-width"), "10%");
+  EXPECT_EQ(child.value("font-size-adjust"), "ex-height 10");
+  EXPECT_EQ(child.value("width"), "200px") << "width is not a font-affecting property";
+}
+
 /* Color HDR 1, 3.3: "Let p1, ..., pN be the mixing percentages, normalized to sum to 100%"; the computed value is dynamic-range-limit-mix() "with parameters standard,
    constrained, and no-limit, in that order ... omitting parameters with a percentage equal to 0%", and a mix that is all of one limit is that limit. */
 TEST(CssComputedCompletionMixes, DynamicRangeLimitMixNormalizesAndOrders) {

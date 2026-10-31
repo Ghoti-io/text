@@ -54,6 +54,9 @@ namespace entries {
 namespace dump {
 #include "doc-snippets/css/style-dump.c"
 }
+namespace shorthand {
+#include "doc-snippets/css/style-shorthand.c"
+}
 
 namespace {
 
@@ -68,6 +71,7 @@ const Snippet kSnippets[] = {
         "font-size: 20px\nstroke-width: 5px\nletter-spacing: 10px\nopacity: 0.5\nstroke-width came from the style attribute\nopacity came from the presentation attribute\n"
         "dropped stroke-linecap at byte 0\ndropped bogus at byte 23\n"},
     {"style-entries.c", entries::style_entries, "stroke-width: 4px\nopacity: 0.75\nfont-size: 30px\n"},
+    {"style-shorthand.c", shorthand::style_shorthand, "background-position: 89% 100%\ncorner: superellipse(-infinity) 4px 2% / 3px\ncolor-mix(in srgb, red, blue) is color(srgb 0.5 0 0.5)\n"},
     {"style-dump.c", dump::style_dump,
         "version 3, begins:\ncss-computed 3\na line for each property, after the two of the header: yes\nhash of 32 bytes\nsame values, same hash: yes\nother values, same hash: no\n"},
 };

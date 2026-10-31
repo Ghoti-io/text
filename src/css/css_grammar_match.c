@@ -2617,6 +2617,22 @@ static bool build_task(builder * B, const struct task * t) {
   case GN_REQ:
     return push_task(B, T_BUILD, kid_of(m, g, 0), t->pos, t->end, 0);
   case GN_ALT: {
+    /* Values 4, 6.1: "However, if a 0 could be parsed as either a <number> or a <length> in a property (such as line-height), it must parse as a <number>": a
+       literal 0 that two alternatives take goes to the one that is a number, whichever the grammar writes first */
+    const GTEXT_CSS_Component_Value * zv = t->pos < m->nitems ? m->items[t->pos].cv : NULL;
+    const bool literal_zero = zv && t->end == t->pos + 1 && tok(zv, GTEXT_CSS_TOKEN_NUMBER) && zv->number == 0;
+    for (uint32_t j = 0; literal_zero && j < g->nkids; j++) {
+      const gnode * kn = &m->c->nodes[kid_of(m, g, j)];
+      ends_t e;
+      if (kn->kind == GN_NATIVE && kn->native == NT_NUMBER) {
+        if (!ends_sync(m, kid_of(m, g, j), t->pos, &e)) {
+          return false;
+        }
+        if (ends_has(&e, t->end)) {
+          return push_task(B, T_BUILD, kid_of(m, g, j), t->pos, t->end, 0);
+        }
+      }
+    }
     for (uint32_t j = 0; j < g->nkids; j++) {
       ends_t e;
       if (!ends_sync(m, kid_of(m, g, j), t->pos, &e)) {
