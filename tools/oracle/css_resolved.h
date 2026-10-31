@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <set>
 #include <string>
 #include <vector>
@@ -317,6 +318,26 @@ inline GTEXT_CSS_Status read(const GTEXT_CSS_Registry * registry, const GTEXT_CS
     }
     *out = text;
     return GTEXT_CSS_OK;
+  }
+  /* Both pinned browsers write the resolved value of these two shorthands from all their longhands, the initial ones included (`text-emphasis: black` is
+     `none rgb(0, 0, 0)`, `-webkit-text-stroke: green` is `0px rgb(0, 128, 0)`; recorded cases text-emphasis.1 and webkit-text-stroke.1): a resolved
+     longhand is a used value, and a color is never the initial `currentcolor`. The served text is silent. */
+  static const char * const full_shorthands[][3] = {{"text-emphasis", "text-emphasis-style", "text-emphasis-color"}, {"-webkit-text-stroke", "-webkit-text-stroke-width", "-webkit-text-stroke-color"}};
+  for (const auto & full : full_shorthands) {
+    if (std::string(t.name, t.name_length) == full[0]) {
+      std::string joined;
+      for (int k = 1; k < 3; k++) {
+        const GTEXT_CSS_Property_Id leaf = gtext_css_registry_find_property(registry, full[k], std::strlen(full[k]));
+        std::string part;
+        const GTEXT_CSS_Status ls = leaf ? read(registry, style, leaf, &part, result) : GTEXT_CSS_E_INVALID;
+        if (ls != GTEXT_CSS_OK) {
+          return ls;
+        }
+        joined += (k > 1 ? " " : "") + part;
+      }
+      *out = joined;
+      return GTEXT_CSS_OK;
+    }
   }
   char * buf = nullptr;
   size_t n = 0;

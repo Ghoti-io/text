@@ -204,6 +204,27 @@ TEST(CssComputedCompletionAlignment, TheLegacyKeywordsAreTheirFlowAliases) {
   EXPECT_EQ(root_computed("align-content: flow-middle", "align-content"), "normal");
 }
 
+/* Box Alignment 3 (served 2026-10-30), justify-items: "if the inherited value of justify-items includes the legacy keyword, this value computes to the inherited value";
+   otherwise a lone legacy is normal. Both pinned browsers write normal under a root (recorded case justify-items-legacy). */
+TEST(CssComputedCompletionAlignment, ALoneLegacyIsTheInheritedLegacyValueOrNormal) {
+  EXPECT_EQ(root_computed("justify-items: legacy", "justify-items"), "normal");
+  EXPECT_EQ(computed("justify-items: normal", "justify-items: legacy", "justify-items"), "normal");
+  EXPECT_EQ(computed("justify-items: legacy left", "justify-items: legacy", "justify-items"), "legacy left");
+  EXPECT_EQ(computed("justify-items: legacy", "justify-items: legacy", "justify-items"), "normal") << "the parent's own lone legacy computed to normal";
+  EXPECT_EQ(root_computed("justify-items: legacy left", "justify-items"), "legacy left");
+  EXPECT_EQ(root_computed("place-items: flex-end legacy", "justify-items"), "normal");
+}
+
+/* Viewport 1 (served 2026-10-30), zoom: "A 0 value is treated as if it was 1." and "A 0 percentage is treated as if it was 100%."; the computed value line ("as specified, but
+   with <percentage> converted to the equivalent <number>") does not say whether the 1 is written, and both pinned browsers write it (recorded cases zoom.1, zoom.2). */
+TEST(CssComputedCompletionZoom, ZeroAndNormalAreOne) {
+  EXPECT_EQ(root_computed("zoom: normal", "zoom"), "1");
+  EXPECT_EQ(root_computed("zoom: 0", "zoom"), "1");
+  EXPECT_EQ(root_computed("zoom: 0%", "zoom"), "1");
+  EXPECT_EQ(root_computed("zoom: 50%", "zoom"), "0.5");
+  EXPECT_EQ(root_computed("zoom: 2", "zoom"), "2");
+}
+
 /* Overflow 3: "The visible and clip values are known as the non-scrollable values." and "a specified value of visible computes to auto, enabling scrolling in its axis", when the
    other axis is scrollable. clip does not make the other axis scrollable and is not changed. */
 TEST(CssComputedCompletionOverflow, VisibleBesideAScrollableAxisIsAuto) {

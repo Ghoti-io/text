@@ -946,6 +946,13 @@ static GTEXT_CSS_Status algo_zoom(css_state * st, GTEXT_CSS_Property_Id id, cons
     return s;
   }
   const GTEXT_CSS_Value * b = gtext_css_value_set_root(bt);
+  /* Viewport 1 (served 2026-10-30), zoom: "A 0 value is treated as if it was 1." and "A 0 percentage is treated as if it was 100%."; the computed value line is
+     silent on whether that is written, so the answer both pinned browsers give decides (recorded case zoom.2): 1. `normal` is in neither the pin nor the served
+     grammar; both browsers accept it as 1 (recorded case zoom.1). */
+  if (kw(b, "normal") || (b && (is_pct(b) || is_number(b)) && b->number == 0.0)) {
+    gtext_css_value_set_free(bt);
+    return emit_number(st, 1.0, false, out);
+  }
   if (is_pct(b)) {
     const double n = b->number / 100.0;
     gtext_css_value_set_free(bt);
@@ -1776,13 +1783,55 @@ static const char * align_alias(const GTEXT_CSS_Value * v) {
   return NULL;
 }
 
+/// Whether an alignment value is or holds the keyword `legacy`.
+static bool align_has_legacy(const GTEXT_CSS_Value * v) {
+  if (!v) {
+    return false;
+  }
+  if (v->kind == GTEXT_CSS_VAL_KEYWORD) {
+    return kw(v, "legacy");
+  }
+  for (size_t i = 0; v->kind == GTEXT_CSS_VAL_LIST && i < v->child_count; i++) {
+    if (kw(&v->children[i], "legacy")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static GTEXT_CSS_Status build_align_keyword(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,
     GTEXT_CSS_Value ** out_root) {
-  (void)st;
   (void)bt;
-  (void)m;
   if (!root) {
     return GTEXT_CSS_OK;
+  }
+  /* Box Alignment 3 (served 2026-10-30), justify-items: "if the inherited value of justify-items includes the legacy keyword, this value computes to the inherited
+     value"; otherwise a lone legacy computes to normal. Both pinned browsers write normal under a root (recorded case justify-items-legacy). */
+  if (root->kind == GTEXT_CSS_VAL_KEYWORD && kw(root, "legacy") && strcmp(m->name, "justify-items") == 0) {
+    const GTEXT_CSS_Value * parent = css_st_parent_root(st, st->current);
+    if (!align_has_legacy(parent)) {
+      GTEXT_CSS_Value * one = css_vb_value(&a->vb);
+      if (!one) {
+        return a->vb.status;
+      }
+      *one = *root;
+      one->atom = 0;
+      css_v_keyword(&a->vb, one, "normal");
+      *out_root = one;
+      return a->vb.status;
+    }
+    if (parent->kind == GTEXT_CSS_VAL_LIST) {
+      GTEXT_CSS_Value * kids = css_vb_values(&a->vb, parent->child_count);
+      GTEXT_CSS_Value * list = css_vb_value(&a->vb);
+      if (!kids || !list) {
+        return a->vb.status;
+      }
+      memcpy(kids, parent->children, parent->child_count * sizeof *kids);
+      *list = *parent;
+      list->children = kids;
+      *out_root = list;
+    }
+    return a->vb.status;
   }
   if (root->kind == GTEXT_CSS_VAL_KEYWORD) {
     const char * to = align_alias(root);
