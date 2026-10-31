@@ -122,6 +122,48 @@ PAIRS = [
 ]
 
 
+# declarations of the C2e families, one compute per entry (root, root-plain and a parent/child): the fixed point of a computed value is only
+# compared when a computation succeeds, and only these compute-mode seeds reach it
+FAMILIES = [
+    "color: color-mix(in oklch, red 30%, blue)", "color: color-mix(in srgb, red, blue 20%)", "color: color-mix(in hsl longer hue, red, blue)",
+    "color: rgb(from red r g b / 0.5)", "color: hsl(from rebeccapurple calc(h + 30) s l)", "color: lab(from oklch(70% 0.1 120) l a b / alpha)",
+    "color: alpha(from red / 0.5)", "color: contrast-color(white)", "color: contrast-color(color-mix(in srgb, blue, green))",
+    "color: light-dark(red, blue)", "color: color(display-p3 1 0.5 none / 0.5)", "color: oklch(none 0.1 none)", "color: rgb(none 128 255)",
+    "color: rgb(from red calc(NaN) g b)", "background-color: color-mix(in srgb, currentcolor 40%, white)", "color: red; background-color: currentcolor",
+    "border-color: color-mix(in lab, red, blue) hsl(0 100% 50%) currentcolor light-dark(white, black)",
+    "clip-path: inset(1px 2px 3px 4px round 5px 6px / 7px 8px)", "clip-path: circle(closest-side at top 0% right 10%)",
+    "clip-path: ellipse(1px closest-side at center)", "clip-path: polygon(round 1em, 0 0, 10px 20px, 30px 5%)", "clip-path: rect(0px 1% auto 3% round 0px 1px 2em)",
+    "clip-path: xywh(1px 2px 30% 40% round 3px)", "clip-path: path('M10,10h80v80h-80z')", "clip-path: shape(from 20px 40px, smooth to center 20%, close)",
+    "shape-outside: circle(50%) margin-box", "offset-path: ray(0deg at center center sides)", "offset-path: ray(45deg closest-corner contain)",
+    "border-shape: circle(closest-corner) ellipse(5px 6px)", "clip: rect(1px, 2em, calc(3px + 1em), auto)",
+    "background-image: radial-gradient(farthest-corner, red, blue)", "background-image: conic-gradient(from 0deg at 50% 50%, red, gold)",
+    "background-image: linear-gradient(-45deg, red, currentcolor)", "background-image: repeating-linear-gradient(to top right, red 0 10px, blue 10px 20px)",
+    "background-image: linear-gradient(in oklch longer hue, red, blue), url(a)", "mask-image: radial-gradient(circle 10px at 1px 2px, red 10%, blue)",
+    "border-image-source: linear-gradient(red 10%, 30%, blue)", "list-style-image: conic-gradient(red, blue 50%, green)", "content: linear-gradient(red, blue)",
+    "filter: grayscale(50%) contrast() drop-shadow(1px 2px)", "filter: blur(calc(1px + 2px)) brightness(calc(-10)) sepia(150%)", "filter: hue-rotate(0.5turn) invert() saturate(2) opacity(50%)",
+    "backdrop-filter: drop-shadow(0 0 5px red) url(#a)", "filter: drop-shadow(1px 2px color-mix(in srgb, red, blue))",
+    "background-position: 50% 6px", "background-position: right 10px top 20px, left 5% bottom 3em", "background-position-x: center, left, right",
+    "background-position-y: bottom 10px, top", "mask-position: right 11% bottom 3px", "object-position: left 20px top", "transform-origin: left top 4px",
+    "perspective-origin: right 10% bottom 10%", "offset-position: bottom right",
+    "mask: url(a) 1px 2px / 3px 4px no-repeat luminance add, none", "animation: anim paused both reverse 4 1s -3s cubic-bezier(0, -2, 1, 3)",
+    "transition: opacity 1s linear(0, 0.5 25% 75%, 1), color 2s steps(4, jump-none)", "animation-timing-function: linear(0, 1), steps(2, jump-start), step-end",
+    "animation-timing-function: linear(0 20%, 0.5 10%, 1)", "font-palette: palette-mix(in oklch, light 30%, dark)", "font-palette: palette-mix(in lch, light, dark 25%)",
+    "dynamic-range-limit: dynamic-range-limit-mix(standard 30%, no-limit 20%, constrained 50%)", "dynamic-range-limit: dynamic-range-limit-mix(no-limit 1%, standard 3%)",
+    "corner-shape: superellipse(5) round", "corner-top-left-shape: notch", "corner-block-start-shape: scoop squircle", "corner-shape: bevel square",
+    "position-area: span-all center", "position-area: top span-left", "position-area: block-start inline-end", "position-area: x-start y-end", "overlay: auto",
+    "align-content: flex-start", "place-items: flex-end legacy", "justify-content: safe flow-start", "align-self: unsafe center", "place-content: first baseline start",
+    "justify-items: legacy left", "justify-items: legacy", "text-justify: distribute", "view-transition-name: auto", "view-transition-name: Foo",
+    "container-type: anchored", "text-box: trim-both cap alphabetic", "hyphenate-limit-chars: 5 2 2", "text-emphasis: filled circle red", "text-emphasis-position: over right",
+    "zoom: 0", "zoom: normal", "zoom: 150%", "scroll-marker-group: before", "overflow: hidden visible", "overflow: clip visible", "opacity: clamp(50%, 0%, 70%)",
+    "offset-rotate: reverse", "animation-duration: auto", "text-decoration-thickness: calc(200% - 0px)", "text-underline-offset: calc(1em / 4)",
+    "font-variation-settings: \"wght\" 700, \"opsz\" 12, \"wght\" calc(300 + 1)", "font-feature-settings: \"liga\" 0, \"kern\", \"liga\" 1",
+    "contain: size style layout paint", "grid-template-areas: \"a  b\" \"c ...\"", "caret-color: red auto", "aspect-ratio: calc(1 + 1) / 3",
+    "font-synthesis: weight position", "font: italic bold 12px/1.5 serif", "text-align-last: match-parent", "outline-offset: inset",
+    "-webkit-text-stroke: 1px red", "width: calc(10% + 0px)", "z-index: 1e400", "flex-grow: calc(1 / 0)", "width: calc(infinity * 1px)",
+    "color-scheme: only dark; color: light-dark(red, blue)", "clip-path: circle(calc(min(50%, 60%)) at 1px 2px)",
+]
+
+
 def shorthand_names():
     names = []
     with open(os.path.join(HERE, "shorthand_rules.tsv"), encoding="utf-8") as fh:
@@ -167,6 +209,10 @@ def main():
         for fault in (1, 2, 3, 7, 19, 61):
             put("pair-%02d-oom-%02d" % (k, fault), seed(2, 0, 0, fault, parent + "\n---\n" + child))
             put("block-%02d-oom-%02d" % (k, fault), seed(1, 0, 0, fault, decls))
+    for k, decl in enumerate(FAMILIES):
+        put("family-root-%03d" % k, seed(3, 0, 0, 0, decl))
+        put("family-plain-%03d" % k, seed(3 | 8, 0, 0, 0, decl))
+        put("family-pair-%03d" % k, seed(2, 0, 0, 0, "font-size: 20px; color: red; writing-mode: vertical-rl\n---\n" + decl))
     # the seeds the planted defects of tools/css/plant-fuzz.py are found by (each is a value that shows one of them)
     def short_seed(name, value, fault=0):
         i = names.index(name)

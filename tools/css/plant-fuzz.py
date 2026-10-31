@@ -93,6 +93,7 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
   block-takes-any-custom-name  a block takes a custom property whose name no identifier has: the cssText cannot be read back as it was written.
   pending-longhand-written-empty a longhand declared with var() or attr() is written with no value: the cssText cannot be read back.
   mixed-longhands-written-as-a-shorthand  a shorthand is written over longhands some of which are a CSS-wide keyword: the text is another value.
+  alias-not-a-fixed-point       a keyword alias maps its own result on (flow-start to start): the fixed point of a computed style, which the seeds of the C2e families reach.
   context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
 
 The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-custom):
@@ -368,6 +369,9 @@ COMPUTE_PLANTS = {
                                                 "  if (!text_says_the_longhands(c, sh, last_t->text, leaves, nleaf)) {"],
                                                ["  if (0 || gtext_css_shorthand_kind(c->reg, sh) == GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {",
                                                 "  if (0) {"], "own-mixed-wide.seed"),
+    # a keyword alias that is not idempotent: flex-start computes to flow-start, which computes to start the second time; only the fixed-point comparison of a computed style sees it
+    "alias-not-a-fixed-point": ("css_compute_algo.c", '  if (kw(v, "flex-end")) {\n    return "flow-end";\n  }\n',
+                                '  if (kw(v, "flex-end")) {\n    return "flow-end";\n  }\n  if (kw(v, "flow-start")) {\n    return "start";\n  }\n', "family-root-071.seed"),
     "context-leaks-its-groups": ("css_compute.c", "  gtext_allocator_free(&a, cc->groups);\n", "", "own-context-fails-early.seed"),
 }
 

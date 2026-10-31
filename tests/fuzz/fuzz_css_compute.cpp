@@ -63,6 +63,9 @@
 
 namespace css_cfuzz {
 
+/// How many inputs reached the fixed-point comparison (a computed style, written as declarations, computed again, compared). A replay that compares none checks nothing.
+inline size_t g_fixed_compared = 0;
+
 [[noreturn]] void fail(const char * what, const std::string & detail, const std::string & input) {
   std::fprintf(stderr, "%s: %s\n", "fuzz_css_compute", what);
   for (unsigned char c : detail) {
@@ -548,6 +551,7 @@ void check_compute(const std::string & parent_text, const std::string & child_te
     fail("two computations of the same inputs differ", "", input);
   }
   if (fixed_checked) {
+    g_fixed_compared++;
     first_for_fixed = without_customs_and_hash(first);
   }
   if (fixed_checked && again != first_for_fixed) {

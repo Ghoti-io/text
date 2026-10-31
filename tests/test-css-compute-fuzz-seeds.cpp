@@ -122,11 +122,19 @@ TEST_F(CssComputeFuzzSeeds, EverySeedHoldsEveryProperty) {
   constexpr size_t kMinSeeds = 3500;
   ASSERT_GE(files.size(), kMinSeeds) << "the seed corpus is missing from " << dir << "; tools/css/make-fuzz-compute-seeds.py writes it";
   const auto start = std::chrono::steady_clock::now();
+  const size_t compared_before = css_cfuzz::g_fixed_compared;
   for (const std::string & path : files) {
     std::snprintf(g_current, sizeof g_current, "%s", path.c_str());
     const std::string data = slurp(path);
     css_compute_entry(reinterpret_cast<const uint8_t *>(data.data()), data.size());
   }
+  // The fixed point of a computed value was a vacuous check once (every input skipped it because a property it re-declares was unsupported the second time).
+  // The replay must show that the comparison ran: a floor on the count of inputs compared, not only that nothing failed.
+  const size_t compared = css_cfuzz::g_fixed_compared - compared_before;
+  RecordProperty("fixed_point_compared", std::to_string(compared));
+  // Only the compute-mode seeds without a failed allocation reach it (the shorthand and block seeds, and the oom ones, do not): about 530 of the corpus when this was written.
+  constexpr size_t kMinCompared = 450;
+  EXPECT_GE(compared, kMinCompared) << "only " << compared << " of " << files.size() << " seeds reached the fixed-point comparison";
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
   RecordProperty("replay_seconds", std::to_string(seconds));
   EXPECT_LT(seconds, 60.0 * css_test::slowdown()) << files.size() << " seeds took " << seconds << " s";
