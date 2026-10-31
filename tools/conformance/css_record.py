@@ -24,12 +24,13 @@ def load_record():
         have[r['id']] = {e: a.get('computed', {}) for e, a in r['engines'].items() if a.get('computed') or a.get('declarations')}
         have['style:' + r['style']] = have[r['id']]
         SPECIFIED[r['id']] = {e: tuple(x.get('specified', '') for _, x in sorted(a.get('declarations', {}).items())) for e, a in r['engines'].items()}
+        SPECIFIED['style:' + r['style']] = SPECIFIED[r['id']]
     return have
 
 
 def record_problems(ident, reason, record, prop=None, differ=False, value=None, specified=False):
     """A `served-text` exception quotes the sentence (checked as for the other classes) and names the recorded answers of both browsers: `[record: *]` is this vector's
-    own case in the record (CSS_COMPUTED_DEFECTS:<vector> or CSS_PROPERTY_DEFECTS:<vector>), or ids of hand cases are listed after `record:` separated by semicolons."""
+    own case in the record (CSS_COMPUTED_DEFECTS:<vector>, CSS_PROPERTY_DEFECTS:<vector> or, once the line is an exception, CSS_COMPUTED_EXCEPTIONS:<vector> or CSS_PROPERTY_EXCEPTIONS:<vector>), or ids of hand cases are listed after `record:` separated by semicolons."""
     m = re.search(r'\[record: ([^\]]+)\]', reason)
     if not m:
         return ['%s: a served-text exception names the recorded answers of both browsers as [record: *] or [record: <case id>; ...]' % ident]
@@ -37,7 +38,7 @@ def record_problems(ident, reason, record, prop=None, differ=False, value=None, 
     out = []
     for i in ids:
         if i == '*':
-            cands = ['CSS_COMPUTED_DEFECTS:' + ident, 'CSS_PROPERTY_DEFECTS:' + ident, 'style:%s: %s' % (prop, value)]
+            cands = ['CSS_COMPUTED_DEFECTS:' + ident, 'CSS_PROPERTY_DEFECTS:' + ident, 'CSS_COMPUTED_EXCEPTIONS:' + ident, 'CSS_PROPERTY_EXCEPTIONS:' + ident, 'style:%s: %s' % (prop, value)]
             ok = [c for c in cands if c in record]
             if not ok:
                 out.append('%s: the record has no case of this vector' % ident)

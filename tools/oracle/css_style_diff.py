@@ -360,7 +360,7 @@ def main(argv):
     ap.add_argument("--work", required=True)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("CSS_STYLE_ORACLE_SEED", "1")))
     ap.add_argument("--count", type=int, default=int(os.environ.get("CSS_STYLE_ORACLE_COUNT", "200")))
-    ap.add_argument("--scope", default=os.environ.get("CSS_STYLE_ORACLE_SCOPE", "core"), choices=("core", "full"))
+    ap.add_argument("--scope", default=os.environ.get("CSS_STYLE_ORACLE_SCOPE", "core"), choices=("core", "full", "color"))
     ap.add_argument("--schemes", default=os.environ.get("CSS_STYLE_ORACLE_SCHEMES", "light,dark"))
     ap.add_argument("--stage", default="all")
     ap.add_argument("--ours", default=os.path.join(ROOT, "build", "css-style-ours"))

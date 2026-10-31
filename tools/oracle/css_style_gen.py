@@ -219,6 +219,100 @@ def value_docs(rng, wpt_dir, props, per_property, chunk=60):
     return out
 
 
+# ---- the color family ------------------------------------------------------------------------------------------------------
+
+COLOR_BASES = ["red", "rebeccapurple", "transparent", "currentcolor", "#abc", "#12345678", "rgb(10 20 30)", "rgb(10 20 30 / 40%)", "rgba(255, 128, 0, 0.5)", "hsl(120 50% 40%)",
+               "hsl(200deg 100% 50% / 0.3)", "hwb(60 10% 20%)", "lab(50% 40 59.5)", "lch(52% 72 51)", "oklab(60% 0.1 -0.05)", "oklch(70% 0.15 200)",
+               "color(srgb 0.2 0.4 0.6)", "color(display-p3 0.9 0.2 0.3)", "color(a98-rgb 0.5 0.5 0.5)", "color(prophoto-rgb 0.3 0.6 0.9)", "color(rec2020 0.1 0.8 0.4)",
+               "color(xyz 0.2 0.3 0.4)", "color(xyz-d50 0.2 0.3 0.4)", "color(srgb-linear 0.5 0.25 0.125)", "oklch(none 0.1 none)", "rgb(none 20 30)", "hsl(none 50% 50%)"]
+COLOR_RECT = ["srgb", "srgb-linear", "display-p3", "a98-rgb", "prophoto-rgb", "rec2020", "lab", "oklab", "xyz", "xyz-d50", "xyz-d65"]
+COLOR_POLAR = ["hsl", "hwb", "lch", "oklch"]
+COLOR_HUE = ["shorter", "longer", "increasing", "decreasing"]
+COLOR_PERCENT = ["", "50%", "30%", "0%", "100%", "10%", "75%", "25%", "calc(10% * 2)"]
+COLOR_RELATIVE = {
+    "rgb": ["r g b", "r g b / alpha", "calc(r / 2) g b", "b g r / 0.5", "255 g b", "r 0 b / calc(alpha * 0.5)", "none g b"],
+    "hsl": ["h s l", "h s l / alpha", "calc(h + 30) s l", "h calc(s / 2) l", "h s calc(l + 10)", "0 s l"],
+    "hwb": ["h w b", "h w b / alpha", "calc(h + 180) w b", "h 0% 0%"],
+    "lab": ["l a b", "l a b / alpha", "calc(l / 2) a b", "l calc(a * -1) b", "50 a b"],
+    "lch": ["l c h", "l c h / alpha", "l c calc(h + 60)", "calc(l + 10) c h"],
+    "oklab": ["l a b", "l a b / alpha", "calc(l * 0.5) a b", "l b a"],
+    "oklch": ["l c h", "l c h / alpha", "l calc(c * 0.5) h", "l c calc(h + 90)", "0.5 0.1 h"],
+}
+COLOR_RELATIVE_FN = [("srgb", "r g b"), ("srgb", "calc(r / 2) g b / alpha"), ("display-p3", "r g b"), ("display-p3", "r calc(g * 0.5) b"), ("srgb-linear", "r g b"),
+                     ("xyz", "x y z"), ("xyz-d50", "x y z"), ("xyz-d65", "x calc(y / 2) z / alpha"), ("a98-rgb", "r g b"), ("rec2020", "r g b / 0.5")]
+
+
+def color_values(rng, count):
+    """Values of the color family: color-mix() in every space with the hue methods and percentages, relative colors in every function, color() with every space,
+    contrast-color(), light-dark() and nestings of them."""
+    out = []
+    def base():
+        return rng.choice(COLOR_BASES)
+    for space in COLOR_RECT + COLOR_POLAR:
+        for _ in range(6):
+            methods = [""]
+            if space in COLOR_POLAR:
+                methods = [""] + ["%s hue" % h for h in COLOR_HUE]
+            m = rng.choice(methods)
+            p1, p2 = rng.choice(COLOR_PERCENT), rng.choice(COLOR_PERCENT)
+            c1 = (base() + " " + p1).strip() if rng.random() < 0.5 else (p1 + " " + base()).strip()
+            c2 = (base() + " " + p2).strip()
+            out.append("color-mix(in %s%s, %s, %s)" % (space, (" " + m) if m else "", c1, c2))
+    for _ in range(max(0, count // 6)):
+        space = rng.choice(COLOR_RECT + COLOR_POLAR)
+        n = rng.choice([1, 3, 3, 4])
+        parts = ", ".join((base() + " " + rng.choice(COLOR_PERCENT)).strip() for _ in range(n))
+        out.append("color-mix(in %s, %s)" % (space, parts))
+        out.append("color-mix(in %s, color-mix(in srgb, %s, %s), %s)" % (space, base(), base(), base()))
+    for fn, chans in COLOR_RELATIVE.items():
+        for ch in chans:
+            for _ in range(2):
+                out.append("%s(from %s %s)" % (fn, base(), ch))
+    for space, ch in COLOR_RELATIVE_FN:
+        for _ in range(2):
+            out.append("color(from %s %s %s)" % (base(), space, ch))
+    for space in COLOR_RECT:
+        for vals in ("0 0 0", "1 1 1", "0.5 0.25 0.75", "none 0.5 1", "20% 40% 60%", "1.5 -0.2 0.3", "0.1 0.2 0.3 / 50%", "calc(1 / 2) 0 0"):
+            if space in ("lab", "oklab"):
+                continue
+            out.append("color(%s %s)" % (space, vals))
+    for fn, vals in (("lab", ["50% 40 -30", "100% 0 0", "0% 0 0", "120% 200 200", "none none none", "50 125 125 / 0.5", "calc(50 + 10)% 20 30"]),
+                     ("lch", ["50% 40 300", "100% 150 0", "50% 0 none", "20% 230 360", "50% 40 -60deg", "50% 40 0.5turn", "50% 40 1rad"]),
+                     ("oklab", ["0.5 0.1 -0.1", "1 0 0", "0 0 0", "1.2 0.5 0.5", "50% 25% -25%", "none 0.1 0.1"]),
+                     ("oklch", ["0.5 0.1 300", "1 0.4 0", "0.5 0 none", "0.2 0.3 -60deg", "50% 50% 0.25turn", "0.5 0.1 3.14159rad"]),
+                     ("hwb", ["120 10% 20%", "0 50% 50%", "0 80% 80%", "180 120% 0%", "none 10% 10%", "-120 0% 0%", "360 0% 0%"]),
+                     ("hsl", ["120 100% 50%", "0 0% 100%", "400 50% 50%", "-30 50% 50%", "none 50% 50%", "120 150% 50%", "120 50% -10%", "120, 50%, 50%"])):
+        for v in vals:
+            out.append("%s(%s)" % (fn, v))
+    for a in ("red", "white", "black", "#808080", "rgb(10 20 30 / 0.5)", "oklch(0.5 0.1 200)", "transparent"):
+        out.append("contrast-color(%s)" % a)
+    for _ in range(12):
+        out.append("light-dark(%s, %s)" % (base(), base()))
+    for _ in range(12):
+        out.append("color-mix(in %s, light-dark(%s, %s), %s)" % (rng.choice(COLOR_RECT + COLOR_POLAR), base(), base(), base()))
+    rng.shuffle(out)
+    return out
+
+
+def color_docs(rng, count=0, chunk=60):
+    """The color values as `color: value` of the elements of a parent with `color: rgb(11 22 33)`, so that currentcolor and light-dark() mean something, in
+    documents of `chunk` elements."""
+    vals = color_values(rng, count)
+    out = []
+    for k in range(0, len(vals), chunk):
+        part = vals[k:k + chunk]
+        body = "<div id=\"parent\" style=\"color: rgb(11 22 33); font-size: 20px\">"
+        queries, its = [], []
+        for n, v in enumerate(part):
+            i = "c%d" % n
+            body += "<div id=\"%s\" style=\"%s\"></div>" % (i, html_escape("color: %s" % v))
+            queries.append([i, ["color"]])
+            its.append([i, "color", "style: color: %s" % v, "value"])
+        body += "</div>"
+        out.append(doc("color-%d" % (k // chunk), "h", wrap_html(body), queries, its))
+    return out
+
+
 # ---- attribute probes ----------------------------------------------------------------------------------------------------
 
 def attribute_docs(rng, table, chunk=40):
@@ -378,6 +472,8 @@ def population(seed, count, ours, wpt_dir, scope="core"):
     docs += attribute_docs(rng, table)
     if scope == "full":
         docs += value_docs(rng, wpt_dir, props, 12)
+    if scope in ("full", "color"):
+        docs += color_docs(rng, count)
     for n in range(count):
         docs.append(tree_doc(rng, n))
     return docs
@@ -387,7 +483,7 @@ def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--count", type=int, default=200)
-    ap.add_argument("--scope", default="core", choices=("core", "full"))
+    ap.add_argument("--scope", default="core", choices=("core", "full", "color"))
     ap.add_argument("--ours", default=os.path.join(ROOT, "build", "css-style-ours"))
     ap.add_argument("--wpt", default=os.path.join(ROOT, "build", "css-property-vectors"))
     ap.add_argument("--out", default="-")
