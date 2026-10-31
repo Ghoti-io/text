@@ -1567,6 +1567,8 @@ test-quiet: $(APP_DIR)/$(TARGET) $(TEST_EXECUTABLES)
 test-valgrind: ## Run all tests under valgrind (Linux only)
 test-valgrind: $(APP_DIR)/$(TARGET) $(TEST_EXECUTABLES)
 ifeq ($(OS_NAME), Linux)
+# GTEXT_TEST_SLOWDOWN=20: the seed replays of the CSS fuzz harnesses bound their time (tests/css_test_support.h, slowdown()), and valgrind is about twenty
+# times slower than a native run for a reason that is not the library; the bound is multiplied by it.
 # VALGRIND_FLAGS carries --error-exitcode=1, so valgrind already reports a
 # memory error as a non-zero status.  This loop simply did not look at it.
 	@failed=""; \
@@ -1577,7 +1579,7 @@ ifeq ($(OS_NAME), Linux)
 		printf "### Running %s tests under Valgrind ###\n" "$$test_name"; \
 		printf "############################"; \
 		printf "\033[0m\n\n"; \
-		if ! LD_LIBRARY_PATH="$(APP_DIR)" valgrind $(VALGRIND_FLAGS) $$test_exe --gtest_brief=1; then \
+		if ! GTEXT_TEST_SLOWDOWN=20 LD_LIBRARY_PATH="$(APP_DIR)" valgrind $(VALGRIND_FLAGS) $$test_exe --gtest_brief=1; then \
 			failed="$$failed $$test_name"; \
 		fi; \
 	done; \
@@ -1600,7 +1602,7 @@ ifeq ($(OS_NAME), Linux)
 	printf "\033[1;35m%-30s %8s %10s %s\033[0m\n" "------------------------------" "--------" "----------" "------"; \
 	for test_exe in $(TEST_EXECUTABLES); do \
 		test_name=$$(basename $$test_exe $(EXE_EXTENSION)); \
-		output=$$(LD_LIBRARY_PATH="$(APP_DIR)" valgrind $(VALGRIND_FLAGS) $$test_exe --gtest_brief=1 2>&1); \
+		output=$$(GTEXT_TEST_SLOWDOWN=20 LD_LIBRARY_PATH="$(APP_DIR)" valgrind $(VALGRIND_FLAGS) $$test_exe --gtest_brief=1 2>&1); \
 		exit_code=$$?; \
 		num_tests=$$(echo "$$output" | grep -oP '\[\s*=+\s*\]\s*\K\d+(?=\s+tests?)' | head -1); \
 		time_ms=$$(echo "$$output" | grep -oP '\(\K\d+(?=\s*ms\s*total\))' | head -1); \
