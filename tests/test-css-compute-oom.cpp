@@ -265,14 +265,9 @@ TEST(CssComputeOom, MakingAContextSweptOverTheAllocationsWithAStride) {
   EXPECT_GT(failures, 30u);
 }
 
-TEST(CssComputeOom, ComputingAStyleSweptOverEveryAllocation) {
-  Block pb(R(), "font-size: 20px; color: red; writing-mode: vertical-rl; --a: 1");
-  Block cb(R(), "width: 2em; margin-inline-start: calc(1em + 3px); height: calc(50% - 10px); border-style: none; border-width: 5px; "
-                "font-weight: bolder; color: light-dark(red, blue); background-color: color-mix(in srgb, red, blue); "
-                "border-top-color: contrast-color(color-mix(in oklch, red 30%, blue)); outline-color: rgb(from hsl(120 50% 50% / 0.5) r g calc(b + 10)); "
-                "text-decoration-color: alpha(from color-mix(in lab, currentcolor 20%, white) / calc(alpha * 0.5)); caret-color: lab(calc(50 + 10) 30 50); "
-                "font-palette: palette-mix(in srgb, dark 10%, palette-mix(light 30%, normal)); dynamic-range-limit: dynamic-range-limit-mix(no-limit 10%, standard 30%); "
-                "transition-timing-function: step-start, linear(0 0% 50%, 1 50% 100%), steps(calc(-10), start); animation-timing-function: steps(3, end)");
+void sweep_computed_style(const std::string & parent_decls, const std::string & child_decls, size_t least_failures) {
+  Block pb(R(), parent_decls);
+  Block cb(R(), child_decls);
   std::string want;
   {
     FaultAllocator fa;
@@ -325,7 +320,33 @@ TEST(CssComputeOom, ComputingAStyleSweptOverEveryAllocation) {
       break;
     }
   }
-  EXPECT_GT(failures, 20u);
+  EXPECT_GT(failures, least_failures);
+}
+
+
+TEST(CssComputeOom, ComputingAStyleSweptOverEveryAllocation) {
+  sweep_computed_style("font-size: 20px; color: red; writing-mode: vertical-rl; --a: 1",
+                       "width: 2em; margin-inline-start: calc(1em + 3px); height: calc(50% - 10px); border-style: none; border-width: 5px; "
+                       "font-weight: bolder; color: light-dark(red, blue); background-color: color-mix(in srgb, red, blue); "
+                       "border-top-color: contrast-color(color-mix(in oklch, red 30%, blue)); outline-color: rgb(from hsl(120 50% 50% / 0.5) r g calc(b + 10)); "
+                       "text-decoration-color: alpha(from color-mix(in lab, currentcolor 20%, white) / calc(alpha * 0.5)); caret-color: lab(calc(50 + 10) 30 50); "
+                       "font-palette: palette-mix(in srgb, dark 10%, palette-mix(light 30%, normal)); dynamic-range-limit: dynamic-range-limit-mix(no-limit 10%, standard 30%); "
+                       "transition-timing-function: step-start, linear(0 0% 50%, 1 50% 100%), steps(calc(-10), start); animation-timing-function: steps(3, end)", 20u);
+}
+
+/* The rewrites of the shape family (css_algo_shape: shapes, gradients, filters, the image form of light-dark(), easing, position-area and the corner shapes), ident() with a
+   calculation, the origin keywords of the logical background-position members and clip without commas: every allocation of the child failed in turn. */
+TEST(CssComputeOom, TheShapeFamilyAndTheRewritesAroundItSweptOverEveryAllocation) {
+  sweep_computed_style("font-size: 20px; writing-mode: vertical-rl; direction: rtl",
+                       "clip-path: rect(0px 1% auto 3% round 0px 1px 2em); shape-outside: circle(at top 0% right 10%); offset-path: ray(0deg at center center sides); "
+                       "border-shape: circle(closest-corner) ellipse(1px closest-side); "
+                       "background-image: radial-gradient(farthest-corner, red, blue), conic-gradient(from 0deg at 50% 50%, red, gold), light-dark(none, url(a)); "
+                       "mask-image: linear-gradient(-45deg, red 10% 20%, currentcolor), light-dark(linear-gradient(red, blue), none); "
+                       "filter: grayscale(50%) contrast() drop-shadow(1px 2px) blur(calc(1px + 1px)); backdrop-filter: brightness(calc(-10)) opacity(150%); "
+                       "animation-timing-function: linear(0 calc(min(50%, 60%)), 0.5, 1 100%), steps(3, start), step-end; "
+                       "position-area: top span-all; corner-top-left-shape: scoop; position-try-fallbacks: start end, flip-block; text-emphasis-style: filled; "
+                       "font-palette: ident(\"--p-\" calc(1em / 1px)); background-position-x: x-end 10px, center; background-position-block: end 5%, 7px; "
+                       "link-parameters: param(--a <color>, orange), param(--b, ); will-change: transform, opacity; color-scheme: foo dark only; grid-row-start: span calc(-1)", 40u);
 }
 
 } // namespace
