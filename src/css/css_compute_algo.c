@@ -1296,10 +1296,11 @@ typedef enum { T_NONE, T_LEFT, T_RIGHT, T_TOP, T_BOTTOM, T_CENTER, T_LOGICAL, T_
 
 static tok_t classify_tok(const GTEXT_CSS_Value * v) {
   if (v->kind == GTEXT_CSS_VAL_KEYWORD) {
-    if (kw(v, "left")) return T_LEFT;
-    if (kw(v, "right")) return T_RIGHT;
-    if (kw(v, "top")) return T_TOP;
-    if (kw(v, "bottom")) return T_BOTTOM;
+    /* Values 5, 4.2: x-start, x-end, y-start and y-end "compute the same as the physical edge keyword corresponding to the start/end side in the y/x axis" */
+    if (kw(v, "left") || kw(v, "x-start")) return T_LEFT;
+    if (kw(v, "right") || kw(v, "x-end")) return T_RIGHT;
+    if (kw(v, "top") || kw(v, "y-start")) return T_TOP;
+    if (kw(v, "bottom") || kw(v, "y-end")) return T_BOTTOM;
     if (kw(v, "center")) return T_CENTER;
     return T_LOGICAL;
   }
@@ -1506,9 +1507,13 @@ static GTEXT_CSS_Status axis_item(css_state * st, ab * a, const css_pmeta * m, c
   const size_t nl = m->name_length;
   const char * lo = "left";
   const char * hi = "right";
+  const char * lo_logical = "x-start";   /* Values 5, 4.2: the start/end side of the axis, as the physical edge keyword */
+  const char * hi_logical = "x-end";
   if (nl && name[nl - 1] == 'y') {
     lo = "top";
     hi = "bottom";
+    lo_logical = "y-start";
+    hi_logical = "y-end";
   }
   else if (nl >= 5 && (memcmp(name + nl - 5, "block", 5) == 0 || (nl >= 6 && memcmp(name + nl - 6, "inline", 6) == 0))) {
     lo = "start";
@@ -1525,8 +1530,8 @@ static GTEXT_CSS_Status axis_item(css_state * st, ab * a, const css_pmeta * m, c
     else if (k == T_CENTER) {
       center = true;
     }
-    else if (leaves[i]->kind == GTEXT_CSS_VAL_KEYWORD && (kw(leaves[i], lo) || kw(leaves[i], hi))) {
-      edge = kw(leaves[i], hi) ? hi : lo;
+    else if (leaves[i]->kind == GTEXT_CSS_VAL_KEYWORD && (kw(leaves[i], lo) || kw(leaves[i], hi) || kw(leaves[i], lo_logical) || kw(leaves[i], hi_logical))) {
+      edge = (kw(leaves[i], hi) || kw(leaves[i], hi_logical)) ? hi : lo;
     }
     else {
       return css_st_fail(st, GTEXT_CSS_E_UNSUPPORTED, leaves[i]->text.data, "a flow-relative position keyword needs the writing mode");
@@ -1549,6 +1554,98 @@ static GTEXT_CSS_Status axis_item(css_state * st, ab * a, const css_pmeta * m, c
   memset(out, 0, sizeof *out);
   css_v_list(out, kids, 2, GTEXT_CSS_SEP_SPACE);
   return a->vb.status;
+}
+
+/// The physical side an origin keyword of a `background-position-*` longhand names: `left right top bottom` for the physical members, `start end` for a flow-relative one
+/// (the start or end of its axis in `flow`). -1 for a word that is neither.
+static int axis_keyword_side(const GTEXT_CSS_Value * v, bool logical, bool block, const GTEXT_CSS_Flow * flow) {
+  if (v->kind != GTEXT_CSS_VAL_KEYWORD) {
+    return -1;
+  }
+  if (!logical) {
+    return kw(v, "left") ? (int)GTEXT_CSS_SIDE_LEFT : kw(v, "right") ? (int)GTEXT_CSS_SIDE_RIGHT : kw(v, "top") ? (int)GTEXT_CSS_SIDE_TOP :
+        kw(v, "bottom") ? (int)GTEXT_CSS_SIDE_BOTTOM : -1;
+  }
+  if (!kw(v, "start") && !kw(v, "end")) {
+    return -1;
+  }
+  const bool end = kw(v, "end");
+  return (int)(block ? gtext_css_flow_block_side(flow, end) : gtext_css_flow_inline_side(flow, end));
+}
+
+typedef struct {
+  bool from_logical, from_block, to_logical, to_block;
+  const GTEXT_CSS_Flow * flow;
+  bool ok;   ///< every item had the shape of a computed origin and an offset
+} axis_map;
+
+static const char * axis_word(const axis_map * am, int side) {
+  if (!am->to_logical) {
+    return side == (int)GTEXT_CSS_SIDE_LEFT ? "left" : side == (int)GTEXT_CSS_SIDE_RIGHT ? "right" : side == (int)GTEXT_CSS_SIDE_TOP ? "top" : "bottom";
+  }
+  const int end_side = (int)(am->to_block ? gtext_css_flow_block_side(am->flow, true) : gtext_css_flow_inline_side(am->flow, true));
+  return side == end_side ? "end" : "start";
+}
+
+/// One item of a computed `background-position-*` (an origin keyword and an offset) with the keyword said in the words of another member of the slot.
+static GTEXT_CSS_Status axis_remap_item(ab * a, axis_map * am, const GTEXT_CSS_Value * item, GTEXT_CSS_Value * out) {
+  int side = -1;
+  if (item->kind == GTEXT_CSS_VAL_LIST && item->child_count == 2) {
+    side = axis_keyword_side(&item->children[0], am->from_logical, am->from_block, am->flow);
+  }
+  if (side < 0) {
+    am->ok = false;
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value * kids = css_vb_values(&a->vb, 2);
+  if (!kids) {
+    return a->vb.status;
+  }
+  css_v_keyword(&a->vb, &kids[0], axis_word(am, side));
+  kids[1] = item->children[1];
+  memset(out, 0, sizeof *out);
+  css_v_list(out, kids, 2, GTEXT_CSS_SEP_SPACE);
+  return a->vb.status;
+}
+
+GTEXT_CSS_Status css_algo_axis_remap(css_state * st, const GTEXT_CSS_Value_Set * set, bool from_logical, bool from_block, bool to_logical, bool to_block,
+    GTEXT_CSS_Value_Set ** out) {
+  *out = NULL;
+  const GTEXT_CSS_Value * root = gtext_css_value_set_root(set);
+  if (!root) {
+    return GTEXT_CSS_OK;
+  }
+  axis_map am = {from_logical, from_block, to_logical, to_block, &st->style->flow, true};
+  ab a;
+  GTEXT_CSS_Status s = ab_open(&a, st);
+  if (s != GTEXT_CSS_OK) {
+    return s;
+  }
+  GTEXT_CSS_Value * rv = css_vb_value(&a.vb);
+  if (!rv) {
+    s = a.vb.status;
+  }
+  else if (root->kind == GTEXT_CSS_VAL_LIST && root->separator == GTEXT_CSS_SEP_COMMA) {
+    GTEXT_CSS_Value * kids = css_vb_values(&a.vb, root->child_count);
+    if (!kids) {
+      s = a.vb.status;
+    }
+    for (size_t i = 0; s == GTEXT_CSS_OK && am.ok && i < root->child_count; i++) {
+      s = axis_remap_item(&a, &am, &root->children[i], &kids[i]);
+    }
+    if (s == GTEXT_CSS_OK && am.ok) {
+      *rv = *root;
+      rv->children = kids;
+    }
+  }
+  else {
+    s = axis_remap_item(&a, &am, root, rv);
+  }
+  if (s != GTEXT_CSS_OK || !am.ok) {
+    css_vb_abort(&a.vb);
+    return s;
+  }
+  return ab_close(&a, rv, set, NULL, out);
 }
 
 static GTEXT_CSS_Status build_axis(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,

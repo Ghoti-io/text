@@ -341,6 +341,11 @@ bool css_cv_length_px(css_state * st, const GTEXT_CSS_Value * v, double * px);
 /// The computed value of a basic shape property (css_shape_compute.c).
 GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const css_pmeta * m, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out);
 
+/// The computed value of one `background-position-*` longhand written as the value of another that shares its slot in the flow (`-x` and `-inline` in a horizontal
+/// ltr writing mode): the origin keywords name the same physical sides in the other member's words. `*out` is NULL when the value is not a list of an origin keyword and an offset.
+GTEXT_CSS_Status css_algo_axis_remap(css_state * st, const GTEXT_CSS_Value_Set * set, bool from_logical, bool from_block, bool to_logical, bool to_block,
+    GTEXT_CSS_Value_Set ** out);
+
 /// Compute a declared value by the property's algorithm. `src` is the specified value's set (VALID), `*out` the computed value (a new set or
 /// `src` retained). The parent's and the element's earlier values are read through css_st_get().
 GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, const css_pmeta * meta, const GTEXT_CSS_Value_Set * src,

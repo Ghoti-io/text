@@ -1542,9 +1542,79 @@ static bool rewrite_mix(sb * out, span text, bool palette, bool * changed) {
 
 /* ---- easing functions (Easing 2) ---------------------------------------------------------------------------------------- */
 
-/// A control point's input progress as a plain percentage (`50%`); false for anything else (a calculation that stayed, a number).
-static bool plain_percent(span s, double * v) {
+/// A plain percentage (`50%`) as its number; false for anything else.
+static bool one_percent(span s, double * v) {
   return s.n > 1 && s.p[s.n - 1] == '%' && amount_value((span){s.p, s.n - 1}, v);
+}
+
+/// A control point's input progress as a plain percentage (`50%`), or a `min()`, `max()` or `clamp()` of plain percentages, which stands for the one it picks: the
+/// input progress of linear() has no basis to resolve a percentage against, so such a calculation is a number of percent (Values 4, 10.10.1 step 4 keeps an unresolved
+/// percentage in a `min()` only because it "might resolve against a negative basis"; Easing 2 gives it none, and both pinned browsers write `linear(0 50%, 0 100%)` for
+/// `linear(0 calc(min(50%, 60%)), 0 100%)`: cases linear.7 and CSS_COMPUTED_DEFECTS:css/css-easing/linear-timing-functions-syntax.html#29). False for anything else
+/// (a calculation that stayed, a number, a nested function).
+static bool plain_percent(span s, double * v) {
+  if (one_percent(s, v)) {
+    return true;
+  }
+  int kind = 0;
+  size_t name = 0;
+  if (starts_fn(s, "min")) {
+    kind = 1;
+    name = 3;
+  }
+  else if (starts_fn(s, "max")) {
+    kind = 2;
+    name = 3;
+  }
+  else if (starts_fn(s, "clamp")) {
+    kind = 3;
+    name = 5;
+  }
+  if (!kind) {
+    return false;
+  }
+  const span in = fn_inner(s, name);
+  double got[3];
+  size_t n = 0;
+  size_t from = 0;
+  for (size_t i = 0; i <= in.n; i++) {
+    if (i < in.n && (in.p[i] == '(' || in.p[i] == ')')) {
+      return false;
+    }
+    if (i == in.n || in.p[i] == ',') {
+      span a = {in.p + from, i - from};
+      while (a.n && is_ws(a.p[0])) {
+        a.p++;
+        a.n--;
+      }
+      while (a.n && is_ws(a.p[a.n - 1])) {
+        a.n--;
+      }
+      if (n == 3 || !one_percent(a, &got[n])) {
+        return false;
+      }
+      n++;
+      from = i + 1;
+    }
+  }
+  if (kind == 3) {
+    if (n != 3) {
+      return false;
+    }
+    /* clamp(MIN, VAL, MAX) is max(MIN, min(VAL, MAX)) */
+    double r = got[1] < got[2] ? got[1] : got[2];
+    *v = got[0] > r ? got[0] : r;
+    return true;
+  }
+  if (n < 1) {
+    return false;
+  }
+  double r = got[0];
+  for (size_t i = 1; i < n; i++) {
+    r = kind == 1 ? (got[i] < r ? got[i] : r) : (got[i] > r ? got[i] : r);
+  }
+  *v = r;
+  return true;
 }
 
 /// One control point of a linear(): its output progress and its input progress, when it has a plain percentage.
@@ -2148,6 +2218,49 @@ static void rewrite_position_area(sb * out, span text) {
   put_span(out, text);
 }
 
+/// The image form of `light-dark()` (Color 5, 7: "For the image form, this function returns the first image, if the element color scheme is light, or the second image,
+/// if the element color scheme is dark."), for each item of an image list: the item is the image of the element's scheme. `none` is not an <image> in the served
+/// text, which therefore says nothing of `light-dark(none, ...)`; both pinned browsers write the transparent image `image(rgba(0, 0, 0, 0))` for it, light or dark
+/// (cases light-dark-none.1, light-dark-none.2, light-dark-img.1), and so does this. An item that is not a `light-dark()` of two arguments is kept.
+static void resolve_light_dark_images(sb * out, span text, bool dark, bool * changed) {
+  spv parts = {out->a, NULL, 0, 0, false};
+  split_top(&parts, text, ',');
+  if (parts.fail) {
+    out->fail = true;
+    gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+    return;
+  }
+  for (size_t i = 0; i < parts.n; i++) {
+    if (i) {
+      sb_puts(out, ", ");
+    }
+    span item = parts.v[i];
+    for (size_t guard = 0; guard < 64 && starts_fn(item, "light-dark"); guard++) {
+      spv args = {out->a, NULL, 0, 0, false};
+      split_top(&args, fn_inner(item, 10), ',');
+      if (args.fail) {
+        out->fail = true;
+      }
+      const bool two = !args.fail && args.n == 2;
+      if (two) {
+        item = args.v[dark ? 1 : 0];
+        *changed = true;
+      }
+      gtext_allocator_free((GTEXT_Allocator *)out->a, args.v);
+      if (!two) {
+        break;
+      }
+    }
+    if (eq(item, "none") && *changed) {
+      sb_puts(out, "image(rgba(0, 0, 0, 0))");
+    }
+    else {
+      put_span(out, item);
+    }
+  }
+  gtext_allocator_free((GTEXT_Allocator *)out->a, parts.v);
+}
+
 /// The whole value: each of its comma-separated parts (image lists, `content`) rewritten.
 static bool rewrite_value(sb * out, span text, shape_prop prop, bool * changed) {
   if (prop == SHAPE_PROP_SETTINGS || prop == SHAPE_PROP_AREAS || prop == SHAPE_PROP_ROTATE || prop == SHAPE_PROP_CORNER || prop == SHAPE_PROP_POSITION_AREA) {
@@ -2552,7 +2665,25 @@ GTEXT_CSS_Status css_algo_shape(css_state * st, GTEXT_CSS_Property_Id id, const 
   /* pass one: the functions and the boxes */
   sb one = {&alloc, NULL, 0, 0, false};
   bool changed = false;
-  rewrite_value(&one, (span){text, text_len}, prop, &changed);
+  sb ld = {&alloc, NULL, 0, 0, false};
+  span whole = {text, text_len};
+  if (prop == SHAPE_PROP_OTHER && strstr(text, "light-dark(")) {
+    bool picked = false;
+    resolve_light_dark_images(&ld, whole, css_st_used_scheme(st) == GTEXT_CSS_SCHEME_DARK, &picked);
+    if (ld.fail) {
+      gtext_allocator_free(&alloc, ld.d);
+      gtext_css_serialize_buffer_free(&so, text);
+      gtext_allocator_free(&alloc, one.d);
+      gtext_css_value_set_free(bt);
+      return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+    if (picked && ld.n) {
+      whole = (span){ld.d, ld.n};
+      changed = true;
+    }
+  }
+  rewrite_value(&one, whole, prop, &changed);
+  gtext_allocator_free(&alloc, ld.d);
   gtext_css_serialize_buffer_free(&so, text);
   if (one.fail) {
     gtext_allocator_free(&alloc, one.d);

@@ -656,7 +656,7 @@ static bool nullable_worklist(linker * L, uint8_t * nl) {
 
 static bool is_sep_literal(const GTEXT_CSS_Compiled * c, uint32_t node, uint32_t ch) {
   const gnode * g = &c->nodes[node];
-  return g->kind == GN_LITERAL && g->lit == ch;
+  return g->kind == GN_LITERAL && g->lit == ch && !(g->flags & GNF_QUOTED);
 }
 
 static uint32_t add_node(linker * L, const gnode * proto) {

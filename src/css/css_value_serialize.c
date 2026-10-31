@@ -219,11 +219,24 @@ static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
   }
 }
 
+/// Whether `v` is the one-character delimiter `ch` (a literal of a grammar or a delim token).
+static bool is_delim_char(const GTEXT_CSS_Value * v, char ch) {
+  return v && v->kind == GTEXT_CSS_VAL_TOKEN && v->text.length == 1 && v->text.data && v->text.data[0] == ch;
+}
+
 static void close_value(vwriter * w, const GTEXT_CSS_Value * v) {
   switch (v->kind) {
   case GTEXT_CSS_VAL_FUNCTION:
     if (v->math) {
       break;
+    }
+    /* a comma with nothing after it (`param(--a, )`: an empty second argument) is followed by the space every comma is: CSSOM writes the arguments separated by ", " */
+    const GTEXT_CSS_Value * last = v;
+    while (last->child_count > 0 && (last == v || last->kind == GTEXT_CSS_VAL_LIST)) {
+      last = &last->children[last->child_count - 1];
+    }
+    if (is_delim_char(last, ',')) {
+      puts_(w, " ");
     }
     puts_(w, ")");
     break;
@@ -238,7 +251,7 @@ static void close_value(vwriter * w, const GTEXT_CSS_Value * v) {
   }
 }
 
-static void put_separator(vwriter * w, const GTEXT_CSS_Value * parent, const GTEXT_CSS_Value * child) {
+static void put_separator(vwriter * w, const GTEXT_CSS_Value * parent, const GTEXT_CSS_Value * prev, const GTEXT_CSS_Value * child) {
   if (parent->kind == GTEXT_CSS_VAL_RATIO) {
     puts_(w, " / ");
     return;
@@ -250,6 +263,10 @@ static void put_separator(vwriter * w, const GTEXT_CSS_Value * parent, const GTE
     default: break;
     }
     if (begins_with_comma(child)) {
+      return;
+    }
+    /* a type name is written `<color>` (CSS Values and Units 5, <css-type>: "<syntax-single-component> = '<' <syntax-type-name> '>'"): no white space inside the brackets */
+    if (prev && (is_delim_char(prev, '<') || (is_delim_char(child, '>') && prev->kind == GTEXT_CSS_VAL_KEYWORD))) {
       return;
     }
   }
@@ -293,7 +310,7 @@ GTEXT_CSS_Status gtext_css_serialize_value(const GTEXT_CSS_Value * value, const 
     }
     const GTEXT_CSS_Value * c = &f->v->children[f->i];
     if (f->i > 0 || f->v->kind == GTEXT_CSS_VAL_URL) { /* (a ratio's first child has none) */
-      put_separator(&w, f->v, c);
+      put_separator(&w, f->v, f->i > 0 ? &f->v->children[f->i - 1] : NULL, c);
     }
     f->i++;
     if (open_value(&w, c)) {

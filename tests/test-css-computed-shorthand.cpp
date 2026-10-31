@@ -121,6 +121,16 @@ TEST(CssComputedShorthand, TheLonghandsKeepTheKeyword) {
   EXPECT_EQ(style.value("background-position-y"), "bottom 0%");
 }
 
+// Backgrounds 4 (served 2026-10-30): `box-shadow: none` is "no shadow", a layer with neither a blur nor a spread. The computed longhands hold `0px` for both, which a
+// shadow that is written would carry back; a layer whose offset is `none` has nothing to carry, so the shorthand is `none`, and reads back as the same longhands.
+TEST(CssComputedShorthand, BoxShadowNoneIsNone) {
+  expect_all("box-shadow", {
+      {"none", "none"},
+      {"1px 2px", "1px 2px 0px 0px"},
+      {"1px 2px red", "red 1px 2px 0px 0px"},
+  });
+}
+
 // `background` holds `background-position`: its text has the offsets alone too.
 TEST(CssComputedShorthand, BackgroundHoldsThePosition) {
   EXPECT_EQ(shorthand_text("background: url(a) right 10px bottom 3px no-repeat", "background"), "url(\"a\") calc(100% - 10px) calc(100% - 3px) no-repeat");

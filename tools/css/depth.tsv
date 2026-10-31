@@ -509,15 +509,15 @@ property	grid-area	1	1	1	1
 property	grid-auto-columns	1	1	1	1	
 property	grid-auto-flow	1	1	1	1	
 property	grid-auto-rows	1	1	1	1	
-property	grid-column	1	1	1	0	
-property	grid-column-end	1	1	1	0	
+property	grid-column	1	1	1	1	
+property	grid-column-end	1	1	1	1	
 property	grid-column-gap	1	1	1	1	alias of column-gap
-property	grid-column-start	1	1	1	0	
+property	grid-column-start	1	1	1	1	
 property	grid-gap	1	1	1	1	alias of gap
-property	grid-row	1	1	1	0	
-property	grid-row-end	1	1	1	0	
+property	grid-row	1	1	1	1	
+property	grid-row-end	1	1	1	1	
 property	grid-row-gap	1	1	1	1	alias of row-gap
-property	grid-row-start	1	1	1	0	
+property	grid-row-start	1	1	1	1	
 property	grid-template	1	1	1	1	
 property	grid-template-areas	1	1	1	0	
 property	grid-template-columns	1	1	1	0	

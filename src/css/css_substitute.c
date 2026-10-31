@@ -1572,6 +1572,10 @@ static int step_tree(css_sub * sub, size_t fi) {
 
 /* ---- ident() -------------------------------------------------------------------------------------------------------- */
 
+/// The integer a calculation inside ident() computes to, written as an integer is: GTEXT_CSS_OK with the text in `nb` (`*nl` bytes), GTEXT_CSS_E_INVALID when it is
+/// not a number or cannot be resolved, GTEXT_CSS_E_OOM.
+static GTEXT_CSS_Status ident_calc_piece(css_sub * sub, const GTEXT_CSS_Component_Value * v, char nb[340], size_t * nl);
+
 static int step_ident(css_sub * sub, size_t fi) {
   int pre = fn_prelude(sub, fi);
   if (pre) {
@@ -1631,7 +1635,21 @@ static int step_ident(css_sub * sub, size_t fi) {
       continue;
     }
     items++;
-    if (v->kind != GTEXT_CSS_VALUE_TOKEN) {
+    if (v->kind == GTEXT_CSS_VALUE_FUNCTION && gtext_css_math_is_function(v->value.data, v->value.length)) {
+      /* "Replace each item with its computed value": a calculation of numbers is the integer it computes to (Values 5, 8.8: an <ident-arg> is a <string>, an <integer>
+         or an <ident>; the calculation of an <integer> is rounded to the nearest, Values 4, 10.9.2). A unit in it is made absolute against the element. */
+      char nb[340];
+      size_t nl = 0;
+      const GTEXT_CSS_Status ms = ident_calc_piece(sub, v, nb, &nl);
+      if (ms == GTEXT_CSS_E_OOM) {
+        dbuf_free(&pieces);
+        gtext_css_tree_free(t);
+        SUB_FAIL(sub, ms);
+        return STEP_ERROR;
+      }
+      good = ms == GTEXT_CSS_OK && dbuf_put(&pieces, nb, nl);
+    }
+    else if (v->kind != GTEXT_CSS_VALUE_TOKEN) {
       good = false;
     }
     else if (v->type == GTEXT_CSS_TOKEN_STRING || v->type == GTEXT_CSS_TOKEN_IDENT) {
@@ -3061,6 +3079,65 @@ static GTEXT_CSS_Status ensure_fonts(css_sub * sub, unsigned need, bool * cycle)
       return status;
     }
   }
+  return GTEXT_CSS_OK;
+}
+
+
+typedef struct {
+  css_state * st;
+} ident_unit_ctx;
+
+static bool ident_unit_size(void * user, GTEXT_CSS_Unit unit, double * canonical) {
+  return css_st_unit_px(((ident_unit_ctx *)user)->st, unit, canonical);
+}
+
+static GTEXT_CSS_Status ident_calc_piece(css_sub * sub, const GTEXT_CSS_Component_Value * v, char nb[340], size_t * nl) {
+  bool valid = false;
+  GTEXT_CSS_Math * m = NULL;
+  GTEXT_CSS_Status st = gtext_css_math_parse(v, NULL, NULL, &valid, &m, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_E_INVALID;
+  }
+  if (!valid || !m) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  bool number = true;
+  for (int i = 0; i < GTEXT_CSS_MATH_BASE_COUNT; i++) {
+    if (m->type.exponent[i] != 0) {
+      number = false;
+    }
+  }
+  unsigned need = 0;
+  bool cycle = false;
+  if (number) {
+    st = units_needed(sub, v, 1, &need);
+    if (st == GTEXT_CSS_OK) {
+      st = ensure_fonts(sub, need, &cycle);
+    }
+  }
+  double value = 0.0;
+  bool resolved = false;
+  if (number && st == GTEXT_CSS_OK && !cycle) {
+    ident_unit_ctx uc = {sub->st};
+    GTEXT_CSS_Math_Env env;
+    memset(&env, 0, sizeof env);
+    env.unit_size = ident_unit_size;
+    env.user = &uc;
+    GTEXT_Allocator a = sub->alloc;
+    st = gtext_css_math_resolve(m, &env, &a, &value, &resolved);
+  }
+  gtext_css_math_free(m);
+  if (st == GTEXT_CSS_E_OOM) {
+    return st;
+  }
+  if (st != GTEXT_CSS_OK || !number || cycle || !resolved || value != value || value > 2147483647.0 || value < -2147483648.0) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  double r = value < 0 ? -(double)(long long)(-value + 0.5) : (double)(long long)(value + 0.5);
+  if (r == 0) {
+    r = 0;
+  }
+  *nl = css_cssom_number(r, true, nb);
   return GTEXT_CSS_OK;
 }
 

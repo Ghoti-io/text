@@ -92,6 +92,7 @@ typedef enum {
 #define GNF_RANGE 0x02u   ///< A NATIVE or REF: `lo` and `hi` are a range.
 #define GNF_GROUP 0x08u   ///< Written as a `[ ]` group.
 #define GNF_SOURCE_ORDER 0x20u ///< An OR: the members are kept in the order they were written, not in the grammar's (the order is significant).
+#define GNF_QUOTED 0x40u ///< A LITERAL written in quotes (`','`): an item of the grammar, never a separator that may be omitted.
 #define GNF_OMITTED 0x10u ///< A SEQ the linker made (or rewrote) when it worked out which commas are omissible: its literals are items, not separators.
 
 /// What the bounds of a range were written in (gnode::rclass): nothing but plain numbers, percent, or a unit type + 2.
@@ -103,7 +104,7 @@ typedef enum {
 typedef enum {
   NT_INTEGER = 0, NT_NUMBER, NT_PERCENTAGE, NT_DIMENSION, NT_LENGTH, NT_ANGLE, NT_TIME,
   NT_FREQUENCY, NT_RESOLUTION, NT_FLEX, NT_RATIO, NT_ZERO, NT_STRING, NT_URL, NT_IDENT,
-  NT_CUSTOM_IDENT, NT_DASHED_IDENT, NT_ANY_VALUE, NT_DECL_VALUE, NT_URANGE, NT_ANB,
+  NT_CUSTOM_IDENT, NT_GRID_IDENT, NT_DASHED_IDENT, NT_ANY_VALUE, NT_DECL_VALUE, NT_URANGE, NT_ANB,
   NT_DECL_LIST, NT_RULE_LIST,
   NT_TOK_IDENT, NT_TOK_FUNCTION, NT_TOK_AT_KEYWORD, NT_TOK_HASH, NT_TOK_STRING,
   NT_TOK_BAD_STRING, NT_TOK_URL, NT_TOK_BAD_URL, NT_TOK_DELIM, NT_TOK_NUMBER,

@@ -1625,7 +1625,21 @@ static GTEXT_CSS_Status compute_group(css_state * st, GTEXT_CSS_Property_Id id) 
       win_all = from_all;
     }
   }
-  const GTEXT_CSS_Property_Id deciding = winner ? winner : id;
+  GTEXT_CSS_Property_Id deciding = winner ? winner : id;
+  if (!winner && m->algo == GTEXT_CSS_ALGO_POSITION_AXIS) {
+    /* Nothing is declared in the slot, and its members write an origin keyword in their own words (`left` / `start`): the slot has one value, the physical member's
+       initial value, which the others say in their words (the members are one property under another name). */
+    for (size_t k = 0; k < g->nmembers; k++) {
+      GTEXT_CSS_Property_Info mi;
+      css_lmember ml;
+      gtext_css_registry_property_info(st->cc->registry, g->members[k], &mi);
+      css_logical_describe(g->name, mi.name, mi.name_length, &ml);
+      if (!ml.logical && css_logical_slot_of(&ml, &st->style->flow) == slot) {
+        deciding = g->members[k];
+        break;
+      }
+    }
+  }
   st->current = deciding;
   GTEXT_CSS_Value_Set * set = NULL;
   const css_source src = pick_source(st, deciding);
@@ -1633,6 +1647,10 @@ static GTEXT_CSS_Status compute_group(css_state * st, GTEXT_CSS_Property_Id id) 
   if (status != GTEXT_CSS_OK) {
     return status;
   }
+  css_lmember dl;
+  GTEXT_CSS_Property_Info di;
+  gtext_css_registry_property_info(st->cc->registry, deciding, &di);
+  css_logical_describe(g->name, di.name, di.name_length, &dl);
   for (size_t k = 0; k < g->nmembers; k++) {
     const GTEXT_CSS_Property_Id member = g->members[k];
     GTEXT_CSS_Property_Info mi;
@@ -1640,6 +1658,20 @@ static GTEXT_CSS_Status compute_group(css_state * st, GTEXT_CSS_Property_Id id) 
     gtext_css_registry_property_info(st->cc->registry, member, &mi);
     css_logical_describe(g->name, mi.name, mi.name_length, &ml);
     if (css_logical_slot_of(&ml, &st->style->flow) == slot && !st->done[member - 1]) {
+      if (member != deciding && st->cc->meta[member - 1].algo == GTEXT_CSS_ALGO_POSITION_AXIS && st->cc->meta[deciding - 1].algo == GTEXT_CSS_ALGO_POSITION_AXIS &&
+          dl.logical != ml.logical) {
+        /* the members write the origin keyword in their own words (`left` / `start`): the same physical side, said in the member's */
+        GTEXT_CSS_Value_Set * mapped = NULL;
+        const GTEXT_CSS_Status ms = css_algo_axis_remap(st, set, dl.logical != 0, dl.desc == 0, ml.logical != 0, ml.desc == 0, &mapped);
+        if (ms != GTEXT_CSS_OK) {
+          gtext_css_value_set_free(set);
+          return ms;
+        }
+        if (mapped) {
+          set_entry(st, member, mapped);
+          continue;
+        }
+      }
       set_entry(st, member, gtext_css_value_set_retain(set));
     }
   }

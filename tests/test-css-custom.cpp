@@ -779,7 +779,7 @@ TEST(CssCustom, CycleOnAShorthandCyclesEachLonghand) {
 
 TEST(CssCustom, CycleMustBeTheWholeValueAndHoldNoAttrCalcOrCycle) {
   // "background-position: 10px cycle(50px, 100px); /* cycle() must be the sole value of the property */"
-  EXPECT_EQ(prop_of("", "background-position-x: 10px cycle(50px, 100px)", "background-position-x"), "start 0%");
+  EXPECT_EQ(prop_of("", "background-position-x: 10px cycle(50px, 100px)", "background-position-x"), "left 0%");
   // "it is not allowed to be nested, nor may it contain attr() or calc() notations; declarations containing such constructs are invalid."
   EXPECT_EQ(prop_of("", "margin-top: cycle(calc(1px + 1px), 2px)", "margin-top"), "0px");
   EXPECT_EQ(prop_of("", "margin-top: cycle(cycle(1px, 2px), 3px)", "margin-top"), "0px");

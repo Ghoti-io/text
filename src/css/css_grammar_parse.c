@@ -55,7 +55,7 @@ static const struct {
   {"dimension", NT_DIMENSION}, {"length", NT_LENGTH}, {"angle", NT_ANGLE}, {"time", NT_TIME},
   {"frequency", NT_FREQUENCY}, {"resolution", NT_RESOLUTION}, {"flex", NT_FLEX},
   {"ratio", NT_RATIO}, {"zero", NT_ZERO}, {"string", NT_STRING}, {"url", NT_URL},
-  {"ident", NT_IDENT}, {"custom-ident", NT_CUSTOM_IDENT}, {"dashed-ident", NT_DASHED_IDENT},
+  {"ident", NT_IDENT}, {"custom-ident", NT_CUSTOM_IDENT}, {"grid-custom-ident", NT_GRID_IDENT}, {"dashed-ident", NT_DASHED_IDENT},
   {"any-value", NT_ANY_VALUE}, {"declaration-value", NT_DECL_VALUE}, {"urange", NT_URANGE}, {"unicode-range-token", NT_URANGE},
   {"an+b", NT_ANB}, {"declaration-list", NT_DECL_LIST}, {"rule-list", NT_RULE_LIST},
   {"ident-token", NT_TOK_IDENT}, {"function-token", NT_TOK_FUNCTION},
@@ -915,6 +915,7 @@ static bool parse_text(parser * P) {
       gnode g;
       proto_init(&g, GN_LITERAL);
       g.lit = cp;
+      g.flags |= GNF_QUOTED;
       g.src_off = (uint32_t)at;
       g.src_len = (uint32_t)(P->pos - at);
       term = new_node(P, &g);

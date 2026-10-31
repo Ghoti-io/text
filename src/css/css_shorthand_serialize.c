@@ -998,6 +998,13 @@ static bool layers_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
       if (sr && nm(c, d->ids[h], sr->after)) idx_after = (int)h;
       if (sr && sr->slash1 && nm(c, d->ids[h], sr->slash1)) idx_s1 = (int)h;
     }
+    /* a box-shadow layer whose offset is `none` is no shadow: it has no blur or spread to write back, whether or not the block says they were written */
+    bool no_shadow = false;
+    for (size_t h = 0; is_bs && h < nh; h++) {
+      if (nm(c, d->ids[h], "box-shadow-offset") && texteq(per[h][li], "none")) {
+        no_shadow = true;
+      }
+    }
     for (size_t kk = 0; kk < nh; kk++) {
       const size_t h = lperm[kk];
       if ((int)h == idx_s1) {
@@ -1010,11 +1017,11 @@ static bool layers_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
       const char * txt = final_only_h ? per[h][0] : per[h][li];
       const char * init = is_sh(c, d->ids[h]) ? NULL : initial_serialized(c, d->ids[h]);
       bool is_init = init && texteq(txt, init);
-      if (is_bs && dfl[h] && (nm(c, d->ids[h], "box-shadow-blur") || nm(c, d->ids[h], "box-shadow-spread"))) {
+      if (is_bs && !no_shadow && dfl[h] && (nm(c, d->ids[h], "box-shadow-blur") || nm(c, d->ids[h], "box-shadow-spread"))) {
         /* a blur or a spread the author wrote is written back, whatever it is (`0px` too); one that was left out is not */
         is_init = dfl[h][final_only_h ? 0 : li];
       }
-      if (is_bs && nm(c, d->ids[h], "box-shadow-blur")) {
+      if (is_bs && !no_shadow && nm(c, d->ids[h], "box-shadow-blur")) {
         /* the blur comes before the spread: a spread that is written needs its blur written, or it reads as the blur */
         for (size_t sp = 0; sp < nh; sp++) {
           if (nm(c, d->ids[sp], "box-shadow-spread")) {

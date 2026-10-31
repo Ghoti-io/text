@@ -1046,6 +1046,10 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     return tok(v, GTEXT_CSS_TOKEN_IDENT);
   case NT_CUSTOM_IDENT:
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value);
+  case NT_GRID_IDENT:
+    /* Grid 2 (served 2026-10-30), 8.3: "In all the above productions, the <custom-ident> additionally excludes the keywords span and auto." */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !fold_equal(v->value.data, v->value.length, "span", 4) &&
+        !fold_equal(v->value.data, v->value.length, "auto", 4);
   case NT_DASHED_IDENT:
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && v->value.length >= 2 && v->value.data[0] == '-' && v->value.data[1] == '-';
   case NT_URANGE:
@@ -2145,6 +2149,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     out->atom = gtext_css_atom_lookup(m->c->atoms, v->value.data, v->value.length);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_CUSTOM_IDENT:
+  case NT_GRID_IDENT:
     value_init(out, GTEXT_CSS_VAL_CUSTOM_IDENT, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_DASHED_IDENT:

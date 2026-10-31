@@ -412,7 +412,7 @@ static const char * native_word(walk * w, const gnode * n) {
   case NT_ZERO: return "0";
   case NT_STRING: case NT_TOK_STRING: return pick(w, kStrings, COUNT(kStrings));
   case NT_URL: case NT_TOK_URL: return pick(w, kUrls, COUNT(kUrls));
-  case NT_IDENT: case NT_TOK_IDENT: case NT_CUSTOM_IDENT: return pick(w, kIdents, COUNT(kIdents));
+  case NT_IDENT: case NT_TOK_IDENT: case NT_CUSTOM_IDENT: case NT_GRID_IDENT: return pick(w, kIdents, COUNT(kIdents));
   case NT_DASHED_IDENT: return w->rng && below(w->rng, 2) ? "--a-b" : "--foo";
   case NT_ANY_VALUE: case NT_DECL_VALUE: return pick(w, kAny, COUNT(kAny));
   case NT_URANGE: return w->rng && below(w->rng, 2) ? "U+??" : "U+0-7F";

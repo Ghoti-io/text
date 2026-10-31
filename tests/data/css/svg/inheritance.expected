@@ -1,5 +1,5 @@
 ## root
-hash 4097967035af5c5ec27e0170f6bb9c2c9c65fdb29810f060c7e791a1017669ce
+hash f1256fa378f9410c3e88c4581cbf0a67cf0ac56143af299e2db53a19057b6e97
 color: purple
 fill: black
 stroke: none
@@ -8,7 +8,7 @@ font-size: 10px
 letter-spacing: normal
 word-spacing: 0px
 ## outer
-hash 2eb751577aa27022fa2ab3db5f5dbaa44e6b24b0f0949b0175285a2f15830256
+hash 26a0e212df27b88a66ecbb58bd3b45e1463d7af9201e3d3e7408830b8a162ec3
 color: purple
 fill: currentcolor
 stroke: rgb(1, 2, 3)
@@ -17,7 +17,7 @@ font-size: 20px
 letter-spacing: normal
 word-spacing: 0px
 ## middle
-hash aaec993d552f88cdd99277422d5280f00006b2106aaaf2c394198dea36f69227
+hash fc36fa5b1d142ec64c422be9f85201604aafcaf39d5967655ac83d603c4af3cb
 color: purple
 fill: currentcolor
 stroke: rgb(1, 2, 3)
@@ -26,7 +26,7 @@ font-size: 30px
 letter-spacing: normal
 word-spacing: 0px
 ## inner
-hash 4e1380a449f36743148abe2f4494d96842c104667b17fd36e50633d230312b16
+hash 791d1ec83dc14b751c20b0aa54e638f792180ba09a6c4ae23b6555f1dd0fd1e9
 color: purple
 fill: currentcolor
 stroke: rgb(1, 2, 3)
@@ -35,7 +35,7 @@ font-size: 15px
 letter-spacing: 10px
 word-spacing: 0px
 ## calc
-hash ed2244c6c1a86ae7883e44360dbf2a8583494fb366ddf405d562e50455a33618
+hash a267766eb1ae512e4299c473b6da82f38f1deddbca2014a87971e2e5d00ce465
 color: purple
 fill: currentcolor
 stroke: rgb(1, 2, 3)
@@ -44,7 +44,7 @@ font-size: 30px
 letter-spacing: normal
 word-spacing: calc(10% + 30px)
 ## recolor
-hash 923d13d64b3264c6f692ac360532ced290e4612dc55be9694aeb59815cd0bfb7
+hash 3d8112bf992f3c7cdecbe5d7c49f836f978cb77c87e7b577bc2fac8b070135b1
 color: teal
 fill: currentcolor
 stroke: rgb(1, 2, 3)
@@ -53,7 +53,7 @@ font-size: 20px
 letter-spacing: normal
 word-spacing: 0px
 ## current
-hash 9c39cb1e11dc8030660c70c9674b2987386455d2f09eb8df8fd0f51fa07240c7
+hash 91c03bac8971fb19d59a7f03d26c68a5caa45d34391ba982b873b968a496406e
 color: teal
 fill: currentcolor
 stroke: currentcolor
@@ -62,7 +62,7 @@ font-size: 20px
 letter-spacing: normal
 word-spacing: 0px
 ## keywords
-hash 6e26a75ee4bea0be76e444da7c0f99cc531045b76216fb2321f6fa277ab99771
+hash 2ad8f0b1410fe275cfb84b56b0e366fffed438e2b396548fd22753b8ce94825f
 color: purple
 fill: black
 stroke: none
@@ -71,7 +71,7 @@ font-size: 19.2px
 letter-spacing: normal
 word-spacing: 0px
 ## larger
-hash 2ec3a4e8a390bcab435860724547ef6e24655797b1a696ff3ef749de4584188e
+hash 1bf05e4fb77767cbe42a1f74ae508d535ab0a494ab2ce220ea06adeda1863ece
 color: purple
 fill: black
 stroke: none
@@ -80,7 +80,7 @@ font-size: 23.04px
 letter-spacing: normal
 word-spacing: 0px
 ## smaller
-hash 720e8695daecd275e67570de68fe4810a25ad4f0def00d1f0fa2a930237e8f32
+hash 034e70eeaf97b0ff8bce562f3210f3c597ccc909c58e374324ec735c210c55ce
 color: purple
 fill: black
 stroke: none
@@ -89,7 +89,7 @@ font-size: 16px
 letter-spacing: normal
 word-spacing: 0px
 ## medium
-hash 720e8695daecd275e67570de68fe4810a25ad4f0def00d1f0fa2a930237e8f32
+hash 034e70eeaf97b0ff8bce562f3210f3c597ccc909c58e374324ec735c210c55ce
 color: purple
 fill: black
 stroke: none

@@ -318,6 +318,104 @@ TEST(CssComputedCompletionNewerGrammar, TextJustifyDistributeComputesToInterChar
   EXPECT_EQ(root_computed("text-justify: distribute inter-word", "text-justify"), "auto") << "two justification keywords stay invalid";
 }
 
+/* Color 5, 7: "For the image form, this function returns the first image, if the element color scheme is light, or the second image, if the element color scheme is dark."
+   `none` is not an <image> in the served text; both pinned browsers write the transparent image for `light-dark(none, ...)` (cases light-dark-none.1, .2, light-dark-img.1). */
+TEST(CssComputedCompletionLightDarkImage, TheImageOfTheElementsScheme) {
+  EXPECT_EQ(root_computed("background-image: light-dark(url(a), url(b))", "background-image"), "url(\"a\")");
+  EXPECT_EQ(root_computed("color-scheme: dark; background-image: light-dark(url(a), url(b))", "background-image"), "url(\"b\")");
+  EXPECT_EQ(root_computed("background-image: light-dark(none, none)", "background-image"), "image(rgba(0, 0, 0, 0))");
+  EXPECT_EQ(root_computed("color-scheme: dark; list-style-image: light-dark(url(a), none)", "list-style-image"), "image(rgba(0, 0, 0, 0))");
+  EXPECT_EQ(root_computed("background-image: url(x), light-dark(none, url(b))", "background-image"), "url(\"x\"), image(rgba(0, 0, 0, 0))");
+  EXPECT_EQ(root_computed("mask-image: light-dark(linear-gradient(red, blue), url(b))", "mask-image"), "linear-gradient(red, blue)");
+}
+
+/* Values 5, 8.8: "ident( <ident-arg>+ )", "<ident-arg> = <string> | <integer> | <ident>"; the items are replaced "with its computed value" and serialized, then
+   concatenated; a result that "can't be represented as an ident" is the guaranteed-invalid value. A calculation of numbers is the integer it computes to, and a unit in
+   it is made absolute against the element (font-size 16px here). */
+TEST(CssComputedCompletionIdent, ACalculationIsTheIntegerItComputesTo) {
+  EXPECT_EQ(root_computed("animation-name: ident(\"a\" calc(2 + 3))", "animation-name"), "a5");
+  EXPECT_EQ(root_computed("animation-name: ident(\"a\" calc(1em / 1px))", "animation-name"), "a16");
+  EXPECT_EQ(root_computed("font-size: 10px; animation-name: ident(\"a\" calc(1em / 1px))", "animation-name"), "a10");
+  // Values 4, 6.1.1: a font-relative length in a font-affecting property is made absolute against the parent's font (here the initial 16px, whatever the element's own size is)
+  EXPECT_EQ(root_computed("font-size: 10px; font-palette: ident(\"--test-\" calc(1em / 1px))", "font-palette"), "--test-16");
+  EXPECT_EQ(root_computed("font-size: 10px; font-variant-alternates: stylistic(ident(\"test-\" calc(1em / 1px)))", "font-variant-alternates"), "stylistic(test-16)");
+  EXPECT_EQ(root_computed("animation-name: ident(\"a\" calc(2.5))", "animation-name"), "a3") << "an <integer> calculation is rounded";
+  // a calculation that is not a number makes the function the guaranteed-invalid value, so the declaration is not a value
+  EXPECT_EQ(root_computed("animation-name: ident(\"a\" calc(2px))", "animation-name"), "none");
+}
+
+/* Link Parameters 1 (served 2026-10-30), 2.1: "a completely empty second argument is valid, and is indicated by specifying the comma" and "param(--foo,) explicitly gives
+   the link parameter an empty value"; the first argument is "color | accent-color | [ <dashed-ident> <css-type>? ]", and a <css-type> is `<color>` (CSS Values 5,
+   "<syntax-single-component> = '<' <syntax-type-name> '>'"). The commas of other functions stay omissible (Values 4, 2). */
+TEST(CssComputedCompletionLinkParameters, AnEmptySecondArgumentNeedsItsCommaAndATypeIsWrittenWithoutSpaces) {
+  EXPECT_EQ(root_computed("link-parameters: param(--a, )", "link-parameters"), "param(--a, )");
+  EXPECT_EQ(root_computed("link-parameters: param(--a,)", "link-parameters"), "param(--a, )");
+  EXPECT_EQ(root_computed("link-parameters: param(--a, ), param(--b, )", "link-parameters"), "param(--a, ), param(--b, )");
+  EXPECT_EQ(root_computed("link-parameters: param(--a <color>, orange)", "link-parameters"), "param(--a <color>, orange)");
+  EXPECT_EQ(root_computed("link-parameters: param(--a <length>, currentcolor)", "link-parameters"), "param(--a <length>, currentcolor)");
+  EXPECT_EQ(root_computed("link-parameters: param(--a <color>, orange), param(--b, blue)", "link-parameters"), "param(--a <color>, orange), param(--b, blue)");
+  // without a comma the second argument is not given: not a value of the property
+  EXPECT_EQ(root_computed("link-parameters: param(--a)", "link-parameters"), "none");
+  // other functions keep the omission rule: a comma that nothing follows is not written
+  EXPECT_EQ(root_computed("animation-timing-function: steps(2,)", "animation-timing-function"), "ease");
+}
+
+/* Values 5, 4.2 (served 2026-10-30): x-start, x-end, y-start and y-end "compute the same as the physical edge keyword corresponding to the start/end side in the y/x
+   axis"; Backgrounds 4, 2.6: the grammar of background-position-x is "[ center | [ [ left | right | x-start | x-end ]? <length-percentage>? ]! ]#". */
+TEST(CssComputedCompletionPosition, TheAxisKeywordsAreTheirPhysicalEdges) {
+  EXPECT_EQ(root_computed("background-position-x: x-start", "background-position-x"), "left 0%");
+  EXPECT_EQ(root_computed("background-position-x: x-end 10px", "background-position-x"), "right 10px");
+  EXPECT_EQ(root_computed("background-position-x: 0.5em, x-start, x-end", "background-position-x"), "left 8px, left 0%, right 0%");
+  EXPECT_EQ(root_computed("background-position-y: y-end", "background-position-y"), "bottom 0%");
+  EXPECT_EQ(root_computed("background-position-y: y-start 3px", "background-position-y"), "top 3px");
+  EXPECT_EQ(root_computed("background-position: x-end y-end", "background-position-x"), "right 0%");
+  EXPECT_EQ(root_computed("object-position: x-end y-start", "object-position"), "100% 0%");
+  // an axis keyword of the other axis is not a value of the property: the initial value, in the form of the property (the members of a logical group write the
+  // origin keyword differently, so the one computed first does not stand for the others)
+  EXPECT_EQ(root_computed("background-position-x: y-start", "background-position-x"), "left 0%");
+  EXPECT_EQ(root_computed("", "background-position-x"), "left 0%");
+  EXPECT_EQ(root_computed("", "background-position-y"), "top 0%");
+  EXPECT_EQ(root_computed("", "background-position-inline"), "start 0%");
+  EXPECT_EQ(root_computed("", "background-position-block"), "start 0%");
+  EXPECT_EQ(root_computed("background-position-inline: 5px", "background-position-inline"), "start 5px");
+  // the members of one slot are one declaration: a winner declared in one member's words is read in the others' (horizontal ltr: x is inline, y is block)
+  EXPECT_EQ(root_computed("background-position-inline: end 5px", "background-position-x"), "right 5px");
+  EXPECT_EQ(root_computed("background-position-x: right 5px", "background-position-inline"), "end 5px");
+  EXPECT_EQ(root_computed("background-position-y: bottom 5px", "background-position-block"), "end 5px");
+  EXPECT_EQ(root_computed("direction: rtl; background-position-inline: end 5px", "background-position-x"), "left 5px");
+  EXPECT_EQ(root_computed("direction: rtl; background-position-x: left 5px", "background-position-inline"), "end 5px");
+  // in a vertical writing mode the block axis is the horizontal one: the initial value is one position, said in each member's words (vertical-rl starts at the right)
+  EXPECT_EQ(root_computed("writing-mode: vertical-rl", "background-position-x"), "left 0%");
+  EXPECT_EQ(root_computed("writing-mode: vertical-rl", "background-position-block"), "end 0%");
+  EXPECT_EQ(root_computed("writing-mode: vertical-rl", "background-position-inline"), "start 0%");
+  EXPECT_EQ(root_computed("writing-mode: vertical-lr", "background-position-block"), "start 0%");
+  // below a parent that sets the writing mode, the child's initial values are said in its (inherited) flow
+  EXPECT_EQ(computed("writing-mode: vertical-rl", "color: red", "background-position-block"), "end 0%");
+  EXPECT_EQ(computed("writing-mode: vertical-rl", "color: red", "background-position-x"), "left 0%");
+  EXPECT_EQ(computed("font-size: 20px; color: red; writing-mode: vertical-rl", "color: color-mix(in oklch, red 30%, blue)", "background-position-block"), "end 0%");
+  // a later declaration of the other member wins, as before
+  EXPECT_EQ(root_computed("background-position-inline: end 5px; background-position-x: left 1px", "background-position-inline"), "start 1px");
+}
+
+/* Grid 2 (served 2026-10-30), 8.3: "In all the above productions, the <custom-ident> additionally excludes the keywords span and auto." and "Negative integers or zero are
+   invalid" after span. So `span` is no line name: `span -1` and a lone `span` are invalid, and a calculation after `span` is clamped to [1,inf], not to the union of the ranges of
+   the line-number alternative. */
+TEST(CssComputedCompletionGrid, SpanIsNoLineNameAndItsIntegerIsPositive) {
+  EXPECT_EQ(root_computed("grid-row-start: span calc(-1)", "grid-row-start"), "span 1");
+  EXPECT_EQ(root_computed("grid-row-start: span calc(0)", "grid-row-start"), "span 1");
+  EXPECT_EQ(root_computed("grid-row-start: span calc(3)", "grid-row-start"), "span 3");
+  EXPECT_EQ(root_computed("grid-row-start: span -1", "grid-row-start"), "auto") << "invalid, so the initial value";
+  EXPECT_EQ(root_computed("grid-row-start: span", "grid-row-start"), "auto");
+  EXPECT_EQ(root_computed("grid-row-end: SPAN foo", "grid-row-end"), "span foo");
+  EXPECT_EQ(root_computed("grid-row-start: foo span 2", "grid-row-start"), "auto") << "a line named span is not allowed beside an integer";
+  // the line-number alternative keeps the union of its two ranges
+  EXPECT_EQ(root_computed("grid-row-start: calc(3)", "grid-row-start"), "3");
+  EXPECT_EQ(root_computed("grid-row-start: calc(-2) foo", "grid-row-start"), "-2 foo");
+  // <line-names>: "the <custom-ident> in the <line-names> production excludes the keywords span and auto"
+  EXPECT_EQ(root_computed("grid-template-columns: [span] 1fr", "grid-template-columns"), "none");
+  EXPECT_EQ(root_computed("grid-template-columns: [a b] 1fr", "grid-template-columns"), "[a b] 1fr");
+}
+
 /* View Transitions 2: "The values none, auto, and match-element are excluded from <custom-ident>" and "also accepts an auto keyword"; a keyword is ASCII case-insensitive and
    is written in lower case, a custom identifier keeps its case. */
 TEST(CssComputedCompletionNewerGrammar, ViewTransitionNameKeywordsAreLowerCase) {
@@ -438,7 +536,10 @@ TEST(CssComputedCompletionEasing, LinearSplitsDoublePositionsAndAscends) {
            {"linear(0, 0.25 25% 75%, 1)", "linear(0 0%, 0.25 25%, 0.25 75%, 1 100%)"}, {"linear(0, 0.5 25% 75%, 1 100% 100%)", "linear(0 0%, 0.5 25%, 0.5 75%, 1 100%, 1 100%)"},
            {"linear(0, 1)", "linear(0 0%, 1 100%)"}, {"linear(0 10%, 1 90%)", "linear(0 10%, 1 90%)"}, {"ease-in, linear(0 50% 25%, 1)", "ease-in, linear(0 50%, 0 50%, 1 100%)"},
            {"linear(0, 0.5 20%, 0.7, 1)", "linear(0 0%, 0.5 20%, 0.7 60%, 1 100%)"}, {"linear(0, 0.25, 0.5, 0.75, 1)", "linear(0 0%, 0.25 25%, 0.5 50%, 0.75 75%, 1 100%)"},
-           {"linear(0 30% 70%, 1)", "linear(0 30%, 0 70%, 1 100%)"}, {"linear(0 10%, 0.5, 1 90%)", "linear(0 10%, 0.5 50%, 1 90%)"}}) {
+           {"linear(0 30% 70%, 1)", "linear(0 30%, 0 70%, 1 100%)"}, {"linear(0 10%, 0.5, 1 90%)", "linear(0 10%, 0.5 50%, 1 90%)"},
+           // a position that is a min(), max() or clamp() of percentages is the percentage it picks (both browsers, case linear.7)
+           {"linear(0 calc(min(50%, 60%)), 0 100%)", "linear(0 50%, 0 100%)"}, {"linear(0 max(10%, 5%), 1)", "linear(0 10%, 1 100%)"},
+           {"linear(0, 1 clamp(10%, 5%, 20%))", "linear(0 0%, 1 10%)"}}) {
     EXPECT_EQ(root_computed(std::string("animation-timing-function: ") + r.in, "animation-timing-function"), r.out) << r.in;
     EXPECT_EQ(root_computed(std::string("transition-timing-function: ") + r.in, "transition-timing-function"), r.out) << r.in;
   }
