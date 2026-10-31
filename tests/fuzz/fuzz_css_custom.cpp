@@ -326,7 +326,7 @@ std::string dump_of(const GTEXT_CSS_Computed_Style * s, const std::string & inpu
 }
 
 /// The properties and the custom properties of a style, written as declarations. `ok` is false when a value holds a character that the block reader splits on.
-std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok) {
+std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok, const GTEXT_CSS_Computed_Style * parent) {
   std::string out;
   const GTEXT_CSS_Registry * r = registry();
   const size_t n = gtext_css_registry_property_count(r);
@@ -370,6 +370,25 @@ std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok) {
     out += ": ";
     out += text;
     out += ";\n";
+  }
+  // a custom property the parent has and the child has not is the guaranteed-invalid value (`--a: initial`), which no declaration of the child's own values can say by
+  // leaving it out: the child would inherit it
+  for (size_t i = 0; parent && i < gtext_css_computed_custom_count(parent); i++) {
+    GTEXT_CSS_String name;
+    const GTEXT_CSS_Custom_Value * v = nullptr;
+    if (!gtext_css_computed_custom_at(parent, i, &name, &v)) {
+      continue;
+    }
+    bool held = false;
+    for (size_t k = 0; !held && k < gtext_css_computed_custom_count(s); k++) {
+      GTEXT_CSS_String other;
+      const GTEXT_CSS_Custom_Value * ov = nullptr;
+      held = gtext_css_computed_custom_at(s, k, &other, &ov) && other.length == name.length && memcmp(other.data, name.data, name.length) == 0;
+    }
+    if (!held) {
+      out.append(name.data, name.length);
+      out += ": initial;\n";
+    }
   }
   return out;
 }
@@ -472,7 +491,7 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
   }
   if (st == GTEXT_CSS_OK && !fa.failed) {
     bool splittable = true;
-    const std::string decls = declarations_of(child, &splittable);
+    const std::string decls = declarations_of(child, &splittable, parent);
     GTEXT_CSS_Declaration_Block * rb = nullptr;
     if (splittable && build(declarations(decls), nullptr, &rb, input) == GTEXT_CSS_OK) {
       GTEXT_CSS_Computed_Style * second = nullptr;

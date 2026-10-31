@@ -86,6 +86,10 @@ bool is_hard_limit(GTEXT_CSS_Status s) {
 
 /// Equal, or equal as a number is written (at most six decimals: CSSOM's rule, which loses the rest). (Not `near`: a macro of <windows.h>.)
 bool same_as_written(double a, double b) {
+  // a finite number is written no larger than the largest single-precision float (the number writer's limit: CSS Values 4, 9.1 "extremely large values ... will clamp")
+  const double limit = 3.4028234663852886e38;
+  a = a > limit && a <= 1.7976931348623157e308 ? limit : a < -limit && a >= -1.7976931348623157e308 ? -limit : a;
+  b = b > limit && b <= 1.7976931348623157e308 ? limit : b < -limit && b >= -1.7976931348623157e308 ? -limit : b;
   if (a == b || (a != a && b != b)) {
     return true;
   }
