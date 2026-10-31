@@ -174,7 +174,7 @@ def main():
             if record is None:
                 record = _record_module()
                 record_cache = record.load_record()
-            problems += record.record_problems(ident, f[6], record_cache, f[1], f[5] == 'browsers-differ', f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'))
+            problems += record.record_problems(ident, f[6], record_cache, f[1], f[5] == 'browsers-differ', f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'), specified=True)
     defects, p = load_table(defects_path, 7, 'not <id> TAB <property> TAB <value> TAB <stage> TAB <answer> TAB <owner> TAB <what the library lacks>')
     problems += p
     for ident, f in defects.items():

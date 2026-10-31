@@ -8,6 +8,9 @@ import re
 
 BROWSER_RECORD = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_browser_answers.jsonl')
 
+# the specified values the engines wrote for a case's declarations: id -> engine -> tuple of the specified texts (the specified-value gate's browsers-differ is about these: `specified=True`)
+SPECIFIED = {}
+
 
 def load_record():
     """The ids of the recorded browser answers (css_browser_answers.jsonl) that have an answer of both engines: id -> set of engines."""
@@ -20,10 +23,11 @@ def load_record():
         r = json.loads(line)
         have[r['id']] = {e: a.get('computed', {}) for e, a in r['engines'].items() if a.get('computed') or a.get('declarations')}
         have['style:' + r['style']] = have[r['id']]
+        SPECIFIED[r['id']] = {e: tuple(x.get('specified', '') for _, x in sorted(a.get('declarations', {}).items())) for e, a in r['engines'].items()}
     return have
 
 
-def record_problems(ident, reason, record, prop=None, differ=False, value=None):
+def record_problems(ident, reason, record, prop=None, differ=False, value=None, specified=False):
     """A `served-text` exception quotes the sentence (checked as for the other classes) and names the recorded answers of both browsers: `[record: *]` is this vector's
     own case in the record (CSS_COMPUTED_DEFECTS:<vector> or CSS_PROPERTY_DEFECTS:<vector>), or ids of hand cases are listed after `record:` separated by semicolons."""
     m = re.search(r'\[record: ([^\]]+)\]', reason)
@@ -43,6 +47,6 @@ def record_problems(ident, reason, record, prop=None, differ=False, value=None):
             out.append('%s: the record has no case %r' % (ident, i))
         elif set(record[i]) != {'chromium', 'firefox'}:
             out.append('%s: the record case %r lacks an answer of %s' % (ident, i, ', '.join(sorted({'chromium', 'firefox'} - set(record[i])))))
-        elif differ and prop is not None and record[i]['chromium'].get(prop) == record[i]['firefox'].get(prop):
+        elif differ and prop is not None and record[i]['chromium'].get(prop) == record[i]['firefox'].get(prop) and not (specified and SPECIFIED.get(i, {}).get('chromium') != SPECIFIED.get(i, {}).get('firefox')):
             out.append('%s: the class is browsers-differ and the record case %r has the same answer in both browsers for %s' % (ident, i, prop))
     return out
