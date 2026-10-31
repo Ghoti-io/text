@@ -209,6 +209,14 @@ LFS_FLAGS := -D_FILE_OFFSET_BITS=64
 CXXFLAGS := -pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function -Wfatal-errors -std=c++20 -O1 -g $(LFS_FLAGS) $(EXTRA_CXXFLAGS)
 CC := cc
 CFLAGS := -pedantic-errors -Wall -Wextra -Werror -Wno-error=unused-function -Wfatal-errors -std=c17 $(OPT_CFLAGS) -g $(LFS_FLAGS) $(EXTRA_CFLAGS)
+# A 32-bit x86 target does its double arithmetic on the x87 stack by default, in 80 bits, so a color converted there is not the color every other target computes
+# (the same mixing of rounding and extended precision, one bit in the last place, which the powerless-hue and tolerance tests then read as a difference). SSE2
+# arithmetic is IEEE double, as everywhere else, and every x86 CPU that runs 32-bit code today has it.
+FP_TARGET := $(shell $(CC) -dumpmachine 2>/dev/null)
+ifneq (,$(filter i386-% i486-% i586-% i686-%,$(FP_TARGET)))
+CFLAGS += -msse2 -mfpmath=sse
+CXXFLAGS += -msse2 -mfpmath=sse
+endif
 # Library-specific compile flags (export symbols on Windows, PIC on Linux)
 # GTEXT_BUILD enables DLL export on Windows (checked by GTEXT_API macro)
 # GTEXT_TEST_BUILD enables export of internal functions for testing (checked by GTEXT_INTERNAL_API macro)
