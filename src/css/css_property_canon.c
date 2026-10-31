@@ -2156,6 +2156,38 @@ static bool rule_box_sides(cb * out, const sp * t, size_t n) {
   return true;
 }
 
+/* Masking 1, Appendix A: "User agents must support separation with commas, but may also support separation without commas"; "Authors should separate offset values with
+ * commas." The two pinned browsers write the commas (cases clip.4), and the text gives no serialization of the other form: `rect(1px 2px 3px 4px)` is written with them. */
+static bool rule_clip_rect_commas(cb * out, const char * text, size_t len) {
+  if (len < 6 || strncmp(text, "rect(", 5) != 0 || text[len - 1] != ')' || memchr(text, ',', len)) {
+    return false;
+  }
+  cb_put(out, text, 5);
+  bool gap = false;
+  bool first = true;
+  size_t depth = 0;
+  for (size_t i = 5; i + 1 < len; i++) {
+    if (text[i] == '(') {
+      depth++;
+    }
+    else if (text[i] == ')' && depth) {
+      depth--;
+    }
+    if (text[i] == ' ' && depth == 0) {
+      gap = true;
+      continue;
+    }
+    if (gap && !first) {
+      cb_puts(out, ", ");
+    }
+    gap = false;
+    first = false;
+    cb_putc(out, text[i]);
+  }
+  cb_putc(out, ')');
+  return true;
+}
+
 /* ---- the table ------------------------------------------------------------------------------------------------------------- */
 
 typedef enum { MODE_ITEMS = 1, MODE_WHOLE, MODE_TEXT } canon_mode;
@@ -2191,6 +2223,7 @@ static const canon_row kRows[] = {
   R("border-image-width", rule_box_sides, MODE_WHOLE),
   R("border-shape", rule_shape, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
+  T("clip", rule_clip_rect_commas),
   R("clip-path", rule_shape, MODE_WHOLE),
   R("color-scheme", rule_color_scheme, MODE_WHOLE),
   R("counter-increment", rule_counter_one, MODE_WHOLE),

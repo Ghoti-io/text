@@ -397,6 +397,63 @@ TEST(CssComputedCompletionPosition, TheAxisKeywordsAreTheirPhysicalEdges) {
   EXPECT_EQ(root_computed("background-position-inline: end 5px; background-position-x: left 1px", "background-position-inline"), "start 1px");
 }
 
+/* Masking 1, Appendix A: "User agents must support separation with commas, but may also support separation without commas"; both pinned browsers write the commas for the
+   other form (case clip.4), which the text does not contradict. This is the specified value's text (the computed value is "as specified"). */
+std::string specified_text(const std::string & decl, const char * property) {
+  GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  if (gtext_css_block_new(R(), &o, &b) != GTEXT_CSS_OK) {
+    return "<block>";
+  }
+  GTEXT_CSS_Property_Outcome oc = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  const std::string value = decl;
+  gtext_css_block_add_text(b, property, strlen(property), value.data(), value.size(), false, nullptr, &oc, nullptr);
+  std::string out = "<invalid>";
+  if (oc == GTEXT_CSS_PROP_RESULT_VALID) {
+    char * t = nullptr;
+    size_t n = 0;
+    if (gtext_css_block_get_property_value(b, find(R(), property), &t, &n, nullptr) == GTEXT_CSS_OK) {
+      out.assign(t, n);
+      gtext_css_serialize_buffer_free(nullptr, t);
+    }
+  }
+  gtext_css_block_free(b);
+  return out;
+}
+
+TEST(CssComputedCompletionClip, RectWithoutCommasIsWrittenWithThem) {
+  EXPECT_EQ(specified_text("rect(1px 2px 3px 4px)", "clip"), "rect(1px, 2px, 3px, 4px)");
+  EXPECT_EQ(specified_text("rect(auto 2px calc(1px + 2em) 4px)", "clip"), "rect(auto, 2px, calc(2em + 1px), 4px)");
+  EXPECT_EQ(specified_text("rect(1px, 2px, 3px, 4px)", "clip"), "rect(1px, 2px, 3px, 4px)");
+  EXPECT_EQ(specified_text("rect(1px 2px 3px)", "clip"), "<invalid>") << "three offsets are not a value";
+  EXPECT_EQ(specified_text("rect(1px 2px, 3px, 4px)", "clip"), "<invalid>") << "commas between some of the offsets only are not a value";
+}
+
+/* Easing 2, 2.1: "linear() = linear( [ <number> && <percentage>{0,2} ] # )" has no minimum number of control points, and 2.1.2 step 2 handles "a single item": linear(1) is a
+   value, though both pinned browsers refuse it (case linear.17; the text decides). */
+TEST(CssComputedCompletionEasing, ASingleControlPointIsAValue) {
+  EXPECT_EQ(root_computed("animation-timing-function: linear(1)", "animation-timing-function"), "linear(1)");
+  EXPECT_EQ(root_computed("animation-timing-function: linear(0.5 30%)", "animation-timing-function"), "linear(0.5 30%)");
+}
+
+/* CSS Conditional 5, 5.2: "The keywords none, and, not, and or are excluded from this <custom-ident>."; Will Change 1, 2: the <custom-ident> "excludes the keywords
+   will-change, none, all, auto, scroll-position, and contents"; Counter Styles 3, 2.1: "The keyword none (including any ASCII case-insensitive permutation of it) is not a
+   valid <counter-style-name>." An excluded word makes the declaration invalid, so the property has its initial value. */
+TEST(CssComputedCompletionIdentExclusions, TheKeywordsEachTypeExcludes) {
+  EXPECT_EQ(root_computed("container-name: a b", "container-name"), "a b");
+  for (const char * bad : {"none none", "not", "a and", "OR b"}) {
+    EXPECT_EQ(root_computed(std::string("container-name: ") + bad, "container-name"), "none") << bad;
+  }
+  EXPECT_EQ(root_computed("will-change: transform, opacity", "will-change"), "transform, opacity");
+  EXPECT_EQ(root_computed("will-change: scroll-position, contents", "will-change"), "scroll-position, contents");
+  for (const char * bad : {"auto, transform", "contents, auto", "all", "none", "will-change", "foo, NONE"}) {
+    EXPECT_EQ(root_computed(std::string("will-change: ") + bad, "will-change"), "auto") << bad;
+  }
+  EXPECT_EQ(root_computed("content: counter(foo, decimal)", "content"), "counter(foo, decimal)");
+  EXPECT_EQ(root_computed("content: counter(foo, none)", "content"), "normal");
+  EXPECT_EQ(root_computed("content: counters(foo, \"\", NoNe)", "content"), "normal");
+}
+
 /* Grid 2 (served 2026-10-30), 8.3: "In all the above productions, the <custom-ident> additionally excludes the keywords span and auto." and "Negative integers or zero are
    invalid" after span. So `span` is no line name: `span -1` and a lone `span` are invalid, and a calculation after `span` is clamped to [1,inf], not to the union of the ranges of
    the line-number alternative. */

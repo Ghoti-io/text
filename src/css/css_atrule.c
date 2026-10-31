@@ -788,15 +788,6 @@ static const char * descriptor_semantics(const GTEXT_Allocator * alloc, const ch
         k++;
       }
     }
-    else if (css_ascii_ieq(&d->name, "fallback") || css_ascii_ieq(&d->name, "speak-as") || css_ascii_ieq(&d->name, "system")) {
-      /* a <counter-style-name> (fallback, speak-as, `system: extends`) is a <custom-ident> that is never `none` (web-platform-tests counter-style-at-rule: fallback.html,
-         speak-as-syntax.html, system-syntax.html) */
-      for (size_t i = 0; i < n; i++) {
-        if (ident_is(&v[i], "none")) {
-          return "Counter Styles 3: a <counter-style-name> excludes none";
-        }
-      }
-    }
   }
   else if (strcmp(at_name, "font-face") == 0) {
     if (css_ascii_ieq(&d->name, "font-family")) {

@@ -722,6 +722,17 @@ static bool fold_equal(const char * a, size_t an, const char * b, size_t bn) {
   return true;
 }
 
+/// Whether the identifier is, in ASCII case-insensitive comparison, one of the keywords (NULL entries are skipped).
+static bool ident_in(const GTEXT_CSS_String * s, const char * a, const char * b, const char * c, const char * d, const char * e, const char * f) {
+  const char * const list[6] = {a, b, c, d, e, f};
+  for (size_t i = 0; i < 6; i++) {
+    if (list[i] && fold_equal(s->data, s->length, list[i], strlen(list[i]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static bool is_css_wide(const GTEXT_CSS_String * s) {
   static const char * const names[] = {"initial", "inherit", "unset", "revert", "revert-layer", "default"};
   for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
@@ -1048,8 +1059,16 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value);
   case NT_GRID_IDENT:
     /* Grid 2 (served 2026-10-30), 8.3: "In all the above productions, the <custom-ident> additionally excludes the keywords span and auto." */
-    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !fold_equal(v->value.data, v->value.length, "span", 4) &&
-        !fold_equal(v->value.data, v->value.length, "auto", 4);
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "span", "auto", NULL, NULL, NULL, NULL);
+  case NT_CONTAINER_IDENT:
+    /* CSS Conditional 5 (served 2026-10-30), 5.2: "The keywords none, and, not, and or are excluded from this <custom-ident>." */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "none", "and", "not", "or", NULL, NULL);
+  case NT_WILLCHANGE_IDENT:
+    /* Will Change 1 (served 2026-10-30), 2: the <custom-ident> "excludes the keywords will-change, none, all, auto, scroll-position, and contents" */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "will-change", "none", "all", "auto", "scroll-position", "contents");
+  case NT_COUNTER_STYLE_IDENT:
+    /* Counter Styles 3 (served 2026-10-30), 2.1: "The keyword none (including any ASCII case-insensitive permutation of it) is not a valid <counter-style-name>." */
+    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !is_css_wide(&v->value) && !ident_in(&v->value, "none", NULL, NULL, NULL, NULL, NULL);
   case NT_DASHED_IDENT:
     return tok(v, GTEXT_CSS_TOKEN_IDENT) && v->value.length >= 2 && v->value.data[0] == '-' && v->value.data[1] == '-';
   case NT_URANGE:
@@ -2150,6 +2169,9 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_CUSTOM_IDENT:
   case NT_GRID_IDENT:
+  case NT_CONTAINER_IDENT:
+  case NT_WILLCHANGE_IDENT:
+  case NT_COUNTER_STYLE_IDENT:
     value_init(out, GTEXT_CSS_VAL_CUSTOM_IDENT, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_DASHED_IDENT:

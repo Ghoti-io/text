@@ -424,7 +424,7 @@ TEST(CssRegistryTypes, GlobalAndScopedAndNative) {
   ASSERT_TRUE(gtext_css_registry_find_type("rect()", 6, find(r, "clip"), &t));
   EXPECT_EQ(t.scope, find(r, "clip"));
   EXPECT_NE(t.flags & GTEXT_CSS_TYPE_SCOPED, 0u);
-  EXPECT_EQ(str(t.grammar), "rect( <top>, <right>, <bottom>, <left> )");
+  EXPECT_EQ(str(t.grammar), "rect( <top>, <right>, <bottom>, <left> ) | rect( <top> <right> <bottom> <left> )") << "Masking 1, Appendix A: separation without commas is allowed (consolidate.tsv)";
   EXPECT_FALSE(gtext_css_registry_find_type("rect()", 6, find(r, "width"), &t) && t.scope != 0) << "no definition of the name is scoped to width";
   // the order the lookup relies on
   std::string prev;

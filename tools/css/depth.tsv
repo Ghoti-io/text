@@ -211,7 +211,7 @@ property	animation-timing-function	1	1	1	0
 property	animation-trigger	1	1	1	0	
 property	appearance	1	1	1	0	
 property	aspect-ratio	1	1	1	1	
-property	backdrop-filter	1	1	1	0	
+property	backdrop-filter	1	1	1	1	
 property	backface-visibility	1	1	1	1	
 property	background	1	1	1	0	
 property	background-attachment	1	1	1	1	
@@ -383,10 +383,10 @@ property	contain-intrinsic-height	1	1	1	1
 property	contain-intrinsic-inline-size	1	1	1	1	
 property	contain-intrinsic-size	1	1	1	1	
 property	contain-intrinsic-width	1	1	1	1	
-property	container	1	1	1	0	
-property	container-name	1	1	1	0	
+property	container	1	1	1	1	
+property	container-name	1	1	1	1	
 property	container-type	1	1	1	1	
-property	content	1	1	1	0	
+property	content	1	1	1	1	
 property	content-visibility	1	1	1	1	
 property	continue	1	1	1	1	
 property	copy-into	1	1	1	0	
@@ -453,7 +453,7 @@ property	fill-position	1	1	1	0
 property	fill-repeat	1	1	1	0	
 property	fill-rule	1	1	1	0	
 property	fill-size	1	1	1	0	
-property	filter	1	1	1	0	
+property	filter	1	1	1	1	
 property	fit-tolerance	1	1	1	0	
 property	flex	1	1	1	1	
 property	flex-basis	1	1	1	0	
@@ -919,7 +919,7 @@ property	white-space-collapse	1	1	1	1
 property	white-space-trim	1	1	1	0	
 property	widows	1	1	1	1	
 property	width	1	1	1	0	
-property	will-change	1	1	1	0	
+property	will-change	1	1	1	1	
 property	window-drag	1	1	1	0	
 property	word-break	1	1	1	1	
 property	word-space-transform	1	1	1	0	

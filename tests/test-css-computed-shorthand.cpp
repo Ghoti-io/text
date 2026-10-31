@@ -131,6 +131,21 @@ TEST(CssComputedShorthand, BoxShadowNoneIsNone) {
   });
 }
 
+// CSSOM, "serialize a CSS declaration block": a shorthand omits the components that are initial; the computed `font-weight` is a number, so `bold` is `700` and `400` is
+// the initial weight, which is left out (both pinned browsers write `700 12px serif`: cases font.*). `font-width` has a keyword for the percentages Fonts 4 names
+// ("condensed" is 75%, Firefox writes `condensed 12px serif`), and 100% is `normal`, which is initial.
+TEST(CssComputedShorthand, FontWritesWeightAsANumberAndWidthAsItsKeyword) {
+  expect_all("font", {
+      {"bold 12px serif", "700 12px serif"},
+      {"400 12px serif", "12px serif"},
+      {"italic bold 12px/1.5 serif", "italic 700 12px/1.5 serif"},
+      {"condensed 12px serif", "condensed 12px serif"},
+      {"ultra-condensed bold 12px serif", "700 ultra-condensed 12px serif"},
+      {"small-caps 12px serif", "small-caps 12px serif"},
+      {"normal normal normal 12px/normal serif", "12px serif"},
+  });
+}
+
 // `background` holds `background-position`: its text has the offsets alone too.
 TEST(CssComputedShorthand, BackgroundHoldsThePosition) {
   EXPECT_EQ(shorthand_text("background: url(a) right 10px bottom 3px no-repeat", "background"), "url(\"a\") calc(100% - 10px) calc(100% - 3px) no-repeat");

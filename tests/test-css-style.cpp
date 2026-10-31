@@ -1116,6 +1116,20 @@ TEST(CssStyleComputedCompletion, ACalculationInAGridLineIsClampedToTheUnionOfIts
   EXPECT_EQ(d.value("g", "grid-row-start"), "10 bar");
 }
 
+/* Easing 2, 2.3: "steps() = steps( <integer>, <step-position>? )" says nothing of the form of the integer; a tree-counting function is an integer (Values 5), so the
+   count of steps is the element's index, and a count below the least the position allows is the least (2.3). Grid 2, 8.3: "Negative integers or zero are invalid" after
+   span, so a calculation there is clamped to 1. The index of the third child is 3. */
+TEST(CssStyleComputedCompletion, ATreeCountingFunctionIsTheCountOfSteps) {
+  Doc d("<div id=\"a\" style=\"animation-timing-function: steps(sibling-index(), start); grid-row-start: span calc(sibling-index() - 2)\"></div>"
+        "<div id=\"b\" style=\"animation-timing-function: steps(sibling-index() + 1, end)\"></div>"
+        "<div id=\"c\" style=\"animation-timing-function: steps(calc(sibling-index() * 2), jump-both); grid-row-start: span calc(sibling-index() - 2)\"></div>", true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.value("a", "animation-timing-function"), "steps(1, start)");
+  EXPECT_EQ(d.value("a", "grid-row-start"), "span 1");
+  EXPECT_EQ(d.value("c", "animation-timing-function"), "steps(6, jump-both)");
+  EXPECT_EQ(d.value("c", "grid-row-start"), "span 1");
+}
+
 TEST(CssStyleDump, ItIsVersionedSortedByTheBytesOfTheNamesAndOneLineAProperty) {
   Doc d(svg("<rect id=\"r\" style=\"--b: 1; --a: 2; -x-unknown: 1; fill: red\"/>"));
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
