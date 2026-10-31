@@ -62,7 +62,13 @@
 
 /* ---- the state ---------------------------------------------------------------------------- */
 
-/** The grammar of one thing, compiled when first asked for. */
+/** The grammar of one thing, compiled when first asked for.
+ *
+ * Publication: `compiled` and `res` are written under the registry's lock, and then `state` is stored with a sequentially consistent
+ * atomic (cutil's); a reader loads `state` first and reads `compiled` and `res` only when it has seen a final state, so the store
+ * is the release and the load the acquire of the pair. Nothing writes them afterwards but `lazy_forget_compiled`, which runs while
+ * a registry is a builder (a failed freeze), before any reader has it. A race detector that cannot see cutil's atomics (a cutil
+ * without the detector's instrumentation) reports the read of `compiled` as a race; it is not one. */
 typedef struct {
   GTEXT_CSS_Definition * def;  ///< The parsed text, kept for the references that resolve to it (under the lock).
   uint8_t def_state;           ///< 0 not parsed, 1 parsed, 2 the text is not a definition (under the lock).

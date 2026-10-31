@@ -149,6 +149,20 @@ jobs:
           make -j"$(nproc)" PREFIX="$PREFIX"
           make install PREFIX="$PREFIX"
 
+      # cutil's atomics are functions of cutil, so ThreadSanitizer only sees
+      # the release/acquire pair that publishes the registry's lazily compiled
+      # grammars (documented at lazy_grammar in src/css/css_registry.c) when
+      # cutil is instrumented too. With a plain cutil it reports the read of
+      # the compiled grammar as a race, which it is not. So this job builds
+      # cutil's own ThreadSanitizer variant and puts it where the plain
+      # library was installed.
+      - name: Build cutil with ThreadSanitizer
+        working-directory: cutil
+        run: |
+          make build/linux/release-tsan/apps/libghoti.io-cutil-0-tsan.so PREFIX="$PREFIX"
+          cp -f build/linux/release-tsan/apps/libghoti.io-cutil-0-tsan.so \
+            "$PREFIX/lib/ghoti.io/libghoti.io-cutil-0.so.0.0.0"
+
       # A separate job from asan because the two runtimes cannot be linked
       # together, and separate from `test` because ASan and UBSan detect
       # nothing about data races - measured in this library, not quoted:

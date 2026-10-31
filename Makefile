@@ -555,6 +555,15 @@ ASAN_LIBOBJECTS := $(patsubst src/%.c,$(ASAN_OBJ_DIR)/%.o,$(SOURCES))
 # nothing - and it breaks every system() call, because the spawned shell
 # inherits the preload and dies. Several tests here shell out to an oracle.
 #
+# cutil has to be built with ThreadSanitizer too (its `build/linux/release-tsan/
+# apps/libghoti.io-cutil-0-tsan.so` target, put in place of the installed
+# library). Its atomics are functions of cutil, so against a plain cutil
+# ThreadSanitizer cannot see the sequentially consistent store and load that
+# publish a lazily compiled grammar in css_registry.c, and reports the read of the
+# compiled grammar as a race. It is not one: the grammar and its report are
+# written under the registry's lock before the state is stored, and are read
+# only after a load that sees that state.
+#
 # LD_PRELOAD *is* cleared, for the same reason the ASan target clears it: a
 # desktop-wide preload inherited from the session (Debian sets
 # libgtk3-nocsd.so.0) gets ahead of the sanitizer runtime.

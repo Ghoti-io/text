@@ -381,6 +381,18 @@ documented prohibition and is deliberately *not* tested. A test for it would be
 a race on purpose: it would pass the plain build most of the time and fail
 `make test-tsan` by design, which is a gate reporting a defect that is not one.
 
+**`make test-tsan` needs a ThreadSanitizer build of cutil.** The library's atomics
+(`gcu_atomic_int_load` and the rest) are functions of cutil, so against a plain
+cutil ThreadSanitizer cannot see the ordering they provide. Where the library
+publishes data through one - the CSS registry compiles a grammar on first use
+under its lock, stores the result, and then stores the state with a
+sequentially consistent atomic that every reader loads before it reads the
+result - ThreadSanitizer then reports the read as a race although the two
+accesses are ordered. Build cutil's ThreadSanitizer variant
+(`build/linux/release-tsan/apps/libghoti.io-cutil-0-tsan.so`) and put it in
+place of the installed cutil before running the gate; the CI job for
+ThreadSanitizer does. With it the whole suite reports nothing.
+
 The guarantee itself is still not *enforced*. There is no internal locking to
 disable and no thread-safe build variant; a caller that needs shared access
 provides its own mutual exclusion. What the gate adds is that the property the
