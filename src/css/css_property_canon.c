@@ -2188,6 +2188,67 @@ static bool rule_clip_rect_commas(cb * out, const char * text, size_t len) {
   return true;
 }
 
+/* Grid 2 (served 2026-10-31), 7.3.1, Serialization Of Template Strings: "each null cell token is serialized as a single "." (U+002E FULL STOP)", "consecutive
+ * cell tokens are separated by a single space (U+0020 SPACE)" "with all other white space elided." A string is written with the escape `\9 ` for a tab. */
+static size_t areas_ws(const char * t, size_t k, size_t end) {
+  if (t[k] == ' ' || t[k] == '\t' || t[k] == '\n') {
+    return 1;
+  }
+  if (t[k] == '\\' && k + 2 < end && t[k + 1] == '9' && t[k + 2] == ' ') {
+    return 3;
+  }
+  return 0;
+}
+
+static bool rule_grid_areas(cb * out, const char * text, size_t len) {
+  size_t i = 0;
+  while (i < len) {
+    if (text[i] != '"') {
+      cb_putc(out, text[i++]);
+      continue;
+    }
+    size_t j = i + 1;
+    while (j < len && text[j] != '"') {
+      j++;
+    }
+    if (j >= len) {
+      cb_put(out, text + i, len - i);
+      return true;
+    }
+    cb_putc(out, '"');
+    bool first = true;
+    size_t k = i + 1;
+    while (k < j) {
+      size_t u;
+      while (k < j && (u = areas_ws(text, k, j)) > 0) {
+        k += u;
+      }
+      size_t e = k;
+      bool dots = true;
+      while (e < j && areas_ws(text, e, j) == 0) {
+        dots = dots && text[e] == '.';
+        e++;
+      }
+      if (e > k) {
+        if (!first) {
+          cb_putc(out, ' ');
+        }
+        first = false;
+        if (dots) {
+          cb_putc(out, '.');
+        }
+        else {
+          cb_put(out, text + k, e - k);
+        }
+      }
+      k = e;
+    }
+    cb_putc(out, '"');
+    i = j + 1;
+  }
+  return true;
+}
+
 /* ---- the table ------------------------------------------------------------------------------------------------------------- */
 
 typedef enum { MODE_ITEMS = 1, MODE_WHOLE, MODE_TEXT } canon_mode;
@@ -2245,6 +2306,7 @@ static const canon_row kRows[] = {
   R("grid-column-start", rule_grid_line, MODE_WHOLE),
   R("grid-row-end", rule_grid_line, MODE_WHOLE),
   R("grid-row-start", rule_grid_line, MODE_WHOLE),
+  T("grid-template-areas", rule_grid_areas),
   T("grid-template-columns", rule_grid_template_tracks),
   T("grid-template-rows", rule_grid_template_tracks),
   R("justify-items", rule_first_baseline, MODE_ITEMS),

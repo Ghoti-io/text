@@ -295,6 +295,23 @@ TEST(CssProperty, APropertyWithNoUsableGrammarIsNotGuessedAt) {
   EXPECT_EQ(parse(r, "voice-family", "var(--c)"), "pending:var(--c)");
 }
 
+TEST(CssProperty, GridTemplateAreasStringsHaveACellAndAreWrittenWithTheirWhiteSpaceElided) {
+  const GTEXT_CSS_Registry * r = R();
+  // Grid 2, 7.3: "A sequence of whitespace, representing nothing (do not produce a token)." "All strings must define the same number of cell tokens" and "at least one
+  // cell token, or else the declaration is invalid"; 7.3.1: "each null cell token is serialized as a single "."", "consecutive cell tokens are separated by a single
+  // space (U+0020 SPACE)" "with all other white space elided."
+  EXPECT_EQ(parse(r, "grid-template-areas", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\"a b\" \"c d\""), "valid:\"a b\" \"c d\"");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\"  a  \t  b  \""), "valid:\"a b\"");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\"c\td\""), "valid:\"c d\"");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\"first ...\""), "valid:\"first .\"");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\". .. ...\""), "valid:\". . .\"");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\"\""), "invalid");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\" \""), "invalid");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\".\" \"\""), "invalid");
+  EXPECT_EQ(parse(r, "grid-template-areas", "\"first\" \" \" \"second\""), "invalid");
+}
+
 TEST(CssProperty, AFontLanguageOverrideIsATagOfOneToFourPrintableAsciiCharacters) {
   const GTEXT_CSS_Registry * r = R();
   // Fonts 4: a "single four-character case-sensitive OpenType language system tag"; "If the string is shorter than four characters, it is padded at the end with

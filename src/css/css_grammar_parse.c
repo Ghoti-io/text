@@ -56,7 +56,7 @@ static const struct {
   {"frequency", NT_FREQUENCY}, {"resolution", NT_RESOLUTION}, {"flex", NT_FLEX}, {"decibel", NT_DECIBEL}, {"semitones", NT_SEMITONES},
   {"ratio", NT_RATIO}, {"zero", NT_ZERO}, {"string", NT_STRING}, {"url", NT_URL},
   {"ident", NT_IDENT}, {"custom-ident", NT_CUSTOM_IDENT}, {"grid-custom-ident", NT_GRID_IDENT}, {"container-custom-ident", NT_CONTAINER_IDENT}, {"will-change-custom-ident", NT_WILLCHANGE_IDENT},
-  {"counter-style-custom-ident", NT_COUNTER_STYLE_IDENT}, {"color-scheme-custom-ident", NT_COLOR_SCHEME_IDENT}, {"opentype-tag-string", NT_OPENTYPE_TAG}, {"opentype-language-tag-string", NT_LANGUAGE_TAG}, {"id", NT_ID_SELECTOR}, {"target-name", NT_TARGET_NAME}, {"dashed-ident", NT_DASHED_IDENT},
+  {"counter-style-custom-ident", NT_COUNTER_STYLE_IDENT}, {"color-scheme-custom-ident", NT_COLOR_SCHEME_IDENT}, {"opentype-tag-string", NT_OPENTYPE_TAG}, {"opentype-language-tag-string", NT_LANGUAGE_TAG}, {"grid-areas-row", NT_AREAS_ROW}, {"id", NT_ID_SELECTOR}, {"target-name", NT_TARGET_NAME}, {"dashed-ident", NT_DASHED_IDENT},
   {"any-value", NT_ANY_VALUE}, {"declaration-value", NT_DECL_VALUE}, {"urange", NT_URANGE}, {"unicode-range-token", NT_URANGE},
   {"an+b", NT_ANB}, {"declaration-list", NT_DECL_LIST}, {"rule-list", NT_RULE_LIST},
   {"ident-token", NT_TOK_IDENT}, {"function-token", NT_TOK_FUNCTION},

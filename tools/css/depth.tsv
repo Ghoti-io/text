@@ -519,7 +519,7 @@ property	grid-row-end	1	1	1	1
 property	grid-row-gap	1	1	1	1	alias of row-gap
 property	grid-row-start	1	1	1	1	
 property	grid-template	1	1	1	1	
-property	grid-template-areas	1	1	1	0	
+property	grid-template-areas	1	1	1	1	
 property	grid-template-columns	1	1	1	0	
 property	grid-template-rows	1	1	1	0	
 property	hanging-punctuation	1	1	1	0	

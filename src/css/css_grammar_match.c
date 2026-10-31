@@ -1063,6 +1063,20 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     }
     return true;
   }
+  case NT_AREAS_ROW: {
+    /* Grid 2 (served 2026-10-31), 7.3: "A sequence of whitespace, representing nothing (do not produce a token)." and "at least one cell token, or else the declaration is
+       invalid": a string that is empty or only white space produces no token and is not a row */
+    if (!tok(v, GTEXT_CSS_TOKEN_STRING)) {
+      return false;
+    }
+    for (size_t i = 0; i < v->value.length; i++) {
+      const char ch = v->value.data[i];
+      if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r' && ch != '\f') {
+        return true;
+      }
+    }
+    return false;
+  }
   case NT_ID_SELECTOR:
     /* UI 4 (served 2026-10-31), 5.3.1: "The <id> value is an ID selector"; Selectors 4: an ID selector is a <hash-token> whose type flag is "id" (`#a`, not `#1`) */
     return tok(v, GTEXT_CSS_TOKEN_HASH) && (v->flags & GTEXT_CSS_FLAG_HASH_ID);
@@ -2153,6 +2167,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   case NT_STRING:
   case NT_OPENTYPE_TAG:
   case NT_LANGUAGE_TAG:
+  case NT_AREAS_ROW:
   case NT_TARGET_NAME:
     value_init(out, GTEXT_CSS_VAL_STRING, node, v);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
