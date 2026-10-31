@@ -120,7 +120,7 @@ classify() {
 	$diff_py --work "$base" --stage classify --replay "$replay" "$@"
 }
 
-for p in ours-writes-differently ours-has-no-value engine-writes-differently; do
+for p in ours-writes-differently ours-has-no-value engine-writes-differently ours-differs-beyond-the-tolerance; do
 	expect "plant-$p" "UNLISTED\|COUNT\|GONE\|DIGEST" classify --plant "$p"
 done
 expect plant-control-is-misclassified "CONTROL" classify --plant control-is-misclassified

@@ -216,4 +216,21 @@ TEST(CssParam, TheSameSpecIsReadInAUrlModifier) {
   EXPECT_EQ(P("background-image", "url(\"icon.svg\" unknown(<notatype>))"), "valid:url(\"icon.svg\" unknown(<notatype>))");
 }
 
+/* Color 4, 5.2: "The syntax of a <hex-color> is a <hash-token> token whose value consists of 3, 4, 6, or 8 hexadecimal digits." The types that the pin described in prose are
+   the drafts' sentences as grammars now, so that every reference of the pin compiles (tools/css/UNRESOLVED_REFERENCES lists the four that no sentence defines). */
+TEST(CssProseTypes, TheTypesTheDraftsDescribeInProseCompile) {
+  GTEXT_CSS_Type_Info t;
+  for (const char * name : {"hex-color", "extension-name", "supports-condition-name", "media-query-list", "url-modifier", "size-feature", "scroll-state-feature",
+           "style-feature-name", "style-feature-value", "declaration"}) {
+    ASSERT_TRUE(gtext_css_registry_find_type(name, std::strlen(name), 0, &t)) << name;
+    EXPECT_TRUE(t.grammar != nullptr || (t.flags & GTEXT_CSS_TYPE_NATIVE)) << name;
+    EXPECT_FALSE(t.flags & GTEXT_CSS_TYPE_NO_GRAMMAR) << name;
+  }
+  EXPECT_TRUE(gtext_css_registry_find_type("hex-color", 9, 0, &t) && (t.flags & GTEXT_CSS_TYPE_NATIVE));
+  EXPECT_EQ(P("color", "#abc"), "valid:rgb(170, 187, 204)");
+  EXPECT_EQ(P("color", "#abcd"), "valid:rgba(170, 187, 204, 0.867)");
+  EXPECT_EQ(P("color", "#abcde"), "invalid");
+  EXPECT_EQ(P("color", "#xyz"), "invalid");
+}
+
 } // namespace

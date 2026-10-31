@@ -1577,6 +1577,19 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     }
     return false;
   }
+  case NT_HEX_COLOR: {
+    /* Color 4, 5.2: "The syntax of a <hex-color> is a <hash-token> token whose value consists of 3, 4, 6, or 8 hexadecimal digits." */
+    if (!tok(v, GTEXT_CSS_TOKEN_HASH) || !(v->value.length == 3 || v->value.length == 4 || v->value.length == 6 || v->value.length == 8)) {
+      return false;
+    }
+    for (size_t i = 0; i < v->value.length; i++) {
+      const char ch = v->value.data[i];
+      if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F'))) {
+        return false;
+      }
+    }
+    return true;
+  }
   case NT_ID_SELECTOR:
     /* UI 4 (served 2026-10-31), 5.3.1: "The <id> value is an ID selector"; Selectors 4: an ID selector is a <hash-token> whose type flag is "id" (`#a`, not `#1`) */
     return tok(v, GTEXT_CSS_TOKEN_HASH) && (v->flags & GTEXT_CSS_FLAG_HASH_ID);

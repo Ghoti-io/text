@@ -72,7 +72,7 @@ static const struct {
   {"{-token", NT_TOK_OPEN_CURLY}, {"}-token", NT_TOK_CLOSE_CURLY},
   {"length-percentage", NT_LENGTH_PERCENTAGE}, {"angle-percentage", NT_ANGLE_PERCENTAGE},
   {"time-percentage", NT_TIME_PERCENTAGE}, {"frequency-percentage", NT_FREQUENCY_PERCENTAGE},
-  {"color", NT_COLOR}, {"param-spec", NT_PARAM_SPEC}, {"size-keyword", NT_SIZE_KEYWORD}, {"calc-size-sum", NT_CALC_SIZE_SUM}, {"calc-size-calculation", NT_CALC_SIZE_CALC},
+  {"color", NT_COLOR}, {"hex-color", NT_HEX_COLOR}, {"param-spec", NT_PARAM_SPEC}, {"size-keyword", NT_SIZE_KEYWORD}, {"calc-size-sum", NT_CALC_SIZE_SUM}, {"calc-size-calculation", NT_CALC_SIZE_CALC},
 };
 
 gn_native css_grammar_native_lookup(const char * name, size_t length) {

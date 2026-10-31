@@ -32,6 +32,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -50,6 +51,47 @@ LIST = os.path.join(HERE, "css_style_divergences.txt")
 WITNESSES = os.path.join(HERE, "css_style_witnesses.txt")
 GATE_EXIT = 3
 STYLE_DRIVER = os.path.join(HERE, "containers", "cssprop", "style_driver.mjs")
+
+
+# ---- the numeric tolerance ---------------------------------------------------------------------------------------------------
+
+# **The tolerance.** Two serializations of a color are the same value when they are the same text with every number replaced by a placeholder and the numbers, taken in
+# order, differ by at most TOLERANCE_RELATIVE of the larger magnitude or TOLERANCE_ABSOLUTE, whichever is the larger. Why it exists: both engines keep a color's
+# components in 32-bit floats and print them with six significant digits or fewer, and the conversions of a long chain (a color-mix() of relative colors in
+# another space) pass through a dozen matrix products, so the last digits of a channel differ between the engines and from this library, which computes
+# with 64-bit floats through the `math` library, with no defect of any of them. The bounds are the measured ones, not a guess: of the 428 keys of the color
+# population (notes: the first run of the color scope), 104 differ only so, with a relative error under 2e-4, and every difference that is a defect of a
+# conversion (a wrong matrix or transfer function coefficient, a gamma of 2.4 for a piecewise curve) is 1e-3 or more. What is not within the bounds
+# stays a divergence: a number that differs by more than the bounds, a hue that differs by a turn, a number against a keyword, and text that differs
+# in any other character. Nothing is rounded to the engines' digits: the value this library writes is its own.
+TOLERANCE_RELATIVE = 3e-4
+TOLERANCE_ABSOLUTE = 5e-6
+_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+_COLOR_TEXT = re.compile(r"\b(?:color|lab|lch|oklab|oklch|rgba?|hsla?|hwb)\(")
+
+
+def numbers_agree(a, b):
+    """Whether the serializations a and b are the same text with numbers within the tolerance (see above). Only a color has the tolerance: the length of a
+    font-size or a transform is compared as text, as it always was."""
+    if a == b:
+        return True
+    if not (_COLOR_TEXT.search(a) and _COLOR_TEXT.search(b)):
+        return False
+    if _NUMBER.sub("#", a) != _NUMBER.sub("#", b):
+        return False
+    xs, ys = _NUMBER.findall(a), _NUMBER.findall(b)
+    if len(xs) != len(ys):
+        return False
+    for x, y in zip(xs, ys):
+        fx, fy = float(x), float(y)
+        if abs(fx - fy) > max(TOLERANCE_ABSOLUTE, TOLERANCE_RELATIVE * max(abs(fx), abs(fy))):
+            return False
+    return True
+
+
+base.SER_EQUAL = numbers_agree
 
 
 # ---- the readers ---------------------------------------------------------------------------------------------------------
@@ -333,6 +375,17 @@ def apply_plant(name, items, o, a, headers, schemes):
         for i, x in enumerate(o):
             if x[0] == "OK" and items[i][2] != "probe" and x[1] == base.engine_view(a["chromium"][i])[1] == base.engine_view(a["firefox"][i])[1]:
                 a["chromium"][i] = [1, x[1] + "0", "", 1, ""]
+                return
+    elif name == "ours-differs-beyond-the-tolerance":
+        # one number of an answer all three give, moved by 1e-3 of its value (ten times the relative tolerance): it is a divergence and the gate says so
+        for i, x in enumerate(o):
+            if x[0] != "OK" or items[i][2] == "probe" or not _COLOR_TEXT.search(x[1]) or not (x[1] == base.engine_view(a["chromium"][i])[1] == base.engine_view(a["firefox"][i])[1]):
+                continue
+            m = [m for m in _NUMBER.finditer(x[1]) if abs(float(m.group(0))) > 0 and "." in m.group(0)]
+            if m:
+                m = m[0]
+                moved = "%.6g" % (float(m.group(0)) * 1.002)
+                o[i] = ("OK", x[1][:m.start()] + moved + x[1][m.end():])
                 return
     elif name == "header-names-another-browser":
         headers["firefox"]["browser"] = "157.0"

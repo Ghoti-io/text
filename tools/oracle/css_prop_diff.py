@@ -215,6 +215,15 @@ def support_of(items, answers):
     return out
 
 
+def _same_text(a, b):
+    return a == b
+
+
+# Whether two serializations are the same value. The property differential compares text; the computed-style differential replaces it (css_style_diff.py) with a
+# comparison that lets the numbers of a color differ in their last digits.
+SER_EQUAL = _same_text
+
+
 def patterns_of(ours, chromium, firefox, support):
     """The divergence patterns of one item (a list; usually zero or one).
 
@@ -234,11 +243,18 @@ def patterns_of(ours, chromium, firefox, support):
     if len(set(bits.values())) > 1:
         out.append("acc:" + "".join(("1" if bits[n] else "0") if n in bits else "-" for n in "ABC"))
     sers = [(n, s) for n, ok, s in [("A", a, ours[1] if a else None)] + [(n, v[0], v[1]) for n, v in views.items()] if ok]
-    if len(sers) >= 2 and len({s for _, s in sers}) > 1:
-        groups = collections.OrderedDict()
+    if len(sers) >= 2:
+        # the readers whose serializations agree (SER_EQUAL: the same text, unless a differential says that numbers within a tolerance are the same) are one group
+        groups = []
         for n, s in sers:
-            groups.setdefault(s, []).append(n)
-        out.append("ser:" + "|".join("=".join(g) for g in groups.values()))
+            for rep, members in groups:
+                if SER_EQUAL(rep, s):
+                    members.append(n)
+                    break
+            else:
+                groups.append((s, [n]))
+        if len(groups) > 1:
+            out.append("ser:" + "|".join("=".join(members) for _, members in groups))
     for n, row in present:
         if bool(row[0]) != bool(row[3]):
             out.append("sup:" + ("chromium" if n == "B" else "firefox"))
