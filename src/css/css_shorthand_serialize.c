@@ -340,6 +340,44 @@ static bool texteq(const char * a, const char * b) {
   return a && b && strcmp(a, b) == 0;
 }
 
+/// Whether a serialized value is a zero <time> in some spelling (`0ms`, `0.0s`): it is the initial value `0s` of a duration or a delay, and a shorthand leaves it out as it leaves
+/// `0s` out (both pinned browsers write `transition: foo 0ms` as `foo`).
+static bool zero_time_text(const char * t) {
+  size_t i = 0;
+  while (t[i] == '0' || t[i] == '.') {
+    i++;
+  }
+  return i > 0 && (strcmp(t + i, "s") == 0 || strcmp(t + i, "ms") == 0);
+}
+
+/// Whether two serialized comma-separated lists are the same but for the spelling of zero times (`0ms` and `0s`).
+static bool same_but_zero_times(const char * a, const char * b) {
+  while (*a || *b) {
+    const char * ea = strstr(a, ", ");
+    const char * eb = strstr(b, ", ");
+    const size_t la = ea ? (size_t)(ea - a) : strlen(a), lb = eb ? (size_t)(eb - b) : strlen(b);
+    if (!(la == lb && memcmp(a, b, la) == 0)) {
+      char ta[64], tb[64];
+      if (la >= sizeof ta || lb >= sizeof tb) {
+        return false;
+      }
+      memcpy(ta, a, la);
+      ta[la] = '\0';
+      memcpy(tb, b, lb);
+      tb[lb] = '\0';
+      if (!(zero_time_text(ta) && zero_time_text(tb))) {
+        return false;
+      }
+    }
+    if (!ea || !eb) {
+      return !ea && !eb;
+    }
+    a = ea + 2;
+    b = eb + 2;
+  }
+  return true;
+}
+
 /// The keyword of a `font-width` value: itself where it is one, or the keyword that names the percentage (Fonts 4: "normal" 100%, "semi-condensed" 87.5%, ...); NULL for a
 /// percentage that no keyword names. The `font` shorthand takes the keywords only, so a longhand of `font-width: 100%` is written `normal` in it.
 static const char * font_width_keyword(const char * t) {
@@ -393,7 +431,8 @@ static bool lhv_fill(sctx * c, const directs * d, lhv * v) {
       if (!v[i].text) {
         return false;
       }
-      v[i].initial = texteq(v[i].text, initial_serialized(c, d->ids[i]));
+      const char * init_text = initial_serialized(c, d->ids[i]);
+      v[i].initial = texteq(v[i].text, init_text) || (v[i].text && init_text && strcmp(init_text, "0s") == 0 && zero_time_text(v[i].text));
       v[i].uniform = true;
     }
   }
@@ -1016,7 +1055,7 @@ static bool layers_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
       }
       const char * txt = final_only_h ? per[h][0] : per[h][li];
       const char * init = is_sh(c, d->ids[h]) ? NULL : initial_serialized(c, d->ids[h]);
-      bool is_init = init && texteq(txt, init);
+      bool is_init = init && (texteq(txt, init) || (txt && strcmp(init, "0s") == 0 && zero_time_text(txt)));
       if (is_bs && !no_shadow && dfl[h] && (nm(c, d->ids[h], "box-shadow-blur") || nm(c, d->ids[h], "box-shadow-spread"))) {
         /* a blur or a spread the author wrote is written back, whatever it is (`0px` too); one that was left out is not */
         is_init = dfl[h][final_only_h ? 0 : li];
@@ -1755,6 +1794,10 @@ static bool text_says_the_longhands(sctx * c, GTEXT_CSS_Property_Id sh, const ch
     }
     else {
       same = strcmp(want, got) == 0;
+      /* `0ms` is the time `0s`: a duration or a delay left out of the shorthand reads back as the initial `0s` */
+      if (!same) {
+        same = same_but_zero_times(want, got);
+      }
       /* `normal` is the weight 400, which a computed value is */
       if (!same && nm(c, leaves[i], "font-weight")) {
         same = (texteq(want, "normal") || texteq(want, "400")) && (texteq(got, "normal") || texteq(got, "400"));

@@ -1704,6 +1704,7 @@ static int step_ident(css_sub * sub, size_t fi) {
 
 typedef struct {
   bool valid;
+  bool oom; ///< reading the key ran out of memory (a `fixed calc(...)` is evaluated)
   bool fixed;
   double fixed_value;
   char name[256];
@@ -1733,7 +1734,7 @@ static uint64_t fnv_bytes(uint64_t h, const void * data, size_t n) {
 
 /// Read a <random-key> from the values of a group: "auto | <random-cache-key> | fixed <number [0,1]>", where "<random-cache-key> = <dashed-ident> ||
 /// element-scoped || [ property-scoped | property-index-scoped | <random-ua-ident> ]".
-static void read_random_key(const GTEXT_CSS_Component_Value * v, size_t n, random_key * k) {
+static void read_random_key(const GTEXT_CSS_Component_Value * v, size_t n, random_key * k, const GTEXT_Allocator * allocator) {
   memset(k, 0, sizeof *k);
   size_t items = 0;
   bool have_name = false, have_scope = false, have_el = false;
@@ -1765,7 +1766,10 @@ static void read_random_key(const GTEXT_CSS_Component_Value * v, size_t n, rando
         while (j < n && is_ws(&v[j])) {
           j++;
         }
-        if (j >= n || v[j].kind != GTEXT_CSS_VALUE_TOKEN || v[j].type != GTEXT_CSS_TOKEN_NUMBER || v[j].number < 0 || v[j].number > 1) {
+        double fv = 0.0;
+        bool oom = false;
+        if (j >= n || !css_random_key_number(&v[j], allocator, &fv, &oom, NULL, NULL) || fv < 0 || fv > 1) {
+          k->oom = oom;
           return;
         }
         for (size_t m = j + 1; m < n; m++) {
@@ -1774,7 +1778,7 @@ static void read_random_key(const GTEXT_CSS_Component_Value * v, size_t n, rando
           }
         }
         k->fixed = true;
-        k->fixed_value = v[j].number;
+        k->fixed_value = fv;
         k->valid = true;
         return;
       }
@@ -1925,8 +1929,12 @@ bool css_st_random_base(css_state * st, const char * key, size_t key_length, dou
       return false;
     }
     else {
-      read_random_key(t->values, t->value_count, &k);
+      read_random_key(t->values, t->value_count, &k, &st->cc->alloc);
       gtext_css_tree_free(t);
+      if (k.oom) {
+        css_st_fail(st, GTEXT_CSS_E_OOM, "random", NULL);
+        return false;
+      }
     }
   }
   if (!k.valid) {
@@ -1976,8 +1984,12 @@ static int step_random_item(css_sub * sub, size_t fi) {
         return STEP_ERROR;
       }
       if (t) {
-        read_random_key(t->values, t->value_count, &key);
+        read_random_key(t->values, t->value_count, &key, &sub->cc->alloc);
         gtext_css_tree_free(t);
+        if (key.oom) {
+          SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+          return STEP_ERROR;
+        }
       }
     }
     f = &sub->frames[fi];
@@ -2145,7 +2157,12 @@ static int step_random(css_sub * sub, size_t fi) {
   if (t && ng >= 2 && ng <= 4) {
     bool has_key = false;
     if (ng >= 3) {
-      read_random_key(t->values + g[0].from, g[0].count, &key);
+      read_random_key(t->values + g[0].from, g[0].count, &key, &sub->cc->alloc);
+      if (key.oom) {
+        gtext_css_tree_free(t);
+        SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+        return STEP_ERROR;
+      }
       has_key = key.valid;
     }
     if (ng == 4 && !has_key) {

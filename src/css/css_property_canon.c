@@ -510,6 +510,120 @@ static bool rule_first_baseline(cb * out, const sp * t, size_t n) {
   return false;
 }
 
+/** The plain percentage `t` (`12.5%`) as a decimal, false for anything else (a `calc()`, a number, a dimension). */
+static bool pct_dec(sp t, dec * d) {
+  return t.n > 1 && t.p[t.n - 1] == '%' && dec_parse((sp){t.p, t.n - 1}, d);
+}
+
+/** The sign of `a - b` for two decimals: -1, 0 or 1, compared digit by digit (no floating point, so the answer is the same on every host). */
+static int dec_cmp(const dec * a, const dec * b) {
+  const bool az = dec_zero(a), bz = dec_zero(b);
+  const bool an = a->neg && !az, bn = b->neg && !bz;
+  if (an != bn) {
+    return an ? -1 : 1;
+  }
+  size_t al = 0, bl = 0;
+  while (al < a->ip.n && a->ip.p[al] == '0') {
+    al++;
+  }
+  while (bl < b->ip.n && b->ip.p[bl] == '0') {
+    bl++;
+  }
+  int c = 0;
+  if (a->ip.n - al != b->ip.n - bl) {
+    c = a->ip.n - al > b->ip.n - bl ? 1 : -1;
+  }
+  else if (a->ip.n - al && (c = memcmp(a->ip.p + al, b->ip.p + bl, a->ip.n - al)) != 0) {
+    c = c > 0 ? 1 : -1;
+  }
+  else {
+    const size_t fl = a->fp.n > b->fp.n ? a->fp.n : b->fp.n;
+    for (size_t i = 0; i < fl && c == 0; i++) {
+      const char ca = i < a->fp.n ? a->fp.p[i] : '0', cb2 = i < b->fp.n ? b->fp.p[i] : '0';
+      c = ca == cb2 ? 0 : (ca > cb2 ? 1 : -1);
+    }
+  }
+  return an ? -c : c;
+}
+
+/* Easing 2 (served 2026-11-01), 2.1.1: "control points originally specified with two input progress values are turned into two separate control points, and the input
+ * progress values are in strictly ascending order" (`linear(0 20%, 0.5 10%, 1)` serializes as `linear(0 20%, 0.5 20%, 1)`, `linear(0, 0.25 25% 75%, 1)` as
+ * `linear(0, 0.25 25%, 0.25 75%, 1)`); a control point that "originally lacked an input progress value" is written without one. A function with an argument that is not a
+ * number and up to two plain percentages (a `calc()` that stayed) is left as it was written. */
+static bool rule_linear_points(cb * out, sp f) {
+  spv args = {out->a, NULL, 0, 0, false, &out->fail};
+  top_split(&args, f.p + 7, f.n - 8, ',');
+  bool done = false;
+  dec max_pos;
+  sp max_sp = {NULL, 0};
+  bool have_max = false;
+  cb tmp = {out->a, NULL, 0, 0, false, &out->fail};
+  bool ok = !args.fail && args.n > 0;
+  cb_puts(&tmp, "linear(");
+  bool first = true;
+  for (size_t i = 0; ok && i < args.n; i++) {
+    spv toks = {out->a, NULL, 0, 0, false, &out->fail};
+    top_split(&toks, args.v[i].p, args.v[i].n, ' ');
+    sp value = {NULL, 0};
+    sp pos[2];
+    size_t npos = 0;
+    dec d;
+    for (size_t k = 0; ok && k < toks.n; k++) {
+      if (toks.v[k].p[toks.v[k].n - 1] == '%') {
+        if (npos == 2 || !pct_dec(toks.v[k], &d)) {
+          ok = false;
+        }
+        else {
+          pos[npos++] = toks.v[k];
+        }
+      }
+      else if (value.p || !dec_parse(toks.v[k], &d)) {
+        ok = false;
+      }
+      else {
+        value = toks.v[k];
+      }
+    }
+    ok = ok && !toks.fail && value.p;
+    for (size_t k = 0; ok && k < (npos ? npos : 1); k++) {
+      sp at = npos ? pos[k] : (sp){NULL, 0};
+      if (at.p) {
+        dec cur;
+        pct_dec(at, &cur);
+        if (have_max && dec_cmp(&cur, &max_pos) < 0) {
+          at = max_sp;
+        }
+        else {
+          max_pos = cur;
+          max_sp = at;
+          have_max = true;
+        }
+      }
+      if (!first) {
+        cb_puts(&tmp, ", ");
+      }
+      first = false;
+      put_sp(&tmp, value);
+      if (at.p) {
+        cb_putc(&tmp, ' ');
+        put_sp(&tmp, at);
+      }
+    }
+    gtext_allocator_free(out->a, toks.v);
+  }
+  if (ok && !tmp.fail) {
+    cb_putc(&tmp, ')');
+    cb_put(out, tmp.d, tmp.n);
+    done = true;
+  }
+  gtext_allocator_free(out->a, tmp.d);
+  if (args.fail) {
+    out->fail = true;
+  }
+  gtext_allocator_free(out->a, args.v);
+  return done;
+}
+
 /* Easing 2: `steps(<n>, jump-end)` and `steps(<n>, end)` are `steps(<n>)`. */
 static bool rule_steps(cb * out, const sp * t, size_t n) {
   /* Easing 2 (served 2026-10-31), 2.3.1: "Unlike the other easing function keywords, step-start and step-end do not serialize as themselves. Instead, they serialize as
@@ -521,6 +635,9 @@ static bool rule_steps(cb * out, const sp * t, size_t n) {
   if (n == 1 && eq(t[0], "step-end")) {
     cb_puts(out, "steps(1)");
     return true;
+  }
+  if (n == 1 && t[0].n > 8 && memcmp(t[0].p, "linear(", 7) == 0 && t[0].p[t[0].n - 1] == ')') {
+    return rule_linear_points(out, t[0]);
   }
   if (n != 1 || t[0].n < 8 || memcmp(t[0].p, "steps(", 6) != 0 || t[0].p[t[0].n - 1] != ')') {
     return false;
@@ -1878,8 +1995,10 @@ static bool shape_command(cb * out, sp arg) {
 
 static bool gradient_function(cb * out, sp f);
 
+static bool image_function(cb * out, sp f, unsigned depth);
+
 static bool shape_function(cb * out, sp f) {
-  if (gradient_function(out, f)) {
+  if (image_function(out, f, 0)) {
     return true; /* shape-outside takes an <image> as well */
   }
   const char * open = memchr(f.p, '(', f.n);
@@ -2324,11 +2443,99 @@ static bool gradient_function(cb * out, sp f) {
   return done;
 }
 
+/* Images 4, 8 and 2.5 (served 2026-11-01): `image-set()` takes an <image> in each option, and Color 5 gives `light-dark()` the images of a property that takes them; the
+ * gradient inside one is serialized as it is anywhere else, so the defaults it leaves out are left out there too (both pinned browsers write
+ * `image-set(radial-gradient(farthest-corner, red, blue) 1x)` as `image-set(radial-gradient(red, blue) 1x)`). The nesting that is followed is bounded; a deeper one is left as it is. */
+#define IMAGE_NEST_MAX 8u
+
+static bool image_function(cb * out, sp f, unsigned depth) {
+  if (gradient_function(out, f)) {
+    return true;
+  }
+  if (depth >= IMAGE_NEST_MAX) {
+    return false;
+  }
+  const char * open = memchr(f.p, '(', f.n);
+  if (!open || f.p[f.n - 1] != ')') {
+    return false;
+  }
+  const sp name = {f.p, (size_t)(open - f.p)};
+  const sp inner = {open + 1, f.n - name.n - 2};
+  if (!ieq(name, "image-set") && !ieq(name, "-webkit-image-set") && !ieq(name, "light-dark")) {
+    return false;
+  }
+  spv args = {out->a, NULL, 0, 0, false, &out->fail};
+  top_split(&args, inner.p, inner.n, ',');
+  cb tmp = {out->a, NULL, 0, 0, false, &out->fail};
+  bool changed = false;
+  cb_put(&tmp, f.p, name.n + 1);
+  for (size_t i = 0; !args.fail && i < args.n; i++) {
+    if (i) {
+      cb_puts(&tmp, ", ");
+    }
+    spv tk = {out->a, NULL, 0, 0, false, &out->fail};
+    top_split(&tk, args.v[i].p, args.v[i].n, ' ');
+    for (size_t j = 0; !tk.fail && j < tk.n; j++) {
+      if (j) {
+        cb_putc(&tmp, ' ');
+      }
+      cb sub = {out->a, NULL, 0, 0, false, &out->fail};
+      if (memchr(tk.v[j].p, '(', tk.v[j].n) && image_function(&sub, tk.v[j], depth + 1)) {
+        cb_put(&tmp, sub.d, sub.n);
+        changed = true;
+      }
+      else {
+        put_sp(&tmp, tk.v[j]);
+      }
+      gtext_allocator_free(out->a, sub.d);
+    }
+    if (tk.fail) {
+      args.fail = true;
+    }
+    gtext_allocator_free(out->a, tk.v);
+  }
+  cb_putc(&tmp, ')');
+  const bool done = changed && !args.fail && !tmp.fail;
+  if (done) {
+    cb_put(out, tmp.d, tmp.n);
+  }
+  gtext_allocator_free(out->a, tmp.d);
+  gtext_allocator_free(out->a, args.v);
+  return done;
+}
+
 static bool rule_gradient(cb * out, const sp * t, size_t n) {
   if (n != 1) {
     return false;
   }
-  return gradient_function(out, t[0]);
+  return image_function(out, t[0], 0);
+}
+
+/* Content 3: `content` takes images where it takes a <content-replacement> or a <content-list> item; the functions among its tokens are rewritten as the images of the other
+ * properties are, the rest is left as it is. */
+static bool rule_content(cb * out, const sp * t, size_t n) {
+  cb tmp = {out->a, NULL, 0, 0, false, &out->fail};
+  bool changed = false;
+  for (size_t i = 0; i < n; i++) {
+    if (i) {
+      cb_putc(&tmp, ' ');
+    }
+    cb sub = {out->a, NULL, 0, 0, false, &out->fail};
+    if (memchr(t[i].p, '(', t[i].n) && image_function(&sub, t[i], 0)) {
+      cb_put(&tmp, sub.d, sub.n);
+      changed = true;
+    }
+    else {
+      put_sp(&tmp, t[i]);
+    }
+    gtext_allocator_free(out->a, sub.d);
+  }
+  if (changed && !tmp.fail) {
+    cb_put(out, tmp.d, tmp.n);
+  }
+  const bool done = changed && !tmp.fail;
+  gtext_allocator_free(out->a, tmp.d);
+  return done;
 }
 
 /* Masking 1 (served 2026-10-31): "If no reference box is specified, the border-box will be used as reference box" for a clip-path basic shape, and Motion 1: "If
@@ -2631,6 +2838,7 @@ static const canon_row kRows[] = {
   T("font-palette", rule_palette_mix),
   R("clip-path", rule_shape_default_box, MODE_WHOLE),
   R("color-scheme", rule_color_scheme, MODE_WHOLE),
+  R("content", rule_content, MODE_WHOLE),
   R("counter-increment", rule_counter_one, MODE_WHOLE),
   R("counter-reset", rule_counter_zero, MODE_WHOLE),
   R("counter-set", rule_counter_zero, MODE_WHOLE),

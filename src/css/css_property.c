@@ -511,6 +511,26 @@ static bool steps_count_is_nan(const GTEXT_CSS_Component_Value * values, size_t 
   return false;
 }
 
+/// Whether a `transition` value has more than one comma-separated item and one of them has `none` as its property: Transitions 1, 2.3, "If there is more than one
+/// <single-transition> in the shorthand, and any of the transitions has none as the <single-transition-property>, then the declaration is invalid."
+static bool transition_none_in_list(const GTEXT_CSS_Component_Value * values, size_t count) {
+  size_t items = 1;
+  bool none = false;
+  for (size_t i = 0; i < count; i++) {
+    const GTEXT_CSS_Component_Value * v = &values[i];
+    if (v->kind != GTEXT_CSS_VALUE_TOKEN) {
+      continue;
+    }
+    if (v->type == GTEXT_CSS_TOKEN_COMMA) {
+      items++;
+    }
+    else if (v->type == GTEXT_CSS_TOKEN_IDENT && css_ascii_ieq(&v->value, "none")) {
+      none = true;
+    }
+  }
+  return items > 1 && none;
+}
+
 /// Whether, in some comma-separated item of a `transition` or `animation` value, the first component value that is a <time> is negative: it is the duration then.
 static bool first_time_is_negative(const GTEXT_CSS_Component_Value * values, size_t count) {
   bool seen = false;
@@ -653,7 +673,8 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   }
   else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID && info.name_length >= 9 &&
            (memcmp(info.name, "transition", 10) == 0 || memcmp(info.name, "animation", 9) == 0) &&
-           ((first_time_is_negative(values, count) && (info.name_length == 10 || info.name_length == 9)) || steps_count_is_nan(values, count))) {
+           ((first_time_is_negative(values, count) && (info.name_length == 10 || info.name_length == 9)) || steps_count_is_nan(values, count) ||
+            (info.name_length == 10 && transition_none_in_list(values, count)))) {
     /* Transitions 1, 2.3 (and Animations 1 of animation): "the first value that can be parsed as a time is assigned to the transition-duration, and the second value that can be
        parsed as a time is assigned to transition-delay", and a duration is "<time [0,∞]>" ("Negative values for transition-duration are invalid"): `-1s -2s`, and `-2s 1s`, which the
        grammar's `||` reads with the times swapped, are not a transition */

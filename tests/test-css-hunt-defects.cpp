@@ -196,4 +196,66 @@ TEST(CssHuntGradients, TheDefaultsAGradientLeavesOutAreNotWritten) {
   EXPECT_EQ(B("background-image", "radial-gradient(red, blue), url(a.png)"), "valid:radial-gradient(red, blue), url(\"a.png\")");
 }
 
+/* Easing 2, 2.1.1 (served 2026-11-01): "control points originally specified with two input progress values are turned into two separate control points, and the input
+   progress values are in strictly ascending order", with the examples "linear(0 20%, 0.5 10%, 1) serializes as linear(0 20%, 0.5 20%, 1)" and "linear(0, 0.25 25% 75%, 1)
+   serializes as linear(0, 0.25 25%, 0.25 75%, 1)"; a control point that "originally lacked an input progress value" is written without one. */
+TEST(CssHuntEasing, ALinearControlPointWithTwoPositionsIsTwoPointsInAscendingOrder) {
+  EXPECT_EQ(P("animation-timing-function", "linear(0, 0.25, 1)"), "valid:linear(0, 0.25, 1)");
+  EXPECT_EQ(P("animation-timing-function", "linear(0 20%, 0.5 10%, 1)"), "valid:linear(0 20%, 0.5 20%, 1)");
+  EXPECT_EQ(P("animation-timing-function", "linear(0, 0.25 25% 75%, 1)"), "valid:linear(0, 0.25 25%, 0.25 75%, 1)");
+  EXPECT_EQ(P("transition-timing-function", "ease, linear(1 50% 40%, 0 10%)"), "valid:ease, linear(1 50%, 1 50%, 0 50%)");
+  EXPECT_EQ(P("transition-timing-function", "linear(0 0.5% 2%, 65535 -0.5%, -0.5 0%)"), "valid:linear(0 0.5%, 0 2%, 65535 2%, -0.5 2%)");
+  /* a position that is not a plain percentage is left as it was written */
+  EXPECT_EQ(P("animation-timing-function", "linear(0 calc(10% + 5%) 40%, 1)"), "valid:linear(0 calc(15%) 40%, 1)");
+}
+
+/* Values 5, 9.2 (served 2026-11-01): "<random-key> = auto | <random-cache-key> | fixed <number [0,1]>", and Values 4 lets a math function stand where a <number> is allowed;
+   Chromium reads `fixed calc(0.5)`. A calculation that is not a number in [0,1], or is not first after `fixed`, is no key. */
+TEST(CssHuntRandom, AFixedKeyTakesACalculationThatIsANumber) {
+  EXPECT_EQ(P("width", "random(fixed 0.5, 0%, 100%)"), "valid:random(fixed 0.5, 0%, 100%)");
+  EXPECT_EQ(P("width", "random(fixed calc(0.5), 0%, 100%)"), "valid:random(fixed calc(0.5), 0%, 100%)");
+  EXPECT_EQ(P("width", "random(fixed calc(2 / 4), 0%, 100%)"), "valid:random(fixed calc(0.5), 0%, 100%)");
+  EXPECT_EQ(P("width", "random(fixed calc(2), 0%, 100%)"), "invalid");
+  EXPECT_EQ(P("width", "random(fixed calc(1px), 0%, 100%)"), "invalid");
+  EXPECT_EQ(P("width", "random(fixed calc(50%), 0%, 100%)"), "invalid");
+  EXPECT_EQ(P("width", "random(calc(0.5) fixed, 0%, 100%)"), "invalid");
+}
+
+/* Images 4, 8 (served 2026-11-01): a gradient is serialized "omitting components when possible without changing the meaning", wherever the image stands: inside an
+   image-set() option, as an argument of light-dark(), as an item of `content` or of `shape-outside`. Both pinned browsers write the defaults out of all of them. */
+TEST(CssHuntGradients, TheDefaultsAreLeftOutInsideImageSetLightDarkAndContent) {
+  EXPECT_EQ(B("background-image", "image-set(radial-gradient(farthest-corner, red, blue) 1x)"), "valid:image-set(radial-gradient(red, blue) 1x)");
+  EXPECT_EQ(B("mask-image", "light-dark(none, conic-gradient(from 0deg at 50% 50%, red, gold))"), "valid:light-dark(none, conic-gradient(red, gold))");
+  EXPECT_EQ(B("mask-image", "light-dark(radial-gradient(at center, red, blue), image-set(conic-gradient(from 0deg, red, blue) 2x))"),
+      "valid:light-dark(radial-gradient(red, blue), image-set(conic-gradient(red, blue) 2x))");
+  EXPECT_EQ(B("content", "radial-gradient(ellipse 50% 40% at calc(2em + 10px) 30%, red, blue)"), "valid:radial-gradient(50% 40% at calc(2em + 10px) 30%, red, blue)");
+  EXPECT_EQ(B("content", "conic-gradient(from 0deg, red, blue) \"a\""), "valid:conic-gradient(red, blue) \"a\"");
+  EXPECT_EQ(B("content", "\"a\" counter(x)"), "valid:\"a\" counter(x)");
+  EXPECT_EQ(B("shape-outside", "image-set(radial-gradient(farthest-corner, red, blue) 1x)"), "valid:image-set(radial-gradient(red, blue) 1x)");
+  /* what keeps a meaning is kept */
+  EXPECT_EQ(B("background-image", "image-set(radial-gradient(closest-side, red, blue) 1x)"), "valid:image-set(radial-gradient(closest-side, red, blue) 1x)");
+}
+
+/* Transitions 1, 2.3 (served 2026-11-01): "If there is more than one <single-transition> in the shorthand, and any of the transitions has none as the
+   <single-transition-property>, then the declaration is invalid." Both pinned browsers refuse it. */
+TEST(CssHuntTransition, NoneBesideAnotherTransitionIsInvalid) {
+  EXPECT_EQ(P("transition", "none"), "valid:none");
+  EXPECT_EQ(P("transition", "none 1s"), "valid:none 1s");
+  EXPECT_EQ(P("transition", "none, foo"), "invalid");
+  EXPECT_EQ(P("transition", "foo, none"), "invalid");
+  EXPECT_EQ(P("transition", "foo 1s, none 2s ease-out"), "invalid");
+  EXPECT_EQ(P("transition", "foo 1s, bar 2s"), "valid:foo 1s, bar 2s");
+}
+
+/* Values 4, 6 (served 2026-11-01): a time in milliseconds is a time, and 0ms is the value 0s that transition-duration and transition-delay start as. The shorthand leaves out a
+   component that is its longhand's initial value, so it leaves out 0ms as it leaves out 0s; both pinned browsers write `transition: foo 0ms` as `foo`. A delay that is not zero
+   still needs the duration before it, in the spelling the author used. */
+TEST(CssHuntTransition, AZeroTimeInAnyUnitIsTheInitialValue) {
+  EXPECT_EQ(B("transition", "foo 0ms"), "valid:foo");
+  EXPECT_EQ(B("transition", "foo 1s 0ms"), "valid:foo 1s");
+  EXPECT_EQ(B("transition", "0ms steps(1, end)"), "valid:steps(1)");
+  EXPECT_EQ(B("transition", "foo, 0.0ms"), "valid:foo, all");
+  EXPECT_EQ(B("transition", "foo 0ms 1s"), "valid:foo 0ms 1s");
+}
+
 } // namespace

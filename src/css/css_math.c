@@ -316,8 +316,12 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
       comma++;
     }
     bool key = comma < F->n;
-    size_t parts = 0, dashed = 0, element = 0, property = 0, fixed = 0, autos = 0, numbers = 0;
+    size_t parts = 0, dashed = 0, element = 0, property = 0, fixed = 0, autos = 0, numbers = 0, fixed_at = 0, number_at = 0;
     double fixed_value = 0.0;
+    char * fixed_canon = NULL;
+    size_t fixed_canon_len = 0;
+    GTEXT_CSS_Serialize_Options fixed_so = gtext_css_serialize_options_default();
+    fixed_so.allocator = &mb->alloc;
     for (size_t i = 0; key && i < comma; i++) {
       const GTEXT_CSS_Component_Value * c = &F->items[i];
       if (is_ws(c)) {
@@ -327,6 +331,7 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
       if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_IDENT) {
         if (name_is(&c->value, "fixed")) {
           fixed++;
+          fixed_at = parts;
         }
         else if (name_is(&c->value, "auto")) {
           autos++;
@@ -346,7 +351,23 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
       }
       else if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_NUMBER) {
         numbers++;
+        number_at = parts;
         fixed_value = c->number;
+      }
+      else if (c->kind == GTEXT_CSS_VALUE_FUNCTION && fixed == 1 && parts == 2 && gtext_css_math_is_function(c->value.data, c->value.length)) {
+        /* Values 5, 9.2: `fixed <number [0,1]>`, and Values 4 lets a math function stand where a <number> is allowed (`fixed calc(0.5)`) */
+        bool oom = false;
+        if (css_random_key_number(c, &mb->alloc, &fixed_value, &oom, &fixed_canon, &fixed_canon_len)) {
+          numbers++;
+          number_at = parts;
+        }
+        else if (oom) {
+          mb_fail(mb, GTEXT_CSS_E_OOM);
+          return false;
+        }
+        else {
+          key = false;
+        }
       }
       else {
         key = false;
@@ -355,7 +376,7 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
     /* <random-key> = auto | <random-cache-key> | fixed <number [0,1]>; <random-cache-key> = <dashed-ident> || element-scoped || [ property-scoped | property-index-scoped ] */
     if (key) {
       if (fixed) {
-        key = fixed == 1 && numbers == 1 && parts == 2 && fixed_value >= 0.0 && fixed_value <= 1.0;
+        key = fixed == 1 && numbers == 1 && parts == 2 && fixed_at == 1 && number_at == 2 && fixed_value >= 0.0 && fixed_value <= 1.0;
       }
       else if (autos) {
         key = autos == 1 && parts == 1;
@@ -364,12 +385,35 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
         key = numbers == 0 && dashed <= 1 && element <= 1 && property <= 1;
       }
     }
+    if (fixed_canon && !(key && parts > 0)) {
+      gtext_css_serialize_buffer_free(&fixed_so, fixed_canon);
+      fixed_canon = NULL;
+    }
     if (key && parts > 0) {
       GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
       so.allocator = &mb->alloc;
       char * buf = NULL;
       size_t len = 0;
-      const GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(F->items, comma, &so, &buf, &len);
+      GTEXT_CSS_Status st = GTEXT_CSS_OK;
+      if (fixed_canon) {
+        /* `fixed calc(2 / 4)` is written `fixed calc(0.5)`: the calculation as a specified value is serialized (Values 4, 10.13) */
+        const size_t total = 6 + fixed_canon_len;
+        buf = (char *)gtext_allocator_malloc(&mb->alloc, total + 1);
+        if (!buf) {
+          st = GTEXT_CSS_E_OOM;
+        }
+        else {
+          memcpy(buf, "fixed ", 6);
+          memcpy(buf + 6, fixed_canon, fixed_canon_len);
+          buf[total] = '\0';
+          len = total;
+        }
+        gtext_css_serialize_buffer_free(&fixed_so, fixed_canon);
+        fixed_canon = NULL;
+      }
+      else {
+        st = gtext_css_serialize_values_buffer(F->items, comma, &so, &buf, &len);
+      }
       if (st != GTEXT_CSS_OK) {
         mb_fail(mb, st);
         return false;
@@ -392,6 +436,48 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
     }
   }
   return true;
+}
+
+bool css_random_key_number(const GTEXT_CSS_Component_Value * c, const GTEXT_Allocator * allocator, double * out, bool * oom, char ** canon, size_t * canon_length) {
+  if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
+    if (c->type != GTEXT_CSS_TOKEN_NUMBER) {
+      return false;
+    }
+    *out = c->number;
+    return true;
+  }
+  if (c->kind != GTEXT_CSS_VALUE_FUNCTION || !gtext_css_math_is_function(c->value.data, c->value.length)) {
+    return false;
+  }
+  GTEXT_CSS_Math_Options mo = gtext_css_math_options_default();
+  mo.allocator = allocator;
+  bool valid = false;
+  GTEXT_CSS_Math * m = NULL;
+  const GTEXT_CSS_Status st = gtext_css_math_parse(c, NULL, &mo, &valid, &m, NULL);
+  if (st == GTEXT_CSS_E_OOM) {
+    *oom = true;
+    return false;
+  }
+  bool ok = false;
+  if (st == GTEXT_CSS_OK && valid && m) {
+    GTEXT_CSS_Unit unit = GTEXT_CSS_UNIT_NONE;
+    bool percent = false;
+    double v = 0.0;
+    if (gtext_css_math_numeric(m, &v, &unit, &percent) && unit == GTEXT_CSS_UNIT_NONE && !percent && v == v) {
+      *out = v;
+      ok = true;
+      if (canon) {
+        GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+        so.allocator = allocator;
+        if (gtext_css_math_serialize_buffer(m, &so, canon, canon_length) != GTEXT_CSS_OK) {
+          *oom = true;
+          ok = false;
+        }
+      }
+    }
+  }
+  gtext_css_math_free(m);
+  return ok;
 }
 
 static const GTEXT_CSS_Math_Keyword * find_keyword(const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_String * name) {

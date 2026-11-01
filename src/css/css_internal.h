@@ -329,6 +329,12 @@ bool css_filtered_text(css_ctx * ctx, size_t begin, size_t end,
  */
 bool css_number_value(css_ctx * ctx, const char * repr, size_t len, double * out, unsigned * flags);
 
+/** The number of the `<number>` of a `fixed <number [0,1]>` random key (Values 5, 9.2): a number token, or a math function whose result is a number (Values 4: where a
+ *  `<number>` is allowed a math function is). False when the component value is neither, or the function does not resolve to a plain number; `*oom` is set when the
+ *  allocator failed (the allocator is the context's, `NULL` for the default). For a function, `canon` (when not `NULL`) receives its simplified text (`calc(2 / 4)`
+ *  is `calc(0.5)`), which the caller releases with gtext_css_serialize_buffer_free(). */
+bool css_random_key_number(const GTEXT_CSS_Component_Value * c, const GTEXT_Allocator * allocator, double * out, bool * oom, char ** canon, size_t * canon_length);
+
 /// ASCII case-insensitive equality of a string with a lower-case literal.
 bool css_ascii_ieq(const GTEXT_CSS_String * s, const char * lower);
 /** Whether an identifier could be taken for a keyword of the font-family value definition or for a CSS-wide keyword (Fonts 4, 2.1.1), so that an unquoted family name
