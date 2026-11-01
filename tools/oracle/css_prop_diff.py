@@ -589,6 +589,8 @@ def cause_labels(ours, chromium, firefox):
       E-notation    both accept, the texts are not the same, and are the same once every number is read as a number (`1e+20` against `100000000000000000000`: an exponent that this library's text does not have)
       E-precision   both accept, the texts are the same once every number is replaced, and each pair of numbers differs by at most 5e-6 of its size (an engine that
                     keeps six significant digits, or a 32-bit float: 1.23457e+08 or 123456792 for 123456789)
+      E-decimals    both accept, the texts are the same once every number is replaced, and each pair of numbers differs by less than 1e-6 (this library writes at
+                    most six decimals: 0 for 1e-07)
       E-longer      both accept and the engine writes every word this library writes and more (the components of a shorthand that are the initial value)
       E-text        both accept and the texts differ in more than that
     """
@@ -608,6 +610,9 @@ def cause_labels(ours, chromium, firefox):
             elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and all(
                     abs(float(a) - float(b)) <= 5e-6 * max(abs(float(a)), abs(float(b))) for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(ours[1]))):
                 labels.add(name + "-precision")
+            elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and all(
+                    abs(float(a) - float(b)) < 1e-6 for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(ours[1]))):
+                labels.add(name + "-decimals")
             elif len(words_e) > len(words_o) and all(words_e.count(w) >= words_o.count(w) for w in set(words_o)):
                 labels.add(name + "-longer")
             else:
