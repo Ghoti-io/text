@@ -482,8 +482,7 @@ def population(seed, count, ours, wpt_dir, scope="core"):
     docs += attribute_docs(rng, table)
     if scope == "full":
         docs += value_docs(rng, wpt_dir, props, 12)
-    if scope in ("full", "color"):
-        docs += color_docs(rng, count)
+    docs += color_docs(rng, count)  # the color population is part of every scope (it was a scope of its own until its keys were all classified)
     for n in range(count):
         docs.append(tree_doc(rng, n))
     return docs
@@ -493,7 +492,7 @@ def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--count", type=int, default=200)
-    ap.add_argument("--scope", default="core", choices=("core", "full", "color"))
+    ap.add_argument("--scope", default="core", choices=("core", "full", "color"))  # "color" is the core population, kept as a name
     ap.add_argument("--ours", default=os.path.join(ROOT, "build", "css-style-ours"))
     ap.add_argument("--wpt", default=os.path.join(ROOT, "build", "css-property-vectors"))
     ap.add_argument("--out", default="-")

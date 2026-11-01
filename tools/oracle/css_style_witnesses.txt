@@ -1,14 +1,112 @@
 # tools/oracle/css_style_diff.py: one witness for every key of css_style_divergences.txt: the smallest item of the key, what this library says of it
 # (OK=<value>, NO) and what an engine says that differs from that. Columns: key, document, element, property, scheme, ours, reference.
 # The run asks every witness again and fails when either answer is not the one written here.
+ser:A=B|C:color:style : color : color-mix( in prophoto-rgb , color( prophoto-rgb N N N ) P , #H P )	color-6	c27	color	light	OK=color(prophoto-rgb 0.136149 0.15083 0.253704 / 0.470588)	OK=color(prophoto-rgb 0.136152 0.150823 0.253685 / 0.470588)
+ser:A=B|C:color:style : color : color-mix( in srgb-linear , hsl( D P P / N ) P , color( srgb-linear N N N ) P )	color-2	c1	color	light	OK=color(srgb-linear 0.458716 0.262549 0.197248 / 0.838462)	OK=color(srgb-linear 0.458716 0.262549 0.197248 / 0.84)
+ser:A=B|C:color:style : color : color-mix( in srgb-linear , rgb( none N N ) , lab( P N N ) P )	color-4	c28	color	light	OK=color(srgb-linear 0.520025 0.029129 0.009734)	OK=color(srgb-linear 0.519936 0.0291376 0.00973513)
+ser:A=B|C:color:style : color : color-mix( in xyz , P rgb( none N N ) , rebeccapurple P )	color-2	c38	color	light	OK=color(xyz-d65 0.124123 0.033534 0.131626)	OK=color(xyz-d65 0.12412 0.0335318 0.131608)
+ser:A=B|C:color:style : color : color-mix( in xyz , lab( P N N ) P , rgb( none N N ) P )	color-0	c3	color	light	OK=color(xyz-d65 0.248612 0.070799 0.01627 / 0.8)	OK=color(xyz-d65 0.24861 0.0708015 0.0162672 / 0.8)
+ser:A=B|C:color:style : color : color-mix( in xyz-d50 , calc( P * N ) hsl( D P P / N ) , currentcolor P )	color-5	c51	color	light	OK=color(xyz-d50 0.023207 0.026741 0.053654 / 0.883333)	OK=color(xyz-d50 0.0232061 0.0267401 0.0536537 / 0.883333)
+ser:A=B|C:color:style : color : color-mix( in xyz-d50 , rgb( none N N ) P , color( prophoto-rgb N N N ) P )	color-6	c0	color	light	OK=color(xyz-d50 0.171179 0.213191 0.458362 / 0.75)	OK=color(xyz-d50 0.17118 0.213197 0.45842 / 0.75)
+ser:A=B|C:color:style : color : color-mix( in xyz-d50 , rgb( none N N ) P , hsl( N P P ) )	color-3	c47	color	light	OK=color(xyz-d50 0.141861 0.214541 0.050518)	OK=color(xyz-d50 0.141859 0.214537 0.0505167)
+ser:A=B|C:color:style : color : color-mix( in xyz-d65 , P color( srgb-linear N N N ) , transparent calc( P * N ) )	color-3	c31	color	light	OK=color(xyz-d65 0.318152 0.294136 0.158281 / 0.833333)	OK=color(xyz-d65 0.318176 0.294131 0.158253 / 0.833333)
+ser:A=B|C:color:style : color : color-mix( in xyz-d65 , rgb( N N N / P ) P , lab( P N N ) P )	color-2	c13	color	light	OK=color(xyz-d65 0.179322 0.129666 0.019087 / 0)	OK=color(xyz-d65 0.17932 0.12967 0.0190836 / 0)
+ser:A=B|C:color:style : color : hwb( from #H h w b )	color-3	c46	color	light	OK=color(srgb 0.070588 0.203922 0.337255 / 0.470588)	OK=color(srgb 0.0705882 0.203922 0.337255 / 0.470588)
+ser:A=B|C:color:style : color : rgb( from #H r g b )	color-3	c19	color	light	OK=color(srgb 0.070588 0.203922 0.337255 / 0.470588)	OK=color(srgb 0.0705882 0.203922 0.337255 / 0.470588)
 ser:A=C|B:alignment-baseline:attr : alignment-baseline =	attribute-5	a21	alignment-baseline	light	OK=baseline	OK=auto
-ser:A=C|B:display:(empty)	tree-1	e24	display	light	OK=inline	OK=block
+ser:A=C|B:color:style : color : color( from color( xyz N N N ) srgb-linear r g b )	color-5	c3	color	light	OK=color(srgb-linear -0.012465 0.385564 0.372722)	OK=color(srgb-linear -0.0125363 0.385603 0.372776)
+ser:A=C|B:color:style : color : color( from hsl( D P P / N ) a98-rgb r g b )	color-1	c15	color	light	OK=color(a98-rgb 0.373297 0.660736 0.988731 / 0.3)	OK=color(a98-rgb 0.373452 0.660787 0.98885 / 0.3)
+ser:A=C|B:color:style : color : color( from rgb( N N N ) a98-rgb r g b )	color-2	c4	color	light	OK=color(a98-rgb 0.082708 0.104718 0.137516)	OK=color(a98-rgb 0.0827855 0.104795 0.137629)
+ser:A=C|B:color:style : color : color( from rgba( N , N , N , N ) srgb calc( r / N ) g b / alpha )	color-3	c28	color	light	OK=color(srgb 0.5 0.501961 0 / 0.5)	OK=color(srgb 0.5 0.501961 0 / 0.501961)
+ser:A=C|B:color:style : color : color-mix( in a98-rgb , P hsl( none P P ) , rgba( N , N , N , N ) calc( P * N ) )	color-3	c21	color	light	OK=color(a98-rgb 0.690494 0.298113 0.234568 / 0.6)	OK=color(a98-rgb 0.690737 0.298336 0.23462 / 0.600392)
+ser:A=C|B:color:style : color : color-mix( in a98-rgb , hwb( N P P ) P , color( a98-rgb N N N ) )	color-4	c33	color	light	OK=color(a98-rgb 0.721267 0.721267 0.28718)	OK=color(a98-rgb 0.721348 0.721289 0.287292)
+ser:A=C|B:color:style : color : color-mix( in a98-rgb , hwb( N P P ) calc( P * N ) , lch( P N N ) P )	color-1	c56	color	light	OK=color(a98-rgb 0.719575 0.436999 0.152264 / 0.95)	OK=color(a98-rgb 0.719653 0.437134 0.152386 / 0.95)
+ser:A=C|B:color:style : color : color-mix( in a98-rgb , oklab( P N N ) P , oklch( none N none ) P , rgb( N N N / P ) P , hsl( none P P ) P )	color-3	c17	color	light	OK=color(a98-rgb 0.536864 0.269375 0.345006)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in display-p3 , P red , oklch( none N none ) P )	color-6	c7	color	light	OK=color(display-p3 0.460018 0.099688 0.069267 / 0.6)	OK=color(display-p3 0.460039 0.0996648 0.0692375 / 0.6)
+ser:A=C|B:color:style : color : color-mix( in display-p3 , color( prophoto-rgb N N N ) , color( a98-rgb N N N ) P )	color-3	c18	color	light	OK=color(display-p3 0.503993 0.503993 0.503993)	OK=color(display-p3 0.503885 0.503869 0.503776)
+ser:A=C|B:color:style : color : color-mix( in display-p3 , rebeccapurple )	color-5	c52	color	light	OK=color(display-p3 0.37367 0.210334 0.579113)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in hsl , rgb( N N N ) calc( P * N ) )	color-1	c12	color	light	OK=color(srgb 0.039216 0.078431 0.117647 / 0.2)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in hsl longer hue , lch( P N N ) calc( P * N ) , color( display-p3 N N N ) P )	color-3	c52	color	light	OK=color(srgb 0.797497 0.339194 0.091505 / 0.2)	OK=color(srgb 0.797438 0.339258 0.0915333 / 0.2)
+ser:A=C|B:color:style : color : color-mix( in hwb , color( a98-rgb N N N ) P , rgb( N N N ) P , rgb( none N N ) P )	color-2	c40	color	light	OK=color(srgb 0.185427 0.218187 0.246429)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in hwb , color-mix( in srgb , rgb( N N N ) , oklab( P N N ) ) , color( prophoto-rgb N N N ) )	color-3	c54	color	light	OK=color(srgb -0.166573 -0.177566 0.659747)	OK=color(srgb -0.166729 -0.177576 0.659786)
+ser:A=C|B:color:style : color : color-mix( in hwb , currentcolor P , lab( P N N ) P , color( display-p3 N N N ) , rgba( N , N , N , N ) calc( P * N ) )	color-4	c11	color	light	OK=color(srgb 0.087064 0.036939 0.273448 / 0.9)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in hwb longer hue , hsl( none P P ) P , rgba( N , N , N , N ) P )	color-6	c6	color	light	OK=color(srgb 0.166667 0.498693 0.833333 / 0.45)	OK=color(srgb 0.166449 0.498692 0.833551 / 0.450588)
+ser:A=C|B:color:style : color : color-mix( in lab , calc( P * N ) hsl( none P P ) , color( xyz N N N ) P )	color-1	c28	color	light	OK=lab(51.389374 21.466275 16.567925 / 0.3)	OK=lab(51.3892 21.4747 16.567 / 0.3)
+ser:A=C|B:color:style : color : color-mix( in lab , color( prophoto-rgb N N N ) calc( P * N ) , lab( P N N ) P )	color-3	c36	color	light	OK=lab(55.815399 -4.38895 10.213227 / 0.45)	OK=lab(55.8157 -4.38604 10.2101 / 0.45)
+ser:A=C|B:color:style : color : color-mix( in lab , color( xyz N N N ) P , currentcolor P )	color-5	c43	color	light	OK=lab(13.127503 -6.128055 -9.333749 / 0.85)	OK=lab(13.1273 -6.12535 -9.33475 / 0.85)
+ser:A=C|B:color:style : color : color-mix( in lab , color-mix( in srgb , rgb( N N N ) , transparent ) , rebeccapurple )	color-2	c0	color	light	OK=lab(23.545444 25.116614 -34.545726 / 0.75)	OK=lab(23.5446 25.1242 -34.547 / 0.75)
+ser:A=C|B:color:style : color : color-mix( in lab , hsl( D P P / N ) , rgb( none N N ) P )	color-5	c11	color	light	OK=lab(30.117093 -8.222663 -27.351563 / 0.51)	OK=lab(30.1164 -8.21659 -27.3527 / 0.51)
+ser:A=C|B:color:style : color : color-mix( in lab , light-dark( color( srgb N N N ) , hsl( D P P / N ) ) , currentcolor )	color-3	c24	color	light	OK=lab(24.110847 -3.150434 -21.371934)	OK=lab(24.1102 -3.14455 -21.3729)
+ser:A=C|B:color:style : color : color-mix( in lab , light-dark( hsl( N P P ) , hsl( D P P / N ) ) , hwb( N P P ) )	color-3	c44	color	light	OK=lab(67.958844 -29.433399 59.404811)	OK=lab(67.9583 -29.4209 59.4057)
+ser:A=C|B:color:style : color : color-mix( in lab , light-dark( hwb( N P P ) , #H ) , color( a98-rgb N N N ) )	color-3	c7	color	light	OK=lab(66.922746 -6.537025 38.009009)	OK=lab(66.9161 -6.52924 38.0147)
+ser:A=C|B:color:style : color : color-mix( in lab , oklab( P N N ) P , hsl( D P P / N ) P , color( a98-rgb N N N ) P )	color-1	c9	color	light	OK=lab(53.216719 20.58793 -14.12626 / 0.9)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in lab , rgb( N N N ) P , color( a98-rgb N N N ) P )	color-0	c30	color	light	OK=lab(5.850898 -1.496147 -8.254926 / 0.75)	OK=lab(5.85066 -1.49351 -8.25527 / 0.75)
+ser:A=C|B:color:style : color : color-mix( in lch , color( srgb-linear N N N ) P , color( xyz-d50 N N N ) P , oklab( P N N ) calc( P * N ) , rgb( N N N ) P )	color-3	c41	color	light	OK=lch(56.853902 34.228659 67.018973)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in lch , color( xyz-d50 N N N ) P , rgba( N , N , N , N ) P , color( xyz N N N ) )	color-2	c31	color	light	OK=lch(61.327249 40.37889 194.286487)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in lch , color-mix( in srgb , oklch( P N N ) , rgb( none N N ) ) , rgba( N , N , N , N ) )	color-6	c22	color	light	OK=lch(46.297397 64.822397 129.634252 / 0.75)	OK=lch(46.3237 64.8764 129.629 / 0.75098)
+ser:A=C|B:color:style : color : color-mix( in lch , hwb( N P P ) P , lab( P N N ) calc( P * N ) , lab( P N N ) P )	color-3	c48	color	light	OK=lch(50 71.695537 56.088286 / 0.5)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in oklab , P rgb( N N N ) , rgba( N , N , N , N ) P )	color-1	c41	color	light	OK=oklab(0.368624 0.031322 0.03365 / 0.45)	OK=oklab(0.369099 0.0314428 0.0338063 / 0.450588)
+ser:A=C|B:color:style : color : color-mix( in oklab , color( a98-rgb N N N ) P , rgb( none N N ) P )	color-3	c23	color	light	OK=oklab(0.495992 -0.005733 -0.006844 / 0.4)	OK=oklab(0.495908 -0.00573444 -0.00681394 / 0.4)
+ser:A=C|B:color:style : color : color-mix( in oklab , color-mix( in srgb , rebeccapurple , rgba( N , N , N , N ) ) , oklch( none N none ) )	color-0	c31	color	light	OK=oklab(0.520144 0.102365 0.000273 / 0.875)	OK=oklab(0.520395 0.102372 0.000421881 / 0.87549)
+ser:A=C|B:color:style : color : color-mix( in oklab , hsl( N P P ) P , rgb( N N N / P ) P , color( xyz-d50 N N N ) P )	color-0	c53	color	light	OK=oklab(0.515112 -0.108221 0.074763 / 0.76)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in oklab , light-dark( hwb( N P P ) , color( srgb-linear N N N ) ) , lab( P N N ) )	color-6	c1	color	light	OK=oklab(0.698146 0.02102 0.140329)	OK=oklab(0.698149 0.0210342 0.140336)
+ser:A=C|B:color:style : color : color-mix( in oklab , oklab( P N N ) calc( P * N ) , rebeccapurple P , color( srgb N N N ) P )	color-1	c31	color	light	OK=oklab(0.476429 0.053915 -0.111969)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in oklab , red , color( display-p3 N N N ) , color( srgb N N N ) P )	color-4	c2	color	light	OK=oklab(0.588291 0.15132 0.044576)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in oklch , color( a98-rgb N N N ) P )	color-1	c16	color	light	OK=oklch(0.601621 0 none / 0.75)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in oklch , color( prophoto-rgb N N N ) P , oklab( P N N ) calc( P * N ) , #H P )	color-2	c48	color	light	OK=oklch(0.621893 0.221919 236.602752 / 0.894118)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in oklch , color-mix( in srgb , oklch( none N none ) , #H ) , color( xyz-d50 N N N ) )	color-5	c19	color	light	OK=oklch(0.567921 0.077041 228.899478)	OK=oklch(0.567917 0.0770161 207.381)
+ser:A=C|B:color:style : color : color-mix( in oklch , color-mix( in srgb , rgba( N , N , N , N ) , #H ) , transparent )	color-1	c4	color	light	OK=oklch(0.748981 0.056295 67.091362 / 0.375)	OK=oklch(0.74891 0.0565443 67.059 / 0.37549)
+ser:A=C|B:color:style : color : color-mix( in oklch , lab( P N N ) P , hsl( none P P ) P , rgb( none N N ) )	color-0	c5	color	light	OK=oklch(0.410646 0.109677 337.596253)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in srgb , P rgba( N , N , N , N ) , color( srgb-linear N N N ) )	color-4	c59	color	light	OK=color(srgb 0.894143 0.516016 0.155429 / 0.625)	OK=color(srgb 0.894406 0.515992 0.155073 / 0.626471)
+ser:A=C|B:color:style : color : color-mix( in srgb , color( xyz-d50 N N N ) calc( P * N ) , hsl( none P P ) P , hsl( D P P / N ) P , currentcolor P )	color-2	c21	color	light	OK=color(srgb 0.141518 0.400273 0.523262 / 0.6)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in srgb , color-mix( in srgb , color( display-p3 N N N ) , rgb( N N N ) ) , rgba( N , N , N , N ) )	color-1	c8	color	light	OK=color(srgb 0.67337 0.199411 0.131555 / 0.75)	OK=color(srgb 0.673781 0.199886 0.131399 / 0.75098)
+ser:A=C|B:color:style : color : color-mix( in srgb , color-mix( in srgb , currentcolor , rgb( N N N / P ) ) , lab( P N N ) )	color-4	c21	color	light	OK=color(srgb 0.457533 0.235522 0.051811 / 0.85)	OK=color(srgb 0.4575 0.235555 0.0518379 / 0.85)
+ser:A=C|B:color:style : color : color-mix( in srgb , color-mix( in srgb , oklab( P N N ) , hsl( none P P ) ) , rgba( N , N , N , N ) )	color-2	c3	color	light	OK=color(srgb 0.80264 0.383378 0.287624 / 0.75)	OK=color(srgb 0.802881 0.383544 0.287263 / 0.75098)
+ser:A=C|B:color:style : color : color-mix( in srgb , hsl( none P P ) P , rgb( N N N ) P , hsl( N P P ) P )	color-5	c59	color	light	OK=color(srgb 0.513603 0.283456 0.215809)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in srgb , oklch( P N N ) P )	color-4	c50	color	light	OK=color(srgb -0.316508 0.724403 0.764399 / 0.1)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in srgb , rgba( N , N , N , N ) P , color( xyz N N N ) calc( P * N ) , hsl( N P P ) P )	color-2	c50	color	light	OK=color(srgb 0.470916 0.570381 0.21584 / 0.7)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in srgb-linear , color( a98-rgb N N N ) calc( P * N ) , oklch( P N N ) P )	color-0	c39	color	light	OK=color(srgb-linear 0.217756 0.217756 0.217756 / 0.2)	OK=color(srgb-linear 0.217594 0.217665 0.217579 / 0.2)
+ser:A=C|B:color:style : color : color-mix( in srgb-linear , color-mix( in srgb , color( xyz N N N ) , hsl( none P P ) ) , rgb( N N N ) )	color-5	c0	color	light	OK=color(srgb-linear 0.042654 0.089682 0.090663)	OK=color(srgb-linear 0.0426006 0.0896882 0.0906711)
+ser:A=C|B:color:style : color : color-mix( in srgb-linear , light-dark( oklab( P N N ) , rgba( N , N , N , N ) ) , oklch( P N N ) )	color-0	c44	color	light	OK=color(srgb-linear 0.154351 0.30756 0.439507)	OK=color(srgb-linear 0.154277 0.307596 0.439572)
+ser:A=C|B:color:style : color : color-mix( in srgb-linear , rgb( N N N / P ) P )	color-0	c55	color	light	OK=color(srgb-linear 0.003035 0.006995 0.012983 / 0.3)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in srgb-linear , transparent P , red P , color( srgb N N N ) P )	color-1	c39	color	light	OK=color(srgb-linear 0.516552 0.066434 0.159273 / 0.6)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in xyz , color( xyz N N N ) , red P )	color-5	c55	color	light	OK=color(xyz-d65 0.412391 0.212639 0.019331)	OK=color(xyz-d65 0.412426 0.212648 0.0193173)
+ser:A=C|B:color:style : color : color-mix( in xyz , red P , oklab( P N N ) P , hwb( N P P ) P )	color-5	c50	color	light	OK=color(xyz-d65 0.422862 0.410047 0.107407)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in xyz , transparent P , rgba( N , N , N , N ) calc( P * N ) )	color-0	c41	color	light	OK=color(xyz-d65 0.489579 0.367016 0.04506 / 0.1)	OK=color(xyz-d65 0.489624 0.367019 0.0450425 / 0.100392)
+ser:A=C|B:color:style : color : color-mix( in xyz-d50 , color( display-p3 N N N ) P )	color-2	c46	color	light	OK=color(xyz-d50 0.426808 0.217716 0.057999)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in xyz-d50 , color-mix( in srgb , rgba( N , N , N , N ) , rgb( N N N / P ) ) , lab( P N N ) )	color-0	c58	color	light	OK=color(xyz-d50 0.230501 0.164831 0.015963 / 0.725)	OK=color(xyz-d50 0.230597 0.16492 0.0159702 / 0.72549)
+ser:A=C|B:color:style : color : color-mix( in xyz-d50 , rgb( N N N ) P , lch( P N N ) calc( P * N ) , lch( P N N ) P , color( xyz N N N ) P )	color-4	c13	color	light	OK=color(xyz-d50 0.185736 0.200216 0.147742)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in xyz-d65 , color( a98-rgb N N N ) P , hsl( N P P ) P )	color-4	c57	color	light	OK=color(xyz-d65 0.151892 0.232372 0.111844 / 0.4)	OK=color(xyz-d65 0.151873 0.232336 0.111782 / 0.4)
+ser:A=C|B:color:style : color : color-mix( in xyz-d65 , color( prophoto-rgb N N N ) P , rgb( N N N ) calc( P * N ) , rgb( N N N ) P )	color-5	c27	color	light	OK=color(xyz-d65 0.167196 0.27573 0.755267)	OK=rgb(11, 22, 33)
+ser:A=C|B:color:style : color : color-mix( in xyz-d65 , color-mix( in srgb , color( a98-rgb N N N ) , rgb( none N N ) ) , color( a98-rgb N N N ) )	color-2	c44	color	light	OK=color(xyz-d65 0.167817 0.159531 0.162198)	OK=color(xyz-d65 0.167719 0.159443 0.162056)
+ser:A=C|B:color:style : color : color-mix( in xyz-d65 , color-mix( in srgb , hsl( D P P / N ) , rgba( N , N , N , N ) ) , transparent )	color-1	c30	color	light	OK=color(xyz-d65 0.264011 0.281182 0.150131 / 0.2)	OK=color(xyz-d65 0.264333 0.281257 0.149545 / 0.20049)
+ser:A=C|B:color:style : color : hsl( from color( display-p3 N N N ) h s l )	color-3	c5	color	light	OK=color(srgb 0.980894 0.017841 0.277017)	OK=color(srgb 0.980848 0.0180799 0.277065)
+ser:A=C|B:color:style : color : hsl( from color( xyz N N N ) h s l / alpha )	color-6	c19	color	light	OK=color(srgb -0.114744 0.654239 0.644299)	OK=color(srgb -0.115147 0.654269 0.644341)
+ser:A=C|B:color:style : color : hsl( from lch( P N N ) h s l / alpha )	color-4	c18	color	light	OK=color(srgb 0.797497 0.339194 0.091505)	OK=color(srgb 0.797438 0.339258 0.0915333)
+ser:A=C|B:color:style : color : hsl( from rgba( N , N , N , N ) h calc( s / N ) l )	color-3	c53	color	light	OK=color(srgb 0.75 0.50098 0.25 / 0.5)	OK=color(srgb 0.75 0.50098 0.25 / 0.501961)
+ser:A=C|B:color:style : color : hwb( from rgba( N , N , N , N ) h w b )	color-2	c9	color	light	OK=color(srgb 1 0.501961 0 / 0.5)	OK=color(srgb 1 0.501961 0 / 0.501961)
+ser:A=C|B:color:style : color : lab( from color( srgb N N N ) calc( l / N ) a b )	color-5	c14	color	light	OK=lab(20.760412 -4.57309 -33.494195)	OK=lab(20.76 -4.56434 -33.4957)
+ser:A=C|B:color:style : color : lab( from color( srgb N N N ) l calc( a * N ) b )	color-4	c24	color	light	OK=lab(41.520824 4.57309 -33.494195)	OK=lab(41.5199 4.56434 -33.4957)
+ser:A=C|B:color:style : color : lab( from currentcolor N a b )	color-4	c17	color	light	OK=lab(50 -1.727778 -9.249673)	OK=lab(50 -1.72476 -9.25008)
+ser:A=C|B:color:style : color : lab( from hsl( D P P / N ) N a b )	color-1	c46	color	light	OK=lab(50 -13.953706 -53.222591 / 0.3)	OK=lab(50 -13.9419 -53.2248 / 0.3)
+ser:A=C|B:color:style : color : lab( from hwb( N P P ) l calc( a * N ) b )	color-1	c20	color	light	OK=lab(80.057444 13.074049 76.018018)	OK=lab(80.0568 13.0588 76.0199)
+ser:A=C|B:color:style : color : lab( from oklch( P N N ) calc( l / N ) a b )	color-0	c45	color	light	OK=lab(33.317741 -46.724915 -19.112875)	OK=lab(33.3181 -46.7241 -19.1189)
+ser:A=C|B:color:style : color : oklab( from color( srgb N N N ) calc( l * N ) a b )	color-1	c11	color	light	OK=oklab(0.249657 -0.033043 -0.092967)	OK=oklab(0.249652 -0.0330228 -0.0929556)
+ser:A=C|B:color:style : color : oklab( from color( srgb-linear N N N ) calc( l * N ) a b )	color-3	c45	color	light	OK=oklab(0.335257 0.043323 0.068456)	OK=oklab(0.335257 0.0433531 0.0684676)
+ser:A=C|B:color:style : color : oklab( from rgba( N , N , N , N ) l b a )	color-1	c24	color	light	OK=oklab(0.731895 0.148359 0.111859 / 0.5)	OK=oklab(0.731901 0.148369 0.111889 / 0.501961)
+ser:A=C|B:color:style : color : oklch( from rgba( N , N , N , N ) N N h )	color-3	c10	color	light	OK=oklch(0.5 0.1 52.984674 / 0.5)	OK=oklch(0.5 0.1 52.9792 / 0.501961)
+ser:A=C|B:color:style : color : oklch( from rgba( N , N , N , N ) l c h )	color-2	c41	color	light	OK=oklch(0.731895 0.185803 52.984674 / 0.5)	OK=oklch(0.731901 0.185829 52.9792 / 0.501961)
+ser:A=C|B:color:style : color : rgb( from color( display-p3 N N N ) calc( r / N ) g b )	color-4	c54	color	light	OK=color(srgb 0.490447 0.017841 0.277017)	OK=color(srgb 0.490424 0.0180799 0.277065)
+ser:A=C|B:color:style : color : rgb( from color( display-p3 N N N ) none g b )	color-2	c16	color	light	OK=color(srgb none 0.017841 0.277017)	OK=color(srgb none 0.0180799 0.277065)
+ser:A=C|B:color:style : color : rgb( from lch( P N N ) r N b / calc( alpha * N ) )	color-0	c51	color	light	OK=color(srgb 0.797497 0 0.091505 / 0.5)	OK=color(srgb 0.797438 0 0.0915333 / 0.5)
+ser:A=C|B:color:style : color : rgb( from lch( P N N ) r g b / alpha )	color-0	c47	color	light	OK=color(srgb 0.797497 0.339194 0.091505)	OK=color(srgb 0.797438 0.339258 0.0915333)
+ser:A=C|B:display:(empty)	tree-3	e8	display	light	OK=inline	OK=block
 ser:A=C|B:font-family:(empty)	tree-0	e1	font-family	light	OK=serif	OK="Times New Roman"
 ser:A=C|B:height:attr : height = N	attribute-1	a15	height	light	OK=auto	OK=0px
 ser:A=C|B:height:attr : height = inherit	attribute-1	a17	height	light	OK=auto	OK=0px
 ser:A=C|B:height:attr : height = initial	attribute-1	a18	height	light	OK=auto	OK=0px
 ser:A=C|B:height:attr : height = unset	attribute-1	a19	height	light	OK=auto	OK=0px
-ser:A=C|B:letter-spacing:style : letter-spacing : N	tree-96	e13	letter-spacing	light	OK=normal	OK=1px
+ser:A=C|B:letter-spacing:style : letter-spacing : N	tree-83	e13	letter-spacing	light	OK=normal	OK=1px
 ser:A=C|B:r:attr : r = N	attribute-3	a1	r	light	OK=0px	OK=-3.5px
 ser:A=C|B:rx:attr : rx = N	attribute-3	a21	rx	light	OK=auto	OK=-3.5px
 ser:A=C|B:rx:attr : rx = inherit	attribute-3	a37	rx	light	OK=auto	OK=0px
@@ -23,26 +121,66 @@ ser:A=C|B:width:attr : width = N	attribute-1	a35	width	light	OK=auto	OK=0px
 ser:A=C|B:width:attr : width = inherit	attribute-1	a37	width	light	OK=auto	OK=0px
 ser:A=C|B:width:attr : width = initial	attribute-1	a38	width	light	OK=auto	OK=0px
 ser:A=C|B:width:attr : width = unset	attribute-1	a39	width	light	OK=auto	OK=0px
-ser:A=C|B:word-spacing:style : word-spacing : N	tree-72	e20	word-spacing	light	OK=0px	OK=1px
+ser:A=C|B:word-spacing:style : word-spacing : N	tree-59	e20	word-spacing	light	OK=0px	OK=1px
 ser:A|B=C:color-interpolation:attr : color-interpolation =	attribute-6	a14	color-interpolation	light	OK=sRGB	OK=srgb
+ser:A|B=C:color:style : color : color( from color( srgb N N N ) rec2020 r g b / N )	color-1	c36	color	light	OK=color(rec2020 0.346027 0.424741 0.603442 / 0.5)	OK=color(rec2020 0.250148 0.336685 0.537754 / 0.5)
+ser:A|B=C:color:style : color : color( from hsl( D P P / N ) rec2020 r g b / N )	color-1	c17	color	light	OK=color(rec2020 0.484505 0.668935 0.970638 / 0.5)	OK=color(rec2020 0.403352 0.612751 0.965117 / 0.5)
+ser:A|B=C:color:style : color : color-mix( in hwb , light-dark( color( rec2020 N N N ) , color( display-p3 N N N ) ) , hsl( D P P / N ) )	color-4	c5	color	light	OK=color(srgb -0.478847 0.871729 0.8416 / 0.65)	OK=color(srgb -0.482617 0.884353 0.896553 / 0.65)
+ser:A|B=C:color:style : color : color-mix( in lab , color-mix( in srgb , color( rec2020 N N N ) , red ) , lch( P N N ) )	color-5	c41	color	light	OK=lab(45.916147 7.240709 44.074038)	OK=lab(46.6834 7.01338 41.3821)
+ser:A|B=C:color:style : color : color-mix( in lch increasing hue , P color( srgb-linear N N N ) , color( rec2020 N N N ) calc( P * N ) )	color-1	c22	color	light	OK=lch(66.87774 99.103516 126.134174 / 0.3)	OK=lch(68.9313 93.2498 128.016 / 0.3)
+ser:A|B=C:color:style : color : color-mix( in rec2020 , P #H , red P )	color-5	c48	color	light	OK=color(rec2020 0.791511 0.447128 0.35832)	OK=color(rec2020 0.75488 0.364762 0.272172)
+ser:A|B=C:color:style : color : color-mix( in rec2020 , P color( xyz N N N ) , lch( P N N ) P )	color-3	c4	color	light	OK=color(rec2020 0.549741 0.548581 0.458724 / 0.55)	OK=color(rec2020 0.478089 0.476558 0.379496 / 0.55)
+ser:A|B=C:color:style : color : color-mix( in rec2020 , color( rec2020 N N N ) calc( P * N ) , red P )	color-2	c52	color	light	OK=color(rec2020 0.501925 0.538016 0.277966 / 0.45)	OK=color(rec2020 0.484453 0.483864 0.218725 / 0.45)
+ser:A|B=C:color:style : color : color-mix( in rec2020 , hsl( N P P ) P , #H P )	color-4	c3	color	light	OK=color(rec2020 0.677717 0.72716 0.744748 / 0.85)	OK=color(rec2020 0.623592 0.680058 0.702237 / 0.85)
+ser:A|B=C:color:style : color : color-mix( in rec2020 , oklch( none N none ) P , color( xyz-d50 N N N ) P )	color-1	c53	color	light	OK=color(rec2020 0.408945 0.655514 0.741912 / 0.25)	OK=color(rec2020 0.319274 0.59735 0.696992 / 0.25)
+ser:A|B=C:color:style : color : color-mix( in rec2020 , transparent , hsl( N P P ) P )	color-3	c38	color	light	OK=color(rec2020 0.423371 0.601794 0.305823)	OK=color(rec2020 0.335233 0.535893 0.206469)
+ser:A|B=C:color:style : color : color-mix( in srgb , red P , color( rec2020 N N N ) P )	color-5	c2	color	light	OK=color(srgb 0.729583 0.138875 0.047175 / 0.6)	OK=color(srgb 0.728766 0.144253 0.0657153 / 0.6)
+ser:A|B=C:color:style : color : color-mix( in srgb-linear , color-mix( in srgb , color( rec2020 N N N ) , color( srgb-linear N N N ) ) , color( xyz-d50 N N N ) )	color-4	c14	color	light	OK=color(srgb-linear -0.025057 0.409829 0.300046)	OK=color(srgb-linear -0.0251718 0.421189 0.317402)
+ser:A|B=C:color:style : color : hsl( from oklch( none N none ) N s l )	color-5	c4	color	light	OK=hsl(0 193.087439% none)	OK=color(srgb 0.00332721 -0.00105684 -0.00105684)
+ser:A|B=C:color:style : color : hsl( none P P )	color-0	c25	color	light	OK=hsl(none 50% 50%)	OK=rgb(191, 64, 64)
+ser:A|B=C:color:style : color : hwb( none P P )	color-5	c53	color	light	OK=hwb(none 10% 10%)	OK=rgb(230, 26, 26)
+ser:A|B=C:color:style : color : lab( from color( rec2020 N N N ) l a b )	color-1	c10	color	light	OK=lab(69.573989 -123.784345 46.645076)	OK=lab(72.6546 -117.575 37.7841)
+ser:A|B=C:color:style : color : light-dark( rgb( none N N ) , lab( P N N ) )	color-2	c49	color	light	OK=color(srgb none 0.078431 0.117647)	OK=rgb(0, 20, 30)
+ser:A|B=C:color:style : color : oklab( from oklch( none N none ) l a b )	color-5	c18	color	light	OK=oklab(none 0.1 0)	OK=oklab(0 0.1 0)
+ser:A|B=C:color:style : color : oklch( from transparent l c h / alpha )	color-4	c4	color	light	OK=oklch(0 0 none / 0)	OK=oklch(0 0 0 / 0)
+ser:A|B=C:color:style : color : rgb( from color( rec2020 N N N ) b g r / N )	color-1	c47	color	light	OK=color(srgb 0.283049 0.833247 -0.622501 / 0.5)	OK=color(srgb 0.394292 0.865519 -0.627402 / 0.5)
 ser:A|B=C:color:style : color-scheme : normal	control-page-scheme	p1	color	light	OK=rgb(0, 0, 255)	OK=rgb(255, 0, 0)
 ser:A|B=C:d:attr : d = bogus	attribute-4	a25	d	light	OK="bogus"	OK=none
 ser:A|B=C:d:attr : d = m0 N l10 N	attribute-4	a20	d	light	OK="M0 0 L10 10"	OK=path("M 0 0 L 10 10")
 ser:A|B=C:d:attr : d = none	attribute-4	a23	d	light	OK="none"	OK=none
 ser:A|B=C:d:attr : d = path( S )	attribute-4	a24	d	light	OK="path('M0 0')"	OK=none
 ser:A|B=C:font-size:(empty)	fixture-inheritance	keywords	font-size	light	OK=19.2px	OK=18px
-ser:A|B=C:line-height:style : line-height : D	tree-85	e6	line-height	light	OK=38.4px	OK=36px
-ser:A|B=C:line-height:style : line-height : N	tree-19	e12	line-height	light	OK=1.5	OK=24px
-ser:A|B=C:line-height:style : line-height : inherit	tree-76	e7	line-height	light	OK=1.5	OK=24px
-ser:A|B=C:shape-rendering:attr : shape-rendering = crispedges	tree-39	e14	shape-rendering	light	OK=crispEdges	OK=crispedges
-ser:A|B=C:shape-rendering:style : shape-rendering : crispedges	tree-1	e5	shape-rendering	light	OK=crispEdges	OK=crispedges
-ser:A|B=C:stroke-dashoffset:style : stroke-dashoffset : calc( D + D )	tree-1	e6	stroke-dashoffset	light	OK=20.2px	OK=19px
+ser:A|B=C:line-height:style : line-height : D	tree-72	e6	line-height	light	OK=38.4px	OK=36px
+ser:A|B=C:line-height:style : line-height : N	tree-14	e9	line-height	light	OK=1.5	OK=39px
+ser:A|B=C:line-height:style : line-height : inherit	tree-63	e7	line-height	light	OK=1.5	OK=24px
+ser:A|B=C:shape-rendering:attr : shape-rendering = crispedges	tree-5	e9	shape-rendering	light	OK=crispEdges	OK=crispedges
+ser:A|B=C:shape-rendering:style : shape-rendering : crispedges	tree-13	e10	shape-rendering	light	OK=crispEdges	OK=crispedges
 ser:A|B=C:stroke-miterlimit:attr : stroke-miterlimit = N	attribute-14	a12	stroke-miterlimit	light	OK=4	OK=0.5
-ser:A|B=C:stroke-width:style : stroke-width : calc( D + D )	tree-107	e1	stroke-width	light	OK=14.333333px	OK=14.3333px
+ser:A|B=C:stroke-width:style : stroke-width : calc( D + D )	tree-94	e1	stroke-width	light	OK=14.333333px	OK=14.3333px
 ser:A|B=C:transform-origin:attr : transform-origin =	attribute-15	a39	transform-origin	light	OK=50% 50% 0px	OK=0px 0px
 ser:A|B=C:transform:attr : transform = translate( D , D ) rotate( D )	attribute-5	a6	transform	light	OK=translate(10px, 20px) rotate(30deg)	OK=none
+ser:A|B|C:color:style : color : color( from rgb( none N N ) display-p3 r g b )	color-0	c38	color	light	OK=color(display-p3 none 0.076568 0.113961)	OK=color(display-p3 0.0160579 0.0765619 0.113952)
+ser:A|B|C:color:style : color : color-mix( in a98-rgb , P color( rec2020 N N N ) , #H )	color-0	c48	color	light	OK=color(a98-rgb -0.029743 0.470027 0.33498 / 0.602941)	OK=color(a98-rgb -0.0178446 0.48374 0.37338 / 0.602941)
+ser:A|B|C:color:style : color : color-mix( in a98-rgb , P oklab( P N N ) , red P )	color-3	c40	color	light	OK=color(a98-rgb 0.725701 0.198828 0.300122)	OK=color(a98-rgb 0.725785 0.195684 0.297531)
+ser:A|B|C:color:style : color : color-mix( in a98-rgb , rgb( none N N ) , color( prophoto-rgb N N N ) calc( P * N ) )	color-5	c5	color	light	OK=color(a98-rgb -0.335585 0.224625 0.298823)	OK=color(a98-rgb -0.335735 0.224701 0.298951)
+ser:A|B|C:color:style : color : color-mix( in hsl , color( rec2020 N N N ) P , rgb( none N N ) P , #H P )	color-5	c31	color	light	OK=color(srgb -0.205065 0.312665 0.392277 / 0.882353)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in hwb , color( rec2020 N N N ) P , oklab( P N N ) calc( P * N ) )	color-1	c58	color	light	OK=color(srgb -0.214232 0.135073 0.763116 / 0.5)	OK=color(srgb -0.217159 0.102856 0.782459 / 0.5)
+ser:A|B|C:color:style : color : color-mix( in hwb increasing hue , #H , rgba( N , N , N , N ) P )	color-4	c0	color	light	OK=color(srgb 0.841733 0.016857 0.221863 / 0.492647)	OK=color(srgb 0.842204 0.0168067 0.221942 / 0.494118)
+ser:A|B|C:color:style : color : color-mix( in hwb increasing hue , P rgb( N N N / P ) , oklch( P N N ) P )	color-2	c19	color	light	OK=color(srgb 0.441023 -0.138646 0.39349 / 0.571429)	OK=color(srgb 0.441047 -0.138724 0.393505 / 0.571429)
+ser:A|B|C:color:style : color : color-mix( in lab , lab( P N N ) P , color( prophoto-rgb N N N ) P , oklch( P N N ) P , color( rec2020 N N N ) P )	color-3	c51	color	light	OK=lab(66.322695 -93.576196 16.81091)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in oklab , hsl( D P P / N ) calc( P * N ) , currentcolor P )	color-4	c8	color	light	OK=oklab(0.224638 -0.013592 -0.032691 / 0.883333)	OK=oklab(0.224634 -0.0135828 -0.0326861 / 0.883333)
+ser:A|B|C:color:style : color : color-mix( in oklch , oklch( none N none ) P , rgb( none N N ) P , rgb( N N N ) P , color( rec2020 N N N ) P )	color-6	c23	color	light	OK=oklch(0.268249 0.08301 223.76099)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in oklch , transparent P , #H P )	color-0	c11	color	light	OK=oklch(0.784436 0.030669 248.218217 / 0.333333)	OK=oklch(0.78443 0.0306406 248.268 / 0.333333)
+ser:A|B|C:color:style : color : color-mix( in prophoto-rgb , hsl( none P P ) P , rgb( none N N ) P , color( display-p3 N N N ) P )	color-5	c22	color	light	OK=color(prophoto-rgb 0.540379 0.175576 0.154555 / 0.65)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in prophoto-rgb , rgba( N , N , N , N ) P , color( srgb N N N ) P )	color-5	c56	color	light	OK=color(prophoto-rgb 0.520482 0.40965 0.338502 / 0.666667)	OK=color(prophoto-rgb 0.520967 0.409806 0.33814 / 0.667974)
+ser:A|B|C:color:style : color : color-mix( in rec2020 , light-dark( rgb( none N N ) , hsl( D P P / N ) ) , color( a98-rgb N N N ) )	color-0	c36	color	light	OK=color(rec2020 0.529851 0.326571 0.344773)	OK=color(rec2020 0.454185 0.241892 0.254583)
+ser:A|B|C:color:style : color : color-mix( in srgb-linear , oklab( P N N ) calc( P * N ) , color( display-p3 N N N ) , #H P )	color-3	c29	color	light	OK=color(srgb-linear 0.120675 0.063345 0.164853 / 0.558824)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in srgb-linear , transparent P , red P , color( rec2020 N N N ) P , color( srgb-linear N N N ) P )	color-0	c24	color	light	OK=color(srgb-linear 0.417011 0.289365 0.09325)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in xyz , P oklab( P N N ) , rgba( N , N , N , N ) calc( P * N ) )	color-2	c8	color	light	OK=color(xyz-d65 0.288404 0.21629 0.313642 / 0.916667)	OK=color(xyz-d65 0.288479 0.216344 0.313544 / 0.916993)
+ser:A|B|C:color:style : color : color-mix( in xyz-d65 , P color( a98-rgb N N N ) , rgb( none N N ) P )	color-1	c48	color	light	OK=color(xyz-d65 0.206967 0.041243 0.050504 / 0.6)	OK=color(xyz-d65 0.206847 0.0412225 0.050466 / 0.6)
+ser:A|B|C:color:style : color : color-mix( in xyz-d65 , lab( P N N ) P , color( rec2020 N N N ) P , rgba( N , N , N , N ) P , rgb( N N N / P ) )	color-4	c56	color	light	OK=color(xyz-d65 0.118889 0.383981 0.123856)	OK=rgb(11, 22, 33)
+ser:A|B|C:color:style : color : color-mix( in xyz-d65 , transparent calc( P * N ) , hwb( N P P ) P , lch( P N N ) calc( P * N ) )	color-5	c30	color	light	OK=color(xyz-d65 0.436037 0.500045 0.082833 / 0.857143)	OK=rgb(11, 22, 33)
 ser:A|B|C:d:attr : d = m N , N h N v N z	attribute-4	a21	d	light	OK="M 0,0 h 5 v 5 z"	OK=path("M 0 0 H 5 V 5 Z")
-ser:A|B|C:font-size:style : font-size : large	tree-5	e6	font-size	light	OK=19.2px	OK=16px
 ser:A|B|C:transform:attr : gradienttransform = rotate( N )	attribute-5	a16	transform	light	OK=rotate(30deg)	OK=none
 ser:A|B|C:transform:attr : gradienttransform = scale( N )	attribute-5	a15	transform	light	OK=scale(2)	OK=none
 ser:A|B|C:transform:attr : patterntransform = rotate( N )	attribute-5	a14	transform	light	OK=rotate(30deg)	OK=none
