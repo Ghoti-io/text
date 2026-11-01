@@ -676,6 +676,96 @@ ser:A=C|B:y:D	y	-1e+20in	OK=-100000000000000000000in	OK=-1e+20in
 ser:A=C|B:y:P	y	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A=C|B:zoom:N	zoom	1e+20	OK=100000000000000000000	OK=1e+20
 ser:A=C|B:zoom:P	zoom	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A|B:animation-duration:D , D , auto	animation-duration	123456789s, 360s, auto	OK=123456789s, 360s, auto	OK=1.23457e+08s, 360s, auto
+ser:A|B:animation-range-end:contain , P , exit D , P	animation-range-end	contain , 0%, exit -0.5dvh, -1e+20%	OK=contain, 0%, exit -0.5dvh, -100000000000000000000%	OK=contain, 0%, exit -0.5dvh, -1e+20%
+ser:A|B:animation-range-end:contain , P , exit P , entry-crossing	animation-range-end	contain , /*x*/-0%, exit 123456789%, entry-crossing 	OK=contain, 0%, exit 123456789%, entry-crossing	OK=contain, 0%, exit 1.23457e+08%, entry-crossing
+ser:A|B:animation-range-end:entry P , contain , entry	animation-range-end	entry -1e+20%, contain , entry 	OK=entry -100000000000000000000%, contain, entry	OK=entry -1e+20%, contain, entry
+ser:A|B:animation-range-end:exit-crossing D	animation-range-end	exit-crossing -1e+20ex	OK=exit-crossing -100000000000000000000ex	OK=exit-crossing -1e+20ex
+ser:A|B:animation-range-end:normal , contain D	animation-range-end	normal, contain 1e+20vmax	OK=normal, contain 100000000000000000000vmax	OK=normal, contain 1e+20vmax
+ser:A|B:animation-range-start:contain , entry D , D	animation-range-start	contain , entry -1dvh, -1e+20vmax	OK=contain, entry -1dvh, -100000000000000000000vmax	OK=contain, entry -1dvh, -1e+20vmax
+ser:A|B:animation-range-start:cover D	animation-range-start	cover -1e+20pc	OK=cover -100000000000000000000pc	OK=cover -1e+20pc
+ser:A|B:animation-range-start:normal , contain , D	animation-range-start	normal, contain , -1e+20cap	OK=normal, contain, -100000000000000000000cap	OK=normal, contain, -1e+20cap
+ser:A|B:animation-range:D , normal	animation-range	-1e+20em, normal 	OK=-100000000000000000000em, normal	OK=-1e+20em, normal
+ser:A|B:border-shape:xywh( D D D D )	border-shape	xywh(-1e+20in 360px 1.5rex 65535in ) 	OK=xywh(-100000000000000000000in 360px 1.5rex 65535in)	OK=xywh(-1e+20in 360px 1.5rex 65535in)
+ser:A|B:border-shape:xywh( D D P D )	border-shape	xywh(-100pt -1e+20lh 1% 0vmin ) 	OK=xywh(-100pt -100000000000000000000lh 1% 0vmin)	OK=xywh(-100pt -1e+20lh 1% 0vmin)
+ser:A|B:column-height:D	column-height	123456789cm	OK=123456789cm	OK=1.23457e+08cm
+ser:A|B:column-rule-inset-cap-end:P	column-rule-inset-cap-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset-cap-start:P	column-rule-inset-cap-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset-end:P	column-rule-inset-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset-junction-end:P	column-rule-inset-junction-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset-junction-start:P	column-rule-inset-junction-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset-junction:overlap-join P	column-rule-inset-junction	overlap-join -1e+20%	OK=overlap-join -100000000000000000000%	OK=overlap-join -1e+20%
+ser:A|B:column-rule-inset-start:P	column-rule-inset-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-width:repeat( auto , D , medium , medium )	column-rule-width	repeat(auto, 123456789px, medium, medium) 	OK=repeat(auto, 123456789px, medium, medium)	OK=repeat(auto, 1.23457e+08px, medium, medium)
+ser:A|B:column-rule:repeat( auto , D , canvas ) , repeat( N , thin inset ) , repeat( N , hidden , canvas )	column-rule	repeat(auto, 123456789ex, Canvas) , repeat(1, thin inset), repeat(1, hidden, Canvas)	OK=repeat(auto, 123456789ex, canvas), repeat(1, thin inset), repeat(1, hidden, canvas)	OK=repeat(auto, 1.23457e+08ex, canvas), repeat(1, thin inset), repeat(1, hidden, canvas)
+ser:A|B:columns:D / D	columns	0.001em / 123456789px	OK=0.001em / 123456789px	OK=0.001em / 1.23457e+08px
+ser:A|B:corner-block-end-shape:superellipse( N ) square	corner-block-end-shape	superellipse(-1e+20) square	OK=superellipse(-100000000000000000000) square	OK=superellipse(-1e+20) square
+ser:A|B:corner-block-end-shape:superellipse( N ) squircle	corner-block-end-shape	supEreLLIpsE(123456789) /* a b */sQuiRCLE	OK=superellipse(123456789) squircle	OK=superellipse(1.23457e+08) squircle
+ser:A|B:corner-block-start-shape:superellipse( N )	corner-block-start-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-bottom-left-shape:superellipse( N )	corner-bottom-left-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-bottom-right-shape:superellipse( N )	corner-bottom-right-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-bottom-shape:squircle superellipse( N )	corner-bottom-shape	squircle superellipse(-1e+20)	OK=squircle superellipse(-100000000000000000000)	OK=squircle superellipse(-1e+20)
+ser:A|B:corner-bottom-shape:superellipse( N ) scoop	corner-bottom-shape	superellipse(-1e+20) scoop	OK=superellipse(-100000000000000000000) scoop	OK=superellipse(-1e+20) scoop
+ser:A|B:corner-bottom-shape:superellipse( N ) superellipse( -infinity )	corner-bottom-shape	superellipse(-1e+20) superellipse(-infinity)	OK=superellipse(-100000000000000000000) superellipse(-infinity)	OK=superellipse(-1e+20) superellipse(-infinity)
+ser:A|B:corner-end-end-shape:superellipse( N )	corner-end-end-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-end-start-shape:superellipse( N )	corner-end-start-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-inline-end-shape:superellipse( N )	corner-inline-end-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-inline-start-shape:superellipse( N )	corner-inline-start-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-left-shape:squircle superellipse( N )	corner-left-shape	squircle superellipse(-1e+20)	OK=squircle superellipse(-100000000000000000000)	OK=squircle superellipse(-1e+20)
+ser:A|B:corner-right-shape:bevel superellipse( N )	corner-right-shape	 bevel\nsuperellipse(1e+20 )  	OK=bevel superellipse(100000000000000000000)	OK=bevel superellipse(1e+20)
+ser:A|B:corner-right-shape:round superellipse( N )	corner-right-shape	round superellipse(-1e+20)	OK=round superellipse(-100000000000000000000)	OK=round superellipse(-1e+20)
+ser:A|B:corner-right-shape:superellipse( N ) squircle	corner-right-shape	superellipse(-1e+20) squircle	OK=superellipse(-100000000000000000000) squircle	OK=superellipse(-1e+20) squircle
+ser:A|B:corner-shape:notch superellipse( N ) squircle	corner-shape	notch superellipse(-1e+20) squircle	OK=notch superellipse(-100000000000000000000) squircle	OK=notch superellipse(-1e+20) squircle
+ser:A|B:corner-shape:square squircle superellipse( N )	corner-shape	square squircle superellipse(-1e+20)	OK=square squircle superellipse(-100000000000000000000)	OK=square squircle superellipse(-1e+20)
+ser:A|B:corner-shape:superellipse( N ) superellipse( N ) squircle round	corner-shape	superellipse(-1e+20) superellipse(1) squircle round	OK=superellipse(-100000000000000000000) superellipse(1) squircle round	OK=superellipse(-1e+20) superellipse(1) squircle round
+ser:A|B:corner-start-end-shape:superellipse( N )	corner-start-end-shape	\tsuperellipse(1e-07 )\t 	OK=superellipse(0)	OK=superellipse(1e-07)
+ser:A|B:corner-start-start-shape:superellipse( N )	corner-start-start-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-top-left-shape:superellipse( N )	corner-top-left-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-top-right-shape:superellipse( N )	corner-top-right-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:corner-top-shape:superellipse( N )	corner-top-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:height:anchor-size( P )	height	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
+ser:A|B:initial-letter:N drop	initial-letter	123456789 drop	OK=123456789 drop	OK=1.23457e+08 drop
+ser:A|B:interest-delay-end:D	interest-delay-end	123456789ms	OK=123456789ms	OK=1.23457e+08ms
+ser:A|B:interest-delay-start:D	interest-delay-start	123456789ms	OK=123456789ms	OK=1.23457e+08ms
+ser:A|B:max-block-size:anchor-size( --a-b , D )	max-block-size	anchor-size(--a-b , -1e+20ic)	OK=anchor-size(--a-b, -100000000000000000000ic)	OK=anchor-size(--a-b, -1e+20ic)
+ser:A|B:max-block-size:anchor-size( P )	max-block-size	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
+ser:A|B:max-height:anchor-size( D )	max-height	anchor-size(-1e+20in)	OK=anchor-size(-100000000000000000000in)	OK=anchor-size(-1e+20in)
+ser:A|B:min-inline-size:anchor-size( P )	min-inline-size	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
+ser:A|B:min-width:anchor-size( P )	min-width	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
+ser:A|B:object-view-box:xywh( D D D D round D )	object-view-box	xywh(1e+20lh 10ch 360vmin 0vw round 100vw )	OK=xywh(100000000000000000000lh 10ch 360vmin 0vw round 100vw)	OK=xywh(1e+20lh 10ch 360vmin 0vw round 100vw)
+ser:A|B:overflow-clip-margin:D	overflow-clip-margin	\t -1e+20lvi\n	OK=-100000000000000000000lvi	OK=-1e+20lvi
+ser:A|B:row-rule-color:hwb( N P P ) , repeat( N , color( srgb N N N / P ) , transparent ) , color-mix( in srgb , red , blue ) , light-dark( red , blue )	row-rule-color	hwb(0 10% 20%), repeat(2147483648, color(srgb 1 0 0 / 50%), transparent), color-mix(in srgb, red, blue), light-dark(red, blue)	OK=rgb(204, 26, 26), repeat(2147483648, color(srgb 1 0 0 / 0.5), transparent), color-mix(in srgb, red, blue), light-dark(red, blue)	OK=rgb(204, 26, 26), repeat(2147483647, color(srgb 1 0 0 / 0.5), transparent), color-mix(in srgb, red, blue), light-dark(red, blue)
+ser:A|B:row-rule-inset-cap-start:P	row-rule-inset-cap-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:row-rule-inset-cap:P	row-rule-inset-cap	-1e+20% 	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:row-rule-inset-end:P	row-rule-inset-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:row-rule-inset-junction-end:P	row-rule-inset-junction-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:row-rule-inset-junction-start:P	row-rule-inset-junction-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:row-rule-inset-junction:P	row-rule-inset-junction	2147483647% 	OK=2147483647%	OK=2.14748e+09%
+ser:A|B:rule-inset-cap:P P	rule-inset-cap	-1e+20% 0.001%	OK=-100000000000000000000% 0.001%	OK=-1e+20% 0.001%
+ser:A|B:rule-inset-cap:P overlap-join	rule-inset-cap	2147483647% overlap-join	OK=2147483647% overlap-join	OK=2.14748e+09% overlap-join
+ser:A|B:rule-inset-end:P	rule-inset-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:rule-inset-junction:P overlap-join	rule-inset-junction	-1e+20% overlap-join	OK=-100000000000000000000% overlap-join	OK=-1e+20% overlap-join
+ser:A|B:rule-inset-start:P	rule-inset-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:rule-style:ridge , repeat( N , hidden , ridge , dotted ) , repeat( N , none , dashed ) , repeat( N , double , double )	rule-style	ridge, repeat(1, hidden, ridge, dotted), repeat(1, none, dashed), repeat(2147483648, double, double)	OK=ridge, repeat(1, hidden, ridge, dotted), repeat(1, none, dashed), repeat(2147483648, double, double)	OK=ridge, repeat(1, hidden, ridge, dotted), repeat(1, none, dashed), repeat(2147483647, double, double)
+ser:A|B:text-fit:grow consistent P	text-fit	grow consistent 1e+20%	OK=grow consistent 100000000000000000000%	OK=grow consistent 1e+20%
+ser:A|B:text-fit:none P	text-fit	none  123456789%	OK=none 123456789%	OK=none 1.23457e+08%
+ser:A|B:text-fit:shrink P	text-fit	shrink  123456789%	OK=shrink 123456789%	OK=shrink 1.23457e+08%
+ser:A|B:text-size-adjust:P	text-size-adjust	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|B:timeline-trigger-activation-range-start:D	timeline-trigger-activation-range-start	-1e+20mm	OK=-100000000000000000000mm	OK=-1e+20mm
+ser:A|B:timeline-trigger-activation-range-start:P , P	timeline-trigger-activation-range-start	0%, -1e+20%	OK=0%, -100000000000000000000%	OK=0%, -1e+20%
+ser:A|B:timeline-trigger-activation-range-start:normal , normal , contain P	timeline-trigger-activation-range-start	normal, normal, contain 1e+20%	OK=normal, normal, contain 100000000000000000000%	OK=normal, normal, contain 1e+20%
+ser:A|B:timeline-trigger-activation-range:P , P , exit-crossing D , entry-crossing D , D , D , exit-crossing	timeline-trigger-activation-range	10%, 0%, exit-crossing 2147483648lvi , entry-crossing 1000vh, 0lh, 65535pc, exit-crossing  	OK=10%, 0%, exit-crossing 2147483648lvi, entry-crossing 1000vh, 0lh, 65535pc, exit-crossing	OK=10%, 0%, exit-crossing 2.14748e+09lvi, entry-crossing 1000vh, 0lh, 65535pc, exit-crossing
+ser:A|B:timeline-trigger-activation-range:contain , D , exit-crossing P , P , D , normal normal , P , D	timeline-trigger-activation-range	contain , 0rlh, exit-crossing -1% , 1000%, 10lh, normal normal, 0.5%, 2147483648vh	OK=contain, 0rlh, exit-crossing -1%, 1000%, 10lh, normal, 0.5%, 2147483648vh	OK=contain, 0rlh, exit-crossing -1%, 1000%, 10lh, normal, 0.5%, 2.14748e+09vh
+ser:A|B:timeline-trigger-activation-range:normal , D cover , contain , normal , normal , normal , normal , P exit-crossing P , exit-crossing P , normal , D , contain , P normal , normal , normal	timeline-trigger-activation-range	normal, -1cm cover , contain , normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2147483647rex , contain , 1% normal, normal, normal	OK=normal, -1cm cover, contain, normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2147483647rex, contain, 1%, normal, normal	OK=normal, -1cm cover, contain, normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2.14748e+09rex, contain, 1%, normal, normal
+ser:A|B:timeline-trigger-activation-range:normal , normal contain P , exit D	timeline-trigger-activation-range	normal, normal contain -1e+20%, exit -0.5cm	OK=normal, normal contain -100000000000000000000%, exit -0.5cm	OK=normal, normal contain -1e+20%, exit -0.5cm
+ser:A|B:timeline-trigger-active-range-end:P , normal , entry-crossing	timeline-trigger-active-range-end	2147483648%, normal, entry-crossing 	OK=2147483648%, normal, entry-crossing	OK=2.14748e+09%, normal, entry-crossing
+ser:A|B:timeline-trigger-active-range-start:auto , P , cover D , entry D	timeline-trigger-active-range-start	auto, 0%, cover 100vmin, entry 2147483648in	OK=auto, 0%, cover 100vmin, entry 2147483648in	OK=auto, 0%, cover 100vmin, entry 2.14748e+09in
+ser:A|B:timeline-trigger-active-range-start:contain D , P , exit	timeline-trigger-active-range-start	contain 1e+20rem, 0.001%, exit 	OK=contain 100000000000000000000rem, 0.001%, exit	OK=contain 1e+20rem, 0.001%, exit
+ser:A|B:timeline-trigger-active-range-start:entry-crossing D , normal	timeline-trigger-active-range-start	entry-crossing -1e+20rlh, normal	OK=entry-crossing -100000000000000000000rlh, normal	OK=entry-crossing -1e+20rlh, normal
+ser:A|B:timeline-trigger-active-range-start:exit-crossing D , auto , P , normal	timeline-trigger-active-range-start	exit-crossing 0.1pc, auto, -1e+20%, normal	OK=exit-crossing 0.1pc, auto, -100000000000000000000%, normal	OK=exit-crossing 0.1pc, auto, -1e+20%, normal
+ser:A|B:timeline-trigger-active-range-start:normal , entry , P	timeline-trigger-active-range-start	normal, entry , 2147483647%	OK=normal, entry, 2147483647%	OK=normal, entry, 2.14748e+09%
+ser:A|B:timeline-trigger-active-range-start:normal , normal , D	timeline-trigger-active-range-start	normal, normal, -1e+20in	OK=normal, normal, -100000000000000000000in	OK=normal, normal, -1e+20in
+ser:A|B:timeline-trigger-active-range:entry-crossing P , normal , cover , contain , normal auto	timeline-trigger-active-range	entry-crossing 2147483648%, normal , cover , contain , normal auto	OK=entry-crossing 2147483648%, normal, cover, contain, normal	OK=entry-crossing 2.14748e+09%, normal, cover, contain, normal
 ser:A|B=C:-webkit-text-stroke:D oklch( P N N )	-webkit-text-stroke	0px oklch(50% 0.1 120)	OK=oklch(0.5 0.1 120)	OK=0px oklch(0.5 0.1 120)
 ser:A|B=C:background-image:conic-gradient( at bottom , red , blue )	background-image	conic-gradient(at /* c */bottom, red, blue)	OK=conic-gradient(at bottom, red, blue)	OK=conic-gradient(at center bottom, red, blue)
 ser:A|B=C:background-image:conic-gradient( at left , red , blue )	background-image	conic-gradient(at left, red, blue)	OK=conic-gradient(at left, red, blue)	OK=conic-gradient(at left center, red, blue)
