@@ -489,7 +489,7 @@ def main(argv):
 
     if "populate" in stages:
         k, t = (int(x) for x in args.chunk.split("/"))
-        fixed, generated = css_prop_gen.population(args.seed, args.count, (k, t), args.ours, args.wpt, args.witnesses, args.scope)
+        fixed, generated = css_prop_gen.population(args.seed, args.count, (k, t), args.ours, args.wpt, WITNESSES, args.scope)
         items = fixed + generated
         write_population(pop_path, items)
         print("css property differential: seed %d, %d fixed and %d generated items" % (args.seed, len(fixed), len(generated)), flush=True)
