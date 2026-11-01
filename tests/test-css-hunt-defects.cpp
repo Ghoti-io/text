@@ -56,13 +56,14 @@ std::string B(const std::string & property, const std::string & value) {
     id = gtext_css_registry_find_property(R(), property.data(), property.size());
     char * got = nullptr;
     size_t length = 0;
-    if (gtext_css_block_get_property_value(block, gtext_css_registry_resolve_alias(R(), id), &got, &length, nullptr) == GTEXT_CSS_OK && length > 0) {
+    const bool have = gtext_css_block_get_property_value(block, gtext_css_registry_resolve_alias(R(), id), &got, &length, nullptr) == GTEXT_CSS_OK && length > 0;
+    if (have) {
       result = "valid:" + std::string(got, length);
-      gtext_css_serialize_buffer_free(nullptr, got);
     }
     else {
       result = P(property, value);
     }
+    gtext_css_serialize_buffer_free(nullptr, got); /* an empty text is a buffer too */
   }
   gtext_css_block_free(block);
   return result;
