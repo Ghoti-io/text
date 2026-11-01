@@ -1,6 +1,9 @@
 # tools/oracle/css_prop_diff.py: one witness for every key of css_prop_divergences.txt: the smallest item of the key, what this library
 # says of it (OK=<serialization>, NO) and what an engine says that differs from that. Columns: key, property, value, ours, reference.
 # The run asks every witness again and fails when either answer is not the one written here.
+# tools/oracle/css_prop_diff.py: one witness for every key of css_prop_divergences.txt: the smallest item of the key, what this library
+# says of it (OK=<serialization>, NO) and what an engine says that differs from that. Columns: key, property, value, ours, reference.
+# The run asks every witness again and fails when either answer is not the one written here.
 acc:001:font-synthesis:oblique-only	font-synthesis	oblique-only	NO	OK=oblique-only
 acc:001:hyphenate-limit-chars:N N	hyphenate-limit-chars	-1 360	NO	OK=-1 360
 acc:001:hyphenate-limit-chars:N auto	hyphenate-limit-chars	-1 auto	NO	OK=-1
@@ -22,12 +25,18 @@ acc:01-:size:a4	size	a4	NO	OK=a4
 acc:01-:size:jis-b5	size	jis-b5	NO	OK=jis-b5
 acc:01-:size:landscape	size	landscape	NO	OK=landscape
 acc:01-:size:letter	size	letter	NO	OK=letter
+acc:01-:timeline-trigger:--foo , , --foo , --a-b auto , auto , none view( ) , none D , P , normal contain D , normal , P , D , normal , cover , normal , entry-crossing D normal , normal , D , P / P , cover P , --a-b auto , auto	timeline-trigger	--foo, , --foo, --a-b auto, auto , none view(), none 0.001vmax, 123456789%, normal contain 255vmax, normal, 2147483647% , 2147483648vmin, normal , cover , normal, entry-crossing -1ic normal, normal, 2147483647cap, -100% / 10%, /* c */ cover 0% , --a-b auto, auto 	NO	OK=--foo, none, --foo, --a-b, none, view(), 0.001vmax, 1.23457e+08%, contain 255vmax, none, 2.14748e+09%, 2.14748e+09vmin, none, cover, none, entry-crossing -1ic, none, 2.14748e+09cap, -100% / 10%, cover, --a-b, none
+acc:01-:timeline-trigger:none auto , none P , normal , D , cover D , D , exit D , D , P P , D , entry D , contain P / D entry , exit ,	timeline-trigger	none auto, none 2%, normal, 2147483648pt , cover 1e-07pc, 0.5cm , exit 2147483647dvh, -1ic  , 1% 1.5%, 1000em, entry  -0.5em, contain 2% / 1pt entry , exit,	NO	OK=none, 2%, none, 2.14748e+09pt, cover 1e-07pc, 0.5cm, exit 2.14748e+09dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit, none
 acc:010:-webkit-perspective:calc( N )	-webkit-perspective	calc(1000)	NO	OK=1000px
 acc:010:alignment-baseline:auto	alignment-baseline	auto	NO	OK=auto
+acc:010:animation:auto , auto , D , D auto backwards normal , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, 10s, -0.001ms auto backwards normal, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	NO	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, auto ease -0.001ms 1 normal backwards running none, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
+acc:010:animation:auto , auto , D , auto --a-b forwards step-end , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, -0.001ms, auto --a-b forwards step-end, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	NO	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease -0.001ms 1 normal none running none, auto step-end 0s 1 normal forwards running --a-b, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
 acc:010:baseline-shift:N	baseline-shift	5	NO	OK=5
 acc:010:column-rule-color:repeat( auto , rgb( N N N ) , rgb( N N N ) , canvas ) ,	column-rule-color	repeat(auto, rgb(1 2 3), rgb(1 2 3), Canvas) , 	NO	OK=repeat(auto, rgb(1, 2, 3), rgb(1, 2, 3), canvas)
 acc:010:column-rule-width:repeat( auto , medium , D , thick ) ,	column-rule-width	repeat(auto, medium, 0vw, thick) , 	NO	OK=repeat(auto, medium, 0vw, thick)
 acc:010:column-rule:repeat( auto , D , D #H ) ,	column-rule	repeat(auto, 1rem, 0.001cm #fff) , 	NO	OK=repeat(auto, 1rem, 0.001cm rgb(255, 255, 255))
+acc:010:content:counter( foo , none )	content	CoUNTER(FOo, NOne)	NO	OK=counter(FOo, none)
+acc:010:content:counters( foo , S , none )	content	counters(foo, "", none)	NO	OK=counter(foo, none)
 acc:010:cursor:light-dark( image-set( S D ) , url( S ) ) N N , grab	cursor	light-dark(image-set("https://example.com/" 1x), url("https://example.com/")) 5 6, grab	NO	OK=light-dark(image-set(url("https://example.com/") 1x), url("https://example.com/")) 5 6, grab
 acc:010:cursor:light-dark( url( S ) , url( S ) ) , pointer	cursor	light-dark(url("https://example.com/light"), url("https://example.com/dark")), pointer	NO	OK=light-dark(url("https://example.com/light"), url("https://example.com/dark")), pointer
 acc:010:cursor:light-dark( url( S ) , url( S ) ) N N , grab	cursor	light-dark(url("https://example.com/light"), url("https://example.com/dark")) 5 6, grab	NO	OK=light-dark(url("https://example.com/light"), url("https://example.com/dark")) 5 6, grab
@@ -40,6 +49,7 @@ acc:010:height:random( element-scoped ua-height , D , D )	height	random(element-
 acc:010:height:random( element-scoped ua-height-1 , D , D )	height	random(element-scoped ua-height-1, 0px, 100px)	NO	OK=random(element-scoped ua-height-1, 0px, 100px)
 acc:010:resize:auto	resize	auto	NO	OK=auto
 acc:010:rotate:random( element-scoped ua-rotate-1 , D , D )	rotate	random(element-scoped ua-rotate-1, 25deg, 360deg)	NO	OK=random(element-scoped ua-rotate-1, 25deg, 360deg)
+acc:010:rx:N	rx	2	NO	OK=2
 acc:010:transition-delay:random( element-scoped ua-transition-delay-1 , D , D )	transition-delay	random(element-scoped ua-transition-delay-1, 0.025s, 50s)	NO	OK=random(element-scoped ua-transition-delay-1, 0.025s, 50s)
 acc:010:width:random( element-scoped ua- \ { , D , D , D )	width	random(element-scoped ua-\\{, 0px, 100px, 3px)	NO	OK=random(element-scoped ua-\{, 0px, 100px, 3px)
 acc:010:width:random( element-scoped ua-height-1 , D , P )	width	random(element-scoped ua-height-1, 10px, 20%)	NO	OK=random(element-scoped ua-height-1, 10px, 20%)
@@ -49,6 +59,7 @@ acc:010:width:random( ua-width , D , P )	width	random(ua-width, 10px, 20%)	NO	OK
 acc:010:width:random( ua-width-1 , D , D )	width	random(ua-width-1, 0px, 100px)	NO	OK=random(ua-width-1, 0px, 100px)
 acc:010:width:random( ua-width-1 , D , P )	width	random(ua-width-1, 10px, 20%)	NO	OK=random(ua-width-1, 10px, 20%)
 acc:010:width:random( ua-x , D , P )	width	random(ua-x, 10px, 20%)	NO	OK=random(ua-x, 10px, 20%)
+acc:010:y:N	y	6	NO	OK=6
 acc:011:-webkit-perspective:N	-webkit-perspective	1000	NO	OK=1000px
 acc:011:-webkit-transform:perspective( N )	-webkit-transform	\t perspective(25)	NO	OK=perspective(25px)
 acc:011:animation:auto , auto , D , D none none , infinite D , D , D , D none D	animation	auto, auto, 10s, 0ms none none, infinite -1e+20ms, 255s, 0.001ms, 2147483647s none 2147483648ms	NO	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, 0ms ease 0s 1 normal none running none, auto ease -1e+20ms infinite normal none running none, 255s ease 0s 1 normal none running none, 0.001ms ease 0s 1 normal none running none, 2.14748e+09s ease 2.14748e+09ms 1 normal none running none
@@ -74,6 +85,9 @@ acc:10-:animation-timeline:view( x D D , auto , D , D ) , none , auto	animation-
 acc:10-:animation-timeline:view( x D D , auto , D D , P ) , scroll( ) , scroll( block )	animation-timeline	view(x 65535svw 0rem, auto, 2147483647rem -0.5rex, 255%), scroll(), scroll(block)	OK=view(x 65535svw 0rem, auto, 2147483647rem -0.5rex, 255%), scroll(), scroll(block)	NO
 acc:10-:animation-timeline:view( x D P , auto , D , D ) , none , auto	animation-timeline	view(x 0svw 100%, auto, 10rem, -0.5rex), none, auto	OK=view(x 0svw 100%, auto, 10rem, -0.5rex), none, auto	NO
 acc:10-:animation-timeline:view( x D P , auto , P , auto auto ) , --a-b , none	animation-timeline	 view(x\n65535svw  100%,\nauto,  0%,  auto auto),  --a-b,\tnone	OK=view(x 65535svw 100%, auto, 0%, auto auto), --a-b, none	NO
+acc:10-:animation-trigger:--a-b play-forwards --foo play-once --a-b replay	animation-trigger	--A-B Play-Forwards --Foo Play-Once --A-B Replay	OK=--A-B play-forwards --Foo play-once --A-B replay	NO
+acc:10-:animation-trigger:--foo reset play play-forwards play-once --foo pause none --a-b pause play-forwards play-forwards none --a-b reset pause , --foo pause pause none --foo reset none none --a-b play-forwards play-forwards --foo reset	animation-trigger	--foo reset play play-forwards play-once --foo pause none --a-b pause play-forwards play-forwards none --a-b reset pause, --foo pause pause none --foo reset none none --a-b play-forwards play-forwards --foo reset	OK=--foo reset play play-forwards play-once --foo pause none --a-b pause play-forwards play-forwards none --a-b reset pause, --foo pause pause none --foo reset none none --a-b play-forwards play-forwards --foo reset	NO
+acc:10-:animation-trigger:none , --foo play-forwards none play-backwards , none	animation-trigger	none, --foo play-forwards none play-backwards, none	OK=none, --foo play-forwards none play-backwards, none	NO
 acc:10-:border-shape:circle( at inline-end center )	border-shape	circle( at inline-end center) 	OK=circle(at center inline-end)	NO
 acc:10-:border-shape:circle( closest-corner ) ellipse( farthest-corner closest-corner )	border-shape	circle(closest-corner) ellipse(farthest-corner closest-corner)	OK=circle(closest-corner) ellipse(farthest-corner closest-corner)	NO
 acc:10-:border-shape:circle( closest-corner at D D )	border-shape	circle(closest-corner at 20px 50px)	OK=circle(closest-corner at 20px 50px)	NO
@@ -124,6 +138,15 @@ acc:10-:text-spacing-trim:auto	text-spacing-trim	auto	OK=auto	NO
 acc:10-:text-spacing-trim:trim-all	text-spacing-trim	trim-all	OK=trim-all	NO
 acc:10-:text-spacing-trim:trim-both	text-spacing-trim	trim-both	OK=trim-both	NO
 acc:10-:timeline-scope:all	timeline-scope	all	OK=all	NO
+acc:10-:timeline-trigger-source:auto , --a-b view( ) , none , none	timeline-trigger-source	auto, --a-b view(), none, none	OK=auto, --a-b view(), none, none	NO
+acc:10-:timeline-trigger-source:auto , --foo scroll( ) view( block D , D ) --foo	timeline-trigger-source	auto, --foo scroll() view(block -1e+20em, 2147483648mm) --foo	OK=auto, --foo scroll() view(block -100000000000000000000em, 2147483648mm) --foo	NO
+acc:10-:timeline-trigger-source:auto , scroll( ) view( ) , auto	timeline-trigger-source	auto, scroll() view(), auto	OK=auto, scroll() view(), auto	NO
+acc:10-:timeline-trigger-source:none , scroll( ) scroll( ) , view( inline P ) , auto	timeline-trigger-source	none, scroll() scroll(), view(inline -1%), auto	OK=none, scroll() scroll(), view(inline -1%), auto	NO
+acc:10-:timeline-trigger-source:view( D D , D , P ) view( ) --foo scroll( ) , view( ) scroll( ) scroll( self ) , --a-b scroll( inline ) , none	timeline-trigger-source	view(-1vmax -100Q, 360dvh, 1000%) view() --foo scroll(), view() scroll() scroll(self), --a-b scroll(inline), none	OK=view(-1vmax -100q, 360dvh, 1000%) view() --foo scroll(), view() scroll() scroll(self), --a-b scroll(inline), none	NO
+acc:10-:timeline-trigger:--a-b , --a-b --foo scroll( ) view( y ) , --foo --a-b --foo , scroll( nearest inline ) scroll( ) scroll( ) , none exit-crossing , exit-crossing D , normal , normal , D , exit-crossing D , normal , P , normal , D , contain , normal , normal , D , D , exit-crossing D entry D , cover , P , entry-crossing , normal P , exit D / entry-crossing D , D , D normal , D , D , auto , normal , D , D entry-crossing D , entry , entry / normal , P , --foo , --foo , --foo , --foo auto	timeline-trigger	--a-b, --a-b --foo scroll() view(y), --foo --a-b --foo, scroll(nearest inline) scroll() scroll(), none exit-crossing , exit-crossing 1e+20em, normal, normal , 0.001pt, exit-crossing 0mm, normal, 0% , normal , 255pc, contain , normal, normal  , -100vmin, 2147483647in , exit-crossing 0.5ex entry 2147483647rlh, cover  , -100%, entry-crossing , normal 360%, exit -0.5em / entry-crossing 1pc, 10cm , 100vw normal, 2147483648rlh, 0.5Q, auto, normal , 255ch, -1vmax entry-crossing 10em, entry , entry  / normal, 0.5% , --foo, --foo, --foo, --foo auto 	OK=--a-b, --a-b --foo scroll() view(y), --foo --a-b --foo, scroll(nearest inline) scroll() scroll(), none exit-crossing, exit-crossing 100000000000000000000em, normal, normal, 0.001pt, exit-crossing 0mm, normal, 0%, normal, 255pc, contain, normal, normal, -100vmin, 2147483647in, exit-crossing 0.5ex entry 2147483647rlh, cover, -100%, entry-crossing, normal 360%, exit -0.5em / entry-crossing 1pc, 10cm, 100vw normal, 2147483648rlh, 0.5q, auto, normal, 255ch, -1vmax entry-crossing 10em, entry, entry / normal, 0.5%, --foo, --foo, --foo, --foo auto	NO
+acc:10-:timeline-trigger:--a-b --foo view( ) view( auto P , D ) exit-crossing , normal , D contain , normal , P , --foo , --a-b , --a-b , --a-b auto , none , auto , none , --foo , --a-b --a-b --a-b --foo , view( ) scroll( ) --a-b scroll( y ) , none scroll( ) --foo , --foo scroll( root y ) scroll( ) scroll( root ) P , normal , normal D , normal , entry-crossing D , P normal , exit , contain , entry-crossing , normal , D / P , entry D D , D	timeline-trigger	--a-b --foo view() view(auto 360%, 0.001cm) exit-crossing , normal, -1vw contain , normal, 10%  , --foo, --a-b, --a-b, --a-b auto, none, auto, none , --foo, --a-b --a-b --a-b --foo, view() scroll() --a-b scroll(y) , none scroll() --foo, --foo scroll(root y) scroll() scroll(root) 2147483647%, normal, normal -0.5ex, normal, entry-crossing -100cm, 65535% normal, exit , contain , entry-crossing , normal , 0rem  / -0.5%, entry 0.1cap 1.5vw, 360px	OK=--a-b --foo view() view(auto 360%, 0.001cm) exit-crossing, normal, -1vw contain, normal, 10%, --foo, --a-b, --a-b, --a-b auto, none, auto, none, --foo, --a-b --a-b --a-b --foo, view() scroll() --a-b scroll(y), none scroll() --foo, --foo scroll(root y) scroll() scroll(root) 2147483647%, normal, normal -0.5ex, normal, entry-crossing -100cm, 65535% normal, exit, contain, entry-crossing, normal, 0rem / -0.5%, entry 0.1cap 1.5vw, 360px	NO
+acc:10-:timeline-trigger:--foo , --foo , --a-b auto , auto , none view( ) , none D , P , exit-crossing D normal , normal , P , D entry D , P , P , normal , normal , D normal , entry-crossing D , D , exit , normal , normal , P exit P / normal , normal , auto , auto , normal auto , auto , P , normal , contain auto , cover D , --a-b , --a-b , --a-b auto , scroll( ) , view( x auto auto , D D , auto ) --a-b view( ) , auto D , P , entry-crossing D , D , exit , normal , normal D , D / D , auto , entry-crossing normal , normal , normal , D , exit-crossing , D , normal auto , normal , cover P , entry-crossing , normal , cover , auto , cover P , auto , D , cover , D	timeline-trigger	--foo, --foo, --a-b auto, auto , none view(), none 0.001vmax, 1.5%, exit-crossing 0lh normal, normal, 2147483647%, 2147483647em entry 0lvi, 2147483647%, 0%, normal, normal, 2147483647cap normal, entry-crossing 0.001pc, -0.5svw, exit , normal, normal, -0.5% exit 2% / normal, normal, auto, auto , normal auto, auto, 10%, normal, contain  auto, cover 0Q, --a-b, --a-b, --a-b auto, scroll(), view(x auto auto, 0lvi 1.5em, auto) --a-b view(), auto 1lvi , 1000%, entry-crossing 100lvi, 360px , exit , normal, normal -0.5lvi, -1ch / 2147483647lvi, auto, entry-crossing  normal, normal, normal, 65535svw, exit-crossing , -100rem, normal auto, normal, cover 1000%, entry-crossing , normal, cover , auto , cover 1%, auto , 2147483648rlh, cover , 0ic  	OK=--foo, --foo, --a-b auto, auto, none view(), none 0.001vmax, 1.5%, exit-crossing 0lh normal, normal, 2147483647%, 2147483647em entry 0lvi, 2147483647%, 0%, normal, normal, 2147483647cap normal, entry-crossing 0.001pc, -0.5svw, exit, normal, normal, -0.5% exit 2% / normal, normal, auto, auto, normal auto, auto, 10%, normal, contain auto, cover 0q, --a-b, --a-b, --a-b auto, scroll(), view(x auto auto, 0lvi 1.5em, auto) --a-b view(), auto 1lvi, 1000%, entry-crossing 100lvi, 360px, exit, normal, normal -0.5lvi, -1ch / 2147483647lvi, auto, entry-crossing normal, normal, normal, 65535svw, exit-crossing, -100rem, normal auto, normal, cover 1000%, entry-crossing, normal, cover, auto, cover 1%, auto, 2147483648rlh, cover, 0ic	NO
+acc:10-:timeline-trigger:--foo auto , none , scroll( ) , --a-b , --a-b , --a-b --foo , none , none cover , contain , exit-crossing P , P , D , D , D , P , D normal , normal , exit , D , normal , P , normal D , normal , D , D , cover , P , contain P , entry-crossing D / D , normal auto , D , normal , entry-crossing D , D , D , D D , normal , auto , auto , auto , cover P , D auto , D , D , contain D , normal normal , normal , exit-crossing D , normal , entry , contain , normal , exit-crossing P , exit / exit , auto auto , P , auto , normal P , D , contain , auto , exit-crossing D , D / P , auto , normal , normal , normal , entry D , normal , entry-crossing P auto , normal , P , normal , P , normal , auto , normal auto , normal	timeline-trigger	--foo auto, none, scroll() , --a-b, --a-b, --a-b --foo, none, none cover , contain , exit-crossing -1%, 1.5% , -0.5pc, 10lvi  , 360em, 2147483648%, 0.5pc normal, normal, exit , 0.1vw, normal, -1%, normal 360rex, normal, 0ic, 0mm, cover , 2147483648%, contain -0.5%, entry-crossing 2147483647rem  / 360Q, normal auto, 1vh, normal, entry-crossing 0ex , 100mm, 2pc, 255Q 10dvh, normal, auto, auto, auto, cover 360%, -0.5rlh auto, 0.1ic, 2ch, contain 2147483647ex, normal normal, normal, exit-crossing 2147483648vw, normal, entry , contain , normal, exit-crossing 1e+20% , exit   / exit , auto auto, 0.001%, auto, normal 2147483648%, 2147483648dvh, contain , auto, exit-crossing 1e+20rem, 0svw  / 0.5%, auto, normal, normal , normal, entry 1e+20vw, normal, entry-crossing 255% auto, normal, 2147483647%, normal , 1e+20%, normal, auto, normal auto, normal	OK=--foo auto, none, scroll(), --a-b, --a-b, --a-b --foo, none, none cover, contain, exit-crossing -1%, 1.5%, -0.5pc, 10lvi, 360em, 2147483648%, 0.5pc normal, normal, exit, 0.1vw, normal, -1%, normal 360rex, normal, 0ic, 0mm, cover, 2147483648%, contain -0.5%, entry-crossing 2147483647rem / 360q, normal auto, 1vh, normal, entry-crossing 0ex, 100mm, 2pc, 255q 10dvh, normal, auto, auto, auto, cover 360%, -0.5rlh auto, 0.1ic, 2ch, contain 2147483647ex, normal normal, normal, exit-crossing 2147483648vw, normal, entry, contain, normal, exit-crossing 100000000000000000000%, exit / exit, auto auto, 0.001%, auto, normal 2147483648%, 2147483648dvh, contain, auto, exit-crossing 100000000000000000000rem, 0svw / 0.5%, auto, normal, normal, normal, entry 100000000000000000000vw, normal, entry-crossing 255% auto, normal, 2147483647%, normal, 100000000000000000000%, normal, auto, normal auto, normal	NO
 acc:10-:view-timeline:--a-b P , D auto , P auto y , x , inline , x , --a-b , none , --foo x , x , block	view-timeline	\n--a-b \n 3%,\n-1svw   auto,   0% auto\ty, x,   inline, \n x,  --a-b,\nnone,  \n --foo \n x,\nx, \n block\n	OK=--a-b y, x, inline, x 3%, -1svw auto, 0% auto, --a-b, none, --foo x, x, block	NO
 acc:10-:view-timeline:--foo , --foo , none , --a-b , none , none , none , --foo , none y , inline , y , block , --a-b , --a-b , none auto , P D , auto	view-timeline	--foo, --foo, none, --a-b , none , none, none, --foo, none y, inline, y, block, --a-b, --a-b, none auto, -100% 0.1px, auto	OK=--foo, --foo, none, --a-b, none, none, none, --foo, none y, inline, y, block, --a-b, --a-b, none auto, -100% 0.1px, auto	NO
 acc:10-:view-timeline:--foo , none , none , none P , D , --foo block , --foo , none , none , --a-b x , y auto P , P , auto P	view-timeline	--foo, none, none, none -0.5%, 10vw, --foo block, --foo, none, none, --a-b x, y auto 360%, 100%, auto 0.1%	OK=--foo, none, none, none -0.5%, 10vw, --foo block, --foo, none, none, --a-b x, y auto 360%, 100%, auto 0.1%	NO
@@ -137,6 +160,7 @@ acc:10-:view-timeline:none auto auto , D auto , P , auto auto , none , none D P 
 acc:10-:view-timeline:none auto auto , D auto , P , auto auto , none , none P auto y , x , y , y , --a-b , --a-b , --a-b , --a-b , none y , y , x	view-timeline	none auto auto, -100px auto, 10%, auto auto, none, none -1% auto y, x, y, y, --a-b, --a-b , --a-b, --a-b, none y, y, x	OK=none auto auto, -100px auto, 10%, auto auto, none, none y, x, y, y -1% auto, --a-b, --a-b, --a-b, --a-b, none y, y, x	NO
 acc:10-:view-timeline:none auto auto , D auto , auto , auto auto block , --foo , none , --foo P P , D D , --foo	view-timeline	none auto auto, -1e+20vw auto, auto, auto auto block, --foo , none, --foo 10% -100%, 0.001ic 65535lvi, --foo 	OK=none block auto auto, -100000000000000000000vw auto, auto, auto auto, --foo, none, --foo 10% -100%, 0.001ic 65535lvi, --foo	NO
 acc:100:-webkit-text-stroke-width:hairline	-webkit-text-stroke-width	hairline	OK=hairline	NO
+acc:100:-webkit-user-select:contain	-webkit-user-select	contain	OK=contain	NO
 acc:100:align-content:baseline last	align-content	baseline last	OK=last baseline	NO
 acc:100:align-items:baseline last	align-items	baseline last	OK=last baseline	NO
 acc:100:align-items:flow-end	align-items	flow-end	OK=flow-end	NO
@@ -146,6 +170,15 @@ acc:100:align-self:flow-end	align-self	flow-end	OK=flow-end	NO
 acc:100:align-self:flow-start	align-self	flow-start	OK=flow-start	NO
 acc:100:align-self:unsafe normal	align-self	unsafe normal	OK=unsafe normal	NO
 acc:100:animation-delay:D , D D , D	animation-delay	0.001ms, 1000ms 0s, 0s	OK=0.001ms, 1000ms, 0s	NO
+acc:100:animation-timing-function:cubic-bezier( N , sibling-index( ) , N , sign( D - D ) )	animation-timing-function	cubic-bezier(0, sibling-index(), 1, sign(2em - 20px))	OK=cubic-bezier(0, sibling-index(), 1, sign(2em - 20px))	NO
+acc:100:animation-timing-function:cubic-bezier( calc( N ) , calc( N ) , calc( N ) , calc( N ) )	animation-timing-function	cubic-bezier(calc(-2), calc(0.35), calc(1.5), calc(0))	OK=cubic-bezier(calc(-2), calc(0.35), calc(1.5), calc(0))	NO
+acc:100:animation-timing-function:linear( N )	animation-timing-function	linear(0)	OK=linear(0)	NO
+acc:100:animation-timing-function:steps( calc( N ) , jump-none )	animation-timing-function	steps(calc(1), jump-none)	OK=steps(calc(1), jump-none)	NO
+acc:100:animation:auto , auto , D , D view( ) none none , infinite D , D , D , D D	animation	auto, auto, 10s, 0ms view() none none, infinite 1e+20s, 2ms, 2147483647ms, 10ms 2147483648ms	OK=none, none, 10s, 0ms view(), 100000000000000000000s, 2ms, 2147483647ms, 10ms 2147483648ms infinite	NO
+acc:100:animation:ease-out scroll( ) , alternate au	animation	ease-out scroll(), alternate au	OK=ease-out scroll(), alternate au	NO
+acc:100:animation:ease-out scroll( ) , alternate auto D , D , D , D D , D	animation	ease-out scroll(), alternate /*\n*/auto 0ms, 255ms, 65535s, 2ms 0s, 255s	OK=ease-out scroll(), 0ms, 255ms, 65535s, 2ms, 255s alternate	NO
+acc:100:animation:ease-out scroll( ) , alternate auto D , D , D , D D , auto ease-out	animation	ease-out scroll(), alternate auto 1000ms, 255ms, 0.5ms, 0.5s 0ms, auto ease-out	OK=ease-out scroll(), 0ms, auto ease-out 1000ms, 255ms, 0.5ms, 0.5s alternate auto	NO
+acc:100:animation:ease-out scroll( ) , alternate auto D , none , D , D D , auto ease-out	animation	 ease-out scroll( ), \n alternate auto  1000ms,   none, \n 1ms,\n0.5s  0ms,   auto ease-out	OK=ease-out scroll(), auto 1000ms alternate, none, 0ms, auto ease-out 1ms, 0.5s	NO
 acc:100:appearance:base	appearance	base	OK=base	NO
 acc:100:background-image:cross-fade( P color-mix( in srgb , currentcolor , blue ) , white )	background-image	cross-fade(30% color-mix(in srgb, currentcolor, blue), white)	OK=cross-fade(color-mix(in srgb, currentcolor, blue) 30%, white)	NO
 acc:100:background-image:cross-fade( P red , green )	background-image	cross-fade( 1% red, green)	OK=cross-fade(red 1%, green)	NO
@@ -154,6 +187,7 @@ acc:100:background-image:cross-fade( blue , linear-gradient( D , rgb( N , N , N 
 acc:100:background-image:cross-fade( image( green ) , red )	background-image	cross-fade(image(green), red)	OK=cross-fade(image(green), red)	NO
 acc:100:background-image:cross-fade( light-dark( red , blue ) P ) , element( #H )	background-image	cross-fade(light-dark(red, blue) 0%), element(#zz)	OK=cross-fade(light-dark(red, blue) 0%), element(#zz)	NO
 acc:100:background-image:cross-fade( red P , white P , blue )	background-image	cross-fade(red 33%, white 33%, blue)	OK=cross-fade(red 33%, white 33%, blue)	NO
+acc:100:background-image:image( url( foo . png ) )	background-image	image(url(foo.png))	OK=image(url("foo.png"))	NO
 acc:100:background-image:none , none , image-set( cross-fade( light-dark( none , none ) P ) ) , none	background-image	none, none, image-set(cross-fade(light-dark(none, none) 0%) ), none	OK=none, none, image-set(cross-fade(light-dark(none, none) 0%)), none	NO
 acc:100:background-image:url( S cross-origin( anonymous ) cross-origin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(anonymous))	NO
 acc:100:background-image:url( S cross-origin( anonymous ) cross-origin( use-credentials ) )	background-image	url("http://{{hosts,][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(use-credentials))	OK=url("http://{{hosts,][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(use-credentials))	NO
@@ -337,7 +371,7 @@ acc:100:clip-path:ellipse( D at left D y-end D )	clip-path	ellipse(1cap at left 
 acc:100:clip-path:ellipse( P )	clip-path	ellipse(0% )	OK=ellipse(0%)	NO
 acc:100:clip-path:ellipse( closest-side )	clip-path	ellipse(closest-side)	OK=ellipse()	NO
 acc:100:color:random-item( -- , rgb( N , N , N ) , rgb( N , N , N ) )	color	random-item(--, rgb(1, 0, 0), rgb(0, 1, 0))	OK=random-item(--, rgb(1, 0, 0), rgb(0, 1, 0))	NO
-acc:100:color:random-item( --key , rgb( N , N , N ) , rgb( N , N , N ) , rgb( N , N , N ) )	color	\t random-item(--key,   rgb(1,\n0,   0) \n ,rgb(0, 1, 0), \n rgb(0, \n 0,\n1) )  	OK= random-item(--key, rgb(1, 0, 0) ,rgb(0, 1, 0), rgb(0, 0, 1) ) 	NO
+acc:100:color:random-item( --key , rgb( N , N , N ) , rgb( N , N , N ) , rgb( N , N , N ) )	color	\t random-item(--key,   rgb(1,\n0,   0) \n ,rgb(0, 1, 0), \n rgb(0, \n 0,\n1) )  	OK=random-item(--key, rgb(1, 0, 0) ,rgb(0, 1, 0), rgb(0, 0, 1) )	NO
 acc:100:color:random-item( auto , red , green , blue )	color	random-item(auto, red, green, blue)	OK=random-item(auto, red, green, blue)	NO
 acc:100:color:random-item( auto , red , gren , blue )	color	random-item(auto, red, /*\n*/ gren, blue)	OK=random-item(auto, red, gren, blue)	NO
 acc:100:color:random-item( auto , rgb( N , N , N ) )	color	random-item(auto, rgb(1, 0, 0))	OK=random-item(auto, rgb(1, 0, 0))	NO
@@ -362,6 +396,7 @@ acc:100:columns:max-content / D	columns	max-content / 10lvi	OK=max-content / 10l
 acc:100:columns:stretch	columns	stretch 	OK=stretch	NO
 acc:100:columns:stretch( P )	columns	stretch(0%) 	OK=stretch(0%)	NO
 acc:100:content:element( #H )	content	element(#zz)	OK=element(#zz)	NO
+acc:100:d:S	d	""	OK=""	NO
 acc:100:display:grid-lanes	display	grid-lanes	OK=grid-lanes	NO
 acc:100:display:inline-grid-lanes	display	inline-grid-lanes	OK=inline-grid-lanes	NO
 acc:100:display:run-in	display	run-in	OK=run-in	NO
@@ -390,6 +425,7 @@ acc:100:font-palette:palette-mix( light P , light P )	font-palette	palette-mix(l
 acc:100:font-palette:palette-mix( palette-mix( in --foo , dark ) , --a-b P , dark P , dark P )	font-palette	palette-mix(palette-mix(in --foo , dark ) , --a-b 99%, dark 100%, dark 99%)	OK=palette-mix(palette-mix(in --foo, dark) 0%, --a-b 99%, dark 100%, dark 99%)	NO
 acc:100:font-style:left	font-style	left	OK=left	NO
 acc:100:font-style:right	font-style	right	OK=right	NO
+acc:100:font-variant-alternates:stylistic( ident( S calc( D / D ) ) )	font-variant-alternates	stylistic(ident("test-" calc(1em / 1px)))	OK=stylistic(ident("test-" calc(1em / 1px)))	NO
 acc:100:font:D / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 \n 0.001svw \n / \n 1vw \n generic(fangsong),    generic(fangsong), \n"a", \ngeneric(kai ), "\\"q\\"",   sans-serif,   ui-rounded	OK=0.001svw/1vw generic(fangsong), generic(fangsong), a, generic(kai), "\"q\"", sans-serif, ui-rounded	NO
 acc:100:font:P / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 1.5% / 0vw generic(fangsong), generic(fangsong), "a", generic(kai), "\\"q\\"", sans-serif, ui-rounded	OK=1.5%/0vw generic(fangsong), generic(fangsong), a, generic(kai), "\"q\"", sans-serif, ui-rounded	NO
 acc:100:font:normal oblique D smaller / N monospace , math , S , generic( fangsong ) , S	font	normal oblique 0rad smaller / 0.1 monospace, math, 'b', generic(fangsong), "a b"	OK=smaller/0.1 monospace, math, b, generic(fangsong), a b	NO
@@ -448,10 +484,13 @@ acc:100:justify-self:baseline last	justify-self	baseline last	OK=last baseline	N
 acc:100:justify-self:flow-end	justify-self	flow-end	OK=flow-end	NO
 acc:100:justify-self:flow-start	justify-self	flow-start	OK=flow-start	NO
 acc:100:left:anchor( inside , D --a-b )	left	anchor(inside , 2147483648lh --a-b)	OK=anchor(--a-b inside, 2147483648lh)	NO
+acc:100:left:inherit( --x )	left	inherit(--x)	OK=inherit(--x)	NO
 acc:100:list-style-image:cross-fade( color-mix( in srgb , red , blue ) P )	list-style-image	cross-fade(color-mix(in srgb, red, blue) 0%)	OK=cross-fade(color-mix(in srgb, red, blue) 0%)	NO
 acc:100:list-style-image:element( #H )	list-style-image	element(#zz)	OK=element(#zz)	NO
 acc:100:list-style-type:symbols( S light-dark( image( rtl S ) , none ) S cross-fade( P url( S ) , P red ) )	list-style-type	symbols( "\\41 " light-dark(image(rtl "\\"q\\"" ), none) 'b' cross-fade(0% url('d'), 0% RED))	OK=symbols("A" light-dark(image(rtl "\"q\""), none) "b" cross-fade(url("d") 0%, red 0%))	NO
 acc:100:list-style-type:symbols( alphabetic S light-dark( element( #H ) , cross-fade( url( S ) , hwb( N P P ) , rgb( N N N ) , P paint( foo , D ) ) ) )	list-style-type	symbols(alphabetic "\\41 " light-dark(element(#zz), cross-fade(url("b c.png") , hwb(0 10% 20%) , rgb(1 2 3) , 0% paint(foo , 1px))))	OK=symbols(alphabetic "A" light-dark(element(#zz), cross-fade(url("b c.png"), rgb(204, 26, 26), rgb(1, 2, 3), paint(foo, 1px) 0%)))	NO
+acc:100:list-style-type:symbols( fixed url( S ) )	list-style-type	symbols(fixed url("https://example.com"))	OK=symbols(fixed url("https://example.com"))	NO
+acc:100:list-style-type:symbols( numeric S image-set( S type( S ) , S type( S ) ) )	list-style-type	symbols(numeric "\\41 " image-set("a" type("\\41 "), "" type("a")))	OK=symbols(numeric "A" image-set("a" type("A"), "" type("a")))	NO
 acc:100:list-style-type:symbols( numeric S url( a . png ) image-set( repeating-linear-gradient( in hwb D , #H D ) , S ) cross-fade( color( srgb N N N / P ) ) )	list-style-type	symbols(numeric "" url(a.png) image-set(repeating-linear-gradient(in hwb  2147483648grad , #ff00ff80 0rex ) , "\\41 " ) cross-fade(color(srgb 1 0 0 / 50%) ))	OK=symbols(numeric "" url("a.png") image-set(repeating-linear-gradient(2147483648grad in hwb, rgba(255, 0, 255, 0.5) 0rex), "A") cross-fade(color(srgb 1 0 0 / 0.5)))	NO
 acc:100:list-style:cross-fade( light-dark( red , blue ) P , P canvas , P #H ) outside	list-style	cross-fade(light-dark(red, blue) 0%, 0% Canvas, 100% #fff) outside	OK=cross-fade(light-dark(red, blue) 0%, canvas 0%, rgb(255, 255, 255) 100%)	NO
 acc:100:list-style:cross-fade( light-dark( red , blue ) P , P hsl( N P P ) , color( srgb N N N / P ) ) outside	list-style	\t cross-fade(light-dark(red,\tblue)\t100%,  0% hsl(120   50%  50%),\tcolor(srgb 1 0  0\n/   50%)) outside 	OK=cross-fade(light-dark(red, blue) 100%, rgb(64, 191, 64) 0%, color(srgb 1 0 0 / 0.5))	NO
@@ -487,11 +526,13 @@ acc:100:mask-repeat:repeat-block , repeat-y	mask-repeat	repeat-block, repeat-y	O
 acc:100:mask-repeat:repeat-y , repeat-inline , space , repeat-inline	mask-repeat	repeat-y, repeat-inline, space, repeat-inline	OK=repeat-y, repeat-inline, space, repeat-inline	NO
 acc:100:mask-repeat:space space , no-repeat , repeat-inline , repeat-x	mask-repeat	space space, no-repeat, repeat-inline, repeat-x	OK=space, no-repeat, repeat-inline, repeat-x	NO
 acc:100:mask:cross-fade( P url( S ) , color( srgb N N N / P ) ) space no-repeat match-source , repeat-x intersect paint( bar-baz , ( a ) ) , stroke-box luminance block-start / contain	mask	cross-fade(99% url('d'), color(srgb 1 0 0 / 50%) ) space no-repeat match-source, repeat-x intersect paint(bar-baz , (a)), stroke-box luminance block-start / contain	OK=cross-fade(url("d") 99%, color(srgb 1 0 0 / 0.5)) space no-repeat, paint(bar-baz, (a)) repeat-x intersect, block-start / contain stroke-box luminance	NO
+acc:100:mask:exclude none bottom D left P / D space no-repeat , right subtract stroke-box match-source , no-clip url( S ) repeat-x block-end P inline-start D , url( S ) right center no-clip view-box	mask	exclude none bottom 100vh left -1% / 0.1in space no-repeat, right  subtract stroke-box match-source, no-clip url('d') repeat-x block-end -0.5% inline-start 360pt , url('d') right center  no-clip view-box	OK=left -1% bottom 100vh / 0.1in auto space no-repeat exclude, right center stroke-box subtract, url("d") block-end -0.5% inline-start 360pt repeat-x no-clip, url("d") right center view-box no-clip	NO
 acc:100:mask:exclude none bottom P x-start P repeat-x , view-box border-box repeat-inline , fill-box match-source , add fill-box url( e ) repeat-inline	mask	 exclude\tnone   bottom  0%\nx-start \n 255% repeat-x,   view-box \n border-box\trepeat-inline, \tfill-box\tmatch-source, \n add\tfill-box   url(    e \n )\nrepeat-inline 	OK=x-start 255% bottom 0% repeat-x exclude, repeat-inline view-box border-box, fill-box, url("e") repeat-inline fill-box	NO
 acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) center , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D x-start D subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) 1e+20rad ) center , inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 10lvi x-start 0pc  subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) 100000000000000000000rad) center center, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, x-start 0pc y-end 10lvi repeat-x stroke-box no-clip subtract	NO
 acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) center , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D x-start P / contain subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) 0rad ) center , inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 10lvi x-start -100% / contain subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) 0rad) center center, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, x-start -100% y-end 10lvi / contain repeat-x stroke-box no-clip subtract	NO
 acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) center , inline-start center add light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D right D / contain subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) 1e+20rad ) center , inline-start center  add  light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 2pt right -0.5mm / contain subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) 100000000000000000000rad) center center, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box, right -0.5mm y-end 2pt / contain repeat-x stroke-box no-clip subtract	NO
 acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) repeat-inline stroke-box , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D x-start P / contain subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) -1deg ) repeat-inline stroke-box, inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 10lvi x-start -100% / contain subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) -1deg) repeat-inline stroke-box, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, x-start -100% y-end 10lvi / contain repeat-x stroke-box no-clip subtract	NO
+acc:100:mask:intersect end D start D / contain no-repeat , luminance	mask	intersect end 100cqw start 2147483647rem / contain no-repeat, luminance	OK=end 100cqw start 2147483647rem / contain no-repeat intersect, luminance	NO
 acc:100:mask:space no-clip add x-start , no-clip repeat-y	mask	space no-clip \n add \n x-start  , \n no-clip repeat-y	OK=x-start space no-clip, repeat-y no-clip	NO
 acc:100:mask:stroke-box add inline-end P block-end D match-source , element( #H ) alpha , no-clip cross-fade( P paint( foo ) , hwb( N P P ) P , #H P ) fill-box add	mask	stroke-box add inline-end 1.5% block-end -1vh  match-source, element(#zz) alpha, no-clip cross-fade(1.5% paint(Foo ), hwb(0 10% 20%) 0%, #abc 0%) fill-box add	OK=block-end -1vh inline-end 1.5% stroke-box, element(#zz) alpha, cross-fade(paint(Foo) 1.5%, rgb(204, 26, 26) 0%, rgb(170, 187, 204) 0%) fill-box no-clip	NO
 acc:100:mask:view-box repeat-y alpha no-clip x-end bottom url( e ) , stroke-box x-start / cover	mask	view-box repeat-y alpha no-clip x-end bottom   url(  e  ), stroke-box x-start / cover	OK=url("e") x-end bottom repeat-y view-box no-clip alpha, x-start / cover stroke-box	NO
@@ -538,6 +579,9 @@ acc:100:offset-anchor:x-end y-end	offset-anchor	x-end y-end	OK=x-end y-end	NO
 acc:100:offset-anchor:x-start D bottom D	offset-anchor	x-start 1.5cm bottom 1.5vmin	OK=x-start 1.5cm bottom 1.5vmin	NO
 acc:100:offset-anchor:y-end D left D	offset-anchor	Y-END -1E+20IN LEFT 1000Q	OK=left 1000q y-end -100000000000000000000in	NO
 acc:100:offset-anchor:y-end D x-start D	offset-anchor	Y-END -0.5CH X-START -2Q	OK=x-start -2q y-end -0.5ch	NO
+acc:100:offset-path:path( evenodd , S )	offset-path	path(evenodd, "M 0 0 H 100")	OK=path(evenodd, "M 0 0 H 100")	NO
+acc:100:offset-path:path( nonzero , S )	offset-path	path(nonzero, "M 0 0 H 100")	OK=path("M 0 0 H 100")	NO
+acc:100:offset-path:ray( at block-start D )	offset-path	ray(  at block-start -1rad)	OK=ray(-1rad at block-start)	NO
 acc:100:offset-path:ray( at right D y-end D D )	offset-path	ray(at right 360cqw y-end -1e+20vh  10turn )	OK=ray(10turn at right 360cqw y-end -100000000000000000000vh)	NO
 acc:100:offset-path:ray( at right D y-end P D )	offset-path	ray(at right 0cqw y-end 1%  10turn )	OK=ray(10turn at right 0cqw y-end 1%)	NO
 acc:100:offset-path:ray( at right D y-start D D )	offset-path	ray(at right -1e+20lh y-start 10vh  10turn )	OK=ray(10turn at right -100000000000000000000lh y-start 10vh)	NO
@@ -589,6 +633,7 @@ acc:100:place-self:unsafe flow-end anchor-center	place-self	unsafe flow-end anch
 acc:100:position-anchor:match-parent	position-anchor	match-parent	OK=match-parent	NO
 acc:100:position-visibility:anchor-valid	position-visibility	anchor-valid	OK=anchor-valid	NO
 acc:100:position-visibility:anchor-visible	position-visibility	anchor-visible	OK=anchor-visible	NO
+acc:100:position:running( x \ y )	position	running(x\\ y)	OK=running(x\ y)	NO
 acc:100:quotes:bikeshed-this	quotes	bikeshed-this	OK=bikeshed-this	NO
 acc:100:row-gap:thick	row-gap	thick	OK=thick	NO
 acc:100:ruby-position:inter-character	ruby-position	inter-character	OK=inter-character	NO
@@ -609,6 +654,8 @@ acc:100:stroke-width:medium , N	stroke-width	medium, 0.5	OK=medium, 0.5	NO
 acc:100:stroke-width:thin , N	stroke-width	thin, 0	OK=thin, 0	NO
 acc:100:stroke:child	stroke	child	OK=child	NO
 acc:100:stroke:child( N )	stroke	child(-1)	OK=child(-1)	NO
+acc:100:stroke:conic-gradient( currentcolor N )	stroke	conic-gradient(currentcolor 0 )	OK=conic-gradient(currentcolor 0)	NO
+acc:100:stroke:light-dark( none , none )	stroke	light-dark(none, none)	OK=light-dark(none, none)	NO
 acc:100:text-align-last:match-parent	text-align-last	match-parent	OK=match-parent	NO
 acc:100:text-align:S	text-align	""	OK=""	NO
 acc:100:text-align:justify-all	text-align	justify-all	OK=justify-all	NO
@@ -621,17 +668,26 @@ acc:100:text-justify:no-compress	text-justify	no-compress	OK=no-compress	NO
 acc:100:text-overflow:fade	text-overflow	fade	OK=fade	NO
 acc:100:text-overflow:fade( D )	text-overflow	fade(-1px)	OK=fade(-1px)	NO
 acc:100:text-overflow:fade( P )	text-overflow	fade(-1%)	OK=fade(-1%)	NO
+acc:100:text-shadow:D D D D	text-shadow	10px 20px 30px 40px	OK=10px 20px 30px 40px	NO
 acc:100:text-wrap:avoid-short-last-line	text-wrap	avoid-short-last-line	OK=avoid-short-last-line	NO
+acc:100:top:--func( --myident : )	top	--func( --myident : )	OK=--func( --myident : )	NO
 acc:100:top:anchor( left , P --a-b )	top	anchor(left , 0.1% --a-b)	OK=anchor(--a-b left, 0.1%)	NO
+acc:100:transition-timing-function:steps( N , jump-none ) , linear( N P , P P N , N , P P N ) , cubic-bezier( N , N , N , N ) , linear( N )	transition-timing-function	steps(2 , jump-none), linear(0.001 2%, 10% -0.5% 0, 1 , -0.5% -0.5% 255), cubic-bezier(0, 65535, 0, -100), linear(0.001 )	OK=steps(2, jump-none), linear(0.001 2%, 0 10%, 0 10%, 1, 255 10%, 255 10%), cubic-bezier(0, 65535, 0, -100), linear(0.001)	NO
 acc:100:user-select:contain	user-select	contain	OK=contain	NO
+acc:100:vector-effect:fixed-position	vector-effect	fixed-position	OK=fixed-position	NO
+acc:100:vector-effect:non-rotation	vector-effect	non-rotation	OK=non-rotation	NO
+acc:100:vector-effect:non-scaling-size	vector-effect	non-scaling-size	OK=non-scaling-size	NO
+acc:100:view-transition-name:auto	view-transition-name	auto	OK=auto	NO
 acc:100:visibility:force-hidden	visibility	force-hidden	OK=force-hidden	NO
 acc:100:white-space-collapse:discard	white-space-collapse	discard	OK=discard	NO
 acc:100:white-space:preserve-breaks wrap discard-inner	white-space	preserve-breaks wrap discard-inner	OK=preserve-breaks wrap discard-inner	NO
 acc:100:white-space:preserve-spaces discard-after discard-before	white-space	preserve-spaces discard-after discard-before	OK=preserve-spaces discard-before discard-after	NO
-acc:100:width:env( safe-area-inset-top ( ) )	width	\t env(safe-area-inset-top \n ())\n	OK= env(safe-area-inset-top ()) 	NO
+acc:100:width:env( safe-area-inset-top ( ) )	width	\t env(safe-area-inset-top \n ())\n	OK=env(safe-area-inset-top ())	NO
 acc:100:width:env( safe-area-inset-top( ) )	width	env(safe-area-inset-top() )	OK=env(safe-area-inset-top() )	NO
 acc:100:width:fit-content( D )	width	fit-content(0.5em)	OK=fit-content(0.5em)	NO
 acc:100:width:fit-content( P )	width	fit-content(0%)	OK=fit-content(0%)	NO
+acc:100:width:random( property-index-scoped , D , D )	width	RANDOM(PROPERTY-INDEX-SCOPED, \t0PX,    100PX)	OK=random(PROPERTY-INDEX-SCOPED, 0px, 100px)	NO
+acc:100:width:random-item( auto , D , D , D )	width	random-item(auto, 1px, 2px, 3px)	OK=random-item(auto, 1px, 2px, 3px)	NO
 acc:100:width:stretch( D )	width	stretch(0.001em)	OK=stretch(0.001em)	NO
 acc:100:width:var( --x ( ) )	width	var(--x () )	OK=var(--x () )	NO
 acc:100:width:var( --x( ) )	width	var(--x() )	OK=var(--x() )	NO
@@ -699,6 +755,9 @@ acc:101:width:calc( D * progress( no-clamp abs( P ) , ( P - P ) , P / N ) )	widt
 acc:110:align-content:flow-end	align-content	flow-end	OK=flow-end	NO
 acc:110:align-content:flow-start	align-content	flow-start	OK=flow-start	NO
 acc:110:animation-duration:auto	animation-duration	auto	OK=auto	NO
+acc:110:animation-timing-function:steps( calc( N + sign( D - D ) ) )	animation-timing-function	steps(calc(2 + sign(100em - 1px)))	OK=steps(calc(2 + sign(100em - 1px)))	NO
+acc:110:animation:auto , auto , D , D auto backwards normal , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, 10s, 0.001ms auto backwards normal, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	OK=auto, auto, 10s, 0.001ms normal backwards auto, 0.001s, 0ms, auto, auto linear infinite alternate-reverse none none	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, 0.001ms ease 0s 1 normal backwards running auto, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
+acc:110:animation:forwards infinite D , D , auto none --a-b	animation	forwards infinite 0ms, 0ms, auto none --a-b	OK=0ms, 0ms, auto infinite forwards none --a-b	OK=0ms ease 0s infinite normal forwards running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running --a-b
 acc:110:appearance:base-select	appearance	base-select	OK=base-select	NO
 acc:110:background-clip:border-area	background-clip	border-area	OK=border-area	NO
 acc:110:background-image:conic-gradient( red calc( P + D ) , blue )	background-image	conic-gradient( red \n calc(100% +\n0deg),   blue)	OK=conic-gradient(red calc(100% + 0deg), blue)	NO
@@ -850,9 +909,13 @@ acc:110:shape-outside:shape( from D D , smooth to center P )	shape-outside	shape
 acc:110:shape-outside:shape( from N N , line to P P )	shape-outside	shape(from 0 0, line to 100% 100%)	OK=shape(from 0px 0px, line to 100% 100%)	NO
 acc:110:text-wrap-style:pretty	text-wrap-style	pretty	OK=pretty	NO
 acc:110:text-wrap:pretty	text-wrap	pretty	OK=pretty	NO
+acc:110:top:--func( )	top	--func()	OK=--func()	NO
 acc:110:touch-action:pan-left	touch-action	pan-left	OK=pan-left	NO
 acc:110:touch-action:pan-right pan-up pinch-zoom	touch-action	pan-right pan-up pinch-zoom	OK=pan-right pan-up pinch-zoom	NO
 acc:110:transition-delay:random( D , D )	transition-delay	random(25ms, 50s)	OK=random(0.025s, 50s)	OK=random(element-scoped ua-transition-delay-1, 0.025s, 50s)
+acc:110:transition-timing-function:steps( calc( N * sign( D - D ) ) , jump-none )	transition-timing-function	steps(calc(2 * sign(1em - 1000px)), jump-none)	OK=steps(calc(2 * sign(1em - 1000px)), jump-none)	NO
+acc:110:transition-timing-function:steps( calc( N * sign( D - D ) ) , start )	transition-timing-function	steps(calc(2 * sign(1em - 1000px)), start)	OK=steps(calc(2 * sign(1em - 1000px)), start)	NO
+acc:110:transition-timing-function:steps( sibling-index( ) , jump-none )	transition-timing-function	steps(sibling-index(), jump-none)	OK=steps(sibling-index(), jump-none)	NO
 acc:110:width:calc-size( D , D )	width	calc-size(0px, 0px)	OK=calc-size(0px, 0px)	NO
 acc:110:width:calc-size( D , sign( size ) * size )	width	calc-size(10px, sign(size) * size)	OK=calc-size(10px, sign(size) * size)	NO
 acc:110:width:calc-size( any , D )	width	calc-size(any, 25em)	OK=calc-size(any, 25em)	NO
@@ -863,6 +926,7 @@ acc:110:width:calc-size( fit-content , size )	width	calc-size(fit-content, size)
 acc:110:width:calc-size( max-content , size )	width	calc-size(max-content, size)	OK=calc-size(max-content, size)	NO
 acc:110:width:random( --foo , D , P )	width	random(--foo, 10px, 20%)	OK=random(--foo, 10px, 20%)	NO
 acc:110:width:random( D , D )	width	random(0px, 100px)	OK=random(0px, 100px)	OK=random(element-scoped ua-width-1, 0px, 100px)
+acc:110:width:random( fixed calc( N ) , P , P )	width	random(fixed calc(0.5), 0%, 100%)	OK=random(fixed calc(0.5), 0%, 100%)	NO
 acc:110:width:stretch	width	stretch	OK=stretch	NO
 acc:110:word-break:auto-phrase	word-break	auto-phrase	OK=auto-phrase	NO
 acc:110:z-index:random( --foo , N , N )	z-index	random(--foo, 25, 50)	OK=random(--foo, 25, 50)	NO
@@ -901,6 +965,10 @@ ser:A=B|C:filter:sepia( )	filter	sepia()	OK=sepia()	OK=sepia(1)
 ser:A=B|C:hyphenate-limit-chars:N N N	hyphenate-limit-chars	5 2 2	OK=5 2 2	OK=5 2
 ser:A=B|C:hyphenate-limit-chars:N auto	hyphenate-limit-chars	1 auto	OK=1 auto	OK=1
 ser:A=B|C:hyphenate-limit-chars:auto auto	hyphenate-limit-chars	auto auto	OK=auto auto	OK=auto
+ser:A=B|C:opacity:clamp( P , P , P )	opacity	clamp(50%, 0%, 70%)	OK=clamp(50%, 0%, 70%)	OK=calc(50%)
+ser:A=B|C:opacity:max( P , P )	opacity	max(0%, 50%)	OK=max(0%, 50%)	OK=calc(50%)
+ser:A=B|C:opacity:min( P , P )	opacity	min(-40%, 50%)	OK=min(-40%, 50%)	OK=calc(-40%)
+ser:A=B|C:stroke-dashoffset:N	stroke-dashoffset	-1	OK=-1	OK=-1px
 ser:A=B|C:text-box:cap text trim-both	text-box	cap text trim-both	OK=cap text	OK=cap
 ser:A=B|C:text-box:cap text trim-end	text-box	cap text trim-end	OK=trim-end cap text	OK=trim-end cap
 ser:A=B|C:text-box:ex text	text-box	ex text	OK=ex text	OK=ex
@@ -921,6 +989,8 @@ ser:A=C|B:-webkit-text-stroke-width:D	-webkit-text-stroke-width	1e+20lh	OK=10000
 ser:A=C|B:animation-delay:D	animation-delay	-1e+20s 	OK=-100000000000000000000s	OK=-1e+20s
 ser:A=C|B:animation-duration:D , D	animation-duration	1e+20ms, 100ms	OK=100000000000000000000ms, 100ms	OK=1e+20ms, 100ms
 ser:A=C|B:animation-iteration-count:N	animation-iteration-count	1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:animation-timing-function:step-end	animation-timing-function	step-end	OK=steps(1)	OK=step-end
+ser:A=C|B:animation-timing-function:step-start	animation-timing-function	step-start	OK=steps(1, start)	OK=step-start
 ser:A=C|B:animation:D	animation	1s	OK=1s	OK=1s ease 0s 1 normal none running none
 ser:A=C|B:animation:N	animation	4	OK=4	OK=auto ease 0s 4 normal none running none
 ser:A=C|B:animation:anim	animation	anim	OK=anim	OK=auto ease 0s 1 normal none running anim
@@ -939,14 +1009,18 @@ ser:A=C|B:background:local border-box	background	local \n border-box\t  	OK=loca
 ser:A=C|B:background:red repeat-y border-box	background	RED repeat-y border-box	OK=repeat-y border-box red	OK=repeat-y border-box border-box red
 ser:A=C|B:background:scroll none padding-box content-box	background	scroll none padding-box content-box	OK=padding-box content-box	OK=none scroll padding-box content-box
 ser:A=C|B:baseline-shift:D	baseline-shift	-1e+20pt	OK=-100000000000000000000pt	OK=-1e+20pt
+ser:A=C|B:baseline-shift:N	baseline-shift	0	OK=0px	OK=0
 ser:A=C|B:baseline-shift:P	baseline-shift	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A=C|B:block-size:P	block-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
 ser:A=C|B:border-block-end-width:D	border-block-end-width	1e+20pt	OK=100000000000000000000pt	OK=1e+20pt
 ser:A=C|B:border-block-end:D	border-block-end	1e+20px	OK=100000000000000000000px	OK=1e+20px
 ser:A=C|B:border-block-end:medium hwb( N P P )	border-block-end	medium hwb(0 10% 20%)	OK=rgb(204, 26, 26)	OK=medium rgb(204, 26, 26)
 ser:A=C|B:border-block-end:medium red	border-block-end	medium RED	OK=red	OK=medium red
+ser:A=C|B:border-block-end:none	border-block-end	none	OK=medium	OK=none
 ser:A=C|B:border-block-start-width:D	border-block-start-width	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:border-block-start:D	border-block-start	1e+20px	OK=100000000000000000000px	OK=1e+20px
 ser:A=C|B:border-block-start:hidden oklch( P N N ) medium	border-block-start	hidden oklch(50% 0.1 120) medium	OK=hidden oklch(0.5 0.1 120)	OK=medium hidden oklch(0.5 0.1 120)
+ser:A=C|B:border-block-start:none	border-block-start	none	OK=medium	OK=none
 ser:A=C|B:border-block-width:D	border-block-width	1e+20lh	OK=100000000000000000000lh	OK=1e+20lh
 ser:A=C|B:border-block:D	border-block	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
 ser:A=C|B:border-bottom-left-radius:D	border-bottom-left-radius	1e+20cqw 	OK=100000000000000000000cqw	OK=1e+20cqw
@@ -954,6 +1028,8 @@ ser:A=C|B:border-bottom-right-radius:D	border-bottom-right-radius	1e+20px 	OK=10
 ser:A=C|B:border-bottom-right-radius:P P	border-bottom-right-radius	0% 1e+20%	OK=0% 100000000000000000000%	OK=0% 1e+20%
 ser:A=C|B:border-bottom-width:D	border-bottom-width	1e+20Q	OK=100000000000000000000q	OK=1e+20q
 ser:A=C|B:border-bottom:D	border-bottom	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:border-bottom:currentcolor	border-bottom	currentcolor	OK=medium	OK=border-bottom-width: medium; border-bottom-style: none; border-bottom-color: currentcolor;
+ser:A=C|B:border-bottom:none	border-bottom	none	OK=medium	OK=border-bottom-width: medium; border-bottom-style: none; border-bottom-color: currentcolor;
 ser:A=C|B:border-end-end-radius:D	border-end-end-radius	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
 ser:A=C|B:border-end-start-radius:D	border-end-start-radius	1e+20dvh 	OK=100000000000000000000dvh	OK=1e+20dvh
 ser:A=C|B:border-end-start-radius:P P	border-end-start-radius	1e+20% 1000%	OK=100000000000000000000% 1000%	OK=1e+20% 1000%
@@ -963,10 +1039,12 @@ ser:A=C|B:border-image-slice:N	border-image-slice	1e+20 	OK=10000000000000000000
 ser:A=C|B:border-image-width:D	border-image-width	1e+20px	OK=100000000000000000000px	OK=1e+20px
 ser:A=C|B:border-image-width:P N	border-image-width	1e+20% 65535	OK=100000000000000000000% 65535	OK=1e+20% 65535
 ser:A=C|B:border-image-width:auto N	border-image-width	auto 1e+20	OK=auto 100000000000000000000	OK=auto 1e+20
+ser:A=C|B:border-image:N	border-image	1	OK=1	OK=none 1 / 1 / 0 stretch
 ser:A=C|B:border-image:repeat	border-image	repeat	OK=repeat	OK=none 100% / 1 / 0 repeat
 ser:A=C|B:border-image:round	border-image	round	OK=round	OK=none 100% / 1 / 0 round
 ser:A=C|B:border-image:space	border-image	space	OK=space	OK=none 100% / 1 / 0 space
 ser:A=C|B:border-inline-end-width:D	border-inline-end-width	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:border-inline-end:D	border-inline-end	\n1e+20px	OK=100000000000000000000px	OK=1e+20px
 ser:A=C|B:border-inline-end:currentcolor medium	border-inline-end	currentcolor medium	OK=medium	OK=medium currentcolor
 ser:A=C|B:border-inline-end:hsl( N P P ) dotted medium	border-inline-end	hsl(120 50% 50%) dotted medium	OK=dotted rgb(64, 191, 64)	OK=medium dotted rgb(64, 191, 64)
 ser:A=C|B:border-inline-start-width:D	border-inline-start-width	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
@@ -1005,6 +1083,9 @@ ser:A=C|B:contain-intrinsic-inline-size:D	contain-intrinsic-inline-size	 1e+20cm
 ser:A=C|B:contain-intrinsic-size:auto D	contain-intrinsic-size	auto 1e+20ex	OK=auto 100000000000000000000ex	OK=auto 1e+20ex
 ser:A=C|B:contain-intrinsic-size:none D	contain-intrinsic-size	 none  1e+20em	OK=none 100000000000000000000em	OK=none 1e+20em
 ser:A=C|B:contain-intrinsic-width:D	contain-intrinsic-width	 1e+20rlh	OK=100000000000000000000rlh	OK=1e+20rlh
+ser:A=C|B:cursor:url( S ) N N , url( e ) N N , col-resize	cursor	\t url('s')\t-0.5 \n 1e+20\t, \nurl( e\n)\n1e+20   1e+20 \n , \n col-resize	OK=url("s") -0.5 100000000000000000000, url("e") 100000000000000000000 100000000000000000000, col-resize	OK=url("s") 0 2147483647, url("e") 2147483647 2147483647, col-resize
+ser:A=C|B:cursor:url( S ) N calc( N ) , copy	cursor	url("https://example.com/") 1 calc(2), copy	OK=url("https://example.com/") 1 calc(2), copy	OK=url("https://example.com/") 1 2, copy
+ser:A=C|B:cursor:url( e ) N N , url( S ) , ew-resize	cursor	url(  e  ) -0.5 -1 , url('d')  , ew-resize	OK=url("e") -0.5 -1, url("d"), ew-resize	OK=url("e") 0 -1, url("d"), ew-resize
 ser:A=C|B:cx:D	cx	-1e+20cap	OK=-100000000000000000000cap	OK=-1e+20cap
 ser:A=C|B:cx:P	cx	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A=C|B:cy:D	cy	-1e+20in	OK=-100000000000000000000in	OK=-1e+20in
@@ -1023,6 +1104,7 @@ ser:A=C|B:font-family:serif , sa ns-serif , cursive , fantasy , monospace , syst
 ser:A=C|B:font-size-adjust:N	font-size-adjust	 1e+20	OK=100000000000000000000	OK=1e+20
 ser:A=C|B:font-size:D	font-size	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
 ser:A=C|B:font-size:P	font-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:font-style:oblique calc( D / D * D )	font-style	oblique calc(1em / 1px * 1deg)	OK=oblique calc(1deg * 1em / 1px)	OK=oblique calc((1em / 1px) * 1deg)
 ser:A=C|B:font-variant-ligatures:historical-ligatures common-ligatures no-contextual	font-variant-ligatures	historical-ligatures common-ligatures no-contextual	OK=common-ligatures historical-ligatures no-contextual	OK=historical-ligatures common-ligatures no-contextual
 ser:A=C|B:font-variant-ligatures:no-common-ligatures contextual discretionary-ligatures	font-variant-ligatures	no-common-ligatures contextual discretionary-ligatures	OK=no-common-ligatures discretionary-ligatures contextual	OK=no-common-ligatures contextual discretionary-ligatures
 ser:A=C|B:font-variant-numeric:lining-nums slashed-zero tabular-nums	font-variant-numeric	lining-nums slashed-zero tabular-nums	OK=lining-nums tabular-nums slashed-zero	OK=lining-nums slashed-zero tabular-nums
@@ -1108,9 +1190,11 @@ ser:A=C|B:offset:auto none D	offset	auto none -1e+20vh 	OK=auto none -1000000000
 ser:A=C|B:offset:normal / P	offset	normal  / -1e+20%	OK=normal / -100000000000000000000% center	OK=normal / -1e+20% center
 ser:A=C|B:opacity:N	opacity	-1e+20	OK=-100000000000000000000	OK=-1e+20
 ser:A=C|B:opacity:P	opacity	-1e+20%	OK=-1000000000000000000	OK=-1e+18
+ser:A=C|B:opacity:progress( D , D , D )	opacity	progress(1rad, 1rad, 1rad)	OK=calc(0)	OK=calc(NaN)
 ser:A=C|B:outline-offset:D	outline-offset	-1e+20ic	OK=-100000000000000000000ic	OK=-1e+20ic
 ser:A=C|B:outline-width:D	outline-width	1e+20cm	OK=100000000000000000000cm	OK=1e+20cm
 ser:A=C|B:outline:D	outline	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:outline:medium	outline	medium	OK=none	OK=medium
 ser:A=C|B:overflow-clip-margin:D	overflow-clip-margin	1e+20lvi	OK=100000000000000000000lvi	OK=1e+20lvi
 ser:A=C|B:padding-block-end:D	padding-block-end	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
 ser:A=C|B:padding-block-end:P	padding-block-end	1e+20%	OK=100000000000000000000%	OK=1e+20%
@@ -1204,14 +1288,27 @@ ser:A=C|B:text-indent:P each-line	text-indent	-1e+20%  each-line	OK=-10000000000
 ser:A=C|B:text-underline-offset:D	text-underline-offset	-1e+20mm	OK=-100000000000000000000mm	OK=-1e+20mm
 ser:A=C|B:text-underline-offset:P	text-underline-offset	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A=C|B:top:D	top	-1e+20cap	OK=-100000000000000000000cap	OK=-1e+20cap
+ser:A=C|B:transform-origin:D	transform-origin	-1px	OK=-1px center 0px	OK=-1px center
+ser:A=C|B:transform-origin:P	transform-origin	-4%	OK=-4% center 0px	OK=-4% center
+ser:A=C|B:transform-origin:bottom	transform-origin	bottom	OK=center bottom 0px	OK=center bottom
+ser:A=C|B:transform-origin:center	transform-origin	center	OK=center center 0px	OK=center center
 ser:A=C|B:transform-origin:left	transform-origin	left	OK=left center 0px	OK=left center
+ser:A=C|B:transform-origin:right	transform-origin	right	OK=right center 0px	OK=right center
+ser:A=C|B:transform-origin:top	transform-origin	top	OK=center top 0px	OK=center top
+ser:A=C|B:transform:rotate( calc( ( D - D ) / D * D - D ) )	transform	rotate(calc((40em - 40px) / 1px * 1deg - 0.5turn))	OK=rotate(calc(-180deg + (1deg * (40em - 40px) / 1px)))	OK=rotate(calc((((40em - 40px) / 1px) * 1deg) - 180deg))
 ser:A=C|B:transform:skew( D ) perspective( D )	transform	skew(-1e+20grad ) perspective(2in)	OK=skew(-100000000000000000000grad) perspective(2in)	OK=skew(-1e+20grad) perspective(2in)
 ser:A=C|B:transform:skew( D , N )	transform	skew(90deg, 0)	OK=skew(90deg)	OK=skew(90deg, 0deg)
 ser:A=C|B:transform:translatey( D ) scalez( P )	transform	translateY(-1vmax) scaleZ(-1e+20%)	OK=translateY(-1vmax) scaleZ(-1000000000000000000)	OK=translateY(-1vmax) scaleZ(-1e+18)
 ser:A=C|B:transform:translatey( P ) skewy( D )	transform	translateY(-1e+20%) skewY(0.5grad)	OK=translateY(-100000000000000000000%) skewY(0.5grad)	OK=translateY(-1e+20%) skewY(0.5grad)
 ser:A=C|B:transition-delay:D	transition-delay	-1e+20ms	OK=-100000000000000000000ms	OK=-1e+20ms
 ser:A=C|B:transition-duration:D	transition-duration	1e+20s	OK=100000000000000000000s	OK=1e+20s
+ser:A=C|B:transition-timing-function:linear , ease , linear( N P P , N P , N P ) , ease-in-out	transition-timing-function	linear, ease, linear(-1e+20 0.5% 2%, 65535 -0.5%, -0.5 0%), ease-in-out	OK=linear, ease, linear(-100000000000000000000 0.5%, -100000000000000000000 2%, 65535 2%, -0.5 2%), ease-in-out	OK=linear, ease, linear(-1.00000e+20 0.5%, -1.00000e+20 2%, 65535 2%, -0.5 2%), ease-in-out
+ser:A=C|B:transition-timing-function:step-end	transition-timing-function	step-end	OK=steps(1)	OK=step-end
+ser:A=C|B:transition-timing-function:step-start	transition-timing-function	step-start	OK=steps(1, start)	OK=step-start
+ser:A=C|B:transition:allow-discrete D	transition	allow-discrete 1e+20s	OK=100000000000000000000s allow-discrete	OK=1e+20s allow-discrete
 ser:A=C|B:translate:D	translate	-1e+20cm 	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:vertical-align:D	vertical-align	-1e+20pc	OK=-100000000000000000000pc	OK=-1e+20pc
+ser:A=C|B:vertical-align:N	vertical-align	0	OK=baseline	OK=0px
 ser:A=C|B:vertical-align:P	vertical-align	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A=C|B:width:D	width	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
 ser:A=C|B:word-spacing:D	word-spacing	-1e+20em	OK=-100000000000000000000em	OK=-1e+20em
@@ -1232,6 +1329,13 @@ ser:A|B:animation-range-start:contain , entry D , D	animation-range-start	contai
 ser:A|B:animation-range-start:cover D	animation-range-start	cover -1e+20pc	OK=cover -100000000000000000000pc	OK=cover -1e+20pc
 ser:A|B:animation-range-start:normal , contain , D	animation-range-start	normal, contain , -1e+20cap	OK=normal, contain, -100000000000000000000cap	OK=normal, contain, -1e+20cap
 ser:A|B:animation-range:D , normal	animation-range	-1e+20em, normal 	OK=-100000000000000000000em, normal	OK=-1e+20em, normal
+ser:A|B:animation-range:D P	animation-range	-1e+20mm 65535%	OK=-100000000000000000000mm 65535%	OK=-1e+20mm 65535%
+ser:A|B:animation-range:entry calc( P ) entry calc( P )	animation-range	entry calc(0%) entry calc(100%)	OK=entry calc(0%) entry calc(100%)	OK=entry
+ser:A|B:animation:auto , auto , D , D auto backwards normal , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, 10s, 0.001ms auto backwards normal, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	OK=auto, auto, 10s, 0.001ms normal backwards auto, 0.001s, 0ms, auto, auto linear infinite alternate-reverse none none	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, 0.001ms ease 0s 1 normal backwards running auto, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
+ser:A|B:animation:forwards infinite D , D , auto none --a-b	animation	forwards infinite 0ms, 0ms, auto none --a-b	OK=0ms, 0ms, auto infinite forwards none --a-b	OK=0ms ease 0s infinite normal forwards running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running --a-b
+ser:A|B:background:padding-box scroll border-area	background	padding-box scroll border-area	OK=padding-box border-area	OK=scroll padding-box border-area
+ser:A|B:border-shape:circle( ) border-box circle( ) border-box	border-shape	circle() border-box circle() border-box	OK=circle() border-box circle() border-box	OK=circle() border-box
+ser:A|B:border-shape:circle( ) half-border-box circle( ) half-border-box	border-shape	circle() half-border-box circle() half-border-box	OK=circle() half-border-box circle() half-border-box	OK=circle() half-border-box
 ser:A|B:border-shape:xywh( D D D D )	border-shape	xywh(-1e+20in 360px 1.5rex 65535in ) 	OK=xywh(-100000000000000000000in 360px 1.5rex 65535in)	OK=xywh(-1e+20in 360px 1.5rex 65535in)
 ser:A|B:border-shape:xywh( D D P D )	border-shape	XyWh(-100PT -1e+20Lh 1% 0Vmin ) 	OK=xywh(-100pt -100000000000000000000lh 1% 0vmin)	OK=xywh(-100pt -1e+20lh 1% 0vmin)
 ser:A|B:color:rgb( sign( P - D ) , N , N )	color	rgb(sign(0% - 0px), 0, 0)	OK=rgb(sign(0% + 0px) 0 0)	OK=rgb(sign(0% - 0px) 0 0)
@@ -1251,7 +1355,12 @@ ser:A|B:column-rule-inset-junction:D	column-rule-inset-junction	-1e+20px 	OK=-10
 ser:A|B:column-rule-inset-junction:overlap-join P	column-rule-inset-junction	overlap-join -1e+20%	OK=overlap-join -100000000000000000000%	OK=overlap-join -1e+20%
 ser:A|B:column-rule-inset-start:D	column-rule-inset-start	-1e+20Q	OK=-100000000000000000000q	OK=-1e+20q
 ser:A|B:column-rule-inset-start:P	column-rule-inset-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset:D	column-rule-inset	-1e+20em  	OK=-100000000000000000000em	OK=-1e+20em
+ser:A|B:column-rule-inset:P P	column-rule-inset	1.5% -1% 	OK=1.5% -1%	OK=1.5% -1% / 1.5% -1%
+ser:A|B:column-rule-inset:P overlap-join	column-rule-inset	-1% overlap-join 	OK=-1% overlap-join	OK=-1% overlap-join / -1% overlap-join
 ser:A|B:column-rule-width:repeat( auto , D , medium , medium )	column-rule-width	repeat(auto, 123456789px, medium, medium) 	OK=repeat(auto, 123456789px, medium, medium)	OK=repeat(auto, 1.23457e+08px, medium, medium)
+ser:A|B:column-rule:repeat( N , D , medium rgb( from red r g b ) , groove thick , medium hwb( N P P ) ) , repeat( N , dashed , canvas dotted )	column-rule	repeat(1, 1em, medium rgb(from red r g b), groove thick, medium hwb(0 10% 20%)), repeat(1, dashed, Canvas dotted)	OK=repeat(1, 1em, medium rgb(from red r g b), thick groove, medium rgb(204, 26, 26)), repeat(1, dashed, dotted canvas)	OK=repeat(1, 1em, rgb(from red r g b), thick groove, rgb(204, 26, 26)), repeat(1, dashed, dotted canvas)
+ser:A|B:column-rule:repeat( N , double , solid medium , rgb( from red r g b ) medium groove ) , oklch( P N N ) dashed	column-rule	repeat(1, double, solid medium, rgb(from red r g b) medium groove), oklch(50% 0.1 120) dashed	OK=repeat(1, double, medium solid, medium groove rgb(from red r g b)), dashed oklch(0.5 0.1 120)	OK=repeat(1, double, solid, groove rgb(from red r g b)), dashed oklch(0.5 0.1 120)
 ser:A|B:column-rule:repeat( auto , D , canvas ) , repeat( N , thin inset ) , repeat( N , hidden , canvas )	column-rule	repeat(auto, 123456789ex, Canvas) , repeat(1, thin inset), repeat(1, hidden, Canvas)	OK=repeat(auto, 123456789ex, canvas), repeat(1, thin inset), repeat(1, hidden, canvas)	OK=repeat(auto, 1.23457e+08ex, canvas), repeat(1, thin inset), repeat(1, hidden, canvas)
 ser:A|B:columns:D / D	columns	0.001em / 123456789px	OK=0.001em / 123456789px	OK=0.001em / 1.23457e+08px
 ser:A|B:corner-block-end-shape:superellipse( N ) square	corner-block-end-shape	superellipse(-1e+20) square	OK=superellipse(-100000000000000000000) square	OK=superellipse(-1e+20) square
@@ -1278,6 +1387,10 @@ ser:A|B:corner-start-start-shape:superellipse( N )	corner-start-start-shape	supe
 ser:A|B:corner-top-left-shape:superellipse( N )	corner-top-left-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
 ser:A|B:corner-top-right-shape:superellipse( N )	corner-top-right-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
 ser:A|B:corner-top-shape:superellipse( N )	corner-top-shape	superellipse(-1e+20)	OK=superellipse(-100000000000000000000)	OK=superellipse(-1e+20)
+ser:A|B:font-palette:palette-mix( in oklab , --foo P , normal )	font-palette	palette-mix(in oklab, --foo 30%, normal)	OK=palette-mix(--foo 30%, normal 70%)	OK=palette-mix(in oklab, --foo 30%, normal 70%)
+ser:A|B:font-palette:palette-mix( in oklab , P light , dark )	font-palette	palette-mix(in oklab, 30% light, dark)	OK=palette-mix(light 30%, dark 70%)	OK=palette-mix(in oklab, light 30%, dark 70%)
+ser:A|B:font-palette:palette-mix( in oklab , light P , light )	font-palette	palette-mix(in oklab, light 30%, light)	OK=palette-mix(light 30%, light 70%)	OK=palette-mix(in oklab, light 30%, light 70%)
+ser:A|B:font-palette:palette-mix( in oklab , light P , normal )	font-palette	palette-mix(in oklab, light 30%, normal)	OK=palette-mix(light 30%, normal 70%)	OK=palette-mix(in oklab, light 30%, normal 70%)
 ser:A|B:height:anchor-size( P )	height	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
 ser:A|B:initial-letter:N N	initial-letter	123456789 1	OK=123456789 1	OK=1.23457e+08 1
 ser:A|B:initial-letter:N drop	initial-letter	123456789 drop	OK=123456789 drop	OK=1.23457e+08 drop
@@ -1304,9 +1417,15 @@ ser:A|B:row-rule-inset-junction-end:D	row-rule-inset-junction-end	-1e+20cm	OK=-1
 ser:A|B:row-rule-inset-junction-end:P	row-rule-inset-junction-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A|B:row-rule-inset-junction-start:D	row-rule-inset-junction-start	-1e+20Q	OK=-100000000000000000000q	OK=-1e+20q
 ser:A|B:row-rule-inset-junction-start:P	row-rule-inset-junction-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:row-rule-inset-junction:D	row-rule-inset-junction	-1e+20em 	OK=-100000000000000000000em	OK=-1e+20em
 ser:A|B:row-rule-inset-junction:P	row-rule-inset-junction	2147483647% 	OK=2147483647%	OK=2.14748e+09%
 ser:A|B:row-rule-inset-start:D	row-rule-inset-start	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A|B:row-rule-inset:D	row-rule-inset	-1e+20px  	OK=-100000000000000000000px	OK=-1e+20px
+ser:A|B:row-rule-inset:P P	row-rule-inset	-1% -100% 	OK=-1% -100%	OK=-1% -100% / -1% -100%
 ser:A|B:row-rule-width:D	row-rule-width	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B:row-rule:D	row-rule	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B:row-rule:repeat( N , thick ) , light-dark( red , blue ) dotted , repeat( N , #H , solid medium )	row-rule	repeat(2147483647, thick), light-dark(red, blue) dotted, repeat(1, #fff, solid medium)	OK=repeat(2147483647, thick), dotted light-dark(red, blue), repeat(1, rgb(255, 255, 255), medium solid)	OK=repeat(2147483647, thick), dotted light-dark(red, blue), repeat(1, rgb(255, 255, 255), solid)
+ser:A|B:row-rule:repeat( N , thin dotted #H ) , red dashed , thin none , repeat( N , rgb( N N N ) inset medium )	row-rule	repeat(1, thin dotted #fff), RED dashed, thin none, repeat(1, rgb(1 2 3) inset medium)	OK=repeat(1, thin dotted rgb(255, 255, 255)), dashed red, thin none, repeat(1, medium inset rgb(1, 2, 3))	OK=repeat(1, thin dotted rgb(255, 255, 255)), dashed red, thin, repeat(1, inset rgb(1, 2, 3))
 ser:A|B:rule-inset-cap:D	rule-inset-cap	-1e+20px 	OK=-100000000000000000000px	OK=-1e+20px
 ser:A|B:rule-inset-cap:P P	rule-inset-cap	-1e+20% 0.001%	OK=-100000000000000000000% 0.001%	OK=-1e+20% 0.001%
 ser:A|B:rule-inset-cap:P overlap-join	rule-inset-cap	2147483647% overlap-join	OK=2147483647% overlap-join	OK=2.14748e+09% overlap-join
@@ -1316,7 +1435,15 @@ ser:A|B:rule-inset-junction:D	rule-inset-junction	-1e+20ch 	OK=-1000000000000000
 ser:A|B:rule-inset-junction:P overlap-join	rule-inset-junction	-1e+20% overlap-join	OK=-100000000000000000000% overlap-join	OK=-1e+20% overlap-join
 ser:A|B:rule-inset-start:D	rule-inset-start	-1e+20cap	OK=-100000000000000000000cap	OK=-1e+20cap
 ser:A|B:rule-inset-start:P	rule-inset-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:rule-inset:D	rule-inset	-1e+20px  	OK=-100000000000000000000px	OK=-1e+20px
+ser:A|B:rule-inset:P overlap-join	rule-inset	-0.5% overlap-join 	OK=-0.5% overlap-join	OK=-0.5% overlap-join / -0.5% overlap-join
 ser:A|B:rule-width:D	rule-width	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B:rule:D	rule	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B:rule:color( srgb N N N / P ) , repeat( N , color-mix( in srgb , red , blue ) , medium color( srgb N N N / P ) )	rule	color(srgb 1 0 0 / 50%), repeat(1, color-mix(in srgb, red, blue), medium color(srgb 1 0 0 / 50%))	OK=color(srgb 1 0 0 / 0.5), repeat(1, color-mix(in srgb, red, blue), medium color(srgb 1 0 0 / 0.5))	OK=color(srgb 1 0 0 / 0.5), repeat(1, color-mix(in srgb, red, blue), color(srgb 1 0 0 / 0.5))
+ser:A|B:rule:repeat( N , color-mix( in srgb , red , blue ) ridge , double medium , dotted #H medium ) , repeat( N , dashed #H , red , double ) , red	rule	repeat(1, color-mix(in srgb, red, blue) ridge, double medium, dotted #fff medium), repeat(2, dashed #abc, red, double), RED	OK=repeat(1, ridge color-mix(in srgb, red, blue), medium double, medium dotted rgb(255, 255, 255)), repeat(2, dashed rgb(170, 187, 204), red, double), red	OK=repeat(1, ridge color-mix(in srgb, red, blue), double, dotted rgb(255, 255, 255)), repeat(2, dashed rgb(170, 187, 204), red, double), red
+ser:A|B:rule:repeat( N , double thin #H , color( srgb N N N / P ) none ) , repeat( N , thin currentcolor , thin none #H ) , canvas N	rule	repeat(2147483647, double thin #ff00ff80, color(srgb 1 0 0 / 50%) none), repeat(1, thin currentcolor, thin none #ff00ff80), Canvas 0	OK=repeat(2147483647, thin double rgba(255, 0, 255, 0.5), none color(srgb 1 0 0 / 0.5)), repeat(1, thin currentcolor, thin none rgba(255, 0, 255, 0.5)), 0px canvas	OK=repeat(2147483647, thin double rgba(255, 0, 255, 0.5), color(srgb 1 0 0 / 0.5)), repeat(1, thin, thin rgba(255, 0, 255, 0.5)), 0px canvas
+ser:A|B:rule:repeat( auto , solid , medium inset )	rule	repeat(auto, solid, medium inset) 	OK=repeat(auto, solid, medium inset)	OK=repeat(auto, solid, inset)
+ser:A|B:size:D D	size	100px 100px	OK=100px	OK=100px 100px
 ser:A|B:text-fit:grow consistent P	text-fit	grow consistent 1e+20%	OK=grow consistent 100000000000000000000%	OK=grow consistent 1e+20%
 ser:A|B:text-fit:none P	text-fit	none  01e+20%	OK=none 100000000000000000000%	OK=none 1e+20%
 ser:A|B:text-fit:shrink P	text-fit	shrink  123456789%	OK=shrink 123456789%	OK=shrink 1.23457e+08%
@@ -1327,9 +1454,17 @@ ser:A|B:timeline-trigger-activation-range-start:P , P	timeline-trigger-activatio
 ser:A|B:timeline-trigger-activation-range-start:normal , normal , contain P	timeline-trigger-activation-range-start	normal, normal, contain 1e+20%	OK=normal, normal, contain 100000000000000000000%	OK=normal, normal, contain 1e+20%
 ser:A|B:timeline-trigger-activation-range:P , P , exit-crossing D , entry-crossing D , D , D , exit-crossing	timeline-trigger-activation-range	10%, 0%, exit-crossing 2147483648lvi , entry-crossing 1000vh, 0lh, 65535pc, exit-crossing  	OK=10%, 0%, exit-crossing 2147483648lvi, entry-crossing 1000vh, 0lh, 65535pc, exit-crossing	OK=10%, 0%, exit-crossing 2.14748e+09lvi, entry-crossing 1000vh, 0lh, 65535pc, exit-crossing
 ser:A|B:timeline-trigger-activation-range:contain , D , entry D , P , D , normal normal , P , D	timeline-trigger-activation-range	contain , -123456789rex, entry 0.1vh , 11000%, 10lh, normal normal, 0.5%, 2147483648vh	OK=contain, -123456789rex, entry 0.1vh, 11000%, 10lh, normal, 0.5%, 2147483648vh	OK=contain, -1.23457e+08rex, entry 0.1vh, 11000%, 10lh, normal, 0.5%, 2.14748e+09vh
+ser:A|B:timeline-trigger-activation-range:contain , D , exit , contain D normal , D , D , D	timeline-trigger-activation-range	contain , 0rlh, exit  , contain 10ic normal, 0Q, 1.5ex, 0.001px	OK=contain, 0rlh, exit, contain 10ic, 0q, 1.5ex, 0.001px	OK=contain, 0rlh, exit, contain 10ic normal, 0q, 1.5ex, 0.001px
+ser:A|B:timeline-trigger-activation-range:contain , D , exit , contain D normal , D , P , D	timeline-trigger-activation-range	\ncontain , 0rlh, exit \n , \n contain\t10ic \n normal,\t3px,   0.5%,\n2147483648vh  	OK=contain, 0rlh, exit, contain 10ic, 3px, 0.5%, 2147483648vh	OK=contain, 0rlh, exit, contain 10ic normal, 3px, 0.5%, 2.14748e+09vh
+ser:A|B:timeline-trigger-activation-range:contain , D , exit , contain P P , P , P	timeline-trigger-activation-range	contain , 0rlh, exit  , contain -1e+20% -0.5%, 0.1%, .05%	OK=contain, 0rlh, exit, contain -100000000000000000000% -0.5%, 0.1%, 0.05%	OK=contain, 0rlh, exit, contain -1e+20% -0.5%, 0.1%, 0.05%
 ser:A|B:timeline-trigger-activation-range:contain , D , exit-crossing P , P , D , normal normal , P , D	timeline-trigger-activation-range	contain , 0rlh, exit-crossing -1% , 1000%, 10lh, normal normal, 0.5%, 2147483648vh	OK=contain, 0rlh, exit-crossing -1%, 1000%, 10lh, normal, 0.5%, 2147483648vh	OK=contain, 0rlh, exit-crossing -1%, 1000%, 10lh, normal, 0.5%, 2.14748e+09vh
+ser:A|B:timeline-trigger-activation-range:contain , entry-crossing exit-crossing D , D , P , normal	timeline-trigger-activation-range	contain , entry-crossing  exit-crossing -1e+20px, 65535in, 0%, normal	OK=contain, entry-crossing exit-crossing -100000000000000000000px, 65535in, 0%, normal	OK=contain, entry-crossing exit-crossing -1e+20px, 65535in, 0%, normal
+ser:A|B:timeline-trigger-activation-range:contain , entry-crossing exit-crossing P , D , D , exit	timeline-trigger-activation-range	contain , entry-crossing  exit-crossing 100%, 65535in, 0ex, exit 	OK=contain, entry-crossing exit-crossing 100%, 65535in, 0ex, exit	OK=contain, entry-crossing exit-crossing, 65535in, 0ex, exit
+ser:A|B:timeline-trigger-activation-range:contain , entry-crossing exit-crossing P , P , contain , exit P	timeline-trigger-activation-range	cONtAIn , EnTRY-CRossing  EXiT-crOSsinG 100%, 0.5%, CoNtaIN , EXiT 0.5%	OK=contain, entry-crossing exit-crossing 100%, 0.5%, contain, exit 0.5%	OK=contain, entry-crossing exit-crossing, 0.5%, contain, exit 0.5%
 ser:A|B:timeline-trigger-activation-range:normal , D cover , contain , normal , normal , normal , normal , P exit-crossing P , exit-crossing P , normal , D , contain , P normal , normal , normal	timeline-trigger-activation-range	normal, -1cm cover , contain , normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2147483647rex , contain , 1% normal, normal, normal	OK=normal, -1cm cover, contain, normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2147483647rex, contain, 1%, normal, normal	OK=normal, -1cm cover, contain, normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2.14748e+09rex, contain, 1%, normal, normal
+ser:A|B:timeline-trigger-activation-range:normal , entry P D , cover D normal , D , D , exit exit-crossing , P , D , entry , entry-crossing D	timeline-trigger-activation-range	Normal, Entry 255% 2pt, Cover 0.1rem Normal, 2147483648cqw, 2147483647lvi, Exit  Exit-Crossing , 255%, 1svw, Entry , Entry-Crossing 1000pt 	OK=normal, entry 255% 2pt, cover 0.1rem, 2147483648cqw, 2147483647lvi, exit exit-crossing, 255%, 1svw, entry, entry-crossing 1000pt	OK=normal, entry 255% 2pt, cover 0.1rem normal, 2.14748e+09cqw, 2.14748e+09lvi, exit exit-crossing, 255%, 1svw, entry, entry-crossing 1000pt
 ser:A|B:timeline-trigger-activation-range:normal , normal contain P , exit D	timeline-trigger-activation-range	normal, normal contain -1e+20%, exit -0.5cm	OK=normal, normal contain -100000000000000000000%, exit -0.5cm	OK=normal, normal contain -1e+20%, exit -0.5cm
+ser:A|B:timeline-trigger-activation-range:normal P , D , P , normal , normal normal , entry-crossing P	timeline-trigger-activation-range	normal 2147483647%, -1rlh, 2147483648%, normal, normal normal, entry-crossing 1000%	OK=normal 2147483647%, -1rlh, 2147483648%, normal, normal normal, entry-crossing 1000%	OK=normal 2.14748e+09%, -1rlh, 2.14748e+09%, normal, normal, entry-crossing 1000%
 ser:A|B:timeline-trigger-active-range-end:D , auto	timeline-trigger-active-range-end	-1e+20pc, auto	OK=-100000000000000000000pc, auto	OK=-1e+20pc, auto
 ser:A|B:timeline-trigger-active-range-end:D , contain , normal , normal	timeline-trigger-active-range-end	2147483647em, contain , normal, normal	OK=2147483647em, contain, normal, normal	OK=2.14748e+09em, contain, normal, normal
 ser:A|B:timeline-trigger-active-range-end:P , normal , entry-crossing	timeline-trigger-active-range-end	2147483648%, normal, entry-crossing 	OK=2147483648%, normal, entry-crossing	OK=2.14748e+09%, normal, entry-crossing
@@ -1341,11 +1476,28 @@ ser:A|B:timeline-trigger-active-range-start:auto , P , cover D , entry D	timelin
 ser:A|B:timeline-trigger-active-range-start:contain D , P , exit	timeline-trigger-active-range-start	contain 1e+20rem, 0.001%, exit 	OK=contain 100000000000000000000rem, 0.001%, exit	OK=contain 1e+20rem, 0.001%, exit
 ser:A|B:timeline-trigger-active-range-start:entry-crossing D , normal	timeline-trigger-active-range-start	entry-crossing -1e+20rlh, normal	OK=entry-crossing -100000000000000000000rlh, normal	OK=entry-crossing -1e+20rlh, normal
 ser:A|B:timeline-trigger-active-range-start:exit-crossing D , auto , P , normal	timeline-trigger-active-range-start	exit-crossing 0.1pc, auto, -1e+20%, normal	OK=exit-crossing 0.1pc, auto, -100000000000000000000%, normal	OK=exit-crossing 0.1pc, auto, -1e+20%, normal
+ser:A|B:timeline-trigger-active-range-start:exit-crossing P , exit , P , auto	timeline-trigger-active-range-start	exit-crossing   -1e+20%, \nexit\n,  1.5%,   auto\n	OK=exit-crossing -100000000000000000000%, exit, 1.5%, auto	OK=exit-crossing -1e+20%, exit, 1.5%, auto
 ser:A|B:timeline-trigger-active-range-start:normal , entry , P	timeline-trigger-active-range-start	normal, entry , 2147483647%	OK=normal, entry, 2147483647%	OK=normal, entry, 2.14748e+09%
 ser:A|B:timeline-trigger-active-range-start:normal , normal , D	timeline-trigger-active-range-start	normal, normal, -1e+20in	OK=normal, normal, -100000000000000000000in	OK=normal, normal, -1e+20in
 ser:A|B:timeline-trigger-active-range:entry-crossing P , normal , cover , contain , normal auto	timeline-trigger-active-range	entry-crossing 2147483648%, normal , cover , contain , normal auto	OK=entry-crossing 2147483648%, normal, cover, contain, normal	OK=entry-crossing 2.14748e+09%, normal, cover, contain, normal
 ser:A|B:timeline-trigger-active-range:normal , D	timeline-trigger-active-range	\t normal   ,   123456789dvh\n\n	OK=normal, 123456789dvh	OK=normal, 1.23457e+08dvh
+ser:A|B:timeline-trigger-source:auto , auto , none , scroll( nearest )	timeline-trigger-source	auto, auto, none, scroll(nearest)	OK=auto, auto, none, scroll(nearest)	OK=auto, auto, none, scroll()
+ser:A|B:timeline-trigger:--a-b , --foo auto , none , view( ) , none normal , entry-crossing P , normal , contain , normal , normal , normal , normal , D , exit-crossing D , D D / normal , auto , D , normal exit , normal , P , D	timeline-trigger	--a-b, --foo auto, none, view(), none normal, entry-crossing -1%, normal, contain  , normal, normal, normal , normal, 0.1vmin, exit-crossing 2147483647em, -100dvh 0.5Q / normal, auto, -0.5pc, normal exit , normal, 255%, 1000dvh	OK=--a-b, --foo auto, none, view(), none normal, entry-crossing -1%, normal, contain, normal, normal, normal, normal, 0.1vmin, exit-crossing 2147483647em, -100dvh 0.5q / normal, auto, -0.5pc, normal exit, normal, 255%, 1000dvh	OK=--a-b, --foo, none, view(), none, entry-crossing -1%, none, contain, none, none, none, none, 0.1vmin, exit-crossing 2.14748e+09em, -100dvh 0.5q / normal, none, -0.5pc, exit, none, 255%, 1000dvh
+ser:A|B:timeline-trigger:--foo , --foo , --a-b auto , auto , none view( ) , none D , P , exit-crossing D cover , P , D , P , exit-crossing , D , D normal , normal , D , P , P , D , P , exit P , normal , exit P D , D , cover D , --a-b , --foo , --a-b , --a-b none	timeline-trigger	--foo, --foo, --a-b /*x*/auto, auto , none view(), none 0.001vmax, 1.5%, exit-crossing 123456789in cover , 2147483647%, 100vw, 2147483647%, exit-crossing , 255ch, -1ic normal, normal, 2147483647cap, -100%, 65535%, 360mm, 0%, exit  -0.5%, normal, exit 2% 0pt, 65535svw, cover 255lh , --a-b, --foo, --a-b, --a-b none 	OK=--foo, --foo, --a-b auto, auto, none view(), none 0.001vmax, 1.5%, exit-crossing 123456789in cover, 2147483647%, 100vw, 2147483647%, exit-crossing, 255ch, -1ic normal, normal, 2147483647cap, -100%, 65535%, 360mm, 0%, exit -0.5%, normal, exit 2% 0pt, 65535svw, cover 255lh, --a-b, --foo, --a-b, --a-b none	OK=--foo, --foo, --a-b, none, view(), 0.001vmax, 1.5%, exit-crossing 1.23457e+08in cover, 2.14748e+09%, 100vw, 2.14748e+09%, exit-crossing, 255ch, -1ic, none, 2.14748e+09cap, -100%, 65535%, 360mm, 0%, exit -0.5%, none, exit 2% 0pt, 65535svw, cover 255lh, --a-b, --foo, --a-b, --a-b none
+ser:A|B:timeline-trigger:--foo , --foo , --a-b auto , auto , none view( ) , none D , P , normal contain D , normal , P , D , normal , cover , normal , entry-crossing D normal , normal , D , P / P , cover P , --a-b auto , auto	timeline-trigger	--foo, --foo, --a-b auto, auto , none view(), none 0.001vmax, -1%, normal contain 255vmax, normal, 2147483647% , 2147483648vmin, normal , cover , normal, entry-crossing -1ic normal, normal, 2147483647cap, -100% / 10%, cover 0% , --a-b auto, auto 	OK=--foo, --foo, --a-b auto, auto, none view(), none 0.001vmax, -1%, normal contain 255vmax, normal, 2147483647%, 2147483648vmin, normal, cover, normal, entry-crossing -1ic normal, normal, 2147483647cap, -100% / 10%, cover 0%, --a-b auto, auto	OK=--foo, --foo, --a-b, none, view(), 0.001vmax, -1%, contain 255vmax, none, 2.14748e+09%, 2.14748e+09vmin, none, cover, none, entry-crossing -1ic, none, 2.14748e+09cap, -100% / 10%, cover, --a-b, none
+ser:A|B:timeline-trigger:--foo , --foo , --a-b auto , auto , none view( ) , none D , contain , normal contain D , normal , P , D , normal , cover , normal , entry-crossing D normal , normal , D , P / P , cover P , --a-b auto , auto	timeline-trigger	--foo, --foo, --a-b auto, auto , none view(), none -1e+20vmin, contain , normal contain 255vmax, normal, 2147483647% , 2147483648vmin, normal , cover , normal, entry-crossing -1ic normal, normal, 2147483647cap, -100% / 10%, cover 0% , --a-b auto, auto 	OK=--foo, --foo, --a-b auto, auto, none view(), none -100000000000000000000vmin, contain, normal contain 255vmax, normal, 2147483647%, 2147483648vmin, normal, cover, normal, entry-crossing -1ic normal, normal, 2147483647cap, -100% / 10%, cover 0%, --a-b auto, auto	OK=--foo, --foo, --a-b, none, view(), -1e+20vmin, contain, contain 255vmax, none, 2.14748e+09%, 2.14748e+09vmin, none, cover, none, entry-crossing -1ic, none, 2.14748e+09cap, -100% / 10%, cover, --a-b, none
+ser:A|B:timeline-trigger:none auto , none P , normal , D , cover D , D , exit D , D , P P , D , entry D , contain P / D entry , exit	timeline-trigger	none\nauto,\tnone\t2%,\nnormal,  2147483648pt   , cover  1e+20pc,  0.5cm\t,  exit   2147483647dvh, \t-1ic   ,  1% /* c */ 1.5%, 1000em, \n entry \n -0.5em, \tcontain\n2%\t/ 1pt   entry \n ,   exit   \n	OK=none auto, none 2%, normal, 2147483648pt, cover 100000000000000000000pc, 0.5cm, exit 2147483647dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit	OK=none, 2%, none, 2.14748e+09pt, cover 1e+20pc, 0.5cm, exit 2.14748e+09dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit
+ser:A|B:timeline-trigger:none auto , none P , normal , D , cover D , entry-crossing P , D , D , P P , D , entry D , contain P / D entry , exit	timeline-trigger	NoNE aUto, nOne 2%, NOrMAL, 2147483648pT , cOvER 0lh, EntRy-CroSsing -1% , 2147483647dVh, -1Ic  , 1% 1.5%, 1000em, ENtrY  -0.5eM, conTAIN 2% / 1Pt EnTrY , Exit 	OK=none auto, none 2%, normal, 2147483648pt, cover 0lh, entry-crossing -1%, 2147483647dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit	OK=none, 2%, none, 2.14748e+09pt, cover 0lh, entry-crossing -1%, 2.14748e+09dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit
+ser:A|B:timeline-trigger:none auto , none P , normal , D , cover P , D , exit D , D , P P , D , entry D , contain P / D entry , exit	timeline-trigger	none auto, none 2%, normal, 0pt , cover 2147483647%, 0.5cm , exit 2147483647dvh, -1ic  , 1% 1.5%, 1000em, entry  -0.5em, contain 2% / 1pt entry , exit 	OK=none auto, none 2%, normal, 0pt, cover 2147483647%, 0.5cm, exit 2147483647dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit	OK=none, 2%, none, 0pt, cover 2.14748e+09%, 0.5cm, exit 2.14748e+09dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit
+ser:A|B:timeline-trigger:none auto , none P , normal , D , normal P , entry-crossing P , exit D , D , P / cover P , normal , normal normal , entry , exit-crossing D , exit-crossing D , auto , D , contain D entry-crossing , D cover , exit D , normal cover D , D , entry-crossing D / auto , exit-crossing P , D , D D , P , exit , normal	timeline-trigger	nONE AUto, nOne 2%, nOrmal, -1E+20EM , nOrMaL 2147483647%, eNtRY-CROssING -1%, ExIt 2147483647dVH, -1iC, 65535%  / cOver 1.5%, NorMal, nOrmal nOrmAL, EnTRy , ExiT-croSSiNG -0.5Em, ExIT-CroSsing 0.5CH, AUtO, 1PT, coNtAin 255ReX entry-croSsinG , -1in cOveR , EXit 1cqW, NORmal COVEr 0.001REm, 100pT, eNTrY-CROssiNg -1in  / AUTo, ExIT-crOsSInG 360%, 100LH, 0.001rLh 1.5rEX, 0.1%, exIT , nORMAL	OK=none auto, none 2%, normal, -100000000000000000000em, normal 2147483647%, entry-crossing -1%, exit 2147483647dvh, -1ic, 65535% / cover 1.5%, normal, normal normal, entry, exit-crossing -0.5em, exit-crossing 0.5ch, auto, 1pt, contain 255rex entry-crossing, -1in cover, exit 1cqw, normal cover 0.001rem, 100pt, entry-crossing -1in / auto, exit-crossing 360%, 100lh, 0.001rlh 1.5rex, 0.1%, exit, normal	OK=none, 2%, none, -1e+20em, 2.14748e+09%, entry-crossing -1%, exit 2.14748e+09dvh, -1ic, 65535% / cover 1.5%, none, none, entry, exit-crossing -0.5em, exit-crossing 0.5ch, none, 1pt, contain 255rex entry-crossing, -1in cover, exit 1cqw, cover 0.001rem, 100pt, entry-crossing -1in, exit-crossing 360%, 100lh, 0.001rlh 1.5rex, 0.1%, exit, none
+101px  ,	#fff)
+ser:A|B:view-timeline-inset:D P	view-timeline-inset	-1e+20vmax 0%	OK=-100000000000000000000vmax 0%	OK=-1e+20vmax 0%
+ser:A|B:view-timeline-inset:auto , D auto	view-timeline-inset	auto, 2147483647em auto	OK=auto, 2147483647em auto	OK=auto, 2.14748e+09em auto
+ser:A|B:view-timeline-inset:auto auto , P , auto auto	view-timeline-inset	auto auto, 2147483648%, auto auto	OK=auto auto, 2147483648%, auto auto	OK=auto, 2.14748e+09%, auto
+ser:A|B:view-timeline-inset:auto auto , auto auto , auto auto , auto	view-timeline-inset	auto auto, auto auto, auto auto, auto	OK=auto auto, auto auto, auto auto, auto	OK=auto, auto, auto, auto
+ser:A|B:view-timeline:none , --foo , --foo , --a-b , --a-b P , --a-b , --foo block , none	view-timeline	none , --foo, --foo, --a-b, --a-b 360%, --a-b, --foo block, none 	OK=none, --foo, --foo, --a-b, --a-b 360%, --a-b, --foo block, none	OK=none, --foo, --foo, --a-b, --a-b 360%, --a-b, --foo, none
 ser:A|B=C:-webkit-text-stroke:D oklch( P N N )	-webkit-text-stroke	0px oklch(50% 0.1 120)	OK=oklch(0.5 0.1 120)	OK=0px oklch(0.5 0.1 120)
+ser:A|B=C:animation-timing-function:linear( N , N )	animation-timing-function	linear(0, 1)	OK=linear(0, 1)	OK=linear(0 0%, 1 100%)
 ser:A|B=C:background-image:none , repeating-conic-gradient( color( srgb N N N / P ) P P , color( srgb N N N / P ) ) , none , none	background-image	none, repeating-conic-gradient(color(srgb 1 0 0 / 50%) -1% -1% , color(srgb 1 0 0 / 50%) ), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1% -1%, color(srgb 1 0 0 / 0.5)), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none
 ser:A|B=C:border-image-source:image-set( S )	border-image-source	image-set("\\41 " )	OK=image-set("A")	OK=image-set(url("A") 1x)
 ser:A|B=C:clip-path:shape( from D D , arc by D D of P P cw rotate D )	clip-path	shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.14159265rad)	OK=shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.141593rad)	OK=shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.14159rad)
@@ -1373,9 +1525,16 @@ ser:A|B|C:-webkit-text-stroke-width:D	-webkit-text-stroke-width	123456789lh	OK=1
 ser:A|B|C:animation-delay:D	animation-delay	123456789s 	OK=123456789s	OK=1.23457e+08s
 ser:A|B|C:animation-duration:D , D	animation-duration	123456789ms, 100ms	OK=123456789ms, 100ms	OK=1.23457e+08ms, 100ms
 ser:A|B|C:animation-iteration-count:N	animation-iteration-count	123456789	OK=123456789	OK=1.23457e+08
+ser:A|B|C:animation-timing-function:ease-in , linear( N , N , N P ) , steps( N , jump-none ) , linear( N P P , N )	animation-timing-function	ease-in, linear( 65535, -0.5 , 255 1%), steps(2 , jump-none), linear(2147483648 0.5% 255%,  0.001)	OK=ease-in, linear(65535, -0.5, 255 1%), steps(2, jump-none), linear(2147483648 0.5%, 2147483648 255%, 0.001)	OK=ease-in, linear(65535 0%, -0.5 0.5%, 255 1%), steps(2, jump-none), linear(2.14748e+9 0.5%, 2.14748e+9 255%, 0.001 255%)
+ser:A|B|C:animation-timing-function:linear , ease-in , linear( N P P , N P P ) , step-start	animation-timing-function	\t linear,\tease-in,   linear(1\n2147483648%\n0.5%,  0.001\n360% 1000%), \nstep-start	OK=linear, ease-in, linear(1 2147483648%, 1 2147483648%, 0.001 2147483648%, 0.001 2147483648%), steps(1, start)	OK=linear, ease-in, linear(1 2.14748e+9%, 1 2.14748e+9%, 0.001 2.14748e+9%, 0.001 2.14748e+9%), step-start
+ser:A|B|C:animation-timing-function:linear , linear( N P , N , N , P N ) , linear	animation-timing-function	linear, linear(360 0%, -100 , 0.5 , 1e+20% 10), linear	OK=linear, linear(360 0%, -100, 0.5, 10 100000000000000000000%), linear	OK=linear, linear(360 0%, -100 3.33333e+19%, 0.5 6.66667e+19%, 10 1.00000e+20%), linear
+ser:A|B|C:animation-timing-function:linear , step-start , linear( N P , N , N , P N )	animation-timing-function	linear, step-start, linear(-100 0.1%, 0.5 , 10 , 65535% 2)	OK=linear, steps(1, start), linear(-100 0.1%, 0.5, 10, 2 65535%)	OK=linear, step-start, linear(-100 0.1%, 0.5 21845.1%, 10 43690%, 2 65535%)
+ser:A|B|C:animation-timing-function:step-end , linear , ease-in , linear( N , N , N P , N )	animation-timing-function	step-end, \n linear,    ease-in,  linear(\t2,   1e+20,\n0.001   -100%,  0.5)\n	OK=steps(1), linear, ease-in, linear(2, 100000000000000000000, 0.001 -100%, 0.5)	OK=step-end, linear, ease-in, linear(2 0%, 1.00000e+20 0%, 0.001 0%, 0.5 100%)
+ser:A|B|C:animation-timing-function:steps( N , jump-both ) , ease , linear( N P P , N P ) , linear	animation-timing-function	steps(1 , jump-both), ease, linear(10 65535% 2147483647%, 0.001 0%), linear	OK=steps(1, jump-both), ease, linear(10 65535%, 10 2147483647%, 0.001 2147483647%), linear	OK=steps(1, jump-both), ease, linear(10 65535%, 10 2.14748e+9%, 0.001 2.14748e+9%), linear
 ser:A|B|C:animation:auto	animation	auto	OK=none	OK=auto ease 0s 1 normal none running none
 ser:A|B|C:backdrop-filter:drop-shadow( light-dark( red , blue ) D D D )	backdrop-filter	drop-shadow(light-dark(red, blue) 10pt 0.5cap 123456789cm)	OK=drop-shadow(light-dark(red, blue) 10pt 0.5cap 123456789cm)	OK=drop-shadow(light-dark(red, blue) 10pt 0.5cap 1.23457e+08cm)
 ser:A|B|C:backdrop-filter:invert( N ) hue-rotate( D ) url( a . png )	backdrop-filter	invert(1e-07) hue-rotate(255rad) url(a.png)	OK=invert(0) hue-rotate(255rad) url("a.png")	OK=invert(1e-07) hue-rotate(255rad) url("a.png")
+ser:A|B|C:backdrop-filter:sepia( N ) hue-rotate( N ) grayscale( ) url( a . png )	backdrop-filter	sepia(1e-07) hue-rotate(0) grayscale() url(a.png)	OK=sepia(0) hue-rotate(0deg) grayscale() url("a.png")	OK=sepia(1e-07) hue-rotate(0deg) grayscale() url("a.png")
 ser:A|B|C:backdrop-filter:sepia( N ) url( S ) url( a . png ) invert( N )	backdrop-filter	sepia(0.1) url("b c.png") url(a.png) invert(1e-07)	OK=sepia(0.1) url("b c.png") url("a.png") invert(0)	OK=sepia(0.1) url("b c.png") url("a.png") invert(1e-07)
 ser:A|B|C:background-position-x:D	background-position-x	 123456789svw	OK=123456789svw	OK=1.23457e+08svw
 ser:A|B|C:background-position:bottom P right D	background-position	bottom -1% right 2147483648svw	OK=right 2147483648svw bottom -1%	OK=right 2.14748e+09svw bottom -1%
@@ -1393,9 +1552,11 @@ ser:A|B|C:border-block-width:D	border-block-width	123456789lh	OK=123456789lh	OK=
 ser:A|B|C:border-block:D	border-block	123456789ch	OK=123456789ch	OK=1.23457e+08ch
 ser:A|B|C:border-bottom-left-radius:D	border-bottom-left-radius	123456789cqw 	OK=123456789cqw	OK=1.23457e+08cqw
 ser:A|B|C:border-bottom-right-radius:D	border-bottom-right-radius	123456789px 	OK=123456789px	OK=1.23457e+08px
+ser:A|B|C:border-bottom-right-radius:P P	border-bottom-right-radius	123456789% 1e+20%	OK=123456789% 100000000000000000000%	OK=1.23457e+08% 1e+20%
 ser:A|B|C:border-bottom-width:D	border-bottom-width	123456789Q	OK=123456789q	OK=1.23457e+08q
 ser:A|B|C:border-bottom:D	border-bottom	123456789cqw	OK=123456789cqw	OK=1.23457e+08cqw
 ser:A|B|C:border-end-end-radius:D	border-end-end-radius	123456789cap	OK=123456789cap	OK=1.23457e+08cap
+ser:A|B|C:border-end-start-radius:D	border-end-start-radius	123456789dvh 	OK=123456789dvh	OK=1.23457e+08dvh
 ser:A|B|C:border-end-start-radius:P P	border-end-start-radius	123456789% 1000%	OK=123456789% 1000%	OK=1.23457e+08% 1000%
 ser:A|B|C:border-image-outset:D	border-image-outset	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-image-outset:N	border-image-outset	123456789	OK=123456789	OK=1.23457e+08
@@ -1415,6 +1576,7 @@ ser:A|B|C:border-radius:D	border-radius	123456789px 	OK=123456789px	OK=1.23457e+
 ser:A|B|C:border-right-width:D	border-right-width	123456789dvh	OK=123456789dvh	OK=1.23457e+08dvh
 ser:A|B|C:border-right:D	border-right	123456789ch	OK=123456789ch	OK=1.23457e+08ch
 ser:A|B|C:border-spacing:D	border-spacing	123456789in	OK=123456789in	OK=1.23457e+08in
+ser:A|B|C:border-start-end-radius:D	border-start-end-radius	123456789pt	OK=123456789pt	OK=1.23457e+08pt
 ser:A|B|C:border-start-end-radius:P	border-start-end-radius	2147483647%	OK=2147483647%	OK=2.14748e+09%
 ser:A|B|C:border-start-start-radius:D	border-start-start-radius	123456789ic 	OK=123456789ic	OK=1.23457e+08ic
 ser:A|B|C:border-start-start-radius:P	border-start-start-radius	123456789%	OK=123456789%	OK=1.23457e+08%
@@ -1447,6 +1609,8 @@ ser:A|B|C:fill-opacity:N	fill-opacity	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:fill-opacity:P	fill-opacity	123456789%	OK=1234567.89	OK=1.23457e+06
 ser:A|B|C:filter:opacity( P ) blur( D )	filter	opacity(2147483648%) blur(123456789ch)	OK=opacity(100%) blur(123456789ch)	OK=opacity(100%) blur(1.23457e+08ch)
 ser:A|B|C:filter:opacity( P ) url( a . png )	filter	opacity(1e-07%) url(a.png)	OK=opacity(0%) url("a.png")	OK=opacity(1e-07%) url("a.png")
+ser:A|B|C:filter:sepia( P ) saturate( N ) blur( ) url( a . png )	filter	sepia(1e-07%) saturate(0.5) blur() url(a.png)	OK=sepia(0%) saturate(0.5) blur() url("a.png")	OK=sepia(1e-07%) saturate(0.5) blur() url("a.png")
+ser:A|B|C:filter:sepia( P ) url( e ) saturate( ) sepia( N )	filter	sepia(1%) url(  e  ) saturate() sepia(1e-07)	OK=sepia(1%) url("e") saturate() sepia(0)	OK=sepia(1%) url("e") saturate() sepia(1e-07)
 ser:A|B|C:flex-grow:N	flex-grow	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:flex-shrink:N	flex-shrink	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:flex:N	flex	123456789 	OK=123456789 1 0%	OK=1.23457e+08 1 0%
@@ -1610,6 +1774,7 @@ ser:A|B|C:shape-margin:D	shape-margin	123456789Q	OK=123456789q	OK=1.23457e+08q
 ser:A|B|C:shape-outside:xywh( D D P D )	shape-outside	xywh(-1e+20pt 2147483647rlh 0% 65535cqw )	OK=xywh(-100000000000000000000pt 2147483647rlh 0% 65535cqw)	OK=xywh(-1e+20pt 2.14748e+09rlh 0% 65535cqw)
 ser:A|B|C:stop-opacity:N	stop-opacity	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:stroke-dashoffset:D	stroke-dashoffset	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B|C:stroke-dashoffset:N	stroke-dashoffset	-1e+20	OK=-100000000000000000000	OK=-1e+20
 ser:A|B|C:stroke-dashoffset:P	stroke-dashoffset	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:stroke-miterlimit:N	stroke-miterlimit	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:stroke-opacity:N	stroke-opacity	123456789	OK=123456789	OK=1.23457e+08
@@ -1640,6 +1805,11 @@ ser:A|B|C:transform:translatey( D ) scalez( P )	transform	translateY(-1vmax) sca
 ser:A|B|C:transform:translatey( P ) skewy( D )	transform	translateY(123456789%) skewY(0.5grad)	OK=translateY(123456789%) skewY(0.5grad)	OK=translateY(1.23457e+08%) skewY(0.5grad)
 ser:A|B|C:transition-delay:D	transition-delay	123456789ms	OK=123456789ms	OK=1.23457e+08ms
 ser:A|B|C:transition-duration:D	transition-duration	123456789s	OK=123456789s	OK=1.23457e+08s
+ser:A|B|C:transition-timing-function:linear , ease , linear( N , P N , N ) , step-end	transition-timing-function	linear, ease, linear(-1.5 , 65535% -2,  1.5), step-end	OK=linear, ease, linear(-1.5, -2 65535%, 1.5), steps(1)	OK=linear, ease, linear(-1.5 0%, -2 65535%, 1.5 65535%), step-end
+ser:A|B|C:transition-timing-function:linear , ease , linear( N P P , N P , N P ) , ease-in-out	transition-timing-function	\nlinear, ease, \n linear(1e-07   0.5%  2%,\n65535/**/ -0.5%,  -0.5\t0%),\nease-in-out 	OK=linear, ease, linear(0 0.5%, 0 2%, 65535 2%, -0.5 2%), ease-in-out	OK=linear, ease, linear(1.00000e-7 0.5%, 1.00000e-7 2%, 65535 2%, -0.5 2%), ease-in-out
+ser:A|B|C:transition-timing-function:linear( N , N P , N P ) , linear , step-start , step-end	transition-timing-function	 linear(\n0,\n2147483647   0.001%,  255  360%),  linear,\nstep-start,  step-end 	OK=linear(0, 2147483647 0.001%, 255 360%), linear, steps(1, start), steps(1)	OK=linear(0 0%, 2.14748e+9 0.001%, 255 360%), linear, step-start, step-end
+ser:A|B|C:transition-timing-function:step-end , linear( P P N , P P N ) , ease-in-out , step-end	transition-timing-function	step-end,  \n linear(2%   2147483648%   2,   0.5% \n 100% 0),  ease-in-out, \n step-end\n	OK=steps(1), linear(2 2%, 2 2147483648%, 0 2147483648%, 0 2147483648%), ease-in-out, steps(1)	OK=step-end, linear(2 2%, 2 2.14748e+9%, 0 2.14748e+9%, 0 2.14748e+9%), ease-in-out, step-end
+ser:A|B|C:transition-timing-function:steps( N , jump-none ) , linear( N , N , P N ) , linear( N P P , P P N , N , P P N )	transition-timing-function	steps( 2147483647   ,  jump-none),\nlinear(1e+20\t,   360, \n 100%  100),\nlinear(0\t1e+20%\t-1%,\n2147483648%\n0.1%   -0.5,\t0.001,   360%\t-0.5%\n-100)\n	OK=steps(2147483647, jump-none), linear(100000000000000000000, 360, 100 100%), linear(0 100000000000000000000%, 0 100000000000000000000%, -0.5 100000000000000000000%, -0.5 100000000000000000000%, 0.001, -100 100000000000000000000%, -100 100000000000000000000%)	OK=steps(2147483647, jump-none), linear(1.00000e+20 0%, 360 50%, 100 100%), linear(0 1.00000e+20%, 0 1.00000e+20%, -0.5 1.00000e+20%, -0.5 1.00000e+20%, 0.001 1.00000e+20%, -100 1.00000e+20%, -100 1.00000e+20%)
 ser:A|B|C:vertical-align:D	vertical-align	123456789pc	OK=123456789pc	OK=1.23457e+08pc
 ser:A|B|C:vertical-align:P	vertical-align	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:word-spacing:D	word-spacing	123456789em	OK=123456789em	OK=1.23457e+08em
