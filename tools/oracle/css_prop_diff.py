@@ -580,6 +580,23 @@ def _canonical_numbers(text):
     return _NUMBER.sub(lambda m: repr(float(m.group(0))), text)
 
 
+def _number_pairs(text, other):
+    """The kinds of difference between the numbers of two texts that have the same words: "p" for a pair that differs by at most 5e-6 of its size, "d" for a pair that
+    differs by less than 1e-6 and not by that; None when a pair differs by more."""
+    kinds = set()
+    for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(other)):
+        diff = abs(float(a) - float(b))
+        if diff == 0:
+            continue
+        if diff <= 5e-6 * max(abs(float(a)), abs(float(b))):
+            kinds.add("p")
+        elif diff < 1e-6:
+            kinds.add("d")
+        else:
+            return None
+    return kinds
+
+
 def cause_labels(ours, chromium, firefox):
     """What differs in an item, named, so that a rule can say which differences it is about. A rule whose reason begins `[cause: a, b]` holds for a
     key only when every item of the key differs from the engines in nothing but those ways: a rule that matched on the key alone would hide a defect of
@@ -591,6 +608,7 @@ def cause_labels(ours, chromium, firefox):
                     keeps six significant digits, or a 32-bit float: 1.23457e+08 or 123456792 for 123456789)
       E-decimals    both accept, the texts are the same once every number is replaced, and each pair of numbers differs by less than 1e-6 (this library writes at
                     most six decimals: 0 for 1e-07)
+      (an item with a number of each kind of precision and decimals has both labels)
       E-longer      both accept and the engine writes every word this library writes and more (the components of a shorthand that are the initial value)
       E-shorter     both accept and every word the engine writes is a word this library writes, and it writes fewer (a component the engine leaves out)
       E-case        both accept and the texts are the same once ASCII letters are folded to lower case
@@ -611,12 +629,14 @@ def cause_labels(ours, chromium, firefox):
             words_o, words_e = re.findall(r"[^\s,()/]+", ours[1]), re.findall(r"[^\s,()/]+", text)
             if exponent and _canonical_numbers(text) == _canonical_numbers(ours[1]):
                 labels.add(name + "-notation")
-            elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and all(
-                    abs(float(a) - float(b)) <= 5e-6 * max(abs(float(a)), abs(float(b))) for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(ours[1]))):
-                labels.add(name + "-precision")
-            elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and all(
-                    abs(float(a) - float(b)) < 1e-6 for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(ours[1]))):
-                labels.add(name + "-decimals")
+            elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and _number_pairs(text, ours[1]) is not None:
+                # the same words, and numbers that differ only by what an engine keeps (six significant digits, or a 32-bit float: precision) or what this library
+                # keeps (six decimals: decimals); an item with a number of each kind has both labels
+                kinds = _number_pairs(text, ours[1])
+                if "p" in kinds or not kinds:
+                    labels.add(name + "-precision")
+                if "d" in kinds:
+                    labels.add(name + "-decimals")
             elif text.lower() == ours[1].lower():
                 labels.add(name + "-case")
             elif re.sub(r"[\"']", "", text) == re.sub(r"[\"']", "", ours[1]):

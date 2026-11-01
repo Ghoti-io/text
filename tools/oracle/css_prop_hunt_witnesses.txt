@@ -887,6 +887,7 @@ ser:A=C|B:border-bottom-left-radius:D	border-bottom-left-radius	1e+20cqw 	OK=100
 ser:A=C|B:border-bottom-right-radius:D	border-bottom-right-radius	1e+20px 	OK=100000000000000000000px	OK=1e+20px
 ser:A=C|B:border-bottom-right-radius:P P	border-bottom-right-radius	0% 1e+20%	OK=0% 100000000000000000000%	OK=0% 1e+20%
 ser:A=C|B:border-bottom-width:D	border-bottom-width	1e+20Q	OK=100000000000000000000q	OK=1e+20q
+ser:A=C|B:border-bottom:D	border-bottom	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
 ser:A=C|B:border-end-end-radius:D	border-end-end-radius	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
 ser:A=C|B:border-end-start-radius:D	border-end-start-radius	1e+20dvh 	OK=100000000000000000000dvh	OK=1e+20dvh
 ser:A=C|B:border-end-start-radius:P P	border-end-start-radius	1e+20% 1000%	OK=100000000000000000000% 1000%	OK=1e+20% 1000%
@@ -950,6 +951,7 @@ ser:A=C|B:flex-shrink:N	flex-shrink	+.678E9	OK=678000000	OK=6.78e+08
 ser:A=C|B:flex:N	flex	1e+20 	OK=100000000000000000000 1 0%	OK=1e+20 1 0%
 ser:A=C|B:flood-opacity:N	flood-opacity	-1e+20	OK=-100000000000000000000	OK=-1e+20
 ser:A=C|B:flood-opacity:P	flood-opacity	0.001%	OK=0.00001	OK=1e-05
+ser:A=C|B:font-size-adjust:N	font-size-adjust	 1e+20	OK=100000000000000000000	OK=1e+20
 ser:A=C|B:font-size:D	font-size	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
 ser:A=C|B:font-size:P	font-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
 ser:A=C|B:font-variant-ligatures:historical-ligatures common-ligatures no-contextual	font-variant-ligatures	historical-ligatures common-ligatures no-contextual	OK=common-ligatures historical-ligatures no-contextual	OK=historical-ligatures common-ligatures no-contextual
@@ -1176,6 +1178,7 @@ ser:A|B:column-rule-inset-junction-end:D	column-rule-inset-junction-end	-1e+20ic
 ser:A|B:column-rule-inset-junction-end:P	column-rule-inset-junction-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A|B:column-rule-inset-junction-start:D	column-rule-inset-junction-start	-1e+20em	OK=-100000000000000000000em	OK=-1e+20em
 ser:A|B:column-rule-inset-junction-start:P	column-rule-inset-junction-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A|B:column-rule-inset-junction:D	column-rule-inset-junction	-1e+20px 	OK=-100000000000000000000px	OK=-1e+20px
 ser:A|B:column-rule-inset-junction:overlap-join P	column-rule-inset-junction	overlap-join -1e+20%	OK=overlap-join -100000000000000000000%	OK=overlap-join -1e+20%
 ser:A|B:column-rule-inset-start:D	column-rule-inset-start	-1e+20Q	OK=-100000000000000000000q	OK=-1e+20q
 ser:A|B:column-rule-inset-start:P	column-rule-inset-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
@@ -1211,12 +1214,15 @@ ser:A|B:initial-letter:N N	initial-letter	123456789 1	OK=123456789 1	OK=1.23457e
 ser:A|B:initial-letter:N drop	initial-letter	123456789 drop	OK=123456789 drop	OK=1.23457e+08 drop
 ser:A|B:interest-delay-end:D	interest-delay-end	123456789ms	OK=123456789ms	OK=1.23457e+08ms
 ser:A|B:interest-delay-start:D	interest-delay-start	123456789ms	OK=123456789ms	OK=1.23457e+08ms
+ser:A|B:interest-delay:D	interest-delay	 123456789s 	OK=123456789s	OK=1.23457e+08s
 ser:A|B:max-block-size:anchor-size( --a-b , D )	max-block-size	anchor-size(--a-b , -1e+20ic)	OK=anchor-size(--a-b, -100000000000000000000ic)	OK=anchor-size(--a-b, -1e+20ic)
 ser:A|B:max-block-size:anchor-size( P )	max-block-size	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
 ser:A|B:max-height:anchor-size( D )	max-height	anchor-size(-1e+20in)	OK=anchor-size(-100000000000000000000in)	OK=anchor-size(-1e+20in)
 ser:A|B:min-inline-size:anchor-size( P )	min-inline-size	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
 ser:A|B:min-width:anchor-size( P )	min-width	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
+ser:A|B:object-view-box:inset( D )	object-view-box	inset(-1e+20dvh )	OK=inset(-100000000000000000000dvh)	OK=inset(-1e+20dvh)
 ser:A|B:object-view-box:xywh( D D D D round D )	object-view-box	XYWH(1E+20LH 10CH 360VMIN 0VW ROUND 100VW )	OK=xywh(100000000000000000000lh 10ch 360vmin 0vw round 100vw)	OK=xywh(1e+20lh 10ch 360vmin 0vw round 100vw)
+ser:A|B:object-view-box:xywh( D D P P )	object-view-box	xywh(-1e+20pc 0.001in 65535% 0% )	OK=xywh(-100000000000000000000pc 0.001in 65535% 0%)	OK=xywh(-1e+20pc 0.001in 65535% 0%)
 ser:A|B:overflow-clip-margin:D	overflow-clip-margin	-1e+20lvi	OK=-100000000000000000000lvi	OK=-1e+20lvi
 ser:A|B:row-rule-inset-cap-end:D	row-rule-inset-cap-end	\t 123456789VH 	OK=123456789vh	OK=1.23457e+08vh
 ser:A|B:row-rule-inset-cap-start:D	row-rule-inset-cap-start	-1e+20Q	OK=-100000000000000000000q	OK=-1e+20q
@@ -1251,6 +1257,7 @@ ser:A|B:timeline-trigger-activation-range-start:D	timeline-trigger-activation-ra
 ser:A|B:timeline-trigger-activation-range-start:P , P	timeline-trigger-activation-range-start	0%, -1e+20%	OK=0%, -100000000000000000000%	OK=0%, -1e+20%
 ser:A|B:timeline-trigger-activation-range-start:normal , normal , contain P	timeline-trigger-activation-range-start	normal, normal, contain 1e+20%	OK=normal, normal, contain 100000000000000000000%	OK=normal, normal, contain 1e+20%
 ser:A|B:timeline-trigger-activation-range:P , P , exit-crossing D , entry-crossing D , D , D , exit-crossing	timeline-trigger-activation-range	10%, 0%, exit-crossing 2147483648lvi , entry-crossing 1000vh, 0lh, 65535pc, exit-crossing  	OK=10%, 0%, exit-crossing 2147483648lvi, entry-crossing 1000vh, 0lh, 65535pc, exit-crossing	OK=10%, 0%, exit-crossing 2.14748e+09lvi, entry-crossing 1000vh, 0lh, 65535pc, exit-crossing
+ser:A|B:timeline-trigger-activation-range:contain , D , entry D , P , D , normal normal , P , D	timeline-trigger-activation-range	contain , -123456789rex, entry 0.1vh , 11000%, 10lh, normal normal, 0.5%, 2147483648vh	OK=contain, -123456789rex, entry 0.1vh, 11000%, 10lh, normal, 0.5%, 2147483648vh	OK=contain, -1.23457e+08rex, entry 0.1vh, 11000%, 10lh, normal, 0.5%, 2.14748e+09vh
 ser:A|B:timeline-trigger-activation-range:contain , D , exit-crossing P , P , D , normal normal , P , D	timeline-trigger-activation-range	contain , 0rlh, exit-crossing -1% , 1000%, 10lh, normal normal, 0.5%, 2147483648vh	OK=contain, 0rlh, exit-crossing -1%, 1000%, 10lh, normal, 0.5%, 2147483648vh	OK=contain, 0rlh, exit-crossing -1%, 1000%, 10lh, normal, 0.5%, 2.14748e+09vh
 ser:A|B:timeline-trigger-activation-range:normal , D cover , contain , normal , normal , normal , normal , P exit-crossing P , exit-crossing P , normal , D , contain , P normal , normal , normal	timeline-trigger-activation-range	normal, -1cm cover , contain , normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2147483647rex , contain , 1% normal, normal, normal	OK=normal, -1cm cover, contain, normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2147483647rex, contain, 1%, normal, normal	OK=normal, -1cm cover, contain, normal, normal, normal, normal, 0.001% exit-crossing 1.5%, exit-crossing 1%, normal, 2.14748e+09rex, contain, 1%, normal, normal
 ser:A|B:timeline-trigger-activation-range:normal , normal contain P , exit D	timeline-trigger-activation-range	normal, normal contain -1e+20%, exit -0.5cm	OK=normal, normal contain -100000000000000000000%, exit -0.5cm	OK=normal, normal contain -1e+20%, exit -0.5cm
@@ -1308,7 +1315,10 @@ ser:A|B|C:animation:auto	animation	auto	OK=none	OK=auto ease 0s 1 normal none ru
 ser:A|B|C:backdrop-filter:drop-shadow( light-dark( red , blue ) D D D )	backdrop-filter	drop-shadow(light-dark(red, blue) 10pt 0.5cap 123456789cm)	OK=drop-shadow(light-dark(red, blue) 10pt 0.5cap 123456789cm)	OK=drop-shadow(light-dark(red, blue) 10pt 0.5cap 1.23457e+08cm)
 ser:A|B|C:backdrop-filter:invert( N ) hue-rotate( D ) url( a . png )	backdrop-filter	invert(1e-07) hue-rotate(255rad) url(a.png)	OK=invert(0) hue-rotate(255rad) url("a.png")	OK=invert(1e-07) hue-rotate(255rad) url("a.png")
 ser:A|B|C:backdrop-filter:sepia( N ) url( S ) url( a . png ) invert( N )	backdrop-filter	sepia(0.1) url("b c.png") url(a.png) invert(1e-07)	OK=sepia(0.1) url("b c.png") url("a.png") invert(0)	OK=sepia(0.1) url("b c.png") url("a.png") invert(1e-07)
+ser:A|B|C:background-position-x:D	background-position-x	 123456789svw	OK=123456789svw	OK=1.23457e+08svw
+ser:A|B|C:background-position:bottom P right D	background-position	bottom -1% right 2147483648svw	OK=right 2147483648svw bottom -1%	OK=right 2.14748e+09svw bottom -1%
 ser:A|B|C:background-position:center top D , top D center	background-position	center top 2147483647vh, top 0cqw center	OK=center top 2147483647vh, center top 0cqw	OK=center top 2.14748e+09vh, center top 0cqw
+ser:A|B|C:background-position:center top D , top left	background-position	center top 123456789ch, top left	OK=center top 123456789ch, left top	OK=center top 1.23457e+08ch, left top
 ser:A|B|C:background-position:left P bottom	background-position	left 123456789% bottom	OK=left 123456789% bottom	OK=left 1.23457e+08% bottom
 ser:A|B|C:background-size:D	background-size	123456789px	OK=123456789px auto	OK=1.23457e+08px auto
 ser:A|B|C:baseline-shift:D	baseline-shift	123456789pt	OK=123456789pt	OK=1.23457e+08pt
@@ -1364,6 +1374,7 @@ ser:A|B|C:column-width:D	column-width	123456789em	OK=123456789em	OK=1.23457e+08e
 ser:A|B|C:contain-intrinsic-block-size:D	contain-intrinsic-block-size	 123456789lh	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:contain-intrinsic-height:D	contain-intrinsic-height	 123456789cqw	OK=123456789cqw	OK=1.23457e+08cqw
 ser:A|B|C:contain-intrinsic-inline-size:D	contain-intrinsic-inline-size	 123456789cm	OK=123456789cm	OK=1.23457e+08cm
+ser:A|B|C:contain-intrinsic-size:auto D	contain-intrinsic-size	auto 123456789ex	OK=auto 123456789ex	OK=auto 1.23457e+08ex
 ser:A|B|C:contain-intrinsic-size:none D	contain-intrinsic-size	 none  123456789em	OK=none 123456789em	OK=none 1.23457e+08em
 ser:A|B|C:contain-intrinsic-width:D	contain-intrinsic-width	 123456789rlh	OK=123456789rlh	OK=1.23457e+08rlh
 ser:A|B|C:cx:D	cx	123456789cap	OK=123456789cap	OK=1.23457e+08cap
@@ -1382,6 +1393,7 @@ ser:A|B|C:font-size-adjust:N	font-size-adjust	 123456789	OK=123456789	OK=1.23457
 ser:A|B|C:font-size:D	font-size	123456789ic	OK=123456789ic	OK=1.23457e+08ic
 ser:A|B|C:font-size:P	font-size	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:gap:D	gap	123456789lh 	OK=123456789lh	OK=1.23457e+08lh
+ser:A|B|C:grid-auto-columns:D	grid-auto-columns	123456789fr	OK=123456789fr	OK=1.23457e+08fr
 ser:A|B|C:grid-auto-rows:D	grid-auto-rows	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:grid-auto-rows:minmax( auto , P ) min-content P minmax( max-content , max-content )	grid-auto-rows	minmax(auto, 2147483648%) min-content 1000% minmax(max-content, max-content)	OK=minmax(auto, 2147483648%) min-content 1000% minmax(max-content, max-content)	OK=minmax(auto, 2.14748e+09%) min-content 1000% minmax(max-content, max-content)
 ser:A|B|C:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ ] repeat( N , [ _x none-of ] minmax( P , auto ) [ bar-baz _x ] )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 1fr) [] repeat(2, [_x none-of] minmax(123456789%, auto) [bar-baz _x]) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(123456789%, auto) [bar-baz _x])	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(1.23457e+08%, auto) [bar-baz _x])
@@ -1402,6 +1414,7 @@ ser:A|B|C:inset-inline-end:P	inset-inline-end	123456789%	OK=123456789%	OK=1.2345
 ser:A|B|C:inset-inline-start:D	inset-inline-start	123456789ch	OK=123456789ch	OK=1.23457e+08ch
 ser:A|B|C:inset-inline:P anchor( --foo end , D )	inset-inline	2147483647% anchor(--foo end , 255pc)	OK=2147483647% anchor(--foo end, 255pc)	OK=2.14748e+09% anchor(--foo end, 255pc)
 ser:A|B|C:inset-inline:anchor( bottom , D ) D	inset-inline	anchor(bottom , 123456789vh ) 0vmin	OK=anchor(bottom, 123456789vh) 0vmin	OK=anchor(bottom, 1.23457e+08vh) 0vmin
+ser:A|B|C:inset-inline:anchor( bottom , P ) D	inset-inline	anchor(bottom , 2147483648% ) -1e+20lvi	OK=anchor(bottom, 2147483648%) -100000000000000000000lvi	OK=anchor(bottom, 2.14748e+09%) -1e+20lvi
 ser:A|B|C:inset-inline:auto anchor( P --a-b )	inset-inline	auto anchor(123456789%  --a-b)	OK=auto anchor(--a-b 123456789%)	OK=auto anchor(--a-b 1.23457e+08%)
 ser:A|B|C:inset-inline:auto anchor-size( D	inset-inline	auto anchor-size(123456789em	OK=auto anchor-size(123456789em)	OK=auto anchor-size(1.23457e+08em)
 ser:A|B|C:inset:anchor( --foo top , P ) D anchor-size( )	inset	anchor(--foo top , 123456789%) 0.001pc anchor-size()	OK=anchor(--foo top, 123456789%) 0.001pc anchor-size()	OK=anchor(--foo top, 1.23457e+08%) 0.001pc anchor-size()
@@ -1431,6 +1444,7 @@ ser:A|B|C:margin-right:D	margin-right	123456789cap	OK=123456789cap	OK=1.23457e+0
 ser:A|B|C:margin-right:P	margin-right	-1e-07%	OK=0%	OK=-1e-07%
 ser:A|B|C:margin-top:D	margin-top	123456789lh	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:margin-top:P	margin-top	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|B|C:margin:D	margin	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:mask-position:center , D , right D bottom D	mask-position	center, 123456789vw, right 1e+20rem bottom -1rex	OK=center center, 123456789vw center, right 100000000000000000000rem bottom -1rex	OK=center center, 1.23457e+08vw center, right 1e+20rem bottom -1rex
 ser:A|B|C:mask-size:D	mask-size	123456789px	OK=123456789px auto	OK=1.23457e+08px auto
 ser:A|B|C:mask-size:contain , P auto , contain	mask-size	contain, 2147483647% auto, contain	OK=contain, 2147483647% auto, contain	OK=contain, 2.14748e+09% auto, contain
@@ -1448,6 +1462,7 @@ ser:A|B|C:offset-distance:D	offset-distance	123456789pc	OK=123456789pc	OK=1.2345
 ser:A|B|C:offset-distance:P	offset-distance	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:offset-path:polygon( D D , P D )	offset-path	polygon(0.5Q 10rem, 123456789% 0cm)	OK=polygon(0.5q 10rem, 123456789% 0cm)	OK=polygon(0.5q 10rem, 1.23457e+08% 0cm)
 ser:A|B|C:offset-path:polygon( D D , P P ) fill-box	offset-path	polygon(0Q 10rem, 2147483647% 1e+20%) fill-box	OK=polygon(0q 10rem, 2147483647% 100000000000000000000%) fill-box	OK=polygon(0q 10rem, 2.14748e+09% 1e+20%) fill-box
+ser:A|B|C:offset-path:xywh( D D D D )	offset-path	xywh(-1cqw 1e+20Q 2147483647em 65535ic )	OK=xywh(-1cqw 100000000000000000000q 2147483647em 65535ic)	OK=xywh(-1cqw 1e+20q 2.14748e+09em 65535ic)
 ser:A|B|C:offset-path:xywh( P D D D )	offset-path	 xywh( 360%  0Q  2147483647em   65535ic ) 	OK=xywh(360% 0q 2147483647em 65535ic)	OK=xywh(360% 0q 2.14748e+09em 65535ic)
 ser:A|B|C:offset-position:top P right D	offset-position	top \n 1e-07%  right\t0.5vh	OK=right 0.5vh top 0%	OK=right 0.5vh top 1e-07%
 ser:A|B|C:offset:auto none D	offset	auto none 123456789vh 	OK=auto none 123456789vh	OK=auto none 1.23457e+08vh
@@ -1476,6 +1491,7 @@ ser:A|B|C:padding-right:D	padding-right	123456789em	OK=123456789em	OK=1.23457e+0
 ser:A|B|C:padding-right:P	padding-right	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:padding-top:D	padding-top	123456789mm	OK=123456789mm	OK=1.23457e+08mm
 ser:A|B|C:padding-top:P	padding-top	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|B|C:padding:D	padding	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:perspective-origin:top D left D	perspective-origin	top 0.1vw left 123456789vw	OK=left 123456789vw top 0.1vw	OK=left 1.23457e+08vw top 0.1vw
 ser:A|B|C:perspective-origin:top P left P	perspective-origin	top 123456789% left 10%	OK=left 10% top 123456789%	OK=left 10% top 1.23457e+08%
 ser:A|B|C:perspective:D	perspective	123456789ch	OK=123456789ch	OK=1.23457e+08ch
@@ -1501,10 +1517,12 @@ ser:A|B|C:scroll-margin-inline:D	scroll-margin-inline	123456789ch	OK=123456789ch
 ser:A|B|C:scroll-margin-left:D	scroll-margin-left	123456789lh	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:scroll-margin-right:D	scroll-margin-right	123456789dvh	OK=123456789dvh	OK=1.23457e+08dvh
 ser:A|B|C:scroll-margin-top:D	scroll-margin-top	123456789em	OK=123456789em	OK=1.23457e+08em
+ser:A|B|C:scroll-margin:D	scroll-margin	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:scroll-padding-block-end:D	scroll-padding-block-end	123456789cap	OK=123456789cap	OK=1.23457e+08cap
 ser:A|B|C:scroll-padding-block-end:P	scroll-padding-block-end	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:scroll-padding-block-start:D	scroll-padding-block-start	123456789in	OK=123456789in	OK=1.23457e+08in
 ser:A|B|C:scroll-padding-block-start:P	scroll-padding-block-start	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|B|C:scroll-padding-block:D	scroll-padding-block	123456789cap	OK=123456789cap	OK=1.23457e+08cap
 ser:A|B|C:scroll-padding-bottom:D	scroll-padding-bottom	123456789rlh	OK=123456789rlh	OK=1.23457e+08rlh
 ser:A|B|C:scroll-padding-bottom:P	scroll-padding-bottom	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:scroll-padding-inline-end:D	scroll-padding-inline-end	123456789rem	OK=123456789rem	OK=1.23457e+08rem
@@ -1527,6 +1545,7 @@ ser:A|B|C:scroll-padding:auto P auto	scroll-padding	auto 123456789% auto	OK=auto
 ser:A|B|C:shape-image-threshold:N	shape-image-threshold	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:shape-image-threshold:P	shape-image-threshold	123456789%	OK=1234567.89	OK=1.23457e+06
 ser:A|B|C:shape-margin:D	shape-margin	123456789Q	OK=123456789q	OK=1.23457e+08q
+ser:A|B|C:shape-outside:xywh( D D P D )	shape-outside	xywh(-1e+20pt 2147483647rlh 0% 65535cqw )	OK=xywh(-100000000000000000000pt 2147483647rlh 0% 65535cqw)	OK=xywh(-1e+20pt 2.14748e+09rlh 0% 65535cqw)
 ser:A|B|C:stop-opacity:N	stop-opacity	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:stroke-dashoffset:D	stroke-dashoffset	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:stroke-dashoffset:P	stroke-dashoffset	123456789%	OK=123456789%	OK=1.23457e+08%
@@ -1552,9 +1571,12 @@ ser:A|B|C:transform-origin:left bottom D	transform-origin	left bottom 123456789v
 ser:A|B|C:transform-origin:left center D	transform-origin	left center 123456789in	OK=left center 123456789in	OK=left center 1.23457e+08in
 ser:A|B|C:transform-origin:right D D	transform-origin	right -1ch 2147483647Q	OK=right -1ch 2147483647q	OK=right -1ch 2.14748e+09q
 ser:A|B|C:transform:rotatez( N ) rotatex( D ) matrix3d( N , N , N , N , N , N , N , N , N , N , N , N , N , N , N , N ) translate( P )	transform	rotateZ(0) rotateX(1rad) matrix3d(1e+20, 1000, 0.001, 2, 1, 1000, 1000, 2147483647, 1000, -100, 0.001, 100, 1, -1, 1000, 2147483648) translate(360% )	OK=rotateZ(0deg) rotateX(1rad) matrix3d(100000000000000000000, 1000, 0.001, 2, 1, 1000, 1000, 2147483647, 1000, -100, 0.001, 100, 1, -1, 1000, 2147483648) translate(360%)	OK=rotateZ(0deg) rotateX(1rad) matrix3d(1e+20, 1000, 0.001, 2, 1, 1000, 1000, 2.14748e+09, 1000, -100, 0.001, 100, 1, -1, 1000, 2.14748e+09) translate(360%)
+ser:A|B|C:transform:scalez( P ) translatez( D ) rotatez( D )	transform	scaleZ(360%) translateZ(-1e+20ex) rotateZ(2147483648deg)	OK=scaleZ(3.6) translateZ(-100000000000000000000ex) rotateZ(2147483648deg)	OK=scaleZ(3.6) translateZ(-1e+20ex) rotateZ(2.14748e+09deg)
 ser:A|B|C:transform:scalez( P ) translatez( N ) rotatez( D )	transform	scaleZ(360%) translateZ(0) rotateZ(2147483648deg)	OK=scaleZ(3.6) translateZ(0px) rotateZ(2147483648deg)	OK=scaleZ(3.6) translateZ(0px) rotateZ(2.14748e+09deg)
 ser:A|B|C:transform:skew( D ) perspective( D )	transform	skew(123456789grad ) perspective(2in)	OK=skew(123456789grad) perspective(2in)	OK=skew(1.23457e+08grad) perspective(2in)
+ser:A|B|C:transform:translatey( D ) scalez( P )	transform	translateY(-1vmax) scaleZ(123456789%)	OK=translateY(-1vmax) scaleZ(1234567.89)	OK=translateY(-1vmax) scaleZ(1.23457e+06)
 ser:A|B|C:transform:translatey( P ) skewy( D )	transform	translateY(123456789%) skewY(0.5grad)	OK=translateY(123456789%) skewY(0.5grad)	OK=translateY(1.23457e+08%) skewY(0.5grad)
+ser:A|B|C:transition-delay:D	transition-delay	123456789ms	OK=123456789ms	OK=1.23457e+08ms
 ser:A|B|C:transition-duration:D	transition-duration	123456789s	OK=123456789s	OK=1.23457e+08s
 ser:A|B|C:vertical-align:D	vertical-align	123456789pc	OK=123456789pc	OK=1.23457e+08pc
 ser:A|B|C:vertical-align:P	vertical-align	123456789%	OK=123456789%	OK=1.23457e+08%
@@ -1566,6 +1588,8 @@ ser:A|B|C:y:D	y	123456789in	OK=123456789in	OK=1.23457e+08in
 ser:A|B|C:y:P	y	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:zoom:N	zoom	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:zoom:P	zoom	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|C:font-width:P	font-width	123456789%	OK=123456789%	NO
+ser:A|C:vertical-align:D first	vertical-align	123456789vh first	OK=first 123456789vh	NO
 support:chromium+firefox:animation-delay-end	animation-delay-end	initial	OK=initial	NO
 support:chromium+firefox:animation-delay-start	animation-delay-start	initial	OK=initial	NO
 support:chromium+firefox:animation-range-center	animation-range-center	initial	OK=initial	NO
