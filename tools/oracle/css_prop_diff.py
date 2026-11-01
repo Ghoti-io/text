@@ -592,6 +592,10 @@ def cause_labels(ours, chromium, firefox):
       E-decimals    both accept, the texts are the same once every number is replaced, and each pair of numbers differs by less than 1e-6 (this library writes at
                     most six decimals: 0 for 1e-07)
       E-longer      both accept and the engine writes every word this library writes and more (the components of a shorthand that are the initial value)
+      E-shorter     both accept and every word the engine writes is a word this library writes, and it writes fewer (a component the engine leaves out)
+      E-case        both accept and the texts are the same once ASCII letters are folded to lower case
+      E-quote       both accept and the texts are the same once the quotation marks are taken out
+      E-order       both accept and the texts have the same words in another order
       E-text        both accept and the texts differ in more than that
     """
     labels = set()
@@ -613,8 +617,16 @@ def cause_labels(ours, chromium, firefox):
             elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and all(
                     abs(float(a) - float(b)) < 1e-6 for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(ours[1]))):
                 labels.add(name + "-decimals")
+            elif text.lower() == ours[1].lower():
+                labels.add(name + "-case")
+            elif re.sub(r"[\"']", "", text) == re.sub(r"[\"']", "", ours[1]):
+                labels.add(name + "-quote")
+            elif sorted(words_e) == sorted(words_o):
+                labels.add(name + "-order")
             elif len(words_e) > len(words_o) and all(words_e.count(w) >= words_o.count(w) for w in set(words_o)):
                 labels.add(name + "-longer")
+            elif len(words_e) < len(words_o) and all(words_o.count(w) >= words_e.count(w) for w in set(words_e)):
+                labels.add(name + "-shorter")
             else:
                 labels.add(name + "-text")
     return labels

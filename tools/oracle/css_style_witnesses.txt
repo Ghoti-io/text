@@ -122,7 +122,6 @@ ser:A=C|B:width:attr : width = inherit	attribute-1	a37	width	light	OK=auto	OK=0p
 ser:A=C|B:width:attr : width = initial	attribute-1	a38	width	light	OK=auto	OK=0px
 ser:A=C|B:width:attr : width = unset	attribute-1	a39	width	light	OK=auto	OK=0px
 ser:A=C|B:word-spacing:style : word-spacing : N	tree-59	e20	word-spacing	light	OK=0px	OK=1px
-ser:A|B=C:color-interpolation:attr : color-interpolation =	attribute-6	a14	color-interpolation	light	OK=sRGB	OK=srgb
 ser:A|B=C:color:style : color : color( from color( srgb N N N ) rec2020 r g b / N )	color-1	c36	color	light	OK=color(rec2020 0.346027 0.424741 0.603442 / 0.5)	OK=color(rec2020 0.250148 0.336685 0.537754 / 0.5)
 ser:A|B=C:color:style : color : color( from hsl( D P P / N ) rec2020 r g b / N )	color-1	c17	color	light	OK=color(rec2020 0.484505 0.668935 0.970638 / 0.5)	OK=color(rec2020 0.403352 0.612751 0.965117 / 0.5)
 ser:A|B=C:color:style : color : color-mix( in hwb , light-dark( color( rec2020 N N N ) , color( display-p3 N N N ) ) , hsl( D P P / N ) )	color-4	c5	color	light	OK=color(srgb -0.478847 0.871729 0.8416 / 0.65)	OK=color(srgb -0.482617 0.884353 0.896553 / 0.65)
@@ -153,8 +152,6 @@ ser:A|B=C:font-size:(empty)	fixture-inheritance	keywords	font-size	light	OK=19.2
 ser:A|B=C:line-height:style : line-height : D	tree-72	e6	line-height	light	OK=38.4px	OK=36px
 ser:A|B=C:line-height:style : line-height : N	tree-14	e9	line-height	light	OK=1.5	OK=39px
 ser:A|B=C:line-height:style : line-height : inherit	tree-63	e7	line-height	light	OK=1.5	OK=24px
-ser:A|B=C:shape-rendering:attr : shape-rendering = crispedges	tree-5	e9	shape-rendering	light	OK=crispEdges	OK=crispedges
-ser:A|B=C:shape-rendering:style : shape-rendering : crispedges	tree-13	e10	shape-rendering	light	OK=crispEdges	OK=crispedges
 ser:A|B=C:stroke-miterlimit:attr : stroke-miterlimit = N	attribute-14	a12	stroke-miterlimit	light	OK=4	OK=0.5
 ser:A|B=C:stroke-width:style : stroke-width : calc( D + D )	tree-94	e1	stroke-width	light	OK=14.333333px	OK=14.3333px
 ser:A|B=C:transform-origin:attr : transform-origin =	attribute-15	a39	transform-origin	light	OK=50% 50% 0px	OK=0px 0px
