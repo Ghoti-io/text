@@ -1545,7 +1545,7 @@ TEST(CssRegistryGrammars, ManyThreadsAskingAtOnceGetOneCompiledGrammarEach) {
   // that is missing a lock shows in some interleavings only.
   const char * names[] = {"margin", "background", "font", "transform", "grid-template-columns", "border", "color", "width"};
   const int nthreads = 8;
-  long bad = 0;
+  std::atomic<long> bad{0};
   for (int round = 0; round < 60; round++) {
     AtomicAllocator counting;
     GTEXT_CSS_Registry_Options ro = gtext_css_registry_options_default();
@@ -1564,6 +1564,7 @@ TEST(CssRegistryGrammars, ManyThreadsAskingAtOnceGetOneCompiledGrammarEach) {
       threads.emplace_back([&, t] {
         ready++;
         while (!go.load()) {
+          std::this_thread::yield();  // a bare spin starves the thread that would release it under a checker that runs one thread at a time (Valgrind)
         }
         for (size_t k = 0; k < ids.size(); k++) {
           GTEXT_CSS_Grammar_State s;
@@ -1577,6 +1578,7 @@ TEST(CssRegistryGrammars, ManyThreadsAskingAtOnceGetOneCompiledGrammarEach) {
       });
     }
     while (ready.load() < nthreads) {
+      std::this_thread::yield();
     }
     go = true;
     for (auto & th : threads) {
