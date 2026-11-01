@@ -1876,7 +1876,12 @@ static bool shape_command(cb * out, sp arg) {
   return changed;
 }
 
+static bool gradient_function(cb * out, sp f);
+
 static bool shape_function(cb * out, sp f) {
+  if (gradient_function(out, f)) {
+    return true; /* shape-outside takes an <image> as well */
+  }
   const char * open = memchr(f.p, '(', f.n);
   if (!open || f.p[f.n - 1] != ')') {
     return false;
@@ -2133,6 +2138,197 @@ static bool rule_shape(cb * out, const sp * t, size_t n) {
     }
   }
   return changed;
+}
+
+
+/* ---- gradients (Images 4, 8) ------------------------------------------------------------------------------------------------------------------------------ */
+
+static bool gradient_quantity(sp s) {
+  if (!s.n) {
+    return false;
+  }
+  const char c = s.p[0];
+  return (c >= '0' && c <= '9') || c == '.' || c == '+' || c == '-' || (s.n > 5 && ieq((sp){s.p, 5}, "calc("));
+}
+
+static bool gradient_extent(sp s) {
+  return eq(s, "closest-side") || eq(s, "closest-corner") || eq(s, "farthest-side") || eq(s, "farthest-corner");
+}
+
+/* the position of `at <position>` as the browsers write it: one value is completed (`70px` is `70px center`), and the center is not written at all */
+static void gradient_position(cb * out, const sp * t, size_t n, bool * is_center, bool * ok) {
+  *is_center = false;
+  *ok = true;
+  if (n == 1) {
+    cb pos = {out->a, NULL, 0, 0, false, &out->fail};
+    if (!rule_position(&pos, t, 1)) {
+      *ok = false;
+    }
+    else {
+      *is_center = pos.n == 13 && memcmp(pos.d, "center center", 13) == 0;
+      if (!*is_center && t[0].n == 3 && memcmp(t[0].p, "50%", 3) == 0) {
+        *is_center = true; /* 50% center is the center */
+      }
+      cb_put(out, pos.d, pos.n);
+    }
+    gtext_allocator_free(out->a, pos.d);
+  }
+  else if (n == 2) {
+    const bool a = eq(t[0], "center") || eq(t[0], "50%");
+    const bool b = eq(t[1], "center") || eq(t[1], "50%");
+    *is_center = a && b;
+    put_join(out, t, n);
+  }
+  else if (n >= 3) {
+    put_join(out, t, n);
+  }
+  else {
+    *ok = false;
+  }
+}
+
+/* Images 4, 8 (served 2026-11-01): a gradient is serialized "per its individual grammar, ... omitting components when possible without changing the meaning". The configuration
+ * of a radial or conic gradient loses `from 0deg`, a center position, a lone `farthest-corner`, the `ellipse` of two sizes (or of none) and the `circle` of one size; a position of
+ * one value is completed. Both pinned browsers write `conic-gradient(from 0deg at 50% 50%, red, gold)` as `conic-gradient(red, gold)` and `at 70px` as `at 70px center`. */
+static bool gradient_function(cb * out, sp f) {
+  const char * open = memchr(f.p, '(', f.n);
+  if (!open || f.p[f.n - 1] != ')') {
+    return false;
+  }
+  const sp name = {f.p, (size_t)(open - f.p)};
+  const sp inner = {open + 1, f.n - name.n - 2};
+  const bool conic = ieq(name, "conic-gradient") || ieq(name, "repeating-conic-gradient");
+  const bool radial = ieq(name, "radial-gradient") || ieq(name, "repeating-radial-gradient");
+  if (!conic && !radial) {
+    return false;
+  }
+  spv args = {out->a, NULL, 0, 0, false, &out->fail};
+  top_split(&args, inner.p, inner.n, ',');
+  bool done = false;
+  if (!args.fail && args.n >= 2) {
+    spv tk = {out->a, NULL, 0, 0, false, &out->fail};
+    top_split(&tk, args.v[0].p, args.v[0].n, ' ');
+    const bool config = !tk.fail && tk.n > 0 &&
+        (eq(tk.v[0], "from") || eq(tk.v[0], "at") || eq(tk.v[0], "in") || (radial && (eq(tk.v[0], "circle") || eq(tk.v[0], "ellipse") || gradient_extent(tk.v[0]) || gradient_quantity(tk.v[0]))));
+    if (config) {
+      size_t at = tk.n, in = tk.n;
+      for (size_t i = 0; i < tk.n; i++) {
+        if (at == tk.n && eq(tk.v[i], "at")) {
+          at = i;
+        }
+        if (in == tk.n && eq(tk.v[i], "in")) {
+          in = i;
+        }
+      }
+      const size_t head = at < in ? at : in;
+      cb parts = {out->a, NULL, 0, 0, false, &out->fail};
+      size_t first = 0;
+      if (conic) {
+        if (head >= 2 && eq(tk.v[0], "from")) {
+          if (!eq(tk.v[1], "0deg")) {
+            cb_puts(&parts, "from ");
+            put_sp(&parts, tk.v[1]);
+          }
+          first = 2;
+        }
+        if (first < head) {
+          cb_puts(&parts, parts.n ? " " : "");
+          put_join(&parts, tk.v + first, head - first);
+        }
+      }
+      else {
+        bool shape_circle = false, shape_ellipse = false;
+        if (head > 0 && eq(tk.v[0], "circle")) {
+          shape_circle = true;
+          first = 1;
+        }
+        else if (head > 0 && eq(tk.v[0], "ellipse")) {
+          shape_ellipse = true;
+          first = 1;
+        }
+        const size_t nsize = head - first;
+        bool lengths = nsize > 0;
+        for (size_t i = first; i < head; i++) {
+          lengths = lengths && gradient_quantity(tk.v[i]);
+        }
+        const bool lone_default = nsize == 1 && eq(tk.v[first], "farthest-corner");
+        const bool implied = (shape_circle && lengths && nsize == 1) || (shape_ellipse && (nsize == 0 || (lengths && nsize == 2)));
+        if ((shape_circle || shape_ellipse) && !implied) {
+          cb_puts(&parts, shape_circle ? "circle" : "ellipse");
+        }
+        if (nsize && !lone_default) {
+          if (parts.n) {
+            cb_putc(&parts, ' ');
+          }
+          put_join(&parts, tk.v + first, nsize);
+        }
+      }
+      if (at < tk.n) {
+        const size_t pend = in > at ? in : tk.n;
+        cb pos = {out->a, NULL, 0, 0, false, &out->fail};
+        bool is_center = false, ok = true;
+        gradient_position(&pos, tk.v + at + 1, pend - at - 1, &is_center, &ok);
+        if (ok && !is_center) {
+          if (parts.n) {
+            cb_putc(&parts, ' ');
+          }
+          cb_puts(&parts, "at ");
+          cb_put(&parts, pos.d, pos.n);
+        }
+        else if (!ok) {
+          /* a position this rule does not know is written as it is */
+          if (parts.n) {
+            cb_putc(&parts, ' ');
+          }
+          put_join(&parts, tk.v + at, pend - at);
+        }
+        gtext_allocator_free(out->a, pos.d);
+      }
+      if (in < tk.n) {
+        if (parts.n) {
+          cb_putc(&parts, ' ');
+        }
+        put_join(&parts, tk.v + in, tk.n - in);
+      }
+      /* the text of the first argument, as it was and as it would be written now */
+      cb was = {out->a, NULL, 0, 0, false, &out->fail};
+      put_join(&was, tk.v, tk.n);
+      const bool changed = parts.n != was.n || (parts.n && memcmp(parts.d, was.d, parts.n) != 0);
+      if (changed && !parts.fail && !was.fail) {
+        put_sp(out, name);
+        cb_putc(out, '(');
+        bool wrote = false;
+        if (parts.n) {
+          cb_put(out, parts.d, parts.n);
+          wrote = true;
+        }
+        for (size_t i = 1; i < args.n; i++) {
+          if (wrote) {
+            cb_puts(out, ", ");
+          }
+          put_sp(out, args.v[i]);
+          wrote = true;
+        }
+        cb_putc(out, ')');
+        done = true;
+      }
+      gtext_allocator_free(out->a, was.d);
+      gtext_allocator_free(out->a, parts.d);
+    }
+    gtext_allocator_free(out->a, tk.v);
+  }
+  if (args.fail) {
+    out->fail = true;
+  }
+  gtext_allocator_free(out->a, args.v);
+  return done;
+}
+
+static bool rule_gradient(cb * out, const sp * t, size_t n) {
+  if (n != 1) {
+    return false;
+  }
+  return gradient_function(out, t[0]);
 }
 
 /* Masking 1 (served 2026-10-31): "If no reference box is specified, the border-box will be used as reference box" for a clip-path basic shape, and Motion 1: "If
@@ -2420,12 +2616,14 @@ static const canon_row kRows[] = {
   R("animation-range-start", rule_range_start, MODE_ITEMS),
   R("animation-timing-function", rule_steps, MODE_ITEMS),
   R("backdrop-filter", rule_filter, MODE_WHOLE),
+  R("background-image", rule_gradient, MODE_ITEMS),
   R("background-position", rule_position, MODE_ITEMS),
   R("background-repeat", rule_repeat_style, MODE_ITEMS),
   R("background-size", rule_bg_size, MODE_ITEMS),
   R("border-image-outset", rule_box_sides, MODE_WHOLE),
   R("border-image-repeat", rule_pair, MODE_WHOLE),
   R("border-image-slice", rule_box_sides, MODE_WHOLE),
+  R("border-image-source", rule_gradient, MODE_ITEMS),
   R("border-image-width", rule_box_sides, MODE_WHOLE),
   R("border-shape", rule_shape, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
@@ -2457,8 +2655,10 @@ static const canon_row kRows[] = {
   T("grid-template-rows", rule_grid_template_tracks),
   R("justify-items", rule_first_baseline, MODE_ITEMS),
   R("justify-self", rule_first_baseline, MODE_ITEMS),
+  R("list-style-image", rule_gradient, MODE_ITEMS),
   R("list-style-type", rule_symbols, MODE_WHOLE),
   R("margin-trim", rule_margin_trim, MODE_WHOLE),
+  R("mask-image", rule_gradient, MODE_ITEMS),
   R("mask-position", rule_position, MODE_ITEMS),
   R("mask-repeat", rule_repeat_style, MODE_ITEMS),
   R("mask-size", rule_bg_size, MODE_ITEMS),

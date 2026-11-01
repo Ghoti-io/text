@@ -172,4 +172,28 @@ TEST(CssHuntTextShadow, ANegativeSpreadIsInvalid) {
   EXPECT_EQ(P("box-shadow", "1px 2px 3px -4px"), "valid:1px 2px 3px -4px");
 }
 
+/* Images 4, 8 (served 2026-11-01): "To serialize any function defined in this module, serialize it per its individual grammar, in the order its grammar is written in, omitting
+   components when possible without changing the meaning". Both pinned browsers leave out of a gradient what is its default: `from 0deg`, `at center` (and `at 50% 50%`, `at 50%`),
+   a lone `farthest-corner`, the `ellipse` of two sizes and the `circle` of one, and complete a one-value position (`at 70px` is `at 70px center`). */
+TEST(CssHuntGradients, TheDefaultsAGradientLeavesOutAreNotWritten) {
+  EXPECT_EQ(B("background-image", "conic-gradient(from 0deg, red, blue)"), "valid:conic-gradient(red, blue)");
+  EXPECT_EQ(B("background-image", "conic-gradient(at center, red, blue)"), "valid:conic-gradient(red, blue)");
+  EXPECT_EQ(B("background-image", "conic-gradient(from 0deg at 50% 50%, red, gold)"), "valid:conic-gradient(red, gold)");
+  EXPECT_EQ(B("background-image", "conic-gradient(at 50%, red, blue)"), "valid:conic-gradient(red, blue)");
+  EXPECT_EQ(B("background-image", "conic-gradient(at 70px, red, blue)"), "valid:conic-gradient(at 70px center, red, blue)");
+  EXPECT_EQ(B("background-image", "conic-gradient(from 2rad at 50% 50%, red, blue)"), "valid:conic-gradient(from 2rad, red, blue)");
+  EXPECT_EQ(B("background-image", "conic-gradient(from 1rad at 10% 20%, red, blue)"), "valid:conic-gradient(from 1rad at 10% 20%, red, blue)");
+  EXPECT_EQ(B("background-image", "repeating-conic-gradient(from 0deg at center, red, gold)"), "valid:repeating-conic-gradient(red, gold)");
+  EXPECT_EQ(B("mask-image", "radial-gradient(at center, red, blue)"), "valid:radial-gradient(red, blue)");
+  EXPECT_EQ(B("mask-image", "radial-gradient(at 10%, red, blue)"), "valid:radial-gradient(at 10% center, red, blue)");
+  EXPECT_EQ(B("mask-image", "radial-gradient(farthest-corner, red, blue)"), "valid:radial-gradient(red, blue)");
+  EXPECT_EQ(B("mask-image", "radial-gradient(closest-side, red, blue)"), "valid:radial-gradient(closest-side, red, blue)");
+  EXPECT_EQ(B("list-style-image", "radial-gradient(ellipse 10px 20px, red, blue)"), "valid:radial-gradient(10px 20px, red, blue)");
+  EXPECT_EQ(B("list-style-image", "radial-gradient(circle 10px at 5px 6px, red, blue)"), "valid:radial-gradient(10px at 5px 6px, red, blue)");
+  EXPECT_EQ(B("list-style-image", "radial-gradient(circle, red, blue)"), "valid:radial-gradient(circle, red, blue)");
+  EXPECT_EQ(B("background-image", "linear-gradient(to right, red, blue)"), "valid:linear-gradient(to right, red, blue)");
+  EXPECT_EQ(B("shape-outside", "radial-gradient(ellipse 10px 20px at 5px 6px, red, blue)"), "valid:radial-gradient(10px 20px at 5px 6px, red, blue)");
+  EXPECT_EQ(B("background-image", "radial-gradient(red, blue), url(a.png)"), "valid:radial-gradient(red, blue), url(\"a.png\")");
+}
+
 } // namespace
