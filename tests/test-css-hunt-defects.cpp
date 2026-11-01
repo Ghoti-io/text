@@ -258,4 +258,12 @@ TEST(CssHuntTransition, AZeroTimeInAnyUnitIsTheInitialValue) {
   EXPECT_EQ(B("transition", "foo 0ms 1s"), "valid:foo 0ms 1s");
 }
 
+/* Syntax 3 (served 2026-11-01), "consume a declaration": "remove leading and trailing <whitespace-token>s from the value": the value of a property read from text, a
+   substitution function included, does not begin or end with white space. */
+TEST(CssHuntWhitespace, AValueDoesNotKeepItsLeadingAndTrailingWhiteSpace) {
+  EXPECT_EQ(P("top", "\t --func( a )\n"), "pending:--func( a )");
+  EXPECT_EQ(P("width", "  var(--x)  "), "pending:var(--x)");
+  EXPECT_EQ(P("width", " 1px "), "valid:1px");
+}
+
 } // namespace

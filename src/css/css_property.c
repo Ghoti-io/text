@@ -834,7 +834,17 @@ GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * regist
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = gtext_css_parse_property(registry, name, name_length, tree->values, tree->value_count, options, out);
+  /* Syntax 3, "consume a declaration": "remove leading and trailing <whitespace-token>s from the value"; a value read from text is a declaration's value */
+  const GTEXT_CSS_Component_Value * first = tree->values;
+  size_t kept = tree->value_count;
+  while (kept && first->kind == GTEXT_CSS_VALUE_TOKEN && first->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+    first++;
+    kept--;
+  }
+  while (kept && first[kept - 1].kind == GTEXT_CSS_VALUE_TOKEN && first[kept - 1].type == GTEXT_CSS_TOKEN_WHITESPACE) {
+    kept--;
+  }
+  st = gtext_css_parse_property(registry, name, name_length, first, kept, options, out);
   gtext_css_tree_free(tree);
   if (st == GTEXT_CSS_OK && name_length >= 2 && name[0] == '-' && name[1] == '-') {
     /* a custom property's value is its text "exactly as specified by the author": comments and the spelling of its numbers are kept (Variables 1, 4.1) */
