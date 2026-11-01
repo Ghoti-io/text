@@ -152,4 +152,14 @@ TEST(CssHuntGridAreas, ATrashTokenInARowIsInvalid) {
   EXPECT_EQ(P("grid-template-areas", "\"a . ..\" \"b-c _d \xc3\xa9\""), "valid:\"a . .\" \"b-c _d \xc3\xa9\"");
 }
 
+/* Images 4, 4: "<color-stripe> = <color> && [ <length-percentage> | <flex> ]?" with the thicknesses "<length [0,∞]>" ("Negative length values are invalid."), "<percentage [0,100]>"
+   and a bare "<flex>"; Grid 2 gives the range [0,∞] to the flex of a track ("<flex [0,∞]>: A non-negative dimension with the unit fr") and defines "a flexible length or
+   <flex>" itself as "a dimension with the fr unit", with no range. So a negative <flex> is a valid thickness of a stripe (stripes() has no engine to ask), and is not a valid track. */
+TEST(CssHuntStripes, ANegativeFlexIsAThicknessAndALengthIsNot) {
+  EXPECT_EQ(P("border-color", "stripes(red -1fr)"), "valid:stripes(red -1fr)");
+  EXPECT_EQ(P("border-color", "stripes(red -1px)"), "invalid");
+  EXPECT_EQ(P("border-color", "stripes(red 101%)"), "invalid");
+  EXPECT_EQ(P("grid-template-columns", "-1fr"), "invalid");
+}
+
 } // namespace
