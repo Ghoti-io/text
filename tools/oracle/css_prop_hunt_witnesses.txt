@@ -898,11 +898,23 @@ ser:A=B|C:filter:invert( )	filter	invert()	OK=invert()	OK=invert(1)
 ser:A=B|C:filter:opacity( )	filter	opacity()	OK=opacity()	OK=opacity(1)
 ser:A=B|C:filter:saturate( )	filter	saturate()	OK=saturate()	OK=saturate(1)
 ser:A=B|C:filter:sepia( )	filter	sepia()	OK=sepia()	OK=sepia(1)
+ser:A=B|C:hyphenate-limit-chars:N N N	hyphenate-limit-chars	5 2 2	OK=5 2 2	OK=5 2
+ser:A=B|C:hyphenate-limit-chars:N auto	hyphenate-limit-chars	1 auto	OK=1 auto	OK=1
+ser:A=B|C:hyphenate-limit-chars:auto auto	hyphenate-limit-chars	auto auto	OK=auto auto	OK=auto
+ser:A=B|C:text-box:cap text trim-both	text-box	cap text trim-both	OK=cap text	OK=cap
+ser:A=B|C:text-box:cap text trim-end	text-box	cap text trim-end	OK=trim-end cap text	OK=trim-end cap
+ser:A=B|C:text-box:ex text	text-box	ex text	OK=ex text	OK=ex
+ser:A=B|C:text-box:none cap text	text-box	none cap text	OK=none cap text	OK=none cap
+ser:A=B|C:text-box:text alphabetic	text-box	text alphabetic	OK=text alphabetic	OK=alphabetic
+ser:A=B|C:text-emphasis-position:over right	text-emphasis-position	over right	OK=over right	OK=over
+ser:A=B|C:text-emphasis-position:right under	text-emphasis-position	right under	OK=under right	OK=under
+ser:A=B|C:text-emphasis-style:filled circle	text-emphasis-style	filled circle	OK=filled circle	OK=circle
 ser:A=B|C:text-emphasis:black	text-emphasis	black	OK=black	OK=none black
 ser:A=B|C:text-emphasis:dot	text-emphasis	dot	OK=dot	OK=dot currentcolor
 ser:A=B|C:text-emphasis:none	text-emphasis	none	OK=none	OK=none currentcolor
 ser:A=B|C:text-emphasis:rgb( N N N )	text-emphasis	rgb(1 2 3)	OK=rgb(1, 2, 3)	OK=none rgb(1, 2, 3)
 ser:A=B|C:text-emphasis:transparent	text-emphasis	transparent	OK=transparent	OK=none transparent
+ser:A=B|C:text-emphasis:triangle filled red	text-emphasis	triangle filled red	OK=filled triangle red	OK=triangle red
 ser:A=C|B:-webkit-border-radius:D D	-webkit-border-radius	1px 2px	OK=1px 2px	OK=1px / 2px
 ser:A=C|B:-webkit-border-radius:D P	-webkit-border-radius	1px 5%	OK=1px 5%	OK=1px / 5%
 ser:A=C|B:-webkit-text-stroke-width:D	-webkit-text-stroke-width	1e+20lh	OK=100000000000000000000lh	OK=1e+20lh
@@ -1005,6 +1017,9 @@ ser:A=C|B:flex-shrink:N	flex-shrink	+.678E9	OK=678000000	OK=6.78e+08
 ser:A=C|B:flex:N	flex	1e+20 	OK=100000000000000000000 1 0%	OK=1e+20 1 0%
 ser:A=C|B:flood-opacity:N	flood-opacity	-1e+20	OK=-100000000000000000000	OK=-1e+20
 ser:A=C|B:flood-opacity:P	flood-opacity	0.001%	OK=0.00001	OK=1e-05
+ser:A=C|B:font-family:S , serif	font-family	"New Century Schoolbook", serif	OK=New Century Schoolbook, serif	OK="New Century Schoolbook", serif
+ser:A=C|B:font-family:new century schoolbook , serif	font-family	New \n Century Schoolbook,/* c */serif	OK=New Century Schoolbook, serif	OK="New Century Schoolbook", serif
+ser:A=C|B:font-family:serif , sa ns-serif , cursive , fantasy , monospace , system-ui	font-family	serif, sa/**/ns-serif, cursive, fantasy, monospace, system-ui	OK=serif, sa ns-serif, cursive, fantasy, monospace, system-ui	OK=serif, "sa ns-serif", cursive, fantasy, monospace, system-ui
 ser:A=C|B:font-size-adjust:N	font-size-adjust	 1e+20	OK=100000000000000000000	OK=1e+20
 ser:A=C|B:font-size:D	font-size	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
 ser:A=C|B:font-size:P	font-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
