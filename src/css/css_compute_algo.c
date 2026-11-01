@@ -846,9 +846,13 @@ static GTEXT_CSS_Status algo_float(css_state * st, const GTEXT_CSS_Value_Set * s
 
 static GTEXT_CSS_Status algo_color(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Value_Set ** out) {
   const GTEXT_CSS_Value * v = gtext_css_value_set_root(src);
-  if (v && v->kind == GTEXT_CSS_VAL_COLOR && v->color && v->color->kind == GTEXT_CSS_COLOR_KEYWORD &&
-      v->color->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {
-    /* `color: currentcolor` is `color: inherit` (Color 4, 4.4) */
+  const GTEXT_CSS_Color * c = (v && v->kind == GTEXT_CSS_VAL_COLOR) ? v->color : NULL;
+  /* light-dark() picks the branch of the element's color scheme first (Color Adjust 1, 2.4), and the branch may be currentcolor */
+  for (size_t guard = 0; c && c->kind == GTEXT_CSS_COLOR_LIGHT_DARK && c->item_count == 2 && c->items[0] && c->items[1] && guard < 100000; guard++) {
+    c = c->items[css_st_used_scheme(st) == GTEXT_CSS_SCHEME_DARK ? 1 : 0];
+  }
+  if (c && c->kind == GTEXT_CSS_COLOR_KEYWORD && c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {
+    /* `color: currentcolor` is `color: inherit` (Color 4, 4.4: "In the color property, the used value of currentcolor is the resolved inherited value") */
     return css_st_inherit(st, id, out);
   }
   return bytype(st, id, src, out);

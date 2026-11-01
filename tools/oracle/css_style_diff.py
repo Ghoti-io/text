@@ -307,6 +307,40 @@ def summarize(items, o, a, headers, features, listed, undecided, unanswered, tot
     print("  answers of this library that are UNSUPPORTED (not compared): %d (%d distinct)" % (sum(undecided.values()), len(undecided)))
 
 
+# What differs in a color answer, named, so that a rule of css_style_classes.tsv can say which differences it is about. A rule whose reason begins `[cause: a, b]`
+# holds for a key only when every item of the key differs from the engines in nothing but those ways (a rule that matched on the key alone would hide a defect of
+# another kind that happens to share a spelling). The labels, for an engine E and this library's answer:
+#   E-drops       E refused the declaration (the element has its parent's color, `rgb(11, 22, 33)` in the color population)
+#   E-alpha8      the text is the same and the alpha differs by 0.0021 or less beyond the tolerance (an engine that keeps an 8-bit alpha)
+#   E-constants   the text is the same and no number differs by more than 3e-3 of its size beyond the tolerance (conversion constants of another derivation)
+#   E-numbers     the text is the same and the numbers differ by more
+#   E-shape       the text is not the same (a keyword against a number, a function against another)
+_PARENT_COLOR = "rgb(11, 22, 33)"
+
+
+def cause_labels(ours, chromium, firefox):
+    labels = set()
+    for name, v in (("chromium", chromium), ("firefox", firefox)):
+        if numbers_agree(v, ours):
+            continue
+        if v == _PARENT_COLOR and ours != _PARENT_COLOR:
+            labels.add(name + "-drops")
+        elif _NUMBER.sub("#", v) != _NUMBER.sub("#", ours):
+            labels.add(name + "-shape")
+        else:
+            xs, ys = [float(x) for x in _NUMBER.findall(ours)], [float(x) for x in _NUMBER.findall(v)]
+            diffs = [(abs(x - y), max(abs(x), abs(y))) for x, y in zip(xs, ys)]
+            last_only = (abs(xs[-1] - ys[-1]) <= 0.0021 and
+                         all(abs(x - y) <= max(TOLERANCE_ABSOLUTE, TOLERANCE_RELATIVE * max(abs(x), abs(y))) for x, y in zip(xs[:-1], ys[:-1]))) if xs else False
+            if last_only:
+                labels.add(name + "-alpha8")
+            elif all(d <= 3e-3 * max(1.0, m) for d, m in diffs):
+                labels.add(name + "-constants")
+            else:
+                labels.add(name + "-numbers")
+    return labels
+
+
 def read_rules(path):
     """[(regex, class, reason)] of tools/oracle/css_style_classes.tsv: how a key that is not in the list yet is classified when the list is written."""
     import re
@@ -317,7 +351,8 @@ def read_rules(path):
                 continue
             f = line.rstrip("\n").split("\t")
             if len(f) == 3:
-                out.append((re.compile(f[0]), f[1], f[2]))
+                m = re.match(r"\[cause: ([a-z0-9, -]+)\] ", f[2])
+                out.append((re.compile(f[0]), f[1], f[2], set(x.strip() for x in m.group(1).split(",")) if m else None))
     return out
 
 
@@ -330,7 +365,9 @@ def write_list(path, items, o, a, features, listed, headers, witnesses_path, fla
             elif key.startswith("support:"):
                 cls, reason = support_class(key, headers)
             else:
-                cls, reason = next(((c, r) for rx, c, r in rules if rx.fullmatch(key)), ("unclassified", "TODO"))
+                cls, reason = next(((c, r) for rx, c, r, cause in rules if rx.fullmatch(key) and (cause is None or all(
+                    cause_labels(o[m][1], base.engine_view(a["chromium"][m])[1], base.engine_view(a["firefox"][m])[1]) <= cause for m in features[key]["members"]))),
+                    ("unclassified", "TODO"))
             f.write("%s\t%d\t%s\t%s\t%s\n" % (key, features[key]["count"], cls, features[key]["digest"], reason))
             rep = features[key]["rep"]
             k, s, i, p, _desc, _origin = flat[keep[rep]]

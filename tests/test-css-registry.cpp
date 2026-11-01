@@ -857,6 +857,23 @@ TEST(CssRegistryCaller, AnOverrideThatNamesItselfLeavesTheGeneratedPropertiesTha
   EXPECT_EQ(gtext_css_registry_override_count(o.r), 3u);
 }
 
+// CSS Syntax 3 white space is a space, a tab, a line feed, a carriage return and a form feed, and the grammar parser reads all five between the quote and the `>` of
+// `<'width' >`: the override's reference to the property it replaces must be found with any of them (a fuzz input found a form feed freezing as a left recursion).
+TEST(CssRegistryCaller, AnOverrideNamesTheOriginalThroughAnyWhiteSpaceBeforeTheBracket) {
+  for (const char * ws : {" ", "\t", "\n", "\r", "\f", "\f\f \r"}) {
+    Builder b;
+    const std::string grammar = std::string("<'width'") + ws + "> | zzwide";
+    GTEXT_CSS_Property_Def w = def("width", grammar.c_str(), "auto");
+    w.override = true;
+    ASSERT_EQ(gtext_css_registry_register_property(b.b, &w, nullptr), GTEXT_CSS_OK);
+    Owned o;
+    GTEXT_CSS_Registry_Result res;
+    ASSERT_EQ(b.freeze(o, &res), GTEXT_CSS_OK) << "white space " << static_cast<int>(ws[0]) << ": " << res.name << " " << (res.detail ? res.detail : "");
+    EXPECT_EQ(parse(o.r, "width", "zzwide"), "valid:zzwide");
+    EXPECT_EQ(parse(o.r, "width", "5px"), "valid:5px");
+  }
+}
+
 TEST(CssRegistryCaller, AnOverrideIsSeenByTheRelationsAndAliasesOfTheProperty) {
   // After `overflow-wrap` is overridden, `word-wrap` (its alias in the pin) means the override, and `margin`'s longhand list and the
   // logical groups name the override and not the property it replaced.

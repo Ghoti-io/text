@@ -1289,7 +1289,7 @@ static GTEXT_CSS_Status expand_self(GTEXT_CSS_Registry * r, const char * lname, 
         j++;
       }
       size_t k = j + 1;
-      while (k < glen && (grammar[k] == ' ' || grammar[k] == '\t' || grammar[k] == '\n')) {
+      while (k < glen && (grammar[k] == ' ' || grammar[k] == '\t' || grammar[k] == '\n' || grammar[k] == '\r' || grammar[k] == '\f')) {
         k++;
       }
       if (j < glen && k < glen && grammar[k] == '>' && j - (i + 2) == nlen) {

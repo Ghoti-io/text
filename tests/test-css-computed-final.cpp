@@ -233,4 +233,11 @@ TEST(CssProseTypes, TheTypesTheDraftsDescribeInProseCompile) {
   EXPECT_EQ(P("color", "#xyz"), "invalid");
 }
 
+/* Color 4, 15.5: "In the color property, the used value of currentcolor is the resolved inherited value"; Color Adjust 1, 2.4: the element's color scheme picks the branch of light-dark(). */
+TEST(CssColorProperty, ALightDarkThatPicksCurrentcolorIsTheInheritedColor) {
+  EXPECT_EQ(computed("color: rgb(11 22 33)", "color: light-dark(currentcolor, #abc)", "color"), "rgb(11, 22, 33)");
+  EXPECT_EQ(computed("color: rgb(11 22 33)", "color: light-dark(#abc, currentcolor)", "color"), "rgb(170, 187, 204)");
+  EXPECT_EQ(computed("color: rgb(11 22 33)", "color-scheme: dark; color: light-dark(#abc, currentcolor)", "color"), "rgb(11, 22, 33)");
+}
+
 } // namespace

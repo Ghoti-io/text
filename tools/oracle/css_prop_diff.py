@@ -311,7 +311,7 @@ def classify(items, ours, answers):
         for f in feats:
             key = "%s:%s:%s" % (pattern, prop, " ".join(f["toks"]) if f["toks"] else "(empty)")
             features[key] = {"count": f["count"], "rep": f["rep"], "pattern": pattern, "prop": prop,
-                             "digest": digest_of(items, ours, answers, f["members"])}
+                             "digest": digest_of(items, ours, answers, f["members"]), "members": f["members"]}
     return features, undecided, unanswered
 
 
