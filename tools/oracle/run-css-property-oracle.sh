@@ -26,7 +26,8 @@
 # the four run in turn. The work directory (default build/css-prop-oracle) holds the population and every reader's answers, so a run
 # can be split across hosts: the first two stages in the build container, the third where the engine is, the last anywhere.
 #
-# CSS_PROP_ORACLE_COUNT and CSS_PROP_ORACLE_SEED size and seed the generated part (the list tools/oracle/css_prop_divergences.txt
+# CSS_PROP_ORACLE_LIST and CSS_PROP_ORACLE_WITNESSES name another list and its witnesses (the hunt's: tools/oracle/css_prop_hunt_divergences.txt, with
+# CSS_PROP_ORACLE_SCOPE=full); the keys it does not list are reported UNLISTED, which is the open part of the hunt. CSS_PROP_ORACLE_COUNT and CSS_PROP_ORACLE_SEED size and seed the generated part (the list tools/oracle/css_prop_divergences.txt
 # describes the default, 3,000 and seed 1; a hunt is a count of 100,000 or more, in chunks: CSS_PROP_ORACLE_CHUNK=K/T takes every T-th
 # generated item from K, and the fixed part, which every chunk has). CSS_PROP_ORACLE_MAX_OURS is the most keys of class `ours` the list may hold (default 0: a finished list holds none; the Makefile
 # sets the number a list under construction has, and it only goes down).
@@ -80,6 +81,9 @@ if [ ! -f "$vectors/valid.json" ] || [ -n "$CSS_PROP_ORACLE_REEXTRACT" ]; then
 fi
 
 diff_py="python3 $root/tools/oracle/css_prop_diff.py --ours $ours --wpt $vectors"
+# a hunt is judged by a list of its own: CSS_PROP_ORACLE_LIST and CSS_PROP_ORACLE_WITNESSES name it (tools/oracle/css_prop_hunt_divergences.txt)
+[ -n "$CSS_PROP_ORACLE_LIST" ] && diff_py="$diff_py --list $CSS_PROP_ORACLE_LIST"
+[ -n "$CSS_PROP_ORACLE_WITNESSES" ] && diff_py="$diff_py --witnesses $CSS_PROP_ORACLE_WITNESSES"
 
 if [ $controls = 0 ]; then
 	exec $diff_py --work "$work" --stage "$stage"
