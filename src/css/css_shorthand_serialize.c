@@ -340,17 +340,34 @@ static bool texteq(const char * a, const char * b) {
   return a && b && strcmp(a, b) == 0;
 }
 
-/// Whether a serialized value is a zero <time> in some spelling (`0ms`, `0.0s`): it is the initial value `0s` of a duration or a delay, and a shorthand leaves it out as it leaves
-/// `0s` out (both pinned browsers write `transition: foo 0ms` as `foo`).
-static bool zero_time_text(const char * t) {
+/// Whether a serialized value is the zero of the kind the initial value `init` is the zero of, in some spelling: `0ms` and `0.0s` for the time `0s`, `0pt` and `0mm` for the
+/// length `0px`. It is the initial value, and a shorthand leaves it out as it leaves out `0s` and `0px` (both pinned browsers write `transition: foo 0ms` as `foo` and
+/// `offset: auto none 0pt` as `auto`).
+static bool zero_of_init(const char * init, const char * t) {
+  if (!init || !t) {
+    return false;
+  }
+  const GTEXT_CSS_Unit_Type want = strcmp(init, "0s") == 0 ? GTEXT_CSS_UNIT_TYPE_TIME : strcmp(init, "0px") == 0 ? GTEXT_CSS_UNIT_TYPE_LENGTH : GTEXT_CSS_UNIT_TYPE_NONE;
+  if (want == GTEXT_CSS_UNIT_TYPE_NONE) {
+    return false;
+  }
   size_t i = 0;
   while (t[i] == '0' || t[i] == '.') {
     i++;
   }
-  return i > 0 && (strcmp(t + i, "s") == 0 || strcmp(t + i, "ms") == 0);
+  if (i == 0 || t[i] == '\0') {
+    return false;
+  }
+  const GTEXT_CSS_Unit u = gtext_css_unit_lookup(t + i, strlen(t + i));
+  return u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == want;
 }
 
-/// Whether two serialized comma-separated lists are the same but for the spelling of zero times (`0ms` and `0s`).
+/// zero_of_init() for the time `0s`.
+static bool zero_time_text(const char * t) {
+  return zero_of_init("0s", t);
+}
+
+/// Whether two serialized comma-separated lists are the same but for the spelling of zero times and lengths (`0ms` and `0s`, `0pt` and `0px`).
 static bool same_but_zero_times(const char * a, const char * b) {
   while (*a || *b) {
     const char * ea = strstr(a, ", ");
@@ -365,7 +382,7 @@ static bool same_but_zero_times(const char * a, const char * b) {
       ta[la] = '\0';
       memcpy(tb, b, lb);
       tb[lb] = '\0';
-      if (!(zero_time_text(ta) && zero_time_text(tb))) {
+      if (!((zero_of_init("0s", ta) && zero_of_init("0s", tb)) || (zero_of_init("0px", ta) && zero_of_init("0px", tb)))) {
         return false;
       }
     }
@@ -432,7 +449,7 @@ static bool lhv_fill(sctx * c, const directs * d, lhv * v) {
         return false;
       }
       const char * init_text = initial_serialized(c, d->ids[i]);
-      v[i].initial = texteq(v[i].text, init_text) || (v[i].text && init_text && strcmp(init_text, "0s") == 0 && zero_time_text(v[i].text));
+      v[i].initial = texteq(v[i].text, init_text) || zero_of_init(init_text, v[i].text);
       v[i].uniform = true;
     }
   }
@@ -1055,7 +1072,7 @@ static bool layers_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
       }
       const char * txt = final_only_h ? per[h][0] : per[h][li];
       const char * init = is_sh(c, d->ids[h]) ? NULL : initial_serialized(c, d->ids[h]);
-      bool is_init = init && (texteq(txt, init) || (txt && strcmp(init, "0s") == 0 && zero_time_text(txt)));
+      bool is_init = init && (texteq(txt, init) || zero_of_init(init, txt));
       if (is_bs && !no_shadow && dfl[h] && (nm(c, d->ids[h], "box-shadow-blur") || nm(c, d->ids[h], "box-shadow-spread"))) {
         /* a blur or a spread the author wrote is written back, whatever it is (`0px` too); one that was left out is not */
         is_init = dfl[h][final_only_h ? 0 : li];

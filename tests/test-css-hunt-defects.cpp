@@ -266,4 +266,31 @@ TEST(CssHuntWhitespace, AValueDoesNotKeepItsLeadingAndTrailingWhiteSpace) {
   EXPECT_EQ(P("width", " 1px "), "valid:1px");
 }
 
+/* Shapes 1 (served 2026-11-01): the <shape-box> of shape-outside is margin-box when none is given, so the shortest form leaves it out; Backgrounds 3: the second radius of a
+   corner "if omitted, is equal to the first"; Text 4: "UAs must also support the alternate keyword distribute which must compute to inter-character, thus having the exact
+   same meaning and behavior"; Values 4: a zero length is the length 0px whatever its unit, and a shorthand leaves out what is its longhand's initial value. Both pinned
+   browsers write each of these as shown. */
+TEST(CssHuntEquivalents, TheValueThatIsTheDefaultOrTheSameIsNotWritten) {
+  EXPECT_EQ(P("shape-outside", "circle() margin-box"), "valid:circle()");
+  EXPECT_EQ(P("shape-outside", "margin-box polygon(evenodd, 0px 0px, 1px 1px, 2px 0px)"), "valid:polygon(evenodd, 0px 0px, 1px 1px, 2px 0px)");
+  EXPECT_EQ(P("shape-outside", "circle() content-box"), "valid:circle() content-box");
+  EXPECT_EQ(P("border-start-end-radius", "1dvh 1dvh"), "valid:1dvh");
+  EXPECT_EQ(P("border-top-left-radius", "1px 1px"), "valid:1px");
+  EXPECT_EQ(P("border-top-left-radius", "1px 2px"), "valid:1px 2px");
+  EXPECT_EQ(P("text-justify", "distribute"), "valid:inter-character");
+  EXPECT_EQ(P("text-justify", "inter-word"), "valid:inter-word");
+  EXPECT_EQ(B("offset", "auto none 0pt"), "valid:auto");
+}
+
+/* Anchor Positioning 1 (served 2026-11-01), position-area: "If only a single keyword is given, it behaves as if the second keyword is span-all if the given keyword is
+   unambigous about its axis; otherwise, it behaves as if the given keyword was repeated. (For example, top is equivalent to top span-all": the span-all of such a keyword is
+   not written (both pinned browsers write position-try-fallbacks: self-x-start span-all as self-x-start). */
+TEST(CssHuntPositionArea, ASpanAllBesideAKeywordThatNamesItsAxisIsNotWritten) {
+  EXPECT_EQ(P("position-try-fallbacks", "span-all self-x-start, left span-self-y-end"), "valid:self-x-start, left span-self-y-end");
+  EXPECT_EQ(P("position-area", "top span-all"), "valid:top");
+  EXPECT_EQ(P("position-area", "span-all top"), "valid:top");
+  EXPECT_EQ(P("position-area", "start span-all"), "valid:start span-all");
+  EXPECT_EQ(P("position-area", "center center"), "valid:center");
+}
+
 } // namespace

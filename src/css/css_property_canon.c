@@ -682,6 +682,33 @@ static bool rule_pair(cb * out, const sp * t, size_t n) {
   return false;
 }
 
+/* Anchor Positioning 1 (served 2026-11-01), position-area: "If only a single keyword is given, it behaves as if the second keyword is span-all if the given keyword is
+ * unambigous about its axis ... (For example, top is equivalent to top span-all"; the shortest form leaves the span-all out beside a keyword that names its axis (top, left,
+ * x-start, self-y-end, block-end, span-inline-start ...) and keeps it beside one that does not (start, end, center). Two equal keywords are one. */
+static bool names_its_axis(sp t) {
+  static const char * const pre[] = {"top", "bottom", "left", "right", "x-", "y-", "self-x-", "self-y-", "block-", "inline-", "span-top", "span-bottom", "span-left",
+      "span-right", "span-x-", "span-y-", "span-self-x-", "span-self-y-", "span-block-", "span-inline-"};
+  for (size_t i = 0; i < sizeof pre / sizeof pre[0]; i++) {
+    const size_t n = strlen(pre[i]);
+    if (t.n >= n && memcmp(t.p, pre[i], n) == 0 && (pre[i][n - 1] == '-' || t.n == n)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool rule_position_area(cb * out, const sp * t, size_t n) {
+  if (n == 2 && eq(t[1], "span-all") && names_its_axis(t[0])) {
+    put_sp(out, t[0]);
+    return true;
+  }
+  if (n == 2 && eq(t[0], "span-all") && names_its_axis(t[1])) {
+    put_sp(out, t[1]);
+    return true;
+  }
+  return rule_pair(out, t, n);
+}
+
 /* Backgrounds 3 `<repeat-style> = repeat-x | repeat-y | [repeat | space | round | no-repeat]{1,2}`: the pair of equal keywords is one,
  * `repeat no-repeat` is `repeat-x` and `no-repeat repeat` is `repeat-y` ("the shorthand `repeat-x` is equivalent to `repeat no-repeat`"). */
 static bool rule_repeat_style(cb * out, const sp * t, size_t n) {
@@ -2554,6 +2581,40 @@ static bool rule_shape_default_box(cb * out, const sp * t, size_t n) {
   return rule_shape(out, t, n);
 }
 
+/* Shapes 1 (served 2026-11-01), shape-outside: "If <shape-box> is not supplied, then the reference box defaults to margin-box"; the shortest form leaves it out beside a
+ * function, writes the shape first, and an image alone is the value (both pinned browsers write `circle() margin-box` as `circle()`). */
+static bool rule_shape_outside(cb * out, const sp * t, size_t n) {
+  if (n == 2 && (eq(t[0], "margin-box") || eq(t[1], "margin-box"))) {
+    const sp fn = eq(t[0], "margin-box") ? t[1] : t[0];
+    if (memchr(fn.p, '(', fn.n)) {
+      if (!shape_function(out, fn)) {
+        put_sp(out, fn);
+      }
+      return true;
+    }
+  }
+  return rule_shape(out, t, n);
+}
+
+/* Text 4 (served 2026-11-01), text-justify: "UAs must also support the alternate keyword distribute which must compute to inter-character, thus having the exact same meaning
+ * and behavior"; both pinned browsers write it as inter-character already in the specified value. */
+static bool rule_text_justify(cb * out, const sp * t, size_t n) {
+  bool changed = false;
+  for (size_t i = 0; i < n; i++) {
+    if (i) {
+      cb_putc(out, ' ');
+    }
+    if (ieq(t[i], "distribute")) {
+      cb_puts(out, "inter-character");
+      changed = true;
+    }
+    else {
+      put_sp(out, t[i]);
+    }
+  }
+  return changed;
+}
+
 /* Scroll-driven Animations 1, <timeline-range-name> <length-percentage>?: the start of a range name is `0%` and its end `100%` by default, and
  * what is the default is not written. */
 static bool is_range_name(sp t) {
@@ -2827,12 +2888,20 @@ static const canon_row kRows[] = {
   R("background-position", rule_position, MODE_ITEMS),
   R("background-repeat", rule_repeat_style, MODE_ITEMS),
   R("background-size", rule_bg_size, MODE_ITEMS),
+  R("border-bottom-left-radius", rule_pair, MODE_WHOLE),
+  R("border-bottom-right-radius", rule_pair, MODE_WHOLE),
+  R("border-end-end-radius", rule_pair, MODE_WHOLE),
+  R("border-end-start-radius", rule_pair, MODE_WHOLE),
   R("border-image-outset", rule_box_sides, MODE_WHOLE),
   R("border-image-repeat", rule_pair, MODE_WHOLE),
   R("border-image-slice", rule_box_sides, MODE_WHOLE),
   R("border-image-source", rule_gradient, MODE_ITEMS),
   R("border-image-width", rule_box_sides, MODE_WHOLE),
   R("border-shape", rule_shape, MODE_WHOLE),
+  R("border-start-end-radius", rule_pair, MODE_WHOLE),
+  R("border-start-start-radius", rule_pair, MODE_WHOLE),
+  R("border-top-left-radius", rule_pair, MODE_WHOLE),
+  R("border-top-right-radius", rule_pair, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
   T("clip", rule_clip_rect_commas),
   T("font-palette", rule_palette_mix),
@@ -2883,18 +2952,19 @@ static const canon_row kRows[] = {
   R("overflow-clip-margin-top", rule_clip_margin, MODE_WHOLE),
   R("paint-order", rule_paint_order, MODE_WHOLE),
   R("perspective-origin", rule_position, MODE_ITEMS),
-  R("position-area", rule_pair, MODE_WHOLE),
-  R("position-try-fallbacks", rule_pair, MODE_ITEMS),
+  R("position-area", rule_position_area, MODE_WHOLE),
+  R("position-try-fallbacks", rule_position_area, MODE_ITEMS),
   R("rotate", rule_rotate, MODE_WHOLE),
   R("scale", rule_scale, MODE_WHOLE),
   R("scroll-snap-align", rule_pair, MODE_WHOLE),
   R("scroll-snap-type", rule_scroll_snap_type, MODE_WHOLE),
   R("shape-image-threshold", rule_alpha_percent, MODE_WHOLE),
-  R("shape-outside", rule_shape, MODE_WHOLE),
+  R("shape-outside", rule_shape_outside, MODE_WHOLE),
   R("stop-opacity", rule_alpha_percent, MODE_WHOLE),
   R("stroke-opacity", rule_alpha_percent, MODE_WHOLE),
   R("text-box-edge", rule_text_edge, MODE_WHOLE),
   R("line-fit-edge", rule_text_edge, MODE_WHOLE),
+  R("text-justify", rule_text_justify, MODE_WHOLE),
   R("transform", rule_transform, MODE_WHOLE),
   R("transform-origin", rule_transform_origin, MODE_WHOLE),
   R("transition-timing-function", rule_steps, MODE_ITEMS),
