@@ -344,7 +344,7 @@ def read_list(path):
         if cls in ("standard-newer", "reference-old", "reference-wrong", "legacy-compat") and not key.startswith("support:") and not quotes_a_sentence(reason):
             problems.append("%s:%d: class %s says a specification decides, and the reason quotes no sentence of it (25 characters or more in double quotes); "
                             "class unspecified is for what the specification leaves to the implementation" % (path, n, cls))
-        if "*" in key:
+        if re.search(r"(?<! )\*|\*(?! )", key):  # a `*` between spaces is the multiplication of a calc() and a token of a feature like any other
             problems.append("%s:%d: a key with a wildcard is a blanket" % (path, n))
         rows[key] = (count, cls, reason, digest)
     return rows, problems
@@ -584,6 +584,9 @@ def cause_labels(ours, chromium, firefox):
       E-refuses     this library accepts and E refuses
       E-accepts     this library refuses and E accepts
       E-notation    both accept, the texts are not the same, and are the same once every number is read as a number (`1e+20` against `100000000000000000000`: an exponent that this library's text does not have)
+      E-precision   both accept, the texts are the same once every number is replaced, and each pair of numbers differs by at most 5e-6 of its size (an engine that
+                    keeps six significant digits, or a 32-bit float: 1.23457e+08 or 123456792 for 123456789)
+      E-longer      both accept and the engine writes every word this library writes and more (the components of a shorthand that are the initial value)
       E-text        both accept and the texts differ in more than that
     """
     labels = set()
@@ -596,7 +599,16 @@ def cause_labels(ours, chromium, firefox):
             labels.add(name + "-refuses")
         elif text != ours[1]:
             exponent = re.search(r"\d[eE][-+]?\d", text) and not re.search(r"\d[eE][-+]?\d", ours[1])
-            labels.add(name + ("-notation" if exponent and _canonical_numbers(text) == _canonical_numbers(ours[1]) else "-text"))
+            words_o, words_e = re.findall(r"[^\s,()/]+", ours[1]), re.findall(r"[^\s,()/]+", text)
+            if exponent and _canonical_numbers(text) == _canonical_numbers(ours[1]):
+                labels.add(name + "-notation")
+            elif _NUMBER.sub("#", text) == _NUMBER.sub("#", ours[1]) and all(
+                    abs(float(a) - float(b)) <= 5e-6 * max(abs(float(a)), abs(float(b))) for a, b in zip(_NUMBER.findall(text), _NUMBER.findall(ours[1]))):
+                labels.add(name + "-precision")
+            elif len(words_e) > len(words_o) and all(words_e.count(w) >= words_o.count(w) for w in set(words_o)):
+                labels.add(name + "-longer")
+            else:
+                labels.add(name + "-text")
     return labels
 
 
