@@ -162,4 +162,14 @@ TEST(CssHuntStripes, ANegativeFlexIsAThicknessAndALengthIsNot) {
   EXPECT_EQ(P("grid-template-columns", "-1fr"), "invalid");
 }
 
+/* Text Decoration 4, text-shadow: "Values are interpreted as for box-shadow" and "Negative spread values are invalid." (the blur is "<length [0,∞]>" in Backgrounds 3, with
+   "Negative values are invalid."). The spread itself is the fourth length. */
+TEST(CssHuntTextShadow, ANegativeSpreadIsInvalid) {
+  EXPECT_EQ(P("text-shadow", "1px 2px 3px -4px"), "invalid");
+  EXPECT_EQ(P("text-shadow", "1px 2px -3px"), "invalid");
+  EXPECT_EQ(P("text-shadow", "red 1px 2px 3px 4px inset"), "valid:red 1px 2px 3px 4px inset");
+  EXPECT_EQ(P("text-shadow", "-1px -2px"), "valid:-1px -2px");
+  EXPECT_EQ(P("box-shadow", "1px 2px 3px -4px"), "valid:1px 2px 3px -4px");
+}
+
 } // namespace
